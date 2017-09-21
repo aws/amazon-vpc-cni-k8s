@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.grpc.examples.helloworld";
+option java_outer_classname = "HelloWorldProto";
+
+package rpc;;
+
+// The service definition.
+service CNIBackend {
+  rpc AddNetwork (AddNetworkRequest) returns (AddNetworkReply) {}
+  rpc DelNetwork (DelNetworkRequest) returns (DelNetworkReply) {}
+}
+
+message AddNetworkRequest {
+  string K8S_POD_NAME = 1;
+  string K8S_POD_NAMESPACE = 2;
+  string Netns = 3;
+  string IfName = 4;
+}
+
+message  AddNetworkReply{
+  bool Success = 1;
+  string IPv4Addr = 2;
+  string IPv4Subnet = 3;
+  int32 DeviceNumber = 4;
+}
+
+message DelNetworkRequest {
+  string K8S_POD_NAME = 1;
+  string K8S_POD_NAMESPACE = 2;
+  string IPv4Addr = 3;
+}
+
+message DelNetworkReply {
+  bool Success = 1;
+  string IPv4Addr = 2;
+  int32 DeviceNumber = 3;
+}
