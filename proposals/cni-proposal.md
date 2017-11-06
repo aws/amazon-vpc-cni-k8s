@@ -9,14 +9,14 @@ Kubernetes imposes the following fundamental requirements:
 
 To run Kubernetes over AWS VPC, we would like to reach following additional goals:
 
-* Networking for Pods must support high throughput and availability, low latency and minimal jitter comparable to the characteristics a customer would get from EC2 networking.
-* Customers must be able to express and enforce granular network policies and isolation comparable to those achievable with native EC2 networking and security groups.
-* Network operation must be simple and secure. Customers must be able to apply exsiting AWS VPC networking and security best practices for building Kubernetes clusters over AWS VPC. For example, customers should be able to: 
+* Networking for Pods must support high throughput and availability, low latency and minimal jitter comparable to the characteristics a user would get from EC2 networking.
+* Users must be able to express and enforce granular network policies and isolation comparable to those achievable with native EC2 networking and security groups.
+* Network operation must be simple and secure. Users must be able to apply exsiting AWS VPC networking and security best practices for building Kubernetes clusters over AWS VPC. For example, a user should be able to: 
 	* use VPC flow logs for troubleshooting and compliance auditing,
 	* apply VPC routing polices for traffic engineering,
 	* apply security groups to enforce isolation and meet regulatory requirements.
 * Pod networking should be setup in a matter of seconds.
-* Customer should be able to scale clusters up to 2000 nodes.
+* Administrators should be able to scale clusters up to 2000 nodes.
  
 ## Proposal
 Here we propose:
@@ -46,7 +46,7 @@ Max IPs = min((N * M - N), subnet's free IP)
 ## Solution Components
 
 ### Pod to Pod Communication
-Here is an overview on how we setup host side network stack and pod side network stack to allows pod to pod communication:
+Here is an overview on how we setup host side network stack and pod side network stack to allow pod to pod communication:
 
 ![](https://s3-us-west-1.amazonaws.com/liwen-public/wire-network.png)
 
@@ -87,7 +87,7 @@ default via 169.254.1.1 dev eth0
  
 #### On Host side
 
-There are multiple routing tables used to route incoming/outing Pod's traffic.
+There are multiple routing tables used to route incoming/outgoing Pod's traffic.
 
 * main (toPod) route table is used to route to Pod traffic
 
@@ -173,9 +173,9 @@ Here is the NAT rule:
 
 ### Local IP Address Manager (L-IPAM)
 
-For fast Pod networking setup time, we will run a small, single binary(L-IPAM) on each host to maintain a warm-pool of available secondary IP addresses. Whenever Kubelet receives a ADD pod request, L-IPAM can immediately take one available secondary IP address from its warm pool and assign it to Pod.
+For fast Pod networking setup time, we will run a small, single binary(L-IPAM) on each host to maintain a warm-pool of available secondary IP addresses. Whenever Kubelet receives an ADD pod request, L-IPAM can immediately take one available secondary IP address from its warm pool and assign it to Pod.
 
-#### Building a warn-pool of available secondary IP addresses
+#### Building a warm-pool of available secondary IP addresses
 L-IPAM learns the available ENIs and their secondary IP addresses from [EC2 instance's Metadata Service](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html). 
 
 ```
@@ -186,7 +186,7 @@ curl http://169.254.169.254/latest/meta-data/network/interfaces/macs/
 curl http://169.254.169.254/latest/meta-data/network/interfaces/macs/0a:da:9d:51:47:28/local-ipv4s
 ```
 
-Whenever L-IPAM daemon restarts (e.g. for upgrade reason), it also queries local Kubelet introspection service and get current running Pods information such as Pod Name, Pod Namespace and Pod IP address.
+Whenever L-IPAM daemon restarts (e.g. for upgrade reason), it also queries local Kubelet introspection service to get current running Pods information such as Pod Name, Pod Namespace and Pod IP address.
 
 ```
 curl --stderr /dev/null http://localhost:10255/pods 
@@ -197,17 +197,18 @@ With the information from these 2 sources, L-IPAM can build a warm-pool that con
 
 L-IPAM monitors the size of secondary IP address warm pool.
 
-* whenever the number of available IP addresses goes below a configured min threshold, the Local IP manager will:
+* whenever the number of available IP addresses goes below a configured min threshold, L-IPAM  will:
 	* create a new ENI and attach it to instance
 	* allocate all available IP addresses on this new ENI
 	* once these IP addresses become available on the instance (confirmed through instance's metadata service), add these IP addresses to warm-pool.
 
-* whenever the number of available IP addresses exceeds a configured max threshold, the local IP manager will free the ENI where all of its secondary IP address are in warm-pool, detach the ENI interface and free to EC2-VPC ENI pool.
+* whenever the number of available IP addresses exceeds a configured max threshold, L-IPAM will pick an ENI where all of its secondary IP address are in warm-pool, detach the ENI interface and free it to EC2-VPC ENI pool. 
+
+##### Note
+Fragmentation of addresses assignment to ENIs may prevent freeing ENIs even when there are many unused IP addresses.
 
 ##### Limitations and Security Consideration
-Right now, ENIs are allocated or freed by local IP manager on each instance.  All ENIs on a instance share same subnet and same security groups.
-
-In future, ENIs can be allocated or freed by a central IP manager on a dedicated instance and each Kubernetes worker node (instance) can have ENIs associated with different security groups.
+Right now, ENIs are allocated or freed by L-IPAM on each instance.  All ENIs on a instance share same subnet and same security groups.
 
 #### Pod IP address cooling period
 
@@ -215,7 +216,7 @@ When a Pod is deleted, we will keep the Pod IP address in "cooling mode" for coo
 
 #### Troubleshooting
 
-Local IP manager will have a command to show:
+L-IPAM will have a command to show:
 
 * Number of currently allocated IP addresses
 * How many addresses are still available
@@ -225,14 +226,18 @@ Local IP manager will have a command to show:
 curl http://localhost:6666/ip-manager
 ```
 
-### Inter-process communication  between CNI-plugin and IP Local Address Manager
+### Inter-process communication  between CNI-plugin and L-IPAM
 
-We will use gRPC for inter-process communication between CNI-plugin and IP Local Address Manager.
+We will use gRPC for inter-process communication between CNI-plugin and L-IPAM.
 
 ![](https://s3-us-west-1.amazonaws.com/liwen-public/ipam.png)
 
 ### Installation
-Local IP manager runs as DaemonSet on all nodes.
+L-IPAM runs as DaemonSet on all nodes.
 ### Future
 
-In future, we would like to have a central IP manager manages allocating and freeing ENIs for all worker nodes in the cluster and associate ENIs of different security groups to a single worker node.
+In the future, we would like to investigate whether to have a cluster ENI manager which manages allocating and freeing ENIs for all worker nodes in the cluster.  Here are a few benefits of having a cluster ENI manager:
+
+* Administrators can remove EC2 ENI write permission from worker nodes.
+* It may be easier to troubleshoot.
+* It may be easier to allow ENIs of different security groups and subnets get attached to a single worker node.
