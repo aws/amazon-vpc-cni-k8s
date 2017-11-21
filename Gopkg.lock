@@ -16,12 +16,12 @@
 [[projects]]
   branch = "master"
   name = "github.com/aws/amazon-ecs-cni-plugins"
-  packages = ["pkg/logger","pkg/version"]
+  packages = ["pkg/logger"]
   revision = "17438ddf497765b2c43bfad94d4c7d9c89b2be8e"
 
 [[projects]]
   name = "github.com/aws/aws-sdk-go"
-  packages = ["aws","aws/awserr","aws/awsutil","aws/client","aws/client/metadata","aws/corehandlers","aws/credentials","aws/credentials/ec2rolecreds","aws/credentials/endpointcreds","aws/credentials/stscreds","aws/defaults","aws/ec2metadata","aws/endpoints","aws/request","aws/session","aws/signer/v4","internal/shareddefaults","private/protocol","private/protocol/ec2query","private/protocol/json/jsonutil","private/protocol/jsonrpc","private/protocol/query","private/protocol/query/queryutil","private/protocol/rest","private/protocol/xml/xmlutil","service/ec2","service/resourcegroupstaggingapi","service/sts"]
+  packages = ["aws","aws/arn","aws/awserr","aws/awsutil","aws/client","aws/client/metadata","aws/corehandlers","aws/credentials","aws/credentials/ec2rolecreds","aws/credentials/endpointcreds","aws/credentials/stscreds","aws/defaults","aws/ec2metadata","aws/endpoints","aws/request","aws/session","aws/signer/v4","internal/shareddefaults","private/protocol","private/protocol/ec2query","private/protocol/json/jsonutil","private/protocol/jsonrpc","private/protocol/query","private/protocol/query/queryutil","private/protocol/rest","private/protocol/xml/xmlutil","service/ec2","service/resourcegroupstaggingapi","service/sts"]
   revision = "1e7792b681d9bc32eff919999321b2589e891688"
   version = "v1.12.14"
 
@@ -151,12 +151,6 @@
   version = "v1.0.0"
 
 [[projects]]
-  name = "github.com/sirupsen/logrus"
-  packages = ["."]
-  revision = "f006c2ac4710855cf0f916dd6b77acf6b048dc6e"
-  version = "v1.0.3"
-
-[[projects]]
   name = "github.com/spf13/pflag"
   packages = ["."]
   revision = "e57e3eeb33f795204c1ca35f56c44f83227c6e66"
@@ -182,12 +176,6 @@
 
 [[projects]]
   branch = "master"
-  name = "golang.org/x/crypto"
-  packages = ["ssh/terminal"]
-  revision = "541b9d50ad47e36efd8fb423e938e59ff1691f68"
-
-[[projects]]
-  branch = "master"
   name = "golang.org/x/net"
   packages = ["context","http2","http2/hpack","idna","internal/timeseries","lex/httplex","trace"]
   revision = "aabf50738bcdd9b207582cbe796b59ed65d56680"
@@ -195,7 +183,7 @@
 [[projects]]
   branch = "master"
   name = "golang.org/x/sys"
-  packages = ["unix","windows"]
+  packages = ["unix"]
   revision = "8dbc5d05d6edcc104950cc299a1ce6641235bc86"
 
 [[projects]]
@@ -249,6 +237,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "774faa15857eecf0de6be30d3773ee46282d7467c145d1144f67a02ae92e3313"
+  inputs-digest = "1003f2048943d3eee6747174022a8e41f8e6b93408bff2f636ea53ea62e0e696"
   solver-name = "gps-cdcl"
   solver-version = 1
