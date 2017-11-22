@@ -1,0 +1,240 @@
+// Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"). You may
+// not use this file except in compliance with the License. A copy of the
+// License is located at
+//
+//     http://aws.amazon.com/apache2.0/
+//
+// or in the "license" file accompanying this file. This file is distributed
+// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+// express or implied. See the License for the specific language governing
+// permissions and limitations under the License.
+
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
+	"net"
+	"runtime"
+
+	log "github.com/cihub/seelog"
+
+	"github.com/pkg/errors"
+
+	"github.com/aws/amazon-ecs-cni-plugins/pkg/logger"
+
+	"github.com/containernetworking/cni/pkg/skel"
+	"github.com/containernetworking/cni/pkg/types"
+	"github.com/containernetworking/cni/pkg/types/current"
+	cniSpecVersion "github.com/containernetworking/cni/pkg/version"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/grpcwrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/rpcwrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/typeswrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/plugins/routed-eni/driver"
+	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
+)
+
+const (
+	ipamDAddress       = "localhost:50051"
+	defaultLogFilePath = "/var/log/aws-routed-eni/plugin.log"
+	maxVethNameLen     = 10
+)
+
+// NetConf stores the common network config for CNI plugin
+type NetConf struct {
+	// CNIVersion is the version pluging
+	CNIVersion string `json:"cniVersion,omitempty"`
+
+	// Name is the plugin name
+	Name string `json:"name"`
+
+	// Type is the plugin type
+	Type string `json:"type"`
+}
+
+// K8sArgs is the valid CNI_ARGS used for Kubernetes
+type K8sArgs struct {
+	types.CommonArgs
+
+	// IP is pod's ip address
+	IP net.IP
+
+	// K8S_POD_NAME is pod's name
+	K8S_POD_NAME types.UnmarshallableString
+
+	// K8S_POD_NAMESPACE is pod's namespace
+	K8S_POD_NAMESPACE types.UnmarshallableString
+
+	// K8S_POD_INFRA_CONTAINER_ID is pod's container id
+	K8S_POD_INFRA_CONTAINER_ID types.UnmarshallableString
+}
+
+func init() {
+	// This is to ensure that all the namespace operations are performed for
+	// a single thread
+	runtime.LockOSThread()
+}
+
+func cmdAdd(args *skel.CmdArgs) error {
+	return add(args, typeswrapper.New(), grpcwrapper.New(), rpcwrapper.New(), driver.New())
+}
+
+func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrapper.GRPC,
+	rpcClient rpcwrapper.RPC, driverClient driver.NetworkAPIs) error {
+	log.Infof("Received CNI add request: ContainerID(%s) Netns(%s) IfName(%s) Args(%s) Path(%s) argsStdinData(%s)",
+		args.ContainerID, args.Netns, args.IfName, args.Args, args.Path, args.StdinData)
+
+	conf := NetConf{}
+	if err := json.Unmarshal(args.StdinData, &conf); err != nil {
+		log.Errorf("Error loading config from args: %v", err)
+		return errors.Wrap(err, "add cmd: error loading config from args")
+	}
+
+	k8sArgs := K8sArgs{}
+	if err := cniTypes.LoadArgs(args.Args, &k8sArgs); err != nil {
+		return errors.Wrap(err, "add cmd: failed to load k8s config from arg")
+	}
+
+	cniVersion := conf.CNIVersion
+
+	// Set up a connection to the ipamD server.
+	conn, err := grpcClient.Dial(ipamDAddress, grpc.WithInsecure())
+	if err != nil {
+		return errors.Wrap(err, "add cmd: failed to connect to backend server")
+	}
+	defer conn.Close()
+
+	c := rpcClient.NewCNIBackendClient(conn)
+
+	r, err := c.AddNetwork(context.Background(),
+		&pb.AddNetworkRequest{
+			Netns:             args.Netns,
+			K8S_POD_NAME:      string(k8sArgs.K8S_POD_NAME),
+			K8S_POD_NAMESPACE: string(k8sArgs.K8S_POD_NAMESPACE),
+			IfName:            args.IfName})
+
+	if err != nil {
+		log.Errorf("add cmd: Error received from backend server for add network request: %v", err)
+		return err
+	}
+
+	if !r.Success {
+		log.Errorf("Failed to assign an IP address to pod %s, namespace %s", string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE))
+		return fmt.Errorf("add cmd: failed to assign an IP address to container")
+	}
+
+	log.Infof("Received add network response for pod %s namespace %s: %s, table %d ",
+		string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE),
+		r.IPv4Addr, r.DeviceNumber)
+
+	addr := &net.IPNet{
+		IP:   net.ParseIP(r.IPv4Addr),
+		Mask: net.IPv4Mask(255, 255, 255, 255),
+	}
+
+	// build hostVethName
+	// hostVethName := "eni" + args.ContainerID[:min(11, len(args.ContainerID))]
+	// Note: the maximum length for linux interface name is 15
+	length := len(args.ContainerID)
+	if length > maxVethNameLen {
+		length = maxVethNameLen
+	}
+	hostVethName := "eni" + args.ContainerID[:length]
+
+	err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber))
+
+	if err != nil {
+		log.Errorf("Failed SetupPodNetwork for pod %s namespace %s: %v",
+			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), err)
+		return errors.Wrap(err, "add command: failed to setup network")
+	}
+
+	ips := []*current.IPConfig{
+		{
+			Version: "4",
+			Address: *addr,
+		},
+	}
+
+	result := &current.Result{
+		IPs: ips,
+	}
+
+	return cniTypes.PrintResult(result, cniVersion)
+}
+
+func cmdDel(args *skel.CmdArgs) error {
+	return del(args, typeswrapper.New(), grpcwrapper.New(), rpcwrapper.New(), driver.New())
+}
+
+func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrapper.GRPC, rpcClient rpcwrapper.RPC,
+	driverClient driver.NetworkAPIs) error {
+
+	log.Infof("Received CNI del request: ContainerID(%s) Netns(%s) IfName(%s) Args(%s) Path(%s) argsStdinData(%s)",
+		args.ContainerID, args.Netns, args.IfName, args.Args, args.Path, args.StdinData)
+
+	conf := NetConf{}
+	if err := json.Unmarshal(args.StdinData, &conf); err != nil {
+		log.Errorf("Failed to load netconf from args %v", err)
+		return errors.Wrap(err, "del cmd: failed to load netconf from args")
+	}
+
+	k8sArgs := K8sArgs{}
+	if err := cniTypes.LoadArgs(args.Args, &k8sArgs); err != nil {
+		return errors.Wrap(err, "del cmd: failed to load k8s config from args")
+	}
+
+	// notify local IP address manager to free secondary IP
+	// Set up a connection to the server.
+	conn, err := grpcClient.Dial(ipamDAddress, grpc.WithInsecure())
+	if err != nil {
+		return errors.Wrap(err, "del cmd: failed to connect to backend server")
+	}
+	defer conn.Close()
+
+	c := rpcClient.NewCNIBackendClient(conn)
+
+	r, err := c.DelNetwork(context.Background(),
+		&pb.DelNetworkRequest{
+			K8S_POD_NAME:      string(k8sArgs.K8S_POD_NAME),
+			K8S_POD_NAMESPACE: string(k8sArgs.K8S_POD_NAMESPACE),
+			IPv4Addr:          k8sArgs.IP.String()})
+
+	if err != nil {
+		log.Errorf("Error received from backend server for del network request for pod %s namespace %s: %v",
+			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), err)
+		return err
+	}
+
+	if !r.Success {
+		log.Errorf("Failed to process delete request for pod %s namespace %s: %v",
+			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), err)
+		return errors.Wrap(err, "del cmd: failed to process delete request")
+	}
+
+	addr := &net.IPNet{
+		IP:   net.ParseIP(r.IPv4Addr),
+		Mask: net.IPv4Mask(255, 255, 255, 255),
+	}
+
+	err = driverClient.TeardownNS(addr, int(r.DeviceNumber))
+
+	if err != nil {
+		log.Errorf("Failed on TeardownPodNetwork for pod %s namespace %s: %v",
+			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), err)
+		return err
+	}
+	return nil
+}
+
+func main() {
+	defer log.Flush()
+	logger.SetupLogger(logger.GetLogFileLocation(defaultLogFilePath))
+
+	skel.PluginMain(cmdAdd, cmdDel, cniSpecVersion.All)
+}
