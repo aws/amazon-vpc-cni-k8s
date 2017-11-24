@@ -24,13 +24,14 @@ import (
 
 const (
 	defaultLogFilePath = "/host/var/log/aws-routed-eni/ipamd.log"
+	version            = "0.1"
 )
 
 func main() {
 	defer log.Flush()
 	logger.SetupLogger(logger.GetLogFileLocation(defaultLogFilePath))
 
-	log.Info("Starting L-IPAMD ...")
+	log.Infof("Starting L-IPAMD %s  ...", version)
 	aws_k8s_agent, err := ipamd.New()
 
 	if err != nil {

@@ -633,7 +633,6 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string) error {
 		log.Debugf("Not able to delete eni yet (attempt %d/%d): %v ", retry, maxENIDeleteRetries, err)
 		time.Sleep(retryDeleteENIInternal)
 	}
-	return errors.Wrapf(err, "failed to delete eni: %s", eniName)
 
 }
 

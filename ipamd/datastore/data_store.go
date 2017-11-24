@@ -33,6 +33,12 @@ const (
 	DuplicateIPError = "datastore: duplicated IP"
 )
 
+// ErrUnknownPod is an error when there is no pod in data store matching pod name, namespace, container id
+var ErrUnknownPod = errors.New("datastore: unknown pod")
+
+// ErrUnknownPodIP is an error where pod's ip address is not found in data store
+var ErrUnknownPodIP = errors.New("datastore: pod using unknown ip address")
+
 // ENIIPPool contains ENI/IP Pool information
 type ENIIPPool struct {
 	createTime            time.Time
@@ -55,6 +61,7 @@ type AddressInfo struct {
 type PodKey struct {
 	name      string
 	namespace string
+	container string
 }
 
 // PodIPInfo contains Pod's IP and the device number of the ENI
@@ -141,19 +148,20 @@ func (ds *DataStore) AssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, in
 	podKey := PodKey{
 		name:      k8sPod.Name,
 		namespace: k8sPod.Namespace,
+		container: k8sPod.Container,
 	}
 	ipAddr, ok := ds.podsIP[podKey]
 	if ok {
 		if ipAddr.IP == k8sPod.IP && k8sPod.IP != "" {
 			// The caller invoke multiple times to assign(PodName/NameSpace --> same IPAddress). It is not a error, but not very efficient.
-			log.Infof("AssignPodIPv4Address: duplicate pod assign for ip %s, name %s, namespace %s",
-				k8sPod.IP, k8sPod.Name, k8sPod.Namespace)
+			log.Infof("AssignPodIPv4Address: duplicate pod assign for ip %s, name %s, namespace %s, container %s",
+				k8sPod.IP, k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
 			return ipAddr.IP, ipAddr.DeviceNumber, nil
 		}
 		//TODO handle this bug assert?, may need to add a counter here, if counter is too high, need to mark node as unhealthy...
 		// this is a bug that the caller invoke multiple times to assign(PodName/NameSpace -> a different IPaddress).
-		log.Errorf("AssignPodIPv4Address:  current ip %s is changed to ip %s for POD(name %s, namespace %s)",
-			ipAddr, k8sPod.IP, k8sPod.Name, k8sPod.Namespace)
+		log.Errorf("AssignPodIPv4Address:  current ip %s is changed to ip %s for POD(name %s, namespace %s, container %s)",
+			ipAddr, k8sPod.IP, k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
 		return "", 0, errors.New("datastore; invalid pod with multiple IP addresses")
 
 	}
@@ -166,6 +174,7 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 	podKey := PodKey{
 		name:      k8sPod.Name,
 		namespace: k8sPod.Namespace,
+		container: k8sPod.Container,
 	}
 	for _, eni := range ds.eniIPPools {
 		if (k8sPod.IP == "") && (len(eni.ipv4Addresses) == eni.assignedIPv4Addresses) {
@@ -192,8 +201,8 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 				eni.assignedIPv4Addresses++
 				addr.assigned = true
 				ds.podsIP[podKey] = PodIPInfo{IP: addr.address, DeviceNumber: eni.deviceNumber}
-				log.Infof("AssignPodIPv4Address Assign IP %v to Pod (name %s, namespace %s)",
-					addr.address, k8sPod.Name, k8sPod.Namespace)
+				log.Infof("AssignPodIPv4Address Assign IP %v to Pod (name %s, namespace %s container %s)",
+					addr.address, k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
 				return addr.address, eni.deviceNumber, nil
 			}
 		}
@@ -249,8 +258,8 @@ func (ds *DataStore) FreeENI() (string, error) {
 
 	ds.total -= len(ds.eniIPPools[deletableENI.id].ipv4Addresses)
 	ds.assigned -= deletableENI.assignedIPv4Addresses
-	log.Debugf("FreeENI: IP address pool stats: free %d addresses, total: %d, assigned: %d",
-		len(ds.eniIPPools[deletableENI.id].ipv4Addresses), ds.total, ds.assigned)
+	log.Infof("FreeENI %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
+		deletableENI.id, len(ds.eniIPPools[deletableENI.id].ipv4Addresses), ds.total, ds.assigned)
 	deletedENI := deletableENI.id
 	delete(ds.eniIPPools, deletableENI.id)
 
@@ -262,16 +271,19 @@ func (ds *DataStore) FreeENI() (string, error) {
 func (ds *DataStore) UnAssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, int, error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
-	log.Debugf("UnAssignIPv4Address: IP address pool stats: total:%d, assigned %d, Pod(Name: %s, Namespace: %s)",
-		ds.total, ds.assigned, k8sPod.Name, k8sPod.Namespace)
+	log.Debugf("UnAssignIPv4Address: IP address pool stats: total:%d, assigned %d, Pod(Name: %s, Namespace: %s, Container %s)",
+		ds.total, ds.assigned, k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
 
 	podKey := PodKey{
 		name:      k8sPod.Name,
 		namespace: k8sPod.Namespace,
+		container: k8sPod.Container,
 	}
 	ipAddr, ok := ds.podsIP[podKey]
 	if !ok {
-		return "", 0, errors.Errorf("datastore: unknown pod name %s namespace %s", podKey.name, podKey.namespace)
+		log.Warnf("UnassignIPv4Address: Failed to find pod %s namespace %s Container %s",
+			k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
+		return "", 0, ErrUnknownPod
 	}
 
 	for _, eni := range ds.eniIPPools {
@@ -283,12 +295,14 @@ func (ds *DataStore) UnAssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, 
 			curTime := time.Now()
 			ip.unAssignedTime = curTime
 			eni.lastUnassignedTime = curTime
-			log.Infof("UnAssignIPv4Address: Pod (Name: %s, NameSpace %s)'s ipAddr %s, DeviceNumber%d",
-				k8sPod.Name, k8sPod.Namespace, ip.address, eni.deviceNumber)
+			log.Infof("UnAssignIPv4Address: Pod (Name: %s, NameSpace %s Container %s)'s ipAddr %s, DeviceNumber%d",
+				k8sPod.Name, k8sPod.Namespace, k8sPod.Container, ip.address, eni.deviceNumber)
 			delete(ds.podsIP, podKey)
 			return ip.address, eni.deviceNumber, nil
 		}
 	}
 
-	return "", 0, errors.Errorf("datastore: unknown pod name %s namespace %s", podKey.name, podKey.namespace)
+	log.Warnf("UnassignIPv4Address: Failed to find pod %s namespace %s Container %s using ip %s",
+		k8sPod.Name, k8sPod.Namespace, k8sPod.Container, ipAddr.IP)
+	return "", 0, ErrUnknownPodIP
 }

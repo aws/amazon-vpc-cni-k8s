@@ -15,8 +15,9 @@ service CNIBackend {
 message AddNetworkRequest {
   string K8S_POD_NAME = 1;
   string K8S_POD_NAMESPACE = 2;
-  string Netns = 3;
-  string IfName = 4;
+  string K8S_POD_INFRA_CONTAINER_ID = 3;
+  string Netns = 4;
+  string IfName = 5;
 }
 
 message  AddNetworkReply{
@@ -29,7 +30,8 @@ message  AddNetworkReply{
 message DelNetworkRequest {
   string K8S_POD_NAME = 1;
   string K8S_POD_NAMESPACE = 2;
-  string IPv4Addr = 3;
+  string K8S_POD_INFRA_CONTAINER_ID = 3;
+  string IPv4Addr = 4;
 }
 
 message DelNetworkReply {

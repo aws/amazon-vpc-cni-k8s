@@ -97,6 +97,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	k8sArgs := K8sArgs{}
 	if err := cniTypes.LoadArgs(args.Args, &k8sArgs); err != nil {
+		log.Errorf("Failed to load k8s config from arg: %v", err)
 		return errors.Wrap(err, "add cmd: failed to load k8s config from arg")
 	}
 
@@ -105,6 +106,11 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	// Set up a connection to the ipamD server.
 	conn, err := grpcClient.Dial(ipamDAddress, grpc.WithInsecure())
 	if err != nil {
+		log.Errorf("Failed to connect to backend server for pod %s namespace %s container %s: %v",
+			string(k8sArgs.K8S_POD_NAME),
+			string(k8sArgs.K8S_POD_NAMESPACE),
+			string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
+			err)
 		return errors.Wrap(err, "add cmd: failed to connect to backend server")
 	}
 	defer conn.Close()
@@ -113,23 +119,31 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	r, err := c.AddNetwork(context.Background(),
 		&pb.AddNetworkRequest{
-			Netns:             args.Netns,
-			K8S_POD_NAME:      string(k8sArgs.K8S_POD_NAME),
-			K8S_POD_NAMESPACE: string(k8sArgs.K8S_POD_NAMESPACE),
-			IfName:            args.IfName})
+			Netns:                      args.Netns,
+			K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
+			K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
+			K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
+			IfName: args.IfName})
 
 	if err != nil {
-		log.Errorf("add cmd: Error received from backend server for add network request: %v", err)
+		log.Errorf("Error received from AddNetwork grpc call for pod %s namespace %s container %s: %v",
+			string(k8sArgs.K8S_POD_NAME),
+			string(k8sArgs.K8S_POD_NAMESPACE),
+			string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
+			err)
 		return err
 	}
 
 	if !r.Success {
-		log.Errorf("Failed to assign an IP address to pod %s, namespace %s", string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE))
+		log.Errorf("Failed to assign an IP address to pod %s, namespace %s container %s",
+			string(k8sArgs.K8S_POD_NAME),
+			string(k8sArgs.K8S_POD_NAMESPACE),
+			string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID))
 		return fmt.Errorf("add cmd: failed to assign an IP address to container")
 	}
 
-	log.Infof("Received add network response for pod %s namespace %s: %s, table %d ",
-		string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE),
+	log.Infof("Received add network response for pod %s namespace %s container %s: %s, table %d ",
+		string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
 		r.IPv4Addr, r.DeviceNumber)
 
 	addr := &net.IPNet{
@@ -149,8 +163,8 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber))
 
 	if err != nil {
-		log.Errorf("Failed SetupPodNetwork for pod %s namespace %s: %v",
-			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), err)
+		log.Errorf("Failed SetupPodNetwork for pod %s namespace %s container %s: %v",
+			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), err)
 		return errors.Wrap(err, "add command: failed to setup network")
 	}
 
@@ -186,6 +200,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	k8sArgs := K8sArgs{}
 	if err := cniTypes.LoadArgs(args.Args, &k8sArgs); err != nil {
+		log.Errorf("Failed to load k8s config from args: %v", err)
 		return errors.Wrap(err, "del cmd: failed to load k8s config from args")
 	}
 
@@ -193,6 +208,12 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	// Set up a connection to the server.
 	conn, err := grpcClient.Dial(ipamDAddress, grpc.WithInsecure())
 	if err != nil {
+		log.Errorf("Failed to connect to backend server for pod %s namespace %s container %s: %v",
+			string(k8sArgs.K8S_POD_NAME),
+			string(k8sArgs.K8S_POD_NAMESPACE),
+			string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
+			err)
+
 		return errors.Wrap(err, "del cmd: failed to connect to backend server")
 	}
 	defer conn.Close()
@@ -201,19 +222,20 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	r, err := c.DelNetwork(context.Background(),
 		&pb.DelNetworkRequest{
-			K8S_POD_NAME:      string(k8sArgs.K8S_POD_NAME),
-			K8S_POD_NAMESPACE: string(k8sArgs.K8S_POD_NAMESPACE),
-			IPv4Addr:          k8sArgs.IP.String()})
+			K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
+			K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
+			K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
+			IPv4Addr:                   k8sArgs.IP.String()})
 
 	if err != nil {
-		log.Errorf("Error received from backend server for del network request for pod %s namespace %s: %v",
-			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), err)
+		log.Errorf("Error received from DelNetwork grpc call for pod %s namespace %s container %s: %v",
+			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), err)
 		return err
 	}
 
 	if !r.Success {
-		log.Errorf("Failed to process delete request for pod %s namespace %s: %v",
-			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), err)
+		log.Errorf("Failed to process delete request for pod %s namespace %s container %s: %v",
+			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), err)
 		return errors.Wrap(err, "del cmd: failed to process delete request")
 	}
 
@@ -225,8 +247,8 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	err = driverClient.TeardownNS(addr, int(r.DeviceNumber))
 
 	if err != nil {
-		log.Errorf("Failed on TeardownPodNetwork for pod %s namespace %s: %v",
-			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), err)
+		log.Errorf("Failed on TeardownPodNetwork for pod %s namespace %s container %s: %v",
+			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), err)
 		return err
 	}
 	return nil
