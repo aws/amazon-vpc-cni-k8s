@@ -137,6 +137,7 @@ func TestPodIPv4Address(t *testing.T) {
 	podInfo = k8sapi.K8SPodInfo{
 		Name:      "pod-1",
 		Namespace: "ns-3",
+		Container: "container-1",
 	}
 
 	ip, _, err = ds.AssignPodIPv4Address(&podInfo)
@@ -156,6 +157,15 @@ func TestPodIPv4Address(t *testing.T) {
 	_, _, err = ds.AssignPodIPv4Address(&podInfo)
 	assert.Error(t, err)
 	// Unassign unknown Pod
+	_, _, err = ds.UnAssignPodIPv4Address(&podInfo)
+	assert.Error(t, err)
+
+	// Unassign pod which have same name/namespace, but different container
+	podInfo = k8sapi.K8SPodInfo{
+		Name:      "pod-1",
+		Namespace: "ns-3",
+		Container: "container-2",
+	}
 	_, _, err = ds.UnAssignPodIPv4Address(&podInfo)
 	assert.Error(t, err)
 

@@ -25,6 +25,7 @@ import (
 
 	log "github.com/cihub/seelog"
 
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 )
 
@@ -38,23 +39,34 @@ type server struct {
 
 // AddNetwork processes CNI add network request and return an IP address for container
 func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.AddNetworkReply, error) {
-	log.Infof("Received AddNetwork for NS %s, Pod %s, NameSpace %s, ifname %s",
-		in.Netns, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.IfName)
+	log.Infof("Received AddNetwork for NS %s, Pod %s, NameSpace %s, Container %s, ifname %s",
+		in.Netns, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID, in.IfName)
 
 	addr, deviceNumber, err := s.ipamContext.dataStore.AssignPodIPv4Address(&k8sapi.K8SPodInfo{
 		Name:      in.K8S_POD_NAME,
-		Namespace: in.K8S_POD_NAMESPACE})
+		Namespace: in.K8S_POD_NAMESPACE,
+		Container: in.K8S_POD_INFRA_CONTAINER_ID})
 	log.Infof("Send AddNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", addr, deviceNumber, err)
 	return &pb.AddNetworkReply{Success: err == nil, IPv4Addr: addr, IPv4Subnet: "", DeviceNumber: int32(deviceNumber)}, nil
 }
 
 func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.DelNetworkReply, error) {
-	log.Infof("Received DelNetwork for IP %s, Pod %s, Namespace %s",
-		in.IPv4Addr, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
+	log.Infof("Received DelNetwork for IP %s, Pod %s, Namespace %s, Container %s",
+		in.IPv4Addr, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID)
+
+	var err error
 
 	ip, deviceNumber, err := s.ipamContext.dataStore.UnAssignPodIPv4Address(&k8sapi.K8SPodInfo{
 		Name:      in.K8S_POD_NAME,
-		Namespace: in.K8S_POD_NAMESPACE})
+		Namespace: in.K8S_POD_NAMESPACE,
+		Container: in.K8S_POD_INFRA_CONTAINER_ID})
+
+	if err != nil && err == datastore.ErrUnknownPod {
+		// If L-IPAMD restarts, the pod's IP address are assigned by only pod's name and namespace due to kubelet's introspection.
+		ip, deviceNumber, err = s.ipamContext.dataStore.UnAssignPodIPv4Address(&k8sapi.K8SPodInfo{
+			Name:      in.K8S_POD_NAME,
+			Namespace: in.K8S_POD_NAMESPACE})
+	}
 	log.Infof("Send DelNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", ip, deviceNumber, err)
 
 	return &pb.DelNetworkReply{Success: err == nil, IPv4Addr: ip, DeviceNumber: int32(deviceNumber)}, nil
