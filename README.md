@@ -38,7 +38,7 @@ The details can be found in [Proposal: CNI plugin for Kubernetes networking over
          "ec2:DetachNetworkInterface",
          "ec2:DescribeNetworkInterfaces",
          “ec2:DescribeInstances”,
-         “ec2.ModifyNetworkIntefaceAttribute”,
+         “ec2:ModifyNetworkInterfaceAttribute”,
          "ec2:AssignPrivateIpAddresses"
      ],
      "Resource": [
