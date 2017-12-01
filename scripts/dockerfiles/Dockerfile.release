@@ -14,5 +14,6 @@ COPY misc/aws.conf /app
 COPY misc/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 ADD aws-k8s-agent  /app
+ADD scripts/aws-cni-support.sh /app
 ADD scripts/install-aws.sh /app
 ENTRYPOINT /app/install-aws.sh

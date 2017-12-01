@@ -14,6 +14,12 @@
   revision = "de5bf2ad457846296e2031421a34e2568e304e35"
 
 [[projects]]
+  name = "github.com/aws/amazon-ecs-agent"
+  packages = ["agent/utils/ttime","agent/utils/ttime/mocks"]
+  revision = "ea58fddf8462034ff2034aa9788b02341d7702e3"
+  version = "v1.15.2"
+
+[[projects]]
   branch = "master"
   name = "github.com/aws/amazon-ecs-cni-plugins"
   packages = ["pkg/logger"]
@@ -237,6 +243,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "1003f2048943d3eee6747174022a8e41f8e6b93408bff2f636ea53ea62e0e696"
+  inputs-digest = "b6c35664386e0bd1130101921cf7b02047e942892491d64f3bac3507f9146f02"
   solver-name = "gps-cdcl"
   solver-version = 1

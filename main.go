@@ -40,5 +40,6 @@ func main() {
 	}
 
 	go aws_k8s_agent.StartNodeIPPoolManager()
+	go aws_k8s_agent.SetupHTTP()
 	aws_k8s_agent.RunRPCHandler()
 }

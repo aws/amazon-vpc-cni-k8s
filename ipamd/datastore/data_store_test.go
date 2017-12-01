@@ -34,6 +34,9 @@ func TestAddENI(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, len(ds.eniIPPools), 2)
+
+	eniInfos := ds.GetENIInfos()
+	assert.Equal(t, len(eniInfos.ENIIPPools), 2)
 }
 
 func TestAddENIIPv4Address(t *testing.T) {
@@ -48,29 +51,29 @@ func TestAddENIIPv4Address(t *testing.T) {
 	err = ds.AddENIIPv4Address("eni-1", "1.1.1.1")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 1)
-	assert.Equal(t, len(ds.eniIPPools["eni-1"].ipv4Addresses), 1)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 1)
 
 	err = ds.AddENIIPv4Address("eni-1", "1.1.1.1")
 	assert.Error(t, err)
 	assert.Equal(t, ds.total, 1)
-	assert.Equal(t, len(ds.eniIPPools["eni-1"].ipv4Addresses), 1)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 1)
 
 	err = ds.AddENIIPv4Address("eni-1", "1.1.1.2")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 2)
-	assert.Equal(t, len(ds.eniIPPools["eni-1"].ipv4Addresses), 2)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
 
 	err = ds.AddENIIPv4Address("eni-2", "1.1.2.2")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
-	assert.Equal(t, len(ds.eniIPPools["eni-1"].ipv4Addresses), 2)
-	assert.Equal(t, len(ds.eniIPPools["eni-2"].ipv4Addresses), 1)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
+	assert.Equal(t, len(ds.eniIPPools["eni-2"].IPv4Addresses), 1)
 
 	err = ds.AddENIIPv4Address("dummy-eni", "1.1.2.2")
 	assert.Error(t, err)
 	assert.Equal(t, ds.total, 3)
-	assert.Equal(t, len(ds.eniIPPools["eni-1"].ipv4Addresses), 2)
-	assert.Equal(t, len(ds.eniIPPools["eni-2"].ipv4Addresses), 1)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
+	assert.Equal(t, len(ds.eniIPPools["eni-2"].IPv4Addresses), 1)
 
 }
 
@@ -98,17 +101,20 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "1.1.1.1")
 	assert.Equal(t, ds.total, 3)
-	assert.Equal(t, len(ds.eniIPPools["eni-1"].ipv4Addresses), 2)
-	assert.Equal(t, ds.eniIPPools["eni-1"].assignedIPv4Addresses, 1)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
+	assert.Equal(t, ds.eniIPPools["eni-1"].AssignedIPv4Addresses, 1)
 	ip, _, err = ds.AssignPodIPv4Address(&podInfo)
+
+	podsInfos := ds.GetPodInfos()
+	assert.Equal(t, len(*podsInfos), 1)
 
 	// duplicate add
 	ip, _, err = ds.AssignPodIPv4Address(&podInfo)
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "1.1.1.1")
 	assert.Equal(t, ds.total, 3)
-	assert.Equal(t, len(ds.eniIPPools["eni-1"].ipv4Addresses), 2)
-	assert.Equal(t, ds.eniIPPools["eni-1"].assignedIPv4Addresses, 1)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
+	assert.Equal(t, ds.eniIPPools["eni-1"].AssignedIPv4Addresses, 1)
 
 	// wrong ip address
 	podInfo = k8sapi.K8SPodInfo{
@@ -131,8 +137,11 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, ip, "1.1.2.2")
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, ds.assigned, 2)
-	assert.Equal(t, len(ds.eniIPPools["eni-2"].ipv4Addresses), 1)
-	assert.Equal(t, ds.eniIPPools["eni-2"].assignedIPv4Addresses, 1)
+	assert.Equal(t, len(ds.eniIPPools["eni-2"].IPv4Addresses), 1)
+	assert.Equal(t, ds.eniIPPools["eni-2"].AssignedIPv4Addresses, 1)
+
+	podsInfos = ds.GetPodInfos()
+	assert.Equal(t, len(*podsInfos), 2)
 
 	podInfo = k8sapi.K8SPodInfo{
 		Name:      "pod-1",
@@ -145,8 +154,8 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, ip, "1.1.1.2")
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, ds.assigned, 3)
-	assert.Equal(t, len(ds.eniIPPools["eni-1"].ipv4Addresses), 2)
-	assert.Equal(t, ds.eniIPPools["eni-1"].assignedIPv4Addresses, 2)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
+	assert.Equal(t, ds.eniIPPools["eni-1"].AssignedIPv4Addresses, 2)
 
 	// no more IP addresses
 	podInfo = k8sapi.K8SPodInfo{
@@ -179,15 +188,15 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, ds.assigned, 2)
 	assert.Equal(t, deviceNum, pod1Ns2Device)
-	assert.Equal(t, len(ds.eniIPPools["eni-2"].ipv4Addresses), 1)
-	assert.Equal(t, ds.eniIPPools["eni-2"].assignedIPv4Addresses, 0)
+	assert.Equal(t, len(ds.eniIPPools["eni-2"].IPv4Addresses), 1)
+	assert.Equal(t, ds.eniIPPools["eni-2"].AssignedIPv4Addresses, 0)
 
 	// should not able to free this eni
 	eni, _ := ds.FreeENI()
 	assert.True(t, (eni == ""))
 
 	ds.eniIPPools["eni-2"].createTime = time.Time{}
-	ds.eniIPPools["eni-2"].lastUnassignedTime = time.Time{}
+	ds.eniIPPools["eni-2"].lastUnAssignedTime = time.Time{}
 	eni, _ = ds.FreeENI()
 	assert.Equal(t, eni, "eni-2")
 
