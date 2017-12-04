@@ -1,6 +1,12 @@
 # amazon-vpc-cni-k8s
 Networking plugin for pod networking in [Kubernetes](https://kubernetes.io/) using [Elastic Network Interfaces](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html) on AWS.
 
+## Status
+
+**Alpha**  This is an experimental release as part of the [Amazon EKS](https://aws.amazon.com/eks/) Preview.
+Interfaces and functionality may change. Expect bugs (and please help us squash them).
+DO NOT use for production workloads. 
+
 ## Installing
 
 ```
