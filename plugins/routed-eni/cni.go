@@ -14,6 +14,8 @@
 package main
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"golang.org/x/net/context"
@@ -152,13 +154,9 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	// build hostVethName
-	// hostVethName := "eni" + args.ContainerID[:min(11, len(args.ContainerID))]
+	// hostVethName := "cali" + sha1(namespace.name)[:11]
 	// Note: the maximum length for linux interface name is 15
-	length := len(args.ContainerID)
-	if length > maxVethNameLen {
-		length = maxVethNameLen
-	}
-	hostVethName := "eni" + args.ContainerID[:length]
+	hostVethName := generateHostVethName(string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 
 	err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber))
 
@@ -180,6 +178,15 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	return cniTypes.PrintResult(result, cniVersion)
+}
+
+// generateHostVethName returns a name to be used on the host-side veth device.
+// The veth name is generated such that it aligns with the value expected
+// by Calico for NetworkPolicy enforcement.
+func generateHostVethName(namespace, podname string) string {
+	h := sha1.New()
+	h.Write([]byte(fmt.Sprintf("%s.%s", namespace, podname)))
+	return fmt.Sprintf("cali%s", hex.EncodeToString(h.Sum(nil))[:11])
 }
 
 func cmdDel(args *skel.CmdArgs) error {
