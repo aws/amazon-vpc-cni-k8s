@@ -57,6 +57,11 @@ type NetConf struct {
 
 	// Type is the plugin type
 	Type string `json:"type"`
+
+	// VethPrefix is the prefix to use when constructing the host-side
+	// veth device name. It should be no more than four characters, and
+	// defaults to 'eni'.
+	VethPrefix string `json:"vethPrefix"`
 }
 
 // K8sArgs is the valid CNI_ARGS used for Kubernetes
@@ -101,6 +106,14 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	if err := cniTypes.LoadArgs(args.Args, &k8sArgs); err != nil {
 		log.Errorf("Failed to load k8s config from arg: %v", err)
 		return errors.Wrap(err, "add cmd: failed to load k8s config from arg")
+	}
+
+	// Default the host-side veth prefix to 'eni'.
+	if conf.VethPrefix == "" {
+		conf.VethPrefix = "eni"
+	}
+	if len(conf.VethPrefix) > 4 {
+		return errors.New("conf.VethPrefix must be less than 4 characters long")
 	}
 
 	cniVersion := conf.CNIVersion
@@ -154,9 +167,8 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	// build hostVethName
-	// hostVethName := "cali" + sha1(namespace.name)[:11]
 	// Note: the maximum length for linux interface name is 15
-	hostVethName := generateHostVethName(string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+	hostVethName := generateHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 
 	err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber))
 
@@ -181,12 +193,10 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 }
 
 // generateHostVethName returns a name to be used on the host-side veth device.
-// The veth name is generated such that it aligns with the value expected
-// by Calico for NetworkPolicy enforcement.
-func generateHostVethName(namespace, podname string) string {
+func generateHostVethName(prefix, namespace, podname string) string {
 	h := sha1.New()
 	h.Write([]byte(fmt.Sprintf("%s.%s", namespace, podname)))
-	return fmt.Sprintf("cali%s", hex.EncodeToString(h.Sum(nil))[:11])
+	return fmt.Sprintf("%s%s", prefix, hex.EncodeToString(h.Sum(nil))[:11])
 }
 
 func cmdDel(args *skel.CmdArgs) error {

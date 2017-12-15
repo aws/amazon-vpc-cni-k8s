@@ -1,4 +1,5 @@
 echo "=====Starting installing AWS-CNI ========="
+sed -i s/__VETHPREFIX__/${ECS_CNI_VETHPREFIX:-"eni"}/g /app/aws.conf
 cp /app/aws-cni /host/opt/cni/bin/
 cp /app/aws.conf /host/etc/cni/net.d/
 echo "=====Starting amazon-k8s-agent ==========="
