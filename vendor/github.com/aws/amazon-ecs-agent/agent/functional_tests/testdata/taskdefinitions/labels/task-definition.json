@@ -1,0 +1,14 @@
+{
+  "family": "ecsftest-labels",
+  "containerDefinitions": [{
+    "image": "busybox:latest",
+    "name": "labeled",
+    "cpu": 10,
+    "memory": 10,
+    "dockerLabels": {
+      "label1": "",
+      "com.foo.label2": "value"
+    },
+    "command": ["sh", "-c", "exit 0"]
+  }]
+}

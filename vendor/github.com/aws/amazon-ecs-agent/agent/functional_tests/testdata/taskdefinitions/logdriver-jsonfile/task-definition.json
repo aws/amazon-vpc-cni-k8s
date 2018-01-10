@@ -1,0 +1,17 @@
+{
+  "family": "ecsinteg-json-file-rollover",
+  "containerDefinitions": [{
+    "image": "busybox:latest",
+    "name": "exit",
+    "memory": 10,
+    "cpu": 10,
+    "logConfiguration": {
+      "logDriver": "json-file",
+      "options": {
+        "max-file": "50",
+        "max-size": "50k"
+      }
+    },
+    "command": ["sh", "-c", "echo helloworld"]
+  }]
+}

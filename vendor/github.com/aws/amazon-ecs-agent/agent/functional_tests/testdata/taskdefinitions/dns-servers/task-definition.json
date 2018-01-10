@@ -1,0 +1,11 @@
+{
+  "family": "ecsftest-dns-servers",
+  "containerDefinitions": [{
+    "image": "busybox:latest",
+    "name": "exit",
+    "cpu": 10,
+    "memory": 10,
+    "dnsServers": ["1.2.3.4"],
+    "command": ["sh", "-c", "egrep \"nameserver\\s+1\\.2\\.3\\.4\" /etc/resolv.conf && exit 42 || exit 1"]
+  }]
+}

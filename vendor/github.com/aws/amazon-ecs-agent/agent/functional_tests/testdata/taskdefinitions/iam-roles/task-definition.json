@@ -1,0 +1,13 @@
+{
+    "family": "ecsftest-iamrole-test",
+    "taskRoleArn": "$$$TASK_ROLE$$$",
+    "networkMode": "$$$NETWORK_MODE$$$",
+    "containerDefinitions": [{
+        "memory": 100,
+        "cpu": 100,
+        "name": "container-with-iamrole",
+        "image": "127.0.0.1:51670/amazon/awscli:latest",
+        "entryPoint": ["sh", "-c"],
+        "command": ["sleep 5s; export AWS_DEFAULT_REGION=$$$TEST_REGION$$$; aws ec2 describe-regions"]
+    }]
+}

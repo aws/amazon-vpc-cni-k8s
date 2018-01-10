@@ -1,0 +1,3 @@
+[submodule "amazon-ecs-cni-plugins"]
+	path = amazon-ecs-cni-plugins
+	url = https://github.com/aws/amazon-ecs-cni-plugins.git

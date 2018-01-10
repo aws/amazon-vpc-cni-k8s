@@ -1,0 +1,11 @@
+{
+  "family": "ecsinteg-privileged-mount",
+  "containerDefinitions": [{
+    "image": "busybox:latest",
+    "name": "exit",
+    "cpu": 10,
+    "memory": 10,
+    "readonlyRootFilesystem": true,
+    "command": ["sh", "-c", "touch /readonly && exit 1 || exit 42"]
+  }]
+}

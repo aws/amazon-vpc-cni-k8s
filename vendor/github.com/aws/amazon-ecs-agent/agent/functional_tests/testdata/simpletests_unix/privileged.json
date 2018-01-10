@@ -1,0 +1,10 @@
+{
+  "Name": "Privileged",
+  "Description": "Check that privileged works",
+  "TaskDefinition": "privileged",
+  "Version": ">=1.5.0",
+  "Timeout": "2m",
+  "ExitCodes": {
+    "exit": 42
+  }
+}

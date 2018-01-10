@@ -1,0 +1,10 @@
+{
+  "family": "ecsftest-mdservice-validator",
+  "containerDefinitions": [{
+    "image": "127.0.0.1:51670/busybox:latest",
+    "name": "mdservice-validator-unix",
+    "cpu": 10,
+    "memory": 10,
+    "command": ["sh", "-c", "sleep 10 && if cat $ECS_CONTAINER_METADATA_FILE | grep \"READY\"; then exit 42; else exit 1; fi"]
+  }]
+}

@@ -1,0 +1,11 @@
+{
+  "family": "ecsftest-working-dir-windows",
+  "containerDefinitions": [{
+    "image": "microsoft/windowsservercore:latest",
+    "name": "exit",
+    "cpu": 512,
+    "memory": 256,
+    "workingDirectory": "C:/windows/system32",
+    "command": ["powershell", "-c", "if ((pwd).Path -eq \"C:\\windows\\system32\") { exit 42 } ; exit 1"]
+  }]
+}

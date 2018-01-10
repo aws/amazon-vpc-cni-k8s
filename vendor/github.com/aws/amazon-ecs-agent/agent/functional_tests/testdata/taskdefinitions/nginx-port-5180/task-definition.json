@@ -1,0 +1,12 @@
+{
+  "family": "ecsftest-nginx-port-5180",
+  "containerDefinitions": [{
+    "image": "127.0.0.1:51670/nginx:latest",
+    "name": "nginx",
+    "portBindings": [{
+      "containerPort": 80,
+      "hostPort": 5180
+    }],
+    "memory": 50
+  }]
+}

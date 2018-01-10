@@ -1,0 +1,11 @@
+{
+  "family": "ecsftest-dns-search",
+  "containerDefinitions": [{
+    "image": "busybox:latest",
+    "name": "exit",
+    "cpu": 10,
+    "memory": 10,
+    "dnsSearchDomains": ["search.example.com"],
+    "command": ["sh", "-c", "egrep \"search\\s+search.example.com\" /etc/resolv.conf && exit 42 || exit 1"]
+  }]
+}

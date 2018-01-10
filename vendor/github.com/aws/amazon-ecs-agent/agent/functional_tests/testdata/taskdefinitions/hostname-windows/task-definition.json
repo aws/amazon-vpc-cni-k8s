@@ -1,0 +1,11 @@
+{
+  "family": "ecsftest-hostname",
+  "containerDefinitions": [{
+    "image": "microsoft/windowsservercore:latest",
+    "name": "exit",
+    "cpu": 512,
+    "memory": 256,
+    "hostname": "foobarbaz",
+    "command": ["powershell", "-c",  "if ((hostname) -eq \"foobarbaz\") { exit 42 } ; exit 1"]
+  }]
+}

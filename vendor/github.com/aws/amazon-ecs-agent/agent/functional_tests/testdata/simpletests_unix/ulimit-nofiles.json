@@ -1,0 +1,10 @@
+{
+  "Name": "NofilesULimit",
+  "Description": "Check that nofiles ulimit works",
+  "TaskDefinition": "nofiles-ulimit",
+  "Version": ">=1.5.0",
+  "Timeout": "2m",
+  "ExitCodes": {
+    "exit": 42
+  }
+}

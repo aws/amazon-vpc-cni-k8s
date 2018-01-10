@@ -1,0 +1,59 @@
+# Copyright 2014-2016 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"). You may
+# not use this file except in compliance with the License. A copy of the
+# License is located at
+#
+#	http://aws.amazon.com/apache2.0/
+#
+# or in the "license" file accompanying this file. This file is distributed
+# on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+# express or implied. See the License for the specific language governing
+# permissions and limitations under the License.
+
+# A Dockerfile to run all the the Amazon Elastic Container Service's Container
+# Agent's tests.
+#
+# Because the Agent's tests include starting docker containers, it is necessary
+# to have both go and docker available in the testing environment.
+# It's easier to get go, so start with docker-in-docker and add go on top
+FROM jpetazzo/dind
+MAINTAINER Amazon Web Services, Inc.
+
+# The following code is taken, in part, from the docker-library/golang
+# repository under a BSD 3-clause license. The license file is reproduced in the
+# NOTICES file at the root of this repository in accordance.
+# https://github.com/docker-library/golang/blob/0ce80411b9f41e9c3a21fc0a1bffba6ae761825a/1.6/Dockerfile
+
+# SCMs for "go get", gcc for cgo
+RUN apt-get update && apt-get install -y \
+		ca-certificates curl gcc libc6-dev make \
+		bzr git mercurial \
+		--no-install-recommends \
+	&& rm -rf /var/lib/apt/lists/*
+
+ENV GOLANG_VERSION 1.7.4
+ENV GOLANG_DOWNLOAD_URL https://golang.org/dl/go$GOLANG_VERSION.linux-amd64.tar.gz
+ENV GOLANG_DOWNLOAD_SHA256 47fda42e46b4c3ec93fa5d4d4cc6a748aa3f9411a2a2b7e08e3a6d80d753ec8b
+
+RUN curl -fsSL "$GOLANG_DOWNLOAD_URL" -o golang.tar.gz \
+  && echo "$GOLANG_DOWNLOAD_SHA256  golang.tar.gz" | sha256sum -c - \
+  && tar -C /usr/local -xzf golang.tar.gz \
+  && rm golang.tar.gz
+
+
+ENV GOPATH /go
+ENV PATH $GOPATH/bin:/usr/local/go/bin:$PATH
+
+RUN mkdir -p "$GOPATH/src" "$GOPATH/bin" && chmod -R 777 "$GOPATH"
+WORKDIR $GOPATH
+
+# End docker-library/golang sourced data
+
+# Once https://github.com/docker/docker/issues/735 is resolved, this and
+# Dockerfile.build should INCLUDE a common source. Same is true for the above
+# section.
+RUN mkdir -p /go/src/github.com/aws/
+WORKDIR /go/src/github.com/aws/amazon-ecs-agent
+COPY scripts/test /entrypoint
+ENTRYPOINT ["/entrypoint"]

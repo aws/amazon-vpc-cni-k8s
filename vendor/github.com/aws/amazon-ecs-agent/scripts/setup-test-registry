@@ -1,0 +1,115 @@
+#!/bin/bash
+# Copyright 2014-2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"). You
+# may not use this file except in compliance with the License. A copy of
+# the License is located at
+#
+# 	http://aws.amazon.com/apache2.0/
+#
+# or in the "license" file accompanying this file. This file is
+# distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
+# ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
+
+# Run a local registry on the 'well known' port 51670 if it is not running.
+# Also push images we will need to it.
+set -e
+
+# registry:2 from 2015-09-15
+REGISTRY_IMAGE="registry@sha256:b7de4f6226df56d18f83296efa77dedf9bb72e79838167be0484a3078836fab2"
+# nginx:latest from  2015-09-15
+NGINX_IMAGE="nginx@sha256:0324afc5c8191616576f7b23b297d001609726a2f1b6561c90e229e54ab701cf"
+
+ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )
+cd "${ROOT}"
+
+REGISTRY_CONTAINER_NAME=test-ecs-registry
+status=$(docker inspect -f "{{ .State.Running }}" "$REGISTRY_CONTAINER_NAME") || true
+if [[ "$status" == "false" ]]; then
+	docker rm -f "$REGISTRY_CONTAINER_NAME"
+fi
+
+# This will fail if we already have one running, but that's fine. We'll see it
+# running and push our image to it to make sure it's there
+if [[ "$status" != "true" ]]; then
+	docker run -d --name="$REGISTRY_CONTAINER_NAME" -e SETTINGS_FLAVOR=local -p "127.0.0.1:51670:5000" "${REGISTRY_IMAGE}"
+fi
+
+# Wait for it to be started which might include downloading the image
+status="false"
+for try in $(seq 1 300); do
+	status=$(docker inspect -f "{{ .State.Running }}" $REGISTRY_CONTAINER_NAME)
+	if [[ "$status" == "true" ]]; then
+		break
+	fi
+	sleep 1
+done
+
+if [[ "$status" != "true" ]]; then
+	echo "Unable to start test registry"
+	exit 1
+fi
+
+sleep 2
+
+# Make sure our images are pushed to it
+mirror_image() {
+  docker pull $1
+  mirror_local_image $@
+}
+
+mirror_local_image() {
+  docker tag $1 $2
+  docker push $2
+  docker rmi $2
+}
+
+for image in "amazon/amazon-ecs-netkitten" "amazon/amazon-ecs-volumes-test" "amazon/squid" "amazon/awscli" "amazon/image-cleanup-test-image1" "amazon/image-cleanup-test-image2" "amazon/image-cleanup-test-image3" "amazon/fluentd"; do
+  mirror_local_image "${image}:make" "127.0.0.1:51670/${image}:latest"
+done
+
+# Remove the tag so this image can be deleted successfully in the docker image cleanup integ tests
+docker rmi amazon/image-cleanup-test-image1:make
+docker rmi amazon/image-cleanup-test-image2:make
+docker rmi amazon/image-cleanup-test-image3:make
+
+BUSYBOX_IMAGE="busybox@sha256:5551dbdfc48d66734d0f01cafee0952cb6e8eeecd1e2492240bf2fd9640c2279"
+NGINX_IMAGE="nginx@sha256:0324afc5c8191616576f7b23b297d001609726a2f1b6561c90e229e54ab701cf"
+PYTHON2_IMAGE="python@sha256:3a1e82d95d0e75677cdac237b0174425d8ae94dd11d1ef14db73075f1e34c06c"
+UBUNTU_IMAGE="ubuntu@sha256:1bea66e185d3464fec1abda32ffaf2a11de69833cfcf81bd2b9a5be147776814"
+
+PARALLEL_PULL_FTS_BUSYBOX=${BUSYBOX_IMAGE}
+PARALLEL_PULL_FTS_UBUNTU=${UBUNTU_IMAGE}
+PARALLEL_PULL_FTS_NGINX=${NGINX_IMAGE}
+PARALLEL_PULL_FTS_CONSUL="consul@sha256:ce15f85417a0cf121d943563dedb873c7d6c26e9b1e8b47bc2f1b5a3e27498e1"
+PARALLEL_PULL_FTS_DEBIAN="debian@sha256:f7062cf040f67f0c26ff46b3b44fe036c29468a7e69d8170f37c57f2eec1261b"
+PARALLEL_PULL_FTS_HTTPD="httpd@sha256:0d817a924bed1a216f12a0f4947b5f8a2f173bd5a9cebfe1382d024287154c99"
+PARALLEL_PULL_FTS_MONGO="mongo@sha256:23e5cdbd9bc26a6d1ae4db8252a295d6bdba8332dec68483816d5b7bb2438d7d"
+PARALLEL_PULL_FTS_REDIS="redis@sha256:eed4da4937cb562e9005f3c66eb8c3abc14bb95ad497c03dc89d66bcd172fc7f"
+PARALLEL_PULL_FTS_REGISTRY="registry@sha256:946480a23b33480b8e7cdb89b82c1bd6accae91a8e66d017e21e8b56551f6209"
+
+mirror_image ${BUSYBOX_IMAGE} "127.0.0.1:51670/busybox:latest"
+mirror_image ${NGINX_IMAGE} "127.0.0.1:51670/nginx:latest"
+mirror_image ${PYTHON2_IMAGE} "127.0.0.1:51670/python:2"
+mirror_image ${UBUNTU_IMAGE} "127.0.0.1:51670/ubuntu:latest"
+mirror_image ${PARALLEL_PULL_FTS_BUSYBOX} "127.0.0.1:51670/busybox:parallel-pull-fts"
+mirror_image ${PARALLEL_PULL_FTS_UBUNTU} "127.0.0.1:51670/ubuntu:parallel-pull-fts"
+mirror_image ${PARALLEL_PULL_FTS_CONSUL} "127.0.0.1:51670/consul:parallel-pull-fts"
+mirror_image ${PARALLEL_PULL_FTS_DEBIAN} "127.0.0.1:51670/debian:parallel-pull-fts"
+mirror_image ${PARALLEL_PULL_FTS_HTTPD} "127.0.0.1:51670/httpd:parallel-pull-fts"
+mirror_image ${PARALLEL_PULL_FTS_MONGO} "127.0.0.1:51670/mongo:parallel-pull-fts"
+mirror_image ${PARALLEL_PULL_FTS_NGINX} "127.0.0.1:51670/nginx:parallel-pull-fts"
+mirror_image ${PARALLEL_PULL_FTS_REDIS} "127.0.0.1:51670/redis:parallel-pull-fts"
+mirror_image ${PARALLEL_PULL_FTS_REGISTRY} "127.0.0.1:51670/registry:parallel-pull-fts"
+
+# Now setup a v2 registry with auth... aka nginx with basic auth in front of it
+REGISTRY_AUTH_CONTAINER_NAME="test-ecs-registry-auth"
+status=$(docker inspect -f "{{ .State.Running }}" "${REGISTRY_AUTH_CONTAINER_NAME}") || true
+if [[ "$status" == "false" ]]; then
+  docker rm -f "${REGISTRY_AUTH_CONTAINER_NAME}"
+fi
+
+if [[ "$status" != "true" ]]; then
+  docker run -d -p "127.0.0.1:51671:80" --link "${REGISTRY_CONTAINER_NAME}:registry" --name="${REGISTRY_AUTH_CONTAINER_NAME}" -v "${ROOT}/scripts/registry/nginx-auth:/etc/nginx" "${NGINX_IMAGE}"
+fi

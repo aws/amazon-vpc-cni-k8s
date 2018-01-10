@@ -1,0 +1,13 @@
+{
+  "family": "ecsftest-memory-overcommit",
+  "containerDefinitions": [{
+    "image": "busybox:latest",
+    "name": "memory-overcommit",
+    "portBindings": [{
+      "containerPort": 80
+    }],
+    "command": ["sleep", "1m"],
+    "memory": 200,
+    "memoryReservation": $$$$MEMORY_RESERVATION$$$$ 
+  }]
+}

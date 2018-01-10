@@ -1,0 +1,11 @@
+{
+  "family": "ecs-ftest-user-nobody",
+  "containerDefinitions": [{
+    "image": "busybox:latest",
+    "name": "exit",
+    "cpu": 10,
+    "memory": 10,
+    "user": "nobody",
+    "command": ["sh", "-c", "[ \"$(whoami)\" == \"nobody\" ] && exit 42 || exit 1"]
+  }]
+}

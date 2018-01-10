@@ -1,0 +1,22 @@
+#!/bin/bash
+set -e
+
+version=${1:?Must specify version as the only argument (e.g. 1.0.0)}
+
+# Normalize to working directory being build root (up one level from ./scripts)
+ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )
+cd "${ROOT}"
+
+source ./scripts/shared_env
+
+echo -n "$version" > VERSION
+export ECS_UNKNOWN_VERSION=true
+
+cd ./agent/version/
+go run gen/version-gen.go
+cd "${ROOT}"
+
+git add agent/version/version.go VERSION
+
+# TODO, the changelog bump could also be automated
+echo "Please edit the changelog and commit the version bump"

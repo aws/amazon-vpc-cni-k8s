@@ -1,0 +1,13 @@
+{
+  "family": "ecsftest-busybox-port-5180",
+  "containerDefinitions": [{
+    "image": "127.0.0.1:51670/busybox:latest",
+    "name": "sleep",
+    "portBindings": [{
+      "containerPort": 80,
+      "hostPort": 5180
+    }],
+    "memory": 50,
+    "command": ["sh", "-c", "echo foobar | nc -l -p 80"]
+  }]
+}

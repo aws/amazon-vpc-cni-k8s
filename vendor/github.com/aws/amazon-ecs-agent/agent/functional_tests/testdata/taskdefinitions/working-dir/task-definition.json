@@ -1,0 +1,11 @@
+{
+  "family": "ecsftest-working-dir",
+  "containerDefinitions": [{
+    "image": "busybox:latest",
+    "name": "exit",
+    "cpu": 10,
+    "memory": 10,
+    "workingDirectory": "/var",
+    "command": ["sh", "-c", "[ \"$(pwd)\" == \"/var\" ] && exit 42 || exit 1"]
+  }]
+}
