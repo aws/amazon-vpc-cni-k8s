@@ -1,0 +1,19 @@
+{
+  "family": "ecs-awslogs-test",
+  "containerDefinitions": [{
+    "essential": true,
+    "memory": 10,
+    "name": "awslogs",
+    "cpu": 10,
+    "image": "busybox:latest",
+    "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+            "awslogs-group":"ecs-functional-tests",
+            "awslogs-region":"$$$TEST_REGION$$$",
+            "awslogs-stream-prefix":"ecs-functional-tests"
+        }
+    },
+    "command": ["sh", "-c", "echo hello world"]
+  }]
+}

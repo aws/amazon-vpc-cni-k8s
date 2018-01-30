@@ -1,0 +1,10 @@
+{
+  "Name": "DisableNetworking",
+  "Description": "Check that disable networking works",
+  "TaskDefinition": "network-disabled",
+  "Version": ">=1.5.0",
+  "Timeout": "2m",
+  "ExitCodes": {
+    "exit": 42
+  }
+}

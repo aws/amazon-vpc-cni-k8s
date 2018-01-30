@@ -1,0 +1,11 @@
+{
+  "family": "ecsftest-extra-hosts",
+  "containerDefinitions": [{
+    "image": "busybox:latest",
+    "name": "exit",
+    "cpu": 10,
+    "memory": 10,
+    "extraHosts": [{"hostname": "test.local", "ipAddress": "127.10.10.10"}],
+    "command": ["sh", "-c", "egrep \"127\\.10\\.10\\.10\\s+test\\.local\" /etc/hosts && exit 42 || exit 1"]
+  }]
+}

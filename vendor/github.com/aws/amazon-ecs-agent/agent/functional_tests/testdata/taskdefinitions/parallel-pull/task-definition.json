@@ -1,0 +1,78 @@
+{
+    "family": "concurrent-pull-test",
+    "containerDefinitions": [
+    {
+        "name": "busybox",
+        "image": "127.0.0.1:51670/busybox:parallel-pull-fts",
+        "cpu": 10,
+        "command":  [ "sh", "-c", "while [ true ]; do sleep 1s; date +%T; done"],
+        "memory": 10,
+        "essential": true
+    },
+    {
+        "name": "ubuntu",
+        "image": "127.0.0.1:51670/ubuntu:parallel-pull-fts",
+        "cpu": 10,
+        "memory": 10,
+        "essential": true,
+        "command": ["bash", "-c", "while [ true ]; do date +%T; sleep 1s; done"]
+    },
+    {
+        "name": "consul",
+        "image": "127.0.0.1:51670/consul:parallel-pull-fts",
+        "cpu": 10,
+        "memory": 50
+    },
+    {
+        "name": "debian",
+        "image": "127.0.0.1:51670/debian:parallel-pull-fts",
+        "cpu": 10,
+        "memory": 10,
+        "essential": true,
+        "command": ["bash", "-c", "while [ true ]; do date +%T; sleep 1s; done"]
+    },
+    {
+        "name": "debian-2",
+        "image": "127.0.0.1:51670/debian:parallel-pull-fts",
+        "cpu": 10,
+        "memory": 10,
+        "essential": true,
+        "command": ["bash", "-c", "while [ true ]; do date +%T; sleep 1s; done"]
+    },
+    {
+        "name": "httpd",
+        "image": "127.0.0.1:51670/httpd:parallel-pull-fts",
+        "cpu": 10,
+        "memory": 10,
+        "essential": true
+    },
+    {
+        "name": "mongo",
+        "image": "127.0.0.1:51670/mongo:parallel-pull-fts",
+        "cpu": 10,
+        "memory": 100,
+        "essential": true
+    },
+    {
+        "name": "nginx",
+        "image": "127.0.0.1:51670/nginx:parallel-pull-fts",
+        "cpu": 10,
+        "memory": 50,
+        "essential": true
+    },
+    {
+        "name": "redis",
+        "image": "127.0.0.1:51670/redis:parallel-pull-fts",
+        "cpu": 10,
+        "memory": 10,
+        "essential": true
+    },
+    {
+        "name": "registry",
+        "image": "127.0.0.1:51670/registry:parallel-pull-fts",
+        "cpu": 10,
+        "memory": 50,
+        "essential": true
+    }
+    ]
+}

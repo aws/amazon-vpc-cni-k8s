@@ -1,0 +1,12 @@
+{
+    "family": "ecsftest-iamrole-test",
+    "taskRoleArn": "$$$TASK_ROLE$$$",
+    "containerDefinitions": [{
+        "memory": 512,
+        "cpu": 1024,
+        "name": "container-with-iamrole-windows",
+        "image": "amazon/amazon-ecs-iamrolecontainer",
+         "entryPoint": ["powershell"],
+         "command": [".\\application.ps1; $env:AWS_REGION=\"$$$TEST_REGION$$$\";.\\ec2.exe; exit $LASTEXITCODE"]
+    }]
+}

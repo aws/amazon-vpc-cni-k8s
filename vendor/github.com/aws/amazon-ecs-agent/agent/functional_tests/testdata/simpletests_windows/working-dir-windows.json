@@ -1,0 +1,10 @@
+{
+  "Name": "WorkingDir",
+  "Description": "Check that working dir works",
+  "TaskDefinition": "working-dir-windows",
+  "Version": ">=1.5.0",
+  "Timeout": "2m",
+  "ExitCodes": {
+    "exit": 42
+  }
+}

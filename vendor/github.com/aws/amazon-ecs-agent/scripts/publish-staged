@@ -1,0 +1,159 @@
+#!/bin/bash
+# Copyright 2014-2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the
+# "License"). You may not use this file except in compliance
+#  with the License. A copy of the License is located at
+#
+# 		http://aws.amazon.com/apache2.0/
+#
+# or in the "license" file accompanying this file. This file is
+# distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and
+# limitations under the License.
+
+set -e
+
+DRYRUN=true
+
+IMAGE_NAME="amazon/amazon-ecs-agent"
+
+AWS_PROFILE=""
+STAGE_S3_BUCKET=""
+PUBLISH_S3_BUCKET="amazon-ecs-agent"
+S3_ACL_OVERRIDE=""
+
+source $(dirname "${0}")/publishing-common.sh
+
+TARGET_OS_LIST=${SUPPORTED_OSES[@]}
+
+usage() {
+	echo "Usage: ${0} -s BUCKET [OPTIONS]"
+	echo
+	echo "This script is responsible for publishing new versions of the Amazon ECS Container Agent."
+	echo "1. Grab the staged image from S3"
+	echo "2. Push the image to a registry, tagged with :latest, :VERSION, and :SHA"
+	echo "3. Push the image (and its md5sum) to S3 with -latest, -VERSION, and -SHA"
+	echo
+	echo "Options"
+	echo "  -d  true|false  Dryrun (default is true)"
+	echo "  -p  PROFILE     AWS CLI Profile (default is none)"
+	echo "  -s  BUCKET      AWS S3 Bucket for staging"
+	echo "  -b  BUCKET      AWS S3 Bucket for publishing (default is amazon-ecs-agent)"
+	echo "  -a  ACL         AWS S3 Object Canned ACL (default is public-read)"
+	echo "  -i  IMAGE       Docker image name"
+	echo "  -o  OS_LIST     Comma-separated list of OS targets to build."
+	echo "  -h              Display this help message"
+}
+
+publish_s3() {
+	if [ "$1" == "windows" ]; then
+		base_name="ecs-agent-windows"
+		suffix="zip"
+	else
+		base_name="ecs-agent"
+		suffix="tar"
+	fi
+
+	for tag in ${IMAGE_TAG_VERSION} ${IMAGE_TAG_SHA} ${IMAGE_TAG_LATEST}; do
+		echo "Publishing as ${base_name}-${tag}.${suffix}"
+		dryval s3_cp "s3://${STAGE_S3_BUCKET}/${base_name}-${IMAGE_TAG_SHA}.${suffix}" \
+			"s3://${PUBLISH_S3_BUCKET}/${base_name}-${tag}.${suffix}"
+		dryval s3_cp "s3://${STAGE_S3_BUCKET}/${base_name}-${IMAGE_TAG_SHA}.${suffix}.md5" \
+			"s3://${PUBLISH_S3_BUCKET}/${base_name}-${tag}.${suffix}.md5"
+		dryval s3_cp "s3://${STAGE_S3_BUCKET}/${base_name}-${IMAGE_TAG_SHA}.${suffix}.json" \
+			"s3://${PUBLISH_S3_BUCKET}/${base_name}-${tag}.${suffix}.json"
+	done
+}
+
+publish_docker() {
+	if [ "$1" == "windows" ]; then
+		echo "Skipping docker publication on Windows"
+		return
+	fi
+
+	tarball="$(mktemp)"
+	tarball_md5="$(mktemp)"
+
+	s3_cp "s3://${STAGE_S3_BUCKET}/ecs-agent-${IMAGE_TAG_SHA}.tar" "${tarball}"
+	s3_cp "s3://${STAGE_S3_BUCKET}/ecs-agent-${IMAGE_TAG_SHA}.tar.md5" "${tarball_md5}"
+
+	if ! check_md5 "${tarball}" "${tarball_md5}" ; then
+		echo "Failed to validate integrity of s3://${STAGE_S3_BUCKET}/ecs-agent-${IMAGE_TAG_SHA}.tar"
+		rm "${tarball}"
+		rm "${tarball_md5}"
+		exit 1
+	fi
+
+	docker load < "${tarball}"
+
+	tag_and_push_docker
+
+	rm "${tarball}"
+	rm "${tarball_md5}"
+}
+
+while getopts ":d:p:s:b:i:a:o:h" opt; do
+	case ${opt} in
+		d)
+			if [[ "${OPTARG}" = "false" ]]; then
+				DRYRUN=false
+			fi
+			;;
+		p)
+			AWS_PROFILE="${OPTARG}"
+			;;
+		s)
+			STAGE_S3_BUCKET="${OPTARG}"
+			;;
+		b)
+			PUBLISH_S3_BUCKET="${OPTARG}"
+			;;
+		a)
+			S3_ACL_OVERRIDE="${OPTARG}"
+			;;
+		i)
+			IMAGE_NAME="${OPTARG}"
+			;;
+		o)
+			TARGET_OS_OPT="${OPTARG}"
+			;;
+		\?)
+			echo "Invalid option -${OPTARG}" >&2
+			usage
+			exit 1
+			;;
+		:)
+			echo "Option -${OPTARG} requires an argument." >&2
+			usage
+			exit 1
+			;;
+		h)
+			usage
+			exit 0
+			;;
+	esac
+done
+
+if [ -n "${TARGET_OS_OPT}" ]; then
+	TARGET_OS_LIST=()
+	for os in ${TARGET_OS_OPT/,/ }; do
+		if supported_os "${os}"; then
+			TARGET_OS_LIST+=(${os})
+		else
+			echo "Unsupported target OS ${os}" >&2
+			exit 1
+		fi
+	done
+fi
+
+if [ -z "${STAGE_S3_BUCKET}" ]; then
+	usage
+	exit 1
+fi
+
+for target_os in ${TARGET_OS_LIST[@]}; do
+	publish_s3 "$target_os"
+	publish_docker "$target_os"
+done

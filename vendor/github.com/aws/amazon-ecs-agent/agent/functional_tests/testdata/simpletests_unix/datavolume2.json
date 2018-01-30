@@ -1,0 +1,11 @@
+{
+  "Name": "DataVolume2",
+  "Description": "Verify that more complex datavolumes (including empty and volumes-from) work as expected; see Related",
+  "TaskDefinition": "datavolume2",
+  "Version": ">1.0.0",
+  "Timeout": "2m",
+  "ExitCodes": {
+    "exit": 42
+  },
+  "Related": ["https://forums.aws.amazon.com/thread.jspa?threadID=176057", "https://github.com/aws/amazon-ecs-agent/issues/52"]
+}

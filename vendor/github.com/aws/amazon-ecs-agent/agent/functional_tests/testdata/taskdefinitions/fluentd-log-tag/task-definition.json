@@ -1,0 +1,24 @@
+{
+   "family":"ecs-fluentd-test",
+   "containerDefinitions":[
+      {
+         "name":"fluentd-test",
+         "image":"127.0.0.1:51670/ubuntu:latest",
+         "essential":true,
+         "cpu":10,
+         "memory":10,
+         "command":[
+            "sh",
+            "-c",
+            "echo hello, this is fluentd functional test; sleep 30s;"
+         ],
+         "logConfiguration":{
+            "logDriver":"fluentd",
+            "options":{
+               "fluentd-address":"localhost:24224",
+               "fluentd-tag":"ecs.{{.Name}}.{{.FullID}}"
+            }
+         }
+      }
+   ]
+}

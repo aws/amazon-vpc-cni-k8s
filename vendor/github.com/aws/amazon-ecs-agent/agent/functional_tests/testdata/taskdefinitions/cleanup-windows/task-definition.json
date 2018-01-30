@@ -1,0 +1,14 @@
+{
+  "family": "ecsftest-cleanup-windows",
+  "containerDefinitions": [{
+    "image": "microsoft/windowsservercore:latest",
+    "name": "cleanup-windows",
+    "cpu": 512,
+    "memory": 256,
+    "portBindings": [{
+      "containerPort": 80
+    }],
+    "entryPoint": ["powershell"],
+    "command": ["sleep", "500"]
+  }]
+}

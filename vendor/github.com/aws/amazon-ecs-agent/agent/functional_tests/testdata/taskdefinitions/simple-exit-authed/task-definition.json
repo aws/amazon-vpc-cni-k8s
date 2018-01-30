@@ -1,0 +1,11 @@
+{
+  "family": "ecsftest-simple-exit-authed",
+  "containerDefinitions": [{
+    "image": "127.0.0.1:51671/busybox:latest",
+    "name": "exit",
+    "cpu": 10,
+    "memory": 10,
+    "essential": true,
+    "command": ["sh", "-c", "exit 42"]
+  }]
+}

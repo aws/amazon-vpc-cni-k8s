@@ -1,0 +1,11 @@
+{
+  "family": "ecsftest-savedstate-windows",
+  "containerDefinitions": [{
+    "image": "microsoft/windowsservercore:latest",
+    "name": "savedstate-windows",
+    "cpu": 512,
+    "memory": 256,
+    "entryPoint": ["powershell"],
+    "command": ["sleep", "500"]
+  }]
+}

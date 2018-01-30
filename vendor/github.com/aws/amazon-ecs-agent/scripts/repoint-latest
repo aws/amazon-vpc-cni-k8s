@@ -1,0 +1,174 @@
+#!/bin/bash
+# Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the
+# "License"). You may not use this file except in compliance
+#  with the License. A copy of the License is located at
+#
+#     http://aws.amazon.com/apache2.0/
+#
+# or in the "license" file accompanying this file. This file is
+# distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and
+# limitations under the License.
+
+set -e
+
+DRYRUN=true
+
+IMAGE_NAME="amazon/amazon-ecs-agent"
+
+AWS_PROFILE=""
+PUBLISH_S3_BUCKET="amazon-ecs-agent"
+S3_ACL_OVERRIDE=""
+
+source $(dirname "${0}")/publishing-common.sh
+
+TARGET_OS_LIST=${SUPPORTED_OSES[@]}
+
+usage() {
+	echo "Usage: ${0} -s BUCKET [OPTIONS]"
+	echo
+	echo "This script is responsible for un-publishing a given release of the ECS Agent."
+	echo		
+	echo "Options"
+	echo "  -d  true|false      Dryrun (default is true)"
+	echo "  -b  BAD_VERSION     Version that will be unpublished"
+	echo "  -g  GOOD_VERSION    Version that will be re-tagged as latest"
+	echo "  -p  PROFILE         AWS CLI Profile (default is none)"
+	echo "  -h                  Display this help message"
+}
+
+unpublish_s3() {
+	if [ "$1" == "windows" ]; then
+	     	base_name="ecs-agent-windows"
+		suffix="zip"
+	else
+		base_name="ecs-agent"
+		suffix="tar"
+	fi
+
+	tarball_bad="$(mktemp)"
+	tarball_latest_md5="$(mktemp)"
+
+	s3_cp "s3://${PUBLISH_S3_BUCKET}/ecs-agent-${BAD_VERSION}.tar" "${tarball_bad}"
+	s3_cp "s3://${PUBLISH_S3_BUCKET}/ecs-agent-${IMAGE_TAG_LATEST}.tar.md5" "${tarball_latest_md5}"
+
+	if ! check_md5 "${tarball_bad}" "${tarball_latest_md5}"; then
+		echo "The bad version ${BAD_VERSION} is not currently tagged as latest"
+		rm "${tarball_bad}"
+		rm "${tarball_latest_md5}"
+		exit 1
+	fi
+
+	set +e
+	s3_ls "s3://${PUBLISH_S3_BUCKET}/${base_name}-${GOOD_VERSION}.${suffix}" &> /dev/null
+	if [ $? -ne 0 ]; then
+		echo "Unable to find prior version ${base_name}-${GOOD_VERSION}.${suffix} in ${PUBLISH_S3_BUCKET}"
+		exit 1
+	fi
+	set -e
+	
+	echo "Un-Publishing ${base_name}-${BAD_VERSION}.${suffix} as latest"
+	echo "Marking ${base_name}-${GOOD_VERSION}.${suffix} as latest"
+
+	dryval s3_cp "s3://${PUBLISH_S3_BUCKET}/${base_name}-${GOOD_VERSION}.${suffix}" \
+		     "s3://${PUBLISH_S3_BUCKET}/${base_name}-${IMAGE_TAG_LATEST}.${suffix}"
+}
+
+unpublish_docker() {
+	if [ "$1" == "windows" ]; then
+		echo "Skipping docker publication on Windows"
+		return
+	fi
+
+	tarball="$(mktemp)"
+	tarball_md5="$(mktemp)"
+
+	s3_cp "s3://${PUBLISH_S3_BUCKET}/ecs-agent-${GOOD_VERSION}.tar" "${tarball}"
+	s3_cp "s3://${PUBLISH_S3_BUCKET}/ecs-agent-${GOOD_VERSION}.tar.md5" "${tarball_md5}"
+
+	if ! check_md5 "${tarball}" "${tarball_md5}" ; then
+		echo "Failed to validate integrity of s3://${PUBLISH_S3_BUCKET}/ecs-agent-${GOOD_VERSION}.tar"
+		rm "${tarball}"
+		rm "${tarball_md5}"
+		exit 1
+	fi
+
+	echo "Removing any amazon/amazon-ecs-agent images for safety"
+	docker images -q amazon/amazon-ecs-agent | xargs -r -L 1 docker rmi -f
+
+	docker load < "${tarball}"
+
+	echo "Tagging as ${IMAGE_NAME}:${IMAGE_TAG_LATEST}"
+	docker tag amazon/amazon-ecs-agent:latest "${IMAGE_NAME}:${IMAGE_TAG_LATEST}"
+	echo "Pushing ${IMAGE_NAME}:${IMAGE_TAG_LATEST}"
+	dryval docker push "${IMAGE_NAME}:${IMAGE_TAG_LATEST}"
+
+	rm "${tarball}"
+	rm "${tarball_md5}"
+}
+
+while getopts ":p:d:b:g:h:n" opt; do
+	case ${opt} in
+		d)
+			if [[ "${OPTARG}" = "false" ]]; then
+				DRYRUN=false
+			fi
+			;;
+		p)
+			AWS_PROFILE="${OPTARG}"
+			;;
+		b)
+			BAD_VERSION="${OPTARG}"
+			;;
+		g)
+			GOOD_VERSION="${OPTARG}"
+			;;
+		\?)
+			echo "Invalid option -${OPTARG}" >&2
+			usage
+			exit 1
+			;;
+		:)
+			echo "Option -${OPTARG} requires an argument." >&2
+			usage
+			exit 1
+			;;
+		h)
+			usage
+			exit 0
+			;;
+	esac
+done
+
+if [ -n "${TARGET_OS_OPT}" ]; then
+	TARGET_OS_LIST=()
+	for os in ${TARGET_OS_OPT/,/ }; do
+		if supported_os "${os}"; then
+			TARGET_OS_LIST+=(${os})
+		else
+			echo "Unsupported target OS ${os}" >&2
+			exit 1
+		fi
+	done
+fi
+
+if [ "${GOOD_VERSION}" == "" ]; then
+   echo "GOOD_VERSION must be supplied with the -g flag"
+   exit 1
+fi
+
+if [ "${BAD_VERSION}" == "" ]; then
+   echo "BAD_VERSION must be supplied with the -b flag"
+   exit 1
+fi
+
+echo "Current bad version: ${BAD_VERSION}"
+echo "New \"latest\" version: ${GOOD_VERSION}"
+
+for target_os in ${TARGET_OS_LIST[@]}; do
+	unpublish_s3 "$target_os"
+	unpublish_docker "$target_os"
+done

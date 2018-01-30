@@ -1,0 +1,12 @@
+{
+  "family": "ecsftest-networkmode",
+  "networkMode": "$$$$NETWORK_MODE$$$$",
+  "containerDefinitions": [{
+    "image": "microsoft/windowsservercore:latest",
+    "entryPoint": ["powershell"],
+    "command": ["sleep", "60"],
+    "name": "network-$$$$NETWORK_MODE$$$$",
+    "memory": 256,
+    "cpu": 512
+  }]
+}

@@ -1,0 +1,10 @@
+{
+  "Name": "InitProcessEnabled",
+  "Description": "checks that enabling init process works",
+  "TaskDefinition": "init-process",
+  "Version": ">=1.15.0",
+  "Timeout": "2m",
+  "ExitCodes": {
+    "exit": 42
+  }
+}

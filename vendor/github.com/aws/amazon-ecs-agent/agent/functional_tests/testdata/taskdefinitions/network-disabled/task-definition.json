@@ -1,0 +1,11 @@
+{
+  "family": "ecsftest-network-disabled",
+  "containerDefinitions": [{
+    "image": "busybox:latest",
+    "name": "exit",
+    "cpu": 10,
+    "memory": 10,
+    "disableNetworking": true,
+    "command": ["sh", "-c", "[ -z \"$(ifconfig | grep \"inet addr\" | grep -v \"127\\.0\\.0\\.1\")\" ] && exit 42 || exit 1"]
+  }]
+}

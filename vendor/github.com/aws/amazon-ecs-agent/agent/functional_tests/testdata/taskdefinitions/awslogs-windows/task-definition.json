@@ -1,0 +1,20 @@
+{
+  "family": "ecs-awslogs-test",
+  "containerDefinitions": [{
+    "essential": true,
+    "memory": 256,
+    "name": "awslogs",
+    "cpu": 512,
+    "image": "microsoft/windowsservercore:latest",
+    "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+            "awslogs-group":"ecs-functional-tests",
+            "awslogs-region":"$$$TEST_REGION$$$",
+            "awslogs-stream-prefix":"ecs-functional-tests"
+        }
+    },
+    "entryPoint": ["powershell"],
+    "command": ["echo", "helloworld"]
+  }]
+}

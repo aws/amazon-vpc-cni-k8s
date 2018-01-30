@@ -1,0 +1,87 @@
+
+# Gopkg.toml example
+#
+# Refer to https://github.com/golang/dep/blob/master/docs/Gopkg.toml.md
+# for detailed Gopkg.toml documentation.
+#
+# required = ["github.com/user/thing/cmd/thing"]
+# ignored = ["github.com/user/project/pkgX", "bitbucket.org/user/project/pkgA/pkgY"]
+#
+# [[constraint]]
+#   name = "github.com/user/project"
+#   version = "1.0.0"
+#
+# [[constraint]]
+#   name = "github.com/user/project2"
+#   branch = "dev"
+#   source = "github.com/myfork/project2"
+#
+# [[override]]
+#  name = "github.com/x/y"
+#  version = "2.4.0"
+
+
+[[constraint]]
+  name = "github.com/aws/aws-sdk-go"
+  version = "1.10.30"
+
+[[constraint]]
+  name = "github.com/cihub/seelog"
+  revision ="0fa7e41d2b9600ca6b7e1592478124e4f800f724"
+
+[[constraint]]
+  name = "github.com/containerd/cgroups"
+  revision ="c3fc2b77b568af2406f3931cf3d3f17d76736886"
+
+[[constraint]]
+  name = "github.com/containernetworking/cni"
+  version = "0.5.2"
+
+[[constraint]]
+  name = "github.com/deniswernert/udev"
+  revision ="82fe5be8ca5f7d8255cc838723687f61bb175120"
+
+[[constraint]]
+  name = "github.com/docker/docker"
+  branch = "master"
+
+[[constraint]]
+  name = "github.com/fsouza/go-dockerclient"
+  revision ="d25e8d2941bd448756b336a2ec3abf79802d6ddf"
+
+[[constraint]]
+  name = "github.com/golang/mock"
+  revision ="bd3c8e81be01eef76d4b503f5e687d2d1354d2d9"
+
+[[constraint]]
+  name = "github.com/gorilla/websocket"
+  revision ="0868951cdb8e69bc42df4598bdc6164ff2f1a072"
+
+[[constraint]]
+  name = "github.com/opencontainers/runtime-spec"
+  revision ="d349388c43b01b2ea695965ae561b5bddb81318f"
+
+[[constraint]]
+  name = "github.com/pborman/uuid"
+  revision ="ca53cad383cad2479bbba7f7a1a05797ec1386e4"
+
+[[constraint]]
+  name = "github.com/pkg/errors"
+  revision ="c605e284fe17294bda444b34710735b29d1a9d90"
+
+[[constraint]]
+  name = "github.com/stretchr/testify"
+  revision ="d77da356e56a7428ad25149ca77381849a6a5232"
+
+[[constraint]]
+  name = "github.com/vishvananda/netlink"
+  revision ="fe3b5664d23a11b52ba59bece4ff29c52772a56b"
+
+[[constraint]]
+  name = "golang.org/x/net"
+
+[[constraint]]
+  name = "golang.org/x/sys"
+
+[[constraint]]
+  name = "golang.org/x/tools"
