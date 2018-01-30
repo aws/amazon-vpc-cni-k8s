@@ -33,7 +33,7 @@ The details can be found in [Proposal: CNI plugin for Kubernetes networking over
 		*  --cni-bin-dir=/opt/cni/bin
 
 * kubeletes must also explicit specify using primary IPv4 address on the Primary ENI as its node-ip, for example:
-    * --node-ip=$(curl [http://169.254.169.254/latest/meta-data/local-ipv4](http://169.254.169.254/latest/meta-data/local-ipv4))
+ `--node-ip=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)`
 
 * L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html):
 
