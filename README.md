@@ -27,10 +27,13 @@ The details can be found in [Proposal: CNI plugin for Kubernetes networking over
    
 ## Requirements
 
-* kubelets must be started with --network-plugin=cni and have --cni-conf-dir and --cni-bin-dir properly set
+* kubelets must be started with --network-plugin=cni and have --cni-conf-dir and --cni-bin-dir properly set. 
 	* In aws-k8s-cni.yaml, the following defaults are configured:
 		*  --cni-conf-dir=/etc/cni/net.d
 		*  --cni-bin-dir=/opt/cni/bin
+
+* kubeletes must also explicit specify using primary IPv4 address on the Primary ENI as its node-ip, for example:
+ `--node-ip=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)`
 
 * L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html):
 
