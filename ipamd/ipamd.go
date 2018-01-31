@@ -39,10 +39,11 @@ import (
 // free them back when the pool size goes above max threshold.
 
 const (
-	ipPoolMonitorInterval = 5 * time.Second
-	maxRetryCheckENI      = 5
-	eniAttachTime         = 10 * time.Second
-	defaultWarmENITarget  = 1
+	ipPoolMonitorInterval       = 5 * time.Second
+	maxRetryCheckENI            = 5
+	eniAttachTime               = 10 * time.Second
+	defaultWarmENITarget        = 1
+	nodeIPPoolReconcileInterval = 60 * time.Second
 )
 
 var (
@@ -72,6 +73,13 @@ var (
 			Help: "The maximum number of IP addresses that can be allocated to the instance",
 		},
 	)
+	reconcileCnt = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "reconcile_count",
+			Help: "The number of times ipamD reconciles on ENIs and IP addresses",
+		},
+		[]string{"fn"},
+	)
 	prometheusRegistered = false
 )
 
@@ -87,7 +95,9 @@ type IPAMContext struct {
 	// maxENI indicate the maximum number of ENIs can be attached to the instance
 	// It is initialized to 0 and it is set to current number of ENIs attached
 	// when ipamD receives AttachmentLimitExceeded error
-	maxENI int
+	maxENI               int
+	primaryIP            map[string]string
+	lastNodeIPPoolAction time.Time
 }
 
 func prometheusRegister() {
@@ -96,6 +106,7 @@ func prometheusRegister() {
 		prometheus.MustRegister(ipamdActionsInprogress)
 		prometheus.MustRegister(enisMax)
 		prometheus.MustRegister(ipMax)
+		prometheus.MustRegister(reconcileCnt)
 		prometheusRegistered = true
 	}
 }
@@ -137,6 +148,8 @@ func (c *IPAMContext) nodeInit() error {
 	if err == nil {
 		ipMax.Set(float64(maxIPs * int64(maxENIs)))
 	}
+	c.primaryIP = make(map[string]string)
+
 	enis, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		log.Error("Failed to retrive ENI info")
@@ -207,11 +220,12 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 	for {
 		time.Sleep(ipPoolMonitorInterval)
 		c.updateIPPoolIfRequired()
+		c.nodeIPPoolReconcile(nodeIPPoolReconcileInterval)
 	}
 }
 
 func (c *IPAMContext) updateIPPoolIfRequired() {
-	c.reconcileENIIP()
+	c.retryAllocENIIP()
 	if c.nodeIPPoolTooLow() {
 		c.increaseIPPool()
 	} else if c.nodeIPPoolTooHigh() {
@@ -219,9 +233,9 @@ func (c *IPAMContext) updateIPPoolIfRequired() {
 	}
 }
 
-func (c *IPAMContext) reconcileENIIP() {
-	ipamdActionsInprogress.WithLabelValues("reconcileENIip").Add(float64(1))
-	defer ipamdActionsInprogress.WithLabelValues("reconcileENIip").Sub(float64(1))
+func (c *IPAMContext) retryAllocENIIP() {
+	ipamdActionsInprogress.WithLabelValues("retryAllocENIIP").Add(float64(1))
+	defer ipamdActionsInprogress.WithLabelValues("retryAllocENIIP").Sub(float64(1))
 	maxIPLimit, err := c.awsClient.GetENIipLimit()
 	if err != nil {
 		log.Infof("Failed to retrieve ENI IP limit: %v", err)
@@ -232,16 +246,17 @@ func (c *IPAMContext) reconcileENIIP() {
 		log.Debugf("Attempt again to allocate IP address for eni :%s", eni.Id)
 		err := c.awsClient.AllocAllIPAddress(eni.Id)
 		if err != nil {
-			ipamdErrInc("reconcileENIIPAllocAllIPAddressFailed", err)
+			ipamdErrInc("retryAllocENIIPAllocAllIPAddressFailed", err)
 			log.Warn("During eni repair: error encountered on allocate IP address", err)
 			return
 		}
 		ec2Addrs, _, err := c.getENIaddresses(eni.Id)
 		if err != nil {
-			ipamdErrInc("reconcileENIIPgetENIaddressesFailed", err)
+			ipamdErrInc("retryAllocENIIPgetENIaddressesFailed", err)
 			log.Warn("During eni repair: failed to get ENI ip addresses", err)
 			return
 		}
+		c.lastNodeIPPoolAction = time.Now()
 		c.addENIaddressesToDataStore(ec2Addrs, eni.Id)
 	}
 }
@@ -257,6 +272,7 @@ func (c *IPAMContext) decreaseIPPool() {
 	}
 	log.Debugf("Start freeing eni %s", eni)
 	c.awsClient.FreeENI(eni)
+	c.lastNodeIPPoolAction = time.Now()
 	total, used := c.dataStore.GetStats()
 	log.Debugf("Successfully decreased IP Pool")
 	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
@@ -318,6 +334,7 @@ func (c *IPAMContext) increaseIPPool() {
 		log.Errorf("Failed to increase pool size: %v", err)
 		return
 	}
+	c.lastNodeIPPoolAction = time.Now()
 	total, used := c.dataStore.GetStats()
 	log.Debugf("Successfully increased IP Pool")
 	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
@@ -353,15 +370,18 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) err
 		}
 	}
 
-	c.addENIaddressesToDataStore(ec2Addrs, eni)
+	c.primaryIP[eni] = c.addENIaddressesToDataStore(ec2Addrs, eni)
 
 	return nil
 
 }
 
-func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfacePrivateIpAddress, eni string) {
+// return primary ip address on the interface
+func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfacePrivateIpAddress, eni string) string {
+	var primaryIP string
 	for _, ec2Addr := range ec2Addrs {
 		if aws.BoolValue(ec2Addr.Primary) {
+			primaryIP = aws.StringValue(ec2Addr.PrivateIpAddress)
 			continue
 		}
 		err := c.dataStore.AddENIIPv4Address(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
@@ -372,6 +392,8 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 			ipamdErrInc("addENIaddressesToDataStoreAddENIIPv4AddressFailed", err)
 		}
 	}
+
+	return primaryIP
 }
 
 // returns all addresses on eni, the primary adderss on eni, error
@@ -471,4 +493,115 @@ func ipamdErrInc(fn string, err error) {
 
 func ipamdActionsInprogressSet(fn string, curNum int) {
 	ipamdActionsInprogress.WithLabelValues(fn).Set(float64(curNum))
+}
+
+// nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
+func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) error {
+	ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
+	defer ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
+
+	curTime := time.Now()
+	last := c.lastNodeIPPoolAction
+
+	if curTime.Sub(last) <= interval {
+		return nil
+	}
+
+	log.Debug("Reconciling ENI/IP pool info...")
+	attachedENIs, err := c.awsClient.GetAttachedENIs()
+
+	if err != nil {
+		log.Error("ip pool reconcile: Failed to get attached eni info", err.Error())
+		ipamdErrInc("reconcileFailedGetENIs", err)
+		return errors.Wrap(err, "ip pool reconcile: failed to get attached eni")
+	}
+
+	curENIs := c.dataStore.GetENIInfos()
+
+	// mark phase
+	for _, attachedENI := range attachedENIs {
+		eniIPPool, err := c.dataStore.GetENIIPPools(attachedENI.ENIID)
+
+		if err == nil {
+			log.Debugf("Reconcile existing ENI %s IP pool", attachedENI.ENIID)
+			// reconcile IP pool
+			c.eniIPPoolReconcile(eniIPPool, attachedENI, attachedENI.ENIID)
+
+			// mark action= remove this eni from curENIs list
+			delete(curENIs.ENIIPPools, attachedENI.ENIID)
+			continue
+		}
+
+		// add new ENI
+		log.Debugf("Reconcile and add a new eni %s", attachedENI)
+		err = c.setupENI(attachedENI.ENIID, attachedENI)
+		if err != nil {
+			log.Errorf("ip pool reconcile: Failed to setup eni %s network: %v", attachedENI.ENIID, err)
+			ipamdErrInc("eniReconcileAdd", err)
+			//continue if having trouble with ONLY 1 eni, instead of bailout here?
+			continue
+		}
+		reconcileCnt.With(prometheus.Labels{"fn": "eniReconcileAdd"}).Inc()
+
+	}
+
+	// sweep phase: since the marked eni have been removed, the remaining ones needs to be sweeped
+	for eni := range curENIs.ENIIPPools {
+		log.Infof("Reconcile and delete detached eni %s", eni)
+		err = c.dataStore.DeleteENI(eni)
+		if err != nil {
+			log.Errorf("ip pool reconcile: Failed to delete ENI during reconcile: %v", err)
+			ipamdErrInc("eniReconcileDel", err)
+			continue
+		}
+		reconcileCnt.With(prometheus.Labels{"fn": "eniReconcileDel"}).Inc()
+	}
+	log.Debug("Successfully Reconciled ENI/IP pool")
+	c.lastNodeIPPoolAction = curTime
+	return nil
+}
+
+func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInfo, attachENI awsutils.ENIMetadata, eni string) error {
+
+	for _, localIP := range attachENI.LocalIPv4s {
+		if localIP == c.primaryIP[eni] {
+			log.Debugf("Reconcile and skip primary IP %s on eni %s", localIP, eni)
+			continue
+		}
+
+		err := c.dataStore.AddENIIPv4Address(eni, localIP)
+
+		if err != nil && err.Error() == datastore.DuplicateIPError {
+			log.Debugf("Reconciled IP %s on eni %s", localIP, eni)
+			// mark action = remove it from eniPool
+			delete(ipPool, localIP)
+			continue
+		}
+
+		if err != nil {
+			log.Errorf("Failed to reconcile IP %s on eni %s", localIP, eni)
+			ipamdErrInc("ipReconcileAdd", err)
+			// contine instead of bailout due to one ip
+			continue
+		}
+		reconcileCnt.With(prometheus.Labels{"fn": "eniIPPoolReconcileAdd"}).Inc()
+
+	}
+
+	// sweep phase, delete remaining IPs
+
+	for existingIP := range ipPool {
+		log.Debugf("Reconcile and delete ip %s on eni %s", existingIP, eni)
+		err := c.dataStore.DelENIIPv4Address(eni, existingIP)
+		if err != nil {
+			log.Errorf("Failed to reconcile and delete IP %s on eni %s, %v", existingIP, eni, err)
+			ipamdErrInc("ipReconcileDel", err)
+			// contine instead of bailout due to one ip
+			continue
+		}
+		reconcileCnt.With(prometheus.Labels{"fn": "eniIPPoolReconcileDel"}).Inc()
+	}
+
+	return nil
+
 }

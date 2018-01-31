@@ -37,7 +37,7 @@ You can verify if you are in this situation by example cni metrics
 ![](images/cni-metrics-inprogress.png)
 **ipamdActionInProgress**: the total number of nodes whose ipamD is in the middle of ENI operation.
 
-To avoid Pod deployment delay, you can configure ipamD to have a higher [**WARM-ENI-TARGET**](https://github.com/aws/amazon-vpc-cni-k8s/pull/68).
+To avoid Pod deployment delay, you can configure ipamD to have a higher [**WARM\_ENI\_TARGET**](https://github.com/aws/amazon-vpc-cni-k8s/pull/68).
 
 ## Troubleshooting CNI/ipamD at node level
 
