@@ -139,6 +139,7 @@ func TestIncreaseIPPool(t *testing.T) {
 		awsClient:     mockAWS,
 		k8sClient:     mockK8S,
 		networkClient: mockNetwork,
+		primaryIP:     make(map[string]string),
 	}
 
 	mockContext.dataStore = datastore.NewDataStore()
