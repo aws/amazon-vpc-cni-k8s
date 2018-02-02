@@ -1,0 +1,33 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: eni-ip-controller
+spec:
+  replicas: 1 
+  template:
+    metadata:
+      labels:
+        app: eni-ip-controller
+        tier: backend
+        track: stable
+    spec:
+      containers:
+        - name: controller 
+          image: "694065802095.dkr.ecr.us-east-1.amazonaws.com/eni-ip-controller:latest"
+          env:
+            - name: MY_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+          - mountPath: /host/var/log
+            name: log-dir
+      volumes:
+      - name: log-dir
+        hostPath:
+          path: /var/log
+

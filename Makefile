@@ -18,6 +18,7 @@ static:
 	go build -o aws-cni plugins/routed-eni/cni.go
 	go build verify-aws.go
 	go build verify-network.go
+	go build -o controller/eni-ip-controller controller/eni_ip_controller.go
 
 # need to bundle certificates
 certs: misc/certs/ca-certificates.crt
@@ -30,6 +31,8 @@ misc/certs/ca-certificates.crt:
 docker: certs
 	@docker build -f scripts/dockerfiles/Dockerfile.release -t "amazon/amazon-k8s-cni:latest" .
 	@echo "Built Docker image \"amazon/amazon-k8s-cni:latest\""
+	docker build -f controller/Dockerfile -t eni-ip-controller controller
+	@echo "Built Docker image \"amazon/eni-ip-controller:latest\""
 
 # unit-test
 unit-test:
@@ -39,6 +42,7 @@ unit-test:
 	go test -v -cover -race -timeout 10s ./pkg/k8sapi/...
 	go test -v -cover -race -timeout 10s ./pkg/networkutils/...
 	go test -v -cover -race -timeout 10s ./ipamd/...
+	go test -v -cover -race -timeout 10s ./controller/...
 
 #golint
 lint:
@@ -49,6 +53,8 @@ lint:
 	golint pkg/networkutils/*.go
 	golint ipamd/*.go
 	golint ipamd/*/*.go
+	golint controller/*.go
+	golint controller/*/*.go
 
 #go tool vet
 vet:
@@ -56,3 +62,5 @@ vet:
 	go tool vet ./plugins/routed-eni
 	go tool vet ./pkg/k8sapi
 	go tool vet ./pkg/networkutils
+	go tool vet controller
+	go tool vet controller/vpcipresource
