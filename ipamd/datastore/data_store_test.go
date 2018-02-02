@@ -39,6 +39,34 @@ func TestAddENI(t *testing.T) {
 	assert.Equal(t, len(eniInfos.ENIIPPools), 2)
 }
 
+func TestDeleteENI(t *testing.T) {
+	ds := NewDataStore()
+
+	err := ds.AddENI("eni-1", 1, true)
+	assert.NoError(t, err)
+
+	err = ds.AddENI("eni-2", 2, false)
+	assert.NoError(t, err)
+
+	err = ds.AddENI("eni-3", 3, false)
+	assert.NoError(t, err)
+
+	eniInfos := ds.GetENIInfos()
+	assert.Equal(t, len(eniInfos.ENIIPPools), 3)
+
+	err = ds.DeleteENI("eni-2")
+	assert.NoError(t, err)
+
+	eniInfos = ds.GetENIInfos()
+	assert.Equal(t, len(eniInfos.ENIIPPools), 2)
+
+	err = ds.DeleteENI("unknown-eni")
+	assert.Error(t, err)
+
+	eniInfos = ds.GetENIInfos()
+	assert.Equal(t, len(eniInfos.ENIIPPools), 2)
+}
+
 func TestAddENIIPv4Address(t *testing.T) {
 	ds := NewDataStore()
 
@@ -75,6 +103,72 @@ func TestAddENIIPv4Address(t *testing.T) {
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
 	assert.Equal(t, len(ds.eniIPPools["eni-2"].IPv4Addresses), 1)
 
+}
+
+func TestGetENIIPPools(t *testing.T) {
+	ds := NewDataStore()
+
+	err := ds.AddENI("eni-1", 1, true)
+	assert.NoError(t, err)
+
+	err = ds.AddENI("eni-2", 2, false)
+	assert.NoError(t, err)
+
+	err = ds.AddENIIPv4Address("eni-1", "1.1.1.1")
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 1)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 1)
+
+	err = ds.AddENIIPv4Address("eni-1", "1.1.1.2")
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 2)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
+
+	err = ds.AddENIIPv4Address("eni-2", "1.1.2.2")
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 3)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
+	assert.Equal(t, len(ds.eniIPPools["eni-2"].IPv4Addresses), 1)
+
+	eniIPPool, err := ds.GetENIIPPools("eni-1")
+	assert.NoError(t, err)
+	assert.Equal(t, len(eniIPPool), 2)
+
+	eniIPPool, err = ds.GetENIIPPools("dummy-eni")
+	assert.Error(t, err)
+
+}
+
+func TestDelENIIPv4Address(t *testing.T) {
+	ds := NewDataStore()
+	err := ds.AddENI("eni-1", 1, true)
+	assert.NoError(t, err)
+
+	err = ds.AddENIIPv4Address("eni-1", "1.1.1.1")
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 1)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 1)
+
+	err = ds.AddENIIPv4Address("eni-1", "1.1.1.2")
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 2)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
+
+	err = ds.AddENIIPv4Address("eni-1", "1.1.1.3")
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 3)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 3)
+
+	err = ds.DelENIIPv4Address("eni-1", "1.1.1.2")
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 2)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
+
+	// delete a unknown IP
+	err = ds.DelENIIPv4Address("eni-1", "10.10.10.10")
+	assert.Error(t, err)
+	assert.Equal(t, ds.total, 2)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
 }
 
 func TestPodIPv4Address(t *testing.T) {
