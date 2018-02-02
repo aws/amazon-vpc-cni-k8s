@@ -44,8 +44,10 @@ const (
 	secSubnet        = "10.10.20.0/24"
 	ipaddr01         = "10.10.10.11"
 	ipaddr02         = "10.10.10.12"
+	ipaddr03         = "10.10.10.13"
 	ipaddr11         = "10.10.20.11"
 	ipaddr12         = "10.10.20.12"
+	ipaddr13         = "10.10.20.13"
 	vpcCIDR          = "10.10.0.0/16"
 )
 
@@ -139,6 +141,7 @@ func TestIncreaseIPPool(t *testing.T) {
 		awsClient:     mockAWS,
 		k8sClient:     mockK8S,
 		networkClient: mockNetwork,
+		primaryIP:     make(map[string]string),
 	}
 
 	mockContext.dataStore = datastore.NewDataStore()
@@ -184,4 +187,74 @@ func TestIncreaseIPPool(t *testing.T) {
 
 	mockContext.increaseIPPool()
 
+}
+
+func TestNodeIPPoolReconcile(t *testing.T) {
+	ctrl, mockAWS, mockK8S, mockNetwork := setup(t)
+	defer ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:     mockAWS,
+		k8sClient:     mockK8S,
+		networkClient: mockNetwork,
+		primaryIP:     make(map[string]string),
+	}
+
+	mockContext.dataStore = datastore.NewDataStore()
+
+	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
+		awsutils.ENIMetadata{
+			ENIID:          primaryENIid,
+			MAC:            primaryMAC,
+			DeviceNumber:   primaryDevice,
+			SubnetIPv4CIDR: primarySubnet,
+			LocalIPv4s:     []string{ipaddr01, ipaddr02},
+		},
+	}, nil)
+
+	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
+
+	primary := true
+	notPrimary := false
+	attachmentID := testAttachmentID
+	testAddr1 := ipaddr01
+	testAddr2 := ipaddr02
+
+	mockAWS.EXPECT().DescribeENI(primaryENIid).Return(
+		[]*ec2.NetworkInterfacePrivateIpAddress{
+			&ec2.NetworkInterfacePrivateIpAddress{
+				PrivateIpAddress: &testAddr1, Primary: &primary},
+			&ec2.NetworkInterfacePrivateIpAddress{
+				PrivateIpAddress: &testAddr2, Primary: &notPrimary}}, &attachmentID, nil)
+	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
+
+	mockContext.nodeIPPoolReconcile()
+
+	curENIs := mockContext.dataStore.GetENIInfos()
+	assert.Equal(t, len(curENIs.ENIIPPools), 1)
+	assert.Equal(t, curENIs.TotalIPs, 1)
+
+	// remove 1 IP
+	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
+		awsutils.ENIMetadata{
+			ENIID:          primaryENIid,
+			MAC:            primaryMAC,
+			DeviceNumber:   primaryDevice,
+			SubnetIPv4CIDR: primarySubnet,
+			LocalIPv4s:     []string{ipaddr01},
+		},
+	}, nil)
+
+	mockContext.nodeIPPoolReconcile()
+	curENIs = mockContext.dataStore.GetENIInfos()
+	assert.Equal(t, len(curENIs.ENIIPPools), 1)
+	assert.Equal(t, curENIs.TotalIPs, 0)
+
+	// remove eni
+	mockAWS.EXPECT().GetAttachedENIs().Return(nil, nil)
+
+	mockContext.nodeIPPoolReconcile()
+	curENIs = mockContext.dataStore.GetENIInfos()
+	assert.Equal(t, len(curENIs.ENIIPPools), 0)
+	assert.Equal(t, curENIs.TotalIPs, 0)
 }

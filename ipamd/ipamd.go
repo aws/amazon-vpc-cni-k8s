@@ -49,6 +49,7 @@ type IPAMContext struct {
 
 	currentMaxAddrsPerENI int
 	maxAddrsPerENI        int
+	primaryIP             map[string]string
 }
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
@@ -77,6 +78,8 @@ func New() (*IPAMContext, error) {
 
 //TODO need to break this function down(comments from CR)
 func (c *IPAMContext) nodeInit() error {
+	c.primaryIP = make(map[string]string)
+
 	enis, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		log.Error("Failed to retrive ENI info")
@@ -144,6 +147,8 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 	for {
 		time.Sleep(ipPoolMonitorInterval)
 		c.updateIPPoolIfRequired()
+		// TODO what trigger nodeIPPoolReconcile()
+		c.nodeIPPoolReconcile()
 	}
 }
 
@@ -221,15 +226,18 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) err
 		}
 	}
 
-	c.addENIaddressesToDataStore(ec2Addrs, eni)
+	c.primaryIP[eni] = c.addENIaddressesToDataStore(ec2Addrs, eni)
 
 	return nil
 
 }
 
-func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfacePrivateIpAddress, eni string) {
+// return primary ip address on the interface
+func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfacePrivateIpAddress, eni string) string {
+	var primaryIP string
 	for _, ec2Addr := range ec2Addrs {
 		if aws.BoolValue(ec2Addr.Primary) {
+			primaryIP = aws.StringValue(ec2Addr.PrivateIpAddress)
 			continue
 		}
 		err := c.dataStore.AddENIIPv4Address(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
@@ -239,6 +247,8 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 			// TODO need to add health stats for err
 		}
 	}
+
+	return primaryIP
 }
 
 // returns all addresses on eni, the primary adderss on eni, error
@@ -305,5 +315,91 @@ func (c *IPAMContext) nodeIPPoolTooHigh() bool {
 		total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
 	return (total-used > 2*c.currentMaxAddrsPerENI)
+
+}
+
+// nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
+func (c *IPAMContext) nodeIPPoolReconcile() error {
+	log.Debug("Reconciling IP pool info...")
+	attachedENIs, err := c.awsClient.GetAttachedENIs()
+
+	if err != nil {
+		log.Error("ip pool reconcile: Failed to get attached eni info", err.Error())
+		errors.Wrap(err, "ip pool reconcile: failed to get attached eni")
+	}
+
+	curENIs := c.dataStore.GetENIInfos()
+
+	// mark phase
+	for _, attachedENI := range attachedENIs {
+		eniIPPool, err := c.dataStore.GetENIIPPools(attachedENI.ENIID)
+
+		if err == nil {
+			log.Debugf("Reconcile existing ENI %s IP pool", attachedENI.ENIID)
+			// reconcile IP pool
+			c.eniIPPoolReconcile(eniIPPool, attachedENI, attachedENI.ENIID)
+
+			// mark action= remove this eni from curENIs list
+			delete(curENIs.ENIIPPools, attachedENI.ENIID)
+			continue
+		}
+
+		// add new ENI
+		log.Debugf("Reconcile and add a new eni %s", attachedENI)
+		err = c.setupENI(attachedENI.ENIID, attachedENI)
+		if err != nil {
+			log.Errorf("ip pool reconcile: Failed to setup eni %s network: %v", attachedENI.ENIID, err)
+			//TODO should continue if having trouble with ONLY 1 eni, instead of bailout here?
+			return errors.Wrapf(err, "ip pool reconcile: failed to setup eni %v", attachedENI.ENIID)
+		}
+
+	}
+
+	// sweep phase: since the marked eni have been removed, the remaining ones needs to be sweeped
+	for eni, _ := range curENIs.ENIIPPools {
+		log.Infof("Reconcile and delete detached eni %s", eni)
+		c.dataStore.DeleteENI(eni)
+	}
+
+	return nil
+}
+
+func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInfo, attachENI awsutils.ENIMetadata, eni string) error {
+
+	for _, localIP := range attachENI.LocalIPv4s {
+		if localIP == c.primaryIP[eni] {
+			log.Debugf("Reconcile and skip primary IP %s on eni %s", localIP, eni)
+			continue
+		}
+
+		err := c.dataStore.AddENIIPv4Address(eni, localIP)
+
+		if err != nil && err.Error() == datastore.DuplicateIPError {
+			log.Debugf("Reconciled IP %s on eni %s", localIP, eni)
+			// mark action = remove it from eniPool
+			delete(ipPool, localIP)
+			continue
+		}
+
+		if err != nil {
+			log.Errorf("Failed to reconcile IP %s on eni %s", localIP, eni)
+			return errors.Wrapf(err, "ip pool reconcile: failed to reconcile ip %s on eni %s", localIP, eni)
+		}
+
+	}
+
+	// sweep phase, delete remaining IPs
+
+	for existingIP, _ := range ipPool {
+		log.Debugf("Reconcile and delete ip %s on eni %s", existingIP, eni)
+		err := c.dataStore.DelENIIPv4Address(eni, existingIP)
+		if err != nil {
+			log.Errorf("Failed to reconcile and delete IP %s on eni %s, %v", existingIP, eni, err)
+			//TODO should contine instead of bailout due to one ip ?
+			return errors.Wrapf(err, "ip pool reconcile: failed to reconcile and delete IP %s on eni %s", existingIP, eni)
+		}
+	}
+
+	return nil
 
 }
