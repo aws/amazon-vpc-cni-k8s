@@ -77,6 +77,7 @@ type Iterator struct {
 	captureStartedAt int
 	captured         []byte
 	Error            error
+	Attachment       interface{} // open for customized decoder
 }
 
 // NewIterator creates an empty Iterator instance
@@ -167,7 +168,7 @@ func (iter *Iterator) isObjectEnd() bool {
 	if c == '}' {
 		return true
 	}
-	iter.ReportError("isObjectEnd", "object ended prematurely")
+	iter.ReportError("isObjectEnd", "object ended prematurely, unexpected char "+string([]byte{c}))
 	return true
 }
 

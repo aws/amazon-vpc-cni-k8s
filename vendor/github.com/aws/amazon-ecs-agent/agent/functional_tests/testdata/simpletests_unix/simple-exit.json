@@ -1,0 +1,10 @@
+{
+  "Name": "SimpleExit",
+  "Description": "Tests that the basic premis of this testing fromwork works (e.g. exit codes go through, etc)",
+  "TaskDefinition": "simple-exit",
+  "Version": ">=1.0.0",
+  "Timeout": "2m",
+  "ExitCodes": {
+    "exit": 42
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "family": "ecsftest-oom-container-windows",
+  "containerDefinitions": [{
+    "essential": true,
+    "memory": 256,
+    "name": "memory-overcommit",
+    "cpu": 512,
+    "image": "amazon/amazon-ecs-windows-python:make",
+    "command": ["python", "-c", "import time; time.sleep(30); foo=' '*1024*1024*1024;"]
+  }]
+}
+

@@ -1,0 +1,40 @@
+{
+  "family": "datavolume-example",
+  "volumes": [{
+    "name": "vol",
+    "host": {}
+  }],
+  "containerDefinitions": [{
+    "name": "datavolume",
+    "image": "127.0.0.1:51670/busybox:latest",
+    "memory": 20,
+    "mountPoints": [{
+      "sourceVolume": "vol",
+      "containerPath": "/data"
+    }],
+    "essential": false
+  }, {
+    "name": "a",
+    "image": "127.0.0.1:51670/busybox:latest",
+    "memory": 20,
+    "command": ["sh", "-c", "echo 42 | nc -l -p 9000"],
+    "volumesFrom": [{
+      "sourceContainer": "datavolume"
+    }]
+  }, {
+    "name": "exit",
+    "image": "127.0.0.1:51670/busybox:latest",
+    "memory": 20,
+    "portMappings": [{
+      "containerPort": 80
+    }],
+    "volumesFrom": [{
+      "sourceContainer": "datavolume"
+    }],
+    "links": [
+      "a:a"
+      ],
+    "command": ["sh", "-c", "sleep 1; exit `nc a:9000`"]
+  }]
+}
+

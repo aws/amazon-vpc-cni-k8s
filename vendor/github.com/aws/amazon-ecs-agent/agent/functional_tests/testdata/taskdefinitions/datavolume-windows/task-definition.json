@@ -1,0 +1,39 @@
+{
+  "family": "ecsinteg-datavolume-test",
+  "volumes": [{
+    "name": "test",
+    "host": {}
+  }],
+  "containerDefinitions": [{
+    "image": "microsoft/windowsservercore:latest",
+    "name": "exit",
+    "cpu": 512,
+    "memory": 256,
+    "essential": true,
+    "volumesFrom": [{
+      "sourceContainer": "data-volume-source"
+    }],
+    "command": ["powershell", "-c", "while (1) { sleep 1; if (test-path \"C:/data/success\") { exit 42 }}; done"]
+  }, {
+    "image": "microsoft/windowsservercore:latest",
+    "name": "dataSource",
+    "cpu": 512,
+    "memory": 256,
+    "essential": false,
+    "volumesFrom": [{
+      "sourceContainer": "data-volume-source"
+    }],
+    "command": ["powershell", "-c", "New-Item -ItemType file C:/data/success"]
+  }, {
+    "image": "microsoft/windowsservercore:latest",
+    "name": "data-volume-source",
+    "cpu": 512,
+    "memory": 256,
+    "essential": false,
+    "mountPoints": [{
+      "sourceVolume": "test",
+      "containerPath": "C:/data/"
+    }],
+    "command": ["data volumes shouldn't need to run"]
+  }]
+}

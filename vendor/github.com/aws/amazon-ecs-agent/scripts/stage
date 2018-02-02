@@ -1,0 +1,190 @@
+#!/bin/bash
+# Copyright 2014-2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the
+# "License"). You may not use this file except in compliance
+#  with the License. A copy of the License is located at
+#
+#     http://aws.amazon.com/apache2.0/
+#
+# or in the "license" file accompanying this file. This file is
+# distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+# CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and
+# limitations under the License.
+
+set -e
+
+DRYRUN=true
+SKIP_REBUILD=false
+
+IMAGE_NAME=""
+
+AWS_PROFILE=""
+S3_BUCKET=""
+S3_ACL_OVERRIDE=""
+DEVCON_ZIP_URI="s3://amazon-ecs-devcon/devcon-3a3f98688359aa1b905147831f910218.zip"
+
+source $(dirname "${0}")/publishing-common.sh
+
+usage() {
+	echo "Usage: ${0} -b BUCKET [OPTIONS]"
+	echo
+	echo "This script is responsible for staging new versions of the Amazon ECS Container Agent."
+	echo "1. (Optionally) Push the image to a registry, tagged with :latest, :VERSION, and :SHA"
+	echo "2. Push the image (and its md5sum) to S3 with -latest, -VERSION, and -SHA"
+	echo
+	echo "Options"
+	echo "  -d  true|false  Dryrun (default is true)"
+	echo "  -p  PROFILE     AWS CLI Profile (default is none)"
+	echo "  -b  BUCKET      AWS S3 Bucket"
+	echo "  -a  ACL         AWS S3 Object Canned ACL (default is public-read)"
+	echo "  -i  IMAGE       Docker image name"
+	echo "  -o  TARGET_OS   Build for the given OS (default is linux)"
+	echo "  -s              Skip re-build"
+	echo "  -h              Display this help message"
+}
+
+stage_s3() {
+	tarball="$(mktemp)"
+	tarball_md5="$(mktemp)"
+	tarball_manifest="$(mktemp)"
+
+	trap "rm -r \"${tarball}\" \"${tarball_md5}\" \"${tarball_manifest}\"" RETURN EXIT
+
+	generate_manifest ${IMAGE_TAG_VERSION} > "${tarball_manifest}"
+
+	docker save "amazon/amazon-ecs-agent:latest" > "${tarball}"
+	md5sum "${tarball}" | sed 's/ .*//' > "${tarball_md5}"
+	echo "Saved with md5sum $(cat ${tarball_md5})"
+
+	for tag in ${IMAGE_TAG_VERSION} ${IMAGE_TAG_SHA} ${IMAGE_TAG_LATEST}; do
+		echo "Publishing as ecs-agent-${tag}"
+		dryval s3_cp "${tarball}" "s3://${S3_BUCKET}/ecs-agent-${tag}.tar"
+		dryval s3_cp "${tarball_md5}" "s3://${S3_BUCKET}/ecs-agent-${tag}.tar.md5"
+		dryval s3_cp "${tarball_manifest}" "s3://${S3_BUCKET}/ecs-agent-${tag}.tar.json"
+	done
+
+	rm "${tarball}"
+	rm "${tarball_md5}"
+	rm "${tarball_manifest}"
+}
+
+stage_windows_s3() {
+	local ziproot="$(mktemp -d)"
+	local ziptgtdir="$(mktemp -d)"
+	local zipfile="${ziptgtdir}/amazon-ecs-agent"
+	local zip_md5="$(mktemp)"
+	local zip_manifest="$(mktemp)"
+
+	trap "rm -r \"${ziproot}\" \"${ziptgtdir}\" \"${zip_md5}\" \"${zip_manifest}\"" RETURN EXIT
+
+	generate_manifest ${IMAGE_TAG_VERSION} > "${zip_manifest}"
+
+	install_devcon "${ziproot}"
+	cp LICENSE "${ziproot}"
+	cp out/amazon-ecs-agent.exe "${ziproot}"
+	cp -v misc/windows-deploy/*.ps1 "${ziproot}"
+	pushd "${ziproot}"
+	zip "${zipfile}" *
+	md5sum "${zipfile}.zip" | sed 's/ .*//' > "${zip_md5}"
+	echo "Saved with md5sum $(cat ${zip_md5})"
+
+	for tag in ${IMAGE_TAG_VERSION} ${IMAGE_TAG_SHA} ${IMAGE_TAG_LATEST}; do
+		dryval s3_cp "${zipfile}.zip" "s3://${S3_BUCKET}/ecs-agent-windows-${tag}.zip"
+		dryval s3_cp "${zip_md5}" "s3://${S3_BUCKET}/ecs-agent-windows-${tag}.zip.md5"
+		dryval s3_cp "${zip_manifest}" "s3://${S3_BUCKET}/ecs-agent-windows-${tag}.zip.json"
+	done
+	popd
+
+	rm "${ziproot}"
+	rm "${ziptgtdir}"
+	rm "${zip_md5}"
+	rm "${zip_manifest}"
+}
+
+install_devcon() {
+	local ziproot="$1"
+	local zipfile=$(mktemp)
+	local md5file=$(mktemp)
+	trap "rm -vf \"${zipfile}\" \"${md5file}\"" RETURN EXIT
+	s3_cp "$DEVCON_ZIP_URI" "${zipfile}"
+	s3_cp "${DEVCON_ZIP_URI}.md5" "${md5file}"
+	if ! check_md5 "${zipfile}" "${md5file}"; then
+		echo "${DEVCON_ZIP_URI} did not match expected checksum." >&2
+		exit 1
+	fi
+	pushd "${ziproot}"
+	unzip "${zipfile}"
+	popd
+}
+
+generate_manifest() {
+	local version=$1
+
+	echo "{\"agentVersion\":\"${version}\"}"
+}
+
+while getopts ":d:p:b:i:a:o:sh" opt; do
+	case ${opt} in
+		d)
+			if [[ "${OPTARG}" = "false" ]]; then
+				DRYRUN=false
+			fi
+			;;
+		p)
+			AWS_PROFILE="${OPTARG}"
+			;;
+		b)
+			S3_BUCKET="${OPTARG}"
+			;;
+		a)
+			S3_ACL_OVERRIDE="${OPTARG}"
+			;;
+		i)
+			IMAGE_NAME="${OPTARG}"
+			;;
+		s)
+			SKIP_REBUILD=true
+			;;
+		o)
+			TARGET_OS="${OPTARG}"
+			;;
+		e)
+			DEVCON_ZIP_URI="${OPTARG}"
+			;;
+		\?)
+			echo "Invalid option -${OPTARG}" >&2
+			usage
+			exit 1
+			;;
+		:)
+			echo "Option -${OPTARG} requires an argument." >&2
+			usage
+			exit 1
+			;;
+		h)
+			usage
+			exit 0
+			;;
+	esac
+done
+
+if [ -z "${S3_BUCKET}" ]; then
+	usage
+	exit 1
+fi
+
+if [ "${TARGET_OS}" != "windows" ]; then
+	if ! $(${SKIP_REBUILD}); then
+		TARGET_OS="${TARGET_OS}" make release
+	fi
+
+	tag_and_push_docker
+	stage_s3
+else
+	if ! $(${SKIP_REBUILD}); then
+		TARGET_OS="${TARGET_OS}" make docker-release
+	fi
+	stage_windows_s3
+fi

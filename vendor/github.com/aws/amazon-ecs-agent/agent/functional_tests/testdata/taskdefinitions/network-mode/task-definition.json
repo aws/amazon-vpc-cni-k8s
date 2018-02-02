@@ -1,0 +1,10 @@
+{
+  "family": "ecsftest-networkmode",
+  "networkMode": "$$$$NETWORK_MODE$$$$",
+  "containerDefinitions": [{
+    "image": "busybox:latest",
+    "command": ["sleep", "1m"],
+    "name": "network-$$$$NETWORK_MODE$$$$",
+    "memory": 50
+  }]
+}

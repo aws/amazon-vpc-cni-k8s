@@ -1,0 +1,57 @@
+{
+  "family": "ecsftest-network-link-2",
+  "containerDefinitions": [{
+    "name": "a",
+    "image": "127.0.0.1:51670/busybox:latest",
+    "cpu": 0,
+    "memory": 8,
+    "essential": true,
+    "command": ["sh", "-c", "while true; do sleep 1; done"]
+  },
+  {
+    "name": "b",
+    "image": "127.0.0.1:51670/busybox:latest",
+    "links": ["a:a"],
+    "cpu": 0,
+    "memory": 8,
+    "essential": true,
+    "command": ["sh", "-c", "while true; do sleep 1; done"]
+  },
+  {
+    "name": "bb",
+    "image": "127.0.0.1:51670/busybox:latest",
+    "links": ["a:a"],
+    "volumesFrom": [{"sourceContainer": "a"}],
+    "cpu": 0,
+    "memory": 8,
+    "essential": true,
+    "command": ["sh", "-c", "while true; do sleep 1; done"]
+  },
+  {
+    "name": "c",
+    "image": "127.0.0.1:51670/busybox:latest",
+    "links": ["a:a", "bb:bb", "b:b"],
+    "volumesFrom": [{"sourceContainer": "a"}],
+    "cpu": 0,
+    "memory": 8,
+    "essential": true,
+    "command": ["sh", "-c", "while true; do sleep 1; done"]
+  },
+  {
+    "name": "d",
+    "image": "127.0.0.1:51670/busybox:latest",
+    "volumesFrom": [{"sourceContainer": "c"}],
+    "cpu": 0,
+    "memory": 8,
+    "essential": true,
+    "command": ["sh", "-c", "while true; do sleep 1; done"]
+  },
+  {
+    "name": "exit",
+    "image": "127.0.0.1:51670/busybox:latest",
+    "cpu": 0,
+    "memory": 8,
+    "links": ["d:d"],
+    "command": ["sh", "-c", "exit 42"]
+  }]
+}

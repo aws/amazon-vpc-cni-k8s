@@ -1,0 +1,10 @@
+{
+  "Name": "SecurityOptNoNewPrivileges",
+  "Description": "Check that security-opt=no-new-privileges works",
+  "TaskDefinition": "security-opt-nonewprivileges",
+  "Version": ">=1.12.1",
+  "Timeout": "2m",
+  "ExitCodes": {
+    "exit": 42
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "Name": "Hostname",
+  "Description": "Check that hostname works",
+  "TaskDefinition": "hostname",
+  "Version": ">=1.5.0",
+  "Timeout": "2m",
+  "ExitCodes": {
+    "exit": 42
+  }
+}

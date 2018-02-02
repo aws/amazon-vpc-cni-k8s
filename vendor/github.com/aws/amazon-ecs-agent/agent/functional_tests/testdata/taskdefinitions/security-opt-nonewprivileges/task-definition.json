@@ -1,0 +1,10 @@
+{
+  "family": "security-opt-nonewprivileges",
+  "containerDefinitions": [{
+    "image": "amazon/testnnp:make",
+    "name": "exit",
+    "portBindings": [],
+    "memory": 50,
+    "dockerSecurityOptions": ["no-new-privileges"]
+  }]
+}

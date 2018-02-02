@@ -1,0 +1,19 @@
+{
+  "family": "ecsftest-devices",
+  "containerDefinitions": [{
+    "image": "127.0.0.1:51670/ubuntu:latest",
+    "name": "exit",
+    "cpu": 10,
+    "memory": 10,
+    "linuxParameters": {
+      "devices":[
+        {
+          "hostPath": "/dev/xvda",
+          "containerPath": "/dev/sda",
+          "permissions": ["read"]
+        }
+      ]
+    },
+    "command": ["sh", "-c", "if ls /dev/sda && ! fdisk /dev/sda; then exit 42; else exit 1; fi"]
+  }]
+}

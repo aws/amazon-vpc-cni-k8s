@@ -1,0 +1,17 @@
+{
+  "family": "ecsinteg-network-link",
+  "containerDefinitions": [{
+    "name": "nginx",
+    "image": "127.0.0.1:51670/nginx:latest",
+    "cpu": 20,
+    "memory": 20,
+    "essential": true
+  }, {
+    "name": "exit",
+    "image": "127.0.0.1:51670/busybox:latest",
+    "cpu": 10,
+    "memory": 10,
+    "links": ["nginx:nginx"],
+    "command": ["sh", "-c", "sleep 1; wget -O- http://nginx && exit 42; exit -1"]
+  }]
+}

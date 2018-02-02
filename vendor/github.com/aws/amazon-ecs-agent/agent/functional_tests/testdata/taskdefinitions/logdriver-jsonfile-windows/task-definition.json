@@ -1,0 +1,18 @@
+{
+  "family": "ecsinteg-json-file-rollover",
+  "containerDefinitions": [{
+    "image": "microsoft/windowsservercore:latest",
+    "name": "exit",
+    "memory": 256,
+    "cpu": 512,
+    "logConfiguration": {
+      "logDriver": "json-file",
+      "options": {
+        "max-file": "50",
+        "max-size": "50k"
+      }
+    },
+    "entryPoint": ["powershell"],
+    "command": ["echo", "helloworld"]
+  }]
+}

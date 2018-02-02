@@ -1,0 +1,15 @@
+{
+  "family": "ecsinteg-invalid-image",
+  "containerDefinitions": [{
+    "volumesFrom": [],
+    "portMappings": [{
+      "containerPort": 80
+    }],
+    "essential": true,
+    "memory": 256,
+    "name": "error",
+    "cpu": 1,
+    "image": "example.com/nonexistent"
+  }]
+}
+

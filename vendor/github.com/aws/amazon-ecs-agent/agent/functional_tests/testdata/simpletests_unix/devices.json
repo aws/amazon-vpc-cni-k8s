@@ -1,0 +1,10 @@
+{
+  "Name": "Devices",
+  "Description": "checks that adding devices works",
+  "TaskDefinition": "devices",
+  "Version": ">=1.0.0",
+  "Timeout": "2m",
+  "ExitCodes": {
+    "exit": 42
+  }
+}

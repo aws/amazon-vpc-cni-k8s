@@ -1,0 +1,25 @@
+{
+  "Arn":"arn:aws:ecs:us-west-2:123456789012:task/12345678-90ab-cdef-1234-56780abcdef1-circular-dependency",
+  "Family":"circular-dependency",
+  "Version":"2",
+  "Containers":
+  [{
+    "Name": "web",
+    "Image": "busybox",
+    "Command": ["sleep", "1000"],
+    "Links":["web-db:web-db"]
+  },
+  {
+    "Name": "web-db",
+    "Image": "busybox",
+    "Command": ["sleep", "1000"],
+    "volumesFrom": [{
+        "sourceContainer": "web"
+    }]
+  }],
+  "volumes": [],
+  "DesiredStatus": "RUNNING",
+  "KnownStatus": "NONE",
+  "KnownTime": "0001-01-01T00:00:00Z",
+  "SentStatus": "NONE"
+}

@@ -1,0 +1,10 @@
+{
+  "Name": "ParallelPull",
+  "Description": "check docker pull in parallel works for docker >= 1.11.1",
+  "TaskDefinition": "parallel-pull",
+  "Version": ">=1.0.0",
+  "DockerVersion": ">=1.11.1",
+  "Timeout": "1m",
+  "Count": 4,
+  "Daemon": true
+}

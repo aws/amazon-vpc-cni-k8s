@@ -1,0 +1,31 @@
+{
+   "family":"ecs-fts-fluentd-driver",
+   "containerDefinitions":[
+      {
+         "memory":100,
+         "name":"fluentd-driver",
+         "cpu":10,
+         "image":"127.0.0.1:51670/amazon/fluentd:latest",
+         "portMappings":[
+            {
+               "containerPort":24224,
+               "hostPort":24224
+            }
+         ],
+         "mountPoints":[
+            {
+               "sourceVolume":"logs",
+               "containerPath":"/fluentd/log"
+            }
+         ]
+      }
+   ],
+   "volumes":[
+      {
+         "name":"logs",
+         "host":{
+            "sourcePath":"/tmp"
+         }
+      }
+   ]
+}

@@ -1,0 +1,10 @@
+{
+  "Name": "NetworkLink",
+  "Description": "Tests that basic network linking works",
+  "TaskDefinition": "network-link",
+  "Version": ">=1.0.0",
+  "Timeout": "2m",
+  "ExitCodes": {
+    "exit": 42
+  }
+}

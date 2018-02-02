@@ -1,0 +1,11 @@
+{
+  "family": "ecsftest-hostname",
+  "containerDefinitions": [{
+    "image": "busybox:latest",
+    "name": "exit",
+    "cpu": 10,
+    "memory": 10,
+    "hostname": "foobarbaz",
+    "command": ["sh", "-c", "[ \"$(hostname)\" == \"foobarbaz\" ] && exit 42 || exit 1"]
+  }]
+}
