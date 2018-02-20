@@ -26,9 +26,9 @@ spec:
       - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:0.1.2
         name: aws-node
         env:
-          - name: ECS_CNI_LOGLEVEL
+          - name: AWS_VPC_K8S_CNI_LOGLEVEL
             value: DEBUG
-          - name: EKS_CNI_VETHPREFIX
+          - name: AWS_VPC_K8S_CNI_VETHPREFIX
             value: cali
         resources:
           requests:
