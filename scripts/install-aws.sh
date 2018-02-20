@@ -1,5 +1,5 @@
 echo "=====Starting installing AWS-CNI ========="
-sed -i s/__VETHPREFIX__/${EKS_CNI_VETHPREFIX:-"eni"}/g /app/aws.conf
+sed -i s/__VETHPREFIX__/${AWS_VPC_K8S_CNI_VETHPREFIX:-"eni"}/g /app/aws.conf
 cp /app/aws-cni /host/opt/cni/bin/
 cp /app/aws-cni-support.sh /host/opt/cni/bin/
 cp /app/aws.conf /host/etc/cni/net.d/
