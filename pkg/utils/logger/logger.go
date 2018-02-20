@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	envLogLevel    = "ECS_CNI_LOGLEVEL"
-	envLogFilePath = "ECS_CNI_LOG_FILE"
+	envLogLevel    = "AWS_VPC_K8S_CNI_LOGLEVEL"
+	envLogFilePath = "AWS_VPC_K8S_CNI_LOG_FILE"
 	// logConfigFormat defines the seelog format, with a rolling file
 	// writer. We cannot do this in code and have to resort to using
 	// LoggerFromConfigAsString as seelog doesn't have a usable public

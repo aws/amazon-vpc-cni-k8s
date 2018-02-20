@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aws/amazon-ecs-cni-plugins/pkg/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
 	log "github.com/cihub/seelog"
 	"math/rand"
