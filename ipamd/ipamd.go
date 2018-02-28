@@ -15,6 +15,7 @@ package ipamd
 
 import (
 	"net"
+	"strings"
 	"time"
 
 	log "github.com/cihub/seelog"
@@ -49,6 +50,10 @@ type IPAMContext struct {
 
 	currentMaxAddrsPerENI int
 	maxAddrsPerENI        int
+	// maxENI indicate the maximum number of ENIs can be attached to the instance
+	// It is initialized to 0 and it is set to current number of ENIs attached
+	// when ipamD receives AttachmentLimitExceeded error
+	maxENI int
 }
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
@@ -164,10 +169,24 @@ func (c *IPAMContext) decreaseIPPool() {
 	c.awsClient.FreeENI(eni)
 }
 
+func isAttachmentLimitExceededError(err error) bool {
+	return strings.Contains(err.Error(), "AttachmentLimitExceeded")
+}
+
 func (c *IPAMContext) increaseIPPool() {
+
+	if (c.maxENI > 0) && (c.maxENI == c.dataStore.GetENIs()) {
+		log.Debugf("Skipping increase IPPOOL due to max ENI already attached to the instance : %d", c.maxENI)
+		return
+	}
 	eni, err := c.awsClient.AllocENI()
 	if err != nil {
 		log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
+
+		if isAttachmentLimitExceededError(err) {
+			c.maxENI = c.dataStore.GetENIs()
+			log.Infof("Discovered the instance max ENI allowed is: %d", c.maxENI)
+		}
 		// TODO need to add health stats
 		return
 	}
