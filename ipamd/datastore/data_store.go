@@ -359,3 +359,10 @@ func (ds *DataStore) GetENIInfos() *ENIInfos {
 	}
 	return &eniInfos
 }
+
+// GetENIs provides the number of ENI in the datastore
+func (ds *DataStore) GetENIs() int {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+	return len(ds.eniIPPools)
+}
