@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"net"
 	"os/exec"
+	"strings"
 	"syscall"
 
 	"github.com/pkg/errors"
@@ -63,6 +64,10 @@ func New() NetworkAPIs {
 		ns: nswrapper.NewNS()}
 }
 
+func isDuplicateRuleAdd(err error) bool {
+	return strings.Contains(err.Error(), "File exists")
+}
+
 // SetupNodeNetwork performs node level network configuration
 // TODO : implement ip rule not to 10.0.0.0/16(vpc'subnet) table main priority  1024
 func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP) error {
@@ -87,7 +92,12 @@ func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP
 
 	if err := runCmd.Run(); err != nil {
 		log.Errorf("Unable to run command(%s %s)  %v: %s", path, cmd, err, stderr.String())
-		return err
+		// In some OS, when L-IPAMD restarts and add node level same rule again, it returns an error.
+		// And this prevent rolling update. disable it for now
+		//TODO: figure out better error handling instead of just return err and quit
+		if !isDuplicateRuleAdd(err) {
+			return err
+		}
 	}
 
 	ipt, err := iptables.New()
