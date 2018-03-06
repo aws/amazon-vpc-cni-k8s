@@ -64,10 +64,6 @@ func New() NetworkAPIs {
 		ns: nswrapper.NewNS()}
 }
 
-func isDuplicateRuleAdd(err error) bool {
-	return strings.Contains(err.Error(), "File exists")
-}
-
 // SetupNodeNetwork performs node level network configuration
 // TODO : implement ip rule not to 10.0.0.0/16(vpc'subnet) table main priority  1024
 func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP) error {
@@ -89,20 +85,23 @@ func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP
 		Path:   path,
 		Args:   cmd,
 		Stderr: &stderr}
-
 	if err := runCmd.Run(); err != nil {
 		log.Errorf("Unable to run command(%s %s)  %v: %s", path, cmd, err, stderr.String())
 		// In some OS, when L-IPAMD restarts and add node level same rule again, it returns an error.
 		// And this prevent rolling update. disable it for now
 		//TODO: figure out better error handling instead of just return err and quit
-		if !isDuplicateRuleAdd(err) {
+		if !strings.Contains(stderr.String(), "File exists") {
 			return err
 		}
+		log.Debugf("The host level rule already exists")
 	}
+
+	log.Debugf("Trying to setup host level ip table rule")
 
 	ipt, err := iptables.New()
 
 	if err != nil {
+		log.Errorf("Failed to create iptables: %v", err)
 		return errors.Wrap(err, "host network setup: failed to create iptables")
 	}
 
@@ -111,6 +110,7 @@ func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP
 	exists, err := ipt.Exists("nat", "POSTROUTING", natCmd...)
 
 	if err != nil {
+		log.Errorf("Failed to check if the host rule exsits already:%v", err)
 		return errors.Wrapf(err, "host network setup: failed to add POSTROUTING rule for primary address %s", primaryAddr)
 	}
 
@@ -118,6 +118,7 @@ func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP
 		err = ipt.Append("nat", "POSTROUTING", natCmd...)
 
 		if err != nil {
+			log.Errorf("Failed to append host POSTROUTING rule for primary address: %v", err)
 			return errors.Wrapf(err, "host network setup: failed to append POSTROUTING rule for primary adderss %s", primaryAddr)
 		}
 	}
