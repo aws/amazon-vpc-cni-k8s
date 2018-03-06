@@ -106,7 +106,8 @@ func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP
 		return errors.Wrap(err, "host network setup: failed to create iptables")
 	}
 
-	natCmd := []string{"!", "-d", vpcCIDR.String(), "-m", "comment", "--comment", "AWS, SNAT",
+	// None of the 10.0.0.0/8 CIDR block needs to be SNAT'd
+	natCmd := []string{"!", "-d", "10.0.0.0/8", "-m", "comment", "--comment", "AWS, SNAT",
 		"-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", primaryAddr.String()}
 	exists, err := ipt.Exists("nat", "POSTROUTING", natCmd...)
 
