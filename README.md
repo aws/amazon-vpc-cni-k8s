@@ -1,6 +1,10 @@
 # amazon-vpc-cni-k8s
 Networking plugin for pod networking in [Kubernetes](https://kubernetes.io/) using [Elastic Network Interfaces](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html) on AWS.
 
+## Why this Fork
+
+The plugin sets up iptable SNAT rules to change any outside VPC traffic to use the Primary IP address on the Primary ENI. This is non-configurable. Unfortunately, this broke routing in our clusters that are VPC peered. We've just manually configured the iptables rule to not just include the VPC cidr that the pod is in, but the entire 10.0.0.0/8 block (which all of our VPCs are in) as a workaround.
+
 ## Status
 
 **Alpha**  This is an experimental release as part of the [Amazon EKS](https://aws.amazon.com/eks/) Preview.
