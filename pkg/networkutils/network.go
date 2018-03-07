@@ -14,9 +14,7 @@
 package networkutils
 
 import (
-	"bytes"
 	"net"
-	"os/exec"
 	"strings"
 	"syscall"
 
@@ -38,6 +36,7 @@ const (
 	// 513 - 1023, can be used priority lower than toPodRulePriority but higher than default nonVPC CIDR rule
 
 	// 1024 is reserved for (ip rule not to <vpc's subnet> table main)
+	hostRulePriority = 1024
 
 	// 1025 - 1535 can be used priority lower than fromPodRulePriority but higher than default nonVPC CIDR rule
 	fromPodRulePriority = 1536
@@ -72,32 +71,24 @@ func isDuplicateRuleAdd(err error) bool {
 // TODO : implement ip rule not to 10.0.0.0/16(vpc'subnet) table main priority  1024
 func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP) error {
 
-	//TODO : temporary implement "ip rule not to vpc cider table main priority 1024
-	cmd := append([]string{"ip", "rule", "add", "not", "to", vpcCIDR.String(), "table", "main", "priority", "1024"})
+	hostRule := os.netLink.NewRule()
+	hostRule.Dst = vpcCIDR
+	hostRule.Table = mainRoutingTable
+	hostRule.Priority = hostRulePriority
+	hostRule.Invert = true
 
-	path, err := exec.LookPath("ip")
-
-	if err != nil {
-		log.Errorf("Unable to add network config for the host,'ip' command is not found in path: %v", err)
-		return errors.Wrap(err, "host network setup: unable to add network config, 'ip' command is found")
+	// if this is a restart, cleanup previous rule first
+	err := os.netLink.RuleDel(hostRule)
+	if err != nil && !containsNoSuchRule(err) {
+		log.Errorf("Failed to cleanup old host IP rule: %v", err)
+		return errors.Wrapf(err, "host network setup: failed to delete old host rule")
 	}
 
-	log.Debugf("Trying to execute command[%v %v]", path, cmd)
+	err = os.netLink.RuleAdd(hostRule)
 
-	var stderr bytes.Buffer
-	runCmd := exec.Cmd{
-		Path:   path,
-		Args:   cmd,
-		Stderr: &stderr}
-
-	if err := runCmd.Run(); err != nil {
-		log.Errorf("Unable to run command(%s %s)  %v: %s", path, cmd, err, stderr.String())
-		// In some OS, when L-IPAMD restarts and add node level same rule again, it returns an error.
-		// And this prevent rolling update. disable it for now
-		//TODO: figure out better error handling instead of just return err and quit
-		if !isDuplicateRuleAdd(err) {
-			return err
-		}
+	if err != nil {
+		log.Errorf("Failed to add host IP rule: %v", err)
+		return errors.Wrapf(err, "host network setup: failed to add host rule")
 	}
 
 	ipt, err := iptables.New()
@@ -123,6 +114,13 @@ func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP
 	}
 
 	return nil
+}
+
+func containsNoSuchRule(err error) bool {
+	if errno, ok := err.(syscall.Errno); ok {
+		return errno == syscall.ENOENT
+	}
+	return false
 }
 
 // LinkByMac returns linux netlink based on interface MAC
