@@ -13,11 +13,15 @@
 #
 
 # build binary
+
+GOOS ?= linux
+GOARCH ?= amd64 
+
 static:
-	go build -o aws-k8s-agent main.go
-	go build -o aws-cni plugins/routed-eni/cni.go
-	go build verify-aws.go
-	go build verify-network.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o aws-k8s-agent main.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o aws-cni plugins/routed-eni/cni.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) go build verify-aws.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) go build verify-network.go
 
 # need to bundle certificates
 certs: misc/certs/ca-certificates.crt
@@ -27,7 +31,7 @@ misc/certs/ca-certificates.crt:
 
 
 # build docker image
-docker: certs
+docker: static certs
 	@docker build -f scripts/dockerfiles/Dockerfile.release -t "889883130442.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:latest" .
 	@echo "Built Docker image \"amazon/amazon-k8s-cni:latest\""
 
