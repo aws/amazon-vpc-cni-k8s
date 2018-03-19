@@ -13,4 +13,4 @@
 
 package driver
 
-// go:generate go run ../../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/plugins/routed-eni/driver NetworkAPIs mocks/driver_mocks.go
+// go:generate go run ../../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/cni/driver NetworkAPIs mocks/driver_mocks.go

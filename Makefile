@@ -15,7 +15,7 @@
 # build binary
 static:
 	go build -o aws-k8s-agent main.go
-	go build -o aws-cni plugins/routed-eni/cni.go
+	go build -o aws-cni cni/cni.go
 	go build verify-aws.go
 	go build verify-network.go
 

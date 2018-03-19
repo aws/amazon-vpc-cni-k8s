@@ -7,8 +7,9 @@ import (
 	"github.com/aws/amazon-ecs-cni-plugins/pkg/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 
-	log "github.com/cihub/seelog"
 	"math/rand"
+
+	log "github.com/cihub/seelog"
 )
 
 var testEC2Instance *awsutils.EC2InstanceMetadataCache

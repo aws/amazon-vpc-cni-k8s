@@ -18,10 +18,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
 	"net"
 	"runtime"
+
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 
 	log "github.com/cihub/seelog"
 
@@ -34,10 +35,10 @@ import (
 	"github.com/containernetworking/cni/pkg/types/current"
 	cniSpecVersion "github.com/containernetworking/cni/pkg/version"
 
+	"github.com/aws/amazon-vpc-cni-k8s/cni/driver"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/grpcwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/rpcwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/typeswrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/plugins/routed-eni/driver"
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 )
 
