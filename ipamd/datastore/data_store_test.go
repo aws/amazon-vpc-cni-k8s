@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/k8sapi"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -18,12 +18,10 @@ import (
 	"testing"
 	//"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/awsutils"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/awsutils/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/k8sapi"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"

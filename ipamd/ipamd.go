@@ -25,10 +25,10 @@ import (
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/k8sapi"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/networkutils"
 )
 
 // Package ipamd is a long running daemon which manages a warn-pool of available IP addresses.

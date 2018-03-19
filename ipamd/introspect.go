@@ -22,7 +22,7 @@ import (
 
 	log "github.com/cihub/seelog"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/utils"
 )
 
 const (

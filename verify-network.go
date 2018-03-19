@@ -18,7 +18,7 @@ import (
 	"net"
 
 	"github.com/aws/amazon-vpc-cni-k8s/cni/driver"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/networkutils"
 )
 
 const (

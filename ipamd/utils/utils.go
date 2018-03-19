@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/ttime"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/utils/ttime"
 )
 
 func DefaultIfBlank(str string, default_value string) string {

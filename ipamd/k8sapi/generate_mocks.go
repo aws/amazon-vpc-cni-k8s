@@ -13,4 +13,4 @@
 
 package k8sapi
 
-//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi K8SAPIs mocks/k8sapi_mocks.go
+//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/ipamd/k8sapi K8SAPIs mocks/k8sapi_mocks.go
