@@ -18,15 +18,10 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/pkg/errors"
-
-	log "github.com/cihub/seelog"
-
 	"github.com/coreos/go-iptables/iptables"
+	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
 )
 
 const (
@@ -44,23 +39,34 @@ const (
 	mainRoutingTable = 254
 )
 
-// NetworkAPIs defines the host level and the eni level network related operations
-type NetworkAPIs interface {
+// Network defines the host level and the eni level network related operations
+type Network interface {
 	// SetupNodeNetwork performs node level network configuration
 	SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP) error
 	// SetupENINetwork performs eni level network configuration
 	SetupENINetwork(eniIP string, mac string, table int, subnetCIDR string) error
 }
 
+type netLinker interface {
+	// LinkSetUp is equivalent to `ip link set $link up`
+	LinkSetUp(link netlink.Link) error
+	// LinkList is equivalent to: `ip link show`
+	LinkList() ([]netlink.Link, error)
+	// RouteAdd will add a route to the route table
+	RouteAdd(route *netlink.Route) error
+	// RouteDel is equivalent to `ip route del`
+	RouteDel(route *netlink.Route) error
+	RuleAdd(rule *netlink.Rule) error
+	RuleDel(rule *netlink.Rule) error
+}
+
 type linuxNetwork struct {
-	netLink netlinkwrapper.NetLink
-	ns      nswrapper.NS
+	netLink netLinker
 }
 
 // New creates a linuxNetwork object
-func New() NetworkAPIs {
-	return &linuxNetwork{netLink: netlinkwrapper.NewNetLink(),
-		ns: nswrapper.NewNS()}
+func NewLinuxNetwork() *linuxNetwork {
+	return &linuxNetwork{netLink: &netlink.Handle{}}
 }
 
 func isDuplicateRuleAdd(err error) bool {
@@ -71,7 +77,7 @@ func isDuplicateRuleAdd(err error) bool {
 // TODO : implement ip rule not to 10.0.0.0/16(vpc'subnet) table main priority  1024
 func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP) error {
 
-	hostRule := os.netLink.NewRule()
+	hostRule := netlink.NewRule()
 	hostRule.Dst = vpcCIDR
 	hostRule.Table = mainRoutingTable
 	hostRule.Priority = hostRulePriority
@@ -123,18 +129,16 @@ func containsNoSuchRule(err error) bool {
 	return false
 }
 
-// LinkByMac returns linux netlink based on interface MAC
-func LinkByMac(mac string, netLink netlinkwrapper.NetLink) (netlink.Link, error) {
+// linkByMac returns linux netlink based on interface MAC
+func linkByMac(mac string, netLink netLinker) (netlink.Link, error) {
 	links, err := netLink.LinkList()
-
 	if err != nil {
 		return nil, err
 	}
 
 	for _, link := range links {
 		if mac == link.Attrs().HardwareAddr.String() {
-			log.Debugf("Found the Link that uses mac address %s and its index is %d",
-				mac, link.Attrs().Index)
+			log.Infof("Found the Link that uses mac address %s and its index is %d", mac, link.Attrs().Index)
 			return link, nil
 		}
 	}
@@ -147,7 +151,7 @@ func (os *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, eniTable in
 	return setupENINetwork(eniIP, eniMAC, eniTable, eniSubnetCIDR, os.netLink)
 }
 
-func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink) error {
+func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string, netLink netLinker) error {
 
 	if eniTable == 0 {
 		log.Debugf("Skipping set up eni network for primary interface")
@@ -156,7 +160,7 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 
 	log.Infof("Setting up network for an eni with ip address %s, mac address %s, cidr %s and route table %d",
 		eniIP, eniMAC, eniSubnetCIDR, eniTable)
-	link, err := LinkByMac(eniMAC, netLink)
+	link, err := linkByMac(eniMAC, netLink)
 	if err != nil {
 		return errors.Wrapf(err, "eni network setup: failed to find the link which uses mac address %s", eniMAC)
 	}
@@ -183,14 +187,14 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 		netlink.Route{
 			LinkIndex: deviceNumber,
 			Dst:       &net.IPNet{IP: gw.IP, Mask: net.CIDRMask(32, 32)},
-			Scope:     netlink.SCOPE_LINK,
+			Scope:     SCOPE_LINK,
 			Table:     eniTable,
 		},
 		// Route all other traffic via the host's ENI IP
 		netlink.Route{
 			LinkIndex: deviceNumber,
 			Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
-			Scope:     netlink.SCOPE_UNIVERSE,
+			Scope:     SCOPE_UNIVERSE,
 			Gw:        gw.IP,
 			Table:     eniTable,
 		},
@@ -204,7 +208,7 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 			if !isRouteExistsError(err) {
 				return errors.Wrapf(err, "eni network setup: unable to add route %s/0 via %s table %d", r.Dst.IP.String(), gw.IP.String(), eniTable)
 			}
-			if err := netlink.RouteReplace(&r); err != nil {
+			if err := RouteReplace(&r); err != nil {
 				return errors.Wrapf(err, "eni network setup: unable to replace route entry %s", r.Dst.IP.String())
 			}
 		}
@@ -220,7 +224,7 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 		Dst:   cidr,
 		Src:   net.ParseIP(eniIP),
 		Table: mainRoutingTable,
-		Scope: netlink.SCOPE_LINK,
+		Scope: SCOPE_LINK,
 	}
 
 	if err := netLink.RouteDel(&defaultRoute); err != nil {

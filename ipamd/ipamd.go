@@ -45,7 +45,7 @@ const (
 type IPAMContext struct {
 	awsClient     awsutils.APIs
 	dataStore     *datastore.DataStore
-	networkClient network.NetworkAPIs
+	networkClient network.Network
 	podClient     getter
 
 	currentMaxAddrsPerENI int
@@ -63,7 +63,7 @@ func New() (*IPAMContext, error) {
 		podClient: http.DefaultClient,
 	}
 
-	c.networkClient = network.New()
+	c.networkClient = network.NewLinuxNetwork()
 
 	client, err := awsutils.New()
 	if err != nil {
