@@ -47,5 +47,9 @@
   version = "1.7.0"
 
 [[constraint]]
-  name = "k8s.io/kubernetes"
-  version = "1.8.1"
+  name = "k8s.io/api"
+  version = "kubernetes-1.8.1"
+
+[[override]]
+  revision = "e9a29eff7d472df0f7da9ead5ab59b74e74a07ec"
+  name = "k8s.io/apimachinery"
