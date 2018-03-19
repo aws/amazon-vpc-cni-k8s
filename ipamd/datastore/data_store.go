@@ -19,8 +19,6 @@ import (
 
 	log "github.com/cihub/seelog"
 	"github.com/pkg/errors"
-
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd/k8sapi"
 )
 
 const (
@@ -157,51 +155,53 @@ func (ds *DataStore) AddENIIPv4Address(eniID string, ipv4 string) error {
 
 // AssignPodIPv4Address assigns an IPv4 address to pod
 // It returns the assigned IPv4 address, device number, error
-func (ds *DataStore) AssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, int, error) {
+func (ds *DataStore) AssignPodIPv4Address(name, namespace string) (string, int, error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
 	log.Debugf("AssignIPv4Address: IP address pool stats: total:%d, assigned %d",
 		ds.total, ds.assigned)
 	podKey := PodKey{
-		name:      k8sPod.Name,
-		namespace: k8sPod.Namespace,
-		container: k8sPod.Container,
+		name:      name,
+		namespace: namespace,
+		container: "",
 	}
+	podIP := ""
 	ipAddr, ok := ds.podsIP[podKey]
 	if ok {
-		if ipAddr.IP == k8sPod.IP && k8sPod.IP != "" {
+		if ipAddr.IP == podIP && podIP != "" {
 			// The caller invoke multiple times to assign(PodName/NameSpace --> same IPAddress). It is not a error, but not very efficient.
 			log.Infof("AssignPodIPv4Address: duplicate pod assign for IP %s, name %s, namespace %s, container %s",
-				k8sPod.IP, k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
+				podIP, name, namespace, "k8sPod.Container")
 			return ipAddr.IP, ipAddr.DeviceNumber, nil
 		}
 		//TODO handle this bug assert?, may need to add a counter here, if counter is too high, need to mark node as unhealthy...
 		// this is a bug that the caller invoke multiple times to assign(PodName/NameSpace -> a different IPaddress).
 		log.Errorf("AssignPodIPv4Address:  current IP %s is changed to IP %s for pod(name %s, namespace %s, container %s)",
-			ipAddr, k8sPod.IP, k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
+			ipAddr, podIP, name, namespace, "k8sPod.Container")
 		return "", 0, errors.New("datastore; invalid pod with multiple IP addresses")
 
 	}
 
-	return ds.assignPodIPv4AddressUnsafe(k8sPod)
+	return ds.assignPodIPv4AddressUnsafe(name, namespace)
 }
 
 // It returns the assigned IPv4 address, device number, error
-func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (string, int, error) {
+func (ds *DataStore) assignPodIPv4AddressUnsafe(name, namespace string) (string, int, error) {
 	podKey := PodKey{
-		name:      k8sPod.Name,
-		namespace: k8sPod.Namespace,
-		container: k8sPod.Container,
+		name:      name,
+		namespace: namespace,
+		container: "",
 	}
 	for _, eni := range ds.eniIPPools {
-		if (k8sPod.IP == "") && (len(eni.IPv4Addresses) == eni.AssignedIPv4Addresses) {
+		if len(eni.IPv4Addresses) == eni.AssignedIPv4Addresses {
 			// skip this ENI, since it has no available IP address
 			log.Debugf("AssignPodIPv4Address, skip ENI %s that do not have available addresses", eni.id)
 			continue
 		}
 		for _, addr := range eni.IPv4Addresses {
-			if k8sPod.IP == addr.address {
+			// if k8sPod.IP == addr.address {
+			if true {
 				// After L-IPAM restart and built IP warm-pool, it needs to take the existing running pod IP out of the pool.
 				if !addr.Assigned {
 					ds.assigned++
@@ -210,17 +210,17 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 				}
 				ds.podsIP[podKey] = PodIPInfo{IP: addr.address, DeviceNumber: eni.DeviceNumber}
 				log.Infof("AssignPodIPv4Address Reassign IP %v to pod (name %s, namespace %s)",
-					addr.address, k8sPod.Name, k8sPod.Namespace)
+					addr.address, name, namespace)
 				return addr.address, eni.DeviceNumber, nil
 			}
-			if !addr.Assigned && k8sPod.IP == "" {
+			if !addr.Assigned {
 				// This is triggered by a pod's Add Network command from CNI plugin
 				ds.assigned++
 				eni.AssignedIPv4Addresses++
 				addr.Assigned = true
 				ds.podsIP[podKey] = PodIPInfo{IP: addr.address, DeviceNumber: eni.DeviceNumber}
 				log.Infof("AssignPodIPv4Address Assign IP %v to pod (name %s, namespace %s container %s)",
-					addr.address, k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
+					addr.address, name, namespace, "k8sPod.Container")
 				return addr.address, eni.DeviceNumber, nil
 			}
 		}
@@ -286,21 +286,21 @@ func (ds *DataStore) FreeENI() (string, error) {
 
 // UnAssignPodIPv4Address a) find out the IP address based on PodName and PodNameSpace
 // b)  mark IP address as unassigned c) returns IP address, ENI's device number, error
-func (ds *DataStore) UnAssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, int, error) {
+func (ds *DataStore) UnAssignPodIPv4Address(name, namespace string) (string, int, error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	log.Debugf("UnAssignIPv4Address: IP address pool stats: total:%d, assigned %d, pod(Name: %s, Namespace: %s, Container %s)",
-		ds.total, ds.assigned, k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
+		ds.total, ds.assigned, name, namespace, "")
 
 	podKey := PodKey{
-		name:      k8sPod.Name,
-		namespace: k8sPod.Namespace,
-		container: k8sPod.Container,
+		name:      name,
+		namespace: namespace,
+		container: "",
 	}
 	ipAddr, ok := ds.podsIP[podKey]
 	if !ok {
-		log.Warnf("UnassignIPv4Address: Failed to find pod %s namespace %s Container %s",
-			k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
+		// log.Warnf("UnassignIPv4Address: Failed to find pod %s namespace %s Container %s",
+		// 	name, namespace, "k8sPod.Container")
 		return "", 0, ErrUnknownPod
 	}
 
@@ -314,14 +314,14 @@ func (ds *DataStore) UnAssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, 
 			ip.unAssignedTime = curTime
 			eni.lastUnAssignedTime = curTime
 			log.Infof("UnAssignIPv4Address: pod (Name: %s, NameSpace %s Container %s)'s ipAddr %s, DeviceNumber%d",
-				k8sPod.Name, k8sPod.Namespace, k8sPod.Container, ip.address, eni.DeviceNumber)
+				name, namespace, "k8sPod.Container", ip.address, eni.DeviceNumber)
 			delete(ds.podsIP, podKey)
 			return ip.address, eni.DeviceNumber, nil
 		}
 	}
 
 	log.Warnf("UnassignIPv4Address: Failed to find pod %s namespace %s container %s using IP %s",
-		k8sPod.Name, k8sPod.Namespace, k8sPod.Container, ipAddr.IP)
+		name, namespace, "k8sPod.Container", ipAddr.IP)
 	return "", 0, ErrUnknownPodIP
 }
 

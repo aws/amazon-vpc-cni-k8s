@@ -15,6 +15,7 @@ package ipamd
 
 import (
 	"net"
+	"net/http"
 	"strings"
 	"time"
 
@@ -27,7 +28,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/networkutils"
 )
 
@@ -45,8 +45,8 @@ const (
 type IPAMContext struct {
 	awsClient     awsutils.APIs
 	dataStore     *datastore.DataStore
-	k8sClient     k8sapi.K8SAPIs
 	networkClient networkutils.NetworkAPIs
+	podClient     getter
 
 	currentMaxAddrsPerENI int
 	maxAddrsPerENI        int
@@ -59,9 +59,10 @@ type IPAMContext struct {
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
 func New() (*IPAMContext, error) {
-	c := &IPAMContext{}
+	c := &IPAMContext{
+		podClient: http.DefaultClient,
+	}
 
-	c.k8sClient = k8sapi.New()
 	c.networkClient = networkutils.New()
 
 	client, err := awsutils.New()
@@ -121,7 +122,7 @@ func (c *IPAMContext) nodeInit() error {
 		}
 	}
 
-	usedIPs, err := c.k8sClient.K8SGetLocalPodIPs(c.awsClient.GetLocalIPv4())
+	usedIPs, err := k8sGetLocalPodIPs(c.podClient, c.awsClient.GetLocalIPv4())
 	if err != nil {
 		log.Warnf("During ipamd init, failed to get Pod information from Kubelet %v", err)
 		// This can happens when L-IPAMD starts before kubelet.
@@ -130,7 +131,7 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	for _, ip := range usedIPs {
-		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
+		_, _, err = c.dataStore.AssignPodIPv4Address(ip.Name, ip.Namespace)
 		if err != nil {
 			log.Warnf("During ipamd init, failed to use pod ip %s returned from Kubelet %v", ip.IP, err)
 			// TODO continue, but need to add node health stats here
