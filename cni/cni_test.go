@@ -11,24 +11,20 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package main
+package cni
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"net"
 	"testing"
 
 	"github.com/containernetworking/cni/pkg/skel"
-	"github.com/golang/mock/gomock"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/aws/amazon-vpc-cni-k8s/cni/driver/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/grpcwrapper/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/rpcwrapper/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/typeswrapper/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/rpc"
 	"google.golang.org/grpc"
+
+	"github.com/aws/amazon-vpc-cni-k8s/rpc"
 )
 
 const (
@@ -44,244 +40,111 @@ const (
 	devNum       = 4
 )
 
-func setup(t *testing.T) (*gomock.Controller,
-	*mock_typeswrapper.MockCNITYPES,
-	*mock_grpcwrapper.MockGRPC,
-	*mock_rpcwrapper.MockRPC,
-	*mock_driver.MockNetworkAPIs) {
-	ctrl := gomock.NewController(t)
-	return ctrl,
-		mock_typeswrapper.NewMockCNITYPES(ctrl),
-		mock_grpcwrapper.NewMockGRPC(ctrl),
-		mock_rpcwrapper.NewMockRPC(ctrl),
-		mock_driver.NewMockNetworkAPIs(ctrl)
+type mockCNIBackendClient struct {
+	an func(ctx context.Context, in *rpc.AddNetworkRequest, opts ...grpc.CallOption) (*rpc.AddNetworkReply, error)
+	dn func(ctx context.Context, in *rpc.DelNetworkRequest, opts ...grpc.CallOption) (*rpc.DelNetworkReply, error)
 }
 
-type RPCCONN interface {
-	Close() error
+func (m *mockCNIBackendClient) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest, opts ...grpc.CallOption) (*rpc.AddNetworkReply, error) {
+	return m.an(ctx, in, opts...)
+}
+func (m *mockCNIBackendClient) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest, opts ...grpc.CallOption) (*rpc.DelNetworkReply, error) {
+	return m.dn(ctx, in, opts...)
 }
 
-type rpcConn struct{}
-
-func NewRPCCONN() RPCCONN {
-	return &rpcConn{}
+type mockDriver struct {
+	sn func(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int) error
+	tn func(addr *net.IPNet, table int) error
 }
 
-func (*rpcConn) Close() error {
-	return nil
+func (m *mockDriver) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int) error {
+	return m.sn(hostVethName, contVethName, netnsPath, addr, table)
+}
+func (m *mockDriver) TeardownNS(addr *net.IPNet, table int) error {
+	return m.tn(addr, table)
+}
+
+func newMockDriver() *mockDriver {
+	return &mockDriver{
+		func(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int) error {
+			return nil
+		},
+		func(addr *net.IPNet, table int) error { return nil },
+	}
+}
+
+func setupCmdArgs() *skel.CmdArgs {
+	netconf := &cniPluginConf{
+		CNIVersion: cniVersion,
+		Name:       cniName,
+		Type:       cniType,
+	}
+	stdinData, _ := json.Marshal(netconf)
+
+	cmdArgs := &skel.CmdArgs{
+		ContainerID: containerID,
+		Netns:       netNS,
+		IfName:      ifName,
+		StdinData:   stdinData,
+	}
+	return cmdArgs
 }
 
 func TestCmdAdd(t *testing.T) {
-	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
-	defer ctrl.Finish()
+	cmdArgs := setupCmdArgs()
+	mock := &mockCNIBackendClient{func(ctx context.Context, in *rpc.AddNetworkRequest, opts ...grpc.CallOption) (*rpc.AddNetworkReply, error) {
+		return &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}, nil
+	}, nil}
 
-	netconf := &NetConf{CNIVersion: cniVersion,
-		Name: cniName,
-		Type: cniType}
-	stdinData, _ := json.Marshal(netconf)
-
-	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
-		Netns:     netNS,
-		IfName:    ifName,
-		StdinData: stdinData}
-
-	//k8sArgs := K8sArgs{K8S_POD_NAMESPACE: podNamespace,
-	//	K8S_POD_NAME: podName}
-	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
-
-	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
-
-	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
-	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
-	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
-
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
-	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
-
-	addr := &net.IPNet{
-		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
-
-	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		addr, int(addNetworkReply.DeviceNumber)).Return(nil)
-
-	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
-
-	add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
-
+	add(cmdArgs, mock, newMockDriver())
+	// TODO(tvi): assert.Nil(t, err)
 }
 
 func TestCmdAddNetworkErr(t *testing.T) {
-	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
-	defer ctrl.Finish()
-
-	netconf := &NetConf{CNIVersion: cniVersion,
-		Name: cniName,
-		Type: cniType}
-	stdinData, _ := json.Marshal(netconf)
-
-	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
-		Netns:     netNS,
-		IfName:    ifName,
-		StdinData: stdinData}
-
-	//k8sArgs := K8sArgs{K8S_POD_NAMESPACE: podNamespace,
-	//	K8S_POD_NAME: podName}
-	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
-
-	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
-
-	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
-	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
-	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
-
-	addNetworkReply := &rpc.AddNetworkReply{Success: false, IPv4Addr: ipAddr, DeviceNumber: devNum}
-	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, errors.New("Error on AddNetworkReply"))
-
-	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
-
+	cmdArgs := setupCmdArgs()
+	mock := &mockCNIBackendClient{func(ctx context.Context, in *rpc.AddNetworkRequest, opts ...grpc.CallOption) (*rpc.AddNetworkReply, error) {
+		return nil, errors.New("Error on AddNetworkReply")
+	}, nil}
+	err := add(cmdArgs, mock, newMockDriver())
 	assert.Error(t, err)
-
 }
 
 func TestCmdAddErrSetupPodNetwork(t *testing.T) {
-	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
-	defer ctrl.Finish()
-
-	netconf := &NetConf{CNIVersion: cniVersion,
-		Name: cniName,
-		Type: cniType}
-	stdinData, _ := json.Marshal(netconf)
-
-	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
-		Netns:     netNS,
-		IfName:    ifName,
-		StdinData: stdinData}
-
-	//k8sArgs := K8sArgs{K8S_POD_NAMESPACE: podNamespace,
-	//	K8S_POD_NAME: podName}
-	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
-
-	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
-
-	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
-	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
-	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
-
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
-	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
-
-	addr := &net.IPNet{
-		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
-
-	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		addr, int(addNetworkReply.DeviceNumber)).Return(errors.New("Error on SetupPodNetwork"))
-
-	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
-
+	cmdArgs := setupCmdArgs()
+	mock := &mockCNIBackendClient{func(ctx context.Context, in *rpc.AddNetworkRequest, opts ...grpc.CallOption) (*rpc.AddNetworkReply, error) {
+		return &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}, nil
+	}, nil}
+	mockDriver := &mockDriver{func(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int) error {
+		return errors.New("Error on SetupPodNetwork")
+	}, nil}
+	err := add(cmdArgs, mock, mockDriver)
 	assert.Error(t, err)
 }
 
 func TestCmdDel(t *testing.T) {
-	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
-	defer ctrl.Finish()
-
-	netconf := &NetConf{CNIVersion: cniVersion,
-		Name: cniName,
-		Type: cniType}
-	stdinData, _ := json.Marshal(netconf)
-
-	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
-		Netns:     netNS,
-		IfName:    ifName,
-		StdinData: stdinData}
-
-	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
-
-	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
-
-	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
-	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
-	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
-
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
-
-	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
-
-	addr := &net.IPNet{
-		IP:   net.ParseIP(delNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
-
-	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber)).Return(nil)
-
-	del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	cmdArgs := setupCmdArgs()
+	mock := &mockCNIBackendClient{nil, func(ctx context.Context, in *rpc.DelNetworkRequest, opts ...grpc.CallOption) (*rpc.DelNetworkReply, error) {
+		return &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}, nil
+	}}
+	err := del(cmdArgs, mock, newMockDriver())
+	assert.Nil(t, err)
 }
 
 func TestCmdDelErrDelNetwork(t *testing.T) {
-	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
-	defer ctrl.Finish()
-
-	netconf := &NetConf{CNIVersion: cniVersion,
-		Name: cniName,
-		Type: cniType}
-	stdinData, _ := json.Marshal(netconf)
-
-	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
-		Netns:     netNS,
-		IfName:    ifName,
-		StdinData: stdinData}
-
-	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
-
-	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
-
-	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
-	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
-	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
-
-	delNetworkReply := &rpc.DelNetworkReply{Success: false, IPv4Addr: ipAddr, DeviceNumber: devNum}
-
-	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, errors.New("Error on DelNetwork"))
-
-	del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	cmdArgs := setupCmdArgs()
+	mock := &mockCNIBackendClient{nil, func(ctx context.Context, in *rpc.DelNetworkRequest, opts ...grpc.CallOption) (*rpc.DelNetworkReply, error) {
+		return &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}, errors.New("Error on DelNetwork")
+	}}
+	err := del(cmdArgs, mock, newMockDriver())
+	assert.Error(t, err)
 }
 
 func TestCmdDelErrTeardown(t *testing.T) {
-	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
-	defer ctrl.Finish()
-
-	netconf := &NetConf{CNIVersion: cniVersion,
-		Name: cniName,
-		Type: cniType}
-	stdinData, _ := json.Marshal(netconf)
-
-	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
-		Netns:     netNS,
-		IfName:    ifName,
-		StdinData: stdinData}
-
-	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
-
-	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
-
-	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
-	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
-	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
-
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
-
-	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
-
-	addr := &net.IPNet{
-		IP:   net.ParseIP(delNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
-
-	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber)).Return(errors.New("Error on teardown"))
-
-	del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	cmdArgs := setupCmdArgs()
+	mock := &mockCNIBackendClient{nil, func(ctx context.Context, in *rpc.DelNetworkRequest, opts ...grpc.CallOption) (*rpc.DelNetworkReply, error) {
+		return &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}, nil
+	}}
+	mockDriver := &mockDriver{nil, func(addr *net.IPNet, table int) error { return errors.New("Error on teardown") }}
+	err := del(cmdArgs, mock, mockDriver)
+	assert.Error(t, err)
 }
