@@ -82,10 +82,10 @@ func CmdAdd(args *skel.CmdArgs) error {
 	defer conn.Close()
 
 	c := pb.NewCNIBackendClient(conn)
-	return add(args, c, driver.New())
+	return add(args, c, driver.NewLinuxDriver())
 }
 
-func add(args *skel.CmdArgs, c pb.CNIBackendClient, driverClient driver.NetworkAPIs) error {
+func add(args *skel.CmdArgs, c pb.CNIBackendClient, driverClient driver.NetworkDriver) error {
 	conf := cniPluginConf{}
 	if err := json.Unmarshal(args.StdinData, &conf); err != nil {
 		return errors.Wrap(err, "add cmd: error loading config from args")
@@ -150,10 +150,10 @@ func CmdDel(args *skel.CmdArgs) error {
 	defer conn.Close()
 
 	c := pb.NewCNIBackendClient(conn)
-	return del(args, c, driver.New())
+	return del(args, c, driver.NewLinuxDriver())
 }
 
-func del(args *skel.CmdArgs, c pb.CNIBackendClient, driverClient driver.NetworkAPIs) error {
+func del(args *skel.CmdArgs, c pb.CNIBackendClient, driverClient driver.NetworkDriver) error {
 	conf := cniPluginConf{}
 	if err := json.Unmarshal(args.StdinData, &conf); err != nil {
 		return errors.Wrap(err, "del cmd: failed to load cniPluginConf from args")

@@ -22,12 +22,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/vishvananda/netlink"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/cninswrapper/mock_ns"
-	mocks_ip "github.com/aws/amazon-vpc-cni-k8s/pkg/ipwrapper/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mock_netlink"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper/mocks"
 )
 
 const (
@@ -46,14 +40,14 @@ const (
 )
 
 func setup(t *testing.T) (*gomock.Controller,
-	*mock_netlinkwrapper.MockNetLink,
-	*mocks_ip.MockIP,
-	*mock_nswrapper.MockNS) {
+	*MockNetLink,
+	*MockIP,
+	*MockNS) {
 	ctrl := gomock.NewController(t)
 	return ctrl,
-		mock_netlinkwrapper.NewMockNetLink(ctrl),
-		mocks_ip.NewMockIP(ctrl),
-		mock_nswrapper.NewMockNS(ctrl)
+		NewMockNetLink(ctrl),
+		NewMockIP(ctrl),
+		NewMockNS(ctrl)
 }
 
 func TestRun(t *testing.T) {
@@ -77,9 +71,9 @@ func TestRun(t *testing.T) {
 	mockLinkAttrs := &netlink.LinkAttrs{
 		HardwareAddr: hwAddr,
 	}
-	mockHostVeth := mock_netlink.NewMockLink(ctrl)
-	mockContVeth := mock_netlink.NewMockLink(ctrl)
-	mockNS := mock_ns.NewMockNetNS(ctrl)
+	mockHostVeth := NewMockLink(ctrl)
+	mockContVeth := NewMockLink(ctrl)
+	mockNS := NewMockNetNS(ctrl)
 	gomock.InOrder(
 		// veth pair
 		mockNetLink.EXPECT().LinkAdd(gomock.Any()).Return(nil),
@@ -130,7 +124,7 @@ func TestRunLinkAddErr(t *testing.T) {
 		},
 	}
 
-	mockNS := mock_ns.NewMockNetNS(ctrl)
+	mockNS := NewMockNetNS(ctrl)
 	gomock.InOrder(
 		// veth pair
 		mockNetLink.EXPECT().LinkAdd(gomock.Any()).Return(errors.New("Error on LinkAdd")),
@@ -155,7 +149,7 @@ func TestRunErrLinkByNameHost(t *testing.T) {
 		},
 	}
 
-	mockNS := mock_ns.NewMockNetNS(ctrl)
+	mockNS := NewMockNetNS(ctrl)
 	gomock.InOrder(
 		// veth pair
 		mockNetLink.EXPECT().LinkAdd(gomock.Any()).Return(nil),
@@ -182,8 +176,8 @@ func TestRunErrSetup(t *testing.T) {
 		},
 	}
 
-	mockHostVeth := mock_netlink.NewMockLink(ctrl)
-	mockNS := mock_ns.NewMockNetNS(ctrl)
+	mockHostVeth := NewMockLink(ctrl)
+	mockNS := NewMockNetNS(ctrl)
 	gomock.InOrder(
 		// veth pair
 		mockNetLink.EXPECT().LinkAdd(gomock.Any()).Return(nil),
@@ -212,9 +206,9 @@ func TestRunErrLinkByNameCont(t *testing.T) {
 		},
 	}
 
-	mockHostVeth := mock_netlink.NewMockLink(ctrl)
-	mockContVeth := mock_netlink.NewMockLink(ctrl)
-	mockNS := mock_ns.NewMockNetNS(ctrl)
+	mockHostVeth := NewMockLink(ctrl)
+	mockContVeth := NewMockLink(ctrl)
+	mockNS := NewMockNetNS(ctrl)
 	gomock.InOrder(
 		// veth pair
 		mockNetLink.EXPECT().LinkAdd(gomock.Any()).Return(nil),
@@ -251,9 +245,9 @@ func TestRunErrRouteAdd(t *testing.T) {
 	mockLinkAttrs := &netlink.LinkAttrs{
 		HardwareAddr: hwAddr,
 	}
-	mockHostVeth := mock_netlink.NewMockLink(ctrl)
-	mockContVeth := mock_netlink.NewMockLink(ctrl)
-	mockNS := mock_ns.NewMockNetNS(ctrl)
+	mockHostVeth := NewMockLink(ctrl)
+	mockContVeth := NewMockLink(ctrl)
+	mockNS := NewMockNetNS(ctrl)
 	gomock.InOrder(
 		// veth pair
 		mockNetLink.EXPECT().LinkAdd(gomock.Any()).Return(nil),
@@ -296,9 +290,9 @@ func TestRunErrAddDefaultRoute(t *testing.T) {
 	mockLinkAttrs := &netlink.LinkAttrs{
 		HardwareAddr: hwAddr,
 	}
-	mockHostVeth := mock_netlink.NewMockLink(ctrl)
-	mockContVeth := mock_netlink.NewMockLink(ctrl)
-	mockNS := mock_ns.NewMockNetNS(ctrl)
+	mockHostVeth := NewMockLink(ctrl)
+	mockContVeth := NewMockLink(ctrl)
+	mockNS := NewMockNetNS(ctrl)
 	gomock.InOrder(
 		// veth pair
 		mockNetLink.EXPECT().LinkAdd(gomock.Any()).Return(nil),
@@ -342,9 +336,9 @@ func TestRunErrAddrAdd(t *testing.T) {
 	mockLinkAttrs := &netlink.LinkAttrs{
 		HardwareAddr: hwAddr,
 	}
-	mockHostVeth := mock_netlink.NewMockLink(ctrl)
-	mockContVeth := mock_netlink.NewMockLink(ctrl)
-	mockNS := mock_ns.NewMockNetNS(ctrl)
+	mockHostVeth := NewMockLink(ctrl)
+	mockContVeth := NewMockLink(ctrl)
+	mockNS := NewMockNetNS(ctrl)
 	gomock.InOrder(
 		// veth pair
 		mockNetLink.EXPECT().LinkAdd(gomock.Any()).Return(nil),
@@ -391,9 +385,9 @@ func TestRunErrNeighAdd(t *testing.T) {
 	mockLinkAttrs := &netlink.LinkAttrs{
 		HardwareAddr: hwAddr,
 	}
-	mockHostVeth := mock_netlink.NewMockLink(ctrl)
-	mockContVeth := mock_netlink.NewMockLink(ctrl)
-	mockNS := mock_ns.NewMockNetNS(ctrl)
+	mockHostVeth := NewMockLink(ctrl)
+	mockContVeth := NewMockLink(ctrl)
+	mockNS := NewMockNetNS(ctrl)
 	gomock.InOrder(
 		// veth pair
 		mockNetLink.EXPECT().LinkAdd(gomock.Any()).Return(nil),
@@ -445,9 +439,9 @@ func TestRunErrLinkSetNsFd(t *testing.T) {
 	mockLinkAttrs := &netlink.LinkAttrs{
 		HardwareAddr: hwAddr,
 	}
-	mockHostVeth := mock_netlink.NewMockLink(ctrl)
-	mockContVeth := mock_netlink.NewMockLink(ctrl)
-	mockNS := mock_ns.NewMockNetNS(ctrl)
+	mockHostVeth := NewMockLink(ctrl)
+	mockContVeth := NewMockLink(ctrl)
+	mockNS := NewMockNetNS(ctrl)
 	gomock.InOrder(
 		// veth pair
 		mockNetLink.EXPECT().LinkAdd(gomock.Any()).Return(nil),
@@ -486,7 +480,7 @@ func TestSetupPodNetwork(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS := setup(t)
 	defer ctrl.Finish()
 
-	mockHostVeth := mock_netlink.NewMockLink(ctrl)
+	mockHostVeth := NewMockLink(ctrl)
 
 	mockNetLink.EXPECT().LinkByName(testHostVethName).Return(mockHostVeth, errors.New("hostVeth already exists"))
 	mockNS.EXPECT().WithNetNSPath(testnetnsPath, gomock.Any()).Return(nil)
@@ -505,22 +499,12 @@ func TestSetupPodNetwork(t *testing.T) {
 	mockHostVeth.EXPECT().Attrs().Return(mockLinkAttrs)
 	mockNetLink.EXPECT().RouteAdd(gomock.Any()).Return(nil)
 
-	testRule := &netlink.Rule{
-		SuppressIfgroup:   -1,
-		SuppressPrefixlen: -1,
-		Priority:          -1,
-		Mark:              -1,
-		Mask:              -1,
-		Goto:              -1,
-		Flow:              -1,
-	}
-	mockNetLink.EXPECT().NewRule().Return(testRule)
 	// test to-pod rule
 	mockNetLink.EXPECT().RuleDel(gomock.Any()).Return(nil)
 	mockNetLink.EXPECT().RuleAdd(gomock.Any()).Return(nil)
 
 	// test from-pod rule
-	mockNetLink.EXPECT().NewRule().Return(testRule)
+	// mockNetLink.EXPECT().NewRule().Return(testRule)
 	mockNetLink.EXPECT().RuleDel(gomock.Any()).Return(nil)
 	mockNetLink.EXPECT().RuleAdd(gomock.Any()).Return(nil)
 
@@ -538,7 +522,7 @@ func TestSetupPodNetworkErrLinkByName(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS := setup(t)
 	defer ctrl.Finish()
 
-	mockHostVeth := mock_netlink.NewMockLink(ctrl)
+	mockHostVeth := NewMockLink(ctrl)
 
 	mockNetLink.EXPECT().LinkByName(testHostVethName).Return(mockHostVeth, errors.New("hostVeth already exists"))
 	mockNS.EXPECT().WithNetNSPath(testnetnsPath, gomock.Any()).Return(nil)
@@ -558,7 +542,7 @@ func TestSetupPodNetworkErrLinkSetup(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS := setup(t)
 	defer ctrl.Finish()
 
-	mockHostVeth := mock_netlink.NewMockLink(ctrl)
+	mockHostVeth := NewMockLink(ctrl)
 
 	mockNetLink.EXPECT().LinkByName(testHostVethName).Return(mockHostVeth, errors.New("hostVeth already exists"))
 	mockNS.EXPECT().WithNetNSPath(testnetnsPath, gomock.Any()).Return(nil)
@@ -580,7 +564,7 @@ func TestSetupPodNetworkErrRouteAdd(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS := setup(t)
 	defer ctrl.Finish()
 
-	mockHostVeth := mock_netlink.NewMockLink(ctrl)
+	mockHostVeth := NewMockLink(ctrl)
 
 	mockNetLink.EXPECT().LinkByName(testHostVethName).Return(mockHostVeth, errors.New("hostVeth already exists"))
 	mockNS.EXPECT().WithNetNSPath(testnetnsPath, gomock.Any()).Return(nil)
@@ -612,7 +596,7 @@ func TestSetupPodNetworkPrimaryIntf(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS := setup(t)
 	defer ctrl.Finish()
 
-	mockHostVeth := mock_netlink.NewMockLink(ctrl)
+	mockHostVeth := NewMockLink(ctrl)
 
 	mockNetLink.EXPECT().LinkByName(testHostVethName).Return(mockHostVeth, errors.New("hostVeth already exists"))
 	mockNS.EXPECT().WithNetNSPath(testnetnsPath, gomock.Any()).Return(nil)
@@ -631,16 +615,6 @@ func TestSetupPodNetworkPrimaryIntf(t *testing.T) {
 	mockHostVeth.EXPECT().Attrs().Return(mockLinkAttrs)
 	mockNetLink.EXPECT().RouteAdd(gomock.Any()).Return(nil)
 
-	testRule := &netlink.Rule{
-		SuppressIfgroup:   -1,
-		SuppressPrefixlen: -1,
-		Priority:          -1,
-		Mark:              -1,
-		Mask:              -1,
-		Goto:              -1,
-		Flow:              -1,
-	}
-	mockNetLink.EXPECT().NewRule().Return(testRule)
 	// test to-pod rule
 	mockNetLink.EXPECT().RuleDel(gomock.Any()).Return(nil)
 	mockNetLink.EXPECT().RuleAdd(gomock.Any()).Return(nil)
@@ -659,17 +633,8 @@ func TestTearDownPodNetwork(t *testing.T) {
 	ctrl, mockNetLink, _, _ := setup(t)
 	defer ctrl.Finish()
 
-	testRule := &netlink.Rule{
-		SuppressIfgroup:   -1,
-		SuppressPrefixlen: -1,
-		Priority:          -1,
-		Mark:              -1,
-		Mask:              -1,
-		Goto:              -1,
-		Flow:              -1,
-	}
 	gomock.InOrder(
-		mockNetLink.EXPECT().NewRule().Return(testRule),
+		// mockNetLink.EXPECT().NewRule().Return(testRule),
 		// test to-pod rule
 		mockNetLink.EXPECT().RuleDel(gomock.Any()).Return(nil),
 
@@ -688,17 +653,8 @@ func TestTearDownPodNetworkMain(t *testing.T) {
 	ctrl, mockNetLink, _, _ := setup(t)
 	defer ctrl.Finish()
 
-	testRule := &netlink.Rule{
-		SuppressIfgroup:   -1,
-		SuppressPrefixlen: -1,
-		Priority:          -1,
-		Mark:              -1,
-		Mask:              -1,
-		Goto:              -1,
-		Flow:              -1,
-	}
 	gomock.InOrder(
-		mockNetLink.EXPECT().NewRule().Return(testRule),
+		// mockNetLink.EXPECT().NewRule().Return(testRule),
 		// test to-pod rule
 		mockNetLink.EXPECT().RuleDel(gomock.Any()).Return(nil),
 	)

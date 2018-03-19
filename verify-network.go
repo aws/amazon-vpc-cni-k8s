@@ -48,7 +48,7 @@ type podSpec struct {
 
 func main() {
 	hdlr := networkutils.New()
-	drv := driver.New()
+	drv := driver.NewLinuxDriver()
 
 	hdlr.SetupENINetwork(eniIP, eniMAC, eniDeviceNum, eniSubnet)
 

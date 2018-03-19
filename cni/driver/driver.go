@@ -20,13 +20,8 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/containernetworking/cni/pkg/ns"
+	log "github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
-
-	log "github.com/cihub/seelog"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipwrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
 )
 
 const (
@@ -41,21 +36,20 @@ const (
 	ethernetMTU = 1500
 )
 
-// NetworkAPIs defines network API calls
-type NetworkAPIs interface {
+// NetworkDriver defines network API calls
+type NetworkDriver interface {
 	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int) error
 	TeardownNS(addr *net.IPNet, table int) error
 }
 
-type linuxNetwork struct {
-	netLink netlinkwrapper.NetLink
-	ns      nswrapper.NS
+type linuxDriver struct {
+	netLink NetLink
+	ns      NS
 }
 
-// New creates linuxNetwork object
-func New() NetworkAPIs {
-	return &linuxNetwork{netLink: netlinkwrapper.NewNetLink(),
-		ns: nswrapper.NewNS()}
+// NewLinuxDriver creates linuxDriver object
+func NewLinuxDriver() NetworkDriver {
+	return &linuxDriver{netLink: &netlink.Handle{}, ns: nsType(0)}
 }
 
 // createVethPairContext wraps the parameters and the method to create the
@@ -64,26 +58,12 @@ type createVethPairContext struct {
 	contVethName string
 	hostVethName string
 	addr         *net.IPNet
-	netLink      netlinkwrapper.NetLink
-	ip           ipwrapper.IP
+
+	netLink NetLink
+	ip      IP
 }
 
-func newCreateVethPairContext(
-	contVethName string,
-	hostVethName string,
-	addr *net.IPNet) *createVethPairContext {
-
-	return &createVethPairContext{
-		contVethName: contVethName,
-		hostVethName: hostVethName,
-		addr:         addr,
-		netLink:      netlinkwrapper.NewNetLink(),
-		ip:           ipwrapper.NewIP(),
-	}
-}
-
-// run defines the closure to execute within the container's namespace to
-// create the veth pair
+// run defines the closure to execute within the container's namespace to create the veth pair
 func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	veth := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{
@@ -130,7 +110,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 
 	if err = createVethContext.netLink.RouteAdd(&netlink.Route{
 		LinkIndex: contVeth.Attrs().Index,
-		Scope:     netlink.SCOPE_LINK,
+		Scope:     SCOPE_LINK,
 		Dst:       gwNet}); err != nil {
 		return errors.Wrap(err, "setup NS network: failed to add default gateway")
 	}
@@ -149,7 +129,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	// we are using routed mode on the host and container need this static ARP entry to resolve its default gateway.
 	neigh := &netlink.Neigh{
 		LinkIndex:    contVeth.Attrs().Index,
-		State:        netlink.NUD_PERMANENT,
+		State:        NUD_PERMANENT,
 		IP:           gwNet.IP,
 		HardwareAddr: hostVeth.Attrs().HardwareAddr,
 	}
@@ -168,7 +148,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 }
 
 // SetupNS wiresup linux networking for Pod's network
-func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int) error {
+func (os *linuxDriver) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int) error {
 	log.Debugf("SetupNS: hostVethName=%s,contVethName=%s, netnsPath=%s table=%d\n",
 		hostVethName, contVethName, netnsPath, table)
 
@@ -176,7 +156,7 @@ func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsP
 }
 
 func setupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int,
-	netLink netlinkwrapper.NetLink, ns nswrapper.NS) error {
+	netLink NetLink, ns NS) error {
 	// Clean up if hostVeth exists.
 	if oldHostVeth, err := netLink.LinkByName(hostVethName); err == nil {
 		if err = netLink.LinkDel(oldHostVeth); err != nil {
@@ -185,7 +165,14 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 		log.Debugf("Clean up  old hostVeth: %v\n", hostVethName)
 	}
 
-	createVethContext := newCreateVethPairContext(contVethName, hostVethName, addr)
+	createVethContext := &createVethPairContext{
+		contVethName: contVethName,
+		hostVethName: hostVethName,
+		addr:         addr,
+		// netLink:      NewNetLink(),
+		netLink: netLink,
+		ip:      ipRoute(0),
+	}
 
 	if err := ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		log.Errorf("Failed to setup NS network %v", err)
@@ -212,7 +199,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 	// Add host route
 	if err = netLink.RouteAdd(&netlink.Route{
 		LinkIndex: hostVeth.Attrs().Index,
-		Scope:     netlink.SCOPE_LINK,
+		Scope:     SCOPE_LINK,
 		Dst:       addrHostAddr}); err != nil {
 		return errors.Wrap(err, "setup NS network: failed to add host route")
 	}
@@ -240,8 +227,8 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 	return nil
 }
 
-func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *net.IPNet, priority int, table int) error {
-	containerRule := netLink.NewRule()
+func addContainerRule(netLink NetLink, isToContainer bool, addr *net.IPNet, priority int, table int) error {
+	containerRule := netlink.NewRule()
 
 	if isToContainer {
 		containerRule.Dst = addr
@@ -266,15 +253,15 @@ func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *
 }
 
 // TeardownPodNetwork cleanup ip rules
-func (os *linuxNetwork) TeardownNS(addr *net.IPNet, table int) error {
+func (os *linuxDriver) TeardownNS(addr *net.IPNet, table int) error {
 	log.Debugf("TeardownNS: addr %s, table %d", addr.String(), table)
 	return tearDownNS(addr, table, os.netLink)
 }
 
-func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink) error {
+func tearDownNS(addr *net.IPNet, table int, netLink NetLink) error {
 
 	// remove to-pod rule
-	toContainerRule := netLink.NewRule()
+	toContainerRule := netlink.NewRule()
 	toContainerRule.Dst = addr
 	toContainerRule.Priority = toContainerRulePriority
 	err := netLink.RuleDel(toContainerRule)
