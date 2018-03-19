@@ -19,7 +19,6 @@ import (
 	//"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/awsutils"
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd/awsutils/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/k8sapi"
 
@@ -50,12 +49,12 @@ const (
 func setup(t *testing.T) (*gomock.Controller,
 	*mock_awsutils.MockAPIs,
 	*mock_k8sapi.MockK8SAPIs,
-	*mock_networkutils.MockNetworkAPIs) {
+	*mock_network.MockNetworkAPIs) {
 	ctrl := gomock.NewController(t)
 	return ctrl,
 		mock_awsutils.NewMockAPIs(ctrl),
 		mock_k8sapi.NewMockK8SAPIs(ctrl),
-		mock_networkutils.NewMockNetworkAPIs(ctrl)
+		mock_network.NewMockNetworkAPIs(ctrl)
 }
 
 func TestNodeInit(t *testing.T) {

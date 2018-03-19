@@ -28,7 +28,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd/networkutils"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/network"
 )
 
 // Package ipamd is a long running daemon which manages a warn-pool of available IP addresses.
@@ -45,7 +45,7 @@ const (
 type IPAMContext struct {
 	awsClient     awsutils.APIs
 	dataStore     *datastore.DataStore
-	networkClient networkutils.NetworkAPIs
+	networkClient network.NetworkAPIs
 	podClient     getter
 
 	currentMaxAddrsPerENI int
@@ -63,7 +63,7 @@ func New() (*IPAMContext, error) {
 		podClient: http.DefaultClient,
 	}
 
-	c.networkClient = networkutils.New()
+	c.networkClient = network.New()
 
 	client, err := awsutils.New()
 	if err != nil {

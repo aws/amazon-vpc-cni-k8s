@@ -18,7 +18,7 @@ import (
 	"net"
 
 	"github.com/aws/amazon-vpc-cni-k8s/cni/driver"
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd/networkutils"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/network"
 )
 
 const (
@@ -47,7 +47,7 @@ type podSpec struct {
 }
 
 func main() {
-	hdlr := networkutils.New()
+	hdlr := network.New()
 	drv := driver.NewLinuxDriver()
 
 	hdlr.SetupENINetwork(eniIP, eniMAC, eniDeviceNum, eniSubnet)
