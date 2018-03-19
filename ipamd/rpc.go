@@ -41,9 +41,10 @@ func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.
 	log.Infof("Received AddNetwork for NS %s, Pod %s, NameSpace %s, Container %s, ifname %s",
 		in.Netns, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID, in.IfName)
 
-	addr, deviceNumber, err := s.ipamContext.dataStore.AssignPodIPv4Address(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
+	deviceNumber := 0
+	addr, err := s.ipamContext.dataStore.AssignPodIP(ctx, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
 	log.Infof("Send AddNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", addr, deviceNumber, err)
-	return &pb.AddNetworkReply{Success: err == nil, IPv4Addr: addr, IPv4Subnet: "", DeviceNumber: int32(deviceNumber)}, nil
+	return &pb.AddNetworkReply{Success: err == nil, IPv4Addr: addr.IP.String(), IPv4Subnet: "", DeviceNumber: int32(deviceNumber)}, nil
 }
 
 func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.DelNetworkReply, error) {
@@ -51,16 +52,16 @@ func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.
 		in.IPv4Addr, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID)
 
 	var err error
-
-	ip, deviceNumber, err := s.ipamContext.dataStore.UnAssignPodIPv4Address(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
+	deviceNumber := 0
+	ip, err := s.ipamContext.dataStore.UnassignPodIP(ctx, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
 
 	if err != nil && err == datastore.ErrUnknownPod {
 		// If L-IPAMD restarts, the pod's IP address are assigned by only pod's name and namespace due to kubelet's introspection.
-		ip, deviceNumber, err = s.ipamContext.dataStore.UnAssignPodIPv4Address(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
+		ip, err = s.ipamContext.dataStore.UnassignPodIP(ctx, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
 	}
 	log.Infof("Send DelNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", ip, deviceNumber, err)
 
-	return &pb.DelNetworkReply{Success: err == nil, IPv4Addr: ip, DeviceNumber: int32(deviceNumber)}, nil
+	return &pb.DelNetworkReply{Success: err == nil, IPv4Addr: ip.IP.String(), DeviceNumber: int32(deviceNumber)}, nil
 }
 
 // RunRPCHandler handles request from gRPC

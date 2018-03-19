@@ -44,7 +44,7 @@ const (
 // IPAMContext contains node level control information
 type IPAMContext struct {
 	awsClient     awsutils.APIs
-	dataStore     *datastore.DataStore
+	dataStore     datastore.Datastore
 	networkClient network.Network
 	podClient     getter
 
@@ -103,7 +103,7 @@ func (c *IPAMContext) nodeInit() error {
 		return errors.Wrap(err, "ipamd init: failed to setup host network")
 	}
 
-	c.dataStore = datastore.NewDataStore()
+	c.dataStore = datastore.NewDatastore()
 
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s", eni.ENIID)
@@ -131,7 +131,7 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	for _, ip := range usedIPs {
-		_, _, err = c.dataStore.AssignPodIPv4Address(ip.Name, ip.Namespace)
+		err = c.dataStore.ReconstructPodIP(ip.Name, ip.Namespace, ip.IP)
 		if err != nil {
 			log.Warnf("During ipamd init, failed to use pod ip %s returned from Kubelet %v", ip.IP, err)
 			// TODO continue, but need to add node health stats here
@@ -176,16 +176,16 @@ func isAttachmentLimitExceededError(err error) bool {
 
 func (c *IPAMContext) increaseIPPool() {
 
-	if (c.maxENI > 0) && (c.maxENI == c.dataStore.GetENIs()) {
-		log.Debugf("Skipping increase IPPOOL due to max ENI already attached to the instance : %d", c.maxENI)
-		return
-	}
+	// if (c.maxENI > 0) && (c.maxENI == c.dataStore.GetENIs()) {
+	// 	log.Debugf("Skipping increase IPPOOL due to max ENI already attached to the instance : %d", c.maxENI)
+	// 	return
+	// }
 	eni, err := c.awsClient.AllocENI()
 	if err != nil {
 		log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
 
 		if isAttachmentLimitExceededError(err) {
-			c.maxENI = c.dataStore.GetENIs()
+			// c.maxENI = c.dataStore.GetENIs()
 			log.Infof("Discovered the instance max ENI allowed is: %d", c.maxENI)
 		}
 		// TODO need to add health stats
@@ -219,7 +219,7 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) err
 	// Have discovered the attached ENI from metadata service
 	// add eni's IP to IP pool
 	err := c.dataStore.AddENI(eni, int(eniMetadata.DeviceNumber), (eni == c.awsClient.GetPrimaryENI()))
-	if err != nil && err.Error() != datastore.DuplicatedENIError {
+	if err != nil && err != datastore.ErrDuplicateENI {
 		return errors.Wrapf(err, "failed to add eni %s to data store", eni)
 	}
 
@@ -252,8 +252,8 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 		if aws.BoolValue(ec2Addr.Primary) {
 			continue
 		}
-		err := c.dataStore.AddENIIPv4Address(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
-		if err != nil && err.Error() != datastore.DuplicateIPError {
+		err := c.dataStore.AddIPAddr(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
+		if err != nil && err != datastore.ErrDuplicateIP {
 			log.Warnf("Failed to increase ip pool, failed to add ip %s to data store", ec2Addr.PrivateIpAddress)
 			// continue to add next address
 			// TODO need to add health stats for err
@@ -310,7 +310,7 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 
 //nodeIPPoolTooLow returns true if IP pool is below low threshhold
 func (c *IPAMContext) nodeIPPoolTooLow() bool {
-	total, used := c.dataStore.GetStats()
+	total, used, _ := c.dataStore.GetStats()
 	log.Debugf("IP pool stats: total=%d, used=%d, c.currentMaxAddrsPerENI =%d, c.maxAddrsPerENI = %d",
 		total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
@@ -319,7 +319,7 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 
 // NodeIPPoolTooHigh returns true if IP pool is above high threshhold
 func (c *IPAMContext) nodeIPPoolTooHigh() bool {
-	total, used := c.dataStore.GetStats()
+	total, used, _ := c.dataStore.GetStats()
 
 	log.Debugf("IP pool stats: total=%d, used=%d, c.currentMaxAddrsPerENI =%d, c.maxAddrsPerENI = %d",
 		total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)

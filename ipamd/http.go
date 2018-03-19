@@ -93,24 +93,12 @@ func (c *IPAMContext) setupServer() *http.Server {
 
 func eniV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		responseJSON, err := json.Marshal(ipam.dataStore.GetENIInfos())
-		if err != nil {
-			log.Error("Failed to marshal ENI data: %v", err)
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
-		w.Write(responseJSON)
+		w.Write([]byte("responseJSON"))
 	}
 }
 
 func podV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		responseJSON, err := json.Marshal(ipam.dataStore.GetPodInfos())
-		if err != nil {
-			log.Error("Failed to marshal pod data: %v", err)
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
-		w.Write(responseJSON)
+		w.Write([]byte("responseJSON"))
 	}
 }
