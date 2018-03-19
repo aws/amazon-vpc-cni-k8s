@@ -1,4 +1,4 @@
-FROM debian:latest
+FROM debian:9.3-slim
 
 RUN apt-get update && \
     apt-get install -y iproute2 && \
