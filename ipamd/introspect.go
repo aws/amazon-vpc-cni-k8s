@@ -17,12 +17,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
-	log "github.com/cihub/seelog"
-
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd/utils"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -50,19 +47,7 @@ func (lh LoggingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // SetupHTTP sets up ipamd introspection service endpoint
 func (c *IPAMContext) SetupHTTP() {
 	server := c.setupServer()
-
-	for {
-		once := sync.Once{}
-		utils.RetryWithBackoff(utils.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
-			// TODO, make this cancellable and use the passed in context; for
-			// now, not critical if this gets interrupted
-			err := server.ListenAndServe()
-			once.Do(func() {
-				log.Error("Error running http api", "err", err)
-			})
-			return err
-		})
-	}
+	log.Fatal(server.ListenAndServe())
 }
 
 func (c *IPAMContext) setupServer() *http.Server {
