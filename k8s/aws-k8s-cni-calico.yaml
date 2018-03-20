@@ -19,6 +19,7 @@ spec:
         scheduler.alpha.kubernetes.io/critical-pod: ''
     spec:
       hostNetwork: true
+      terminationGracePeriodSeconds: 5
       tolerations:
       - key: node-role.kubernetes.io/master
         effect: NoSchedule
@@ -27,8 +28,16 @@ spec:
       containers:
       - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:0.1.4
         name: aws-node
+        ports:
+          - name: http
+            containerPort: 51678
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 51678
+          initialDelaySeconds: 5
         env:
-          - name: ECS_CNI_LOGLEVEL
+          - name: CNI_LOGLEVEL
             value: DEBUG
           - name: EKS_CNI_VETHPREFIX
             value: cali
