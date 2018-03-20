@@ -14,6 +14,7 @@
 package ipamd
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"strings"
@@ -43,7 +44,7 @@ const (
 
 // IPAMContext contains node level control information
 type IPAMContext struct {
-	awsClient     eni.APIs
+	awsClient     eni.ENIService
 	dataStore     datastore.Datastore
 	networkClient network.Network
 	podClient     getter
@@ -64,8 +65,12 @@ func New() (*IPAMContext, error) {
 	}
 
 	c.networkClient = network.NewLinuxNetwork()
-
-	client, err := eni.New()
+	region, instanceID, instanceType, err := eni.GetMetadata()
+	if err != nil {
+		log.Errorf("Failed to initialize awsutil interface %v", err)
+		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
+	}
+	client, err := eni.NewEC2Instance(region, instanceID, instanceType)
 	if err != nil {
 		log.Errorf("Failed to initialize awsutil interface %v", err)
 		return nil, errors.Wrap(err, "ipamD: can not initialize with AWS SDK interface")
@@ -83,19 +88,25 @@ func New() (*IPAMContext, error) {
 
 //TODO need to break this function down(comments from CR)
 func (c *IPAMContext) nodeInit() error {
-	enis, err := c.awsClient.GetAttachedENIs()
+	cidr, localIP, _, err := c.awsClient.GetPrimaryDetails(context.Background())
 	if err != nil {
-		log.Error("Failed to retrive ENI info")
-		return errors.New("ipamd init: failed to retrieve attached ENIs info")
+		log.Error("Failed to parse GetPrimaryDetails", err.Error())
+		return errors.Wrap(err, "ipamd init: failed to get VPC CIDR")
 	}
 
-	_, vpcCIDR, err := net.ParseCIDR(c.awsClient.GetVPCIPv4CIDR())
+	_, vpcCIDR, err := net.ParseCIDR(cidr)
 	if err != nil {
 		log.Error("Failed to parse VPC IPv4 CIDR", err.Error())
 		return errors.Wrap(err, "ipamd init: failed to retrieve VPC CIDR")
 	}
 
-	primaryIP := net.ParseIP(c.awsClient.GetLocalIPv4())
+	primaryIP := net.ParseIP(localIP)
+
+	enis, err := c.awsClient.GetENIs(context.Background())
+	if err != nil {
+		log.Error("Failed to retrive ENI info")
+		return errors.New("ipamd init: failed to retrieve attached ENIs info")
+	}
 
 	err = c.networkClient.SetupHostNetwork(vpcCIDR, &primaryIP)
 	if err != nil {
@@ -105,24 +116,16 @@ func (c *IPAMContext) nodeInit() error {
 
 	c.dataStore = datastore.NewDatastore()
 
-	for _, eni := range enis {
-		log.Debugf("Discovered ENI %s", eni.ENIID)
-
-		err = c.awsClient.AllocAllIPAddress(eni.ENIID)
+	for _, eniID := range enis {
+		log.Debugf("Discovered ENI %s", eniID)
+		err = c.setupENI(eniID, eni.ENIMetadata{})
 		if err != nil {
-			//TODO need to increment ipamd err stats
-			log.Warn("During ipamd init:  error encountered on trying to allocate all available IP addresses", err)
-			// fall though to add those allocated OK addresses
-		}
-
-		err = c.setupENI(eni.ENIID, eni)
-		if err != nil {
-			log.Errorf("Failed to setup eni %s network: %v", eni.ENIID, err)
-			return errors.Wrapf(err, "Failed to setup eni %v", eni.ENIID)
+			log.Errorf("Failed to setup eni %s network: %v", eniID, err)
+			return errors.Wrapf(err, "Failed to setup eni %v", eniID)
 		}
 	}
 
-	usedIPs, err := k8sGetLocalPodIPs(c.podClient, c.awsClient.GetLocalIPv4())
+	usedIPs, err := k8sGetLocalPodIPs(c.podClient, localIP)
 	if err != nil {
 		log.Warnf("During ipamd init, failed to get Pod information from Kubelet %v", err)
 		// This can happens when L-IPAMD starts before kubelet.
@@ -167,7 +170,7 @@ func (c *IPAMContext) decreaseIPPool() {
 		log.Errorf("Failed to decrease pool %v", err)
 		return
 	}
-	c.awsClient.FreeENI(eni)
+	c.awsClient.FreeENI(context.Background(), eni)
 }
 
 func isAttachmentLimitExceededError(err error) bool {
@@ -180,7 +183,7 @@ func (c *IPAMContext) increaseIPPool() {
 	// 	log.Debugf("Skipping increase IPPOOL due to max ENI already attached to the instance : %d", c.maxENI)
 	// 	return
 	// }
-	eni, err := c.awsClient.AllocENI()
+	eni, _, err := c.awsClient.AddENI(context.Background())
 	if err != nil {
 		log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
 
@@ -190,12 +193,6 @@ func (c *IPAMContext) increaseIPPool() {
 		}
 		// TODO need to add health stats
 		return
-	}
-
-	err = c.awsClient.AllocAllIPAddress(eni)
-	if err != nil {
-		log.Warnf("Failed to allocate all available ip addresses on an ENI %v", err)
-		// continue to proecsses those allocated ip addresses
 	}
 
 	eniMetadata, err := c.waitENIAttached(eni)
@@ -216,32 +213,46 @@ func (c *IPAMContext) increaseIPPool() {
 // 2) add all ENI's secondary IP addresses to datastore
 // 3) setup linux eni related networking stack.
 func (c *IPAMContext) setupENI(eni string, eniMetadata eni.ENIMetadata) error {
+	_, _, primaryENI, err := c.awsClient.GetPrimaryDetails(context.Background())
+	if err != nil {
+		return errors.Wrapf(err, "failed to retrieve eni %s ip addresses", eni)
+	}
 	// Have discovered the attached ENI from metadata service
 	// add eni's IP to IP pool
-	err := c.dataStore.AddENI(eni, int(eniMetadata.DeviceNumber), (eni == c.awsClient.GetPrimaryENI()))
+	err = c.dataStore.AddENI(eni, int(eniMetadata.Device), (eni == primaryENI))
 	if err != nil && err != datastore.ErrDuplicateENI {
 		return errors.Wrapf(err, "failed to add eni %s to data store", eni)
 	}
 
-	ec2Addrs, eniPrimaryIP, err := c.getENIaddresses(eni)
-	if err != nil {
-		return errors.Wrapf(err, "failed to retrieve eni %s ip addresses", eni)
-	}
+	// ec2Addrs, eniPrimaryIP, err := c.getENIaddresses(eni)
+	// if err != nil {
+	// 	return errors.Wrapf(err, "failed to retrieve eni %s ip addresses", eni)
+	// }
 
-	c.currentMaxAddrsPerENI = len(ec2Addrs)
-	if c.currentMaxAddrsPerENI > c.maxAddrsPerENI {
-		c.maxAddrsPerENI = c.currentMaxAddrsPerENI
-	}
+	// c.currentMaxAddrsPerENI = len(ec2Addrs)
+	// if c.currentMaxAddrsPerENI > c.maxAddrsPerENI {
+	// 	c.maxAddrsPerENI = c.currentMaxAddrsPerENI
+	// }
 
-	if eni != c.awsClient.GetPrimaryENI() {
-		err = c.networkClient.SetupENINetwork(eniPrimaryIP, eniMetadata.MAC,
-			int(eniMetadata.DeviceNumber), eniMetadata.SubnetIPv4CIDR)
-		if err != nil {
+	if eni != primaryENI {
+		if err := c.networkClient.SetupENINetwork(
+			eniMetadata.PrimaryIP,
+			eniMetadata.MAC,
+			int(eniMetadata.Device),
+			eniMetadata.CIDR); err != nil {
 			return errors.Wrapf(err, "failed to setup eni %s network", eni)
 		}
 	}
 
-	c.addENIaddressesToDataStore(ec2Addrs, eni)
+	for _, ec2Addr := range eniMetadata.SecondaryIPs {
+		err := c.dataStore.AddIPAddr(eni, ec2Addr)
+		if err != nil && err != datastore.ErrDuplicateIP {
+			log.Warnf("Failed to increase ip pool, failed to add ip %s to data store", ec2Addr)
+			// continue to add next address
+			// TODO(aws): need to add health stats for err
+		}
+	}
+	// c.addENIaddressesToDataStore(ec2Addrs, eni)
 
 	return nil
 
@@ -262,21 +273,21 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 }
 
 // returns all addresses on eni, the primary adderss on eni, error
-func (c *IPAMContext) getENIaddresses(eni string) ([]*ec2.NetworkInterfacePrivateIpAddress, string, error) {
-	ec2Addrs, _, err := c.awsClient.DescribeENI(eni)
-	if err != nil {
-		return nil, "", errors.Wrapf(err, "fail to find eni addresses for eni %s", eni)
-	}
+// func (c *IPAMContext) getENIaddresses(eni string) ([]*ec2.NetworkInterfacePrivateIpAddress, string, error) {
+// 	ec2Addrs, _, err := c.awsClient.DescribeENI(eni)
+// 	if err != nil {
+// 		return nil, "", errors.Wrapf(err, "fail to find eni addresses for eni %s", eni)
+// 	}
 
-	for _, ec2Addr := range ec2Addrs {
-		if aws.BoolValue(ec2Addr.Primary) {
-			eniPrimaryIP := aws.StringValue(ec2Addr.PrivateIpAddress)
-			return ec2Addrs, eniPrimaryIP, nil
-		}
-	}
+// 	for _, ec2Addr := range ec2Addrs {
+// 		if aws.BoolValue(ec2Addr.Primary) {
+// 			eniPrimaryIP := aws.StringValue(ec2Addr.PrivateIpAddress)
+// 			return ec2Addrs, eniPrimaryIP, nil
+// 		}
+// 	}
 
-	return nil, "", errors.Wrapf(err, "faind to find eni's primary address for eni %s", eni)
-}
+// 	return nil, "", errors.Wrapf(err, "faind to find eni's primary address for eni %s", eni)
+// }
 
 func (c *IPAMContext) waitENIAttached(eniID string) (eni.ENIMetadata, error) {
 	// wait till eni is showup in the instance meta data service
@@ -288,19 +299,22 @@ func (c *IPAMContext) waitENIAttached(eniID string) (eni.ENIMetadata, error) {
 			// TODO need to add health stats
 			return eni.ENIMetadata{}, errors.New("add eni: not able to retrieve eni from metata service")
 		}
-		enis, err := c.awsClient.GetAttachedENIs()
+		ok, err := c.awsClient.IsENIReady(context.Background(), eniID)
 		if err != nil {
+			return eni.ENIMetadata{}, errors.Wrapf(err, "failed to retrieve eni %s readyness", eniID)
+		}
+		if !ok {
 			log.Warnf("Failed to increase pool, error trying to discover attached enis: %v ", err)
 			time.Sleep(eniAttachTime)
 			continue
 		}
 
 		// verify eni is in the returned eni list
-		for _, returnedENI := range enis {
-			if eniID == returnedENI.ENIID {
-				return returnedENI, nil
-			}
-		}
+		// for _, returnedENI := range enis {
+		// 	if eniID == returnedENI.ENIID {
+		// 		return returnedENI, nil
+		// 	}
+		// }
 
 		log.Debugf("Not able to discover attached eni yet (attempt %d/%d)", retry, maxRetryCheckENI)
 
