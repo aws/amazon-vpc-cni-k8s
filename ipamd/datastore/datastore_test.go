@@ -18,9 +18,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/metrics"
 )
 
 func TestAddENI(t *testing.T) {
+	m, _ := metrics.New()
 	ds := NewDatastore(m)
 
 	err := ds.AddENI("eni-1", 1, true)
@@ -39,6 +42,7 @@ func TestAddENI(t *testing.T) {
 }
 
 func TestAddIPAddr(t *testing.T) {
+	m, _ := metrics.New()
 	ds := NewDatastore(m)
 
 	err := ds.AddENI("eni-1", 1, true)
@@ -77,6 +81,7 @@ func TestAddIPAddr(t *testing.T) {
 }
 
 func TestPodIPv4Address(t *testing.T) {
+	m, _ := metrics.New()
 	ds := NewDatastore(m)
 
 	ds.AddENI("eni-1", 1, true)

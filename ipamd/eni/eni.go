@@ -31,6 +31,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/metrics"
 )
 
 type EC2 interface {
@@ -55,8 +57,9 @@ type EC2Instance struct {
 	region, instanceID string
 	lock               sync.RWMutex
 
-	tag *resourcegroupstaggingapi.ResourceGroupsTaggingAPI
-	ec2 EC2
+	tag     *resourcegroupstaggingapi.ResourceGroupsTaggingAPI
+	ec2     EC2
+	metrics *metrics.Metrics
 }
 
 const (
@@ -131,7 +134,7 @@ func GetMetadata() (string, string, string, error) {
 	return region, instanceID, instanceType, nil
 }
 
-func NewEC2Instance(region, instanceID, instanceType string) (*EC2Instance, error) {
+func NewEC2Instance(region, instanceID, instanceType string, metrics *metrics.Metrics) (*EC2Instance, error) {
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(region),
 	})
@@ -147,9 +150,10 @@ func NewEC2Instance(region, instanceID, instanceType string) (*EC2Instance, erro
 		instanceID: instanceID,
 		dirty:      true,
 
-		tag:  tag,
-		ec2:  ec,
-		lock: sync.RWMutex{},
+		tag:     tag,
+		ec2:     ec,
+		lock:    sync.RWMutex{},
+		metrics: metrics,
 	}
 	limit, ok := eniLimit[instanceType]
 	if !ok {
@@ -159,6 +163,8 @@ func NewEC2Instance(region, instanceID, instanceType string) (*EC2Instance, erro
 	inst.maxENIs, inst.maxIPs = limit.ENILimit, limit.IPv4Limit
 	inst.maxIPs = inst.maxIPs - 1 // We are looking for secondary ips
 	inst.ipsPerEni = inst.maxIPs
+
+	metrics.SetMaxENI(inst.maxENIs)
 
 	return inst, nil
 }
@@ -175,9 +181,11 @@ func (e *EC2Instance) update(ctx context.Context) error {
 		return nil
 	}
 
+	start := time.Now()
 	result, err := e.ec2.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
 		InstanceIds: []*string{aws.String(e.instanceID)},
 	})
+	e.metrics.TimeAWSCall(start, "DescribeInstancesWithContext", err != nil)
 	if err != nil {
 		return errors.Errorf("could not find instance id '%s': %v", e.instanceID, err)
 	}
@@ -270,6 +278,7 @@ func (e *EC2Instance) AddENI(ctx context.Context) (string, bool, error) {
 	var retENI string
 	for i := e.ipsPerEni; i > 1; i-- {
 		if i != e.ipsPerEni {
+			e.metrics.AddENIRetry()
 			time.Sleep(addENIRetry)
 			log.Infof("Retrying (attempt %v) to add eni", e.ipsPerEni-i)
 		}
@@ -297,12 +306,14 @@ func (e *EC2Instance) AddENI(ctx context.Context) (string, bool, error) {
 }
 
 func (e *EC2Instance) tryAddEni(ctx context.Context, i int64, groups []*string, freeDevice *int64) (string, bool, error) {
+	start := time.Now()
 	result, err := e.ec2.CreateNetworkInterfaceWithContext(ctx, &ec2.CreateNetworkInterfaceInput{
 		Description: aws.String(fmt.Sprintf("aws-K8S-%v", aws.StringValue(e.instance.InstanceId))),
 		SubnetId:    e.instance.SubnetId,
 		Groups:      groups,
 		SecondaryPrivateIpAddressCount: aws.Int64(i),
 	})
+	e.metrics.TimeAWSCall(start, "CreateNetworkInterfaceWithContext", err != nil)
 	if err != nil {
 		return "", false, errors.Wrap(err, "failed to CreateNetworkInterface")
 	}
@@ -311,6 +322,7 @@ func (e *EC2Instance) tryAddEni(ctx context.Context, i int64, groups []*string, 
 	eni := aws.StringValue(eniID)
 	log.Infof("Created a new empty eni: %s", eni)
 
+	start = time.Now()
 	_, err = e.tag.TagResourcesWithContext(ctx, &resourcegroupstaggingapi.TagResourcesInput{
 		ResourceARNList: []*string{aws.String(arn.ARN{
 			Partition: "aws", Service: "ec2",
@@ -321,15 +333,18 @@ func (e *EC2Instance) tryAddEni(ctx context.Context, i int64, groups []*string, 
 			eniTagKey: aws.String(e.instanceID),
 		},
 	})
+	e.metrics.TimeAWSCall(start, "TagResourcesWithContext", err != nil)
 	if err != nil {
 		return "", false, errors.Wrap(err, "failed to TagResourcesWithContext")
 	}
 
+	start = time.Now()
 	attachOutput, err := e.ec2.AttachNetworkInterfaceWithContext(ctx, &ec2.AttachNetworkInterfaceInput{
 		NetworkInterfaceId: eniID,
 		DeviceIndex:        freeDevice,
 		InstanceId:         aws.String(e.instanceID),
 	})
+	e.metrics.TimeAWSCall(start, "AttachNetworkInterfaceWithContext", err != nil)
 	if err != nil {
 		e.deleteENI(ctx, eni)
 		if containsAttachmentLimitExceededError(err) {
@@ -342,6 +357,7 @@ func (e *EC2Instance) tryAddEni(ctx context.Context, i int64, groups []*string, 
 
 	log.Infof("Attached and tagged new eni: %s", eni)
 
+	start = time.Now()
 	_, err = e.ec2.ModifyNetworkInterfaceAttributeWithContext(ctx, &ec2.ModifyNetworkInterfaceAttributeInput{
 		Attachment: &ec2.NetworkInterfaceAttachmentChanges{
 			AttachmentId:        attachOutput.AttachmentId,
@@ -349,18 +365,22 @@ func (e *EC2Instance) tryAddEni(ctx context.Context, i int64, groups []*string, 
 		},
 		NetworkInterfaceId: eniID,
 	})
+	e.metrics.TimeAWSCall(start, "ModifyNetworkInterfaceAttributeWithContext", err != nil)
 	if err != nil {
 		e.deleteENI(ctx, eni)
 		return "", false, errors.Wrap(err, "failed to ModifyNetworkInterfaceAttributeWithContext")
 	}
 
+	fullWait := time.Now()
 	for {
 		// TODO(tvi): Add max retries?
+		start = time.Now()
 		// err = e.ec2.WaitUntilNetworkInterfaceAvailableWithContext(ctx, &ec2.DescribeNetworkInterfacesInput{
 		// TODO(tvi): Rework dependency injection.
 		err = WaitUntilNetworkInterfaceAvailableWithContext(ctx, e.ec2.(*ec2.EC2), &ec2.DescribeNetworkInterfacesInput{
 			NetworkInterfaceIds: []*string{eniID},
 		})
+		e.metrics.TimeAWSCall(start, "WaitUntilNetworkInterfaceAvailableWithContext", false)
 		if err == nil {
 			break
 		}
@@ -375,6 +395,7 @@ func (e *EC2Instance) tryAddEni(ctx context.Context, i int64, groups []*string, 
 		}
 		time.Sleep(waiterSleep)
 	}
+	e.metrics.TimeAWSCall(fullWait, "FullWaitUntilNetworkInterfaceAvailable", err != nil)
 	if err != nil {
 		e.deleteENI(ctx, eni)
 		return "", false, errors.Wrap(err, "failed to WaitUntilNetworkInterfaceAvailableWithContext")
@@ -428,9 +449,11 @@ func (e *EC2Instance) deleteENI(ctx context.Context, eniID string) error {
 	log.Debugf("Trying to delete eni: %s", eniID)
 
 	for retry := 0; retry < maxENIDeleteRetries; retry++ {
+		start := time.Now()
 		_, err := e.ec2.DeleteNetworkInterfaceWithContext(ctx, &ec2.DeleteNetworkInterfaceInput{
 			NetworkInterfaceId: aws.String(eniID),
 		})
+		e.metrics.TimeAWSCall(start, "DeleteNetworkInterfaceWithContext", err != nil)
 		if err != nil {
 			log.Debugf("Not able to delete eni yet (attempt %d/%d): %v ", retry, maxENIDeleteRetries, err)
 		} else {

@@ -74,14 +74,14 @@ func New() (*IPAMD, error) {
 		log.Errorf("Failed to initialize awsutil interface %v", err)
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
-	client, err := eni.NewEC2Instance(region, instanceID, instanceType)
+	client, err := eni.NewEC2Instance(region, instanceID, instanceType, m)
 	if err != nil {
 		log.Errorf("Failed to initialize awsutil interface %v", err)
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
 
 	i.awsClient = client
-	i.dataStore = datastore.NewDatastore()
+	i.dataStore = datastore.NewDatastore(m)
 	err = i.init(context.Background())
 	if err != nil {
 		return nil, err

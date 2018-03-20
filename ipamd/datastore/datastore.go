@@ -22,6 +22,8 @@ import (
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/metrics"
 )
 
 const (
@@ -107,7 +109,8 @@ type memStore struct {
 	pods   []*Pod
 	podMap map[string]*Pod
 
-	lock sync.RWMutex
+	lock    sync.RWMutex
+	metrics *metrics.Metrics
 }
 
 func (ms *memStore) String() string {
@@ -142,13 +145,14 @@ func (ms *memStore) GetStats() (int, int, int) {
 }
 
 // NewDatastore returns DataStore structure
-func NewDatastore() *memStore {
+func NewDatastore(metrics *metrics.Metrics) *memStore {
 	return &memStore{
-		enis:   make([]*ENI, 0),
-		eniMap: make(map[string]*ENI),
-		pods:   make([]*Pod, 0),
-		podMap: make(map[string]*Pod),
-		lock:   sync.RWMutex{},
+		enis:    make([]*ENI, 0),
+		eniMap:  make(map[string]*ENI),
+		pods:    make([]*Pod, 0),
+		podMap:  make(map[string]*Pod),
+		lock:    sync.RWMutex{},
+		metrics: metrics,
 	}
 }
 
@@ -174,6 +178,7 @@ func (ms *memStore) AddENI(eniID string, device int, primary bool) error {
 	}
 	ms.eniMap[eniID] = eni
 	ms.enis = append(ms.enis, eni)
+	ms.metrics.AddENI()
 	return nil
 }
 
@@ -203,6 +208,7 @@ func (ms *memStore) AddIPAddr(eniID string, ipv4 string) error {
 	}
 	cENI.Addrs = append(cENI.Addrs, addr)
 	cENI.AddrMap[ipv4] = addr
+	ms.metrics.AddIP()
 	return nil
 }
 
@@ -227,6 +233,7 @@ func (ms *memStore) ReconstructPodIP(name, namespace, ipaddr string) error {
 				addr.Assigned = true
 				addr.Updated = now
 				addr.ENI.Updated = now
+				ms.metrics.AssignPodIP()
 				return nil
 			}
 		}
@@ -260,6 +267,7 @@ func (ms *memStore) AssignPodIP(ctx context.Context, name, namespace string) (*I
 				addr.Assigned = true
 				addr.Updated = now
 				addr.ENI.Updated = now
+				ms.metrics.AssignPodIP()
 				return addr, nil
 			}
 		}
@@ -296,6 +304,7 @@ func (ms *memStore) UnassignPodIP(ctx context.Context, name, namespace string) (
 		}
 	}
 
+	ms.metrics.UnassignPodIP()
 	return ipaddr, nil
 }
 
@@ -343,5 +352,6 @@ func (ms *memStore) FreeENI() (string, error) {
 			break
 		}
 	}
+	ms.metrics.FreeENI(len(dENI.AddrMap))
 	return deletedENI, nil
 }
