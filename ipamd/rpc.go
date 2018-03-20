@@ -14,67 +14,78 @@
 package ipamd
 
 import (
+	"context"
+	"fmt"
 	"net"
+	"time"
 
 	"github.com/pkg/errors"
-
-	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
-	"golang.org/x/net/context"
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
-	log "github.com/cihub/seelog"
-
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
+	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 )
 
 const (
-	port = "127.0.0.1:50051"
+	grpcPort    = "127.0.0.1:50051"
+	initTimeout = 1 * time.Second
 )
 
-type server struct {
-	ipamContext *IPAMContext
-}
-
-// AddNetwork processes CNI add network request and return an IP address for container
-func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.AddNetworkReply, error) {
-	log.Infof("Received AddNetwork for NS %s, Pod %s, NameSpace %s, Container %s, ifname %s",
-		in.Netns, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID, in.IfName)
-
-	deviceNumber := 0
-	addr, err := s.ipamContext.dataStore.AssignPodIP(ctx, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
-	log.Infof("Send AddNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", addr, deviceNumber, err)
-	return &pb.AddNetworkReply{Success: err == nil, IPv4Addr: addr.IP.String(), IPv4Subnet: "", DeviceNumber: int32(deviceNumber)}, nil
-}
-
-func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.DelNetworkReply, error) {
-	log.Infof("Received DelNetwork for IP %s, Pod %s, Namespace %s, Container %s",
-		in.IPv4Addr, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID)
-
-	var err error
-	deviceNumber := 0
-	ip, err := s.ipamContext.dataStore.UnassignPodIP(ctx, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
-
-	if err != nil && err == datastore.ErrUnknownPod {
-		// If L-IPAMD restarts, the pod's IP address are assigned by only pod's name and namespace due to kubelet's introspection.
-		ip, err = s.ipamContext.dataStore.UnassignPodIP(ctx, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
+// AddNetwork processes CNI add network request and return an IP address for container.
+func (i *IPAMD) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.AddNetworkReply, error) {
+	log.Debugf("AddNetworkRequest %+#v\n", in)
+	ip, err := i.dataStore.AssignPodIP(ctx, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
+	reply := &pb.AddNetworkReply{
+		Success:    err == nil,
+		IPv4Subnet: "",
 	}
-	log.Infof("Send DelNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", ip, deviceNumber, err)
+	if err == nil {
+		reply.IPv4Addr = ip.IP.String()
+		reply.DeviceNumber = int32(ip.ENI.Device)
+	} else {
+		log.Warningf("AddNetwork error: %v", err)
+	}
+	log.Debugf("AddNetworkReply: %+#v", reply)
+	return reply, nil
+}
 
-	return &pb.DelNetworkReply{Success: err == nil, IPv4Addr: ip.IP.String(), DeviceNumber: int32(deviceNumber)}, nil
+// DelNetwork processes CNI delete network request.
+func (i *IPAMD) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.DelNetworkReply, error) {
+	log.Debugf("DelNetworkRequest %+#v\n", in)
+	ip, err := i.dataStore.UnassignPodIP(ctx, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
+	reply := &pb.DelNetworkReply{
+		Success: err == nil,
+	}
+	if err == nil {
+		reply.IPv4Addr = ip.IP.String()
+		reply.DeviceNumber = int32(ip.ENI.Device)
+	} else {
+		log.Warningf("DelNetwork error: %v", err)
+	}
+	log.Debugf("DelNetworkReply: %+#v", reply)
+	return reply, nil
 }
 
 // RunRPCHandler handles request from gRPC
-func (c *IPAMContext) RunRPCHandler() error {
-	lis, err := net.Listen("tcp", port)
+func (i *IPAMD) RunRPCHandler() error {
+	lis, err := net.Listen("tcp", grpcPort)
 	if err != nil {
-		log.Errorf("Failed to listen gRPC port: %v", err)
+		log.Errorf("Failed to listen gRPC port %v: %v", grpcPort, err)
 		return errors.Wrap(err, "ipamd: failed to listen to gRPC port")
 	}
+
+	select {
+	case <-i.inited:
+		break
+	case <-time.After(initTimeout):
+		log.Errorf("Timeout on init L-IPAMD")
+		return fmt.Errorf("Timeout on init L-IPAMD")
+	}
+
 	s := grpc.NewServer()
-	pb.RegisterCNIBackendServer(s, &server{ipamContext: c})
-	// Register reflection service on gRPC server.
-	reflection.Register(s)
+	pb.RegisterCNIBackendServer(s, i)
+	reflection.Register(s) // Register reflection service on gRPC server.
 	if err := s.Serve(lis); err != nil {
 		log.Errorf("Failed to start server on gRPC port: %v", err)
 		return errors.Wrap(err, "ipamd: failed to start server on gPRC port")

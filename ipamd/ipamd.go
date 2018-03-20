@@ -11,6 +11,9 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
+// Package ipamd is a long running daemon which manages a warn-pool of available IP addresses.
+// It also monitors the size of the pool, dynamically allocate more ENIs when the pool size goes below threshold and
+// free them back when the pool size goes above max threshold.
 package ipamd
 
 import (
@@ -20,21 +23,14 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/cihub/seelog"
 	"github.com/pkg/errors"
-
-	"github.com/aws/aws-sdk-go/aws"
-
-	"github.com/aws/aws-sdk-go/service/ec2"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/eni"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/metrics"
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/network"
 )
-
-// Package ipamd is a long running daemon which manages a warn-pool of available IP addresses.
-// It also monitors the size of the pool, dynamically allocate more ENIs when the pool size goes below threshold and
-// free them back when the pool size goes above max threshold.
 
 const (
 	ipPoolMonitorInterval = 5 * time.Second
@@ -42,29 +38,37 @@ const (
 	eniAttachTime         = 10 * time.Second
 )
 
-// IPAMContext contains node level control information
-type IPAMContext struct {
+// IPAMD contains node level control information
+type IPAMD struct {
 	awsClient     eni.ENIService
 	dataStore     datastore.Datastore
 	networkClient network.Network
 	podClient     getter
 
-	currentMaxAddrsPerENI int
-	maxAddrsPerENI        int
 	// maxENI indicate the maximum number of ENIs can be attached to the instance
 	// It is initialized to 0 and it is set to current number of ENIs attached
 	// when ipamD receives AttachmentLimitExceeded error
 	maxENI int
+
+	metrics *metrics.Metrics
+	started bool
+	inited  chan bool
 }
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
-func New() (*IPAMContext, error) {
-	c := &IPAMContext{
-		podClient: http.DefaultClient,
+func New() (*IPAMD, error) {
+	i := &IPAMD{
+		networkClient: network.NewLinuxNetwork(),
+		podClient:     http.DefaultClient,
+		inited:        make(chan bool),
 	}
+	m, err := metrics.New()
+	if err != nil {
+		return nil, err
+	}
+	i.metrics = m
 
-	c.networkClient = network.NewLinuxNetwork()
 	region, instanceID, instanceType, err := eni.GetMetadata()
 	if err != nil {
 		log.Errorf("Failed to initialize awsutil interface %v", err)
@@ -73,22 +77,23 @@ func New() (*IPAMContext, error) {
 	client, err := eni.NewEC2Instance(region, instanceID, instanceType)
 	if err != nil {
 		log.Errorf("Failed to initialize awsutil interface %v", err)
-		return nil, errors.Wrap(err, "ipamD: can not initialize with AWS SDK interface")
+		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
 
-	c.awsClient = client
-
-	err = c.nodeInit()
+	i.awsClient = client
+	i.dataStore = datastore.NewDatastore()
+	err = i.init(context.Background())
 	if err != nil {
 		return nil, err
 	}
-
-	return c, nil
+	i.started = true
+	return i, nil
 }
 
-//TODO need to break this function down(comments from CR)
-func (c *IPAMContext) nodeInit() error {
-	cidr, localIP, _, err := c.awsClient.GetPrimaryDetails(context.Background())
+//TODO(aws): need to break this function down(comments from CR)
+func (i *IPAMD) init(ctx context.Context) error {
+	i.metrics.Reset()
+	cidr, localIP, _, err := i.awsClient.GetPrimaryDetails(ctx)
 	if err != nil {
 		log.Error("Failed to parse GetPrimaryDetails", err.Error())
 		return errors.Wrap(err, "ipamd init: failed to get VPC CIDR")
@@ -101,243 +106,150 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	primaryIP := net.ParseIP(localIP)
+	if err = i.networkClient.SetupHostNetwork(vpcCIDR, &primaryIP); err != nil {
+		log.Error("Failed to setup host network", err)
+		return errors.Wrap(err, "ipamd init: failed to setup host network")
+	}
 
-	enis, err := c.awsClient.GetENIs(context.Background())
+	enis, err := i.awsClient.GetENIs(ctx)
 	if err != nil {
 		log.Error("Failed to retrive ENI info")
 		return errors.New("ipamd init: failed to retrieve attached ENIs info")
 	}
 
-	err = c.networkClient.SetupHostNetwork(vpcCIDR, &primaryIP)
-	if err != nil {
-		log.Error("Failed to setup host network", err)
-		return errors.Wrap(err, "ipamd init: failed to setup host network")
-	}
-
-	c.dataStore = datastore.NewDatastore()
-
-	for _, eniID := range enis {
-		log.Debugf("Discovered ENI %s", eniID)
-		err = c.setupENI(eniID, eni.ENIMetadata{})
-		if err != nil {
-			log.Errorf("Failed to setup eni %s network: %v", eniID, err)
-			return errors.Wrapf(err, "Failed to setup eni %v", eniID)
+	for _, eni := range enis {
+		log.Debugf("Discovered ENI %s", eni)
+		if err := i.setupENI(ctx, eni); err != nil {
+			log.Errorf("Failed to setup eni %s network: %v", eni, err)
+			return errors.Wrapf(err, "Failed to setup eni %v", eni)
 		}
 	}
 
-	usedIPs, err := k8sGetLocalPodIPs(c.podClient, localIP)
+	usedIPs, err := k8sGetLocalPodIPs(i.podClient, localIP)
 	if err != nil {
-		log.Warnf("During ipamd init, failed to get Pod information from Kubelet %v", err)
+		log.Warnf("ipamd init: failed to get Pod information from Kubelet %v", err)
 		// This can happens when L-IPAMD starts before kubelet.
-		// TODO  need to add node health stats here
-		return nil
+		// We are going to error out and let liveness probe restart the daemon.
+		return errors.Wrapf(err, "failed to get Pod information from Kubelet %v", err)
 	}
 
 	for _, ip := range usedIPs {
-		err = c.dataStore.ReconstructPodIP(ip.Name, ip.Namespace, ip.IP)
-		if err != nil {
-			log.Warnf("During ipamd init, failed to use pod ip %s returned from Kubelet %v", ip.IP, err)
-			// TODO continue, but need to add node health stats here
-			// TODO need to feed this to controller on the health of pod and node
-			// This is a bug among kubelet/cni-plugin/l-ipamd/ec2-metadata that this particular pod is using an non existent ip address.
-			// Here we choose to continue instead of returning error and EXIT out L-IPAMD(exit L-IPAMD will make whole node out)
-			// The plan(TODO) is to feed this info back to controller and let controller cleanup this pod from this node.
+		if err := i.dataStore.ReconstructPodIP(ip.Name, ip.Namespace, ip.IP); err != nil {
+			// TODO
 		}
 	}
+
+	// TODO(aws): continue, but need to add node health stats here
+	// TODO(aws): need to feed this to controller on the health of pod and node
+	// This is a bug among kubelet/cni-plugin/l-ipamd/ec2-metadata that this particular pod is using an non existent ip address.
+	// Here we choose to continue instead of returning error and EXIT out L-IPAMD(exit L-IPAMD will make whole node out)
+	// The plan(TODO) is to feed this info back to controller and let controller cleanup this pod from this node.
 
 	return nil
 }
 
 // StartNodeIPPoolManager monitors the IP Pool, add or del them when it is required.
-func (c *IPAMContext) StartNodeIPPoolManager() {
+func (i *IPAMD) StartNodeIPPoolManager() {
+	i.inited <- true
 	for {
 		time.Sleep(ipPoolMonitorInterval)
-		c.updateIPPoolIfRequired()
+		i.updateIPPoolIfRequired(context.Background())
 	}
 }
 
-func (c *IPAMContext) updateIPPoolIfRequired() {
-	if c.nodeIPPoolTooLow() {
-		c.increaseIPPool()
-	} else if c.nodeIPPoolTooHigh() {
-		c.decreaseIPPool()
+func (i *IPAMD) updateIPPoolIfRequired(ctx context.Context) {
+	total, used, _ := i.dataStore.GetStats()
+	currentMaxAddrsPerENI := int(i.awsClient.GetMaxIPs())
+	if (total - used) <= currentMaxAddrsPerENI {
+		log.Infof("Increasing IPPool: total %v used %v currentMaxAddrsPerENI %v", total, used, currentMaxAddrsPerENI)
+		i.increaseIPPool(ctx)
+	} else if total-used > 2*currentMaxAddrsPerENI {
+		log.Infof("Decreasing IPPool: total %v used %v currentMaxAddrsPerENI %v", total, used, currentMaxAddrsPerENI)
+		i.decreaseIPPool(ctx)
 	}
-}
-
-func (c *IPAMContext) decreaseIPPool() {
-	eni, err := c.dataStore.FreeENI()
-	if err != nil {
-		log.Errorf("Failed to decrease pool %v", err)
-		return
-	}
-	c.awsClient.FreeENI(context.Background(), eni)
 }
 
 func isAttachmentLimitExceededError(err error) bool {
 	return strings.Contains(err.Error(), "AttachmentLimitExceeded")
 }
 
-func (c *IPAMContext) increaseIPPool() {
-
-	// if (c.maxENI > 0) && (c.maxENI == c.dataStore.GetENIs()) {
-	// 	log.Debugf("Skipping increase IPPOOL due to max ENI already attached to the instance : %d", c.maxENI)
-	// 	return
-	// }
-	eni, _, err := c.awsClient.AddENI(context.Background())
+func (i *IPAMD) increaseIPPool(ctx context.Context) {
+	eni, runOut, err := i.awsClient.AddENI(ctx)
 	if err != nil {
 		log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
-
-		if isAttachmentLimitExceededError(err) {
-			// c.maxENI = c.dataStore.GetENIs()
-			log.Infof("Discovered the instance max ENI allowed is: %d", c.maxENI)
-		}
-		// TODO need to add health stats
+		// TODO(aws): need to add health stats
+		// TODO(tvi): Fix isAttachmentLimitExceededError?
 		return
 	}
-
-	eniMetadata, err := c.waitENIAttached(eni)
-	if err != nil {
-		log.Errorf("Failed to increase pool size: not able to discover attached eni from metadata service %v", err)
-		return
+	if runOut {
+		log.Info("Run out of enis to allocate")
 	}
 
-	err = c.setupENI(eni, eniMetadata)
-	if err != nil {
+	if err := i.setupENI(ctx, eni); err != nil {
 		log.Errorf("Failed to increase pool size: %v", err)
 		return
 	}
+}
+
+func (i *IPAMD) decreaseIPPool(ctx context.Context) {
+	eni, err := i.dataStore.FreeENI()
+	if err != nil {
+		log.Debugf("Failed to decrease pool %v", err)
+		return
+	}
+	i.awsClient.FreeENI(ctx, eni)
 }
 
 // setupENI does following:
 // 1) add ENI to datastore
 // 2) add all ENI's secondary IP addresses to datastore
 // 3) setup linux eni related networking stack.
-func (c *IPAMContext) setupENI(eni string, eniMetadata eni.ENIMetadata) error {
-	_, _, primaryENI, err := c.awsClient.GetPrimaryDetails(context.Background())
-	if err != nil {
-		return errors.Wrapf(err, "failed to retrieve eni %s ip addresses", eni)
-	}
-	// Have discovered the attached ENI from metadata service
-	// add eni's IP to IP pool
-	err = c.dataStore.AddENI(eni, int(eniMetadata.Device), (eni == primaryENI))
-	if err != nil && err != datastore.ErrDuplicateENI {
-		return errors.Wrapf(err, "failed to add eni %s to data store", eni)
-	}
-
-	// ec2Addrs, eniPrimaryIP, err := c.getENIaddresses(eni)
-	// if err != nil {
-	// 	return errors.Wrapf(err, "failed to retrieve eni %s ip addresses", eni)
-	// }
-
-	// c.currentMaxAddrsPerENI = len(ec2Addrs)
-	// if c.currentMaxAddrsPerENI > c.maxAddrsPerENI {
-	// 	c.maxAddrsPerENI = c.currentMaxAddrsPerENI
-	// }
-
-	if eni != primaryENI {
-		if err := c.networkClient.SetupENINetwork(
-			eniMetadata.PrimaryIP,
-			eniMetadata.MAC,
-			int(eniMetadata.Device),
-			eniMetadata.CIDR); err != nil {
-			return errors.Wrapf(err, "failed to setup eni %s network", eni)
-		}
-	}
-
-	for _, ec2Addr := range eniMetadata.SecondaryIPs {
-		err := c.dataStore.AddIPAddr(eni, ec2Addr)
-		if err != nil && err != datastore.ErrDuplicateIP {
-			log.Warnf("Failed to increase ip pool, failed to add ip %s to data store", ec2Addr)
-			// continue to add next address
-			// TODO(aws): need to add health stats for err
-		}
-	}
-	// c.addENIaddressesToDataStore(ec2Addrs, eni)
-
-	return nil
-
-}
-
-func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfacePrivateIpAddress, eni string) {
-	for _, ec2Addr := range ec2Addrs {
-		if aws.BoolValue(ec2Addr.Primary) {
-			continue
-		}
-		err := c.dataStore.AddIPAddr(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
-		if err != nil && err != datastore.ErrDuplicateIP {
-			log.Warnf("Failed to increase ip pool, failed to add ip %s to data store", ec2Addr.PrivateIpAddress)
-			// continue to add next address
-			// TODO need to add health stats for err
-		}
-	}
-}
-
-// returns all addresses on eni, the primary adderss on eni, error
-// func (c *IPAMContext) getENIaddresses(eni string) ([]*ec2.NetworkInterfacePrivateIpAddress, string, error) {
-// 	ec2Addrs, _, err := c.awsClient.DescribeENI(eni)
-// 	if err != nil {
-// 		return nil, "", errors.Wrapf(err, "fail to find eni addresses for eni %s", eni)
-// 	}
-
-// 	for _, ec2Addr := range ec2Addrs {
-// 		if aws.BoolValue(ec2Addr.Primary) {
-// 			eniPrimaryIP := aws.StringValue(ec2Addr.PrivateIpAddress)
-// 			return ec2Addrs, eniPrimaryIP, nil
-// 		}
-// 	}
-
-// 	return nil, "", errors.Wrapf(err, "faind to find eni's primary address for eni %s", eni)
-// }
-
-func (c *IPAMContext) waitENIAttached(eniID string) (eni.ENIMetadata, error) {
+func (i *IPAMD) setupENI(ctx context.Context, eni string) error {
 	// wait till eni is showup in the instance meta data service
-	retry := 0
-	for {
-		retry++
-		if retry > maxRetryCheckENI {
-			log.Errorf("Unable to discover attached ENI from metadata service")
-			// TODO need to add health stats
-			return eni.ENIMetadata{}, errors.New("add eni: not able to retrieve eni from metata service")
-		}
-		ok, err := c.awsClient.IsENIReady(context.Background(), eniID)
+	for retry := 0; retry < maxRetryCheckENI; retry++ {
+		ok, err := i.awsClient.IsENIReady(ctx, eni)
 		if err != nil {
-			return eni.ENIMetadata{}, errors.Wrapf(err, "failed to retrieve eni %s readyness", eniID)
+			return errors.Wrapf(err, "failed to retrieve eni %s readyness", eni)
 		}
 		if !ok {
-			log.Warnf("Failed to increase pool, error trying to discover attached enis: %v ", err)
 			time.Sleep(eniAttachTime)
 			continue
 		}
 
-		// verify eni is in the returned eni list
-		// for _, returnedENI := range enis {
-		// 	if eniID == returnedENI.ENIID {
-		// 		return returnedENI, nil
-		// 	}
-		// }
+		eniMetadata, err := i.awsClient.GetENIMetadata(ctx, eni)
+		if err != nil {
+			return errors.Wrapf(err, "failed to retrieve eni %s ip addresses", eni)
+		}
 
-		log.Debugf("Not able to discover attached eni yet (attempt %d/%d)", retry, maxRetryCheckENI)
+		_, _, primaryENI, err := i.awsClient.GetPrimaryDetails(ctx)
+		if err != nil {
+			return errors.Wrapf(err, "failed to retrieve eni %s ip addresses", eni)
+		}
+		// Have discovered the attached ENI from metadata service add eni's IP to IP pool.
+		err = i.dataStore.AddENI(eni, int(eniMetadata.Device), (eni == primaryENI))
+		if err != nil && err != datastore.ErrDuplicateENI {
+			return errors.Wrapf(err, "failed to add eni %s to data store", eni)
+		}
 
-		time.Sleep(eniAttachTime)
+		if eni != primaryENI {
+			if err := i.networkClient.SetupENINetwork(
+				eniMetadata.PrimaryIP,
+				eniMetadata.MAC,
+				int(eniMetadata.Device),
+				eniMetadata.CIDR); err != nil {
+				return errors.Wrapf(err, "failed to setup eni %s network", eni)
+			}
+		}
+
+		for _, ec2Addr := range eniMetadata.SecondaryIPs {
+			err := i.dataStore.AddIPAddr(eni, ec2Addr)
+			if err != nil && err != datastore.ErrDuplicateIP {
+				log.Warnf("Failed to increase ip pool, failed to add ip %s to data store", ec2Addr)
+				// continue to add next address
+				// TODO(aws): need to add health stats for err
+			}
+		}
+		break
 	}
-}
-
-//nodeIPPoolTooLow returns true if IP pool is below low threshhold
-func (c *IPAMContext) nodeIPPoolTooLow() bool {
-	total, used, _ := c.dataStore.GetStats()
-	log.Debugf("IP pool stats: total=%d, used=%d, c.currentMaxAddrsPerENI =%d, c.maxAddrsPerENI = %d",
-		total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
-
-	return ((total - used) <= c.currentMaxAddrsPerENI)
-}
-
-// NodeIPPoolTooHigh returns true if IP pool is above high threshhold
-func (c *IPAMContext) nodeIPPoolTooHigh() bool {
-	total, used, _ := c.dataStore.GetStats()
-
-	log.Debugf("IP pool stats: total=%d, used=%d, c.currentMaxAddrsPerENI =%d, c.maxAddrsPerENI = %d",
-		total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
-
-	return (total-used > 2*c.currentMaxAddrsPerENI)
-
+	return nil
 }
