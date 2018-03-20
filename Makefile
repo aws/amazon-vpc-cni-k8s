@@ -16,8 +16,6 @@
 static:
 	go build -o aws-k8s-agent main.go
 	go build -o aws-cni cmd/cni/main.go
-	go build verify-aws.go
-	go build verify-network.go
 
 # need to bundle certificates
 certs: docker/certs/ca-certificates.crt
