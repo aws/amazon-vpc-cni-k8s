@@ -14,12 +14,6 @@
   revision = "de5bf2ad457846296e2031421a34e2568e304e35"
 
 [[projects]]
-  branch = "master"
-  name = "github.com/aws/amazon-ecs-cni-plugins"
-  packages = ["pkg/logger"]
-  revision = "0c6216c60401232805e50e31d4040ae84b0b23cf"
-
-[[projects]]
   name = "github.com/aws/aws-sdk-go"
   packages = [
     "aws",
@@ -62,12 +56,6 @@
   name = "github.com/beorn7/perks"
   packages = ["quantile"]
   revision = "4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9"
-
-[[projects]]
-  name = "github.com/cihub/seelog"
-  packages = ["."]
-  revision = "d2c6e5aa9fbfdd1c624e140287063c7730654115"
-  version = "v2.6"
 
 [[projects]]
   name = "github.com/containernetworking/cni"
@@ -210,7 +198,10 @@
 
 [[projects]]
   name = "github.com/prometheus/client_golang"
-  packages = ["prometheus"]
+  packages = [
+    "prometheus",
+    "prometheus/promhttp"
+  ]
   revision = "c5b7fccd204277076155f10851dad72b76a49317"
   version = "v0.8.0"
 
@@ -416,6 +407,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "d6980beedbfb081e3804eed3f61ee9eda7f9d4b945b8e5732af09ab591f7ad90"
+  inputs-digest = "e226cd0055a9481a5a57b5e965a6e626e519c4dd8eb64ad21622b87bda54235f"
   solver-name = "gps-cdcl"
   solver-version = 1
