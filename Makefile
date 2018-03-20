@@ -14,7 +14,7 @@
 
 # build binary
 static:
-	go build -o aws-k8s-agent main.go
+	go build -o aws-k8s-agent cmd/ipamd/main.go
 	go build -o aws-cni cmd/cni/main.go
 
 # need to bundle certificates
