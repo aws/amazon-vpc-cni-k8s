@@ -11,6 +11,6 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package awsutils
+package eni
 
-//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/ipamd/awsutils APIs mocks/awsutils_mocks.go
+//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/ipamd/eni APIs mocks/eni_mocks.go

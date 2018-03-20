@@ -26,8 +26,8 @@ import (
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/eni"
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/network"
 )
 
@@ -43,7 +43,7 @@ const (
 
 // IPAMContext contains node level control information
 type IPAMContext struct {
-	awsClient     awsutils.APIs
+	awsClient     eni.APIs
 	dataStore     datastore.Datastore
 	networkClient network.Network
 	podClient     getter
@@ -65,7 +65,7 @@ func New() (*IPAMContext, error) {
 
 	c.networkClient = network.NewLinuxNetwork()
 
-	client, err := awsutils.New()
+	client, err := eni.New()
 	if err != nil {
 		log.Errorf("Failed to initialize awsutil interface %v", err)
 		return nil, errors.Wrap(err, "ipamD: can not initialize with AWS SDK interface")
@@ -215,7 +215,7 @@ func (c *IPAMContext) increaseIPPool() {
 // 1) add ENI to datastore
 // 2) add all ENI's secondary IP addresses to datastore
 // 3) setup linux eni related networking stack.
-func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) error {
+func (c *IPAMContext) setupENI(eni string, eniMetadata eni.ENIMetadata) error {
 	// Have discovered the attached ENI from metadata service
 	// add eni's IP to IP pool
 	err := c.dataStore.AddENI(eni, int(eniMetadata.DeviceNumber), (eni == c.awsClient.GetPrimaryENI()))
@@ -278,7 +278,7 @@ func (c *IPAMContext) getENIaddresses(eni string) ([]*ec2.NetworkInterfacePrivat
 	return nil, "", errors.Wrapf(err, "faind to find eni's primary address for eni %s", eni)
 }
 
-func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) {
+func (c *IPAMContext) waitENIAttached(eniID string) (eni.ENIMetadata, error) {
 	// wait till eni is showup in the instance meta data service
 	retry := 0
 	for {
@@ -286,7 +286,7 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 		if retry > maxRetryCheckENI {
 			log.Errorf("Unable to discover attached ENI from metadata service")
 			// TODO need to add health stats
-			return awsutils.ENIMetadata{}, errors.New("add eni: not able to retrieve eni from metata service")
+			return eni.ENIMetadata{}, errors.New("add eni: not able to retrieve eni from metata service")
 		}
 		enis, err := c.awsClient.GetAttachedENIs()
 		if err != nil {
@@ -297,7 +297,7 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 
 		// verify eni is in the returned eni list
 		for _, returnedENI := range enis {
-			if eni == returnedENI.ENIID {
+			if eniID == returnedENI.ENIID {
 				return returnedENI, nil
 			}
 		}

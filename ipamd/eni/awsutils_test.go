@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package awsutils
+package eni
 
 import (
 	"errors"
@@ -24,7 +24,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadata/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/resourcegroupstaggingapiwrapper/mocks"
 )
 
 const (

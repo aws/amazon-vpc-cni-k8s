@@ -5,14 +5,14 @@ import (
 	"time"
 
 	"github.com/aws/amazon-ecs-cni-plugins/pkg/logger"
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd/awsutils"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/eni"
 
 	"math/rand"
 
 	log "github.com/cihub/seelog"
 )
 
-var testEC2Instance *awsutils.EC2InstanceMetadataCache
+var testEC2Instance *eni.EC2InstanceMetadataCache
 
 const (
 	defaultLogFilePath = "/var/log/verify-aws.log"
@@ -23,7 +23,7 @@ func main() {
 	defer log.Flush()
 	logger.SetupLogger(logger.GetLogFileLocation(defaultLogFilePath))
 	// verify API: GetInstanceMetadata
-	testEC2Instance, _ = awsutils.New()
+	testEC2Instance, _ = eni.New()
 
 	testENIs, _ := testEC2Instance.GetAttachedENIs()
 	log.Infof("Number of current attached interface is %d \n", len(testENIs))
