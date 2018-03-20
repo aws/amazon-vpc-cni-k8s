@@ -14,6 +14,6 @@ COPY docker/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 ADD docker/aws-cni-support.sh /app
 ADD docker/install-aws.sh /app
-ADD aws-k8s-agent  /app
-ADD aws-cni /app 
+ADD .build/aws-k8s-agent  /app
+ADD .build/aws-cni /app
 ENTRYPOINT /app/install-aws.sh
