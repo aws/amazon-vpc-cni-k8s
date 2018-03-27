@@ -226,10 +226,10 @@ func (e *EC2Instance) GetPrimaryDetails(ctx context.Context) (string, string, st
 	if err != nil {
 		return "", "", "", err
 	}
-	// eniID := aws.StringValue(e.instance.NetworkInterfaces[0].NetworkInterfaceId)
-	// log.Infof("GetPrimaryDetails: %v \n", e.instance)
-	eniID := ""
-	// TODO(tvi): Implement.
+	eniID, err := svc.GetMetadata(fmt.Sprintf(metadataENIPath, mac))
+	if err != nil {
+		return "", "", "", err
+	}
 	return cidr, localip, eniID, nil
 }
 
@@ -491,7 +491,6 @@ func (e *EC2Instance) GetENIMetadata(ctx context.Context, eniID string) (meta EN
 
 			meta.MAC = aws.StringValue(eni.MacAddress)
 			meta.Device = int(aws.Int64Value(eni.Attachment.DeviceIndex))
-			// meta.CIDR // TODO(tvi): Fix.
 			cidr, err := svc.GetMetadata(metadataMACPath + meta.MAC + metadataVPCcidr)
 			if err != nil {
 				return ENIMetadata{}, errors.Wrap(err, "instance metadata: failed to retrieve cidr for mac")

@@ -136,6 +136,7 @@ func (i *IPAMD) init(ctx context.Context) error {
 	for _, ip := range usedIPs {
 		if err := i.dataStore.ReconstructPodIP(ip.Name, ip.Namespace, ip.IP); err != nil {
 			// TODO
+			log.Warnf("ipamd init: failed to reconstruct pod %v %v %v : %v", ip.Name, ip.Namespace, ip.IP, err)
 		}
 	}
 
@@ -183,6 +184,7 @@ func (i *IPAMD) increaseIPPool(ctx context.Context) {
 	}
 	if runOut {
 		log.Info("Run out of enis to allocate")
+		return
 	}
 
 	if err := i.setupENI(ctx, eni); err != nil {
@@ -197,7 +199,11 @@ func (i *IPAMD) decreaseIPPool(ctx context.Context) {
 		log.Debugf("Failed to decrease pool %v", err)
 		return
 	}
-	i.awsClient.FreeENI(ctx, eni)
+	if err = i.awsClient.FreeENI(ctx, eni); err != nil {
+		log.Errorf("Failed to free eni: %v", err)
+		// TODO(tvi): This should not happen. Maybe panic and get restarted?
+		log.Warningf("Leaking eni")
+	}
 }
 
 // setupENI does following:
