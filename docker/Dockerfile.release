@@ -1,0 +1,19 @@
+FROM debian:9.3-slim
+
+RUN apt-get update && \
+    apt-get install -y iproute2 && \
+    apt-get install -y iptables
+
+WORKDIR /app
+
+COPY docker/aws.conf /app
+
+# Copy our bundled certs to the first place go will check: see 
+# https://golang.org/src/pkg/crypto/x509/root_unix.go
+COPY docker/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+ADD docker/aws-cni-support.sh /app
+ADD docker/install-aws.sh /app
+ADD .build/aws-k8s-agent  /app
+ADD .build/aws-cni /app
+ENTRYPOINT /app/install-aws.sh

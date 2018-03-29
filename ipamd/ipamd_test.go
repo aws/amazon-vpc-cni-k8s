@@ -14,22 +14,68 @@
 package ipamd
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
 	"net"
+	"net/http"
 	"testing"
-	//"time"
+
+	"github.com/stretchr/testify/assert"
+	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
-
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/assert"
-
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/eni"
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/metrics"
 )
+
+type mockNetworkAPIs struct {
+	hn   func(vpcCIDR *net.IPNet, primaryAddr *net.IP) error
+	enin func(eniIP string, mac string, table int, subnetCIDR string) error
+}
+
+func (m *mockNetworkAPIs) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP) error {
+	return m.hn(vpcCIDR, primaryAddr)
+}
+
+func (m *mockNetworkAPIs) SetupENINetwork(eniIP string, mac string, table int, subnetCIDR string) error {
+	return m.enin(eniIP, mac, table, subnetCIDR)
+}
+
+type mockENI struct {
+	add  func() (string, bool, error)
+	free func(string) error
+}
+
+func (m *mockENI) AddENI(context.Context) (string, bool, error) {
+	return m.add()
+}
+func (m *mockENI) FreeENI(_ context.Context, e string) error {
+	return m.free(e)
+}
+func (m *mockENI) IsENIReady(context.Context, string) (bool, error) {
+	return true, nil
+}
+func (m *mockENI) GetENIs(context.Context) ([]string, error) {
+	return []string{eniID}, nil
+}
+func (m *mockENI) GetENIMetadata(context.Context, string) (eni.ENIMetadata, error) {
+	return eni.ENIMetadata{
+		MAC:          primaryMAC,
+		PrimaryIP:    ipaddr01,
+		SecondaryIPs: []string{},
+		Device:       primaryDevice,
+		CIDR:         vpcCIDR,
+	}, nil
+}
+func (m *mockENI) GetPrimaryDetails(ctx context.Context) (string, string, string, error) {
+	return vpcCIDR, ipaddr01, eniID, nil
+}
+func (m *mockENI) GetMaxIPs() int64 {
+	return 5
+}
 
 const (
 	primaryENIid     = "eni-00000000"
@@ -49,139 +95,158 @@ const (
 	vpcCIDR          = "10.10.0.0/16"
 )
 
-func setup(t *testing.T) (*gomock.Controller,
-	*mock_awsutils.MockAPIs,
-	*mock_k8sapi.MockK8SAPIs,
-	*mock_networkutils.MockNetworkAPIs) {
-	ctrl := gomock.NewController(t)
-	return ctrl,
-		mock_awsutils.NewMockAPIs(ctrl),
-		mock_k8sapi.NewMockK8SAPIs(ctrl),
-		mock_networkutils.NewMockNetworkAPIs(ctrl)
+func TestNodeInitError(t *testing.T) {
+	m, _ := metrics.New()
+	store := datastore.NewDatastore(m)
+	mockContext := &IPAMD{
+		awsClient: &mockENI{func() (string, bool, error) {
+			return "", true, nil
+		}, func(string) error {
+			return nil
+		}},
+		podClient: mockGetter{func(url string) (resp *http.Response, err error) {
+			return nil, fmt.Errorf("error")
+		}},
+		networkClient: &mockNetworkAPIs{
+			func(vpcCIDR *net.IPNet, primaryAddr *net.IP) error { return nil },
+			func(eniIP string, mac string, table int, subnetCIDR string) error { return nil },
+		},
+		metrics:   m,
+		dataStore: store,
+	}
+
+	err := mockContext.init(context.Background())
+	assert.Error(t, err)
 }
 
 func TestNodeInit(t *testing.T) {
-	ctrl, mockAWS, mockK8S, mockNetwork := setup(t)
-	defer ctrl.Finish()
-
-	mockContext := &IPAMContext{
-		awsClient:     mockAWS,
-		k8sClient:     mockK8S,
-		networkClient: mockNetwork}
-
-	eni1 := awsutils.ENIMetadata{
-		ENIID:          primaryENIid,
-		MAC:            primaryMAC,
-		DeviceNumber:   primaryDevice,
-		SubnetIPv4CIDR: primarySubnet,
-		LocalIPv4s:     []string{ipaddr01, ipaddr02},
-	}
-
-	eni2 := awsutils.ENIMetadata{
-		ENIID:          secENIid,
-		MAC:            secMAC,
-		DeviceNumber:   secDevice,
-		SubnetIPv4CIDR: secSubnet,
-		LocalIPv4s:     []string{ipaddr11, ipaddr12},
-	}
-	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{eni1, eni2}, nil)
-	mockAWS.EXPECT().GetVPCIPv4CIDR().Return(vpcCIDR)
-	mockAWS.EXPECT().GetLocalIPv4().Return(ipaddr01)
-
-	_, vpcCIDR, _ := net.ParseCIDR(vpcCIDR)
-	primaryIP := net.ParseIP(ipaddr01)
-	mockNetwork.EXPECT().SetupHostNetwork(vpcCIDR, &primaryIP).Return(nil)
-
-	//primaryENIid
-	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	mockAWS.EXPECT().AllocAllIPAddress(primaryENIid).Return(nil)
-	attachmentID := testAttachmentID
-	testAddr1 := ipaddr01
-	testAddr2 := ipaddr02
-	primary := true
-	eniResp := []*ec2.NetworkInterfacePrivateIpAddress{
-		&ec2.NetworkInterfacePrivateIpAddress{
-			PrivateIpAddress: &testAddr1, Primary: &primary},
-		&ec2.NetworkInterfacePrivateIpAddress{
-			PrivateIpAddress: &testAddr2, Primary: &primary}}
-	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	mockAWS.EXPECT().DescribeENI(primaryENIid).Return(eniResp, &attachmentID, nil)
-
-	//secENIid
-	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	mockAWS.EXPECT().AllocAllIPAddress(secENIid).Return(nil)
-	attachmentID = testAttachmentID
-	testAddr11 := ipaddr11
-	testAddr12 := ipaddr12
-	primary = false
-	eniResp = []*ec2.NetworkInterfacePrivateIpAddress{
-		&ec2.NetworkInterfacePrivateIpAddress{
-			PrivateIpAddress: &testAddr11, Primary: &primary},
-		&ec2.NetworkInterfacePrivateIpAddress{
-			PrivateIpAddress: &testAddr12, Primary: &primary}}
-	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	mockAWS.EXPECT().DescribeENI(secENIid).Return(eniResp, &attachmentID, nil)
-	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
-
-	mockAWS.EXPECT().GetLocalIPv4().Return(ipaddr01)
-	mockK8S.EXPECT().K8SGetLocalPodIPs(gomock.Any()).Return([]*k8sapi.K8SPodInfo{&k8sapi.K8SPodInfo{Name: "pod1",
-		Namespace: "default"}}, nil)
-
-	err := mockContext.nodeInit()
-	assert.NoError(t, err)
-}
-
-func TestIncreaseIPPool(t *testing.T) {
-	ctrl, mockAWS, mockK8S, mockNetwork := setup(t)
-	defer ctrl.Finish()
-
-	mockContext := &IPAMContext{
-		awsClient:     mockAWS,
-		k8sClient:     mockK8S,
-		networkClient: mockNetwork,
-	}
-
-	mockContext.dataStore = datastore.NewDataStore()
-
-	eni2 := secENIid
-
-	mockAWS.EXPECT().AllocENI().Return(eni2, nil)
-
-	mockAWS.EXPECT().AllocAllIPAddress(eni2)
-
-	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
-		awsutils.ENIMetadata{
-			ENIID:          primaryENIid,
-			MAC:            primaryMAC,
-			DeviceNumber:   primaryDevice,
-			SubnetIPv4CIDR: primarySubnet,
-			LocalIPv4s:     []string{ipaddr01, ipaddr02},
+	tests := []struct {
+		pods  []v1.Pod
+		ipamd *IPAMD
+		ret   func(*IPAMD)
+	}{
+		{
+			pods: []v1.Pod{
+				v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "default"},
+					Status:     v1.PodStatus{PodIP: pod1IP},
+				},
+				v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "default"},
+					Status:     v1.PodStatus{PodIP: pod2IP},
+				},
+			},
+			ipamd: &IPAMD{
+				awsClient: &mockENI{func() (string, bool, error) {
+					return "eni-neweni", false, nil
+				}, func(string) error {
+					return nil
+				}},
+				networkClient: &mockNetworkAPIs{
+					func(vpcCIDR *net.IPNet, primaryAddr *net.IP) error { return nil },
+					func(eniIP string, mac string, table int, subnetCIDR string) error { return nil },
+				},
+			},
+			ret: func(mockContext *IPAMD) {
+				err := mockContext.init(context.Background())
+				assert.NoError(t, err)
+				mockContext.increaseIPPool(context.Background())
+				mockContext.decreaseIPPool(context.Background())
+			},
 		},
-		awsutils.ENIMetadata{
-			ENIID:          secENIid,
-			MAC:            secMAC,
-			DeviceNumber:   secDevice,
-			SubnetIPv4CIDR: secSubnet,
-			LocalIPv4s:     []string{ipaddr11, ipaddr12}},
-	}, nil)
+		{
+			pods: nil,
+			ipamd: &IPAMD{
+				awsClient: &mockENI{func() (string, bool, error) {
+					return "eni-neweni", false, nil
+				}, func(string) error {
+					return nil
+				}},
+				networkClient: &mockNetworkAPIs{
+					func(vpcCIDR *net.IPNet, primaryAddr *net.IP) error { return nil },
+					func(eniIP string, mac string, table int, subnetCIDR string) error { return nil },
+				},
+			},
+			ret: func(mockContext *IPAMD) {
+				err := mockContext.init(context.Background())
+				assert.NoError(t, err)
+				mockContext.increaseIPPool(context.Background())
+				mockContext.decreaseIPPool(context.Background())
+			},
+		},
+		{
+			pods: nil,
+			ipamd: &IPAMD{
+				awsClient: &mockENI{func() (string, bool, error) {
+					return "", true, nil
+				}, func(string) error {
+					return nil
+				}},
+				networkClient: &mockNetworkAPIs{
+					func(vpcCIDR *net.IPNet, primaryAddr *net.IP) error { return nil },
+					func(eniIP string, mac string, table int, subnetCIDR string) error { return nil },
+				},
+			},
+			ret: func(mockContext *IPAMD) {
+				err := mockContext.init(context.Background())
+				assert.NoError(t, err)
+				mockContext.increaseIPPool(context.Background())
+				mockContext.decreaseIPPool(context.Background())
+			},
+		},
+		{
+			pods: nil,
+			ipamd: &IPAMD{
+				awsClient: &mockENI{func() (string, bool, error) {
+					return "", false, fmt.Errorf("testerror")
+				}, func(string) error {
+					return nil
+				}},
+				networkClient: &mockNetworkAPIs{
+					func(vpcCIDR *net.IPNet, primaryAddr *net.IP) error { return nil },
+					func(eniIP string, mac string, table int, subnetCIDR string) error { return nil },
+				},
+			},
+			ret: func(mockContext *IPAMD) {
+				err := mockContext.init(context.Background())
+				assert.NoError(t, err)
+				mockContext.increaseIPPool(context.Background())
+				mockContext.decreaseIPPool(context.Background())
+			},
+		},
+		{
+			pods: nil,
+			ipamd: &IPAMD{
+				awsClient: &mockENI{func() (string, bool, error) {
+					return "", true, nil
+				}, func(string) error {
+					return fmt.Errorf("testerror")
+				}},
+				networkClient: &mockNetworkAPIs{
+					func(vpcCIDR *net.IPNet, primaryAddr *net.IP) error { return nil },
+					func(eniIP string, mac string, table int, subnetCIDR string) error { return nil },
+				},
+			},
+			ret: func(mockContext *IPAMD) {
+				err := mockContext.init(context.Background())
+				assert.NoError(t, err)
+				mockContext.increaseIPPool(context.Background())
+				mockContext.decreaseIPPool(context.Background())
+			},
+		},
+	}
 
-	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
-
-	primary := false
-	attachmentID := testAttachmentID
-	testAddr11 := ipaddr11
-	testAddr12 := ipaddr12
-
-	mockAWS.EXPECT().DescribeENI(eni2).Return(
-		[]*ec2.NetworkInterfacePrivateIpAddress{
-			&ec2.NetworkInterfacePrivateIpAddress{
-				PrivateIpAddress: &testAddr11, Primary: &primary},
-			&ec2.NetworkInterfacePrivateIpAddress{
-				PrivateIpAddress: &testAddr12, Primary: &primary}}, &attachmentID, nil)
-
-	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
-
-	mockContext.increaseIPPool()
-
+	for _, test := range tests {
+		testRespByte, _ := json.Marshal(&v1.PodList{Items: test.pods})
+		m, _ := metrics.New()
+		store := datastore.NewDatastore(m)
+		test.ipamd.metrics = m
+		test.ipamd.dataStore = store
+		test.ipamd.podClient = mockGetter{func(url string) (resp *http.Response, err error) {
+			return &http.Response{
+				Body: nopCloser{bytes.NewBuffer(testRespByte)},
+			}, nil
+		}}
+		test.ret(test.ipamd)
+	}
 }

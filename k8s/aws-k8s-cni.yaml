@@ -1,0 +1,65 @@
+kind: DaemonSet
+apiVersion: extensions/v1beta1
+metadata:
+  name: aws-node
+  namespace: kube-system
+  labels:
+    k8s-app: aws-node
+spec:
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      k8s-app: aws-node
+  template:
+    metadata:
+      labels:
+        k8s-app: aws-node
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ''
+    spec:
+      hostNetwork: true
+      terminationGracePeriodSeconds: 5
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      - key: CriticalAddonsOnly
+        operator: Exists
+      containers:
+      - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:0.1.4
+        name: aws-node
+        ports:
+          - name: http
+            containerPort: 51678
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 51678
+          initialDelaySeconds: 5
+        env:
+          - name: CNI_LOGLEVEL
+            value: DEBUG
+        resources:
+          requests:
+            cpu: 10m
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /host/opt/cni/bin
+          name: cni-bin-dir
+        - mountPath: /host/etc/cni/net.d
+          name: cni-net-dir
+        - mountPath: /host/var/log
+          name: log-dir
+      volumes:
+      - name: cni-bin-dir
+        hostPath:
+          path: /opt/cni/bin
+      - name: cni-net-dir
+        hostPath:
+          path: /etc/cni/net.d
+      - name: log-dir
+        hostPath:
+          path: /var/log
+
+

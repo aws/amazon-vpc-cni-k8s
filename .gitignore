@@ -3,3 +3,4 @@ aws-cni
 verify-aws
 verify-network
 Gopkg.lock
+vendor
