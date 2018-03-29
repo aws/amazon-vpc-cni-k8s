@@ -28,6 +28,10 @@ const (
 )
 
 func main() {
+	os.Exit(_main())
+}
+
+func _main() int {
 	defer log.Flush()
 	logger.SetupLogger(logger.GetLogFileLocation(defaultLogFilePath))
 
@@ -36,10 +40,12 @@ func main() {
 
 	if err != nil {
 		log.Error("initialization failure", err)
-		os.Exit(1)
+		return 1
 	}
 
 	go aws_k8s_agent.StartNodeIPPoolManager()
 	go aws_k8s_agent.SetupHTTP()
 	aws_k8s_agent.RunRPCHandler()
+
+	return 0
 }
