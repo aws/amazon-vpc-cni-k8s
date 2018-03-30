@@ -68,6 +68,10 @@ spec:
   selector:
     matchLabels:
       k8s-app: calico-node
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
   template:
     metadata:
       labels:
@@ -81,12 +85,6 @@ spec:
     spec:
       hostNetwork: true
       serviceAccountName: calico-node
-      tolerations:
-        - key: node-role.kubernetes.io/master
-          effect: NoSchedule
-        # Mark the pod as a critical add-on for rescheduling.
-        - key: CriticalAddonsOnly
-          operator: Exists
       # Minimize downtime during a rolling upgrade or deletion; tell Kubernetes to do a "force
       # deletion": https://kubernetes.io/docs/concepts/workloads/pods/pod/#termination-of-pods.
       terminationGracePeriodSeconds: 0
@@ -95,7 +93,7 @@ spec:
         # container programs network policy and routes on each
         # host.
         - name: calico-node
-          image: quay.io/calico/node:v2.6.3
+          image: quay.io/calico/node:v3.0.2
           env:
             # Use Kubernetes API as the backing datastore.
             - name: DATASTORE_TYPE
@@ -112,6 +110,8 @@ spec:
             # Disable file logging so `kubectl logs` works.
             - name: CALICO_DISABLE_FILE_LOGGING
               value: "true"
+            - name: FELIX_TYPHAK8SSERVICENAME
+              value: "calico-typha"
             # Set Felix endpoint to host default action to ACCEPT.
             - name: FELIX_DEFAULTENDPOINTTOHOSTACTION
               value: "ACCEPT"
@@ -120,6 +120,12 @@ spec:
               value: "false"
             # Wait for the datastore.
             - name: WAIT_FOR_DATASTORE
+              value: "true"
+            - name: FELIX_LOGSEVERITYSYS
+              value: "none"
+            - name: FELIX_PROMETHEUSMETRICSENABLED
+              value: "true"
+            - name: NO_DEFAULT_POOLS
               value: "true"
             # Set based on the k8s node name.
             - name: NODENAME
@@ -153,13 +159,22 @@ spec:
               name: var-run-calico
               readOnly: false
       volumes:
-        # Used by calico/node.
+        # Used to ensure proper kmods are installed.
         - name: lib-modules
           hostPath:
             path: /lib/modules
         - name: var-run-calico
           hostPath:
             path: /var/run/calico
+      tolerations:
+        # Make sure calico/node gets scheduled on all nodes.
+        - effect: NoSchedule
+          operator: Exists
+        - effect: NoExecute
+          operator: Exists
+        # Mark the pod as a critical add-on for rescheduling.
+        - key: CriticalAddonsOnly
+          operator: Exists
 
 ---
 
@@ -167,34 +182,34 @@ spec:
 # Calico policy-only mode.
 
 apiVersion: apiextensions.k8s.io/v1beta1
-description: Calico Global Felix Configuration
+description: Calico Felix Configuration
 kind: CustomResourceDefinition
 metadata:
-   name: globalfelixconfigs.crd.projectcalico.org
+   name: felixconfigurations.crd.projectcalico.org
 spec:
   scope: Cluster
   group: crd.projectcalico.org
   version: v1
   names:
-    kind: GlobalFelixConfig
-    plural: globalfelixconfigs
-    singular: globalfelixconfig
+    kind: FelixConfiguration
+    plural: felixconfigurations
+    singular: felixconfiguration
 
 ---
 
 apiVersion: apiextensions.k8s.io/v1beta1
-description: Calico Global BGP Configuration
+description: Calico BGP Configuration
 kind: CustomResourceDefinition
 metadata:
-  name: globalbgpconfigs.crd.projectcalico.org
+  name: bgpconfigurations.crd.projectcalico.org
 spec:
   scope: Cluster
   group: crd.projectcalico.org
   version: v1
   names:
-    kind: GlobalBGPConfig
-    plural: globalbgpconfigs
-    singular: globalbgpconfig
+    kind: BGPConfiguration
+    plural: bgpconfigurations
+    singular: bgpconfiguration
 
 ---
 
@@ -215,6 +230,38 @@ spec:
 ---
 
 apiVersion: apiextensions.k8s.io/v1beta1
+description: Calico Host Endpoints
+kind: CustomResourceDefinition
+metadata:
+  name: hostendpoints.crd.projectcalico.org
+spec:
+  scope: Cluster
+  group: crd.projectcalico.org
+  version: v1
+  names:
+    kind: HostEndpoint
+    plural: hostendpoints
+    singular: hostendpoint
+
+---
+
+apiVersion: apiextensions.k8s.io/v1beta1
+description: Calico Cluster Information
+kind: CustomResourceDefinition
+metadata:
+  name: clusterinformations.crd.projectcalico.org
+spec:
+  scope: Cluster
+  group: crd.projectcalico.org
+  version: v1
+  names:
+    kind: ClusterInformation
+    plural: clusterinformations
+    singular: clusterinformation
+
+---
+
+apiVersion: apiextensions.k8s.io/v1beta1
 description: Calico Global Network Policies
 kind: CustomResourceDefinition
 metadata:
@@ -227,6 +274,38 @@ spec:
     kind: GlobalNetworkPolicy
     plural: globalnetworkpolicies
     singular: globalnetworkpolicy
+
+---
+
+apiVersion: apiextensions.k8s.io/v1beta1
+description: Calico Global Network Sets
+kind: CustomResourceDefinition
+metadata:
+  name: globalnetworksets.crd.projectcalico.org
+spec:
+  scope: Cluster
+  group: crd.projectcalico.org
+  version: v1
+  names:
+    kind: GlobalNetworkSet
+    plural: globalnetworksets
+    singular: globalnetworkset
+
+---
+
+apiVersion: apiextensions.k8s.io/v1beta1
+description: Calico Network Policies
+kind: CustomResourceDefinition
+metadata:
+  name: networkpolicies.crd.projectcalico.org
+spec:
+  scope: Namespaced
+  group: crd.projectcalico.org
+  version: v1
+  names:
+    kind: NetworkPolicy
+    plural: networkpolicies
+    singular: networkpolicy
 
 ---
 
@@ -264,6 +343,17 @@ rules:
       - get
       - list
       - watch
+      - patch
+  - apiGroups: [""]
+    resources:
+      - services
+    verbs:
+      - get
+  - apiGroups: [""]
+    resources:
+      - endpoints
+    verbs:
+      - get
   - apiGroups: [""]
     resources:
       - nodes
@@ -279,13 +369,25 @@ rules:
       - get
       - list
       - watch
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - networkpolicies
+    verbs:
+      - watch
+      - list
   - apiGroups: ["crd.projectcalico.org"]
     resources:
       - globalfelixconfigs
+      - felixconfigurations
       - bgppeers
       - globalbgpconfigs
+      - bgpconfigurations
       - ippools
       - globalnetworkpolicies
+      - globalnetworksets
+      - networkpolicies
+      - clusterinformations
+      - hostendpoints
     verbs:
       - create
       - get
@@ -307,3 +409,215 @@ subjects:
 - kind: ServiceAccount
   name: calico-node
   namespace: kube-system
+
+---
+
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: calico-typha
+  namespace: kube-system
+  labels:
+    k8s-app: calico-typha
+spec:
+  revisionHistoryLimit: 2
+  template:
+    metadata:
+      labels:
+        k8s-app: calico-typha
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ''
+    spec:
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      hostNetwork: true
+      serviceAccountName: calico-node
+      containers:
+      - image: quay.io/calico/typha:v0.6.1
+        name: calico-typha
+        ports:
+        - containerPort: 5473
+          name: calico-typha
+          protocol: TCP
+        env:
+          - name: TYPHA_LOGFILEPATH
+            value: "none"
+          - name: TYPHA_LOGSEVERITYSYS
+            value: "none"
+          - name: TYPHA_LOGSEVERITYSCREEN
+            value: "info"
+          - name: TYPHA_PROMETHEUSMETRICSENABLED
+            value: "true"
+          - name: TYPHA_CONNECTIONREBALANCINGMODE
+            value: "kubernetes"
+          - name: TYPHA_PROMETHEUSMETRICSPORT
+            value: "9093"
+          - name: TYPHA_DATASTORETYPE
+            value: "kubernetes"
+          - name: TYPHA_MAXCONNECTIONSLOWERLIMIT
+            value: "1"
+          - name: TYPHA_HEALTHENABLED
+            value: "true"
+        volumeMounts:
+        - mountPath: /etc/calico
+          name: etc-calico
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /liveness
+            port: 9098
+          periodSeconds: 30
+          initialDelaySeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /readiness
+            port: 9098
+          periodSeconds: 10
+      volumes:
+      - name: etc-calico
+        hostPath:
+          path: /etc/calico
+
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: typha-cpha
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: typha-cpha
+subjects:
+  - kind: ServiceAccount
+    name: typha-cpha
+    namespace: kube-system
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: typha-cpha
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["list"]
+
+---
+
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: calico-typha-horizontal-autoscaler
+  namespace: kube-system
+data:
+  ladder: |-
+    {
+      "coresToReplicas": [],
+      "nodesToReplicas":
+      [
+        [1, 1],
+        [10, 2],
+        [100, 3],
+        [250, 4],
+        [500, 5],
+        [1000, 6],
+        [1500, 7],
+        [2000, 8]
+      ]
+    }
+
+---
+
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: calico-typha-horizontal-autoscaler
+  namespace: kube-system
+  labels:
+    k8s-app: calico-typha-autoscaler
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        k8s-app: calico-typha-autoscaler
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ''
+    spec:
+      containers:
+        - image: k8s.gcr.io/cluster-proportional-autoscaler-amd64:1.1.2
+          name: autoscaler
+          command:
+            - /cluster-proportional-autoscaler
+            - --namespace=kube-system
+            - --configmap=calico-typha-horizontal-autoscaler
+            - --target=deployment/calico-typha
+            - --logtostderr=true
+            - --v=2
+          resources:
+            requests:
+              cpu: 10m
+            limits:
+              cpu: 10m
+      serviceAccountName: typha-cpha
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: Role
+metadata:
+  name: typha-cpha
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get"]
+  - apiGroups: ["extensions"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "update"]
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: typha-cpha
+  namespace: kube-system
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: RoleBinding
+metadata:
+  name: typha-cpha
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: typha-cpha
+subjects:
+  - kind: ServiceAccount
+    name: typha-cpha
+    namespace: kube-system
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: calico-typha
+  namespace: kube-system
+  labels:
+    k8s-app: calico-typha
+spec:
+  ports:
+    - port: 5473
+      protocol: TCP
+      targetPort: calico-typha
+      name: calico-typha
+  selector:
+    k8s-app: calico-typha
