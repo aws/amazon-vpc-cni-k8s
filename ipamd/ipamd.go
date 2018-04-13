@@ -153,10 +153,34 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 }
 
 func (c *IPAMContext) updateIPPoolIfRequired() {
+	c.reconcileENIIP()
 	if c.nodeIPPoolTooLow() {
 		c.increaseIPPool()
 	} else if c.nodeIPPoolTooHigh() {
 		c.decreaseIPPool()
+	}
+}
+
+func (c *IPAMContext) reconcileENIIP() {
+	maxIPLimit, err := c.awsClient.GetENIipLimit()
+	if err != nil {
+		log.Infof("Failed to retrieve ENI IP limit: %v", err)
+		return
+	}
+	eni := c.dataStore.GetENINeedsIP(maxIPLimit)
+	if eni != nil {
+		log.Debugf("Attempt again to allocate IP address for eni :%s", eni.Id)
+		err := c.awsClient.AllocAllIPAddress(eni.Id)
+		if err != nil {
+			log.Warn("During eni repair: error encountered on allocate IP address", err)
+			return
+		}
+		ec2Addrs, _, err := c.getENIaddresses(eni.Id)
+		if err != nil {
+			log.Warn("During eni repair: failed to get ENI ip addresses", err)
+			return
+		}
+		c.addENIaddressesToDataStore(ec2Addrs, eni.Id)
 	}
 }
 

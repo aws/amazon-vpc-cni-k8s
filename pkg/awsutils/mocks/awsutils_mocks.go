@@ -1,4 +1,4 @@
-// Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -21,7 +21,7 @@ import (
 	reflect "reflect"
 
 	awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	ec2 "github.com/aws/aws-sdk-go/service/ec2"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -122,6 +122,19 @@ func (m *MockAPIs) GetAttachedENIs() ([]awsutils.ENIMetadata, error) {
 // GetAttachedENIs indicates an expected call of GetAttachedENIs
 func (mr *MockAPIsMockRecorder) GetAttachedENIs() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAttachedENIs", reflect.TypeOf((*MockAPIs)(nil).GetAttachedENIs))
+}
+
+// GetENIipLimit mocks base method
+func (m *MockAPIs) GetENIipLimit() (int64, error) {
+	ret := m.ctrl.Call(m, "GetENIipLimit")
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetENIipLimit indicates an expected call of GetENIipLimit
+func (mr *MockAPIsMockRecorder) GetENIipLimit() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetENIipLimit", reflect.TypeOf((*MockAPIs)(nil).GetENIipLimit))
 }
 
 // GetLocalIPv4 mocks base method
