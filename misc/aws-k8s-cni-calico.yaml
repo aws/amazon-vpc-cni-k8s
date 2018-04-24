@@ -434,7 +434,7 @@ spec:
       hostNetwork: true
       serviceAccountName: calico-node
       containers:
-      - image: quay.io/calico/typha:v0.6.1
+      - image: quay.io/calico/typha:v0.6.4
         name: calico-typha
         ports:
         - containerPort: 5473
