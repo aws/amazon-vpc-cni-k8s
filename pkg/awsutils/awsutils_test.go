@@ -17,10 +17,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/aws/aws-sdk-go/aws"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadata/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
@@ -31,6 +32,7 @@ const (
 	az           = "us-east-1a"
 	localIP      = "10.0.0.10"
 	instanceID   = "i-0e1f3b9eb950e4980"
+	instanceType = "c1.medium"
 	primaryMAC   = "12:ef:2a:98:e5:5a"
 	eni2MAC      = "12:ef:2a:98:e5:5b"
 	sg1          = "sg-2e080f50"
@@ -66,6 +68,7 @@ func TestInitWithEC2metadata(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return("1", nil)
@@ -96,6 +99,7 @@ func TestInitWithEC2metadataVPCcidrErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return("1", nil)
@@ -119,6 +123,7 @@ func TestInitWithEC2metadataSubnetErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return("1", nil)
@@ -140,6 +145,7 @@ func TestInitWithEC2metadataSGErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return("1", nil)
@@ -160,6 +166,7 @@ func TestInitWithEC2metadataENIErrs(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return("", errors.New("Err on ENIs"))
 
@@ -177,6 +184,7 @@ func TestInitWithEC2metadataMACErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, errors.New("Error on MAC"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
@@ -517,13 +525,29 @@ func TestAllocAllIPAddress(t *testing.T) {
 	ctrl, _, mockEC2, _ := setup(t)
 	defer ctrl.Finish()
 
-	// 2 addresses
-	mockEC2.EXPECT().AssignPrivateIpAddresses(gomock.Any()).Return(nil, nil)
-	mockEC2.EXPECT().AssignPrivateIpAddresses(gomock.Any()).Return(nil, awserr.New("PrivateIpAddressLimitExceeded", "PrivateIpAddressLimitExceeded", nil))
+	// the expected addresses for t2.nano
+	input := &ec2.AssignPrivateIpAddressesInput{
+		NetworkInterfaceId:             aws.String("eni-id"),
+		SecondaryPrivateIpAddressCount: aws.Int64(1),
+	}
+	mockEC2.EXPECT().AssignPrivateIpAddresses(input).Return(nil, nil)
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "t2.nano"}
 
 	err := ins.AllocAllIPAddress("eni-id")
+
+	assert.NoError(t, err)
+
+	// the expected addresses for r4.16xlarge
+	input = &ec2.AssignPrivateIpAddressesInput{
+		NetworkInterfaceId:             aws.String("eni-id"),
+		SecondaryPrivateIpAddressCount: aws.Int64(49),
+	}
+	mockEC2.EXPECT().AssignPrivateIpAddresses(input).Return(nil, nil)
+
+	ins = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "r4.16xlarge"}
+
+	err = ins.AllocAllIPAddress("eni-id")
 
 	assert.NoError(t, err)
 }

@@ -38,6 +38,7 @@ const (
 	metadataAZ           = "placement/availability-zone/"
 	metadataLocalIP      = "local-ipv4"
 	metadataInstanceID   = "instance-id"
+	metadataInstanceType = "instance-type"
 	metadataMAC          = "mac"
 	metadataSGs          = "/security-group-ids/"
 	metadataSubnetID     = "/subnet-id/"
@@ -46,7 +47,7 @@ const (
 	metadataInterface    = "/interface-id/"
 	metadataSubnetCIDR   = "/subnet-ipv4-cidr-block"
 	metadataIPv4s        = "/local-ipv4s"
-	maxENIDeleteRetries  = 5
+	maxENIDeleteRetries  = 20
 	eniDescriptionPrefix = "aws-K8S-"
 	metadataOwnerID      = "/owner-id"
 	// AllocENI need to choose a first free device number between 0 and maxENI
@@ -54,6 +55,9 @@ const (
 	eniTagKey = "k8s-eni-key"
 
 	retryDeleteENIInternal = 5 * time.Second
+
+	// UnknownInstanceType indicates that the instance type is not yet supported
+	UnknownInstanceType = "vpc ip resource(eni ip limit): unknown instance type"
 )
 
 // APIs defines interfaces calls for adding/getting/deleting ENIs/secondary IPs. The APIs are not thread-safe.
@@ -84,6 +88,9 @@ type APIs interface {
 
 	// GetPrimaryENI returns the primary eni
 	GetPrimaryENI() string
+
+	// GetENIipLimit returns the number IP address can be allocated on a ENI
+	GetENIipLimit() (int64, error)
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -94,6 +101,7 @@ type EC2InstanceMetadataCache struct {
 	cidrBlock        string
 	localIPv4        string
 	instanceID       string
+	instanceType     string
 	vpcIPv4CIDR      string
 	primaryENI       string
 	primaryENImac    string
@@ -140,7 +148,9 @@ func New() (*EC2InstanceMetadataCache, error) {
 	cache.region = region
 	log.Debugf("Discovered region: %s", cache.region)
 
-	sess, err := session.NewSession(&aws.Config{Region: aws.String(cache.region)})
+	sess, err := session.NewSession(
+		&aws.Config{Region: aws.String(cache.region),
+			MaxRetries: aws.Int(5)})
 	if err != nil {
 		log.Errorf("Failed to initialize AWS SDK session %v", err)
 		return nil, errors.Wrap(err, "instance metadata: failed to initialize AWS SDK session")
@@ -186,6 +196,14 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata() error {
 		return errors.Wrap(err, "get instance metadata: failed to retrieve instance-id")
 	}
 	log.Debugf("Found instance-id: %s ", cache.instanceID)
+
+	// retrieve instance-type
+	cache.instanceType, err = cache.ec2Metadata.GetMetadata(metadataInstanceType)
+	if err != nil {
+		log.Errorf("Failed to retrieve instance-type from instance metadata %v", err)
+		return errors.Wrap(err, "get instance metadata: failed to retrieve instance-type")
+	}
+	log.Debugf("Found instance-type: %s ", cache.instanceType)
 
 	// retrieve primary interface's mac
 	mac, err := cache.ec2Metadata.GetMetadata(metadataMAC)
@@ -674,17 +692,50 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddress(eniID string) error {
 	return nil
 }
 
+// GetENIipLimit return IP address limit per ENI based on EC2 instance type
+func (cache *EC2InstanceMetadataCache) GetENIipLimit() (int64, error) {
+	ipLimit, ok := InstanceIPsAvailable[cache.instanceType]
+	if !ok {
+		log.Errorf("Failed to get eni IP limit due to unknown instance type %s", cache.instanceType)
+		return 0, errors.New(UnknownInstanceType)
+	}
+
+	return ipLimit - 1, nil
+}
+
 // AllocAllIPAddress allocates all IP addresses available on eni
 func (cache *EC2InstanceMetadataCache) AllocAllIPAddress(eniID string) error {
 	log.Infof("Trying to allocate all available ip addresses on eni: %s", eniID)
 
-	input := &ec2.AssignPrivateIpAddressesInput{
-		NetworkInterfaceId:             aws.String(eniID),
-		SecondaryPrivateIpAddressCount: aws.Int64(1),
-	}
+	ipLimit, err := cache.GetENIipLimit()
 
-	for {
-		// until error
+	if err != nil {
+		// for unknown instance type, will allocate one ip address at a time
+		ipLimit = 1
+
+		input := &ec2.AssignPrivateIpAddressesInput{
+			NetworkInterfaceId:             aws.String(eniID),
+			SecondaryPrivateIpAddressCount: aws.Int64(ipLimit),
+		}
+
+		for {
+			// until error
+			_, err := cache.ec2SVC.AssignPrivateIpAddresses(input)
+			if err != nil {
+				if containsPrivateIPAddressLimitExceededError(err) {
+					return nil
+				}
+				log.Errorf("Failed to allocate a private IP address %v", err)
+				return errors.Wrap(err, "allocate ip address: failed to allocate a private IP address")
+			}
+		}
+	} else {
+		// for known instance type, will allocate max number ip address for that interface
+		input := &ec2.AssignPrivateIpAddressesInput{
+			NetworkInterfaceId:             aws.String(eniID),
+			SecondaryPrivateIpAddressCount: aws.Int64(ipLimit),
+		}
+
 		_, err := cache.ec2SVC.AssignPrivateIpAddresses(input)
 		if err != nil {
 			if containsPrivateIPAddressLimitExceededError(err) {
@@ -694,6 +745,7 @@ func (cache *EC2InstanceMetadataCache) AllocAllIPAddress(eniID string) error {
 			return errors.Wrap(err, "allocate ip address: failed to allocate a private IP address")
 		}
 	}
+	return nil
 }
 
 // GetVPCIPv4CIDR returns VPC CIDR
