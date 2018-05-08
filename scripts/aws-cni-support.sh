@@ -21,10 +21,13 @@ set -e
 LOG_DIR="/var/log/aws-routed-eni"
 
 # collecting L-IPAMD introspection data
-curl http://localhost:51678/v1/enis  > ${LOG_DIR}/eni.output
-curl http://localhost:51678/v1/pods  > ${LOG_DIR}/pod.output
+curl http://localhost:61678/v1/enis  > ${LOG_DIR}/eni.output
+curl http://localhost:61678/v1/pods  > ${LOG_DIR}/pod.output
 
-# collecting kubeleet introspection data
+# metrics TODO not able to use LOG_DIR
+curl http://localhost:61678/metrics 2>&1 > /var/log/aws-routed-eni/metrics.output
+
+# collecting kubelet introspection data
 curl http://localhost:10255/pods  > ${LOG_DIR}/kubelet.output
 
 # ifconfig
@@ -32,6 +35,22 @@ ifconfig > ${LOG_DIR}/ifconig.output
 
 # ip rule show
 ip rule show > ${LOG_DIR}/iprule.output
+
+# iptables-save
+iptables-save > $LOG_DIR/iptables-save.out
+
+# iptables -nvL
+iptables -nvL > $LOG_DIR/iptables.out
+
+# iptables -nvL -t nat
+iptables -nvL -t nat > $LOG_DIR/iptables-nat.out
+
+# dump cni config
+mkdir -p $LOG_DIR/cni
+cp /etc/cni/net.d/* $LOG_DIR/cni
+
+# collect kubelet log
+cp /var/log/messages $LOG_DIR/
 
 # dump out route table
 ROUTE_OUTPUT="route.output"

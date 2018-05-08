@@ -21,13 +21,14 @@ import (
 	"time"
 
 	log "github.com/cihub/seelog"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils"
 )
 
 const (
 	// IntrospectionPort is the port for ipamd introspection
-	IntrospectionPort = 51678
+	IntrospectionPort = 61678
 )
 
 type rootResponse struct {
@@ -91,6 +92,7 @@ func (c *IPAMContext) setupServer() *http.Server {
 	for key, fn := range serverFunctions {
 		serveMux.HandleFunc(key, fn)
 	}
+	serveMux.Handle("/metrics", promhttp.Handler())
 
 	// Log all requests and then pass through to serveMux
 	loggingServeMux := http.NewServeMux()
@@ -127,5 +129,11 @@ func podV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 			return
 		}
 		w.Write(responseJSON)
+	}
+}
+
+func metricsHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		promhttp.Handler()
 	}
 }

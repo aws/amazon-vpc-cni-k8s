@@ -20,6 +20,7 @@ import (
 
 	log "github.com/cihub/seelog"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -41,6 +42,30 @@ const (
 	eniAttachTime         = 10 * time.Second
 )
 
+var (
+	ipamdErr = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "ipamd_error_count",
+			Help: "the number of errors encountered in ipamd",
+		},
+		[]string{"fn", "error"},
+	)
+	ipamdActionsInprogress = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "ipamd_action_inprogress",
+			Help: "the number of ipamd actions inprogress",
+		},
+		[]string{"fn"},
+	)
+	enisMax = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "eni_max",
+			Help: "The number of maximum ENIs can be attached to the instance",
+		},
+	)
+	prometheusRegistered = false
+)
+
 // IPAMContext contains node level control information
 type IPAMContext struct {
 	awsClient     awsutils.APIs
@@ -56,9 +81,19 @@ type IPAMContext struct {
 	maxENI int
 }
 
+func prometheusRegister() {
+	if !prometheusRegistered {
+		prometheus.MustRegister(ipamdErr)
+		prometheus.MustRegister(ipamdActionsInprogress)
+		prometheus.MustRegister(enisMax)
+		prometheusRegistered = true
+	}
+}
+
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
 func New() (*IPAMContext, error) {
+	prometheusRegister()
 	c := &IPAMContext{}
 
 	c.k8sClient = k8sapi.New()
@@ -82,6 +117,8 @@ func New() (*IPAMContext, error) {
 
 //TODO need to break this function down(comments from CR)
 func (c *IPAMContext) nodeInit() error {
+	maxENIs, err := c.awsClient.GetENILimit()
+	enisMax.Set(float64(maxENIs))
 	enis, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		log.Error("Failed to retrive ENI info")
@@ -109,6 +146,7 @@ func (c *IPAMContext) nodeInit() error {
 
 		err = c.awsClient.AllocAllIPAddress(eni.ENIID)
 		if err != nil {
+			ipamdErrInc("nodeInitAllocAllIPAddressFailed", err)
 			//TODO need to increment ipamd err stats
 			log.Warn("During ipamd init:  error encountered on trying to allocate all available IP addresses", err)
 			// fall though to add those allocated OK addresses
@@ -124,6 +162,7 @@ func (c *IPAMContext) nodeInit() error {
 	usedIPs, err := c.k8sClient.K8SGetLocalPodIPs(c.awsClient.GetLocalIPv4())
 	if err != nil {
 		log.Warnf("During ipamd init, failed to get Pod information from Kubelet %v", err)
+		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed", err)
 		// This can happens when L-IPAMD starts before kubelet.
 		// TODO  need to add node health stats here
 		return nil
@@ -132,6 +171,7 @@ func (c *IPAMContext) nodeInit() error {
 	for _, ip := range usedIPs {
 		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
 		if err != nil {
+			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed", err)
 			log.Warnf("During ipamd init, failed to use pod ip %s returned from Kubelet %v", ip.IP, err)
 			// TODO continue, but need to add node health stats here
 			// TODO need to feed this to controller on the health of pod and node
@@ -162,6 +202,8 @@ func (c *IPAMContext) updateIPPoolIfRequired() {
 }
 
 func (c *IPAMContext) reconcileENIIP() {
+	ipamdActionsInprogress.WithLabelValues("reconcileENIip").Add(float64(1))
+	defer ipamdActionsInprogress.WithLabelValues("reconcileENIip").Sub(float64(1))
 	maxIPLimit, err := c.awsClient.GetENIipLimit()
 	if err != nil {
 		log.Infof("Failed to retrieve ENI IP limit: %v", err)
@@ -172,11 +214,13 @@ func (c *IPAMContext) reconcileENIIP() {
 		log.Debugf("Attempt again to allocate IP address for eni :%s", eni.Id)
 		err := c.awsClient.AllocAllIPAddress(eni.Id)
 		if err != nil {
+			ipamdErrInc("reconcileENIIPAllocAllIPAddressFailed", err)
 			log.Warn("During eni repair: error encountered on allocate IP address", err)
 			return
 		}
 		ec2Addrs, _, err := c.getENIaddresses(eni.Id)
 		if err != nil {
+			ipamdErrInc("reconcileENIIPgetENIaddressesFailed", err)
 			log.Warn("During eni repair: failed to get ENI ip addresses", err)
 			return
 		}
@@ -185,12 +229,19 @@ func (c *IPAMContext) reconcileENIIP() {
 }
 
 func (c *IPAMContext) decreaseIPPool() {
+	ipamdActionsInprogress.WithLabelValues("decreaseIPPool").Add(float64(1))
+	defer ipamdActionsInprogress.WithLabelValues("decreaseIPPool").Sub(float64(1))
 	eni, err := c.dataStore.FreeENI()
 	if err != nil {
+		ipamdErrInc("decreaseIPPoolFreeENIFailed", err)
 		log.Errorf("Failed to decrease pool %v", err)
 		return
 	}
+	log.Debugf("Start freeing eni %s", eni)
 	c.awsClient.FreeENI(eni)
+	total, used := c.dataStore.GetStats()
+	log.Debugf("Successfully decreased IP Pool: total=%d, used=%d, c.currentMaxAddrsPerENI =%d, c.maxAddrsPerENI = %d",
+		total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 }
 
 func isAttachmentLimitExceededError(err error) bool {
@@ -198,7 +249,16 @@ func isAttachmentLimitExceededError(err error) bool {
 }
 
 func (c *IPAMContext) increaseIPPool() {
+	log.Debug("Start increasing IP Pool size")
+	ipamdActionsInprogress.WithLabelValues("increaseIPPool").Add(float64(1))
+	defer ipamdActionsInprogress.WithLabelValues("increaseIPPool").Sub(float64(1))
+	maxENIs, err := c.awsClient.GetENILimit()
+	enisMax.Set(float64(maxENIs))
 
+	if err == nil && maxENIs == c.dataStore.GetENIs() {
+		log.Debugf("Skipping increase IPPOOL due to max ENI already attached to the instance : %d", maxENIs)
+		return
+	}
 	if (c.maxENI > 0) && (c.maxENI == c.dataStore.GetENIs()) {
 		log.Debugf("Skipping increase IPPOOL due to max ENI already attached to the instance : %d", c.maxENI)
 		return
@@ -212,6 +272,7 @@ func (c *IPAMContext) increaseIPPool() {
 			log.Infof("Discovered the instance max ENI allowed is: %d", c.maxENI)
 		}
 		// TODO need to add health stats
+		ipamdErrInc("increaseIPPoolAllocENI", err)
 		return
 	}
 
@@ -219,19 +280,25 @@ func (c *IPAMContext) increaseIPPool() {
 	if err != nil {
 		log.Warnf("Failed to allocate all available ip addresses on an ENI %v", err)
 		// continue to proecsses those allocated ip addresses
+		ipamdErrInc("increaseIPPoolAllocAllIPAddressFailed", err)
 	}
 
 	eniMetadata, err := c.waitENIAttached(eni)
 	if err != nil {
+		ipamdErrInc("increaseIPPoolwaitENIAttachedFailed", err)
 		log.Errorf("Failed to increase pool size: not able to discover attached eni from metadata service %v", err)
 		return
 	}
 
 	err = c.setupENI(eni, eniMetadata)
 	if err != nil {
+		ipamdErrInc("increaseIPPoolsetupENIFailed", err)
 		log.Errorf("Failed to increase pool size: %v", err)
 		return
 	}
+	total, used := c.dataStore.GetStats()
+	log.Debugf("Successfully increased IP Pool: total=%d, used=%d, c.currentMaxAddrsPerENI =%d, c.maxAddrsPerENI = %d",
+		total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 }
 
 // setupENI does following:
@@ -280,6 +347,7 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 			log.Warnf("Failed to increase ip pool, failed to add ip %s to data store", ec2Addr.PrivateIpAddress)
 			// continue to add next address
 			// TODO need to add health stats for err
+			ipamdErrInc("addENIaddressesToDataStoreAddENIIPv4AddressFailed", err)
 		}
 	}
 }
@@ -305,12 +373,6 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 	// wait till eni is showup in the instance meta data service
 	retry := 0
 	for {
-		retry++
-		if retry > maxRetryCheckENI {
-			log.Errorf("Unable to discover attached ENI from metadata service")
-			// TODO need to add health stats
-			return awsutils.ENIMetadata{}, errors.New("add eni: not able to retrieve eni from metata service")
-		}
 		enis, err := c.awsClient.GetAttachedENIs()
 		if err != nil {
 			log.Warnf("Failed to increase pool, error trying to discover attached enis: %v ", err)
@@ -325,6 +387,13 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 			}
 		}
 
+		retry++
+		if retry > maxRetryCheckENI {
+			log.Errorf("Unable to discover attached ENI from metadata service")
+			// TODO need to add health stats
+			ipamdErrInc("waitENIAttachedMaxRetryExceeded", err)
+			return awsutils.ENIMetadata{}, errors.New("add eni: not able to retrieve eni from metata service")
+		}
 		log.Debugf("Not able to discover attached eni yet (attempt %d/%d)", retry, maxRetryCheckENI)
 
 		time.Sleep(eniAttachTime)
@@ -349,4 +418,12 @@ func (c *IPAMContext) nodeIPPoolTooHigh() bool {
 
 	return (total-used > 2*c.currentMaxAddrsPerENI)
 
+}
+
+func ipamdErrInc(fn string, err error) {
+	ipamdErr.With(prometheus.Labels{"fn": fn, "error": err.Error()}).Inc()
+}
+
+func ipamdActionsInprogressSet(fn string, curNum int) {
+	ipamdActionsInprogress.WithLabelValues(fn).Set(float64(curNum))
 }
