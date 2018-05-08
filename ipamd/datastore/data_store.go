@@ -24,8 +24,14 @@ import (
 )
 
 const (
-	minLifeTime          = 1 * time.Minute
-	addressCoolingPeriod = 1 * time.Minute
+	minLifeTime = 1 * time.Minute
+	// addressENICoolingPeriod is used to ensure ENI will NOT get freed back to EC2 control plane if one of
+	// its secondary IP addresses is used for a Pod within last addressENICoolingPeriod
+	addressENICoolingPeriod = 1 * time.Minute
+
+	// addressCoolingPeriod is used to ensure an IP not get assigned to a Pod if this IP is used by a different Pod
+	// in addressCoolingPeriod
+	addressCoolingPeriod = 30 * time.Second
 	// DuplicatedENIError is an error when caller tries to add an duplicate ENI to data store
 	DuplicatedENIError = "data store: duplicate ENI"
 
@@ -194,6 +200,7 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 		namespace: k8sPod.Namespace,
 		container: k8sPod.Container,
 	}
+	curTime := time.Now()
 	for _, eni := range ds.eniIPPools {
 		if (k8sPod.IP == "") && (len(eni.IPv4Addresses) == eni.AssignedIPv4Addresses) {
 			// skip this ENI, since it has no available IP address
@@ -213,7 +220,7 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 					addr.address, k8sPod.Name, k8sPod.Namespace)
 				return addr.address, eni.DeviceNumber, nil
 			}
-			if !addr.Assigned && k8sPod.IP == "" {
+			if !addr.Assigned && k8sPod.IP == "" && curTime.Sub(addr.unAssignedTime) > addressCoolingPeriod {
 				// This is triggered by a pod's Add Network command from CNI plugin
 				ds.assigned++
 				eni.AssignedIPv4Addresses++
@@ -248,7 +255,7 @@ func (ds *DataStore) getDeletableENI() *ENIIPPool {
 			continue
 		}
 
-		if time.Now().Sub(eni.lastUnAssignedTime) < addressCoolingPeriod {
+		if time.Now().Sub(eni.lastUnAssignedTime) < addressENICoolingPeriod {
 			continue
 		}
 
