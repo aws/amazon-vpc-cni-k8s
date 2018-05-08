@@ -7,12 +7,14 @@ Networking plugin for pod networking in [Kubernetes](https://kubernetes.io/) usi
 Interfaces and functionality may change. Expect bugs (and please help us squash them).
 DO NOT use for production workloads. 
 
-## Installing
+## Installing/Upgrading
 
 ```
 REPO_PATH=<path-to-this-repo>
 kubectl apply -f $REPO_PATH/misc/aws-k8s-cni.yaml
 ```
+
+**note**: upgrading is supported from 0.1.4
 
 ## Components
 
