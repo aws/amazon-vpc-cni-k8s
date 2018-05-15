@@ -50,7 +50,7 @@ var (
 	enis = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "eni_allocated",
-			Help: "The number of ENI allocated",
+			Help: "The number of ENIs allocated",
 		},
 	)
 	totalIPs = prometheus.NewGauge(
@@ -62,7 +62,7 @@ var (
 	assignedIPs = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "assigned_ip_addresses",
-			Help: "The number of IP addresses assigned",
+			Help: "The number of IP addresses assigned to pods",
 		},
 	)
 	prometheusRegistered = false

@@ -73,14 +73,14 @@ var (
 	awsAPIErr = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "aws_api_error_count",
-			Help: "the number of times AWS API returns an err",
+			Help: "The number of times AWS API returns an error",
 		},
 		[]string{"api", "error"},
 	)
 	awsUtilsErr = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "aws_utils_error_count",
-			Help: " the number of errors not handled in awsutils library",
+			Help: "The number of errors not handled in awsutils library",
 		},
 		[]string{"fn", "error"},
 	)
