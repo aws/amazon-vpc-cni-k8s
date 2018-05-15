@@ -124,6 +124,19 @@ func (mr *MockAPIsMockRecorder) GetAttachedENIs() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAttachedENIs", reflect.TypeOf((*MockAPIs)(nil).GetAttachedENIs))
 }
 
+// GetENILimit mocks base method
+func (m *MockAPIs) GetENILimit() (int, error) {
+	ret := m.ctrl.Call(m, "GetENILimit")
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetENILimit indicates an expected call of GetENILimit
+func (mr *MockAPIsMockRecorder) GetENILimit() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetENILimit", reflect.TypeOf((*MockAPIs)(nil).GetENILimit))
+}
+
 // GetENIipLimit mocks base method
 func (m *MockAPIs) GetENIipLimit() (int64, error) {
 	ret := m.ctrl.Call(m, "GetENIipLimit")

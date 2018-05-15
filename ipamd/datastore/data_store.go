@@ -19,6 +19,7 @@ import (
 
 	log "github.com/cihub/seelog"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 )
@@ -44,6 +45,28 @@ var ErrUnknownPod = errors.New("datastore: unknown pod")
 
 // ErrUnknownPodIP is an error where pod's IP address is not found in data store
 var ErrUnknownPodIP = errors.New("datastore: pod using unknown IP address")
+
+var (
+	enis = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "eni_allocated",
+			Help: "The number of ENI allocated",
+		},
+	)
+	totalIPs = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "total_ip_addresses",
+			Help: "The total number of IP addresses",
+		},
+	)
+	assignedIPs = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "assigned_ip_addresses",
+			Help: "The number of IP addresses assigned",
+		},
+	)
+	prometheusRegistered = false
+)
 
 // ENIIPPool contains ENI/IP Pool information. Exported fields will be Marshaled for introspection.
 type ENIIPPool struct {
@@ -105,8 +128,18 @@ type ENIInfos struct {
 	ENIIPPools map[string]ENIIPPool
 }
 
+func prometheusRegister() {
+	if !prometheusRegistered {
+		prometheus.MustRegister(enis)
+		prometheus.MustRegister(totalIPs)
+		prometheus.MustRegister(assignedIPs)
+		prometheusRegistered = true
+	}
+}
+
 // NewDataStore returns DataStore structure
 func NewDataStore() *DataStore {
+	prometheusRegister()
 	return &DataStore{
 		eniIPPools: make(map[string]*ENIIPPool),
 		podsIP:     make(map[PodKey]PodIPInfo),
@@ -130,6 +163,7 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary bool) erro
 		Id:            eniID,
 		DeviceNumber:  deviceNumber,
 		IPv4Addresses: make(map[string]*AddressInfo)}
+	enis.Set(float64(len(ds.eniIPPools)))
 	return nil
 }
 
@@ -153,6 +187,7 @@ func (ds *DataStore) AddENIIPv4Address(eniID string, ipv4 string) error {
 	}
 
 	ds.total++
+	totalIPs.Set(float64(ds.total))
 
 	curENI.IPv4Addresses[ipv4] = &AddressInfo{address: ipv4, Assigned: false}
 
@@ -213,6 +248,7 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 				if !addr.Assigned {
 					ds.assigned++
 					eni.AssignedIPv4Addresses++
+					assignedIPs.Set(float64(ds.assigned))
 					addr.Assigned = true
 				}
 				ds.podsIP[podKey] = PodIPInfo{IP: addr.address, DeviceNumber: eni.DeviceNumber}
@@ -223,6 +259,7 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 			if !addr.Assigned && k8sPod.IP == "" && curTime.Sub(addr.unAssignedTime) > addressCoolingPeriod {
 				// This is triggered by a pod's Add Network command from CNI plugin
 				ds.assigned++
+				assignedIPs.Set(float64(ds.assigned))
 				eni.AssignedIPv4Addresses++
 				addr.Assigned = true
 				ds.podsIP[podKey] = PodIPInfo{IP: addr.address, DeviceNumber: eni.DeviceNumber}
@@ -300,6 +337,9 @@ func (ds *DataStore) FreeENI() (string, error) {
 	deletedENI := deletableENI.Id
 	delete(ds.eniIPPools, deletableENI.Id)
 
+	enis.Set(float64(len(ds.eniIPPools)))
+	assignedIPs.Set(float64(ds.assigned))
+	totalIPs.Set(float64(ds.total))
 	return deletedENI, nil
 }
 
@@ -328,6 +368,7 @@ func (ds *DataStore) UnAssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, 
 		if ok && ip.Assigned {
 			ip.Assigned = false
 			ds.assigned--
+			assignedIPs.Set(float64(ds.assigned))
 			eni.AssignedIPv4Addresses--
 			curTime := time.Now()
 			ip.unAssignedTime = curTime

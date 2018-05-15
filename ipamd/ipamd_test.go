@@ -84,6 +84,7 @@ func TestNodeInit(t *testing.T) {
 		SubnetIPv4CIDR: secSubnet,
 		LocalIPv4s:     []string{ipaddr11, ipaddr12},
 	}
+	mockAWS.EXPECT().GetENILimit().Return(4, nil)
 	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{eni1, eni2}, nil)
 	mockAWS.EXPECT().GetVPCIPv4CIDR().Return(vpcCIDR)
 	mockAWS.EXPECT().GetLocalIPv4().Return(ipaddr01)
@@ -145,6 +146,7 @@ func TestIncreaseIPPool(t *testing.T) {
 
 	eni2 := secENIid
 
+	mockAWS.EXPECT().GetENILimit().Return(4, nil)
 	mockAWS.EXPECT().AllocENI().Return(eni2, nil)
 
 	mockAWS.EXPECT().AllocAllIPAddress(eni2)
