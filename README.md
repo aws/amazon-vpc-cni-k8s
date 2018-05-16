@@ -25,7 +25,7 @@ kubectl apply -f $REPO_PATH/misc/aws-k8s-cni.yaml
   	* maintaining a warm-pool of available IP addresses, and
   	* assigning an IP address to a Pod.
 
-The details can be found in [Proposal: CNI plugin for Kubernetes networking over AWS VPC](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/proposals/cni-proposal.md)
+The details can be found in [Proposal: CNI plugin for Kubernetes networking over AWS VPC](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/cni-proposal.md)
    
 ## Requirements
 
