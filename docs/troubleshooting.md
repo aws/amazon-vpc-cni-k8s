@@ -10,7 +10,7 @@ A node, based on the instance type ([Limit](http://docs.aws.amazon.com/AWSEC2/la
  If a subnet runs out of IP addresses, ipamD will not able to get secondary IP addresses.  When this happens, pods assigned to this node may not able to get an IP and get stucked in ** ContainerCreating**.
 
 You can check the available IP addresses in AWS console:
-![](./images/subnet.png)
+![](images/subnet.png)
 
 #### known issue: [Leaking ENIs](https://github.com/aws/amazon-vpc-cni-k8s/issues/69) can cause a subnet available IP pool being depleted and requires user intervention.
 
@@ -20,7 +20,7 @@ We provide a tool [**cni-metrics-helper**](./misc/cni_metrics_helper.yaml) which
 
 You can optionally push them to cloudwatch.  For example:
 
-![cloudwatch](./images/cni-metrics-100.png)
+![cloudwatch](images/cni-metrics-100.png)
 
 **maxIPAddress**: the maximum number of IP addresses that can be used for Pods in the cluster. (assumes there is enough IPs in the subnet).
 
@@ -34,7 +34,7 @@ If you need to deploy more Pods than **maxIPAddresses**, you need to increase yo
 When running 500 nodes cluster, we noticed that when there is a burst of pod scale up event (e.g. scale pods from 0 to 23000) at onetime, it can trigger all node's ipamD start allocating ENIs.  Due to EC2 resource limit nature, some node's ipamD can get throttled and go into exponentially backoff before retry. If a pod is assigned to this node and its ipamD is waiting to retry, the pod could stay in **ContainerCreating** until ENI retry succeed.
 
 You can verify if you are in this situation by example cni metrics
-![](./images/cni-metrics-inprogress.png)
+![](images/cni-metrics-inprogress.png)
 **ipamdActionInProgress**: the total number of nodes whose ipamD is in the middle of ENI operation.
 
 To avoid Pod deployment delay, you can configure ipamD to have a higher [**WARM-ENI-TARGET**](https://github.com/aws/amazon-vpc-cni-k8s/pull/68).
