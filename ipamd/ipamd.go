@@ -15,6 +15,8 @@ package ipamd
 
 import (
 	"net"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,27 +42,34 @@ const (
 	ipPoolMonitorInterval = 5 * time.Second
 	maxRetryCheckENI      = 5
 	eniAttachTime         = 10 * time.Second
+	defaultWarmENITarget  = 1
 )
 
 var (
 	ipamdErr = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "ipamd_error_count",
-			Help: "the number of errors encountered in ipamd",
+			Help: "The number of errors encountered in ipamd",
 		},
 		[]string{"fn", "error"},
 	)
 	ipamdActionsInprogress = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "ipamd_action_inprogress",
-			Help: "the number of ipamd actions inprogress",
+			Help: "The number of ipamd actions inprogress",
 		},
 		[]string{"fn"},
 	)
 	enisMax = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "eni_max",
-			Help: "The number of maximum ENIs can be attached to the instance",
+			Help: "The maximum number of ENIs that can be attached to the instance",
+		},
+	)
+	ipMax = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "ip_max",
+			Help: "The maximum number of IP addresses that can be allocated to the instance",
 		},
 	)
 	prometheusRegistered = false
@@ -86,6 +95,7 @@ func prometheusRegister() {
 		prometheus.MustRegister(ipamdErr)
 		prometheus.MustRegister(ipamdActionsInprogress)
 		prometheus.MustRegister(enisMax)
+		prometheus.MustRegister(ipMax)
 		prometheusRegistered = true
 	}
 }
@@ -117,8 +127,16 @@ func New() (*IPAMContext, error) {
 
 //TODO need to break this function down(comments from CR)
 func (c *IPAMContext) nodeInit() error {
+	ipamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
+	defer ipamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
 	maxENIs, err := c.awsClient.GetENILimit()
-	enisMax.Set(float64(maxENIs))
+	if err == nil {
+		enisMax.Set(float64(maxENIs))
+	}
+	maxIPs, err := c.awsClient.GetENIipLimit()
+	if err == nil {
+		ipMax.Set(float64(maxIPs * int64(maxENIs)))
+	}
 	enis, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		log.Error("Failed to retrive ENI info")
@@ -240,8 +258,8 @@ func (c *IPAMContext) decreaseIPPool() {
 	log.Debugf("Start freeing eni %s", eni)
 	c.awsClient.FreeENI(eni)
 	total, used := c.dataStore.GetStats()
-	log.Debugf("Successfully decreased IP Pool: total=%d, used=%d, c.currentMaxAddrsPerENI =%d, c.maxAddrsPerENI = %d",
-		total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	log.Debugf("Successfully decreased IP Pool")
+	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 }
 
 func isAttachmentLimitExceededError(err error) bool {
@@ -260,6 +278,10 @@ func (c *IPAMContext) increaseIPPool() {
 		return
 	}
 	if (c.maxENI > 0) && (c.maxENI == c.dataStore.GetENIs()) {
+		if c.maxENI < maxENIs {
+			errString := "desired: " + strconv.FormatInt(int64(maxENIs), 10) + "current: " + strconv.FormatInt(int64(c.maxENI), 10)
+			ipamdErrInc("unExpectedMaxENIAttached", errors.New(errString))
+		}
 		log.Debugf("Skipping increase IPPOOL due to max ENI already attached to the instance : %d", c.maxENI)
 		return
 	}
@@ -297,8 +319,8 @@ func (c *IPAMContext) increaseIPPool() {
 		return
 	}
 	total, used := c.dataStore.GetStats()
-	log.Debugf("Successfully increased IP Pool: total=%d, used=%d, c.currentMaxAddrsPerENI =%d, c.maxAddrsPerENI = %d",
-		total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	log.Debugf("Successfully increased IP Pool")
+	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 }
 
 // setupENI does following:
@@ -400,23 +422,46 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 	}
 }
 
+func getWarmENITarget() int {
+	inputStr, found := os.LookupEnv("WARM_ENI_TARGET")
+
+	if !found {
+		return defaultWarmENITarget
+	}
+
+	if input, err := strconv.Atoi(inputStr); err == nil {
+		if input < 0 {
+			return defaultWarmENITarget
+		}
+		log.Debugf("Using WARM-ENI-TARGET %v", input)
+		return input
+	}
+	return defaultWarmENITarget
+}
+
+func logPoolStats(total, used, currentMaxAddrsPerENI, maxAddrsPerENI int) {
+	log.Debugf("IP pool stats: total = %d, used = %d, c.currentMaxAddrsPerENI = %d, c.maxAddrsPerENI = %d",
+		total, used, currentMaxAddrsPerENI, maxAddrsPerENI)
+}
+
 //nodeIPPoolTooLow returns true if IP pool is below low threshhold
 func (c *IPAMContext) nodeIPPoolTooLow() bool {
+	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
-	log.Debugf("IP pool stats: total=%d, used=%d, c.currentMaxAddrsPerENI =%d, c.maxAddrsPerENI = %d",
-		total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
-	return ((total - used) <= c.currentMaxAddrsPerENI)
+	available := total - used
+	return (available <= c.currentMaxAddrsPerENI*warmENITarget)
 }
 
 // NodeIPPoolTooHigh returns true if IP pool is above high threshhold
 func (c *IPAMContext) nodeIPPoolTooHigh() bool {
+	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
+	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
-	log.Debugf("IP pool stats: total=%d, used=%d, c.currentMaxAddrsPerENI =%d, c.maxAddrsPerENI = %d",
-		total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
-
-	return (total-used > 2*c.currentMaxAddrsPerENI)
+	available := total - used
+	return (available > (warmENITarget+1)*c.currentMaxAddrsPerENI)
 
 }
 
