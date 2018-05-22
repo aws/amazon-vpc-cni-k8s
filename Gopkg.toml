@@ -21,9 +21,9 @@
 #  version = "2.4.0"
 
 
-[[constraint]]
-  branch = "master"
-  name = "github.com/aws/amazon-ecs-cni-plugins"
+[prune]
+  go-tests = true
+  unused-packages = true
 
 [[constraint]]
   name = "github.com/aws/aws-sdk-go"
@@ -54,10 +54,6 @@
   version = "0.8.0"
 
 [[constraint]]
-  name = "github.com/sirupsen/logrus"
-  version = "1.0.3"
-
-[[constraint]]
   name = "github.com/stretchr/testify"
   version = "1.1.4"
 
@@ -72,7 +68,3 @@
 [[constraint]]
   name = "google.golang.org/grpc"
   version = "1.7.0"
-
-[[constraint]]
-  name = "k8s.io/kubernetes"
-  version = "1.8.1"
