@@ -68,7 +68,3 @@
 [[constraint]]
   name = "google.golang.org/grpc"
   version = "1.7.0"
-
-[[constraint]]
-  name = "k8s.io/kubernetes"
-  version = "1.8.1"

@@ -21,7 +21,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/api/core/v1"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/httpwrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ioutilwrapper/mocks"
