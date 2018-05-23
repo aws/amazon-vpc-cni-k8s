@@ -38,6 +38,18 @@ const (
 
 	// DuplicateIPError is an error when caller tries to add an duplicate IP address to data store
 	DuplicateIPError = "datastore: duplicated IP"
+
+	// UnknownIPError is an error when caller tries to delele an IP which is unknown to data store
+	UnknownIPError = "datastore: unknown IP"
+
+	// IPInUseError is an error when caller tries to delete an IP where IP is still assigned to a Pod
+	IPInUseError = "datastore: IP is used and can not be deleted"
+
+	// ENIInUseError is an error when caller tries to delete an ENI where there are IP still assigned to a pod
+	ENIInUseError = "datastore: ENI is used and can not be deleted"
+
+	// UnknownENIError is an error when caller tries to access an ENI which is unknown to datastore
+	UnknownENIError = "datastore: unknown ENI"
 )
 
 // ErrUnknownPod is an error when there is no pod in data store matching pod name, namespace, container id
@@ -196,6 +208,38 @@ func (ds *DataStore) AddENIIPv4Address(eniID string, ipv4 string) error {
 	return nil
 }
 
+// DelENIIPv4Address delete an IP of ENI from datastore
+func (ds *DataStore) DelENIIPv4Address(eniID string, ipv4 string) error {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+	log.Debugf("Deleting ENI(%s)'s IPv4 address %s from datastore", eniID, ipv4)
+	log.Debugf("IP Address Pool stats: total: %d, assigned: %d",
+		ds.total, ds.assigned)
+
+	curENI, ok := ds.eniIPPools[eniID]
+	if !ok {
+		return errors.New(UnknownENIError)
+	}
+
+	ipAddr, ok := curENI.IPv4Addresses[ipv4]
+	if !ok {
+		return errors.New(UnknownIPError)
+	}
+
+	if ipAddr.Assigned {
+		return errors.New(IPInUseError)
+	}
+
+	ds.total--
+	totalIPs.Set(float64(ds.total))
+
+	delete(curENI.IPv4Addresses, ipv4)
+
+	log.Infof("Deleted ENI(%s)'s IP %s from datastore", eniID, ipv4)
+
+	return nil
+}
+
 // AssignPodIPv4Address assigns an IPv4 address to pod
 // It returns the assigned IPv4 address, device number, error
 func (ds *DataStore) AssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, int, error) {
@@ -343,6 +387,29 @@ func (ds *DataStore) FreeENI() (string, error) {
 	return deletedENI, nil
 }
 
+// DeleteENI free a ENI.
+func (ds *DataStore) DeleteENI(eni string) error {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	eniIPPool, ok := ds.eniIPPools[eni]
+	if !ok {
+		return errors.New(UnknownENIError)
+	}
+
+	if eniIPPool.AssignedIPv4Addresses != 0 {
+		return errors.New(ENIInUseError)
+	}
+
+	ds.total -= len(eniIPPool.IPv4Addresses)
+	log.Infof("DeleteENI %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
+		eni, len(ds.eniIPPools[eni].IPv4Addresses), ds.total, ds.assigned)
+	delete(ds.eniIPPools, eni)
+	enis.Set(float64(len(ds.eniIPPools)))
+
+	return nil
+}
+
 // UnAssignPodIPv4Address a) find out the IP address based on PodName and PodNameSpace
 // b)  mark IP address as unassigned c) returns IP address, ENI's device number, error
 func (ds *DataStore) UnAssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, int, error) {
@@ -425,4 +492,24 @@ func (ds *DataStore) GetENIs() int {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	return len(ds.eniIPPools)
+}
+
+// GetENIIPPools returns eni's IP address list
+func (ds *DataStore) GetENIIPPools(eni string) (map[string]*AddressInfo, error) {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	eniIPPool, ok := ds.eniIPPools[eni]
+
+	if !ok {
+		return nil, errors.New(UnknownENIError)
+	}
+
+	var ipPool = make(map[string]*AddressInfo, len(eniIPPool.IPv4Addresses))
+
+	for ip, ipAddr := range eniIPPool.IPv4Addresses {
+		ipPool[ip] = ipAddr
+	}
+
+	return ipPool, nil
 }
