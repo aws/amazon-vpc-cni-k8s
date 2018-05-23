@@ -749,10 +749,10 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string) error {
 		_, err = cache.ec2SVC.DeleteNetworkInterface(deleteInput)
 		awsAPILatency.WithLabelValues("DeleteNetworkInterface", fmt.Sprint(err != nil)).Observe(msSince(start))
 		if err == nil {
-			awsAPIErrInc("DeleteNetworkInterface", err)
 			log.Infof("Successfully deleted eni: %s", eniName)
 			return nil
 		}
+		awsAPIErrInc("DeleteNetworkInterface", err)
 
 		log.Debugf("Not able to delete eni yet (attempt %d/%d): %v ", retry, maxENIDeleteRetries, err)
 		time.Sleep(retryDeleteENIInternal)

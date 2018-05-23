@@ -1,3 +1,40 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+# kubernetes versions before 1.8.0 should use rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: aws-node
+rules:
+- apiGroups: [""]
+  resources:
+  - pods
+  - namespaces
+    verbs: ["list", "watch", "get"]
+  - apiGroups: ["extensions"]
+    resources:
+    - daemonsets
+    verbs: ["list", "watch"]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aws-node
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+# kubernetes versions before 1.8.0 should use rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: aws-node
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aws-node
+subjects:
+- kind: ServiceAccount
+  name: aws-node
+  namespace: kube-system
+--- 
 kind: DaemonSet
 apiVersion: extensions/v1beta1
 metadata:
@@ -18,6 +55,7 @@ spec:
       annotations:
         scheduler.alpha.kubernetes.io/critical-pod: ''
     spec:
+      serviceAccountName: aws-node
       hostNetwork: true
       tolerations:
       - key: node-role.kubernetes.io/master
@@ -25,7 +63,7 @@ spec:
       - key: CriticalAddonsOnly
         operator: Exists
       containers:
-      - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:0.1.5
+      - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:0.2.1
         name: aws-node
         env:
           - name: AWS_VPC_K8S_CNI_LOGLEVEL

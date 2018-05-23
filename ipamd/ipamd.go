@@ -30,6 +30,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/docker"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 )
@@ -44,6 +45,8 @@ const (
 	eniAttachTime               = 10 * time.Second
 	defaultWarmENITarget        = 1
 	nodeIPPoolReconcileInterval = 60 * time.Second
+	maxK8SRetries               = 12
+	retryK8SInterval            = 5 * time.Second
 )
 
 var (
@@ -87,7 +90,7 @@ var (
 type IPAMContext struct {
 	awsClient     awsutils.APIs
 	dataStore     *datastore.DataStore
-	k8sClient     k8sapi.K8SAPIs
+	k8sClient     *k8sapi.Controller
 	networkClient networkutils.NetworkAPIs
 
 	currentMaxAddrsPerENI int
@@ -113,11 +116,11 @@ func prometheusRegister() {
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
-func New() (*IPAMContext, error) {
+func New(k8sapiClient *k8sapi.Controller) (*IPAMContext, error) {
 	prometheusRegister()
 	c := &IPAMContext{}
 
-	c.k8sClient = k8sapi.New()
+	c.k8sClient = k8sapiClient
 	c.networkClient = networkutils.New()
 
 	client, err := awsutils.New()
@@ -190,7 +193,7 @@ func (c *IPAMContext) nodeInit() error {
 		}
 	}
 
-	usedIPs, err := c.k8sClient.K8SGetLocalPodIPs(c.awsClient.GetLocalIPv4())
+	usedIPs, err := c.getLocalPodsWithRetry()
 	if err != nil {
 		log.Warnf("During ipamd init, failed to get Pod information from Kubelet %v", err)
 		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed", err)
@@ -200,7 +203,9 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	for _, ip := range usedIPs {
-		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
+		log.Infof("Recovered AddNetwork for Pod %s, Namespace %s, Container %s",
+			ip.Name, ip.Namespace, ip.Container)
+		_, _, err = c.dataStore.AssignPodIPv4Address(&ip)
 		if err != nil {
 			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed", err)
 			log.Warnf("During ipamd init, failed to use pod ip %s returned from Kubelet %v", ip.IP, err)
@@ -213,6 +218,46 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	return nil
+}
+
+func (c *IPAMContext) getLocalPodsWithRetry() ([]k8sapi.K8SPodInfo, error) {
+	var pods []k8sapi.K8SPodInfo
+	var err error
+	for retry := 1; retry <= maxK8SRetries; retry++ {
+		pods, err = c.k8sClient.GetLocalPods()
+		if err == nil {
+			break
+		}
+		log.Infof("Not able to get local pods yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
+		time.Sleep(retryK8SInterval)
+	}
+
+	if pods == nil {
+		return nil, errors.New("unable to get local pods, giving up")
+	}
+
+	containers, err := docker.GetRunningContainers()
+
+	if err != nil {
+		log.Errorf("Not able to get container info from docker: %v", err)
+		return nil, errors.Wrapf(err, "not able to get container info from docker")
+	}
+
+	// TODO consider using map
+	for i, pod := range pods {
+		// needs to find the container ID
+		for _, container := range containers {
+			//e.g. /k8s_POD_worker-hello-5974f49799-q9vct_default_c31721a2-5dfb-11e8-b09c-022ad646a21e_0
+			k8sName := "/k8s_POD_" + pod.Name + "_" + pod.Namespace + "_" + pod.UID + "_0"
+			log.Debugf("Try to find container with name: %v", k8sName)
+			if container.Name == k8sName {
+				log.Debugf("Found container ID: %v", container.ID)
+				pods[i].Container = container.ID
+			}
+		}
+	}
+
+	return pods, nil
 }
 
 // StartNodeIPPoolManager monitors the IP Pool, add or del them when it is required.
