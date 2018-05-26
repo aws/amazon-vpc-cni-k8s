@@ -33,23 +33,6 @@ const (
 	kubeletURLSurfix = ":10255/pods"
 )
 
-// K8SAPIs defines interface to use kubelet introspection API
-type K8SAPIs interface {
-	K8SGetLocalPodIPs(localIP string) ([]*K8SPodInfo, error)
-}
-
-// K8SPodInfo provides pod info
-type K8SPodInfo struct {
-	// Name is pod's name
-	Name string
-	// Namespace is pod's namespace
-	Namespace string
-	// Container is pod's container id
-	Container string
-	// IP is pod's ipv4 address
-	IP string
-}
-
 // client provides k8sapi client
 type client struct {
 }
