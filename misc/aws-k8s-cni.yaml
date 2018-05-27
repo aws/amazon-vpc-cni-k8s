@@ -63,7 +63,7 @@ spec:
       - key: CriticalAddonsOnly
         operator: Exists
       containers:
-      - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:0.2.1
+      - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:0.2.2
         name: aws-node
         env:
           - name: AWS_VPC_K8S_CNI_LOGLEVEL

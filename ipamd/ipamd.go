@@ -203,6 +203,11 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	for _, ip := range usedIPs {
+		if ip.Container == "" {
+			log.Infof("Skipping Pod %s, Namespace %s due to no matching container",
+				ip.Name, ip.Namespace)
+			continue
+		}
 		log.Infof("Recovered AddNetwork for Pod %s, Namespace %s, Container %s",
 			ip.Name, ip.Namespace, ip.Container)
 		_, _, err = c.dataStore.AssignPodIPv4Address(&ip)
@@ -249,10 +254,10 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]k8sapi.K8SPodInfo, error) {
 		for _, container := range containers {
 			//e.g. /k8s_POD_worker-hello-5974f49799-q9vct_default_c31721a2-5dfb-11e8-b09c-022ad646a21e_0
 			k8sName := "/k8s_POD_" + pod.Name + "_" + pod.Namespace + "_" + pod.UID + "_0"
-			log.Debugf("Try to find container with name: %v", k8sName)
 			if container.Name == k8sName {
-				log.Debugf("Found container ID: %v", container.ID)
+				log.Debugf("Found pod(%v)'s container ID: %v ", k8sName, container.ID)
 				pods[i].Container = container.ID
+				break
 			}
 		}
 	}
