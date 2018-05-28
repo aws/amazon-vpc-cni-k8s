@@ -14,14 +14,16 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
+	"fmt"
 	"os"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd"
-	log "github.com/cihub/seelog"
-
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	log "github.com/cihub/seelog"
 )
 
 const (
@@ -30,11 +32,26 @@ const (
 )
 
 func main() {
-	os.Exit(_main())
-}
+	maxPods := flag.Bool("max-pods", false, "Display the table showing how many pods can be run on each instance type")
+	versionFlag := flag.Bool("version", false, "Print the version number and exit")
+	flag.Parse()
 
-func _main() int {
-	defer log.Flush()
+	if *versionFlag {
+		fmt.Println(version)
+		os.Exit(0)
+	}
+
+	if *maxPods {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "    ")
+		err := enc.Encode(awsutils.MaxPods())
+		if err != nil {
+			log.Errorf("Error serializing instance IPs", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	logger.SetupLogger(logger.GetLogFileLocation(defaultLogFilePath))
 
 	log.Infof("Starting L-IPAMD %s  ...", version)
@@ -42,6 +59,7 @@ func _main() int {
 	kubeClient, err := k8sapi.CreateKubeClient("", "")
 	if err != nil {
 		log.Errorf("Failed to create client: %v", err)
+		log.Flush()
 		os.Exit(1)
 	}
 
@@ -52,12 +70,11 @@ func _main() int {
 
 	if err != nil {
 		log.Error("initialization failure", err)
-		return 1
+		log.Flush()
+		os.Exit(1)
 	}
 
 	go aws_k8s_agent.StartNodeIPPoolManager()
 	go aws_k8s_agent.SetupHTTP()
 	aws_k8s_agent.RunRPCHandler()
-
-	return 0
 }

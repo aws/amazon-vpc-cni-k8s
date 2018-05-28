@@ -180,3 +180,17 @@ var InstanceIPsAvailable = map[string]int64{
 	"x1.16xlarge": 30,
 	"x1.32xlarge": 30,
 }
+
+// MaxPods returns a map of where keys are instance types and values are how
+// many pods can be run on that node. The value for each host assumes two
+// pods with host-level networking for kube-proxy and CNI
+func MaxPods() map[string]int {
+	instanceIPs := make(map[string]int)
+	for instance, enis := range InstanceENIsAvailable {
+		if ipsPerEni, ok := InstanceIPsAvailable[instance]; ok {
+			// The first IP on each ENI is not used
+			instanceIPs[instance] = (int(ipsPerEni-1) * enis) + 2
+		}
+	}
+	return instanceIPs
+}

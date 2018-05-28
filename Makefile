@@ -14,10 +14,8 @@
 
 # build binary
 static:
-	go build -o aws-k8s-agent main.go
-	go build -o aws-cni plugins/routed-eni/cni.go
-	go build verify-aws.go
-	go build verify-network.go
+	GOOS=linux CGO_ENABLED=0 go build -o aws-k8s-agent
+	GOOS=linux CGO_ENABLED=0 go build -o aws-cni ./plugins/routed-eni/
 
 # need to bundle certificates
 certs: misc/certs/ca-certificates.crt
