@@ -6,4 +6,5 @@ verify-network
 .idea/
 *.iml
 .DS_Store
+cni-metrics-helper/cni-metrics-helper
 portmap
