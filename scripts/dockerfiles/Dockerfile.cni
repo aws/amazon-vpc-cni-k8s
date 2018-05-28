@@ -1,0 +1,8 @@
+From debian
+COPY ./cni-metrics-helper/cni-metrics-helper  /cni-metrics-helper
+
+# Copy our bundled certs to the first place go will check: see
+# https://golang.org/src/pkg/crypto/x509/root_unix.go
+COPY misc/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+ENTRYPOINT /cni-metrics-helper --cloudwatch=false

@@ -4,6 +4,7 @@ package k8sapi
 import (
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,6 +32,10 @@ type controller struct {
 	informer cache.Controller
 }
 
+const (
+	cniPodName = "aws-node"
+)
+
 // K8SAPIs defines interface to use kubelet introspection API
 type K8SAPIs interface {
 	K8SGetLocalPodIPs() ([]*K8SPodInfo, error)
@@ -57,6 +62,9 @@ type Controller struct {
 	workerPods     map[string]*K8SPodInfo
 	workerPodsLock sync.RWMutex
 
+	cniPods     map[string]string
+	cniPodsLock sync.RWMutex
+
 	controller *controller
 	kubeClient kubernetes.Interface
 	myNodeName string
@@ -67,6 +75,7 @@ type Controller struct {
 func NewController(clientset kubernetes.Interface) *Controller {
 	return &Controller{kubeClient: clientset,
 		myNodeName: os.Getenv("MY_NODE_NAME"),
+		cniPods:    make(map[string]string),
 		workerPods: make(map[string]*K8SPodInfo)}
 }
 
@@ -95,6 +104,23 @@ func CreateKubeClient(apiserver string, kubeconfig string) (clientset.Interface,
 	log.Info("Communication with server successful")
 
 	return kubeClient, nil
+}
+
+// GetCNIPods return the list of CNI pod names
+func (d *Controller) GetCNIPods() []string {
+	var cniPods []string
+
+	log.Info("GetCNIPods start...")
+
+	d.cniPodsLock.Lock()
+	defer d.cniPodsLock.Unlock()
+
+	for k, _ := range d.cniPods {
+		cniPods = append(cniPods, k)
+	}
+
+	log.Info("GetCNIPods discovered", cniPods)
+	return cniPods
 }
 
 // DiscoverK8SPods discovers Pods running in the cluster
@@ -204,6 +230,11 @@ func (d *Controller) handlePodUpdate(key string) error {
 		d.workerPodsLock.Lock()
 		defer d.workerPodsLock.Unlock()
 		delete(d.workerPods, key)
+		if strings.HasPrefix(key, metav1.NamespaceSystem+"/"+cniPodName) {
+			d.cniPodsLock.Lock()
+			defer d.cniPodsLock.Unlock()
+			delete(d.cniPods, key)
+		}
 		return nil
 	}
 
@@ -229,6 +260,12 @@ func (d *Controller) handlePodUpdate(key string) error {
 		}
 
 		log.Infof(" Add/Update for Pod %s on my node, namespace = %s, IP = %s", podName, d.workerPods[key].Namespace, d.workerPods[key].IP)
+	} else if strings.HasPrefix(key, metav1.NamespaceSystem+"/"+cniPodName) {
+		d.cniPodsLock.Lock()
+		defer d.cniPodsLock.Unlock()
+
+		log.Infof(" Add/Update for CNI pod %s", podName)
+		d.cniPods[podName] = podName
 	}
 	return nil
 }

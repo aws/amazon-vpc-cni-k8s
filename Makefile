@@ -19,6 +19,9 @@ build-linux:
 	GOOS=linux CGO_ENABLED=0 go build -o aws-k8s-agent
 	GOOS=linux CGO_ENABLED=0 go build -o aws-cni ./plugins/routed-eni/
 
+build-metrics:
+	GOOS=linux CGO_ENABLED=0 go build -o cni-metrics-helper/cni-metrics-helper cni-metrics-helper/cni-metrics-helper.go
+
 docker-build:
 	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
 		--workdir=/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
@@ -30,6 +33,10 @@ docker-build:
 docker: docker-build
 	@docker build -f scripts/dockerfiles/Dockerfile.release -t "amazon/amazon-k8s-cni:latest" .
 	@echo "Built Docker image \"amazon/amazon-k8s-cni:latest\""
+
+docker-metrics:
+	@docker build -f scripts/dockerfiles/Dockerfile.cni -t "amazon/cni-metrics-helper:latest" .
+	@echo "Built Docker image \"amazon/cni-metrics-helper:latest\""
 
 # unit-test
 unit-test:
