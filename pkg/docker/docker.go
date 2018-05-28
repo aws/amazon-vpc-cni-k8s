@@ -15,8 +15,19 @@ type ContainerInfo struct {
 	K8SUID string
 }
 
-func GetRunningContainers() ([]ContainerInfo, error) {
-	var containerInfos []ContainerInfo
+// APIs provides Docker API
+type APIs interface {
+	GetRunningContainers() ([]*ContainerInfo, error)
+}
+
+type Client struct{}
+
+func New() *Client {
+	return &Client{}
+}
+
+func (c *Client) GetRunningContainers() ([]*ContainerInfo, error) {
+	var containerInfos []*ContainerInfo
 
 	cli, err := client.NewEnvClient()
 	if err != nil {
@@ -30,13 +41,14 @@ func GetRunningContainers() ([]ContainerInfo, error) {
 	}
 
 	for _, container := range containers {
+		log.Infof("GetRunningContainers: Discovered running docker: %s %s %s",
+			container.ID, container.Names[0], container.Labels["io.kubernetes.pod.uid"])
 		containerInfos = append(containerInfos,
-			ContainerInfo{
+			&ContainerInfo{
 				ID:     container.ID,
 				Name:   container.Names[0],
 				K8SUID: container.Labels["io.kubernetes.pod.uid"]})
 	}
 
-	log.Info("GetRunningContainers: Discovered running docker: ", containerInfos)
 	return containerInfos, nil
 }

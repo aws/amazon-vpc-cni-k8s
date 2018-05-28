@@ -86,7 +86,7 @@ type ENIIPPool struct {
 	lastUnAssignedTime time.Time
 	// IsPrimary indicates whether ENI is a primary ENI
 	IsPrimary bool
-	Id        string
+	ID        string
 	// DeviceNumber is the device number of ENI
 	DeviceNumber int
 	// AssignedIPv4Addresses is the number of IP addesses already been assigned
@@ -172,7 +172,7 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary bool) erro
 	ds.eniIPPools[eniID] = &ENIIPPool{
 		createTime:    time.Now(),
 		IsPrimary:     isPrimary,
-		Id:            eniID,
+		ID:            eniID,
 		DeviceNumber:  deviceNumber,
 		IPv4Addresses: make(map[string]*AddressInfo)}
 	enis.Set(float64(len(ds.eniIPPools)))
@@ -283,7 +283,7 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 	for _, eni := range ds.eniIPPools {
 		if (k8sPod.IP == "") && (len(eni.IPv4Addresses) == eni.AssignedIPv4Addresses) {
 			// skip this ENI, since it has no available IP address
-			log.Debugf("AssignPodIPv4Address, skip ENI %s that does not have available addresses", eni.Id)
+			log.Debugf("AssignPodIPv4Address, skip ENI %s that does not have available addresses", eni.ID)
 			continue
 		}
 		for _, addr := range eni.IPv4Addresses {
@@ -344,7 +344,7 @@ func (ds *DataStore) getDeletableENI() *ENIIPPool {
 			continue
 		}
 
-		log.Debugf("FreeENI: found a deletable ENI %s", eni.Id)
+		log.Debugf("FreeENI: found a deletable ENI %s", eni.ID)
 		return eni
 	}
 	return nil
@@ -355,7 +355,7 @@ func (ds *DataStore) GetENINeedsIP(maxIPperENI int64) *ENIIPPool {
 	for _, eni := range ds.eniIPPools {
 		if int64(len(eni.IPv4Addresses)) < maxIPperENI {
 			log.Debugf("Found eni %s that have less IP address allocated: cur=%d, max=%d",
-				eni.Id, len(eni.IPv4Addresses), maxIPperENI)
+				eni.ID, len(eni.IPv4Addresses), maxIPperENI)
 			return eni
 		}
 	}
@@ -374,12 +374,12 @@ func (ds *DataStore) FreeENI() (string, error) {
 		return "", errors.New("free ENI: no ENI can be deleted at this time")
 	}
 
-	ds.total -= len(ds.eniIPPools[deletableENI.Id].IPv4Addresses)
+	ds.total -= len(ds.eniIPPools[deletableENI.ID].IPv4Addresses)
 	ds.assigned -= deletableENI.AssignedIPv4Addresses
 	log.Infof("FreeENI %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
-		deletableENI.Id, len(ds.eniIPPools[deletableENI.Id].IPv4Addresses), ds.total, ds.assigned)
-	deletedENI := deletableENI.Id
-	delete(ds.eniIPPools, deletableENI.Id)
+		deletableENI.ID, len(ds.eniIPPools[deletableENI.ID].IPv4Addresses), ds.total, ds.assigned)
+	deletedENI := deletableENI.ID
+	delete(ds.eniIPPools, deletableENI.ID)
 
 	enis.Set(float64(len(ds.eniIPPools)))
 	assignedIPs.Set(float64(ds.assigned))

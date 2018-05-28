@@ -1,4 +1,4 @@
-// Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -48,14 +48,14 @@ func (m *MockK8SAPIs) EXPECT() *MockK8SAPIsMockRecorder {
 }
 
 // K8SGetLocalPodIPs mocks base method
-func (m *MockK8SAPIs) K8SGetLocalPodIPs(arg0 string) ([]*k8sapi.K8SPodInfo, error) {
-	ret := m.ctrl.Call(m, "K8SGetLocalPodIPs", arg0)
+func (m *MockK8SAPIs) K8SGetLocalPodIPs() ([]*k8sapi.K8SPodInfo, error) {
+	ret := m.ctrl.Call(m, "K8SGetLocalPodIPs")
 	ret0, _ := ret[0].([]*k8sapi.K8SPodInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // K8SGetLocalPodIPs indicates an expected call of K8SGetLocalPodIPs
-func (mr *MockK8SAPIsMockRecorder) K8SGetLocalPodIPs(arg0 interface{}) *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "K8SGetLocalPodIPs", reflect.TypeOf((*MockK8SAPIs)(nil).K8SGetLocalPodIPs), arg0)
+func (mr *MockK8SAPIsMockRecorder) K8SGetLocalPodIPs() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "K8SGetLocalPodIPs", reflect.TypeOf((*MockK8SAPIs)(nil).K8SGetLocalPodIPs))
 }
