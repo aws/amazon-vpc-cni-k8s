@@ -9,11 +9,11 @@ rules:
   resources:
   - pods
   - namespaces
-    verbs: ["list", "watch", "get"]
-  - apiGroups: ["extensions"]
-    resources:
-    - daemonsets
-    verbs: ["list", "watch"]
+  verbs: ["list", "watch", "get"]
+- apiGroups: ["extensions"]
+  resources:
+  - daemonsets
+  verbs: ["list", "watch"]
 ---
 apiVersion: v1
 kind: ServiceAccount
