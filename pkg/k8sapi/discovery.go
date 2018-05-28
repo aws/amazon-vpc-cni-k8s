@@ -1,4 +1,4 @@
-// Package k8sapi
+// Package k8sapi contains logic to retrive pods running on local node
 package k8sapi
 
 import (
@@ -34,7 +34,7 @@ type controller struct {
 
 // K8SAPIs defines interface to use kubelet introspection API
 type K8SAPIs interface {
-	K8SGetLocalPodIPs(localIP string) ([]*K8SPodInfo, error)
+	K8SGetLocalPodIPs() ([]*K8SPodInfo, error)
 }
 
 // K8SPodInfo provides pod info
@@ -50,6 +50,7 @@ type K8SPodInfo struct {
 	UID string
 }
 
+// ErrInformerNotSynced indicates that it has not synced with API server yet
 var ErrInformerNotSynced = errors.New("discovery: informer not synced")
 
 // Controller defines global context for discovery controller
@@ -70,6 +71,7 @@ func NewController(clientset kubernetes.Interface) *Controller {
 		workerPods: make(map[string]*K8SPodInfo)}
 }
 
+// CreateKubeClient creates a k8s client
 func CreateKubeClient(apiserver string, kubeconfig string) (clientset.Interface, error) {
 	config, err := clientcmd.BuildConfigFromFlags(apiserver, kubeconfig)
 	if err != nil {
@@ -142,9 +144,9 @@ func (d *Controller) DiscoverK8SPods() {
 	select {}
 }
 
-// GetLocalPods return the list of pods running on the local nodes
-func (d *Controller) GetLocalPods() ([]K8SPodInfo, error) {
-	var localPods []K8SPodInfo
+// K8SGetLocalPodIPs return the list of pods running on the local nodes
+func (d *Controller) K8SGetLocalPodIPs() ([]*K8SPodInfo, error) {
+	var localPods []*K8SPodInfo
 
 	if !d.synced {
 		log.Info("GetLocalPods: informer not synced yet")
@@ -156,10 +158,10 @@ func (d *Controller) GetLocalPods() ([]K8SPodInfo, error) {
 	defer d.workerPodsLock.Unlock()
 
 	for _, pod := range d.workerPods {
-		localPods = append(localPods, *pod)
+		log.Infof("K8SGetLocalPodIPs discovered local Pods: %s %s %s %s",
+			pod.Name, pod.Namespace, pod.IP, pod.UID)
+		localPods = append(localPods, pod)
 	}
-
-	log.Info("GetLocalPods discovered: ", localPods)
 
 	return localPods, nil
 }

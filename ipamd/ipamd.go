@@ -90,7 +90,8 @@ var (
 type IPAMContext struct {
 	awsClient     awsutils.APIs
 	dataStore     *datastore.DataStore
-	k8sClient     *k8sapi.Controller
+	k8sClient     k8sapi.K8SAPIs
+	dockerClient  docker.APIs
 	networkClient networkutils.NetworkAPIs
 
 	currentMaxAddrsPerENI int
@@ -116,12 +117,13 @@ func prometheusRegister() {
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
-func New(k8sapiClient *k8sapi.Controller) (*IPAMContext, error) {
+func New(k8sapiClient k8sapi.K8SAPIs) (*IPAMContext, error) {
 	prometheusRegister()
 	c := &IPAMContext{}
 
 	c.k8sClient = k8sapiClient
 	c.networkClient = networkutils.New()
+	c.dockerClient = docker.New()
 
 	client, err := awsutils.New()
 	if err != nil {
@@ -210,7 +212,7 @@ func (c *IPAMContext) nodeInit() error {
 		}
 		log.Infof("Recovered AddNetwork for Pod %s, Namespace %s, Container %s",
 			ip.Name, ip.Namespace, ip.Container)
-		_, _, err = c.dataStore.AssignPodIPv4Address(&ip)
+		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
 		if err != nil {
 			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed", err)
 			log.Warnf("During ipamd init, failed to use pod ip %s returned from Kubelet %v", ip.IP, err)
@@ -225,11 +227,11 @@ func (c *IPAMContext) nodeInit() error {
 	return nil
 }
 
-func (c *IPAMContext) getLocalPodsWithRetry() ([]k8sapi.K8SPodInfo, error) {
-	var pods []k8sapi.K8SPodInfo
+func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
+	var pods []*k8sapi.K8SPodInfo
 	var err error
 	for retry := 1; retry <= maxK8SRetries; retry++ {
-		pods, err = c.k8sClient.GetLocalPods()
+		pods, err = c.k8sClient.K8SGetLocalPodIPs()
 		if err == nil {
 			break
 		}
@@ -241,7 +243,7 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]k8sapi.K8SPodInfo, error) {
 		return nil, errors.New("unable to get local pods, giving up")
 	}
 
-	containers, err := docker.GetRunningContainers()
+	containers, err := c.dockerClient.GetRunningContainers()
 
 	if err != nil {
 		log.Errorf("Not able to get container info from docker: %v", err)
@@ -249,14 +251,14 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]k8sapi.K8SPodInfo, error) {
 	}
 
 	// TODO consider using map
-	for i, pod := range pods {
+	for _, pod := range pods {
 		// needs to find the container ID
 		for _, container := range containers {
 			//e.g. /k8s_POD_worker-hello-5974f49799-q9vct_default_c31721a2-5dfb-11e8-b09c-022ad646a21e_0
 			k8sName := "/k8s_POD_" + pod.Name + "_" + pod.Namespace + "_" + pod.UID + "_0"
 			if container.Name == k8sName {
 				log.Debugf("Found pod(%v)'s container ID: %v ", k8sName, container.ID)
-				pods[i].Container = container.ID
+				pod.Container = container.ID
 				break
 			}
 		}
@@ -293,21 +295,21 @@ func (c *IPAMContext) retryAllocENIIP() {
 	}
 	eni := c.dataStore.GetENINeedsIP(maxIPLimit)
 	if eni != nil {
-		log.Debugf("Attempt again to allocate IP address for eni :%s", eni.Id)
-		err := c.awsClient.AllocAllIPAddress(eni.Id)
+		log.Debugf("Attempt again to allocate IP address for eni :%s", eni.ID)
+		err := c.awsClient.AllocAllIPAddress(eni.ID)
 		if err != nil {
 			ipamdErrInc("retryAllocENIIPAllocAllIPAddressFailed", err)
 			log.Warn("During eni repair: error encountered on allocate IP address", err)
 			return
 		}
-		ec2Addrs, _, err := c.getENIaddresses(eni.Id)
+		ec2Addrs, _, err := c.getENIaddresses(eni.ID)
 		if err != nil {
 			ipamdErrInc("retryAllocENIIPgetENIaddressesFailed", err)
 			log.Warn("During eni repair: failed to get ENI ip addresses", err)
 			return
 		}
 		c.lastNodeIPPoolAction = time.Now()
-		c.addENIaddressesToDataStore(ec2Addrs, eni.Id)
+		c.addENIaddressesToDataStore(ec2Addrs, eni.ID)
 	}
 }
 

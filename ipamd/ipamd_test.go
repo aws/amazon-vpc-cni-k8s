@@ -20,6 +20,8 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/docker"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/docker/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
@@ -53,21 +55,24 @@ const (
 func setup(t *testing.T) (*gomock.Controller,
 	*mock_awsutils.MockAPIs,
 	*mock_k8sapi.MockK8SAPIs,
+	*mock_docker.MockAPIs,
 	*mock_networkutils.MockNetworkAPIs) {
 	ctrl := gomock.NewController(t)
 	return ctrl,
 		mock_awsutils.NewMockAPIs(ctrl),
 		mock_k8sapi.NewMockK8SAPIs(ctrl),
+		mock_docker.NewMockAPIs(ctrl),
 		mock_networkutils.NewMockNetworkAPIs(ctrl)
 }
 
 func TestNodeInit(t *testing.T) {
-	ctrl, mockAWS, mockK8S, mockNetwork := setup(t)
+	ctrl, mockAWS, mockK8S, mockDocker, mockNetwork := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
 		awsClient:     mockAWS,
 		k8sClient:     mockK8S,
+		dockerClient:  mockDocker,
 		networkClient: mockNetwork}
 
 	eni1 := awsutils.ENIMetadata{
@@ -89,7 +94,6 @@ func TestNodeInit(t *testing.T) {
 	mockAWS.EXPECT().GetENIipLimit().Return(int64(56), nil)
 	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{eni1, eni2}, nil)
 	mockAWS.EXPECT().GetVPCIPv4CIDR().Return(vpcCIDR)
-	mockAWS.EXPECT().GetLocalIPv4().Return(ipaddr01)
 
 	_, vpcCIDR, _ := net.ParseCIDR(vpcCIDR)
 	primaryIP := net.ParseIP(ipaddr01)
@@ -127,15 +131,19 @@ func TestNodeInit(t *testing.T) {
 	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 
 	mockAWS.EXPECT().GetLocalIPv4().Return(ipaddr01)
-	mockK8S.EXPECT().K8SGetLocalPodIPs(gomock.Any()).Return([]*k8sapi.K8SPodInfo{&k8sapi.K8SPodInfo{Name: "pod1",
-		Namespace: "default"}}, nil)
+	k8sName := "/k8s_POD_" + "pod1" + "_" + "default" + "_" + "pod-uid" + "_0"
+	mockK8S.EXPECT().K8SGetLocalPodIPs().Return([]*k8sapi.K8SPodInfo{&k8sapi.K8SPodInfo{Name: "pod1",
+		Namespace: "default", UID: "pod-uid", IP: ipaddr02}}, nil)
+
+	mockDocker.EXPECT().GetRunningContainers().Return([]*docker.ContainerInfo{&docker.ContainerInfo{ID: "docker-id",
+		Name: k8sName, K8SUID: "pod-uid"}}, nil)
 
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
 }
 
 func TestIncreaseIPPool(t *testing.T) {
-	ctrl, mockAWS, mockK8S, mockNetwork := setup(t)
+	ctrl, mockAWS, mockK8S, _, mockNetwork := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
@@ -192,7 +200,7 @@ func TestIncreaseIPPool(t *testing.T) {
 }
 
 func TestNodeIPPoolReconcile(t *testing.T) {
-	ctrl, mockAWS, mockK8S, mockNetwork := setup(t)
+	ctrl, mockAWS, mockK8S, _, mockNetwork := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
