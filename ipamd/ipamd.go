@@ -210,6 +210,11 @@ func (c *IPAMContext) nodeInit() error {
 				ip.Name, ip.Namespace)
 			continue
 		}
+		if ip.IP == "" {
+			log.Infof("Skipping Pod %s, Namespace %s due to no IP",
+				ip.Name, ip.Namespace)
+			continue
+		}
 		log.Infof("Recovered AddNetwork for Pod %s, Namespace %s, Container %s",
 			ip.Name, ip.Namespace, ip.Container)
 		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
@@ -243,21 +248,23 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 		return nil, errors.New("unable to get local pods, giving up")
 	}
 
-	containers, err := c.dockerClient.GetRunningContainers()
+	var containers map[string]*docker.ContainerInfo
 
-	if err != nil {
-		log.Errorf("Not able to get container info from docker: %v", err)
-		return nil, errors.Wrapf(err, "not able to get container info from docker")
+	for retry := 1; retry <= maxK8SRetries; retry++ {
+		containers, err = c.dockerClient.GetRunningContainers()
+		if err == nil {
+			break
+		}
+		log.Infof("Not able to get local containers yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
+		time.Sleep(retryK8SInterval)
 	}
 
 	// TODO consider using map
 	for _, pod := range pods {
 		// needs to find the container ID
 		for _, container := range containers {
-			//e.g. /k8s_POD_worker-hello-5974f49799-q9vct_default_c31721a2-5dfb-11e8-b09c-022ad646a21e_0
-			k8sName := "/k8s_POD_" + pod.Name + "_" + pod.Namespace + "_" + pod.UID + "_0"
-			if container.Name == k8sName {
-				log.Debugf("Found pod(%v)'s container ID: %v ", k8sName, container.ID)
+			if container.K8SUID == pod.UID {
+				log.Debugf("Found pod(%v)'s container ID: %v ", container.Name, container.ID)
 				pod.Container = container.ID
 				break
 			}
