@@ -4,7 +4,6 @@ package k8sapi
 import (
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -201,35 +200,35 @@ func (d *Controller) handlePodUpdate(key string) error {
 	}
 
 	if !exists {
-		podName := obj.(*v1.Pod).GetName()
-		// Below we will warm up our cache with a Pod, so that we will see a delete for one pod
-		if strings.Compare(d.myNodeName, obj.(*v1.Pod).Spec.NodeName) == 0 && !obj.(*v1.Pod).Spec.HostNetwork {
-			log.Infof(" Pods deleted on my node: %v", podName)
-			d.workerPodsLock.Lock()
-			defer d.workerPodsLock.Unlock()
+		log.Infof(" Pods deleted on my node: %s", key)
+		d.workerPodsLock.Lock()
+		defer d.workerPodsLock.Unlock()
+		delete(d.workerPods, key)
+		return nil
+	}
 
-			delete(d.workerPods, key)
+	pod, ok := obj.(*v1.Pod)
+	if !ok {
+		log.Errorf("Updated object recieved was not a pod: %+v", obj)
+		return errors.New("recieved a non-pod object update")
+	}
+	// Note that you also have to check the uid if you have a local controlled resource, which
+	// is dependent on the actual instance, to detect that a Pod was recreated with the same name
+	podName := pod.GetName()
+
+	// check to see if this is one of worker pod on my nodes
+	if d.myNodeName == pod.Spec.NodeName && !pod.Spec.HostNetwork {
+		d.workerPodsLock.Lock()
+		defer d.workerPodsLock.Unlock()
+
+		d.workerPods[key] = &K8SPodInfo{
+			Name:      podName,
+			Namespace: pod.GetNamespace(),
+			UID:       string(pod.GetUID()),
+			IP:        pod.Status.PodIP,
 		}
-	} else {
-		// Note that you also have to check the uid if you have a local controlled resource, which
-		// is dependent on the actual instance, to detect that a Pod was recreated with the same name
-		podName := obj.(*v1.Pod).GetName()
 
-		// check to see if this is one of worker pod on my nodes
-		if strings.Compare(d.myNodeName, obj.(*v1.Pod).Spec.NodeName) == 0 && !obj.(*v1.Pod).Spec.HostNetwork {
-			d.workerPodsLock.Lock()
-			defer d.workerPodsLock.Unlock()
-
-			d.workerPods[key] = &K8SPodInfo{
-				Name:      podName,
-				Namespace: obj.(*v1.Pod).GetNamespace(),
-				UID:       string(obj.(*v1.Pod).GetUID()),
-				IP:        obj.(*v1.Pod).Status.PodIP}
-
-			log.Infof(" Add/Update for Pod %s on my node, namespace = %s, IP = %s",
-				podName, d.workerPods[key].Namespace, d.workerPods[key].IP)
-
-		}
+		log.Infof(" Add/Update for Pod %s on my node, namespace = %s, IP = %s", podName, d.workerPods[key].Namespace, d.workerPods[key].IP)
 	}
 	return nil
 }
