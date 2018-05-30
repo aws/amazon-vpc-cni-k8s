@@ -11,7 +11,7 @@ To run Kubernetes over AWS VPC, we would like to reach following additional goal
 
 * Networking for Pods must support high throughput and availability, low latency and minimal jitter comparable to the characteristics a user would get from EC2 networking.
 * Users must be able to express and enforce granular network policies and isolation comparable to those achievable with native EC2 networking and security groups.
-* Network operation must be simple and secure. Users must be able to apply exsiting AWS VPC networking and security best practices for building Kubernetes clusters over AWS VPC. For example, a user should be able to: 
+* Network operation must be simple and secure. Users must be able to apply existing AWS VPC networking and security best practices for building Kubernetes clusters over AWS VPC. For example, a user should be able to: 
 	* use VPC flow logs for troubleshooting and compliance auditing,
 	* apply VPC routing polices for traffic engineering,
 	* apply security groups to enforce isolation and meet regulatory requirements.
