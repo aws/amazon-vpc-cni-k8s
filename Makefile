@@ -19,15 +19,15 @@ static:
 	go build verify-aws.go
 	go build verify-network.go
 
-# need to bundle certificates
-certs: misc/certs/ca-certificates.crt
-misc/certs/ca-certificates.crt:
-	docker build -t "amazon/amazon-k8s-cert-source:make" misc/certs/
-	docker run "amazon/amazon-k8s-cert-source:make" cat /etc/ssl/certs/ca-certificates.crt > misc/certs/ca-certificates.crt
+docker-build:
+	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
+		--workdir=/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
+		--env GOPATH=/usr/src/app \
+		golang:1.10 make static
 
 
 # build docker image
-docker: certs
+docker: docker-build
 	@docker build -f scripts/dockerfiles/Dockerfile.release -t "amazon/amazon-k8s-cni:latest" .
 	@echo "Built Docker image \"amazon/amazon-k8s-cni:latest\""
 
