@@ -200,7 +200,7 @@ func (d *Controller) handlePodUpdate(key string) error {
 	}
 
 	if !exists {
-		log.Infof(" Pods deleted on my node: %s", key)
+		log.Infof(" Pods deleted on my node: %v", key)
 		d.workerPodsLock.Lock()
 		defer d.workerPodsLock.Unlock()
 		delete(d.workerPods, key)

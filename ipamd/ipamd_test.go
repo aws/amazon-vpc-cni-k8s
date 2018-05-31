@@ -135,8 +135,10 @@ func TestNodeInit(t *testing.T) {
 	mockK8S.EXPECT().K8SGetLocalPodIPs().Return([]*k8sapi.K8SPodInfo{&k8sapi.K8SPodInfo{Name: "pod1",
 		Namespace: "default", UID: "pod-uid", IP: ipaddr02}}, nil)
 
-	mockDocker.EXPECT().GetRunningContainers().Return([]*docker.ContainerInfo{&docker.ContainerInfo{ID: "docker-id",
-		Name: k8sName, K8SUID: "pod-uid"}}, nil)
+	var dockerList = make(map[string]*docker.ContainerInfo, 0)
+	dockerList["pod-uid"] = &docker.ContainerInfo{ID: "docker-id",
+		Name: k8sName, K8SUID: "pod-uid"}
+	mockDocker.EXPECT().GetRunningContainers().Return(dockerList, nil)
 
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)

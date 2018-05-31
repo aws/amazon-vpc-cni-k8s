@@ -48,9 +48,9 @@ func (m *MockAPIs) EXPECT() *MockAPIsMockRecorder {
 }
 
 // GetRunningContainers mocks base method
-func (m *MockAPIs) GetRunningContainers() ([]*docker.ContainerInfo, error) {
+func (m *MockAPIs) GetRunningContainers() (map[string]*docker.ContainerInfo, error) {
 	ret := m.ctrl.Call(m, "GetRunningContainers")
-	ret0, _ := ret[0].([]*docker.ContainerInfo)
+	ret0, _ := ret[0].(map[string]*docker.ContainerInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
