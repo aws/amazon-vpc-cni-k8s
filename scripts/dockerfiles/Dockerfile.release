@@ -6,8 +6,9 @@ RUN yum update -y && \
 WORKDIR /app
 
 COPY aws-cni /app 
+COPY misc/aws.conf /app
 
-ADD aws-k8s-agent  /app
-ADD scripts/aws-cni-support.sh /app
-ADD scripts/install-aws.sh /app
+COPY aws-k8s-agent  /app
+COPY scripts/aws-cni-support.sh /app
+COPY scripts/install-aws.sh /app
 ENTRYPOINT /app/install-aws.sh
