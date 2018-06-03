@@ -26,7 +26,7 @@ import (
 
 const (
 	defaultLogFilePath = "/host/var/log/aws-routed-eni/ipamd.log"
-	version            = "0.2.4"
+	version            = "1.0.0"
 )
 
 func main() {
