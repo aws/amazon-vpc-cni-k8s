@@ -1,100 +1,4 @@
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-# kubernetes versions before 1.8.0 should use rbac.authorization.k8s.io/v1beta1
-kind: ClusterRole
-metadata:
-  name: aws-node
-rules:
-- apiGroups: [""]
-  resources:
-  - pods
-  - namespaces
-  verbs: ["list", "watch", "get"]
-- apiGroups: ["extensions"]
-  resources:
-  - daemonsets
-  verbs: ["list", "watch"]
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: aws-node
-  namespace: kube-system
----
-apiVersion: rbac.authorization.k8s.io/v1
-# kubernetes versions before 1.8.0 should use rbac.authorization.k8s.io/v1beta1
-kind: ClusterRoleBinding
-metadata:
-  name: aws-node
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: aws-node
-subjects:
-- kind: ServiceAccount
-  name: aws-node
-  namespace: kube-system
---- 
-kind: DaemonSet
-apiVersion: extensions/v1beta1
-metadata:
-  name: aws-node
-  namespace: kube-system
-  labels:
-    k8s-app: aws-node
-spec:
-  updateStrategy:
-    type: RollingUpdate
-  selector:
-    matchLabels:
-      k8s-app: aws-node
-  template:
-    metadata:
-      labels:
-        k8s-app: aws-node
-      annotations:
-        scheduler.alpha.kubernetes.io/critical-pod: ''
-    spec:
-      serviceAccountName: aws-node
-      hostNetwork: true
-      tolerations:
-      - key: node-role.kubernetes.io/master
-        effect: NoSchedule
-      - key: CriticalAddonsOnly
-        operator: Exists
-      containers:
-      - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:1.0.0
-        name: aws-node
-        env:
-          - name: AWS_VPC_K8S_CNI_LOGLEVEL
-            value: DEBUG
-          - name: AWS_VPC_K8S_CNI_VETHPREFIX
-            value: cali
-        resources:
-          requests:
-            cpu: 10m
-        securityContext:
-          privileged: true
-        volumeMounts:
-        - mountPath: /host/opt/cni/bin
-          name: cni-bin-dir
-        - mountPath: /host/etc/cni/net.d
-          name: cni-net-dir
-        - mountPath: /host/var/log
-          name: log-dir
-      volumes:
-      - name: cni-bin-dir
-        hostPath:
-          path: /opt/cni/bin
-      - name: cni-net-dir
-        hostPath:
-          path: /etc/cni/net.d
-      - name: log-dir
-        hostPath:
-          path: /var/log
-
----
-
 kind: DaemonSet
 apiVersion: extensions/v1beta1
 metadata:
@@ -131,11 +35,14 @@ spec:
         # container programs network policy and routes on each
         # host.
         - name: calico-node
-          image: quay.io/calico/node:v3.0.6
+          image: quay.io/calico/node:v3.1.3
           env:
             # Use Kubernetes API as the backing datastore.
             - name: DATASTORE_TYPE
               value: "kubernetes"
+            # Use eni not cali for interface prefix
+            - name: FELIX_INTERFACEPREFIX
+              value: "eni"
             # Enable felix info logging.
             - name: FELIX_LOGSEVERITYSCREEN
               value: "info"
@@ -181,6 +88,7 @@ spec:
             httpGet:
               path: /liveness
               port: 9099
+              host: localhost
             periodSeconds: 10
             initialDelaySeconds: 10
             failureThreshold: 6
@@ -472,7 +380,7 @@ spec:
       hostNetwork: true
       serviceAccountName: calico-node
       containers:
-      - image: quay.io/calico/typha:v0.6.4
+      - image: quay.io/calico/typha:v0.7.4
         name: calico-typha
         ports:
         - containerPort: 5473
