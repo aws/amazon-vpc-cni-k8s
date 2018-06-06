@@ -387,6 +387,9 @@ spec:
           name: calico-typha
           protocol: TCP
         env:
+          # Use eni not cali for interface prefix
+          - name: FELIX_INTERFACEPREFIX
+            value: "eni"
           - name: TYPHA_LOGFILEPATH
             value: "none"
           - name: TYPHA_LOGSEVERITYSYS
