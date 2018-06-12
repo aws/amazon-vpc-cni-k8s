@@ -14,10 +14,13 @@
 
 .PHONY: build-linux clean docker docker-build lint unit-test vet
 
+VERSION ?= $(shell git describe --tags --always --dirty)
+LDFLAGS ?= -X main.version=$(VERSION)
+
 # Default to build the Linux binary
 build-linux:
-	GOOS=linux CGO_ENABLED=0 go build -o aws-k8s-agent
-	GOOS=linux CGO_ENABLED=0 go build -o aws-cni ./plugins/routed-eni/
+	GOOS=linux CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "$(LDFLAGS)"
+	GOOS=linux CGO_ENABLED=0 go build -o aws-cni -ldflags "$(LDFLAGS)" ./plugins/routed-eni/
 
 docker-build:
 	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
@@ -28,8 +31,8 @@ docker-build:
 
 # Build docker image
 docker: docker-build
-	@docker build -f scripts/dockerfiles/Dockerfile.release -t "amazon/amazon-k8s-cni:latest" .
-	@echo "Built Docker image \"amazon/amazon-k8s-cni:latest\""
+	@docker build -f scripts/dockerfiles/Dockerfile.release -t "amazon/amazon-k8s-cni:$(VERSION)" .
+	@echo "Built Docker image \"amazon/amazon-k8s-cni:$(VERSION)\""
 
 # unit-test
 unit-test:
