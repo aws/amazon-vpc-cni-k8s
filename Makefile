@@ -12,10 +12,17 @@
 # language governing permissions and limitations under the License.
 #
 
+.PHONY:	static docker-build docker unit-test lint vet
+.DEFAULT_GOAL := static
+
+#VERSION ?= $(shell git describe --tags --always --dirty)
+VERSION ?= $(shell git rev-parse --short HEAD)
+LDFLAGS ?= -X main.version=$(VERSION)
+
 # build binary
 static:
-	go build -o aws-k8s-agent main.go
-	go build -o aws-cni plugins/routed-eni/cni.go
+	go build -o aws-k8s-agent -ldflags "$(LDFLAGS)" main.go
+	go build -o aws-cni -ldflags "$(LDFLAGS)" plugins/routed-eni/cni.go
 	go build verify-aws.go
 	go build verify-network.go
 
@@ -28,8 +35,8 @@ docker-build:
 
 # build docker image
 docker: docker-build
-	@docker build -f scripts/dockerfiles/Dockerfile.release -t "amazon/amazon-k8s-cni:latest" .
-	@echo "Built Docker image \"amazon/amazon-k8s-cni:latest\""
+	@docker build -f scripts/dockerfiles/Dockerfile.release -t "amazon/amazon-k8s-cni:$(VERSION)" .
+	@echo "Built Docker image \"amazon/amazon-k8s-cni:$(VERSION)\""
 
 # unit-test
 unit-test:

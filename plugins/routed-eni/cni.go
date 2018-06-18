@@ -18,10 +18,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
 	"net"
 	"runtime"
+
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 
 	log "github.com/cihub/seelog"
 
@@ -45,6 +46,10 @@ const (
 	ipamDAddress       = "localhost:50051"
 	defaultLogFilePath = "/var/log/aws-routed-eni/plugin.log"
 	maxVethNameLen     = 10
+)
+
+var (
+	version string
 )
 
 // NetConf stores the common network config for CNI plugin
@@ -274,6 +279,8 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 func main() {
 	defer log.Flush()
 	logger.SetupLogger(logger.GetLogFileLocation(defaultLogFilePath))
+
+	log.Infof("Starting CNI Plugin %s  ...", version)
 
 	skel.PluginMain(cmdAdd, cmdDel, cniSpecVersion.All)
 }
