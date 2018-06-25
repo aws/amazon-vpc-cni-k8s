@@ -3,3 +3,6 @@ aws-cni
 verify-aws
 verify-network
 *~
+.idea/
+*.iml
+.DS_Store

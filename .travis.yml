@@ -1,0 +1,28 @@
+# This is how to tell Travis to use the fast container-based test
+# runner instead of the slow VM-based one.
+sudo: false
+
+language: go
+
+# Only the last two Go releases are supported by the Go team with security updates.
+# Any older versions are considered deprecated.
+go:
+  - "1.10.x"
+  - "1.9.x"
+
+# Only clone the most recent commit.
+git:
+  depth: 1
+
+go_import_path: github.com/aws/amazon-vpc-cni-k8s
+
+# Install needed tools
+install:
+  - go get -u golang.org/x/lint/golint
+
+# Tests to run
+script:
+  - make build-linux
+  - make lint
+  - make vet
+  - make unit-test

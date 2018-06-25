@@ -44,12 +44,11 @@ import (
 const (
 	ipamDAddress       = "localhost:50051"
 	defaultLogFilePath = "/var/log/aws-routed-eni/plugin.log"
-	maxVethNameLen     = 10
 )
 
-// NetConf stores the common network config for CNI plugin
+// NetConf stores the common network config for the CNI plugin
 type NetConf struct {
-	// CNIVersion is the version pluging
+	// CNIVersion is the plugin version
 	CNIVersion string `json:"cniVersion,omitempty"`
 
 	// Name is the plugin name

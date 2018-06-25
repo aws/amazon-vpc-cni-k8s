@@ -38,7 +38,7 @@ L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/Us
 
 ## Building
 
-* `make static` builds the binary files
+* `make` defaults to `make build-linux` that builds the Linux binaries.
 * `make docker-build` uses a docker container (golang:1.10) to build the binaries.
 * `make docker` will create a docker container using the docker-build with the finished binaries, with a tag of `amazon/amazon-k8s-cni:latest`
 * `unit-test`, `lint` and `vet` provide ways to run the respective tests/tools and should be run before submitting a PR.
