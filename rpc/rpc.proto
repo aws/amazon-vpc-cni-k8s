@@ -4,7 +4,7 @@ option java_multiple_files = true;
 option java_package = "io.grpc.examples.helloworld";
 option java_outer_classname = "HelloWorldProto";
 
-package rpc;;
+package rpc;
 
 // The service definition.
 service CNIBackend {

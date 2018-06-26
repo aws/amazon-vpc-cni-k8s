@@ -12,35 +12,36 @@
 # language governing permissions and limitations under the License.
 #
 
-# build binary
-static:
-	go build -o aws-k8s-agent main.go
-	go build -o aws-cni plugins/routed-eni/cni.go
-	go build verify-aws.go
-	go build verify-network.go
+.PHONY: build-linux clean docker docker-build lint unit-test vet
+
+# Default to build the Linux binary
+build-linux:
+	GOOS=linux CGO_ENABLED=0 go build -o aws-k8s-agent
+	GOOS=linux CGO_ENABLED=0 go build -o aws-cni ./plugins/routed-eni/
 
 docker-build:
 	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
 		--workdir=/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
 		--env GOPATH=/usr/src/app \
-		golang:1.10 make static
+		golang:1.10 make build-linux
 
 
-# build docker image
+# Build docker image
 docker: docker-build
 	@docker build -f scripts/dockerfiles/Dockerfile.release -t "amazon/amazon-k8s-cni:latest" .
 	@echo "Built Docker image \"amazon/amazon-k8s-cni:latest\""
 
 # unit-test
 unit-test:
-	go test -v -cover -race -timeout 150s ./pkg/awsutils/...
-	go test -v -cover -race -timeout 10s ./plugins/routed-eni/...
-	go test -v -cover -race -timeout 10s ./plugins/routed-eni/driver
-	go test -v -cover -race -timeout 10s ./pkg/k8sapi/...
-	go test -v -cover -race -timeout 10s ./pkg/networkutils/...
-	go test -v -cover -race -timeout 10s ./ipamd/...
+	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 150s ./pkg/awsutils/...
+	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./plugins/routed-eni/...
+	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./plugins/routed-eni/driver
+	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/k8sapi/...
+	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/networkutils/...
+	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./ipamd/...
 
-#golint
+# golint
+# To install: go get -u golang.org/x/lint/golint
 lint:
 	golint pkg/awsutils/*.go
 	golint plugins/routed-eni/*.go
@@ -56,3 +57,7 @@ vet:
 	go tool vet ./plugins/routed-eni
 	go tool vet ./pkg/k8sapi
 	go tool vet ./pkg/networkutils
+
+clean:
+	rm -f aws-k8s-agent
+	rm -f aws-cni
