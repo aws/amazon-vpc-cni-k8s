@@ -48,16 +48,16 @@ func _main() int {
 	discoverController := k8sapi.NewController(kubeClient)
 	go discoverController.DiscoverK8SPods()
 
-	aws_k8s_agent, err := ipamd.New(discoverController)
+	awsK8sAgent, err := ipamd.New(discoverController)
 
 	if err != nil {
 		log.Error("initialization failure", err)
 		return 1
 	}
 
-	go aws_k8s_agent.StartNodeIPPoolManager()
-	go aws_k8s_agent.SetupHTTP()
-	aws_k8s_agent.RunRPCHandler()
+	go awsK8sAgent.StartNodeIPPoolManager()
+	go awsK8sAgent.SetupHTTP()
+	awsK8sAgent.RunRPCHandler()
 
 	return 0
 }

@@ -157,7 +157,7 @@ func (c *IPAMContext) nodeInit() error {
 
 	enis, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
-		log.Error("Failed to retrive ENI info")
+		log.Error("Failed to retrieve ENI info")
 		return errors.New("ipamd init: failed to retrieve attached ENIs info")
 	}
 
@@ -455,7 +455,7 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 	return primaryIP
 }
 
-// returns all addresses on eni, the primary adderss on eni, error
+// returns all addresses on eni, the primary address on eni, error
 func (c *IPAMContext) getENIaddresses(eni string) ([]*ec2.NetworkInterfacePrivateIpAddress, string, error) {
 	ec2Addrs, _, err := c.awsClient.DescribeENI(eni)
 	if err != nil {
@@ -525,7 +525,7 @@ func logPoolStats(total, used, currentMaxAddrsPerENI, maxAddrsPerENI int) {
 		total, used, currentMaxAddrsPerENI, maxAddrsPerENI)
 }
 
-//nodeIPPoolTooLow returns true if IP pool is below low threshhold
+//nodeIPPoolTooLow returns true if IP pool is below low threshold
 func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
@@ -535,7 +535,7 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	return (available <= c.currentMaxAddrsPerENI*warmENITarget)
 }
 
-// NodeIPPoolTooHigh returns true if IP pool is above high threshhold
+// NodeIPPoolTooHigh returns true if IP pool is above high threshold
 func (c *IPAMContext) nodeIPPoolTooHigh() bool {
 	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
@@ -640,7 +640,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 		if err != nil {
 			log.Errorf("Failed to reconcile IP %s on eni %s", localIP, eni)
 			ipamdErrInc("ipReconcileAdd", err)
-			// contine instead of bailout due to one ip
+			// continue instead of bailout due to one ip
 			continue
 		}
 		reconcileCnt.With(prometheus.Labels{"fn": "eniIPPoolReconcileAdd"}).Inc()
@@ -655,7 +655,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 		if err != nil {
 			log.Errorf("Failed to reconcile and delete IP %s on eni %s, %v", existingIP, eni, err)
 			ipamdErrInc("ipReconcileDel", err)
-			// contine instead of bailout due to one ip
+			// continue instead of bailout due to one ip
 			continue
 		}
 		reconcileCnt.With(prometheus.Labels{"fn": "eniIPPoolReconcileDel"}).Inc()

@@ -306,7 +306,7 @@ func TestAWSGetFreeDeviceNumberNoDevice(t *testing.T) {
 		ec2ENIs = append(ec2ENIs, ec2ENI)
 	}
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []*ec2.Reservation{&ec2.Reservation{Instances: []*ec2.Instance{&ec2.Instance{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []*ec2.Reservation{{Instances: []*ec2.Instance{{NetworkInterfaces: ec2ENIs}}}}}
 
 	mockEC2.EXPECT().DescribeInstances(gomock.Any()).Return(result, nil)
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
@@ -341,7 +341,7 @@ func TestAllocENI(t *testing.T) {
 	ec2ENIs = append(ec2ENIs, ec2ENI)
 
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []*ec2.Reservation{&ec2.Reservation{Instances: []*ec2.Instance{&ec2.Instance{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []*ec2.Reservation{{Instances: []*ec2.Instance{{NetworkInterfaces: ec2ENIs}}}}}
 
 	mockEC2.EXPECT().DescribeInstances(gomock.Any()).Return(result, nil)
 	attachmentID := "eni-attach-58ddda9d"
@@ -377,7 +377,7 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 		ec2ENIs = append(ec2ENIs, ec2ENI)
 	}
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []*ec2.Reservation{&ec2.Reservation{Instances: []*ec2.Instance{&ec2.Instance{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []*ec2.Reservation{{Instances: []*ec2.Instance{{NetworkInterfaces: ec2ENIs}}}}}
 
 	mockEC2.EXPECT().DescribeInstances(gomock.Any()).Return(result, nil)
 
@@ -413,7 +413,7 @@ func TestAllocENIMaxReached(t *testing.T) {
 	ec2ENIs = append(ec2ENIs, ec2ENI)
 
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []*ec2.Reservation{&ec2.Reservation{Instances: []*ec2.Instance{&ec2.Instance{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []*ec2.Reservation{{Instances: []*ec2.Instance{{NetworkInterfaces: ec2ENIs}}}}}
 
 	mockEC2.EXPECT().DescribeInstances(gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any()).Return(nil, errors.New("AttachmentLimitExceeded"))
@@ -431,7 +431,7 @@ func TestFreeENI(t *testing.T) {
 	attachmentID := eniAttachID
 	attachment := &ec2.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
 	result := &ec2.DescribeNetworkInterfacesOutput{
-		NetworkInterfaces: []*ec2.NetworkInterface{&ec2.NetworkInterface{Attachment: attachment}}}
+		NetworkInterfaces: []*ec2.NetworkInterface{{Attachment: attachment}}}
 	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().DetachNetworkInterface(gomock.Any()).Return(nil, nil)
 	mockEC2.EXPECT().DeleteNetworkInterface(gomock.Any()).Return(nil, nil)
@@ -448,7 +448,7 @@ func TestFreeENIRetry(t *testing.T) {
 	attachmentID := eniAttachID
 	attachment := &ec2.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
 	result := &ec2.DescribeNetworkInterfacesOutput{
-		NetworkInterfaces: []*ec2.NetworkInterface{&ec2.NetworkInterface{Attachment: attachment}}}
+		NetworkInterfaces: []*ec2.NetworkInterface{{Attachment: attachment}}}
 	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any()).Return(result, nil)
 
 	// retry 2 times
@@ -468,7 +468,7 @@ func TestFreeENIRetryMax(t *testing.T) {
 	attachmentID := eniAttachID
 	attachment := &ec2.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
 	result := &ec2.DescribeNetworkInterfacesOutput{
-		NetworkInterfaces: []*ec2.NetworkInterface{&ec2.NetworkInterface{Attachment: attachment}}}
+		NetworkInterfaces: []*ec2.NetworkInterface{{Attachment: attachment}}}
 	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any()).Return(result, nil)
 
 	mockEC2.EXPECT().DetachNetworkInterface(gomock.Any()).Return(nil, nil)
