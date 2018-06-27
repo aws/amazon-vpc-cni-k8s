@@ -65,7 +65,7 @@ func NewAttributeError(err string) AttributeError {
 	return AttributeError{err}
 }
 
-// Implements error
+// MultiErr Implements error
 type MultiErr struct {
 	errors []error
 }

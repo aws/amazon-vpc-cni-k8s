@@ -27,9 +27,9 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/ttime"
 )
 
-func DefaultIfBlank(str string, default_value string) string {
+func DefaultIfBlank(str string, defaultValue string) string {
 	if len(str) == 0 {
-		return default_value
+		return defaultValue
 	}
 	return str
 }
@@ -134,7 +134,6 @@ func RetryWithBackoffCtx(ctx context.Context, backoff Backoff, fn func() error) 
 
 		_time.Sleep(backoff.Duration())
 	}
-	return err
 }
 
 // RetryNWithBackoff takes a Backoff, a maximum number of tries 'n', and a

@@ -134,9 +134,8 @@ func TestGetENIIPPools(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, len(eniIPPool), 2)
 
-	eniIPPool, err = ds.GetENIIPPools("dummy-eni")
+	_, err = ds.GetENIIPPools("dummy-eni")
 	assert.Error(t, err)
-
 }
 
 func TestDelENIIPv4Address(t *testing.T) {
@@ -193,11 +192,14 @@ func TestPodIPv4Address(t *testing.T) {
 	ip, _, err := ds.AssignPodIPv4Address(&podInfo)
 
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.1")
-	assert.Equal(t, ds.total, 3)
-	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
-	assert.Equal(t, ds.eniIPPools["eni-1"].AssignedIPv4Addresses, 1)
+	assert.Equal(t, "1.1.1.1", ip)
+	assert.Equal(t, 3, ds.total)
+	assert.Equal(t, 2, len(ds.eniIPPools["eni-1"].IPv4Addresses))
+	assert.Equal(t, 1, ds.eniIPPools["eni-1"].AssignedIPv4Addresses)
+
 	ip, _, err = ds.AssignPodIPv4Address(&podInfo)
+	assert.NoError(t, err)
+	assert.Equal(t, "1.1.1.1", ip)
 
 	podsInfos := ds.GetPodInfos()
 	assert.Equal(t, len(*podsInfos), 1)
@@ -217,7 +219,7 @@ func TestPodIPv4Address(t *testing.T) {
 		IP:        "1.1.2.10",
 	}
 
-	ip, _, err = ds.AssignPodIPv4Address(&podInfo)
+	_, _, err = ds.AssignPodIPv4Address(&podInfo)
 	assert.Error(t, err)
 
 	podInfo = k8sapi.K8SPodInfo{
@@ -277,7 +279,7 @@ func TestPodIPv4Address(t *testing.T) {
 		Namespace: "ns-2",
 	}
 
-	ip, deviceNum, err := ds.UnAssignPodIPv4Address(&podInfo)
+	_, deviceNum, err := ds.UnAssignPodIPv4Address(&podInfo)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, ds.assigned, 2)

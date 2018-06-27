@@ -1,4 +1,4 @@
-// Package k8sapi contains logic to retrive pods running on local node
+// Package k8sapi contains logic to retrieve pods running on local node
 package k8sapi
 
 import (
@@ -63,7 +63,7 @@ type Controller struct {
 	synced     bool
 }
 
-// NewController creats a new DiscoveryController
+// NewController creates a new DiscoveryController
 func NewController(clientset kubernetes.Interface) *Controller {
 	return &Controller{kubeClient: clientset,
 		myNodeName: os.Getenv("MY_NODE_NAME"),
@@ -195,7 +195,7 @@ func (d *Controller) processNextItem() bool {
 func (d *Controller) handlePodUpdate(key string) error {
 	obj, exists, err := d.controller.indexer.GetByKey(key)
 	if err != nil {
-		log.Errorf("Fetching object with key %s from store failed with %v", key, err)
+		log.Errorf("fetching object with key %s from store failed with %v", key, err)
 		return err
 	}
 
@@ -209,8 +209,8 @@ func (d *Controller) handlePodUpdate(key string) error {
 
 	pod, ok := obj.(*v1.Pod)
 	if !ok {
-		log.Errorf("Updated object recieved was not a pod: %+v", obj)
-		return errors.New("recieved a non-pod object update")
+		log.Errorf("updated object received was not a pod: %+v", obj)
+		return errors.New("received a non-pod object update")
 	}
 	// Note that you also have to check the uid if you have a local controlled resource, which
 	// is dependent on the actual instance, to detect that a Pod was recreated with the same name
@@ -269,7 +269,7 @@ func (d *Controller) run(threadiness int, stopCh chan struct{}) {
 
 	// Wait for all involved caches to be synced, before processing items from the queue is started
 	if !cache.WaitForCacheSync(stopCh, d.controller.informer.HasSynced) {
-		runtime.HandleError(fmt.Errorf("Timed out waiting for caches to sync"))
+		runtime.HandleError(fmt.Errorf("timed out waiting for caches to sync"))
 		return
 	}
 

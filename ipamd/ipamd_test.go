@@ -107,9 +107,9 @@ func TestNodeInit(t *testing.T) {
 	testAddr2 := ipaddr02
 	primary := true
 	eniResp := []*ec2.NetworkInterfacePrivateIpAddress{
-		&ec2.NetworkInterfacePrivateIpAddress{
+		{
 			PrivateIpAddress: &testAddr1, Primary: &primary},
-		&ec2.NetworkInterfacePrivateIpAddress{
+		{
 			PrivateIpAddress: &testAddr2, Primary: &primary}}
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	mockAWS.EXPECT().DescribeENI(primaryENIid).Return(eniResp, &attachmentID, nil)
@@ -122,9 +122,9 @@ func TestNodeInit(t *testing.T) {
 	testAddr12 := ipaddr12
 	primary = false
 	eniResp = []*ec2.NetworkInterfacePrivateIpAddress{
-		&ec2.NetworkInterfacePrivateIpAddress{
+		{
 			PrivateIpAddress: &testAddr11, Primary: &primary},
-		&ec2.NetworkInterfacePrivateIpAddress{
+		{
 			PrivateIpAddress: &testAddr12, Primary: &primary}}
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	mockAWS.EXPECT().DescribeENI(secENIid).Return(eniResp, &attachmentID, nil)
@@ -132,7 +132,7 @@ func TestNodeInit(t *testing.T) {
 
 	mockAWS.EXPECT().GetLocalIPv4().Return(ipaddr01)
 	k8sName := "/k8s_POD_" + "pod1" + "_" + "default" + "_" + "pod-uid" + "_0"
-	mockK8S.EXPECT().K8SGetLocalPodIPs().Return([]*k8sapi.K8SPodInfo{&k8sapi.K8SPodInfo{Name: "pod1",
+	mockK8S.EXPECT().K8SGetLocalPodIPs().Return([]*k8sapi.K8SPodInfo{{Name: "pod1",
 		Namespace: "default", UID: "pod-uid", IP: ipaddr02}}, nil)
 
 	var dockerList = make(map[string]*docker.ContainerInfo, 0)
@@ -165,14 +165,14 @@ func TestIncreaseIPPool(t *testing.T) {
 	mockAWS.EXPECT().AllocAllIPAddress(eni2)
 
 	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
-		awsutils.ENIMetadata{
+		{
 			ENIID:          primaryENIid,
 			MAC:            primaryMAC,
 			DeviceNumber:   primaryDevice,
 			SubnetIPv4CIDR: primarySubnet,
 			LocalIPv4s:     []string{ipaddr01, ipaddr02},
 		},
-		awsutils.ENIMetadata{
+		{
 			ENIID:          secENIid,
 			MAC:            secMAC,
 			DeviceNumber:   secDevice,
@@ -189,9 +189,9 @@ func TestIncreaseIPPool(t *testing.T) {
 
 	mockAWS.EXPECT().DescribeENI(eni2).Return(
 		[]*ec2.NetworkInterfacePrivateIpAddress{
-			&ec2.NetworkInterfacePrivateIpAddress{
+			{
 				PrivateIpAddress: &testAddr11, Primary: &primary},
-			&ec2.NetworkInterfacePrivateIpAddress{
+			{
 				PrivateIpAddress: &testAddr12, Primary: &primary}}, &attachmentID, nil)
 
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
@@ -215,7 +215,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	mockContext.dataStore = datastore.NewDataStore()
 
 	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
-		awsutils.ENIMetadata{
+		{
 			ENIID:          primaryENIid,
 			MAC:            primaryMAC,
 			DeviceNumber:   primaryDevice,
@@ -234,9 +234,9 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 
 	mockAWS.EXPECT().DescribeENI(primaryENIid).Return(
 		[]*ec2.NetworkInterfacePrivateIpAddress{
-			&ec2.NetworkInterfacePrivateIpAddress{
+			{
 				PrivateIpAddress: &testAddr1, Primary: &primary},
-			&ec2.NetworkInterfacePrivateIpAddress{
+			{
 				PrivateIpAddress: &testAddr2, Primary: &notPrimary}}, &attachmentID, nil)
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 
@@ -248,7 +248,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 
 	// remove 1 IP
 	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
-		awsutils.ENIMetadata{
+		{
 			ENIID:          primaryENIid,
 			MAC:            primaryMAC,
 			DeviceNumber:   primaryDevice,

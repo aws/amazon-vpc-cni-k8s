@@ -1,6 +1,15 @@
 # amazon-vpc-cni-k8s
 Networking plugin for pod networking in [Kubernetes](https://kubernetes.io/) using [Elastic Network Interfaces](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html) on AWS.
 
+[![BuildStatus Widget]][BuildStatus Result]
+[![GoReport Widget]][GoReport Status]
+
+
+[BuildStatus Result]: https://travis-ci.org/aws/amazon-vpc-cni-k8s
+[BuildStatus Widget]: https://travis-ci.org/aws/amazon-vpc-cni-k8s.svg?branch=master
+
+[GoReport Status]: https://goreportcard.com/report/github.com/aws/amazon-vpc-cni-k8s
+[GoReport Widget]: https://goreportcard.com/badge/github.com/aws/amazon-vpc-cni-k8s
 ## Setup
 Download the latest version of the [yaml](./config/) and apply it the cluster.
 ```

@@ -109,7 +109,7 @@ func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP
 		err = ipt.Append("nat", "POSTROUTING", natCmd...)
 
 		if err != nil {
-			return errors.Wrapf(err, "host network setup: failed to append POSTROUTING rule for primary adderss %s", primaryAddr)
+			return errors.Wrapf(err, "host network setup: failed to append POSTROUTING rule for primary address %s", primaryAddr)
 		}
 	}
 
@@ -180,14 +180,14 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 
 	for _, r := range []netlink.Route{
 		// Add a direct link route for the host's ENI IP only
-		netlink.Route{
+		{
 			LinkIndex: deviceNumber,
 			Dst:       &net.IPNet{IP: gw.IP, Mask: net.CIDRMask(32, 32)},
 			Scope:     netlink.SCOPE_LINK,
 			Table:     eniTable,
 		},
 		// Route all other traffic via the host's ENI IP
-		netlink.Route{
+		{
 			LinkIndex: deviceNumber,
 			Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
 			Scope:     netlink.SCOPE_UNIVERSE,
@@ -239,7 +239,6 @@ func isNotExistsError(err error) bool {
 	if errno, ok := err.(syscall.Errno); ok {
 		return errno == syscall.ESRCH
 	}
-
 	return false
 }
 
@@ -252,5 +251,4 @@ func isRouteExistsError(err error) bool {
 		return errno == syscall.EEXIST
 	}
 	return false
-
 }
