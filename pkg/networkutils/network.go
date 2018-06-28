@@ -92,11 +92,14 @@ func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP
 		return errors.Wrapf(err, "host network setup: failed to delete old host rule")
 	}
 
-	err = os.netLink.RuleAdd(hostRule)
-
-	if err != nil {
-		log.Errorf("Failed to add host IP rule: %v", err)
-		return errors.Wrapf(err, "host network setup: failed to add host rule")
+	// Only include the rule if SNAT is not being handled by an external NAT gateway and needs to be
+	// handled on-node.
+	if !externalSNAT {
+		err = os.netLink.RuleAdd(hostRule)
+		if err != nil {
+			log.Errorf("Failed to add host IP rule: %v", err)
+			return errors.Wrapf(err, "host network setup: failed to add host rule")
+		}
 	}
 
 	ipt, err := iptables.New()
