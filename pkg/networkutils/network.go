@@ -15,6 +15,8 @@ package networkutils
 
 import (
 	"net"
+	"os"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -42,6 +44,11 @@ const (
 	fromPodRulePriority = 1536
 
 	mainRoutingTable = 254
+
+	// This environment is used to specify whether an external NAT gateway will be used to provide SNAT of
+	// secondary ENI IP addresses.  If set to "true", the SNAT iptables rule and off-VPC ip rule will not
+	// be installed and will be removed if they are already installed.
+	envExternalSNAT = "AWS_VPC_K8S_CNI_EXTERNALSNAT"
 )
 
 // NetworkAPIs defines the host level and the eni level network related operations
@@ -67,17 +74,18 @@ func isDuplicateRuleAdd(err error) bool {
 	return strings.Contains(err.Error(), "File exists")
 }
 
-// SetupNodeNetwork performs node level network configuration
+// SetupHostNetwork performs node level network configuration
 // TODO : implement ip rule not to 10.0.0.0/16(vpc'subnet) table main priority  1024
 func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP) error {
 
+	externalSNAT := useExternalSNAT()
 	hostRule := os.netLink.NewRule()
 	hostRule.Dst = vpcCIDR
 	hostRule.Table = mainRoutingTable
 	hostRule.Priority = hostRulePriority
 	hostRule.Invert = true
 
-	// if this is a restart, cleanup previous rule first
+	// If this is a restart, cleanup previous rule first
 	err := os.netLink.RuleDel(hostRule)
 	if err != nil && !containsNoSuchRule(err) {
 		log.Errorf("Failed to cleanup old host IP rule: %v", err)
@@ -105,11 +113,19 @@ func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP
 		return errors.Wrapf(err, "host network setup: failed to add POSTROUTING rule for primary address %s", primaryAddr)
 	}
 
-	if !exists {
+	if !exists && !externalSNAT {
+		// We are handling SNAT on-node, so include the iptables SNAT POSTROUTING rule.
 		err = ipt.Append("nat", "POSTROUTING", natCmd...)
 
 		if err != nil {
 			return errors.Wrapf(err, "host network setup: failed to append POSTROUTING rule for primary address %s", primaryAddr)
+		}
+	} else if exists && externalSNAT {
+		// We are not handling SNAT on-node, so delete the existing iptables SNAT POSTROUTING rule.
+		err = ipt.Delete("nat", "POSTROUTING", natCmd...)
+
+		if err != nil {
+			return errors.Wrapf(err, "host network setup: failed to delete POSTROUTING rule for primary address %s", primaryAddr)
 		}
 	}
 
@@ -119,6 +135,21 @@ func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP
 func containsNoSuchRule(err error) bool {
 	if errno, ok := err.(syscall.Errno); ok {
 		return errno == syscall.ENOENT
+	}
+	return false
+}
+
+// useExternalSNAT returns whether SNAT of secondary ENI IPs should be handled with an external
+// NAT gateway rather than on node.  Failure to parse the setting will result in a log and the
+// setting will be disabled.
+func useExternalSNAT() bool {
+	if externalSNATStr := os.Getenv(envExternalSNAT); externalSNATStr != "" {
+		externalSNAT, err := strconv.ParseBool(externalSNATStr)
+		if err != nil {
+			log.Error("Failed to parse "+envExternalSNAT, err.Error())
+			return false
+		}
+		return externalSNAT
 	}
 	return false
 }
