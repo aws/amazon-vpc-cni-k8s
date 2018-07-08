@@ -32,6 +32,7 @@ message DelNetworkRequest {
   string K8S_POD_NAMESPACE = 2;
   string K8S_POD_INFRA_CONTAINER_ID = 3;
   string IPv4Addr = 4;
+  string Reason = 5;
 }
 
 message DelNetworkReply {
