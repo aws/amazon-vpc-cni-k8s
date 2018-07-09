@@ -14,6 +14,9 @@
 package networkutils
 
 import (
+	"fmt"
+	"io"
+	"math"
 	"net"
 	"os"
 	"strconv"
@@ -47,8 +50,26 @@ const (
 
 	// This environment is used to specify whether an external NAT gateway will be used to provide SNAT of
 	// secondary ENI IP addresses.  If set to "true", the SNAT iptables rule and off-VPC ip rule will not
-	// be installed and will be removed if they are already installed.
+	// be installed and will be removed if they are already installed.  Defaults to false.
 	envExternalSNAT = "AWS_VPC_K8S_CNI_EXTERNALSNAT"
+
+	// envNodePortSupport is the name of environment variable that configures whether we implement support for
+	// NodePorts on the primary ENI.  This requires that we add additional iptables rules and loosen the kernel's
+	// RPF check as described below.  Defaults to true.
+	envNodePortSupport = "AWS_VPC_CNI_NODE_PORT_SUPPORT"
+
+	// envConnmark is the name of the environment variable that overrides the default connection mark, used to
+	// mark traffic coming from the primary ENI so that return traffic can be forced out of the same interface.
+	// Without using a mark, NodePort DNAT and our source-based routing do not work together if the target pod
+	// behind the node port is not on the main ENI.  In that case, the un-DNAT is done after the source-based
+	// routing, resulting in the packet being sent out of the pod's ENI, when the NodePort traffic should be
+	// sent over the main ENI.
+	envConnmark = "AWS_VPC_K8S_CNI_CONNMARK"
+
+	// defaultConnmark is the default value for the connmark described above.  Note: the mark space is a little crowded,
+	// - kube-proxy uses 0x0000c000
+	// - Calico uses 0xffff0000.
+	defaultConnmark = 0x80
 )
 
 // NetworkAPIs defines the host level and the eni level network related operations
@@ -60,14 +81,45 @@ type NetworkAPIs interface {
 }
 
 type linuxNetwork struct {
-	netLink netlinkwrapper.NetLink
-	ns      nswrapper.NS
+	useExternalSNAT        bool
+	nodePortSupportEnabled bool
+	connmark               uint32
+
+	netLink     netlinkwrapper.NetLink
+	ns          nswrapper.NS
+	newIptables func() (iptablesIface, error)
+	mainENIMark uint32
+	openFile    func(name string, flag int, perm os.FileMode) (stringWriteCloser, error)
+}
+
+type iptablesIface interface {
+	Exists(table, chain string, rulespec ...string) (bool, error)
+	Append(table, chain string, rulespec ...string) error
+	Delete(table, chain string, rulespec ...string) error
 }
 
 // New creates a linuxNetwork object
 func New() NetworkAPIs {
-	return &linuxNetwork{netLink: netlinkwrapper.NewNetLink(),
-		ns: nswrapper.NewNS()}
+	return &linuxNetwork{
+		useExternalSNAT:        useExternalSNAT(),
+		nodePortSupportEnabled: nodePortSupportEnabled(),
+		mainENIMark:            getConnmark(),
+
+		netLink: netlinkwrapper.NewNetLink(),
+		ns:      nswrapper.NewNS(),
+		newIptables: func() (iptablesIface, error) {
+			ipt, err := iptables.New()
+			return ipt, err
+		},
+		openFile: func(name string, flag int, perm os.FileMode) (stringWriteCloser, error) {
+			return os.OpenFile(name, flag, perm)
+		},
+	}
+}
+
+type stringWriteCloser interface {
+	io.Closer
+	WriteString(s string) (int, error)
 }
 
 func isDuplicateRuleAdd(err error) bool {
@@ -76,17 +128,16 @@ func isDuplicateRuleAdd(err error) bool {
 
 // SetupHostNetwork performs node level network configuration
 // TODO : implement ip rule not to 10.0.0.0/16(vpc'subnet) table main priority  1024
-func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP) error {
-
-	externalSNAT := useExternalSNAT()
-	hostRule := os.netLink.NewRule()
+func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP) error {
+	log.Info("Setting up host network")
+	hostRule := n.netLink.NewRule()
 	hostRule.Dst = vpcCIDR
 	hostRule.Table = mainRoutingTable
 	hostRule.Priority = hostRulePriority
 	hostRule.Invert = true
 
 	// If this is a restart, cleanup previous rule first
-	err := os.netLink.RuleDel(hostRule)
+	err := n.netLink.RuleDel(hostRule)
 	if err != nil && !containsNoSuchRule(err) {
 		log.Errorf("Failed to cleanup old host IP rule: %v", err)
 		return errors.Wrapf(err, "host network setup: failed to delete old host rule")
@@ -94,45 +145,141 @@ func (os *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP
 
 	// Only include the rule if SNAT is not being handled by an external NAT gateway and needs to be
 	// handled on-node.
-	if !externalSNAT {
-		err = os.netLink.RuleAdd(hostRule)
+	if !n.useExternalSNAT {
+		err = n.netLink.RuleAdd(hostRule)
 		if err != nil {
 			log.Errorf("Failed to add host IP rule: %v", err)
 			return errors.Wrapf(err, "host network setup: failed to add host rule")
 		}
 	}
 
-	ipt, err := iptables.New()
+	if n.nodePortSupportEnabled {
+		// If node port support is enabled, configure the kernel's reverse path filter check on eth0 for "loose"
+		// filtering.  This is required because
+		// - NodePorts are exposed on eth0
+		// - The kernel's RPF check happens after incoming packets to NodePorts are DNATted to the pod IP.
+		// - For pods assigned to secondary ENIs, the routing table includes source-based routing.  When the kernel does
+		//   the RPF check, it looks up the route using the pod IP as the source.
+		// - Thus, it finds the source-based route that leaves via the secondary ENI.
+		// - In "strict" mode, the RPF check fails because the return path uses a different interface to the incoming
+		//   packet.  In "loose" mode, the check passes because some route was found.
+		const eth0RPFilter = "/proc/sys/net/ipv4/conf/eth0/rp_filter"
+		const rpFilterLoose = "2"
+		err := n.setProcSys(eth0RPFilter, rpFilterLoose)
+		if err != nil {
+			return errors.Wrapf(err, "failed to configure eth0 RPF check")
+		}
+	}
+
+	// If node port support is enabled, add a rule that will force force marked traffic out of the main ENI.  We then
+	// add iptables rules below that will mark traffic that needs this special treatment.  In particular NodePort
+	// traffic always comes in via the main ENI but response traffic would go out of the pod's assigned ENI if we
+	// didn't handle it specially. This is because the routing decision is done before the NodePort's DNAT is
+	// reversed so, to the routing table, it looks like the traffic is pod traffic instead of NodePort traffic.
+	mainENIRule := n.netLink.NewRule()
+	mainENIRule.Mark = int(n.mainENIMark)
+	mainENIRule.Mask = int(n.mainENIMark)
+	mainENIRule.Table = mainRoutingTable
+	mainENIRule.Priority = hostRulePriority
+	// If this is a restart, cleanup previous rule first
+	err = n.netLink.RuleDel(mainENIRule)
+	if err != nil && !containsNoSuchRule(err) {
+		log.Errorf("Failed to cleanup old main ENI rule: %v", err)
+		return errors.Wrapf(err, "host network setup: failed to delete old main ENI rule")
+	}
+
+	if n.nodePortSupportEnabled {
+		err = n.netLink.RuleAdd(mainENIRule)
+		if err != nil {
+			log.Errorf("Failed to add host main ENI rule: %v", err)
+			return errors.Wrapf(err, "host network setup: failed to add main ENI rule")
+		}
+	}
+
+	ipt, err := n.newIptables()
 
 	if err != nil {
 		return errors.Wrap(err, "host network setup: failed to create iptables")
 	}
 
-	natCmd := []string{"!", "-d", vpcCIDR.String(), "-m", "comment", "--comment", "AWS, SNAT",
-		"-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", primaryAddr.String()}
-	exists, err := ipt.Exists("nat", "POSTROUTING", natCmd...)
-
-	if err != nil {
-		return errors.Wrapf(err, "host network setup: failed to add POSTROUTING rule for primary address %s", primaryAddr)
-	}
-
-	if !exists && !externalSNAT {
-		// We are handling SNAT on-node, so include the iptables SNAT POSTROUTING rule.
-		err = ipt.Append("nat", "POSTROUTING", natCmd...)
-
+	for _, rule := range []iptablesRule{
+		{
+			name:        "connmark for primary ENI",
+			shouldExist: n.nodePortSupportEnabled,
+			table:       "mangle",
+			chain:       "PREROUTING",
+			rule: []string{
+				"-m", "comment", "--comment", "AWS, primary ENI",
+				"-i", "eth0",
+				"-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in",
+				"-j", "CONNMARK", "--set-mark", fmt.Sprintf("%#x/%#x", n.mainENIMark, n.mainENIMark),
+			},
+		},
+		{
+			name:        "connmark restore for primary ENI",
+			shouldExist: n.nodePortSupportEnabled,
+			table:       "mangle",
+			chain:       "PREROUTING",
+			rule: []string{
+				"-m", "comment", "--comment", "AWS, primary ENI",
+				"-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", n.mainENIMark),
+			},
+		},
+		{
+			name:        fmt.Sprintf("rule for primary address %s", primaryAddr),
+			shouldExist: !n.useExternalSNAT,
+			table:       "nat",
+			chain:       "POSTROUTING",
+			rule: []string{
+				"!", "-d", vpcCIDR.String(),
+				"-m", "comment", "--comment", "AWS, SNAT",
+				"-m", "addrtype", "!", "--dst-type", "LOCAL",
+				"-j", "SNAT", "--to-source", primaryAddr.String()},
+		},
+	} {
+		exists, err := ipt.Exists(rule.table, rule.chain, rule.rule...)
 		if err != nil {
-			return errors.Wrapf(err, "host network setup: failed to append POSTROUTING rule for primary address %s", primaryAddr)
+			return errors.Wrapf(err, "host network setup: failed to check existence of %v", rule)
 		}
-	} else if exists && externalSNAT {
-		// We are not handling SNAT on-node, so delete the existing iptables SNAT POSTROUTING rule.
-		err = ipt.Delete("nat", "POSTROUTING", natCmd...)
 
-		if err != nil {
-			return errors.Wrapf(err, "host network setup: failed to delete POSTROUTING rule for primary address %s", primaryAddr)
+		if !exists && rule.shouldExist {
+			err = ipt.Append(rule.table, rule.chain, rule.rule...)
+			if err != nil {
+				return errors.Wrapf(err, "host network setup: failed to add %v", rule)
+			}
+		} else if exists && !rule.shouldExist {
+			err = ipt.Delete(rule.table, rule.chain, rule.rule...)
+			if err != nil {
+				return errors.Wrapf(err, "host network setup: failed to delete %v", rule)
+			}
 		}
 	}
 
 	return nil
+}
+
+func (n *linuxNetwork) setProcSys(key, value string) error {
+	f, err := n.openFile(key, os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(value)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+type iptablesRule struct {
+	name         string
+	shouldExist  bool
+	table, chain string
+	rule         []string
+}
+
+func (r iptablesRule) String() string {
+	return fmt.Sprintf("%s/%s rule %s", r.table, r.chain, r.name)
 }
 
 func containsNoSuchRule(err error) bool {
@@ -142,19 +289,52 @@ func containsNoSuchRule(err error) bool {
 	return false
 }
 
+// GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
+func GetConfigForDebug() map[string]interface{} {
+	return map[string]interface{}{
+		envExternalSNAT:    useExternalSNAT(),
+		envNodePortSupport: nodePortSupportEnabled(),
+		envConnmark:        getConnmark(),
+	}
+}
+
 // useExternalSNAT returns whether SNAT of secondary ENI IPs should be handled with an external
 // NAT gateway rather than on node.  Failure to parse the setting will result in a log and the
 // setting will be disabled.
 func useExternalSNAT() bool {
-	if externalSNATStr := os.Getenv(envExternalSNAT); externalSNATStr != "" {
-		externalSNAT, err := strconv.ParseBool(externalSNATStr)
+	return getBoolEnvVar(envExternalSNAT, false)
+}
+
+func nodePortSupportEnabled() bool {
+	return getBoolEnvVar(envNodePortSupport, true)
+}
+
+func getBoolEnvVar(name string, defaultValue bool) bool {
+	if strValue := os.Getenv(name); strValue != "" {
+		parsedValue, err := strconv.ParseBool(strValue)
 		if err != nil {
-			log.Error("Failed to parse "+envExternalSNAT, err.Error())
-			return false
+			log.Error("Failed to parse "+name+"; using default: "+fmt.Sprint(defaultValue), err.Error())
+			return defaultValue
 		}
-		return externalSNAT
+		return parsedValue
 	}
-	return false
+	return defaultValue
+}
+
+func getConnmark() uint32 {
+	if connmark := os.Getenv(envConnmark); connmark != "" {
+		mark, err := strconv.ParseInt(connmark, 0, 64)
+		if err != nil {
+			log.Error("Failed to parse "+envConnmark+"; will use ", defaultConnmark, err.Error())
+			return defaultConnmark
+		}
+		if mark > math.MaxUint32 || mark <= 0 {
+			log.Error(""+envConnmark+" out of range; will use ", defaultConnmark)
+			return defaultConnmark
+		}
+		return uint32(mark)
+	}
+	return defaultConnmark
 }
 
 // LinkByMac returns linux netlink based on interface MAC
@@ -177,8 +357,8 @@ func LinkByMac(mac string, netLink netlinkwrapper.NetLink) (netlink.Link, error)
 }
 
 // SetupENINetwork adds default route to route table (eni-<eni_table>)
-func (os *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string) error {
-	return setupENINetwork(eniIP, eniMAC, eniTable, eniSubnetCIDR, os.netLink)
+func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string) error {
+	return setupENINetwork(eniIP, eniMAC, eniTable, eniSubnetCIDR, n.netLink)
 }
 
 func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink) error {

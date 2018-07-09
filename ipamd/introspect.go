@@ -23,6 +23,7 @@ import (
 	log "github.com/cihub/seelog"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils"
 )
 
@@ -68,8 +69,9 @@ func (c *IPAMContext) SetupHTTP() {
 
 func (c *IPAMContext) setupServer() *http.Server {
 	serverFunctions := map[string]func(w http.ResponseWriter, r *http.Request){
-		"/v1/enis": eniV1RequestHandler(c),
-		"/v1/pods": podV1RequestHandler(c),
+		"/v1/enis":         eniV1RequestHandler(c),
+		"/v1/pods":         podV1RequestHandler(c),
+		"/v1/env-settings": envV1RequestHandler(c),
 	}
 	paths := make([]string, 0, len(serverFunctions))
 	for path := range serverFunctions {
@@ -125,6 +127,18 @@ func podV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 		responseJSON, err := json.Marshal(ipam.dataStore.GetPodInfos())
 		if err != nil {
 			log.Error("Failed to marshal pod data: %v", err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+		w.Write(responseJSON)
+	}
+}
+
+func envV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		responseJSON, err := json.Marshal(networkutils.GetConfigForDebug())
+		if err != nil {
+			log.Error("Failed to marshal env var data: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
