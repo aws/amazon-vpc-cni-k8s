@@ -83,6 +83,19 @@ var (
 		},
 		[]string{"fn"},
 	)
+	addIPCnt = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "add_ip_req_count",
+			Help: "The number of add IP address request",
+		},
+	)
+	delIPCnt = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "del_ip_req_count",
+			Help: "The number of delete IP address request",
+		},
+		[]string{"reason"},
+	)
 	prometheusRegistered = false
 )
 
@@ -111,6 +124,8 @@ func prometheusRegister() {
 		prometheus.MustRegister(enisMax)
 		prometheus.MustRegister(ipMax)
 		prometheus.MustRegister(reconcileCnt)
+		prometheus.MustRegister(addIPCnt)
+		prometheus.MustRegister(delIPCnt)
 		prometheusRegistered = true
 	}
 }

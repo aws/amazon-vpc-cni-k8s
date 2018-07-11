@@ -179,6 +179,25 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	if err != nil {
 		log.Errorf("Failed SetupPodNetwork for pod %s namespace %s container %s: %v",
 			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), err)
+
+		// return allocated IP back to IP pool
+		r, delErr := c.DelNetwork(context.Background(),
+			&pb.DelNetworkRequest{
+				K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
+				K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
+				K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
+				IPv4Addr:                   r.IPv4Addr,
+				Reason:                     "SetupNSFailed"})
+
+		if delErr != nil {
+			log.Errorf("Error received from DelNetwork grpc call for pod %s namespace %s container %s: %v",
+				string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), delErr)
+		}
+
+		if !r.Success {
+			log.Errorf("Failed to release IP of pod %s namespace %s container %s: %v",
+				string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), delErr)
+		}
 		return errors.Wrap(err, "add command: failed to setup network")
 	}
 
@@ -246,7 +265,8 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
 			K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 			K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
-			IPv4Addr:                   k8sArgs.IP.String()})
+			IPv4Addr:                   k8sArgs.IP.String(),
+			Reason:                     "PodDeleted"})
 
 	if err != nil {
 		log.Errorf("Error received from DelNetwork grpc call for pod %s namespace %s container %s: %v",

@@ -181,6 +181,10 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
 		addr, int(addNetworkReply.DeviceNumber)).Return(errors.New("Error on SetupPodNetwork"))
 
+	// when SetupPodNetwork fails, expect to return IP back to datastore
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
+	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
+
 	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 
 	assert.Error(t, err)

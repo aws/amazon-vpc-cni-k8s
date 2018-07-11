@@ -19,6 +19,7 @@ import (
 	"github.com/pkg/errors"
 
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -47,12 +48,14 @@ func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.
 		Namespace: in.K8S_POD_NAMESPACE,
 		Container: in.K8S_POD_INFRA_CONTAINER_ID})
 	log.Infof("Send AddNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", addr, deviceNumber, err)
+	addIPCnt.Inc()
 	return &pb.AddNetworkReply{Success: err == nil, IPv4Addr: addr, IPv4Subnet: "", DeviceNumber: int32(deviceNumber)}, nil
 }
 
 func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.DelNetworkReply, error) {
 	log.Infof("Received DelNetwork for IP %s, Pod %s, Namespace %s, Container %s",
 		in.IPv4Addr, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID)
+	delIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
 
 	var err error
 
