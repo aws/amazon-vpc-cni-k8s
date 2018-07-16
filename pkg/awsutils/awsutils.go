@@ -15,6 +15,7 @@ package awsutils
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -26,13 +27,10 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadata"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/resourcegroupstaggingapiwrapper"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
 )
 
 const (
@@ -53,8 +51,10 @@ const (
 	eniDescriptionPrefix = "aws-K8S-"
 	metadataOwnerID      = "/owner-id"
 	// AllocENI need to choose a first free device number between 0 and maxENI
-	maxENIs   = 128
-	eniTagKey = "k8s-eni-key"
+	maxENIs           = 128
+	clusterNameEnvVar = "CLUSTER_NAME"
+	eniNodeTagKey     = "node.k8s.amazonaws.com/instance_id"
+	eniClusterTagKey  = "cluster.k8s.amazonaws.com/name"
 
 	retryDeleteENIInternal = 5 * time.Second
 
@@ -144,7 +144,6 @@ type EC2InstanceMetadataCache struct {
 
 	ec2Metadata ec2metadata.EC2Metadata
 	ec2SVC      ec2wrapper.EC2
-	tagSVC      resourcegroupstaggingapiwrapper.ResourceGroupsTaggingAPI
 }
 
 // ENIMetadata contains ENI information retrieved from EC2 meta data service
@@ -204,9 +203,6 @@ func New() (*EC2InstanceMetadataCache, error) {
 
 	ec2SVC := ec2wrapper.New(sess)
 	cache.ec2SVC = ec2SVC
-
-	tagSVC := resourcegroupstaggingapiwrapper.New(sess)
-	cache.tagSVC = tagSVC
 
 	err = cache.initWithEC2Metadata()
 	if err != nil {
@@ -625,37 +621,44 @@ func (cache *EC2InstanceMetadataCache) createENI() (string, error) {
 }
 
 func (cache *EC2InstanceMetadataCache) tagENI(eniID string) {
-	tagSvc := cache.tagSVC
-	arns := make([]*string, 0)
 
-	eniARN := &arn.ARN{
-		Partition: "aws",
-		Service:   "ec2",
-		Region:    cache.region,
-		AccountID: cache.accountID,
-		Resource:  "network-interface/" + eniID}
-	arnString := eniARN.String()
-	arns = append(arns, aws.String(arnString))
+	// Tag the ENI with "node.k8s.amazonaws.com/instance_id=<instance_id>"
+	tags := []*ec2.Tag{
+		{
+			Key:   aws.String(eniNodeTagKey),
+			Value: aws.String(cache.instanceID),
+		},
+	}
 
-	tags := make(map[string]*string)
+	// If the CLUSTER_NAME env var is present,
+	// tag the ENI with "cluster.k8s.amazonaws.com/name=<cluster_name>"
+	clusterName := os.Getenv(clusterNameEnvVar)
+	if clusterName != "" {
+		tags = append(tags, &ec2.Tag{
+			Key:   aws.String(eniClusterTagKey),
+			Value: aws.String(clusterName),
+		})
+	}
 
-	tagValue := cache.instanceID
-	tags[eniTagKey] = aws.String(tagValue)
-	log.Debugf("Trying to tag newly created eni: keys=%s, value=%s", eniTagKey, tagValue)
+	for _, tag := range tags {
+		log.Debugf("Trying to tag newly created eni: key=%s, value=%s", aws.StringValue(tag.Key), aws.StringValue(tag.Value))
+	}
 
-	tagInput := &resourcegroupstaggingapi.TagResourcesInput{
-		ResourceARNList: arns,
-		Tags:            tags,
+	input := &ec2.CreateTagsInput{
+		Resources: []*string{
+			aws.String(eniID),
+		},
+		Tags: tags,
 	}
 
 	start := time.Now()
-	_, err := tagSvc.TagResources(tagInput)
-	awsAPILatency.WithLabelValues("TagResources", fmt.Sprint(err != nil)).Observe(msSince(start))
+	_, err := cache.ec2SVC.CreateTags(input)
+	awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
-		awsAPIErrInc("TagResources", err)
-		log.Warnf("Fail to tag the newly created eni %s  %v", eniID, err)
+		awsAPIErrInc("CreateTags", err)
+		log.Warnf("Failed to tag the newly created eni %s:  %v", eniID, err)
 	} else {
-		log.Debugf("Tag the newly created eni with arn: %s", arnString)
+		log.Debugf("Successfully tagged ENI: %s", eniID)
 	}
 }
 

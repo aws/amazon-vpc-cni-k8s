@@ -27,6 +27,7 @@ type EC2 interface {
 	AssignPrivateIpAddresses(input *ec2svc.AssignPrivateIpAddressesInput) (*ec2svc.AssignPrivateIpAddressesOutput, error)
 	DescribeNetworkInterfaces(input *ec2svc.DescribeNetworkInterfacesInput) (*ec2svc.DescribeNetworkInterfacesOutput, error)
 	ModifyNetworkInterfaceAttribute(input *ec2svc.ModifyNetworkInterfaceAttributeInput) (*ec2svc.ModifyNetworkInterfaceAttributeOutput, error)
+	CreateTags(input *ec2svc.CreateTagsInput) (*ec2svc.CreateTagsOutput, error)
 }
 
 func New(sess *session.Session) EC2 {
