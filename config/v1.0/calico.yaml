@@ -114,13 +114,7 @@ spec:
             path: /var/run/calico
       tolerations:
         # Make sure calico/node gets scheduled on all nodes.
-        - effect: NoSchedule
-          operator: Exists
-        - effect: NoExecute
-          operator: Exists
-        # Mark the pod as a critical add-on for rescheduling.
-        - key: CriticalAddonsOnly
-          operator: Exists
+      - operator: Exists
 
 ---
 
@@ -375,8 +369,7 @@ spec:
         scheduler.alpha.kubernetes.io/critical-pod: ''
     spec:
       tolerations:
-      - key: CriticalAddonsOnly
-        operator: Exists
+      - operator: Exists
       hostNetwork: true
       serviceAccountName: calico-node
       containers:
