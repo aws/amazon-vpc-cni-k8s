@@ -107,6 +107,9 @@ type APIs interface {
 	// AllocAllIPAddress allocates all ip addresses available on an eni
 	AllocAllIPAddress(eniID string) error
 
+	// Allocate alloactes numIPs of IP address on a eni
+	AllocIPAddresses(eniID string, numIPs int64) error
+
 	// GetVPCIPv4CIDR returns vpc's cidr
 	GetVPCIPv4CIDR() string
 
@@ -827,6 +830,36 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
 		return 0, errors.New(UnknownInstanceType)
 	}
 	return eniLimit, nil
+}
+
+// Allocate alloactes numIPs of IP address on a eni
+func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int64) error {
+	var needIPs = int64(numIPs)
+
+	ipLimit, err := cache.GetENIipLimit()
+	if err == nil && ipLimit < int64(needIPs) {
+		needIPs = ipLimit
+	}
+
+	log.Infof("Trying to allocate %d IP address on eni %s", needIPs, eniID)
+
+	input := &ec2.AssignPrivateIpAddressesInput{
+		NetworkInterfaceId:             aws.String(eniID),
+		SecondaryPrivateIpAddressCount: aws.Int64(int64(needIPs)),
+	}
+
+	start := time.Now()
+	_, err = cache.ec2SVC.AssignPrivateIpAddresses(input)
+	awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil)).Observe(msSince(start))
+	if err != nil {
+		awsAPIErrInc("AssignPrivateIpAddresses", err)
+		if containsPrivateIPAddressLimitExceededError(err) {
+			return nil
+		}
+		log.Errorf("Failed to allocate a private IP address %v", err)
+		return errors.Wrap(err, "allocate ip address: failed to allocate a private IP address")
+	}
+	return nil
 }
 
 // AllocAllIPAddress allocates all IP addresses available on eni
