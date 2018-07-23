@@ -59,6 +59,9 @@ spec:
       hostNetwork: true
       tolerations:
       - operator: Exists
+        effect: "NoExecute"
+      - operator: "Exists"
+        effect: "NoSchedule"
       containers:
       - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:1.0.0
         name: aws-node
