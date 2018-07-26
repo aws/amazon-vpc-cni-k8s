@@ -43,8 +43,8 @@ L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/Us
  },
  {
      "Effect": "Allow",
-     "Action": "tag:TagResources",
-     "Resource": "*"
+     "Action": "ec2:CreateTags",
+     "Resource": "arn:aws:ec2:*:*:network-interface/*"
  },
 ```
 
