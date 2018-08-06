@@ -178,6 +178,12 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	_, vpcCIDR, err := net.ParseCIDR(c.awsClient.GetVPCIPv4CIDR())
+	for _, VpcIpNet := range c.awsClient.GetVPCIPv4CIDRS() {
+		_, VPCCIpNetParsed, _ := net.ParseCIDR(*VpcIpNet)
+		if VPCCIpNetParsed.Contains(net.ParseIP(c.awsClient.GetLocalIPv4())) {
+			vpcCIDR = VPCCIpNetParsed
+		}
+	}
 	if err != nil {
 		log.Error("Failed to parse VPC IPv4 CIDR", err.Error())
 		return errors.Wrap(err, "ipamd init: failed to retrieve VPC CIDR")

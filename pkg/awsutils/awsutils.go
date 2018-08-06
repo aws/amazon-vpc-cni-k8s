@@ -114,6 +114,9 @@ type APIs interface {
 	// GetVPCIPv4CIDR returns vpc's cidr
 	GetVPCIPv4CIDR() string
 
+	// GetVPCIPv4CIDRS returns vpc's cidrs as an array
+	GetVPCIPv4CIDRS() []*string
+
 	// GetLocalIPv4 returns the primary IP address on the primary eni interface
 	GetLocalIPv4() string
 
