@@ -39,6 +39,9 @@ const (
 	sgs          = sg1 + " " + sg2
 	subnetID     = "subnet-6b245523"
 	vpcCIDR      = "10.0.0.0/16"
+	vpcCIDR1	 = "10.0.0.0/20"
+	vpcCIDR2	 = "10.0.0.0/22"
+	vpcCIDRS	 = vpcCIDR1 + " " + vpcCIDR2
 	subnetCIDR   = "10.0.1.0/24"
 	accountID    = "694065802095"
 	primaryeniID = "eni-00000000"
@@ -74,6 +77,7 @@ func TestInitWithEC2metadata(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidr).Return(vpcCIDR, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(vpcCIDRS, nil)
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
 
@@ -87,7 +91,10 @@ func TestInitWithEC2metadata(t *testing.T) {
 	assert.Equal(t, len(ins.securityGroups), 2)
 	assert.Equal(t, subnetID, ins.subnetID)
 	assert.Equal(t, vpcCIDR, ins.vpcIPv4CIDR)
+	assert.Equal(t, len(ins.vpcIPv4CIDRs), 2)
 }
+
+//TODO Implement test for multiple CIDRS
 
 func TestInitWithEC2metadataVPCcidrErr(t *testing.T) {
 	ctrl, mockMetadata, _ := setup(t)
