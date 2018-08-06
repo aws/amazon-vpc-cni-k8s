@@ -43,6 +43,7 @@ const (
 	metadataSGs          = "/security-group-ids/"
 	metadataSubnetID     = "/subnet-id/"
 	metadataVPCcidr      = "/vpc-ipv4-cidr-block/"
+	metadataVPCcidrs 	 = "/vpc-ipv4-cidr-blocks/"
 	metadataDeviceNum    = "/device-number/"
 	metadataInterface    = "/interface-id/"
 	metadataSubnetCIDR   = "/subnet-ipv4-cidr-block"
@@ -136,6 +137,7 @@ type EC2InstanceMetadataCache struct {
 	instanceID       string
 	instanceType     string
 	vpcIPv4CIDR      string
+	vpcIPv4CIDRs	 []*string
 	primaryENI       string
 	primaryENImac    string
 	availabilityZone string
@@ -300,6 +302,20 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata() error {
 		return errors.Wrap(err, "get instance metadata: failed to retrieve vpc-ipv4-cidr-block data")
 	}
 	log.Debugf("Found vpc-ipv4-cidr-block: %s ", cache.vpcIPv4CIDR)
+
+	// retrieve vpc-ipv4-cidr-blocks when more than 1 available
+	metadataVPCIPV4CIDRs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataVPCcidrs)
+	if err != nil {
+		awsAPIErrInc("GetMetadata", err)
+		log.Errorf("Failed to retrieve vpc-ipv4-cidr-blocks from instance metadata service")
+		return errors.Wrap(err, "get instance metadata: failed to retrieve vpc-ipv4-cidr-blocks data")
+	}
+	vpcIPV4CIDRs := strings.Fields(metadataVPCIPV4CIDRs)
+
+	for _, vpcIPV4CIDR := range vpcIPV4CIDRs {
+		log.Debugf("Found vpc-ipv4-cidr-blocks: %s", vpcIPV4CIDR)
+		cache.vpcIPv4CIDRs = append(cache.vpcIPv4CIDRs, aws.String(vpcIPV4CIDR))
+	}
 
 	return nil
 }
@@ -917,6 +933,10 @@ func (cache *EC2InstanceMetadataCache) AllocAllIPAddress(eniID string) error {
 // GetVPCIPv4CIDR returns VPC CIDR
 func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDR() string {
 	return cache.vpcIPv4CIDR
+}
+
+func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDRS() []*string {
+	return cache.vpcIPv4CIDRs
 }
 
 // GetLocalIPv4 returns the primary IP address on the primary interface
