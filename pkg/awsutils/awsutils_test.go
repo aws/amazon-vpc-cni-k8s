@@ -28,27 +28,28 @@ import (
 )
 
 const (
-	az           = "us-east-1a"
-	localIP      = "10.0.0.0"
-	instanceID   = "i-0e1f3b9eb950e4980"
-	instanceType = "c1.medium"
-	primaryMAC   = "12:ef:2a:98:e5:5a"
-	eni2MAC      = "12:ef:2a:98:e5:5b"
-	sg1          = "sg-2e080f50"
-	sg2          = "sg-2e080f51"
-	sgs          = sg1 + " " + sg2
-	subnetID     = "subnet-6b245523"
-	vpcCIDR1	 = "10.0.0.0/16"
-	vpcCIDR2	 = "10.2.0.0/16"
-	vpcCIDRS	 = vpcCIDR1 + " " + vpcCIDR2
-	subnetCIDR   = "10.0.1.0/24"
-	accountID    = "694065802095"
-	primaryeniID = "eni-00000000"
-	eniID        = "eni-5731da78"
-	eniAttachID  = "eni-attach-beb21856"
-	eni1Device   = "0"
-	eni2Device   = "2"
-	ownerID      = "i-0946d8a24922d2852"
+	az                 = "us-east-1a"
+	localIP            = "10.0.0.10"
+	localIPInSecondary = "10.2.0.10"
+	instanceID         = "i-0e1f3b9eb950e4980"
+	instanceType       = "c1.medium"
+	primaryMAC         = "12:ef:2a:98:e5:5a"
+	eni2MAC            = "12:ef:2a:98:e5:5b"
+	sg1                = "sg-2e080f50"
+	sg2                = "sg-2e080f51"
+	sgs                = sg1 + " " + sg2
+	subnetID           = "subnet-6b245523"
+	primaryVpcCIDR     = "10.0.0.0/16"
+	secondaryVpcCIDR   = "10.2.0.0/16"
+	vpcCIDRS           = primaryVpcCIDR + " " + secondaryVpcCIDR
+	subnetCIDR         = "10.0.1.0/24"
+	accountID          = "694065802095"
+	primaryeniID       = "eni-00000000"
+	eniID              = "eni-5731da78"
+	eniAttachID        = "eni-attach-beb21856"
+	eni1Device         = "0"
+	eni2Device         = "2"
+	ownerID            = "i-0946d8a24922d2852"
 )
 
 func setup(t *testing.T) (*gomock.Controller,
@@ -75,7 +76,7 @@ func TestInitWithEC2metadata(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(vpcCIDRS, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCCidrs).Return(vpcCIDRS, nil)
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
 
@@ -88,11 +89,38 @@ func TestInitWithEC2metadata(t *testing.T) {
 	assert.Equal(t, ins.primaryENImac, primaryMAC)
 	assert.Equal(t, len(ins.securityGroups), 2)
 	assert.Equal(t, subnetID, ins.subnetID)
-	assert.Equal(t, vpcCIDR1, ins.vpcIPv4CIDR)
 	assert.Equal(t, len(ins.vpcIPv4CIDRs), 2)
+	assert.Equal(t, primaryVpcCIDR, ins.vpcIPv4CIDR)
 }
 
-func TestInitWithEC2metadataVPCcidrErr(t *testing.T) {
+func TestSecondaryVPCCidr (t *testing.T) {
+	ctrl, mockMetadata, _ := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIPInSecondary, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return("1", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataOwnerID).Return("1234", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCCidrs).Return(vpcCIDRS, nil)
+
+	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
+
+	err := ins.initWithEC2Metadata()
+
+	assert.NoError(t, err)
+	assert.Equal(t, localIPInSecondary, ins.localIPv4)
+	assert.Equal(t, len(ins.vpcIPv4CIDRs), 2)
+	assert.Equal(t, secondaryVpcCIDR, ins.vpcIPv4CIDR)
+}
+
+func TestInitWithEC2metadataVPCCidrErr(t *testing.T) {
 	ctrl, mockMetadata, _ := setup(t)
 	defer ctrl.Finish()
 
@@ -107,7 +135,7 @@ func TestInitWithEC2metadataVPCcidrErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(vpcCIDRS, errors.New("Error on VPCcidr"))
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCCidrs).Return(vpcCIDRS, errors.New("Error on VPCcidr"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
 

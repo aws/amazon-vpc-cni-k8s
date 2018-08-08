@@ -43,7 +43,7 @@ const (
 	metadataMAC          = "mac"
 	metadataSGs          = "/security-group-ids/"
 	metadataSubnetID     = "/subnet-id/"
-	metadataVPCcidrs 	 = "/vpc-ipv4-cidr-blocks/"
+	metadataVPCCidrs 	 = "/vpc-ipv4-cidr-blocks/"
 	metadataDeviceNum    = "/device-number/"
 	metadataInterface    = "/interface-id/"
 	metadataSubnetCIDR   = "/subnet-ipv4-cidr-block"
@@ -295,7 +295,7 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata() error {
 	log.Debugf("Found subnet-id: %s ", cache.subnetID)
 
 	// retrieve vpc-ipv4-cidr-blocks
-	metadataVPCIPV4CIDRs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataVPCcidrs)
+	metadataVPCIPV4CIDRs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataVPCCidrs)
 	if err != nil {
 		awsAPIErrInc("GetMetadata", err)
 		log.Errorf("Failed to retrieve vpc-ipv4-cidr-blocks from instance metadata service")
