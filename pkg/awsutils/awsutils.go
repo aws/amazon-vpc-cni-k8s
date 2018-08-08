@@ -137,7 +137,6 @@ type EC2InstanceMetadataCache struct {
 	instanceID       string
 	instanceType     string
 	vpcIPv4CIDR      string
-	vpcIPv4CIDRs	 []*string
 	primaryENI       string
 	primaryENImac    string
 	availabilityZone string
@@ -301,16 +300,11 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata() error {
 		log.Errorf("Failed to retrieve vpc-ipv4-cidr-blocks from instance metadata service")
 		return errors.Wrap(err, "get instance metadata: failed to retrieve vpc-ipv4-cidr-blocks data")
 	}
-	vpcIPV4CIDRs := strings.Fields(metadataVPCIPV4CIDRs)
-
-	for _, vpcIPV4CIDR := range vpcIPV4CIDRs {
-		log.Debugf("Found vpc-ipv4-cidr-blocks: %s", vpcIPV4CIDR)
-		cache.vpcIPv4CIDRs = append(cache.vpcIPv4CIDRs, aws.String(vpcIPV4CIDR))
-	}
 
 	// find the correct VPC CIDR based on localIPv4
-	for _, VpcIpNet := range cache.vpcIPv4CIDRs {
-		_, VPCCIpNetParsed, _ := net.ParseCIDR(*VpcIpNet)
+	for _, vpcIPV4CIDR := range strings.Fields(metadataVPCIPV4CIDRs) {
+		log.Debugf("Found vpc-ipv4-cidr-blocks: %s", strings.Fields(metadataVPCIPV4CIDRs))
+		_, VPCCIpNetParsed, _ := net.ParseCIDR(vpcIPV4CIDR)
 		if VPCCIpNetParsed.Contains(net.ParseIP(cache.localIPv4)) {
 			cache.vpcIPv4CIDR = VPCCIpNetParsed.String()
 		}
