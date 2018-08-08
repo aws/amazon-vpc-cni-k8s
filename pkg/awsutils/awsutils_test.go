@@ -93,7 +93,7 @@ func TestInitWithEC2metadata(t *testing.T) {
 	assert.Equal(t, primaryVpcCIDR, ins.vpcIPv4CIDR)
 }
 
-func TestSecondaryVPCCidr (t *testing.T) {
+func TestInitWithEC2metadataVPCSecondaryCidr (t *testing.T) {
 	ctrl, mockMetadata, _ := setup(t)
 	defer ctrl.Finish()
 
