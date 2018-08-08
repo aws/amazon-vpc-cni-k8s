@@ -43,7 +43,7 @@ const (
 	metadataMAC          = "mac"
 	metadataSGs          = "/security-group-ids/"
 	metadataSubnetID     = "/subnet-id/"
-	metadataVPCCidrs 	 = "/vpc-ipv4-cidr-blocks/"
+	metadataVPCCidrs     = "/vpc-ipv4-cidr-blocks/"
 	metadataDeviceNum    = "/device-number/"
 	metadataInterface    = "/interface-id/"
 	metadataSubnetCIDR   = "/subnet-ipv4-cidr-block"
