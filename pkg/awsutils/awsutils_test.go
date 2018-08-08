@@ -89,7 +89,6 @@ func TestInitWithEC2metadata(t *testing.T) {
 	assert.Equal(t, ins.primaryENImac, primaryMAC)
 	assert.Equal(t, len(ins.securityGroups), 2)
 	assert.Equal(t, subnetID, ins.subnetID)
-	assert.Equal(t, len(ins.vpcIPv4CIDRs), 2)
 	assert.Equal(t, primaryVpcCIDR, ins.vpcIPv4CIDR)
 }
 
@@ -116,7 +115,6 @@ func TestInitWithEC2metadataVPCSecondaryCidr (t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, localIPInSecondary, ins.localIPv4)
-	assert.Equal(t, len(ins.vpcIPv4CIDRs), 2)
 	assert.Equal(t, secondaryVpcCIDR, ins.vpcIPv4CIDR)
 }
 
