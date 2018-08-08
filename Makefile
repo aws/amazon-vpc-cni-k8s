@@ -17,6 +17,15 @@
 VERSION ?= $(shell git describe --tags --always --dirty)
 LDFLAGS ?= -X main.version=$(VERSION)
 
+# Download portmap plugin
+download-portmap:
+	mkdir -p tmp/downloads
+	mkdir -p tmp/plugins
+	curl -L -o tmp/downloads/cni-plugins-amd64.tgz https://github.com/containernetworking/plugins/releases/download/v0.6.0/cni-plugins-amd64-v0.6.0.tgz
+	tar -vxf tmp/downloads/cni-plugins-amd64.tgz -C tmp/plugins
+	cp tmp/plugins/portmap .
+	rm -rf tmp
+
 # Default to build the Linux binary
 build-linux:
 	GOOS=linux CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "$(LDFLAGS)"
@@ -26,7 +35,7 @@ docker-build:
 	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
 		--workdir=/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
 		--env GOPATH=/usr/src/app \
-		golang:1.10 make build-linux
+		golang:1.10 make build-linux && make download-portmap
 
 
 # Build docker image
@@ -64,3 +73,4 @@ vet:
 clean:
 	rm -f aws-k8s-agent
 	rm -f aws-cni
+	rm -f portmap
