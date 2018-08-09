@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"net"
 
 	"github.com/pkg/errors"
 
@@ -42,7 +43,7 @@ const (
 	metadataMAC          = "mac"
 	metadataSGs          = "/security-group-ids/"
 	metadataSubnetID     = "/subnet-id/"
-	metadataVPCcidr      = "/vpc-ipv4-cidr-block/"
+	metadataVPCCidrs     = "/vpc-ipv4-cidr-blocks/"
 	metadataDeviceNum    = "/device-number/"
 	metadataInterface    = "/interface-id/"
 	metadataSubnetCIDR   = "/subnet-ipv4-cidr-block"
@@ -292,14 +293,22 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata() error {
 	}
 	log.Debugf("Found subnet-id: %s ", cache.subnetID)
 
-	// retrieve vpc-ipv4-cidr-block
-	cache.vpcIPv4CIDR, err = cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataVPCcidr)
+	// retrieve vpc-ipv4-cidr-blocks
+	metadataVPCIPV4CIDRs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataVPCCidrs)
 	if err != nil {
 		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve vpc-ipv4-cidr-block from instance metadata service")
-		return errors.Wrap(err, "get instance metadata: failed to retrieve vpc-ipv4-cidr-block data")
+		log.Errorf("Failed to retrieve vpc-ipv4-cidr-blocks from instance metadata service")
+		return errors.Wrap(err, "get instance metadata: failed to retrieve vpc-ipv4-cidr-blocks data")
 	}
-	log.Debugf("Found vpc-ipv4-cidr-block: %s ", cache.vpcIPv4CIDR)
+
+	// find the correct VPC CIDR based on localIPv4
+	for _, vpcIPV4CIDR := range strings.Fields(metadataVPCIPV4CIDRs) {
+		log.Debugf("Found vpc-ipv4-cidr-blocks: %s", strings.Fields(metadataVPCIPV4CIDRs))
+		_, VPCCIpNetParsed, _ := net.ParseCIDR(vpcIPV4CIDR)
+		if VPCCIpNetParsed.Contains(net.ParseIP(cache.localIPv4)) {
+			cache.vpcIPv4CIDR = VPCCIpNetParsed.String()
+		}
+	}
 
 	return nil
 }
