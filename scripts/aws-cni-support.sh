@@ -21,8 +21,9 @@ set -e
 LOG_DIR="/var/log/aws-routed-eni"
 
 # collecting L-IPAMD introspection data
-curl http://localhost:61678/v1/enis  > ${LOG_DIR}/eni.output
-curl http://localhost:61678/v1/pods  > ${LOG_DIR}/pod.output
+curl http://localhost:61678/v1/enis         > ${LOG_DIR}/eni.output
+curl http://localhost:61678/v1/pods         > ${LOG_DIR}/pod.output
+curl http://localhost:61678/v1/env-settings > ${LOG_DIR}/env.output
 
 # metrics TODO not able to use LOG_DIR
 curl http://localhost:61678/metrics 2>&1 > /var/log/aws-routed-eni/metrics.output
@@ -57,5 +58,11 @@ ROUTE_OUTPUT="route.output"
 echo "=============================================" >> ${LOG_DIR}/${ROUTE_OUTPUT}
 echo "ip route show table all" >> $LOG_DIR/$ROUTE_OUTPUT
 ip route show table all >> $LOG_DIR/$ROUTE_OUTPUT
+
+# dump relevant sysctls
+echo "================== sysctls ==================" > ${LOG_DIR}/sysctls.out
+for f in /proc/sys/net/ipv4/conf/{all,default,eth0}/rp_filter; do
+  echo "$f = $(cat $f)" >> ${LOG_DIR}/sysctls.out
+done
 
 tar -cvzf $LOG_DIR/aws-cni-support.tar.gz ${LOG_DIR}/
