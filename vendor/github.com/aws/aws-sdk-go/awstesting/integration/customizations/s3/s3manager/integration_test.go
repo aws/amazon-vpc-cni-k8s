@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -52,7 +51,7 @@ func setup() error {
 
 	// Create a bucket for testing
 	bucketName = aws.String(
-		fmt.Sprintf("aws-sdk-go-integration-%d-%s", time.Now().Unix(), integration.UniqueID()))
+		fmt.Sprintf("aws-sdk-go-integration-%s", integration.UniqueID()))
 
 	_, err := svc.CreateBucket(&s3.CreateBucketInput{Bucket: bucketName})
 	if err != nil {
@@ -61,7 +60,7 @@ func setup() error {
 
 	err = svc.WaitUntilBucketExists(&s3.HeadBucketInput{Bucket: bucketName})
 	if err != nil {
-		return fmt.Errorf("failed to wait for bucket %q to exist, %v", bucketName, err)
+		return fmt.Errorf("failed to wait for bucket %q to exist, %v", *bucketName, err)
 	}
 
 	return nil
@@ -73,7 +72,7 @@ func teardown() error {
 
 	objs, err := svc.ListObjects(&s3.ListObjectsInput{Bucket: bucketName})
 	if err != nil {
-		return fmt.Errorf("failed to list bucket %q objects, %v", bucketName, err)
+		return fmt.Errorf("failed to list bucket %q objects, %v", *bucketName, err)
 	}
 
 	for _, o := range objs.Contents {
@@ -82,7 +81,7 @@ func teardown() error {
 
 	uploads, err := svc.ListMultipartUploads(&s3.ListMultipartUploadsInput{Bucket: bucketName})
 	if err != nil {
-		return fmt.Errorf("failed to list bucket %q multipart objects, %v", bucketName, err)
+		return fmt.Errorf("failed to list bucket %q multipart objects, %v", *bucketName, err)
 	}
 
 	for _, u := range uploads.Uploads {
@@ -95,7 +94,7 @@ func teardown() error {
 
 	_, err = svc.DeleteBucket(&s3.DeleteBucketInput{Bucket: bucketName})
 	if err != nil {
-		return fmt.Errorf("failed to delete bucket %q, %v", bucketName, err)
+		return fmt.Errorf("failed to delete bucket %q, %v", *bucketName, err)
 	}
 
 	return nil

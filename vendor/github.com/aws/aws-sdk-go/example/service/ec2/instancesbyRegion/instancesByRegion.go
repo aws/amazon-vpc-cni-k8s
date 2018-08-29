@@ -49,7 +49,7 @@ func main() {
 		ec2Svc := ec2.New(sess)
 		params := &ec2.DescribeInstancesInput{
 			Filters: []*ec2.Filter{
-				&ec2.Filter{
+				{
 					Name:   aws.String("instance-state-name"),
 					Values: aws.StringSlice(states),
 				},
@@ -60,9 +60,9 @@ func main() {
 		if err != nil {
 			fmt.Println("Error", err)
 		} else {
-			fmt.Printf("\n\n\nFetching instace details  for region: %s with criteria: %s**\n ", region, instanceCriteria)
+			fmt.Printf("\n\n\nFetching instance details for region: %s with criteria: %s**\n ", region, instanceCriteria)
 			if len(result.Reservations) == 0 {
-				fmt.Printf("There is no instance for the for region %s with the matching Criteria:%s  \n", region, instanceCriteria)
+				fmt.Printf("There is no instance for the region: %s with the matching criteria:%s  \n", region, instanceCriteria)
 			}
 			for _, reservation := range result.Reservations {
 

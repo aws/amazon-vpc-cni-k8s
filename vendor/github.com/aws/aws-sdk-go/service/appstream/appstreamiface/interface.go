@@ -64,6 +64,10 @@ type AppStreamAPI interface {
 	AssociateFleetWithContext(aws.Context, *appstream.AssociateFleetInput, ...request.Option) (*appstream.AssociateFleetOutput, error)
 	AssociateFleetRequest(*appstream.AssociateFleetInput) (*request.Request, *appstream.AssociateFleetOutput)
 
+	CopyImage(*appstream.CopyImageInput) (*appstream.CopyImageOutput, error)
+	CopyImageWithContext(aws.Context, *appstream.CopyImageInput, ...request.Option) (*appstream.CopyImageOutput, error)
+	CopyImageRequest(*appstream.CopyImageInput) (*request.Request, *appstream.CopyImageOutput)
+
 	CreateDirectoryConfig(*appstream.CreateDirectoryConfigInput) (*appstream.CreateDirectoryConfigOutput, error)
 	CreateDirectoryConfigWithContext(aws.Context, *appstream.CreateDirectoryConfigInput, ...request.Option) (*appstream.CreateDirectoryConfigOutput, error)
 	CreateDirectoryConfigRequest(*appstream.CreateDirectoryConfigInput) (*request.Request, *appstream.CreateDirectoryConfigOutput)
@@ -104,6 +108,10 @@ type AppStreamAPI interface {
 	DeleteImageBuilderWithContext(aws.Context, *appstream.DeleteImageBuilderInput, ...request.Option) (*appstream.DeleteImageBuilderOutput, error)
 	DeleteImageBuilderRequest(*appstream.DeleteImageBuilderInput) (*request.Request, *appstream.DeleteImageBuilderOutput)
 
+	DeleteImagePermissions(*appstream.DeleteImagePermissionsInput) (*appstream.DeleteImagePermissionsOutput, error)
+	DeleteImagePermissionsWithContext(aws.Context, *appstream.DeleteImagePermissionsInput, ...request.Option) (*appstream.DeleteImagePermissionsOutput, error)
+	DeleteImagePermissionsRequest(*appstream.DeleteImagePermissionsInput) (*request.Request, *appstream.DeleteImagePermissionsOutput)
+
 	DeleteStack(*appstream.DeleteStackInput) (*appstream.DeleteStackOutput, error)
 	DeleteStackWithContext(aws.Context, *appstream.DeleteStackInput, ...request.Option) (*appstream.DeleteStackOutput, error)
 	DeleteStackRequest(*appstream.DeleteStackInput) (*request.Request, *appstream.DeleteStackOutput)
@@ -120,9 +128,19 @@ type AppStreamAPI interface {
 	DescribeImageBuildersWithContext(aws.Context, *appstream.DescribeImageBuildersInput, ...request.Option) (*appstream.DescribeImageBuildersOutput, error)
 	DescribeImageBuildersRequest(*appstream.DescribeImageBuildersInput) (*request.Request, *appstream.DescribeImageBuildersOutput)
 
+	DescribeImagePermissions(*appstream.DescribeImagePermissionsInput) (*appstream.DescribeImagePermissionsOutput, error)
+	DescribeImagePermissionsWithContext(aws.Context, *appstream.DescribeImagePermissionsInput, ...request.Option) (*appstream.DescribeImagePermissionsOutput, error)
+	DescribeImagePermissionsRequest(*appstream.DescribeImagePermissionsInput) (*request.Request, *appstream.DescribeImagePermissionsOutput)
+
+	DescribeImagePermissionsPages(*appstream.DescribeImagePermissionsInput, func(*appstream.DescribeImagePermissionsOutput, bool) bool) error
+	DescribeImagePermissionsPagesWithContext(aws.Context, *appstream.DescribeImagePermissionsInput, func(*appstream.DescribeImagePermissionsOutput, bool) bool, ...request.Option) error
+
 	DescribeImages(*appstream.DescribeImagesInput) (*appstream.DescribeImagesOutput, error)
 	DescribeImagesWithContext(aws.Context, *appstream.DescribeImagesInput, ...request.Option) (*appstream.DescribeImagesOutput, error)
 	DescribeImagesRequest(*appstream.DescribeImagesInput) (*request.Request, *appstream.DescribeImagesOutput)
+
+	DescribeImagesPages(*appstream.DescribeImagesInput, func(*appstream.DescribeImagesOutput, bool) bool) error
+	DescribeImagesPagesWithContext(aws.Context, *appstream.DescribeImagesInput, func(*appstream.DescribeImagesOutput, bool) bool, ...request.Option) error
 
 	DescribeSessions(*appstream.DescribeSessionsInput) (*appstream.DescribeSessionsOutput, error)
 	DescribeSessionsWithContext(aws.Context, *appstream.DescribeSessionsInput, ...request.Option) (*appstream.DescribeSessionsOutput, error)
@@ -148,6 +166,10 @@ type AppStreamAPI interface {
 	ListAssociatedStacksWithContext(aws.Context, *appstream.ListAssociatedStacksInput, ...request.Option) (*appstream.ListAssociatedStacksOutput, error)
 	ListAssociatedStacksRequest(*appstream.ListAssociatedStacksInput) (*request.Request, *appstream.ListAssociatedStacksOutput)
 
+	ListTagsForResource(*appstream.ListTagsForResourceInput) (*appstream.ListTagsForResourceOutput, error)
+	ListTagsForResourceWithContext(aws.Context, *appstream.ListTagsForResourceInput, ...request.Option) (*appstream.ListTagsForResourceOutput, error)
+	ListTagsForResourceRequest(*appstream.ListTagsForResourceInput) (*request.Request, *appstream.ListTagsForResourceOutput)
+
 	StartFleet(*appstream.StartFleetInput) (*appstream.StartFleetOutput, error)
 	StartFleetWithContext(aws.Context, *appstream.StartFleetInput, ...request.Option) (*appstream.StartFleetOutput, error)
 	StartFleetRequest(*appstream.StartFleetInput) (*request.Request, *appstream.StartFleetOutput)
@@ -164,6 +186,14 @@ type AppStreamAPI interface {
 	StopImageBuilderWithContext(aws.Context, *appstream.StopImageBuilderInput, ...request.Option) (*appstream.StopImageBuilderOutput, error)
 	StopImageBuilderRequest(*appstream.StopImageBuilderInput) (*request.Request, *appstream.StopImageBuilderOutput)
 
+	TagResource(*appstream.TagResourceInput) (*appstream.TagResourceOutput, error)
+	TagResourceWithContext(aws.Context, *appstream.TagResourceInput, ...request.Option) (*appstream.TagResourceOutput, error)
+	TagResourceRequest(*appstream.TagResourceInput) (*request.Request, *appstream.TagResourceOutput)
+
+	UntagResource(*appstream.UntagResourceInput) (*appstream.UntagResourceOutput, error)
+	UntagResourceWithContext(aws.Context, *appstream.UntagResourceInput, ...request.Option) (*appstream.UntagResourceOutput, error)
+	UntagResourceRequest(*appstream.UntagResourceInput) (*request.Request, *appstream.UntagResourceOutput)
+
 	UpdateDirectoryConfig(*appstream.UpdateDirectoryConfigInput) (*appstream.UpdateDirectoryConfigOutput, error)
 	UpdateDirectoryConfigWithContext(aws.Context, *appstream.UpdateDirectoryConfigInput, ...request.Option) (*appstream.UpdateDirectoryConfigOutput, error)
 	UpdateDirectoryConfigRequest(*appstream.UpdateDirectoryConfigInput) (*request.Request, *appstream.UpdateDirectoryConfigOutput)
@@ -171,6 +201,10 @@ type AppStreamAPI interface {
 	UpdateFleet(*appstream.UpdateFleetInput) (*appstream.UpdateFleetOutput, error)
 	UpdateFleetWithContext(aws.Context, *appstream.UpdateFleetInput, ...request.Option) (*appstream.UpdateFleetOutput, error)
 	UpdateFleetRequest(*appstream.UpdateFleetInput) (*request.Request, *appstream.UpdateFleetOutput)
+
+	UpdateImagePermissions(*appstream.UpdateImagePermissionsInput) (*appstream.UpdateImagePermissionsOutput, error)
+	UpdateImagePermissionsWithContext(aws.Context, *appstream.UpdateImagePermissionsInput, ...request.Option) (*appstream.UpdateImagePermissionsOutput, error)
+	UpdateImagePermissionsRequest(*appstream.UpdateImagePermissionsInput) (*request.Request, *appstream.UpdateImagePermissionsOutput)
 
 	UpdateStack(*appstream.UpdateStackInput) (*appstream.UpdateStackOutput, error)
 	UpdateStackWithContext(aws.Context, *appstream.UpdateStackInput, ...request.Option) (*appstream.UpdateStackOutput, error)
