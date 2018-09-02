@@ -23,7 +23,9 @@ LOG_DIR="/var/log/aws-routed-eni"
 # collecting L-IPAMD introspection data
 curl http://localhost:61678/v1/enis         > ${LOG_DIR}/eni.output
 curl http://localhost:61678/v1/pods         > ${LOG_DIR}/pod.output
-curl http://localhost:61678/v1/env-settings > ${LOG_DIR}/env.output
+curl http://localhost:61678/v1/networkutils-env-settings > ${LOG_DIR}/networkutils-env.output
+curl http://localhost:61678/v1/ipamd-env-settings > ${LOG_DIR}/ipamd-env.output
+curl http://localhost:61678/v1/eni-configs  > ${LOG_DIR}/eni-configs.output
 
 # metrics TODO not able to use LOG_DIR
 curl http://localhost:61678/metrics 2>&1 > /var/log/aws-routed-eni/metrics.output
