@@ -111,6 +111,7 @@ func TestNodeInit(t *testing.T) {
 			PrivateIpAddress: &testAddr1, Primary: &primary},
 		{
 			PrivateIpAddress: &testAddr2, Primary: &primary}}
+	mockAWS.EXPECT().GetENIipLimit().Return(int64(56), nil)
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	mockAWS.EXPECT().DescribeENI(primaryENIid).Return(eniResp, &attachmentID, nil)
 
@@ -125,6 +126,7 @@ func TestNodeInit(t *testing.T) {
 			PrivateIpAddress: &testAddr11, Primary: &primary},
 		{
 			PrivateIpAddress: &testAddr12, Primary: &primary}}
+	mockAWS.EXPECT().GetENIipLimit().Return(int64(56), nil)
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	mockAWS.EXPECT().DescribeENI(secENIid).Return(eniResp, &attachmentID, nil)
 	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
@@ -181,6 +183,7 @@ func TestIncreaseIPPool(t *testing.T) {
 			LocalIPv4s:     []string{ipaddr11, ipaddr12}},
 	}, nil)
 
+	mockAWS.EXPECT().GetENIipLimit().Return(int64(5), nil)
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 
 	primary := false
@@ -239,6 +242,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 				PrivateIpAddress: &testAddr1, Primary: &primary},
 			{
 				PrivateIpAddress: &testAddr2, Primary: &notPrimary}}, &attachmentID, nil)
+	mockAWS.EXPECT().GetENIipLimit().Return(int64(5), nil)
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 
 	mockContext.nodeIPPoolReconcile(0)
@@ -309,7 +313,7 @@ func TestGetCurWarmIPTarget(t *testing.T) {
 	os.Setenv("WARM_IP_TARGET", "5")
 	curWarmIPTarget, warmIPTargetDefined := mockContext.getCurWarmIPTarget()
 	assert.True(t, warmIPTargetDefined)
-	assert.Equal(t, curWarmIPTarget, 5)
+	assert.Equal(t, curWarmIPTarget, int64(5))
 
 	// add 2 addresses to datastore
 	mockContext.dataStore.AddENI("eni-1", 1, true)
@@ -318,7 +322,7 @@ func TestGetCurWarmIPTarget(t *testing.T) {
 
 	curWarmIPTarget, warmIPTargetDefined = mockContext.getCurWarmIPTarget()
 	assert.True(t, warmIPTargetDefined)
-	assert.Equal(t, curWarmIPTarget, 3)
+	assert.Equal(t, curWarmIPTarget, int64(3))
 
 	// add 3 more addresses to datastore
 	mockContext.dataStore.AddENIIPv4Address("eni-1", "1.1.1.3")
@@ -327,5 +331,5 @@ func TestGetCurWarmIPTarget(t *testing.T) {
 
 	curWarmIPTarget, warmIPTargetDefined = mockContext.getCurWarmIPTarget()
 	assert.True(t, warmIPTargetDefined)
-	assert.Equal(t, curWarmIPTarget, 0)
+	assert.Equal(t, curWarmIPTarget, int64(0))
 }

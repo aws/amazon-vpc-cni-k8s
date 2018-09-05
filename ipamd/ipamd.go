@@ -108,8 +108,8 @@ type IPAMContext struct {
 	dockerClient  docker.APIs
 	networkClient networkutils.NetworkAPIs
 
-	currentMaxAddrsPerENI int
-	maxAddrsPerENI        int
+	currentMaxAddrsPerENI int64
+	maxAddrsPerENI        int64
 	// maxENI indicate the maximum number of ENIs can be attached to the instance
 	// It is initialized to 0 and it is set to current number of ENIs attached
 	// when ipamD receives AttachmentLimitExceeded error
@@ -359,7 +359,7 @@ func (c *IPAMContext) decreaseIPPool() {
 	c.lastNodeIPPoolAction = time.Now()
 	total, used := c.dataStore.GetStats()
 	log.Debugf("Successfully decreased IP Pool")
-	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 }
 
 func isAttachmentLimitExceededError(err error) bool {
@@ -438,7 +438,7 @@ func (c *IPAMContext) increaseIPPool() {
 	c.lastNodeIPPoolAction = time.Now()
 	total, used := c.dataStore.GetStats()
 	log.Debugf("Successfully increased IP Pool")
-	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 }
 
 // setupENI does following:
@@ -458,7 +458,15 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) err
 		return errors.Wrapf(err, "failed to retrieve eni %s ip addresses", eni)
 	}
 
-	c.currentMaxAddrsPerENI = len(ec2Addrs)
+	c.currentMaxAddrsPerENI, err = c.awsClient.GetENIipLimit()
+
+	if err != nil {
+		// if the instance type is not supported in ipamD and the GetENIipLimit() call returns an error
+		// the code here fallbacks to use the number of IPs discovered on the ENI.
+		// note: the number of IP discovered on the ENI at a time can be less than the number of supported IPs on
+		// an ENI, for example:  ipamD has NOT allocated all IPs on the ENI yet.
+		c.currentMaxAddrsPerENI = int64(len(ec2Addrs))
+	}
 	if c.currentMaxAddrsPerENI > c.maxAddrsPerENI {
 		c.maxAddrsPerENI = c.currentMaxAddrsPerENI
 	}
@@ -562,7 +570,7 @@ func getWarmENITarget() int {
 	return defaultWarmENITarget
 }
 
-func logPoolStats(total, used, currentMaxAddrsPerENI, maxAddrsPerENI int) {
+func logPoolStats(total, used, currentMaxAddrsPerENI, maxAddrsPerENI int64) {
 	log.Debugf("IP pool stats: total = %d, used = %d, c.currentMaxAddrsPerENI = %d, c.maxAddrsPerENI = %d",
 		total, used, currentMaxAddrsPerENI, maxAddrsPerENI)
 }
@@ -581,26 +589,26 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	// if WARM-IP-TARGET not defined fallback using number of ENIs
 	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
-	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
 	available := total - used
-	return (available <= c.maxAddrsPerENI*warmENITarget)
+	return (int64(available) < c.maxAddrsPerENI*int64(warmENITarget))
 }
 
 // NodeIPPoolTooHigh returns true if IP pool is above high threshold
 func (c *IPAMContext) nodeIPPoolTooHigh() bool {
 	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
-	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
 	available := total - used
 
 	target := getWarmIPTarget()
-	if target != noWarmIPTarget && target >= available {
+	if int64(target) != noWarmIPTarget && int64(target) >= int64(available) {
 		return false
 	}
 
-	return (available > (warmENITarget+1)*c.maxAddrsPerENI)
+	return (int64(available) >= (int64(warmENITarget)+1)*c.maxAddrsPerENI)
 }
 
 func ipamdErrInc(fn string, err error) {
@@ -739,17 +747,17 @@ func getWarmIPTarget() int {
 	return noWarmIPTarget
 }
 
-func (c *IPAMContext) getCurWarmIPTarget() (int, bool) {
+func (c *IPAMContext) getCurWarmIPTarget() (int64, bool) {
 	target := getWarmIPTarget()
 	if target == noWarmIPTarget {
 		// there is no WARM_IP_TARGET defined, fallback to use all IP addresses on ENI
-		return target, false
+		return int64(target), false
 	}
 
 	total, used := c.dataStore.GetStats()
 	log.Debugf("Current warm IP stats: target: %d, total: %d, used: %d",
 		target, total, used)
-	curTarget := target - (total - used)
+	curTarget := int64(target) - int64(total-used)
 
 	return curTarget, true
 }
