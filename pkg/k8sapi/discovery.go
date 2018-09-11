@@ -88,6 +88,9 @@ func CreateKubeClient(apiserver string, kubeconfig string) (clientset.Interface,
 	log.Infof("Testing communication with server")
 	v, err := kubeClient.Discovery().ServerVersion()
 	if err != nil {
+		errMsg := "Failed to communicate with K8S Server. Please check instance security groups or http proxy setting"
+		log.Infof(errMsg)
+		fmt.Printf(errMsg)
 		return nil, fmt.Errorf("error communicating with apiserver: %v", err)
 	}
 	log.Infof("Running with Kubernetes cluster version: v%s.%s. git version: %s. git tree state: %s. commit: %s. platform: %s",
