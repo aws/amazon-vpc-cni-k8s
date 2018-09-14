@@ -211,7 +211,7 @@ func (d *Controller) handlePodUpdate(key string) error {
 	}
 
 	pod, ok := obj.(*v1.Pod)
-	if !ok {
+	if !ok || pod == nil {
 		log.Errorf("updated object received was not a pod: %+v", obj)
 		return errors.New("received a non-pod object update")
 	}
