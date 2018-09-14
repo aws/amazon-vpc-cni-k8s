@@ -14,6 +14,7 @@
 
 .PHONY: build-linux clean docker docker-build lint unit-test vet
 
+IMAGE   ?= amazon/amazon-k8s-cni
 VERSION ?= $(shell git describe --tags --always --dirty)
 LDFLAGS ?= -X main.version=$(VERSION)
 
@@ -31,8 +32,8 @@ docker-build:
 
 # Build docker image
 docker: docker-build
-	@docker build -f scripts/dockerfiles/Dockerfile.release -t "amazon/amazon-k8s-cni:$(VERSION)" .
-	@echo "Built Docker image \"amazon/amazon-k8s-cni:$(VERSION)\""
+	@docker build -f scripts/dockerfiles/Dockerfile.release -t "$(IMAGE):$(VERSION)" .
+	@echo "Built Docker image \"$(IMAGE):$(VERSION)\""
 
 # unit-test
 unit-test:
