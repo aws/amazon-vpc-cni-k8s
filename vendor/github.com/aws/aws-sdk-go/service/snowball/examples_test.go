@@ -154,6 +154,7 @@ func ExampleSnowball_CreateCluster_shared00() {
 			S3Resources: []*snowball.S3Resource{
 				{
 					BucketArn: aws.String("arn:aws:s3:::MyBucket"),
+					KeyRange:  &snowball.KeyRange{},
 				},
 			},
 		},
@@ -172,6 +173,8 @@ func ExampleSnowball_CreateCluster_shared00() {
 				fmt.Println(snowball.ErrCodeKMSRequestFailedException, aerr.Error())
 			case snowball.ErrCodeInvalidInputCombinationException:
 				fmt.Println(snowball.ErrCodeInvalidInputCombinationException, aerr.Error())
+			case snowball.ErrCodeEc2RequestFailedException:
+				fmt.Println(snowball.ErrCodeEc2RequestFailedException, aerr.Error())
 			default:
 				fmt.Println(aerr.Error())
 			}
@@ -207,6 +210,7 @@ func ExampleSnowball_CreateJob_shared00() {
 			S3Resources: []*snowball.S3Resource{
 				{
 					BucketArn: aws.String("arn:aws:s3:::MyBucket"),
+					KeyRange:  &snowball.KeyRange{},
 				},
 			},
 		},
@@ -228,6 +232,8 @@ func ExampleSnowball_CreateJob_shared00() {
 				fmt.Println(snowball.ErrCodeInvalidInputCombinationException, aerr.Error())
 			case snowball.ErrCodeClusterLimitExceededException:
 				fmt.Println(snowball.ErrCodeClusterLimitExceededException, aerr.Error())
+			case snowball.ErrCodeEc2RequestFailedException:
+				fmt.Println(snowball.ErrCodeEc2RequestFailedException, aerr.Error())
 			default:
 				fmt.Println(aerr.Error())
 			}
@@ -596,6 +602,8 @@ func ExampleSnowball_UpdateCluster_shared00() {
 				fmt.Println(snowball.ErrCodeKMSRequestFailedException, aerr.Error())
 			case snowball.ErrCodeInvalidInputCombinationException:
 				fmt.Println(snowball.ErrCodeInvalidInputCombinationException, aerr.Error())
+			case snowball.ErrCodeEc2RequestFailedException:
+				fmt.Println(snowball.ErrCodeEc2RequestFailedException, aerr.Error())
 			default:
 				fmt.Println(aerr.Error())
 			}
@@ -639,6 +647,8 @@ func ExampleSnowball_UpdateJob_shared00() {
 				fmt.Println(snowball.ErrCodeInvalidInputCombinationException, aerr.Error())
 			case snowball.ErrCodeClusterLimitExceededException:
 				fmt.Println(snowball.ErrCodeClusterLimitExceededException, aerr.Error())
+			case snowball.ErrCodeEc2RequestFailedException:
+				fmt.Println(snowball.ErrCodeEc2RequestFailedException, aerr.Error())
 			default:
 				fmt.Println(aerr.Error())
 			}

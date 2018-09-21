@@ -119,6 +119,10 @@ func main() {
 	flag.Parse()
 	api.Bootstrap()
 
+	if len(os.Getenv("AWS_SDK_CODEGEN_DEBUG")) != 0 {
+		api.LogDebug(os.Stdout)
+	}
+
 	files := []string{}
 	for i := 0; i < flag.NArg(); i++ {
 		file := flag.Arg(i)
@@ -132,7 +136,7 @@ func main() {
 
 	for svcName := range excludeServices {
 		if strings.Contains(os.Getenv("SERVICES"), svcName) {
-			fmt.Printf("Service %s is not supported\n", svcName)
+			fmt.Fprintf(os.Stderr, "Service %s is not supported\n", svcName)
 			os.Exit(1)
 		}
 	}
@@ -141,6 +145,10 @@ func main() {
 
 	// Remove old API versions from list
 	m := map[string]bool{}
+	// caches paths to ensure we are not overriding previously generated
+	// code.
+	servicePaths := map[string]struct{}{}
+
 	for i := range files {
 		idx := len(files) - 1 - i
 		parts := strings.Split(files[idx], string(filepath.Separator))
@@ -168,6 +176,13 @@ func main() {
 			continue
 		}
 
+		if _, ok := servicePaths[genInfo.PackageDir]; ok {
+			fmt.Fprintf(os.Stderr, "Path %q has already been generated", genInfo.PackageDir)
+			os.Exit(1)
+		}
+
+		servicePaths[genInfo.PackageDir] = struct{}{}
+
 		wg.Add(1)
 		go func(g *generateInfo, filename string) {
 			defer wg.Done()
@@ -183,6 +198,7 @@ func writeServiceFiles(g *generateInfo, filename string) {
 		if r := recover(); r != nil {
 			fmt.Fprintf(os.Stderr, "Error generating %s\n%s\n%s\n",
 				filename, r, debug.Stack())
+			os.Exit(1)
 		}
 	}()
 
@@ -197,6 +213,10 @@ func writeServiceFiles(g *generateInfo, filename string) {
 	Must(writeWaitersFile(g))
 	Must(writeAPIErrorsFile(g))
 	Must(writeExamplesFile(g))
+
+	if g.API.HasEventStream {
+		Must(writeAPIEventStreamTestFile(g))
+	}
 }
 
 // Must will panic if the error passed in is not nil.
@@ -299,5 +319,14 @@ func writeAPIErrorsFile(g *generateInfo) error {
 		"",
 		g.API.PackageName(),
 		g.API.APIErrorsGoCode(),
+	)
+}
+
+func writeAPIEventStreamTestFile(g *generateInfo) error {
+	return writeGoFile(filepath.Join(g.PackageDir, "eventstream_test.go"),
+		codeLayout,
+		"// +build go1.6\n",
+		g.API.PackageName(),
+		g.API.APIEventStreamTestGoCode(),
 	)
 }

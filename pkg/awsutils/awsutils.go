@@ -90,7 +90,7 @@ var (
 // APIs defines interfaces calls for adding/getting/deleting ENIs/secondary IPs. The APIs are not thread-safe.
 type APIs interface {
 	// AllocENI creates an eni and attaches it to instance
-	AllocENI() (eni string, err error)
+	AllocENI(useCustomCfg bool, sg []*string, subnet string) (eni string, err error)
 
 	// FreeENI detaches eni interface and deletes it
 	FreeENI(eniName string) error
@@ -532,8 +532,8 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int64, error) {
 
 // AllocENI creates an eni and attach it to the instance
 // returns: newly created eni id
-func (cache *EC2InstanceMetadataCache) AllocENI() (string, error) {
-	eniID, err := cache.createENI()
+func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string, subnet string) (string, error) {
+	eniID, err := cache.createENI(useCustomCfg, sg, subnet)
 	if err != nil {
 		return "", errors.Wrap(err, "allocate eni: failed to create eni")
 	}
@@ -601,13 +601,24 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 }
 
 // return eni id , error
-func (cache *EC2InstanceMetadataCache) createENI() (string, error) {
+func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string, subnet string) (string, error) {
 	eniDescription := eniDescriptionPrefix + cache.instanceID
+	var input *ec2.CreateNetworkInterfaceInput
 
-	input := &ec2.CreateNetworkInterfaceInput{
-		Description: aws.String(eniDescription),
-		Groups:      cache.securityGroups,
-		SubnetId:    aws.String(cache.subnetID),
+	if useCustomCfg {
+		log.Infof("createENI: use customer network config, %v, %s", sg, subnet)
+		input = &ec2.CreateNetworkInterfaceInput{
+			Description: aws.String(eniDescription),
+			Groups:      sg,
+			SubnetId:    aws.String(subnet),
+		}
+	} else {
+		log.Infof("createENI: use primary interface's config, %v, %s", cache.securityGroups, cache.subnetID)
+		input = &ec2.CreateNetworkInterfaceInput{
+			Description: aws.String(eniDescription),
+			Groups:      cache.securityGroups,
+			SubnetId:    aws.String(cache.subnetID),
+		}
 	}
 
 	start := time.Now()

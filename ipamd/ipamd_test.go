@@ -18,11 +18,16 @@ import (
 	"os"
 	"testing"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/pkg/errors"
+
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/docker"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/docker/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
@@ -57,17 +62,19 @@ func setup(t *testing.T) (*gomock.Controller,
 	*mock_awsutils.MockAPIs,
 	*mock_k8sapi.MockK8SAPIs,
 	*mock_docker.MockAPIs,
-	*mock_networkutils.MockNetworkAPIs) {
+	*mock_networkutils.MockNetworkAPIs,
+	*mock_eniconfig.MockENIConfig) {
 	ctrl := gomock.NewController(t)
 	return ctrl,
 		mock_awsutils.NewMockAPIs(ctrl),
 		mock_k8sapi.NewMockK8SAPIs(ctrl),
 		mock_docker.NewMockAPIs(ctrl),
-		mock_networkutils.NewMockNetworkAPIs(ctrl)
+		mock_networkutils.NewMockNetworkAPIs(ctrl),
+		mock_eniconfig.NewMockENIConfig(ctrl)
 }
 
 func TestNodeInit(t *testing.T) {
-	ctrl, mockAWS, mockK8S, mockDocker, mockNetwork := setup(t)
+	ctrl, mockAWS, mockK8S, mockDocker, mockNetwork, _ := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
@@ -145,14 +152,47 @@ func TestNodeInit(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestIncreaseIPPool(t *testing.T) {
-	ctrl, mockAWS, mockK8S, _, mockNetwork := setup(t)
+func TestIncreaseIPPoolDefault(t *testing.T) {
+	os.Unsetenv(envCustomNetworkCfg)
+	testIncreaseIPPool(t, false)
+}
+
+func TestIncreaseIPPoolCustomENI(t *testing.T) {
+	os.Setenv(envCustomNetworkCfg, "true")
+	testIncreaseIPPool(t, true)
+}
+
+func TestIncreaseIPPoolCustomENINoCfg(t *testing.T) {
+	os.Setenv(envCustomNetworkCfg, "true")
+	ctrl, mockAWS, mockK8S, _, mockNetwork, mockENIConfig := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
 		awsClient:     mockAWS,
 		k8sClient:     mockK8S,
 		networkClient: mockNetwork,
+		eniConfig:     mockENIConfig,
+		primaryIP:     make(map[string]string),
+	}
+
+	mockContext.dataStore = datastore.NewDataStore()
+
+	mockAWS.EXPECT().GetENILimit().Return(4, nil)
+	mockENIConfig.EXPECT().MyENIConfig().Return(nil, errors.New("no POD eni config"))
+
+	mockContext.increaseIPPool()
+
+}
+
+func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
+	ctrl, mockAWS, mockK8S, _, mockNetwork, mockENIConfig := setup(t)
+	defer ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:     mockAWS,
+		k8sClient:     mockK8S,
+		networkClient: mockNetwork,
+		eniConfig:     mockENIConfig,
 		primaryIP:     make(map[string]string),
 	}
 
@@ -161,7 +201,23 @@ func TestIncreaseIPPool(t *testing.T) {
 	eni2 := secENIid
 
 	mockAWS.EXPECT().GetENILimit().Return(4, nil)
-	mockAWS.EXPECT().AllocENI().Return(eni2, nil)
+
+	podENIConfig := &v1alpha1.ENIConfigSpec{
+		SecurityGroups: []string{"sg1-id", "sg2-id"},
+		Subnet:         "subnet1",
+	}
+	var sg []*string
+
+	for _, sgID := range podENIConfig.SecurityGroups {
+		sg = append(sg, aws.String(sgID))
+	}
+
+	if useENIConfig {
+		mockENIConfig.EXPECT().MyENIConfig().Return(podENIConfig, nil)
+		mockAWS.EXPECT().AllocENI(true, sg, podENIConfig.Subnet).Return(eni2, nil)
+	} else {
+		mockAWS.EXPECT().AllocENI(false, nil, "").Return(eni2, nil)
+	}
 
 	mockAWS.EXPECT().GetENIipLimit().Return(int64(5), nil)
 
@@ -206,7 +262,7 @@ func TestIncreaseIPPool(t *testing.T) {
 }
 
 func TestNodeIPPoolReconcile(t *testing.T) {
-	ctrl, mockAWS, mockK8S, _, mockNetwork := setup(t)
+	ctrl, mockAWS, mockK8S, _, mockNetwork, _ := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
@@ -277,7 +333,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 }
 
 func TestGetWarmENITarget(t *testing.T) {
-	ctrl, _, _, _, _ := setup(t)
+	ctrl, _, _, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
 	os.Setenv("WARM_IP_TARGET", "5")
@@ -294,7 +350,7 @@ func TestGetWarmENITarget(t *testing.T) {
 }
 
 func TestGetCurWarmIPTarget(t *testing.T) {
-	ctrl, mockAWS, mockK8S, _, mockNetwork := setup(t)
+	ctrl, mockAWS, mockK8S, _, mockNetwork, _ := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{

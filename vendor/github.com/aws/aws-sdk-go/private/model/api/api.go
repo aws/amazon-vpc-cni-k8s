@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+	"unicode"
 )
 
 // An API defines a service API's definition. and logic to serialize the definition.
@@ -54,6 +55,8 @@ type API struct {
 	path        string
 
 	BaseCrosslinkURL string
+
+	HasEventStream bool `json:"-"`
 }
 
 // A Metadata is the metadata about an API's definition.
@@ -67,14 +70,23 @@ type Metadata struct {
 	JSONVersion         string
 	TargetPrefix        string
 	Protocol            string
+	ProtocolSettings    ProtocolSettings
 	UID                 string
 	EndpointsID         string
+	ServiceID           string
 
 	NoResolveEndpoint bool
 }
 
+// ProtocolSettings define how the SDK should handle requests in the context
+// of of a protocol.
+type ProtocolSettings struct {
+	HTTP2 string `json:"h2,omitempty"`
+}
+
 var serviceAliases map[string]string
 
+// Bootstrap loads SDK model customizations prior to the API model is parsed.
 func Bootstrap() error {
 	b, err := ioutil.ReadFile(filepath.Join("..", "models", "customizations", "service-aliases.json"))
 	if err != nil {
@@ -94,23 +106,53 @@ func (a *API) InterfacePackageName() string {
 	return a.PackageName() + "iface"
 }
 
-var nameRegex = regexp.MustCompile(`^Amazon|AWS\s*|\(.*|\s+|\W+`)
+var stripServiceNamePrefixes = []string{
+	"Amazon",
+	"AWS",
+}
 
 // StructName returns the struct name for a given API.
 func (a *API) StructName() string {
-	if a.name == "" {
-		name := a.Metadata.ServiceAbbreviation
-		if name == "" {
-			name = a.Metadata.ServiceFullName
-		}
+	if len(a.name) != 0 {
+		return a.name
+	}
 
-		name = nameRegex.ReplaceAllString(name, "")
+	name := a.Metadata.ServiceAbbreviation
+	if len(name) == 0 {
+		name = a.Metadata.ServiceFullName
+	}
 
-		a.name = name
-		if name, ok := serviceAliases[strings.ToLower(name)]; ok {
-			a.name = name
+	name = strings.TrimSpace(name)
+
+	// Strip out prefix names not reflected in service client symbol names.
+	for _, prefix := range stripServiceNamePrefixes {
+		if strings.HasPrefix(name, prefix) {
+			name = name[len(prefix):]
+			break
 		}
 	}
+
+	// Replace all Non-letter/number values with space
+	runes := []rune(name)
+	for i := 0; i < len(runes); i++ {
+		if r := runes[i]; !(unicode.IsNumber(r) || unicode.IsLetter(r)) {
+			runes[i] = ' '
+		}
+	}
+	name = string(runes)
+
+	// Title case name so its readable as a symbol.
+	name = strings.Title(name)
+
+	// Strip out spaces.
+	name = strings.Replace(name, " ", "", -1)
+
+	// Swap out for alias name if one is defined.
+	if alias, ok := serviceAliases[strings.ToLower(name)]; ok {
+		name = alias
+	}
+
+	a.name = name
 	return a.name
 }
 
@@ -371,7 +413,7 @@ var tplServiceDoc = template.Must(template.New("service docs").Funcs(template.Fu
 //
 // Using the Client
 //
-// To {{ .Metadata.ServiceFullName }} with the SDK use the New function to create
+// To contact {{ .Metadata.ServiceFullName }} with the SDK use the New function to create
 // a new service client. With that client you can make API requests to the service.
 // These clients are safe to use concurrently.
 //
@@ -386,30 +428,62 @@ var tplServiceDoc = template.Must(template.New("service docs").Funcs(template.Fu
 // https://docs.aws.amazon.com/sdk-for-go/api/service/{{ .PackageName }}/#New
 `))
 
+var serviceIDRegex = regexp.MustCompile("[^a-zA-Z0-9 ]+")
+var prefixDigitRegex = regexp.MustCompile("^[0-9]+")
+
+// ServiceID will return a unique identifier specific to a service.
+func ServiceID(a *API) string {
+	if len(a.Metadata.ServiceID) > 0 {
+		return a.Metadata.ServiceID
+	}
+
+	name := a.Metadata.ServiceAbbreviation
+	if len(name) == 0 {
+		name = a.Metadata.ServiceFullName
+	}
+
+	name = strings.Replace(name, "Amazon", "", -1)
+	name = strings.Replace(name, "AWS", "", -1)
+	name = serviceIDRegex.ReplaceAllString(name, "")
+	name = prefixDigitRegex.ReplaceAllString(name, "")
+	name = strings.TrimSpace(name)
+	return name
+}
+
 // A tplService defines the template for the service generated code.
 var tplService = template.Must(template.New("service").Funcs(template.FuncMap{
+	"ServiceNameConstValue": ServiceName,
 	"ServiceNameValue": func(a *API) string {
-		if a.NoConstServiceNames {
-			return fmt.Sprintf("%q", a.Metadata.EndpointPrefix)
+		if !a.NoConstServiceNames {
+			return "ServiceName"
 		}
-		return "ServiceName"
+		return fmt.Sprintf("%q", ServiceName(a))
 	},
 	"EndpointsIDConstValue": func(a *API) string {
 		if a.NoConstServiceNames {
-			return fmt.Sprintf("%q", a.Metadata.EndpointPrefix)
+			return fmt.Sprintf("%q", a.Metadata.EndpointsID)
 		}
-		if a.Metadata.EndpointPrefix == a.Metadata.EndpointsID {
+		if a.Metadata.EndpointsID == ServiceName(a) {
 			return "ServiceName"
 		}
+
 		return fmt.Sprintf("%q", a.Metadata.EndpointsID)
 	},
 	"EndpointsIDValue": func(a *API) string {
 		if a.NoConstServiceNames {
-			return fmt.Sprintf("%q", a.Metadata.EndpointPrefix)
+			return fmt.Sprintf("%q", a.Metadata.EndpointsID)
 		}
 
 		return "EndpointsID"
 	},
+	"ServiceIDVar": func(a *API) string {
+		if a.NoConstServiceNames {
+			return fmt.Sprintf("%q", ServiceID(a))
+		}
+
+		return "ServiceID"
+	},
+	"ServiceID": ServiceID,
 }).Parse(`
 // {{ .StructName }} provides the API operation methods for making requests to
 // {{ .Metadata.ServiceFullName }}. See this package's package overview docs
@@ -432,8 +506,9 @@ var initRequest func(*request.Request)
 {{ if not .NoConstServiceNames -}}
 // Service information constants
 const (
-	ServiceName = "{{ .Metadata.EndpointPrefix }}" // Service endpoint prefix API calls made to.
-	EndpointsID = {{ EndpointsIDConstValue . }} // Service ID for Regions and Endpoints metadata.
+	ServiceName = "{{ ServiceNameConstValue . }}" // Name of service.
+	EndpointsID = {{ EndpointsIDConstValue . }} // ID to lookup a service endpoint with.
+	ServiceID = "{{ ServiceID . }}" // ServiceID is a unique identifer of a specific service.
 )
 {{- end }}
 
@@ -458,21 +533,23 @@ func New(p client.ConfigProvider, cfgs ...*aws.Config) *{{ .StructName }} {
 	{{- else -}}
 		c := p.ClientConfig({{ EndpointsIDValue . }}, cfgs...)
 	{{- end }}
+
+	{{- if .Metadata.SigningName }}
+		if c.SigningNameDerived || len(c.SigningName) == 0{
+			c.SigningName = "{{ .Metadata.SigningName }}"
+		}
+	{{- end }}
 	return newClient(*c.Config, c.Handlers, c.Endpoint, c.SigningRegion, c.SigningName)
 }
 
 // newClient creates, initializes and returns a new service client instance.
 func newClient(cfg aws.Config, handlers request.Handlers, endpoint, signingRegion, signingName string) *{{ .StructName }} {
-	{{- if .Metadata.SigningName }}
-		if len(signingName) == 0 {
-			signingName = "{{ .Metadata.SigningName }}"
-		}
-	{{- end }}
     svc := &{{ .StructName }}{
     	Client: client.New(
     		cfg,
     		metadata.ClientInfo{
 			ServiceName: {{ ServiceNameValue . }},
+			ServiceID : {{ ServiceIDVar . }},
 			SigningName: signingName,
 			SigningRegion: signingRegion,
 			Endpoint:     endpoint,
@@ -497,6 +574,9 @@ func newClient(cfg aws.Config, handlers request.Handlers, endpoint, signingRegio
 	svc.Handlers.Unmarshal.PushBackNamed({{ .ProtocolPackage }}.UnmarshalHandler)
 	svc.Handlers.UnmarshalMeta.PushBackNamed({{ .ProtocolPackage }}.UnmarshalMetaHandler)
 	svc.Handlers.UnmarshalError.PushBackNamed({{ .ProtocolPackage }}.UnmarshalErrorHandler)
+	{{ if .HasEventStream }}
+	svc.Handlers.UnmarshalStream.PushBackNamed({{ .ProtocolPackage }}.UnmarshalHandler)
+	{{ end }}
 
 	{{ if .UseInitMethods }}// Run custom client initialization if present
 	if initClient != nil {
@@ -770,4 +850,53 @@ func (a *API) APIErrorsGoCode() string {
 	}
 
 	return strings.TrimSpace(buf.String())
+}
+
+// removeOperation removes an operation, its input/output shapes, as well as
+// any references/shapes that are unique to this operation.
+func (a *API) removeOperation(name string) {
+	debugLogger.Logln("removing operation,", name)
+	op := a.Operations[name]
+
+	delete(a.Operations, name)
+	delete(a.Examples, name)
+
+	a.removeShape(op.InputRef.Shape)
+	a.removeShape(op.OutputRef.Shape)
+}
+
+// removeShape removes the given shape, and all form member's reference target
+// shapes. Will also remove member reference targeted shapes if those shapes do
+// not have any additional references.
+func (a *API) removeShape(s *Shape) {
+	debugLogger.Logln("removing shape,", s.ShapeName)
+
+	delete(a.Shapes, s.ShapeName)
+
+	for name, ref := range s.MemberRefs {
+		a.removeShapeRef(ref)
+		delete(s.MemberRefs, name)
+	}
+
+	for _, ref := range []*ShapeRef{&s.MemberRef, &s.KeyRef, &s.ValueRef} {
+		if ref.Shape == nil {
+			continue
+		}
+		a.removeShapeRef(ref)
+		*ref = ShapeRef{}
+	}
+}
+
+// removeShapeRef removes the shape reference from its target shape. If the
+// reference was the last reference to the target shape, the shape will also be
+// removed.
+func (a *API) removeShapeRef(ref *ShapeRef) {
+	if ref.Shape == nil {
+		return
+	}
+
+	ref.Shape.removeRef(ref)
+	if len(ref.Shape.refs) == 0 {
+		a.removeShape(ref.Shape)
+	}
 }

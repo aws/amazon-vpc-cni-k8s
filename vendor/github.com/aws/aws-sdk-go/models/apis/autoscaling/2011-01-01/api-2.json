@@ -5,6 +5,7 @@
     "endpointPrefix":"autoscaling",
     "protocol":"query",
     "serviceFullName":"Auto Scaling",
+    "serviceId":"Auto Scaling",
     "signatureVersion":"v4",
     "uid":"autoscaling-2011-01-01",
     "xmlNamespace":"http://autoscaling.amazonaws.com/doc/2011-01-01/"
@@ -18,7 +19,8 @@
       },
       "input":{"shape":"AttachInstancesQuery"},
       "errors":[
-        {"shape":"ResourceContentionFault"}
+        {"shape":"ResourceContentionFault"},
+        {"shape":"ServiceLinkedRoleFailure"}
       ]
     },
     "AttachLoadBalancerTargetGroups":{
@@ -33,7 +35,8 @@
         "resultWrapper":"AttachLoadBalancerTargetGroupsResult"
       },
       "errors":[
-        {"shape":"ResourceContentionFault"}
+        {"shape":"ResourceContentionFault"},
+        {"shape":"ServiceLinkedRoleFailure"}
       ]
     },
     "AttachLoadBalancers":{
@@ -48,6 +51,39 @@
         "resultWrapper":"AttachLoadBalancersResult"
       },
       "errors":[
+        {"shape":"ResourceContentionFault"},
+        {"shape":"ServiceLinkedRoleFailure"}
+      ]
+    },
+    "BatchDeleteScheduledAction":{
+      "name":"BatchDeleteScheduledAction",
+      "http":{
+        "method":"POST",
+        "requestUri":"/"
+      },
+      "input":{"shape":"BatchDeleteScheduledActionType"},
+      "output":{
+        "shape":"BatchDeleteScheduledActionAnswer",
+        "resultWrapper":"BatchDeleteScheduledActionResult"
+      },
+      "errors":[
+        {"shape":"ResourceContentionFault"}
+      ]
+    },
+    "BatchPutScheduledUpdateGroupAction":{
+      "name":"BatchPutScheduledUpdateGroupAction",
+      "http":{
+        "method":"POST",
+        "requestUri":"/"
+      },
+      "input":{"shape":"BatchPutScheduledUpdateGroupActionType"},
+      "output":{
+        "shape":"BatchPutScheduledUpdateGroupActionAnswer",
+        "resultWrapper":"BatchPutScheduledUpdateGroupActionResult"
+      },
+      "errors":[
+        {"shape":"AlreadyExistsFault"},
+        {"shape":"LimitExceededFault"},
         {"shape":"ResourceContentionFault"}
       ]
     },
@@ -76,7 +112,8 @@
       "errors":[
         {"shape":"AlreadyExistsFault"},
         {"shape":"LimitExceededFault"},
-        {"shape":"ResourceContentionFault"}
+        {"shape":"ResourceContentionFault"},
+        {"shape":"ServiceLinkedRoleFailure"}
       ]
     },
     "CreateLaunchConfiguration":{
@@ -165,7 +202,8 @@
       },
       "input":{"shape":"DeletePolicyType"},
       "errors":[
-        {"shape":"ResourceContentionFault"}
+        {"shape":"ResourceContentionFault"},
+        {"shape":"ServiceLinkedRoleFailure"}
       ]
     },
     "DeleteScheduledAction":{
@@ -383,7 +421,8 @@
       },
       "errors":[
         {"shape":"InvalidNextToken"},
-        {"shape":"ResourceContentionFault"}
+        {"shape":"ResourceContentionFault"},
+        {"shape":"ServiceLinkedRoleFailure"}
       ]
     },
     "DescribeScalingActivities":{
@@ -596,7 +635,8 @@
       "input":{"shape":"PutNotificationConfigurationType"},
       "errors":[
         {"shape":"LimitExceededFault"},
-        {"shape":"ResourceContentionFault"}
+        {"shape":"ResourceContentionFault"},
+        {"shape":"ServiceLinkedRoleFailure"}
       ]
     },
     "PutScalingPolicy":{
@@ -612,7 +652,8 @@
       },
       "errors":[
         {"shape":"LimitExceededFault"},
-        {"shape":"ResourceContentionFault"}
+        {"shape":"ResourceContentionFault"},
+        {"shape":"ServiceLinkedRoleFailure"}
       ]
     },
     "PutScheduledUpdateGroupAction":{
@@ -731,7 +772,8 @@
       "input":{"shape":"UpdateAutoScalingGroupType"},
       "errors":[
         {"shape":"ScalingActivityInProgressFault"},
-        {"shape":"ResourceContentionFault"}
+        {"shape":"ResourceContentionFault"},
+        {"shape":"ServiceLinkedRoleFailure"}
       ]
     }
   },
@@ -876,6 +918,7 @@
         "AutoScalingGroupName":{"shape":"XmlStringMaxLen255"},
         "AutoScalingGroupARN":{"shape":"ResourceName"},
         "LaunchConfigurationName":{"shape":"XmlStringMaxLen255"},
+        "LaunchTemplate":{"shape":"LaunchTemplateSpecification"},
         "MinSize":{"shape":"AutoScalingGroupMinSize"},
         "MaxSize":{"shape":"AutoScalingGroupMaxSize"},
         "DesiredCapacity":{"shape":"AutoScalingGroupDesiredCapacity"},
@@ -894,7 +937,8 @@
         "Status":{"shape":"XmlStringMaxLen255"},
         "Tags":{"shape":"TagDescriptionList"},
         "TerminationPolicies":{"shape":"TerminationPolicies"},
-        "NewInstancesProtectedFromScaleIn":{"shape":"InstanceProtected"}
+        "NewInstancesProtectedFromScaleIn":{"shape":"InstanceProtected"},
+        "ServiceLinkedRoleARN":{"shape":"ResourceName"}
       }
     },
     "AutoScalingGroupDesiredCapacity":{"type":"integer"},
@@ -932,7 +976,6 @@
         "AvailabilityZone",
         "LifecycleState",
         "HealthStatus",
-        "LaunchConfigurationName",
         "ProtectedFromScaleIn"
       ],
       "members":{
@@ -942,6 +985,7 @@
         "LifecycleState":{"shape":"XmlStringMaxLen32"},
         "HealthStatus":{"shape":"XmlStringMaxLen32"},
         "LaunchConfigurationName":{"shape":"XmlStringMaxLen255"},
+        "LaunchTemplate":{"shape":"LaunchTemplateSpecification"},
         "ProtectedFromScaleIn":{"shape":"InstanceProtected"}
       }
     },
@@ -964,6 +1008,40 @@
       "type":"list",
       "member":{"shape":"XmlStringMaxLen255"},
       "min":1
+    },
+    "BatchDeleteScheduledActionAnswer":{
+      "type":"structure",
+      "members":{
+        "FailedScheduledActions":{"shape":"FailedScheduledUpdateGroupActionRequests"}
+      }
+    },
+    "BatchDeleteScheduledActionType":{
+      "type":"structure",
+      "required":[
+        "AutoScalingGroupName",
+        "ScheduledActionNames"
+      ],
+      "members":{
+        "AutoScalingGroupName":{"shape":"ResourceName"},
+        "ScheduledActionNames":{"shape":"ScheduledActionNames"}
+      }
+    },
+    "BatchPutScheduledUpdateGroupActionAnswer":{
+      "type":"structure",
+      "members":{
+        "FailedScheduledUpdateGroupActions":{"shape":"FailedScheduledUpdateGroupActionRequests"}
+      }
+    },
+    "BatchPutScheduledUpdateGroupActionType":{
+      "type":"structure",
+      "required":[
+        "AutoScalingGroupName",
+        "ScheduledUpdateGroupActions"
+      ],
+      "members":{
+        "AutoScalingGroupName":{"shape":"ResourceName"},
+        "ScheduledUpdateGroupActions":{"shape":"ScheduledUpdateGroupActionRequests"}
+      }
     },
     "BlockDeviceEbsDeleteOnTermination":{"type":"boolean"},
     "BlockDeviceEbsEncrypted":{"type":"boolean"},
@@ -1031,6 +1109,7 @@
       "members":{
         "AutoScalingGroupName":{"shape":"XmlStringMaxLen255"},
         "LaunchConfigurationName":{"shape":"ResourceName"},
+        "LaunchTemplate":{"shape":"LaunchTemplateSpecification"},
         "InstanceId":{"shape":"XmlStringMaxLen19"},
         "MinSize":{"shape":"AutoScalingGroupMinSize"},
         "MaxSize":{"shape":"AutoScalingGroupMaxSize"},
@@ -1046,7 +1125,8 @@
         "TerminationPolicies":{"shape":"TerminationPolicies"},
         "NewInstancesProtectedFromScaleIn":{"shape":"InstanceProtected"},
         "LifecycleHookSpecificationList":{"shape":"LifecycleHookSpecifications"},
-        "Tags":{"shape":"Tags"}
+        "Tags":{"shape":"Tags"},
+        "ServiceLinkedRoleARN":{"shape":"ResourceName"}
       }
     },
     "CreateLaunchConfigurationType":{
@@ -1442,6 +1522,19 @@
         "AutoScalingGroupName":{"shape":"ResourceName"}
       }
     },
+    "FailedScheduledUpdateGroupActionRequest":{
+      "type":"structure",
+      "required":["ScheduledActionName"],
+      "members":{
+        "ScheduledActionName":{"shape":"XmlStringMaxLen255"},
+        "ErrorCode":{"shape":"XmlStringMaxLen64"},
+        "ErrorMessage":{"shape":"XmlString"}
+      }
+    },
+    "FailedScheduledUpdateGroupActionRequests":{
+      "type":"list",
+      "member":{"shape":"FailedScheduledUpdateGroupActionRequest"}
+    },
     "Filter":{
       "type":"structure",
       "members":{
@@ -1465,7 +1558,6 @@
         "AvailabilityZone",
         "LifecycleState",
         "HealthStatus",
-        "LaunchConfigurationName",
         "ProtectedFromScaleIn"
       ],
       "members":{
@@ -1474,6 +1566,7 @@
         "LifecycleState":{"shape":"LifecycleState"},
         "HealthStatus":{"shape":"XmlStringMaxLen32"},
         "LaunchConfigurationName":{"shape":"XmlStringMaxLen255"},
+        "LaunchTemplate":{"shape":"LaunchTemplateSpecification"},
         "ProtectedFromScaleIn":{"shape":"InstanceProtected"}
       }
     },
@@ -1565,6 +1658,20 @@
         "NextToken":{"shape":"XmlString"}
       }
     },
+    "LaunchTemplateName":{
+      "type":"string",
+      "max":128,
+      "min":3,
+      "pattern":"[a-zA-Z0-9\\(\\)\\.-/_]+"
+    },
+    "LaunchTemplateSpecification":{
+      "type":"structure",
+      "members":{
+        "LaunchTemplateId":{"shape":"XmlStringMaxLen255"},
+        "LaunchTemplateName":{"shape":"LaunchTemplateName"},
+        "Version":{"shape":"XmlStringMaxLen255"}
+      }
+    },
     "LifecycleActionResult":{"type":"string"},
     "LifecycleActionToken":{
       "type":"string",
@@ -1592,7 +1699,10 @@
     },
     "LifecycleHookSpecification":{
       "type":"structure",
-      "required":["LifecycleHookName"],
+      "required":[
+        "LifecycleHookName",
+        "LifecycleTransition"
+      ],
       "members":{
         "LifecycleHookName":{"shape":"AsciiStringMaxLen255"},
         "LifecycleTransition":{"shape":"LifecycleTransition"},
@@ -2025,6 +2135,23 @@
         "DesiredCapacity":{"shape":"AutoScalingGroupDesiredCapacity"}
       }
     },
+    "ScheduledUpdateGroupActionRequest":{
+      "type":"structure",
+      "required":["ScheduledActionName"],
+      "members":{
+        "ScheduledActionName":{"shape":"XmlStringMaxLen255"},
+        "StartTime":{"shape":"TimestampType"},
+        "EndTime":{"shape":"TimestampType"},
+        "Recurrence":{"shape":"XmlStringMaxLen255"},
+        "MinSize":{"shape":"AutoScalingGroupMinSize"},
+        "MaxSize":{"shape":"AutoScalingGroupMaxSize"},
+        "DesiredCapacity":{"shape":"AutoScalingGroupDesiredCapacity"}
+      }
+    },
+    "ScheduledUpdateGroupActionRequests":{
+      "type":"list",
+      "member":{"shape":"ScheduledUpdateGroupActionRequest"}
+    },
     "ScheduledUpdateGroupActions":{
       "type":"list",
       "member":{"shape":"ScheduledUpdateGroupAction"}
@@ -2032,6 +2159,18 @@
     "SecurityGroups":{
       "type":"list",
       "member":{"shape":"XmlString"}
+    },
+    "ServiceLinkedRoleFailure":{
+      "type":"structure",
+      "members":{
+        "message":{"shape":"XmlStringMaxLen255"}
+      },
+      "error":{
+        "code":"ServiceLinkedRoleFailure",
+        "httpStatusCode":500,
+        "senderFault":true
+      },
+      "exception":true
     },
     "SetDesiredCapacityType":{
       "type":"structure",
@@ -2190,6 +2329,7 @@
       "members":{
         "AutoScalingGroupName":{"shape":"ResourceName"},
         "LaunchConfigurationName":{"shape":"ResourceName"},
+        "LaunchTemplate":{"shape":"LaunchTemplateSpecification"},
         "MinSize":{"shape":"AutoScalingGroupMinSize"},
         "MaxSize":{"shape":"AutoScalingGroupMaxSize"},
         "DesiredCapacity":{"shape":"AutoScalingGroupDesiredCapacity"},
@@ -2200,7 +2340,8 @@
         "PlacementGroup":{"shape":"XmlStringMaxLen255"},
         "VPCZoneIdentifier":{"shape":"XmlStringMaxLen2047"},
         "TerminationPolicies":{"shape":"TerminationPolicies"},
-        "NewInstancesProtectedFromScaleIn":{"shape":"InstanceProtected"}
+        "NewInstancesProtectedFromScaleIn":{"shape":"InstanceProtected"},
+        "ServiceLinkedRoleARN":{"shape":"ResourceName"}
       }
     },
     "Values":{

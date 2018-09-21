@@ -14,6 +14,7 @@
 package ipamd
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -31,6 +32,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/docker"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 )
@@ -43,11 +45,40 @@ const (
 	ipPoolMonitorInterval       = 5 * time.Second
 	maxRetryCheckENI            = 5
 	eniAttachTime               = 10 * time.Second
-	defaultWarmENITarget        = 1
 	nodeIPPoolReconcileInterval = 60 * time.Second
 	maxK8SRetries               = 12
 	retryK8SInterval            = 5 * time.Second
-	noWarmIPTarget              = 0
+
+	// This environment is used to specify the desired number of free IPs always available in "warm pool"
+	// When it is not set, ipamD defaut to use the number IPs per ENI for that instance.
+	// For example, for a m4.4xlarge node,
+	//     if WARM-IP-TARGET is set to 1, and there are 9 pods running on the node, ipamD will try
+	//     to make "warm pool" to have 10 IP address with 9 being assigned to Pod and 1 free IP.
+	//
+	//     if "WARM-IP-TARGET is not set, it will be defaulted to 30 (which the number of IPs per ENI). If there are 9 pods
+	//     running on the node, ipamD will try to make "warm pool" to have 39 IPs with 9 being assigned to Pod and 30 free IPs.
+	envWarmIPTarget = "WARM_IP_TARGET"
+	noWarmIPTarget  = 0
+
+	// This environment is used to specify the desired number of free ENIs along with all of its IP addresses
+	// always available in "warm pool".
+	// When it is not set, it is default to 1.
+	//
+	// when "WARM-IP-TARGET" is defined, ipamD will use behavior defined for "WARM-IP-TARGET".
+	//
+	// For example, for a m4.4xlarget node
+	//     if WARM_ENI_TARGET is set to 2, and there are 9 pods running on the node, ipamD will try to
+	//     make "warm  pool" to have 2 extra ENIs and its IP addresses,  in another word, 90 IP addresses with 9 IPs assigne to Pod
+	//     and 81 free IPs.
+	//
+	//     if "WARM_ENI_TARGET" is not set, it is default to 1,  if there 9 pods running on the node, ipamD will try to
+	//     make "warm pool" to have 1 extra ENI, in aother word 60 IPs with 9 being assigned to Pod and 51 free IPs.
+	envWarmENITarget     = "WARM_ENI_TARGET"
+	defaultWarmENITarget = 1
+
+	// This environment is used to specify whether Pods need to use securitygroup and subnet defined in ENIConfig CRD
+	// When it is NOT set or set to false, ipamD will use primary interface security group and subnet for Pod network.
+	envCustomNetworkCfg = "AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG"
 )
 
 var (
@@ -105,6 +136,7 @@ type IPAMContext struct {
 	awsClient     awsutils.APIs
 	dataStore     *datastore.DataStore
 	k8sClient     k8sapi.K8SAPIs
+	eniConfig     eniconfig.ENIConfig
 	dockerClient  docker.APIs
 	networkClient networkutils.NetworkAPIs
 
@@ -133,13 +165,14 @@ func prometheusRegister() {
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
-func New(k8sapiClient k8sapi.K8SAPIs) (*IPAMContext, error) {
+func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) (*IPAMContext, error) {
 	prometheusRegister()
 	c := &IPAMContext{}
 
 	c.k8sClient = k8sapiClient
 	c.networkClient = networkutils.New()
 	c.dockerClient = docker.New()
+	c.eniConfig = eniConfig
 
 	client, err := awsutils.New()
 	if err != nil {
@@ -314,7 +347,7 @@ func (c *IPAMContext) retryAllocENIIP() {
 		log.Infof("Failed to retrieve ENI IP limit: %v", err)
 		return
 	}
-	eni := c.dataStore.GetENINeedsIP(maxIPLimit)
+	eni := c.dataStore.GetENINeedsIP(maxIPLimit, useCustomNetworkCfg())
 	if eni != nil {
 		log.Debugf("Attempt again to allocate IP address for eni :%s", eni.ID)
 		var err error
@@ -392,7 +425,30 @@ func (c *IPAMContext) increaseIPPool() {
 		log.Debugf("Skipping increase IPPOOL due to max ENI already attached to the instance : %d", c.maxENI)
 		return
 	}
-	eni, err := c.awsClient.AllocENI()
+
+	var securityGroups []*string
+	var subnet string
+	customNetworkCfg := useCustomNetworkCfg()
+
+	if customNetworkCfg {
+		eniCfg, err := c.eniConfig.MyENIConfig()
+
+		if err != nil {
+			log.Errorf("Failed to get pod ENI config")
+			return
+		}
+
+		log.Infof("ipamd: using custom network config: %v, %s", eniCfg.SecurityGroups, eniCfg.Subnet)
+
+		for _, sgID := range eniCfg.SecurityGroups {
+			log.Debugf("Found security-group id: %s", sgID)
+			securityGroups = append(securityGroups, aws.String(sgID))
+		}
+
+		subnet = eniCfg.Subnet
+	}
+
+	eni, err := c.awsClient.AllocENI(customNetworkCfg, securityGroups, subnet)
 	if err != nil {
 		log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
 
@@ -554,7 +610,7 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 }
 
 func getWarmENITarget() int {
-	inputStr, found := os.LookupEnv("WARM_ENI_TARGET")
+	inputStr, found := os.LookupEnv(envWarmENITarget)
 
 	if !found {
 		return defaultWarmENITarget
@@ -730,8 +786,21 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 
 }
 
+func useCustomNetworkCfg() bool {
+	defaultValue := false
+	if strValue := os.Getenv(envCustomNetworkCfg); strValue != "" {
+		parsedValue, err := strconv.ParseBool(strValue)
+		if err != nil {
+			log.Error("Failed to parse "+envCustomNetworkCfg+"; using default: "+fmt.Sprint(defaultValue), err.Error())
+			return defaultValue
+		}
+		return parsedValue
+	}
+	return defaultValue
+}
+
 func getWarmIPTarget() int {
-	inputStr, found := os.LookupEnv("WARM_IP_TARGET")
+	inputStr, found := os.LookupEnv(envWarmIPTarget)
 
 	if !found {
 		return noWarmIPTarget
@@ -760,4 +829,13 @@ func (c *IPAMContext) getCurWarmIPTarget() (int64, bool) {
 	curTarget := int64(target) - int64(total-used)
 
 	return curTarget, true
+}
+
+// GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
+func GetConfigForDebug() map[string]interface{} {
+	return map[string]interface{}{
+		envWarmIPTarget:     getWarmIPTarget(),
+		envWarmENITarget:    getWarmENITarget(),
+		envCustomNetworkCfg: useCustomNetworkCfg(),
+	}
 }

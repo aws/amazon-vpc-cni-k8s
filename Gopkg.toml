@@ -21,13 +21,9 @@
 #  version = "2.4.0"
 
 
-[prune]
-  go-tests = true
-  unused-packages = true
-
 [[constraint]]
   name = "github.com/aws/aws-sdk-go"
-  version = "1.12.14"
+  version = "1.15.22"
 
 [[constraint]]
   name = "github.com/cihub/seelog"
@@ -39,27 +35,40 @@
 
 [[constraint]]
   name = "github.com/coreos/go-iptables"
-  version = "0.2.0"
+  version = "0.4.0"
+
+[[constraint]]
+  name = "github.com/docker/docker"
+  version = "1.13.1"
 
 [[constraint]]
   name = "github.com/golang/mock"
-  version = "1.0.0"
+  version = "1.1.1"
 
 [[constraint]]
-  branch = "master"
   name = "github.com/golang/protobuf"
+  version = "1.2.0"
+
+[[constraint]]
+  name = "github.com/operator-framework/operator-sdk"
+  branch = "master"
+  # version = "0.0.5"
 
 [[constraint]]
   name = "github.com/pkg/errors"
   version = "0.8.0"
 
 [[constraint]]
-  name = "github.com/stretchr/testify"
-  version = "1.1.4"
+  name = "github.com/prometheus/client_golang"
+  version = "0.8.0"
 
 [[constraint]]
-  branch = "master"
+  name = "github.com/stretchr/testify"
+  version = "1.2.2"
+
+[[constraint]]
   name = "github.com/vishvananda/netlink"
+  version = "1.0.0"
 
 [[constraint]]
   branch = "master"
@@ -67,4 +76,19 @@
 
 [[constraint]]
   name = "google.golang.org/grpc"
-  version = "1.7.0"
+  version = "1.14.0"
+
+[[constraint]]
+  name = "k8s.io/api"
+   # revision for tag "kubernetes-1.10.1"
+  revision = "73d903622b7391f3312dcbac6483fed484e185f8"
+
+[[constraint]]
+  name = "k8s.io/apimachinery"
+  # revision for tag "kubernetes-1.10.1"
+  revision = "302974c03f7e50f16561ba237db776ab93594ef6"
+
+[[constraint]]
+  name = "k8s.io/client-go"
+  # revision for tag "kubernetes-1.10.1"
+  revision = "989be4278f353e42f26c416c53757d16fcff77db"

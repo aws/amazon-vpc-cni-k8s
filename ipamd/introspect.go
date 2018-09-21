@@ -69,9 +69,11 @@ func (c *IPAMContext) SetupHTTP() {
 
 func (c *IPAMContext) setupServer() *http.Server {
 	serverFunctions := map[string]func(w http.ResponseWriter, r *http.Request){
-		"/v1/enis":         eniV1RequestHandler(c),
-		"/v1/pods":         podV1RequestHandler(c),
-		"/v1/env-settings": envV1RequestHandler(c),
+		"/v1/enis":                      eniV1RequestHandler(c),
+		"/v1/pods":                      podV1RequestHandler(c),
+		"/v1/networkutils-env-settings": networkEnvV1RequestHandler(c),
+		"/v1/ipamd-env-settings":        ipamdEnvV1RequestHandler(c),
+		"/v1/eni-configs":               eniConfigRequestHandler(c),
 	}
 	paths := make([]string, 0, len(serverFunctions))
 	for path := range serverFunctions {
@@ -134,9 +136,33 @@ func podV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 	}
 }
 
-func envV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
+func eniConfigRequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		responseJSON, err := json.Marshal(ipam.eniConfig.Getter())
+		if err != nil {
+			log.Error("Failed to marshal pod data: %v", err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+		w.Write(responseJSON)
+	}
+}
+
+func networkEnvV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		responseJSON, err := json.Marshal(networkutils.GetConfigForDebug())
+		if err != nil {
+			log.Error("Failed to marshal env var data: %v", err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+		w.Write(responseJSON)
+	}
+}
+
+func ipamdEnvV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		responseJSON, err := json.Marshal(GetConfigForDebug())
 		if err != nil {
 			log.Error("Failed to marshal env var data: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
