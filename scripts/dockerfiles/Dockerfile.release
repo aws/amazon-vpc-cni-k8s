@@ -6,7 +6,9 @@ RUN yum update -y && \
 WORKDIR /app
 
 COPY aws-cni /app 
-COPY misc/aws.conf /app
+COPY misc/10-aws.conflist /app
+
+COPY portmap /app
 
 COPY aws-k8s-agent  /app
 COPY scripts/aws-cni-support.sh /app
