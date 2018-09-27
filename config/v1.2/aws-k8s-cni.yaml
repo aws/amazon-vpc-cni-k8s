@@ -9,7 +9,7 @@ rules:
   - crd.k8s.amazonaws.com
   resources:
   - "*"
-  - namespaecs
+  - namespaces
   verbs:
   - "*"
 - apiGroups: [""]
