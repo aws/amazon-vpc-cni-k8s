@@ -9,7 +9,7 @@ rules:
   - crd.k8s.amazonaws.com
   resources:
   - "*"
-  - namespaecs
+  - namespaces
   verbs:
   - "*"
 - apiGroups: [""]
@@ -124,7 +124,7 @@ spec:
   names:
     scope: Cluster
     plural: eniconfigs
-    singuar: eniconfig
+    singular: eniconfig
     kind: ENIConfig
 
 
