@@ -347,7 +347,7 @@ func (c *IPAMContext) retryAllocENIIP() {
 		log.Infof("Failed to retrieve ENI IP limit: %v", err)
 		return
 	}
-	eni := c.dataStore.GetENINeedsIP(maxIPLimit, useCustomNetworkCfg())
+	eni := c.dataStore.GetENINeedsIP(maxIPLimit, UseCustomNetworkCfg())
 	if eni != nil {
 		log.Debugf("Attempt again to allocate IP address for eni :%s", eni.ID)
 		var err error
@@ -428,7 +428,7 @@ func (c *IPAMContext) increaseIPPool() {
 
 	var securityGroups []*string
 	var subnet string
-	customNetworkCfg := useCustomNetworkCfg()
+	customNetworkCfg := UseCustomNetworkCfg()
 
 	if customNetworkCfg {
 		eniCfg, err := c.eniConfig.MyENIConfig()
@@ -786,7 +786,8 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 
 }
 
-func useCustomNetworkCfg() bool {
+// UseCustomerNetworkCfg() return whether Pods needs to use pod specific config
+func UseCustomNetworkCfg() bool {
 	defaultValue := false
 	if strValue := os.Getenv(envCustomNetworkCfg); strValue != "" {
 		parsedValue, err := strconv.ParseBool(strValue)
@@ -836,6 +837,6 @@ func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
 		envWarmIPTarget:     getWarmIPTarget(),
 		envWarmENITarget:    getWarmENITarget(),
-		envCustomNetworkCfg: useCustomNetworkCfg(),
+		envCustomNetworkCfg: UseCustomNetworkCfg(),
 	}
 }

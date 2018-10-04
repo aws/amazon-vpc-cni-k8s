@@ -53,7 +53,9 @@ func _main() int {
 	go discoverController.DiscoverK8SPods()
 
 	eniConfigController := eniconfig.NewENIConfigController()
-	go eniConfigController.Start()
+	if ipamd.UseCustomNetworkCfg() {
+		go eniConfigController.Start()
+	}
 
 	awsK8sAgent, err := ipamd.New(discoverController, eniConfigController)
 
