@@ -84,7 +84,8 @@ var (
 		},
 		[]string{"fn", "error"},
 	)
-	prometheusRegistered = false
+	prometheusRegistered   = false
+	errENIMetadataNotFound = fmt.Errorf("ENI metadata not found")
 )
 
 // APIs defines interfaces calls for adding/getting/deleting ENIs/secondary IPs. The APIs are not thread-safe.
@@ -385,6 +386,10 @@ func (cache *EC2InstanceMetadataCache) GetAttachedENIs() (eniList []ENIMetadata,
 	for _, macStr := range macsStrs {
 		eniMetadata, err := cache.getENIMetadata(macStr)
 		if err != nil {
+			if errors.Cause(err) == errENIMetadataNotFound {
+				log.Debugf("Metadata not found for eni %s. Ignoring, assuming stale metadata cache to be the cause.", macStr)
+				continue
+			}
 			return nil, errors.Wrapf(err, "get attached enis: failed to retrieve eni metadata for eni: %s", macStr)
 		}
 
@@ -456,7 +461,13 @@ func (cache *EC2InstanceMetadataCache) getENIDeviceNumber(eniMAC string) (string
 	awsAPILatency.WithLabelValues("GetMetadata", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve the device-number of eni %s,  %v", eniMAC, err)
+		logMessage := fmt.Sprintf("Failed to retrieve the device-number of eni %s,  %v", eniMAC, err)
+		if isMetadataNotFoundError(err) {
+			log.Warn(logMessage)
+			err = errENIMetadataNotFound
+		} else {
+			log.Errorf(logMessage)
+		}
 		return "", 0, errors.Wrapf(err, "failed to retrieve device-number for eni %s",
 			eniMAC)
 	}
@@ -690,6 +701,13 @@ func containsPrivateIPAddressLimitExceededError(err error) bool {
 		return aerr.Code() == "PrivateIpAddressLimitExceeded"
 	}
 	return false
+}
+
+func isMetadataNotFoundError(err error) bool {
+	aerr, ok := err.(awserr.Error)
+	return ok &&
+		aerr.Code() == "EC2MetadataError" &&
+		strings.Contains(aerr.OrigErr().Error(), "404 - Not Found")
 }
 
 func awsAPIErrInc(api string, err error) {
