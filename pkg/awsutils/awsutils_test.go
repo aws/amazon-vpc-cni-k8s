@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadata/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
@@ -291,6 +292,41 @@ func TestGetAttachedENIsOnErr(t *testing.T) {
 	_, err := ins.GetAttachedENIs()
 
 	assert.Error(t, err)
+}
+
+func TestGetAttachedENIsOn404(t *testing.T) {
+	ctrl, mockMetadata, _ := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC+" "+eni2MAC, nil)
+
+	eniNotFoundErr := awserr.New("EC2MetadataError", "failed to make EC2Metadata request", errors.New(
+		"<?xml version=\"1.0\" encoding=\"iso-8859-1\"?>\n"+
+			"<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\"\n"+
+			"		 \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\n"+
+			"<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"en\" lang=\"en\">\n"+
+			" <head>\n"+
+			"  <title>404 - Not Found</title>\n"+
+			" </head>\n"+
+			" <body>\n"+
+			"  <h1>404 - Not Found</h1>\n"+
+			" </body>\n"+
+			"</html>\n",
+	))
+
+	gomock.InOrder(
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil),
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil),
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Return(subnetCIDR, nil),
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Return("", nil),
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataDeviceNum).Return("", eniNotFoundErr),
+	)
+	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
+	ens, err := ins.GetAttachedENIs()
+
+	assert.NoError(t, err)
+	assert.Equal(t, len(ens), 1)
+	assert.Equal(t, ens[0].MAC, primaryMAC)
 }
 
 func TestAWSGetFreeDeviceNumberOnErr(t *testing.T) {
