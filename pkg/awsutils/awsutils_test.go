@@ -274,6 +274,25 @@ func TestGetAttachedENIs(t *testing.T) {
 	assert.Equal(t, len(ens), 2)
 }
 
+func TestGetAttachedENIsOnErr(t *testing.T) {
+	ctrl, mockMetadata, _ := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC+" "+eni2MAC, nil)
+
+	gomock.InOrder(
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil),
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil),
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Return(subnetCIDR, nil),
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Return("", nil),
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataDeviceNum).Return("", errors.New("Arbitrary error")),
+	)
+	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
+	_, err := ins.GetAttachedENIs()
+
+	assert.Error(t, err)
+}
+
 func TestAWSGetFreeDeviceNumberOnErr(t *testing.T) {
 	ctrl, _, mockEC2 := setup(t)
 	defer ctrl.Finish()
