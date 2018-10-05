@@ -387,7 +387,7 @@ func (cache *EC2InstanceMetadataCache) GetAttachedENIs() (eniList []ENIMetadata,
 		eniMetadata, err := cache.getENIMetadata(macStr)
 		if err != nil {
 			if errors.Cause(err) == errENIMetadataNotFound {
-				log.Debugf("Metadata not found for eni %s. Ignoring, assuming stale metadata cache to be the cause.")
+				log.Debugf("Metadata not found for eni %s. Ignoring, assuming stale metadata cache to be the cause.", macStr)
 				continue
 			}
 			return nil, errors.Wrapf(err, "get attached enis: failed to retrieve eni metadata for eni: %s", macStr)
