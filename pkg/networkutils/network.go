@@ -70,6 +70,13 @@ const (
 	// - kube-proxy uses 0x0000c000
 	// - Calico uses 0xffff0000.
 	defaultConnmark = 0x80
+
+	// envDefaultRPFInterface is the name of the environment variable that overrides the default network interface
+	// used to set the RPF check when AWS_VPC_CNI_NODE_PORT_SUPPORT is enabled.
+	envDefaultRPFInterface = "AWS_VPC_CNI_DEFAULT_RPF_INTERFACE"
+
+	// The default network interface used by for the envDefaultRPFInterface above.
+	defaultRPFInterface = "eth0"
 )
 
 // NetworkAPIs defines the host level and the eni level network related operations
@@ -84,6 +91,7 @@ type linuxNetwork struct {
 	useExternalSNAT        bool
 	nodePortSupportEnabled bool
 	connmark               uint32
+	defaultRPFInterface       string
 
 	netLink     netlinkwrapper.NetLink
 	ns          nswrapper.NS
@@ -101,9 +109,10 @@ type iptablesIface interface {
 // New creates a linuxNetwork object
 func New() NetworkAPIs {
 	return &linuxNetwork{
-		useExternalSNAT:        useExternalSNAT(),
-		nodePortSupportEnabled: nodePortSupportEnabled(),
-		mainENIMark:            getConnmark(),
+		useExternalSNAT:            useExternalSNAT(),
+		nodePortSupportEnabled:     nodePortSupportEnabled(),
+		mainENIMark:                getConnmark(),
+		defaultRPFInterface:        getDefaultRPFInterface(),
 
 		netLink: netlinkwrapper.NewNetLink(),
 		ns:      nswrapper.NewNS(),
@@ -163,11 +172,11 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP)
 		// - Thus, it finds the source-based route that leaves via the secondary ENI.
 		// - In "strict" mode, the RPF check fails because the return path uses a different interface to the incoming
 		//   packet.  In "loose" mode, the check passes because some route was found.
-		const eth0RPFilter = "/proc/sys/net/ipv4/conf/eth0/rp_filter"
+		eth0RPFilter := "/proc/sys/net/ipv4/conf/" + n.defaultRPFInterface + "/rp_filter"
 		const rpFilterLoose = "2"
 		err := n.setProcSys(eth0RPFilter, rpFilterLoose)
 		if err != nil {
-			return errors.Wrapf(err, "failed to configure eth0 RPF check")
+			return errors.Wrapf(err, "failed to configure " + n.defaultRPFInterface + " RPF check")
 		}
 	}
 
@@ -292,9 +301,10 @@ func containsNoSuchRule(err error) bool {
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
 func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
-		envExternalSNAT:    useExternalSNAT(),
-		envNodePortSupport: nodePortSupportEnabled(),
-		envConnmark:        getConnmark(),
+		envExternalSNAT:        useExternalSNAT(),
+		envNodePortSupport:     nodePortSupportEnabled(),
+		envConnmark:            getConnmark(),
+		envDefaultRPFInterface: getDefaultRPFInterface(),
 	}
 }
 
@@ -335,6 +345,13 @@ func getConnmark() uint32 {
 		return uint32(mark)
 	}
 	return defaultConnmark
+}
+
+func getDefaultRPFInterface() string {
+	if defaultinterface := os.Getenv(envDefaultRPFInterface); defaultinterface != "" {
+		return defaultinterface
+	}
+	return defaultRPFInterface
 }
 
 // LinkByMac returns linux netlink based on interface MAC

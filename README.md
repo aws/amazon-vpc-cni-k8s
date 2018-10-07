@@ -88,6 +88,11 @@ Type: Boolean
 Default: `true`  
 Specifies whether `NodePort` services are enabled on a worker node's primary network interface\. This requires additional `iptables` rules and that the kernel's reverse path filter on the primary interface is set to `loose`\.
 
+`AWS_VPC_CNI_DEFAULT_RPF_INTERFACE`  
+Type: String  
+Default: `eth0`  
+Specifies the name of the primary interface to be used when `NodePort` services are enabled\.
+
 `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG`  
 Type: Boolean  
 Default: `false`  
