@@ -105,7 +105,8 @@ func TestNodeInit(t *testing.T) {
 
 	_, vpcCIDR, _ := net.ParseCIDR(vpcCIDR)
 	primaryIP := net.ParseIP(ipaddr01)
-	mockNetwork.EXPECT().SetupHostNetwork(vpcCIDR, &primaryIP).Return(nil)
+	mockAWS.EXPECT().GetPrimaryENImac().Return("")
+	mockNetwork.EXPECT().SetupHostNetwork(vpcCIDR, "", &primaryIP).Return(nil)
 
 	//primaryENIid
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)

@@ -218,7 +218,7 @@ func (c *IPAMContext) nodeInit() error {
 
 	primaryIP := net.ParseIP(c.awsClient.GetLocalIPv4())
 
-	err = c.networkClient.SetupHostNetwork(vpcCIDR, &primaryIP)
+	err = c.networkClient.SetupHostNetwork(vpcCIDR, c.awsClient.GetPrimaryENImac(), &primaryIP)
 	if err != nil {
 		log.Error("Failed to setup host network", err)
 		return errors.Wrap(err, "ipamd init: failed to setup host network")
