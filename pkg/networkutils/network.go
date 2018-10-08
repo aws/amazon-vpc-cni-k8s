@@ -75,7 +75,7 @@ const (
 // NetworkAPIs defines the host level and the eni level network related operations
 type NetworkAPIs interface {
 	// SetupNodeNetwork performs node level network configuration
-	SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP) error
+	SetupHostNetwork(vpcCIDR *net.IPNet, primaryMAC string, primaryAddr *net.IP) error
 	// SetupENINetwork performs eni level network configuration
 	SetupENINetwork(eniIP string, mac string, table int, subnetCIDR string) error
 }
@@ -126,9 +126,34 @@ func isDuplicateRuleAdd(err error) bool {
 	return strings.Contains(err.Error(), "File exists")
 }
 
+// find out the primary interface name
+func findPrimaryInterfaceName(primaryMAC string) (string, error) {
+
+	log.Debugf("Trying to find primary interface that has mac : %s", primaryMAC)
+
+	interfaces, err := net.Interfaces()
+
+	if err != nil {
+		log.Errorf("Failed to read all interfaces: %v", err)
+		return "", errors.Wrapf(err, "findPrimaryInterfaceName: failed to find interfaces")
+	}
+
+	for _, intf := range interfaces {
+		log.Debugf("Discovered interface: %v, mac: %v", intf.Name, intf.HardwareAddr)
+
+		if strings.Compare(primaryMAC, intf.HardwareAddr.String()) == 0 {
+			log.Infof("Discovered primary interface: %s", intf.Name)
+			return intf.Name, nil
+		}
+	}
+
+	log.Errorf("No primary interface found")
+	return "", errors.New("no primary interface found")
+}
+
 // SetupHostNetwork performs node level network configuration
 // TODO : implement ip rule not to 10.0.0.0/16(vpc'subnet) table main priority  1024
-func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP) error {
+func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryMAC string, primaryAddr *net.IP) error {
 	log.Info("Setting up host network")
 	hostRule := n.netLink.NewRule()
 	hostRule.Dst = vpcCIDR
@@ -154,6 +179,12 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP)
 	}
 
 	if n.nodePortSupportEnabled {
+
+		primaryIntf, err := findPrimaryInterfaceName(primaryMAC)
+
+		if err != nil {
+			return errors.Wrapf(err, "failed to SetupHostNetwork")
+		}
 		// If node port support is enabled, configure the kernel's reverse path filter check on eth0 for "loose"
 		// filtering.  This is required because
 		// - NodePorts are exposed on eth0
@@ -163,9 +194,11 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, primaryAddr *net.IP)
 		// - Thus, it finds the source-based route that leaves via the secondary ENI.
 		// - In "strict" mode, the RPF check fails because the return path uses a different interface to the incoming
 		//   packet.  In "loose" mode, the check passes because some route was found.
-		const eth0RPFilter = "/proc/sys/net/ipv4/conf/eth0/rp_filter"
+		primaryIntfRPFilter := "/proc/sys/net/ipv4/conf/" + primaryIntf + "/rp_filter"
 		const rpFilterLoose = "2"
-		err := n.setProcSys(eth0RPFilter, rpFilterLoose)
+
+		log.Debugf("Setting RPF for primary interface: %s", primaryIntfRPFilter)
+		err = n.setProcSys(primaryIntfRPFilter, rpFilterLoose)
 		if err != nil {
 			return errors.Wrapf(err, "failed to configure eth0 RPF check")
 		}
