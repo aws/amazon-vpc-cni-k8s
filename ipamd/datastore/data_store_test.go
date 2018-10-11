@@ -299,3 +299,39 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, ds.total, 2)
 	assert.Equal(t, ds.assigned, 2)
 }
+
+func TestIPCoolingPeriod(t *testing.T) {
+	ds := NewDataStore()
+
+	eni := "eni-1"
+	ip := "1.1.1.1"
+	ds.AddENI(eni, 1, false)
+	ds.AddENIIPv4Address(eni, ip)
+
+	podInfo := k8sapi.K8SPodInfo{
+		Name:      "pod-1",
+		Namespace: "ns-1",
+		Container: "container-1",
+	}
+
+	assignedIP, _, err := ds.AssignPodIPv4Address(&podInfo)
+	assert.NoError(t, err)
+	assert.Equal(t, ip, assignedIP)
+	total, assigned, cooling := ds.GetStats()
+	assert.Equal(t, []int{1, 1, 0}, []int{total, assigned, cooling})
+
+	unAssignedIP, _, err := ds.UnAssignPodIPv4Address(&podInfo)
+	assert.NoError(t, err)
+	assert.Equal(t, ip, unAssignedIP)
+	total, assigned, cooling = ds.GetStats()
+	assert.Equal(t, []int{1, 0, 1}, []int{total, assigned, cooling})
+
+	newPodInfo := k8sapi.K8SPodInfo{
+		Name:      "pod-2",
+		Namespace: "ns-1",
+		Container: "container-2",
+	}
+
+	_, _, err = ds.AssignPodIPv4Address(&newPodInfo)
+	assert.Error(t, err)
+}

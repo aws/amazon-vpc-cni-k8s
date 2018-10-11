@@ -77,6 +77,12 @@ var (
 			Help: "The number of IP addresses assigned to pods",
 		},
 	)
+	coolingIPs = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "cooling_ip_addresses",
+			Help: "The number of IP addresses in cooling mode",
+		},
+	)
 	prometheusRegistered = false
 )
 
@@ -122,6 +128,7 @@ type PodIPInfo struct {
 type DataStore struct {
 	total      int
 	assigned   int
+	cooling    int
 	eniIPPools map[string]*ENIIPPool
 	podsIP     map[PodKey]PodIPInfo
 	lock       sync.RWMutex
@@ -145,6 +152,7 @@ func prometheusRegister() {
 		prometheus.MustRegister(enis)
 		prometheus.MustRegister(totalIPs)
 		prometheus.MustRegister(assignedIPs)
+		prometheus.MustRegister(coolingIPs)
 		prometheusRegistered = true
 	}
 }
@@ -184,9 +192,7 @@ func (ds *DataStore) AddENIIPv4Address(eniID string, ipv4 string) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	log.Debugf("Adding ENI(%s)'s IPv4 address %s to datastore", eniID, ipv4)
-	log.Debugf("IP Address Pool stats: total: %d, assigned: %d",
-		ds.total, ds.assigned)
+	ds.withStats(log.Debugf, "Adding ENI(%s)'s IPv4 address %s to datastore", eniID, ipv4)
 
 	curENI, ok := ds.eniIPPools[eniID]
 	if !ok {
@@ -212,9 +218,7 @@ func (ds *DataStore) AddENIIPv4Address(eniID string, ipv4 string) error {
 func (ds *DataStore) DelENIIPv4Address(eniID string, ipv4 string) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
-	log.Debugf("Deleting ENI(%s)'s IPv4 address %s from datastore", eniID, ipv4)
-	log.Debugf("IP Address Pool stats: total: %d, assigned: %d",
-		ds.total, ds.assigned)
+	ds.withStats(log.Debugf, "Deleting ENI(%s)'s IPv4 address %s from datastore", eniID, ipv4)
 
 	curENI, ok := ds.eniIPPools[eniID]
 	if !ok {
@@ -246,8 +250,7 @@ func (ds *DataStore) AssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, in
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	log.Debugf("AssignIPv4Address: IP address pool stats: total:%d, assigned %d",
-		ds.total, ds.assigned)
+	ds.withStats(log.Debugf, "AssignIPv4Address")
 	podKey := PodKey{
 		name:      k8sPod.Name,
 		namespace: k8sPod.Namespace,
@@ -321,9 +324,16 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 }
 
 // GetStats returns statistics
-// it returns total number of IP addresses, number of assigned IP addresses
-func (ds *DataStore) GetStats() (int, int) {
-	return ds.total, ds.assigned
+// it returns total number of IP addresses, number of assigned IP addresses,
+// and number of IPs in "cooling mode"
+func (ds *DataStore) GetStats() (int, int, int) {
+	return ds.total, ds.assigned, ds.cooling
+}
+
+func (ds *DataStore) withStats(logf func(string, ...interface{}), format string, a ...interface{}) {
+	total, assigned, cooling := ds.GetStats()
+	statFormat := ", IP address pool stats: total: %d, assigned: %d, cooling: %d"
+	logf(format+statFormat, append(a, total, assigned, cooling)...)
 }
 
 func (ds *DataStore) getDeletableENI() *ENIIPPool {
@@ -380,8 +390,8 @@ func (ds *DataStore) FreeENI() (string, error) {
 
 	ds.total -= len(ds.eniIPPools[deletableENI.ID].IPv4Addresses)
 	ds.assigned -= deletableENI.AssignedIPv4Addresses
-	log.Infof("FreeENI %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
-		deletableENI.ID, len(ds.eniIPPools[deletableENI.ID].IPv4Addresses), ds.total, ds.assigned)
+	ds.withStats(log.Infof, "FreeENI %s: free %d addresses", deletableENI.ID,
+		len(ds.eniIPPools[deletableENI.ID].IPv4Addresses))
 	deletedENI := deletableENI.ID
 	delete(ds.eniIPPools, deletableENI.ID)
 
@@ -406,8 +416,8 @@ func (ds *DataStore) DeleteENI(eni string) error {
 	}
 
 	ds.total -= len(eniIPPool.IPv4Addresses)
-	log.Infof("DeleteENI %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
-		eni, len(ds.eniIPPools[eni].IPv4Addresses), ds.total, ds.assigned)
+	ds.withStats(log.Infof, "DeleteENI %s: free %d addresses ", eni,
+		len(ds.eniIPPools[eni].IPv4Addresses))
 	delete(ds.eniIPPools, eni)
 	enis.Set(float64(len(ds.eniIPPools)))
 
@@ -419,8 +429,8 @@ func (ds *DataStore) DeleteENI(eni string) error {
 func (ds *DataStore) UnAssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, int, error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
-	log.Debugf("UnAssignIPv4Address: IP address pool stats: total:%d, assigned %d, pod(Name: %s, Namespace: %s, Container %s)",
-		ds.total, ds.assigned, k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
+	ds.withStats(log.Debugf, "UnAssignIPv4Address: pod(Name: %s, Namespace: %s, Container %s)",
+		k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
 
 	podKey := PodKey{
 		name:      k8sPod.Name,
@@ -444,7 +454,16 @@ func (ds *DataStore) UnAssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, 
 			curTime := time.Now()
 			ip.unAssignedTime = curTime
 			eni.lastUnAssignedTime = curTime
-			log.Infof("UnAssignIPv4Address: pod (Name: %s, NameSpace %s Container %s)'s ipAddr %s, DeviceNumber%d",
+
+			ds.cooling++
+			coolingIPs.Set(float64(ds.cooling))
+			go func() {
+				time.Sleep(addressCoolingPeriod)
+				ds.cooling--
+				coolingIPs.Set(float64(ds.cooling))
+			}()
+
+			log.Infof("UnAssignIPv4Address: pod (Name: %s, NameSpace %s Container %s)'s ipAddr %s, DeviceNumber %d",
 				k8sPod.Name, k8sPod.Namespace, k8sPod.Container, ip.address, eni.DeviceNumber)
 			delete(ds.podsIP, podKey)
 			return ip.address, eni.DeviceNumber, nil

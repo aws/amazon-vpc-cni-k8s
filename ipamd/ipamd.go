@@ -390,9 +390,9 @@ func (c *IPAMContext) decreaseIPPool() {
 	log.Debugf("Start freeing eni %s", eni)
 	c.awsClient.FreeENI(eni)
 	c.lastNodeIPPoolAction = time.Now()
-	total, used := c.dataStore.GetStats()
+	total, used, cooling := c.dataStore.GetStats()
 	log.Debugf("Successfully decreased IP Pool")
-	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	logPoolStats(int64(total), int64(used), int64(cooling), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 }
 
 func isAttachmentLimitExceededError(err error) bool {
@@ -492,9 +492,9 @@ func (c *IPAMContext) increaseIPPool() {
 		return
 	}
 	c.lastNodeIPPoolAction = time.Now()
-	total, used := c.dataStore.GetStats()
+	total, used, cooling := c.dataStore.GetStats()
 	log.Debugf("Successfully increased IP Pool")
-	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	logPoolStats(int64(total), int64(used), int64(cooling), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 }
 
 // setupENI does following:
@@ -626,9 +626,9 @@ func getWarmENITarget() int {
 	return defaultWarmENITarget
 }
 
-func logPoolStats(total, used, currentMaxAddrsPerENI, maxAddrsPerENI int64) {
-	log.Debugf("IP pool stats: total = %d, used = %d, c.currentMaxAddrsPerENI = %d, c.maxAddrsPerENI = %d",
-		total, used, currentMaxAddrsPerENI, maxAddrsPerENI)
+func logPoolStats(total, used, cooling, currentMaxAddrsPerENI, maxAddrsPerENI int64) {
+	log.Debugf("IP pool stats: total = %d, used = %d, cooling = %d, c.currentMaxAddrsPerENI = %d, c.maxAddrsPerENI = %d",
+		total, used, cooling, currentMaxAddrsPerENI, maxAddrsPerENI)
 }
 
 //nodeIPPoolTooLow returns true if IP pool is below low threshold
@@ -644,8 +644,8 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 
 	// if WARM-IP-TARGET not defined fallback using number of ENIs
 	warmENITarget := getWarmENITarget()
-	total, used := c.dataStore.GetStats()
-	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	total, used, cooling := c.dataStore.GetStats()
+	logPoolStats(int64(total), int64(used), int64(cooling), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
 	available := total - used
 	return (int64(available) < c.maxAddrsPerENI*int64(warmENITarget))
@@ -654,8 +654,8 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 // NodeIPPoolTooHigh returns true if IP pool is above high threshold
 func (c *IPAMContext) nodeIPPoolTooHigh() bool {
 	warmENITarget := getWarmENITarget()
-	total, used := c.dataStore.GetStats()
-	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	total, used, cooling := c.dataStore.GetStats()
+	logPoolStats(int64(total), int64(used), int64(cooling), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
 	available := total - used
 
@@ -824,9 +824,9 @@ func (c *IPAMContext) getCurWarmIPTarget() (int64, bool) {
 		return int64(target), false
 	}
 
-	total, used := c.dataStore.GetStats()
-	log.Debugf("Current warm IP stats: target: %d, total: %d, used: %d",
-		target, total, used)
+	total, used, cooling := c.dataStore.GetStats()
+	log.Debugf("Current warm IP stats: target: %d, total: %d, used: %d, cooling: %d",
+		target, total, used, cooling)
 	curTarget := int64(target) - int64(total-used)
 
 	return curTarget, true
