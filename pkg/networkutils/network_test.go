@@ -136,7 +136,7 @@ func TestSetupHostNetworkNodePortDisabled(t *testing.T) {
 	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
 	mockNetLink.EXPECT().RuleDel(&mainENIRule)
 
-	err := ln.SetupHostNetwork(testENINetIPNet, &testENINetIP)
+	err := ln.SetupHostNetwork(testENINetIPNet, "", &testENINetIP)
 	assert.NoError(t, err)
 
 	assert.Equal(t, map[string]map[string][][]string{
@@ -181,7 +181,7 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 	mockNetLink.EXPECT().RuleDel(&mainENIRule)
 	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
 
-	err := ln.SetupHostNetwork(testENINetIPNet, &testENINetIP)
+	err := ln.SetupHostNetwork(testENINetIPNet, "", &testENINetIP)
 	assert.NoError(t, err)
 
 	assert.Equal(t, map[string]map[string][][]string{
@@ -241,7 +241,7 @@ func (ipt *mockIptables) Delete(table, chainName string, rulespec ...string) err
 		}
 		updatedChain = append(updatedChain, r)
 	}
-	if ! found {
+	if !found {
 		return errors.New("not found")
 	}
 	ipt.dataplaneState[table][chainName] = updatedChain

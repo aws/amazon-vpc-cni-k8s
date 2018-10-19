@@ -125,6 +125,8 @@ type APIs interface {
 
 	// GetENILimit returns the number of enis can be attached to an instance
 	GetENILimit() (int, error)
+	// GetPrimaryENImac returns the mac address of the primary eni
+	GetPrimaryENImac() string
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -956,4 +958,9 @@ func (cache *EC2InstanceMetadataCache) GetLocalIPv4() string {
 // GetPrimaryENI returns the primary ENI
 func (cache *EC2InstanceMetadataCache) GetPrimaryENI() string {
 	return cache.primaryENI
+}
+
+// GetPrimaryENIMAC returns the mac address of primary eni
+func (cache *EC2InstanceMetadataCache) GetPrimaryENImac() string {
+	return cache.primaryENImac
 }
