@@ -44,6 +44,9 @@ const (
 	testeniIP        = "10.10.10.20"
 	testeniMAC       = "01:23:45:67:89:ab"
 	testeniSubnet    = "10.10.0.0/16"
+	// Default MTU of ENI and veth
+	// defined in plugins/routed-eni/driver/driver.go, pkg/networkutils/network.go
+	testMTU          = 9001
 )
 
 var (
@@ -88,6 +91,7 @@ func TestSetupENINetwork(t *testing.T) {
 	lo.EXPECT().Attrs().Return(mockLinkAttrs1)
 	eth1.EXPECT().Attrs().Return(mockLinkAttrs2)
 
+	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
 	mockNetLink.EXPECT().LinkSetUp(gomock.Any()).Return(nil)
 
 	// eth1's device
