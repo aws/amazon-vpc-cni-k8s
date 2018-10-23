@@ -48,25 +48,25 @@ func (m *MockNetworkAPIs) EXPECT() *MockNetworkAPIsMockRecorder {
 }
 
 // SetupENINetwork mocks base method
-func (m *MockNetworkAPIs) SetupENINetwork(arg0, arg1 string, arg2 int, arg3 string) error {
-	ret := m.ctrl.Call(m, "SetupENINetwork", arg0, arg1, arg2, arg3)
+func (m *MockNetworkAPIs) SetupENINetwork(arg0, arg1 string, arg2 int, arg3 string, arg4 int) error {
+	ret := m.ctrl.Call(m, "SetupENINetwork", arg0, arg1, arg2, arg3, arg4)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetupENINetwork indicates an expected call of SetupENINetwork
-func (mr *MockNetworkAPIsMockRecorder) SetupENINetwork(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupENINetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupENINetwork), arg0, arg1, arg2, arg3)
+func (mr *MockNetworkAPIsMockRecorder) SetupENINetwork(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupENINetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupENINetwork), arg0, arg1, arg2, arg3, arg4)
 }
 
 // SetupHostNetwork mocks base method
-func (m *MockNetworkAPIs) SetupHostNetwork(arg0 *net.IPNet, arg1 string, arg2 *net.IP) error {
-	ret := m.ctrl.Call(m, "SetupHostNetwork", arg0, arg1, arg2)
+func (m *MockNetworkAPIs) SetupHostNetwork(arg0 *net.IPNet, arg1 string, arg2 *net.IP, arg3 *int) error {
+	ret := m.ctrl.Call(m, "SetupHostNetwork", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetupHostNetwork indicates an expected call of SetupHostNetwork
-func (mr *MockNetworkAPIsMockRecorder) SetupHostNetwork(arg0, arg1, arg2 interface{}) *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupHostNetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupHostNetwork), arg0, arg1, arg2)
+func (mr *MockNetworkAPIsMockRecorder) SetupHostNetwork(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupHostNetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupHostNetwork), arg0, arg1, arg2, arg3)
 }

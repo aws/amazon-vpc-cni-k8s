@@ -44,11 +44,13 @@ const (
 	testeniIP        = "10.10.10.20"
 	testeniMAC       = "01:23:45:67:89:ab"
 	testeniSubnet    = "10.10.0.0/16"
+	testMTU          = 9001
 )
 
 var (
 	_, testENINetIPNet, _ = net.ParseCIDR(testeniSubnet)
 	testENINetIP          = net.ParseIP(testeniIP)
+	testContextMTU        int
 )
 
 func setup(t *testing.T) (*gomock.Controller,
@@ -88,6 +90,7 @@ func TestSetupENINetwork(t *testing.T) {
 	lo.EXPECT().Attrs().Return(mockLinkAttrs1)
 	eth1.EXPECT().Attrs().Return(mockLinkAttrs2)
 
+	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
 	mockNetLink.EXPECT().LinkSetUp(gomock.Any()).Return(nil)
 
 	// eth1's device
@@ -101,7 +104,7 @@ func TestSetupENINetwork(t *testing.T) {
 	mockNetLink.EXPECT().RouteAdd(gomock.Any()).Return(nil)
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil)
-	err = setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink)
+	err = setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, testMTU)
 
 	assert.NoError(t, err)
 }
@@ -110,7 +113,7 @@ func TestSetupENINetworkPrimary(t *testing.T) {
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
-	err := setupENINetwork(testeniIP, testMAC2, 0, testeniSubnet, mockNetLink)
+	err := setupENINetwork(testeniIP, testMAC2, 0, testeniSubnet, mockNetLink, testMTU)
 	assert.NoError(t, err)
 }
 
@@ -128,6 +131,19 @@ func TestSetupHostNetworkNodePortDisabled(t *testing.T) {
 		},
 	}
 
+	// Primary interface is looked up to get MTU
+	hwAddr, err := net.ParseMAC(testMAC)
+	assert.NoError(t, err)
+
+	mockLinkAttrs := &netlink.LinkAttrs{
+		HardwareAddr: hwAddr,
+		MTU: testMTU,
+	}
+
+	eth0 := mock_netlink.NewMockLink(ctrl)
+	mockNetLink.EXPECT().LinkList().Return([]netlink.Link([]netlink.Link{eth0}), nil)
+	eth0.EXPECT().Attrs().Return(mockLinkAttrs).AnyTimes()
+
 	var hostRule netlink.Rule
 	mockNetLink.EXPECT().NewRule().Return(&hostRule)
 	mockNetLink.EXPECT().RuleDel(&hostRule)
@@ -136,7 +152,7 @@ func TestSetupHostNetworkNodePortDisabled(t *testing.T) {
 	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
 	mockNetLink.EXPECT().RuleDel(&mainENIRule)
 
-	err := ln.SetupHostNetwork(testENINetIPNet, "", &testENINetIP)
+	err = ln.SetupHostNetwork(testENINetIPNet, testMAC, &testENINetIP, &testContextMTU)
 	assert.NoError(t, err)
 
 	assert.Equal(t, map[string]map[string][][]string{
@@ -151,6 +167,7 @@ func TestSetupHostNetworkNodePortDisabled(t *testing.T) {
 			},
 		},
 	}, mockIptables.dataplaneState)
+	assert.Equal(t, testContextMTU, testMTU)
 }
 
 func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
@@ -173,6 +190,19 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 		},
 	}
 
+	// Primary interface is looked up to get MTU
+	hwAddr, err := net.ParseMAC(testMAC)
+	assert.NoError(t, err)
+
+	mockLinkAttrs := &netlink.LinkAttrs{
+		HardwareAddr: hwAddr,
+		MTU: testMTU,
+	}
+
+	eth0 := mock_netlink.NewMockLink(ctrl)
+	mockNetLink.EXPECT().LinkList().Return([]netlink.Link([]netlink.Link{eth0}), nil)
+	eth0.EXPECT().Attrs().Return(mockLinkAttrs).AnyTimes()
+
 	var hostRule netlink.Rule
 	mockNetLink.EXPECT().NewRule().Return(&hostRule)
 	mockNetLink.EXPECT().RuleDel(&hostRule)
@@ -181,7 +211,7 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 	mockNetLink.EXPECT().RuleDel(&mainENIRule)
 	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
 
-	err := ln.SetupHostNetwork(testENINetIPNet, "", &testENINetIP)
+	err = ln.SetupHostNetwork(testENINetIPNet, testMAC, &testENINetIP, &testContextMTU)
 	assert.NoError(t, err)
 
 	assert.Equal(t, map[string]map[string][][]string{
@@ -201,6 +231,7 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 		},
 	}, mockIptables.dataplaneState)
 	assert.Equal(t, mockFile{closed: true, data: "2"}, mockRPFilter)
+	assert.Equal(t, testContextMTU, testMTU)
 }
 
 type mockIptables struct {

@@ -43,6 +43,7 @@ const (
 	testeniIP        = "10.10.10.20"
 	testeniMAC       = "01:23:45:67:89:ab"
 	testeniSubnet    = "10.10.0.0/16"
+	testMTU          = 9001
 )
 
 func setup(t *testing.T) (*gomock.Controller,
@@ -69,6 +70,7 @@ func TestRun(t *testing.T) {
 			IP:   net.ParseIP(testIP),
 			Mask: net.IPv4Mask(255, 255, 255, 255),
 		},
+		mtu:          testMTU,
 	}
 
 	hwAddr, err := net.ParseMAC(testMAC)
@@ -128,6 +130,7 @@ func TestRunLinkAddErr(t *testing.T) {
 			IP:   net.ParseIP(testIP),
 			Mask: net.IPv4Mask(255, 255, 255, 255),
 		},
+		mtu:          testMTU,
 	}
 
 	mockNS := mock_ns.NewMockNetNS(ctrl)
@@ -153,6 +156,7 @@ func TestRunErrLinkByNameHost(t *testing.T) {
 			IP:   net.ParseIP(testIP),
 			Mask: net.IPv4Mask(255, 255, 255, 255),
 		},
+		mtu:          testMTU,
 	}
 
 	mockNS := mock_ns.NewMockNetNS(ctrl)
@@ -180,6 +184,7 @@ func TestRunErrSetup(t *testing.T) {
 			IP:   net.ParseIP(testIP),
 			Mask: net.IPv4Mask(255, 255, 255, 255),
 		},
+		mtu:          testMTU,
 	}
 
 	mockHostVeth := mock_netlink.NewMockLink(ctrl)
@@ -210,6 +215,7 @@ func TestRunErrLinkByNameCont(t *testing.T) {
 			IP:   net.ParseIP(testIP),
 			Mask: net.IPv4Mask(255, 255, 255, 255),
 		},
+		mtu:          testMTU,
 	}
 
 	mockHostVeth := mock_netlink.NewMockLink(ctrl)
@@ -243,6 +249,7 @@ func TestRunErrRouteAdd(t *testing.T) {
 			IP:   net.ParseIP(testIP),
 			Mask: net.IPv4Mask(255, 255, 255, 255),
 		},
+		mtu:          testMTU,
 	}
 
 	hwAddr, err := net.ParseMAC(testMAC)
@@ -288,6 +295,7 @@ func TestRunErrAddDefaultRoute(t *testing.T) {
 			IP:   net.ParseIP(testIP),
 			Mask: net.IPv4Mask(255, 255, 255, 255),
 		},
+		mtu:          testMTU,
 	}
 
 	hwAddr, err := net.ParseMAC(testMAC)
@@ -334,6 +342,7 @@ func TestRunErrAddrAdd(t *testing.T) {
 			IP:   net.ParseIP(testIP),
 			Mask: net.IPv4Mask(255, 255, 255, 255),
 		},
+		mtu:          testMTU,
 	}
 
 	hwAddr, err := net.ParseMAC(testMAC)
@@ -383,6 +392,7 @@ func TestRunErrNeighAdd(t *testing.T) {
 			IP:   net.ParseIP(testIP),
 			Mask: net.IPv4Mask(255, 255, 255, 255),
 		},
+		mtu:          testMTU,
 	}
 
 	hwAddr, err := net.ParseMAC(testMAC)
@@ -437,6 +447,7 @@ func TestRunErrLinkSetNsFd(t *testing.T) {
 			IP:   net.ParseIP(testIP),
 			Mask: net.IPv4Mask(255, 255, 255, 255),
 		},
+		mtu:          testMTU,
 	}
 
 	hwAddr, err := net.ParseMAC(testMAC)
@@ -528,7 +539,7 @@ func TestSetupPodNetwork(t *testing.T) {
 		IP:   net.ParseIP(testIP),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, mockNetLink, mockNS)
+	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, mockNetLink, mockNS, testMTU)
 
 	assert.NoError(t, err)
 
@@ -548,7 +559,7 @@ func TestSetupPodNetworkErrLinkByName(t *testing.T) {
 		IP:   net.ParseIP(testIP),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, mockNetLink, mockNS)
+	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, mockNetLink, mockNS, testMTU)
 
 	assert.Error(t, err)
 
@@ -570,7 +581,7 @@ func TestSetupPodNetworkErrLinkSetup(t *testing.T) {
 		IP:   net.ParseIP(testIP),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, mockNetLink, mockNS)
+	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, mockNetLink, mockNS, testMTU)
 
 	assert.Error(t, err)
 
@@ -603,7 +614,7 @@ func TestSetupPodNetworkErrRouteAdd(t *testing.T) {
 		IP:   net.ParseIP(testIP),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, mockNetLink, mockNS)
+	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, mockNetLink, mockNS, testMTU)
 
 	assert.Error(t, err)
 }
@@ -649,7 +660,7 @@ func TestSetupPodNetworkPrimaryIntf(t *testing.T) {
 		IP:   net.ParseIP(testIP),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, 0, mockNetLink, mockNS)
+	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, 0, mockNetLink, mockNS, testMTU)
 
 	assert.NoError(t, err)
 

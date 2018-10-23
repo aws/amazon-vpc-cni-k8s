@@ -23,14 +23,15 @@ import (
 
 func TestAddENI(t *testing.T) {
 	ds := NewDataStore()
+	testMTU := 9001
 
-	err := ds.AddENI("eni-1", 1, true)
+	err := ds.AddENI("eni-1", 1, true, testMTU)
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-1", 1, true)
+	err = ds.AddENI("eni-1", 1, true, testMTU)
 	assert.Error(t, err)
 
-	err = ds.AddENI("eni-2", 2, false)
+	err = ds.AddENI("eni-2", 2, false, testMTU)
 	assert.NoError(t, err)
 
 	assert.Equal(t, len(ds.eniIPPools), 2)
@@ -41,14 +42,15 @@ func TestAddENI(t *testing.T) {
 
 func TestDeleteENI(t *testing.T) {
 	ds := NewDataStore()
+	testMTU := 9001
 
-	err := ds.AddENI("eni-1", 1, true)
+	err := ds.AddENI("eni-1", 1, true, testMTU)
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false)
+	err = ds.AddENI("eni-2", 2, false, testMTU)
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-3", 3, false)
+	err = ds.AddENI("eni-3", 3, false, testMTU)
 	assert.NoError(t, err)
 
 	eniInfos := ds.GetENIInfos()
@@ -69,11 +71,12 @@ func TestDeleteENI(t *testing.T) {
 
 func TestAddENIIPv4Address(t *testing.T) {
 	ds := NewDataStore()
+	testMTU := 9001
 
-	err := ds.AddENI("eni-1", 1, true)
+	err := ds.AddENI("eni-1", 1, true, testMTU)
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false)
+	err = ds.AddENI("eni-2", 2, false, testMTU)
 	assert.NoError(t, err)
 
 	err = ds.AddENIIPv4Address("eni-1", "1.1.1.1")
@@ -107,11 +110,12 @@ func TestAddENIIPv4Address(t *testing.T) {
 
 func TestGetENIIPPools(t *testing.T) {
 	ds := NewDataStore()
+	testMTU := 9001
 
-	err := ds.AddENI("eni-1", 1, true)
+	err := ds.AddENI("eni-1", 1, true, testMTU)
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false)
+	err = ds.AddENI("eni-2", 2, false, testMTU)
 	assert.NoError(t, err)
 
 	err = ds.AddENIIPv4Address("eni-1", "1.1.1.1")
@@ -140,7 +144,9 @@ func TestGetENIIPPools(t *testing.T) {
 
 func TestDelENIIPv4Address(t *testing.T) {
 	ds := NewDataStore()
-	err := ds.AddENI("eni-1", 1, true)
+	testMTU := 9001
+
+	err := ds.AddENI("eni-1", 1, true, testMTU)
 	assert.NoError(t, err)
 
 	err = ds.AddENIIPv4Address("eni-1", "1.1.1.1")
@@ -172,10 +178,11 @@ func TestDelENIIPv4Address(t *testing.T) {
 
 func TestPodIPv4Address(t *testing.T) {
 	ds := NewDataStore()
+	testMTU := 9001
 
-	ds.AddENI("eni-1", 1, true)
+	ds.AddENI("eni-1", 1, true, testMTU)
 
-	ds.AddENI("eni-2", 2, false)
+	ds.AddENI("eni-2", 2, false, testMTU)
 
 	ds.AddENIIPv4Address("eni-1", "1.1.1.1")
 
@@ -189,7 +196,7 @@ func TestPodIPv4Address(t *testing.T) {
 		IP:        "1.1.1.1",
 	}
 
-	ip, _, err := ds.AssignPodIPv4Address(&podInfo)
+	ip, _, _, err := ds.AssignPodIPv4Address(&podInfo)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "1.1.1.1", ip)
@@ -197,7 +204,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, 2, len(ds.eniIPPools["eni-1"].IPv4Addresses))
 	assert.Equal(t, 1, ds.eniIPPools["eni-1"].AssignedIPv4Addresses)
 
-	ip, _, err = ds.AssignPodIPv4Address(&podInfo)
+	ip, _, _, err = ds.AssignPodIPv4Address(&podInfo)
 	assert.NoError(t, err)
 	assert.Equal(t, "1.1.1.1", ip)
 
@@ -205,7 +212,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, len(*podsInfos), 1)
 
 	// duplicate add
-	ip, _, err = ds.AssignPodIPv4Address(&podInfo)
+	ip, _, _, err = ds.AssignPodIPv4Address(&podInfo)
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "1.1.1.1")
 	assert.Equal(t, ds.total, 3)
@@ -219,7 +226,7 @@ func TestPodIPv4Address(t *testing.T) {
 		IP:        "1.1.2.10",
 	}
 
-	_, _, err = ds.AssignPodIPv4Address(&podInfo)
+	_, _, _, err = ds.AssignPodIPv4Address(&podInfo)
 	assert.Error(t, err)
 
 	podInfo = k8sapi.K8SPodInfo{
@@ -228,7 +235,7 @@ func TestPodIPv4Address(t *testing.T) {
 		IP:        "1.1.2.2",
 	}
 
-	ip, pod1Ns2Device, err := ds.AssignPodIPv4Address(&podInfo)
+	ip, pod1Ns2Device, _, err := ds.AssignPodIPv4Address(&podInfo)
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "1.1.2.2")
 	assert.Equal(t, ds.total, 3)
@@ -245,7 +252,7 @@ func TestPodIPv4Address(t *testing.T) {
 		Container: "container-1",
 	}
 
-	ip, _, err = ds.AssignPodIPv4Address(&podInfo)
+	ip, _, _, err = ds.AssignPodIPv4Address(&podInfo)
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "1.1.1.2")
 	assert.Equal(t, ds.total, 3)
@@ -259,7 +266,7 @@ func TestPodIPv4Address(t *testing.T) {
 		Namespace: "ns-3",
 	}
 
-	_, _, err = ds.AssignPodIPv4Address(&podInfo)
+	_, _, _, err = ds.AssignPodIPv4Address(&podInfo)
 	assert.Error(t, err)
 	// Unassign unknown Pod
 	_, _, err = ds.UnAssignPodIPv4Address(&podInfo)

@@ -48,15 +48,15 @@ func (m *MockNetworkAPIs) EXPECT() *MockNetworkAPIsMockRecorder {
 }
 
 // SetupNS mocks base method
-func (m *MockNetworkAPIs) SetupNS(arg0, arg1, arg2 string, arg3 *net.IPNet, arg4 int) error {
-	ret := m.ctrl.Call(m, "SetupNS", arg0, arg1, arg2, arg3, arg4)
+func (m *MockNetworkAPIs) SetupNS(arg0, arg1, arg2 string, arg3 *net.IPNet, arg4, arg5 int) error {
+	ret := m.ctrl.Call(m, "SetupNS", arg0, arg1, arg2, arg3, arg4, arg5)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetupNS indicates an expected call of SetupNS
-func (mr *MockNetworkAPIsMockRecorder) SetupNS(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupNS", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupNS), arg0, arg1, arg2, arg3, arg4)
+func (mr *MockNetworkAPIsMockRecorder) SetupNS(arg0, arg1, arg2, arg3, arg4, arg5 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupNS", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupNS), arg0, arg1, arg2, arg3, arg4, arg5)
 }
 
 // TeardownNS mocks base method
