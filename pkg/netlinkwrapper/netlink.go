@@ -46,6 +46,8 @@ type NetLink interface {
 	NewRule() *netlink.Rule
 	RuleDel(rule *netlink.Rule) error
 	RuleAdd(rule *netlink.Rule) error
+	// LinkSetMTU is equivalent to `ip link set dev $link mtu $mtu`
+	LinkSetMTU(link netlink.Link, mtu int) error
 }
 
 type netLink struct {
@@ -121,4 +123,8 @@ func (*netLink) RuleDel(rule *netlink.Rule) error {
 
 func (*netLink) RuleAdd(rule *netlink.Rule) error {
 	return netlink.RuleAdd(rule)
+}
+
+func (*netLink) LinkSetMTU(link netlink.Link, mtu int) error {
+	return netlink.LinkSetMTU(link, mtu)
 }

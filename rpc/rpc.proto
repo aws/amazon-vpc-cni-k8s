@@ -25,6 +25,7 @@ message  AddNetworkReply{
   string IPv4Addr = 2;
   string IPv4Subnet = 3;
   int32 DeviceNumber = 4;
+  int32 MTU = 5;
 }
 
 message DelNetworkRequest {

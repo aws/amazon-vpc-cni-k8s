@@ -37,13 +37,11 @@ const (
 
 	// TODO need to test all distros use this number
 	mainRouteTable = 254
-
-	ethernetMTU = 1500
 )
 
 // NetworkAPIs defines network API calls
 type NetworkAPIs interface {
-	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int) error
+	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, mtu int) error
 	TeardownNS(addr *net.IPNet, table int) error
 }
 
@@ -66,12 +64,14 @@ type createVethPairContext struct {
 	addr         *net.IPNet
 	netLink      netlinkwrapper.NetLink
 	ip           ipwrapper.IP
+	mtu          int
 }
 
 func newCreateVethPairContext(
 	contVethName string,
 	hostVethName string,
-	addr *net.IPNet) *createVethPairContext {
+	addr *net.IPNet,
+	mtu int) *createVethPairContext {
 
 	return &createVethPairContext{
 		contVethName: contVethName,
@@ -79,6 +79,7 @@ func newCreateVethPairContext(
 		addr:         addr,
 		netLink:      netlinkwrapper.NewNetLink(),
 		ip:           ipwrapper.NewIP(),
+		mtu:          mtu,
 	}
 }
 
@@ -89,9 +90,12 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		LinkAttrs: netlink.LinkAttrs{
 			Name:  createVethContext.contVethName,
 			Flags: net.FlagUp,
-			MTU:   ethernetMTU,
 		},
 		PeerName: createVethContext.hostVethName,
+	}
+
+	if createVethContext.mtu > 0 {
+		veth.LinkAttrs.MTU = createVethContext.mtu
 	}
 
 	if err := createVethContext.netLink.LinkAdd(veth); err != nil {
@@ -168,15 +172,15 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 }
 
 // SetupNS wiresup linux networking for Pod's network
-func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int) error {
-	log.Debugf("SetupNS: hostVethName=%s,contVethName=%s, netnsPath=%s table=%d\n",
-		hostVethName, contVethName, netnsPath, table)
+func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, mtu int) error {
+	log.Debugf("SetupNS: hostVethName=%s,contVethName=%s, netnsPath=%s, table=%d, mtu=%d\n",
+		hostVethName, contVethName, netnsPath, table, mtu)
 
-	return setupNS(hostVethName, contVethName, netnsPath, addr, table, os.netLink, os.ns)
+	return setupNS(hostVethName, contVethName, netnsPath, addr, table, os.netLink, os.ns, mtu)
 }
 
 func setupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int,
-	netLink netlinkwrapper.NetLink, ns nswrapper.NS) error {
+	netLink netlinkwrapper.NetLink, ns nswrapper.NS, mtu int) error {
 	// Clean up if hostVeth exists.
 	if oldHostVeth, err := netLink.LinkByName(hostVethName); err == nil {
 		if err = netLink.LinkDel(oldHostVeth); err != nil {
@@ -185,7 +189,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 		log.Debugf("Clean up  old hostVeth: %v\n", hostVethName)
 	}
 
-	createVethContext := newCreateVethPairContext(contVethName, hostVethName, addr)
+	createVethContext := newCreateVethPairContext(contVethName, hostVethName, addr, mtu)
 
 	if err := ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		log.Errorf("Failed to setup NS network %v", err)

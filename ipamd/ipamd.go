@@ -148,6 +148,8 @@ type IPAMContext struct {
 	maxENI               int
 	primaryIP            map[string]string
 	lastNodeIPPoolAction time.Time
+	// MTU of primary interface (usually eth0)
+	primaryMTU           int
 }
 
 func prometheusRegister() {
@@ -218,7 +220,7 @@ func (c *IPAMContext) nodeInit() error {
 
 	primaryIP := net.ParseIP(c.awsClient.GetLocalIPv4())
 
-	err = c.networkClient.SetupHostNetwork(vpcCIDR, c.awsClient.GetPrimaryENImac(), &primaryIP)
+	err = c.networkClient.SetupHostNetwork(vpcCIDR, c.awsClient.GetPrimaryENImac(), &primaryIP, &c.primaryMTU)
 	if err != nil {
 		log.Error("Failed to setup host network", err)
 		return errors.Wrap(err, "ipamd init: failed to setup host network")
@@ -258,7 +260,7 @@ func (c *IPAMContext) nodeInit() error {
 		}
 		log.Infof("Recovered AddNetwork for Pod %s, Namespace %s, Container %s",
 			ip.Name, ip.Namespace, ip.Container)
-		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
+		_, _, _, err = c.dataStore.AssignPodIPv4Address(ip)
 		if err != nil {
 			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed", err)
 			log.Warnf("During ipamd init, failed to use pod ip %s returned from Kubelet %v", ip.IP, err)
@@ -504,7 +506,7 @@ func (c *IPAMContext) increaseIPPool() {
 func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) error {
 	// Have discovered the attached ENI from metadata service
 	// add eni's IP to IP pool
-	err := c.dataStore.AddENI(eni, int(eniMetadata.DeviceNumber), (eni == c.awsClient.GetPrimaryENI()))
+	err := c.dataStore.AddENI(eni, int(eniMetadata.DeviceNumber), (eni == c.awsClient.GetPrimaryENI()), c.primaryMTU)
 	if err != nil && err.Error() != datastore.DuplicatedENIError {
 		return errors.Wrapf(err, "failed to add eni %s to data store", eni)
 	}
@@ -529,7 +531,7 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) err
 
 	if eni != c.awsClient.GetPrimaryENI() {
 		err = c.networkClient.SetupENINetwork(eniPrimaryIP, eniMetadata.MAC,
-			int(eniMetadata.DeviceNumber), eniMetadata.SubnetIPv4CIDR)
+			int(eniMetadata.DeviceNumber), eniMetadata.SubnetIPv4CIDR, c.primaryMTU)
 		if err != nil {
 			return errors.Wrapf(err, "failed to setup eni %s network", eni)
 		}
