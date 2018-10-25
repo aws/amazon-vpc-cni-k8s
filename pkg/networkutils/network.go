@@ -70,6 +70,9 @@ const (
 	// - kube-proxy uses 0x0000c000
 	// - Calico uses 0xffff0000.
 	defaultConnmark = 0x80
+
+	// MTU of ENI - veth MTU defined in plugins/routed-eni/driver/driver.go
+	ethernetMTU = 9001
 )
 
 // NetworkAPIs defines the host level and the eni level network related operations
@@ -406,6 +409,10 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 	link, err := LinkByMac(eniMAC, netLink)
 	if err != nil {
 		return errors.Wrapf(err, "eni network setup: failed to find the link which uses mac address %s", eniMAC)
+	}
+
+	if err = netLink.LinkSetMTU(link, ethernetMTU); err != nil {
+		return errors.Wrapf(err, "eni network setup: failed to set MTU for %s", eniIP)
 	}
 
 	if err = netLink.LinkSetUp(link); err != nil {
