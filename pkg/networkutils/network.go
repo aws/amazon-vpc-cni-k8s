@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -73,6 +74,11 @@ const (
 
 	// MTU of ENI - veth MTU defined in plugins/routed-eni/driver/driver.go
 	ethernetMTU = 9001
+
+	// number of retries to add a route
+	maxRetryRouteAdd = 5
+
+	retryRouteAddInterval = 5 * time.Second
 )
 
 // NetworkAPIs defines the host level and the eni level network related operations
@@ -454,12 +460,38 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 			return errors.Wrap(err, "eni network setup: failed to clean up old routes")
 		}
 
-		if err := netLink.RouteAdd(&r); err != nil {
-			if !isRouteExistsError(err) {
-				return errors.Wrapf(err, "eni network setup: unable to add route %s/0 via %s table %d", r.Dst.IP.String(), gw.IP.String(), eniTable)
-			}
-			if err := netlink.RouteReplace(&r); err != nil {
-				return errors.Wrapf(err, "eni network setup: unable to replace route entry %s", r.Dst.IP.String())
+		// in case of route dependency, retry few times
+		retry := 0
+		for {
+
+			if err := netLink.RouteAdd(&r); err != nil {
+
+				if isNetworkUnreachable(err) {
+					retry++
+					if retry > maxRetryRouteAdd {
+						log.Errorf("Failed to add route %s/0 via %s table %d",
+							r.Dst.IP.String(), gw.IP.String(), eniTable)
+						return errors.Wrapf(err,
+							"eni network setup: failed unable to add route %s/0 via %s table %d",
+							r.Dst.IP.String(), gw.IP.String(), eniTable)
+					}
+					log.Debugf("Not able to add route route %s/0 via %s table %d (attempt %d/%d)",
+						r.Dst.IP.String(), gw.IP.String(), eniTable,
+						retry, maxRetryRouteAdd)
+					time.Sleep(retryRouteAddInterval)
+				} else if isRouteExistsError(err) {
+					if err := netlink.RouteReplace(&r); err != nil {
+						return errors.Wrapf(err, "eni network setup: unable to replace route entry %s", r.Dst.IP.String())
+					}
+					log.Debugf("Successfully replaced route to be %s/0", r.Dst.IP.String())
+					break
+				} else {
+					return errors.Wrapf(err, "eni network setup: unable to add route %s/0 via %s table %d",
+						r.Dst.IP.String(), gw.IP.String(), eniTable)
+				}
+			} else {
+				log.Debugf("Successfully added route route %s/0 via %s table %d", r.Dst.IP.String(), gw.IP.String(), eniTable)
+				break
 			}
 		}
 	}
@@ -503,6 +535,17 @@ func isRouteExistsError(err error) bool {
 
 	if errno, ok := err.(syscall.Errno); ok {
 		return errno == syscall.EEXIST
+	}
+	return false
+}
+
+// isNetworkUnreachable returns true if the error type is syscall.ENETUNREACH
+// This helps us determine if we should ignore this error as the route the call
+// depends on is not plumbed ready yet
+func isNetworkUnreachable(err error) bool {
+
+	if errno, ok := err.(syscall.Errno); ok {
+		return errno == syscall.ENETUNREACH
 	}
 	return false
 }
