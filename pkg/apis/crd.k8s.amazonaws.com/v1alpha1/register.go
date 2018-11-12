@@ -2,7 +2,6 @@ package v1alpha1
 
 import (
 	sdkK8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -22,6 +21,13 @@ var (
 
 func init() {
 	sdkK8sutil.AddToSDKScheme(AddToScheme)
+}
+
+// Resource takes an unqualified resource and returns back a Group qualified
+// GroupResource required to Lister code generated error handling
+// errors.NewNotFound(v1alpha1.Resource("eniconfig"), name)
+func Resource(resource string) schema.GroupResource {
+	return SchemeGroupVersion.WithResource(resource).GroupResource()
 }
 
 // addKnownTypes adds the set of types defined in this package to the supplied scheme.

@@ -4,6 +4,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type ENIConfigList struct {
@@ -12,6 +13,8 @@ type ENIConfigList struct {
 	Items           []ENIConfig `json:"items"`
 }
 
+// +genclient
+// +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type ENIConfig struct {
@@ -24,7 +27,7 @@ type ENIConfig struct {
 type ENIConfigSpec struct {
 	// Fill me
 	SecurityGroups []string `json:"securitygroups"`
-	Subnet         string   `json: "subnet"`
+	Subnet         string   `json:"subnet"`
 }
 type ENIConfigStatus struct {
 	// Fill me

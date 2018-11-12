@@ -21,17 +21,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd.k8s.amazonaws.com/v1alpha1"
+	log "github.com/cihub/seelog"
 	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
-	"github.com/pkg/errors"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
-
-	corev1 "k8s.io/api/core/v1"
-
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
-
-	log "github.com/cihub/seelog"
+	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (

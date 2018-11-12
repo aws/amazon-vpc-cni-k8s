@@ -18,12 +18,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd.k8s.amazonaws.com/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/docker"
@@ -32,11 +30,11 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
-
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/assert"
-
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/golang/mock/gomock"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 )
 
 const (

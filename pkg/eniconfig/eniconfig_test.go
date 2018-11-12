@@ -17,14 +17,12 @@ import (
 	"os"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd.k8s.amazonaws.com/v1alpha1"
 	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/stretchr/testify/assert"
-
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func updateENIConfig(hdlr sdk.Handler, name string, eniConfig v1alpha1.ENIConfigSpec, toDelete bool) {

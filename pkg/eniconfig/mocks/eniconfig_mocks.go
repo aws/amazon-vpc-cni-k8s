@@ -20,7 +20,7 @@ package mock_eniconfig
 import (
 	reflect "reflect"
 
-	v1alpha1 "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	v1alpha1 "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd.k8s.amazonaws.com/v1alpha1"
 	eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	gomock "github.com/golang/mock/gomock"
 )
