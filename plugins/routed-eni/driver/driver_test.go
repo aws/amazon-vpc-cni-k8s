@@ -675,6 +675,8 @@ func TestTearDownPodNetwork(t *testing.T) {
 
 		// test from-pod rule
 		mockNetLink.EXPECT().RuleDel(gomock.Any()).Return(nil),
+
+		mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil),
 	)
 
 	addr := &net.IPNet{
@@ -701,6 +703,8 @@ func TestTearDownPodNetworkMain(t *testing.T) {
 		mockNetLink.EXPECT().NewRule().Return(testRule),
 		// test to-pod rule
 		mockNetLink.EXPECT().RuleDel(gomock.Any()).Return(nil),
+
+		mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil),
 	)
 
 	addr := &net.IPNet{

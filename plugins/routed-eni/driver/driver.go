@@ -298,6 +298,17 @@ func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink) erro
 		log.Infof("Delete fromContainer rule for %s in table %d", addr.String(), table)
 	}
 
+	addrHostAddr := &net.IPNet{
+		IP:   addr.IP,
+		Mask: net.CIDRMask(32, 32)}
+
+	// cleanup host route:
+	if err = netLink.RouteDel(&netlink.Route{
+		Scope: netlink.SCOPE_LINK,
+		Dst:   addrHostAddr}); err != nil {
+		log.Errorf("delete NS network: failed to delete host route for %s, %v", addr.String(), err)
+	}
+
 	return nil
 }
 
