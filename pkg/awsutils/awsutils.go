@@ -555,6 +555,9 @@ func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string,
 			DeleteOnTermination: aws.Bool(true),
 		},
 		NetworkInterfaceId: aws.String(eniID),
+		SourceDestCheck: &ec2.AttributeBooleanValue{
+			Value: aws.Bool(false),
+		},
 	}
 
 	start := time.Now()
