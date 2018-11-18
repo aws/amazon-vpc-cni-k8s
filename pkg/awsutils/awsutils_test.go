@@ -74,6 +74,7 @@ func TestInitWithEC2metadata(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidr).Return(vpcCIDR, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(vpcCIDR, nil)
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
 

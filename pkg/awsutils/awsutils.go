@@ -42,6 +42,7 @@ const (
 	metadataMAC          = "mac"
 	metadataSGs          = "/security-group-ids/"
 	metadataSubnetID     = "/subnet-id/"
+	metadataVPCcidrs     = "/vpc-ipv4-cidr-blocks/"
 	metadataVPCcidr      = "/vpc-ipv4-cidr-block/"
 	metadataDeviceNum    = "/device-number/"
 	metadataInterface    = "/interface-id/"
@@ -110,8 +111,11 @@ type APIs interface {
 	// Allocate alloactes numIPs of IP address on a eni
 	AllocIPAddresses(eniID string, numIPs int64) error
 
-	// GetVPCIPv4CIDR returns vpc's cidr
+	// GetVPCIPv4CIDR returns vpc's 1st cidr
 	GetVPCIPv4CIDR() string
+
+	// GetVPCIPv4CIDRs returns vpc's cidrs
+	GetVPCIPv4CIDRs() []*string
 
 	// GetLocalIPv4 returns the primary IP address on the primary eni interface
 	GetLocalIPv4() string
@@ -138,6 +142,7 @@ type EC2InstanceMetadataCache struct {
 	instanceID       string
 	instanceType     string
 	vpcIPv4CIDR      string
+	vpcIPv4CIDRs     []*string
 	primaryENI       string
 	primaryENImac    string
 	availabilityZone string
@@ -302,6 +307,21 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata() error {
 		return errors.Wrap(err, "get instance metadata: failed to retrieve vpc-ipv4-cidr-block data")
 	}
 	log.Debugf("Found vpc-ipv4-cidr-block: %s ", cache.vpcIPv4CIDR)
+
+	// retrieve vpc-ipv4-cidr-blocks
+	metadataVPCIPv4CIDRs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataVPCcidrs)
+	if err != nil {
+		awsAPIErrInc("GetMetadata", err)
+		log.Errorf("Failed to retrieve vpc-ipv4-cidr-blocks from instance metadata service")
+		return errors.Wrap(err, "get instance metadata: failed to retrieve vpc-ipv4-cidr-block data")
+	}
+
+	vpcIPv4CIDRs := strings.Fields(metadataVPCIPv4CIDRs)
+
+	for _, vpcCIDR := range vpcIPv4CIDRs {
+		log.Debugf("Found VPC CIDR: %s", vpcCIDR)
+		cache.vpcIPv4CIDRs = append(cache.vpcIPv4CIDRs, aws.String(vpcCIDR))
+	}
 
 	return nil
 }
@@ -930,6 +950,11 @@ func (cache *EC2InstanceMetadataCache) AllocAllIPAddress(eniID string) error {
 // GetVPCIPv4CIDR returns VPC CIDR
 func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDR() string {
 	return cache.vpcIPv4CIDR
+}
+
+// GetVPCIPv4CIDRs returns VPC CIDRs
+func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDRs() []*string {
+	return cache.vpcIPv4CIDRs
 }
 
 // GetLocalIPv4 returns the primary IP address on the primary interface

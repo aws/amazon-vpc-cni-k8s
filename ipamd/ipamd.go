@@ -217,8 +217,7 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	primaryIP := net.ParseIP(c.awsClient.GetLocalIPv4())
-
-	err = c.networkClient.SetupHostNetwork(vpcCIDR, c.awsClient.GetPrimaryENImac(), &primaryIP)
+	err = c.networkClient.SetupHostNetwork(vpcCIDR, c.awsClient.GetVPCIPv4CIDRs(), c.awsClient.GetPrimaryENImac(), &primaryIP)
 	if err != nil {
 		log.Error("Failed to setup host network", err)
 		return errors.Wrap(err, "ipamd init: failed to setup host network")
@@ -245,6 +244,12 @@ func (c *IPAMContext) nodeInit() error {
 		return nil
 	}
 
+	rules, err := c.networkClient.GetRuleList()
+	if err != nil {
+		log.Errorf("During ipamd init: failed to retrieve IP rule list %v", err)
+		return nil
+	}
+
 	for _, ip := range usedIPs {
 		if ip.Container == "" {
 			log.Infof("Skipping Pod %s, Namespace %s due to no matching container",
@@ -268,6 +273,18 @@ func (c *IPAMContext) nodeInit() error {
 			// Here we choose to continue instead of returning error and EXIT out L-IPAMD(exit L-IPAMD will make whole node out)
 			// The plan(TODO) is to feed this info back to controller and let controller cleanup this pod from this node.
 		}
+
+		// update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
+		srcIPNet := net.IPNet{IP: net.ParseIP(ip.IP), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
+
+		var pbVPCcidrs []string
+
+		for _, cidr := range vpcCIDRs {
+			pbVPCcidrs = append(pbVPCcidrs, *cidr)
+		}
+
+		c.networkClient.UpdateRuleListBySrc(rules, srcIPNet, pbVPCcidrs, !c.networkClient.UseExternalSNAT())
 	}
 
 	return nil

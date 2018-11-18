@@ -209,3 +209,15 @@ func (m *MockAPIs) GetVPCIPv4CIDR() string {
 func (mr *MockAPIsMockRecorder) GetVPCIPv4CIDR() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVPCIPv4CIDR", reflect.TypeOf((*MockAPIs)(nil).GetVPCIPv4CIDR))
 }
+
+// GetVPCIPv4CIDRs mocks base method
+func (m *MockAPIs) GetVPCIPv4CIDRs() []*string {
+	ret := m.ctrl.Call(m, "GetVPCIPv4CIDRs")
+	ret0, _ := ret[0].([]*string)
+	return ret0
+}
+
+// GetVPCIPv4CIDRs indicates an expected call of GetVPCIPv4CIDRs
+func (mr *MockAPIsMockRecorder) GetVPCIPv4CIDRs() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVPCIPv4CIDRs", reflect.TypeOf((*MockAPIs)(nil).GetVPCIPv4CIDRs))
+}

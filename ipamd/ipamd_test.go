@@ -20,6 +20,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/pkg/errors"
+	"github.com/vishvananda/netlink"
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
@@ -98,6 +99,7 @@ func TestNodeInit(t *testing.T) {
 		SubnetIPv4CIDR: secSubnet,
 		LocalIPv4s:     []string{ipaddr11, ipaddr12},
 	}
+	var cidrs []*string
 	mockAWS.EXPECT().GetENILimit().Return(4, nil)
 	mockAWS.EXPECT().GetENIipLimit().Return(int64(56), nil)
 	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{eni1, eni2}, nil)
@@ -105,8 +107,9 @@ func TestNodeInit(t *testing.T) {
 
 	_, vpcCIDR, _ := net.ParseCIDR(vpcCIDR)
 	primaryIP := net.ParseIP(ipaddr01)
+	mockAWS.EXPECT().GetVPCIPv4CIDRs().Return(cidrs)
 	mockAWS.EXPECT().GetPrimaryENImac().Return("")
-	mockNetwork.EXPECT().SetupHostNetwork(vpcCIDR, "", &primaryIP).Return(nil)
+	mockNetwork.EXPECT().SetupHostNetwork(vpcCIDR, cidrs, "", &primaryIP).Return(nil)
 
 	//primaryENIid
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
@@ -148,6 +151,13 @@ func TestNodeInit(t *testing.T) {
 	dockerList["pod-uid"] = &docker.ContainerInfo{ID: "docker-id",
 		Name: k8sName, K8SUID: "pod-uid"}
 	mockDocker.EXPECT().GetRunningContainers().Return(dockerList, nil)
+
+	var rules []netlink.Rule
+	mockNetwork.EXPECT().GetRuleList().Return(rules, nil)
+
+	mockAWS.EXPECT().GetVPCIPv4CIDRs().Return(cidrs)
+	mockNetwork.EXPECT().UseExternalSNAT().Return(false)
+	mockNetwork.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any(), gomock.Any(), true)
 
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
