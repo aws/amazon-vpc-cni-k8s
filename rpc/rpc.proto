@@ -25,6 +25,8 @@ message  AddNetworkReply{
   string IPv4Addr = 2;
   string IPv4Subnet = 3;
   int32 DeviceNumber = 4;
+  bool UseExternalSNAT = 5;
+  repeated string VPCcidrs = 6;
 }
 
 message DelNetworkRequest {

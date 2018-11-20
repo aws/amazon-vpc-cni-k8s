@@ -46,7 +46,7 @@ const (
 	testeniSubnet    = "10.10.0.0/16"
 	// Default MTU of ENI and veth
 	// defined in plugins/routed-eni/driver/driver.go, pkg/networkutils/network.go
-	testMTU          = 9001
+	testMTU = 9001
 )
 
 var (
@@ -135,26 +135,14 @@ func TestSetupHostNetworkNodePortDisabled(t *testing.T) {
 	var hostRule netlink.Rule
 	mockNetLink.EXPECT().NewRule().Return(&hostRule)
 	mockNetLink.EXPECT().RuleDel(&hostRule)
-	mockNetLink.EXPECT().RuleAdd(&hostRule)
 	var mainENIRule netlink.Rule
 	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
 	mockNetLink.EXPECT().RuleDel(&mainENIRule)
 
-	err := ln.SetupHostNetwork(testENINetIPNet, "", &testENINetIP)
+	var vpcCIDRs []*string
+	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, "", &testENINetIP)
 	assert.NoError(t, err)
 
-	assert.Equal(t, map[string]map[string][][]string{
-		"nat": {
-			"POSTROUTING": [][]string{
-				{
-					"!", "-d", testeniSubnet,
-					"-m", "comment", "--comment", "AWS, SNAT",
-					"-m", "addrtype", "!", "--dst-type", "LOCAL",
-					"-j", "SNAT", "--to-source", testeniIP,
-				},
-			},
-		},
-	}, mockIptables.dataplaneState)
 }
 
 func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
@@ -185,7 +173,8 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 	mockNetLink.EXPECT().RuleDel(&mainENIRule)
 	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
 
-	err := ln.SetupHostNetwork(testENINetIPNet, "", &testENINetIP)
+	var vpcCIDRs []*string
+	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, "", &testENINetIP)
 	assert.NoError(t, err)
 
 	assert.Equal(t, map[string]map[string][][]string{
@@ -249,6 +238,10 @@ func (ipt *mockIptables) Delete(table, chainName string, rulespec ...string) err
 		return errors.New("not found")
 	}
 	ipt.dataplaneState[table][chainName] = updatedChain
+	return nil
+}
+
+func (ipt *mockIptables) NewChain(table, chain string) error {
 	return nil
 }
 
