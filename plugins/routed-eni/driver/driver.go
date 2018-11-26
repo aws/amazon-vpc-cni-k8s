@@ -100,9 +100,8 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	}
 
 	hostVeth, err := createVethContext.netLink.LinkByName(createVethContext.hostVethName)
-
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "setup NS network: failed to find link %q", createVethContext.hostVethName)
 	}
 
 	// Explicitly set the veth to UP state, because netlink doesn't always do that on all the platforms with net.FlagUp.
@@ -119,7 +118,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	// Explicitly set the veth to UP state, because netlink doesn't always do that on all the platforms with net.FlagUp.
 	// veth won't get a link local address unless it's set to UP state.
 	if err = createVethContext.netLink.LinkSetUp(contVeth); err != nil {
-		return errors.Wrapf(err, "setup NS network: failed to seti link %q up", createVethContext.contVethName)
+		return errors.Wrapf(err, "setup NS network: failed to set link %q up", createVethContext.contVethName)
 	}
 
 	// Add a connected route to a dummy next hop (169.254.1.1)
@@ -181,7 +180,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 	// Clean up if hostVeth exists.
 	if oldHostVeth, err := netLink.LinkByName(hostVethName); err == nil {
 		if err = netLink.LinkDel(oldHostVeth); err != nil {
-			return errors.Wrapf(err, "setup NS network: failed to delete old hostVeth", hostVethName)
+			return errors.Wrapf(err, "setup NS network: failed to delete old hostVeth %q", hostVethName)
 		}
 		log.Debugf("Clean up  old hostVeth: %v\n", hostVethName)
 	}
