@@ -7,8 +7,8 @@ language: go
 # Only the last two Go releases are supported by the Go team with security updates.
 # Any older versions are considered deprecated.
 go:
+  - "1.11.x"
   - "1.10.x"
-  - "1.9.x"
 
 # Only clone the most recent commit.
 git:
