@@ -100,10 +100,11 @@ Specifies whether an external NAT gateway should be used to provide SNAT of seco
 Disable SNAT if you need to allow inbound communication to your pods from external VPNs, direct connections, and external VPCs, and your pods do not need to access the Internet directly via an Internet Gateway\. However, your nodes must be running in a private subnet and connected to the internet through an AWS NAT Gateway or another external NAT device\.
 
 `AWS_VPC_K8S_CNI_RANDOMIZESNAT`  
-Type: Boolean  
-Default: `true`  
-Specifies weather the SNAT `iptables` rule should randomize the outgoing ports for connections. When enabled the `--random` flag will be added to the SNAT `iptables` rule. To use pseudo random number generation rather than hash based (i.e. `--random-fully`) use "prng" for the environment variable.
-Disable this functionality if you rely on sequential port allocation for outgoing connections.
+Type: String 
+Default: `true` 
+Valid Values: `true`, `prng`, `false`
+Specifies weather the SNAT `iptables` rule should randomize the outgoing ports for connections. When enabled (`true`) the `--random` flag will be added to the SNAT `iptables` rule. To use pseudo random number generation rather than hash based (i.e. `--random-fully`) use "prng" for the environment variable.
+Disable (`false`) this functionality if you rely on sequential port allocation for outgoing connections.
 
 `WARM_ENI_TARGET`  
 Type: Integer  
