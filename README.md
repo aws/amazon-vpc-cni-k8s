@@ -102,7 +102,7 @@ Disable SNAT if you need to allow inbound communication to your pods from extern
 `AWS_VPC_K8S_CNI_RANDOMIZESNAT`  
 Type: Boolean  
 Default: `true`  
-Specifies weather the SNAT `iptables` rule should randomize the outgoing ports for connections. When enabled the `--random` flag will be added to the SNAT `iptables` rule. 
+Specifies weather the SNAT `iptables` rule should randomize the outgoing ports for connections. When enabled the `--random` flag will be added to the SNAT `iptables` rule. To use pseudo random number generation rather than hash based (i.e. `--random-fully`) use "prng" for the environment variable.
 Disable this functionality if you rely on sequential port allocation for outgoing connections.
 
 `WARM_ENI_TARGET`  

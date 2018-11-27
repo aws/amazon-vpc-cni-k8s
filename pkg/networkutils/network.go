@@ -57,7 +57,8 @@ const (
 
 	// This environment is used to specify weather an the SNAT rule added to iptables should randomize port
 	// allocation for outgoing connections. If set to "true" the SNAT iptables rule will have the "--random" flag
-	// added to it. Defaults to true.
+	// added to it. Set it to "prng" if you want to use a pseudo random numbers, i.e. "--random-fully".
+	// Defaults to true.
 	envRandomizeSNAT = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 
 	// envNodePortSupport is the name of environment variable that configures whether we implement support for
@@ -102,7 +103,7 @@ type NetworkAPIs interface {
 
 type linuxNetwork struct {
 	useExternalSNAT        bool
-	randomizeSNAT          bool
+	randomizeSNAT          snatType
 	nodePortSupportEnabled bool
 	connmark               uint32
 
@@ -119,6 +120,14 @@ type iptablesIface interface {
 	Delete(table, chain string, rulespec ...string) error
 	NewChain(table, chain string) error
 }
+
+type snatType uint32
+
+const (
+	sequentialSNAT snatType = 0
+	randomHashSNAT snatType = 1
+	randomPRNGSNAT snatType = 2
+)
 
 // New creates a linuxNetwork object
 func New() NetworkAPIs {
@@ -305,7 +314,8 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	snatRule := []string{"-m", "comment", "--comment", "AWS, SNAT",
 		"-m", "addrtype", "!", "--dst-type", "LOCAL",
 		"-j", "SNAT", "--to-source", primaryAddr.String()}
-	if n.randomizeSNAT { snatRule.append("--random") }
+	if n.randomizeSNAT == randomHashSNAT { snatRule = append(snatRule, "--random") }
+	if n.randomizeSNAT == randomPRNGSNAT { snatRule = append(snatRule, "--random-fully") }
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "last SNAT rule for non-VPC outbound traffic",
 		shouldExist: !n.useExternalSNAT,
@@ -435,8 +445,26 @@ func useExternalSNAT() bool {
 	return getBoolEnvVar(envExternalSNAT, false)
 }
 
-func randomizeSNAT() bool {
-	return getBoolEnvVar(envRandomizeSNAT, true)
+func randomizeSNAT() snatType {
+	defaultValue := randomHashSNAT
+	defaultString := "hash based random"
+	if strValue := os.Getenv(envRandomizeSNAT); strValue != "" {
+		parsedValue, err := strconv.ParseBool(strValue)
+		if err != nil {
+			if strings.Compare( "prng", strValue) == 0 {
+				return randomPRNGSNAT
+			}
+			log.Error("Failed to parse "+envRandomizeSNAT+"; using default: "+defaultString, err.Error())
+			return defaultValue
+		}
+		// true is equal to hash based random
+		if parsedValue {
+			return randomHashSNAT
+		}
+		// false is equal to sequential
+		return sequentialSNAT
+	}
+	return defaultValue
 }
 
 func nodePortSupportEnabled() bool {
