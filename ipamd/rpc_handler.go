@@ -71,7 +71,6 @@ func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.
 func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.DelNetworkReply, error) {
 	log.Infof("Received DelNetwork for IP %s, Pod %s, Namespace %s, Container %s",
 		in.IPv4Addr, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID)
-
 	delIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
 
 	ip, deviceNumber, err := s.ipamContext.dataStore.UnAssignPodIPv4Address(&k8sapi.K8SPodInfo{
