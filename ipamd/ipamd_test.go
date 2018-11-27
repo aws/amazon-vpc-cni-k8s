@@ -117,11 +117,12 @@ func TestNodeInit(t *testing.T) {
 	testAddr1 := ipaddr01
 	testAddr2 := ipaddr02
 	primary := true
+	notPrimary := false
 	eniResp := []*ec2.NetworkInterfacePrivateIpAddress{
 		{
 			PrivateIpAddress: &testAddr1, Primary: &primary},
 		{
-			PrivateIpAddress: &testAddr2, Primary: &primary}}
+			PrivateIpAddress: &testAddr2, Primary: &notPrimary}}
 	mockAWS.EXPECT().GetENIipLimit().Return(int64(56), nil)
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	mockAWS.EXPECT().DescribeENI(primaryENIid).Return(eniResp, &attachmentID, nil)
@@ -131,12 +132,11 @@ func TestNodeInit(t *testing.T) {
 	attachmentID = testAttachmentID
 	testAddr11 := ipaddr11
 	testAddr12 := ipaddr12
-	primary = false
 	eniResp = []*ec2.NetworkInterfacePrivateIpAddress{
 		{
 			PrivateIpAddress: &testAddr11, Primary: &primary},
 		{
-			PrivateIpAddress: &testAddr12, Primary: &primary}}
+			PrivateIpAddress: &testAddr12, Primary: &notPrimary}}
 	mockAWS.EXPECT().GetENIipLimit().Return(int64(56), nil)
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	mockAWS.EXPECT().DescribeENI(secENIid).Return(eniResp, &attachmentID, nil)
@@ -253,7 +253,8 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 	mockAWS.EXPECT().GetENIipLimit().Return(int64(5), nil)
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 
-	primary := false
+	primary := true
+	notPrimary := false
 	attachmentID := testAttachmentID
 	testAddr11 := ipaddr11
 	testAddr12 := ipaddr12
@@ -263,7 +264,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 			{
 				PrivateIpAddress: &testAddr11, Primary: &primary},
 			{
-				PrivateIpAddress: &testAddr12, Primary: &primary}}, &attachmentID, nil)
+				PrivateIpAddress: &testAddr12, Primary: &notPrimary}}, &attachmentID, nil)
 
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
