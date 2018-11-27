@@ -99,6 +99,12 @@ Default: `false`
 Specifies whether an external NAT gateway should be used to provide SNAT of secondary ENI IP addresses\. If set to `true`, the SNAT `iptables` rule and off\-VPC IP rule are not applied, and these rules are removed if they have already been applied\.  
 Disable SNAT if you need to allow inbound communication to your pods from external VPNs, direct connections, and external VPCs, and your pods do not need to access the Internet directly via an Internet Gateway\. However, your nodes must be running in a private subnet and connected to the internet through an AWS NAT Gateway or another external NAT device\.
 
+`AWS_VPC_K8S_CNI_RANDOMISESNAT`  
+Type: Boolean  
+Default: `true`  
+Specifies weather the SNAT `iptables` rule should randomise the outgoing ports for connections. When enabled the `--random` flag will be added to the SNAT `iptables` rule. 
+Disable this functionality if you rely on sequential port allocation for outgoing connections.
+
 `WARM_ENI_TARGET`  
 Type: Integer  
 Default: `1`  

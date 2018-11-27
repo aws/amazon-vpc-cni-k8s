@@ -55,6 +55,11 @@ const (
 	// be installed and will be removed if they are already installed.  Defaults to false.
 	envExternalSNAT = "AWS_VPC_K8S_CNI_EXTERNALSNAT"
 
+	// This environment is used to specify weather an the SNAT rule added to iptables should randomise port
+	// allocation for outgoing connections. If set to "true" the SNAT iptables rule will have the "--random" flag
+	// added to it. Defaults to true.
+	envRandomiseSNAT = "AWS_VPC_K8S_CNI_RANDOMISESNAT"
+
 	// envNodePortSupport is the name of environment variable that configures whether we implement support for
 	// NodePorts on the primary ENI.  This requires that we add additional iptables rules and loosen the kernel's
 	// RPF check as described below.  Defaults to true.
@@ -97,6 +102,7 @@ type NetworkAPIs interface {
 
 type linuxNetwork struct {
 	useExternalSNAT        bool
+	randomiseSNAT          bool
 	nodePortSupportEnabled bool
 	connmark               uint32
 
@@ -118,6 +124,7 @@ type iptablesIface interface {
 func New() NetworkAPIs {
 	return &linuxNetwork{
 		useExternalSNAT:        useExternalSNAT(),
+		randomiseSNAT:          randomiseSNAT(),
 		nodePortSupportEnabled: nodePortSupportEnabled(),
 		mainENIMark:            getConnmark(),
 
@@ -295,15 +302,16 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	}
 
 	curChain := fmt.Sprintf("AWS-SNAT-CHAIN-%d", len(vpcCIDRs))
+	snatRule := []string{"-m", "comment", "--comment", "AWS, SNAT",
+		"-m", "addrtype", "!", "--dst-type", "LOCAL",
+		"-j", "SNAT", "--to-source", primaryAddr.String()}
+	if n.randomiseSNAT { snatRule.append("--random") }
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "last SNAT rule for non-VPC outbound traffic",
 		shouldExist: !n.useExternalSNAT,
 		table:       "nat",
 		chain:       curChain,
-		rule: []string{
-			"-m", "comment", "--comment", "AWS, SNAT",
-			"-m", "addrtype", "!", "--dst-type", "LOCAL",
-			"-j", "SNAT", "--to-source", primaryAddr.String()},
+		rule:		 snatRule,
 	})
 
 	log.Debugf("iptableRules: %v", iptableRules)
@@ -425,6 +433,10 @@ func (n *linuxNetwork) UseExternalSNAT() bool {
 
 func useExternalSNAT() bool {
 	return getBoolEnvVar(envExternalSNAT, false)
+}
+
+func randomiseSNAT() bool {
+	return getBoolEnvVar(envRandomiseSNAT, true)
 }
 
 func nodePortSupportEnabled() bool {
