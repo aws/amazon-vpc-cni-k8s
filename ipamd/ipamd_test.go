@@ -360,6 +360,23 @@ func TestGetWarmENITarget(t *testing.T) {
 	assert.Equal(t, warmIPTarget, noWarmIPTarget)
 }
 
+func TestGetMaxENI(t *testing.T) {
+	ctrl, _, _, _, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	os.Setenv("MAX_ENI", "5")
+	maxENI := getMaxENI()
+	assert.Equal(t, maxENI, 5)
+
+	os.Unsetenv("MAX_ENI")
+	maxENI = getMaxENI()
+	assert.Equal(t, maxENI, defaultMaxENI)
+
+	os.Setenv("MAX_ENI", "non-integer-string")
+	maxENI = getMaxENI()
+	assert.Equal(t, maxENI, defaultMaxENI)
+}
+
 func TestGetCurWarmIPTarget(t *testing.T) {
 	ctrl, mockAWS, mockK8S, _, mockNetwork, _ := setup(t)
 	defer ctrl.Finish()

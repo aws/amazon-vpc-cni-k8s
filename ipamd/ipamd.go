@@ -76,6 +76,13 @@ const (
 	envWarmENITarget     = "WARM_ENI_TARGET"
 	defaultWarmENITarget = 1
 
+	// This environment variable is used to specify the maximum number of ENIs that will be allocated.
+	// When it is not set or less than 1, the default is to use the maximum available for the instance type.
+	//
+	// The maximum number of ENIs is in any case limited to the amount allowed for the instance type.
+	envMaxENI     = "MAX_ENI"
+	defaultMaxENI = -1
+
 	// This environment is used to specify whether Pods need to use securitygroup and subnet defined in ENIConfig CRD
 	// When it is NOT set or set to false, ipamD will use primary interface security group and subnet for Pod network.
 	envCustomNetworkCfg = "AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG"
@@ -194,10 +201,20 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 func (c *IPAMContext) nodeInit() error {
 	ipamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
-	maxENIs, err := c.awsClient.GetENILimit()
-	if err == nil {
+	var err error
+
+	// If MAX_ENI is set, the maximum number of ENIs may be no more than that
+	// number (but might be less, depending on instance type.) If MAX_ENI is < 1,
+	// then we use the limit from the instance type.
+	maxENIs := getMaxENI()
+	instanceMaxENIs, err := c.awsClient.GetENILimit()
+	if err == nil && (maxENIs < 1 || maxENIs > instanceMaxENIs) {
+		maxENIs = instanceMaxENIs
+	}
+	if maxENIs >= 1 {
 		enisMax.Set(float64(maxENIs))
 	}
+
 	maxIPs, err := c.awsClient.GetENIipLimit()
 	if err == nil {
 		ipMax.Set(float64(maxIPs * int64(maxENIs)))
@@ -427,8 +444,17 @@ func (c *IPAMContext) increaseIPPool() {
 		return
 	}
 
-	maxENIs, err := c.awsClient.GetENILimit()
-	enisMax.Set(float64(maxENIs))
+	// If MAX_ENI is set, the maximum number of ENIs may be no more than that
+	// number (but might be less, depending on instance type.) If MAX_ENI is < 1,
+	// then we use the limit from the instance type.
+	maxENIs := getMaxENI()
+	instanceMaxENIs, err := c.awsClient.GetENILimit()
+	if err == nil && (maxENIs < 1 || maxENIs > instanceMaxENIs) {
+		maxENIs = instanceMaxENIs
+	}
+	if maxENIs >= 1 {
+		enisMax.Set(float64(maxENIs))
+	}
 
 	if err == nil && maxENIs == c.dataStore.GetENIs() {
 		log.Debugf("Skipping increase IPPOOL due to max ENI already attached to the instance : %d", maxENIs)
@@ -624,6 +650,23 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 
 		time.Sleep(eniAttachTime)
 	}
+}
+
+func getMaxENI() int {
+	inputStr, found := os.LookupEnv(envMaxENI)
+
+	if !found {
+		return defaultMaxENI
+	}
+
+	if input, err := strconv.Atoi(inputStr); err == nil {
+		if input < 1 {
+			return defaultMaxENI
+		}
+		log.Debugf("Using MAX_ENI %v", input)
+		return input
+	}
+	return defaultMaxENI
 }
 
 func getWarmENITarget() int {
