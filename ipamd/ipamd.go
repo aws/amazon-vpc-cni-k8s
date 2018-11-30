@@ -201,7 +201,6 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 func (c *IPAMContext) nodeInit() error {
 	ipamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
-	var err error
 
 	// If MAX_ENI is set, the maximum number of ENIs may be no more than that
 	// number (but might be less, depending on instance type.) If MAX_ENI is < 1,
