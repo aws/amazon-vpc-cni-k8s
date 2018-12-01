@@ -364,17 +364,35 @@ func TestGetMaxENI(t *testing.T) {
 	ctrl, _, _, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
+	// MaxENI 5 is less than lower bound of 10, so 5
 	os.Setenv("MAX_ENI", "5")
-	maxENI := getMaxENI()
+	maxENI := getMaxENI(10)
 	assert.Equal(t, maxENI, 5)
 
-	os.Unsetenv("MAX_ENI")
-	maxENI = getMaxENI()
-	assert.Equal(t, maxENI, defaultMaxENI)
+	// MaxENI 5 is greater than lower bound of 4, so 4
+	os.Setenv("MAX_ENI", "5")
+	maxENI = getMaxENI(4)
+	assert.Equal(t, maxENI, 4)
 
+	// MaxENI 0 is 0, which means disabled; so use lower bound
+	os.Setenv("MAX_ENI", "0")
+	maxENI = getMaxENI(4)
+	assert.Equal(t, maxENI, 4)
+
+	// MaxENI 1 is less than lower bound of 4, so 1.
+	os.Setenv("MAX_ENI", "1")
+	maxENI = getMaxENI(4)
+	assert.Equal(t, maxENI, 1)
+
+	// Empty MaxENI means disabled, so use lower bound
+	os.Unsetenv("MAX_ENI")
+	maxENI = getMaxENI(10)
+	assert.Equal(t, maxENI, 10)
+
+	// Invalid MaxENI means disabled, so use lower bound
 	os.Setenv("MAX_ENI", "non-integer-string")
-	maxENI = getMaxENI()
-	assert.Equal(t, maxENI, defaultMaxENI)
+	maxENI = getMaxENI(10)
+	assert.Equal(t, maxENI, 10)
 }
 
 func TestGetCurWarmIPTarget(t *testing.T) {

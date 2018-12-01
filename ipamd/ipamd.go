@@ -202,14 +202,8 @@ func (c *IPAMContext) nodeInit() error {
 	ipamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
 
-	// If MAX_ENI is set, the maximum number of ENIs may be no more than that
-	// number (but might be less, depending on instance type.) If MAX_ENI is < 1,
-	// then we use the limit from the instance type.
-	maxENIs := getMaxENI()
-	instanceMaxENIs, err := c.awsClient.GetENILimit()
-	if err == nil && (maxENIs < 1 || maxENIs > instanceMaxENIs) {
-		maxENIs = instanceMaxENIs
-	}
+	instanceMaxENIs, _ := c.awsClient.GetENILimit()
+	maxENIs := getMaxENI(instanceMaxENIs)
 	if maxENIs >= 1 {
 		enisMax.Set(float64(maxENIs))
 	}
@@ -443,14 +437,8 @@ func (c *IPAMContext) increaseIPPool() {
 		return
 	}
 
-	// If MAX_ENI is set, the maximum number of ENIs may be no more than that
-	// number (but might be less, depending on instance type.) If MAX_ENI is < 1,
-	// then we use the limit from the instance type.
-	maxENIs := getMaxENI()
 	instanceMaxENIs, err := c.awsClient.GetENILimit()
-	if err == nil && (maxENIs < 1 || maxENIs > instanceMaxENIs) {
-		maxENIs = instanceMaxENIs
-	}
+	maxENIs := getMaxENI(instanceMaxENIs)
 	if maxENIs >= 1 {
 		enisMax.Set(float64(maxENIs))
 	}
@@ -651,21 +639,30 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 	}
 }
 
-func getMaxENI() int {
+// getMaxENI returns the maximum number of ENIs for this instance, which is
+// the lesser of the given lower bound (for example, the limit for the instance
+// type) and a value configured via the MAX_ENI environment variable.
+//
+// If the value configured via environment variable is 0 or less, it is
+// ignored, and the lowerBound is returned.
+func getMaxENI(lowerBound int) int {
 	inputStr, found := os.LookupEnv(envMaxENI)
 
-	if !found {
-		return defaultMaxENI
+	envMax := defaultMaxENI
+	if found {
+		if input, err := strconv.Atoi(inputStr); err == nil && input >= 1 {
+			log.Debugf("Using MAX_ENI %v", input)
+			envMax = input
+		}
 	}
 
-	if input, err := strconv.Atoi(inputStr); err == nil {
-		if input < 1 {
-			return defaultMaxENI
-		}
-		log.Debugf("Using MAX_ENI %v", input)
-		return input
+	// If envMax is defined (>=1) and is less than the input lower bound, return
+	// envMax.
+	if envMax >= 1 && envMax < lowerBound {
+		return envMax
 	}
-	return defaultMaxENI
+
+	return lowerBound
 }
 
 func getWarmENITarget() int {
