@@ -145,6 +145,78 @@ func TestSetupHostNetworkNodePortDisabled(t *testing.T) {
 
 }
 
+func TestUpdateRuleListBySrc(t *testing.T) {
+	ctrl, mockNetLink, _, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{netLink: mockNetLink}
+
+	origRule := netlink.Rule{
+		Src:   testENINetIPNet,
+		Table: testTable,
+	}
+	testCases := []struct {
+		name     string
+		oldRule  netlink.Rule
+		toFlag   bool
+		toCIDRs  []string
+		ruleList []netlink.Rule
+		newRules []netlink.Rule
+		expDst   []*net.IPNet
+		expTable []int
+	}{
+		{
+			"multiple desitinations",
+			origRule,
+			true,
+			[]string{"10.10.0.0/16", "10.11.0.0/16"},
+			[]netlink.Rule{origRule},
+			make([]netlink.Rule, 2),
+			make([]*net.IPNet, 2),
+			[]int{origRule.Table, origRule.Table},
+		},
+		{
+			"single desitination",
+			origRule,
+			false,
+			[]string{""},
+			[]netlink.Rule{origRule},
+			make([]netlink.Rule, 1),
+			make([]*net.IPNet, 1),
+			[]int{origRule.Table},
+		},
+	}
+
+	for _, tc := range testCases {
+		var newRuleSize int
+		if tc.toFlag {
+			newRuleSize = len(tc.toCIDRs)
+		} else {
+			newRuleSize = 1
+		}
+
+		for i := 0; i < newRuleSize; i += 1 {
+			_, tc.expDst[i], _ = net.ParseCIDR(tc.toCIDRs[i])
+		}
+
+		mockNetLink.EXPECT().RuleDel(&tc.oldRule)
+
+		for i := 0; i < newRuleSize; i += 1 {
+			mockNetLink.EXPECT().NewRule().Return(&tc.newRules[i])
+			mockNetLink.EXPECT().RuleAdd(&tc.newRules[i])
+		}
+
+		err := ln.UpdateRuleListBySrc(tc.ruleList, *testENINetIPNet, tc.toCIDRs, tc.toFlag)
+		assert.NoError(t, err)
+
+		for i := 0; i < newRuleSize; i += 1 {
+			assert.Equal(t, tc.oldRule.Src, tc.newRules[i].Src, tc.name)
+			assert.Equal(t, tc.expDst[i], tc.newRules[i].Dst, tc.name)
+			assert.Equal(t, tc.expTable[i], tc.newRules[i].Table, tc.name)
+		}
+	}
+}
+
 func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()

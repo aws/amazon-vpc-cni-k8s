@@ -49,7 +49,7 @@ const (
 	// 1025 - 1535 can be used priority lower than fromPodRulePriority but higher than default nonVPC CIDR rule
 	fromPodRulePriority = 1536
 
-	mainRoutingTable = 254
+	mainRoutingTable = unix.RT_TABLE_MAIN
 
 	// This environment is used to specify whether an external NAT gateway will be used to provide SNAT of
 	// secondary ENI IP addresses.  If set to "true", the SNAT iptables rule and off-VPC ip rule will not
@@ -218,7 +218,6 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	// reversed so, to the routing table, it looks like the traffic is pod traffic instead of NodePort traffic.
 	mainENIRule := n.netLink.NewRule()
 	mainENIRule.Mark = int(n.mainENIMark)
-	mainENIRule.Mask = int(n.mainENIMark)
 	mainENIRule.Table = mainRoutingTable
 	mainENIRule.Priority = hostRulePriority
 	// If this is a restart, cleanup previous rule first
@@ -258,7 +257,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	log.Debugf("Setup Host Network: iptables -N %s  -t nat", lastChainName)
 
 	if err = ipt.NewChain("nat", lastChainName); err != nil && !containChainExistErr(err) {
-		log.Errorf("TODO: ipt.NewChain chain [%s] error %v", lastChainName, err)
+		log.Errorf("Setup Host Network: ipt.NewChain chain [%s] error %v", lastChainName, err)
 		return errors.Wrapf(err, "host network setup: failed to add chain")
 	}
 
@@ -670,7 +669,7 @@ func (n *linuxNetwork) GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) 
 // DeleteRuleListBySrc deletes IP rules who has matcing source IP
 func (n *linuxNetwork) DeleteRuleListBySrc(src net.IPNet) error {
 
-	log.Infof("Delete Rule List By Src [%v", src)
+	log.Infof("Delete Rule List By Src [%v]", src)
 
 	ruleList, err := n.GetRuleList()
 	if err != nil {
@@ -709,7 +708,6 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 	log.Infof("Update Rule List[%v] for source[%v] with toCIDRs[%v], toFlag[%v]", ruleList, src, toCIDRs, toFlag)
 
 	srcRuleList, err := n.GetRuleListBySrc(ruleList, src)
-
 	if err != nil {
 		log.Errorf("UpdateRuleListBySrc: failed to retrieve rule list %v", err)
 		return err
@@ -758,7 +756,6 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 			}
 
 			log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v] to %s", podRule, toDst)
-
 		}
 	} else {
 		podRule := n.netLink.NewRule()
