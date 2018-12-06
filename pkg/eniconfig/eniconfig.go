@@ -36,6 +36,7 @@ import (
 
 const (
 	eniConfigAnnotationDef = "k8s.amazonaws.com/eniConfig"
+	eniConfigLabelDef      = "k8s.amazonaws.com/eniConfig"
 	eniConfigDefault       = "default"
 )
 
@@ -104,7 +105,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 
 	case *corev1.Node:
 
-		log.Infof("Handle corev1.Node: %s, %v", o.GetName(), o.GetAnnotations())
+		log.Infof("Handle corev1.Node: %s, %v, %v", o.GetName(), o.GetAnnotations(), o.GetLabels())
 		if h.controller.myNodeName == o.GetName() {
 			annotation := o.GetAnnotations()
 
@@ -115,10 +116,22 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 				h.controller.myENI = val
 				log.Infof(" Setting myENI to: %s", val)
 			} else {
-				h.controller.eniLock.Lock()
-				defer h.controller.eniLock.Unlock()
-				h.controller.myENI = eniConfigDefault
-				log.Infof(" Setting myENI to: %s", eniConfigDefault)
+
+				label := o.GetLabels()
+
+				val, ok := label[eniConfigLabelDef]
+				if ok {
+					h.controller.eniLock.Lock()
+					defer h.controller.eniLock.Unlock()
+					h.controller.myENI = val
+					log.Infof(" Setting myENI to: %s", val)
+				} else {
+
+					h.controller.eniLock.Lock()
+					defer h.controller.eniLock.Unlock()
+					h.controller.myENI = eniConfigDefault
+					log.Infof(" Setting myENI to: %s", eniConfigDefault)
+				}
 			}
 		}
 	}

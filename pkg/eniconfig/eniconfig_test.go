@@ -68,6 +68,33 @@ func updateNodeAnnotation(hdlr sdk.Handler, nodeName string, configName string, 
 	hdlr.Handle(nil, event)
 }
 
+func updateNodeLabel(hdlr sdk.Handler, nodeName string, configName string, toDelete bool) {
+
+	node := corev1.Node{
+		TypeMeta: metav1.TypeMeta{APIVersion: corev1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: nodeName,
+		},
+	}
+	accessor, err := meta.Accessor(&node)
+
+	if err != nil {
+		fmt.Printf("Failed to call meta.Access %v", err)
+	}
+
+	event := sdk.Event{
+		Object:  &node,
+		Deleted: toDelete,
+	}
+	eniLabels := make(map[string]string)
+
+	if !toDelete {
+		eniLabels[eniConfigLabelDef] = configName
+	}
+	accessor.SetLabels(eniLabels)
+	hdlr.Handle(nil, event)
+}
+
 func TestENIConfig(t *testing.T) {
 
 	testENIConfigController := NewENIConfigController()
@@ -105,7 +132,7 @@ func TestENIConfig(t *testing.T) {
 }
 
 func TestNodeENIConfig(t *testing.T) {
-	myNodeName := "testMyNode"
+	myNodeName := "testMyNodeWithAnnotation"
 	myENIConfig := "testMyENIConfig"
 	os.Setenv("MY_NODE_NAME", myNodeName)
 	testENIConfigController := NewENIConfigController()
@@ -139,6 +166,47 @@ func TestNodeENIConfig(t *testing.T) {
 
 	// Delete node's myENIConfig annotation, then the value should fallback to default
 	updateNodeAnnotation(testHandler, myNodeName, myENIConfig, true)
+	outputCfg, err = testENIConfigController.MyENIConfig()
+	assert.NoError(t, err)
+	assert.Equal(t, defaultCfg, *outputCfg)
+
+}
+
+func TestNodeENIConfigLabel(t *testing.T) {
+	myNodeName := "testMyNodeWithLabel"
+	myENIConfig := "testMyENIConfig"
+	os.Setenv("MY_NODE_NAME", myNodeName)
+	testENIConfigController := NewENIConfigController()
+
+	testHandler := NewHandler(testENIConfigController)
+	updateNodeLabel(testHandler, myNodeName, myENIConfig, false)
+
+	// If there is no ENI config
+	_, err := testENIConfigController.MyENIConfig()
+	assert.Error(t, err)
+
+	// Add eniconfig for myENIConfig
+	group1Cfg := v1alpha1.ENIConfigSpec{
+		SecurityGroups: []string{"sg21-id", "sg22-id"},
+		Subnet:         "subnet21"}
+	updateENIConfig(testHandler, myENIConfig, group1Cfg, false)
+	outputCfg, err := testENIConfigController.MyENIConfig()
+	assert.NoError(t, err)
+	assert.Equal(t, group1Cfg, *outputCfg)
+
+	// Add default config
+	defaultSGs := []string{"sg1-id", "sg2-id"}
+	defaultSubnet := "subnet1"
+	defaultCfg := v1alpha1.ENIConfigSpec{
+		SecurityGroups: defaultSGs,
+		Subnet:         defaultSubnet}
+	updateENIConfig(testHandler, eniConfigDefault, defaultCfg, false)
+	outputCfg, err = testENIConfigController.MyENIConfig()
+	assert.NoError(t, err)
+	assert.Equal(t, group1Cfg, *outputCfg)
+
+	// Delete node's myENIConfig annotation, then the value should fallback to default
+	updateNodeLabel(testHandler, myNodeName, myENIConfig, true)
 	outputCfg, err = testENIConfigController.MyENIConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, defaultCfg, *outputCfg)
