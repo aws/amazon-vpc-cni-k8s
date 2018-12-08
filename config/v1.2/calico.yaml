@@ -63,6 +63,10 @@ spec:
             # Disable IPV6 on Kubernetes.
             - name: FELIX_IPV6SUPPORT
               value: "false"
+            # This will make Felix honor AWS VPC CNI's mangle table
+            # rules.
+            - name: FELIX_IPTABLESMANGLEALLOWACTION
+              value: Return
             # Wait for the datastore.
             - name: WAIT_FOR_DATASTORE
               value: "true"
@@ -393,6 +397,10 @@ spec:
             value: "1"
           - name: TYPHA_HEALTHENABLED
             value: "true"
+          # This will make Felix honor AWS VPC CNI's mangle table
+          # rules.
+          - name: FELIX_IPTABLESMANGLEALLOWACTION
+            value: Return
         volumeMounts:
         - mountPath: /etc/calico
           name: etc-calico
