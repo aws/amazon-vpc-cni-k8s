@@ -53,7 +53,7 @@ func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.
 	var pbVPCcidrs []string
 
 	for _, cidr := range vpcCIDRs {
-		log.Debugf("VPC CIDR %s", cidr)
+		log.Debugf("VPC CIDR %s", *cidr)
 		pbVPCcidrs = append(pbVPCcidrs, *cidr)
 	}
 
