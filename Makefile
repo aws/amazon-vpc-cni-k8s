@@ -17,12 +17,20 @@
 VERSION ?= $(shell git describe --tags --always --dirty)
 LDFLAGS ?= -X main.version=$(VERSION)
 
+ARCH ?= $(shell uname -m)
+
+ifeq ($(ARCH),aarch64)
+  ARCH = arm64
+else ($(ARCH),x86_64)
+  ARCH = amd64
+endif
+
 # Download portmap plugin
 download-portmap:
 	mkdir -p tmp/downloads
 	mkdir -p tmp/plugins
-	curl -L -o tmp/downloads/cni-plugins-amd64.tgz https://github.com/containernetworking/plugins/releases/download/v0.6.0/cni-plugins-amd64-v0.6.0.tgz
-	tar -vxf tmp/downloads/cni-plugins-amd64.tgz -C tmp/plugins
+	curl -L -o tmp/downloads/cni-plugins-$(ARCH).tgz https://github.com/containernetworking/plugins/releases/download/v0.6.0/cni-plugins-$(ARCH)-v0.6.0.tgz
+	tar -vxf tmp/downloads/cni-plugins-$(ARCH).tgz -C tmp/plugins
 	cp tmp/plugins/portmap .
 	rm -rf tmp
 
