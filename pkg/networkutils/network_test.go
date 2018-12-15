@@ -196,6 +196,32 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 	assert.Equal(t, mockFile{closed: true, data: "2"}, mockRPFilter)
 }
 
+func TestIncrementIPv4Addr(t *testing.T) {
+	testCases := []struct {
+		name     string
+		ip       net.IP
+		expected net.IP
+		err      bool
+	}{
+		{"increment", net.IPv4(10, 0, 0, 1), net.IPv4(10, 0, 0, 2).To4(), false},
+		{"carry up 1", net.IPv4(10, 0, 0, 255), net.IPv4(10, 0, 1, 0).To4(), false},
+		{"carry up 2", net.IPv4(10, 0, 255, 255), net.IPv4(10, 1, 0, 0).To4(), false},
+		{"overflow", net.IPv4(255, 255, 255, 255), nil, true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := incrementIPv4Addr(tc.ip)
+			if tc.err {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Equal(t, tc.expected, result, tc.name)
+		})
+	}
+}
+
 type mockIptables struct {
 	// dataplaneState is a map from table name to chain name to slice of rulespecs
 	dataplaneState map[string]map[string][][]string
