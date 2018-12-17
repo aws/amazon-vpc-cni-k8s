@@ -25,6 +25,8 @@ type NetLink interface {
 	ParseAddr(s string) (*netlink.Addr, error)
 	// AddrAdd is equivalent to `ip addr add $addr dev $link`
 	AddrAdd(link netlink.Link, addr *netlink.Addr) error
+	// AddrDel is equivalent to `ip addr del $addr dev $link`
+	AddrDel(link netlink.Link, addr *netlink.Addr) error
 	// AddrList is equivalent to `ip addr show `
 	AddrList(link netlink.Link, family int) ([]netlink.Addr, error)
 	// LinkAdd is equivalent to `ip link add`
@@ -77,6 +79,10 @@ func (*netLink) ParseAddr(s string) (*netlink.Addr, error) {
 
 func (*netLink) AddrAdd(link netlink.Link, addr *netlink.Addr) error {
 	return netlink.AddrAdd(link, addr)
+}
+
+func (*netLink) AddrDel(link netlink.Link, addr *netlink.Addr) error {
+	return netlink.AddrDel(link, addr)
 }
 
 func (*netLink) LinkSetUp(link netlink.Link) error {

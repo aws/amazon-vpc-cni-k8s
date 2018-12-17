@@ -59,6 +59,18 @@ func (mr *MockNetLinkMockRecorder) AddrAdd(arg0, arg1 interface{}) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddrAdd", reflect.TypeOf((*MockNetLink)(nil).AddrAdd), arg0, arg1)
 }
 
+// AddrDel mocks base method
+func (m *MockNetLink) AddrDel(arg0 netlink.Link, arg1 *netlink.Addr) error {
+	ret := m.ctrl.Call(m, "AddrDel", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddrDel indicates an expected call of AddrDel
+func (mr *MockNetLinkMockRecorder) AddrDel(arg0, arg1 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddrDel", reflect.TypeOf((*MockNetLink)(nil).AddrDel), arg0, arg1)
+}
+
 // AddrList mocks base method
 func (m *MockNetLink) AddrList(arg0 netlink.Link, arg1 int) ([]netlink.Addr, error) {
 	ret := m.ctrl.Call(m, "AddrList", arg0, arg1)
