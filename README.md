@@ -19,7 +19,7 @@ kubectl apply -f aws-k8s-cni.yaml
 ```
 
 Launch kubelet with network plugins set to cni (`--network-plugin=cni`), the cni directories configured (`--cni-config-dir` and `--cni-bin-dir`) and node ip set to the primary IPv4 address of the primary ENI for the instance (`--node-ip=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)`).
-It is also recommended to set `--max-pods` equal to _(the number of ENIs for the instance type * (the number of IPs per ENI - 1)) + 2_; for details, see [vpc_ip_resource_limit.go][] to prevent scheduling that exceeds the IP resources available to the kubelet.
+It is also recommended to set `--max-pods` equal to _(the number of ENIs for the instance type × (the number of IPs per ENI - 1)) + 2_; for details, see [vpc_ip_resource_limit.go][]. Setting `--max-pods` will prevent scheduling that exceeds the IP address resources available to the kubelet.
 
 [vpc_ip_resource_limit.go]: ./pkg/awsutils/vpc_ip_resource_limit.go
 
