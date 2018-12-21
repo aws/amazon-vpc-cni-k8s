@@ -536,14 +536,14 @@ func TestAllocAllIPAddress(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	// the expected addresses for r4.16xlarge
+	// the expected addresses for c5n.18xlarge
 	input = &ec2.AssignPrivateIpAddressesInput{
 		NetworkInterfaceId:             aws.String("eni-id"),
 		SecondaryPrivateIpAddressCount: aws.Int64(49),
 	}
 	mockEC2.EXPECT().AssignPrivateIpAddresses(input).Return(nil, nil)
 
-	ins = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "r4.16xlarge"}
+	ins = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
 
 	err = ins.AllocAllIPAddress("eni-id")
 
@@ -561,7 +561,7 @@ func TestAllocIPAddresses(t *testing.T) {
 	}
 	mockEC2.EXPECT().AssignPrivateIpAddresses(input).Return(nil, nil)
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "r4.16xlarge"}
+	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
 
 	err := ins.AllocIPAddresses("eni-id", 5)
 
@@ -574,7 +574,7 @@ func TestAllocIPAddresses(t *testing.T) {
 	}
 	mockEC2.EXPECT().AssignPrivateIpAddresses(input).Return(nil, nil)
 
-	ins = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "r4.16xlarge"}
+	ins = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
 
 	err = ins.AllocIPAddresses("eni-id", 49)
 
