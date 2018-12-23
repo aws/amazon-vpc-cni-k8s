@@ -44,13 +44,23 @@ const (
   `
 )
 
-// TODO detect if mockgen or goimports are in the path
+var (
+	requiredCommands = [2]string{"mockgen", "goimports"}
+)
 
 func main() {
 	if len(os.Args) != 4 {
 		usage()
 		os.Exit(1)
 	}
+
+	for _, c := range requiredCommands {
+		if _, err := exec.LookPath(c); err != nil {
+			printErrorAndExitWithErrorCode(
+				fmt.Errorf("%s requires %q in the $PATH: %v", os.Args[0], c, err))
+		}
+	}
+
 	packageName := os.Args[1]
 	interfaces := os.Args[2]
 	outputPath := os.Args[3]
@@ -74,7 +84,7 @@ func main() {
 	mockgenOut, err := mockgen.Output()
 	if err != nil {
 		printErrorAndExitWithErrorCode(
-			fmt.Errorf("Error running mockgen for package '%s' and interfaces '%s': %v\n", packageName, interfaces, err))
+			fmt.Errorf("Error running mockgen for package '%s' and interfaces '%s': %v", packageName, interfaces, err))
 	}
 
 	sanitized := re.ReplaceAllString(string(mockgenOut), "")
