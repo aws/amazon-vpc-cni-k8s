@@ -55,10 +55,10 @@ const (
 	// be installed and will be removed if they are already installed.  Defaults to false.
 	envExternalSNAT = "AWS_VPC_K8S_CNI_EXTERNALSNAT"
 
-	// This environment is used to specify weather an the SNAT rule added to iptables should randomize port
-	// allocation for outgoing connections. If set to "true" the SNAT iptables rule will have the "--random" flag
+	// This environment is used to specify weather the SNAT rule added to iptables should randomize port
+	// allocation for outgoing connections. If set to "hashrandom" the SNAT iptables rule will have the "--random" flag
 	// added to it. Set it to "prng" if you want to use a pseudo random numbers, i.e. "--random-fully".
-	// Defaults to true.
+	// Defaults to hashrandom.
 	envRandomizeSNAT = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 
 	// envNodePortSupport is the name of environment variable that configures whether we implement support for
@@ -314,14 +314,18 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	snatRule := []string{"-m", "comment", "--comment", "AWS, SNAT",
 		"-m", "addrtype", "!", "--dst-type", "LOCAL",
 		"-j", "SNAT", "--to-source", primaryAddr.String()}
-	if n.randomizeSNAT == randomHashSNAT { snatRule = append(snatRule, "--random") }
-	if n.randomizeSNAT == randomPRNGSNAT { snatRule = append(snatRule, "--random-fully") }
+	if n.randomizeSNAT == randomHashSNAT {
+		snatRule = append(snatRule, "--random")
+	}
+	if n.randomizeSNAT == randomPRNGSNAT {
+		snatRule = append(snatRule, "--random-fully")
+	}
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "last SNAT rule for non-VPC outbound traffic",
 		shouldExist: !n.useExternalSNAT,
 		table:       "nat",
 		chain:       curChain,
-		rule:		 snatRule,
+		rule:        snatRule,
 	})
 
 	log.Debugf("iptableRules: %v", iptableRules)
@@ -448,22 +452,25 @@ func useExternalSNAT() bool {
 func randomizeSNAT() snatType {
 	defaultValue := randomHashSNAT
 	defaultString := "hash based random"
-	if strValue := os.Getenv(envRandomizeSNAT); strValue != "" {
-		parsedValue, err := strconv.ParseBool(strValue)
-		if err != nil {
-			if strings.Compare( "prng", strValue) == 0 {
-				return randomPRNGSNAT
-			}
-			log.Error("Failed to parse "+envRandomizeSNAT+"; using default: "+defaultString, err.Error())
-			return defaultValue
-		}
-		// true is equal to hash based random
-		if parsedValue {
-			return randomHashSNAT
-		}
-		// false is equal to sequential
+	strValue := os.Getenv(envRandomizeSNAT)
+	if strValue == "" {
+		// empty means default
+		return defaultValue
+	}
+	if strValue == "prng" {
+		// prng means to use --random-fully
+		return randomPRNGSNAT
+	}
+	if strValue == "none" {
+		// none means to disable randomisation (no flag)
 		return sequentialSNAT
 	}
+	if strValue == "hashrandom" {
+		// hashrandom means to use --random
+		return randomHashSNAT
+	}
+	// if we get to this point, the environment variable has an invalid value
+	log.Error("Failed to parse " + envRandomizeSNAT + "; using default: " + defaultString + ". Provided string was " + strValue)
 	return defaultValue
 }
 
