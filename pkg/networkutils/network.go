@@ -14,6 +14,7 @@
 package networkutils
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
@@ -48,7 +49,7 @@ const (
 	// 1025 - 1535 can be used priority lower than fromPodRulePriority but higher than default nonVPC CIDR rule
 	fromPodRulePriority = 1536
 
-	mainRoutingTable = 254
+	mainRoutingTable = unix.RT_TABLE_MAIN
 
 	// This environment is used to specify whether an external NAT gateway will be used to provide SNAT of
 	// secondary ENI IP addresses.  If set to "true", the SNAT iptables rule and off-VPC ip rule will not
@@ -233,7 +234,6 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	// reversed so, to the routing table, it looks like the traffic is pod traffic instead of NodePort traffic.
 	mainENIRule := n.netLink.NewRule()
 	mainENIRule.Mark = int(n.mainENIMark)
-	mainENIRule.Mask = int(n.mainENIMark)
 	mainENIRule.Table = mainRoutingTable
 	mainENIRule.Priority = hostRulePriority
 	// If this is a restart, cleanup previous rule first
@@ -273,7 +273,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	log.Debugf("Setup Host Network: iptables -N %s  -t nat", lastChainName)
 
 	if err = ipt.NewChain("nat", lastChainName); err != nil && !containChainExistErr(err) {
-		log.Errorf("TODO: ipt.NewChain chain [%s] error %v", lastChainName, err)
+		log.Errorf("Setup Host Network: ipt.NewChain chain [%s] error %v", lastChainName, err)
 		return errors.Wrapf(err, "host network setup: failed to add chain")
 	}
 
@@ -554,22 +554,24 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 
 	deviceNumber := link.Attrs().Index
 
-	_, gw, err := net.ParseCIDR(eniSubnetCIDR)
+	_, ipnet, err := net.ParseCIDR(eniSubnetCIDR)
 
 	if err != nil {
 		return errors.Wrapf(err, "eni network setup: invalid ipv4 cidr block %s", eniSubnetCIDR)
 	}
 
-	// TODO: big/little endian:  convert subnet to gw
-	gw.IP[3] = gw.IP[3] + 1
+	gw, err := incrementIPv4Addr(ipnet.IP)
+	if err != nil {
+		return errors.Wrapf(err, "eni network setup: failed to define gateway address from %v", ipnet.IP)
+	}
 
-	log.Debugf("Setting up ENI's default gateway %v", gw.IP)
+	log.Debugf("Setting up ENI's default gateway %v", gw)
 
 	for _, r := range []netlink.Route{
 		// Add a direct link route for the host's ENI IP only
 		{
 			LinkIndex: deviceNumber,
-			Dst:       &net.IPNet{IP: gw.IP, Mask: net.CIDRMask(32, 32)},
+			Dst:       &net.IPNet{IP: gw, Mask: net.CIDRMask(32, 32)},
 			Scope:     netlink.SCOPE_LINK,
 			Table:     eniTable,
 		},
@@ -578,7 +580,7 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 			LinkIndex: deviceNumber,
 			Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
 			Scope:     netlink.SCOPE_UNIVERSE,
-			Gw:        gw.IP,
+			Gw:        gw,
 			Table:     eniTable,
 		},
 	} {
@@ -597,13 +599,13 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 					retry++
 					if retry > maxRetryRouteAdd {
 						log.Errorf("Failed to add route %s/0 via %s table %d",
-							r.Dst.IP.String(), gw.IP.String(), eniTable)
+							r.Dst.IP.String(), gw.String(), eniTable)
 						return errors.Wrapf(err,
 							"eni network setup: failed unable to add route %s/0 via %s table %d",
-							r.Dst.IP.String(), gw.IP.String(), eniTable)
+							r.Dst.IP.String(), gw.String(), eniTable)
 					}
 					log.Debugf("Not able to add route route %s/0 via %s table %d (attempt %d/%d)",
-						r.Dst.IP.String(), gw.IP.String(), eniTable,
+						r.Dst.IP.String(), gw.String(), eniTable,
 						retry, maxRetryRouteAdd)
 					time.Sleep(retryRouteAddInterval)
 				} else if isRouteExistsError(err) {
@@ -614,10 +616,10 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 					break
 				} else {
 					return errors.Wrapf(err, "eni network setup: unable to add route %s/0 via %s table %d",
-						r.Dst.IP.String(), gw.IP.String(), eniTable)
+						r.Dst.IP.String(), gw.String(), eniTable)
 				}
 			} else {
-				log.Debugf("Successfully added route route %s/0 via %s table %d", r.Dst.IP.String(), gw.IP.String(), eniTable)
+				log.Debugf("Successfully added route route %s/0 via %s table %d", r.Dst.IP.String(), gw.String(), eniTable)
 				break
 			}
 		}
@@ -643,6 +645,22 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 		}
 	}
 	return nil
+}
+
+// incremetnIPv4Addr returns incremented IPv4 address
+func incrementIPv4Addr(ip net.IP) (net.IP, error) {
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return nil, fmt.Errorf("%q is not a valid IPv4 Address.", ip)
+	}
+	int_ip := binary.BigEndian.Uint32([]byte(ip4))
+	if int_ip == (1<<32 - 1) {
+		return nil, fmt.Errorf("%q will be overflowed", ip)
+	}
+	int_ip++
+	bytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(bytes, int_ip)
+	return net.IP(bytes), nil
 }
 
 // isNotExistsError returns true if the error type is syscall.ESRCH
@@ -698,7 +716,7 @@ func (n *linuxNetwork) GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) 
 // DeleteRuleListBySrc deletes IP rules who has matcing source IP
 func (n *linuxNetwork) DeleteRuleListBySrc(src net.IPNet) error {
 
-	log.Infof("Delete Rule List By Src [%v", src)
+	log.Infof("Delete Rule List By Src [%v]", src)
 
 	ruleList, err := n.GetRuleList()
 	if err != nil {
@@ -737,7 +755,6 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 	log.Infof("Update Rule List[%v] for source[%v] with toCIDRs[%v], toFlag[%v]", ruleList, src, toCIDRs, toFlag)
 
 	srcRuleList, err := n.GetRuleListBySrc(ruleList, src)
-
 	if err != nil {
 		log.Errorf("UpdateRuleListBySrc: failed to retrieve rule list %v", err)
 		return err
@@ -786,7 +803,6 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 			}
 
 			log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v] to %s", podRule, toDst)
-
 		}
 	} else {
 		podRule := n.netLink.NewRule()
