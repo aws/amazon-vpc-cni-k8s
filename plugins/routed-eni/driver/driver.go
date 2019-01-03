@@ -18,6 +18,7 @@ import (
 	"syscall"
 
 	"github.com/pkg/errors"
+	"golang.org/x/sys/unix"
 
 	"github.com/containernetworking/cni/pkg/ns"
 	"github.com/vishvananda/netlink"
@@ -36,8 +37,8 @@ const (
 	// 1024 is reserved for (ip rule not to <vpc's subnet> table main)
 	fromContainerRulePriority = 1536
 
-	// TODO need to test all distros use this number
-	mainRouteTable = 254
+	// main routing table number
+	mainRouteTable = unix.RT_TABLE_MAIN
 	// MTU of veth - ENI MTU defined in pkg/networkutils/network.go
 	ethernetMTU = 9001
 )
