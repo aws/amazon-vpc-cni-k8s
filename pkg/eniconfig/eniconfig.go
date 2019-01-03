@@ -35,9 +35,19 @@ import (
 )
 
 const (
-	eniConfigAnnotationDef = "k8s.amazonaws.com/eniConfig"
-	eniConfigLabelDef      = "k8s.amazonaws.com/eniConfig"
-	eniConfigDefault       = "default"
+	defaultEniConfigAnnotationDef = "k8s.amazonaws.com/eniConfig"
+	defaultEniConfigLabelDef      = "k8s.amazonaws.com/eniConfig"
+	eniConfigDefault              = "default"
+
+	// when "ENI_CONFIG_LABEL_DEF is defined, ENIConfigController will use that label key to
+	// search if is setting value for eniConfigLabelDef
+	// Example:
+	//   Node has set label k8s.amazonaws.com/eniConfigCustom=customConfig
+	//   We can get that value in controller by setting environmental variable ENI_CONFIG_LABEL_DEF
+	//   ENI_CONFIG_LABEL_DEF=k8s.amazonaws.com/eniConfigOverride
+	//   This will set eniConfigLabelDef to eniConfigOverride
+	envEniConfigAnnotationDef = "ENI_CONFIG_ANNOTATION_DEF"
+	envEniConfigLabelDef      = "ENI_CONFIG_LABEL_DEF"
 )
 
 type ENIConfig interface {
@@ -106,10 +116,12 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	case *corev1.Node:
 
 		log.Infof("Handle corev1.Node: %s, %v, %v", o.GetName(), o.GetAnnotations(), o.GetLabels())
+		// Get annotations if not found get labels if not found fallback use default
 		if h.controller.myNodeName == o.GetName() {
 			annotation := o.GetAnnotations()
+			annotationDef := getEniConfigAnnotationDef()
 
-			val, ok := annotation[eniConfigAnnotationDef]
+			val, ok := annotation[annotationDef]
 			if ok {
 				h.controller.eniLock.Lock()
 				defer h.controller.eniLock.Unlock()
@@ -118,8 +130,9 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			} else {
 
 				label := o.GetLabels()
+				labelDef := getEniConfigLabelDef()
 
-				val, ok := label[eniConfigLabelDef]
+				val, ok := label[labelDef]
 				if ok {
 					h.controller.eniLock.Lock()
 					defer h.controller.eniLock.Unlock()
@@ -194,4 +207,34 @@ func (eniCfg *ENIConfigController) MyENIConfig() (*v1alpha1.ENIConfigSpec, error
 		}, nil
 	}
 	return nil, ErrNoENIConfig
+}
+
+// getEniConfigAnnotationDef returns eniConfigAnnotation
+func getEniConfigAnnotationDef() string {
+	inputStr, found := os.LookupEnv(envEniConfigAnnotationDef)
+
+	if !found {
+		return defaultEniConfigAnnotationDef
+	}
+	if len(inputStr) > 0 {
+		log.Debugf("Using ENI_CONFIG_ANNOTATION_DEF %v", inputStr)
+		return inputStr
+	}
+
+	return defaultEniConfigAnnotationDef
+}
+
+// getEniConfigLabelDef returns eniConfigLabel name
+func getEniConfigLabelDef() string {
+	inputStr, found := os.LookupEnv(envEniConfigLabelDef)
+
+	if !found {
+		return defaultEniConfigLabelDef
+	}
+	if len(inputStr) > 0 {
+		log.Debugf("Using ENI_CONFIG_LABEL_DEF %v", inputStr)
+		return inputStr
+	}
+
+	return defaultEniConfigLabelDef
 }
