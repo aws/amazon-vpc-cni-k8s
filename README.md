@@ -93,6 +93,17 @@ Type: Boolean
 Default: `false`  
 Specifies that your pods may use subnets and security groups that are independent of your worker node's VPC configuration\. By default, pods share the same subnet and security groups as the worker node's primary interface\. Setting this variable to `true` causes `ipamD` to use the security groups and VPC subnet in a worker node's `ENIConfig` for elastic network interface allocation\. You must create an `ENIConfig` custom resource definition for each subnet that your pods will reside in, and then annotate each worker node to use a specific `ENIConfig` \(multiple worker nodes can be annotated with the same `ENIConfig`\)\. Worker nodes can only be annotated with a single `ENIConfig` at a time, and the subnet in the `ENIConfig` must belong to the same Availability Zone that the worker node resides in\. For more information, see [https://github.com/aws/amazon-vpc-cni-k8s/pull/165](https://github.com/aws/amazon-vpc-cni-k8s/pull/165)\.
 
+`ENI_CONFIG_ANNOTATION_DEF`
+Type: String
+Default: k8s.amazonaws.com/eniConfig
+Specifies node annotation key name. This should be used when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Custom annotation value will be used to set eniConfig name.
+
+`ENI_CONFIG_LABEL_DEF`
+Type: String
+Default: k8s.amazonaws.com/eniConfig
+Specifies node label key name. This should be used when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Custom annotation value will be used to set eniConfig name.
+For example if you set ENI_CONFIG_LABEL_DEF=failure-domain.beta.kubernetes.io/zone, the node that is deployed in `us-east-1a` would have it set to that zone and CNI would use eniConfig named `us-east-1a`.
+
 `AWS_VPC_K8S_CNI_EXTERNALSNAT`  
 Type: Boolean  
 Default: `false`  
