@@ -125,9 +125,9 @@ type iptablesIface interface {
 type snatType uint32
 
 const (
-	sequentialSNAT snatType = 0
-	randomHashSNAT snatType = 1
-	randomPRNGSNAT snatType = 2
+	sequentialSNAT snatType = iota
+	randomHashSNAT
+	randomPRNGSNAT
 )
 
 // New creates a linuxNetwork object
