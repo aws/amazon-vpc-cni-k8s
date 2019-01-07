@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 
 	mocks_ip "github.com/aws/amazon-vpc-cni-k8s/pkg/ipwrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mock_netlink"
@@ -97,6 +98,14 @@ func TestSetupENINetwork(t *testing.T) {
 	// eth1's device
 	eth1.EXPECT().Attrs().Return(mockLinkAttrs2)
 	eth1.EXPECT().Attrs().Return(mockLinkAttrs2)
+
+	// eth1's IP address
+	testeniAddr := &net.IPNet{
+		IP:   net.ParseIP(testeniIP),
+		Mask: testENINetIPNet.Mask,
+	}
+	mockNetLink.EXPECT().AddrList(gomock.Any(), unix.AF_INET).Return([]netlink.Addr{}, nil)
+	mockNetLink.EXPECT().AddrAdd(gomock.Any(), &netlink.Addr{IPNet: testeniAddr}).Return(nil)
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any())
 	mockNetLink.EXPECT().RouteAdd(gomock.Any()).Return(nil)
