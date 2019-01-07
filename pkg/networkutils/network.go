@@ -524,7 +524,7 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 	// ip add del <eniIP> dev <link> (if necessary)
 	// ip add add <eniIP> dev <link>
 	log.Debugf("Setting up ENI's primary IP %s", eniIP)
-	addrs, err := netlink.AddrList(link, unix.AF_INET)
+	addrs, err := netLink.AddrList(link, unix.AF_INET)
 	if err != nil {
 		return errors.Wrap(err, "eni network setup: failed to list IP addrs for ENI")
 	}
