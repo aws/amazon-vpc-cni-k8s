@@ -465,7 +465,7 @@ func typeOfSNAT() snatType {
 		return defaultValue
 	case "prng":
 		// prng means to use --random-fully
-		// note: for old versions of iptables/, this will fall back to --random
+		// note: for old versions of iptables, this will fall back to --random
 		return randomPRNGSNAT
 	case "none":
 		// none means to disable randomisation (no flag)
