@@ -381,12 +381,13 @@ func (n *linuxNetwork) setProcSys(key, value string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	_, err = f.WriteString(value)
 	if err != nil {
+		// If the write failed, just close
+		_ = f.Close()
 		return err
 	}
-	return nil
+	return f.Close()
 }
 
 type iptablesRule struct {
