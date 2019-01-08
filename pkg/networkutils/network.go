@@ -104,7 +104,7 @@ type NetworkAPIs interface {
 
 type linuxNetwork struct {
 	useExternalSNAT        bool
-	randomizeSNAT          snatType
+	typeOfSNAT             snatType
 	nodePortSupportEnabled bool
 	connmark               uint32
 
@@ -134,7 +134,7 @@ const (
 func New() NetworkAPIs {
 	return &linuxNetwork{
 		useExternalSNAT:        useExternalSNAT(),
-		randomizeSNAT:          randomizeSNAT(),
+		typeOfSNAT:             typeOfSNAT(),
 		nodePortSupportEnabled: nodePortSupportEnabled(),
 		mainENIMark:            getConnmark(),
 
@@ -310,15 +310,22 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 			}})
 	}
 
+	// Prepare the Desired Rule for SNAT Rule
 	curChain := fmt.Sprintf("AWS-SNAT-CHAIN-%d", len(vpcCIDRs))
 	snatRule := []string{"-m", "comment", "--comment", "AWS, SNAT",
 		"-m", "addrtype", "!", "--dst-type", "LOCAL",
 		"-j", "SNAT", "--to-source", primaryAddr.String()}
-	if n.randomizeSNAT == randomHashSNAT {
+	if n.typeOfSNAT == randomHashSNAT {
 		snatRule = append(snatRule, "--random")
 	}
-	if n.randomizeSNAT == randomPRNGSNAT {
-		snatRule = append(snatRule, "--random-fully")
+	if n.typeOfSNAT == randomPRNGSNAT {
+		if ipt.HasRandomFully() {
+			snatRule = append(snatRule, "--random-fully")
+		} else {
+			log.Warning("prng (--random-fully) requested, but iptables version does not support it." +
+				"Falling back to hashrandom (--random)")
+			snatRule = append(snatRule, "--random")
+		}
 	}
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "last SNAT rule for non-VPC outbound traffic",
@@ -331,7 +338,6 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	log.Debugf("iptableRules: %v", iptableRules)
 
 	iptableRules = append(iptableRules, iptablesRule{
-
 		name:        "connmark for primary ENI",
 		shouldExist: n.nodePortSupportEnabled,
 		table:       "mangle",
@@ -449,29 +455,30 @@ func useExternalSNAT() bool {
 	return getBoolEnvVar(envExternalSNAT, false)
 }
 
-func randomizeSNAT() snatType {
+func typeOfSNAT() snatType {
 	defaultValue := randomHashSNAT
-	defaultString := "hash based random"
-	strValue := os.Getenv(envRandomizeSNAT)
-	if strValue == "" {
+	defaultString := "hashrandom"
+	switch os.Getenv(envRandomizeSNAT) {
+	case "":
 		// empty means default
 		return defaultValue
-	}
-	if strValue == "prng" {
+	case "prng":
 		// prng means to use --random-fully
+		// note: for old versions of iptables, this will fall back to --random
 		return randomPRNGSNAT
-	}
-	if strValue == "none" {
+	case "none":
 		// none means to disable randomisation (no flag)
 		return sequentialSNAT
-	}
-	if strValue == "hashrandom" {
+
+	case defaultString:
 		// hashrandom means to use --random
 		return randomHashSNAT
+	default:
+		// if we get to this point, the environment variable has an invalid value
+		log.Error("Failed to parse " + envRandomizeSNAT + "; using default: " + defaultString + ". Provided string was " +
+			strValue)
+		return defaultValue
 	}
-	// if we get to this point, the environment variable has an invalid value
-	log.Error("Failed to parse " + envRandomizeSNAT + "; using default: " + defaultString + ". Provided string was " + strValue)
-	return defaultValue
 }
 
 func nodePortSupportEnabled() bool {
