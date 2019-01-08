@@ -103,8 +103,9 @@ Disable SNAT if you need to allow inbound communication to your pods from extern
 Type: String 
 Default: `hashrandom` 
 Valid Values: `hashrandom`, `prng`, `none`
-Specifies weather the SNAT `iptables` rule should randomize the outgoing ports for connections. When enabled (`hashrandom`) the `--random` flag will be added to the SNAT `iptables` rule. To use pseudo random number generation rather than hash based (i.e. `--random-fully`) use `prng` for the environment variable.
-Disable (`none`) this functionality if you rely on sequential port allocation for outgoing connections. For old versions if iptables that do not support `--random-fully` this option will fall back to `--random`.
+Specifies weather the SNAT `iptables` rule should randomize the outgoing ports for connections. When enabled (`hashrandom`) the `--random` flag will be added to the SNAT `iptables` rule.
+To use pseudo random number generation rather than hash based (i.e. `--random-fully`) use `prng` for the environment variable. For old versions of `iptables` that do not support `--random-fully` this option will fall back to `--random`.
+Disable (`none`) this functionality if you rely on sequential port allocation for outgoing connections.
 
 `WARM_ENI_TARGET`  
 Type: Integer  
