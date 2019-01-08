@@ -92,3 +92,7 @@
   name = "k8s.io/client-go"
   # revision for tag "kubernetes-1.10.1"
   revision = "989be4278f353e42f26c416c53757d16fcff77db"
+
+[[constraint]]
+  name = "firepear.net/qsplit"
+  version = "2.2.2"

@@ -325,7 +325,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		snatRule = append(snatRule, "--random")
 	}
 	if n.typeOfSNAT == randomPRNGSNAT {
-		if ipt.HasRandomFully {
+		if ipt.HasRandomFully() {
 			snatRule = append(snatRule, "--random-fully")
 		} else {
 			log.Warn("prng (--random-fully) requested, but iptables version does not support it. " +
