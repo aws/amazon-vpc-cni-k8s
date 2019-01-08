@@ -117,9 +117,15 @@ type linuxNetwork struct {
 
 type iptablesIface interface {
 	Exists(table, chain string, rulespec ...string) (bool, error)
+	Insert(table, chain string, pos int, rulespec ...string) error
 	Append(table, chain string, rulespec ...string) error
 	Delete(table, chain string, rulespec ...string) error
+	List(table, chain string) ([]string, error)
 	NewChain(table, chain string) error
+	ClearChain(table, chain string) error
+	DeleteChain(table, chain string) error
+	ListChains(table string) ([]string, error)
+	HasRandomFully() bool
 }
 
 type snatType uint32
@@ -319,7 +325,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		snatRule = append(snatRule, "--random")
 	}
 	if n.typeOfSNAT == randomPRNGSNAT {
-		if ipt.HasRandomFully() {
+		if ipt.HasRandomFully {
 			snatRule = append(snatRule, "--random-fully")
 		} else {
 			log.Warn("prng (--random-fully) requested, but iptables version does not support it. " +
