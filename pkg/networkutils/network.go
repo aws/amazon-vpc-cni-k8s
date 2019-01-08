@@ -322,7 +322,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		if ipt.HasRandomFully() {
 			snatRule = append(snatRule, "--random-fully")
 		} else {
-			log.Warning("prng (--random-fully) requested, but iptables version does not support it." +
+			log.Warn("prng (--random-fully) requested, but iptables version does not support it. " +
 				"Falling back to hashrandom (--random)")
 			snatRule = append(snatRule, "--random")
 		}
@@ -458,13 +458,14 @@ func useExternalSNAT() bool {
 func typeOfSNAT() snatType {
 	defaultValue := randomHashSNAT
 	defaultString := "hashrandom"
-	switch os.Getenv(envRandomizeSNAT) {
+	strValue := os.Getenv(envRandomizeSNAT)
+	switch strValue {
 	case "":
 		// empty means default
 		return defaultValue
 	case "prng":
 		// prng means to use --random-fully
-		// note: for old versions of iptables, this will fall back to --random
+		// note: for old versions of iptables/, this will fall back to --random
 		return randomPRNGSNAT
 	case "none":
 		// none means to disable randomisation (no flag)
@@ -475,7 +476,7 @@ func typeOfSNAT() snatType {
 		return randomHashSNAT
 	default:
 		// if we get to this point, the environment variable has an invalid value
-		log.Error("Failed to parse " + envRandomizeSNAT + "; using default: " + defaultString + ". Provided string was " +
+		log.Errorf("Failed to parse %s; using default: %s. Provided string was \"%s\"", envRandomizeSNAT, defaultString,
 			strValue)
 		return defaultValue
 	}
