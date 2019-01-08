@@ -113,10 +113,10 @@ Default: None
 Specifies the number of free IP addresses that the `ipamD` daemon should attempt to keep available for pod assignment on the node\. For example, if `WARM_IP_TARGET` is set to 10, then `ipamD` attempts to keep 10 free IP addresses available at all times\. If the elastic network interfaces on the node are unable to provide these free addresses, `ipamD` attempts to allocate more interfaces until `WARM_IP_TARGET` free IP addresses are available\.  
 This environment variable overrides `WARM_ENI_TARGET` behavior\.
 
-`MAX_ENI`
-Type: Integer
-Default: `-1`
-Specifies the maximum number of ENIs that will be attached to the node. When MAX_ENI is <= 1 (i.e., the default), the setting is not used, and the maximum number of ENIs is always equal to the maximum number for the instance type in question. Even when MAX_ENI is a positive number, it is limited by the maximum number for the instance type.
+`MAX_ENI`  
+Type: Integer  
+Default: None  
+Specifies the maximum number of ENIs that will be attached to the node. When MAX_ENI is unset or 0 (or lower), the setting is not used, and the maximum number of ENIs is always equal to the maximum number for the instance type in question. Even when MAX_ENI is a positive number, it is limited by the maximum number for the instance type.
 
 ### Notes
 
