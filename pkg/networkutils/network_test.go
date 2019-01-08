@@ -364,7 +364,7 @@ func (ipt *mockIptables) ListChains(table string) ([]string, error) {
 	return nil, nil
 }
 
-func (ipt *mockIptables) HasFullyRandom() bool {
+func (ipt *mockIptables) HasRandomFully() bool {
 	// TODO: Work out how to write a test case for this
 	return true
 }
