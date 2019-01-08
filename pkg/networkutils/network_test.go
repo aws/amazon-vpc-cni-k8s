@@ -313,6 +313,10 @@ func (ipt *mockIptables) Exists(table, chainName string, rulespec ...string) (bo
 	return false, nil
 }
 
+func (ipt *mockIptables) Insert(table, chain string, pos int, rulespec ...string) error {
+	return nil
+}
+
 func (ipt *mockIptables) Append(table, chain string, rulespec ...string) error {
 	if ipt.dataplaneState[table] == nil {
 		ipt.dataplaneState[table] = map[string][][]string{}
@@ -339,8 +343,30 @@ func (ipt *mockIptables) Delete(table, chainName string, rulespec ...string) err
 	return nil
 }
 
+func (ipt *mockIptables) List(table, chain string) ([]string, error) {
+	return nil, nil
+
+}
+
 func (ipt *mockIptables) NewChain(table, chain string) error {
 	return nil
+}
+
+func (ipt *mockIptables) ClearChain(table, chain string) error {
+	return nil
+}
+
+func (ipt *mockIptables) DeleteChain(table, chain string) error {
+	return nil
+}
+
+func (ipt *mockIptables) ListChains(table string) ([]string, error) {
+	return nil, nil
+}
+
+func (ipt *mockIptables) HasFullyRandom() bool {
+	// TODO: Work out how to write a test case for this
+	return true
 }
 
 type mockFile struct {
