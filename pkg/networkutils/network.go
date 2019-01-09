@@ -56,6 +56,12 @@ const (
 	// be installed and will be removed if they are already installed.  Defaults to false.
 	envExternalSNAT = "AWS_VPC_K8S_CNI_EXTERNALSNAT"
 
+	// This environment is used to specify weather the SNAT rule added to iptables should randomize port
+	// allocation for outgoing connections. If set to "hashrandom" the SNAT iptables rule will have the "--random" flag
+	// added to it. Set it to "prng" if you want to use a pseudo random numbers, i.e. "--random-fully".
+	// Defaults to hashrandom.
+	envRandomizeSNAT = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
+
 	// envNodePortSupport is the name of environment variable that configures whether we implement support for
 	// NodePorts on the primary ENI.  This requires that we add additional iptables rules and loosen the kernel's
 	// RPF check as described below.  Defaults to true.
@@ -98,6 +104,7 @@ type NetworkAPIs interface {
 
 type linuxNetwork struct {
 	useExternalSNAT        bool
+	typeOfSNAT             snatType
 	nodePortSupportEnabled bool
 	connmark               uint32
 
@@ -110,15 +117,30 @@ type linuxNetwork struct {
 
 type iptablesIface interface {
 	Exists(table, chain string, rulespec ...string) (bool, error)
+	Insert(table, chain string, pos int, rulespec ...string) error
 	Append(table, chain string, rulespec ...string) error
 	Delete(table, chain string, rulespec ...string) error
+	List(table, chain string) ([]string, error)
 	NewChain(table, chain string) error
+	ClearChain(table, chain string) error
+	DeleteChain(table, chain string) error
+	ListChains(table string) ([]string, error)
+	HasRandomFully() bool
 }
+
+type snatType uint32
+
+const (
+	sequentialSNAT snatType = iota
+	randomHashSNAT
+	randomPRNGSNAT
+)
 
 // New creates a linuxNetwork object
 func New() NetworkAPIs {
 	return &linuxNetwork{
 		useExternalSNAT:        useExternalSNAT(),
+		typeOfSNAT:             typeOfSNAT(),
 		nodePortSupportEnabled: nodePortSupportEnabled(),
 		mainENIMark:            getConnmark(),
 
@@ -294,22 +316,34 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 			}})
 	}
 
+	// Prepare the Desired Rule for SNAT Rule
 	curChain := fmt.Sprintf("AWS-SNAT-CHAIN-%d", len(vpcCIDRs))
+	snatRule := []string{"-m", "comment", "--comment", "AWS, SNAT",
+		"-m", "addrtype", "!", "--dst-type", "LOCAL",
+		"-j", "SNAT", "--to-source", primaryAddr.String()}
+	if n.typeOfSNAT == randomHashSNAT {
+		snatRule = append(snatRule, "--random")
+	}
+	if n.typeOfSNAT == randomPRNGSNAT {
+		if ipt.HasRandomFully() {
+			snatRule = append(snatRule, "--random-fully")
+		} else {
+			log.Warn("prng (--random-fully) requested, but iptables version does not support it. " +
+				"Falling back to hashrandom (--random)")
+			snatRule = append(snatRule, "--random")
+		}
+	}
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "last SNAT rule for non-VPC outbound traffic",
 		shouldExist: !n.useExternalSNAT,
 		table:       "nat",
 		chain:       curChain,
-		rule: []string{
-			"-m", "comment", "--comment", "AWS, SNAT",
-			"-m", "addrtype", "!", "--dst-type", "LOCAL",
-			"-j", "SNAT", "--to-source", primaryAddr.String()},
+		rule:        snatRule,
 	})
 
 	log.Debugf("iptableRules: %v", iptableRules)
 
 	iptableRules = append(iptableRules, iptablesRule{
-
 		name:        "connmark for primary ENI",
 		shouldExist: n.nodePortSupportEnabled,
 		table:       "mangle",
@@ -426,6 +460,33 @@ func (n *linuxNetwork) UseExternalSNAT() bool {
 
 func useExternalSNAT() bool {
 	return getBoolEnvVar(envExternalSNAT, false)
+}
+
+func typeOfSNAT() snatType {
+	defaultValue := randomHashSNAT
+	defaultString := "hashrandom"
+	strValue := os.Getenv(envRandomizeSNAT)
+	switch strValue {
+	case "":
+		// empty means default
+		return defaultValue
+	case "prng":
+		// prng means to use --random-fully
+		// note: for old versions of iptables, this will fall back to --random
+		return randomPRNGSNAT
+	case "none":
+		// none means to disable randomisation (no flag)
+		return sequentialSNAT
+
+	case defaultString:
+		// hashrandom means to use --random
+		return randomHashSNAT
+	default:
+		// if we get to this point, the environment variable has an invalid value
+		log.Errorf("Failed to parse %s; using default: %s. Provided string was \"%s\"", envRandomizeSNAT, defaultString,
+			strValue)
+		return defaultValue
+	}
 }
 
 func nodePortSupportEnabled() bool {
