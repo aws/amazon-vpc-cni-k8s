@@ -46,8 +46,8 @@ const (
 	eniID            = "eni-5731da78"
 	primaryMAC       = "12:ef:2a:98:e5:5a"
 	secMAC           = "12:ef:2a:98:e5:5b"
-	primaryDevice    = 2
-	secDevice        = 0
+	primaryDevice    = 0
+	secDevice        = 2
 	primarySubnet    = "10.10.10.0/24"
 	secSubnet        = "10.10.20.0/24"
 	ipaddr01         = "10.10.10.11"
