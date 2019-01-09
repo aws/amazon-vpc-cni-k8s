@@ -592,7 +592,7 @@ func (c *IPAMContext) getENIaddresses(eni string) ([]*ec2.NetworkInterfacePrivat
 		}
 	}
 
-	return nil, "", errors.Wrapf(err, "faind to find eni's primary address for eni %s", eni)
+	return nil, "", errors.Errorf("failed to find eni's primary address for eni %s", eni)
 }
 
 func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) {
