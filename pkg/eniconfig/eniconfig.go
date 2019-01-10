@@ -59,10 +59,12 @@ var ErrNoENIConfig = errors.New("eniconfig: eniconfig is not available")
 
 // ENIConfigController defines global context for ENIConfig controller
 type ENIConfigController struct {
-	eni        map[string]*v1alpha1.ENIConfigSpec
-	myENI      string
-	eniLock    sync.RWMutex
-	myNodeName string
+	eni                    map[string]*v1alpha1.ENIConfigSpec
+	myENI                  string
+	eniLock                sync.RWMutex
+	myNodeName             string
+	eniConfigAnnotationDef string
+	eniConfigLabelDef      string
 }
 
 // ENIConfigInfo returns locally cached ENIConfigs
@@ -77,6 +79,8 @@ func NewENIConfigController() *ENIConfigController {
 		myNodeName: os.Getenv("MY_NODE_NAME"),
 		eni:        make(map[string]*v1alpha1.ENIConfigSpec),
 		myENI:      eniConfigDefault,
+		eniConfigAnnotationDef: getEniConfigAnnotationDef(),
+		eniConfigLabelDef:      getEniConfigLabelDef(),
 	}
 }
 
@@ -119,9 +123,8 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		// Get annotations if not found get labels if not found fallback use default
 		if h.controller.myNodeName == o.GetName() {
 			annotation := o.GetAnnotations()
-			annotationDef := getEniConfigAnnotationDef()
 
-			val, ok := annotation[annotationDef]
+			val, ok := annotation[h.controller.eniConfigAnnotationDef]
 			if ok {
 				h.controller.eniLock.Lock()
 				defer h.controller.eniLock.Unlock()
@@ -130,9 +133,8 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			} else {
 
 				label := o.GetLabels()
-				labelDef := getEniConfigLabelDef()
 
-				val, ok := label[labelDef]
+				val, ok := label[h.controller.eniConfigLabelDef]
 				if ok {
 					h.controller.eniLock.Lock()
 					defer h.controller.eniLock.Unlock()
