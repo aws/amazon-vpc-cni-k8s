@@ -96,13 +96,14 @@ Specifies that your pods may use subnets and security groups that are independen
 `ENI_CONFIG_ANNOTATION_DEF`
 Type: String
 Default: k8s.amazonaws.com/eniConfig
-Specifies node annotation key name. This should be used when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Custom annotation value will be used to set eniConfig name.
+Specifies node annotation key name. This should be used when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Custom annotation value will be used to set eniConfig name. See ENI_CONFIG_LABEL_DEF for examples.
 
 `ENI_CONFIG_LABEL_DEF`
 Type: String
 Default: k8s.amazonaws.com/eniConfig
-Specifies node label key name. This should be used when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Custom annotation value will be used to set eniConfig name.
-For example if you set ENI_CONFIG_LABEL_DEF=failure-domain.beta.kubernetes.io/zone, the node that is deployed in `us-east-1a` would have it set to that zone and CNI would use eniConfig named `us-east-1a`.
+Specifies node label key name. This should be used when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Custom label value will be used to set eniConfig name. Note that annotations will take precedence over labels. To use labels, ensure default annotation k8s.amazonaws.com/eniConfig is not set on node and ENI_CONFIG_ANNOTATION_DEF is not used.
+For example, you can use custom node label key _example.com/eniConfig_ by setting ENI_CONFIG_LABEL_DEF=example.com/eniConfig. Then you can set that label on node with value of your custom eniConfig name like `eniConfig-us-east-1a`.
+In other example if your node has label _failure-domain.beta.kubernetes.io/zone_ and its value is set to availability zone `us-east-1a`, you can set ENI_CONFIG_LABEL_DEF=failure-domain.beta.kubernetes.io/zone. In such case eniConfig would be set to availability zone name `us-east-1a`, and you could use it to differentiate configs between zones.
 
 `AWS_VPC_K8S_CNI_EXTERNALSNAT`  
 Type: Boolean  
