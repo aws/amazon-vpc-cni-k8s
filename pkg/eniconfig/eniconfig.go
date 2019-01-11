@@ -122,32 +122,19 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		log.Infof("Handle corev1.Node: %s, %v, %v", o.GetName(), o.GetAnnotations(), o.GetLabels())
 		// Get annotations if not found get labels if not found fallback use default
 		if h.controller.myNodeName == o.GetName() {
-			annotation := o.GetAnnotations()
 
-			val, ok := annotation[h.controller.eniConfigAnnotationDef]
-			if ok {
-				h.controller.eniLock.Lock()
-				defer h.controller.eniLock.Unlock()
-				h.controller.myENI = val
-				log.Infof(" Setting myENI to: %s", val)
-			} else {
-
-				label := o.GetLabels()
-
-				val, ok := label[h.controller.eniConfigLabelDef]
-				if ok {
-					h.controller.eniLock.Lock()
-					defer h.controller.eniLock.Unlock()
-					h.controller.myENI = val
-					log.Infof(" Setting myENI to: %s", val)
-				} else {
-
-					h.controller.eniLock.Lock()
-					defer h.controller.eniLock.Unlock()
-					h.controller.myENI = eniConfigDefault
-					log.Infof(" Setting myENI to: %s", eniConfigDefault)
+			val, ok := o.GetAnnotations()[h.controller.eniConfigAnnotationDef]
+			if !ok {
+				val, ok = o.GetLabels()[h.controller.eniConfigLabelDef]
+				if !ok {
+					val = eniConfigDefault
 				}
 			}
+
+			h.controller.eniLock.Lock()
+			defer h.controller.eniLock.Unlock()
+			h.controller.myENI = val
+			log.Infof(" Setting myENI to: %s", val)
 		}
 	}
 	return nil
