@@ -35,8 +35,19 @@ import (
 )
 
 const (
-	eniConfigAnnotationDef = "k8s.amazonaws.com/eniConfig"
-	eniConfigDefault       = "default"
+	defaultEniConfigAnnotationDef = "k8s.amazonaws.com/eniConfig"
+	defaultEniConfigLabelDef      = "k8s.amazonaws.com/eniConfig"
+	eniConfigDefault              = "default"
+
+	// when "ENI_CONFIG_LABEL_DEF is defined, ENIConfigController will use that label key to
+	// search if is setting value for eniConfigLabelDef
+	// Example:
+	//   Node has set label k8s.amazonaws.com/eniConfigCustom=customConfig
+	//   We can get that value in controller by setting environmental variable ENI_CONFIG_LABEL_DEF
+	//   ENI_CONFIG_LABEL_DEF=k8s.amazonaws.com/eniConfigOverride
+	//   This will set eniConfigLabelDef to eniConfigOverride
+	envEniConfigAnnotationDef = "ENI_CONFIG_ANNOTATION_DEF"
+	envEniConfigLabelDef      = "ENI_CONFIG_LABEL_DEF"
 )
 
 type ENIConfig interface {
@@ -48,10 +59,12 @@ var ErrNoENIConfig = errors.New("eniconfig: eniconfig is not available")
 
 // ENIConfigController defines global context for ENIConfig controller
 type ENIConfigController struct {
-	eni        map[string]*v1alpha1.ENIConfigSpec
-	myENI      string
-	eniLock    sync.RWMutex
-	myNodeName string
+	eni                    map[string]*v1alpha1.ENIConfigSpec
+	myENI                  string
+	eniLock                sync.RWMutex
+	myNodeName             string
+	eniConfigAnnotationDef string
+	eniConfigLabelDef      string
 }
 
 // ENIConfigInfo returns locally cached ENIConfigs
@@ -66,6 +79,8 @@ func NewENIConfigController() *ENIConfigController {
 		myNodeName: os.Getenv("MY_NODE_NAME"),
 		eni:        make(map[string]*v1alpha1.ENIConfigSpec),
 		myENI:      eniConfigDefault,
+		eniConfigAnnotationDef: getEniConfigAnnotationDef(),
+		eniConfigLabelDef:      getEniConfigLabelDef(),
 	}
 }
 
@@ -104,22 +119,22 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 
 	case *corev1.Node:
 
-		log.Infof("Handle corev1.Node: %s, %v", o.GetName(), o.GetAnnotations())
+		log.Infof("Handle corev1.Node: %s, %v, %v", o.GetName(), o.GetAnnotations(), o.GetLabels())
+		// Get annotations if not found get labels if not found fallback use default
 		if h.controller.myNodeName == o.GetName() {
-			annotation := o.GetAnnotations()
 
-			val, ok := annotation[eniConfigAnnotationDef]
-			if ok {
-				h.controller.eniLock.Lock()
-				defer h.controller.eniLock.Unlock()
-				h.controller.myENI = val
-				log.Infof(" Setting myENI to: %s", val)
-			} else {
-				h.controller.eniLock.Lock()
-				defer h.controller.eniLock.Unlock()
-				h.controller.myENI = eniConfigDefault
-				log.Infof(" Setting myENI to: %s", eniConfigDefault)
+			val, ok := o.GetAnnotations()[h.controller.eniConfigAnnotationDef]
+			if !ok {
+				val, ok = o.GetLabels()[h.controller.eniConfigLabelDef]
+				if !ok {
+					val = eniConfigDefault
+				}
 			}
+
+			h.controller.eniLock.Lock()
+			defer h.controller.eniLock.Unlock()
+			h.controller.myENI = val
+			log.Infof(" Setting myENI to: %s", val)
 		}
 	}
 	return nil
@@ -181,4 +196,34 @@ func (eniCfg *ENIConfigController) MyENIConfig() (*v1alpha1.ENIConfigSpec, error
 		}, nil
 	}
 	return nil, ErrNoENIConfig
+}
+
+// getEniConfigAnnotationDef returns eniConfigAnnotation
+func getEniConfigAnnotationDef() string {
+	inputStr, found := os.LookupEnv(envEniConfigAnnotationDef)
+
+	if !found {
+		return defaultEniConfigAnnotationDef
+	}
+	if len(inputStr) > 0 {
+		log.Debugf("Using ENI_CONFIG_ANNOTATION_DEF %v", inputStr)
+		return inputStr
+	}
+
+	return defaultEniConfigAnnotationDef
+}
+
+// getEniConfigLabelDef returns eniConfigLabel name
+func getEniConfigLabelDef() string {
+	inputStr, found := os.LookupEnv(envEniConfigLabelDef)
+
+	if !found {
+		return defaultEniConfigLabelDef
+	}
+	if len(inputStr) > 0 {
+		log.Debugf("Using ENI_CONFIG_LABEL_DEF %v", inputStr)
+		return inputStr
+	}
+
+	return defaultEniConfigLabelDef
 }

@@ -96,6 +96,18 @@ Type: Boolean
 Default: `false`  
 Specifies that your pods may use subnets and security groups that are independent of your worker node's VPC configuration\. By default, pods share the same subnet and security groups as the worker node's primary interface\. Setting this variable to `true` causes `ipamD` to use the security groups and VPC subnet in a worker node's `ENIConfig` for elastic network interface allocation\. You must create an `ENIConfig` custom resource definition for each subnet that your pods will reside in, and then annotate each worker node to use a specific `ENIConfig` \(multiple worker nodes can be annotated with the same `ENIConfig`\)\. Worker nodes can only be annotated with a single `ENIConfig` at a time, and the subnet in the `ENIConfig` must belong to the same Availability Zone that the worker node resides in\. For more information, see [https://github.com/aws/amazon-vpc-cni-k8s/pull/165](https://github.com/aws/amazon-vpc-cni-k8s/pull/165)\.
 
+`ENI_CONFIG_ANNOTATION_DEF`
+Type: String
+Default: k8s.amazonaws.com/eniConfig
+Specifies node annotation key name. This should be used when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Custom annotation value will be used to set eniConfig name. See ENI_CONFIG_LABEL_DEF for examples.
+
+`ENI_CONFIG_LABEL_DEF`
+Type: String
+Default: k8s.amazonaws.com/eniConfig
+Specifies node label key name. This should be used when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Custom label value will be used to set eniConfig name. Note that annotations will take precedence over labels. To use labels, ensure default annotation k8s.amazonaws.com/eniConfig is not set on node and ENI_CONFIG_ANNOTATION_DEF is not used.
+For example, you can use custom node label key _example.com/eniConfig_ by setting ENI_CONFIG_LABEL_DEF=example.com/eniConfig. Then you can set that label on node with value of your custom eniConfig name like `eniConfig-us-east-1a`.
+In other example if your node has label _failure-domain.beta.kubernetes.io/zone_ and its value is set to availability zone `us-east-1a`, you can set ENI_CONFIG_LABEL_DEF=failure-domain.beta.kubernetes.io/zone. In such case eniConfig would be set to availability zone name `us-east-1a`, and you could use it to differentiate configs between zones.
+
 `AWS_VPC_K8S_CNI_EXTERNALSNAT`  
 Type: Boolean  
 Default: `false`  
