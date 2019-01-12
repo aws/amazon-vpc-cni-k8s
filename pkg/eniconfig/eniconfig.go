@@ -69,16 +69,18 @@ type ENIConfigController struct {
 
 // ENIConfigInfo returns locally cached ENIConfigs
 type ENIConfigInfo struct {
-	ENI   map[string]v1alpha1.ENIConfigSpec
-	MyENI string
+	ENI                    map[string]v1alpha1.ENIConfigSpec
+	MyENI                  string
+	EniConfigAnnotationDef string
+	EniConfigLabelDef      string
 }
 
 // NewENIConfigController creates a new ENIConfig controller
 func NewENIConfigController() *ENIConfigController {
 	return &ENIConfigController{
-		myNodeName: os.Getenv("MY_NODE_NAME"),
-		eni:        make(map[string]*v1alpha1.ENIConfigSpec),
-		myENI:      eniConfigDefault,
+		myNodeName:             os.Getenv("MY_NODE_NAME"),
+		eni:                    make(map[string]*v1alpha1.ENIConfigSpec),
+		myENI:                  eniConfigDefault,
 		eniConfigAnnotationDef: getEniConfigAnnotationDef(),
 		eniConfigLabelDef:      getEniConfigLabelDef(),
 	}
@@ -174,6 +176,8 @@ func (eniCfg *ENIConfigController) Getter() *ENIConfigInfo {
 	defer eniCfg.eniLock.Unlock()
 
 	output.MyENI = eniCfg.myENI
+	output.EniConfigAnnotationDef = getEniConfigAnnotationDef()
+	output.EniConfigLabelDef = getEniConfigLabelDef()
 
 	for name, val := range eniCfg.eni {
 		output.ENI[name] = *val
