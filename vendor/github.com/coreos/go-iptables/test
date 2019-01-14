@@ -45,11 +45,14 @@ split=(${TEST// / })
 TEST=${split[@]/#/${REPO_PATH}/}
 
 echo "Running tests..."
-go test -i ${TEST}
+bin=$(mktemp)
+
+go test -c -o ${bin} ${COVER} -i ${TEST}
 if [[ -z "$SUDO_PERMITTED" ]]; then
     echo "Test aborted for safety reasons. Please set the SUDO_PERMITTED variable."
     exit 1
 fi
 
-sudo -E bash -c "PATH=\$GOROOT/bin:\$PATH go test ${COVER} $@ ${TEST}"
+sudo -E bash -c "${bin} $@ ${TEST}"
 echo "Success"
+rm "${bin}"

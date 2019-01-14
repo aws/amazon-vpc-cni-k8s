@@ -14,10 +14,22 @@
 
 .PHONY: build-linux clean docker docker-build lint unit-test vet
 
+VERSION ?= $(shell git describe --tags --always --dirty)
+LDFLAGS ?= -X main.version=$(VERSION)
+
+# Download portmap plugin
+download-portmap:
+	mkdir -p tmp/downloads
+	mkdir -p tmp/plugins
+	curl -L -o tmp/downloads/cni-plugins-amd64.tgz https://github.com/containernetworking/plugins/releases/download/v0.6.0/cni-plugins-amd64-v0.6.0.tgz
+	tar -vxf tmp/downloads/cni-plugins-amd64.tgz -C tmp/plugins
+	cp tmp/plugins/portmap .
+	rm -rf tmp
+
 # Default to build the Linux binary
 build-linux:
-	GOOS=linux CGO_ENABLED=0 go build -o aws-k8s-agent
-	GOOS=linux CGO_ENABLED=0 go build -o aws-cni ./plugins/routed-eni/
+	GOOS=linux CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "$(LDFLAGS)"
+	GOOS=linux CGO_ENABLED=0 go build -o aws-cni -ldflags "$(LDFLAGS)" ./plugins/routed-eni/
 
 build-metrics:
 	GOOS=linux CGO_ENABLED=0 go build -o cni-metrics-helper/cni-metrics-helper cni-metrics-helper/cni-metrics-helper.go
@@ -26,13 +38,13 @@ docker-build:
 	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
 		--workdir=/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
 		--env GOPATH=/usr/src/app \
-		golang:1.10 make build-linux
+		golang:1.10 make build-linux && make download-portmap
 
 
 # Build docker image
 docker: docker-build
-	@docker build -f scripts/dockerfiles/Dockerfile.release -t "amazon/amazon-k8s-cni:latest" .
-	@echo "Built Docker image \"amazon/amazon-k8s-cni:latest\""
+	@docker build -f scripts/dockerfiles/Dockerfile.release -t "amazon/amazon-k8s-cni:$(VERSION)" .
+	@echo "Built Docker image \"amazon/amazon-k8s-cni:$(VERSION)\""
 
 docker-metrics:
 	@docker build -f scripts/dockerfiles/Dockerfile.cni -t "amazon/cni-metrics-helper:latest" .
@@ -42,9 +54,10 @@ docker-metrics:
 unit-test:
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 150s ./pkg/awsutils/...
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./plugins/routed-eni/...
-	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./plugins/routed-eni/driver
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/k8sapi/...
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/networkutils/...
+	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/utils/...
+	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/eniconfig/...
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./ipamd/...
 
 # golint
@@ -68,3 +81,4 @@ vet:
 clean:
 	rm -f aws-k8s-agent
 	rm -f aws-cni
+	rm -f portmap

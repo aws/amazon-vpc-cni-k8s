@@ -15,6 +15,7 @@ package awsutils
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -26,13 +27,10 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadata"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/resourcegroupstaggingapiwrapper"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
 )
 
 const (
@@ -44,6 +42,7 @@ const (
 	metadataMAC          = "mac"
 	metadataSGs          = "/security-group-ids/"
 	metadataSubnetID     = "/subnet-id/"
+	metadataVPCcidrs     = "/vpc-ipv4-cidr-blocks/"
 	metadataVPCcidr      = "/vpc-ipv4-cidr-block/"
 	metadataDeviceNum    = "/device-number/"
 	metadataInterface    = "/interface-id/"
@@ -53,8 +52,10 @@ const (
 	eniDescriptionPrefix = "aws-K8S-"
 	metadataOwnerID      = "/owner-id"
 	// AllocENI need to choose a first free device number between 0 and maxENI
-	maxENIs   = 128
-	eniTagKey = "k8s-eni-key"
+	maxENIs           = 128
+	clusterNameEnvVar = "CLUSTER_NAME"
+	eniNodeTagKey     = "node.k8s.amazonaws.com/instance_id"
+	eniClusterTagKey  = "cluster.k8s.amazonaws.com/name"
 
 	retryDeleteENIInternal = 5 * time.Second
 
@@ -90,7 +91,7 @@ var (
 // APIs defines interfaces calls for adding/getting/deleting ENIs/secondary IPs. The APIs are not thread-safe.
 type APIs interface {
 	// AllocENI creates an eni and attaches it to instance
-	AllocENI() (eni string, err error)
+	AllocENI(useCustomCfg bool, sg []*string, subnet string) (eni string, err error)
 
 	// FreeENI detaches eni interface and deletes it
 	FreeENI(eniName string) error
@@ -107,8 +108,14 @@ type APIs interface {
 	// AllocAllIPAddress allocates all ip addresses available on an eni
 	AllocAllIPAddress(eniID string) error
 
-	// GetVPCIPv4CIDR returns vpc's cidr
+	// Allocate alloactes numIPs of IP address on a eni
+	AllocIPAddresses(eniID string, numIPs int64) error
+
+	// GetVPCIPv4CIDR returns vpc's 1st cidr
 	GetVPCIPv4CIDR() string
+
+	// GetVPCIPv4CIDRs returns vpc's cidrs
+	GetVPCIPv4CIDRs() []*string
 
 	// GetLocalIPv4 returns the primary IP address on the primary eni interface
 	GetLocalIPv4() string
@@ -121,6 +128,8 @@ type APIs interface {
 
 	// GetENILimit returns the number of enis can be attached to an instance
 	GetENILimit() (int, error)
+	// GetPrimaryENImac returns the mac address of the primary eni
+	GetPrimaryENImac() string
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -133,6 +142,7 @@ type EC2InstanceMetadataCache struct {
 	instanceID       string
 	instanceType     string
 	vpcIPv4CIDR      string
+	vpcIPv4CIDRs     []*string
 	primaryENI       string
 	primaryENImac    string
 	availabilityZone string
@@ -144,7 +154,6 @@ type EC2InstanceMetadataCache struct {
 
 	ec2Metadata ec2metadata.EC2Metadata
 	ec2SVC      ec2wrapper.EC2
-	tagSVC      resourcegroupstaggingapiwrapper.ResourceGroupsTaggingAPI
 }
 
 // ENIMetadata contains ENI information retrieved from EC2 meta data service
@@ -204,9 +213,6 @@ func New() (*EC2InstanceMetadataCache, error) {
 
 	ec2SVC := ec2wrapper.New(sess)
 	cache.ec2SVC = ec2SVC
-
-	tagSVC := resourcegroupstaggingapiwrapper.New(sess)
-	cache.tagSVC = tagSVC
 
 	err = cache.initWithEC2Metadata()
 	if err != nil {
@@ -301,6 +307,21 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata() error {
 		return errors.Wrap(err, "get instance metadata: failed to retrieve vpc-ipv4-cidr-block data")
 	}
 	log.Debugf("Found vpc-ipv4-cidr-block: %s ", cache.vpcIPv4CIDR)
+
+	// retrieve vpc-ipv4-cidr-blocks
+	metadataVPCIPv4CIDRs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataVPCcidrs)
+	if err != nil {
+		awsAPIErrInc("GetMetadata", err)
+		log.Errorf("Failed to retrieve vpc-ipv4-cidr-blocks from instance metadata service")
+		return errors.Wrap(err, "get instance metadata: failed to retrieve vpc-ipv4-cidr-block data")
+	}
+
+	vpcIPv4CIDRs := strings.Fields(metadataVPCIPv4CIDRs)
+
+	for _, vpcCIDR := range vpcIPv4CIDRs {
+		log.Debugf("Found VPC CIDR: %s", vpcCIDR)
+		cache.vpcIPv4CIDRs = append(cache.vpcIPv4CIDRs, aws.String(vpcCIDR))
+	}
 
 	return nil
 }
@@ -533,8 +554,8 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int64, error) {
 
 // AllocENI creates an eni and attach it to the instance
 // returns: newly created eni id
-func (cache *EC2InstanceMetadataCache) AllocENI() (string, error) {
-	eniID, err := cache.createENI()
+func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string, subnet string) (string, error) {
+	eniID, err := cache.createENI(useCustomCfg, sg, subnet)
 	if err != nil {
 		return "", errors.Wrap(err, "allocate eni: failed to create eni")
 	}
@@ -602,13 +623,24 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 }
 
 // return eni id , error
-func (cache *EC2InstanceMetadataCache) createENI() (string, error) {
+func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string, subnet string) (string, error) {
 	eniDescription := eniDescriptionPrefix + cache.instanceID
+	var input *ec2.CreateNetworkInterfaceInput
 
-	input := &ec2.CreateNetworkInterfaceInput{
-		Description: aws.String(eniDescription),
-		Groups:      cache.securityGroups,
-		SubnetId:    aws.String(cache.subnetID),
+	if useCustomCfg {
+		log.Infof("createENI: use customer network config, %v, %s", sg, subnet)
+		input = &ec2.CreateNetworkInterfaceInput{
+			Description: aws.String(eniDescription),
+			Groups:      sg,
+			SubnetId:    aws.String(subnet),
+		}
+	} else {
+		log.Infof("createENI: use primary interface's config, %v, %s", cache.securityGroups, cache.subnetID)
+		input = &ec2.CreateNetworkInterfaceInput{
+			Description: aws.String(eniDescription),
+			Groups:      cache.securityGroups,
+			SubnetId:    aws.String(cache.subnetID),
+		}
 	}
 
 	start := time.Now()
@@ -625,37 +657,44 @@ func (cache *EC2InstanceMetadataCache) createENI() (string, error) {
 }
 
 func (cache *EC2InstanceMetadataCache) tagENI(eniID string) {
-	tagSvc := cache.tagSVC
-	arns := make([]*string, 0)
 
-	eniARN := &arn.ARN{
-		Partition: "aws",
-		Service:   "ec2",
-		Region:    cache.region,
-		AccountID: cache.accountID,
-		Resource:  "network-interface/" + eniID}
-	arnString := eniARN.String()
-	arns = append(arns, aws.String(arnString))
+	// Tag the ENI with "node.k8s.amazonaws.com/instance_id=<instance_id>"
+	tags := []*ec2.Tag{
+		{
+			Key:   aws.String(eniNodeTagKey),
+			Value: aws.String(cache.instanceID),
+		},
+	}
 
-	tags := make(map[string]*string)
+	// If the CLUSTER_NAME env var is present,
+	// tag the ENI with "cluster.k8s.amazonaws.com/name=<cluster_name>"
+	clusterName := os.Getenv(clusterNameEnvVar)
+	if clusterName != "" {
+		tags = append(tags, &ec2.Tag{
+			Key:   aws.String(eniClusterTagKey),
+			Value: aws.String(clusterName),
+		})
+	}
 
-	tagValue := cache.instanceID
-	tags[eniTagKey] = aws.String(tagValue)
-	log.Debugf("Trying to tag newly created eni: keys=%s, value=%s", eniTagKey, tagValue)
+	for _, tag := range tags {
+		log.Debugf("Trying to tag newly created eni: key=%s, value=%s", aws.StringValue(tag.Key), aws.StringValue(tag.Value))
+	}
 
-	tagInput := &resourcegroupstaggingapi.TagResourcesInput{
-		ResourceARNList: arns,
-		Tags:            tags,
+	input := &ec2.CreateTagsInput{
+		Resources: []*string{
+			aws.String(eniID),
+		},
+		Tags: tags,
 	}
 
 	start := time.Now()
-	_, err := tagSvc.TagResources(tagInput)
-	awsAPILatency.WithLabelValues("TagResources", fmt.Sprint(err != nil)).Observe(msSince(start))
+	_, err := cache.ec2SVC.CreateTags(input)
+	awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
-		awsAPIErrInc("TagResources", err)
-		log.Warnf("Fail to tag the newly created eni %s  %v", eniID, err)
+		awsAPIErrInc("CreateTags", err)
+		log.Warnf("Failed to tag the newly created eni %s:  %v", eniID, err)
 	} else {
-		log.Debugf("Tag the newly created eni with arn: %s", arnString)
+		log.Debugf("Successfully tagged ENI: %s", eniID)
 	}
 }
 
@@ -826,6 +865,36 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
 	return eniLimit, nil
 }
 
+// Allocate alloactes numIPs of IP address on a eni
+func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int64) error {
+	var needIPs = int64(numIPs)
+
+	ipLimit, err := cache.GetENIipLimit()
+	if err == nil && ipLimit < int64(needIPs) {
+		needIPs = ipLimit
+	}
+
+	log.Infof("Trying to allocate %d IP address on eni %s", needIPs, eniID)
+
+	input := &ec2.AssignPrivateIpAddressesInput{
+		NetworkInterfaceId:             aws.String(eniID),
+		SecondaryPrivateIpAddressCount: aws.Int64(int64(needIPs)),
+	}
+
+	start := time.Now()
+	_, err = cache.ec2SVC.AssignPrivateIpAddresses(input)
+	awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil)).Observe(msSince(start))
+	if err != nil {
+		awsAPIErrInc("AssignPrivateIpAddresses", err)
+		if containsPrivateIPAddressLimitExceededError(err) {
+			return nil
+		}
+		log.Errorf("Failed to allocate a private IP address %v", err)
+		return errors.Wrap(err, "allocate ip address: failed to allocate a private IP address")
+	}
+	return nil
+}
+
 // AllocAllIPAddress allocates all IP addresses available on eni
 func (cache *EC2InstanceMetadataCache) AllocAllIPAddress(eniID string) error {
 	log.Infof("Trying to allocate all available ip addresses on eni: %s", eniID)
@@ -883,6 +952,11 @@ func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDR() string {
 	return cache.vpcIPv4CIDR
 }
 
+// GetVPCIPv4CIDRs returns VPC CIDRs
+func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDRs() []*string {
+	return cache.vpcIPv4CIDRs
+}
+
 // GetLocalIPv4 returns the primary IP address on the primary interface
 func (cache *EC2InstanceMetadataCache) GetLocalIPv4() string {
 	return cache.localIPv4
@@ -891,4 +965,9 @@ func (cache *EC2InstanceMetadataCache) GetLocalIPv4() string {
 // GetPrimaryENI returns the primary ENI
 func (cache *EC2InstanceMetadataCache) GetPrimaryENI() string {
 	return cache.primaryENI
+}
+
+// GetPrimaryENIMAC returns the mac address of primary eni
+func (cache *EC2InstanceMetadataCache) GetPrimaryENImac() string {
+	return cache.primaryENImac
 }

@@ -18,6 +18,7 @@ import (
 	"syscall"
 
 	"github.com/pkg/errors"
+	"golang.org/x/sys/unix"
 
 	"github.com/containernetworking/cni/pkg/ns"
 	"github.com/vishvananda/netlink"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
 )
 
@@ -35,15 +37,15 @@ const (
 	// 1024 is reserved for (ip rule not to <vpc's subnet> table main)
 	fromContainerRulePriority = 1536
 
-	// TODO need to test all distros use this number
-	mainRouteTable = 254
-
-	ethernetMTU = 1500
+	// main routing table number
+	mainRouteTable = unix.RT_TABLE_MAIN
+	// MTU of veth - ENI MTU defined in pkg/networkutils/network.go
+	ethernetMTU = 9001
 )
 
 // NetworkAPIs defines network API calls
 type NetworkAPIs interface {
-	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int) error
+	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool) error
 	TeardownNS(addr *net.IPNet, table int) error
 }
 
@@ -99,9 +101,8 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	}
 
 	hostVeth, err := createVethContext.netLink.LinkByName(createVethContext.hostVethName)
-
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "setup NS network: failed to find link %q", createVethContext.hostVethName)
 	}
 
 	// Explicitly set the veth to UP state, because netlink doesn't always do that on all the platforms with net.FlagUp.
@@ -118,7 +119,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	// Explicitly set the veth to UP state, because netlink doesn't always do that on all the platforms with net.FlagUp.
 	// veth won't get a link local address unless it's set to UP state.
 	if err = createVethContext.netLink.LinkSetUp(contVeth); err != nil {
-		return errors.Wrapf(err, "setup NS network: failed to seti link %q up", createVethContext.contVethName)
+		return errors.Wrapf(err, "setup NS network: failed to set link %q up", createVethContext.contVethName)
 	}
 
 	// Add a connected route to a dummy next hop (169.254.1.1)
@@ -168,19 +169,19 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 }
 
 // SetupNS wiresup linux networking for Pod's network
-func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int) error {
+func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool) error {
 	log.Debugf("SetupNS: hostVethName=%s,contVethName=%s, netnsPath=%s table=%d\n",
 		hostVethName, contVethName, netnsPath, table)
 
-	return setupNS(hostVethName, contVethName, netnsPath, addr, table, os.netLink, os.ns)
+	return setupNS(hostVethName, contVethName, netnsPath, addr, table, vpcCIDRs, useExternalSNAT, os.netLink, os.ns)
 }
 
-func setupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int,
+func setupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool,
 	netLink netlinkwrapper.NetLink, ns nswrapper.NS) error {
 	// Clean up if hostVeth exists.
 	if oldHostVeth, err := netLink.LinkByName(hostVethName); err == nil {
 		if err = netLink.LinkDel(oldHostVeth); err != nil {
-			return errors.Wrapf(err, "setup NS network: failed to delete old hostVeth", hostVethName)
+			return errors.Wrapf(err, "setup NS network: failed to delete old hostVeth %q", hostVethName)
 		}
 		log.Debugf("Clean up  old hostVeth: %v\n", hostVethName)
 	}
@@ -228,14 +229,41 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 
 	// add from-pod rule, only need it when it is not primary ENI
 	if table > 0 {
-		toContainerFlag = false
-		err = addContainerRule(netLink, toContainerFlag, addr, fromContainerRulePriority, table)
+		if useExternalSNAT {
+			// add rule: 1536: from <podIP> use table <table>
+			toContainerFlag = false
+			err = addContainerRule(netLink, toContainerFlag, addr, fromContainerRulePriority, table)
 
-		if err != nil {
-			log.Errorf("Failed to add fromContainer rule for %s err: %v", addr.String(), err)
-			return errors.Wrap(err, "add NS network: failed to add fromContainer rule")
+			if err != nil {
+				log.Errorf("Failed to add fromContainer rule for %s err: %v", addr.String(), err)
+				return errors.Wrap(err, "add NS network: failed to add fromContainer rule")
+			}
+			log.Infof("Added rule priority %d from %s table %d", fromContainerRulePriority, addr.String(), table)
+		} else {
+			// add rule: 1536: list of from <podIP> to <vpcCIDR> use table <table>
+			for _, cidr := range vpcCIDRs {
+				podRule := netLink.NewRule()
+				_, podRule.Dst, _ = net.ParseCIDR(cidr)
+				podRule.Src = addr
+				podRule.Table = table
+				podRule.Priority = fromContainerRulePriority
+
+				err = netLink.RuleAdd(podRule)
+				if err != nil {
+					log.Errorf("Failed to add pod IP rule: %v", err)
+					return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule")
+				}
+				var toDst string
+
+				if podRule.Dst != nil {
+					toDst = podRule.Dst.String()
+				}
+
+				log.Infof("Successfully added pod rule[%v] to %s", podRule, toDst)
+
+			}
 		}
-		log.Infof("Added fromContainer rule for %s", addr.String())
+
 	}
 	return nil
 }
@@ -287,10 +315,7 @@ func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink) erro
 
 	if table > 0 {
 		// remove from-pod rule only for non main table
-		fromContainerRule := netlink.NewRule()
-		fromContainerRule.Src = addr
-		fromContainerRule.Table = table
-		err = netLink.RuleDel(fromContainerRule)
+		err := deleteRuleListBySrc(*addr)
 		if err != nil {
 			log.Errorf("Failed to delete fromContainer for %s %v", addr.String(), err)
 			return errors.Wrapf(err, "delete NS network: failed to delete fromContainer rule for %s", addr.String())
@@ -298,7 +323,23 @@ func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink) erro
 		log.Infof("Delete fromContainer rule for %s in table %d", addr.String(), table)
 	}
 
+	addrHostAddr := &net.IPNet{
+		IP:   addr.IP,
+		Mask: net.CIDRMask(32, 32)}
+
+	// cleanup host route:
+	if err = netLink.RouteDel(&netlink.Route{
+		Scope: netlink.SCOPE_LINK,
+		Dst:   addrHostAddr}); err != nil {
+		log.Errorf("delete NS network: failed to delete host route for %s, %v", addr.String(), err)
+	}
+
 	return nil
+}
+
+func deleteRuleListBySrc(src net.IPNet) error {
+	networkClient := networkutils.New()
+	return networkClient.DeleteRuleListBySrc(src)
 }
 
 func containsNoSuchRule(err error) bool {

@@ -1,4 +1,4 @@
-// Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -22,6 +22,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
+	netlink "github.com/vishvananda/netlink"
 )
 
 // MockNetworkAPIs is a mock of NetworkAPIs interface
@@ -47,6 +48,44 @@ func (m *MockNetworkAPIs) EXPECT() *MockNetworkAPIsMockRecorder {
 	return m.recorder
 }
 
+// DeleteRuleListBySrc mocks base method
+func (m *MockNetworkAPIs) DeleteRuleListBySrc(arg0 net.IPNet) error {
+	ret := m.ctrl.Call(m, "DeleteRuleListBySrc", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteRuleListBySrc indicates an expected call of DeleteRuleListBySrc
+func (mr *MockNetworkAPIsMockRecorder) DeleteRuleListBySrc(arg0 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteRuleListBySrc", reflect.TypeOf((*MockNetworkAPIs)(nil).DeleteRuleListBySrc), arg0)
+}
+
+// GetRuleList mocks base method
+func (m *MockNetworkAPIs) GetRuleList() ([]netlink.Rule, error) {
+	ret := m.ctrl.Call(m, "GetRuleList")
+	ret0, _ := ret[0].([]netlink.Rule)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetRuleList indicates an expected call of GetRuleList
+func (mr *MockNetworkAPIsMockRecorder) GetRuleList() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRuleList", reflect.TypeOf((*MockNetworkAPIs)(nil).GetRuleList))
+}
+
+// GetRuleListBySrc mocks base method
+func (m *MockNetworkAPIs) GetRuleListBySrc(arg0 []netlink.Rule, arg1 net.IPNet) ([]netlink.Rule, error) {
+	ret := m.ctrl.Call(m, "GetRuleListBySrc", arg0, arg1)
+	ret0, _ := ret[0].([]netlink.Rule)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetRuleListBySrc indicates an expected call of GetRuleListBySrc
+func (mr *MockNetworkAPIsMockRecorder) GetRuleListBySrc(arg0, arg1 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRuleListBySrc", reflect.TypeOf((*MockNetworkAPIs)(nil).GetRuleListBySrc), arg0, arg1)
+}
+
 // SetupENINetwork mocks base method
 func (m *MockNetworkAPIs) SetupENINetwork(arg0, arg1 string, arg2 int, arg3 string) error {
 	ret := m.ctrl.Call(m, "SetupENINetwork", arg0, arg1, arg2, arg3)
@@ -60,13 +99,37 @@ func (mr *MockNetworkAPIsMockRecorder) SetupENINetwork(arg0, arg1, arg2, arg3 in
 }
 
 // SetupHostNetwork mocks base method
-func (m *MockNetworkAPIs) SetupHostNetwork(arg0 *net.IPNet, arg1 *net.IP) error {
-	ret := m.ctrl.Call(m, "SetupHostNetwork", arg0, arg1)
+func (m *MockNetworkAPIs) SetupHostNetwork(arg0 *net.IPNet, arg1 []*string, arg2 string, arg3 *net.IP) error {
+	ret := m.ctrl.Call(m, "SetupHostNetwork", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetupHostNetwork indicates an expected call of SetupHostNetwork
-func (mr *MockNetworkAPIsMockRecorder) SetupHostNetwork(arg0, arg1 interface{}) *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupHostNetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupHostNetwork), arg0, arg1)
+func (mr *MockNetworkAPIsMockRecorder) SetupHostNetwork(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupHostNetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupHostNetwork), arg0, arg1, arg2, arg3)
+}
+
+// UpdateRuleListBySrc mocks base method
+func (m *MockNetworkAPIs) UpdateRuleListBySrc(arg0 []netlink.Rule, arg1 net.IPNet, arg2 []string, arg3 bool) error {
+	ret := m.ctrl.Call(m, "UpdateRuleListBySrc", arg0, arg1, arg2, arg3)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateRuleListBySrc indicates an expected call of UpdateRuleListBySrc
+func (mr *MockNetworkAPIsMockRecorder) UpdateRuleListBySrc(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateRuleListBySrc", reflect.TypeOf((*MockNetworkAPIs)(nil).UpdateRuleListBySrc), arg0, arg1, arg2, arg3)
+}
+
+// UseExternalSNAT mocks base method
+func (m *MockNetworkAPIs) UseExternalSNAT() bool {
+	ret := m.ctrl.Call(m, "UseExternalSNAT")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// UseExternalSNAT indicates an expected call of UseExternalSNAT
+func (mr *MockNetworkAPIsMockRecorder) UseExternalSNAT() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UseExternalSNAT", reflect.TypeOf((*MockNetworkAPIs)(nil).UseExternalSNAT))
 }

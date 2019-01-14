@@ -351,8 +351,12 @@ func (ds *DataStore) getDeletableENI() *ENIIPPool {
 }
 
 // GetENINeedsIP finds out the eni in datastore which failed to get secondary IP address
-func (ds *DataStore) GetENINeedsIP(maxIPperENI int64) *ENIIPPool {
+func (ds *DataStore) GetENINeedsIP(maxIPperENI int64, skipPrimary bool) *ENIIPPool {
 	for _, eni := range ds.eniIPPools {
+		if skipPrimary && eni.IsPrimary {
+			log.Debugf("Skip the primary ENI for need IP check")
+			continue
+		}
 		if int64(len(eni.IPv4Addresses)) < maxIPperENI {
 			log.Debugf("Found eni %s that have less IP address allocated: cur=%d, max=%d",
 				eni.ID, len(eni.IPv4Addresses), maxIPperENI)

@@ -1,9 +1,5 @@
 syntax = "proto3";
 
-option java_multiple_files = true;
-option java_package = "io.grpc.examples.helloworld";
-option java_outer_classname = "HelloWorldProto";
-
 package rpc;
 
 // The service definition.
@@ -25,6 +21,8 @@ message  AddNetworkReply{
   string IPv4Addr = 2;
   string IPv4Subnet = 3;
   int32 DeviceNumber = 4;
+  bool UseExternalSNAT = 5;
+  repeated string VPCcidrs = 6;
 }
 
 message DelNetworkRequest {
@@ -32,6 +30,7 @@ message DelNetworkRequest {
   string K8S_POD_NAMESPACE = 2;
   string K8S_POD_INFRA_CONTAINER_ID = 3;
   string IPv4Addr = 4;
+  string Reason = 5;
 }
 
 message DelNetworkReply {

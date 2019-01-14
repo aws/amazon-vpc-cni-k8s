@@ -15,7 +15,7 @@ const opCancelCluster = "CancelCluster"
 
 // CancelClusterRequest generates a "aws/request.Request" representing the
 // client's request for the CancelCluster operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -36,7 +36,7 @@ const opCancelCluster = "CancelCluster"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CancelCluster
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CancelCluster
 func (c *Snowball) CancelClusterRequest(input *CancelClusterInput) (req *request.Request, output *CancelClusterOutput) {
 	op := &request.Operation{
 		Name:       opCancelCluster,
@@ -79,7 +79,7 @@ func (c *Snowball) CancelClusterRequest(input *CancelClusterInput) (req *request
 //   The specified resource can't be found. Check the information you provided
 //   in your last request, and try again.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CancelCluster
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CancelCluster
 func (c *Snowball) CancelCluster(input *CancelClusterInput) (*CancelClusterOutput, error) {
 	req, out := c.CancelClusterRequest(input)
 	return out, req.Send()
@@ -105,7 +105,7 @@ const opCancelJob = "CancelJob"
 
 // CancelJobRequest generates a "aws/request.Request" representing the
 // client's request for the CancelJob operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -126,7 +126,7 @@ const opCancelJob = "CancelJob"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CancelJob
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CancelJob
 func (c *Snowball) CancelJobRequest(input *CancelJobInput) (req *request.Request, output *CancelJobOutput) {
 	op := &request.Operation{
 		Name:       opCancelJob,
@@ -147,8 +147,7 @@ func (c *Snowball) CancelJobRequest(input *CancelJobInput) (req *request.Request
 //
 // Cancels the specified job. You can only cancel a job before its JobState
 // value changes to PreparingAppliance. Requesting the ListJobs or DescribeJob
-// action will return a job's JobState as part of the response element data
-// returned.
+// action returns a job's JobState as part of the response element data returned.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -170,7 +169,7 @@ func (c *Snowball) CancelJobRequest(input *CancelJobInput) (req *request.Request
 //   The provided AWS Key Management Service key lacks the permissions to perform
 //   the specified CreateJob or UpdateJob action.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CancelJob
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CancelJob
 func (c *Snowball) CancelJob(input *CancelJobInput) (*CancelJobOutput, error) {
 	req, out := c.CancelJobRequest(input)
 	return out, req.Send()
@@ -196,7 +195,7 @@ const opCreateAddress = "CreateAddress"
 
 // CreateAddressRequest generates a "aws/request.Request" representing the
 // client's request for the CreateAddress operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -217,7 +216,7 @@ const opCreateAddress = "CreateAddress"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateAddress
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateAddress
 func (c *Snowball) CreateAddressRequest(input *CreateAddressInput) (req *request.Request, output *CreateAddressOutput) {
 	op := &request.Operation{
 		Name:       opCreateAddress,
@@ -258,7 +257,7 @@ func (c *Snowball) CreateAddressRequest(input *CreateAddressInput) (req *request
 //   error occurred. Check the address with your region's carrier and try again.
 //   If the issue persists, contact AWS Support.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateAddress
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateAddress
 func (c *Snowball) CreateAddress(input *CreateAddressInput) (*CreateAddressOutput, error) {
 	req, out := c.CreateAddressRequest(input)
 	return out, req.Send()
@@ -284,7 +283,7 @@ const opCreateCluster = "CreateCluster"
 
 // CreateClusterRequest generates a "aws/request.Request" representing the
 // client's request for the CreateCluster operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -305,7 +304,7 @@ const opCreateCluster = "CreateCluster"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateCluster
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateCluster
 func (c *Snowball) CreateClusterRequest(input *CreateClusterInput) (req *request.Request, output *CreateClusterOutput) {
 	op := &request.Operation{
 		Name:       opCreateCluster,
@@ -349,7 +348,11 @@ func (c *Snowball) CreateClusterRequest(input *CreateClusterInput) (req *request
 //   that the CreateClusterRequest$SnowballType value supports your CreateJobRequest$JobType,
 //   and try again.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateCluster
+//   * ErrCodeEc2RequestFailedException "Ec2RequestFailedException"
+//   Your IAM user lacks the necessary Amazon EC2 permissions to perform the attempted
+//   action.
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateCluster
 func (c *Snowball) CreateCluster(input *CreateClusterInput) (*CreateClusterOutput, error) {
 	req, out := c.CreateClusterRequest(input)
 	return out, req.Send()
@@ -375,7 +378,7 @@ const opCreateJob = "CreateJob"
 
 // CreateJobRequest generates a "aws/request.Request" representing the
 // client's request for the CreateJob operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -396,7 +399,7 @@ const opCreateJob = "CreateJob"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateJob
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateJob
 func (c *Snowball) CreateJobRequest(input *CreateJobInput) (req *request.Request, output *CreateJobOutput) {
 	op := &request.Operation{
 		Name:       opCreateJob,
@@ -448,7 +451,11 @@ func (c *Snowball) CreateJobRequest(input *CreateJobInput) (req *request.Request
 //   this cluster, try again and create jobs until your cluster has exactly five
 //   notes.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateJob
+//   * ErrCodeEc2RequestFailedException "Ec2RequestFailedException"
+//   Your IAM user lacks the necessary Amazon EC2 permissions to perform the attempted
+//   action.
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateJob
 func (c *Snowball) CreateJob(input *CreateJobInput) (*CreateJobOutput, error) {
 	req, out := c.CreateJobRequest(input)
 	return out, req.Send()
@@ -474,7 +481,7 @@ const opDescribeAddress = "DescribeAddress"
 
 // DescribeAddressRequest generates a "aws/request.Request" representing the
 // client's request for the DescribeAddress operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -495,7 +502,7 @@ const opDescribeAddress = "DescribeAddress"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeAddress
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeAddress
 func (c *Snowball) DescribeAddressRequest(input *DescribeAddressInput) (req *request.Request, output *DescribeAddressOutput) {
 	op := &request.Operation{
 		Name:       opDescribeAddress,
@@ -529,7 +536,7 @@ func (c *Snowball) DescribeAddressRequest(input *DescribeAddressInput) (req *req
 //   The specified resource can't be found. Check the information you provided
 //   in your last request, and try again.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeAddress
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeAddress
 func (c *Snowball) DescribeAddress(input *DescribeAddressInput) (*DescribeAddressOutput, error) {
 	req, out := c.DescribeAddressRequest(input)
 	return out, req.Send()
@@ -555,7 +562,7 @@ const opDescribeAddresses = "DescribeAddresses"
 
 // DescribeAddressesRequest generates a "aws/request.Request" representing the
 // client's request for the DescribeAddresses operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -576,7 +583,7 @@ const opDescribeAddresses = "DescribeAddresses"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeAddresses
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeAddresses
 func (c *Snowball) DescribeAddressesRequest(input *DescribeAddressesInput) (req *request.Request, output *DescribeAddressesOutput) {
 	op := &request.Operation{
 		Name:       opDescribeAddresses,
@@ -621,7 +628,7 @@ func (c *Snowball) DescribeAddressesRequest(input *DescribeAddressesInput) (req 
 //   The NextToken string was altered unexpectedly, and the operation has stopped.
 //   Run the operation without changing the NextToken string, and try again.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeAddresses
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeAddresses
 func (c *Snowball) DescribeAddresses(input *DescribeAddressesInput) (*DescribeAddressesOutput, error) {
 	req, out := c.DescribeAddressesRequest(input)
 	return out, req.Send()
@@ -697,7 +704,7 @@ const opDescribeCluster = "DescribeCluster"
 
 // DescribeClusterRequest generates a "aws/request.Request" representing the
 // client's request for the DescribeCluster operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -718,7 +725,7 @@ const opDescribeCluster = "DescribeCluster"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeCluster
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeCluster
 func (c *Snowball) DescribeClusterRequest(input *DescribeClusterInput) (req *request.Request, output *DescribeClusterOutput) {
 	op := &request.Operation{
 		Name:       opDescribeCluster,
@@ -752,7 +759,7 @@ func (c *Snowball) DescribeClusterRequest(input *DescribeClusterInput) (req *req
 //   The specified resource can't be found. Check the information you provided
 //   in your last request, and try again.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeCluster
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeCluster
 func (c *Snowball) DescribeCluster(input *DescribeClusterInput) (*DescribeClusterOutput, error) {
 	req, out := c.DescribeClusterRequest(input)
 	return out, req.Send()
@@ -778,7 +785,7 @@ const opDescribeJob = "DescribeJob"
 
 // DescribeJobRequest generates a "aws/request.Request" representing the
 // client's request for the DescribeJob operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -799,7 +806,7 @@ const opDescribeJob = "DescribeJob"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeJob
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeJob
 func (c *Snowball) DescribeJobRequest(input *DescribeJobInput) (req *request.Request, output *DescribeJobOutput) {
 	op := &request.Operation{
 		Name:       opDescribeJob,
@@ -833,7 +840,7 @@ func (c *Snowball) DescribeJobRequest(input *DescribeJobInput) (req *request.Req
 //   The specified resource can't be found. Check the information you provided
 //   in your last request, and try again.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeJob
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeJob
 func (c *Snowball) DescribeJob(input *DescribeJobInput) (*DescribeJobOutput, error) {
 	req, out := c.DescribeJobRequest(input)
 	return out, req.Send()
@@ -859,7 +866,7 @@ const opGetJobManifest = "GetJobManifest"
 
 // GetJobManifestRequest generates a "aws/request.Request" representing the
 // client's request for the GetJobManifest operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -880,7 +887,7 @@ const opGetJobManifest = "GetJobManifest"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetJobManifest
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetJobManifest
 func (c *Snowball) GetJobManifestRequest(input *GetJobManifestInput) (req *request.Request, output *GetJobManifestOutput) {
 	op := &request.Operation{
 		Name:       opGetJobManifest,
@@ -934,7 +941,7 @@ func (c *Snowball) GetJobManifestRequest(input *GetJobManifestInput) (req *reque
 //   The action can't be performed because the job's current state doesn't allow
 //   that action to be performed.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetJobManifest
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetJobManifest
 func (c *Snowball) GetJobManifest(input *GetJobManifestInput) (*GetJobManifestOutput, error) {
 	req, out := c.GetJobManifestRequest(input)
 	return out, req.Send()
@@ -960,7 +967,7 @@ const opGetJobUnlockCode = "GetJobUnlockCode"
 
 // GetJobUnlockCodeRequest generates a "aws/request.Request" representing the
 // client's request for the GetJobUnlockCode operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -981,7 +988,7 @@ const opGetJobUnlockCode = "GetJobUnlockCode"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetJobUnlockCode
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetJobUnlockCode
 func (c *Snowball) GetJobUnlockCodeRequest(input *GetJobUnlockCodeInput) (req *request.Request, output *GetJobUnlockCodeOutput) {
 	op := &request.Operation{
 		Name:       opGetJobUnlockCode,
@@ -1030,7 +1037,7 @@ func (c *Snowball) GetJobUnlockCodeRequest(input *GetJobUnlockCodeInput) (req *r
 //   The action can't be performed because the job's current state doesn't allow
 //   that action to be performed.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetJobUnlockCode
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetJobUnlockCode
 func (c *Snowball) GetJobUnlockCode(input *GetJobUnlockCodeInput) (*GetJobUnlockCodeOutput, error) {
 	req, out := c.GetJobUnlockCodeRequest(input)
 	return out, req.Send()
@@ -1056,7 +1063,7 @@ const opGetSnowballUsage = "GetSnowballUsage"
 
 // GetSnowballUsageRequest generates a "aws/request.Request" representing the
 // client's request for the GetSnowballUsage operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -1077,7 +1084,7 @@ const opGetSnowballUsage = "GetSnowballUsage"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetSnowballUsage
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetSnowballUsage
 func (c *Snowball) GetSnowballUsageRequest(input *GetSnowballUsageInput) (req *request.Request, output *GetSnowballUsageOutput) {
 	op := &request.Operation{
 		Name:       opGetSnowballUsage,
@@ -1108,7 +1115,7 @@ func (c *Snowball) GetSnowballUsageRequest(input *GetSnowballUsageInput) (req *r
 //
 // See the AWS API reference guide for Amazon Import/Export Snowball's
 // API operation GetSnowballUsage for usage and error information.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetSnowballUsage
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetSnowballUsage
 func (c *Snowball) GetSnowballUsage(input *GetSnowballUsageInput) (*GetSnowballUsageOutput, error) {
 	req, out := c.GetSnowballUsageRequest(input)
 	return out, req.Send()
@@ -1134,7 +1141,7 @@ const opListClusterJobs = "ListClusterJobs"
 
 // ListClusterJobsRequest generates a "aws/request.Request" representing the
 // client's request for the ListClusterJobs operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -1155,7 +1162,7 @@ const opListClusterJobs = "ListClusterJobs"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListClusterJobs
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListClusterJobs
 func (c *Snowball) ListClusterJobsRequest(input *ListClusterJobsInput) (req *request.Request, output *ListClusterJobsOutput) {
 	op := &request.Operation{
 		Name:       opListClusterJobs,
@@ -1194,7 +1201,7 @@ func (c *Snowball) ListClusterJobsRequest(input *ListClusterJobsInput) (req *req
 //   The NextToken string was altered unexpectedly, and the operation has stopped.
 //   Run the operation without changing the NextToken string, and try again.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListClusterJobs
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListClusterJobs
 func (c *Snowball) ListClusterJobs(input *ListClusterJobsInput) (*ListClusterJobsOutput, error) {
 	req, out := c.ListClusterJobsRequest(input)
 	return out, req.Send()
@@ -1220,7 +1227,7 @@ const opListClusters = "ListClusters"
 
 // ListClustersRequest generates a "aws/request.Request" representing the
 // client's request for the ListClusters operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -1241,7 +1248,7 @@ const opListClusters = "ListClusters"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListClusters
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListClusters
 func (c *Snowball) ListClustersRequest(input *ListClustersInput) (req *request.Request, output *ListClustersOutput) {
 	op := &request.Operation{
 		Name:       opListClusters,
@@ -1276,7 +1283,7 @@ func (c *Snowball) ListClustersRequest(input *ListClustersInput) (req *request.R
 //   The NextToken string was altered unexpectedly, and the operation has stopped.
 //   Run the operation without changing the NextToken string, and try again.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListClusters
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListClusters
 func (c *Snowball) ListClusters(input *ListClustersInput) (*ListClustersOutput, error) {
 	req, out := c.ListClustersRequest(input)
 	return out, req.Send()
@@ -1298,11 +1305,99 @@ func (c *Snowball) ListClustersWithContext(ctx aws.Context, input *ListClustersI
 	return out, req.Send()
 }
 
+const opListCompatibleImages = "ListCompatibleImages"
+
+// ListCompatibleImagesRequest generates a "aws/request.Request" representing the
+// client's request for the ListCompatibleImages operation. The "output" return
+// value will be populated with the request's response once the request completes
+// successfuly.
+//
+// Use "Send" method on the returned Request to send the API call to the service.
+// the "output" return value is not valid until after Send returns without error.
+//
+// See ListCompatibleImages for more information on using the ListCompatibleImages
+// API call, and error handling.
+//
+// This method is useful when you want to inject custom logic or configuration
+// into the SDK's request lifecycle. Such as custom headers, or retry logic.
+//
+//
+//    // Example sending a request using the ListCompatibleImagesRequest method.
+//    req, resp := client.ListCompatibleImagesRequest(params)
+//
+//    err := req.Send()
+//    if err == nil { // resp is now filled
+//        fmt.Println(resp)
+//    }
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListCompatibleImages
+func (c *Snowball) ListCompatibleImagesRequest(input *ListCompatibleImagesInput) (req *request.Request, output *ListCompatibleImagesOutput) {
+	op := &request.Operation{
+		Name:       opListCompatibleImages,
+		HTTPMethod: "POST",
+		HTTPPath:   "/",
+	}
+
+	if input == nil {
+		input = &ListCompatibleImagesInput{}
+	}
+
+	output = &ListCompatibleImagesOutput{}
+	req = c.newRequest(op, input, output)
+	return
+}
+
+// ListCompatibleImages API operation for Amazon Import/Export Snowball.
+//
+// This action returns a list of the different Amazon EC2 Amazon Machine Images
+// (AMIs) that are owned by your AWS account that would be supported for use
+// on a Snowball Edge device. Currently, supported AMIs are based on the CentOS
+// 7 (x86_64) - with Updates HVM, Ubuntu Server 14.04 LTS (HVM), and Ubuntu
+// 16.04 LTS - Xenial (HVM) images, available on the AWS Marketplace.
+//
+// Returns awserr.Error for service API and SDK errors. Use runtime type assertions
+// with awserr.Error's Code and Message methods to get detailed information about
+// the error.
+//
+// See the AWS API reference guide for Amazon Import/Export Snowball's
+// API operation ListCompatibleImages for usage and error information.
+//
+// Returned Error Codes:
+//   * ErrCodeInvalidNextTokenException "InvalidNextTokenException"
+//   The NextToken string was altered unexpectedly, and the operation has stopped.
+//   Run the operation without changing the NextToken string, and try again.
+//
+//   * ErrCodeEc2RequestFailedException "Ec2RequestFailedException"
+//   Your IAM user lacks the necessary Amazon EC2 permissions to perform the attempted
+//   action.
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListCompatibleImages
+func (c *Snowball) ListCompatibleImages(input *ListCompatibleImagesInput) (*ListCompatibleImagesOutput, error) {
+	req, out := c.ListCompatibleImagesRequest(input)
+	return out, req.Send()
+}
+
+// ListCompatibleImagesWithContext is the same as ListCompatibleImages with the addition of
+// the ability to pass a context and additional request options.
+//
+// See ListCompatibleImages for details on how to use this API operation.
+//
+// The context must be non-nil and will be used for request cancellation. If
+// the context is nil a panic will occur. In the future the SDK may create
+// sub-contexts for http.Requests. See https://golang.org/pkg/context/
+// for more information on using Contexts.
+func (c *Snowball) ListCompatibleImagesWithContext(ctx aws.Context, input *ListCompatibleImagesInput, opts ...request.Option) (*ListCompatibleImagesOutput, error) {
+	req, out := c.ListCompatibleImagesRequest(input)
+	req.SetContext(ctx)
+	req.ApplyOptions(opts...)
+	return out, req.Send()
+}
+
 const opListJobs = "ListJobs"
 
 // ListJobsRequest generates a "aws/request.Request" representing the
 // client's request for the ListJobs operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -1323,7 +1418,7 @@ const opListJobs = "ListJobs"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListJobs
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListJobs
 func (c *Snowball) ListJobsRequest(input *ListJobsInput) (req *request.Request, output *ListJobsOutput) {
 	op := &request.Operation{
 		Name:       opListJobs,
@@ -1366,7 +1461,7 @@ func (c *Snowball) ListJobsRequest(input *ListJobsInput) (req *request.Request, 
 //   The NextToken string was altered unexpectedly, and the operation has stopped.
 //   Run the operation without changing the NextToken string, and try again.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListJobs
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListJobs
 func (c *Snowball) ListJobs(input *ListJobsInput) (*ListJobsOutput, error) {
 	req, out := c.ListJobsRequest(input)
 	return out, req.Send()
@@ -1442,7 +1537,7 @@ const opUpdateCluster = "UpdateCluster"
 
 // UpdateClusterRequest generates a "aws/request.Request" representing the
 // client's request for the UpdateCluster operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -1463,7 +1558,7 @@ const opUpdateCluster = "UpdateCluster"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/UpdateCluster
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/UpdateCluster
 func (c *Snowball) UpdateClusterRequest(input *UpdateClusterInput) (req *request.Request, output *UpdateClusterOutput) {
 	op := &request.Operation{
 		Name:       opUpdateCluster,
@@ -1512,7 +1607,11 @@ func (c *Snowball) UpdateClusterRequest(input *UpdateClusterInput) (req *request
 //   that the CreateClusterRequest$SnowballType value supports your CreateJobRequest$JobType,
 //   and try again.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/UpdateCluster
+//   * ErrCodeEc2RequestFailedException "Ec2RequestFailedException"
+//   Your IAM user lacks the necessary Amazon EC2 permissions to perform the attempted
+//   action.
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/UpdateCluster
 func (c *Snowball) UpdateCluster(input *UpdateClusterInput) (*UpdateClusterOutput, error) {
 	req, out := c.UpdateClusterRequest(input)
 	return out, req.Send()
@@ -1538,7 +1637,7 @@ const opUpdateJob = "UpdateJob"
 
 // UpdateJobRequest generates a "aws/request.Request" representing the
 // client's request for the UpdateJob operation. The "output" return
-// value will be populated with the request's response once the request complets
+// value will be populated with the request's response once the request completes
 // successfuly.
 //
 // Use "Send" method on the returned Request to send the API call to the service.
@@ -1559,7 +1658,7 @@ const opUpdateJob = "UpdateJob"
 //        fmt.Println(resp)
 //    }
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/UpdateJob
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/UpdateJob
 func (c *Snowball) UpdateJobRequest(input *UpdateJobInput) (req *request.Request, output *UpdateJobOutput) {
 	op := &request.Operation{
 		Name:       opUpdateJob,
@@ -1613,7 +1712,11 @@ func (c *Snowball) UpdateJobRequest(input *UpdateJobInput) (req *request.Request
 //   this cluster, try again and create jobs until your cluster has exactly five
 //   notes.
 //
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/UpdateJob
+//   * ErrCodeEc2RequestFailedException "Ec2RequestFailedException"
+//   Your IAM user lacks the necessary Amazon EC2 permissions to perform the attempted
+//   action.
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/UpdateJob
 func (c *Snowball) UpdateJob(input *UpdateJobInput) (*UpdateJobOutput, error) {
 	req, out := c.UpdateJobRequest(input)
 	return out, req.Send()
@@ -1640,7 +1743,6 @@ func (c *Snowball) UpdateJobWithContext(ctx aws.Context, input *UpdateJobInput, 
 // address you provide must be located within the serviceable area of your region.
 // Although no individual elements of the Address are required, if the address
 // is invalid or unsupported, then an exception is thrown.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/Address
 type Address struct {
 	_ struct{} `type:"structure"`
 
@@ -1832,7 +1934,6 @@ func (s *Address) SetStreet3(v string) *Address {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CancelClusterRequest
 type CancelClusterInput struct {
 	_ struct{} `type:"structure"`
 
@@ -1875,7 +1976,6 @@ func (s *CancelClusterInput) SetClusterId(v string) *CancelClusterInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CancelClusterResult
 type CancelClusterOutput struct {
 	_ struct{} `type:"structure"`
 }
@@ -1890,7 +1990,6 @@ func (s CancelClusterOutput) GoString() string {
 	return s.String()
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CancelJobRequest
 type CancelJobInput struct {
 	_ struct{} `type:"structure"`
 
@@ -1933,7 +2032,6 @@ func (s *CancelJobInput) SetJobId(v string) *CancelJobInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CancelJobResult
 type CancelJobOutput struct {
 	_ struct{} `type:"structure"`
 }
@@ -1949,7 +2047,6 @@ func (s CancelJobOutput) GoString() string {
 }
 
 // Contains a cluster's state, a cluster's ID, and other important information.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ClusterListEntry
 type ClusterListEntry struct {
 	_ struct{} `type:"structure"`
 
@@ -1961,7 +2058,7 @@ type ClusterListEntry struct {
 	ClusterState *string `type:"string" enum:"ClusterState"`
 
 	// The creation date for this cluster.
-	CreationDate *time.Time `type:"timestamp" timestampFormat:"unix"`
+	CreationDate *time.Time `type:"timestamp"`
 
 	// Defines an optional description of the cluster, for example Environmental
 	// Data Cluster-01.
@@ -2003,7 +2100,6 @@ func (s *ClusterListEntry) SetDescription(v string) *ClusterListEntry {
 }
 
 // Contains metadata about a specific cluster.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ClusterMetadata
 type ClusterMetadata struct {
 	_ struct{} `type:"structure"`
 
@@ -2017,7 +2113,7 @@ type ClusterMetadata struct {
 	ClusterState *string `type:"string" enum:"ClusterState"`
 
 	// The creation date for this cluster.
-	CreationDate *time.Time `type:"timestamp" timestampFormat:"unix"`
+	CreationDate *time.Time `type:"timestamp"`
 
 	// The optional description of the cluster.
 	Description *string `min:"1" type:"string"`
@@ -2049,11 +2145,11 @@ type ClusterMetadata struct {
 	RoleARN *string `type:"string"`
 
 	// The shipping speed for each node in this cluster. This speed doesn't dictate
-	// how soon you'll get each Snowball Edge appliance, rather it represents how
-	// quickly each appliance moves to its destination while in transit. Regional
-	// shipping speeds are as follows:
+	// how soon you'll get each Snowball Edge device, rather it represents how quickly
+	// each device moves to its destination while in transit. Regional shipping
+	// speeds are as follows:
 	//
-	//    * In Australia, you have access to express shipping. Typically, appliances
+	//    * In Australia, you have access to express shipping. Typically, devices
 	//    shipped express are delivered in about a day.
 	//
 	//    * In the European Union (EU), you have access to express shipping. Typically,
@@ -2066,8 +2162,8 @@ type ClusterMetadata struct {
 	//    * In the US, you have access to one-day shipping and two-day shipping.
 	ShippingOption *string `type:"string" enum:"ShippingOption"`
 
-	// The type of AWS Snowball appliance to use for this cluster. Currently, the
-	// only supported appliance type for cluster jobs is EDGE.
+	// The type of AWS Snowball device to use for this cluster. Currently, the only
+	// supported device type for cluster jobs is EDGE.
 	SnowballType *string `type:"string" enum:"Type"`
 }
 
@@ -2159,7 +2255,42 @@ func (s *ClusterMetadata) SetSnowballType(v string) *ClusterMetadata {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateAddressRequest
+// A JSON-formatted object that describes a compatible Amazon Machine Image
+// (AMI), including the ID and name for a Snowball Edge AMI. This AMI is compatible
+// with the device's physical hardware requirements, and it should be able to
+// be run in an SBE1 instance on the device.
+type CompatibleImage struct {
+	_ struct{} `type:"structure"`
+
+	// The unique identifier for an individual Snowball Edge AMI.
+	AmiId *string `min:"1" type:"string"`
+
+	// The optional name of a compatible image.
+	Name *string `min:"1" type:"string"`
+}
+
+// String returns the string representation
+func (s CompatibleImage) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s CompatibleImage) GoString() string {
+	return s.String()
+}
+
+// SetAmiId sets the AmiId field's value.
+func (s *CompatibleImage) SetAmiId(v string) *CompatibleImage {
+	s.AmiId = &v
+	return s
+}
+
+// SetName sets the Name field's value.
+func (s *CompatibleImage) SetName(v string) *CompatibleImage {
+	s.Name = &v
+	return s
+}
+
 type CreateAddressInput struct {
 	_ struct{} `type:"structure"`
 
@@ -2203,7 +2334,6 @@ func (s *CreateAddressInput) SetAddress(v *Address) *CreateAddressInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateAddressResult
 type CreateAddressOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -2229,11 +2359,10 @@ func (s *CreateAddressOutput) SetAddressId(v string) *CreateAddressOutput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateClusterRequest
 type CreateClusterInput struct {
 	_ struct{} `type:"structure"`
 
-	// The ID for the address that you want the cluster shipped to.>
+	// The ID for the address that you want the cluster shipped to.
 	//
 	// AddressId is a required field
 	AddressId *string `min:"40" type:"string" required:"true"`
@@ -2275,11 +2404,11 @@ type CreateClusterInput struct {
 	RoleARN *string `type:"string" required:"true"`
 
 	// The shipping speed for each node in this cluster. This speed doesn't dictate
-	// how soon you'll get each Snowball Edge appliance, rather it represents how
-	// quickly each appliance moves to its destination while in transit. Regional
-	// shipping speeds are as follows:
+	// how soon you'll get each Snowball Edge device, rather it represents how quickly
+	// each device moves to its destination while in transit. Regional shipping
+	// speeds are as follows:
 	//
-	//    * In Australia, you have access to express shipping. Typically, appliances
+	//    * In Australia, you have access to express shipping. Typically, devices
 	//    shipped express are delivered in about a day.
 	//
 	//    * In the European Union (EU), you have access to express shipping. Typically,
@@ -2294,8 +2423,8 @@ type CreateClusterInput struct {
 	// ShippingOption is a required field
 	ShippingOption *string `type:"string" required:"true" enum:"ShippingOption"`
 
-	// The type of AWS Snowball appliance to use for this cluster. Currently, the
-	// only supported appliance type for cluster jobs is EDGE.
+	// The type of AWS Snowball device to use for this cluster. Currently, the only
+	// supported device type for cluster jobs is EDGE.
 	SnowballType *string `type:"string" enum:"Type"`
 }
 
@@ -2408,7 +2537,6 @@ func (s *CreateClusterInput) SetSnowballType(v string) *CreateClusterInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateClusterResult
 type CreateClusterOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -2432,7 +2560,6 @@ func (s *CreateClusterOutput) SetClusterId(v string) *CreateClusterOutput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateJobRequest
 type CreateJobInput struct {
 	_ struct{} `type:"structure"`
 
@@ -2503,8 +2630,8 @@ type CreateJobInput struct {
 	// Snowballs come with 80 TB in storage capacity.
 	SnowballCapacityPreference *string `type:"string" enum:"Capacity"`
 
-	// The type of AWS Snowball appliance to use for this job. Currently, the only
-	// supported appliance type for cluster jobs is EDGE.
+	// The type of AWS Snowball device to use for this job. Currently, the only
+	// supported device type for cluster jobs is EDGE.
 	SnowballType *string `type:"string" enum:"Type"`
 }
 
@@ -2617,7 +2744,6 @@ func (s *CreateJobInput) SetSnowballType(v string) *CreateJobInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/CreateJobResult
 type CreateJobOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -2641,10 +2767,9 @@ func (s *CreateJobOutput) SetJobId(v string) *CreateJobOutput {
 	return s
 }
 
-// Defines the real-time status of a Snowball's data transfer while the appliance
+// Defines the real-time status of a Snowball's data transfer while the device
 // is at AWS. This data is only available while a job has a JobState value of
 // InProgress, for both import and export jobs.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DataTransfer
 type DataTransfer struct {
 	_ struct{} `type:"structure"`
 
@@ -2699,7 +2824,6 @@ func (s *DataTransfer) SetTotalObjects(v int64) *DataTransfer {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeAddressRequest
 type DescribeAddressInput struct {
 	_ struct{} `type:"structure"`
 
@@ -2741,7 +2865,6 @@ func (s *DescribeAddressInput) SetAddressId(v string) *DescribeAddressInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeAddressResult
 type DescribeAddressOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -2766,7 +2889,6 @@ func (s *DescribeAddressOutput) SetAddress(v *Address) *DescribeAddressOutput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeAddressesRequest
 type DescribeAddressesInput struct {
 	_ struct{} `type:"structure"`
 
@@ -2814,7 +2936,6 @@ func (s *DescribeAddressesInput) SetNextToken(v string) *DescribeAddressesInput 
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeAddressesResult
 type DescribeAddressesOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -2849,7 +2970,6 @@ func (s *DescribeAddressesOutput) SetNextToken(v string) *DescribeAddressesOutpu
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeClusterRequest
 type DescribeClusterInput struct {
 	_ struct{} `type:"structure"`
 
@@ -2891,7 +3011,6 @@ func (s *DescribeClusterInput) SetClusterId(v string) *DescribeClusterInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeClusterResult
 type DescribeClusterOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -2916,7 +3035,6 @@ func (s *DescribeClusterOutput) SetClusterMetadata(v *ClusterMetadata) *Describe
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeJobRequest
 type DescribeJobInput struct {
 	_ struct{} `type:"structure"`
 
@@ -2958,7 +3076,6 @@ func (s *DescribeJobInput) SetJobId(v string) *DescribeJobInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/DescribeJobResult
 type DescribeJobOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -2993,8 +3110,64 @@ func (s *DescribeJobOutput) SetSubJobMetadata(v []*JobMetadata) *DescribeJobOutp
 	return s
 }
 
+// A JSON-formatted object that contains the IDs for an Amazon Machine Image
+// (AMI), including the Amazon EC2 AMI ID and the Snowball Edge AMI ID. Each
+// AMI has these two IDs to simplify identifying the AMI in both the AWS Cloud
+// and on the device.
+type Ec2AmiResource struct {
+	_ struct{} `type:"structure"`
+
+	// The ID of the AMI in Amazon EC2.
+	//
+	// AmiId is a required field
+	AmiId *string `min:"12" type:"string" required:"true"`
+
+	// The ID of the AMI on the Snowball Edge device.
+	SnowballAmiId *string `min:"1" type:"string"`
+}
+
+// String returns the string representation
+func (s Ec2AmiResource) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s Ec2AmiResource) GoString() string {
+	return s.String()
+}
+
+// Validate inspects the fields of the type to determine if they are valid.
+func (s *Ec2AmiResource) Validate() error {
+	invalidParams := request.ErrInvalidParams{Context: "Ec2AmiResource"}
+	if s.AmiId == nil {
+		invalidParams.Add(request.NewErrParamRequired("AmiId"))
+	}
+	if s.AmiId != nil && len(*s.AmiId) < 12 {
+		invalidParams.Add(request.NewErrParamMinLen("AmiId", 12))
+	}
+	if s.SnowballAmiId != nil && len(*s.SnowballAmiId) < 1 {
+		invalidParams.Add(request.NewErrParamMinLen("SnowballAmiId", 1))
+	}
+
+	if invalidParams.Len() > 0 {
+		return invalidParams
+	}
+	return nil
+}
+
+// SetAmiId sets the AmiId field's value.
+func (s *Ec2AmiResource) SetAmiId(v string) *Ec2AmiResource {
+	s.AmiId = &v
+	return s
+}
+
+// SetSnowballAmiId sets the SnowballAmiId field's value.
+func (s *Ec2AmiResource) SetSnowballAmiId(v string) *Ec2AmiResource {
+	s.SnowballAmiId = &v
+	return s
+}
+
 // The container for the EventTriggerDefinition$EventResourceARN.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/EventTriggerDefinition
 type EventTriggerDefinition struct {
 	_ struct{} `type:"structure"`
 
@@ -3019,7 +3192,6 @@ func (s *EventTriggerDefinition) SetEventResourceARN(v string) *EventTriggerDefi
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetJobManifestRequest
 type GetJobManifestInput struct {
 	_ struct{} `type:"structure"`
 
@@ -3062,7 +3234,6 @@ func (s *GetJobManifestInput) SetJobId(v string) *GetJobManifestInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetJobManifestResult
 type GetJobManifestOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -3087,7 +3258,6 @@ func (s *GetJobManifestOutput) SetManifestURI(v string) *GetJobManifestOutput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetJobUnlockCodeRequest
 type GetJobUnlockCodeInput struct {
 	_ struct{} `type:"structure"`
 
@@ -3130,7 +3300,6 @@ func (s *GetJobUnlockCodeInput) SetJobId(v string) *GetJobUnlockCodeInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetJobUnlockCodeResult
 type GetJobUnlockCodeOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -3155,7 +3324,6 @@ func (s *GetJobUnlockCodeOutput) SetUnlockCode(v string) *GetJobUnlockCodeOutput
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetSnowballUsageRequest
 type GetSnowballUsageInput struct {
 	_ struct{} `type:"structure"`
 }
@@ -3170,7 +3338,6 @@ func (s GetSnowballUsageInput) GoString() string {
 	return s.String()
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/GetSnowballUsageResult
 type GetSnowballUsageOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -3206,12 +3373,11 @@ func (s *GetSnowballUsageOutput) SetSnowballsInUse(v int64) *GetSnowballUsageOut
 
 // Each JobListEntry object contains a job's state, a job's ID, and a value
 // that indicates whether the job is a job part, in the case of an export job.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/JobListEntry
 type JobListEntry struct {
 	_ struct{} `type:"structure"`
 
 	// The creation date for this job.
-	CreationDate *time.Time `type:"timestamp" timestampFormat:"unix"`
+	CreationDate *time.Time `type:"timestamp"`
 
 	// The optional description of this specific job, for example Important Photos
 	// 2016-08-11.
@@ -3234,7 +3400,7 @@ type JobListEntry struct {
 	// The type of job.
 	JobType *string `type:"string" enum:"JobType"`
 
-	// The type of appliance used with this job.
+	// The type of device used with this job.
 	SnowballType *string `type:"string" enum:"Type"`
 }
 
@@ -3310,7 +3476,6 @@ func (s *JobListEntry) SetSnowballType(v string) *JobListEntry {
 // look at the two associated logs: a success log and a failure log. The logs
 // are saved in comma-separated value (CSV) format, and the name of each log
 // includes the ID of the job or job part that the log describes.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/JobLogs
 type JobLogs struct {
 	_ struct{} `type:"structure"`
 
@@ -3355,7 +3520,6 @@ func (s *JobLogs) SetJobSuccessLogURI(v string) *JobLogs {
 // Contains information about a specific job including shipping information,
 // job status, and other important metadata. This information is returned as
 // a part of the response syntax of the DescribeJob action.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/JobMetadata
 type JobMetadata struct {
 	_ struct{} `type:"structure"`
 
@@ -3366,10 +3530,10 @@ type JobMetadata struct {
 	ClusterId *string `min:"1" type:"string"`
 
 	// The creation date for this job.
-	CreationDate *time.Time `type:"timestamp" timestampFormat:"unix"`
+	CreationDate *time.Time `type:"timestamp"`
 
 	// A value that defines the real-time status of a Snowball's data transfer while
-	// the appliance is at AWS. This data is only available while a job has a JobState
+	// the device is at AWS. This data is only available while a job has a JobState
 	// value of InProgress, for both import and export jobs.
 	DataTransferProgress *DataTransfer `type:"structure"`
 
@@ -3424,7 +3588,7 @@ type JobMetadata struct {
 	// regions use 80 TB capacity Snowballs.
 	SnowballCapacityPreference *string `type:"string" enum:"Capacity"`
 
-	// The type of appliance used with this job.
+	// The type of device used with this job.
 	SnowballType *string `type:"string" enum:"Type"`
 }
 
@@ -3540,12 +3704,14 @@ func (s *JobMetadata) SetSnowballType(v string) *JobMetadata {
 	return s
 }
 
-// Contains an array of S3Resource objects. Each S3Resource object represents
-// an Amazon S3 bucket that your transferred data will be exported from or imported
-// into.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/JobResource
+// Contains an array of AWS resource objects. Each object represents an Amazon
+// S3 bucket, an AWS Lambda function, or an Amazon Machine Image (AMI) based
+// on Amazon EC2 that is associated with a particular job.
 type JobResource struct {
 	_ struct{} `type:"structure"`
+
+	// The Amazon Machine Images (AMIs) associated with this job.
+	Ec2AmiResources []*Ec2AmiResource `type:"list"`
 
 	// The Python-language Lambda functions for this job.
 	LambdaResources []*LambdaResource `type:"list"`
@@ -3567,6 +3733,16 @@ func (s JobResource) GoString() string {
 // Validate inspects the fields of the type to determine if they are valid.
 func (s *JobResource) Validate() error {
 	invalidParams := request.ErrInvalidParams{Context: "JobResource"}
+	if s.Ec2AmiResources != nil {
+		for i, v := range s.Ec2AmiResources {
+			if v == nil {
+				continue
+			}
+			if err := v.Validate(); err != nil {
+				invalidParams.AddNested(fmt.Sprintf("%s[%v]", "Ec2AmiResources", i), err.(request.ErrInvalidParams))
+			}
+		}
+	}
 	if s.S3Resources != nil {
 		for i, v := range s.S3Resources {
 			if v == nil {
@@ -3582,6 +3758,12 @@ func (s *JobResource) Validate() error {
 		return invalidParams
 	}
 	return nil
+}
+
+// SetEc2AmiResources sets the Ec2AmiResources field's value.
+func (s *JobResource) SetEc2AmiResources(v []*Ec2AmiResource) *JobResource {
+	s.Ec2AmiResources = v
+	return s
 }
 
 // SetLambdaResources sets the LambdaResources field's value.
@@ -3600,7 +3782,6 @@ func (s *JobResource) SetS3Resources(v []*S3Resource) *JobResource {
 // KeyRange value. The length of the range is defined at job creation, and has
 // either an inclusive BeginMarker, an inclusive EndMarker, or both. Ranges
 // are UTF-8 binary sorted.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/KeyRange
 type KeyRange struct {
 	_ struct{} `type:"structure"`
 
@@ -3652,7 +3833,6 @@ func (s *KeyRange) SetEndMarker(v string) *KeyRange {
 }
 
 // Identifies
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/LambdaResource
 type LambdaResource struct {
 	_ struct{} `type:"structure"`
 
@@ -3687,7 +3867,6 @@ func (s *LambdaResource) SetLambdaArn(v string) *LambdaResource {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListClusterJobsRequest
 type ListClusterJobsInput struct {
 	_ struct{} `type:"structure"`
 
@@ -3752,7 +3931,6 @@ func (s *ListClusterJobsInput) SetNextToken(v string) *ListClusterJobsInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListClusterJobsResult
 type ListClusterJobsOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -3788,7 +3966,6 @@ func (s *ListClusterJobsOutput) SetNextToken(v string) *ListClusterJobsOutput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListClustersRequest
 type ListClustersInput struct {
 	_ struct{} `type:"structure"`
 
@@ -3836,7 +4013,6 @@ func (s *ListClustersInput) SetNextToken(v string) *ListClustersInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListClustersResult
 type ListClustersOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -3872,7 +4048,88 @@ func (s *ListClustersOutput) SetNextToken(v string) *ListClustersOutput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListJobsRequest
+type ListCompatibleImagesInput struct {
+	_ struct{} `type:"structure"`
+
+	// The maximum number of results for the list of compatible images. Currently,
+	// a Snowball Edge device can store 10 AMIs.
+	MaxResults *int64 `type:"integer"`
+
+	// HTTP requests are stateless. To identify what object comes "next" in the
+	// list of compatible images, you can specify a value for NextToken as the starting
+	// point for your list of returned images.
+	NextToken *string `min:"1" type:"string"`
+}
+
+// String returns the string representation
+func (s ListCompatibleImagesInput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s ListCompatibleImagesInput) GoString() string {
+	return s.String()
+}
+
+// Validate inspects the fields of the type to determine if they are valid.
+func (s *ListCompatibleImagesInput) Validate() error {
+	invalidParams := request.ErrInvalidParams{Context: "ListCompatibleImagesInput"}
+	if s.NextToken != nil && len(*s.NextToken) < 1 {
+		invalidParams.Add(request.NewErrParamMinLen("NextToken", 1))
+	}
+
+	if invalidParams.Len() > 0 {
+		return invalidParams
+	}
+	return nil
+}
+
+// SetMaxResults sets the MaxResults field's value.
+func (s *ListCompatibleImagesInput) SetMaxResults(v int64) *ListCompatibleImagesInput {
+	s.MaxResults = &v
+	return s
+}
+
+// SetNextToken sets the NextToken field's value.
+func (s *ListCompatibleImagesInput) SetNextToken(v string) *ListCompatibleImagesInput {
+	s.NextToken = &v
+	return s
+}
+
+type ListCompatibleImagesOutput struct {
+	_ struct{} `type:"structure"`
+
+	// A JSON-formatted object that describes a compatible AMI, including the ID
+	// and name for a Snowball Edge AMI.
+	CompatibleImages []*CompatibleImage `type:"list"`
+
+	// Because HTTP requests are stateless, this is the starting point for your
+	// next list of returned images.
+	NextToken *string `min:"1" type:"string"`
+}
+
+// String returns the string representation
+func (s ListCompatibleImagesOutput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s ListCompatibleImagesOutput) GoString() string {
+	return s.String()
+}
+
+// SetCompatibleImages sets the CompatibleImages field's value.
+func (s *ListCompatibleImagesOutput) SetCompatibleImages(v []*CompatibleImage) *ListCompatibleImagesOutput {
+	s.CompatibleImages = v
+	return s
+}
+
+// SetNextToken sets the NextToken field's value.
+func (s *ListCompatibleImagesOutput) SetNextToken(v string) *ListCompatibleImagesOutput {
+	s.NextToken = &v
+	return s
+}
+
 type ListJobsInput struct {
 	_ struct{} `type:"structure"`
 
@@ -3920,7 +4177,6 @@ func (s *ListJobsInput) SetNextToken(v string) *ListJobsInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ListJobsResult
 type ListJobsOutput struct {
 	_ struct{} `type:"structure"`
 
@@ -3965,7 +4221,6 @@ func (s *ListJobsOutput) SetNextToken(v string) *ListJobsOutput {
 // to notify based on a specific set of job states using the JobStatesToNotify
 // array of strings, or you can specify that you want to have Amazon SNS notifications
 // sent out for all job states with NotifyAll set to true.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/Notification
 type Notification struct {
 	_ struct{} `type:"structure"`
 
@@ -4018,7 +4273,6 @@ func (s *Notification) SetSnsTopicARN(v string) *Notification {
 // can have an optional KeyRange value. The length of the range is defined at
 // job creation, and has either an inclusive BeginMarker, an inclusive EndMarker,
 // or both. Ranges are UTF-8 binary sorted.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/S3Resource
 type S3Resource struct {
 	_ struct{} `type:"structure"`
 
@@ -4070,7 +4324,6 @@ func (s *S3Resource) SetKeyRange(v *KeyRange) *S3Resource {
 }
 
 // The Status and TrackingNumber information for an inbound or outbound shipment.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/Shipment
 type Shipment struct {
 	_ struct{} `type:"structure"`
 
@@ -4109,16 +4362,15 @@ func (s *Shipment) SetTrackingNumber(v string) *Shipment {
 
 // A job's shipping information, including inbound and outbound tracking numbers
 // and shipping speed options.
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/ShippingDetails
 type ShippingDetails struct {
 	_ struct{} `type:"structure"`
 
-	// The Status and TrackingNumber values for a Snowball being delivered to the
-	// address that you specified for a particular job.
-	InboundShipment *Shipment `type:"structure"`
-
 	// The Status and TrackingNumber values for a Snowball being returned to AWS
 	// for a particular job.
+	InboundShipment *Shipment `type:"structure"`
+
+	// The Status and TrackingNumber values for a Snowball being delivered to the
+	// address that you specified for a particular job.
 	OutboundShipment *Shipment `type:"structure"`
 
 	// The shipping speed for a particular job. This speed doesn't dictate how soon
@@ -4169,7 +4421,6 @@ func (s *ShippingDetails) SetShippingOption(v string) *ShippingDetails {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/UpdateClusterRequest
 type UpdateClusterInput struct {
 	_ struct{} `type:"structure"`
 
@@ -4292,7 +4543,6 @@ func (s *UpdateClusterInput) SetShippingOption(v string) *UpdateClusterInput {
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/UpdateClusterResult
 type UpdateClusterOutput struct {
 	_ struct{} `type:"structure"`
 }
@@ -4307,7 +4557,6 @@ func (s UpdateClusterOutput) GoString() string {
 	return s.String()
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/UpdateJobRequest
 type UpdateJobInput struct {
 	_ struct{} `type:"structure"`
 
@@ -4329,8 +4578,7 @@ type UpdateJobInput struct {
 	// The new or updated Notification object.
 	Notification *Notification `type:"structure"`
 
-	// The updated S3Resource object (for a single Amazon S3 bucket or key range),
-	// or the updated JobResource object (for multiple buckets or key ranges).
+	// The updated JobResource object, or the updated JobResource object.
 	Resources *JobResource `type:"structure"`
 
 	// The new role Amazon Resource Name (ARN) that you want to associate with this
@@ -4440,7 +4688,6 @@ func (s *UpdateJobInput) SetSnowballCapacityPreference(v string) *UpdateJobInput
 	return s
 }
 
-// Please also see https://docs.aws.amazon.com/goto/WebAPI/snowball-2016-06-30/UpdateJobResult
 type UpdateJobOutput struct {
 	_ struct{} `type:"structure"`
 }
@@ -4504,6 +4751,9 @@ const (
 
 	// JobStateInTransitToAws is a JobState enum value
 	JobStateInTransitToAws = "InTransitToAWS"
+
+	// JobStateWithAwssortingFacility is a JobState enum value
+	JobStateWithAwssortingFacility = "WithAWSSortingFacility"
 
 	// JobStateWithAws is a JobState enum value
 	JobStateWithAws = "WithAWS"

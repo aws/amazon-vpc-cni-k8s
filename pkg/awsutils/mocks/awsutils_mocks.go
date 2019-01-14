@@ -61,16 +61,16 @@ func (mr *MockAPIsMockRecorder) AllocAllIPAddress(arg0 interface{}) *gomock.Call
 }
 
 // AllocENI mocks base method
-func (m *MockAPIs) AllocENI() (string, error) {
-	ret := m.ctrl.Call(m, "AllocENI")
+func (m *MockAPIs) AllocENI(arg0 bool, arg1 []*string, arg2 string) (string, error) {
+	ret := m.ctrl.Call(m, "AllocENI", arg0, arg1, arg2)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // AllocENI indicates an expected call of AllocENI
-func (mr *MockAPIsMockRecorder) AllocENI() *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocENI", reflect.TypeOf((*MockAPIs)(nil).AllocENI))
+func (mr *MockAPIsMockRecorder) AllocENI(arg0, arg1, arg2 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocENI", reflect.TypeOf((*MockAPIs)(nil).AllocENI), arg0, arg1, arg2)
 }
 
 // AllocIPAddress mocks base method
@@ -83,6 +83,18 @@ func (m *MockAPIs) AllocIPAddress(arg0 string) error {
 // AllocIPAddress indicates an expected call of AllocIPAddress
 func (mr *MockAPIsMockRecorder) AllocIPAddress(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocIPAddress", reflect.TypeOf((*MockAPIs)(nil).AllocIPAddress), arg0)
+}
+
+// AllocIPAddresses mocks base method
+func (m *MockAPIs) AllocIPAddresses(arg0 string, arg1 int64) error {
+	ret := m.ctrl.Call(m, "AllocIPAddresses", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AllocIPAddresses indicates an expected call of AllocIPAddresses
+func (mr *MockAPIsMockRecorder) AllocIPAddresses(arg0, arg1 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).AllocIPAddresses), arg0, arg1)
 }
 
 // DescribeENI mocks base method
@@ -174,6 +186,18 @@ func (mr *MockAPIsMockRecorder) GetPrimaryENI() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPrimaryENI", reflect.TypeOf((*MockAPIs)(nil).GetPrimaryENI))
 }
 
+// GetPrimaryENImac mocks base method
+func (m *MockAPIs) GetPrimaryENImac() string {
+	ret := m.ctrl.Call(m, "GetPrimaryENImac")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetPrimaryENImac indicates an expected call of GetPrimaryENImac
+func (mr *MockAPIsMockRecorder) GetPrimaryENImac() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPrimaryENImac", reflect.TypeOf((*MockAPIs)(nil).GetPrimaryENImac))
+}
+
 // GetVPCIPv4CIDR mocks base method
 func (m *MockAPIs) GetVPCIPv4CIDR() string {
 	ret := m.ctrl.Call(m, "GetVPCIPv4CIDR")
@@ -184,4 +208,16 @@ func (m *MockAPIs) GetVPCIPv4CIDR() string {
 // GetVPCIPv4CIDR indicates an expected call of GetVPCIPv4CIDR
 func (mr *MockAPIsMockRecorder) GetVPCIPv4CIDR() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVPCIPv4CIDR", reflect.TypeOf((*MockAPIs)(nil).GetVPCIPv4CIDR))
+}
+
+// GetVPCIPv4CIDRs mocks base method
+func (m *MockAPIs) GetVPCIPv4CIDRs() []*string {
+	ret := m.ctrl.Call(m, "GetVPCIPv4CIDRs")
+	ret0, _ := ret[0].([]*string)
+	return ret0
+}
+
+// GetVPCIPv4CIDRs indicates an expected call of GetVPCIPv4CIDRs
+func (mr *MockAPIsMockRecorder) GetVPCIPv4CIDRs() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVPCIPv4CIDRs", reflect.TypeOf((*MockAPIs)(nil).GetVPCIPv4CIDRs))
 }

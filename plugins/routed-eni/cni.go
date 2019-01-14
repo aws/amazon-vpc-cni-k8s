@@ -18,10 +18,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
 	"net"
 	"runtime"
+
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 
 	log "github.com/cihub/seelog"
 
@@ -44,6 +45,10 @@ import (
 const (
 	ipamDAddress       = "localhost:50051"
 	defaultLogFilePath = "/var/log/aws-routed-eni/plugin.log"
+)
+
+var (
+	version string
 )
 
 // NetConf stores the common network config for the CNI plugin
@@ -156,9 +161,9 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return fmt.Errorf("add cmd: failed to assign an IP address to container")
 	}
 
-	log.Infof("Received add network response for pod %s namespace %s container %s: %s, table %d ",
+	log.Infof("Received add network response for pod %s namespace %s container %s: %s, table %d ,external-SNAT: %v, vpcCIDR: %v",
 		string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
-		r.IPv4Addr, r.DeviceNumber)
+		r.IPv4Addr, r.DeviceNumber, r.UseExternalSNAT, r.VPCcidrs)
 
 	addr := &net.IPNet{
 		IP:   net.ParseIP(r.IPv4Addr),
@@ -169,11 +174,30 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	// Note: the maximum length for linux interface name is 15
 	hostVethName := generateHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 
-	err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber))
+	err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber), r.VPCcidrs, r.UseExternalSNAT)
 
 	if err != nil {
 		log.Errorf("Failed SetupPodNetwork for pod %s namespace %s container %s: %v",
 			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), err)
+
+		// return allocated IP back to IP pool
+		r, delErr := c.DelNetwork(context.Background(),
+			&pb.DelNetworkRequest{
+				K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
+				K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
+				K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
+				IPv4Addr:                   r.IPv4Addr,
+				Reason:                     "SetupNSFailed"})
+
+		if delErr != nil {
+			log.Errorf("Error received from DelNetwork grpc call for pod %s namespace %s container %s: %v",
+				string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), delErr)
+		}
+
+		if !r.Success {
+			log.Errorf("Failed to release IP of pod %s namespace %s container %s: %v",
+				string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), delErr)
+		}
 		return errors.Wrap(err, "add command: failed to setup network")
 	}
 
@@ -241,7 +265,8 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
 			K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 			K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
-			IPv4Addr:                   k8sArgs.IP.String()})
+			IPv4Addr:                   k8sArgs.IP.String(),
+			Reason:                     "PodDeleted"})
 
 	if err != nil {
 		log.Errorf("Error received from DelNetwork grpc call for pod %s namespace %s container %s: %v",
@@ -273,6 +298,8 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 func main() {
 	defer log.Flush()
 	logger.SetupLogger(logger.GetLogFileLocation(defaultLogFilePath))
+
+	log.Infof("Starting CNI Plugin %s  ...", version)
 
 	skel.PluginMain(cmdAdd, cmdDel, cniSpecVersion.All)
 }

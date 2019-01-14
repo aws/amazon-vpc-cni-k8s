@@ -528,7 +528,8 @@ func TestSetupPodNetwork(t *testing.T) {
 		IP:   net.ParseIP(testIP),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, mockNetLink, mockNS)
+	var cidrs []string
+	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, true, mockNetLink, mockNS)
 
 	assert.NoError(t, err)
 
@@ -548,7 +549,8 @@ func TestSetupPodNetworkErrLinkByName(t *testing.T) {
 		IP:   net.ParseIP(testIP),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, mockNetLink, mockNS)
+	var cidrs []string
+	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS)
 
 	assert.Error(t, err)
 
@@ -570,7 +572,8 @@ func TestSetupPodNetworkErrLinkSetup(t *testing.T) {
 		IP:   net.ParseIP(testIP),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, mockNetLink, mockNS)
+	var cidrs []string
+	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS)
 
 	assert.Error(t, err)
 
@@ -603,7 +606,8 @@ func TestSetupPodNetworkErrRouteAdd(t *testing.T) {
 		IP:   net.ParseIP(testIP),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, mockNetLink, mockNS)
+	var cidrs []string
+	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS)
 
 	assert.Error(t, err)
 }
@@ -649,7 +653,9 @@ func TestSetupPodNetworkPrimaryIntf(t *testing.T) {
 		IP:   net.ParseIP(testIP),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, 0, mockNetLink, mockNS)
+
+	var cidrs []string
+	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, 0, cidrs, false, mockNetLink, mockNS)
 
 	assert.NoError(t, err)
 
@@ -674,14 +680,14 @@ func TestTearDownPodNetwork(t *testing.T) {
 		mockNetLink.EXPECT().RuleDel(gomock.Any()).Return(nil),
 
 		// test from-pod rule
-		mockNetLink.EXPECT().RuleDel(gomock.Any()).Return(nil),
+		mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil),
 	)
 
 	addr := &net.IPNet{
 		IP:   net.ParseIP(testIP),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	tearDownNS(addr, 10, mockNetLink)
+	tearDownNS(addr, 0, mockNetLink)
 }
 
 func TestTearDownPodNetworkMain(t *testing.T) {
@@ -701,6 +707,8 @@ func TestTearDownPodNetworkMain(t *testing.T) {
 		mockNetLink.EXPECT().NewRule().Return(testRule),
 		// test to-pod rule
 		mockNetLink.EXPECT().RuleDel(gomock.Any()).Return(nil),
+
+		mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil),
 	)
 
 	addr := &net.IPNet{

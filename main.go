@@ -21,12 +21,16 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd"
 	log "github.com/cihub/seelog"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 )
 
 const (
 	defaultLogFilePath = "/host/var/log/aws-routed-eni/ipamd.log"
-	version            = "1.0.0"
+)
+
+var (
+	version string
 )
 
 func main() {
@@ -48,7 +52,12 @@ func _main() int {
 	discoverController := k8sapi.NewController(kubeClient)
 	go discoverController.DiscoverK8SPods()
 
-	awsK8sAgent, err := ipamd.New(discoverController)
+	eniConfigController := eniconfig.NewENIConfigController()
+	if ipamd.UseCustomNetworkCfg() {
+		go eniConfigController.Start()
+	}
+
+	awsK8sAgent, err := ipamd.New(discoverController, eniConfigController)
 
 	if err != nil {
 		log.Error("initialization failure", err)

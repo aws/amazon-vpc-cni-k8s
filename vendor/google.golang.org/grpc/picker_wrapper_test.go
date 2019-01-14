@@ -28,8 +28,8 @@ import (
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/connectivity"
 	_ "google.golang.org/grpc/grpclog/glogger"
-	"google.golang.org/grpc/test/leakcheck"
-	"google.golang.org/grpc/transport"
+	"google.golang.org/grpc/internal/leakcheck"
+	"google.golang.org/grpc/internal/transport"
 )
 
 const goroutineCount = 5
@@ -100,7 +100,7 @@ func TestBlockingPickNoSubAvailable(t *testing.T) {
 	bp := newPickerWrapper()
 	var finishedCount uint64
 	bp.updatePicker(&testingPicker{err: balancer.ErrNoSubConnAvailable, maxCalled: goroutineCount})
-	// All goroutines should block because picker returns no sc avilable.
+	// All goroutines should block because picker returns no sc available.
 	for i := goroutineCount; i > 0; i-- {
 		go func() {
 			if tr, _, err := bp.pick(context.Background(), true, balancer.PickOptions{}); err != nil || tr != testT {

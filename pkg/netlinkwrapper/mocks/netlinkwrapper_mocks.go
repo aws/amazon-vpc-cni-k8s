@@ -1,4 +1,4 @@
-// Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -21,7 +21,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	"github.com/vishvananda/netlink"
+	netlink "github.com/vishvananda/netlink"
 )
 
 // MockNetLink is a mock of NetLink interface
@@ -57,6 +57,18 @@ func (m *MockNetLink) AddrAdd(arg0 netlink.Link, arg1 *netlink.Addr) error {
 // AddrAdd indicates an expected call of AddrAdd
 func (mr *MockNetLinkMockRecorder) AddrAdd(arg0, arg1 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddrAdd", reflect.TypeOf((*MockNetLink)(nil).AddrAdd), arg0, arg1)
+}
+
+// AddrDel mocks base method
+func (m *MockNetLink) AddrDel(arg0 netlink.Link, arg1 *netlink.Addr) error {
+	ret := m.ctrl.Call(m, "AddrDel", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddrDel indicates an expected call of AddrDel
+func (mr *MockNetLinkMockRecorder) AddrDel(arg0, arg1 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddrDel", reflect.TypeOf((*MockNetLink)(nil).AddrDel), arg0, arg1)
 }
 
 // AddrList mocks base method
@@ -132,6 +144,18 @@ func (m *MockNetLink) LinkSetDown(arg0 netlink.Link) error {
 // LinkSetDown indicates an expected call of LinkSetDown
 func (mr *MockNetLinkMockRecorder) LinkSetDown(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LinkSetDown", reflect.TypeOf((*MockNetLink)(nil).LinkSetDown), arg0)
+}
+
+// LinkSetMTU mocks base method
+func (m *MockNetLink) LinkSetMTU(arg0 netlink.Link, arg1 int) error {
+	ret := m.ctrl.Call(m, "LinkSetMTU", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LinkSetMTU indicates an expected call of LinkSetMTU
+func (mr *MockNetLinkMockRecorder) LinkSetMTU(arg0, arg1 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LinkSetMTU", reflect.TypeOf((*MockNetLink)(nil).LinkSetMTU), arg0, arg1)
 }
 
 // LinkSetNsFd mocks base method
@@ -254,4 +278,17 @@ func (m *MockNetLink) RuleDel(arg0 *netlink.Rule) error {
 // RuleDel indicates an expected call of RuleDel
 func (mr *MockNetLinkMockRecorder) RuleDel(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RuleDel", reflect.TypeOf((*MockNetLink)(nil).RuleDel), arg0)
+}
+
+// RuleList mocks base method
+func (m *MockNetLink) RuleList(arg0 int) ([]netlink.Rule, error) {
+	ret := m.ctrl.Call(m, "RuleList", arg0)
+	ret0, _ := ret[0].([]netlink.Rule)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RuleList indicates an expected call of RuleList
+func (mr *MockNetLinkMockRecorder) RuleList(arg0 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RuleList", reflect.TypeOf((*MockNetLink)(nil).RuleList), arg0)
 }
