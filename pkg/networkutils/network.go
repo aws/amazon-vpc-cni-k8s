@@ -448,6 +448,7 @@ func GetConfigForDebug() map[string]interface{} {
 		envExternalSNAT:    useExternalSNAT(),
 		envNodePortSupport: nodePortSupportEnabled(),
 		envConnmark:        getConnmark(),
+		envRandomizeSNAT:   typeOfSNAT(),
 	}
 }
 
@@ -483,7 +484,7 @@ func typeOfSNAT() snatType {
 		return randomHashSNAT
 	default:
 		// if we get to this point, the environment variable has an invalid value
-		log.Errorf("Failed to parse %s; using default: %s. Provided string was \"%s\"", envRandomizeSNAT, defaultString,
+		log.Errorf("Failed to parse %s; using default: %s. Provided string was %q", envRandomizeSNAT, defaultString,
 			strValue)
 		return defaultValue
 	}
