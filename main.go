@@ -46,7 +46,7 @@ func _main() int {
 	kubeClient, err := k8sapi.CreateKubeClient("", "")
 	if err != nil {
 		log.Errorf("Failed to create client: %v", err)
-		os.Exit(1)
+		return 1
 	}
 
 	discoverController := k8sapi.NewController(kubeClient)
