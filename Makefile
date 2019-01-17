@@ -21,7 +21,9 @@ ARCH ?= $(shell uname -m)
 
 ifeq ($(ARCH),aarch64)
   ARCH = arm64
-else ($(ARCH),x86_64)
+else
+endif
+ifeq ($(ARCH),x86_64)
   ARCH = amd64
 endif
 
