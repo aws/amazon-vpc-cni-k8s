@@ -12,7 +12,7 @@
 # language governing permissions and limitations under the License.
 #
 
-.PHONY: build-linux clean docker docker-build lint unit-test vet
+.PHONY: build-linux clean docker docker-build lint unit-test vet download-portmap
 
 VERSION ?= $(shell git describe --tags --always --dirty)
 LDFLAGS ?= -X main.version=$(VERSION)
@@ -38,13 +38,14 @@ download-portmap:
 
 # Default to build the Linux binary
 build-linux:
-	GOOS=linux CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "$(LDFLAGS)"
-	GOOS=linux CGO_ENABLED=0 go build -o aws-cni -ldflags "$(LDFLAGS)" ./plugins/routed-eni/
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "$(LDFLAGS)"
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-cni -ldflags "$(LDFLAGS)" ./plugins/routed-eni/
 
 docker-build:
 	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
 		--workdir=/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
 		--env GOPATH=/usr/src/app \
+		--env ARCH=$(ARCH) \
 		golang:1.10 make build-linux && make download-portmap
 
 
