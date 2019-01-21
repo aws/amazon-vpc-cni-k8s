@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
@@ -72,7 +73,13 @@ func NewController(clientset kubernetes.Interface) *Controller {
 
 // CreateKubeClient creates a k8s client
 func CreateKubeClient(apiserver string, kubeconfig string) (clientset.Interface, error) {
-	config, err := clientcmd.BuildConfigFromFlags(apiserver, kubeconfig)
+	var config *rest.Config
+	var err error
+	if apiserver == "" && kubeconfig == "" {
+		config, err = rest.InClusterConfig()
+	} else {
+		config, err = clientcmd.BuildConfigFromFlags(apiserver, kubeconfig)
+	}
 	if err != nil {
 		return nil, err
 	}
