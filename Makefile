@@ -64,6 +64,12 @@ unit-test:
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/eniconfig/...
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./ipamd/...
 
+docker-unit-test:
+	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
+		--workdir=/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
+		--env GOPATH=/usr/src/app \
+		golang:1.10 make unit-test
+
 # golint
 # To install: go get -u golang.org/x/lint/golint
 lint:
