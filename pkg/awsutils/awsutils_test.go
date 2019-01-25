@@ -539,7 +539,7 @@ func TestAllocAllIPAddress(t *testing.T) {
 	// the expected addresses for c5n.18xlarge
 	input = &ec2.AssignPrivateIpAddressesInput{
 		NetworkInterfaceId:             aws.String("eni-id"),
-		SecondaryPrivateIpAddressCount: aws.Int64(49),
+		SecondaryPrivateIpAddressCount: aws.Int64(30),
 	}
 	mockEC2.EXPECT().AssignPrivateIpAddresses(input).Return(nil, nil)
 
@@ -554,7 +554,7 @@ func TestAllocIPAddresses(t *testing.T) {
 	ctrl, _, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
-	// when required IP numbers(5) is below ENI's limit(49)
+	// when required IP numbers(5) is below ENI's limit(30)
 	input := &ec2.AssignPrivateIpAddressesInput{
 		NetworkInterfaceId:             aws.String("eni-id"),
 		SecondaryPrivateIpAddressCount: aws.Int64(5),
@@ -567,16 +567,16 @@ func TestAllocIPAddresses(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	// when required IP numbers(60) is higher than ENI's limit(49)
+	// when required IP numbers(31) is higher than ENI's limit(30)
 	input = &ec2.AssignPrivateIpAddressesInput{
 		NetworkInterfaceId:             aws.String("eni-id"),
-		SecondaryPrivateIpAddressCount: aws.Int64(49),
+		SecondaryPrivateIpAddressCount: aws.Int64(30),
 	}
 	mockEC2.EXPECT().AssignPrivateIpAddresses(input).Return(nil, nil)
 
 	ins = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
 
-	err = ins.AllocIPAddresses("eni-id", 49)
+	err = ins.AllocIPAddresses("eni-id", 30)
 
 	assert.NoError(t, err)
 }
