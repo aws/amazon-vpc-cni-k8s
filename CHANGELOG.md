@@ -44,3 +44,7 @@ See the [README](README.md) for additional information.
 * Improvement - [Configure MTU of ENI and veths to 9001](https://github.com/aws/amazon-vpc-cni-k8s/pull/210)
 * Bug Fix - [Update containerPort in the spec](https://github.com/aws/amazon-vpc-cni-k8s/pull/207)
 * Bug Fix - [cleanup the host route when perform CNI delete](https://github.com/aws/amazon-vpc-cni-k8s/pull/228)
+
+## 1.3.1
+* Feature - [Add ENI entries for p3dn.24xlarge](https://github.com/aws/amazon-vpc-cni-k8s/pull/295)
+* Bug Fix - [Restrict p3dn.24xlarge to 31 IPs/ENI](https://github.com/aws/amazon-vpc-cni-k8s/pull/300)
