@@ -207,9 +207,10 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		return errors.Wrapf(err, "host network setup: failed to delete old host rule")
 	}
 
+	primaryIntf := "eth0"
 	if n.nodePortSupportEnabled {
 
-		primaryIntf, err := findPrimaryInterfaceName(primaryMAC)
+		primaryIntf, err = findPrimaryInterfaceName(primaryMAC)
 
 		if err != nil {
 			return errors.Wrapf(err, "failed to SetupHostNetwork")
@@ -350,7 +351,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		chain:       "PREROUTING",
 		rule: []string{
 			"-m", "comment", "--comment", "AWS, primary ENI",
-			"-i", "eth0",
+			"-i", primaryIntf,
 			"-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in",
 			"-j", "CONNMARK", "--set-mark", fmt.Sprintf("%#x/%#x", n.mainENIMark, n.mainENIMark),
 		},
