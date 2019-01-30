@@ -48,6 +48,9 @@ iptables -nvL > $LOG_DIR/iptables.out
 # iptables -nvL -t nat
 iptables -nvL -t nat > $LOG_DIR/iptables-nat.out
 
+# iptables -nvL -t mangle
+iptables -nvL -t mangle > $LOG_DIR/iptables-mangle.out
+
 # dump cni config
 mkdir -p $LOG_DIR/cni
 cp /etc/cni/net.d/* $LOG_DIR/cni
