@@ -255,7 +255,12 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
 
 	var vpcCIDRs []*string
-	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, "", &testENINetIP)
+
+	// loopback for primary device is a little bit hacky. But the test is stable and it should be
+	// OK for test purpose.
+	LoopBackMac := ""
+
+	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, LoopBackMac, &testENINetIP)
 	assert.NoError(t, err)
 
 	assert.Equal(t, map[string]map[string][][]string{
@@ -263,7 +268,7 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 			"PREROUTING": [][]string{
 				{
 					"-m", "comment", "--comment", "AWS, primary ENI",
-					"-i", "eth0",
+					"-i", "lo",
 					"-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in",
 					"-j", "CONNMARK", "--set-mark", "0x80/0x80",
 				},
