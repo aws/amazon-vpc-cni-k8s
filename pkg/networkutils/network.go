@@ -230,7 +230,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		log.Debugf("Setting RPF for primary interface: %s", primaryIntfRPFilter)
 		err = n.setProcSys(primaryIntfRPFilter, rpFilterLoose)
 		if err != nil {
-			return errors.Wrapf(err, "failed to configure eth0 RPF check")
+			return errors.Wrapf(err, "failed to configure %s RPF check", primaryIntf)
 		}
 	}
 
