@@ -262,12 +262,12 @@ func (c *IPAMContext) nodeInit() error {
 
 	for _, ip := range usedIPs {
 		if ip.Container == "" {
-			log.Infof("Skipping Pod %s, Namespace %s due to no matching container",
+			log.Infof("Skipping Pod %s, Namespace %s, due to no matching container",
 				ip.Name, ip.Namespace)
 			continue
 		}
 		if ip.IP == "" {
-			log.Infof("Skipping Pod %s, Namespace %s due to no IP",
+			log.Infof("Skipping Pod %s, Namespace %s, due to no IP",
 				ip.Name, ip.Namespace)
 			continue
 		}
@@ -284,19 +284,20 @@ func (c *IPAMContext) nodeInit() error {
 			// The plan(TODO) is to feed this info back to controller and let controller cleanup this pod from this node.
 		}
 
-		// update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
+		// Update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
 		srcIPNet := net.IPNet{IP: net.ParseIP(ip.IP), Mask: net.IPv4Mask(255, 255, 255, 255)}
 		vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
 
 		var pbVPCcidrs []string
-
 		for _, cidr := range vpcCIDRs {
 			pbVPCcidrs = append(pbVPCcidrs, *cidr)
 		}
 
-		c.networkClient.UpdateRuleListBySrc(rules, srcIPNet, pbVPCcidrs, !c.networkClient.UseExternalSNAT())
+		err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet, pbVPCcidrs, !c.networkClient.UseExternalSNAT())
+		if err != nil {
+			log.Errorf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", ip.IP, err)
+		}
 	}
-
 	return nil
 }
 
@@ -415,7 +416,12 @@ func (c *IPAMContext) decreaseIPPool() {
 		return
 	}
 	log.Debugf("Start freeing eni %s", eni)
-	c.awsClient.FreeENI(eni)
+	err = c.awsClient.FreeENI(eni)
+	if err != nil {
+		ipamdErrInc("decreaseIPPoolFreeENIFailed", err)
+		log.Errorf("Failed to free eni %s, err: %v", eni, err)
+		return
+	}
 	c.lastNodeIPPoolAction = time.Now()
 	total, used := c.dataStore.GetStats()
 	log.Debugf("Successfully decreased IP Pool")
@@ -757,7 +763,6 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) error {
 	// mark phase
 	for _, attachedENI := range attachedENIs {
 		eniIPPool, err := c.dataStore.GetENIIPPools(attachedENI.ENIID)
-
 		if err == nil {
 			log.Debugf("Reconcile existing ENI %s IP pool", attachedENI.ENIID)
 			// reconcile IP pool
@@ -778,7 +783,6 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) error {
 			continue
 		}
 		reconcileCnt.With(prometheus.Labels{"fn": "eniReconcileAdd"}).Inc()
-
 	}
 
 	// sweep phase: since the marked eni have been removed, the remaining ones needs to be sweeped
@@ -797,8 +801,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) error {
 	return nil
 }
 
-func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInfo, attachENI awsutils.ENIMetadata, eni string) error {
-
+func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInfo, attachENI awsutils.ENIMetadata, eni string) {
 	for _, localIP := range attachENI.LocalIPv4s {
 		if localIP == c.primaryIP[eni] {
 			log.Debugf("Reconcile and skip primary IP %s on eni %s", localIP, eni)
@@ -806,7 +809,6 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 		}
 
 		err := c.dataStore.AddENIIPv4Address(eni, localIP)
-
 		if err != nil && err.Error() == datastore.DuplicateIPError {
 			log.Debugf("Reconciled IP %s on eni %s", localIP, eni)
 			// mark action = remove it from eniPool
@@ -821,11 +823,9 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 			continue
 		}
 		reconcileCnt.With(prometheus.Labels{"fn": "eniIPPoolReconcileAdd"}).Inc()
-
 	}
 
-	// sweep phase, delete remaining IPs
-
+	// Sweep phase, delete remaining IPs
 	for existingIP := range ipPool {
 		log.Debugf("Reconcile and delete ip %s on eni %s", existingIP, eni)
 		err := c.dataStore.DelENIIPv4Address(eni, existingIP)
@@ -837,9 +837,6 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 		}
 		reconcileCnt.With(prometheus.Labels{"fn": "eniIPPoolReconcileDel"}).Inc()
 	}
-
-	return nil
-
 }
 
 // UseCustomerNetworkCfg() return whether Pods needs to use pod specific config
