@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadata/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
@@ -312,6 +313,36 @@ func TestAWSGetFreeDeviceNumberNoDevice(t *testing.T) {
 	_, err := ins.awsGetFreeDeviceNumber()
 
 	assert.Error(t, err)
+
+}
+
+func TestDescribeENI(t *testing.T) {
+	ctrl, _, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	attachmentID := eniAttachID
+	attachment := &ec2.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
+	result := &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: []*ec2.NetworkInterface{{Attachment: attachment}}}
+
+	testCases := []struct {
+		name   string
+		expID  *string
+		awsErr error
+		expErr error
+	}{
+		{"success DescribeENI", &attachmentID, nil, nil},
+		{"not found error", nil, awserr.New("InvalidNetworkInterfaceID.NotFound", "", nil), ErrENINotFound},
+	}
+
+	for _, tc := range testCases {
+		mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any()).Return(result, tc.awsErr)
+
+		ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+		_, id, err := ins.DescribeENI("test-eni")
+		assert.Equal(t, tc.expErr, err, tc.name)
+		assert.Equal(t, tc.expID, id, tc.name)
+	}
 
 }
 
