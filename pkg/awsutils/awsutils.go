@@ -63,6 +63,9 @@ const (
 	UnknownInstanceType = "vpc ip resource(eni ip limit): unknown instance type"
 )
 
+// ErrENINotFound is an error when ENI is not found.
+var ErrENINotFound = errors.New("ENI is not found")
+
 var (
 	awsAPILatency = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -732,8 +735,13 @@ func (cache *EC2InstanceMetadataCache) FreeENI(eniName string) error {
 	//TODO: use metadata
 	_, attachID, err := cache.DescribeENI(eniName)
 	if err != nil {
+		if err == ErrENINotFound {
+			log.Infof("eni %s not found. It seems to be already freed", eniName)
+			return nil
+		}
+
 		awsUtilsErrInc("FreeENIDescribeENIFailed", err)
-		log.Errorf("Failed to retrieve eni %s attachment id %d", eniName, err)
+		log.Errorf("Failed to retrieve eni %s attachment id: %v", eniName, err)
 		return errors.Wrap(err, "free eni: failed to retrieve eni's attachment id")
 	}
 
@@ -812,6 +820,11 @@ func (cache *EC2InstanceMetadataCache) DescribeENI(eniID string) ([]*ec2.Network
 	result, err := cache.ec2SVC.DescribeNetworkInterfaces(input)
 	awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+				return nil, nil, ErrENINotFound
+			}
+		}
 		awsAPIErrInc("DescribeNetworkInterfaces", err)
 		log.Errorf("Failed to get eni %s information from EC2 control plane %v", eniID, err)
 		return nil, nil, errors.Wrap(err, "failed to describe network interface")
