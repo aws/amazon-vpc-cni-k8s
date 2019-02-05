@@ -275,7 +275,7 @@ var InstanceIPsAvailable = map[string]int64{
 	"p3.2xlarge":    15,
 	"p3.8xlarge":    30,
 	"p3.16xlarge":   30,
-	"p3dn.24xlarge": 31,
+	"p3dn.24xlarge": 50,
 	"r3.large":      10,
 	"r3.xlarge":     15,
 	"r3.2xlarge":    15,
