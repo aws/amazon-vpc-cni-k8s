@@ -94,7 +94,7 @@ Specifies whether `NodePort` services are enabled on a worker node's primary net
 `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG`  
 Type: Boolean  
 Default: `false`  
-Specifies that your pods may use subnets and security groups that are independent of your worker node's VPC configuration\. By default, pods share the same subnet and security groups as the worker node's primary interface\. Setting this variable to `true` causes `ipamD` to use the security groups and VPC subnet in a worker node's `ENIConfig` for elastic network interface allocation\. You must create an `ENIConfig` custom resource for each subnet that your pods will reside in, and then annotate or label each worker node to use a specific `ENIConfig` \(multiple worker nodes can be annotated or labelled with the same `ENIConfig`\)\. Worker nodes can only be annotated with a single `ENIConfig` at a time, and the subnet in the `ENIConfig` must belong to the same Availability Zone that the worker node resides in\.
+Specifies that your pods may use subnets and security groups that are independent of your worker node's VPC configuration\. By default, pods share the same subnet and security groups as the worker node's primary interface\. Setting this variable to `true` causes `ipamD` to use the security groups and VPC subnet in a worker node's `ENIConfig` for elastic network interface allocation\. You must create an `ENIConfig` custom resource for each subnet that your pods will reside in, and then annotate or label each worker node to use a specific `ENIConfig` (multiple worker nodes can be annotated or labelled with the same `ENIConfig`)\. Worker nodes can only be annotated with a single `ENIConfig` at a time, and the subnet in the `ENIConfig` must belong to the same Availability Zone that the worker node resides in\.
 For more information, see [*CNI Custom Networking*](https://docs.aws.amazon.com/eks/latest/userguide/cni-custom-network.html) in the Amazon EKS User Guide\.
 
 `ENI_CONFIG_ANNOTATION_DEF`  
@@ -106,7 +106,7 @@ Specifies node annotation key name\. This should be used when `AWS_VPC_K8S_CNI_C
 Type: String  
 Default: `k8s.amazonaws.com/eniConfig`  
 Specifies node label key name\. This should be used when `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true`\. Label value will be used to set `ENIConfig` name\. Note that annotations will take precedence over labels\. To use labels ensure annotation with key _k8s.amazonaws.com/eniConfig_ or defined key (in `ENI_CONFIG_ANNOTATION_DEF`) is not set on the node.
-To select an `ENIConfig` based upon availability zone set  this to _failure-domain.beta.kubernetes.io/zone_ and create an `ENIConfig` custom resource for each availability zone (e.g. `us-east-1a`).
+To select an `ENIConfig` based upon availability zone set this to _failure-domain.beta.kubernetes.io/zone_ and create an `ENIConfig` custom resource for each availability zone (e.g. `us-east-1a`).
 
 `AWS_VPC_K8S_CNI_EXTERNALSNAT`  
 Type: Boolean  
@@ -118,7 +118,7 @@ Disable SNAT if you need to allow inbound communication to your pods from extern
 Type: String  
 Default: `hashrandom`   
 Valid Values: `hashrandom`, `prng`, `none`
-Specifies weather the SNAT `iptables` rule should randomize the outgoing ports for connections\. When enabled (`hashrandom`) the `--random` flag will be added to the SNAT `iptables` rule\.  This should be used when `AWS_VPC_K8S_CNI_EXTERNALSNAT=true`\.
+Specifies weather the SNAT `iptables` rule should randomize the outgoing ports for connections\. When enabled (`hashrandom`) the `--random` flag will be added to the SNAT `iptables` rule\. This should be used when `AWS_VPC_K8S_CNI_EXTERNALSNAT=true`\.
 To use pseudo random number generation rather than hash based (i.e. `--random-fully`) use `prng` for the environment variable\. For old versions of `iptables` that do not support `--random-fully` this option will fall back to `--random`\.  
 Disable (`none`) this functionality if you rely on sequential port allocation for outgoing connections\.
 
