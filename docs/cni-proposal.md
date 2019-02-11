@@ -189,7 +189,7 @@ curl http://169.254.169.254/latest/meta-data/network/interfaces/macs/0a:da:9d:51
 Whenever L-IPAM daemon restarts (e.g. for upgrade reason), it also queries local Kubelet introspection service to get current running Pods information such as Pod Name, Pod Namespace and Pod IP address.
 
 ```
-curl --stderr /dev/null http://localhost:10255/pods 
+kubectl get --raw=/api/v1/pods 
 ```
 With the information from these 2 sources, L-IPAM can build a warm-pool that contains all available secondary IP addresses on the instance.
 
