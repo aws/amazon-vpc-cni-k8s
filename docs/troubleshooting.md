@@ -16,7 +16,7 @@ You can check the available IP addresses in AWS console:
 
 ### Tip: Make sure there are enough ENIs and IPs for Pods in the cluster
 
-We provide a tool [**cni-metrics-helper**](./misc/cni_metrics_helper.yaml) which can show aggregated ENIs and IPs information at the cluster level.  
+We provide a tool [**cni-metrics-helper**](../misc/cni_metrics_helper.yaml) which can show aggregated ENIs and IPs information at the cluster level.  
 
 You can optionally push them to cloudwatch.  For example:
 
