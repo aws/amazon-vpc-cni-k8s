@@ -48,18 +48,20 @@ func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.
 		Namespace: in.K8S_POD_NAMESPACE,
 		Container: in.K8S_POD_INFRA_CONTAINER_ID})
 
-	vpcCIDRs := s.ipamContext.awsClient.GetVPCIPv4CIDRs()
-
 	var pbVPCcidrs []string
-
-	for _, cidr := range vpcCIDRs {
+	for _, cidr := range s.ipamContext.awsClient.GetVPCIPv4CIDRs() {
 		log.Debugf("VPC CIDR %s", *cidr)
 		pbVPCcidrs = append(pbVPCcidrs, *cidr)
 	}
 
-	resp := pb.AddNetworkReply{Success: err == nil, IPv4Addr: addr, IPv4Subnet: "",
-		DeviceNumber: int32(deviceNumber), UseExternalSNAT: s.ipamContext.networkClient.UseExternalSNAT()}
-	resp.VPCcidrs = pbVPCcidrs
+	resp := pb.AddNetworkReply{
+		Success:         err == nil,
+		IPv4Addr:        addr,
+		IPv4Subnet:      "",
+		DeviceNumber:    int32(deviceNumber),
+		UseExternalSNAT: s.ipamContext.networkClient.UseExternalSNAT(),
+		VPCcidrs:        pbVPCcidrs,
+	}
 
 	log.Infof("Send AddNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", addr, deviceNumber, err)
 	addIPCnt.Inc()
@@ -69,9 +71,8 @@ func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.
 func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.DelNetworkReply, error) {
 	log.Infof("Received DelNetwork for IP %s, Pod %s, Namespace %s, Container %s",
 		in.IPv4Addr, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID)
-	delIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
 
-	var err error
+	delIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
 
 	ip, deviceNumber, err := s.ipamContext.dataStore.UnAssignPodIPv4Address(&k8sapi.K8SPodInfo{
 		Name:      in.K8S_POD_NAME,
@@ -104,6 +105,5 @@ func (c *IPAMContext) RunRPCHandler() error {
 		log.Errorf("Failed to start server on gRPC port: %v", err)
 		return errors.Wrap(err, "ipamd: failed to start server on gPRC port")
 	}
-
 	return nil
 }
