@@ -23,6 +23,7 @@ import (
 
 const (
 	envLogLevel    = "AWS_VPC_K8S_CNI_LOGLEVEL"
+	envLogOutput   = "AWS_VPC_K8S_CNI_LOG_OUTPUT"
 	envLogFilePath = "AWS_VPC_K8S_CNI_LOG_FILE"
 	// logConfigFormat defines the seelog format, with a rolling file
 	// writer. We cannot do this in code and have to resort to using
@@ -31,7 +32,7 @@ const (
 	logConfigFormat = `
 <seelog type="asyncloop" minlevel="%s">
  <outputs formatid="main">
-  <rollingfile filename="%s" type="date" datepattern="2006-01-02-15" archivetype="none" maxrolls="24" />
+  %s
  </outputs>
  <formats>
   <format id="main" format="%%UTCDate(2006-01-02T15:04:05Z07:00) [%%LEVEL] %%Msg%%n" />
@@ -52,7 +53,7 @@ func GetLogFileLocation(defaultLogFilePath string) string {
 
 // SetupLogger sets up a file logger
 func SetupLogger(logFilePath string) {
-	logger, err := log.LoggerFromConfigAsString(fmt.Sprintf(logConfigFormat, getLogLevel(), logFilePath))
+	logger, err := log.LoggerFromConfigAsString(fmt.Sprintf(logConfigFormat, getLogLevel(), getLogOutput(logFilePath)))
 	if err != nil {
 		fmt.Println("Error setting up logger: ", err)
 		return
@@ -67,4 +68,13 @@ func getLogLevel() string {
 	}
 
 	return seelogLevel.String()
+}
+
+func getLogOutput(logFilePath string) string {
+	switch strings.ToLower(os.Getenv(envLogOutput)) {
+	case "stdout":
+		return `<console />`
+	default:
+		return fmt.Sprintf(`<rollingfile filename="%s" type="date" datepattern="2006-01-02-15" archivetype="none" maxrolls="24" />`, logFilePath)
+	}
 }
