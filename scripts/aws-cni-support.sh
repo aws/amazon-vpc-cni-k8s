@@ -66,7 +66,7 @@ ip route show table all >> $LOG_DIR/$ROUTE_OUTPUT
 
 # dump relevant sysctls
 echo "================== sysctls ==================" > ${LOG_DIR}/sysctls.out
-for f in /proc/sys/net/ipv4/conf/{all,default,eth0}/rp_filter; do
+for f in /proc/sys/net/ipv4/conf/*/rp_filter; do
   echo "$f = $(cat $f)" >> ${LOG_DIR}/sysctls.out
 done
 
