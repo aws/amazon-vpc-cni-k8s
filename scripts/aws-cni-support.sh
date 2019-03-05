@@ -37,7 +37,7 @@ if [[ -n "${KUBECONFIG}" ]]; then
 elif [[ -f /etc/systemd/system/kubelet.service ]]; then
     KUBECONFIG=`grep kubeconfig /etc/systemd/system/kubelet.service | awk '{print $2}'`
     command -v kubectl > /dev/null && kubectl get --kubeconfig=${KUBECONFIG} --raw=/api/v1/pods > ${LOG_DIR}/kubelet.out
-elif  [[ -f /etc/eksctl/kubeconfig.yaml ]]; then
+elif [[ -f /etc/eksctl/kubeconfig.yaml ]]; then
     command -v kubectl > /dev/null && kubectl get --kubeconfig=/etc/eksctl/kubeconfig.yaml --raw=/api/v1/pods > ${LOG_DIR}/kubelet.out
 else
     echo "======== Unable to find KUBECONFIG, IGNORING POD DATA ========="
