@@ -241,6 +241,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	// reversed so, to the routing table, it looks like the traffic is pod traffic instead of NodePort traffic.
 	mainENIRule := n.netLink.NewRule()
 	mainENIRule.Mark = int(n.mainENIMark)
+	mainENIRule.Mask = int(n.mainENIMark)
 	mainENIRule.Table = mainRoutingTable
 	mainENIRule.Priority = hostRulePriority
 	// If this is a restart, cleanup previous rule first
