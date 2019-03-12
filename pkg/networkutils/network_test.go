@@ -15,6 +15,7 @@ package networkutils
 
 import (
 	"errors"
+	"github.com/aws/aws-sdk-go/aws"
 	"net"
 	"os"
 	"reflect"
@@ -175,7 +176,7 @@ func TestUpdateRuleListBySrc(t *testing.T) {
 		expTable []int
 	}{
 		{
-			"multiple desitinations",
+			"multiple destinations",
 			origRule,
 			true,
 			[]string{"10.10.0.0/16", "10.11.0.0/16"},
@@ -185,7 +186,7 @@ func TestUpdateRuleListBySrc(t *testing.T) {
 			[]int{origRule.Table, origRule.Table},
 		},
 		{
-			"single desitination",
+			"single destination",
 			origRule,
 			false,
 			[]string{""},
@@ -280,6 +281,40 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 		},
 	}, mockIptables.dataplaneState)
 	assert.Equal(t, mockFile{closed: true, data: "2"}, mockRPFilter)
+}
+
+func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
+	defer ctrl.Finish()
+
+	var mockRPFilter mockFile
+	ln := &linuxNetwork{
+		useExternalSNAT:        true,
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+
+		netLink: mockNetLink,
+		ns:      mockNS,
+		newIptables: func() (iptablesIface, error) {
+			return mockIptables, nil
+		},
+		openFile: func(name string, flag int, perm os.FileMode) (stringWriteCloser, error) {
+			return &mockRPFilter, nil
+		},
+	}
+
+	var hostRule netlink.Rule
+	mockNetLink.EXPECT().NewRule().Return(&hostRule)
+	mockNetLink.EXPECT().RuleDel(&hostRule)
+	var mainENIRule netlink.Rule
+	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
+	mockNetLink.EXPECT().RuleDel(&mainENIRule)
+	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
+
+	var vpcCIDRs []*string
+	vpcCIDRs = []*string{aws.String("10.10.0.0/16"), aws.String("10.11.0.0/16")}
+	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, "", &testENINetIP)
+	assert.NoError(t, err)
 }
 
 func TestIncrementIPv4Addr(t *testing.T) {

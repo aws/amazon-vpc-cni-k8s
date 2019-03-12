@@ -161,10 +161,6 @@ type stringWriteCloser interface {
 	WriteString(s string) (int, error)
 }
 
-func isDuplicateRuleAdd(err error) bool {
-	return strings.Contains(err.Error(), "File exists")
-}
-
 // find out the primary interface name
 func findPrimaryInterfaceName(primaryMAC string) (string, error) {
 
@@ -209,9 +205,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 
 	primaryIntf := "eth0"
 	if n.nodePortSupportEnabled {
-
 		primaryIntf, err = findPrimaryInterfaceName(primaryMAC)
-
 		if err != nil {
 			return errors.Wrapf(err, "failed to SetupHostNetwork")
 		}
@@ -259,36 +253,26 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	}
 
 	ipt, err := n.newIptables()
-
 	if err != nil {
 		return errors.Wrap(err, "host network setup: failed to create iptables")
 	}
 
 	// build IPTABLES chain for SNAT of non-VPC outbound traffic
-	for i, _ := range vpcCIDRs {
+	var chains []string
+	for i := 0; i <= len(vpcCIDRs); i++ {
 		chain := fmt.Sprintf("AWS-SNAT-CHAIN-%d", i)
 		log.Debugf("Setup Host Network: iptables -N %s -t nat", chain)
-
 		if err = ipt.NewChain("nat", chain); err != nil && !containChainExistErr(err) {
 			log.Errorf("ipt.NewChain error for chain [%s]: %v", chain, err)
 			return errors.Wrapf(err, "host network setup: failed to add chain")
-
 		}
+		chains = append(chains, chain)
 	}
-
-	lastChainName := fmt.Sprintf("AWS-SNAT-CHAIN-%d", len(vpcCIDRs))
-	log.Debugf("Setup Host Network: iptables -N %s  -t nat", lastChainName)
-
-	if err = ipt.NewChain("nat", lastChainName); err != nil && !containChainExistErr(err) {
-		log.Errorf("Setup Host Network: ipt.NewChain chain [%s] error %v", lastChainName, err)
-		return errors.Wrapf(err, "host network setup: failed to add chain")
-	}
-
-	var iptableRules []iptablesRule
 
 	// build SNAT rules for outbound non-VPC traffic
 	log.Debugf("Setup Host Network: iptables -A POSTROUTING -m comment --comment \"AWS SNAT CHAIN\" -j AWS-SNAT-CHAIN-0")
 
+	var iptableRules []iptablesRule
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "first SNAT rules for non-VPC outbound traffic",
 		shouldExist: !n.useExternalSNAT,
@@ -299,12 +283,11 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		}})
 
 	for i, cidr := range vpcCIDRs {
-		curChain := fmt.Sprintf("AWS-SNAT-CHAIN-%d", i)
-		nextChain := fmt.Sprintf("AWS-SNAT-CHAIN-%d", i+1)
+		curChain := chains[i]
+		nextChain := chains[i+1]
 		curName := fmt.Sprintf("[%d] AWS-SNAT-CHAIN", i)
 
-		log.Debugf("Setup Host Network: iptables -A %s ! -d %s -t nat -j %s",
-			curChain, *cidr, nextChain)
+		log.Debugf("Setup Host Network: iptables -A %s ! -d %s -t nat -j %s", curChain, *cidr, nextChain)
 
 		iptableRules = append(iptableRules, iptablesRule{
 			name:        curName,
@@ -312,13 +295,12 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 			table:       "nat",
 			chain:       curChain,
 			rule: []string{
-				"!", "-d", *cidr,
-				"-m", "comment", "--comment", "AWS SNAT CHAN", "-j", nextChain,
+				"!", "-d", *cidr, "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", nextChain,
 			}})
 	}
 
+	lastChain := chains[len(chains)-1]
 	// Prepare the Desired Rule for SNAT Rule
-	curChain := fmt.Sprintf("AWS-SNAT-CHAIN-%d", len(vpcCIDRs))
 	snatRule := []string{"-m", "comment", "--comment", "AWS, SNAT",
 		"-m", "addrtype", "!", "--dst-type", "LOCAL",
 		"-j", "SNAT", "--to-source", primaryAddr.String()}
@@ -334,11 +316,12 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 			snatRule = append(snatRule, "--random")
 		}
 	}
+
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "last SNAT rule for non-VPC outbound traffic",
 		shouldExist: !n.useExternalSNAT,
 		table:       "nat",
-		chain:       curChain,
+		chain:       lastChain,
 		rule:        snatRule,
 	})
 
@@ -381,7 +364,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 			"-j", "SNAT", "--to-source", primaryAddr.String()}})
 
 	for _, rule := range iptableRules {
-		log.Debugf("executate iptablerule : %s", rule.name)
+		log.Debugf("execute iptable rule : %s", rule.name)
 
 		exists, err := ipt.Exists(rule.table, rule.chain, rule.rule...)
 		if err != nil {
@@ -403,7 +386,6 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 			}
 		}
 	}
-
 	return nil
 }
 
@@ -454,10 +436,10 @@ func GetConfigForDebug() map[string]interface{} {
 }
 
 // UseExternalSNAT returns whether SNAT of secondary ENI IPs should be handled with an external
-// NAT gateway rather than on node.  Failure to parse the setting will result in a log and the
+// NAT gateway rather than on node. Failure to parse the setting will result in a log and the
 // setting will be disabled.
 func (n *linuxNetwork) UseExternalSNAT() bool {
-	return getBoolEnvVar(envExternalSNAT, false)
+	return useExternalSNAT()
 }
 
 func useExternalSNAT() bool {
@@ -533,12 +515,10 @@ func LinkByMac(mac string, netLink netlinkwrapper.NetLink) (netlink.Link, error)
 
 	for _, link := range links {
 		if mac == link.Attrs().HardwareAddr.String() {
-			log.Debugf("Found the Link that uses mac address %s and its index is %d",
-				mac, link.Attrs().Index)
+			log.Debugf("Found the Link that uses mac address %s and its index is %d", mac, link.Attrs().Index)
 			return link, nil
 		}
 	}
-
 	return nil, errors.Errorf("no interface found which uses mac address %s ", mac)
 }
 
@@ -548,7 +528,6 @@ func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, eniTable int
 }
 
 func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink) error {
-
 	if eniTable == 0 {
 		log.Debugf("Skipping set up eni network for primary interface")
 		return nil
@@ -635,9 +614,7 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 		// in case of route dependency, retry few times
 		retry := 0
 		for {
-
 			if err := netLink.RouteAdd(&r); err != nil {
-
 				if isNetworkUnreachable(err) {
 					retry++
 					if retry > maxRetryRouteAdd {
@@ -720,7 +697,6 @@ func isNotExistsError(err error) bool {
 // This helps us determine if we should ignore this error as the route
 // we want to add has been added already in routing table
 func isRouteExistsError(err error) bool {
-
 	if errno, ok := err.(syscall.Errno); ok {
 		return errno == syscall.EEXIST
 	}
@@ -731,7 +707,6 @@ func isRouteExistsError(err error) bool {
 // This helps us determine if we should ignore this error as the route the call
 // depends on is not plumbed ready yet
 func isNetworkUnreachable(err error) bool {
-
 	if errno, ok := err.(syscall.Errno); ok {
 		return errno == syscall.ENETUNREACH
 	}
@@ -746,19 +721,16 @@ func (n *linuxNetwork) GetRuleList() ([]netlink.Rule, error) {
 // GetRuleListBySrc returns IP rules with matching source IP
 func (n *linuxNetwork) GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error) {
 	var srcRuleList []netlink.Rule
-
 	for _, rule := range ruleList {
 		if rule.Src != nil && rule.Src.IP.Equal(src.IP) {
 			srcRuleList = append(srcRuleList, rule)
 		}
 	}
-
 	return srcRuleList, nil
 }
 
-// DeleteRuleListBySrc deletes IP rules who has matcing source IP
+// DeleteRuleListBySrc deletes IP rules that have a matching source IP
 func (n *linuxNetwork) DeleteRuleListBySrc(src net.IPNet) error {
-
 	log.Infof("Delete Rule List By Src [%v]", src)
 
 	ruleList, err := n.GetRuleList()
@@ -768,32 +740,28 @@ func (n *linuxNetwork) DeleteRuleListBySrc(src net.IPNet) error {
 	}
 
 	srcRuleList, err := n.GetRuleListBySrc(ruleList, src)
-
 	if err != nil {
 		log.Errorf("DeleteRuleListBySrc: failed to retrieve rule list %v", err)
 		return err
 	}
 
 	log.Infof("Remove current list [%v]", srcRuleList)
-
 	for _, rule := range srcRuleList {
-		if n.netLink.RuleDel(&rule); err != nil && !containsNoSuchRule(err) {
+		if err := n.netLink.RuleDel(&rule); err != nil && !containsNoSuchRule(err) {
 			log.Errorf("Failed to cleanup old IP rule: %v", err)
 			return errors.Wrapf(err, "DeleteRuleListBySrc: failed to delete old rule")
 		}
 
 		var toDst string
-
 		if rule.Dst != nil {
 			toDst = rule.Dst.String()
 		}
 		log.Debugf("DeleteRuleListBySrc: Successfully removed current rule [%v] to %s", rule, toDst)
 	}
-
 	return nil
 }
 
-// UpdateRuleListBySrc modify IP rules who has matching IP source
+// UpdateRuleListBySrc modify IP rules that have a matching source IP
 func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet, toCIDRs []string, toFlag bool) error {
 	log.Infof("Update Rule List[%v] for source[%v] with toCIDRs[%v], toFlag[%v]", ruleList, src, toCIDRs, toFlag)
 
@@ -808,13 +776,12 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 
 	for _, rule := range srcRuleList {
 		srcRuleTable = rule.Table
-		if n.netLink.RuleDel(&rule); err != nil && !containsNoSuchRule(err) {
+		if err := n.netLink.RuleDel(&rule); err != nil && !containsNoSuchRule(err) {
 			log.Errorf("Failed to cleanup old IP rule: %v", err)
 			return errors.Wrapf(err, "UpdateRuleListBySrc: failed to delete old rule")
 		}
 
 		var toDst string
-
 		if rule.Dst != nil {
 			toDst = rule.Dst.String()
 		}
@@ -863,6 +830,5 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 		log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v]", podRule)
 
 	}
-
 	return nil
 }

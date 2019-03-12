@@ -726,15 +726,11 @@ func (c *IPAMContext) nodeIPPoolTooHigh() bool {
 		return false
 	}
 
-	return (int64(available) >= (int64(warmENITarget)+1)*c.maxAddrsPerENI)
+	return int64(available) >= (int64(warmENITarget)+1)*c.maxAddrsPerENI
 }
 
 func ipamdErrInc(fn string, err error) {
 	ipamdErr.With(prometheus.Labels{"fn": fn, "error": err.Error()}).Inc()
-}
-
-func ipamdActionsInprogressSet(fn string, curNum int) {
-	ipamdActionsInprogress.WithLabelValues(fn).Set(float64(curNum))
 }
 
 // nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
@@ -839,7 +835,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 	}
 }
 
-// UseCustomerNetworkCfg() return whether Pods needs to use pod specific config
+// UseCustomNetworkCfg returns whether Pods needs to use pod specific configuration or not.
 func UseCustomNetworkCfg() bool {
 	defaultValue := false
 	if strValue := os.Getenv(envCustomNetworkCfg); strValue != "" {

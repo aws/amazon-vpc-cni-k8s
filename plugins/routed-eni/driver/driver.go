@@ -56,8 +56,10 @@ type linuxNetwork struct {
 
 // New creates linuxNetwork object
 func New() NetworkAPIs {
-	return &linuxNetwork{netLink: netlinkwrapper.NewNetLink(),
-		ns: nswrapper.NewNS()}
+	return &linuxNetwork{
+		netLink: netlinkwrapper.NewNetLink(),
+		ns:      nswrapper.NewNS(),
+	}
 }
 
 // createVethPairContext wraps the parameters and the method to create the
@@ -70,11 +72,7 @@ type createVethPairContext struct {
 	ip           ipwrapper.IP
 }
 
-func newCreateVethPairContext(
-	contVethName string,
-	hostVethName string,
-	addr *net.IPNet) *createVethPairContext {
-
+func newCreateVethPairContext(contVethName string, hostVethName string, addr *net.IPNet) *createVethPairContext {
 	return &createVethPairContext{
 		contVethName: contVethName,
 		hostVethName: hostVethName,
@@ -168,11 +166,9 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	return nil
 }
 
-// SetupNS wiresup linux networking for Pod's network
+// SetupNS wires up linux networking for Pod's network
 func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool) error {
-	log.Debugf("SetupNS: hostVethName=%s,contVethName=%s, netnsPath=%s table=%d\n",
-		hostVethName, contVethName, netnsPath, table)
-
+	log.Debugf("SetupNS: hostVethName=%s,contVethName=%s, netnsPath=%s table=%d\n", hostVethName, contVethName, netnsPath, table)
 	return setupNS(hostVethName, contVethName, netnsPath, addr, table, vpcCIDRs, useExternalSNAT, os.netLink, os.ns)
 }
 
@@ -258,12 +254,9 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 				if podRule.Dst != nil {
 					toDst = podRule.Dst.String()
 				}
-
 				log.Infof("Successfully added pod rule[%v] to %s", podRule, toDst)
-
 			}
 		}
-
 	}
 	return nil
 }
@@ -285,11 +278,9 @@ func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *
 	}
 
 	err = netLink.RuleAdd(containerRule)
-
 	if err != nil {
 		return errors.Wrapf(err, "add NS network: failed to add container rule  for %s", addr.String())
 	}
-
 	return nil
 }
 
@@ -300,7 +291,6 @@ func (os *linuxNetwork) TeardownNS(addr *net.IPNet, table int) error {
 }
 
 func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink) error {
-
 	// remove to-pod rule
 	toContainerRule := netLink.NewRule()
 	toContainerRule.Dst = addr
@@ -333,7 +323,6 @@ func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink) erro
 		Dst:   addrHostAddr}); err != nil {
 		log.Errorf("delete NS network: failed to delete host route for %s, %v", addr.String(), err)
 	}
-
 	return nil
 }
 
