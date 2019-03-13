@@ -23,7 +23,6 @@ import (
 
 const (
 	envLogLevel    = "AWS_VPC_K8S_CNI_LOGLEVEL"
-	envLogOutput   = "AWS_VPC_K8S_CNI_LOG_OUTPUT"
 	envLogFilePath = "AWS_VPC_K8S_CNI_LOG_FILE"
 	// logConfigFormat defines the seelog format, with a rolling file
 	// writer. We cannot do this in code and have to resort to using
@@ -71,7 +70,7 @@ func getLogLevel() string {
 }
 
 func getLogOutput(logFilePath string) string {
-	switch strings.ToLower(os.Getenv(envLogOutput)) {
+	switch logFilePath {
 	case "stdout":
 		return `<console />`
 	default:
