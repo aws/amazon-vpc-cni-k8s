@@ -57,3 +57,17 @@ func TestLogLevelReturnsDefaultLevelWhenEnvSetToInvalidValue(t *testing.T) {
 	expectedLogLevel = log.InfoLvl
 	assert.Equal(t, expectedLogLevel.String(), getLogLevel())
 }
+
+func TestLogOutputReturnsFileWhenValueNotStdout(t *testing.T) {
+	path := "/tmp/foo"
+
+	var expectedOutput = `<rollingfile filename="/tmp/foo" type="date" datepattern="2006-01-02-15" archivetype="none" maxrolls="24" />`
+	assert.Equal(t, expectedOutput, getLogOutput(path))
+}
+
+func TestLogOutputReturnsConsole(t *testing.T) {
+	path := "stdout"
+
+	var expectedOutput = `<console />`
+	assert.Equal(t, expectedOutput, getLogOutput(path))
+}

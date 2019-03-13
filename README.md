@@ -141,6 +141,12 @@ Type: Integer
 Default: None  
 Specifies the maximum number of ENIs that will be attached to the node. When MAX_ENI is unset or 0 (or lower), the setting is not used, and the maximum number of ENIs is always equal to the maximum number for the instance type in question. Even when MAX_ENI is a positive number, it is limited by the maximum number for the instance type.
 
+`AWS_VPC_K8S_CNI_LOG_FILE`
+Type: String
+Default: Unset
+Valid Values: stdout or a file path
+Specifies where to write the logging output. Either to stdout or to override the default file.
+
 ### Notes
 
 `L-IPAMD`(aws-node daemonSet) running on every worker node requires access to kubernetes API server.  If it can **not** reach kubernetes API server, ipamD will exit and CNI will not be able to get any IP address for Pods.  Here is a way to confirm if `L-IPAMD` has access to the kubernetes API server.
