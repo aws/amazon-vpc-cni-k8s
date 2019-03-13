@@ -80,6 +80,11 @@ const (
 	maxRetryRouteAdd = 5
 
 	retryRouteAddInterval = 5 * time.Second
+
+	// number of attempts to find an ENI by MAC address after it is attached
+	maxAttemptsLinkByMac = 5
+
+	retryLinkByMacInterval = 5 * time.Second
 )
 
 // NetworkAPIs defines the host level and the eni level network related operations
@@ -460,30 +465,47 @@ func getConnmark() uint32 {
 }
 
 // LinkByMac returns linux netlink based on interface MAC
-func LinkByMac(mac string, netLink netlinkwrapper.NetLink) (netlink.Link, error) {
-	links, err := netLink.LinkList()
+func LinkByMac(mac string, netLink netlinkwrapper.NetLink, retryInterval time.Duration) (netlink.Link, error) {
 
-	if err != nil {
-		return nil, err
-	}
-
-	for _, link := range links {
-		if mac == link.Attrs().HardwareAddr.String() {
-			log.Debugf("Found the Link that uses mac address %s and its index is %d",
-				mac, link.Attrs().Index)
-			return link, nil
+	// The adapter might not be immediately available, so we perform retries
+	var lastErr error
+	attempt := 0
+	for {
+		attempt++
+		if attempt > maxAttemptsLinkByMac {
+			return nil, lastErr
+		} else if attempt > 1 {
+			time.Sleep(retryInterval)
 		}
+
+		links, err := netLink.LinkList()
+
+		if err != nil {
+			lastErr = errors.Errorf("%s (attempt %d/%d)", err, attempt, maxAttemptsLinkByMac)
+			log.Debugf(lastErr.Error())
+			continue
+		}
+
+		for _, link := range links {
+			if mac == link.Attrs().HardwareAddr.String() {
+				log.Debugf("Found the Link that uses mac address %s and its index is %d (attempt %d/%d)",
+					mac, link.Attrs().Index, attempt, maxAttemptsLinkByMac)
+				return link, nil
+			}
+		}
+
+		lastErr = errors.Errorf("no interface found which uses mac address %s (attempt %d/%d)", mac, attempt, maxAttemptsLinkByMac)
+		log.Debugf(lastErr.Error())
 	}
 
-	return nil, errors.Errorf("no interface found which uses mac address %s ", mac)
 }
 
 // SetupENINetwork adds default route to route table (eni-<eni_table>)
 func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string) error {
-	return setupENINetwork(eniIP, eniMAC, eniTable, eniSubnetCIDR, n.netLink)
+	return setupENINetwork(eniIP, eniMAC, eniTable, eniSubnetCIDR, n.netLink, retryLinkByMacInterval)
 }
 
-func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink) error {
+func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink, retryLinkByMacInterval time.Duration) error {
 
 	if eniTable == 0 {
 		log.Debugf("Skipping set up eni network for primary interface")
@@ -492,7 +514,7 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 
 	log.Infof("Setting up network for an eni with ip address %s, mac address %s, cidr %s and route table %d",
 		eniIP, eniMAC, eniSubnetCIDR, eniTable)
-	link, err := LinkByMac(eniMAC, netLink)
+	link, err := LinkByMac(eniMAC, netLink, retryLinkByMacInterval)
 	if err != nil {
 		return errors.Wrapf(err, "eni network setup: failed to find the link which uses mac address %s", eniMAC)
 	}
