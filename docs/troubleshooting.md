@@ -150,12 +150,12 @@ ipamd.log.2018-05-16-01  ipamd.log.2018-05-16-06  ipamd.log.2018-05-16-11  ipamd
 ```
 // get ipamD metrics
 root@ip-192-168-188-7 bin]# curl http://localhost:61678/metrics
-# HELP assigned_ip_addresses The number of IP addresses assigned
-# TYPE assigned_ip_addresses gauge
-assigned_ip_addresses 46
-# HELP eni_allocated The number of ENI allocated
-# TYPE eni_allocated gauge
-eni_allocated 4
+# HELP awscni_assigned_ip_addresses The number of IP addresses assigned
+# TYPE awscni_assigned_ip_addresses gauge
+awscni_assigned_ip_addresses 46
+# HELP awscni_eni_allocated The number of ENI allocated
+# TYPE awscni_eni_allocated gauge
+awscni_eni_allocated 4
 # HELP eni_max The number of maximum ENIs can be attached to the instance
 # TYPE eni_max gauge
 eni_max 4

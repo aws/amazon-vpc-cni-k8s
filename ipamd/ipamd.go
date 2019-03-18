@@ -91,14 +91,14 @@ const (
 var (
 	ipamdErr = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "ipamd_error_count",
+			Name: "awscni_ipamd_error_count",
 			Help: "The number of errors encountered in ipamd",
 		},
 		[]string{"fn", "error"},
 	)
 	ipamdActionsInprogress = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "ipamd_action_inprogress",
+			Name: "awscni_ipamd_action_inprogress",
 			Help: "The number of ipamd actions inprogress",
 		},
 		[]string{"fn"},
@@ -111,26 +111,26 @@ var (
 	)
 	ipMax = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "ip_max",
+			Name: "awscni_ip_max",
 			Help: "The maximum number of IP addresses that can be allocated to the instance",
 		},
 	)
 	reconcileCnt = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "reconcile_count",
+			Name: "awscni_reconcile_count",
 			Help: "The number of times ipamD reconciles on ENIs and IP addresses",
 		},
 		[]string{"fn"},
 	)
 	addIPCnt = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "add_ip_req_count",
+			Name: "awscni_add_ip_req_count",
 			Help: "The number of add IP address request",
 		},
 	)
 	delIPCnt = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "del_ip_req_count",
+			Name: "awscni_del_ip_req_count",
 			Help: "The number of delete IP address request",
 		},
 		[]string{"reason"},

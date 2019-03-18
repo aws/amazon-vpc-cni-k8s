@@ -69,21 +69,21 @@ var ErrENINotFound = errors.New("ENI is not found")
 var (
 	awsAPILatency = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Name: "aws_api_lantency_ms",
+			Name: "awscni_aws_api_lantency_ms",
 			Help: "AWS API call latency in ms",
 		},
 		[]string{"api", "error"},
 	)
 	awsAPIErr = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "aws_api_error_count",
+			Name: "awscni_aws_api_error_count",
 			Help: "The number of times AWS API returns an error",
 		},
 		[]string{"api", "error"},
 	)
 	awsUtilsErr = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "aws_utils_error_count",
+			Name: "awscni_aws_utils_error_count",
 			Help: "The number of errors not handled in awsutils library",
 		},
 		[]string{"fn", "error"},
