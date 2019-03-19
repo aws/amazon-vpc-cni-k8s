@@ -35,6 +35,7 @@ See the [README](README.md) for additional information.
 * Bug Fix - [Add logic to dynamically discover primary interface name](https://github.com/aws/amazon-vpc-cni-k8s/pull/196)
 
 ## 1.3.0
+
 * Feature - [Add logic to handle multiple VPC CIDRs](https://github.com/aws/amazon-vpc-cni-k8s/pull/234)
 * Improvement - [Update instance types](https://github.com/aws/amazon-vpc-cni-k8s/pull/229)
 * Improvement - [Add retry for plumbing route entry](https://github.com/aws/amazon-vpc-cni-k8s/pull/223)
@@ -46,5 +47,14 @@ See the [README](README.md) for additional information.
 * Bug Fix - [cleanup the host route when perform CNI delete](https://github.com/aws/amazon-vpc-cni-k8s/pull/228)
 
 ## 1.3.1
+
 * Feature - [Add ENI entries for p3dn.24xlarge](https://github.com/aws/amazon-vpc-cni-k8s/pull/295)
 * Bug Fix - [Restrict p3dn.24xlarge to 31 IPs/ENI](https://github.com/aws/amazon-vpc-cni-k8s/pull/300)
+
+## 1.3.2
+
+* Bug Fix - [Bump CNI to latest 1.3 version](https://github.com/aws/amazon-vpc-cni-k8s/pull/333)
+
+## 1.3.3
+
+* Improvement - [Renaming Prometheus metrics with "awscni_" prefix](https://github.com/aws/amazon-vpc-cni-k8s/pull/348)
