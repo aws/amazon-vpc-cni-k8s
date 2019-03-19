@@ -105,7 +105,7 @@ var (
 	)
 	enisMax = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "eni_max",
+			Name: "awscni_eni_max",
 			Help: "The maximum number of ENIs that can be attached to the instance",
 		},
 	)
