@@ -52,8 +52,12 @@ See the [README](README.md) for additional information.
 * Bug Fix - [Restrict p3dn.24xlarge to 31 IPs/ENI](https://github.com/aws/amazon-vpc-cni-k8s/pull/300)
 
 ## 1.3.2
-
+* Bug Fix - [Fix max pods for p3dn.24xlarge](https://github.com/aws/amazon-vpc-cni-k8s/pull/312)
 * Bug Fix - [Bump CNI to latest 1.3 version](https://github.com/aws/amazon-vpc-cni-k8s/pull/333)
+
+## 1.3.3
+
+* Feature - [Add ENI entries for a1 and c5n instance families](https://github.com/aws/amazon-vpc-cni-k8s/pull/349)
 
 ## 1.4.0
 
