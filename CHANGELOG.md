@@ -55,6 +55,6 @@ See the [README](README.md) for additional information.
 
 * Bug Fix - [Bump CNI to latest 1.3 version](https://github.com/aws/amazon-vpc-cni-k8s/pull/333)
 
-## 1.3.3
+## 1.4.0
 
 * Improvement - [Renaming Prometheus metrics with "awscni_" prefix](https://github.com/aws/amazon-vpc-cni-k8s/pull/348)
