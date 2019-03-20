@@ -156,9 +156,9 @@ awscni_assigned_ip_addresses 46
 # HELP awscni_eni_allocated The number of ENI allocated
 # TYPE awscni_eni_allocated gauge
 awscni_eni_allocated 4
-# HELP eni_max The number of maximum ENIs can be attached to the instance
-# TYPE eni_max gauge
-eni_max 4
+# HELP awscni_eni_max The number of maximum ENIs can be attached to the instance
+# TYPE awscni_eni_max gauge
+awscni_eni_max 4
 # HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # TYPE go_gc_duration_seconds summary
 go_gc_duration_seconds{quantile="0"} 5.6955e-05
