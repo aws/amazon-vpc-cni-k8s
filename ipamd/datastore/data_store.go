@@ -61,19 +61,19 @@ var ErrUnknownPodIP = errors.New("datastore: pod using unknown IP address")
 var (
 	enis = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "eni_allocated",
+			Name: "awscni_eni_allocated",
 			Help: "The number of ENIs allocated",
 		},
 	)
 	totalIPs = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "total_ip_addresses",
+			Name: "awscni_total_ip_addresses",
 			Help: "The total number of IP addresses",
 		},
 	)
 	assignedIPs = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "assigned_ip_addresses",
+			Name: "awscni_assigned_ip_addresses",
 			Help: "The number of IP addresses assigned to pods",
 		},
 	)
