@@ -1,7 +1,8 @@
 FROM amazonlinux:2
 RUN yum update -y && \
     yum install -y iproute && \
-    yum install -y iptables
+    yum install -y iptables && \
+    yum clean all
 
 WORKDIR /app
 
