@@ -205,13 +205,13 @@ func TestUpdateRuleListBySrc(t *testing.T) {
 			newRuleSize = 1
 		}
 
-		for i := 0; i < newRuleSize; i += 1 {
+		for i := 0; i < newRuleSize; i++ {
 			_, tc.expDst[i], _ = net.ParseCIDR(tc.toCIDRs[i])
 		}
 
 		mockNetLink.EXPECT().RuleDel(&tc.oldRule)
 
-		for i := 0; i < newRuleSize; i += 1 {
+		for i := 0; i < newRuleSize; i++ {
 			mockNetLink.EXPECT().NewRule().Return(&tc.newRules[i])
 			mockNetLink.EXPECT().RuleAdd(&tc.newRules[i])
 		}
@@ -219,7 +219,7 @@ func TestUpdateRuleListBySrc(t *testing.T) {
 		err := ln.UpdateRuleListBySrc(tc.ruleList, *testENINetIPNet, tc.toCIDRs, tc.toFlag)
 		assert.NoError(t, err)
 
-		for i := 0; i < newRuleSize; i += 1 {
+		for i := 0; i < newRuleSize; i++ {
 			assert.Equal(t, tc.oldRule.Src, tc.newRules[i].Src, tc.name)
 			assert.Equal(t, tc.expDst[i], tc.newRules[i].Dst, tc.name)
 			assert.Equal(t, tc.expTable[i], tc.newRules[i].Table, tc.name)

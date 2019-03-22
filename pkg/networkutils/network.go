@@ -163,11 +163,9 @@ type stringWriteCloser interface {
 
 // find out the primary interface name
 func findPrimaryInterfaceName(primaryMAC string) (string, error) {
-
 	log.Debugf("Trying to find primary interface that has mac : %s", primaryMAC)
 
 	interfaces, err := net.Interfaces()
-
 	if err != nil {
 		log.Errorf("Failed to read all interfaces: %v", err)
 		return "", errors.Wrapf(err, "findPrimaryInterfaceName: failed to find interfaces")
@@ -530,36 +528,35 @@ func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, eniTable int
 
 func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink) error {
 	if eniTable == 0 {
-		log.Debugf("Skipping set up eni network for primary interface")
+		log.Debugf("Skipping set up ENI network for primary interface")
 		return nil
 	}
 
-	log.Infof("Setting up network for an eni with ip address %s, mac address %s, cidr %s and route table %d",
+	log.Infof("Setting up network for an ENI with ip address %s, MAC address %s, CIDR %s and route table %d",
 		eniIP, eniMAC, eniSubnetCIDR, eniTable)
 	link, err := LinkByMac(eniMAC, netLink)
 	if err != nil {
-		return errors.Wrapf(err, "eni network setup: failed to find the link which uses mac address %s", eniMAC)
+		return errors.Wrapf(err, "ENI network setup: failed to find the link which uses MAC address %s", eniMAC)
 	}
 
 	if err = netLink.LinkSetMTU(link, ethernetMTU); err != nil {
-		return errors.Wrapf(err, "eni network setup: failed to set MTU for %s", eniIP)
+		return errors.Wrapf(err, "ENI network setup: failed to set MTU for %s", eniIP)
 	}
 
 	if err = netLink.LinkSetUp(link); err != nil {
-		return errors.Wrapf(err, "eni network setup: failed to bring up eni %s", eniIP)
+		return errors.Wrapf(err, "ENI network setup: failed to bring up ENI %s", eniIP)
 	}
 
 	deviceNumber := link.Attrs().Index
 
 	_, ipnet, err := net.ParseCIDR(eniSubnetCIDR)
-
 	if err != nil {
-		return errors.Wrapf(err, "eni network setup: invalid ipv4 cidr block %s", eniSubnetCIDR)
+		return errors.Wrapf(err, "ENI network setup: invalid IPv4 CIDR block %s", eniSubnetCIDR)
 	}
 
 	gw, err := incrementIPv4Addr(ipnet.IP)
 	if err != nil {
-		return errors.Wrapf(err, "eni network setup: failed to define gateway address from %v", ipnet.IP)
+		return errors.Wrapf(err, "ENI network setup: failed to define gateway address from %v", ipnet.IP)
 	}
 
 	// Explicitly set the IP on the device if not already set.
@@ -570,13 +567,13 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 	log.Debugf("Setting up ENI's primary IP %s", eniIP)
 	addrs, err := netLink.AddrList(link, unix.AF_INET)
 	if err != nil {
-		return errors.Wrap(err, "eni network setup: failed to list IP addrs for ENI")
+		return errors.Wrap(err, "ENI network setup: failed to list IP address for ENI")
 	}
 
 	for _, addr := range addrs {
 		log.Debugf("Deleting existing IP address %s", addr.String())
 		if err = netLink.AddrDel(link, &addr); err != nil {
-			return errors.Wrap(err, "eni network setup: failed to delete IP addr from ENI")
+			return errors.Wrap(err, "ENI network setup: failed to delete IP addr from ENI")
 		}
 	}
 	eniAddr := &net.IPNet{
@@ -585,11 +582,10 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 	}
 	log.Debugf("Adding IP address %s", eniAddr.String())
 	if err = netLink.AddrAdd(link, &netlink.Addr{IPNet: eniAddr}); err != nil {
-		return errors.Wrap(err, "eni network setup: failed to add IP addr to ENI")
+		return errors.Wrap(err, "ENI network setup: failed to add IP addr to ENI")
 	}
 
 	log.Debugf("Setting up ENI's default gateway %v", gw)
-
 	for _, r := range []netlink.Route{
 		// Add a direct link route for the host's ENI IP only
 		{
@@ -609,7 +605,7 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 	} {
 		err := netLink.RouteDel(&r)
 		if err != nil && !isNotExistsError(err) {
-			return errors.Wrap(err, "eni network setup: failed to clean up old routes")
+			return errors.Wrap(err, "ENI network setup: failed to clean up old routes")
 		}
 
 		// in case of route dependency, retry few times
@@ -622,7 +618,7 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 						log.Errorf("Failed to add route %s/0 via %s table %d",
 							r.Dst.IP.String(), gw.String(), eniTable)
 						return errors.Wrapf(err,
-							"eni network setup: failed unable to add route %s/0 via %s table %d",
+							"ENI network setup: failed to add route %s/0 via %s table %d",
 							r.Dst.IP.String(), gw.String(), eniTable)
 					}
 					log.Debugf("Not able to add route route %s/0 via %s table %d (attempt %d/%d)",
@@ -631,12 +627,12 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 					time.Sleep(retryRouteAddInterval)
 				} else if isRouteExistsError(err) {
 					if err := netlink.RouteReplace(&r); err != nil {
-						return errors.Wrapf(err, "eni network setup: unable to replace route entry %s", r.Dst.IP.String())
+						return errors.Wrapf(err, "ENI network setup: unable to replace route entry %s", r.Dst.IP.String())
 					}
 					log.Debugf("Successfully replaced route to be %s/0", r.Dst.IP.String())
 					break
 				} else {
-					return errors.Wrapf(err, "eni network setup: unable to add route %s/0 via %s table %d",
+					return errors.Wrapf(err, "ENI network setup: unable to add route %s/0 via %s table %d",
 						r.Dst.IP.String(), gw.String(), eniTable)
 				}
 			} else {
@@ -648,9 +644,8 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 
 	// remove the route that default out to eni-x out of main route table
 	_, cidr, err := net.ParseCIDR(eniSubnetCIDR)
-
 	if err != nil {
-		return errors.Wrapf(err, "eni network setup: invalid ipv4 cidr block %s", eniSubnetCIDR)
+		return errors.Wrapf(err, "ENI network setup: invalid IPv4 CIDR block %s", eniSubnetCIDR)
 	}
 	defaultRoute := netlink.Route{
 		Dst:   cidr,
@@ -661,26 +656,25 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 
 	if err := netLink.RouteDel(&defaultRoute); err != nil {
 		if !isNotExistsError(err) {
-			return errors.Wrapf(err, "eni network setup: unable to delete route %s for source is %s", cidr.String(), eniIP)
-
+			return errors.Wrapf(err, "ENI network setup: unable to delete route %s for source IP %s", cidr.String(), eniIP)
 		}
 	}
 	return nil
 }
 
-// incremetnIPv4Addr returns incremented IPv4 address
+// incrementIPv4Addr returns incremented IPv4 address
 func incrementIPv4Addr(ip net.IP) (net.IP, error) {
 	ip4 := ip.To4()
 	if ip4 == nil {
-		return nil, fmt.Errorf("%q is not a valid IPv4 Address.", ip)
+		return nil, fmt.Errorf("%q is not a valid IPv4 Address", ip)
 	}
-	int_ip := binary.BigEndian.Uint32([]byte(ip4))
-	if int_ip == (1<<32 - 1) {
+	intIP := binary.BigEndian.Uint32([]byte(ip4))
+	if intIP == (1<<32 - 1) {
 		return nil, fmt.Errorf("%q will be overflowed", ip)
 	}
-	int_ip++
+	intIP++
 	bytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(bytes, int_ip)
+	binary.BigEndian.PutUint32(bytes, intIP)
 	return net.IP(bytes), nil
 }
 
@@ -774,14 +768,12 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 
 	log.Infof("Remove current list [%v]", srcRuleList)
 	var srcRuleTable int
-
 	for _, rule := range srcRuleList {
 		srcRuleTable = rule.Table
 		if err := n.netLink.RuleDel(&rule); err != nil && !containsNoSuchRule(err) {
 			log.Errorf("Failed to cleanup old IP rule: %v", err)
 			return errors.Wrapf(err, "UpdateRuleListBySrc: failed to delete old rule")
 		}
-
 		var toDst string
 		if rule.Dst != nil {
 			toDst = rule.Dst.String()
@@ -812,7 +804,6 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 			if podRule.Dst != nil {
 				toDst = podRule.Dst.String()
 			}
-
 			log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v] to %s", podRule, toDst)
 		}
 	} else {
@@ -827,9 +818,7 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 			log.Errorf("Failed to add pod IP rule: %v", err)
 			return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule")
 		}
-
 		log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v]", podRule)
-
 	}
 	return nil
 }
