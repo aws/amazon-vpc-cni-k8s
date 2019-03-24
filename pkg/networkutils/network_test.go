@@ -15,11 +15,14 @@ package networkutils
 
 import (
 	"errors"
-	"github.com/aws/aws-sdk-go/aws"
+	"fmt"
 	"net"
 	"os"
 	"reflect"
 	"testing"
+	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -88,10 +91,15 @@ func TestSetupENINetwork(t *testing.T) {
 
 	lo := mock_netlink.NewMockLink(ctrl)
 	eth1 := mock_netlink.NewMockLink(ctrl)
-	mockNetLink.EXPECT().LinkList().Return([]netlink.Link([]netlink.Link{lo, eth1}), nil)
-	// 2 links
+	// Emulate a delay attaching the ENI so a retry is necessary
+	// First attempt gets one links
+	firstlistSet := mockNetLink.EXPECT().LinkList().Return([]netlink.Link([]netlink.Link{lo}), nil)
+	lo.EXPECT().Attrs().Return(mockLinkAttrs1)
+	// Second attempt gets both links
+	secondlistSet := mockNetLink.EXPECT().LinkList().Return([]netlink.Link([]netlink.Link{lo, eth1}), nil)
 	lo.EXPECT().Attrs().Return(mockLinkAttrs1)
 	eth1.EXPECT().Attrs().Return(mockLinkAttrs2)
+	gomock.InOrder(firstlistSet, secondlistSet)
 
 	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
 	mockNetLink.EXPECT().LinkSetUp(gomock.Any()).Return(nil)
@@ -115,16 +123,30 @@ func TestSetupENINetwork(t *testing.T) {
 	mockNetLink.EXPECT().RouteAdd(gomock.Any()).Return(nil)
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil)
-	err = setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink)
+	err = setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, 0*time.Second)
 
 	assert.NoError(t, err)
+}
+
+func TestSetupENINetworkMACFail(t *testing.T) {
+	ctrl, mockNetLink, _, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	// Emulate a delay attaching the ENI so a retry is necessary
+	// First attempt gets one links
+	for i := 0; i < maxAttemptsLinkByMac; i++ {
+		mockNetLink.EXPECT().LinkList().Return(nil, fmt.Errorf("simulated failure"))
+	}
+	err := setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, 0*time.Second)
+
+	assert.Errorf(t, err, "simulated failure")
 }
 
 func TestSetupENINetworkPrimary(t *testing.T) {
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
-	err := setupENINetwork(testeniIP, testMAC2, 0, testeniSubnet, mockNetLink)
+	err := setupENINetwork(testeniIP, testMAC2, 0, testeniSubnet, mockNetLink, 0*time.Second)
 	assert.NoError(t, err)
 }
 
