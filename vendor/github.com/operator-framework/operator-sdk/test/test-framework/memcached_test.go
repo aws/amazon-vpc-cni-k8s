@@ -29,8 +29,10 @@ import (
 )
 
 var (
-	retryInterval = time.Second * 5
-	timeout       = time.Second * 30
+	retryInterval        = time.Second * 5
+	timeout              = time.Second * 30
+	cleanupRetryInterval = time.Second * 1
+	cleanupTimeout       = time.Second * 5
 )
 
 func TestMemcached(t *testing.T) {
@@ -51,7 +53,7 @@ func TestMemcached(t *testing.T) {
 	})
 }
 
-func memcachedScaleTest(t *testing.T, f *framework.Framework, ctx framework.TestCtx) error {
+func memcachedScaleTest(t *testing.T, f *framework.Framework, ctx *framework.TestCtx) error {
 	namespace, err := ctx.GetNamespace()
 	if err != nil {
 		return fmt.Errorf("could not get namespace: %v", err)
@@ -70,7 +72,8 @@ func memcachedScaleTest(t *testing.T, f *framework.Framework, ctx framework.Test
 			Size: 3,
 		},
 	}
-	err = f.DynamicClient.Create(goctx.TODO(), exampleMemcached)
+	// use TestCtx's create helper to create the object and add a cleanup function for the new object
+	err = f.Client.Create(goctx.TODO(), exampleMemcached, &framework.CleanupOptions{TestContext: ctx, Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval})
 	if err != nil {
 		return err
 	}
@@ -80,12 +83,12 @@ func memcachedScaleTest(t *testing.T, f *framework.Framework, ctx framework.Test
 		return err
 	}
 
-	err = f.DynamicClient.Get(goctx.TODO(), types.NamespacedName{Name: "example-memcached", Namespace: namespace}, exampleMemcached)
+	err = f.Client.Get(goctx.TODO(), types.NamespacedName{Name: "example-memcached", Namespace: namespace}, exampleMemcached)
 	if err != nil {
 		return err
 	}
 	exampleMemcached.Spec.Size = 4
-	err = f.DynamicClient.Update(goctx.TODO(), exampleMemcached)
+	err = f.Client.Update(goctx.TODO(), exampleMemcached)
 	if err != nil {
 		return err
 	}
@@ -97,8 +100,8 @@ func memcachedScaleTest(t *testing.T, f *framework.Framework, ctx framework.Test
 func MemcachedCluster(t *testing.T) {
 	t.Parallel()
 	ctx := framework.NewTestCtx(t)
-	defer ctx.Cleanup(t)
-	err := ctx.InitializeClusterResources()
+	defer ctx.Cleanup()
+	err := ctx.InitializeClusterResources(&framework.CleanupOptions{TestContext: ctx, Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval})
 	if err != nil {
 		t.Fatalf("failed to initialize cluster resources: %v", err)
 	}

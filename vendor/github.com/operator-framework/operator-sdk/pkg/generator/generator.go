@@ -20,9 +20,12 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/operator-framework/operator-sdk/pkg/test"
 
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 )
@@ -30,15 +33,23 @@ import (
 const (
 	defaultDirFileMode  = 0750
 	defaultFileMode     = 0644
-	defaultExecFileMode = 0744
+	defaultExecFileMode = 0755
+
+	// types
+	goOperatorType      = "go"
+	ansibleOperatorType = "ansible"
+
 	// dirs
 	cmdDir        = "cmd"
 	deployDir     = "deploy"
+	rolesDir      = "roles"
 	olmCatalogDir = deployDir + "/olm-catalog"
 	configDir     = "config"
 	tmpDir        = "tmp"
 	buildDir      = tmpDir + "/build"
 	codegenDir    = tmpDir + "/codegen"
+	dockerTestDir = buildDir + "/test-framework"
+	initDir       = tmpDir + "/init"
 	pkgDir        = "pkg"
 	apisDir       = pkgDir + "/apis"
 	stubDir       = pkgDir + "/stub"
@@ -51,21 +62,28 @@ const (
 	register           = "register.go"
 	types              = "types.go"
 	build              = "build.sh"
-	dockerBuild        = "docker_build.sh"
 	dockerfile         = "Dockerfile"
+	testingDockerfile  = "Dockerfile"
+	goTest             = "go-test.sh"
 	boilerplate        = "boilerplate.go.txt"
 	updateGenerated    = "update-generated.sh"
+	galaxyInit         = "galaxy-init.sh"
 	gopkgtoml          = "Gopkg.toml"
 	gopkglock          = "Gopkg.lock"
 	config             = "config.yaml"
-	operatorYaml       = deployDir + "/operator.yaml"
 	rbacYaml           = "rbac.yaml"
 	crYaml             = "cr.yaml"
+	saYaml             = "sa.yaml"
 	catalogPackageYaml = "package.yaml"
 	catalogCSVYaml     = "csv.yaml"
 	crdYaml            = "crd.yaml"
 	gitignore          = ".gitignore"
 	versionfile        = "version.go"
+	watches            = "watches.yaml"
+	playbook           = "playbook.yaml"
+
+	// commands
+	galaxyInitCmd = initDir + "/" + galaxyInit
 
 	// sdkImport is the operator-sdk import path.
 	sdkImport          = "github.com/operator-framework/operator-sdk/pkg/sdk"
@@ -77,6 +95,8 @@ const (
 	operatorTmplName   = "deploy/operator.yaml"
 	rbacTmplName       = "deploy/rbac.yaml"
 	crTmplName         = "deploy/cr.yaml"
+	testYamlName       = "deploy/test-pod.yaml"
+	saTmplName         = "deploy/sa.yaml"
 	pluralSuffix       = "s"
 )
 
@@ -84,6 +104,10 @@ type Generator struct {
 	// apiVersion is the kubernetes apiVersion that has the format of $GROUP_NAME/$VERSION.
 	apiVersion string
 	kind       string
+	// operatorType is the type of operator to initialize
+	operatorType string
+	// generatePlaybook is a switch to set playbook instead of role in watches.yaml for Ansible Operator
+	generatePlaybook bool
 	// projectName is name of the new operator application
 	// and is also the name of the base directory.
 	projectName string
@@ -92,8 +116,15 @@ type Generator struct {
 }
 
 // NewGenerator creates a new scaffold Generator.
-func NewGenerator(apiVersion, kind, projectName, repoPath string) *Generator {
-	return &Generator{apiVersion: apiVersion, kind: kind, projectName: projectName, repoPath: repoPath}
+func NewGenerator(apiVersion, kind, operatorType, projectName, repoPath string, generatePlaybook bool) *Generator {
+	return &Generator{
+		apiVersion:       apiVersion,
+		kind:             kind,
+		operatorType:     operatorType,
+		generatePlaybook: generatePlaybook,
+		projectName:      projectName,
+		repoPath:         repoPath,
+	}
 }
 
 // Render generates the default project structure:
@@ -112,8 +143,109 @@ func NewGenerator(apiVersion, kind, projectName, repoPath string) *Generator {
 // │   |   ├── build
 // │   |   └── codegen
 // │   └── version
+//
+// Render generates the following project structure for Operator type Ansible
+// ├── <projectName>
+// │   ├── Dockerfile
+// │   ├── roles
+// │   │   └── <kind>
+// │   ├── watches.yaml
+// │   ├── deploy
+// │   │   ├── <kind>-CRD.yaml
+// │   │   ├── rbac.yaml
+// │   │   ├── operator.yaml
+// │   ├   └── cr.yaml
+
 func (g *Generator) Render() error {
-	if err := g.generateDirStructure(); err != nil {
+	switch g.operatorType {
+	case ansibleOperatorType:
+		if err := g.renderAnsibleOperator(); err != nil {
+			return err
+		}
+	case goOperatorType:
+		if err := g.renderGoOperator(); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unexpected operator type [%v]", g.operatorType)
+	}
+	return nil
+}
+
+func (g *Generator) renderAnsibleOperator() error {
+	if err := g.generateAnsibleDirStructure(); err != nil {
+		return err
+	}
+	if err := g.renderTmp(); err != nil {
+		return err
+	}
+	if err := g.renderRole(); err != nil {
+		return err
+	}
+	if err := g.renderWatches(); err != nil {
+		return err
+	}
+	if err := g.renderPlaybook(); err != nil {
+		return err
+	}
+	return g.renderDeploy()
+}
+
+func (g *Generator) renderRole() error {
+	fmt.Printf("Rendering Ansible Galaxy role [%v/%v/%v]...\n", g.projectName, rolesDir, g.kind)
+	agcmd := exec.Command(filepath.Join(g.projectName, galaxyInitCmd))
+	output, err := agcmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("Rendering Ansible Galaxy role failed: [%v], Output: %s", err.Error(), string(output))
+		return err
+	}
+	// Clean up tmp/init
+	fmt.Printf("Cleaning up %v\n", filepath.Join(g.projectName, initDir))
+	err = os.RemoveAll(filepath.Join(g.projectName, initDir))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (g *Generator) renderPlaybook() error {
+	if !g.generatePlaybook {
+		return nil
+	}
+	buf := &bytes.Buffer{}
+	bTd := tmplData{
+		Kind: g.kind,
+	}
+
+	if err := renderFile(buf, playbook, playbookTmpl, bTd); err != nil {
+		return err
+	}
+	if err := writeFileAndPrint(filepath.Join(g.projectName, playbook), buf.Bytes(), defaultFileMode); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (g *Generator) renderWatches() error {
+	buf := &bytes.Buffer{}
+	bTd := tmplData{
+		GroupName:        groupName(g.apiVersion),
+		Version:          version(g.apiVersion),
+		Kind:             g.kind,
+		GeneratePlaybook: g.generatePlaybook,
+	}
+
+	if err := renderFile(buf, watches, watchesTmpl, bTd); err != nil {
+		return err
+	}
+	if err := writeFileAndPrint(filepath.Join(g.projectName, watches), buf.Bytes(), defaultFileMode); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (g *Generator) renderGoOperator() error {
+	if err := g.generateGoDirStructure(); err != nil {
 		return err
 	}
 
@@ -197,7 +329,7 @@ func renderConfigFiles(configDir, apiVersion, kind, projectName string) error {
 
 func (g *Generator) renderDeploy() error {
 	dp := filepath.Join(g.projectName, deployDir)
-	return renderDeployFiles(dp, g.projectName, g.apiVersion, g.kind)
+	return renderDeployFiles(dp, g.projectName, g.apiVersion, g.kind, g.operatorType)
 }
 
 func renderRBAC(deployDir, projectName, groupName string) error {
@@ -209,10 +341,34 @@ func renderRBAC(deployDir, projectName, groupName string) error {
 	return renderWriteFile(filepath.Join(deployDir, rbacYaml), rbacTmplName, rbacYamlTmpl, td)
 }
 
-func renderDeployFiles(deployDir, projectName, apiVersion, kind string) error {
+func RenderDeployCrdFiles(deployPath, apiVersion, kind string) error {
+	crTd := tmplData{
+		APIVersion: apiVersion,
+		Kind:       kind,
+	}
+	crFilePath := filepath.Join(deployPath,
+		groupName(apiVersion)+"_"+version(apiVersion)+"_"+strings.ToLower(kind)+"_cr.yaml")
+	if err := renderWriteFile(crFilePath, crFilePath, crYamlTmpl, crTd); err != nil {
+		return err
+	}
+
+	crdTd := tmplData{
+		Kind:         kind,
+		KindSingular: strings.ToLower(kind),
+		KindPlural:   toPlural(strings.ToLower(kind)),
+		GroupName:    groupName(apiVersion),
+		Version:      version(apiVersion),
+	}
+	crdFilePath := filepath.Join(deployPath,
+		groupName(apiVersion)+"_"+version(apiVersion)+"_"+strings.ToLower(kind)+"_crd.yaml")
+	return renderWriteFile(crdFilePath, crdFilePath, crdYamlTmpl, crdTd)
+}
+
+func renderDeployFiles(deployDir, projectName, apiVersion, kind, operatorType string) error {
 	rbacTd := tmplData{
-		ProjectName: projectName,
-		GroupName:   groupName(apiVersion),
+		ProjectName:  projectName,
+		GroupName:    groupName(apiVersion),
+		IsGoOperator: isGoOperator(operatorType),
 	}
 	if err := renderWriteFile(filepath.Join(deployDir, rbacYaml), rbacTmplName, rbacYamlTmpl, rbacTd); err != nil {
 		return err
@@ -233,19 +389,38 @@ func renderDeployFiles(deployDir, projectName, apiVersion, kind string) error {
 		APIVersion: apiVersion,
 		Kind:       kind,
 	}
-	return renderWriteFile(filepath.Join(deployDir, crYaml), crTmplName, crYamlTmpl, crTd)
-}
+	if err := renderWriteFile(filepath.Join(deployDir, crYaml), crTmplName, crYamlTmpl, crTd); err != nil {
+		return err
+	}
 
-// RenderOperatorYaml generates "deploy/operator.yaml"
-func RenderOperatorYaml(c *Config, image string) error {
-	td := tmplData{
-		ProjectName:     c.ProjectName,
-		Image:           image,
+	// Service account file is only needed for Go operator
+	if operatorType == goOperatorType {
+		saTd := tmplData{
+			ProjectName: projectName,
+		}
+		if err := renderWriteFile(filepath.Join(deployDir, saYaml), saTmplName, saYamlTmpl, saTd); err != nil {
+			return err
+		}
+	}
+
+	opTd := tmplData{
+		ProjectName:     projectName,
+		Image:           "REPLACE_IMAGE",
 		MetricsPort:     k8sutil.PrometheusMetricsPort,
 		MetricsPortName: k8sutil.PrometheusMetricsPortName,
 		OperatorNameEnv: k8sutil.OperatorNameEnvVar,
+		IsGoOperator:    isGoOperator(operatorType),
 	}
-	return renderWriteFile(operatorYaml, operatorTmplName, operatorYamlTmpl, td)
+	return renderWriteFile(filepath.Join(deployDir, "operator.yaml"), operatorTmplName, operatorYamlTmpl, opTd)
+}
+
+func RenderTestYaml(c *Config, image string) error {
+	opTd := tmplData{
+		ProjectName:      c.ProjectName,
+		Image:            image,
+		TestNamespaceEnv: test.TestNamespaceEnv,
+	}
+	return renderWriteFile(filepath.Join(deployDir, "test-pod.yaml"), testYamlName, testYamlTmpl, opTd)
 }
 
 // RenderOlmCatalog generates catalog manifests "deploy/olm-catalog/*"
@@ -303,13 +478,21 @@ func getCSVName(name, version string) string {
 }
 
 func (g *Generator) renderTmp() error {
-	bDir := filepath.Join(g.projectName, buildDir)
-	if err := renderBuildFiles(bDir, g.repoPath, g.projectName); err != nil {
-		return err
+	switch g.operatorType {
+	case goOperatorType:
+		cDir := filepath.Join(g.projectName, codegenDir)
+		if err := renderCodegenFiles(cDir, g.repoPath, apiDirName(g.apiVersion), version(g.apiVersion), g.projectName); err != nil {
+			return err
+		}
+	case ansibleOperatorType:
+		iDir := filepath.Join(g.projectName, initDir)
+		if err := renderInitFiles(iDir, g.repoPath, g.projectName, g.kind); err != nil {
+			return err
+		}
 	}
 
-	cDir := filepath.Join(g.projectName, codegenDir)
-	return renderCodegenFiles(cDir, g.repoPath, apiDirName(g.apiVersion), version(g.apiVersion), g.projectName)
+	bDir := filepath.Join(g.projectName, buildDir)
+	return renderBuildFiles(bDir, g.repoPath, g.projectName, g.operatorType, g.generatePlaybook)
 }
 
 func (g *Generator) renderVersion() error {
@@ -320,40 +503,51 @@ func (g *Generator) renderVersion() error {
 	return renderWriteFile(filepath.Join(g.projectName, versionDir, versionfile), "version/version.go", versionTmpl, td)
 }
 
-func renderBuildFiles(buildDir, repoPath, projectName string) error {
-	buf := &bytes.Buffer{}
-	bTd := tmplData{
-		ProjectName: projectName,
-		RepoPath:    repoPath,
-	}
-
-	if err := renderFile(buf, "tmp/build/build.sh", buildTmpl, bTd); err != nil {
-		return err
-	}
-	if err := writeFileAndPrint(filepath.Join(buildDir, build), buf.Bytes(), defaultExecFileMode); err != nil {
-		return err
-	}
-
-	buf = &bytes.Buffer{}
-	if err := renderDockerBuildFile(buf); err != nil {
-		return err
-	}
-	if err := writeFileAndPrint(filepath.Join(buildDir, dockerBuild), buf.Bytes(), defaultExecFileMode); err != nil {
-		return err
+func renderBuildFiles(buildDir, repoPath, projectName, operatorType string, generatePlaybook bool) error {
+	var dockerFileTmplName string
+	switch operatorType {
+	case goOperatorType:
+		dockerFileTmplName = dockerFileTmpl
+	case ansibleOperatorType:
+		dockerFileTmplName = dockerFileAnsibleTmpl
 	}
 
 	dTd := tmplData{
-		ProjectName: projectName,
+		ProjectName:      projectName,
+		GeneratePlaybook: generatePlaybook,
 	}
-	if err := renderFile(buf, "tmp/build/Dockerfile", dockerFileTmpl, dTd); err != nil {
+
+	if err := renderWriteFile(filepath.Join(buildDir, dockerfile), "tmp/build/Dockerfile", dockerFileTmplName, dTd); err != nil {
 		return err
 	}
-	return renderWriteFile(filepath.Join(buildDir, dockerfile), "tmp/build/Dockerfile", dockerFileTmpl, dTd)
+
+	return RenderTestingContainerFiles(buildDir, projectName)
 }
 
-func renderDockerBuildFile(w io.Writer) error {
-	_, err := w.Write([]byte(dockerBuildTmpl))
-	return err
+func RenderTestingContainerFiles(buildDir, projectName string) error {
+	dTd := tmplData{
+		ProjectName: projectName,
+	}
+	if err := renderWriteFile(filepath.Join(buildDir, "test-framework", testingDockerfile), "tmp/build/test-framework/Dockerfile", testingDockerFileTmpl, dTd); err != nil {
+		return err
+	}
+	buf := &bytes.Buffer{}
+	if err := renderFile(buf, filepath.Join(buildDir, goTest), goTestScript, tmplData{}); err != nil {
+		return err
+	}
+	return writeFileAndPrint(filepath.Join(buildDir, goTest), buf.Bytes(), defaultExecFileMode)
+}
+
+func renderInitFiles(initDir, repoPath, projectName, kind string) error {
+	buf := &bytes.Buffer{}
+	iTd := tmplData{
+		Kind: kind,
+		Name: projectName,
+	}
+	if err := renderFile(buf, galaxyInitCmd, galaxyInitTmpl, iTd); err != nil {
+		return err
+	}
+	return writeFileAndPrint(filepath.Join(initDir, galaxyInit), buf.Bytes(), defaultExecFileMode)
 }
 
 func renderCodegenFiles(codegenDir, repoPath, apiDirName, version, projectName string) error {
@@ -461,10 +655,17 @@ type tmplData struct {
 	CRDVersion     string
 	CSVName        string
 	CatalogVersion string
+
+	// for test framework
+	TestNamespaceEnv string
+
+	// Ansible Operator specific vars
+	GeneratePlaybook bool
+	IsGoOperator     bool
 }
 
-// Creates all the necesary directories for the generated files
-func (g *Generator) generateDirStructure() error {
+// Creates all the necesary directories for the generated files for Go Operator
+func (g *Generator) generateGoDirStructure() error {
 	dirsToCreate := []string{
 		g.projectName,
 		filepath.Join(g.projectName, cmdDir, g.projectName),
@@ -473,9 +674,29 @@ func (g *Generator) generateDirStructure() error {
 		filepath.Join(g.projectName, olmCatalogDir),
 		filepath.Join(g.projectName, buildDir),
 		filepath.Join(g.projectName, codegenDir),
+		filepath.Join(g.projectName, dockerTestDir),
 		filepath.Join(g.projectName, versionDir),
 		filepath.Join(g.projectName, apisDir, apiDirName(g.apiVersion), version(g.apiVersion)),
 		filepath.Join(g.projectName, stubDir),
+	}
+
+	for _, dir := range dirsToCreate {
+		if err := os.MkdirAll(dir, defaultDirFileMode); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Creates all the necesary directories for the generated files for Ansible Operator
+func (g *Generator) generateAnsibleDirStructure() error {
+	dirsToCreate := []string{
+		g.projectName,
+		filepath.Join(g.projectName, deployDir),
+		filepath.Join(g.projectName, initDir),
+		filepath.Join(g.projectName, buildDir),
+		filepath.Join(g.projectName, rolesDir),
 	}
 
 	for _, dir := range dirsToCreate {
@@ -520,6 +741,9 @@ func apiDirName(apiVersion string) string {
 
 // Writes file to a given path and data buffer, as well as prints out a message confirming creation of a file
 func writeFileAndPrint(filePath string, data []byte, fileMode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(filePath), defaultDirFileMode); err != nil {
+		return err
+	}
 	if err := ioutil.WriteFile(filePath, data, fileMode); err != nil {
 		return err
 	}
@@ -540,4 +764,11 @@ func renderWriteFile(filePath string, fileLoc string, fileTmpl string, info tmpl
 	}
 
 	return nil
+}
+
+func isGoOperator(operatorType string) bool {
+	if operatorType == "go" {
+		return true
+	}
+	return false
 }

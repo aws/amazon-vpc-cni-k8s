@@ -16,6 +16,8 @@ package generator
 
 import (
 	"bytes"
+	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -89,13 +91,23 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
-func NewHandler() sdk.Handler {
-	return &Handler{}
+func NewHandler(m *Metrics) sdk.Handler {
+	return &Handler{
+		metrics: m,
+	}
+}
+
+type Metrics struct {
+	operatorErrors prometheus.Counter
 }
 
 type Handler struct {
+	// Metrics example
+	metrics *Metrics
+
 	// Fill me
 }
 
@@ -105,6 +117,8 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		err := sdk.Create(newbusyBoxPod(o))
 		if err != nil && !errors.IsAlreadyExists(err) {
 			logrus.Errorf("failed to create busybox pod : %v", err)
+			// increment error metric
+			h.metrics.operatorErrors.Inc()
 			return err
 		}
 	}
@@ -137,12 +151,24 @@ func newbusyBoxPod(cr *v1alpha1.AppService) *corev1.Pod {
 			Containers: []corev1.Container{
 				{
 					Name:    "busybox",
-					Image:   "busybox",
+					Image:   "docker.io/busybox",
 					Command: []string{"sleep", "3600"},
 				},
 			},
 		},
 	}
+}
+
+func RegisterOperatorMetrics() (*Metrics, error) {
+	operatorErrors := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "memcached_operator_reconcile_errors_total",
+		Help: "Number of errors that occurred while reconciling the memcached deployment",
+	})
+	err := prometheus.Register(operatorErrors)
+	if err != nil {
+		return nil, err
+	}
+	return &Metrics{operatorErrors: operatorErrors}, nil
 }
 `
 
@@ -197,6 +223,7 @@ spec:
       labels:
         name: app-operator
     spec:
+      serviceAccountName: app-operator
       containers:
         - name: app-operator
           image: quay.io/example-inc/app-operator:0.0.1
@@ -205,6 +232,36 @@ spec:
             name: metrics
           command:
           - app-operator
+          imagePullPolicy: Always
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: OPERATOR_NAME
+              value: "app-operator"
+`
+
+const ansibleOperatorYamlExp = `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: app-operator
+  template:
+    metadata:
+      labels:
+        name: app-operator
+    spec:
+      containers:
+        - name: app-operator
+          image: quay.io/example-inc/app-operator:0.0.1
+          ports:
+          - containerPort: 60000
+            name: metrics
           imagePullPolicy: Always
           env:
             - name: WATCH_NAMESPACE
@@ -253,14 +310,69 @@ rules:
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
-  name: default-account-app-operator
+  name: app-operator
 subjects:
 - kind: ServiceAccount
-  name: default
+  name: app-operator
 roleRef:
   kind: Role
   name: app-operator
   apiGroup: rbac.authorization.k8s.io
+`
+
+const rbacYamlAnsibleExp = `kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: app-operator
+rules:
+- apiGroups:
+  - app.example.com
+  resources:
+  - "*"
+  verbs:
+  - "*"
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - services
+  - endpoints
+  - persistentvolumeclaims
+  - events
+  - configmaps
+  - secrets
+  verbs:
+  - "*"
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - daemonsets
+  - replicasets
+  - statefulsets
+  verbs:
+  - "*"
+
+---
+
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: app-operator
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: app-operator
+  apiGroup: rbac.authorization.k8s.io
+`
+
+const saYamlExp = `apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-operator
 `
 
 func TestGenDeploy(t *testing.T) {
@@ -288,6 +400,7 @@ func TestGenDeploy(t *testing.T) {
 		MetricsPort:     k8sutil.PrometheusMetricsPort,
 		MetricsPortName: k8sutil.PrometheusMetricsPortName,
 		OperatorNameEnv: k8sutil.OperatorNameEnvVar,
+		IsGoOperator:    true,
 	}
 	if err := renderFile(buf, operatorTmplName, operatorYamlTmpl, td); err != nil {
 		t.Error(err)
@@ -298,13 +411,52 @@ func TestGenDeploy(t *testing.T) {
 		t.Errorf("\nTest failed. Below is the diff of the expected vs actual results.\nRed text is missing and green text is extra.\n\n" + dmp.DiffPrettyText(diffs))
 	}
 
+	// Test Ansible Operator operator.yaml
 	buf = &bytes.Buffer{}
-	if err := renderFile(buf, rbacTmplName, rbacYamlTmpl, tmplData{ProjectName: appProjectName, GroupName: appGroupName}); err != nil {
+	td = tmplData{
+		ProjectName:     appProjectName,
+		Image:           appImage,
+		MetricsPort:     k8sutil.PrometheusMetricsPort,
+		MetricsPortName: k8sutil.PrometheusMetricsPortName,
+		OperatorNameEnv: k8sutil.OperatorNameEnvVar,
+		IsGoOperator:    false,
+	}
+	if err := renderFile(buf, operatorTmplName, operatorYamlTmpl, td); err != nil {
+		t.Error(err)
+	}
+	if ansibleOperatorYamlExp != buf.String() {
+		dmp := diffmatchpatch.New()
+		diffs := dmp.DiffMain(ansibleOperatorYamlExp, buf.String(), false)
+		t.Errorf("\nTest failed. Below is the diff of the expected vs actual results.\nRed text is missing and green text is extra.\n\n" + dmp.DiffPrettyText(diffs))
+	}
+
+	buf = &bytes.Buffer{}
+	if err := renderFile(buf, rbacTmplName, rbacYamlTmpl, tmplData{ProjectName: appProjectName, GroupName: appGroupName, IsGoOperator: true}); err != nil {
 		t.Error(err)
 	}
 	if rbacYamlExp != buf.String() {
 		dmp := diffmatchpatch.New()
 		diffs := dmp.DiffMain(rbacYamlExp, buf.String(), false)
+		t.Errorf("\nTest failed. Below is the diff of the expected vs actual results.\nRed text is missing and green text is extra.\n\n" + dmp.DiffPrettyText(diffs))
+	}
+
+	// Test Ansible Operator rbac.yaml
+	buf = &bytes.Buffer{}
+	if err := renderFile(buf, rbacTmplName, rbacYamlTmpl, tmplData{ProjectName: appProjectName, GroupName: appGroupName, IsGoOperator: false}); err != nil {
+		t.Error(err)
+	}
+	if rbacYamlAnsibleExp != buf.String() {
+		dmp := diffmatchpatch.New()
+		diffs := dmp.DiffMain(rbacYamlAnsibleExp, buf.String(), false)
+		t.Errorf("\nTest failed. Below is the diff of the expected vs actual results.\nRed text is missing and green text is extra.\n\n" + dmp.DiffPrettyText(diffs))
+	}
+	buf = &bytes.Buffer{}
+	if err := renderFile(buf, saTmplName, saYamlTmpl, tmplData{ProjectName: appProjectName}); err != nil {
+		t.Error(err)
+	}
+	if saYamlExp != buf.String() {
+		dmp := diffmatchpatch.New()
+		diffs := dmp.DiffMain(saYamlExp, buf.String(), false)
 		t.Errorf("\nTest failed. Below is the diff of the expected vs actual results.\nRed text is missing and green text is extra.\n\n" + dmp.DiffPrettyText(diffs))
 	}
 }
@@ -439,6 +591,11 @@ func main() {
 	printVersion()
 
 	sdk.ExposeMetricsPort()
+	metrics, err := stub.RegisterOperatorMetrics()
+	if err != nil {
+		logrus.Errorf("failed to register operator specific metrics: %v", err)
+	}
+	h := stub.NewHandler(metrics)
 
 	resource := "app.example.com/v1alpha1"
 	kind := "AppService"
@@ -449,7 +606,7 @@ func main() {
 	resyncPeriod := time.Duration(5) * time.Second
 	logrus.Infof("Watching %s, %s, %s, %d", resource, kind, namespace, resyncPeriod)
 	sdk.Watch(resource, kind, namespace, resyncPeriod)
-	sdk.Handle(stub.NewHandler())
+	sdk.Handle(h)
 	sdk.Run(context.TODO())
 }
 `
@@ -492,8 +649,13 @@ mkdir -p ${BIN_DIR}
 PROJECT_NAME="app-operator"
 REPO_PATH="github.com/example-inc/app-operator"
 BUILD_PATH="${REPO_PATH}/cmd/${PROJECT_NAME}"
+TEST_PATH="${REPO_PATH}/${TEST_LOCATION}"
 echo "building "${PROJECT_NAME}"..."
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ${BIN_DIR}/${PROJECT_NAME} $BUILD_PATH
+if $ENABLE_TESTS ; then
+	echo "building "${PROJECT_NAME}-test"..."
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c -o ${BIN_DIR}/${PROJECT_NAME}-test $TEST_PATH
+fi
 `
 
 const dockerFileExp = `FROM alpine:3.6
@@ -504,34 +666,21 @@ USER app-operator
 ADD tmp/_output/bin/app-operator /usr/local/bin/app-operator
 `
 
+const dockerFileAnsibleNoPlaybookExp = `FROM quay.io/water-hole/ansible-operator
+
+COPY roles/ ${HOME}/roles/
+COPY watches.yaml ${HOME}/watches.yaml
+`
+
+const dockerFileAnsiblePlaybookExp = `FROM quay.io/water-hole/ansible-operator
+
+COPY roles/ ${HOME}/roles/
+COPY playbook.yaml ${HOME}/playbook.yaml
+COPY watches.yaml ${HOME}/watches.yaml
+`
+
 func TestGenBuild(t *testing.T) {
 	buf := &bytes.Buffer{}
-	bTd := tmplData{
-		ProjectName: appProjectName,
-		RepoPath:    appRepoPath,
-	}
-	if err := renderFile(buf, "tmp/build/build.sh", buildTmpl, bTd); err != nil {
-		t.Error(err)
-		return
-	}
-	if buildExp != buf.String() {
-		dmp := diffmatchpatch.New()
-		diffs := dmp.DiffMain(buildExp, buf.String(), false)
-		t.Errorf("\nTest failed. Below is the diff of the expected vs actual results.\nRed text is missing and green text is extra.\n\n" + dmp.DiffPrettyText(diffs))
-	}
-
-	buf = &bytes.Buffer{}
-	if err := renderDockerBuildFile(buf); err != nil {
-		t.Error(err)
-		return
-	}
-	if dockerBuildTmpl != buf.String() {
-		dmp := diffmatchpatch.New()
-		diffs := dmp.DiffMain(dockerBuildTmpl, buf.String(), false)
-		t.Errorf("\nTest failed. Below is the diff of the expected vs actual results.\nRed text is missing and green text is extra.\n\n" + dmp.DiffPrettyText(diffs))
-	}
-
-	buf = &bytes.Buffer{}
 	dTd := tmplData{
 		ProjectName: appProjectName,
 	}
@@ -543,5 +692,54 @@ func TestGenBuild(t *testing.T) {
 		dmp := diffmatchpatch.New()
 		diffs := dmp.DiffMain(dockerFileExp, buf.String(), false)
 		t.Errorf("\nTest failed. Below is the diff of the expected vs actual results.\nRed text is missing and green text is extra.\n\n" + dmp.DiffPrettyText(diffs))
+	}
+
+	// Test Ansible Operator Dockerfile with no playbook
+	buf = &bytes.Buffer{}
+	dTd = tmplData{
+		ProjectName:      appProjectName,
+		GeneratePlaybook: false,
+	}
+	if err := renderFile(buf, "tmp/build/Dockerfile", dockerFileAnsibleTmpl, dTd); err != nil {
+		t.Error(err)
+		return
+	}
+	if dockerFileAnsibleNoPlaybookExp != buf.String() {
+		dmp := diffmatchpatch.New()
+		diffs := dmp.DiffMain(dockerFileAnsibleNoPlaybookExp, buf.String(), false)
+		t.Errorf("\nTest failed. Below is the diff of the expected vs actual results.\nRed text is missing and green text is extra.\n\n" + dmp.DiffPrettyText(diffs))
+	}
+
+	// Test Ansible Operator Dockerfile with playbook generation
+	buf = &bytes.Buffer{}
+	dTd = tmplData{
+		ProjectName:      appProjectName,
+		GeneratePlaybook: true,
+	}
+	if err := renderFile(buf, "tmp/build/Dockerfile", dockerFileAnsibleTmpl, dTd); err != nil {
+		t.Error(err)
+		return
+	}
+	if dockerFileAnsiblePlaybookExp != buf.String() {
+		dmp := diffmatchpatch.New()
+		diffs := dmp.DiffMain(dockerFileAnsiblePlaybookExp, buf.String(), false)
+		t.Errorf("\nTest failed. Below is the diff of the expected vs actual results.\nRed text is missing and green text is extra.\n\n" + dmp.DiffPrettyText(diffs))
+	}
+}
+
+func TestWriteFileAndPrint(t *testing.T) {
+	deployDir, err := ioutil.TempDir("", "test-write-file-and-print")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer os.RemoveAll(deployDir)
+
+	olmCatalogPackagePath := filepath.Join(deployDir, olmCatalogDir, catalogPackageYaml)
+	if err = writeFileAndPrint(olmCatalogPackagePath, []byte("sometext"), defaultFileMode); err != nil {
+		t.Fatalf("\nTest failed. Failed to write file and print: %v", err)
+	}
+	if _, err := os.Stat(olmCatalogPackagePath); os.IsNotExist(err) {
+		t.Errorf("\nTest failed. Failed to create %s", olmCatalogPackagePath)
 	}
 }

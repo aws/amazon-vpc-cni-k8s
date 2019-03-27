@@ -53,39 +53,47 @@ generates a skeletal app-operator application in $GOPATH/src/github.com/example.
 	newCmd.MarkFlagRequired("api-version")
 	newCmd.Flags().StringVar(&kind, "kind", "", "Kubernetes CustomResourceDefintion kind. (e.g AppService)")
 	newCmd.MarkFlagRequired("kind")
+	newCmd.Flags().StringVar(&operatorType, "type", "go", "Type of operator to initialize (e.g \"ansible\")")
 	newCmd.Flags().BoolVar(&skipGit, "skip-git-init", false, "Do not init the directory as a git repository")
+	newCmd.Flags().BoolVar(&generatePlaybook, "generate-playbook", false, "Generate a playbook skeleton. (Only used for --type ansible)")
 
 	return newCmd
 }
 
 var (
-	apiVersion  string
-	kind        string
-	projectName string
-	skipGit     bool
+	apiVersion       string
+	kind             string
+	operatorType     string
+	projectName      string
+	skipGit          bool
+	generatePlaybook bool
 )
 
 const (
-	gopath    = "GOPATH"
-	src       = "src"
-	dep       = "dep"
-	ensureCmd = "ensure"
+	gopath              = "GOPATH"
+	src                 = "src"
+	dep                 = "dep"
+	ensureCmd           = "ensure"
+	goOperatorType      = "go"
+	ansibleOperatorType = "ansible"
 )
 
 func newFunc(cmd *cobra.Command, args []string) {
 	if len(args) != 1 {
-		cmdError.ExitWithError(cmdError.ExitBadArgs, fmt.Errorf("new command needs 1 argument."))
+		cmdError.ExitWithError(cmdError.ExitBadArgs, fmt.Errorf("new command needs 1 argument"))
 	}
 	parse(args)
 	mustBeNewProject()
 	verifyFlags()
-	g := generator.NewGenerator(apiVersion, kind, projectName, repoPath())
+	g := generator.NewGenerator(apiVersion, kind, operatorType, projectName, repoPath(), generatePlaybook)
 	err := g.Render()
 	if err != nil {
 		cmdError.ExitWithError(cmdError.ExitError, fmt.Errorf("failed to create project %v: %v", projectName, err))
 	}
-	pullDep()
-	generate.K8sCodegen(projectName)
+	if operatorType == goOperatorType {
+		pullDep()
+		generate.K8sCodegen(projectName)
+	}
 	initGit()
 }
 
@@ -113,20 +121,25 @@ func mustBeNewProject() {
 }
 
 // repoPath checks if this project's repository path is rooted under $GOPATH and returns project's repository path.
+// repoPath field on generator is used primarily in generation of Go operator. For Ansible we will set it to cwd
 func repoPath() string {
-	gp := os.Getenv(gopath)
-	if len(gp) == 0 {
-		cmdError.ExitWithError(cmdError.ExitError, fmt.Errorf("$GOPATH env not set"))
-	}
+	// We only care about GOPATH constraint checks if we are a Go operator
 	wd := mustGetwd()
-	// check if this project's repository path is rooted under $GOPATH
-	if !strings.HasPrefix(wd, gp) {
-		cmdError.ExitWithError(cmdError.ExitError, fmt.Errorf("project's repository path (%v) is not rooted under GOPATH (%v)", wd, gp))
+	if operatorType == goOperatorType {
+		gp := os.Getenv(gopath)
+		if len(gp) == 0 {
+			cmdError.ExitWithError(cmdError.ExitError, fmt.Errorf("$GOPATH env not set"))
+		}
+		// check if this project's repository path is rooted under $GOPATH
+		if !strings.HasPrefix(wd, gp) {
+			cmdError.ExitWithError(cmdError.ExitError, fmt.Errorf("project's repository path (%v) is not rooted under GOPATH (%v)", wd, gp))
+		}
+		// compute the repo path by stripping "$GOPATH/src/" from the path of the current directory.
+		rp := filepath.Join(string(wd[len(filepath.Join(gp, src)):]), projectName)
+		// strip any "/" prefix from the repo path.
+		return strings.TrimPrefix(rp, string(filepath.Separator))
 	}
-	// compute the repo path by stripping "$GOPATH/src/" from the path of the current directory.
-	rp := filepath.Join(string(wd[len(filepath.Join(gp, src)):]), projectName)
-	// strip any "/" prefix from the repo path.
-	return strings.TrimPrefix(rp, string(filepath.Separator))
+	return wd
 }
 
 func verifyFlags() {
@@ -135,6 +148,12 @@ func verifyFlags() {
 	}
 	if len(kind) == 0 {
 		cmdError.ExitWithError(cmdError.ExitBadArgs, errors.New("--kind must not have empty value"))
+	}
+	if operatorType != goOperatorType && operatorType != ansibleOperatorType {
+		cmdError.ExitWithError(cmdError.ExitBadArgs, errors.New("--type can only be `go` or `ansible`"))
+	}
+	if operatorType != ansibleOperatorType && generatePlaybook {
+		cmdError.ExitWithError(cmdError.ExitBadArgs, errors.New("--generate-playbook can only be used with --type `ansible`"))
 	}
 	kindFirstLetter := string(kind[0])
 	if kindFirstLetter != strings.ToUpper(kindFirstLetter) {
@@ -181,6 +200,6 @@ func initGit() {
 	fmt.Fprintln(os.Stdout, "Run git init ...")
 	execCmd(os.Stdout, "git", "init")
 	execCmd(os.Stdout, "git", "add", "--all")
-	execCmd(nil, "git", "commit", "-m", "INITIAL COMMIT")
+	execCmd(os.Stdout, "git", "commit", "-q", "-m", "INITIAL COMMIT")
 	fmt.Fprintln(os.Stdout, "Run git init done")
 }
