@@ -51,8 +51,7 @@
 
 [[constraint]]
   name = "github.com/operator-framework/operator-sdk"
-  branch = "master"
-  # version = "0.0.5"
+  version = "v0.0.7"
 
 [[constraint]]
   name = "github.com/pkg/errors"
@@ -80,15 +79,12 @@
 
 [[constraint]]
   name = "k8s.io/api"
-   # revision for tag "kubernetes-1.10.1"
-  revision = "73d903622b7391f3312dcbac6483fed484e185f8"
+  version = "kubernetes-1.11.2"
 
 [[constraint]]
   name = "k8s.io/apimachinery"
-  # revision for tag "kubernetes-1.10.1"
-  revision = "302974c03f7e50f16561ba237db776ab93594ef6"
+  version = "kubernetes-1.11.2"
 
 [[constraint]]
   name = "k8s.io/client-go"
-  # revision for tag "kubernetes-1.10.1"
-  revision = "989be4278f353e42f26c416c53757d16fcff77db"
+  version = "kubernetes-1.11.2"
