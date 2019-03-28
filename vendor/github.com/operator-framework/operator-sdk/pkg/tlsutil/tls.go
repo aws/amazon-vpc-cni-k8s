@@ -19,15 +19,15 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"strings"
-
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
 
 	"k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 )
 
 // CertType defines the type of the cert.
@@ -130,14 +130,18 @@ const (
 	TLSCACertKey = "ca.crt"
 )
 
+// NewSDKCertGenerator constructs a new CertGenerator given the kubeClient.
+func NewSDKCertGenerator(kubeClient kubernetes.Interface) CertGenerator {
+	return &SDKCertGenerator{KubeClient: kubeClient}
+}
+
 type SDKCertGenerator struct {
+	KubeClient kubernetes.Interface
 }
 
-type keyAndCert struct {
-	key  *rsa.PrivateKey
-	cert *x509.Certificate
-}
-
+// GenerateCert returns a secret containing the TLS encryption key and cert,
+// a ConfigMap containing the CA Certificate and a Secret containing the CA key or it
+// returns a error incase something goes wrong.
 func (scg *SDKCertGenerator) GenerateCert(cr runtime.Object, service *v1.Service, config *CertConfig) (*v1.Secret, *v1.ConfigMap, *v1.Secret, error) {
 	if err := verifyConfig(config); err != nil {
 		return nil, nil, nil, err
@@ -147,28 +151,121 @@ func (scg *SDKCertGenerator) GenerateCert(cr runtime.Object, service *v1.Service
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	appSecret, err := getAppSecretInCluster(toAppSecretName(k, n, config.CertName), ns)
+	appSecretName := ToAppSecretName(k, n, config.CertName)
+	appSecret, err := getAppSecretInCluster(scg.KubeClient, appSecretName, ns)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	caSecret, caConfigMap, err := getCASecretAndConfigMapInCluster(toCASecretAndConfigMapName(k, n), ns)
+	caSecretAndConfigMapName := ToCASecretAndConfigMapName(k, n)
+
+	var (
+		caSecret    *v1.Secret
+		caConfigMap *v1.ConfigMap
+	)
+
+	caSecret, caConfigMap, err = getCASecretAndConfigMapInCluster(scg.KubeClient, caSecretAndConfigMapName, ns)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
+	if config.CAKey != "" && config.CACert != "" {
+		// custom CA provided by the user.
+		customCAKeyData, err := ioutil.ReadFile(config.CAKey)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("error reading CA Key from the given file name: %v", err)
+		}
+
+		customCACertData, err := ioutil.ReadFile(config.CACert)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("error reading CA Cert from the given file name: %v", err)
+		}
+
+		customCAKey, err := parsePEMEncodedPrivateKey(customCAKeyData)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("error parsing CA Key from the given file name: %v", err)
+		}
+
+		customCACert, err := parsePEMEncodedCert(customCACertData)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("error parsing CA Cert from the given file name: %v", err)
+		}
+		caSecret, caConfigMap = toCASecretAndConfigmap(customCAKey, customCACert, caSecretAndConfigMapName)
+	} else if config.CAKey != "" || config.CACert != "" {
+		// if only one of the custom CA Key or Cert is provided
+		return nil, nil, nil, ErrCAKeyAndCACertReq
+	}
+
 	hasAppSecret := appSecret != nil
 	hasCASecretAndConfigMap := caSecret != nil && caConfigMap != nil
-	// TODO: handle passed in CA
-	if hasAppSecret && hasCASecretAndConfigMap {
+
+	switch {
+	case hasAppSecret && hasCASecretAndConfigMap:
 		return appSecret, caConfigMap, caSecret, nil
-	} else if hasAppSecret && !hasCASecretAndConfigMap {
-		// TODO
-	} else if !hasAppSecret && hasCASecretAndConfigMap {
-		// TODO
-	} else {
-		// TODO
+
+	case hasAppSecret && !hasCASecretAndConfigMap:
+		return nil, nil, nil, ErrCANotFound
+
+	case !hasAppSecret && hasCASecretAndConfigMap:
+		// Note: if a custom CA is passed in my the user it takes preference over an already
+		// generated CA secret and CA configmap that might exist in the cluster
+		caKey, err := parsePEMEncodedPrivateKey(caSecret.Data[TLSPrivateCAKeyKey])
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		caCert, err := parsePEMEncodedCert([]byte(caConfigMap.Data[TLSCACertKey]))
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		key, err := newPrivateKey()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		cert, err := newSignedCertificate(config, service, key, caCert, caKey)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		appSecret, err := scg.KubeClient.CoreV1().Secrets(ns).Create(toTLSSecret(key, cert, appSecretName))
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return appSecret, caConfigMap, caSecret, nil
+
+	case !hasAppSecret && !hasCASecretAndConfigMap:
+		// If no custom CAKey and CACert are provided we have to generate them
+		caKey, err := newPrivateKey()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		caCert, err := newSelfSignedCACertificate(caKey)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		caSecret, caConfigMap := toCASecretAndConfigmap(caKey, caCert, caSecretAndConfigMapName)
+		caSecret, err = scg.KubeClient.CoreV1().Secrets(ns).Create(caSecret)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		caConfigMap, err = scg.KubeClient.CoreV1().ConfigMaps(ns).Create(caConfigMap)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		key, err := newPrivateKey()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		cert, err := newSignedCertificate(config, service, key, caCert, caKey)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		appSecret, err := scg.KubeClient.CoreV1().Secrets(ns).Create(toTLSSecret(key, cert, appSecretName))
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return appSecret, caConfigMap, caSecret, nil
+	default:
+		return nil, nil, nil, ErrInternal
 	}
-	return nil, nil, nil, nil
 }
 
 func verifyConfig(config *CertConfig) error {
@@ -181,74 +278,48 @@ func verifyConfig(config *CertConfig) error {
 	return nil
 }
 
-func toAppSecretName(kind, name, certName string) string {
+func ToAppSecretName(kind, name, certName string) string {
 	return strings.ToLower(kind) + "-" + name + "-" + certName
 }
 
-func toCASecretAndConfigMapName(kind, name string) string {
+func ToCASecretAndConfigMapName(kind, name string) string {
 	return strings.ToLower(kind) + "-" + name + "-ca"
 }
 
-func getAppSecretInCluster(name, namespace string) (*v1.Secret, error) {
-	se := &v1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
+func getAppSecretInCluster(kubeClient kubernetes.Interface, name, namespace string) (*v1.Secret, error) {
+	se, err := kubeClient.CoreV1().Secrets(namespace).Get(name, metav1.GetOptions{})
+	if err != nil && !apiErrors.IsNotFound(err) {
+		return nil, err
 	}
-	err := sdk.Get(se)
 	if apiErrors.IsNotFound(err) {
 		return nil, nil
-	}
-	if err != nil {
-		return nil, err
 	}
 	return se, nil
 }
 
 // getCASecretAndConfigMapInCluster gets CA secret and configmap of the given name and namespace.
-// it only returns both if they are found and nil if both are not found. In the case if only one of them is found, then we error out because we expect either both CA secret and configmap exit or not.
-func getCASecretAndConfigMapInCluster(name, namespace string) (*v1.Secret, *v1.ConfigMap, error) {
-	cm := &v1.ConfigMap{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ConfigMap",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-	}
+// it only returns both if they are found and nil if both are not found. In the case if only one of them is found,
+// then we error out because we expect either both CA secret and configmap exit or not.
+//
+// NOTE: both the CA secret and configmap have the same name with template `<cr-kind>-<cr-name>-ca` which is what the
+// input parameter `name` refers to.
+func getCASecretAndConfigMapInCluster(kubeClient kubernetes.Interface, name, namespace string) (*v1.Secret, *v1.ConfigMap, error) {
 	hasConfigMap := true
-	err := sdk.Get(cm)
+	cm, err := kubeClient.CoreV1().ConfigMaps(namespace).Get(name, metav1.GetOptions{})
+	if err != nil && !apiErrors.IsNotFound(err) {
+		return nil, nil, err
+	}
 	if apiErrors.IsNotFound(err) {
 		hasConfigMap = false
 	}
-	if err != nil {
+
+	hasSecret := true
+	se, err := kubeClient.CoreV1().Secrets(namespace).Get(name, metav1.GetOptions{})
+	if err != nil && !apiErrors.IsNotFound(err) {
 		return nil, nil, err
 	}
-
-	se := &v1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-	}
-	hasSecret := true
-	err = sdk.Get(se)
 	if apiErrors.IsNotFound(err) {
 		hasSecret = false
-	}
-	if err != nil {
-		return nil, nil, err
 	}
 
 	if hasConfigMap != hasSecret {
@@ -280,15 +351,10 @@ func toKindNameNamespace(cr runtime.Object) (string, string, string, error) {
 
 // toTLSSecret returns a client/server "kubernetes.io/tls" secret.
 // TODO: add owner ref.
-func toTLSSecret(key *rsa.PrivateKey, cert *x509.Certificate, name, namespace string) *v1.Secret {
+func toTLSSecret(key *rsa.PrivateKey, cert *x509.Certificate, name string) *v1.Secret {
 	return &v1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: "v1",
-		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name: name,
 		},
 		Data: map[string][]byte{
 			v1.TLSPrivateKeyKey: encodePrivateKeyPEM(key),
@@ -299,30 +365,20 @@ func toTLSSecret(key *rsa.PrivateKey, cert *x509.Certificate, name, namespace st
 }
 
 // TODO: add owner ref.
-func toCASecretAndConfigmap(key *rsa.PrivateKey, cert *x509.Certificate, name, namespace string) (*v1.ConfigMap, *v1.Secret) {
-	return &v1.ConfigMap{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "ConfigMap",
-				APIVersion: "v1",
-			},
+func toCASecretAndConfigmap(key *rsa.PrivateKey, cert *x509.Certificate, name string) (*v1.Secret, *v1.ConfigMap) {
+	return &v1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: namespace,
-			},
-			Data: map[string]string{
-				TLSCACertKey: string(encodeCertificatePEM(cert)),
-			},
-		}, &v1.Secret{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "Secret",
-				APIVersion: "v1",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: namespace,
+				Name: name,
 			},
 			Data: map[string][]byte{
 				TLSPrivateCAKeyKey: encodePrivateKeyPEM(key),
+			},
+		}, &v1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+			},
+			Data: map[string]string{
+				TLSCACertKey: string(encodeCertificatePEM(cert)),
 			},
 		}
 }
