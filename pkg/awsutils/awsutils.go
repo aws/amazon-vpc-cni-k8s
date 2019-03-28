@@ -188,13 +188,14 @@ func prometheusRegister() {
 		prometheus.MustRegister(awsAPILatency)
 		prometheus.MustRegister(awsAPIErr)
 		prometheus.MustRegister(awsUtilsErr)
-		prometheusRegistered = false
+		prometheusRegistered = true
 	}
 }
 
 // New creates an EC2InstanceMetadataCache
 func New() (*EC2InstanceMetadataCache, error) {
 	// Initializes prometheus metrics
+	prometheusRegister()
 
 	cache := &EC2InstanceMetadataCache{}
 	cache.ec2Metadata = ec2metadata.New()
