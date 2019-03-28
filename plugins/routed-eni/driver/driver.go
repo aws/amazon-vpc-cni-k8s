@@ -122,8 +122,8 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 
 	// Add a connected route to a dummy next hop (169.254.1.1)
 	// # ip route show
-	//default via 169.254.1.1 dev eth0
-	//169.254.1.1 dev eth0
+	// default via 169.254.1.1 dev eth0
+	// 169.254.1.1 dev eth0
 	gw := net.IPv4(169, 254, 1, 1)
 	gwNet := &net.IPNet{IP: gw, Mask: net.CIDRMask(32, 32)}
 
@@ -162,7 +162,6 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	if err = createVethContext.netLink.LinkSetNsFd(hostVeth, int(hostNS.Fd())); err != nil {
 		return errors.Wrap(err, "setup NS network: failed to move veth to host netns")
 	}
-
 	return nil
 }
 
@@ -183,14 +182,12 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 	}
 
 	createVethContext := newCreateVethPairContext(contVethName, hostVethName, addr)
-
 	if err := ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		log.Errorf("Failed to setup NS network %v", err)
 		return errors.Wrap(err, "setup NS network: failed to setup NS network")
 	}
 
 	hostVeth, err := netLink.LinkByName(hostVethName)
-
 	if err != nil {
 		return errors.Wrapf(err, "setup NS network: failed to find link %q", hostVethName)
 	}

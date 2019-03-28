@@ -39,8 +39,6 @@ const (
 	cniVersion   = "1.0"
 	cniName      = "aws-cni"
 	cniType      = "aws-cni"
-	podNamespace = "test-namespace"
-	podName      = "test-pod"
 	ipAddr       = "10.0.1.15"
 	devNum       = 4
 )
@@ -86,8 +84,6 @@ func TestCmdAdd(t *testing.T) {
 		IfName:    ifName,
 		StdinData: stdinData}
 
-	//k8sArgs := K8sArgs{K8S_POD_NAMESPACE: podNamespace,
-	//	K8S_POD_NAME: podName}
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
 	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
@@ -110,7 +106,6 @@ func TestCmdAdd(t *testing.T) {
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
 
 	add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
-
 }
 
 func TestCmdAddNetworkErr(t *testing.T) {
@@ -127,8 +122,6 @@ func TestCmdAddNetworkErr(t *testing.T) {
 		IfName:    ifName,
 		StdinData: stdinData}
 
-	//k8sArgs := K8sArgs{K8S_POD_NAMESPACE: podNamespace,
-	//	K8S_POD_NAME: podName}
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
 	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
@@ -143,7 +136,6 @@ func TestCmdAddNetworkErr(t *testing.T) {
 	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 
 	assert.Error(t, err)
-
 }
 
 func TestCmdAddErrSetupPodNetwork(t *testing.T) {
@@ -160,8 +152,6 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 		IfName:    ifName,
 		StdinData: stdinData}
 
-	//k8sArgs := K8sArgs{K8S_POD_NAMESPACE: podNamespace,
-	//	K8S_POD_NAME: podName}
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
 	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
@@ -179,7 +169,7 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 	}
 
 	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any()).Return(errors.New("Error on SetupPodNetwork"))
+		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
 
 	// when SetupPodNetwork fails, expect to return IP back to datastore
 	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
@@ -250,7 +240,7 @@ func TestCmdDelErrDelNetwork(t *testing.T) {
 
 	delNetworkReply := &rpc.DelNetworkReply{Success: false, IPv4Addr: ipAddr, DeviceNumber: devNum}
 
-	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, errors.New("Error on DelNetwork"))
+	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, errors.New("error on DelNetwork"))
 
 	del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 }
@@ -286,7 +276,7 @@ func TestCmdDelErrTeardown(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 
-	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber)).Return(errors.New("Error on teardown"))
+	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber)).Return(errors.New("error on teardown"))
 
 	del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 }
