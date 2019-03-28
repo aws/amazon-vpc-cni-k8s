@@ -12,14 +12,13 @@ import (
 	log "github.com/cihub/seelog"
 
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
@@ -72,23 +71,8 @@ func NewController(clientset kubernetes.Interface) *Controller {
 }
 
 // CreateKubeClient creates a k8s client
-func CreateKubeClient(apiserver string, kubeconfig string) (clientset.Interface, error) {
-	var config *rest.Config
-	var err error
-	if apiserver == "" && kubeconfig == "" {
-		config, err = rest.InClusterConfig()
-	} else {
-		config, err = clientcmd.BuildConfigFromFlags(apiserver, kubeconfig)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	kubeClient, err := clientset.NewForConfig(config)
-	if err != nil {
-		return nil, err
-	}
-
+func CreateKubeClient() (clientset.Interface, error) {
+	kubeClient := k8sclient.GetKubeClient()
 	// Informers don't seem to do a good job logging error messages when it
 	// can't reach the server, making debugging hard. This makes it easier to
 	// figure out if apiserver is configured incorrectly.

@@ -43,7 +43,7 @@ func _main() int {
 
 	log.Infof("Starting L-IPAMD %s  ...", version)
 
-	kubeClient, err := k8sapi.CreateKubeClient("", "")
+	kubeClient, err := k8sapi.CreateKubeClient()
 	if err != nil {
 		log.Errorf("Failed to create client: %v", err)
 		return 1
