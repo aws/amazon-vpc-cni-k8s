@@ -511,7 +511,6 @@ func getConnmark() uint32 {
 
 // LinkByMac returns linux netlink based on interface MAC
 func LinkByMac(mac string, netLink netlinkwrapper.NetLink, retryInterval time.Duration) (netlink.Link, error) {
-
 	// The adapter might not be immediately available, so we perform retries
 	var lastErr error
 	attempt := 0
@@ -551,7 +550,6 @@ func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, eniTable int
 }
 
 func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink, retryLinkByMacInterval time.Duration) error {
-
 	if eniTable == 0 {
 		log.Debugf("Skipping set up ENI network for primary interface")
 		return nil
@@ -611,7 +609,7 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 	}
 
 	log.Debugf("Setting up ENI's default gateway %v", gw)
-	for _, r := range []netlink.Route{
+	routes := []netlink.Route{
 		// Add a direct link route for the host's ENI IP only
 		{
 			LinkIndex: deviceNumber,
@@ -627,9 +625,10 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 			Gw:        gw,
 			Table:     eniTable,
 		},
-	} {
+	}
+	for _, r := range routes {
 		err := netLink.RouteDel(&r)
-		if err != nil && !isNotExistsError(err) {
+		if err != nil && !netlinkwrapper.IsNotExistsError(err) {
 			return errors.Wrap(err, "ENI network setup: failed to clean up old routes")
 		}
 
@@ -637,20 +636,18 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 		retry := 0
 		for {
 			if err := netLink.RouteAdd(&r); err != nil {
-				if isNetworkUnreachable(err) {
+				if netlinkwrapper.IsNetworkUnreachableError(err) {
 					retry++
 					if retry > maxRetryRouteAdd {
 						log.Errorf("Failed to add route %s/0 via %s table %d",
 							r.Dst.IP.String(), gw.String(), eniTable)
-						return errors.Wrapf(err,
-							"ENI network setup: failed to add route %s/0 via %s table %d",
+						return errors.Wrapf(err, "ENI network setup: failed to add route %s/0 via %s table %d",
 							r.Dst.IP.String(), gw.String(), eniTable)
 					}
 					log.Debugf("Not able to add route route %s/0 via %s table %d (attempt %d/%d)",
-						r.Dst.IP.String(), gw.String(), eniTable,
-						retry, maxRetryRouteAdd)
+						r.Dst.IP.String(), gw.String(), eniTable, retry, maxRetryRouteAdd)
 					time.Sleep(retryRouteAddInterval)
-				} else if isRouteExistsError(err) {
+				} else if netlinkwrapper.IsRouteExistsError(err) {
 					if err := netlink.RouteReplace(&r); err != nil {
 						return errors.Wrapf(err, "ENI network setup: unable to replace route entry %s", r.Dst.IP.String())
 					}
@@ -680,7 +677,7 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 	}
 
 	if err := netLink.RouteDel(&defaultRoute); err != nil {
-		if !isNotExistsError(err) {
+		if !netlinkwrapper.IsNotExistsError(err) {
 			return errors.Wrapf(err, "ENI network setup: unable to delete route %s for source IP %s", cidr.String(), eniIP)
 		}
 	}
@@ -701,36 +698,6 @@ func incrementIPv4Addr(ip net.IP) (net.IP, error) {
 	bytes := make([]byte, 4)
 	binary.BigEndian.PutUint32(bytes, intIP)
 	return net.IP(bytes), nil
-}
-
-// isNotExistsError returns true if the error type is syscall.ESRCH
-// This helps us determine if we should ignore this error as the route
-// that we want to cleanup has been deleted already routing table
-func isNotExistsError(err error) bool {
-	if errno, ok := err.(syscall.Errno); ok {
-		return errno == syscall.ESRCH
-	}
-	return false
-}
-
-// isRouteExistsError returns true if the error type is syscall.EEXIST
-// This helps us determine if we should ignore this error as the route
-// we want to add has been added already in routing table
-func isRouteExistsError(err error) bool {
-	if errno, ok := err.(syscall.Errno); ok {
-		return errno == syscall.EEXIST
-	}
-	return false
-}
-
-// isNetworkUnreachable returns true if the error type is syscall.ENETUNREACH
-// This helps us determine if we should ignore this error as the route the call
-// depends on is not plumbed ready yet
-func isNetworkUnreachable(err error) bool {
-	if errno, ok := err.(syscall.Errno); ok {
-		return errno == syscall.ENETUNREACH
-	}
-	return false
 }
 
 // GetRuleList returns IP rules
@@ -782,8 +749,8 @@ func (n *linuxNetwork) DeleteRuleListBySrc(src net.IPNet) error {
 }
 
 // UpdateRuleListBySrc modify IP rules that have a matching source IP
-func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet, toCIDRs []string, toFlag bool) error {
-	log.Infof("Update Rule List[%v] for source[%v] with toCIDRs[%v], toFlag[%v]", ruleList, src, toCIDRs, toFlag)
+func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet, toCIDRs []string, useExternalSNAT bool) error {
+	log.Infof("Update Rule List[%v] for source[%v] with toCIDRs[%v], useExternalSNAT[%v]", ruleList, src, toCIDRs, useExternalSNAT)
 
 	srcRuleList, err := n.GetRuleListBySrc(ruleList, src)
 	if err != nil {
@@ -811,7 +778,7 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 		return nil
 	}
 
-	if toFlag {
+	if useExternalSNAT {
 		for _, cidr := range toCIDRs {
 			podRule := n.netLink.NewRule()
 			_, podRule.Dst, _ = net.ParseCIDR(cidr)
@@ -822,7 +789,7 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 			err = n.netLink.RuleAdd(podRule)
 			if err != nil {
 				log.Errorf("Failed to add pod IP rule: %v", err)
-				return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule")
+				return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule for CIDR %s", cidr)
 			}
 			var toDst string
 
