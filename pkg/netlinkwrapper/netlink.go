@@ -13,7 +13,10 @@
 
 package netlinkwrapper
 
-import "github.com/vishvananda/netlink"
+import (
+	"github.com/vishvananda/netlink"
+	"syscall"
+)
 
 // NetLink wraps methods used from the vishvananda/netlink package
 type NetLink interface {
@@ -41,13 +44,21 @@ type NetLink interface {
 	RouteList(link netlink.Link, family int) ([]netlink.Route, error)
 	// RouteAdd will add a route to the route table
 	RouteAdd(route *netlink.Route) error
+	// RouteReplace will replace the route in the route table
+	RouteReplace(route *netlink.Route) error
 	// RouteDel is equivalent to `ip route del`
 	RouteDel(route *netlink.Route) error
+	// NeighAdd equivalent to: `ip neigh add ....`
 	NeighAdd(neigh *netlink.Neigh) error
+	// LinkDel equivalent to: `ip link del $link`
 	LinkDel(link netlink.Link) error
+	// NewRule creates a new empty rule
 	NewRule() *netlink.Rule
-	RuleDel(rule *netlink.Rule) error
+	// RuleAdd is equivalent to: ip rule add
 	RuleAdd(rule *netlink.Rule) error
+	// RuleDel is equivalent to: ip rule del
+	RuleDel(rule *netlink.Rule) error
+	// RuleList is equivalent to: ip rule list
 	RuleList(family int) ([]netlink.Rule, error)
 	// LinkSetMTU is equivalent to `ip link set dev $link mtu $mtu`
 	LinkSetMTU(link netlink.Link, mtu int) error
@@ -104,6 +115,11 @@ func (*netLink) RouteList(link netlink.Link, family int) ([]netlink.Route, error
 func (*netLink) RouteAdd(route *netlink.Route) error {
 	return netlink.RouteAdd(route)
 }
+
+func (*netLink) RouteReplace(route *netlink.Route) error {
+	return netlink.RouteReplace(route)
+}
+
 func (*netLink) RouteDel(route *netlink.Route) error {
 	return netlink.RouteDel(route)
 }
@@ -124,12 +140,12 @@ func (*netLink) NewRule() *netlink.Rule {
 	return netlink.NewRule()
 }
 
-func (*netLink) RuleDel(rule *netlink.Rule) error {
-	return netlink.RuleDel(rule)
-}
-
 func (*netLink) RuleAdd(rule *netlink.Rule) error {
 	return netlink.RuleAdd(rule)
+}
+
+func (*netLink) RuleDel(rule *netlink.Rule) error {
+	return netlink.RuleDel(rule)
 }
 
 func (*netLink) RuleList(family int) ([]netlink.Rule, error) {
@@ -138,4 +154,34 @@ func (*netLink) RuleList(family int) ([]netlink.Rule, error) {
 
 func (*netLink) LinkSetMTU(link netlink.Link, mtu int) error {
 	return netlink.LinkSetMTU(link, mtu)
+}
+
+// IsNotExistsError returns true if the error type is syscall.ESRCH
+// This helps us determine if we should ignore this error as the route
+// that we want to cleanup has been deleted already routing table
+func IsNotExistsError(err error) bool {
+	if errno, ok := err.(syscall.Errno); ok {
+		return errno == syscall.ESRCH
+	}
+	return false
+}
+
+// IsRouteExistsError returns true if the error type is syscall.EEXIST
+// This helps us determine if we should ignore this error as the route
+// we want to add has been added already in routing table
+func IsRouteExistsError(err error) bool {
+	if errno, ok := err.(syscall.Errno); ok {
+		return errno == syscall.EEXIST
+	}
+	return false
+}
+
+// IsNetworkUnreachableError returns true if the error type is syscall.ENETUNREACH
+// This helps us determine if we should ignore this error as the route the call
+// depends on is not plumbed ready yet
+func IsNetworkUnreachableError(err error) bool {
+	if errno, ok := err.(syscall.Errno); ok {
+		return errno == syscall.ENETUNREACH
+	}
+	return false
 }

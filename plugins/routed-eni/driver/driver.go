@@ -165,7 +165,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	return nil
 }
 
-// SetupNS wires up linux networking for Pod's network
+// SetupNS wires up linux networking for a pod's network
 func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool) error {
 	log.Debugf("SetupNS: hostVethName=%s,contVethName=%s, netnsPath=%s table=%d\n", hostVethName, contVethName, netnsPath, table)
 	return setupNS(hostVethName, contVethName, netnsPath, addr, table, vpcCIDRs, useExternalSNAT, os.netLink, os.ns)
@@ -176,26 +176,26 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 	// Clean up if hostVeth exists.
 	if oldHostVeth, err := netLink.LinkByName(hostVethName); err == nil {
 		if err = netLink.LinkDel(oldHostVeth); err != nil {
-			return errors.Wrapf(err, "setup NS network: failed to delete old hostVeth %q", hostVethName)
+			return errors.Wrapf(err, "setupNS network: failed to delete old hostVeth %q", hostVethName)
 		}
-		log.Debugf("Clean up  old hostVeth: %v\n", hostVethName)
+		log.Debugf("Clean up old hostVeth: %v\n", hostVethName)
 	}
 
 	createVethContext := newCreateVethPairContext(contVethName, hostVethName, addr)
 	if err := ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		log.Errorf("Failed to setup NS network %v", err)
-		return errors.Wrap(err, "setup NS network: failed to setup NS network")
+		return errors.Wrap(err, "setupNS network: failed to setup NS network")
 	}
 
 	hostVeth, err := netLink.LinkByName(hostVethName)
 	if err != nil {
-		return errors.Wrapf(err, "setup NS network: failed to find link %q", hostVethName)
+		return errors.Wrapf(err, "setupNS network: failed to find link %q", hostVethName)
 	}
 
 	// Explicitly set the veth to UP state, because netlink doesn't always do that on all the platforms with net.FlagUp.
 	// veth won't get a link local address unless it's set to UP state.
 	if err = netLink.LinkSetUp(hostVeth); err != nil {
-		return errors.Wrapf(err, "setup NS network: failed to set link %q up", hostVethName)
+		return errors.Wrapf(err, "setupNS network: failed to set link %q up", hostVethName)
 	}
 
 	log.Debugf("Setup host route outgoing hostVeth, LinkIndex %d\n", hostVeth.Attrs().Index)
@@ -204,18 +204,27 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 		Mask: net.CIDRMask(32, 32)}
 
 	// Add host route
-	if err = netLink.RouteAdd(&netlink.Route{
+	route := netlink.Route{
 		LinkIndex: hostVeth.Attrs().Index,
 		Scope:     netlink.SCOPE_LINK,
-		Dst:       addrHostAddr}); err != nil {
-		return errors.Wrap(err, "setup NS network: failed to add host route")
+		Dst:       addrHostAddr}
+	if err = netLink.RouteAdd(&route); err != nil {
+		// If a route exists, replace it instead
+		if netlinkwrapper.IsRouteExistsError(err) {
+			if err := netlink.RouteReplace(&route); err != nil {
+				return errors.Wrapf(err, "setupNS: unable to replace route entry for %s", route.Dst.IP.String())
+			}
+			log.Debugf("Successfully replaced route to be %s/0", route.Dst.IP.String())
+		} else {
+			return errors.Wrap(err, "setupNS network: failed to add host route")
+		}
 	}
 	toContainerFlag := true
 	err = addContainerRule(netLink, toContainerFlag, addr, toContainerRulePriority, mainRouteTable)
 
 	if err != nil {
 		log.Errorf("Failed to add toContainer rule for %s err=%v, ", addr.String(), err)
-		return errors.Wrap(err, "setup NS network: failed to add toContainer")
+		return errors.Wrap(err, "setupNS network: failed to add toContainer")
 	}
 
 	log.Infof("Added toContainer rule for %s", addr.String())
@@ -242,9 +251,10 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 				podRule.Priority = fromContainerRulePriority
 
 				err = netLink.RuleAdd(podRule)
+				// TODO: Replace?
 				if err != nil {
 					log.Errorf("Failed to add pod IP rule: %v", err)
-					return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule")
+					return errors.Wrapf(err, "setupNS: failed to add pod rule")
 				}
 				var toDst string
 

@@ -33,13 +33,14 @@ const (
 	// addressCoolingPeriod is used to ensure an IP not get assigned to a Pod if this IP is used by a different Pod
 	// in addressCoolingPeriod
 	addressCoolingPeriod = 30 * time.Second
+
 	// DuplicatedENIError is an error when caller tries to add an duplicate ENI to data store
 	DuplicatedENIError = "data store: duplicate ENI"
 
 	// DuplicateIPError is an error when caller tries to add an duplicate IP address to data store
 	DuplicateIPError = "datastore: duplicated IP"
 
-	// UnknownIPError is an error when caller tries to delele an IP which is unknown to data store
+	// UnknownIPError is an error when caller tries to delete an IP which is unknown to data store
 	UnknownIPError = "datastore: unknown IP"
 
 	// IPInUseError is an error when caller tries to delete an IP where IP is still assigned to a Pod
@@ -80,7 +81,7 @@ var (
 	prometheusRegistered = false
 )
 
-// ENIIPPool contains ENI/IP Pool information. Exported fields will be Marshaled for introspection.
+// ENIIPPool contains ENI/IP Pool information. Exported fields will be marshaled for introspection.
 type ENIIPPool struct {
 	createTime         time.Time
 	lastUnAssignedTime time.Time
@@ -89,14 +90,14 @@ type ENIIPPool struct {
 	ID        string
 	// DeviceNumber is the device number of ENI
 	DeviceNumber int
-	// AssignedIPv4Addresses is the number of IP addesses already been assigned
+	// AssignedIPv4Addresses is the number of IP addresses already been assigned
 	AssignedIPv4Addresses int
 	// IPv4Addresses shows whether each address is assigned, the key is IP address, which must
 	// be in dot-decimal notation with no leading zeros and no whitespace(eg: "10.1.0.253")
 	IPv4Addresses map[string]*AddressInfo
 }
 
-// AddressInfo contains inforation about an IP, Exported fields will be Marshaled for introspection.
+// AddressInfo contains information about an IP, Exported fields will be marshaled for introspection.
 type AddressInfo struct {
 	address        string
 	Assigned       bool // true if it is assigned to a pod
@@ -202,9 +203,7 @@ func (ds *DataStore) AddENIIPv4Address(eniID string, ipv4 string) error {
 	totalIPs.Set(float64(ds.total))
 
 	curENI.IPv4Addresses[ipv4] = &AddressInfo{address: ipv4, Assigned: false}
-
 	log.Infof("Added ENI(%s)'s IP %s to datastore", eniID, ipv4)
-
 	return nil
 }
 
@@ -213,8 +212,7 @@ func (ds *DataStore) DelENIIPv4Address(eniID string, ipv4 string) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	log.Debugf("Deleting ENI(%s)'s IPv4 address %s from datastore", eniID, ipv4)
-	log.Debugf("IP Address Pool stats: total: %d, assigned: %d",
-		ds.total, ds.assigned)
+	log.Debugf("IP Address Pool stats: total: %d, assigned: %d", ds.total, ds.assigned)
 
 	curENI, ok := ds.eniIPPools[eniID]
 	if !ok {
@@ -246,8 +244,7 @@ func (ds *DataStore) AssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, in
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	log.Debugf("AssignIPv4Address: IP address pool stats: total:%d, assigned %d",
-		ds.total, ds.assigned)
+	log.Debugf("AssignIPv4Address: IP address pool stats: total:%d, assigned %d", ds.total, ds.assigned)
 	podKey := PodKey{
 		name:      k8sPod.Name,
 		namespace: k8sPod.Namespace,
@@ -263,12 +260,10 @@ func (ds *DataStore) AssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (string, in
 		}
 		//TODO handle this bug assert?, may need to add a counter here, if counter is too high, need to mark node as unhealthy...
 		// this is a bug that the caller invoke multiple times to assign(PodName/NameSpace -> a different IPaddress).
-		log.Errorf("AssignPodIPv4Address:  current IP %s is changed to IP %s for pod(name %s, namespace %s, container %s)",
+		log.Errorf("AssignPodIPv4Address: current IP %s is changed to IP %s for pod(name %s, namespace %s, container %s)",
 			ipAddr, k8sPod.IP, k8sPod.Name, k8sPod.Namespace, k8sPod.Container)
 		return "", 0, errors.New("datastore; invalid pod with multiple IP addresses")
-
 	}
-
 	return ds.assignPodIPv4AddressUnsafe(k8sPod)
 }
 
@@ -282,7 +277,7 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 	curTime := time.Now()
 	for _, eni := range ds.eniIPPools {
 		if (k8sPod.IP == "") && (len(eni.IPv4Addresses) == eni.AssignedIPv4Addresses) {
-			// skip this ENI, since it has no available IP address
+			// skip this ENI, since it has no available IP addresses
 			log.Debugf("AssignPodIPv4Address, skip ENI %s that does not have available addresses", eni.ID)
 			continue
 		}
@@ -312,7 +307,6 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 				return addr.address, eni.DeviceNumber, nil
 			}
 		}
-
 	}
 
 	log.Infof("DataStore has no available IP addresses")
@@ -366,16 +360,16 @@ func (ds *DataStore) GetENINeedsIP(maxIPperENI int64, skipPrimary bool) *ENIIPPo
 	return nil
 }
 
-// FreeENI free a deletable ENI.
-// It returns the name of ENI which is deleted out data store
-func (ds *DataStore) FreeENI() (string, error) {
+// FreeENI frees a deletable ENI.
+// It returns the name of the ENI which is deleted out the data store
+func (ds *DataStore) FreeENI() string {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
 	deletableENI := ds.getDeletableENI()
 	if deletableENI == nil {
 		log.Debugf("No ENI can be deleted at this time")
-		return "", errors.New("free ENI: no ENI can be deleted at this time")
+		return ""
 	}
 
 	ds.total -= len(ds.eniIPPools[deletableENI.ID].IPv4Addresses)
@@ -388,7 +382,7 @@ func (ds *DataStore) FreeENI() (string, error) {
 	enis.Set(float64(len(ds.eniIPPools)))
 	assignedIPs.Set(float64(ds.assigned))
 	totalIPs.Set(float64(ds.total))
-	return deletedENI, nil
+	return deletedENI
 }
 
 // DeleteENI free a ENI.

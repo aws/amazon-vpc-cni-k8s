@@ -231,6 +231,18 @@ func (mr *MockNetLinkMockRecorder) RouteAdd(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RouteAdd", reflect.TypeOf((*MockNetLink)(nil).RouteAdd), arg0)
 }
 
+// RouteReplace mocks base method
+func (m *MockNetLink) RouteReplace(arg0 *netlink.Route) error {
+	ret := m.ctrl.Call(m, "RouteReplace", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RouteReplace indicates an expected call of RouteReplace
+func (mr *MockNetLinkMockRecorder) RouteReplace(arg0 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RouteReplace", reflect.TypeOf((*MockNetLink)(nil).RouteReplace), arg0)
+}
+
 // RouteDel mocks base method
 func (m *MockNetLink) RouteDel(arg0 *netlink.Route) error {
 	ret := m.ctrl.Call(m, "RouteDel", arg0)
