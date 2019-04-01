@@ -32,7 +32,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/docker"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
@@ -148,7 +147,6 @@ type IPAMContext struct {
 	dataStore     *datastore.DataStore
 	k8sClient     k8sapi.K8SAPIs
 	eniConfig     eniconfig.ENIConfig
-	dockerClient  docker.APIs
 	networkClient networkutils.NetworkAPIs
 
 	currentMaxAddrsPerENI int
@@ -183,7 +181,6 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 
 	c.k8sClient = k8sapiClient
 	c.networkClient = networkutils.New()
-	c.dockerClient = docker.New()
 	c.eniConfig = eniConfig
 
 	client, err := awsutils.New()
@@ -324,27 +321,6 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 		return pods, nil
 	}
 
-	var containers map[string]*docker.ContainerInfo
-	for retry := 1; retry <= maxK8SRetries; retry++ {
-		containers, err = c.dockerClient.GetRunningContainers()
-		if err == nil {
-			break
-		}
-		log.Infof("Not able to get local containers yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
-		time.Sleep(retryK8SInterval)
-	}
-
-	// TODO consider using map
-	for _, pod := range pods {
-		// needs to find the container ID
-		for _, container := range containers {
-			if container.K8SUID == pod.UID {
-				log.Debugf("Found pod(%v)'s container ID: %v ", container.Name, container.ID)
-				pod.Container = container.ID
-				break
-			}
-		}
-	}
 	return pods, nil
 }
 
