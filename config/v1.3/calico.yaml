@@ -37,7 +37,7 @@ spec:
         # container programs network policy and routes on each
         # host.
         - name: calico-node
-          image: quay.io/calico/node:v3.3.5
+          image: quay.io/calico/node:v3.3.6
           env:
             # Use Kubernetes API as the backing datastore.
             - name: DATASTORE_TYPE
@@ -86,6 +86,9 @@ spec:
               value: "true"
           securityContext:
             privileged: true
+          resources:
+            requests:
+              cpu: 250m
           livenessProbe:
             httpGet:
               path: /liveness
@@ -110,6 +113,9 @@ spec:
             - mountPath: /var/run/calico
               name: var-run-calico
               readOnly: false
+            - mountPath: /var/lib/calico
+              name: var-lib-calico
+              readOnly: false
       volumes:
         # Used to ensure proper kmods are installed.
         - name: lib-modules
@@ -118,13 +124,22 @@ spec:
         - name: var-run-calico
           hostPath:
             path: /var/run/calico
+        - name: var-lib-calico
+          hostPath:
+            path: /var/lib/calico
         - name: xtables-lock
           hostPath:
             path: /run/xtables.lock
             type: FileOrCreate
       tolerations:
         # Make sure calico/node gets scheduled on all nodes.
-        - operator: Exists
+        - effect: NoSchedule
+          operator: Exists
+        # Mark the pod as a critical add-on for rescheduling.
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - effect: NoExecute
+          operator: Exists
 
 ---
 
@@ -374,11 +389,13 @@ spec:
       nodeSelector:
         beta.kubernetes.io/os: linux
       tolerations:
-        - operator: Exists
+        # Mark the pod as a critical add-on for rescheduling.
+        - key: CriticalAddonsOnly
+          operator: Exists
       hostNetwork: true
       serviceAccountName: calico-node
       containers:
-        - image: quay.io/calico/typha:v3.3.5
+        - image: quay.io/calico/typha:v3.3.6
           name: calico-typha
           ports:
             - containerPort: 5473
@@ -406,10 +423,6 @@ spec:
               value: "1"
             - name: TYPHA_HEALTHENABLED
               value: "true"
-          volumeMounts:
-            - mountPath: /etc/calico
-              name: etc-calico
-              readOnly: true
           livenessProbe:
             exec:
               command:
@@ -425,11 +438,6 @@ spec:
                 - check
                 - readiness
             periodSeconds: 10
-      volumes:
-        - name: etc-calico
-          hostPath:
-            path: /etc/calico
-
 
 ---
 
