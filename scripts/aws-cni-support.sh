@@ -80,4 +80,4 @@ for f in /proc/sys/net/ipv4/conf/*/rp_filter; do
   echo "$f = $(cat ${f})" >> ${LOG_DIR}/sysctls.out
 done
 
-tar -cvzf ${LOG_DIR}/aws-cni-support.tar.gz ${LOG_DIR}/
+tar --exclude 'aws-cni-support.tar.gz' -cvzf ${LOG_DIR}/aws-cni-support.tar.gz ${LOG_DIR}/
