@@ -127,7 +127,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	gw := net.IPv4(169, 254, 1, 1)
 	gwNet := &net.IPNet{IP: gw, Mask: net.CIDRMask(32, 32)}
 
-	if err = createVethContext.netLink.RouteAdd(&netlink.Route{
+	if err = createVethContext.netLink.RouteReplace(&netlink.Route{
 		LinkIndex: contVeth.Attrs().Index,
 		Scope:     netlink.SCOPE_LINK,
 		Dst:       gwNet}); err != nil {
@@ -208,17 +208,13 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 		LinkIndex: hostVeth.Attrs().Index,
 		Scope:     netlink.SCOPE_LINK,
 		Dst:       addrHostAddr}
-	if err = netLink.RouteAdd(&route); err != nil {
-		// If a route exists, replace it instead
-		if netlinkwrapper.IsRouteExistsError(err) {
-			if err := netlink.RouteReplace(&route); err != nil {
-				return errors.Wrapf(err, "setupNS: unable to replace route entry for %s", route.Dst.IP.String())
-			}
-			log.Debugf("Successfully replaced route to be %s/0", route.Dst.IP.String())
-		} else {
-			return errors.Wrap(err, "setupNS network: failed to add host route")
-		}
+
+	// Add or replace route
+	if err := netLink.RouteReplace(&route); err != nil {
+		return errors.Wrapf(err, "setupNS: unable to add or replace route entry for %s", route.Dst.IP.String())
 	}
+	log.Debugf("Successfully set host route to be %s/0", route.Dst.IP.String())
+
 	toContainerFlag := true
 	err = addContainerRule(netLink, toContainerFlag, addr, toContainerRulePriority, mainRouteTable)
 
@@ -251,10 +247,13 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 				podRule.Priority = fromContainerRulePriority
 
 				err = netLink.RuleAdd(podRule)
-				// TODO: Replace?
-				if err != nil {
-					log.Errorf("Failed to add pod IP rule: %v", err)
-					return errors.Wrapf(err, "setupNS: failed to add pod rule")
+				if isRuleExistsError(err) {
+					log.Warn("Rule already exists [%v]", podRule)
+				} else {
+					if err != nil {
+						log.Errorf("Failed to add pod IP rule [%v]: %v", podRule, err)
+						return errors.Wrapf(err, "setupNS: failed to add pod rule [%v]", podRule)
+					}
 				}
 				var toDst string
 
@@ -281,12 +280,12 @@ func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *
 
 	err := netLink.RuleDel(containerRule)
 	if err != nil && !containsNoSuchRule(err) {
-		return errors.Wrapf(err, "add NS network: failed to delete old container rule for %s", addr.String())
+		return errors.Wrapf(err, "addContainerRule: failed to delete old container rule for %s", addr.String())
 	}
 
 	err = netLink.RuleAdd(containerRule)
 	if err != nil {
-		return errors.Wrapf(err, "add NS network: failed to add container rule  for %s", addr.String())
+		return errors.Wrapf(err, "addContainerRule: failed to add container rule for %s", addr.String())
 	}
 	return nil
 }
@@ -341,6 +340,13 @@ func deleteRuleListBySrc(src net.IPNet) error {
 func containsNoSuchRule(err error) bool {
 	if errno, ok := err.(syscall.Errno); ok {
 		return errno == syscall.ENOENT
+	}
+	return false
+}
+
+func isRuleExistsError(err error) bool {
+	if errno, ok := err.(syscall.Errno); ok {
+		return errno == syscall.EEXIST
 	}
 	return false
 }
