@@ -42,17 +42,9 @@ build-linux:
 	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "$(LDFLAGS)"
 	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-cni -ldflags "$(LDFLAGS)" ./plugins/routed-eni/
 
-docker-build:
-	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
-		--workdir=/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
-		--env GOPATH=/usr/src/app \
-		--env ARCH=$(ARCH) \
-		golang:1.10 make build-linux && make download-portmap
-
-
 # Build docker image
-docker: docker-build
-	@docker build -f scripts/dockerfiles/Dockerfile.release -t "$(IMAGE):$(VERSION)" .
+docker: 
+	@docker build --build-arg arch="$(ARCH)" -f scripts/dockerfiles/Dockerfile.release -t "$(IMAGE):$(VERSION)" .
 	@echo "Built Docker image \"$(IMAGE):$(VERSION)\""
 
 # unit-test
