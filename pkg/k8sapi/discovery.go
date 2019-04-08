@@ -249,6 +249,7 @@ func (d *Controller) handlePodUpdate(key string) error {
 		var containerID string
 
 		if len(pod.Status.ContainerStatuses) > 0 {
+			log.Debugf("Found pod (%v)'s container ID: %v", podName, containerID)
 			containerID = pod.Status.ContainerStatuses[0].ContainerID
 		}
 
