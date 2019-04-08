@@ -32,7 +32,7 @@ curl http://localhost:61678/v1/eni-configs  > ${LOG_DIR}/eni-configs.out
 curl http://localhost:61678/metrics 2>&1 > ${LOG_DIR}/metrics.out
 
 # Collecting kubelet introspection data
-if [[ -n "${KUBECONFIG}" ]]; then
+if [[ -n "${KUBECONFIG:-}" ]]; then
     command -v kubectl > /dev/null && kubectl get --kubeconfig=${KUBECONFIG} --raw=/api/v1/pods > ${LOG_DIR}/kubelet.out
 elif [[ -f /etc/systemd/system/kubelet.service ]]; then
     KUBECONFIG=`grep kubeconfig /etc/systemd/system/kubelet.service | awk '{print $2}'`
