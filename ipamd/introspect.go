@@ -37,11 +37,8 @@ type rootResponse struct {
 }
 
 // LoggingHandler is a object for handling http request
-type LoggingHandler struct{ h http.Handler }
-
-// NewLoggingHandler creates a new LoggingHandler object.
-func NewLoggingHandler(handler http.Handler) LoggingHandler {
-	return LoggingHandler{h: handler}
+type LoggingHandler struct{
+	h http.Handler
 }
 
 func (lh LoggingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -70,10 +67,10 @@ func (c *IPAMContext) SetupHTTP() {
 func (c *IPAMContext) setupServer() *http.Server {
 	serverFunctions := map[string]func(w http.ResponseWriter, r *http.Request){
 		"/v1/enis":                      eniV1RequestHandler(c),
-		"/v1/pods":                      podV1RequestHandler(c),
-		"/v1/networkutils-env-settings": networkEnvV1RequestHandler(c),
-		"/v1/ipamd-env-settings":        ipamdEnvV1RequestHandler(c),
 		"/v1/eni-configs":               eniConfigRequestHandler(c),
+		"/v1/pods":                      podV1RequestHandler(c),
+		"/v1/networkutils-env-settings": networkEnvV1RequestHandler(),
+		"/v1/ipamd-env-settings":        ipamdEnvV1RequestHandler(),
 	}
 	paths := make([]string, 0, len(serverFunctions))
 	for path := range serverFunctions {
@@ -88,7 +85,7 @@ func (c *IPAMContext) setupServer() *http.Server {
 	}
 
 	defaultHandler := func(w http.ResponseWriter, r *http.Request) {
-		w.Write(availableCommandResponse)
+		logErr(w.Write(availableCommandResponse))
 	}
 
 	serveMux := http.NewServeMux()
@@ -108,7 +105,6 @@ func (c *IPAMContext) setupServer() *http.Server {
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
 	}
-
 	return server
 }
 
@@ -120,7 +116,7 @@ func eniV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-		w.Write(responseJSON)
+		logErr(w.Write(responseJSON))
 	}
 }
 
@@ -132,7 +128,7 @@ func podV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-		w.Write(responseJSON)
+		logErr(w.Write(responseJSON))
 	}
 }
 
@@ -140,40 +136,40 @@ func eniConfigRequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.
 	return func(w http.ResponseWriter, r *http.Request) {
 		responseJSON, err := json.Marshal(ipam.eniConfig.Getter())
 		if err != nil {
-			log.Error("Failed to marshal pod data: %v", err)
+			log.Error("Failed to marshal ENI config: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-		w.Write(responseJSON)
+		logErr(w.Write(responseJSON))
 	}
 }
 
-func networkEnvV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
+func networkEnvV1RequestHandler() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		responseJSON, err := json.Marshal(networkutils.GetConfigForDebug())
 		if err != nil {
-			log.Error("Failed to marshal env var data: %v", err)
+			log.Error("Failed to marshal network env var data: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-		w.Write(responseJSON)
+		logErr(w.Write(responseJSON))
 	}
 }
 
-func ipamdEnvV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
+func ipamdEnvV1RequestHandler() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		responseJSON, err := json.Marshal(GetConfigForDebug())
 		if err != nil {
-			log.Error("Failed to marshal env var data: %v", err)
+			log.Error("Failed to marshal ipamd env var data: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-		w.Write(responseJSON)
+		logErr(w.Write(responseJSON))
 	}
 }
 
-func metricsHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		promhttp.Handler()
+func logErr(_ int, err error) {
+	if err != nil {
+		log.Errorf("Write failed: %v", err)
 	}
 }
