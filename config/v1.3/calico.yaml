@@ -62,6 +62,10 @@ spec:
             # Set Felix endpoint to host default action to ACCEPT.
             - name: FELIX_DEFAULTENDPOINTTOHOSTACTION
               value: "ACCEPT"
+            # This will make Felix honor AWS VPC CNI's mangle table
+            # rules.
+            - name: FELIX_IPTABLESMANGLEALLOWACTION
+              value: Return
             # Disable IPV6 on Kubernetes.
             - name: FELIX_IPV6SUPPORT
               value: "false"
@@ -86,9 +90,6 @@ spec:
               value: "true"
           securityContext:
             privileged: true
-          resources:
-            requests:
-              cpu: 250m
           livenessProbe:
             httpGet:
               path: /liveness
@@ -423,6 +424,10 @@ spec:
               value: "1"
             - name: TYPHA_HEALTHENABLED
               value: "true"
+            # This will make Felix honor AWS VPC CNI's mangle table
+            # rules.
+            - name: FELIX_IPTABLESMANGLEALLOWACTION
+              value: Return              
           livenessProbe:
             exec:
               command:
