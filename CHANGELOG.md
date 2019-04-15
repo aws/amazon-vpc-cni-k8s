@@ -2,39 +2,64 @@
 
 ## v1.4.0
 
-* Feature - [Add an environment variable to limit the number of ENIs](https://github.com/aws/amazon-vpc-cni-k8s/pull/251)
-* Feature - [Randomise outgoing port for connections in the SNAT iptables rule](https://github.com/aws/amazon-vpc-cni-k8s/pull/246)
-* Improvement - [Update Calico to 3.3.6](https://github.com/aws/amazon-vpc-cni-k8s/pull/368)
-* Improvement - [Add new instance types](https://github.com/aws/amazon-vpc-cni-k8s/pull/366)
-* Improvement - [Actually enable prometheus metrics](https://github.com/aws/amazon-vpc-cni-k8s/pull/361)
-* Improvement - [Retry LinkByMac when link not found](https://github.com/aws/amazon-vpc-cni-k8s/pull/360)
-* Improvement - [Run `yum clean all` to reduce image size](https://github.com/aws/amazon-vpc-cni-k8s/pull/351)
-* Improvement - [Renaming Prometheus metrics with "awscni_" prefix](https://github.com/aws/amazon-vpc-cni-k8s/pull/348)
-* Improvement - [Allow configuring docker image when running make](https://github.com/aws/amazon-vpc-cni-k8s/pull/178)
-* Improvement - [Add support for stdout logging](https://github.com/aws/amazon-vpc-cni-k8s/pull/342)
-* Improvement - [Some cleanups related to #234](https://github.com/aws/amazon-vpc-cni-k8s/pull/244)
-* Improvement - [Use apps/v1 for DaemonSet](https://github.com/aws/amazon-vpc-cni-k8s/pull/341)
-* Improvement - [Clean up aws-cni-support.sh and update the documentation](https://github.com/aws/amazon-vpc-cni-k8s/pull/320)
-* Improvement - [Collect rp_filter from all network interface in aws-cni-support.sh](https://github.com/aws/amazon-vpc-cni-k8s/pull/338)
-* Improvement - [Use device number 0 for primary device in unit test](https://github.com/aws/amazon-vpc-cni-k8s/pull/247)
-* Improvement - [Return the err from f.Close()](https://github.com/aws/amazon-vpc-cni-k8s/pull/249)
-* Improvement - [Explicitly set the IP on secondary ENIs](https://github.com/aws/amazon-vpc-cni-k8s/pull/271)
-* Improvement - [Update instance ENI and IP mapping table](https://github.com/aws/amazon-vpc-cni-k8s/pull/275)
-* Improvement - [Add ENI entries for p3dn.24xlarge instance](https://github.com/aws/amazon-vpc-cni-k8s/pull/274)
-* Improvement - [Use `unix.RT_TABLE_MAIN` for main routing table number](https://github.com/aws/amazon-vpc-cni-k8s/pull/269)
-* Improvement - [Increment IP address safely](https://github.com/aws/amazon-vpc-cni-k8s/pull/258)
-* Improvement - [Output CIDR in correct format](https://github.com/aws/amazon-vpc-cni-k8s/pull/267)
-* Improvement - [Remove unused options from rpc.proto](https://github.com/aws/amazon-vpc-cni-k8s/pull/252)
-* Improvement - [Add missing unit tests execution to Makefile](https://github.com/aws/amazon-vpc-cni-k8s/pull/253)
-* Improvement - [Bump TravisCI to use 1.11](https://github.com/aws/amazon-vpc-cni-k8s/pull/243)
-* Bug fix - [Use replace when adding host route](https://github.com/aws/amazon-vpc-cni-k8s/pull/367)
-* Bug fix - [Update k8sapi to use operator-framework inClusterConfig](https://github.com/aws/amazon-vpc-cni-k8s/pull/364)
-* Bug fix - [Set mainENIRule mask](https://github.com/aws/amazon-vpc-cni-k8s/pull/340)
-* Bug fix - [Stop wrapping and returning nil](https://github.com/aws/amazon-vpc-cni-k8s/pull/245)
-* Bug fix - [Fix return path of NodePort traffic when using Calico network policy](https://github.com/aws/amazon-vpc-cni-k8s/pull/263)
-* Bug fix - [Remove scope: Cluster from spec.names](https://github.com/aws/amazon-vpc-cni-k8s/pull/199)
-* Bug fix - [Remove unneeded spec entry in v1.3 manifest](https://github.com/aws/amazon-vpc-cni-k8s/pull/262)
-* Bug fix - [Add formatter to errors.Wrapf in driver](https://github.com/aws/amazon-vpc-cni-k8s/pull/241)
+* Feature - [Add an environment variable to limit the number of ENIs](https://github.com/aws/amazon-vpc-cni-k8s/pull/251) (#251, @pdbogen)
+    - Makes it possible to limit how many ENIs that are allocated per node.
+* Feature - [Randomize outgoing port for connections in the SNAT iptables rule](https://github.com/aws/amazon-vpc-cni-k8s/pull/246) (#246, @taylorb-syd)
+    - To avoid a race condition when using SNAT, select ports randomly instead of sequentially.
+* Feature - [ENIConfig set by custom annotation or label names](https://github.com/aws/amazon-vpc-cni-k8s/pull/280) (#280, @etopeter)
+    - Enables users to set a custom annotation or label key to define ENIConfig name.
+* Improvement - [Update Calico to 3.3.6](https://github.com/aws/amazon-vpc-cni-k8s/pull/368) (#368, @2ffs2nns)
+* Improvement - [Add new instance types](https://github.com/aws/amazon-vpc-cni-k8s/pull/366) (#366, @mogren)
+    - Adds m5ad and r5ad families.
+* Improvement - [Actually enable prometheus metrics](https://github.com/aws/amazon-vpc-cni-k8s/pull/361) (#361, @mogren)
+* Improvement - [Retry LinkByMac when link not found](https://github.com/aws/amazon-vpc-cni-k8s/pull/360) (#360, @peterbroadhurst)
+    - Sometimes it takes a few seconds for a new ENI to be available, so we retry 5 times.
+* Improvement - [Run `yum clean all` to reduce image size](https://github.com/aws/amazon-vpc-cni-k8s/pull/351) (#351, @mogren)
+* Improvement - [Renaming Prometheus metrics with "awscni_" prefix](https://github.com/aws/amazon-vpc-cni-k8s/pull/348) (#348, @max-rocket-internet)
+* Improvement - [Allow configuring docker image when running make](https://github.com/aws/amazon-vpc-cni-k8s/pull/178) (#178, @mikkeloscar)
+* Improvement - [Add support for stdout logging](https://github.com/aws/amazon-vpc-cni-k8s/pull/342) (#342, @rudoi)
+    - Adds the environment variable `AWS_VPC_K8S_CNI_LOG_FILE` that can be set to `stdout` or a file path.
+* Improvement - [Some cleanups related to #234](https://github.com/aws/amazon-vpc-cni-k8s/pull/244) (#244, @mogren)
+* Improvement - [Use apps/v1 for DaemonSet](https://github.com/aws/amazon-vpc-cni-k8s/pull/341) (#341, @errordeveloper)
+* Improvement - [Clean up aws-cni-support.sh and update the documentation](https://github.com/aws/amazon-vpc-cni-k8s/pull/320) (#320, @mogren)
+* Improvement - [Fix tiny typo in log message](https://github.com/aws/amazon-vpc-cni-k8s/pull/324) (#323, #324, @ankon)
+* Improvement - [Collect rp_filter from all network interface in aws-cni-support.sh](https://github.com/aws/amazon-vpc-cni-k8s/pull/338) (#338, @nak3)
+* Improvement - [Use device number 0 for primary device in unit test](https://github.com/aws/amazon-vpc-cni-k8s/pull/247) (#247, @nak3)
+* Improvement - [Collect iptables -nvL -t mangle in support script](https://github.com/aws/amazon-vpc-cni-k8s/pull/304) (#304, @nak3)
+* Improvement - [Return the err from f.Close()](https://github.com/aws/amazon-vpc-cni-k8s/pull/249) (#249, @mogren)
+* Improvement - [Explicitly set the IP on secondary ENIs](https://github.com/aws/amazon-vpc-cni-k8s/pull/271) (#271, @ewbankkit)
+    - Fixes IP bug on older kernels.
+* Improvement - [Update instance ENI and IP mapping table](https://github.com/aws/amazon-vpc-cni-k8s/pull/275) (#275, @hmizuma)
+    - Adds a1 and c5n instances. (Already included in v1.3.2) 
+* Improvement - [Add ENI entries for p3dn.24xlarge instance](https://github.com/aws/amazon-vpc-cni-k8s/pull/274) (#274, @hmizuma)
+    - p3dn.24xlarge was already included in v1.3.2 
+* Improvement - [Use InClusterConfig when CreateKubeClient() was called without args](https://github.com/aws/amazon-vpc-cni-k8s/pull/293) (#293, @nak3)
+* Improvement - [Expose configuration variables via ipamD to make it debug friendly](https://github.com/aws/amazon-vpc-cni-k8s/pull/287) (#287, @nak3)
+* Improvement - [Allow cross compile on different platform ](https://github.com/aws/amazon-vpc-cni-k8s/pull/292) (#292, @nak3)
+* Improvement - [Add changes to support multiple platform build](https://github.com/aws/amazon-vpc-cni-k8s/pull/286) (#286, @mbartsch)
+    - arm64 build support
+* Improvement - [Improve setup advice in README around ENI / IP ](https://github.com/aws/amazon-vpc-cni-k8s/pull/276) (#276 @sftim)
+* Improvement - [Use `unix.RT_TABLE_MAIN` for main routing table number](https://github.com/aws/amazon-vpc-cni-k8s/pull/269) (#269, @nak3)
+* Improvement - [Detect if mockgen and goimports are in the path](https://github.com/aws/amazon-vpc-cni-k8s/pull/278) (#278, @nak3)
+* Improvement - [Increment IP address safely](https://github.com/aws/amazon-vpc-cni-k8s/pull/258) (#258, @nak3)
+    - Calculate the gateway IP in a safe way.
+* Improvement - [Remove unused options from rpc.proto](https://github.com/aws/amazon-vpc-cni-k8s/pull/252) (#252, @nak3)
+* Improvement - [Add missing unit tests execution to Makefile](https://github.com/aws/amazon-vpc-cni-k8s/pull/253) (#253, @nak3)
+* Improvement - [Bump TravisCI to use 1.11](https://github.com/aws/amazon-vpc-cni-k8s/pull/243) (#243, @mogren)
+* Bug fix - [Fix typos in json types for ENIConfig](https://github.com/aws/amazon-vpc-cni-k8s/pull/393) (#393, @tiffanyfay)
+* Bug fix - [Avoid unbound variable error in aws-cni-support.sh](https://github.com/aws/amazon-vpc-cni-k8s/pull/382) (#382, @StevenACoffman)
+* Bug fix - [Output CIDR in correct format](https://github.com/aws/amazon-vpc-cni-k8s/pull/267) (#267, @nak3)
+* Bug fix - [Use replace when adding host route](https://github.com/aws/amazon-vpc-cni-k8s/pull/367) (#367, @mogren)
+* Bug fix - [Update k8sapi to use operator-framework inClusterConfig](https://github.com/aws/amazon-vpc-cni-k8s/pull/364) (#364, @tiffanyfay)
+    - If the environment variables are missing, fall back to DNS lookup.
+* Bug fix - [Set mainENIRule mask](https://github.com/aws/amazon-vpc-cni-k8s/pull/340) (#340, @tustvold)
+    - In order to match the connmark correctly, we need to mask it out when checking.
+* Bug fix - [Use primary interface to add iptables for connmark entry](https://github.com/aws/amazon-vpc-cni-k8s/pull/305) (#305, @nak3)
+* Bug fix - [Stop wrapping and returning nil](https://github.com/aws/amazon-vpc-cni-k8s/pull/245) (#245, @nak3)
+* Bug fix - [Fix return path of NodePort traffic when using Calico network policy](https://github.com/aws/amazon-vpc-cni-k8s/pull/263) (#263, @ikatson)
+* Bug fix - [Remove scope: Cluster from spec.names](https://github.com/aws/amazon-vpc-cni-k8s/pull/199) (#199, @rickardrosen)
+* Bug fix - [Remove unneeded spec entry in v1.3 manifest](https://github.com/aws/amazon-vpc-cni-k8s/pull/262) (#262, @hmizuma)
+* Bug fix - [Add formatter to errors.Wrapf in driver](https://github.com/aws/amazon-vpc-cni-k8s/pull/241) (#241, @nak3)
 
 ## v1.3.3
 
