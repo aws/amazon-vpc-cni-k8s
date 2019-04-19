@@ -69,7 +69,7 @@ var ErrENINotFound = errors.New("ENI is not found")
 var (
 	awsAPILatency = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Name: "awscni_aws_api_lantency_ms",
+			Name: "awscni_aws_api_latency_ms",
 			Help: "AWS API call latency in ms",
 		},
 		[]string{"api", "error"},
@@ -131,7 +131,7 @@ type APIs interface {
 
 	// GetENILimit returns the number of ENIs that can be attached to an instance
 	GetENILimit() (int, error)
-	
+
 	// GetPrimaryENImac returns the mac address of the primary ENI
 	GetPrimaryENImac() string
 }
@@ -792,7 +792,7 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string) error {
 func (cache *EC2InstanceMetadataCache) DescribeENI(eniID string) ([]*ec2.NetworkInterfacePrivateIpAddress, *string, error) {
 	eniIds := make([]*string, 0)
 	eniIds = append(eniIds, aws.String(eniID))
-	input := &ec2.DescribeNetworkInterfacesInput{ NetworkInterfaceIds: eniIds}
+	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIds}
 
 	start := time.Now()
 	result, err := cache.ec2SVC.DescribeNetworkInterfaces(input)
