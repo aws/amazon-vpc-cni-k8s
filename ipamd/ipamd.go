@@ -14,6 +14,7 @@
 package ipamd
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -23,6 +24,7 @@ import (
 	log "github.com/cihub/seelog"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	set "github.com/deckarep/golang-set"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -45,6 +47,7 @@ const (
 	maxRetryCheckENI            = 5
 	eniAttachTime               = 10 * time.Second
 	nodeIPPoolReconcileInterval = 60 * time.Second
+	decreaseIPPoolInterval = 30 * time.Second
 	maxK8SRetries               = 12
 	retryK8SInterval            = 5 * time.Second
 
@@ -150,12 +153,13 @@ type IPAMContext struct {
 
 	currentMaxAddrsPerENI int64
 	maxAddrsPerENI        int64
-	// maxENI indicate the maximum number of ENIs can be attached to the instance
+	// maxENIs indicate the maximum number of ENIs can be attached to the instance
 	// It is initialized to 0 and it is set to current number of ENIs attached
 	// when ipamd receives AttachmentLimitExceeded error
-	maxENI               int
+	maxENIs              int
 	primaryIP            map[string]string
 	lastNodeIPPoolAction time.Time
+	lastDecreaseIPPool time.Time
 }
 
 func prometheusRegister() {
@@ -201,6 +205,7 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 func (c *IPAMContext) nodeInit() error {
 	ipamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
+	log.Debugf("Start node init")
 
 	instanceMaxENIs, _ := c.awsClient.GetENILimit()
 	maxENIs := getMaxENI(instanceMaxENIs)
@@ -324,7 +329,6 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 		time.Sleep(retryK8SInterval)
 	}
 
-	// TODO consider using map
 	for _, pod := range pods {
 		// needs to find the container ID
 		for _, container := range containers {
@@ -348,79 +352,115 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 }
 
 func (c *IPAMContext) updateIPPoolIfRequired() {
-	c.retryAllocENIIP()
 	if c.nodeIPPoolTooLow() {
 		c.increaseIPPool()
 	} else if c.nodeIPPoolTooHigh() {
-		c.decreaseIPPool()
+		c.decreaseIPPool(decreaseIPPoolInterval)
 	}
 }
 
-// TODO: Does not retry!
-func (c *IPAMContext) retryAllocENIIP() {
-	ipamdActionsInprogress.WithLabelValues("retryAllocENIIP").Add(float64(1))
-	defer ipamdActionsInprogress.WithLabelValues("retryAllocENIIP").Sub(float64(1))
-
-	curIPTarget, warmIPTargetDefined := c.getCurWarmIPTarget()
-	if warmIPTargetDefined && curIPTarget <= 0 {
-		log.Debugf("Skipping retry allocating ENI IP, warm IP target reached")
-		return
-	}
-	maxIPLimit, err := c.awsClient.GetENIipLimit()
-	if err != nil {
-		log.Infof("Failed to retrieve ENI IP limit: %v", err)
-		return
-	}
-	eni := c.dataStore.GetENINeedsIP(maxIPLimit, UseCustomNetworkCfg())
-	if eni != nil {
-		log.Debugf("Attempt again to allocate IP address for ENI :%s", eni.ID)
-		var err error
-		if warmIPTargetDefined {
-			err = c.awsClient.AllocIPAddresses(eni.ID, int64(curIPTarget))
-		} else {
-			err = c.awsClient.AllocIPAddresses(eni.ID, maxIPLimit)
-		}
-		if err != nil {
-			ipamdErrInc("retryAllocENIIPAllocAllIPAddressFailed", err)
-			log.Warn("During eni repair: error encountered on allocate IP address", err)
-			return
-		}
-		ec2Addrs, _, err := c.getENIaddresses(eni.ID)
-		if err != nil {
-			ipamdErrInc("retryAllocENIIPgetENIaddressesFailed", err)
-			log.Warn("During eni repair: failed to get ENI ip addresses", err)
-			return
-		}
-		c.lastNodeIPPoolAction = time.Now()
-		c.addENIaddressesToDataStore(ec2Addrs, eni.ID)
-
-		curIPTarget, warmIPTargetDefined := c.getCurWarmIPTarget()
-		if warmIPTargetDefined && curIPTarget <= 0 {
-			log.Debugf("Finish retry allocating ENI IP, warm IP target reached")
-			return
-		}
-	}
-}
-
-func (c *IPAMContext) decreaseIPPool() {
+func (c *IPAMContext) decreaseIPPool(interval time.Duration) {
 	ipamdActionsInprogress.WithLabelValues("decreaseIPPool").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("decreaseIPPool").Sub(float64(1))
+
+	now := time.Now()
+	timeSinceLast := now.Sub(c.lastDecreaseIPPool)
+	if timeSinceLast <= interval {
+		log.Debugf("decreaseIPPool: skipping because time since last %v <= %v", timeSinceLast, interval)
+		return
+	}
+
+	log.Debugf("Start decreasing IP pool")
+
+	// TODO(nckturner) shouldn't we attempt to remove more than 1 ENI at a time here?
 	eni := c.dataStore.RemoveUnusedENIFromDataStore()
-	if eni == "" {
-		log.Info("No ENI to remove, all ENIs have IPs in use")
-		return
+	if eni != "" {
+		log.Debugf("Start freeing ENI %s", eni)
+		err := c.awsClient.FreeENI(eni)
+		if err != nil {
+			ipamdErrInc("decreaseIPPoolFreeENIFailed", err)
+			log.Errorf("Failed to free ENI %s, err: %v", eni, err)
+			return
+		}
 	}
-	log.Debugf("Start freeing ENI %s", eni)
-	err := c.awsClient.FreeENI(eni)
-	if err != nil {
-		ipamdErrInc("decreaseIPPoolFreeENIFailed", err)
-		log.Errorf("Failed to free ENI %s, err: %v", eni, err)
-		return
+	log.Info("No ENI to remove, all ENIs have IPs in use")
+
+	// Determine if there are IPs to free
+	// When we have extra IPs beyond the target and warmIPTargetDefined is enabled, deallocate extra IP addresses
+	if _, over, warmIPTargetDefined := c.ipTargetState(); warmIPTargetDefined && over > 0 {
+		eniInfos := c.dataStore.GetENIInfos()
+		for eniID := range eniInfos.ENIIPPools {
+			ips, err := c.findFreeableIPs(eniID)
+			if err != nil {
+				log.Errorf("Error finding unassigned IPs: %s", err)
+				return
+			}
+
+			if len(ips) == 0 {
+				continue
+			}
+
+			// Deallocate IPs from the instance if they aren't used by pods.
+			if err := c.awsClient.DeallocIPAddresses(eniID, ips); err != nil {
+				log.Debugf(fmt.Sprintf("Failed to decrease IP pool by removing IPs %v from ENI %s: %s", ips, eniID, err))
+			} else {
+				for _, unassignedIP := range ips {
+					err := c.dataStore.DelIPv4AddressFromStore(eniID, unassignedIP)
+					if err != nil {
+						log.Errorf("Failed to delete IP %s on ENI %s from datastore: %s", unassignedIP, eni, err)
+						ipamdErrInc("decreaseIPPool", err)
+						continue
+					}
+				}
+			}
+
+		}
 	}
-	c.lastNodeIPPoolAction = time.Now()
+
+	c.lastDecreaseIPPool = now
+	c.lastNodeIPPoolAction = now
 	total, used := c.dataStore.GetStats()
 	log.Debugf("Successfully decreased IP pool")
 	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+}
+
+// findFreeableIPs finds and returns IPs that are not assigned to Pods but are attached
+// to ENIs on the node.
+func (c *IPAMContext) findFreeableIPs(eni string) ([]string, error) {
+	podIPInfos := c.dataStore.GetPodInfos()
+	usedIPs := set.NewSet()
+	allocatedIPs := set.NewSet()
+
+	// Get IPs that are currently in use by pods
+	for _, pod := range *podIPInfos {
+		usedIPs.Add(pod.IP)
+	}
+
+	// Get IPs that are currently attached to the instance
+	eniInfos := c.dataStore.GetENIInfos()
+	eniIPPools := eniInfos.ENIIPPools
+
+	pool, ok := eniIPPools[eni]
+	if !ok {
+		return nil, fmt.Errorf("error finding available IPs: eni %s does not exist", eni)
+	}
+
+	for _, ip := range pool.IPv4Addresses {
+		allocatedIPs.Add(ip.Address)
+	}
+
+	availableIPs := allocatedIPs.Difference(usedIPs).ToSlice()
+	freeableIPs := []string{}
+
+	// Free the number of ips `over` the warm IP target, unless `over` is greater than the number of available IPs on
+	// this ENI.  In that case we should only free the number of available  IPs.
+	_, over, _ := c.ipTargetState()
+	numFreeable := min(over, len(availableIPs))
+
+	for _, ip := range availableIPs[:numFreeable] {
+		freeableIPs = append(freeableIPs, ip.(string))
+	}
+	return freeableIPs, nil
 }
 
 func isAttachmentLimitExceededError(err error) bool {
@@ -428,97 +468,138 @@ func isAttachmentLimitExceededError(err error) bool {
 }
 
 func (c *IPAMContext) increaseIPPool() {
-	log.Debug("Start increasing IP pool size")
+	log.Debug("Start increasing IP pool")
 	ipamdActionsInprogress.WithLabelValues("increaseIPPool").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("increaseIPPool").Sub(float64(1))
 
-	curIPTarget, warmIPTargetDefined := c.getCurWarmIPTarget()
-	if warmIPTargetDefined && curIPTarget <= 0 {
+	short, _, warmIPTargetDefined := c.ipTargetState()
+	if warmIPTargetDefined && short == 0 {
 		log.Debugf("Skipping increase IP pool, warm IP target reached")
 		return
 	}
 
 	instanceMaxENIs, err := c.awsClient.GetENILimit()
+	if err != nil {
+		log.Errorf("Failed to get ENI limit due to unknown instance type %s", err)
+	}
 	maxENIs := getMaxENI(instanceMaxENIs)
 	if maxENIs >= 1 {
 		enisMax.Set(float64(maxENIs))
 	}
 
-	if err == nil && maxENIs == c.dataStore.GetENIs() {
-		log.Debugf("Skipping increase IP pool due to max ENI already attached to the instance : %d", maxENIs)
-		return
-	}
-	if (c.maxENI > 0) && (c.maxENI == c.dataStore.GetENIs()) {
-		if c.maxENI < maxENIs {
-			errString := "desired: " + strconv.FormatInt(int64(maxENIs), 10) + "current: " + strconv.FormatInt(int64(c.maxENI), 10)
+	// If discovered maxENIs is set, and it is equal to our current number of ENIs, then our pool is at maximum capacity
+	if (c.maxENIs > 0) && (c.maxENIs == c.dataStore.GetNumENIs()) {
+		// If discovered max is less than maxENIs
+		if c.maxENIs < maxENIs {
+			errString := fmt.Sprintf("desired: %d, current: %d", maxENIs, c.maxENIs)
 			ipamdErrInc("unExpectedMaxENIAttached", errors.New(errString))
 		}
-		log.Debugf("Skipping increase IP pool due to max ENI already attached to the instance : %d", c.maxENI)
+		log.Debugf("Skipping increase IP pool due to max ENI already attached to the instance : %d", c.maxENIs)
 		return
 	}
 
-	var securityGroups []*string
-	var subnet string
-	customNetworkCfg := UseCustomNetworkCfg()
-	if customNetworkCfg {
-		eniCfg, err := c.eniConfig.MyENIConfig()
+	// Attempt to increase IP pool by allocating one ENI
+	if c.dataStore.GetNumENIs() < maxENIs {
+		var securityGroups []*string
+		var subnet string
+		customNetworkCfg := UseCustomNetworkCfg()
+		if customNetworkCfg {
+			eniCfg, err := c.eniConfig.MyENIConfig()
 
+			if err != nil {
+				log.Errorf("Failed to get pod ENI config")
+				return
+			}
+
+			log.Infof("ipamd: using custom network config: %v, %s", eniCfg.SecurityGroups, eniCfg.Subnet)
+			for _, sgID := range eniCfg.SecurityGroups {
+				log.Debugf("Found security-group id: %s", sgID)
+				securityGroups = append(securityGroups, aws.String(sgID))
+			}
+			subnet = eniCfg.Subnet
+		}
+
+		eniID, err := c.awsClient.AllocENI(customNetworkCfg, securityGroups, subnet)
 		if err != nil {
-			log.Errorf("Failed to get pod ENI config")
+			log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
+
+			if isAttachmentLimitExceededError(err) {
+				c.maxENIs = c.dataStore.GetNumENIs()
+				log.Infof("Discovered the instance max ENI allowed is: %d", c.maxENIs)
+			}
+			// TODO need to add health stats
+			ipamdErrInc("increaseIPPoolAllocENI", err)
+			return
+		}
+		log.Infof("Allocated eniID: %s", eniID)
+
+		maxIPPerENI, err := c.awsClient.GetENIipLimit()
+		if err != nil {
+			log.Infof("Failed to retrieve ENI IP limit: %v", err)
 			return
 		}
 
-		log.Infof("ipamd: using custom network config: %v, %s", eniCfg.SecurityGroups, eniCfg.Subnet)
-		for _, sgID := range eniCfg.SecurityGroups {
-			log.Debugf("Found security-group id: %s", sgID)
-			securityGroups = append(securityGroups, aws.String(sgID))
+		eniInfos := c.dataStore.GetENIInfos()
+		eni := eniInfos.ENIIPPools[eniID]
+		err = c.awsClient.AllocIPAddresses(eniID, maxIPPerENI-int64(len(eni.IPv4Addresses)))
+		if err != nil {
+			log.Warnf("Failed to allocate all available ip addresses on an eni %s: %s", eni.ID, err)
+			// Continue to process the allocated IP addresses
+			ipamdErrInc("increaseIPPoolAllocAllIPAddressFailed", err)
 		}
-		subnet = eniCfg.Subnet
-	}
 
-	eni, err := c.awsClient.AllocENI(customNetworkCfg, securityGroups, subnet)
-	if err != nil {
-		log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
-
-		if isAttachmentLimitExceededError(err) {
-			c.maxENI = c.dataStore.GetENIs()
-			log.Infof("Discovered the instance max ENI allowed is: %d", c.maxENI)
+		eniMetadata, err := c.waitENIAttached(eniID)
+		if err != nil {
+			ipamdErrInc("increaseIPPoolWaitENIAttachedFailed", err)
+			log.Errorf("Failed to increase pool size: not able to discover attached ENI from metadata service %v", err)
+			return
 		}
-		// TODO need to add health stats
-		ipamdErrInc("increaseIPPoolAllocENI", err)
-		return
-	}
 
-	maxIPLimit, err := c.awsClient.GetENIipLimit()
-	if err != nil {
-		log.Infof("Failed to retrieve ENI IP limit: %v", err)
-		return
-	}
-
-	if warmIPTargetDefined {
-		err = c.awsClient.AllocIPAddresses(eni, int64(curIPTarget))
+		err = c.setupENI(eniID, eniMetadata)
+		if err != nil {
+			ipamdErrInc("increaseIPPoolSetupENIFailed", err)
+			log.Errorf("Failed to increase pool size: %v", err)
+			return
+		}
 	} else {
-		err = c.awsClient.AllocIPAddresses(eni, maxIPLimit)
-	}
-	if err != nil {
-		log.Warnf("Failed to allocate all available ip addresses on an ENI %v", err)
-		// Continue to process the allocated IP addresses
-		ipamdErrInc("increaseIPPoolAllocAllIPAddressFailed", err)
+		log.Debugf("Skipping ENI allocation due to max ENI already attached to the instance : %d", maxENIs)
 	}
 
-	eniMetadata, err := c.waitENIAttached(eni)
-	if err != nil {
-		ipamdErrInc("increaseIPPoolwaitENIAttachedFailed", err)
-		log.Errorf("Failed to increase pool size: not able to discover attached ENI from metadata service %v", err)
-		return
+	// For each ENI, try to fill in missing IPs
+	eniInfos := c.dataStore.GetENIInfos()
+	for _, eni := range eniInfos.ENIIPPools {
+
+		maxIPPerENI, err := c.awsClient.GetENIipLimit()
+		if err != nil {
+			log.Infof("Failed to retrieve ENI IP limit: %v", err)
+			return
+		}
+
+		skipPrimary := UseCustomNetworkCfg()
+		if skipPrimary && eni.IsPrimary {
+			log.Debugf("Skip the primary ENI for need IP check")
+			continue
+		}
+		if int64(len(eni.IPv4Addresses)) < maxIPPerENI {
+			log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d",
+				eni.ID, len(eni.IPv4Addresses), maxIPPerENI)
+
+			err = c.awsClient.AllocIPAddresses(eni.ID, maxIPPerENI-int64(len(eni.IPv4Addresses)))
+			if err != nil {
+				log.Warnf("Failed to allocate all available ip addresses on an eni %s: %s", eni.ID, err)
+			}
+
+			ec2Addrs, _, err := c.getENIaddresses(eni.ID)
+			if err != nil {
+				ipamdErrInc("increaseIPPoolGetENIaddressesFailed", err)
+				log.Warn("During eni repair: failed to get ENI ip addresses", err)
+				return
+			}
+
+			c.addENIaddressesToDataStore(ec2Addrs, eni.ID)
+		}
 	}
 
-	err = c.setupENI(eni, eniMetadata)
-	if err != nil {
-		ipamdErrInc("increaseIPPoolsetupENIFailed", err)
-		log.Errorf("Failed to increase pool size: %v", err)
-		return
-	}
 	c.lastNodeIPPoolAction = time.Now()
 	total, used := c.dataStore.GetStats()
 	log.Debugf("Successfully increased IP pool")
@@ -574,7 +655,7 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 			primaryIP = aws.StringValue(ec2Addr.PrivateIpAddress)
 			continue
 		}
-		err := c.dataStore.AddENIIPv4Address(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
+		err := c.dataStore.AddIPv4AddressToStore(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
 		if err != nil && err.Error() != datastore.DuplicateIPError {
 			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store", ec2Addr.PrivateIpAddress)
 			// continue to add next address
@@ -635,12 +716,12 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 }
 
 // getMaxENI returns the maximum number of ENIs for this instance, which is
-// the lesser of the given lower bound (for example, the limit for the instance
+// the lesser of the given upper bound (for example, the limit for the instance
 // type) and a value configured via the MAX_ENI environment variable.
 //
 // If the value configured via environment variable is 0 or less, it is
-// ignored, and the lowerBound is returned.
-func getMaxENI(lowerBound int) int {
+// ignored, and the upperBound is returned.
+func getMaxENI(upperBound int) int {
 	inputStr, found := os.LookupEnv(envMaxENI)
 
 	envMax := defaultMaxENI
@@ -651,12 +732,12 @@ func getMaxENI(lowerBound int) int {
 		}
 	}
 
-	// If envMax is defined (>=1) and is less than the input lower bound, return
+	// If envMax is defined (>=1) and is less than the input upper bound, return
 	// envMax.
-	if envMax >= 1 && envMax < lowerBound {
+	if envMax >= 1 && envMax < upperBound {
 		return envMax
 	}
-	return lowerBound
+	return upperBound
 }
 
 func getWarmENITarget() int {
@@ -683,13 +764,9 @@ func logPoolStats(total, used, currentMaxAddrsPerENI, maxAddrsPerENI int64) {
 
 // nodeIPPoolTooLow returns true if IP pool is below low threshold
 func (c *IPAMContext) nodeIPPoolTooLow() bool {
-	curIPTarget, warmIPTargetDefined := c.getCurWarmIPTarget()
-	if warmIPTargetDefined && curIPTarget <= 0 {
-		return false
-	}
-
-	if warmIPTargetDefined && curIPTarget > 0 {
-		return true
+	short, _, warmIPTargetDefined := c.ipTargetState()
+	if warmIPTargetDefined {
+		return short > 0
 	}
 
 	// If WARM-IP-TARGET not defined fallback using number of ENIs
@@ -710,8 +787,9 @@ func (c *IPAMContext) nodeIPPoolTooHigh() bool {
 	available := total - used
 
 	target := getWarmIPTarget()
-	if int64(target) != noWarmIPTarget && int64(target) >= int64(available) {
-		return false
+	if int64(target) != noWarmIPTarget {
+		// When our available IPs are greater than our target, our pool is too high
+		return int64(available) > int64(target)
 	}
 
 	return int64(available) >= (int64(warmENITarget)+1)*c.maxAddrsPerENI
@@ -721,15 +799,16 @@ func ipamdErrInc(fn string, err error) {
 	ipamdErr.With(prometheus.Labels{"fn": fn, "error": err.Error()}).Inc()
 }
 
-// nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
+// nodeIPPoolReconcile Adds ENIs to the store that are present on the host, and removes ENIs from the store that are not
+// present on the host.
 func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
 
 	curTime := time.Now()
-	last := c.lastNodeIPPoolAction
-
-	if curTime.Sub(last) <= interval {
+	timeSinceLast := curTime.Sub(c.lastNodeIPPoolAction)
+	if time.Duration(timeSinceLast) <= interval {
+		log.Debugf("nodeIPPoolReconcile: skipping because time since last %v <= %v", timeSinceLast, interval)
 		return
 	}
 
@@ -737,7 +816,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	attachedENIs, err := c.awsClient.GetAttachedENIs()
 
 	if err != nil {
-		log.Error("IP pool reconcile: Failed to get attached ENI info", err.Error())
+		log.Errorf("IP pool reconcile: Failed to get attached ENI info: %s", err.Error())
 		ipamdErrInc("reconcileFailedGetENIs", err)
 		return
 	}
@@ -748,9 +827,8 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	for _, attachedENI := range attachedENIs {
 		eniIPPool, err := c.dataStore.GetENIIPPools(attachedENI.ENIID)
 		if err == nil {
-			// If the attached ENI is in the data store
-			log.Debugf("Reconcile existing ENI %s IP pool", attachedENI.ENIID)
-			// Reconcile IP pool
+			// Attached ENI is in the data store, reconcile its IPs
+			log.Debugf("IP pool reconcile: reconcile existing ENI %s IP pool", attachedENI.ENIID)
 			c.eniIPPoolReconcile(eniIPPool, attachedENI, attachedENI.ENIID)
 			// Mark action, remove this ENI from curENIs list
 			delete(curENIs.ENIIPPools, attachedENI.ENIID)
@@ -758,12 +836,11 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		}
 
 		// Add new ENI
-		log.Debugf("Reconcile and add a new ENI %s", attachedENI)
+		log.Debugf("IP pool reconcile: add a new ENI %s to the data store", attachedENI)
 		err = c.setupENI(attachedENI.ENIID, attachedENI)
 		if err != nil {
 			log.Errorf("IP pool reconcile: Failed to setup ENI %s network: %v", attachedENI.ENIID, err)
 			ipamdErrInc("eniReconcileAdd", err)
-			// Continue if having trouble with ONLY 1 ENI, instead of bailout here?
 			continue
 		}
 		reconcileCnt.With(prometheus.Labels{"fn": "eniReconcileAdd"}).Inc()
@@ -771,8 +848,8 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 
 	// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
 	for eni := range curENIs.ENIIPPools {
-		log.Infof("Reconcile and delete detached ENI %s", eni)
-		err = c.dataStore.DeleteENI(eni)
+		log.Infof("IP pool reconcile: delete detached ENI %s from data store", eni)
+		err = c.dataStore.RemoveENIFromDataStore(eni)
 		if err != nil {
 			log.Errorf("IP pool reconcile: Failed to delete ENI during reconcile: %v", err)
 			ipamdErrInc("eniReconcileDel", err)
@@ -780,27 +857,29 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		}
 		reconcileCnt.With(prometheus.Labels{"fn": "eniReconcileDel"}).Inc()
 	}
-	log.Debug("Successfully Reconciled ENI/IP pool")
+	log.Debug("IP pool reconcile: successfully Reconciled ENI/IP pool")
 	c.lastNodeIPPoolAction = curTime
 }
 
+// eniIPPoolReconcile Adds IPs to the store that are present on the ENI, and removes IPs from the store that are not
+// present on the ENI.
 func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInfo, attachedENI awsutils.ENIMetadata, eni string) {
 	for _, localIP := range attachedENI.LocalIPv4s {
 		if localIP == c.primaryIP[eni] {
-			log.Debugf("Reconcile and skip primary IP %s on ENI %s", localIP, eni)
+			log.Debugf("IP pool reconcile: reconcile and skip primary IP %s on ENI %s", localIP, eni)
 			continue
 		}
 
-		err := c.dataStore.AddENIIPv4Address(eni, localIP)
+		err := c.dataStore.AddIPv4AddressToStore(eni, localIP)
 		if err != nil && err.Error() == datastore.DuplicateIPError {
-			log.Debugf("Reconciled IP %s on ENI %s", localIP, eni)
+			log.Debugf("IP pool reconcile: IP %s on ENI %s already present in store", localIP, eni)
 			// mark action = remove it from eniPool
 			delete(ipPool, localIP)
 			continue
 		}
 
 		if err != nil {
-			log.Errorf("Failed to reconcile IP %s on ENI %s", localIP, eni)
+			log.Errorf("IP pool reconcile: failed to reconcile IP %s on ENI %s", localIP, eni)
 			ipamdErrInc("ipReconcileAdd", err)
 			// continue instead of bailout due to one ip
 			continue
@@ -810,10 +889,10 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 
 	// Sweep phase, delete remaining IPs
 	for existingIP := range ipPool {
-		log.Debugf("Reconcile and delete IP %s on ENI %s", existingIP, eni)
-		err := c.dataStore.DelENIIPv4Address(eni, existingIP)
+		log.Debugf("IP pool reconcile: reconcile and delete IP %s on ENI %s", existingIP, eni)
+		err := c.dataStore.DelIPv4AddressFromStore(eni, existingIP)
 		if err != nil {
-			log.Errorf("Failed to reconcile and delete IP %s on ENI %s, %v", existingIP, eni, err)
+			log.Errorf("IP pool reconcile: failed to reconcile and delete IP %s on ENI %s, %v", existingIP, eni, err)
 			ipamdErrInc("ipReconcileDel", err)
 			// continue instead of bailout due to one ip
 			continue
@@ -850,17 +929,25 @@ func getWarmIPTarget() int {
 	return noWarmIPTarget
 }
 
-func (c *IPAMContext) getCurWarmIPTarget() (int64, bool) {
+func (c *IPAMContext) ipTargetState() (short int, over int, enabled bool) {
 	target := getWarmIPTarget()
 	if target == noWarmIPTarget {
 		// there is no WARM_IP_TARGET defined, fallback to use all IP addresses on ENI
-		return int64(target), false
+		return 0, 0, false
 	}
 
-	total, used := c.dataStore.GetStats()
-	curTarget := int64(target) - int64(total-used)
-	log.Debugf("Current warm IP stats: target: %d, total: %d, used: %d, curTarget: %d", target, total, used, curTarget)
-	return curTarget, true
+	total, assigned := c.dataStore.GetStats()
+	available := total - assigned
+
+	// short is greater than 0 when we have fewer available IPs than the warm IP target
+	short = max(target - available, 0)
+
+	// over is the number of available IPs we have beyond the warm IP target
+	over = max(available - target, 0)
+
+
+	log.Debugf("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, short: %d, over %d", target, total, assigned, available, short, over)
+	return short, over, true
 }
 
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
@@ -870,4 +957,20 @@ func GetConfigForDebug() map[string]interface{} {
 		envWarmENITarget:    getWarmENITarget(),
 		envCustomNetworkCfg: UseCustomNetworkCfg(),
 	}
+}
+
+// max returns the larger of x or y.
+func max(x, y int) int {
+	if x < y {
+		return y
+	}
+	return x
+}
+
+// Max returns the larger of x or y.
+func min(x, y int) int {
+	if y < x {
+		return y
+	}
+	return x
 }

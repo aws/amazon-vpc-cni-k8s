@@ -410,29 +410,29 @@ func TestGetCurWarmIPTarget(t *testing.T) {
 	mockContext.dataStore = datastore.NewDataStore()
 
 	os.Unsetenv("WARM_IP_TARGET")
-	_, warmIPTargetDefined := mockContext.getCurWarmIPTarget()
+	_, warmIPTargetDefined := mockContext.ipTargetState()
 	assert.False(t, warmIPTargetDefined)
 
 	os.Setenv("WARM_IP_TARGET", "5")
-	curWarmIPTarget, warmIPTargetDefined := mockContext.getCurWarmIPTarget()
+	curWarmIPTarget, warmIPTargetDefined := mockContext.ipTargetState()
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, curWarmIPTarget, int64(5))
 
 	// add 2 addresses to datastore
 	mockContext.dataStore.AddENI("eni-1", 1, true)
-	mockContext.dataStore.AddENIIPv4Address("eni-1", "1.1.1.1")
-	mockContext.dataStore.AddENIIPv4Address("eni-1", "1.1.1.2")
+	mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.1")
+	mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.2")
 
-	curWarmIPTarget, warmIPTargetDefined = mockContext.getCurWarmIPTarget()
+	curWarmIPTarget, warmIPTargetDefined = mockContext.ipTargetState()
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, curWarmIPTarget, int64(3))
 
 	// add 3 more addresses to datastore
-	mockContext.dataStore.AddENIIPv4Address("eni-1", "1.1.1.3")
-	mockContext.dataStore.AddENIIPv4Address("eni-1", "1.1.1.4")
-	mockContext.dataStore.AddENIIPv4Address("eni-1", "1.1.1.5")
+	mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.3")
+	mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.4")
+	mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.5")
 
-	curWarmIPTarget, warmIPTargetDefined = mockContext.getCurWarmIPTarget()
+	curWarmIPTarget, warmIPTargetDefined = mockContext.ipTargetState()
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, curWarmIPTarget, int64(0))
 }

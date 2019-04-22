@@ -151,8 +151,7 @@ func (d *Controller) K8SGetLocalPodIPs() ([]*K8SPodInfo, error) {
 	defer d.workerPodsLock.Unlock()
 
 	for _, pod := range d.workerPods {
-		log.Infof("K8SGetLocalPodIPs discovered local Pods: %s %s %s %s",
-			pod.Name, pod.Namespace, pod.IP, pod.UID)
+		log.Infof("K8SGetLocalPodIPs discovered local Pods: %s %s %s %s", pod.Name, pod.Namespace, pod.IP, pod.UID)
 		localPods = append(localPods, pod)
 	}
 
