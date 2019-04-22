@@ -47,6 +47,7 @@ type K8SPodInfo struct {
 	// IP is pod's ipv4 address
 	IP  string
 	UID string
+	Phase string
 }
 
 // ErrInformerNotSynced indicates that it has not synced with API server yet
@@ -151,13 +152,14 @@ func (d *Controller) K8SGetLocalPodIPs() ([]*K8SPodInfo, error) {
 	defer d.workerPodsLock.Unlock()
 
 	for _, pod := range d.workerPods {
-		log.Infof("K8SGetLocalPodIPs discovered local Pods: %s %s %s %s",
-			pod.Name, pod.Namespace, pod.IP, pod.UID)
+		log.Infof("K8SGetLocalPodIPs discovered local Pods: %s %s %s %s", pod.Name, pod.Namespace, pod.IP, pod.UID)
 		localPods = append(localPods, pod)
 	}
 
 	return localPods, nil
 }
+
+
 
 // The rest of logic/code are taken from kubernetes/client-go/examples/workqueue
 func newController(queue workqueue.RateLimitingInterface, indexer cache.Indexer, informer cache.Controller) *controller {
@@ -220,6 +222,7 @@ func (d *Controller) handlePodUpdate(key string) error {
 			Namespace: pod.GetNamespace(),
 			UID:       string(pod.GetUID()),
 			IP:        pod.Status.PodIP,
+			Phase:     string(pod.Status.Phase),
 		}
 
 		log.Infof(" Add/Update for Pod %s on my node, namespace = %s, IP = %s", podName, d.workerPods[key].Namespace, d.workerPods[key].IP)

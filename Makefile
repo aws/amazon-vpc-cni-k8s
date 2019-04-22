@@ -85,3 +85,4 @@ clean:
 	rm -f aws-k8s-agent
 	rm -f aws-cni
 	rm -f portmap
+	rm -rf tmp
