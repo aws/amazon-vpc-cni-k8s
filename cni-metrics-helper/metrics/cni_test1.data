@@ -1,0 +1,188 @@
+# HELP awscni_add_ip_req_count The number of add IP address request
+# TYPE awscni_add_ip_req_count counter
+awscni_add_ip_req_count 100
+# HELP awscni_assigned_ip_addresses The number of IP addresses assigned to pods
+# TYPE awscni_assigned_ip_addresses gauge
+awscni_assigned_ip_addresses 1
+# HELP awscni_aws_api_error_count The number of times AWS API returns an error
+# TYPE awscni_aws_api_error_count counter
+awscni_aws_api_error_count{api="DeleteNetworkInterface",error="InvalidParameterValue"} 14
+# HELP awscni_aws_api_latency_ms AWS API call latency in ms
+# TYPE awscni_aws_api_latency_ms summary
+awscni_aws_api_latency_ms{api="AssignPrivateIpAddresses",error="false",quantile="0.5"} NaN
+awscni_aws_api_latency_ms{api="AssignPrivateIpAddresses",error="false",quantile="0.9"} NaN
+awscni_aws_api_latency_ms{api="AssignPrivateIpAddresses",error="false",quantile="0.99"} NaN
+awscni_aws_api_latency_ms_sum{api="AssignPrivateIpAddresses",error="false"} 2938
+awscni_aws_api_latency_ms_count{api="AssignPrivateIpAddresses",error="false"} 10
+awscni_aws_api_latency_ms{api="AttachNetworkInterface",error="false",quantile="0.5"} NaN
+awscni_aws_api_latency_ms{api="AttachNetworkInterface",error="false",quantile="0.9"} NaN
+awscni_aws_api_latency_ms{api="AttachNetworkInterface",error="false",quantile="0.99"} NaN
+awscni_aws_api_latency_ms_sum{api="AttachNetworkInterface",error="false"} 4377
+awscni_aws_api_latency_ms_count{api="AttachNetworkInterface",error="false"} 10
+awscni_aws_api_latency_ms{api="CreateNetworkInterface",error="false",quantile="0.5"} NaN
+awscni_aws_api_latency_ms{api="CreateNetworkInterface",error="false",quantile="0.9"} NaN
+awscni_aws_api_latency_ms{api="CreateNetworkInterface",error="false",quantile="0.99"} NaN
+awscni_aws_api_latency_ms_sum{api="CreateNetworkInterface",error="false"} 1328
+awscni_aws_api_latency_ms_count{api="CreateNetworkInterface",error="false"} 10
+awscni_aws_api_latency_ms{api="CreateTags",error="false",quantile="0.5"} NaN
+awscni_aws_api_latency_ms{api="CreateTags",error="false",quantile="0.9"} NaN
+awscni_aws_api_latency_ms{api="CreateTags",error="false",quantile="0.99"} NaN
+awscni_aws_api_latency_ms_sum{api="CreateTags",error="false"} 1123
+awscni_aws_api_latency_ms_count{api="CreateTags",error="false"} 10
+awscni_aws_api_latency_ms{api="DeleteNetworkInterface",error="false",quantile="0.5"} NaN
+awscni_aws_api_latency_ms{api="DeleteNetworkInterface",error="false",quantile="0.9"} NaN
+awscni_aws_api_latency_ms{api="DeleteNetworkInterface",error="false",quantile="0.99"} NaN
+awscni_aws_api_latency_ms_sum{api="DeleteNetworkInterface",error="false"} 2364
+awscni_aws_api_latency_ms_count{api="DeleteNetworkInterface",error="false"} 9
+awscni_aws_api_latency_ms{api="DeleteNetworkInterface",error="true",quantile="0.5"} NaN
+awscni_aws_api_latency_ms{api="DeleteNetworkInterface",error="true",quantile="0.9"} NaN
+awscni_aws_api_latency_ms{api="DeleteNetworkInterface",error="true",quantile="0.99"} NaN
+awscni_aws_api_latency_ms_sum{api="DeleteNetworkInterface",error="true"} 1806
+awscni_aws_api_latency_ms_count{api="DeleteNetworkInterface",error="true"} 14
+awscni_aws_api_latency_ms{api="DescribeInstances",error="false",quantile="0.5"} NaN
+awscni_aws_api_latency_ms{api="DescribeInstances",error="false",quantile="0.9"} NaN
+awscni_aws_api_latency_ms{api="DescribeInstances",error="false",quantile="0.99"} NaN
+awscni_aws_api_latency_ms_sum{api="DescribeInstances",error="false"} 1330
+awscni_aws_api_latency_ms_count{api="DescribeInstances",error="false"} 10
+awscni_aws_api_latency_ms{api="DescribeNetworkInterfaces",error="false",quantile="0.5"} NaN
+awscni_aws_api_latency_ms{api="DescribeNetworkInterfaces",error="false",quantile="0.9"} NaN
+awscni_aws_api_latency_ms{api="DescribeNetworkInterfaces",error="false",quantile="0.99"} NaN
+awscni_aws_api_latency_ms_sum{api="DescribeNetworkInterfaces",error="false"} 2360
+awscni_aws_api_latency_ms_count{api="DescribeNetworkInterfaces",error="false"} 20
+awscni_aws_api_latency_ms{api="DetachNetworkInterface",error="false",quantile="0.5"} NaN
+awscni_aws_api_latency_ms{api="DetachNetworkInterface",error="false",quantile="0.9"} NaN
+awscni_aws_api_latency_ms{api="DetachNetworkInterface",error="false",quantile="0.99"} NaN
+awscni_aws_api_latency_ms_sum{api="DetachNetworkInterface",error="false"} 1828
+awscni_aws_api_latency_ms_count{api="DetachNetworkInterface",error="false"} 9
+awscni_aws_api_latency_ms{api="GetMetadata",error="false",quantile="0.5"} 0
+awscni_aws_api_latency_ms{api="GetMetadata",error="false",quantile="0.9"} 0
+awscni_aws_api_latency_ms{api="GetMetadata",error="false",quantile="0.99"} 1
+awscni_aws_api_latency_ms_sum{api="GetMetadata",error="false"} 4384
+awscni_aws_api_latency_ms_count{api="GetMetadata",error="false"} 82716
+awscni_aws_api_latency_ms{api="ModifyNetworkInterfaceAttribute",error="false",quantile="0.5"} NaN
+awscni_aws_api_latency_ms{api="ModifyNetworkInterfaceAttribute",error="false",quantile="0.9"} NaN
+awscni_aws_api_latency_ms{api="ModifyNetworkInterfaceAttribute",error="false",quantile="0.99"} NaN
+awscni_aws_api_latency_ms_sum{api="ModifyNetworkInterfaceAttribute",error="false"} 1551
+awscni_aws_api_latency_ms_count{api="ModifyNetworkInterfaceAttribute",error="false"} 10
+# HELP awscni_del_ip_req_count The number of delete IP address request
+# TYPE awscni_del_ip_req_count counter
+awscni_del_ip_req_count{reason="PodDeleted"} 106
+awscni_del_ip_req_count{reason="SetupNSFailed"} 2
+# HELP awscni_eni_allocated The number of ENIs allocated
+# TYPE awscni_eni_allocated gauge
+awscni_eni_allocated 2
+# HELP awscni_eni_max The maximum number of ENIs that can be attached to the instance
+# TYPE awscni_eni_max gauge
+awscni_eni_max 3
+# HELP awscni_ip_max The maximum number of IP addresses that can be allocated to the instance
+# TYPE awscni_ip_max gauge
+awscni_ip_max 15
+# HELP awscni_ipamd_action_inprogress The number of ipamd actions in progress
+# TYPE awscni_ipamd_action_inprogress gauge
+awscni_ipamd_action_inprogress{fn="decreaseIPPool"} 0
+awscni_ipamd_action_inprogress{fn="increaseIPPool"} 0
+awscni_ipamd_action_inprogress{fn="nodeIPPoolReconcile"} 0
+awscni_ipamd_action_inprogress{fn="nodeInit"} 0
+awscni_ipamd_action_inprogress{fn="retryAllocENIIP"} 0
+# HELP awscni_total_ip_addresses The total number of IP addresses
+# TYPE awscni_total_ip_addresses gauge
+awscni_total_ip_addresses 10
+# HELP go_gc_duration_seconds A summary of the GC invocation durations.
+# TYPE go_gc_duration_seconds summary
+go_gc_duration_seconds{quantile="0"} 1.7901e-05
+go_gc_duration_seconds{quantile="0.25"} 3.2781e-05
+go_gc_duration_seconds{quantile="0.5"} 5.1354e-05
+go_gc_duration_seconds{quantile="0.75"} 0.00013115
+go_gc_duration_seconds{quantile="1"} 0.005550315
+go_gc_duration_seconds_sum 0.797514698
+go_gc_duration_seconds_count 9895
+# HELP go_goroutines Number of goroutines that currently exist.
+# TYPE go_goroutines gauge
+go_goroutines 25
+# HELP go_memstats_alloc_bytes Number of bytes allocated and still in use.
+# TYPE go_memstats_alloc_bytes gauge
+go_memstats_alloc_bytes 7.710456e+06
+# HELP go_memstats_alloc_bytes_total Total number of bytes allocated, even if freed.
+# TYPE go_memstats_alloc_bytes_total counter
+go_memstats_alloc_bytes_total 1.778966304e+10
+# HELP go_memstats_buck_hash_sys_bytes Number of bytes used by the profiling bucket hash table.
+# TYPE go_memstats_buck_hash_sys_bytes gauge
+go_memstats_buck_hash_sys_bytes 1.775926e+06
+# HELP go_memstats_frees_total Total number of frees.
+# TYPE go_memstats_frees_total counter
+go_memstats_frees_total 1.80537453e+08
+# HELP go_memstats_gc_sys_bytes Number of bytes used for garbage collection system metadata.
+# TYPE go_memstats_gc_sys_bytes gauge
+go_memstats_gc_sys_bytes 712704
+# HELP go_memstats_heap_alloc_bytes Number of heap bytes allocated and still in use.
+# TYPE go_memstats_heap_alloc_bytes gauge
+go_memstats_heap_alloc_bytes 7.710456e+06
+# HELP go_memstats_heap_idle_bytes Number of heap bytes waiting to be used.
+# TYPE go_memstats_heap_idle_bytes gauge
+go_memstats_heap_idle_bytes 4.620288e+06
+# HELP go_memstats_heap_inuse_bytes Number of heap bytes that are in use.
+# TYPE go_memstats_heap_inuse_bytes gauge
+go_memstats_heap_inuse_bytes 1.0387456e+07
+# HELP go_memstats_heap_objects Number of allocated objects.
+# TYPE go_memstats_heap_objects gauge
+go_memstats_heap_objects 43550
+# HELP go_memstats_heap_released_bytes_total Total number of heap bytes released to OS.
+# TYPE go_memstats_heap_released_bytes_total counter
+go_memstats_heap_released_bytes_total 1.073152e+06
+# HELP go_memstats_heap_sys_bytes Number of heap bytes obtained from system.
+# TYPE go_memstats_heap_sys_bytes gauge
+go_memstats_heap_sys_bytes 1.5007744e+07
+# HELP go_memstats_last_gc_time_seconds Number of seconds since 1970 of last garbage collection.
+# TYPE go_memstats_last_gc_time_seconds gauge
+go_memstats_last_gc_time_seconds 1.5562085013141422e+09
+# HELP go_memstats_lookups_total Total number of pointer lookups.
+# TYPE go_memstats_lookups_total counter
+go_memstats_lookups_total 226723
+# HELP go_memstats_mallocs_total Total number of mallocs.
+# TYPE go_memstats_mallocs_total counter
+go_memstats_mallocs_total 1.80581003e+08
+# HELP go_memstats_mcache_inuse_bytes Number of bytes in use by mcache structures.
+# TYPE go_memstats_mcache_inuse_bytes gauge
+go_memstats_mcache_inuse_bytes 3472
+# HELP go_memstats_mcache_sys_bytes Number of bytes used for mcache structures obtained from system.
+# TYPE go_memstats_mcache_sys_bytes gauge
+go_memstats_mcache_sys_bytes 16384
+# HELP go_memstats_mspan_inuse_bytes Number of bytes in use by mspan structures.
+# TYPE go_memstats_mspan_inuse_bytes gauge
+go_memstats_mspan_inuse_bytes 128896
+# HELP go_memstats_mspan_sys_bytes Number of bytes used for mspan structures obtained from system.
+# TYPE go_memstats_mspan_sys_bytes gauge
+go_memstats_mspan_sys_bytes 163840
+# HELP go_memstats_next_gc_bytes Number of heap bytes when next garbage collection will take place.
+# TYPE go_memstats_next_gc_bytes gauge
+go_memstats_next_gc_bytes 1.1965008e+07
+# HELP go_memstats_other_sys_bytes Number of bytes used for other system allocations.
+# TYPE go_memstats_other_sys_bytes gauge
+go_memstats_other_sys_bytes 589762
+# HELP go_memstats_stack_inuse_bytes Number of bytes in use by the stack allocator.
+# TYPE go_memstats_stack_inuse_bytes gauge
+go_memstats_stack_inuse_bytes 720896
+# HELP go_memstats_stack_sys_bytes Number of bytes obtained from system for stack allocator.
+# TYPE go_memstats_stack_sys_bytes gauge
+go_memstats_stack_sys_bytes 720896
+# HELP go_memstats_sys_bytes Number of bytes obtained by system. Sum of all system allocations.
+# TYPE go_memstats_sys_bytes gauge
+go_memstats_sys_bytes 1.8987256e+07
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 1391.13
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds 65536
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds 10
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 3.9559168e+07
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1.5550271644e+09
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 5.1757056e+07

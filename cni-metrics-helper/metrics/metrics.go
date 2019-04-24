@@ -1,4 +1,4 @@
-// Package metrics provide common data structure and routines for converting/aggregating  prometheus metrics to cloudwatch metrics
+// Package metrics provide common data structure and routines for converting/aggregating prometheus metrics to cloudwatch metrics
 package metrics
 
 import (
@@ -17,7 +17,7 @@ import (
 )
 
 type metricMatcher func(metric *dto.Metric) bool
-type actionFuncType func(aggregatedValue *float64, sampleValue float64) error
+type actionFuncType func(aggregatedValue *float64, sampleValue float64)
 
 type metricsTarget interface {
 	grabMetricsFromTarget(target string) ([]byte, error)
@@ -59,16 +59,14 @@ func matchAny(metric *dto.Metric) bool {
 	return true
 }
 
-func metricsAdd(aggregatedValue *float64, sampleValue float64) error {
+func metricsAdd(aggregatedValue *float64, sampleValue float64) {
 	*aggregatedValue += sampleValue
-	return nil
 }
 
-func metricsMax(aggregatedValue *float64, sampleValue float64) error {
+func metricsMax(aggregatedValue *float64, sampleValue float64) {
 	if *aggregatedValue < sampleValue {
 		*aggregatedValue = sampleValue
 	}
-	return nil
 }
 
 func getMetricsFromPod(client clientset.Interface, podName string, namespace string, port int) ([]byte, error) {
@@ -144,8 +142,7 @@ func processHistogram(metric *dto.Metric, act *metricsAction) {
 			*upperBound = float64(bucket.GetUpperBound())
 			cumulativeCount := new(float64)
 			*cumulativeCount = float64(bucket.GetCumulativeCount())
-			newBucket := &bucketPoint{UpperBound: upperBound,
-				CumulativeCount: cumulativeCount}
+			newBucket := &bucketPoint{UpperBound: upperBound, CumulativeCount: cumulativeCount}
 			act.bucket.curBucket = append(act.bucket.curBucket, newBucket)
 		}
 	}
@@ -194,26 +191,22 @@ func postProcessingHistogram(convert metricsConvert) bool {
 		}
 		for i := 1; i < numOfBuckets; i++ {
 			glog.V(10).Infof("Found numOfBuckets-i:=%d, *action.bucket.curBucket[numOfBuckets-i].CumulativeCount=%f",
-				numOfBuckets-i,
-				*action.bucket.curBucket[numOfBuckets-i].CumulativeCount)
-			// delta against the  prevous bucket value
-			// e.g. diff between buckekt LE250000 and previous bucket LE125000
-			*action.bucket.curBucket[numOfBuckets-i].CumulativeCount -=
-				*action.bucket.curBucket[numOfBuckets-i-1].CumulativeCount
+				numOfBuckets-i, *action.bucket.curBucket[numOfBuckets-i].CumulativeCount)
 
+			// Delta against the previous bucket value
+			// e.g. diff between bucket LE250000 and previous bucket LE125000
+			*action.bucket.curBucket[numOfBuckets-i].CumulativeCount -= *action.bucket.curBucket[numOfBuckets-i-1].CumulativeCount
 			glog.V(10).Infof("Found numOfBuckets-i:=%d, *action.bucket.curBucket[numOfBuckets-i].CumulativeCount=%f, *action.bucket.curBucket[numOfBuckets-i-1].CumulativeCount=%f",
 				numOfBuckets-i, *action.bucket.curBucket[numOfBuckets-i].CumulativeCount, *action.bucket.curBucket[numOfBuckets-i-1].CumulativeCount)
 
-			// delta against the previous value
+			// Delta against the previous value
 			if action.bucket.lastBucket != nil {
 				glog.V(10).Infof("Found *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount=%f",
 					*action.bucket.lastBucket[numOfBuckets-i].CumulativeCount)
 				currentTotal := *action.bucket.curBucket[numOfBuckets-i].CumulativeCount
 				// Only do delta if there is no restart for metric target
-				if *action.bucket.curBucket[numOfBuckets-i].CumulativeCount >=
-					*action.bucket.lastBucket[numOfBuckets-i].CumulativeCount {
-					*action.bucket.curBucket[numOfBuckets-i].CumulativeCount -=
-						*action.bucket.lastBucket[numOfBuckets-i].CumulativeCount
+				if *action.bucket.curBucket[numOfBuckets-i].CumulativeCount >= *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount {
+					*action.bucket.curBucket[numOfBuckets-i].CumulativeCount -= *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount
 					glog.V(10).Infof("Found *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount=%f, *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount=%f",
 						*action.bucket.curBucket[numOfBuckets-i].CumulativeCount, *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount)
 				} else {
@@ -226,8 +219,7 @@ func postProcessingHistogram(convert metricsConvert) bool {
 		if action.bucket.lastBucket != nil {
 			currentTotal := *action.bucket.curBucket[0].CumulativeCount
 			// Only do delta if there is no restart for metric target
-			if *action.bucket.curBucket[0].CumulativeCount >=
-				*action.bucket.lastBucket[0].CumulativeCount {
+			if *action.bucket.curBucket[0].CumulativeCount >= *action.bucket.lastBucket[0].CumulativeCount {
 				*action.bucket.curBucket[0].CumulativeCount -= *action.bucket.lastBucket[0].CumulativeCount
 			} else {
 				resetDetected = true
@@ -297,9 +289,8 @@ func produceHistogram(act metricsAction, cw publisher.Publisher) {
 		prevUpperBound = *bucket.UpperBound
 		if *bucket.CumulativeCount != 0 {
 			glog.Infof("Produce HISTOGRAM metrics: %s, max:%f, min:%f, count: %f, sum: %f",
-				act.cwMetricName,
-				mid, mid, *bucket.CumulativeCount, mid*float64(*bucket.CumulativeCount))
-			datapoint := &cloudwatch.MetricDatum{
+				act.cwMetricName, mid, mid, *bucket.CumulativeCount, mid*float64(*bucket.CumulativeCount))
+			dataPoint := &cloudwatch.MetricDatum{
 				MetricName: aws.String(act.cwMetricName),
 				StatisticValues: &cloudwatch.StatisticSet{
 					Maximum:     aws.Float64(mid),
@@ -308,7 +299,7 @@ func produceHistogram(act metricsAction, cw publisher.Publisher) {
 					Sum:         aws.Float64(mid * float64(*bucket.CumulativeCount)),
 				},
 			}
-			cw.Publish(datapoint)
+			cw.Publish(dataPoint)
 		}
 	}
 }
@@ -327,7 +318,7 @@ func filterMetrics(originalMetrics map[string]*dto.MetricFamily,
 }
 
 func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFamily, convertDef map[string]metricsConvert, cw publisher.Publisher) {
-	// TODO the following will be changed to integate with cloudwatch publisher
+	// TODO: The following will be changed to integrate with CloudWatch publisher
 	for key, family := range families {
 		convertMetrics := convertDef[key]
 
@@ -337,32 +328,32 @@ func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFa
 			case dto.MetricType_COUNTER:
 				glog.Infof("Produce COUNTER metrics: %s, value: %f", action.cwMetricName, action.data.curSingleDataPoint)
 				if t.submitCloudWatch() {
-					datapoint := &cloudwatch.MetricDatum{
+					dataPoint := &cloudwatch.MetricDatum{
 						MetricName: aws.String(action.cwMetricName),
 						Unit:       aws.String(cloudwatch.StandardUnitCount),
 						Value:      aws.Float64(action.data.curSingleDataPoint),
 					}
-					cw.Publish(datapoint)
+					cw.Publish(dataPoint)
 				}
 			case dto.MetricType_GAUGE:
 				glog.Infof("Produce GAUGE metrics: %s, value: %f", action.cwMetricName, action.data.curSingleDataPoint)
 				if t.submitCloudWatch() {
-					datapoint := &cloudwatch.MetricDatum{
+					dataPoint := &cloudwatch.MetricDatum{
 						MetricName: aws.String(action.cwMetricName),
 						Unit:       aws.String(cloudwatch.StandardUnitCount),
 						Value:      aws.Float64(action.data.curSingleDataPoint),
 					}
-					cw.Publish(datapoint)
+					cw.Publish(dataPoint)
 				}
 			case dto.MetricType_SUMMARY:
-				glog.Infof("Produce PENCENTILE metrics: %s, value: %f", action.cwMetricName, action.data.curSingleDataPoint)
+				glog.Infof("Produce PERCENTILE metrics: %s, value: %f", action.cwMetricName, action.data.curSingleDataPoint)
 				if t.submitCloudWatch() {
-					datapoint := &cloudwatch.MetricDatum{
+					dataPoint := &cloudwatch.MetricDatum{
 						MetricName: aws.String(action.cwMetricName),
 						Unit:       aws.String(cloudwatch.StandardUnitCount),
 						Value:      aws.Float64(action.data.curSingleDataPoint),
 					}
-					cw.Publish(datapoint)
+					cw.Publish(dataPoint)
 				}
 			case dto.MetricType_HISTOGRAM:
 				if t.submitCloudWatch() {
@@ -374,7 +365,6 @@ func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFa
 }
 
 func resetMetrics(interestingMetrics map[string]metricsConvert) {
-
 	for _, convert := range interestingMetrics {
 		for _, act := range convert.actions {
 			if act.data != nil {
@@ -411,13 +401,13 @@ func metricsListGrabAggregateConvert(t metricsTarget) (map[string]*dto.MetricFam
 		origFamilies, err := parser.TextToMetricFamilies(bytes.NewReader(rawOutput))
 
 		if err != nil {
-			glog.Warning("Failed to parse metrics: %v", err)
+			glog.Warning("Failed to parse metrics:", err)
 			return nil, nil, true, err
 		}
 
 		families, err = filterMetrics(origFamilies, interestingMetrics)
 		if err != nil {
-			glog.Warning("failed to filter metrics: %v", err)
+			glog.Warning("Failed to filter metrics:", err)
 			return nil, nil, true, err
 		}
 
@@ -441,18 +431,14 @@ func metricsListGrabAggregateConvert(t metricsTarget) (map[string]*dto.MetricFam
 	return families, interestingMetrics, resetDetected, nil
 }
 
-// Hdlr grabs metrics from target, aggregates the metrics and convert them into cloudwatch metrics
-func Hdlr(t metricsTarget) error {
-
+// Handler grabs metrics from target, aggregates the metrics and convert them into cloudwatch metrics
+func Handler(t metricsTarget) {
 	families, interestingMetrics, resetDetected, err := metricsListGrabAggregateConvert(t)
 
 	if err != nil || resetDetected {
 		glog.Info("Skipping 1st poll after reset, error:", err)
-		return nil
 	}
 
 	cw := t.getCWContext()
 	produceCloudWatchMetrics(t, families, interestingMetrics, cw)
-
-	return nil
 }

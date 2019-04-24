@@ -25,18 +25,17 @@ type options struct {
 }
 
 func main() {
-
 	options := &options{}
 	flags := pflag.NewFlagSet("", pflag.ExitOnError)
-	// add glog flags
+	// Add glog flags
 	flags.AddGoFlagSet(flag.CommandLine)
-	flags.Lookup("logtostderr").Value.Set("true")
+	_ = flags.Lookup("logtostderr").Value.Set("true")
 	flags.Lookup("logtostderr").DefValue = "true"
 	flags.Lookup("logtostderr").NoOptDefVal = "true"
 	flags.BoolVar(&options.submitCW, "cloudwatch", true, "a bool")
 
 	flags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
+		_, _ = fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
 		flags.PrintDefaults()
 	}
 
@@ -45,7 +44,10 @@ func main() {
 		glog.Fatalf("Error on parsing parameters: %s", err)
 	}
 
-	flag.CommandLine.Parse([]string{})
+	err = flag.CommandLine.Parse([]string{})
+	if err != nil {
+		glog.Fatalf("Error on parsing commandline: %s", err)
+	}
 
 	if options.help {
 		flags.Usage()
@@ -64,7 +66,7 @@ func main() {
 
 	glog.Infof("Starting CNIMetricsHelper, cloudwatch: %v...", options.submitCW)
 
-	kubeClient, err := k8sapi.CreateKubeClient("", "")
+	kubeClient, err := k8sapi.CreateKubeClient()
 	if err != nil {
 		glog.Errorf("Failed to create client: %v", err)
 		os.Exit(1)
@@ -95,7 +97,6 @@ func main() {
 	var pullInterval = 30 // seconds
 	for range time.Tick(time.Duration(pullInterval) * time.Second) {
 		glog.Info("Collecting metrics ...")
-
-		metrics.Hdlr(cniMetric)
+		metrics.Handler(cniMetric)
 	}
 }

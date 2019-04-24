@@ -30,7 +30,7 @@ func TestGetClusterID(t *testing.T) {
 	mockEC2ServiceClient := mockEC2ServiceClient{
 		tags: &ec2.DescribeTagsOutput{
 			Tags: []*ec2.TagDescription{
-				&ec2.TagDescription{
+				{
 					Value: aws.String("TEST_CLUSTER_ID"),
 				},
 			},
@@ -42,7 +42,7 @@ func TestGetClusterID(t *testing.T) {
 		instanceIdentityDocument: testInstanceIdentityDocument,
 	}
 
-	clusterID, err := ec2wrap.GetClusterID()
+	clusterID, err := ec2wrap.GetClusterTag(clusterIDTag)
 	assert.NoError(t, err)
 	assert.NotNil(t, clusterID)
 }
@@ -57,7 +57,7 @@ func TestGetClusterIDWithError(t *testing.T) {
 		instanceIdentityDocument: testInstanceIdentityDocument,
 	}
 
-	clusterID, err := ec2wrap.GetClusterID()
+	clusterID, err := ec2wrap.GetClusterTag(clusterIDTag)
 	assert.Error(t, err)
 	assert.Empty(t, clusterID)
 }
@@ -74,7 +74,7 @@ func TestGetClusterIDWithInsufficientTags(t *testing.T) {
 		instanceIdentityDocument: testInstanceIdentityDocument,
 	}
 
-	clusterID, err := ec2wrap.GetClusterID()
+	clusterID, err := ec2wrap.GetClusterTag(clusterIDTag)
 	assert.Error(t, err)
 	assert.Empty(t, clusterID)
 }

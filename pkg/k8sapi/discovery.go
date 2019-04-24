@@ -109,7 +109,7 @@ func (d *Controller) GetCNIPods() []string {
 	d.cniPodsLock.Lock()
 	defer d.cniPodsLock.Unlock()
 
-	for k, _ := range d.cniPods {
+	for k := range d.cniPods {
 		cniPods = append(cniPods, k)
 	}
 

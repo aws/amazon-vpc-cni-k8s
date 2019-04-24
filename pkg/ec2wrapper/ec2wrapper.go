@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/golang/glog"
 
 	"github.com/pkg/errors"
 )
@@ -28,8 +29,7 @@ type EC2Wrapper struct {
 
 // New returns an instance of the EC2 wrapper
 func NewMetricsClient() (*EC2Wrapper, error) {
-	session := session.Must(session.NewSession())
-
+	metricsSession := session.Must(session.NewSession())
 	ec2MetadataClient := ec2metadatawrapper.New(nil)
 
 	instanceIdentityDocument, err := ec2MetadataClient.GetInstanceIdentityDocument()
@@ -37,7 +37,7 @@ func NewMetricsClient() (*EC2Wrapper, error) {
 		return &EC2Wrapper{}, err
 	}
 
-	ec2ServiceClient := ec2.New(session, aws.NewConfig().WithMaxRetries(maxRetries).WithRegion(instanceIdentityDocument.Region))
+	ec2ServiceClient := ec2.New(metricsSession, aws.NewConfig().WithMaxRetries(maxRetries).WithRegion(instanceIdentityDocument.Region))
 
 	return &EC2Wrapper{
 		ec2ServiceClient:         ec2ServiceClient,
@@ -45,8 +45,8 @@ func NewMetricsClient() (*EC2Wrapper, error) {
 	}, nil
 }
 
-// GetClusterID is used to retrieve the CLUSTER_ID from the ec2 instance tags
-func (e *EC2Wrapper) GetClusterID() (string, error) {
+// GetClusterTag is used to retrieve a tag from the ec2 instance
+func (e *EC2Wrapper) GetClusterTag(tagKey string) (string, error) {
 	input := ec2.DescribeTagsInput{
 		Filters: []*ec2.Filter{
 			{
@@ -57,19 +57,20 @@ func (e *EC2Wrapper) GetClusterID() (string, error) {
 			}, {
 				Name: aws.String(resourceKey),
 				Values: []*string{
-					aws.String(clusterIDTag),
+					aws.String(tagKey),
 				},
 			},
 		},
 	}
 
+	glog.Info("Calling DescribeTags with key ", tagKey)
 	results, err := e.ec2ServiceClient.DescribeTags(&input)
 	if err != nil {
-		return "", errors.Wrap(err, "get cluster-id: unable to obtain ec2 instance tags")
+		return "", errors.Wrap(err, "GetClusterTag: Unable to obtain EC2 instance tags")
 	}
 
 	if len(results.Tags) < 1 {
-		return "", errors.Errorf("get cluster-id: insufficient number of tags: %d", len(results.Tags))
+		return "", errors.Errorf("GetClusterTag: No tag matching key: %s", tagKey)
 	}
 
 	return aws.StringValue(results.Tags[0].Value), nil

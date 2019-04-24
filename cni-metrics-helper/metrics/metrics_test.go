@@ -44,70 +44,35 @@ func (target *testMetricsTarget) submitCloudWatch() bool {
 }
 
 func TestAPIServerMetric(t *testing.T) {
-	testTarget := newTestMetricsTarget("apiserver_test1.data", InterestingAPIServerMetrics)
+	testTarget := newTestMetricsTarget("cni_test1.data", InterestingCNIMetrics)
 
 	_, _, resetDetected, err := metricsListGrabAggregateConvert(testTarget)
 	assert.NoError(t, err)
 	assert.True(t, resetDetected)
 
-	actions := InterestingAPIServerMetrics["apiserver_request_count"].actions
-	// verify apiserverRequestCount aggregated value
-	assert.Equal(t, actions[0].data.curSingleDataPoint, 2.567083e+06)
-	// verify apiserverRequestErrCount aggegated value
-	assert.Equal(t, actions[1].data.curSingleDataPoint, float64(7394))
+	actions := InterestingCNIMetrics["awscni_assigned_ip_addresses"].actions
+	// verify awscni_assigned_ip_addresses value
+	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
 
-	actions = InterestingAPIServerMetrics["apiserver_request_latencies_summary"].actions
-	// verify apiserverLatencyP99x value
-	assert.Equal(t, actions[0].data.curSingleDataPoint, float64(19907))
+	actions = InterestingCNIMetrics["awscni_total_ip_addresses"].actions
+	// verify awscni_total_ip_addresses value
+	assert.Equal(t, 10.0, actions[0].data.curSingleDataPoint)
 
-	actions = InterestingAPIServerMetrics["apiserver_request_latencies"].actions
+	actions = InterestingCNIMetrics["awscni_aws_api_error_count"].actions
+	// verify awscni_aws_api_error_count value
+	assert.Equal(t, 14.0, actions[0].data.curSingleDataPoint)
+
+	actions = InterestingCNIMetrics["awscni_eni_allocated"].actions
+	// verify awscni_eni_allocated value
+	assert.Equal(t, 2.0, actions[0].data.curSingleDataPoint)
+
+	actions = InterestingCNIMetrics["awscni_add_ip_req_count"].actions
+	// verify awscni_add_ip_req_count value
+	assert.Equal(t, 100.0, actions[0].data.curSingleDataPoint)
+
+	actions = InterestingCNIMetrics["awscni_aws_api_latency_ms"].actions
 	// verify apiserver_request_latencies_bucket
-	assert.Equal(t, *actions[0].bucket.curBucket[0].CumulativeCount, 2.389851e+06)
-
-	// 2nd time  which generate diff for counter/histogram/percentile
-	testTarget = newTestMetricsTarget("apiserver_test2.data", InterestingAPIServerMetrics)
-	_, _, resetDetected, err = metricsListGrabAggregateConvert(testTarget)
-	assert.NoError(t, err)
-	assert.False(t, resetDetected)
-
-	actions = InterestingAPIServerMetrics["apiserver_request_count"].actions
-	// verify apiserverRequestCount aggregated value
-	assert.Equal(t, actions[0].data.curSingleDataPoint, float64(162))
-	// verify apiserverRequestErrCount aggegated value
-	assert.Equal(t, actions[1].data.curSingleDataPoint, float64(0))
-
-	actions = InterestingAPIServerMetrics["apiserver_request_latencies_summary"].actions
-	// verify apiserverLatencyP99x value
-	assert.Equal(t, actions[0].data.curSingleDataPoint, float64(19907))
-
-	actions = InterestingAPIServerMetrics["apiserver_request_latencies"].actions
-	// verify apiserver_request_latencies_bucket
-	assert.Equal(t, *actions[0].bucket.curBucket[0].CumulativeCount, float64(160))
-
-	// test reset
-	testTarget = newTestMetricsTarget("apiserver_test1.data", InterestingAPIServerMetrics)
-
-	_, _, resetDetected, err = metricsListGrabAggregateConvert(testTarget)
-	assert.NoError(t, err)
-	assert.True(t, resetDetected)
-
-}
-
-func TestKubeMetric(t *testing.T) {
-	testTarget := newTestMetricsTarget("kube_test.data", InterestingKubeStateMetrics)
-
-	_, _, _, err := metricsListGrabAggregateConvert(testTarget)
-	assert.NoError(t, err)
-
-	actions := InterestingKubeStateMetrics["kube_node_info"].actions
-	assert.Equal(t, actions[0].data.curSingleDataPoint, float64(11))
-
-	actions = InterestingKubeStateMetrics["kube_endpoint_info"].actions
-	assert.Equal(t, actions[0].data.curSingleDataPoint, float64(3))
-
-	actions = InterestingKubeStateMetrics["kube_pod_info"].actions
-	assert.Equal(t, actions[0].data.curSingleDataPoint, float64(26))
-
-	actions = InterestingKubeStateMetrics["kube_service_info"].actions
-	assert.Equal(t, actions[0].data.curSingleDataPoint, float64(2))
+	assert.Equal(t, "awsAPILatency", actions[0].cwMetricName)
+	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
+	assert.Equal(t, 0.0, actions[0].data.lastSingleDataPoint)
 }

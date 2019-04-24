@@ -1,4 +1,4 @@
-// Package metrics handles the processing of all metrics. This file handles  metrics for kube-state-metrics
+// Package metrics handles the processing of all metrics. This file handles metrics for kube-state-metrics
 package metrics
 
 import (
@@ -12,74 +12,88 @@ import (
 
 // InterestingCNIMetrics defines metrics parsing definition for kube-state-metrics
 var InterestingCNIMetrics = map[string]metricsConvert{
-	"assigned_ip_addresses": {
+	"awscni_assigned_ip_addresses": {
 		actions: []metricsAction{
 			{cwMetricName: "assignIPAddresses",
 				matchFunc:  matchAny,
 				actionFunc: metricsAdd,
 				data:       &dataPoints{}}}},
-	"total_ip_addresses": {
+	"awscni_total_ip_addresses": {
 		actions: []metricsAction{
 			{cwMetricName: "totalIPAddresses",
 				matchFunc:  matchAny,
 				actionFunc: metricsAdd,
 				data:       &dataPoints{}}}},
-	"eni_allocated": {
+	"awscni_eni_allocated": {
 		actions: []metricsAction{
 			{cwMetricName: "eniAllocated",
 				matchFunc:  matchAny,
 				actionFunc: metricsAdd,
 				data:       &dataPoints{}}}},
-	"eni_max": {
+	"awscni_eni_max": {
 		actions: []metricsAction{
 			{cwMetricName: "eniMaxAvailable",
 				matchFunc:  matchAny,
 				actionFunc: metricsAdd,
 				data:       &dataPoints{}}}},
-	"ip_max": {
+	"awscni_ip_max": {
 		actions: []metricsAction{
 			{cwMetricName: "maxIPAddresses",
 				matchFunc:  matchAny,
 				actionFunc: metricsAdd,
 				data:       &dataPoints{}}}},
-	"aws_api_lantency_ms": {
+	"awscni_aws_api_latency_ms": {
 		actions: []metricsAction{
 			{cwMetricName: "awsAPILatency",
 				matchFunc:  matchAny,
 				actionFunc: metricsMax,
 				data:       &dataPoints{},
 				logToFile:  true}}},
-	"aws_api_error_count": {
+	"awscni_aws_api_error_count": {
 		actions: []metricsAction{
 			{cwMetricName: "awsAPIErr",
 				matchFunc:  matchAny,
 				actionFunc: metricsAdd,
 				data:       &dataPoints{},
 				logToFile:  true}}},
-	"aws_utils_error_count": {
+	"awscni_aws_utils_error_count": {
 		actions: []metricsAction{
 			{cwMetricName: "awsUtilErr",
 				matchFunc:  matchAny,
 				actionFunc: metricsAdd,
 				data:       &dataPoints{},
 				logToFile:  true}}},
-	"ipamd_error_count": {
+	"awscni_ipamd_error_count": {
 		actions: []metricsAction{
 			{cwMetricName: "ipamdErr",
 				matchFunc:  matchAny,
 				actionFunc: metricsAdd,
 				data:       &dataPoints{},
 				logToFile:  true}}},
-	"ipamd_action_inprogress": {
+	"awscni_ipamd_action_inprogress": {
 		actions: []metricsAction{
 			{cwMetricName: "ipamdActionInProgress",
 				matchFunc:  matchAny,
 				actionFunc: metricsAdd,
 				data:       &dataPoints{},
 				logToFile:  true}}},
-	"reconcile_count": {
+	"awscni_reconcile_count": {
 		actions: []metricsAction{
 			{cwMetricName: "reconcileCount",
+				matchFunc:  matchAny,
+				actionFunc: metricsAdd,
+				data:       &dataPoints{},
+				logToFile:  true}}},
+	"awscni_add_ip_req_count": {
+		actions: []metricsAction{
+			{cwMetricName: "addReqCount",
+				matchFunc:  matchAny,
+				actionFunc: metricsAdd,
+				data:       &dataPoints{},
+				logToFile:  true}}},
+	"awscni_del_ip_req_count": {
+		actions: []metricsAction{
+			{cwMetricName: "delReqCount",
 				matchFunc:  matchAny,
 				actionFunc: metricsAdd,
 				data:       &dataPoints{},
@@ -112,7 +126,7 @@ func (t *CNIMetricsTarget) grabMetricsFromTarget(cniPod string) ([]byte, error) 
 	glog.Info("Grabbing metrics from CNI ", cniPod)
 	output, err := getMetricsFromPod(t.kubeClient, cniPod, metav1.NamespaceSystem, 61678)
 	if err != nil {
-		glog.Errorf("Failed to grab CNI endpoint: %v", err)
+		glog.Errorf("grabMetricsFromTarget: Failed to grab CNI endpoint: %v", err)
 		return nil, err
 	}
 
