@@ -33,14 +33,14 @@ import (
 )
 
 const (
-	containerID  = "test-container"
-	netNS        = "/proc/ns/1234"
-	ifName       = "eth0"
-	cniVersion   = "1.0"
-	cniName      = "aws-cni"
-	cniType      = "aws-cni"
-	ipAddr       = "10.0.1.15"
-	devNum       = 4
+	containerID = "test-container"
+	netNS       = "/proc/ns/1234"
+	ifName      = "eth0"
+	cniVersion  = "1.0"
+	cniName     = "aws-cni"
+	cniType     = "aws-cni"
+	ipAddr      = "10.0.1.15"
+	devNum      = 4
 )
 
 func setup(t *testing.T) (*gomock.Controller,

@@ -142,7 +142,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
 			K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 			K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
-			IfName: args.IfName})
+			IfName:                     args.IfName})
 
 	if err != nil {
 		log.Errorf("Error received from AddNetwork grpc call for pod %s namespace %s container %s: %v",

@@ -22,9 +22,9 @@ import (
 	"time"
 
 	log "github.com/cihub/seelog"
+	set "github.com/deckarep/golang-set"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	set "github.com/deckarep/golang-set"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -47,7 +47,7 @@ const (
 	maxRetryCheckENI            = 5
 	eniAttachTime               = 10 * time.Second
 	nodeIPPoolReconcileInterval = 60 * time.Second
-	decreaseIPPoolInterval = 30 * time.Second
+	decreaseIPPoolInterval      = 30 * time.Second
 	maxK8SRetries               = 12
 	retryK8SInterval            = 5 * time.Second
 
@@ -159,7 +159,7 @@ type IPAMContext struct {
 	maxENIs              int
 	primaryIP            map[string]string
 	lastNodeIPPoolAction time.Time
-	lastDecreaseIPPool time.Time
+	lastDecreaseIPPool   time.Time
 }
 
 func prometheusRegister() {
@@ -940,11 +940,10 @@ func (c *IPAMContext) ipTargetState() (short int, over int, enabled bool) {
 	available := total - assigned
 
 	// short is greater than 0 when we have fewer available IPs than the warm IP target
-	short = max(target - available, 0)
+	short = max(target-available, 0)
 
 	// over is the number of available IPs we have beyond the warm IP target
-	over = max(available - target, 0)
-
+	over = max(available-target, 0)
 
 	log.Debugf("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, short: %d, over %d", target, total, assigned, available, short, over)
 	return short, over, true
