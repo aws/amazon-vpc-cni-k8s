@@ -12,7 +12,7 @@
 # language governing permissions and limitations under the License.
 #
 
-.PHONY: build-linux clean docker docker-build lint unit-test vet download-portmap
+.PHONY: build-linux clean docker docker-build lint unit-test vet download-portmap build-docker-test
 
 IMAGE   ?= amazon/amazon-k8s-cni
 VERSION ?= $(shell git describe --tags --always --dirty)
@@ -57,11 +57,12 @@ unit-test:
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/eniconfig/...
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./ipamd/...
 
-docker-unit-test:
-	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
-		--workdir=/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
-		--env GOPATH=/usr/src/app \
-		golang:1.10 make unit-test
+build-docker-test:
+	@docker build -f scripts/dockerfiles/Dockerfile.test -t amazon-k8s-cni-test:latest .
+
+docker-unit-test: build-docker-test
+	docker run -e GO111MODULE=on \
+		amazon-k8s-cni-test:latest make unit-test
 
 # golint
 # To install: go get -u golang.org/x/lint/golint
@@ -74,12 +75,13 @@ lint:
 	golint ipamd/*.go
 	golint ipamd/*/*.go
 
-#go tool vet
+# go vet
 vet:
-	go tool vet ./pkg/awsutils
-	go tool vet ./plugins/routed-eni
-	go tool vet ./pkg/k8sapi
-	go tool vet ./pkg/networkutils
+	GOOS=linux go vet
+
+docker-vet: build-docker-test
+	docker run -e GO111MODULE=on \
+		amazon-k8s-cni-test:latest make vet
 
 clean:
 	rm -f aws-k8s-agent
