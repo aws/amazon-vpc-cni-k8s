@@ -420,17 +420,17 @@ func TestGetCurWarmIPTarget(t *testing.T) {
 
 	// add 2 addresses to datastore
 	mockContext.dataStore.AddENI("eni-1", 1, true)
-	mockContext.dataStore.AddENIIPv4Address("eni-1", "1.1.1.1")
-	mockContext.dataStore.AddENIIPv4Address("eni-1", "1.1.1.2")
+	mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.1")
+	mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.2")
 
 	curWarmIPTarget, warmIPTargetDefined = mockContext.getCurWarmIPTarget()
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, curWarmIPTarget, 3)
 
 	// add 3 more addresses to datastore
-	mockContext.dataStore.AddENIIPv4Address("eni-1", "1.1.1.3")
-	mockContext.dataStore.AddENIIPv4Address("eni-1", "1.1.1.4")
-	mockContext.dataStore.AddENIIPv4Address("eni-1", "1.1.1.5")
+	mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.3")
+	mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.4")
+	mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.5")
 
 	curWarmIPTarget, warmIPTargetDefined = mockContext.getCurWarmIPTarget()
 	assert.True(t, warmIPTargetDefined)
