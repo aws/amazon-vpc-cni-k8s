@@ -68,7 +68,7 @@ spec:
       tolerations:
       - operator: Exists
       containers:
-      - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:v1.3.3
+      - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:v1.3.4
         imagePullPolicy: Always
         ports:
         - containerPort: 61678
@@ -122,9 +122,6 @@ spec:
   group: crd.k8s.amazonaws.com
   version: v1alpha1
   names:
-    scope: Cluster
     plural: eniconfigs
     singular: eniconfig
     kind: ENIConfig
-
-
