@@ -37,7 +37,7 @@ type rootResponse struct {
 }
 
 // LoggingHandler is a object for handling http request
-type LoggingHandler struct{
+type LoggingHandler struct {
 	h http.Handler
 }
 

@@ -148,8 +148,8 @@ type IPAMContext struct {
 	dockerClient  docker.APIs
 	networkClient networkutils.NetworkAPIs
 
-	currentMaxAddrsPerENI int64
-	maxAddrsPerENI        int64
+	currentMaxAddrsPerENI int
+	maxAddrsPerENI        int
 	// maxENI indicate the maximum number of ENIs can be attached to the instance
 	// It is initialized to 0 and it is set to current number of ENIs attached
 	// when ipamd receives AttachmentLimitExceeded error
@@ -210,7 +210,7 @@ func (c *IPAMContext) nodeInit() error {
 
 	maxIPs, err := c.awsClient.GetENIipLimit()
 	if err == nil {
-		ipMax.Set(float64(maxIPs * int64(maxENIs)))
+		ipMax.Set(float64(maxIPs * maxENIs))
 	}
 	c.primaryIP = make(map[string]string)
 
@@ -376,7 +376,7 @@ func (c *IPAMContext) retryAllocENIIP() {
 		log.Debugf("Attempt again to allocate IP address for ENI :%s", eni.ID)
 		var err error
 		if warmIPTargetDefined {
-			err = c.awsClient.AllocIPAddresses(eni.ID, int64(curIPTarget))
+			err = c.awsClient.AllocIPAddresses(eni.ID, curIPTarget)
 		} else {
 			err = c.awsClient.AllocIPAddresses(eni.ID, maxIPLimit)
 		}
@@ -420,7 +420,7 @@ func (c *IPAMContext) decreaseIPPool() {
 	c.lastNodeIPPoolAction = time.Now()
 	total, used := c.dataStore.GetStats()
 	log.Debugf("Successfully decreased IP pool")
-	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 }
 
 func isAttachmentLimitExceededError(err error) bool {
@@ -492,7 +492,7 @@ func (c *IPAMContext) increaseIPPool() {
 	}
 
 	if warmIPTargetDefined {
-		err = c.awsClient.AllocIPAddresses(eni, int64(curIPTarget))
+		err = c.awsClient.AllocIPAddresses(eni, curIPTarget)
 	} else {
 		err = c.awsClient.AllocIPAddresses(eni, maxIPLimit)
 	}
@@ -518,7 +518,7 @@ func (c *IPAMContext) increaseIPPool() {
 	c.lastNodeIPPoolAction = time.Now()
 	total, used := c.dataStore.GetStats()
 	log.Debugf("Successfully increased IP pool")
-	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 }
 
 // setupENI does following:
@@ -545,7 +545,7 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) err
 		// the code here falls back to use the number of IPs discovered on the ENI.
 		// note: the number of IP discovered on the ENI at a time can be less than the number of supported IPs on
 		// an ENI, for example: ipamd has NOT allocated all IPs on the ENI yet.
-		c.currentMaxAddrsPerENI = int64(len(ec2Addrs))
+		c.currentMaxAddrsPerENI = len(ec2Addrs)
 	}
 	if c.currentMaxAddrsPerENI > c.maxAddrsPerENI {
 		c.maxAddrsPerENI = c.currentMaxAddrsPerENI
@@ -672,7 +672,7 @@ func getWarmENITarget() int {
 	return defaultWarmENITarget
 }
 
-func logPoolStats(total, used, currentMaxAddrsPerENI, maxAddrsPerENI int64) {
+func logPoolStats(total, used, currentMaxAddrsPerENI, maxAddrsPerENI int) {
 	log.Debugf("IP pool stats: total = %d, used = %d, c.currentMaxAddrsPerENI = %d, c.maxAddrsPerENI = %d",
 		total, used, currentMaxAddrsPerENI, maxAddrsPerENI)
 }
@@ -691,26 +691,26 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	// If WARM-IP-TARGET not defined fallback using number of ENIs
 	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
-	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
 	available := total - used
-	return int64(available) < c.maxAddrsPerENI*int64(warmENITarget)
+	return available < c.maxAddrsPerENI*warmENITarget
 }
 
 // nodeIPPoolTooHigh returns true if IP pool is above high threshold
 func (c *IPAMContext) nodeIPPoolTooHigh() bool {
 	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
-	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
+	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
 	available := total - used
 
 	target := getWarmIPTarget()
-	if int64(target) != noWarmIPTarget && int64(target) >= int64(available) {
+	if target != noWarmIPTarget && target >= available {
 		return false
 	}
 
-	return int64(available) >= (int64(warmENITarget)+1)*c.maxAddrsPerENI
+	return available >= (warmENITarget+1)*c.maxAddrsPerENI
 }
 
 func ipamdErrInc(fn string, err error) {
@@ -846,15 +846,15 @@ func getWarmIPTarget() int {
 	return noWarmIPTarget
 }
 
-func (c *IPAMContext) getCurWarmIPTarget() (int64, bool) {
+func (c *IPAMContext) getCurWarmIPTarget() (int, bool) {
 	target := getWarmIPTarget()
 	if target == noWarmIPTarget {
 		// there is no WARM_IP_TARGET defined, fallback to use all IP addresses on ENI
-		return int64(target), false
+		return target, false
 	}
 
 	total, used := c.dataStore.GetStats()
-	curTarget := int64(target) - int64(total-used)
+	curTarget := target - (total - used)
 	log.Debugf("Current warm IP stats: target: %d, total: %d, used: %d, curTarget: %d", target, total, used, curTarget)
 	return curTarget, true
 }
