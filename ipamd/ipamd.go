@@ -449,10 +449,6 @@ func (c *IPAMContext) increaseIPPool() {
 		return
 	}
 	if (c.maxENI > 0) && (c.maxENI == c.dataStore.GetENIs()) {
-		if c.maxENI < maxENIs {
-			errString := "desired: " + strconv.FormatInt(int64(maxENIs), 10) + "current: " + strconv.FormatInt(int64(c.maxENI), 10)
-			ipamdErrInc("unExpectedMaxENIAttached", errors.New(errString))
-		}
 		log.Debugf("Skipping increase IP pool due to max ENI already attached to the instance : %d", c.maxENI)
 		return
 	}
