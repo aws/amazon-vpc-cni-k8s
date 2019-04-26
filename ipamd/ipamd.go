@@ -405,7 +405,7 @@ func (c *IPAMContext) retryAllocENIIP() {
 func (c *IPAMContext) decreaseIPPool() {
 	ipamdActionsInprogress.WithLabelValues("decreaseIPPool").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("decreaseIPPool").Sub(float64(1))
-	eni := c.dataStore.RemoveUnusedENIFromDataStore()
+	eni := c.dataStore.RemoveUnusedENIFromStore()
 	if eni == "" {
 		log.Info("No ENI to remove, all ENIs have IPs in use")
 		return
@@ -445,11 +445,11 @@ func (c *IPAMContext) increaseIPPool() {
 	}
 
 	if err == nil && maxENIs == c.dataStore.GetENIs() {
-		log.Debugf("Skipping increase IP pool due to max ENI already attached to the instance : %d", maxENIs)
+		log.Debugf("Skipping increase IP pool due to max ENI already attached to the instance: %d", maxENIs)
 		return
 	}
 	if (c.maxENI > 0) && (c.maxENI == c.dataStore.GetENIs()) {
-		log.Debugf("Skipping increase IP pool due to max ENI already attached to the instance : %d", c.maxENI)
+		log.Debugf("Skipping increase IP pool due to max ENI already attached to the instance: %d", c.maxENI)
 		return
 	}
 
@@ -570,7 +570,7 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 			primaryIP = aws.StringValue(ec2Addr.PrivateIpAddress)
 			continue
 		}
-		err := c.dataStore.AddENIIPv4Address(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
+		err := c.dataStore.AddIPv4AddressFromStore(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
 		if err != nil && err.Error() != datastore.DuplicateIPError {
 			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store", ec2Addr.PrivateIpAddress)
 			// continue to add next address
@@ -768,7 +768,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
 	for eni := range curENIs.ENIIPPools {
 		log.Infof("Reconcile and delete detached ENI %s", eni)
-		err = c.dataStore.DeleteENI(eni)
+		err = c.dataStore.RemoveENIFromDataStore(eni)
 		if err != nil {
 			log.Errorf("IP pool reconcile: Failed to delete ENI during reconcile: %v", err)
 			ipamdErrInc("eniReconcileDel", err)
@@ -787,7 +787,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 			continue
 		}
 
-		err := c.dataStore.AddENIIPv4Address(eni, localIP)
+		err := c.dataStore.AddIPv4AddressFromStore(eni, localIP)
 		if err != nil && err.Error() == datastore.DuplicateIPError {
 			log.Debugf("Reconciled IP %s on ENI %s", localIP, eni)
 			// mark action = remove it from eniPool
@@ -807,7 +807,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 	// Sweep phase, delete remaining IPs
 	for existingIP := range ipPool {
 		log.Debugf("Reconcile and delete IP %s on ENI %s", existingIP, eni)
-		err := c.dataStore.DelENIIPv4Address(eni, existingIP)
+		err := c.dataStore.DelIPv4AddressFromStore(eni, existingIP)
 		if err != nil {
 			log.Errorf("Failed to reconcile and delete IP %s on ENI %s, %v", existingIP, eni, err)
 			ipamdErrInc("ipReconcileDel", err)
