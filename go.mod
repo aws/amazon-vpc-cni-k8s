@@ -10,6 +10,7 @@ require (
 	github.com/containernetworking/cni v0.5.2
 	github.com/coreos/go-iptables v0.4.0
 	github.com/davecgh/go-spew v1.1.1
+	github.com/deckarep/golang-set v1.7.1
 	github.com/docker/distribution v2.6.2+incompatible
 	github.com/docker/docker v1.13.1
 	github.com/docker/go-connections v0.4.0

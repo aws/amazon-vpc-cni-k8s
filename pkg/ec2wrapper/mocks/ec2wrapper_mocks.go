@@ -20,6 +20,8 @@ package mock_ec2wrapper
 import (
 	reflect "reflect"
 
+	aws "github.com/aws/aws-sdk-go/aws"
+	request "github.com/aws/aws-sdk-go/aws/request"
 	ec2 "github.com/aws/aws-sdk-go/service/ec2"
 	gomock "github.com/golang/mock/gomock"
 )
@@ -162,4 +164,22 @@ func (m *MockEC2) ModifyNetworkInterfaceAttribute(arg0 *ec2.ModifyNetworkInterfa
 // ModifyNetworkInterfaceAttribute indicates an expected call of ModifyNetworkInterfaceAttribute
 func (mr *MockEC2MockRecorder) ModifyNetworkInterfaceAttribute(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ModifyNetworkInterfaceAttribute", reflect.TypeOf((*MockEC2)(nil).ModifyNetworkInterfaceAttribute), arg0)
+}
+
+// UnassignPrivateIpAddressesWithContext mocks base method
+func (m *MockEC2) UnassignPrivateIpAddressesWithContext(arg0 aws.Context, arg1 *ec2.UnassignPrivateIpAddressesInput, arg2 ...request.Option) (*ec2.UnassignPrivateIpAddressesOutput, error) {
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "UnassignPrivateIpAddressesWithContext", varargs...)
+	ret0, _ := ret[0].(*ec2.UnassignPrivateIpAddressesOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UnassignPrivateIpAddressesWithContext indicates an expected call of UnassignPrivateIpAddressesWithContext
+func (mr *MockEC2MockRecorder) UnassignPrivateIpAddressesWithContext(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnassignPrivateIpAddressesWithContext", reflect.TypeOf((*MockEC2)(nil).UnassignPrivateIpAddressesWithContext), varargs...)
 }
