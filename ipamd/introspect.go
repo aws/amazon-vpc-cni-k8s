@@ -16,20 +16,22 @@ package ipamd
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
 
-	log "github.com/cihub/seelog"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils"
+	log "github.com/cihub/seelog"
 )
 
 const (
-	// IntrospectionPort is the port for ipamd introspection
-	IntrospectionPort = 61678
+	// introspectionAddress is listening on localhost 61679 for ipamd introspection
+	introspectionAddress = "127.0.0.1:61679"
+
+	// Environment variable to disable the introspection endpoints
+	envDisableIntrospection = "DISABLE_INTROSPECTION"
 )
 
 type rootResponse struct {
@@ -42,29 +44,33 @@ type LoggingHandler struct {
 }
 
 func (lh LoggingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Info("Handling http request", "method", r.Method, "from", r.RemoteAddr, "uri", r.RequestURI)
+	log.Info("Handling http request: ", ", method: ", r.Method, ", from: ", r.RemoteAddr, ", URI: ", r.RequestURI)
 	lh.h.ServeHTTP(w, r)
 }
 
-// SetupHTTP sets up ipamd introspection service endpoint
-func (c *IPAMContext) SetupHTTP() {
-	server := c.setupServer()
+// ServeIntrospection sets up ipamd introspection endpoints
+func (c *IPAMContext) ServeIntrospection() {
+	if disableIntrospection() {
+		log.Info("Introspection endpoints disabled")
+		return
+	}
 
+	log.Info("Serving introspection endpoints on ", introspectionAddress)
+	server := c.setupIntrospectionServer()
 	for {
 		once := sync.Once{}
-		utils.RetryWithBackoff(utils.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
-			// TODO, make this cancellable and use the passed in context; for
-			// now, not critical if this gets interrupted
+		_ = utils.RetryWithBackoff(utils.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
 			err := server.ListenAndServe()
 			once.Do(func() {
-				log.Error("Error running http api", "err", err)
+				log.Error("Error running http API: ", err)
 			})
 			return err
 		})
 	}
 }
 
-func (c *IPAMContext) setupServer() *http.Server {
+func (c *IPAMContext) setupIntrospectionServer() *http.Server {
+	// If enabled, add introspection endpoints
 	serverFunctions := map[string]func(w http.ResponseWriter, r *http.Request){
 		"/v1/enis":                      eniV1RequestHandler(c),
 		"/v1/eni-configs":               eniConfigRequestHandler(c),
@@ -81,26 +87,24 @@ func (c *IPAMContext) setupServer() *http.Server {
 	availableCommandResponse, err := json.Marshal(&availableCommands)
 
 	if err != nil {
-		log.Error("Failed to Marshal: %v", err)
+		log.Error("Failed to marshal: %v", err)
 	}
 
 	defaultHandler := func(w http.ResponseWriter, r *http.Request) {
 		logErr(w.Write(availableCommandResponse))
 	}
-
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", defaultHandler)
 	for key, fn := range serverFunctions {
 		serveMux.HandleFunc(key, fn)
 	}
-	serveMux.Handle("/metrics", promhttp.Handler())
 
 	// Log all requests and then pass through to serveMux
 	loggingServeMux := http.NewServeMux()
 	loggingServeMux.Handle("/", LoggingHandler{serveMux})
 
 	server := &http.Server{
-		Addr:         ":" + strconv.Itoa(IntrospectionPort),
+		Addr:         introspectionAddress,
 		Handler:      loggingServeMux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
@@ -112,7 +116,7 @@ func eniV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 	return func(w http.ResponseWriter, r *http.Request) {
 		responseJSON, err := json.Marshal(ipam.dataStore.GetENIInfos())
 		if err != nil {
-			log.Error("Failed to marshal ENI data: %v", err)
+			log.Errorf("Failed to marshal ENI data: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -124,7 +128,7 @@ func podV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 	return func(w http.ResponseWriter, r *http.Request) {
 		responseJSON, err := json.Marshal(ipam.dataStore.GetPodInfos())
 		if err != nil {
-			log.Error("Failed to marshal pod data: %v", err)
+			log.Errorf("Failed to marshal pod data: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -136,7 +140,7 @@ func eniConfigRequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.
 	return func(w http.ResponseWriter, r *http.Request) {
 		responseJSON, err := json.Marshal(ipam.eniConfig.Getter())
 		if err != nil {
-			log.Error("Failed to marshal ENI config: %v", err)
+			log.Errorf("Failed to marshal ENI config: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -148,7 +152,7 @@ func networkEnvV1RequestHandler() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		responseJSON, err := json.Marshal(networkutils.GetConfigForDebug())
 		if err != nil {
-			log.Error("Failed to marshal network env var data: %v", err)
+			log.Errorf("Failed to marshal network env var data: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -160,7 +164,7 @@ func ipamdEnvV1RequestHandler() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		responseJSON, err := json.Marshal(GetConfigForDebug())
 		if err != nil {
-			log.Error("Failed to marshal ipamd env var data: %v", err)
+			log.Errorf("Failed to marshal ipamd env var data: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -172,4 +176,20 @@ func logErr(_ int, err error) {
 	if err != nil {
 		log.Errorf("Write failed: %v", err)
 	}
+}
+
+// disableIntrospection returns true if we should disable the introspection
+func disableIntrospection() bool {
+	return getEnvBoolWithDefault(envDisableIntrospection, false)
+}
+
+func getEnvBoolWithDefault(envName string, def bool) bool {
+	if strValue := os.Getenv(envName); strValue != "" {
+		parsedValue, err := strconv.ParseBool(strValue)
+		if err == nil {
+			return parsedValue
+		}
+		log.Errorf("Failed to parse %s, using default `%t`: %v", envName, def, err.Error())
+	}
+	return def
 }

@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	port = "127.0.0.1:50051"
+	ipamdgRPCaddress = "127.0.0.1:50051"
 )
 
 type server struct {
@@ -91,7 +91,7 @@ func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.
 
 // RunRPCHandler handles request from gRPC
 func (c *IPAMContext) RunRPCHandler() error {
-	lis, err := net.Listen("tcp", port)
+	lis, err := net.Listen("tcp", ipamdgRPCaddress)
 	if err != nil {
 		log.Errorf("Failed to listen gRPC port: %v", err)
 		return errors.Wrap(err, "ipamd: failed to listen to gRPC port")

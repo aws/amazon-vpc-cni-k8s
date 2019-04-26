@@ -42,7 +42,6 @@ const (
 	primaryENIid     = "eni-00000000"
 	secENIid         = "eni-00000001"
 	testAttachmentID = "eni-00000000-attach"
-	eniID            = "eni-5731da78"
 	primaryMAC       = "12:ef:2a:98:e5:5a"
 	secMAC           = "12:ef:2a:98:e5:5b"
 	primaryDevice    = 0
@@ -51,10 +50,8 @@ const (
 	secSubnet        = "10.10.20.0/24"
 	ipaddr01         = "10.10.10.11"
 	ipaddr02         = "10.10.10.12"
-	ipaddr03         = "10.10.10.13"
 	ipaddr11         = "10.10.20.11"
 	ipaddr12         = "10.10.20.12"
-	ipaddr13         = "10.10.20.13"
 	vpcCIDR          = "10.10.0.0/16"
 )
 
@@ -163,12 +160,12 @@ func TestNodeInit(t *testing.T) {
 }
 
 func TestIncreaseIPPoolDefault(t *testing.T) {
-	os.Unsetenv(envCustomNetworkCfg)
+	_ = os.Unsetenv(envCustomNetworkCfg)
 	testIncreaseIPPool(t, false)
 }
 
 func TestIncreaseIPPoolCustomENI(t *testing.T) {
-	os.Setenv(envCustomNetworkCfg, "true")
+	_ = os.Setenv(envCustomNetworkCfg, "true")
 	testIncreaseIPPool(t, true)
 }
 
@@ -337,15 +334,15 @@ func TestGetWarmENITarget(t *testing.T) {
 	ctrl, _, _, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
-	os.Setenv("WARM_IP_TARGET", "5")
+	_ = os.Setenv("WARM_IP_TARGET", "5")
 	warmIPTarget := getWarmIPTarget()
 	assert.Equal(t, warmIPTarget, 5)
 
-	os.Unsetenv("WARM_IP_TARGET")
+	_ = os.Unsetenv("WARM_IP_TARGET")
 	warmIPTarget = getWarmIPTarget()
 	assert.Equal(t, warmIPTarget, noWarmIPTarget)
 
-	os.Setenv("WARM_IP_TARGET", "non-integer-string")
+	_ = os.Setenv("WARM_IP_TARGET", "non-integer-string")
 	warmIPTarget = getWarmIPTarget()
 	assert.Equal(t, warmIPTarget, noWarmIPTarget)
 }
@@ -355,32 +352,32 @@ func TestGetMaxENI(t *testing.T) {
 	defer ctrl.Finish()
 
 	// MaxENI 5 is less than upper bound of 10, so 5
-	os.Setenv("MAX_ENI", "5")
+	_ = os.Setenv("MAX_ENI", "5")
 	maxENI := getMaxENI(10)
 	assert.Equal(t, maxENI, 5)
 
 	// MaxENI 5 is greater than upper bound of 4, so 4
-	os.Setenv("MAX_ENI", "5")
+	_ = os.Setenv("MAX_ENI", "5")
 	maxENI = getMaxENI(4)
 	assert.Equal(t, maxENI, 4)
 
 	// MaxENI 0 is 0, which means disabled; so use upper bound
-	os.Setenv("MAX_ENI", "0")
+	_ = os.Setenv("MAX_ENI", "0")
 	maxENI = getMaxENI(4)
 	assert.Equal(t, maxENI, 4)
 
 	// MaxENI 1 is less than upper bound of 4, so 1.
-	os.Setenv("MAX_ENI", "1")
+	_ = os.Setenv("MAX_ENI", "1")
 	maxENI = getMaxENI(4)
 	assert.Equal(t, maxENI, 1)
 
 	// Empty MaxENI means disabled, so use upper bound
-	os.Unsetenv("MAX_ENI")
+	_ = os.Unsetenv("MAX_ENI")
 	maxENI = getMaxENI(10)
 	assert.Equal(t, maxENI, 10)
 
 	// Invalid MaxENI means disabled, so use upper bound
-	os.Setenv("MAX_ENI", "non-integer-string")
+	_ = os.Setenv("MAX_ENI", "non-integer-string")
 	maxENI = getMaxENI(10)
 	assert.Equal(t, maxENI, 10)
 }
@@ -398,20 +395,20 @@ func TestGetWarmIPTargetState(t *testing.T) {
 
 	mockContext.dataStore = datastore.NewDataStore()
 
-	os.Unsetenv("WARM_IP_TARGET")
+	_ = os.Unsetenv("WARM_IP_TARGET")
 	_, _, warmIPTargetDefined := mockContext.ipTargetState()
 	assert.False(t, warmIPTargetDefined)
 
-	os.Setenv("WARM_IP_TARGET", "5")
+	_ = os.Setenv("WARM_IP_TARGET", "5")
 	short, over, warmIPTargetDefined := mockContext.ipTargetState()
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, 5, short)
 	assert.Equal(t, 0, over)
 
 	// add 2 addresses to datastore
-	mockContext.dataStore.AddENI("eni-1", 1, true)
-	mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.1")
-	mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.2")
+	_ = mockContext.dataStore.AddENI("eni-1", 1, true)
+	_ = mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.1")
+	_ = mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.2")
 
 	short, over, warmIPTargetDefined = mockContext.ipTargetState()
 	assert.True(t, warmIPTargetDefined)
@@ -419,9 +416,9 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	assert.Equal(t, 0, over)
 
 	// add 3 more addresses to datastore
-	mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.3")
-	mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.4")
-	mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.5")
+	_ = mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.3")
+	_ = mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.4")
+	_ = mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.5")
 
 	short, over, warmIPTargetDefined = mockContext.ipTargetState()
 	assert.True(t, warmIPTargetDefined)
