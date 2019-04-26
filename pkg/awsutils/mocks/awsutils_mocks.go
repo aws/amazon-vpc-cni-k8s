@@ -1,4 +1,4 @@
-// Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -86,7 +86,7 @@ func (mr *MockAPIsMockRecorder) AllocIPAddress(arg0 interface{}) *gomock.Call {
 }
 
 // AllocIPAddresses mocks base method
-func (m *MockAPIs) AllocIPAddresses(arg0 string, arg1 int64) error {
+func (m *MockAPIs) AllocIPAddresses(arg0 string, arg1 int) error {
 	ret := m.ctrl.Call(m, "AllocIPAddresses", arg0, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
@@ -150,9 +150,9 @@ func (mr *MockAPIsMockRecorder) GetENILimit() *gomock.Call {
 }
 
 // GetENIipLimit mocks base method
-func (m *MockAPIs) GetENIipLimit() (int64, error) {
+func (m *MockAPIs) GetENIipLimit() (int, error) {
 	ret := m.ctrl.Call(m, "GetENIipLimit")
-	ret0, _ := ret[0].(int64)
+	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

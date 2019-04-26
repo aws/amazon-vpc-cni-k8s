@@ -201,7 +201,7 @@ var InstanceENIsAvailable = map[string]int{
 
 // InstanceIPsAvailable contains a mapping of instance types to the number of IPs per ENI
 // https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI
-var InstanceIPsAvailable = map[string]int64{
+var InstanceIPsAvailable = map[string]int{
 	"a1.medium":     4,
 	"a1.large":      10,
 	"a1.xlarge":     15,

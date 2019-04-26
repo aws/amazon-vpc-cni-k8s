@@ -112,7 +112,7 @@ type APIs interface {
 	AllocAllIPAddress(eniID string) error
 
 	// AllocIPAddresses allocates numIPs IP addresses on a ENI
-	AllocIPAddresses(eniID string, numIPs int64) error
+	AllocIPAddresses(eniID string, numIPs int) error
 
 	// GetVPCIPv4CIDR returns VPC's 1st CIDR
 	GetVPCIPv4CIDR() string
@@ -127,7 +127,7 @@ type APIs interface {
 	GetPrimaryENI() string
 
 	// GetENIipLimit return IP address limit per ENI based on EC2 instance type
-	GetENIipLimit() (int64, error)
+	GetENIipLimit() (int, error)
 
 	// GetENILimit returns the number of ENIs that can be attached to an instance
 	GetENILimit() (int, error)
@@ -169,7 +169,7 @@ type ENIMetadata struct {
 	MAC string
 
 	// DeviceNumber is the  device number of network interface
-	DeviceNumber int64 // 0 means it is primary interface
+	DeviceNumber int // 0 means it is primary interface
 
 	// SubnetIPv4CIDR is the ipv4 cider of network interface
 	SubnetIPv4CIDR string
@@ -466,7 +466,7 @@ func (cache *EC2InstanceMetadataCache) getIPsAndCIDR(eniMAC string) ([]string, s
 }
 
 // getENIDeviceNumber returns ENI ID, device number, error
-func (cache *EC2InstanceMetadataCache) getENIDeviceNumber(eniMAC string) (string, int64, error) {
+func (cache *EC2InstanceMetadataCache) getENIDeviceNumber(eniMAC string) (string, int, error) {
 	// get device-number
 	start := time.Now()
 	device, err := cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataDeviceNum)
@@ -497,10 +497,10 @@ func (cache *EC2InstanceMetadataCache) getENIDeviceNumber(eniMAC string) (string
 		return eni, 0, nil
 	}
 	// 0 is reserved for primary ENI, the rest of them has to +1 to avoid collision at 0
-	return eni, deviceNum + 1, nil
+	return eni, int(deviceNum + 1), nil
 }
 
-func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int64, error) {
+func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int, error) {
 	input := &ec2.DescribeInstancesInput{
 		InstanceIds: []*string{aws.String(cache.instanceID)},
 	}
@@ -535,7 +535,7 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int64, error) {
 	for freeDeviceIndex := 0; freeDeviceIndex < maxENIs; freeDeviceIndex++ {
 		if !device[freeDeviceIndex] {
 			log.Debugf("Found a free device number: %d", freeDeviceIndex)
-			return int64(freeDeviceIndex), nil
+			return freeDeviceIndex, nil
 		}
 	}
 	return 0, errors.New("awsGetFreeDeviceNumber: no available device number")
@@ -591,7 +591,7 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 	}
 
 	attachInput := &ec2.AttachNetworkInterfaceInput{
-		DeviceIndex:        aws.Int64(freeDevice),
+		DeviceIndex:        aws.Int64(int64(freeDevice)),
 		InstanceId:         aws.String(cache.instanceID),
 		NetworkInterfaceId: aws.String(eniID),
 	}
@@ -833,7 +833,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddress(eniID string) error {
 }
 
 // GetENIipLimit return IP address limit per ENI based on EC2 instance type
-func (cache *EC2InstanceMetadataCache) GetENIipLimit() (int64, error) {
+func (cache *EC2InstanceMetadataCache) GetENIipLimit() (int, error) {
 	ipLimit, ok := InstanceIPsAvailable[cache.instanceType]
 	if !ok {
 		log.Errorf("Failed to get ENI IP limit due to unknown instance type %s", cache.instanceType)
@@ -854,11 +854,11 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
 }
 
 // AllocIPAddresses allocates numIPs of IP address on an ENI
-func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int64) error {
-	var needIPs = int64(numIPs)
+func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int) error {
+	var needIPs = numIPs
 
 	ipLimit, err := cache.GetENIipLimit()
-	if err == nil && ipLimit < int64(needIPs) {
+	if err == nil && ipLimit < needIPs {
 		needIPs = ipLimit
 	}
 
@@ -895,7 +895,7 @@ func (cache *EC2InstanceMetadataCache) AllocAllIPAddress(eniID string) error {
 
 		input := &ec2.AssignPrivateIpAddressesInput{
 			NetworkInterfaceId:             aws.String(eniID),
-			SecondaryPrivateIpAddressCount: aws.Int64(ipLimit),
+			SecondaryPrivateIpAddressCount: aws.Int64(int64(ipLimit)),
 		}
 
 		for {
@@ -916,7 +916,7 @@ func (cache *EC2InstanceMetadataCache) AllocAllIPAddress(eniID string) error {
 		// for known instance type, will allocate max number ip address for that interface
 		input := &ec2.AssignPrivateIpAddressesInput{
 			NetworkInterfaceId:             aws.String(eniID),
-			SecondaryPrivateIpAddressCount: aws.Int64(ipLimit),
+			SecondaryPrivateIpAddressCount: aws.Int64(int64(ipLimit)),
 		}
 
 		start := time.Now()

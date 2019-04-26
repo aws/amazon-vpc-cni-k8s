@@ -1,4 +1,4 @@
-// Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -20,7 +20,7 @@ package mock_nswrapper
 import (
 	reflect "reflect"
 
-	"github.com/containernetworking/cni/pkg/ns"
+	ns "github.com/containernetworking/cni/pkg/ns"
 	gomock "github.com/golang/mock/gomock"
 )
 

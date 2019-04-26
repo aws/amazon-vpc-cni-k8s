@@ -344,13 +344,13 @@ func (ds *DataStore) getDeletableENI() *ENIIPPool {
 }
 
 // GetENINeedsIP finds an ENI in the datastore that needs more IP addresses allocated
-func (ds *DataStore) GetENINeedsIP(maxIPperENI int64, skipPrimary bool) *ENIIPPool {
+func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENIIPPool {
 	for _, eni := range ds.eniIPPools {
 		if skipPrimary && eni.IsPrimary {
 			log.Debugf("Skip the primary ENI for need IP check")
 			continue
 		}
-		if int64(len(eni.IPv4Addresses)) < maxIPperENI {
+		if len(eni.IPv4Addresses) < maxIPperENI {
 			log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d",
 				eni.ID, len(eni.IPv4Addresses), maxIPperENI)
 			return eni
