@@ -23,7 +23,7 @@ install:
 
 # Tests to run
 script:
-  - make build-linux
-  - make lint
-  - make vet
-  - make unit-test
+  - GO111MODULE=on make build-linux
+  - GO111MODULE=on make lint
+  - GO111MODULE=on make vet
+  - GO111MODULE=on make unit-test
