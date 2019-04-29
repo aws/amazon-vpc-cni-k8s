@@ -417,20 +417,25 @@ func (c *IPAMContext) tryUnassignIPsFromAll() {
 				continue
 			}
 
-			// Deallocate IPs from the instance if they aren't used by pods.
-			if err := c.awsClient.DeallocIPAddresses(eniID, ips); err != nil {
-				log.Debugf(fmt.Sprintf("Failed to decrease IP pool by removing IPs %v from ENI %s: %s", ips, eniID, err))
-			} else {
-				for _, unassignedIP := range ips {
-					err := c.dataStore.DelIPv4AddressFromStore(eniID, unassignedIP)
-					if err != nil {
-						log.Errorf("Failed to delete IP %s on ENI %s from datastore: %s", unassignedIP, eniID, err)
-						ipamdErrInc("decreaseIPPool", err)
-						continue
-					}
+			// Delete IPs from datastore
+			deletedIPs := []string{}
+			for _, toDelete := range ips {
+				err := c.dataStore.DelIPv4AddressFromStore(eniID, toDelete)
+				if err != nil {
+					log.Errorf("Failed to delete IP %s on ENI %s from datastore: %s", toDelete, eniID, err)
+					ipamdErrInc("decreaseIPPool", err)
+					continue
+				} else {
+					deletedIPs = append(deletedIPs, toDelete)
 				}
 			}
 
+			// Deallocate IPs from the instance if they aren't used by pods.
+			if err := c.awsClient.DeallocIPAddresses(eniID, deletedIPs); err != nil {
+				log.Debugf(fmt.Sprintf("Failed to decrease IP pool by removing IPs %v from ENI %s: %s", ips, eniID, err))
+			} else {
+				log.Debugf(fmt.Sprintf("Successfully decreased IP pool by removing IPs %v from ENI %s", ips, eniID))
+			}
 		}
 	}
 }
