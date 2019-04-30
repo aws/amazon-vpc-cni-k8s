@@ -851,8 +851,7 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
 	eniLimit, ok := InstanceENIsAvailable[cache.instanceType]
 
 	if !ok {
-		log.Errorf("Failed to get ENI limit due to unknown instance type %s", cache.instanceType)
-		return 0, errors.New(UnknownInstanceType)
+		return 0, errors.New(fmt.Sprintf("%s: %s", UnknownInstanceType, cache.instanceType))
 	}
 	return eniLimit, nil
 }
