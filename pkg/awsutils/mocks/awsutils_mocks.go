@@ -97,6 +97,18 @@ func (mr *MockAPIsMockRecorder) AllocIPAddresses(arg0, arg1 interface{}) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).AllocIPAddresses), arg0, arg1)
 }
 
+// DeallocIPAddresses mocks base method
+func (m *MockAPIs) DeallocIPAddresses(arg0 string, arg1 []string) error {
+	ret := m.ctrl.Call(m, "DeallocIPAddresses", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeallocIPAddresses indicates an expected call of DeallocIPAddresses
+func (mr *MockAPIsMockRecorder) DeallocIPAddresses(arg0, arg1 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeallocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).DeallocIPAddresses), arg0, arg1)
+}
+
 // DescribeENI mocks base method
 func (m *MockAPIs) DescribeENI(arg0 string) ([]*ec2.NetworkInterfacePrivateIpAddress, *string, error) {
 	ret := m.ctrl.Call(m, "DescribeENI", arg0)
