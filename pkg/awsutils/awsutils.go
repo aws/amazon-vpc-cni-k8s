@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"context"
 
 	"github.com/pkg/errors"
 
@@ -114,6 +115,9 @@ type APIs interface {
 	// AllocIPAddresses allocates numIPs IP addresses on a ENI
 	AllocIPAddresses(eniID string, numIPs int64) error
 
+	// DeallocIPAddresses deallocates the list of IP addresses from a ENI
+	DeallocIPAddresses(eniID string, ips []string) error
+
 	// GetVPCIPv4CIDR returns VPC's 1st CIDR
 	GetVPCIPv4CIDR() string
 
@@ -131,7 +135,7 @@ type APIs interface {
 
 	// GetENILimit returns the number of ENIs that can be attached to an instance
 	GetENILimit() (int, error)
-	
+
 	// GetPrimaryENImac returns the mac address of the primary ENI
 	GetPrimaryENImac() string
 }
@@ -930,6 +934,34 @@ func (cache *EC2InstanceMetadataCache) AllocAllIPAddress(eniID string) error {
 			log.Errorf("Failed to allocate a private IP address %v", err)
 			return errors.Wrap(err, "AllocAllIPAddress: failed to allocate a private IP address")
 		}
+	}
+	return nil
+}
+
+// DeallocIPAddresses allocates numIPs of IP address on an ENI
+func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []string) error {
+	ctx := context.Background()
+
+	log.Infof("Trying to unassign the following IPs %s from ENI %s", ips, eniID)
+
+	ipsInput := []*string{}
+	for _, ip := range ips {
+		ipsInput = append(ipsInput, aws.String(ip))
+	}
+
+	input := &ec2.UnassignPrivateIpAddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		PrivateIpAddresses: ipsInput,
+	}
+
+	start := time.Now()
+	_, err := cache.ec2SVC.UnassignPrivateIpAddressesWithContext(ctx, input)
+	awsAPILatency.WithLabelValues("UnassignPrivateIpAddressesWithContext", fmt.Sprint(err != nil)).Observe(msSince(start))
+	if err != nil {
+		awsAPIErrInc("UnassignPrivateIpAddressesWithContext", err)
+
+		log.Errorf("Failed to deallocate a private IP address %v", err)
+		return errors.Wrap(err, fmt.Sprintf("deallocate IP addresses: failed to deallocate private IP addresses: %s", ips))
 	}
 	return nil
 }

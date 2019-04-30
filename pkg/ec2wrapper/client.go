@@ -14,6 +14,8 @@
 package ec2wrapper
 
 import (
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	ec2svc "github.com/aws/aws-sdk-go/service/ec2"
 )
@@ -25,6 +27,7 @@ type EC2 interface {
 	DeleteNetworkInterface(input *ec2svc.DeleteNetworkInterfaceInput) (*ec2svc.DeleteNetworkInterfaceOutput, error)
 	DetachNetworkInterface(input *ec2svc.DetachNetworkInterfaceInput) (*ec2svc.DetachNetworkInterfaceOutput, error)
 	AssignPrivateIpAddresses(input *ec2svc.AssignPrivateIpAddressesInput) (*ec2svc.AssignPrivateIpAddressesOutput, error)
+	UnassignPrivateIpAddressesWithContext(ctx aws.Context, input *ec2svc.UnassignPrivateIpAddressesInput, opts ...request.Option) (*ec2svc.UnassignPrivateIpAddressesOutput, error)
 	DescribeNetworkInterfaces(input *ec2svc.DescribeNetworkInterfacesInput) (*ec2svc.DescribeNetworkInterfacesOutput, error)
 	ModifyNetworkInterfaceAttribute(input *ec2svc.ModifyNetworkInterfaceAttributeInput) (*ec2svc.ModifyNetworkInterfaceAttributeOutput, error)
 	CreateTags(input *ec2svc.CreateTagsInput) (*ec2svc.CreateTagsOutput, error)
