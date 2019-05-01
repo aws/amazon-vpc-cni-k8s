@@ -208,7 +208,11 @@ func (c *IPAMContext) nodeInit() error {
 
 	log.Debugf("Start node init")
 
-	instanceMaxENIs, _ := c.awsClient.GetENILimit()
+	instanceMaxENIs, err := c.awsClient.GetENILimit()
+	if err != nil {
+		log.Errorf("Failed to get ENI limit: %s")
+	}
+
 	maxENIs := getMaxENI(instanceMaxENIs)
 	if maxENIs >= 1 {
 		enisMax.Set(float64(maxENIs))
@@ -363,6 +367,10 @@ func (c *IPAMContext) updateIPPoolIfRequired() {
 	} else if c.nodeIPPoolTooHigh() {
 		c.decreaseIPPool(decreaseIPPoolInterval)
 	}
+
+	if c.shouldRemoveExtraENIs() {
+		c.tryFreeENI()
+	}
 }
 
 // decreaseIPPool runs every `interval` and attempts to return unused ENIs and IPs
@@ -379,7 +387,6 @@ func (c *IPAMContext) decreaseIPPool(interval time.Duration) {
 
 	log.Debugf("Starting to decrease IP pool")
 
-	c.tryFreeENI()
 	c.tryUnassignIPsFromAll()
 
 	c.lastDecreaseIPPool = now
@@ -391,7 +398,9 @@ func (c *IPAMContext) decreaseIPPool(interval time.Duration) {
 
 // tryFreeENI always trys to free one ENI
 func (c *IPAMContext) tryFreeENI() {
-	eni := c.dataStore.RemoveUnusedENIFromStore()
+	warmIPTarget := getWarmIPTarget()
+
+	eni := c.dataStore.RemoveUnusedENIFromStore(warmIPTarget)
 	if eni == "" {
 		log.Info("No ENI to remove, all ENIs have IPs in use")
 		return
@@ -488,7 +497,7 @@ func isAttachmentLimitExceededError(err error) bool {
 }
 
 func (c *IPAMContext) increaseIPPool() {
-	log.Debug("Start increasing IP pool size")
+	log.Debug("Starting to increase IP pool size")
 	ipamdActionsInprogress.WithLabelValues("increaseIPPool").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("increaseIPPool").Sub(float64(1))
 
@@ -763,7 +772,7 @@ func getWarmENITarget() int {
 		if input < 0 {
 			return defaultWarmENITarget
 		}
-		log.Debugf("Using WARM-ENI-TARGET %v", input)
+		log.Debugf("Using WARM_ENI_TARGET %v", input)
 		return input
 	}
 	return defaultWarmENITarget
@@ -781,29 +790,52 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 		return short > 0
 	}
 
-	// If WARM-IP-TARGET not defined fallback using number of ENIs
+	// If WARM_IP_TARGET not defined fallback using number of ENIs
 	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
 	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
 	available := total - used
-	return available < c.maxAddrsPerENI*warmENITarget
+	poolTooLow := available < c.maxAddrsPerENI*warmENITarget
+	if poolTooLow {
+		log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, warmENITarget, c.maxAddrsPerENI)
+	} else {
+		log.Debugf("IP pool is NOT too low: available (%d) >= ENI target (%d) * addrsPerENI (%d)", available, warmENITarget, c.maxAddrsPerENI)
+	}
+	return poolTooLow
 }
 
 // nodeIPPoolTooHigh returns true if IP pool is above high threshold
 func (c *IPAMContext) nodeIPPoolTooHigh() bool {
+	_, over, warmIPTargetDefined := c.ipTargetState()
+	if warmIPTargetDefined {
+		return over > 0
+	}
+
+	// We only ever report the pool being too high if WARM_IP_TARGET is set
+	return false
+}
+
+// shouldRemoveExtraENIs returns true if we should attempt to find an ENI to free.  When WARM_IP_TARGET is set, we
+// always check and do verification in getDeletableENI()
+func (c *IPAMContext) shouldRemoveExtraENIs() bool {
+	_, _, warmIPTargetDefined := c.ipTargetState()
+	if warmIPTargetDefined {
+		return true
+	}
+
 	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
 	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
 	available := total - used
-
-	target := getWarmIPTarget()
-	if target != noWarmIPTarget {
-		return target > available
+	shouldRemoveExtra := available >= (warmENITarget+1)*c.maxAddrsPerENI
+	if shouldRemoveExtra {
+		log.Debugf("It might be possible to remove extra ENIs because available (%d) > ENI target (%d) * addrsPerENI (%d): ", available, warmENITarget, c.maxAddrsPerENI)
+	} else {
+		log.Debugf("Its NOT possible to remove extra ENIs because available (%d) <= ENI target (%d) * addrsPerENI (%d): ", available, warmENITarget, c.maxAddrsPerENI)
 	}
-
-	return available >= (warmENITarget+1)*c.maxAddrsPerENI
+	return shouldRemoveExtra
 }
 
 func ipamdErrInc(fn string, err error) {
@@ -932,7 +964,7 @@ func getWarmIPTarget() int {
 
 	if input, err := strconv.Atoi(inputStr); err == nil {
 		if input >= 0 {
-			log.Debugf("Using WARM-IP-TARGET %v", input)
+			log.Debugf("Using WARM_IP_TARGET %v", input)
 			return input
 		}
 	}
