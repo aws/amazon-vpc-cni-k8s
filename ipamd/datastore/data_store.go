@@ -318,21 +318,42 @@ func (ds *DataStore) GetStats() (int, int) {
 	return ds.total, ds.assigned
 }
 
-func (ds *DataStore) getDeletableENI() *ENIIPPool {
+// IsRequiredForWarmIPTarget determines if this ENI has warm IPs that are required to fulfill whatever WARM_IP_TARGET is
+// set to.
+func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENIIPPool) bool {
+	otherWarmIPs := 0
+	for _, other := range ds.eniIPPools {
+		if other.ID != eni.ID {
+			otherWarmIPs += len(other.IPv4Addresses) - other.AssignedIPv4Addresses
+		}
+	}
+	return otherWarmIPs < warmIPTarget
+}
+
+func (ds *DataStore) getDeletableENI(warmIPTarget int) *ENIIPPool {
 	for _, eni := range ds.eniIPPools {
 		if eni.IsPrimary {
+			log.Debugf("ENI %s cannot be deleted because it is primary", eni.ID)
 			continue
 		}
 
-		if time.Now().Sub(eni.createTime) < minLifeTime {
+		if eni.isTooYoung() {
+			log.Debugf("ENI %s cannot be deleted because it is too young", eni.ID)
 			continue
 		}
 
-		if time.Now().Sub(eni.lastUnassignedTime) < addressENICoolingPeriod {
+		if eni.hasIPInCooling() {
+			log.Debugf("ENI %s cannot be deleted because has IPs in cooling", eni.ID)
 			continue
 		}
 
-		if eni.AssignedIPv4Addresses != 0 {
+		if eni.hasPods() {
+			log.Debugf("ENI %s cannot be deleted because it has pods assigned", eni.ID)
+			continue
+		}
+
+		if warmIPTarget != 0 && ds.isRequiredForWarmIPTarget(warmIPTarget, eni) {
+			log.Debugf("ENI %s cannot be deleted because it is required for WARM_IP_TARGET: %d", eni.ID, warmIPTarget)
 			continue
 		}
 
@@ -342,7 +363,22 @@ func (ds *DataStore) getDeletableENI() *ENIIPPool {
 	return nil
 }
 
-// GetENINeedsIP finds out the eni in datastore which failed to get secondary IP address
+// IsTooYoung returns true if the ENI hasn't been around long enough to be deleted.
+func (e *ENIIPPool) isTooYoung() bool {
+	return time.Now().Sub(e.createTime) < minLifeTime
+}
+
+// HasIPInCooling returns true if an IP address was unassigned recently.
+func (e *ENIIPPool) hasIPInCooling() bool {
+	return time.Now().Sub(e.lastUnassignedTime) < addressENICoolingPeriod
+}
+
+// HasPods returns true if the ENI has pods assigned to it.
+func (e *ENIIPPool) hasPods() bool {
+	return e.AssignedIPv4Addresses != 0
+}
+
+// GetENINeedsIP finds an ENI in the datastore that needs more IP addresses allocated
 func (ds *DataStore) GetENINeedsIP(maxIPperENI int64, skipPrimary bool) *ENIIPPool {
 	for _, eni := range ds.eniIPPools {
 		if skipPrimary && eni.IsPrimary {
@@ -350,7 +386,7 @@ func (ds *DataStore) GetENINeedsIP(maxIPperENI int64, skipPrimary bool) *ENIIPPo
 			continue
 		}
 		if int64(len(eni.IPv4Addresses)) < maxIPperENI {
-			log.Debugf("Found eni %s that have less IP address allocated: cur=%d, max=%d",
+			log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d",
 				eni.ID, len(eni.IPv4Addresses), maxIPperENI)
 			return eni
 		}
@@ -361,11 +397,11 @@ func (ds *DataStore) GetENINeedsIP(maxIPperENI int64, skipPrimary bool) *ENIIPPo
 // RemoveUnusedENIFromStore removes a deletable ENI from the data store.
 // It returns the name of the ENI which has been removed from the data store and needs to be deleted,
 // or empty string if no ENI could be removed.
-func (ds *DataStore) RemoveUnusedENIFromStore() string {
+func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget int) string {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	deletableENI := ds.getDeletableENI()
+	deletableENI := ds.getDeletableENI(warmIPTarget)
 	if deletableENI == nil {
 		log.Debugf("No ENI can be deleted at this time")
 		return ""
