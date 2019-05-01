@@ -1,3 +1,16 @@
+// Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"). You may
+// not use this file except in compliance with the License. A copy of the
+// License is located at
+//
+//     http://aws.amazon.com/apache2.0/
+//
+// or in the "license" file accompanying this file. This file is distributed
+// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+// express or implied. See the License for the specific language governing
+// permissions and limitations under the License.
+
 // Package metrics provide common data structure and routines for converting/aggregating prometheus metrics to cloudwatch metrics
 package metrics
 
@@ -22,7 +35,7 @@ type actionFuncType func(aggregatedValue *float64, sampleValue float64)
 type metricsTarget interface {
 	grabMetricsFromTarget(target string) ([]byte, error)
 	getInterestingMetrics() map[string]metricsConvert
-	getCWContext() publisher.Publisher
+	getCWMetricsPublisher() publisher.Publisher
 	getTargetList() []string
 	submitCloudWatch() bool
 }
@@ -318,10 +331,8 @@ func filterMetrics(originalMetrics map[string]*dto.MetricFamily,
 }
 
 func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFamily, convertDef map[string]metricsConvert, cw publisher.Publisher) {
-	// TODO: The following will be changed to integrate with CloudWatch publisher
 	for key, family := range families {
 		convertMetrics := convertDef[key]
-
 		mType := family.GetType()
 		for _, action := range convertMetrics.actions {
 			switch mType {
@@ -439,6 +450,6 @@ func Handler(t metricsTarget) {
 		glog.Info("Skipping 1st poll after reset, error:", err)
 	}
 
-	cw := t.getCWContext()
+	cw := t.getCWMetricsPublisher()
 	produceCloudWatchMetrics(t, families, interestingMetrics, cw)
 }

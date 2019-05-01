@@ -1,4 +1,17 @@
-// Package metrics handles the processing of all metrics. This file handles metrics for kube-state-metrics
+// Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"). You may
+// not use this file except in compliance with the License. A copy of the
+// License is located at
+//
+//     http://aws.amazon.com/apache2.0/
+//
+// or in the "license" file accompanying this file. This file is distributed
+// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+// express or implied. See the License for the specific language governing
+// permissions and limitations under the License.
+
+// Package metrics handles the processing of all metrics. This file handles metrics for ipamd
 package metrics
 
 import (
@@ -9,6 +22,9 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 )
+
+// Port where prometheus metrics are published.
+const metricsPort = 61678
 
 // InterestingCNIMetrics defines metrics parsing definition for kube-state-metrics
 var InterestingCNIMetrics = map[string]metricsConvert{
@@ -103,7 +119,7 @@ var InterestingCNIMetrics = map[string]metricsConvert{
 // CNIMetricsTarget defines data structure for kube-state-metric target
 type CNIMetricsTarget struct {
 	interestingMetrics  map[string]metricsConvert
-	cwClient            publisher.Publisher
+	cwMetricsPublisher  publisher.Publisher
 	kubeClient          clientset.Interface
 	cniPods             []string
 	discoveryController *k8sapi.Controller
@@ -114,7 +130,7 @@ type CNIMetricsTarget struct {
 func CNIMetricsNew(c clientset.Interface, cw publisher.Publisher, d *k8sapi.Controller, submitCW bool) *CNIMetricsTarget {
 	return &CNIMetricsTarget{
 		interestingMetrics:  InterestingCNIMetrics,
-		cwClient:            cw,
+		cwMetricsPublisher:  cw,
 		kubeClient:          c,
 		discoveryController: d,
 		submitCW:            submitCW,
@@ -122,16 +138,14 @@ func CNIMetricsNew(c clientset.Interface, cw publisher.Publisher, d *k8sapi.Cont
 }
 
 func (t *CNIMetricsTarget) grabMetricsFromTarget(cniPod string) ([]byte, error) {
-
-	glog.Info("Grabbing metrics from CNI ", cniPod)
-	output, err := getMetricsFromPod(t.kubeClient, cniPod, metav1.NamespaceSystem, 61678)
+	glog.Infof("Grabbing metrics from CNI: %s", cniPod)
+	output, err := getMetricsFromPod(t.kubeClient, cniPod, metav1.NamespaceSystem, metricsPort)
 	if err != nil {
 		glog.Errorf("grabMetricsFromTarget: Failed to grab CNI endpoint: %v", err)
 		return nil, err
 	}
 
-	glog.V(5).Infof("cni-metrics text output: %v", string(output))
-
+	glog.V(5).Infof("cni-metrics text output: %s", string(output))
 	return output, nil
 }
 
@@ -139,8 +153,8 @@ func (t *CNIMetricsTarget) getInterestingMetrics() map[string]metricsConvert {
 	return InterestingCNIMetrics
 }
 
-func (t *CNIMetricsTarget) getCWContext() publisher.Publisher {
-	return t.cwClient
+func (t *CNIMetricsTarget) getCWMetricsPublisher() publisher.Publisher {
+	return t.cwMetricsPublisher
 }
 
 func (t *CNIMetricsTarget) getTargetList() []string {
