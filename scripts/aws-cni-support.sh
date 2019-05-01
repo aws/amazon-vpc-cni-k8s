@@ -17,18 +17,18 @@
 # Set language to C to make sorting consistent among different environments.
 export LANG=C
 
-set -euo pipefail
+set -uo pipefail
 LOG_DIR="/var/log/aws-routed-eni"
 mkdir -p ${LOG_DIR}
 
-# collecting L-IPAMD introspection data
-curl http://localhost:61678/v1/enis         > ${LOG_DIR}/eni.out
-curl http://localhost:61678/v1/pods         > ${LOG_DIR}/pod.out
-curl http://localhost:61678/v1/networkutils-env-settings > ${LOG_DIR}/networkutils-env.out
-curl http://localhost:61678/v1/ipamd-env-settings > ${LOG_DIR}/ipamd-env.out
-curl http://localhost:61678/v1/eni-configs  > ${LOG_DIR}/eni-configs.out
+# Collecting L-IPAMD introspection data
+curl http://localhost:61679/v1/enis         > ${LOG_DIR}/eni.out
+curl http://localhost:61679/v1/pods         > ${LOG_DIR}/pod.out
+curl http://localhost:61679/v1/networkutils-env-settings > ${LOG_DIR}/networkutils-env.out
+curl http://localhost:61679/v1/ipamd-env-settings > ${LOG_DIR}/ipamd-env.out
+curl http://localhost:61679/v1/eni-configs  > ${LOG_DIR}/eni-configs.out
 
-# metrics
+# Metrics
 curl http://localhost:61678/metrics 2>&1 > ${LOG_DIR}/metrics.out
 
 # Collecting kubelet introspection data
