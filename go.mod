@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	github.com/Microsoft/go-winio v0.4.11
-	github.com/aws/aws-sdk-go v1.15.22
+	github.com/aws/aws-sdk-go v1.19.21
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973
 	github.com/cihub/seelog v0.0.0-20151216151435-d2c6e5aa9fbf
 	github.com/containernetworking/cni v0.5.2
@@ -27,7 +27,7 @@ require (
 	github.com/gregjones/httpcache v0.0.0-20190212212710-3befbb6ad0cc
 	github.com/hashicorp/golang-lru v0.0.0-20180201235237-0fb14efe8c47
 	github.com/imdario/mergo v0.3.6
-	github.com/jmespath/go-jmespath v0.0.0-20160202185014-0b12d6b521d8
+	github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af
 	github.com/json-iterator/go v1.1.5
 	github.com/matttproud/golang_protobuf_extensions v1.0.1
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
