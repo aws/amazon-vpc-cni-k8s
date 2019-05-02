@@ -54,3 +54,6 @@ See the [README](README.md) for additional information.
 
 ## 1.3.3
 * Feature - [Add ENI entries for a1 and c5n instance families](https://github.com/aws/amazon-vpc-cni-k8s/pull/349)
+
+## 1.3.4
+* Feature - [Add flag to disable metrics and introspection](https://github.com/aws/amazon-vpc-cni-k8s/pull/434)
