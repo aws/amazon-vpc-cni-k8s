@@ -12,7 +12,7 @@
 # language governing permissions and limitations under the License.
 #
 
-.PHONY: build-linux clean docker docker-build lint unit-test vet download-portmap build-docker-test
+.PHONY: all build-linux clean docker docker-build lint unit-test vet download-portmap build-docker-test build-metrics docker-metrics metrics-unit-test docker-metrics-test docker-vet
 
 IMAGE   ?= amazon/amazon-k8s-cni
 VERSION ?= $(shell git describe --tags --always --dirty)
@@ -42,8 +42,8 @@ build-linux:
 	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "$(LDFLAGS)"
 	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-cni -ldflags "$(LDFLAGS)" ./plugins/routed-eni/
 
-# Build docker image
-docker: 
+# Build CNI Docker image
+docker:
 	@docker build --build-arg arch="$(ARCH)" -f scripts/dockerfiles/Dockerfile.release -t "$(IMAGE):$(VERSION)" .
 	@echo "Built Docker image \"$(IMAGE):$(VERSION)\""
 
@@ -63,6 +63,27 @@ build-docker-test:
 docker-unit-test: build-docker-test
 	docker run -e GO111MODULE=on \
 		amazon-k8s-cni-test:latest make unit-test
+
+# Build metrics
+build-metrics:
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o cni-metrics-helper/cni-metrics-helper cni-metrics-helper/cni-metrics-helper.go
+
+# Build metrics Docker image
+docker-metrics:
+	@docker build --build-arg arch="$(ARCH)" -f scripts/dockerfiles/Dockerfile.metrics -t "amazon/cni-metrics-helper:$(VERSION)" .
+	@echo "Built Docker image \"amazon/cni-metrics-helper:$(VERSION)\""
+
+metrics-unit-test:
+	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./cni-metrics-helper/metrics/...
+
+docker-metrics-test:
+	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
+		--workdir=/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
+		--env GOPATH=/usr/src/app \
+		golang:1.10 make metrics-unit-test
+
+# Build both CNI and metrics helper
+all: docker docker-metrics
 
 # golint
 # To install: go get -u golang.org/x/lint/golint
@@ -86,4 +107,5 @@ docker-vet: build-docker-test
 clean:
 	rm -f aws-k8s-agent
 	rm -f aws-cni
+	rm -f cni-metrics-helper/cni-metrics-helper
 	rm -f portmap
