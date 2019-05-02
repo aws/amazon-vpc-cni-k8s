@@ -52,14 +52,14 @@ ip rule show > ${LOG_DIR}/iprule.out
 # iptables-save
 iptables-save > ${LOG_DIR}/iptables-save.out
 
-# iptables -nvL
-iptables -nvL > ${LOG_DIR}/iptables.out
+# iptables -w1 -nvL
+iptables -w1 -nvL > ${LOG_DIR}/iptables.out
 
-# iptables -nvL -t nat
-iptables -nvL -t nat > ${LOG_DIR}/iptables-nat.out
+# iptables -w1 -nvL -t nat
+iptables -w1 -nvL -t nat > ${LOG_DIR}/iptables-nat.out
 
-# iptables -nvL -t mangle
-iptables -nvL -t mangle > ${LOG_DIR}/iptables-mangle.out
+# iptables -w1 -nvL -t mangle
+iptables -w1 -nvL -t mangle > ${LOG_DIR}/iptables-mangle.out
 
 # dump cni config
 mkdir -p ${LOG_DIR}/cni
