@@ -147,6 +147,17 @@ Default: Unset
 Valid Values: stdout or a file path
 Specifies where to write the logging output. Either to stdout or to override the default file.
 
+`DISABLE_INTROSPECTION`
+Type: Boolean
+Default: `false`
+Specifies whether introspection endpoints are disabled on a worker node. Setting this to `true` will reduce the debugging 
+information we can get from the node when running the `aws-cni-support.sh` script.
+
+`DISABLE_METRICS`
+Type: Boolean
+Default: `false`
+Specifies whether prometeus metrics endpoints are enabled on a worker node.
+
 ### Notes
 
 `L-IPAMD`(aws-node daemonSet) running on every worker node requires access to kubernetes API server.  If it can **not** reach kubernetes API server, ipamD will exit and CNI will not be able to get any IP address for Pods.  Here is a way to confirm if `L-IPAMD` has access to the kubernetes API server.
