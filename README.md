@@ -113,6 +113,17 @@ Default: None
 Specifies the number of free IP addresses that the `ipamD` daemon should attempt to keep available for pod assignment on the node\. For example, if `WARM_IP_TARGET` is set to 10, then `ipamD` attempts to keep 10 free IP addresses available at all times\. If the elastic network interfaces on the node are unable to provide these free addresses, `ipamD` attempts to allocate more interfaces until `WARM_IP_TARGET` free IP addresses are available\.  
 This environment variable overrides `WARM_ENI_TARGET` behavior\.
 
+`DISABLE_INTROSPECTION`
+Type: Boolean
+Default: `false`
+Specifies whether introspection endpoints are disabled on a worker node. Setting this to `true` will reduce the debugging 
+information we can get from the node when running the `aws-cni-support.sh` script.
+
+`DISABLE_METRICS`
+Type: Boolean
+Default: `false`
+Specifies whether prometeus metrics endpoints are enabled on a worker node.
+
 ### Notes
 
 `L-IPAMD`(aws-node daemonSet) running on every worker node requires access to kubernetes API server.  If it can **not** reach kubernetes API server, ipamD will exit and CNI will not be able to get any IP address for Pods.  Here is a way to confirm if `L-IPAMD` has access to the kubernetes API server.

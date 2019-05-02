@@ -60,13 +60,24 @@ func _main() int {
 	awsK8sAgent, err := ipamd.New(discoverController, eniConfigController)
 
 	if err != nil {
-		log.Error("initialization failure", err)
+		log.Error("Initialization failure ", err)
 		return 1
 	}
 
+	// Pool manager
 	go awsK8sAgent.StartNodeIPPoolManager()
-	go awsK8sAgent.SetupHTTP()
-	awsK8sAgent.RunRPCHandler()
+
+	// Prometheus metrics
+	go awsK8sAgent.ServeMetrics()
+
+	// CNI introspection endpoints
+	go awsK8sAgent.ServeIntrospection()
+
+	err = awsK8sAgent.RunRPCHandler()
+	if err != nil {
+		log.Error("Failed to set up gRPC handler ", err)
+		return 1
+	}
 
 	return 0
 }
