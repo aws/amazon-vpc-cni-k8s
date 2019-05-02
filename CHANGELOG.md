@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.4.1
+
+* Feature - [Add flag to disable metrics and introspection](https://github.com/aws/amazon-vpc-cni-k8s/pull/436) (#436, @mogren)
+* Bug fix - [Adding additional CRD for Calico that was missing](https://github.com/aws/amazon-vpc-cni-k8s/pull/410) (#410, @wmorgan6796)
+* Improvement - [Update CNI metrics](https://github.com/aws/amazon-vpc-cni-k8s/pull/413) (#413, @mogren)
+
 ## v1.4.0
 
 * Feature - [Add an environment variable to limit the number of ENIs](https://github.com/aws/amazon-vpc-cni-k8s/pull/251) (#251, @pdbogen)
