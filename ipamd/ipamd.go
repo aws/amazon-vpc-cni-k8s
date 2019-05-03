@@ -208,7 +208,11 @@ func (c *IPAMContext) nodeInit() error {
 
 	log.Debugf("Start node init")
 
-	instanceMaxENIs, _ := c.awsClient.GetENILimit()
+	instanceMaxENIs, err := c.awsClient.GetENILimit()
+	if err != nil {
+		log.Errorf("Failed to get ENI limit: %s")
+	}
+
 	maxENIs := getMaxENI(instanceMaxENIs)
 	if maxENIs >= 1 {
 		enisMax.Set(float64(maxENIs))
@@ -359,6 +363,10 @@ func (c *IPAMContext) updateIPPoolIfRequired() {
 	} else if c.nodeIPPoolTooHigh() {
 		c.decreaseIPPool(decreaseIPPoolInterval)
 	}
+
+	if c.shouldRemoveExtraENIs() {
+		c.tryFreeENI()
+	}
 }
 
 // decreaseIPPool runs every `interval` and attempts to return unused ENIs and IPs
@@ -375,7 +383,6 @@ func (c *IPAMContext) decreaseIPPool(interval time.Duration) {
 
 	log.Debugf("Starting to decrease IP pool")
 
-	c.tryFreeENI()
 	c.tryUnassignIPsFromAll()
 
 	c.lastDecreaseIPPool = now
@@ -387,7 +394,9 @@ func (c *IPAMContext) decreaseIPPool(interval time.Duration) {
 
 // tryFreeENI always trys to free one ENI
 func (c *IPAMContext) tryFreeENI() {
-	eni := c.dataStore.RemoveUnusedENIFromStore()
+	warmIPTarget := getWarmIPTarget()
+
+	eni := c.dataStore.RemoveUnusedENIFromStore(warmIPTarget)
 	if eni == "" {
 		log.Info("No ENI to remove, all ENIs have IPs in use")
 		return
@@ -622,7 +631,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 
 	eni := c.dataStore.GetENINeedsIP(maxIPPerENI, UseCustomNetworkCfg())
 
-	if int64(len(eni.IPv4Addresses)) < maxIPPerENI {
+	if eni != nil && int64(len(eni.IPv4Addresses)) < maxIPPerENI {
 		log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d", eni.ID, len(eni.IPv4Addresses), maxIPPerENI)
 
 		err = c.awsClient.AllocIPAddresses(eni.ID, maxIPPerENI-int64(len(eni.IPv4Addresses)))
@@ -673,8 +682,7 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) err
 	}
 
 	if eni != c.awsClient.GetPrimaryENI() {
-		err = c.networkClient.SetupENINetwork(eniPrimaryIP, eniMetadata.MAC,
-			int(eniMetadata.DeviceNumber), eniMetadata.SubnetIPv4CIDR)
+		err = c.networkClient.SetupENINetwork(eniPrimaryIP, eniMetadata.MAC, int(eniMetadata.DeviceNumber), eniMetadata.SubnetIPv4CIDR)
 		if err != nil {
 			return errors.Wrapf(err, "failed to setup ENI %s network", eni)
 		}
@@ -753,11 +761,8 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 }
 
 // getMaxENI returns the maximum number of ENIs for this instance, which is
-// the lesser of the given upper bound (for example, the limit for the instance
+// the lesser of the given lower bound (for example, the limit for the instance
 // type) and a value configured via the MAX_ENI environment variable.
-//
-// If upperBound is 0, then we are using an unknown instance type and we should
-// return the value of envMaxENI if it is set.
 //
 // If the value configured via environment variable is 0 or less, it is
 // ignored, and the upperBound is returned.
@@ -808,7 +813,7 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 		return short > 0
 	}
 
-	// If WARM-IP-TARGET not defined fallback using number of ENIs
+	// If WARM_IP_TARGET not defined fallback using number of ENIs
 	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
 	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
@@ -819,18 +824,27 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 
 // nodeIPPoolTooHigh returns true if IP pool is above high threshold
 func (c *IPAMContext) nodeIPPoolTooHigh() bool {
-	warmENITarget := getWarmENITarget()
-	total, used := c.dataStore.GetStats()
-	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
-
-	available := total - used
-
-	target := getWarmIPTarget()
-	if target != noWarmIPTarget {
-		return target > available
+	_, over, warmIPTargetDefined := c.ipTargetState()
+	if warmIPTargetDefined {
+		return over > 0
 	}
 
-	return int64(available) >= (int64(warmENITarget)+1)*c.maxAddrsPerENI
+	// We only ever report the pool being too high if WARM_IP_TARGET is set
+	return false
+}
+
+// shouldRemoveExtraENIs returns true if we should attempt to find an ENI to free.  When WARM_IP_TARGET is set, we
+// always check and do verification in getDeletableENI()
+func (c *IPAMContext) shouldRemoveExtraENIs() bool {
+	_, _, warmIPTargetDefined := c.ipTargetState()
+	if warmIPTargetDefined {
+		return true
+	}
+
+	warmENITarget := getWarmENITarget()
+	total, used := c.dataStore.GetStats()
+	available := total - used
+	return int64(available) > int64(warmENITarget) * c.maxAddrsPerENI
 }
 
 func ipamdErrInc(fn string, err error) {
