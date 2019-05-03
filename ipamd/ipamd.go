@@ -819,7 +819,7 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
 	available := total - used
-	return int64(available) < c.maxAddrsPerENI*int64(warmENITarget)
+	return int64(available) <= c.maxAddrsPerENI * int64(warmENITarget)
 }
 
 // nodeIPPoolTooHigh returns true if IP pool is above high threshold
