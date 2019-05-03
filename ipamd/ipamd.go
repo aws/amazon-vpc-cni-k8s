@@ -850,7 +850,7 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
 	available := total - used
-  // We need the +1 to account for the Primary ENI.
+        // We need the +1 to account for the Primary ENI.
 	shouldRemoveExtra := int64(available) >= (int64(warmENITarget)+1)*c.maxAddrsPerENI
 	if shouldRemoveExtra {
 		log.Debugf("It might be possible to remove extra ENIs because available (%d) > ENI target (%d) * addrsPerENI (%d): ", available, warmENITarget, c.maxAddrsPerENI)
