@@ -844,7 +844,7 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
 	available := total - used
-	return int64(available) > int64(warmENITarget) * c.maxAddrsPerENI
+	return int64(available) - int64(c.maxAddrsPerENI) > int64(warmENITarget) * c.maxAddrsPerENI
 }
 
 func ipamdErrInc(fn string, err error) {
