@@ -493,7 +493,7 @@ func isAttachmentLimitExceededError(err error) bool {
 }
 
 func (c *IPAMContext) increaseIPPool() {
-	log.Debug("Start increasing IP pool size")
+	log.Debug("Starting to increase IP pool size")
 	ipamdActionsInprogress.WithLabelValues("increaseIPPool").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("increaseIPPool").Sub(float64(1))
 
@@ -795,7 +795,7 @@ func getWarmENITarget() int {
 		if input < 0 {
 			return defaultWarmENITarget
 		}
-		log.Debugf("Using WARM-ENI-TARGET %v", input)
+		log.Debugf("Using WARM_ENI_TARGET %v", input)
 		return input
 	}
 	return defaultWarmENITarget
@@ -819,7 +819,13 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	logPoolStats(int64(total), int64(used), c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
 	available := total - used
-	return int64(available) < c.maxAddrsPerENI*int64(warmENITarget)
+	poolTooLow := int64(available) < c.maxAddrsPerENI*int64(warmENITarget)
+	if poolTooLow {
+		log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, warmENITarget, c.maxAddrsPerENI)
+	} else {
+		log.Debugf("IP pool is NOT too low: available (%d) >= ENI target (%d) * addrsPerENI (%d)", available, warmENITarget, c.maxAddrsPerENI)
+	}
+	return poolTooLow
 }
 
 // nodeIPPoolTooHigh returns true if IP pool is above high threshold
@@ -844,7 +850,14 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
 	available := total - used
-	return int64(available) - int64(c.maxAddrsPerENI) > int64(warmENITarget) * c.maxAddrsPerENI
+  // We need the +1 to account for the Primary ENI.
+	shouldRemoveExtra := int64(available) >= (int64(warmENITarget)+1)*c.maxAddrsPerENI
+	if shouldRemoveExtra {
+		log.Debugf("It might be possible to remove extra ENIs because available (%d) > ENI target (%d) * addrsPerENI (%d): ", available, warmENITarget, c.maxAddrsPerENI)
+	} else {
+		log.Debugf("Its NOT possible to remove extra ENIs because available (%d) <= ENI target (%d) * addrsPerENI (%d): ", available, warmENITarget, c.maxAddrsPerENI)
+	}
+	return shouldRemoveExtra
 }
 
 func ipamdErrInc(fn string, err error) {
@@ -973,7 +986,7 @@ func getWarmIPTarget() int {
 
 	if input, err := strconv.Atoi(inputStr); err == nil {
 		if input >= 0 {
-			log.Debugf("Using WARM-IP-TARGET %v", input)
+			log.Debugf("Using WARM_IP_TARGET %v", input)
 			return input
 		}
 	}
