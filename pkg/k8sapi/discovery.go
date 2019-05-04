@@ -291,15 +291,16 @@ func (c *controller) handleErr(err error, key interface{}) {
 }
 
 func (d *Controller) run(threadiness int, stopCh chan struct{}) {
-
 	// Let the workers stop when we are done
 	defer d.controller.queue.ShutDown()
 	log.Info("Starting Pod controller")
 
 	go d.controller.informer.Run(stopCh)
 
+	log.Info("Waiting for controller cache sync")
 	// Wait for all involved caches to be synced, before processing items from the queue is started
 	if !cache.WaitForCacheSync(stopCh, d.controller.informer.HasSynced) {
+		log.Error("Timed out waiting for caches to sync!")
 		runtime.HandleError(fmt.Errorf("timed out waiting for caches to sync"))
 		return
 	}

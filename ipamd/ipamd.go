@@ -260,7 +260,7 @@ func (c *IPAMContext) nodeInit() error {
 		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed", err)
 		// This can happens when L-IPAMD starts before kubelet.
 		// TODO  need to add node health stats here
-		return nil
+		return errors.Wrap(err, "Failed to get running pods!")
 	}
 
 	rules, err := c.networkClient.GetRuleList()
@@ -620,7 +620,7 @@ func (c *IPAMContext) tryAssignIPs() {
 
 		err = c.awsClient.AllocIPAddresses(eni.ID, maxIPPerENI-len(eni.IPv4Addresses))
 		if err != nil {
-			log.Warnf("Failed to allocate all available ip addresses on an eni %s: %s", eni.ID, err)
+			log.Warnf("Failed to allocate all available IP addresses on an ENI %s: %s", eni.ID, err)
 		}
 
 		ec2Addrs, _, err := c.getENIaddresses(eni.ID)
@@ -829,6 +829,7 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 
 	available := total - used
+	// We need the +1 to make sure we are not going below the WARM_ENI_TARGET.
 	shouldRemoveExtra := available >= (warmENITarget+1)*c.maxAddrsPerENI
 	if shouldRemoveExtra {
 		log.Debugf("It might be possible to remove extra ENIs because available (%d) > ENI target (%d) * addrsPerENI (%d): ", available, warmENITarget, c.maxAddrsPerENI)
