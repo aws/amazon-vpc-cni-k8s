@@ -319,12 +319,16 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 		time.Sleep(retryK8SInterval)
 	}
 
+	if err != nil {
+		return nil, err
+	}
+
 	if pods == nil {
-		return nil, errors.New("unable to get local pods, giving up")
+		log.Info("No pods found on this node")
+		return pods, nil
 	}
 
 	var containers map[string]*docker.ContainerInfo
-
 	for retry := 1; retry <= maxK8SRetries; retry++ {
 		containers, err = c.dockerClient.GetRunningContainers()
 		if err == nil {
