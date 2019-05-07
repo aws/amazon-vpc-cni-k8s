@@ -159,7 +159,7 @@ type IPAMContext struct {
 	maxENI               int
 	primaryIP            map[string]string
 	lastNodeIPPoolAction time.Time
-	lastDecreaseIPPool time.Time
+	lastDecreaseIPPool   time.Time
 }
 
 func prometheusRegister() {
@@ -260,7 +260,7 @@ func (c *IPAMContext) nodeInit() error {
 		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed", err)
 		// This can happens when L-IPAMD starts before kubelet.
 		// TODO  need to add node health stats here
-		return nil
+		return errors.Wrap(err, "Failed to get running pods!")
 	}
 
 	rules, err := c.networkClient.GetRuleList()
@@ -636,7 +636,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 
 		err = c.awsClient.AllocIPAddresses(eni.ID, maxIPPerENI-int64(len(eni.IPv4Addresses)))
 		if err != nil {
-			return false, errors.Wrap(err,fmt.Sprintf("failed to allocate all available IP addresses on ENI %s", eni.ID))
+			return false, errors.Wrap(err, fmt.Sprintf("failed to allocate all available IP addresses on ENI %s", eni.ID))
 		}
 
 		ec2Addrs, _, err := c.getENIaddresses(eni.ID)
@@ -850,7 +850,7 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	warmENITarget := getWarmENITarget()
 	total, used := c.dataStore.GetStats()
 	available := total - used
-        // We need the +1 to account for the Primary ENI.
+	// We need the +1 to make sure we are not going below the WARM_ENI_TARGET.
 	shouldRemoveExtra := int64(available) >= (int64(warmENITarget)+1)*c.maxAddrsPerENI
 	if shouldRemoveExtra {
 		log.Debugf("It might be possible to remove extra ENIs because available (%d) > ENI target (%d) * addrsPerENI (%d): ", available, warmENITarget, c.maxAddrsPerENI)
