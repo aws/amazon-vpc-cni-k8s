@@ -19,6 +19,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/cihub/seelog"
@@ -50,6 +51,10 @@ const (
 	decreaseIPPoolInterval      = 30 * time.Second
 	maxK8SRetries               = 12
 	retryK8SInterval            = 5 * time.Second
+
+	// ipReconcileCooldown is the amount of time that an IP address must wait until it can be added to the data store
+	// during reconciliation after being discovered on the EC2 instance metadata.
+	ipReconcileCooldown = 60 * time.Second
 
 	// This environment variable is used to specify the desired number of free IPs always available in the "warm pool".
 	// When it is not set, ipamd defaults to use all available IPs per ENI for that instance type.
@@ -160,6 +165,34 @@ type IPAMContext struct {
 	primaryIP            map[string]string
 	lastNodeIPPoolAction time.Time
 	lastDecreaseIPPool   time.Time
+
+	// reconcileCooldownCache keeps timestamps of the last time an IP address was unassigned from an ENI,
+	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
+	reconcileCooldownCache ReconcileCooldownCache
+}
+
+type ReconcileCooldownCache struct {
+	cache map[string]time.Time
+	lock  sync.RWMutex
+}
+
+func (r *ReconcileCooldownCache) Add(ips []string) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	expiry := time.Now().Add(ipReconcileCooldown)
+	for _, ip := range ips {
+		r.cache[ip] = expiry
+	}
+}
+
+func (r *ReconcileCooldownCache) RecentlyFreed(ip string) bool {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	now := time.Now()
+	if expiry, ok := r.cache[ip]; ok {
+		return now.Sub(expiry) < 0
+	}
+	return false
 }
 
 func prometheusRegister() {
@@ -223,6 +256,7 @@ func (c *IPAMContext) nodeInit() error {
 		ipMax.Set(float64(maxIPs * maxENIs))
 	}
 	c.primaryIP = make(map[string]string)
+	c.reconcileCooldownCache.cache = make(map[string]time.Time)
 
 	enis, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
@@ -320,12 +354,11 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "no pods because apiserver not running")
 	}
 
 	if pods == nil {
-		log.Info("No pods found on this node")
-		return pods, nil
+		return nil, nil
 	}
 
 	var containers map[string]*docker.ContainerInfo
@@ -354,9 +387,11 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
 func (c *IPAMContext) StartNodeIPPoolManager() {
+	sleepDuration := ipPoolMonitorInterval / 2
 	for {
-		time.Sleep(ipPoolMonitorInterval)
+		time.Sleep(sleepDuration)
 		c.updateIPPoolIfRequired()
+		time.Sleep(sleepDuration)
 		c.nodeIPPoolReconcile(nodeIPPoolReconcileInterval)
 	}
 }
@@ -435,7 +470,7 @@ func (c *IPAMContext) tryUnassignIPsFromAll() {
 			for _, toDelete := range ips {
 				err := c.dataStore.DelIPv4AddressFromStore(eniID, toDelete)
 				if err != nil {
-					log.Errorf("Failed to delete IP %s on ENI %s from datastore: %s", toDelete, eniID, err)
+					log.Warnf("Failed to delete IP %s on ENI %s from datastore: %s", toDelete, eniID, err)
 					ipamdErrInc("decreaseIPPool", err)
 					continue
 				} else {
@@ -445,10 +480,14 @@ func (c *IPAMContext) tryUnassignIPsFromAll() {
 
 			// Deallocate IPs from the instance if they aren't used by pods.
 			if err := c.awsClient.DeallocIPAddresses(eniID, deletedIPs); err != nil {
-				log.Debugf(fmt.Sprintf("Failed to decrease IP pool by removing IPs %v from ENI %s: %s", ips, eniID, err))
+				log.Debugf(fmt.Sprintf("Failed to decrease IP pool by removing IPs %v from ENI %s: %s", deletedIPs, eniID, err))
 			} else {
-				log.Debugf(fmt.Sprintf("Successfully decreased IP pool by removing IPs %v from ENI %s", ips, eniID))
+				log.Debugf(fmt.Sprintf("Successfully decreased IP pool by removing IPs %v from ENI %s", deletedIPs, eniID))
 			}
+
+			// Track the last time we unassigned IPs from an ENI. We won't reconcile any IPs in this cache
+			// for at least ipReconcileCooldown
+			c.reconcileCooldownCache.Add(deletedIPs)
 		}
 	}
 }
@@ -629,7 +668,6 @@ func (c *IPAMContext) tryAssignIPs() {
 			log.Warn("During eni repair: failed to get ENI ip addresses", err)
 			return
 		}
-
 		c.addENIaddressesToDataStore(ec2Addrs, eni.ID)
 	}
 }
@@ -691,7 +729,6 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 			ipamdErrInc("addENIaddressesToDataStoreAddENIIPv4AddressFailed", err)
 		}
 	}
-
 	return primaryIP
 }
 
@@ -859,7 +896,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	attachedENIs, err := c.awsClient.GetAttachedENIs()
 
 	if err != nil {
-		log.Error("IP pool reconcile: Failed to get attached ENI info", err.Error())
+		log.Errorf("IP pool reconcile: Failed to get attached ENI info: %v", err.Error())
 		ipamdErrInc("reconcileFailedGetENIs", err)
 		return
 	}
@@ -910,6 +947,11 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 	for _, localIP := range attachedENI.LocalIPv4s {
 		if localIP == c.primaryIP[eni] {
 			log.Debugf("Reconcile and skip primary IP %s on ENI %s", localIP, eni)
+			continue
+		}
+
+		if c.reconcileCooldownCache.RecentlyFreed(localIP) {
+			log.Debugf("Reconcile skipping IP %s on ENI %s because it was recently unassigned from the ENI.", localIP, eni)
 			continue
 		}
 
