@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"runtime"
 
 	"golang.org/x/net/context"
@@ -142,7 +143,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
 			K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 			K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
-			IfName: args.IfName})
+			IfName:                     args.IfName})
 
 	if err != nil {
 		log.Errorf("Error received from AddNetwork grpc call for pod %s namespace %s container %s: %v",
@@ -296,10 +297,20 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 }
 
 func main() {
-	defer log.Flush()
 	logger.SetupLogger(logger.GetLogFileLocation(defaultLogFilePath))
 
 	log.Infof("Starting CNI Plugin %s  ...", version)
 
-	skel.PluginMain(cmdAdd, cmdDel, cniSpecVersion.All)
+	exitCode := 0
+
+	if e := skel.PluginMainWithError(cmdAdd, cmdDel, cniSpecVersion.All); e != nil {
+		exitCode = 1
+		log.Error("Failed CNI request: ", e)
+		if err := e.Print(); err != nil {
+			log.Error("Error writing error JSON to stdout: ", err)
+		}
+	}
+
+	log.Flush()
+	os.Exit(exitCode)
 }
