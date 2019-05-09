@@ -98,7 +98,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrapper.GRPC,
 	rpcClient rpcwrapper.RPC, driverClient driver.NetworkAPIs) error {
-	log.Infof("Received CNI add request: ContainerID(%s) Netns(%s) IfName(%s) Args(%s) Path(%s) argsStdinData(%s)",
+	log.Infof(" Received CNI add request: ContainerID(%s) Netns(%s) IfName(%s) Args(%s) Path(%s) argsStdinData(%s)",
 		args.ContainerID, args.Netns, args.IfName, args.Args, args.Path, args.StdinData)
 
 	conf := NetConf{}
@@ -162,7 +162,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return fmt.Errorf("add cmd: failed to assign an IP address to container")
 	}
 
-	log.Infof("Received add network response for pod %s namespace %s container %s: %s, table %d, external-SNAT: %v, vpcCIDR: %v",
+	log.Infof(" Received add network response for pod %s namespace %s container %s: %s, table %d, external-SNAT: %v, vpcCIDR: %v",
 		string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
 		r.IPv4Addr, r.DeviceNumber, r.UseExternalSNAT, r.VPCcidrs)
 
@@ -230,7 +230,7 @@ func cmdDel(args *skel.CmdArgs) error {
 func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrapper.GRPC, rpcClient rpcwrapper.RPC,
 	driverClient driver.NetworkAPIs) error {
 
-	log.Infof("Received CNI del request: ContainerID(%s) Netns(%s) IfName(%s) Args(%s) Path(%s) argsStdinData(%s)",
+	log.Infof(" Received CNI del request: ContainerID(%s) Netns(%s) IfName(%s) Args(%s) Path(%s) argsStdinData(%s)",
 		args.ContainerID, args.Netns, args.IfName, args.Args, args.Path, args.StdinData)
 
 	conf := NetConf{}
@@ -299,7 +299,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 func main() {
 	logger.SetupLogger(logger.GetLogFileLocation(defaultLogFilePath))
 
-	log.Infof("Starting CNI Plugin %s  ...", version)
+	log.Infof(" Starting CNI Plugin %s  ...", version)
 
 	exitCode := 0
 

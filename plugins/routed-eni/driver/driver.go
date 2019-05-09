@@ -223,7 +223,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 		return errors.Wrap(err, "setupNS network: failed to add toContainer")
 	}
 
-	log.Infof("Added toContainer rule for %s", addr.String())
+	log.Infof(" Added toContainer rule for %s", addr.String())
 
 	// add from-pod rule, only need it when it is not primary ENI
 	if table > 0 {
@@ -236,7 +236,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 				log.Errorf("Failed to add fromContainer rule for %s err: %v", addr.String(), err)
 				return errors.Wrap(err, "add NS network: failed to add fromContainer rule")
 			}
-			log.Infof("Added rule priority %d from %s table %d", fromContainerRulePriority, addr.String(), table)
+			log.Infof(" Added rule priority %d from %s table %d", fromContainerRulePriority, addr.String(), table)
 		} else {
 			// add rule: 1536: list of from <podIP> to <vpcCIDR> use table <table>
 			for _, cidr := range vpcCIDRs {
@@ -260,7 +260,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 				if podRule.Dst != nil {
 					toDst = podRule.Dst.String()
 				}
-				log.Infof("Successfully added pod rule[%v] to %s", podRule, toDst)
+				log.Infof(" Successfully added pod rule[%v] to %s", podRule, toDst)
 			}
 		}
 	}
@@ -306,7 +306,7 @@ func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink) erro
 	if err != nil {
 		log.Errorf("Failed to delete toContainer rule for %s err %v", addr.String(), err)
 	} else {
-		log.Infof("Delete toContainer rule for %s ", addr.String())
+		log.Infof(" Deleted toContainer rule for %s", addr.String())
 	}
 
 	if table > 0 {
@@ -316,7 +316,7 @@ func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink) erro
 			log.Errorf("Failed to delete fromContainer for %s %v", addr.String(), err)
 			return errors.Wrapf(err, "delete NS network: failed to delete fromContainer rule for %s", addr.String())
 		}
-		log.Infof("Delete fromContainer rule for %s in table %d", addr.String(), table)
+		log.Infof(" Deleted fromContainer rule for %s in table %d", addr.String(), table)
 	}
 
 	addrHostAddr := &net.IPNet{

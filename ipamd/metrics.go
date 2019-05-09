@@ -36,11 +36,11 @@ const (
 // ServeMetrics sets up ipamd metrics and introspection endpoints
 func (c *IPAMContext) ServeMetrics() {
 	if disableMetrics() {
-		log.Info("Metrics endpoint disabled")
+		log.Info(" Metrics endpoint disabled")
 		return
 	}
 
-	log.Info("Serving metrics on port ", metricsPort)
+	log.Info(" Serving metrics on port ", metricsPort)
 	server := c.setupMetricsServer()
 	for {
 		once := sync.Once{}

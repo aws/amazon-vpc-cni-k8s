@@ -44,18 +44,18 @@ type LoggingHandler struct {
 }
 
 func (lh LoggingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Info("Handling http request: ", ", method: ", r.Method, ", from: ", r.RemoteAddr, ", URI: ", r.RequestURI)
+	log.Infof(" Handling http request: %s, from: %s, URI: %s", r.Method, r.RemoteAddr, r.RequestURI)
 	lh.h.ServeHTTP(w, r)
 }
 
 // ServeIntrospection sets up ipamd introspection endpoints
 func (c *IPAMContext) ServeIntrospection() {
 	if disableIntrospection() {
-		log.Info("Introspection endpoints disabled")
+		log.Info(" Introspection endpoints disabled")
 		return
 	}
 
-	log.Info("Serving introspection endpoints on ", introspectionAddress)
+	log.Info(" Serving introspection endpoints on ", introspectionAddress)
 	server := c.setupIntrospectionServer()
 	for {
 		once := sync.Once{}

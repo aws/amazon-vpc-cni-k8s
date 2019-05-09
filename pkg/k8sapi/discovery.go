@@ -85,7 +85,7 @@ func CreateKubeClient() (clientset.Interface, error) {
 	// Informers don't seem to do a good job logging error messages when it
 	// can't reach the server, making debugging hard. This makes it easier to
 	// figure out if apiserver is configured incorrectly.
-	log.Infof("Testing communication with server")
+	log.Infof(" Testing communication with server")
 	v, err := kubeClient.Discovery().ServerVersion()
 	if err != nil {
 		errMsg := "Failed to communicate with K8S Server. Please check instance security groups or http proxy setting"
@@ -93,9 +93,9 @@ func CreateKubeClient() (clientset.Interface, error) {
 		fmt.Printf(errMsg)
 		return nil, fmt.Errorf("error communicating with apiserver: %v", err)
 	}
-	log.Infof("Running with Kubernetes cluster version: v%s.%s. git version: %s. git tree state: %s. commit: %s. platform: %s",
+	log.Infof(" Running with Kubernetes cluster version: v%s.%s. git version: %s. git tree state: %s. commit: %s. platform: %s",
 		v.Major, v.Minor, v.GitVersion, v.GitTreeState, v.GitCommit, v.Platform)
-	log.Info("Communication with server successful")
+	log.Info(" Communication with server successful")
 
 	return kubeClient, nil
 }
@@ -168,7 +168,7 @@ func (d *Controller) K8SGetLocalPodIPs() ([]*K8SPodInfo, error) {
 	var localPods []*K8SPodInfo
 
 	if !d.synced {
-		log.Info("GetLocalPods: informer not synced yet")
+		log.Info(" GetLocalPods: informer not synced yet")
 		return nil, ErrInformerNotSynced
 	}
 
@@ -177,7 +177,7 @@ func (d *Controller) K8SGetLocalPodIPs() ([]*K8SPodInfo, error) {
 	defer d.workerPodsLock.Unlock()
 
 	for _, pod := range d.workerPods {
-		log.Infof("K8SGetLocalPodIPs discovered local Pods: %s %s %s %s",
+		log.Infof(" K8SGetLocalPodIPs discovered local Pods: %s %s %s %s",
 			pod.Name, pod.Namespace, pod.IP, pod.UID)
 		localPods = append(localPods, pod)
 	}
@@ -276,7 +276,7 @@ func (c *controller) handleErr(err error, key interface{}) {
 
 	// This controller retries 5 times if something goes wrong. After that, it stops trying.
 	if c.queue.NumRequeues(key) < 5 {
-		log.Infof("Error syncing pod %v: %v", key, err)
+		log.Infof(" Failed to sync pod %v: %v", key, err)
 
 		// Re-enqueue the key rate limited. Based on the rate limiter on the
 		// queue and the re-enqueue history, the key will be processed later again.
@@ -287,17 +287,17 @@ func (c *controller) handleErr(err error, key interface{}) {
 	c.queue.Forget(key)
 	// Report to an external entity that, even after several retries, we could not successfully process this key
 	runtime.HandleError(err)
-	log.Infof("Dropping pod %q out of the queue: %v", key, err)
+	log.Infof(" Dropping pod %q out of the queue: %v", key, err)
 }
 
 func (d *Controller) run(threadiness int, stopCh chan struct{}) {
 	// Let the workers stop when we are done
 	defer d.controller.queue.ShutDown()
-	log.Info("Starting Pod controller")
+	log.Info(" Starting Pod controller")
 
 	go d.controller.informer.Run(stopCh)
 
-	log.Info("Waiting for controller cache sync")
+	log.Info(" Waiting for controller cache sync")
 	// Wait for all involved caches to be synced, before processing items from the queue is started
 	if !cache.WaitForCacheSync(stopCh, d.controller.informer.HasSynced) {
 		log.Error("Timed out waiting for caches to sync!")
@@ -305,7 +305,7 @@ func (d *Controller) run(threadiness int, stopCh chan struct{}) {
 		return
 	}
 
-	log.Info("Synced successfully with APIServer")
+	log.Info(" Synced successfully with APIServer")
 	d.synced = true
 
 	for i := 0; i < threadiness; i++ {
@@ -313,7 +313,7 @@ func (d *Controller) run(threadiness int, stopCh chan struct{}) {
 	}
 
 	<-stopCh
-	log.Info("Stopping Pod controller")
+	log.Info(" Stopping Pod controller")
 }
 
 func (d *Controller) runWorker() {

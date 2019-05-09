@@ -41,7 +41,7 @@ func _main() int {
 	defer log.Flush()
 	logger.SetupLogger(logger.GetLogFileLocation(defaultLogFilePath))
 
-	log.Infof("Starting L-IPAMD %s  ...", version)
+	log.Infof(" Starting L-IPAMD %s  ...", version)
 
 	kubeClient, err := k8sapi.CreateKubeClient()
 	if err != nil {
@@ -78,6 +78,5 @@ func _main() int {
 		log.Error("Failed to set up gRPC handler ", err)
 		return 1
 	}
-
 	return 0
 }

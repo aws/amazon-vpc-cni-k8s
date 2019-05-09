@@ -21,14 +21,14 @@ import (
 	"sync"
 	"time"
 
-	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
+	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/pkg/errors"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
 
-	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
+	"github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 
 	log "github.com/cihub/seelog"
@@ -100,28 +100,25 @@ type Handler struct {
 func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	switch o := event.Object.(type) {
 	case *v1alpha1.ENIConfig:
-
 		eniConfigName := o.GetName()
-
 		curENIConfig := o.DeepCopy()
 
 		if event.Deleted {
-			log.Infof("Deleting ENIConfig: %s", eniConfigName)
+			log.Infof(" Deleting ENIConfig: %s", eniConfigName)
 			h.controller.eniLock.Lock()
 			defer h.controller.eniLock.Unlock()
 			delete(h.controller.eni, eniConfigName)
 			return nil
 		}
 
-		log.Infof("Handle ENIConfig Add/Update:  %s, %v, %s", eniConfigName, curENIConfig.Spec.SecurityGroups, curENIConfig.Spec.Subnet)
+		log.Infof(" Handle ENIConfig Add/Update: %s, %v, %s", eniConfigName, curENIConfig.Spec.SecurityGroups, curENIConfig.Spec.Subnet)
 
 		h.controller.eniLock.Lock()
 		defer h.controller.eniLock.Unlock()
 		h.controller.eni[eniConfigName] = &curENIConfig.Spec
 
 	case *corev1.Node:
-
-		log.Infof("Handle corev1.Node: %s, %v, %v", o.GetName(), o.GetAnnotations(), o.GetLabels())
+		log.Infof(" Handle corev1.Node: %s, %v, %v", o.GetName(), o.GetAnnotations(), o.GetLabels())
 		// Get annotations if not found get labels if not found fallback use default
 		if h.controller.myNodeName == o.GetName() {
 
@@ -143,9 +140,9 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 }
 
 func printVersion() {
-	log.Infof("Go Version: %s", runtime.Version())
-	log.Infof("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH)
-	log.Infof("operator-sdk Version: %v", sdkVersion.Version)
+	log.Infof(" Go Version: %s", runtime.Version())
+	log.Infof(" Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH)
+	log.Infof(" operator-sdk Version: %v", sdkVersion.Version)
 }
 
 // Start kicks off ENIConfig controller
@@ -161,7 +158,7 @@ func (eniCfg *ENIConfigController) Start() {
 		log.Errorf("failed to get watch namespace: %v", err)
 	}
 	resyncPeriod := time.Second * 5
-	log.Infof("Watching %s, %s, %s, %d", resource, kind, namespace, resyncPeriod)
+	log.Infof(" Watching %s, %s, %s, %d", resource, kind, namespace, resyncPeriod)
 	sdk.Watch(resource, kind, namespace, resyncPeriod)
 	sdk.Watch("/v1", "Node", corev1.NamespaceAll, resyncPeriod)
 	sdk.Handle(NewHandler(eniCfg))
@@ -182,7 +179,6 @@ func (eniCfg *ENIConfigController) Getter() *ENIConfigInfo {
 	for name, val := range eniCfg.eni {
 		output.ENI[name] = *val
 	}
-
 	return output
 }
 

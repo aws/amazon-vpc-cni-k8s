@@ -180,7 +180,7 @@ func findPrimaryInterfaceName(primaryMAC string) (string, error) {
 		log.Debugf("Discovered interface: %v, mac: %v", intf.Name, intf.HardwareAddr)
 
 		if strings.Compare(primaryMAC, intf.HardwareAddr.String()) == 0 {
-			log.Infof("Discovered primary interface: %s", intf.Name)
+			log.Infof(" Discovered primary interface: %s", intf.Name)
 			return intf.Name, nil
 		}
 	}
@@ -191,7 +191,7 @@ func findPrimaryInterfaceName(primaryMAC string) (string, error) {
 
 // SetupHostNetwork performs node level network configuration
 func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, primaryMAC string, primaryAddr *net.IP) error {
-	log.Info("Setting up host network... ")
+	log.Info(" Setting up host network... ")
 
 	hostRule := n.netLink.NewRule()
 	hostRule.Dst = vpcCIDR
@@ -315,7 +315,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		if ipt.HasRandomFully() {
 			snatRule = append(snatRule, "--random-fully")
 		} else {
-			log.Warn("prng (--random-fully) requested, but iptables version does not support it. " +
+			log.Warn(" prng (--random-fully) requested, but iptables version does not support it. " +
 				"Falling back to hashrandom (--random)")
 			snatRule = append(snatRule, "--random")
 		}
@@ -555,7 +555,7 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 		return nil
 	}
 
-	log.Infof("Setting up network for an ENI with IP address %s, MAC address %s, CIDR %s and route table %d",
+	log.Infof(" Setting up network for an ENI with IP address %s, MAC address %s, CIDR %s and route table %d",
 		eniIP, eniMAC, eniSubnetCIDR, eniTable)
 	link, err := LinkByMac(eniMAC, netLink, retryLinkByMacInterval)
 	if err != nil {
@@ -718,7 +718,7 @@ func (n *linuxNetwork) GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) 
 
 // DeleteRuleListBySrc deletes IP rules that have a matching source IP
 func (n *linuxNetwork) DeleteRuleListBySrc(src net.IPNet) error {
-	log.Infof("Delete Rule List By Src [%v]", src)
+	log.Infof(" Delete Rule List By Src [%v]", src)
 
 	ruleList, err := n.GetRuleList()
 	if err != nil {
@@ -732,10 +732,10 @@ func (n *linuxNetwork) DeleteRuleListBySrc(src net.IPNet) error {
 		return err
 	}
 
-	log.Infof("Remove current list [%v]", srcRuleList)
+	log.Infof(" Remove current list [%v]", srcRuleList)
 	for _, rule := range srcRuleList {
 		if err := n.netLink.RuleDel(&rule); err != nil && !containsNoSuchRule(err) {
-			log.Errorf("Failed to cleanup old IP rule: %v", err)
+			log.Errorf(" Failed to cleanup old IP rule: %v", err)
 			return errors.Wrapf(err, "DeleteRuleListBySrc: failed to delete old rule")
 		}
 
@@ -750,7 +750,7 @@ func (n *linuxNetwork) DeleteRuleListBySrc(src net.IPNet) error {
 
 // UpdateRuleListBySrc modify IP rules that have a matching source IP
 func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet, toCIDRs []string, useExternalSNAT bool) error {
-	log.Infof("Update Rule List[%v] for source[%v] with toCIDRs[%v], useExternalSNAT[%v]", ruleList, src, toCIDRs, useExternalSNAT)
+	log.Infof(" Update Rule List[%v] for source[%v] with toCIDRs[%v], useExternalSNAT[%v]", ruleList, src, toCIDRs, useExternalSNAT)
 
 	srcRuleList, err := n.GetRuleListBySrc(ruleList, src)
 	if err != nil {
@@ -758,7 +758,7 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 		return err
 	}
 
-	log.Infof("Remove current list [%v]", srcRuleList)
+	log.Infof(" Remove current list [%v]", srcRuleList)
 	var srcRuleTable int
 	for _, rule := range srcRuleList {
 		srcRuleTable = rule.Table
@@ -796,7 +796,7 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 			if podRule.Dst != nil {
 				toDst = podRule.Dst.String()
 			}
-			log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v] to %s", podRule, toDst)
+			log.Infof(" UpdateRuleListBySrc: Successfully added pod rule[%v] to %s", podRule, toDst)
 		}
 	} else {
 		podRule := n.netLink.NewRule()
@@ -810,7 +810,7 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 			log.Errorf("Failed to add pod IP rule: %v", err)
 			return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule")
 		}
-		log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v]", podRule)
+		log.Infof(" UpdateRuleListBySrc: Successfully added pod rule[%v]", podRule)
 	}
 	return nil
 }

@@ -311,7 +311,7 @@ func (c *IPAMContext) nodeInit() error {
 
 	usedIPs, err := c.getLocalPodsWithRetry()
 	if err != nil {
-		log.Warnf("During ipamd init, failed to get Pod information from kubelet %v", err)
+		log.Warnf(" During ipamd init, failed to get Pod information from kubelet %v", err)
 		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed", err)
 		// This can happens when L-IPAMD starts before kubelet.
 		// TODO  need to add node health stats here
@@ -326,18 +326,18 @@ func (c *IPAMContext) nodeInit() error {
 
 	for _, ip := range usedIPs {
 		if ip.Container == "" {
-			log.Infof("Skipping Pod %s, Namespace %s, due to no matching container", ip.Name, ip.Namespace)
+			log.Infof(" Skipping Pod %s, Namespace %s, due to no matching container", ip.Name, ip.Namespace)
 			continue
 		}
 		if ip.IP == "" {
-			log.Infof("Skipping Pod %s, Namespace %s, due to no IP", ip.Name, ip.Namespace)
+			log.Infof(" Skipping Pod %s, Namespace %s, due to no IP", ip.Name, ip.Namespace)
 			continue
 		}
-		log.Infof("Recovered AddNetwork for Pod %s, Namespace %s, Container %s", ip.Name, ip.Namespace, ip.Container)
+		log.Infof(" Recovered AddNetwork for Pod %s, Namespace %s, Container %s", ip.Name, ip.Namespace, ip.Container)
 		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
 		if err != nil {
 			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed", err)
-			log.Warnf("During ipamd init, failed to use pod ip %s returned from Kubelet %v", ip.IP, err)
+			log.Warnf(" During ipamd init, failed to use pod IP %s returned from Kubelet %v", ip.IP, err)
 			// TODO continue, but need to add node health stats here
 			// TODO need to feed this to controller on the health of pod and node
 			// This is a bug among kubelet/cni-plugin/l-ipamd/ec2-metadata that this particular pod is using an non existent ip address.
@@ -370,7 +370,7 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 		if err == nil {
 			break
 		}
-		log.Infof("Not able to get local pods yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
+		log.Infof(" Not able to get local pods yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
 		time.Sleep(retryK8SInterval)
 	}
 
@@ -388,7 +388,7 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 		if err == nil {
 			break
 		}
-		log.Infof("Not able to get local containers yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
+		log.Infof(" Not able to get local containers yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
 		time.Sleep(retryK8SInterval)
 	}
 
@@ -452,13 +452,13 @@ func (c *IPAMContext) decreaseIPPool(interval time.Duration) {
 	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 }
 
-// tryFreeENI always trys to free one ENI
+// tryFreeENI always tries to free one ENI
 func (c *IPAMContext) tryFreeENI() {
 	warmIPTarget := getWarmIPTarget()
 
 	eni := c.dataStore.RemoveUnusedENIFromStore(warmIPTarget)
 	if eni == "" {
-		log.Info("No ENI to remove, all ENIs have IPs in use")
+		log.Info(" No ENI to remove, all ENIs have IPs in use")
 		return
 	}
 	log.Debugf("Start freeing ENI %s", eni)
@@ -491,7 +491,7 @@ func (c *IPAMContext) tryUnassignIPsFromAll() {
 			for _, toDelete := range ips {
 				err := c.dataStore.DelIPv4AddressFromStore(eniID, toDelete)
 				if err != nil {
-					log.Warnf("Failed to delete IP %s on ENI %s from datastore: %s", toDelete, eniID, err)
+					log.Warnf(" Failed to delete IP %s on ENI %s from datastore: %s", toDelete, eniID, err)
 					ipamdErrInc("decreaseIPPool", err)
 					continue
 				} else {
@@ -620,7 +620,7 @@ func (c *IPAMContext) tryAllocateENI() {
 			return
 		}
 
-		log.Infof("ipamd: using custom network config: %v, %s", eniCfg.SecurityGroups, eniCfg.Subnet)
+		log.Infof(" ipamd: using custom network config: %v, %s", eniCfg.SecurityGroups, eniCfg.Subnet)
 		for _, sgID := range eniCfg.SecurityGroups {
 			log.Debugf("Found security-group id: %s", sgID)
 			securityGroups = append(securityGroups, aws.String(sgID))
@@ -637,7 +637,7 @@ func (c *IPAMContext) tryAllocateENI() {
 
 	maxIPPerENI, err := c.awsClient.GetENIipLimit()
 	if err != nil {
-		log.Infof("Failed to retrieve ENI IP limit: %v", err)
+		log.Warnf(" Failed to retrieve ENI IP limit: %v", err)
 		return
 	}
 
@@ -648,7 +648,7 @@ func (c *IPAMContext) tryAllocateENI() {
 		err = c.awsClient.AllocIPAddresses(eni, maxIPPerENI)
 	}
 	if err != nil {
-		log.Warnf("Failed to allocate all available ip addresses on an ENI %v", err)
+		log.Warnf(" Failed to allocate all available IP addresses on an ENI %v", err)
 		// Continue to process the allocated IP addresses
 		ipamdErrInc("increaseIPPoolAllocAllIPAddressFailed", err)
 	}
@@ -663,7 +663,7 @@ func (c *IPAMContext) tryAllocateENI() {
 	err = c.setupENI(eni, eniMetadata)
 	if err != nil {
 		ipamdErrInc("increaseIPPoolsetupENIFailed", err)
-		log.Errorf("Failed to increase pool size: %v", err)
+		log.Errorf(" Failed to increase pool size: %v", err)
 		return
 	}
 }
@@ -756,7 +756,7 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 		}
 		err := c.dataStore.AddIPv4AddressFromStore(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
 		if err != nil && err.Error() != datastore.DuplicateIPError {
-			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store", ec2Addr.PrivateIpAddress)
+			log.Warnf(" Failed to increase IP pool, failed to add IP %s to data store", ec2Addr.PrivateIpAddress)
 			// continue to add next address
 			// TODO need to add health stats for err
 			ipamdErrInc("addENIaddressesToDataStoreAddENIIPv4AddressFailed", err)
@@ -788,7 +788,7 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 	for {
 		enis, err := c.awsClient.GetAttachedENIs()
 		if err != nil {
-			log.Warnf("Failed to increase pool, error trying to discover attached ENIs: %v ", err)
+			log.Warnf(" Failed to increase pool, error trying to discover attached ENIs: %v ", err)
 		} else {
 			// Verify that the ENI we are waiting for is in the returned list
 			for _, returnedENI := range enis {
@@ -963,7 +963,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 
 	// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
 	for eni := range curENIs.ENIIPPools {
-		log.Infof("Reconcile and delete detached ENI %s", eni)
+		log.Infof(" Reconcile and delete detached ENI %s", eni)
 		err = c.dataStore.RemoveENIFromDataStore(eni)
 		if err != nil {
 			log.Errorf("IP pool reconcile: Failed to delete ENI during reconcile: %v", err)

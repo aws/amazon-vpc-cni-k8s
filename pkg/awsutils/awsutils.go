@@ -61,7 +61,7 @@ const (
 	retryDeleteENIInternal = 5 * time.Second
 
 	// UnknownInstanceType indicates that the instance type is not yet supported
-	UnknownInstanceType = "vpc ip resource(eni ip limit): unknown instance type"
+	UnknownInstanceType = "VPC IP resource(ENI IP limit): unknown instance type"
 )
 
 // ErrENINotFound is an error when ENI is not found.
@@ -245,10 +245,10 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata() error {
 	cache.localIPv4, err = cache.ec2Metadata.GetMetadata(metadataLocalIP)
 	if err != nil {
 		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve instance's primary ip address data from instance metadata service %v", err)
-		return errors.Wrap(err, "get instance metadata: failed to retrieve the instance primary ip address data")
+		log.Errorf("Failed to retrieve instance's primary IP address data from instance metadata service %v", err)
+		return errors.Wrap(err, "get instance metadata: failed to retrieve the instance primary IP address data")
 	}
-	log.Debugf("Discovered the instance primary ip address: %s", cache.localIPv4)
+	log.Debugf("Discovered the instance primary IP address: %s", cache.localIPv4)
 
 	// retrieve instance-id
 	cache.instanceID, err = cache.ec2Metadata.GetMetadata(metadataInstanceID)
@@ -527,7 +527,7 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int, error) {
 	var device [maxENIs]bool
 	for _, eni := range inst.NetworkInterfaces {
 		if aws.Int64Value(eni.Attachment.DeviceIndex) > maxENIs {
-			log.Warnf("The Device Index %d of the attached ENI %s > instance max slot %d",
+			log.Warnf(" The Device Index %d of the attached ENI %s > instance max slot %d",
 				aws.Int64Value(eni.Attachment.DeviceIndex), aws.StringValue(eni.NetworkInterfaceId),
 				maxENIs)
 		} else {
@@ -582,7 +582,7 @@ func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string,
 		return "", errors.Wrap(err, "AllocENI: unable to change the ENI's attribute")
 	}
 
-	log.Infof("Successfully created and attached a new ENI %s to instance", eniID)
+	log.Infof(" Successfully created and attached a new ENI %s to instance", eniID)
 	return eniID, nil
 }
 
@@ -606,7 +606,7 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 		awsAPIErrInc("AttachNetworkInterface", err)
 		if containsAttachmentLimitExceededError(err) {
 			// TODO once reached limit, should stop retrying increasePool
-			log.Infof("Exceeded instance ENI attachment limit: %d ", cache.currentENIs)
+			log.Infof(" Exceeded instance ENI attachment limit: %d ", cache.currentENIs)
 		}
 		log.Errorf("Failed to attach ENI %s: %v", eniID, err)
 		return "", errors.Wrap(err, "attachENI: failed to attach ENI")
@@ -620,14 +620,14 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 	var input *ec2.CreateNetworkInterfaceInput
 
 	if useCustomCfg {
-		log.Infof("createENI: use customer network config, %v, %s", sg, subnet)
+		log.Infof(" createENI: use customer network config, %v, %s", sg, subnet)
 		input = &ec2.CreateNetworkInterfaceInput{
 			Description: aws.String(eniDescription),
 			Groups:      sg,
 			SubnetId:    aws.String(subnet),
 		}
 	} else {
-		log.Infof("createENI: use primary interface's config, %v, %s", cache.securityGroups, cache.subnetID)
+		log.Infof(" createENI: use primary interface's config, %v, %s", cache.securityGroups, cache.subnetID)
 		input = &ec2.CreateNetworkInterfaceInput{
 			Description: aws.String(eniDescription),
 			Groups:      cache.securityGroups,
@@ -643,7 +643,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 		log.Errorf("Failed to CreateNetworkInterface %v", err)
 		return "", errors.Wrap(err, "failed to create network interface")
 	}
-	log.Infof("Created a new ENI: %s", aws.StringValue(result.NetworkInterface.NetworkInterfaceId))
+	log.Infof(" Created a new ENI: %s", aws.StringValue(result.NetworkInterface.NetworkInterfaceId))
 	return aws.StringValue(result.NetworkInterface.NetworkInterfaceId), nil
 }
 
@@ -682,7 +682,7 @@ func (cache *EC2InstanceMetadataCache) tagENI(eniID string) {
 	awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("CreateTags", err)
-		log.Warnf("Failed to tag the newly created ENI %s: %v", eniID, err)
+		log.Warnf(" Failed to tag the newly created ENI %s: %v", eniID, err)
 	} else {
 		log.Debugf("Successfully tagged ENI: %s", eniID)
 	}
@@ -716,14 +716,14 @@ func awsUtilsErrInc(fn string, err error) {
 
 // FreeENI detaches and deletes the ENI interface
 func (cache *EC2InstanceMetadataCache) FreeENI(eniName string) error {
-	log.Infof("Trying to free ENI: %s", eniName)
+	log.Infof(" Trying to free ENI: %s", eniName)
 
 	// Find out attachment
 	// TODO: use metadata
 	_, attachID, err := cache.DescribeENI(eniName)
 	if err != nil {
 		if err == ErrENINotFound {
-			log.Infof("ENI %s not found. It seems to be already freed", eniName)
+			log.Infof(" ENI %s not found. It seems to be already freed", eniName)
 			return nil
 		}
 
@@ -768,7 +768,7 @@ func (cache *EC2InstanceMetadataCache) FreeENI(eniName string) error {
 		return errors.Wrapf(err, "FreeENI: failed to free ENI: %s", eniName)
 	}
 
-	log.Infof("Successfully freed ENI: %s", eniName)
+	log.Infof(" Successfully freed ENI: %s", eniName)
 	return nil
 }
 
@@ -790,7 +790,7 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string) error {
 		_, err = cache.ec2SVC.DeleteNetworkInterface(deleteInput)
 		awsAPILatency.WithLabelValues("DeleteNetworkInterface", fmt.Sprint(err != nil)).Observe(msSince(start))
 		if err == nil {
-			log.Infof("Successfully deleted ENI: %s", eniName)
+			log.Infof(" Successfully deleted ENI: %s", eniName)
 			return nil
 		}
 		awsAPIErrInc("DeleteNetworkInterface", err)
@@ -825,7 +825,7 @@ func (cache *EC2InstanceMetadataCache) DescribeENI(eniID string) ([]*ec2.Network
 
 // AllocIPAddress allocates an IP address for an ENI
 func (cache *EC2InstanceMetadataCache) AllocIPAddress(eniID string) error {
-	log.Infof("Trying to allocate an IP address on ENI: %s", eniID)
+	log.Infof(" Trying to allocate an IP address on ENI: %s", eniID)
 
 	input := &ec2.AssignPrivateIpAddressesInput{
 		NetworkInterfaceId:             aws.String(eniID),
@@ -841,7 +841,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddress(eniID string) error {
 		return errors.Wrap(err, "failed to assign private IP addresses")
 	}
 
-	log.Infof("Successfully allocated IP address %s on ENI %s", output.String(), eniID)
+	log.Infof(" Successfully allocated IP address %s on ENI %s", output.String(), eniID)
 	return nil
 }
 
@@ -902,7 +902,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 
 // AllocAllIPAddress allocates all IP addresses available on ENI (TODO: Cleanup)
 func (cache *EC2InstanceMetadataCache) AllocAllIPAddress(eniID string) error {
-	log.Infof("Trying to allocate all available IP addresses on ENI: %s", eniID)
+	log.Infof(" Trying to allocate all available IP addresses on ENI: %s", eniID)
 
 	ipLimit, err := cache.GetENIipLimit()
 	if err != nil {
@@ -955,7 +955,7 @@ func (cache *EC2InstanceMetadataCache) AllocAllIPAddress(eniID string) error {
 func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []string) error {
 	ctx := context.Background()
 
-	log.Infof("Trying to unassign the following IPs %s from ENI %s", ips, eniID)
+	log.Infof(" Trying to unassign the following IPs %s from ENI %s", ips, eniID)
 
 	ipsInput := []*string{}
 	for _, ip := range ips {
