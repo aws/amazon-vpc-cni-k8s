@@ -731,22 +731,31 @@ func (cache *EC2InstanceMetadataCache) FreeENI(eniName string) error {
 		log.Errorf("Failed to retrieve ENI %s attachment id: %v", eniName, err)
 		return errors.Wrap(err, "FreeENI: failed to retrieve ENI's attachment id")
 	}
-
 	log.Debugf("Found ENI %s attachment id: %s ", eniName, aws.StringValue(attachID))
 
-	// Detach it first
 	detachInput := &ec2.DetachNetworkInterfaceInput{
 		AttachmentId: attachID,
-		Force:        aws.Bool(true),
 	}
 
-	start := time.Now()
-	_, err = cache.ec2SVC.DetachNetworkInterface(detachInput)
-	awsAPILatency.WithLabelValues("DetachNetworkInterface", fmt.Sprint(err != nil)).Observe(msSince(start))
-	if err != nil {
-		awsAPIErrInc("DetachNetworkInterface", err)
-		log.Errorf("Failed to detach ENI %s %v", eniName, err)
-		return errors.Wrap(err, "FreeENI: failed to detach ENI from instance")
+	// Retry detaching the ENI from the instance
+	var retry int
+	for retry = 0; retry <= maxENIDeleteRetries; retry++ {
+		start := time.Now()
+		_, err = cache.ec2SVC.DetachNetworkInterface(detachInput)
+		awsAPILatency.WithLabelValues("DetachNetworkInterface", fmt.Sprint(err != nil)).Observe(msSince(start))
+		if err != nil {
+			awsAPIErrInc("DetachNetworkInterface", err)
+			log.Errorf("Failed to detach ENI %s %v", eniName, err)
+			if retry == maxENIDeleteRetries {
+				return errors.New("unable to detach ENI from EC2 instance, giving up")
+			}
+		} else {
+			log.Infof("Successfully detached ENI: %s", eniName)
+			break
+		}
+
+		log.Debugf("Not able to detach ENI yet (attempt %d/%d): %v ", retry, maxENIDeleteRetries, err)
+		time.Sleep(retryDeleteENIInternal)
 	}
 
 	// It may take awhile for EC2-VPC to detach ENI from instance
