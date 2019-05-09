@@ -610,6 +610,11 @@ func TestAllocIPAddresses(t *testing.T) {
 	err = ins.AllocIPAddresses("eni-id", 30)
 
 	assert.NoError(t, err)
+
+	// Adding 0 should do nothing
+	err = ins.AllocIPAddresses("eni-id", 0)
+
+	assert.NoError(t, err)
 }
 
 func TestAllocAllIPAddressOnErr(t *testing.T) {
