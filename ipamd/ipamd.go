@@ -710,26 +710,21 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 		enis, err := c.awsClient.GetAttachedENIs()
 		if err != nil {
 			log.Warnf("Failed to increase pool, error trying to discover attached ENIs: %v ", err)
-			time.Sleep(eniAttachTime)
-			continue
-		}
-
-		// Verify that the ENI we are waiting for is in the returned list
-		for _, returnedENI := range enis {
-			if eni == returnedENI.ENIID {
-				return returnedENI, nil
+		} else {
+			// Verify that the ENI we are waiting for is in the returned list
+			for _, returnedENI := range enis {
+				if eni == returnedENI.ENIID {
+					return returnedENI, nil
+				}
 			}
+			log.Debugf("Not able to find the right ENI yet (attempt %d/%d)", retry, maxRetryCheckENI)
 		}
-
 		retry++
 		if retry > maxRetryCheckENI {
-			log.Errorf("unable to discover attached ENI from metadata service")
-			// TODO need to add health stats
 			ipamdErrInc("waitENIAttachedMaxRetryExceeded", err)
-			return awsutils.ENIMetadata{}, errors.New("waitENIAttached: not able to retrieve ENI from metadata service")
+			return awsutils.ENIMetadata{}, errors.New("waitENIAttached: giving up trying to retrieve ENIs from metadata service")
 		}
-		log.Debugf("Not able to discover attached ENI yet (attempt %d/%d)", retry, maxRetryCheckENI)
-
+		log.Debugf("Not able to discover attached ENIs yet (attempt %d/%d)", retry, maxRetryCheckENI)
 		time.Sleep(eniAttachTime)
 	}
 }
@@ -808,7 +803,7 @@ func (c *IPAMContext) nodeIPPoolTooHigh() bool {
 		return target > available
 	}
 
-	return available >= (warmENITarget + 1) * c.maxAddrsPerENI
+	return available >= (warmENITarget+1)*c.maxAddrsPerENI
 }
 
 func ipamdErrInc(fn string, err error) {
