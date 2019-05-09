@@ -279,12 +279,25 @@ func (c *IPAMContext) nodeInit() error {
 
 	c.dataStore = datastore.NewDataStore()
 	for _, eni := range enis {
-		log.Debugf("Discovered ENI %s", eni.ENIID)
+		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
+		// Retry ENI sync
+		retry := 0
+		for {
+			retry++
+			err = c.setupENI(eni.ENIID, eni)
+			if retry > maxRetryCheckENI {
+				log.Errorf("unable to discover attached IPs for ENI from metadata service")
+				ipamdErrInc("waitENIAttachedMaxRetryExceeded", err)
+				break
+			}
 
-		err = c.setupENI(eni.ENIID, eni)
-		if err != nil {
-			log.Errorf("Failed to setup ENI %s network: %v", eni.ENIID, err)
-			return errors.Wrapf(err, "Failed to setup ENI %v", eni.ENIID)
+			if err != nil {
+				log.Debugf("Not able to discover IPs for this ENI yet (attempt %d/%d)", retry, maxRetryCheckENI)
+				time.Sleep(eniAttachTime)
+				continue
+			}
+			log.Infof("ENI %s set up.", eni.ENIID)
+			break
 		}
 	}
 
@@ -698,6 +711,7 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) err
 		// an ENI, for example: ipamd has NOT allocated all IPs on the ENI yet.
 		c.currentMaxAddrsPerENI = len(ec2Addrs)
 	}
+
 	if c.currentMaxAddrsPerENI > c.maxAddrsPerENI {
 		c.maxAddrsPerENI = c.currentMaxAddrsPerENI
 	}
