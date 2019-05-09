@@ -866,6 +866,11 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 		needIPs = ipLimit
 	}
 
+	// If we don't need any more IPs, exit
+	if needIPs < 1 {
+		return nil
+	}
+
 	log.Infof("Trying to allocate %d IP address on ENI %s", needIPs, eniID)
 
 	input := &ec2.AssignPrivateIpAddressesInput{
