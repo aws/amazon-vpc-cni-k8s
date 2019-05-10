@@ -319,7 +319,7 @@ func (c *IPAMContext) nodeInit() error {
 		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed", err)
 		// This can happens when L-IPAMD starts before kubelet.
 		// TODO  need to add node health stats here
-		return errors.Wrap(err, "Failed to get running pods!")
+		return errors.Wrap(err, "failed to get running pods!")
 	}
 
 	rules, err := c.networkClient.GetRuleList()
@@ -379,7 +379,7 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 	}
 
 	if err != nil {
-		return nil, errors.Wrap(err, "no pods because apiserver not running")
+		return nil, errors.Wrap(err, "no pods because apiserver not running.")
 	}
 
 	if pods == nil {
@@ -572,23 +572,45 @@ func (c *IPAMContext) increaseIPPool() {
 	}
 
 	instanceMaxENIs, err := c.awsClient.GetENILimit()
+	if err != nil {
+		log.Errorf("Failed to get ENI limit: %s")
+	}
+
+	// instanceMaxENIs will be 0 if the instance type is unknown.  In this case, getMaxENI returns 0 or will use
+	// MAX_ENI if it is set.
 	maxENIs := getMaxENI(instanceMaxENIs)
 	if maxENIs >= 1 {
 		enisMax.Set(float64(maxENIs))
 	}
 
-	if err == nil && maxENIs == c.dataStore.GetENIs() {
-		log.Debugf("Skipping increase IP pool due to max ENI already attached to the instance: %d", maxENIs)
-		return
-	}
-	if (c.maxENI > 0) && (c.maxENI == c.dataStore.GetENIs()) {
-		log.Debugf("Skipping increase IP pool due to max ENI already attached to the instance: %d", c.maxENI)
+	// Unknown instance type and MAX_ENI is not set
+	if maxENIs == 0 {
+		log.Errorf("Unknown instance type and MAX_ENI is not set.  Cannot increase IP pool.")
 		return
 	}
 
-	c.tryAllocateENI()
-	c.tryAssignIPs()
+	if c.dataStore.GetENIs() < maxENIs {
+		// c.maxENI represent the discovered maximum number of ENIs
+		if (c.maxENI > 0) && (c.maxENI == c.dataStore.GetENIs()) {
+			log.Debugf("Skipping ENI allocation due to max ENI already attached to the instance: %d", c.maxENI)
+		} else {
+			c.tryAllocateENI()
+			c.updateLastNodeIPPoolAction()
+		}
+	} else {
+		log.Debugf("Skipping ENI allocation due to max ENI already attached to the instance: %d", maxENIs)
+	}
 
+	increasedPool, err := c.tryAssignIPs()
+	if err != nil {
+		log.Errorf(err.Error())
+	}
+	if increasedPool {
+		c.updateLastNodeIPPoolAction()
+	}
+}
+
+func (c *IPAMContext) updateLastNodeIPPoolAction() {
 	c.lastNodeIPPoolAction = time.Now()
 	total, used := c.dataStore.GetStats()
 	log.Debugf("Successfully increased IP pool")
@@ -662,38 +684,39 @@ func (c *IPAMContext) tryAllocateENI() {
 }
 
 // For an ENI, try to fill in missing IPs
-func (c *IPAMContext) tryAssignIPs() {
-	// If WARM_IP_TARGET is set, only proceed if we are short of target
+func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
+
+	// if WARM_IP_TARGET is set, only proceed if we are short of target
 	short, _, warmIPTargetDefined := c.ipTargetState()
 	if warmIPTargetDefined && short == 0 {
-		return
+		return false, nil
 	}
 
 	maxIPPerENI, err := c.awsClient.GetENIipLimit()
 	if err != nil {
-		log.Infof("Failed to retrieve ENI IP limit: %v", err)
-		return
+		return false, errors.Wrap(err, "failed to retrieve ENI IP limit during IP allocation")
 	}
 
 	eni := c.dataStore.GetENINeedsIP(maxIPPerENI, UseCustomNetworkCfg())
 
-	if len(eni.IPv4Addresses) < maxIPPerENI {
-		log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d",
-			eni.ID, len(eni.IPv4Addresses), maxIPPerENI)
+	if eni != nil && len(eni.IPv4Addresses) < maxIPPerENI {
+		log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d", eni.ID, len(eni.IPv4Addresses), maxIPPerENI)
 
 		err = c.awsClient.AllocIPAddresses(eni.ID, maxIPPerENI-len(eni.IPv4Addresses))
 		if err != nil {
-			log.Warnf("Failed to allocate all available IP addresses on an ENI %s: %s", eni.ID, err)
+			return false, errors.Wrap(err, fmt.Sprintf("failed to allocate all available IP addresses on ENI %s", eni.ID))
 		}
 
 		ec2Addrs, _, err := c.getENIaddresses(eni.ID)
 		if err != nil {
 			ipamdErrInc("increaseIPPoolGetENIaddressesFailed", err)
-			log.Warn("During eni repair: failed to get ENI ip addresses", err)
-			return
+			return true, errors.Wrap(err, "failed to get ENI IP addresses during IP allocation")
 		}
+
 		c.addENIaddressesToDataStore(ec2Addrs, eni.ID)
+		return true, nil
 	}
+	return false, nil
 }
 
 // setupENI does following:
