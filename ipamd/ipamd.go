@@ -171,11 +171,13 @@ type IPAMContext struct {
 	reconcileCooldownCache ReconcileCooldownCache
 }
 
+// Keep track of recently freed IPs to avoid reading stale EC2 metadata
 type ReconcileCooldownCache struct {
 	cache map[string]time.Time
 	lock  sync.RWMutex
 }
 
+// Add sets a timestamp for the list of IPs added that says how long they are not to be put back in the data store.
 func (r *ReconcileCooldownCache) Add(ips []string) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -185,14 +187,24 @@ func (r *ReconcileCooldownCache) Add(ips []string) {
 	}
 }
 
-func (r *ReconcileCooldownCache) RecentlyFreed(ip string) bool {
+// Remove removes an IP from the cooldown cache.
+func (r *ReconcileCooldownCache) Remove(ip string) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	log.Debugf("Removing %s from cooldown cache.", ip)
+	delete(r.cache, ip)
+}
+
+// RecentlyFreed checks if this IP was recently freed.
+func (r *ReconcileCooldownCache) RecentlyFreed(ip string) (found, recentlyFreed bool) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	now := time.Now()
 	if expiry, ok := r.cache[ip]; ok {
-		return now.Sub(expiry) < 0
+		log.Debugf("Checking if IP %s has been recently freed. Cooldown expires at: %s. (Cooldown: %v)", ip, expiry, now.Sub(expiry) < 0)
+		return true, now.Sub(expiry) < 0
 	}
-	return false
+	return false, false
 }
 
 func prometheusRegister() {
@@ -286,13 +298,13 @@ func (c *IPAMContext) nodeInit() error {
 			retry++
 			err = c.setupENI(eni.ENIID, eni)
 			if retry > maxRetryCheckENI {
-				log.Errorf("unable to discover attached IPs for ENI from metadata service")
+				log.Errorf("Unable to discover attached IPs for ENI from metadata service")
 				ipamdErrInc("waitENIAttachedMaxRetryExceeded", err)
 				break
 			}
 
 			if err != nil {
-				log.Debugf("Not able to discover IPs for this ENI yet (attempt %d/%d)", retry, maxRetryCheckENI)
+				log.Debugf("Unable to discover IPs for this ENI yet (attempt %d/%d)", retry, maxRetryCheckENI)
 				time.Sleep(eniAttachTime)
 				continue
 			}
@@ -493,9 +505,9 @@ func (c *IPAMContext) tryUnassignIPsFromAll() {
 
 			// Deallocate IPs from the instance if they aren't used by pods.
 			if err := c.awsClient.DeallocIPAddresses(eniID, deletedIPs); err != nil {
-				log.Debugf(fmt.Sprintf("Failed to decrease IP pool by removing IPs %v from ENI %s: %s", deletedIPs, eniID, err))
+				log.Warnf("Failed to decrease IP pool by removing IPs %v from ENI %s: %s", deletedIPs, eniID, err)
 			} else {
-				log.Debugf(fmt.Sprintf("Successfully decreased IP pool by removing IPs %v from ENI %s", deletedIPs, eniID))
+				log.Debugf("Successfully decreased IP pool by removing IPs %v from ENI %s", deletedIPs, eniID)
 			}
 
 			// Track the last time we unassigned IPs from an ENI. We won't reconcile any IPs in this cache
@@ -637,7 +649,7 @@ func (c *IPAMContext) tryAllocateENI() {
 	eniMetadata, err := c.waitENIAttached(eni)
 	if err != nil {
 		ipamdErrInc("increaseIPPoolwaitENIAttachedFailed", err)
-		log.Errorf("Failed to increase pool size: not able to discover attached ENI from metadata service %v", err)
+		log.Errorf("Failed to increase pool size: Unable to discover attached ENI from metadata service %v", err)
 		return
 	}
 
@@ -651,8 +663,7 @@ func (c *IPAMContext) tryAllocateENI() {
 
 // For an ENI, try to fill in missing IPs
 func (c *IPAMContext) tryAssignIPs() {
-
-	// if WARM_IP_TARGET is set, only proceed if we are short of target
+	// If WARM_IP_TARGET is set, only proceed if we are short of target
 	short, _, warmIPTargetDefined := c.ipTargetState()
 	if warmIPTargetDefined && short == 0 {
 		return
@@ -964,9 +975,37 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 			continue
 		}
 
-		if c.reconcileCooldownCache.RecentlyFreed(localIP) {
-			log.Debugf("Reconcile skipping IP %s on ENI %s because it was recently unassigned from the ENI.", localIP, eni)
-			continue
+		// Check if this IP was recently freed
+		found, recentlyFreed :=  c.reconcileCooldownCache.RecentlyFreed(localIP)
+		if found {
+			if recentlyFreed {
+				log.Debugf("Reconcile skipping IP %s on ENI %s because it was recently unassigned from the ENI.", localIP, eni)
+				continue
+			} else {
+				log.Debugf("This IP was recently freed, but is out of cooldown. We need to verify with EC2 control plane.")
+				// Call EC2 to verify
+				ec2Addresses, _, err := c.getENIaddresses(eni)
+				if err != nil {
+					log.Error("Failed to fetch ENI IP addresses!")
+					continue
+				} else {
+					// Verify that the IP really belongs to this ENI
+					isReallyAttachedToENI := false
+					for _, ec2Addr := range ec2Addresses {
+						if localIP == aws.StringValue(ec2Addr.PrivateIpAddress) {
+							isReallyAttachedToENI = true
+							log.Debugf("Verified that IP %s is attached to ENI %s", localIP, eni)
+							break
+						}
+					}
+					if isReallyAttachedToENI {
+						c.reconcileCooldownCache.Remove(localIP)
+					} else {
+						log.Warnf(" Skipping IP %s on ENI %s because it does not belong to this ENI!.", localIP, eni)
+						continue
+					}
+				}
+			}
 		}
 
 		err := c.dataStore.AddIPv4AddressFromStore(eni, localIP)
