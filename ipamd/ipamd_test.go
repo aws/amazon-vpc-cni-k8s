@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
@@ -157,28 +156,6 @@ func TestIncreaseIPPoolDefault(t *testing.T) {
 func TestIncreaseIPPoolCustomENI(t *testing.T) {
 	_ = os.Setenv(envCustomNetworkCfg, "true")
 	testIncreaseIPPool(t, true)
-}
-
-func TestIncreaseIPPoolCustomENINoCfg(t *testing.T) {
-	os.Setenv(envCustomNetworkCfg, "true")
-	ctrl, mockAWS, mockK8S, mockNetwork, mockENIConfig := setup(t)
-	defer ctrl.Finish()
-
-	mockContext := &IPAMContext{
-		awsClient:     mockAWS,
-		k8sClient:     mockK8S,
-		networkClient: mockNetwork,
-		eniConfig:     mockENIConfig,
-		primaryIP:     make(map[string]string),
-	}
-
-	mockContext.dataStore = datastore.NewDataStore()
-
-	mockAWS.EXPECT().GetENILimit().Return(4, nil)
-	mockENIConfig.EXPECT().MyENIConfig().Return(nil, errors.New("no POD eni config"))
-
-	mockContext.increaseIPPool()
-
 }
 
 func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
@@ -395,7 +372,7 @@ func TestGetMaxENI(t *testing.T) {
 }
 
 func TestGetWarmIPTargetState(t *testing.T) {
-	ctrl, mockAWS, mockK8S, _, mockNetwork, _ := setup(t)
+	ctrl, mockAWS, mockK8S, mockNetwork, _ := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
