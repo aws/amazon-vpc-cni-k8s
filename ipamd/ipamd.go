@@ -98,7 +98,7 @@ var (
 			Name: "awscni_ipamd_error_count",
 			Help: "The number of errors encountered in ipamd",
 		},
-		[]string{"fn", "error"},
+		[]string{"fn"},
 	)
 	ipamdActionsInprogress = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -807,7 +807,7 @@ func (c *IPAMContext) nodeIPPoolTooHigh() bool {
 }
 
 func ipamdErrInc(fn string, err error) {
-	ipamdErr.With(prometheus.Labels{"fn": fn, "error": err.Error()}).Inc()
+	ipamdErr.With(prometheus.Labels{"fn": fn}).Inc()
 }
 
 // nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
