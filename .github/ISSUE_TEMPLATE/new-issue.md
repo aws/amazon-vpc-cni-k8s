@@ -1,5 +1,5 @@
 ---
-name: Default issue template
+name: New issue
 about: Base issue template
 title: ''
 labels: ''
