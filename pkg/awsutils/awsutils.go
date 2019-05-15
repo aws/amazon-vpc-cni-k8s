@@ -860,8 +860,7 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
 	eniLimit, ok := InstanceENIsAvailable[cache.instanceType]
 
 	if !ok {
-		log.Errorf("Failed to get ENI limit due to unknown instance type %s", cache.instanceType)
-		return 0, errors.New(UnknownInstanceType)
+		return 0, errors.New(fmt.Sprintf("%s: %s", UnknownInstanceType, cache.instanceType))
 	}
 	return eniLimit, nil
 }
@@ -880,7 +879,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 		return nil
 	}
 
-	log.Infof("Trying to allocate %d IP address on ENI %s", needIPs, eniID)
+	log.Infof("Trying to allocate %d IP addresses on ENI %s", needIPs, eniID)
 
 	input := &ec2.AssignPrivateIpAddressesInput{
 		NetworkInterfaceId:             aws.String(eniID),
@@ -973,7 +972,6 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []st
 	awsAPILatency.WithLabelValues("UnassignPrivateIpAddressesWithContext", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("UnassignPrivateIpAddressesWithContext", err)
-
 		log.Errorf("Failed to deallocate a private IP address %v", err)
 		return errors.Wrap(err, fmt.Sprintf("deallocate IP addresses: failed to deallocate private IP addresses: %s", ips))
 	}
