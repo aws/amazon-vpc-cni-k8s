@@ -14,12 +14,12 @@
 package awsutils
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-	"context"
 
 	"github.com/pkg/errors"
 
