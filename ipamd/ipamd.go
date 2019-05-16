@@ -158,10 +158,6 @@ type IPAMContext struct {
 
 	currentMaxAddrsPerENI int
 	maxAddrsPerENI        int
-	// maxENI indicate the maximum number of ENIs can be attached to the instance
-	// It is initialized to 0 and it is set to current number of ENIs attached
-	// when ipamd receives AttachmentLimitExceeded error
-	maxENI               int
 	primaryIP            map[string]string
 	lastNodeIPPoolAction time.Time
 	lastDecreaseIPPool   time.Time
@@ -590,13 +586,8 @@ func (c *IPAMContext) increaseIPPool() {
 	}
 
 	if c.dataStore.GetENIs() < maxENIs {
-		// c.maxENI represent the discovered maximum number of ENIs
-		if (c.maxENI > 0) && (c.maxENI == c.dataStore.GetENIs()) {
-			log.Debugf("Skipping ENI allocation due to max ENI already attached to the instance: %d", c.maxENI)
-		} else {
-			c.tryAllocateENI()
-			c.updateLastNodeIPPoolAction()
-		}
+		c.tryAllocateENI()
+		c.updateLastNodeIPPoolAction()
 	} else {
 		log.Debugf("Skipping ENI allocation due to max ENI already attached to the instance: %d", maxENIs)
 	}
@@ -640,12 +631,6 @@ func (c *IPAMContext) tryAllocateENI() {
 	eni, err := c.awsClient.AllocENI(customNetworkCfg, securityGroups, subnet)
 	if err != nil {
 		log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
-
-		if isAttachmentLimitExceededError(err) {
-			c.maxENI = c.dataStore.GetENIs()
-			log.Infof("Discovered the instance max ENI allowed is: %d", c.maxENI)
-		}
-		// TODO need to add health stats
 		ipamdErrInc("increaseIPPoolAllocENI", err)
 		return
 	}
