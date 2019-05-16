@@ -220,7 +220,7 @@ func (d *Controller) handlePodUpdate(key string) error {
 	}
 
 	if !exists {
-		log.Infof(" Pods deleted on my node: %v", key)
+		log.Infof("Pods deleted on my node: %v", key)
 		d.workerPodsLock.Lock()
 		defer d.workerPodsLock.Unlock()
 		delete(d.workerPods, key)
@@ -253,12 +253,12 @@ func (d *Controller) handlePodUpdate(key string) error {
 			IP:        pod.Status.PodIP,
 		}
 
-		log.Infof(" Add/Update for Pod %s on my node, namespace = %s, IP = %s", podName, d.workerPods[key].Namespace, d.workerPods[key].IP)
+		log.Infof("Add/Update for Pod %s on my node, namespace = %s, IP = %s", podName, d.workerPods[key].Namespace, d.workerPods[key].IP)
 	} else if strings.HasPrefix(key, metav1.NamespaceSystem+"/"+cniPodName) {
 		d.cniPodsLock.Lock()
 		defer d.cniPodsLock.Unlock()
 
-		log.Infof(" Add/Update for CNI pod %s", podName)
+		log.Infof("Add/Update for CNI pod %s", podName)
 		d.cniPods[podName] = podName
 	}
 	return nil

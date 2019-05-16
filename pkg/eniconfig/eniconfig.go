@@ -136,7 +136,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			h.controller.eniLock.Lock()
 			defer h.controller.eniLock.Unlock()
 			h.controller.myENI = val
-			log.Infof(" Setting myENI to: %s", val)
+			log.Infof("Setting myENI to: %s", val)
 		}
 	}
 	return nil
