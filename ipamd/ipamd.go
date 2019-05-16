@@ -337,7 +337,7 @@ func (c *IPAMContext) nodeInit() error {
 		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
 		if err != nil {
 			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed", err)
-			log.Warnf("During ipamd init, failed to use pod ip %s returned from Kubelet %v", ip.IP, err)
+			log.Warnf("During ipamd init, failed to use pod IP %s returned from Kubelet %v", ip.IP, err)
 			// TODO continue, but need to add node health stats here
 			// TODO need to feed this to controller on the health of pod and node
 			// This is a bug among kubelet/cni-plugin/l-ipamd/ec2-metadata that this particular pod is using an non existent ip address.
@@ -452,7 +452,7 @@ func (c *IPAMContext) decreaseIPPool(interval time.Duration) {
 	logPoolStats(total, used, c.currentMaxAddrsPerENI, c.maxAddrsPerENI)
 }
 
-// tryFreeENI always trys to free one ENI
+// tryFreeENI always tries to free one ENI
 func (c *IPAMContext) tryFreeENI() {
 	warmIPTarget := getWarmIPTarget()
 
@@ -637,7 +637,7 @@ func (c *IPAMContext) tryAllocateENI() {
 
 	maxIPPerENI, err := c.awsClient.GetENIipLimit()
 	if err != nil {
-		log.Infof("Failed to retrieve ENI IP limit: %v", err)
+		log.Warnf("Failed to retrieve ENI IP limit: %v", err)
 		return
 	}
 
@@ -1009,7 +1009,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 					if isReallyAttachedToENI {
 						c.reconcileCooldownCache.Remove(localIP)
 					} else {
-						log.Warnf(" Skipping IP %s on ENI %s because it does not belong to this ENI!.", localIP, eni)
+						log.Warnf("Skipping IP %s on ENI %s because it does not belong to this ENI!.", localIP, eni)
 						continue
 					}
 				}

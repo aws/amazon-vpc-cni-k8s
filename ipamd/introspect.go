@@ -44,7 +44,7 @@ type LoggingHandler struct {
 }
 
 func (lh LoggingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Info("Handling http request: ", ", method: ", r.Method, ", from: ", r.RemoteAddr, ", URI: ", r.RequestURI)
+	log.Infof("Handling http request: %s, from: %s, URI: %s", r.Method, r.RemoteAddr, r.RequestURI)
 	lh.h.ServeHTTP(w, r)
 }
 
