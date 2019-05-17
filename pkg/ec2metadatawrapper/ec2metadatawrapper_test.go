@@ -1,11 +1,11 @@
 package ec2metadatawrapper
 
 import (
+	mockec2metadatawrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper/mocks"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
-	"github.com/aws/wesley-k8s-metrics/pkg/ec2metadatawrapper/mocks"
 
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
@@ -35,7 +35,7 @@ func TestGetInstanceIdentityDocHappyPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockGetter := mock_ec2metadatawrapper.NewMockHttpClient(ctrl)
+	mockGetter := mockec2metadatawrapper.NewMockHttpClient(ctrl)
 	testClient := New(mockGetter)
 
 	mockGetter.EXPECT().GetInstanceIdentityDocument().Return(testInstanceIdentityDoc, nil)
@@ -49,7 +49,7 @@ func TestGetInstanceIdentityDocError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockGetter := mock_ec2metadatawrapper.NewMockHttpClient(ctrl)
+	mockGetter := mockec2metadatawrapper.NewMockHttpClient(ctrl)
 	testClient := New(mockGetter)
 
 	mockGetter.EXPECT().GetInstanceIdentityDocument().Return(ec2metadata.EC2InstanceIdentityDocument{}, errors.New("test error"))
@@ -63,7 +63,7 @@ func TestGetRegionHappyPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockGetter := mock_ec2metadatawrapper.NewMockHttpClient(ctrl)
+	mockGetter := mockec2metadatawrapper.NewMockHttpClient(ctrl)
 	testClient := New(mockGetter)
 
 	mockGetter.EXPECT().Region().Return(iidRegion, nil)
@@ -77,7 +77,7 @@ func TestGetRegionErr(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockGetter := mock_ec2metadatawrapper.NewMockHttpClient(ctrl)
+	mockGetter := mockec2metadatawrapper.NewMockHttpClient(ctrl)
 	testClient := New(mockGetter)
 
 	mockGetter.EXPECT().Region().Return("", errors.New("test error"))
