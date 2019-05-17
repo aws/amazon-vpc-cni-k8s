@@ -28,6 +28,11 @@ ifeq ($(ARCH),x86_64)
   ARCH = amd64
 endif
 
+# Default to build the Linux binary
+build-linux:
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "$(LDFLAGS)"
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-cni -ldflags "$(LDFLAGS)" ./plugins/routed-eni/
+
 # Download portmap plugin
 download-portmap:
 	mkdir -p tmp/downloads
@@ -36,11 +41,6 @@ download-portmap:
 	tar -vxf tmp/downloads/cni-plugins-$(ARCH).tgz -C tmp/plugins
 	cp tmp/plugins/portmap .
 	rm -rf tmp
-
-# Default to build the Linux binary
-build-linux:
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "$(LDFLAGS)"
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-cni -ldflags "$(LDFLAGS)" ./plugins/routed-eni/
 
 # Build CNI Docker image
 docker:

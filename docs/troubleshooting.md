@@ -7,7 +7,7 @@ As described in [Proposal: CNI plugin for Kubernetes networking over AWS VPC](./
 A node, based on the instance type ([Limit](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI)), can have up to N ENIs and M addresses. The maximum number of IP addresses available to Pods on this node is min((N*M -N), subnet's free IP)
 
 ### Tip: Make sure subnet have enough available addresses
- If a subnet runs out of IP addresses, ipamD will not able to get secondary IP addresses.  When this happens, pods assigned to this node may not able to get an IP and get stucked in ** ContainerCreating**.
+If a subnet runs out of IP addresses, ipamD will not able to get secondary IP addresses. When this happens, pods assigned to this node may not able to get an IP and get stucked in ** ContainerCreating**.
 
 You can check the available IP addresses in AWS console:
 ![](images/subnet.png)
@@ -16,7 +16,7 @@ You can check the available IP addresses in AWS console:
 
 ### Tip: Make sure there are enough ENIs and IPs for Pods in the cluster
 
-We provide a tool [**cni-metrics-helper**](../misc/cni_metrics_helper.yaml) which can show aggregated ENIs and IPs information at the cluster level.  
+We provide a tool [**cni-metrics-helper**](../config/v1.4/cni-metrics-helper.yaml) which can show aggregated ENIs and IPs information at the cluster level.
 
 You can optionally push them to cloudwatch.  For example:
 
