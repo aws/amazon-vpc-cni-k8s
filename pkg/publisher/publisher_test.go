@@ -147,7 +147,6 @@ func TestCloudWatchPubisherWithSingleDatumWithError(t *testing.T) {
 }
 
 func TestCloudWatchPubisherWithGreaterThanMaxDatapointsAndExplicitStartStop(t *testing.T) {
-	t.Skip()
 	cloudwatchPublisher := getCloudWatchPublisher(t)
 
 	var metricDataPoints []*cloudwatch.MetricDatum
