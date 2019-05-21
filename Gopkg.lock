@@ -97,14 +97,6 @@
   version = "v1.1.1"
 
 [[projects]]
-  digest = "1:aaeffbff5bd24654cb4c190ed75d6c7b57b4f5d6741914c1a7a6bb7447e756c5"
-  name = "github.com/deckarep/golang-set"
-  packages = ["."]
-  pruneopts = ""
-  revision = "cbaa98ba5575e67703b32b4b19f73c91f3c4159e"
-  version = "v1.7.1"
-
-[[projects]]
   digest = "1:a9e4ff75555e4500e409dc87c1d708b090bb8dd77f889bbf266773f3dc23af70"
   name = "github.com/docker/distribution"
   packages = [
@@ -750,7 +742,6 @@
     "github.com/containernetworking/cni/pkg/types/current",
     "github.com/containernetworking/cni/pkg/version",
     "github.com/coreos/go-iptables/iptables",
-    "github.com/deckarep/golang-set",
     "github.com/docker/docker/api/types",
     "github.com/docker/docker/client",
     "github.com/golang/mock/gomock",

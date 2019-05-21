@@ -287,15 +287,13 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, len(ds.eniIPPools["eni-2"].IPv4Addresses), 1)
 	assert.Equal(t, ds.eniIPPools["eni-2"].AssignedIPv4Addresses, 0)
 
-	noWarmIPTarget := 0
-
 	// should not able to free this eni
-	eni := ds.RemoveUnusedENIFromStore(noWarmIPTarget)
+	eni := ds.RemoveUnusedENIFromStore()
 	assert.True(t, eni == "")
 
 	ds.eniIPPools["eni-2"].createTime = time.Time{}
 	ds.eniIPPools["eni-2"].lastUnassignedTime = time.Time{}
-	eni = ds.RemoveUnusedENIFromStore(noWarmIPTarget)
+	eni = ds.RemoveUnusedENIFromStore()
 	assert.Equal(t, eni, "eni-2")
 
 	assert.Equal(t, ds.total, 2)
