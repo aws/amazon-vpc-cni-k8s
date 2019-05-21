@@ -368,7 +368,18 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 	for retry := 1; retry <= maxK8SRetries; retry++ {
 		pods, err = c.k8sClient.K8SGetLocalPodIPs()
 		if err == nil {
-			break
+			// Check for pods with no IP since the API server might not have the latest state of the node.
+			allPodsHaveAnIP := true
+			for _, pod := range pods {
+				if pod.IP == "" {
+					log.Infof("Pod %s, Namespace %s, has no IP", pod.Name, pod.Namespace)
+					allPodsHaveAnIP = false
+				}
+			}
+			if allPodsHaveAnIP {
+				break
+			}
+			log.Warnf("Not all pods have an IP, trying again in %s seconds.", retryK8SInterval.Seconds())
 		}
 		log.Infof("Not able to get local pods yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
 		time.Sleep(retryK8SInterval)
