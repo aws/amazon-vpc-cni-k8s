@@ -48,14 +48,14 @@ Max IPs = min((N * M - N), subnet's free IP)
 ### Pod to Pod Communication
 Here is an overview on how we setup host side network stack and pod side network stack to allow pod to pod communication:
 
-![](https://s3-us-west-1.amazonaws.com/liwen-public/wire-network.png)
+![](images/wire-network.png)
 
 #### Inside a Pod
 
  IP address
  
  ```
- / # ip addr show
+# ip addr show
 1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN qlen 1
     link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
     inet 127.0.0.1/8 scope host lo
@@ -156,7 +156,7 @@ Here are the wiring steps to enable pod to pod communication:
 
 #### Life of a Pod to Pod Ping Packet
 
-![](https://s3-us-west-1.amazonaws.com/liwen-public/ping.png)
+![](images/ping.png)
 
 ### Pod to external communications
 For Pod to external (outside VPC) traffic, we will program iptables to SNAT using Primary IP address on the Primary ENI.
@@ -169,7 +169,7 @@ Here is the NAT rule:
 
 #### Life of a Pod to External Packet
 
-![](https://s3-us-west-1.amazonaws.com/liwen-public/ping2external.png)
+![](images/ping2external.png)
 
 ### Local IP Address Manager (L-IPAM)
 
@@ -230,7 +230,7 @@ curl http://localhost:6666/ip-manager
 
 We will use gRPC for inter-process communication between CNI-plugin and L-IPAM.
 
-![](https://s3-us-west-1.amazonaws.com/liwen-public/ipam.png)
+![](images/ipam.png)
 
 ### Installation
 L-IPAM runs as DaemonSet on all nodes.
