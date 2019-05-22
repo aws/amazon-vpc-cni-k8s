@@ -289,7 +289,7 @@ func TestPodIPv4Address(t *testing.T) {
 
 	noWarmIPTarget := 0
 
-	// should not able to free this eni
+	// Should not be able to free this ENI
 	eni := ds.RemoveUnusedENIFromStore(noWarmIPTarget)
 	assert.True(t, eni == "")
 
