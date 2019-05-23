@@ -69,10 +69,10 @@ func main() {
 
 	cwENV, found := os.LookupEnv("USE_CLOUDWATCH")
 	if found {
-		if strings.Compare(cwENV, "yes") == 0 {
+		if strings.Compare(cwENV, "yes") == 0 || strings.Compare(cwENV, "true") == 0 {
 			options.submitCW = true
 		}
-		if strings.Compare(cwENV, "no") == 0 {
+		if strings.Compare(cwENV, "no") == 0 || strings.Compare(cwENV, "false") == 0 {
 			options.submitCW = false
 		}
 	}
