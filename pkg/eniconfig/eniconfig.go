@@ -21,14 +21,14 @@ import (
 	"sync"
 	"time"
 
-	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
+	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/pkg/errors"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
 
-	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
+	"github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 
 	log "github.com/cihub/seelog"
@@ -96,15 +96,11 @@ type Handler struct {
 	controller *ENIConfigController
 }
 
-// Handle handles ENIconfigs updates from API Server and store them in local cache
+// Handle handles ENIConfig updates from API Server and store them in local cache
 func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	switch o := event.Object.(type) {
 	case *v1alpha1.ENIConfig:
-
 		eniConfigName := o.GetName()
-
-		curENIConfig := o.DeepCopy()
-
 		if event.Deleted {
 			log.Infof("Deleting ENIConfig: %s", eniConfigName)
 			h.controller.eniLock.Lock()
@@ -113,18 +109,18 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			return nil
 		}
 
-		log.Infof("Handle ENIConfig Add/Update:  %s, %v, %s", eniConfigName, curENIConfig.Spec.SecurityGroups, curENIConfig.Spec.Subnet)
+		curENIConfig := o.DeepCopy()
+
+		log.Infof("Handle ENIConfig Add/Update: %s, %v, %s", eniConfigName, curENIConfig.Spec.SecurityGroups, curENIConfig.Spec.Subnet)
 
 		h.controller.eniLock.Lock()
 		defer h.controller.eniLock.Unlock()
 		h.controller.eni[eniConfigName] = &curENIConfig.Spec
 
 	case *corev1.Node:
-
 		log.Infof("Handle corev1.Node: %s, %v, %v", o.GetName(), o.GetAnnotations(), o.GetLabels())
 		// Get annotations if not found get labels if not found fallback use default
 		if h.controller.myNodeName == o.GetName() {
-
 			val, ok := o.GetAnnotations()[h.controller.eniConfigAnnotationDef]
 			if !ok {
 				val, ok = o.GetLabels()[h.controller.eniConfigLabelDef]
@@ -161,7 +157,7 @@ func (eniCfg *ENIConfigController) Start() {
 		log.Errorf("failed to get watch namespace: %v", err)
 	}
 	resyncPeriod := time.Second * 5
-	log.Infof("Watching %s, %s, %s, %d", resource, kind, namespace, resyncPeriod)
+	log.Infof("Watching %s, %s, %s, every %d s", resource, kind, namespace, resyncPeriod.Seconds())
 	sdk.Watch(resource, kind, namespace, resyncPeriod)
 	sdk.Watch("/v1", "Node", corev1.NamespaceAll, resyncPeriod)
 	sdk.Handle(NewHandler(eniCfg))
@@ -213,7 +209,6 @@ func getEniConfigAnnotationDef() string {
 		log.Debugf("Using ENI_CONFIG_ANNOTATION_DEF %v", inputStr)
 		return inputStr
 	}
-
 	return defaultEniConfigAnnotationDef
 }
 
@@ -228,6 +223,5 @@ func getEniConfigLabelDef() string {
 		log.Debugf("Using ENI_CONFIG_LABEL_DEF %v", inputStr)
 		return inputStr
 	}
-
 	return defaultEniConfigLabelDef
 }
