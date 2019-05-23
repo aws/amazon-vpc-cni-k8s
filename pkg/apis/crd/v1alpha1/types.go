@@ -22,7 +22,6 @@ type ENIConfig struct {
 }
 
 type ENIConfigSpec struct {
-	// Fill me
 	SecurityGroups []string `json:"securityGroups"`
 	Subnet         string   `json:"subnet"`
 }

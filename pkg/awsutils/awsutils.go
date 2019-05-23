@@ -477,7 +477,7 @@ func (cache *EC2InstanceMetadataCache) getENIDeviceNumber(eniMAC string) (string
 	awsAPILatency.WithLabelValues("GetMetadata", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve the device-number of ENI %s,  %v", eniMAC, err)
+		log.Errorf("Failed to retrieve the device-number of ENI %s, %v", eniMAC, err)
 		return "", 0, errors.Wrapf(err, "failed to retrieve device-number for ENI %s",
 			eniMAC)
 	}
@@ -620,7 +620,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 	var input *ec2.CreateNetworkInterfaceInput
 
 	if useCustomCfg {
-		log.Infof("createENI: use customer network config, %v, %s", sg, subnet)
+		log.Infof("createENI: use custom network config, %v, %s", &sg, subnet)
 		input = &ec2.CreateNetworkInterfaceInput{
 			Description: aws.String(eniDescription),
 			Groups:      sg,
