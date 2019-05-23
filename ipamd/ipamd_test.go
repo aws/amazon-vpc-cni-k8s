@@ -75,10 +75,14 @@ func TestNodeInit(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:     mockAWS,
-		k8sClient:     mockK8S,
-		dockerClient:  mockDocker,
-		networkClient: mockNetwork}
+		awsClient:      mockAWS,
+		k8sClient:      mockK8S,
+		maxAddrsPerENI: 14,
+		maxENI:         4,
+		warmENITarget:  1,
+		warmIPTarget:   3,
+		dockerClient:   mockDocker,
+		networkClient:  mockNetwork}
 
 	eni1 := awsutils.ENIMetadata{
 		ENIID:          primaryENIid,
@@ -119,7 +123,6 @@ func TestNodeInit(t *testing.T) {
 			PrivateIpAddress: &testAddr1, Primary: &primary},
 		{
 			PrivateIpAddress: &testAddr2, Primary: &notPrimary}}
-	mockAWS.EXPECT().GetENIipLimit().Return(56, nil)
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	mockAWS.EXPECT().DescribeENI(primaryENIid).Return(eniResp, &attachmentID, nil)
 
@@ -133,7 +136,6 @@ func TestNodeInit(t *testing.T) {
 			PrivateIpAddress: &testAddr11, Primary: &primary},
 		{
 			PrivateIpAddress: &testAddr12, Primary: &notPrimary}}
-	mockAWS.EXPECT().GetENIipLimit().Return(56, nil)
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	mockAWS.EXPECT().DescribeENI(secENIid).Return(eniResp, &attachmentID, nil)
 	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
@@ -174,14 +176,25 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:     mockAWS,
-		k8sClient:     mockK8S,
-		networkClient: mockNetwork,
-		eniConfig:     mockENIConfig,
-		primaryIP:     make(map[string]string),
+		awsClient:        mockAWS,
+		k8sClient:        mockK8S,
+		maxAddrsPerENI:   14,
+		maxENI:           4,
+		warmENITarget:    1,
+		networkClient:    mockNetwork,
+		customNetworkCfg: UseCustomNetworkCfg(),
+		eniConfig:        mockENIConfig,
+		primaryIP:        make(map[string]string),
 	}
 
 	mockContext.dataStore = datastore.NewDataStore()
+
+	primary := true
+	notPrimary := false
+	attachmentID := testAttachmentID
+	testAddr11 := ipaddr11
+	testAddr12 := ipaddr12
+	eni2 := secENIid
 
 	podENIConfig := &v1alpha1.ENIConfigSpec{
 		SecurityGroups: []string{"sg1-id", "sg2-id"},
@@ -192,6 +205,108 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 	for _, sgID := range podENIConfig.SecurityGroups {
 		sg = append(sg, aws.String(sgID))
 	}
+
+	if useENIConfig {
+		mockENIConfig.EXPECT().MyENIConfig().Return(podENIConfig, nil)
+		mockAWS.EXPECT().AllocENI(true, sg, podENIConfig.Subnet).Return(eni2, nil)
+	} else {
+		mockAWS.EXPECT().AllocENI(false, nil, "").Return(eni2, nil)
+	}
+
+	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
+		{
+			ENIID:          primaryENIid,
+			MAC:            primaryMAC,
+			DeviceNumber:   primaryDevice,
+			SubnetIPv4CIDR: primarySubnet,
+			LocalIPv4s:     []string{ipaddr01, ipaddr02},
+		},
+		{
+			ENIID:          secENIid,
+			MAC:            secMAC,
+			DeviceNumber:   secDevice,
+			SubnetIPv4CIDR: secSubnet,
+			LocalIPv4s:     []string{ipaddr11, ipaddr12}},
+	}, nil)
+
+	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
+
+	mockAWS.EXPECT().AllocIPAddresses(eni2, 14)
+	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
+
+	mockAWS.EXPECT().DescribeENI(eni2).Return(
+		[]*ec2.NetworkInterfacePrivateIpAddress{
+			{ PrivateIpAddress: &testAddr11, Primary: &primary },
+			{ PrivateIpAddress: &testAddr12, Primary: &notPrimary },
+			{ PrivateIpAddress: &testAddr12, Primary: &notPrimary },
+		},
+		&attachmentID, nil)
+
+	mockContext.increaseIPPool()
+}
+
+func TestTryAddIPToENI(t *testing.T) {
+	_ = os.Unsetenv(envCustomNetworkCfg)
+	ctrl, mockAWS, mockK8S, _, mockNetwork, mockENIConfig := setup(t)
+	defer ctrl.Finish()
+
+	warmIpTarget := 3
+	mockContext := &IPAMContext{
+		awsClient:      mockAWS,
+		k8sClient:      mockK8S,
+		maxAddrsPerENI: 14,
+		maxENI:         4,
+		warmENITarget:  1,
+		warmIPTarget:   warmIpTarget,
+		networkClient:  mockNetwork,
+		eniConfig:      mockENIConfig,
+		primaryIP:      make(map[string]string),
+	}
+
+	mockContext.dataStore = datastore.NewDataStore()
+
+	podENIConfig := &v1alpha1.ENIConfigSpec{
+		SecurityGroups: []string{"sg1-id", "sg2-id"},
+		Subnet:         "subnet1",
+	}
+	var sg []*string
+	for _, sgID := range podENIConfig.SecurityGroups {
+		sg = append(sg, aws.String(sgID))
+	}
+
+	mockAWS.EXPECT().AllocENI(false, nil, "").Return(secENIid, nil)
+	mockAWS.EXPECT().AllocIPAddresses(secENIid, warmIpTarget)
+	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
+		{
+			ENIID:          primaryENIid,
+			MAC:            primaryMAC,
+			DeviceNumber:   primaryDevice,
+			SubnetIPv4CIDR: primarySubnet,
+			LocalIPv4s:     []string{ipaddr01, ipaddr02},
+		},
+		{
+			ENIID:          secENIid,
+			MAC:            secMAC,
+			DeviceNumber:   secDevice,
+			SubnetIPv4CIDR: secSubnet,
+			LocalIPv4s:     []string{ipaddr11, ipaddr12}},
+	}, nil)
+	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
+	primary := true
+	notPrimary := false
+	attachmentID := testAttachmentID
+	testAddr11 := ipaddr11
+	testAddr12 := ipaddr12
+	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	mockAWS.EXPECT().DescribeENI(secENIid).Return(
+		[]*ec2.NetworkInterfacePrivateIpAddress{
+			{ PrivateIpAddress: &testAddr11, Primary: &primary },
+			{ PrivateIpAddress: &testAddr12, Primary: &notPrimary },
+			{ PrivateIpAddress: &testAddr12, Primary: &notPrimary },
+		},
+		&attachmentID, nil)
 
 	mockContext.increaseIPPool()
 }
@@ -233,7 +348,6 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 				PrivateIpAddress: &testAddr1, Primary: &primary},
 			{
 				PrivateIpAddress: &testAddr2, Primary: &notPrimary}}, &attachmentID, nil)
-	mockAWS.EXPECT().GetENIipLimit().Return(5, nil)
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 
 	mockContext.nodeIPPoolReconcile(0)
