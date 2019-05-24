@@ -870,7 +870,12 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	var needIPs = numIPs
 
 	ipLimit, err := cache.GetENIipLimit()
-	if err == nil && ipLimit < needIPs {
+	if err != nil {
+		awsUtilsErrInc("UnknownInstanceType", err)
+		return err
+	}
+
+	if ipLimit < needIPs {
 		needIPs = ipLimit
 	}
 
