@@ -295,7 +295,7 @@ func (c *IPAMContext) nodeInit() error {
 			err = c.setupENI(eni.ENIID, eni)
 			if retry > maxRetryCheckENI {
 				log.Errorf("Unable to discover attached IPs for ENI from metadata service")
-				ipamdErrInc("waitENIAttachedMaxRetryExceeded", err)
+				ipamdErrInc("waitENIAttachedMaxRetryExceeded")
 				break
 			}
 
@@ -312,7 +312,7 @@ func (c *IPAMContext) nodeInit() error {
 	usedIPs, err := c.getLocalPodsWithRetry()
 	if err != nil {
 		log.Warnf("During ipamd init, failed to get Pod information from kubelet %v", err)
-		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed", err)
+		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed")
 		// This can happens when L-IPAMD starts before kubelet.
 		// TODO  need to add node health stats here
 		return errors.Wrap(err, "failed to get running pods!")
@@ -336,7 +336,7 @@ func (c *IPAMContext) nodeInit() error {
 		log.Infof("Recovered AddNetwork for Pod %s, Namespace %s, Container %s", ip.Name, ip.Namespace, ip.Container)
 		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
 		if err != nil {
-			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed", err)
+			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed")
 			log.Warnf("During ipamd init, failed to use pod IP %s returned from Kubelet %v", ip.IP, err)
 			// TODO continue, but need to add node health stats here
 			// TODO need to feed this to controller on the health of pod and node
@@ -475,7 +475,7 @@ func (c *IPAMContext) tryFreeENI() {
 	log.Debugf("Start freeing ENI %s", eni)
 	err := c.awsClient.FreeENI(eni)
 	if err != nil {
-		ipamdErrInc("decreaseIPPoolFreeENIFailed", err)
+		ipamdErrInc("decreaseIPPoolFreeENIFailed")
 		log.Errorf("Failed to free ENI %s, err: %v", eni, err)
 		return
 	}
@@ -503,7 +503,7 @@ func (c *IPAMContext) tryUnassignIPsFromAll() {
 				err := c.dataStore.DelIPv4AddressFromStore(eniID, toDelete)
 				if err != nil {
 					log.Warnf("Failed to delete IP %s on ENI %s from datastore: %s", toDelete, eniID, err)
-					ipamdErrInc("decreaseIPPool", err)
+					ipamdErrInc("decreaseIPPool")
 					continue
 				} else {
 					deletedIPs = append(deletedIPs, toDelete)
@@ -642,7 +642,7 @@ func (c *IPAMContext) tryAllocateENI() {
 	eni, err := c.awsClient.AllocENI(customNetworkCfg, securityGroups, subnet)
 	if err != nil {
 		log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
-		ipamdErrInc("increaseIPPoolAllocENI", err)
+		ipamdErrInc("increaseIPPoolAllocENI")
 		return
 	}
 
@@ -661,19 +661,19 @@ func (c *IPAMContext) tryAllocateENI() {
 	if err != nil {
 		log.Warnf("Failed to allocate all available ip addresses on an ENI %v", err)
 		// Continue to process the allocated IP addresses
-		ipamdErrInc("increaseIPPoolAllocAllIPAddressFailed", err)
+		ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 	}
 
 	eniMetadata, err := c.waitENIAttached(eni)
 	if err != nil {
-		ipamdErrInc("increaseIPPoolwaitENIAttachedFailed", err)
+		ipamdErrInc("increaseIPPoolwaitENIAttachedFailed")
 		log.Errorf("Failed to increase pool size: Unable to discover attached ENI from metadata service %v", err)
 		return
 	}
 
 	err = c.setupENI(eni, eniMetadata)
 	if err != nil {
-		ipamdErrInc("increaseIPPoolsetupENIFailed", err)
+		ipamdErrInc("increaseIPPoolsetupENIFailed")
 		log.Errorf("Failed to increase pool size: %v", err)
 		return
 	}
@@ -705,7 +705,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 
 		ec2Addrs, _, err := c.getENIaddresses(eni.ID)
 		if err != nil {
-			ipamdErrInc("increaseIPPoolGetENIaddressesFailed", err)
+			ipamdErrInc("increaseIPPoolGetENIaddressesFailed")
 			return true, errors.Wrap(err, "failed to get ENI IP addresses during IP allocation")
 		}
 
@@ -770,7 +770,7 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store", ec2Addr.PrivateIpAddress)
 			// continue to add next address
 			// TODO need to add health stats for err
-			ipamdErrInc("addENIaddressesToDataStoreAddENIIPv4AddressFailed", err)
+			ipamdErrInc("addENIaddressesToDataStoreAddENIIPv4AddressFailed")
 		}
 	}
 	return primaryIP
@@ -811,7 +811,7 @@ func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) 
 		}
 		retry++
 		if retry > maxRetryCheckENI {
-			ipamdErrInc("waitENIAttachedMaxRetryExceeded", err)
+			ipamdErrInc("waitENIAttachedMaxRetryExceeded")
 			return awsutils.ENIMetadata{}, errors.New("waitENIAttached: giving up trying to retrieve ENIs from metadata service")
 		}
 		log.Debugf("Not able to discover attached ENIs yet (attempt %d/%d)", retry, maxRetryCheckENI)
@@ -920,7 +920,7 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	return shouldRemoveExtra
 }
 
-func ipamdErrInc(fn string, err error) {
+func ipamdErrInc(fn string) {
 	ipamdErr.With(prometheus.Labels{"fn": fn}).Inc()
 }
 
@@ -941,7 +941,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 
 	if err != nil {
 		log.Errorf("IP pool reconcile: Failed to get attached ENI info: %v", err.Error())
-		ipamdErrInc("reconcileFailedGetENIs", err)
+		ipamdErrInc("reconcileFailedGetENIs")
 		return
 	}
 
@@ -965,7 +965,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		err = c.setupENI(attachedENI.ENIID, attachedENI)
 		if err != nil {
 			log.Errorf("IP pool reconcile: Failed to setup ENI %s network: %v", attachedENI.ENIID, err)
-			ipamdErrInc("eniReconcileAdd", err)
+			ipamdErrInc("eniReconcileAdd")
 			// Continue if having trouble with ONLY 1 ENI, instead of bailout here?
 			continue
 		}
@@ -978,7 +978,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		err = c.dataStore.RemoveENIFromDataStore(eni)
 		if err != nil {
 			log.Errorf("IP pool reconcile: Failed to delete ENI during reconcile: %v", err)
-			ipamdErrInc("eniReconcileDel", err)
+			ipamdErrInc("eniReconcileDel")
 			continue
 		}
 		reconcileCnt.With(prometheus.Labels{"fn": "eniReconcileDel"}).Inc()
@@ -1037,7 +1037,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 
 		if err != nil {
 			log.Errorf("Failed to reconcile IP %s on ENI %s", localIP, eni)
-			ipamdErrInc("ipReconcileAdd", err)
+			ipamdErrInc("ipReconcileAdd")
 			// continue instead of bailout due to one ip
 			continue
 		}
@@ -1050,7 +1050,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 		err := c.dataStore.DelIPv4AddressFromStore(eni, existingIP)
 		if err != nil {
 			log.Errorf("Failed to reconcile and delete IP %s on ENI %s, %v", existingIP, eni, err)
-			ipamdErrInc("ipReconcileDel", err)
+			ipamdErrInc("ipReconcileDel")
 			// continue instead of bailout due to one ip
 			continue
 		}
