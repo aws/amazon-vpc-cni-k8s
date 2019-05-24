@@ -48,18 +48,6 @@ func (m *MockAPIs) EXPECT() *MockAPIsMockRecorder {
 	return m.recorder
 }
 
-// AllocAllIPAddress mocks base method
-func (m *MockAPIs) AllocAllIPAddress(arg0 string) error {
-	ret := m.ctrl.Call(m, "AllocAllIPAddress", arg0)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// AllocAllIPAddress indicates an expected call of AllocAllIPAddress
-func (mr *MockAPIsMockRecorder) AllocAllIPAddress(arg0 interface{}) *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocAllIPAddress", reflect.TypeOf((*MockAPIs)(nil).AllocAllIPAddress), arg0)
-}
-
 // AllocENI mocks base method
 func (m *MockAPIs) AllocENI(arg0 bool, arg1 []*string, arg2 string) (string, error) {
 	ret := m.ctrl.Call(m, "AllocENI", arg0, arg1, arg2)

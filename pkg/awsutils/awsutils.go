@@ -109,9 +109,6 @@ type APIs interface {
 	// AllocIPAddress allocates an IP address for an ENI
 	AllocIPAddress(eniID string) error
 
-	// AllocAllIPAddress allocates all IP addresses available on an ENI
-	AllocAllIPAddress(eniID string) error
-
 	// AllocIPAddresses allocates numIPs IP addresses on a ENI
 	AllocIPAddresses(eniID string, numIPs int) error
 
@@ -896,57 +893,6 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 		}
 		log.Errorf("Failed to allocate a private IP address %v", err)
 		return errors.Wrap(err, "allocate IP address: failed to allocate a private IP address")
-	}
-	return nil
-}
-
-// AllocAllIPAddress allocates all IP addresses available on ENI (TODO: Cleanup)
-func (cache *EC2InstanceMetadataCache) AllocAllIPAddress(eniID string) error {
-	log.Infof("Trying to allocate all available IP addresses on ENI: %s", eniID)
-
-	ipLimit, err := cache.GetENIipLimit()
-	if err != nil {
-		awsUtilsErrInc("UnknownInstanceType", err)
-		// for unknown instance type, will allocate one ip address at a time
-		ipLimit = 1
-
-		input := &ec2.AssignPrivateIpAddressesInput{
-			NetworkInterfaceId:             aws.String(eniID),
-			SecondaryPrivateIpAddressCount: aws.Int64(int64(ipLimit)),
-		}
-
-		for {
-			// until error
-			start := time.Now()
-			_, err := cache.ec2SVC.AssignPrivateIpAddresses(input)
-			awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil)).Observe(msSince(start))
-			if err != nil {
-				awsAPIErrInc("AssignPrivateIpAddresses", err)
-				if containsPrivateIPAddressLimitExceededError(err) {
-					return nil
-				}
-				log.Errorf("Failed to allocate a private IP address %v", err)
-				return errors.Wrap(err, "AllocAllIPAddress: failed to allocate a private IP address")
-			}
-		}
-	} else {
-		// for known instance type, will allocate max number ip address for that interface
-		input := &ec2.AssignPrivateIpAddressesInput{
-			NetworkInterfaceId:             aws.String(eniID),
-			SecondaryPrivateIpAddressCount: aws.Int64(int64(ipLimit)),
-		}
-
-		start := time.Now()
-		_, err := cache.ec2SVC.AssignPrivateIpAddresses(input)
-		awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil)).Observe(msSince(start))
-		if err != nil {
-			awsAPIErrInc("AssignPrivateIpAddresses", err)
-			if containsPrivateIPAddressLimitExceededError(err) {
-				return nil
-			}
-			log.Errorf("Failed to allocate a private IP address %v", err)
-			return errors.Wrap(err, "AllocAllIPAddress: failed to allocate a private IP address")
-		}
 	}
 	return nil
 }
