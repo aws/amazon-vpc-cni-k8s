@@ -75,14 +75,14 @@ func TestNodeInit(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:      mockAWS,
-		k8sClient:      mockK8S,
-		maxAddrsPerENI: 14,
-		maxENI:         4,
-		warmENITarget:  1,
-		warmIPTarget:   3,
-		dockerClient:   mockDocker,
-		networkClient:  mockNetwork}
+		awsClient:     mockAWS,
+		k8sClient:     mockK8S,
+		maxIPsPerENI:  14,
+		maxENI:        4,
+		warmENITarget: 1,
+		warmIPTarget:  3,
+		dockerClient:  mockDocker,
+		networkClient: mockNetwork}
 
 	eni1 := awsutils.ENIMetadata{
 		ENIID:          primaryENIid,
@@ -176,15 +176,15 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:        mockAWS,
-		k8sClient:        mockK8S,
-		maxAddrsPerENI:   14,
-		maxENI:           4,
-		warmENITarget:    1,
-		networkClient:    mockNetwork,
-		customNetworkCfg: UseCustomNetworkCfg(),
-		eniConfig:        mockENIConfig,
-		primaryIP:        make(map[string]string),
+		awsClient:           mockAWS,
+		k8sClient:           mockK8S,
+		maxIPsPerENI:        14,
+		maxENI:              4,
+		warmENITarget:       1,
+		networkClient:       mockNetwork,
+		useCustomNetworking: UseCustomNetworkCfg(),
+		eniConfig:           mockENIConfig,
+		primaryIP:           make(map[string]string),
 	}
 
 	mockContext.dataStore = datastore.NewDataStore()
@@ -253,15 +253,15 @@ func TestTryAddIPToENI(t *testing.T) {
 
 	warmIpTarget := 3
 	mockContext := &IPAMContext{
-		awsClient:      mockAWS,
-		k8sClient:      mockK8S,
-		maxAddrsPerENI: 14,
-		maxENI:         4,
-		warmENITarget:  1,
-		warmIPTarget:   warmIpTarget,
-		networkClient:  mockNetwork,
-		eniConfig:      mockENIConfig,
-		primaryIP:      make(map[string]string),
+		awsClient:     mockAWS,
+		k8sClient:     mockK8S,
+		maxIPsPerENI:  14,
+		maxENI:        4,
+		warmENITarget: 1,
+		warmIPTarget:  warmIpTarget,
+		networkClient: mockNetwork,
+		eniConfig:     mockENIConfig,
+		primaryIP:     make(map[string]string),
 	}
 
 	mockContext.dataStore = datastore.NewDataStore()
