@@ -77,7 +77,7 @@ func main() {
 		}
 	}
 
-	glog.Infof("Starting CNIMetricsHelper, cloudwatch: %v...", options.submitCW)
+	glog.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v", options.submitCW)
 
 	kubeClient, err := k8sapi.CreateKubeClient()
 	if err != nil {

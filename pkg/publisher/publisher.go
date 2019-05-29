@@ -118,13 +118,13 @@ func New(ctx context.Context) (Publisher, error) {
 
 // Start is used to setup the monitor loop
 func (p *cloudWatchPublisher) Start() {
-	glog.V(2).Info("Starting monitor loop for CloudWatch publisher")
+	glog.Info("Starting monitor loop for CloudWatch publisher")
 	p.monitor(defaultInterval)
 }
 
 // Stop is used to cancel the monitor loop
 func (p *cloudWatchPublisher) Stop() {
-	glog.V(2).Info("Stopping monitor loop for CloudWatch publisher")
+	glog.Info("Stopping monitor loop for CloudWatch publisher")
 	p.cancel()
 }
 
@@ -184,14 +184,13 @@ func (p *cloudWatchPublisher) push(metricData []*cloudwatch.MetricDatum) {
 }
 
 func (p *cloudWatchPublisher) send(input cloudwatch.PutMetricDataInput) error {
-	glog.V(2).Info("Sending data to CloudWatch metrics")
+	glog.Info("Sending data to CloudWatch metrics")
 	_, err := p.cloudwatchClient.PutMetricData(&input)
 	return err
 }
 
 func (p *cloudWatchPublisher) monitor(interval time.Duration) {
 	p.updateIntervalTicker = time.NewTicker(interval)
-
 	for {
 		select {
 		case <-p.updateIntervalTicker.C:
