@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.5.0
+
+* Bug fix - [Fix spelling on annotation](https://github.com/aws/amazon-vpc-cni-k8s/pull/482) (#482, @forsberg)
+* Bug fix - [Avoid using force detach of ENIs](https://github.com/aws/amazon-vpc-cni-k8s/pull/458) (#458, @mogren)
+* Bug fix - [Flush logs before exiting](https://github.com/aws/amazon-vpc-cni-k8s/pull/451) (#451, @venkatesh-eb)
+* Improvement - [Add IPs to existing ENIs first](https://github.com/aws/amazon-vpc-cni-k8s/pull/487) (#487, @mogren)
+* Improvement - [Added error handling for GetENIipLimit](https://github.com/aws/amazon-vpc-cni-k8s/pull/484) (#484, @Zyqsempai)
+* Improvement - [Moved all GetEnv's calls to init step](https://github.com/aws/amazon-vpc-cni-k8s/pull/445) (#445, @Zyqsempai)
+* Improvement - [On start up, wait for pods with no IP](https://github.com/aws/amazon-vpc-cni-k8s/pull/480) (#480, @mogren)
+* Improvement - [Don't modify maxENI](https://github.com/aws/amazon-vpc-cni-k8s/pull/472) (#472, @nckturner)
+* Improvement - [Improve WARM_IP_TARGET handling](https://github.com/aws/amazon-vpc-cni-k8s/pull/461) (#461, @nckturner)
+* Improvement - [Update logging format to align messages](https://github.com/aws/amazon-vpc-cni-k8s/pull/473) (#473, @mogren)
+* Improvement - [Added -W (wait for xlock's) flag to iptables commands](https://github.com/aws/amazon-vpc-cni-k8s/pull/439) (#439, @Zyqsempai)
+* Improvement - [Remove error message from Prometheus labels](https://github.com/aws/amazon-vpc-cni-k8s/pull/467) (#467, @bboreham)
+* Improvement - [Update instance types](https://github.com/aws/amazon-vpc-cni-k8s/pull/459) (#459, @mogren)
+
 ## v1.4.1
 
 * Feature - [Add flag to disable metrics and introspection](https://github.com/aws/amazon-vpc-cni-k8s/pull/436) (#436, @mogren)
