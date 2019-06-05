@@ -185,6 +185,11 @@ Default: Unset
 Valid Values: `stdout` or a file path
 Specifies where to write the logging output. Either to stdout or to override the default file.
 
+`INTROSPECTION_BIND_ADDRESS`
+Type: String
+Default: `127.0.0.1:61679`
+Specifies the bind address for the introspection endpoint.
+
 `DISABLE_INTROSPECTION`
 Type: Boolean
 Default: `false`
