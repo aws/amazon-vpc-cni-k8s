@@ -85,7 +85,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	discoverController := k8sapi.NewController(kubeClient)
+	discoverController, err := k8sapi.NewController(kubeClient)
+	if err != nil {
+		glog.Errorf("Failed to create controller: %v", err)
+		os.Exit(1)
+	}
 	go discoverController.DiscoverK8SPods()
 
 	var cw publisher.Publisher

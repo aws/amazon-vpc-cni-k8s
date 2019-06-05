@@ -49,7 +49,11 @@ func _main() int {
 		return 1
 	}
 
-	discoverController := k8sapi.NewController(kubeClient)
+	discoverController, err := k8sapi.NewController(kubeClient)
+	if err != nil {
+		log.Error("Initialization failure ", err)
+		return 1
+	}
 	go discoverController.DiscoverK8SPods()
 
 	eniConfigController := eniconfig.NewENIConfigController()

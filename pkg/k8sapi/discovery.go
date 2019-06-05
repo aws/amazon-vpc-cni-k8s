@@ -72,11 +72,14 @@ type Controller struct {
 }
 
 // NewController creates a new DiscoveryController
-func NewController(clientset kubernetes.Interface) *Controller {
+func NewController(clientset kubernetes.Interface) (*Controller, error) {
+	if os.Getenv("MY_NODE_NAME") == "" {
+		return nil, errors.New("env var MY_NODE_NAME must not be blank")
+	}
 	return &Controller{kubeClient: clientset,
 		myNodeName: os.Getenv("MY_NODE_NAME"),
 		cniPods:    make(map[string]string),
-		workerPods: make(map[string]*K8SPodInfo)}
+		workerPods: make(map[string]*K8SPodInfo)}, nil
 }
 
 // CreateKubeClient creates a k8s client

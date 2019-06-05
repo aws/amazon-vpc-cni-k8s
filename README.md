@@ -196,6 +196,11 @@ Type: Boolean
 Default: `false`
 Specifies whether prometeus metrics endpoints are enabled on a worker node.
 
+`MY_NODE_NAME`
+Type: String
+Default: Unset
+Specifies the local node name to use when filtering pods from the kubernetes API.
+
 ### Notes
 
 `L-IPAMD`(aws-node daemonSet) running on every worker node requires access to kubernetes API server. If it can **not** reach
