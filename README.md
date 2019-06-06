@@ -149,6 +149,8 @@ To use pseudo random number generation rather than hash based (i.e. `--random-fu
 For old versions of `iptables` that do not support `--random-fully` this option will fall back to `--random`.
 Disable (`none`) this functionality if you rely on sequential port allocation for outgoing connections.
 
+*Note*: Any options other than `none` will cause outbound connections to be assigned a source port that's not necessarily part of the ephemeral port range set at the OS level (/proc/sys/net/ipv4/ip_local_port_range). This is relevant for any customers that might have NACLs restricting traffic based on the port range found in ip_local_port_range
+
 `WARM_ENI_TARGET`
 Type: Integer
 Default: `1`
