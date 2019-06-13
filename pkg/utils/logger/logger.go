@@ -34,7 +34,7 @@ const (
   %s
  </outputs>
  <formats>
-  <format id="main" format="%%UTCDate(2006-01-02T15:04:05Z07:00) [%%LEVEL] %%Msg%%n" />
+  <format id="main" format="%%UTCDate(2006-01-02T15:04:05.000Z07:00) [%%LEVEL]%%t%%Msg%%n" />
  </formats>
 </seelog>
 `
@@ -46,7 +46,6 @@ func GetLogFileLocation(defaultLogFilePath string) string {
 	if logFilePath == "" {
 		logFilePath = defaultLogFilePath
 	}
-
 	return logFilePath
 }
 
@@ -57,7 +56,11 @@ func SetupLogger(logFilePath string) {
 		fmt.Println("Error setting up logger: ", err)
 		return
 	}
-	log.ReplaceLogger(logger)
+	err = log.ReplaceLogger(logger)
+	if err != nil {
+		fmt.Println("Error replacing logger: ", err)
+		return
+	}
 }
 
 func getLogLevel() string {
@@ -65,7 +68,6 @@ func getLogLevel() string {
 	if !ok {
 		seelogLevel = log.InfoLvl
 	}
-
 	return seelogLevel.String()
 }
 

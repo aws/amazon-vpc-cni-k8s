@@ -2,23 +2,33 @@
 
 
 ## Manage Pod's IP address pool at cluster level
-As described in [Proposal: CNI plugin for Kubernetes networking over AWS VPC](./cni-proposal.md), ipamD allocates ENIs and secondary IP addresses from the instance subnet.
+As described in [Proposal: CNI plugin for Kubernetes networking over AWS VPC](./cni-proposal.md), ipamD allocates ENIs and 
+secondary IP addresses from the instance subnet.
 
-A node, based on the instance type ([Limit](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI)), can have up to N ENIs and M addresses. The maximum number of IP addresses available to Pods on this node is min((N*M -N), subnet's free IP)
+A node, based on the instance type [limit](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI), 
+can have up to `N` ENIs and `M` addresses. The maximum number of IP addresses available to pods on this node is 
+`min((N * (M - 1)), free IPs in the subnet)`. The `-1` is because each ENI uses one of the IPs when it is attached to the instance.
 
 ### Tip: Make sure subnet have enough available addresses
- If a subnet runs out of IP addresses, ipamD will not able to get secondary IP addresses.  When this happens, pods assigned to this node may not able to get an IP and get stucked in ** ContainerCreating**.
+If a subnet runs out of IP addresses, ipamD will not able to get secondary IP addresses. When this happens, pods assigned 
+to this node may not able to get an IP and get stuck in **ContainerCreating**.
 
 You can check the available IP addresses in AWS console:
 ![](images/subnet.png)
 
-#### known issue: [Leaking ENIs](https://github.com/aws/amazon-vpc-cni-k8s/issues/69) can cause a subnet available IP pool being depleted and requires user intervention.
+#### Possible issue: 
+[Leaking ENIs](https://github.com/aws/amazon-vpc-cni-k8s/issues/69) can cause a subnet available IP pool being depleted 
+and requires user intervention.
 
 ### Tip: Make sure there are enough ENIs and IPs for Pods in the cluster
 
-We provide a tool [**cni-metrics-helper**](../misc/cni_metrics_helper.yaml) which can show aggregated ENIs and IPs information at the cluster level.  
+We provide a tool [**cni-metrics-helper**](../config/v1.4/cni-metrics-helper.yaml) which can show aggregated ENI and IP 
+information at the cluster level.
 
-You can optionally push them to cloudwatch.  For example:
+By default these metrics will be pushed to CloudWatch, but it can be disabled by setting `USE_CLOUDWATCH` to `"no"`. 
+This requires the `"cloudwatch:PutMetricData"` permission to publish the metrics. 
+
+Example of CNI metrics in CloudWatch:
 
 ![cloudwatch](images/cni-metrics-100.png)
 
@@ -31,10 +41,15 @@ You can optionally push them to cloudwatch.  For example:
 If you need to deploy more Pods than **maxIPAddresses**, you need to increase your cluster and add more nodes.
 
 ### Tip: Running Large cluster
-When running 500 nodes cluster, we noticed that when there is a burst of pod scale up event (e.g. scale pods from 0 to 23000) at onetime, it can trigger all node's ipamD start allocating ENIs.  Due to EC2 resource limit nature, some node's ipamD can get throttled and go into exponentially backoff before retry. If a pod is assigned to this node and its ipamD is waiting to retry, the pod could stay in **ContainerCreating** until ENI retry succeed.
+When running 500 nodes cluster, we noticed that when there is a burst of pod scale up event (e.g. scale pods from 0 to 23000)
+at onetime, it can trigger all node's ipamD start allocating ENIs. Due to EC2 resource limit nature, some node's ipamD can get
+throttled and go into exponentially backoff before retry. If a pod is assigned to this node and its ipamD is waiting to retry,
+the pod could stay in **ContainerCreating** until ENI retry succeed.
 
-You can verify if you are in this situation by example cni metrics
+You can verify if you are in this situation by running the cni-metrics-helper:
+
 ![](images/cni-metrics-inprogress.png)
+
 **ipamdActionInProgress**: the total number of nodes whose ipamD is in the middle of ENI operation.
 
 To avoid Pod deployment delay, you can configure ipamD to have a higher [**WARM\_ENI\_TARGET**](https://github.com/aws/amazon-vpc-cni-k8s/pull/68).
@@ -174,44 +189,7 @@ go_goroutines 20
 ...
 ```
 
-## cni-metrics-helper 
+## cni-metrics-helper
 
-The following show how cni-metrics-helper works in a cluster:
-
-![](images/cni-metrics-helper.png)
-
-### install cni-metrics-helper
-``
-kubectl apply -f misc/cni_metrics_helper.yaml
-``
-
-### get cni-metrics-helper logs
-
-```
-kubectl get pod -n kube-system
-NAME                                  READY     STATUS    RESTARTS   AGE
-aws-node-248ns                        1/1       Running   0          6h
-aws-node-257bn                        1/1       Running   0          2h
-...
-cni-metrics-helper-6dcff5ddf4-v5l6d   1/1       Running   0          7h
-kube-dns-75fddcb66f-48tzn             3/3       Running   0          1d
-```
-
-```
-kubectl logs cni-metrics-helper-6dcff5ddf4-v5l6d -n kube-system
-```
-### cni-metrics-helper key log messages
-
-```
-# following shows the aggregated metrics. this can be optionally sent to cloudwatch
-I0516 17:11:58.489648       7 metrics.go:350] Produce GAUGE metrics: ipamdActionInProgress, value: 0.000000
-I0516 17:11:58.489657       7 metrics.go:350] Produce GAUGE metrics: assignIPAddresses, value: 2.000000
-I0516 17:11:58.489665       7 metrics.go:350] Produce GAUGE metrics: totalIPAddresses, value: 11186.000000
-I0516 17:11:58.489674       7 metrics.go:350] Produce GAUGE metrics: eniMaxAvailable, value: 800.000000
-I0516 17:11:58.489685       7 metrics.go:340] Produce COUNTER metrics: ipamdErr, value: 1.000000
-I0516 17:11:58.489695       7 metrics.go:350] Produce GAUGE metrics: eniAllocated, value: 799.000000
-I0516 17:11:58.489715       7 metrics.go:350] Produce GAUGE metrics: maxIPAddresses, value: 11200.000000
-```
-
-
+See the [cni-metrics-helper README](../cni-metrics-helper/README.md).
 

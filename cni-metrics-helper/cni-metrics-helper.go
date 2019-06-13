@@ -69,15 +69,15 @@ func main() {
 
 	cwENV, found := os.LookupEnv("USE_CLOUDWATCH")
 	if found {
-		if strings.Compare(cwENV, "yes") == 0 {
+		if strings.Compare(cwENV, "yes") == 0 || strings.Compare(cwENV, "true") == 0 {
 			options.submitCW = true
 		}
-		if strings.Compare(cwENV, "no") == 0 {
+		if strings.Compare(cwENV, "no") == 0 || strings.Compare(cwENV, "false") == 0 {
 			options.submitCW = false
 		}
 	}
 
-	glog.Infof("Starting CNIMetricsHelper, cloudwatch: %v...", options.submitCW)
+	glog.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v", options.submitCW)
 
 	kubeClient, err := k8sapi.CreateKubeClient()
 	if err != nil {

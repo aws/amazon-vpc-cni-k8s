@@ -220,7 +220,7 @@ func (d *Controller) handlePodUpdate(key string) error {
 	}
 
 	if !exists {
-		log.Infof(" Pods deleted on my node: %v", key)
+		log.Infof("Pods deleted on my node: %v", key)
 		d.workerPodsLock.Lock()
 		defer d.workerPodsLock.Unlock()
 		delete(d.workerPods, key)
@@ -261,12 +261,12 @@ func (d *Controller) handlePodUpdate(key string) error {
 			IP:        pod.Status.PodIP,
 		}
 
-		log.Infof(" Add/Update for Pod %s on my node, namespace = %s, IP = %s", podName, d.workerPods[key].Namespace, d.workerPods[key].IP)
+		log.Infof("Add/Update for Pod %s on my node, namespace = %s, IP = %s", podName, d.workerPods[key].Namespace, d.workerPods[key].IP)
 	} else if strings.HasPrefix(key, metav1.NamespaceSystem+"/"+cniPodName) {
 		d.cniPodsLock.Lock()
 		defer d.cniPodsLock.Unlock()
 
-		log.Infof(" Add/Update for CNI pod %s", podName)
+		log.Infof("Add/Update for CNI pod %s", podName)
 		d.cniPods[podName] = podName
 	}
 	return nil
@@ -299,15 +299,16 @@ func (c *controller) handleErr(err error, key interface{}) {
 }
 
 func (d *Controller) run(threadiness int, stopCh chan struct{}) {
-
 	// Let the workers stop when we are done
 	defer d.controller.queue.ShutDown()
 	log.Info("Starting Pod controller")
 
 	go d.controller.informer.Run(stopCh)
 
+	log.Info("Waiting for controller cache sync")
 	// Wait for all involved caches to be synced, before processing items from the queue is started
 	if !cache.WaitForCacheSync(stopCh, d.controller.informer.HasSynced) {
+		log.Error("Timed out waiting for caches to sync!")
 		runtime.HandleError(fmt.Errorf("timed out waiting for caches to sync"))
 		return
 	}

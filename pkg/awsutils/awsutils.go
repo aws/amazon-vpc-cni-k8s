@@ -14,12 +14,12 @@
 package awsutils
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-	"context"
 
 	"github.com/pkg/errors"
 
@@ -108,9 +108,6 @@ type APIs interface {
 
 	// AllocIPAddress allocates an IP address for an ENI
 	AllocIPAddress(eniID string) error
-
-	// AllocAllIPAddress allocates all IP addresses available on an ENI
-	AllocAllIPAddress(eniID string) error
 
 	// AllocIPAddresses allocates numIPs IP addresses on a ENI
 	AllocIPAddresses(eniID string, numIPs int) error
@@ -477,7 +474,7 @@ func (cache *EC2InstanceMetadataCache) getENIDeviceNumber(eniMAC string) (string
 	awsAPILatency.WithLabelValues("GetMetadata", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve the device-number of ENI %s,  %v", eniMAC, err)
+		log.Errorf("Failed to retrieve the device-number of ENI %s, %v", eniMAC, err)
 		return "", 0, errors.Wrapf(err, "failed to retrieve device-number for ENI %s",
 			eniMAC)
 	}
@@ -620,7 +617,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 	var input *ec2.CreateNetworkInterfaceInput
 
 	if useCustomCfg {
-		log.Infof("createENI: use customer network config, %v, %s", sg, subnet)
+		log.Infof("createENI: use custom network config, %v, %s", &sg, subnet)
 		input = &ec2.CreateNetworkInterfaceInput{
 			Description: aws.String(eniDescription),
 			Groups:      sg,
@@ -860,8 +857,7 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
 	eniLimit, ok := InstanceENIsAvailable[cache.instanceType]
 
 	if !ok {
-		log.Errorf("Failed to get ENI limit due to unknown instance type %s", cache.instanceType)
-		return 0, errors.New(UnknownInstanceType)
+		return 0, errors.New(fmt.Sprintf("%s: %s", UnknownInstanceType, cache.instanceType))
 	}
 	return eniLimit, nil
 }
@@ -871,7 +867,12 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	var needIPs = numIPs
 
 	ipLimit, err := cache.GetENIipLimit()
-	if err == nil && ipLimit < needIPs {
+	if err != nil {
+		awsUtilsErrInc("UnknownInstanceType", err)
+		return err
+	}
+
+	if ipLimit < needIPs {
 		needIPs = ipLimit
 	}
 
@@ -880,7 +881,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 		return nil
 	}
 
-	log.Infof("Trying to allocate %d IP address on ENI %s", needIPs, eniID)
+	log.Infof("Trying to allocate %d IP addresses on ENI %s", needIPs, eniID)
 
 	input := &ec2.AssignPrivateIpAddressesInput{
 		NetworkInterfaceId:             aws.String(eniID),
@@ -897,57 +898,6 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 		}
 		log.Errorf("Failed to allocate a private IP address %v", err)
 		return errors.Wrap(err, "allocate IP address: failed to allocate a private IP address")
-	}
-	return nil
-}
-
-// AllocAllIPAddress allocates all IP addresses available on ENI (TODO: Cleanup)
-func (cache *EC2InstanceMetadataCache) AllocAllIPAddress(eniID string) error {
-	log.Infof("Trying to allocate all available IP addresses on ENI: %s", eniID)
-
-	ipLimit, err := cache.GetENIipLimit()
-	if err != nil {
-		awsUtilsErrInc("UnknownInstanceType", err)
-		// for unknown instance type, will allocate one ip address at a time
-		ipLimit = 1
-
-		input := &ec2.AssignPrivateIpAddressesInput{
-			NetworkInterfaceId:             aws.String(eniID),
-			SecondaryPrivateIpAddressCount: aws.Int64(int64(ipLimit)),
-		}
-
-		for {
-			// until error
-			start := time.Now()
-			_, err := cache.ec2SVC.AssignPrivateIpAddresses(input)
-			awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil)).Observe(msSince(start))
-			if err != nil {
-				awsAPIErrInc("AssignPrivateIpAddresses", err)
-				if containsPrivateIPAddressLimitExceededError(err) {
-					return nil
-				}
-				log.Errorf("Failed to allocate a private IP address %v", err)
-				return errors.Wrap(err, "AllocAllIPAddress: failed to allocate a private IP address")
-			}
-		}
-	} else {
-		// for known instance type, will allocate max number ip address for that interface
-		input := &ec2.AssignPrivateIpAddressesInput{
-			NetworkInterfaceId:             aws.String(eniID),
-			SecondaryPrivateIpAddressCount: aws.Int64(int64(ipLimit)),
-		}
-
-		start := time.Now()
-		_, err := cache.ec2SVC.AssignPrivateIpAddresses(input)
-		awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil)).Observe(msSince(start))
-		if err != nil {
-			awsAPIErrInc("AssignPrivateIpAddresses", err)
-			if containsPrivateIPAddressLimitExceededError(err) {
-				return nil
-			}
-			log.Errorf("Failed to allocate a private IP address %v", err)
-			return errors.Wrap(err, "AllocAllIPAddress: failed to allocate a private IP address")
-		}
 	}
 	return nil
 }
@@ -973,7 +923,6 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []st
 	awsAPILatency.WithLabelValues("UnassignPrivateIpAddressesWithContext", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("UnassignPrivateIpAddressesWithContext", err)
-
 		log.Errorf("Failed to deallocate a private IP address %v", err)
 		return errors.Wrap(err, fmt.Sprintf("deallocate IP addresses: failed to deallocate private IP addresses: %s", ips))
 	}

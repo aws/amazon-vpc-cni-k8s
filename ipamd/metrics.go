@@ -55,7 +55,6 @@ func (c *IPAMContext) ServeMetrics() {
 }
 
 func (c *IPAMContext) setupMetricsServer() *http.Server {
-	// Always add the metrics endpoint
 	serveMux := http.NewServeMux()
 	serveMux.Handle("/metrics", promhttp.Handler())
 	server := &http.Server{

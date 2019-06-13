@@ -44,7 +44,7 @@ type LoggingHandler struct {
 }
 
 func (lh LoggingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Info("Handling http request: ", ", method: ", r.Method, ", from: ", r.RemoteAddr, ", URI: ", r.RequestURI)
+	log.Infof("Handling http request: %s, from: %s, URI: %s", r.Method, r.RemoteAddr, r.RequestURI)
 	lh.h.ServeHTTP(w, r)
 }
 
@@ -70,7 +70,6 @@ func (c *IPAMContext) ServeIntrospection() {
 }
 
 func (c *IPAMContext) setupIntrospectionServer() *http.Server {
-	// If enabled, add introspection endpoints
 	serverFunctions := map[string]func(w http.ResponseWriter, r *http.Request){
 		"/v1/enis":                      eniV1RequestHandler(c),
 		"/v1/eni-configs":               eniConfigRequestHandler(c),
@@ -87,7 +86,7 @@ func (c *IPAMContext) setupIntrospectionServer() *http.Server {
 	availableCommandResponse, err := json.Marshal(&availableCommands)
 
 	if err != nil {
-		log.Error("Failed to marshal: %v", err)
+		log.Errorf("Failed to marshal: %v", err)
 	}
 
 	defaultHandler := func(w http.ResponseWriter, r *http.Request) {

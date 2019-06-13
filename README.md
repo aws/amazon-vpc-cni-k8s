@@ -42,7 +42,8 @@ L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/Us
          "ec2:DescribeNetworkInterfaces",
          "ec2:DescribeInstances",
          "ec2:ModifyNetworkInterfaceAttribute",
-         "ec2:AssignPrivateIpAddresses"
+         "ec2:AssignPrivateIpAddresses",
+         "ec2:UnassignPrivateIpAddresses"
      ],
      "Resource": [
          "*"
@@ -58,9 +59,10 @@ L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/Us
 ## Building
 
 * `make` defaults to `make build-linux` that builds the Linux binaries.
-* `make docker-build` uses a docker container (golang:1.10) to build the binaries.
-* `make docker` will create a docker container using the docker-build with the finished binaries, with a tag of `amazon/amazon-k8s-cni:latest`
 * `unit-test`, `lint` and `vet` provide ways to run the respective tests/tools and should be run before submitting a PR.
+* `make docker` will create a docker container using the docker-build with the finished binaries, with a tag of `amazon/amazon-k8s-cni:latest`
+* `make docker-build` uses a docker container (golang:1.12) to build the binaries.
+* `make docker-unit-tests` uses a docker container (golang:1.12) to run all unit tests.
 
 ## Components
 
@@ -147,6 +149,8 @@ To use pseudo random number generation rather than hash based (i.e. `--random-fu
 For old versions of `iptables` that do not support `--random-fully` this option will fall back to `--random`.
 Disable (`none`) this functionality if you rely on sequential port allocation for outgoing connections.
 
+*Note*: Any options other than `none` will cause outbound connections to be assigned a source port that's not necessarily part of the ephemeral port range set at the OS level (/proc/sys/net/ipv4/ip_local_port_range). This is relevant for any customers that might have NACLs restricting traffic based on the port range found in ip_local_port_range
+
 `WARM_ENI_TARGET`
 Type: Integer
 Default: `1`
@@ -214,6 +218,9 @@ Connected to 10.0.0.1.
 Escape character is '^]'.  <-------- kubernetes API server is reachable
 
 ``` 
+## Security disclosures
+
+If you think you’ve found a potential security issue, please do not post it in the Issues.  Instead, please follow the instructions [here](https://aws.amazon.com/security/vulnerability-reporting/) or [email AWS security directly](mailto:aws-security@amazon.com).
 
 ## Contributing
 [See CONTRIBUTING.md](./CONTRIBUTING.md)

@@ -199,7 +199,7 @@ func postProcessingHistogram(convert metricsConvert) bool {
 	for _, action := range convert.actions {
 		numOfBuckets := len(action.bucket.curBucket)
 		if numOfBuckets == 0 {
-			glog.Info(" Post Histogram Processing: no bucket found")
+			glog.Info("Post Histogram Processing: no bucket found")
 			continue
 		}
 		for i := 1; i < numOfBuckets; i++ {
