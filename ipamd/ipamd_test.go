@@ -237,7 +237,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 
 func TestTryAddIPToENI(t *testing.T) {
 	_ = os.Unsetenv(envCustomNetworkCfg)
-	ctrl, mockAWS, mockK8S, _, mockNetwork, mockENIConfig := setup(t)
+	ctrl, mockAWS, mockK8S, mockNetwork, mockENIConfig := setup(t)
 	defer ctrl.Finish()
 
 	warmIpTarget := 3
