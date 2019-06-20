@@ -82,7 +82,7 @@ ipamd.log.2018-05-16-01  ipamd.log.2018-05-16-06  ipamd.log.2018-05-16-11  ipamd
 
 ```
 // get enis info
-[root@ip-192-168-188-7 bin]# curl http://localhost:61678/v1/enis | python -m json.tool
+[root@ip-192-168-188-7 bin]# curl http://localhost:61679/v1/enis | python -m json.tool
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
 100  2589    0  2589    0     0   2589      0 --:--:-- --:--:-- --:--:--  505k
@@ -137,7 +137,7 @@ ipamd.log.2018-05-16-01  ipamd.log.2018-05-16-06  ipamd.log.2018-05-16-11  ipamd
 
 ```
 // get IP assignment info
-[root@ip-192-168-188-7 bin]# curl http://localhost:61678/v1/pods | python -m json.tool
+[root@ip-192-168-188-7 bin]# curl http://localhost:61679/v1/pods | python -m json.tool
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
 100  6688    0  6688    0     0   6688      0 --:--:-- --:--:-- --:--:-- 1306k
