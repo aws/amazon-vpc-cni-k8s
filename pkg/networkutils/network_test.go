@@ -305,6 +305,59 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 	assert.Equal(t, mockFile{closed: true, data: "2"}, mockRPFilter)
 }
 
+func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
+	defer ctrl.Finish()
+
+	os.Setenv(envExcludeSNATCIDRs, "10.12.0.0/16,10.13.0.0/16")
+	var mockRPFilter mockFile
+	ln := &linuxNetwork{
+		useExternalSNAT:        false,
+		excludeSNATCIDRs:       excludeSNATCIDRs(),
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+
+		netLink: mockNetLink,
+		ns:      mockNS,
+		newIptables: func() (iptablesIface, error) {
+			return mockIptables, nil
+		},
+		openFile: func(name string, flag int, perm os.FileMode) (stringWriteCloser, error) {
+			return &mockRPFilter, nil
+		},
+	}
+
+	var hostRule netlink.Rule
+	mockNetLink.EXPECT().NewRule().Return(&hostRule)
+	mockNetLink.EXPECT().RuleDel(&hostRule)
+	var mainENIRule netlink.Rule
+	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
+	mockNetLink.EXPECT().RuleDel(&mainENIRule)
+	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
+
+	var vpcCIDRs []*string
+	vpcCIDRs = []*string{aws.String("10.10.0.0/16"), aws.String("10.11.0.0/16")}
+	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, "", &testENINetIP)
+	assert.NoError(t, err)
+
+	assert.Equal(t,
+		map[string]map[string][][]string{
+			"nat": map[string][][]string{
+				"AWS-SNAT-CHAIN-0": [][]string{[]string{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-1"}},
+				"AWS-SNAT-CHAIN-1": [][]string{[]string{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-2"}},
+				"AWS-SNAT-CHAIN-2": [][]string{[]string{"!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-3"}},
+				"AWS-SNAT-CHAIN-3": [][]string{[]string{"!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-4"}},
+				"AWS-SNAT-CHAIN-4": [][]string{[]string{"-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
+				"POSTROUTING":      [][]string{[]string{"-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-0"}}},
+			"mangle": map[string][][]string{
+				"PREROUTING": [][]string{
+					[]string{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "lo", "-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in", "-j", "CONNMARK", "--set-mark", "0x80/0x80"},
+					[]string{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+				},
+			},
+		}, mockIptables.dataplaneState)
+}
+
 func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()

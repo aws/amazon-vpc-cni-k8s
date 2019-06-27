@@ -56,6 +56,11 @@ const (
 	// be installed and will be removed if they are already installed.  Defaults to false.
 	envExternalSNAT = "AWS_VPC_K8S_CNI_EXTERNALSNAT"
 
+	// This environment is used to specify a comma separated list of ipv4 CIDRs to exclude from SNAT. An additional rule 
+	// will be written to the iptables for each item. If an item is not an ipv4 range it will be skipped.
+	// Defaults to empty.
+	envExcludeSNATCIDRs = "AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS"
+
 	// This environment is used to specify weather the SNAT rule added to iptables should randomize port
 	// allocation for outgoing connections. If set to "hashrandom" the SNAT iptables rule will have the "--random" flag
 	// added to it. Set it to "prng" if you want to use a pseudo random numbers, i.e. "--random-fully".
@@ -109,6 +114,7 @@ type NetworkAPIs interface {
 
 type linuxNetwork struct {
 	useExternalSNAT        bool
+	excludeSNATCIDRs       []*string
 	typeOfSNAT             snatType
 	nodePortSupportEnabled bool
 	connmark               uint32
@@ -145,6 +151,7 @@ const (
 func New() NetworkAPIs {
 	return &linuxNetwork{
 		useExternalSNAT:        useExternalSNAT(),
+		excludeSNATCIDRs:       excludeSNATCIDRs(),
 		typeOfSNAT:             typeOfSNAT(),
 		nodePortSupportEnabled: nodePortSupportEnabled(),
 		mainENIMark:            getConnmark(),
@@ -263,7 +270,8 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 
 	// build IPTABLES chain for SNAT of non-VPC outbound traffic
 	var chains []string
-	for i := 0; i <= len(vpcCIDRs); i++ {
+	allCIDRs := append(vpcCIDRs, n.excludeSNATCIDRs...)
+	for i := 0; i <= len(allCIDRs); i++ {
 		chain := fmt.Sprintf("AWS-SNAT-CHAIN-%d", i)
 		log.Debugf("Setup Host Network: iptables -N %s -t nat", chain)
 		if err = ipt.NewChain("nat", chain); err != nil && !containChainExistErr(err) {
@@ -286,7 +294,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 			"-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-0",
 		}})
 
-	for i, cidr := range vpcCIDRs {
+	for i, cidr := range allCIDRs {
 		curChain := chains[i]
 		nextChain := chains[i+1]
 		curName := fmt.Sprintf("[%d] AWS-SNAT-CHAIN", i)
@@ -448,6 +456,28 @@ func (n *linuxNetwork) UseExternalSNAT() bool {
 
 func useExternalSNAT() bool {
 	return getBoolEnvVar(envExternalSNAT, false)
+}
+
+func excludeSNATCIDRs() []*string {
+	if useExternalSNAT() {
+		return nil
+	}
+
+	excludeCIDRs := os.Getenv(envExcludeSNATCIDRs)
+	if excludeCIDRs == "" {
+		return nil
+	}
+	var cidrs []*string
+	for _, excludeCIDR := range strings.Split(excludeCIDRs, ",") {
+		_, parseCIDR, err := net.ParseCIDR(excludeCIDR)
+		if err != nil {
+			log.Errorf("excludeSNATCIDRs : ignoring %v is not a valid IPv4 CIDR", excludeCIDR)
+		} else {
+			cidr := parseCIDR.String()
+			cidrs = append(cidrs, &cidr)
+		}
+	}
+	return cidrs
 }
 
 func typeOfSNAT() snatType {
