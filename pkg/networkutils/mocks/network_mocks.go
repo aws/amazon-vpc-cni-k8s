@@ -133,3 +133,15 @@ func (m *MockNetworkAPIs) UseExternalSNAT() bool {
 func (mr *MockNetworkAPIsMockRecorder) UseExternalSNAT() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UseExternalSNAT", reflect.TypeOf((*MockNetworkAPIs)(nil).UseExternalSNAT))
 }
+
+// GetExcludeSNATCIDRs mocks base method
+func (m *MockNetworkAPIs) GetExcludeSNATCIDRs() []string {
+	ret := m.ctrl.Call(m, "GetExcludeSNATCIDRs")
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+// GetExcludeSNATCIDRs indicates an expected call of GetExcludeSNATCIDRs
+func (mr *MockNetworkAPIsMockRecorder) GetExcludeSNATCIDRs() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetExcludeSNATCIDRs", reflect.TypeOf((*MockNetworkAPIs)(nil).GetExcludeSNATCIDRs))
+}

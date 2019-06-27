@@ -151,6 +151,12 @@ Disable (`none`) this functionality if you rely on sequential port allocation fo
 
 *Note*: Any options other than `none` will cause outbound connections to be assigned a source port that's not necessarily part of the ephemeral port range set at the OS level (/proc/sys/net/ipv4/ip_local_port_range). This is relevant for any customers that might have NACLs restricting traffic based on the port range found in ip_local_port_range
 
+`AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS`
+Type: String
+Default: empty
+Specify a comma separated list of ipv4 CIDRs to exclude from SNAT. For every item in the list an `iptables` rule and off\-VPC
+IP rule will be applied. If an item is not a valid ipv4 range it will be skipped. This should be used when `AWS_VPC_K8S_CNI_EXTERNALSNAT=false`.
+
 `WARM_ENI_TARGET`
 Type: Integer
 Default: `1`
