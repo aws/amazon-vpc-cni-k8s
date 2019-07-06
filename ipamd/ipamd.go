@@ -384,7 +384,7 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 			if allPodsHaveAnIP {
 				break
 			}
-			log.Warnf("Not all pods have an IP, trying again in %s seconds.", retryK8SInterval.Seconds())
+			log.Warnf("Not all pods have an IP, trying again in %v seconds.", retryK8SInterval.Seconds())
 		}
 		log.Infof("Not able to get local pods yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
 		time.Sleep(retryK8SInterval)
