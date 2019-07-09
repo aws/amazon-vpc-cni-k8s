@@ -89,6 +89,24 @@ spec:
         resources:
           requests:
             cpu: 10m
+        livenessProbe:
+          tcpSocket:
+            host: 127.0.0.1
+            port: 50051
+          initialDelaySeconds: 5
+          periodSeconds: 1
+          successThreshold: 1
+          timeoutSeconds: 1
+          failureThreshold: 3
+        readinessProbe:
+          tcpSocket:
+            host: 127.0.0.1
+            port: 50051
+          initialDelaySeconds: 1
+          periodSeconds: 1
+          successThreshold: 1
+          timeoutSeconds: 1
+          failureThreshold: 3
         securityContext:
           privileged: true
         volumeMounts:
