@@ -157,7 +157,7 @@ func (eniCfg *ENIConfigController) Start() {
 		log.Errorf("failed to get watch namespace: %v", err)
 	}
 	resyncPeriod := time.Second * 5
-	log.Infof("Watching %s, %s, %s, every %d s", resource, kind, namespace, resyncPeriod.Seconds())
+	log.Infof("Watching %s, %s, %s, every %v s", resource, kind, namespace, resyncPeriod.Seconds())
 	sdk.Watch(resource, kind, namespace, resyncPeriod)
 	sdk.Watch("/v1", "Node", corev1.NamespaceAll, resyncPeriod)
 	sdk.Handle(NewHandler(eniCfg))
