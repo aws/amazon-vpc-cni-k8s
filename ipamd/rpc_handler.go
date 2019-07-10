@@ -91,6 +91,8 @@ func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.
 
 // RunRPCHandler handles request from gRPC
 func (c *IPAMContext) RunRPCHandler() error {
+	log.Info("Serving RPC Handler on ", ipamdgRPCaddress)
+
 	lis, err := net.Listen("tcp", ipamdgRPCaddress)
 	if err != nil {
 		log.Errorf("Failed to listen gRPC port: %v", err)
