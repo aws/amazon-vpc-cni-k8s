@@ -14,8 +14,9 @@
 package netlinkwrapper
 
 import (
-	"github.com/vishvananda/netlink"
 	"syscall"
+
+	"github.com/vishvananda/netlink"
 )
 
 // NetLink wraps methods used from the vishvananda/netlink package

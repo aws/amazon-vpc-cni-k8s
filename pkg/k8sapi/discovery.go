@@ -15,7 +15,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"

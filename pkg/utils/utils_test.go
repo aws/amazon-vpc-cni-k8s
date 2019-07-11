@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/ttime"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/ttime/mocks"
+	mock_ttime "github.com/aws/amazon-vpc-cni-k8s/pkg/utils/ttime/mocks"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 )

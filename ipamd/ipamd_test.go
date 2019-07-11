@@ -24,13 +24,13 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
+	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/docker"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/docker/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
+	mock_docker "github.com/aws/amazon-vpc-cni-k8s/pkg/docker/mocks"
+	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
+	mock_k8sapi "github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi/mocks"
+	mock_networkutils "github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -237,9 +237,9 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 
 	mockAWS.EXPECT().DescribeENI(eni2).Return(
 		[]*ec2.NetworkInterfacePrivateIpAddress{
-			{ PrivateIpAddress: &testAddr11, Primary: &primary },
-			{ PrivateIpAddress: &testAddr12, Primary: &notPrimary },
-			{ PrivateIpAddress: &testAddr12, Primary: &notPrimary },
+			{PrivateIpAddress: &testAddr11, Primary: &primary},
+			{PrivateIpAddress: &testAddr12, Primary: &notPrimary},
+			{PrivateIpAddress: &testAddr12, Primary: &notPrimary},
 		},
 		&attachmentID, nil)
 
@@ -302,9 +302,9 @@ func TestTryAddIPToENI(t *testing.T) {
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	mockAWS.EXPECT().DescribeENI(secENIid).Return(
 		[]*ec2.NetworkInterfacePrivateIpAddress{
-			{ PrivateIpAddress: &testAddr11, Primary: &primary },
-			{ PrivateIpAddress: &testAddr12, Primary: &notPrimary },
-			{ PrivateIpAddress: &testAddr12, Primary: &notPrimary },
+			{PrivateIpAddress: &testAddr11, Primary: &primary},
+			{PrivateIpAddress: &testAddr12, Primary: &notPrimary},
+			{PrivateIpAddress: &testAddr12, Primary: &notPrimary},
 		},
 		&attachmentID, nil)
 

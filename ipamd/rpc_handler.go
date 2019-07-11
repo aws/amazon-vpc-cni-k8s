@@ -54,12 +54,20 @@ func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.
 		pbVPCcidrs = append(pbVPCcidrs, *cidr)
 	}
 
+	useExternalSNAT := s.ipamContext.networkClient.UseExternalSNAT()
+	if !useExternalSNAT {
+		for _, cidr := range s.ipamContext.networkClient.GetExcludeSNATCIDRs() {
+			log.Debugf("CIDR SNAT Exclusion %s", cidr)
+			pbVPCcidrs = append(pbVPCcidrs, cidr)
+		}
+	}
+
 	resp := pb.AddNetworkReply{
 		Success:         err == nil,
 		IPv4Addr:        addr,
 		IPv4Subnet:      "",
 		DeviceNumber:    int32(deviceNumber),
-		UseExternalSNAT: s.ipamContext.networkClient.UseExternalSNAT(),
+		UseExternalSNAT: useExternalSNAT,
 		VPCcidrs:        pbVPCcidrs,
 	}
 

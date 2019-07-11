@@ -12,7 +12,7 @@
 # language governing permissions and limitations under the License.
 #
 
-.PHONY: all build-linux clean docker docker-build lint unit-test vet download-portmap build-docker-test build-metrics docker-metrics metrics-unit-test docker-metrics-test docker-vet
+.PHONY: all build-linux clean format check-format docker docker-build lint unit-test vet download-portmap build-docker-test build-metrics docker-metrics metrics-unit-test docker-metrics-test docker-vet
 
 IMAGE   ?= amazon/amazon-k8s-cni
 VERSION ?= $(shell git describe --tags --always --dirty)
@@ -123,3 +123,19 @@ clean:
 	rm -f aws-cni
 	rm -f cni-metrics-helper/cni-metrics-helper
 	rm -f portmap
+
+files := $(shell find . -path ./vendor -prune -or -not -name 'mock_publisher.go' -name '*.go' -print)
+unformatted = $(shell goimports -l $(files))
+
+format :
+	@echo "== format"
+	@goimports -w $(files)
+	@sync
+
+check-format :
+	@echo "== check formatting"
+ifneq "$(unformatted)" ""
+	@echo "needs formatting: $(unformatted)"
+	@echo "run 'make format'"
+	@exit 1
+endif
