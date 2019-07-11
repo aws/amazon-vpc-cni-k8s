@@ -15,9 +15,10 @@ package ipamd
 
 import (
 	"context"
+	"testing"
+
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/aws-sdk-go/aws"
-	"testing"
 
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 

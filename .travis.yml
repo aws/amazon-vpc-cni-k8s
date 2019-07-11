@@ -23,6 +23,7 @@ install:
 
 # Tests to run
 script:
+  - GO111MODULE=on make check-format
   - GO111MODULE=on make build-linux
   - GO111MODULE=on make lint
   - GO111MODULE=on make vet

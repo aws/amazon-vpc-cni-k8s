@@ -672,7 +672,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 		log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d", eni.ID, currentNumberOfAllocatedIPs, c.maxIPsPerENI)
 		// Try to allocate all available IPs for this ENI
 		// TODO: Retry with back-off, trying with half the number of IPs each time
-		err = c.awsClient.AllocIPAddresses(eni.ID, c.maxIPsPerENI- currentNumberOfAllocatedIPs)
+		err = c.awsClient.AllocIPAddresses(eni.ID, c.maxIPsPerENI-currentNumberOfAllocatedIPs)
 		if err != nil {
 			log.Warnf("failed to allocate all available IP addresses on ENI %s, err: %v", eni.ID, err)
 			// Try to just get one more IP
@@ -692,7 +692,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 		return true, nil
 	}
 	return false, nil
-} 
+}
 
 // setupENI does following:
 // 1) add ENI to datastore
