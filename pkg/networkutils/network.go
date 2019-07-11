@@ -303,21 +303,21 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 
 	// build SNAT rules for outbound non-VPC traffic
 	var iptableRules []iptablesRule
-	log.Debugf("Setup Host Network: iptables -A POSTROUTING -m comment --comment \"AWS SNAT CHAN\" -j AWS-SNAT-CHAIN-0")
+	log.Debugf("Setup Host Network: iptables -A POSTROUTING -m comment --comment \"AWS SNAT CHAIN\" -j AWS-SNAT-CHAIN-0")
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "first SNAT rules for non-VPC outbound traffic",
 		shouldExist: !n.useExternalSNAT,
 		table:       "nat",
 		chain:       "POSTROUTING",
 		rule: []string{
-			"-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-0",
+			"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0",
 		}})
 
 	for i, cidr := range allCIDRs {
 		curChain := chains[i]
 		curName := fmt.Sprintf("[%d] AWS-SNAT-CHAIN", i)
 		nextChain := chains[i+1]
-		comment := "AWS SNAT CHAN"
+		comment := "AWS SNAT CHAIN"
 		if cidr.isExclusion {
 			comment += " EXCLUSION"
 		}
