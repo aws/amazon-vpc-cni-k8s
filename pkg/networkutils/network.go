@@ -58,7 +58,7 @@ const (
 	// be installed and will be removed if they are already installed.  Defaults to false.
 	envExternalSNAT = "AWS_VPC_K8S_CNI_EXTERNALSNAT"
 
-	// This environment is used to specify a comma separated list of ipv4 CIDRs to exclude from SNAT. An additional rule 
+	// This environment is used to specify a comma separated list of ipv4 CIDRs to exclude from SNAT. An additional rule
 	// will be written to the iptables for each item. If an item is not an ipv4 range it will be skipped.
 	// Defaults to empty.
 	envExcludeSNATCIDRs = "AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS"
@@ -313,7 +313,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 			"-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-0",
 		}})
 
-	for i, cidr:= range allCIDRs {
+	for i, cidr := range allCIDRs {
 		curChain := chains[i]
 		curName := fmt.Sprintf("[%d] AWS-SNAT-CHAIN", i)
 		nextChain := chains[i+1]
@@ -467,7 +467,7 @@ func listCurrentSNATRules(ipt iptablesIface) ([]iptablesRule, error) {
 			log.Debugf("host network setup: found potentially stale SNAT rule for chain %s: %v", chain, ruleSpec)
 			toClear = append(toClear, iptablesRule{
 				name:        fmt.Sprintf("[%d] %s", i, chain),
-				shouldExist: false,
+				shouldExist: false, // To trigger ipt.Delete for stale rules
 				table:       "nat",
 				chain:       chain,
 				rule:        ruleSpec[2:], //drop action and chain name
