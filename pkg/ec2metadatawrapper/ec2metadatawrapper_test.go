@@ -1,9 +1,10 @@
 package ec2metadatawrapper
 
 import (
-	mockec2metadatawrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper/mocks"
 	"testing"
 	"time"
+
+	mockec2metadatawrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper/mocks"
 
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 

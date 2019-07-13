@@ -15,11 +15,13 @@ package networkutils
 
 import (
 	"encoding/binary"
+	"encoding/csv"
 	"fmt"
 	"io"
 	"math"
 	"net"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -55,6 +57,11 @@ const (
 	// secondary ENI IP addresses.  If set to "true", the SNAT iptables rule and off-VPC ip rule will not
 	// be installed and will be removed if they are already installed.  Defaults to false.
 	envExternalSNAT = "AWS_VPC_K8S_CNI_EXTERNALSNAT"
+
+	// This environment is used to specify a comma separated list of ipv4 CIDRs to exclude from SNAT. An additional rule
+	// will be written to the iptables for each item. If an item is not an ipv4 range it will be skipped.
+	// Defaults to empty.
+	envExcludeSNATCIDRs = "AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS"
 
 	// This environment is used to specify weather the SNAT rule added to iptables should randomize port
 	// allocation for outgoing connections. If set to "hashrandom" the SNAT iptables rule will have the "--random" flag
@@ -101,6 +108,7 @@ type NetworkAPIs interface {
 	// SetupENINetwork performs eni level network configuration
 	SetupENINetwork(eniIP string, mac string, table int, subnetCIDR string) error
 	UseExternalSNAT() bool
+	GetExcludeSNATCIDRs() []string
 	GetRuleList() ([]netlink.Rule, error)
 	GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error)
 	UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet, toCIDRs []string, toFlag bool) error
@@ -109,6 +117,7 @@ type NetworkAPIs interface {
 
 type linuxNetwork struct {
 	useExternalSNAT        bool
+	excludeSNATCIDRs       []string
 	typeOfSNAT             snatType
 	nodePortSupportEnabled bool
 	connmark               uint32
@@ -145,6 +154,7 @@ const (
 func New() NetworkAPIs {
 	return &linuxNetwork{
 		useExternalSNAT:        useExternalSNAT(),
+		excludeSNATCIDRs:       getExcludeSNATCIDRs(),
 		typeOfSNAT:             typeOfSNAT(),
 		nodePortSupportEnabled: nodePortSupportEnabled(),
 		mainENIMark:            getConnmark(),
@@ -261,12 +271,30 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		return errors.Wrap(err, "host network setup: failed to create iptables")
 	}
 
-	// build IPTABLES chain for SNAT of non-VPC outbound traffic
+	type snatCIDR struct {
+		cidr        string
+		isExclusion bool
+	}
+	var allCIDRs []snatCIDR
+	for _, cidr := range vpcCIDRs {
+		allCIDRs = append(allCIDRs, snatCIDR{cidr: *cidr, isExclusion: false})
+	}
+	for _, cidr := range n.excludeSNATCIDRs {
+		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: true})
+	}
+
+	// if excludeSNATCIDRs or vpcCIDRs have changed they need to be cleared
+	snatStaleRulesToCheck, err := listCurrentSNATRules(ipt)
+	if err != nil {
+		return errors.Wrapf(err, "host network setup: failed to get SNAT chain rules to clear")
+	}
+
+	// build IPTABLES chain for SNAT of non-VPC outbound traffic and excluded CIDRs
 	var chains []string
-	for i := 0; i <= len(vpcCIDRs); i++ {
+	for i := 0; i <= len(allCIDRs); i++ {
 		chain := fmt.Sprintf("AWS-SNAT-CHAIN-%d", i)
 		log.Debugf("Setup Host Network: iptables -N %s -t nat", chain)
-		if err = ipt.NewChain("nat", chain); err != nil && !containChainExistErr(err) {
+		if err := ipt.NewChain("nat", chain); err != nil && !containChainExistErr(err) {
 			log.Errorf("ipt.NewChain error for chain [%s]: %v", chain, err)
 			return errors.Wrapf(err, "host network setup: failed to add chain")
 		}
@@ -274,24 +302,26 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	}
 
 	// build SNAT rules for outbound non-VPC traffic
-	log.Debugf("Setup Host Network: iptables -A POSTROUTING -m comment --comment \"AWS SNAT CHAIN\" -j AWS-SNAT-CHAIN-0")
-
 	var iptableRules []iptablesRule
+	log.Debugf("Setup Host Network: iptables -A POSTROUTING -m comment --comment \"AWS SNAT CHAIN\" -j AWS-SNAT-CHAIN-0")
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "first SNAT rules for non-VPC outbound traffic",
 		shouldExist: !n.useExternalSNAT,
 		table:       "nat",
 		chain:       "POSTROUTING",
 		rule: []string{
-			"-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-0",
+			"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0",
 		}})
 
-	for i, cidr := range vpcCIDRs {
+	for i, cidr := range allCIDRs {
 		curChain := chains[i]
-		nextChain := chains[i+1]
 		curName := fmt.Sprintf("[%d] AWS-SNAT-CHAIN", i)
-
-		log.Debugf("Setup Host Network: iptables -A %s ! -d %s -t nat -j %s", curChain, *cidr, nextChain)
+		nextChain := chains[i+1]
+		comment := "AWS SNAT CHAIN"
+		if cidr.isExclusion {
+			comment += " EXCLUSION"
+		}
+		log.Debugf("Setup Host Network: iptables -A %s ! -d %s -t nat -j %s", curChain, cidr, nextChain)
 
 		iptableRules = append(iptableRules, iptablesRule{
 			name:        curName,
@@ -299,11 +329,10 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 			table:       "nat",
 			chain:       curChain,
 			rule: []string{
-				"!", "-d", *cidr, "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", nextChain,
+				"!", "-d", cidr.cidr, "-m", "comment", "--comment", comment, "-j", nextChain,
 			}})
 	}
 
-	lastChain := chains[len(chains)-1]
 	// Prepare the Desired Rule for SNAT Rule
 	snatRule := []string{"-m", "comment", "--comment", "AWS, SNAT",
 		"-m", "addrtype", "!", "--dst-type", "LOCAL",
@@ -321,6 +350,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		}
 	}
 
+	lastChain := chains[len(chains)-1]
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "last SNAT rule for non-VPC outbound traffic",
 		shouldExist: !n.useExternalSNAT,
@@ -329,6 +359,24 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		rule:        snatRule,
 	})
 
+	var snatStaleRulesToClear []iptablesRule
+	log.Debugf("Setup Host Network: synchronising SNAT stale rules")
+	for _, staleRule := range snatStaleRulesToCheck {
+		keepRule := false
+		for _, newRule := range iptableRules {
+			if staleRule.chain == newRule.chain && reflect.DeepEqual(newRule.rule, staleRule.rule) {
+				log.Debugf("Setup Host Network: active rule found: %s", staleRule)
+				keepRule = true
+				break
+			}
+		}
+		if !keepRule {
+			log.Debugf("Setup Host Network: stale rule found: %s", staleRule)
+			snatStaleRulesToClear = append(snatStaleRulesToClear, staleRule)
+		}
+	}
+
+	iptableRules = append(iptableRules, snatStaleRulesToClear...)
 	log.Debugf("iptableRules: %v", iptableRules)
 
 	iptableRules = append(iptableRules, iptablesRule{
@@ -393,6 +441,42 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	return nil
 }
 
+func listCurrentSNATRules(ipt iptablesIface) ([]iptablesRule, error) {
+	var toClear []iptablesRule
+	log.Debug("Setup Host Network: loading existing iptables nat SNAT exclusion rules")
+
+	existingChains, err := ipt.ListChains("nat")
+	if err != nil {
+		return nil, errors.Wrap(err, "host network setup: failed to list iptables nat chains")
+	}
+	for _, chain := range existingChains {
+		if !strings.HasPrefix(chain, "AWS-SNAT-CHAIN") {
+			continue
+		}
+		rules, err := ipt.List("nat", chain)
+		if err != nil {
+			return nil, errors.Wrap(err, fmt.Sprintf("host network setup: failed to list iptables nat chain %s", chain))
+		}
+		for i, rule := range rules {
+			r := csv.NewReader(strings.NewReader(rule))
+			r.Comma = ' '
+			ruleSpec, err := r.Read()
+			if err != nil {
+				return nil, errors.Wrap(err, fmt.Sprintf("host network setup: failed to parse iptables nat chain %s rule %s", chain, rule))
+			}
+			log.Debugf("host network setup: found potentially stale SNAT rule for chain %s: %v", chain, ruleSpec)
+			toClear = append(toClear, iptablesRule{
+				name:        fmt.Sprintf("[%d] %s", i, chain),
+				shouldExist: false, // To trigger ipt.Delete for stale rules
+				table:       "nat",
+				chain:       chain,
+				rule:        ruleSpec[2:], //drop action and chain name
+			})
+		}
+	}
+	return toClear, nil
+}
+
 func containChainExistErr(err error) bool {
 	return strings.Contains(err.Error(), "Chain already exists")
 }
@@ -432,10 +516,11 @@ func containsNoSuchRule(err error) bool {
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
 func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
-		envExternalSNAT:    useExternalSNAT(),
-		envNodePortSupport: nodePortSupportEnabled(),
-		envConnmark:        getConnmark(),
-		envRandomizeSNAT:   typeOfSNAT(),
+		envExternalSNAT:     useExternalSNAT(),
+		envExcludeSNATCIDRs: getExcludeSNATCIDRs(),
+		envNodePortSupport:  nodePortSupportEnabled(),
+		envConnmark:         getConnmark(),
+		envRandomizeSNAT:    typeOfSNAT(),
 	}
 }
 
@@ -448,6 +533,33 @@ func (n *linuxNetwork) UseExternalSNAT() bool {
 
 func useExternalSNAT() bool {
 	return getBoolEnvVar(envExternalSNAT, false)
+}
+
+// GetExcludeSNATCIDRs returns a list of cidrs that should be excluded from SNAT if UseExternalSNAT is false,
+// otherwise it returns an empty list.
+func (n *linuxNetwork) GetExcludeSNATCIDRs() []string {
+	return getExcludeSNATCIDRs()
+}
+
+func getExcludeSNATCIDRs() []string {
+	if useExternalSNAT() {
+		return nil
+	}
+
+	excludeCIDRs := os.Getenv(envExcludeSNATCIDRs)
+	if excludeCIDRs == "" {
+		return nil
+	}
+	var cidrs []string
+	for _, excludeCIDR := range strings.Split(excludeCIDRs, ",") {
+		_, parseCIDR, err := net.ParseCIDR(excludeCIDR)
+		if err != nil {
+			log.Errorf("getExcludeSNATCIDRs : ignoring %v is not a valid IPv4 CIDR", excludeCIDR)
+		} else {
+			cidrs = append(cidrs, parseCIDR.String())
+		}
+	}
+	return cidrs
 }
 
 func typeOfSNAT() snatType {
@@ -749,8 +861,9 @@ func (n *linuxNetwork) DeleteRuleListBySrc(src net.IPNet) error {
 }
 
 // UpdateRuleListBySrc modify IP rules that have a matching source IP
-func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet, toCIDRs []string, useExternalSNAT bool) error {
-	log.Infof("Update Rule List[%v] for source[%v] with toCIDRs[%v], useExternalSNAT[%v]", ruleList, src, toCIDRs, useExternalSNAT)
+func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet, toCIDRs []string, requiresSNAT bool) error {
+	log.Infof("Update Rule List[%v] for source[%v] with toCIDRs[%v], excludeSNATCIDRs[%v], requiresSNAT[%v]",
+		ruleList, src, toCIDRs, n.excludeSNATCIDRs, requiresSNAT)
 
 	srcRuleList, err := n.GetRuleListBySrc(ruleList, src)
 	if err != nil {
@@ -778,8 +891,9 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 		return nil
 	}
 
-	if useExternalSNAT {
-		for _, cidr := range toCIDRs {
+	if requiresSNAT {
+		allCIDRs := append(toCIDRs, n.excludeSNATCIDRs...)
+		for _, cidr := range allCIDRs {
 			podRule := n.netLink.NewRule()
 			_, podRule.Dst, _ = net.ParseCIDR(cidr)
 			podRule.Src = &src

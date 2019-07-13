@@ -34,11 +34,11 @@ curl http://localhost:61678/metrics 2>&1 > ${LOG_DIR}/metrics.out
 # Collecting kubelet introspection data
 if [[ -n "${KUBECONFIG:-}" ]]; then
     command -v kubectl > /dev/null && kubectl get --kubeconfig=${KUBECONFIG} --raw=/api/v1/pods > ${LOG_DIR}/kubelet.out
+elif [[ -f /etc/eksctl/kubeconfig.yaml ]]; then
+    command -v kubectl > /dev/null && kubectl get --kubeconfig=/etc/eksctl/kubeconfig.yaml --raw=/api/v1/pods > ${LOG_DIR}/kubelet.out
 elif [[ -f /etc/systemd/system/kubelet.service ]]; then
     KUBECONFIG=`grep kubeconfig /etc/systemd/system/kubelet.service | awk '{print $2}'`
     command -v kubectl > /dev/null && kubectl get --kubeconfig=${KUBECONFIG} --raw=/api/v1/pods > ${LOG_DIR}/kubelet.out
-elif [[ -f /etc/eksctl/kubeconfig.yaml ]]; then
-    command -v kubectl > /dev/null && kubectl get --kubeconfig=/etc/eksctl/kubeconfig.yaml --raw=/api/v1/pods > ${LOG_DIR}/kubelet.out
 else
     echo "======== Unable to find KUBECONFIG, IGNORING POD DATA ========="
 fi

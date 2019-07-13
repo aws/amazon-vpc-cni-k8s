@@ -54,12 +54,20 @@ func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.
 		pbVPCcidrs = append(pbVPCcidrs, *cidr)
 	}
 
+	useExternalSNAT := s.ipamContext.networkClient.UseExternalSNAT()
+	if !useExternalSNAT {
+		for _, cidr := range s.ipamContext.networkClient.GetExcludeSNATCIDRs() {
+			log.Debugf("CIDR SNAT Exclusion %s", cidr)
+			pbVPCcidrs = append(pbVPCcidrs, cidr)
+		}
+	}
+
 	resp := pb.AddNetworkReply{
 		Success:         err == nil,
 		IPv4Addr:        addr,
 		IPv4Subnet:      "",
 		DeviceNumber:    int32(deviceNumber),
-		UseExternalSNAT: s.ipamContext.networkClient.UseExternalSNAT(),
+		UseExternalSNAT: useExternalSNAT,
 		VPCcidrs:        pbVPCcidrs,
 	}
 
@@ -91,6 +99,8 @@ func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.
 
 // RunRPCHandler handles request from gRPC
 func (c *IPAMContext) RunRPCHandler() error {
+	log.Info("Serving RPC Handler on ", ipamdgRPCaddress)
+
 	lis, err := net.Listen("tcp", ipamdgRPCaddress)
 	if err != nil {
 		log.Errorf("Failed to listen gRPC port: %v", err)

@@ -23,24 +23,24 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/grpcwrapper/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/rpcwrapper/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/typeswrapper/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/plugins/routed-eni/driver/mocks"
+	mock_grpcwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/grpcwrapper/mocks"
+	mock_rpcwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/rpcwrapper/mocks"
+	mock_typeswrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/typeswrapper/mocks"
+	mock_driver "github.com/aws/amazon-vpc-cni-k8s/plugins/routed-eni/driver/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/rpc"
-	"github.com/aws/amazon-vpc-cni-k8s/rpc/mocks"
+	mock_rpc "github.com/aws/amazon-vpc-cni-k8s/rpc/mocks"
 	"google.golang.org/grpc"
 )
 
 const (
-	containerID  = "test-container"
-	netNS        = "/proc/ns/1234"
-	ifName       = "eth0"
-	cniVersion   = "1.0"
-	cniName      = "aws-cni"
-	cniType      = "aws-cni"
-	ipAddr       = "10.0.1.15"
-	devNum       = 4
+	containerID = "test-container"
+	netNS       = "/proc/ns/1234"
+	ifName      = "eth0"
+	cniVersion  = "1.0"
+	cniName     = "aws-cni"
+	cniType     = "aws-cni"
+	ipAddr      = "10.0.1.15"
+	devNum      = 4
 )
 
 func setup(t *testing.T) (*gomock.Controller,

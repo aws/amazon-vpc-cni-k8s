@@ -24,8 +24,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadata/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
+	mock_ec2metadata "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadata/mocks"
+	mock_ec2wrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
 )
 
 const (

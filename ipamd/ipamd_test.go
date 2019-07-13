@@ -226,9 +226,9 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 
 	mockAWS.EXPECT().DescribeENI(eni2).Return(
 		[]*ec2.NetworkInterfacePrivateIpAddress{
-			{ PrivateIpAddress: &testAddr11, Primary: &primary },
-			{ PrivateIpAddress: &testAddr12, Primary: &notPrimary },
-			{ PrivateIpAddress: &testAddr12, Primary: &notPrimary },
+			{PrivateIpAddress: &testAddr11, Primary: &primary},
+			{PrivateIpAddress: &testAddr12, Primary: &notPrimary},
+			{PrivateIpAddress: &testAddr12, Primary: &notPrimary},
 		},
 		&attachmentID, nil)
 
