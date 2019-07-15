@@ -16,6 +16,7 @@ package ipamd
 import (
 	"net"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -428,4 +429,14 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, 0, short)
 	assert.Equal(t, 0, over)
+}
+
+func TestGetMaxK8SRetries(t *testing.T){
+		maxTries := 3
+
+		_ = os.Setenv(envMaxK8SRetries, strconv.Itoa(maxTries))
+		defer os.Unsetenv(envMaxK8SRetries)
+
+		c:=&IPAMContext{}
+		assert.Equal(t, maxTries, c.getMaxK8SRetries())
 }

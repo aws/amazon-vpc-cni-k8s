@@ -47,8 +47,13 @@ const (
 	eniAttachTime               = 10 * time.Second
 	nodeIPPoolReconcileInterval = 60 * time.Second
 	decreaseIPPoolInterval      = 30 * time.Second
-	maxK8SRetries               = 12
-	retryK8SInterval            = 5 * time.Second
+
+	// envMaxK8SRetries is an environment variable that can be used to specify how many retries to do
+	// when accessing Kubernetes API Server.
+	envMaxK8SRetries = "MAX_K8S_RETRIES"
+	// defaultMaxK8SRetries is a default number of retries to do when accessing Kubernetes API Server.
+	defaultMaxK8SRetries = 12
+	retryK8SInterval     = 5 * time.Second
 
 	// ipReconcileCooldown is the amount of time that an IP address must wait until it can be added to the data store
 	// during reconciliation after being discovered on the EC2 instance metadata.
@@ -364,10 +369,26 @@ func (c *IPAMContext) nodeInit() error {
 	return nil
 }
 
+// getMaxK8SRetries returns number of retries to do when accessing Kubernetes API Server.
+func (c *IPAMContext) getMaxK8SRetries() int {
+	maxRetries := defaultMaxK8SRetries
+	if strRetries := os.Getenv(envMaxK8SRetries); len(strRetries) > 0 {
+		retries, err := strconv.Atoi(strRetries)
+		if err != nil {
+			log.Errorf("%s should be integer, got %q", envMaxK8SRetries, strRetries)
+		} else {
+			maxRetries = retries
+		}
+	}
+	log.Infof("maxK8SRetries = %d", maxRetries)
+	return maxRetries
+}
+
 func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 	var pods []*k8sapi.K8SPodInfo
 	var err error
-	for retry := 1; retry <= maxK8SRetries; retry++ {
+	maxRetries := c.getMaxK8SRetries()
+	for retry := 1; retry <= maxRetries; retry++ {
 		pods, err = c.k8sClient.K8SGetLocalPodIPs()
 		if err == nil {
 			// Check for pods with no IP since the API server might not have the latest state of the node.
@@ -383,7 +404,7 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 			}
 			log.Warnf("Not all pods have an IP, trying again in %v seconds.", retryK8SInterval.Seconds())
 		}
-		log.Infof("Not able to get local pods yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
+		log.Infof("Not able to get local pods yet (attempt %d/%d): %v", retry, maxRetries, err)
 		time.Sleep(retryK8SInterval)
 	}
 
