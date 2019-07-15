@@ -385,7 +385,7 @@ spec:
         k8s-app: calico-typha
       annotations:
         scheduler.alpha.kubernetes.io/critical-pod: ''
-        cluster-autoscaler.kuberentes.io/safe-to-evict: 'true'
+        cluster-autoscaler.kubernetes.io/safe-to-evict: 'true'
     spec:
       nodeSelector:
         beta.kubernetes.io/os: linux
