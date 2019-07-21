@@ -331,6 +331,20 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 			rule: []string{
 				"!", "-d", cidr.cidr, "-m", "comment", "--comment", comment, "-j", nextChain,
 			}})
+
+		// ACCEPT FORWARD rules for inside VPC traffic
+		log.Debugf("Setup Host Network: iptables -A FORWARD -d %s -t filter -j ACCEPT", cidr)
+		iptableRules = append(iptableRules, iptablesRule{
+			name:        "AWS CNI FORWARD",
+			shouldExist: true,
+			table:       "filter",
+			chain:       "FORWARD",
+			rule: []string{
+				"-s", cidr.cidr,
+				"-m", "comment", "--comment", "AWS CNI FORWARD",
+				"-j", "ACCEPT",
+			},
+		})
 	}
 
 	// Prepare the Desired Rule for SNAT Rule
