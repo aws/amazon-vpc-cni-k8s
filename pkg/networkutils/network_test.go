@@ -378,6 +378,14 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
 				},
 			},
+			"filter": {
+				"FORWARD": [][]string{
+					{"-s", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CNI FORWARD", "-j", "ACCEPT"},
+					{"-s", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CNI FORWARD", "-j", "ACCEPT"},
+					{"-s", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CNI FORWARD", "-j", "ACCEPT"},
+					{"-s", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CNI FORWARD", "-j", "ACCEPT"},
+				},
+			},
 		}, mockIptables.dataplaneState)
 }
 
@@ -437,6 +445,12 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
 				},
 			},
+			"filter": {
+				"FORWARD": [][]string{
+					{"-s", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CNI FORWARD", "-j", "ACCEPT"},
+					{"-s", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CNI FORWARD", "-j", "ACCEPT"},
+				},
+			},
 		}, mockIptables.dataplaneState)
 }
 
@@ -494,6 +508,14 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 				"PREROUTING": [][]string{
 					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "lo", "-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in", "-j", "CONNMARK", "--set-mark", "0x80/0x80"},
 					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+				},
+			},
+			"filter": {
+				"FORWARD": [][]string{
+					{"-s", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CNI FORWARD", "-j", "ACCEPT"},
+					{"-s", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CNI FORWARD", "-j", "ACCEPT"},
+					{"-s", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CNI FORWARD", "-j", "ACCEPT"},
+					{"-s", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CNI FORWARD", "-j", "ACCEPT"},
 				},
 			},
 		}, mockIptables.dataplaneState)
