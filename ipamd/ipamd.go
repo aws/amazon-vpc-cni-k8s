@@ -316,7 +316,7 @@ func (c *IPAMContext) nodeInit() error {
 
 	usedIPs, err := c.getLocalPodsWithRetry()
 	if err != nil {
-		log.Warnf("During ipamd init, failed to get Pod information from kubelet %v", err)
+		log.Warnf("During ipamd init, failed to get Pod information from Kubernetes API Server %v", err)
 		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed")
 		// This can happens when L-IPAMD starts before kubelet.
 		// TODO  need to add node health stats here
@@ -342,7 +342,7 @@ func (c *IPAMContext) nodeInit() error {
 		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
 		if err != nil {
 			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed")
-			log.Warnf("During ipamd init, failed to use pod IP %s returned from Kubelet %v", ip.IP, err)
+			log.Warnf("During ipamd init, failed to use pod IP %s returned from Kubernetes API Server %v", ip.IP, err)
 			// TODO continue, but need to add node health stats here
 			// TODO need to feed this to controller on the health of pod and node
 			// This is a bug among kubelet/cni-plugin/l-ipamd/ec2-metadata that this particular pod is using an non existent ip address.
