@@ -874,9 +874,9 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	// We need the +1 to make sure we are not going below the WARM_ENI_TARGET.
 	shouldRemoveExtra := available >= (c.warmENITarget+1)*c.maxIPsPerENI
 	if shouldRemoveExtra {
-		log.Debugf("It might be possible to remove extra ENIs because available (%d) > ENI target (%d) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
+		log.Debugf("It might be possible to remove extra ENIs because available (%d) >= (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
 	} else {
-		log.Debugf("Its NOT possible to remove extra ENIs because available (%d) <= ENI target (%d) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
+		log.Debugf("Its NOT possible to remove extra ENIs because available (%d) < (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
 	}
 	return shouldRemoveExtra
 }
