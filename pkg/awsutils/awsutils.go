@@ -572,7 +572,7 @@ func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string,
 	awsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
-		err := cache.deleteENI(eniID)
+		err := cache.FreeENI(eniID)
 		if err != nil {
 			awsUtilsErrInc("ENICleanupUponModifyNetworkErr", err)
 		}
