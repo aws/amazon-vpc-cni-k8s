@@ -276,9 +276,9 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	if !r.Success {
-		log.Errorf("Failed to process delete request for pod %s namespace %s container %s: %v",
-			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), err)
-		return errors.Wrap(err, "del cmd: failed to process delete request")
+		log.Errorf("Failed to process delete request for pod %s namespace %s container %s: Success == false",
+			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID))
+		return errors.New("del cmd: failed to process delete request")
 	}
 
 	addr := &net.IPNet{
