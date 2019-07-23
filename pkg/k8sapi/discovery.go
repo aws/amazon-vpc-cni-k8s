@@ -246,7 +246,15 @@ func (d *Controller) handlePodUpdate(key string) error {
 		d.workerPodsLock.Lock()
 		defer d.workerPodsLock.Unlock()
 
+		var containerID string
+
+		if len(pod.Status.ContainerStatuses) > 0 {
+			containerID = pod.Status.ContainerStatuses[0].ContainerID
+			log.Debugf("Found pod (%v)'s container ID: %v", podName, containerID)
+		}
+
 		d.workerPods[key] = &K8SPodInfo{
+			Container: containerID,
 			Name:      podName,
 			Namespace: pod.GetNamespace(),
 			UID:       string(pod.GetUID()),
