@@ -13,5 +13,6 @@ COPY go.sum .
 
 # This ensures `go mod download` happens only when go.mod and go.sum change.
 RUN go mod download
+RUN go get -u golang.org/x/tools/cmd/goimports
 
 COPY . .
