@@ -189,7 +189,7 @@ var InstanceENIsAvailable = map[string]int{
 	"t3.2xlarge":    4,
 	"t3a.nano":      2,
 	"t3a.micro":     2,
-	"t3a.small":     3,
+	"t3a.small":     2,
 	"t3a.medium":    3,
 	"t3a.large":     3,
 	"t3a.xlarge":    4,
