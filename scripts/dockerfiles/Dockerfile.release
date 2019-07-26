@@ -31,6 +31,7 @@ COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/misc/10-aws.confli
 COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/portmap /app
 
 COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-k8s-agent  /app
+COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/grpc_health_probe /app
 COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/aws-cni-support.sh /app
 COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/install-aws.sh /app
 ENTRYPOINT /app/install-aws.sh
