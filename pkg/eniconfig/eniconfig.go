@@ -102,7 +102,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	case *v1alpha1.ENIConfig:
 		eniConfigName := o.GetName()
 		if event.Deleted {
-			log.Infof("Deleting ENIConfig: %s", eniConfigName)
+			log.Debugf("Deleting ENIConfig: %s", eniConfigName)
 			h.controller.eniLock.Lock()
 			defer h.controller.eniLock.Unlock()
 			delete(h.controller.eni, eniConfigName)
@@ -111,14 +111,14 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 
 		curENIConfig := o.DeepCopy()
 
-		log.Infof("Handle ENIConfig Add/Update: %s, %v, %s", eniConfigName, curENIConfig.Spec.SecurityGroups, curENIConfig.Spec.Subnet)
+		log.Debugf("Handle ENIConfig Add/Update: %s, %v, %s", eniConfigName, curENIConfig.Spec.SecurityGroups, curENIConfig.Spec.Subnet)
 
 		h.controller.eniLock.Lock()
 		defer h.controller.eniLock.Unlock()
 		h.controller.eni[eniConfigName] = &curENIConfig.Spec
 
 	case *corev1.Node:
-		log.Infof("Handle corev1.Node: %s, %v, %v", o.GetName(), o.GetAnnotations(), o.GetLabels())
+		log.Debugf("Handle corev1.Node: %s, %v, %v", o.GetName(), o.GetAnnotations(), o.GetLabels())
 		// Get annotations if not found get labels if not found fallback use default
 		if h.controller.myNodeName == o.GetName() {
 			val, ok := o.GetAnnotations()[h.controller.eniConfigAnnotationDef]
@@ -129,10 +129,12 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 				}
 			}
 
-			h.controller.eniLock.Lock()
-			defer h.controller.eniLock.Unlock()
-			h.controller.myENI = val
-			log.Infof("Setting myENI to: %s", val)
+			if h.controller.myENI != val {
+				h.controller.eniLock.Lock()
+				defer h.controller.eniLock.Unlock()
+				h.controller.myENI = val
+				log.Debugf("Setting myENI to: %s", val)
+			}
 		}
 	}
 	return nil
