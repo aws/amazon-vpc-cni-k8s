@@ -14,7 +14,7 @@
 package nswrapper
 
 import (
-	"github.com/containernetworking/cni/pkg/ns"
+	"github.com/containernetworking/plugins/pkg/ns"
 )
 
 type NS interface {

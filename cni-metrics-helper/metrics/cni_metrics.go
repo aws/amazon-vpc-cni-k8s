@@ -19,7 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	k8sapi "github.com/aws/amazon-vpc-cni-k8s/pkg/controller/pod"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 )
 
@@ -122,12 +122,12 @@ type CNIMetricsTarget struct {
 	cwMetricsPublisher  publisher.Publisher
 	kubeClient          clientset.Interface
 	cniPods             []string
-	discoveryController *k8sapi.Controller
+	discoveryController *k8sapi.ReconcilePod
 	submitCW            bool
 }
 
 // CNIMetricsNew creates a new metricsTarget
-func CNIMetricsNew(c clientset.Interface, cw publisher.Publisher, d *k8sapi.Controller, submitCW bool) *CNIMetricsTarget {
+func CNIMetricsNew(c clientset.Interface, cw publisher.Publisher, d *k8sapi.ReconcilePod, submitCW bool) *CNIMetricsTarget {
 	return &CNIMetricsTarget{
 		interestingMetrics:  InterestingCNIMetrics,
 		cwMetricsPublisher:  cw,

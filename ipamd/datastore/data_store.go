@@ -21,7 +21,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	k8sapi "github.com/aws/amazon-vpc-cni-k8s/pkg/controller/pod"
 )
 
 const (

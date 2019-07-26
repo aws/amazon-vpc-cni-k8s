@@ -223,6 +223,14 @@ func generateHostVethName(prefix, namespace, podname string) string {
 	return fmt.Sprintf("%s%s", prefix, hex.EncodeToString(h.Sum(nil))[:11])
 }
 
+func cmdCheck(args *skel.CmdArgs) error {
+	// TODO: support CHECK method
+	return &types.Error{
+		Code: types.ErrIncompatibleCNIVersion,
+		Msg:  "config version does not allow CHECK",
+	}
+}
+
 func cmdDel(args *skel.CmdArgs) error {
 	return del(args, typeswrapper.New(), grpcwrapper.New(), rpcwrapper.New(), driver.New())
 }
@@ -303,7 +311,9 @@ func main() {
 
 	exitCode := 0
 
-	if e := skel.PluginMainWithError(cmdAdd, cmdDel, cniSpecVersion.All); e != nil {
+	cniVersions := cniSpecVersion.PluginSupports("0.1.0", "0.2.0", "0.3.0", "0.3.1")
+
+	if e := skel.PluginMainWithError(cmdAdd, cmdCheck, cmdDel, cniVersions, "amazon-vpc-cni-k8s"); e != nil {
 		exitCode = 1
 		log.Error("Failed CNI request: ", e)
 		if err := e.Print(); err != nil {

@@ -27,13 +27,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/aws/aws-sdk-go/aws"
-
 	"github.com/aws/aws-sdk-go/service/ec2"
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/controller/eniconfig"
+	k8sapi "github.com/aws/amazon-vpc-cni-k8s/pkg/controller/pod"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 )
 
@@ -217,7 +216,7 @@ func prometheusRegister() {
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
-func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) (*IPAMContext, error) {
+func New(k8sapiClient *k8sapi.ReconcilePod, eniConfig *eniconfig.ReconcileENIConfig) (*IPAMContext, error) {
 	prometheusRegister()
 	c := &IPAMContext{}
 

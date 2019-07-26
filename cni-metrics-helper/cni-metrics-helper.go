@@ -25,7 +25,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/aws/amazon-vpc-cni-k8s/cni-metrics-helper/metrics"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	//"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 )
 
@@ -79,14 +79,14 @@ func main() {
 
 	glog.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v", options.submitCW)
 
-	kubeClient, err := k8sapi.CreateKubeClient()
-	if err != nil {
-		glog.Errorf("Failed to create client: %v", err)
-		os.Exit(1)
-	}
-
-	discoverController := k8sapi.NewController(kubeClient)
-	go discoverController.DiscoverK8SPods()
+	//kubeClient, err := k8sapi.CreateKubeClient()
+	//if err != nil {
+	//	glog.Errorf("Failed to create client: %v", err)
+	//	os.Exit(1)
+	//}
+	//
+	//discoverController := k8sapi.NewController(kubeClient)
+	//go discoverController.DiscoverK8SPods()
 
 	var cw publisher.Publisher
 

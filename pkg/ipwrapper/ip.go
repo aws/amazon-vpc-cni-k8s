@@ -16,7 +16,7 @@ package ipwrapper
 import (
 	"net"
 
-	"github.com/containernetworking/cni/pkg/ip"
+	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/vishvananda/netlink"
 )
 
