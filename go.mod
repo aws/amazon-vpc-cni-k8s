@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	github.com/Microsoft/go-winio v0.4.11 // indirect
-	github.com/aws/aws-sdk-go v1.19.21
+	github.com/aws/aws-sdk-go v1.21.7
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 // indirect
 	github.com/cihub/seelog v0.0.0-20151216151435-d2c6e5aa9fbf
 	github.com/containernetworking/cni v0.5.2
