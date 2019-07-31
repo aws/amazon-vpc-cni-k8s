@@ -48,8 +48,8 @@ const (
 	eniAttachTime               = 10 * time.Second
 	nodeIPPoolReconcileInterval = 60 * time.Second
 	decreaseIPPoolInterval      = 30 * time.Second
-	maxK8SRetries               = 12
-	retryK8SInterval            = 5 * time.Second
+	maxK8SRetries               = 5
+	retryK8SInterval            = 3 * time.Second
 
 	// ipReconcileCooldown is the amount of time that an IP address must wait until it can be added to the data store
 	// during reconciliation after being discovered on the EC2 instance metadata.
@@ -315,6 +315,7 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	usedIPs, err := c.getLocalPodsWithRetry()
+	log.Debugf("getLocalPodsWithRetry() found %d used IPs.", len(usedIPs))
 	if err != nil {
 		log.Warnf("During ipamd init, failed to get Pod information from kubelet %v", err)
 		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed")
