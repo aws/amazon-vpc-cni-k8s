@@ -1,6 +1,4 @@
-# github.com/Microsoft/go-winio v0.4.11
-github.com/Microsoft/go-winio
-# github.com/aws/aws-sdk-go v1.19.21
+# github.com/aws/aws-sdk-go v1.21.7
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/service/cloudwatch
 github.com/aws/aws-sdk-go/service/ec2
@@ -33,8 +31,10 @@ github.com/aws/aws-sdk-go/private/protocol/rest
 github.com/aws/aws-sdk-go/private/protocol/query/queryutil
 github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil
 github.com/aws/aws-sdk-go/service/sts
+github.com/aws/aws-sdk-go/service/sts/stsiface
 github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds
 github.com/aws/aws-sdk-go/aws/credentials/endpointcreds
+github.com/aws/aws-sdk-go/private/protocol/json/jsonutil
 # github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973
 github.com/beorn7/perks/quantile
 # github.com/cihub/seelog v0.0.0-20151216151435-d2c6e5aa9fbf
@@ -54,32 +54,6 @@ github.com/coreos/go-iptables/iptables
 github.com/davecgh/go-spew/spew
 # github.com/deckarep/golang-set v1.7.1
 github.com/deckarep/golang-set
-# github.com/docker/distribution v2.6.2+incompatible
-github.com/docker/distribution/reference
-github.com/docker/distribution/digest
-# github.com/docker/docker v1.13.1
-github.com/docker/docker/api/types
-github.com/docker/docker/client
-github.com/docker/docker/api/types/container
-github.com/docker/docker/api/types/filters
-github.com/docker/docker/api/types/mount
-github.com/docker/docker/api/types/network
-github.com/docker/docker/api/types/registry
-github.com/docker/docker/api/types/swarm
-github.com/docker/docker/api/types/events
-github.com/docker/docker/api/types/reference
-github.com/docker/docker/api/types/time
-github.com/docker/docker/api/types/versions
-github.com/docker/docker/api/types/volume
-github.com/docker/docker/pkg/tlsconfig
-github.com/docker/docker/api/types/blkiodev
-github.com/docker/docker/api/types/strslice
-# github.com/docker/go-connections v0.4.0
-github.com/docker/go-connections/nat
-github.com/docker/go-connections/sockets
-github.com/docker/go-connections/tlsconfig
-# github.com/docker/go-units v0.3.3
-github.com/docker/go-units
 # github.com/ghodss/yaml v1.0.0
 github.com/ghodss/yaml
 # github.com/gogo/protobuf v1.1.1
@@ -165,13 +139,10 @@ golang.org/x/crypto/ssh/terminal
 golang.org/x/net/context
 golang.org/x/net/http2
 golang.org/x/net/trace
-golang.org/x/net/context/ctxhttp
 golang.org/x/net/http/httpguts
 golang.org/x/net/http2/hpack
 golang.org/x/net/idna
 golang.org/x/net/internal/timeseries
-golang.org/x/net/proxy
-golang.org/x/net/internal/socks
 # golang.org/x/sys v0.0.0-20180909124046-d0be0721c37e
 golang.org/x/sys/unix
 golang.org/x/sys/windows
