@@ -87,6 +87,14 @@ spec:
             - containerPort: 61678
               name: metrics
           name: aws-node
+          #readinessProbe:
+          #  exec:
+          #    command: ["/app/grpc_health_probe", "-addr=:50051"]
+          #  initialDelaySeconds: 5
+          #livenessProbe:
+          #  exec:
+          #    command: ["/app/grpc_health_probe", "-addr=:50051"]
+          #  initialDelaySeconds: 5
           env:
             - name: AWS_VPC_K8S_CNI_LOGLEVEL
               value: DEBUG
