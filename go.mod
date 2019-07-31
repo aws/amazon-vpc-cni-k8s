@@ -3,7 +3,6 @@ module github.com/aws/amazon-vpc-cni-k8s
 go 1.12
 
 require (
-	github.com/Microsoft/go-winio v0.4.11 // indirect
 	github.com/aws/aws-sdk-go v1.21.7
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 // indirect
 	github.com/cihub/seelog v0.0.0-20151216151435-d2c6e5aa9fbf
@@ -11,10 +10,6 @@ require (
 	github.com/coreos/go-iptables v0.4.0
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set v1.7.1
-	github.com/docker/distribution v2.6.2+incompatible // indirect
-	github.com/docker/docker v1.13.1
-	github.com/docker/go-connections v0.4.0 // indirect
-	github.com/docker/go-units v0.3.3 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/gogo/protobuf v1.1.1 // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
@@ -42,7 +37,6 @@ require (
 	github.com/prometheus/procfs v0.0.0-20180725123919-05ee40e3a273 // indirect
 	github.com/sirupsen/logrus v1.0.6 // indirect
 	github.com/spf13/pflag v1.0.2
-	github.com/stevvooe/resumable v0.0.0-20180830230917-22b14a53ba50 // indirect
 	github.com/stretchr/testify v1.2.2
 	github.com/vishvananda/netlink v1.0.0
 	github.com/vishvananda/netns v0.0.0-20180720170159-13995c7128cc // indirect
