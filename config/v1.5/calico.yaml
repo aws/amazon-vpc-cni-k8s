@@ -37,7 +37,7 @@ spec:
         # container programs network policy and routes on each
         # host.
         - name: calico-node
-          image: quay.io/calico/node:v3.3.6
+          image: quay.io/calico/node:v3.8.1
           env:
             # Use Kubernetes API as the backing datastore.
             - name: DATASTORE_TYPE
@@ -159,6 +159,42 @@ spec:
     kind: FelixConfiguration
     plural: felixconfigurations
     singular: felixconfiguration
+
+---
+
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: ipamblocks.crd.projectcalico.org
+spec:
+  scope: Cluster
+  group: crd.projectcalico.org
+  versions:
+    - name: v1
+      served: true
+      storage: true
+  names:
+    kind: IPAMBlock
+    plural: ipamblocks
+    singular: ipamblock
+
+---
+
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: blockaffinities.crd.projectcalico.org
+spec:
+  scope: Cluster
+  group: crd.projectcalico.org
+  versions:
+    - name: v1
+      served: true
+      storage: true
+  names:
+    kind: BlockAffinity
+    plural: blockaffinities
+    singular: blockaffinity
 
 ---
 
@@ -295,6 +331,24 @@ spec:
 
 ---
 
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: networksets.crd.projectcalico.org
+spec:
+  scope: Namespaced
+  group: crd.projectcalico.org
+  versions:
+    - name: v1
+      served: true
+      storage: true
+  names:
+    kind: NetworkSet
+    plural: networksets
+    singular: networkset
+
+---
+
 # Create the ServiceAccount and roles necessary for Calico.
 
 apiVersion: v1
@@ -323,6 +377,12 @@ rules:
       - pods/status
     verbs:
       - patch
+  - apiGroups: [""]
+    resources:
+      - nodes/status
+    verbs:
+      - patch
+      - update
   - apiGroups: [""]
     resources:
       - pods
@@ -369,9 +429,11 @@ rules:
       - globalbgpconfigs
       - bgpconfigurations
       - ippools
+      - ipamblocks
       - globalnetworkpolicies
       - globalnetworksets
       - networkpolicies
+      - networksets
       - clusterinformations
       - hostendpoints
     verbs:
@@ -379,6 +441,22 @@ rules:
       - get
       - list
       - update
+      - watch
+  - apiGroups: ["crd.projectcalico.org"]
+    resources:
+      - blockaffinities
+      - ipamblocks
+      - ipamhandles
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - delete
+  - apiGroups: ["crd.projectcalico.org"]
+    resources:
+      - blockaffinities
+    verbs:
       - watch
 
 ---
@@ -424,7 +502,7 @@ spec:
       hostNetwork: true
       serviceAccountName: calico-node
       containers:
-        - image: quay.io/calico/typha:v3.3.6
+        - image: quay.io/calico/typha:v3.8.1
           name: calico-typha
           ports:
             - containerPort: 5473
@@ -457,19 +535,17 @@ spec:
             - name: FELIX_IPTABLESMANGLEALLOWACTION
               value: Return
           livenessProbe:
-            exec:
-              command:
-                - calico-typha
-                - check
-                - liveness
+            httpGet:
+              path: /liveness
+              port: 9098
+              host: localhost
             periodSeconds: 30
             initialDelaySeconds: 30
           readinessProbe:
-            exec:
-              command:
-                - calico-typha
-                - check
-                - readiness
+            httpGet:
+              path: /readiness
+              port: 9098
+              host: localhost
             periodSeconds: 10
 
 ---
