@@ -1,6 +1,6 @@
 ---
 kind: DaemonSet
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 metadata:
   name: calico-node
   namespace: kube-system
@@ -149,7 +149,10 @@ metadata:
 spec:
   scope: Cluster
   group: crd.projectcalico.org
-  version: v1
+  versions:
+    - name: v1
+      served: true
+      storage: true
   names:
     kind: FelixConfiguration
     plural: felixconfigurations
@@ -164,7 +167,10 @@ metadata:
 spec:
   scope: Cluster
   group: crd.projectcalico.org
-  version: v1
+  versions:
+    - name: v1
+      served: true
+      storage: true
   names:
     kind: BGPConfiguration
     plural: bgpconfigurations
@@ -178,7 +184,10 @@ metadata:
 spec:
   scope: Cluster
   group: crd.projectcalico.org
-  version: v1
+  versions:
+    - name: v1
+      served: true
+      storage: true
   names:
     kind: BGPPeer
     plural: bgppeers
@@ -192,7 +201,10 @@ metadata:
 spec:
   scope: Cluster
   group: crd.projectcalico.org
-  version: v1
+  versions:
+    - name: v1
+      served: true
+      storage: true
   names:
     kind: IPPool
     plural: ippools
@@ -301,7 +313,7 @@ metadata:
 ---
 
 kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: calico-node
 rules:
@@ -378,7 +390,7 @@ rules:
 
 ---
 
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: calico-node
@@ -393,7 +405,7 @@ subjects:
 
 ---
 
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: calico-typha
@@ -402,6 +414,9 @@ metadata:
     k8s-app: calico-typha
 spec:
   revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      k8s-app: calico-typha
   template:
     metadata:
       labels:
@@ -484,7 +499,7 @@ spec:
       k8s-app: calico-typha
 
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: typha-cpha
@@ -499,7 +514,7 @@ subjects:
 
 ---
 
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: typha-cpha
@@ -534,7 +549,7 @@ data:
 
 ---
 
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: calico-typha-horizontal-autoscaler
@@ -542,6 +557,9 @@ metadata:
   labels:
     k8s-app: calico-typha-autoscaler
 spec:
+  selector:
+    matchLabels:
+      k8s-app: calico-typha-autoscaler
   replicas: 1
   template:
     metadata:
@@ -570,7 +588,7 @@ spec:
 
 ---
 
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: typha-cpha
@@ -593,7 +611,7 @@ metadata:
 
 ---
 
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: typha-cpha
