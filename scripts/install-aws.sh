@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -uo pipefail
+
 grpcHealthCheck () {
   /app/grpc_health_probe -addr 127.0.0.1:50051
 }
