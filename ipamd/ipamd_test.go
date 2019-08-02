@@ -25,9 +25,9 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
-	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
-	mock_k8sapi "github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi/mocks"
+	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/controller/eniconfig/mocks"
+	k8sapi "github.com/aws/amazon-vpc-cni-k8s/pkg/controller/pod"
+	mock_k8sapi "github.com/aws/amazon-vpc-cni-k8s/pkg/controller/pod/mocks"
 	mock_networkutils "github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
 
 	"github.com/golang/mock/gomock"
