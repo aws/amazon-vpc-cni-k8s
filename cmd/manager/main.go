@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	defaultLogFilePath = "stdout"; // TODO: restore to "/host/var/log/aws-routed-eni/ipamd.log"
+	defaultLogFilePath = "stdout" // TODO: restore to "/host/var/log/aws-routed-eni/ipamd.log"
 
 	// Environment variable to disable the metrics endpoint on 61678
 	envDisableMetrics = "DISABLE_METRICS"
@@ -43,7 +43,6 @@ const (
 var (
 	metricsHost       = "0.0.0.0"
 	metricsPort int32 = 61678
-
 )
 var log = logf.Log.WithName("cmd")
 

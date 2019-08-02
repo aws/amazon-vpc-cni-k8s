@@ -25,8 +25,8 @@ import (
 	"strconv"
 	"strings"
 
-	log "github.com/cihub/seelog"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/ttime"
+	log "github.com/cihub/seelog"
 )
 
 func DefaultIfBlank(str string, defaultValue string) string {

@@ -71,11 +71,11 @@ func Add(mgr manager.Manager) (*ReconcilePod, error) {
 // newReconciler returns a new ReconcilePod
 func newReconciler(mgr manager.Manager) *ReconcilePod {
 	return &ReconcilePod{
-		client: mgr.GetClient(),
-		scheme: mgr.GetScheme(),
+		client:     mgr.GetClient(),
+		scheme:     mgr.GetScheme(),
 		myNodeName: os.Getenv("MY_NODE_NAME"),
 		workerPods: make(map[types.NamespacedName]*K8SPodInfo),
-		cniPods: make(map[types.NamespacedName]string),
+		cniPods:    make(map[types.NamespacedName]string),
 	}
 }
 
@@ -217,7 +217,7 @@ func (d *ReconcilePod) InitPodList() error {
 		listOptions := &client.ListOptions{FieldSelector: fieldSelector, Raw: &metav1.ListOptions{Continue: continueToken}}
 		err := d.client.List(context.TODO(), listOptions, &podList)
 		if err != nil {
-			return err;
+			return err
 		}
 
 		for _, pod := range podList.Items {
@@ -229,7 +229,7 @@ func (d *ReconcilePod) InitPodList() error {
 		}
 
 		if podList.Continue == "" {
-			break;
+			break
 		}
 		continueToken = podList.Continue
 	}

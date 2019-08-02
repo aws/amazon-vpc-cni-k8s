@@ -49,8 +49,8 @@ func newReconciler(mgr manager.Manager) *ReconcileNode {
 		client: mgr.GetClient(),
 		scheme: mgr.GetScheme(),
 
-		myNodeName: os.Getenv("MY_NODE_NAME"),
-		myENI:      eniConfigDefault,
+		myNodeName:             os.Getenv("MY_NODE_NAME"),
+		myENI:                  eniConfigDefault,
 		eniConfigAnnotationDef: GetEniConfigAnnotationDef(),
 		eniConfigLabelDef:      GetEniConfigLabelDef(),
 	}
@@ -80,8 +80,8 @@ var _ reconcile.Reconciler = &ReconcileNode{}
 type ReconcileNode struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	client                 client.Client
-	scheme                 *runtime.Scheme
+	client client.Client
+	scheme *runtime.Scheme
 
 	myNodeName             string
 	myENI                  string

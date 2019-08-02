@@ -41,9 +41,9 @@ type ReconcileENIConfig struct {
 	client client.Client
 	scheme *runtime.Scheme
 
-	nodeController         *node.ReconcileNode
-	eni                    map[string]*crdv1alpha1.ENIConfigSpec
-	eniLock                sync.RWMutex
+	nodeController *node.ReconcileNode
+	eni            map[string]*crdv1alpha1.ENIConfigSpec
+	eniLock        sync.RWMutex
 }
 
 // blank assignment to verify that ReconcileENIConfig implements reconcile.Reconciler
@@ -63,10 +63,10 @@ func Add(mgr manager.Manager, nodeController *node.ReconcileNode) (*ReconcileENI
 // newReconciler returns a new ReconcileENIConfig
 func newReconciler(mgr manager.Manager, nodeController *node.ReconcileNode) *ReconcileENIConfig {
 	return &ReconcileENIConfig{
-		client: mgr.GetClient(),
-		scheme: mgr.GetScheme(),
+		client:         mgr.GetClient(),
+		scheme:         mgr.GetScheme(),
 		nodeController: nodeController,
-		eni: make(map[string]*crdv1alpha1.ENIConfigSpec),
+		eni:            make(map[string]*crdv1alpha1.ENIConfigSpec),
 	}
 }
 
@@ -102,7 +102,7 @@ func (r *ReconcileENIConfig) Reconcile(request reconcile.Request) (reconcile.Res
 	// Fetch the ENIConfig instance
 	o := &crdv1alpha1.ENIConfig{}
 	err := r.client.Get(context.TODO(), request.NamespacedName, o)
-	eniConfigName := request.NamespacedName.Name;
+	eniConfigName := request.NamespacedName.Name
 
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -113,7 +113,6 @@ func (r *ReconcileENIConfig) Reconcile(request reconcile.Request) (reconcile.Res
 			r.eniLock.Lock()
 			defer r.eniLock.Unlock()
 			delete(r.eni, eniConfigName)
-
 
 			// Return and don't requeue
 			return reconcileResult, nil
@@ -167,4 +166,3 @@ func (eniCfg *ReconcileENIConfig) MyENIConfig() (*crdv1alpha1.ENIConfigSpec, err
 	}
 	return nil, ErrNoENIConfig
 }
-
