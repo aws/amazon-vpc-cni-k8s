@@ -17,6 +17,8 @@ import (
 	"net"
 
 	"github.com/pkg/errors"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 	"github.com/prometheus/client_golang/prometheus"
@@ -43,6 +45,10 @@ type server struct {
 // Check is for health checking.
 func (s *server) Check(ctx context.Context, req *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
 	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
+}
+
+func (s *server) Watch(*healthpb.HealthCheckRequest, healthpb.Health_WatchServer) error {
+	return status.Errorf(codes.Unimplemented, "health check watch not implemented") // TODO
 }
 
 // AddNetwork processes CNI add network request and return an IP address for container
