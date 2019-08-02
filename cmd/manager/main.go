@@ -28,17 +28,22 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/controller/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/controller/node"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/controller/pod"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
 const (
 	defaultLogFilePath = "stdout"; // TODO: restore to "/host/var/log/aws-routed-eni/ipamd.log"
+
+	// Environment variable to disable the metrics endpoint on 61678
+	envDisableMetrics = "DISABLE_METRICS"
 )
 
 // Change below variables to serve metrics on different host or port.
 var (
 	metricsHost       = "0.0.0.0"
-	metricsPort int32 = 8383
+	metricsPort int32 = 61678
+
 )
 var log = logf.Log.WithName("cmd")
 
@@ -101,11 +106,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Allow metrics to be disabled
+	disableMetrics := utils.GetEnvBoolWithDefault(envDisableMetrics, false)
+	metricsBindAddress := ""
+	if !disableMetrics {
+		metricsBindAddress = fmt.Sprintf("%s:%d", metricsHost, metricsPort)
+	}
+
 	// Create a new Cmd to provide shared dependencies and start components
 	mgr, err := manager.New(cfg, manager.Options{
 		Namespace:          namespace,
 		MapperProvider:     restmapper.NewDynamicRESTMapper,
-		MetricsBindAddress: fmt.Sprintf("%s:%d", metricsHost, metricsPort),
+		MetricsBindAddress: metricsBindAddress,
 	})
 	if err != nil {
 		log.Error(err, "")
@@ -144,9 +156,11 @@ func main() {
 	}
 
 	// Create Service object to expose the metrics port.
-	_, err = metrics.ExposeMetricsPort(ctx, metricsPort)
-	if err != nil {
-		log.Info(err.Error())
+	if !disableMetrics {
+		_, err = metrics.ExposeMetricsPort(ctx, metricsPort)
+		if err != nil {
+			log.Info(err.Error())
+		}
 	}
 
 	stopCh := signals.SetupSignalHandler()
@@ -169,9 +183,6 @@ func main() {
 
 	// Pool manager
 	go awsK8sAgent.StartNodeIPPoolManager()
-
-	// Prometheus metrics
-	go awsK8sAgent.ServeMetrics()
 
 	// CNI introspection endpoints
 	go awsK8sAgent.ServeIntrospection()

@@ -20,10 +20,12 @@ import (
 	"encoding/hex"
 	"math"
 	"math/big"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
 
+	log "github.com/cihub/seelog"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/ttime"
 )
 
@@ -194,4 +196,15 @@ func ParseBool(str string, default_ bool) bool {
 		return default_
 	}
 	return res
+}
+
+func GetEnvBoolWithDefault(envName string, def bool) bool {
+	if strValue := os.Getenv(envName); strValue != "" {
+		parsedValue, err := strconv.ParseBool(strValue)
+		if err == nil {
+			return parsedValue
+		}
+		log.Errorf("Failed to parse %s, using default `%t`: %v", envName, def, err.Error())
+	}
+	return def
 }

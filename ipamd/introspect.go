@@ -17,13 +17,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
+	log "github.com/cihub/seelog"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils"
-	log "github.com/cihub/seelog"
 )
 
 const (
@@ -188,16 +188,5 @@ func logErr(_ int, err error) {
 
 // disableIntrospection returns true if we should disable the introspection
 func disableIntrospection() bool {
-	return getEnvBoolWithDefault(envDisableIntrospection, false)
-}
-
-func getEnvBoolWithDefault(envName string, def bool) bool {
-	if strValue := os.Getenv(envName); strValue != "" {
-		parsedValue, err := strconv.ParseBool(strValue)
-		if err == nil {
-			return parsedValue
-		}
-		log.Errorf("Failed to parse %s, using default `%t`: %v", envName, def, err.Error())
-	}
-	return def
+	return utils.GetEnvBoolWithDefault(envDisableIntrospection, false)
 }
