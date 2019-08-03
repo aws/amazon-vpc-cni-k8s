@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.5.2
+* Bug fix - [Fix formatting flag](https://github.com/aws/amazon-vpc-cni-k8s/pull/521) (#521, @uthark)
+* Bug fix - [Fix formatting issue](https://github.com/aws/amazon-vpc-cni-k8s/pull/524) (#524, @uthark)
+* Bug fix - [Detach ENI before deleting](https://github.com/aws/amazon-vpc-cni-k8s/pull/538) (#538, @uthark)
+* Improvement - [Adding healthz endpoint to IPamD](https://github.com/aws/amazon-vpc-cni-k8s/pull/548) (#548, @nithu0115)
+* Improvement - [Adding new m5 and r5 instances](https://github.com/aws/amazon-vpc-cni-k8s/pull/518) (#518, @mogren)
+* Improvement - [t3a.small only have 2 ENIs](https://github.com/aws/amazon-vpc-cni-k8s/pull/543) (#543, @mogren)
+* Improvement - [Updating AWS Go SDK version](https://github.com/aws/amazon-vpc-cni-k8s/pull/549) (#549, Nordlund, Eric)
+* Improvement - [Reduce the wait time when checking for pods without IPs](https://github.com/aws/amazon-vpc-cni-k8s/pull/552) (#552, @mogren)
+* Improvement - [Update start script to wait for ipamd health](https://github.com/aws/amazon-vpc-cni-k8s/pull/472) (#552, @mogren)
+* Improvement - [Hide health check output](https://github.com/aws/amazon-vpc-cni-k8s/pull/569) (#569, @mogren)
+* Improvement - [Support c5.12xlarge and c5.24xlarge](https://github.com/aws/amazon-vpc-cni-k8s/pull/510) (#510, @mogren)
+
 ## v1.5.1
 
 * Bug fix - [Ignore namespace for custom eniconfig watch](https://github.com/aws/amazon-vpc-cni-k8s/pull/561) (#561, @mogren)
