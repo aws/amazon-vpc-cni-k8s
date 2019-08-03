@@ -26,12 +26,9 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 
-	corev1 "k8s.io/api/core/v1"
-
-	"github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
-	sdkVersion "github.com/operator-framework/operator-sdk/version"
-
 	log "github.com/cihub/seelog"
+	sdkVersion "github.com/operator-framework/operator-sdk/version"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -152,13 +149,9 @@ func (eniCfg *ENIConfigController) Start() {
 
 	resource := "crd.k8s.amazonaws.com/v1alpha1"
 	kind := "ENIConfig"
-	namespace, err := k8sutil.GetWatchNamespace()
-	if err != nil {
-		log.Errorf("failed to get watch namespace: %v", err)
-	}
 	resyncPeriod := time.Second * 5
-	log.Infof("Watching %s, %s, %s, every %d s", resource, kind, namespace, resyncPeriod.Seconds())
-	sdk.Watch(resource, kind, namespace, resyncPeriod)
+	log.Infof("Watching %s, %s, every %v s", resource, kind, resyncPeriod.Seconds())
+	sdk.Watch(resource, kind, "", resyncPeriod)
 	sdk.Watch("/v1", "Node", corev1.NamespaceAll, resyncPeriod)
 	sdk.Handle(NewHandler(eniCfg))
 	sdk.Run(context.TODO())
@@ -178,7 +171,6 @@ func (eniCfg *ENIConfigController) Getter() *ENIConfigInfo {
 	for name, val := range eniCfg.eni {
 		output.ENI[name] = *val
 	}
-
 	return output
 }
 
