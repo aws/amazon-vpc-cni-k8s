@@ -81,7 +81,7 @@ spec:
       tolerations:
         - operator: Exists
       containers:
-        - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:v1.5.1
+        - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:v1.5.2
           imagePullPolicy: Always
           ports:
             - containerPort: 61678
