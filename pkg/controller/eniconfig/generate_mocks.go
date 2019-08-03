@@ -13,4 +13,6 @@
 
 package eniconfig
 
-//go:generate go run ../../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/controller/eniconfig ENIConfig  mocks/eniconfig_mocks.go
+//go:generate go run ../../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/controller/eniconfig ENIConfig mocks/eniconfig_mocks.go
+//go:generate go run ../../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/controller/node MyENIProvider mocks/node_mocks.go
+//go:generate go run ../../../scripts/mockgen.go sigs.k8s.io/controller-runtime/pkg/manager Manager mocks/manager_mocks.go

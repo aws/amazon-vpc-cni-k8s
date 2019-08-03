@@ -41,7 +41,7 @@ type ReconcileENIConfig struct {
 	client client.Client
 	scheme *runtime.Scheme
 
-	nodeController *node.ReconcileNode
+	nodeController node.MyENIProvider
 	eni            map[string]*crdv1alpha1.ENIConfigSpec
 	eniLock        sync.RWMutex
 }
@@ -55,13 +55,13 @@ var log = logf.Log.WithName("controller_eniconfig")
 
 // Add creates a new ENIConfig Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
-func Add(mgr manager.Manager, nodeController *node.ReconcileNode) (*ReconcileENIConfig, error) {
-	r := newReconciler(mgr, nodeController)
+func Add(mgr manager.Manager, nodeController node.MyENIProvider) (*ReconcileENIConfig, error) {
+	r := NewReconciler(mgr, nodeController)
 	return r, add(mgr, r)
 }
 
 // newReconciler returns a new ReconcileENIConfig
-func newReconciler(mgr manager.Manager, nodeController *node.ReconcileNode) *ReconcileENIConfig {
+func NewReconciler(mgr manager.Manager, nodeController node.MyENIProvider) *ReconcileENIConfig {
 	return &ReconcileENIConfig{
 		client:         mgr.GetClient(),
 		scheme:         mgr.GetScheme(),
@@ -156,7 +156,8 @@ func (eniCfg *ReconcileENIConfig) MyENIConfig() (*crdv1alpha1.ENIConfigSpec, err
 	eniCfg.eniLock.Lock()
 	defer eniCfg.eniLock.Unlock()
 
-	myENIConfig, ok := eniCfg.eni[eniCfg.nodeController.GetMyENI()]
+	myENIName := eniCfg.nodeController.GetMyENI()
+	myENIConfig, ok := eniCfg.eni[myENIName]
 
 	if ok {
 		return &crdv1alpha1.ENIConfigSpec{

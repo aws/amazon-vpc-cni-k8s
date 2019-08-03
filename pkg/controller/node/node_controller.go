@@ -76,6 +76,10 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 // blank assignment to verify that ReconcileNode implements reconcile.Reconciler
 var _ reconcile.Reconciler = &ReconcileNode{}
 
+type MyENIProvider interface {
+	GetMyENI() string
+}
+
 // ReconcileNode reconciles a Node object
 type ReconcileNode struct {
 	// This client, initialized using mgr.Client() above, is a split client

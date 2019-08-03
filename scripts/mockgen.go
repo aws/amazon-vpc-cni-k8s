@@ -80,7 +80,7 @@ func main() {
 	}
 	defer outputFile.Close()
 
-	mockgen := exec.Command("mockgen", packageName, interfaces)
+	mockgen := exec.Command("mockgen", "-package", "mocks", packageName, interfaces)
 	mockgenOut, err := mockgen.Output()
 	if err != nil {
 		printErrorAndExitWithErrorCode(

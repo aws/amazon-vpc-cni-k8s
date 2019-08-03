@@ -10,115 +10,90 @@
 // on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
-package eniconfig
+package eniconfig_test
 
 import (
-	"fmt"
-	"os"
+	"context"
 	"testing"
+	"time"
 
-	"k8s.io/apimachinery/pkg/api/meta"
+	"github.com/golang/mock/gomock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/controller/eniconfig"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/controller/eniconfig/mocks"
 
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	"github.com/stretchr/testify/assert"
-
-	corev1 "k8s.io/api/core/v1"
 )
 
-func updateENIConfig(hdlr sdk.Handler, name string, eniConfig v1alpha1.ENIConfigSpec, toDelete bool) {
-	event := sdk.Event{
-		Object: &v1alpha1.ENIConfig{
-			TypeMeta: metav1.TypeMeta{APIVersion: v1alpha1.SchemeGroupVersion.String()},
-			ObjectMeta: metav1.ObjectMeta{
-				Name: name,
-			},
-			Spec: eniConfig},
-		Deleted: toDelete,
-	}
+const expectedRequeueTime = 5 * time.Second
 
-	hdlr.Handle(nil, event)
-}
-
-func updateNodeAnnotation(hdlr sdk.Handler, nodeName string, configName string, toDelete bool) {
-
-	node := corev1.Node{
-		TypeMeta: metav1.TypeMeta{APIVersion: corev1.SchemeGroupVersion.String()},
+func updateENIConfig(t *testing.T, client client.Client, reconciler reconcile.Reconciler, name string, eniConfig v1alpha1.ENIConfigSpec) {
+	err := client.Create(context.TODO(), &v1alpha1.ENIConfig{
+		TypeMeta: metav1.TypeMeta{APIVersion: v1alpha1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodeName,
+			Name: name,
+		},
+		Spec: eniConfig,
+	})
+	assert.NoError(t, err)
+
+	// Mock request to simulate Reconcile() being called on the watched resource
+	req := reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name: name,
 		},
 	}
-	accessor, err := meta.Accessor(&node)
+	res, err := reconciler.Reconcile(req)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedRequeueTime, res.RequeueAfter)
+}
+func newReconcilerWithFakeClient(ctrl *gomock.Controller, cl client.Client) (*eniconfig.ReconcileENIConfig, *mocks.MockMyENIProvider) {
+	s := scheme.Scheme
+	s.AddKnownTypes(v1alpha1.SchemeGroupVersion, &v1alpha1.ENIConfig{})
 
-	if err != nil {
-		fmt.Printf("Failed to call meta.Access %v", err)
-	}
+	mgr := mocks.NewMockManager(ctrl)
+	mgr.EXPECT().GetClient().Return(cl)
+	mgr.EXPECT().GetScheme().Return(s)
 
-	event := sdk.Event{
-		Object:  &node,
-		Deleted: toDelete,
-	}
-	eniAnnotations := make(map[string]string)
-	eniConfigAnnotationDef := eniconfig.getEniConfigAnnotationDef()
+	myEniProvider := mocks.NewMockMyENIProvider(ctrl)
+	myEniProvider.EXPECT().GetMyENI().Return("")
 
-	if !toDelete {
-		eniAnnotations[eniConfigAnnotationDef] = configName
-	}
-	accessor.SetAnnotations(eniAnnotations)
-	hdlr.Handle(nil, event)
+	return eniconfig.NewReconciler(mgr, myEniProvider), myEniProvider
 }
 
-func updateNodeLabel(hdlr sdk.Handler, nodeName string, configName string, toDelete bool) {
+func TestMyENIConfig(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-	node := corev1.Node{
-		TypeMeta: metav1.TypeMeta{APIVersion: corev1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: nodeName,
-		},
-	}
-	accessor, err := meta.Accessor(&node)
-
-	if err != nil {
-		fmt.Printf("Failed to call meta.Access %v", err)
-	}
-
-	event := sdk.Event{
-		Object:  &node,
-		Deleted: toDelete,
-	}
-	eniLabels := make(map[string]string)
-	eniConfigLabelDef := eniconfig.getEniConfigLabelDef()
-
-	if !toDelete {
-		eniLabels[eniConfigLabelDef] = configName
-	}
-	accessor.SetLabels(eniLabels)
-	hdlr.Handle(nil, event)
-}
-
-func TestENIConfig(t *testing.T) {
-
-	testENIConfigController := eniconfig.NewENIConfigController()
-
-	testHandler := eniconfig.NewHandler(testENIConfigController)
+	cl := fake.NewFakeClient()
+	reconciler, myEniProvider := newReconcilerWithFakeClient(ctrl, cl)
 
 	// If there is no default ENI config
-	_, err := eniconfig.MyENIConfig()
+	_, err := reconciler.MyENIConfig()
 	assert.Error(t, err)
 
 	// Start with default config
 	defaultSGs := []string{"sg1-id", "sg2-id"}
 	defaultSubnet := "subnet1"
+	defaultName := "default"
 	defaultCfg := v1alpha1.ENIConfigSpec{
 		SecurityGroups: defaultSGs,
-		Subnet:         defaultSubnet}
+		Subnet:         defaultSubnet,
+	}
 
-	updateENIConfig(testHandler, eniconfig.eniConfigDefault, defaultCfg, false)
+	myEniProvider.EXPECT().GetMyENI().AnyTimes().Return(defaultName)
+	updateENIConfig(t, cl, reconciler, defaultName, defaultCfg)
 
-	outputCfg, err := eniconfig.MyENIConfig()
+	// Check config matches
+	outputCfg, err := reconciler.MyENIConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, defaultCfg, *outputCfg)
 
@@ -127,116 +102,53 @@ func TestENIConfig(t *testing.T) {
 		SecurityGroups: []string{"sg11-id", "sg12-id"},
 		Subnet:         "subnet11"}
 	group1Name := "group1ENIconfig"
-	updateENIConfig(testHandler, group1Name, group1Cfg, false)
 
-	outputCfg, err = eniconfig.MyENIConfig()
+	updateENIConfig(t, cl, reconciler, group1Name, group1Cfg)
+
+	outputCfg, err = reconciler.MyENIConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, defaultCfg, *outputCfg)
-
 }
 
 func TestNodeENIConfig(t *testing.T) {
-	myNodeName := "testMyNodeWithAnnotation"
-	myENIConfig := "testMyENIConfig"
-	os.Setenv("MY_NODE_NAME", myNodeName)
-	testENIConfigController := eniconfig.NewENIConfigController()
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-	testHandler := eniconfig.NewHandler(testENIConfigController)
-	updateNodeAnnotation(testHandler, myNodeName, myENIConfig, false)
+	cl := fake.NewFakeClient()
+	reconciler, myEniProvider := newReconcilerWithFakeClient(ctrl, cl)
+
+	myENIConfig := "testMyENIConfig"
+	myEniProvider.EXPECT().GetMyENI().Return(myENIConfig).Times(2)
 
 	// If there is no ENI config
-	_, err := eniconfig.MyENIConfig()
+	_, err := reconciler.MyENIConfig()
 	assert.Error(t, err)
 
 	// Add eniconfig for myENIConfig
 	group1Cfg := v1alpha1.ENIConfigSpec{
 		SecurityGroups: []string{"sg21-id", "sg22-id"},
 		Subnet:         "subnet21"}
-	updateENIConfig(testHandler, myENIConfig, group1Cfg, false)
-	outputCfg, err := eniconfig.MyENIConfig()
+	updateENIConfig(t, cl, reconciler, myENIConfig, group1Cfg)
+	outputCfg, err := reconciler.MyENIConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, group1Cfg, *outputCfg)
 
 	// Add default config
 	defaultSGs := []string{"sg1-id", "sg2-id"}
 	defaultSubnet := "subnet1"
+	defaultName := "default"
 	defaultCfg := v1alpha1.ENIConfigSpec{
 		SecurityGroups: defaultSGs,
 		Subnet:         defaultSubnet}
-	updateENIConfig(testHandler, eniconfig.eniConfigDefault, defaultCfg, false)
-	outputCfg, err = eniconfig.MyENIConfig()
+	updateENIConfig(t, cl, reconciler, defaultName, defaultCfg)
+	outputCfg, err = reconciler.MyENIConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, group1Cfg, *outputCfg)
 
 	// Delete node's myENIConfig annotation, then the value should fallback to default
-	updateNodeAnnotation(testHandler, myNodeName, myENIConfig, true)
-	outputCfg, err = eniconfig.MyENIConfig()
+	myEniProvider.EXPECT().GetMyENI().Return(defaultName)
+
+	outputCfg, err = reconciler.MyENIConfig()
 	assert.NoError(t, err)
 	assert.Equal(t, defaultCfg, *outputCfg)
-
-}
-
-func TestNodeENIConfigLabel(t *testing.T) {
-	myNodeName := "testMyNodeWithLabel"
-	myENIConfig := "testMyENIConfig"
-	os.Setenv("MY_NODE_NAME", myNodeName)
-	testENIConfigController := eniconfig.NewENIConfigController()
-
-	testHandler := eniconfig.NewHandler(testENIConfigController)
-	updateNodeLabel(testHandler, myNodeName, myENIConfig, false)
-
-	// If there is no ENI config
-	_, err := eniconfig.MyENIConfig()
-	assert.Error(t, err)
-
-	// Add eniconfig for myENIConfig
-	group1Cfg := v1alpha1.ENIConfigSpec{
-		SecurityGroups: []string{"sg21-id", "sg22-id"},
-		Subnet:         "subnet21"}
-	updateENIConfig(testHandler, myENIConfig, group1Cfg, false)
-	outputCfg, err := eniconfig.MyENIConfig()
-	assert.NoError(t, err)
-	assert.Equal(t, group1Cfg, *outputCfg)
-
-	// Add default config
-	defaultSGs := []string{"sg1-id", "sg2-id"}
-	defaultSubnet := "subnet1"
-	defaultCfg := v1alpha1.ENIConfigSpec{
-		SecurityGroups: defaultSGs,
-		Subnet:         defaultSubnet}
-	updateENIConfig(testHandler, eniconfig.eniConfigDefault, defaultCfg, false)
-	outputCfg, err = eniconfig.MyENIConfig()
-	assert.NoError(t, err)
-	assert.Equal(t, group1Cfg, *outputCfg)
-
-	// Delete node's myENIConfig annotation, then the value should fallback to default
-	updateNodeLabel(testHandler, myNodeName, myENIConfig, true)
-	outputCfg, err = eniconfig.MyENIConfig()
-	assert.NoError(t, err)
-	assert.Equal(t, defaultCfg, *outputCfg)
-
-}
-
-func TestGetEniConfigAnnotationDefDefault(t *testing.T) {
-	os.Unsetenv(eniconfig.envEniConfigAnnotationDef)
-	eniConfigAnnotationDef := eniconfig.getEniConfigAnnotationDef()
-	assert.Equal(t, eniConfigAnnotationDef, eniconfig.defaultEniConfigAnnotationDef)
-}
-
-func TestGetEniConfigAnnotationlDefCustom(t *testing.T) {
-	os.Setenv(eniconfig.envEniConfigAnnotationDef, "k8s.amazonaws.com/eniConfigCustom")
-	eniConfigAnnotationDef := eniconfig.getEniConfigAnnotationDef()
-	assert.Equal(t, eniConfigAnnotationDef, "k8s.amazonaws.com/eniConfigCustom")
-}
-
-func TestGetEniConfigLabelDefDefault(t *testing.T) {
-	os.Unsetenv(eniconfig.envEniConfigLabelDef)
-	eniConfigLabelDef := eniconfig.getEniConfigLabelDef()
-	assert.Equal(t, eniConfigLabelDef, eniconfig.defaultEniConfigLabelDef)
-}
-
-func TestGetEniConfigLabelDefCustom(t *testing.T) {
-	os.Setenv(eniconfig.envEniConfigLabelDef, "k8s.amazonaws.com/eniConfigCustom")
-	eniConfigLabelDef := eniconfig.getEniConfigLabelDef()
-	assert.Equal(t, eniConfigLabelDef, "k8s.amazonaws.com/eniConfigCustom")
 }
