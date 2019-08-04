@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.5.1
+
+* Bug fix - [Ignore namespace for custom eniconfig watch](https://github.com/aws/amazon-vpc-cni-k8s/pull/561) (#561, @mogren)
+
 ## v1.5.0
 
 * Bug fix - [Fix spelling on annotation](https://github.com/aws/amazon-vpc-cni-k8s/pull/482) (#482, @forsberg)
