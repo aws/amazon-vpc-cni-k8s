@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	defaultEniConfigAnnotationDef = "k8s.amazonaws.com/eniConfig"
-	defaultEniConfigLabelDef      = "k8s.amazonaws.com/eniConfig"
-	eniConfigDefault              = "default"
+	DefaultEniConfigAnnotationDef = "k8s.amazonaws.com/eniConfig"
+	DefaultEniConfigLabelDef      = "k8s.amazonaws.com/eniConfig"
+	EniConfigDefault              = "default"
 
 	// when "ENI_CONFIG_LABEL_DEF is defined, ENIConfigController will use that label key to
 	// search if is setting value for eniConfigLabelDef
@@ -30,8 +30,8 @@ const (
 	//   We can get that value in controller by setting environmental variable ENI_CONFIG_LABEL_DEF
 	//   ENI_CONFIG_LABEL_DEF=k8s.amazonaws.com/eniConfigOverride
 	//   This will set eniConfigLabelDef to eniConfigOverride
-	envEniConfigAnnotationDef = "ENI_CONFIG_ANNOTATION_DEF"
-	envEniConfigLabelDef      = "ENI_CONFIG_LABEL_DEF"
+	EnvEniConfigAnnotationDef = "ENI_CONFIG_ANNOTATION_DEF"
+	EnvEniConfigLabelDef      = "ENI_CONFIG_LABEL_DEF"
 )
 
 var log = logf.Log.WithName("controller_node")
@@ -39,18 +39,18 @@ var log = logf.Log.WithName("controller_node")
 // Add creates a new Node Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager) (*ReconcileNode, error) {
-	r := newReconciler(mgr)
+	r := NewReconciler(mgr)
 	return r, add(mgr, r)
 }
 
 // newReconciler returns a new ReconcileNode
-func newReconciler(mgr manager.Manager) *ReconcileNode {
+func NewReconciler(mgr manager.Manager) *ReconcileNode {
 	return &ReconcileNode{
 		client: mgr.GetClient(),
 		scheme: mgr.GetScheme(),
 
 		myNodeName:             os.Getenv("MY_NODE_NAME"),
-		myENI:                  eniConfigDefault,
+		myENI:                  EniConfigDefault,
 		eniConfigAnnotationDef: GetEniConfigAnnotationDef(),
 		eniConfigLabelDef:      GetEniConfigLabelDef(),
 	}
@@ -125,7 +125,7 @@ func (r *ReconcileNode) Reconcile(request reconcile.Request) (reconcile.Result, 
 	if !ok {
 		val, ok = node.GetLabels()[r.eniConfigLabelDef]
 		if !ok {
-			val = eniConfigDefault
+			val = EniConfigDefault
 		}
 	}
 
@@ -145,28 +145,28 @@ func (r *ReconcileNode) GetMyENI() string {
 
 // getEniConfigAnnotationDef returns eniConfigAnnotation
 func GetEniConfigAnnotationDef() string {
-	inputStr, found := os.LookupEnv(envEniConfigAnnotationDef)
+	inputStr, found := os.LookupEnv(EnvEniConfigAnnotationDef)
 
 	if !found {
-		return defaultEniConfigAnnotationDef
+		return DefaultEniConfigAnnotationDef
 	}
 	if len(inputStr) > 0 {
 		log.V(2).Info(fmt.Sprintf("Using ENI_CONFIG_ANNOTATION_DEF %v", inputStr))
 		return inputStr
 	}
-	return defaultEniConfigAnnotationDef
+	return DefaultEniConfigAnnotationDef
 }
 
 // getEniConfigLabelDef returns eniConfigLabel name
 func GetEniConfigLabelDef() string {
-	inputStr, found := os.LookupEnv(envEniConfigLabelDef)
+	inputStr, found := os.LookupEnv(EnvEniConfigLabelDef)
 
 	if !found {
-		return defaultEniConfigLabelDef
+		return DefaultEniConfigLabelDef
 	}
 	if len(inputStr) > 0 {
 		log.V(2).Info(fmt.Sprintf("Using ENI_CONFIG_LABEL_DEF %v", inputStr))
 		return inputStr
 	}
-	return defaultEniConfigLabelDef
+	return DefaultEniConfigLabelDef
 }

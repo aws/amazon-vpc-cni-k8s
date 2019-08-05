@@ -11,7 +11,6 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package pod
+package node
 
 //go:generate go run ../../../scripts/mockgen.go sigs.k8s.io/controller-runtime/pkg/manager Manager mocks/manager_mocks.go
-//go:generate go run ../../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/controller/pod K8SAPIs mocks/k8sapi_mocks.go

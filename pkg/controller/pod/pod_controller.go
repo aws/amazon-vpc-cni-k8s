@@ -64,12 +64,12 @@ func getCniPodName() string {
 // Add creates a new Pod Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager) (*ReconcilePod, error) {
-	r := newReconciler(mgr)
+	r := NewReconciler(mgr)
 	return r, add(mgr, r)
 }
 
 // newReconciler returns a new ReconcilePod
-func newReconciler(mgr manager.Manager) *ReconcilePod {
+func NewReconciler(mgr manager.Manager) *ReconcilePod {
 	return &ReconcilePod{
 		client:     mgr.GetClient(),
 		scheme:     mgr.GetScheme(),
@@ -131,8 +131,6 @@ type ReconcilePod struct {
 
 // Reconcile reads that state of the cluster for a Pod object and makes changes based on the state read
 // and what is in the Pod.Spec
-// TODO(user): Modify this Reconcile function to implement your Controller logic.  This example creates
-// a Pod as an example
 // Note:
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
