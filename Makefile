@@ -40,7 +40,7 @@ build-linux:
 download-portmap:
 	mkdir -p tmp/downloads
 	mkdir -p tmp/plugins
-	curl -L -o tmp/downloads/cni-plugins-$(ARCH).tgz https://github.com/containernetworking/plugins/releases/download/v0.6.0/cni-plugins-$(ARCH)-v0.6.0.tgz
+	curl -L -o tmp/downloads/cni-plugins-$(ARCH).tgz https://github.com/containernetworking/plugins/releases/download/v0.7.5/cni-plugins-$(ARCH)-v0.7.5.tgz
 	tar -vxf tmp/downloads/cni-plugins-$(ARCH).tgz -C tmp/plugins
 	cp tmp/plugins/portmap .
 	rm -rf tmp
