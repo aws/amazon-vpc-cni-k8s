@@ -94,7 +94,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileENIConfig) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	reqLogger.Info("Reconciling ENIConfig")
+	reqLogger.V(3).Info("Reconciling ENIConfig")
 
 	reconcilePeriod := 5 * time.Second
 	reconcileResult := reconcile.Result{RequeueAfter: reconcilePeriod}
@@ -109,7 +109,7 @@ func (r *ReconcileENIConfig) Reconcile(request reconcile.Request) (reconcile.Res
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 
-			reqLogger.Info("Deleting ENIConfig")
+			reqLogger.V(3).Info("Deleting ENIConfig")
 			r.eniLock.Lock()
 			defer r.eniLock.Unlock()
 			delete(r.eni, eniConfigName)
@@ -123,7 +123,7 @@ func (r *ReconcileENIConfig) Reconcile(request reconcile.Request) (reconcile.Res
 
 	curENIConfig := o.DeepCopy()
 
-	reqLogger.Info("ENIConfig Add/Update", "SecurityGroups", curENIConfig.Spec.SecurityGroups, "Subnet", curENIConfig.Spec.Subnet)
+	reqLogger.V(3).Info("ENIConfig Add/Update", "SecurityGroups", curENIConfig.Spec.SecurityGroups, "Subnet", curENIConfig.Spec.Subnet)
 
 	r.eniLock.Lock()
 	defer r.eniLock.Unlock()

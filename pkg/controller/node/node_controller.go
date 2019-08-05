@@ -106,11 +106,11 @@ func (r *ReconcileNode) Reconcile(request reconcile.Request) (reconcile.Result, 
 
 	// Skip other node updates
 	if request.Name != r.myNodeName {
-		reqLogger.V(2).Info("Ignoring other node")
+		reqLogger.V(4).Info("Ignoring other node")
 		return reconcile.Result{}, nil
 	}
 
-	reqLogger.Info("Reconciling Node")
+	reqLogger.V(3).Info("Reconciling Node")
 
 	// Fetch the Node instance
 	node := &corev1.Node{}
@@ -129,10 +129,12 @@ func (r *ReconcileNode) Reconcile(request reconcile.Request) (reconcile.Result, 
 		}
 	}
 
-	r.eniLock.Lock()
-	defer r.eniLock.Unlock()
-	r.myENI = val
-	log.Info(fmt.Sprintf("Setting myENI to: %s", val))
+	if r.myENI != val {
+		r.eniLock.Lock()
+		defer r.eniLock.Unlock()
+		r.myENI = val
+		log.V(3).Info(fmt.Sprintf("Setting myENI to: %s", val))
+	}
 
 	return reconcileResult, nil
 }
