@@ -2,3 +2,4 @@ aws-cni
 aws-k8s-agent
 portmap
 cni-metrics-helper/cni-metrics-helper
+vendor/*

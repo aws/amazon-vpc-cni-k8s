@@ -554,7 +554,7 @@ func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string,
 
 	attachmentID, err := cache.attachENI(eniID)
 	if err != nil {
-		_ = cache.deleteENI(eniID)
+		_ = cache.deleteENI(eniID, retryDeleteENIInternal)
 		return "", errors.Wrap(err, "AllocENI: error attaching ENI")
 	}
 
@@ -713,6 +713,10 @@ func awsUtilsErrInc(fn string, err error) {
 
 // FreeENI detaches and deletes the ENI interface
 func (cache *EC2InstanceMetadataCache) FreeENI(eniName string) error {
+	return cache.freeENI(eniName, retryDeleteENIInternal)
+}
+
+func (cache *EC2InstanceMetadataCache) freeENI(eniName string, retryDeleteENISleepDuration time.Duration) error {
 	log.Infof("Trying to free ENI: %s", eniName)
 
 	// Find out attachment
@@ -752,14 +756,14 @@ func (cache *EC2InstanceMetadataCache) FreeENI(eniName string) error {
 		}
 
 		log.Debugf("Not able to detach ENI yet (attempt %d/%d): %v ", retry, maxENIDeleteRetries, err)
-		time.Sleep(retryDeleteENIInternal)
+		time.Sleep(retryDeleteENISleepDuration)
 	}
 
 	// It may take awhile for EC2-VPC to detach ENI from instance
 	// retry maxENIDeleteRetries times with sleep 5 sec between to delete the interface
 	// TODO check if can use built-in waiter in the aws-sdk-go,
 	// Example: https://github.com/aws/aws-sdk-go/blob/master/service/ec2/waiters.go#L874
-	err = cache.deleteENI(eniName)
+	err = cache.deleteENI(eniName, retryDeleteENISleepDuration)
 	if err != nil {
 		awsUtilsErrInc("FreeENIDeleteErr", err)
 		return errors.Wrapf(err, "FreeENI: failed to free ENI: %s", eniName)
@@ -769,7 +773,7 @@ func (cache *EC2InstanceMetadataCache) FreeENI(eniName string) error {
 	return nil
 }
 
-func (cache *EC2InstanceMetadataCache) deleteENI(eniName string) error {
+func (cache *EC2InstanceMetadataCache) deleteENI(eniName string, retryDeleteENIInternal time.Duration) error {
 	log.Debugf("Trying to delete ENI: %s", eniName)
 
 	retry := 0
