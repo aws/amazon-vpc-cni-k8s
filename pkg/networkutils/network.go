@@ -658,10 +658,12 @@ func LinkByMac(mac string, netLink netlinkwrapper.NetLink, retryInterval time.Du
 
 // SetupENINetwork adds default route to route table (eni-<eni_table>)
 func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string) error {
-	return setupENINetwork(eniIP, eniMAC, eniTable, eniSubnetCIDR, n.netLink, retryLinkByMacInterval)
+	return setupENINetwork(eniIP, eniMAC, eniTable, eniSubnetCIDR, n.netLink, retryLinkByMacInterval, retryRouteAddInterval)
 }
 
-func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink, retryLinkByMacInterval time.Duration) error {
+func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink,
+	retryLinkByMacInterval time.Duration, retryRouteAddInterval time.Duration) error {
+
 	if eniTable == 0 {
 		log.Debugf("Skipping set up ENI network for primary interface")
 		return nil

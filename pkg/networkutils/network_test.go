@@ -38,17 +38,10 @@ import (
 )
 
 const (
-	testMAC          = "01:23:45:67:89:ab"
 	testMAC1         = "01:23:45:67:89:a0"
 	testMAC2         = "01:23:45:67:89:a1"
-	testIP           = "10.0.10.10"
-	testContVethName = "eth0"
-	testHostVethName = "aws-eth0"
-	testFD           = 10
-	testnetnsPath    = "/proc/1234/netns"
 	testTable        = 10
 	testeniIP        = "10.10.10.20"
-	testeniMAC       = "01:23:45:67:89:ab"
 	testeniSubnet    = "10.10.0.0/16"
 	// Default MTU of ENI and veth
 	// defined in plugins/routed-eni/driver/driver.go, pkg/networkutils/network.go
@@ -124,8 +117,8 @@ func TestSetupENINetwork(t *testing.T) {
 	mockNetLink.EXPECT().RouteAdd(gomock.Any()).Return(nil)
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil)
-	err = setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, 0*time.Second)
 
+	err = setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second)
 	assert.NoError(t, err)
 }
 
@@ -138,8 +131,8 @@ func TestSetupENINetworkMACFail(t *testing.T) {
 	for i := 0; i < maxAttemptsLinkByMac; i++ {
 		mockNetLink.EXPECT().LinkList().Return(nil, fmt.Errorf("simulated failure"))
 	}
-	err := setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, 0*time.Second)
 
+	err := setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second)
 	assert.Errorf(t, err, "simulated failure")
 }
 
@@ -147,7 +140,7 @@ func TestSetupENINetworkPrimary(t *testing.T) {
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
-	err := setupENINetwork(testeniIP, testMAC2, 0, testeniSubnet, mockNetLink, 0*time.Second)
+	err := setupENINetwork(testeniIP, testMAC2, 0, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second)
 	assert.NoError(t, err)
 }
 
@@ -175,7 +168,6 @@ func TestSetupHostNetworkNodePortDisabled(t *testing.T) {
 	var vpcCIDRs []*string
 	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, "", &testENINetIP)
 	assert.NoError(t, err)
-
 }
 
 func TestUpdateRuleListBySrc(t *testing.T) {
