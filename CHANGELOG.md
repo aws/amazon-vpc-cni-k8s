@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.5.3
+
+* Bug fix - [Copy the binary and config after ipamd is ready](https://github.com/aws/amazon-vpc-cni-k8s/pull/576) (#576, @mogren)
+* Improvement - [Update Calico version to v3.8.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/554) (#554, @lmm)
+* Improvement - [Add env var to override introspection bind address](https://github.com/aws/amazon-vpc-cni-k8s/pull/501) (#501, @jacksontj)
+* Improvement - [Remove unused env variable](https://github.com/aws/amazon-vpc-cni-k8s/pull/578) (#578, @mogren)
+* Improvement - [Exit early if MAC address doesn't match](https://github.com/aws/amazon-vpc-cni-k8s/pull/582) (#582, @mogren)
+
 ## v1.5.2
 * Bug fix - [Fix formatting flag](https://github.com/aws/amazon-vpc-cni-k8s/pull/521) (#521, @uthark)
 * Bug fix - [Fix formatting issue](https://github.com/aws/amazon-vpc-cni-k8s/pull/524) (#524, @uthark)
