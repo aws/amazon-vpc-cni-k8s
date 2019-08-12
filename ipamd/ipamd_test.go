@@ -48,6 +48,7 @@ const (
 	secSubnet        = "10.10.20.0/24"
 	ipaddr01         = "10.10.10.11"
 	ipaddr02         = "10.10.10.12"
+	ipaddr03         = "10.10.10.13"
 	ipaddr11         = "10.10.20.11"
 	ipaddr12         = "10.10.20.12"
 	vpcCIDR          = "10.10.0.0/16"
@@ -428,4 +429,97 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, 0, short)
 	assert.Equal(t, 0, over)
+}
+
+func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
+	ctrl, mockAWS, mockK8S, mockNetwork, mockENIConfig := setup(t)
+	defer ctrl.Finish()
+
+	type fields struct {
+		maxIPsPerENI           int
+		warmENITarget          int
+		warmIPTarget           int
+		datastore              *datastore.DataStore
+	}
+
+	tests := []struct {
+		name   string
+		fields fields
+		want   bool
+	}{
+		{"Test new ds, all defaults", fields{14,  1, 0, datastore.NewDataStore()}, true},
+		{"Test new ds, 0 ENIs", fields{14, 0, 0, datastore.NewDataStore()}, true},
+		{"Test new ds, 3 warm IPs", fields{14, 0, 3, datastore.NewDataStore()}, true},
+		{"Test 3 unused IPs, 1 warm", fields{3, 1, 1, datastoreWith3FreeIPs()}, false},
+		{"Test 1 used, 1 warm ENI", fields{3, 1, 0, datastoreWith1Pod1()}, true},
+		{"Test 1 used, 0 warm ENI", fields{3, 0, 0, datastoreWith1Pod1()}, false},
+		{"Test 3 used, 1 warm ENI", fields{3, 1, 0, datastoreWith3Pods()}, true},
+		{"Test 3 used, 0 warm ENI", fields{3, 0, 0, datastoreWith3Pods()}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &IPAMContext{
+				awsClient:              mockAWS,
+				dataStore:              tt.fields.datastore,
+				k8sClient:              mockK8S,
+				useCustomNetworking:    false,
+				eniConfig:              mockENIConfig,
+				networkClient:          mockNetwork,
+				maxIPsPerENI:           tt.fields.maxIPsPerENI,
+				maxENI:                 -1,
+				warmENITarget:          tt.fields.warmENITarget,
+				warmIPTarget:           tt.fields.warmIPTarget,
+			}
+			if got := c.nodeIPPoolTooLow(); got != tt.want {
+				t.Errorf("nodeIPPoolTooLow() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func datastoreWith3FreeIPs() *datastore.DataStore {
+	datastoreWith3FreeIPs := datastore.NewDataStore()
+	_ = datastoreWith3FreeIPs.AddENI(primaryENIid, 1, true)
+	_ = datastoreWith3FreeIPs.AddIPv4AddressFromStore(primaryENIid, ipaddr01)
+	_ = datastoreWith3FreeIPs.AddIPv4AddressFromStore(primaryENIid, ipaddr02)
+	_ = datastoreWith3FreeIPs.AddIPv4AddressFromStore(primaryENIid, ipaddr03)
+	return datastoreWith3FreeIPs
+}
+
+func datastoreWith1Pod1() *datastore.DataStore {
+	datastoreWith1Pod1 := datastoreWith3FreeIPs()
+
+	podInfo1 := k8sapi.K8SPodInfo{
+		Name:      "pod-1",
+		Namespace: "ns-1",
+		IP:        ipaddr01,
+	}
+	_, _, _ = datastoreWith1Pod1.AssignPodIPv4Address(&podInfo1)
+	return datastoreWith1Pod1
+}
+
+func datastoreWith3Pods() *datastore.DataStore {
+	datastoreWith3Pods := datastoreWith3FreeIPs()
+
+	podInfo1 := k8sapi.K8SPodInfo{
+		Name:      "pod-1",
+		Namespace: "ns-1",
+		IP:        ipaddr01,
+	}
+	_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(&podInfo1)
+
+	podInfo2 := k8sapi.K8SPodInfo{
+		Name:      "pod-2",
+		Namespace: "ns-1",
+		IP:        ipaddr02,
+	}
+	_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(&podInfo2)
+
+	podInfo3 := k8sapi.K8SPodInfo{
+		Name:      "pod-3",
+		Namespace: "ns-1",
+		IP:        ipaddr03,
+	}
+	_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(&podInfo3)
+	return datastoreWith3Pods
 }
