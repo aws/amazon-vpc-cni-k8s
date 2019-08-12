@@ -823,7 +823,7 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	logPoolStats(total, used, c.maxIPsPerENI)
 
 	available := total - used
-	poolTooLow := available < c.maxIPsPerENI*c.warmENITarget
+	poolTooLow := available < c.maxIPsPerENI*c.warmENITarget || (c.warmENITarget == 0 && available == 0)
 	if poolTooLow {
 		log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
 	} else {
