@@ -317,9 +317,8 @@ func (c *IPAMContext) nodeInit() error {
 			break
 		}
 	}
-
-	usedIPs, err := c.getLocalPodsWithRetry()
-	log.Debugf("getLocalPodsWithRetry() found %d used IPs.", len(usedIPs))
+	localPods, err := c.getLocalPodsWithRetry()
+	log.Debugf("getLocalPodsWithRetry() found %d local pods", len(localPods))
 	if err != nil {
 		log.Warnf("During ipamd init, failed to get Pod information from Kubernetes API Server %v", err)
 		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed")
@@ -334,7 +333,7 @@ func (c *IPAMContext) nodeInit() error {
 		return nil
 	}
 
-	for _, ip := range usedIPs {
+	for _, ip := range localPods {
 		if ip.Container == "" {
 			log.Infof("Skipping Pod %s, Namespace %s, due to no matching container", ip.Name, ip.Namespace)
 			continue
