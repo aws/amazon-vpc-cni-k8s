@@ -1,11 +1,10 @@
 # cni-metrics-helper
 
-The `cni-metrics-helper` is a tool that can be used to scrape ENI and IP information, aggregate it at the cluster 
-level and publish the metrics to CloudWatch. The following two IAM permissions are required by the worker nodes to 
-publish metrics and provide useful metric names:
+The `cni-metrics-helper` is a tool that can be used to scrape ENI and IP information, aggregate it on a cluster 
+level and publish the metrics to CloudWatch. The following IAM permission is required by the worker nodes to 
+publish metrics:
 ```
 "cloudwatch:PutMetricData"
-"ec2:DescribeTags"
 ```
 
 The following diagram shows how `cni-metrics-helper` works in a cluster:
@@ -14,7 +13,7 @@ The following diagram shows how `cni-metrics-helper` works in a cluster:
 
 ### Installing the cni-metrics-helper
 ```
-kubectl apply -f v1.4/cni-metrics-helper.yaml
+kubectl apply -f v1.5/cni-metrics-helper.yaml
 ```
 
 Adding this will publish the following metrics to CloudWatch:
