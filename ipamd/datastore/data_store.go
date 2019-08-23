@@ -86,22 +86,22 @@ type ENIIPPool struct {
 	createTime         time.Time
 	lastUnassignedTime time.Time
 	// IsPrimary indicates whether ENI is a primary ENI
-	IsPrimary bool
-	ID        string
+	IsPrimary bool   `json:"IsPrimary"`
+	ID        string `json:"ID"`
 	// DeviceNumber is the device number of ENI
-	DeviceNumber int
+	DeviceNumber int `json:"DeviceNumber"`
 	// AssignedIPv4Addresses is the number of IP addresses already been assigned
-	AssignedIPv4Addresses int
+	AssignedIPv4Addresses int `json:"AssignedIPv4Addresses"`
 	// IPv4Addresses shows whether each address is assigned, the key is IP address, which must
 	// be in dot-decimal notation with no leading zeros and no whitespace(eg: "10.1.0.253")
-	IPv4Addresses map[string]*AddressInfo
+	IPv4Addresses map[string]*AddressInfo `json:"IPv4Addresses"`
 }
 
 // AddressInfo contains information about an IP, Exported fields will be marshaled for introspection.
 type AddressInfo struct {
-	Address        string
-	Assigned       bool // true if it is assigned to a pod
-	UnassignedTime time.Time
+	Address        string    `json:"Address"`
+	Assigned       bool      `json:"Assigned"` // true if it is assigned to a pod
+	UnassignedTime time.Time `json:"UnassignedTime"`
 }
 
 // PodKey is used to locate pod IP
@@ -134,11 +134,11 @@ type PodInfos map[string]PodIPInfo
 // ENIInfos contains ENI IP information
 type ENIInfos struct {
 	// TotalIPs is the total number of IP addresses
-	TotalIPs int
+	TotalIPs int `json:"TotalIPs"`
 	// assigned is the number of IP addresses that has been assigned
-	AssignedIPs int
+	AssignedIPs int `json:"AssignedIPs"`
 	// ENIIPPools contains ENI IP pool information
-	ENIIPPools map[string]ENIIPPool
+	ENIIPPools map[string]ENIIPPool `json:"ENIIPPools"`
 }
 
 func prometheusRegister() {
