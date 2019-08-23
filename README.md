@@ -207,7 +207,12 @@ information we can get from the node when running the `aws-cni-support.sh` scrip
 `DISABLE_METRICS`
 Type: Boolean
 Default: `false`
-Specifies whether prometeus metrics endpoints are enabled on a worker node.
+Specifies whether the prometheus metrics endpoint is disabled or not for ipamd.
+
+`AWS_VPC_K8S_CNI_VETHPREFIX`
+Type: String
+Default: `eni`
+Specifies the veth prefix used to generate the host-side veth device name for the CNI. The prefix can be at most 4 characters long.
 
 ### Notes
 
