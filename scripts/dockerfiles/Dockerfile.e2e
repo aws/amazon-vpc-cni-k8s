@@ -1,0 +1,22 @@
+FROM golang:1.12-stretch
+WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s/test/e2e
+
+ARG arch
+ENV ARCH=$arch
+
+# Force the go compiler to use modules.
+ENV GO111MODULE=on
+
+# go.mod and go.sum go into their own layers.
+COPY test/e2e/go.mod .
+COPY test/e2e/go.sum .
+
+# This ensures `go mod download` happens only when go.mod and go.sum change.
+RUN go mod download
+
+# TODO use the existing ginkgo in the go mod dir
+RUN go get github.com/onsi/ginkgo/ginkgo
+
+COPY test/e2e/ .
+
+ENTRYPOINT ["scripts/e2e.sh"]

@@ -2,3 +2,8 @@ aws-cni
 aws-k8s-agent
 portmap
 cni-metrics-helper/cni-metrics-helper
+<<<<<<< HEAD
+=======
+vendor/*
+test/e2e/vendor/*
+>>>>>>> Add dockerfiles for e2e and testpod, update Makefile and .dockerignore
