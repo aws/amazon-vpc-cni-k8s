@@ -118,7 +118,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		conf.VethPrefix = "eni"
 	}
 	if len(conf.VethPrefix) > 4 {
-		return errors.New("conf.VethPrefix must be less than 4 characters long")
+		return errors.New("conf.VethPrefix can be at most 4 characters long")
 	}
 
 	cniVersion := conf.CNIVersion
