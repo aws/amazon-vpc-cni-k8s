@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
@@ -38,11 +39,6 @@ const (
 // server controls RPC service responses.
 type server struct {
 	ipamContext *IPAMContext
-}
-
-// Check is for health checking.
-func (s *server) Check(ctx context.Context, req *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
-	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
 }
 
 // AddNetwork processes CNI add network request and return an IP address for container
@@ -122,7 +118,10 @@ func (c *IPAMContext) RunRPCHandler() error {
 	}
 	s := grpc.NewServer()
 	pb.RegisterCNIBackendServer(s, &server{ipamContext: c})
-	healthpb.RegisterHealthServer(s, &server{})
+	hs := health.NewServer()
+	// TODO: Implement watch once the status is check is handled correctly.
+	hs.SetServingStatus("grpc.health.v1.aws-node", healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(s, hs)
 	// Register reflection service on gRPC server.
 	reflection.Register(s)
 	if err := s.Serve(lis); err != nil {
