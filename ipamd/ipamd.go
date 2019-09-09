@@ -68,6 +68,17 @@ const (
 	envWarmIPTarget = "WARM_IP_TARGET"
 	noWarmIPTarget  = 0
 
+	// This environment variable is used to specify the desired minimum number of total IPs.
+	// When it is not set, ipamd defaults to 0.
+	// For example, for a m4.4xlarge node,
+	//     If WARM-IP-TARGET is set to 1 and MINIMUM_IP_TARGET is set to 12, and there are 9 pods running on the node,
+	//     ipamd will make the "warm pool" have 12 IP addresses with 9 being assigned to pods and 3 free IPs.
+	//
+	//     If "MINIMUM-WARM-IP-TARGET is not set, it will default to 0, which causes WARM-IP-TARGET settings to be the
+	//	   only settings considered.
+	envMinimumIPTarget = "MINIMUM_IP_TARGET"
+	noMinimumIPTarget  = 0
+
 	// This environment is used to specify the desired number of free ENIs along with all of its IP addresses
 	// always available in "warm pool".
 	// When it is not set, it is default to 1.
@@ -159,6 +170,7 @@ type IPAMContext struct {
 	maxENI               int
 	warmENITarget        int
 	warmIPTarget         int
+	minimumIPTarget      int
 	primaryIP            map[string]string
 	lastNodeIPPoolAction time.Time
 	lastDecreaseIPPool   time.Time
@@ -238,6 +250,7 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 	c.reconcileCooldownCache.cache = make(map[string]time.Time)
 	c.warmENITarget = getWarmENITarget()
 	c.warmIPTarget = getWarmIPTarget()
+	c.minimumIPTarget = getMinimumIPTarget()
 	c.useCustomNetworking = UseCustomNetworkCfg()
 
 	err = c.nodeInit()
@@ -463,7 +476,7 @@ func (c *IPAMContext) tryFreeENI() {
 		return
 	}
 
-	eni := c.dataStore.RemoveUnusedENIFromStore(c.warmIPTarget)
+	eni := c.dataStore.RemoveUnusedENIFromStore(c.warmIPTarget, c.minimumIPTarget)
 	if eni == "" {
 		return
 	}
@@ -1046,10 +1059,27 @@ func getWarmIPTarget() int {
 	return noWarmIPTarget
 }
 
-// ipTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET
+func getMinimumIPTarget() int {
+	inputStr, found := os.LookupEnv(envMinimumIPTarget)
+
+	if !found {
+		return noMinimumIPTarget
+	}
+
+	if input, err := strconv.Atoi(inputStr); err == nil {
+		if input >= 0 {
+			log.Debugf("Using MINIMUM_IP_TARGET %v", input)
+			return input
+		}
+	}
+	return noMinimumIPTarget
+}
+
+// ipTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET,
+// accounting for the MINIMUM_IP_TARGET
 func (c *IPAMContext) ipTargetState() (short int, over int, enabled bool) {
-	if c.warmIPTarget == noWarmIPTarget {
-		// there is no WARM_IP_TARGET defined, fallback to use all IP addresses on ENI
+	if c.warmIPTarget == noWarmIPTarget && c.minimumIPTarget == noMinimumIPTarget {
+		// there is no WARM_IP_TARGET defined and no MINIMUM_IP_TARGET, fallback to use all IP addresses on ENI
 		return 0, 0, false
 	}
 
@@ -1059,8 +1089,14 @@ func (c *IPAMContext) ipTargetState() (short int, over int, enabled bool) {
 	// short is greater than 0 when we have fewer available IPs than the warm IP target
 	short = max(c.warmIPTarget-available, 0)
 
+	// short is greater than the warm IP target alone when we have fewer total IPs than the minimum target
+	short = max(short, c.minimumIPTarget-total)
+
 	// over is the number of available IPs we have beyond the warm IP target
 	over = max(available-c.warmIPTarget, 0)
+
+	// over is less than the warm IP target alone if it would imply reducing total IPs below the minimum target
+	over = max(min(over, total-c.minimumIPTarget), 0)
 
 	log.Tracef("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, short: %d, over %d", c.warmIPTarget, total, assigned, available, short, over)
 	return short, over, true

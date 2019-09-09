@@ -288,16 +288,73 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, ds.eniIPPools["eni-2"].AssignedIPv4Addresses, 0)
 
 	noWarmIPTarget := 0
+	noMinimumIPTarget := 0
 
 	// Should not be able to free this ENI
-	eni := ds.RemoveUnusedENIFromStore(noWarmIPTarget)
+	eni := ds.RemoveUnusedENIFromStore(noWarmIPTarget, noMinimumIPTarget)
 	assert.True(t, eni == "")
 
 	ds.eniIPPools["eni-2"].createTime = time.Time{}
 	ds.eniIPPools["eni-2"].lastUnassignedTime = time.Time{}
-	eni = ds.RemoveUnusedENIFromStore(noWarmIPTarget)
+	eni = ds.RemoveUnusedENIFromStore(noWarmIPTarget, noMinimumIPTarget)
 	assert.Equal(t, eni, "eni-2")
 
 	assert.Equal(t, ds.total, 2)
 	assert.Equal(t, ds.assigned, 2)
+}
+
+func TestWarmENIInteractions(t *testing.T) {
+	ds := NewDataStore()
+
+	ds.AddENI("eni-1", 1, true)
+	ds.AddENI("eni-2", 2, false)
+	ds.AddENI("eni-3", 3, false)
+	ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
+	ds.AddIPv4AddressToStore("eni-1", "1.1.1.2")
+	ds.AddIPv4AddressToStore("eni-2", "1.1.2.1")
+	ds.AddIPv4AddressToStore("eni-2", "1.1.2.2")
+	ds.AddIPv4AddressToStore("eni-3", "1.1.3.1")
+
+	podInfo := k8sapi.K8SPodInfo{
+		Name:      "pod-1",
+		Namespace: "ns-1",
+		IP:        "1.1.1.1",
+	}
+	_, _, err := ds.AssignPodIPv4Address(&podInfo)
+	assert.NoError(t, err)
+
+	podInfo = k8sapi.K8SPodInfo{
+		Name:      "pod-2",
+		Namespace: "ns-2",
+		IP:        "1.1.1.2",
+	}
+	_, _, err = ds.AssignPodIPv4Address(&podInfo)
+	assert.NoError(t, err)
+
+	noWarmIPTarget := 0
+
+	ds.eniIPPools["eni-2"].createTime = time.Time{}
+	ds.eniIPPools["eni-2"].lastUnassignedTime = time.Time{}
+	ds.eniIPPools["eni-3"].createTime = time.Time{}
+	ds.eniIPPools["eni-3"].lastUnassignedTime = time.Time{}
+
+	// We have three ENIs, 5 IPs and two pods on ENI 1. Each ENI can handle two pods.
+	// We should not be able to remove any ENIs if either warmIPTarget >= 3 or minimumWarmIPTarget >= 5
+	eni := ds.RemoveUnusedENIFromStore(3, 1)
+	assert.Equal(t, "", eni)
+	// Should not be able to free this ENI because we want at least 5 IPs, which requires at least three ENIs
+	eni = ds.RemoveUnusedENIFromStore(1, 5)
+	assert.Equal(t, "", eni)
+	// Should be able to free an ENI because both warmIPTarget and minimumWarmIPTarget are both effectively 4
+	removedEni := ds.RemoveUnusedENIFromStore(2, 4)
+	assert.Contains(t, []string{"eni-2", "eni-3"}, removedEni)
+
+	// Should not be able to free an ENI because minimumWarmIPTarget requires at least two ENIs and no warm IP target
+	eni = ds.RemoveUnusedENIFromStore(noWarmIPTarget, 3)
+	assert.Equal(t, "", eni)
+	// Should be able to free an ENI because one ENI can provide a minimum count of 2 IPs
+	secondRemovedEni := ds.RemoveUnusedENIFromStore(noWarmIPTarget, 2)
+	assert.Contains(t, []string{"eni-2", "eni-3"}, secondRemovedEni)
+
+	assert.NotEqual(t, removedEni, secondRemovedEni, "The two removed ENIs should not be the same ENI.")
 }
