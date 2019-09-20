@@ -96,15 +96,25 @@ For example, a m4.4xlarge node can have up to 8 ENIs, and each ENI can have up t
 The Amazon VPC CNI plugin for Kubernetes supports a number of configuration options, which are set through environment variables.
 The following environment variables are available, and all of them are optional.
 
+---
+
 `AWS_VPC_CNI_NODE_PORT_SUPPORT`
+
 Type: Boolean
+
 Default: `true`
+
 Specifies whether `NodePort` services are enabled on a worker node's primary network interface\. This requires additional
 `iptables` rules and that the kernel's reverse path filter on the primary interface is set to `loose`.
 
+---
+
 `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG`
+
 Type: Boolean
+
 Default: `false`
+
 Specifies that your pods may use subnets and security groups that are independent of your worker node's VPC configuration.
 By default, pods share the same subnet and security groups as the worker node's primary interface\. Setting this variable
 to `true` causes `ipamD` to use the security groups and VPC subnet in a worker node's `ENIConfig` for elastic network interface
@@ -115,34 +125,65 @@ same Availability Zone that the worker node resides in.
 For more information, see [*CNI Custom Networking*](https://docs.aws.amazon.com/eks/latest/userguide/cni-custom-network.html)
 in the Amazon EKS User Guide.
 
+---
+
 `ENI_CONFIG_ANNOTATION_DEF`
+
 Type: String
+
 Default: `k8s.amazonaws.com/eniConfig`
+
 Specifies node annotation key name. This should be used when `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true`. Annotation value
 will be used to set `ENIConfig` name. Note that annotations take precedence over labels.
 
+---
+
 `ENI_CONFIG_LABEL_DEF`
+
 Type: String
+
 Default: `k8s.amazonaws.com/eniConfig`
+
 Specifies node label key name\. This should be used when `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true`. Label value will be used
 to set `ENIConfig` name\. Note that annotations will take precedence over labels. To use labels ensure annotation with key
 `k8s.amazonaws.com/eniConfig` or defined key (in `ENI_CONFIG_ANNOTATION_DEF`) is not set on the node.
 To select an `ENIConfig` based upon availability zone set this to `failure-domain.beta.kubernetes.io/zone` and create an
 `ENIConfig` custom resource for each availability zone (e.g. `us-east-1a`).
 
+---
+
+`AWS_VPC_ENI_MTU` 
+
+Type: Integer
+
+Default: 9001 
+
+Used to configure the MTU size for attached ENIs. The valid range is from `576` to `9001`.
+
+---
+
 `AWS_VPC_K8S_CNI_EXTERNALSNAT`
+
 Type: Boolean
+
 Default: `false`
+
 Specifies whether an external NAT gateway should be used to provide SNAT of secondary ENI IP addresses. If set to `true`, the
 SNAT `iptables` rule and off\-VPC IP rule are not applied, and these rules are removed if they have already been applied.
 Disable SNAT if you need to allow inbound communication to your pods from external VPNs, direct connections, and external VPCs,
 and your pods do not need to access the Internet directly via an Internet Gateway. However, your nodes must be running in a
 private subnet and connected to the internet through an AWS NAT Gateway or another external NAT device.
 
+---
+
 `AWS_VPC_K8S_CNI_RANDOMIZESNAT`
+
 Type: String
+
 Default: `hashrandom`
+
 Valid Values: `hashrandom`, `prng`, `none`
+
 Specifies weather the SNAT `iptables` rule should randomize the outgoing ports for connections\. This should be used when
 `AWS_VPC_K8S_CNI_EXTERNALSNAT=false`. When enabled (`hashrandom`) the `--random` flag will be added to the SNAT `iptables`
 rule\. To use pseudo random number generation rather than hash based (i.e. `--random-fully`) use `prng` for the environment
@@ -151,15 +192,25 @@ Disable (`none`) this functionality if you rely on sequential port allocation fo
 
 *Note*: Any options other than `none` will cause outbound connections to be assigned a source port that's not necessarily part of the ephemeral port range set at the OS level (/proc/sys/net/ipv4/ip_local_port_range). This is relevant for any customers that might have NACLs restricting traffic based on the port range found in ip_local_port_range
 
+---
+
 `AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS`
+
 Type: String
+
 Default: empty
+
 Specify a comma separated list of IPv4 CIDRs to exclude from SNAT. For every item in the list an `iptables` rule and off\-VPC
 IP rule will be applied. If an item is not a valid ipv4 range it will be skipped. This should be used when `AWS_VPC_K8S_CNI_EXTERNALSNAT=false`.
 
+---
+
 `WARM_ENI_TARGET`
+
 Type: Integer
+
 Default: `1`
+
 Specifies the number of free elastic network interfaces \(and all of their available IP addresses\) that the `ipamD` daemon should
 attempt to keep available for pod assignment on the node\. By default, `ipamD` attempts to keep 1 elastic network interface and all
 of its IP addresses available for pod assignment. The number of IP addresses per network interface varies by instance type. For more
@@ -171,47 +222,84 @@ addresses are removed from the IP address warm pool, then `ipamD` attempts to al
 interfaces are available on the node.
 If `WARM_IP_TARGET` is set, then this environment variable is ignored and the `WARM_IP_TARGET` behavior is used instead.
 
+---
+
 `WARM_IP_TARGET`
+
 Type: Integer
+
 Default: None
+
 Specifies the number of free IP addresses that the `ipamD` daemon should attempt to keep available for pod assignment on the node.
 For example, if `WARM_IP_TARGET` is set to 10, then `ipamD` attempts to keep 10 free IP addresses available at all times. If the
 elastic network interfaces on the node are unable to provide these free addresses, `ipamD` attempts to allocate more interfaces
 until `WARM_IP_TARGET` free IP addresses are available.
 This environment variable overrides `WARM_ENI_TARGET` behavior.
 
+---
+
 `MAX_ENI`
+
 Type: Integer
+
 Default: None
+
 Specifies the maximum number of ENIs that will be attached to the node. When `MAX_ENI` is unset or 0 (or lower), the setting
 is not used, and the maximum number of ENIs is always equal to the maximum number for the instance type in question. Even when
 `MAX_ENI` is a positive number, it is limited by the maximum number for the instance type.
 
+---
+
 `AWS_VPC_K8S_CNI_LOG_FILE`
+
 Type: String
+
 Default: Unset
+
 Valid Values: `stdout` or a file path
+
 Specifies where to write the logging output. Either to stdout or to override the default file.
 
+---
+
 `INTROSPECTION_BIND_ADDRESS`
+
 Type: String
+
 Default: `127.0.0.1:61679`
+
 Specifies the bind address for the introspection endpoint.
 
+---
+
 `DISABLE_INTROSPECTION`
+
 Type: Boolean
+
 Default: `false`
-Specifies whether introspection endpoints are disabled on a worker node. Setting this to `true` will reduce the debugging 
+
+Specifies whether introspection endpoints are disabled on a worker node. Setting this to `true` will reduce the debugging
 information we can get from the node when running the `aws-cni-support.sh` script.
 
+---
+
 `DISABLE_METRICS`
+
 Type: Boolean
+
 Default: `false`
-Specifies whether the prometheus metrics endpoint is disabled or not for ipamd.
+
+Specifies whether the prometheus metrics endpoint is disabled or not for ipamd. By default metrics are published
+on `:61678/metrics`.
+
+---
 
 `AWS_VPC_K8S_CNI_VETHPREFIX`
+
 Type: String
+
 Default: `eni`
+
 Specifies the veth prefix used to generate the host-side veth device name for the CNI. The prefix can be at most 4 characters long.
 
 ### Notes
@@ -221,7 +309,6 @@ kubernetes API server, ipamD will exit and CNI will not be able to get any IP ad
 `L-IPAMD` has access to the kubernetes API server.
 
 ```
-
 # find out kubernetes service IP, e.g. 10.0.0.1
 kubectl get svc kubernetes
 NAME         TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
@@ -232,11 +319,11 @@ telnet 10.0.0.1 443
 Trying 10.0.0.1...
 Connected to 10.0.0.1.
 Escape character is '^]'.  <-------- kubernetes API server is reachable
-
 ``` 
 ## Security disclosures
 
-If you think you’ve found a potential security issue, please do not post it in the Issues.  Instead, please follow the instructions [here](https://aws.amazon.com/security/vulnerability-reporting/) or [email AWS security directly](mailto:aws-security@amazon.com).
+If you think you’ve found a potential security issue, please do not post it in the Issues. Instead, please follow the
+instructions [here](https://aws.amazon.com/security/vulnerability-reporting/) or [email AWS security directly](mailto:aws-security@amazon.com).
 
 ## Contributing
 [See CONTRIBUTING.md](./CONTRIBUTING.md)

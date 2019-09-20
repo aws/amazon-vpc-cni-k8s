@@ -32,15 +32,12 @@ import (
 )
 
 const (
-	// ip rules priority and leave 512 gap for future
+	// IP rules priority, leaving a 512 gap for the future
 	toContainerRulePriority = 512
-	// 1024 is reserved for (ip rule not to <vpc's subnet> table main)
+	// 1024 is reserved for (IP rule not to <VPC's subnet> table main)
 	fromContainerRulePriority = 1536
-
-	// main routing table number
+	// Main routing table number
 	mainRouteTable = unix.RT_TABLE_MAIN
-	// MTU of veth - ENI MTU defined in pkg/networkutils/network.go
-	ethernetMTU = 9001
 )
 
 // NetworkAPIs defines network API calls
@@ -70,6 +67,7 @@ type createVethPairContext struct {
 	addr         *net.IPNet
 	netLink      netlinkwrapper.NetLink
 	ip           ipwrapper.IP
+	mtu          int
 }
 
 func newCreateVethPairContext(contVethName string, hostVethName string, addr *net.IPNet) *createVethPairContext {
@@ -79,17 +77,17 @@ func newCreateVethPairContext(contVethName string, hostVethName string, addr *ne
 		addr:         addr,
 		netLink:      netlinkwrapper.NewNetLink(),
 		ip:           ipwrapper.NewIP(),
+		mtu:          networkutils.GetEthernetMTU(),
 	}
 }
 
-// run defines the closure to execute within the container's namespace to
-// create the veth pair
+// run defines the closure to execute within the container's namespace to create the veth pair
 func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	veth := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{
 			Name:  createVethContext.contVethName,
 			Flags: net.FlagUp,
-			MTU:   ethernetMTU,
+			MTU:   createVethContext.mtu,
 		},
 		PeerName: createVethContext.hostVethName,
 	}
@@ -215,8 +213,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 	}
 	log.Debugf("Successfully set host route to be %s/0", route.Dst.IP.String())
 
-	toContainerFlag := true
-	err = addContainerRule(netLink, toContainerFlag, addr, toContainerRulePriority, mainRouteTable)
+	err = addContainerRule(netLink, true, addr, toContainerRulePriority, mainRouteTable)
 
 	if err != nil {
 		log.Errorf("Failed to add toContainer rule for %s err=%v, ", addr.String(), err)
@@ -229,9 +226,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 	if table > 0 {
 		if useExternalSNAT {
 			// add rule: 1536: from <podIP> use table <table>
-			toContainerFlag = false
-			err = addContainerRule(netLink, toContainerFlag, addr, fromContainerRulePriority, table)
-
+			err = addContainerRule(netLink, false, addr, fromContainerRulePriority, table)
 			if err != nil {
 				log.Errorf("Failed to add fromContainer rule for %s err: %v", addr.String(), err)
 				return errors.Wrap(err, "add NS network: failed to add fromContainer rule")
