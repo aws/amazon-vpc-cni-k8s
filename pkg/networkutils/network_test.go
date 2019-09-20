@@ -118,7 +118,7 @@ func TestSetupENINetwork(t *testing.T) {
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil)
 
-	err = setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second)
+	err = setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
 	assert.NoError(t, err)
 }
 
@@ -132,7 +132,7 @@ func TestSetupENINetworkMACFail(t *testing.T) {
 		mockNetLink.EXPECT().LinkList().Return(nil, fmt.Errorf("simulated failure"))
 	}
 
-	err := setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second)
+	err := setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
 	assert.Errorf(t, err, "simulated failure")
 }
 
@@ -140,7 +140,7 @@ func TestSetupENINetworkPrimary(t *testing.T) {
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
-	err := setupENINetwork(testeniIP, testMAC2, 0, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second)
+	err := setupENINetwork(testeniIP, testMAC2, 0, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
 	assert.NoError(t, err)
 }
 
@@ -312,6 +312,21 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 		},
 	}, mockIptables.dataplaneState)
 	assert.Equal(t, mockFile{closed: true, data: "2"}, mockRPFilter)
+}
+
+func TestLoadMTUFromEnvTooLow(t *testing.T) {
+	_ = os.Setenv(envMTU, "1")
+	assert.Equal(t, GetEthernetMTU(), minimumMTU)
+}
+
+func TestLoadMTUFromEnv1500(t *testing.T) {
+	_ = os.Setenv(envMTU, "1500")
+	assert.Equal(t, GetEthernetMTU(), 1500)
+}
+
+func TestLoadMTUFromEnvTooHigh(t *testing.T) {
+	_ = os.Setenv(envMTU, "65536")
+	assert.Equal(t, GetEthernetMTU(), maximumMTU)
 }
 
 func TestLoadExcludeSNATCIDRsFromEnv(t *testing.T) {
