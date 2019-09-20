@@ -77,18 +77,22 @@ const (
 	// envConnmark is the name of the environment variable that overrides the default connection mark, used to
 	// mark traffic coming from the primary ENI so that return traffic can be forced out of the same interface.
 	// Without using a mark, NodePort DNAT and our source-based routing do not work together if the target pod
-	// behind the node port is not on the main ENI.  In that case, the un-DNAT is done after the source-based
+	// behind the node port is not on the main ENI. In that case, the un-DNAT is done after the source-based
 	// routing, resulting in the packet being sent out of the pod's ENI, when the NodePort traffic should be
 	// sent over the main ENI.
 	envConnmark = "AWS_VPC_K8S_CNI_CONNMARK"
 
-	// defaultConnmark is the default value for the connmark described above.  Note: the mark space is a little crowded,
+	// defaultConnmark is the default value for the connmark described above. Note: the mark space is a little crowded,
 	// - kube-proxy uses 0x0000c000
 	// - Calico uses 0xffff0000.
 	defaultConnmark = 0x80
 
-	// MTU of ENI - veth MTU defined in plugins/routed-eni/driver/driver.go
-	ethernetMTU = 9001
+	// envMTU gives a way to configure the MTU size for new ENIs attached. Range is from 576 to 9001.
+	envMTU = "AWS_VPC_ENI_MTU"
+
+	// Range of MTU for each ENI and veth pair. Defaults to maximumMTU
+	minimumMTU = 576
+	maximumMTU = 9001
 
 	// number of retries to add a route
 	maxRetryRouteAdd = 5
@@ -121,6 +125,7 @@ type linuxNetwork struct {
 	typeOfSNAT             snatType
 	nodePortSupportEnabled bool
 	connmark               uint32
+	mtu                    int
 
 	netLink     netlinkwrapper.NetLink
 	ns          nswrapper.NS
@@ -158,6 +163,7 @@ func New() NetworkAPIs {
 		typeOfSNAT:             typeOfSNAT(),
 		nodePortSupportEnabled: nodePortSupportEnabled(),
 		mainENIMark:            getConnmark(),
+		mtu:                    GetEthernetMTU(),
 
 		netLink: netlinkwrapper.NewNetLink(),
 		ns:      nswrapper.NewNS(),
@@ -657,11 +663,11 @@ func LinkByMac(mac string, netLink netlinkwrapper.NetLink, retryInterval time.Du
 
 // SetupENINetwork adds default route to route table (eni-<eni_table>)
 func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string) error {
-	return setupENINetwork(eniIP, eniMAC, eniTable, eniSubnetCIDR, n.netLink, retryLinkByMacInterval, retryRouteAddInterval)
+	return setupENINetwork(eniIP, eniMAC, eniTable, eniSubnetCIDR, n.netLink, retryLinkByMacInterval, retryRouteAddInterval, n.mtu)
 }
 
 func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink,
-	retryLinkByMacInterval time.Duration, retryRouteAddInterval time.Duration) error {
+	retryLinkByMacInterval time.Duration, retryRouteAddInterval time.Duration, mtu int) error {
 
 	if eniTable == 0 {
 		log.Debugf("Skipping set up ENI network for primary interface")
@@ -675,8 +681,8 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 		return errors.Wrapf(err, "setupENINetwork: failed to find the link which uses MAC address %s", eniMAC)
 	}
 
-	if err = netLink.LinkSetMTU(link, ethernetMTU); err != nil {
-		return errors.Wrapf(err, "setupENINetwork: failed to set MTU for %s", eniIP)
+	if err = netLink.LinkSetMTU(link, mtu); err != nil {
+		return errors.Wrapf(err, "setupENINetwork: failed to set MTU to %d for %s", mtu, eniIP)
 	}
 
 	if err = netLink.LinkSetUp(link); err != nil {
@@ -928,4 +934,28 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 		log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v]", podRule)
 	}
 	return nil
+}
+
+// GetEthernetMTU gets the MTU setting from AWS_VPC_ENI_MTU, or defaults to 9001 if not set.
+func GetEthernetMTU() int {
+	if envMTUValue := os.Getenv(envMTU); envMTUValue != "" {
+		mtu, err := strconv.Atoi(envMTUValue)
+		if err != nil {
+			log.Errorf("Failed to parse %s will use %d: %v", envMTU,  maximumMTU, err.Error())
+			return maximumMTU
+		}
+		// Restrict range between jumbo frame and the maximum required size to assemble.
+		// Details in https://tools.ietf.org/html/rfc879 and
+		// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/network_mtu.html
+		if mtu < minimumMTU {
+			log.Errorf("%s is too low: %d. Will use %d", envMTU, mtu, minimumMTU)
+			return minimumMTU
+		}
+		if mtu > maximumMTU  {
+			log.Errorf("%s is too high: %d. Will use %d", envMTU, mtu, maximumMTU)
+			return maximumMTU
+		}
+		return mtu
+	}
+	return maximumMTU
 }
