@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 	log "github.com/cihub/seelog"
 )
 
@@ -61,7 +61,7 @@ func (c *IPAMContext) ServeIntrospection() {
 	server := c.setupIntrospectionServer()
 	for {
 		once := sync.Once{}
-		_ = utils.RetryWithBackoff(utils.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
+		_ = retry.RetryWithBackoff(retry.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
 			err := server.ListenAndServe()
 			once.Do(func() {
 				log.Error("Error running http API: ", err)
