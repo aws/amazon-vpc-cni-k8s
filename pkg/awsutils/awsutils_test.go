@@ -335,7 +335,6 @@ func TestAllocENI(t *testing.T) {
 	cureniID := eniID
 	eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2.NetworkInterface{NetworkInterfaceId: &cureniID}}
 	mockEC2.EXPECT().CreateNetworkInterface(gomock.Any()).Return(&eni, nil)
-	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, nil)
 
 	// 2 ENIs, uses device number 0 3, expect to find free at 1
 	ec2ENIs := make([]*ec2.InstanceNetworkInterface, 0)
@@ -359,6 +358,7 @@ func TestAllocENI(t *testing.T) {
 	attachResult := &ec2.AttachNetworkInterfaceOutput{
 		AttachmentId: &attachmentID}
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any()).Return(attachResult, nil)
+	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any()).Return(nil, nil)
 
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
@@ -373,7 +373,6 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 	cureniID := eniID
 	eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2.NetworkInterface{NetworkInterfaceId: &cureniID}}
 	mockEC2.EXPECT().CreateNetworkInterface(gomock.Any()).Return(&eni, nil)
-	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, nil)
 
 	// test no free index
 	ec2ENIs := make([]*ec2.InstanceNetworkInterface, 0)
@@ -404,7 +403,6 @@ func TestAllocENIMaxReached(t *testing.T) {
 	cureniID := eniID
 	eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2.NetworkInterface{NetworkInterfaceId: &cureniID}}
 	mockEC2.EXPECT().CreateNetworkInterface(gomock.Any()).Return(&eni, nil)
-	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, nil)
 
 	// 2 ENIs, uses device number 0 3, expect to find free at 1
 	ec2ENIs := make([]*ec2.InstanceNetworkInterface, 0)
@@ -445,7 +443,7 @@ func TestFreeENI(t *testing.T) {
 	mockEC2.EXPECT().DeleteNetworkInterface(gomock.Any()).Return(nil, nil)
 
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := ins.freeENI("test-eni", 0*time.Second)
+	err := ins.freeENI("test-eni", time.Millisecond)
 	assert.NoError(t, err)
 }
 
@@ -465,7 +463,7 @@ func TestFreeENIRetry(t *testing.T) {
 	mockEC2.EXPECT().DeleteNetworkInterface(gomock.Any()).Return(nil, nil)
 
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := ins.freeENI("test-eni", 0*time.Second)
+	err := ins.freeENI("test-eni", time.Millisecond)
 	assert.NoError(t, err)
 }
 
@@ -485,7 +483,7 @@ func TestFreeENIRetryMax(t *testing.T) {
 	}
 
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := ins.freeENI("test-eni", 0*time.Second)
+	err := ins.freeENI("test-eni", time.Millisecond)
 	assert.Error(t, err)
 }
 

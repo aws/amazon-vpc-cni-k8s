@@ -11,9 +11,8 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package utils
+package retry
 
-//TODO needs to extract this to library (it's copied from ecs agent)
 import (
 	"math"
 	"math/rand"
@@ -35,13 +34,10 @@ type SimpleBackoff struct {
 	mu             sync.Mutex
 }
 
-// NewSimpleBackoff creates a Backoff which ranges from min to max increasing by
-// multiple each time.
-// It also adds (and yes, the jitter is always added, never
-// subtracted) a random amount of jitter up to jitterMultiple percent (that is,
-// jitterMultiple = 0.0 is no jitter, 0.15 is 15% added jitter). The total time
-// may exceed "max" when accounting for jitter, such that the absolute max is
-// max + max * jiterMultiple
+// NewSimpleBackoff creates a Backoff which ranges from min to max increasing by multiple each time.
+// It also adds (and yes, the jitter is always added, never subtracted) a random amount of jitter up to jitterMultiple
+// percent (that is, jitterMultiple = 0.0 is no jitter, 0.15 is 15% added jitter). The total time/ may exceed "max"
+// when accounting for jitter, such that the absolute max is max + max * jitterMultiple
 func NewSimpleBackoff(min, max time.Duration, jitterMultiple, multiple float64) *SimpleBackoff {
 	return &SimpleBackoff{
 		start:          min,
@@ -56,8 +52,7 @@ func (sb *SimpleBackoff) Duration() time.Duration {
 	sb.mu.Lock()
 	defer sb.mu.Unlock()
 	ret := sb.current
-	sb.current = time.Duration(math.Min(float64(sb.max.Nanoseconds()), float64(float64(sb.current.Nanoseconds())*sb.multiple)))
-
+	sb.current = time.Duration(math.Min(float64(sb.max.Nanoseconds()), float64(sb.current.Nanoseconds())*sb.multiple))
 	return AddJitter(ret, time.Duration(int64(float64(ret)*sb.jitterMultiple)))
 }
 
@@ -67,8 +62,7 @@ func (sb *SimpleBackoff) Reset() {
 	sb.current = sb.start
 }
 
-// AddJitter adds an amount of jitter between 0 and the given jitter to the
-// given duration
+// AddJitter adds an amount of jitter between 0 and the given jitter to the given duration
 func AddJitter(duration time.Duration, jitter time.Duration) time.Duration {
 	var randJitter int64
 	if jitter.Nanoseconds() == 0 {
