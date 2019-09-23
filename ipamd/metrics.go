@@ -19,10 +19,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 	log "github.com/cihub/seelog"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils"
 )
 
 const (
@@ -44,7 +43,7 @@ func (c *IPAMContext) ServeMetrics() {
 	server := c.setupMetricsServer()
 	for {
 		once := sync.Once{}
-		_ = utils.RetryWithBackoff(utils.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
+		_ = retry.RetryWithBackoff(retry.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
 			err := server.ListenAndServe()
 			once.Do(func() {
 				log.Error("Error running http API: ", err)
