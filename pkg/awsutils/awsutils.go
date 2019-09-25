@@ -16,6 +16,7 @@ package awsutils
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -33,6 +34,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -54,6 +56,7 @@ const (
 	maxENIBackoffDelay   = time.Minute
 	eniDescriptionPrefix = "aws-K8S-"
 	metadataOwnerID      = "/owner-id"
+
 	// AllocENI need to choose a first free device number between 0 and maxENI
 	maxENIs           = 128
 	clusterNameEnvVar = "CLUSTER_NAME"
@@ -62,6 +65,9 @@ const (
 
 	// UnknownInstanceType indicates that the instance type is not yet supported
 	UnknownInstanceType = "vpc ip resource(eni ip limit): unknown instance type"
+
+	// Stagger cleanup start time to avoid calling EC2 too much. Time in seconds.
+	eniCleanupStartupDelayMax = 300
 )
 
 // ErrENINotFound is an error when ENI is not found.
@@ -223,6 +229,10 @@ func New() (*EC2InstanceMetadataCache, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Clean up leaked ENIs in the background
+	go wait.Forever(cache.cleanUpLeakedENIs, time.Hour)
+
 	return cache, nil
 }
 
@@ -760,7 +770,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, maxBackoffDelay t
 	}
 
 	// It does take awhile for EC2 to detach ENI from instance, so we wait 2s before trying the delete.
-	time.Sleep(time.Second * 2)
+	time.Sleep(2 * time.Second)
 	err = cache.deleteENI(eniName, maxBackoffDelay)
 	if err != nil {
 		awsUtilsErrInc("FreeENIDeleteErr", err)
@@ -781,6 +791,13 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string, maxBackoffDelay
 		_, ec2Err := cache.ec2SVC.DeleteNetworkInterface(deleteInput)
 		awsAPILatency.WithLabelValues("DeleteNetworkInterface", fmt.Sprint(ec2Err != nil)).Observe(msSince(start))
 		if ec2Err != nil {
+			if aerr, ok := ec2Err.(awserr.Error); ok {
+				// If already deleted, we are good
+				if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+					log.Infof("ENI %s has already been deleted", eniName)
+					return nil
+				}
+			}
 			awsAPIErrInc("DeleteNetworkInterface", ec2Err)
 			log.Debugf("Not able to delete ENI: %v ", ec2Err)
 			return errors.Wrapf(ec2Err, "unable to delete ENI")
@@ -918,6 +935,71 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []st
 		return errors.Wrap(err, fmt.Sprintf("deallocate IP addresses: failed to deallocate private IP addresses: %s", ips))
 	}
 	return nil
+}
+
+func (cache *EC2InstanceMetadataCache) cleanUpLeakedENIs() {
+	rand.Seed(time.Now().UnixNano())
+	startupDelay := time.Duration(rand.Intn(eniCleanupStartupDelayMax)) * time.Second
+	log.Infof("Will attempt to clean up AWS CNI leaked ENIs after waiting %s.", startupDelay)
+	time.Sleep(startupDelay)
+
+	log.Debug("Checking for leaked AWS CNI ENIs.")
+	networkInterfaces, err := cache.getFilteredListOfNetworkInterfaces()
+	if err != nil {
+		log.Warnf("Unable to get leaked ENIs: %v", err)
+	} else {
+		// Clean up all the leaked ones we found
+		for _, networkInterface := range networkInterfaces {
+			eniID := aws.StringValue(networkInterface.NetworkInterfaceId)
+			err = cache.deleteENI(eniID, maxENIBackoffDelay)
+			if err != nil {
+				log.Warnf("Failed to clean up leaked ENI %s: %v", eniID, err)
+			}
+		}
+	}
+}
+
+// getFilteredListOfNetworkInterfaces calls DescribeNetworkInterfaces to get all available ENIs that were allocated by
+// the AWS CNI plugin, but were not deleted.
+func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*ec2.NetworkInterface, error) {
+	// The tag key has to be "node.k8s.amazonaws.com/instance_id"
+	tagFilter := &ec2.Filter{
+		Name: aws.String("tag-key"),
+		Values: []*string{
+			aws.String(eniNodeTagKey),
+		},
+	}
+	// Only fetch "available" ENIs.
+	statusFilter := &ec2.Filter{
+		Name: aws.String("status"),
+		Values: []*string{
+			aws.String("available"),
+		},
+	}
+
+	input := &ec2.DescribeNetworkInterfacesInput{
+		Filters: []*ec2.Filter{tagFilter, statusFilter},
+	}
+	result, err := cache.ec2SVC.DescribeNetworkInterfaces(input)
+	if err != nil {
+		return nil, errors.Wrap(err, "awsutils: unable to obtain filtered list of network interfaces")
+	}
+
+	networkInterfaces := make([]*ec2.NetworkInterface, 0)
+	for _, networkInterface := range result.NetworkInterfaces {
+		// Verify the description starts with "aws-K8S-"
+		if strings.HasPrefix(aws.StringValue(networkInterface.Description), eniDescriptionPrefix) {
+			networkInterfaces = append(networkInterfaces, networkInterface)
+		}
+	}
+
+	if len(networkInterfaces) < 1 {
+		log.Debug("No AWS CNI leaked ENIs found.")
+		return nil, nil
+	}
+
+	log.Debugf("Found %d available instances with the AWS CNI tag.", len(networkInterfaces))
+	return networkInterfaces, nil
 }
 
 // GetVPCIPv4CIDR returns VPC CIDR
