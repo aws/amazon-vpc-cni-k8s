@@ -274,7 +274,6 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 		namespace: k8sPod.Namespace,
 		container: k8sPod.Container,
 	}
-	curTime := time.Now()
 	for _, eni := range ds.eniIPPools {
 		if (k8sPod.IP == "") && (len(eni.IPv4Addresses) == eni.AssignedIPv4Addresses) {
 			// skip this ENI, since it has no available IP addresses
@@ -292,7 +291,7 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(k8sPod *k8sapi.K8SPodInfo) (stri
 				ds.podsIP[podKey] = PodIPInfo{IP: addr.Address, DeviceNumber: eni.DeviceNumber}
 				return addr.Address, eni.DeviceNumber, nil
 			}
-			if !addr.Assigned && k8sPod.IP == "" && curTime.Sub(addr.UnassignedTime) > addressCoolingPeriod {
+			if !addr.Assigned && k8sPod.IP == "" && !addr.inCoolingPeriod() {
 				// This is triggered by a pod's Add Network command from CNI plugin
 				incrementAssignedCount(ds, eni, addr)
 				log.Infof("AssignPodIPv4Address: Assign IP %v to pod (name %s, namespace %s container %s)",
@@ -366,12 +365,12 @@ func (ds *DataStore) getDeletableENI(warmIPTarget int) *ENIIPPool {
 
 // IsTooYoung returns true if the ENI hasn't been around long enough to be deleted.
 func (e *ENIIPPool) isTooYoung() bool {
-	return time.Now().Sub(e.createTime) < minLifeTime
+	return time.Since(e.createTime) < minLifeTime
 }
 
 // HasIPInCooling returns true if an IP address was unassigned recently.
 func (e *ENIIPPool) hasIPInCooling() bool {
-	return time.Now().Sub(e.lastUnassignedTime) < addressENICoolingPeriod
+	return time.Since(e.lastUnassignedTime) < addressENICoolingPeriod
 }
 
 // HasPods returns true if the ENI has pods assigned to it.
@@ -544,4 +543,9 @@ func (ds *DataStore) GetENIIPPools(eni string) (map[string]*AddressInfo, error) 
 		ipPool[ip] = ipAddr
 	}
 	return ipPool, nil
+}
+
+// InCoolingPeriod checks whether an addr is in addressCoolingPeriod
+func (addr AddressInfo) inCoolingPeriod() bool {
+	return time.Since(addr.UnassignedTime) <= addressCoolingPeriod
 }
