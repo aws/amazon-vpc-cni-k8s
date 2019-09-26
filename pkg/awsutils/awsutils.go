@@ -675,15 +675,17 @@ func (cache *EC2InstanceMetadataCache) tagENI(eniID string) {
 		Tags: tags,
 	}
 
-	start := time.Now()
-	_, err := cache.ec2SVC.CreateTags(input)
-	awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil)).Observe(msSince(start))
-	if err != nil {
-		awsAPIErrInc("CreateTags", err)
-		log.Warnf("Failed to tag the newly created ENI %s: %v", eniID, err)
-	} else {
+	_ = retry.RetryNWithBackoff(retry.NewSimpleBackoff(time.Second, time.Minute, 0.3, 2), 5, func() error {
+		start := time.Now()
+		_, err := cache.ec2SVC.CreateTags(input)
+		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil)).Observe(msSince(start))
+		if err != nil {
+			awsAPIErrInc("CreateTags", err)
+			return log.Warnf("Failed to tag the newly created ENI %s: %v", eniID, err)
+		}
 		log.Debugf("Successfully tagged ENI: %s", eniID)
-	}
+		return nil
+	})
 }
 
 //containsAttachmentLimitExceededError returns whether exceeds instance's ENI limit
@@ -758,7 +760,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, maxBackoffDelay t
 	}
 
 	// It does take awhile for EC2 to detach ENI from instance, so we wait 2s before trying the delete.
-	time.Sleep(time.Second*2)
+	time.Sleep(time.Second * 2)
 	err = cache.deleteENI(eniName, maxBackoffDelay)
 	if err != nil {
 		awsUtilsErrInc("FreeENIDeleteErr", err)
