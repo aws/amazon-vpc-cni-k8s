@@ -457,6 +457,35 @@ func TestMapToTags(t *testing.T) {
 	assert.Equal(t, aws.StringValue(tags[1].Value), tagValue2)
 }
 
+func TestTagEni(t *testing.T) {
+	ctrl, mockMetadata, mockEC2 := setup(t)
+	defer ctrl.Finish()
+	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return("1", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataOwnerID).Return("1234", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidr).Return(vpcCIDR, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(vpcCIDR, nil)
+
+	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata, ec2SVC: mockEC2}
+	err := ins.initWithEC2Metadata()
+	assert.NoError(t, err)
+	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, errors.New("Tagging Failed"))
+	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, errors.New("Tagging Failed"))
+	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, errors.New("Tagging Failed"))
+	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, errors.New("Tagging Failed"))
+	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, nil)
+	ins.tagENI(eniID)
+	assert.NoError(t, err)
+}
+
 func TestAllocENI(t *testing.T) {
 	ctrl, _, mockEC2 := setup(t)
 	defer ctrl.Finish()
