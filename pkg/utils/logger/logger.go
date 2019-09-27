@@ -34,7 +34,7 @@ const (
   %s
  </outputs>
  <formats>
-  <format id="main" format="%%UTCDate(2006-01-02T15:04:05.000Z07:00) [%%LEVEL]%%t%%Msg%%n" />
+  <format id="main" format="%%UTCDate(2006-01-02T15:04:05.000Z07:00) [%%LEVEL] %%t%%Msg%%n" />
  </formats>
 </seelog>
 `
