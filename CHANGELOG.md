@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.4
+
+* Improvement - [Add support for g4dn instance family](https://github.com/aws/amazon-vpc-cni-k8s/pull/621) (#621, @mogren)
+* Improvement - [Set cniVersion in the config to 0.3.1 (required for Kubernetes 1.16)](https://github.com/aws/amazon-vpc-cni-k8s/pull/605) (#605, @mogren)
+* Bug fix - [Return delete success for pods that never got scheduled](https://github.com/aws/amazon-vpc-cni-k8s/commit/b0b2fc1be3cdb5cdde9ff4b13094488bf2c39d28) (#623, @mogren)
+
 ## v1.5.3
 
 * Bug fix - [Copy the binary and config after ipamd is ready](https://github.com/aws/amazon-vpc-cni-k8s/pull/576) (#576, @mogren)
