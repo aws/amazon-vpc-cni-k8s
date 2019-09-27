@@ -37,8 +37,8 @@ const (
 	// DuplicatedENIError is an error when caller tries to add an duplicate ENI to data store
 	DuplicatedENIError = "data store: duplicate ENI"
 
-	// DuplicateIPError is an error when caller tries to add an duplicate IP address to data store
-	DuplicateIPError = "datastore: duplicated IP"
+	// IPAlreadyInStoreError is an error when caller tries to add an duplicate IP address to data store
+	IPAlreadyInStoreError = "datastore: IP already in data store"
 
 	// UnknownIPError is an error when caller tries to delete an IP which is unknown to data store
 	UnknownIPError = "datastore: unknown IP"
@@ -185,17 +185,18 @@ func (ds *DataStore) AddIPv4AddressFromStore(eniID string, ipv4 string) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	log.Debugf("Adding ENI(%s)'s IPv4 address %s to datastore", eniID, ipv4)
-	log.Debugf("IP Address Pool stats: total: %d, assigned: %d", ds.total, ds.assigned)
+	log.Tracef("Adding ENI(%s)'s IPv4 address %s to datastore", eniID, ipv4)
+	log.Tracef("IP Address Pool stats: total: %d, assigned: %d", ds.total, ds.assigned)
 
 	curENI, ok := ds.eniIPPools[eniID]
 	if !ok {
 		return errors.New("add ENI's IP to datastore: unknown ENI")
 	}
 
+	// Already there
 	_, ok = curENI.IPv4Addresses[ipv4]
 	if ok {
-		return errors.New(DuplicateIPError)
+		return errors.New(IPAlreadyInStoreError)
 	}
 
 	ds.total++
