@@ -585,8 +585,9 @@ func (c *IPAMContext) increaseIPPool() {
 	} else {
 		// If we did not add an IP, try to add an ENI instead.
 		if c.dataStore.GetENIs() < c.maxENI {
-			c.tryAllocateENI()
-			c.updateLastNodeIPPoolAction()
+			if err = c.tryAllocateENI(); err == nil {
+				c.updateLastNodeIPPoolAction()
+			}
 		} else {
 			log.Debugf("Skipping ENI allocation as the instance's max ENI limit of %d is already reached", c.maxENI)
 		}
@@ -596,11 +597,11 @@ func (c *IPAMContext) increaseIPPool() {
 func (c *IPAMContext) updateLastNodeIPPoolAction() {
 	c.lastNodeIPPoolAction = time.Now()
 	total, used := c.dataStore.GetStats()
-	log.Debugf("Successfully increased IP pool")
+	log.Debugf("Successfully increased IP pool, total: %d, used: %d", total, used)
 	logPoolStats(total, used, c.maxIPsPerENI)
 }
 
-func (c *IPAMContext) tryAllocateENI() {
+func (c *IPAMContext) tryAllocateENI() error {
 	var securityGroups []*string
 	var subnet string
 
@@ -609,7 +610,7 @@ func (c *IPAMContext) tryAllocateENI() {
 
 		if err != nil {
 			log.Errorf("Failed to get pod ENI config")
-			return
+			return err
 		}
 
 		log.Infof("ipamd: using custom network config: %v, %s", eniCfg.SecurityGroups, eniCfg.Subnet)
@@ -624,17 +625,18 @@ func (c *IPAMContext) tryAllocateENI() {
 	if err != nil {
 		log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
 		ipamdErrInc("increaseIPPoolAllocENI")
-		return
+		return err
 	}
 
+	ipsToAllocate := c.maxIPsPerENI
 	short, _, warmIPTargetDefined := c.ipTargetState()
 	if warmIPTargetDefined {
-		err = c.awsClient.AllocIPAddresses(eni, short)
-	} else {
-		err = c.awsClient.AllocIPAddresses(eni, c.maxIPsPerENI)
+		ipsToAllocate = short
 	}
+
+	err = c.awsClient.AllocIPAddresses(eni, ipsToAllocate)
 	if err != nil {
-		log.Warnf("Failed to allocate all available ip addresses on an ENI %v", err)
+		log.Warnf("Failed to allocate %d IP addresses on an ENI: %v",ipsToAllocate, err)
 		// Continue to process the allocated IP addresses
 		ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 	}
@@ -643,15 +645,16 @@ func (c *IPAMContext) tryAllocateENI() {
 	if err != nil {
 		ipamdErrInc("increaseIPPoolwaitENIAttachedFailed")
 		log.Errorf("Failed to increase pool size: Unable to discover attached ENI from metadata service %v", err)
-		return
+		return err
 	}
 
 	err = c.setupENI(eni, eniMetadata)
 	if err != nil {
 		ipamdErrInc("increaseIPPoolsetupENIFailed")
 		log.Errorf("Failed to increase pool size: %v", err)
-		return
+		return err
 	}
+	return nil
 }
 
 // For an ENI, try to fill in missing IPs on an existing ENI
@@ -727,7 +730,7 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 			continue
 		}
 		err := c.dataStore.AddIPv4AddressFromStore(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
-		if err != nil && err.Error() != datastore.DuplicateIPError {
+		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
 			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store", ec2Addr.PrivateIpAddress)
 			// continue to add next address
 			// TODO need to add health stats for err
@@ -837,9 +840,9 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	available := total - used
 	poolTooLow := available < c.maxIPsPerENI*c.warmENITarget || (c.warmENITarget == 0 && available == 0)
 	if poolTooLow {
-		log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
+		log.Tracef("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
 	} else {
-		log.Debugf("IP pool is NOT too low: available (%d) >= ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
+		log.Tracef("IP pool is NOT too low: available (%d) >= ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
 	}
 	return poolTooLow
 }
@@ -870,9 +873,9 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	// We need the +1 to make sure we are not going below the WARM_ENI_TARGET.
 	shouldRemoveExtra := available >= (c.warmENITarget+1)*c.maxIPsPerENI
 	if shouldRemoveExtra {
-		log.Debugf("It might be possible to remove extra ENIs because available (%d) >= (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
+		log.Tracef("It might be possible to remove extra ENIs because available (%d) >= (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
 	} else {
-		log.Debugf("Its NOT possible to remove extra ENIs because available (%d) < (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
+		log.Tracef("Its NOT possible to remove extra ENIs because available (%d) < (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
 	}
 	return shouldRemoveExtra
 }
@@ -985,9 +988,9 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 		}
 
 		err := c.dataStore.AddIPv4AddressFromStore(eni, localIP)
-		if err != nil && err.Error() == datastore.DuplicateIPError {
+		if err != nil && err.Error() == datastore.IPAlreadyInStoreError {
 			log.Debugf("Reconciled IP %s on ENI %s", localIP, eni)
-			// mark action = remove it from eniPool
+			// mark action = remove it from ipPool since the IP should not be deleted
 			delete(ipPool, localIP)
 			continue
 		}
@@ -995,7 +998,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 		if err != nil {
 			log.Errorf("Failed to reconcile IP %s on ENI %s", localIP, eni)
 			ipamdErrInc("ipReconcileAdd")
-			// continue instead of bailout due to one ip
+			// continue instead of bailout due to one IP
 			continue
 		}
 		reconcileCnt.With(prometheus.Labels{"fn": "eniIPPoolReconcileAdd"}).Inc()
@@ -1059,7 +1062,7 @@ func (c *IPAMContext) ipTargetState() (short int, over int, enabled bool) {
 	// over is the number of available IPs we have beyond the warm IP target
 	over = max(available-c.warmIPTarget, 0)
 
-	log.Debugf("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, short: %d, over %d", c.warmIPTarget, total, assigned, available, short, over)
+	log.Tracef("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, short: %d, over %d", c.warmIPTarget, total, assigned, available, short, over)
 	return short, over, true
 }
 
