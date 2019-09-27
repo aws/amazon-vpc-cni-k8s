@@ -117,7 +117,7 @@ clean:
 	rm -f cni-metrics-helper/cni-metrics-helper
 	rm -f portmap
 
-files := $(shell find . -path ./vendor -prune -or -not -name 'mock_publisher.go' -name '*.go' -print)
+files := $(shell find . -not -name 'mock_publisher.go' -name '*.go' -print)
 unformatted = $(shell goimports -l $(files))
 
 format :

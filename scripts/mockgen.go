@@ -20,13 +20,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"strings"
 	"time"
 )
 
 const (
-	projectVendor         = `github.com/aws/amazon-vpc-cni-k8s/vendor`
 	copyrightHeaderFormat = "// Copyright %v Amazon.com, Inc. or its affiliates. All Rights Reserved."
 	licenseBlock          = `
 //
@@ -64,7 +61,6 @@ func main() {
 	packageName := os.Args[1]
 	interfaces := os.Args[2]
 	outputPath := os.Args[3]
-	re := regexp.MustCompile("(?m)[\r\n]+^.*" + projectVendor + ".*$")
 
 	copyrightHeader := fmt.Sprintf(copyrightHeaderFormat, time.Now().Year())
 
@@ -84,12 +80,10 @@ func main() {
 	mockgenOut, err := mockgen.Output()
 	if err != nil {
 		printErrorAndExitWithErrorCode(
-			fmt.Errorf("Error running mockgen for package '%s' and interfaces '%s': %v", packageName, interfaces, err))
+			fmt.Errorf("error running mockgen for package '%s' and interfaces '%s': %v", packageName, interfaces, err))
 	}
 
-	sanitized := re.ReplaceAllString(string(mockgenOut), "")
-
-	withHeader := copyrightHeader + licenseBlock + sanitized
+	withHeader := copyrightHeader + licenseBlock + string(mockgenOut)
 
 	goimports := exec.Command("goimports")
 	goimports.Stdin = bytes.NewBufferString(withHeader)
@@ -101,14 +95,12 @@ func main() {
 
 	scanner := bufio.NewScanner(outputFile)
 	mockFileContents := scanner.Bytes()
-	sanitizedMockFileContents := strings.Replace(string(mockFileContents), projectVendor, "", 1)
 
 	writer := bufio.NewWriter(outputFile)
-	_, err = writer.WriteString(sanitizedMockFileContents)
+	_, err = writer.WriteString(string(mockFileContents))
 	if err != nil {
 		printErrorAndExitWithErrorCode(err)
 	}
-
 }
 
 func usage() {
