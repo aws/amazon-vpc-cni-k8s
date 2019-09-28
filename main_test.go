@@ -24,7 +24,7 @@ func Test_copyFileContents(t *testing.T) {
 			dst := os.TempDir() + "/" + tt.args.dst
 
 			err := copyFileContents(tt.args.src, dst)
-			if  err != nil {
+			if err != nil {
 				if !tt.wantErr {
 					t.Errorf("copyFileContents() error = %v, wantErr %v", err, tt.wantErr)
 				}
