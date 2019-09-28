@@ -135,4 +135,3 @@ func main() {
 	}
 	log.Printf("status: %v", resp.GetStatus().String())
 }
-

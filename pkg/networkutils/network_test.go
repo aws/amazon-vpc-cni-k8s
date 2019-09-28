@@ -38,11 +38,11 @@ import (
 )
 
 const (
-	testMAC1         = "01:23:45:67:89:a0"
-	testMAC2         = "01:23:45:67:89:a1"
-	testTable        = 10
-	testeniIP        = "10.10.10.20"
-	testeniSubnet    = "10.10.0.0/16"
+	testMAC1      = "01:23:45:67:89:a0"
+	testMAC2      = "01:23:45:67:89:a1"
+	testTable     = 10
+	testeniIP     = "10.10.10.20"
+	testeniSubnet = "10.10.0.0/16"
 	// Default MTU of ENI and veth
 	// defined in plugins/routed-eni/driver/driver.go, pkg/networkutils/network.go
 	testMTU = 9001
