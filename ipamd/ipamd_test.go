@@ -436,10 +436,10 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 	defer ctrl.Finish()
 
 	type fields struct {
-		maxIPsPerENI           int
-		warmENITarget          int
-		warmIPTarget           int
-		datastore              *datastore.DataStore
+		maxIPsPerENI  int
+		warmENITarget int
+		warmIPTarget  int
+		datastore     *datastore.DataStore
 	}
 
 	tests := []struct {
@@ -447,7 +447,7 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 		fields fields
 		want   bool
 	}{
-		{"Test new ds, all defaults", fields{14,  1, 0, datastore.NewDataStore()}, true},
+		{"Test new ds, all defaults", fields{14, 1, 0, datastore.NewDataStore()}, true},
 		{"Test new ds, 0 ENIs", fields{14, 0, 0, datastore.NewDataStore()}, true},
 		{"Test new ds, 3 warm IPs", fields{14, 0, 3, datastore.NewDataStore()}, true},
 		{"Test 3 unused IPs, 1 warm", fields{3, 1, 1, datastoreWith3FreeIPs()}, false},
@@ -459,16 +459,16 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &IPAMContext{
-				awsClient:              mockAWS,
-				dataStore:              tt.fields.datastore,
-				k8sClient:              mockK8S,
-				useCustomNetworking:    false,
-				eniConfig:              mockENIConfig,
-				networkClient:          mockNetwork,
-				maxIPsPerENI:           tt.fields.maxIPsPerENI,
-				maxENI:                 -1,
-				warmENITarget:          tt.fields.warmENITarget,
-				warmIPTarget:           tt.fields.warmIPTarget,
+				awsClient:           mockAWS,
+				dataStore:           tt.fields.datastore,
+				k8sClient:           mockK8S,
+				useCustomNetworking: false,
+				eniConfig:           mockENIConfig,
+				networkClient:       mockNetwork,
+				maxIPsPerENI:        tt.fields.maxIPsPerENI,
+				maxENI:              -1,
+				warmENITarget:       tt.fields.warmENITarget,
+				warmIPTarget:        tt.fields.warmIPTarget,
 			}
 			if got := c.nodeIPPoolTooLow(); got != tt.want {
 				t.Errorf("nodeIPPoolTooLow() = %v, want %v", got, tt.want)
