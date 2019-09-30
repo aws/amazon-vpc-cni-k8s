@@ -91,7 +91,7 @@ const (
 	// number of attempts to find an ENI by MAC address after it is attached
 	maxAttemptsLinkByMac = 5
 
-	retryLinkByMacInterval = 5 * time.Second
+	retryLinkByMacInterval = 3 * time.Second
 )
 
 // NetworkAPIs defines the host level and the eni level network related operations
@@ -541,7 +541,6 @@ func LinkByMac(mac string, netLink netlinkwrapper.NetLink, retryInterval time.Du
 		lastErr = errors.Errorf("no interface found which uses mac address %s (attempt %d/%d)", mac, attempt, maxAttemptsLinkByMac)
 		log.Debugf(lastErr.Error())
 	}
-
 }
 
 // SetupENINetwork adds default route to route table (eni-<eni_table>)

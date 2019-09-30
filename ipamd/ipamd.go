@@ -18,6 +18,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -305,6 +306,12 @@ func (c *IPAMContext) nodeInit() error {
 			}
 
 			if err != nil {
+				log.Warnf("Error trying to set up ENI %s: %v", eni.ENIID, err)
+				if strings.Contains(err.Error(), "setupENINetwork: failed to find the link which uses MAC address") {
+					// If we can't find the matching link for this MAC address, there is no point in retrying for this ENI.
+					log.Errorf("Unable to match link for this ENI, going to the next one.")
+					break
+				}
 				log.Debugf("Unable to discover IPs for this ENI yet (attempt %d/%d)", retry, maxRetryCheckENI)
 				time.Sleep(eniAttachTime)
 				continue
@@ -471,7 +478,6 @@ func (c *IPAMContext) decreaseIPPool(interval time.Duration) {
 
 // tryFreeENI always tries to free one ENI
 func (c *IPAMContext) tryFreeENI() {
-
 	eni := c.dataStore.RemoveUnusedENIFromStore(c.warmIPTarget)
 	if eni == "" {
 		log.Info("No ENI to remove, all ENIs have IPs in use")
@@ -700,21 +706,22 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 // 2) set up linux ENI related networking stack.
 // 3) add all ENI's secondary IP addresses to datastore
 func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) error {
-	// Have discovered the attached ENI from metadata service
-	// add eni's IP to IP pool
-	err := c.dataStore.AddENI(eni, int(eniMetadata.DeviceNumber), eni == c.awsClient.GetPrimaryENI())
-	if err != nil && err.Error() != datastore.DuplicatedENIError {
-		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
-	}
-
 	ec2Addrs, eniPrimaryIP, err := c.getENIaddresses(eni)
 	if err != nil {
 		return errors.Wrapf(err, "failed to retrieve ENI %s IP addresses", eni)
 	}
 
+	// Add the ENI to the datastore
+	err = c.dataStore.AddENI(eni, eniMetadata.DeviceNumber, eni == c.awsClient.GetPrimaryENI())
+	if err != nil && err.Error() != datastore.DuplicatedENIError {
+		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
+	}
+
+	// For secondary ENIs, set up the network
 	if eni != c.awsClient.GetPrimaryENI() {
-		err = c.networkClient.SetupENINetwork(eniPrimaryIP, eniMetadata.MAC, int(eniMetadata.DeviceNumber), eniMetadata.SubnetIPv4CIDR)
+		err = c.networkClient.SetupENINetwork(eniPrimaryIP, eniMetadata.MAC, eniMetadata.DeviceNumber, eniMetadata.SubnetIPv4CIDR)
 		if err != nil {
+			log.Errorf("Failed to set up networking for ENI %s", eni)
 			return errors.Wrapf(err, "failed to set up ENI %s network", eni)
 		}
 	}
@@ -893,7 +900,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 
 	curTime := time.Now()
 	timeSinceLast := curTime.Sub(c.lastNodeIPPoolAction)
-	if time.Duration(timeSinceLast) <= interval {
+	if timeSinceLast <= interval {
 		log.Debugf("nodeIPPoolReconcile: skipping because time since last %v <= %v", timeSinceLast, interval)
 		return
 	}
