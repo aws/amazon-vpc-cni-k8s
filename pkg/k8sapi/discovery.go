@@ -110,7 +110,9 @@ func (d *Controller) GetCNIPods() []string {
 	defer d.cniPodsLock.Unlock()
 
 	for k := range d.cniPods {
-		cniPods = append(cniPods, k)
+		if _, ok, _ := d.controller.indexer.GetByKey(k); ok {
+			cniPods = append(cniPods, k)
+		}
 	}
 
 	log.Info("GetCNIPods discovered", cniPods)
