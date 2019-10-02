@@ -645,7 +645,7 @@ func LinkByMac(mac string, netLink netlinkwrapper.NetLink, retryInterval time.Du
 		if attempt > maxAttemptsLinkByMac {
 			return nil, lastErr
 		} else if attempt > 1 {
-			time.Sleep(retryInterval)
+			time.Sleep(retryInterval * time.Duration(attempt))
 		}
 
 		links, err := netLink.LinkList()
@@ -773,7 +773,7 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 					}
 					log.Debugf("Not able to add route route %s/0 via %s table %d (attempt %d/%d)",
 						r.Dst.IP.String(), gw.String(), eniTable, retry, maxRetryRouteAdd)
-					time.Sleep(retryRouteAddInterval)
+					time.Sleep(retryRouteAddInterval * time.Duration(retry))
 				} else if netlinkwrapper.IsRouteExistsError(err) {
 					if err := netLink.RouteReplace(&r); err != nil {
 						return errors.Wrapf(err, "setupENINetwork: unable to replace route entry %s", r.Dst.IP.String())
