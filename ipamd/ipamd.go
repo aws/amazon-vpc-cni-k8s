@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	log "github.com/cihub/seelog"
@@ -161,10 +162,10 @@ type IPAMContext struct {
 	primaryIP            map[string]string
 	lastNodeIPPoolAction time.Time
 	lastDecreaseIPPool   time.Time
-
 	// reconcileCooldownCache keeps timestamps of the last time an IP address was unassigned from an ENI,
 	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
 	reconcileCooldownCache ReconcileCooldownCache
+	terminating            int32 // Flag to warn that the pod is about to shut down.
 }
 
 // Keep track of recently freed IPs to avoid reading stale EC2 metadata
@@ -231,10 +232,13 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 		log.Errorf("Failed to initialize awsutil interface %v", err)
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
-
 	c.awsClient = client
+
+	c.primaryIP = make(map[string]string)
+	c.reconcileCooldownCache.cache = make(map[string]time.Time)
 	c.warmENITarget = getWarmENITarget()
 	c.warmIPTarget = getWarmIPTarget()
+	c.useCustomNetworking = UseCustomNetworkCfg()
 
 	err = c.nodeInit()
 	if err != nil {
@@ -264,10 +268,6 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 	ipMax.Set(float64(c.maxIPsPerENI * c.maxENI))
-
-	c.useCustomNetworking = UseCustomNetworkCfg()
-	c.primaryIP = make(map[string]string)
-	c.reconcileCooldownCache.cache = make(map[string]time.Time)
 
 	enis, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
@@ -453,11 +453,16 @@ func (c *IPAMContext) decreaseIPPool(interval time.Duration) {
 
 // tryFreeENI always tries to free one ENI
 func (c *IPAMContext) tryFreeENI() {
-	eni := c.dataStore.RemoveUnusedENIFromStore(c.warmIPTarget)
-	if eni == "" {
-		log.Info("No ENI to remove, all ENIs have IPs in use")
+	if c.isTerminating() {
+		log.Debug("AWS CNI is terminating, not detaching any ENIs")
 		return
 	}
+
+	eni := c.dataStore.RemoveUnusedENIFromStore(c.warmIPTarget)
+	if eni == "" {
+		return
+	}
+
 	log.Debugf("Start freeing ENI %s", eni)
 	err := c.awsClient.FreeENI(eni)
 	if err != nil {
@@ -557,6 +562,11 @@ func (c *IPAMContext) increaseIPPool() {
 	short, _, warmIPTargetDefined := c.ipTargetState()
 	if warmIPTargetDefined && short == 0 {
 		log.Debugf("Skipping increase IP pool, warm IP target reached")
+		return
+	}
+
+	if c.isTerminating() {
+		log.Debug("AWS CNI is terminating, will not try to attach any new IPs or ENIs right now")
 		return
 	}
 
@@ -1048,6 +1058,15 @@ func (c *IPAMContext) ipTargetState() (short int, over int, enabled bool) {
 
 	log.Debugf("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, short: %d, over %d", c.warmIPTarget, total, assigned, available, short, over)
 	return short, over, true
+}
+
+// setTerminating atomically sets the terminating flag.
+func (c *IPAMContext) setTerminating() {
+	atomic.StoreInt32(&c.terminating, 1)
+}
+
+func (c *IPAMContext) isTerminating() bool {
+	return atomic.LoadInt32(&c.terminating) > 0
 }
 
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
