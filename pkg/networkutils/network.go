@@ -17,6 +17,7 @@ import (
 	"encoding/binary"
 	"encoding/csv"
 	"fmt"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 	"io"
 	"math"
 	"net"
@@ -645,7 +646,7 @@ func LinkByMac(mac string, netLink netlinkwrapper.NetLink, retryInterval time.Du
 		if attempt > maxAttemptsLinkByMac {
 			return nil, lastErr
 		} else if attempt > 1 {
-			time.Sleep(retryInterval * time.Duration(attempt))
+			time.Sleep(retryInterval)
 		}
 
 		links, err := netLink.LinkList()
@@ -759,36 +760,28 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 			return errors.Wrap(err, "setupENINetwork: failed to clean up old routes")
 		}
 
-		// In case of route dependency, retry few times
-		retry := 0
-		for {
+		err = retry.RetryNWithBackoff(retry.NewSimpleBackoff(time.Millisecond*500, retryRouteAddInterval*time.Duration(maxRetryRouteAdd), 0.15, 2.0), maxRetryRouteAdd, func() error {
 			if err := netLink.RouteAdd(&r); err != nil {
 				if netlinkwrapper.IsNetworkUnreachableError(err) {
-					retry++
-					if retry > maxRetryRouteAdd {
-						log.Errorf("Failed to add route %s/0 via %s table %d",
-							r.Dst.IP.String(), gw.String(), eniTable)
-						return errors.Wrapf(err, "setupENINetwork: failed to add route %s/0 via %s table %d",
-							r.Dst.IP.String(), gw.String(), eniTable)
-					}
-					log.Debugf("Not able to add route route %s/0 via %s table %d (attempt %d/%d)",
-						r.Dst.IP.String(), gw.String(), eniTable, retry, maxRetryRouteAdd)
-					time.Sleep(retryRouteAddInterval * time.Duration(retry))
+					log.Debugf("Not able to add route route %s/0 via %s table %d ",
+						r.Dst.IP.String(), gw.String(), eniTable, maxRetryRouteAdd)
+					time.Sleep(retryRouteAddInterval)
 				} else if netlinkwrapper.IsRouteExistsError(err) {
 					if err := netLink.RouteReplace(&r); err != nil {
 						return errors.Wrapf(err, "setupENINetwork: unable to replace route entry %s", r.Dst.IP.String())
 					}
 					log.Debugf("Successfully replaced route to be %s/0", r.Dst.IP.String())
-					break
+					return nil
 				} else {
 					return errors.Wrapf(err, "setupENINetwork: unable to add route %s/0 via %s table %d",
 						r.Dst.IP.String(), gw.String(), eniTable)
 				}
 			} else {
 				log.Debugf("Successfully added route route %s/0 via %s table %d", r.Dst.IP.String(), gw.String(), eniTable)
-				break
+				return nil
 			}
-		}
+			return nil
+		})
 	}
 
 	// Remove the route that default out to ENI-x out of main route table
