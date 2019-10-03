@@ -78,6 +78,8 @@ func TestNodeInit(t *testing.T) {
 		maxENI:        4,
 		warmENITarget: 1,
 		warmIPTarget:  3,
+		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
 		networkClient: mockNetwork}
 
 	eni1 := awsutils.ENIMetadata{
@@ -175,6 +177,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 		useCustomNetworking: UseCustomNetworkCfg(),
 		eniConfig:           mockENIConfig,
 		primaryIP:           make(map[string]string),
+		terminating:         int32(0),
 	}
 
 	mockContext.dataStore = datastore.NewDataStore()
@@ -252,6 +255,7 @@ func TestTryAddIPToENI(t *testing.T) {
 		networkClient: mockNetwork,
 		eniConfig:     mockENIConfig,
 		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
 	}
 
 	mockContext.dataStore = datastore.NewDataStore()
@@ -310,6 +314,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 		k8sClient:     mockK8S,
 		networkClient: mockNetwork,
 		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
 	}
 
 	mockContext.dataStore = datastore.NewDataStore()
@@ -397,6 +402,7 @@ func TestGetWarmIPTargetState(t *testing.T) {
 		k8sClient:     mockK8S,
 		networkClient: mockNetwork,
 		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
 	}
 
 	mockContext.dataStore = datastore.NewDataStore()
