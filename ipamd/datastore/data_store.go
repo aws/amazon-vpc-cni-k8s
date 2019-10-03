@@ -403,7 +403,6 @@ func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget int) string {
 
 	deletableENI := ds.getDeletableENI(warmIPTarget)
 	if deletableENI == nil {
-		log.Debugf("No ENI can be deleted at this time")
 		return ""
 	}
 

@@ -9,4 +9,4 @@ if [[ -f /host/etc/cni/net.d/aws.conf ]]; then
 fi
 
 echo "====== Starting amazon-k8s-agent ======"
-/app/aws-k8s-agent
+exec /app/aws-k8s-agent
