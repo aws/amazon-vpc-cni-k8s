@@ -625,24 +625,24 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 // return ENI id, error
 func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string, subnet string) (string, error) {
 	eniDescription := eniDescriptionPrefix + cache.instanceID
-	var input *ec2.CreateNetworkInterfaceInput
-
-	if useCustomCfg {
-		log.Infof("createENI: use custom network config, %v, %s", &sg, subnet)
-		input = &ec2.CreateNetworkInterfaceInput{
-			Description: aws.String(eniDescription),
-			Groups:      sg,
-			SubnetId:    aws.String(subnet),
-		}
-	} else {
-		log.Infof("createENI: use primary interface's config, %v, %s", cache.securityGroups, cache.subnetID)
-		input = &ec2.CreateNetworkInterfaceInput{
-			Description: aws.String(eniDescription),
-			Groups:      cache.securityGroups,
-			SubnetId:    aws.String(cache.subnetID),
-		}
+	input := &ec2.CreateNetworkInterfaceInput{
+		Description: aws.String(eniDescription),
+		Groups:      cache.securityGroups,
+		SubnetId:    aws.String(cache.subnetID),
 	}
 
+	if useCustomCfg {
+		log.Info("Using a custom network config for the new ENI")
+		input.Groups = sg
+		input.SubnetId = aws.String(subnet)
+	} else {
+		log.Info("Using same config as the primary interface for the new ENI")
+	}
+	var sgs []string
+	for i := range input.Groups {
+		sgs = append(sgs, *input.Groups[i])
+	}
+	log.Infof("Creating ENI with security groups: %v in subnet: %s", sgs, *input.SubnetId)
 	start := time.Now()
 	result, err := cache.ec2SVC.CreateNetworkInterface(input)
 	awsAPILatency.WithLabelValues("CreateNetworkInterface", fmt.Sprint(err != nil)).Observe(msSince(start))
