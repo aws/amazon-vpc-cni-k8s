@@ -368,7 +368,12 @@ func (c *IPAMContext) nodeInit() error {
 			log.Errorf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", ip.IP, err)
 		}
 	}
-	return nil
+	// For a new node, attach IPs
+	increasedPool, err := c.tryAssignIPs()
+	if err == nil && increasedPool {
+		c.updateLastNodeIPPoolAction()
+	}
+	return err
 }
 
 func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
@@ -661,9 +666,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 	eni := c.dataStore.GetENINeedsIP(c.maxIPsPerENI, c.useCustomNetworking)
 	if eni != nil && len(eni.IPv4Addresses) < c.maxIPsPerENI {
 		currentNumberOfAllocatedIPs := len(eni.IPv4Addresses)
-		log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d", eni.ID, currentNumberOfAllocatedIPs, c.maxIPsPerENI)
 		// Try to allocate all available IPs for this ENI
-		// TODO: Retry with back-off, trying with half the number of IPs each time
 		err = c.awsClient.AllocIPAddresses(eni.ID, c.maxIPsPerENI-currentNumberOfAllocatedIPs)
 		if err != nil {
 			log.Warnf("failed to allocate all available IP addresses on ENI %s, err: %v", eni.ID, err)
