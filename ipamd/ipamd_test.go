@@ -148,6 +148,9 @@ func TestNodeInit(t *testing.T) {
 	mockAWS.EXPECT().GetVPCIPv4CIDRs().Return(cidrs)
 	mockNetwork.EXPECT().UseExternalSNAT().Return(false)
 	mockNetwork.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any(), gomock.Any(), true)
+	// Add IPs
+	mockAWS.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
+	mockAWS.EXPECT().DescribeENI(gomock.Any()).Return(eniResp, &attachmentID, nil)
 
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
