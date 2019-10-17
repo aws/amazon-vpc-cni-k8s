@@ -71,10 +71,10 @@ const (
 	// This environment variable is used to specify the desired minimum number of total IPs.
 	// When it is not set, ipamd defaults to 0.
 	// For example, for a m4.4xlarge node,
-	//     If WARM-IP-TARGET is set to 1 and MINIMUM_IP_TARGET is set to 12, and there are 9 pods running on the node,
+	//     If WARM_IP_TARGET is set to 1 and MINIMUM_IP_TARGET is set to 12, and there are 9 pods running on the node,
 	//     ipamd will make the "warm pool" have 12 IP addresses with 9 being assigned to pods and 3 free IPs.
 	//
-	//     If "MINIMUM-WARM-IP-TARGET is not set, it will default to 0, which causes WARM-IP-TARGET settings to be the
+	//     If "MINIMUM_IP_TARGET is not set, it will default to 0, which causes WARM_IP_TARGET settings to be the
 	//	   only settings considered.
 	envMinimumIPTarget = "MINIMUM_IP_TARGET"
 	noMinimumIPTarget  = 0

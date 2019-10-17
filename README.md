@@ -234,7 +234,7 @@ Specifies the number of free IP addresses that the `ipamD` daemon should attempt
 For example, if `WARM_IP_TARGET` is set to 10, then `ipamD` attempts to keep 10 free IP addresses available at all times. If the
 elastic network interfaces on the node are unable to provide these free addresses, `ipamD` attempts to allocate more interfaces
 until `WARM_IP_TARGET` free IP addresses are available.
-If both `WARM_IP_TARGET` and `MINIMUM_WARM_TARGET` are set, `ipamD` will attempt to meet both constraints.
+If both `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are set, `ipamD` will attempt to meet both constraints.
 This environment variable overrides `WARM_ENI_TARGET` behavior.
 
 `MINIMUM_IP_TARGET`
