@@ -84,6 +84,7 @@ spec:
                       - fargate
       serviceAccountName: aws-node
       hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       tolerations:
         - operator: Exists
       containers:
