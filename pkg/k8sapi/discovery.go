@@ -221,13 +221,14 @@ func (d *Controller) handlePodUpdate(key string) error {
 
 	if !exists {
 		log.Infof("Pods deleted on my node: %v", key)
-		d.workerPodsLock.Lock()
-		defer d.workerPodsLock.Unlock()
-		delete(d.workerPods, key)
 		if strings.HasPrefix(key, metav1.NamespaceSystem+"/"+cniPodName) {
 			d.cniPodsLock.Lock()
 			defer d.cniPodsLock.Unlock()
 			delete(d.cniPods, key)
+		} else {
+			d.workerPodsLock.Lock()
+			defer d.workerPodsLock.Unlock()
+			delete(d.workerPods, key)
 		}
 		return nil
 	}
@@ -241,24 +242,27 @@ func (d *Controller) handlePodUpdate(key string) error {
 	// is dependent on the actual instance, to detect that a Pod was recreated with the same name
 	podName := pod.GetName()
 
-	// check to see if this is one of worker pod on my nodes
+	// Check to see if this is a pod on this node
 	if d.myNodeName == pod.Spec.NodeName && !pod.Spec.HostNetwork {
 		d.workerPodsLock.Lock()
 		defer d.workerPodsLock.Unlock()
-
 		var containerID string
-
-		if len(pod.Status.ContainerStatuses) > 0 {
+		if len(pod.Status.ContainerStatuses) > 0 && pod.Status.ContainerStatuses[0].ContainerID != "" {
 			containerID = pod.Status.ContainerStatuses[0].ContainerID
-			log.Debugf("Found pod (%v)'s container ID: %v", podName, containerID)
+			log.Debugf("Found pod %s with container ID: %s", podName, containerID)
+		} else {
+			log.Debugf("No container ID found for %s", podName)
 		}
 
+		log.Tracef("Update for pod %s: %+v, %+v", podName, pod.Status, pod.Spec)
+
+		// Save pod info
 		d.workerPods[key] = &K8SPodInfo{
-			Container: containerID,
 			Name:      podName,
 			Namespace: pod.GetNamespace(),
-			UID:       string(pod.GetUID()),
+			Container: containerID,
 			IP:        pod.Status.PodIP,
+			UID:       string(pod.GetUID()),
 		}
 
 		log.Infof("Add/Update for Pod %s on my node, namespace = %s, IP = %s", podName, d.workerPods[key].Namespace, d.workerPods[key].IP)

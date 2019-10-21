@@ -281,17 +281,18 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.New("del cmd: failed to process delete request")
 	}
 
-	addr := &net.IPNet{
-		IP:   net.ParseIP(r.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
-
-	err = driverClient.TeardownNS(addr, int(r.DeviceNumber))
-
-	if err != nil {
-		log.Errorf("Failed on TeardownPodNetwork for pod %s namespace %s container %s: %v",
-			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), err)
-		return err
+	deletedPodIp := net.ParseIP(r.IPv4Addr)
+	if deletedPodIp != nil {
+		addr := &net.IPNet{
+			IP:   deletedPodIp,
+			Mask: net.IPv4Mask(255, 255, 255, 255),
+		}
+		err = driverClient.TeardownNS(addr, int(r.DeviceNumber))
+		if err != nil {
+			log.Errorf("Failed on TeardownPodNetwork for pod %s namespace %s container %s: %v",
+				string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), err)
+			return err
+		}
 	}
 	return nil
 }
@@ -299,15 +300,14 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 func main() {
 	logger.SetupLogger(logger.GetLogFileLocation(defaultLogFilePath))
 
-	log.Infof("Starting CNI Plugin %s  ...", version)
+	log.Infof("Starting CNI Plugin %s ...", version)
 
 	exitCode := 0
-
 	if e := skel.PluginMainWithError(cmdAdd, cmdDel, cniSpecVersion.All); e != nil {
 		exitCode = 1
 		log.Error("Failed CNI request: ", e)
 		if err := e.Print(); err != nil {
-			log.Error("Error writing error JSON to stdout: ", err)
+			log.Errorf("Error writing error JSON to stdout: %v", err)
 		}
 	}
 
