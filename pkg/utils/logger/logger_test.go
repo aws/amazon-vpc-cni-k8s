@@ -23,7 +23,7 @@ import (
 
 func TestGetLogFileLocationReturnsOverriddenPath(t *testing.T) {
 	path := "/tmp/foo"
-	os.Setenv(envLogFilePath, path)
+	_ = os.Setenv(envLogFilePath, path)
 	defer os.Unsetenv(envLogFilePath)
 
 	assert.Equal(t, path, GetLogFileLocation("/tmp/bar"))
@@ -35,26 +35,26 @@ func TestGetLogFileLocationReturnsDefaultPath(t *testing.T) {
 }
 
 func TestLogLevelReturnsOverriddenLevel(t *testing.T) {
-	os.Setenv(envLogLevel, "DEBUG")
+	_ = os.Setenv(envLogLevel, "INFO")
 	defer os.Unsetenv(envLogLevel)
 
 	var expectedLogLevel log.LogLevel
-	expectedLogLevel = log.DebugLvl
+	expectedLogLevel = log.InfoLvl
 	assert.Equal(t, expectedLogLevel.String(), getLogLevel())
 }
 
 func TestLogLevelReturnsDefaultLevelWhenEnvNotSet(t *testing.T) {
 	var expectedLogLevel log.LogLevel
-	expectedLogLevel = log.InfoLvl
+	expectedLogLevel = log.DebugLvl
 	assert.Equal(t, expectedLogLevel.String(), getLogLevel())
 }
 
 func TestLogLevelReturnsDefaultLevelWhenEnvSetToInvalidValue(t *testing.T) {
-	os.Setenv(envLogLevel, "DEBUGGER")
+	_ = os.Setenv(envLogLevel, "EVERYTHING")
 	defer os.Unsetenv(envLogLevel)
 
 	var expectedLogLevel log.LogLevel
-	expectedLogLevel = log.InfoLvl
+	expectedLogLevel = log.DebugLvl
 	assert.Equal(t, expectedLogLevel.String(), getLogLevel())
 }
 
