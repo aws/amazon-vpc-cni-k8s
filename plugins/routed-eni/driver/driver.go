@@ -165,7 +165,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 
 // SetupNS wires up linux networking for a pod's network
 func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool) error {
-	log.Debugf("SetupNS: hostVethName=%s,contVethName=%s, netnsPath=%s table=%d\n", hostVethName, contVethName, netnsPath, table)
+	log.Debugf("SetupNS: hostVethName=%s,contVethName=%s, netnsPath=%s table=%d", hostVethName, contVethName, netnsPath, table)
 	return setupNS(hostVethName, contVethName, netnsPath, addr, table, vpcCIDRs, useExternalSNAT, os.netLink, os.ns)
 }
 
@@ -196,7 +196,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 		return errors.Wrapf(err, "setupNS network: failed to set link %q up", hostVethName)
 	}
 
-	log.Debugf("Setup host route outgoing hostVeth, LinkIndex %d\n", hostVeth.Attrs().Index)
+	log.Debugf("Setup host route outgoing hostVeth, LinkIndex %d", hostVeth.Attrs().Index)
 	addrHostAddr := &net.IPNet{
 		IP:   addr.IP,
 		Mask: net.CIDRMask(32, 32)}

@@ -636,7 +636,7 @@ func (c *IPAMContext) tryAllocateENI() error {
 
 	err = c.awsClient.AllocIPAddresses(eni, ipsToAllocate)
 	if err != nil {
-		log.Warnf("Failed to allocate %d IP addresses on an ENI: %v",ipsToAllocate, err)
+		log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", ipsToAllocate, err)
 		// Continue to process the allocated IP addresses
 		ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 	}
