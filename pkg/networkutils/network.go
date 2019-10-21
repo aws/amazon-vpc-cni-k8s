@@ -40,12 +40,12 @@ import (
 )
 
 const (
-	// 0- 511 can be used other higher priorities
+	// 0 - 511 can be used other higher priorities
 	toPodRulePriority = 512
 
 	// 513 - 1023, can be used priority lower than toPodRulePriority but higher than default nonVPC CIDR rule
 
-	// 1024 is reserved for (ip rule not to <vpc's subnet> table main)
+	// 1024 is reserved for (ip rule not to <VPC's subnet> table main)
 	hostRulePriority = 1024
 
 	// 1025 - 1535 can be used priority lower than fromPodRulePriority but higher than default nonVPC CIDR rule
@@ -54,8 +54,8 @@ const (
 	mainRoutingTable = unix.RT_TABLE_MAIN
 
 	// This environment is used to specify whether an external NAT gateway will be used to provide SNAT of
-	// secondary ENI IP addresses.  If set to "true", the SNAT iptables rule and off-VPC ip rule will not
-	// be installed and will be removed if they are already installed.  Defaults to false.
+	// secondary ENI IP addresses. If set to "true", the SNAT iptables rule and off-VPC ip rule will not
+	// be installed and will be removed if they are already installed. Defaults to false.
 	envExternalSNAT = "AWS_VPC_K8S_CNI_EXTERNALSNAT"
 
 	// This environment is used to specify a comma separated list of ipv4 CIDRs to exclude from SNAT. An additional rule
@@ -70,8 +70,8 @@ const (
 	envRandomizeSNAT = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 
 	// envNodePortSupport is the name of environment variable that configures whether we implement support for
-	// NodePorts on the primary ENI.  This requires that we add additional iptables rules and loosen the kernel's
-	// RPF check as described below.  Defaults to true.
+	// NodePorts on the primary ENI. This requires that we add additional iptables rules and loosen the kernel's
+	// RPF check as described below. Defaults to true.
 	envNodePortSupport = "AWS_VPC_CNI_NODE_PORT_SUPPORT"
 
 	// envConnmark is the name of the environment variable that overrides the default connection mark, used to
@@ -229,14 +229,14 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 			return errors.Wrapf(err, "failed to SetupHostNetwork")
 		}
 		// If node port support is enabled, configure the kernel's reverse path filter check on eth0 for "loose"
-		// filtering.  This is required because
+		// filtering. This is required because
 		// - NodePorts are exposed on eth0
 		// - The kernel's RPF check happens after incoming packets to NodePorts are DNATted to the pod IP.
-		// - For pods assigned to secondary ENIs, the routing table includes source-based routing.  When the kernel does
+		// - For pods assigned to secondary ENIs, the routing table includes source-based routing. When the kernel does
 		//   the RPF check, it looks up the route using the pod IP as the source.
 		// - Thus, it finds the source-based route that leaves via the secondary ENI.
 		// - In "strict" mode, the RPF check fails because the return path uses a different interface to the incoming
-		//   packet.  In "loose" mode, the check passes because some route was found.
+		//   packet. In "loose" mode, the check passes because some route was found.
 		primaryIntfRPFilter := "/proc/sys/net/ipv4/conf/" + primaryIntf + "/rp_filter"
 		const rpFilterLoose = "2"
 
@@ -809,14 +809,14 @@ func incrementIPv4Addr(ip net.IP) (net.IP, error) {
 	if ip4 == nil {
 		return nil, fmt.Errorf("%q is not a valid IPv4 Address", ip)
 	}
-	intIP := binary.BigEndian.Uint32([]byte(ip4))
+	intIP := binary.BigEndian.Uint32(ip4)
 	if intIP == (1<<32 - 1) {
 		return nil, fmt.Errorf("%q will be overflowed", ip)
 	}
 	intIP++
-	bytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(bytes, intIP)
-	return net.IP(bytes), nil
+	nextIPv4 := make(net.IP, 4)
+	binary.BigEndian.PutUint32(nextIPv4, intIP)
+	return nextIPv4, nil
 }
 
 // GetRuleList returns IP rules
