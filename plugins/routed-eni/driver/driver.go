@@ -213,7 +213,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 	}
 	log.Debugf("Successfully set host route to be %s/0", route.Dst.IP.String())
 
-	err = addContainerRule(netLink, true, addr, toContainerRulePriority, mainRouteTable)
+	err = addContainerRule(netLink, true, addr, mainRouteTable)
 
 	if err != nil {
 		log.Errorf("Failed to add toContainer rule for %s err=%v, ", addr.String(), err)
@@ -226,7 +226,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 	if table > 0 {
 		if useExternalSNAT {
 			// add rule: 1536: from <podIP> use table <table>
-			err = addContainerRule(netLink, false, addr, fromContainerRulePriority, table)
+			err = addContainerRule(netLink, false, addr, table)
 			if err != nil {
 				log.Errorf("Failed to add fromContainer rule for %s err: %v", addr.String(), err)
 				return errors.Wrap(err, "add NS network: failed to add fromContainer rule")
@@ -262,16 +262,21 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 	return nil
 }
 
-func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *net.IPNet, priority int, table int) error {
+func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *net.IPNet, table int) error {
+	if addr == nil {
+		return errors.New("can't add container rules without an IP address")
+	}
 	containerRule := netLink.NewRule()
-
 	if isToContainer {
+		// Example: 512:	from all to 10.200.202.222 lookup main
 		containerRule.Dst = addr
+		containerRule.Priority = toContainerRulePriority
 	} else {
+		// Example: 1536:	from 10.200.202.222 to 10.200.0.0/16 lookup 2
 		containerRule.Src = addr
+		containerRule.Priority = fromContainerRulePriority
 	}
 	containerRule.Table = table
-	containerRule.Priority = priority
 
 	err := netLink.RuleDel(containerRule)
 	if err != nil && !containsNoSuchRule(err) {
@@ -292,7 +297,10 @@ func (os *linuxNetwork) TeardownNS(addr *net.IPNet, table int) error {
 }
 
 func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink) error {
-	// remove to-pod rule
+	if addr == nil {
+		return errors.New("can't tear down network namespace with no IP address")
+	}
+	// Remove to-pod rule
 	toContainerRule := netLink.NewRule()
 	toContainerRule.Dst = addr
 	toContainerRule.Priority = toContainerRulePriority
@@ -324,6 +332,7 @@ func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink) erro
 		Dst:   addrHostAddr}); err != nil {
 		log.Errorf("delete NS network: failed to delete host route for %s, %v", addr.String(), err)
 	}
+	log.Debug("Tear down of NS complete")
 	return nil
 }
 
