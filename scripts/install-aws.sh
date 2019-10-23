@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 echo "====== Installing AWS-CNI ======"
 sed -i s/__VETHPREFIX__/"${AWS_VPC_K8S_CNI_VETHPREFIX:-"eni"}"/g /app/10-aws.conflist
+sed -i s/__MTU__/"${AWS_VPC_ENI_MTU:-"9001"}"/g /app/10-aws.conflist
 cp /app/portmap /host/opt/cni/bin/
 cp /app/aws-cni-support.sh /host/opt/cni/bin/
 

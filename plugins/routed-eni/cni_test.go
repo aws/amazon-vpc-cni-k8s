@@ -56,15 +56,7 @@ func setup(t *testing.T) (*gomock.Controller,
 		mock_driver.NewMockNetworkAPIs(ctrl)
 }
 
-type RPCCONN interface {
-	Close() error
-}
-
 type rpcConn struct{}
-
-func NewRPCCONN() RPCCONN {
-	return &rpcConn{}
-}
 
 func (*rpcConn) Close() error {
 	return nil
@@ -101,11 +93,12 @@ func TestCmdAdd(t *testing.T) {
 	}
 
 	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any()).Return(nil)
+		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
 
-	add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
 }
 
 func TestCmdAddNetworkErr(t *testing.T) {
@@ -169,7 +162,7 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 	}
 
 	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
+		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
 
 	// when SetupPodNetwork fails, expect to return IP back to datastore
 	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
@@ -213,7 +206,8 @@ func TestCmdDel(t *testing.T) {
 
 	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber)).Return(nil)
 
-	del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
 }
 
 func TestCmdDelErrDelNetwork(t *testing.T) {
@@ -242,7 +236,8 @@ func TestCmdDelErrDelNetwork(t *testing.T) {
 
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, errors.New("error on DelNetwork"))
 
-	del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Error(t, err)
 }
 
 func TestCmdDelErrTeardown(t *testing.T) {
@@ -278,5 +273,6 @@ func TestCmdDelErrTeardown(t *testing.T) {
 
 	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber)).Return(errors.New("error on teardown"))
 
-	del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Error(t, err)
 }

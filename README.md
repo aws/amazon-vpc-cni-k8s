@@ -273,6 +273,18 @@ is not used, and the maximum number of ENIs is always equal to the maximum numbe
 
 ---
 
+`AWS_VPC_K8S_CNI_LOGLEVEL`
+
+Type: String
+
+Default: `DEBUG`
+
+Valid Values: `trace`, `debug`, `info`, `warn`, `error`, `critical` or `off`. (Not case sensitive)
+
+Specifies the loglevel for ipamd.
+
+---
+
 `AWS_VPC_K8S_CNI_LOG_FILE`
 
 Type: String
