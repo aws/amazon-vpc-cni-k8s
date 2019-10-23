@@ -78,7 +78,6 @@ spec:
                       - amd64
       serviceAccountName: aws-node
       hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
       tolerations:
         - operator: Exists
       containers:
