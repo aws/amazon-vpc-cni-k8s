@@ -1,5 +1,13 @@
 # Changelog
 
+# v1.5.5
+
+* Bug fix - [Revert "Return delete success for pods that never got scheduled"](https://github.com/aws/amazon-vpc-cni-k8s/pull/672/commits/474479d7455f41c514ffcd58390a2a3ebae26de5) (#672, @mogren)
+* Improvement - [Add support for r5dn instance family](https://github.com/aws/amazon-vpc-cni-k8s/pull/656) (#656, @mogren)
+* Improvement - [Add support for m5n/m5dn/r5n instances](https://github.com/aws/amazon-vpc-cni-k8s/pull/657) (#657, @Jeffwan)
+* Improvement - [Update cni-metrics-helper to v1.5.5](https://github.com/aws/amazon-vpc-cni-k8s/pull/672) (#672, @mogren)
+
+
 ## v1.5.4
 
 * Improvement - [Add support for g4dn instance family](https://github.com/aws/amazon-vpc-cni-k8s/pull/621) (#621, @mogren)
@@ -15,6 +23,7 @@
 * Improvement - [Exit early if MAC address doesn't match](https://github.com/aws/amazon-vpc-cni-k8s/pull/582) (#582, @mogren)
 
 ## v1.5.2
+
 * Bug fix - [Fix formatting flag](https://github.com/aws/amazon-vpc-cni-k8s/pull/521) (#521, @uthark)
 * Bug fix - [Fix formatting issue](https://github.com/aws/amazon-vpc-cni-k8s/pull/524) (#524, @uthark)
 * Bug fix - [Detach ENI before deleting](https://github.com/aws/amazon-vpc-cni-k8s/pull/538) (#538, @uthark)
