@@ -421,8 +421,8 @@ func TestGetWarmIPTargetState(t *testing.T) {
 
 	// add 2 addresses to datastore
 	_ = mockContext.dataStore.AddENI("eni-1", 1, true)
-	_ = mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.1")
-	_ = mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.2")
+	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.1")
+	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.2")
 
 	short, over, warmIPTargetDefined = mockContext.ipTargetState()
 	assert.True(t, warmIPTargetDefined)
@@ -430,9 +430,9 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	assert.Equal(t, 0, over)
 
 	// add 3 more addresses to datastore
-	_ = mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.3")
-	_ = mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.4")
-	_ = mockContext.dataStore.AddIPv4AddressFromStore("eni-1", "1.1.1.5")
+	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.3")
+	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.4")
+	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.5")
 
 	short, over, warmIPTargetDefined = mockContext.ipTargetState()
 	assert.True(t, warmIPTargetDefined)
@@ -489,9 +489,9 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 func datastoreWith3FreeIPs() *datastore.DataStore {
 	datastoreWith3FreeIPs := datastore.NewDataStore()
 	_ = datastoreWith3FreeIPs.AddENI(primaryENIid, 1, true)
-	_ = datastoreWith3FreeIPs.AddIPv4AddressFromStore(primaryENIid, ipaddr01)
-	_ = datastoreWith3FreeIPs.AddIPv4AddressFromStore(primaryENIid, ipaddr02)
-	_ = datastoreWith3FreeIPs.AddIPv4AddressFromStore(primaryENIid, ipaddr03)
+	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr01)
+	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr02)
+	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr03)
 	return datastoreWith3FreeIPs
 }
 

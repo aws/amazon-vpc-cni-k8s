@@ -76,28 +76,28 @@ func TestAddENIIPv4Address(t *testing.T) {
 	err = ds.AddENI("eni-2", 2, false)
 	assert.NoError(t, err)
 
-	err = ds.AddIPv4AddressFromStore("eni-1", "1.1.1.1")
+	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 1)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 1)
 
-	err = ds.AddIPv4AddressFromStore("eni-1", "1.1.1.1")
+	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
 	assert.Error(t, err)
 	assert.Equal(t, ds.total, 1)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 1)
 
-	err = ds.AddIPv4AddressFromStore("eni-1", "1.1.1.2")
+	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.2")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 2)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
 
-	err = ds.AddIPv4AddressFromStore("eni-2", "1.1.2.2")
+	err = ds.AddIPv4AddressToStore("eni-2", "1.1.2.2")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
 	assert.Equal(t, len(ds.eniIPPools["eni-2"].IPv4Addresses), 1)
 
-	err = ds.AddIPv4AddressFromStore("dummy-eni", "1.1.2.2")
+	err = ds.AddIPv4AddressToStore("dummy-eni", "1.1.2.2")
 	assert.Error(t, err)
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
@@ -114,17 +114,17 @@ func TestGetENIIPPools(t *testing.T) {
 	err = ds.AddENI("eni-2", 2, false)
 	assert.NoError(t, err)
 
-	err = ds.AddIPv4AddressFromStore("eni-1", "1.1.1.1")
+	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 1)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 1)
 
-	err = ds.AddIPv4AddressFromStore("eni-1", "1.1.1.2")
+	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.2")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 2)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
 
-	err = ds.AddIPv4AddressFromStore("eni-2", "1.1.2.2")
+	err = ds.AddIPv4AddressToStore("eni-2", "1.1.2.2")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
@@ -143,17 +143,17 @@ func TestDelENIIPv4Address(t *testing.T) {
 	err := ds.AddENI("eni-1", 1, true)
 	assert.NoError(t, err)
 
-	err = ds.AddIPv4AddressFromStore("eni-1", "1.1.1.1")
+	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 1)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 1)
 
-	err = ds.AddIPv4AddressFromStore("eni-1", "1.1.1.2")
+	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.2")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 2)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
 
-	err = ds.AddIPv4AddressFromStore("eni-1", "1.1.1.3")
+	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.3")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 3)
@@ -177,11 +177,11 @@ func TestPodIPv4Address(t *testing.T) {
 
 	ds.AddENI("eni-2", 2, false)
 
-	ds.AddIPv4AddressFromStore("eni-1", "1.1.1.1")
+	ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
 
-	ds.AddIPv4AddressFromStore("eni-1", "1.1.1.2")
+	ds.AddIPv4AddressToStore("eni-1", "1.1.1.2")
 
-	ds.AddIPv4AddressFromStore("eni-2", "1.1.2.2")
+	ds.AddIPv4AddressToStore("eni-2", "1.1.2.2")
 
 	podInfo := k8sapi.K8SPodInfo{
 		Name:      "pod-1",
