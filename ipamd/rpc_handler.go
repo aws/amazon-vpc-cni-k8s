@@ -93,14 +93,7 @@ func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.
 	}
 	log.Infof("Send DelNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", ip, deviceNumber, err)
 
-	// Plugins should generally complete a DEL action without error even if some resources are missing. For example,
-	// an IPAM plugin should generally release an IP allocation and return success even if the container network
-	// namespace no longer exists, unless that network namespace is critical for IPAM management
-	success := true
-	if err != nil && err != datastore.ErrUnknownPod {
-		success = false
-	}
-	return &pb.DelNetworkReply{Success: success, IPv4Addr: ip, DeviceNumber: int32(deviceNumber)}, nil
+	return &pb.DelNetworkReply{Success: err == nil, IPv4Addr: ip, DeviceNumber: int32(deviceNumber)}, nil
 }
 
 // RunRPCHandler handles request from gRPC
