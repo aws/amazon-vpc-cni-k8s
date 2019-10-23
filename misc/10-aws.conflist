@@ -5,7 +5,8 @@
     {
       "name": "aws-cni",
       "type": "aws-cni",
-      "vethPrefix": "__VETHPREFIX__"
+      "vethPrefix": "__VETHPREFIX__",
+      "mtu": "__MTU__"
     },
     {
       "type": "portmap",
