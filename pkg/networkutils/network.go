@@ -163,7 +163,7 @@ func New() NetworkAPIs {
 		typeOfSNAT:             typeOfSNAT(),
 		nodePortSupportEnabled: nodePortSupportEnabled(),
 		mainENIMark:            getConnmark(),
-		mtu:                    GetEthernetMTU(),
+		mtu:                    GetEthernetMTU(""),
 
 		netLink: netlinkwrapper.NewNetLink(),
 		ns:      nswrapper.NewNS(),
@@ -245,6 +245,14 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		if err != nil {
 			return errors.Wrapf(err, "failed to configure %s RPF check", primaryIntf)
 		}
+	}
+
+	link, err := LinkByMac(primaryMAC, n.netLink, retryLinkByMacInterval)
+	if err != nil {
+		return errors.Wrapf(err, "setupHostNetwork: failed to find the link primary ENI with MAC address %s", primaryMAC)
+	}
+	if err = n.netLink.LinkSetMTU(link, n.mtu); err != nil {
+		return errors.Wrapf(err, "setupHostNetwork: failed to set MTU to %d for %s", n.mtu, primaryIntf)
 	}
 
 	// If node port support is enabled, add a rule that will force force marked traffic out of the main ENI.  We then
@@ -936,9 +944,13 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 	return nil
 }
 
-// GetEthernetMTU gets the MTU setting from AWS_VPC_ENI_MTU, or defaults to 9001 if not set.
-func GetEthernetMTU() int {
-	if envMTUValue := os.Getenv(envMTU); envMTUValue != "" {
+// GetEthernetMTU gets the MTU setting from AWS_VPC_ENI_MTU if set, or takes the passed in string. Defaults to 9001 if not set.
+func GetEthernetMTU(envMTUValue string) int {
+	inputStr, found := os.LookupEnv(envMTU)
+	if found {
+		envMTUValue = inputStr
+	}
+	if envMTUValue != "" {
 		mtu, err := strconv.Atoi(envMTUValue)
 		if err != nil {
 			log.Errorf("Failed to parse %s will use %d: %v", envMTU, maximumMTU, err.Error())
