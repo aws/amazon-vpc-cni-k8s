@@ -729,7 +729,7 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 			primaryIP = aws.StringValue(ec2Addr.PrivateIpAddress)
 			continue
 		}
-		err := c.dataStore.AddIPv4AddressFromStore(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
+		err := c.dataStore.AddIPv4AddressToStore(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
 			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store", ec2Addr.PrivateIpAddress)
 			// continue to add next address
@@ -987,7 +987,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 			}
 		}
 
-		err := c.dataStore.AddIPv4AddressFromStore(eni, localIP)
+		err := c.dataStore.AddIPv4AddressToStore(eni, localIP)
 		if err != nil && err.Error() == datastore.IPAlreadyInStoreError {
 			log.Debugf("Reconciled IP %s on ENI %s", localIP, eni)
 			// mark action = remove it from ipPool since the IP should not be deleted
