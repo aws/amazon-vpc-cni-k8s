@@ -120,7 +120,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	// Default the host-side veth prefix to 'eni'.
 	if conf.VethPrefix == "" {
-		conf.VethPrefix = "eni"
+		conf.VethPrefix = "veth"
 	}
 	if len(conf.VethPrefix) > 4 {
 		return errors.New("conf.VethPrefix can be at most 4 characters long")
