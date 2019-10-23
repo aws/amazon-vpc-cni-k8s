@@ -22,6 +22,8 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
+
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 
@@ -67,6 +69,9 @@ type NetConf struct {
 	// veth device name. It should be no more than four characters, and
 	// defaults to 'eni'.
 	VethPrefix string `json:"vethPrefix"`
+
+	// MTU for eth0
+	MTU string `json:"mtu"`
 }
 
 // K8sArgs is the valid CNI_ARGS used for Kubernetes
@@ -120,6 +125,13 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	if len(conf.VethPrefix) > 4 {
 		return errors.New("conf.VethPrefix can be at most 4 characters long")
 	}
+
+	// MTU
+	if conf.MTU == "" {
+		log.Debug("MTU not set, defaulting to 9001")
+		conf.MTU = "9001"
+	}
+	mtu := networkutils.GetEthernetMTU(conf.MTU)
 
 	cniVersion := conf.CNIVersion
 
@@ -175,7 +187,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	// Note: the maximum length for linux interface name is 15
 	hostVethName := generateHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 
-	err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber), r.VPCcidrs, r.UseExternalSNAT)
+	err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber), r.VPCcidrs, r.UseExternalSNAT, mtu)
 
 	if err != nil {
 		log.Errorf("Failed SetupPodNetwork for pod %s namespace %s container %s: %v",
