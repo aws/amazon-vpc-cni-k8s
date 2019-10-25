@@ -48,7 +48,7 @@ func TestServer_AddNetwork(t *testing.T) {
 		K8S_POD_NAME:               "pod",
 		K8S_POD_NAMESPACE:          "ns",
 		K8S_POD_INFRA_CONTAINER_ID: "cid",
-		IfName:                     "veth",
+		IfName:                     "eni",
 	}
 
 	vpcCIDRs := []*string{aws.String(vpcCIDR)}
