@@ -1,0 +1,22 @@
+# cni-e2e test
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: cni-test
+  name: cni-e2e
+  labels:
+    app: cni-e2e
+spec:
+  hostNetwork: true
+  serviceAccountName: "cni-tester"
+  terminationGracePeriodSeconds: 180
+  restartPolicy: Never
+  containers:
+  - name: cni-e2e
+    image: {{CNI_E2E_TEST_IMAGE_URI}}
+    imagePullPolicy: Always
+    args: ["cni", "true"]
+    env:
+    - name: TESTPOD_IMAGE_URI
+      value: {{TESTPOD_IMAGE_URI}}

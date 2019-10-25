@@ -1,0 +1,20 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: cni-test
+  name: cni-e2e
+  labels:
+    app: cni-e2e
+spec:
+  serviceAccountName: "cni-tester"
+  terminationGracePeriodSeconds: 180
+  restartPolicy: Never
+  containers:
+  - name: cni-e2e
+    image: 038954622175.dkr.ecr.us-west-2.amazonaws.com/cni/amazon-k8s-cni-test-e2e:v1.5.0-rc1-67-g0e1f6167-dirty
+    imagePullPolicy: Always
+    args: ["cni", "false"]
+    env: 
+    - name: TESTPOD_IMAGE_URI
+      value: 038954622175.dkr.ecr.us-west-2.amazonaws.com/cni/amazon-k8s-cni-testpod:latest
