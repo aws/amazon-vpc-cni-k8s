@@ -324,7 +324,19 @@ func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENIIPPool)
 	return otherWarmIPs < warmIPTarget
 }
 
-func (ds *DataStore) getDeletableENI(warmIPTarget int) *ENIIPPool {
+// IsRequiredForMinimumIPTarget determines if this ENI is necessary to fulfill whatever MINIMUM_IP_TARGET is
+// set to.
+func (ds *DataStore) isRequiredForMinimumIPTarget(minimumIPTarget int, eni *ENIIPPool) bool {
+	otherIPs := 0
+	for _, other := range ds.eniIPPools {
+		if other.ID != eni.ID {
+			otherIPs += len(other.IPv4Addresses)
+		}
+	}
+	return otherIPs < minimumIPTarget
+}
+
+func (ds *DataStore) getDeletableENI(warmIPTarget int, minimumIPTarget int) *ENIIPPool {
 	for _, eni := range ds.eniIPPools {
 		if eni.IsPrimary {
 			log.Debugf("ENI %s cannot be deleted because it is primary", eni.ID)
@@ -348,6 +360,11 @@ func (ds *DataStore) getDeletableENI(warmIPTarget int) *ENIIPPool {
 
 		if warmIPTarget != 0 && ds.isRequiredForWarmIPTarget(warmIPTarget, eni) {
 			log.Debugf("ENI %s cannot be deleted because it is required for WARM_IP_TARGET: %d", eni.ID, warmIPTarget)
+			continue
+		}
+
+		if minimumIPTarget != 0 && ds.isRequiredForMinimumIPTarget(minimumIPTarget, eni) {
+			log.Debugf("ENI %s cannot be deleted because it is required for MINIMUM_IP_TARGET: %d", eni.ID, minimumIPTarget)
 			continue
 		}
 
@@ -391,11 +408,11 @@ func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENIIPPool
 // RemoveUnusedENIFromStore removes a deletable ENI from the data store.
 // It returns the name of the ENI which has been removed from the data store and needs to be deleted,
 // or empty string if no ENI could be removed.
-func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget int) string {
+func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget int, minimumIPTarget int) string {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	deletableENI := ds.getDeletableENI(warmIPTarget)
+	deletableENI := ds.getDeletableENI(warmIPTarget, minimumIPTarget)
 	if deletableENI == nil {
 		return ""
 	}
