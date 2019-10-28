@@ -243,8 +243,12 @@ EC2 API and that might cause throttling of the requests. It is strongly suggeste
 If both `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are set, `ipamD` will attempt to meet both constraints.
 This environment variable overrides `WARM_ENI_TARGET` behavior.
 
+---
+
 `MINIMUM_IP_TARGET`
+
 Type: Integer
+
 Default: None
 
 Specifies the number of total IP addresses that the `ipamD` daemon should attempt to allocate for pod assignment on the node.
