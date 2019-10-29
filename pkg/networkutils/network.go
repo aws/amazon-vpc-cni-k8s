@@ -27,6 +27,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
+
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 
@@ -759,35 +761,18 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 			return errors.Wrap(err, "setupENINetwork: failed to clean up old routes")
 		}
 
-		// In case of route dependency, retry few times
-		retry := 0
-		for {
-			if err := netLink.RouteAdd(&r); err != nil {
-				if netlinkwrapper.IsNetworkUnreachableError(err) {
-					retry++
-					if retry > maxRetryRouteAdd {
-						log.Errorf("Failed to add route %s/0 via %s table %d",
-							r.Dst.IP.String(), gw.String(), eniTable)
-						return errors.Wrapf(err, "setupENINetwork: failed to add route %s/0 via %s table %d",
-							r.Dst.IP.String(), gw.String(), eniTable)
-					}
-					log.Debugf("Not able to add route route %s/0 via %s table %d (attempt %d/%d)",
-						r.Dst.IP.String(), gw.String(), eniTable, retry, maxRetryRouteAdd)
-					time.Sleep(retryRouteAddInterval)
-				} else if netlinkwrapper.IsRouteExistsError(err) {
-					if err := netLink.RouteReplace(&r); err != nil {
-						return errors.Wrapf(err, "setupENINetwork: unable to replace route entry %s", r.Dst.IP.String())
-					}
-					log.Debugf("Successfully replaced route to be %s/0", r.Dst.IP.String())
-					break
-				} else {
-					return errors.Wrapf(err, "setupENINetwork: unable to add route %s/0 via %s table %d",
-						r.Dst.IP.String(), gw.String(), eniTable)
-				}
-			} else {
-				log.Debugf("Successfully added route route %s/0 via %s table %d", r.Dst.IP.String(), gw.String(), eniTable)
-				break
+		err = retry.RetryNWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, retryRouteAddInterval, 0.15, 2.0), maxRetryRouteAdd, func() error {
+			if err := netLink.RouteReplace(&r); err != nil {
+				log.Debugf("Not able to set route %s/0 via %s table %d",
+					r.Dst.IP.String(), gw.String(), eniTable)
+				return errors.Wrapf(err, "setupENINetwork: unable to replace route entry %s", r.Dst.IP.String())
 			}
+
+			log.Debugf("Successfully added/replaced route to be %s/0", r.Dst.IP.String())
+			return nil
+		})
+		if err != nil {
+			return err
 		}
 	}
 
