@@ -106,10 +106,10 @@ func TestSetupENINetwork(t *testing.T) {
 	mockNetLink.EXPECT().AddrAdd(gomock.Any(), &netlink.Addr{IPNet: testeniAddr}).Return(nil)
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any())
-	mockNetLink.EXPECT().RouteAdd(gomock.Any()).Return(nil)
+	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any())
-	mockNetLink.EXPECT().RouteAdd(gomock.Any()).Return(nil)
+	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil)
 
