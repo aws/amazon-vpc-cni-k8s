@@ -761,15 +761,19 @@ func setupENINetwork(eniIP string, eniMAC string, eniTable int, eniSubnetCIDR st
 			return errors.Wrap(err, "setupENINetwork: failed to clean up old routes")
 		}
 
-		err = retry.RetryNWithBackoff(retry.NewSimpleBackoff(500*time.Microsecond, retryRouteAddInterval, 0.15, 2.0), maxRetryRouteAdd, func() error {
+		err = retry.RetryNWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, retryRouteAddInterval, 0.15, 2.0), maxRetryRouteAdd, func() error {
 			if err := netLink.RouteReplace(&r); err != nil {
-				log.Debugf("Not able to add/replace route route %s/0 via %s table %d ",
-					r.Dst.IP.String(), gw.String(), eniTable, maxRetryRouteAdd)
+				log.Debugf("Not able to set route %s/0 via %s table %d",
+					r.Dst.IP.String(), gw.String(), eniTable)
 				return errors.Wrapf(err, "setupENINetwork: unable to replace route entry %s", r.Dst.IP.String())
 			}
+
 			log.Debugf("Successfully added/replaced route to be %s/0", r.Dst.IP.String())
 			return nil
 		})
+		if err != nil {
+			return err
+		}
 	}
 
 	// Remove the route that default out to ENI-x out of main route table
