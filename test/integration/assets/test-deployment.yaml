@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: integration-test-app
+  labels:
+    app: test
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: test
+  template:
+    metadata:
+      labels:
+        app: test
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.17.5-alpine
+          ports:
+            - containerPort: 80
