@@ -19,19 +19,18 @@ RUN make build-linux && make download-portmap
 
 FROM amazonlinux:2
 RUN yum update -y && \
-    yum install -y iproute && \
     yum install -y iptables && \
+    yum install -y iproute && \
     yum clean all
 
 WORKDIR /app
 
-COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni /app
-COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/misc/10-aws.conflist /app
+COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/misc/10-aws.conflist \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/portmap \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-k8s-agent  \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/grpc_health_probe \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/aws-cni-support.sh \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/install-aws.sh /app/
 
-COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/portmap /app
-
-COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-k8s-agent  /app
-COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/grpc_health_probe /app
-COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/aws-cni-support.sh /app
-COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/install-aws.sh /app
 ENTRYPOINT /app/install-aws.sh
