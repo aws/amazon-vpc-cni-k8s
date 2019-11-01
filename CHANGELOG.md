@@ -6,7 +6,7 @@
 * Improvement - [Add support for r5dn instance family](https://github.com/aws/amazon-vpc-cni-k8s/pull/656) (#656, @mogren)
 * Improvement - [Add support for m5n/m5dn/r5n instances](https://github.com/aws/amazon-vpc-cni-k8s/pull/657) (#657, @Jeffwan)
 * Improvement - [Update cni-metrics-helper to v1.5.5](https://github.com/aws/amazon-vpc-cni-k8s/pull/672) (#672, @mogren)
-
+* Improvement - [Reduce image layers and strip debug flags](https://github.com/aws/amazon-vpc-cni-k8s/pull/699) (#699, @mogren)
 
 ## v1.5.4
 
