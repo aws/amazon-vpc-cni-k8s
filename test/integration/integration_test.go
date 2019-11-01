@@ -1,12 +1,6 @@
 package integration
 
 import (
-	"bytes"
-	"io/ioutil"
-	"net/http"
-	"strconv"
-	"strings"
-
 	"flag"
 	"fmt"
 	"os"
@@ -77,43 +71,8 @@ var _ = ginkgo.Describe("[cni-integration]", func() {
 	var f *framework.Framework
 	f = framework.NewDefaultFramework("cni-integration")
 
-	ginkgo.Context("Host ip rule test", func() {
-		ginkgo.It("Should test something 1", func() {
-			applyTestDeployment()
-			scaleTestDeployment(1)
-			podName := getFirstPodName()
-
-			go func() {
-				KubectlPortForward(f.Namespace.Name, podName, "80")
-			}()
-
-			resp, err := http.Get("http://localhost/")
-			defer resp.Body.Close()
-			Expect(err).Should(BeNil())
-
-			body, err := ioutil.ReadAll(resp.Body)
-			Expect(err).Should(BeNil())
-
-			fmt.Printf(string(body))
-		})
-	})
-
 	ginkgo.It("should enable pod-pod communication", func() {
-		serverPod := &v1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "server-pod",
-			},
-			Spec: v1.PodSpec{
-				Containers: []v1.Container{
-					{
-						Name:    "c",
-						Image:   framework.BusyBoxImage,
-						Command: []string{"sleep", "60"},
-					},
-				},
-				RestartPolicy: v1.RestartPolicyNever,
-			},
-		}
+		serverPod := newTestPod()
 		serverPod, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).Create(serverPod)
 		framework.ExpectNoError(err, "creating pod")
 		framework.ExpectNoError(f.WaitForPodRunning(serverPod.Name), "waiting for pod running")
@@ -134,87 +93,20 @@ var _ = ginkgo.Describe("[cni-integration]", func() {
 
 })
 
-func applyTestDeployment() {
-	stdout, stderr, err := KubectlApply(fmt.Sprintf("%s/test-deployment.yaml", LocalTestContext.AssetsDir))
-	fmt.Printf("%s\n%s", stdout, stderr)
-	if err != nil {
-		fmt.Printf("error applying test deployment: %s", err.Error())
+func newTestPod() *v1.Pod {
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "server-pod",
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Name:    "c",
+					Image:   framework.BusyBoxImage,
+					Command: []string{"sleep", "60"},
+				},
+			},
+			RestartPolicy: v1.RestartPolicyNever,
+		},
 	}
-	Expect(err).Should(BeNil())
-}
-
-func scaleTestDeployment(replicas int) {
-	stdout, stderr, err := KubectlScale(integrationTestAppName, strconv.Itoa(replicas))
-	fmt.Printf("%s\n%s", stdout, stderr)
-	if err != nil {
-		fmt.Printf("error scaling test deployment: %s\n", err)
-	}
-	Expect(err).Should(BeNil())
-}
-
-func getFirstPodName() string {
-	var stdout, stderr bytes.Buffer
-	cmd := framework.KubectlCmd("get", "pods", "-lapp=test", "-o=jsonpath='{.items[0].metadata.name}'")
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	fmt.Printf("%s\n%s", stdout.String(), stderr.String())
-	if err != nil {
-		fmt.Printf("kubectl get pods error: %s\n", err.Error())
-	}
-	Expect(err).Should(BeNil())
-
-	return stdout.String()
-}
-
-func KubectlPortForward(namespace, podName, port string, args ...string) ([]byte, []byte, error) {
-	var stdout, stderr bytes.Buffer
-	cmdArgs := []string{
-		"port-forward",
-		fmt.Sprintf("--namespace=%v", namespace),
-		podName,
-		fmt.Sprintf("%v", port),
-	}
-	cmdArgs = append(cmdArgs, args...)
-
-	cmd := framework.KubectlCmd(cmdArgs...)
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-
-	fmt.Printf("Port Forwarding '%s %s'\n", cmd.Path, strings.Join(cmdArgs, " "))
-	err := cmd.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
-}
-
-func KubectlApply(path string, args ...string) ([]byte, []byte, error) {
-	var stdout, stderr bytes.Buffer
-	cmdArgs := []string{
-		"apply",
-		"-f",
-		path,
-	}
-	cmdArgs = append(cmdArgs, args...)
-
-	cmd := framework.KubectlCmd(cmdArgs...)
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-
-	fmt.Printf("Applying '%s %s'\n", cmd.Path, strings.Join(cmdArgs, " "))
-	err := cmd.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
-}
-
-func KubectlScale(deployment, replicas string, args ...string) ([]byte, []byte, error) {
-	var stdout, stderr bytes.Buffer
-	cmdArgs := []string{
-		"scale",
-		"deployment",
-		deployment,
-		fmt.Sprintf("--replicas=%s", replicas),
-	}
-	cmdArgs = append(cmdArgs, args...)
-
-	cmd := framework.KubectlCmd(cmdArgs...)
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-
-	fmt.Printf("Scaling '%s %s'\n", cmd.Path, strings.Join(cmdArgs, " "))
-	err := cmd.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
 }
