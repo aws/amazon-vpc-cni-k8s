@@ -32,9 +32,9 @@ endif
 
 # Default to build the Linux binary
 build-linux:
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "$(LDFLAGS)"
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-cni -ldflags "$(LDFLAGS)" ./plugins/routed-eni/
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o grpc_health_probe -ldflags "$(LDFLAGS)" ./client/health-check/
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "-s -w $(LDFLAGS)"
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-cni -ldflags " -s -w $(LDFLAGS)" ./plugins/routed-eni/
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o grpc_health_probe -ldflags "-s -w $(LDFLAGS)" ./client/health-check/
 
 # Download portmap plugin
 download-portmap:
@@ -73,7 +73,7 @@ docker-unit-test: build-docker-test
 
 # Build metrics
 build-metrics:
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o cni-metrics-helper/cni-metrics-helper cni-metrics-helper/cni-metrics-helper.go
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -ldflags="-s -w" -o cni-metrics-helper/cni-metrics-helper cni-metrics-helper/cni-metrics-helper.go
 
 # Build metrics Docker image
 docker-metrics:
