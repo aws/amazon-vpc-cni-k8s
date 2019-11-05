@@ -46,6 +46,7 @@ func main() {
 	flags.Lookup("logtostderr").DefValue = "true"
 	flags.Lookup("logtostderr").NoOptDefVal = "true"
 	flags.BoolVar(&options.submitCW, "cloudwatch", true, "a bool")
+	flags.StringVar(&options.kubeconfig, "kubeconfig", "", "Path to a kubeconfig file, specifying how to connect to the API server.")
 
 	flags.Usage = func() {
 		_, _ = fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
@@ -79,7 +80,7 @@ func main() {
 
 	glog.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v", options.submitCW)
 
-	kubeClient, err := k8sapi.CreateKubeClient()
+	kubeClient, err := k8sapi.CreateKubeClient(options.kubeconfig, "")
 	if err != nil {
 		glog.Errorf("Failed to create client: %v", err)
 		os.Exit(1)

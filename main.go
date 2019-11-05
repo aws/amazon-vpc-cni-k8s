@@ -14,6 +14,7 @@
 package main
 
 import (
+	"flag"
 	"io"
 	"os"
 
@@ -31,8 +32,15 @@ const (
 )
 
 var (
-	version string
+	version    string
+	kubeconfig string
+	master     string
 )
+
+func init() {
+	flag.StringVar(&master, "master", "", "The address of the Kubernetes API server (overrides any value in kubeconfig).")
+	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file with authorization and master location information.")
+}
 
 func main() {
 	os.Exit(_main())
@@ -40,11 +48,12 @@ func main() {
 
 func _main() int {
 	defer log.Flush()
+	flag.Parse()
 	logger.SetupLogger(logger.GetLogFileLocation(defaultLogFilePath))
 
 	log.Infof("Starting L-IPAMD %s  ...", version)
 
-	kubeClient, err := k8sapi.CreateKubeClient()
+	kubeClient, err := k8sapi.CreateKubeClient(kubeconfig, master)
 	if err != nil {
 		log.Errorf("Failed to create client: %v", err)
 		return 1
