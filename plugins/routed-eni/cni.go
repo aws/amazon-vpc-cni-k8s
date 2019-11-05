@@ -22,6 +22,8 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 
 	"golang.org/x/net/context"
@@ -282,9 +284,17 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			Reason:                     "PodDeleted"})
 
 	if err != nil {
-		log.Errorf("Error received from DelNetwork grpc call for pod %s namespace %s sandbox %s: %v",
-			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), err)
-		return err
+		if err == datastore.ErrUnknownPod {
+			// Plugins should generally complete a DEL action without error even if some resources are missing. For example,
+			// an IPAM plugin should generally release an IP allocation and return success even if the container network
+			// namespace no longer exists, unless that network namespace is critical for IPAM management
+			log.Infof("Pod %s in namespace %s not found", string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE))
+			return nil
+		} else {
+			log.Errorf("Error received from DelNetwork grpc call for pod %s namespace %s sandbox %s: %v",
+				string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), err)
+			return err
+		}
 	}
 
 	if !r.Success {
@@ -305,6 +315,9 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 				string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), err)
 			return err
 		}
+	} else {
+		log.Warnf("Pod %s in namespace %s did not have a valid IP %s", string(k8sArgs.K8S_POD_NAME),
+			string(k8sArgs.K8S_POD_NAMESPACE), r.IPv4Addr)
 	}
 	return nil
 }
