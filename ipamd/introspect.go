@@ -15,15 +15,18 @@ package ipamd
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	log "github.com/cihub/seelog"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
-	log "github.com/cihub/seelog"
 )
 
 const (
@@ -62,7 +65,20 @@ func (c *IPAMContext) ServeIntrospection() {
 	for {
 		once := sync.Once{}
 		_ = retry.RetryWithBackoff(retry.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
-			err := server.ListenAndServe()
+			var ln net.Listener
+			var err error
+
+			if strings.HasPrefix(server.Addr, "unix:") {
+				socket := strings.TrimPrefix(server.Addr, "unix:")
+				ln, err = net.Listen("unix", socket)
+			} else {
+				ln, err = net.Listen("tcp", server.Addr)
+			}
+
+			if err == nil {
+				err = server.Serve(ln)
+			}
+
 			once.Do(func() {
 				log.Error("Error running http API: ", err)
 			})
