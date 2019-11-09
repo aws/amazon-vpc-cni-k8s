@@ -305,6 +305,8 @@ Default: `127.0.0.1:61679`
 
 Specifies the bind address for the introspection endpoint.
 
+A Unix Domain Socket can be specified with the `unix:` prefix before the socket path.
+
 ---
 
 `DISABLE_INTROSPECTION`
