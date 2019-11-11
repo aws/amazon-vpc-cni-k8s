@@ -81,6 +81,8 @@ var _ = ginkgo.Describe("[cni-integration]", func() {
 
 		framework.ExpectNoError(
 			framework.CheckConnectivityToHost(f, "", "client-pod", serverPod.Status.PodIP, framework.IPv4PingCommand, 30))
+		err = f.ClientSet.CoreV1().Pods(f.Namespace.Name).Delete("server-pod", &metav1.DeleteOptions{})
+		framework.ExpectNoError(err, "deleting pod")
 	})
 
 	ginkgo.It("should enable pod-node communication", func() {
