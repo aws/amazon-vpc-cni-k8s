@@ -25,8 +25,8 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/docker"
-	mock_docker "github.com/aws/amazon-vpc-cni-k8s/pkg/docker/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
+	mock_cri "github.com/aws/amazon-vpc-cni-k8s/pkg/cri/mocks"
 	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	mock_k8sapi "github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi/mocks"
@@ -59,20 +59,20 @@ const (
 func setup(t *testing.T) (*gomock.Controller,
 	*mock_awsutils.MockAPIs,
 	*mock_k8sapi.MockK8SAPIs,
-	*mock_docker.MockAPIs,
+	*mock_cri.MockAPIs,
 	*mock_networkutils.MockNetworkAPIs,
 	*mock_eniconfig.MockENIConfig) {
 	ctrl := gomock.NewController(t)
 	return ctrl,
 		mock_awsutils.NewMockAPIs(ctrl),
 		mock_k8sapi.NewMockK8SAPIs(ctrl),
-		mock_docker.NewMockAPIs(ctrl),
+		mock_cri.NewMockAPIs(ctrl),
 		mock_networkutils.NewMockNetworkAPIs(ctrl),
 		mock_eniconfig.NewMockENIConfig(ctrl)
 }
 
 func TestNodeInit(t *testing.T) {
-	ctrl, mockAWS, mockK8S, mockDocker, mockNetwork, _ := setup(t)
+	ctrl, mockAWS, mockK8S, mockCRI, mockNetwork, _ := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
@@ -84,7 +84,7 @@ func TestNodeInit(t *testing.T) {
 		warmIPTarget:  3,
 		primaryIP:     make(map[string]string),
 		terminating:   int32(0),
-		dockerClient:  mockDocker,
+		criClient:     mockCRI,
 		networkClient: mockNetwork}
 
 	eni1 := awsutils.ENIMetadata{
@@ -148,10 +148,10 @@ func TestNodeInit(t *testing.T) {
 	mockK8S.EXPECT().K8SGetLocalPodIPs().Return([]*k8sapi.K8SPodInfo{{Name: "pod1",
 		Namespace: "default", UID: "pod-uid", IP: ipaddr02}}, nil)
 
-	var dockerList = make(map[string]*docker.ContainerInfo, 0)
-	dockerList["pod-uid"] = &docker.ContainerInfo{ID: "docker-id",
+	var criList = make(map[string]*cri.ContainerInfo, 0)
+	criList["pod-uid"] = &cri.ContainerInfo{ID: "sandbox-id",
 		Name: k8sName, K8SUID: "pod-uid"}
-	mockDocker.EXPECT().GetRunningContainers().Return(dockerList, nil)
+	mockCRI.EXPECT().GetRunningContainers().Return(criList, nil)
 
 	var rules []netlink.Rule
 	mockNetwork.EXPECT().GetRuleList().Return(rules, nil)

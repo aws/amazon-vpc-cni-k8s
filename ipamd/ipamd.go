@@ -34,7 +34,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/docker"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
@@ -166,7 +166,7 @@ type IPAMContext struct {
 	k8sClient            k8sapi.K8SAPIs
 	useCustomNetworking  bool
 	eniConfig            eniconfig.ENIConfig
-	dockerClient         docker.APIs
+	criClient            cri.APIs
 	networkClient        networkutils.NetworkAPIs
 	maxIPsPerENI         int
 	maxENI               int
@@ -239,7 +239,7 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 
 	c.k8sClient = k8sapiClient
 	c.networkClient = networkutils.New()
-	c.dockerClient = docker.New()
+	c.criClient = cri.New()
 	c.eniConfig = eniConfig
 
 	client, err := awsutils.New()
@@ -423,9 +423,9 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 		return nil, nil
 	}
 
-	var containers map[string]*docker.ContainerInfo
+	var containers map[string]*cri.ContainerInfo
 	for retry := 1; retry <= maxK8SRetries; retry++ {
-		containers, err = c.dockerClient.GetRunningContainers()
+		containers, err = c.criClient.GetRunningContainers()
 		if err == nil {
 			break
 		}

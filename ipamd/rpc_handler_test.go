@@ -26,7 +26,7 @@ import (
 )
 
 func TestServer_AddNetwork(t *testing.T) {
-	ctrl, mockAWS, mockK8S, mockDocker, mockNetwork, _ := setup(t)
+	ctrl, mockAWS, mockK8S, mockCRI, mockNetwork, _ := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
@@ -36,7 +36,7 @@ func TestServer_AddNetwork(t *testing.T) {
 		maxENI:        4,
 		warmENITarget: 1,
 		warmIPTarget:  3,
-		dockerClient:  mockDocker,
+		criClient:     mockCRI,
 		networkClient: mockNetwork,
 		dataStore:     datastore.NewDataStore(),
 	}
