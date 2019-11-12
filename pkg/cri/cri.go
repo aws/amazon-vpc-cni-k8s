@@ -10,6 +10,11 @@ import (
 	log "github.com/cihub/seelog"
 )
 
+const (
+	// TODO: Parameterize?
+	criSocketPath = "unix:///var/run/cri.sock"
+)
+
 // ContainerInfo provides container information
 type ContainerInfo struct {
 	ID     string
@@ -28,8 +33,7 @@ func New() *Client {
 }
 
 func (c *Client) GetRunningContainers() (map[string]*ContainerInfo, error) {
-	// TODO: Parameterize socket path
-	conn, err := grpc.Dial("unix:///var/run/dockershim.sock", grpc.WithInsecure())
+	conn, err := grpc.Dial(criSocketPath, grpc.WithInsecure())
 	if err != nil {
 		return nil, err
 	}
