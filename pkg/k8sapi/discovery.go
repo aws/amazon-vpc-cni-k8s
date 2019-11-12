@@ -120,7 +120,7 @@ func (d *Controller) GetCNIPods() []string {
 // DiscoverK8SPods discovers Pods running in the cluster
 func (d *Controller) DiscoverK8SPods() {
 	// create the pod watcher
-	podListWatcher := cache.NewListWatchFromClient(d.kubeClient.CoreV1().RESTClient(), "pods", metav1.NamespaceAll, fields.Everything())
+	podListWatcher := cache.NewListWatchFromClient(d.kubeClient.CoreV1().RESTClient(), "pods", metav1.NamespaceAll, fields.OneTermEqualSelector("spec.nodeName", d.myNodeName))
 
 	// create the workqueue
 	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
