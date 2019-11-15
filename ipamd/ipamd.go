@@ -107,6 +107,10 @@ const (
 	// This environment is used to specify whether Pods need to use a security group and subnet defined in an ENIConfig CRD.
 	// When it is NOT set or set to false, ipamd will use primary interface security group and subnet for Pod network.
 	envCustomNetworkCfg = "AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG"
+
+	// eniNoManageTagKey is the tag that may be set on an ENI to indicate ipamd
+	// should not manage it in any form.
+	eniNoManageTagKey = "node.k8s.amazonaws.com/no_manage"
 )
 
 var (
@@ -128,6 +132,12 @@ var (
 		prometheus.GaugeOpts{
 			Name: "awscni_eni_max",
 			Help: "The maximum number of ENIs that can be attached to the instance",
+		},
+	)
+	unmanagedENIs = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "awscni_eni_unmanaged",
+			Help: "The number of ENIs that are unmanaged on this instance",
 		},
 	)
 	ipMax = prometheus.NewGauge(
@@ -271,25 +281,24 @@ func (c *IPAMContext) nodeInit() error {
 
 	log.Debugf("Start node init")
 
-	c.maxENI, err = c.getMaxENI()
+	allENIs, err := c.awsClient.GetAttachedENIs()
+	if err != nil {
+		log.Error("Failed to retrieve ENI info")
+		return errors.New("ipamd init: failed to retrieve attached ENIs info")
+	}
+	enis, numUnmanaged := filterUnmanagedENIs(allENIs)
+	nodeMaxENI, err := c.getMaxENI()
 	if err != nil {
 		log.Error("Failed to get ENI limit")
 		return err
 	}
-	enisMax.Set(float64(c.maxENI))
-
+	c.maxENI = nodeMaxENI
 	c.maxIPsPerENI, err = c.awsClient.GetENIipLimit()
 	if err != nil {
 		log.Error("Failed to get IPs per ENI limit")
 		return err
 	}
-	ipMax.Set(float64(c.maxIPsPerENI * c.maxENI))
-
-	enis, err := c.awsClient.GetAttachedENIs()
-	if err != nil {
-		log.Error("Failed to retrieve ENI info")
-		return errors.New("ipamd init: failed to retrieve attached ENIs info")
-	}
+	c.updateIPStats(numUnmanaged)
 
 	_, vpcCIDR, err := net.ParseCIDR(c.awsClient.GetVPCIPv4CIDR())
 	if err != nil {
@@ -390,6 +399,11 @@ func (c *IPAMContext) nodeInit() error {
 		c.updateLastNodeIPPoolAction()
 	}
 	return err
+}
+
+func (c *IPAMContext) updateIPStats(unmanaged int) {
+	ipMax.Set(float64(c.maxIPsPerENI * (c.maxENI - unmanaged)))
+	unmanagedENIs.Set(float64(unmanaged))
 }
 
 func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
@@ -786,7 +800,7 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 
 // returns all addresses on ENI, the primary address on ENI, error
 func (c *IPAMContext) getENIaddresses(eni string) ([]*ec2.NetworkInterfacePrivateIpAddress, string, error) {
-	ec2Addrs, _, err := c.awsClient.DescribeENI(eni)
+	ec2Addrs, _, _, err := c.awsClient.DescribeENI(eni)
 	if err != nil {
 		return nil, "", errors.Wrapf(err, "failed to find ENI addresses for ENI %s", eni)
 	}
@@ -941,13 +955,14 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	}
 
 	log.Debug("Reconciling ENI/IP pool info...")
-	attachedENIs, err := c.awsClient.GetAttachedENIs()
-
+	allENIs, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		log.Errorf("IP pool reconcile: Failed to get attached ENI info: %v", err.Error())
 		ipamdErrInc("reconcileFailedGetENIs")
 		return
 	}
+	attachedENIs, numUnmanaged := filterUnmanagedENIs(allENIs)
+	c.updateIPStats(numUnmanaged)
 
 	curENIs := c.dataStore.GetENIInfos()
 
@@ -1104,6 +1119,20 @@ func getMinimumIPTarget() int {
 		}
 	}
 	return noMinimumIPTarget
+}
+
+func filterUnmanagedENIs(enis []awsutils.ENIMetadata) ([]awsutils.ENIMetadata, int) {
+	numFiltered := 0
+	ret := make([]awsutils.ENIMetadata, 0, len(enis))
+	for _, eni := range enis {
+		if eni.Tags[eniNoManageTagKey] == "true" {
+			log.Debugf("skipping ENI %s: tagged with %s", eni.ENIID, eniNoManageTagKey)
+			numFiltered++
+			continue
+		}
+		ret = append(ret, eni)
+	}
+	return ret, numFiltered
 }
 
 // ipTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET,
