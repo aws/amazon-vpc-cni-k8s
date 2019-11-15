@@ -58,6 +58,8 @@ L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/Us
 
 Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
 
+Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
+
 ## Building
 
 * `make` defaults to `make build-linux` that builds the Linux binaries.
