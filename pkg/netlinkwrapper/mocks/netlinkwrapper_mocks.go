@@ -1,4 +1,4 @@
-// Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -231,18 +231,6 @@ func (mr *MockNetLinkMockRecorder) RouteAdd(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RouteAdd", reflect.TypeOf((*MockNetLink)(nil).RouteAdd), arg0)
 }
 
-// RouteReplace mocks base method
-func (m *MockNetLink) RouteReplace(arg0 *netlink.Route) error {
-	ret := m.ctrl.Call(m, "RouteReplace", arg0)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// RouteReplace indicates an expected call of RouteReplace
-func (mr *MockNetLinkMockRecorder) RouteReplace(arg0 interface{}) *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RouteReplace", reflect.TypeOf((*MockNetLink)(nil).RouteReplace), arg0)
-}
-
 // RouteDel mocks base method
 func (m *MockNetLink) RouteDel(arg0 *netlink.Route) error {
 	ret := m.ctrl.Call(m, "RouteDel", arg0)
@@ -266,6 +254,18 @@ func (m *MockNetLink) RouteList(arg0 netlink.Link, arg1 int) ([]netlink.Route, e
 // RouteList indicates an expected call of RouteList
 func (mr *MockNetLinkMockRecorder) RouteList(arg0, arg1 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RouteList", reflect.TypeOf((*MockNetLink)(nil).RouteList), arg0, arg1)
+}
+
+// RouteReplace mocks base method
+func (m *MockNetLink) RouteReplace(arg0 *netlink.Route) error {
+	ret := m.ctrl.Call(m, "RouteReplace", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RouteReplace indicates an expected call of RouteReplace
+func (mr *MockNetLinkMockRecorder) RouteReplace(arg0 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RouteReplace", reflect.TypeOf((*MockNetLink)(nil).RouteReplace), arg0)
 }
 
 // RuleAdd mocks base method

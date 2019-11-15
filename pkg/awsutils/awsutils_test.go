@@ -32,25 +32,29 @@ import (
 )
 
 const (
-	az           = "us-east-1a"
-	localIP      = "10.0.0.10"
-	instanceID   = "i-0e1f3b9eb950e4980"
-	instanceType = "c1.medium"
-	primaryMAC   = "12:ef:2a:98:e5:5a"
-	eni2MAC      = "12:ef:2a:98:e5:5b"
-	sg1          = "sg-2e080f50"
-	sg2          = "sg-2e080f51"
-	sgs          = sg1 + " " + sg2
-	subnetID     = "subnet-6b245523"
-	vpcCIDR      = "10.0.0.0/16"
-	subnetCIDR   = "10.0.1.0/24"
-	accountID    = "694065802095"
-	primaryeniID = "eni-00000000"
-	eniID        = "eni-5731da78"
-	eniAttachID  = "eni-attach-beb21856"
-	eni1Device   = "0"
-	eni2Device   = "2"
-	ownerID      = "i-0946d8a24922d2852"
+	az            = "us-east-1a"
+	localIP       = "10.0.0.10"
+	instanceID    = "i-0e1f3b9eb950e4980"
+	instanceType  = "c1.medium"
+	primaryMAC    = "12:ef:2a:98:e5:5a"
+	eni2MAC       = "12:ef:2a:98:e5:5b"
+	sg1           = "sg-2e080f50"
+	sg2           = "sg-2e080f51"
+	sgs           = sg1 + " " + sg2
+	subnetID      = "subnet-6b245523"
+	vpcCIDR       = "10.0.0.0/16"
+	subnetCIDR    = "10.0.1.0/24"
+	accountID     = "694065802095"
+	primaryeniID  = "eni-00000000"
+	eniID         = "eni-5731da78"
+	eniAttachID   = "eni-attach-beb21856"
+	eni1Device    = "0"
+	eni1PrivateIP = "10.0.0.1"
+	eni2Device    = "2"
+	eni2PrivateIP = "10.0.0.2"
+	eni2AttachID  = "eni-attach-fafdfafd"
+	eni2ID        = "eni-12341234"
+	ownerID       = "i-0946d8a24922d2852"
 )
 
 func setup(t *testing.T) (*gomock.Controller,
@@ -242,23 +246,60 @@ func TestSetPrimaryENs(t *testing.T) {
 }
 
 func TestGetAttachedENIs(t *testing.T) {
-	ctrl, mockMetadata, _ := setup(t)
+	ctrl, mockMetadata, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC+" "+eni2MAC, nil)
 
+	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any()).
+		DoAndReturn(func(input *ec2.DescribeNetworkInterfacesInput) (*ec2.DescribeNetworkInterfacesOutput, error) {
+			output := []*ec2.NetworkInterface{}
+			for _, in := range input.NetworkInterfaceIds {
+				ip := ""
+				attachID := ""
+				switch *in {
+				case eniID:
+					ip, attachID = eni1PrivateIP, eniAttachID
+				case eni2ID:
+					ip, attachID = eni2PrivateIP, eni2AttachID
+				default:
+					panic("no such id " + *in)
+				}
+
+				output = append(output, &ec2.NetworkInterface{
+					PrivateIpAddresses: []*ec2.NetworkInterfacePrivateIpAddress{
+						{
+							PrivateIpAddress: &ip,
+						},
+					},
+					Attachment: &ec2.NetworkInterfaceAttachment{
+						AttachmentId: &attachID,
+					},
+					TagSet: []*ec2.Tag{
+						{
+							Key:   aws.String("foo"),
+							Value: aws.String("foo-value"),
+						},
+					},
+				})
+			}
+			return &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: output,
+			}, nil
+		}).Times(2)
+
 	gomock.InOrder(
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil),
-		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil),
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(eniID, nil),
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Return(subnetCIDR, nil),
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Return("", nil),
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataDeviceNum).Return(eni2Device, nil),
-		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataInterface).Return(eni2MAC, nil),
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataInterface).Return(eni2ID, nil),
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataSubnetCIDR).Return(subnetCIDR, nil),
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataIPv4s).Return("", nil),
 	)
 
-	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
+	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata, ec2SVC: mockEC2}
 	ens, err := ins.GetAttachedENIs()
 	assert.NoError(t, err)
 	assert.Equal(t, len(ens), 2)
@@ -308,25 +349,33 @@ func TestDescribeENI(t *testing.T) {
 	attachmentID := eniAttachID
 	attachment := &ec2.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
 	result := &ec2.DescribeNetworkInterfacesOutput{
-		NetworkInterfaces: []*ec2.NetworkInterface{{Attachment: attachment}}}
+		NetworkInterfaces: []*ec2.NetworkInterface{{
+			Attachment: attachment,
+			TagSet: []*ec2.Tag{
+				{Key: aws.String("foo"), Value: aws.String("foo-value")},
+			},
+		}},
+	}
 
 	testCases := []struct {
-		name   string
-		expID  *string
-		awsErr error
-		expErr error
+		name    string
+		expID   *string
+		exptags map[string]string
+		awsErr  error
+		expErr  error
 	}{
-		{"success DescribeENI", &attachmentID, nil, nil},
-		{"not found error", nil, awserr.New("InvalidNetworkInterfaceID.NotFound", "", nil), ErrENINotFound},
+		{"success DescribeENI", &attachmentID, map[string]string{"foo": "foo-value"}, nil, nil},
+		{"not found error", nil, nil, awserr.New("InvalidNetworkInterfaceID.NotFound", "", nil), ErrENINotFound},
 	}
 
 	for _, tc := range testCases {
 		mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any()).Return(result, tc.awsErr)
 
 		ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-		_, id, err := ins.DescribeENI("test-eni")
+		_, tags, id, err := ins.DescribeENI("test-eni")
 		assert.Equal(t, tc.expErr, err, tc.name)
 		assert.Equal(t, tc.expID, id, tc.name)
+		assert.Equal(t, tc.exptags, tags, tc.name)
 	}
 }
 

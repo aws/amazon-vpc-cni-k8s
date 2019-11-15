@@ -18,9 +18,9 @@
 package mock_ec2wrapper
 
 import (
+	context "context"
 	reflect "reflect"
 
-	aws "github.com/aws/aws-sdk-go/aws"
 	request "github.com/aws/aws-sdk-go/aws/request"
 	ec2 "github.com/aws/aws-sdk-go/service/ec2"
 	gomock "github.com/golang/mock/gomock"
@@ -167,7 +167,7 @@ func (mr *MockEC2MockRecorder) ModifyNetworkInterfaceAttribute(arg0 interface{})
 }
 
 // UnassignPrivateIpAddressesWithContext mocks base method
-func (m *MockEC2) UnassignPrivateIpAddressesWithContext(arg0 aws.Context, arg1 *ec2.UnassignPrivateIpAddressesInput, arg2 ...request.Option) (*ec2.UnassignPrivateIpAddressesOutput, error) {
+func (m *MockEC2) UnassignPrivateIpAddressesWithContext(arg0 context.Context, arg1 *ec2.UnassignPrivateIpAddressesInput, arg2 ...request.Option) (*ec2.UnassignPrivateIpAddressesOutput, error) {
 	varargs := []interface{}{arg0, arg1}
 	for _, a := range arg2 {
 		varargs = append(varargs, a)
