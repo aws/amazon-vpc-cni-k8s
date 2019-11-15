@@ -679,7 +679,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 	}
 
 	// Find an ENI where we can add more IPs
-	eni := c.dataStore.GetENINeedsIP(c.maxIPsPerENI, c.useCustomNetworking)
+	eni := c.dataStore.GetENINeedsIP(c.maxIPsPerENI, !c.useCustomNetworking)
 	if eni != nil && len(eni.IPv4Addresses) < c.maxIPsPerENI {
 		currentNumberOfAllocatedIPs := len(eni.IPv4Addresses)
 		// Try to allocate all available IPs for this ENI
