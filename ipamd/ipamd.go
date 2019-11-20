@@ -134,12 +134,6 @@ var (
 			Help: "The maximum number of ENIs that can be attached to the instance",
 		},
 	)
-	unmanagedENIs = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "awscni_eni_unmanaged",
-			Help: "The number of ENIs that are unmanaged on this instance",
-		},
-	)
 	ipMax = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "awscni_ip_max",
@@ -403,7 +397,6 @@ func (c *IPAMContext) nodeInit() error {
 
 func (c *IPAMContext) updateIPStats(unmanaged int) {
 	ipMax.Set(float64(c.maxIPsPerENI * (c.maxENI - unmanaged)))
-	unmanagedENIs.Set(float64(unmanaged))
 }
 
 func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
