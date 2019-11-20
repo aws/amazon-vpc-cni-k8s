@@ -11,15 +11,15 @@ import (
 )
 
 const (
-	// TODO: Parameterize?
 	criSocketPath = "unix:///var/run/cri.sock"
 )
 
 // ContainerInfo provides container information
 type ContainerInfo struct {
-	ID     string
-	Name   string
-	K8SUID string
+	ID        string
+	Namespace string
+	Name      string
+	K8SUID    string
 }
 
 type APIs interface {
@@ -41,36 +41,39 @@ func (c *Client) GetRunningContainers() (map[string]*ContainerInfo, error) {
 
 	client := runtimeapi.NewRuntimeServiceClient(conn)
 
-	// TODO: Filter on ready state?
-	sandboxes, err := client.ListPodSandbox(context.Background(), &runtimeapi.ListPodSandboxRequest{})
+	// List all ready sandboxes from the CRI
+	filter := &runtimeapi.PodSandboxFilter{
+		State: &runtimeapi.PodSandboxStateValue{
+			State: runtimeapi.PodSandboxState_SANDBOX_READY,
+		},
+	}
+	sandboxes, err := client.ListPodSandbox(context.Background(), &runtimeapi.ListPodSandboxRequest{Filter: filter})
 	if err != nil {
 		return nil, err
 	}
 
 	containerInfos := make(map[string]*ContainerInfo)
 	for _, sandbox := range sandboxes.Items {
+		if sandbox.Metadata == nil {
+			continue
+		}
 		uid := sandbox.Metadata.Uid
-		_, ok := containerInfos[uid]
-		if !ok {
-			containerInfos[uid] = &ContainerInfo{
-				ID:     sandbox.Id,
-				Name:   sandbox.Metadata.Name,
-				K8SUID: uid}
-			continue
+
+		// Verify each pod only has one active sandbox. Kubelet will clean this
+		// up if it happens, so we should abort and wait until it does.
+		other, ok := containerInfos[uid]
+		if ok {
+			log.Errorf("GetRunningContainers: More than one sandbox with the same pod UID %s", uid)
+			log.Errorf("  Sandbox %s: namespace=%s name=%s", other.ID, other.Namespace, other.Name)
+			log.Errorf("  Sandbox %s: namespace=%s name=%s", sandbox.Id, sandbox.Metadata.Namespace, sandbox.Metadata.Name)
+			return nil, errors.New("UID conflict in container runtime")
 		}
 
-		// TODO: Are these checks relevant for CRI?
-		if sandbox.Metadata.Name != containerInfos[uid].Name {
-			log.Infof("GetRunningContainers: same uid matched by container:%s, %s container id %s",
-				containerInfos[uid].Name, sandbox.Metadata.Name, sandbox.Id)
-			continue
-		}
-
-		if sandbox.Metadata.Name == containerInfos[uid].Name {
-			log.Errorf("GetRunningContainers: Conflict container id %s for container %s",
-				sandbox.Id, containerInfos[uid].Name)
-			return nil, errors.New("conflict docker runtime info")
-		}
+		containerInfos[uid] = &ContainerInfo{
+			ID:        sandbox.Id,
+			Namespace: sandbox.Metadata.Namespace,
+			Name:      sandbox.Metadata.Name,
+			K8SUID:    uid}
 	}
 	return containerInfos, nil
 }
