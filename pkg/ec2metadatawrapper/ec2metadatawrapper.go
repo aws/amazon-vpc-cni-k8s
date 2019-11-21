@@ -1,4 +1,4 @@
-// package ecmetadatawrapper is used to retrieve data from EC2 IMDS
+// Package ec2metadatawrapper is used to retrieve data from EC2 IMDS
 package ec2metadatawrapper
 
 import (
@@ -32,10 +32,12 @@ type ec2MetadataClientImpl struct {
 // New creates an ec2metadata client to retrieve metadata
 func New(client HttpClient) EC2MetadataClient {
 	if client == nil {
-		return &ec2MetadataClientImpl{client: ec2metadata.New(session.New(), aws.NewConfig().WithMaxRetries(metadataRetries))}
-	} else {
-		return &ec2MetadataClientImpl{client: client}
+		awsSession := session.Must(session.NewSession(aws.NewConfig().
+			WithMaxRetries(metadataRetries),
+		))
+		return &ec2MetadataClientImpl{client: ec2metadata.New(awsSession)}
 	}
+	return &ec2MetadataClientImpl{client: client}
 }
 
 // InstanceIdentityDocument returns instance identity documents
