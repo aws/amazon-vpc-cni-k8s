@@ -25,7 +25,10 @@ type EC2Metadata interface {
 	Region() (string, error)
 }
 
-// NewEC2Metadata creates a new EC2Metadata object
+// New creates a new EC2Metadata object
 func New() EC2Metadata {
-	return ec2metadatasvc.New(session.New(), aws.NewConfig().WithMaxRetries(10))
+	awsSession := session.Must(session.NewSession(aws.NewConfig().
+		WithMaxRetries(10),
+	))
+	return ec2metadatasvc.New(awsSession)
 }
