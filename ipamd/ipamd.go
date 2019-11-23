@@ -509,7 +509,10 @@ func (c *IPAMContext) tryUnassignIPsFromAll() {
 			// Delete IPs from datastore
 			var deletedIPs []string
 			for _, toDelete := range ips {
-				err := c.dataStore.DelIPv4AddressFromStore(eniID, toDelete)
+				// Don't force the delete, since a freeable IP might have been assigned to a pod
+				// before we get around to deleting it.
+				const force = false
+				err := c.dataStore.DelIPv4AddressFromStore(eniID, toDelete, force)
 				if err != nil {
 					log.Warnf("Failed to delete IP %s on ENI %s from datastore: %s", toDelete, eniID, err)
 					ipamdErrInc("decreaseIPPool")
@@ -948,7 +951,10 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
 	for eni := range curENIs.ENIIPPools {
 		log.Infof("Reconcile and delete detached ENI %s", eni)
-		err = c.dataStore.RemoveENIFromDataStore(eni)
+		// Force the delete, since aws local metadata has told us that this ENI is no longer
+		// attached, so any IPs assigned from this ENI will no longer work.
+		const force = true
+		err = c.dataStore.RemoveENIFromDataStore(eni, force)
 		if err != nil {
 			log.Errorf("IP pool reconcile: Failed to delete ENI during reconcile: %v", err)
 			ipamdErrInc("eniReconcileDel")
@@ -1020,7 +1026,10 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 	// Sweep phase, delete remaining IPs
 	for existingIP := range ipPool {
 		log.Debugf("Reconcile and delete IP %s on ENI %s", existingIP, eni)
-		err := c.dataStore.DelIPv4AddressFromStore(eni, existingIP)
+		// Force the delete, since aws local metadata has told us that this ENI is no longer
+		// attached, so any IPs assigned from this ENI will no longer work.
+		const force = true
+		err := c.dataStore.DelIPv4AddressFromStore(eni, existingIP, force)
 		if err != nil {
 			log.Errorf("Failed to reconcile and delete IP %s on ENI %s, %v", existingIP, eni, err)
 			ipamdErrInc("ipReconcileDel")
