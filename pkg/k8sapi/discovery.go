@@ -47,8 +47,8 @@ type K8SPodInfo struct {
 	Name string
 	// Namespace is pod's namespace
 	Namespace string
-	// Container is pod's container id
-	Container string
+	// Sandbox is pod's sandbox id
+	Sandbox string
 	// IP is pod's ipv4 address
 	IP  string
 	UID string

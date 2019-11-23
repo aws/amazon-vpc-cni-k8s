@@ -14,8 +14,8 @@ const (
 	criSocketPath = "unix:///var/run/cri.sock"
 )
 
-// ContainerInfo provides container information
-type ContainerInfo struct {
+// SandboxInfo provides container information
+type SandboxInfo struct {
 	ID        string
 	Namespace string
 	Name      string
@@ -23,7 +23,7 @@ type ContainerInfo struct {
 }
 
 type APIs interface {
-	GetRunningContainers() (map[string]*ContainerInfo, error)
+	GetRunningPodSandboxes() (map[string]*SandboxInfo, error)
 }
 
 type Client struct{}
@@ -32,7 +32,7 @@ func New() *Client {
 	return &Client{}
 }
 
-func (c *Client) GetRunningContainers() (map[string]*ContainerInfo, error) {
+func (c *Client) GetRunningPodSandboxes() (map[string]*SandboxInfo, error) {
 	conn, err := grpc.Dial(criSocketPath, grpc.WithInsecure())
 	if err != nil {
 		return nil, err
@@ -52,7 +52,7 @@ func (c *Client) GetRunningContainers() (map[string]*ContainerInfo, error) {
 		return nil, err
 	}
 
-	containerInfos := make(map[string]*ContainerInfo)
+	sandboxInfos := make(map[string]*SandboxInfo)
 	for _, sandbox := range sandboxes.Items {
 		if sandbox.Metadata == nil {
 			continue
@@ -61,19 +61,18 @@ func (c *Client) GetRunningContainers() (map[string]*ContainerInfo, error) {
 
 		// Verify each pod only has one active sandbox. Kubelet will clean this
 		// up if it happens, so we should abort and wait until it does.
-		other, ok := containerInfos[uid]
-		if ok {
-			log.Errorf("GetRunningContainers: More than one sandbox with the same pod UID %s", uid)
+		if other, ok := sandboxInfos[uid]; ok {
+			log.Errorf("GetRunningPodSandboxes: More than one sandbox with the same pod UID %s", uid)
 			log.Errorf("  Sandbox %s: namespace=%s name=%s", other.ID, other.Namespace, other.Name)
 			log.Errorf("  Sandbox %s: namespace=%s name=%s", sandbox.Id, sandbox.Metadata.Namespace, sandbox.Metadata.Name)
 			return nil, errors.New("UID conflict in container runtime")
 		}
 
-		containerInfos[uid] = &ContainerInfo{
+		sandboxInfos[uid] = &SandboxInfo{
 			ID:        sandbox.Id,
 			Namespace: sandbox.Metadata.Namespace,
 			Name:      sandbox.Metadata.Name,
 			K8SUID:    uid}
 	}
-	return containerInfos, nil
+	return sandboxInfos, nil
 }

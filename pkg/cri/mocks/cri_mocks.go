@@ -47,15 +47,15 @@ func (m *MockAPIs) EXPECT() *MockAPIsMockRecorder {
 	return m.recorder
 }
 
-// GetRunningContainers mocks base method
-func (m *MockAPIs) GetRunningContainers() (map[string]*cri.ContainerInfo, error) {
-	ret := m.ctrl.Call(m, "GetRunningContainers")
-	ret0, _ := ret[0].(map[string]*cri.ContainerInfo)
+// GetRunningPodSandboxes mocks base method
+func (m *MockAPIs) GetRunningPodSandboxes() (map[string]*cri.SandboxInfo, error) {
+	ret := m.ctrl.Call(m, "GetRunningPodSandboxes")
+	ret0, _ := ret[0].(map[string]*cri.SandboxInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetRunningContainers indicates an expected call of GetRunningContainers
-func (mr *MockAPIsMockRecorder) GetRunningContainers() *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRunningContainers", reflect.TypeOf((*MockAPIs)(nil).GetRunningContainers))
+// GetRunningPodSandboxes indicates an expected call of GetRunningPodSandboxes
+func (mr *MockAPIsMockRecorder) GetRunningPodSandboxes() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRunningPodSandboxes", reflect.TypeOf((*MockAPIs)(nil).GetRunningPodSandboxes))
 }

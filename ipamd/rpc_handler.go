@@ -46,13 +46,13 @@ type server struct {
 
 // AddNetwork processes CNI add network request and return an IP address for container
 func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.AddNetworkReply, error) {
-	log.Infof("Received AddNetwork for NS %s, Pod %s, NameSpace %s, Container %s, ifname %s",
+	log.Infof("Received AddNetwork for NS %s, Pod %s, NameSpace %s, Sandbox %s, ifname %s",
 		in.Netns, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID, in.IfName)
 
 	addr, deviceNumber, err := s.ipamContext.dataStore.AssignPodIPv4Address(&k8sapi.K8SPodInfo{
 		Name:      in.K8S_POD_NAME,
 		Namespace: in.K8S_POD_NAMESPACE,
-		Container: in.K8S_POD_INFRA_CONTAINER_ID})
+		Sandbox:   in.K8S_POD_INFRA_CONTAINER_ID})
 
 	var pbVPCcidrs []string
 	for _, cidr := range s.ipamContext.awsClient.GetVPCIPv4CIDRs() {
@@ -83,14 +83,14 @@ func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.
 }
 
 func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.DelNetworkReply, error) {
-	log.Infof("Received DelNetwork for IP %s, Pod %s, Namespace %s, Container %s",
+	log.Infof("Received DelNetwork for IP %s, Pod %s, Namespace %s, Sandbox %s",
 		in.IPv4Addr, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID)
 	delIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
 
 	ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(&k8sapi.K8SPodInfo{
 		Name:      in.K8S_POD_NAME,
 		Namespace: in.K8S_POD_NAMESPACE,
-		Container: in.K8S_POD_INFRA_CONTAINER_ID})
+		Sandbox:   in.K8S_POD_INFRA_CONTAINER_ID})
 
 	if err != nil && err == datastore.ErrUnknownPod {
 		// If L-IPAMD restarts, the pod's IP address are assigned by only pod's name and namespace due to kubelet's introspection.

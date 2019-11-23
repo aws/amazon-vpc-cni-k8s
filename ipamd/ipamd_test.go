@@ -148,10 +148,10 @@ func TestNodeInit(t *testing.T) {
 	mockK8S.EXPECT().K8SGetLocalPodIPs().Return([]*k8sapi.K8SPodInfo{{Name: "pod1",
 		Namespace: "default", UID: "pod-uid", IP: ipaddr02}}, nil)
 
-	var criList = make(map[string]*cri.ContainerInfo, 0)
-	criList["pod-uid"] = &cri.ContainerInfo{ID: "sandbox-id",
+	var criList = make(map[string]*cri.SandboxInfo, 0)
+	criList["pod-uid"] = &cri.SandboxInfo{ID: "sandbox-id",
 		Name: k8sName, K8SUID: "pod-uid"}
-	mockCRI.EXPECT().GetRunningContainers().Return(criList, nil)
+	mockCRI.EXPECT().GetRunningPodSandboxes().Return(criList, nil)
 
 	var rules []netlink.Rule
 	mockNetwork.EXPECT().GetRuleList().Return(rules, nil)
