@@ -78,6 +78,18 @@ var (
 			Help: "The number of IP addresses assigned to pods",
 		},
 	)
+	forceRemovedENIs = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "awscni_force_removed_enis",
+			Help: "The number of ENIs force removed while they had assigned pods",
+		},
+	)
+	forceRemovedIPs = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "awscni_force_removed_ips",
+			Help: "The number of IPs force removed while they had assigned pods",
+		},
+	)
 	prometheusRegistered = false
 )
 
@@ -146,6 +158,8 @@ func prometheusRegister() {
 		prometheus.MustRegister(enis)
 		prometheus.MustRegister(totalIPs)
 		prometheus.MustRegister(assignedIPs)
+		prometheus.MustRegister(forceRemovedENIs)
+		prometheus.MustRegister(forceRemovedIPs)
 		prometheusRegistered = true
 	}
 }
@@ -209,7 +223,7 @@ func (ds *DataStore) AddIPv4AddressToStore(eniID string, ipv4 string) error {
 }
 
 // DelIPv4AddressFromStore delete an IP of ENI from datastore
-func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string) error {
+func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string, force bool) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	log.Debugf("Deleting ENI(%s)'s IPv4 address %s from datastore", eniID, ipv4)
@@ -226,7 +240,18 @@ func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string) error {
 	}
 
 	if ipAddr.Assigned {
-		return errors.New(IPInUseError)
+		if !force {
+			return errors.New(IPInUseError)
+		}
+		log.Warnf("Force deleting assigned ip %s on eni %s", ipv4, eniID)
+		forceRemovedIPs.Inc()
+		decrementAssignedCount(ds, curENI, ipAddr)
+		for key, info := range ds.podsIP {
+			if info.IP == ipv4 {
+				delete(ds.podsIP, key)
+				break
+			}
+		}
 	}
 
 	ds.total--
@@ -303,6 +328,17 @@ func incrementAssignedCount(ds *DataStore, eni *ENIIPPool, addr *AddressInfo) {
 	ds.assigned++
 	eni.AssignedIPv4Addresses++
 	addr.Assigned = true
+	// Prometheus gauge
+	assignedIPs.Set(float64(ds.assigned))
+}
+
+func decrementAssignedCount(ds *DataStore, eni *ENIIPPool, addr *AddressInfo) {
+	ds.assigned--
+	eni.AssignedIPv4Addresses--
+	addr.Assigned = false
+	curTime := time.Now()
+	eni.lastUnassignedTime = curTime
+	addr.UnassignedTime = curTime
 	// Prometheus gauge
 	assignedIPs.Set(float64(ds.assigned))
 }
@@ -431,7 +467,7 @@ func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget int, minimumIPTarget 
 }
 
 // RemoveENIFromDataStore removes an ENI from the datastore.  It return nil on success or an error.
-func (ds *DataStore) RemoveENIFromDataStore(eni string) error {
+func (ds *DataStore) RemoveENIFromDataStore(eni string, force bool) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
@@ -440,9 +476,26 @@ func (ds *DataStore) RemoveENIFromDataStore(eni string) error {
 		return errors.New(UnknownENIError)
 	}
 
-	// Only unused ENIs can be deleted
-	if eniIPPool.AssignedIPv4Addresses != 0 {
-		return errors.New(ENIInUseError)
+	if eniIPPool.hasPods() {
+		if !force {
+			return errors.New(ENIInUseError)
+		}
+		// This scenario can occur if the reconciliation process discovered this eni was detached
+		// from the EC2 instance outside of the control of ipamd.  If this happens, there's nothing
+		// we can do other than force all pods to be unassigned from the IPs on this eni.
+		log.Warnf("Force removing eni %s with %d assigned pods", eni, eniIPPool.AssignedIPv4Addresses)
+		forceRemovedENIs.Inc()
+		forceRemovedIPs.Add(float64(eniIPPool.AssignedIPv4Addresses))
+		for _, addr := range eniIPPool.IPv4Addresses {
+			if addr.Assigned {
+				decrementAssignedCount(ds, eniIPPool, addr)
+			}
+		}
+		for key, info := range ds.podsIP {
+			if info.DeviceNumber == eniIPPool.DeviceNumber {
+				delete(ds.podsIP, key)
+			}
+		}
 	}
 
 	ds.total -= len(eniIPPool.IPv4Addresses)
@@ -478,13 +531,7 @@ func (ds *DataStore) UnassignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (ip strin
 	for _, eni := range ds.eniIPPools {
 		ip, ok := eni.IPv4Addresses[ipAddr.IP]
 		if ok && ip.Assigned {
-			ip.Assigned = false
-			ds.assigned--
-			assignedIPs.Set(float64(ds.assigned))
-			eni.AssignedIPv4Addresses--
-			curTime := time.Now()
-			ip.UnassignedTime = curTime
-			eni.lastUnassignedTime = curTime
+			decrementAssignedCount(ds, eni, ip)
 			log.Infof("UnassignPodIPv4Address: pod (Name: %s, NameSpace %s Sandbox %s)'s ipAddr %s, DeviceNumber%d",
 				k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox, ip.Address, eni.DeviceNumber)
 			delete(ds.podsIP, podKey)
