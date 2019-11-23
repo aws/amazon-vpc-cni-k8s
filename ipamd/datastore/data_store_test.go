@@ -54,17 +54,37 @@ func TestDeleteENI(t *testing.T) {
 	eniInfos := ds.GetENIInfos()
 	assert.Equal(t, len(eniInfos.ENIIPPools), 3)
 
-	err = ds.RemoveENIFromDataStore("eni-2")
+	err = ds.RemoveENIFromDataStore("eni-2", false)
 	assert.NoError(t, err)
 
 	eniInfos = ds.GetENIInfos()
 	assert.Equal(t, len(eniInfos.ENIIPPools), 2)
 
-	err = ds.RemoveENIFromDataStore("unknown-eni")
+	err = ds.RemoveENIFromDataStore("unknown-eni", false)
 	assert.Error(t, err)
 
 	eniInfos = ds.GetENIInfos()
 	assert.Equal(t, len(eniInfos.ENIIPPools), 2)
+
+	// Add an IP and assign a pod.
+	err = ds.AddIPv4AddressFromStore("eni-1", "1.1.1.1")
+	assert.NoError(t, err)
+	podInfo := &k8sapi.K8SPodInfo{
+		Name:      "pod-1",
+		Namespace: "ns-1",
+		IP:        "1.1.1.1",
+	}
+	ip, device, err := ds.AssignPodIPv4Address(podInfo)
+	assert.NoError(t, err)
+	assert.Equal(t, "1.1.1.1", ip)
+	assert.Equal(t, 1, device)
+
+	// Test force removal.  The first call fails because eni-1 has an IP with a pod assigned to it,
+	// but the second call force-removes it and succeeds.
+	err = ds.RemoveENIFromDataStore("eni-1", false)
+	assert.Error(t, err)
+	err = ds.RemoveENIFromDataStore("eni-1", true)
+	assert.NoError(t, err)
 }
 
 func TestAddENIIPv4Address(t *testing.T) {
@@ -158,16 +178,39 @@ func TestDelENIIPv4Address(t *testing.T) {
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 3)
 
-	err = ds.DelIPv4AddressFromStore("eni-1", "1.1.1.2")
+	err = ds.DelIPv4AddressFromStore("eni-1", "1.1.1.2", false)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 2)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
 
 	// delete a unknown IP
-	err = ds.DelIPv4AddressFromStore("eni-1", "10.10.10.10")
+	err = ds.DelIPv4AddressFromStore("eni-1", "10.10.10.10", false)
 	assert.Error(t, err)
 	assert.Equal(t, ds.total, 2)
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
+
+	// Assign a pod.
+	podInfo := &k8sapi.K8SPodInfo{
+		Name:      "pod-1",
+		Namespace: "ns-1",
+		IP:        "1.1.1.1",
+	}
+	ip, device, err := ds.AssignPodIPv4Address(podInfo)
+	assert.NoError(t, err)
+	assert.Equal(t, "1.1.1.1", ip)
+	assert.Equal(t, 1, device)
+
+	// Test force removal.  The first call fails because the IP has a pod assigned to it, but the
+	// second call force-removes it and succeeds.
+	err = ds.DelIPv4AddressFromStore("eni-1", "1.1.1.1", false)
+	assert.Error(t, err)
+	assert.Equal(t, ds.total, 2)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
+
+	err = ds.DelIPv4AddressFromStore("eni-1", "1.1.1.1", true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 1)
+	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 1)
 }
 
 func TestPodIPv4Address(t *testing.T) {
