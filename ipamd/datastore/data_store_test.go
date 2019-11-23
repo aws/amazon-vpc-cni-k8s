@@ -67,7 +67,7 @@ func TestDeleteENI(t *testing.T) {
 	assert.Equal(t, len(eniInfos.ENIIPPools), 2)
 
 	// Add an IP and assign a pod.
-	err = ds.AddIPv4AddressFromStore("eni-1", "1.1.1.1")
+	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
 	assert.NoError(t, err)
 	podInfo := &k8sapi.K8SPodInfo{
 		Name:      "pod-1",
