@@ -436,6 +436,9 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 		log.Infof("Not able to get local pod sandboxes yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
 		time.Sleep(retryK8SInterval)
 	}
+	if err != nil {
+		return nil, errors.Wrap(err, "Unable to get local pod sandboxes")
+	}
 
 	// TODO consider using map
 	for _, pod := range pods {
