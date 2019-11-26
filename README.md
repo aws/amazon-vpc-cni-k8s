@@ -375,17 +375,17 @@ This plugin interacts with the following tags on ENIs:
 * `node.k8s.amazonaws.com/instance_id`
 * `node.k8s.amazonaws.com/no_manage`.
 
-### Cluster Name tag
+#### Cluster Name tag
 
 The tag `cluster.k8s.amazonaws.com/name` will be set to the cluster name of the
 aws-node daemonset which created the ENI.
 
-### Instance ID tag
+#### Instance ID tag
 
 The tag `node.k8s.amazonaws.com/instance_id` will be set to the instance ID of
 the aws-node instance that allocated this ENI.
 
-### No Manage tag
+#### No Manage tag
 
 The tag `node.k8s.amazonaws.com/no_manage` is read by the aws-node daemonset to
 determine whether an ENI attached to the machine should not be configured or
