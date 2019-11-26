@@ -31,6 +31,6 @@ COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-k8s-agent  \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/grpc_health_probe \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/aws-cni-support.sh \
-    /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/install-aws.sh /app/
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/entrypoint.sh /app/
 
-ENTRYPOINT /app/install-aws.sh
+ENTRYPOINT /app/entrypoint.sh
