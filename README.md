@@ -373,7 +373,7 @@ This plugin interacts with the following tags on ENIs:
 
 * `cluster.k8s.amazonaws.com/name`
 * `node.k8s.amazonaws.com/instance_id`
-* `node.k8s.amazonaws.com/no_manage`.
+* `node.k8s.amazonaws.com/no_manage`
 
 #### Cluster Name tag
 
