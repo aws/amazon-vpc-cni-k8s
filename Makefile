@@ -50,6 +50,9 @@ docker:
 	@docker build --build-arg arch="$(ARCH)" -f scripts/dockerfiles/Dockerfile.release -t "$(IMAGE):$(VERSION)" .
 	@echo "Built Docker image \"$(IMAGE):$(VERSION)\""
 
+docker-func-test: docker
+	docker run -it "$(IMAGE):$(VERSION)"
+
 # unit-test
 unit-test:
 	GOOS=linux CGO_ENABLED=1 go test -v -cover $(ALLPKGS)
