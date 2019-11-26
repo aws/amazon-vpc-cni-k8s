@@ -14,7 +14,6 @@
 package main
 
 import (
-	"io"
 	"os"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -74,21 +73,6 @@ func _main() int {
 	// CNI introspection endpoints
 	go ipamContext.ServeIntrospection()
 
-	// Copy the CNI plugin and config. This will mark the node as Ready.
-	log.Info("Copying /app/aws-cni to /host/opt/cni/bin/aws-cni")
-	err = copyFileContents("/app/aws-cni", "/host/opt/cni/bin/aws-cni")
-	if err != nil {
-		log.Errorf("Failed to copy aws-cni: %v", err)
-		return 1
-	}
-
-	log.Info("Copying /app/10-aws.conflist to /host/etc/cni/net.d/10-aws.conflist")
-	err = copyFileContents("/app/10-aws.conflist", "/host/etc/cni/net.d/10-aws.conflist")
-	if err != nil {
-		log.Errorf("Failed to copy 10-aws.conflist: %v", err)
-		return 1
-	}
-
 	// Start the RPC listener
 	err = ipamContext.RunRPCHandler()
 	if err != nil {
@@ -96,40 +80,4 @@ func _main() int {
 		return 1
 	}
 	return 0
-}
-
-// copyFileContents copies a file
-func copyFileContents(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		e := out.Close()
-		if err == nil {
-			err = e
-		}
-	}()
-	if _, err = io.Copy(out, in); err != nil {
-		return err
-	}
-	err = out.Sync()
-	if err != nil {
-		return err
-	}
-	si, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	err = os.Chmod(dst, si.Mode())
-	if err != nil {
-		return err
-	}
-	log.Debugf("Copied file from %q to %q", src, dst)
-	return err
 }
