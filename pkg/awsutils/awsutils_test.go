@@ -486,6 +486,55 @@ func TestTagEni(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestAdditionalTagsEni(t *testing.T) {
+	ctrl, _, mockEC2 := setup(t)
+	defer ctrl.Finish()
+	os.Setenv(additionalEniTagsEnvVar, `{"testKey": "testing"}`)
+	cureniID := eniID
+	//result key
+	tagKey1 := "testKey"
+	//result value
+	tagValue1 := "testing"
+	tag := ec2.Tag{
+		Key:   &tagKey1,
+		Value: &tagValue1}
+	result := &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: []*ec2.NetworkInterface{{TagSet: []*ec2.Tag{&tag}}}}
+
+	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, nil)
+	ins.tagENI(cureniID)
+
+	// Verify the tags are registered.
+	assert.Equal(t, aws.StringValue(result.NetworkInterfaces[0].TagSet[0].Key), tagKey1)
+	assert.Equal(t, aws.StringValue(result.NetworkInterfaces[0].TagSet[0].Value), tagValue1)
+}
+
+func TestMapToTags(t *testing.T) {
+	tagKey1 := "tagKey1"
+	tagKey2 := "tagKey2"
+	tagValue1 := "tagValue1"
+	tagValue2 := "tagValue2"
+	tagKey3 := "cluster.k8s.amazonaws.com/name"
+	tagValue3 := "clusterName"
+	tagsMap := map[string]string{
+		tagKey1: tagValue1,
+		tagKey2: tagValue2,
+		tagKey3: tagValue3,
+	}
+	tags := make([]*ec2.Tag, 0)
+	tags = mapToTags(tagsMap, tags)
+	assert.Equal(t, 2, len(tags))
+	sort.Slice(tags, func(i, j int) bool {
+		return aws.StringValue(tags[i].Key) < aws.StringValue(tags[j].Key)
+	})
+
+	assert.Equal(t, aws.StringValue(tags[0].Key), tagKey1)
+	assert.Equal(t, aws.StringValue(tags[0].Value), tagValue1)
+	assert.Equal(t, aws.StringValue(tags[1].Key), tagKey2)
+	assert.Equal(t, aws.StringValue(tags[1].Value), tagValue2)
+}
+
 func TestAllocENI(t *testing.T) {
 	ctrl, _, mockEC2 := setup(t)
 	defer ctrl.Finish()
