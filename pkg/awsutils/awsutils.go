@@ -15,6 +15,7 @@ package awsutils
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -58,11 +59,12 @@ const (
 	metadataOwnerID      = "/owner-id"
 
 	// AllocENI need to choose a first free device number between 0 and maxENI
-	maxENIs           = 128
-	clusterNameEnvVar = "CLUSTER_NAME"
-	eniNodeTagKey     = "node.k8s.amazonaws.com/instance_id"
-	eniClusterTagKey  = "cluster.k8s.amazonaws.com/name"
-
+	maxENIs                 = 128
+	clusterNameEnvVar       = "CLUSTER_NAME"
+	eniNodeTagKey           = "node.k8s.amazonaws.com/instance_id"
+	eniClusterTagKey        = "cluster.k8s.amazonaws.com/name"
+	additionalEniTagsEnvVar = "ADDITIONAL_ENI_TAGS"
+	reservedTagKeyPrefix    = "k8s.amazonaws.com"
 	// UnknownInstanceType indicates that the instance type is not yet supported
 	UnknownInstanceType = "vpc ip resource(eni ip limit): unknown instance type"
 
@@ -674,6 +676,16 @@ func (cache *EC2InstanceMetadataCache) tagENI(eniID string) {
 		})
 	}
 
+	//additionalEniTags for adding additional tags on ENI
+	additionalEniTags := os.Getenv(additionalEniTagsEnvVar)
+	if additionalEniTags != "" {
+		tagsMap, err := parseAdditionalEniTagsMap(additionalEniTags)
+		if err != nil {
+			log.Warnf("Failed to add additional tags to the newly created ENI %s: %v", eniID, err)
+		}
+		tags = mapToTags(tagsMap, tags)
+	}
+
 	for _, tag := range tags {
 		log.Debugf("Trying to tag newly created ENI: key=%s, value=%s", aws.StringValue(tag.Key), aws.StringValue(tag.Value))
 	}
@@ -696,6 +708,38 @@ func (cache *EC2InstanceMetadataCache) tagENI(eniID string) {
 		log.Debugf("Successfully tagged ENI: %s", eniID)
 		return nil
 	})
+}
+
+//parseAdditionalEniTagsMap will create a map for additional tags
+func parseAdditionalEniTagsMap(additionalEniTags string) (map[string]string, error) {
+	var additionalEniTagsMap map[string]string
+
+	// If duplicate keys exist, the value of the key will be the value of latter key.
+	err := json.Unmarshal([]byte(additionalEniTags), &additionalEniTagsMap)
+	if err != nil {
+		log.Errorf("Invalid format for ADDITIONAL_ENI_TAGS. Expected a json hash: %v", err)
+	}
+	return additionalEniTagsMap, err
+}
+
+// MapToTags converts a map to a slice of tags.
+func mapToTags(tagsMap map[string]string, tags []*ec2.Tag) []*ec2.Tag {
+	if tagsMap == nil {
+		return tags
+	}
+
+	for key, value := range tagsMap {
+		keyPrefix := reservedTagKeyPrefix
+		if strings.Contains(key, keyPrefix) {
+			log.Warnf("Additional tags has %s prefix. Ignoring %s tag as it is reserved", keyPrefix, key)
+			continue
+		}
+		tags = append(tags, &ec2.Tag{
+			Key:   aws.String(key),
+			Value: aws.String(value),
+		})
+	}
+	return tags
 }
 
 //containsAttachmentLimitExceededError returns whether exceeds instance's ENI limit
