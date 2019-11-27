@@ -365,6 +365,20 @@ Default: `eni`
 
 Specifies the veth prefix used to generate the host-side veth device name for the CNI. The prefix can be at most 4 characters long.
 
+---
+
+`ADDITIONAL_ENI_TAGS`
+
+Type: String
+
+Default: `{}`
+
+Example values: `{"tag_key": "tag_val"}`
+
+Metadata applied to ENI help you categorize and organize your resources for billing or other purposes. Each tag consists of a custom-defined key and an optional value. Tag keys can have a maximum character length of 128 characters. Tag values can have a maximum length of 256 characters. These tags will be added to all ENIs on the host. 
+
+Important: Custom tags should not contain `k8s.amazonaws.com` prefix as it is reserved. If the tag has `k8s.amazonaws.com` string, tag addition will ignored.
+
 ### Notes
 
 `L-IPAMD`(aws-node daemonSet) running on every worker node requires access to kubernetes API server. If it can **not** reach
