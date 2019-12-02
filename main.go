@@ -50,7 +50,12 @@ func _main() int {
 		return 1
 	}
 
-	discoverController := k8sapi.NewController(kubeClient)
+	discoverController, err := k8sapi.NewController(kubeClient)
+	if err != nil {
+		log.Errorf("Failed to create new Discover Controller: %v", err)
+		return 1
+	}
+
 	go discoverController.DiscoverK8SPods()
 
 	eniConfigController := eniconfig.NewENIConfigController()
@@ -59,7 +64,6 @@ func _main() int {
 	}
 
 	ipamContext, err := ipamd.New(discoverController, eniConfigController)
-
 	if err != nil {
 		log.Errorf("Initialization failure: %v", err)
 		return 1

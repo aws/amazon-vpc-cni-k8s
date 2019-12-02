@@ -68,15 +68,31 @@ type Controller struct {
 	controller *controller
 	kubeClient kubernetes.Interface
 	myNodeName string
-	synced     bool
 }
 
 // NewController creates a new DiscoveryController
-func NewController(clientset kubernetes.Interface) *Controller {
-	return &Controller{kubeClient: clientset,
+func NewController(clientset kubernetes.Interface) (*Controller, error) {
+	stopCh := wait.NeverStop
+
+	d := &Controller{kubeClient: clientset,
 		myNodeName: os.Getenv("MY_NODE_NAME"),
 		cniPods:    make(map[string]string),
 		workerPods: make(map[string]*K8SPodInfo)}
+
+	log.Info("Starting Pod informer")
+
+	go d.controller.informer.Run(stopCh)
+
+	log.Info("Waiting for controller cache sync")
+	// Wait for all involved caches to be synced, before processing items from the queue is started
+	if !cache.WaitForCacheSync(stopCh, d.controller.informer.HasSynced) {
+		log.Error("Timed out waiting for caches to sync!")
+		return nil, fmt.Errorf("timed out waiting for caches to sync")
+	}
+
+	log.Info("Synced successfully with APIServer")
+
+	return d, nil
 }
 
 // CreateKubeClient creates a k8s client
@@ -166,11 +182,6 @@ func (d *Controller) DiscoverK8SPods() {
 // K8SGetLocalPodIPs return the list of pods running on the local nodes
 func (d *Controller) K8SGetLocalPodIPs() ([]*K8SPodInfo, error) {
 	var localPods []*K8SPodInfo
-
-	if !d.synced {
-		log.Info("GetLocalPods: informer not synced yet")
-		return nil, ErrInformerNotSynced
-	}
 
 	log.Debug("GetLocalPods start ...")
 	d.workerPodsLock.Lock()
@@ -305,20 +316,6 @@ func (c *controller) handleErr(err error, key interface{}) {
 func (d *Controller) run(threadiness int, stopCh chan struct{}) {
 	// Let the workers stop when we are done
 	defer d.controller.queue.ShutDown()
-	log.Info("Starting Pod controller")
-
-	go d.controller.informer.Run(stopCh)
-
-	log.Info("Waiting for controller cache sync")
-	// Wait for all involved caches to be synced, before processing items from the queue is started
-	if !cache.WaitForCacheSync(stopCh, d.controller.informer.HasSynced) {
-		log.Error("Timed out waiting for caches to sync!")
-		runtime.HandleError(fmt.Errorf("timed out waiting for caches to sync"))
-		return
-	}
-
-	log.Info("Synced successfully with APIServer")
-	d.synced = true
 
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(d.runWorker, time.Second, stopCh)
