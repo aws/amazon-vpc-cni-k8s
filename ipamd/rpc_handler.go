@@ -97,6 +97,14 @@ func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.
 		ip, deviceNumber, err = s.ipamContext.dataStore.UnassignPodIPv4Address(&k8sapi.K8SPodInfo{
 			Name:      in.K8S_POD_NAME,
 			Namespace: in.K8S_POD_NAMESPACE})
+
+		// if a pod gets scheduled to a node when the aws cni is restarting,
+		// kubelet would kill and recreate pod. When kubelet tries to kill
+		// the container initially, this block would make sure the ipamD agent would
+		// make sure we dont return an error.
+		if err == datastore.ErrUnknownPod {
+			err = nil
+		}
 	}
 	log.Infof("Send DelNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", ip, deviceNumber, err)
 
