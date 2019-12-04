@@ -47,8 +47,8 @@ type K8SPodInfo struct {
 	Name string
 	// Namespace is pod's namespace
 	Namespace string
-	// Container is pod's container id
-	Container string
+	// Sandbox is pod's sandbox id
+	Sandbox string
 	// IP is pod's ipv4 address
 	IP  string
 	UID string
@@ -246,13 +246,6 @@ func (d *Controller) handlePodUpdate(key string) error {
 	if d.myNodeName == pod.Spec.NodeName && !pod.Spec.HostNetwork {
 		d.workerPodsLock.Lock()
 		defer d.workerPodsLock.Unlock()
-		var containerID string
-		if len(pod.Status.ContainerStatuses) > 0 && pod.Status.ContainerStatuses[0].ContainerID != "" {
-			containerID = pod.Status.ContainerStatuses[0].ContainerID
-			log.Debugf("Found pod %s with container ID: %s", podName, containerID)
-		} else {
-			log.Debugf("No container ID found for %s", podName)
-		}
 
 		log.Tracef("Update for pod %s: %+v, %+v", podName, pod.Status, pod.Spec)
 
@@ -260,7 +253,6 @@ func (d *Controller) handlePodUpdate(key string) error {
 		d.workerPods[key] = &K8SPodInfo{
 			Name:      podName,
 			Namespace: pod.GetNamespace(),
-			Container: containerID,
 			IP:        pod.Status.PodIP,
 			UID:       string(pod.GetUID()),
 		}
