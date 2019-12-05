@@ -34,6 +34,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
@@ -165,6 +166,7 @@ type IPAMContext struct {
 	k8sClient            k8sapi.K8SAPIs
 	useCustomNetworking  bool
 	eniConfig            eniconfig.ENIConfig
+	criClient            cri.APIs
 	networkClient        networkutils.NetworkAPIs
 	maxIPsPerENI         int
 	maxENI               int
@@ -237,6 +239,7 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 
 	c.k8sClient = k8sapiClient
 	c.networkClient = networkutils.New()
+	c.criClient = cri.New()
 	c.eniConfig = eniConfig
 
 	client, err := awsutils.New()
@@ -347,15 +350,15 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	for _, ip := range localPods {
-		if ip.Container == "" {
-			log.Infof("Skipping Pod %s, Namespace %s, due to no matching container", ip.Name, ip.Namespace)
+		if ip.Sandbox == "" {
+			log.Infof("Skipping Pod %s, Namespace %s, due to no matching sandbox", ip.Name, ip.Namespace)
 			continue
 		}
 		if ip.IP == "" {
 			log.Infof("Skipping Pod %s, Namespace %s, due to no IP", ip.Name, ip.Namespace)
 			continue
 		}
-		log.Infof("Recovered AddNetwork for Pod %s, Namespace %s, Container %s", ip.Name, ip.Namespace, ip.Container)
+		log.Infof("Recovered AddNetwork for Pod %s, Namespace %s, Sandbox %s", ip.Name, ip.Namespace, ip.Sandbox)
 		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
 		if err != nil {
 			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed")
@@ -420,6 +423,34 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 		return nil, nil
 	}
 
+	// Ask the CRI for the set of running pod sandboxes. These sandboxes are
+	// what the CNI operates on, but the Kubernetes API doesn't expose any
+	// information about them. If we relied only on the Kubernetes API, we
+	// could leak IPs or unassign an IP from a still-running pod.
+	var sandboxes map[string]*cri.SandboxInfo
+	for retry := 1; retry <= maxK8SRetries; retry++ {
+		sandboxes, err = c.criClient.GetRunningPodSandboxes()
+		if err == nil {
+			break
+		}
+		log.Infof("Not able to get local pod sandboxes yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
+		time.Sleep(retryK8SInterval)
+	}
+	if err != nil {
+		return nil, errors.Wrap(err, "Unable to get local pod sandboxes")
+	}
+
+	// TODO consider using map
+	for _, pod := range pods {
+		// Fill in the sandbox ID by matching against the pod's UID
+		for _, sandbox := range sandboxes {
+			if sandbox.K8SUID == pod.UID {
+				log.Debugf("Found pod(%v)'s sandbox ID: %v ", sandbox.Name, sandbox.ID)
+				pod.Sandbox = sandbox.ID
+				break
+			}
+		}
+	}
 	return pods, nil
 }
 
