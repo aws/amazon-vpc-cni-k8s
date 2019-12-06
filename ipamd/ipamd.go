@@ -131,7 +131,7 @@ var (
 	enisMax = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "awscni_eni_max",
-			Help: "The maximum number of ENIs that can be attached to the instance",
+			Help: "The maximum number of ENIs that can be attached to the instance, accounting for unmanaged ENIs",
 		},
 	)
 	ipMax = prometheus.NewGauge(
@@ -174,6 +174,7 @@ type IPAMContext struct {
 	networkClient        networkutils.NetworkAPIs
 	maxIPsPerENI         int
 	maxENI               int
+	unmanagedENI         int
 	warmENITarget        int
 	warmIPTarget         int
 	minimumIPTarget      int
@@ -287,6 +288,7 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 	c.maxENI = nodeMaxENI
+	c.unmanagedENI = numUnmanaged
 	c.maxIPsPerENI, err = c.awsClient.GetENIipLimit()
 	if err != nil {
 		log.Error("Failed to get IPs per ENI limit")
@@ -397,6 +399,7 @@ func (c *IPAMContext) nodeInit() error {
 
 func (c *IPAMContext) updateIPStats(unmanaged int) {
 	ipMax.Set(float64(c.maxIPsPerENI * (c.maxENI - unmanaged)))
+	enisMax.Set(float64(c.maxENI - unmanaged))
 }
 
 func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
@@ -635,12 +638,12 @@ func (c *IPAMContext) increaseIPPool() {
 		c.updateLastNodeIPPoolAction()
 	} else {
 		// If we did not add an IP, try to add an ENI instead.
-		if c.dataStore.GetENIs() < c.maxENI {
+		if c.dataStore.GetENIs() < (c.maxENI - c.unmanagedENI) {
 			if err = c.tryAllocateENI(); err == nil {
 				c.updateLastNodeIPPoolAction()
 			}
 		} else {
-			log.Debugf("Skipping ENI allocation as the instance's max ENI limit of %d is already reached", c.maxENI)
+			log.Debugf("Skipping ENI allocation as the instance's max ENI limit of %d is already reached (accounting for %d unmanaged ENIs)", c.maxENI, c.unmanagedENI)
 		}
 	}
 }
@@ -956,6 +959,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	}
 	attachedENIs, numUnmanaged := filterUnmanagedENIs(allENIs)
 	c.updateIPStats(numUnmanaged)
+	c.unmanagedENI = numUnmanaged
 
 	curENIs := c.dataStore.GetENIInfos()
 
