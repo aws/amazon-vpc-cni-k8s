@@ -285,7 +285,7 @@ func TestPodIPv4Address(t *testing.T) {
 	podInfo = k8sapi.K8SPodInfo{
 		Name:      "pod-1",
 		Namespace: "ns-3",
-		Container: "container-1",
+		Sandbox:   "container-1",
 	}
 
 	ip, _, err = ds.AssignPodIPv4Address(&podInfo)
@@ -312,7 +312,7 @@ func TestPodIPv4Address(t *testing.T) {
 	podInfo = k8sapi.K8SPodInfo{
 		Name:      "pod-1",
 		Namespace: "ns-3",
-		Container: "container-2",
+		Sandbox:   "container-2",
 	}
 	_, _, err = ds.UnassignPodIPv4Address(&podInfo)
 	assert.Error(t, err)
