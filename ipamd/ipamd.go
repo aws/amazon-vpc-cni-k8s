@@ -334,7 +334,6 @@ func (c *IPAMContext) nodeInit() error {
 		}
 	}
 	localPods, err := c.getLocalPodsWithRetry()
-	log.Debugf("getLocalPodsWithRetry() found %d local pods", len(localPods))
 	if err != nil {
 		log.Warnf("During ipamd init, failed to get Pod information from Kubernetes API Server %v", err)
 		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed")
@@ -342,6 +341,7 @@ func (c *IPAMContext) nodeInit() error {
 		// TODO  need to add node health stats here
 		return errors.Wrap(err, "failed to get running pods!")
 	}
+	log.Debugf("getLocalPodsWithRetry() found %d local pods", len(localPods))
 
 	rules, err := c.networkClient.GetRuleList()
 	if err != nil {

@@ -36,7 +36,7 @@ fi
 
 AGENT_LOG_PATH=${AGENT_LOG_PATH:-aws-k8s-agent.log}
 HOST_CNI_BIN_PATH=${HOST_CNI_BIN_PATH:-/host/opt/cni/bin}
-HOST_CNI_CONFDIR_PATH=${HOST_CNI_CONFDIR_PATH:-/host/opt/cni/net.d}
+HOST_CNI_CONFDIR_PATH=${HOST_CNI_CONFDIR_PATH:-/host/etc/cni/net.d}
 
 # Checks for IPAM connectivity on localhost port 50051, retrying connectivity
 # check with a timeout of 36 seconds
@@ -53,7 +53,7 @@ wait_for_ipam() {
 }
 
 echo -n "starting IPAM daemon in background ... "
-./aws-k8s-agent > $AGENT_LOG_PATH 2>&1 &
+./aws-k8s-agent > "$AGENT_LOG_PATH" 2>&1 &
 echo "ok."
 
 echo -n "checking for IPAM connectivity ... "
@@ -68,13 +68,13 @@ echo "ok."
 
 echo -n "copying CNI plugin binaries and config files ... "
 
-cp portmap $HOST_CNI_BIN_PATH
-cp aws-cni $HOST_CNI_BIN_PATH$
-cp aws-cni-support.sh $HOST_CNI_BIN_PATH
+cp portmap "$HOST_CNI_BIN_PATH"
+cp aws-cni "$HOST_CNI_BIN_PATH"
+cp aws-cni-support.sh "$HOST_CNI_BIN_PATH"
 
 sed -i s/__VETHPREFIX__/"${AWS_VPC_K8S_CNI_VETHPREFIX:-"eni"}"/g 10-aws.conflist
 sed -i s/__MTU__/"${AWS_VPC_ENI_MTU:-"9001"}"/g 10-aws.conflist
-cp 10-aws.conflist $HOST_CNI_CONFDIR_PATH
+cp 10-aws.conflist "$HOST_CNI_CONFDIR_PATH"
 
 echo " ok."
 
@@ -84,8 +84,8 @@ fi
 
 # bring the aws-k8s-agent process back into the foreground
 echo "foregrounding IPAM daemon ... "
-fg %1 >/dev/null 2>&1 || $(echo "failed (process terminated)" && cat $AGENT_LOG_PATH && exit 1)
+fg %1 >/dev/null 2>&1 || $(echo "failed (process terminated)" && cat "$AGENT_LOG_PATH" && exit 1)
 
 # Best practice states we should send the container's CMD output to stdout, so
 # let's tee back up the log file into stdout
-cat $AGENT_LOG_PATH
+cat "$AGENT_LOG_PATH"
