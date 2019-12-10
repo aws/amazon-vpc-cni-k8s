@@ -89,11 +89,11 @@ spec:
           name: aws-node
           #readinessProbe:
           #  exec:
-          #    command: ["/app/grpc_health_probe", "-addr=:50051"]
+          #    command: ["/app/grpc-health-probe", "-addr=:50051"]
           #  initialDelaySeconds: 25
           #livenessProbe:
           #  exec:
-          #    command: ["/app/grpc_health_probe", "-addr=:50051"]
+          #    command: ["/app/grpc-health-probe", "-addr=:50051"]
           #  initialDelaySeconds: 25
           env:
             - name: AWS_VPC_K8S_CNI_LOGLEVEL

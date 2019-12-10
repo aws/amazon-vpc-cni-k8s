@@ -23,19 +23,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	log "github.com/cihub/seelog"
 	set "github.com/deckarep/golang-set"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/aws/aws-sdk-go/aws"
-
-	"github.com/aws/aws-sdk-go/service/ec2"
-
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 )

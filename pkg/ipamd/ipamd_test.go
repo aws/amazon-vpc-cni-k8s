@@ -19,23 +19,21 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
 	"github.com/vishvananda/netlink"
 
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	mock_cri "github.com/aws/amazon-vpc-cni-k8s/pkg/cri/mocks"
 	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	mock_k8sapi "github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi/mocks"
 	mock_networkutils "github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
-
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/assert"
-
-	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
 const (

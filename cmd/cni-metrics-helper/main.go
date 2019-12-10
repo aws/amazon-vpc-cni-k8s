@@ -24,7 +24,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/spf13/pflag"
 
-	"github.com/aws/amazon-vpc-cni-k8s/cni-metrics-helper/metrics"
+	"github.com/aws/amazon-vpc-cni-k8s/cmd/cni-metrics-helper/metrics"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 )

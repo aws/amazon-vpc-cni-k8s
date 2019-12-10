@@ -32,9 +32,9 @@ endif
 
 # Default to build the Linux binary
 build-linux:
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "-s -w $(LDFLAGS)"
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-cni -ldflags " -s -w $(LDFLAGS)" ./plugins/routed-eni/
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o grpc_health_probe -ldflags "-s -w $(LDFLAGS)" ./client/health-check/
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "-s -w $(LDFLAGS)" ./cmd/aws-k8s-agent/
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-cni -ldflags " -s -w $(LDFLAGS)" ./cmd/routed-eni-cni-plugin/
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o grpc-health-probe -ldflags "-s -w $(LDFLAGS)" ./cmd/grpc-health-probe/
 
 # Download portmap plugin
 download-portmap:
@@ -59,13 +59,13 @@ unit-test:
 
 # unit-test-race
 unit-test-race:
+	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./cmd/*/...
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 150s ./pkg/awsutils/...
-	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./plugins/routed-eni/...
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/k8sapi/...
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/networkutils/...
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/utils/...
 	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/eniconfig/...
-	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./ipamd/...
+	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/ipamd/...
 
 build-docker-test:
 	@docker build -f scripts/dockerfiles/Dockerfile.test -t amazon-k8s-cni-test:latest .
@@ -76,7 +76,7 @@ docker-unit-test: build-docker-test
 
 # Build metrics
 build-metrics:
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -ldflags="-s -w" -o cni-metrics-helper/cni-metrics-helper cni-metrics-helper/cni-metrics-helper.go
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -ldflags="-s -w" -o cni-metrics-helper ./cmd/cni-metrics-helper/
 
 # Build metrics Docker image
 docker-metrics:
@@ -84,7 +84,7 @@ docker-metrics:
 	@echo "Built Docker image \"amazon/cni-metrics-helper:$(VERSION)\""
 
 metrics-unit-test:
-	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./cni-metrics-helper/metrics/...
+	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./cmd/cni-metrics-helper/metrics/...
 
 docker-metrics-test:
 	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
@@ -102,16 +102,16 @@ generate-limits:
 # To install: go get -u golang.org/x/lint/golint
 lint:
 	golint pkg/awsutils/*.go
-	golint plugins/routed-eni/*.go
-	golint plugins/routed-eni/driver/*.go
+	golint cmd/routed-eni-cni-plugin/*.go
+	golint cmd/routed-eni-cni-plugin/driver/*.go
 	golint pkg/k8sapi/*.go
 	golint pkg/networkutils/*.go
-	golint ipamd/*.go
-	golint ipamd/*/*.go
+	golint pkg/ipamd/*.go
+	golint pkg/ipamd/*/*.go
 
 # go vet
 vet:
-	GOOS=linux go vet
+	GOOS=linux go vet ./...
 
 docker-vet: build-docker-test
 	docker run -e GO111MODULE=on \
@@ -120,7 +120,8 @@ docker-vet: build-docker-test
 clean:
 	rm -f aws-k8s-agent
 	rm -f aws-cni
-	rm -f cni-metrics-helper/cni-metrics-helper
+	rm -f grpc-health-probe
+	rm -f cni-metrics-helper
 	rm -f portmap
 
 files := $(shell find . -not -name 'mock_publisher.go' -not -name 'rpc.pb.go' -not -name 'integration_test.go' -name '*.go' -print)

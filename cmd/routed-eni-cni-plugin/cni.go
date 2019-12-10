@@ -23,28 +23,22 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
-
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-
 	log "github.com/cihub/seelog"
-
-	"github.com/pkg/errors"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/types/current"
 	cniSpecVersion "github.com/containernetworking/cni/pkg/version"
+	"github.com/pkg/errors"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 
+	"github.com/aws/amazon-vpc-cni-k8s/cmd/routed-eni-cni-plugin/driver"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/grpcwrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/rpcwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/typeswrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/plugins/routed-eni/driver"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 )
 
