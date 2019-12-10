@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
 
@@ -284,7 +285,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			Reason:                     "PodDeleted"})
 
 	if err != nil {
-		if err == datastore.ErrUnknownPod {
+		if strings.Contains(err.Error(), datastore.ErrUnknownPod.Error()) {
 			// Plugins should generally complete a DEL action without error even if some resources are missing. For example,
 			// an IPAM plugin should generally release an IP allocation and return success even if the container network
 			// namespace no longer exists, unless that network namespace is critical for IPAM management
