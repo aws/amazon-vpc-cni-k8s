@@ -17,7 +17,7 @@
 IMAGE   ?= amazon/amazon-k8s-cni
 VERSION ?= $(shell git describe --tags --always --dirty)
 LDFLAGS ?= -X main.version=$(VERSION)
-
+DOCKER_ARGS ?=
 ALLPKGS := $(shell go list ./...)
 
 ARCH ?= $(shell uname -m)
@@ -47,11 +47,11 @@ download-portmap:
 
 # Build CNI Docker image
 docker:
-	@docker build --build-arg arch="$(ARCH)" -f scripts/dockerfiles/Dockerfile.release -t "$(IMAGE):$(VERSION)" .
+	@docker build $(DOCKER_ARGS) --build-arg arch="$(ARCH)" -f scripts/dockerfiles/Dockerfile.release -t "$(IMAGE):$(VERSION)" .
 	@echo "Built Docker image \"$(IMAGE):$(VERSION)\""
 
 docker-func-test: docker
-	docker run -it "$(IMAGE):$(VERSION)"
+	docker run $(DOCKER_ARGS) -it "$(IMAGE):$(VERSION)"
 
 # unit-test
 unit-test:
