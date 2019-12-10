@@ -24,7 +24,7 @@ RUN yum update -y && \
 
 WORKDIR /app
 
-COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/cni-metrics-helper/cni-metrics-helper /app
+COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/cni-metrics-helper /app
 
 # Copy our bundled certs to the first place go will check: see
 # https://golang.org/src/pkg/crypto/x509/root_unix.go

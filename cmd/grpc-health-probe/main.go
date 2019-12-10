@@ -38,7 +38,7 @@ func init() {
 	log.SetFlags(0)
 	flag.StringVar(&remoteURL, "addr", "", "(required) tcp host:port to connect")
 	flag.StringVar(&serviceName, "service", "", "service name to check (default: \"\")")
-	flag.StringVar(&userAgent, "user-agent", "grpc_health_probe", "user-agent header value of health check requests")
+	flag.StringVar(&userAgent, "user-agent", "grpc-health-probe", "user-agent header value of health check requests")
 	// timeouts
 	flag.DurationVar(&connTimeoutDur, "connect-timeout", connTimeoutDur, "timeout for establishing connection")
 	flag.DurationVar(&rpcTimeoutDur, "rpc-timeout", rpcTimeoutDur, "timeout for health check rpc")
