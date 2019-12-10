@@ -22,14 +22,14 @@ import (
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc"
 
+	mock_driver "github.com/aws/amazon-vpc-cni-k8s/cmd/routed-eni-cni-plugin/driver/mocks"
 	mock_grpcwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/grpcwrapper/mocks"
 	mock_rpcwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/rpcwrapper/mocks"
 	mock_typeswrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/typeswrapper/mocks"
-	mock_driver "github.com/aws/amazon-vpc-cni-k8s/plugins/routed-eni/driver/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/rpc"
 	mock_rpc "github.com/aws/amazon-vpc-cni-k8s/rpc/mocks"
-	"google.golang.org/grpc"
 )
 
 const (
