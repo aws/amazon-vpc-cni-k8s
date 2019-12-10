@@ -25,12 +25,12 @@
 set -m
 
 # Check for all the required binaries before we go forward
-if [ ! -x $(command -v aws-k8s-agent) ]; then
+if [ ! -f aws-k8s-agent ]; then
     echo "Required aws-k8s-agent executable not found."
     exit 1
 fi
-if [ ! -x $(command -v grp_health_probe) ]; then
-    echo "Required grp_health_probe executable not found."
+if [ ! -f grpc_health_probe ]; then
+    echo "Required grpc_health_probe executable not found."
     exit 1
 fi
 
