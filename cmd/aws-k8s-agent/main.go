@@ -16,13 +16,12 @@ package main
 import (
 	"os"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd"
 	log "github.com/cihub/seelog"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
 const (
