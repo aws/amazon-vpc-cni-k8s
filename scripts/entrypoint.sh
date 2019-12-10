@@ -29,8 +29,8 @@ if [ ! -f aws-k8s-agent ]; then
     echo "Required aws-k8s-agent executable not found."
     exit 1
 fi
-if [ ! -f grpc_health_probe ]; then
-    echo "Required grpc_health_probe executable not found."
+if [ ! -f grpc-health-probe ]; then
+    echo "Required grpc-health-probe executable not found."
     exit 1
 fi
 
@@ -45,7 +45,7 @@ wait_for_ipam() {
 
     until [ $__sleep_time -eq 8 ]; do
         sleep $(( __sleep_time++ ))
-        if $(./grpc_health_probe -addr 127.0.0.1:50051 >/dev/null 2>&1); then
+        if $(./grpc-health-probe -addr 127.0.0.1:50051 >/dev/null 2>&1); then
             return 0
         fi
     done

@@ -19,9 +19,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	log "github.com/cihub/seelog"
 	"github.com/pkg/errors"
-
-	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -29,10 +28,9 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
-	log "github.com/cihub/seelog"
-
-	"github.com/aws/amazon-vpc-cni-k8s/ipamd/datastore"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 )
 
 const (
