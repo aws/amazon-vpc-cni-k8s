@@ -7,6 +7,7 @@ import (
 
 	"google.golang.org/grpc"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	"os"
 
 	log "github.com/cihub/seelog"
 )
