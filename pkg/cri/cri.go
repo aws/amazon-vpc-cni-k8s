@@ -3,15 +3,16 @@ package cri
 import (
 	"context"
 	"errors"
-
 	"google.golang.org/grpc"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	"os"
 
 	log "github.com/cihub/seelog"
 )
 
 const (
 	criSocketPath = "unix:///var/run/cri.sock"
+	dockerSocketPath = "unix:///var/run/dockershim.sock"
 )
 
 // SandboxInfo provides container information
@@ -33,7 +34,12 @@ func New() *Client {
 }
 
 func (c *Client) GetRunningPodSandboxes() (map[string]*SandboxInfo, error) {
-	conn, err := grpc.Dial(criSocketPath, grpc.WithInsecure())
+	socketPath := dockerSocketPath
+	if info, err := os.Stat("/var/run/cri.sock"); err == nil && !info.IsDir() {
+		socketPath = criSocketPath
+	}
+	log.Debugf("Getting running pod sandboxes from %q", socketPath)
+	conn, err := grpc.Dial(socketPath, grpc.WithInsecure())
 	if err != nil {
 		return nil, err
 	}
