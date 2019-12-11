@@ -523,7 +523,7 @@ func (ds *DataStore) UnassignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (ip strin
 	}
 	ipAddr, ok := ds.podsIP[podKey]
 	if !ok {
-		log.Warnf("UnassignPodIPv4Address: Failed to find pod %s namespace %s Sandbox %s",
+		log.Warnf("UnassignPodIPv4Address: Failed to find pod %s namespace %q, sandbox %q",
 			k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox)
 		return "", 0, ErrUnknownPod
 	}
