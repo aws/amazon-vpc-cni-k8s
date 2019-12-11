@@ -1,4 +1,4 @@
-// Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -58,6 +58,18 @@ func (m *MockNetworkAPIs) DeleteRuleListBySrc(arg0 net.IPNet) error {
 // DeleteRuleListBySrc indicates an expected call of DeleteRuleListBySrc
 func (mr *MockNetworkAPIsMockRecorder) DeleteRuleListBySrc(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteRuleListBySrc", reflect.TypeOf((*MockNetworkAPIs)(nil).DeleteRuleListBySrc), arg0)
+}
+
+// GetExcludeSNATCIDRs mocks base method
+func (m *MockNetworkAPIs) GetExcludeSNATCIDRs() []string {
+	ret := m.ctrl.Call(m, "GetExcludeSNATCIDRs")
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+// GetExcludeSNATCIDRs indicates an expected call of GetExcludeSNATCIDRs
+func (mr *MockNetworkAPIsMockRecorder) GetExcludeSNATCIDRs() *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetExcludeSNATCIDRs", reflect.TypeOf((*MockNetworkAPIs)(nil).GetExcludeSNATCIDRs))
 }
 
 // GetRuleList mocks base method
@@ -132,16 +144,4 @@ func (m *MockNetworkAPIs) UseExternalSNAT() bool {
 // UseExternalSNAT indicates an expected call of UseExternalSNAT
 func (mr *MockNetworkAPIsMockRecorder) UseExternalSNAT() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UseExternalSNAT", reflect.TypeOf((*MockNetworkAPIs)(nil).UseExternalSNAT))
-}
-
-// GetExcludeSNATCIDRs mocks base method
-func (m *MockNetworkAPIs) GetExcludeSNATCIDRs() []string {
-	ret := m.ctrl.Call(m, "GetExcludeSNATCIDRs")
-	ret0, _ := ret[0].([]string)
-	return ret0
-}
-
-// GetExcludeSNATCIDRs indicates an expected call of GetExcludeSNATCIDRs
-func (mr *MockNetworkAPIsMockRecorder) GetExcludeSNATCIDRs() *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetExcludeSNATCIDRs", reflect.TypeOf((*MockNetworkAPIs)(nil).GetExcludeSNATCIDRs))
 }
