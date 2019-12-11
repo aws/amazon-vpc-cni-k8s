@@ -33,7 +33,7 @@ The default manifest expects `--cni-conf-dir=/etc/cni/net.d` and `--cni-bin-dir=
 
 L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html):
 
-```      
+```
  {
      "Effect": "Allow",
      "Action": [
@@ -353,9 +353,52 @@ Default: `{}`
 
 Example values: `{"tag_key": "tag_val"}`
 
-Metadata applied to ENI help you categorize and organize your resources for billing or other purposes. Each tag consists of a custom-defined key and an optional value. Tag keys can have a maximum character length of 128 characters. Tag values can have a maximum length of 256 characters. These tags will be added to all ENIs on the host. 
+Metadata applied to ENI help you categorize and organize your resources for billing or other purposes. Each tag consists of a custom-defined key and an optional value. Tag keys can have a maximum character length of 128 characters. Tag values can have a maximum length of 256 characters. These tags will be added to all ENIs on the host.
 
 Important: Custom tags should not contain `k8s.amazonaws.com` prefix as it is reserved. If the tag has `k8s.amazonaws.com` string, tag addition will ignored.
+
+---
+
+`CLUSTER_NAME`
+
+Type: String
+
+Default: `""`
+
+Specifies the cluster name to tag allocated ENIs with. See the "Cluster Name tag" section below.
+
+### ENI tags related to Allocation
+
+This plugin interacts with the following tags on ENIs:
+
+* `cluster.k8s.amazonaws.com/name`
+* `node.k8s.amazonaws.com/instance_id`
+* `node.k8s.amazonaws.com/no_manage`
+
+#### Cluster Name tag
+
+The tag `cluster.k8s.amazonaws.com/name` will be set to the cluster name of the
+aws-node daemonset which created the ENI.
+
+#### Instance ID tag
+
+The tag `node.k8s.amazonaws.com/instance_id` will be set to the instance ID of
+the aws-node instance that allocated this ENI.
+
+#### No Manage tag
+
+The tag `node.k8s.amazonaws.com/no_manage` is read by the aws-node daemonset to
+determine whether an ENI attached to the machine should not be configured or
+used for private IPs.
+
+This tag is not set by the cni plugin itself, but rather may be set by a user
+to indicate that an ENI is intended for host networking pods, or for some other
+process unrelated to Kubernetes.
+
+*Note*: Attaching an ENI with the `no_manage` tag will result in an incorrect
+value for the Kubelet's `--max-pods` configuration option. Consider also
+updating the `MAX_ENI` and `--max-pods` configuration options on this plugin
+and the kubelet respectively if you are making use of this tag.
 
 ### Notes
 

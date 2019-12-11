@@ -98,12 +98,13 @@ func (mr *MockAPIsMockRecorder) DeallocIPAddresses(arg0, arg1 interface{}) *gomo
 }
 
 // DescribeENI mocks base method
-func (m *MockAPIs) DescribeENI(arg0 string) ([]*ec2.NetworkInterfacePrivateIpAddress, *string, error) {
+func (m *MockAPIs) DescribeENI(arg0 string) ([]*ec2.NetworkInterfacePrivateIpAddress, map[string]string, *string, error) {
 	ret := m.ctrl.Call(m, "DescribeENI", arg0)
 	ret0, _ := ret[0].([]*ec2.NetworkInterfacePrivateIpAddress)
-	ret1, _ := ret[1].(*string)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret1, _ := ret[1].(map[string]string)
+	ret2, _ := ret[2].(*string)
+	ret3, _ := ret[3].(error)
+	return ret0, ret1, ret2, ret3
 }
 
 // DescribeENI indicates an expected call of DescribeENI

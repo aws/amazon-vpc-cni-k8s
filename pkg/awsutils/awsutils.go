@@ -111,8 +111,8 @@ type APIs interface {
 	// GetAttachedENIs retrieves eni information from instance metadata service
 	GetAttachedENIs() (eniList []ENIMetadata, err error)
 
-	// DescribeENI returns the IPv4 addresses of ENI interface and ENI attachment ID
-	DescribeENI(eniID string) (addrList []*ec2.NetworkInterfacePrivateIpAddress, attachemdID *string, err error)
+	// DescribeENI returns the IPv4 addresses of ENI interface, tags, and the ENI attachment ID
+	DescribeENI(eniID string) (addrList []*ec2.NetworkInterfacePrivateIpAddress, tags map[string]string, attachemdID *string, err error)
 
 	// AllocIPAddress allocates an IP address for an ENI
 	AllocIPAddress(eniID string) error
@@ -185,6 +185,9 @@ type ENIMetadata struct {
 
 	// The ip addresses allocated for the network interface
 	LocalIPv4s []string
+
+	// Tags are the tags associated with this ENI in AWS
+	Tags map[string]string
 }
 
 // msSince returns milliseconds since start.
@@ -443,12 +446,18 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(macStr string) (ENIMetadat
 	if err != nil {
 		return ENIMetadata{}, errors.Wrapf(err, "get ENI metadata: failed to retrieve IPs and CIDR for ENI: %s", eniMAC)
 	}
+	_, tags, _, err := cache.DescribeENI(eni)
+	if err != nil {
+		return ENIMetadata{}, errors.Wrapf(err, "get ENI metadata: failed to describe ENI: %s, %v", eniMAC, err)
+	}
 	return ENIMetadata{
 		ENIID:          eni,
 		MAC:            eniMAC,
 		DeviceNumber:   deviceNum,
 		SubnetIPv4CIDR: cidr,
-		LocalIPv4s:     localIPv4s}, nil
+		LocalIPv4s:     localIPv4s,
+		Tags:           tags,
+	}, nil
 }
 
 // getIPsAndCIDR return list of IPs, CIDR, error
@@ -777,7 +786,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, maxBackoffDelay t
 	log.Infof("Trying to free ENI: %s", eniName)
 
 	// Find out attachment
-	_, attachID, err := cache.DescribeENI(eniName)
+	_, _, attachID, err := cache.DescribeENI(eniName)
 	if err != nil {
 		if err == ErrENINotFound {
 			log.Infof("ENI %s not found. It seems to be already freed", eniName)
@@ -852,9 +861,9 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string, maxBackoffDelay
 	return err
 }
 
-// DescribeENI returns the IPv4 addresses of interface and the attachment id
-// return: private IP address, attachment id, error
-func (cache *EC2InstanceMetadataCache) DescribeENI(eniID string) ([]*ec2.NetworkInterfacePrivateIpAddress, *string, error) {
+// DescribeENI returns the IPv4 addresses, tags, and attachment id of the given ENI
+// return: private IP address, tags, attachment id, error
+func (cache *EC2InstanceMetadataCache) DescribeENI(eniID string) ([]*ec2.NetworkInterfacePrivateIpAddress, map[string]string, *string, error) {
 	eniIds := make([]*string, 0)
 	eniIds = append(eniIds, aws.String(eniID))
 	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIds}
@@ -865,14 +874,23 @@ func (cache *EC2InstanceMetadataCache) DescribeENI(eniID string) ([]*ec2.Network
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
-				return nil, nil, ErrENINotFound
+				return nil, nil, nil, ErrENINotFound
 			}
 		}
 		awsAPIErrInc("DescribeNetworkInterfaces", err)
 		log.Errorf("Failed to get ENI %s information from EC2 control plane %v", eniID, err)
-		return nil, nil, errors.Wrap(err, "failed to describe network interface")
+		return nil, nil, nil, errors.Wrap(err, "failed to describe network interface")
 	}
-	return result.NetworkInterfaces[0].PrivateIpAddresses, result.NetworkInterfaces[0].Attachment.AttachmentId, nil
+	tags := make(map[string]string, len(result.NetworkInterfaces[0].TagSet))
+	for _, tag := range result.NetworkInterfaces[0].TagSet {
+		if tag.Key == nil || tag.Value == nil {
+			log.Errorf("nil tag on ENI: %v", eniID)
+			continue
+		}
+		tags[*tag.Key] = *tag.Value
+	}
+
+	return result.NetworkInterfaces[0].PrivateIpAddresses, tags, result.NetworkInterfaces[0].Attachment.AttachmentId, nil
 }
 
 // AllocIPAddress allocates an IP address for an ENI
