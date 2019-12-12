@@ -29,7 +29,8 @@ KUBECONFIG_PATH=${KUBECONFIG_PATH:-${TEST_CLUSTER_DIR}/kubeconfig}
 
 # shared binaries
 TESTER_DOWNLOAD_URL=https://github.com/aws/aws-k8s-tester/releases/download/v0.4.3/aws-k8s-tester-v0.4.3-$OS-$ARCH
-TESTER_PATH=${TESTER_PATH:-/tmp/aws-k8s-tester/aws-k8s-tester}
+TESTER_DIR=${TESTER_DIR:-/tmp/aws-k8s-tester}
+TESTER_PATH=${TESTER_PATH:-$TESTER_DIR/aws-k8s-tester}
 AUTHENTICATOR_PATH=${AUTHENTICATOR_PATH:-/tmp/aws-k8s-tester/aws-iam-authenticator}
 KUBECTL_PATH=${KUBECTL_PATH:-/tmp/aws-k8s-tester/kubectl}
 
@@ -51,8 +52,9 @@ mkdir -p $TEST_CLUSTER_DIR
 
 # Download aws-k8s-tester if not yet
 if [[ ! -e $TESTER_PATH ]]; then
+  mkdir -p $TESTER_DIR
   echo "Downloading aws-k8s-tester from $TESTER_DOWNLOAD_URL to $TESTER_PATH"
-  curl -L -X GET $TESTER_DOWNLOAD_URL -o $TESTER_PATH
+  curl -s -L -X GET $TESTER_DOWNLOAD_URL -o $TESTER_PATH
   chmod +x $TESTER_PATH
 fi
 
