@@ -1,0 +1,29 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: golang:1.12-stretch
+
+    working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    environment:
+      GO111MODULE: "on"
+    steps:
+      - checkout
+      - run: make build-linux
+  test:
+    docker:
+      - image: golang:1.12-stretch
+
+    working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    environment:
+      GO111MODULE: "on"
+    steps:
+      - checkout
+      - run: make unit-test
+
+workflows:
+  version: 2
+  build-and-test:
+    jobs:
+      - build
+      - test
