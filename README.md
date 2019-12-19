@@ -2,12 +2,8 @@
 
 Networking plugin for pod networking in [Kubernetes](https://kubernetes.io/) using [Elastic Network Interfaces](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html) on AWS.
 
-[![BuildStatus Widget]][BuildStatus Result]
+[![CircleCI](https://circleci.com/gh/aws/amazon-vpc-cni-k8s.svg?style=svg)](https://circleci.com/gh/aws/amazon-vpc-cni-k8s)
 [![GoReport Widget]][GoReport Status]
-
-
-[BuildStatus Result]: https://travis-ci.org/aws/amazon-vpc-cni-k8s
-[BuildStatus Widget]: https://travis-ci.org/aws/amazon-vpc-cni-k8s.svg?branch=master
 
 [GoReport Status]: https://goreportcard.com/report/github.com/aws/amazon-vpc-cni-k8s
 [GoReport Widget]: https://goreportcard.com/badge/github.com/aws/amazon-vpc-cni-k8s?
