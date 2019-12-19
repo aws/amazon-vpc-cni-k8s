@@ -100,15 +100,18 @@ check_aws_credentials
 ensure_aws_k8s_tester
 
 AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}
-AWS_ECR_REPO_URL=${AWS_ECR_REPO_ID:-"$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/amazon"}
-IMAGE_NAME=${IMAGE_VERSION:-"$AWS_ECR_REPO_URL/amazon-k8s-cni"}
+AWS_ECR_REGISTRY=${AWS_ECR_REGISTRY:-"$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"}
+AWS_ECR_REPO_NAME=${AWS_ECR_REPO_NAME:-"amazon-k8s-cni"}
+IMAGE_NAME=${IMAGE_NAME:-"$AWS_ECR_REGISTRY/$AWS_ECR_REPO_NAME"}
 IMAGE_VERSION=${IMAGE_VERSION:-$(git describe --tags --always --dirty)}
 
 if [[ "$BUILD" = true ]]; then
     # `aws ec2 get-login` returns a docker login string, which we eval here to
-    # login to the EC2 registry
-    eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
-    check_ecr_repo_exists "$AWS_ACCOUNT_ID" "amazon"
+    # login to the ECR registry
+    eval $(aws ecr get-login --region $AWS_REGION --no-include-email) >/dev/null 2>&1
+    ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
+    make docker IMAGE=$IMAGE_NAME VERSION=$IMAGE_VERSION
+    docker push $IMAGE_NAME:$IMAGE_VERSION
 fi
 
 # The version substituted in ./config/X/aws-k8s-cni.yaml
