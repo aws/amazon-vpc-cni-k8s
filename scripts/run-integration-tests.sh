@@ -93,6 +93,24 @@ else
     fi
 fi
 
+# double-check all our preconditions and requirements have been met
+check_is_installed docker
+check_is_installed aws
+check_aws_credentials
+ensure_aws_k8s_tester
+
+AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}
+AWS_ECR_REPO_URL=${AWS_ECR_REPO_ID:-"$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/amazon"}
+IMAGE_NAME=${IMAGE_VERSION:-"$AWS_ECR_REPO_URL/amazon-k8s-cni"}
+IMAGE_VERSION=${IMAGE_VERSION:-$(git describe --tags --always --dirty)}
+
+if [[ "$BUILD" = true ]]; then
+    # `aws ec2 get-login` returns a docker login string, which we eval here to
+    # login to the EC2 registry
+    eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
+    check_ecr_repo_exists "$AWS_ACCOUNT_ID" "amazon"
+fi
+
 # The version substituted in ./config/X/aws-k8s-cni.yaml
 CNI_TEMPLATE_VERSION=${CNI_TEMPLATE_VERSION:-v1.6}
 
