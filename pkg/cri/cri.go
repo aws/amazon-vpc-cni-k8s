@@ -3,15 +3,16 @@ package cri
 import (
 	"context"
 	"errors"
+	"os"
+
 	"google.golang.org/grpc"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
-	"os"
 
 	log "github.com/cihub/seelog"
 )
 
 const (
-	criSocketPath = "unix:///var/run/cri.sock"
+	criSocketPath    = "unix:///var/run/cri.sock"
 	dockerSocketPath = "unix:///var/run/dockershim.sock"
 )
 
