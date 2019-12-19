@@ -1,7 +1,7 @@
 # https://circleci.com/docs/2.0/language-go/
 version: 2.1
 jobs:
-  build-unit-test:
+  build:
     docker:
       - image: circleci/golang:1.12-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
@@ -15,8 +15,9 @@ jobs:
       - run: make lint
       - run: make vet
       - run: make unit-test
+      
 workflows:
   version: 2
   check:
     jobs:
-      - build-unit-test      
+      - build
