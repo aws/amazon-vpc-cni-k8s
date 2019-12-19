@@ -3,11 +3,13 @@
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")"; pwd)
+source $DIR/lib/common.sh
+source $DIR/lib/aws.sh
 source $DIR/lib/cluster.sh
 
 OS=$(go env GOOS)
-ARCH=amd64
-REGION=${AWS_REGION:-us-west-2}
+ARCH=$(go env GOARCH)
+AWS_REGION=${AWS_REGION:-us-west-2}
 K8S_VERSION=${K8S_VERSION:-1.14.6}
 PROVISION=${PROVISION:-true}
 DEPROVISION=${DEPROVISION:-true}
@@ -28,11 +30,28 @@ SSH_KEY_PATH=${SSH_KEY_PATH:-${TEST_CLUSTER_DIR}/id_rsa}
 KUBECONFIG_PATH=${KUBECONFIG_PATH:-${TEST_CLUSTER_DIR}/kubeconfig}
 
 # shared binaries
-TESTER_DOWNLOAD_URL=https://github.com/aws/aws-k8s-tester/releases/download/v0.4.3/aws-k8s-tester-v0.4.3-$OS-$ARCH
 TESTER_DIR=${TESTER_DIR:-/tmp/aws-k8s-tester}
 TESTER_PATH=${TESTER_PATH:-$TESTER_DIR/aws-k8s-tester}
 AUTHENTICATOR_PATH=${AUTHENTICATOR_PATH:-/tmp/aws-k8s-tester/aws-iam-authenticator}
 KUBECTL_PATH=${KUBECTL_PATH:-/tmp/aws-k8s-tester/kubectl}
+
+# double-check all our preconditions and requirements have been met
+check_is_installed docker
+check_is_installed aws
+check_aws_credentials
+ensure_aws_k8s_tester
+
+AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}
+AWS_ECR_REPO_URL=${AWS_ECR_REPO_ID:-"$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/amazon"}
+IMAGE_NAME=${IMAGE_VERSION:-"$AWS_ECR_REPO_URL/amazon-k8s-cni"}
+IMAGE_VERSION=${IMAGE_VERSION:-$(git describe --tags --always --dirty)}
+
+if [[ "$BUILD" = true ]]; then
+    # `aws ec2 get-login` returns a docker login string, which we eval here to
+    # login to the EC2 registry
+    eval $(aws ecr get-login --region $AWS_REGION --no-include-email)
+    check_ecr_repo_exists "$AWS_ACCOUNT_ID" "amazon"
+fi
 
 # The version substituted in ./config/X/aws-k8s-cni.yaml
 CNI_TEMPLATE_VERSION=${CNI_TEMPLATE_VERSION:-v1.5}
@@ -50,25 +69,12 @@ mkdir -p $TEST_DIR
 mkdir -p $REPORT_DIR
 mkdir -p $TEST_CLUSTER_DIR
 
-# Download aws-k8s-tester if not yet
-if [[ ! -e $TESTER_PATH ]]; then
-  mkdir -p $TESTER_DIR
-  echo "Downloading aws-k8s-tester from $TESTER_DOWNLOAD_URL to $TESTER_PATH"
-  curl -s -L -X GET $TESTER_DOWNLOAD_URL -o $TESTER_PATH
-  chmod +x $TESTER_PATH
-fi
-
 if [[ "$PROVISION" = true ]]; then
     up-test-cluster
 fi
 
 if [[ "$BUILD" = true ]]; then
     # Push test image
-    eval $(aws ecr get-login --region $REGION --no-include-email)
-    AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-    IMAGE_NAME="$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/amazon/amazon-k8s-cni"
-    IMAGE_VERSION=$(git describe --tags --always --dirty)
-
     make docker IMAGE=$IMAGE_NAME VERSION=$IMAGE_VERSION
     docker push $IMAGE_NAME:$IMAGE_VERSION
 
