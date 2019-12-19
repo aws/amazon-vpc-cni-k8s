@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 
 function down-test-cluster() {
-    echo "Deleting cluster $CLUSTER_NAME"
-    $TESTER_PATH eks delete cluster --path $CLUSTER_CONFIG
+    echo -n "Deleting cluster $CLUSTER_NAME (this may take ~10 mins) ... "
+    $TESTER_PATH eks delete cluster --path $CLUSTER_CONFIG >>$CLUSTER_MANAGE_LOG_PATH 2>&1 ||
+        ( echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1 )
+    echo "ok."
 }
 
 function up-test-cluster() {
-    echo "Creating cluster $CLUSTER_NAME"
-    ssh-keygen -P cni-test -f $SSH_KEY_PATH
-
-    $TESTER_PATH eks create config --path $CLUSTER_CONFIG
+    ssh-keygen -q -P cni-test -f $SSH_KEY_PATH
 
     AWS_K8S_TESTER_EKS_CLUSTER_NAME=$CLUSTER_NAME \
         AWS_K8S_TESTER_EKS_KUBECONFIG_PATH=$KUBECONFIG_PATH \
@@ -23,5 +22,9 @@ function up-test-cluster() {
         AWS_K8S_TESTER_EKS_AWS_K8S_TESTER_PATH=$TESTER_PATH \
         AWS_K8S_TESTER_EKS_AWS_IAM_AUTHENTICATOR_PATH=$AUTHENTICATOR_PATH \
         AWS_K8S_TESTER_EKS_KUBECTL_PATH=$KUBECTL_PATH \
-        $TESTER_PATH eks create cluster --path $CLUSTER_CONFIG 1>&2
+    $TESTER_PATH eks create config --path $CLUSTER_CONFIG 1>&2
+    echo -n "Creating cluster $CLUSTER_NAME (this may take ~20 mins. details: tail -f $CLUSTER_MANAGE_LOG_PATH)... "
+    $TESTER_PATH eks create cluster --path $CLUSTER_CONFIG 2>>$CLUSTER_MANAGE_LOG_PATH 1>&2 ||
+        ( echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1 )
+    echo "ok."
 }
