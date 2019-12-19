@@ -6,7 +6,7 @@ jobs:
       - image: circleci/golang:1.12-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
-      GO111MODULE: on
+      GO111MODULE: "on"
     steps:
       - checkout
       - run: make check-format
