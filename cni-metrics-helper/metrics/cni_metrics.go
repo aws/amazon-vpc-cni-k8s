@@ -86,6 +86,20 @@ var InterestingCNIMetrics = map[string]metricsConvert{
 				actionFunc: metricsAdd,
 				data:       &dataPoints{},
 				logToFile:  true}}},
+	"awscni_force_removed_enis": {
+		actions: []metricsAction{
+			{cwMetricName: "forceRemoveENI",
+				matchFunc:  matchAny,
+				actionFunc: metricsAdd,
+				data:       &dataPoints{},
+				logToFile:  true}}},
+	"awscni_force_removed_ips": {
+		actions: []metricsAction{
+			{cwMetricName: "forceRemoveIPs",
+				matchFunc:  matchAny,
+				actionFunc: metricsAdd,
+				data:       &dataPoints{},
+				logToFile:  true}}},
 	"awscni_ipamd_action_inprogress": {
 		actions: []metricsAction{
 			{cwMetricName: "ipamdActionInProgress",
