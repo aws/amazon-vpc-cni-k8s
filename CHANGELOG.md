@@ -1,5 +1,52 @@
 # Changelog
 
+## v1.6.0
+
+* Feature - [Add MTU to the plugin config](https://github.com/aws/amazon-vpc-cni-k8s/pull/676) (#676, @mogren)
+* Feature - [Clean up leaked ENIs on startup](https://github.com/aws/amazon-vpc-cni-k8s/pull/624) (#624, @mogren)
+* Feature - [Get container ID from kube rather than docker](https://github.com/aws/amazon-vpc-cni-k8s/pull/371) (#371, @rudoi)
+* Feature - [Use CRI to obtain pod sandbox IDs instead of Kubernetes API](https://github.com/aws/amazon-vpc-cni-k8s/pull/714) (#714, @drakedevel)
+* Feature - [Use dockershim.sock for CRI](https://github.com/aws/amazon-vpc-cni-k8s/pull/751) (#751, @mogren)
+* Feature - [Allow additional CIDRs to be excluded from SNAT](https://github.com/aws/amazon-vpc-cni-k8s/pull/520) (#520, @totahuanocotl, @rewiko, @yorg1st)
+* Feature - [Add support for listening on unix socket for introspection endpoint](https://github.com/aws/amazon-vpc-cni-k8s/pull/#713) (#713, @adammw)
+* Feature - [Additional tags to ENI](https://github.com/aws/amazon-vpc-cni-k8s/pull/#734) (#734, @nithu0115)
+* Improvement - [Force ENI/IP reconciliation to delete from the datastore](https://github.com/aws/amazon-vpc-cni-k8s/pull/#754) (#754, @tatatodd)
+* Improvement - [Treating ErrUnknownPod from ipamd to be a noop and not returning error](https://github.com/aws/amazon-vpc-cni-k8s/pull/#750) (#750, @uruddarraju)
+* Improvement - [copy CNI plugin and config in entrypoint not agent](https://github.com/aws/amazon-vpc-cni-k8s/pull/#735) (#735, @jaypipes)
+* Improvement - [Adding m6g instance types](https://github.com/aws/amazon-vpc-cni-k8s/pull/#742) (#742, Srini Ramabadran)
+* Improvement - [Remove deprecated session.New method](https://github.com/aws/amazon-vpc-cni-k8s/pull/#729) (#729, @nithu0115)
+* Improvement - [Add support for a 'no manage' tag](https://github.com/aws/amazon-vpc-cni-k8s/pull/#726) (#726, @euank)
+* Improvement - [Scope watch on "pods" to only pods associated with the local node](https://github.com/aws/amazon-vpc-cni-k8s/pull/#716) (#716, @jacksontj)
+* Improvement - [Update ENI limits to match documentation](https://github.com/aws/amazon-vpc-cni-k8s/pull/#710) (#710, @mogren)
+* Improvement - [Add run-integration-tests.sh script](https://github.com/aws/amazon-vpc-cni-k8s/pull/#698) (#698, @nckturner)
+* Improvement - [Return the error from ipamd to plugin](https://github.com/aws/amazon-vpc-cni-k8s/pull/#688) (#688, @mogren)
+* Improvement - [Reduce image layer and strip debug flags](https://github.com/aws/amazon-vpc-cni-k8s/pull/#699) (#699, @mogren)
+* Improvement - [Bump aws-sdk-go to v1.23.13](https://github.com/aws/amazon-vpc-cni-k8s/pull/681) (#681, @mogren)
+* Improvement - [Made timeouts exponential](https://github.com/aws/amazon-vpc-cni-k8s/pull/640) (#640, @Zyqsempai)
+* Improvement - [Introduce a minimum target for ENI IPs](https://github.com/aws/amazon-vpc-cni-k8s/pull/612) (#612, @asheldon)
+* Improvement - [Reduce image layers and strip debug flags](https://github.com/aws/amazon-vpc-cni-k8s/pull/699) (#699, @mogren)
+* Improvement - [Add inCoolingPeriod for AddressInfo](https://github.com/aws/amazon-vpc-cni-k8s/pull/627) (#627, @chendotjs)
+* Improvement - [Reduce log level to Trace for the most common Debug lines](https://github.com/aws/amazon-vpc-cni-k8s/pull/631) (#631, @mogren)
+* Improvement - [Add support for m5n/m5dn/r5n/r5dn instances](https://github.com/aws/amazon-vpc-cni-k8s/pull/657) (#657, @Jeffwan)
+* Improvement - [Log security groups correctly](https://github.com/aws/amazon-vpc-cni-k8s/pull/646) (#646, @mogren)
+* Improvement - [Remove vendor folder](https://github.com/aws/amazon-vpc-cni-k8s/pull/635) (#635, @mogren)
+* Improvement - [Add IPs to the first ENI on startup](https://github.com/aws/amazon-vpc-cni-k8s/pull/648) (#648, @mogren)
+* Improvement - [Add shutdown listener](https://github.com/aws/amazon-vpc-cni-k8s/pull/645) (#645, @mogren)
+* Improvement - [Update protobuf to v1.3.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/633) (#633, @mogren)
+* Improvement - [Bump grpc version to v1.23.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/629) (#629, @mogren)
+* Improvement - [Added retryNbackoff for tagENI method](https://github.com/aws/amazon-vpc-cni-k8s/pull/626) (#626, @nithu0115)
+* Improvement - [Update backoff code from upstream and use when detaching ENIs](https://github.com/aws/amazon-vpc-cni-k8s/pull/623) (#623, @mogren)
+* Improvement - [Update kubeconfig lookup with eksctl clusters](https://github.com/aws/amazon-vpc-cni-k8s/pull/513) (#513, @dkeightley)
+* Improvement - [Fix introspection port in troubleshooting docs](https://github.com/aws/amazon-vpc-cni-k8s/pull/512) (#512, @drakedevel)
+
+# v1.5.5
+
+* Bug fix - [Revert "Return delete success for pods that never got scheduled"](https://github.com/aws/amazon-vpc-cni-k8s/pull/672/commits/474479d7455f41c514ffcd58390a2a3ebae26de5) (#672, @mogren)
+* Improvement - [Add support for r5dn instance family](https://github.com/aws/amazon-vpc-cni-k8s/pull/656) (#656, @mogren)
+* Improvement - [Add support for m5n/m5dn/r5n instances](https://github.com/aws/amazon-vpc-cni-k8s/pull/657) (#657, @Jeffwan)
+* Improvement - [Update cni-metrics-helper to v1.5.5](https://github.com/aws/amazon-vpc-cni-k8s/pull/672) (#672, @mogren)
+* Improvement - [Reduce image layers and strip debug flags](https://github.com/aws/amazon-vpc-cni-k8s/pull/699) (#699, @mogren)
+
 ## v1.5.4
 
 * Improvement - [Add support for g4dn instance family](https://github.com/aws/amazon-vpc-cni-k8s/pull/621) (#621, @mogren)
