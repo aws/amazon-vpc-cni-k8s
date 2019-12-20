@@ -86,7 +86,7 @@ func main() {
 	}
 
 	discoverController := k8sapi.NewController(kubeClient)
-	go discoverController.DiscoverK8SPods()
+	go discoverController.DiscoverCNIK8SPods()
 
 	var cw publisher.Publisher
 

@@ -117,11 +117,20 @@ func (d *Controller) GetCNIPods() []string {
 	return cniPods
 }
 
-// DiscoverK8SPods discovers Pods running in the cluster
-func (d *Controller) DiscoverK8SPods() {
+// DiscoverLocalK8SPods discovers CNI pods, aws-node, running in the cluster
+func (d *Controller) DiscoverCNIK8SPods() {
 	// create the pod watcher
-	podListWatcher := cache.NewListWatchFromClient(d.kubeClient.CoreV1().RESTClient(), "pods", metav1.NamespaceAll, fields.OneTermEqualSelector("spec.nodeName", d.myNodeName))
+	d.DiscoverK8SPods(cache.NewListWatchFromClient(d.kubeClient.CoreV1().RESTClient(), "pods", metav1.NamespaceSystem, fields.Everything()))
+}
 
+// DiscoverLocalK8SPods discovers local pods running on the node
+func (d *Controller) DiscoverLocalK8SPods() {
+	// create the pod watcher
+	d.DiscoverK8SPods(cache.NewListWatchFromClient(d.kubeClient.CoreV1().RESTClient(), "pods", metav1.NamespaceAll, fields.OneTermEqualSelector("spec.nodeName", d.myNodeName)))
+}
+
+// DiscoverK8SPods takes a watcher and updates the Controller cache
+func (d *Controller) DiscoverK8SPods(podListWatcher *cache.ListWatch) {
 	// create the workqueue
 	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 
