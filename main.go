@@ -50,7 +50,7 @@ func _main() int {
 	}
 
 	discoverController := k8sapi.NewController(kubeClient)
-	go discoverController.DiscoverK8SPods()
+	go discoverController.DiscoverLocalK8SPods()
 
 	eniConfigController := eniconfig.NewENIConfigController()
 	if ipamd.UseCustomNetworkCfg() {
