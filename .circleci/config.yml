@@ -3,7 +3,7 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: circleci/golang:1.12-stretch
+      - image: circleci/golang:1.13-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
       GO111MODULE: "on"
