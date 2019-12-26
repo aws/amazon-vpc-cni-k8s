@@ -95,6 +95,9 @@ docker-metrics-test:
 # Build both CNI and metrics helper
 all: docker docker-metrics
 
+generate-limits:
+	go run pkg/awsutils/gen_vpc_ip_limits.go
+
 # golint
 # To install: go get -u golang.org/x/lint/golint
 lint:
