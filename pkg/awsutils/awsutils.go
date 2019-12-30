@@ -928,9 +928,25 @@ func (cache *EC2InstanceMetadataCache) GetENIipLimit() (int, error) {
 // GetENILimit returns the number of ENIs can be attached to an instance
 func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
 	eniLimit, ok := InstanceENIsAvailable[cache.instanceType]
-
 	if !ok {
-		return 0, errors.New(fmt.Sprintf("%s: %s", UnknownInstanceType, cache.instanceType))
+		// Fetch from EC2 API
+		describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{InstanceTypes: []*string{aws.String(cache.instanceType)}}
+		output, err := cache.ec2SVC.DescribeInstanceTypes(describeInstanceTypesInput)
+		if err != nil || len(output.InstanceTypes) != 1 {
+			log.Errorf("", err)
+			return 0, errors.New(fmt.Sprintf("Failed calling DescribeInstanceTypes for `%s`: %v", cache.instanceType, err))
+		}
+		info := output.InstanceTypes[0]
+		// Ignore any missing values
+		instanceType := aws.StringValue(info.InstanceType)
+		eniLimit = int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
+		ipLimit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
+		if instanceType != "" && eniLimit > 0 && ipLimit > 0 {
+			InstanceENIsAvailable[instanceType] = eniLimit
+			InstanceIPsAvailable[instanceType] = ipLimit
+		} else {
+			return 0, errors.New(fmt.Sprintf("%s: %s", UnknownInstanceType, cache.instanceType))
+		}
 	}
 	return eniLimit, nil
 }

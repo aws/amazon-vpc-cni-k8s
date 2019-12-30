@@ -627,6 +627,27 @@ func TestFreeENIDescribeErr(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestDescribeInstanceTypes(t *testing.T) {
+	ctrl, _, mockEC2 := setup(t)
+	defer ctrl.Finish()
+	mockEC2.EXPECT().DescribeInstanceTypes(gomock.Any()).Return(&ec2.DescribeInstanceTypesOutput{
+		InstanceTypes: []*ec2.InstanceTypeInfo{
+			{InstanceType: aws.String("not-there"), NetworkInfo: &ec2.NetworkInfo{
+				MaximumNetworkInterfaces:  aws.Int64(9),
+				Ipv4AddressesPerInterface: aws.Int64(99)},
+			},
+		},
+		NextToken: nil,
+	}, nil)
+
+	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	ins.instanceType = "not-there"
+	value, err := ins.GetENILimit()
+	assert.NoError(t, err)
+	assert.Equal(t, 9, value)
+	assert.Equal(t, 99, InstanceIPsAvailable[ins.instanceType])
+}
+
 func TestAllocIPAddress(t *testing.T) {
 	ctrl, _, mockEC2 := setup(t)
 	defer ctrl.Finish()
