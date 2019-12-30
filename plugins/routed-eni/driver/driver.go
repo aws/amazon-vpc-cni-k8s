@@ -233,30 +233,22 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 			}
 			log.Infof("Added rule priority %d from %s table %d", fromContainerRulePriority, addr.String(), table)
 		} else {
-			// add rule: 1536: list of from <podIP> to <vpcCIDR> use table <table>
-			for _, cidr := range vpcCIDRs {
-				podRule := netLink.NewRule()
-				_, podRule.Dst, _ = net.ParseCIDR(cidr)
-				podRule.Src = addr
-				podRule.Table = table
-				podRule.Priority = fromContainerRulePriority
+			// add rule: 1536: list of from <podIP> use table <table>
+			podRule := netLink.NewRule()
+			podRule.Src = addr
+			podRule.Table = table
+			podRule.Priority = fromContainerRulePriority
 
-				err = netLink.RuleAdd(podRule)
-				if isRuleExistsError(err) {
-					log.Warn("Rule already exists [%v]", podRule)
-				} else {
-					if err != nil {
-						log.Errorf("Failed to add pod IP rule [%v]: %v", podRule, err)
-						return errors.Wrapf(err, "setupNS: failed to add pod rule [%v]", podRule)
-					}
+			err = netLink.RuleAdd(podRule)
+			if isRuleExistsError(err) {
+				log.Warn("Rule already exists [%v]", podRule)
+			} else {
+				if err != nil {
+					log.Errorf("Failed to add pod IP rule [%v]: %v", podRule, err)
+					return errors.Wrapf(err, "setupNS: failed to add pod rule [%v]", podRule)
 				}
-				var toDst string
-
-				if podRule.Dst != nil {
-					toDst = podRule.Dst.String()
-				}
-				log.Infof("Successfully added pod rule[%v] to %s", podRule, toDst)
 			}
+			log.Infof("Successfully added pod rule[%v]", podRule)
 		}
 	}
 	return nil
