@@ -79,7 +79,10 @@ spec:
       serviceAccountName: aws-node
       hostNetwork: true
       tolerations:
-        - operator: Exists
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
       containers:
         - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:v1.5.5
           imagePullPolicy: Always
