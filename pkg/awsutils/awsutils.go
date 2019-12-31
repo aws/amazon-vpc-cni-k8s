@@ -578,7 +578,7 @@ func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string,
 	}
 
 	// Once the ENI is attached, tag it.
-	cache.tagENI(eniID)
+	cache.tagENI(eniID, maxENIBackoffDelay)
 
 	// Also change the ENI's attribute so that the ENI will be deleted when the instance is deleted.
 	attributeInput := &ec2.ModifyNetworkInterfaceAttributeInput{
@@ -666,7 +666,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 	return aws.StringValue(result.NetworkInterface.NetworkInterfaceId), nil
 }
 
-func (cache *EC2InstanceMetadataCache) tagENI(eniID string) {
+func (cache *EC2InstanceMetadataCache) tagENI(eniID string, maxBackoffDelay time.Duration) {
 	// Tag the ENI with "node.k8s.amazonaws.com/instance_id=<instance_id>"
 	tags := []*ec2.Tag{
 		{
@@ -706,7 +706,7 @@ func (cache *EC2InstanceMetadataCache) tagENI(eniID string) {
 		Tags: tags,
 	}
 
-	_ = retry.RetryNWithBackoff(retry.NewSimpleBackoff(time.Second, time.Minute, 0.3, 2), 5, func() error {
+	_ = retry.RetryNWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, maxBackoffDelay, 0.3, 2), 5, func() error {
 		start := time.Now()
 		_, err := cache.ec2SVC.CreateTags(input)
 		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil)).Observe(msSince(start))
@@ -779,10 +779,10 @@ func awsUtilsErrInc(fn string, err error) {
 
 // FreeENI detaches and deletes the ENI interface
 func (cache *EC2InstanceMetadataCache) FreeENI(eniName string) error {
-	return cache.freeENI(eniName, maxENIBackoffDelay)
+	return cache.freeENI(eniName, 2*time.Second, maxENIBackoffDelay)
 }
 
-func (cache *EC2InstanceMetadataCache) freeENI(eniName string, maxBackoffDelay time.Duration) error {
+func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDetach time.Duration, maxBackoffDelay time.Duration) error {
 	log.Infof("Trying to free ENI: %s", eniName)
 
 	// Find out attachment
@@ -823,7 +823,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, maxBackoffDelay t
 	}
 
 	// It does take awhile for EC2 to detach ENI from instance, so we wait 2s before trying the delete.
-	time.Sleep(2 * time.Second)
+	time.Sleep(sleepDelayAfterDetach)
 	err = cache.deleteENI(eniName, maxBackoffDelay)
 	if err != nil {
 		awsUtilsErrInc("FreeENIDeleteErr", err)
