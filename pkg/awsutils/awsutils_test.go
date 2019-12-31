@@ -482,15 +482,15 @@ func TestTagEni(t *testing.T) {
 	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, errors.New("Tagging Failed"))
 	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, errors.New("Tagging Failed"))
 	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, nil)
-	ins.tagENI(eniID)
+	ins.tagENI(eniID, time.Millisecond)
 	assert.NoError(t, err)
 }
 
 func TestAdditionalTagsEni(t *testing.T) {
 	ctrl, _, mockEC2 := setup(t)
 	defer ctrl.Finish()
-	os.Setenv(additionalEniTagsEnvVar, `{"testKey": "testing"}`)
-	cureniID := eniID
+	_ = os.Setenv(additionalEniTagsEnvVar, `{"testKey": "testing"}`)
+	currentENIID := eniID
 	//result key
 	tagKey1 := "testKey"
 	//result value
@@ -503,7 +503,7 @@ func TestAdditionalTagsEni(t *testing.T) {
 
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
 	mockEC2.EXPECT().CreateTags(gomock.Any()).Return(nil, nil)
-	ins.tagENI(cureniID)
+	ins.tagENI(currentENIID, time.Millisecond)
 
 	// Verify the tags are registered.
 	assert.Equal(t, aws.StringValue(result.NetworkInterfaces[0].TagSet[0].Key), tagKey1)
