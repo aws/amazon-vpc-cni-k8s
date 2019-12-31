@@ -49,11 +49,11 @@ func main() {
 		log.Fatal(err)
 	}
 	svc := ec2.New(sess)
-	describeInstanceTypeInput := &ec2.DescribeInstanceTypesInput{}
+	describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{}
 
 	eniLimitMap := make(map[string]ENILimit)
 	for {
-		output, err := svc.DescribeInstanceTypes(describeInstanceTypeInput)
+		output, err := svc.DescribeInstanceTypes(describeInstanceTypesInput)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -71,7 +71,7 @@ func main() {
 		if output.NextToken == nil {
 			break
 		}
-		describeInstanceTypeInput = &ec2.DescribeInstanceTypesInput{
+		describeInstanceTypesInput = &ec2.DescribeInstanceTypesInput{
 			NextToken: output.NextToken,
 		}
 	}

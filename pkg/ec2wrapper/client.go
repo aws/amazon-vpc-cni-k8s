@@ -23,6 +23,7 @@ import (
 type EC2 interface {
 	CreateNetworkInterface(input *ec2svc.CreateNetworkInterfaceInput) (*ec2svc.CreateNetworkInterfaceOutput, error)
 	DescribeInstances(input *ec2svc.DescribeInstancesInput) (*ec2svc.DescribeInstancesOutput, error)
+	DescribeInstanceTypes(input *ec2svc.DescribeInstanceTypesInput) (*ec2svc.DescribeInstanceTypesOutput, error)
 	AttachNetworkInterface(input *ec2svc.AttachNetworkInterfaceInput) (*ec2svc.AttachNetworkInterfaceOutput, error)
 	DeleteNetworkInterface(input *ec2svc.DeleteNetworkInterfaceInput) (*ec2svc.DeleteNetworkInterfaceOutput, error)
 	DetachNetworkInterface(input *ec2svc.DetachNetworkInterfaceInput) (*ec2svc.DetachNetworkInterfaceOutput, error)

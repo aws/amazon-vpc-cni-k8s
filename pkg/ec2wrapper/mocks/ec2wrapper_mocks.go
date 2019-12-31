@@ -127,6 +127,19 @@ func (mr *MockEC2MockRecorder) DescribeInstances(arg0 interface{}) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeInstances", reflect.TypeOf((*MockEC2)(nil).DescribeInstances), arg0)
 }
 
+// DescribeInstanceTypes mocks base method
+func (m *MockEC2) DescribeInstanceTypes(arg0 *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
+	ret := m.ctrl.Call(m, "DescribeInstanceTypes", arg0)
+	ret0, _ := ret[0].(*ec2.DescribeInstanceTypesOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DescribeInstanceTypes indicates an expected call of DescribeInstanceTypes
+func (mr *MockEC2MockRecorder) DescribeInstanceTypes(arg0 interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeInstanceTypes", reflect.TypeOf((*MockEC2)(nil).DescribeInstanceTypes), arg0)
+}
+
 // DescribeNetworkInterfaces mocks base method
 func (m *MockEC2) DescribeNetworkInterfaces(arg0 *ec2.DescribeNetworkInterfacesInput) (*ec2.DescribeNetworkInterfacesOutput, error) {
 	ret := m.ctrl.Call(m, "DescribeNetworkInterfaces", arg0)
