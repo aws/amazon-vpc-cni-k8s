@@ -198,12 +198,6 @@ func TestPushWithMissingData(t *testing.T) {
 	assert.Empty(t, cloudwatchPublisher.localMetricData)
 }
 
-func TestPublisherNewWithoutClusterID(t *testing.T) {
-	cloudwatchPublisher, err := New(context.TODO())
-	assert.Error(t, err)
-	assert.Nil(t, cloudwatchPublisher)
-}
-
 func TestMin(t *testing.T) {
 	a, b := 1, 2
 
