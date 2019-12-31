@@ -623,10 +623,6 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 	awsAPILatency.WithLabelValues("AttachNetworkInterface", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("AttachNetworkInterface", err)
-		if containsAttachmentLimitExceededError(err) {
-			// TODO once reached limit, should stop retrying increasePool
-			log.Infof("Exceeded instance ENI attachment limit: %d ", cache.currentENIs)
-		}
 		log.Errorf("Failed to attach ENI %s: %v", eniID, err)
 		return "", errors.Wrap(err, "attachENI: failed to attach ENI")
 	}
@@ -749,14 +745,6 @@ func mapToTags(tagsMap map[string]string, tags []*ec2.Tag) []*ec2.Tag {
 		})
 	}
 	return tags
-}
-
-//containsAttachmentLimitExceededError returns whether exceeds instance's ENI limit
-func containsAttachmentLimitExceededError(err error) bool {
-	if aerr, ok := err.(awserr.Error); ok {
-		return aerr.Code() == "AttachmentLimitExceeded"
-	}
-	return false
 }
 
 // containsPrivateIPAddressLimitExceededError returns whether exceeds ENI's IP address limit

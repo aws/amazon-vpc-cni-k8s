@@ -268,7 +268,6 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 	return c, nil
 }
 
-//TODO need to break this function down(comments from CR)
 func (c *IPAMContext) nodeInit() error {
 	ipamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
@@ -343,7 +342,6 @@ func (c *IPAMContext) nodeInit() error {
 		log.Warnf("During ipamd init, failed to get Pod information from Kubernetes API Server %v", err)
 		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed")
 		// This can happens when L-IPAMD starts before kubelet.
-		// TODO  need to add node health stats here
 		return errors.Wrap(err, "failed to get running pods!")
 	}
 	log.Debugf("getLocalPodsWithRetry() found %d local pods", len(localPods))
@@ -368,11 +366,6 @@ func (c *IPAMContext) nodeInit() error {
 		if err != nil {
 			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed")
 			log.Warnf("During ipamd init, failed to use pod IP %s returned from Kubernetes API Server %v", ip.IP, err)
-			// TODO continue, but need to add node health stats here
-			// TODO need to feed this to controller on the health of pod and node
-			// This is a bug among kubelet/cni-plugin/l-ipamd/ec2-metadata that this particular pod is using an non existent ip address.
-			// Here we choose to continue instead of returning error and EXIT out L-IPAMD(exit L-IPAMD will make whole node out)
-			// The plan(TODO) is to feed this info back to controller and let controller cleanup this pod from this node.
 		}
 
 		// Update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
@@ -789,7 +782,6 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
 			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store", ec2Addr.PrivateIpAddress)
 			// continue to add next address
-			// TODO need to add health stats for err
 			ipamdErrInc("addENIaddressesToDataStoreAddENIIPv4AddressFailed")
 		}
 	}
