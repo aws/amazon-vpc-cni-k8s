@@ -8,6 +8,9 @@ ENV ARCH=$arch
 ENV GO111MODULE=on
 ENV GOPROXY=direct
 
+# Add goimports
+RUN go get -u golang.org/x/tools/cmd/goimports
+
 # go.mod and go.sum go into their own layers.
 COPY go.mod .
 COPY go.sum .
