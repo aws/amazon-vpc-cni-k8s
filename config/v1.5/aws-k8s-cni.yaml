@@ -76,6 +76,10 @@ spec:
                     operator: In
                     values:
                       - amd64
+                  - key: eks.amazonaws.com/compute-type
+                    operator: NotIn
+                    values:
+                      - fargate
       serviceAccountName: aws-node
       hostNetwork: true
       tolerations:
