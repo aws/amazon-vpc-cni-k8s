@@ -124,7 +124,7 @@ func TestSetupENINetworkMACFail(t *testing.T) {
 	// Emulate a delay attaching the ENI so a retry is necessary
 	// First attempt gets one links
 	for i := 0; i < maxAttemptsLinkByMac; i++ {
-		mockNetLink.EXPECT().LinkList().Return(nil, fmt.Errorf("simulated failure"))
+		mockNetLink.EXPECT().LinkList().Return(nil, errors.New("simulated failure"))
 	}
 
 	err := setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)

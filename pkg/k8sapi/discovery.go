@@ -91,7 +91,7 @@ func CreateKubeClient() (clientset.Interface, error) {
 		errMsg := "Failed to communicate with K8S Server. Please check instance security groups or http proxy setting"
 		log.Infof(errMsg)
 		fmt.Printf(errMsg)
-		return nil, fmt.Errorf("error communicating with apiserver: %v", err)
+		return nil, fmt.Errorf("error communicating with apiserver: %w", err)
 	}
 	log.Infof("Running with Kubernetes cluster version: v%s.%s. git version: %s. git tree state: %s. commit: %s. platform: %s",
 		v.Major, v.Minor, v.GitVersion, v.GitTreeState, v.GitCommit, v.Platform)
@@ -314,7 +314,7 @@ func (d *Controller) run(threadiness int, stopCh chan struct{}) {
 	// Wait for all involved caches to be synced, before processing items from the queue is started
 	if !cache.WaitForCacheSync(stopCh, d.controller.informer.HasSynced) {
 		log.Error("Timed out waiting for caches to sync!")
-		runtime.HandleError(fmt.Errorf("timed out waiting for caches to sync"))
+		runtime.HandleError(errors.New("timed out waiting for caches to sync"))
 		return
 	}
 

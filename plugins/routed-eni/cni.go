@@ -174,7 +174,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			string(k8sArgs.K8S_POD_NAME),
 			string(k8sArgs.K8S_POD_NAMESPACE),
 			string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID))
-		return fmt.Errorf("add cmd: failed to assign an IP address to container")
+		return errors.New("add cmd: failed to assign an IP address to container")
 	}
 
 	log.Infof("Received add network response for pod %s namespace %s sandbox %s: %s, table %d, external-SNAT: %v, vpcCIDR: %v",

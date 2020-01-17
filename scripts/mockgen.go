@@ -54,7 +54,7 @@ func main() {
 	for _, c := range requiredCommands {
 		if _, err := exec.LookPath(c); err != nil {
 			printErrorAndExitWithErrorCode(
-				fmt.Errorf("%s requires %q in the $PATH: %v", os.Args[0], c, err))
+				fmt.Errorf("%s requires %q in the $PATH: %w", os.Args[0], c, err))
 		}
 	}
 
@@ -80,7 +80,7 @@ func main() {
 	mockgenOut, err := mockgen.Output()
 	if err != nil {
 		printErrorAndExitWithErrorCode(
-			fmt.Errorf("error running mockgen for package '%s' and interfaces '%s': %v", packageName, interfaces, err))
+			fmt.Errorf("error running mockgen for package '%s' and interfaces '%s': %w", packageName, interfaces, err))
 	}
 
 	withHeader := copyrightHeader + licenseBlock + string(mockgenOut)
