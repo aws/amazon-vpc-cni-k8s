@@ -126,12 +126,12 @@ clean:
 files := $(shell find . -not -name 'mock_publisher.go' -not -name 'rpc.pb.go' -not -name 'integration_test.go' -name '*.go' -print)
 unformatted = $(shell goimports -l $(files))
 
-format :
+format:
 	@echo "== format"
 	@goimports -w $(files)
 	@sync
 
-check-format :
+check-format:
 	@echo "== check formatting"
 ifneq "$(unformatted)" ""
 	@echo "needs formatting: $(unformatted)"
