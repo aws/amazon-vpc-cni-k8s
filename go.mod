@@ -35,12 +35,11 @@ require (
 	github.com/sirupsen/logrus v1.4.1 // indirect
 	github.com/spf13/pflag v1.0.2
 	github.com/stretchr/testify v1.3.0
-	github.com/vishvananda/netlink v1.0.0
-	github.com/vishvananda/netns v0.0.0-20180720170159-13995c7128cc // indirect
+	github.com/vishvananda/netlink v1.1.0
+	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550 // indirect
 	golang.org/x/net v0.0.0-20191004110552-13f9640d40b9
 	golang.org/x/sys v0.0.0-20190826190057-c7b8b68b1456
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
-	golang.org/x/tools v0.0.0-20191227053925-7b8e75db28f4 // indirect
 	google.golang.org/grpc v1.23.1
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/api v0.0.0-20180712090710-2d6f90ab1293
