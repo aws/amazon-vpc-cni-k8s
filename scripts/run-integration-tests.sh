@@ -112,6 +112,9 @@ if [[ "$BUILD" = true ]]; then
     ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
     make docker IMAGE=$IMAGE_NAME VERSION=$IMAGE_VERSION
     docker push $IMAGE_NAME:$IMAGE_VERSION
+    if [[ $IMAGE_VERSION != $LOCAL_GIT_VERSION ]]; then
+        popd
+    fi
 fi
 
 # The version substituted in ./config/X/aws-k8s-cni.yaml
