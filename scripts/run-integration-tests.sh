@@ -63,15 +63,34 @@ AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account -
 AWS_ECR_REGISTRY=${AWS_ECR_REGISTRY:-"$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"}
 AWS_ECR_REPO_NAME=${AWS_ECR_REPO_NAME:-"amazon-k8s-cni"}
 IMAGE_NAME=${IMAGE_NAME:-"$AWS_ECR_REGISTRY/$AWS_ECR_REPO_NAME"}
-IMAGE_VERSION=${IMAGE_VERSION:-$(git describe --tags --always --dirty)}
+LOCAL_GIT_VERSION=$(git describe --tags --always --dirty)
+IMAGE_VERSION=${IMAGE_VERSION:-$LOCAL_GIT_VERSION}
 
-if [[ "$BUILD" = true ]]; then
-    # `aws ec2 get-login` returns a docker login string, which we eval here to
-    # login to the ECR registry
-    eval $(aws ecr get-login --region $AWS_REGION --no-include-email) >/dev/null 2>&1
-    ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
+# `aws ec2 get-login` returns a docker login string, which we eval here to
+# login to the ECR registry
+eval $(aws ecr get-login --region $AWS_REGION --no-include-email) >/dev/null 2>&1
+ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
+
+# Check to see if the image already exists in the Docker repository, and if
+# not, check out the CNI source code for that image tag, build the CNI
+# image and push it to the Docker repository
+if [[ `docker images -q $IMAGE_NAME:$IMAGE_VERSION 2> /dev/null` ]]; then
+    echo "CNI image $IMAGE_NAME:$IMAGE_VERSION already exists in repository. Skipping image build..."
+else
+    echo "CNI image $IMAGE_NAME:$IMAGE_VERSION does not exist in repository."
+    if [[ $IMAGE_VERSION != $LOCAL_GIT_VERSION ]]; then
+        __cni_source_tmpdir="/tmp/cni-src-$IMAGE_VERSION"
+        echo "Checking out CNI source code for $IMAGE_VERSION ..."
+
+        git clone --depth=1 --branch $IMAGE_VERSION \
+            https://github.com/aws/amazon-vpc-cni-k8s $__cni_source_tmpdir || exit 1;
+        pushd $__cni_source_tmpdir
+    fi
     make docker IMAGE=$IMAGE_NAME VERSION=$IMAGE_VERSION
     docker push $IMAGE_NAME:$IMAGE_VERSION
+    if [[ $IMAGE_VERSION != $LOCAL_GIT_VERSION ]]; then
+        popd
+    fi
 fi
 
 # The version substituted in ./config/X/aws-k8s-cni.yaml
