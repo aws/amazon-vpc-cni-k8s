@@ -41,6 +41,7 @@ require (
 	golang.org/x/net v0.0.0-20191004110552-13f9640d40b9
 	golang.org/x/sys v0.0.0-20190826190057-c7b8b68b1456
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
+	google.golang.org/appengine v1.4.0 // indirect
 	google.golang.org/grpc v1.23.1
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/api v0.0.0-20180712090710-2d6f90ab1293
