@@ -242,6 +242,12 @@ func cmdDel(args *skel.CmdArgs) error {
 	return del(args, typeswrapper.New(), grpcwrapper.New(), rpcwrapper.New(), driver.New())
 }
 
+func cmdCheck(args *skel.CmdArgs) error {
+	// TODO: implement
+	return nil
+}
+
+
 func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrapper.GRPC, rpcClient rpcwrapper.RPC,
 	driverClient driver.NetworkAPIs) error {
 
@@ -329,7 +335,7 @@ func main() {
 	log.Infof("Starting CNI Plugin %s ...", version)
 
 	exitCode := 0
-	if e := skel.PluginMainWithError(cmdAdd, cmdDel, cniSpecVersion.All); e != nil {
+	if e := skel.PluginMainWithError(cmdAdd ,cmdCheck , cmdDel, cniSpecVersion.All,"cni"); e != nil {
 		exitCode = 1
 		log.Error("Failed CNI request: ", e)
 		if err := e.Print(); err != nil {

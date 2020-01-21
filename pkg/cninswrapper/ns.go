@@ -13,7 +13,7 @@
 
 package cninswrapper
 
-import "github.com/containernetworking/cni/pkg/ns"
+import "github.com/containernetworking/plugins/pkg/ns"
 
 // NS wraps methods used from the cni/pkg/ns package
 type NS interface {

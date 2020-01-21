@@ -20,7 +20,7 @@ package mock_ns
 import (
 	reflect "reflect"
 
-	ns "github.com/containernetworking/cni/pkg/ns"
+	ns "github.com/containernetworking/plugins/pkg/ns"
 	gomock "github.com/golang/mock/gomock"
 )
 

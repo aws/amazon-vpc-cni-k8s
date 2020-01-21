@@ -6,8 +6,9 @@ require (
 	github.com/aws/aws-sdk-go v1.26.8
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 // indirect
 	github.com/cihub/seelog v0.0.0-20151216151435-d2c6e5aa9fbf
-	github.com/containernetworking/cni v0.5.2
-	github.com/coreos/go-iptables v0.4.0
+	github.com/containernetworking/cni v0.7.1
+	github.com/containernetworking/plugins v0.8.4
+	github.com/coreos/go-iptables v0.4.5
 	github.com/deckarep/golang-set v1.7.1
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
@@ -35,12 +36,11 @@ require (
 	github.com/sirupsen/logrus v1.4.1 // indirect
 	github.com/spf13/pflag v1.0.2
 	github.com/stretchr/testify v1.3.0
-	github.com/vishvananda/netlink v1.0.0
-	github.com/vishvananda/netns v0.0.0-20180720170159-13995c7128cc // indirect
+	github.com/vishvananda/netlink v1.1.0
+	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550 // indirect
 	golang.org/x/net v0.0.0-20191004110552-13f9640d40b9
 	golang.org/x/sys v0.0.0-20190826190057-c7b8b68b1456
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
-	golang.org/x/tools v0.0.0-20191227053925-7b8e75db28f4 // indirect
 	google.golang.org/grpc v1.23.1
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/api v0.0.0-20180712090710-2d6f90ab1293
