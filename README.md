@@ -30,28 +30,30 @@ The default manifest expects `--cni-conf-dir=/etc/cni/net.d` and `--cni-bin-dir=
 L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html):
 
 ```
- {
-     "Effect": "Allow",
-     "Action": [
-         "ec2:CreateNetworkInterface",
-         "ec2:AttachNetworkInterface",
-         "ec2:DeleteNetworkInterface",
-         "ec2:DetachNetworkInterface",
-         "ec2:DescribeNetworkInterfaces",
-         "ec2:DescribeInstances",
-         "ec2:ModifyNetworkInterfaceAttribute",
-         "ec2:AssignPrivateIpAddresses",
-         "ec2:UnassignPrivateIpAddresses"
-     ],
-     "Resource": [
-         "*"
-     ]
- },
- {
-     "Effect": "Allow",
-     "Action": "ec2:CreateTags",
-     "Resource": "arn:aws:ec2:*:*:network-interface/*"
- },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "ec2:AssignPrivateIpAddresses",
+          "ec2:AttachNetworkInterface",
+          "ec2:CreateNetworkInterface",
+          "ec2:DeleteNetworkInterface",
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceTypes",
+          "ec2:DescribeTags",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DetachNetworkInterface",
+          "ec2:ModifyNetworkInterfaceAttribute",
+          "ec2:UnassignPrivateIpAddresses"
+        ],
+        "Resource": "*"
+      },
+      {
+         "Effect": "Allow",
+         "Action": [
+            "ec2:CreateTags"
+          ],
+          "Resource": ["arn:aws:ec2:*:*:network-interface/*"]
+      }
 ```
 
 Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
@@ -59,10 +61,10 @@ Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](
 ## Building
 
 * `make` defaults to `make build-linux` that builds the Linux binaries.
-* `unit-test`, `lint` and `vet` provide ways to run the respective tests/tools and should be run before submitting a PR.
+* `unit-test`, `format`,`lint` and `vet` provide ways to run the respective tests/tools and should be run before submitting a PR.
 * `make docker` will create a docker container using the docker-build with the finished binaries, with a tag of `amazon/amazon-k8s-cni:latest`
-* `make docker-build` uses a docker container (golang:1.12) to build the binaries.
-* `make docker-unit-tests` uses a docker container (golang:1.12) to run all unit tests.
+* `make docker-build` uses a docker container (golang:1.13) to build the binaries.
+* `make docker-unit-tests` uses a docker container (golang:1.13) to run all unit tests.
 
 ## Components
 
