@@ -89,11 +89,11 @@ ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
 # Check to see if the image already exists in the Docker repository, and if
 # not, check out the CNI source code for that image tag, build the CNI
 # image and push it to the Docker repository
-if [[ $(docker images -q $IMAGE_NAME:$TEST_IMAGE_VERSION 2>/dev/null) ]]; then
+if [[ $(docker images -q $IMAGE_NAME:$TEST_IMAGE_VERSION 2> /dev/null) ]]; then
     echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION already exists in repository. Skipping image build..."
 else
     echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION does not exist in repository."
-    if [[ $TEST_IMAGE_VERSION != $LOCAL_GIT_VERSION ]]; then
+    if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
         __cni_source_tmpdir="/tmp/cni-src-$IMAGE_VERSION"
         echo "Checking out CNI source code for $IMAGE_VERSION ..."
 
@@ -103,7 +103,7 @@ else
     fi
     make docker IMAGE=$IMAGE_NAME VERSION=$TEST_IMAGE_VERSION
     docker push $IMAGE_NAME:$TEST_IMAGE_VERSION
-    if [[ $TEST_IMAGE_VERSION != $LOCAL_GIT_VERSION ]]; then
+    if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
         popd
     fi
 fi
@@ -138,7 +138,9 @@ cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," "$TEST_CONFIG_PATH"
 sed -i'.bak' "s,$STABLE_IMAGE_VERSION,$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
 
+export KUBECONFIG=$KUBECONFIG_PATH
 ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
+
 echo "*******************************************************************************"
 echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
 echo ""
@@ -149,13 +151,12 @@ TEST_PASS=$?
 popd
 
 echo "*******************************************************************************"
-echo "Deploying CNI with image $IMAGE_NAME"
-export KUBECONFIG=$KUBECONFIG_PATH
-$KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
+echo "Updating CNI to image $IMAGE_NAME:$IMAGE_VERSION"
+$KUBECTL_PATH apply -f ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
 
-echo "Sleping for 90s"
+echo "Sleping for 110s"
 echo "TODO: Poll and wait for updates to complete instead!"
-sleep 90
+sleep 110
 
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"

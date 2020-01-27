@@ -1,12 +1,16 @@
 # https://circleci.com/docs/2.0/language-go/
 version: 2.1
+
+orbs:
+  aws-cli: circleci/aws-cli@0.1.19
+
 jobs:
   build:
     docker:
       - image: circleci/golang:1.13-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
-      GO111MODULE: "on"
+      GO111MODULE: 'on'
     steps:
       - checkout
       - run: go get -u golang.org/x/lint/golint
@@ -16,9 +20,30 @@ jobs:
       - run: make lint
       - run: make vet
       - run: make unit-test
-      
+  integration_test:
+    docker:
+      - image: circleci/golang:1.13-stretch
+    working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    environment:
+      GO111MODULE: 'on'
+    steps:
+      - checkout
+      - setup_remote_docker
+      - aws-cli/setup:
+          profile-name: awstester
+      - run:
+          name: Run the integration tests
+          command: ./scripts/run-integration-tests.sh
+          no_output_timeout: 15m
+      - store_artifacts:
+          path: /tmp/cni-test
+
 workflows:
   version: 2
   check:
     jobs:
       - build
+      - integration_test:
+          context: aws
+          requires:
+            - build

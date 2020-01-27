@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 check_aws_credentials() {
-    aws sts get-caller-identity --query "Account" >/dev/null 2>&1 ||
+    aws sts get-caller-identity --query "Account" ||
         ( echo "No AWS credentials found. Please run \`aws configure\` to set up the CLI for your credentials." && exit 1)
 }
 
