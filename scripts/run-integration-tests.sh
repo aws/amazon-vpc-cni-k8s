@@ -57,11 +57,11 @@ KUBECTL_PATH=${KUBECTL_PATH:-$TESTER_DIR/kubectl}
 LOCAL_GIT_VERSION=$(git describe --tags --always --dirty)
 # The stable image version is the image tag used in the latest stable
 # aws-k8s-cni.yaml manifest
-STABLE_IMAGE_VERSION=${STABLE_IMAGE_VERSION:-v1.5.3}
+STABLE_IMAGE_VERSION=${STABLE_IMAGE_VERSION:-v1.6.0-rc5}
 TEST_IMAGE_VERSION=${IMAGE_VERSION:-$LOCAL_GIT_VERSION}
 # The CNI version we will start our k8s clusters with. We will then perform an
 # upgrade from this CNI to the CNI being tested (TEST_IMAGE_VERSION)
-BASE_CNI_VERSION=${BASE_CNI_VERSION:-v1.5}
+BASE_CNI_VERSION=${BASE_CNI_VERSION:-v1.6}
 BASE_CONFIG_PATH="$DIR/../config/$BASE_CNI_VERSION/aws-k8s-cni.yaml"
 TEST_CONFIG_PATH="$TEST_CONFIG_DIR/aws-k8s-cni.yaml"
 
@@ -138,10 +138,24 @@ cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," "$TEST_CONFIG_PATH"
 sed -i'.bak' "s,$STABLE_IMAGE_VERSION,$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
 
+ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
+echo "*******************************************************************************"
+echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
+echo ""
+pushd ./test/integration
+GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \
+    --assets=./assets
+TEST_PASS=$?
+popd
+
 echo "*******************************************************************************"
 echo "Deploying CNI with image $IMAGE_NAME"
 export KUBECONFIG=$KUBECONFIG_PATH
-kubectl apply -f "$TEST_CONFIG_PATH"
+$KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
+
+echo "Sleping for 90s"
+echo "TODO: Poll and wait for updates to complete instead!"
+sleep 90
 
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"
