@@ -247,7 +247,7 @@ This environment variable overrides `WARM_ENI_TARGET` behavior.
 
 ---
 
-`MINIMUM_IP_TARGET`
+`MINIMUM_IP_TARGET` (Since v1.6.0)
 
 Type: Integer
 
