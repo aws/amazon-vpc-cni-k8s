@@ -164,7 +164,7 @@ Used to configure the MTU size for attached ENIs. The valid range is from `576` 
 
 ---
 
-`AWS_VPC_K8S_CNI_EXTERNALSNAT` (Since v1.6.0)
+`AWS_VPC_K8S_CNI_EXTERNALSNAT`
 
 Type: Boolean
 
@@ -196,7 +196,7 @@ Disable (`none`) this functionality if you rely on sequential port allocation fo
 
 ---
 
-`AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS`
+`AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS` (Since v1.6.0)
 
 Type: String
 
