@@ -238,7 +238,7 @@ elastic network interfaces on the node are unable to provide these free addresse
 until `WARM_IP_TARGET` free IP addresses are available.
 
 **NOTE!** Avoid this setting for large clusters, or if the cluster has high pod churn. Setting it will cause additional calls to the
-EC2 API and that might cause throttling of the requests. It is strongly suggested to set `MINIMUM_IP_TARGET` when using `MINIMUM_IP_TARGET`.
+EC2 API and that might cause throttling of the requests. It is strongly suggested to set `MINIMUM_IP_TARGET` when using `WARM_IP_TARGET`.
 
 If both `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are set, `ipamD` will attempt to meet both constraints.
 This environment variable overrides `WARM_ENI_TARGET` behavior.
