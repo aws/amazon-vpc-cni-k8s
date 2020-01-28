@@ -746,19 +746,16 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 // 2) set up linux ENI related networking stack.
 // 3) add all ENI's secondary IP addresses to datastore
 func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) error {
-	ec2Addrs, eniPrimaryIP, err := c.getENIaddresses(eni)
-	if err != nil {
-		return errors.Wrapf(err, "failed to retrieve ENI %s IP addresses", eni)
-	}
-
 	// Add the ENI to the datastore
-	err = c.dataStore.AddENI(eni, eniMetadata.DeviceNumber, eni == c.awsClient.GetPrimaryENI())
+	err := c.dataStore.AddENI(eni, eniMetadata.DeviceNumber, eni == c.awsClient.GetPrimaryENI())
 	if err != nil && err.Error() != datastore.DuplicatedENIError {
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
 
 	// For secondary ENIs, set up the network
 	if eni != c.awsClient.GetPrimaryENI() {
+
+		eniPrimaryIP := eniMetadata.PrimaryIPv4Address()
 		err = c.networkClient.SetupENINetwork(eniPrimaryIP, eniMetadata.MAC, eniMetadata.DeviceNumber, eniMetadata.SubnetIPv4CIDR)
 		if err != nil {
 			log.Errorf("Failed to set up networking for ENI %s", eni)
@@ -766,7 +763,7 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) err
 		}
 	}
 
-	c.primaryIP[eni] = c.addENIaddressesToDataStore(ec2Addrs, eni)
+	c.primaryIP[eni] = c.addENIaddressesToDataStore(eniMetadata.IPv4Addresses, eni)
 	return nil
 }
 
@@ -1000,17 +997,18 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 }
 
 func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInfo, attachedENI awsutils.ENIMetadata, eni string) {
-	for _, localIP := range attachedENI.LocalIPv4s {
-		if localIP == c.primaryIP[eni] {
-			log.Debugf("Reconcile and skip primary IP %s on ENI %s", localIP, eni)
+	for _, privateIPv4 := range attachedENI.IPv4Addresses {
+		strPrivateIPv4 := aws.StringValue(privateIPv4.PrivateIpAddress)
+		if strPrivateIPv4 == c.primaryIP[eni] {
+			log.Debugf("Reconcile and skip primary IP %s on ENI %s", strPrivateIPv4, eni)
 			continue
 		}
 
 		// Check if this IP was recently freed
-		found, recentlyFreed := c.reconcileCooldownCache.RecentlyFreed(localIP)
+		found, recentlyFreed := c.reconcileCooldownCache.RecentlyFreed(strPrivateIPv4)
 		if found {
 			if recentlyFreed {
-				log.Debugf("Reconcile skipping IP %s on ENI %s because it was recently unassigned from the ENI.", localIP, eni)
+				log.Debugf("Reconcile skipping IP %s on ENI %s because it was recently unassigned from the ENI.", strPrivateIPv4, eni)
 				continue
 			} else {
 				log.Debugf("This IP was recently freed, but is out of cooldown. We need to verify with EC2 control plane.")
@@ -1023,32 +1021,32 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 					// Verify that the IP really belongs to this ENI
 					isReallyAttachedToENI := false
 					for _, ec2Addr := range ec2Addresses {
-						if localIP == aws.StringValue(ec2Addr.PrivateIpAddress) {
+						if strPrivateIPv4 == aws.StringValue(ec2Addr.PrivateIpAddress) {
 							isReallyAttachedToENI = true
-							log.Debugf("Verified that IP %s is attached to ENI %s", localIP, eni)
+							log.Debugf("Verified that IP %s is attached to ENI %s", strPrivateIPv4, eni)
 							break
 						}
 					}
 					if isReallyAttachedToENI {
-						c.reconcileCooldownCache.Remove(localIP)
+						c.reconcileCooldownCache.Remove(strPrivateIPv4)
 					} else {
-						log.Warnf("Skipping IP %s on ENI %s because it does not belong to this ENI!.", localIP, eni)
+						log.Warnf("Skipping IP %s on ENI %s because it does not belong to this ENI!.", strPrivateIPv4, eni)
 						continue
 					}
 				}
 			}
 		}
 
-		err := c.dataStore.AddIPv4AddressToStore(eni, localIP)
+		err := c.dataStore.AddIPv4AddressToStore(eni, strPrivateIPv4)
 		if err != nil && err.Error() == datastore.IPAlreadyInStoreError {
-			log.Debugf("Reconciled IP %s on ENI %s", localIP, eni)
+			log.Debugf("Reconciled IP %s on ENI %s", strPrivateIPv4, eni)
 			// mark action = remove it from ipPool since the IP should not be deleted
-			delete(ipPool, localIP)
+			delete(ipPool, strPrivateIPv4)
 			continue
 		}
 
 		if err != nil {
-			log.Errorf("Failed to reconcile IP %s on ENI %s", localIP, eni)
+			log.Errorf("Failed to reconcile IP %s on ENI %s", strPrivateIPv4, eni)
 			ipamdErrInc("ipReconcileAdd")
 			// continue instead of bailout due to one IP
 			continue

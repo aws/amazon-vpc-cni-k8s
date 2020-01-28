@@ -169,7 +169,7 @@ type EC2InstanceMetadataCache struct {
 	ec2SVC      ec2wrapper.EC2
 }
 
-// ENIMetadata contains ENI information retrieved from EC2 meta data service
+// ENIMetadata contains information about an ENI
 type ENIMetadata struct {
 	// ENIID is the id of network interface
 	ENIID string
@@ -184,10 +184,19 @@ type ENIMetadata struct {
 	SubnetIPv4CIDR string
 
 	// The ip addresses allocated for the network interface
-	LocalIPv4s []string
+	IPv4Addresses []*ec2.NetworkInterfacePrivateIpAddress
 
 	// Tags are the tags associated with this ENI in AWS
 	Tags map[string]string
+}
+
+func (eni ENIMetadata) PrimaryIPv4Address() string {
+	for _, addr := range eni.IPv4Addresses {
+		if aws.BoolValue(addr.Primary) {
+			return aws.StringValue(addr.PrivateIpAddress)
+		}
+	}
+	return ""
 }
 
 // msSince returns milliseconds since start.
@@ -442,20 +451,61 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(macStr string) (ENIMetadat
 	}
 	log.Debugf("Found ENI: %s, MAC %s, device %d", eni, eniMAC, deviceNum)
 
-	localIPv4s, cidr, err := cache.getIPsAndCIDR(eniMAC)
+	imdsIPv4s, cidr, err := cache.getIPsAndCIDR(eniMAC)
 	if err != nil {
 		return ENIMetadata{}, errors.Wrapf(err, "get ENI metadata: failed to retrieve IPs and CIDR for ENI: %s", eniMAC)
 	}
-	_, tags, _, err := cache.DescribeENI(eni)
+	privateIPv4s, tags, _, err := cache.DescribeENI(eni)
 	if err != nil {
 		return ENIMetadata{}, errors.Wrapf(err, "get ENI metadata: failed to describe ENI: %s, %v", eniMAC, err)
+	}
+	// getIPsAndCIDR() queries IMDS for IPv4 addresses attached to the ENI.
+	// DescribeENI() calls the DescribeNetworkInterfaces AWS API call, which
+	// technically should be the source of truth and contain the freshest
+	// information. Let's just do a quick scan here and output some diagnostic
+	// messages if we find stale info in the IMDS result.
+	missingIMDS := []string{}
+	missingDNI := []string{}
+	for _, privateIPv4 := range privateIPv4s {
+		found := false
+		strPrivateIPv4 := aws.StringValue(privateIPv4.PrivateIpAddress)
+		for _, imdsIPv4 := range imdsIPv4s {
+			if imdsIPv4 == strPrivateIPv4 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missingIMDS = append(missingIMDS, strPrivateIPv4)
+		}
+	}
+	for _, imdsIPv4 := range imdsIPv4s {
+		found := false
+		for _, privateIPv4 := range privateIPv4s {
+			strPrivateIPv4 := aws.StringValue(privateIPv4.PrivateIpAddress)
+			if imdsIPv4 == strPrivateIPv4 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missingDNI = append(missingDNI, imdsIPv4)
+		}
+	}
+	if len(missingIMDS) > 0 {
+		strMissing := strings.Join(missingIMDS, ",")
+		log.Debugf("getENIMetadata: DescribeNetworkInterfaces(%s) yielded private IPv4 addresses %s that were not yet found in IMDS.", eni, strMissing)
+	}
+	if len(missingDNI) > 0 {
+		strMissing := strings.Join(missingDNI, ",")
+		log.Debugf("getENIMetadata: IMDS query yielded stale IPv4 addresses %s that were not found in DescribeNetworkInterfaces(%s).", strMissing, eni)
 	}
 	return ENIMetadata{
 		ENIID:          eni,
 		MAC:            eniMAC,
 		DeviceNumber:   deviceNum,
 		SubnetIPv4CIDR: cidr,
-		LocalIPv4s:     localIPv4s,
+		IPv4Addresses:  privateIPv4s,
 		Tags:           tags,
 	}, nil
 }
