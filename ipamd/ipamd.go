@@ -322,26 +322,25 @@ func (c *IPAMContext) nodeInit() error {
 		retry := 0
 		for {
 			retry++
-			err = c.setupENI(eni.ENIID, eni)
+			if err = c.setupENI(eni.ENIID, eni); err == nil {
+				log.Infof("ENI %s set up.", eni.ENIID)
+				break
+			}
+
 			if retry > maxRetryCheckENI {
 				log.Errorf("Unable to discover attached IPs for ENI from metadata service")
 				ipamdErrInc("waitENIAttachedMaxRetryExceeded")
 				break
 			}
 
-			if err != nil {
-				log.Warnf("Error trying to set up ENI %s: %v", eni.ENIID, err)
-				if strings.Contains(err.Error(), "setupENINetwork: failed to find the link which uses MAC address") {
-					// If we can't find the matching link for this MAC address, there is no point in retrying for this ENI.
-					log.Errorf("Unable to match link for this ENI, going to the next one.")
-					break
-				}
-				log.Debugf("Unable to discover IPs for this ENI yet (attempt %d/%d)", retry, maxRetryCheckENI)
-				time.Sleep(eniAttachTime)
-				continue
+			log.Warnf("Error trying to set up ENI %s: %v", eni.ENIID, err)
+			if strings.Contains(err.Error(), "setupENINetwork: failed to find the link which uses MAC address") {
+				// If we can't find the matching link for this MAC address, there is no point in retrying for this ENI.
+				log.Errorf("Unable to match link for this ENI, going to the next one.")
+				break
 			}
-			log.Infof("ENI %s set up.", eni.ENIID)
-			break
+			log.Debugf("Unable to discover IPs for this ENI yet (attempt %d/%d)", retry, maxRetryCheckENI)
+			time.Sleep(eniAttachTime)
 		}
 	}
 	localPods, err := c.getLocalPodsWithRetry()
