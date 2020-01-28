@@ -295,6 +295,13 @@ func (c *IPAMContext) nodeInit() error {
 	}
 	c.updateIPStats(numUnmanaged)
 
+	var pbVPCcidrs []string
+	vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
+
+	for _, cidr := range vpcCIDRs {
+		pbVPCcidrs = append(pbVPCcidrs, *cidr)
+	}
+
 	_, vpcCIDR, err := net.ParseCIDR(c.awsClient.GetVPCIPv4CIDR())
 	if err != nil {
 		log.Error("Failed to parse VPC IPv4 CIDR", err.Error())
@@ -302,7 +309,7 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	primaryIP := net.ParseIP(c.awsClient.GetLocalIPv4())
-	err = c.networkClient.SetupHostNetwork(vpcCIDR, c.awsClient.GetVPCIPv4CIDRs(), c.awsClient.GetPrimaryENImac(), &primaryIP)
+	err = c.networkClient.SetupHostNetwork(vpcCIDR, vpcCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP)
 	if err != nil {
 		log.Error("Failed to set up host network", err)
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
@@ -370,12 +377,6 @@ func (c *IPAMContext) nodeInit() error {
 
 		// Update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
 		srcIPNet := net.IPNet{IP: net.ParseIP(ip.IP), Mask: net.IPv4Mask(255, 255, 255, 255)}
-		vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
-
-		var pbVPCcidrs []string
-		for _, cidr := range vpcCIDRs {
-			pbVPCcidrs = append(pbVPCcidrs, *cidr)
-		}
 
 		err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet, pbVPCcidrs, !c.networkClient.UseExternalSNAT())
 		if err != nil {

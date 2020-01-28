@@ -156,7 +156,6 @@ func TestNodeInit(t *testing.T) {
 	var rules []netlink.Rule
 	mockNetwork.EXPECT().GetRuleList().Return(rules, nil)
 
-	mockAWS.EXPECT().GetVPCIPv4CIDRs().Return(cidrs)
 	mockNetwork.EXPECT().UseExternalSNAT().Return(false)
 	mockNetwork.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any(), gomock.Any(), true)
 	// Add IPs
