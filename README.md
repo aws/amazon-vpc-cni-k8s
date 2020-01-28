@@ -154,7 +154,7 @@ To select an `ENIConfig` based upon availability zone set this to `failure-domai
 
 ---
 
-`AWS_VPC_ENI_MTU`
+`AWS_VPC_ENI_MTU` (Since v1.6.0)
 
 Type: Integer
 
@@ -196,7 +196,7 @@ Disable (`none`) this functionality if you rely on sequential port allocation fo
 
 ---
 
-`AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS`
+`AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS` (Since v1.6.0)
 
 Type: String
 
@@ -233,15 +233,19 @@ Type: Integer
 Default: None
 
 Specifies the number of free IP addresses that the `ipamD` daemon should attempt to keep available for pod assignment on the node.
-For example, if `WARM_IP_TARGET` is set to 10, then `ipamD` attempts to keep 10 free IP addresses available at all times. If the
+For example, if `WARM_IP_TARGET` is set to 5, then `ipamD` attempts to keep 5 free IP addresses available at all times. If the
 elastic network interfaces on the node are unable to provide these free addresses, `ipamD` attempts to allocate more interfaces
 until `WARM_IP_TARGET` free IP addresses are available.
+
+**NOTE!** Avoid this setting for large clusters, or if the cluster has high pod churn. Setting it will cause additional calls to the
+EC2 API and that might cause throttling of the requests. It is strongly suggested to set `MINIMUM_IP_TARGET` when using `WARM_IP_TARGET`.
+
 If both `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are set, `ipamD` will attempt to meet both constraints.
 This environment variable overrides `WARM_ENI_TARGET` behavior.
 
 ---
 
-`MINIMUM_IP_TARGET`
+`MINIMUM_IP_TARGET` (Since v1.6.0)
 
 Type: Integer
 
