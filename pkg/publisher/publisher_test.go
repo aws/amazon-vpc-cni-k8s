@@ -113,9 +113,10 @@ func TestCloudWatchPublisherWithGreaterThanMaxDatapointsAndStop(t *testing.T) {
 
 	go cloudwatchPublisher.monitor(testMonitorDuration)
 
+	// Delays added to prevent test flakiness
 	<-time.After(2 * testMonitorDuration)
 	cloudwatchPublisher.Stop()
-	<-time.After(testMonitorDuration)
+	<-time.After(2 * testMonitorDuration)
 
 	assert.Empty(t, cloudwatchPublisher.localMetricData)
 }

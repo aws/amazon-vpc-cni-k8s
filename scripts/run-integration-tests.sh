@@ -23,7 +23,7 @@ __cluster_deprovisioned=0
 on_error() {
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the cluster
-    if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" = true ]]; then
+    if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
         # prevent double-deprovisioning with ctrl-c during deprovisioning...
         __cluster_deprovisioned=1
         echo "Cluster was provisioned already. Deprovisioning it..."
@@ -74,7 +74,7 @@ ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
 # Check to see if the image already exists in the Docker repository, and if
 # not, check out the CNI source code for that image tag, build the CNI
 # image and push it to the Docker repository
-if [[ `docker images -q $IMAGE_NAME:$IMAGE_VERSION 2> /dev/null` ]]; then
+if [[ $(docker images -q $IMAGE_NAME:$IMAGE_VERSION 2>/dev/null) ]]; then
     echo "CNI image $IMAGE_NAME:$IMAGE_VERSION already exists in repository. Skipping image build..."
 else
     echo "CNI image $IMAGE_NAME:$IMAGE_VERSION does not exist in repository."
@@ -83,7 +83,7 @@ else
         echo "Checking out CNI source code for $IMAGE_VERSION ..."
 
         git clone --depth=1 --branch $IMAGE_VERSION \
-            https://github.com/aws/amazon-vpc-cni-k8s $__cni_source_tmpdir || exit 1;
+            https://github.com/aws/amazon-vpc-cni-k8s $__cni_source_tmpdir || exit 1
         pushd $__cni_source_tmpdir
     fi
     make docker IMAGE=$IMAGE_NAME VERSION=$IMAGE_VERSION
@@ -111,12 +111,12 @@ mkdir -p $TEST_DIR
 mkdir -p $REPORT_DIR
 mkdir -p $TEST_CLUSTER_DIR
 
-if [[ "$PROVISION" = true ]]; then
+if [[ "$PROVISION" == true ]]; then
     up-test-cluster
     __cluster_created=1
 fi
 
-if [[ "$BUILD" = true ]]; then
+if [[ "$BUILD" == true ]]; then
     echo "Using ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml as a template"
     if [[ ! -f "./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml" ]]; then
         echo "./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml DOES NOT exist. Set \$CNI_TEMPLATE_VERSION to an existing directory in ./config/"
@@ -133,7 +133,7 @@ export KUBECONFIG=$KUBECONFIG_PATH
 kubectl apply -f ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
 
 echo "*******************************************************************************"
-echo "Running integration tests"
+echo "Running integration tests on current image:"
 echo ""
 pushd ./test/integration
 GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \
@@ -141,10 +141,10 @@ GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.foc
 TEST_PASS=$?
 popd
 
-if [[ "$DEPROVISION" = true ]]; then
+if [[ "$DEPROVISION" == true ]]; then
     down-test-cluster
 fi
 
 if [[ $TEST_PASS -ne 0 ]]; then
-  exit 1
+    exit 1
 fi
