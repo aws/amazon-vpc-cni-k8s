@@ -24,9 +24,9 @@ import (
 	"time"
 
 	log "github.com/cihub/seelog"
-	set "github.com/deckarep/golang-set"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -573,12 +573,10 @@ func (c *IPAMContext) tryUnassignIPsFromAll() {
 // to ENIs on the node.
 func (c *IPAMContext) findFreeableIPs(eni string) ([]string, error) {
 	podIPInfos := c.dataStore.GetPodInfos()
-	usedIPs := set.NewSet()
-	allocatedIPs := set.NewSet()
-
+	usedIPs := sets.String{}
 	// Get IPs that are currently in use by pods
 	for _, pod := range *podIPInfos {
-		usedIPs.Add(pod.IP)
+		usedIPs.Insert(pod.IP)
 	}
 
 	// Get IPs that are currently attached to the instance
@@ -590,20 +588,21 @@ func (c *IPAMContext) findFreeableIPs(eni string) ([]string, error) {
 		return nil, fmt.Errorf("error finding available IPs: eni %s does not exist", eni)
 	}
 
+	allocatedIPs := sets.String{}
 	for _, ip := range pool.IPv4Addresses {
-		allocatedIPs.Add(ip.Address)
+		allocatedIPs.Insert(ip.Address)
 	}
 
-	availableIPs := allocatedIPs.Difference(usedIPs).ToSlice()
+	availableIPs := allocatedIPs.Difference(usedIPs).UnsortedList()
 	var freeableIPs []string
 
-	// Free the number of ips `over` the warm IP target, unless `over` is greater than the number of available IPs on
-	// this ENI.  In that case we should only free the number of available  IPs.
+	// Free the number of IPs `over` the warm IP target, unless `over` is greater than the number of available IPs on
+	// this ENI. In that case we should only free the number of available IPs.
 	_, over, _ := c.ipTargetState()
 	numFreeable := min(over, len(availableIPs))
 
 	for _, ip := range availableIPs[:numFreeable] {
-		freeableIPs = append(freeableIPs, ip.(string))
+		freeableIPs = append(freeableIPs, ip)
 	}
 	return freeableIPs, nil
 }
