@@ -14,6 +14,7 @@
 package datastore
 
 import (
+	"sort"
 	"sync"
 	"time"
 
@@ -427,11 +428,21 @@ func (e *ENIIPPool) hasPods() bool {
 
 // GetENINeedsIP finds an ENI in the datastore that needs more IP addresses allocated
 func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENIIPPool {
-	for _, eni := range ds.eniIPPools {
+	// NOTE(jaypipes): Some tests rely on key order so we iterate over the IP
+	// pool structs here in sorted key order.
+	// TODO(jaypipes): Don't use a map as the primary iterator vehicle.
+	// Instead, use a slice of *ENIPool and use a map for existence checks only
+	eniIDs := make([]string, 0)
+	for eniID, eni := range ds.eniIPPools {
 		if skipPrimary && eni.IsPrimary {
 			log.Debugf("Skip the primary ENI for need IP check")
 			continue
 		}
+		eniIDs = append(eniIDs, eniID)
+	}
+	sort.Strings(eniIDs)
+	for _, eniID := range eniIDs {
+		eni := ds.eniIPPools[eniID]
 		if len(eni.IPv4Addresses) < maxIPperENI {
 			log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d",
 				eni.ID, len(eni.IPv4Addresses), maxIPperENI)
