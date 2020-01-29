@@ -16,7 +16,8 @@ jobs:
       - run: go get -u golang.org/x/lint/golint
       - run: go get -u golang.org/x/tools/cmd/goimports
       - run: make check-format
-      - run: make build-linux
+      - run: make build-linux ARCH=x86_64
+      - run: make build-linux ARCH=aarch64
       - run: make lint
       - run: make vet
       - run: make unit-test

@@ -1,4 +1,6 @@
-FROM golang:1.13-stretch as builder
+ARG docker_arch
+ARG golang_image=golang:1.13-stretch
+FROM $golang_image as builder
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
 
 ARG arch
@@ -18,16 +20,16 @@ RUN go mod download
 COPY . .
 RUN make build-metrics
 
-FROM amazonlinux:2
+FROM $docker_arch/amazonlinux:2
 RUN yum update -y && \
-    yum clean all
+	yum clean all
+
+# Copy our bundled certs to the first place go will check: see
+# https://golang.org/src/pkg/crypto/x509/root_unix.go
+COPY ./misc/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
 
 COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/cni-metrics-helper /app
-
-# Copy our bundled certs to the first place go will check: see
-# https://golang.org/src/pkg/crypto/x509/root_unix.go
-COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/misc/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 ENTRYPOINT /app/cni-metrics-helper --cloudwatch=false
