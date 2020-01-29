@@ -36,6 +36,7 @@ on_error() {
 TEST_ID=${TEST_ID:-$RANDOM}
 TEST_DIR=/tmp/cni-test/$(date "+%Y%M%d%H%M%S")-$TEST_ID
 REPORT_DIR=${TEST_DIR}/report
+TEST_CONFIG_DIR="$TEST_DIR/config"
 
 # test cluster config location
 # Pass in CLUSTER_ID to reuse a test cluster
@@ -53,6 +54,22 @@ TESTER_PATH=${TESTER_PATH:-$TESTER_DIR/aws-k8s-tester}
 AUTHENTICATOR_PATH=${AUTHENTICATOR_PATH:-$TESTER_DIR/aws-iam-authenticator}
 KUBECTL_PATH=${KUBECTL_PATH:-$TESTER_DIR/kubectl}
 
+LOCAL_GIT_VERSION=$(git describe --tags --always --dirty)
+# The stable image version is the image tag used in the latest stable
+# aws-k8s-cni.yaml manifest
+STABLE_IMAGE_VERSION=${STABLE_IMAGE_VERSION:-v1.5.3}
+TEST_IMAGE_VERSION=${IMAGE_VERSION:-$LOCAL_GIT_VERSION}
+# The CNI version we will start our k8s clusters with. We will then perform an
+# upgrade from this CNI to the CNI being tested (TEST_IMAGE_VERSION)
+BASE_CNI_VERSION=${BASE_CNI_VERSION:-v1.5}
+BASE_CONFIG_PATH="$DIR/../config/$BASE_CNI_VERSION/aws-k8s-cni.yaml"
+TEST_CONFIG_PATH="$TEST_CONFIG_DIR/aws-k8s-cni.yaml"
+
+if [[ ! -f "$BASE_CONFIG_PATH" ]]; then
+    echo "$BASE_CONFIG_PATH DOES NOT exist. Set \$CNI_TEMPLATE_VERSION to an existing directory in ./config/"
+    exit
+fi
+
 # double-check all our preconditions and requirements have been met
 check_is_installed docker
 check_is_installed aws
@@ -63,8 +80,6 @@ AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account -
 AWS_ECR_REGISTRY=${AWS_ECR_REGISTRY:-"$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"}
 AWS_ECR_REPO_NAME=${AWS_ECR_REPO_NAME:-"amazon-k8s-cni"}
 IMAGE_NAME=${IMAGE_NAME:-"$AWS_ECR_REGISTRY/$AWS_ECR_REPO_NAME"}
-LOCAL_GIT_VERSION=$(git describe --tags --always --dirty)
-IMAGE_VERSION=${IMAGE_VERSION:-$LOCAL_GIT_VERSION}
 
 # `aws ec2 get-login` returns a docker login string, which we eval here to
 # login to the ECR registry
@@ -74,21 +89,21 @@ ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
 # Check to see if the image already exists in the Docker repository, and if
 # not, check out the CNI source code for that image tag, build the CNI
 # image and push it to the Docker repository
-if [[ $(docker images -q $IMAGE_NAME:$IMAGE_VERSION 2>/dev/null) ]]; then
-    echo "CNI image $IMAGE_NAME:$IMAGE_VERSION already exists in repository. Skipping image build..."
+if [[ $(docker images -q $IMAGE_NAME:$TEST_IMAGE_VERSION 2>/dev/null) ]]; then
+    echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION already exists in repository. Skipping image build..."
 else
-    echo "CNI image $IMAGE_NAME:$IMAGE_VERSION does not exist in repository."
-    if [[ $IMAGE_VERSION != $LOCAL_GIT_VERSION ]]; then
+    echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION does not exist in repository."
+    if [[ $TEST_IMAGE_VERSION != $LOCAL_GIT_VERSION ]]; then
         __cni_source_tmpdir="/tmp/cni-src-$IMAGE_VERSION"
         echo "Checking out CNI source code for $IMAGE_VERSION ..."
 
-        git clone --depth=1 --branch $IMAGE_VERSION \
+        git clone --depth=1 --branch $TEST_IMAGE_VERSION \
             https://github.com/aws/amazon-vpc-cni-k8s $__cni_source_tmpdir || exit 1
         pushd $__cni_source_tmpdir
     fi
-    make docker IMAGE=$IMAGE_NAME VERSION=$IMAGE_VERSION
-    docker push $IMAGE_NAME:$IMAGE_VERSION
-    if [[ $IMAGE_VERSION != $LOCAL_GIT_VERSION ]]; then
+    make docker IMAGE=$IMAGE_NAME VERSION=$TEST_IMAGE_VERSION
+    docker push $IMAGE_NAME:$TEST_IMAGE_VERSION
+    if [[ $TEST_IMAGE_VERSION != $LOCAL_GIT_VERSION ]]; then
         popd
     fi
 fi
@@ -129,23 +144,19 @@ echo "+ Kubeconfig:         $KUBECONFIG_PATH"
 echo "+ Node SSH key:       $SSH_KEY_PATH"
 echo "+ Cluster config:     $CLUSTER_CONFIG"
 echo "+ AWS Account ID:     $AWS_ACCOUNT_ID"
-echo "+ CNI image to test:  $IMAGE_NAME:$IMAGE_VERSION"
+echo "+ CNI image to test:  $IMAGE_NAME:$TEST_IMAGE_VERSION"
 
 mkdir -p $TEST_DIR
 mkdir -p $REPORT_DIR
 mkdir -p $TEST_CLUSTER_DIR
+mkdir -p $TEST_CONFIG_DIR
 
 if [[ "$PROVISION" == true ]]; then
     up-test-cluster
     __cluster_created=1
 fi
 
-if [[ "$BUILD" == true ]]; then
-    echo "Using ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml as a template"
-    if [[ ! -f "./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml" ]]; then
-        echo "./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml DOES NOT exist. Set \$CNI_TEMPLATE_VERSION to an existing directory in ./config/"
-        exit
-    fi
+echo "Using $BASE_CONFIG_PATH as a template"
 
     sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
     sed -i'.bak' "s,v1.6.0,$IMAGE_VERSION," ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
@@ -154,7 +165,7 @@ fi
 echo "*******************************************************************************"
 echo "Deploying CNI with image $IMAGE_NAME"
 export KUBECONFIG=$KUBECONFIG_PATH
-kubectl apply -f ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
+kubectl apply -f "$TEST_CONFIG_PATH"
 
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"
