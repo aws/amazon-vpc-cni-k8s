@@ -132,26 +132,16 @@ func TestNodeInit(t *testing.T) {
 	mockAWS.EXPECT().GetPrimaryENImac().Return("")
 	mockNetwork.EXPECT().SetupHostNetwork(vpcCIDR, cidrs, "", &primaryIP).Return(nil)
 
+	mockAWS.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+
 	//primaryENIid
-	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	attachmentID := testAttachmentID
 	eniResp := []*ec2.NetworkInterfacePrivateIpAddress{
 		{
 			PrivateIpAddress: &testAddr1, Primary: &primary},
 		{
 			PrivateIpAddress: &testAddr2, Primary: &notPrimary}}
-	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	mockAWS.EXPECT().DescribeENI(primaryENIid).Return(eniResp, map[string]string{}, &attachmentID, nil)
-
-	//secENIid
-	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	attachmentID = testAttachmentID
-	eniResp = []*ec2.NetworkInterfacePrivateIpAddress{
-		{
-			PrivateIpAddress: &testAddr11, Primary: &primary},
-		{
-			PrivateIpAddress: &testAddr12, Primary: &notPrimary}}
-	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 
 	mockAWS.EXPECT().GetLocalIPv4().Return(ipaddr01)
