@@ -35,6 +35,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -464,34 +465,13 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(macStr string) (ENIMetadat
 	// technically should be the source of truth and contain the freshest
 	// information. Let's just do a quick scan here and output some diagnostic
 	// messages if we find stale info in the IMDS result.
-	missingIMDS := []string{}
-	missingDNI := []string{}
+	imdsIPv4Set := sets.NewString(imdsIPv4s...)
+	privateIPv4Set := sets.String{}
 	for _, privateIPv4 := range privateIPv4s {
-		found := false
-		strPrivateIPv4 := aws.StringValue(privateIPv4.PrivateIpAddress)
-		for _, imdsIPv4 := range imdsIPv4s {
-			if imdsIPv4 == strPrivateIPv4 {
-				found = true
-				break
-			}
-		}
-		if !found {
-			missingIMDS = append(missingIMDS, strPrivateIPv4)
-		}
+		privateIPv4Set.Insert(aws.StringValue(privateIPv4.PrivateIpAddress))
 	}
-	for _, imdsIPv4 := range imdsIPv4s {
-		found := false
-		for _, privateIPv4 := range privateIPv4s {
-			strPrivateIPv4 := aws.StringValue(privateIPv4.PrivateIpAddress)
-			if imdsIPv4 == strPrivateIPv4 {
-				found = true
-				break
-			}
-		}
-		if !found {
-			missingDNI = append(missingDNI, imdsIPv4)
-		}
-	}
+	missingIMDS := privateIPv4Set.Difference(imdsIPv4Set).List()
+	missingDNI := imdsIPv4Set.Difference(privateIPv4Set).List()
 	if len(missingIMDS) > 0 {
 		strMissing := strings.Join(missingIMDS, ",")
 		log.Debugf("getENIMetadata: DescribeNetworkInterfaces(%s) yielded private IPv4 addresses %s that were not yet found in IMDS.", eni, strMissing)

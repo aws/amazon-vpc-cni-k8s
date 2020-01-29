@@ -8,7 +8,6 @@ require (
 	github.com/cihub/seelog v0.0.0-20151216151435-d2c6e5aa9fbf
 	github.com/containernetworking/cni v0.5.2
 	github.com/coreos/go-iptables v0.4.0
-	github.com/deckarep/golang-set v1.7.1
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
