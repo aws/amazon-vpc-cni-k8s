@@ -4,29 +4,44 @@ version: 2.1
 orbs:
   aws-cli: circleci/aws-cli@0.1.19
 
-jobs:
-  build:
+references:
+  build_job: &build
     docker:
       - image: circleci/golang:1.13-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
-    environment:
+    environment: &env
       GO111MODULE: "on"
     steps:
       - checkout
       - run: go get -u golang.org/x/lint/golint
       - run: go get -u golang.org/x/tools/cmd/goimports
       - run: make check-format
-      - run: make build-linux ARCH=x86_64
-      - run: make build-linux ARCH=aarch64
+      - run: make build-linux "ARCH=$ARCH"
       - run: make lint
       - run: make vet
       - run: make unit-test
+
+jobs:
+  build_x86_64:
+    <<: *build
+    environment:
+      <<: *env
+      # Target the GOARCH for x86_64
+      ARCH: amd64
+
+  build_aarch64:
+    <<: *build
+    environment:
+      <<: *env
+      # Target the GOARCH for aarch64
+      ARCH: arm64
+
   integration_test:
     docker:
       - image: circleci/golang:1.13-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
-      GO111MODULE: "on"
+      <<: *env
     steps:
       - checkout
       - setup_remote_docker
@@ -43,11 +58,13 @@ workflows:
   version: 2
   check:
     jobs:
-      - build
+      - build_x86_64
+      - build_aarch64
       - hold:
           type: approval
           requires:
-            - build
+            - build_x86_64
+            - build_aarch64
       - integration_test:
           requires:
             - hold
