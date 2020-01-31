@@ -54,6 +54,8 @@ metadata:
 spec:
   updateStrategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: "10%"
   selector:
     matchLabels:
       k8s-app: aws-node
@@ -76,6 +78,10 @@ spec:
                     operator: In
                     values:
                       - amd64
+                  - key: eks.amazonaws.com/compute-type
+                    operator: NotIn
+                    values:
+                      - fargate
       serviceAccountName: aws-node
       hostNetwork: true
       tolerations:
@@ -89,11 +95,11 @@ spec:
           name: aws-node
           readinessProbe:
             exec:
-              command: ["/app/grpc_health_probe", "-addr=:50051"]
+              command: ["/app/grpc-health-probe", "-addr=:50051"]
             initialDelaySeconds: 35
           livenessProbe:
             exec:
-              command: ["/app/grpc_health_probe", "-addr=:50051"]
+              command: ["/app/grpc-health-probe", "-addr=:50051"]
             initialDelaySeconds: 35
           env:
             - name: AWS_VPC_K8S_CNI_LOGLEVEL

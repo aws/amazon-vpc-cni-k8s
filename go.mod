@@ -3,7 +3,7 @@ module github.com/aws/amazon-vpc-cni-k8s
 go 1.13
 
 require (
-	github.com/aws/aws-sdk-go v1.23.13
+	github.com/aws/aws-sdk-go v1.26.8
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 // indirect
 	github.com/cihub/seelog v0.0.0-20151216151435-d2c6e5aa9fbf
 	github.com/containernetworking/cni v0.5.2
