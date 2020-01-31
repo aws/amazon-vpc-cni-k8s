@@ -94,7 +94,7 @@ else
 fi
 
 # The version substituted in ./config/X/aws-k8s-cni.yaml
-CNI_TEMPLATE_VERSION=${CNI_TEMPLATE_VERSION:-v1.5}
+CNI_TEMPLATE_VERSION=${CNI_TEMPLATE_VERSION:-v1.6}
 
 echo "*******************************************************************************"
 echo "Running $TEST_ID on $CLUSTER_NAME in $AWS_REGION"
@@ -124,7 +124,7 @@ if [[ "$BUILD" == true ]]; then
     fi
 
     sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
-    sed -i'.bak' "s,v1.5.3,$IMAGE_VERSION," ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
+    sed -i'.bak' "s,v1.6.0-rc5,$IMAGE_VERSION," ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
 fi
 
 echo "*******************************************************************************"
