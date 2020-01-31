@@ -10,7 +10,7 @@ jobs:
       - image: circleci/golang:1.13-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
-      GO111MODULE: 'on'
+      GO111MODULE: "on"
     steps:
       - checkout
       - run: go get -u golang.org/x/lint/golint
@@ -25,7 +25,7 @@ jobs:
       - image: circleci/golang:1.13-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
-      GO111MODULE: 'on'
+      GO111MODULE: "on"
     steps:
       - checkout
       - setup_remote_docker
@@ -43,7 +43,10 @@ workflows:
   check:
     jobs:
       - build
-      - integration_test:
-          context: aws
+      - hold:
+          type: approval
           requires:
             - build
+      - integration_test:
+          requires:
+            - hold
