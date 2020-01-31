@@ -186,7 +186,7 @@ Default: `hashrandom`
 
 Valid Values: `hashrandom`, `prng`, `none`
 
-Specifies weather the SNAT `iptables` rule should randomize the outgoing ports for connections\. This should be used when
+Specifies whether the SNAT `iptables` rule should randomize the outgoing ports for connections\. This should be used when
 `AWS_VPC_K8S_CNI_EXTERNALSNAT=false`. When enabled (`hashrandom`) the `--random` flag will be added to the SNAT `iptables`
 rule\. To use pseudo random number generation rather than hash based (i.e. `--random-fully`) use `prng` for the environment
 variable. For old versions of `iptables` that do not support `--random-fully` this option will fall back to `--random`.
