@@ -175,10 +175,11 @@ TEST_PASS=$?
 popd
 
 echo "*******************************************************************************"
-echo "Updating CNI to image $IMAGE_NAME:$IMAGE_VERSION"
-$KUBECTL_PATH apply -f ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
+echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
+$KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 
-echo "Sleping for 110s"
+# Delay based on 3 nodes, 30s grace period per CNI pod
+echo "Sleeping for 110s"
 echo "TODO: Poll and wait for updates to complete instead!"
 sleep 110
 
