@@ -43,7 +43,7 @@ import (
 )
 
 const (
-	ipamDAddress       = "localhost:50051"
+	ipamDAddress       = "127.0.0.1:50051"
 	defaultLogFilePath = "/var/log/aws-routed-eni/plugin.log"
 )
 
