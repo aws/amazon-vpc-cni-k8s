@@ -18,8 +18,8 @@ var (
 	userAgent      string
 	remoteURL      string
 	serviceName    string
-	connTimeoutDur time.Duration = time.Second
-	rpcTimeoutDur  time.Duration = time.Second
+	connTimeoutDur = time.Second
+	rpcTimeoutDur  = time.Second
 	verbose        bool
 )
 
