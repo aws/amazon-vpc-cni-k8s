@@ -30,11 +30,12 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
-	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
+	"github.com/aws/amazon-vpc-cni-k8s/rpc"
 )
 
 const (
-	ipamdgRPCaddress = "127.0.0.1:50051"
+	ipamdgRPCaddress      = "127.0.0.1:50051"
+	grpcHealthServiceName = "grpc.health.v1.aws-node"
 )
 
 // server controls RPC service responses.
@@ -43,7 +44,7 @@ type server struct {
 }
 
 // AddNetwork processes CNI add network request and return an IP address for container
-func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.AddNetworkReply, error) {
+func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rpc.AddNetworkReply, error) {
 	log.Infof("Received AddNetwork for NS %s, Pod %s, NameSpace %s, Sandbox %s, ifname %s",
 		in.Netns, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID, in.IfName)
 
@@ -66,7 +67,7 @@ func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.
 		}
 	}
 
-	resp := pb.AddNetworkReply{
+	resp := rpc.AddNetworkReply{
 		Success:         err == nil,
 		IPv4Addr:        addr,
 		IPv4Subnet:      "",
@@ -80,7 +81,7 @@ func (s *server) AddNetwork(ctx context.Context, in *pb.AddNetworkRequest) (*pb.
 	return &resp, nil
 }
 
-func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.DelNetworkReply, error) {
+func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rpc.DelNetworkReply, error) {
 	log.Infof("Received DelNetwork for IP %s, Pod %s, Namespace %s, Sandbox %s",
 		in.IPv4Addr, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID)
 	delIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
@@ -98,29 +99,30 @@ func (s *server) DelNetwork(ctx context.Context, in *pb.DelNetworkRequest) (*pb.
 	}
 	log.Infof("Send DelNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", ip, deviceNumber, err)
 
-	return &pb.DelNetworkReply{Success: err == nil, IPv4Addr: ip, DeviceNumber: int32(deviceNumber)}, err
+	return &rpc.DelNetworkReply{Success: err == nil, IPv4Addr: ip, DeviceNumber: int32(deviceNumber)}, err
 }
 
 // RunRPCHandler handles request from gRPC
 func (c *IPAMContext) RunRPCHandler() error {
 	log.Info("Serving RPC Handler on ", ipamdgRPCaddress)
-
-	lis, err := net.Listen("tcp", ipamdgRPCaddress)
+	listener, err := net.Listen("tcp", ipamdgRPCaddress)
 	if err != nil {
 		log.Errorf("Failed to listen gRPC port: %v", err)
 		return errors.Wrap(err, "ipamd: failed to listen to gRPC port")
 	}
-	s := grpc.NewServer()
-	pb.RegisterCNIBackendServer(s, &server{ipamContext: c})
-	hs := health.NewServer()
-	// TODO: Implement watch once the status is check is handled correctly.
-	hs.SetServingStatus("grpc.health.v1.aws-node", healthpb.HealthCheckResponse_SERVING)
-	healthpb.RegisterHealthServer(s, hs)
+	grpcServer := grpc.NewServer()
+	rpc.RegisterCNIBackendServer(grpcServer, &server{ipamContext: c})
+	healthServer := health.NewServer()
+	// If ipamd can talk to the API server and to the EC2 API, the pod is healthy.
+	// No need to ever change this to HealthCheckResponse_NOT_SERVING since it's a local service only
+	healthServer.SetServingStatus(grpcHealthServiceName, healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(grpcServer, healthServer)
+
 	// Register reflection service on gRPC server.
-	reflection.Register(s)
+	reflection.Register(grpcServer)
 	// Add shutdown hook
-	go c.shutdownListener(s)
-	if err := s.Serve(lis); err != nil {
+	go c.shutdownListener()
+	if err := grpcServer.Serve(listener); err != nil {
 		log.Errorf("Failed to start server on gRPC port: %v", err)
 		return errors.Wrap(err, "ipamd: failed to start server on gPRC port")
 	}
@@ -128,7 +130,7 @@ func (c *IPAMContext) RunRPCHandler() error {
 }
 
 // shutdownListener - Listen to signals and set ipamd to be in status "terminating"
-func (c *IPAMContext) shutdownListener(s *grpc.Server) {
+func (c *IPAMContext) shutdownListener() {
 	log.Info("Setting up shutdown hook.")
 	sig := make(chan os.Signal, 1)
 
