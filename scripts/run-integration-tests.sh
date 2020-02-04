@@ -124,7 +124,7 @@ if [[ "$BUILD" == true ]]; then
     fi
 
     sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
-    sed -i'.bak' "s,v1.6.0-rc5,$IMAGE_VERSION," ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
+    sed -i'.bak' "s,v1.6.0-rc6,$IMAGE_VERSION," ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
 fi
 
 echo "*******************************************************************************"
