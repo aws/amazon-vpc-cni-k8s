@@ -57,7 +57,7 @@ KUBECTL_PATH=${KUBECTL_PATH:-$TESTER_DIR/kubectl}
 LOCAL_GIT_VERSION=$(git describe --tags --always --dirty)
 # The stable image version is the image tag used in the latest stable
 # aws-k8s-cni.yaml manifest
-STABLE_IMAGE_VERSION=${STABLE_IMAGE_VERSION:-v1.6.0-rc5}
+STABLE_IMAGE_VERSION=${STABLE_IMAGE_VERSION:-v1.6.0}
 TEST_IMAGE_VERSION=${IMAGE_VERSION:-$LOCAL_GIT_VERSION}
 # The CNI version we will start our k8s clusters with. We will then perform an
 # upgrade from this CNI to the CNI being tested (TEST_IMAGE_VERSION)
