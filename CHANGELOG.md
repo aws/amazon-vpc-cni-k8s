@@ -12,6 +12,7 @@
 * Feature - [Introduce a minimum target for ENI IPs](https://github.com/aws/amazon-vpc-cni-k8s/pull/612) (#612, @asheldon)
 * Feature - [Allow peered VPC CIDRs to be excluded from SNAT](https://github.com/aws/amazon-vpc-cni-k8s/pull/520) (#520, @totahuanocotl, @rewiko, @yorg1st)
 * Feature - [Get container ID from kube rather than docker](https://github.com/aws/amazon-vpc-cni-k8s/pull/371) (#371, @rudoi)
+* Improvement - [Make entrypoint script fail if any step fails](https://github.com/aws/amazon-vpc-cni-k8s/pull/839) (#839, @drakedevel)
 * Improvement - [Place binaries in cmd/ and packages in pkg/](https://github.com/aws/amazon-vpc-cni-k8s/pull/815) (#815, @jaypipes)
 * Improvement - [De-dupe calls to DescribeNetworkInterfaces](https://github.com/aws/amazon-vpc-cni-k8s/pull/808) (#808, @jaypipes)
 * Improvement - [Update RollingUpdate strategy to allow 10% unavailable](https://github.com/aws/amazon-vpc-cni-k8s/pull/805) (#805, @gavinbunney)
