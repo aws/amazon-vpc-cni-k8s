@@ -47,7 +47,7 @@ wait_for_ipam() {
 
     until [ $__sleep_time -eq 8 ]; do
         sleep $(( __sleep_time++ ))
-        if $(./grpc-health-probe -addr 127.0.0.1:50051 >/dev/null 2>&1); then
+        if ./grpc-health-probe -addr 127.0.0.1:50051 >/dev/null 2>&1; then
             return 0
         fi
     done
@@ -86,7 +86,7 @@ fi
 
 # bring the aws-k8s-agent process back into the foreground
 echo "foregrounding IPAM daemon ... "
-fg %1 >/dev/null 2>&1 || $(echo "failed (process terminated)" && cat "$AGENT_LOG_PATH" && exit 1)
+fg %1 >/dev/null 2>&1 || { echo "failed (process terminated)" && cat "$AGENT_LOG_PATH" && exit 1; }
 
 # Best practice states we should send the container's CMD output to stdout, so
 # let's tee back up the log file into stdout
