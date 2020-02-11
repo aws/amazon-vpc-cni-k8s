@@ -19,7 +19,8 @@ references:
       - run: make build-linux "ARCH=$ARCH"
       - run: make lint
       - run: make vet
-      - run: make unit-test
+      # TODO: Enable architecture specific unit-test when Circle CI supports it!
+      - run: make unit-test ARCH=amd64
 
 jobs:
   build_x86_64:
