@@ -21,6 +21,8 @@
 # CNI plugin binary and its configuration file to the well-known directory that
 # Kubelet looks in.
 
+# turn on exit on subprocess error and exit on undefined variables
+set -eu
 # turn on bash's job control
 set -m
 
