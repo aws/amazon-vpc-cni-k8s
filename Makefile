@@ -194,8 +194,7 @@ check: check-format lint vet
 #
 #   go get -u golang.org/x/lint/golint
 #
-# TODO: run with '-set_exit_status' to enforce lint checks (currently failing)
-#lint: LINT_FLAGS = -set_exit_status
+lint: LINT_FLAGS = -set_exit_status
 lint:
 	@command -v golint >/dev/null || { echo "ERROR: golint not installed"; exit 1; }
 	find . \

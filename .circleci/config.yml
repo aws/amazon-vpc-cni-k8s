@@ -17,7 +17,8 @@ references:
       - run: go get -u golang.org/x/tools/cmd/goimports
       - run: make check-format
       - run: make build-linux "ARCH=$ARCH"
-      - run: make lint
+      # TODO: Make lint a hard-check once baselined
+      - run: make lint LINT_FLAGS=
       - run: make vet
       # TODO: Enable architecture specific unit-test when Circle CI supports it!
       - run: make unit-test ARCH=amd64
