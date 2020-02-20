@@ -31,6 +31,7 @@ jobs:
       - setup_remote_docker
       - aws-cli/setup:
           profile-name: awstester
+          aws-access-key-id: AWS_ACCESS_KEY_ID123
       - run:
           name: Run the integration tests
           command: ./scripts/run-integration-tests.sh
