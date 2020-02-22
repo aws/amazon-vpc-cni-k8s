@@ -57,7 +57,7 @@ IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(ARCH),arm64))
 GOLANG_IMAGE = golang:1.13-stretch
 # For the requseted build, these are the set of Go specific build environment
 # variables.
-export GOARCH = $(ARCH)
+export GOARCH ?= $(ARCH)
 export GOOS = linux
 export CGO_ENABLED = 0
 # NOTE: Provided for local toolchains that require explicit module feature flag.
@@ -76,7 +76,7 @@ DOCKER_ARGS =
 DOCKER_RUN_FLAGS = --rm -ti $(DOCKER_ARGS)
 # DOCKER_BUILD_FLAGS is the set of flags passed during container image builds
 # based on the requested build.
-DOCKER_BUILD_FLAGS = --build-arg arch="$(ARCH)" \
+DOCKER_BUILD_FLAGS = --build-arg GOARCH="$(ARCH)" \
 					  --build-arg docker_arch="$(DOCKER_ARCH)" \
 					  --build-arg golang_image="$(GOLANG_IMAGE)" \
 					  --network=host \

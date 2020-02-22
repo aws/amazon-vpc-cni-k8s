@@ -3,16 +3,13 @@ ARG golang_image=golang:1.13-stretch
 
 FROM $golang_image as builder
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
-ARG arch
-ENV ARCH=$arch
-ENV GOARCH=$arch
-# Force the go compiler to use modules.
+ARG GOARCH=
+# Configure build with Go modules
 ENV GO111MODULE=on
 ENV GOPROXY=direct
 
 # Copy modules in before the rest of the source to only expire cache on module
 # changes:
-#
 COPY go.mod go.sum ./
 RUN go mod download
 
