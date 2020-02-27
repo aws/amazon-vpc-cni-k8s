@@ -62,7 +62,8 @@ echo -n "checking for IPAM connectivity ... "
 
 if ! wait_for_ipam; then
     echo " failed."
-    echo "timed out waiting for IPAM daemon to start."
+    echo "timed out waiting for IPAM daemon to start:"
+    cat "$AGENT_LOG_PATH" >&2
     exit 1
 fi
 
