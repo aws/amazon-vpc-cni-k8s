@@ -3,6 +3,7 @@ version: 2.1
 
 orbs:
   aws-cli: circleci/aws-cli@0.1.19
+  k8s: circleci/kubernetes@0.11.0
 
 references:
   build_job: &build
@@ -44,11 +45,15 @@ jobs:
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
       <<: *env
+      RUN_CONFORMANCE: "true"
     steps:
       - checkout
       - setup_remote_docker
       - aws-cli/setup:
           profile-name: awstester
+      - k8s/install-kubectl:
+          # requires 1.14.9 for k8s testing, since it uses log api.
+          kubectl-version: v1.14.9
       - run:
           name: Run the integration tests
           command: ./scripts/run-integration-tests.sh
@@ -70,3 +75,25 @@ workflows:
       - integration_test:
           requires:
             - hold
+
+  # runs integration test when new git tag is pushed.
+  run-test-on-tags:
+    jobs:
+      - integration_test:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v.*/
+
+  # triggers daily test run on master
+  nightly-test-run:
+    triggers:
+      - schedule:
+          cron: "0 * * * *"
+          filters:
+            branches:
+              only:
+                - master
+    jobs:
+      - integration_test
