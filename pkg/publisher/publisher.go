@@ -84,16 +84,7 @@ func New(ctx context.Context) (Publisher, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "publisher: unable to obtain EC2 service client")
 	}
-	clusterID, err := ec2Client.GetClusterTag("CLUSTER_ID")
-	if err != nil || clusterID == "" {
-		glog.Errorf("Failed to obtain cluster-id, fetching name.  %v", err)
-		clusterID, err = ec2Client.GetClusterTag("Name")
-		if err != nil || clusterID == "" {
-			glog.Errorf("Failed to obtain cluster-id or name, defaulting to 'k8s-cluster'.  %v", err)
-			clusterID = "k8s-cluster"
-		}
-	}
-	glog.Info("Using cluster ID ", clusterID)
+	clusterID := getClusterId(ec2Client)
 
 	// Get CloudWatch client
 	ec2MetadataClient := ec2metadatawrapper.New(nil)
@@ -205,6 +196,24 @@ func (p *cloudWatchPublisher) monitor(interval time.Duration) {
 
 func (p *cloudWatchPublisher) getCloudWatchMetricNamespace() *string {
 	return aws.String(cloudwatchMetricNamespace)
+}
+
+func getClusterId(ec2Client *ec2wrapper.EC2Wrapper) string {
+	clusterID, err := ec2Client.GetClusterTag("eks:cluster-name")
+	if err != nil || clusterID == "" {
+		glog.Errorf("Failed to obtain eks:cluster-name, fetching CLUSTER_ID.  %v", err)
+		clusterID, err := ec2Client.GetClusterTag("CLUSTER_ID")
+		if err != nil || clusterID == "" {
+			glog.Errorf("Failed to obtain CLUSTER_ID, fetching Name.  %v", err)
+			clusterID, err = ec2Client.GetClusterTag("Name")
+			if err != nil || clusterID == "" {
+				glog.Errorf("Failed to determine cluster-id, defaulting to 'k8s-cluster'.  %v", err)
+				clusterID = "k8s-cluster"
+			}
+		}
+	}
+	glog.Info("Using cluster ID ", clusterID)
+	return clusterID
 }
 
 func (p *cloudWatchPublisher) getCloudWatchMetricDatumDimensions() []*cloudwatch.Dimension {
