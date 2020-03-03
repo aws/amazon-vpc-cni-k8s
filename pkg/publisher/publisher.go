@@ -48,16 +48,6 @@ const (
 
 	// maxDataPoints is the maximum number of data points per PutMetricData API request
 	maxDataPoints = 20
-
-	// Default cluster id if unable to detect something more suitable
-	defaultClusterID = "k8s-cluster"
-
-	// List of EC2 tags (in priority order) to use as the CLUSTER_ID metric dimension
-	clusterIDTags = []string{
-		"eks:cluster-name",
-		"CLUSTER_ID",
-		"Name",
-	}
 )
 
 // Publisher defines the interface to publish one or more data points
@@ -209,9 +199,19 @@ func (p *cloudWatchPublisher) getCloudWatchMetricNamespace() *string {
 }
 
 func getClusterId(ec2Client *ec2wrapper.EC2Wrapper) string {
+	// Default cluster id if unable to detect something more suitable
+	defaultClusterID := "k8s-cluster"
+
+	// List of EC2 tags (in priority order) to use as the CLUSTER_ID metric dimension
+	clusterIDTags := []string{
+		"eks:cluster-name",
+		"CLUSTER_ID",
+		"Name",
+	}
+
     var clusterID string
     var err error
-    for _, tag: = range clusterIDTags {
+    for _, tag := range clusterIDTags {
         clusterID, err = ec2Client.GetClusterTag(tag)
         if err != nil && clusterID != "" {
             break
