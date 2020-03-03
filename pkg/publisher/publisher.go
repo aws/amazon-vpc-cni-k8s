@@ -215,7 +215,7 @@ func getClusterID(ec2Client *ec2wrapper.EC2Wrapper) string {
 	var err error
 	for _, tag := range clusterIDTags {
 		clusterID, err = ec2Client.GetClusterTag(tag)
-		if err != nil && clusterID != "" {
+		if err == nil && clusterID != "" {
 			break
 		}
 	}
