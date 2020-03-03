@@ -50,7 +50,7 @@ const (
 	maxDataPoints = 20
 
 	// Default cluster id if unable to detect something more suitable
-    defaultClusterID = "k8s-cluster"
+	defaultClusterID = "k8s-cluster"
 )
 
 var (
