@@ -209,19 +209,19 @@ func getClusterId(ec2Client *ec2wrapper.EC2Wrapper) string {
 		"Name",
 	}
 
-    var clusterID string
-    var err error
-    for _, tag := range clusterIDTags {
-        clusterID, err = ec2Client.GetClusterTag(tag)
-        if err != nil && clusterID != "" {
-            break
-        }
-    }
-    if clusterID == "" {
-        clusterID = defaultClusterID
-    }
-    glog.Info("Using cluster ID ", clusterID)
-    return clusterID
+	var clusterID string
+	var err error
+	for _, tag := range clusterIDTags {
+		clusterID, err = ec2Client.GetClusterTag(tag)
+		if err != nil && clusterID != "" {
+			break
+		}
+	}
+	if clusterID == "" {
+		clusterID = defaultClusterID
+	}
+	glog.Info("Using cluster ID ", clusterID)
+	return clusterID
 }
 
 func (p *cloudWatchPublisher) getCloudWatchMetricDatumDimensions() []*cloudwatch.Dimension {
