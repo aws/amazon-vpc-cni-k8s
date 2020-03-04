@@ -48,6 +48,18 @@ const (
 
 	// maxDataPoints is the maximum number of data points per PutMetricData API request
 	maxDataPoints = 20
+
+	// Default cluster id if unable to detect something more suitable
+	defaultClusterID = "k8s-cluster"
+)
+
+var (
+	// List of EC2 tags (in priority order) to use as the CLUSTER_ID metric dimension
+	clusterIDTags = []string{
+		"eks:cluster-name",
+		"CLUSTER_ID",
+		"Name",
+	}
 )
 
 // Publisher defines the interface to publish one or more data points
@@ -84,16 +96,7 @@ func New(ctx context.Context) (Publisher, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "publisher: unable to obtain EC2 service client")
 	}
-	clusterID, err := ec2Client.GetClusterTag("CLUSTER_ID")
-	if err != nil || clusterID == "" {
-		glog.Errorf("Failed to obtain cluster-id, fetching name.  %v", err)
-		clusterID, err = ec2Client.GetClusterTag("Name")
-		if err != nil || clusterID == "" {
-			glog.Errorf("Failed to obtain cluster-id or name, defaulting to 'k8s-cluster'.  %v", err)
-			clusterID = "k8s-cluster"
-		}
-	}
-	glog.Info("Using cluster ID ", clusterID)
+	clusterID := getClusterID(ec2Client)
 
 	// Get CloudWatch client
 	ec2MetadataClient := ec2metadatawrapper.New(nil)
@@ -205,6 +208,22 @@ func (p *cloudWatchPublisher) monitor(interval time.Duration) {
 
 func (p *cloudWatchPublisher) getCloudWatchMetricNamespace() *string {
 	return aws.String(cloudwatchMetricNamespace)
+}
+
+func getClusterID(ec2Client *ec2wrapper.EC2Wrapper) string {
+	var clusterID string
+	var err error
+	for _, tag := range clusterIDTags {
+		clusterID, err = ec2Client.GetClusterTag(tag)
+		if err == nil && clusterID != "" {
+			break
+		}
+	}
+	if clusterID == "" {
+		clusterID = defaultClusterID
+	}
+	glog.Info("Using cluster ID ", clusterID)
+	return clusterID
 }
 
 func (p *cloudWatchPublisher) getCloudWatchMetricDatumDimensions() []*cloudwatch.Dimension {
