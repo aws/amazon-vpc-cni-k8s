@@ -46,13 +46,11 @@ CLUSTER_NAME=cni-test-$CLUSTER_ID
 TEST_CLUSTER_DIR=/tmp/cni-test/cluster-$CLUSTER_NAME
 CLUSTER_MANAGE_LOG_PATH=$TEST_CLUSTER_DIR/cluster-manage.log
 CLUSTER_CONFIG=${CLUSTER_CONFIG:-${TEST_CLUSTER_DIR}/${CLUSTER_NAME}.yaml}
-SSH_KEY_PATH=${SSH_KEY_PATH:-${TEST_CLUSTER_DIR}/id_rsa}
 KUBECONFIG_PATH=${KUBECONFIG_PATH:-${TEST_CLUSTER_DIR}/kubeconfig}
 
 # shared binaries
 TESTER_DIR=${TESTER_DIR:-/tmp/aws-k8s-tester}
 TESTER_PATH=${TESTER_PATH:-$TESTER_DIR/aws-k8s-tester}
-AUTHENTICATOR_PATH=${AUTHENTICATOR_PATH:-$TESTER_DIR/aws-iam-authenticator}
 KUBECTL_PATH=${KUBECTL_PATH:-$TESTER_DIR/kubectl}
 
 LOCAL_GIT_VERSION=$(git describe --tags --always --dirty)
@@ -142,7 +140,6 @@ echo "+ Cluster config dir: $TEST_CLUSTER_DIR"
 echo "+ Result dir:         $TEST_DIR"
 echo "+ Tester:             $TESTER_PATH"
 echo "+ Kubeconfig:         $KUBECONFIG_PATH"
-echo "+ Node SSH key:       $SSH_KEY_PATH"
 echo "+ Cluster config:     $CLUSTER_CONFIG"
 echo "+ AWS Account ID:     $AWS_ACCOUNT_ID"
 echo "+ CNI image to test:  $IMAGE_NAME:$TEST_IMAGE_VERSION"
