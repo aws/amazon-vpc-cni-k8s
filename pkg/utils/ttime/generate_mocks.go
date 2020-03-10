@@ -13,4 +13,4 @@
 
 package ttime
 
-//go:generate go run ../../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/utils/ttime Time,Timer mocks/time_mocks.go
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/time_mocks.go -copyright_file ../../../scripts/copyright.txt . Time,Timer

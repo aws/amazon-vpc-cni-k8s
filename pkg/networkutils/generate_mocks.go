@@ -13,4 +13,4 @@
 
 package networkutils
 
-//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils NetworkAPIs mocks/network_mocks.go
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/network_mocks.go -copyright_file ../../scripts/copyright.txt . NetworkAPIs

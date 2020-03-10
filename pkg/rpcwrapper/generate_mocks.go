@@ -13,4 +13,4 @@
 
 package rpcwrapper
 
-//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/rpcwrapper RPC mocks/rpcwrapper_mocks.go
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/rpcwrapper_mocks.go -copyright_file ../../scripts/copyright.txt . RPC
