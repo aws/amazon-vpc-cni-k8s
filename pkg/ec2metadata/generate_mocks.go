@@ -13,4 +13,4 @@
 
 package ec2metadata
 
-//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadata EC2Metadata mocks/ec2metadata_mocks.go
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/ec2metadata_mocks.go -copyright_file ../../scripts/copyright.txt . EC2Metadata

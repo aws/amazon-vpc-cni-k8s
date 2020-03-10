@@ -95,6 +95,10 @@ docker-metrics-test:
 # Build both CNI and metrics helper
 all: docker docker-metrics
 
+generate:
+	go generate -x ./...
+	$(MAKE) format
+
 generate-limits:
 	go run pkg/awsutils/gen_vpc_ip_limits.go
 
