@@ -13,4 +13,4 @@
 
 package nswrapper
 
-//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper NS mocks/nswrapper_mocks.go
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/nswrapper_mocks.go -copyright_file ../../scripts/copyright.txt . NS

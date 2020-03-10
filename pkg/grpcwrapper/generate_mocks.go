@@ -13,4 +13,4 @@
 
 package grpcwrapper
 
-//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/grpcwrapper GRPC mocks/grpcwrapper_mocks.go
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/grpcwrapper_mocks.go -copyright_file ../../scripts/copyright.txt . GRPC

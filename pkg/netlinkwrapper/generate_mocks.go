@@ -13,5 +13,5 @@
 
 package netlinkwrapper
 
-//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper NetLink mocks/netlinkwrapper_mocks.go
-//go:generate go run ../../scripts/mockgen.go github.com/vishvananda/netlink Link mock_netlink/link_mocks.go
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/netlinkwrapper_mocks.go -copyright_file ../../scripts/copyright.txt . NetLink
+//go:generate go run github.com/golang/mock/mockgen -destination mock_netlink/link_mocks.go -copyright_file ../../scripts/copyright.txt github.com/vishvananda/netlink Link

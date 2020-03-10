@@ -13,4 +13,4 @@
 
 package eniconfig
 
-//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig ENIConfig  mocks/eniconfig_mocks.go
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/eniconfig_mocks.go -copyright_file ../../scripts/copyright.txt . ENIConfig
