@@ -21,11 +21,13 @@ message AddNetworkRequest {
 
 message AddNetworkReply {
   bool Success = 1;
-  string IPv4Addr = 2;
+  string Ipv4Addr = 2;
+  string Ipv6Addr = 7;
   int32 DeviceNumber = 4;
   bool UseExternalSNAT = 5;
-  repeated string VPCcidrs = 6;
-  // next field: 7
+  repeated string VpcCidrs4 = 6;
+  repeated string VpcCidrs6 = 8;
+  // next field: 9
 }
 
 message DelNetworkRequest {
@@ -41,7 +43,8 @@ message DelNetworkRequest {
 
 message DelNetworkReply {
   bool Success = 1;
-  string IPv4Addr = 2;
+  string Ipv4Addr = 2;
+  string Ipv6Addr = 4;
   int32 DeviceNumber = 3;
-  // next field: 4
+  // next field: 5
 }

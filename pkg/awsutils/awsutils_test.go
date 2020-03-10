@@ -44,6 +44,7 @@ const (
 	sgs           = sg1 + " " + sg2
 	subnetID      = "subnet-6b245523"
 	vpcCIDR       = "10.0.0.0/16"
+	vpc6CIDR      = "2001:db8::/56"
 	subnetCIDR    = "10.0.1.0/24"
 	accountID     = "694065802095"
 	primaryeniID  = "eni-00000000"
@@ -88,6 +89,7 @@ func TestInitWithEC2metadata(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil).AnyTimes()
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidr).Return(vpcCIDR, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(metadataVPCIPv4CIDRs, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPC6cidrs).Return(vpc6CIDR, nil).AnyTimes()
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
 	err := ins.initWithEC2Metadata(ctx)
@@ -99,7 +101,8 @@ func TestInitWithEC2metadata(t *testing.T) {
 	assert.Equal(t, len(ins.securityGroups.SortedList()), 2)
 	assert.Equal(t, subnetID, ins.subnetID)
 	assert.Equal(t, vpcCIDR, ins.vpcIPv4CIDR)
-	assert.Equal(t, len(ins.vpcIPv4CIDRs.SortedList()), 2)
+	assert.ElementsMatch(t, []string{"192.168.0.0/16", "100.66.0.0/1"}, ins.vpcIPv4CIDRs.SortedList())
+	assert.ElementsMatch(t, []string{vpc6CIDR}, ins.vpcIPv6CIDRs.SortedList())
 }
 
 func TestInitWithEC2metadataVPCcidrErr(t *testing.T) {
@@ -273,21 +276,38 @@ func TestGetAttachedENIs(t *testing.T) {
 
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC+" "+eni2MAC, nil)
 
-	gomock.InOrder(
-		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil),
-		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(eniID, nil),
-		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Return(subnetCIDR, nil),
-		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Return("", nil),
-		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataDeviceNum).Return(eni2Device, nil),
-		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataInterface).Return(eni2ID, nil),
-		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataSubnetCIDR).Return(subnetCIDR, nil),
-		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataIPv4s).Return("", nil),
-	)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(eniID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Return(subnetCIDR, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Return("", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv6s).Return("", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataDeviceNum).Return(eni2Device, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataInterface).Return(eni2ID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataSubnetCIDR).Return(subnetCIDR, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataIPv4s).Return("", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataIPv6s).Return("", nil)
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
 	ens, err := ins.GetAttachedENIs()
 	assert.NoError(t, err)
-	assert.Equal(t, len(ens), 2)
+	assert.ElementsMatch(t, ens, []ENIMetadata{
+		{
+			ENIID:          eniID,
+			MAC:            primaryMAC,
+			DeviceNumber:   1,
+			SubnetIPv4CIDR: subnetCIDR,
+			IPv4Addresses:  []*ec2.NetworkInterfacePrivateIpAddress{},
+			IPv6Addresses:  []string{},
+		},
+		{
+			ENIID:          eni2ID,
+			MAC:            eni2MAC,
+			DeviceNumber:   2,
+			SubnetIPv4CIDR: subnetCIDR,
+			IPv4Addresses:  []*ec2.NetworkInterfacePrivateIpAddress{},
+			IPv6Addresses:  []string{},
+		},
+	})
 }
 
 func TestAWSGetFreeDeviceNumberOnErr(t *testing.T) {
@@ -423,6 +443,7 @@ func TestDescribeAllENIs(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Times(len(testCases)).Return(eniID, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Times(len(testCases)).Return(subnetCIDR, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Times(len(testCases)).Return("", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv6s).Times(len(testCases)).Return("", nil)
 
 	for _, tc := range testCases {
 		mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Times(tc.n).Return(result, tc.awsErr)
@@ -451,6 +472,7 @@ func TestTagEni(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidr).Return(vpcCIDR, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(vpcCIDR, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPC6cidrs).Return(vpcCIDR, nil).AnyTimes()
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata, ec2SVC: mockEC2}
 	err := ins.initWithEC2Metadata(ctx)
@@ -704,29 +726,7 @@ func TestDescribeInstanceTypes(t *testing.T) {
 	assert.Equal(t, 99, InstanceIPsAvailable[ins.instanceType])
 }
 
-func TestAllocIPAddress(t *testing.T) {
-	ctrl, _, mockEC2 := setup(t)
-	defer ctrl.Finish()
-
-	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(&ec2.AssignPrivateIpAddressesOutput{}, nil)
-
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := ins.AllocIPAddress("eni-id")
-	assert.NoError(t, err)
-}
-
-func TestAllocIPAddressOnErr(t *testing.T) {
-	ctrl, _, mockEC2 := setup(t)
-	defer ctrl.Finish()
-
-	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("Error on AssignPrivateIpAddressesWithContext"))
-
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := ins.AllocIPAddress("eni-id")
-	assert.Error(t, err)
-}
-
-func TestAllocIPAddresses(t *testing.T) {
+func TestAllocIPv4Addresses(t *testing.T) {
 	ctrl, _, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
@@ -735,10 +735,10 @@ func TestAllocIPAddresses(t *testing.T) {
 		NetworkInterfaceId:             aws.String("eni-id"),
 		SecondaryPrivateIpAddressCount: aws.Int64(5),
 	}
-	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, nil)
+	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(&ec2.AssignPrivateIpAddressesOutput{}, nil)
 
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
-	err := ins.AllocIPAddresses("eni-id", 5)
+	_, err := ins.AllocIPv4Addresses("eni-id", 5)
 	assert.NoError(t, err)
 
 	// when required IP numbers(50) is higher than ENI's limit(49)
@@ -746,14 +746,14 @@ func TestAllocIPAddresses(t *testing.T) {
 		NetworkInterfaceId:             aws.String("eni-id"),
 		SecondaryPrivateIpAddressCount: aws.Int64(49),
 	}
-	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, nil)
+	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(&ec2.AssignPrivateIpAddressesOutput{}, nil)
 
 	ins = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
-	err = ins.AllocIPAddresses("eni-id", 50)
+	_, err = ins.AllocIPv4Addresses("eni-id", 50)
 	assert.NoError(t, err)
 
 	// Adding 0 should do nothing
-	err = ins.AllocIPAddresses("eni-id", 0)
+	_, err = ins.AllocIPv4Addresses("eni-id", 0)
 	assert.NoError(t, err)
 }
 

@@ -77,11 +77,12 @@ func TestDeleteENI(t *testing.T) {
 	assert.Equal(t, len(eniInfos.ENIs), 2)
 
 	// Add an IP and assign a pod.
-	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
+	err = ds.AddAddressToStore("eni-1", "1.1.1.1", "2001:db8::2:1")
 	assert.NoError(t, err)
-	ip, device, err := ds.AssignPodIPv4Address(IPAMKey{"net1", "sandbox1", "eth0"})
+	ip4, ip6, device, err := ds.AssignPodAddress(IPAMKey{"net1", "sandbox1", "eth0"})
 	assert.NoError(t, err)
-	assert.Equal(t, "1.1.1.1", ip)
+	assert.Equal(t, "1.1.1.1", ip4)
+	assert.Equal(t, "2001:db8::2:1", ip6)
 	assert.Equal(t, 1, device)
 
 	// Test force removal.  The first call fails because eni-1 has an IP with a pod assigned to it,
@@ -101,32 +102,32 @@ func TestAddENIIPv4Address(t *testing.T) {
 	err = ds.AddENI("eni-2", 2, false)
 	assert.NoError(t, err)
 
-	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
+	err = ds.AddAddressToStore("eni-1", "1.1.1.1", "")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 1)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 1)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 1)
 
-	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
+	err = ds.AddAddressToStore("eni-1", "1.1.1.1", "")
 	assert.Error(t, err)
 	assert.Equal(t, ds.total, 1)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 1)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 1)
 
-	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.2")
+	err = ds.AddAddressToStore("eni-1", "1.1.1.2", "")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 2)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 2)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 2)
 
-	err = ds.AddIPv4AddressToStore("eni-2", "1.1.2.2")
+	err = ds.AddAddressToStore("eni-2", "1.1.2.2", "")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 2)
-	assert.Equal(t, len(ds.eniPool["eni-2"].IPv4Addresses), 1)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 2)
+	assert.Equal(t, len(ds.eniPool["eni-2"].Addresses), 1)
 
-	err = ds.AddIPv4AddressToStore("dummy-eni", "1.1.2.2")
+	err = ds.AddAddressToStore("dummy-eni", "1.1.2.2", "")
 	assert.Error(t, err)
 	assert.Equal(t, ds.total, 3)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 2)
-	assert.Equal(t, len(ds.eniPool["eni-2"].IPv4Addresses), 1)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 2)
+	assert.Equal(t, len(ds.eniPool["eni-2"].Addresses), 1)
 
 }
 
@@ -139,28 +140,27 @@ func TestGetENIIPs(t *testing.T) {
 	err = ds.AddENI("eni-2", 2, false)
 	assert.NoError(t, err)
 
-	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
+	err = ds.AddAddressToStore("eni-1", "1.1.1.1", "")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 1)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 1)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 1)
 
-	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.2")
+	err = ds.AddAddressToStore("eni-1", "1.1.1.2", "")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 2)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 2)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 2)
 
-	err = ds.AddIPv4AddressToStore("eni-2", "1.1.2.2")
+	err = ds.AddAddressToStore("eni-2", "1.1.2.2", "")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 2)
-	assert.Equal(t, len(ds.eniPool["eni-2"].IPv4Addresses), 1)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 2)
+	assert.Equal(t, len(ds.eniPool["eni-2"].Addresses), 1)
 
-	eniIPPool, err := ds.GetENIIPs("eni-1")
-	assert.NoError(t, err)
+	eniIPPool := ds.GetENIIPs()["eni-1"]
 	assert.Equal(t, len(eniIPPool), 2)
 
-	_, err = ds.GetENIIPs("dummy-eni")
-	assert.Error(t, err)
+	_, ok := ds.GetENIIPs()["dummy-eni"]
+	assert.False(t, ok)
 }
 
 func TestDelENIIPv4Address(t *testing.T) {
@@ -168,50 +168,51 @@ func TestDelENIIPv4Address(t *testing.T) {
 	err := ds.AddENI("eni-1", 1, true)
 	assert.NoError(t, err)
 
-	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
+	err = ds.AddAddressToStore("eni-1", "1.1.1.1", "")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 1)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 1)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 1)
 
 	// Assign a pod.
 	key := IPAMKey{"net0", "sandbox-1", "eth0"}
-	ip, device, err := ds.AssignPodIPv4Address(key)
+	ip4, ip6, device, err := ds.AssignPodAddress(key)
 	assert.NoError(t, err)
-	assert.Equal(t, "1.1.1.1", ip)
+	assert.Equal(t, "1.1.1.1", ip4)
+	assert.Equal(t, "", ip6)
 	assert.Equal(t, 1, device)
 
-	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.2")
+	err = ds.AddAddressToStore("eni-1", "1.1.1.2", "")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 2)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 2)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 2)
 
-	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.3")
+	err = ds.AddAddressToStore("eni-1", "1.1.1.3", "")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 3)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 3)
 
-	err = ds.DelIPv4AddressFromStore("eni-1", "1.1.1.2", false)
+	err = ds.DelAddressFromStore("eni-1", "1.1.1.2", "", false)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 2)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 2)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 2)
 
 	// delete a unknown IP
-	err = ds.DelIPv4AddressFromStore("eni-1", "10.10.10.10", false)
+	err = ds.DelAddressFromStore("eni-1", "10.10.10.10", "", false)
 	assert.Error(t, err)
 	assert.Equal(t, ds.total, 2)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 2)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 2)
 
 	// Test force removal.  The first call fails because the IP has a pod assigned to it, but the
 	// second call force-removes it and succeeds.
-	err = ds.DelIPv4AddressFromStore("eni-1", "1.1.1.1", false)
+	err = ds.DelAddressFromStore("eni-1", "1.1.1.1", "", false)
 	assert.Error(t, err)
 	assert.Equal(t, ds.total, 2)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 2)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 2)
 
-	err = ds.DelIPv4AddressFromStore("eni-1", "1.1.1.1", true)
+	err = ds.DelAddressFromStore("eni-1", "1.1.1.1", "", true)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 1)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 1)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 1)
 }
 
 func TestPodIPv4Address(t *testing.T) {
@@ -222,16 +223,17 @@ func TestPodIPv4Address(t *testing.T) {
 
 	ds.AddENI("eni-2", 2, false)
 
-	ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
+	ds.AddAddressToStore("eni-1", "1.1.1.1", "")
 
 	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
-	ip, _, err := ds.AssignPodIPv4Address(key1)
+	ip4, ip6, _, err := ds.AssignPodAddress(key1)
 
 	assert.NoError(t, err)
-	assert.Equal(t, "1.1.1.1", ip)
+	assert.Equal(t, "1.1.1.1", ip4)
+	assert.Equal(t, "", ip6)
 	assert.Equal(t, 1, ds.total)
-	assert.Equal(t, 1, len(ds.eniPool["eni-1"].IPv4Addresses))
-	assert.Equal(t, 1, ds.eniPool["eni-1"].AssignedIPv4Addresses())
+	assert.Equal(t, 1, len(ds.eniPool["eni-1"].Addresses))
+	assert.Equal(t, 1, ds.eniPool["eni-1"].AssignedAddresses())
 	assert.Equal(t, checkpoint.Data, &CheckpointData{
 		Version: CheckpointFormatVersion,
 		Allocations: []CheckpointEntry{
@@ -239,26 +241,27 @@ func TestPodIPv4Address(t *testing.T) {
 		},
 	})
 
-	podsInfos := ds.AllocatedIPs()
-	assert.Equal(t, len(podsInfos), 1)
+	eniInfos := ds.GetENIInfos()
+	assert.Equal(t, eniInfos.AssignedIPs, 1)
 
-	ds.AddIPv4AddressToStore("eni-2", "1.1.2.2")
+	ds.AddAddressToStore("eni-2", "1.1.2.2", "")
 
 	// duplicate add
-	ip, _, err = ds.AssignPodIPv4Address(key1) // same id
+	ip4, ip6, _, err = ds.AssignPodAddress(key1) // same id
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.1")
+	assert.Equal(t, ip4, "1.1.1.1")
+	assert.Equal(t, ip6, "")
 	assert.Equal(t, ds.total, 2)
 	assert.Equal(t, ds.assigned, 1)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 1)
-	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 1)
-	assert.Equal(t, len(ds.eniPool["eni-2"].IPv4Addresses), 1)
-	assert.Equal(t, ds.eniPool["eni-2"].AssignedIPv4Addresses(), 0)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 1)
+	assert.Equal(t, ds.eniPool["eni-1"].AssignedAddresses(), 1)
+	assert.Equal(t, len(ds.eniPool["eni-2"].Addresses), 1)
+	assert.Equal(t, ds.eniPool["eni-2"].AssignedAddresses(), 0)
 
 	// Checkpoint error
 	checkpoint.Error = errors.New("fake checkpoint error")
 	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key2)
+	_, _, _, err = ds.AssignPodAddress(key2)
 	assert.Error(t, err)
 	assert.Equal(t, checkpoint.Data, &CheckpointData{
 		Version: CheckpointFormatVersion,
@@ -268,45 +271,47 @@ func TestPodIPv4Address(t *testing.T) {
 	})
 	checkpoint.Error = nil
 
-	ip, pod1Ns2Device, err := ds.AssignPodIPv4Address(key2)
+	ip4, ip6, pod1Ns2Device, err := ds.AssignPodAddress(key2)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.2.2")
+	assert.Equal(t, ip4, "1.1.2.2")
+	assert.Equal(t, ip6, "")
 	assert.Equal(t, ds.total, 2)
 	assert.Equal(t, ds.assigned, 2)
-	assert.Equal(t, len(ds.eniPool["eni-2"].IPv4Addresses), 1)
-	assert.Equal(t, ds.eniPool["eni-2"].AssignedIPv4Addresses(), 1)
+	assert.Equal(t, len(ds.eniPool["eni-2"].Addresses), 1)
+	assert.Equal(t, ds.eniPool["eni-2"].AssignedAddresses(), 1)
 	assert.Equal(t, len(checkpoint.Data.(*CheckpointData).Allocations), 2)
 
-	podsInfos = ds.AllocatedIPs()
-	assert.Equal(t, len(podsInfos), 2)
+	eniInfos = ds.GetENIInfos()
+	assert.Equal(t, eniInfos.AssignedIPs, 2)
 
-	ds.AddIPv4AddressToStore("eni-1", "1.1.1.2")
+	ds.AddAddressToStore("eni-1", "1.1.1.2", "")
 
 	key3 := IPAMKey{"net0", "sandbox-3", "eth0"}
-	ip, _, err = ds.AssignPodIPv4Address(key3)
+	ip4, ip6, _, err = ds.AssignPodAddress(key3)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.2")
+	assert.Equal(t, ip4, "1.1.1.2")
+	assert.Equal(t, ip6, "")
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, ds.assigned, 3)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 2)
-	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 2)
+	assert.Equal(t, len(ds.eniPool["eni-1"].Addresses), 2)
+	assert.Equal(t, ds.eniPool["eni-1"].AssignedAddresses(), 2)
 	assert.Equal(t, len(checkpoint.Data.(*CheckpointData).Allocations), 3)
 
 	// no more IP addresses
 	key4 := IPAMKey{"net0", "sandbox-4", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key4)
+	_, _, _, err = ds.AssignPodAddress(key4)
 	assert.Error(t, err)
 	// Unassign unknown Pod
-	_, _, err = ds.UnassignPodIPv4Address(key4)
+	_, _, _, err = ds.UnassignPodAddress(key4)
 	assert.Error(t, err)
 
-	_, deviceNum, err := ds.UnassignPodIPv4Address(key2)
+	_, _, deviceNum, err := ds.UnassignPodAddress(key2)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, ds.assigned, 2)
 	assert.Equal(t, deviceNum, pod1Ns2Device)
-	assert.Equal(t, len(ds.eniPool["eni-2"].IPv4Addresses), 1)
-	assert.Equal(t, ds.eniPool["eni-2"].AssignedIPv4Addresses(), 0)
+	assert.Equal(t, len(ds.eniPool["eni-2"].Addresses), 1)
+	assert.Equal(t, ds.eniPool["eni-2"].AssignedAddresses(), 0)
 	assert.Equal(t, len(checkpoint.Data.(*CheckpointData).Allocations), 2)
 
 	noWarmIPTarget := 0
@@ -317,7 +322,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.True(t, eni == "")
 
 	ds.eniPool["eni-2"].createTime = time.Time{}
-	ds.eniPool["eni-2"].IPv4Addresses["1.1.2.2"].UnassignedTime = time.Time{}
+	ds.eniPool["eni-2"].Addresses[0].UnassignedTime = time.Time{}
 	eni = ds.RemoveUnusedENIFromStore(noWarmIPTarget, noMinimumIPTarget)
 	assert.Equal(t, eni, "eni-2")
 
@@ -332,19 +337,19 @@ func TestWarmENIInteractions(t *testing.T) {
 	ds.AddENI("eni-2", 2, false)
 	ds.AddENI("eni-3", 3, false)
 
-	ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
+	ds.AddAddressToStore("eni-1", "1.1.1.1", "")
 	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
-	_, _, err := ds.AssignPodIPv4Address(key1)
+	_, _, _, err := ds.AssignPodAddress(key1)
 	assert.NoError(t, err)
 
-	ds.AddIPv4AddressToStore("eni-1", "1.1.1.2")
+	ds.AddAddressToStore("eni-1", "1.1.1.2", "")
 	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key2)
+	_, _, _, err = ds.AssignPodAddress(key2)
 	assert.NoError(t, err)
 
-	ds.AddIPv4AddressToStore("eni-2", "1.1.2.1")
-	ds.AddIPv4AddressToStore("eni-2", "1.1.2.2")
-	ds.AddIPv4AddressToStore("eni-3", "1.1.3.1")
+	ds.AddAddressToStore("eni-2", "1.1.2.1", "")
+	ds.AddAddressToStore("eni-2", "1.1.2.2", "")
+	ds.AddAddressToStore("eni-3", "1.1.3.1", "")
 
 	noWarmIPTarget := 0
 
