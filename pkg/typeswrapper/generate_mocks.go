@@ -13,4 +13,4 @@
 
 package typeswrapper
 
-//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/typeswrapper CNITYPES mocks/typeswrapper_mocks.go
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/typeswrapper_mocks.go -copyright_file ../../scripts/copyright.txt . CNITYPES
