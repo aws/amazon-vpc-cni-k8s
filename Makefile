@@ -189,6 +189,16 @@ portmap:
 	@echo
 	curl -L $(FETCH_URL) | tar -z -x ./portmap
 
+debug-script: FETCH_URL=https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/log-collector-script/linux/eks-log-collector.sh
+debug-script: VISIT_URL=https://github.com/awslabs/amazon-eks-ami/tree/master/log-collector-script/linux
+debug-script:
+	@echo "Fetching debug script from awslabs/amazon-eks-ami"
+	@echo
+	@echo "Visit upstream project for debug script details:"
+	@echo "$(VISIT_URL)"
+	@echo
+	curl -L $(FETCH_URL) -o ./aws-cni-support.sh
+
 # Run all source code checks.
 check: check-format lint vet
 
