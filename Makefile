@@ -94,7 +94,7 @@ dist: all
 	docker save $(METRICS_IMAGE_NAME) | gzip > $(METRICS_IMAGE_DIST)
 
 # Build the VPC CNI plugin agent using the host's Go toolchain.
-build-linux: BUILD_FLAGS = -mod=readonly -ldflags '-s -w $(LDFLAGS)'
+build-linux: BUILD_FLAGS = -ldflags '-s -w $(LDFLAGS)'
 build-linux:
 	go build $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
 	go build $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
@@ -115,19 +115,19 @@ docker-func-test: docker
 
 # Run unit tests
 unit-test:
-	go test -mod=readonly -v -cover $(ALLPKGS)
+	go test -v -cover $(ALLPKGS)
 
 # Run unit tests with race detection (can only be run natively)
 unit-test-race: CGO_ENABLED=1
 unit-test-race: GOARCH=
 unit-test-race:
-	go test -v -mod=readonly -cover -race -timeout 10s  ./cmd/...
-	go test -v -mod=readonly -cover -race -timeout 150s ./pkg/awsutils/...
-	go test -v -mod=readonly -cover -race -timeout 10s  ./pkg/k8sapi/...
-	go test -v -mod=readonly -cover -race -timeout 10s  ./pkg/networkutils/...
-	go test -v -mod=readonly -cover -race -timeout 10s  ./pkg/utils/...
-	go test -v -mod=readonly -cover -race -timeout 10s  ./pkg/eniconfig/...
-	go test -v -mod=readonly -cover -race -timeout 10s  ./pkg/ipamd/...
+	go test -v -cover -race -timeout 10s  ./cmd/...
+	go test -v -cover -race -timeout 150s ./pkg/awsutils/...
+	go test -v -cover -race -timeout 10s  ./pkg/k8sapi/...
+	go test -v -cover -race -timeout 10s  ./pkg/networkutils/...
+	go test -v -cover -race -timeout 10s  ./pkg/utils/...
+	go test -v -cover -race -timeout 10s  ./pkg/eniconfig/...
+	go test -v -cover -race -timeout 10s  ./pkg/ipamd/...
 
 # Build the unit test driver container image.
 build-docker-test:
@@ -144,7 +144,7 @@ docker-unit-test: build-docker-test
 
 # Build metrics helper agent.
 build-metrics:
-	go build -mod=readonly -ldflags="-s -w" -o cni-metrics-helper ./cmd/cni-metrics-helper
+	go build -ldflags="-s -w" -o cni-metrics-helper ./cmd/cni-metrics-helper
 
 # Build metrics helper agent Docker image.
 docker-metrics:
@@ -158,7 +158,7 @@ docker-metrics:
 metrics-unit-test: CGO_ENABLED=1
 metrics-unit-test: GOARCH=
 metrics-unit-test:
-	go test -v -cover -race -timeout 10s -mod=readonly \
+	go test -v -cover -race -timeout 10s \
 		./cmd/cni-metrics-helper/metrics/...
 
 # Run metrics helper unit test suite in a container.
@@ -171,7 +171,7 @@ docker-metrics-test:
 
 # Generate descriptors for supported ENI configurations.
 generate-limits:
-	go run -mod=readonly pkg/awsutils/gen_vpc_ip_limits.go
+	go run pkg/awsutils/gen_vpc_ip_limits.go
 
 # Fetch portmap the port-forwarding management CNI plugin
 portmap: FETCH_VERSION=0.7.5
