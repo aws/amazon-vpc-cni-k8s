@@ -13,4 +13,4 @@
 
 package ec2wrapper
 
-//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper EC2 mocks/ec2wrapper_mocks.go
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/ec2wrapper_mocks.go -copyright_file ../../scripts/copyright.txt . EC2

@@ -13,4 +13,5 @@
 
 package rpc
 
-//go:generate go run ../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/rpc CNIBackendClient  mocks/rpc_mocks.go
+//go:generate protoc --go_out=plugins=grpc,paths=source_relative:. rpc.proto
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/rpc_mocks.go -copyright_file ../scripts/copyright.txt . CNIBackendClient

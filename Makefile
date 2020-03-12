@@ -169,6 +169,10 @@ docker-metrics-test:
 		$(GOLANG_IMAGE) \
 		make metrics-unit-test
 
+generate:
+	go generate -x ./...
+	$(MAKE) format
+
 # Generate descriptors for supported ENI configurations.
 generate-limits:
 	go run pkg/awsutils/gen_vpc_ip_limits.go
