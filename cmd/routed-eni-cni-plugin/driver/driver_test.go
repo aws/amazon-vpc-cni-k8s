@@ -331,6 +331,7 @@ func TestRunErrAddDefaultRoute(t *testing.T) {
 	assert.Error(t, err)
 }
 
+
 func TestRunErrAddrAdd(t *testing.T) {
 	ctrl, mockNetLink, mockIP, _, _ := setup(t)
 	defer ctrl.Finish()
@@ -542,7 +543,7 @@ func TestSetupPodNetwork(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 	var cidrs []string
-	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, true, mockNetLink, mockNS, mtu, log, mockProcSys)
+	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, true, mockNetLink, mockNS, mtu, log, mockProcSys, nil)
 	assert.NoError(t, err)
 }
 
@@ -597,7 +598,7 @@ func TestSetupPodNetworkErrNoIPv6(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 	var cidrs []string
-	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, true, mockNetLink, mockNS, mtu, log, mockProcSys)
+	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, true, mockNetLink, mockNS, mtu, log, mockProcSys, nil)
 	assert.NoError(t, err)
 }
 
@@ -616,7 +617,7 @@ func TestSetupPodNetworkErrLinkByName(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 	var cidrs []string
-	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu, log, mockProcSys)
+	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu, log, mockProcSys, nil)
 
 	assert.Error(t, err)
 }
@@ -641,7 +642,7 @@ func TestSetupPodNetworkErrLinkSetup(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 	var cidrs []string
-	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu, log, mockProcSys)
+	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu, log, mockProcSys, nil)
 
 	assert.Error(t, err)
 }
@@ -663,7 +664,7 @@ func TestSetupPodNetworkErrProcSys(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 	var cidrs []string
-	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu, log, mockProcSys)
+	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu, log, mockProcSys, nil)
 
 	assert.Error(t, err)
 }
@@ -699,7 +700,7 @@ func TestSetupPodNetworkErrRouteReplace(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 	var cidrs []string
-	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu, log, mockProcSys)
+	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu, log, mockProcSys, nil)
 
 	assert.Error(t, err)
 }
@@ -751,7 +752,7 @@ func TestSetupPodNetworkPrimaryIntf(t *testing.T) {
 
 	var cidrs []string
 
-	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, 0, cidrs, false, mockNetLink, mockNS, mtu, log, mockProcSys)
+	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, 0, cidrs, false, mockNetLink, mockNS, mtu, log, mockProcSys, nil)
 	assert.NoError(t, err)
 }
 

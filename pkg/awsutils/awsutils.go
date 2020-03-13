@@ -191,8 +191,14 @@ type ENIMetadata struct {
 	// SubnetIPv4CIDR is the ipv4 cider of network interface
 	SubnetIPv4CIDR string
 
+	// SubnetId that this interface is in
+	SubnetId string
+
 	// The ip addresses allocated for the network interface
 	IPv4Addresses []*ec2.NetworkInterfacePrivateIpAddress
+
+	// SecurityGroups that this interface belongs to
+	SecurityGroups []*string
 }
 
 func (eni ENIMetadata) PrimaryIPv4Address() string {
@@ -460,11 +466,24 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(macStr string) (ENIMetadat
 	if err != nil {
 		return ENIMetadata{}, errors.Wrapf(err, "get ENI metadata: failed to retrieve IPs and CIDR for ENI: %s", eniMAC)
 	}
+
+	subnetId, err := cache.getSubnetId(eniMAC)
+	if err != nil {
+		return ENIMetadata{}, errors.Wrapf(err, "get ENI metadata: failed to retrieve subnetId: %s, %v", eniMAC, err)
+	}
+
+	securityGroups, err := cache.getSecurityGroups(eniMAC)
+	if err != nil {
+		return ENIMetadata{}, errors.Wrapf(err, "get ENI metadata: failed to retrieve securityGroups: %s, %v", eniMAC, err)
+	}
+
 	return ENIMetadata{
 		ENIID:          eni,
 		MAC:            eniMAC,
 		DeviceNumber:   deviceNum,
 		SubnetIPv4CIDR: cidr,
+		SubnetId:       subnetId,
+		SecurityGroups: securityGroups,
 		IPv4Addresses:  imdsIPv4s,
 	}, nil
 }
@@ -505,6 +524,50 @@ func (cache *EC2InstanceMetadataCache) getIPsAndCIDR(eniMAC string) ([]*ec2.Netw
 		isFirst = false
 	}
 	return ipv4s, cidr, nil
+}
+
+// getSubnetId return the SubnetId of this interface
+func (cache *EC2InstanceMetadataCache) getSubnetId(eniMAC string) (string, error) {
+	start := time.Now()
+	subnetId, err := cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataSubnetID)
+
+	awsAPILatency.WithLabelValues("GetMetadata", fmt.Sprint(err != nil)).Observe(msSince(start))
+
+	if err != nil {
+		awsAPIErrInc("GetMetadata", err)
+		log.Errorf("Failed to retrieve subnet-id data from instance metadata %v", err)
+		return "", errors.Wrapf(err, "failed to retrieve subnet-id for ENI %s", eniMAC)
+	}
+	log.Debugf("Found SubnetId %s for ENI %s", subnetId, eniMAC)
+
+	return subnetId, nil
+}
+
+// getSecurityGroups return the SecurityGroups of this interface
+func (cache *EC2InstanceMetadataCache) getSecurityGroups(eniMAC string) ([]*string, error) {
+	start := time.Now()
+
+	// retrieve security groups
+	metadataSGIDs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataSGs)
+
+	awsAPILatency.WithLabelValues("GetMetadata", fmt.Sprint(err != nil)).Observe(msSince(start))
+
+	if err != nil {
+		awsAPIErrInc("GetMetadata", err)
+		log.Errorf("Failed to retrieve security-group-ids data from instance metadata service, %v", err)
+		return nil, errors.Wrap(err, "get instance metadata: failed to retrieve security-group-ids")
+	}
+	sgIDs := strings.Fields(metadataSGIDs)
+
+	var securityGroups []*string
+	for _, sgID := range sgIDs {
+		log.Debugf("Found security-group id: %s", sgID)
+		securityGroups = append(securityGroups, aws.String(sgID))
+	}
+
+	log.Debugf("Found %s SecurityGroups for ENI %s", len(securityGroups), eniMAC)
+
+	return securityGroups, nil
 }
 
 // getENIDeviceNumber returns ENI ID, device number, error

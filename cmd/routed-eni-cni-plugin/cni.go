@@ -61,6 +61,9 @@ type NetConf struct {
 	// defaults to 'eni'.
 	VethPrefix string `json:"vethPrefix"`
 
+	// ENIConfig to use when selecting the interface/IP address
+	ENIConfig string `json:"eniConfig"`
+
 	// MTU for eth0
 	MTU string `json:"mtu"`
 
@@ -84,6 +87,9 @@ type K8sArgs struct {
 
 	// K8S_POD_INFRA_CONTAINER_ID is pod's sandbox id
 	K8S_POD_INFRA_CONTAINER_ID types.UnmarshallableString
+
+	// IfName is the interface name being operated on
+	IfName types.UnmarshallableString
 }
 
 func init() {
@@ -145,6 +151,16 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.Wrap(err, "add cmd: failed to load k8s config from arg")
 	}
 
+	// Default the host-side veth prefix to 'eni'.
+	if conf.VethPrefix == "" {
+		conf.VethPrefix = "eni"
+	}
+	if len(conf.VethPrefix) > 4 {
+		return errors.New("conf.VethPrefix can be at most 4 characters long")
+	}
+
+	eniConfigName := conf.ENIConfig
+
 	mtu := networkutils.GetEthernetMTU(conf.MTU)
 	log.Debugf("MTU value set is %d:", mtu)
 
@@ -168,7 +184,8 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
 			K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 			K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
-			IfName:                     args.IfName})
+			IfName:                     args.IfName,
+			EniConfigName:              eniConfigName})
 
 	if err != nil {
 		log.Errorf("Error received from AddNetwork grpc call for pod %s namespace %s sandbox %s: %v",
@@ -191,6 +208,12 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
 		r.IPv4Addr, r.DeviceNumber, r.UseExternalSNAT, r.VPCcidrs)
 
+	_, ipv4Subnet, err := net.ParseCIDR(r.GetIPv4Subnet())
+	if err != nil {
+		log.Debugf("Failed to parse the subnet %s", r.GetIPv4Subnet())
+		ipv4Subnet = nil
+	}
+
 	addr := &net.IPNet{
 		IP:   net.ParseIP(r.IPv4Addr),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
@@ -198,9 +221,9 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	// build hostVethName
 	// Note: the maximum length for linux interface name is 15
-	hostVethName := generateHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+	hostVethName := generateHostVethName(conf.VethPrefix+args.IfName, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 
-	err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber), r.VPCcidrs, r.UseExternalSNAT, mtu, log)
+	err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber), r.VPCcidrs, r.UseExternalSNAT, mtu, log, ipv4Subnet)
 
 	if err != nil {
 		log.Errorf("Failed SetupPodNetwork for pod %s namespace %s sandbox %s: %v",
@@ -213,7 +236,8 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 				K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 				K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
 				IPv4Addr:                   r.IPv4Addr,
-				Reason:                     "SetupNSFailed"})
+				Reason:                     "SetupNSFailed",
+				IfName:                     string(k8sArgs.IfName)})
 
 		if delErr != nil {
 			log.Errorf("Error received from DelNetwork grpc call for pod %s namespace %s sandbox %s: %v",
@@ -242,10 +266,11 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 }
 
 // generateHostVethName returns a name to be used on the host-side veth device.
+// Note: the maximum length for linux interface name is 15
 func generateHostVethName(prefix, namespace, podname string) string {
 	h := sha1.New()
 	h.Write([]byte(fmt.Sprintf("%s.%s", namespace, podname)))
-	return fmt.Sprintf("%s%s", prefix, hex.EncodeToString(h.Sum(nil))[:11])
+	return fmt.Sprintf("%s%s", prefix, hex.EncodeToString(h.Sum(nil)))[:15]
 }
 
 func cmdDel(args *skel.CmdArgs) error {
@@ -291,7 +316,8 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 			K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
 			IPv4Addr:                   k8sArgs.IP.String(),
-			Reason:                     "PodDeleted"})
+			Reason:                     "PodDeleted",
+			IfName:                     string(args.IfName)})
 
 	if err != nil {
 		if strings.Contains(err.Error(), datastore.ErrUnknownPod.Error()) {

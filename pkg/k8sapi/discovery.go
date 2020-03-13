@@ -51,6 +51,10 @@ type K8SPodInfo struct {
 	Sandbox string
 	// IP is pod's ipv4 address
 	IP  string
+	// IfName is interface name
+	IfName string
+	// ENIConfigName
+	ENIConfigName string
 	UID string
 }
 

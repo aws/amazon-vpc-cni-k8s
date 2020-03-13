@@ -47,7 +47,8 @@ const (
 )
 
 type ENIConfig interface {
-	MyENIConfig() (*v1alpha1.ENIConfigSpec, error)
+	GetENIConfig(eniConfig string) (*v1alpha1.ENIConfigSpec, error)
+	GetAllENIConfigs() (map[string]*v1alpha1.ENIConfigSpec, error)
 	Getter() *ENIConfigInfo
 }
 
@@ -177,12 +178,25 @@ func (eniCfg *ENIConfigController) Getter() *ENIConfigInfo {
 	return output
 }
 
-// MyENIConfig returns the security
-func (eniCfg *ENIConfigController) MyENIConfig() (*v1alpha1.ENIConfigSpec, error) {
+// GetENIConfig returns the default ENIConfig if no string is provided, else the requested one
+// providing a subnet and security group to use
+// At this point, if there are more than one configs associated with this worker node
+// the decision as to which one is default is fairly arbitrary
+func (eniCfg *ENIConfigController) GetENIConfig(eniConfigName string) (*v1alpha1.ENIConfigSpec, error) {
 	eniCfg.eniLock.Lock()
 	defer eniCfg.eniLock.Unlock()
 
-	myENIConfig, ok := eniCfg.eni[eniCfg.myENI]
+	log.Debugf("Provided ENIConfigName of %s", eniConfigName)
+
+	//If the caller didn't specify an ENIConfig, use the myENI one
+	if eniConfigName == "" {
+		eniConfigName = eniCfg.myENI
+	}
+	log.Debugf("Look for ENIConfig with the label %s", eniConfigName)
+
+	log.Debugf("Enis %s", eniCfg.eni)
+
+	myENIConfig, ok := eniCfg.eni[eniConfigName]
 
 	if ok {
 		return &v1alpha1.ENIConfigSpec{
@@ -191,6 +205,20 @@ func (eniCfg *ENIConfigController) MyENIConfig() (*v1alpha1.ENIConfigSpec, error
 		}, nil
 	}
 	return nil, ErrNoENIConfig
+}
+
+// Return the map of all eni configurations
+func (eniCfg *ENIConfigController) GetAllENIConfigs() (map[string]*v1alpha1.ENIConfigSpec, error) {
+	eniCfg.eniLock.Lock()
+	defer eniCfg.eniLock.Unlock()
+
+	log.Debugf("Enis %s", eniCfg.eni)
+
+	if eniCfg.eni == nil || len(eniCfg.eni) == 0 {
+		return nil, ErrNoENIConfig
+	}
+
+	return eniCfg.eni, nil
 }
 
 // getEniConfigAnnotationDef returns eniConfigAnnotation

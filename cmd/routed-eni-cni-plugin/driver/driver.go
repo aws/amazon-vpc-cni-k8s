@@ -44,7 +44,7 @@ const (
 
 // NetworkAPIs defines network API calls
 type NetworkAPIs interface {
-	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error
+	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger, ipv4Subnet *net.IPNet) error
 	TeardownNS(addr *net.IPNet, table int, log logger.Logger) error
 }
 
@@ -69,12 +69,13 @@ type createVethPairContext struct {
 	contVethName string
 	hostVethName string
 	addr         *net.IPNet
+	ipv4Subnet	 *net.IPNet
 	netLink      netlinkwrapper.NetLink
 	ip           ipwrapper.IP
 	mtu          int
 }
 
-func newCreateVethPairContext(contVethName string, hostVethName string, addr *net.IPNet, mtu int) *createVethPairContext {
+func newCreateVethPairContext(contVethName string, hostVethName string, addr *net.IPNet, mtu int, ipv4Subnet *net.IPNet) *createVethPairContext {
 	return &createVethPairContext{
 		contVethName: contVethName,
 		hostVethName: hostVethName,
@@ -82,6 +83,7 @@ func newCreateVethPairContext(contVethName string, hostVethName string, addr *ne
 		netLink:      netlinkwrapper.NewNetLink(),
 		ip:           ipwrapper.NewIP(),
 		mtu:          mtu,
+		ipv4Subnet:   ipv4Subnet,
 	}
 }
 
@@ -136,10 +138,25 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		return errors.Wrap(err, "setup NS network: failed to add default gateway")
 	}
 
+
+
 	// Add a default route via dummy next hop(169.254.1.1). Then all outgoing traffic will be routed by this
 	// default route via dummy next hop (169.254.1.1).
-	if err = createVethContext.ip.AddDefaultRoute(gwNet.IP, contVeth); err != nil {
+	// If this is not the first interface, the route may already exist
+	if err = createVethContext.ip.AddDefaultRoute(gwNet.IP, contVeth); err != nil && err.Error() != "file exists"{
 		return errors.Wrap(err, "setup NS network: failed to add default route")
+	}
+
+	if createVethContext.ipv4Subnet != nil {
+		routeSubnet := netlink.Route{
+			LinkIndex: contVeth.Attrs().Index,
+			Scope:     netlink.SCOPE_LINK,
+			Dst:       createVethContext.ipv4Subnet}
+
+		// Add or replace route
+		if err := createVethContext.netLink.RouteReplace(&routeSubnet); err != nil {
+			return errors.Wrapf(err, "setupNS: unable to add or replace route entry for %s", routeSubnet.String())
+		}
 	}
 
 	if err = createVethContext.netLink.AddrAdd(contVeth, &netlink.Addr{IPNet: createVethContext.addr}); err != nil {
@@ -168,13 +185,13 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 }
 
 // SetupNS wires up linux networking for a pod's network
-func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error {
-	log.Debugf("SetupNS: hostVethName=%s, contVethName=%s, netnsPath=%s, table=%d, mtu=%d", hostVethName, contVethName, netnsPath, table, mtu)
-	return setupNS(hostVethName, contVethName, netnsPath, addr, table, vpcCIDRs, useExternalSNAT, os.netLink, os.ns, mtu, log, os.procSys)
+func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger, ipv4Subnet *net.IPNet) error {
+	log.Debugf("SetupNS: hostVethName=%s, contVethName=%s, netnsPath=%s, table=%d, addr=%s, mtu=%d", hostVethName, contVethName, netnsPath, table, addr.String(), mtu)
+	return setupNS(hostVethName, contVethName, netnsPath, addr, table, vpcCIDRs, useExternalSNAT, os.netLink, os.ns, mtu, log, os.procSys, ipv4Subnet)
 }
 
 func setupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool,
-	netLink netlinkwrapper.NetLink, ns nswrapper.NS, mtu int, log logger.Logger, procSys procsyswrapper.ProcSys) error {
+	netLink netlinkwrapper.NetLink, ns nswrapper.NS, mtu int, log logger.Logger, procSys procsyswrapper.ProcSys, ipv4Subnet *net.IPNet) error {
 	// Clean up if hostVeth exists.
 	if oldHostVeth, err := netLink.LinkByName(hostVethName); err == nil {
 		if err = netLink.LinkDel(oldHostVeth); err != nil {
@@ -183,11 +200,13 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 		log.Debugf("Clean up old hostVeth: %v\n", hostVethName)
 	}
 
-	createVethContext := newCreateVethPairContext(contVethName, hostVethName, addr, mtu)
+	createVethContext := newCreateVethPairContext(contVethName, hostVethName, addr, mtu, ipv4Subnet)
 	if err := ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		log.Errorf("Failed to setup NS network %v", err)
 		return errors.Wrap(err, "setupNS network: failed to setup NS network")
 	}
+
+	log.Debugf("Setup netNS with netnsPath %s", netnsPath)
 
 	hostVeth, err := netLink.LinkByName(hostVethName)
 	if err != nil {
