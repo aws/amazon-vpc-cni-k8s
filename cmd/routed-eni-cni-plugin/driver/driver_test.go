@@ -322,6 +322,7 @@ func TestRunErrAddDefaultRoute(t *testing.T) {
 	assert.Error(t, err)
 }
 
+
 func TestRunErrAddrAdd(t *testing.T) {
 	ctrl, mockNetLink, mockIP, _ := setup(t)
 	defer ctrl.Finish()
@@ -530,7 +531,7 @@ func TestSetupPodNetwork(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 	var cidrs []string
-	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, true, mockNetLink, mockNS, mtu)
+	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, true, mockNetLink, mockNS, mtu, nil)
 	assert.NoError(t, err)
 }
 
@@ -549,7 +550,7 @@ func TestSetupPodNetworkErrLinkByName(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 	var cidrs []string
-	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu)
+	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu, nil)
 
 	assert.Error(t, err)
 }
@@ -571,7 +572,7 @@ func TestSetupPodNetworkErrLinkSetup(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 	var cidrs []string
-	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu)
+	err := setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu, nil)
 
 	assert.Error(t, err)
 }
@@ -604,7 +605,7 @@ func TestSetupPodNetworkErrRouteReplace(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 	var cidrs []string
-	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu)
+	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, testTable, cidrs, false, mockNetLink, mockNS, mtu, nil)
 
 	assert.Error(t, err)
 }
@@ -652,7 +653,7 @@ func TestSetupPodNetworkPrimaryIntf(t *testing.T) {
 	}
 
 	var cidrs []string
-	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, 0, cidrs, false, mockNetLink, mockNS, mtu)
+	err = setupNS(testHostVethName, testContVethName, testnetnsPath, addr, 0, cidrs, false, mockNetLink, mockNS, mtu, nil)
 
 	assert.NoError(t, err)
 }

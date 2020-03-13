@@ -29,6 +29,7 @@ type AddNetworkRequest struct {
 	K8S_POD_INFRA_CONTAINER_ID string   `protobuf:"bytes,3,opt,name=K8S_POD_INFRA_CONTAINER_ID,json=k8SPODINFRACONTAINERID,proto3" json:"K8S_POD_INFRA_CONTAINER_ID,omitempty"`
 	Netns                      string   `protobuf:"bytes,4,opt,name=Netns,json=netns,proto3" json:"Netns,omitempty"`
 	IfName                     string   `protobuf:"bytes,5,opt,name=IfName,json=ifName,proto3" json:"IfName,omitempty"`
+	EniConfigName              string `protobuf:"bytes,6,opt,name=EniConfigName" json:"EniConfigName,omitempty"`
 	XXX_NoUnkeyedLiteral       struct{} `json:"-"`
 	XXX_unrecognized           []byte   `json:"-"`
 	XXX_sizecache              int32    `json:"-"`
@@ -89,6 +90,13 @@ func (m *AddNetworkRequest) GetNetns() string {
 func (m *AddNetworkRequest) GetIfName() string {
 	if m != nil {
 		return m.IfName
+	}
+	return ""
+}
+
+func (m *AddNetworkRequest) GetEniConfigName() string {
+	if m != nil {
+		return m.EniConfigName
 	}
 	return ""
 }
@@ -177,6 +185,7 @@ type DelNetworkRequest struct {
 	K8S_POD_INFRA_CONTAINER_ID string   `protobuf:"bytes,3,opt,name=K8S_POD_INFRA_CONTAINER_ID,json=k8SPODINFRACONTAINERID,proto3" json:"K8S_POD_INFRA_CONTAINER_ID,omitempty"`
 	IPv4Addr                   string   `protobuf:"bytes,4,opt,name=IPv4Addr,json=iPv4Addr,proto3" json:"IPv4Addr,omitempty"`
 	Reason                     string   `protobuf:"bytes,5,opt,name=Reason,json=reason,proto3" json:"Reason,omitempty"`
+	IfName                     string `protobuf:"bytes,6,opt,name=IfName" json:"IfName,omitempty"`
 	XXX_NoUnkeyedLiteral       struct{} `json:"-"`
 	XXX_unrecognized           []byte   `json:"-"`
 	XXX_sizecache              int32    `json:"-"`
@@ -237,6 +246,13 @@ func (m *DelNetworkRequest) GetIPv4Addr() string {
 func (m *DelNetworkRequest) GetReason() string {
 	if m != nil {
 		return m.Reason
+	}
+	return ""
+}
+
+func (m *DelNetworkRequest) GetIfName() string {
+	if m != nil {
+		return m.IfName
 	}
 	return ""
 }

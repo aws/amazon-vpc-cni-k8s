@@ -104,7 +104,7 @@ func TestENIConfig(t *testing.T) {
 	testHandler := NewHandler(testENIConfigController)
 
 	// If there is no default ENI config
-	_, err := testENIConfigController.MyENIConfig()
+	_, err := testENIConfigController.GetENIConfig("")
 	assert.Error(t, err)
 
 	// Start with default config
@@ -116,7 +116,7 @@ func TestENIConfig(t *testing.T) {
 
 	updateENIConfig(testHandler, eniConfigDefault, defaultCfg, false)
 
-	outputCfg, err := testENIConfigController.MyENIConfig()
+	outputCfg, err := testENIConfigController.GetENIConfig("")
 	assert.NoError(t, err)
 	assert.Equal(t, defaultCfg, *outputCfg)
 
@@ -127,7 +127,7 @@ func TestENIConfig(t *testing.T) {
 	group1Name := "group1ENIconfig"
 	updateENIConfig(testHandler, group1Name, group1Cfg, false)
 
-	outputCfg, err = testENIConfigController.MyENIConfig()
+	outputCfg, err = testENIConfigController.GetENIConfig("")
 	assert.NoError(t, err)
 	assert.Equal(t, defaultCfg, *outputCfg)
 
@@ -143,7 +143,7 @@ func TestNodeENIConfig(t *testing.T) {
 	updateNodeAnnotation(testHandler, myNodeName, myENIConfig, false)
 
 	// If there is no ENI config
-	_, err := testENIConfigController.MyENIConfig()
+	_, err := testENIConfigController.GetENIConfig("")
 	assert.Error(t, err)
 
 	// Add eniconfig for myENIConfig
@@ -151,7 +151,7 @@ func TestNodeENIConfig(t *testing.T) {
 		SecurityGroups: []string{"sg21-id", "sg22-id"},
 		Subnet:         "subnet21"}
 	updateENIConfig(testHandler, myENIConfig, group1Cfg, false)
-	outputCfg, err := testENIConfigController.MyENIConfig()
+	outputCfg, err := testENIConfigController.GetENIConfig("")
 	assert.NoError(t, err)
 	assert.Equal(t, group1Cfg, *outputCfg)
 
@@ -162,13 +162,13 @@ func TestNodeENIConfig(t *testing.T) {
 		SecurityGroups: defaultSGs,
 		Subnet:         defaultSubnet}
 	updateENIConfig(testHandler, eniConfigDefault, defaultCfg, false)
-	outputCfg, err = testENIConfigController.MyENIConfig()
+	outputCfg, err = testENIConfigController.GetENIConfig("")
 	assert.NoError(t, err)
 	assert.Equal(t, group1Cfg, *outputCfg)
 
 	// Delete node's myENIConfig annotation, then the value should fallback to default
 	updateNodeAnnotation(testHandler, myNodeName, myENIConfig, true)
-	outputCfg, err = testENIConfigController.MyENIConfig()
+	outputCfg, err = testENIConfigController.GetENIConfig("")
 	assert.NoError(t, err)
 	assert.Equal(t, defaultCfg, *outputCfg)
 
@@ -184,7 +184,7 @@ func TestNodeENIConfigLabel(t *testing.T) {
 	updateNodeLabel(testHandler, myNodeName, myENIConfig, false)
 
 	// If there is no ENI config
-	_, err := testENIConfigController.MyENIConfig()
+	_, err := testENIConfigController.GetENIConfig("")
 	assert.Error(t, err)
 
 	// Add eniconfig for myENIConfig
@@ -192,7 +192,7 @@ func TestNodeENIConfigLabel(t *testing.T) {
 		SecurityGroups: []string{"sg21-id", "sg22-id"},
 		Subnet:         "subnet21"}
 	updateENIConfig(testHandler, myENIConfig, group1Cfg, false)
-	outputCfg, err := testENIConfigController.MyENIConfig()
+	outputCfg, err := testENIConfigController.GetENIConfig("")
 	assert.NoError(t, err)
 	assert.Equal(t, group1Cfg, *outputCfg)
 
@@ -203,13 +203,13 @@ func TestNodeENIConfigLabel(t *testing.T) {
 		SecurityGroups: defaultSGs,
 		Subnet:         defaultSubnet}
 	updateENIConfig(testHandler, eniConfigDefault, defaultCfg, false)
-	outputCfg, err = testENIConfigController.MyENIConfig()
+	outputCfg, err = testENIConfigController.GetENIConfig("")
 	assert.NoError(t, err)
 	assert.Equal(t, group1Cfg, *outputCfg)
 
 	// Delete node's myENIConfig annotation, then the value should fallback to default
 	updateNodeLabel(testHandler, myNodeName, myENIConfig, true)
-	outputCfg, err = testENIConfigController.MyENIConfig()
+	outputCfg, err = testENIConfigController.GetENIConfig("")
 	assert.NoError(t, err)
 	assert.Equal(t, defaultCfg, *outputCfg)
 
