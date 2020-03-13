@@ -12,134 +12,224 @@
 # language governing permissions and limitations under the License.
 #
 
-.PHONY: all build-linux clean format check-format docker docker-build lint unit-test vet download-portmap build-docker-test build-metrics docker-metrics metrics-unit-test docker-metrics-test docker-vet
+.PHONY: all dist check clean \
+		lint format check-format vet docker-vet \
+		build-linux docker \
+		unit-test unit-test-race build-docker-test docker-func-test \
+		build-metrics docker-metrics \
+		metrics-unit-test docker-metrics-test
 
-IMAGE   ?= amazon/amazon-k8s-cni
-VERSION ?= $(shell git describe --tags --always --dirty)
-LDFLAGS ?= -X main.version=$(VERSION)
-DOCKER_ARGS ?=
-ALLPKGS := $(shell go list ./...)
+# VERSION is the source revision that executables and images are built from.
+VERSION = $(shell git describe --tags --always --dirty || echo "unknown")
 
-ARCH ?= $(shell uname -m)
+# DESTDIR is where distribution output (container images) is placed.
+DESTDIR = .
 
-ifeq ($(ARCH),aarch64)
-  ARCH = arm64
-else
-endif
-ifeq ($(ARCH),x86_64)
-  ARCH = amd64
-endif
+# IMAGE is the primary AWS VPC CNI plugin container image.
+IMAGE = amazon/amazon-k8s-cni
+IMAGE_NAME = $(IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
+IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(IMAGE_NAME)).tar.gz
+# METRICS_IMAGE is the CNI metrics publisher sidecar container image.
+METRICS_IMAGE = amazon/cni-metrics-helper
+METRICS_IMAGE_NAME = $(METRICS_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
+METRICS_IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(METRICS_IMAGE_NAME)).tar.gz
+# TEST_IMAGE is the testing environment container image.
+TEST_IMAGE = amazon-k8s-cni-test
+TEST_IMAGE_NAME = $(TEST_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
+# These values derive ARCH and DOCKER_ARCH which are needed by dependencies in
+# image build defaulting to system's architecture when not specified.
+#
+# UNAME_ARCH is the runtime architecture of the building host.
+UNAME_ARCH = $(shell uname -m)
+# ARCH is the target architecture which is being built for.
+#
+# These are pairs of input_arch to derived_arch separated by colons:
+ARCH = $(lastword $(subst :, ,$(filter $(UNAME_ARCH):%,x86_64:amd64 aarch64:arm64)))
+# DOCKER_ARCH is the docker specific architecture specifier used for building on
+# multiarch container images.
+DOCKER_ARCH = $(lastword $(subst :, ,$(filter $(ARCH):%,amd64:amd64 arm64:arm64v8)))
+# IMAGE_ARCH_SUFFIX is the `-arch` suffix included in the container image name.
+#
+# This is only applied to the arm64 container image by default. Override to
+# provide an alternate suffix or to omit.
+IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(ARCH),arm64))
+# GOLANG_IMAGE is the building golang container image used.
+GOLANG_IMAGE = golang:1.13-stretch
+# For the requseted build, these are the set of Go specific build environment
+# variables.
+export GOARCH ?= $(ARCH)
+export GOOS = linux
+export CGO_ENABLED = 0
+# NOTE: Provided for local toolchains that require explicit module feature flag.
+export GO111MODULE = on
+export GOPROXY = direct
 
-# Default to build the Linux binary
+# LDFLAGS is the set of flags used when building golang executables.
+LDFLAGS = -X main.version=$(VERSION)
+# ALLPKGS is the set of packages provided in source.
+ALLPKGS = $(shell go list ./...)
+# BINS is the set of built command executables.
+BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper
+# DOCKER_ARGS is extra arguments passed during container image build.
+DOCKER_ARGS =
+# DOCKER_RUN_FLAGS is set the flags passed during runs of containers.
+DOCKER_RUN_FLAGS = --rm -ti $(DOCKER_ARGS)
+# DOCKER_BUILD_FLAGS is the set of flags passed during container image builds
+# based on the requested build.
+DOCKER_BUILD_FLAGS = --build-arg GOARCH="$(ARCH)" \
+					  --build-arg docker_arch="$(DOCKER_ARCH)" \
+					  --build-arg golang_image="$(GOLANG_IMAGE)" \
+					  --network=host \
+	  		          $(DOCKER_ARGS)
+
+# Default to building an executable using the host's Go toolchain.
+.DEFAULT_GOAL = build-linux
+
+# Build both CNI and metrics helper container images.
+all: docker docker-metrics
+
+dist: all
+	mkdir -p $(DESTDIR)
+	docker save $(IMAGE_NAME) | gzip > $(IMAGE_DIST)
+	docker save $(METRICS_IMAGE_NAME) | gzip > $(METRICS_IMAGE_DIST)
+
+# Build the VPC CNI plugin agent using the host's Go toolchain.
+build-linux: BUILD_FLAGS = -ldflags '-s -w $(LDFLAGS)'
 build-linux:
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "-s -w $(LDFLAGS)" ./cmd/aws-k8s-agent/
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-cni -ldflags " -s -w $(LDFLAGS)" ./cmd/routed-eni-cni-plugin/
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o grpc-health-probe -ldflags "-s -w $(LDFLAGS)" ./cmd/grpc-health-probe/
+	go build $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
+	go build $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
+	go build $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
 
-# Download portmap plugin
-download-portmap:
-	mkdir -p tmp/downloads
-	mkdir -p tmp/plugins
-	curl -L -o tmp/downloads/cni-plugins-$(ARCH).tgz https://github.com/containernetworking/plugins/releases/download/v0.7.5/cni-plugins-$(ARCH)-v0.7.5.tgz
-	tar -vxf tmp/downloads/cni-plugins-$(ARCH).tgz -C tmp/plugins
-	cp tmp/plugins/portmap .
-	rm -rf tmp
-
-# Build CNI Docker image
+# Build VPC CNI plugin & agent container image.
 docker:
-	@docker build $(DOCKER_ARGS) --build-arg arch="$(ARCH)" -f scripts/dockerfiles/Dockerfile.release -t "$(IMAGE):$(VERSION)" .
-	@echo "Built Docker image \"$(IMAGE):$(VERSION)\""
+	docker build $(DOCKER_BUILD_FLAGS) \
+		-f scripts/dockerfiles/Dockerfile.release \
+		-t "$(IMAGE_NAME)" \
+		.
+	@echo "Built Docker image \"$(IMAGE_NAME)\""
 
+# Run the built cni container image to use in functional testing
 docker-func-test: docker
-	docker run $(DOCKER_ARGS) -it "$(IMAGE):$(VERSION)"
+	docker run $(DOCKER_RUN_FLAGS) \
+		"$(IMAGE_NAME)"
 
-# unit-test
+# Run unit tests
 unit-test:
-	GOOS=linux CGO_ENABLED=1 go test -v -cover $(ALLPKGS)
+	go test -v -cover $(ALLPKGS)
 
-# unit-test-race
+# Run unit tests with race detection (can only be run natively)
+unit-test-race: CGO_ENABLED=1
+unit-test-race: GOARCH=
 unit-test-race:
-	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./cmd/*/...
-	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 150s ./pkg/awsutils/...
-	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/k8sapi/...
-	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/networkutils/...
-	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/utils/...
-	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/eniconfig/...
-	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./pkg/ipamd/...
+	go test -v -cover -race -timeout 10s  ./cmd/...
+	go test -v -cover -race -timeout 150s ./pkg/awsutils/...
+	go test -v -cover -race -timeout 10s  ./pkg/k8sapi/...
+	go test -v -cover -race -timeout 10s  ./pkg/networkutils/...
+	go test -v -cover -race -timeout 10s  ./pkg/utils/...
+	go test -v -cover -race -timeout 10s  ./pkg/eniconfig/...
+	go test -v -cover -race -timeout 10s  ./pkg/ipamd/...
 
+# Build the unit test driver container image.
 build-docker-test:
-	@docker build -f scripts/dockerfiles/Dockerfile.test -t amazon-k8s-cni-test:latest .
+	docker build $(DOCKER_BUILD_FLAGS) \
+		-f scripts/dockerfiles/Dockerfile.test \
+		-t $(TEST_IMAGE_NAME) \
+		.
 
+# Run unit tests inside of the testing container image.
 docker-unit-test: build-docker-test
-	docker run -e GO111MODULE=on \
-		amazon-k8s-cni-test:latest make unit-test
+	docker run $(DOCKER_RUN_ARGS) \
+		$(TEST_IMAGE_NAME) \
+		make unit-test
 
-# Build metrics
+# Build metrics helper agent.
 build-metrics:
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -ldflags="-s -w" -o cni-metrics-helper ./cmd/cni-metrics-helper/
+	go build -ldflags="-s -w" -o cni-metrics-helper ./cmd/cni-metrics-helper
 
-# Build metrics Docker image
+# Build metrics helper agent Docker image.
 docker-metrics:
-	@docker build --build-arg arch="$(ARCH)" -f scripts/dockerfiles/Dockerfile.metrics -t "amazon/cni-metrics-helper:$(VERSION)" .
+	docker build $(DOCKER_BUILD_FLAGS) \
+		-f scripts/dockerfiles/Dockerfile.metrics \
+		-t "$(METRICS_IMAGE_NAME)" \
+		.
 	@echo "Built Docker image \"amazon/cni-metrics-helper:$(VERSION)\""
 
+# Run metrics helper unit test suite (must be run natively).
+metrics-unit-test: CGO_ENABLED=1
+metrics-unit-test: GOARCH=
 metrics-unit-test:
-	GOOS=linux CGO_ENABLED=1 go test -v -cover -race -timeout 10s ./cmd/cni-metrics-helper/metrics/...
+	go test -v -cover -race -timeout 10s \
+		./cmd/cni-metrics-helper/metrics/...
 
+# Run metrics helper unit test suite in a container.
 docker-metrics-test:
-	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
-		--workdir=/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
-		--env GOPATH=/usr/src/app \
-		golang:1.10 make metrics-unit-test
-
-# Build both CNI and metrics helper
-all: docker docker-metrics
+	docker run $(DOCKER_RUN_FLAGS) \
+		-v $(shell pwd -P):/src --workdir=/src \
+		-e GOARCH -e GOOS -e GO111MODULE \
+		$(GOLANG_IMAGE) \
+		make metrics-unit-test
 
 generate:
 	go generate -x ./...
 	$(MAKE) format
 
+# Generate descriptors for supported ENI configurations.
 generate-limits:
 	go run pkg/awsutils/gen_vpc_ip_limits.go
 
-# golint
-# To install: go get -u golang.org/x/lint/golint
+# Fetch portmap the port-forwarding management CNI plugin
+portmap: FETCH_VERSION=0.7.5
+portmap: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOARCH)-v$(FETCH_VERSION).tgz
+portmap: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/meta/portmap
+portmap:
+	@echo "Fetching portmap CNI plugin v$(FETCH_VERSION) from upstream release"
+	@echo
+	@echo "Visit upstream project for portmap plugin details:"
+	@echo "$(VISIT_URL)"
+	@echo
+	curl -L $(FETCH_URL) | tar -z -x ./portmap
+
+# Run all source code checks.
+check: check-format lint vet
+
+# Run golint on source code.
+#
+# To install:
+#
+#   go get -u golang.org/x/lint/golint
+#
+lint: LINT_FLAGS = -set_exit_status
 lint:
-	golint pkg/awsutils/*.go
-	golint cmd/routed-eni-cni-plugin/*.go
-	golint cmd/routed-eni-cni-plugin/driver/*.go
-	golint pkg/k8sapi/*.go
-	golint pkg/networkutils/*.go
-	golint pkg/ipamd/*.go
-	golint pkg/ipamd/*/*.go
+	@command -v golint >/dev/null || { echo "ERROR: golint not installed"; exit 1; }
+	find . \
+	  -type f -name '*.go' \
+	  -not -name 'mock_*' -not -name 'mocks_*' \
+	  -print0 | sort -z | xargs -0 -L1 -- golint $(LINT_FLAGS) 2>/dev/null
 
-# go vet
+# Run go vet on source code.
 vet:
-	GOOS=linux go vet ./...
+	go vet ./...
 
+# Run go vet inside of a container.
 docker-vet: build-docker-test
-	docker run -e GO111MODULE=on \
-		amazon-k8s-cni-test:latest make vet
+	docker run $(DOCKER_RUN_FLAGS) \
+		$(TEST_IMAGE_NAME) make vet
 
-clean:
-	rm -f aws-k8s-agent
-	rm -f aws-cni
-	rm -f grpc-health-probe
-	rm -f cni-metrics-helper
-	rm -f portmap
-
-files := $(shell find . -not -name 'mock_publisher.go' -not -name 'rpc.pb.go' -not -name 'integration_test.go' -name '*.go' -print)
-unformatted = $(shell goimports -l $(files))
-
+# Format all Go source code files.
 format:
-	@echo "== format"
-	@goimports -w $(files)
-	@sync
+	@command -v goimports >/dev/null || { echo "ERROR: goimports not installed"; exit 1; }
+	find ./* \
+	  -type f \
+	  -not -name 'mock_publisher.go' \
+	  -not -name 'rpc.pb.go' \
+	  -name '*.go' \
+	  -print0 | sort -z | xargs -0 -- goimports $(or $(FORMAT_FLAGS),-w)
 
-check-format:
-	@echo "== check formatting"
-ifneq "$(unformatted)" ""
-	@echo "needs formatting: $(unformatted)"
-	@echo "run 'make format'"
-	@exit 1
-endif
+# Check formatting of source code files without modification.
+check-format: FORMAT_FLAGS = -l
+check-format: format
+
+# Clean temporary files and build artifacts from the project.
+clean:
+	@rm -f -- $(BINS)
+	@rm -f -- portmap
