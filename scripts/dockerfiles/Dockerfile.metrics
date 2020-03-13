@@ -1,33 +1,31 @@
-FROM golang:1.13-stretch as builder
+ARG docker_arch
+ARG golang_image=golang:1.13-stretch
+
+FROM $golang_image as builder
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
-
-ARG arch
-ENV ARCH=$arch
-
-# Force the go compiler to use modules.
+ARG GOARCH=
+# Configure build with Go modules
 ENV GO111MODULE=on
 ENV GOPROXY=direct
 
-# go.mod and go.sum go into their own layers.
-COPY go.mod .
-COPY go.sum .
-
-# This ensures `go mod download` happens only when go.mod and go.sum change.
+# Copy modules in before the rest of the source to only expire cache on module
+# changes:
+COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . .
+COPY . ./
 RUN make build-metrics
 
-FROM amazonlinux:2
+FROM $docker_arch/amazonlinux:2
 RUN yum update -y && \
-    yum clean all
+	yum clean all
+
+# Copy our bundled certs to the first place go will check: see
+# https://golang.org/src/pkg/crypto/x509/root_unix.go
+COPY ./misc/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
 
 COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/cni-metrics-helper /app
-
-# Copy our bundled certs to the first place go will check: see
-# https://golang.org/src/pkg/crypto/x509/root_unix.go
-COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/misc/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 ENTRYPOINT /app/cni-metrics-helper --cloudwatch=false

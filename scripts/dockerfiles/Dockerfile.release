@@ -1,30 +1,28 @@
-FROM golang:1.13-stretch as builder
+ARG docker_arch
+ARG golang_image=golang:1.13-stretch
+
+FROM $golang_image as builder
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
-
-ARG arch
-ENV ARCH=$arch
-
-# Force the go compiler to use modules.
+ARG GOARCH=
+# Configure build with Go modules
 ENV GO111MODULE=on
 ENV GOPROXY=direct
 
-# Add goimports
-RUN go get -u golang.org/x/tools/cmd/goimports
-
-# go.mod and go.sum go into their own layers.
-COPY go.mod .
-COPY go.sum .
-
-# This ensures `go mod download` happens only when go.mod and go.sum change.
+# Copy modules in before the rest of the source to only expire cache on module
+# changes:
+COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . .
-RUN make build-linux && make download-portmap
+COPY Makefile ./
+RUN make portmap
 
-FROM amazonlinux:2
+COPY . ./
+RUN make build-linux
+
+# Build the architecture specific container image:
+FROM $docker_arch/amazonlinux:2
 RUN yum update -y && \
-    yum install -y iptables && \
-    yum install -y iproute && \
+    yum install -y iptables iproute && \
     yum clean all
 
 WORKDIR /app
