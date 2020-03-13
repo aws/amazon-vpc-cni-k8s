@@ -63,17 +63,33 @@ func (mr *MockENIConfigMockRecorder) Getter() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Getter", reflect.TypeOf((*MockENIConfig)(nil).Getter))
 }
 
-// MyENIConfig mocks base method
-func (m *MockENIConfig) MyENIConfig() (*v1alpha1.ENIConfigSpec, error) {
+
+// GetENIConfig mocks base method
+func (m *MockENIConfig) GetENIConfig(arg0 string) (*v1alpha1.ENIConfigSpec, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MyENIConfig")
+	ret := m.ctrl.Call(m, "GetENIConfig", arg0)
 	ret0, _ := ret[0].(*v1alpha1.ENIConfigSpec)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// MyENIConfig indicates an expected call of MyENIConfig
-func (mr *MockENIConfigMockRecorder) MyENIConfig() *gomock.Call {
+// GetENIConfig indicates an expected call of GetENIConfig
+func (mr *MockENIConfigMockRecorder) GetENIConfig(arg0 string) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MyENIConfig", reflect.TypeOf((*MockENIConfig)(nil).MyENIConfig))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetENIConfig", reflect.TypeOf((*MockENIConfig)(nil).GetENIConfig), arg0)
+}
+
+// GetAllENIConfigs mocks base method
+func (m *MockENIConfig) GetAllENIConfigs() (map[string]*v1alpha1.ENIConfigSpec, error) {
+	m.ctrl.T.Helper()
+    ret := m.ctrl.Call(m, "GetAllENIConfigs")
+	ret0, _ := ret[0].(map[string]*v1alpha1.ENIConfigSpec)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAllENIConfigs indicates an expected call of GetAllENIConfigs
+func (mr *MockENIConfigMockRecorder) GetAllENIConfigs() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAllENIConfigs", reflect.TypeOf((*MockENIConfig)(nil).GetAllENIConfigs))
 }

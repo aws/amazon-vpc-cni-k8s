@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,6 +37,8 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 )
 
 // The package ipamd is a long running daemon which manages a warm pool of available IP addresses.
@@ -428,6 +431,10 @@ func (c *IPAMContext) nodeInit() error {
 	if err == nil && increasedPool {
 		c.updateLastNodeIPPoolAction()
 	}
+
+	// Setup ENIConfigs as needed
+	err = c.globalAllocateENI(enis)
+
 	return err
 }
 
@@ -674,7 +681,7 @@ func (c *IPAMContext) increaseIPPool() {
 	} else {
 		// If we did not add an IP, try to add an ENI instead.
 		if c.dataStore.GetENIs() < (c.maxENI - c.unmanagedENI) {
-			if err = c.tryAllocateENI(); err == nil {
+			if err = c.tryAllocateENI(""); err == nil {
 				c.updateLastNodeIPPoolAction()
 			}
 		} else {
@@ -690,12 +697,117 @@ func (c *IPAMContext) updateLastNodeIPPoolAction() {
 	logPoolStats(total, used, c.maxIPsPerENI)
 }
 
-func (c *IPAMContext) tryAllocateENI() error {
+
+// For each ENIConfig we want to make sure there is at least
+// one matching interface attached
+func (c *IPAMContext) globalAllocateENI(enis []awsutils.ENIMetadata) error {
+
+	if c.eniConfig == nil {
+		return fmt.Errorf("eniConfig does not exist")
+	}
+
+	allENIConfigs, err := c.eniConfig.GetAllENIConfigs()
+
+	log.Debugf("Try to pre-allocate an ENI from each ENIConfig")
+
+	if err != nil {
+		return err
+	}
+
+	var existingENIs []v1alpha1.ENIConfigSpec
+	for _, eni := range enis {
+
+		var securityGroups []string
+
+		for _, sg := range eni.SecurityGroups {
+			securityGroups = append(securityGroups, *sg)
+		}
+
+		log.Debugf("Existing ENI %s, subnet %s, sgAll %s", eni.ENIID, eni.SubnetId, securityGroups)
+		existingENIs = append(existingENIs,v1alpha1.ENIConfigSpec{
+			SecurityGroups: securityGroups,
+			Subnet:         eni.SubnetId,
+		})
+	}
+	log.Debugf("existingENIs %s", existingENIs)
+
+	// TODO - This needs to filter down to just the ENIConfigs tagged to this specific host
+	// for now it configures for all ENIConfigs present
+	for key, eniConfig := range allENIConfigs {
+		log.Debugf("Checking on %s with config %s", key, eniConfig)
+		interfaceSeen := false
+
+		for _, eni := range existingENIs {
+			if reflect.DeepEqual(eni, *eniConfig) {
+				log.Debugf("There is an interface for %s", eniConfig)
+				interfaceSeen = true
+			}
+		}
+
+		if !interfaceSeen {
+			log.Debugf("Need to create an interface for %s", eniConfig)
+			var sgPtrs []*string
+
+			for _, sg := range eniConfig.SecurityGroups {
+				sgPtrs = append(sgPtrs, &sg)
+			}
+			err := c.tryAllocateENI(key)
+			if err != nil {
+				return errors.Wrap(err, fmt.Sprintf("failed to allocate an ENI with config %s, err: %v", eniConfig, err))
+			}
+		}
+	}
+
+	return nil
+}
+
+// Get the ENIConfig that matches this ENI
+// If none match, return an empty string
+func (c *IPAMContext) matchENItoENIConfig(eniMetadata awsutils.ENIMetadata) (eniConfigName string) {
+
+	if c.eniConfig == nil {
+		return ""
+	}
+
+	allENIConfigs, err := c.eniConfig.GetAllENIConfigs()
+
+	if err != nil {
+		return ""
+	}
+
+	var securityGroups []string
+	for _, sg := range eniMetadata.SecurityGroups {
+		securityGroups = append(securityGroups, *sg)
+	}
+
+	eni := v1alpha1.ENIConfigSpec{
+		SecurityGroups: securityGroups,
+		Subnet:         eniMetadata.SubnetId,
+	}
+
+	log.Debugf("Look for something in %s that matches %s %s", allENIConfigs, eniMetadata.SecurityGroups, eniMetadata.SubnetIPv4CIDR)
+	for key, eniConfig := range allENIConfigs {
+		log.Debugf("Checking on %s with config %s", key, eniConfig)
+
+		if reflect.DeepEqual(eni, *eniConfig) {
+			log.Debugf("returning %s", key)
+			return key
+		}
+	}
+
+	return ""
+
+}
+
+// When configuring an interface if a non-empty eniConfigName is provided
+// the interface will attempt to use the specified config when in customNetworking mode
+// If customNetworking is active and no ENIConfig is specified, get the default one
+func (c *IPAMContext) tryAllocateENI(eniConfigName string) error {
 	var securityGroups []*string
 	var subnet string
 
 	if c.useCustomNetworking {
-		eniCfg, err := c.eniConfig.MyENIConfig()
+		eniCfg, err := c.eniConfig.GetENIConfig(eniConfigName)
 
 		if err != nil {
 			log.Errorf("Failed to get pod ENI config")
@@ -786,8 +898,17 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 // 2) set up linux ENI related networking stack.
 // 3) add all ENI's secondary IP addresses to datastore
 func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) error {
+	/*Determine which ENIConfig this interface matches*/
+	eniConfigName := c.matchENItoENIConfig(eniMetadata)
+
+	_, subnet, err := net.ParseCIDR(eniMetadata.SubnetIPv4CIDR)
+
+	if err != nil {
+		return errors.Wrapf(err, "Failed to parse subnet %s", eniMetadata.SubnetIPv4CIDR)
+	}
+
 	// Add the ENI to the datastore
-	err := c.dataStore.AddENI(eni, eniMetadata.DeviceNumber, eni == c.awsClient.GetPrimaryENI())
+	err = c.dataStore.AddENIWithSubnet(eni, eniMetadata.DeviceNumber, eni == c.awsClient.GetPrimaryENI(), eniConfigName, *subnet)
 	if err != nil && err.Error() != datastore.DuplicatedENIError {
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}

@@ -14,6 +14,7 @@ message AddNetworkRequest {
   string K8S_POD_INFRA_CONTAINER_ID = 3;
   string Netns = 4;
   string IfName = 5;
+  string EniConfigName = 6;
 }
 
 message  AddNetworkReply{
@@ -31,6 +32,7 @@ message DelNetworkRequest {
   string K8S_POD_INFRA_CONTAINER_ID = 3;
   string IPv4Addr = 4;
   string Reason = 5;
+  string IfName = 6;
 }
 
 message DelNetworkReply {
