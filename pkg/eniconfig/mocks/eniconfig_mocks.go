@@ -80,12 +80,11 @@ func (mr *MockENIConfigMockRecorder) GetENIConfig(arg0 string) *gomock.Call {
 }
 
 // GetAllENIConfigs mocks base method
-func (m *MockENIConfig) GetAllENIConfigs() (map[string]*v1alpha1.ENIConfigSpec, error) {
+func (m *MockENIConfig) GetAllENIConfigs() map[string]*v1alpha1.ENIConfigSpec {
 	m.ctrl.T.Helper()
     ret := m.ctrl.Call(m, "GetAllENIConfigs")
 	ret0, _ := ret[0].(map[string]*v1alpha1.ENIConfigSpec)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	return ret0
 }
 
 // GetAllENIConfigs indicates an expected call of GetAllENIConfigs

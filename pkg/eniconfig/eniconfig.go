@@ -48,7 +48,7 @@ const (
 
 type ENIConfig interface {
 	GetENIConfig(eniConfig string) (*v1alpha1.ENIConfigSpec, error)
-	GetAllENIConfigs() (map[string]*v1alpha1.ENIConfigSpec, error)
+	GetAllENIConfigs() map[string]*v1alpha1.ENIConfigSpec
 	Getter() *ENIConfigInfo
 }
 
@@ -208,17 +208,17 @@ func (eniCfg *ENIConfigController) GetENIConfig(eniConfigName string) (*v1alpha1
 }
 
 // Return the map of all eni configurations
-func (eniCfg *ENIConfigController) GetAllENIConfigs() (map[string]*v1alpha1.ENIConfigSpec, error) {
+func (eniCfg *ENIConfigController) GetAllENIConfigs() map[string]*v1alpha1.ENIConfigSpec {
 	eniCfg.eniLock.Lock()
 	defer eniCfg.eniLock.Unlock()
 
 	log.Debugf("Enis %s", eniCfg.eni)
 
 	if eniCfg.eni == nil || len(eniCfg.eni) == 0 {
-		return nil, ErrNoENIConfig
+		return nil
 	}
 
-	return eniCfg.eni, nil
+	return eniCfg.eni
 }
 
 // getEniConfigAnnotationDef returns eniConfigAnnotation
