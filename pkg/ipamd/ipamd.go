@@ -706,13 +706,9 @@ func (c *IPAMContext) globalAllocateENI(enis []awsutils.ENIMetadata) error {
 		return fmt.Errorf("eniConfig does not exist")
 	}
 
-	allENIConfigs, err := c.eniConfig.GetAllENIConfigs()
+	allENIConfigs := c.eniConfig.GetAllENIConfigs()
 
 	log.Debugf("Try to pre-allocate an ENI from each ENIConfig")
-
-	if err != nil {
-		return err
-	}
 
 	var existingENIs []v1alpha1.ENIConfigSpec
 	for _, eni := range enis {
@@ -769,11 +765,7 @@ func (c *IPAMContext) matchENItoENIConfig(eniMetadata awsutils.ENIMetadata) (eni
 		return ""
 	}
 
-	allENIConfigs, err := c.eniConfig.GetAllENIConfigs()
-
-	if err != nil {
-		return ""
-	}
+	allENIConfigs := c.eniConfig.GetAllENIConfigs()
 
 	var securityGroups []string
 	for _, sg := range eniMetadata.SecurityGroups {
