@@ -198,7 +198,7 @@ func TestNodeInit(t *testing.T) {
 	var podENIConfigs = make(map[string]*v1alpha1.ENIConfigSpec)
 	podENIConfigs["sample"] = podENIConfig
 
-	mockENIConfig.EXPECT().GetAllENIConfigs().Return(podENIConfigs, nil).Times(4)
+	mockENIConfig.EXPECT().GetAllENIConfigs().Return(podENIConfigs).Times(4)
 	mockENIConfig.EXPECT().GetENIConfig("sample").Return(podENIConfig, nil)
 	mockAWS.EXPECT().AllocENI(true, gomock.Any(), podENIConfig.Subnet).Return(thirdENIid, nil)
 	mockAWS.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
@@ -298,7 +298,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 	}, nil)
 
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	mockENIConfig.EXPECT().GetAllENIConfigs().Return(podENIConfigs, nil)
+	mockENIConfig.EXPECT().GetAllENIConfigs().Return(podENIConfigs)
 	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 
 	mockAWS.EXPECT().AllocIPAddresses(eni2, 14)
@@ -379,7 +379,7 @@ func TestTryAddIPToENI(t *testing.T) {
 		},
 	}, nil)
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	mockENIConfig.EXPECT().GetAllENIConfigs().Return(podENIConfigs, nil)
+	mockENIConfig.EXPECT().GetAllENIConfigs().Return(podENIConfigs)
 	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
 
@@ -570,18 +570,6 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 
 
 func TestMatchENItoENIConfig_NoConfig(t *testing.T) {
-	/*	ctrl, mockAWS, mockK8S, _, mockNetwork, _ := setup(t)
-		defer ctrl.Finish()
-
-		mockContext := &IPAMContext{
-			awsClient:     mockAWS,
-			k8sClient:     mockK8S,
-			networkClient: mockNetwork,
-			primaryIP:     make(map[string]string),
-			terminating:   int32(0),
-		}
-	*/
-
 	mockContext := &IPAMContext{}
 
 	primary := true
@@ -651,7 +639,7 @@ func TestMatchENItoENIConfig_Match(t *testing.T) {
 	var podENIConfigs = make(map[string]*v1alpha1.ENIConfigSpec)
 	podENIConfigs["sample"] = podENIConfig
 
-	mockENIConfig.EXPECT().GetAllENIConfigs().Return(podENIConfigs, nil)
+	mockENIConfig.EXPECT().GetAllENIConfigs().Return(podENIConfigs)
 
 	result := mockContext.matchENItoENIConfig(eni1)
 	assert.Equal(t, "sample", result)
@@ -663,6 +651,7 @@ func TestMatchENItoENIConfig_MisMatch(t *testing.T) {
 
 	mockContext := &IPAMContext{
 		eniConfig:     mockENIConfig,
+		useCustomNetworking: true,
 	}
 
 	primary := true
@@ -700,10 +689,94 @@ func TestMatchENItoENIConfig_MisMatch(t *testing.T) {
 	var podENIConfigs = make(map[string]*v1alpha1.ENIConfigSpec)
 	podENIConfigs["sample"] = podENIConfig
 
-	mockENIConfig.EXPECT().GetAllENIConfigs().Return(podENIConfigs, nil)
+	mockENIConfig.EXPECT().GetAllENIConfigs().Return(podENIConfigs)
 
 	result := mockContext.matchENItoENIConfig(eni1)
 	assert.Equal(t, "", result)
+}
+
+func TestGlobalAllocateENI_NoENIConfigInContext(t *testing.T) {
+	ctrl, _, _, _, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		eniConfig:     nil,
+	}
+
+	err := mockContext.globalAllocateENI( []awsutils.ENIMetadata{})
+	assert.Error(t, err)
+
+}
+
+func TestGlobalAllocateENI_NormalCase(t *testing.T) {
+	ctrl, mockAWS, _, _, mockNetwork, mockENIConfig := setup(t)
+	defer ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:           mockAWS,
+		eniConfig:           mockENIConfig,
+		networkClient:       mockNetwork,
+		primaryIP:           make(map[string]string),
+	}
+
+	mockContext.dataStore = datastore.NewDataStore()
+
+	podENIConfig := &v1alpha1.ENIConfigSpec{
+		SecurityGroups: []string{"sg1-id", "sg2-id"},
+		Subnet:         "subnet2",
+	}
+	var sg []*string
+	for _, sgID := range podENIConfig.SecurityGroups {
+		sg = append(sg, aws.String(sgID))
+	}
+
+	var podENIConfigs = make(map[string]*v1alpha1.ENIConfigSpec)
+	podENIConfigs["sample"] = podENIConfig
+
+	primary := true
+	notPrimary := false
+	testAddr1 := ipaddr01
+	testAddr2 := ipaddr02
+
+	eni1 := awsutils.ENIMetadata{
+		ENIID:          primaryENIid,
+		MAC:            primaryMAC,
+		DeviceNumber:   primaryDevice,
+		SubnetIPv4CIDR: primarySubnet,
+		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			{
+				PrivateIpAddress: &testAddr1, Primary: &primary,
+			},
+			{
+				PrivateIpAddress: &testAddr2, Primary: &notPrimary,
+			},
+		},
+	}
+
+	mockENIConfig.EXPECT().GetAllENIConfigs().Return(podENIConfigs).Times(2)
+	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid).Times(2)
+	mockAWS.EXPECT().AllocENI(gomock.Any(), gomock.Any(), gomock.Any()).Return(primaryENIid, nil)
+	mockAWS.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
+	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{eni1}, nil)
+
+	err := mockContext.globalAllocateENI( []awsutils.ENIMetadata{})
+	assert.NoError(t, err)
+
+}
+
+func TestGlobalAllocateENI_NoENIConfigsConfigured(t *testing.T) {
+	ctrl, _, _, _, _, mockENIConfig := setup(t)
+	defer ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		eniConfig:     mockENIConfig,
+	}
+
+	mockENIConfig.EXPECT().GetAllENIConfigs().Return(make(map[string]*v1alpha1.ENIConfigSpec))
+
+	err := mockContext.globalAllocateENI( []awsutils.ENIMetadata{})
+	assert.NoError(t, err)
+
 }
 
 func datastoreWith3FreeIPs() *datastore.DataStore {
