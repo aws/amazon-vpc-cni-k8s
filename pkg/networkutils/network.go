@@ -39,6 +39,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
 )
 
 const (
@@ -133,7 +134,7 @@ type linuxNetwork struct {
 	ns          nswrapper.NS
 	newIptables func() (iptablesIface, error)
 	mainENIMark uint32
-	openFile    func(name string, flag int, perm os.FileMode) (stringWriteCloser, error)
+	procSys     procsyswrapper.ProcSys
 }
 
 type iptablesIface interface {
@@ -173,9 +174,7 @@ func New() NetworkAPIs {
 			ipt, err := iptables.New()
 			return ipt, err
 		},
-		openFile: func(name string, flag int, perm os.FileMode) (stringWriteCloser, error) {
-			return os.OpenFile(name, flag, perm)
-		},
+		procSys: procsyswrapper.NewProcSys(),
 	}
 }
 
@@ -239,11 +238,11 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		// - Thus, it finds the source-based route that leaves via the secondary ENI.
 		// - In "strict" mode, the RPF check fails because the return path uses a different interface to the incoming
 		//   packet. In "loose" mode, the check passes because some route was found.
-		primaryIntfRPFilter := "/proc/sys/net/ipv4/conf/" + primaryIntf + "/rp_filter"
+		primaryIntfRPFilter := "net/ipv4/conf/" + primaryIntf + "/rp_filter"
 		const rpFilterLoose = "2"
 
 		log.Debugf("Setting RPF for primary interface: %s", primaryIntfRPFilter)
-		err = n.setProcSys(primaryIntfRPFilter, rpFilterLoose)
+		err = n.procSys.Set(primaryIntfRPFilter, rpFilterLoose)
 		if err != nil {
 			return errors.Wrapf(err, "failed to configure %s RPF check", primaryIntf)
 		}
@@ -495,20 +494,6 @@ func listCurrentSNATRules(ipt iptablesIface) ([]iptablesRule, error) {
 
 func containChainExistErr(err error) bool {
 	return strings.Contains(err.Error(), "Chain already exists")
-}
-
-func (n *linuxNetwork) setProcSys(key, value string) error {
-	f, err := n.openFile(key, os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	_, err = f.WriteString(value)
-	if err != nil {
-		// If the write failed, just close
-		_ = f.Close()
-		return err
-	}
-	return f.Close()
 }
 
 type iptablesRule struct {
