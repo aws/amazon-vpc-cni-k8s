@@ -39,19 +39,38 @@ fi
 AGENT_LOG_PATH=${AGENT_LOG_PATH:-aws-k8s-agent.log}
 HOST_CNI_BIN_PATH=${HOST_CNI_BIN_PATH:-/host/opt/cni/bin}
 HOST_CNI_CONFDIR_PATH=${HOST_CNI_CONFDIR_PATH:-/host/etc/cni/net.d}
+# Number of seconds to wait checking for healthy ipamd. We default this to 60
+# seconds because most times ipamd needs kube-proxy to be running in order to
+# contact the Kubernetes API service and sometimes it can take a little while
+# for kube-proxy to start (or restart after an upgrade)
+IPAMD_TIMEOUT_SECONDS=${IPAMD_TIMEOUT_SECONDS:-60}
 
-# Checks for IPAM connectivity on localhost port 50051, retrying connectivity
-# check with a timeout of 36 seconds
+# Check for ipamd connectivity on localhost port 50051
 wait_for_ipam() {
     local __sleep_time=0
+    local __elapsed_time=0
+    local __time_left=$IPAMD_TIMEOUT_SECONDS
 
-    until [ $__sleep_time -eq 8 ]; do
-        sleep $(( __sleep_time++ ))
+    while :
+    do
         if ./grpc-health-probe -addr 127.0.0.1:50051 >/dev/null 2>&1; then
             return 0
         fi
+        # We sleep for 1 second, then 2 seconds, then 3 seconds, etc
+        __sleep_time=$(( sleep_time++ ))
+        __time_left=$(( __time_left - __sleep_time ))
+        if [ $__time_left -le 0 ]; then
+            # Sleep for the remainder of time before timeout and check one more
+            # time
+            sleep $(( IPAMD_TIMEOUT_SECONDS - __elapsed_time ))
+            if ./grpc-health-probe -addr 127.0.0.1:50051 >/dev/null 2>&1; then
+                return 0
+            fi
+            return 1
+        fi
+        __elapsed_time=$(( __elapsed_time + __sleep_time ))
+        sleep $__sleep_time
     done
-    return 1
 }
 
 echo -n "starting IPAM daemon in background ... "
