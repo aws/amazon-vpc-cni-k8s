@@ -102,7 +102,7 @@ func TestRun(t *testing.T) {
 		// container setup
 		mockNetLink.EXPECT().LinkSetUp(mockContVeth).Return(nil),
 		// container
-		mockContVeth.EXPECT().Attrs().Return(mockLinkAttrs),
+		mockContVeth.EXPECT().Attrs().Return(mockLinkAttrs).Times(2),
 
 		mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil),
 		mockIP.EXPECT().AddDefaultRoute(gomock.Any(), mockContVeth).Return(nil),
@@ -276,7 +276,7 @@ func TestRunErrRouteAdd(t *testing.T) {
 		// container setup
 		mockNetLink.EXPECT().LinkSetUp(mockContVeth).Return(nil),
 		// container
-		mockContVeth.EXPECT().Attrs().Return(mockLinkAttrs),
+		mockContVeth.EXPECT().Attrs().Return(mockLinkAttrs).Times(2),
 
 		mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(errors.New("error on RouteReplace")),
 	)
@@ -321,7 +321,7 @@ func TestRunErrAddDefaultRoute(t *testing.T) {
 		// container setup
 		mockNetLink.EXPECT().LinkSetUp(mockContVeth).Return(nil),
 		// container
-		mockContVeth.EXPECT().Attrs().Return(mockLinkAttrs),
+		mockContVeth.EXPECT().Attrs().Return(mockLinkAttrs).Times(2),
 
 		mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil),
 		mockIP.EXPECT().AddDefaultRoute(gomock.Any(), mockContVeth).Return(errors.New("error on AddDefaultRoute")),
@@ -368,7 +368,7 @@ func TestRunErrAddrAdd(t *testing.T) {
 		// container setup
 		mockNetLink.EXPECT().LinkSetUp(mockContVeth).Return(nil),
 		// container
-		mockContVeth.EXPECT().Attrs().Return(mockLinkAttrs),
+		mockContVeth.EXPECT().Attrs().Return(mockLinkAttrs).Times(2),
 
 		mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil),
 		mockIP.EXPECT().AddDefaultRoute(gomock.Any(), mockContVeth).Return(nil),
@@ -417,7 +417,7 @@ func TestRunErrNeighAdd(t *testing.T) {
 		// container setup
 		mockNetLink.EXPECT().LinkSetUp(mockContVeth).Return(nil),
 		// container
-		mockContVeth.EXPECT().Attrs().Return(mockLinkAttrs),
+		mockContVeth.EXPECT().Attrs().Return(mockLinkAttrs).Times(2),
 
 		mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil),
 		mockIP.EXPECT().AddDefaultRoute(gomock.Any(), mockContVeth).Return(nil),
@@ -471,7 +471,7 @@ func TestRunErrLinkSetNsFd(t *testing.T) {
 		// container setup
 		mockNetLink.EXPECT().LinkSetUp(mockContVeth).Return(nil),
 		// container
-		mockContVeth.EXPECT().Attrs().Return(mockLinkAttrs),
+		mockContVeth.EXPECT().Attrs().Return(mockLinkAttrs).Times(2),
 
 		mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil),
 		mockIP.EXPECT().AddDefaultRoute(gomock.Any(), mockContVeth).Return(nil),
@@ -537,6 +537,10 @@ func TestSetupPodNetwork(t *testing.T) {
 	mockNetLink.EXPECT().NewRule().Return(testRule)
 	mockNetLink.EXPECT().RuleDel(gomock.Any()).Return(nil)
 	mockNetLink.EXPECT().RuleAdd(gomock.Any()).Return(nil)
+
+	// Add static arp entry
+	mockHostVeth.EXPECT().Attrs().Return(mockLinkAttrs)
+	mockNetLink.EXPECT().NeighAdd(gomock.Any()).Return(nil)
 
 	addr := &net.IPNet{
 		IP:   net.ParseIP(testIP),
@@ -744,6 +748,10 @@ func TestSetupPodNetworkPrimaryIntf(t *testing.T) {
 	// test to-pod rule
 	mockNetLink.EXPECT().RuleDel(gomock.Any()).Return(nil)
 	mockNetLink.EXPECT().RuleAdd(gomock.Any()).Return(nil)
+
+	// Add static arp entry
+	mockHostVeth.EXPECT().Attrs().Return(mockLinkAttrs)
+	mockNetLink.EXPECT().NeighAdd(gomock.Any()).Return(nil)
 
 	addr := &net.IPNet{
 		IP:   net.ParseIP(testIP),
