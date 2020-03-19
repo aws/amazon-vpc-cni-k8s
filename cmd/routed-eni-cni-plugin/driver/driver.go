@@ -66,12 +66,13 @@ type createVethPairContext struct {
 	hostVethName string
 	addr         *net.IPNet
 	ipv4Subnet	 *net.IPNet
+	contHWAddress net.HardwareAddr
 	netLink      netlinkwrapper.NetLink
 	ip           ipwrapper.IP
 	mtu          int
 }
 
-func newCreateVethPairContext(contVethName string, hostVethName string, addr *net.IPNet, mtu int, ipv4Subnet *net.IPNet) *createVethPairContext {
+func newCreateVethPairContext(contVethName string, hostVethName string, addr *net.IPNet, mtu int, ipv4Subnet *net.IPNet, contHWAddress net.HardwareAddr) *createVethPairContext {
 	return &createVethPairContext{
 		contVethName: contVethName,
 		hostVethName: hostVethName,
@@ -80,6 +81,7 @@ func newCreateVethPairContext(contVethName string, hostVethName string, addr *ne
 		ip:           ipwrapper.NewIP(),
 		mtu:          mtu,
 		ipv4Subnet:   ipv4Subnet,
+		contHWAddress: contHWAddress,
 	}
 }
 
@@ -90,6 +92,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 			Name:  createVethContext.contVethName,
 			Flags: net.FlagUp,
 			MTU:   createVethContext.mtu,
+			HardwareAddr:  createVethContext.contHWAddress,
 		},
 		PeerName: createVethContext.hostVethName,
 	}
@@ -120,11 +123,12 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		return errors.Wrapf(err, "setup NS network: failed to set link %q up", createVethContext.contVethName)
 	}
 
-	// Add a connected route to a dummy next hop (169.254.1.1)
+	// Add a connected route to a dummy next hop (169.254.1.1 + interface Index)
+	// Offsetting by the index to allow for routes to multiple interfaces in a container
 	// # ip route show
-	// default via 169.254.1.1 dev eth0
-	// 169.254.1.1 dev eth0
-	gw := net.IPv4(169, 254, 1, 1)
+	// default via 169.254.1.x dev eth0
+	// 169.254.1.x dev eth0
+	gw := net.IPv4(169, 254, 1, byte(1 + contVeth.Attrs().Index))
 	gwNet := &net.IPNet{IP: gw, Mask: net.CIDRMask(32, 32)}
 
 	if err = createVethContext.netLink.RouteReplace(&netlink.Route{
@@ -143,11 +147,13 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		return errors.Wrap(err, "setup NS network: failed to add default route")
 	}
 
+	// Add a route for each interfaces local subnet that goes out that interface
 	if createVethContext.ipv4Subnet != nil {
 		routeSubnet := netlink.Route{
 			LinkIndex: contVeth.Attrs().Index,
-			Scope:     netlink.SCOPE_LINK,
-			Dst:       createVethContext.ipv4Subnet}
+			Dst:       createVethContext.ipv4Subnet,
+			Gw:        gw,
+		}
 
 		// Add or replace route
 		if err := createVethContext.netLink.RouteReplace(&routeSubnet); err != nil {
@@ -182,6 +188,11 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	return nil
 }
 
+func generateMACAddress(addr *net.IPNet) net.HardwareAddr {
+	ipBytes := addr.IP.To4()
+	return net.HardwareAddr{0, 0, ipBytes[0], ipBytes[1], ipBytes[2], ipBytes[3]}
+}
+
 // SetupNS wires up linux networking for a pod's network
 func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, ipv4Subnet *net.IPNet) error {
 	log.Debugf("SetupNS: hostVethName=%s, contVethName=%s, netnsPath=%s, table=%d, addr=%s, mtu=%d", hostVethName, contVethName, netnsPath, table, addr.String(), mtu)
@@ -197,7 +208,9 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 		log.Debugf("Clean up old hostVeth: %v\n", hostVethName)
 	}
 
-	createVethContext := newCreateVethPairContext(contVethName, hostVethName, addr, mtu, ipv4Subnet)
+	contMac := generateMACAddress(addr)
+
+	createVethContext := newCreateVethPairContext(contVethName, hostVethName, addr, mtu, ipv4Subnet, contMac)
 	if err := ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		log.Errorf("Failed to setup NS network %v", err)
 		return errors.Wrap(err, "setupNS network: failed to setup NS network")
@@ -279,6 +292,22 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 			}
 		}
 	}
+
+	// add static ARP entry for container interface
+	// If the container is not in the same subnet as
+	// the aws-cni container need this static ARP entry to resolve
+	// the container IP as ARP won't work on async routed network.
+	neigh := &netlink.Neigh{
+		LinkIndex:    hostVeth.Attrs().Index,
+		State:        netlink.NUD_PERMANENT,
+		IP:           addr.IP,
+		HardwareAddr: contMac,
+	}
+
+	if err = netLink.NeighAdd(neigh); err != nil {
+		return errors.Wrap(err, "setup NS network: failed to add static ARP")
+	}
+
 	return nil
 }
 
