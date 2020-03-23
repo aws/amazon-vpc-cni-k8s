@@ -18,7 +18,7 @@
 package main
 
 import (
-	"log"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"os"
 	"sort"
 	"text/template"
@@ -40,13 +40,14 @@ type ENILimit struct {
 
 // Helper function to call the EC2 DescribeInstanceTypes API and generate the IP limit file.
 func main() {
+	log := logger.DefaultLogger()
 	// Get session
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	}))
 	_, err := sess.Config.Credentials.Get()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf(err)
 	}
 	svc := ec2.New(sess)
 	describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{}
@@ -55,7 +56,7 @@ func main() {
 	for {
 		output, err := svc.DescribeInstanceTypes(describeInstanceTypesInput)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf(err)
 		}
 		// We just want the type name, ENI and IP limits
 		for _, info := range output.InstanceTypes {
@@ -93,7 +94,7 @@ func main() {
 	// Generate the file
 	f, err := os.Create(ipLimitFileName)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf(err)
 	}
 	limitsTemplate.Execute(f, struct {
 		Timestamp string

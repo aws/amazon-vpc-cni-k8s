@@ -14,6 +14,7 @@
 package datastore
 
 import (
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"testing"
 	"time"
 
@@ -21,8 +22,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var logConfig = logger.Configuration{
+	BinaryName:   "aws-cni",
+	LogLevel:     "Debug",
+	LogLocation:  "/var/log/test.log",
+}
+
+var log = logger.New(&logConfig)
+
 func TestAddENI(t *testing.T) {
-	ds := NewDataStore()
+	ds := NewDataStore(log)
 
 	err := ds.AddENI("eni-1", 1, true)
 	assert.NoError(t, err)
@@ -40,7 +49,7 @@ func TestAddENI(t *testing.T) {
 }
 
 func TestDeleteENI(t *testing.T) {
-	ds := NewDataStore()
+	ds := NewDataStore(log)
 
 	err := ds.AddENI("eni-1", 1, true)
 	assert.NoError(t, err)
@@ -88,7 +97,7 @@ func TestDeleteENI(t *testing.T) {
 }
 
 func TestAddENIIPv4Address(t *testing.T) {
-	ds := NewDataStore()
+	ds := NewDataStore(log)
 
 	err := ds.AddENI("eni-1", 1, true)
 	assert.NoError(t, err)
@@ -126,7 +135,7 @@ func TestAddENIIPv4Address(t *testing.T) {
 }
 
 func TestGetENIIPPools(t *testing.T) {
-	ds := NewDataStore()
+	ds := NewDataStore(log)
 
 	err := ds.AddENI("eni-1", 1, true)
 	assert.NoError(t, err)
@@ -159,7 +168,7 @@ func TestGetENIIPPools(t *testing.T) {
 }
 
 func TestDelENIIPv4Address(t *testing.T) {
-	ds := NewDataStore()
+	ds := NewDataStore(log)
 	err := ds.AddENI("eni-1", 1, true)
 	assert.NoError(t, err)
 
@@ -214,7 +223,7 @@ func TestDelENIIPv4Address(t *testing.T) {
 }
 
 func TestPodIPv4Address(t *testing.T) {
-	ds := NewDataStore()
+	ds := NewDataStore(log)
 
 	ds.AddENI("eni-1", 1, true)
 
@@ -347,7 +356,7 @@ func TestPodIPv4Address(t *testing.T) {
 }
 
 func TestWarmENIInteractions(t *testing.T) {
-	ds := NewDataStore()
+	ds := NewDataStore(log)
 
 	ds.AddENI("eni-1", 1, true)
 	ds.AddENI("eni-2", 2, false)

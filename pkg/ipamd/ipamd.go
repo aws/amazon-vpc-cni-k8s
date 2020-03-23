@@ -23,9 +23,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	log "github.com/cihub/seelog"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -111,6 +111,8 @@ const (
 	eniNoManageTagKey = "node.k8s.amazonaws.com/no_manage"
 )
 
+var log = logger.Get()
+
 var (
 	ipamdErr = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -185,7 +187,7 @@ type IPAMContext struct {
 	terminating            int32 // Flag to warn that the pod is about to shut down.
 }
 
-// Keep track of recently freed IPs to avoid reading stale EC2 metadata
+//ReconcileCooldownCache keep track of recently freed IPs to avoid reading stale EC2 metadata
 type ReconcileCooldownCache struct {
 	cache map[string]time.Time
 	lock  sync.RWMutex
@@ -247,7 +249,6 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 
 	client, err := awsutils.New()
 	if err != nil {
-		log.Errorf("Failed to initialize awsutil interface %v", err)
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
 	c.awsClient = client
@@ -275,7 +276,6 @@ func (c *IPAMContext) nodeInit() error {
 
 	allENIs, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
-		log.Error("Failed to retrieve ENI info")
 		return errors.New("ipamd init: failed to retrieve attached ENIs info")
 	}
 	enis, numUnmanaged := filterUnmanagedENIs(allENIs)
@@ -288,7 +288,6 @@ func (c *IPAMContext) nodeInit() error {
 	c.unmanagedENI = numUnmanaged
 	c.maxIPsPerENI, err = c.awsClient.GetENIipLimit()
 	if err != nil {
-		log.Error("Failed to get IPs per ENI limit")
 		return err
 	}
 	c.updateIPStats(numUnmanaged)
@@ -302,18 +301,16 @@ func (c *IPAMContext) nodeInit() error {
 
 	_, vpcCIDR, err := net.ParseCIDR(c.awsClient.GetVPCIPv4CIDR())
 	if err != nil {
-		log.Error("Failed to parse VPC IPv4 CIDR", err.Error())
 		return errors.Wrap(err, "ipamd init: failed to retrieve VPC CIDR")
 	}
 
 	primaryIP := net.ParseIP(c.awsClient.GetLocalIPv4())
 	err = c.networkClient.SetupHostNetwork(vpcCIDR, vpcCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP)
 	if err != nil {
-		log.Error("Failed to set up host network", err)
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
 
-	c.dataStore = datastore.NewDataStore()
+	c.dataStore = datastore.NewDataStore(log)
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
 		// Retry ENI sync
@@ -326,7 +323,7 @@ func (c *IPAMContext) nodeInit() error {
 			}
 
 			if retry > maxRetryCheckENI {
-				log.Errorf("Unable to discover attached IPs for ENI from metadata service")
+				log.Warn("Unable to discover attached IPs for ENI from metadata service")
 				ipamdErrInc("waitENIAttachedMaxRetryExceeded")
 				break
 			}
@@ -334,7 +331,7 @@ func (c *IPAMContext) nodeInit() error {
 			log.Warnf("Error trying to set up ENI %s: %v", eni.ENIID, err)
 			if strings.Contains(err.Error(), "setupENINetwork: failed to find the link which uses MAC address") {
 				// If we can't find the matching link for this MAC address, there is no point in retrying for this ENI.
-				log.Errorf("Unable to match link for this ENI, going to the next one.")
+				log.Debug("Unable to match link for this ENI, going to the next one.")
 				break
 			}
 			log.Debugf("Unable to discover IPs for this ENI yet (attempt %d/%d)", retry, maxRetryCheckENI)
@@ -430,7 +427,7 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 	// could leak IPs or unassign an IP from a still-running pod.
 	var sandboxes map[string]*cri.SandboxInfo
 	for retry := 1; retry <= maxK8SRetries; retry++ {
-		sandboxes, err = c.criClient.GetRunningPodSandboxes()
+		sandboxes, err = c.criClient.GetRunningPodSandboxes(log)
 		if err == nil {
 			break
 		}
@@ -755,7 +752,6 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) err
 		eniPrimaryIP := eniMetadata.PrimaryIPv4Address()
 		err = c.networkClient.SetupENINetwork(eniPrimaryIP, eniMetadata.MAC, eniMetadata.DeviceNumber, eniMetadata.SubnetIPv4CIDR)
 		if err != nil {
-			log.Errorf("Failed to set up networking for ENI %s", eni)
 			return errors.Wrapf(err, "failed to set up ENI %s network", eni)
 		}
 	}
@@ -882,9 +878,9 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	available := total - used
 	poolTooLow := available < c.maxIPsPerENI*c.warmENITarget || (c.warmENITarget == 0 && available == 0)
 	if poolTooLow {
-		log.Tracef("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
+		log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
 	} else {
-		log.Tracef("IP pool is NOT too low: available (%d) >= ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
+		log.Debugf("IP pool is NOT too low: available (%d) >= ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
 	}
 	return poolTooLow
 }
@@ -915,9 +911,9 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	// We need the +1 to make sure we are not going below the WARM_ENI_TARGET.
 	shouldRemoveExtra := available >= (c.warmENITarget+1)*c.maxIPsPerENI
 	if shouldRemoveExtra {
-		log.Tracef("It might be possible to remove extra ENIs because available (%d) >= (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
+		log.Debugf("It might be possible to remove extra ENIs because available (%d) >= (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
 	} else {
-		log.Tracef("Its NOT possible to remove extra ENIs because available (%d) < (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
+		log.Debugf("Its NOT possible to remove extra ENIs because available (%d) < (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
 	}
 	return shouldRemoveExtra
 }
@@ -1074,7 +1070,7 @@ func UseCustomNetworkCfg() bool {
 		if err == nil {
 			return parsedValue
 		}
-		log.Error("Failed to parse "+envCustomNetworkCfg+"; using default: false", err.Error())
+		log.Warnf("Failed to parse %s; using default: false, err: %v", envCustomNetworkCfg, err)
 	}
 	return false
 }
@@ -1148,7 +1144,7 @@ func (c *IPAMContext) ipTargetState() (short int, over int, enabled bool) {
 	// over is less than the warm IP target alone if it would imply reducing total IPs below the minimum target
 	over = max(min(over, total-c.minimumIPTarget), 0)
 
-	log.Tracef("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, short: %d, over %d", c.warmIPTarget, total, assigned, available, short, over)
+	log.Debugf("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, short: %d, over %d", c.warmIPTarget, total, assigned, available, short, over)
 	return short, over, true
 }
 
