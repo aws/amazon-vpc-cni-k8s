@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
-	log "github.com/cihub/seelog"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -39,14 +38,14 @@ func (c *IPAMContext) ServeMetrics() {
 		return
 	}
 
-	log.Info("Serving metrics on port ", metricsPort)
+	log.Infof("Serving metrics on port %d", metricsPort)
 	server := c.setupMetricsServer()
 	for {
 		once := sync.Once{}
 		_ = retry.RetryWithBackoff(retry.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
 			err := server.ListenAndServe()
 			once.Do(func() {
-				log.Error("Error running http API: ", err)
+				log.Warnf("Error running http API: %v", err)
 			})
 			return err
 		})

@@ -289,7 +289,7 @@ Default: `DEBUG`
 
 Valid Values: `trace`, `debug`, `info`, `warn`, `error`, `critical` or `off`. (Not case sensitive)
 
-Specifies the loglevel for ipamd.
+Specifies the loglevel for `ipamd`.
 
 ---
 
@@ -301,7 +301,29 @@ Default: Unset
 
 Valid Values: `stdout` or a file path
 
-Specifies where to write the logging output. Either to stdout or to override the default file.
+Specifies where to write the logging output of `ipamd`. Either to stdout or to override the default file (i.e., `/var/log/aws-routed-eni/ipamd.log`).
+
+---
+
+`AWS_VPC_K8S_PLUGIN_LOG_FILE`
+
+Type: String
+
+Default: Unset
+
+Valid Values: `stdout` or a file path
+
+Specifies where to write the logging output for `aws-cni` plugin. Either to stdout or to override the default file (i.e., `/var/log/aws-routed-eni/plugin.log`).
+
+---
+
+`AWS_VPC_K8S_PLUGIN_LOG_LEVEL`
+
+Type: String
+
+Valid Values: `trace`, `debug`, `info`, `warn`, `error`, `critical` or `off`. (Not case sensitive)
+
+Specifies the loglevel for `aws-cni` plugin.
 
 ---
 
