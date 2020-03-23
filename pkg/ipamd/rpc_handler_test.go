@@ -38,7 +38,7 @@ func TestServer_AddNetwork(t *testing.T) {
 		warmIPTarget:  3,
 		criClient:     mockCRI,
 		networkClient: mockNetwork,
-		dataStore:     datastore.NewDataStore(),
+		dataStore:     datastore.NewDataStore(log),
 	}
 
 	rpcServer := server{ipamContext: mockContext}

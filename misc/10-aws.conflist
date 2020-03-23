@@ -6,7 +6,9 @@
       "name": "aws-cni",
       "type": "aws-cni",
       "vethPrefix": "__VETHPREFIX__",
-      "mtu": "__MTU__"
+      "mtu": "__MTU__",
+      "pluginLogFile": "__PLUGINLOGFILE__",
+      "pluginLogLevel": "__PLUGINLOGLEVEL__"
     },
     {
       "type": "portmap",
