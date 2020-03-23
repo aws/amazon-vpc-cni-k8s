@@ -26,7 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
 
-	"github.com/golang/glog"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/pkg/errors"
 )
 
@@ -61,6 +61,8 @@ var (
 		"Name",
 	}
 )
+
+var log = logger.Get()
 
 // Publisher defines the interface to publish one or more data points
 type Publisher interface {
@@ -121,20 +123,20 @@ func New(ctx context.Context) (Publisher, error) {
 
 // Start is used to setup the monitor loop
 func (p *cloudWatchPublisher) Start() {
-	glog.Info("Starting monitor loop for CloudWatch publisher")
+	log.Info("Starting monitor loop for CloudWatch publisher")
 	p.monitor(defaultInterval)
 }
 
 // Stop is used to cancel the monitor loop
 func (p *cloudWatchPublisher) Stop() {
-	glog.Info("Stopping monitor loop for CloudWatch publisher")
+	log.Info("Stopping monitor loop for CloudWatch publisher")
 	p.cancel()
 }
 
 // Publish is a variadic function to publish one or more metric data points
 func (p *cloudWatchPublisher) Publish(metricDataPoints ...*cloudwatch.MetricDatum) {
 	// Fetch dimensions for override
-	glog.V(2).Info("Fetching CloudWatch dimensions")
+	log.Info("Fetching CloudWatch dimensions")
 	dimensions := p.getCloudWatchMetricDatumDimensions()
 
 	// Grab lock
@@ -158,7 +160,7 @@ func (p *cloudWatchPublisher) pushLocal() {
 
 func (p *cloudWatchPublisher) push(metricData []*cloudwatch.MetricDatum) {
 	if len(metricData) == 0 {
-		glog.Warning("Missing data for publishing CloudWatch metrics")
+		log.Info("Missing data for publishing CloudWatch metrics")
 		return
 	}
 
@@ -173,7 +175,7 @@ func (p *cloudWatchPublisher) push(metricData []*cloudwatch.MetricDatum) {
 		// Publish data
 		err := p.send(input)
 		if err != nil {
-			glog.Errorf("Unable to publish CloudWatch metrics: %v", err)
+			log.Warnf("Unable to publish CloudWatch metrics: %v", err)
 		}
 
 		// Mutate slice
@@ -187,7 +189,7 @@ func (p *cloudWatchPublisher) push(metricData []*cloudwatch.MetricDatum) {
 }
 
 func (p *cloudWatchPublisher) send(input cloudwatch.PutMetricDataInput) error {
-	glog.Info("Sending data to CloudWatch metrics")
+	log.Info("Sending data to CloudWatch metrics")
 	_, err := p.cloudwatchClient.PutMetricData(&input)
 	return err
 }
@@ -222,7 +224,7 @@ func getClusterID(ec2Client *ec2wrapper.EC2Wrapper) string {
 	if clusterID == "" {
 		clusterID = defaultClusterID
 	}
-	glog.Info("Using cluster ID ", clusterID)
+	log.Infof("Using cluster ID ", clusterID)
 	return clusterID
 }
 

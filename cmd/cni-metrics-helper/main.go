@@ -21,13 +21,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/spf13/pflag"
 
 	"github.com/aws/amazon-vpc-cni-k8s/cmd/cni-metrics-helper/metrics"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 )
+
+var log = logger.DefaultLogger()
 
 type options struct {
 	kubeconfig   string
@@ -40,11 +42,8 @@ type options struct {
 func main() {
 	options := &options{}
 	flags := pflag.NewFlagSet("", pflag.ExitOnError)
-	// Add glog flags
 	flags.AddGoFlagSet(flag.CommandLine)
-	_ = flags.Lookup("logtostderr").Value.Set("true")
-	flags.Lookup("logtostderr").DefValue = "true"
-	flags.Lookup("logtostderr").NoOptDefVal = "true"
+
 	flags.BoolVar(&options.submitCW, "cloudwatch", true, "a bool")
 
 	flags.Usage = func() {
@@ -54,12 +53,12 @@ func main() {
 
 	err := flags.Parse(os.Args)
 	if err != nil {
-		glog.Fatalf("Error on parsing parameters: %s", err)
+		log.Fatalf("Error on parsing parameters: %s", err)
 	}
 
 	err = flag.CommandLine.Parse([]string{})
 	if err != nil {
-		glog.Fatalf("Error on parsing commandline: %s", err)
+		log.Fatalf("Error on parsing commandline: %s", err)
 	}
 
 	if options.help {
@@ -77,12 +76,11 @@ func main() {
 		}
 	}
 
-	glog.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v", options.submitCW)
+	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v", options.submitCW)
 
 	kubeClient, err := k8sapi.CreateKubeClient()
 	if err != nil {
-		glog.Errorf("Failed to create client: %v", err)
-		os.Exit(1)
+		log.Fatalf("Failed to create client: %v", err)
 	}
 
 	discoverController := k8sapi.NewController(kubeClient)
@@ -96,8 +94,7 @@ func main() {
 
 		cw, err = publisher.New(ctx)
 		if err != nil {
-			glog.Errorf("Failed to create publisher: %v", err)
-			os.Exit(1)
+			log.Fatalf("Failed to create publisher: %v", err)
 		}
 		go cw.Start()
 		defer cw.Stop()
@@ -109,7 +106,7 @@ func main() {
 	// metric loop
 	var pullInterval = 30 // seconds
 	for range time.Tick(time.Duration(pullInterval) * time.Second) {
-		glog.Info("Collecting metrics ...")
+		log.Info("Collecting metrics ...")
 		metrics.Handler(cniMetric)
 	}
 }

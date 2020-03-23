@@ -36,9 +36,13 @@ if [ ! -f grpc-health-probe ]; then
     exit 1
 fi
 
-AGENT_LOG_PATH=${AGENT_LOG_PATH:-aws-k8s-agent.log}
-HOST_CNI_BIN_PATH=${HOST_CNI_BIN_PATH:-/host/opt/cni/bin}
-HOST_CNI_CONFDIR_PATH=${HOST_CNI_CONFDIR_PATH:-/host/etc/cni/net.d}
+AGENT_LOG_PATH=${AGENT_LOG_PATH:-"aws-k8s-agent.log"}
+HOST_CNI_BIN_PATH=${HOST_CNI_BIN_PATH:-"/host/opt/cni/bin"}
+HOST_CNI_CONFDIR_PATH=${HOST_CNI_CONFDIR_PATH:-"/host/etc/cni/net.d"}
+AWS_VPC_K8S_CNI_VETHPREFIX=${AWS_VPC_K8S_CNI_VETHPREFIX:-"eni"}
+AWS_VPC_ENI_MTU=${AWS_VPC_ENI_MTU:-"9001"}
+AWS_VPC_K8S_PLUGIN_LOG_FILE=${AWS_VPC_K8S_PLUGIN_LOG_FILE:-"/var/log/aws-routed-eni/plugin.log"}
+AWS_VPC_K8S_PLUGIN_LOG_LEVEL=${AWS_VPC_K8S_PLUGIN_LOG_LEVEL:-"Debug"}
 
 # Checks for IPAM connectivity on localhost port 50051, retrying connectivity
 # check with a timeout of 36 seconds
@@ -75,8 +79,10 @@ cp portmap "$HOST_CNI_BIN_PATH"
 cp aws-cni "$HOST_CNI_BIN_PATH"
 cp aws-cni-support.sh "$HOST_CNI_BIN_PATH"
 
-sed -i s/__VETHPREFIX__/"${AWS_VPC_K8S_CNI_VETHPREFIX:-"eni"}"/g 10-aws.conflist
-sed -i s/__MTU__/"${AWS_VPC_ENI_MTU:-"9001"}"/g 10-aws.conflist
+sed -i s~__VETHPREFIX__~"${AWS_VPC_K8S_CNI_VETHPREFIX}"~g 10-aws.conflist
+sed -i s~__MTU__~"${AWS_VPC_ENI_MTU}"~g 10-aws.conflist
+sed -i s~__PLUGINLOGFILE__~"${AWS_VPC_K8S_PLUGIN_LOG_FILE}"~g 10-aws.conflist
+sed -i s~__PLUGINLOGLEVEL__~"${AWS_VPC_K8S_PLUGIN_LOG_LEVEL}"~g 10-aws.conflist
 cp 10-aws.conflist "$HOST_CNI_CONFDIR_PATH"
 
 echo " ok."
