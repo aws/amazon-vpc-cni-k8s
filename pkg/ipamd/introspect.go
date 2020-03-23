@@ -20,10 +20,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
-
-	log "github.com/cihub/seelog"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
@@ -63,7 +60,6 @@ func (c *IPAMContext) ServeIntrospection() {
 
 	server := c.setupIntrospectionServer()
 	for {
-		once := sync.Once{}
 		_ = retry.RetryWithBackoff(retry.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
 			var ln net.Listener
 			var err error
@@ -79,9 +75,6 @@ func (c *IPAMContext) ServeIntrospection() {
 				err = server.Serve(ln)
 			}
 
-			once.Do(func() {
-				log.Error("Error running http API: ", err)
-			})
 			return err
 		})
 	}
@@ -125,7 +118,7 @@ func (c *IPAMContext) setupIntrospectionServer() *http.Server {
 		addr = defaultIntrospectionBindAddress
 	}
 
-	log.Info("Serving introspection endpoints on ", addr)
+	log.Infof("Serving introspection endpoints on %s", addr)
 
 	server := &http.Server{
 		Addr:         addr,

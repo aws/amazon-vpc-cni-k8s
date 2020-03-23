@@ -10,7 +10,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	log "github.com/cihub/seelog"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
 	clientset "k8s.io/client-go/kubernetes"
 
@@ -54,6 +54,8 @@ type K8SPodInfo struct {
 	UID string
 }
 
+var log = logger.Get()
+
 // ErrInformerNotSynced indicates that it has not synced with API server yet
 var ErrInformerNotSynced = errors.New("discovery: informer not synced")
 
@@ -88,14 +90,10 @@ func CreateKubeClient() (clientset.Interface, error) {
 	log.Infof("Testing communication with server")
 	v, err := kubeClient.Discovery().ServerVersion()
 	if err != nil {
-		errMsg := "Failed to communicate with K8S Server. Please check instance security groups or http proxy setting"
-		log.Infof(errMsg)
-		fmt.Printf(errMsg)
 		return nil, fmt.Errorf("error communicating with apiserver: %v", err)
 	}
-	log.Infof("Running with Kubernetes cluster version: v%s.%s. git version: %s. git tree state: %s. commit: %s. platform: %s",
+	log.Infof("Successful communication with the Cluster! Cluster Version is: v%s.%s. git version: %s. git tree state: %s. commit: %s. platform: %s",
 		v.Major, v.Minor, v.GitVersion, v.GitTreeState, v.GitCommit, v.Platform)
-	log.Info("Communication with server successful")
 
 	return kubeClient, nil
 }
@@ -113,11 +111,11 @@ func (d *Controller) GetCNIPods() []string {
 		cniPods = append(cniPods, k)
 	}
 
-	log.Info("GetCNIPods discovered", cniPods)
+	log.Infof("GetCNIPods discovered %v", cniPods)
 	return cniPods
 }
 
-// DiscoverLocalK8SPods discovers CNI pods, aws-node, running in the cluster
+// DiscoverCNIK8SPods discovers CNI pods, aws-node, running in the cluster
 func (d *Controller) DiscoverCNIK8SPods() {
 	// create the pod watcher
 	d.DiscoverK8SPods(cache.NewListWatchFromClient(d.kubeClient.CoreV1().RESTClient(), "pods", metav1.NamespaceSystem, fields.Everything()))
@@ -256,7 +254,7 @@ func (d *Controller) handlePodUpdate(key string) error {
 		d.workerPodsLock.Lock()
 		defer d.workerPodsLock.Unlock()
 
-		log.Tracef("Update for pod %s: %+v, %+v", podName, pod.Status, pod.Spec)
+		log.Debugf("Update for pod %s: %+v, %+v", podName, pod.Status, pod.Spec)
 
 		// Save pod info
 		d.workerPods[key] = &K8SPodInfo{
