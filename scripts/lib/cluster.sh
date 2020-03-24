@@ -15,8 +15,6 @@ function up-test-cluster() {
     echo -n "Configuring cluster $CLUSTER_NAME"
     AWS_K8S_TESTER_EKS_NAME=$CLUSTER_NAME \
         AWS_K8S_TESTER_EKS_KUBECONFIG_PATH=$KUBECONFIG_PATH \
-        AWS_K8S_TESTER_EKS_S3_BUCKET_NAME=amazon-vpc-cni-k8s-aws-k8s-tester \
-        AWS_K8S_TESTER_EKS_S3_BUCKET_CREATE=false \
         AWS_K8S_TESTER_EKS_PARAMETERS_VERSION=${K8S_VERSION%.*} \
         AWS_K8S_TESTER_EKS_PARAMETERS_ENCRYPTION_CMK_CREATE=false \
         AWS_K8S_TESTER_EKS_PARAMETERS_ROLE_CREATE=false \
@@ -24,8 +22,7 @@ function up-test-cluster() {
         AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_ENABLE=true \
         AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_ROLE_CREATE=false \
         AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_ROLE_ARN=arn:aws:iam::404174646922:role/K8sTester-ClusterManagementRole \
-        AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_MNGS={\"${CLUSTER_NAME}-mng-for-cni\":{\"name\":\"${CLUSTER_NAME}-mng-for-cni\",\"tags\":{\"group\":\"amazon-vpc-cni-k8s\"},\"remote-access-user-name\":\"ec2-user\",\"ami-type\":\"AL2_x86_64\",\"asg-min-size\":3,\"asg-max-size\":3,\"asg-desired-capacity\":3,\"instance-types\":[\"c5.xlarge\"]}} \
-        AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_FETCH_LOGS=true \
+        AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_MNGS={\"${CLUSTER_NAME}-mng-for-cni\":{\"name\":\"${CLUSTER_NAME}-mng-for-cni\",\"tags\":{\"group\":\"amazon-vpc-cni-k8s\"},\"ami-type\":\"AL2_x86_64\",\"asg-min-size\":3,\"asg-max-size\":3,\"asg-desired-capacity\":3,\"instance-types\":[\"c5.xlarge\"]}} \
         AWS_K8S_TESTER_EKS_ADD_ON_NLB_HELLO_WORLD_ENABLE=true \
         AWS_K8S_TESTER_EKS_ADD_ON_ALB_2048_ENABLE=true \
         AWS_K8S_TESTER_EKS_KUBECTL_PATH=$KUBECTL_PATH \
