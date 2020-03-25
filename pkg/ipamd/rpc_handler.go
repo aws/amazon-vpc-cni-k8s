@@ -19,7 +19,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	log "github.com/cihub/seelog"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/context"
@@ -112,7 +111,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 
 // RunRPCHandler handles request from gRPC
 func (c *IPAMContext) RunRPCHandler() error {
-	log.Info("Serving RPC Handler on ", ipamdgRPCaddress)
+	log.Infof("Serving RPC Handler on ", ipamdgRPCaddress)
 	listener, err := net.Listen("tcp", ipamdgRPCaddress)
 	if err != nil {
 		log.Errorf("Failed to listen gRPC port: %v", err)

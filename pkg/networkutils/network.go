@@ -32,7 +32,7 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 
-	log "github.com/cihub/seelog"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/vishvananda/netlink"
@@ -107,6 +107,8 @@ const (
 
 	retryLinkByMacInterval = 3 * time.Second
 )
+
+var log = logger.Get()
 
 // NetworkAPIs defines the host level and the eni level network related operations
 type NetworkAPIs interface {
@@ -598,7 +600,7 @@ func getBoolEnvVar(name string, defaultValue bool) bool {
 	if strValue := os.Getenv(name); strValue != "" {
 		parsedValue, err := strconv.ParseBool(strValue)
 		if err != nil {
-			log.Error("Failed to parse "+name+"; using default: "+fmt.Sprint(defaultValue), err.Error())
+			log.Errorf("Failed to parse "+name+"; using default: "+fmt.Sprint(defaultValue), err.Error())
 			return defaultValue
 		}
 		return parsedValue
@@ -610,11 +612,11 @@ func getConnmark() uint32 {
 	if connmark := os.Getenv(envConnmark); connmark != "" {
 		mark, err := strconv.ParseInt(connmark, 0, 64)
 		if err != nil {
-			log.Error("Failed to parse "+envConnmark+"; will use ", defaultConnmark, err.Error())
+			log.Infof("Failed to parse %s; will use %d, error: %v", envConnmark, defaultConnmark, err)
 			return defaultConnmark
 		}
 		if mark > math.MaxUint32 || mark <= 0 {
-			log.Error(""+envConnmark+" out of range; will use ", defaultConnmark)
+			log.Infof("%s out of range; will use %s", envConnmark, defaultConnmark)
 			return defaultConnmark
 		}
 		return uint32(mark)

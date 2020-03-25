@@ -1,15 +1,14 @@
-// package ec2wrapper is used to wrap around the ec2 service APIs
+//Package ec2wrapper is used to wrap around the ec2 service APIs
 package ec2wrapper
 
 import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/golang/glog"
-
 	"github.com/pkg/errors"
 )
 
@@ -20,6 +19,8 @@ const (
 	clusterIDTag = "CLUSTER_ID"
 )
 
+var log = logger.Get()
+
 // EC2Wrapper is used to wrap around EC2 service APIs to obtain ClusterID from
 // the ec2 instance tags
 type EC2Wrapper struct {
@@ -27,7 +28,7 @@ type EC2Wrapper struct {
 	instanceIdentityDocument ec2metadata.EC2InstanceIdentityDocument
 }
 
-// New returns an instance of the EC2 wrapper
+//NewMetricsClient returns an instance of the EC2 wrapper
 func NewMetricsClient() (*EC2Wrapper, error) {
 	metricsSession := session.Must(session.NewSession())
 	ec2MetadataClient := ec2metadatawrapper.New(nil)
@@ -63,7 +64,7 @@ func (e *EC2Wrapper) GetClusterTag(tagKey string) (string, error) {
 		},
 	}
 
-	glog.Info("Calling DescribeTags with key ", tagKey)
+	log.Infof("Calling DescribeTags with key %s", tagKey)
 	results, err := e.ec2ServiceClient.DescribeTags(&input)
 	if err != nil {
 		return "", errors.Wrap(err, "GetClusterTag: Unable to obtain EC2 instance tags")

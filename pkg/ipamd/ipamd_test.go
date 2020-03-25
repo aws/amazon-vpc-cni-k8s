@@ -175,7 +175,7 @@ func TestNodeInit(t *testing.T) {
 	var criList = make(map[string]*cri.SandboxInfo, 0)
 	criList["pod-uid"] = &cri.SandboxInfo{ID: "sandbox-id",
 		Name: k8sName, K8SUID: "pod-uid"}
-	mockCRI.EXPECT().GetRunningPodSandboxes().Return(criList, nil)
+	mockCRI.EXPECT().GetRunningPodSandboxes(gomock.Any()).Return(criList, nil)
 
 	var rules []netlink.Rule
 	mockNetwork.EXPECT().GetRuleList().Return(rules, nil)
@@ -237,7 +237,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 		terminating:         int32(0),
 	}
 
-	mockContext.dataStore = datastore.NewDataStore()
+	mockContext.dataStore = datastore.NewDataStore(log)
 
 	primary := true
 	notPrimary := false
@@ -333,7 +333,7 @@ func TestTryAddIPToENI(t *testing.T) {
 		terminating:   int32(0),
 	}
 
-	mockContext.dataStore = datastore.NewDataStore()
+	mockContext.dataStore = datastore.NewDataStore(log)
 
 	podENIConfig := &v1alpha1.ENIConfigSpec{
 		SecurityGroups: []string{"sg1-id", "sg2-id"},
@@ -398,7 +398,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 		terminating:   int32(0),
 	}
 
-	mockContext.dataStore = datastore.NewDataStore()
+	mockContext.dataStore = datastore.NewDataStore(log)
 
 	primary := true
 	notPrimary := false
@@ -490,7 +490,7 @@ func TestGetWarmIPTargetState(t *testing.T) {
 		terminating:   int32(0),
 	}
 
-	mockContext.dataStore = datastore.NewDataStore()
+	mockContext.dataStore = datastore.NewDataStore(log)
 
 	_, _, warmIPTargetDefined := mockContext.ipTargetState()
 	assert.False(t, warmIPTargetDefined)
@@ -538,9 +538,9 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 		fields fields
 		want   bool
 	}{
-		{"Test new ds, all defaults", fields{14, 1, 0, datastore.NewDataStore()}, true},
-		{"Test new ds, 0 ENIs", fields{14, 0, 0, datastore.NewDataStore()}, true},
-		{"Test new ds, 3 warm IPs", fields{14, 0, 3, datastore.NewDataStore()}, true},
+		{"Test new ds, all defaults", fields{14, 1, 0, datastore.NewDataStore(log)}, true},
+		{"Test new ds, 0 ENIs", fields{14, 0, 0, datastore.NewDataStore(log)}, true},
+		{"Test new ds, 3 warm IPs", fields{14, 0, 3, datastore.NewDataStore(log)}, true},
 		{"Test 3 unused IPs, 1 warm", fields{3, 1, 1, datastoreWith3FreeIPs()}, false},
 		{"Test 1 used, 1 warm ENI", fields{3, 1, 0, datastoreWith1Pod1()}, true},
 		{"Test 1 used, 0 warm ENI", fields{3, 0, 0, datastoreWith1Pod1()}, false},
@@ -719,7 +719,7 @@ func TestGlobalAllocateENI_NormalCase(t *testing.T) {
 		primaryIP:           make(map[string]string),
 	}
 
-	mockContext.dataStore = datastore.NewDataStore()
+	mockContext.dataStore = datastore.NewDataStore(log)
 
 	podENIConfig := &v1alpha1.ENIConfigSpec{
 		SecurityGroups: []string{"sg1-id", "sg2-id"},
@@ -779,8 +779,7 @@ func TestGlobalAllocateENI_NoENIConfigsConfigured(t *testing.T) {
 
 }
 
-func datastoreWith3FreeIPs() *datastore.DataStore {
-	datastoreWith3FreeIPs := datastore.NewDataStore()
+func datastoreWith3FreeIPs() *datastore.DataStore {datastoreWith3FreeIPs := datastore.NewDataStore(log)
 	_ = datastoreWith3FreeIPs.AddENI(primaryENIid, 1, true, "")
 	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr01)
 	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr02)

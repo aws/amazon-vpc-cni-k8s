@@ -23,12 +23,11 @@ import (
 	"github.com/containernetworking/cni/pkg/ns"
 	"github.com/vishvananda/netlink"
 
-	log "github.com/cihub/seelog"
-
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
 const (
@@ -42,8 +41,8 @@ const (
 
 // NetworkAPIs defines network API calls
 type NetworkAPIs interface {
-	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, ipv4Subnet *net.IPNet) error
-	TeardownNS(addr *net.IPNet, table int) error
+	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger, ipv4Subnet *net.IPNet) error
+	TeardownNS(addr *net.IPNet, table int, log logger.Logger) error
 }
 
 type linuxNetwork struct {
@@ -159,8 +158,6 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		if err := createVethContext.netLink.RouteReplace(&routeSubnet); err != nil {
 			return errors.Wrapf(err, "setupNS: unable to add or replace route entry for %s", routeSubnet.String())
 		}
-
-		log.Debugf("Successfully set subnet route to be %s", routeSubnet.String())
 	}
 
 	if err = createVethContext.netLink.AddrAdd(contVeth, &netlink.Addr{IPNet: createVethContext.addr}); err != nil {
@@ -194,12 +191,13 @@ func generateMACAddress(addr *net.IPNet) net.HardwareAddr {
 }
 
 // SetupNS wires up linux networking for a pod's network
-func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, ipv4Subnet *net.IPNet) error {
-	log.Debugf("SetupNS: hostVethName=%s, contVethName=%s, netnsPath=%s, table=%d, addr=%s, mtu=%d", hostVethName, contVethName, netnsPath, table, addr.String(), mtu)
-	return setupNS(hostVethName, contVethName, netnsPath, addr, table, vpcCIDRs, useExternalSNAT, os.netLink, os.ns, mtu, ipv4Subnet)
+func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger, ipv4Subnet *net.IPNet) error {
+	log.Debugf("SetupNS: hostVethName=%s, contVethName=%s, netnsPath=%s, table=%d, mtu=%d", hostVethName, contVethName, netnsPath, table, mtu)
+	return setupNS(hostVethName, contVethName, netnsPath, addr, table, vpcCIDRs, useExternalSNAT, os.netLink, os.ns, mtu, log, ipv4Subnet)
 }
 
-func setupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, netLink netlinkwrapper.NetLink, ns nswrapper.NS, mtu int, ipv4Subnet *net.IPNet) error {
+func setupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool,
+	netLink netlinkwrapper.NetLink, ns nswrapper.NS, mtu int, log logger.Logger, ipv4Subnet *net.IPNet) error {
 	// Clean up if hostVeth exists.
 	if oldHostVeth, err := netLink.LinkByName(hostVethName); err == nil {
 		if err = netLink.LinkDel(oldHostVeth); err != nil {
@@ -276,7 +274,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 
 				err = netLink.RuleAdd(podRule)
 				if isRuleExistsError(err) {
-					log.Warn("Rule already exists [%v]", podRule)
+					log.Warnf("Rule already exists [%v]", podRule)
 				} else {
 					if err != nil {
 						log.Errorf("Failed to add pod IP rule [%v]: %v", podRule, err)
@@ -340,12 +338,12 @@ func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *
 }
 
 // TeardownPodNetwork cleanup ip rules
-func (os *linuxNetwork) TeardownNS(addr *net.IPNet, table int) error {
+func (os *linuxNetwork) TeardownNS(addr *net.IPNet, table int, log logger.Logger) error {
 	log.Debugf("TeardownNS: addr %s, table %d", addr.String(), table)
-	return tearDownNS(addr, table, os.netLink)
+	return tearDownNS(addr, table, os.netLink, log)
 }
 
-func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink) error {
+func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink, log logger.Logger) error {
 	if addr == nil {
 		return errors.New("can't tear down network namespace with no IP address")
 	}

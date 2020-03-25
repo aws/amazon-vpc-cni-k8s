@@ -192,7 +192,9 @@ rule\. To use pseudo random number generation rather than hash based (i.e. `--ra
 variable. For old versions of `iptables` that do not support `--random-fully` this option will fall back to `--random`.
 Disable (`none`) this functionality if you rely on sequential port allocation for outgoing connections.
 
-*Note*: Any options other than `none` will cause outbound connections to be assigned a source port that's not necessarily part of the ephemeral port range set at the OS level (/proc/sys/net/ipv4/ip_local_port_range). This is relevant for any customers that might have NACLs restricting traffic based on the port range found in ip_local_port_range
+*Note*: Any options other than `none` will cause outbound connections to be assigned a source port that's not necessarily
+part of the ephemeral port range set at the OS level (`/proc/sys/net/ipv4/ip_local_port_range`). This is relevant for any
+customers that might have NACLs restricting traffic based on the port range found in `ip_local_port_range`.
 
 ---
 
@@ -287,7 +289,7 @@ Default: `DEBUG`
 
 Valid Values: `trace`, `debug`, `info`, `warn`, `error`, `critical` or `off`. (Not case sensitive)
 
-Specifies the loglevel for ipamd.
+Specifies the loglevel for `ipamd`.
 
 ---
 
@@ -299,7 +301,29 @@ Default: Unset
 
 Valid Values: `stdout` or a file path
 
-Specifies where to write the logging output. Either to stdout or to override the default file.
+Specifies where to write the logging output of `ipamd`. Either to stdout or to override the default file (i.e., `/var/log/aws-routed-eni/ipamd.log`).
+
+---
+
+`AWS_VPC_K8S_PLUGIN_LOG_FILE`
+
+Type: String
+
+Default: Unset
+
+Valid Values: `stdout` or a file path
+
+Specifies where to write the logging output for `aws-cni` plugin. Either to stdout or to override the default file (i.e., `/var/log/aws-routed-eni/plugin.log`).
+
+---
+
+`AWS_VPC_K8S_PLUGIN_LOG_LEVEL`
+
+Type: String
+
+Valid Values: `trace`, `debug`, `info`, `warn`, `error`, `critical` or `off`. (Not case sensitive)
+
+Specifies the loglevel for `aws-cni` plugin.
 
 ---
 
@@ -347,7 +371,7 @@ Specifies the veth prefix used to generate the host-side veth device name for th
 
 ---
 
-`ADDITIONAL_ENI_TAGS`
+`ADDITIONAL_ENI_TAGS` (Since v1.6.0)
 
 Type: String
 
@@ -355,9 +379,12 @@ Default: `{}`
 
 Example values: `{"tag_key": "tag_val"}`
 
-Metadata applied to ENI help you categorize and organize your resources for billing or other purposes. Each tag consists of a custom-defined key and an optional value. Tag keys can have a maximum character length of 128 characters. Tag values can have a maximum length of 256 characters. These tags will be added to all ENIs on the host.
+Metadata applied to ENI help you categorize and organize your resources for billing or other purposes. Each tag consists of a
+custom-defined key and an optional value. Tag keys can have a maximum character length of 128 characters. Tag values can have
+a maximum length of 256 characters. These tags will be added to all ENIs on the host.
 
-Important: Custom tags should not contain `k8s.amazonaws.com` prefix as it is reserved. If the tag has `k8s.amazonaws.com` string, tag addition will ignored.
+Important: Custom tags should not contain `k8s.amazonaws.com` prefix as it is reserved. If the tag has `k8s.amazonaws.com`
+string, tag addition will ignored.
 
 ---
 

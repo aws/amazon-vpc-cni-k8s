@@ -15,7 +15,6 @@
 package metrics
 
 import (
-	"github.com/golang/glog"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 
@@ -152,14 +151,13 @@ func CNIMetricsNew(c clientset.Interface, cw publisher.Publisher, d *k8sapi.Cont
 }
 
 func (t *CNIMetricsTarget) grabMetricsFromTarget(cniPod string) ([]byte, error) {
-	glog.Infof("Grabbing metrics from CNI: %s", cniPod)
 	output, err := getMetricsFromPod(t.kubeClient, cniPod, metav1.NamespaceSystem, metricsPort)
 	if err != nil {
-		glog.Errorf("grabMetricsFromTarget: Failed to grab CNI endpoint: %v", err)
+		log.Errorf("grabMetricsFromTarget: Failed to grab CNI endpoint: %v", err)
 		return nil, err
 	}
 
-	glog.V(5).Infof("cni-metrics text output: %s", string(output))
+	log.Infof("cni-metrics text output: %s", string(output))
 	return output, nil
 }
 

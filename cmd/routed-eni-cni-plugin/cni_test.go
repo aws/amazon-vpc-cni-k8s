@@ -38,10 +38,19 @@ const (
 	ifName      = "eth0"
 	cniVersion  = "1.0"
 	cniName     = "aws-cni"
+	pluginLogLevel = "Debug"
+	pluginLogFile = "/var/log/aws-routed-eni/plugin.log"
 	cniType     = "aws-cni"
 	ipAddr      = "10.0.1.15"
 	devNum      = 4
 )
+
+var netConf = &NetConf{CNIVersion: cniVersion,
+	Name:           cniName,
+	Type:           cniType,
+	PluginLogLevel: pluginLogLevel,
+	PluginLogFile:  pluginLogFile,
+}
 
 func setup(t *testing.T) (*gomock.Controller,
 	*mock_typeswrapper.MockCNITYPES,
@@ -66,10 +75,7 @@ func TestCmdAdd(t *testing.T) {
 	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
 	defer ctrl.Finish()
 
-	netconf := &NetConf{CNIVersion: cniVersion,
-		Name: cniName,
-		Type: cniType}
-	stdinData, _ := json.Marshal(netconf)
+	stdinData, _ := json.Marshal(netConf)
 
 	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
 		Netns:     netNS,
@@ -78,7 +84,7 @@ func TestCmdAdd(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -93,7 +99,7 @@ func TestCmdAdd(t *testing.T) {
 	}
 
 	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -105,10 +111,7 @@ func TestCmdAddNetworkErr(t *testing.T) {
 	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
 	defer ctrl.Finish()
 
-	netconf := &NetConf{CNIVersion: cniVersion,
-		Name: cniName,
-		Type: cniType}
-	stdinData, _ := json.Marshal(netconf)
+	stdinData, _ := json.Marshal(netConf)
 
 	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
 		Netns:     netNS,
@@ -117,7 +120,7 @@ func TestCmdAddNetworkErr(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -135,10 +138,7 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
 	defer ctrl.Finish()
 
-	netconf := &NetConf{CNIVersion: cniVersion,
-		Name: cniName,
-		Type: cniType}
-	stdinData, _ := json.Marshal(netconf)
+	stdinData, _ := json.Marshal(netConf)
 
 	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
 		Netns:     netNS,
@@ -147,7 +147,7 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -162,7 +162,7 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 	}
 
 	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
+		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
 
 	// when SetupPodNetwork fails, expect to return IP back to datastore
 	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
@@ -177,10 +177,7 @@ func TestCmdDel(t *testing.T) {
 	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
 	defer ctrl.Finish()
 
-	netconf := &NetConf{CNIVersion: cniVersion,
-		Name: cniName,
-		Type: cniType}
-	stdinData, _ := json.Marshal(netconf)
+	stdinData, _ := json.Marshal(netConf)
 
 	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
 		Netns:     netNS,
@@ -189,7 +186,7 @@ func TestCmdDel(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -204,7 +201,7 @@ func TestCmdDel(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 
-	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber)).Return(nil)
+	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(nil)
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Nil(t, err)
@@ -214,10 +211,7 @@ func TestCmdDelErrDelNetwork(t *testing.T) {
 	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
 	defer ctrl.Finish()
 
-	netconf := &NetConf{CNIVersion: cniVersion,
-		Name: cniName,
-		Type: cniType}
-	stdinData, _ := json.Marshal(netconf)
+	stdinData, _ := json.Marshal(netConf)
 
 	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
 		Netns:     netNS,
@@ -226,7 +220,7 @@ func TestCmdDelErrDelNetwork(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -244,10 +238,7 @@ func TestCmdDelErrTeardown(t *testing.T) {
 	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
 	defer ctrl.Finish()
 
-	netconf := &NetConf{CNIVersion: cniVersion,
-		Name: cniName,
-		Type: cniType}
-	stdinData, _ := json.Marshal(netconf)
+	stdinData, _ := json.Marshal(netConf)
 
 	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
 		Netns:     netNS,
@@ -256,7 +247,7 @@ func TestCmdDelErrTeardown(t *testing.T) {
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 
-	conn, _ := grpc.Dial(ipamDAddress, grpc.WithInsecure())
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
@@ -271,7 +262,7 @@ func TestCmdDelErrTeardown(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 
-	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber)).Return(errors.New("error on teardown"))
+	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(errors.New("error on teardown"))
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Error(t, err)

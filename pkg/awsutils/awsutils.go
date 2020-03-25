@@ -25,7 +25,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	log "github.com/cihub/seelog"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadata"
@@ -75,6 +75,8 @@ const (
 
 // ErrENINotFound is an error when ENI is not found.
 var ErrENINotFound = errors.New("ENI is not found")
+
+var log = logger.Get()
 
 var (
 	awsAPILatency = prometheus.NewSummaryVec(
@@ -801,7 +803,8 @@ func (cache *EC2InstanceMetadataCache) tagENI(eniID string, maxBackoffDelay time
 		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil)).Observe(msSince(start))
 		if err != nil {
 			awsAPIErrInc("CreateTags", err)
-			return log.Warnf("Failed to tag the newly created ENI %s: %v", eniID, err)
+			log.Warnf("Failed to tag the newly created ENI %s:", eniID)
+			return err
 		}
 		log.Debugf("Successfully tagged ENI: %s", eniID)
 		return nil

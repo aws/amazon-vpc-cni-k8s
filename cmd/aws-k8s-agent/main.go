@@ -16,29 +16,27 @@ package main
 import (
 	"os"
 
-	log "github.com/cihub/seelog"
-
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
-const (
-	defaultLogFilePath = "/host/var/log/aws-routed-eni/ipamd.log"
-)
+const binaryName = "ipamd"
 
-var (
-	version string
-)
+var version string
+
 
 func main() {
 	os.Exit(_main())
 }
 
 func _main() int {
-	defer log.Flush()
-	logger.SetupLogger(logger.GetLogFileLocation(defaultLogFilePath))
+	//Do not add anything before initializing logger
+	logConfig := logger.Configuration{
+		BinaryName:   binaryName,
+	}
+	log := logger.New(&logConfig)
 
 	log.Infof("Starting L-IPAMD %s  ...", version)
 

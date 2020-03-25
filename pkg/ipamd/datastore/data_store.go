@@ -19,11 +19,10 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/cihub/seelog"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 )
 
 const (
@@ -145,6 +144,7 @@ type DataStore struct {
 	eniIPPools map[string]*ENIIPPool
 	podsIP     map[PodKey]PodIPInfo
 	lock       sync.RWMutex
+	log 	   logger.Logger
 }
 
 // PodInfos contains pods IP information which uses key name_namespace_sandbox
@@ -172,11 +172,12 @@ func prometheusRegister() {
 }
 
 // NewDataStore returns DataStore structure
-func NewDataStore() *DataStore {
+func NewDataStore(log logger.Logger) *DataStore {
 	prometheusRegister()
 	return &DataStore{
 		eniIPPools: make(map[string]*ENIIPPool),
 		podsIP:     make(map[PodKey]PodIPInfo),
+		log: 		log,
 	}
 }
 
@@ -195,7 +196,7 @@ func (ds *DataStore) AddENIWithSubnet(eniID string, deviceNumber int,
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	log.Debug("DataStore Add an ENI ", eniID)
+	ds.log.Debugf("DataStore Add an ENI %s", eniID)
 
 	_, ok := ds.eniIPPools[eniID]
 	if ok {
@@ -218,8 +219,8 @@ func (ds *DataStore) AddIPv4AddressToStore(eniID string, ipv4 string) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	log.Tracef("Adding ENI(%s)'s IPv4 address %s to datastore", eniID, ipv4)
-	log.Tracef("IP Address Pool stats: total: %d, assigned: %d", ds.total, ds.assigned)
+	ds.log.Debugf("Adding ENI(%s)'s IPv4 address %s to datastore", eniID, ipv4)
+	ds.log.Debugf("IP Address Pool stats: total: %d, assigned: %d", ds.total, ds.assigned)
 
 	curENI, ok := ds.eniIPPools[eniID]
 	if !ok {
@@ -237,7 +238,7 @@ func (ds *DataStore) AddIPv4AddressToStore(eniID string, ipv4 string) error {
 	totalIPs.Set(float64(ds.total))
 
 	curENI.IPv4Addresses[ipv4] = &AddressInfo{Address: ipv4, Assigned: false}
-	log.Infof("Added ENI(%s)'s IP %s to datastore", eniID, ipv4)
+	ds.log.Infof("Added ENI(%s)'s IP %s to datastore", eniID, ipv4)
 	return nil
 }
 
@@ -245,8 +246,8 @@ func (ds *DataStore) AddIPv4AddressToStore(eniID string, ipv4 string) error {
 func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string, force bool) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
-	log.Debugf("Deleting ENI(%s)'s IPv4 address %s from datastore", eniID, ipv4)
-	log.Debugf("IP Address Pool stats: total: %d, assigned: %d", ds.total, ds.assigned)
+	ds.log.Debugf("Deleting ENI(%s)'s IPv4 address %s from datastore", eniID, ipv4)
+	ds.log.Debugf("IP Address Pool stats: total: %d, assigned: %d", ds.total, ds.assigned)
 
 	curENI, ok := ds.eniIPPools[eniID]
 	if !ok {
@@ -262,7 +263,7 @@ func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string, force bo
 		if !force {
 			return errors.New(IPInUseError)
 		}
-		log.Warnf("Force deleting assigned ip %s on eni %s", ipv4, eniID)
+		ds.log.Warnf("Force deleting assigned ip %s on eni %s", ipv4, eniID)
 		forceRemovedIPs.Inc()
 		decrementAssignedCount(ds, curENI, ipAddr)
 		for key, info := range ds.podsIP {
@@ -279,7 +280,7 @@ func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string, force bo
 
 	delete(curENI.IPv4Addresses, ipv4)
 
-	log.Infof("Deleted ENI(%s)'s IP %s from datastore", eniID, ipv4)
+	ds.log.Infof("Deleted ENI(%s)'s IP %s from datastore", eniID, ipv4)
 	return nil
 }
 
@@ -289,7 +290,7 @@ func (ds *DataStore) AssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (ip net.IPN
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	log.Debugf("AssignIPv4Address: IP address pool stats: total: %d, assigned %d", ds.total, ds.assigned)
+	ds.log.Debugf("AssignIPv4Address: IP address pool stats: total: %d, assigned %d", ds.total, ds.assigned)
 	podKey := PodKey{
 		name:      k8sPod.Name,
 		namespace: k8sPod.Namespace,
@@ -300,11 +301,11 @@ func (ds *DataStore) AssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (ip net.IPN
 	if ok {
 		if ipAddr.IP == k8sPod.IP && k8sPod.IP != "" {
 			// The caller invoke multiple times to assign(PodName/NameSpace --> same IPAddress). It is not a error, but not very efficient.
-			log.Infof("AssignPodIPv4Address: duplicate pod assign for IP %s, name %s, namespace %s, sandbox %s, ifName %s",
+			ds.log.Infof("AssignPodIPv4Address: duplicate pod assign for IP %s, name %s, namespace %s, sandbox %s, ifName %s",
 				k8sPod.IP, k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox, k8sPod.IfName)
 			return net.IPNet{IP: net.ParseIP(ipAddr.IP)}, ipAddr.DeviceNumber, nil
 		}
-		log.Errorf("AssignPodIPv4Address: current IP %s is changed to IP %s for pod(name %s, namespace %s, sandbox %s, ifName %s)",
+		ds.log.Errorf("AssignPodIPv4Address: current IP %s is changed to IP %s for pod(name %s, namespace %s, sandbox %s, ifName %s)",
 			ipAddr, k8sPod.IP, k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox, k8sPod.IfName)
 		return net.IPNet{}, 0, errors.New("AssignPodIPv4Address: invalid pod with multiple IP addresses")
 	}
@@ -317,15 +318,15 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(podKey PodKey, k8sPod *k8sapi.K8
 
 	for _, eni := range ds.eniIPPools {
 
-		log.Debugf("Compare ENIConfigs thisPool %s, requested %s", eni.ENIConfigName, requestedEniConfigName)
+		ds.log.Debugf("Compare ENIConfigs thisPool %s, requested %s", eni.ENIConfigName, requestedEniConfigName)
 		if (requestedEniConfigName != "") && (eni.ENIConfigName != requestedEniConfigName) {
-			log.Debugf("Requested ENIConfig did not match this pool %s, requested %s", eni.ENIConfigName, requestedEniConfigName)
+			ds.log.Debugf("Requested ENIConfig did not match this pool %s, requested %s", eni.ENIConfigName, requestedEniConfigName)
 			continue
 		}
 
 		if (k8sPod.IP == "") && (len(eni.IPv4Addresses) == eni.AssignedIPv4Addresses) {
 			// Skip this ENI, since it has no available IP addresses
-			log.Debugf("AssignPodIPv4Address: Skip ENI %s that does not have available addresses", eni.ID)
+			ds.log.Debugf("AssignPodIPv4Address: Skip ENI %s that does not have available addresses", eni.ID)
 			continue
 		}
 		mask := eni.SubnetIPv4CIDR.Mask
@@ -335,7 +336,7 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(podKey PodKey, k8sPod *k8sapi.K8
 				if !addr.Assigned {
 					incrementAssignedCount(ds, eni, addr)
 				}
-				log.Infof("AssignPodIPv4Address: Reassign IP %v to pod (name %s, namespace %s)",
+				ds.log.Infof("AssignPodIPv4Address: Reassign IP %v to pod (name %s, namespace %s)",
 					addr.Address, k8sPod.Name, k8sPod.Namespace)
 				ds.podsIP[podKey] = PodIPInfo{IP: addr.Address, DeviceNumber: eni.DeviceNumber}
 				return net.IPNet{IP: net.ParseIP(addr.Address), Mask: mask}, eni.DeviceNumber, nil
@@ -343,14 +344,14 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(podKey PodKey, k8sPod *k8sapi.K8
 			if !addr.Assigned && k8sPod.IP == "" && !addr.inCoolingPeriod() {
 				// This is triggered by a pod's Add Network command from CNI plugin
 				incrementAssignedCount(ds, eni, addr)
-				log.Infof("AssignPodIPv4Address: Assign IP %v mask %s to pod (name %s, namespace %s sandbox %s)",
+				ds.log.Infof("AssignPodIPv4Address: Assign IP %v mask %s to pod (name %s, namespace %s sandbox %s)",
 					addr.Address, mask, k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox)
 				ds.podsIP[podKey] = PodIPInfo{IP: addr.Address, DeviceNumber: eni.DeviceNumber}
 				return net.IPNet{IP: net.ParseIP(addr.Address), Mask: mask}, eni.DeviceNumber, nil
 			}
 		}
 	}
-	log.Errorf("DataStore has no available IP addresses")
+	ds.log.Errorf("DataStore has no available IP addresses")
 	return net.IPNet{}, 0, errors.New("assignPodIPv4AddressUnsafe: no available IP addresses")
 }
 
@@ -405,36 +406,36 @@ func (ds *DataStore) isRequiredForMinimumIPTarget(minimumIPTarget int, eni *ENII
 func (ds *DataStore) getDeletableENI(warmIPTarget int, minimumIPTarget int) *ENIIPPool {
 	for _, eni := range ds.eniIPPools {
 		if eni.IsPrimary {
-			log.Debugf("ENI %s cannot be deleted because it is primary", eni.ID)
+			ds.log.Debugf("ENI %s cannot be deleted because it is primary", eni.ID)
 			continue
 		}
 
 		if eni.isTooYoung() {
-			log.Debugf("ENI %s cannot be deleted because it is too young", eni.ID)
+			ds.log.Debugf("ENI %s cannot be deleted because it is too young", eni.ID)
 			continue
 		}
 
 		if eni.hasIPInCooling() {
-			log.Debugf("ENI %s cannot be deleted because has IPs in cooling", eni.ID)
+			ds.log.Debugf("ENI %s cannot be deleted because has IPs in cooling", eni.ID)
 			continue
 		}
 
 		if eni.hasPods() {
-			log.Debugf("ENI %s cannot be deleted because it has pods assigned", eni.ID)
+			ds.log.Debugf("ENI %s cannot be deleted because it has pods assigned", eni.ID)
 			continue
 		}
 
 		if warmIPTarget != 0 && ds.isRequiredForWarmIPTarget(warmIPTarget, eni) {
-			log.Debugf("ENI %s cannot be deleted because it is required for WARM_IP_TARGET: %d", eni.ID, warmIPTarget)
+			ds.log.Debugf("ENI %s cannot be deleted because it is required for WARM_IP_TARGET: %d", eni.ID, warmIPTarget)
 			continue
 		}
 
 		if minimumIPTarget != 0 && ds.isRequiredForMinimumIPTarget(minimumIPTarget, eni) {
-			log.Debugf("ENI %s cannot be deleted because it is required for MINIMUM_IP_TARGET: %d", eni.ID, minimumIPTarget)
+			ds.log.Debugf("ENI %s cannot be deleted because it is required for MINIMUM_IP_TARGET: %d", eni.ID, minimumIPTarget)
 			continue
 		}
 
-		log.Debugf("getDeletableENI: found a deletable ENI %s", eni.ID)
+		ds.log.Debugf("getDeletableENI: found a deletable ENI %s", eni.ID)
 		return eni
 	}
 	return nil
@@ -464,7 +465,7 @@ func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENIIPPool
 	eniIDs := make([]string, 0)
 	for eniID, eni := range ds.eniIPPools {
 		if skipPrimary && eni.IsPrimary {
-			log.Debugf("Skip the primary ENI for need IP check")
+			ds.log.Debugf("Skip the primary ENI for need IP check")
 			continue
 		}
 		eniIDs = append(eniIDs, eniID)
@@ -473,7 +474,7 @@ func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENIIPPool
 	for _, eniID := range eniIDs {
 		eni := ds.eniIPPools[eniID]
 		if len(eni.IPv4Addresses) < maxIPperENI {
-			log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d",
+			ds.log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d",
 				eni.ID, len(eni.IPv4Addresses), maxIPperENI)
 			return eni
 		}
@@ -496,7 +497,7 @@ func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget int, minimumIPTarget 
 	removableENI := deletableENI.ID
 	eniIPCount := len(ds.eniIPPools[removableENI].IPv4Addresses)
 	ds.total -= eniIPCount
-	log.Infof("RemoveUnusedENIFromStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
+	ds.log.Infof("RemoveUnusedENIFromStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
 		removableENI, eniIPCount, ds.total, ds.assigned)
 	delete(ds.eniIPPools, removableENI)
 
@@ -523,7 +524,7 @@ func (ds *DataStore) RemoveENIFromDataStore(eni string, force bool) error {
 		// This scenario can occur if the reconciliation process discovered this eni was detached
 		// from the EC2 instance outside of the control of ipamd.  If this happens, there's nothing
 		// we can do other than force all pods to be unassigned from the IPs on this eni.
-		log.Warnf("Force removing eni %s with %d assigned pods", eni, eniIPPool.AssignedIPv4Addresses)
+		ds.log.Warnf("Force removing eni %s with %d assigned pods", eni, eniIPPool.AssignedIPv4Addresses)
 		forceRemovedENIs.Inc()
 		forceRemovedIPs.Add(float64(eniIPPool.AssignedIPv4Addresses))
 		for _, addr := range eniIPPool.IPv4Addresses {
@@ -539,7 +540,7 @@ func (ds *DataStore) RemoveENIFromDataStore(eni string, force bool) error {
 	}
 
 	ds.total -= len(eniIPPool.IPv4Addresses)
-	log.Infof("RemoveENIFromDataStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
+	ds.log.Infof("RemoveENIFromDataStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
 		eni, len(eniIPPool.IPv4Addresses), ds.total, ds.assigned)
 	delete(ds.eniIPPools, eni)
 
@@ -553,7 +554,7 @@ func (ds *DataStore) RemoveENIFromDataStore(eni string, force bool) error {
 func (ds *DataStore) UnassignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (ip string, deviceNumber int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
-	log.Debugf("UnassignPodIPv4Address: IP address pool stats: total:%d, assigned %d, pod(Name: %s, Namespace: %s, Sandbox %s, IfName %s)",
+	ds.log.Debugf("UnassignPodIPv4Address: IP address pool stats: total:%d, assigned %d, pod(Name: %s, Namespace: %s, Sandbox %s, IfName %s)",
 		ds.total, ds.assigned, k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox, k8sPod.IfName)
 
 	podKey := PodKey{
@@ -564,7 +565,7 @@ func (ds *DataStore) UnassignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (ip strin
 	}
 	ipAddr, ok := ds.podsIP[podKey]
 	if !ok {
-		log.Warnf("UnassignPodIPv4Address: Failed to find pod %s namespace %q, sandbox %q, IfName %s",
+		ds.log.Warnf("UnassignPodIPv4Address: Failed to find pod %s namespace %q, sandbox %q, IfName %s",
 			k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox, k8sPod.IfName)
 		return "", 0, ErrUnknownPod
 	}
@@ -573,14 +574,14 @@ func (ds *DataStore) UnassignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (ip strin
 		ip, ok := eni.IPv4Addresses[ipAddr.IP]
 		if ok && ip.Assigned {
 			decrementAssignedCount(ds, eni, ip)
-			log.Infof("UnassignPodIPv4Address: pod (Name: %s, NameSpace %s Sandbox %s, IfName %s)'s ipAddr %s, DeviceNumber%d",
+			ds.log.Infof("UnassignPodIPv4Address: pod (Name: %s, NameSpace %s Sandbox %s, IfName %s)'s ipAddr %s, DeviceNumber%d",
 				k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox, k8sPod.IfName, ip.Address, eni.DeviceNumber)
 			delete(ds.podsIP, podKey)
 			return ip.Address, eni.DeviceNumber, nil
 		}
 	}
 
-	log.Warnf("UnassignPodIPv4Address: Failed to find pod %s namespace %s sandbox %s IfName %s using IP %s",
+	ds.log.Warnf("UnassignPodIPv4Address: Failed to find pod %s namespace %s sandbox %s IfName %s using IP %s",
 		k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox, k8sPod.IfName, ipAddr.IP)
 	return "", 0, ErrUnknownPodIP
 }
@@ -595,10 +596,10 @@ func (ds *DataStore) GetPodInfos() *map[string]PodIPInfo {
 	for podKey, podInfo := range ds.podsIP {
 		key := podKey.name + "_" + podKey.namespace + "_" + podKey.sandbox
 		podInfos[key] = podInfo
-		log.Debugf("GetPodInfos: key %s", key)
+		ds.log.Debugf("GetPodInfos: key %s", key)
 	}
 
-	log.Debugf("GetPodInfos: len %d", len(ds.podsIP))
+	ds.log.Debugf("GetPodInfos: len %d", len(ds.podsIP))
 	return &podInfos
 }
 
