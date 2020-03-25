@@ -683,7 +683,7 @@ spec:
       nodeSelector:
         beta.kubernetes.io/os: linux
       containers:
-        - image: k8s.gcr.io/cluster-proportional-autoscaler-amd64:1.1.2
+        - image: k8s.gcr.io/cluster-proportional-autoscaler-amd64:1.7.1
           name: autoscaler
           command:
             - /cluster-proportional-autoscaler
