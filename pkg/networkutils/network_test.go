@@ -17,7 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -34,6 +33,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mock_netlink"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper/mocks"
+	mock_procsyswrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper/mocks"
 )
 
 const (
@@ -63,17 +63,19 @@ func setup(t *testing.T) (*gomock.Controller,
 	*mock_netlinkwrapper.MockNetLink,
 	*mocks_ip.MockIP,
 	*mock_nswrapper.MockNS,
-	*mockIptables) {
+	*mockIptables,
+	*mock_procsyswrapper.MockProcSys) {
 	ctrl := gomock.NewController(t)
 	return ctrl,
 		mock_netlinkwrapper.NewMockNetLink(ctrl),
 		mocks_ip.NewMockIP(ctrl),
 		mock_nswrapper.NewMockNS(ctrl),
-		newMockIptables()
+		newMockIptables(),
+		mock_procsyswrapper.NewMockProcSys(ctrl)
 }
 
 func TestSetupENINetwork(t *testing.T) {
-	ctrl, mockNetLink, _, _, _ := setup(t)
+	ctrl, mockNetLink, _, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
 	hwAddr, err := net.ParseMAC(testMAC1)
@@ -129,7 +131,7 @@ func TestSetupENINetwork(t *testing.T) {
 }
 
 func TestSetupENINetworkMACFail(t *testing.T) {
-	ctrl, mockNetLink, _, _, _ := setup(t)
+	ctrl, mockNetLink, _, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
 	// Emulate a delay attaching the ENI so a retry is necessary
@@ -143,7 +145,7 @@ func TestSetupENINetworkMACFail(t *testing.T) {
 }
 
 func TestSetupENINetworkPrimary(t *testing.T) {
-	ctrl, mockNetLink, _, _, _ := setup(t)
+	ctrl, mockNetLink, _, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
 	err := setupENINetwork(testeniIP, testMAC2, 0, testeniSubnet, mockNetLink, 0*time.Second)
@@ -151,7 +153,7 @@ func TestSetupENINetworkPrimary(t *testing.T) {
 }
 
 func TestSetupHostNetworkNodePortDisabled(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables, _ := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
@@ -178,7 +180,7 @@ func TestSetupHostNetworkNodePortDisabled(t *testing.T) {
 }
 
 func TestUpdateRuleListBySrc(t *testing.T) {
-	ctrl, mockNetLink, _, _, _ := setup(t)
+	ctrl, mockNetLink, _, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{netLink: mockNetLink}
@@ -250,10 +252,9 @@ func TestUpdateRuleListBySrc(t *testing.T) {
 }
 
 func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
 	defer ctrl.Finish()
 
-	var mockRPFilter mockFile
 	ln := &linuxNetwork{
 		useExternalSNAT:        true,
 		nodePortSupportEnabled: true,
@@ -264,9 +265,7 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 		newIptables: func() (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		openFile: func(name string, flag int, perm os.FileMode) (stringWriteCloser, error) {
-			return &mockRPFilter, nil
-		},
+		procSys: mockProcSys,
 	}
 
 	var hostRule netlink.Rule
@@ -276,6 +275,8 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
 	mockNetLink.EXPECT().RuleDel(&mainENIRule)
 	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
+
+	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
 	var vpcCIDRs []*string
 
@@ -302,14 +303,12 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 			},
 		},
 	}, mockIptables.dataplaneState)
-	assert.Equal(t, mockFile{closed: true, data: "2"}, mockRPFilter)
 }
 
 func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
 	defer ctrl.Finish()
 
-	var mockRPFilter mockFile
 	ln := &linuxNetwork{
 		useExternalSNAT:        true,
 		nodePortSupportEnabled: true,
@@ -320,9 +319,7 @@ func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
 		newIptables: func() (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		openFile: func(name string, flag int, perm os.FileMode) (stringWriteCloser, error) {
-			return &mockRPFilter, nil
-		},
+		procSys: mockProcSys,
 	}
 
 	var hostRule netlink.Rule
@@ -332,6 +329,8 @@ func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
 	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
 	mockNetLink.EXPECT().RuleDel(&mainENIRule)
 	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
+
+	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
 	var vpcCIDRs []*string
 	vpcCIDRs = []*string{aws.String("10.10.0.0/16"), aws.String("10.11.0.0/16")}
