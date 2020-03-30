@@ -597,6 +597,10 @@ func TestSetupPodNetworkErrNoIPv6(t *testing.T) {
 	mockNetLink.EXPECT().RuleDel(gomock.Any()).Return(nil)
 	mockNetLink.EXPECT().RuleAdd(gomock.Any()).Return(nil)
 
+	// Add static arp entry
+	mockHostVeth.EXPECT().Attrs().Return(mockLinkAttrs)
+	mockNetLink.EXPECT().NeighAdd(gomock.Any()).Return(nil)
+
 	addr := &net.IPNet{
 		IP:   net.ParseIP(testIP),
 		Mask: net.IPv4Mask(255, 255, 255, 255),

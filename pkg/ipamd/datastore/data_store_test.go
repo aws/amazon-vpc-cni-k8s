@@ -14,6 +14,7 @@
 package datastore
 
 import (
+	"net"
 	"testing"
 	"time"
 
@@ -34,13 +35,13 @@ var log = logger.New(&logConfig)
 func TestAddENI(t *testing.T) {
 	ds := NewDataStore(log)
 
-	err := ds.AddENI("eni-1", 1, true, "")
+	err := ds.AddENIWithSubnet("eni-1", 1, true, "", net.IPNet{})
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-1", 1, true, "")
+	err = ds.AddENIWithSubnet("eni-1", 1, true, "", net.IPNet{})
 	assert.Error(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, "")
+	err = ds.AddENIWithSubnet("eni-2", 2, false, "", net.IPNet{})
 	assert.NoError(t, err)
 
 	assert.Equal(t, len(ds.eniIPPools), 2)
@@ -52,13 +53,13 @@ func TestAddENI(t *testing.T) {
 func TestDeleteENI(t *testing.T) {
 	ds := NewDataStore(log)
 
-	err := ds.AddENI("eni-1", 1, true, "")
+	err := ds.AddENIWithSubnet("eni-1", 1, true, "", net.IPNet{})
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, "")
+	err = ds.AddENIWithSubnet("eni-2", 2, false, "", net.IPNet{})
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-3", 3, false, "")
+	err = ds.AddENIWithSubnet("eni-3", 3, false, "", net.IPNet{})
 	assert.NoError(t, err)
 
 	eniInfos := ds.GetENIInfos()
@@ -101,10 +102,10 @@ func TestDeleteENI(t *testing.T) {
 func TestAddENIIPv4Address(t *testing.T) {
 	ds := NewDataStore(log)
 
-	err := ds.AddENI("eni-1", 1, true, "")
+	err := ds.AddENIWithSubnet("eni-1", 1, true, "", net.IPNet{})
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, "")
+	err = ds.AddENIWithSubnet("eni-2", 2, false, "", net.IPNet{})
 	assert.NoError(t, err)
 
 	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
@@ -139,10 +140,10 @@ func TestAddENIIPv4Address(t *testing.T) {
 func TestGetENIIPPools(t *testing.T) {
 	ds := NewDataStore(log)
 
-	err := ds.AddENI("eni-1", 1, true, "")
+	err := ds.AddENIWithSubnet("eni-1", 1, true, "", net.IPNet{})
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, "")
+	err = ds.AddENIWithSubnet("eni-2", 2, false, "", net.IPNet{})
 	assert.NoError(t, err)
 
 	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
@@ -171,7 +172,7 @@ func TestGetENIIPPools(t *testing.T) {
 
 func TestDelENIIPv4Address(t *testing.T) {
 	ds := NewDataStore(log)
-	err := ds.AddENI("eni-1", 1, true, "")
+	err := ds.AddENIWithSubnet("eni-1", 1, true, "", net.IPNet{})
 	assert.NoError(t, err)
 
 	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
@@ -228,9 +229,9 @@ func TestDelENIIPv4Address(t *testing.T) {
 func TestPodIPv4Address(t *testing.T) {
 	ds := NewDataStore(log)
 
-	ds.AddENI("eni-1", 1, true, "")
+	ds.AddENIWithSubnet("eni-1", 1, true, "", net.IPNet{})
 
-	ds.AddENI("eni-2", 2, false, "")
+	ds.AddENIWithSubnet("eni-2", 2, false, "", net.IPNet{})
 
 	ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
 
@@ -366,9 +367,9 @@ func TestPodIPv4Address(t *testing.T) {
 func TestWarmENIInteractions(t *testing.T) {
 	ds := NewDataStore(log)
 
-	ds.AddENI("eni-1", 1, true, "")
-	ds.AddENI("eni-2", 2, false, "")
-	ds.AddENI("eni-3", 3, false, "")
+	ds.AddENIWithSubnet("eni-1", 1, true, "", net.IPNet{})
+	ds.AddENIWithSubnet("eni-2", 2, false, "", net.IPNet{})
+	ds.AddENIWithSubnet("eni-3", 3, false, "", net.IPNet{})
 	ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
 	ds.AddIPv4AddressToStore("eni-1", "1.1.1.2")
 	ds.AddIPv4AddressToStore("eni-2", "1.1.2.1")

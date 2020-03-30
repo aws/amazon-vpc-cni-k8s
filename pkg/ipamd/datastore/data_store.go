@@ -181,15 +181,6 @@ func NewDataStore(log logger.Logger) *DataStore {
 	}
 }
 
-// AddENI add ENI to data store
-func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary bool, eniConfigName string) error {
-	addr := net.IPNet{
-		IP:   net.ParseIP("0.0.0.0"),
-		Mask: net.CIDRMask(32, 32),
-	}
-	return ds.AddENIWithSubnet(eniID, deviceNumber, isPrimary, eniConfigName, addr)
-}
-
 func (ds *DataStore) AddENIWithSubnet(eniID string, deviceNumber int,
 	isPrimary bool, eniConfigName string, subnetIPv4CIDR net.IPNet) error {
 
