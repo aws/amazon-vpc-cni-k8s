@@ -30,9 +30,9 @@ endif
 
 # Default to build the Linux binary
 build-linux:
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-k8s-agent -ldflags "-s -w $(LDFLAGS)"
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o aws-cni -ldflags " -s -w $(LDFLAGS)" ./plugins/routed-eni/
-	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -o grpc_health_probe -ldflags "-s -w $(LDFLAGS)" ./client/health-check/
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -buildmode=pie -o aws-k8s-agent -ldflags "-s -w $(LDFLAGS)"
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -buildmode=pie -o aws-cni -ldflags " -s -w $(LDFLAGS)" ./plugins/routed-eni/
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -buildmode=pie -o grpc_health_probe -ldflags "-s -w $(LDFLAGS)" ./client/health-check/
 
 # Download portmap plugin
 download-portmap:
