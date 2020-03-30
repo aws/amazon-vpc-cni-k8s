@@ -55,8 +55,7 @@ DOCKER_ARCH = $(lastword $(subst :, ,$(filter $(ARCH):%,amd64:amd64 arm64:arm64v
 IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(ARCH),arm64))
 # GOLANG_IMAGE is the building golang container image used.
 GOLANG_IMAGE = golang:1.13-stretch
-# For the requseted build, these are the set of Go specific build environment
-# variables.
+# For the requested build, these are the set of Go specific build environment variables.
 export GOARCH ?= $(ARCH)
 export GOOS = linux
 export CGO_ENABLED = 0
@@ -94,7 +93,8 @@ dist: all
 	docker save $(METRICS_IMAGE_NAME) | gzip > $(METRICS_IMAGE_DIST)
 
 # Build the VPC CNI plugin agent using the host's Go toolchain.
-build-linux: BUILD_FLAGS = -ldflags '-s -w $(LDFLAGS)'
+BUILD_MODE ?= -buildmode=pie
+build-linux: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
 build-linux:
 	go build $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
 	go build $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin

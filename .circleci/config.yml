@@ -34,6 +34,7 @@ jobs:
       <<: *env
       # Target the GOARCH for x86_64
       ARCH: amd64
+      BUILD_MODE: "-buildmode=pie"
 
   build_aarch64:
     <<: *build
@@ -41,6 +42,7 @@ jobs:
       <<: *env
       # Target the GOARCH for aarch64
       ARCH: arm64
+      BUILD_MODE: ""
 
   integration_test:
     docker:
