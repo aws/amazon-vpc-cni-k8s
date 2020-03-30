@@ -48,14 +48,14 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 		in.Netns, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID, in.IfName, in.EniConfigName)
 
 	addr, deviceNumber, err := s.ipamContext.dataStore.AssignPodIPv4Address(&k8sapi.K8SPodInfo{
-		Name:      in.K8S_POD_NAME,
-		Namespace: in.K8S_POD_NAMESPACE,
-		Sandbox:   in.K8S_POD_INFRA_CONTAINER_ID,
-		IfName:    in.IfName,
+		Name:          in.K8S_POD_NAME,
+		Namespace:     in.K8S_POD_NAMESPACE,
+		Sandbox:       in.K8S_POD_INFRA_CONTAINER_ID,
+		IfName:        in.IfName,
 		ENIConfigName: in.EniConfigName})
 
 	ipv4Subnet := net.IPNet{
-		IP: addr.IP.Mask(addr.Mask),
+		IP:   addr.IP.Mask(addr.Mask),
 		Mask: addr.Mask,
 	}
 

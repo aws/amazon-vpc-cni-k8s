@@ -61,25 +61,25 @@ func New() NetworkAPIs {
 // createVethPairContext wraps the parameters and the method to create the
 // veth pair to attach the container namespace
 type createVethPairContext struct {
-	contVethName string
-	hostVethName string
-	addr         *net.IPNet
-	ipv4Subnet	 *net.IPNet
+	contVethName  string
+	hostVethName  string
+	addr          *net.IPNet
+	ipv4Subnet    *net.IPNet
 	contHWAddress net.HardwareAddr
-	netLink      netlinkwrapper.NetLink
-	ip           ipwrapper.IP
-	mtu          int
+	netLink       netlinkwrapper.NetLink
+	ip            ipwrapper.IP
+	mtu           int
 }
 
 func newCreateVethPairContext(contVethName string, hostVethName string, addr *net.IPNet, mtu int, ipv4Subnet *net.IPNet, contHWAddress net.HardwareAddr) *createVethPairContext {
 	return &createVethPairContext{
-		contVethName: contVethName,
-		hostVethName: hostVethName,
-		addr:         addr,
-		netLink:      netlinkwrapper.NewNetLink(),
-		ip:           ipwrapper.NewIP(),
-		mtu:          mtu,
-		ipv4Subnet:   ipv4Subnet,
+		contVethName:  contVethName,
+		hostVethName:  hostVethName,
+		addr:          addr,
+		netLink:       netlinkwrapper.NewNetLink(),
+		ip:            ipwrapper.NewIP(),
+		mtu:           mtu,
+		ipv4Subnet:    ipv4Subnet,
 		contHWAddress: contHWAddress,
 	}
 }
@@ -88,10 +88,10 @@ func newCreateVethPairContext(contVethName string, hostVethName string, addr *ne
 func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	veth := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{
-			Name:  createVethContext.contVethName,
-			Flags: net.FlagUp,
-			MTU:   createVethContext.mtu,
-			HardwareAddr:  createVethContext.contHWAddress,
+			Name:         createVethContext.contVethName,
+			Flags:        net.FlagUp,
+			MTU:          createVethContext.mtu,
+			HardwareAddr: createVethContext.contHWAddress,
 		},
 		PeerName: createVethContext.hostVethName,
 	}
@@ -127,7 +127,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	// # ip route show
 	// default via 169.254.1.x dev eth0
 	// 169.254.1.x dev eth0
-	gw := net.IPv4(169, 254, 1, byte(1 + contVeth.Attrs().Index))
+	gw := net.IPv4(169, 254, 1, byte(1+contVeth.Attrs().Index))
 	gwNet := &net.IPNet{IP: gw, Mask: net.CIDRMask(32, 32)}
 
 	if err = createVethContext.netLink.RouteReplace(&netlink.Route{
@@ -137,12 +137,10 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		return errors.Wrap(err, "setup NS network: failed to add default gateway")
 	}
 
-
-
 	// Add a default route via dummy next hop(169.254.1.1). Then all outgoing traffic will be routed by this
 	// default route via dummy next hop (169.254.1.1).
 	// If this is not the first interface, the route may already exist
-	if err = createVethContext.ip.AddDefaultRoute(gwNet.IP, contVeth); err != nil && err.Error() != "file exists"{
+	if err = createVethContext.ip.AddDefaultRoute(gwNet.IP, contVeth); err != nil && err.Error() != "file exists" {
 		return errors.Wrap(err, "setup NS network: failed to add default route")
 	}
 

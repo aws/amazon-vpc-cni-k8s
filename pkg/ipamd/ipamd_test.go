@@ -80,17 +80,17 @@ func TestNodeInit(t *testing.T) {
 	testAddr12 := ipaddr12
 
 	mockContext := &IPAMContext{
-		awsClient:     mockAWS,
-		k8sClient:     mockK8S,
-		maxIPsPerENI:  14,
-		maxENI:        4,
-		warmENITarget: 1,
-		warmIPTarget:  3,
-		primaryIP:     make(map[string]string),
-		terminating:   int32(0),
-		criClient:     mockCRI,
-		networkClient: mockNetwork,
-		eniConfig:     mockENIConfig,
+		awsClient:           mockAWS,
+		k8sClient:           mockK8S,
+		maxIPsPerENI:        14,
+		maxENI:              4,
+		warmENITarget:       1,
+		warmIPTarget:        3,
+		primaryIP:           make(map[string]string),
+		terminating:         int32(0),
+		criClient:           mockCRI,
+		networkClient:       mockNetwork,
+		eniConfig:           mockENIConfig,
 		useCustomNetworking: true,
 	}
 
@@ -204,7 +204,6 @@ func TestNodeInit(t *testing.T) {
 	mockAWS.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
 	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{eni1, eni2, eni3}, nil)
 	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), thirdMAC, thirdDevice, thirdSubnet)
-
 
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
@@ -568,7 +567,6 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 	}
 }
 
-
 func TestMatchENItoENIConfig_NoConfig(t *testing.T) {
 	mockContext := &IPAMContext{}
 
@@ -601,7 +599,7 @@ func TestMatchENItoENIConfig_Match(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		eniConfig:     mockENIConfig,
+		eniConfig: mockENIConfig,
 	}
 
 	primary := true
@@ -624,7 +622,6 @@ func TestMatchENItoENIConfig_Match(t *testing.T) {
 		},
 		SubnetId:       "subnet1",
 		SecurityGroups: []*string{aws.String("sg1-id"), aws.String("sg2-id")},
-
 	}
 
 	podENIConfig := &v1alpha1.ENIConfigSpec{
@@ -650,7 +647,7 @@ func TestMatchENItoENIConfig_MisMatch(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		eniConfig:     mockENIConfig,
+		eniConfig:           mockENIConfig,
 		useCustomNetworking: true,
 	}
 
@@ -674,7 +671,6 @@ func TestMatchENItoENIConfig_MisMatch(t *testing.T) {
 		},
 		SubnetId:       "subnet1",
 		SecurityGroups: []*string{aws.String("sg1-id"), aws.String("sg2-id")},
-
 	}
 
 	podENIConfig := &v1alpha1.ENIConfigSpec{
@@ -700,10 +696,10 @@ func TestGlobalAllocateENI_NoENIConfigInContext(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		eniConfig:     nil,
+		eniConfig: nil,
 	}
 
-	err := mockContext.globalAllocateENI( []awsutils.ENIMetadata{})
+	err := mockContext.globalAllocateENI([]awsutils.ENIMetadata{})
 	assert.Error(t, err)
 
 }
@@ -713,10 +709,10 @@ func TestGlobalAllocateENI_NormalCase(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:           mockAWS,
-		eniConfig:           mockENIConfig,
-		networkClient:       mockNetwork,
-		primaryIP:           make(map[string]string),
+		awsClient:     mockAWS,
+		eniConfig:     mockENIConfig,
+		networkClient: mockNetwork,
+		primaryIP:     make(map[string]string),
 	}
 
 	mockContext.dataStore = datastore.NewDataStore(log)
@@ -759,7 +755,7 @@ func TestGlobalAllocateENI_NormalCase(t *testing.T) {
 	mockAWS.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
 	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{eni1}, nil)
 
-	err := mockContext.globalAllocateENI( []awsutils.ENIMetadata{})
+	err := mockContext.globalAllocateENI([]awsutils.ENIMetadata{})
 	assert.NoError(t, err)
 
 }
@@ -769,17 +765,18 @@ func TestGlobalAllocateENI_NoENIConfigsConfigured(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		eniConfig:     mockENIConfig,
+		eniConfig: mockENIConfig,
 	}
 
 	mockENIConfig.EXPECT().GetAllENIConfigs().Return(make(map[string]*v1alpha1.ENIConfigSpec))
 
-	err := mockContext.globalAllocateENI( []awsutils.ENIMetadata{})
+	err := mockContext.globalAllocateENI([]awsutils.ENIMetadata{})
 	assert.NoError(t, err)
 
 }
 
-func datastoreWith3FreeIPs() *datastore.DataStore {datastoreWith3FreeIPs := datastore.NewDataStore(log)
+func datastoreWith3FreeIPs() *datastore.DataStore {
+	datastoreWith3FreeIPs := datastore.NewDataStore(log)
 	_ = datastoreWith3FreeIPs.AddENI(primaryENIid, 1, true, "")
 	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr01)
 	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr02)

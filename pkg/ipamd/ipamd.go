@@ -651,7 +651,6 @@ func (c *IPAMContext) updateLastNodeIPPoolAction() {
 	logPoolStats(total, used, c.maxIPsPerENI)
 }
 
-
 // For each ENIConfig we want to make sure there is at least
 // one matching interface attached
 func (c *IPAMContext) globalAllocateENI(enis []awsutils.ENIMetadata) error {
@@ -674,7 +673,7 @@ func (c *IPAMContext) globalAllocateENI(enis []awsutils.ENIMetadata) error {
 		}
 
 		log.Debugf("Existing ENI %s, subnet %s, sgAll %s", eni.ENIID, eni.SubnetId, securityGroups)
-		existingENIs = append(existingENIs,v1alpha1.ENIConfigSpec{
+		existingENIs = append(existingENIs, v1alpha1.ENIConfigSpec{
 			SecurityGroups: securityGroups,
 			Subnet:         eni.SubnetId,
 		})
