@@ -504,7 +504,7 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	assert.Equal(t, 0, over)
 
 	// add 2 addresses to datastore
-	_ = mockContext.dataStore.AddENI("eni-1", 1, true, "")
+	_ = mockContext.dataStore.AddENIWithSubnet("eni-1", 1, true, "", net.IPNet{})
 	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.1")
 	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.2")
 
@@ -718,7 +718,7 @@ func TestGlobalAllocateENI_NormalCase(t *testing.T) {
 		primaryIP:     make(map[string]string),
 	}
 
-	mockContext.dataStore = datastore.NewDataStore()
+	mockContext.dataStore = datastore.NewDataStore(log)
 
 	podENIConfig := &v1alpha1.ENIConfigSpec{
 		SecurityGroups: []string{"sg1-id", "sg2-id"},
@@ -780,7 +780,7 @@ func TestGlobalAllocateENI_NoENIConfigsConfigured(t *testing.T) {
 
 func datastoreWith3FreeIPs() *datastore.DataStore {
 	datastoreWith3FreeIPs := datastore.NewDataStore(log)
-	_ = datastoreWith3FreeIPs.AddENI(primaryENIid, 1, true, "")
+	_ = datastoreWith3FreeIPs.AddENIWithSubnet(primaryENIid, 1, true, "", net.IPNet{})
 	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr01)
 	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr02)
 	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr03)
