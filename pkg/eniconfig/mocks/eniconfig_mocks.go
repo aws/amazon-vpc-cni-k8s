@@ -63,7 +63,6 @@ func (mr *MockENIConfigMockRecorder) Getter() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Getter", reflect.TypeOf((*MockENIConfig)(nil).Getter))
 }
 
-
 // GetENIConfig mocks base method
 func (m *MockENIConfig) GetENIConfig(arg0 string) (*v1alpha1.ENIConfigSpec, error) {
 	m.ctrl.T.Helper()
@@ -82,7 +81,7 @@ func (mr *MockENIConfigMockRecorder) GetENIConfig(arg0 string) *gomock.Call {
 // GetAllENIConfigs mocks base method
 func (m *MockENIConfig) GetAllENIConfigs() map[string]*v1alpha1.ENIConfigSpec {
 	m.ctrl.T.Helper()
-    ret := m.ctrl.Call(m, "GetAllENIConfigs")
+	ret := m.ctrl.Call(m, "GetAllENIConfigs")
 	ret0, _ := ret[0].(map[string]*v1alpha1.ENIConfigSpec)
 	return ret0
 }

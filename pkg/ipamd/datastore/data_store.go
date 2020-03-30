@@ -184,7 +184,7 @@ func NewDataStore(log logger.Logger) *DataStore {
 // AddENI add ENI to data store
 func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary bool, eniConfigName string) error {
 	addr := net.IPNet{
-		IP:	net.ParseIP("0.0.0.0"),
+		IP:   net.ParseIP("0.0.0.0"),
 		Mask: net.CIDRMask(32, 32),
 	}
 	return ds.AddENIWithSubnet(eniID, deviceNumber, isPrimary, eniConfigName, addr)
@@ -203,13 +203,13 @@ func (ds *DataStore) AddENIWithSubnet(eniID string, deviceNumber int,
 		return errors.New(DuplicatedENIError)
 	}
 	ds.eniIPPools[eniID] = &ENIIPPool{
-		createTime:    time.Now(),
-		IsPrimary:     isPrimary,
-		ID:            eniID,
-		DeviceNumber:  deviceNumber,
-		ENIConfigName: eniConfigName,
+		createTime:     time.Now(),
+		IsPrimary:      isPrimary,
+		ID:             eniID,
+		DeviceNumber:   deviceNumber,
+		ENIConfigName:  eniConfigName,
 		SubnetIPv4CIDR: subnetIPv4CIDR,
-		IPv4Addresses: make(map[string]*AddressInfo)}
+		IPv4Addresses:  make(map[string]*AddressInfo)}
 	enis.Set(float64(len(ds.eniIPPools)))
 	return nil
 }

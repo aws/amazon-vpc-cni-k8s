@@ -50,12 +50,12 @@ type K8SPodInfo struct {
 	// Sandbox is pod's sandbox id
 	Sandbox string
 	// IP is pod's ipv4 address
-	IP  string
+	IP string
 	// IfName is interface name
 	IfName string
 	// ENIConfigName
 	ENIConfigName string
-	UID string
+	UID           string
 }
 
 var log = logger.Get()
