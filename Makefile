@@ -15,7 +15,7 @@
 .PHONY: all build-linux clean docker docker-build lint unit-test vet download-portmap build-docker-test build-metrics docker-metrics metrics-unit-test docker-metrics-test docker-vet
 
 IMAGE   ?= amazon/amazon-k8s-cni
-VERSION ?= $(shell git describe --tags --always --dirty)
+export VERSION ?= $(shell git describe --tags --always --dirty || echo "unknown")
 LDFLAGS ?= -X main.version=$(VERSION)
 
 ARCH ?= $(shell uname -m)
@@ -95,7 +95,7 @@ docker-metrics-test:
 	docker run -v $(shell pwd):/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
 		--workdir=/usr/src/app/src/github.com/aws/amazon-vpc-cni-k8s \
 		--env GOPATH=/usr/src/app \
-		golang:1.10 make metrics-unit-test
+		golang:1.12 make metrics-unit-test
 
 # Build both CNI and metrics helper
 all: docker docker-metrics
