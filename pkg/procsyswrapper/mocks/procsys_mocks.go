@@ -62,6 +62,20 @@ func (mr *MockProcSysMockRecorder) Get(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockProcSys)(nil).Get), arg0)
 }
 
+// IsPathWriteAccessible mocks base method
+func (m *MockProcSys) IsPathWriteAccessible(arg0 string) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsPathWriteAccessible", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsPathWriteAccessible indicates an expected call of IsPathWriteAccessible
+func (mr *MockProcSysMockRecorder) IsPathWriteAccessible(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsPathWriteAccessible", reflect.TypeOf((*MockProcSys)(nil).IsPathWriteAccessible), arg0)
+}
+
 // Set mocks base method
 func (m *MockProcSys) Set(arg0, arg1 string) error {
 	m.ctrl.T.Helper()
