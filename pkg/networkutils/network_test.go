@@ -285,18 +285,8 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 		procSys: mockProcSys,
 	}
 
-	mockPrimaryInterfaceLookup(ctrl, mockNetLink)
-	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
-
-	var hostRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&hostRule)
-	mockNetLink.EXPECT().RuleDel(&hostRule)
-	var mainENIRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
-	mockNetLink.EXPECT().RuleDel(&mainENIRule)
-	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
+	setupNetLinkMocks(ctrl, mockNetLink)
+	setupProcSysMocks(mockProcSys, true)
 
 	var vpcCIDRs []*string
 
@@ -363,18 +353,8 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 		procSys: mockProcSys,
 	}
 
-	mockPrimaryInterfaceLookup(ctrl, mockNetLink)
-
-	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
-	var hostRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&hostRule)
-	mockNetLink.EXPECT().RuleDel(&hostRule)
-	var mainENIRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
-	mockNetLink.EXPECT().RuleDel(&mainENIRule)
-	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
+	setupNetLinkMocks(ctrl, mockNetLink)
+	setupProcSysMocks(mockProcSys, true)
 
 	var vpcCIDRs []*string
 	vpcCIDRs = []*string{aws.String("10.10.0.0/16"), aws.String("10.11.0.0/16")}
@@ -416,18 +396,8 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 		},
 		procSys: mockProcSys,
 	}
-	mockPrimaryInterfaceLookup(ctrl, mockNetLink)
-
-	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
-	var hostRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&hostRule)
-	mockNetLink.EXPECT().RuleDel(&hostRule)
-	var mainENIRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
-	mockNetLink.EXPECT().RuleDel(&mainENIRule)
-	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
+	setupNetLinkMocks(ctrl, mockNetLink)
+	setupProcSysMocks(mockProcSys, true)
 
 	vpcCIDRs := []*string{aws.String("10.10.0.0/16"), aws.String("10.11.0.0/16")}
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-1") //AWS SNAT CHAN proves backwards compatibility
@@ -477,18 +447,8 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 		},
 		procSys: mockProcSys,
 	}
-	mockPrimaryInterfaceLookup(ctrl, mockNetLink)
-
-	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
-	var hostRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&hostRule)
-	mockNetLink.EXPECT().RuleDel(&hostRule)
-	var mainENIRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
-	mockNetLink.EXPECT().RuleDel(&mainENIRule)
-	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
+	setupNetLinkMocks(ctrl, mockNetLink)
+	setupProcSysMocks(mockProcSys, true)
 
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-1")
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2")
@@ -537,18 +497,8 @@ func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
 		},
 		procSys: mockProcSys,
 	}
-	mockPrimaryInterfaceLookup(ctrl, mockNetLink)
-
-	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
-	var hostRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&hostRule)
-	mockNetLink.EXPECT().RuleDel(&hostRule)
-	var mainENIRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
-	mockNetLink.EXPECT().RuleDel(&mainENIRule)
-	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
+	setupNetLinkMocks(ctrl, mockNetLink)
+	setupProcSysMocks(mockProcSys, true)
 
 	var vpcCIDRs []*string
 	vpcCIDRs = []*string{aws.String("10.10.0.0/16"), aws.String("10.11.0.0/16")}
@@ -580,6 +530,53 @@ func TestIncrementIPv4Addr(t *testing.T) {
 			assert.Equal(t, tc.expected, result, tc.name)
 		})
 	}
+}
+
+func TestSetupHostNetworkForUnprivilegedPod(t *testing.T) {
+	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{
+		useExternalSNAT:        true,
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+
+		netLink: mockNetLink,
+		ns:      mockNS,
+		newIptables: func() (iptablesIface, error) {
+			return mockIptables, nil
+		},
+		procSys: mockProcSys,
+	}
+	var vpcCIDRs []*string
+	setupNetLinkMocks(ctrl, mockNetLink)
+	setupProcSysMocks(mockProcSys, false)
+
+	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, loopback, &testENINetIP)
+	assert.NoError(t, err)
+}
+
+func setupProcSysMocks(mockProcSys *mock_procsyswrapper.MockProcSys, shouldHaveWriteAccess bool) {
+	rpFilterPath := "net/ipv4/conf/lo/rp_filter"
+
+	mockProcSys.EXPECT().IsPathWriteAccessible(rpFilterPath).Return(shouldHaveWriteAccess)
+	if shouldHaveWriteAccess {
+		mockProcSys.EXPECT().Set(rpFilterPath, "2").Return(nil)
+	}
+}
+
+func setupNetLinkMocks(ctrl *gomock.Controller, mockNetLink *mock_netlinkwrapper.MockNetLink) {
+	mockPrimaryInterfaceLookup(ctrl, mockNetLink)
+	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
+
+	var hostRule netlink.Rule
+	mockNetLink.EXPECT().NewRule().Return(&hostRule)
+	mockNetLink.EXPECT().RuleDel(&hostRule)
+	var mainENIRule netlink.Rule
+	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
+	mockNetLink.EXPECT().RuleDel(&mainENIRule)
+	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
 }
 
 type mockIptables struct {
