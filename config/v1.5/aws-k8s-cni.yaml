@@ -8,7 +8,6 @@ rules:
       - crd.k8s.amazonaws.com
     resources:
       - "*"
-      - namespaces
     verbs:
       - "*"
   - apiGroups: [""]
@@ -54,6 +53,8 @@ metadata:
 spec:
   updateStrategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: "10%"
   selector:
     matchLabels:
       k8s-app: aws-node
@@ -76,12 +77,16 @@ spec:
                     operator: In
                     values:
                       - amd64
+                  - key: eks.amazonaws.com/compute-type
+                    operator: NotIn
+                    values:
+                      - fargate
       serviceAccountName: aws-node
       hostNetwork: true
       tolerations:
         - operator: Exists
       containers:
-        - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:v1.5.5
+        - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:v1.5.7
           imagePullPolicy: Always
           ports:
             - containerPort: 61678
@@ -108,6 +113,8 @@ spec:
               name: log-dir
             - mountPath: /var/run/docker.sock
               name: dockersock
+            - mountPath: /var/run/dockershim.sock
+              name: dockershim
       volumes:
         - name: cni-bin-dir
           hostPath:
@@ -121,6 +128,9 @@ spec:
         - name: dockersock
           hostPath:
             path: /var/run/docker.sock
+        - name: dockershim
+          hostPath:
+            path: /var/run/dockershim.sock
 
 ---
 apiVersion: apiextensions.k8s.io/v1beta1
