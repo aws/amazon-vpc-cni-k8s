@@ -1,5 +1,15 @@
 # Changelog
 
+# v1.5.7
+
+* Improvement - [New AL2 image with iptables-1.8.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/894) (@mogren)
+* Improvement - [Enable the `-buildmode=pie` flag for the binaries](https://github.com/aws/amazon-vpc-cni-k8s/pull/894) (@mogren)
+* Improvement - [Disable IPv6 RA and ICMP redirects on host-side veth](https://github.com/aws/amazon-vpc-cni-k8s/pull/894) (@anguslees)
+
+# v1.5.6
+
+* ARM64 preview custom build only
+
 # v1.5.5
 
 * Bug fix - [Revert "Return delete success for pods that never got scheduled"](https://github.com/aws/amazon-vpc-cni-k8s/pull/672/commits/474479d7455f41c514ffcd58390a2a3ebae26de5) (#672, @mogren)
