@@ -634,7 +634,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["nodes"]
-    verbs: ["list"]
+    verbs: ["watch", "list"]
 
 ---
 
@@ -710,7 +710,7 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get"]
-  - apiGroups: ["extensions"]
+  - apiGroups: ["extensions", "apps"]
     resources: ["deployments/scale"]
     verbs: ["get", "update"]
 
