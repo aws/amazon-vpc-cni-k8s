@@ -3,15 +3,11 @@ module github.com/aws/amazon-vpc-cni-k8s
 go 1.13
 
 require (
-	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
-	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d // indirect
 	github.com/aws/aws-sdk-go v1.26.8
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 // indirect
-	github.com/cihub/seelog v0.0.0-20151216151435-d2c6e5aa9fbf
 	github.com/containernetworking/cni v0.5.2
 	github.com/coreos/go-iptables v0.4.0
 	github.com/ghodss/yaml v1.0.0 // indirect
-	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
 	github.com/golang/mock v1.4.1
 	github.com/golang/protobuf v1.3.2
@@ -43,7 +39,6 @@ require (
 	golang.org/x/sys v0.0.0-20190826190057-c7b8b68b1456
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
 	google.golang.org/grpc v1.23.1
-	gopkg.in/alecthomas/kingpin.v2 v2.2.6 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	k8s.io/api v0.0.0-20180712090710-2d6f90ab1293
