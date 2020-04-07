@@ -58,22 +58,22 @@ wait_for_ipam() {
     return 1
 }
 
-echo -n "starting IPAM daemon in background ... "
-./aws-k8s-agent > "$AGENT_LOG_PATH" 2>&1 &
+echo -n "Starting IPAM daemon in the background ... "
+./aws-k8s-agent | tee -i "$AGENT_LOG_PATH" 2>&1 &
 echo "ok."
 
-echo -n "checking for IPAM connectivity ... "
+echo -n "Checking for IPAM connectivity ... "
 
 if ! wait_for_ipam; then
     echo " failed."
-    echo "timed out waiting for IPAM daemon to start:"
+    echo "Timed out waiting for IPAM daemon to start:"
     cat "$AGENT_LOG_PATH" >&2
     exit 1
 fi
 
 echo "ok."
 
-echo -n "copying CNI plugin binaries and config files ... "
+echo -n "Copying CNI plugin binaries and config files ... "
 
 cp portmap "$HOST_CNI_BIN_PATH"
 cp aws-cni "$HOST_CNI_BIN_PATH"
@@ -85,16 +85,12 @@ sed -i s~__PLUGINLOGFILE__~"${AWS_VPC_K8S_PLUGIN_LOG_FILE}"~g 10-aws.conflist
 sed -i s~__PLUGINLOGLEVEL__~"${AWS_VPC_K8S_PLUGIN_LOG_LEVEL}"~g 10-aws.conflist
 cp 10-aws.conflist "$HOST_CNI_CONFDIR_PATH"
 
-echo " ok."
+echo "ok."
 
 if [[ -f "$HOST_CNI_CONFDIR_PATH/aws.conf" ]]; then
     rm "$HOST_CNI_CONFDIR_PATH/aws.conf"
 fi
 
-# bring the aws-k8s-agent process back into the foreground
-echo "foregrounding IPAM daemon ... "
+# Bring the aws-k8s-agent process back into the foreground
+echo "Foregrounding IPAM daemon ... "
 fg %1 >/dev/null 2>&1 || { echo "failed (process terminated)" && cat "$AGENT_LOG_PATH" && exit 1; }
-
-# Best practice states we should send the container's CMD output to stdout, so
-# let's tee back up the log file into stdout
-cat "$AGENT_LOG_PATH"
