@@ -726,8 +726,6 @@ func (c *IPAMContext) globalAllocateENI(enis []awsutils.ENIMetadata) error {
 	}
 	log.Debugf("existingENIs %s", existingENIs)
 
-	// TODO - This needs to filter down to just the ENIConfigs tagged to this specific host
-	// for now it configures for all ENIConfigs present
 	for key, eniConfig := range allENIConfigs {
 		log.Debugf("Checking on %s with config %s", key, eniConfig)
 		interfaceSeen := false
@@ -797,23 +795,32 @@ func (c *IPAMContext) tryAllocateENI(eniConfigName string) error {
 	var securityGroups []*string
 	var subnet string
 
-	if c.useCustomNetworking {
+	customNetworking := c.useCustomNetworking
+
+	if customNetworking {
 		eniCfg, err := c.eniConfig.GetENIConfig(eniConfigName)
 
 		if err != nil {
-			log.Errorf("Failed to get pod ENI config")
-			return err
+			// If even though the cluster uses custom networking, if this
+			// Node doesn't have an eniConfig there might not be a config
+			// found
+			if eniConfigName == "" {
+				customNetworking = false
+			} else {
+				log.Errorf("Failed to get pod ENI config")
+				return err
+			}
+		} else {
+			log.Infof("ipamd: using custom network config: %v, %s", eniCfg.SecurityGroups, eniCfg.Subnet)
+			for _, sgID := range eniCfg.SecurityGroups {
+				log.Debugf("Found security-group id: %s", sgID)
+				securityGroups = append(securityGroups, aws.String(sgID))
+			}
+			subnet = eniCfg.Subnet
 		}
-
-		log.Infof("ipamd: using custom network config: %v, %s", eniCfg.SecurityGroups, eniCfg.Subnet)
-		for _, sgID := range eniCfg.SecurityGroups {
-			log.Debugf("Found security-group id: %s", sgID)
-			securityGroups = append(securityGroups, aws.String(sgID))
-		}
-		subnet = eniCfg.Subnet
 	}
 
-	eni, err := c.awsClient.AllocENI(c.useCustomNetworking, securityGroups, subnet)
+	eni, err := c.awsClient.AllocENI(customNetworking, securityGroups, subnet)
 	if err != nil {
 		log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
 		ipamdErrInc("increaseIPPoolAllocENI")
