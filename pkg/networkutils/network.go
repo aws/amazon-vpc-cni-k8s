@@ -243,16 +243,10 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		primaryIntfRPFilter := "net/ipv4/conf/" + primaryIntf + "/rp_filter"
 		const rpFilterLoose = "2"
 
-		if n.procSys.IsPathWriteAccessible(primaryIntfRPFilter) {
-			// Setting RPF will be removed from aws-node when we bump our minor version.
-			log.Debugf("Setting RPF for primary interface: %s", primaryIntfRPFilter)
-			err = n.procSys.Set(primaryIntfRPFilter, rpFilterLoose)
-			if err != nil {
-				return errors.Wrapf(err, "failed to configure %s RPF check", primaryIntf)
-		    }
-		} else {
-			// when aws-node run as an un-privileged pod, /proc will be mounted as read only
-			log.Infof("Skip updating RPF for primary interface: %s", primaryIntfRPFilter)
+		log.Debugf("Setting RPF for primary interface: %s", primaryIntfRPFilter)
+		err = n.procSys.Set(primaryIntfRPFilter, rpFilterLoose)
+		if err != nil {
+			return errors.Wrapf(err, "failed to configure %s RPF check", primaryIntf)
 		}
 	}
 
