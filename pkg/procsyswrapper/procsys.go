@@ -15,14 +15,11 @@ package procsyswrapper
 
 import (
 	"io/ioutil"
-
-	"golang.org/x/sys/unix"
 )
 
 type ProcSys interface {
 	Get(key string) (string, error)
 	Set(key, value string) error
-	IsPathWriteAccessible(key string) bool
 }
 
 type procSys struct {
@@ -44,9 +41,4 @@ func (p *procSys) Get(key string) (string, error) {
 
 func (p *procSys) Set(key, value string) error {
 	return ioutil.WriteFile(p.path(key), []byte(value), 0644)
-}
-
-// IsPathWriteAccessible verifies if aws-node pod can write to the specified path
-func (p *procSys) IsPathWriteAccessible(key string) bool {
-	return unix.Access(p.path(key), unix.W_OK) != nil
 }
