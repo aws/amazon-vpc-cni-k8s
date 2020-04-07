@@ -272,10 +272,11 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:        true,
-		nodePortSupportEnabled: true,
-		mainENIMark:            defaultConnmark,
-		mtu:                    testMTU,
+		useExternalSNAT:         true,
+		nodePortSupportEnabled:  true,
+		shouldConfigureRpFilter: true,
+		mainENIMark:             defaultConnmark,
+		mtu:                     testMTU,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
@@ -285,16 +286,7 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 		procSys: mockProcSys,
 	}
 
-	mockPrimaryInterfaceLookup(ctrl, mockNetLink)
-	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
-
-	var hostRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&hostRule)
-	mockNetLink.EXPECT().RuleDel(&hostRule)
-	var mainENIRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
-	mockNetLink.EXPECT().RuleDel(&mainENIRule)
-	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
+	setupNetLinkMocks(ctrl, mockNetLink)
 
 	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
@@ -349,11 +341,12 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:        false,
-		excludeSNATCIDRs:       []string{"10.12.0.0/16", "10.13.0.0/16"},
-		nodePortSupportEnabled: true,
-		mainENIMark:            defaultConnmark,
-		mtu:                    testMTU,
+		useExternalSNAT:         false,
+		excludeSNATCIDRs:        []string{"10.12.0.0/16", "10.13.0.0/16"},
+		nodePortSupportEnabled:  true,
+		shouldConfigureRpFilter: true,
+		mainENIMark:             defaultConnmark,
+		mtu:                     testMTU,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
@@ -363,16 +356,7 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 		procSys: mockProcSys,
 	}
 
-	mockPrimaryInterfaceLookup(ctrl, mockNetLink)
-
-	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
-	var hostRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&hostRule)
-	mockNetLink.EXPECT().RuleDel(&hostRule)
-	var mainENIRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
-	mockNetLink.EXPECT().RuleDel(&mainENIRule)
-	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
+	setupNetLinkMocks(ctrl, mockNetLink)
 
 	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
@@ -403,11 +387,12 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:        false,
-		excludeSNATCIDRs:       nil,
-		nodePortSupportEnabled: true,
-		mainENIMark:            defaultConnmark,
-		mtu:                    testMTU,
+		useExternalSNAT:         false,
+		excludeSNATCIDRs:        nil,
+		nodePortSupportEnabled:  true,
+		shouldConfigureRpFilter: true,
+		mainENIMark:             defaultConnmark,
+		mtu:                     testMTU,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
@@ -416,16 +401,7 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 		},
 		procSys: mockProcSys,
 	}
-	mockPrimaryInterfaceLookup(ctrl, mockNetLink)
-
-	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
-	var hostRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&hostRule)
-	mockNetLink.EXPECT().RuleDel(&hostRule)
-	var mainENIRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
-	mockNetLink.EXPECT().RuleDel(&mainENIRule)
-	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
+	setupNetLinkMocks(ctrl, mockNetLink)
 
 	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
@@ -464,11 +440,12 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:        false,
-		excludeSNATCIDRs:       []string{"10.12.0.0/16", "10.13.0.0/16"},
-		nodePortSupportEnabled: true,
-		mainENIMark:            defaultConnmark,
-		mtu:                    testMTU,
+		useExternalSNAT:         false,
+		excludeSNATCIDRs:        []string{"10.12.0.0/16", "10.13.0.0/16"},
+		nodePortSupportEnabled:  true,
+		shouldConfigureRpFilter: true,
+		mainENIMark:             defaultConnmark,
+		mtu:                     testMTU,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
@@ -477,16 +454,7 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 		},
 		procSys: mockProcSys,
 	}
-	mockPrimaryInterfaceLookup(ctrl, mockNetLink)
-
-	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
-	var hostRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&hostRule)
-	mockNetLink.EXPECT().RuleDel(&hostRule)
-	var mainENIRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
-	mockNetLink.EXPECT().RuleDel(&mainENIRule)
-	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
+	setupNetLinkMocks(ctrl, mockNetLink)
 
 	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
@@ -525,10 +493,11 @@ func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:        true,
-		nodePortSupportEnabled: true,
-		mainENIMark:            defaultConnmark,
-		mtu:                    testMTU,
+		useExternalSNAT:         true,
+		nodePortSupportEnabled:  true,
+		shouldConfigureRpFilter: true,
+		mainENIMark:             defaultConnmark,
+		mtu:                     testMTU,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
@@ -537,16 +506,7 @@ func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
 		},
 		procSys: mockProcSys,
 	}
-	mockPrimaryInterfaceLookup(ctrl, mockNetLink)
-
-	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
-	var hostRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&hostRule)
-	mockNetLink.EXPECT().RuleDel(&hostRule)
-	var mainENIRule netlink.Rule
-	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
-	mockNetLink.EXPECT().RuleDel(&mainENIRule)
-	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
+	setupNetLinkMocks(ctrl, mockNetLink)
 
 	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
@@ -580,6 +540,44 @@ func TestIncrementIPv4Addr(t *testing.T) {
 			assert.Equal(t, tc.expected, result, tc.name)
 		})
 	}
+}
+
+func TestSetupHostNetworkIgnoringRpFilterUpdate(t *testing.T) {
+	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{
+		useExternalSNAT:         true,
+		nodePortSupportEnabled:  true,
+		shouldConfigureRpFilter: false,
+		mainENIMark:             defaultConnmark,
+		mtu:                     testMTU,
+
+		netLink: mockNetLink,
+		ns:      mockNS,
+		newIptables: func() (iptablesIface, error) {
+			return mockIptables, nil
+		},
+		procSys: mockProcSys,
+	}
+	setupNetLinkMocks(ctrl, mockNetLink)
+
+	var vpcCIDRs []*string
+	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, loopback, &testENINetIP)
+	assert.NoError(t, err)
+}
+
+func setupNetLinkMocks(ctrl *gomock.Controller, mockNetLink *mock_netlinkwrapper.MockNetLink) {
+	mockPrimaryInterfaceLookup(ctrl, mockNetLink)
+	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
+
+	var hostRule netlink.Rule
+	mockNetLink.EXPECT().NewRule().Return(&hostRule)
+	mockNetLink.EXPECT().RuleDel(&hostRule)
+	var mainENIRule netlink.Rule
+	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
+	mockNetLink.EXPECT().RuleDel(&mainENIRule)
+	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
 }
 
 type mockIptables struct {
