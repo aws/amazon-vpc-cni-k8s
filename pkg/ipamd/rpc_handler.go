@@ -99,7 +99,18 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		IfName:    in.IfName})
 
 	if err != nil && err == datastore.ErrUnknownPod {
+		// If L-IPAMD restarts, the ifName is not going to be found in retrospection, but in some cases the Sandbox is now present
+		// So this attempt checks to see if that is the case
+		ip, deviceNumber, err = s.ipamContext.dataStore.UnassignPodIPv4Address(&k8sapi.K8SPodInfo{
+			Name:      in.K8S_POD_NAME,
+			Namespace: in.K8S_POD_NAMESPACE,
+			Sandbox:   in.K8S_POD_INFRA_CONTAINER_ID})
+	}
+
+	if err != nil && err == datastore.ErrUnknownPod {
 		// If L-IPAMD restarts, the pod's IP address are assigned by only pod's name and namespace due to kubelet's introspection.
+		// It is possible this isn't needed any longer, but leaving it in case some systems still have the behavior
+		// this was initially added to safely handle.
 		ip, deviceNumber, err = s.ipamContext.dataStore.UnassignPodIPv4Address(&k8sapi.K8SPodInfo{
 			Name:      in.K8S_POD_NAME,
 			Namespace: in.K8S_POD_NAMESPACE})
