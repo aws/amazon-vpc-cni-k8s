@@ -17,6 +17,7 @@ package eniconfig
 import (
 	"context"
 	"os"
+	"regexp"
 	"runtime"
 	"sync"
 	"time"
@@ -60,6 +61,7 @@ var log = logger.Get()
 type ENIConfigController struct {
 	eni                    map[string]*v1alpha1.ENIConfigSpec
 	myENI                  string
+	localENIs              map[string]bool
 	eniLock                sync.RWMutex
 	myNodeName             string
 	eniConfigAnnotationDef string
@@ -80,6 +82,7 @@ func NewENIConfigController() *ENIConfigController {
 		myNodeName:             os.Getenv("MY_NODE_NAME"),
 		eni:                    make(map[string]*v1alpha1.ENIConfigSpec),
 		myENI:                  eniConfigDefault,
+		localENIs:              make(map[string]bool),
 		eniConfigAnnotationDef: getEniConfigAnnotationDef(),
 		eniConfigLabelDef:      getEniConfigLabelDef(),
 	}
@@ -122,9 +125,21 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		if h.controller.myNodeName == o.GetName() {
 			val, ok := o.GetAnnotations()[h.controller.eniConfigAnnotationDef]
 			if !ok {
-				val, ok = o.GetLabels()[h.controller.eniConfigLabelDef]
+				labels := o.GetLabels()
+				val, ok = labels[h.controller.eniConfigLabelDef]
 				if !ok {
 					val = eniConfigDefault
+				}
+				matchString := "^" + h.controller.eniConfigAnnotationDef
+				for key, value := range labels {
+					matched, err := regexp.MatchString(matchString, key)
+					if err != nil {
+						log.Errorf("Invalid regex string %s", err)
+					}
+					if matched {
+						h.controller.localENIs[value] = true
+						log.Debugf("Adding localENI %s", value)
+					}
 				}
 			}
 
@@ -207,7 +222,7 @@ func (eniCfg *ENIConfigController) GetENIConfig(eniConfigName string) (*v1alpha1
 	return nil, ErrNoENIConfig
 }
 
-// Return the map of all eni configurations
+// Return the map of all eni configurations active on this host
 func (eniCfg *ENIConfigController) GetAllENIConfigs() map[string]*v1alpha1.ENIConfigSpec {
 	eniCfg.eniLock.Lock()
 	defer eniCfg.eniLock.Unlock()
@@ -218,7 +233,16 @@ func (eniCfg *ENIConfigController) GetAllENIConfigs() map[string]*v1alpha1.ENICo
 		return nil
 	}
 
-	return eniCfg.eni
+	filteredEnis := make(map[string]*v1alpha1.ENIConfigSpec)
+
+	for name, val := range eniCfg.eni {
+		_, present := eniCfg.localENIs[name]
+		if present {
+			filteredEnis[name] = val
+		}
+	}
+
+	return filteredEnis
 }
 
 // getEniConfigAnnotationDef returns eniConfigAnnotation
