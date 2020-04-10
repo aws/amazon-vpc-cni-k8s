@@ -34,7 +34,7 @@ import (
 const (
 	defaultEniConfigAnnotationDef = "k8s.amazonaws.com/eniConfig"
 	defaultEniConfigLabelDef      = "k8s.amazonaws.com/eniConfig"
-	eniConfigDefault              = "default"
+	eniConfigDefault              = ""
 
 	// when "ENI_CONFIG_LABEL_DEF is defined, ENIConfigController will use that label key to
 	// search if is setting value for eniConfigLabelDef
