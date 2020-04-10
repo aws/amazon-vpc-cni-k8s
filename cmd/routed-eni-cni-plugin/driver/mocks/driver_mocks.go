@@ -18,9 +18,10 @@
 package mock_driver
 
 import (
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	net "net"
 	reflect "reflect"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
 	gomock "github.com/golang/mock/gomock"
 )

@@ -26,7 +26,6 @@ const binaryName = "ipamd"
 
 var version string
 
-
 func main() {
 	os.Exit(_main())
 }
@@ -34,7 +33,7 @@ func main() {
 func _main() int {
 	//Do not add anything before initializing logger
 	logConfig := logger.Configuration{
-		BinaryName:   binaryName,
+		BinaryName: binaryName,
 	}
 	log := logger.New(&logConfig)
 
