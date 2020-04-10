@@ -894,6 +894,8 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 			ipamdErrInc("addENIaddressesToDataStoreAddENIIPv4AddressFailed")
 		}
 	}
+	total, assigned := c.dataStore.GetStats()
+	log.Debugf("IP Address Pool stats: total: %d, assigned: %d", total, assigned)
 	return primaryIP
 }
 
@@ -980,8 +982,7 @@ func getWarmENITarget() int {
 }
 
 func logPoolStats(total, used, maxAddrsPerENI int) {
-	log.Debugf("IP pool stats: total = %d, used = %d, c.maxIPsPerENI = %d",
-		total, used, maxAddrsPerENI)
+	log.Debugf("IP pool stats: total = %d, used = %d, c.maxIPsPerENI = %d", total, used, maxAddrsPerENI)
 }
 
 // nodeIPPoolTooLow returns true if IP pool is below low threshold
@@ -992,14 +993,12 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	}
 
 	total, used := c.dataStore.GetStats()
-	logPoolStats(total, used, c.maxIPsPerENI)
 
 	available := total - used
 	poolTooLow := available < c.maxIPsPerENI*c.warmENITarget || (c.warmENITarget == 0 && available == 0)
 	if poolTooLow {
+		logPoolStats(total, used, c.maxIPsPerENI)
 		log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
-	} else {
-		log.Debugf("IP pool is NOT too low: available (%d) >= ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
 	}
 	return poolTooLow
 }
@@ -1015,7 +1014,7 @@ func (c *IPAMContext) nodeIPPoolTooHigh() bool {
 	return false
 }
 
-// shouldRemoveExtraENIs returns true if we should attempt to find an ENI to free.  When WARM_IP_TARGET is set, we
+// shouldRemoveExtraENIs returns true if we should attempt to find an ENI to free. When WARM_IP_TARGET is set, we
 // always check and do verification in getDeletableENI()
 func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	_, _, warmIPTargetDefined := c.ipTargetState()
@@ -1024,15 +1023,12 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	}
 
 	total, used := c.dataStore.GetStats()
-	logPoolStats(total, used, c.maxIPsPerENI)
-
 	available := total - used
 	// We need the +1 to make sure we are not going below the WARM_ENI_TARGET.
 	shouldRemoveExtra := available >= (c.warmENITarget+1)*c.maxIPsPerENI
 	if shouldRemoveExtra {
+		logPoolStats(total, used, c.maxIPsPerENI)
 		log.Debugf("It might be possible to remove extra ENIs because available (%d) >= (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
-	} else {
-		log.Debugf("Its NOT possible to remove extra ENIs because available (%d) < (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
 	}
 	return shouldRemoveExtra
 }
@@ -1043,17 +1039,16 @@ func ipamdErrInc(fn string) {
 
 // nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
 func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
-	ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
-	defer ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
-
 	curTime := time.Now()
 	timeSinceLast := curTime.Sub(c.lastNodeIPPoolAction)
 	if timeSinceLast <= interval {
-		log.Debugf("nodeIPPoolReconcile: skipping because time since last %v <= %v", timeSinceLast, interval)
 		return
 	}
 
-	log.Debug("Reconciling ENI/IP pool info...")
+	ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
+	defer ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
+
+	log.Debugf("Reconciling ENI/IP pool info because time since last %v <= %v", timeSinceLast, interval)
 	allENIs, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		log.Errorf("IP pool reconcile: Failed to get attached ENI info: %v", err.Error())
@@ -1063,7 +1058,6 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	attachedENIs, numUnmanaged := filterUnmanagedENIs(allENIs)
 	c.updateIPStats(numUnmanaged)
 	c.unmanagedENI = numUnmanaged
-
 	curENIs := c.dataStore.GetENIInfos()
 
 	// Mark phase
@@ -1105,6 +1099,8 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		reconcileCnt.With(prometheus.Labels{"fn": "eniReconcileDel"}).Inc()
 	}
 	log.Debug("Successfully Reconciled ENI/IP pool")
+	total, assigned := c.dataStore.GetStats()
+	log.Debugf("IP Address Pool stats: total: %d, assigned: %d", total, assigned)
 	c.lastNodeIPPoolAction = curTime
 }
 
@@ -1151,7 +1147,6 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 
 		err := c.dataStore.AddIPv4AddressToStore(eni, strPrivateIPv4)
 		if err != nil && err.Error() == datastore.IPAlreadyInStoreError {
-			log.Debugf("Reconciled IP %s on ENI %s", strPrivateIPv4, eni)
 			// mark action = remove it from ipPool since the IP should not be deleted
 			delete(ipPool, strPrivateIPv4)
 			continue

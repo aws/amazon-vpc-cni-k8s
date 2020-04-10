@@ -210,9 +210,6 @@ func (ds *DataStore) AddIPv4AddressToStore(eniID string, ipv4 string) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	ds.log.Debugf("Adding ENI(%s)'s IPv4 address %s to datastore", eniID, ipv4)
-	ds.log.Debugf("IP Address Pool stats: total: %d, assigned: %d", ds.total, ds.assigned)
-
 	curENI, ok := ds.eniIPPools[eniID]
 	if !ok {
 		return errors.New("add ENI's IP to datastore: unknown ENI")
@@ -237,8 +234,6 @@ func (ds *DataStore) AddIPv4AddressToStore(eniID string, ipv4 string) error {
 func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string, force bool) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
-	ds.log.Debugf("Deleting ENI(%s)'s IPv4 address %s from datastore", eniID, ipv4)
-	ds.log.Debugf("IP Address Pool stats: total: %d, assigned: %d", ds.total, ds.assigned)
 
 	curENI, ok := ds.eniIPPools[eniID]
 	if !ok {
