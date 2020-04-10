@@ -15,6 +15,7 @@ package ipamd
 
 import (
 	"context"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
@@ -26,12 +27,13 @@ import (
 )
 
 func TestServer_AddNetwork(t *testing.T) {
-	ctrl, mockAWS, mockK8S, mockCRI, mockNetwork, _ := setup(t)
+	ctrl, mockAWS, mockK8S, mockCRI, mockNetwork, mockENIConfig := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
 		awsClient:     mockAWS,
 		k8sClient:     mockK8S,
+		eniConfig:     mockENIConfig,
 		maxIPsPerENI:  14,
 		maxENI:        4,
 		warmENITarget: 1,
@@ -39,6 +41,10 @@ func TestServer_AddNetwork(t *testing.T) {
 		criClient:     mockCRI,
 		networkClient: mockNetwork,
 		dataStore:     datastore.NewDataStore(log),
+	}
+
+	eniConfigInfo := &eniconfig.ENIConfigInfo{
+		MyENI: "",
 	}
 
 	rpcServer := server{ipamContext: mockContext}
@@ -72,6 +78,7 @@ func TestServer_AddNetwork(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
+		mockENIConfig.EXPECT().Getter().Return(eniConfigInfo)
 		mockAWS.EXPECT().GetVPCIPv4CIDRs().Return(tc.vpcCIDRs)
 		mockNetwork.EXPECT().UseExternalSNAT().Return(tc.useExternalSNAT)
 		if !tc.useExternalSNAT {
