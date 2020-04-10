@@ -47,12 +47,21 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	log.Infof("Received AddNetwork for NS %s, Pod %s, NameSpace %s, Sandbox %s, ifname %s, ENIConfig %s",
 		in.Netns, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID, in.IfName, in.EniConfigName)
 
+	//In the event a node has multiple ENIConfigs provided and one is not specified for this pod
+	//default it to the default Config when choosing an IP to assign
+	eniConfigName := in.EniConfigName
+
+	if eniConfigName == "" {
+		eniConfigName = s.ipamContext.eniConfig.Getter().MyENI
+		log.Infof("No eniconfig received, defaulting to %s", eniConfigName)
+	}
+
 	addr, deviceNumber, err := s.ipamContext.dataStore.AssignPodIPv4Address(&k8sapi.K8SPodInfo{
 		Name:          in.K8S_POD_NAME,
 		Namespace:     in.K8S_POD_NAMESPACE,
 		Sandbox:       in.K8S_POD_INFRA_CONTAINER_ID,
 		IfName:        in.IfName,
-		ENIConfigName: in.EniConfigName})
+		ENIConfigName: eniConfigName})
 
 	ipv4Subnet := net.IPNet{
 		IP:   addr.IP.Mask(addr.Mask),
