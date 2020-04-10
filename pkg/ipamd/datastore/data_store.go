@@ -100,7 +100,7 @@ type ENIIPPool struct {
 	// IsPrimary indicates whether ENI is a primary ENI
 	IsPrimary bool
 	ID        string
-	// DeviceNumber is the device number of ENI
+	// DeviceNumber is the device number of ENI (0 means the primary ENI)
 	DeviceNumber int
 	// AssignedIPv4Addresses is the number of IP addresses already been assigned
 	AssignedIPv4Addresses int
@@ -127,7 +127,7 @@ type PodKey struct {
 type PodIPInfo struct {
 	// IP is the IP address of pod
 	IP string
-	// DeviceNumber is the device number of  pod
+	// DeviceNumber is the device number of the ENI
 	DeviceNumber int
 }
 
@@ -138,7 +138,7 @@ type DataStore struct {
 	eniIPPools map[string]*ENIIPPool
 	podsIP     map[PodKey]PodIPInfo
 	lock       sync.RWMutex
-	log 	   logger.Logger
+	log        logger.Logger
 }
 
 // PodInfos contains pods IP information which uses key name_namespace_sandbox
@@ -171,7 +171,7 @@ func NewDataStore(log logger.Logger) *DataStore {
 	return &DataStore{
 		eniIPPools: make(map[string]*ENIIPPool),
 		podsIP:     make(map[PodKey]PodIPInfo),
-		log: 		log,
+		log:        log,
 	}
 }
 

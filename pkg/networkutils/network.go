@@ -114,7 +114,7 @@ const (
 
 var log = logger.Get()
 
-// NetworkAPIs defines the host level and the eni level network related operations
+// NetworkAPIs defines the host level and the ENI level network related operations
 type NetworkAPIs interface {
 	// SetupNodeNetwork performs node level network configuration
 	SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, primaryMAC string, primaryAddr *net.IP) error
@@ -254,7 +254,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 			err = n.procSys.Set(primaryIntfRPFilter, rpFilterLoose)
 			if err != nil {
 				return errors.Wrapf(err, "failed to configure %s RPF check", primaryIntf)
-		    }
+			}
 		} else {
 			log.Infof("Skip updating RPF for primary interface: %s", primaryIntfRPFilter)
 		}

@@ -15,10 +15,11 @@ package driver
 
 import (
 	"errors"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"net"
 	"os"
 	"testing"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -45,9 +46,9 @@ const (
 )
 
 var logConfig = logger.Configuration{
-	BinaryName:   "aws-cni",
-	LogLevel:     "Debug",
-	LogLocation:  "/var/log/test.log",
+	BinaryName:  "aws-cni",
+	LogLevel:    "Debug",
+	LogLocation: "/var/log/test.log",
 }
 
 var log = logger.New(&logConfig)
