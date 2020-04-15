@@ -48,7 +48,7 @@ func main() {
 	}))
 	_, err := sess.Config.Credentials.Get()
 	if err != nil {
-		log.Fatalf(err)
+		log.Fatalf("Failed to get session credentials: %v", err)
 	}
 	svc := ec2.New(sess)
 	describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{}
@@ -57,7 +57,7 @@ func main() {
 	for {
 		output, err := svc.DescribeInstanceTypes(describeInstanceTypesInput)
 		if err != nil {
-			log.Fatalf(err)
+			log.Fatalf("Failed to call EC2 DescibeInstanceTypes: %v", err)
 		}
 		// We just want the type name, ENI and IP limits
 		for _, info := range output.InstanceTypes {
@@ -95,7 +95,7 @@ func main() {
 	// Generate the file
 	f, err := os.Create(ipLimitFileName)
 	if err != nil {
-		log.Fatalf(err)
+		log.Fatalf("Failed to create file: %v, ", err)
 	}
 	limitsTemplate.Execute(f, struct {
 		Timestamp string
