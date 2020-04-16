@@ -402,6 +402,11 @@ func (ds *DataStore) getDeletableENI(warmIPTarget int, minimumIPTarget int) *ENI
 			continue
 		}
 
+		if ds.isRequiredForENIConfig(eni.ENIConfigName) {
+			ds.log.Debugf("ENI %s cannot be deleted because it is the only eni for %s", eni.ID, eni.ENIConfigName)
+			continue
+		}
+
 		if eni.hasIPInCooling() {
 			ds.log.Debugf("ENI %s cannot be deleted because has IPs in cooling", eni.ID)
 			continue
@@ -431,6 +436,22 @@ func (ds *DataStore) getDeletableENI(warmIPTarget int, minimumIPTarget int) *ENI
 // IsTooYoung returns true if the ENI hasn't been around long enough to be deleted.
 func (e *ENIIPPool) isTooYoung() bool {
 	return time.Since(e.createTime) < minLifeTime
+}
+
+// IsRequiredForENIConfig returns true if the ENI is the only one servicing this ENIConfig
+func (ds *DataStore) isRequiredForENIConfig(eniConfigName string) bool {
+	return ds.getENICountForENIConfig(eniConfigName) <= 1
+}
+
+func (ds *DataStore) getENICountForENIConfig(eniConfig string) int {
+	count := 0
+
+	for _, eni := range ds.eniIPPools {
+		if eniConfig == eni.ENIConfigName {
+			count++
+		}
+	}
+	return count
 }
 
 // HasIPInCooling returns true if an IP address was unassigned recently.
