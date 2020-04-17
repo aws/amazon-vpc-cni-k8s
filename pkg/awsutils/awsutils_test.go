@@ -50,7 +50,7 @@ const (
 	eniAttachID   = "eni-attach-beb21856"
 	eni1Device    = "0"
 	eni1PrivateIP = "10.0.0.1"
-	eni2Device    = "2"
+	eni2Device    = "1"
 	eni2PrivateIP = "10.0.0.2"
 	eni2AttachID  = "eni-attach-fafdfafd"
 	eni2ID        = "eni-12341234"
@@ -76,7 +76,7 @@ func TestInitWithEC2metadata(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return("1", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataOwnerID).Return("1234", nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
@@ -106,7 +106,7 @@ func TestInitWithEC2metadataVPCcidrErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return("1", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataOwnerID).Return("1234", nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
@@ -128,7 +128,7 @@ func TestInitWithEC2metadataSubnetErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return("1", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataOwnerID).Return("1234", nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
@@ -149,7 +149,7 @@ func TestInitWithEC2metadataSGErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return("1", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataOwnerID).Return("1234", nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, errors.New("Error on SG"))
@@ -168,7 +168,7 @@ func TestInitWithEC2metadataENIErrs(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return("", errors.New("Err on ENIs"))
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return("", errors.New("err on ENIs"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
 	err := ins.initWithEC2Metadata()
@@ -183,7 +183,7 @@ func TestInitWithEC2metadataMACErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, errors.New("Error on MAC"))
+	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, errors.New("error on MAC"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
 	err := ins.initWithEC2Metadata()
@@ -195,7 +195,7 @@ func TestInitWithEC2metadataLocalIPErr(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, errors.New("Error on localIP"))
+	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, errors.New("error on localIP"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
 	err := ins.initWithEC2Metadata()
@@ -208,7 +208,7 @@ func TestInitWithEC2metadataInstanceErr(t *testing.T) {
 
 	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, errors.New("Error on instanceID"))
+	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, errors.New("error on instanceID"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
 	err := ins.initWithEC2Metadata()
@@ -219,7 +219,7 @@ func TestInitWithEC2metadataAZErr(t *testing.T) {
 	ctrl, mockMetadata, _ := setup(t)
 	defer ctrl.Finish()
 
-	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, errors.New("Error on metadata AZ"))
+	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, errors.New("error on metadata AZ"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
 	err := ins.initWithEC2Metadata()
@@ -246,47 +246,10 @@ func TestSetPrimaryENs(t *testing.T) {
 }
 
 func TestGetAttachedENIs(t *testing.T) {
-	ctrl, mockMetadata, mockEC2 := setup(t)
+	ctrl, mockMetadata, _ := setup(t)
 	defer ctrl.Finish()
 
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC+" "+eni2MAC, nil)
-
-	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any()).
-		DoAndReturn(func(input *ec2.DescribeNetworkInterfacesInput) (*ec2.DescribeNetworkInterfacesOutput, error) {
-			output := []*ec2.NetworkInterface{}
-			for _, in := range input.NetworkInterfaceIds {
-				ip := ""
-				attachID := ""
-				switch *in {
-				case eniID:
-					ip, attachID = eni1PrivateIP, eniAttachID
-				case eni2ID:
-					ip, attachID = eni2PrivateIP, eni2AttachID
-				default:
-					panic("no such id " + *in)
-				}
-
-				output = append(output, &ec2.NetworkInterface{
-					PrivateIpAddresses: []*ec2.NetworkInterfacePrivateIpAddress{
-						{
-							PrivateIpAddress: &ip,
-						},
-					},
-					Attachment: &ec2.NetworkInterfaceAttachment{
-						AttachmentId: &attachID,
-					},
-					TagSet: []*ec2.Tag{
-						{
-							Key:   aws.String("foo"),
-							Value: aws.String("foo-value"),
-						},
-					},
-				})
-			}
-			return &ec2.DescribeNetworkInterfacesOutput{
-				NetworkInterfaces: output,
-			}, nil
-		}).Times(2)
 
 	gomock.InOrder(
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil),
@@ -299,7 +262,7 @@ func TestGetAttachedENIs(t *testing.T) {
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataIPv4s).Return("", nil),
 	)
 
-	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata, ec2SVC: mockEC2}
+	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
 	ens, err := ins.GetAttachedENIs()
 	assert.NoError(t, err)
 	assert.Equal(t, len(ens), 2)
@@ -342,15 +305,18 @@ func TestAWSGetFreeDeviceNumberNoDevice(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestDescribeENI(t *testing.T) {
-	ctrl, _, mockEC2 := setup(t)
+func TestDescribeAllENIs(t *testing.T) {
+	ctrl, mockMetadata, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
-	attachmentID := eniAttachID
-	attachment := &ec2.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Times(2).Return(primaryMAC, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Times(2).Return(eni1Device, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Times(2).Return(eniID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Times(2).Return(subnetCIDR, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Times(2).Return("", nil)
+
 	result := &ec2.DescribeNetworkInterfacesOutput{
 		NetworkInterfaces: []*ec2.NetworkInterface{{
-			Attachment: attachment,
 			TagSet: []*ec2.Tag{
 				{Key: aws.String("foo"), Value: aws.String("foo-value")},
 			},
@@ -359,22 +325,19 @@ func TestDescribeENI(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		expID   *string
-		exptags map[string]string
+		exptags map[string]TagMap
 		awsErr  error
 		expErr  error
 	}{
-		{"success DescribeENI", &attachmentID, map[string]string{"foo": "foo-value"}, nil, nil},
-		{"not found error", nil, nil, awserr.New("InvalidNetworkInterfaceID.NotFound", "", nil), ErrENINotFound},
+		{"success DescribeENI", map[string]TagMap{"": {"foo": "foo-value"}}, nil, nil},
+		{"not found error", nil, awserr.New("InvalidNetworkInterfaceID.NotFound", "", nil), ErrENINotFound},
 	}
 
 	for _, tc := range testCases {
 		mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any()).Return(result, tc.awsErr)
-
-		ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-		_, tags, id, err := ins.DescribeENI("test-eni")
+		ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata, ec2SVC: mockEC2}
+		_, tags, err := ins.DescribeAllENIs()
 		assert.Equal(t, tc.expErr, err, tc.name)
-		assert.Equal(t, tc.expID, id, tc.name)
 		assert.Equal(t, tc.exptags, tags, tc.name)
 	}
 }
@@ -388,7 +351,7 @@ func TestTagEni(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return("1", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataOwnerID).Return("1234", nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
