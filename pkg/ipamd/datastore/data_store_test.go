@@ -14,19 +14,20 @@
 package datastore
 
 import (
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/stretchr/testify/assert"
 )
 
 var logConfig = logger.Configuration{
-	BinaryName:   "aws-cni",
-	LogLevel:     "Debug",
-	LogLocation:  "/var/log/test.log",
+	BinaryName:  "aws-cni",
+	LogLevel:    "Debug",
+	LogLocation: "/var/log/test.log",
 }
 
 var log = logger.New(&logConfig)

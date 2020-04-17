@@ -258,7 +258,7 @@ func (d *Controller) handlePodUpdate(key string) error {
 		d.workerPodsLock.Lock()
 		defer d.workerPodsLock.Unlock()
 
-		log.Debugf("Update for pod %s: %+v, %+v", podName, pod.Status, pod.Spec)
+		log.Debugf("Update for pod %s: %v", podName, pod.Status.Phase)
 
 		// Save pod info
 		d.workerPods[key] = &K8SPodInfo{

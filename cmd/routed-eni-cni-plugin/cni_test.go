@@ -33,16 +33,16 @@ import (
 )
 
 const (
-	containerID = "test-container"
-	netNS       = "/proc/ns/1234"
-	ifName      = "eth0"
-	cniVersion  = "1.0"
-	cniName     = "aws-cni"
+	containerID    = "test-container"
+	netNS          = "/proc/ns/1234"
+	ifName         = "eth0"
+	cniVersion     = "1.0"
+	cniName        = "aws-cni"
 	pluginLogLevel = "Debug"
-	pluginLogFile = "/var/log/aws-routed-eni/plugin.log"
-	cniType     = "aws-cni"
-	ipAddr      = "10.0.1.15"
-	devNum      = 4
+	pluginLogFile  = "/var/log/aws-routed-eni/plugin.log"
+	cniType        = "aws-cni"
+	ipAddr         = "10.0.1.15"
+	devNum         = 4
 )
 
 var netConf = &NetConf{CNIVersion: cniVersion,

@@ -101,7 +101,7 @@ type ENIIPPool struct {
 	// IsPrimary indicates whether ENI is a primary ENI
 	IsPrimary bool
 	ID        string
-	// DeviceNumber is the device number of ENI
+	// DeviceNumber is the device number of ENI (0 means the primary ENI)
 	DeviceNumber int
 	// Is this ENI matching an ENIConfig? "" means it does not
 	ENIConfigName string
@@ -133,7 +133,7 @@ type PodKey struct {
 type PodIPInfo struct {
 	// IP is the IP address of pod
 	IP string
-	// DeviceNumber is the device number of  pod
+	// DeviceNumber is the device number of the ENI
 	DeviceNumber int
 }
 

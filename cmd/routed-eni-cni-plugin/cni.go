@@ -107,9 +107,9 @@ func LoadNetConf(bytes []byte) (*NetConf, logger.Logger, error) {
 
 	//logConfig
 	logConfig := logger.Configuration{
-		BinaryName:   conf.Name,
-		LogLevel:     conf.PluginLogLevel,
-		LogLocation:  conf.PluginLogFile,
+		BinaryName:  conf.Name,
+		LogLevel:    conf.PluginLogLevel,
+		LogLocation: conf.PluginLogFile,
 	}
 	log := logger.New(&logConfig)
 
