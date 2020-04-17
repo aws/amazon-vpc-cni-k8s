@@ -309,6 +309,68 @@ func TestAWSGetFreeDeviceNumberNoDevice(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestGetENIAttachmentID(t *testing.T) {
+	ctrl, _, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	attachmentID := aws.String("foo-attach")
+	testCases := []struct {
+		name   string
+		output *ec2.DescribeNetworkInterfacesOutput
+		awsErr error
+		expID  *string
+		expErr error
+	}{
+		{
+			"success with attachment",
+			&ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []*ec2.NetworkInterface{{
+					Attachment: &ec2.NetworkInterfaceAttachment{
+						AttachmentId: attachmentID,
+					},
+				}},
+			},
+			nil,
+			attachmentID,
+			nil,
+		},
+		{
+			"success no Attachment",
+			&ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []*ec2.NetworkInterface{{}},
+			},
+			nil,
+			nil,
+			nil,
+		},
+		{
+			"error empty net ifaces",
+			&ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []*ec2.NetworkInterface{},
+			},
+			nil,
+			nil,
+			ErrNoNetworkInterfaces,
+		},
+		{
+			"not found error",
+			nil,
+			awserr.New("InvalidNetworkInterfaceID.NotFound", "", nil),
+			nil,
+			ErrENINotFound,
+		},
+	}
+
+	for _, tc := range testCases {
+		mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any()).Return(tc.output, tc.awsErr)
+
+		ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+		id, err := ins.getENIAttachmentID("test-eni")
+		assert.Equal(t, tc.expErr, err)
+		assert.Equal(t, tc.expID, id)
+	}
+}
+
 func TestDescribeAllENIs(t *testing.T) {
 	ctrl, mockMetadata, mockEC2 := setup(t)
 	defer ctrl.Finish()
