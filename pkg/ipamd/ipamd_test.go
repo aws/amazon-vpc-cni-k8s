@@ -14,16 +14,6 @@
 package ipamd
 
 import (
-	"net"
-	"os"
-	"testing"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/assert"
-	"github.com/vishvananda/netlink"
-
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
@@ -34,24 +24,32 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	mock_k8sapi "github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi/mocks"
 	mock_networkutils "github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
+	"github.com/vishvananda/netlink"
+	"net"
+	"os"
+	"reflect"
+	"testing"
 )
 
 const (
-	primaryENIid     = "eni-00000000"
-	secENIid         = "eni-00000001"
-	testAttachmentID = "eni-00000000-attach"
-	primaryMAC       = "12:ef:2a:98:e5:5a"
-	secMAC           = "12:ef:2a:98:e5:5b"
-	primaryDevice    = 0
-	secDevice        = 2
-	primarySubnet    = "10.10.10.0/24"
-	secSubnet        = "10.10.20.0/24"
-	ipaddr01         = "10.10.10.11"
-	ipaddr02         = "10.10.10.12"
-	ipaddr03         = "10.10.10.13"
-	ipaddr11         = "10.10.20.11"
-	ipaddr12         = "10.10.20.12"
-	vpcCIDR          = "10.10.0.0/16"
+	primaryENIid  = "eni-00000000"
+	secENIid      = "eni-00000001"
+	primaryMAC    = "12:ef:2a:98:e5:5a"
+	secMAC        = "12:ef:2a:98:e5:5b"
+	primaryDevice = 0
+	secDevice     = 2
+	primarySubnet = "10.10.10.0/24"
+	secSubnet     = "10.10.20.0/24"
+	ipaddr01      = "10.10.10.11"
+	ipaddr02      = "10.10.10.12"
+	ipaddr03      = "10.10.10.13"
+	ipaddr11      = "10.10.20.11"
+	ipaddr12      = "10.10.20.12"
+	vpcCIDR       = "10.10.0.0/16"
 )
 
 func setup(t *testing.T) (*gomock.Controller,
@@ -72,12 +70,8 @@ func setup(t *testing.T) (*gomock.Controller,
 func TestNodeInit(t *testing.T) {
 	ctrl, mockAWS, mockK8S, mockCRI, mockNetwork, mockENIConfig := setup(t)
 	defer ctrl.Finish()
-	primary := true
-	notPrimary := false
-	testAddr1 := ipaddr01
-	testAddr2 := ipaddr02
-	testAddr11 := ipaddr11
-	testAddr12 := ipaddr12
+
+
 
 	mockContext := &IPAMContext{
 		awsClient:           mockAWS,
@@ -94,36 +88,12 @@ func TestNodeInit(t *testing.T) {
 		useCustomNetworking: true,
 	}
 
-	eni1 := awsutils.ENIMetadata{
-		ENIID:          primaryENIid,
-		MAC:            primaryMAC,
-		DeviceNumber:   primaryDevice,
-		SubnetIPv4CIDR: primarySubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
-			{
-				PrivateIpAddress: &testAddr1, Primary: &primary,
-			},
-			{
-				PrivateIpAddress: &testAddr2, Primary: &notPrimary,
-			},
-		},
-	}
+	eni1, eni2 := getDummyENIMetdata()
 
-	eni2 := awsutils.ENIMetadata{
-		ENIID:          secENIid,
-		MAC:            secMAC,
-		DeviceNumber:   secDevice,
-		SubnetIPv4CIDR: secSubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
-			{
-				PrivateIpAddress: &testAddr11, Primary: &notPrimary,
-			},
-			{
-				PrivateIpAddress: &testAddr12, Primary: &notPrimary,
-			},
-		},
-	}
 
+	notPrimary := false
+	testAddr11 := ipaddr11
+	testAddr12 := ipaddr12
 	thirdENIid := "eni-00000002"
 	thirdMAC := "12:ef:2a:98:e5:5c"
 	thirdDevice := 3
@@ -146,25 +116,20 @@ func TestNodeInit(t *testing.T) {
 	var cidrs []*string
 	mockAWS.EXPECT().GetENILimit().Return(4, nil)
 	mockAWS.EXPECT().GetENIipLimit().Return(14, nil)
-	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{eni1, eni2}, nil)
+	mockAWS.EXPECT().GetIPv4sFromEC2(eni2.ENIID).Return(eni2.IPv4Addresses, nil)
 	mockAWS.EXPECT().GetVPCIPv4CIDR().Return(vpcCIDR)
 
-	_, vpcCIDR, _ := net.ParseCIDR(vpcCIDR)
+	_, parsedVPCCIDR, _ := net.ParseCIDR(vpcCIDR)
 	primaryIP := net.ParseIP(ipaddr01)
 	mockAWS.EXPECT().GetVPCIPv4CIDRs().Return(cidrs)
 	mockAWS.EXPECT().GetPrimaryENImac().Return("")
-	mockNetwork.EXPECT().SetupHostNetwork(vpcCIDR, cidrs, "", &primaryIP).Return(nil)
+	mockNetwork.EXPECT().SetupHostNetwork(parsedVPCCIDR, cidrs, "", &primaryIP).Return(nil)
 
 	mockAWS.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 
-	//primaryENIid
-	attachmentID := testAttachmentID
-	eniResp := []*ec2.NetworkInterfacePrivateIpAddress{
-		{
-			PrivateIpAddress: &testAddr1, Primary: &primary},
-		{
-			PrivateIpAddress: &testAddr2, Primary: &notPrimary}}
-	mockAWS.EXPECT().DescribeENI(secENIid).Return(eniResp, map[string]string{}, &attachmentID, nil)
+
+	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
+	mockAWS.EXPECT().DescribeAllENIs().Return(eniMetadataSlice, map[string]awsutils.TagMap{}, nil)
 	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 
 	mockAWS.EXPECT().GetLocalIPv4().Return(ipaddr01)
@@ -207,6 +172,45 @@ func TestNodeInit(t *testing.T) {
 
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
+}
+
+func getDummyENIMetdata() (awsutils.ENIMetadata, awsutils.ENIMetadata) {
+	primary := true
+	notPrimary := false
+	testAddr1 := ipaddr01
+	testAddr2 := ipaddr02
+	testAddr11 := ipaddr11
+	testAddr12 := ipaddr12
+	eni1 := awsutils.ENIMetadata{
+		ENIID:          primaryENIid,
+		MAC:            primaryMAC,
+		DeviceNumber:   primaryDevice,
+		SubnetIPv4CIDR: primarySubnet,
+		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			{
+				PrivateIpAddress: &testAddr1, Primary: &primary,
+			},
+			{
+				PrivateIpAddress: &testAddr2, Primary: &notPrimary,
+			},
+		},
+	}
+
+	eni2 := awsutils.ENIMetadata{
+		ENIID:          secENIid,
+		MAC:            secMAC,
+		DeviceNumber:   secDevice,
+		SubnetIPv4CIDR: secSubnet,
+		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			{
+				PrivateIpAddress: &testAddr11, Primary: &notPrimary,
+			},
+			{
+				PrivateIpAddress: &testAddr12, Primary: &notPrimary,
+			},
+		},
+	}
+	return eni1, eni2
 }
 
 func TestIncreaseIPPoolDefault(t *testing.T) {
@@ -404,7 +408,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	testAddr1 := ipaddr01
 	testAddr2 := ipaddr02
 
-	mockAWS.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
+	eniMetadata := []awsutils.ENIMetadata{
 		{
 			ENIID:          primaryENIid,
 			MAC:            primaryMAC,
@@ -419,11 +423,10 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 				},
 			},
 		},
-	}, nil)
-
-	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
-
-	mockAWS.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	}
+	mockAWS.EXPECT().GetAttachedENIs().Return(eniMetadata, nil)
+	mockAWS.EXPECT().GetPrimaryENI().Times(2).Return(primaryENIid)
+	mockAWS.EXPECT().DescribeAllENIs().Return(eniMetadata, map[string]awsutils.TagMap{}, nil)
 
 	mockContext.nodeIPPoolReconcile(0)
 
@@ -820,4 +823,37 @@ func datastoreWith3Pods() *datastore.DataStore {
 	}
 	_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(&podInfo3)
 	return datastoreWith3Pods
+}
+
+func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	eni1, eni2 := getDummyENIMetdata()
+	allENIs := []awsutils.ENIMetadata{eni1, eni2}
+	primaryENIonly := []awsutils.ENIMetadata{eni1}
+	eni1TagMap := map[string]awsutils.TagMap{eni1.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
+	eni2TagMap := map[string]awsutils.TagMap{eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
+
+	mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
+	mockAWSUtils.EXPECT().GetPrimaryENI().Times(2).Return(eni1.ENIID)
+
+	tests := []struct {
+		name          string
+		tagMap map[string]awsutils.TagMap
+		enis          []awsutils.ENIMetadata
+		want          []awsutils.ENIMetadata
+	}{
+		{"No tags at all", nil, allENIs, allENIs},
+		{"Primary ENI unmanaged", eni1TagMap, allENIs, allENIs},
+		{"Secondary ENI unmanaged", eni2TagMap, allENIs, primaryENIonly},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &IPAMContext{awsClient: mockAWSUtils}
+			c.setUnmanagedENIs(tt.tagMap)
+			if got := c.filterUnmanagedENIs(tt.enis); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("filterUnmanagedENIs() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
