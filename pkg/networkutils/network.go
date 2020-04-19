@@ -1,4 +1,4 @@
-// Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -32,13 +32,14 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 
-	log "github.com/cihub/seelog"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/vishvananda/netlink"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
 )
 
 const (
@@ -84,6 +85,10 @@ const (
 	// sent over the main ENI.
 	envConnmark = "AWS_VPC_K8S_CNI_CONNMARK"
 
+	// This environment variable indicates if ipamd should configure rp filter for primary interface. Default value is
+	// true. If set to false, then rp filter should be configured through init container.
+	envConfigureRpfilter = "AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER"
+
 	// defaultConnmark is the default value for the connmark described above. Note: the mark space is a little crowded,
 	// - kube-proxy uses 0x0000c000
 	// - Calico uses 0xffff0000.
@@ -107,7 +112,9 @@ const (
 	retryLinkByMacInterval = 3 * time.Second
 )
 
-// NetworkAPIs defines the host level and the eni level network related operations
+var log = logger.Get()
+
+// NetworkAPIs defines the host level and the ENI level network related operations
 type NetworkAPIs interface {
 	// SetupNodeNetwork performs node level network configuration
 	SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, primaryMAC string, primaryAddr *net.IP) error
@@ -122,18 +129,19 @@ type NetworkAPIs interface {
 }
 
 type linuxNetwork struct {
-	useExternalSNAT        bool
-	excludeSNATCIDRs       []string
-	typeOfSNAT             snatType
-	nodePortSupportEnabled bool
-	connmark               uint32
-	mtu                    int
+	useExternalSNAT         bool
+	excludeSNATCIDRs        []string
+	typeOfSNAT              snatType
+	nodePortSupportEnabled  bool
+	shouldConfigureRpFilter bool
+	connmark                uint32
+	mtu                     int
 
 	netLink     netlinkwrapper.NetLink
 	ns          nswrapper.NS
 	newIptables func() (iptablesIface, error)
 	mainENIMark uint32
-	openFile    func(name string, flag int, perm os.FileMode) (stringWriteCloser, error)
+	procSys     procsyswrapper.ProcSys
 }
 
 type iptablesIface interface {
@@ -160,12 +168,13 @@ const (
 // New creates a linuxNetwork object
 func New() NetworkAPIs {
 	return &linuxNetwork{
-		useExternalSNAT:        useExternalSNAT(),
-		excludeSNATCIDRs:       getExcludeSNATCIDRs(),
-		typeOfSNAT:             typeOfSNAT(),
-		nodePortSupportEnabled: nodePortSupportEnabled(),
-		mainENIMark:            getConnmark(),
-		mtu:                    GetEthernetMTU(""),
+		useExternalSNAT:         useExternalSNAT(),
+		excludeSNATCIDRs:        getExcludeSNATCIDRs(),
+		typeOfSNAT:              typeOfSNAT(),
+		nodePortSupportEnabled:  nodePortSupportEnabled(),
+		shouldConfigureRpFilter: shouldConfigureRpFilter(),
+		mainENIMark:             getConnmark(),
+		mtu:                     GetEthernetMTU(""),
 
 		netLink: netlinkwrapper.NewNetLink(),
 		ns:      nswrapper.NewNS(),
@@ -173,9 +182,7 @@ func New() NetworkAPIs {
 			ipt, err := iptables.New()
 			return ipt, err
 		},
-		openFile: func(name string, flag int, perm os.FileMode) (stringWriteCloser, error) {
-			return os.OpenFile(name, flag, perm)
-		},
+		procSys: procsyswrapper.NewProcSys(),
 	}
 }
 
@@ -239,13 +246,17 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 		// - Thus, it finds the source-based route that leaves via the secondary ENI.
 		// - In "strict" mode, the RPF check fails because the return path uses a different interface to the incoming
 		//   packet. In "loose" mode, the check passes because some route was found.
-		primaryIntfRPFilter := "/proc/sys/net/ipv4/conf/" + primaryIntf + "/rp_filter"
+		primaryIntfRPFilter := "net/ipv4/conf/" + primaryIntf + "/rp_filter"
 		const rpFilterLoose = "2"
 
-		log.Debugf("Setting RPF for primary interface: %s", primaryIntfRPFilter)
-		err = n.setProcSys(primaryIntfRPFilter, rpFilterLoose)
-		if err != nil {
-			return errors.Wrapf(err, "failed to configure %s RPF check", primaryIntf)
+		if n.shouldConfigureRpFilter {
+			log.Debugf("Setting RPF for primary interface: %s", primaryIntfRPFilter)
+			err = n.procSys.Set(primaryIntfRPFilter, rpFilterLoose)
+			if err != nil {
+				return errors.Wrapf(err, "failed to configure %s RPF check", primaryIntf)
+			}
+		} else {
+			log.Infof("Skip updating RPF for primary interface: %s", primaryIntfRPFilter)
 		}
 	}
 
@@ -497,20 +508,6 @@ func containChainExistErr(err error) bool {
 	return strings.Contains(err.Error(), "Chain already exists")
 }
 
-func (n *linuxNetwork) setProcSys(key, value string) error {
-	f, err := n.openFile(key, os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	_, err = f.WriteString(value)
-	if err != nil {
-		// If the write failed, just close
-		_ = f.Close()
-		return err
-	}
-	return f.Close()
-}
-
 type iptablesRule struct {
 	name         string
 	shouldExist  bool
@@ -609,11 +606,15 @@ func nodePortSupportEnabled() bool {
 	return getBoolEnvVar(envNodePortSupport, true)
 }
 
+func shouldConfigureRpFilter() bool {
+	return getBoolEnvVar(envConfigureRpfilter, true)
+}
+
 func getBoolEnvVar(name string, defaultValue bool) bool {
 	if strValue := os.Getenv(name); strValue != "" {
 		parsedValue, err := strconv.ParseBool(strValue)
 		if err != nil {
-			log.Error("Failed to parse "+name+"; using default: "+fmt.Sprint(defaultValue), err.Error())
+			log.Errorf("Failed to parse "+name+"; using default: "+fmt.Sprint(defaultValue), err.Error())
 			return defaultValue
 		}
 		return parsedValue
@@ -625,11 +626,11 @@ func getConnmark() uint32 {
 	if connmark := os.Getenv(envConnmark); connmark != "" {
 		mark, err := strconv.ParseInt(connmark, 0, 64)
 		if err != nil {
-			log.Error("Failed to parse "+envConnmark+"; will use ", defaultConnmark, err.Error())
+			log.Infof("Failed to parse %s; will use %d, error: %v", envConnmark, defaultConnmark, err)
 			return defaultConnmark
 		}
 		if mark > math.MaxUint32 || mark <= 0 {
-			log.Error(""+envConnmark+" out of range; will use ", defaultConnmark)
+			log.Infof("%s out of range; will use %s", envConnmark, defaultConnmark)
 			return defaultConnmark
 		}
 		return uint32(mark)

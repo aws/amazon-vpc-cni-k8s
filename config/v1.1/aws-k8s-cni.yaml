@@ -45,6 +45,8 @@ metadata:
 spec:
   updateStrategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: "10%"
   selector:
     matchLabels:
       k8s-app: aws-node

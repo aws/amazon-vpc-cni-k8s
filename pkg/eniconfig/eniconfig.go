@@ -1,4 +1,4 @@
-// Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -25,8 +25,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
-
-	log "github.com/cihub/seelog"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -53,6 +52,8 @@ type ENIConfig interface {
 }
 
 var ErrNoENIConfig = errors.New("eniconfig: eniconfig is not available")
+
+var log = logger.Get()
 
 // ENIConfigController defines global context for ENIConfig controller
 type ENIConfigController struct {

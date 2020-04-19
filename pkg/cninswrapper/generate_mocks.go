@@ -1,4 +1,4 @@
-// Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -13,5 +13,5 @@
 
 package cninswrapper
 
-//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/cninswrapper NS mocks/cninswrapper_mocks.go
-//go:generate go run ../../scripts/mockgen.go github.com/containernetworking/cni/pkg/ns NetNS mock_ns/netns_mocks.go
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/cninswrapper_mocks.go -copyright_file ../../scripts/copyright.txt . NS
+//go:generate go run github.com/golang/mock/mockgen -destination mock_ns/netns_mocks.go -copyright_file ../../scripts/copyright.txt github.com/containernetworking/cni/pkg/ns NetNS

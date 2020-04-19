@@ -1,4 +1,4 @@
-// Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -113,8 +113,10 @@ func TestCloudWatchPublisherWithGreaterThanMaxDatapointsAndStop(t *testing.T) {
 
 	go cloudwatchPublisher.monitor(testMonitorDuration)
 
+	// Delays added to prevent test flakiness
 	<-time.After(2 * testMonitorDuration)
 	cloudwatchPublisher.Stop()
+	<-time.After(2 * testMonitorDuration)
 
 	assert.Empty(t, cloudwatchPublisher.localMetricData)
 }
@@ -196,12 +198,6 @@ func TestPushWithMissingData(t *testing.T) {
 
 	cloudwatchPublisher.push(testMetricDataPoints)
 	assert.Empty(t, cloudwatchPublisher.localMetricData)
-}
-
-func TestPublisherNewWithoutClusterID(t *testing.T) {
-	cloudwatchPublisher, err := New(context.TODO())
-	assert.Error(t, err)
-	assert.Nil(t, cloudwatchPublisher)
 }
 
 func TestMin(t *testing.T) {

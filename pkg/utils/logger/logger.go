@@ -1,4 +1,4 @@
-// Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -14,68 +14,68 @@
 package logger
 
 import (
-	"fmt"
-	"os"
-	"strings"
-
-	log "github.com/cihub/seelog"
+	"sync"
 )
 
-const (
-	envLogLevel    = "AWS_VPC_K8S_CNI_LOGLEVEL"
-	envLogFilePath = "AWS_VPC_K8S_CNI_LOG_FILE"
-	// logConfigFormat defines the seelog format, with a rolling file
-	// writer. We cannot do this in code and have to resort to using
-	// LoggerFromConfigAsString as seelog doesn't have a usable public
-	// implementation of NewRollingFileWriterTime
-	logConfigFormat = `
-<seelog type="asyncloop" minlevel="%s">
- <outputs formatid="main">
-  %s
- </outputs>
- <formats>
-  <format id="main" format="%%UTCDate(2006-01-02T15:04:05.000Z07:00) [%%LEVEL] %%t%%Msg%%n" />
- </formats>
-</seelog>
-`
-)
+const pluginBinaryName = "aws-cni"
 
-// GetLogFileLocation returns the log file path
-func GetLogFileLocation(defaultLogFilePath string) string {
-	logFilePath := os.Getenv(envLogFilePath)
-	if logFilePath == "" {
-		logFilePath = defaultLogFilePath
-	}
-	return logFilePath
+var once sync.Once
+
+//Log is global variable so that log functions can be directly accessed
+var log Logger
+
+//Fields Type to pass when we want to call WithFields for structured logging
+type Fields map[string]interface{}
+
+//Logger is our contract for the logger
+type Logger interface {
+	Debugf(format string, args ...interface{})
+
+	Debug(format string)
+
+	Infof(format string, args ...interface{})
+
+	Info(format string)
+
+	Warnf(format string, args ...interface{})
+
+	Warn(format string)
+
+	Errorf(format string, args ...interface{})
+
+	Error(format string)
+
+	Fatalf(format string, args ...interface{})
+
+	Panicf(format string, args ...interface{})
+
+	WithFields(keyValues Fields) Logger
 }
 
-// SetupLogger sets up a file logger
-func SetupLogger(logFilePath string) {
-	logger, err := log.LoggerFromConfigAsString(fmt.Sprintf(logConfigFormat, getLogLevel(), getLogOutput(logFilePath)))
-	if err != nil {
-		fmt.Println("Error setting up logger: ", err)
-		return
+// Get returns an default instance of the zap logger
+func Get() Logger {
+	var logf = &structuredLogger{}
+	if logf.isEmpty() {
+		logConfig := LoadLogConfig()
+		log = New(logConfig)
+		return log
 	}
-	err = log.ReplaceLogger(logger)
-	if err != nil {
-		fmt.Println("Error replacing logger: ", err)
-		return
-	}
+	log = logf
+	return log
 }
 
-func getLogLevel() string {
-	seelogLevel, ok := log.LogLevelFromString(strings.ToLower(os.Getenv(envLogLevel)))
-	if !ok {
-		seelogLevel = log.DebugLvl
-	}
-	return seelogLevel.String()
+func (logf *structuredLogger) isEmpty() bool {
+	return logf.zapLogger == nil
 }
 
-func getLogOutput(logFilePath string) string {
-	switch logFilePath {
-	case "stdout":
-		return `<console />`
-	default:
-		return fmt.Sprintf(`<rollingfile filename="%s" type="date" datepattern="2006-01-02-15" archivetype="none" maxrolls="24" />`, logFilePath)
+//New logger initializes logger
+func New(inputLogConfig *Configuration) Logger {
+	if inputLogConfig.BinaryName != pluginBinaryName {
+		logConfig := LoadLogConfig()
+		log = logConfig.newZapLogger()
+		return log
 	}
+
+	log = inputLogConfig.newZapLogger()
+	return log
 }

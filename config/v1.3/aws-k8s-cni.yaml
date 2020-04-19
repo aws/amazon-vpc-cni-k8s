@@ -9,7 +9,6 @@ rules:
   - crd.k8s.amazonaws.com
   resources:
   - "*"
-  - namespaces
   verbs:
   - "*"
 - apiGroups: [""]
@@ -54,6 +53,8 @@ metadata:
 spec:
   updateStrategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: "10%"
   selector:
     matchLabels:
       k8s-app: aws-node

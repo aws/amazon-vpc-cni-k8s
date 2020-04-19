@@ -1,0 +1,99 @@
+# https://circleci.com/docs/2.0/language-go/
+version: 2.1
+
+orbs:
+  aws-cli: circleci/aws-cli@0.1.19
+  k8s: circleci/kubernetes@0.11.0
+
+references:
+  build_job: &build
+    docker:
+      - image: circleci/golang:1.13-stretch
+    working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    environment: &env
+      GO111MODULE: "on"
+    steps:
+      - checkout
+      - run: go get -u golang.org/x/lint/golint
+      - run: go get -u golang.org/x/tools/cmd/goimports
+      - run: make check-format
+      - run: make build-linux "ARCH=$ARCH"
+      # TODO: Make lint a hard-check once baselined
+      - run: make lint LINT_FLAGS=
+      - run: make vet
+      # TODO: Enable architecture specific unit-test when Circle CI supports it!
+      - run: make unit-test ARCH=amd64
+
+jobs:
+  build_x86_64:
+    <<: *build
+    environment:
+      <<: *env
+      # Target the GOARCH for x86_64
+      ARCH: amd64
+
+  build_aarch64:
+    <<: *build
+    environment:
+      <<: *env
+      # Target the GOARCH for aarch64
+      ARCH: arm64
+
+  integration_test:
+    docker:
+      - image: circleci/golang:1.13-stretch
+    working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    environment:
+      <<: *env
+      RUN_CONFORMANCE: "true"
+    steps:
+      - checkout
+      - setup_remote_docker
+      - aws-cli/setup:
+          profile-name: awstester
+      - k8s/install-kubectl:
+          # requires 1.14.9 for k8s testing, since it uses log api.
+          kubectl-version: v1.14.9
+      - run:
+          name: Run the integration tests
+          command: ./scripts/run-integration-tests.sh
+          no_output_timeout: 15m
+      - store_artifacts:
+          path: /tmp/cni-test
+
+workflows:
+  version: 2
+  check:
+    jobs:
+      - build_x86_64
+      - build_aarch64
+      - hold:
+          type: approval
+          requires:
+            - build_x86_64
+            - build_aarch64
+      - integration_test:
+          requires:
+            - hold
+
+  # runs integration test when new git tag is pushed.
+  run-test-on-tags:
+    jobs:
+      - integration_test:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v.*/
+
+  # triggers daily test run on master
+  nightly-test-run:
+    triggers:
+      - schedule:
+          cron: "0 0 * * *"
+          filters:
+            branches:
+              only:
+                - master
+    jobs:
+      - integration_test

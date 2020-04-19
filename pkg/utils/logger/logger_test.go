@@ -1,4 +1,4 @@
-// Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -17,57 +17,46 @@ import (
 	"os"
 	"testing"
 
-	log "github.com/cihub/seelog"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap/zapcore"
 )
 
-func TestGetLogFileLocationReturnsOverriddenPath(t *testing.T) {
-	path := "/tmp/foo"
+func TestEnvLogFilePath(t *testing.T) {
+	path := "/var/log/test.log"
 	_ = os.Setenv(envLogFilePath, path)
 	defer os.Unsetenv(envLogFilePath)
 
-	assert.Equal(t, path, GetLogFileLocation("/tmp/bar"))
+	assert.Equal(t, path, getLogFileLocation())
 }
 
 func TestGetLogFileLocationReturnsDefaultPath(t *testing.T) {
-	path := "/tmp/foo"
-	assert.Equal(t, path, GetLogFileLocation(path))
+	defaultPath := "/host/var/log/aws-routed-eni/ipamd.log"
+	assert.Equal(t, defaultPath, getLogFileLocation())
 }
 
 func TestLogLevelReturnsOverriddenLevel(t *testing.T) {
 	_ = os.Setenv(envLogLevel, "INFO")
 	defer os.Unsetenv(envLogLevel)
 
-	var expectedLogLevel log.LogLevel
-	expectedLogLevel = log.InfoLvl
-	assert.Equal(t, expectedLogLevel.String(), getLogLevel())
+	var expectedLogLevel zapcore.Level
+	expectedLogLevel = zapcore.InfoLevel
+	inputLogLevel := getLogLevel()
+	assert.Equal(t, expectedLogLevel, getZapLevel(inputLogLevel))
 }
 
 func TestLogLevelReturnsDefaultLevelWhenEnvNotSet(t *testing.T) {
-	var expectedLogLevel log.LogLevel
-	expectedLogLevel = log.DebugLvl
-	assert.Equal(t, expectedLogLevel.String(), getLogLevel())
+	var expectedLogLevel zapcore.Level
+	expectedLogLevel = zapcore.DebugLevel
+	inputLogLevel := getLogLevel()
+	assert.Equal(t, expectedLogLevel, getZapLevel(inputLogLevel))
 }
 
 func TestLogLevelReturnsDefaultLevelWhenEnvSetToInvalidValue(t *testing.T) {
 	_ = os.Setenv(envLogLevel, "EVERYTHING")
 	defer os.Unsetenv(envLogLevel)
 
-	var expectedLogLevel log.LogLevel
-	expectedLogLevel = log.DebugLvl
-	assert.Equal(t, expectedLogLevel.String(), getLogLevel())
-}
-
-func TestLogOutputReturnsFileWhenValueNotStdout(t *testing.T) {
-	path := "/tmp/foo"
-
-	var expectedOutput = `<rollingfile filename="/tmp/foo" type="date" datepattern="2006-01-02-15" archivetype="none" maxrolls="24" />`
-	assert.Equal(t, expectedOutput, getLogOutput(path))
-}
-
-func TestLogOutputReturnsConsole(t *testing.T) {
-	path := "stdout"
-
-	var expectedOutput = `<console />`
-	assert.Equal(t, expectedOutput, getLogOutput(path))
+	var expectedLogLevel zapcore.Level
+	inputLogLevel := getLogLevel()
+	expectedLogLevel = zapcore.DebugLevel
+	assert.Equal(t, expectedLogLevel, getZapLevel(inputLogLevel))
 }

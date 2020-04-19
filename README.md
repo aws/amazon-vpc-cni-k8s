@@ -2,12 +2,8 @@
 
 Networking plugin for pod networking in [Kubernetes](https://kubernetes.io/) using [Elastic Network Interfaces](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html) on AWS.
 
-[![BuildStatus Widget]][BuildStatus Result]
+[![CircleCI](https://circleci.com/gh/aws/amazon-vpc-cni-k8s.svg?style=svg)](https://circleci.com/gh/aws/amazon-vpc-cni-k8s)
 [![GoReport Widget]][GoReport Status]
-
-
-[BuildStatus Result]: https://travis-ci.org/aws/amazon-vpc-cni-k8s
-[BuildStatus Widget]: https://travis-ci.org/aws/amazon-vpc-cni-k8s.svg?branch=master
 
 [GoReport Status]: https://goreportcard.com/report/github.com/aws/amazon-vpc-cni-k8s
 [GoReport Widget]: https://goreportcard.com/badge/github.com/aws/amazon-vpc-cni-k8s?
@@ -33,29 +29,31 @@ The default manifest expects `--cni-conf-dir=/etc/cni/net.d` and `--cni-bin-dir=
 
 L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html):
 
-```      
- {
-     "Effect": "Allow",
-     "Action": [
-         "ec2:CreateNetworkInterface",
-         "ec2:AttachNetworkInterface",
-         "ec2:DeleteNetworkInterface",
-         "ec2:DetachNetworkInterface",
-         "ec2:DescribeNetworkInterfaces",
-         "ec2:DescribeInstances",
-         "ec2:ModifyNetworkInterfaceAttribute",
-         "ec2:AssignPrivateIpAddresses",
-         "ec2:UnassignPrivateIpAddresses"
-     ],
-     "Resource": [
-         "*"
-     ]
- },
- {
-     "Effect": "Allow",
-     "Action": "ec2:CreateTags",
-     "Resource": "arn:aws:ec2:*:*:network-interface/*"
- },
+```
+      {
+        "Effect": "Allow",
+        "Action": [
+          "ec2:AssignPrivateIpAddresses",
+          "ec2:AttachNetworkInterface",
+          "ec2:CreateNetworkInterface",
+          "ec2:DeleteNetworkInterface",
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceTypes",
+          "ec2:DescribeTags",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DetachNetworkInterface",
+          "ec2:ModifyNetworkInterfaceAttribute",
+          "ec2:UnassignPrivateIpAddresses"
+        ],
+        "Resource": "*"
+      },
+      {
+         "Effect": "Allow",
+         "Action": [
+            "ec2:CreateTags"
+          ],
+          "Resource": ["arn:aws:ec2:*:*:network-interface/*"]
+      }
 ```
 
 Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
@@ -63,10 +61,10 @@ Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](
 ## Building
 
 * `make` defaults to `make build-linux` that builds the Linux binaries.
-* `unit-test`, `lint` and `vet` provide ways to run the respective tests/tools and should be run before submitting a PR.
+* `unit-test`, `format`,`lint` and `vet` provide ways to run the respective tests/tools and should be run before submitting a PR.
 * `make docker` will create a docker container using the docker-build with the finished binaries, with a tag of `amazon/amazon-k8s-cni:latest`
-* `make docker-build` uses a docker container (golang:1.12) to build the binaries.
-* `make docker-unit-tests` uses a docker container (golang:1.12) to run all unit tests.
+* `make docker-build` uses a docker container (golang:1.13) to build the binaries.
+* `make docker-unit-tests` uses a docker container (golang:1.13) to run all unit tests.
 
 ## Components
 
@@ -156,7 +154,7 @@ To select an `ENIConfig` based upon availability zone set this to `failure-domai
 
 ---
 
-`AWS_VPC_ENI_MTU`
+`AWS_VPC_ENI_MTU` (Since v1.6.0)
 
 Type: Integer
 
@@ -188,17 +186,19 @@ Default: `hashrandom`
 
 Valid Values: `hashrandom`, `prng`, `none`
 
-Specifies weather the SNAT `iptables` rule should randomize the outgoing ports for connections\. This should be used when
+Specifies whether the SNAT `iptables` rule should randomize the outgoing ports for connections\. This should be used when
 `AWS_VPC_K8S_CNI_EXTERNALSNAT=false`. When enabled (`hashrandom`) the `--random` flag will be added to the SNAT `iptables`
 rule\. To use pseudo random number generation rather than hash based (i.e. `--random-fully`) use `prng` for the environment
 variable. For old versions of `iptables` that do not support `--random-fully` this option will fall back to `--random`.
 Disable (`none`) this functionality if you rely on sequential port allocation for outgoing connections.
 
-*Note*: Any options other than `none` will cause outbound connections to be assigned a source port that's not necessarily part of the ephemeral port range set at the OS level (/proc/sys/net/ipv4/ip_local_port_range). This is relevant for any customers that might have NACLs restricting traffic based on the port range found in ip_local_port_range
+*Note*: Any options other than `none` will cause outbound connections to be assigned a source port that's not necessarily
+part of the ephemeral port range set at the OS level (`/proc/sys/net/ipv4/ip_local_port_range`). This is relevant for any
+customers that might have NACLs restricting traffic based on the port range found in `ip_local_port_range`.
 
 ---
 
-`AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS`
+`AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS` (Since v1.6.0)
 
 Type: String
 
@@ -235,15 +235,19 @@ Type: Integer
 Default: None
 
 Specifies the number of free IP addresses that the `ipamD` daemon should attempt to keep available for pod assignment on the node.
-For example, if `WARM_IP_TARGET` is set to 10, then `ipamD` attempts to keep 10 free IP addresses available at all times. If the
+For example, if `WARM_IP_TARGET` is set to 5, then `ipamD` attempts to keep 5 free IP addresses available at all times. If the
 elastic network interfaces on the node are unable to provide these free addresses, `ipamD` attempts to allocate more interfaces
 until `WARM_IP_TARGET` free IP addresses are available.
+
+**NOTE!** Avoid this setting for large clusters, or if the cluster has high pod churn. Setting it will cause additional calls to the
+EC2 API and that might cause throttling of the requests. It is strongly suggested to set `MINIMUM_IP_TARGET` when using `WARM_IP_TARGET`.
+
 If both `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are set, `ipamD` will attempt to meet both constraints.
 This environment variable overrides `WARM_ENI_TARGET` behavior.
 
 ---
 
-`MINIMUM_IP_TARGET`
+`MINIMUM_IP_TARGET` (Since v1.6.0)
 
 Type: Integer
 
@@ -285,7 +289,7 @@ Default: `DEBUG`
 
 Valid Values: `trace`, `debug`, `info`, `warn`, `error`, `critical` or `off`. (Not case sensitive)
 
-Specifies the loglevel for ipamd.
+Specifies the loglevel for `ipamd`.
 
 ---
 
@@ -297,7 +301,29 @@ Default: Unset
 
 Valid Values: `stdout` or a file path
 
-Specifies where to write the logging output. Either to stdout or to override the default file.
+Specifies where to write the logging output of `ipamd`. Either to stdout or to override the default file (i.e., `/var/log/aws-routed-eni/ipamd.log`).
+
+---
+
+`AWS_VPC_K8S_PLUGIN_LOG_FILE`
+
+Type: String
+
+Default: Unset
+
+Valid Values: `stdout` or a file path
+
+Specifies where to write the logging output for `aws-cni` plugin. Either to stdout or to override the default file (i.e., `/var/log/aws-routed-eni/plugin.log`).
+
+---
+
+`AWS_VPC_K8S_PLUGIN_LOG_LEVEL`
+
+Type: String
+
+Valid Values: `trace`, `debug`, `info`, `warn`, `error`, `critical` or `off`. (Not case sensitive)
+
+Specifies the loglevel for `aws-cni` plugin.
 
 ---
 
@@ -342,6 +368,66 @@ Type: String
 Default: `eni`
 
 Specifies the veth prefix used to generate the host-side veth device name for the CNI. The prefix can be at most 4 characters long.
+
+---
+
+`ADDITIONAL_ENI_TAGS` (Since v1.6.0)
+
+Type: String
+
+Default: `{}`
+
+Example values: `{"tag_key": "tag_val"}`
+
+Metadata applied to ENI help you categorize and organize your resources for billing or other purposes. Each tag consists of a
+custom-defined key and an optional value. Tag keys can have a maximum character length of 128 characters. Tag values can have
+a maximum length of 256 characters. These tags will be added to all ENIs on the host.
+
+Important: Custom tags should not contain `k8s.amazonaws.com` prefix as it is reserved. If the tag has `k8s.amazonaws.com`
+string, tag addition will ignored.
+
+---
+
+`CLUSTER_NAME`
+
+Type: String
+
+Default: `""`
+
+Specifies the cluster name to tag allocated ENIs with. See the "Cluster Name tag" section below.
+
+### ENI tags related to Allocation
+
+This plugin interacts with the following tags on ENIs:
+
+* `cluster.k8s.amazonaws.com/name`
+* `node.k8s.amazonaws.com/instance_id`
+* `node.k8s.amazonaws.com/no_manage`
+
+#### Cluster Name tag
+
+The tag `cluster.k8s.amazonaws.com/name` will be set to the cluster name of the
+aws-node daemonset which created the ENI.
+
+#### Instance ID tag
+
+The tag `node.k8s.amazonaws.com/instance_id` will be set to the instance ID of
+the aws-node instance that allocated this ENI.
+
+#### No Manage tag
+
+The tag `node.k8s.amazonaws.com/no_manage` is read by the aws-node daemonset to
+determine whether an ENI attached to the machine should not be configured or
+used for private IPs.
+
+This tag is not set by the cni plugin itself, but rather may be set by a user
+to indicate that an ENI is intended for host networking pods, or for some other
+process unrelated to Kubernetes.
+
+*Note*: Attaching an ENI with the `no_manage` tag will result in an incorrect
+value for the Kubelet's `--max-pods` configuration option. Consider also
+updating the `MAX_ENI` and `--max-pods` configuration options on this plugin
+and the kubelet respectively if you are making use of this tag.
 
 ### Notes
 

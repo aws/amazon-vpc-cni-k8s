@@ -10,7 +10,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	log "github.com/cihub/seelog"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
 	clientset "k8s.io/client-go/kubernetes"
 
@@ -47,12 +47,14 @@ type K8SPodInfo struct {
 	Name string
 	// Namespace is pod's namespace
 	Namespace string
-	// Container is pod's container id
-	Container string
+	// Sandbox is pod's sandbox id
+	Sandbox string
 	// IP is pod's ipv4 address
 	IP  string
 	UID string
 }
+
+var log = logger.Get()
 
 // ErrInformerNotSynced indicates that it has not synced with API server yet
 var ErrInformerNotSynced = errors.New("discovery: informer not synced")
@@ -88,14 +90,10 @@ func CreateKubeClient() (clientset.Interface, error) {
 	log.Infof("Testing communication with server")
 	v, err := kubeClient.Discovery().ServerVersion()
 	if err != nil {
-		errMsg := "Failed to communicate with K8S Server. Please check instance security groups or http proxy setting"
-		log.Infof(errMsg)
-		fmt.Printf(errMsg)
 		return nil, fmt.Errorf("error communicating with apiserver: %v", err)
 	}
-	log.Infof("Running with Kubernetes cluster version: v%s.%s. git version: %s. git tree state: %s. commit: %s. platform: %s",
+	log.Infof("Successful communication with the Cluster! Cluster Version is: v%s.%s. git version: %s. git tree state: %s. commit: %s. platform: %s",
 		v.Major, v.Minor, v.GitVersion, v.GitTreeState, v.GitCommit, v.Platform)
-	log.Info("Communication with server successful")
 
 	return kubeClient, nil
 }
@@ -113,15 +111,24 @@ func (d *Controller) GetCNIPods() []string {
 		cniPods = append(cniPods, k)
 	}
 
-	log.Info("GetCNIPods discovered", cniPods)
+	log.Infof("GetCNIPods discovered %v", cniPods)
 	return cniPods
 }
 
-// DiscoverK8SPods discovers Pods running in the cluster
-func (d *Controller) DiscoverK8SPods() {
+// DiscoverCNIK8SPods discovers CNI pods, aws-node, running in the cluster
+func (d *Controller) DiscoverCNIK8SPods() {
 	// create the pod watcher
-	podListWatcher := cache.NewListWatchFromClient(d.kubeClient.CoreV1().RESTClient(), "pods", metav1.NamespaceAll, fields.OneTermEqualSelector("spec.nodeName", d.myNodeName))
+	d.DiscoverK8SPods(cache.NewListWatchFromClient(d.kubeClient.CoreV1().RESTClient(), "pods", metav1.NamespaceSystem, fields.Everything()))
+}
 
+// DiscoverLocalK8SPods discovers local pods running on the node
+func (d *Controller) DiscoverLocalK8SPods() {
+	// create the pod watcher
+	d.DiscoverK8SPods(cache.NewListWatchFromClient(d.kubeClient.CoreV1().RESTClient(), "pods", metav1.NamespaceAll, fields.OneTermEqualSelector("spec.nodeName", d.myNodeName)))
+}
+
+// DiscoverK8SPods takes a watcher and updates the Controller cache
+func (d *Controller) DiscoverK8SPods(podListWatcher *cache.ListWatch) {
 	// create the workqueue
 	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 
@@ -246,21 +253,13 @@ func (d *Controller) handlePodUpdate(key string) error {
 	if d.myNodeName == pod.Spec.NodeName && !pod.Spec.HostNetwork {
 		d.workerPodsLock.Lock()
 		defer d.workerPodsLock.Unlock()
-		var containerID string
-		if len(pod.Status.ContainerStatuses) > 0 && pod.Status.ContainerStatuses[0].ContainerID != "" {
-			containerID = pod.Status.ContainerStatuses[0].ContainerID
-			log.Debugf("Found pod %s with container ID: %s", podName, containerID)
-		} else {
-			log.Debugf("No container ID found for %s", podName)
-		}
 
-		log.Tracef("Update for pod %s: %+v, %+v", podName, pod.Status, pod.Spec)
+		log.Debugf("Update for pod %s: %v", podName, pod.Status.Phase)
 
 		// Save pod info
 		d.workerPods[key] = &K8SPodInfo{
 			Name:      podName,
 			Namespace: pod.GetNamespace(),
-			Container: containerID,
 			IP:        pod.Status.PodIP,
 			UID:       string(pod.GetUID()),
 		}

@@ -1,4 +1,4 @@
-// Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -26,7 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
 
-	"github.com/golang/glog"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/pkg/errors"
 )
 
@@ -48,7 +48,21 @@ const (
 
 	// maxDataPoints is the maximum number of data points per PutMetricData API request
 	maxDataPoints = 20
+
+	// Default cluster id if unable to detect something more suitable
+	defaultClusterID = "k8s-cluster"
 )
+
+var (
+	// List of EC2 tags (in priority order) to use as the CLUSTER_ID metric dimension
+	clusterIDTags = []string{
+		"eks:cluster-name",
+		"CLUSTER_ID",
+		"Name",
+	}
+)
+
+var log = logger.Get()
 
 // Publisher defines the interface to publish one or more data points
 type Publisher interface {
@@ -84,16 +98,7 @@ func New(ctx context.Context) (Publisher, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "publisher: unable to obtain EC2 service client")
 	}
-	clusterID, err := ec2Client.GetClusterTag("CLUSTER_ID")
-	if err != nil || clusterID == "" {
-		glog.Errorf("Failed to obtain cluster-id, fetching name.  %v", err)
-		clusterID, err = ec2Client.GetClusterTag("Name")
-		if err != nil || clusterID == "" {
-			glog.Errorf("Failed to obtain cluster-id or name, defaulting to 'k8s-cluster'.  %v", err)
-			clusterID = "k8s-cluster"
-		}
-	}
-	glog.Info("Using cluster ID ", clusterID)
+	clusterID := getClusterID(ec2Client)
 
 	// Get CloudWatch client
 	ec2MetadataClient := ec2metadatawrapper.New(nil)
@@ -118,20 +123,20 @@ func New(ctx context.Context) (Publisher, error) {
 
 // Start is used to setup the monitor loop
 func (p *cloudWatchPublisher) Start() {
-	glog.Info("Starting monitor loop for CloudWatch publisher")
+	log.Info("Starting monitor loop for CloudWatch publisher")
 	p.monitor(defaultInterval)
 }
 
 // Stop is used to cancel the monitor loop
 func (p *cloudWatchPublisher) Stop() {
-	glog.Info("Stopping monitor loop for CloudWatch publisher")
+	log.Info("Stopping monitor loop for CloudWatch publisher")
 	p.cancel()
 }
 
 // Publish is a variadic function to publish one or more metric data points
 func (p *cloudWatchPublisher) Publish(metricDataPoints ...*cloudwatch.MetricDatum) {
 	// Fetch dimensions for override
-	glog.V(2).Info("Fetching CloudWatch dimensions")
+	log.Info("Fetching CloudWatch dimensions")
 	dimensions := p.getCloudWatchMetricDatumDimensions()
 
 	// Grab lock
@@ -155,7 +160,7 @@ func (p *cloudWatchPublisher) pushLocal() {
 
 func (p *cloudWatchPublisher) push(metricData []*cloudwatch.MetricDatum) {
 	if len(metricData) == 0 {
-		glog.Warning("Missing data for publishing CloudWatch metrics")
+		log.Info("Missing data for publishing CloudWatch metrics")
 		return
 	}
 
@@ -170,7 +175,7 @@ func (p *cloudWatchPublisher) push(metricData []*cloudwatch.MetricDatum) {
 		// Publish data
 		err := p.send(input)
 		if err != nil {
-			glog.Errorf("Unable to publish CloudWatch metrics: %v", err)
+			log.Warnf("Unable to publish CloudWatch metrics: %v", err)
 		}
 
 		// Mutate slice
@@ -184,7 +189,7 @@ func (p *cloudWatchPublisher) push(metricData []*cloudwatch.MetricDatum) {
 }
 
 func (p *cloudWatchPublisher) send(input cloudwatch.PutMetricDataInput) error {
-	glog.Info("Sending data to CloudWatch metrics")
+	log.Info("Sending data to CloudWatch metrics")
 	_, err := p.cloudwatchClient.PutMetricData(&input)
 	return err
 }
@@ -205,6 +210,22 @@ func (p *cloudWatchPublisher) monitor(interval time.Duration) {
 
 func (p *cloudWatchPublisher) getCloudWatchMetricNamespace() *string {
 	return aws.String(cloudwatchMetricNamespace)
+}
+
+func getClusterID(ec2Client *ec2wrapper.EC2Wrapper) string {
+	var clusterID string
+	var err error
+	for _, tag := range clusterIDTags {
+		clusterID, err = ec2Client.GetClusterTag(tag)
+		if err == nil && clusterID != "" {
+			break
+		}
+	}
+	if clusterID == "" {
+		clusterID = defaultClusterID
+	}
+	log.Infof("Using cluster ID ", clusterID)
+	return clusterID
 }
 
 func (p *cloudWatchPublisher) getCloudWatchMetricDatumDimensions() []*cloudwatch.Dimension {

@@ -1,4 +1,6 @@
-FROM golang:1.12-stretch
+ARG docker_arch
+ARG golang_image=golang:1.13-stretch
+FROM $golang_image
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
 
 ARG arch
@@ -6,6 +8,7 @@ ENV ARCH=$arch
 
 # Force the go compiler to use modules.
 ENV GO111MODULE=on
+ENV GOPROXY=direct
 
 # Add goimports
 RUN go get -u golang.org/x/tools/cmd/goimports

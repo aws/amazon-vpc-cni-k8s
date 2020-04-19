@@ -1,4 +1,4 @@
-// Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
 // not use this file except in compliance with the License. A copy of the
@@ -13,4 +13,4 @@
 
 package rpcwrapper
 
-//go:generate go run ../../scripts/mockgen.go github.com/aws/amazon-vpc-cni-k8s/pkg/rpcwrapper RPC mocks/rpcwrapper_mocks.go
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/rpcwrapper_mocks.go -copyright_file ../../scripts/copyright.txt . RPC
