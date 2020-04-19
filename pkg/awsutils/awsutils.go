@@ -904,13 +904,13 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	if err != nil {
 		awsAPIErrInc("AssignPrivateIpAddresses", err)
 		if containsPrivateIPAddressLimitExceededError(err) {
-			log.Debugf("got PrivateIpAddressLimitExceeded when allocating private IP addresses")
+			log.Debug("AllocIPAddresses: got PrivateIpAddressLimitExceeded")
 			return nil
 		}
 		log.Errorf("Failed to allocate a private IP address %v", err)
 		return errors.Wrap(err, "allocate IP address: failed to allocate a private IP address")
 	}
-	log.Infof("allocated %d private IP addresses", len(output.AssignedPrivateIpAddresses))
+	log.Infof("AllocIPAddresses: allocated %d private IP addresses", len(output.AssignedPrivateIpAddresses))
 	return nil
 }
 
