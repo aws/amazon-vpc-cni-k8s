@@ -178,8 +178,8 @@ generate-limits:
 	go run pkg/awsutils/gen_vpc_ip_limits.go
 
 # Fetch portmap the port-forwarding management CNI plugin
-portmap: FETCH_VERSION=0.7.5
-portmap: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOARCH)-v$(FETCH_VERSION).tgz
+portmap: FETCH_VERSION=0.8.5
+portmap: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
 portmap: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/meta/portmap
 portmap:
 	@echo "Fetching portmap CNI plugin v$(FETCH_VERSION) from upstream release"
@@ -225,15 +225,16 @@ docker-vet: build-docker-test
 	docker run $(DOCKER_RUN_FLAGS) \
 		$(TEST_IMAGE_NAME) make vet
 
-# Format all Go source code files.
+# Format all Go source code files. (Note! integration_test.go has an upstream import dependency that doesn't match)
 format:
 	@command -v goimports >/dev/null || { echo "ERROR: goimports not installed"; exit 1; }
-	find ./* \
+	@exit $(shell find ./* \
 	  -type f \
+	  -not -name 'integration_test.go' \
 	  -not -name 'mock_publisher.go' \
 	  -not -name 'rpc.pb.go' \
 	  -name '*.go' \
-	  -print0 | sort -z | xargs -0 -- goimports $(or $(FORMAT_FLAGS),-w)
+	  -print0 | sort -z | xargs -0 -- goimports $(or $(FORMAT_FLAGS),-w) | wc -l | bc)
 
 # Check formatting of source code files without modification.
 check-format: FORMAT_FLAGS = -l

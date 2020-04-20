@@ -335,8 +335,9 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 func main() {
 	log := logger.DefaultLogger()
 	log.Infof("CNI Plugin version: %s ...", version)
+	about := fmt.Sprintf("AWS CNI %s", version)
 	exitCode := 0
-	if e := skel.PluginMainWithError(cmdAdd, cmdDel, cniSpecVersion.All); e != nil {
+	if e := skel.PluginMainWithError(cmdAdd, nil, cmdDel, cniSpecVersion.All, about); e != nil {
 		if err := e.Print(); err != nil {
 			log.Errorf("Failed to write error to stdout: %v", err)
 		}

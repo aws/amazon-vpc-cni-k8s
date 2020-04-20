@@ -150,13 +150,13 @@ var (
 	addIPCnt = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "awscni_add_ip_req_count",
-			Help: "The number of add IP address request",
+			Help: "The number of add IP address requests",
 		},
 	)
 	delIPCnt = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "awscni_del_ip_req_count",
-			Help: "The number of delete IP address request",
+			Help: "The number of delete IP address requests",
 		},
 		[]string{"reason"},
 	)
