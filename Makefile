@@ -225,15 +225,16 @@ docker-vet: build-docker-test
 	docker run $(DOCKER_RUN_FLAGS) \
 		$(TEST_IMAGE_NAME) make vet
 
-# Format all Go source code files.
+# Format all Go source code files. (Note! integration_test.go has an upstream import dependency that doesn't match)
 format:
 	@command -v goimports >/dev/null || { echo "ERROR: goimports not installed"; exit 1; }
-	find ./* \
+	@exit $(shell find ./* \
 	  -type f \
+	  -not -name 'integration_test.go' \
 	  -not -name 'mock_publisher.go' \
 	  -not -name 'rpc.pb.go' \
 	  -name '*.go' \
-	  -print0 | sort -z | xargs -0 -- goimports $(or $(FORMAT_FLAGS),-w)
+	  -print0 | sort -z | xargs -0 -- goimports $(or $(FORMAT_FLAGS),-w) | wc -l | bc)
 
 # Check formatting of source code files without modification.
 check-format: FORMAT_FLAGS = -l
