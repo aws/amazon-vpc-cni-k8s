@@ -11,24 +11,6 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package nswrapper
+package typeswrapper
 
-import (
-	"github.com/containernetworking/plugins/pkg/ns"
-)
-
-type NS interface {
-	WithNetNSPath(nspath string, toRun func(ns.NetNS) error) error
-}
-
-type nsType struct {
-}
-
-func NewNS() NS {
-	return &nsType{}
-}
-
-func (*nsType) WithNetNSPath(nspath string, toRun func(ns.NetNS) error) error {
-	return ns.WithNetNSPath(nspath, toRun)
-
-}
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/typeswrapper_mocks.go -copyright_file ../../scripts/copyright.txt . CNITYPES

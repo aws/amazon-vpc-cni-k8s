@@ -107,33 +107,6 @@ else
     fi
 fi
 
-# double-check all our preconditions and requirements have been met
-check_is_installed docker
-check_is_installed aws
-check_aws_credentials
-ensure_aws_k8s_tester
-
-AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}
-AWS_ECR_REGISTRY=${AWS_ECR_REGISTRY:-"$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"}
-AWS_ECR_REPO_NAME=${AWS_ECR_REPO_NAME:-"amazon-k8s-cni"}
-IMAGE_NAME=${IMAGE_NAME:-"$AWS_ECR_REGISTRY/$AWS_ECR_REPO_NAME"}
-IMAGE_VERSION=${IMAGE_VERSION:-$(git describe --tags --always --dirty)}
-
-if [[ "$BUILD" = true ]]; then
-    # `aws ec2 get-login` returns a docker login string, which we eval here to
-    # login to the ECR registry
-    eval $(aws ecr get-login --region $AWS_REGION --no-include-email) >/dev/null 2>&1
-    ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
-    make docker IMAGE=$IMAGE_NAME VERSION=$IMAGE_VERSION
-    docker push $IMAGE_NAME:$IMAGE_VERSION
-    if [[ $IMAGE_VERSION != $LOCAL_GIT_VERSION ]]; then
-        popd
-    fi
-fi
-
-# The version substituted in ./config/X/aws-k8s-cni.yaml
-CNI_TEMPLATE_VERSION=${CNI_TEMPLATE_VERSION:-v1.6}
-
 echo "*******************************************************************************"
 echo "Running $TEST_ID on $CLUSTER_NAME in $AWS_REGION"
 echo "+ Cluster config dir: $TEST_CLUSTER_DIR"
@@ -156,9 +129,12 @@ fi
 
 echo "Using $BASE_CONFIG_PATH as a template"
 
-    sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
-    sed -i'.bak' "s,v1.6.0,$IMAGE_VERSION," ./config/$CNI_TEMPLATE_VERSION/aws-k8s-cni.yaml
-fi
+cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
+
+# TODO(jaypipes): Get rid of the hard-coded account ID and URL in the base
+# Daemonset template
+sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," "$TEST_CONFIG_PATH"
+sed -i'.bak' "s,$STABLE_IMAGE_VERSION,$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
 
 export KUBECONFIG=$KUBECONFIG_PATH
 ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')

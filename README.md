@@ -58,8 +58,6 @@ L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/Us
 
 Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
 
-Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
-
 ## Building
 
 * `make` defaults to `make build-linux` that builds the Linux binaries.
@@ -250,50 +248,6 @@ This environment variable overrides `WARM_ENI_TARGET` behavior.
 ---
 
 `MINIMUM_IP_TARGET` (Since v1.6.0)
-
-Type: Integer
-
-Default: None
-
-Specifies the number of total IP addresses that the `ipamD` daemon should attempt to allocate for pod assignment on the node.
-`MINIMUM_IP_TARGET` behaves identically to `WARM_IP_TARGET` except that instead of setting a target number of free IP
-addresses to keep available at all times, it sets a target number for a floor on how many total IP addresses are allocated.
-
-`MINIMUM_IP_TARGET` is for pre-scaling, `WARM_IP_TARGET` is for dynamic scaling. For example, suppose a cluster has an
-expected pod density of approximately 30 pods per node. If `WARM_IP_TARGET` is set to 30 to ensure there are enough IPs
-allocated up front by the CNI, then 30 pods are deployed to the node, the CNI will allocate an additional 30 IPs, for
-a total of 60, accelerating IP exhaustion in the relevant subnets. If instead `MINIMUM_IP_TARGET` is set to 30 and
-`WARM_IP_TARGET` to 2, after the 30 pods are deployed the CNI would allocate an additional 2 IPs. This still provides
-elasticity, but uses roughly half as many IPs as using WARM_IP_TARGET alone (32 IPs vs 60 IPs).
-
-This also improves reliability of the EKS cluster by reducing the number of calls necessary to allocate or deallocate
-private IPs, which may be throttled, especially at scaling-related times.
-
----
-
-`MINIMUM_IP_TARGET` (Since v1.6.0)
-
-Type: Integer
-
-Default: None
-
-Specifies the number of total IP addresses that the `ipamD` daemon should attempt to allocate for pod assignment on the node.
-`MINIMUM_IP_TARGET` behaves identically to `WARM_IP_TARGET` except that instead of setting a target number of free IP
-addresses to keep available at all times, it sets a target number for a floor on how many total IP addresses are allocated.
-
-`MINIMUM_IP_TARGET` is for pre-scaling, `WARM_IP_TARGET` is for dynamic scaling. For example, suppose a cluster has an
-expected pod density of approximately 30 pods per node. If `WARM_IP_TARGET` is set to 30 to ensure there are enough IPs
-allocated up front by the CNI, then 30 pods are deployed to the node, the CNI will allocate an additional 30 IPs, for
-a total of 60, accelerating IP exhaustion in the relevant subnets. If instead `MINIMUM_IP_TARGET` is set to 30 and
-`WARM_IP_TARGET` to 2, after the 30 pods are deployed the CNI would allocate an additional 2 IPs. This still provides
-elasticity, but uses roughly half as many IPs as using WARM_IP_TARGET alone (32 IPs vs 60 IPs).
-
-This also improves reliability of the EKS cluster by reducing the number of calls necessary to allocate or deallocate
-private IPs, which may be throttled, especially at scaling-related times.
-
----
-
-`MINIMUM_IP_TARGET`
 
 Type: Integer
 
