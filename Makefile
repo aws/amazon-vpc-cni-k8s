@@ -115,7 +115,7 @@ docker-func-test: docker
 
 # Run unit tests
 unit-test:
-	go test -v -cover $(ALLPKGS)
+	go test -v -coverprofile=coverage.txt -covermode=atomic $(ALLPKGS)
 
 # Run unit tests with race detection (can only be run natively)
 unit-test-race: CGO_ENABLED=1
@@ -244,3 +244,4 @@ check-format: format
 clean:
 	@rm -f -- $(BINS)
 	@rm -f -- portmap
+	@rm -f -- coverage.txt
