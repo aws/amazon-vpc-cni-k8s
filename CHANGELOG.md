@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.6.1-rc1
+* Feature - [Support architecture targeted builds](https://github.com/aws/amazon-vpc-cni-k8s/pull/837) (#837, @jahkeup)
+* Feature - [Zap logger](https://github.com/aws/amazon-vpc-cni-k8s/pull/824) (#824, @nithu0115)
+* Improvement - [Run conformance test as part of PR/Release certification](https://github.com/aws/amazon-vpc-cni-k8s/pull/851) (#851, @SaranBalaji90)
+* Improvement - [Use eks:cluster-name as clusterId](https://github.com/aws/amazon-vpc-cni-k8s/pull/856) (#856, @groodt)
+* Improvement - [Bump Calico to v3.13.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/857) (#857, @lmm)
+* Improvement - [Use go.mod version of mockgen](https://github.com/aws/amazon-vpc-cni-k8s/pull/863) (#863, @anguslees)
+* Improvement - [Mock /proc/sys](https://github.com/aws/amazon-vpc-cni-k8s/pull/870) (#870, @anguslees)
+* Improvement - [Replace debug script with updated script from EKS AMI](https://github.com/aws/amazon-vpc-cni-k8s/pull/864) (#864, @mogren)
+* Improvement - [Update cluster-proportional-autoscaler to 1.7.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/885) (#885, @ricardochimal)
+* Improvement - [Remove unnecessary/incorrect ClusterRole resource](https://github.com/aws/amazon-vpc-cni-k8s/pull/883) (#883, @anguslees)
+* Improvement - [Disable IPv6 RA and ICMP redirects](https://github.com/aws/amazon-vpc-cni-k8s/pull/897) (#897, @anguslees)
+* Improvement - [scripts/lib/aws.sh: use "aws-k8s-tester" v1.0.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/900) (#900, @gyuho)
+* Improvement - [Configure rp_filter based on env variable](https://github.com/aws/amazon-vpc-cni-k8s/pull/902) (#902, @SaranBalaji90)
+* Improvement - [Less verbose logging](https://github.com/aws/amazon-vpc-cni-k8s/pull/908) (#908, @mogren)
+* Improvement - [Reduce number of calls to EC2 API](https://github.com/aws/amazon-vpc-cni-k8s/pull/909) (#909, @mogren)
+* Improvement - [Bump containernetworking dependencies](https://github.com/aws/amazon-vpc-cni-k8s/pull/916) (#916, @mogren)
+* Improvement - [Use -buildmode=pie for binaries](https://github.com/aws/amazon-vpc-cni-k8s/pull/919) (#919, @mogren)
+* Bug - [Add missing permissions in typha-cpha sa (Calico)](https://github.com/aws/amazon-vpc-cni-k8s/pull/892) (#892, @marcincuber)
+* Bug - [Fix logging to stdout](https://github.com/aws/amazon-vpc-cni-k8s/pull/904) (#904, @mogren)
+* Bug - [Ensure non-nil Attachment in getENIAttachmentID](https://github.com/aws/amazon-vpc-cni-k8s/pull/915) (#915, @jaypipes)
+
 ## v1.6.0
 
 * Feature - [Add fallback to fetch limits from EC2 API](https://github.com/aws/amazon-vpc-cni-k8s/pull/782) (#782, @mogren)
