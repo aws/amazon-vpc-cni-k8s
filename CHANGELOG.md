@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.6.1-rc1
+## v1.6.1
 * Feature - [Support architecture targeted builds](https://github.com/aws/amazon-vpc-cni-k8s/pull/837) (#837, @jahkeup)
 * Feature - [Zap logger](https://github.com/aws/amazon-vpc-cni-k8s/pull/824) (#824, @nithu0115)
 * Improvement - [Run conformance test as part of PR/Release certification](https://github.com/aws/amazon-vpc-cni-k8s/pull/851) (#851, @SaranBalaji90)
