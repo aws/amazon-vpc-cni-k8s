@@ -55,8 +55,7 @@ DOCKER_ARCH = $(lastword $(subst :, ,$(filter $(ARCH):%,amd64:amd64 arm64:arm64v
 IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(ARCH),arm64))
 # GOLANG_IMAGE is the building golang container image used.
 GOLANG_IMAGE = golang:1.13-stretch
-# For the requseted build, these are the set of Go specific build environment
-# variables.
+# For the requested build, these are the set of Go specific build environment variables.
 export GOARCH ?= $(ARCH)
 export GOOS = linux
 export CGO_ENABLED = 0
@@ -94,7 +93,8 @@ dist: all
 	docker save $(METRICS_IMAGE_NAME) | gzip > $(METRICS_IMAGE_DIST)
 
 # Build the VPC CNI plugin agent using the host's Go toolchain.
-build-linux: BUILD_FLAGS = -ldflags '-s -w $(LDFLAGS)'
+BUILD_MODE ?= -buildmode=pie
+build-linux: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
 build-linux:
 	go build $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
 	go build $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
@@ -115,7 +115,7 @@ docker-func-test: docker
 
 # Run unit tests
 unit-test:
-	go test -v -cover $(ALLPKGS)
+	go test -v -coverprofile=coverage.txt -covermode=atomic $(ALLPKGS)
 
 # Run unit tests with race detection (can only be run natively)
 unit-test-race: CGO_ENABLED=1
@@ -178,8 +178,8 @@ generate-limits:
 	go run pkg/awsutils/gen_vpc_ip_limits.go
 
 # Fetch portmap the port-forwarding management CNI plugin
-portmap: FETCH_VERSION=0.7.5
-portmap: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOARCH)-v$(FETCH_VERSION).tgz
+portmap: FETCH_VERSION=0.8.5
+portmap: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
 portmap: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/meta/portmap
 portmap:
 	@echo "Fetching portmap CNI plugin v$(FETCH_VERSION) from upstream release"
@@ -225,15 +225,16 @@ docker-vet: build-docker-test
 	docker run $(DOCKER_RUN_FLAGS) \
 		$(TEST_IMAGE_NAME) make vet
 
-# Format all Go source code files.
+# Format all Go source code files. (Note! integration_test.go has an upstream import dependency that doesn't match)
 format:
 	@command -v goimports >/dev/null || { echo "ERROR: goimports not installed"; exit 1; }
-	find ./* \
+	@exit $(shell find ./* \
 	  -type f \
+	  -not -name 'integration_test.go' \
 	  -not -name 'mock_publisher.go' \
 	  -not -name 'rpc.pb.go' \
 	  -name '*.go' \
-	  -print0 | sort -z | xargs -0 -- goimports $(or $(FORMAT_FLAGS),-w)
+	  -print0 | sort -z | xargs -0 -- goimports $(or $(FORMAT_FLAGS),-w) | wc -l | bc)
 
 # Check formatting of source code files without modification.
 check-format: FORMAT_FLAGS = -l
@@ -243,3 +244,4 @@ check-format: format
 clean:
 	@rm -f -- $(BINS)
 	@rm -f -- portmap
+	@rm -f -- coverage.txt

@@ -4,6 +4,7 @@ version: 2.1
 orbs:
   aws-cli: circleci/aws-cli@0.1.19
   k8s: circleci/kubernetes@0.11.0
+  #  codecov: codecov/codecov@1.0.5
 
 references:
   build_job: &build
@@ -23,6 +24,8 @@ references:
       - run: make vet
       # TODO: Enable architecture specific unit-test when Circle CI supports it!
       - run: make unit-test ARCH=amd64
+      #- codecov/upload:
+      #  file: coverage.txt
 
 jobs:
   build_x86_64:
@@ -31,6 +34,7 @@ jobs:
       <<: *env
       # Target the GOARCH for x86_64
       ARCH: amd64
+      BUILD_MODE: "-buildmode=pie"
 
   build_aarch64:
     <<: *build
@@ -38,6 +42,7 @@ jobs:
       <<: *env
       # Target the GOARCH for aarch64
       ARCH: arm64
+      BUILD_MODE: ""
 
   integration_test:
     docker:
