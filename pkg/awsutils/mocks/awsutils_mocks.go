@@ -264,3 +264,17 @@ func (mr *MockAPIsMockRecorder) GetVPCIPv4CIDRs() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVPCIPv4CIDRs", reflect.TypeOf((*MockAPIs)(nil).GetVPCIPv4CIDRs))
 }
+
+// GetAccountId mocks base method
+func (m *MockAPIs) GetAccountId() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAccountId")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetAccountId returns the account id/owner id
+func (mr *MockAPIsMockRecorder) GetAccountId() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountId", reflect.TypeOf((*MockAPIs)(nil).GetAccountId()))
+}

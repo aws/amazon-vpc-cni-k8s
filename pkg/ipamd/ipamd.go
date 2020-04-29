@@ -109,6 +109,10 @@ const (
 	// eniNoManageTagKey is the tag that may be set on an ENI to indicate ipamd
 	// should not manage it in any form.
 	eniNoManageTagKey = "node.k8s.amazonaws.com/no_manage"
+
+	// whitelistedAccountIds is the account ids which are allowed to track ENI.
+	// account ids should be delimited by comma
+	envWhitelistedAccountIds = "ALLOWED_ENI_TRACKING_IDS"
 )
 
 var log = logger.Get()
@@ -500,6 +504,10 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
 func (c *IPAMContext) StartNodeIPPoolManager() {
+	accountIds := getENITrackingWhitelistedAccountIds()
+	if accountIds != nil && !contains(accountIds, c.awsClient.GetAccountId()) {
+		return
+	}
 	sleepDuration := ipPoolMonitorInterval / 2
 	for {
 		time.Sleep(sleepDuration)
@@ -507,6 +515,15 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 		time.Sleep(sleepDuration)
 		c.nodeIPPoolReconcile(nodeIPPoolReconcileInterval)
 	}
+}
+
+func contains(accounts []string, account string) bool {
+	for _, a := range accounts {
+		if a == account {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *IPAMContext) updateIPPoolIfRequired() {
@@ -889,6 +906,14 @@ func getWarmENITarget() int {
 		return input
 	}
 	return defaultWarmENITarget
+}
+
+func getENITrackingWhitelistedAccountIds() []string {
+	inputStr, found := os.LookupEnv(envWhitelistedAccountIds)
+	if found {
+		return strings.Split(inputStr, ",")
+	}
+	return nil
 }
 
 func logPoolStats(total, used, maxAddrsPerENI int) {

@@ -154,6 +154,9 @@ type APIs interface {
 
 	// GetPrimaryENImac returns the mac address of the primary ENI
 	GetPrimaryENImac() string
+
+	// GetAccountId returns the account id/owner id
+	GetAccountId() string
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -1232,4 +1235,9 @@ func (cache *EC2InstanceMetadataCache) GetPrimaryENI() string {
 // GetPrimaryENImac returns the mac address of primary eni
 func (cache *EC2InstanceMetadataCache) GetPrimaryENImac() string {
 	return cache.primaryENImac
+}
+
+// GetAccountId returns the account id/owner id
+func (cache *EC2InstanceMetadataCache) GetAccountId() string {
+	return cache.accountID
 }
