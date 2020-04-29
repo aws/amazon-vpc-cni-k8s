@@ -58,6 +58,12 @@ wait_for_ipam() {
     return 1
 }
 
+echo -n "Copying CNI plugin binaries and config files ... "
+
+cp portmap "$HOST_CNI_BIN_PATH"
+cp aws-cni "$HOST_CNI_BIN_PATH"
+cp aws-cni-support.sh "$HOST_CNI_BIN_PATH"
+
 echo -n "Starting IPAM daemon in the background ... "
 ./aws-k8s-agent | tee -i "$AGENT_LOG_PATH" 2>&1 &
 echo "ok."
@@ -72,12 +78,6 @@ if ! wait_for_ipam; then
 fi
 
 echo "ok."
-
-echo -n "Copying CNI plugin binaries and config files ... "
-
-cp portmap "$HOST_CNI_BIN_PATH"
-cp aws-cni "$HOST_CNI_BIN_PATH"
-cp aws-cni-support.sh "$HOST_CNI_BIN_PATH"
 
 sed -i s~__VETHPREFIX__~"${AWS_VPC_K8S_CNI_VETHPREFIX}"~g 10-aws.conflist
 sed -i s~__MTU__~"${AWS_VPC_ENI_MTU}"~g 10-aws.conflist
