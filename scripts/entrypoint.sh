@@ -44,13 +44,15 @@ AWS_VPC_ENI_MTU=${AWS_VPC_ENI_MTU:-"9001"}
 AWS_VPC_K8S_PLUGIN_LOG_FILE=${AWS_VPC_K8S_PLUGIN_LOG_FILE:-"/var/log/aws-routed-eni/plugin.log"}
 AWS_VPC_K8S_PLUGIN_LOG_LEVEL=${AWS_VPC_K8S_PLUGIN_LOG_LEVEL:-"Debug"}
 
+AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER=${AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER:-"true"}
+
 # Checks for IPAM connectivity on localhost port 50051, retrying connectivity
 # check with a timeout of 36 seconds
 wait_for_ipam() {
     local __sleep_time=0
 
     until [ $__sleep_time -eq 8 ]; do
-        sleep $(( __sleep_time++ ))
+        sleep $((__sleep_time++))
         if ./grpc-health-probe -addr 127.0.0.1:50051 >/dev/null 2>&1; then
             return 0
         fi
@@ -58,13 +60,19 @@ wait_for_ipam() {
     return 1
 }
 
-echo -n "Copying portmap binary ... "
-
-HOST_PORTMAP="$HOST_CNI_BIN_PATH/portmap"
-if [[ -f "$HOST_PORTMAP" ]]; then
-    rm "$HOST_PORTMAP"
+# If there is no init container, copy the required files
+if [[ "$AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER" != "false" ]]; then
+    # Copy files
+    echo "Copying CNI plugin binaries ... "
+    PLUGIN_BINS="portmap aws-cni-support.sh"
+    for b in $PLUGIN_BINS; do
+        # If the file exist, delete it first
+        if [[ -f "$HOST_CNI_BIN_PATH/$b" ]]; then
+            rm "$HOST_CNI_BIN_PATH/$b"
+        fi
+        cp "$b" "$HOST_CNI_BIN_PATH"
+    done
 fi
-cp portmap "$HOST_CNI_BIN_PATH"
 
 echo -n "Starting IPAM daemon in the background ... "
 ./aws-k8s-agent | tee -i "$AGENT_LOG_PATH" 2>&1 &
@@ -81,10 +89,9 @@ fi
 
 echo "ok."
 
-echo -n "Copying additional CNI plugin binaries and config files ... "
+echo -n "Copying CNI plugin binary and config file ... "
 
 cp aws-cni "$HOST_CNI_BIN_PATH"
-cp aws-cni-support.sh "$HOST_CNI_BIN_PATH"
 
 sed -i s~__VETHPREFIX__~"${AWS_VPC_K8S_CNI_VETHPREFIX}"~g 10-aws.conflist
 sed -i s~__MTU__~"${AWS_VPC_ENI_MTU}"~g 10-aws.conflist

@@ -14,7 +14,7 @@
 
 .PHONY: all dist check clean \
 		lint format check-format vet docker-vet \
-		build-linux docker \
+		build-linux docker init \
 		unit-test unit-test-race build-docker-test docker-func-test \
 		build-metrics docker-metrics \
 		metrics-unit-test docker-metrics-test
@@ -29,6 +29,10 @@ DESTDIR = .
 IMAGE = amazon/amazon-k8s-cni
 IMAGE_NAME = $(IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
 IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(IMAGE_NAME)).tar.gz
+# INIT_IMAGE is the init container for AWS VPC CNI.
+INIT_IMAGE = amazon/amazon-k8s-cni-init
+INIT_IMAGE_NAME = $(INIT_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
+INIT_IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(INIT_IMAGE_NAME)).tar.gz
 # METRICS_IMAGE is the CNI metrics publisher sidecar container image.
 METRICS_IMAGE = amazon/cni-metrics-helper
 METRICS_IMAGE_NAME = $(METRICS_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
@@ -69,6 +73,11 @@ LDFLAGS = -X main.version=$(VERSION)
 ALLPKGS = $(shell go list ./...)
 # BINS is the set of built command executables.
 BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper
+# Plugin binaries
+# Not copied: bandwidth bridge dhcp firewall flannel host-device host-local ipvlan macvlan ptp sbr static tuning vlan
+# For gnu tar, the full path in the tar file is required
+PLUGIN_BINS = ./loopback ./portmap
+
 # DOCKER_ARGS is extra arguments passed during container image build.
 DOCKER_ARGS =
 # DOCKER_RUN_FLAGS is set the flags passed during runs of containers.
@@ -85,11 +94,12 @@ DOCKER_BUILD_FLAGS = --build-arg GOARCH="$(ARCH)" \
 .DEFAULT_GOAL = build-linux
 
 # Build both CNI and metrics helper container images.
-all: docker docker-metrics
+all: docker init docker-metrics
 
 dist: all
 	mkdir -p $(DESTDIR)
 	docker save $(IMAGE_NAME) | gzip > $(IMAGE_DIST)
+	docker save $(INIT_IMAGE_NAME) | gzip > $(INIT_IMAGE_DIST)
 	docker save $(METRICS_IMAGE_NAME) | gzip > $(METRICS_IMAGE_DIST)
 
 # Build the VPC CNI plugin agent using the host's Go toolchain.
@@ -108,7 +118,14 @@ docker:
 		.
 	@echo "Built Docker image \"$(IMAGE_NAME)\""
 
-# Run the built cni container image to use in functional testing
+init:
+	docker build $(DOCKER_BUILD_FLAGS) \
+		-f scripts/dockerfiles/Dockerfile.init \
+		-t "$(INIT_IMAGE_NAME)" \
+		.
+	@echo "Built Docker image \"$(INIT_IMAGE_NAME)\""
+
+# Run the built CNI container image to use in functional testing
 docker-func-test: docker
 	docker run $(DOCKER_RUN_FLAGS) \
 		"$(IMAGE_NAME)"
@@ -179,17 +196,17 @@ generate-limits: GOOS=
 generate-limits:
 	go run pkg/awsutils/gen_vpc_ip_limits.go
 
-# Fetch portmap the port-forwarding management CNI plugin
-portmap: FETCH_VERSION=0.8.6
-portmap: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
-portmap: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/meta/portmap
-portmap:
-	@echo "Fetching portmap CNI plugin v$(FETCH_VERSION) from upstream release"
+# Fetch the CNI plugins
+plugins: FETCH_VERSION=0.8.6
+plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
+plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
+plugins:
+	@echo "Fetching Container networking plugins v$(FETCH_VERSION) from upstream release"
 	@echo
-	@echo "Visit upstream project for portmap plugin details:"
+	@echo "Visit upstream project for plugin details:"
 	@echo "$(VISIT_URL)"
 	@echo
-	curl -L $(FETCH_URL) | tar -z -x ./portmap
+	curl -L $(FETCH_URL) | tar -zx $(PLUGIN_BINS)
 
 debug-script: FETCH_URL=https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/log-collector-script/linux/eks-log-collector.sh
 debug-script: VISIT_URL=https://github.com/awslabs/amazon-eks-ami/tree/master/log-collector-script/linux
@@ -245,5 +262,5 @@ check-format: format
 # Clean temporary files and build artifacts from the project.
 clean:
 	@rm -f -- $(BINS)
-	@rm -f -- portmap
+	@rm -f -- $(PLUGIN_BINS)
 	@rm -f -- coverage.txt
