@@ -58,7 +58,7 @@ wait_for_ipam() {
     return 1
 }
 
-echo -n "Copying portmap binary... "
+echo -n "Copying portmap binary ... "
 
 HOST_PORTMAP="$HOST_CNI_BIN_PATH/portmap"
 if [[ -f "$HOST_PORTMAP" ]]
@@ -86,7 +86,7 @@ fi
 
 echo "ok."
 
-echo "Copying additional CNI plugin binaries and config files"
+echo -n "Copying additional CNI plugin binaries and config files ... "
 
 cp aws-cni "$HOST_CNI_BIN_PATH"
 cp aws-cni-support.sh "$HOST_CNI_BIN_PATH"
