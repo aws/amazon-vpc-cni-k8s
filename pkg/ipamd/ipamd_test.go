@@ -596,3 +596,16 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 		})
 	}
 }
+
+func TestDisablingENIProvisioning(t *testing.T) {
+	ctrl, _, _, _, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	_ = os.Setenv(envDisableENIProvisioning, "true")
+	disabled := disablingENIProvisioning()
+	assert.True(t, disabled)
+
+	_ = os.Unsetenv(envDisableENIProvisioning)
+	disabled = disablingENIProvisioning()
+	assert.False(t, disabled)
+}
