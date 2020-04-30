@@ -61,15 +61,10 @@ wait_for_ipam() {
 echo -n "Copying portmap binary ... "
 
 HOST_PORTMAP="$HOST_CNI_BIN_PATH/portmap"
-if [[ -f "$HOST_PORTMAP" ]]
-then
-    mv "$HOST_PORTMAP" "$HOST_PORTMAP.old"
-    cp portmap "$HOST_CNI_BIN_PATH"
-    rm "$HOST_PORTMAP.old"
-else
-    cp portmap "$HOST_CNI_BIN_PATH"
+if [[ -f "$HOST_PORTMAP" ]]; then
+    rm "$HOST_PORTMAP"
 fi
-
+cp portmap "$HOST_CNI_BIN_PATH"
 
 echo -n "Starting IPAM daemon in the background ... "
 ./aws-k8s-agent | tee -i "$AGENT_LOG_PATH" 2>&1 &
