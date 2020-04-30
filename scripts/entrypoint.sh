@@ -60,11 +60,12 @@ wait_for_ipam() {
 
 echo -n "Copying portmap binary... "
 
-if [[ -f "$HOST_CNI_BIN_PATH" ]]
+HOST_PORTMAP="$HOST_CNI_BIN_PATH/portmap"
+if [[ -f "$HOST_PORTMAP" ]]
 then
-    mv "$HOST_CNI_BIN_PATH" "$HOST_CNI_BIN_PATH.old"
+    mv "$HOST_PORTMAP" "$HOST_PORTMAP.old"
     cp portmap "$HOST_CNI_BIN_PATH"
-    rm "$HOST_CNI_BIN_PATH.old"
+    rm "$HOST_PORTMAP.old"
 else
     cp portmap "$HOST_CNI_BIN_PATH"
 fi
