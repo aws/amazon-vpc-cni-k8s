@@ -1,6 +1,5 @@
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-# kubernetes versions before 1.8.0 should use rbac.authorization.k8s.io/v1beta1
 kind: ClusterRole
 metadata:
   name: cni-metrics-helper
@@ -46,7 +45,6 @@ metadata:
   namespace: kube-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-# kubernetes versions before 1.8.0 should use rbac.authorization.k8s.io/v1beta1
 kind: ClusterRoleBinding
 metadata:
   name: cni-metrics-helper
@@ -59,8 +57,8 @@ subjects:
     name: cni-metrics-helper
     namespace: kube-system
 ---
+apiVersion: apps/v1
 kind: Deployment
-apiVersion: extensions/v1beta1
 metadata:
   name: cni-metrics-helper
   namespace: kube-system
