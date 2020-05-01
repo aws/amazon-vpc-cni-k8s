@@ -508,8 +508,8 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 func (c *IPAMContext) StartNodeIPPoolManager() {
 	sleepDuration := ipPoolMonitorInterval / 2
 	for {
+		time.Sleep(sleepDuration)
 		if c.accountWhitelist == nil || contains(c.accountWhitelist, c.awsClient.GetAccountId()) {
-			time.Sleep(sleepDuration)
 			c.updateIPPoolIfRequired()
 		}
 		time.Sleep(sleepDuration)
