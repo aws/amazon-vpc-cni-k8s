@@ -507,9 +507,14 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
 func (c *IPAMContext) StartNodeIPPoolManager() {
 	sleepDuration := ipPoolMonitorInterval / 2
+	// If no whitelist is defined, or whitelist contains cached owner id, ENI/IPs need to be tracked.
+	// If owner id is not set, or not in the whitelist, don't do ENI tracking.
+	shouldWhitelistTheAccount :=
+		c.accountWhitelist == nil || contains(c.accountWhitelist, c.awsClient.GetAccountId())
+
 	for {
 		time.Sleep(sleepDuration)
-		if c.accountWhitelist == nil || contains(c.accountWhitelist, c.awsClient.GetAccountId()) {
+		if shouldWhitelistTheAccount {
 			c.updateIPPoolIfRequired()
 		}
 		time.Sleep(sleepDuration)
@@ -911,7 +916,15 @@ func getWarmENITarget() int {
 func getENITrackingWhitelistedAccountIds() []string {
 	inputStr, found := os.LookupEnv(envWhitelistedAccountIds)
 	if found {
-		return strings.Split(inputStr, ",")
+		var accounts []string
+		splitInput := strings.Split(inputStr, ",")
+		for _, account := range splitInput {
+			account = strings.TrimSpace(account)
+			if account != "" {
+				accounts = append(accounts, account)
+			}
+		}
+		return accounts
 	}
 	return nil
 }

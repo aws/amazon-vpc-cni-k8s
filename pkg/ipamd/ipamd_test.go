@@ -603,12 +603,16 @@ func TestContains(t *testing.T) {
 	targetAccount := "100"
 	assert.True(t, contains(accounts, targetAccount))
 	assert.False(t, contains(accounts, "102"))
+
+	var emptyAccounts []string
+	targetAccount = ""
+	assert.False(t, contains(emptyAccounts, targetAccount))
 }
 
 func TestGetENITrackingWhitelistedAccountIds(t *testing.T) {
-	_ = os.Setenv(envWhitelistedAccountIds, "100, 101, 102")
+	_ = os.Setenv(envWhitelistedAccountIds, "100, 101, 102, ")
 	accounts := getENITrackingWhitelistedAccountIds()
-	account := "100"
+	account := "101"
 	assert.Equal(t, 3, len(accounts))
 	assert.True(t, contains(accounts, account))
 }
