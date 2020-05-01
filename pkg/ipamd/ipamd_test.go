@@ -14,6 +14,7 @@
 package ipamd
 
 import (
+	_ "fmt"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
@@ -597,19 +598,17 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 	}
 }
 
+func TestContains(t *testing.T) {
+	accounts := []string{"","100","101"}
+	targetAccount := "100"
+	assert.True(t, contains(accounts, targetAccount))
+	assert.False(t, contains(accounts, "102"))
+}
+
 func TestGetENITrackingWhitelistedAccountIds(t *testing.T) {
-	ctrl, _, _, _, _, _ := setup(t)
-	defer ctrl.Finish()
-
-	mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
-	mockAWSUtils.EXPECT().GetAccountId().Return("101")
-	_ = os.Setenv("ALLOWED_ENI_TRACKING_IDS", "100, 101, 102")
+	_ = os.Setenv(envWhitelistedAccountIds, "100, 101, 102")
 	accounts := getENITrackingWhitelistedAccountIds()
-	assert.Equal(t, len(accounts), 3)
-	assert.True(t, contains(accounts, mockAWSUtils.GetAccountId()))
-	assert.False(t, contains(accounts, "103"))
-
-	_ = os.Unsetenv("WARM_IP_TARGET")
-	accounts = getENITrackingWhitelistedAccountIds()
-	assert.Equal(t, accounts, nil)
+	account := "100"
+	assert.Equal(t, 3, len(accounts))
+	assert.True(t, contains(accounts, account))
 }

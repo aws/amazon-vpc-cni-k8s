@@ -190,6 +190,7 @@ type IPAMContext struct {
 	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
 	reconcileCooldownCache ReconcileCooldownCache
 	terminating            int32 // Flag to warn that the pod is about to shut down.
+	accountWhitelist     []string
 }
 
 // UnmanagedENISet keeps a set of ENI IDs for ENIs tagged with "node.k8s.amazonaws.com/no_manage"
@@ -308,6 +309,7 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 	c.warmIPTarget = getWarmIPTarget()
 	c.minimumIPTarget = getMinimumIPTarget()
 	c.useCustomNetworking = UseCustomNetworkCfg()
+	c.accountWhitelist = getENITrackingWhitelistedAccountIds()
 
 	err = c.nodeInit()
 	if err != nil {
@@ -504,14 +506,12 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
 func (c *IPAMContext) StartNodeIPPoolManager() {
-	accountIds := getENITrackingWhitelistedAccountIds()
-	if accountIds != nil && !contains(accountIds, c.awsClient.GetAccountId()) {
-		return
-	}
 	sleepDuration := ipPoolMonitorInterval / 2
 	for {
-		time.Sleep(sleepDuration)
-		c.updateIPPoolIfRequired()
+		if c.accountWhitelist == nil || contains(c.accountWhitelist, c.awsClient.GetAccountId()) {
+			time.Sleep(sleepDuration)
+			c.updateIPPoolIfRequired()
+		}
 		time.Sleep(sleepDuration)
 		c.nodeIPPoolReconcile(nodeIPPoolReconcileInterval)
 	}

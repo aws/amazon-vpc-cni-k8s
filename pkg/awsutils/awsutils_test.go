@@ -771,3 +771,12 @@ func TestEC2InstanceMetadataCache_getFilteredListOfNetworkInterfaces_Error(t *te
 	assert.Nil(t, got)
 	assert.Error(t, err)
 }
+
+func TestEC2InstanceMetadataCache_GetAccountId(t *testing.T) {
+	ctrl, _, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	testId := "123"
+	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, accountID: testId}
+	assert.Equal(t, testId, ins.GetAccountId())
+}
