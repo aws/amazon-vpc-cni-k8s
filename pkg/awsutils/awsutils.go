@@ -594,7 +594,11 @@ func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string,
 
 	attachmentID, err := cache.attachENI(eniID)
 	if err != nil {
-		_ = cache.deleteENI(eniID, maxENIBackoffDelay)
+		derr := cache.deleteENI(eniID, maxENIBackoffDelay)
+		if derr != nil {
+			awsUtilsErrInc("AllocENIDeleteErr", err)
+			log.Errorf("Failed to delete newly created untagged ENI! %v", err)
+		}
 		return "", errors.Wrap(err, "AllocENI: error attaching ENI")
 	}
 
@@ -1106,15 +1110,19 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	}
 
 	start := time.Now()
-	_, err = cache.ec2SVC.AssignPrivateIpAddresses(input)
+	output, err := cache.ec2SVC.AssignPrivateIpAddresses(input)
 	awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
 		log.Errorf("Failed to allocate a private IP addresses on ENI %v: %v", eniID, err)
 		awsAPIErrInc("AssignPrivateIpAddresses", err)
 		if containsPrivateIPAddressLimitExceededError(err) {
+			log.Debug("AssignPrivateIpAddresses returned PrivateIpAddressLimitExceeded")
 			return nil
 		}
 		return errors.Wrap(err, "allocate IP address: failed to allocate a private IP address")
+	}
+	if output != nil {
+		log.Infof("Allocated %d private IP addresses", len(output.AssignedPrivateIpAddresses))
 	}
 	return nil
 }
@@ -1160,6 +1168,7 @@ func (cache *EC2InstanceMetadataCache) cleanUpLeakedENIs() {
 			eniID := aws.StringValue(networkInterface.NetworkInterfaceId)
 			err = cache.deleteENI(eniID, maxENIBackoffDelay)
 			if err != nil {
+				awsUtilsErrInc("cleanUpLeakedENIDeleteErr", err)
 				log.Warnf("Failed to clean up leaked ENI %s: %v", eniID, err)
 			}
 		}
