@@ -58,6 +58,14 @@ wait_for_ipam() {
     return 1
 }
 
+echo -n "Copying portmap binary ... "
+
+HOST_PORTMAP="$HOST_CNI_BIN_PATH/portmap"
+if [[ -f "$HOST_PORTMAP" ]]; then
+    rm "$HOST_PORTMAP"
+fi
+cp portmap "$HOST_CNI_BIN_PATH"
+
 echo -n "Starting IPAM daemon in the background ... "
 ./aws-k8s-agent | tee -i "$AGENT_LOG_PATH" 2>&1 &
 echo "ok."
@@ -73,9 +81,8 @@ fi
 
 echo "ok."
 
-echo -n "Copying CNI plugin binaries and config files ... "
+echo -n "Copying additional CNI plugin binaries and config files ... "
 
-cp portmap "$HOST_CNI_BIN_PATH"
 cp aws-cni "$HOST_CNI_BIN_PATH"
 cp aws-cni-support.sh "$HOST_CNI_BIN_PATH"
 
