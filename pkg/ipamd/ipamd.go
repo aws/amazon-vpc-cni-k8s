@@ -109,6 +109,10 @@ const (
 	// eniNoManageTagKey is the tag that may be set on an ENI to indicate ipamd
 	// should not manage it in any form.
 	eniNoManageTagKey = "node.k8s.amazonaws.com/no_manage"
+
+	// disableENIProvisioning is used to specify that ENI doesn't need to be synced during initializing a pod.
+	envDisableENIProvisioning = "DISABLE_NETWORK_RESOURCE_PROVISIONING"
+	noDisableENIProvisioning = false
 )
 
 var log = logger.Get()
@@ -186,6 +190,7 @@ type IPAMContext struct {
 	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
 	reconcileCooldownCache ReconcileCooldownCache
 	terminating            int32 // Flag to warn that the pod is about to shut down.
+	disableENIProvisioning bool
 }
 
 // UnmanagedENISet keeps a set of ENI IDs for ENIs tagged with "node.k8s.amazonaws.com/no_manage"
@@ -304,6 +309,7 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 	c.warmIPTarget = getWarmIPTarget()
 	c.minimumIPTarget = getMinimumIPTarget()
 	c.useCustomNetworking = UseCustomNetworkCfg()
+	c.disableENIProvisioning = disablingENIProvisioning()
 
 	err = c.nodeInit()
 	if err != nil {
@@ -502,8 +508,10 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 func (c *IPAMContext) StartNodeIPPoolManager() {
 	sleepDuration := ipPoolMonitorInterval / 2
 	for {
-		time.Sleep(sleepDuration)
-		c.updateIPPoolIfRequired()
+		if !c.disableENIProvisioning{
+			time.Sleep(sleepDuration)
+			c.updateIPPoolIfRequired()
+		}
 		time.Sleep(sleepDuration)
 		c.nodeIPPoolReconcile(nodeIPPoolReconcileInterval)
 	}
@@ -1146,6 +1154,10 @@ func getMinimumIPTarget() int {
 		}
 	}
 	return noMinimumIPTarget
+}
+
+func disablingENIProvisioning() bool {
+	return getEnvBoolWithDefault(envDisableENIProvisioning, noDisableENIProvisioning)
 }
 
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag
