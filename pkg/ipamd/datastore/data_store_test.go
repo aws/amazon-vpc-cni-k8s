@@ -26,7 +26,7 @@ import (
 var logConfig = logger.Configuration{
 	BinaryName:  "aws-cni",
 	LogLevel:    "Debug",
-	LogLocation: "/var/log/test.log",
+	LogLocation: "stdout",
 }
 
 var log = logger.New(&logConfig)
