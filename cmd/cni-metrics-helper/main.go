@@ -32,11 +32,8 @@ import (
 var log = logger.DefaultLogger()
 
 type options struct {
-	kubeconfig   string
-	pullInterval int
-	pullCNI      bool
-	submitCW     bool
-	help         bool
+	submitCW bool
+	help     bool
 }
 
 func main() {
@@ -100,8 +97,7 @@ func main() {
 		defer cw.Stop()
 	}
 
-	var cniMetric *metrics.CNIMetricsTarget
-	cniMetric = metrics.CNIMetricsNew(kubeClient, cw, discoverController, options.submitCW)
+	var cniMetric = metrics.CNIMetricsNew(kubeClient, cw, discoverController, options.submitCW)
 
 	// metric loop
 	var pullInterval = 30 // seconds

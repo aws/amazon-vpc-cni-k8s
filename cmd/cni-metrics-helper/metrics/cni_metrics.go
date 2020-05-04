@@ -134,7 +134,6 @@ type CNIMetricsTarget struct {
 	interestingMetrics  map[string]metricsConvert
 	cwMetricsPublisher  publisher.Publisher
 	kubeClient          clientset.Interface
-	cniPods             []string
 	discoveryController *k8sapi.Controller
 	submitCW            bool
 }
