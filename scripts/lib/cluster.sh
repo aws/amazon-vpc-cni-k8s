@@ -2,10 +2,10 @@
 
 function down-test-cluster() {
     if [[ -n "${CIRCLE_JOB:-}" ]]; then
-        $TESTER_PATH eks delete cluster --path $CLUSTER_CONFIG || (echo "failed!" && exit 1)
+        $TESTER_PATH eks delete cluster --enable-prompt=false --path $CLUSTER_CONFIG || (echo "failed!" && exit 1)
     else
         echo -n "Deleting cluster $CLUSTER_NAME (this may take ~10 mins) ... "
-        $TESTER_PATH eks delete cluster --path $CLUSTER_CONFIG >>$CLUSTER_MANAGE_LOG_PATH 2>&1 ||
+        $TESTER_PATH eks delete cluster --enable-prompt=false --path $CLUSTER_CONFIG >>$CLUSTER_MANAGE_LOG_PATH 2>&1 ||
             (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
         echo "ok."
     fi
@@ -32,7 +32,7 @@ function up-test-cluster() {
         $TESTER_PATH eks create config --path $CLUSTER_CONFIG 1>&2
 
     if [[ -n "${CIRCLE_JOB:-}" ]]; then
-        $TESTER_PATH eks create cluster --path $CLUSTER_CONFIG || (echo "failed!" && exit 1)
+        $TESTER_PATH eks create cluster --enable-prompt=false --path $CLUSTER_CONFIG || (echo "failed!" && exit 1)
     else
         echo -n "Creating cluster $CLUSTER_NAME (this may take ~20 mins. details: tail -f $CLUSTER_MANAGE_LOG_PATH)... "
         $TESTER_PATH eks create cluster --path $CLUSTER_CONFIG >>$CLUSTER_MANAGE_LOG_PATH 1>&2 ||
