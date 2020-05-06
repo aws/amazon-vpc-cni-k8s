@@ -291,7 +291,7 @@ Type: String
 
 Default: `DEBUG`
 
-Valid Values: `trace`, `debug`, `info`, `warn`, `error`, `critical` or `off`. (Not case sensitive)
+Valid Values: `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`. (Not case sensitive)
 
 Specifies the loglevel for `ipamd`.
 
@@ -325,7 +325,9 @@ Specifies where to write the logging output for `aws-cni` plugin. Either to stdo
 
 Type: String
 
-Valid Values: `trace`, `debug`, `info`, `warn`, `error`, `critical` or `off`. (Not case sensitive)
+Default: `DEBUG`
+
+Valid Values: `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`. (Not case sensitive)
 
 Specifies the loglevel for `aws-cni` plugin.
 
