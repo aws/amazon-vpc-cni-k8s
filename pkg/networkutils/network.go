@@ -529,11 +529,13 @@ func containsNoSuchRule(err error) bool {
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
 func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
-		envExternalSNAT:     useExternalSNAT(),
-		envExcludeSNATCIDRs: getExcludeSNATCIDRs(),
-		envNodePortSupport:  nodePortSupportEnabled(),
-		envConnmark:         getConnmark(),
-		envRandomizeSNAT:    typeOfSNAT(),
+		envConfigureRpfilter: shouldConfigureRpFilter(),
+		envConnmark:          getConnmark(),
+		envExcludeSNATCIDRs:  getExcludeSNATCIDRs(),
+		envExternalSNAT:      useExternalSNAT(),
+		envMTU:               GetEthernetMTU(""),
+		envNodePortSupport:   nodePortSupportEnabled(),
+		envRandomizeSNAT:     typeOfSNAT(),
 	}
 }
 
