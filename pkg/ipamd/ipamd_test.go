@@ -14,6 +14,11 @@
 package ipamd
 
 import (
+	"net"
+	"os"
+	"reflect"
+	"testing"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
@@ -29,10 +34,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/vishvananda/netlink"
-	"net"
-	"os"
-	"reflect"
-	"testing"
 )
 
 const (
@@ -70,8 +71,6 @@ func setup(t *testing.T) (*gomock.Controller,
 func TestNodeInit(t *testing.T) {
 	ctrl, mockAWS, mockK8S, mockCRI, mockNetwork, _ := setup(t)
 	defer ctrl.Finish()
-
-
 
 	mockContext := &IPAMContext{
 		awsClient:     mockAWS,
@@ -577,10 +576,10 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 	mockAWSUtils.EXPECT().GetPrimaryENI().Times(2).Return(eni1.ENIID)
 
 	tests := []struct {
-		name          string
+		name   string
 		tagMap map[string]awsutils.TagMap
-		enis          []awsutils.ENIMetadata
-		want          []awsutils.ENIMetadata
+		enis   []awsutils.ENIMetadata
+		want   []awsutils.ENIMetadata
 	}{
 		{"No tags at all", nil, allENIs, allENIs},
 		{"Primary ENI unmanaged", eni1TagMap, allENIs, allENIs},

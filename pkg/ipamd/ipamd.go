@@ -112,7 +112,7 @@ const (
 
 	// disableENIProvisioning is used to specify that ENI doesn't need to be synced during initializing a pod.
 	envDisableENIProvisioning = "DISABLE_NETWORK_RESOURCE_PROVISIONING"
-	noDisableENIProvisioning = false
+	noDisableENIProvisioning  = false
 )
 
 var log = logger.Get()
@@ -508,7 +508,7 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 func (c *IPAMContext) StartNodeIPPoolManager() {
 	sleepDuration := ipPoolMonitorInterval / 2
 	for {
-		if !c.disableENIProvisioning{
+		if !c.disableENIProvisioning {
 			time.Sleep(sleepDuration)
 			c.updateIPPoolIfRequired()
 		}

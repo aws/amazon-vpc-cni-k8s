@@ -69,7 +69,6 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	resp := rpc.AddNetworkReply{
 		Success:         err == nil,
 		IPv4Addr:        addr,
-		IPv4Subnet:      "",
 		DeviceNumber:    int32(deviceNumber),
 		UseExternalSNAT: useExternalSNAT,
 		VPCcidrs:        pbVPCcidrs,
@@ -81,8 +80,8 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 }
 
 func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rpc.DelNetworkReply, error) {
-	log.Infof("Received DelNetwork for IP %s, Pod %s, Namespace %s, Sandbox %s",
-		in.IPv4Addr, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID)
+	log.Infof("Received DelNetwork for Pod %s, Namespace %s, Sandbox %s",
+		in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID)
 	delIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
 
 	ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(&k8sapi.K8SPodInfo{
