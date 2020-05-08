@@ -4,7 +4,6 @@ version: 2.1
 orbs:
   aws-cli: circleci/aws-cli@0.1.19
   k8s: circleci/kubernetes@0.11.0
-  #  codecov: codecov/codecov@1.0.5
 
 references:
   build_job: &build
@@ -24,8 +23,17 @@ references:
       - run: make vet
       # TODO: Enable architecture specific unit-test when Circle CI supports it!
       - run: make unit-test ARCH=amd64
-      #- codecov/upload:
-      #  file: coverage.txt
+      - run:
+          name: Upload Coverage Results
+          command: |
+            curl -s https://codecov.io/bash | bash -s -- \
+              -f "coverage.txt" \
+              -t "${CODECOV_TOKEN}" \
+              -n "${CIRCLE_BUILD_NUM}" \
+              -y ".codecov.yml" \
+              -F "" \
+              -Z || echo 'Codecov upload failed'
+          when: always
 
 jobs:
   build_x86_64:
