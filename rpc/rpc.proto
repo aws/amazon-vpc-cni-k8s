@@ -14,27 +14,29 @@ message AddNetworkRequest {
   string K8S_POD_INFRA_CONTAINER_ID = 3;
   string Netns = 4;
   string IfName = 5;
+  // next field: 6
 }
 
-message  AddNetworkReply{
+message AddNetworkReply {
   bool Success = 1;
   string IPv4Addr = 2;
-  string IPv4Subnet = 3;
   int32 DeviceNumber = 4;
   bool UseExternalSNAT = 5;
   repeated string VPCcidrs = 6;
+  // next field: 7
 }
 
 message DelNetworkRequest {
   string K8S_POD_NAME = 1;
   string K8S_POD_NAMESPACE = 2;
   string K8S_POD_INFRA_CONTAINER_ID = 3;
-  string IPv4Addr = 4;
   string Reason = 5;
+  // next field: 6
 }
 
 message DelNetworkReply {
   bool Success = 1;
   string IPv4Addr = 2;
   int32 DeviceNumber = 3;
+  // next field: 4
 }

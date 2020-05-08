@@ -73,9 +73,6 @@ type NetConf struct {
 type K8sArgs struct {
 	types.CommonArgs
 
-	// IP is pod's ip address
-	IP net.IP
-
 	// K8S_POD_NAME is pod's name
 	K8S_POD_NAME types.UnmarshallableString
 
@@ -212,7 +209,6 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 				K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
 				K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 				K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
-				IPv4Addr:                   r.IPv4Addr,
 				Reason:                     "SetupNSFailed"})
 
 		if delErr != nil {
@@ -290,7 +286,6 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
 			K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 			K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
-			IPv4Addr:                   k8sArgs.IP.String(),
 			Reason:                     "PodDeleted"})
 
 	if err != nil {
