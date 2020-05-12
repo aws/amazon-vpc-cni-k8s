@@ -12,9 +12,11 @@ message AddNetworkRequest {
   string K8S_POD_NAME = 1;
   string K8S_POD_NAMESPACE = 2;
   string K8S_POD_INFRA_CONTAINER_ID = 3;
-  string Netns = 4;
+  string ContainerID = 7;
   string IfName = 5;
-  // next field: 6
+  string NetworkName = 6;
+  string Netns = 4;
+  // next field: 8
 }
 
 message AddNetworkReply {
@@ -31,7 +33,10 @@ message DelNetworkRequest {
   string K8S_POD_NAMESPACE = 2;
   string K8S_POD_INFRA_CONTAINER_ID = 3;
   string Reason = 5;
-  // next field: 6
+  string ContainerID = 8;
+  string IfName = 6;
+  string NetworkName = 7;
+  // next field: 9
 }
 
 message DelNetworkReply {

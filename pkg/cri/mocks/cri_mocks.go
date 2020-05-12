@@ -50,10 +50,10 @@ func (m *MockAPIs) EXPECT() *MockAPIsMockRecorder {
 }
 
 // GetRunningPodSandboxes mocks base method
-func (m *MockAPIs) GetRunningPodSandboxes(arg0 logger.Logger) (map[string]*cri.SandboxInfo, error) {
+func (m *MockAPIs) GetRunningPodSandboxes(arg0 logger.Logger) ([]*cri.SandboxInfo, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetRunningPodSandboxes", arg0)
-	ret0, _ := ret[0].(map[string]*cri.SandboxInfo)
+	ret0, _ := ret[0].([]*cri.SandboxInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

@@ -84,7 +84,6 @@ func (c *IPAMContext) setupIntrospectionServer() *http.Server {
 	serverFunctions := map[string]func(w http.ResponseWriter, r *http.Request){
 		"/v1/enis":                      eniV1RequestHandler(c),
 		"/v1/eni-configs":               eniConfigRequestHandler(c),
-		"/v1/pods":                      podV1RequestHandler(c),
 		"/v1/networkutils-env-settings": networkEnvV1RequestHandler(),
 		"/v1/ipamd-env-settings":        ipamdEnvV1RequestHandler(),
 	}
@@ -134,18 +133,6 @@ func eniV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 		responseJSON, err := json.Marshal(ipam.dataStore.GetENIInfos())
 		if err != nil {
 			log.Errorf("Failed to marshal ENI data: %v", err)
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
-		logErr(w.Write(responseJSON))
-	}
-}
-
-func podV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		responseJSON, err := json.Marshal(ipam.dataStore.GetPodInfos())
-		if err != nil {
-			log.Errorf("Failed to marshal pod data: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
