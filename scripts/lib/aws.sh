@@ -15,7 +15,7 @@ ensure_ecr_repo() {
 }
 
 ensure_aws_k8s_tester() {
-    TESTER_RELEASE=${TESTER_RELEASE:-v1.1.7}
+    TESTER_RELEASE=${TESTER_RELEASE:-v1.2.2}
     TESTER_DOWNLOAD_URL=https://github.com/aws/aws-k8s-tester/releases/download/$TESTER_RELEASE/aws-k8s-tester-$TESTER_RELEASE-$OS-$ARCH
 
     # Download aws-k8s-tester if not yet
