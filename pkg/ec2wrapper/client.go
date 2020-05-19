@@ -21,17 +21,17 @@ import (
 )
 
 type EC2 interface {
-	CreateNetworkInterface(input *ec2svc.CreateNetworkInterfaceInput) (*ec2svc.CreateNetworkInterfaceOutput, error)
-	DescribeInstances(input *ec2svc.DescribeInstancesInput) (*ec2svc.DescribeInstancesOutput, error)
-	DescribeInstanceTypes(input *ec2svc.DescribeInstanceTypesInput) (*ec2svc.DescribeInstanceTypesOutput, error)
-	AttachNetworkInterface(input *ec2svc.AttachNetworkInterfaceInput) (*ec2svc.AttachNetworkInterfaceOutput, error)
-	DeleteNetworkInterface(input *ec2svc.DeleteNetworkInterfaceInput) (*ec2svc.DeleteNetworkInterfaceOutput, error)
-	DetachNetworkInterface(input *ec2svc.DetachNetworkInterfaceInput) (*ec2svc.DetachNetworkInterfaceOutput, error)
-	AssignPrivateIpAddresses(input *ec2svc.AssignPrivateIpAddressesInput) (*ec2svc.AssignPrivateIpAddressesOutput, error)
+	CreateNetworkInterfaceWithContext(ctx aws.Context, input *ec2svc.CreateNetworkInterfaceInput, opts ...request.Option) (*ec2svc.CreateNetworkInterfaceOutput, error)
+	DescribeInstancesWithContext(ctx aws.Context, input *ec2svc.DescribeInstancesInput, opts ...request.Option) (*ec2svc.DescribeInstancesOutput, error)
+	DescribeInstanceTypesWithContext(ctx aws.Context, input *ec2svc.DescribeInstanceTypesInput, opts ...request.Option) (*ec2svc.DescribeInstanceTypesOutput, error)
+	AttachNetworkInterfaceWithContext(ctx aws.Context, input *ec2svc.AttachNetworkInterfaceInput, opts ...request.Option) (*ec2svc.AttachNetworkInterfaceOutput, error)
+	DeleteNetworkInterfaceWithContext(ctx aws.Context, input *ec2svc.DeleteNetworkInterfaceInput, opts ...request.Option) (*ec2svc.DeleteNetworkInterfaceOutput, error)
+	DetachNetworkInterfaceWithContext(ctx aws.Context, input *ec2svc.DetachNetworkInterfaceInput, opts ...request.Option) (*ec2svc.DetachNetworkInterfaceOutput, error)
+	AssignPrivateIpAddressesWithContext(ctx aws.Context, input *ec2svc.AssignPrivateIpAddressesInput, opts ...request.Option) (*ec2svc.AssignPrivateIpAddressesOutput, error)
 	UnassignPrivateIpAddressesWithContext(ctx aws.Context, input *ec2svc.UnassignPrivateIpAddressesInput, opts ...request.Option) (*ec2svc.UnassignPrivateIpAddressesOutput, error)
-	DescribeNetworkInterfaces(input *ec2svc.DescribeNetworkInterfacesInput) (*ec2svc.DescribeNetworkInterfacesOutput, error)
-	ModifyNetworkInterfaceAttribute(input *ec2svc.ModifyNetworkInterfaceAttributeInput) (*ec2svc.ModifyNetworkInterfaceAttributeOutput, error)
-	CreateTags(input *ec2svc.CreateTagsInput) (*ec2svc.CreateTagsOutput, error)
+	DescribeNetworkInterfacesWithContext(ctx aws.Context, input *ec2svc.DescribeNetworkInterfacesInput, opts ...request.Option) (*ec2svc.DescribeNetworkInterfacesOutput, error)
+	ModifyNetworkInterfaceAttributeWithContext(ctx aws.Context, input *ec2svc.ModifyNetworkInterfaceAttributeInput, opts ...request.Option) (*ec2svc.ModifyNetworkInterfaceAttributeOutput, error)
+	CreateTagsWithContext(ctx aws.Context, input *ec2svc.CreateTagsInput, opts ...request.Option) (*ec2svc.CreateTagsOutput, error)
 }
 
 func New(sess *session.Session) EC2 {
