@@ -53,7 +53,7 @@ func (c *Client) GetRunningPodSandboxes(log logger.Logger) (map[string]*SandboxI
 		socketPath = criSocketPath
 	}
 	log.Debugf("Getting running pod sandboxes from %q", socketPath)
-	conn, err := grpc.Dial(socketPath, grpc.WithInsecure())
+	conn, err := grpc.Dial(socketPath, grpc.WithInsecure(), grpc.WithNoProxy(), grpc.WithBlock())
 	if err != nil {
 		return nil, err
 	}
