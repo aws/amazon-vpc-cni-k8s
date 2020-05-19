@@ -86,7 +86,8 @@ func main() {
 
 	opts := []grpc.DialOption{
 		grpc.WithUserAgent(userAgent),
-		grpc.WithBlock()}
+		grpc.WithBlock(),
+		grpc.WithNoProxy()}
 
 	opts = append(opts, grpc.WithInsecure())
 
