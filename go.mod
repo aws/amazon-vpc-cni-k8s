@@ -13,6 +13,7 @@ require (
 	github.com/golang/mock v1.4.1
 	github.com/golang/protobuf v1.3.5
 	github.com/google/btree v1.0.0 // indirect
+	github.com/google/go-jsonnet v0.15.0 // indirect
 	github.com/google/gofuzz v0.0.0-20170612174753-24818f796faf // indirect
 	github.com/googleapis/gnostic v0.2.0 // indirect
 	github.com/gregjones/httpcache v0.0.0-20190212212710-3befbb6ad0cc // indirect
@@ -21,8 +22,8 @@ require (
 	github.com/json-iterator/go v1.1.5 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/modern-go/reflect2 v0.0.0-20180701023420-4b7aa43c6742 // indirect
-	github.com/onsi/ginkgo v1.8.0 // indirect
-	github.com/onsi/gomega v1.5.0 // indirect
+	github.com/onsi/ginkgo v1.11.0 // indirect
+	github.com/onsi/gomega v1.8.1 // indirect
 	github.com/operator-framework/operator-sdk v0.0.7
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/errors v0.9.1
@@ -40,8 +41,10 @@ require (
 	golang.org/x/sys v0.0.0-20190826190057-c7b8b68b1456
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
 	google.golang.org/grpc v1.29.0
+	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
+	gopkg.in/yaml.v2 v2.2.7 // indirect
 	k8s.io/api v0.0.0-20180712090710-2d6f90ab1293
 	k8s.io/apimachinery v0.0.0-20180621070125-103fd098999d
 	k8s.io/client-go v0.0.0-20180806134042-1f13a808da65
