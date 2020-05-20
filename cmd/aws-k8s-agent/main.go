@@ -37,7 +37,7 @@ func _main() int {
 	}
 	log := logger.New(&logConfig)
 
-	log.Infof("Starting L-IPAMD %s  ...", version)
+	log.Infof("Starting L-IPAMD %s  ... BenTestCircleCI", version)
 
 	kubeClient, err := k8sapi.CreateKubeClient()
 	if err != nil {
