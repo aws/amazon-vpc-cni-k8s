@@ -111,6 +111,8 @@
           "value": "false"
         - "name": "AWS_VPC_K8S_CNI_LOGLEVEL"
           "value": "DEBUG"
+        - "name": "AWS_VPC_K8S_CNI_LOG_FILE"
+          "value": "/host/var/log/aws-routed-eni/ipamd.log"
         - "name": "AWS_VPC_K8S_CNI_VETHPREFIX"
           "value": "eni"
         - "name": "MY_NODE_NAME"
@@ -147,7 +149,7 @@
           "name": "cni-bin-dir"
         - "mountPath": "/host/etc/cni/net.d"
           "name": "cni-net-dir"
-        - "mountPath": "/host/var/log"
+        - "mountPath": "/host/var/log/aws-routed-eni"
           "name": "log-dir"
         - "mountPath": "/var/run/docker.sock"
           "name": "dockersock"
@@ -175,7 +177,8 @@
           "path": "/etc/cni/net.d"
         "name": "cni-net-dir"
       - "hostPath":
-          "path": "/var/log"
+          "path": "/var/log/aws-routed-eni"
+          "type": "DirectoryOrCreate"
         "name": "log-dir"
       - "hostPath":
           "path": "/var/run/docker.sock"

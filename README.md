@@ -87,7 +87,7 @@ configuration, ipamd always try to keep one extra ENI.
 When number of pods running on the node exceeds the number of addresses on a single ENI, the CNI backend start allocating
 a new ENI and start using following allocation scheme:
 
-For example, a m4.4xlarge node can have up to 8 ENIs, and each ENI can have up to 30 IP addresses. See 
+For example, a m4.4xlarge node can have up to 8 ENIs, and each ENI can have up to 30 IP addresses. See
 [Elastic Network Interfaces documentation](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html) for details.
 
 * If the number of current running Pods is between 0 and 29, ipamd will allocate one more eni. And Warm-Pool size is 2 eni * (30 -1) = 58
@@ -245,7 +245,7 @@ until `WARM_IP_TARGET` free IP addresses are available.
 EC2 API and that might cause throttling of the requests. It is strongly suggested to set `MINIMUM_IP_TARGET` when using `WARM_IP_TARGET`.
 
 If both `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are set, `ipamd` will attempt to meet both constraints.
-This environment variable overrides `WARM_ENI_TARGET` behavior. For a detailed explanation, see 
+This environment variable overrides `WARM_ENI_TARGET` behavior. For a detailed explanation, see
 [`WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/eni-and-ip-target.md).
 
 
@@ -301,7 +301,7 @@ Specifies the loglevel for `ipamd`.
 
 Type: String
 
-Default: Unset
+Default: `/host/var/log/aws-routed-eni/ipamd.log`
 
 Valid Values: `stdout` or a file path
 
@@ -313,7 +313,7 @@ Specifies where to write the logging output of `ipamd`. Either to stdout or to o
 
 Type: String
 
-Default: Unset
+Default: `/var/log/aws-routed-eni/plugin.log`
 
 Valid Values: `stdout` or a file path
 
