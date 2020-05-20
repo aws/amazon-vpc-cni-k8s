@@ -155,6 +155,7 @@ local awsnode = {
                 AWS_VPC_ENI_MTU: "9001",
                 AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER: "false",
                 AWS_VPC_K8S_CNI_LOGLEVEL: "DEBUG",
+                AWS_VPC_K8S_CNI_LOG_FILE: "/host/var/log/aws-routed-eni/ipamd.log",
                 AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
                 MY_NODE_NAME: {
                   valueFrom: {
@@ -175,7 +176,7 @@ local awsnode = {
               volumeMounts: [
                 {mountPath: "/host/opt/cni/bin", name: "cni-bin-dir"},
                 {mountPath: "/host/etc/cni/net.d", name: "cni-net-dir"},
-                {mountPath: "/host/var/log", name: "log-dir"},
+                {mountPath: "/host/var/log/aws-routed-eni", name: "log-dir"},
                 {mountPath: "/var/run/docker.sock", name: "dockersock"},
                 {mountPath: "/var/run/dockershim.sock", name: "dockershim"},
               ],
@@ -185,7 +186,12 @@ local awsnode = {
           volumes: [
             {name: "cni-bin-dir", hostPath: {path: "/opt/cni/bin"}},
             {name: "cni-net-dir", hostPath: {path: "/etc/cni/net.d"}},
-            {name: "log-dir", hostPath: {path: "/var/log"}},
+            {name: "log-dir",
+              hostPath: {
+                path: "/var/log/aws-routed-eni",
+                type: "DirectoryOrCreate",
+              },
+            },
             {name: "dockersock", hostPath: {path: "/var/run/docker.sock"}},
             {name: "dockershim", hostPath: {path: "/var/run/dockershim.sock"}},
           ],

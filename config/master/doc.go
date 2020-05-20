@@ -4,3 +4,8 @@
 package manifests
 
 //go:generate go run github.com/google/go-jsonnet/cmd/jsonnet -S -m . manifests.jsonnet
+
+// Make a 'direct' dependency, so 'go mod tidy' doesn't remove it.
+import (
+	_ "github.com/google/go-jsonnet"
+)
