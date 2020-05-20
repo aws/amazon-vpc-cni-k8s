@@ -11,7 +11,7 @@ source $DIR/lib/cluster.sh
 
 OS=$(go env GOOS)
 ARCH=$(go env GOARCH)
-AWS_REGION=${AWS_REGION:-us-west-2}
+AWS_REGION=${AWS_DEFAULT_REGION:-us-west-2}
 K8S_VERSION=${K8S_VERSION:-1.14.6}
 PROVISION=${PROVISION:-true}
 DEPROVISION=${DEPROVISION:-true}
@@ -153,8 +153,8 @@ echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 
 # Delay based on 3 nodes, 30s grace period per CNI pod
-echo "Sleeping for 110s"
 echo "TODO: Poll and wait for updates to complete instead!"
+echo "Sleeping for 110"
 sleep 110
 
 echo "*******************************************************************************"
@@ -170,7 +170,7 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
   wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
   /tmp/e2e.test --ginkgo.focus="Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
-    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)"
+    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
 fi
 
 if [[ "$DEPROVISION" == true ]]; then
