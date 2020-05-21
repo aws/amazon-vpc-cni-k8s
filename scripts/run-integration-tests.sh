@@ -143,9 +143,9 @@ echo "**************************************************************************
 echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
 echo ""
 pushd ./test/integration
-#GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \
-#    --assets=./assets
-#TEST_PASS=$?
+GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \
+    --assets=./assets
+TEST_PASS=$?
 popd
 
 echo "*******************************************************************************"
@@ -153,9 +153,15 @@ echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 
 # Delay based on 3 nodes, 30s grace period per CNI pod
-echo "Sleeping for 110s"
 echo "TODO: Poll and wait for updates to complete instead!"
-sleep 110
+echo "Sleeping for 50s then polling."
+IS_AVAILABLE=""
+while [ ${#IS_AVAILABLE} -lt 1 ]
+do
+sleep 5
+IS_AVAILABLE=$($KUBECTL_PATH describe daemonset -n=kube-system --selector=k8s-app=aws-node | grep "Available Pods: 4")
+echo ${IS_AVAILABLE}
+done
 
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"
