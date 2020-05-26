@@ -154,14 +154,8 @@ $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 
 # Delay based on 3 nodes, 30s grace period per CNI pod
 echo "TODO: Poll and wait for updates to complete instead!"
-echo "Sleeping for 50s then polling."
-IS_AVAILABLE=""
-while [ ${#IS_AVAILABLE} -lt 1 ]
-do
-sleep 5
-IS_AVAILABLE=$($KUBECTL_PATH describe daemonset -n=kube-system --selector=k8s-app=aws-node | grep "Available Pods: 4")
-echo ${IS_AVAILABLE}
-done
+echo "Sleeping for 110"
+sleep 110
 
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"
@@ -176,7 +170,7 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
   wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
   /tmp/e2e.test --ginkgo.focus="Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
-    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)"
+    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
 fi
 
 if [[ "$DEPROVISION" == true ]]; then
