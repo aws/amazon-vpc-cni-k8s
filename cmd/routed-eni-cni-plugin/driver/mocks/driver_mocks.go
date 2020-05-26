@@ -63,6 +63,21 @@ func (mr *MockNetworkAPIsMockRecorder) SetupNS(arg0, arg1, arg2, arg3, arg4, arg
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupNS", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupNS), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
 }
 
+// SetupPodENINetwork mocks base method
+func (m *MockNetworkAPIs) SetupPodENINetwork(arg0, arg1, arg2 string, arg3 *net.IPNet, arg4 int, arg5, arg6 string, arg7 int, arg8 int, arg9 logger.Logger) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetupPodENINetwork", arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetupPodENINetwork indicates an expected call of SetupPodENINetwork
+func (mr *MockNetworkAPIsMockRecorder) SetupPodENINetwork(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8,
+	arg9 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupPodENINetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupPodENINetwork), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+}
+
 // TeardownNS mocks base method
 func (m *MockNetworkAPIs) TeardownNS(arg0 *net.IPNet, arg1 int, arg2 logger.Logger) error {
 	m.ctrl.T.Helper()
@@ -75,4 +90,18 @@ func (m *MockNetworkAPIs) TeardownNS(arg0 *net.IPNet, arg1 int, arg2 logger.Logg
 func (mr *MockNetworkAPIsMockRecorder) TeardownNS(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TeardownNS", reflect.TypeOf((*MockNetworkAPIs)(nil).TeardownNS), arg0, arg1, arg2)
+}
+
+// TeardownPodENINetwork mocks base method
+func (m *MockNetworkAPIs) TeardownPodENINetwork(arg0 int, arg1 logger.Logger) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TeardownPodENINetwork", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// TeardownPodENINetwork indicates an expected call of TeardownPodENINetwork
+func (mr *MockNetworkAPIsMockRecorder) TeardownPodENINetwork(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TeardownPodENINetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).TeardownPodENINetwork), arg0, arg1)
 }

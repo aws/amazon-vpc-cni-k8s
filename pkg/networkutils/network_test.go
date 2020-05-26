@@ -303,6 +303,10 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 					"-m", "comment", "--comment", "AWS, primary ENI",
 					"-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80",
 				},
+				{
+					"-m", "comment", "--comment", "AWS, primary ENI",
+					"-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80",
+				},
 			},
 		},
 	}, mockIptables.dataplaneState)
@@ -365,12 +369,13 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 				"AWS-SNAT-CHAIN-1": [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2"}},
 				"AWS-SNAT-CHAIN-2": [][]string{{"!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-3"}},
 				"AWS-SNAT-CHAIN-3": [][]string{{"!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-4"}},
-				"AWS-SNAT-CHAIN-4": [][]string{{"-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
+				"AWS-SNAT-CHAIN-4": [][]string{{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
 				"POSTROUTING":      [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}}},
 			"mangle": {
 				"PREROUTING": [][]string{
 					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "lo", "-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in", "-j", "CONNMARK", "--set-mark", "0x80/0x80"},
 					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
 				},
 			},
 		}, mockIptables.dataplaneState)
@@ -416,7 +421,7 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 			"nat": {
 				"AWS-SNAT-CHAIN-0": [][]string{{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-1"}},
 				"AWS-SNAT-CHAIN-1": [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2"}},
-				"AWS-SNAT-CHAIN-2": [][]string{{"-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
+				"AWS-SNAT-CHAIN-2": [][]string{{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
 				"AWS-SNAT-CHAIN-3": [][]string{},
 				"AWS-SNAT-CHAIN-4": [][]string{},
 				"POSTROUTING":      [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}}},
@@ -424,6 +429,7 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 				"PREROUTING": [][]string{
 					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "lo", "-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in", "-j", "CONNMARK", "--set-mark", "0x80/0x80"},
 					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
 				},
 			},
 		}, mockIptables.dataplaneState)
@@ -471,12 +477,13 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 				"AWS-SNAT-CHAIN-1": [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2"}},
 				"AWS-SNAT-CHAIN-2": [][]string{{"!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-3"}},
 				"AWS-SNAT-CHAIN-3": [][]string{{"!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-4"}},
-				"AWS-SNAT-CHAIN-4": [][]string{{"-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
+				"AWS-SNAT-CHAIN-4": [][]string{{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
 				"POSTROUTING":      [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}}},
 			"mangle": {
 				"PREROUTING": [][]string{
 					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "lo", "-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in", "-j", "CONNMARK", "--set-mark", "0x80/0x80"},
 					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
 				},
 			},
 		}, mockIptables.dataplaneState)

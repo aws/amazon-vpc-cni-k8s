@@ -17,6 +17,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -39,6 +40,7 @@ const (
 	testIP           = "10.0.10.10"
 	testContVethName = "eth0"
 	testHostVethName = "aws-eth0"
+	testVlanName     = "vlan.eth.1"
 	testFD           = 10
 	testnetnsPath    = "/proc/1234/netns"
 	testTable        = 10
@@ -270,21 +272,21 @@ func TestRunErrLinkSetNsFd(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func (m *testMocks) mockSetupPodNetworkWithFailureAt(t *testing.T, failAt string) {
+func (m *testMocks) setupMockForVethCreation(failAt string) *mock_netlink.MockLink {
 	mockHostVeth := mock_netlink.NewMockLink(m.ctrl)
 
 	m.netlink.EXPECT().LinkByName(testHostVethName).Return(mockHostVeth, errors.New("hostVeth already exists"))
 	m.ns.EXPECT().WithNetNSPath(testnetnsPath, gomock.Any()).Return(nil)
 
-	if failAt == "link-byname" {
+	if failAt == "veth-link-byname" {
 		m.netlink.EXPECT().LinkByName(testHostVethName).Return(mockHostVeth, errors.New("error on hostVethName"))
-		return
+		return nil
 	}
 	m.netlink.EXPECT().LinkByName(testHostVethName).Return(mockHostVeth, nil)
 
-	if failAt == "procsys" {
+	if failAt == "veth-procsys" {
 		m.procsys.EXPECT().Set("net/ipv6/conf/"+testHostVethName+"/accept_ra", "0").Return(errors.New("Error writing to /proc/sys/..."))
-		return
+		return nil
 	}
 	var procsysRet error
 	if failAt == "no-ipv6" {
@@ -294,11 +296,21 @@ func (m *testMocks) mockSetupPodNetworkWithFailureAt(t *testing.T, failAt string
 	m.procsys.EXPECT().Set("net/ipv6/conf/"+testHostVethName+"/accept_ra", "0").Return(procsysRet)
 	m.procsys.EXPECT().Set("net/ipv6/conf/"+testHostVethName+"/accept_redirects", "0").Return(procsysRet)
 
-	if failAt == "link-setup" {
+	if failAt == "veth-link-setup" {
 		m.netlink.EXPECT().LinkSetUp(mockHostVeth).Return(errors.New("error on LinkSetup"))
-		return
+		return nil
 	}
 	m.netlink.EXPECT().LinkSetUp(mockHostVeth).Return(nil)
+	return mockHostVeth
+}
+
+func (m *testMocks) mockSetupPodNetworkWithFailureAt(t *testing.T, failAt string) {
+	mockHostVeth := m.setupMockForVethCreation(failAt)
+
+	// skip setting other mocks if test is expected to fail at veth creation.
+	if strings.HasPrefix(failAt, "veth-") {
+		return
+	}
 
 	hwAddr, err := net.ParseMAC(testMAC)
 	assert.NoError(t, err)
@@ -370,7 +382,7 @@ func TestSetupPodNetworkErrLinkByName(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 
-	m.mockSetupPodNetworkWithFailureAt(t, "link-byname")
+	m.mockSetupPodNetworkWithFailureAt(t, "veth-link-byname")
 
 	addr := &net.IPNet{
 		IP:   net.ParseIP(testIP),
@@ -386,7 +398,7 @@ func TestSetupPodNetworkErrLinkSetup(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 
-	m.mockSetupPodNetworkWithFailureAt(t, "link-setup")
+	m.mockSetupPodNetworkWithFailureAt(t, "veth-link-setup")
 
 	addr := &net.IPNet{
 		IP:   net.ParseIP(testIP),
@@ -402,7 +414,7 @@ func TestSetupPodNetworkErrProcSys(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 
-	m.mockSetupPodNetworkWithFailureAt(t, "procsys")
+	m.mockSetupPodNetworkWithFailureAt(t, "veth-procsys")
 
 	addr := &net.IPNet{
 		IP:   net.ParseIP(testIP),
@@ -457,5 +469,118 @@ func TestTearDownPodNetwork(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 	err := tearDownNS(addr, 0, m.netlink, log)
+	assert.NoError(t, err)
+}
+
+func TestTeardownPodENINetworkHappyCase(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockVlan := mock_netlink.NewMockLink(m.ctrl)
+	linuxNetwork := &linuxNetwork{
+		netLink: m.netlink,
+		ns:      m.ns,
+		procSys: m.procsys,
+	}
+
+	actualRule := &netlink.Rule{}
+	m.netlink.EXPECT().NewRule().Return(actualRule)
+
+	expectedRule := &netlink.Rule{
+		Priority: vlanRulePriority,
+		Table:    101,
+	}
+	gomock.InOrder(
+		m.netlink.EXPECT().LinkByName(testVlanName).Return(mockVlan, nil),
+		m.netlink.EXPECT().LinkDel(mockVlan).Return(nil),
+		// delete ip rules for the pod.
+		m.netlink.EXPECT().RuleDel(gomock.Eq(expectedRule)).Return(nil),
+		m.netlink.EXPECT().RuleDel(gomock.Eq(expectedRule)).Return(nil),
+	)
+
+	err := linuxNetwork.TeardownPodENINetwork(1, log)
+	assert.NoError(t, err)
+}
+
+func (m *testMocks) mockSetupPodENINetworkWithFailureAt(t *testing.T, addr *net.IPNet, failAt string) {
+	mockHostVeth := m.setupMockForVethCreation(failAt)
+
+	// skip setting pod ENI mocks if test is expected to fail at veth creation.
+	if strings.HasPrefix(failAt, "veth-") {
+		return
+	}
+
+	// link will not exist initially
+	m.netlink.EXPECT().LinkByName(testVlanName).Return(nil,
+		errors.New("link not found"))
+
+	vlanLink := buildVlanLink(1, 2, "eniMacAddress")
+	// add the link
+	m.netlink.EXPECT().LinkAdd(gomock.Eq(vlanLink)).Return(nil)
+
+	// bring up the link
+	m.netlink.EXPECT().LinkSetUp(gomock.Eq(vlanLink)).Return(nil)
+
+	vlanRoutes := buildRoutesForVlan(101, 0, net.ParseIP("10.1.0.1"))
+
+	// two routes for vlan
+	m.netlink.EXPECT().RouteReplace(gomock.Eq(&vlanRoutes[0])).Return(nil)
+	m.netlink.EXPECT().RouteReplace(gomock.Eq(&vlanRoutes[1])).Return(nil)
+
+	hwAddr, _ := net.ParseMAC(testMAC)
+	mockLinkAttrs := &netlink.LinkAttrs{
+		HardwareAddr: hwAddr,
+		Name:         testHostVethName,
+		Index:        3,
+	}
+	mockHostVeth.EXPECT().Attrs().Return(mockLinkAttrs).Times(2)
+
+	// add route for host veth
+	route := netlink.Route{
+		LinkIndex: 3,
+		Scope:     netlink.SCOPE_LINK,
+		Dst:       addr,
+		Table:     101,
+	}
+	m.netlink.EXPECT().RouteReplace(gomock.Eq(&route)).Return(nil)
+
+	actualRule := &netlink.Rule{}
+	m.netlink.EXPECT().NewRule().Return(actualRule)
+
+	// add two ip rules based on iff interfaces
+	expectedRule1 := &netlink.Rule{
+		Priority: vlanRulePriority,
+		Table:    101,
+		IifName:  vlanLink.Name,
+	}
+	m.netlink.EXPECT().RuleAdd(gomock.Eq(expectedRule1)).Return(nil)
+
+	expectedRule2 := &netlink.Rule{
+		Priority: vlanRulePriority,
+		Table:    101,
+		IifName:  testHostVethName,
+	}
+	m.netlink.EXPECT().RuleAdd(gomock.Eq(expectedRule2)).Return(nil)
+}
+
+func TestSetupPodENINetworkHappyCase(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	addr := &net.IPNet{
+		IP:   net.ParseIP(testIP),
+		Mask: net.IPv4Mask(255, 255, 255, 255),
+	}
+	t1 := &linuxNetwork{
+		netLink: m.netlink,
+		ns:      m.ns,
+		procSys: m.procsys,
+	}
+
+	m.mockSetupPodENINetworkWithFailureAt(t, addr, "")
+
+	err := t1.SetupPodENINetwork(testHostVethName, testContVethName, testnetnsPath, addr, 1, "eniMacAddress",
+		"10.1.0.1", 2, mtu, log)
+
 	assert.NoError(t, err)
 }

@@ -338,8 +338,9 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 			}})
 	}
 
-	// Prepare the Desired Rule for SNAT Rule
-	snatRule := []string{"-m", "comment", "--comment", "AWS, SNAT",
+	// Prepare the Desired Rule for SNAT Rule for non-pod ENIs
+	snatRule := []string{"!", "-o", "vlan+",
+		"-m", "comment", "--comment", "AWS, SNAT",
 		"-m", "addrtype", "!", "--dst-type", "LOCAL",
 		"-j", "SNAT", "--to-source", primaryAddr.String()}
 	if n.typeOfSNAT == randomHashSNAT {
@@ -405,6 +406,17 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 		rule: []string{
 			"-m", "comment", "--comment", "AWS, primary ENI",
 			"-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", n.mainENIMark),
+		},
+	})
+
+	iptableRules = append(iptableRules, iptablesRule{
+		name:        "connmark restore for primary ENI from vlan",
+		shouldExist: n.nodePortSupportEnabled,
+		table:       "mangle",
+		chain:       "PREROUTING",
+		rule: []string{
+			"-m", "comment", "--comment", "AWS, primary ENI",
+			"-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", n.mainENIMark),
 		},
 	})
 
