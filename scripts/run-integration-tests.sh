@@ -154,7 +154,7 @@ $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 
 # Delay based on 3 nodes, 30s grace period per CNI pod
 echo "TODO: Poll and wait for updates to complete instead!"
-echo "Sleeping for 110"
+echo "Sleeping for 110s"
 sleep 110
 
 echo "*******************************************************************************"
