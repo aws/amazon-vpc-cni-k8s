@@ -105,10 +105,10 @@
                 - "fargate"
       "containers":
       - "env":
-        - name: "AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER"
-          value: "false"
         - "name": "AWS_VPC_ENI_MTU"
           "value": "9001"
+        - "name": "AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER"
+          "value": "false"
         - "name": "AWS_VPC_K8S_CNI_LOGLEVEL"
           "value": "DEBUG"
         - "name": "AWS_VPC_K8S_CNI_VETHPREFIX"
@@ -139,8 +139,9 @@
           "requests":
             "cpu": "10m"
         "securityContext":
-          capabilities:
-            add: ["NET_ADMIN"]
+          "capabilities":
+            "add":
+            - "NET_ADMIN"
         "volumeMounts":
         - "mountPath": "/host/opt/cni/bin"
           "name": "cni-bin-dir"
@@ -153,6 +154,15 @@
         - "mountPath": "/var/run/dockershim.sock"
           "name": "dockershim"
       "hostNetwork": true
+      "initContainers":
+      - "image": "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init:latest"
+        "imagePullPolicy": "Always"
+        "name": "aws-vpc-cni-init"
+        "securityContext":
+          "privileged": true
+        "volumeMounts":
+        - "mountPath": "/host/opt/cni/bin"
+          "name": "cni-bin-dir"
       "priorityClassName": "system-node-critical"
       "serviceAccountName": "aws-node"
       "tolerations":
@@ -173,15 +183,6 @@
       - "hostPath":
           "path": "/var/run/dockershim.sock"
         "name": "dockershim"
-      initContainers:
-        - name: "aws-vpc-cni-init"
-          image: "973117571331.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init:latest"
-          imagePullPolicy: "Always"
-          securityContext:
-            privileged: true
-          volumeMounts:
-            - mountPath: "/host/opt/cni/bin"
-              name: "cni-bin-dir"
   "updateStrategy":
     "rollingUpdate":
       "maxUnavailable": "10%"
