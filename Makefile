@@ -175,6 +175,7 @@ generate:
 	$(MAKE) format
 
 # Generate descriptors for supported ENI configurations.
+generate-limits: GOOS=
 generate-limits:
 	go run pkg/awsutils/gen_vpc_ip_limits.go
 
