@@ -11,7 +11,7 @@ source $DIR/lib/cluster.sh
 
 OS=$(go env GOOS)
 ARCH=$(go env GOARCH)
-: ${AWS_REGION:=us-west-2}
+: ${AWS_DEFAULT_REGION:=us-west-2}
 : ${K8S_VERSION:=1.14.6}
 : ${PROVISION:=true}
 : ${DEPROVISION:=true}
@@ -75,13 +75,19 @@ check_aws_credentials
 ensure_aws_k8s_tester
 
 : ${AWS_ACCOUNT_ID:=$(aws sts get-caller-identity --query Account --output text)}
-: ${AWS_ECR_REGISTRY:="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"}
+: ${AWS_ECR_REGISTRY:="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com"}
 : ${AWS_ECR_REPO_NAME:="amazon-k8s-cni"}
 : ${IMAGE_NAME:="$AWS_ECR_REGISTRY/$AWS_ECR_REPO_NAME"}
+: ${ROLE_CREATE:=true}
+: ${ROLE_ARN:=""}
+
+# S3 bucket initialization
+: ${S3_BUCKET_CREATE:=true}
+: ${S3_BUCKET_NAME:=""}
 
 # `aws ec2 get-login` returns a docker login string, which we eval here to
 # login to the ECR registry
-eval $(aws ecr get-login --region $AWS_REGION --no-include-email) >/dev/null 2>&1
+eval $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email) >/dev/null 2>&1
 ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
 
 # Check to see if the image already exists in the Docker repository, and if
@@ -107,7 +113,7 @@ else
 fi
 
 echo "*******************************************************************************"
-echo "Running $TEST_ID on $CLUSTER_NAME in $AWS_REGION"
+echo "Running $TEST_ID on $CLUSTER_NAME in $AWS_DEFAULT_REGION"
 echo "+ Cluster config dir: $TEST_CLUSTER_DIR"
 echo "+ Result dir:         $TEST_DIR"
 echo "+ Tester:             $TESTER_PATH"
@@ -152,8 +158,8 @@ echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 
 # Delay based on 3 nodes, 30s grace period per CNI pod
-echo "Sleeping for 110s"
 echo "TODO: Poll and wait for updates to complete instead!"
+echo "Sleeping for 110s"
 sleep 110
 
 echo "*******************************************************************************"
@@ -169,7 +175,7 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
   wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
   /tmp/e2e.test --ginkgo.focus="Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
-    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)"
+    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
 fi
 
 if [[ "$DEPROVISION" == true ]]; then
