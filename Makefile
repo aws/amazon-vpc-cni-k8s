@@ -179,7 +179,7 @@ generate-limits:
 	go run pkg/awsutils/gen_vpc_ip_limits.go
 
 # Fetch portmap the port-forwarding management CNI plugin
-portmap: FETCH_VERSION=0.8.5
+portmap: FETCH_VERSION=0.8.6
 portmap: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
 portmap: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/meta/portmap
 portmap:
