@@ -152,6 +152,7 @@ local awsnode = {
               },
               livenessProbe: self.readinessProbe,
               env_:: {
+                AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER: false,
                 AWS_VPC_K8S_CNI_LOGLEVEL: "DEBUG",
                 AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
                 AWS_VPC_ENI_MTU: "9001",
@@ -168,7 +169,7 @@ local awsnode = {
               resources: {
                 requests: {cpu: "10m"},
               },
-              securityContext: {privileged: true},
+              securityContext: {add: ["NET_ADMIN"]},
               volumeMounts: [
                 {mountPath: "/host/opt/cni/bin", name: "cni-bin-dir"},
                 {mountPath: "/host/etc/cni/net.d", name: "cni-net-dir"},
@@ -176,6 +177,17 @@ local awsnode = {
                 {mountPath: "/var/run/docker.sock", name: "dockersock"},
                 {mountPath: "/var/run/dockershim.sock", name: "dockershim"},
               ],
+              initContainers: [
+              {
+                name: "aws-vpc-cni-init",
+                image: "%s/amazon-k8s-cni-init:%s" % [$.ecrRepo, $.version],
+                imagePullPolicy: "Always",
+                securityContext: {privileged: true},
+                volumeMounts: [
+                  {mountPath: "/host/opt/cni/bin", name: "cni-bin-dir"},
+                ],
+              },
+              ]
             },
           },
           containers: objectValues(self.containers_),
