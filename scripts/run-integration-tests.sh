@@ -78,6 +78,12 @@ ensure_aws_k8s_tester
 : ${AWS_ECR_REGISTRY:="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com"}
 : ${AWS_ECR_REPO_NAME:="amazon-k8s-cni"}
 : ${IMAGE_NAME:="$AWS_ECR_REGISTRY/$AWS_ECR_REPO_NAME"}
+: ${ROLE_CREATE:=true}
+: ${ROLE_ARN:=""}
+
+# S3 bucket initialization
+: ${S3_BUCKET_CREATE:=true}
+: ${S3_BUCKET_NAME:=""}
 
 # `aws ec2 get-login` returns a docker login string, which we eval here to
 # login to the ECR registry
