@@ -67,14 +67,14 @@ jobs:
       - k8s/install-kubectl:
           # requires 1.14.9 for k8s testing, since it uses log api.
           kubectl-version: v1.14.9
-      - restore_cache
+      - restore_cache:
           keys:
             - dependency-cache
       - run:
           name: Run the integration tests
           command: ./scripts/run-integration-tests.sh
           no_output_timeout: 15m
-      - save_cache
+      - save_cache:
           key: dependency-cache
           paths:
             - ./assets
