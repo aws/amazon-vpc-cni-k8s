@@ -14,7 +14,7 @@
 
 .PHONY: all dist check clean \
 		lint format check-format vet docker-vet \
-		build-linux docker init \
+		build-linux docker docker-init \
 		unit-test unit-test-race build-docker-test docker-func-test \
 		build-metrics docker-metrics \
 		metrics-unit-test docker-metrics-test
@@ -94,7 +94,7 @@ DOCKER_BUILD_FLAGS = --build-arg GOARCH="$(ARCH)" \
 .DEFAULT_GOAL = build-linux
 
 # Build both CNI and metrics helper container images.
-all: docker init docker-metrics
+all: docker docker-init docker-metrics
 
 dist: all
 	mkdir -p $(DESTDIR)
@@ -118,7 +118,7 @@ docker:
 		.
 	@echo "Built Docker image \"$(IMAGE_NAME)\""
 
-init:
+docker-init:
 	docker build $(DOCKER_BUILD_FLAGS) \
 		-f scripts/dockerfiles/Dockerfile.init \
 		-t "$(INIT_IMAGE_NAME)" \

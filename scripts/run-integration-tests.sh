@@ -79,6 +79,8 @@ ensure_aws_k8s_tester
 : "${AWS_ECR_REGISTRY:="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com"}"
 : "${AWS_ECR_REPO_NAME:="amazon-k8s-cni"}"
 : "${IMAGE_NAME:="$AWS_ECR_REGISTRY/$AWS_ECR_REPO_NAME"}"
+: "${AWS_INIT_ECR_REPO_NAME:="amazon-k8s-cni-init"}"
+: "${INIT_IMAGE_NAME:="$AWS_ECR_REGISTRY/$AWS_INIT_ECR_REPO_NAME"}"
 : "${ROLE_CREATE:=true}"
 : "${ROLE_ARN:=""}"
 
@@ -90,6 +92,7 @@ ensure_aws_k8s_tester
 # shellcheck disable=SC2046
 eval $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email) >/dev/null 2>&1
 ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
+ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_INIT_ECR_REPO_NAME"
 
 # Check to see if the image already exists in the Docker repository, and if
 # not, check out the CNI source code for that image tag, build the CNI
@@ -108,6 +111,9 @@ else
     fi
     make docker IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
     docker push "$IMAGE_NAME:$TEST_IMAGE_VERSION"
+    # Build matching init container
+    make docker-init INIT_IMAGE="$INIT_IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
+    docker push "$INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
     if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
         popd
     fi
@@ -122,6 +128,7 @@ echo "+ Kubeconfig:         $KUBECONFIG_PATH"
 echo "+ Cluster config:     $CLUSTER_CONFIG"
 echo "+ AWS Account ID:     $AWS_ACCOUNT_ID"
 echo "+ CNI image to test:  $IMAGE_NAME:$TEST_IMAGE_VERSION"
+echo "+ CNI init container: $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 
 mkdir -p "$TEST_DIR"
 mkdir -p "$REPORT_DIR"
@@ -139,6 +146,8 @@ cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
 # Daemonset template
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," "$TEST_CONFIG_PATH"
 sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
+sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
+sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
 
 export KUBECONFIG=$KUBECONFIG_PATH
 ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
@@ -154,6 +163,7 @@ popd
 
 echo "*******************************************************************************"
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
+echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 
 # Delay based on 3 nodes, 30s grace period per CNI pod
