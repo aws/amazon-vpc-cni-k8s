@@ -64,8 +64,13 @@ const (
 	UnknownInstanceType = "vpc ip resource(eni ip limit): unknown instance type"
 )
 
-// ErrENINotFound is an error when ENI is not found.
-var ErrENINotFound = errors.New("ENI is not found")
+var (
+	// ErrENINotFound is an error when ENI is not found.
+	ErrENINotFound = errors.New("ENI is not found")
+	// ErrNoNetworkInterfaces occurs when
+	// DesribeNetworkInterfaces(eniID) returns no network interfaces
+	ErrNoNetworkInterfaces = errors.New("No network interfaces found for ENI")
+)
 
 var (
 	awsAPILatency = prometheus.NewSummaryVec(
@@ -523,6 +528,9 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int, error) {
 	inst := result.Reservations[0].Instances[0]
 	var device [maxENIs]bool
 	for _, eni := range inst.NetworkInterfaces {
+		if eni.Attachment == nil {
+			continue
+		}
 		if aws.Int64Value(eni.Attachment.DeviceIndex) > maxENIs {
 			log.Warnf("The Device Index %d of the attached ENI %s > instance max slot %d",
 				aws.Int64Value(eni.Attachment.DeviceIndex), aws.StringValue(eni.NetworkInterfaceId),
@@ -817,7 +825,20 @@ func (cache *EC2InstanceMetadataCache) DescribeENI(eniID string) ([]*ec2.Network
 		log.Errorf("Failed to get ENI %s information from EC2 control plane %v", eniID, err)
 		return nil, nil, errors.Wrap(err, "failed to describe network interface")
 	}
-	return result.NetworkInterfaces[0].PrivateIpAddresses, result.NetworkInterfaces[0].Attachment.AttachmentId, nil
+	// Shouldn't happen, but let's be safe
+	if len(result.NetworkInterfaces) == 0 {
+		return nil, nil, ErrNoNetworkInterfaces
+	}
+	firstNI := result.NetworkInterfaces[0]
+
+	// We cannot assume that the NetworkInterface.Attachment field is a non-nil
+	// pointer to a NetworkInterfaceAttachment struct.
+	// Ref: https://github.com/aws/amazon-vpc-cni-k8s/issues/914
+	var attachID *string
+	if firstNI.Attachment != nil {
+		attachID = firstNI.Attachment.AttachmentId
+	}
+	return firstNI.PrivateIpAddresses, attachID, nil
 }
 
 // AllocIPAddress allocates an IP address for an ENI
