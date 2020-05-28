@@ -7,6 +7,7 @@
 * Improvement - [Add MTU and RPFilter configs to debug](https://github.com/aws/amazon-vpc-cni-k8s/pull/954) (#954, @mogren)
 * Improvement - [Bump aws-k8s-tester to v1.2.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/978) (#978, @gyuho)
 * Improvement - [Add context and user agent to EC2 requests](https://github.com/aws/amazon-vpc-cni-k8s/pull/979) (#979, @mogren)
+* Improvement - [Update limits for m6g, c6g and r6g](https://github.com/aws/amazon-vpc-cni-k8s/pull/996) (#996, @mogren)
 
 ## v1.6.1
 * Feature - [Support architecture targeted builds](https://github.com/aws/amazon-vpc-cni-k8s/pull/837) (#837, @jahkeup)
