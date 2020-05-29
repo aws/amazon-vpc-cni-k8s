@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.6.2-rc1
+## v1.6.2
 * Bug - [Add WithNoProxy to ignore proxies in gRPC connections when using unix sockets](https://github.com/aws/amazon-vpc-cni-k8s/pull/980) (#980, @nithu0115)
 * Improvement - [Fix order of file copies in entrypoint.sh](https://github.com/aws/amazon-vpc-cni-k8s/pull/935) (#935, @dthorsen)
 * Improvement - [Check all errors and log appropriately](https://github.com/aws/amazon-vpc-cni-k8s/pull/939) (#939, @mogren)
