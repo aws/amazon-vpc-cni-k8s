@@ -3,4 +3,5 @@ aws-k8s-agent
 cni-metrics-helper
 grpc-health-probe
 portmap
+loopback
 routed-eni-cni-plugin

@@ -8,13 +8,12 @@ ARG GOARCH
 ENV GO111MODULE=on
 ENV GOPROXY=direct
 
-# Copy modules in before the rest of the source to only expire cache on module
-# changes:
+# Copy modules in before the rest of the source to only expire cache on module changes:
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY Makefile ./
-RUN make portmap && make debug-script
+RUN make plugins && make debug-script
 
 COPY . ./
 RUN make build-linux
