@@ -3,7 +3,7 @@ local objectItems(obj) = [[k, obj[k]] for k in std.objectFields(obj)];
 
 local regions = {
   default: {
-    version:: "latest", // or eg "v1.6.1"
+    version:: "latest", // or eg "v1.6.2"
     ecrRegion:: "us-west-2",
     ecrAccount:: "602401143452",
     ecrDomain:: "amazonaws.com",
