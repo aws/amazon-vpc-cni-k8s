@@ -106,7 +106,10 @@ else
             https://github.com/aws/amazon-vpc-cni-k8s "$__cni_source_tmpdir" || exit 1
         pushd "$__cni_source_tmpdir"
     fi
+    START=$SECONDS
     make docker IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
+    DOCKER_BUILD_DURATION=$((SECONDS - START))
+    echo "TIMELINE: Docker build took $DOCKER_BUILD_DURATION seconds."
     docker push "$IMAGE_NAME:$TEST_IMAGE_VERSION"
     if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
         popd
@@ -129,7 +132,10 @@ mkdir -p "$TEST_CLUSTER_DIR"
 mkdir -p "$TEST_CONFIG_DIR"
 
 if [[ "$PROVISION" == true ]]; then
+    START=$SECONDS
     up-test-cluster
+    UP_CLUSTER_DURATION=$((SECONDS - START))
+    echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
     __cluster_created=1
 fi
 
@@ -162,7 +168,20 @@ $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 
 # Delay based on 3 nodes, 30s grace period per CNI pod
 echo "TODO: Poll and wait for updates to complete instead!"
-echo "Sleeping for 110s"
+echo "Sleeping for 50s then polling every 5s"
+sleep 50
+START=$SECONDS
+IS_AVAILABLE="TEMPSTRING"
+KUBECTL_PATH=kubectl
+while [ ${#IS_AVAILABLE} -gt 5 && $((SECONDS - START)) -lt 200 ]
+do
+sleep 5
+DESCRIBE_OUTPUT=$($KUBECTL_PATH describe daemonset aws-node -n=kube-system)
+echo ${DESCRIBE_OUTPUT}
+echo ""
+IS_AVAILABLE=$($KUBECTL_PATH describe daemonset aws-node -n=kube-system | grep "Available Pods: 0")
+echo ${IS_AVAILABLE}
+done
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
