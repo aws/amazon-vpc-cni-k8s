@@ -171,7 +171,6 @@ echo "TODO: Poll and wait for updates to complete instead!"
 echo "Sleeping for 50s then polling every 5s"
 START=$SECONDS
 IS_AVAILABLE="TEMPSTRING"
-KUBECTL_PATH=kubectl
 while [[ ${#IS_AVAILABLE} -gt 5 && $((SECONDS - START)) -lt 200 ]]
 do
 sleep 5
