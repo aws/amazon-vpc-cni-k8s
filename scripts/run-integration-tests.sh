@@ -168,18 +168,8 @@ $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 
 # Delay based on 3 nodes, 30s grace period per CNI pod
 echo "TODO: Poll and wait for updates to complete instead!"
-echo "Sleeping for 50s then polling every 5s"
-START=$SECONDS
-IS_AVAILABLE="TEMPSTRING"
-while [[ ${#IS_AVAILABLE} -gt 5 && $((SECONDS - START)) -lt 200 ]]
-do
-sleep 5
-DESCRIBE_OUTPUT=$($KUBECTL_PATH describe daemonset aws-node -n=kube-system)
-echo ${DESCRIBE_OUTPUT}
-echo ""
-IS_AVAILABLE=$($KUBECTL_PATH describe daemonset aws-node -n=kube-system | grep "Available Pods: 0")
-echo ${IS_AVAILABLE}
-done
+echo "Sleeping for 90s"
+sleep 90
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
