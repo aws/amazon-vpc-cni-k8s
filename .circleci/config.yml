@@ -8,7 +8,7 @@ orbs:
 references:
   build_job: &build
     docker:
-      - image: cimg/go:1.13-stretch
+      - image: cimg/go:1.13
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment: &env
       GO111MODULE: "on"
@@ -54,7 +54,7 @@ jobs:
 
   integration_test:
     docker:
-      - image: cimg/go:1.13-stretch
+      - image: cimg/go:1.13
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
       <<: *env
