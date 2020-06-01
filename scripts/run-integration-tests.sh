@@ -173,7 +173,7 @@ sleep 50
 START=$SECONDS
 IS_AVAILABLE="TEMPSTRING"
 KUBECTL_PATH=kubectl
-while [ ${#IS_AVAILABLE} -gt 5 && $((SECONDS - START)) -lt 200 ]
+while [[ ${#IS_AVAILABLE} -gt 5 && $((SECONDS - START)) -lt 200 ]]
 do
 sleep 5
 DESCRIBE_OUTPUT=$($KUBECTL_PATH describe daemonset aws-node -n=kube-system)
@@ -202,6 +202,10 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   START=$SECONDS
   wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
   /tmp/e2e.test --ginkgo.focus="Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
+    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]"
+
+  wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
+  /tmp/e2e.test --ginkgo.focus="/\[Serial\].*Conformance/s" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
     --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
   
   CONFORMANCE_DURATION=$((SECONDS - START))

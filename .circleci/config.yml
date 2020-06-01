@@ -78,6 +78,8 @@ jobs:
           key: dependency-cache
           paths:
             - ./assets
+      - store_test_results:
+          path: /tmp/cni-test
       - store_artifacts:
           path: /tmp/cni-test
 
