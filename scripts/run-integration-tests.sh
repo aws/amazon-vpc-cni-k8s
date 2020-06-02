@@ -149,14 +149,6 @@ sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PA
 export KUBECONFIG=$KUBECONFIG_PATH
 ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 
-
-
-wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
-  /tmp/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
-    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
-
-
-
 echo "*******************************************************************************"
 echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
 echo ""
@@ -202,15 +194,6 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   
   CONFORMANCE_DURATION=$((SECONDS - START))
   echo "TIMELINE: Conformance tests took $CONFORMANCE_DURATION seconds."
-fi
-
-if [[ "$DEPROVISION" == true ]]; then
-    START=$SECONDS
-
-    down-test-cluster
-
-    DOWN_DURATION=$((SECONDS - START))
-    echo "TIMELINE: Down processes took $DOWN_DURATION seconds."
 fi
 
 if [[ $TEST_PASS -ne 0 ]]; then
