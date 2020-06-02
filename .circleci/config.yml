@@ -59,7 +59,6 @@ jobs:
     environment:
       <<: *env
       RUN_CONFORMANCE: "true"
-    parallelism: 4
     steps:
       - checkout
       - setup_remote_docker
@@ -78,34 +77,9 @@ jobs:
       - save_cache:
           key: dependency-cache
           paths:
-            - ./assets
+            - /go/pkg/mod
       - store_test_results:
           path: /tmp/cni-test
-      - store_artifacts:
-          path: /tmp/cni-test
-
-  run_serial_tests:
-    docker:
-      - image: circleci/golang:1.13-stretch
-    working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
-    environment:
-      <<: *env
-      RUN_CONFORMANCE: "true"
-    steps:
-      - checkout
-      - setup_remote_docker
-      - aws-cli/setup:
-        profile-name: awstester
-      - k8s/install-kubectl:
-          # requires 1.14.9 for k8s testing, since it uses log api.
-          kubectl-version: v1.14.9
-      - restore_cache:
-          keys:
-                - dependency-cache
-      - run:
-          name: Run the integration tests
-          command: ./scripts/run-serial-tests.sh
-          no_output_timeout: 15m
       - store_artifacts:
           path: /tmp/cni-test
 
