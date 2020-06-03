@@ -152,8 +152,6 @@ ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | gr
 echo "*******************************************************************************"
 echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
 echo ""
-echo "Printing working directory"
-pwd
 START=$SECONDS
 pushd ./test/integration
 GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \
@@ -163,7 +161,7 @@ popd
 DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
 echo "Listing files in go/pkg/mod"
-ls go/pkg/mod
+ls ../../../pkg/mod
 
 echo "*******************************************************************************"
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
