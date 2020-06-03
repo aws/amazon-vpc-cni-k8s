@@ -161,7 +161,7 @@ popd
 DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
 echo "Listing files in go/pkg/mod"
-ls ../../../pkg/mod
+ls ../../../../pkg/mod
 
 echo "*******************************************************************************"
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
