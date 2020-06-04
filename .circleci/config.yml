@@ -78,6 +78,7 @@ jobs:
           key: dependency-cache
           paths:
             - /go/pkg/mod
+          when: always
       - store_test_results:
           path: /tmp/cni-test
       - store_artifacts:
