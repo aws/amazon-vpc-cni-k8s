@@ -191,7 +191,16 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
   START=$SECONDS
 
-  go get -u k8s.io/test-infra/kubetest
+  tmpdir=$(mktemp -d)
+  trap "rm -rf ${tmpdir}" EXIT
+  pushd ${tmpdir}
+  git clone --depth=1 https://github.com/kubernetes/test-infra
+  pushd test-infra
+  GO111MODULE=on go install ./kubetest
+  popd
+  popd
+
+  #go get -u k8s.io/test-infra/kubetest
   make WHAT="test/e2e/e2e.test"
   export KUBECONFIG=$KUBECONFIG
   GINKGO_PARALLEL=y kubetest --test --test_args="--ginkgo.skip=(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\] --ginkgo.focus=Conformance --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2"
