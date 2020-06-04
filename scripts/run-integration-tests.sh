@@ -191,7 +191,10 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
   START=$SECONDS
 
-  pushd ../../../k8s.io/kubernetes
+  pushd ../../..
+  ls
+  pushd k8s.io
+  ls
   tmpdir=$(mktemp -d)
   trap "rm -rf ${tmpdir}" EXIT
   pushd ${tmpdir}
@@ -206,6 +209,7 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   export KUBECONFIG=$KUBECONFIG
   export KUBERNETES_CONFORMANCE_TEST=y
   kubetest --ginkgo-parallel --provider=skeleton --test --test_args="--ginkgo.focus=\[Conformance\] --ginkgo.skip=(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\] --ginkgo.focus=Conformance --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2"
+  popd
   popd
 
   #wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
