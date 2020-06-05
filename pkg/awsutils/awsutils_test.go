@@ -371,12 +371,6 @@ func TestDescribeAllENIs(t *testing.T) {
 	ctrl, mockMetadata, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Times(2).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Times(2).Return(eni1Device, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Times(2).Return(eniID, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Times(2).Return(subnetCIDR, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Times(2).Return("", nil)
-
 	result := &ec2.DescribeNetworkInterfacesOutput{
 		NetworkInterfaces: []*ec2.NetworkInterface{{
 			TagSet: []*ec2.Tag{
@@ -385,18 +379,31 @@ func TestDescribeAllENIs(t *testing.T) {
 		}},
 	}
 
+	expectedError := awserr.New("InvalidNetworkInterfaceID.NotFound", "no 'eni-xxx'", nil)
+	noMessageError := awserr.New("InvalidNetworkInterfaceID.NotFound", "no message", nil)
+	err := errors.New("other Error")
+
 	testCases := []struct {
 		name    string
 		exptags map[string]TagMap
+		n       int
 		awsErr  error
 		expErr  error
 	}{
-		{"success DescribeENI", map[string]TagMap{"": {"foo": "foo-value"}}, nil, nil},
-		{"not found error", nil, awserr.New("InvalidNetworkInterfaceID.NotFound", "", nil), ErrENINotFound},
+		{"Success DescribeENI", map[string]TagMap{"": {"foo": "foo-value"}}, 1,  nil, nil},
+		{"Not found error", nil, maxENIEC2APIRetries, awserr.New("InvalidNetworkInterfaceID.NotFound", "no 'eni-xxx'", nil), expectedError},
+		{"Not found, no message", nil, maxENIEC2APIRetries, awserr.New("InvalidNetworkInterfaceID.NotFound", "no message", nil), noMessageError},
+		{"Other error", nil, maxENIEC2APIRetries, err, err},
 	}
 
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Times(len(testCases)).Return(primaryMAC, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Times(len(testCases)).Return(eni1Device, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Times(len(testCases)).Return(eniID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Times(len(testCases)).Return(subnetCIDR, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Times(len(testCases)).Return("", nil)
+
 	for _, tc := range testCases {
-		mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, tc.awsErr)
+		mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Times(tc.n).Return(result, tc.awsErr)
 		ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata, ec2SVC: mockEC2}
 		_, tags, err := ins.DescribeAllENIs()
 		assert.Equal(t, tc.expErr, err, tc.name)
@@ -632,7 +639,7 @@ func TestFreeENIRetryMax(t *testing.T) {
 	mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().DetachNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
-	for i := 0; i < maxENIDeleteRetries; i++ {
+	for i := 0; i < maxENIEC2APIRetries; i++ {
 		mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("testing retrying delete"))
 	}
 
