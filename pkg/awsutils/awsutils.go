@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -55,7 +56,7 @@ const (
 	metadataInterface    = "/interface-id/"
 	metadataSubnetCIDR   = "/subnet-ipv4-cidr-block"
 	metadataIPv4s        = "/local-ipv4s"
-	maxENIDeleteRetries  = 12
+	maxENIEC2APIRetries  = 12
 	maxENIBackoffDelay   = time.Minute
 	eniDescriptionPrefix = "aws-K8S-"
 	metadataOwnerID      = "/owner-id"
@@ -820,7 +821,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 	}
 
 	// Retry detaching the ENI from the instance
-	err = retry.RetryNWithBackoff(retry.NewSimpleBackoff(time.Millisecond*200, maxBackoffDelay, 0.15, 2.0), maxENIDeleteRetries, func() error {
+	err = retry.RetryNWithBackoff(retry.NewSimpleBackoff(time.Millisecond*200, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
 		start := time.Now()
 		_, ec2Err := cache.ec2SVC.DetachNetworkInterfaceWithContext(context.Background(), detachInput, userAgent)
 		awsAPILatency.WithLabelValues("DetachNetworkInterface", fmt.Sprint(ec2Err != nil)).Observe(msSince(start))
@@ -890,7 +891,7 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string, maxBackoffDelay
 	deleteInput := &ec2.DeleteNetworkInterfaceInput{
 		NetworkInterfaceId: aws.String(eniName),
 	}
-	err := retry.RetryNWithBackoff(retry.NewSimpleBackoff(time.Millisecond*500, maxBackoffDelay, 0.15, 2.0), maxENIDeleteRetries, func() error {
+	err := retry.RetryNWithBackoff(retry.NewSimpleBackoff(time.Millisecond*500, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
 		start := time.Now()
 		_, ec2Err := cache.ec2SVC.DeleteNetworkInterfaceWithContext(context.Background(), deleteInput, userAgent)
 		awsAPILatency.WithLabelValues("DeleteNetworkInterface", fmt.Sprint(ec2Err != nil)).Observe(msSince(start))
@@ -955,20 +956,49 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[str
 		eniIDs = append(eniIDs, eni.ENIID)
 		eniMap[eni.ENIID] = eni
 	}
-	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: aws.StringSlice(eniIDs)}
 
-	start := time.Now()
-	ec2Response, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input, userAgent)
-	awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil)).Observe(msSince(start))
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
-				return nil, nil, ErrENINotFound
-			}
+	var ec2Response *ec2.DescribeNetworkInterfacesOutput
+	// Try calling EC2 to describe the interfaces.
+	for retryCount := 0; retryCount < maxENIEC2APIRetries && len(eniIDs) > 0; retryCount++ {
+		input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: aws.StringSlice(eniIDs)}
+		start := time.Now()
+		ec2Response, err = cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input, userAgent)
+		awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil)).Observe(msSince(start))
+		if err == nil {
+			// No error, exit the loop
+			break
 		}
 		awsAPIErrInc("DescribeNetworkInterfaces", err)
-		log.Errorf("Failed to call ec2:DescribeNetworkInterfaces for %v: %v", eniIDs, err)
-		return nil, nil, errors.Wrap(err, "failed to describe network interfaces")
+		log.Errorf("Failed to call ec2:DescribeNetworkInterfaces for %v: %v", aws.StringValueSlice(input.NetworkInterfaceIds), err)
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+				badENIID := badENIID(aerr.Message())
+				log.Debugf("Could not find interface: %s, ID: %s", aerr.Message(), badENIID)
+				// Remove this ENI from the map
+				delete(eniMap, badENIID)
+				// Remove the failing ENI ID from the EC2 API request and try again
+				var tmpENIIDs []string
+				for _, eniID := range eniIDs {
+					if eniID != badENIID {
+						tmpENIIDs = append(tmpENIIDs, eniID)
+					}
+				}
+				eniIDs = tmpENIIDs
+				continue
+			}
+		}
+		// For other errors sleep a short while before the next retry
+		time.Sleep(time.Duration(retryCount*10) * time.Millisecond)
+	}
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Collect the verified ENIs
+	var verifiedENIs []ENIMetadata
+	for _, eniMetadata := range eniMap {
+		verifiedENIs = append(verifiedENIs, eniMetadata)
 	}
 
 	// Collect ENI response into ENI metadata and tags.
@@ -990,7 +1020,18 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[str
 			tagMap[eniMetadata.ENIID] = tags
 		}
 	}
-	return allENIs, tagMap, nil
+	return verifiedENIs, tagMap, nil
+}
+
+var eniErrorMessageRegex = regexp.MustCompile("'([a-zA-Z0-9-]+)'")
+
+func badENIID(errMsg string) string {
+	found := eniErrorMessageRegex.FindStringSubmatch(errMsg)
+	if found == nil || len(found) < 2 {
+		return ""
+	}
+	fmt.Printf("found=%v\n", found)
+	return found[1]
 }
 
 // logOutOfSyncState compares the IP and metadata returned by IMDS and the EC2 API DescribeNetworkInterfaces calls
