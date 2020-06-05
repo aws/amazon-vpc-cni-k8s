@@ -69,13 +69,13 @@ jobs:
           kubectl-version: v1.14.9
       - restore_cache:
           keys:
-            - dependency-cache
+            - dependency-packages
       - run:
           name: Run the integration tests
           command: ./scripts/run-integration-tests.sh
           no_output_timeout: 15m
       - save_cache:
-          key: dependency-cache
+          key: dependency-packages
           paths:
             - /go/pkg/mod
           when: always
