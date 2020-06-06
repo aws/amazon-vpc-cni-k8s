@@ -160,18 +160,12 @@ TEST_PASS=$?
 popd
 DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
-echo "Listing files in go/pkg/mod"
-ls ../../../../pkg/mod
 
 echo "*******************************************************************************"
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 
-# Delay based on 3 nodes, 30s grace period per CNI pod
-echo "TODO: Poll and wait for updates to complete instead!"
-echo "Sleeping for 90s"
-sleep 90
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
@@ -191,29 +185,7 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
   START=$SECONDS
 
-#   pushd ../../..
-#   ls
-#   pushd k8s.io
-#   ls
-#   tmpdir=$(mktemp -d)
-#   trap "rm -rf ${tmpdir}" EXIT
-#   pushd ${tmpdir}
-#   git clone --depth=1 https://github.com/kubernetes/test-infra
-#   pushd test-infra
-#   GO111MODULE=on go install ./kubetest
-#   popd
-#   popd
-
-#   #go get -u k8s.io/test-infra/kubetest
-#   make WHAT="test/e2e/e2e.test vendor/github.com/onsi/ginkgo/ginkgo cmd/kubectl"
-#   export KUBECONFIG=$KUBECONFIG
-#   export KUBERNETES_CONFORMANCE_TEST=y
-#   kubetest --ginkgo-parallel --provider=skeleton --test --test_args="--ginkgo.focus=\[Conformance\] --ginkgo.skip=(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\] --ginkgo.focus=Conformance --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2"
-#   popd
-#   popd
-
   go install github.com/onsi/ginkgo/ginkgo
-
   wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
   ginkgo -p --focus="Conformance"  --failFast --flakeAttempts 2 \
    --skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" /tmp/e2e.test -- --kubeconfig=$KUBECONFIG
@@ -233,6 +205,7 @@ if [[ "$DEPROVISION" == true ]]; then
 
     DOWN_DURATION=$((SECONDS - START))
     echo "TIMELINE: Down processes took $DOWN_DURATION seconds."
+    display_timelines
 fi
 
 if [[ $TEST_PASS -ne 0 ]]; then
