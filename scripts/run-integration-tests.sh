@@ -166,6 +166,14 @@ echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 
+IS_AVAILABLE="TEMPSTRING"
+while [ $((SECONDS - START)) -lt 50 ]
+do
+    sleep 5
+    DESCRIBE_OUTPUT=$($KUBECTL_PATH describe daemonset aws-node -n=kube-system)
+    echo ${DESCRIBE_OUTPUT}
+done
+
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
