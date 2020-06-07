@@ -3,7 +3,7 @@ local objectItems(obj) = [[k, obj[k]] for k in std.objectFields(obj)];
 
 local regions = {
   default: {
-    version:: "latest", // or eg "v1.6.1"
+    version:: "latest", // or eg "v1.6.2"
     ecrRegion:: "us-west-2",
     ecrAccount:: "602401143452",
     ecrDomain:: "amazonaws.com",
@@ -35,18 +35,8 @@ local awsnode = {
     rules: [
       {
         apiGroups: ["crd.k8s.amazonaws.com"],
-        resources: ["*"],
-        verbs: ["*"],
-      },
-      {
-        apiGroups: [""],
-        resources: ["pods", "nodes", "namespaces"],
-        verbs: ["list", "watch", "get"],
-      },
-      {
-        apiGroups: ["extensions"],
-        resources: ["daemonsets"],
-        verbs: ["list", "watch"],
+        resources: ["eniconfigs"],
+        verbs: ["get", "list", "watch"],
       },
     ],
   },
@@ -152,9 +142,11 @@ local awsnode = {
               },
               livenessProbe: self.readinessProbe,
               env_:: {
-                AWS_VPC_K8S_CNI_LOGLEVEL: "DEBUG",
-                AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
                 AWS_VPC_ENI_MTU: "9001",
+                AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER: "false",
+                AWS_VPC_K8S_CNI_LOGLEVEL: "DEBUG",
+                AWS_VPC_K8S_CNI_LOG_FILE: "/host/var/log/aws-routed-eni/ipamd.log",
+                AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
                 MY_NODE_NAME: {
                   valueFrom: {
                     fieldRef: {fieldPath: "spec.nodeName"},
@@ -168,11 +160,14 @@ local awsnode = {
               resources: {
                 requests: {cpu: "10m"},
               },
-              securityContext: {privileged: true},
+              securityContext: {
+                capabilities: {add: ["NET_ADMIN"]},
+              },
               volumeMounts: [
                 {mountPath: "/host/opt/cni/bin", name: "cni-bin-dir"},
                 {mountPath: "/host/etc/cni/net.d", name: "cni-net-dir"},
-                {mountPath: "/host/var/log", name: "log-dir"},
+                {mountPath: "/host/var/log/aws-routed-eni", name: "log-dir"},
+                {mountPath: "/var/run/aws-node", name: "run-dir"},
                 {mountPath: "/var/run/docker.sock", name: "dockersock"},
                 {mountPath: "/var/run/dockershim.sock", name: "dockershim"},
               ],
@@ -182,9 +177,31 @@ local awsnode = {
           volumes: [
             {name: "cni-bin-dir", hostPath: {path: "/opt/cni/bin"}},
             {name: "cni-net-dir", hostPath: {path: "/etc/cni/net.d"}},
-            {name: "log-dir", hostPath: {path: "/var/log"}},
             {name: "dockersock", hostPath: {path: "/var/run/docker.sock"}},
             {name: "dockershim", hostPath: {path: "/var/run/dockershim.sock"}},
+            {name: "log-dir",
+              hostPath: {
+                path: "/var/log/aws-routed-eni",
+                type: "DirectoryOrCreate",
+              },
+            },
+            {name: "run-dir",
+              hostPath: {
+                path: "/var/run/aws-node",
+                type: "DirectoryOrCreate",
+              },
+            },
+          ],
+          initContainers: [
+            {
+              name: "aws-vpc-cni-init",
+              image: "%s/amazon-k8s-cni-init:%s" % [$.ecrRepo, $.version],
+              imagePullPolicy: "Always",
+              securityContext: {privileged: true},
+              volumeMounts: [
+                {mountPath: "/host/opt/cni/bin", name: "cni-bin-dir"},
+              ],
+            },
           ],
         },
       },

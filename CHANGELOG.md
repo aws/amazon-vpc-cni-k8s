@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.6.2
+* Bug - [Add WithNoProxy to ignore proxies in gRPC connections when using unix sockets](https://github.com/aws/amazon-vpc-cni-k8s/pull/980) (#980, @nithu0115)
+* Improvement - [Fix order of file copies in entrypoint.sh](https://github.com/aws/amazon-vpc-cni-k8s/pull/935) (#935, @dthorsen)
+* Improvement - [Check all errors and log appropriately](https://github.com/aws/amazon-vpc-cni-k8s/pull/939) (#939, @mogren)
+* Improvement - [Add MTU and RPFilter configs to debug](https://github.com/aws/amazon-vpc-cni-k8s/pull/954) (#954, @mogren)
+* Improvement - [Bump aws-k8s-tester to v1.2.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/978) (#978, @gyuho)
+* Improvement - [Add context and user agent to EC2 requests](https://github.com/aws/amazon-vpc-cni-k8s/pull/979) (#979, @mogren)
+* Improvement - [Update limits for m6g, c6g and r6g](https://github.com/aws/amazon-vpc-cni-k8s/pull/996) (#996, @mogren)
+
 ## v1.6.1
 * Feature - [Support architecture targeted builds](https://github.com/aws/amazon-vpc-cni-k8s/pull/837) (#837, @jahkeup)
 * Feature - [Zap logger](https://github.com/aws/amazon-vpc-cni-k8s/pull/824) (#824, @nithu0115)

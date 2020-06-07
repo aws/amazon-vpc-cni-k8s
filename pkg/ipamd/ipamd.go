@@ -28,13 +28,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 )
 
@@ -113,6 +111,10 @@ const (
 	// disableENIProvisioning is used to specify that ENI doesn't need to be synced during initializing a pod.
 	envDisableENIProvisioning = "DISABLE_NETWORK_RESOURCE_PROVISIONING"
 	noDisableENIProvisioning  = false
+
+	// Specify where ipam should persist its current IP<->container allocations.
+	envBackingStorePath     = "AWS_VPC_K8S_CNI_BACKING_STORE"
+	defaultBackingStorePath = "/var/run/aws-node/ipam.json"
 )
 
 var log = logger.Get()
@@ -171,10 +173,9 @@ var (
 type IPAMContext struct {
 	awsClient            awsutils.APIs
 	dataStore            *datastore.DataStore
-	k8sClient            k8sapi.K8SAPIs
+	k8sClient            kubernetes.Interface
 	useCustomNetworking  bool
 	eniConfig            eniconfig.ENIConfig
-	criClient            cri.APIs
 	networkClient        networkutils.NetworkAPIs
 	maxIPsPerENI         int
 	maxENI               int
@@ -288,13 +289,12 @@ func prometheusRegister() {
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
-func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) (*IPAMContext, error) {
+func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigController) (*IPAMContext, error) {
 	prometheusRegister()
 	c := &IPAMContext{}
 
 	c.k8sClient = k8sapiClient
 	c.networkClient = networkutils.New()
-	c.criClient = cri.New()
 	c.eniConfig = eniConfig
 
 	client, err := awsutils.New()
@@ -311,6 +311,9 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.disableENIProvisioning = disablingENIProvisioning()
 
+	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
+	c.dataStore = datastore.NewDataStore(log, checkpointer)
+
 	err = c.nodeInit()
 	if err != nil {
 		return nil, err
@@ -325,14 +328,6 @@ func (c *IPAMContext) nodeInit() error {
 
 	log.Debugf("Start node init")
 
-	eniMetadata, tagMap, err := c.awsClient.DescribeAllENIs()
-	if err != nil {
-		return errors.New("ipamd init: failed to retrieve attached ENIs info")
-	} else {
-		log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(eniMetadata), len(tagMap))
-	}
-	c.setUnmanagedENIs(tagMap)
-	enis := c.filterUnmanagedENIs(eniMetadata)
 	nodeMaxENI, err := c.getMaxENI()
 	if err != nil {
 		log.Error("Failed to get ENI limit")
@@ -362,7 +357,14 @@ func (c *IPAMContext) nodeInit() error {
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
 
-	c.dataStore = datastore.NewDataStore(log)
+	eniMetadata, tagMap, err := c.awsClient.DescribeAllENIs()
+	if err != nil {
+		return errors.New("ipamd init: failed to retrieve attached ENIs info")
+	}
+	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(eniMetadata), len(tagMap))
+	c.setUnmanagedENIs(tagMap)
+	enis := c.filterUnmanagedENIs(eniMetadata)
+
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
 		// Retry ENI sync
@@ -390,14 +392,10 @@ func (c *IPAMContext) nodeInit() error {
 			time.Sleep(eniAttachTime)
 		}
 	}
-	localPods, err := c.getLocalPodsWithRetry()
-	if err != nil {
-		log.Warnf("During ipamd init, failed to get Pod information from Kubernetes API Server %v", err)
-		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed")
-		// This can happens when L-IPAMD starts before kubelet.
-		return errors.Wrap(err, "failed to get running pods!")
+
+	if err := c.dataStore.ReadBackingStore(); err != nil {
+		return err
 	}
-	log.Debugf("getLocalPodsWithRetry() found %d local pods", len(localPods))
 
 	rules, err := c.networkClient.GetRuleList()
 	if err != nil {
@@ -405,28 +403,15 @@ func (c *IPAMContext) nodeInit() error {
 		return nil
 	}
 
-	for _, ip := range localPods {
-		if ip.Sandbox == "" {
-			log.Infof("Skipping Pod %s, Namespace %s, due to no matching sandbox", ip.Name, ip.Namespace)
-			continue
-		}
-		if ip.IP == "" {
-			log.Infof("Skipping Pod %s, Namespace %s, due to no IP", ip.Name, ip.Namespace)
-			continue
-		}
-		log.Infof("Recovered AddNetwork for Pod %s, Namespace %s, Sandbox %s", ip.Name, ip.Namespace, ip.Sandbox)
-		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
-		if err != nil {
-			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed")
-			log.Warnf("During ipamd init, failed to use pod IP %s returned from Kubernetes API Server %v", ip.IP, err)
-		}
+	for _, info := range c.dataStore.AllocatedIPs() {
+		// TODO(gus): This should really be done via CNI CHECK calls, rather than in ipam (requires upstream k8s changes).
 
 		// Update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
-		srcIPNet := net.IPNet{IP: net.ParseIP(ip.IP), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		srcIPNet := net.IPNet{IP: net.ParseIP(info.IP), Mask: net.IPv4Mask(255, 255, 255, 255)}
 
 		err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet, pbVPCcidrs, !c.networkClient.UseExternalSNAT())
 		if err != nil {
-			log.Errorf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", ip.IP, err)
+			log.Errorf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", info.IP, err)
 		}
 	}
 	// For a new node, attach IPs
@@ -440,68 +425,6 @@ func (c *IPAMContext) nodeInit() error {
 func (c *IPAMContext) updateIPStats(unmanaged int) {
 	ipMax.Set(float64(c.maxIPsPerENI * (c.maxENI - unmanaged)))
 	enisMax.Set(float64(c.maxENI - unmanaged))
-}
-
-func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
-	var pods []*k8sapi.K8SPodInfo
-	var err error
-	for retry := 1; retry <= maxK8SRetries; retry++ {
-		pods, err = c.k8sClient.K8SGetLocalPodIPs()
-		if err == nil {
-			// Check for pods with no IP since the API server might not have the latest state of the node.
-			allPodsHaveAnIP := true
-			for _, pod := range pods {
-				if pod.IP == "" {
-					log.Infof("Pod %s, Namespace %s, has no IP", pod.Name, pod.Namespace)
-					allPodsHaveAnIP = false
-				}
-			}
-			if allPodsHaveAnIP {
-				break
-			}
-			log.Warnf("Not all pods have an IP, trying again in %v seconds.", retryK8SInterval.Seconds())
-		}
-		log.Infof("Not able to get local pods yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
-		time.Sleep(retryK8SInterval)
-	}
-
-	if err != nil {
-		return nil, errors.Wrap(err, "no pods because apiserver not running.")
-	}
-
-	if pods == nil {
-		return nil, nil
-	}
-
-	// Ask the CRI for the set of running pod sandboxes. These sandboxes are
-	// what the CNI operates on, but the Kubernetes API doesn't expose any
-	// information about them. If we relied only on the Kubernetes API, we
-	// could leak IPs or unassign an IP from a still-running pod.
-	var sandboxes map[string]*cri.SandboxInfo
-	for retry := 1; retry <= maxK8SRetries; retry++ {
-		sandboxes, err = c.criClient.GetRunningPodSandboxes(log)
-		if err == nil {
-			break
-		}
-		log.Infof("Not able to get local pod sandboxes yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
-		time.Sleep(retryK8SInterval)
-	}
-	if err != nil {
-		return nil, errors.Wrap(err, "Unable to get local pod sandboxes")
-	}
-
-	// TODO consider using map
-	for _, pod := range pods {
-		// Fill in the sandbox ID by matching against the pod's UID
-		for _, sandbox := range sandboxes {
-			if sandbox.K8SUID == pod.UID {
-				log.Debugf("Found pod(%v)'s sandbox ID: %v ", sandbox.Name, sandbox.ID)
-				pod.Sandbox = sandbox.ID
-				break
-			}
-		}
-	}
-	return pods, nil
 }
 
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
@@ -578,7 +501,7 @@ func (c *IPAMContext) tryFreeENI() {
 func (c *IPAMContext) tryUnassignIPsFromAll() {
 	if _, over, warmIPTargetDefined := c.ipTargetState(); warmIPTargetDefined && over > 0 {
 		eniInfos := c.dataStore.GetENIInfos()
-		for eniID := range eniInfos.ENIIPPools {
+		for eniID := range eniInfos.ENIs {
 			ips, err := c.findFreeableIPs(eniID)
 			if err != nil {
 				log.Errorf("Error finding unassigned IPs: %s", err)
@@ -621,38 +544,14 @@ func (c *IPAMContext) tryUnassignIPsFromAll() {
 // findFreeableIPs finds and returns IPs that are not assigned to Pods but are attached
 // to ENIs on the node.
 func (c *IPAMContext) findFreeableIPs(eni string) ([]string, error) {
-	podIPInfos := c.dataStore.GetPodInfos()
-	usedIPs := sets.String{}
-	// Get IPs that are currently in use by pods
-	for _, pod := range *podIPInfos {
-		usedIPs.Insert(pod.IP)
-	}
-
-	// Get IPs that are currently attached to the instance
-	eniInfos := c.dataStore.GetENIInfos()
-	eniIPPools := eniInfos.ENIIPPools
-
-	pool, ok := eniIPPools[eni]
-	if !ok {
-		return nil, fmt.Errorf("error finding available IPs: eni %s does not exist", eni)
-	}
-
-	allocatedIPs := sets.String{}
-	for _, ip := range pool.IPv4Addresses {
-		allocatedIPs.Insert(ip.Address)
-	}
-
-	availableIPs := allocatedIPs.Difference(usedIPs).UnsortedList()
-	var freeableIPs []string
+	freeableIPs := c.dataStore.FreeableIPs(eni)
 
 	// Free the number of IPs `over` the warm IP target, unless `over` is greater than the number of available IPs on
 	// this ENI. In that case we should only free the number of available IPs.
 	_, over, _ := c.ipTargetState()
-	numFreeable := min(over, len(availableIPs))
+	numFreeable := min(over, len(freeableIPs))
+	freeableIPs = freeableIPs[:numFreeable]
 
-	for _, ip := range availableIPs[:numFreeable] {
-		freeableIPs = append(freeableIPs, ip)
-	}
 	return freeableIPs, nil
 }
 
@@ -974,7 +873,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		return
 	}
 	attachedENIs := c.filterUnmanagedENIs(allENIs)
-	currentENIIPPools := c.dataStore.GetENIInfos().ENIIPPools
+	currentENIIPPools := c.dataStore.GetENIInfos().ENIs
 
 	// Check if a new ENI was added, if so we need to update the tags
 	needToUpdateTags := false
@@ -997,7 +896,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 
 	// Mark phase
 	for _, attachedENI := range attachedENIs {
-		eniIPPool, err := c.dataStore.GetENIIPPools(attachedENI.ENIID)
+		eniIPPool, err := c.dataStore.GetENIIPs(attachedENI.ENIID)
 		if err == nil {
 			// If the attached ENI is in the data store
 			log.Debugf("Reconcile existing ENI %s IP pool", attachedENI.ENIID)
@@ -1039,7 +938,9 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	c.lastNodeIPPoolAction = curTime
 }
 
-func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInfo, attachedENI awsutils.ENIMetadata, eni string) {
+func (c *IPAMContext) eniIPPoolReconcile(ipPool []string, attachedENI awsutils.ENIMetadata, eni string) {
+	seenIPs := make(map[string]bool)
+
 	for _, privateIPv4 := range attachedENI.IPv4Addresses {
 		strPrivateIPv4 := aws.StringValue(privateIPv4.PrivateIpAddress)
 		if strPrivateIPv4 == c.primaryIP[eni] {
@@ -1082,8 +983,8 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 
 		err := c.dataStore.AddIPv4AddressToStore(eni, strPrivateIPv4)
 		if err != nil && err.Error() == datastore.IPAlreadyInStoreError {
-			// mark action = remove it from ipPool since the IP should not be deleted
-			delete(ipPool, strPrivateIPv4)
+			// mark action
+			seenIPs[strPrivateIPv4] = true
 			continue
 		}
 
@@ -1097,7 +998,11 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 	}
 
 	// Sweep phase, delete remaining IPs
-	for existingIP := range ipPool {
+	for _, existingIP := range ipPool {
+		if seenIPs[existingIP] {
+			continue
+		}
+
 		log.Debugf("Reconcile and delete IP %s on ENI %s", existingIP, eni)
 		// Force the delete, since aws local metadata has told us that this ENI is no longer
 		// attached, so any IPs assigned from this ENI will no longer work.
@@ -1122,6 +1027,13 @@ func UseCustomNetworkCfg() bool {
 		log.Warnf("Failed to parse %s; using default: false, err: %v", envCustomNetworkCfg, err)
 	}
 	return false
+}
+
+func dsBackingStorePath() string {
+	if value := os.Getenv(envBackingStorePath); value != "" {
+		return value
+	}
+	return defaultBackingStorePath
 }
 
 func getWarmIPTarget() int {
