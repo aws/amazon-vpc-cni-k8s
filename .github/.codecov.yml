@@ -33,5 +33,9 @@ coverage:
 comment: false
 
 ignore:
+  - "docs/**/*"
+  - "config/**/*"
+  - "rpc/**/*"
+  - "scripts/**/*"
   - "test/**/*"
   - "testdata/**/*"
