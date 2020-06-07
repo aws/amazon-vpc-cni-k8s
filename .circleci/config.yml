@@ -30,7 +30,6 @@ references:
               -f "coverage.txt" \
               -t "${CODECOV_TOKEN}" \
               -n "${CIRCLE_BUILD_NUM}" \
-              -y ".codecov.yml" \
               -F "" \
               -Z || echo 'Codecov upload failed'
           when: always
