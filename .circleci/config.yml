@@ -79,8 +79,6 @@ jobs:
           paths:
             - /go/pkg
           when: always
-      - store_test_results:
-          path: /tmp/cni-test
       - store_artifacts:
           path: /tmp/cni-test
 

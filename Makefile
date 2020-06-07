@@ -87,7 +87,6 @@ DOCKER_RUN_FLAGS = --rm -ti $(DOCKER_ARGS)
 DOCKER_BUILD_FLAGS = --build-arg GOARCH="$(ARCH)" \
 					  --build-arg docker_arch="$(DOCKER_ARCH)" \
 					  --build-arg golang_image="$(GOLANG_IMAGE)" \
-					  --cache-from 431277324525.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:v1.6.0-rc1-212-gda6496e8
 					  --network=host \
 	  		          $(DOCKER_ARGS)
 
