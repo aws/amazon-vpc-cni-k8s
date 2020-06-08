@@ -371,12 +371,13 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: calico-node
 rules:
-  # The CNI plugin needs to get pods, nodes, and namespaces.
+  # The CNI plugin needs to get pods, nodes, configmaps, and namespaces.
   - apiGroups: [""]
     resources:
       - pods
       - nodes
       - namespaces
+      - configmaps
     verbs:
       - get
   - apiGroups: [""]
