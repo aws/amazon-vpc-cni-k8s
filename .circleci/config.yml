@@ -65,6 +65,7 @@ jobs:
           profile-name: awstester
       - restore_cache:
           keys:
+            - dependency-packages-store-{{ checksum "test/integration/go.mod" }}
             - dependency-packages-store
       - k8s/install-kubectl:
           # requires 1.14.9 for k8s testing, since it uses log api.
@@ -74,7 +75,7 @@ jobs:
           command: ./scripts/run-integration-tests.sh
           no_output_timeout: 15m
       - save_cache:
-          key: dependency-packages-store
+          key: dependency-packages-store-{{ checksum "test/integration/go.mod" }}
           paths:
             - /go/pkg
           when: always
