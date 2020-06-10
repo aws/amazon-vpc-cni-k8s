@@ -1,0 +1,20 @@
+#!/bin/sh
+
+set -e
+
+pfx=${1:-TARGET}
+
+eval platform=\${${pfx}PLATFORM}
+
+die() {
+    echo $@ >&2
+    exit 1
+}
+
+case $platform in
+    linux/amd64) echo x86_64 ;;
+    linux/386|linux/386/*) echo i686 ;;
+    linux/arm64) echo aarch64 ;;
+
+    *) die "Unsupported OS/ARCH/VARIANT: $platform" ;;
+esac
