@@ -1004,6 +1004,9 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[str
 	// Collect ENI response into ENI metadata and tags.
 	tagMap := make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
 	for _, ec2res := range ec2Response.NetworkInterfaces {
+		if ec2res.Attachment != nil && aws.Int64Value(ec2res.Attachment.DeviceIndex) == 0 && !aws.BoolValue(ec2res.Attachment.DeleteOnTermination) {
+			log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
+		}
 		eniID := aws.StringValue(ec2res.NetworkInterfaceId)
 		eniMetadata := eniMap[eniID]
 		// Check IPv4 addresses
@@ -1018,9 +1021,6 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[str
 		}
 		if len(tags) > 0 {
 			tagMap[eniMetadata.ENIID] = tags
-		}
-		if aws.Int64Value(ec2res.Attachment.DeviceIndex) == 0 && !aws.BoolValue(ec2res.Attachment.DeleteOnTermination) {
-			log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
 		}
 	}
 	return verifiedENIs, tagMap, nil
