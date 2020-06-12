@@ -1019,6 +1019,9 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[str
 		if len(tags) > 0 {
 			tagMap[eniMetadata.ENIID] = tags
 		}
+		if aws.Int64Value(ec2res.Attachment.DeviceIndex) == 0 && !aws.BoolValue(ec2res.Attachment.DeleteOnTermination) {
+			log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
+		}
 	}
 	return verifiedENIs, tagMap, nil
 }
