@@ -14,6 +14,7 @@ function down-test-cluster() {
 function up-test-cluster() {
     echo -n "Configuring cluster $CLUSTER_NAME"
     AWS_K8S_TESTER_EKS_NAME=$CLUSTER_NAME \
+        AWS_K8S_TESTER_EKS_LOG_COLOR=true \
         AWS_K8S_TESTER_EKS_KUBECONFIG_PATH=$KUBECONFIG_PATH \
         AWS_K8S_TESTER_EKS_KUBECTL_PATH=$KUBECTL_PATH \
         AWS_K8S_TESTER_EKS_S3_BUCKET_NAME=$S3_BUCKET_NAME \
