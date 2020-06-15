@@ -118,7 +118,7 @@
             "command":
             - "/app/grpc-health-probe"
             - "-addr=:50051"
-          "initialDelaySeconds": 35
+          "initialDelaySeconds": 60
         "name": "aws-node"
         "ports":
         - "containerPort": 61678
@@ -128,7 +128,7 @@
             "command":
             - "/app/grpc-health-probe"
             - "-addr=:50051"
-          "initialDelaySeconds": 35
+          "initialDelaySeconds": 1
         "resources":
           "requests":
             "cpu": "10m"
@@ -161,6 +161,7 @@
           "name": "cni-bin-dir"
       "priorityClassName": "system-node-critical"
       "serviceAccountName": "aws-node"
+      "terminationGracePeriodSeconds": 10
       "tolerations":
       - "operator": "Exists"
       "volumes":
