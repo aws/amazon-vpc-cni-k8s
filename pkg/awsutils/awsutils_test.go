@@ -655,7 +655,9 @@ func TestDescribeInstanceTypes(t *testing.T) {
 	value, err := ins.GetENILimit()
 	assert.NoError(t, err)
 	assert.Equal(t, 9, value)
-	assert.Equal(t, 99, InstanceIPsAvailable[ins.instanceType])
+	pv4Limit, err := ins.GetENIIPv4Limit()
+	assert.NoError(t, err)
+	assert.Equal(t, 98, pv4Limit)
 }
 
 func TestAllocIPAddress(t *testing.T) {
