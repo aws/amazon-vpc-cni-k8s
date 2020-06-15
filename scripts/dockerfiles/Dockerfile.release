@@ -28,7 +28,9 @@ WORKDIR /app
 
 COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/misc/10-aws.conflist \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/loopback \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/portmap \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/bandwidth \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni-support.sh \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-k8s-agent  \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/grpc-health-probe \

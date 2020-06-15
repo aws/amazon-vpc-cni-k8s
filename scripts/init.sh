@@ -2,7 +2,7 @@
 
 set -euxo pipefail
 
-PLUGIN_BINS="loopback portmap aws-cni-support.sh"
+PLUGIN_BINS="loopback portmap bandwidth aws-cni-support.sh"
 
 for b in $PLUGIN_BINS; do
     if [ ! -f "$b" ]; then
