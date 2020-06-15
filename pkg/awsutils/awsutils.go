@@ -146,8 +146,8 @@ type APIs interface {
 	// GetPrimaryENI returns the primary ENI
 	GetPrimaryENI() string
 
-	// GetENIipLimit return IP address limit per ENI based on EC2 instance type
-	GetENIipLimit() (int, error)
+	// GetENIIPv4Limit return IP address limit per ENI based on EC2 instance type
+	GetENIIPv4Limit() (int, error)
 
 	// GetENILimit returns the number of ENIs that can be attached to an instance
 	GetENILimit() (int, error)
@@ -191,6 +191,12 @@ type ENIMetadata struct {
 
 	// The ip addresses allocated for the network interface
 	IPv4Addresses []*ec2.NetworkInterfacePrivateIpAddress
+}
+
+// InstanceTypeLimits keeps track of limits for an instance type
+type InstanceTypeLimits struct {
+	ENILimit  int
+	IPv4Limit int
 }
 
 func (eni ENIMetadata) PrimaryIPv4Address() string {
@@ -1144,19 +1150,20 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddress(eniID string) error {
 	return nil
 }
 
-// GetENIipLimit return IP address limit per ENI based on EC2 instance type
-func (cache *EC2InstanceMetadataCache) GetENIipLimit() (int, error) {
-	ipLimit, ok := InstanceIPsAvailable[cache.instanceType]
+// GetENIIPv4Limit return IP address limit per ENI based on EC2 instance type
+func (cache *EC2InstanceMetadataCache) GetENIIPv4Limit() (int, error) {
+	eniLimits, ok := InstanceNetworkingLimits[cache.instanceType]
 	if !ok {
 		log.Errorf("Failed to get ENI IP limit due to unknown instance type %s", cache.instanceType)
 		return 0, errors.New(UnknownInstanceType)
 	}
-	return ipLimit - 1, nil
+	// Subtract one from the IPv4Limit since we don't use the primary IP on each ENI for pods.
+	return eniLimits.IPv4Limit - 1, nil
 }
 
 // GetENILimit returns the number of ENIs can be attached to an instance
 func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
-	eniLimit, ok := InstanceENIsAvailable[cache.instanceType]
+	eniLimits, ok := InstanceNetworkingLimits[cache.instanceType]
 	if !ok {
 		// Fetch from EC2 API
 		describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{InstanceTypes: []*string{aws.String(cache.instanceType)}}
@@ -1168,23 +1175,26 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
 		info := output.InstanceTypes[0]
 		// Ignore any missing values
 		instanceType := aws.StringValue(info.InstanceType)
-		eniLimit = int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
-		ipLimit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
-		if instanceType != "" && eniLimit > 0 && ipLimit > 0 {
-			InstanceENIsAvailable[instanceType] = eniLimit
-			InstanceIPsAvailable[instanceType] = ipLimit
+		eniLimit := int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
+		ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
+		if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
+			eniLimits = InstanceTypeLimits{
+				ENILimit:  eniLimit,
+				IPv4Limit: ipv4Limit,
+			}
+			InstanceNetworkingLimits[instanceType] = eniLimits
 		} else {
 			return 0, errors.New(fmt.Sprintf("%s: %s", UnknownInstanceType, cache.instanceType))
 		}
 	}
-	return eniLimit, nil
+	return int(eniLimits.ENILimit), nil
 }
 
 // AllocIPAddresses allocates numIPs of IP address on an ENI
 func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int) error {
 	var needIPs = numIPs
 
-	ipLimit, err := cache.GetENIipLimit()
+	ipLimit, err := cache.GetENIIPv4Limit()
 	if err != nil {
 		awsUtilsErrInc("UnknownInstanceType", err)
 		return err

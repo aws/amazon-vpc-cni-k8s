@@ -333,7 +333,7 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 	c.maxENI = nodeMaxENI
-	c.maxIPsPerENI, err = c.awsClient.GetENIipLimit()
+	c.maxIPsPerENI, err = c.awsClient.GetENIIPv4Limit()
 	if err != nil {
 		return err
 	}
