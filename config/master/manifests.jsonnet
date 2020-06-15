@@ -100,6 +100,7 @@ local awsnode = {
         },
         spec: {
           priorityClassName: "system-node-critical",
+          terminationGracePeriodSeconds: 10,
           affinity: {
             nodeAffinity: {
               requiredDuringSchedulingIgnoredDuringExecution: {
@@ -143,9 +144,11 @@ local awsnode = {
                 exec: {
                   command: ["/app/grpc-health-probe", "-addr=:50051"],
                 },
-                initialDelaySeconds: 35,
+                initialDelaySeconds: 1,
               },
-              livenessProbe: self.readinessProbe,
+              livenessProbe: self.readinessProbe + {
+                initialDelaySeconds: 60,
+              },
               env_:: {
                 AWS_VPC_ENI_MTU: "9001",
                 AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER: "false",
