@@ -74,9 +74,9 @@ ALLPKGS = $(shell go list ./...)
 # BINS is the set of built command executables.
 BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper
 # Plugin binaries
-# Not copied: bandwidth bridge dhcp firewall flannel host-device host-local ipvlan macvlan ptp sbr static tuning vlan
+# Not copied: bridge dhcp firewall flannel host-device host-local ipvlan macvlan ptp sbr static tuning vlan
 # For gnu tar, the full path in the tar file is required
-PLUGIN_BINS = ./loopback ./portmap
+PLUGIN_BINS = ./loopback ./portmap ./bandwidth
 
 # DOCKER_ARGS is extra arguments passed during container image build.
 DOCKER_ARGS =

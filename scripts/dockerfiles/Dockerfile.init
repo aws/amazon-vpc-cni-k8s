@@ -24,6 +24,7 @@ WORKDIR /init
 COPY --from=builder \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/loopback \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/portmap \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/bandwidth \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni-support.sh \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/init.sh /init/
 
