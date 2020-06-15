@@ -28,7 +28,6 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/rpc"
 )
 
@@ -44,13 +43,15 @@ type server struct {
 
 // AddNetwork processes CNI add network request and return an IP address for container
 func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rpc.AddNetworkReply, error) {
-	log.Infof("Received AddNetwork for NS %s, Pod %s, NameSpace %s, Sandbox %s, ifname %s",
-		in.Netns, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID, in.IfName)
+	log.Infof("Received AddNetwork for NS %s, Sandbox %s, ifname %s",
+		in.Netns, in.ContainerID, in.IfName)
 
-	addr, deviceNumber, err := s.ipamContext.dataStore.AssignPodIPv4Address(&k8sapi.K8SPodInfo{
-		Name:      in.K8S_POD_NAME,
-		Namespace: in.K8S_POD_NAMESPACE,
-		Sandbox:   in.K8S_POD_INFRA_CONTAINER_ID})
+	ipamKey := datastore.IPAMKey{
+		ContainerID: in.ContainerID,
+		IfName:      in.IfName,
+		NetworkName: in.NetworkName,
+	}
+	addr, deviceNumber, err := s.ipamContext.dataStore.AssignPodIPv4Address(ipamKey)
 
 	var pbVPCcidrs []string
 	for _, cidr := range s.ipamContext.awsClient.GetVPCIPv4CIDRs() {
@@ -80,21 +81,16 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 }
 
 func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rpc.DelNetworkReply, error) {
-	log.Infof("Received DelNetwork for Pod %s, Namespace %s, Sandbox %s",
-		in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID)
+	log.Infof("Received DelNetwork for Sandbox %s", in.ContainerID)
 	delIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
 
-	ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(&k8sapi.K8SPodInfo{
-		Name:      in.K8S_POD_NAME,
-		Namespace: in.K8S_POD_NAMESPACE,
-		Sandbox:   in.K8S_POD_INFRA_CONTAINER_ID})
-
-	if err != nil && err == datastore.ErrUnknownPod {
-		// If L-IPAMD restarts, the pod's IP address are assigned by only pod's name and namespace due to kubelet's introspection.
-		ip, deviceNumber, err = s.ipamContext.dataStore.UnassignPodIPv4Address(&k8sapi.K8SPodInfo{
-			Name:      in.K8S_POD_NAME,
-			Namespace: in.K8S_POD_NAMESPACE})
+	ipamKey := datastore.IPAMKey{
+		ContainerID: in.ContainerID,
+		IfName:      in.IfName,
+		NetworkName: in.NetworkName,
 	}
+	ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
+
 	log.Infof("Send DelNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", ip, deviceNumber, err)
 
 	return &rpc.DelNetworkReply{Success: err == nil, IPv4Addr: ip, DeviceNumber: int32(deviceNumber)}, err
@@ -102,7 +98,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 
 // RunRPCHandler handles request from gRPC
 func (c *IPAMContext) RunRPCHandler() error {
-	log.Infof("Serving RPC Handler on ", ipamdgRPCaddress)
+	log.Infof("Serving RPC Handler on %s", ipamdgRPCaddress)
 	listener, err := net.Listen("tcp", ipamdgRPCaddress)
 	if err != nil {
 		log.Errorf("Failed to listen gRPC port: %v", err)

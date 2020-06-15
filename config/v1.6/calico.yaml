@@ -32,7 +32,7 @@ spec:
         # container programs network policy and routes on each
         # host.
         - name: calico-node
-          image: quay.io/calico/node:v3.13.0
+          image: quay.io/calico/node:v3.13.4
           env:
             # Use Kubernetes API as the backing datastore.
             - name: DATASTORE_TYPE
@@ -371,12 +371,13 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: calico-node
 rules:
-  # The CNI plugin needs to get pods, nodes, and namespaces.
+  # The CNI plugin needs to get pods, nodes, configmaps, and namespaces.
   - apiGroups: [""]
     resources:
       - pods
       - nodes
       - namespaces
+      - configmaps
     verbs:
       - get
   - apiGroups: [""]
@@ -546,7 +547,7 @@ spec:
       securityContext:
         fsGroup: 65534
       containers:
-        - image: quay.io/calico/typha:v3.13.0
+        - image: quay.io/calico/typha:v3.13.4
           name: calico-typha
           ports:
             - containerPort: 5473

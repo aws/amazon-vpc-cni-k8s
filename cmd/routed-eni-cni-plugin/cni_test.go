@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/containernetworking/cni/pkg/skel"
+	"github.com/containernetworking/cni/pkg/types"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
@@ -45,9 +46,12 @@ const (
 	devNum         = 4
 )
 
-var netConf = &NetConf{CNIVersion: cniVersion,
-	Name:           cniName,
-	Type:           cniType,
+var netConf = &NetConf{
+	NetConf: types.NetConf{
+		CNIVersion: cniVersion,
+		Name:       cniName,
+		Type:       cniType,
+	},
 	PluginLogLevel: pluginLogLevel,
 	PluginLogFile:  pluginLogFile,
 }

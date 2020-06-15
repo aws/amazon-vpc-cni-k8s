@@ -14,11 +14,12 @@
 package datastore
 
 import (
-	"sort"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -52,6 +53,13 @@ const (
 	// UnknownENIError is an error when caller tries to access an ENI which is unknown to datastore
 	UnknownENIError = "datastore: unknown ENI"
 )
+
+// Enable temporary checkpoint upgrade logic.  If checkpoint file is
+// not found, query CRI to learn current pods and currently-allocated
+// IPs.  Will be disabled/removed after next release.
+const BackfillMissingCheckpointFromCRI = true
+const BackfillNetworkName = "_migrated-from-cri"
+const BackfillNetworkIface = "unknown"
 
 // ErrUnknownPod is an error when there is no pod in data store matching pod name, namespace, sandbox id
 var ErrUnknownPod = errors.New("datastore: unknown pod")
@@ -93,17 +101,34 @@ var (
 	prometheusRegistered = false
 )
 
-// ENIIPPool contains ENI/IP Pool information. Exported fields will be marshaled for introspection.
-type ENIIPPool struct {
-	createTime         time.Time
-	lastUnassignedTime time.Time
+// IPAMKey is the IPAM primary key.  Quoting CNI spec:
+//   Plugins that store state should do so using a primary key of
+//   (network name, CNI_CONTAINERID, CNI_IFNAME).
+type IPAMKey struct {
+	NetworkName string `json:"networkName"`
+	ContainerID string `json:"containerID"`
+	IfName      string `json:"ifName"`
+}
+
+// IsZero returns true iff object is equal to the golang zero/null value.
+func (k IPAMKey) IsZero() bool {
+	return k == IPAMKey{}
+}
+
+// String() implements the fmt.Stringer interface.
+func (k IPAMKey) String() string {
+	return fmt.Sprintf("%s/%s/%s", k.NetworkName, k.ContainerID, k.IfName)
+}
+
+// ENI represents a single ENI.
+type ENI struct {
+	// AWS ENI ID
+	ID         string
+	createTime time.Time
 	// IsPrimary indicates whether ENI is a primary ENI
 	IsPrimary bool
-	ID        string
 	// DeviceNumber is the device number of ENI (0 means the primary ENI)
 	DeviceNumber int
-	// AssignedIPv4Addresses is the number of IP addresses already been assigned
-	AssignedIPv4Addresses int
 	// IPv4Addresses shows whether each address is assigned, the key is IP address, which must
 	// be in dot-decimal notation with no leading zeros and no whitespace(eg: "10.1.0.253")
 	IPv4Addresses map[string]*AddressInfo
@@ -111,21 +136,67 @@ type ENIIPPool struct {
 
 // AddressInfo contains information about an IP, Exported fields will be marshaled for introspection.
 type AddressInfo struct {
+	IPAMKey        IPAMKey
 	Address        string
-	Assigned       bool // true if it is assigned to a pod
 	UnassignedTime time.Time
 }
 
-// PodKey is used to locate pod IP
-type PodKey struct {
-	name      string
-	namespace string
-	sandbox   string
+func (e *ENI) findAddressForSandbox(ipamKey IPAMKey) *AddressInfo {
+	for _, addr := range e.IPv4Addresses {
+		if addr.IPAMKey == ipamKey {
+			return addr
+		}
+	}
+	return nil
+}
+
+// AssignedIPv4Addresses is the number of IP addresses already assigned
+func (e *ENI) AssignedIPv4Addresses() int {
+	count := 0
+	for _, addr := range e.IPv4Addresses {
+		if addr.Assigned() {
+			count++
+		}
+	}
+	return count
+}
+
+// Assigned returns true iff the address is allocated to a pod/sandbox.
+func (addr AddressInfo) Assigned() bool {
+	return !addr.IPAMKey.IsZero()
+}
+
+// InCoolingPeriod checks whether an addr is in addressCoolingPeriod
+func (addr AddressInfo) inCoolingPeriod() bool {
+	return time.Since(addr.UnassignedTime) <= addressCoolingPeriod
+}
+
+// ENIPool is a collection of ENI, keyed by ENI ID
+type ENIPool map[string]*ENI
+
+// AssignedIPv4Addresses is the number of IP addresses already assigned
+func (p *ENIPool) AssignedIPv4Addresses() int {
+	count := 0
+	for _, eni := range *p {
+		count += eni.AssignedIPv4Addresses()
+	}
+	return count
+}
+
+// FindAddressForSandbox returns ENI and AddressInfo or (nil, nil) if not found
+func (p *ENIPool) FindAddressForSandbox(ipamKey IPAMKey) (*ENI, *AddressInfo) {
+	for _, eni := range *p {
+		if addr := eni.findAddressForSandbox(ipamKey); addr != nil {
+			return eni, addr
+		}
+	}
+	return nil, nil
 }
 
 // PodIPInfo contains pod's IP and the device number of the ENI
 type PodIPInfo struct {
-	// IP is the IP address of pod
+	IPAMKey IPAMKey
+	// IP is the IPv4 address of pod
 	IP string
 	// DeviceNumber is the device number of the ENI
 	DeviceNumber int
@@ -133,16 +204,14 @@ type PodIPInfo struct {
 
 // DataStore contains node level ENI/IP
 type DataStore struct {
-	total      int
-	assigned   int
-	eniIPPools map[string]*ENIIPPool
-	podsIP     map[PodKey]PodIPInfo
-	lock       sync.RWMutex
-	log        logger.Logger
+	total        int
+	assigned     int
+	eniPool      ENIPool
+	lock         sync.Mutex
+	log          logger.Logger
+	backingStore Checkpointer
+	cri          cri.APIs
 }
-
-// PodInfos contains pods IP information which uses key name_namespace_sandbox
-type PodInfos map[string]PodIPInfo
 
 // ENIInfos contains ENI IP information
 type ENIInfos struct {
@@ -150,8 +219,8 @@ type ENIInfos struct {
 	TotalIPs int
 	// assigned is the number of IP addresses that has been assigned
 	AssignedIPs int
-	// ENIIPPools contains ENI IP pool information
-	ENIIPPools map[string]ENIIPPool
+	// ENIs contains ENI IP pool information
+	ENIs map[string]ENI
 }
 
 func prometheusRegister() {
@@ -166,13 +235,128 @@ func prometheusRegister() {
 }
 
 // NewDataStore returns DataStore structure
-func NewDataStore(log logger.Logger) *DataStore {
+func NewDataStore(log logger.Logger, backingStore Checkpointer) *DataStore {
 	prometheusRegister()
 	return &DataStore{
-		eniIPPools: make(map[string]*ENIIPPool),
-		podsIP:     make(map[PodKey]PodIPInfo),
-		log:        log,
+		eniPool:      make(ENIPool),
+		log:          log,
+		backingStore: backingStore,
+		cri:          cri.New(),
 	}
+}
+
+// CheckpointFormatVersion is the version stamp used on stored checkpoints.
+const CheckpointFormatVersion = "vpc-cni-ipam/1"
+
+// CheckpointData is the format of stored checkpoints. Note this is
+// deliberately a "dumb" format since efficiency is less important
+// than version stability here.
+type CheckpointData struct {
+	Version     string            `json:"version"`
+	Allocations []CheckpointEntry `json:"allocations"`
+}
+
+// CheckpointEntry is a "row" in the conceptual IPAM datastore, as stored
+// in checkpoints.
+type CheckpointEntry struct {
+	IPAMKey
+	IPv4 string `json:"ipv4"`
+}
+
+// ReadBackingStore initialises the IP allocation state from the
+// configured backing store.  Should be called before using data
+// store.
+func (ds *DataStore) ReadBackingStore() error {
+	ds.log.Infof("Reading ipam state from backing store")
+
+	var data CheckpointData
+	err := ds.backingStore.Restore(&data)
+	ds.log.Debugf("backing store restore returned err %v", err)
+	if BackfillMissingCheckpointFromCRI && os.IsNotExist(err) {
+		ds.log.Infof("Backing store not found. Querying CRI.")
+		sandboxes, err := ds.cri.GetRunningPodSandboxes(ds.log)
+		if err != nil {
+			return err
+		}
+
+		entries := make([]CheckpointEntry, 0, len(sandboxes))
+		for _, s := range sandboxes {
+			entries = append(entries, CheckpointEntry{
+				// NB: These Backfill values are also assumed in UnassignPodIPv4Address
+				IPAMKey: IPAMKey{
+					NetworkName: BackfillNetworkName,
+					ContainerID: s.ID,
+					IfName:      BackfillNetworkIface,
+				},
+				IPv4: s.IP,
+			})
+		}
+		data = CheckpointData{
+			Version:     CheckpointFormatVersion,
+			Allocations: entries,
+		}
+
+	} else if os.IsNotExist(err) {
+		// Assume that no file == no containers are
+		// currently in use, eg a fresh reboot just
+		// cleared everything out.  This is ok, and a
+		// no-op.
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("datastore: error reading backing store: %v", err)
+	}
+
+	if data.Version != CheckpointFormatVersion {
+		return fmt.Errorf("datastore: unknown backing store format (%s != %s) - wrong CNI/ipamd version? (Rebooting this node will restart local pods and probably help)", data.Version, CheckpointFormatVersion)
+	}
+
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	eniIPs := make(ENIPool)
+	for _, eni := range ds.eniPool {
+		for _, addr := range eni.IPv4Addresses {
+			eniIPs[addr.Address] = eni
+		}
+	}
+
+	for _, allocation := range data.Allocations {
+		eni := eniIPs[allocation.IPv4]
+		if eni == nil {
+			ds.log.Infof("datastore: Sandbox %s uses unknown IPv4 %s - presuming stale/dead", allocation.IPAMKey, allocation.IPv4)
+			continue
+		}
+
+		addr := eni.IPv4Addresses[allocation.IPv4]
+		ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
+		ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
+	}
+
+	ds.log.Debugf("Completed reading ipam state from backing store")
+	return nil
+}
+
+func (ds *DataStore) writeBackingStoreUnsafe() error {
+	allocations := make([]CheckpointEntry, 0, ds.assigned)
+
+	for _, eni := range ds.eniPool {
+		for _, addr := range eni.IPv4Addresses {
+			if addr.Assigned() {
+				entry := CheckpointEntry{
+					IPAMKey: addr.IPAMKey,
+					IPv4:    addr.Address,
+				}
+				allocations = append(allocations, entry)
+			}
+		}
+	}
+
+	data := CheckpointData{
+		Version:     CheckpointFormatVersion,
+		Allocations: allocations,
+	}
+
+	return ds.backingStore.Checkpoint(&data)
 }
 
 // AddENI add ENI to data store
@@ -182,17 +366,17 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary bool) erro
 
 	ds.log.Debugf("DataStore Add an ENI %s", eniID)
 
-	_, ok := ds.eniIPPools[eniID]
+	_, ok := ds.eniPool[eniID]
 	if ok {
 		return errors.New(DuplicatedENIError)
 	}
-	ds.eniIPPools[eniID] = &ENIIPPool{
+	ds.eniPool[eniID] = &ENI{
 		createTime:    time.Now(),
 		IsPrimary:     isPrimary,
 		ID:            eniID,
 		DeviceNumber:  deviceNumber,
 		IPv4Addresses: make(map[string]*AddressInfo)}
-	enis.Set(float64(len(ds.eniIPPools)))
+	enis.Set(float64(len(ds.eniPool)))
 	return nil
 }
 
@@ -201,7 +385,7 @@ func (ds *DataStore) AddIPv4AddressToStore(eniID string, ipv4 string) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	curENI, ok := ds.eniIPPools[eniID]
+	curENI, ok := ds.eniPool[eniID]
 	if !ok {
 		return errors.New("add ENI's IP to datastore: unknown ENI")
 	}
@@ -216,7 +400,7 @@ func (ds *DataStore) AddIPv4AddressToStore(eniID string, ipv4 string) error {
 	// Prometheus gauge
 	totalIPs.Set(float64(ds.total))
 
-	curENI.IPv4Addresses[ipv4] = &AddressInfo{Address: ipv4, Assigned: false}
+	curENI.IPv4Addresses[ipv4] = &AddressInfo{Address: ipv4}
 	ds.log.Infof("Added ENI(%s)'s IP %s to datastore", eniID, ipv4)
 	return nil
 }
@@ -226,7 +410,7 @@ func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string, force bo
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	curENI, ok := ds.eniIPPools[eniID]
+	curENI, ok := ds.eniPool[eniID]
 	if !ok {
 		return errors.New(UnknownENIError)
 	}
@@ -236,18 +420,16 @@ func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string, force bo
 		return errors.New(UnknownIPError)
 	}
 
-	if ipAddr.Assigned {
+	if ipAddr.Assigned() {
 		if !force {
 			return errors.New(IPInUseError)
 		}
 		ds.log.Warnf("Force deleting assigned ip %s on eni %s", ipv4, eniID)
 		forceRemovedIPs.Inc()
-		decrementAssignedCount(ds, curENI, ipAddr)
-		for key, info := range ds.podsIP {
-			if info.IP == ipv4 {
-				delete(ds.podsIP, key)
-				break
-			}
+		ds.unassignPodIPv4AddressUnsafe(curENI, ipAddr)
+		if err := ds.writeBackingStoreUnsafe(); err != nil {
+			ds.log.Warnf("Unable to update backing store: %v", err)
+			// Continuing because 'force'
 		}
 	}
 
@@ -263,79 +445,62 @@ func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string, force bo
 
 // AssignPodIPv4Address assigns an IPv4 address to pod
 // It returns the assigned IPv4 address, device number, error
-func (ds *DataStore) AssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (ip string, deviceNumber int, err error) {
+func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (string, int, error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
 	ds.log.Debugf("AssignIPv4Address: IP address pool stats: total: %d, assigned %d", ds.total, ds.assigned)
-	podKey := PodKey{
-		name:      k8sPod.Name,
-		namespace: k8sPod.Namespace,
-		sandbox:   k8sPod.Sandbox,
+	if eni, addr := ds.eniPool.FindAddressForSandbox(ipamKey); addr != nil {
+		ds.log.Infof("AssignPodIPv4Address: duplicate pod assign for sandbox %s", ipamKey)
+		return addr.Address, eni.DeviceNumber, nil
 	}
-	ipAddr, ok := ds.podsIP[podKey]
-	if ok {
-		if ipAddr.IP == k8sPod.IP && k8sPod.IP != "" {
-			// The caller invoke multiple times to assign(PodName/NameSpace --> same IPAddress). It is not a error, but not very efficient.
-			ds.log.Infof("AssignPodIPv4Address: duplicate pod assign for IP %s, name %s, namespace %s, sandbox %s",
-				k8sPod.IP, k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox)
-			return ipAddr.IP, ipAddr.DeviceNumber, nil
-		}
-		ds.log.Errorf("AssignPodIPv4Address: current IP %s is changed to IP %s for pod(name %s, namespace %s, sandbox %s)",
-			ipAddr, k8sPod.IP, k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox)
-		return "", 0, errors.New("AssignPodIPv4Address: invalid pod with multiple IP addresses")
-	}
-	return ds.assignPodIPv4AddressUnsafe(podKey, k8sPod)
-}
 
-// It returns the assigned IPv4 address, device number, error
-func (ds *DataStore) assignPodIPv4AddressUnsafe(podKey PodKey, k8sPod *k8sapi.K8SPodInfo) (ip string, deviceNumber int, err error) {
-	for _, eni := range ds.eniIPPools {
-		if (k8sPod.IP == "") && (len(eni.IPv4Addresses) == eni.AssignedIPv4Addresses) {
-			// Skip this ENI, since it has no available IP addresses
-			ds.log.Debugf("AssignPodIPv4Address: Skip ENI %s that does not have available addresses", eni.ID)
-			continue
-		}
+	for _, eni := range ds.eniPool {
 		for _, addr := range eni.IPv4Addresses {
-			if k8sPod.IP == addr.Address {
-				// After L-IPAM restart and built IP warm-pool, it needs to take the existing running pod IP out of the pool.
-				if !addr.Assigned {
-					incrementAssignedCount(ds, eni, addr)
+			if !addr.Assigned() && !addr.inCoolingPeriod() {
+				ds.assignPodIPv4AddressUnsafe(ipamKey, eni, addr)
+				if err := ds.writeBackingStoreUnsafe(); err != nil {
+					ds.log.Warnf("Failed to update backing store: %v", err)
+					// Important! Unwind assignment
+					ds.unassignPodIPv4AddressUnsafe(eni, addr)
+					return "", 0, err
 				}
-				ds.log.Infof("AssignPodIPv4Address: Reassign IP %v to pod (name %s, namespace %s)",
-					addr.Address, k8sPod.Name, k8sPod.Namespace)
-				ds.podsIP[podKey] = PodIPInfo{IP: addr.Address, DeviceNumber: eni.DeviceNumber}
-				return addr.Address, eni.DeviceNumber, nil
-			}
-			if !addr.Assigned && k8sPod.IP == "" && !addr.inCoolingPeriod() {
-				// This is triggered by a pod's Add Network command from CNI plugin
-				incrementAssignedCount(ds, eni, addr)
-				ds.log.Infof("AssignPodIPv4Address: Assign IP %v to pod (name %s, namespace %s sandbox %s)",
-					addr.Address, k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox)
-				ds.podsIP[podKey] = PodIPInfo{IP: addr.Address, DeviceNumber: eni.DeviceNumber}
+
 				return addr.Address, eni.DeviceNumber, nil
 			}
 		}
+		ds.log.Debugf("AssignPodIPv4Address: ENI %s does not have available addresses", eni.ID)
 	}
 	ds.log.Errorf("DataStore has no available IP addresses")
 	return "", 0, errors.New("assignPodIPv4AddressUnsafe: no available IP addresses")
 }
 
-func incrementAssignedCount(ds *DataStore, eni *ENIIPPool, addr *AddressInfo) {
+// It returns the assigned IPv4 address, device number
+func (ds *DataStore) assignPodIPv4AddressUnsafe(ipamKey IPAMKey, eni *ENI, addr *AddressInfo) (string, int) {
+	ds.log.Infof("AssignPodIPv4Address: Assign IP %v to sandbox %s",
+		addr.Address, ipamKey)
+
+	if addr.Assigned() {
+		panic("addr already assigned")
+	}
+	addr.IPAMKey = ipamKey // This marks the addr as assigned
+
 	ds.assigned++
-	eni.AssignedIPv4Addresses++
-	addr.Assigned = true
 	// Prometheus gauge
 	assignedIPs.Set(float64(ds.assigned))
+
+	return addr.Address, eni.DeviceNumber
 }
 
-func decrementAssignedCount(ds *DataStore, eni *ENIIPPool, addr *AddressInfo) {
+func (ds *DataStore) unassignPodIPv4AddressUnsafe(eni *ENI, addr *AddressInfo) {
+	if !addr.Assigned() {
+		// Already unassigned
+		return
+	}
+	ds.log.Infof("UnAssignPodIPv4Address: Unassign IP %v from sandbox %s",
+		addr.Address, addr.IPAMKey)
+	addr.IPAMKey = IPAMKey{} // unassign the addr
 	ds.assigned--
-	eni.AssignedIPv4Addresses--
-	addr.Assigned = false
-	curTime := time.Now()
-	eni.lastUnassignedTime = curTime
-	addr.UnassignedTime = curTime
 	// Prometheus gauge
 	assignedIPs.Set(float64(ds.assigned))
 }
@@ -347,11 +512,11 @@ func (ds *DataStore) GetStats() (int, int) {
 
 // IsRequiredForWarmIPTarget determines if this ENI has warm IPs that are required to fulfill whatever WARM_IP_TARGET is
 // set to.
-func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENIIPPool) bool {
+func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENI) bool {
 	otherWarmIPs := 0
-	for _, other := range ds.eniIPPools {
+	for _, other := range ds.eniPool {
 		if other.ID != eni.ID {
-			otherWarmIPs += len(other.IPv4Addresses) - other.AssignedIPv4Addresses
+			otherWarmIPs += len(other.IPv4Addresses) - other.AssignedIPv4Addresses()
 		}
 	}
 	return otherWarmIPs < warmIPTarget
@@ -359,9 +524,9 @@ func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENIIPPool)
 
 // IsRequiredForMinimumIPTarget determines if this ENI is necessary to fulfill whatever MINIMUM_IP_TARGET is
 // set to.
-func (ds *DataStore) isRequiredForMinimumIPTarget(minimumIPTarget int, eni *ENIIPPool) bool {
+func (ds *DataStore) isRequiredForMinimumIPTarget(minimumIPTarget int, eni *ENI) bool {
 	otherIPs := 0
-	for _, other := range ds.eniIPPools {
+	for _, other := range ds.eniPool {
 		if other.ID != eni.ID {
 			otherIPs += len(other.IPv4Addresses)
 		}
@@ -369,8 +534,8 @@ func (ds *DataStore) isRequiredForMinimumIPTarget(minimumIPTarget int, eni *ENII
 	return otherIPs < minimumIPTarget
 }
 
-func (ds *DataStore) getDeletableENI(warmIPTarget int, minimumIPTarget int) *ENIIPPool {
-	for _, eni := range ds.eniIPPools {
+func (ds *DataStore) getDeletableENI(warmIPTarget int, minimumIPTarget int) *ENI {
+	for _, eni := range ds.eniPool {
 		if eni.IsPrimary {
 			ds.log.Debugf("ENI %s cannot be deleted because it is primary", eni.ID)
 			continue
@@ -408,37 +573,35 @@ func (ds *DataStore) getDeletableENI(warmIPTarget int, minimumIPTarget int) *ENI
 }
 
 // IsTooYoung returns true if the ENI hasn't been around long enough to be deleted.
-func (e *ENIIPPool) isTooYoung() bool {
+func (e *ENI) isTooYoung() bool {
 	return time.Since(e.createTime) < minLifeTime
 }
 
 // HasIPInCooling returns true if an IP address was unassigned recently.
-func (e *ENIIPPool) hasIPInCooling() bool {
-	return time.Since(e.lastUnassignedTime) < addressENICoolingPeriod
+func (e *ENI) hasIPInCooling() bool {
+	for _, addr := range e.IPv4Addresses {
+		if addr.inCoolingPeriod() {
+			return true
+		}
+	}
+	return false
 }
 
 // HasPods returns true if the ENI has pods assigned to it.
-func (e *ENIIPPool) hasPods() bool {
-	return e.AssignedIPv4Addresses != 0
+func (e *ENI) hasPods() bool {
+	return e.AssignedIPv4Addresses() != 0
 }
 
 // GetENINeedsIP finds an ENI in the datastore that needs more IP addresses allocated
-func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENIIPPool {
-	// NOTE(jaypipes): Some tests rely on key order so we iterate over the IP
-	// pool structs here in sorted key order.
-	// TODO(jaypipes): Don't use a map as the primary iterator vehicle.
-	// Instead, use a slice of *ENIPool and use a map for existence checks only
-	eniIDs := make([]string, 0)
-	for eniID, eni := range ds.eniIPPools {
+func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENI {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	for _, eni := range ds.eniPool {
 		if skipPrimary && eni.IsPrimary {
 			ds.log.Debugf("Skip the primary ENI for need IP check")
 			continue
 		}
-		eniIDs = append(eniIDs, eniID)
-	}
-	sort.Strings(eniIDs)
-	for _, eniID := range eniIDs {
-		eni := ds.eniIPPools[eniID]
 		if len(eni.IPv4Addresses) < maxIPperENI {
 			ds.log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d",
 				eni.ID, len(eni.IPv4Addresses), maxIPperENI)
@@ -461,111 +624,136 @@ func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget int, minimumIPTarget 
 	}
 
 	removableENI := deletableENI.ID
-	eniIPCount := len(ds.eniIPPools[removableENI].IPv4Addresses)
+	eniIPCount := len(ds.eniPool[removableENI].IPv4Addresses)
 	ds.total -= eniIPCount
 	ds.log.Infof("RemoveUnusedENIFromStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
 		removableENI, eniIPCount, ds.total, ds.assigned)
-	delete(ds.eniIPPools, removableENI)
+	delete(ds.eniPool, removableENI)
 
 	// Prometheus update
-	enis.Set(float64(len(ds.eniIPPools)))
+	enis.Set(float64(len(ds.eniPool)))
 	totalIPs.Set(float64(ds.total))
 	return removableENI
 }
 
 // RemoveENIFromDataStore removes an ENI from the datastore.  It return nil on success or an error.
-func (ds *DataStore) RemoveENIFromDataStore(eni string, force bool) error {
+func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	eniIPPool, ok := ds.eniIPPools[eni]
+	eni, ok := ds.eniPool[eniID]
 	if !ok {
 		return errors.New(UnknownENIError)
 	}
 
-	if eniIPPool.hasPods() {
+	if eni.hasPods() {
 		if !force {
 			return errors.New(ENIInUseError)
 		}
 		// This scenario can occur if the reconciliation process discovered this eni was detached
 		// from the EC2 instance outside of the control of ipamd.  If this happens, there's nothing
 		// we can do other than force all pods to be unassigned from the IPs on this eni.
-		ds.log.Warnf("Force removing eni %s with %d assigned pods", eni, eniIPPool.AssignedIPv4Addresses)
+		ds.log.Warnf("Force removing eni %s with %d assigned pods", eniID, eni.AssignedIPv4Addresses())
 		forceRemovedENIs.Inc()
-		forceRemovedIPs.Add(float64(eniIPPool.AssignedIPv4Addresses))
-		for _, addr := range eniIPPool.IPv4Addresses {
-			if addr.Assigned {
-				decrementAssignedCount(ds, eniIPPool, addr)
+		forceRemovedIPs.Add(float64(eni.AssignedIPv4Addresses()))
+		for _, addr := range eni.IPv4Addresses {
+			if addr.Assigned() {
+				ds.unassignPodIPv4AddressUnsafe(eni, addr)
 			}
 		}
-		for key, info := range ds.podsIP {
-			if info.DeviceNumber == eniIPPool.DeviceNumber {
-				delete(ds.podsIP, key)
-			}
+		if err := ds.writeBackingStoreUnsafe(); err != nil {
+			ds.log.Warnf("Unable to update backing store: %v", err)
+			// Continuing, because 'force'
 		}
 	}
 
-	ds.total -= len(eniIPPool.IPv4Addresses)
+	ds.total -= len(eni.IPv4Addresses)
 	ds.log.Infof("RemoveENIFromDataStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
-		eni, len(eniIPPool.IPv4Addresses), ds.total, ds.assigned)
-	delete(ds.eniIPPools, eni)
+		eni, len(eni.IPv4Addresses), ds.total, ds.assigned)
+	delete(ds.eniPool, eniID)
 
 	// Prometheus gauge
-	enis.Set(float64(len(ds.eniIPPools)))
+	enis.Set(float64(len(ds.eniPool)))
 	return nil
 }
 
 // UnassignPodIPv4Address a) find out the IP address based on PodName and PodNameSpace
 // b)  mark IP address as unassigned c) returns IP address, ENI's device number, error
-func (ds *DataStore) UnassignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (ip string, deviceNumber int, err error) {
+func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (ip string, deviceNumber int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
-	ds.log.Debugf("UnassignPodIPv4Address: IP address pool stats: total:%d, assigned %d, pod(Name: %s, Namespace: %s, Sandbox %s)",
-		ds.total, ds.assigned, k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox)
+	ds.log.Debugf("UnassignPodIPv4Address: IP address pool stats: total:%d, assigned %d, sandbox %s",
+		ds.total, ds.assigned, ipamKey)
 
-	podKey := PodKey{
-		name:      k8sPod.Name,
-		namespace: k8sPod.Namespace,
-		sandbox:   k8sPod.Sandbox,
+	eni, addr := ds.eniPool.FindAddressForSandbox(ipamKey)
+
+	if BackfillMissingCheckpointFromCRI && addr == nil {
+		ds.log.Debugf("UnassignPodIPv4Address: Failed to find IPAM entry under full key, trying CRI-migrated version")
+		ipamKey.NetworkName = BackfillNetworkName
+		ipamKey.IfName = BackfillNetworkIface
+		eni, addr = ds.eniPool.FindAddressForSandbox(ipamKey)
 	}
-	ipAddr, ok := ds.podsIP[podKey]
-	if !ok {
-		ds.log.Warnf("UnassignPodIPv4Address: Failed to find pod %s namespace %q, sandbox %q",
-			k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox)
+	if addr == nil {
+		ds.log.Warnf("UnassignPodIPv4Address: Failed to find sandbox %s",
+			ipamKey)
 		return "", 0, ErrUnknownPod
 	}
 
-	for _, eni := range ds.eniIPPools {
-		ip, ok := eni.IPv4Addresses[ipAddr.IP]
-		if ok && ip.Assigned {
-			decrementAssignedCount(ds, eni, ip)
-			ds.log.Infof("UnassignPodIPv4Address: pod (Name: %s, NameSpace %s Sandbox %s)'s ipAddr %s, DeviceNumber%d",
-				k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox, ip.Address, eni.DeviceNumber)
-			delete(ds.podsIP, podKey)
-			return ip.Address, eni.DeviceNumber, nil
-		}
+	ds.unassignPodIPv4AddressUnsafe(eni, addr)
+	if err := ds.writeBackingStoreUnsafe(); err != nil {
+		// Unwind un-assignment
+		ds.assignPodIPv4AddressUnsafe(ipamKey, eni, addr)
+		return "", 0, err
 	}
+	addr.UnassignedTime = time.Now()
 
-	ds.log.Warnf("UnassignPodIPv4Address: Failed to find pod %s namespace %s sandbox %s using IP %s",
-		k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox, ipAddr.IP)
-	return "", 0, ErrUnknownPodIP
+	ds.log.Infof("UnassignPodIPv4Address: sandbox %s's ipAddr %s, DeviceNumber %d",
+		ipamKey, addr.Address, eni.DeviceNumber)
+	return addr.Address, eni.DeviceNumber, nil
 }
 
-// GetPodInfos provides pod IP information to introspection endpoint
-func (ds *DataStore) GetPodInfos() *map[string]PodIPInfo {
+// AllocatedIPs returns a recent snapshot of allocated sandbox<->IPs.
+// Note result may already be stale by the time you look at it.
+func (ds *DataStore) AllocatedIPs() []PodIPInfo {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	var podInfos = make(map[string]PodIPInfo, len(ds.podsIP))
+	ret := make([]PodIPInfo, 0, ds.eniPool.AssignedIPv4Addresses())
+	for _, eni := range ds.eniPool {
+		for _, addr := range eni.IPv4Addresses {
+			if addr.Assigned() {
+				info := PodIPInfo{
+					IPAMKey:      addr.IPAMKey,
+					IP:           addr.Address,
+					DeviceNumber: eni.DeviceNumber,
+				}
+				ret = append(ret, info)
+			}
+		}
+	}
+	return ret
+}
 
-	for podKey, podInfo := range ds.podsIP {
-		key := podKey.name + "_" + podKey.namespace + "_" + podKey.sandbox
-		podInfos[key] = podInfo
-		ds.log.Debugf("GetPodInfos: key %s", key)
+// FreeableIPs returns a list of unused and potentially freeable IPs.
+// Note result may already be stale by the time you look at it.
+func (ds *DataStore) FreeableIPs(eniID string) []string {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	eni := ds.eniPool[eniID]
+	if eni == nil {
+		// Can't free any IPs from an ENI we don't know about...
+		return []string{}
 	}
 
-	ds.log.Debugf("GetPodInfos: len %d", len(ds.podsIP))
-	return &podInfos
+	freeable := make([]string, 0, len(eni.IPv4Addresses))
+	for _, addr := range eni.IPv4Addresses {
+		if !addr.Assigned() {
+			freeable = append(freeable, addr.Address)
+		}
+	}
+
+	return freeable
 }
 
 // GetENIInfos provides ENI IP information to introspection endpoint
@@ -576,11 +764,11 @@ func (ds *DataStore) GetENIInfos() *ENIInfos {
 	var eniInfos = ENIInfos{
 		TotalIPs:    ds.total,
 		AssignedIPs: ds.assigned,
-		ENIIPPools:  make(map[string]ENIIPPool, len(ds.eniIPPools)),
+		ENIs:        make(map[string]ENI, len(ds.eniPool)),
 	}
 
-	for eni, eniInfo := range ds.eniIPPools {
-		eniInfos.ENIIPPools[eni] = *eniInfo
+	for eni, eniInfo := range ds.eniPool {
+		eniInfos.ENIs[eni] = *eniInfo
 	}
 	return &eniInfos
 }
@@ -589,27 +777,22 @@ func (ds *DataStore) GetENIInfos() *ENIInfos {
 func (ds *DataStore) GetENIs() int {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
-	return len(ds.eniIPPools)
+	return len(ds.eniPool)
 }
 
-// GetENIIPPools returns eni's IP address list
-func (ds *DataStore) GetENIIPPools(eni string) (map[string]*AddressInfo, error) {
+// GetENIIPs returns the known (allocated & unallocated) ENI IPs.
+func (ds *DataStore) GetENIIPs(eniID string) ([]string, error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	eniIPPool, ok := ds.eniIPPools[eni]
+	eni, ok := ds.eniPool[eniID]
 	if !ok {
 		return nil, errors.New(UnknownENIError)
 	}
 
-	var ipPool = make(map[string]*AddressInfo, len(eniIPPool.IPv4Addresses))
-	for ip, ipAddr := range eniIPPool.IPv4Addresses {
-		ipPool[ip] = ipAddr
+	var ipPool = make([]string, 0, len(eni.IPv4Addresses))
+	for ip := range eni.IPv4Addresses {
+		ipPool = append(ipPool, ip)
 	}
 	return ipPool, nil
-}
-
-// InCoolingPeriod checks whether an addr is in addressCoolingPeriod
-func (addr AddressInfo) inCoolingPeriod() bool {
-	return time.Since(addr.UnassignedTime) <= addressCoolingPeriod
 }

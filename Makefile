@@ -217,7 +217,8 @@ debug-script:
 	@echo "$(VISIT_URL)"
 	@echo
 	curl -L $(FETCH_URL) -o ./aws-cni-support.sh
-
+	chmod +x ./aws-cni-support.sh
+	
 # Run all source code checks.
 check: check-format lint vet
 

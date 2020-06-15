@@ -26,29 +26,26 @@ import (
 )
 
 func TestServer_AddNetwork(t *testing.T) {
-	ctrl, mockAWS, mockK8S, mockCRI, mockNetwork, _ := setup(t)
-	defer ctrl.Finish()
+	m := setup(t)
+	defer m.ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:     mockAWS,
-		k8sClient:     mockK8S,
+		awsClient:     m.awsutils,
 		maxIPsPerENI:  14,
 		maxENI:        4,
 		warmENITarget: 1,
 		warmIPTarget:  3,
-		criClient:     mockCRI,
-		networkClient: mockNetwork,
-		dataStore:     datastore.NewDataStore(log),
+		networkClient: m.network,
+		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}),
 	}
 
 	rpcServer := server{ipamContext: mockContext}
 
 	addNetworkRequest := &pb.AddNetworkRequest{
-		Netns:                      "netns",
-		K8S_POD_NAME:               "pod",
-		K8S_POD_NAMESPACE:          "ns",
-		K8S_POD_INFRA_CONTAINER_ID: "cid",
-		IfName:                     "eni",
+		Netns:       "netns",
+		NetworkName: "net0",
+		ContainerID: "cid",
+		IfName:      "eni",
 	}
 
 	vpcCIDRs := []*string{aws.String(vpcCIDR)}
@@ -72,10 +69,10 @@ func TestServer_AddNetwork(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		mockAWS.EXPECT().GetVPCIPv4CIDRs().Return(tc.vpcCIDRs)
-		mockNetwork.EXPECT().UseExternalSNAT().Return(tc.useExternalSNAT)
+		m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return(tc.vpcCIDRs)
+		m.network.EXPECT().UseExternalSNAT().Return(tc.useExternalSNAT)
 		if !tc.useExternalSNAT {
-			mockNetwork.EXPECT().GetExcludeSNATCIDRs().Return(tc.snatExclusionCIDRs)
+			m.network.EXPECT().GetExcludeSNATCIDRs().Return(tc.snatExclusionCIDRs)
 		}
 
 		addNetworkReply, err := rpcServer.AddNetwork(context.TODO(), addNetworkRequest)

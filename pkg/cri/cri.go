@@ -15,7 +15,6 @@ package cri
 
 import (
 	"context"
-	"errors"
 	"os"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -30,14 +29,12 @@ const (
 
 // SandboxInfo provides container information
 type SandboxInfo struct {
-	ID        string
-	Namespace string
-	Name      string
-	K8SUID    string
+	ID string
+	IP string
 }
 
 type APIs interface {
-	GetRunningPodSandboxes(log logger.Logger) (map[string]*SandboxInfo, error)
+	GetRunningPodSandboxes(log logger.Logger) ([]*SandboxInfo, error)
 }
 
 type Client struct{}
@@ -47,7 +44,9 @@ func New() *Client {
 }
 
 //GetRunningPodSandboxes get running sandboxIDs
-func (c *Client) GetRunningPodSandboxes(log logger.Logger) (map[string]*SandboxInfo, error) {
+func (c *Client) GetRunningPodSandboxes(log logger.Logger) ([]*SandboxInfo, error) {
+	ctx := context.TODO()
+
 	socketPath := dockerSocketPath
 	if info, err := os.Stat("/var/run/cri.sock"); err == nil && !info.IsDir() {
 		socketPath = criSocketPath
@@ -62,37 +61,48 @@ func (c *Client) GetRunningPodSandboxes(log logger.Logger) (map[string]*SandboxI
 	client := runtimeapi.NewRuntimeServiceClient(conn)
 
 	// List all ready sandboxes from the CRI
-	filter := &runtimeapi.PodSandboxFilter{
-		State: &runtimeapi.PodSandboxStateValue{
-			State: runtimeapi.PodSandboxState_SANDBOX_READY,
+	sandboxes, err := client.ListPodSandbox(ctx, &runtimeapi.ListPodSandboxRequest{
+		Filter: &runtimeapi.PodSandboxFilter{
+			State: &runtimeapi.PodSandboxStateValue{
+				State: runtimeapi.PodSandboxState_SANDBOX_READY,
+			},
 		},
-	}
-	sandboxes, err := client.ListPodSandbox(context.Background(), &runtimeapi.ListPodSandboxRequest{Filter: filter})
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	sandboxInfos := make(map[string]*SandboxInfo)
-	for _, sandbox := range sandboxes.Items {
-		if sandbox.Metadata == nil {
+	sandboxInfos := make([]*SandboxInfo, 0, len(sandboxes.GetItems()))
+	for _, sandbox := range sandboxes.GetItems() {
+		status, err := client.PodSandboxStatus(ctx, &runtimeapi.PodSandboxStatusRequest{
+			PodSandboxId: sandbox.GetId(),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if state := status.GetStatus().GetState(); state != runtimeapi.PodSandboxState_SANDBOX_READY {
+			log.Debugf("Ignoring sandbox %s in unready state %s", sandbox.Id, state)
 			continue
 		}
-		uid := sandbox.Metadata.Uid
 
-		// Verify each pod only has one active sandbox. Kubelet will clean this
-		// up if it happens, so we should abort and wait until it does.
-		if other, ok := sandboxInfos[uid]; ok {
-			log.Errorf("GetRunningPodSandboxes: More than one sandbox with the same pod UID %s", uid)
-			log.Errorf("  Sandbox %s: namespace=%s name=%s", other.ID, other.Namespace, other.Name)
-			log.Errorf("  Sandbox %s: namespace=%s name=%s", sandbox.Id, sandbox.Metadata.Namespace, sandbox.Metadata.Name)
-			return nil, errors.New("UID conflict in container runtime")
+		if netmode := status.GetStatus().GetLinux().GetNamespaces().GetOptions().GetNetwork(); netmode != runtimeapi.NamespaceMode_POD {
+			log.Debugf("Ignoring sandbox %s with non-pod netns mode %s", sandbox.Id, netmode)
+			continue
 		}
 
-		sandboxInfos[uid] = &SandboxInfo{
-			ID:        sandbox.Id,
-			Namespace: sandbox.Metadata.Namespace,
-			Name:      sandbox.Metadata.Name,
-			K8SUID:    uid}
+		ips := []string{status.GetStatus().GetNetwork().GetIp()}
+		for _, ip := range status.GetStatus().GetNetwork().GetAdditionalIps() {
+			ips = append(ips, ip.GetIp())
+		}
+
+		for _, ip := range ips {
+			info := SandboxInfo{
+				ID: sandbox.GetId(),
+				IP: ip,
+			}
+			sandboxInfos = append(sandboxInfos, &info)
+		}
 	}
 	return sandboxInfos, nil
 }

@@ -30,7 +30,6 @@ references:
               -f "coverage.txt" \
               -t "${CODECOV_TOKEN}" \
               -n "${CIRCLE_BUILD_NUM}" \
-              -y ".codecov.yml" \
               -F "" \
               -Z || echo 'Codecov upload failed'
           when: always
@@ -64,6 +63,10 @@ jobs:
       - setup_remote_docker
       - aws-cli/setup:
           profile-name: awstester
+      - restore_cache:
+          keys:
+            - dependency-packages-store-{{ checksum "test/integration/go.mod" }}
+            - dependency-packages-store-
       - k8s/install-kubectl:
           # requires 1.14.9 for k8s testing, since it uses log api.
           kubectl-version: v1.14.9
@@ -71,6 +74,11 @@ jobs:
           name: Run the integration tests
           command: ./scripts/run-integration-tests.sh
           no_output_timeout: 15m
+      - save_cache:
+          key: dependency-packages-store-{{ checksum "test/integration/go.mod" }}
+          paths:
+            - /go/pkg
+          when: always
       - store_artifacts:
           path: /tmp/cni-test
 
