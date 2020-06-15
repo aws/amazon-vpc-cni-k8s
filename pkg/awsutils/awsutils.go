@@ -1033,7 +1033,6 @@ func badENIID(errMsg string) string {
 	if found == nil || len(found) < 2 {
 		return ""
 	}
-	fmt.Printf("found=%v\n", found)
 	return found[1]
 }
 

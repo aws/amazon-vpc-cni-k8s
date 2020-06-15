@@ -390,7 +390,7 @@ func TestDescribeAllENIs(t *testing.T) {
 		awsErr  error
 		expErr  error
 	}{
-		{"Success DescribeENI", map[string]TagMap{"": {"foo": "foo-value"}}, 1,  nil, nil},
+		{"Success DescribeENI", map[string]TagMap{"": {"foo": "foo-value"}}, 1, nil, nil},
 		{"Not found error", nil, maxENIEC2APIRetries, awserr.New("InvalidNetworkInterfaceID.NotFound", "no 'eni-xxx'", nil), expectedError},
 		{"Not found, no message", nil, maxENIEC2APIRetries, awserr.New("InvalidNetworkInterfaceID.NotFound", "no message", nil), noMessageError},
 		{"Other error", nil, maxENIEC2APIRetries, err, err},
@@ -777,4 +777,22 @@ func TestEC2InstanceMetadataCache_getFilteredListOfNetworkInterfaces_Error(t *te
 	got, err := ins.getFilteredListOfNetworkInterfaces()
 	assert.Nil(t, got)
 	assert.Error(t, err)
+}
+
+func Test_badENIID(t *testing.T) {
+	tests := []struct {
+		name   string
+		errMsg string
+		want   string
+	}{
+		{"Just a regular string", "Just a string", ""},
+		{"Actual error message", "The networkInterface ID 'eni-00000088' does not exist", "eni-00000088"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := badENIID(tt.errMsg); got != tt.want {
+				t.Errorf("badENIID() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
