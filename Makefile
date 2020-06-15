@@ -192,10 +192,11 @@ generate:
 	go generate -x ./...
 	$(MAKE) format
 
-# Generate descriptors for supported ENI configurations.
+# Generate limit file go code
+# Generate eni-max-pods.txt file for EKS AMI
 generate-limits: GOOS=
 generate-limits:
-	go run pkg/awsutils/gen_vpc_ip_limits.go
+	go run scripts/gen_vpc_ip_limits.go
 
 # Fetch the CNI plugins
 plugins: FETCH_VERSION=0.8.6
