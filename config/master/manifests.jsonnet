@@ -38,6 +38,11 @@ local awsnode = {
         resources: ["eniconfigs"],
         verbs: ["get", "list", "watch"],
       },
+      {
+        apiGroups: ["discovery.k8s.io"],
+        resources: ["*"],
+        verbs: ["list", "watch"],
+      }
     ],
   },
 
