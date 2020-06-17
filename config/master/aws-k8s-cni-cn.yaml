@@ -25,6 +25,13 @@
   - "get"
   - "list"
   - "watch"
+- "apiGroups":
+  - "discovery.k8s.io"
+  "resources":
+  - "*"
+  "verbs":
+  - "list"
+  - "watch"
 ---
 "apiVersion": "apiextensions.k8s.io/v1beta1"
 "kind": "CustomResourceDefinition"
