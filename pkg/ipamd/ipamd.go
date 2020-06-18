@@ -17,23 +17,24 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 )
 
 // The package ipamd is a long running daemon which manages a warm pool of available IP addresses.
@@ -377,7 +378,7 @@ func (c *IPAMContext) nodeInit() error {
 			}
 
 			if retry > maxRetryCheckENI {
-				log.Warn("Unable to discover attached IPs for ENI from metadata service")
+				log.Warnf("Reached max retry: Unable to discover attached IPs for ENI from metadata service (attempted %d/%d): %v", retry, maxRetryCheckENI, err)
 				ipamdErrInc("waitENIAttachedMaxRetryExceeded")
 				break
 			}
@@ -397,6 +398,24 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
+	if err = c.configureIPRulesForPods(pbVPCcidrs); err != nil {
+		return err
+	}
+
+	// For a new node, attach IPs
+	increasedPool, err := c.tryAssignIPs()
+	if err == nil && increasedPool {
+		c.updateLastNodeIPPoolAction()
+	} else {
+		return err
+	}
+
+	//Spawning checkAndUpdateRules go-routine
+	go wait.Forever(func() { pbVPCcidrs = c.checkVPCCIDRsAndRules(pbVPCcidrs)}, 30*time.Second)
+	return nil
+}
+
+func (c *IPAMContext) configureIPRulesForPods(pbVPCcidrs []string) error {
 	rules, err := c.networkClient.GetRuleList()
 	if err != nil {
 		log.Errorf("During ipamd init: failed to retrieve IP rule list %v", err)
@@ -411,15 +430,23 @@ func (c *IPAMContext) nodeInit() error {
 
 		err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet, pbVPCcidrs, !c.networkClient.UseExternalSNAT())
 		if err != nil {
-			log.Errorf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", info.IP, err)
+			log.Warnf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", info.IP, err)
 		}
 	}
-	// For a new node, attach IPs
-	increasedPool, err := c.tryAssignIPs()
-	if err == nil && increasedPool {
-		c.updateLastNodeIPPoolAction()
+	return nil
+}
+
+func (c *IPAMContext) checkVPCCIDRsAndRules(oldVPCCidrs []string) []string {
+	var pbVPCCIDRs []string
+	newVPCCIDRs := c.awsClient.GetVPCIPv4CIDRs()
+	for _, cidr := range newVPCCIDRs {
+		pbVPCCIDRs = append(pbVPCCIDRs, *cidr)
 	}
-	return err
+
+	if len(oldVPCCidrs) != len(pbVPCCIDRs) || !reflect.DeepEqual(oldVPCCidrs, pbVPCCIDRs) {
+		_ = c.configureIPRulesForPods(pbVPCCIDRs)
+	}
+	return pbVPCCIDRs
 }
 
 func (c *IPAMContext) updateIPStats(unmanaged int) {
