@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.6.3
+* Bug - [Handle stale instance metadata](https://github.com/aws/amazon-vpc-cni-k8s/pull/1011) (#1011, @mogren)
+* Improvement - [Add support for c5a and c5ad](https://github.com/aws/amazon-vpc-cni-k8s/pull/1003) (#1003, @mogren)
+* Improvement - [Make the aws-cni-support.sh executable](https://github.com/aws/amazon-vpc-cni-k8s/pull/1007) (#1007, @jayanthvn)
+
 ## v1.6.2
 * Bug - [Add WithNoProxy to ignore proxies in gRPC connections when using unix sockets](https://github.com/aws/amazon-vpc-cni-k8s/pull/980) (#980, @nithu0115)
 * Improvement - [Fix order of file copies in entrypoint.sh](https://github.com/aws/amazon-vpc-cni-k8s/pull/935) (#935, @dthorsen)
