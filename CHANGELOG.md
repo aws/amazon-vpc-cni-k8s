@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.6.3-rc1
+## v1.6.3
 * Bug - [Handle stale instance metadata](https://github.com/aws/amazon-vpc-cni-k8s/pull/1011) (#1011, @mogren)
 * Improvement - [Add support for c5a and c5ad](https://github.com/aws/amazon-vpc-cni-k8s/pull/1003) (#1003, @mogren)
 * Improvement - [Make the aws-cni-support.sh executable](https://github.com/aws/amazon-vpc-cni-k8s/pull/1007) (#1007, @jayanthvn)
