@@ -184,17 +184,17 @@ private subnet and connected to the internet through an AWS NAT Gateway or anoth
 
 Type: String
 
-Default: `hashrandom`
+Default: `prng`
 
 Valid Values: `hashrandom`, `prng`, `none`
 
-Specifies whether the SNAT `iptables` rule should randomize the outgoing ports for connections\. This should be used when
-`AWS_VPC_K8S_CNI_EXTERNALSNAT=false`. When enabled (`hashrandom`) the `--random` flag will be added to the SNAT `iptables`
-rule\. To use pseudo random number generation rather than hash based (i.e. `--random-fully`) use `prng` for the environment
-variable. For old versions of `iptables` that do not support `--random-fully` this option will fall back to `--random`.
-Disable (`none`) this functionality if you rely on sequential port allocation for outgoing connections.
+Specifies whether the SNAT `iptables` rule should randomize the outgoing ports for connections\. This setting takes effect when
+`AWS_VPC_K8S_CNI_EXTERNALSNAT=false`, which is the default setting. The default setting for `AWS_VPC_K8S_CNI_RANDOMIZESNAT` is
+`prng`, meaning that `--random-fully` will be added to the SNAT `iptables` rule\. For old versions of `iptables` that do not
+support `--random-fully` this option will fall back to `--random`. To disable random port allocation, if you for example
+rely on sequential port allocation for outgoing connections set it to `none`.
 
-*Note*: Any options other than `none` will cause outbound connections to be assigned a source port that's not necessarily
+*Note*: Any options other than `none` will cause outbound connections to be assigned a source port that is not necessarily
 part of the ephemeral port range set at the OS level (`/proc/sys/net/ipv4/ip_local_port_range`). This is relevant for any
 customers that might have NACLs restricting traffic based on the port range found in `ip_local_port_range`.
 
