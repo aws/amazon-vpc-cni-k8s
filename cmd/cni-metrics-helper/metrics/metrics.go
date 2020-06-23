@@ -21,13 +21,16 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
-	"github.com/golang/glog"
+
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	clientset "k8s.io/client-go/kubernetes"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
+
+var log = logger.DefaultLogger()
 
 type metricMatcher func(metric *dto.Metric) bool
 type actionFuncType func(aggregatedValue *float64, sampleValue float64)
@@ -97,27 +100,16 @@ func getMetricsFromPod(client clientset.Interface, podName string, namespace str
 }
 
 func processGauge(metric *dto.Metric, act *metricsAction) {
-	if act.logToFile {
-		glog.Infof("Label: %v, Value: %v ", metric.GetLabel(), metric.GetGauge().GetValue())
-	} else {
-		glog.V(10).Info("processing GAUGE: ", metric.GetGauge().GetValue())
-	}
 	act.actionFunc(&act.data.curSingleDataPoint, metric.GetGauge().GetValue())
 }
 
 func processCounter(metric *dto.Metric, act *metricsAction) {
-	if act.logToFile {
-		glog.Infof("Label: %v, Value: %v ", metric.GetLabel(), metric.GetCounter().GetValue())
-	} else {
-		glog.V(10).Info("processing COUNTER: ", metric.GetCounter().GetValue())
-	}
 	act.actionFunc(&act.data.curSingleDataPoint, metric.GetCounter().GetValue())
 }
 
 func processPercentile(metric *dto.Metric, act *metricsAction) {
 	var p99 float64
 
-	glog.V(10).Info("processing PERCENTILE: ", p99)
 	summary := metric.GetSummary()
 	quantiles := summary.GetQuantile()
 
@@ -130,33 +122,27 @@ func processPercentile(metric *dto.Metric, act *metricsAction) {
 }
 
 func processHistogram(metric *dto.Metric, act *metricsAction) {
-	glog.V(5).Info("processing HISTOGRAM:", metric.GetLabel())
-	glog.V(5).Info(metric.GetHistogram())
 	histogram := metric.GetHistogram()
 
 	for _, bucket := range histogram.GetBucket() {
-		glog.V(10).Info("processing bucket:", bucket)
 		existingBucket := false
 		for _, bucketInAct := range act.bucket.curBucket {
 			if bucket.GetUpperBound() == *bucketInAct.UpperBound {
 				// found the matching bucket
-				glog.V(10).Infof("Found the matching bucket with UpperBound: %f", *bucketInAct.UpperBound)
 				act.actionFunc(bucketInAct.CumulativeCount, float64(bucket.GetCumulativeCount()))
-				glog.V(10).Infof("Found: *bucketInAct.CumulativeCount:%f, bucket.GetCumulativeCount():%f",
-					*bucketInAct.CumulativeCount, float64(bucket.GetCumulativeCount()))
 				existingBucket = true
 				break
 			}
 		}
 
 		if !existingBucket {
-			glog.V(10).Infof("Create a new bucket with upperBound:%f", bucket.GetUpperBound())
 			upperBound := new(float64)
 			*upperBound = float64(bucket.GetUpperBound())
 			cumulativeCount := new(float64)
 			*cumulativeCount = float64(bucket.GetCumulativeCount())
 			newBucket := &bucketPoint{UpperBound: upperBound, CumulativeCount: cumulativeCount}
 			act.bucket.curBucket = append(act.bucket.curBucket, newBucket)
+			log.Infof("Created a new bucket with upperBound:%f", bucket.GetUpperBound())
 		}
 	}
 }
@@ -186,7 +172,7 @@ func postProcessingCounter(convert metricsConvert) bool {
 	}
 
 	if resetDetected || (noPreviousDataPoint && !noCurrentDataPoint) {
-		glog.Infof("Reset detected resetDetected: %v, noPreviousDataPoint: %v, noCurrentDataPoint: %v",
+		log.Infof("Reset detected resetDetected: %v, noPreviousDataPoint: %v, noCurrentDataPoint: %v",
 			resetDetected, noPreviousDataPoint, noCurrentDataPoint)
 	}
 	return resetDetected || (noPreviousDataPoint && !noCurrentDataPoint)
@@ -199,28 +185,28 @@ func postProcessingHistogram(convert metricsConvert) bool {
 	for _, action := range convert.actions {
 		numOfBuckets := len(action.bucket.curBucket)
 		if numOfBuckets == 0 {
-			glog.Info("Post Histogram Processing: no bucket found")
+			log.Info("Post Histogram Processing: no bucket found")
 			continue
 		}
 		for i := 1; i < numOfBuckets; i++ {
-			glog.V(10).Infof("Found numOfBuckets-i:=%d, *action.bucket.curBucket[numOfBuckets-i].CumulativeCount=%f",
+			log.Infof("Found numOfBuckets-i:=%d, *action.bucket.curBucket[numOfBuckets-i].CumulativeCount=%f",
 				numOfBuckets-i, *action.bucket.curBucket[numOfBuckets-i].CumulativeCount)
 
 			// Delta against the previous bucket value
 			// e.g. diff between bucket LE250000 and previous bucket LE125000
 			*action.bucket.curBucket[numOfBuckets-i].CumulativeCount -= *action.bucket.curBucket[numOfBuckets-i-1].CumulativeCount
-			glog.V(10).Infof("Found numOfBuckets-i:=%d, *action.bucket.curBucket[numOfBuckets-i].CumulativeCount=%f, *action.bucket.curBucket[numOfBuckets-i-1].CumulativeCount=%f",
+			log.Infof("Found numOfBuckets-i:=%d, *action.bucket.curBucket[numOfBuckets-i].CumulativeCount=%f, *action.bucket.curBucket[numOfBuckets-i-1].CumulativeCount=%f",
 				numOfBuckets-i, *action.bucket.curBucket[numOfBuckets-i].CumulativeCount, *action.bucket.curBucket[numOfBuckets-i-1].CumulativeCount)
 
 			// Delta against the previous value
 			if action.bucket.lastBucket != nil {
-				glog.V(10).Infof("Found *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount=%f",
+				log.Infof("Found *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount=%f",
 					*action.bucket.lastBucket[numOfBuckets-i].CumulativeCount)
 				currentTotal := *action.bucket.curBucket[numOfBuckets-i].CumulativeCount
 				// Only do delta if there is no restart for metric target
 				if *action.bucket.curBucket[numOfBuckets-i].CumulativeCount >= *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount {
 					*action.bucket.curBucket[numOfBuckets-i].CumulativeCount -= *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount
-					glog.V(10).Infof("Found *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount=%f, *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount=%f",
+					log.Infof("Found *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount=%f, *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount=%f",
 						*action.bucket.curBucket[numOfBuckets-i].CumulativeCount, *action.bucket.lastBucket[numOfBuckets-i].CumulativeCount)
 				} else {
 					resetDetected = true
@@ -250,7 +236,6 @@ func postProcessingHistogram(convert metricsConvert) bool {
 }
 
 func processMetric(family *dto.MetricFamily, convert metricsConvert) (bool, error) {
-	glog.Info("Processing metric: ", family.GetName())
 	resetDetected := false
 
 	mType := family.GetType()
@@ -301,8 +286,6 @@ func produceHistogram(act metricsAction, cw publisher.Publisher) {
 
 		prevUpperBound = *bucket.UpperBound
 		if *bucket.CumulativeCount != 0 {
-			glog.Infof("Produce HISTOGRAM metrics: %s, max:%f, min:%f, count: %f, sum: %f",
-				act.cwMetricName, mid, mid, *bucket.CumulativeCount, mid*float64(*bucket.CumulativeCount))
 			dataPoint := &cloudwatch.MetricDatum{
 				MetricName: aws.String(act.cwMetricName),
 				StatisticValues: &cloudwatch.StatisticSet{
@@ -337,7 +320,6 @@ func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFa
 		for _, action := range convertMetrics.actions {
 			switch mType {
 			case dto.MetricType_COUNTER:
-				glog.Infof("Produce COUNTER metrics: %s, value: %f", action.cwMetricName, action.data.curSingleDataPoint)
 				if t.submitCloudWatch() {
 					dataPoint := &cloudwatch.MetricDatum{
 						MetricName: aws.String(action.cwMetricName),
@@ -347,7 +329,6 @@ func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFa
 					cw.Publish(dataPoint)
 				}
 			case dto.MetricType_GAUGE:
-				glog.Infof("Produce GAUGE metrics: %s, value: %f", action.cwMetricName, action.data.curSingleDataPoint)
 				if t.submitCloudWatch() {
 					dataPoint := &cloudwatch.MetricDatum{
 						MetricName: aws.String(action.cwMetricName),
@@ -357,7 +338,6 @@ func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFa
 					cw.Publish(dataPoint)
 				}
 			case dto.MetricType_SUMMARY:
-				glog.Infof("Produce PERCENTILE metrics: %s, value: %f", action.cwMetricName, action.data.curSingleDataPoint)
 				if t.submitCloudWatch() {
 					dataPoint := &cloudwatch.MetricDatum{
 						MetricName: aws.String(action.cwMetricName),
@@ -397,13 +377,9 @@ func metricsListGrabAggregateConvert(t metricsTarget) (map[string]*dto.MetricFam
 	resetMetrics(interestingMetrics)
 
 	targetList := t.getTargetList()
-	glog.Info("targetList: ", targetList)
-	glog.Info("len(targetList)", len(targetList))
 	for _, target := range targetList {
-		glog.Infof("Grab/Aggregate metrics from %v", target)
 		rawOutput, err := t.grabMetricsFromTarget(target)
 		if err != nil {
-			glog.Errorf("Failed to getMetricsFromTarget: %v", err)
 			// it may take times to remove some metric targets
 			continue
 		}
@@ -412,13 +388,11 @@ func metricsListGrabAggregateConvert(t metricsTarget) (map[string]*dto.MetricFam
 		origFamilies, err := parser.TextToMetricFamilies(bytes.NewReader(rawOutput))
 
 		if err != nil {
-			glog.Warning("Failed to parse metrics:", err)
 			return nil, nil, true, err
 		}
 
 		families, err = filterMetrics(origFamilies, interestingMetrics)
 		if err != nil {
-			glog.Warning("Failed to filter metrics:", err)
 			return nil, nil, true, err
 		}
 
@@ -447,7 +421,7 @@ func Handler(t metricsTarget) {
 	families, interestingMetrics, resetDetected, err := metricsListGrabAggregateConvert(t)
 
 	if err != nil || resetDetected {
-		glog.Info("Skipping 1st poll after reset, error:", err)
+		log.Infof("Skipping 1st poll after reset, error: %v", err)
 	}
 
 	cw := t.getCWMetricsPublisher()

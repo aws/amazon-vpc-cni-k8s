@@ -1,5 +1,41 @@
 # Changelog
 
+## v1.6.3
+* Bug - [Handle stale instance metadata](https://github.com/aws/amazon-vpc-cni-k8s/pull/1011) (#1011, @mogren)
+* Improvement - [Add support for c5a and c5ad](https://github.com/aws/amazon-vpc-cni-k8s/pull/1003) (#1003, @mogren)
+* Improvement - [Make the aws-cni-support.sh executable](https://github.com/aws/amazon-vpc-cni-k8s/pull/1007) (#1007, @jayanthvn)
+
+## v1.6.2
+* Bug - [Add WithNoProxy to ignore proxies in gRPC connections when using unix sockets](https://github.com/aws/amazon-vpc-cni-k8s/pull/980) (#980, @nithu0115)
+* Improvement - [Fix order of file copies in entrypoint.sh](https://github.com/aws/amazon-vpc-cni-k8s/pull/935) (#935, @dthorsen)
+* Improvement - [Check all errors and log appropriately](https://github.com/aws/amazon-vpc-cni-k8s/pull/939) (#939, @mogren)
+* Improvement - [Add MTU and RPFilter configs to debug](https://github.com/aws/amazon-vpc-cni-k8s/pull/954) (#954, @mogren)
+* Improvement - [Bump aws-k8s-tester to v1.2.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/978) (#978, @gyuho)
+* Improvement - [Add context and user agent to EC2 requests](https://github.com/aws/amazon-vpc-cni-k8s/pull/979) (#979, @mogren)
+* Improvement - [Update limits for m6g, c6g and r6g](https://github.com/aws/amazon-vpc-cni-k8s/pull/996) (#996, @mogren)
+
+## v1.6.1
+* Feature - [Support architecture targeted builds](https://github.com/aws/amazon-vpc-cni-k8s/pull/837) (#837, @jahkeup)
+* Feature - [Zap logger](https://github.com/aws/amazon-vpc-cni-k8s/pull/824) (#824, @nithu0115)
+* Improvement - [Run conformance test as part of PR/Release certification](https://github.com/aws/amazon-vpc-cni-k8s/pull/851) (#851, @SaranBalaji90)
+* Improvement - [Use eks:cluster-name as clusterId](https://github.com/aws/amazon-vpc-cni-k8s/pull/856) (#856, @groodt)
+* Improvement - [Bump Calico to v3.13.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/857) (#857, @lmm)
+* Improvement - [Use go.mod version of mockgen](https://github.com/aws/amazon-vpc-cni-k8s/pull/863) (#863, @anguslees)
+* Improvement - [Mock /proc/sys](https://github.com/aws/amazon-vpc-cni-k8s/pull/870) (#870, @anguslees)
+* Improvement - [Replace debug script with updated script from EKS AMI](https://github.com/aws/amazon-vpc-cni-k8s/pull/864) (#864, @mogren)
+* Improvement - [Update cluster-proportional-autoscaler to 1.7.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/885) (#885, @ricardochimal)
+* Improvement - [Remove unnecessary/incorrect ClusterRole resource](https://github.com/aws/amazon-vpc-cni-k8s/pull/883) (#883, @anguslees)
+* Improvement - [Disable IPv6 RA and ICMP redirects](https://github.com/aws/amazon-vpc-cni-k8s/pull/897) (#897, @anguslees)
+* Improvement - [scripts/lib/aws.sh: use "aws-k8s-tester" v1.0.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/900) (#900, @gyuho)
+* Improvement - [Configure rp_filter based on env variable](https://github.com/aws/amazon-vpc-cni-k8s/pull/902) (#902, @SaranBalaji90)
+* Improvement - [Less verbose logging](https://github.com/aws/amazon-vpc-cni-k8s/pull/908) (#908, @mogren)
+* Improvement - [Reduce number of calls to EC2 API](https://github.com/aws/amazon-vpc-cni-k8s/pull/909) (#909, @mogren)
+* Improvement - [Bump containernetworking dependencies](https://github.com/aws/amazon-vpc-cni-k8s/pull/916) (#916, @mogren)
+* Improvement - [Use -buildmode=pie for binaries](https://github.com/aws/amazon-vpc-cni-k8s/pull/919) (#919, @mogren)
+* Bug - [Add missing permissions in typha-cpha sa (Calico)](https://github.com/aws/amazon-vpc-cni-k8s/pull/892) (#892, @marcincuber)
+* Bug - [Fix logging to stdout](https://github.com/aws/amazon-vpc-cni-k8s/pull/904) (#904, @mogren)
+* Bug - [Ensure non-nil Attachment in getENIAttachmentID](https://github.com/aws/amazon-vpc-cni-k8s/pull/915) (#915, @jaypipes)
+
 ## v1.6.0
 
 * Feature - [Add fallback to fetch limits from EC2 API](https://github.com/aws/amazon-vpc-cni-k8s/pull/782) (#782, @mogren)
@@ -45,6 +81,16 @@
 * Improvement - [Fix introspection port in troubleshooting docs](https://github.com/aws/amazon-vpc-cni-k8s/pull/512) (#512, @drakedevel)
 * Bug fix - [Log security groups correctly](https://github.com/aws/amazon-vpc-cni-k8s/pull/646) (#646, @mogren)
 * Bug fix - [Fix WARM_ENI_TARGET=0](https://github.com/aws/amazon-vpc-cni-k8s/pull/587) (#587, @mogren)
+
+# v1.5.7
+
+* Improvement - [New AL2 image with iptables-1.8.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/894) (@mogren)
+* Improvement - [Enable the `-buildmode=pie` flag for the binaries](https://github.com/aws/amazon-vpc-cni-k8s/pull/894) (@mogren)
+* Improvement - [Disable IPv6 RA and ICMP redirects on host-side veth](https://github.com/aws/amazon-vpc-cni-k8s/pull/894) (@anguslees)
+
+# v1.5.6
+
+* arm64 preview custom build
 
 # v1.5.5
 

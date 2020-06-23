@@ -23,18 +23,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	log "github.com/cihub/seelog"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 )
 
@@ -109,7 +107,17 @@ const (
 	// eniNoManageTagKey is the tag that may be set on an ENI to indicate ipamd
 	// should not manage it in any form.
 	eniNoManageTagKey = "node.k8s.amazonaws.com/no_manage"
+
+	// disableENIProvisioning is used to specify that ENI doesn't need to be synced during initializing a pod.
+	envDisableENIProvisioning = "DISABLE_NETWORK_RESOURCE_PROVISIONING"
+	noDisableENIProvisioning  = false
+
+	// Specify where ipam should persist its current IP<->container allocations.
+	envBackingStorePath     = "AWS_VPC_K8S_CNI_BACKING_STORE"
+	defaultBackingStorePath = "/var/run/aws-node/ipam.json"
 )
+
+var log = logger.Get()
 
 var (
 	ipamdErr = prometheus.NewCounterVec(
@@ -148,13 +156,13 @@ var (
 	addIPCnt = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "awscni_add_ip_req_count",
-			Help: "The number of add IP address request",
+			Help: "The number of add IP address requests",
 		},
 	)
 	delIPCnt = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "awscni_del_ip_req_count",
-			Help: "The number of delete IP address request",
+			Help: "The number of delete IP address requests",
 		},
 		[]string{"reason"},
 	)
@@ -165,36 +173,81 @@ var (
 type IPAMContext struct {
 	awsClient            awsutils.APIs
 	dataStore            *datastore.DataStore
-	k8sClient            k8sapi.K8SAPIs
+	k8sClient            kubernetes.Interface
 	useCustomNetworking  bool
 	eniConfig            eniconfig.ENIConfig
-	criClient            cri.APIs
 	networkClient        networkutils.NetworkAPIs
 	maxIPsPerENI         int
 	maxENI               int
+	unmanagedENIs        UnmanagedENISet // a set of ENIs tagged with "node.k8s.amazonaws.com/no_manage"
 	unmanagedENI         int
 	warmENITarget        int
 	warmIPTarget         int
 	minimumIPTarget      int
-	primaryIP            map[string]string
+	primaryIP            map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
 	lastNodeIPPoolAction time.Time
 	lastDecreaseIPPool   time.Time
 	// reconcileCooldownCache keeps timestamps of the last time an IP address was unassigned from an ENI,
 	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
 	reconcileCooldownCache ReconcileCooldownCache
 	terminating            int32 // Flag to warn that the pod is about to shut down.
+	disableENIProvisioning bool
 }
 
-// Keep track of recently freed IPs to avoid reading stale EC2 metadata
+// UnmanagedENISet keeps a set of ENI IDs for ENIs tagged with "node.k8s.amazonaws.com/no_manage"
+type UnmanagedENISet struct {
+	sync.RWMutex
+	data map[string]bool
+}
+
+func (u *UnmanagedENISet) isUnmanaged(eniID string) bool {
+	val, ok := u.data[eniID]
+	return ok && val == true
+}
+
+func (u *UnmanagedENISet) reset() {
+	u.Lock()
+	defer u.Unlock()
+	u.data = make(map[string]bool)
+}
+
+func (u *UnmanagedENISet) add(eniID string) {
+	u.Lock()
+	defer u.Unlock()
+	if len(u.data) == 0 {
+		u.data = make(map[string]bool)
+	}
+	u.data[eniID] = true
+}
+
+// setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
+func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
+	c.unmanagedENIs.reset()
+	if len(tagMap) == 0 {
+		return
+	}
+	for eniID, tags := range tagMap {
+		if tags[eniNoManageTagKey] == "true" {
+			if eniID == c.awsClient.GetPrimaryENI() {
+				log.Debugf("Ignoring no_manage tag on primary ENI %s", eniID)
+			} else {
+				log.Debugf("Marking ENI %s tagged with %s as being unmanaged", eniID, eniNoManageTagKey)
+				c.unmanagedENIs.add(eniID)
+			}
+		}
+	}
+}
+
+// ReconcileCooldownCache keep track of recently freed IPs to avoid reading stale EC2 metadata
 type ReconcileCooldownCache struct {
+	sync.RWMutex
 	cache map[string]time.Time
-	lock  sync.RWMutex
 }
 
 // Add sets a timestamp for the list of IPs added that says how long they are not to be put back in the data store.
 func (r *ReconcileCooldownCache) Add(ips []string) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.Lock()
+	defer r.Unlock()
 	expiry := time.Now().Add(ipReconcileCooldown)
 	for _, ip := range ips {
 		r.cache[ip] = expiry
@@ -203,16 +256,16 @@ func (r *ReconcileCooldownCache) Add(ips []string) {
 
 // Remove removes an IP from the cooldown cache.
 func (r *ReconcileCooldownCache) Remove(ip string) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.Lock()
+	defer r.Unlock()
 	log.Debugf("Removing %s from cooldown cache.", ip)
 	delete(r.cache, ip)
 }
 
 // RecentlyFreed checks if this IP was recently freed.
 func (r *ReconcileCooldownCache) RecentlyFreed(ip string) (found, recentlyFreed bool) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.Lock()
+	defer r.Unlock()
 	now := time.Now()
 	if expiry, ok := r.cache[ip]; ok {
 		log.Debugf("Checking if IP %s has been recently freed. Cooldown expires at: %s. (Cooldown: %v)", ip, expiry, now.Sub(expiry) < 0)
@@ -236,18 +289,16 @@ func prometheusRegister() {
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
-func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) (*IPAMContext, error) {
+func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigController) (*IPAMContext, error) {
 	prometheusRegister()
 	c := &IPAMContext{}
 
 	c.k8sClient = k8sapiClient
 	c.networkClient = networkutils.New()
-	c.criClient = cri.New()
 	c.eniConfig = eniConfig
 
 	client, err := awsutils.New()
 	if err != nil {
-		log.Errorf("Failed to initialize awsutil interface %v", err)
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
 	c.awsClient = client
@@ -258,6 +309,10 @@ func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) 
 	c.warmIPTarget = getWarmIPTarget()
 	c.minimumIPTarget = getMinimumIPTarget()
 	c.useCustomNetworking = UseCustomNetworkCfg()
+	c.disableENIProvisioning = disablingENIProvisioning()
+
+	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
+	c.dataStore = datastore.NewDataStore(log, checkpointer)
 
 	err = c.nodeInit()
 	if err != nil {
@@ -273,25 +328,16 @@ func (c *IPAMContext) nodeInit() error {
 
 	log.Debugf("Start node init")
 
-	allENIs, err := c.awsClient.GetAttachedENIs()
-	if err != nil {
-		log.Error("Failed to retrieve ENI info")
-		return errors.New("ipamd init: failed to retrieve attached ENIs info")
-	}
-	enis, numUnmanaged := filterUnmanagedENIs(allENIs)
 	nodeMaxENI, err := c.getMaxENI()
 	if err != nil {
 		log.Error("Failed to get ENI limit")
 		return err
 	}
 	c.maxENI = nodeMaxENI
-	c.unmanagedENI = numUnmanaged
 	c.maxIPsPerENI, err = c.awsClient.GetENIipLimit()
 	if err != nil {
-		log.Error("Failed to get IPs per ENI limit")
 		return err
 	}
-	c.updateIPStats(numUnmanaged)
 
 	var pbVPCcidrs []string
 	vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
@@ -302,18 +348,23 @@ func (c *IPAMContext) nodeInit() error {
 
 	_, vpcCIDR, err := net.ParseCIDR(c.awsClient.GetVPCIPv4CIDR())
 	if err != nil {
-		log.Error("Failed to parse VPC IPv4 CIDR", err.Error())
 		return errors.Wrap(err, "ipamd init: failed to retrieve VPC CIDR")
 	}
 
 	primaryIP := net.ParseIP(c.awsClient.GetLocalIPv4())
 	err = c.networkClient.SetupHostNetwork(vpcCIDR, vpcCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP)
 	if err != nil {
-		log.Error("Failed to set up host network", err)
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
 
-	c.dataStore = datastore.NewDataStore()
+	eniMetadata, tagMap, err := c.awsClient.DescribeAllENIs()
+	if err != nil {
+		return errors.New("ipamd init: failed to retrieve attached ENIs info")
+	}
+	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(eniMetadata), len(tagMap))
+	c.setUnmanagedENIs(tagMap)
+	enis := c.filterUnmanagedENIs(eniMetadata)
+
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
 		// Retry ENI sync
@@ -326,7 +377,7 @@ func (c *IPAMContext) nodeInit() error {
 			}
 
 			if retry > maxRetryCheckENI {
-				log.Errorf("Unable to discover attached IPs for ENI from metadata service")
+				log.Warn("Unable to discover attached IPs for ENI from metadata service")
 				ipamdErrInc("waitENIAttachedMaxRetryExceeded")
 				break
 			}
@@ -334,21 +385,17 @@ func (c *IPAMContext) nodeInit() error {
 			log.Warnf("Error trying to set up ENI %s: %v", eni.ENIID, err)
 			if strings.Contains(err.Error(), "setupENINetwork: failed to find the link which uses MAC address") {
 				// If we can't find the matching link for this MAC address, there is no point in retrying for this ENI.
-				log.Errorf("Unable to match link for this ENI, going to the next one.")
+				log.Debug("Unable to match link for this ENI, going to the next one.")
 				break
 			}
 			log.Debugf("Unable to discover IPs for this ENI yet (attempt %d/%d)", retry, maxRetryCheckENI)
 			time.Sleep(eniAttachTime)
 		}
 	}
-	localPods, err := c.getLocalPodsWithRetry()
-	if err != nil {
-		log.Warnf("During ipamd init, failed to get Pod information from Kubernetes API Server %v", err)
-		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed")
-		// This can happens when L-IPAMD starts before kubelet.
-		return errors.Wrap(err, "failed to get running pods!")
+
+	if err := c.dataStore.ReadBackingStore(); err != nil {
+		return err
 	}
-	log.Debugf("getLocalPodsWithRetry() found %d local pods", len(localPods))
 
 	rules, err := c.networkClient.GetRuleList()
 	if err != nil {
@@ -356,28 +403,15 @@ func (c *IPAMContext) nodeInit() error {
 		return nil
 	}
 
-	for _, ip := range localPods {
-		if ip.Sandbox == "" {
-			log.Infof("Skipping Pod %s, Namespace %s, due to no matching sandbox", ip.Name, ip.Namespace)
-			continue
-		}
-		if ip.IP == "" {
-			log.Infof("Skipping Pod %s, Namespace %s, due to no IP", ip.Name, ip.Namespace)
-			continue
-		}
-		log.Infof("Recovered AddNetwork for Pod %s, Namespace %s, Sandbox %s", ip.Name, ip.Namespace, ip.Sandbox)
-		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
-		if err != nil {
-			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed")
-			log.Warnf("During ipamd init, failed to use pod IP %s returned from Kubernetes API Server %v", ip.IP, err)
-		}
+	for _, info := range c.dataStore.AllocatedIPs() {
+		// TODO(gus): This should really be done via CNI CHECK calls, rather than in ipam (requires upstream k8s changes).
 
 		// Update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
-		srcIPNet := net.IPNet{IP: net.ParseIP(ip.IP), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		srcIPNet := net.IPNet{IP: net.ParseIP(info.IP), Mask: net.IPv4Mask(255, 255, 255, 255)}
 
 		err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet, pbVPCcidrs, !c.networkClient.UseExternalSNAT())
 		if err != nil {
-			log.Errorf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", ip.IP, err)
+			log.Errorf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", info.IP, err)
 		}
 	}
 	// For a new node, attach IPs
@@ -393,74 +427,14 @@ func (c *IPAMContext) updateIPStats(unmanaged int) {
 	enisMax.Set(float64(c.maxENI - unmanaged))
 }
 
-func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
-	var pods []*k8sapi.K8SPodInfo
-	var err error
-	for retry := 1; retry <= maxK8SRetries; retry++ {
-		pods, err = c.k8sClient.K8SGetLocalPodIPs()
-		if err == nil {
-			// Check for pods with no IP since the API server might not have the latest state of the node.
-			allPodsHaveAnIP := true
-			for _, pod := range pods {
-				if pod.IP == "" {
-					log.Infof("Pod %s, Namespace %s, has no IP", pod.Name, pod.Namespace)
-					allPodsHaveAnIP = false
-				}
-			}
-			if allPodsHaveAnIP {
-				break
-			}
-			log.Warnf("Not all pods have an IP, trying again in %v seconds.", retryK8SInterval.Seconds())
-		}
-		log.Infof("Not able to get local pods yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
-		time.Sleep(retryK8SInterval)
-	}
-
-	if err != nil {
-		return nil, errors.Wrap(err, "no pods because apiserver not running.")
-	}
-
-	if pods == nil {
-		return nil, nil
-	}
-
-	// Ask the CRI for the set of running pod sandboxes. These sandboxes are
-	// what the CNI operates on, but the Kubernetes API doesn't expose any
-	// information about them. If we relied only on the Kubernetes API, we
-	// could leak IPs or unassign an IP from a still-running pod.
-	var sandboxes map[string]*cri.SandboxInfo
-	for retry := 1; retry <= maxK8SRetries; retry++ {
-		sandboxes, err = c.criClient.GetRunningPodSandboxes()
-		if err == nil {
-			break
-		}
-		log.Infof("Not able to get local pod sandboxes yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
-		time.Sleep(retryK8SInterval)
-	}
-	if err != nil {
-		return nil, errors.Wrap(err, "Unable to get local pod sandboxes")
-	}
-
-	// TODO consider using map
-	for _, pod := range pods {
-		// Fill in the sandbox ID by matching against the pod's UID
-		for _, sandbox := range sandboxes {
-			if sandbox.K8SUID == pod.UID {
-				log.Debugf("Found pod(%v)'s sandbox ID: %v ", sandbox.Name, sandbox.ID)
-				pod.Sandbox = sandbox.ID
-				break
-			}
-		}
-	}
-	return pods, nil
-}
-
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
 func (c *IPAMContext) StartNodeIPPoolManager() {
 	sleepDuration := ipPoolMonitorInterval / 2
 	for {
-		time.Sleep(sleepDuration)
-		c.updateIPPoolIfRequired()
+		if !c.disableENIProvisioning {
+			time.Sleep(sleepDuration)
+			c.updateIPPoolIfRequired()
+		}
 		time.Sleep(sleepDuration)
 		c.nodeIPPoolReconcile(nodeIPPoolReconcileInterval)
 	}
@@ -527,7 +501,7 @@ func (c *IPAMContext) tryFreeENI() {
 func (c *IPAMContext) tryUnassignIPsFromAll() {
 	if _, over, warmIPTargetDefined := c.ipTargetState(); warmIPTargetDefined && over > 0 {
 		eniInfos := c.dataStore.GetENIInfos()
-		for eniID := range eniInfos.ENIIPPools {
+		for eniID := range eniInfos.ENIs {
 			ips, err := c.findFreeableIPs(eniID)
 			if err != nil {
 				log.Errorf("Error finding unassigned IPs: %s", err)
@@ -570,38 +544,14 @@ func (c *IPAMContext) tryUnassignIPsFromAll() {
 // findFreeableIPs finds and returns IPs that are not assigned to Pods but are attached
 // to ENIs on the node.
 func (c *IPAMContext) findFreeableIPs(eni string) ([]string, error) {
-	podIPInfos := c.dataStore.GetPodInfos()
-	usedIPs := sets.String{}
-	// Get IPs that are currently in use by pods
-	for _, pod := range *podIPInfos {
-		usedIPs.Insert(pod.IP)
-	}
-
-	// Get IPs that are currently attached to the instance
-	eniInfos := c.dataStore.GetENIInfos()
-	eniIPPools := eniInfos.ENIIPPools
-
-	pool, ok := eniIPPools[eni]
-	if !ok {
-		return nil, fmt.Errorf("error finding available IPs: eni %s does not exist", eni)
-	}
-
-	allocatedIPs := sets.String{}
-	for _, ip := range pool.IPv4Addresses {
-		allocatedIPs.Insert(ip.Address)
-	}
-
-	availableIPs := allocatedIPs.Difference(usedIPs).UnsortedList()
-	var freeableIPs []string
+	freeableIPs := c.dataStore.FreeableIPs(eni)
 
 	// Free the number of IPs `over` the warm IP target, unless `over` is greater than the number of available IPs on
 	// this ENI. In that case we should only free the number of available IPs.
 	_, over, _ := c.ipTargetState()
-	numFreeable := min(over, len(availableIPs))
+	numFreeable := min(over, len(freeableIPs))
+	freeableIPs = freeableIPs[:numFreeable]
 
-	for _, ip := range availableIPs[:numFreeable] {
-		freeableIPs = append(freeableIPs, ip)
-	}
 	return freeableIPs, nil
 }
 
@@ -726,8 +676,8 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err: %v", eni.ID, err))
 			}
 		}
-
-		ec2Addrs, _, err := c.getENIaddresses(eni.ID)
+		// This call to EC2 is needed to verify which IPs got attached to this ENI.
+		ec2Addrs, err := c.awsClient.GetIPv4sFromEC2(eni.ID)
 		if err != nil {
 			ipamdErrInc("increaseIPPoolGetENIaddressesFailed")
 			return true, errors.Wrap(err, "failed to get ENI IP addresses during IP allocation")
@@ -751,11 +701,9 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) err
 
 	// For secondary ENIs, set up the network
 	if eni != c.awsClient.GetPrimaryENI() {
-
 		eniPrimaryIP := eniMetadata.PrimaryIPv4Address()
 		err = c.networkClient.SetupENINetwork(eniPrimaryIP, eniMetadata.MAC, eniMetadata.DeviceNumber, eniMetadata.SubnetIPv4CIDR)
 		if err != nil {
-			log.Errorf("Failed to set up networking for ENI %s", eni)
 			return errors.Wrapf(err, "failed to set up ENI %s network", eni)
 		}
 	}
@@ -779,23 +727,9 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 			ipamdErrInc("addENIaddressesToDataStoreAddENIIPv4AddressFailed")
 		}
 	}
+	total, assigned := c.dataStore.GetStats()
+	log.Debugf("IP Address Pool stats: total: %d, assigned: %d", total, assigned)
 	return primaryIP
-}
-
-// returns all addresses on ENI, the primary address on ENI, error
-func (c *IPAMContext) getENIaddresses(eni string) ([]*ec2.NetworkInterfacePrivateIpAddress, string, error) {
-	ec2Addrs, _, _, err := c.awsClient.DescribeENI(eni)
-	if err != nil {
-		return nil, "", errors.Wrapf(err, "failed to find ENI addresses for ENI %s", eni)
-	}
-
-	for _, ec2Addr := range ec2Addrs {
-		if aws.BoolValue(ec2Addr.Primary) {
-			eniPrimaryIP := aws.StringValue(ec2Addr.PrivateIpAddress)
-			return ec2Addrs, eniPrimaryIP, nil
-		}
-	}
-	return nil, "", errors.Errorf("failed to find the ENI's primary address for ENI %s", eni)
 }
 
 func (c *IPAMContext) waitENIAttached(eni string) (awsutils.ENIMetadata, error) {
@@ -865,8 +799,7 @@ func getWarmENITarget() int {
 }
 
 func logPoolStats(total, used, maxAddrsPerENI int) {
-	log.Debugf("IP pool stats: total = %d, used = %d, c.maxIPsPerENI = %d",
-		total, used, maxAddrsPerENI)
+	log.Debugf("IP pool stats: total = %d, used = %d, c.maxIPsPerENI = %d", total, used, maxAddrsPerENI)
 }
 
 // nodeIPPoolTooLow returns true if IP pool is below low threshold
@@ -877,14 +810,12 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	}
 
 	total, used := c.dataStore.GetStats()
-	logPoolStats(total, used, c.maxIPsPerENI)
 
 	available := total - used
 	poolTooLow := available < c.maxIPsPerENI*c.warmENITarget || (c.warmENITarget == 0 && available == 0)
 	if poolTooLow {
-		log.Tracef("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
-	} else {
-		log.Tracef("IP pool is NOT too low: available (%d) >= ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
+		logPoolStats(total, used, c.maxIPsPerENI)
+		log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
 	}
 	return poolTooLow
 }
@@ -900,7 +831,7 @@ func (c *IPAMContext) nodeIPPoolTooHigh() bool {
 	return false
 }
 
-// shouldRemoveExtraENIs returns true if we should attempt to find an ENI to free.  When WARM_IP_TARGET is set, we
+// shouldRemoveExtraENIs returns true if we should attempt to find an ENI to free. When WARM_IP_TARGET is set, we
 // always check and do verification in getDeletableENI()
 func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	_, _, warmIPTargetDefined := c.ipTargetState()
@@ -909,15 +840,12 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	}
 
 	total, used := c.dataStore.GetStats()
-	logPoolStats(total, used, c.maxIPsPerENI)
-
 	available := total - used
 	// We need the +1 to make sure we are not going below the WARM_ENI_TARGET.
 	shouldRemoveExtra := available >= (c.warmENITarget+1)*c.maxIPsPerENI
 	if shouldRemoveExtra {
-		log.Tracef("It might be possible to remove extra ENIs because available (%d) >= (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
-	} else {
-		log.Tracef("Its NOT possible to remove extra ENIs because available (%d) < (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
+		logPoolStats(total, used, c.maxIPsPerENI)
+		log.Debugf("It might be possible to remove extra ENIs because available (%d) >= (ENI target (%d) + 1) * addrsPerENI (%d): ", available, c.warmENITarget, c.maxIPsPerENI)
 	}
 	return shouldRemoveExtra
 }
@@ -928,39 +856,54 @@ func ipamdErrInc(fn string) {
 
 // nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
 func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
-	ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
-	defer ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
-
 	curTime := time.Now()
 	timeSinceLast := curTime.Sub(c.lastNodeIPPoolAction)
 	if timeSinceLast <= interval {
-		log.Debugf("nodeIPPoolReconcile: skipping because time since last %v <= %v", timeSinceLast, interval)
 		return
 	}
 
-	log.Debug("Reconciling ENI/IP pool info...")
+	ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
+	defer ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
+
+	log.Debugf("Reconciling ENI/IP pool info because time since last %v <= %v", timeSinceLast, interval)
 	allENIs, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		log.Errorf("IP pool reconcile: Failed to get attached ENI info: %v", err.Error())
 		ipamdErrInc("reconcileFailedGetENIs")
 		return
 	}
-	attachedENIs, numUnmanaged := filterUnmanagedENIs(allENIs)
-	c.updateIPStats(numUnmanaged)
-	c.unmanagedENI = numUnmanaged
+	attachedENIs := c.filterUnmanagedENIs(allENIs)
+	currentENIIPPools := c.dataStore.GetENIInfos().ENIs
 
-	curENIs := c.dataStore.GetENIInfos()
+	// Check if a new ENI was added, if so we need to update the tags
+	needToUpdateTags := false
+	for _, attachedENI := range attachedENIs {
+		if _, ok := currentENIIPPools[attachedENI.ENIID]; !ok {
+			needToUpdateTags = true
+			break
+		}
+	}
+	if needToUpdateTags {
+		log.Debugf("A new ENI added but not by ipamd, updating tags")
+		allENIs, tagMap, err := c.awsClient.DescribeAllENIs()
+		if err != nil {
+			log.Warnf("Failed to call EC2 to describe ENIs, aborting reconcile: %v", err)
+			return
+		}
+		c.setUnmanagedENIs(tagMap)
+		attachedENIs = c.filterUnmanagedENIs(allENIs)
+	}
 
 	// Mark phase
 	for _, attachedENI := range attachedENIs {
-		eniIPPool, err := c.dataStore.GetENIIPPools(attachedENI.ENIID)
+		eniIPPool, err := c.dataStore.GetENIIPs(attachedENI.ENIID)
 		if err == nil {
 			// If the attached ENI is in the data store
 			log.Debugf("Reconcile existing ENI %s IP pool", attachedENI.ENIID)
 			// Reconcile IP pool
 			c.eniIPPoolReconcile(eniIPPool, attachedENI, attachedENI.ENIID)
-			// Mark action, remove this ENI from curENIs list
-			delete(curENIs.ENIIPPools, attachedENI.ENIID)
+			// Mark action, remove this ENI from currentENIIPPools map
+			delete(currentENIIPPools, attachedENI.ENIID)
 			continue
 		}
 
@@ -977,7 +920,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	}
 
 	// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
-	for eni := range curENIs.ENIIPPools {
+	for eni := range currentENIIPPools {
 		log.Infof("Reconcile and delete detached ENI %s", eni)
 		// Force the delete, since aws local metadata has told us that this ENI is no longer
 		// attached, so any IPs assigned from this ENI will no longer work.
@@ -990,10 +933,14 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		reconcileCnt.With(prometheus.Labels{"fn": "eniReconcileDel"}).Inc()
 	}
 	log.Debug("Successfully Reconciled ENI/IP pool")
+	total, assigned := c.dataStore.GetStats()
+	log.Debugf("IP Address Pool stats: total: %d, assigned: %d", total, assigned)
 	c.lastNodeIPPoolAction = curTime
 }
 
-func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInfo, attachedENI awsutils.ENIMetadata, eni string) {
+func (c *IPAMContext) eniIPPoolReconcile(ipPool []string, attachedENI awsutils.ENIMetadata, eni string) {
+	seenIPs := make(map[string]bool)
+
 	for _, privateIPv4 := range attachedENI.IPv4Addresses {
 		strPrivateIPv4 := aws.StringValue(privateIPv4.PrivateIpAddress)
 		if strPrivateIPv4 == c.primaryIP[eni] {
@@ -1009,8 +956,8 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 				continue
 			} else {
 				log.Debugf("This IP was recently freed, but is out of cooldown. We need to verify with EC2 control plane.")
-				// Call EC2 to verify
-				ec2Addresses, _, err := c.getENIaddresses(eni)
+				// Call EC2 to verify IPs on this ENI
+				ec2Addresses, err := c.awsClient.GetIPv4sFromEC2(eni)
 				if err != nil {
 					log.Error("Failed to fetch ENI IP addresses!")
 					continue
@@ -1036,9 +983,8 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 
 		err := c.dataStore.AddIPv4AddressToStore(eni, strPrivateIPv4)
 		if err != nil && err.Error() == datastore.IPAlreadyInStoreError {
-			log.Debugf("Reconciled IP %s on ENI %s", strPrivateIPv4, eni)
-			// mark action = remove it from ipPool since the IP should not be deleted
-			delete(ipPool, strPrivateIPv4)
+			// mark action
+			seenIPs[strPrivateIPv4] = true
 			continue
 		}
 
@@ -1052,7 +998,11 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool map[string]*datastore.AddressInf
 	}
 
 	// Sweep phase, delete remaining IPs
-	for existingIP := range ipPool {
+	for _, existingIP := range ipPool {
+		if seenIPs[existingIP] {
+			continue
+		}
+
 		log.Debugf("Reconcile and delete IP %s on ENI %s", existingIP, eni)
 		// Force the delete, since aws local metadata has told us that this ENI is no longer
 		// attached, so any IPs assigned from this ENI will no longer work.
@@ -1074,9 +1024,16 @@ func UseCustomNetworkCfg() bool {
 		if err == nil {
 			return parsedValue
 		}
-		log.Error("Failed to parse "+envCustomNetworkCfg+"; using default: false", err.Error())
+		log.Warnf("Failed to parse %s; using default: false, err: %v", envCustomNetworkCfg, err)
 	}
 	return false
+}
+
+func dsBackingStorePath() string {
+	if value := os.Getenv(envBackingStorePath); value != "" {
+		return value
+	}
+	return defaultBackingStorePath
 }
 
 func getWarmIPTarget() int {
@@ -1111,18 +1068,26 @@ func getMinimumIPTarget() int {
 	return noMinimumIPTarget
 }
 
-func filterUnmanagedENIs(enis []awsutils.ENIMetadata) ([]awsutils.ENIMetadata, int) {
+func disablingENIProvisioning() bool {
+	return getEnvBoolWithDefault(envDisableENIProvisioning, noDisableENIProvisioning)
+}
+
+// filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag
+func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
 	numFiltered := 0
 	ret := make([]awsutils.ENIMetadata, 0, len(enis))
 	for _, eni := range enis {
-		if eni.Tags[eniNoManageTagKey] == "true" {
-			log.Debugf("skipping ENI %s: tagged with %s", eni.ENIID, eniNoManageTagKey)
+		// If we have unmanaged ENIs, filter them out
+		if c.unmanagedENIs.isUnmanaged(eni.ENIID) {
+			log.Debugf("Skipping ENI %s: tagged with %s", eni.ENIID, eniNoManageTagKey)
 			numFiltered++
 			continue
 		}
 		ret = append(ret, eni)
 	}
-	return ret, numFiltered
+	c.unmanagedENI = numFiltered
+	c.updateIPStats(numFiltered)
+	return ret
 }
 
 // ipTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET,
@@ -1148,7 +1113,7 @@ func (c *IPAMContext) ipTargetState() (short int, over int, enabled bool) {
 	// over is less than the warm IP target alone if it would imply reducing total IPs below the minimum target
 	over = max(min(over, total-c.minimumIPTarget), 0)
 
-	log.Tracef("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, short: %d, over %d", c.warmIPTarget, total, assigned, available, short, over)
+	log.Debugf("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, short: %d, over %d", c.warmIPTarget, total, assigned, available, short, over)
 	return short, over, true
 }
 

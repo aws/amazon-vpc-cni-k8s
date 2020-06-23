@@ -3,6 +3,7 @@ ARG golang_image=golang:1.13-stretch
 FROM $golang_image
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
 
+ARG GOARCH
 ARG arch
 ENV ARCH=$arch
 

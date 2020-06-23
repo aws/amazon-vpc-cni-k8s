@@ -20,10 +20,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
-
-	log "github.com/cihub/seelog"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
@@ -63,7 +60,6 @@ func (c *IPAMContext) ServeIntrospection() {
 
 	server := c.setupIntrospectionServer()
 	for {
-		once := sync.Once{}
 		_ = retry.RetryWithBackoff(retry.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
 			var ln net.Listener
 			var err error
@@ -79,9 +75,6 @@ func (c *IPAMContext) ServeIntrospection() {
 				err = server.Serve(ln)
 			}
 
-			once.Do(func() {
-				log.Error("Error running http API: ", err)
-			})
 			return err
 		})
 	}
@@ -91,7 +84,6 @@ func (c *IPAMContext) setupIntrospectionServer() *http.Server {
 	serverFunctions := map[string]func(w http.ResponseWriter, r *http.Request){
 		"/v1/enis":                      eniV1RequestHandler(c),
 		"/v1/eni-configs":               eniConfigRequestHandler(c),
-		"/v1/pods":                      podV1RequestHandler(c),
 		"/v1/networkutils-env-settings": networkEnvV1RequestHandler(),
 		"/v1/ipamd-env-settings":        ipamdEnvV1RequestHandler(),
 	}
@@ -125,7 +117,7 @@ func (c *IPAMContext) setupIntrospectionServer() *http.Server {
 		addr = defaultIntrospectionBindAddress
 	}
 
-	log.Info("Serving introspection endpoints on ", addr)
+	log.Infof("Serving introspection endpoints on %s", addr)
 
 	server := &http.Server{
 		Addr:         addr,
@@ -141,18 +133,6 @@ func eniV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 		responseJSON, err := json.Marshal(ipam.dataStore.GetENIInfos())
 		if err != nil {
 			log.Errorf("Failed to marshal ENI data: %v", err)
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
-		logErr(w.Write(responseJSON))
-	}
-}
-
-func podV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		responseJSON, err := json.Marshal(ipam.dataStore.GetPodInfos())
-		if err != nil {
-			log.Errorf("Failed to marshal pod data: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}

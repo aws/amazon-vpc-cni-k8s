@@ -25,7 +25,6 @@ import (
 type testMetricsTarget struct {
 	metricFile         string
 	interestingMetrics map[string]metricsConvert
-	targetList         []string
 }
 
 func newTestMetricsTarget(metricFile string, interestingMetrics map[string]metricsConvert) *testMetricsTarget {

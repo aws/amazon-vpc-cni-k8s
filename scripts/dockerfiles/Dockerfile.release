@@ -3,18 +3,17 @@ ARG golang_image=golang:1.13-stretch
 
 FROM $golang_image as builder
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
-ARG GOARCH=
+ARG GOARCH
 # Configure build with Go modules
 ENV GO111MODULE=on
 ENV GOPROXY=direct
 
-# Copy modules in before the rest of the source to only expire cache on module
-# changes:
+# Copy modules in before the rest of the source to only expire cache on module changes:
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY Makefile ./
-RUN make portmap
+RUN make plugins && make debug-script
 
 COPY . ./
 RUN make build-linux
@@ -30,9 +29,9 @@ WORKDIR /app
 COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/misc/10-aws.conflist \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/portmap \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni-support.sh \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-k8s-agent  \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/grpc-health-probe \
-    /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/aws-cni-support.sh \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/entrypoint.sh /app/
 
 ENTRYPOINT /app/entrypoint.sh

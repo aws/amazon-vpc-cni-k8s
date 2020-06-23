@@ -106,21 +106,20 @@ func (mr *MockAPIsMockRecorder) DeallocIPAddresses(arg0, arg1 interface{}) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeallocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).DeallocIPAddresses), arg0, arg1)
 }
 
-// DescribeENI mocks base method
-func (m *MockAPIs) DescribeENI(arg0 string) ([]*ec2.NetworkInterfacePrivateIpAddress, map[string]string, *string, error) {
+// DescribeAllENIs mocks base method
+func (m *MockAPIs) DescribeAllENIs() ([]awsutils.ENIMetadata, map[string]awsutils.TagMap, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DescribeENI", arg0)
-	ret0, _ := ret[0].([]*ec2.NetworkInterfacePrivateIpAddress)
-	ret1, _ := ret[1].(map[string]string)
-	ret2, _ := ret[2].(*string)
-	ret3, _ := ret[3].(error)
-	return ret0, ret1, ret2, ret3
+	ret := m.ctrl.Call(m, "DescribeAllENIs")
+	ret0, _ := ret[0].([]awsutils.ENIMetadata)
+	ret1, _ := ret[1].(map[string]awsutils.TagMap)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
-// DescribeENI indicates an expected call of DescribeENI
-func (mr *MockAPIsMockRecorder) DescribeENI(arg0 interface{}) *gomock.Call {
+// DescribeAllENIs indicates an expected call of DescribeAllENIs
+func (mr *MockAPIsMockRecorder) DescribeAllENIs() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeENI", reflect.TypeOf((*MockAPIs)(nil).DescribeENI), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeAllENIs", reflect.TypeOf((*MockAPIs)(nil).DescribeAllENIs))
 }
 
 // FreeENI mocks base method
@@ -180,6 +179,21 @@ func (m *MockAPIs) GetENIipLimit() (int, error) {
 func (mr *MockAPIsMockRecorder) GetENIipLimit() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetENIipLimit", reflect.TypeOf((*MockAPIs)(nil).GetENIipLimit))
+}
+
+// GetIPv4sFromEC2 mocks base method
+func (m *MockAPIs) GetIPv4sFromEC2(arg0 string) ([]*ec2.NetworkInterfacePrivateIpAddress, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetIPv4sFromEC2", arg0)
+	ret0, _ := ret[0].([]*ec2.NetworkInterfacePrivateIpAddress)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetIPv4sFromEC2 indicates an expected call of GetIPv4sFromEC2
+func (mr *MockAPIsMockRecorder) GetIPv4sFromEC2(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIPv4sFromEC2", reflect.TypeOf((*MockAPIs)(nil).GetIPv4sFromEC2), arg0)
 }
 
 // GetLocalIPv4 mocks base method

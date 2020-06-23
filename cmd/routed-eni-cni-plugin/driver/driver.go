@@ -14,21 +14,23 @@
 package driver
 
 import (
+	"fmt"
 	"net"
+	"os"
 	"syscall"
 
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 
-	"github.com/containernetworking/cni/pkg/ns"
+	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/vishvananda/netlink"
-
-	log "github.com/cihub/seelog"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
 const (
@@ -42,13 +44,14 @@ const (
 
 // NetworkAPIs defines network API calls
 type NetworkAPIs interface {
-	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int) error
-	TeardownNS(addr *net.IPNet, table int) error
+	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error
+	TeardownNS(addr *net.IPNet, table int, log logger.Logger) error
 }
 
 type linuxNetwork struct {
 	netLink netlinkwrapper.NetLink
 	ns      nswrapper.NS
+	procSys procsyswrapper.ProcSys
 }
 
 // New creates linuxNetwork object
@@ -56,6 +59,7 @@ func New() NetworkAPIs {
 	return &linuxNetwork{
 		netLink: netlinkwrapper.NewNetLink(),
 		ns:      nswrapper.NewNS(),
+		procSys: procsyswrapper.NewProcSys(),
 	}
 }
 
@@ -164,13 +168,13 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 }
 
 // SetupNS wires up linux networking for a pod's network
-func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int) error {
+func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error {
 	log.Debugf("SetupNS: hostVethName=%s, contVethName=%s, netnsPath=%s, table=%d, mtu=%d", hostVethName, contVethName, netnsPath, table, mtu)
-	return setupNS(hostVethName, contVethName, netnsPath, addr, table, vpcCIDRs, useExternalSNAT, os.netLink, os.ns, mtu)
+	return setupNS(hostVethName, contVethName, netnsPath, addr, table, vpcCIDRs, useExternalSNAT, os.netLink, os.ns, mtu, log, os.procSys)
 }
 
 func setupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool,
-	netLink netlinkwrapper.NetLink, ns nswrapper.NS, mtu int) error {
+	netLink netlinkwrapper.NetLink, ns nswrapper.NS, mtu int, log logger.Logger, procSys procsyswrapper.ProcSys) error {
 	// Clean up if hostVeth exists.
 	if oldHostVeth, err := netLink.LinkByName(hostVethName); err == nil {
 		if err = netLink.LinkDel(oldHostVeth); err != nil {
@@ -189,6 +193,22 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 	if err != nil {
 		return errors.Wrapf(err, "setupNS network: failed to find link %q", hostVethName)
 	}
+
+	// NB: Must be set after move to host namespace, or kernel will reset to defaults.
+	if err := procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", hostVethName), "0"); err != nil {
+		if !os.IsNotExist(err) {
+			return errors.Wrapf(err, "setup NS network: failed to disable IPv6 router advertisements")
+		}
+		log.Debugf("SetupNS: Ignoring '%s' writing to accept_ra: Assuming kernel lacks IPv6 support", err)
+	}
+
+	if err := procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", hostVethName), "0"); err != nil {
+		if !os.IsNotExist(err) {
+			return errors.Wrapf(err, "setup NS network: failed to disable IPv6 ICMP redirects")
+		}
+		log.Debugf("SetupNS: Ignoring '%s' writing to accept_redirects: Assuming kernel lacks IPv6 support", err)
+	}
+	log.Debugf("SetupNS: disabled IPv6 RA and ICMP redirects on %s", hostVethName)
 
 	// Explicitly set the veth to UP state, because netlink doesn't always do that on all the platforms with net.FlagUp.
 	// veth won't get a link local address unless it's set to UP state.
@@ -243,7 +263,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 
 				err = netLink.RuleAdd(podRule)
 				if isRuleExistsError(err) {
-					log.Warn("Rule already exists [%v]", podRule)
+					log.Warnf("Rule already exists [%v]", podRule)
 				} else {
 					if err != nil {
 						log.Errorf("Failed to add pod IP rule [%v]: %v", podRule, err)
@@ -291,12 +311,12 @@ func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *
 }
 
 // TeardownPodNetwork cleanup ip rules
-func (os *linuxNetwork) TeardownNS(addr *net.IPNet, table int) error {
+func (os *linuxNetwork) TeardownNS(addr *net.IPNet, table int, log logger.Logger) error {
 	log.Debugf("TeardownNS: addr %s, table %d", addr.String(), table)
-	return tearDownNS(addr, table, os.netLink)
+	return tearDownNS(addr, table, os.netLink, log)
 }
 
-func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink) error {
+func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink, log logger.Logger) error {
 	if addr == nil {
 		return errors.New("can't tear down network namespace with no IP address")
 	}

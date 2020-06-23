@@ -71,11 +71,10 @@ ipamd.log.2018-05-16-01  ipamd.log.2018-05-16-06  ipamd.log.2018-05-16-11  ipamd
 ### collecting node level tech-support bundle for offline troubleshooting
 
 ```
-[root@ip-192-168-188-7 aws-routed-eni]# /opt/cni/bin/aws-cni-support.sh 
+[root@ip-192-168-188-7 aws-routed-eni]# /opt/cni/bin/aws-cni-support.sh
 
 // download
-/var/log/aws-routed-eni/aws-cni-support.tar.gz
-
+/var/log/eks_i-01111ad54b6cfaa19_2020-03-11_0103-UTC_0.6.0.tar.gz
 ```
 
 ### ipamD debugging commands

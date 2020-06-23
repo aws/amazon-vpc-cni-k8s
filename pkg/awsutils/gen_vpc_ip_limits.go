@@ -18,11 +18,12 @@
 package main
 
 import (
-	"log"
 	"os"
 	"sort"
 	"text/template"
 	"time"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -40,13 +41,14 @@ type ENILimit struct {
 
 // Helper function to call the EC2 DescribeInstanceTypes API and generate the IP limit file.
 func main() {
+	log := logger.DefaultLogger()
 	// Get session
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	}))
 	_, err := sess.Config.Credentials.Get()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to get session credentials: %v", err)
 	}
 	svc := ec2.New(sess)
 	describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{}
@@ -55,7 +57,7 @@ func main() {
 	for {
 		output, err := svc.DescribeInstanceTypes(describeInstanceTypesInput)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("Failed to call EC2 DescibeInstanceTypes: %v", err)
 		}
 		// We just want the type name, ENI and IP limits
 		for _, info := range output.InstanceTypes {
@@ -93,7 +95,7 @@ func main() {
 	// Generate the file
 	f, err := os.Create(ipLimitFileName)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to create file: %v, ", err)
 	}
 	limitsTemplate.Execute(f, struct {
 		Timestamp string
@@ -111,19 +113,47 @@ func addManualLimits(limitMap map[string]ENILimit) map[string]ENILimit {
 		{"cr1.8xlarge", 8, 30},
 		{"g4dn.metal", 15, 50},
 		{"hs1.8xlarge", 8, 30},
-		{"m6g.12xlarge", 8, 30},
-		{"m6g.16xlarge", 15, 50},
-		{"m6g.2xlarge", 4, 15},
-		{"m6g.4xlarge", 8, 30},
-		{"m6g.8xlarge", 8, 30},
-		{"m6g.large", 3, 10},
-		{"m6g.medium", 2, 4},
-		{"m6g.xlarge", 4, 15},
 		{"u-12tb1.metal", 5, 30},
 		{"u-18tb1.metal", 15, 50},
 		{"u-24tb1.metal", 15, 50},
 		{"u-6tb1.metal", 5, 30},
 		{"u-9tb1.metal", 5, 30},
+		{"c5a.12xlarge", 8, 30},
+		{"c5a.16xlarge", 15, 50},
+		{"c5a.24xlarge", 15, 50},
+		{"c5a.2xlarge", 4, 15},
+		{"c5a.4xlarge", 8, 30},
+		{"c5a.8xlarge", 8, 30},
+		{"c5a.large", 3, 10},
+		{"c5a.metal", 15, 50},
+		{"c5a.xlarge", 4, 15},
+		{"c5ad.12xlarge", 8, 30},
+		{"c5ad.16xlarge", 15, 50},
+		{"c5ad.24xlarge", 15, 50},
+		{"c5ad.2xlarge", 4, 15},
+		{"c5ad.4xlarge", 8, 30},
+		{"c5ad.8xlarge", 8, 30},
+		{"c5ad.large", 3, 10},
+		{"c5ad.metal", 15, 50},
+		{"c5ad.xlarge", 4, 15},
+		{"c6g.medium", 2, 4},
+		{"c6g.large", 3, 10},
+		{"c6g.xlarge", 4, 15},
+		{"c6g.2xlarge", 4, 15},
+		{"c6g.4xlarge", 8, 30},
+		{"c6g.8xlarge", 8, 30},
+		{"c6g.12xlarge", 8, 30},
+		{"c6g.16xlarge", 15, 50},
+		{"c6g.metal", 15, 50},
+		{"r6g.medium", 2, 4},
+		{"r6g.large", 3, 10},
+		{"r6g.xlarge", 4, 15},
+		{"r6g.2xlarge", 4, 15},
+		{"r6g.4xlarge", 8, 30},
+		{"r6g.8xlarge", 8, 30},
+		{"r6g.12xlarge", 8, 30},
+		{"r6g.16xlarge", 15, 50},
+		{"r6g.metal", 15, 50},
 	}
 	for _, eniLimit := range manuallyAddedLimits {
 		limitMap[eniLimit.InstanceType] = newENILimit(eniLimit.InstanceType, eniLimit.ENILimit, eniLimit.IPLimit)

@@ -23,6 +23,16 @@ references:
       - run: make vet
       # TODO: Enable architecture specific unit-test when Circle CI supports it!
       - run: make unit-test ARCH=amd64
+      - run:
+          name: Upload Coverage Results
+          command: |
+            curl -s https://codecov.io/bash | bash -s -- \
+              -f "coverage.txt" \
+              -t "${CODECOV_TOKEN}" \
+              -n "${CIRCLE_BUILD_NUM}" \
+              -F "" \
+              -Z || echo 'Codecov upload failed'
+          when: always
 
 jobs:
   build_x86_64:
@@ -31,6 +41,7 @@ jobs:
       <<: *env
       # Target the GOARCH for x86_64
       ARCH: amd64
+      BUILD_MODE: "-buildmode=pie"
 
   build_aarch64:
     <<: *build
@@ -38,6 +49,7 @@ jobs:
       <<: *env
       # Target the GOARCH for aarch64
       ARCH: arm64
+      BUILD_MODE: ""
 
   integration_test:
     docker:
@@ -51,6 +63,10 @@ jobs:
       - setup_remote_docker
       - aws-cli/setup:
           profile-name: awstester
+      - restore_cache:
+          keys:
+            - dependency-packages-store-{{ checksum "test/integration/go.mod" }}
+            - dependency-packages-store-
       - k8s/install-kubectl:
           # requires 1.14.9 for k8s testing, since it uses log api.
           kubectl-version: v1.14.9
@@ -58,6 +74,11 @@ jobs:
           name: Run the integration tests
           command: ./scripts/run-integration-tests.sh
           no_output_timeout: 15m
+      - save_cache:
+          key: dependency-packages-store-{{ checksum "test/integration/go.mod" }}
+          paths:
+            - /go/pkg
+          when: always
       - store_artifacts:
           path: /tmp/cni-test
 

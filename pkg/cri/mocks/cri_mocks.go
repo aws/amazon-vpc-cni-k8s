@@ -22,6 +22,7 @@ import (
 	reflect "reflect"
 
 	cri "github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
+	logger "github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -49,16 +50,16 @@ func (m *MockAPIs) EXPECT() *MockAPIsMockRecorder {
 }
 
 // GetRunningPodSandboxes mocks base method
-func (m *MockAPIs) GetRunningPodSandboxes() (map[string]*cri.SandboxInfo, error) {
+func (m *MockAPIs) GetRunningPodSandboxes(arg0 logger.Logger) ([]*cri.SandboxInfo, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRunningPodSandboxes")
-	ret0, _ := ret[0].(map[string]*cri.SandboxInfo)
+	ret := m.ctrl.Call(m, "GetRunningPodSandboxes", arg0)
+	ret0, _ := ret[0].([]*cri.SandboxInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetRunningPodSandboxes indicates an expected call of GetRunningPodSandboxes
-func (mr *MockAPIsMockRecorder) GetRunningPodSandboxes() *gomock.Call {
+func (mr *MockAPIsMockRecorder) GetRunningPodSandboxes(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRunningPodSandboxes", reflect.TypeOf((*MockAPIs)(nil).GetRunningPodSandboxes))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRunningPodSandboxes", reflect.TypeOf((*MockAPIs)(nil).GetRunningPodSandboxes), arg0)
 }

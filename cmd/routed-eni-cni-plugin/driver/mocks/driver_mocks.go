@@ -22,6 +22,7 @@ import (
 	net "net"
 	reflect "reflect"
 
+	logger "github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -49,29 +50,29 @@ func (m *MockNetworkAPIs) EXPECT() *MockNetworkAPIsMockRecorder {
 }
 
 // SetupNS mocks base method
-func (m *MockNetworkAPIs) SetupNS(arg0, arg1, arg2 string, arg3 *net.IPNet, arg4 int, arg5 []string, arg6 bool, arg7 int) error {
+func (m *MockNetworkAPIs) SetupNS(arg0, arg1, arg2 string, arg3 *net.IPNet, arg4 int, arg5 []string, arg6 bool, arg7 int, arg8 logger.Logger) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetupNS", arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
+	ret := m.ctrl.Call(m, "SetupNS", arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetupNS indicates an expected call of SetupNS
-func (mr *MockNetworkAPIsMockRecorder) SetupNS(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7 interface{}) *gomock.Call {
+func (mr *MockNetworkAPIsMockRecorder) SetupNS(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupNS", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupNS), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupNS", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupNS), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
 }
 
 // TeardownNS mocks base method
-func (m *MockNetworkAPIs) TeardownNS(arg0 *net.IPNet, arg1 int) error {
+func (m *MockNetworkAPIs) TeardownNS(arg0 *net.IPNet, arg1 int, arg2 logger.Logger) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "TeardownNS", arg0, arg1)
+	ret := m.ctrl.Call(m, "TeardownNS", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // TeardownNS indicates an expected call of TeardownNS
-func (mr *MockNetworkAPIsMockRecorder) TeardownNS(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockNetworkAPIsMockRecorder) TeardownNS(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TeardownNS", reflect.TypeOf((*MockNetworkAPIs)(nil).TeardownNS), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TeardownNS", reflect.TypeOf((*MockNetworkAPIs)(nil).TeardownNS), arg0, arg1, arg2)
 }
