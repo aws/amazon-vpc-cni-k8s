@@ -66,10 +66,10 @@ const (
 	// Defaults to empty.
 	envExcludeSNATCIDRs = "AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS"
 
-	// This environment is used to specify weather the SNAT rule added to iptables should randomize port
-	// allocation for outgoing connections. If set to "hashrandom" the SNAT iptables rule will have the "--random" flag
-	// added to it. Set it to "prng" if you want to use a pseudo random numbers, i.e. "--random-fully".
-	// Defaults to hashrandom.
+	// This environment is used to specify weather the SNAT rule added to iptables should randomize port allocation for
+	// outgoing connections. If set to "hashrandom" the SNAT iptables rule will have the "--random" flag added to it.
+	// Use "prng" if you want to use pseudo random numbers, i.e. "--random-fully".
+	// Default is "prng".
 	envRandomizeSNAT = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 
 	// envNodePortSupport is the name of environment variable that configures whether we implement support for
@@ -578,12 +578,11 @@ func getExcludeSNATCIDRs() []string {
 }
 
 func typeOfSNAT() snatType {
-	defaultValue := randomHashSNAT
-	defaultString := "hashrandom"
+	defaultValue := randomPRNGSNAT
 	strValue := os.Getenv(envRandomizeSNAT)
 	switch strValue {
 	case "":
-		// empty means default
+		// empty means default, which is --random-fully
 		return defaultValue
 	case "prng":
 		// prng means to use --random-fully
@@ -592,14 +591,12 @@ func typeOfSNAT() snatType {
 	case "none":
 		// none means to disable randomisation (no flag)
 		return sequentialSNAT
-
-	case defaultString:
+	case "hashrandom":
 		// hashrandom means to use --random
 		return randomHashSNAT
 	default:
 		// if we get to this point, the environment variable has an invalid value
-		log.Errorf("Failed to parse %s; using default: %s. Provided string was %q", envRandomizeSNAT, defaultString,
-			strValue)
+		log.Errorf("Failed to parse %s; using default: %s. Provided string was %q", envRandomizeSNAT, "prng", strValue)
 		return defaultValue
 	}
 }
