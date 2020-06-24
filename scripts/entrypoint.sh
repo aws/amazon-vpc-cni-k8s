@@ -46,36 +46,15 @@ AWS_VPC_K8S_PLUGIN_LOG_LEVEL=${AWS_VPC_K8S_PLUGIN_LOG_LEVEL:-"Debug"}
 
 AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER=${AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER:-"true"}
 
-# Number of seconds to wait checking for healthy ipamd. We default this to 90 seconds
-# because ipamd needs kube-proxy to be running in order to contact the Kubernetes API
-# server and sometimes it can take a little while for kube-proxy to start (or restart 
-# after an upgrade)
-IPAMD_TIMEOUT_SECONDS=${IPAMD_TIMEOUT_SECONDS:-90}
-
 # Check for ipamd connectivity on localhost port 50051
 wait_for_ipam() {
-    local __sleep_time=0
-    local __elapsed_time=0
-    local __time_left=$IPAMD_TIMEOUT_SECONDS
-
     while :
     do
         if ./grpc-health-probe -addr 127.0.0.1:50051 >/dev/null 2>&1; then
             return 0
         fi
-        # We sleep for 1 second, then 2 seconds, then 3 seconds, etc
-        __sleep_time=$(( sleep_time++ ))
-        __time_left=$(( __time_left - __sleep_time ))
-        if [ $__time_left -le 0 ]; then
-            # Sleep for the remainder of time before timeout and check one more time
-            sleep $(( IPAMD_TIMEOUT_SECONDS - __elapsed_time ))
-            if ./grpc-health-probe -addr 127.0.0.1:50051 >/dev/null 2>&1; then
-                return 0
-            fi
-            return 1
-        fi
-        __elapsed_time=$(( __elapsed_time + __sleep_time ))
-        sleep $__sleep_time
+        # We sleep for 1 second between each retry
+        sleep 1
     done
 }
 
