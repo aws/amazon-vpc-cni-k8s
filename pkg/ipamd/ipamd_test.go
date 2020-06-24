@@ -104,7 +104,7 @@ func TestNodeInit(t *testing.T) {
 
 	_, parsedVPCCIDR, _ := net.ParseCIDR(vpcCIDR)
 	primaryIP := net.ParseIP(ipaddr01)
-	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return(cidrs)
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs)
 	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
 	m.network.EXPECT().SetupHostNetwork(parsedVPCCIDR, cidrs, "", &primaryIP).Return(nil)
 
