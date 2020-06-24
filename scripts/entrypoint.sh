@@ -46,18 +46,16 @@ AWS_VPC_K8S_PLUGIN_LOG_LEVEL=${AWS_VPC_K8S_PLUGIN_LOG_LEVEL:-"Debug"}
 
 AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER=${AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER:-"true"}
 
-# Checks for IPAM connectivity on localhost port 50051, retrying connectivity
-# check with a timeout of 36 seconds
+# Check for ipamd connectivity on localhost port 50051
 wait_for_ipam() {
-    local __sleep_time=0
-
-    until [ $__sleep_time -eq 8 ]; do
-        sleep $((__sleep_time++))
+    while :
+    do
         if ./grpc-health-probe -addr 127.0.0.1:50051 >/dev/null 2>&1; then
             return 0
         fi
+        # We sleep for 1 second between each retry
+        sleep 1
     done
-    return 1
 }
 
 # If there is no init container, copy the required files
