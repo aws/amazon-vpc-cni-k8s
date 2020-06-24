@@ -394,6 +394,16 @@ string, tag addition will ignored.
 
 ---
 
+`AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER`
+
+Type: Boolean
+
+Default: `true`
+
+Specifies whether ipamd should configure rp filter for primary interface. Setting this to `false` will require rp filter to be configured through init container
+
+---
+
 `CLUSTER_NAME`
 
 Type: String
