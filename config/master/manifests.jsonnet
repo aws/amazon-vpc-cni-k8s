@@ -152,8 +152,6 @@ local awsnode = {
               env_:: {
                 AWS_VPC_CNI_NODE_PORT_SUPPORT: "true",
                 AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG: "false",
-                ENI_CONFIG_ANNOTATION_DEF: "k8s.amazonaws.com/eniConfig",
-                ENI_CONFIG_LABEL_DEF: "k8s.amazonaws.com/eniConfig",
                 AWS_VPC_ENI_MTU: "9001",
                 AWS_VPC_K8S_CNI_EXTERNALSNAT: "false",
                 AWS_VPC_K8S_CNI_RANDOMIZESNAT: "prng",
@@ -162,7 +160,6 @@ local awsnode = {
                 AWS_VPC_K8S_CNI_LOG_FILE: "/host/var/log/aws-routed-eni/ipamd.log",
                 AWS_VPC_K8S_PLUGIN_LOG_FILE: "/var/log/aws-routed-eni/plugin.log",
                 AWS_VPC_K8S_PLUGIN_LOG_LEVEL: "DEBUG",
-                INTROSPECTION_BIND_ADDRESS: "127.0.0.1:61679",
                 DISABLE_INTROSPECTION: "false",
                 DISABLE_METRICS: "false",
                 AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
