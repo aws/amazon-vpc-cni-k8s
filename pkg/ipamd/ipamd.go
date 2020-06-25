@@ -410,8 +410,8 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
-	//Spawning checkAndUpdateRules go-routine
-	go wait.Forever(func() { pbVPCcidrs = c.checkVPCCIDRsAndRules(pbVPCcidrs)}, 30*time.Second)
+	//Spawning updateCIDRsRulesOnChange go-routine
+	go wait.Forever(func() { pbVPCcidrs = c.updateCIDRsRulesOnChange(pbVPCcidrs)}, 30*time.Second)
 	return nil
 }
 
@@ -436,7 +436,7 @@ func (c *IPAMContext) configureIPRulesForPods(pbVPCcidrs []string) error {
 	return nil
 }
 
-func (c *IPAMContext) checkVPCCIDRsAndRules(oldVPCCidrs []string) []string {
+func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCidrs []string) []string {
 	var pbVPCCIDRs []string
 	newVPCCIDRs := c.awsClient.GetVPCIPv4CIDRs()
 	for _, cidr := range newVPCCIDRs {
