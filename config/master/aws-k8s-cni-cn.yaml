@@ -125,12 +125,6 @@
           "value": "false"
         - "name": "DISABLE_METRICS"
           "value": "false"
-        - "name": "ENI_CONFIG_ANNOTATION_DEF"
-          "value": "k8s.amazonaws.com/eniConfig"
-        - "name": "ENI_CONFIG_LABEL_DEF"
-          "value": "k8s.amazonaws.com/eniConfig"
-        - "name": "INTROSPECTION_BIND_ADDRESS"
-          "value": "127.0.0.1:61679"
         - "name": "MY_NODE_NAME"
           "valueFrom":
             "fieldRef":
