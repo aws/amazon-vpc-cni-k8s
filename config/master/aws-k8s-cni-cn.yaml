@@ -179,6 +179,10 @@
         "volumeMounts":
         - "mountPath": "/host/opt/cni/bin"
           "name": "cni-bin-dir"
+        - "mountPath": "/var/run/aws-node"
+          "name": "run-dir"
+        - "mountPath": "/var/log/aws-routed-eni"
+          "name": "log-dir"
       "priorityClassName": "system-node-critical"
       "serviceAccountName": "aws-node"
       "terminationGracePeriodSeconds": 10
