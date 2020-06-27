@@ -17,11 +17,8 @@ HOST_CNI_BIN_PATH=${HOST_CNI_BIN_PATH:-"/host/opt/cni/bin"}
 echo "Copying CNI plugin binaries ... "
 
 for b in $PLUGIN_BINS; do
-    # If the file exist, delete it first
-    if [[ -f "$HOST_CNI_BIN_PATH/$b" ]]; then
-        rm "$HOST_CNI_BIN_PATH/$b"
-    fi
-    cp "$b" "$HOST_CNI_BIN_PATH"
+    # Install the binary
+    install "$b" "$HOST_CNI_BIN_PATH"
 done
 
 # Configure rp_filter

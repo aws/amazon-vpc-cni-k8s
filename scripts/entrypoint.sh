@@ -14,7 +14,7 @@
 # As mentioned above, Kubelet considers a CNI plugin "ready" when it sees the
 # binary and configuration file for the plugin in a well-known directory. For
 # the AWS VPC CNI plugin binary, we only want to copy the CNI plugin binary
-# into that well-known directory AFTER we have succeessfully started the IPAM
+# into that well-known directory AFTER we have successfully started the IPAM
 # daemon and know that it can connect to Kubernetes and the local EC2 metadata
 # service. This is why this entrypoint script exists; we start the IPAM daemon
 # and wait until we know it is up and running successfully before copying the
@@ -64,11 +64,8 @@ if [[ "$AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER" != "false" ]]; then
     echo "Copying CNI plugin binaries ... "
     PLUGIN_BINS="loopback portmap bandwidth aws-cni-support.sh"
     for b in $PLUGIN_BINS; do
-        # If the file exist, delete it first
-        if [[ -f "$HOST_CNI_BIN_PATH/$b" ]]; then
-            rm "$HOST_CNI_BIN_PATH/$b"
-        fi
-        cp "$b" "$HOST_CNI_BIN_PATH"
+        # Install the binary
+        install "$b" "$HOST_CNI_BIN_PATH"
     done
 fi
 
@@ -89,7 +86,7 @@ echo "ok."
 
 echo -n "Copying CNI plugin binary and config file ... "
 
-cp aws-cni "$HOST_CNI_BIN_PATH"
+install aws-cni "$HOST_CNI_BIN_PATH"
 
 sed -i s~__VETHPREFIX__~"${AWS_VPC_K8S_CNI_VETHPREFIX}"~g 10-aws.conflist
 sed -i s~__MTU__~"${AWS_VPC_ENI_MTU}"~g 10-aws.conflist
