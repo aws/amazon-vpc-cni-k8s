@@ -113,7 +113,7 @@ var log = logger.Get()
 // NetworkAPIs defines the host level and the ENI level network related operations
 type NetworkAPIs interface {
 	// SetupNodeNetwork performs node level network configuration
-	SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, primaryMAC string, primaryAddr *net.IP) error
+	SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error
 	// SetupENINetwork performs eni level network configuration
 	SetupENINetwork(eniIP string, mac string, table int, subnetCIDR string) error
 	UseExternalSNAT() bool
@@ -205,7 +205,7 @@ func findPrimaryInterfaceName(primaryMAC string) (string, error) {
 }
 
 // SetupHostNetwork performs node level network configuration
-func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, primaryMAC string, primaryAddr *net.IP) error {
+func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error {
 	log.Info("Setting up host network... ")
 
 	hostRule := n.netLink.NewRule()
@@ -294,7 +294,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	}
 	var allCIDRs []snatCIDR
 	for _, cidr := range vpcCIDRs {
-		allCIDRs = append(allCIDRs, snatCIDR{cidr: *cidr, isExclusion: false})
+		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
 	}
 	for _, cidr := range n.excludeSNATCIDRs {
 		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: true})

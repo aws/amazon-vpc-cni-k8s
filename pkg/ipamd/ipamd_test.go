@@ -95,7 +95,7 @@ func TestNodeInit(t *testing.T) {
 
 	eni1, eni2 := getDummyENIMetadata()
 
-	var cidrs []*string
+	var cidrs []string
 	m.awsutils.EXPECT().GetENILimit().Return(4, nil)
 	m.awsutils.EXPECT().GetENIipLimit().Return(14, nil)
 	m.awsutils.EXPECT().GetIPv4sFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil)

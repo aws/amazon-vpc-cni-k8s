@@ -122,7 +122,7 @@ func (mr *MockNetworkAPIsMockRecorder) SetupENINetwork(arg0, arg1, arg2, arg3 in
 }
 
 // SetupHostNetwork mocks base method
-func (m *MockNetworkAPIs) SetupHostNetwork(arg0 *net.IPNet, arg1 []*string, arg2 string, arg3 *net.IP) error {
+func (m *MockNetworkAPIs) SetupHostNetwork(arg0 *net.IPNet, arg1 []string, arg2 string, arg3 *net.IP) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SetupHostNetwork", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(error)

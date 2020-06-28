@@ -120,7 +120,7 @@ func (m *testMocks) mockWithFailureAt(t *testing.T, failAt string) *createVethPa
 
 	//container side
 	if failAt == "link-byname" {
-		 m.netlink.EXPECT().LinkByName(gomock.Any()).Return(mockContVeth, errors.New("error on LinkByName container")).After(call)
+		m.netlink.EXPECT().LinkByName(gomock.Any()).Return(mockContVeth, errors.New("error on LinkByName container")).After(call)
 		return mockContext
 	}
 	call = m.netlink.EXPECT().LinkByName(gomock.Any()).Return(mockContVeth, nil).After(call)
