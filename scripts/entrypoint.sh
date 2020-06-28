@@ -62,7 +62,7 @@ wait_for_ipam() {
 if [[ "$AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER" != "false" ]]; then
     # Copy files
     echo "Copying CNI plugin binaries ... "
-    PLUGIN_BINS="portmap aws-cni-support.sh"
+    PLUGIN_BINS="loopback portmap bandwidth aws-cni-support.sh"
     for b in $PLUGIN_BINS; do
         # If the file exist, delete it first
         if [[ -f "$HOST_CNI_BIN_PATH/$b" ]]; then

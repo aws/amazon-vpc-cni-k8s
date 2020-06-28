@@ -150,11 +150,21 @@ local awsnode = {
                 initialDelaySeconds: 60,
               },
               env_:: {
+                AWS_VPC_CNI_NODE_PORT_SUPPORT: "true",
+                AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG: "false",
                 AWS_VPC_ENI_MTU: "9001",
-                AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER: "false",
+                AWS_VPC_K8S_CNI_EXTERNALSNAT: "false",
+                AWS_VPC_K8S_CNI_RANDOMIZESNAT: "prng",
+                WARM_ENI_TARGET: "1",
                 AWS_VPC_K8S_CNI_LOGLEVEL: "DEBUG",
                 AWS_VPC_K8S_CNI_LOG_FILE: "/host/var/log/aws-routed-eni/ipamd.log",
+                AWS_VPC_K8S_PLUGIN_LOG_FILE: "/var/log/aws-routed-eni/plugin.log",
+                AWS_VPC_K8S_PLUGIN_LOG_LEVEL: "DEBUG",
+                DISABLE_INTROSPECTION: "false",
+                DISABLE_METRICS: "false",
                 AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
+                ADDITIONAL_ENI_TAGS: "{}",
+                AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER: "false",
                 MY_NODE_NAME: {
                   valueFrom: {
                     fieldRef: {fieldPath: "spec.nodeName"},
