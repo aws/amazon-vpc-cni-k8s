@@ -253,10 +253,10 @@ func (mr *MockAPIsMockRecorder) GetVPCIPv4CIDR() *gomock.Call {
 }
 
 // GetVPCIPv4CIDRs mocks base method
-func (m *MockAPIs) GetVPCIPv4CIDRs() []*string {
+func (m *MockAPIs) GetVPCIPv4CIDRs() []string {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetVPCIPv4CIDRs")
-	ret0, _ := ret[0].([]*string)
+	ret0, _ := ret[0].([]string)
 	return ret0
 }
 

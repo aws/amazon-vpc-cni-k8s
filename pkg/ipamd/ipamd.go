@@ -47,8 +47,6 @@ const (
 	eniAttachTime               = 10 * time.Second
 	nodeIPPoolReconcileInterval = 60 * time.Second
 	decreaseIPPoolInterval      = 30 * time.Second
-	maxK8SRetries               = 5
-	retryK8SInterval            = 3 * time.Second
 
 	// ipReconcileCooldown is the amount of time that an IP address must wait until it can be added to the data store
 	// during reconciliation after being discovered on the EC2 instance metadata.
@@ -340,18 +338,13 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
-	var pbVPCcidrs []string
-	vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
-
-	for _, cidr := range vpcCIDRs {
-		pbVPCcidrs = append(pbVPCcidrs, *cidr)
-	}
 
 	_, vpcCIDR, err := net.ParseCIDR(c.awsClient.GetVPCIPv4CIDR())
 	if err != nil {
 		return errors.Wrap(err, "ipamd init: failed to retrieve VPC CIDR")
 	}
 
+	vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
 	primaryIP := net.ParseIP(c.awsClient.GetLocalIPv4())
 	err = c.networkClient.SetupHostNetwork(vpcCIDR, vpcCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP)
 	if err != nil {
@@ -398,7 +391,7 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
-	if err = c.configureIPRulesForPods(pbVPCcidrs); err != nil {
+	if err = c.configureIPRulesForPods(vpcCIDRs); err != nil {
 		return err
 	}
 
@@ -410,8 +403,8 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
-	//Spawning updateCIDRsRulesOnChange go-routine
-	go wait.Forever(func() { pbVPCcidrs = c.updateCIDRsRulesOnChange(pbVPCcidrs)}, 30*time.Second)
+	// Spawning updateCIDRsRulesOnChange go-routine
+	go wait.Forever(func() { vpcCIDRs = c.updateCIDRsRulesOnChange(vpcCIDRs) }, 30*time.Second)
 	return nil
 }
 
@@ -437,16 +430,12 @@ func (c *IPAMContext) configureIPRulesForPods(pbVPCcidrs []string) error {
 }
 
 func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCidrs []string) []string {
-	var pbVPCCIDRs []string
 	newVPCCIDRs := c.awsClient.GetVPCIPv4CIDRs()
-	for _, cidr := range newVPCCIDRs {
-		pbVPCCIDRs = append(pbVPCCIDRs, *cidr)
-	}
 
-	if len(oldVPCCidrs) != len(pbVPCCIDRs) || !reflect.DeepEqual(oldVPCCidrs, pbVPCCIDRs) {
-		_ = c.configureIPRulesForPods(pbVPCCIDRs)
+	if len(oldVPCCidrs) != len(newVPCCIDRs) || !reflect.DeepEqual(oldVPCCidrs, newVPCCIDRs) {
+		_ = c.configureIPRulesForPods(newVPCCIDRs)
 	}
-	return pbVPCCIDRs
+	return newVPCCIDRs
 }
 
 func (c *IPAMContext) updateIPStats(unmanaged int) {

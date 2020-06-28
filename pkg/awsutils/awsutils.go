@@ -142,8 +142,8 @@ type APIs interface {
 	// GetVPCIPv4CIDR returns VPC's 1st CIDR
 	GetVPCIPv4CIDR() string
 
-	// GetVPCIPv4CIDRs returns VPC's CIDRs
-	GetVPCIPv4CIDRs() []*string
+	// GetVPCIPv4CIDRs returns VPC's CIDRs from instance metadata
+	GetVPCIPv4CIDRs() []string
 
 	// GetLocalIPv4 returns the primary IP address on the primary ENI interface
 	GetLocalIPv4() string
@@ -227,17 +227,14 @@ func prometheusRegister() {
 //StringSet is a set of strings
 type StringSet struct {
 	sync.RWMutex
-	data 	sets.String
+	data sets.String
 }
 
-func (ss *StringSet) AWSStrings() []*string {
+func (ss *StringSet) SortedList() []string {
 	ss.RLock()
 	defer ss.RUnlock()
-	var dataSlice []*string
-	for key, _ := range ss.data {
-		dataSlice = append(dataSlice, aws.String(key))
-	}
-	return dataSlice
+	// sets.String.List() returns a sorted list
+	return ss.data.List()
 }
 
 func (ss *StringSet) Set(items []string) {
@@ -246,13 +243,7 @@ func (ss *StringSet) Set(items []string) {
 	ss.data = sets.NewString(items...)
 }
 
-func (ss *StringSet) IsEmpty() bool {
-	ss.RLock()
-	defer ss.RUnlock()
-	return ss.data != nil && ss.data.Len() == 0
-}
-
-func (ss *StringSet) Difference (other *StringSet) *StringSet {
+func (ss *StringSet) Difference(other *StringSet) *StringSet {
 	ss.RLock()
 	other.RLock()
 	defer ss.RUnlock()
@@ -280,9 +271,7 @@ func New() (*EC2InstanceMetadataCache, error) {
 	cache.region = region
 	log.Debugf("Discovered region: %s", cache.region)
 
-	sess, err := session.NewSession(
-		&aws.Config{Region: aws.String(cache.region),
-			MaxRetries: aws.Int(15)})
+	sess, err := session.NewSession(&aws.Config{Region: aws.String(cache.region), MaxRetries: aws.Int(15)})
 	if err != nil {
 		log.Errorf("Failed to initialize AWS SDK session %v", err)
 		return nil, errors.Wrap(err, "instance metadata: failed to initialize AWS SDK session")
@@ -385,7 +374,7 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 		return err
 	}
 
-	// refresh security groups and VPC CIDR blocks in the background
+	// Refresh security groups and VPC CIDR blocks in the background
 	// Ignoring errors since we will retry in 30s
 	go wait.Forever(func() { _ = cache.refreshSGIDs(mac) }, 30*time.Second)
 	go wait.Forever(func() { _ = cache.refreshVPCIPv4CIDRs(mac) }, 30*time.Second)
@@ -396,7 +385,6 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 		return nil
 	default:
 	}
-
 	return nil
 }
 
@@ -409,25 +397,20 @@ func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
 		return errors.Wrap(err, "get instance metadata: failed to retrieve security-group-ids")
 	}
 
-	sgIDs  := strings.Fields(metadataSGIDs)
+	sgIDs := strings.Fields(metadataSGIDs)
 
 	newSGs := StringSet{}
 	newSGs.Set(sgIDs)
-	addedSGs   := newSGs.Difference(&cache.securityGroups)
+	addedSGs := newSGs.Difference(&cache.securityGroups)
 	deletedSGs := cache.securityGroups.Difference(&newSGs)
 
-	if !addedSGs.IsEmpty() {
-		for _, sg := range addedSGs.AWSStrings() {
-			log.Infof("Found %s, added to ipamd cache", *sg)
-		}
+	for _, sg := range addedSGs.SortedList() {
+		log.Infof("Found %s, added to ipamd cache", sg)
 	}
-	if !deletedSGs.IsEmpty() {
-		for _, sg := range deletedSGs.AWSStrings() {
-				log.Infof("Removed %s from ipamd cache", *sg)
-		}
+	for _, sg := range deletedSGs.SortedList() {
+		log.Infof("Removed %s from ipamd cache", sg)
 	}
 	cache.securityGroups.Set(sgIDs)
-
 	return nil
 }
 
@@ -444,21 +427,16 @@ func (cache *EC2InstanceMetadataCache) refreshVPCIPv4CIDRs(mac string) error {
 
 	newVpcIPv4CIDRs := StringSet{}
 	newVpcIPv4CIDRs.Set(vpcIPv4CIDRs)
-	addedVpcIPv4CIDRs   := newVpcIPv4CIDRs.Difference(&cache.securityGroups)
-	deletedVpcIPv4CIDRs := cache.securityGroups.Difference(&newVpcIPv4CIDRs)
+	addedVpcIPv4CIDRs := newVpcIPv4CIDRs.Difference(&cache.vpcIPv4CIDRs)
+	deletedVpcIPv4CIDRs := cache.vpcIPv4CIDRs.Difference(&newVpcIPv4CIDRs)
 
-	if !addedVpcIPv4CIDRs.IsEmpty() {
-		for _, vpcIPv4CIDR := range addedVpcIPv4CIDRs.AWSStrings() {
-			log.Infof("Found %s, added to ipamd cache", *vpcIPv4CIDR)
-		}
+	for _, vpcIPv4CIDR := range addedVpcIPv4CIDRs.SortedList() {
+		log.Infof("Found %s, added to ipamd cache", vpcIPv4CIDR)
 	}
-	if !deletedVpcIPv4CIDRs.IsEmpty() {
-		for _, vpcIPv4CIDR := range deletedVpcIPv4CIDRs.AWSStrings() {
-			log.Infof("Removed %s from ipamd cache", *vpcIPv4CIDR)
-		}
+	for _, vpcIPv4CIDR := range deletedVpcIPv4CIDRs.SortedList() {
+		log.Infof("Removed %s from ipamd cache", vpcIPv4CIDR)
 	}
 	cache.vpcIPv4CIDRs.Set(vpcIPv4CIDRs)
-
 	return nil
 }
 
@@ -761,7 +739,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 	eniDescription := eniDescriptionPrefix + cache.instanceID
 	input := &ec2.CreateNetworkInterfaceInput{
 		Description: aws.String(eniDescription),
-		Groups:      cache.securityGroups.AWSStrings(),
+		Groups:      aws.StringSlice(cache.securityGroups.SortedList()),
 		SubnetId:    aws.String(cache.subnetID),
 	}
 
@@ -1367,8 +1345,8 @@ func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDR() string {
 }
 
 // GetVPCIPv4CIDRs returns VPC CIDRs
-func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDRs() []*string {
-	return cache.vpcIPv4CIDRs.AWSStrings()
+func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDRs() []string {
+	return cache.vpcIPv4CIDRs.SortedList()
 }
 
 // GetLocalIPv4 returns the primary IP address on the primary interface
