@@ -248,15 +248,16 @@ func (ss *StringSet) Set(items []string) {
 }
 
 func (ss *StringSet) IsEmpty() bool {
-	if ss.data.Len() == 0 {
-		return true
-	}
-	return false
+	ss.RLock()
+	defer ss.RUnlock()
+	return ss.data != nil && ss.data.Len() == 0
 }
 
 func (ss *StringSet) Difference (other *StringSet) *StringSet {
 	ss.RLock()
+	other.RLock()
 	defer ss.RUnlock()
+	defer other.RUnlock()
 	//example: s1 = {a1, a2, a3} s2 = {a1, a2, a4, a5} s1.Difference(s2) = {a3} s2.Difference(s1) = {a4, a5}
 	return &StringSet{data: ss.data.Difference(other.data)}
 }
@@ -373,13 +374,13 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 	}
 	log.Debugf("Found vpc-ipv4-cidr-block: %s ", cache.vpcIPv4CIDR)
 
-	// initSGIDs retrieves security groups
+	// retrieve security groups
 	err = cache.refreshSGIDs(mac)
 	if err != nil {
 		return err
 	}
 
-	// initVPCIPv4CIDRs retrieves VPC IPv4 CIDR blocks
+	// retrieve VPC IPv4 CIDR blocks
 	err = cache.refreshVPCIPv4CIDRs(mac)
 	if err != nil {
 		return err
