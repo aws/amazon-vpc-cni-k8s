@@ -166,7 +166,6 @@ type EC2InstanceMetadataCache struct {
 	// metadata info
 	securityGroups   StringSet
 	subnetID         string
-	cidrBlock        string
 	localIPv4        string
 	instanceID       string
 	instanceType     string

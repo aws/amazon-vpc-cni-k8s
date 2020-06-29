@@ -12,8 +12,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
-	clientset "k8s.io/client-go/kubernetes"
-
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -82,7 +80,7 @@ func NewController(clientset kubernetes.Interface) *Controller {
 }
 
 // CreateKubeClient creates a k8s client
-func CreateKubeClient() (clientset.Interface, error) {
+func CreateKubeClient() (kubernetes.Interface, error) {
 	kubeClient := k8sclient.GetKubeClient()
 	// Informers don't seem to do a good job logging error messages when it
 	// can't reach the server, making debugging hard. This makes it easier to
@@ -119,12 +117,6 @@ func (d *Controller) GetCNIPods() []string {
 func (d *Controller) DiscoverCNIK8SPods() {
 	// create the pod watcher
 	d.DiscoverK8SPods(cache.NewListWatchFromClient(d.kubeClient.CoreV1().RESTClient(), "pods", metav1.NamespaceSystem, fields.Everything()))
-}
-
-// DiscoverLocalK8SPods discovers local pods running on the node
-func (d *Controller) DiscoverLocalK8SPods() {
-	// create the pod watcher
-	d.DiscoverK8SPods(cache.NewListWatchFromClient(d.kubeClient.CoreV1().RESTClient(), "pods", metav1.NamespaceAll, fields.OneTermEqualSelector("spec.nodeName", d.myNodeName)))
 }
 
 // DiscoverK8SPods takes a watcher and updates the Controller cache

@@ -17,7 +17,6 @@ import (
 	"encoding/binary"
 	"encoding/csv"
 	"fmt"
-	"io"
 	"math"
 	"net"
 	"os"
@@ -43,9 +42,6 @@ import (
 )
 
 const (
-	// 0 - 511 can be used other higher priorities
-	toPodRulePriority = 512
-
 	// 513 - 1023, can be used priority lower than toPodRulePriority but higher than default nonVPC CIDR rule
 
 	// 1024 is reserved for (ip rule not to <VPC's subnet> table main)
@@ -134,7 +130,6 @@ type linuxNetwork struct {
 	typeOfSNAT              snatType
 	nodePortSupportEnabled  bool
 	shouldConfigureRpFilter bool
-	connmark                uint32
 	mtu                     int
 
 	netLink     netlinkwrapper.NetLink
@@ -184,11 +179,6 @@ func New() NetworkAPIs {
 		},
 		procSys: procsyswrapper.NewProcSys(),
 	}
-}
-
-type stringWriteCloser interface {
-	io.Closer
-	WriteString(s string) (int, error)
 }
 
 // find out the primary interface name

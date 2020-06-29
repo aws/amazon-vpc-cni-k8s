@@ -287,15 +287,6 @@ func TestTryAddIPToENI(t *testing.T) {
 
 	mockContext.dataStore = testDatastore()
 
-	podENIConfig := &v1alpha1.ENIConfigSpec{
-		SecurityGroups: []string{"sg1-id", "sg2-id"},
-		Subnet:         "subnet1",
-	}
-	var sg []*string
-	for _, sgID := range podENIConfig.SecurityGroups {
-		sg = append(sg, aws.String(sgID))
-	}
-
 	m.awsutils.EXPECT().AllocENI(false, nil, "").Return(secENIid, nil)
 	m.awsutils.EXPECT().AllocIPAddresses(secENIid, warmIpTarget)
 	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
