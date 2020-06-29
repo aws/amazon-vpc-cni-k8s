@@ -46,6 +46,7 @@ TEST_CONFIG_DIR="$TEST_DIR/config"
 : "${CLUSTER_ID:=$RANDOM}"
 CLUSTER_NAME=cni-test-$CLUSTER_ID
 TEST_CLUSTER_DIR=/tmp/cni-test/cluster-$CLUSTER_NAME
+CLUSTER_MANAGE_LOG_PATH=$TEST_CLUSTER_DIR/cluster-manage.log
 : "${CLUSTER_CONFIG:=${TEST_CLUSTER_DIR}/${CLUSTER_NAME}.yaml}"
 : "${KUBECONFIG_PATH:=${TEST_CLUSTER_DIR}/kubeconfig}"
 
@@ -99,6 +100,7 @@ ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_INIT_ECR_REPO_NAME"
 # image and push it to the Docker repository
 if [[ $(docker images -q "$IMAGE_NAME:$TEST_IMAGE_VERSION" 2> /dev/null) ]]; then
     echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION already exists in repository. Skipping image build..."
+    DOCKER_BUILD_DURATION=0
 else
     echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION does not exist in repository."
     if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
@@ -201,7 +203,7 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
 
   go install github.com/onsi/ginkgo/ginkgo
   wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
-  ginkgo -p --focus="Conformance"  --failFast --flakeAttempts 2 \
+  $GOPATH/bin/ginkgo -p --focus="Conformance"  --failFast --flakeAttempts 2 \
    --skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" /tmp/e2e.test -- --kubeconfig=$KUBECONFIG
 
   /tmp/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
