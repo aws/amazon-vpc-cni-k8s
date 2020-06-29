@@ -171,7 +171,7 @@ docker-metrics:
 		-f scripts/dockerfiles/Dockerfile.metrics \
 		-t "$(METRICS_IMAGE_NAME)" \
 		.
-	@echo "Built Docker image \"amazon/cni-metrics-helper:$(VERSION)\""
+	@echo "Built Docker image \"$(METRICS_IMAGE_NAME)\""
 
 # Run metrics helper unit test suite (must be run natively).
 metrics-unit-test: CGO_ENABLED=1
