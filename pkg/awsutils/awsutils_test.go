@@ -18,7 +18,6 @@ import (
 	"errors"
 	"os"
 	"sort"
-	"strings"
 	"testing"
 	"time"
 
@@ -75,12 +74,6 @@ func TestInitWithEC2metadata(t *testing.T) {
 	defer ctrl.Finish()
 
 	metadataVPCIPv4CIDRs := "192.168.0.0/16	100.66.0.0/1"
-	vpcIPv4CIDRs := strings.Fields(metadataVPCIPv4CIDRs)
-	var cidr []*string
-	for _, vpcCIDR := range vpcIPv4CIDRs {
-		log.Debugf("Found VPC CIDR: %s", vpcCIDR)
-		cidr = append(cidr, aws.String(vpcCIDR))
-	}
 
 	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, nil)

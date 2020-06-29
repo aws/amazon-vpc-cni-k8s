@@ -69,12 +69,6 @@ func setup(t *testing.T) (*gomock.Controller,
 		mock_driver.NewMockNetworkAPIs(ctrl)
 }
 
-type rpcConn struct{}
-
-func (*rpcConn) Close() error {
-	return nil
-}
-
 func TestCmdAdd(t *testing.T) {
 	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
 	defer ctrl.Finish()

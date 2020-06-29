@@ -13,13 +13,7 @@
 
 package logger
 
-import (
-	"sync"
-)
-
 const pluginBinaryName = "aws-cni"
-
-var once sync.Once
 
 //Log is global variable so that log functions can be directly accessed
 var log Logger

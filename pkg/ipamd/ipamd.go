@@ -203,7 +203,7 @@ type UnmanagedENISet struct {
 
 func (u *UnmanagedENISet) isUnmanaged(eniID string) bool {
 	val, ok := u.data[eniID]
-	return ok && val == true
+	return ok && val
 }
 
 func (u *UnmanagedENISet) reset() {

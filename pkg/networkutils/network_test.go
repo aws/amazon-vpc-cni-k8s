@@ -670,24 +670,3 @@ func (ipt *mockIptables) HasRandomFully() bool {
 	// TODO: Work out how to write a test case for this
 	return true
 }
-
-type mockFile struct {
-	closed bool
-	data   string
-}
-
-func (f *mockFile) WriteString(s string) (int, error) {
-	if f.closed {
-		panic("write call on closed file")
-	}
-	f.data += s
-	return len(s), nil
-}
-
-func (f *mockFile) Close() error {
-	if f.closed {
-		panic("close call on closed file")
-	}
-	f.closed = true
-	return nil
-}
