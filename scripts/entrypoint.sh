@@ -26,13 +26,22 @@ set -eu
 # turn on bash's job control
 set -m
 
+log_in_json() 
+{
+    FILENAME="${0##*/}"
+    LOGTYPE=$1
+    MSG=$2
+    TIMESTAMP=$(date +%FT%T.%3NZ)
+    printf '{"level":"%s","ts":"%s","caller":"%s","msg":"%s"}\n' "$LOGTYPE" "$TIMESTAMP" "$FILENAME" "$MSG"
+}
+
 # Check for all the required binaries before we go forward
 if [ ! -f aws-k8s-agent ]; then
-    echo "Required aws-k8s-agent executable not found."
+    log_in_json error "Required aws-k8s-agent executable not found."
     exit 1
 fi
 if [ ! -f grpc-health-probe ]; then
-    echo "Required grpc-health-probe executable not found."
+    log_in_json error "Required grpc-health-probe executable not found."
     exit 1
 fi
 
@@ -61,7 +70,7 @@ wait_for_ipam() {
 # If there is no init container, copy the required files
 if [[ "$AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER" != "false" ]]; then
     # Copy files
-    echo "Copying CNI plugin binaries ... "
+    log_in_json info "Copying CNI plugin binaries ... "
     PLUGIN_BINS="loopback portmap bandwidth aws-cni-support.sh"
     for b in $PLUGIN_BINS; do
         # Install the binary
@@ -69,22 +78,18 @@ if [[ "$AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER" != "false" ]]; then
     done
 fi
 
-echo -n "Starting IPAM daemon in the background ... "
+log_in_json info "Starting IPAM daemon in the background ... "
 ./aws-k8s-agent | tee -i "$AGENT_LOG_PATH" 2>&1 &
-echo "ok."
 
-echo -n "Checking for IPAM connectivity ... "
+log_in_json info "Checking for IPAM connectivity ... "
 
 if ! wait_for_ipam; then
-    echo " failed."
-    echo "Timed out waiting for IPAM daemon to start:"
+    log_in_json error "Timed out waiting for IPAM daemon to start:"
     cat "$AGENT_LOG_PATH" >&2
     exit 1
 fi
 
-echo "ok."
-
-echo -n "Copying CNI plugin binary and config file ... "
+log_in_json info "Copying CNI plugin binary and config file ... "
 
 install aws-cni "$HOST_CNI_BIN_PATH"
 
@@ -94,12 +99,12 @@ sed -i s~__PLUGINLOGFILE__~"${AWS_VPC_K8S_PLUGIN_LOG_FILE}"~g 10-aws.conflist
 sed -i s~__PLUGINLOGLEVEL__~"${AWS_VPC_K8S_PLUGIN_LOG_LEVEL}"~g 10-aws.conflist
 cp 10-aws.conflist "$HOST_CNI_CONFDIR_PATH"
 
-echo "ok."
+log_in_json info "Successfully copied CNI plugin binary and config file."
 
 if [[ -f "$HOST_CNI_CONFDIR_PATH/aws.conf" ]]; then
     rm "$HOST_CNI_CONFDIR_PATH/aws.conf"
 fi
 
 # Bring the aws-k8s-agent process back into the foreground
-echo "Foregrounding IPAM daemon ... "
-fg %1 >/dev/null 2>&1 || { echo "failed (process terminated)" && cat "$AGENT_LOG_PATH" && exit 1; }
+log_in_json info "Foregrounding IPAM daemon ..."
+fg %1 >/dev/null 2>&1 || { log_in_json error "failed (process terminated)" && cat "$AGENT_LOG_PATH" && exit 1; }
