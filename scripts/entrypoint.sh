@@ -95,7 +95,7 @@ install aws-cni "$HOST_CNI_BIN_PATH"
 
 # create a temporary file to be manipulated by sed (ergh).
 # this enables you to mount your own config file from a configmap that is read only
-temp_config_file=$(mktmp)
+temp_config_file=$(mktemp)
 cp 10-aws.conflist "$temp_config_file"
 sed -i s~__VETHPREFIX__~"${AWS_VPC_K8S_CNI_VETHPREFIX}"~g "$temp_config_file"
 sed -i s~__MTU__~"${AWS_VPC_ENI_MTU}"~g "$temp_config_file"
