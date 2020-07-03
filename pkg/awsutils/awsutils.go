@@ -61,7 +61,8 @@ const (
 	eniDescriptionPrefix = "aws-K8S-"
 
 	// AllocENI need to choose a first free device number between 0 and maxENI
-	maxENIs                 = 128
+	// 100 is a hard limit because we use vlanID + 100 for pod networking table names
+	maxENIs                 = 100
 	clusterNameEnvVar       = "CLUSTER_NAME"
 	eniNodeTagKey           = "node.k8s.amazonaws.com/instance_id"
 	eniCreatedAtTagKey      = "node.k8s.amazonaws.com/createdAt"
@@ -629,7 +630,7 @@ func (cache *EC2InstanceMetadataCache) getIPsAndCIDR(eniMAC string) ([]*ec2.Netw
 	// There may be multiple IPv4 addresses on an instance. https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
 	isFirst := true
 	for _, ipv4 := range ipv4Strs {
-		// TODO: Verify that the first IP is always the primary
+		// The first IP in the list is always the primary IP of that ENI
 		primary := isFirst
 		ip := ipv4
 		ipv4s = append(ipv4s, &ec2.NetworkInterfacePrivateIpAddress{PrivateIpAddress: &ip, Primary: &primary})
@@ -639,7 +640,7 @@ func (cache *EC2InstanceMetadataCache) getIPsAndCIDR(eniMAC string) ([]*ec2.Netw
 }
 
 // getENIDeviceNumber returns ENI ID, device number, error
-func (cache *EC2InstanceMetadataCache) getENIDeviceNumber(eniMAC string) (string, int, error) {
+func (cache *EC2InstanceMetadataCache) getENIDeviceNumber(eniMAC string) (eniID string, deviceNumber int, err error) {
 	// get device-number
 	start := time.Now()
 	device, err := cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataDeviceNum)
@@ -647,30 +648,34 @@ func (cache *EC2InstanceMetadataCache) getENIDeviceNumber(eniMAC string) (string
 	if err != nil {
 		awsAPIErrInc("GetMetadata", err)
 		log.Errorf("Failed to retrieve the device-number of ENI %s, %v", eniMAC, err)
-		return "", 0, errors.Wrapf(err, "failed to retrieve device-number for ENI %s",
-			eniMAC)
+		return "", -1, errors.Wrapf(err, "failed to retrieve device-number for ENI %s", eniMAC)
 	}
 
-	deviceNum, err := strconv.ParseInt(device, 0, 32)
+	deviceNumber, err = strconv.Atoi(device)
 	if err != nil {
-		return "", 0, errors.Wrapf(err, "invalid device %s for ENI %s", device, eniMAC)
+		return "", -1, errors.Wrapf(err, "invalid device %s for ENI %s", device, eniMAC)
 	}
 
 	start = time.Now()
-	eni, err := cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataInterface)
+	eniID, err = cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataInterface)
 	awsAPILatency.WithLabelValues("GetMetadata", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("GetMetadata", err)
 		log.Errorf("Failed to retrieve the interface-id data from instance metadata service, %v", err)
-		return "", 0, errors.Wrapf(err, "get attached ENIs: failed to retrieve interface-id for ENI %s", eniMAC)
+		return "", -1, errors.Wrapf(err, "get attached ENIs: failed to retrieve interface-id for ENI %s", eniMAC)
 	}
 
-	if cache.primaryENI == eni {
-		log.Debugf("Using device number 0 for primary eni: %s", eni)
-		return eni, 0, nil
+	if cache.primaryENI == eniID {
+		log.Debugf("Using device number 0 for primary ENI: %s", eniID)
+		if deviceNumber != 0 {
+			// Can this even happen? To be backwards compatible, we will always return 0 here and log an error.
+			log.Errorf("Device number of primary ENI is %d! It was expected to be 0", deviceNumber)
+			return eniID, 0, nil
+		}
+		return eniID, deviceNumber, nil
 	}
-	// 0 is reserved for primary ENI, the rest of them has to +1 to avoid collision at 0
-	return eni, int(deviceNum + 1), nil
+	// 0 is reserved for primary ENI
+	return eniID, deviceNumber, nil
 }
 
 // awsGetFreeDeviceNumber calls EC2 API DescribeInstances to get the next free device index
@@ -1285,7 +1290,7 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
 			return 0, errors.New(fmt.Sprintf("%s: %s", UnknownInstanceType, cache.instanceType))
 		}
 	}
-	return int(eniLimits.ENILimit), nil
+	return eniLimits.ENILimit, nil
 }
 
 // AllocIPAddresses allocates numIPs of IP address on an ENI

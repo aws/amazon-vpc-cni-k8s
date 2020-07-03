@@ -67,7 +67,7 @@ func main() {
 	for {
 		output, err := svc.DescribeInstanceTypes(describeInstanceTypesInput)
 		if err != nil {
-			log.Fatalf("Failed to call EC2 DescibeInstanceTypes: %v", err)
+			log.Fatalf("Failed to call EC2 DescribeInstanceTypes: %v", err)
 		}
 		// We just want the type name, ENI and IP limits
 		for _, info := range output.InstanceTypes {

@@ -46,8 +46,8 @@ const (
 
 // NetworkAPIs defines network API calls
 type NetworkAPIs interface {
-	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error
-	TeardownNS(addr *net.IPNet, table int, log logger.Logger) error
+	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error
+	TeardownNS(addr *net.IPNet, deviceNumber int, log logger.Logger) error
 	SetupPodENINetwork(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, vlanID int, eniMAC string,
 		subnetGW string, parentIfIndex int, mtu int, log logger.Logger) error
 	TeardownPodENINetwork(vlanID int, log logger.Logger) error
@@ -173,12 +173,12 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 }
 
 // SetupNS wires up linux networking for a pod's network
-func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error {
-	log.Debugf("SetupNS: hostVethName=%s, contVethName=%s, netnsPath=%s, table=%d, mtu=%d", hostVethName, contVethName, netnsPath, table, mtu)
-	return setupNS(hostVethName, contVethName, netnsPath, addr, table, vpcCIDRs, useExternalSNAT, os.netLink, os.ns, mtu, log, os.procSys)
+func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error {
+	log.Debugf("SetupNS: hostVethName=%s, contVethName=%s, netnsPath=%s, deviceNumber=%d, mtu=%d", hostVethName, contVethName, netnsPath, deviceNumber, mtu)
+	return setupNS(hostVethName, contVethName, netnsPath, addr, deviceNumber, vpcCIDRs, useExternalSNAT, os.netLink, os.ns, mtu, log, os.procSys)
 }
 
-func setupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool,
+func setupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool,
 	netLink netlinkwrapper.NetLink, ns nswrapper.NS, mtu int, log logger.Logger, procSys procsyswrapper.ProcSys) error {
 
 	hostVeth, err := setupVeth(hostVethName, contVethName, netnsPath, addr, netLink, ns, mtu, procSys, log)
@@ -213,22 +213,24 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 	log.Infof("Added toContainer rule for %s", addr.String())
 
 	// add from-pod rule, only need it when it is not primary ENI
-	if table > 0 {
+	if deviceNumber > 0 {
+		// To be backwards compatible, we will have to keep this off-by one setting
+		tableNumber := deviceNumber + 1
 		if useExternalSNAT {
 			// add rule: 1536: from <podIP> use table <table>
-			err = addContainerRule(netLink, false, addr, table)
+			err = addContainerRule(netLink, false, addr, tableNumber)
 			if err != nil {
 				log.Errorf("Failed to add fromContainer rule for %s err: %v", addr.String(), err)
 				return errors.Wrap(err, "add NS network: failed to add fromContainer rule")
 			}
-			log.Infof("Added rule priority %d from %s table %d", fromContainerRulePriority, addr.String(), table)
+			log.Infof("Added rule priority %d from %s table %d", fromContainerRulePriority, addr.String(), tableNumber)
 		} else {
 			// add rule: 1536: list of from <podIP> to <vpcCIDR> use table <table>
 			for _, cidr := range vpcCIDRs {
 				podRule := netLink.NewRule()
 				_, podRule.Dst, _ = net.ParseCIDR(cidr)
 				podRule.Src = addr
-				podRule.Table = table
+				podRule.Table = tableNumber
 				podRule.Priority = fromContainerRulePriority
 
 				err = netLink.RuleAdd(podRule)
@@ -426,12 +428,12 @@ func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *
 }
 
 // TeardownPodNetwork cleanup ip rules
-func (os *linuxNetwork) TeardownNS(addr *net.IPNet, table int, log logger.Logger) error {
-	log.Debugf("TeardownNS: addr %s, table %d", addr.String(), table)
-	return tearDownNS(addr, table, os.netLink, log)
+func (os *linuxNetwork) TeardownNS(addr *net.IPNet, deviceNumber int, log logger.Logger) error {
+	log.Debugf("TeardownNS: addr %s, deviceNumber %d", addr.String(), deviceNumber)
+	return tearDownNS(addr, deviceNumber, os.netLink, log)
 }
 
-func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink, log logger.Logger) error {
+func tearDownNS(addr *net.IPNet, deviceNumber int, netLink netlinkwrapper.NetLink, log logger.Logger) error {
 	if addr == nil {
 		return errors.New("can't tear down network namespace with no IP address")
 	}
@@ -447,14 +449,15 @@ func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink, log 
 		log.Infof("Delete toContainer rule for %s ", addr.String())
 	}
 
-	if table > 0 {
+	if deviceNumber > 0 {
 		// remove from-pod rule only for non main table
 		err := deleteRuleListBySrc(*addr)
 		if err != nil {
 			log.Errorf("Failed to delete fromContainer for %s %v", addr.String(), err)
 			return errors.Wrapf(err, "delete NS network: failed to delete fromContainer rule for %s", addr.String())
 		}
-		log.Infof("Delete fromContainer rule for %s in table %d", addr.String(), table)
+		tableNumber := deviceNumber + 1
+		log.Infof("Delete fromContainer rule for %s in table %d", addr.String(), tableNumber)
 	}
 
 	addrHostAddr := &net.IPNet{

@@ -822,7 +822,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndIPsAttached(t *testing.T) {
 	eni2Metadata := ENIMetadata{
 		ENIID:          eni2ID,
 		MAC:            eni2MAC,
-		DeviceNumber:   2,
+		DeviceNumber:   1,
 		SubnetIPv4CIDR: subnetCIDR,
 		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
 			{
