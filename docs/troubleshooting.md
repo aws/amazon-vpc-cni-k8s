@@ -190,5 +190,5 @@ go_goroutines 20
 
 ## cni-metrics-helper
 
-See the [cni-metrics-helper README](../cni-metrics-helper/README.md).
+See the [cni-metrics-helper README](../cmd/cni-metrics-helper/README.md).
 

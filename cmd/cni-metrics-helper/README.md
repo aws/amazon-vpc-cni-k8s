@@ -11,7 +11,7 @@ By default ipamd will publish prometheus metrics on `:61678/metrics`.
 
 The following diagram shows how `cni-metrics-helper` works in a cluster:
 
-![](../docs/images/cni-metrics-helper.png)
+![](../../docs/images/cni-metrics-helper.png)
 
 ### Installing the cni-metrics-helper
 ```
