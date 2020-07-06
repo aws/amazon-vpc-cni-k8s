@@ -185,6 +185,8 @@ sleep 110
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
+$KUBECTL_PATH set env ds aws-node -n kube-system WARM_IP_TARGET=2
+
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"
 echo ""
