@@ -8,6 +8,7 @@ DIR=$(cd "$(dirname "$0")"; pwd)
 source "$DIR"/lib/common.sh
 source "$DIR"/lib/aws.sh
 source "$DIR"/lib/cluster.sh
+source "$DIR"/lib/performance_tests.sh
 
 # Variables used in /lib/aws.sh
 OS=$(go env GOOS)
@@ -19,6 +20,8 @@ ARCH=$(go env GOARCH)
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
 : "${RUN_CONFORMANCE:=false}"
+: "${RUN_PERFORMANCE_TESTS:=false}"
+: "${RUNNING_PERFORMANCE:=false}"
 
 __cluster_created=0
 __cluster_deprovisioned=0
@@ -26,13 +29,15 @@ __cluster_deprovisioned=0
 on_error() {
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the cluster
-    if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
-        # prevent double-deprovisioning with ctrl-c during deprovisioning...
-        __cluster_deprovisioned=1
-        echo "Cluster was provisioned already. Deprovisioning it..."
-        down-test-cluster
+    if [[ $RUNNING_PERFORMANCE == false ]]; then
+        if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
+            # prevent double-deprovisioning with ctrl-c during deprovisioning...
+            __cluster_deprovisioned=1
+            echo "Cluster was provisioned already. Deprovisioning it..."
+            down-test-cluster
+        fi
+        exit 1
     fi
-    exit 1
 }
 
 # test specific config, results location
@@ -211,6 +216,22 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
 
   CONFORMANCE_DURATION=$((SECONDS - START))
   echo "TIMELINE: Conformance tests took $CONFORMANCE_DURATION seconds."
+fi
+
+if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
+    START=$SECONDS
+    $KUBECTL_PATH apply -f ./testdata/deploy-130-pods.yaml
+    run_performance_test_130_pods
+    $KUBECTL_PATH delete -f ./testdata/deploy-130-pods.yaml
+
+    $KUBECTL_PATH apply -f ./testdata/deploy-730-pods.yaml
+    run_performance_test_730_pods
+    $KUBECTL_PATH delete -f ./testdata/deploy-730-pods.yaml
+
+    $KUBECTL_PATH apply -f ./testdata/deploy-5000-pods.yaml
+    run_performance_test_5000_pods
+    $KUBECTL_PATH delete -f ./testdata/deploy-5000-pods.yaml
+    PERFORMANCE_DURATION=$((SECONDS - START))
 fi
 
 if [[ "$DEPROVISION" == true ]]; then
