@@ -220,17 +220,9 @@ fi
 
 if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
     START=$SECONDS
-    $KUBECTL_PATH apply -f ./testdata/deploy-130-pods.yaml
     run_performance_test_130_pods
-    $KUBECTL_PATH delete -f ./testdata/deploy-130-pods.yaml
-
-    $KUBECTL_PATH apply -f ./testdata/deploy-730-pods.yaml
     run_performance_test_730_pods
-    $KUBECTL_PATH delete -f ./testdata/deploy-730-pods.yaml
-
-    $KUBECTL_PATH apply -f ./testdata/deploy-5000-pods.yaml
     run_performance_test_5000_pods
-    $KUBECTL_PATH delete -f ./testdata/deploy-5000-pods.yaml
     PERFORMANCE_DURATION=$((SECONDS - START))
 fi
 

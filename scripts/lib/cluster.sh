@@ -16,6 +16,7 @@ function up-test-cluster() {
     if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
         MNGS='{"three-nodes":{"name":"three-nodes","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":3,"asg-max-size":3,"asg-desired-capacity":3,"instance-types":["m5.xlarge"],"volume-size":40}, "single-node":{"name":"single-node","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":1,"asg-desired-capacity":1,"instance-types":["m5.16xlarge"],"volume-size":40}, "multi-node":{"name":"multi-node","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":100,"asg-desired-capacity":98,"instance-types":["m5.xlarge"],"volume-size":40}}'
         RUN_CONFORMANCE=false
+        PERFORMANCE_TEST_S3_BUCKET_NAME:=""
     else
         MNGS='{"GetRef.Name-mng-for-cni":{"name":"GetRef.Name-mng-for-cni","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":3,"asg-max-size":3,"asg-desired-capacity":3,"instance-types":["c5.xlarge"],"volume-size":40}}'
     fi

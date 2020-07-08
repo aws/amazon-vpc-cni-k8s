@@ -8,6 +8,7 @@ function check_for_timeout() {
 function run_performance_test_130_pods() {
     echo "Running performance tests against cluster"
     RUNNING_PERFORMANCE=true
+    $KUBECTL_PATH apply -f ./testdata/deploy-130-pods.yaml
 
     DEPLOY_START=$SECONDS
 
@@ -17,7 +18,6 @@ function run_performance_test_130_pods() {
     do
         ITERATION_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-130-pods.yaml --replicas=130
-        sleep 20
         while [[ ! $($KUBECTL_PATH get deploy | grep 130/130) ]]
         do
             sleep 1
@@ -57,24 +57,30 @@ function run_performance_test_130_pods() {
     echo ""
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
-    now="pod-130-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T").csv"
-    echo $now
+    filename="pod-130-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T").csv"
+    echo $filename
 
-    echo $(date +"%m-%d-%Y-%T") >> $now
-    echo $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $now
-    echo $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $now
-    echo $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $now
+    echo $(date +"%m-%d-%Y-%T") >> $filename
+    echo $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $filename
+    echo $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $filename
+    echo $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $filename
 
-    cat $now
-    aws s3 cp $now s3://cni-performance-test-data
+    cat $filename
+    if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
+        aws s3 cp $filename $PERFORMANCE_TEST_S3_BUCKET_NAME
+    else
+        echo "No S3 bucket name given, skipping test result upload."
+    fi
     
     echo "TIMELINE: 130 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
+    $KUBECTL_PATH delete -f ./testdata/deploy-130-pods.yaml
 }
 
 function run_performance_test_730_pods() {
     echo "Running performance tests against cluster"
     RUNNING_PERFORMANCE=true
+    $KUBECTL_PATH apply -f ./testdata/deploy-730-pods.yaml
 
     DEPLOY_START=$SECONDS
 
@@ -84,7 +90,6 @@ function run_performance_test_730_pods() {
     do
         ITERATION_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-730-pods.yaml --replicas=730
-        sleep 100
         while [[ ! $($KUBECTL_PATH get deploy | grep 730/730) ]]
         do
             sleep 2
@@ -96,7 +101,6 @@ function run_performance_test_730_pods() {
         SCALE_UP_DURATION_ARRAY+=( $((SECONDS - ITERATION_START)) )
         MIDPOINT_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-730-pods.yaml --replicas=0
-        sleep 100
         while [[ $($KUBECTL_PATH get pods) ]]
         do
             sleep 2
@@ -125,24 +129,30 @@ function run_performance_test_730_pods() {
     echo ""
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
-    now="pod-730-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T").csv"
-    echo $now
+    filename="pod-730-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T").csv"
+    echo $filename
 
-    echo $(date +"%m-%d-%Y-%T") >> $now
-    echo $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $now
-    echo $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $now
-    echo $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $now
+    echo $(date +"%m-%d-%Y-%T") >> $filename
+    echo $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $filename
+    echo $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $filename
+    echo $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $filename
 
-    cat $now
-    aws s3 cp $now s3://cni-performance-test-data
+    cat $filename
+    if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
+        aws s3 cp $filename $PERFORMANCE_TEST_S3_BUCKET_NAME
+    else
+        echo "No S3 bucket name given, skipping test result upload."
+    fi
     
     echo "TIMELINE: 730 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
+    $KUBECTL_PATH delete -f ./testdata/deploy-730-pods.yaml
 }
 
 function run_performance_test_5000_pods() {
     echo "Running performance tests against cluster"
     RUNNING_PERFORMANCE=true
+    $KUBECTL_PATH apply -f ./testdata/deploy-5000-pods.yaml
     
     DEPLOY_START=$SECONDS
 
@@ -152,7 +162,6 @@ function run_performance_test_5000_pods() {
     do
         ITERATION_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-5000-pods.yaml --replicas=5000
-        sleep 100
         while [[ ! $($KUBECTL_PATH get deploy | grep 5000/5000) ]]
         do
             sleep 2
@@ -164,7 +173,6 @@ function run_performance_test_5000_pods() {
         SCALE_UP_DURATION_ARRAY+=( $((SECONDS - ITERATION_START)) )
         MIDPOINT_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-5000-pods.yaml --replicas=0
-        sleep 100
         while [[ $($KUBECTL_PATH get pods) ]]
         do
             sleep 2
@@ -193,17 +201,22 @@ function run_performance_test_5000_pods() {
     echo ""
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
-    now="pod-5000-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T").csv"
-    echo $now
+    filename="pod-5000-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T").csv"
+    echo $filename
 
-    echo $(date +"%m-%d-%Y-%T") >> $now
-    echo $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $now
-    echo $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $now
-    echo $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $now
+    echo $(date +"%m-%d-%Y-%T") >> $filename
+    echo $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $filename
+    echo $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $filename
+    echo $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $filename
 
-    cat $now
-    aws s3 cp $now s3://cni-performance-test-data
+    cat $filename
+    if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
+        aws s3 cp $filename $PERFORMANCE_TEST_S3_BUCKET_NAME
+    else
+        echo "No S3 bucket name given, skipping test result upload."
+    fi
     
     echo "TIMELINE: 5000 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
+    $KUBECTL_PATH delete -f ./testdata/deploy-5000-pods.yaml
 }

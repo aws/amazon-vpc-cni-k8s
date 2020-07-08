@@ -4,12 +4,17 @@
     * set AWS_SECRET_ACCESS_KEY
     * set AWS_DEFAULT_REGION (optional, defaults to us-west-2 if not set)
     * approve test after build completes
+
 # Performance
     * run from cni test account to upload test results
+        * set PERFORMANCE_TEST_S3_BUCKET_NAME to the name of the bucket (likely s3://cni-performance-test-data)
     * set RUN_PERFORMANCE_TESTS=true
+
 # KOPS
     * set RUN_KOPS_TEST=true
     * will occassionally fail/flake tests, try re-running test a couple times to ensure there is a problem
+
+
 
 ## Conformance test duration log 
 
@@ -43,3 +48,14 @@
         * Conformance tests: 16 min
         * Down cluster: 30 min
 
+
+
+## How to Manually delete k8s tester Resources (order of deletion)
+
+Cloudformation - (all except cluster, vpc, rol-mng)
+EC2 - load balancers, key pair
+VPC - Nat gateways, Elastic IPs(after a minute), internet gateway
+Cloudformation - cluster
+EC2 - network interfaces, security groups
+VPC - subnet, route tables
+Cloudformation - cluster, vpc(after cluster deletes)
