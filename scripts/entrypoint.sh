@@ -102,6 +102,8 @@ sed -i s~__MTU__~"${AWS_VPC_ENI_MTU}"~g "$temp_config_file"
 sed -i s~__PLUGINLOGFILE__~"${AWS_VPC_K8S_PLUGIN_LOG_FILE}"~g "$temp_config_file"
 sed -i s~__PLUGINLOGLEVEL__~"${AWS_VPC_K8S_PLUGIN_LOG_LEVEL}"~g "$temp_config_file"
 cp "$temp_config_file" "$HOST_CNI_CONFDIR_PATH"
+# clean up temp file
+rm "$temp_config_file"
 
 log_in_json info "Successfully copied CNI plugin binary and config file."
 
