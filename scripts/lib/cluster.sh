@@ -73,7 +73,7 @@ function up-kops-cluster {
         sleep 5
         echo "Waiting for cluster validation"
     done
-    kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.6.3/config/v1.6/cni-metrics-helper.yaml
+    kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/${MANIFEST_CNI_VERSION}/config/v1.6/cni-metrics-helper.yaml
 }
 
 function down-kops-cluster {
