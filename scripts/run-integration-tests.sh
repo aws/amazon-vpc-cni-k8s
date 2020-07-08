@@ -151,10 +151,10 @@ mkdir -p "$TEST_CLUSTER_DIR"
 mkdir -p "$TEST_CONFIG_DIR"
 
 START=$SECONDS
-if [[ "$PROVISION" == true && "$RUN_KOPS_TEST" == false ]]; then
-    up-test-cluster
-else
+if [[ "$PROVISION" == true && "$RUN_KOPS_TEST" == true ]]; then
     up-kops-cluster
+elif [[ "$PROVISION" == true ]]; then
+    up-test-cluster
 fi
 __cluster_created=1
 
@@ -172,10 +172,11 @@ sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PA
 
 if [[ $RUN_KOPS_TEST != true ]]; then
     export KUBECONFIG=$KUBECONFIG_PATH
-    ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 else
     run_kops_conformance
+    KUBECTL_PATH=kubectl
 fi
+ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 
 echo "*******************************************************************************"
 echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
