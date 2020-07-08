@@ -8,6 +8,7 @@ DIR=$(cd "$(dirname "$0")"; pwd)
 source "$DIR"/lib/common.sh
 source "$DIR"/lib/aws.sh
 source "$DIR"/lib/cluster.sh
+source "$DIR"/lib/integration.sh
 
 # Variables used in /lib/aws.sh
 OS=$(go env GOOS)
@@ -19,6 +20,7 @@ ARCH=$(go env GOARCH)
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
 : "${RUN_CONFORMANCE:=false}"
+: "${RUN_KOPS_TEST:=false}"
 
 __cluster_created=0
 __cluster_deprovisioned=0
@@ -27,11 +29,18 @@ on_error() {
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the cluster
     if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
-        # prevent double-deprovisioning with ctrl-c during deprovisioning...
-        __cluster_deprovisioned=1
-        echo "Cluster was provisioned already. Deprovisioning it..."
-        down-test-cluster
+        if [[ $RUN_KOPS_TEST == true ]]; then
+            __cluster_deprovisioned=1
+            echo "Cluster was provisioned already. Deprovisioning it..."
+            down-kops-cluster
+        else
+            # prevent double-deprovisioning with ctrl-c during deprovisioning...
+            __cluster_deprovisioned=1
+            echo "Cluster was provisioned already. Deprovisioning it..."
+            down-test-cluster
+        fi
     fi
+    
     exit 1
 }
 
@@ -49,6 +58,7 @@ TEST_CLUSTER_DIR=/tmp/cni-test/cluster-$CLUSTER_NAME
 CLUSTER_MANAGE_LOG_PATH=$TEST_CLUSTER_DIR/cluster-manage.log
 : "${CLUSTER_CONFIG:=${TEST_CLUSTER_DIR}/${CLUSTER_NAME}.yaml}"
 : "${KUBECONFIG_PATH:=${TEST_CLUSTER_DIR}/kubeconfig}"
+: "${ADDONS_CNI_IMAGE:=""}"
 
 # shared binaries
 : "${TESTER_DIR:=/tmp/aws-k8s-tester}"
@@ -140,13 +150,16 @@ mkdir -p "$REPORT_DIR"
 mkdir -p "$TEST_CLUSTER_DIR"
 mkdir -p "$TEST_CONFIG_DIR"
 
-if [[ "$PROVISION" == true ]]; then
-    START=$SECONDS
+START=$SECONDS
+if [[ "$PROVISION" == true && "$RUN_KOPS_TEST" == false ]]; then
     up-test-cluster
-    UP_CLUSTER_DURATION=$((SECONDS - START))
-    echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
-    __cluster_created=1
+else
+    up-kops-cluster
 fi
+__cluster_created=1
+
+UP_CLUSTER_DURATION=$((SECONDS - START))
+echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
 
 echo "Using $BASE_CONFIG_PATH as a template"
 cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
@@ -157,8 +170,12 @@ sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PA
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
 sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
 
-export KUBECONFIG=$KUBECONFIG_PATH
-ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
+if [[ $RUN_KOPS_TEST != true ]]; then
+    export KUBECONFIG=$KUBECONFIG_PATH
+    ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
+else
+    run_kops_conformance
+fi
 
 echo "*******************************************************************************"
 echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
@@ -177,11 +194,14 @@ echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
+sleep 5
+while [[ $($KUBECTL_PATH describe ds aws-node -n=kube-system | grep "Available Pods: 0") ]]
+do
+    sleep 5
+    echo "Waiting for daemonset update"
+done
+echo "Updated!"
 
-# Delay based on 3 nodes, 30s grace period per CNI pod
-echo "TODO: Poll and wait for updates to complete instead!"
-echo "Sleeping for 110s"
-sleep 110
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
@@ -216,7 +236,11 @@ fi
 if [[ "$DEPROVISION" == true ]]; then
     START=$SECONDS
 
-    down-test-cluster
+    if [[ "$RUN_KOPS_TEST" == true ]]; then
+        down-kops-cluster
+    else
+        down-test-cluster
+    fi
 
     DOWN_DURATION=$((SECONDS - START))
     echo "TIMELINE: Down processes took $DOWN_DURATION seconds."
