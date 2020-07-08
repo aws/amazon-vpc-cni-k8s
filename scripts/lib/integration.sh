@@ -14,7 +14,7 @@ function run_kops_conformance() {
     go install github.com/onsi/ginkgo/ginkgo
     wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
 
-    ginkgo -p --focus="Conformance"  --failFast --flakeAttempts 2 \
+    $GOPATH/bin/ginkgo -p --focus="Conformance"  --failFast --flakeAttempts 2 \
     --skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" /tmp/e2e.test -- --kubeconfig=$KUBECONFIG
 
     /tmp/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
