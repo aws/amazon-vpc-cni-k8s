@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.7.0-rc1
+* Docs - [Fix docs links for cni-metrics-agent](https://github.com/aws/amazon-vpc-cni-k8s/pull/1072) (#1072, @mogren)
+* Bug - [Make metrics-helper docker logging statement multi-arch compatible](https://github.com/aws/amazon-vpc-cni-k8s/pull/1067) (#1067, @nprab428)
+* Improvement - [JSON output format for the entrypoint script](https://github.com/aws/amazon-vpc-cni-k8s/pull/1066) (#1066, @jayanthvn)
+* Testing - [scripts/lib: bump up tester to v1.4.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/1065) (#1065, @gyuho)
+* Improvement - [Use install command instead of cp](https://github.com/aws/amazon-vpc-cni-k8s/pull/1061) (#1061, @mogren)
+* Improvement - [Updated manifest configs with default env vars](https://github.com/aws/amazon-vpc-cni-k8s/pull/1057) (#1057, @saiteja313)
+* Improvement - [Default to random-fully](https://github.com/aws/amazon-vpc-cni-k8s/pull/1048) (#1048, @mogren)
+* Improvement - [Add chaining support and bandwidth plugin](https://github.com/aws/amazon-vpc-cni-k8s/pull/1029) (#1029, @theMagicalKarp)
+* Improvement - [Update probe settings](https://github.com/aws/amazon-vpc-cni-k8s/pull/1028) (#1028, @mogren)
+* Improvement - [Added warning if delete on termination is set to false for the primary ENI](https://github.com/aws/amazon-vpc-cni-k8s/pull/1024) (#1024, @jayanthvn)
+* Testing - [Add parallel testing to conformance](https://github.com/aws/amazon-vpc-cni-k8s/pull/1018) (#1018, @bnapolitan)
+* Testing - [Cache go packages in CircleCI](https://github.com/aws/amazon-vpc-cni-k8s/pull/1017) (#1017, @bnapolitan)
+* Testing - [Create roles by default for e2e test cluster creation](https://github.com/aws/amazon-vpc-cni-k8s/pull/994) (#994, @bnapolitan)
+* Improvement - [Limit scope of logs writable by ipamd container](https://github.com/aws/amazon-vpc-cni-k8s/pull/987) (#987, @anguslees)
+* Improvement - [Autogenerate per-region YAML manifests from a common template](https://github.com/aws/amazon-vpc-cni-k8s/pull/986) (#986, @anguslees)
+* Improvement - [Persist IPAM state to local file and use across restarts](https://github.com/aws/amazon-vpc-cni-k8s/pull/972) (#972, @anguslees)
+* Improvement - [Add init container](https://github.com/aws/amazon-vpc-cni-k8s/pull955) (#955, @mogren)
+* Improvement - [Refresh subnet/CIDR information periodically](https://github.com/aws/amazon-vpc-cni-k8s/pull/903) (#903, @nithu0115)
+
 ## v1.6.3
 * Bug - [Handle stale instance metadata](https://github.com/aws/amazon-vpc-cni-k8s/pull/1011) (#1011, @mogren)
 * Improvement - [Add support for c5a and c5ad](https://github.com/aws/amazon-vpc-cni-k8s/pull/1003) (#1003, @mogren)

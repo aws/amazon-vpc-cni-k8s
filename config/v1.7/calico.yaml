@@ -1,6 +1,6 @@
 ---
 kind: DaemonSet
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 metadata:
   name: calico-node
   namespace: kube-system
@@ -18,13 +18,10 @@ spec:
     metadata:
       labels:
         k8s-app: calico-node
-      annotations:
-        # This, along with the CriticalAddonsOnly toleration below,
-        # marks the pod as a critical add-on, ensuring it gets
-        # priority scheduling and that its resources are reserved
-        # if it ever gets evicted.
-        scheduler.alpha.kubernetes.io/critical-pod: ''
     spec:
+      priorityClassName: system-node-critical
+      nodeSelector:
+        beta.kubernetes.io/os: linux
       hostNetwork: true
       serviceAccountName: calico-node
       # Minimize downtime during a rolling upgrade or deletion; tell Kubernetes to do a "force
@@ -35,7 +32,7 @@ spec:
         # container programs network policy and routes on each
         # host.
         - name: calico-node
-          image: quay.io/calico/node:v3.1.3
+          image: quay.io/calico/node:v3.13.4
           env:
             # Use Kubernetes API as the backing datastore.
             - name: DATASTORE_TYPE
@@ -60,13 +57,13 @@ spec:
             # Set Felix endpoint to host default action to ACCEPT.
             - name: FELIX_DEFAULTENDPOINTTOHOSTACTION
               value: "ACCEPT"
-            # Disable IPV6 on Kubernetes.
-            - name: FELIX_IPV6SUPPORT
-              value: "false"
             # This will make Felix honor AWS VPC CNI's mangle table
             # rules.
             - name: FELIX_IPTABLESMANGLEALLOWACTION
               value: Return
+            # Disable IPV6 on Kubernetes.
+            - name: FELIX_IPV6SUPPORT
+              value: "false"
             # Wait for the datastore.
             - name: WAIT_FOR_DATASTORE
               value: "true"
@@ -89,24 +86,31 @@ spec:
           securityContext:
             privileged: true
           livenessProbe:
-            httpGet:
-              path: /liveness
-              port: 9099
-              host: localhost
+            exec:
+              command:
+              - /bin/calico-node
+              - -felix-live
             periodSeconds: 10
             initialDelaySeconds: 10
             failureThreshold: 6
           readinessProbe:
-            httpGet:
-              path: /readiness
-              port: 9099
+            exec:
+              command:
+                - /bin/calico-node
+                - -felix-ready
             periodSeconds: 10
           volumeMounts:
             - mountPath: /lib/modules
               name: lib-modules
               readOnly: true
+            - mountPath: /run/xtables.lock
+              name: xtables-lock
+              readOnly: false
             - mountPath: /var/run/calico
               name: var-run-calico
+              readOnly: false
+            - mountPath: /var/lib/calico
+              name: var-lib-calico
               readOnly: false
       volumes:
         # Used to ensure proper kmods are installed.
@@ -116,9 +120,22 @@ spec:
         - name: var-run-calico
           hostPath:
             path: /var/run/calico
+        - name: var-lib-calico
+          hostPath:
+            path: /var/lib/calico
+        - name: xtables-lock
+          hostPath:
+            path: /run/xtables.lock
+            type: FileOrCreate
       tolerations:
         # Make sure calico/node gets scheduled on all nodes.
-      - operator: Exists
+        - effect: NoSchedule
+          operator: Exists
+        # Mark the pod as a critical add-on for rescheduling.
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - effect: NoExecute
+          operator: Exists
 
 ---
 
@@ -128,11 +145,14 @@ spec:
 apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
-   name: felixconfigurations.crd.projectcalico.org
+  name: felixconfigurations.crd.projectcalico.org
 spec:
   scope: Cluster
   group: crd.projectcalico.org
-  version: v1
+  versions:
+    - name: v1
+      served: true
+      storage: true
   names:
     kind: FelixConfiguration
     plural: felixconfigurations
@@ -143,16 +163,71 @@ spec:
 apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
+  name: ipamblocks.crd.projectcalico.org
+spec:
+  scope: Cluster
+  group: crd.projectcalico.org
+  versions:
+    - name: v1
+      served: true
+      storage: true
+  names:
+    kind: IPAMBlock
+    plural: ipamblocks
+    singular: ipamblock
+
+---
+
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: blockaffinities.crd.projectcalico.org
+spec:
+  scope: Cluster
+  group: crd.projectcalico.org
+  versions:
+    - name: v1
+      served: true
+      storage: true
+  names:
+    kind: BlockAffinity
+    plural: blockaffinities
+    singular: blockaffinity
+
+---
+
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
   name: bgpconfigurations.crd.projectcalico.org
 spec:
   scope: Cluster
   group: crd.projectcalico.org
-  version: v1
+  versions:
+    - name: v1
+      served: true
+      storage: true
   names:
     kind: BGPConfiguration
     plural: bgpconfigurations
     singular: bgpconfiguration
 
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: bgppeers.crd.projectcalico.org
+spec:
+  scope: Cluster
+  group: crd.projectcalico.org
+  versions:
+    - name: v1
+      served: true
+      storage: true
+  names:
+    kind: BGPPeer
+    plural: bgppeers
+    singular: bgppeer
 ---
 
 apiVersion: apiextensions.k8s.io/v1beta1
@@ -162,7 +237,10 @@ metadata:
 spec:
   scope: Cluster
   group: crd.projectcalico.org
-  version: v1
+  versions:
+    - name: v1
+      served: true
+      storage: true
   names:
     kind: IPPool
     plural: ippools
@@ -177,7 +255,10 @@ metadata:
 spec:
   scope: Cluster
   group: crd.projectcalico.org
-  version: v1
+  versions:
+    - name: v1
+      served: true
+      storage: true
   names:
     kind: HostEndpoint
     plural: hostendpoints
@@ -192,7 +273,10 @@ metadata:
 spec:
   scope: Cluster
   group: crd.projectcalico.org
-  version: v1
+  versions:
+    - name: v1
+      served: true
+      storage: true
   names:
     kind: ClusterInformation
     plural: clusterinformations
@@ -207,7 +291,10 @@ metadata:
 spec:
   scope: Cluster
   group: crd.projectcalico.org
-  version: v1
+  versions:
+    - name: v1
+      served: true
+      storage: true
   names:
     kind: GlobalNetworkPolicy
     plural: globalnetworkpolicies
@@ -222,7 +309,10 @@ metadata:
 spec:
   scope: Cluster
   group: crd.projectcalico.org
-  version: v1
+  versions:
+    - name: v1
+      served: true
+      storage: true
   names:
     kind: GlobalNetworkSet
     plural: globalnetworksets
@@ -237,11 +327,32 @@ metadata:
 spec:
   scope: Namespaced
   group: crd.projectcalico.org
-  version: v1
+  versions:
+    - name: v1
+      served: true
+      storage: true
   names:
     kind: NetworkPolicy
     plural: networkpolicies
     singular: networkpolicy
+
+---
+
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: networksets.crd.projectcalico.org
+spec:
+  scope: Namespaced
+  group: crd.projectcalico.org
+  versions:
+    - name: v1
+      served: true
+      storage: true
+  names:
+    kind: NetworkSet
+    plural: networksets
+    singular: networkset
 
 ---
 
@@ -256,61 +367,60 @@ metadata:
 ---
 
 kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: calico-node
 rules:
-  - apiGroups: [""]
-    resources:
-      - namespaces
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups: [""]
-    resources:
-      - pods/status
-    verbs:
-      - update
+  # The CNI plugin needs to get pods, nodes, configmaps and namespaces.
   - apiGroups: [""]
     resources:
       - pods
-    verbs:
-      - get
-      - list
-      - watch
-      - patch
-  - apiGroups: [""]
-    resources:
-      - services
+      - nodes
+      - configmaps
+      - namespaces
     verbs:
       - get
   - apiGroups: [""]
     resources:
       - endpoints
+      - services
     verbs:
+      # Used to discover service IPs for advertisement.
+      - watch
+      - list
+      # Used to discover Typhas.
       - get
   - apiGroups: [""]
     resources:
-      - nodes
+      - nodes/status
     verbs:
-      - get
-      - list
+      # Needed for clearing NodeNetworkUnavailable flag.
+      - patch
+      # Calico stores some configuration information in node annotations.
       - update
-      - watch
-  - apiGroups: ["extensions"]
-    resources:
-      - networkpolicies
-    verbs:
-      - get
-      - list
-      - watch
+  # Watch for changes to Kubernetes NetworkPolicies.
   - apiGroups: ["networking.k8s.io"]
     resources:
       - networkpolicies
     verbs:
       - watch
       - list
+  # Used by Calico for policy information.
+  - apiGroups: [""]
+    resources:
+      - pods
+      - namespaces
+      - serviceaccounts
+    verbs:
+      - list
+      - watch
+  # The CNI plugin patches pods/status.
+  - apiGroups: [""]
+    resources:
+      - pods/status
+    verbs:
+      - patch
+  # Calico monitors various CRDs for config.
   - apiGroups: ["crd.projectcalico.org"]
     resources:
       - globalfelixconfigs
@@ -319,21 +429,78 @@ rules:
       - globalbgpconfigs
       - bgpconfigurations
       - ippools
+      - ipamblocks
       - globalnetworkpolicies
       - globalnetworksets
       - networkpolicies
+      - networksets
       - clusterinformations
       - hostendpoints
+      - blockaffinities
     verbs:
-      - create
       - get
       - list
-      - update
       - watch
+  # Calico must create and update some CRDs on startup.
+  - apiGroups: ["crd.projectcalico.org"]
+    resources:
+      - ippools
+      - felixconfigurations
+      - clusterinformations
+    verbs:
+      - create
+      - update
+  # Calico stores some configuration information on the node.
+  - apiGroups: [""]
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+  # These permissions are only requried for upgrade from v2.6, and can
+  # be removed after upgrade or on fresh installations.
+  - apiGroups: ["crd.projectcalico.org"]
+    resources:
+      - bgpconfigurations
+      - bgppeers
+    verbs:
+      - create
+      - update
+  # These permissions are required for Calico CNI to perform IPAM allocations.
+  - apiGroups: ["crd.projectcalico.org"]
+    resources:
+      - blockaffinities
+      - ipamblocks
+      - ipamhandles
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - delete
+  - apiGroups: ["crd.projectcalico.org"]
+    resources:
+      - ipamconfigs
+    verbs:
+      - get
+  # Block affinities must also be watchable by confd for route aggregation.
+  - apiGroups: ["crd.projectcalico.org"]
+    resources:
+      - blockaffinities
+    verbs:
+      - watch
+  # The Calico IPAM migration needs to get daemonsets. These permissions can be
+  # removed if not upgrading from an installation using host-local IPAM.
+  - apiGroups: ["apps"]
+    resources:
+      - daemonsets
+    verbs:
+      - get
 
 ---
 
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: calico-node
@@ -342,13 +509,13 @@ roleRef:
   kind: ClusterRole
   name: calico-node
 subjects:
-- kind: ServiceAccount
-  name: calico-node
-  namespace: kube-system
+  - kind: ServiceAccount
+    name: calico-node
+    namespace: kube-system
 
 ---
 
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: calico-typha
@@ -357,74 +524,96 @@ metadata:
     k8s-app: calico-typha
 spec:
   revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      k8s-app: calico-typha
   template:
     metadata:
       labels:
         k8s-app: calico-typha
       annotations:
-        scheduler.alpha.kubernetes.io/critical-pod: ''
+        cluster-autoscaler.kubernetes.io/safe-to-evict: 'true'
     spec:
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        beta.kubernetes.io/os: linux
       tolerations:
-      - operator: Exists
+        # Mark the pod as a critical add-on for rescheduling.
+        - key: CriticalAddonsOnly
+          operator: Exists
       hostNetwork: true
       serviceAccountName: calico-node
+      # fsGroup allows using projected serviceaccount tokens as described here kubernetes/kubernetes#82573
+      securityContext:
+        fsGroup: 65534
       containers:
-      - image: quay.io/calico/typha:v0.7.4
-        name: calico-typha
-        ports:
-        - containerPort: 5473
+        - image: quay.io/calico/typha:v3.13.4
           name: calico-typha
-          protocol: TCP
-        env:
-          # Use eni not cali for interface prefix
-          - name: FELIX_INTERFACEPREFIX
-            value: "eni"
-          - name: TYPHA_LOGFILEPATH
-            value: "none"
-          - name: TYPHA_LOGSEVERITYSYS
-            value: "none"
-          - name: TYPHA_LOGSEVERITYSCREEN
-            value: "info"
-          - name: TYPHA_PROMETHEUSMETRICSENABLED
-            value: "true"
-          - name: TYPHA_CONNECTIONREBALANCINGMODE
-            value: "kubernetes"
-          - name: TYPHA_PROMETHEUSMETRICSPORT
-            value: "9093"
-          - name: TYPHA_DATASTORETYPE
-            value: "kubernetes"
-          - name: TYPHA_MAXCONNECTIONSLOWERLIMIT
-            value: "1"
-          - name: TYPHA_HEALTHENABLED
-            value: "true"
-          # This will make Felix honor AWS VPC CNI's mangle table
-          # rules.
-          - name: FELIX_IPTABLESMANGLEALLOWACTION
-            value: Return
-        volumeMounts:
-        - mountPath: /etc/calico
-          name: etc-calico
-          readOnly: true
-        livenessProbe:
-          httpGet:
-            path: /liveness
-            port: 9098
-          periodSeconds: 30
-          initialDelaySeconds: 30
-        readinessProbe:
-          httpGet:
-            path: /readiness
-            port: 9098
-          periodSeconds: 10
-      volumes:
-      - name: etc-calico
-        hostPath:
-          path: /etc/calico
-
+          ports:
+            - containerPort: 5473
+              name: calico-typha
+              protocol: TCP
+          env:
+            # Use eni not cali for interface prefix
+            - name: FELIX_INTERFACEPREFIX
+              value: "eni"
+            - name: TYPHA_LOGFILEPATH
+              value: "none"
+            - name: TYPHA_LOGSEVERITYSYS
+              value: "none"
+            - name: TYPHA_LOGSEVERITYSCREEN
+              value: "info"
+            - name: TYPHA_PROMETHEUSMETRICSENABLED
+              value: "true"
+            - name: TYPHA_CONNECTIONREBALANCINGMODE
+              value: "kubernetes"
+            - name: TYPHA_PROMETHEUSMETRICSPORT
+              value: "9093"
+            - name: TYPHA_DATASTORETYPE
+              value: "kubernetes"
+            - name: TYPHA_MAXCONNECTIONSLOWERLIMIT
+              value: "1"
+            - name: TYPHA_HEALTHENABLED
+              value: "true"
+            # This will make Felix honor AWS VPC CNI's mangle table
+            # rules.
+            - name: FELIX_IPTABLESMANGLEALLOWACTION
+              value: Return
+          livenessProbe:
+            httpGet:
+              path: /liveness
+              port: 9098
+              host: localhost
+            periodSeconds: 30
+            initialDelaySeconds: 30
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+          readinessProbe:
+            httpGet:
+              path: /readiness
+              port: 9098
+              host: localhost
+            periodSeconds: 10
 
 ---
 
-apiVersion: rbac.authorization.k8s.io/v1beta1
+# This manifest creates a Pod Disruption Budget for Typha to allow K8s Cluster Autoscaler to evict
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: calico-typha
+  namespace: kube-system
+  labels:
+    k8s-app: calico-typha
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      k8s-app: calico-typha
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: typha-cpha
@@ -439,14 +628,14 @@ subjects:
 
 ---
 
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: typha-cpha
 rules:
   - apiGroups: [""]
     resources: ["nodes"]
-    verbs: ["list"]
+    verbs: ["watch", "list"]
 
 ---
 
@@ -474,7 +663,7 @@ data:
 
 ---
 
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: calico-typha-horizontal-autoscaler
@@ -482,16 +671,20 @@ metadata:
   labels:
     k8s-app: calico-typha-autoscaler
 spec:
+  selector:
+    matchLabels:
+      k8s-app: calico-typha-autoscaler
   replicas: 1
   template:
     metadata:
       labels:
         k8s-app: calico-typha-autoscaler
-      annotations:
-        scheduler.alpha.kubernetes.io/critical-pod: ''
     spec:
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        beta.kubernetes.io/os: linux
       containers:
-        - image: k8s.gcr.io/cluster-proportional-autoscaler-amd64:1.1.2
+        - image: k8s.gcr.io/cluster-proportional-autoscaler-amd64:1.7.1
           name: autoscaler
           command:
             - /cluster-proportional-autoscaler
@@ -509,7 +702,7 @@ spec:
 
 ---
 
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: typha-cpha
@@ -518,7 +711,7 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get"]
-  - apiGroups: ["extensions"]
+  - apiGroups: ["extensions", "apps"]
     resources: ["deployments/scale"]
     verbs: ["get", "update"]
 
@@ -532,7 +725,7 @@ metadata:
 
 ---
 
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: typha-cpha
