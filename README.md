@@ -394,7 +394,7 @@ string, tag addition will ignored.
 
 ---
 
-`AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER`
+`AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER` (Since v1.7.0)
 
 Type: Boolean
 
