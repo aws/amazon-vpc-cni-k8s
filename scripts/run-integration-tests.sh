@@ -225,6 +225,7 @@ if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
     START=$SECONDS
     run_performance_test_130_pods
     run_performance_test_730_pods
+    scale_nodes_for_5000_pod_test
     run_performance_test_5000_pods
     PERFORMANCE_DURATION=$((SECONDS - START))
 fi

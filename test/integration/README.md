@@ -59,3 +59,4 @@ Cloudformation - cluster
 EC2 - network interfaces, security groups
 VPC - subnet, route tables
 Cloudformation - cluster, vpc(after cluster deletes)
+S3 - delete bucket

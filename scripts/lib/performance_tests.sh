@@ -142,6 +142,18 @@ function run_performance_test_730_pods() {
     $KUBECTL_PATH delete -f ./testdata/deploy-730-pods.yaml
 }
 
+function scale_nodes_for_5000_pod_test() {
+    AUTO_SCALE_GROUP_INFO=$(aws autoscaling describe-auto-scaling-groups | grep -B9 98,)
+    AUTO_SCALE_GROUP_NAME_WITH_QUOTES=$(echo "${AUTO_SCALE_GROUP_INFO%%:*}")
+    AUTO_SCALE_GROUP_NAME="${AUTO_SCALE_GROUP_NAME_WITH_QUOTES%\"}"
+    AUTO_SCALE_GROUP_NAME=$(echo $AUTO_SCALE_GROUP_NAME | cut -c2-)
+    echo $AUTO_SCALE_GROUP_NAME
+
+    aws autoscaling update-auto-scaling-group \
+        --auto-scaling-group-name $AUTO_SCALE_GROUP_NAME \
+        --desired-capacity 98
+}
+
 function run_performance_test_5000_pods() {
     echo "Running performance tests against cluster"
     RUNNING_PERFORMANCE=true
