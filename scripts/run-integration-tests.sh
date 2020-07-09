@@ -19,6 +19,7 @@ ARCH=$(go env GOARCH)
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
 : "${RUN_CONFORMANCE:=false}"
+: "${RUN_WARM_IP_TEST:=false}"
 
 __cluster_created=0
 __cluster_deprovisioned=0
@@ -185,7 +186,9 @@ sleep 110
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
-$KUBECTL_PATH set env ds aws-node -n kube-system WARM_IP_TARGET=2
+if [[ RUN_WARM_IP_TEST == true ]]; then
+    run_warm_ip_test
+fi
 
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"

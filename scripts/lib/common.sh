@@ -28,3 +28,16 @@ function display_timelines() {
     echo "TIMELINE: Conformance tests took $CONFORMANCE_DURATION seconds."
     echo "TIMELINE: Down processes took $DOWN_DURATION seconds."
 }
+
+function run_warm_ip_test() {
+    $KUBECTL_PATH set env ds aws-node -n kube-system WARM_IP_TARGET=2
+    $KUBECTL_PATH set env ds aws-node -n kube-system MINIMUM_IP_TARGET=10
+    #Sleep a couple seconds to ensure propogation
+    sleep 2
+    KUBECTL_WARM_IP_TARGET=$(kubectl describe ds -n kube-system | grep WARM_IP_TARGET)
+    KUBECTL_MINIMUM_IP_TARGET=$(kubectl describe ds -n kube-system | grep MINIMUM_IP_TARGET)
+    if [[ $KUBECTL_WARM_IP_TARGET != *"2"* || $KUBECTL_MINIMUM_IP_TARGET != *"10"* ]]; then
+        echo "WARM_IP_TARGET not propogated!"
+        on_error
+    fi
+}
