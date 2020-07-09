@@ -93,17 +93,13 @@ log_in_json info "Copying CNI plugin binary and config file ... "
 
 install aws-cni "$HOST_CNI_BIN_PATH"
 
-# create a temporary file to be manipulated by sed (ergh).
-# this enables you to mount your own config file from a configmap that is read only
-temp_config_file=$(mktemp)
-cp 10-aws.conflist "$temp_config_file"
-sed -i s~__VETHPREFIX__~"${AWS_VPC_K8S_CNI_VETHPREFIX}"~g "$temp_config_file"
-sed -i s~__MTU__~"${AWS_VPC_ENI_MTU}"~g "$temp_config_file"
-sed -i s~__PLUGINLOGFILE__~"${AWS_VPC_K8S_PLUGIN_LOG_FILE}"~g "$temp_config_file"
-sed -i s~__PLUGINLOGLEVEL__~"${AWS_VPC_K8S_PLUGIN_LOG_LEVEL}"~g "$temp_config_file"
-cp "$temp_config_file" "$HOST_CNI_CONFDIR_PATH"
-# clean up temp file
-rm "$temp_config_file"
+# modify the static config to populate it with the env vars
+sed \
+  -e s~__VETHPREFIX__~"${AWS_VPC_K8S_CNI_VETHPREFIX}"~g \
+  -e s~__MTU__~"${AWS_VPC_ENI_MTU}"~g \
+  -e s~__PLUGINLOGFILE__~"${AWS_VPC_K8S_PLUGIN_LOG_FILE}"~g \
+  -e s~__PLUGINLOGLEVEL__~"${AWS_VPC_K8S_PLUGIN_LOG_LEVEL}"~g \
+  10-aws.conflist > "$HOST_CNI_CONFDIR_PATH/10-aws.conflist"
 
 log_in_json info "Successfully copied CNI plugin binary and config file."
 
