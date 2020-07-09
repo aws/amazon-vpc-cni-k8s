@@ -5,6 +5,23 @@ function check_for_timeout() {
     fi
 }
 
+function save_results_to_file() {
+    echo $filename
+
+    echo $(date +"%m-%d-%Y-%T") >> $filename
+    echo $TEST_IMAGE_VERSION >> $filename
+    echo $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $filename
+    echo $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $filename
+    echo $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $filename
+
+    cat $filename
+    if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
+        aws s3 cp $filename $PERFORMANCE_TEST_S3_BUCKET_NAME
+    else
+        echo "No S3 bucket name given, skipping test result upload."
+    fi
+}
+
 function run_performance_test_130_pods() {
     echo "Running performance tests against cluster"
     RUNNING_PERFORMANCE=true
@@ -58,19 +75,7 @@ function run_performance_test_130_pods() {
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
     filename="pod-130-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T").csv"
-    echo $filename
-
-    echo $(date +"%m-%d-%Y-%T") >> $filename
-    echo $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $filename
-    echo $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $filename
-    echo $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $filename
-
-    cat $filename
-    if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
-        aws s3 cp $filename $PERFORMANCE_TEST_S3_BUCKET_NAME
-    else
-        echo "No S3 bucket name given, skipping test result upload."
-    fi
+    save_results_to_file
     
     echo "TIMELINE: 130 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
@@ -130,19 +135,7 @@ function run_performance_test_730_pods() {
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
     filename="pod-730-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T").csv"
-    echo $filename
-
-    echo $(date +"%m-%d-%Y-%T") >> $filename
-    echo $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $filename
-    echo $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $filename
-    echo $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $filename
-
-    cat $filename
-    if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
-        aws s3 cp $filename $PERFORMANCE_TEST_S3_BUCKET_NAME
-    else
-        echo "No S3 bucket name given, skipping test result upload."
-    fi
+    save_results_to_file
     
     echo "TIMELINE: 730 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
@@ -202,19 +195,7 @@ function run_performance_test_5000_pods() {
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
     filename="pod-5000-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T").csv"
-    echo $filename
-
-    echo $(date +"%m-%d-%Y-%T") >> $filename
-    echo $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $filename
-    echo $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $filename
-    echo $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $filename
-
-    cat $filename
-    if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
-        aws s3 cp $filename $PERFORMANCE_TEST_S3_BUCKET_NAME
-    else
-        echo "No S3 bucket name given, skipping test result upload."
-    fi
+    save_results_to_file
     
     echo "TIMELINE: 5000 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false

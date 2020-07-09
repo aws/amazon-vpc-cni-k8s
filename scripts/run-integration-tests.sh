@@ -219,6 +219,9 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
 fi
 
 if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
+    echo "*******************************************************************************"
+    echo "Running performance tests on current image:"
+    echo ""
     START=$SECONDS
     run_performance_test_130_pods
     run_performance_test_730_pods

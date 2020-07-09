@@ -52,7 +52,7 @@
 
 ## How to Manually delete k8s tester Resources (order of deletion)
 
-Cloudformation - (all except cluster, vpc, rol-mng)
+Cloudformation - (all except cluster, vpc)
 EC2 - load balancers, key pair
 VPC - Nat gateways, Elastic IPs(after a minute), internet gateway
 Cloudformation - cluster
