@@ -93,11 +93,13 @@ log_in_json info "Copying CNI plugin binary and config file ... "
 
 install aws-cni "$HOST_CNI_BIN_PATH"
 
-sed -i s~__VETHPREFIX__~"${AWS_VPC_K8S_CNI_VETHPREFIX}"~g 10-aws.conflist
-sed -i s~__MTU__~"${AWS_VPC_ENI_MTU}"~g 10-aws.conflist
-sed -i s~__PLUGINLOGFILE__~"${AWS_VPC_K8S_PLUGIN_LOG_FILE}"~g 10-aws.conflist
-sed -i s~__PLUGINLOGLEVEL__~"${AWS_VPC_K8S_PLUGIN_LOG_LEVEL}"~g 10-aws.conflist
-cp 10-aws.conflist "$HOST_CNI_CONFDIR_PATH"
+# modify the static config to populate it with the env vars
+sed \
+  -e s~__VETHPREFIX__~"${AWS_VPC_K8S_CNI_VETHPREFIX}"~g \
+  -e s~__MTU__~"${AWS_VPC_ENI_MTU}"~g \
+  -e s~__PLUGINLOGFILE__~"${AWS_VPC_K8S_PLUGIN_LOG_FILE}"~g \
+  -e s~__PLUGINLOGLEVEL__~"${AWS_VPC_K8S_PLUGIN_LOG_LEVEL}"~g \
+  10-aws.conflist > "$HOST_CNI_CONFDIR_PATH/10-aws.conflist"
 
 log_in_json info "Successfully copied CNI plugin binary and config file."
 
