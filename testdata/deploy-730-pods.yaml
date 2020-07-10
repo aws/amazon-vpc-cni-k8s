@@ -23,4 +23,4 @@ spec:
               containerPort: 80
           imagePullPolicy: IfNotPresent
       nodeSelector:
-        eks.amazonaws.com/nodegroup: single-node
+        eks.amazonaws.com/nodegroup: cni-test-single-node-mng
