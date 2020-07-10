@@ -26,7 +26,17 @@
   - "list"
   - "watch"
 - "apiGroups":
-  - "discovery.k8s.io"
+  - ""
+  "resources":
+  - "pods"
+  - "nodes"
+  - "namespaces"
+  "verbs":
+  - "list"
+  - "watch"
+  - "get"
+- "apiGroups":
+  - "extensions"
   "resources":
   - "*"
   "verbs":

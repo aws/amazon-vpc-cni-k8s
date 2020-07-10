@@ -39,7 +39,12 @@ local awsnode = {
         verbs: ["get", "list", "watch"],
       },
       {
-        apiGroups: ["discovery.k8s.io"],
+        apiGroups: [""],
+        resources: ["pods", "nodes", "namespaces"],
+        verbs: ["list", "watch", "get"],
+      },
+      {
+        apiGroups: ["extensions"],
         resources: ["*"],
         verbs: ["list", "watch"],
       }
