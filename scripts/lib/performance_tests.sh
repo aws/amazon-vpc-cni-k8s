@@ -7,12 +7,10 @@ function check_for_timeout() {
 
 function save_results_to_file() {
     echo $filename
-
-    echo $(date +"%m-%d-%Y-%T") >> $filename
-    echo $TEST_IMAGE_VERSION >> $filename
-    echo $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $filename
-    echo $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $filename
-    echo $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $filename
+    echo "Date", "\"slot1\"", "\"slot2\"" >> $filename
+    echo $(date +"%m-%d-%Y-%T"), $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $filename
+    echo $(date +"%m-%d-%Y-%T"), $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $filename
+    echo $(date +"%m-%d-%Y-%T"), $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $filename
 
     cat $filename
     if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
@@ -74,7 +72,7 @@ function run_performance_test_130_pods() {
     echo ""
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
-    filename="pod-130-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T").csv"
+    filename="pod-130-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
     save_results_to_file
     
     echo "TIMELINE: 130 Pod performance test took $DEPLOY_DURATION seconds."
@@ -134,7 +132,7 @@ function run_performance_test_730_pods() {
     echo ""
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
-    filename="pod-730-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T").csv"
+    filename="pod-730-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
     save_results_to_file
     
     echo "TIMELINE: 730 Pod performance test took $DEPLOY_DURATION seconds."
@@ -206,7 +204,7 @@ function run_performance_test_5000_pods() {
     echo ""
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
-    filename="pod-5000-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T").csv"
+    filename="pod-5000-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
     save_results_to_file
     
     echo "TIMELINE: 5000 Pod performance test took $DEPLOY_DURATION seconds."
