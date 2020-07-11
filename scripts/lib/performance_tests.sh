@@ -151,7 +151,6 @@ function scale_nodes_for_5000_pod_test() {
     echo "Group name ${AUTO_SCALE_GROUP_NAME}"
     AUTO_SCALE_GROUP_NAME=$(echo $AUTO_SCALE_GROUP_NAME | cut -c2-)
     echo $AUTO_SCALE_GROUP_NAME
-    sleep 2000
 
     aws autoscaling update-auto-scaling-group \
         --auto-scaling-group-name $AUTO_SCALE_GROUP_NAME \
