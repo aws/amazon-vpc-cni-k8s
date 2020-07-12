@@ -1,7 +1,10 @@
 function check_for_timeout() {
-    if [[ $((SECONDS - $1)) -gt 10000 ]]; then
-        RUNNING_PERFORMANCE=false
-        on_error
+    if [[ $((SECONDS - $1)) -gt 1500 ]]; then
+        FAILURE_COUNT=$((FAILURE_COUNT + 1))
+        if [[ $FAILURE_COUNT -gt 1 ]]; then
+            RUNNING_PERFORMANCE=false
+            on_error
+        fi
     fi
 }
 
@@ -26,22 +29,26 @@ function run_performance_test_130_pods() {
     $KUBECTL_PATH apply -f ./testdata/deploy-130-pods.yaml
 
     DEPLOY_START=$SECONDS
+    FAILURE_COUNT=0
 
     SCALE_UP_DURATION_ARRAY=()
     SCALE_DOWN_DURATION_ARRAY=()
-    while [ ${#SCALE_UP_DURATION_ARRAY[@]} -lt 3 ]
+    while [ ${#SCALE_DOWN_DURATION_ARRAY[@]} -lt 3 ]
     do
         ITERATION_START=$SECONDS
+        HAS_FAILED=false
         $KUBECTL_PATH scale -f ./testdata/deploy-130-pods.yaml --replicas=130
-        while [[ ! $($KUBECTL_PATH get deploy | grep 130/130) ]]
+        while [[ ! $($KUBECTL_PATH get deploy | grep 130/130) && "$HAS_FAILED" == false ]]
         do
             sleep 1
             echo "Scaling UP"
             echo $($KUBECTL_PATH get deploy)
-            check_for_timeout $DEPLOY_START
+            check_for_timeout $ITERATION_START
         done
 
-        SCALE_UP_DURATION_ARRAY+=( $((SECONDS - ITERATION_START)) )
+        if [[ "$HAS_FAILED" == false ]]; then
+            SCALE_UP_DURATION_ARRAY+=( $((SECONDS - ITERATION_START)) )
+        fi
         MIDPOINT_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-130-pods.yaml --replicas=0
         while [[ $($KUBECTL_PATH get pods) ]]
@@ -49,9 +56,11 @@ function run_performance_test_130_pods() {
             sleep 1
             echo "Scaling DOWN"
             echo $($KUBECTL_PATH get deploy)
-            check_for_timeout $DEPLOY_START
+            check_for_timeout $ITERATION_START
         done
-        SCALE_DOWN_DURATION_ARRAY+=($((SECONDS - MIDPOINT_START)))
+        if [[ "$HAS_FAILED" == false ]]; then
+            SCALE_DOWN_DURATION_ARRAY+=($((SECONDS - MIDPOINT_START)))
+        fi
     done
 
     echo "Times to scale up:"
@@ -86,22 +95,26 @@ function run_performance_test_730_pods() {
     $KUBECTL_PATH apply -f ./testdata/deploy-730-pods.yaml
 
     DEPLOY_START=$SECONDS
+    FAILURE_COUNT=0
 
     SCALE_UP_DURATION_ARRAY=()
     SCALE_DOWN_DURATION_ARRAY=()
-    while [ ${#SCALE_UP_DURATION_ARRAY[@]} -lt 3 ]
+    while [ ${#SCALE_DOWN_DURATION_ARRAY[@]} -lt 3 ]
     do
         ITERATION_START=$SECONDS
+        HAS_FAILED=false
         $KUBECTL_PATH scale -f ./testdata/deploy-730-pods.yaml --replicas=730
-        while [[ ! $($KUBECTL_PATH get deploy | grep 730/730) ]]
+        while [[ ! $($KUBECTL_PATH get deploy | grep 730/730) && "$HAS_FAILED" == false ]]
         do
             sleep 2
             echo "Scaling UP"
             echo $($KUBECTL_PATH get deploy)
-            check_for_timeout $DEPLOY_START
+            check_for_timeout $ITERATION_START
         done
 
-        SCALE_UP_DURATION_ARRAY+=( $((SECONDS - ITERATION_START)) )
+        if [[ "$HAS_FAILED" == false ]]; then
+            SCALE_UP_DURATION_ARRAY+=( $((SECONDS - ITERATION_START)) )
+        fi
         MIDPOINT_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-730-pods.yaml --replicas=0
         while [[ $($KUBECTL_PATH get pods) ]]
@@ -109,9 +122,11 @@ function run_performance_test_730_pods() {
             sleep 2
             echo "Scaling DOWN"
             echo $($KUBECTL_PATH get deploy)
-            check_for_timeout $DEPLOY_START
+            check_for_timeout $ITERATION_START
         done
-        SCALE_DOWN_DURATION_ARRAY+=($((SECONDS - MIDPOINT_START)))
+        if [[ "$HAS_FAILED" == false ]]; then
+            SCALE_DOWN_DURATION_ARRAY+=($((SECONDS - MIDPOINT_START)))
+        fi
     done
 
     echo "Times to scale up:"
@@ -163,22 +178,26 @@ function run_performance_test_5000_pods() {
     $KUBECTL_PATH apply -f ./testdata/deploy-5000-pods.yaml
     
     DEPLOY_START=$SECONDS
+    FAILURE_COUNT=0
 
     SCALE_UP_DURATION_ARRAY=()
     SCALE_DOWN_DURATION_ARRAY=()
-    while [ ${#SCALE_UP_DURATION_ARRAY[@]} -lt 3 ]
+    while [ ${#SCALE_DOWN_DURATION_ARRAY[@]} -lt 3 ]
     do
         ITERATION_START=$SECONDS
+        HAS_FAILED=false
         $KUBECTL_PATH scale -f ./testdata/deploy-5000-pods.yaml --replicas=5000
-        while [[ ! $($KUBECTL_PATH get deploy | grep 5000/5000) ]]
+        while [[ ! $($KUBECTL_PATH get deploy | grep 5000/5000) && "$HAS_FAILED" == false ]]
         do
             sleep 2
             echo "Scaling UP"
             echo $($KUBECTL_PATH get deploy)
-            check_for_timeout $DEPLOY_START
+            check_for_timeout $ITERATION_START
         done
 
-        SCALE_UP_DURATION_ARRAY+=( $((SECONDS - ITERATION_START)) )
+        if [[ "$HAS_FAILED" == false ]]; then
+            SCALE_UP_DURATION_ARRAY+=( $((SECONDS - ITERATION_START)) )
+        fi
         MIDPOINT_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-5000-pods.yaml --replicas=0
         while [[ $($KUBECTL_PATH get pods) ]]
@@ -186,9 +205,11 @@ function run_performance_test_5000_pods() {
             sleep 2
             echo "Scaling DOWN"
             echo $($KUBECTL_PATH get deploy)
-            check_for_timeout $DEPLOY_START
+            check_for_timeout $ITERATION_START
         done
-        SCALE_DOWN_DURATION_ARRAY+=($((SECONDS - MIDPOINT_START)))
+        if [[ "$HAS_FAILED" == false ]]; then
+            SCALE_DOWN_DURATION_ARRAY+=($((SECONDS - MIDPOINT_START)))
+        fi
     done
 
     echo "Times to scale up:"
