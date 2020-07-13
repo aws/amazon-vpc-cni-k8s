@@ -1,6 +1,7 @@
 function check_for_timeout() {
     if [[ $((SECONDS - $1)) -gt 1500 ]]; then
         FAILURE_COUNT=$((FAILURE_COUNT + 1))
+        HAS_FAILED=true
         if [[ $FAILURE_COUNT -gt 1 ]]; then
             RUNNING_PERFORMANCE=false
             on_error
@@ -56,7 +57,6 @@ function run_performance_test_130_pods() {
             sleep 1
             echo "Scaling DOWN"
             echo $($KUBECTL_PATH get deploy)
-            check_for_timeout $ITERATION_START
         done
         if [[ "$HAS_FAILED" == false ]]; then
             SCALE_DOWN_DURATION_ARRAY+=($((SECONDS - MIDPOINT_START)))
@@ -122,7 +122,6 @@ function run_performance_test_730_pods() {
             sleep 2
             echo "Scaling DOWN"
             echo $($KUBECTL_PATH get deploy)
-            check_for_timeout $ITERATION_START
         done
         if [[ "$HAS_FAILED" == false ]]; then
             SCALE_DOWN_DURATION_ARRAY+=($((SECONDS - MIDPOINT_START)))
@@ -205,7 +204,6 @@ function run_performance_test_5000_pods() {
             sleep 2
             echo "Scaling DOWN"
             echo $($KUBECTL_PATH get deploy)
-            check_for_timeout $ITERATION_START
         done
         if [[ "$HAS_FAILED" == false ]]; then
             SCALE_DOWN_DURATION_ARRAY+=($((SECONDS - MIDPOINT_START)))
