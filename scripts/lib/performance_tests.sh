@@ -4,8 +4,10 @@ function check_for_timeout() {
         HAS_FAILED=true
         if [[ $FAILURE_COUNT -gt 1 ]]; then
             RUNNING_PERFORMANCE=false
+            echo "Failed twice, deprovisioning cluster"
             on_error
         fi
+        echo "Failed once, retrying"
     fi
 }
 
@@ -18,7 +20,7 @@ function save_results_to_file() {
 
     cat $filename
     if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
-        aws s3 cp $filename $PERFORMANCE_TEST_S3_BUCKET_NAME
+        aws s3 cp $filename ${PERFORMANCE_TEST_S3_BUCKET_NAME}${1}
     else
         echo "No S3 bucket name given, skipping test result upload."
     fi
@@ -82,7 +84,7 @@ function run_performance_test_130_pods() {
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
     filename="pod-130-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
-    save_results_to_file
+    save_results_to_file "/130-pods/"
     
     echo "TIMELINE: 130 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
@@ -147,7 +149,7 @@ function run_performance_test_730_pods() {
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
     filename="pod-730-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
-    save_results_to_file
+    save_results_to_file "/730-pods/"
     
     echo "TIMELINE: 730 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
@@ -229,7 +231,7 @@ function run_performance_test_5000_pods() {
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
     filename="pod-5000-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
-    save_results_to_file
+    save_results_to_file "/5000-pods/"
     
     echo "TIMELINE: 5000 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
