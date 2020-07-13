@@ -28,9 +28,21 @@ function save_results_to_file() {
 
 function check_for_slow_performance() {
     BUCKET=s3://cni-scale-test-data${1}
-    KEY=`aws s3 ls ${BUCKET} | sort | tail -n 1 | awk '{print $4}'`
-    echo $KEY
-    aws s3 cp s3://$BUCKET/$KEY ./latest-object
+    FILE1=`aws s3 ls ${BUCKET} | sort | tail -n 1 | awk '{print $4}'`
+    FILE2=`aws s3 ls ${BUCKET} | sort | tail -n 2 | sed '1 p' | awk '{print $4}'`
+    FILE3=`aws s3 ls ${BUCKET} | sort | tail -n 3 | sed '1 p' | awk '{print $4}'`
+    
+    PERFORMANCE_UP_AVERAGE_ARRAY=()
+    PERFORMANCE_DOWN_AVERAGE_ARRAY=()
+    #find_performance_duration_average $FILE1 1
+}
+
+function find_performance_duration_average() {
+    aws s3 cp s3://$BUCKET/$1 performance_test${2}.csv
+    SCALE_UP_TEMP_DURATION_ARRAY=()
+    SCALE_DOWN_TEMP_DURATION_ARRAY=()
+    cat performance_test${2}.csv | sed '2 p'
+
 }
 
 function run_performance_test_130_pods() {
