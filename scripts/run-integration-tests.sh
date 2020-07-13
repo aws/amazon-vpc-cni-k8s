@@ -20,6 +20,7 @@ ARCH=$(go env GOARCH)
 : "${BUILD:=true}"
 : "${RUN_CONFORMANCE:=false}"
 : "${RUN_WARM_IP_TEST:=false}"
+: "${RUN_WARM_ENI_TEST:=false}"
 
 __cluster_created=0
 __cluster_deprovisioned=0
@@ -188,6 +189,9 @@ echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
 if [[ RUN_WARM_IP_TEST == true ]]; then
     run_warm_ip_test
+fi
+if [[ RUN_WARM_ENI_TEST == true ]]; then
+    run_warm_eni_test
 fi
 
 echo "*******************************************************************************"

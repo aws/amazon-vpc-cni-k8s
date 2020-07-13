@@ -41,3 +41,14 @@ function run_warm_ip_test() {
         on_error
     fi
 }
+
+function run_warm_eni_test() {
+    $KUBECTL_PATH set env ds aws-node -n kube-system WARM_ENI_TARGET=0
+    #Sleep a couple seconds to ensure propogation
+    sleep 2
+    KUBECTL_WARM_ENI_TARGET=$(kubectl describe ds -n kube-system | grep WARM_ENI_TARGET)
+    if [[ $KUBECTL_WARM_ENI_TARGET != *"0" ]]; then
+        echo "WARM_ENI_TARGET not propogated!"
+        on_error
+    fi
+}
