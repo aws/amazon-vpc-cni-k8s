@@ -26,6 +26,13 @@ function save_results_to_file() {
     fi
 }
 
+function check_for_slow_performance() {
+    BUCKET=s3://cni-scale-test-data${1}
+    KEY=`aws s3 ls ${BUCKET} | sort | tail -n 1 | awk '{print $4}'`
+    echo $KEY
+    aws s3 cp s3://$BUCKET/$KEY ./latest-object
+}
+
 function run_performance_test_130_pods() {
     echo "Running performance tests against cluster"
     RUNNING_PERFORMANCE=true
@@ -85,6 +92,7 @@ function run_performance_test_130_pods() {
 
     filename="pod-130-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
     save_results_to_file "/130-pods/"
+    check_for_slow_performance "/130-pods/"
     
     echo "TIMELINE: 130 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
@@ -150,6 +158,7 @@ function run_performance_test_730_pods() {
 
     filename="pod-730-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
     save_results_to_file "/730-pods/"
+    check_for_slow_performance "/730-pods/"
     
     echo "TIMELINE: 730 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
@@ -232,6 +241,7 @@ function run_performance_test_5000_pods() {
 
     filename="pod-5000-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
     save_results_to_file "/5000-pods/"
+    check_for_slow_performance "/5000-pods/"
     
     echo "TIMELINE: 5000 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
