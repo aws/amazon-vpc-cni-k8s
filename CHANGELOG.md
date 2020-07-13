@@ -1,6 +1,7 @@
 # Changelog
 
 ## v1.7.0-rc1
+* Improvement - [Use sed as a stream editor and redirect to file](https://github.com/aws/amazon-vpc-cni-k8s/pull/1069) (#1069, @willejs)
 * Docs - [Fix docs links for cni-metrics-agent](https://github.com/aws/amazon-vpc-cni-k8s/pull/1072) (#1072, @mogren)
 * Bug - [Make metrics-helper docker logging statement multi-arch compatible](https://github.com/aws/amazon-vpc-cni-k8s/pull/1067) (#1067, @nprab428)
 * Improvement - [JSON output format for the entrypoint script](https://github.com/aws/amazon-vpc-cni-k8s/pull/1066) (#1066, @jayanthvn)
