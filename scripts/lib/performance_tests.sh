@@ -32,17 +32,34 @@ function check_for_slow_performance() {
     FILE2=`aws s3 ls ${BUCKET} | sort | tail -n 2 | sed '1 p' | awk '{print $4}'`
     FILE3=`aws s3 ls ${BUCKET} | sort | tail -n 3 | sed '1 p' | awk '{print $4}'`
     
-    PERFORMANCE_UP_AVERAGE_ARRAY=()
-    PERFORMANCE_DOWN_AVERAGE_ARRAY=()
-    #find_performance_duration_average $FILE1 1
+    PAST_PERFORMANCE_UP_AVERAGE_SUM=0
+    PAST_PERFORMANCE_DOWN_AVERAGE_SUM=0
+    find_performance_duration_average $FILE1 1
+    find_performance_duration_average $FILE2 2
+    find_performance_duration_average $FILE3 3
+    PAST_PERFORMANCE_UP_AVERAGE=$((PAST_PERFORMANCE_UP_AVERAGE_SUM / 3))
+    PAST_PERFORMANCE_DOWN_AVERAGE=$((PAST_PERFORMANCE_DOWN_AVERAGE_SUM / 3))
+
+    # Divided by 3 to get current average, multiply past averages by 5/4 to get 25% window
+    if [[ $((CURRENT_PERFORMANCE_UP_SUM / 3)) -gt $((PAST_PERFORMANCE_UP_AVERAGE * 5 / 4)) ]]; then
+        echo "FAILURE! Performance test took >25% longer than the past three tests!"
+        echo "Look into how current changes could cause cni inefficiency."
+        on_error
+    fi
 }
 
 function find_performance_duration_average() {
     aws s3 cp s3://$BUCKET/$1 performance_test${2}.csv
-    SCALE_UP_TEMP_DURATION_ARRAY=()
-    SCALE_DOWN_TEMP_DURATION_ARRAY=()
-    cat performance_test${2}.csv | sed '2 p'
-
+    SCALE_UP_TEMP_DURATION_SUM=0
+    SCALE_DOWN_TEMP_DURATION_SUM=0
+    for i in {2..4}
+    do
+        TEMP=$(sed -n "${i} p" performance_test${2}.csv)
+        SCALE_UP_TEMP_DURATION_SUM=$((SCALE_UP_TEMP_DURATION_SUM + $(echo "${TEMP%%,*}"))))
+        SCALE_DOWN_TEMP_DURATION_SUM+=$((SCALE_DOWN_TEMP_DURATION_SUM + ($(echo "${TEMP##*,}"))))
+    done
+    PAST_PERFORMANCE_UP_AVERAGE_SUM=($PAST_PERFORMANCE_UP_AVERAGE_SUM + $((SCALE_UP_TEMP_DURATION_SUM / 3)))
+    PAST_PERFORMANCE_DOWN_AVERAGE_SUM=($PAST_PERFORMANCE_DOWN_AVERAGE_SUM + $((SCALE_DOWN_TEMP_DURATION_SUM / 3)))
 }
 
 function run_performance_test_130_pods() {
@@ -55,6 +72,8 @@ function run_performance_test_130_pods() {
 
     SCALE_UP_DURATION_ARRAY=()
     SCALE_DOWN_DURATION_ARRAY=()
+    CURRENT_PERFORMANCE_UP_SUM=0
+    CURRENT_PERFORMANCE_DOWN_SUM=0
     while [ ${#SCALE_DOWN_DURATION_ARRAY[@]} -lt 3 ]
     do
         ITERATION_START=$SECONDS
@@ -69,7 +88,9 @@ function run_performance_test_130_pods() {
         done
 
         if [[ "$HAS_FAILED" == false ]]; then
-            SCALE_UP_DURATION_ARRAY+=( $((SECONDS - ITERATION_START)) )
+            DURATION=$((SECONDS - ITERATION_START))
+            SCALE_UP_DURATION_ARRAY+=( $DURATION )
+            CURRENT_PERFORMANCE_UP_SUM=$((CURRENT_PERFORMANCE_UP_SUM + DURATION))
         fi
         MIDPOINT_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-130-pods.yaml --replicas=0
@@ -80,7 +101,9 @@ function run_performance_test_130_pods() {
             echo $($KUBECTL_PATH get deploy)
         done
         if [[ "$HAS_FAILED" == false ]]; then
-            SCALE_DOWN_DURATION_ARRAY+=($((SECONDS - MIDPOINT_START)))
+            DURATION=$((SECONDS - ITERATION_START))
+            SCALE_DOWN_DURATION_ARRAY+=( $DURATION )
+            CURRENT_PERFORMANCE_DOWN_SUM=$((CURRENT_PERFORMANCE_DOWN_SUM + DURATION))
         fi
     done
 
@@ -104,10 +127,10 @@ function run_performance_test_130_pods() {
 
     filename="pod-130-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
     save_results_to_file "/130-pods/"
-    check_for_slow_performance "/130-pods/"
     
     echo "TIMELINE: 130 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
+    check_for_slow_performance "/130-pods/"
     $KUBECTL_PATH delete -f ./testdata/deploy-130-pods.yaml
 }
 
@@ -135,7 +158,9 @@ function run_performance_test_730_pods() {
         done
 
         if [[ "$HAS_FAILED" == false ]]; then
-            SCALE_UP_DURATION_ARRAY+=( $((SECONDS - ITERATION_START)) )
+            DURATION=$((SECONDS - ITERATION_START))
+            SCALE_UP_DURATION_ARRAY+=( $DURATION )
+            CURRENT_PERFORMANCE_UP_SUM=$((CURRENT_PERFORMANCE_UP_SUM + DURATION))
         fi
         MIDPOINT_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-730-pods.yaml --replicas=0
@@ -146,7 +171,9 @@ function run_performance_test_730_pods() {
             echo $($KUBECTL_PATH get deploy)
         done
         if [[ "$HAS_FAILED" == false ]]; then
-            SCALE_DOWN_DURATION_ARRAY+=($((SECONDS - MIDPOINT_START)))
+            DURATION=$((SECONDS - ITERATION_START))
+            SCALE_DOWN_DURATION_ARRAY+=( $DURATION )
+            CURRENT_PERFORMANCE_DOWN_SUM=$((CURRENT_PERFORMANCE_DOWN_SUM + DURATION))
         fi
     done
 
@@ -170,10 +197,10 @@ function run_performance_test_730_pods() {
 
     filename="pod-730-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
     save_results_to_file "/730-pods/"
-    check_for_slow_performance "/730-pods/"
     
     echo "TIMELINE: 730 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
+    check_for_slow_performance "/730-pods/"
     $KUBECTL_PATH delete -f ./testdata/deploy-730-pods.yaml
 }
 
@@ -218,7 +245,9 @@ function run_performance_test_5000_pods() {
         done
 
         if [[ "$HAS_FAILED" == false ]]; then
-            SCALE_UP_DURATION_ARRAY+=( $((SECONDS - ITERATION_START)) )
+            DURATION=$((SECONDS - ITERATION_START))
+            SCALE_UP_DURATION_ARRAY+=( $DURATION )
+            CURRENT_PERFORMANCE_UP_SUM=$((CURRENT_PERFORMANCE_UP_SUM + DURATION))
         fi
         MIDPOINT_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-5000-pods.yaml --replicas=0
@@ -229,7 +258,9 @@ function run_performance_test_5000_pods() {
             echo $($KUBECTL_PATH get deploy)
         done
         if [[ "$HAS_FAILED" == false ]]; then
-            SCALE_DOWN_DURATION_ARRAY+=($((SECONDS - MIDPOINT_START)))
+            DURATION=$((SECONDS - ITERATION_START))
+            SCALE_DOWN_DURATION_ARRAY+=( $DURATION )
+            CURRENT_PERFORMANCE_DOWN_SUM=$((CURRENT_PERFORMANCE_DOWN_SUM + DURATION))
         fi
     done
 
@@ -253,9 +284,9 @@ function run_performance_test_5000_pods() {
 
     filename="pod-5000-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
     save_results_to_file "/5000-pods/"
-    check_for_slow_performance "/5000-pods/"
     
     echo "TIMELINE: 5000 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
+    check_for_slow_performance "/5000-pods/"
     $KUBECTL_PATH delete -f ./testdata/deploy-5000-pods.yaml
 }
