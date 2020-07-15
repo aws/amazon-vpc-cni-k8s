@@ -15,6 +15,7 @@
 package metrics
 
 import (
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 
@@ -136,27 +137,29 @@ type CNIMetricsTarget struct {
 	kubeClient          clientset.Interface
 	discoveryController *k8sapi.Controller
 	submitCW            bool
+	log                 logger.Logger
 }
 
 // CNIMetricsNew creates a new metricsTarget
-func CNIMetricsNew(c clientset.Interface, cw publisher.Publisher, d *k8sapi.Controller, submitCW bool) *CNIMetricsTarget {
+func CNIMetricsNew(c clientset.Interface, cw publisher.Publisher, d *k8sapi.Controller, submitCW bool, l logger.Logger) *CNIMetricsTarget {
 	return &CNIMetricsTarget{
 		interestingMetrics:  InterestingCNIMetrics,
 		cwMetricsPublisher:  cw,
 		kubeClient:          c,
 		discoveryController: d,
 		submitCW:            submitCW,
+		log:                 l,
 	}
 }
 
 func (t *CNIMetricsTarget) grabMetricsFromTarget(cniPod string) ([]byte, error) {
 	output, err := getMetricsFromPod(t.kubeClient, cniPod, metav1.NamespaceSystem, metricsPort)
 	if err != nil {
-		log.Errorf("grabMetricsFromTarget: Failed to grab CNI endpoint: %v", err)
+		t.log.Errorf("grabMetricsFromTarget: Failed to grab CNI endpoint: %v", err)
 		return nil, err
 	}
 
-	log.Infof("cni-metrics text output: %s", string(output))
+	t.log.Debugf("cni-metrics text output: %s", string(output))
 	return output, nil
 }
 
@@ -175,4 +178,8 @@ func (t *CNIMetricsTarget) getTargetList() []string {
 
 func (t *CNIMetricsTarget) submitCloudWatch() bool {
 	return t.submitCW
+}
+
+func (t *CNIMetricsTarget) getLogger() logger.Logger {
+	return t.log
 }
