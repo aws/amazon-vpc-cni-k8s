@@ -18,19 +18,14 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go/aws"
-
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
-
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	clientset "k8s.io/client-go/kubernetes"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
-
-var log = logger.DefaultLogger()
 
 type metricMatcher func(metric *dto.Metric) bool
 type actionFuncType func(aggregatedValue *float64, sampleValue float64)
@@ -41,6 +36,7 @@ type metricsTarget interface {
 	getCWMetricsPublisher() publisher.Publisher
 	getTargetList() []string
 	submitCloudWatch() bool
+	getLogger() logger.Logger
 }
 
 type metricsConvert struct {
@@ -121,7 +117,7 @@ func processPercentile(metric *dto.Metric, act *metricsAction) {
 	act.actionFunc(&act.data.curSingleDataPoint, p99)
 }
 
-func processHistogram(metric *dto.Metric, act *metricsAction) {
+func processHistogram(metric *dto.Metric, act *metricsAction, log logger.Logger) {
 	histogram := metric.GetHistogram()
 
 	for _, bucket := range histogram.GetBucket() {
@@ -142,12 +138,12 @@ func processHistogram(metric *dto.Metric, act *metricsAction) {
 			*cumulativeCount = float64(bucket.GetCumulativeCount())
 			newBucket := &bucketPoint{UpperBound: upperBound, CumulativeCount: cumulativeCount}
 			act.bucket.curBucket = append(act.bucket.curBucket, newBucket)
-			log.Infof("Created a new bucket with upperBound:%f", bucket.GetUpperBound())
+			log.Infof("Created a new bucket with upperBound: %f", bucket.GetUpperBound())
 		}
 	}
 }
 
-func postProcessingCounter(convert metricsConvert) bool {
+func postProcessingCounter(convert metricsConvert, log logger.Logger) bool {
 	resetDetected := false
 	noPreviousDataPoint := true
 	noCurrentDataPoint := true
@@ -172,13 +168,13 @@ func postProcessingCounter(convert metricsConvert) bool {
 	}
 
 	if resetDetected || (noPreviousDataPoint && !noCurrentDataPoint) {
-		log.Infof("Reset detected resetDetected: %v, noPreviousDataPoint: %v, noCurrentDataPoint: %v",
+		log.Debugf("Reset detected resetDetected: %v, noPreviousDataPoint: %v, noCurrentDataPoint: %v",
 			resetDetected, noPreviousDataPoint, noCurrentDataPoint)
 	}
 	return resetDetected || (noPreviousDataPoint && !noCurrentDataPoint)
 }
 
-func postProcessingHistogram(convert metricsConvert) bool {
+func postProcessingHistogram(convert metricsConvert, log logger.Logger) bool {
 	resetDetected := false
 	noLastBucket := true
 
@@ -235,7 +231,7 @@ func postProcessingHistogram(convert metricsConvert) bool {
 	return resetDetected || noLastBucket
 }
 
-func processMetric(family *dto.MetricFamily, convert metricsConvert) (bool, error) {
+func processMetric(family *dto.MetricFamily, convert metricsConvert, log logger.Logger) (bool, error) {
 	resetDetected := false
 
 	mType := family.GetType()
@@ -246,7 +242,7 @@ func processMetric(family *dto.MetricFamily, convert metricsConvert) (bool, erro
 				case dto.MetricType_GAUGE:
 					processGauge(metric, &act)
 				case dto.MetricType_HISTOGRAM:
-					processHistogram(metric, &act)
+					processHistogram(metric, &act, log)
 				case dto.MetricType_COUNTER:
 					processCounter(metric, &act)
 				case dto.MetricType_SUMMARY:
@@ -258,7 +254,7 @@ func processMetric(family *dto.MetricFamily, convert metricsConvert) (bool, erro
 
 	switch mType {
 	case dto.MetricType_COUNTER:
-		curResetDetected := postProcessingCounter(convert)
+		curResetDetected := postProcessingCounter(convert, log)
 		if curResetDetected {
 			resetDetected = true
 		}
@@ -267,7 +263,7 @@ func processMetric(family *dto.MetricFamily, convert metricsConvert) (bool, erro
 	case dto.MetricType_SUMMARY:
 		// no addition work needs for PERCENTILE
 	case dto.MetricType_HISTOGRAM:
-		curResetDetected := postProcessingHistogram(convert)
+		curResetDetected := postProcessingHistogram(convert, log)
 		if curResetDetected {
 			resetDetected = true
 		}
@@ -398,7 +394,7 @@ func metricsListGrabAggregateConvert(t metricsTarget) (map[string]*dto.MetricFam
 
 		for _, family := range families {
 			convert := interestingMetrics[family.GetName()]
-			curReset, err := processMetric(family, convert)
+			curReset, err := processMetric(family, convert, t.getLogger())
 			if err != nil {
 				return nil, nil, true, err
 			}
@@ -421,7 +417,7 @@ func Handler(t metricsTarget) {
 	families, interestingMetrics, resetDetected, err := metricsListGrabAggregateConvert(t)
 
 	if err != nil || resetDetected {
-		log.Infof("Skipping 1st poll after reset, error: %v", err)
+		t.getLogger().Infof("Skipping 1st poll after reset, error: %v", err)
 	}
 
 	cw := t.getCWMetricsPublisher()
