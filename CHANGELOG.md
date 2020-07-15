@@ -1,6 +1,7 @@
 # Changelog
 
 ## v1.7.0-rc1
+* Bug - [Use limits from API for g4dn.16xlarge](https://github.com/aws/amazon-vpc-cni-k8s/pull/1086) (#1086, @mogren)
 * Improvement - [Use sed as a stream editor and redirect to file](https://github.com/aws/amazon-vpc-cni-k8s/pull/1069) (#1069, @willejs)
 * Docs - [Fix docs links for cni-metrics-agent](https://github.com/aws/amazon-vpc-cni-k8s/pull/1072) (#1072, @mogren)
 * Bug - [Make metrics-helper docker logging statement multi-arch compatible](https://github.com/aws/amazon-vpc-cni-k8s/pull/1067) (#1067, @nprab428)
@@ -9,7 +10,6 @@
 * Improvement - [Use install command instead of cp](https://github.com/aws/amazon-vpc-cni-k8s/pull/1061) (#1061, @mogren)
 * Improvement - [Updated manifest configs with default env vars](https://github.com/aws/amazon-vpc-cni-k8s/pull/1057) (#1057, @saiteja313)
 * Improvement - [Default to random-fully](https://github.com/aws/amazon-vpc-cni-k8s/pull/1048) (#1048, @mogren)
-* Improvement - [Add chaining support and bandwidth plugin](https://github.com/aws/amazon-vpc-cni-k8s/pull/1029) (#1029, @theMagicalKarp)
 * Improvement - [Update probe settings](https://github.com/aws/amazon-vpc-cni-k8s/pull/1028) (#1028, @mogren)
 * Improvement - [Added warning if delete on termination is set to false for the primary ENI](https://github.com/aws/amazon-vpc-cni-k8s/pull/1024) (#1024, @jayanthvn)
 * Testing - [Add parallel testing to conformance](https://github.com/aws/amazon-vpc-cni-k8s/pull/1018) (#1018, @bnapolitan)
