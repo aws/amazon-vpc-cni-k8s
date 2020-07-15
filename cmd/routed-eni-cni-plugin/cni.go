@@ -215,18 +215,15 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.Wrap(err, "add command: failed to setup network")
 	}
 
-	interfaceIndex := 0
 	ips := []*current.IPConfig{
 		{
 			Version:   "4",
 			Address:   *addr,
-			Interface: &interfaceIndex,
 		},
 	}
 
 	result := &current.Result{
 		IPs:        ips,
-		Interfaces: []*current.Interface{{Name: hostVethName}},
 	}
 
 	return cniTypes.PrintResult(result, conf.CNIVersion)
