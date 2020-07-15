@@ -49,14 +49,14 @@ function check_for_slow_performance() {
 }
 
 function find_performance_duration_average() {
-    aws s3 cp s3://$BUCKET/$1 performance_test${2}.csv
+    aws s3 cp $BUCKET/$1 performance_test${2}.csv
     SCALE_UP_TEMP_DURATION_SUM=0
     SCALE_DOWN_TEMP_DURATION_SUM=0
     for i in {2..4}
     do
         TEMP=$(sed -n "${i} p" performance_test${2}.csv)
-        SCALE_UP_TEMP_DURATION_SUM=$((SCALE_UP_TEMP_DURATION_SUM + $(echo "${TEMP%%,*}"))))
-        SCALE_DOWN_TEMP_DURATION_SUM+=$((SCALE_DOWN_TEMP_DURATION_SUM + ($(echo "${TEMP##*,}"))))
+        SCALE_UP_TEMP_DURATION_SUM=$((SCALE_UP_TEMP_DURATION_SUM + ${TEMP%%,*}))
+        SCALE_DOWN_TEMP_DURATION_SUM+=$((SCALE_DOWN_TEMP_DURATION_SUM + ${TEMP##*,}))
     done
     PAST_PERFORMANCE_UP_AVERAGE_SUM=($PAST_PERFORMANCE_UP_AVERAGE_SUM + $((SCALE_UP_TEMP_DURATION_SUM / 3)))
     PAST_PERFORMANCE_DOWN_AVERAGE_SUM=($PAST_PERFORMANCE_DOWN_AVERAGE_SUM + $((SCALE_DOWN_TEMP_DURATION_SUM / 3)))
@@ -207,9 +207,9 @@ function run_performance_test_730_pods() {
 function scale_nodes_for_5000_pod_test() {
     AUTO_SCALE_GROUP_INFO=$(aws autoscaling describe-auto-scaling-groups | grep -B18 100,)
     echo "Group info ${AUTO_SCALE_GROUP_INFO}"
-    AUTO_SCALE_GROUP_NAME_WITH_QUOTES=$(echo "${AUTO_SCALE_GROUP_INFO%%,*}")
+    AUTO_SCALE_GROUP_NAME_WITH_QUOTES=${AUTO_SCALE_GROUP_INFO%%,*}
     echo "Group name with quotes ${AUTO_SCALE_GROUP_NAME_WITH_QUOTES}"
-    AUTO_SCALE_GROUP_NAME_WITH_QUOTES=$(echo "${AUTO_SCALE_GROUP_NAME_WITH_QUOTES##* }")
+    AUTO_SCALE_GROUP_NAME_WITH_QUOTES=${AUTO_SCALE_GROUP_NAME_WITH_QUOTES##* }
     echo "Group name with quotes ${AUTO_SCALE_GROUP_NAME_WITH_QUOTES}"
     AUTO_SCALE_GROUP_NAME="${AUTO_SCALE_GROUP_NAME_WITH_QUOTES%\"}"
     echo "Group name ${AUTO_SCALE_GROUP_NAME}"
