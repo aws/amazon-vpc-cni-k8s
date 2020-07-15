@@ -111,7 +111,7 @@ func (logConfig *Configuration) newZapLogger() *structuredLogger {
 
 	logFilePath := logConfig.LogLocation
 
-	if strings.ToLower(logFilePath) != "stdout" {
+	if logFilePath != "" && strings.ToLower(logFilePath) != "stdout" {
 		writer = getLogWriter(logFilePath)
 	} else {
 		writer = zapcore.Lock(os.Stdout)
