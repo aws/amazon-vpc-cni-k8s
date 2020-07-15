@@ -35,7 +35,7 @@ type Configuration struct {
 func LoadLogConfig() *Configuration {
 	return &Configuration{
 		BinaryName:  binaryName,
-		LogLevel:    getLogLevel(),
+		LogLevel:    GetLogLevel(),
 		LogLocation: getLogFileLocation(),
 	}
 }
@@ -49,7 +49,7 @@ func getLogFileLocation() string {
 	return logFilePath
 }
 
-func getLogLevel() string {
+func GetLogLevel() string {
 	logLevel := os.Getenv(envLogLevel)
 	switch logLevel {
 	case "":

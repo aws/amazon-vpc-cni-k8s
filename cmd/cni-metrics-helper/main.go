@@ -29,7 +29,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 )
 
-var log = logger.DefaultLogger()
+const binaryName = "cni-metrics-helper"
 
 type options struct {
 	submitCW bool
@@ -37,10 +37,17 @@ type options struct {
 }
 
 func main() {
+	// Do not add anything before initializing logger
+	logLevel := logger.GetLogLevel()
+	logConfig := logger.Configuration{
+		BinaryName:  binaryName,
+		LogLevel:    logLevel,
+		LogLocation: "stdout",
+	}
+	log := logger.New(&logConfig)
 	options := &options{}
 	flags := pflag.NewFlagSet("", pflag.ExitOnError)
 	flags.AddGoFlagSet(flag.CommandLine)
-
 	flags.BoolVar(&options.submitCW, "cloudwatch", true, "a bool")
 
 	flags.Usage = func() {
@@ -73,7 +80,7 @@ func main() {
 		}
 	}
 
-	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v", options.submitCW)
+	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, LogLevel %s", options.submitCW, logConfig.LogLevel)
 
 	kubeClient, err := k8sapi.CreateKubeClient()
 	if err != nil {
@@ -97,7 +104,7 @@ func main() {
 		defer cw.Stop()
 	}
 
-	var cniMetric = metrics.CNIMetricsNew(kubeClient, cw, discoverController, options.submitCW)
+	var cniMetric = metrics.CNIMetricsNew(kubeClient, cw, discoverController, options.submitCW, log)
 
 	// metric loop
 	var pullInterval = 30 // seconds

@@ -17,14 +17,18 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/stretchr/testify/assert"
 )
 
 type testMetricsTarget struct {
 	metricFile         string
 	interestingMetrics map[string]metricsConvert
+}
+
+func (target *testMetricsTarget) getLogger() logger.Logger {
+	return logger.DefaultLogger()
 }
 
 func newTestMetricsTarget(metricFile string, interestingMetrics map[string]metricsConvert) *testMetricsTarget {
