@@ -42,7 +42,12 @@ function check_for_slow_performance() {
 
     # Divided by 3 to get current average, multiply past averages by 5/4 to get 25% window
     if [[ $((CURRENT_PERFORMANCE_UP_SUM / 3)) -gt $((PAST_PERFORMANCE_UP_AVERAGE * 5 / 4)) ]]; then
-        echo "FAILURE! Performance test took >25% longer than the past three tests!"
+        echo "FAILURE! Performance test pod UPPING took >25% longer than the past three tests!"
+        echo "Look into how current changes could cause cni inefficiency."
+        on_error
+    fi
+    if [[ $((CURRENT_PERFORMANCE_DOWN_SUM / 3)) -gt $((PAST_PERFORMANCE_DOWN_AVERAGE * 5 / 4)) ]]; then
+        echo "FAILURE! Performance test pod DOWN took >25% longer than the past three tests!"
         echo "Look into how current changes could cause cni inefficiency."
         on_error
     fi

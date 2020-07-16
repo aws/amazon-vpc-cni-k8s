@@ -157,6 +157,7 @@ echo "Using $BASE_CONFIG_PATH as a template"
 cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
 
 # Daemonset template
+echo "IMAGE NAME ${IMAGE_NAME} "
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," "$TEST_CONFIG_PATH"
 sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
@@ -223,8 +224,8 @@ if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
     echo "Running performance tests on current image:"
     echo ""
     START=$SECONDS
-    scale_nodes_for_5000_pod_test
     run_performance_test_130_pods
+    scale_nodes_for_5000_pod_test
     run_performance_test_730_pods
     run_performance_test_5000_pods
     PERFORMANCE_DURATION=$((SECONDS - START))
