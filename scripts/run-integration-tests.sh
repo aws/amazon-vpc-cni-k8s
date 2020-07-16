@@ -19,6 +19,7 @@ ARCH=$(go env GOARCH)
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
 : "${RUN_CONFORMANCE:=false}"
+: "${RUN_BOTTLEROCKET_TEST:=false}"
 
 __cluster_created=0
 __cluster_deprovisioned=0
@@ -142,6 +143,12 @@ mkdir -p "$TEST_CONFIG_DIR"
 
 if [[ "$PROVISION" == true ]]; then
     START=$SECONDS
+    if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
+        echo "TESTING downloading eksctl"
+        curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+        sudo mv -v /tmp/eksctl /usr/local/bin
+        eksctl create cluster --config-file ./testdata/bottlerocket.yaml
+    fi
     up-test-cluster
     UP_CLUSTER_DURATION=$((SECONDS - START))
     echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
