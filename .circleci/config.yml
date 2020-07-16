@@ -155,7 +155,7 @@ workflows:
   weekly-test-run:
     triggers:
       - schedule:
-          cron: "0 4 * * 2"
+          cron: "0 4 * * 4"
           filters:
             branches:
               only:
