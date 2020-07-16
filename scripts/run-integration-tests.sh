@@ -30,21 +30,22 @@ __cluster_deprovisioned=0
 
 on_error() {
     # Make sure we destroy any cluster that was created if we hit run into an
-    # error when attempting to run tests against the cluster
-    if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
-        if [[ $RUN_KOPS_TEST == true ]]; then
-            __cluster_deprovisioned=1
-            echo "Cluster was provisioned already. Deprovisioning it..."
-            down-kops-cluster
-        else
-            # prevent double-deprovisioning with ctrl-c during deprovisioning...
-            __cluster_deprovisioned=1
-            echo "Cluster was provisioned already. Deprovisioning it..."
-            down-test-cluster
+    # error when attempting to run tests against the 
+    if [[ $RUNNING_PERFORMANCE == false ]]; then
+        if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
+            if [[ $RUN_KOPS_TEST == true ]]; then
+                __cluster_deprovisioned=1
+                echo "Cluster was provisioned already. Deprovisioning it..."
+                down-kops-cluster
+            else
+                # prevent double-deprovisioning with ctrl-c during deprovisioning...
+                __cluster_deprovisioned=1
+                echo "Cluster was provisioned already. Deprovisioning it..."
+                down-test-cluster
+            fi
         fi
+        exit 1
     fi
-    
-    exit 1
 }
 
 # test specific config, results location
