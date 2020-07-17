@@ -4,6 +4,7 @@
     * set AWS_SECRET_ACCESS_KEY
     * set AWS_DEFAULT_REGION (optional, defaults to us-west-2 if not set)
     * approve test after build completes
+    * Can only run one of the following tests at a time, as most need a unique cluster to work on
 
 # Performance
     * run from cni test account to upload test results
@@ -13,7 +14,13 @@
 
 # KOPS
     * set RUN_KOPS_TEST=true
-    * will occassionally fail/flake tests, try re-running test a couple times to ensure there is a problem
+    * WARNING: will occassionally fail/flake tests, try re-running test a couple times to ensure there is a 
+    
+# Warm IP
+    * set RUN_WARM_IP_TEST=true
+
+# Warm eni
+    * set RUN_WARM_ENI_TEST=true
 
 
 
