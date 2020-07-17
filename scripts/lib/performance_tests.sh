@@ -219,7 +219,7 @@ function run_performance_test_730_pods() {
 }
 
 function scale_nodes_for_5000_pod_test() {
-    AUTO_SCALE_GROUP_INFO=$(aws autoscaling describe-auto-scaling-groups | grep -B40 100,)
+    AUTO_SCALE_GROUP_INFO=$(aws autoscaling describe-auto-scaling-groups | grep -B70 100,)
     echo "Group info ${AUTO_SCALE_GROUP_INFO}"
     AUTO_SCALE_GROUP_NAME_WITH_QUOTES=${AUTO_SCALE_GROUP_INFO%%,*}
     echo "Group name with quotes ${AUTO_SCALE_GROUP_NAME_WITH_QUOTES}"
