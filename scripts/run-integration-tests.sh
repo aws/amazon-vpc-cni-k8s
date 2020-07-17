@@ -184,6 +184,7 @@ sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PA
 
 if [[ $RUN_KOPS_TEST == true || $RUN_BOTTLEROCKET_TEST == true ]]; then
     KUBECTL_PATH=kubectl
+    export KUBECONFIG=~/.kube/config
 else
     export KUBECONFIG=$KUBECONFIG_PATH
 fi
