@@ -148,8 +148,9 @@ if [[ "$PROVISION" == true ]]; then
         curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
         sudo mv -v /tmp/eksctl /usr/local/bin
         eksctl create cluster --config-file ./testdata/bottlerocket.yaml
+    else
+        up-test-cluster
     fi
-    up-test-cluster
     UP_CLUSTER_DURATION=$((SECONDS - START))
     echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
     __cluster_created=1
