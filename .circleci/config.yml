@@ -194,6 +194,6 @@ workflows:
                 - master
     jobs:
       - performance_test
-      - kops_test
-      requires:
+      - kops_test:
+          requires:
             - performance_test
