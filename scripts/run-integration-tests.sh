@@ -259,7 +259,6 @@ if [[ "$DEPROVISION" == true ]]; then
         down-kops-cluster
     elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
         eksctl delete cluster bottlerocket
-    fi
     else
         down-test-cluster
     fi
