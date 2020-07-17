@@ -232,7 +232,7 @@ function scale_nodes_for_5000_pod_test() {
 
     aws autoscaling update-auto-scaling-group \
         --auto-scaling-group-name $AUTO_SCALE_GROUP_NAME \
-        --desired-capacity 98
+        --desired-capacity 99
 }
 
 function run_performance_test_5000_pods() {
