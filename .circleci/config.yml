@@ -187,7 +187,7 @@ workflows:
   weekly-test-run:
     triggers:
       - schedule:
-          cron: "15 14 * * 5"
+          cron: "0 0 * * 6"
           filters:
             branches:
               only:
@@ -195,3 +195,5 @@ workflows:
     jobs:
       - performance_test
       - kops_test
+      requires:
+            - performance_test
