@@ -30,13 +30,15 @@ on_error() {
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the cluster
     if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
+        echo "Cluster was provisioned already. Deprovisioning it..."
+        __cluster_deprovisioned=1
         if [[ $RUN_KOPS_TEST == true ]]; then
-            __cluster_deprovisioned=1
             echo "Cluster was provisioned already. Deprovisioning it..."
             down-kops-cluster
+        elif [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
+            eksctl delete cluster bottlerocket
         else
             # prevent double-deprovisioning with ctrl-c during deprovisioning...
-            __cluster_deprovisioned=1
             echo "Cluster was provisioned already. Deprovisioning it..."
             down-test-cluster
         fi
