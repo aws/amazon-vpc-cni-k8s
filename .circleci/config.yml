@@ -183,11 +183,11 @@ workflows:
     jobs:
       - integration_test
 
-  # triggers weekly tests on master
+  # triggers weekly tests on master (Friday at 11 PM PST)
   weekly-test-run:
     triggers:
       - schedule:
-          cron: "0 0 * * 6"
+          cron: "0 6 * * 6"
           filters:
             branches:
               only:
