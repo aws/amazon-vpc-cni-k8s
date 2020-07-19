@@ -50,15 +50,6 @@ function check_for_slow_performance() {
         echo "********************************"
         on_error
     fi
-    if [[ $((CURRENT_PERFORMANCE_DOWN_SUM / 3)) -gt $((PAST_PERFORMANCE_DOWN_AVERAGE * 5 / 4)) ]]; then
-        echo "FAILURE! Performance test pod DOWN took >25% longer than the past three tests!"
-        echo "This tests time: $((CURRENT_PERFORMANCE_DOWN_SUM / 3))"
-        echo "Previous tests' time: ${PAST_PERFORMANCE_DOWN_AVERAGE}"
-        echo "********************************"
-        echo "Look into how current changes could cause cni inefficiency."
-        echo "********************************"
-        on_error
-    fi
 }
 
 function find_performance_duration_average() {
