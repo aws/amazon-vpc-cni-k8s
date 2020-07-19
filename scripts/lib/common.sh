@@ -30,6 +30,8 @@ function display_timelines() {
 }
 
 function run_warm_ip_test() {
+    echo "Setting WARM_IP_TARGET=2 and MINUMUM_IP_TARGET=10"
+    echo "Running warm ip test"
     $KUBECTL_PATH set env ds aws-node -n kube-system WARM_IP_TARGET=2
     $KUBECTL_PATH set env ds aws-node -n kube-system MINIMUM_IP_TARGET=10
     #Sleep a couple seconds to ensure propagation
@@ -52,9 +54,14 @@ function run_warm_ip_test() {
         sleep 5
         echo "Waiting for daemonset pod propagation..."
     done
+    echo "WARM_IP_TARGET and MINIMUM_IP_TARGET successfully propagated!"
+    echo $WARM_IP_VALUE1
+    echo $MINIMUM_IP_VALUE1
 }
 
 function run_warm_eni_test() {
+    echo "Setting WARM_ENI_TARGET=0"
+    echo "Running warm eni test"
     $KUBECTL_PATH set env ds aws-node -n kube-system WARM_ENI_TARGET=0
     #Sleep a couple seconds to ensure propagation
     sleep 2
@@ -73,4 +80,6 @@ function run_warm_eni_test() {
         sleep 5
         echo "Waiting for daemonset pod propagation..."
     done
+    echo "WARM_ENI_TARGET successfully propagated!"
+    echo $WARM_ENI_VALUE1
 }
