@@ -32,7 +32,7 @@ function display_timelines() {
 function run_warm_ip_test() {
     $KUBECTL_PATH set env ds aws-node -n kube-system WARM_IP_TARGET=2
     $KUBECTL_PATH set env ds aws-node -n kube-system MINIMUM_IP_TARGET=10
-    #Sleep a couple seconds to ensure propogation
+    #Sleep a couple seconds to ensure propagation
     sleep 2
     KUBECTL_WARM_IP_TARGET=$(kubectl describe ds -n kube-system | grep WARM_IP_TARGET)
     KUBECTL_MINIMUM_IP_TARGET=$(kubectl describe ds -n kube-system | grep MINIMUM_IP_TARGET)
@@ -44,7 +44,7 @@ function run_warm_ip_test() {
 
 function run_warm_eni_test() {
     $KUBECTL_PATH set env ds aws-node -n kube-system WARM_ENI_TARGET=0
-    #Sleep a couple seconds to ensure propogation
+    #Sleep a couple seconds to ensure propagation
     sleep 2
     KUBECTL_WARM_ENI_TARGET=$(kubectl describe ds -n kube-system | grep WARM_ENI_TARGET)
     if [[ $KUBECTL_WARM_ENI_TARGET != *"0" ]]; then
