@@ -37,9 +37,21 @@ function run_warm_ip_test() {
     KUBECTL_WARM_IP_TARGET=$(kubectl describe ds -n kube-system | grep WARM_IP_TARGET)
     KUBECTL_MINIMUM_IP_TARGET=$(kubectl describe ds -n kube-system | grep MINIMUM_IP_TARGET)
     if [[ $KUBECTL_WARM_IP_TARGET != *"2"* || $KUBECTL_MINIMUM_IP_TARGET != *"10"* ]]; then
-        echo "WARM_IP_TARGET not propogated!"
+        echo "WARM_IP_TARGET not propogated in daemonset!"
         on_error
     fi
+    FIRST_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '1 p' | awk '{print $1}')
+    SECOND_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '2 p' | awk '{print $1}')
+    declare WARM_IP_VALUE1 WARM_IP_VALUE2 MINIMUM_IP_VALUE1 MINIMUM_IP_VALUE2
+    while [[ $WARM_IP_VALUE1 != *"2"* || $MINIMUM_IP_VALUE1 != *"10"* || $WARM_IP_VALUE2 != *"2"* || $MINIMUM_IP_VALUE2 != *"10"* ]]
+    do
+        WARM_IP_VALUE1=$($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep WARM_IP_TARGET)
+        MINIMUM_IP_VALUE1=$($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep MINIMUM_IP_TARGET)
+        WARM_IP_VALUE2=$($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep WARM_IP_TARGET)
+        MINIMUM_IP_VALUE2=$($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep MINIMUM_IP_TARGET)
+        sleep 5
+        echo "Waiting for daemonset pod propagation..."
+    done
 }
 
 function run_warm_eni_test() {
@@ -48,7 +60,17 @@ function run_warm_eni_test() {
     sleep 2
     KUBECTL_WARM_ENI_TARGET=$(kubectl describe ds -n kube-system | grep WARM_ENI_TARGET)
     if [[ $KUBECTL_WARM_ENI_TARGET != *"0" ]]; then
-        echo "WARM_ENI_TARGET not propogated!"
+        echo "WARM_ENI_TARGET not propogated in daemonset!"
         on_error
     fi
+    FIRST_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '1 p' | awk '{print $1}')
+    SECOND_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '2 p' | awk '{print $1}')
+    declare WARM_ENI_VALUE1 WARM_ENI_VALUE2
+    while [[ $WARM_ENI_VALUE1 != *"0"* || $WARM_ENI_VALUE2 != *"0"* ]]
+    do
+        WARM_ENI_VALUE1=$($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep WARM_ENI_TARGET)
+        WARM_ENI_VALUE2=$($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep WARM_ENI_TARGET)
+        sleep 5
+        echo "Waiting for daemonset pod propagation..."
+    done
 }
