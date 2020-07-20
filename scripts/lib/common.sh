@@ -53,11 +53,17 @@ function run_warm_ip_test() {
     do
         echo "Waiting for daemonset pod propagation..."
         FIRST_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '1 p' | awk '{print $1}')
+        echo "Made it past first pod name"
         SECOND_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '2 p' | awk '{print $1}')
+        echo "Made it past second pod name"
         WARM_IP_VALUE1=$($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep WARM_IP_TARGET)
+        echo "Made it past warm value 1"
         MINIMUM_IP_VALUE1=$($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep MINIMUM_IP_TARGET)
+        echo "Made it past minimum value 1"
         WARM_IP_VALUE2=$($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep WARM_IP_TARGET)
+        echo "Made it past warm value 2"
         MINIMUM_IP_VALUE2=$($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep MINIMUM_IP_TARGET)
+        echo "Made it past minimum value 2"
         sleep 5
     done
     echo "WARM_IP_TARGET and MINIMUM_IP_TARGET successfully propagated!"
