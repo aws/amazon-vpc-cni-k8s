@@ -42,6 +42,7 @@ function run_warm_ip_test() {
         echo "WARM_IP_TARGET not propogated in daemonset!"
         on_error
     fi
+
     FIRST_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '1 p' | awk '{print $1}')
     SECOND_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '2 p' | awk '{print $1}')
     WARM_IP_VALUE1=""
@@ -50,6 +51,8 @@ function run_warm_ip_test() {
     MINIMUM_IP_VALUE2=""
     while [[ $WARM_IP_VALUE1 != *"2"* || $MINIMUM_IP_VALUE1 != *"10"* || $WARM_IP_VALUE2 != *"2"* || $MINIMUM_IP_VALUE2 != *"10"* ]]
     do
+        FIRST_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '1 p' | awk '{print $1}')
+        SECOND_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '2 p' | awk '{print $1}')
         WARM_IP_VALUE1=$($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep WARM_IP_TARGET)
         MINIMUM_IP_VALUE1=$($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep MINIMUM_IP_TARGET)
         WARM_IP_VALUE2=$($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep WARM_IP_TARGET)
@@ -79,6 +82,8 @@ function run_warm_eni_test() {
     WARM_ENI_VALUE2=""
     while [[ $WARM_ENI_VALUE1 != *"0"* || $WARM_ENI_VALUE2 != *"0"* ]]
     do
+        FIRST_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '1 p' | awk '{print $1}')
+        SECOND_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '2 p' | awk '{print $1}')
         WARM_ENI_VALUE1=$($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep WARM_ENI_TARGET)
         WARM_ENI_VALUE2=$($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep WARM_ENI_TARGET)
         sleep 5
