@@ -208,10 +208,10 @@ echo "Updated!"
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
-if [[ RUN_WARM_IP_TEST == true ]]; then
+if [[ $RUN_WARM_IP_TEST == true ]]; then
     run_warm_ip_test
 fi
-if [[ RUN_WARM_ENI_TEST == true ]]; then
+if [[ $RUN_WARM_ENI_TEST == true ]]; then
     run_warm_eni_test
 fi
 
