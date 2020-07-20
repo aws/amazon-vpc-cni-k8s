@@ -43,24 +43,22 @@ function run_warm_ip_test() {
         on_error
     fi
 
+    sleep 140
     FIRST_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '1 p' | awk '{print $1}')
     SECOND_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '2 p' | awk '{print $1}')
     WARM_IP_VALUE1=""
     WARM_IP_VALUE2=""
     MINIMUM_IP_VALUE1=""
     MINIMUM_IP_VALUE2=""
-    while [[ $WARM_IP_VALUE1 != *"2"* || $MINIMUM_IP_VALUE1 != *"10"* || $WARM_IP_VALUE2 != *"2"* || $MINIMUM_IP_VALUE2 != *"10"* ]]
+    while [[ $($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep WARM_IP_TARGET) != *"2"* || \
+        $($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep MINIMUM_IP_TARGET) != *"10"* || \
+        $($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep WARM_IP_TARGET) != *"2"* || \
+        $($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep MINIMUM_IP_TARGET)  != *"10"* ]]
     do
         echo "Waiting for daemonset pod propagation..."
         $KUBECTL_PATH get pods -n kube-system
         FIRST_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '1 p' | awk '{print $1}')
-        echo "First pod name is $FIRST_DS_POD_NAME"
         SECOND_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '2 p' | awk '{print $1}')
-        echo "First pod name is $SECOND_DS_POD_NAME"
-        WARM_IP_VALUE1=$($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep WARM_IP_TARGET)
-        MINIMUM_IP_VALUE1=$($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep MINIMUM_IP_TARGET)
-        WARM_IP_VALUE2=$($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep WARM_IP_TARGET)
-        MINIMUM_IP_VALUE2=$($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep MINIMUM_IP_TARGET)
         sleep 5
     done
     echo "WARM_IP_TARGET and MINIMUM_IP_TARGET successfully propagated!"
