@@ -56,7 +56,6 @@ function setup_warm_ip_test() {
         $($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep MINIMUM_IP_TARGET)  != *"10"* ]]
     do
         echo "Waiting for daemonset pod propagation..."
-        $KUBECTL_PATH get pods -n kube-system
         FIRST_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '1 p' | awk '{print $1}')
         SECOND_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '2 p' | awk '{print $1}')
         sleep 5
@@ -86,13 +85,12 @@ function setup_warm_eni_test() {
     WARM_ENI_VALUE1=""
     WARM_ENI_VALUE2=""
     START=$SECONDS
-    while [[ $WARM_ENI_VALUE1 != *"0"* || $WARM_ENI_VALUE2 != *"0"* ]]
+    while [[ $($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep WARM_ENI_TARGET) != *"0"* || \
+        $($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep WARM_ENI_TARGET) != *"0"* ]]
     do
         echo "Waiting for daemonset pod propagation..."
         FIRST_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '1 p' | awk '{print $1}')
         SECOND_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '2 p' | awk '{print $1}')
-        WARM_ENI_VALUE1=$($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep WARM_ENI_TARGET)
-        WARM_ENI_VALUE2=$($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep WARM_ENI_TARGET)
         sleep 5
         if [[ $((SECONDS - START)) -gt 500 ]]; then
             echo "Propogation for WARM_IP_TARGET timed out!"
