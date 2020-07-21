@@ -43,7 +43,6 @@ function run_warm_ip_test() {
         on_error
     fi
 
-    sleep 140
     FIRST_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '1 p' | awk '{print $1}')
     SECOND_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '2 p' | awk '{print $1}')
     WARM_IP_VALUE1=""
