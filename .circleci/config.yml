@@ -73,7 +73,7 @@ jobs:
       - run:
           name: Run the integration tests
           command: ./scripts/run-integration-tests.sh
-          no_output_timeout: 15m
+          no_output_timeout: 20m
       - save_cache:
           key: dependency-packages-store-{{ checksum "test/integration/go.mod" }}
           paths:
