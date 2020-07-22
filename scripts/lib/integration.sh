@@ -45,10 +45,6 @@ function setup_warm_ip_test() {
 
     FIRST_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '1 p' | awk '{print $1}')
     SECOND_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '2 p' | awk '{print $1}')
-    WARM_IP_VALUE1=""
-    WARM_IP_VALUE2=""
-    MINIMUM_IP_VALUE1=""
-    MINIMUM_IP_VALUE2=""
     START=$SECONDS
     while [[ $($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep WARM_IP_TARGET) != *"2"* || \
         $($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep MINIMUM_IP_TARGET) != *"10"* || \
@@ -82,8 +78,6 @@ function setup_warm_eni_test() {
     fi
     FIRST_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '1 p' | awk '{print $1}')
     SECOND_DS_POD_NAME=$($KUBECTL_PATH get pods -n kube-system | grep aws-node | sed -n '2 p' | awk '{print $1}')
-    WARM_ENI_VALUE1=""
-    WARM_ENI_VALUE2=""
     START=$SECONDS
     while [[ $($KUBECTL_PATH describe pod $FIRST_DS_POD_NAME -n=kube-system | grep WARM_ENI_TARGET) != *"0"* || \
         $($KUBECTL_PATH describe pod $SECOND_DS_POD_NAME -n=kube-system | grep WARM_ENI_TARGET) != *"0"* ]]
