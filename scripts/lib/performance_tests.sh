@@ -28,9 +28,9 @@ function save_results_to_file() {
 
 function check_for_slow_performance() {
     BUCKET=s3://cni-scale-test-data${1}
-    FILE1=`aws s3 ls ${BUCKET} | sort | tail -n 1 | awk '{print $4}'`
-    FILE2=`aws s3 ls ${BUCKET} | sort | tail -n 2 | sed -n '1 p' | awk '{print $4}'`
-    FILE3=`aws s3 ls ${BUCKET} | sort | tail -n 3 | sed -n '1 p' | awk '{print $4}'`
+    FILE1=`aws s3 ls ${BUCKET} | sort | tail -n 2 | sed -n '1 p' | awk '{print $4}'`
+    FILE2=`aws s3 ls ${BUCKET} | sort | tail -n 3 | sed -n '1 p' | awk '{print $4}'`
+    FILE3=`aws s3 ls ${BUCKET} | sort | tail -n 4 | sed -n '1 p' | awk '{print $4}'`
     
     PAST_PERFORMANCE_UP_AVERAGE_SUM=0
     PAST_PERFORMANCE_DOWN_AVERAGE_SUM=0
@@ -97,7 +97,6 @@ function run_performance_test_130_pods() {
             SCALE_UP_DURATION_ARRAY+=( $DURATION )
             CURRENT_PERFORMANCE_UP_SUM=$((CURRENT_PERFORMANCE_UP_SUM + DURATION))
         fi
-        MIDPOINT_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-130-pods.yaml --replicas=0
         while [[ $($KUBECTL_PATH get pods) ]]
         do
@@ -149,6 +148,8 @@ function run_performance_test_730_pods() {
 
     SCALE_UP_DURATION_ARRAY=()
     SCALE_DOWN_DURATION_ARRAY=()
+    CURRENT_PERFORMANCE_UP_SUM=0
+    CURRENT_PERFORMANCE_DOWN_SUM=0
     while [ ${#SCALE_DOWN_DURATION_ARRAY[@]} -lt 3 ]
     do
         ITERATION_START=$SECONDS
@@ -167,7 +168,6 @@ function run_performance_test_730_pods() {
             SCALE_UP_DURATION_ARRAY+=( $DURATION )
             CURRENT_PERFORMANCE_UP_SUM=$((CURRENT_PERFORMANCE_UP_SUM + DURATION))
         fi
-        MIDPOINT_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-730-pods.yaml --replicas=0
         while [[ $($KUBECTL_PATH get pods) ]]
         do
@@ -236,6 +236,8 @@ function run_performance_test_5000_pods() {
 
     SCALE_UP_DURATION_ARRAY=()
     SCALE_DOWN_DURATION_ARRAY=()
+    CURRENT_PERFORMANCE_UP_SUM=0
+    CURRENT_PERFORMANCE_DOWN_SUM=0
     while [ ${#SCALE_DOWN_DURATION_ARRAY[@]} -lt 3 ]
     do
         ITERATION_START=$SECONDS
@@ -254,7 +256,6 @@ function run_performance_test_5000_pods() {
             SCALE_UP_DURATION_ARRAY+=( $DURATION )
             CURRENT_PERFORMANCE_UP_SUM=$((CURRENT_PERFORMANCE_UP_SUM + DURATION))
         fi
-        MIDPOINT_START=$SECONDS
         $KUBECTL_PATH scale -f ./testdata/deploy-5000-pods.yaml --replicas=0
         while [[ $($KUBECTL_PATH get pods) ]]
         do
