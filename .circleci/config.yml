@@ -183,14 +183,12 @@ workflows:
     jobs:
       - build_x86_64
       - build_aarch64
-      - hold:
-          type: approval
-          requires:
-            - build_x86_64
-            - build_aarch64
-      - all_tests:
-          requires:
-            - hold
+#- hold:
+          #type: approval
+          #requires:
+            #- build_x86_64
+            #- build_aarch64
+      - all_tests
 
   # runs integration test when new git tag is pushed.
   run-test-on-tags:
