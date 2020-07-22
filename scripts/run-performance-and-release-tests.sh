@@ -1,4 +1,6 @@
 export RUN_BOTTLEROCKET_TEST=true
+chmod +x scripts/run-integration-tests.sh
+
 ./scripts/run-integration-tests.sh
 unset RUN_BOTTLEROCKET_TEST
 
