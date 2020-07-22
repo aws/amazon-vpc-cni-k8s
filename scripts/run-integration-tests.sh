@@ -21,6 +21,7 @@ ARCH=$(go env GOARCH)
 : "${BUILD:=true}"
 : "${RUN_CONFORMANCE:=false}"
 : "${RUN_KOPS_TEST:=false}"
+: "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_WARM_IP_TEST:=false}"
 : "${RUN_WARM_ENI_TEST:=false}"
 
@@ -31,13 +32,15 @@ on_error() {
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the cluster
     if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
+        echo "Cluster was provisioned already. Deprovisioning it..."
+        __cluster_deprovisioned=1
         if [[ $RUN_KOPS_TEST == true ]]; then
-            __cluster_deprovisioned=1
             echo "Cluster was provisioned already. Deprovisioning it..."
             down-kops-cluster
+        elif [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
+            eksctl delete cluster bottlerocket
         else
             # prevent double-deprovisioning with ctrl-c during deprovisioning...
-            __cluster_deprovisioned=1
             echo "Cluster was provisioned already. Deprovisioning it..."
             down-test-cluster
         fi
@@ -153,10 +156,18 @@ mkdir -p "$TEST_CLUSTER_DIR"
 mkdir -p "$TEST_CONFIG_DIR"
 
 START=$SECONDS
-if [[ "$PROVISION" == true && "$RUN_KOPS_TEST" == true ]]; then
-    up-kops-cluster
-elif [[ "$PROVISION" == true ]]; then
-    up-test-cluster
+if [[ "$PROVISION" == true ]]; then
+    START=$SECONDS
+    if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
+        ensure_eksctl
+        eksctl create cluster --config-file ./testdata/bottlerocket.yaml
+    elif [[ "$RUN_KOPS_TEST" == true ]]; then
+        up-kops-cluster
+    else
+        up-test-cluster
+    fi
+    UP_CLUSTER_DURATION=$((SECONDS - START))
+    echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
 fi
 __cluster_created=1
 
@@ -172,11 +183,15 @@ sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PA
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
 sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
 
-if [[ $RUN_KOPS_TEST != true ]]; then
-    export KUBECONFIG=$KUBECONFIG_PATH
-else
-    run_kops_conformance
+if [[ $RUN_KOPS_TEST == true || $RUN_BOTTLEROCKET_TEST == true ]]; then
     KUBECTL_PATH=kubectl
+    export KUBECONFIG=~/.kube/config
+else
+    export KUBECONFIG=$KUBECONFIG_PATH
+fi
+
+if [[ $RUN_KOPS_TEST == true ]]; then
+    run_kops_conformance
 fi
 ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 
@@ -248,6 +263,8 @@ if [[ "$DEPROVISION" == true ]]; then
 
     if [[ "$RUN_KOPS_TEST" == true ]]; then
         down-kops-cluster
+    elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
+        eksctl delete cluster bottlerocket
     else
         down-test-cluster
     fi
