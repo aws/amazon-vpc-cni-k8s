@@ -61,8 +61,6 @@ function setup_warm_ip_test() {
         fi
     done
     echo "WARM_IP_TARGET and MINIMUM_IP_TARGET successfully propagated!"
-    echo $WARM_IP_VALUE1
-    echo $MINIMUM_IP_VALUE1
 }
 
 function setup_warm_eni_test() {
@@ -92,5 +90,4 @@ function setup_warm_eni_test() {
         fi
     done
     echo "WARM_ENI_TARGET successfully propagated!"
-    echo $WARM_ENI_VALUE1
 }
