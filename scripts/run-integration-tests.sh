@@ -9,6 +9,7 @@ source "$DIR"/lib/common.sh
 source "$DIR"/lib/aws.sh
 source "$DIR"/lib/cluster.sh
 source "$DIR"/lib/integration.sh
+source "$DIR"/lib/performance_tests.sh
 
 # Variables used in /lib/aws.sh
 OS=$(go env GOOS)
@@ -22,6 +23,8 @@ ARCH=$(go env GOARCH)
 : "${RUN_CONFORMANCE:=false}"
 : "${RUN_KOPS_TEST:=false}"
 : "${RUN_BOTTLEROCKET_TEST:=false}"
+: "${RUN_PERFORMANCE_TESTS:=false}"
+: "${RUNNING_PERFORMANCE:=false}"
 : "${RUN_WARM_IP_TEST:=false}"
 : "${RUN_WARM_ENI_TEST:=false}"
 
@@ -30,23 +33,22 @@ __cluster_deprovisioned=0
 
 on_error() {
     # Make sure we destroy any cluster that was created if we hit run into an
-    # error when attempting to run tests against the cluster
-    if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
-        echo "Cluster was provisioned already. Deprovisioning it..."
-        __cluster_deprovisioned=1
-        if [[ $RUN_KOPS_TEST == true ]]; then
-            echo "Cluster was provisioned already. Deprovisioning it..."
-            down-kops-cluster
-        elif [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
-            eksctl delete cluster bottlerocket
-        else
+    # error when attempting to run tests against the 
+    if [[ $RUNNING_PERFORMANCE == false ]]; then
+        if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
             # prevent double-deprovisioning with ctrl-c during deprovisioning...
+            __cluster_deprovisioned=1
             echo "Cluster was provisioned already. Deprovisioning it..."
-            down-test-cluster
+            if [[ $RUN_KOPS_TEST == true ]]; then
+                down-kops-cluster
+            elif [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
+                eksctl delete cluster bottlerocket
+            else
+                down-test-cluster
+            fi
         fi
+        exit 1
     fi
-    
-    exit 1
 }
 
 # test specific config, results location
@@ -178,6 +180,7 @@ echo "Using $BASE_CONFIG_PATH as a template"
 cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
 
 # Daemonset template
+echo "IMAGE NAME ${IMAGE_NAME} "
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," "$TEST_CONFIG_PATH"
 sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
@@ -256,6 +259,18 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
 
   CONFORMANCE_DURATION=$((SECONDS - START))
   echo "TIMELINE: Conformance tests took $CONFORMANCE_DURATION seconds."
+fi
+
+if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
+    echo "*******************************************************************************"
+    echo "Running performance tests on current image:"
+    echo ""
+    START=$SECONDS
+    run_performance_test_130_pods
+    scale_nodes_for_5000_pod_test
+    run_performance_test_730_pods
+    run_performance_test_5000_pods
+    PERFORMANCE_DURATION=$((SECONDS - START))
 fi
 
 if [[ "$DEPROVISION" == true ]]; then
