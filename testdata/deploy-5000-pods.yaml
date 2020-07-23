@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deploy-5000-pods
+spec:
+  replicas: 1
+  selector:
+      matchLabels:
+        app: deploy-5000-pods
+  template:
+    metadata:
+      name: test-pod-5000
+      labels:
+        app: deploy-5000-pods
+        tier: backend
+        track: stable
+    spec:
+      containers:
+        - name: hello
+          image: "kubernetes/pause:latest"
+          ports:
+            - name: http
+              containerPort: 80
+          imagePullPolicy: IfNotPresent
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: cni-test-multi-node-mng
