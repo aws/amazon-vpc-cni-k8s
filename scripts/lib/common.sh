@@ -25,6 +25,12 @@ function display_timelines() {
     echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds." 
     echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
     echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
-    echo "TIMELINE: Conformance tests took $CONFORMANCE_DURATION seconds."
+    if [[ "$RUN_CONFORMANCE" == true ]]; then
+        echo "TIMELINE: Conformance tests took $CONFORMANCE_DURATION seconds."
+    fi
+    if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
+        echo "TIMELINE: Performance tests took $PERFORMANCE_DURATION seconds."
+    fi
     echo "TIMELINE: Down processes took $DOWN_DURATION seconds."
 }
+
