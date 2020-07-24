@@ -45,15 +45,12 @@ func _main() int {
 		return 1
 	}
 
-	discoverController := k8sapi.NewController(kubeClient)
-	go discoverController.DiscoverLocalK8SPods()
-
 	eniConfigController := eniconfig.NewENIConfigController()
 	if ipamd.UseCustomNetworkCfg() {
 		go eniConfigController.Start()
 	}
 
-	ipamContext, err := ipamd.New(discoverController, eniConfigController)
+	ipamContext, err := ipamd.New(kubeClient, eniConfigController)
 
 	if err != nil {
 		log.Errorf("Initialization failure: %v", err)

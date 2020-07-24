@@ -19,14 +19,14 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	"github.com/stretchr/testify/assert"
 )
 
 var logConfig = logger.Configuration{
 	BinaryName:  "aws-cni",
 	LogLevel:    "Debug",
-	LogLocation: "/var/log/test.log",
+	LogLocation: "stdout",
 }
 
 var log = logger.New(&logConfig)
@@ -79,7 +79,7 @@ func TestDeleteENI(t *testing.T) {
 	// Add an IP and assign a pod.
 	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
 	assert.NoError(t, err)
-	podInfo := &k8sapi.K8SPodInfo{
+	podInfo := &cri.SandboxInfo{
 		Name:      "pod-1",
 		Namespace: "ns-1",
 		IP:        "1.1.1.1",
@@ -200,7 +200,7 @@ func TestDelENIIPv4Address(t *testing.T) {
 	assert.Equal(t, len(ds.eniIPPools["eni-1"].IPv4Addresses), 2)
 
 	// Assign a pod.
-	podInfo := &k8sapi.K8SPodInfo{
+	podInfo := &cri.SandboxInfo{
 		Name:      "pod-1",
 		Namespace: "ns-1",
 		IP:        "1.1.1.1",
@@ -236,7 +236,7 @@ func TestPodIPv4Address(t *testing.T) {
 
 	ds.AddIPv4AddressToStore("eni-2", "1.1.2.2")
 
-	podInfo := k8sapi.K8SPodInfo{
+	podInfo := cri.SandboxInfo{
 		Name:      "pod-1",
 		Namespace: "ns-1",
 		IP:        "1.1.1.1",
@@ -266,7 +266,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, ds.eniIPPools["eni-1"].AssignedIPv4Addresses, 1)
 
 	// wrong ip address
-	podInfo = k8sapi.K8SPodInfo{
+	podInfo = cri.SandboxInfo{
 		Name:      "pod-1",
 		Namespace: "ns-1",
 		IP:        "1.1.2.10",
@@ -275,7 +275,7 @@ func TestPodIPv4Address(t *testing.T) {
 	_, _, err = ds.AssignPodIPv4Address(&podInfo)
 	assert.Error(t, err)
 
-	podInfo = k8sapi.K8SPodInfo{
+	podInfo = cri.SandboxInfo{
 		Name:      "pod-1",
 		Namespace: "ns-2",
 		IP:        "1.1.2.2",
@@ -292,10 +292,10 @@ func TestPodIPv4Address(t *testing.T) {
 	podsInfos = ds.GetPodInfos()
 	assert.Equal(t, len(*podsInfos), 2)
 
-	podInfo = k8sapi.K8SPodInfo{
+	podInfo = cri.SandboxInfo{
 		Name:      "pod-1",
 		Namespace: "ns-3",
-		Sandbox:   "container-1",
+		ID:        "container-1",
 	}
 
 	ip, _, err = ds.AssignPodIPv4Address(&podInfo)
@@ -307,7 +307,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, ds.eniIPPools["eni-1"].AssignedIPv4Addresses, 2)
 
 	// no more IP addresses
-	podInfo = k8sapi.K8SPodInfo{
+	podInfo = cri.SandboxInfo{
 		Name:      "pod-2",
 		Namespace: "ns-3",
 	}
@@ -319,15 +319,15 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Error(t, err)
 
 	// Unassign pod which have same name/namespace, but different container
-	podInfo = k8sapi.K8SPodInfo{
+	podInfo = cri.SandboxInfo{
 		Name:      "pod-1",
 		Namespace: "ns-3",
-		Sandbox:   "container-2",
+		ID:        "container-2",
 	}
 	_, _, err = ds.UnassignPodIPv4Address(&podInfo)
 	assert.Error(t, err)
 
-	podInfo = k8sapi.K8SPodInfo{
+	podInfo = cri.SandboxInfo{
 		Name:      "pod-1",
 		Namespace: "ns-2",
 	}
@@ -368,7 +368,7 @@ func TestWarmENIInteractions(t *testing.T) {
 	ds.AddIPv4AddressToStore("eni-2", "1.1.2.2")
 	ds.AddIPv4AddressToStore("eni-3", "1.1.3.1")
 
-	podInfo := k8sapi.K8SPodInfo{
+	podInfo := cri.SandboxInfo{
 		Name:      "pod-1",
 		Namespace: "ns-1",
 		IP:        "1.1.1.1",
@@ -376,7 +376,7 @@ func TestWarmENIInteractions(t *testing.T) {
 	_, _, err := ds.AssignPodIPv4Address(&podInfo)
 	assert.NoError(t, err)
 
-	podInfo = k8sapi.K8SPodInfo{
+	podInfo = cri.SandboxInfo{
 		Name:      "pod-2",
 		Namespace: "ns-2",
 		IP:        "1.1.1.2",

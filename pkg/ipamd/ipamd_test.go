@@ -21,14 +21,13 @@ import (
 	mock_cri "github.com/aws/amazon-vpc-cni-k8s/pkg/cri/mocks"
 	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
-	mock_k8sapi "github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi/mocks"
 	mock_networkutils "github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/vishvananda/netlink"
+	k8s_fake "k8s.io/client-go/kubernetes/fake"
 	"net"
 	"os"
 	"reflect"
@@ -54,28 +53,25 @@ const (
 
 func setup(t *testing.T) (*gomock.Controller,
 	*mock_awsutils.MockAPIs,
-	*mock_k8sapi.MockK8SAPIs,
+	*k8s_fake.Clientset,
 	*mock_cri.MockAPIs,
 	*mock_networkutils.MockNetworkAPIs,
 	*mock_eniconfig.MockENIConfig) {
 	ctrl := gomock.NewController(t)
 	return ctrl,
 		mock_awsutils.NewMockAPIs(ctrl),
-		mock_k8sapi.NewMockK8SAPIs(ctrl),
+		k8s_fake.NewSimpleClientset(),
 		mock_cri.NewMockAPIs(ctrl),
 		mock_networkutils.NewMockNetworkAPIs(ctrl),
 		mock_eniconfig.NewMockENIConfig(ctrl)
 }
 
 func TestNodeInit(t *testing.T) {
-	ctrl, mockAWS, mockK8S, mockCRI, mockNetwork, _ := setup(t)
+	ctrl, mockAWS, _, mockCRI, mockNetwork, _ := setup(t)
 	defer ctrl.Finish()
-
-
 
 	mockContext := &IPAMContext{
 		awsClient:     mockAWS,
-		k8sClient:     mockK8S,
 		maxIPsPerENI:  14,
 		maxENI:        4,
 		warmENITarget: 1,
@@ -106,13 +102,10 @@ func TestNodeInit(t *testing.T) {
 	mockNetwork.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 
 	mockAWS.EXPECT().GetLocalIPv4().Return(ipaddr01)
-	k8sName := "/k8s_POD_" + "pod1" + "_" + "default" + "_" + "pod-uid" + "_0"
-	mockK8S.EXPECT().K8SGetLocalPodIPs().Return([]*k8sapi.K8SPodInfo{{Name: "pod1",
-		Namespace: "default", UID: "pod-uid", IP: ipaddr02}}, nil)
 
 	var criList = make(map[string]*cri.SandboxInfo, 0)
 	criList["pod-uid"] = &cri.SandboxInfo{ID: "sandbox-id",
-		Name: k8sName, K8SUID: "pod-uid"}
+		Name: "pod1", K8SUID: "pod-uid", IP: ipaddr02, Namespace: "default"}
 	mockCRI.EXPECT().GetRunningPodSandboxes(gomock.Any()).Return(criList, nil)
 
 	var rules []netlink.Rule
@@ -177,12 +170,12 @@ func TestIncreaseIPPoolCustomENI(t *testing.T) {
 }
 
 func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
-	ctrl, mockAWS, mockK8S, _, mockNetwork, mockENIConfig := setup(t)
+	ctrl, mockAWS, _, mockCRI, mockNetwork, mockENIConfig := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
 		awsClient:           mockAWS,
-		k8sClient:           mockK8S,
+		criClient:           mockCRI,
 		maxIPsPerENI:        14,
 		maxENI:              4,
 		warmENITarget:       1,
@@ -262,7 +255,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 
 func TestTryAddIPToENI(t *testing.T) {
 	_ = os.Unsetenv(envCustomNetworkCfg)
-	ctrl, mockAWS, mockK8S, _, mockNetwork, mockENIConfig := setup(t)
+	ctrl, mockAWS, _, mockCRI, mockNetwork, mockENIConfig := setup(t)
 	defer ctrl.Finish()
 
 	primary := true
@@ -275,7 +268,7 @@ func TestTryAddIPToENI(t *testing.T) {
 	warmIpTarget := 3
 	mockContext := &IPAMContext{
 		awsClient:     mockAWS,
-		k8sClient:     mockK8S,
+		criClient:     mockCRI,
 		maxIPsPerENI:  14,
 		maxENI:        4,
 		warmENITarget: 1,
@@ -337,12 +330,12 @@ func TestTryAddIPToENI(t *testing.T) {
 }
 
 func TestNodeIPPoolReconcile(t *testing.T) {
-	ctrl, mockAWS, mockK8S, _, mockNetwork, _ := setup(t)
+	ctrl, mockAWS, _, mockCRI, mockNetwork, _ := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
 		awsClient:     mockAWS,
-		k8sClient:     mockK8S,
+		criClient:     mockCRI,
 		networkClient: mockNetwork,
 		primaryIP:     make(map[string]string),
 		terminating:   int32(0),
@@ -428,12 +421,12 @@ func TestGetWarmENITarget(t *testing.T) {
 }
 
 func TestGetWarmIPTargetState(t *testing.T) {
-	ctrl, mockAWS, mockK8S, _, mockNetwork, _ := setup(t)
+	ctrl, mockAWS, _, mockCRI, mockNetwork, _ := setup(t)
 	defer ctrl.Finish()
 
 	mockContext := &IPAMContext{
 		awsClient:     mockAWS,
-		k8sClient:     mockK8S,
+		criClient:     mockCRI,
 		networkClient: mockNetwork,
 		primaryIP:     make(map[string]string),
 		terminating:   int32(0),
@@ -472,7 +465,7 @@ func TestGetWarmIPTargetState(t *testing.T) {
 }
 
 func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
-	ctrl, mockAWS, mockK8S, _, mockNetwork, mockENIConfig := setup(t)
+	ctrl, mockAWS, _, mockCRI, mockNetwork, mockENIConfig := setup(t)
 	defer ctrl.Finish()
 
 	type fields struct {
@@ -501,7 +494,7 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 			c := &IPAMContext{
 				awsClient:           mockAWS,
 				dataStore:           tt.fields.datastore,
-				k8sClient:           mockK8S,
+				criClient:           mockCRI,
 				useCustomNetworking: false,
 				eniConfig:           mockENIConfig,
 				networkClient:       mockNetwork,
@@ -529,7 +522,7 @@ func datastoreWith3FreeIPs() *datastore.DataStore {
 func datastoreWith1Pod1() *datastore.DataStore {
 	datastoreWith1Pod1 := datastoreWith3FreeIPs()
 
-	podInfo1 := k8sapi.K8SPodInfo{
+	podInfo1 := cri.SandboxInfo{
 		Name:      "pod-1",
 		Namespace: "ns-1",
 		IP:        ipaddr01,
@@ -541,21 +534,21 @@ func datastoreWith1Pod1() *datastore.DataStore {
 func datastoreWith3Pods() *datastore.DataStore {
 	datastoreWith3Pods := datastoreWith3FreeIPs()
 
-	podInfo1 := k8sapi.K8SPodInfo{
+	podInfo1 := cri.SandboxInfo{
 		Name:      "pod-1",
 		Namespace: "ns-1",
 		IP:        ipaddr01,
 	}
 	_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(&podInfo1)
 
-	podInfo2 := k8sapi.K8SPodInfo{
+	podInfo2 := cri.SandboxInfo{
 		Name:      "pod-2",
 		Namespace: "ns-1",
 		IP:        ipaddr02,
 	}
 	_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(&podInfo2)
 
-	podInfo3 := k8sapi.K8SPodInfo{
+	podInfo3 := cri.SandboxInfo{
 		Name:      "pod-3",
 		Namespace: "ns-1",
 		IP:        ipaddr03,
@@ -577,10 +570,10 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 	mockAWSUtils.EXPECT().GetPrimaryENI().Times(2).Return(eni1.ENIID)
 
 	tests := []struct {
-		name          string
+		name   string
 		tagMap map[string]awsutils.TagMap
-		enis          []awsutils.ENIMetadata
-		want          []awsutils.ENIMetadata
+		enis   []awsutils.ENIMetadata
+		want   []awsutils.ENIMetadata
 	}{
 		{"No tags at all", nil, allENIs, allENIs},
 		{"Primary ENI unmanaged", eni1TagMap, allENIs, allENIs},

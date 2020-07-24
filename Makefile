@@ -114,10 +114,12 @@ docker-func-test: docker
 		"$(IMAGE_NAME)"
 
 # Run unit tests
+unit-test: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
 unit-test:
 	go test -v -coverprofile=coverage.txt -covermode=atomic $(ALLPKGS)
 
 # Run unit tests with race detection (can only be run natively)
+unit-test-race: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
 unit-test-race: CGO_ENABLED=1
 unit-test-race: GOARCH=
 unit-test-race:
