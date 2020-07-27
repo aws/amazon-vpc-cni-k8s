@@ -175,8 +175,6 @@
           "name": "log-dir"
         - "mountPath": "/var/run/aws-node"
           "name": "run-dir"
-        - "mountPath": "/var/run/docker.sock"
-          "name": "dockersock"
         - "mountPath": "/var/run/dockershim.sock"
           "name": "dockershim"
       "hostNetwork": true
@@ -201,9 +199,6 @@
       - "hostPath":
           "path": "/etc/cni/net.d"
         "name": "cni-net-dir"
-      - "hostPath":
-          "path": "/var/run/docker.sock"
-        "name": "dockersock"
       - "hostPath":
           "path": "/var/run/dockershim.sock"
         "name": "dockershim"
