@@ -10,7 +10,7 @@ unset RUN_WARM_IP_TEST
 
 export RUN_WARM_ENI_TEST=true
 ./scripts/run-integration-tests.sh
-unset 
+unset RUN_WARM_ENI_TEST
 
 export RUN_CONFORMANCE=false
 

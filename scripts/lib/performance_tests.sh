@@ -14,9 +14,9 @@ function check_for_timeout() {
 function save_results_to_file() {
     echo $filename
     echo "Date", "\"slot1\"", "\"slot2\"" >> $filename
-    echo $(date +"%m-%d-%Y-%T"), $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $filename
-    echo $(date +"%m-%d-%Y-%T"), $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $filename
-    echo $(date +"%m-%d-%Y-%T"), $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $filename
+    echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $filename
+    echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $filename
+    echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $filename
 
     cat $filename
     if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then

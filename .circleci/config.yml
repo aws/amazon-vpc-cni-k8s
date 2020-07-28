@@ -167,7 +167,7 @@ jobs:
           kubectl-version: v1.14.9
       - run:
           name: Run the integration tests
-          command: ./scripts/run-performance-and-release-tests.sh
+          command: ./scripts/run-release-tests.sh
           no_output_timeout: 20m
       - save_cache:
           key: dependency-packages-store-{{ checksum "test/integration/go.mod" }}
