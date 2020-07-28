@@ -8,7 +8,7 @@
 
 # Performance
     * run from cni test account to upload test results
-        * set PERFORMANCE_TEST_S3_BUCKET_NAME to the name of the bucket (likely s3://cni-performance-test-data)
+        * set PERFORMANCE_TEST_S3_BUCKET_NAME to the name of the bucket (likely s3://cni-performance-tests)
     * set RUN_PERFORMANCE_TESTS=true
     * NOTE: if running on previous versions, change the date inside of the file to the date of release so as to not confuse graphing order
 
