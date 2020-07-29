@@ -250,7 +250,9 @@ workflows:
           requires:
             - build_x86_64
             - build_aarch64
-      - integration_test
+      - integration_test:
+          requires:
+            - hold
 
   # runs integration test when new git tag is pushed.
   run-test-on-tags:
