@@ -10,6 +10,11 @@
     * run from cni test account to upload test results
         * set PERFORMANCE_TEST_S3_BUCKET_NAME to the name of the bucket (likely s3://cni-performance-tests)
     * set RUN_PERFORMANCE_TESTS=true
+    * to view data graph, go to AWS QuickSight from the cni test account (make sure you've been added to the quicksight group)
+        * 130-pod test graph: https://us-east-1.quicksight.aws.amazon.com/sn/dashboards/5b0ac811-114e-40cd-b0c9-07f006c5d840
+        * 730-pod test graph: https://us-east-1.quicksight.aws.amazon.com/sn/dashboards/aa1b6544-88e0-47f0-9da7-8e0b7cbd1d88
+        * 5000-pod test graph: https://us-east-1.quicksight.aws.amazon.com/sn/dashboards/029169df-7a56-4249-bb69-53b57eabfa9f
+
     * NOTE: if running on previous versions, change the date inside of the file to the date of release so as to not confuse graphing order
 
 # KOPS
