@@ -57,8 +57,7 @@ type NetConf struct {
 	// MTU for eth0
 	MTU string `json:"mtu"`
 
-	PluginLogFile string `json:"pluginLogFile"`
-
+	PluginLogFile  string `json:"pluginLogFile"`
 	PluginLogLevel string `json:"pluginLogLevel"`
 }
 
@@ -84,7 +83,12 @@ func init() {
 
 // LoadNetConf converts inputs (i.e. stdin) to NetConf
 func LoadNetConf(bytes []byte) (*NetConf, logger.Logger, error) {
-	var conf NetConf
+	// Defaults
+	conf := NetConf{
+		MTU:        "9001",
+		VethPrefix: "eni",
+	}
+
 	if err := json.Unmarshal(bytes, &conf); err != nil {
 		return nil, nil, errors.Wrap(err, "add cmd: error loading config from args")
 	}
@@ -97,16 +101,6 @@ func LoadNetConf(bytes []byte) (*NetConf, logger.Logger, error) {
 	}
 	log := logger.New(&logConfig)
 
-	// MTU
-	if conf.MTU == "" {
-		log.Debug("MTU not set, defaulting to 9001")
-		conf.MTU = "9001"
-	}
-
-	// Default the host-side veth prefix to 'eni'.
-	if conf.VethPrefix == "" {
-		conf.VethPrefix = "eni"
-	}
 	if len(conf.VethPrefix) > 4 {
 		return nil, nil, errors.New("conf.VethPrefix can be at most 4 characters long")
 	}
@@ -173,20 +167,28 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.New("add cmd: failed to assign an IP address to container")
 	}
 
-	log.Infof("Received add network response for container %s interface %s: %s, table %d, external-SNAT: %v, vpcCIDR: %v",
+	log.Infof("Received add network response for container %s interface %s: IP4 %s, IP6 %s, table %d, external-SNAT: %v, vpcCIDR4: %v, vpcCIDR6: %v",
 		args.ContainerID, args.IfName,
-		r.IPv4Addr, r.DeviceNumber, r.UseExternalSNAT, r.VPCcidrs)
+		r.Ipv4Addr, r.Ipv6Addr, r.DeviceNumber, r.UseExternalSNAT, r.VpcCidrs4, r.VpcCidrs6)
 
-	addr := &net.IPNet{
-		IP:   net.ParseIP(r.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
+	addrs := make([]*net.IP, 0, 2)
+	if r.Ipv4Addr != "" {
+		addr := net.ParseIP(r.Ipv4Addr)
+		addrs = append(addrs, &addr)
+	}
+	if r.Ipv6Addr != "" {
+		addr := net.ParseIP(r.Ipv6Addr)
+		addrs = append(addrs, &addr)
 	}
 
 	// build hostVethName
 	// Note: the maximum length for linux interface name is 15
 	hostVethName := generateHostVethName(conf.VethPrefix, conf.Name, args.ContainerID, args.IfName)
 
-	err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber), r.VPCcidrs, r.UseExternalSNAT, mtu, log)
+	vpcCIDRs := r.VpcCidrs4
+	vpcCIDRs = append(vpcCIDRs, r.VpcCidrs6...)
+
+	err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addrs, int(r.DeviceNumber), vpcCIDRs, r.UseExternalSNAT, mtu, log)
 
 	if err != nil {
 		log.Errorf("Failed SetupPodNetwork for container %s: %v",
@@ -215,11 +217,18 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.Wrap(err, "add command: failed to setup network")
 	}
 
-	ips := []*current.IPConfig{
-		{
-			Version: "4",
-			Address: *addr,
-		},
+	ips := make([]*current.IPConfig, 0, len(addrs))
+	for _, addr := range addrs {
+		var version string
+		if addr4 := addr.To4(); addr4 != nil {
+			version = "4"
+		} else {
+			version = "6"
+		}
+		ips = append(ips, &current.IPConfig{
+			Version: version,
+			Address: *networkutils.IpToCIDR(addr),
+		})
 	}
 
 	result := &current.Result{
@@ -299,21 +308,31 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.New("del cmd: failed to process delete request")
 	}
 
-	deletedPodIP := net.ParseIP(r.IPv4Addr)
-	if deletedPodIP != nil {
-		addr := &net.IPNet{
-			IP:   deletedPodIP,
-			Mask: net.IPv4Mask(255, 255, 255, 255),
+	deletedAddrs := make([]*net.IP, 0, 2)
+	if r.Ipv4Addr != "" {
+		addr := net.ParseIP(r.Ipv4Addr)
+		if addr == nil {
+			log.Warnf("Container %s did not have a valid IP %s", args.ContainerID, r.Ipv4Addr)
+			return nil
 		}
-		err = driverClient.TeardownNS(addr, int(r.DeviceNumber), log)
-		if err != nil {
-			log.Errorf("Failed on TeardownPodNetwork for container ID %s: %v",
-				args.ContainerID, err)
-			return errors.Wrap(err, "del cmd: failed on tear down pod network")
-		}
-	} else {
-		log.Warnf("Container %s did not have a valid IP %s", args.ContainerID, r.IPv4Addr)
+		deletedAddrs = append(deletedAddrs, &addr)
 	}
+	if r.Ipv6Addr != "" {
+		addr := net.ParseIP(r.Ipv6Addr)
+		if addr == nil {
+			log.Warnf("Container %s did not have a valid IP6 %s", args.ContainerID, r.Ipv6Addr)
+			return nil
+		}
+		deletedAddrs = append(deletedAddrs, &addr)
+	}
+
+	err = driverClient.TeardownNS(deletedAddrs, int(r.DeviceNumber), log)
+	if err != nil {
+		log.Errorf("Failed on TeardownPodNetwork for container ID %s: %v",
+			args.ContainerID, err)
+		return errors.Wrap(err, "del cmd: failed on tear down pod network")
+	}
+
 	return nil
 }
 

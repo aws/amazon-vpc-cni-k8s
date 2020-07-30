@@ -18,9 +18,7 @@ import (
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
-
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
-
 	"github.com/stretchr/testify/assert"
 )
 
@@ -69,6 +67,7 @@ func TestServer_AddNetwork(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return(tc.vpcCIDRs)
+		m.awsutils.EXPECT().GetVPCIPv6CIDRs().Return([]string{})
 		m.network.EXPECT().UseExternalSNAT().Return(tc.useExternalSNAT)
 		if !tc.useExternalSNAT {
 			m.network.EXPECT().GetExcludeSNATCIDRs().Return(tc.snatExclusionCIDRs)
@@ -80,6 +79,7 @@ func TestServer_AddNetwork(t *testing.T) {
 		assert.Equal(t, tc.useExternalSNAT, addNetworkReply.UseExternalSNAT, tc.name)
 
 		expectedCIDRs := append([]string{vpcCIDR}, tc.snatExclusionCIDRs...)
-		assert.Equal(t, expectedCIDRs, addNetworkReply.VPCcidrs, tc.name)
+		assert.Equal(t, expectedCIDRs, addNetworkReply.VpcCidrs4, tc.name)
+		assert.Equal(t, []string{}, addNetworkReply.VpcCidrs6, tc.name)
 	}
 }

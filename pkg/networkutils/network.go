@@ -946,3 +946,15 @@ func GetEthernetMTU(envMTUValue string) int {
 	}
 	return maximumMTU
 }
+
+// 192.0.2.27 -> 192.0.2.27/32.  Works for IPv6 too.
+func IpToCIDR(ip *net.IP) *net.IPNet {
+	bits := net.IPv6len * 8
+	if ip.To4() != nil {
+		bits = net.IPv4len * 8
+	}
+	return &net.IPNet{
+		IP:   *ip,
+		Mask: net.CIDRMask(bits, bits),
+	}
+}

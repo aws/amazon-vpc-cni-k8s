@@ -83,23 +83,18 @@ func TestNodeInit(t *testing.T) {
 
 	mockContext := &IPAMContext{
 		awsClient:     m.awsutils,
-		maxIPsPerENI:  14,
-		maxENI:        4,
 		warmENITarget: 1,
 		warmIPTarget:  3,
-		primaryIP:     make(map[string]string),
-		terminating:   int32(0),
 		networkClient: m.network,
 		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint)),
+		assignIPv4:    true,
 	}
 
 	eni1, eni2 := getDummyENIMetadata()
 
 	var cidrs []string
 	m.awsutils.EXPECT().GetENILimit().Return(4, nil)
-	m.awsutils.EXPECT().GetENIipLimit().Return(14, nil)
-	m.awsutils.EXPECT().GetIPv4sFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil)
-	m.awsutils.EXPECT().GetIPv4sFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Addresses, nil)
+	m.awsutils.EXPECT().GetENIipLimit().Return(1, nil)
 	m.awsutils.EXPECT().GetVPCIPv4CIDR().Return(vpcCIDR)
 
 	_, parsedVPCCIDR, _ := net.ParseCIDR(vpcCIDR)
@@ -119,10 +114,11 @@ func TestNodeInit(t *testing.T) {
 	var rules []netlink.Rule
 	m.network.EXPECT().GetRuleList().Return(rules, nil)
 
-	m.network.EXPECT().UseExternalSNAT().Return(false)
+	m.network.EXPECT().UseExternalSNAT().AnyTimes().Return(false)
 	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any(), gomock.Any(), true)
+
 	// Add IPs
-	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
+	m.awsutils.EXPECT().AllocIPv4Addresses(secENIid, 1).Return([]string{ipaddr12}, nil)
 
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
@@ -134,7 +130,6 @@ func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata) {
 	testAddr1 := ipaddr01
 	testAddr2 := ipaddr02
 	testAddr11 := ipaddr11
-	testAddr12 := ipaddr12
 	eni1 := awsutils.ENIMetadata{
 		ENIID:          primaryENIid,
 		MAC:            primaryMAC,
@@ -157,10 +152,7 @@ func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata) {
 		SubnetIPv4CIDR: secSubnet,
 		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
 			{
-				PrivateIpAddress: &testAddr11, Primary: &notPrimary,
-			},
-			{
-				PrivateIpAddress: &testAddr12, Primary: &notPrimary,
+				PrivateIpAddress: &testAddr11, Primary: &primary,
 			},
 		},
 	}
@@ -189,8 +181,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 		networkClient:       m.network,
 		useCustomNetworking: UseCustomNetworkCfg(),
 		eniConfig:           m.eniconfig,
-		primaryIP:           make(map[string]string),
-		terminating:         int32(0),
+		assignIPv4:          true,
 	}
 
 	mockContext.dataStore = testDatastore()
@@ -251,11 +242,10 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 		},
 	}, nil)
 
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 
-	m.awsutils.EXPECT().AllocIPAddresses(eni2, 14)
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	m.awsutils.EXPECT().AllocIPv4Addresses(eni2, 14)
 
 	mockContext.increaseIPPool()
 }
@@ -281,14 +271,13 @@ func TestTryAddIPToENI(t *testing.T) {
 		warmIPTarget:  warmIpTarget,
 		networkClient: m.network,
 		eniConfig:     m.eniconfig,
-		primaryIP:     make(map[string]string),
-		terminating:   int32(0),
+		assignIPv4:    true,
 	}
 
 	mockContext.dataStore = testDatastore()
 
 	m.awsutils.EXPECT().AllocENI(false, nil, "").Return(secENIid, nil)
-	m.awsutils.EXPECT().AllocIPAddresses(secENIid, warmIpTarget)
+	m.awsutils.EXPECT().AllocIPv4Addresses(secENIid, warmIpTarget)
 	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
 		{
 			ENIID:          primaryENIid,
@@ -319,9 +308,8 @@ func TestTryAddIPToENI(t *testing.T) {
 			},
 		},
 	}, nil)
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
 
 	mockContext.increaseIPPool()
 }
@@ -333,8 +321,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	mockContext := &IPAMContext{
 		awsClient:     m.awsutils,
 		networkClient: m.network,
-		primaryIP:     make(map[string]string),
-		terminating:   int32(0),
+		assignIPv4:    true,
 	}
 
 	mockContext.dataStore = testDatastore()
@@ -423,8 +410,7 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	mockContext := &IPAMContext{
 		awsClient:     m.awsutils,
 		networkClient: m.network,
-		primaryIP:     make(map[string]string),
-		terminating:   int32(0),
+		assignIPv4:    true,
 	}
 
 	mockContext.dataStore = testDatastore()
@@ -440,8 +426,8 @@ func TestGetWarmIPTargetState(t *testing.T) {
 
 	// add 2 addresses to datastore
 	_ = mockContext.dataStore.AddENI("eni-1", 1, true)
-	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.1")
-	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.2")
+	_ = mockContext.dataStore.AddAddressToStore("eni-1", "1.1.1.1", "")
+	_ = mockContext.dataStore.AddAddressToStore("eni-1", "1.1.1.2", "")
 
 	short, over, warmIPTargetDefined = mockContext.ipTargetState()
 	assert.True(t, warmIPTargetDefined)
@@ -449,9 +435,9 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	assert.Equal(t, 0, over)
 
 	// add 3 more addresses to datastore
-	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.3")
-	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.4")
-	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.5")
+	_ = mockContext.dataStore.AddAddressToStore("eni-1", "1.1.1.3", "")
+	_ = mockContext.dataStore.AddAddressToStore("eni-1", "1.1.1.4", "")
+	_ = mockContext.dataStore.AddAddressToStore("eni-1", "1.1.1.5", "")
 
 	short, over, warmIPTargetDefined = mockContext.ipTargetState()
 	assert.True(t, warmIPTargetDefined)
@@ -496,6 +482,7 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 				maxENI:              -1,
 				warmENITarget:       tt.fields.warmENITarget,
 				warmIPTarget:        tt.fields.warmIPTarget,
+				assignIPv4:          true,
 			}
 			if got := c.nodeIPPoolTooLow(); got != tt.want {
 				t.Errorf("nodeIPPoolTooLow() = %v, want %v", got, tt.want)
@@ -511,16 +498,16 @@ func testDatastore() *datastore.DataStore {
 func datastoreWith3FreeIPs() *datastore.DataStore {
 	datastoreWith3FreeIPs := testDatastore()
 	_ = datastoreWith3FreeIPs.AddENI(primaryENIid, 1, true)
-	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr01)
-	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr02)
-	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr03)
+	_ = datastoreWith3FreeIPs.AddAddressToStore(primaryENIid, ipaddr01, "")
+	_ = datastoreWith3FreeIPs.AddAddressToStore(primaryENIid, ipaddr02, "")
+	_ = datastoreWith3FreeIPs.AddAddressToStore(primaryENIid, ipaddr03, "")
 	return datastoreWith3FreeIPs
 }
 
 func datastoreWith1Pod1() *datastore.DataStore {
 	datastoreWith1Pod1 := datastoreWith3FreeIPs()
 
-	_, _, _ = datastoreWith1Pod1.AssignPodIPv4Address(datastore.IPAMKey{
+	_, _, _, _ = datastoreWith1Pod1.AssignPodAddress(datastore.IPAMKey{
 		NetworkName: "net0",
 		ContainerID: "sandbox-1",
 		IfName:      "eth0",
@@ -537,7 +524,7 @@ func datastoreWith3Pods() *datastore.DataStore {
 			ContainerID: fmt.Sprintf("sandbox-%d", i),
 			IfName:      "eth0",
 		}
-		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key)
+		_, _, _, _ = datastoreWith3Pods.AssignPodAddress(key)
 	}
 	return datastoreWith3Pods
 }
@@ -586,4 +573,23 @@ func TestDisablingENIProvisioning(t *testing.T) {
 	_ = os.Unsetenv(envDisableENIProvisioning)
 	disabled = disablingENIProvisioning()
 	assert.False(t, disabled)
+}
+
+func TestStringPairs(t *testing.T) {
+	tests := []struct {
+		useA bool
+		a    []string
+		useB bool
+		b    []string
+		want []stringPair
+	}{
+		{false, []string{"a"}, false, []string{"b"}, nil},
+		{false, nil, true, []string{"b"}, []stringPair{{b: "b"}}},
+		{true, []string{"a", "b"}, false, nil, []stringPair{{a: "a"}, {a: "b"}}},
+		{true, []string{"a", "b"}, true, []string{"1", "2", "3"}, []stringPair{{a: "a", b: "1"}, {a: "b", b: "2"}}},
+	}
+	for _, test := range tests {
+		ret := stringPairs(test.useA, test.a, test.useB, test.b)
+		assert.Equal(t, test.want, ret)
+	}
 }
