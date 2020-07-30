@@ -728,11 +728,25 @@ func TestEC2InstanceMetadataCache_getFilteredListOfNetworkInterfaces_OneResult(t
 	attachmentID := eniAttachID
 	description := eniDescriptionPrefix + "test"
 	status := "available"
-	tagKey := eniNodeTagKey
-	tag := ec2.Tag{Key: &tagKey}
+
+	tag := []*ec2.Tag{
+		{
+			Key:   aws.String(eniNodeTagKey),
+			Value: aws.String("test"),
+		},
+	}
+
+	timein := time.Now().Local().Add(time.Minute * time.Duration(-10))
+
+	tag = append(tag, &ec2.Tag{
+		Key:   aws.String(eniCreatedAtTagKey),
+		Value: aws.String(timein.Format(time.RFC3339)),
+	})
 	attachment := &ec2.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
+	cureniID := eniID
+
 	result := &ec2.DescribeNetworkInterfacesOutput{
-		NetworkInterfaces: []*ec2.NetworkInterface{{Attachment: attachment, Status: &status, TagSet: []*ec2.Tag{&tag}, Description: &description}}}
+		NetworkInterfaces: []*ec2.NetworkInterface{{Attachment: attachment, Status: &status, TagSet: tag, Description: &description, NetworkInterfaceId: &cureniID}}}
 	mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}

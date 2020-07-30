@@ -64,6 +64,7 @@ const (
 	maxENIs                 = 128
 	clusterNameEnvVar       = "CLUSTER_NAME"
 	eniNodeTagKey           = "node.k8s.amazonaws.com/instance_id"
+	eniCreatedAtTagKey      = "node.k8s.amazonaws.com/createdAt"
 	eniClusterTagKey        = "cluster.k8s.amazonaws.com/name"
 	additionalEniTagsEnvVar = "ADDITIONAL_ENI_TAGS"
 	reservedTagKeyPrefix    = "k8s.amazonaws.com"
@@ -72,6 +73,7 @@ const (
 
 	// Stagger cleanup start time to avoid calling EC2 too much. Time in seconds.
 	eniCleanupStartupDelayMax = 300
+	eniDeleteCooldownTime     = (5 * time.Minute)
 )
 
 var (
@@ -774,10 +776,25 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 // return ENI id, error
 func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string, subnet string) (string, error) {
 	eniDescription := eniDescriptionPrefix + cache.instanceID
+	//Tag on create with create TS
+	tags := []*ec2.Tag{
+		{
+			Key:   aws.String(eniCreatedAtTagKey),
+			Value: aws.String(time.Now().Format(time.RFC3339)),
+		},
+	}
+	resourceType := "network-interface"
+	tagspec := []*ec2.TagSpecification{
+		{
+			ResourceType: &resourceType,
+			Tags:         tags,
+		},
+	}
 	input := &ec2.CreateNetworkInterfaceInput{
-		Description: aws.String(eniDescription),
-		Groups:      aws.StringSlice(cache.securityGroups.SortedList()),
-		SubnetId:    aws.String(cache.subnetID),
+		Description:       aws.String(eniDescription),
+		Groups:            aws.StringSlice(cache.securityGroups.SortedList()),
+		SubnetId:          aws.String(cache.subnetID),
+		TagSpecifications: tagspec,
 	}
 
 	if useCustomCfg {
@@ -1130,19 +1147,25 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (eniMetadata []ENIMetad
 		}
 		// Check IPv4 addresses
 		logOutOfSyncState(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
-		tags := make(map[string]string, len(ec2res.TagSet))
-		for _, tag := range ec2res.TagSet {
-			if tag.Key == nil || tag.Value == nil {
-				log.Errorf("nil tag on ENI: %v", eniMetadata.ENIID)
-				continue
-			}
-			tags[*tag.Key] = *tag.Value
-		}
+		tags := getTags(ec2res, eniMetadata.ENIID)
 		if len(tags) > 0 {
 			tagMap[eniMetadata.ENIID] = tags
 		}
 	}
 	return verifiedENIs, tagMap, trunkENI, nil
+}
+
+// getTags collects tags from an EC2 DescribeNetworkInterfaces call
+func getTags(ec2res *ec2.NetworkInterface, eniID string) map[string]string {
+	tags := make(map[string]string, len(ec2res.TagSet))
+	for _, tag := range ec2res.TagSet {
+		if tag.Key == nil || tag.Value == nil {
+			log.Errorf("nil tag on ENI: %v", eniID)
+			continue
+		}
+		tags[*tag.Key] = *tag.Value
+	}
+	return tags
 }
 
 var eniErrorMessageRegex = regexp.MustCompile("'([a-zA-Z0-9-]+)'")
@@ -1343,6 +1366,38 @@ func (cache *EC2InstanceMetadataCache) cleanUpLeakedENIs() {
 	}
 }
 
+func (cache *EC2InstanceMetadataCache) tagENIcreateTS(eniID string, maxBackoffDelay time.Duration) {
+	// Tag the ENI with "node.k8s.amazonaws.com/createdAt=currentTime"
+	tags := []*ec2.Tag{
+		{
+			Key:   aws.String(eniCreatedAtTagKey),
+			Value: aws.String(time.Now().Format(time.RFC3339)),
+		},
+	}
+
+	log.Debugf("Tag untagged ENI %s: key=%s, value=%s", eniID, aws.StringValue(tags[0].Key), aws.StringValue(tags[0].Value))
+
+	input := &ec2.CreateTagsInput{
+		Resources: []*string{
+			aws.String(eniID),
+		},
+		Tags: tags,
+	}
+
+	_ = retry.RetryNWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, maxBackoffDelay, 0.3, 2), 5, func() error {
+		start := time.Now()
+		_, err := cache.ec2SVC.CreateTagsWithContext(context.Background(), input, userAgent)
+		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil)).Observe(msSince(start))
+		if err != nil {
+			awsAPIErrInc("CreateTags", err)
+			log.Warnf("Failed to add tag to ENI %s: %v", eniID, err)
+			return err
+		}
+		log.Debugf("Successfully tagged ENI: %s", eniID)
+		return nil
+	})
+}
+
 // getFilteredListOfNetworkInterfaces calls DescribeNetworkInterfaces to get all available ENIs that were allocated by
 // the AWS CNI plugin, but were not deleted.
 func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*ec2.NetworkInterface, error) {
@@ -1372,9 +1427,31 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 	networkInterfaces := make([]*ec2.NetworkInterface, 0)
 	for _, networkInterface := range result.NetworkInterfaces {
 		// Verify the description starts with "aws-K8S-"
-		if strings.HasPrefix(aws.StringValue(networkInterface.Description), eniDescriptionPrefix) {
-			networkInterfaces = append(networkInterfaces, networkInterface)
+		if !strings.HasPrefix(aws.StringValue(networkInterface.Description), eniDescriptionPrefix) {
+			continue
 		}
+		// Check that it's not a newly created ENI
+		tags := getTags(networkInterface, aws.StringValue(networkInterface.NetworkInterfaceId))
+
+		if value, ok := tags[eniCreatedAtTagKey]; ok {
+			parsedTime, err := time.Parse(time.RFC3339, value)
+			if err != nil {
+				log.Warnf("ParsedTime format %s is wrong so retagging with current TS", parsedTime)
+				cache.tagENIcreateTS(aws.StringValue(networkInterface.NetworkInterfaceId), maxENIBackoffDelay)
+			}
+			if time.Since(parsedTime) < eniDeleteCooldownTime {
+				log.Infof("Found an ENI created less than 5 mins so not cleaning it up")
+				continue
+			}
+			log.Debugf("%v", value)
+		} else {
+			/* Set a time if we didn't find one. This is to prevent accidentally deleting ENIs that are in the
+			 * process of being attached by CNI versions v1.5.x or earlier.
+			 */
+			cache.tagENIcreateTS(aws.StringValue(networkInterface.NetworkInterfaceId), maxENIBackoffDelay)
+			continue
+		}
+		networkInterfaces = append(networkInterfaces, networkInterface)
 	}
 
 	if len(networkInterfaces) < 1 {
