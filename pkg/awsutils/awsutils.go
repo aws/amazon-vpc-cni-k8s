@@ -18,44 +18,29 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadata"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
-	metadataMACPath      = "network/interfaces/macs/"
-	metadataAZ           = "placement/availability-zone/"
-	metadataLocalIP      = "local-ipv4"
-	metadataInstanceID   = "instance-id"
-	metadataInstanceType = "instance-type"
-	metadataMAC          = "mac"
-	metadataSGs          = "/security-group-ids/"
-	metadataSubnetID     = "/subnet-id/"
-	metadataVPCcidrs     = "/vpc-ipv4-cidr-blocks/"
-	metadataDeviceNum    = "/device-number/"
-	metadataInterface    = "/interface-id/"
-	metadataSubnetCIDR   = "/subnet-ipv4-cidr-block"
-	metadataIPv4s        = "/local-ipv4s"
 	maxENIEC2APIRetries  = 12
 	maxENIBackoffDelay   = time.Minute
 	eniDescriptionPrefix = "aws-K8S-"
@@ -98,7 +83,7 @@ var (
 			Name: "awscni_aws_api_latency_ms",
 			Help: "AWS API call latency in ms",
 		},
-		[]string{"api", "error"},
+		[]string{"api", "error", "status"},
 	)
 	awsAPIErr = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -147,7 +132,7 @@ type APIs interface {
 	GetVPCIPv4CIDRs() []string
 
 	// GetLocalIPv4 returns the primary IP address on the primary ENI interface
-	GetLocalIPv4() string
+	GetLocalIPv4() net.IP
 
 	// GetPrimaryENI returns the primary ENI
 	GetPrimaryENI() string
@@ -176,7 +161,7 @@ type EC2InstanceMetadataCache struct {
 	// metadata info
 	securityGroups      StringSet
 	subnetID            string
-	localIPv4           string
+	localIPv4           net.IP
 	instanceID          string
 	instanceType        string
 	vpcIPv4CIDRs        StringSet
@@ -187,8 +172,8 @@ type EC2InstanceMetadataCache struct {
 	unmanagedENIs       StringSet
 	useCustomNetworking bool
 
-	ec2Metadata ec2metadata.EC2Metadata
-	ec2SVC      ec2wrapper.EC2
+	imds   TypedIMDS
+	ec2SVC ec2wrapper.EC2
 }
 
 // ENIMetadata contains information about an ENI
@@ -280,6 +265,37 @@ func (ss *StringSet) Has(item string) bool {
 	return ss.data.Has(item)
 }
 
+type instrumentedIMDS struct {
+	EC2MetadataIface
+}
+
+func awsReqStatus(err error) string {
+	if err == nil {
+		return "200"
+	}
+	var aerr awserr.RequestFailure
+	if errors.As(err, &aerr) {
+		return fmt.Sprint(aerr.StatusCode())
+	}
+	return "" // Unknown HTTP status code
+}
+
+func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) (string, error) {
+	start := time.Now()
+	result, err := i.EC2MetadataIface.GetMetadataWithContext(ctx, p)
+	duration := msSince(start)
+
+	awsAPILatency.WithLabelValues("GetMetadata", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(duration)
+
+	if err != nil {
+		awsAPIErrInc("GetMetadata", err)
+		log.Warnf("Failed to retrieve %s from instance metadata %v", p, err)
+		return "", err
+	}
+
+	return result, nil
+}
+
 // New creates an EC2InstanceMetadataCache
 func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 	//ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
@@ -288,10 +304,15 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 	// Initializes prometheus metrics
 	prometheusRegister()
 
-	cache := &EC2InstanceMetadataCache{}
-	cache.ec2Metadata = ec2metadata.New()
+	awsSession := session.Must(session.NewSession(aws.NewConfig().
+		WithMaxRetries(10),
+	))
+	ec2Metadata := ec2metadata.New(awsSession)
 
-	region, err := cache.ec2Metadata.Region()
+	cache := &EC2InstanceMetadataCache{}
+	cache.imds = TypedIMDS{instrumentedIMDS{ec2Metadata}}
+
+	region, err := ec2Metadata.Region()
 	if err != nil {
 		log.Errorf("Failed to retrieve region data from instance metadata %v", err)
 		return nil, errors.Wrap(err, "instance metadata: failed to retrieve region data")
@@ -323,64 +344,54 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 
 // InitWithEC2metadata initializes the EC2InstanceMetadataCache with the data retrieved from EC2 metadata service
 func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) error {
+	var err error
+
 	// retrieve availability-zone
-	az, err := cache.ec2Metadata.GetMetadata(metadataAZ)
+	cache.availabilityZone, err = cache.imds.GetAZ(ctx)
 	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve availability zone data from EC2 metadata service, %v", err)
-		return errors.Wrapf(err, "get instance metadata: failed to retrieve availability zone data")
+		return err
 	}
-	cache.availabilityZone = az
 	log.Debugf("Found availability zone: %s ", cache.availabilityZone)
 
 	// retrieve eth0 local-ipv4
-	cache.localIPv4, err = cache.ec2Metadata.GetMetadata(metadataLocalIP)
+	cache.localIPv4, err = cache.imds.GetLocalIPv4(ctx)
 	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve instance's primary ip address data from instance metadata service %v", err)
-		return errors.Wrap(err, "get instance metadata: failed to retrieve the instance primary ip address data")
+		return err
 	}
 	log.Debugf("Discovered the instance primary ip address: %s", cache.localIPv4)
 
 	// retrieve instance-id
-	cache.instanceID, err = cache.ec2Metadata.GetMetadata(metadataInstanceID)
+	cache.instanceID, err = cache.imds.GetInstanceID(ctx)
 	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve instance-id from instance metadata %v", err)
-		return errors.Wrap(err, "get instance metadata: failed to retrieve instance-id")
+		return err
 	}
 	log.Debugf("Found instance-id: %s ", cache.instanceID)
 
 	// retrieve instance-type
-	cache.instanceType, err = cache.ec2Metadata.GetMetadata(metadataInstanceType)
+	cache.instanceType, err = cache.imds.GetInstanceType(ctx)
 	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve instance-type from instance metadata %v", err)
-		return errors.Wrap(err, "get instance metadata: failed to retrieve instance-type")
+		return err
 	}
 	log.Debugf("Found instance-type: %s ", cache.instanceType)
 
 	// retrieve primary interface's mac
-	mac, err := cache.ec2Metadata.GetMetadata(metadataMAC)
+	mac, err := cache.imds.GetMAC(ctx)
 	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve primary interface MAC address from instance metadata service %v", err)
-		return errors.Wrap(err, "get instance metadata: failed to retrieve primary interface MAC address")
+		return err
 	}
 	cache.primaryENImac = mac
 	log.Debugf("Found primary interface's MAC address: %s", mac)
 
-	err = cache.setPrimaryENI()
+	cache.primaryENI, err = cache.imds.GetInterfaceID(ctx, mac)
 	if err != nil {
 		return errors.Wrap(err, "get instance metadata: failed to find primary ENI")
 	}
+	log.Debugf("%s is the primary ENI of this instance", cache.primaryENI)
 
 	// retrieve sub-id
-	cache.subnetID, err = cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataSubnetID)
+	cache.subnetID, err = cache.imds.GetSubnetID(ctx, mac)
 	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve subnet-ids from instance metadata %v", err)
-		return errors.Wrap(err, "get instance metadata: failed to retrieve subnet-ids")
+		return err
 	}
 	log.Debugf("Found subnet-id: %s ", cache.subnetID)
 
@@ -412,14 +423,12 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 
 // refreshSGIDs retrieves security groups
 func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
-	metadataSGIDs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataSGs)
-	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve security-group-ids data from instance metadata service")
-		return errors.Wrap(err, "get instance metadata: failed to retrieve security-group-ids")
-	}
+	ctx := context.TODO()
 
-	sgIDs := strings.Fields(metadataSGIDs)
+	sgIDs, err := cache.imds.GetSecurityGroupIDs(ctx, mac)
+	if err != nil {
+		return err
+	}
 
 	newSGs := StringSet{}
 	newSGs.Set(sgIDs)
@@ -465,7 +474,7 @@ func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
 			}
 			start := time.Now()
 			_, err = cache.ec2SVC.ModifyNetworkInterfaceAttributeWithContext(context.Background(), attributeInput, userAgent)
-			awsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil)).Observe(msSince(start))
+			awsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 			if err != nil {
 				awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
 				return errors.Wrap(err, "refreshSGIDs: unable to update the ENI's SG")
@@ -477,14 +486,18 @@ func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
 
 // refreshVPCIPv4CIDRs retrieves VPC IPv4 CIDR blocks
 func (cache *EC2InstanceMetadataCache) refreshVPCIPv4CIDRs(mac string) error {
-	metadataVPCIPv4CIDRs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataVPCcidrs)
+	ctx := context.TODO()
+
+	ipnets, err := cache.imds.GetVPCIPv4CIDRBlocks(ctx, mac)
 	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve vpc-ipv4-cidr-blocks from instance metadata service")
-		return errors.Wrap(err, "get instance metadata: failed to retrieve vpc-ipv4-cidr-blocks data")
+		return err
 	}
 
-	vpcIPv4CIDRs := strings.Fields(metadataVPCIPv4CIDRs)
+	// TODO: keep as net.IPNet and remove this round-trip to/from string
+	vpcIPv4CIDRs := make([]string, len(ipnets))
+	for i, ipnet := range ipnets {
+		vpcIPv4CIDRs[i] = ipnet.String()
+	}
 
 	newVpcIPv4CIDRs := StringSet{}
 	newVpcIPv4CIDRs.Set(vpcIPv4CIDRs)
@@ -501,179 +514,81 @@ func (cache *EC2InstanceMetadataCache) refreshVPCIPv4CIDRs(mac string) error {
 	return nil
 }
 
-func (cache *EC2InstanceMetadataCache) setPrimaryENI() error {
-	if cache.primaryENI != "" {
-		return nil
-	}
-
-	// retrieve number of interfaces
-	metadataENImacs, err := cache.ec2Metadata.GetMetadata(metadataMACPath)
-	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve interfaces data from instance metadata service, %v", err)
-		return errors.Wrap(err, "set primary ENI: failed to retrieve interfaces data")
-	}
-	eniMACs := strings.Fields(metadataENImacs)
-	log.Debugf("Discovered %d interfaces.", len(eniMACs))
-
-	// retrieve the attached ENIs
-	for _, eniMAC := range eniMACs {
-		// get device-number
-		device, err := cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataDeviceNum)
-		if err != nil {
-			awsAPIErrInc("GetMetadata", err)
-			log.Errorf("Failed to retrieve the device-number data of ENI %s,  %v", eniMAC, err)
-			return errors.Wrapf(err, "set primary ENI: failed to retrieve the device-number data of ENI %s", eniMAC)
-		}
-
-		deviceNum, err := strconv.ParseInt(device, 0, 32)
-		if err != nil {
-			return errors.Wrapf(err, "set primary ENI: invalid device %s", device)
-		}
-		log.Debugf("Found device-number: %d ", deviceNum)
-
-		eni, err := cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataInterface)
-		if err != nil {
-			awsAPIErrInc("GetMetadata", err)
-			log.Errorf("Failed to retrieve interface-id data from instance metadata %v", err)
-			return errors.Wrap(err, "set primary ENI: failed to retrieve interface-id")
-		}
-
-		log.Debugf("Found eni: %s ", eni)
-		result := strings.Split(eniMAC, "/")
-		if cache.primaryENImac == result[0] {
-			//primary interface
-			cache.primaryENI = eni
-			log.Debugf("%s is the primary ENI of this instance", eni)
-			return nil
-		}
-	}
-	return errors.New("set primary ENI: primary ENI not found")
-}
-
 // GetAttachedENIs retrieves ENI information from meta data service
 func (cache *EC2InstanceMetadataCache) GetAttachedENIs() (eniList []ENIMetadata, err error) {
-	// retrieve number of interfaces
-	macs, err := cache.ec2Metadata.GetMetadata(metadataMACPath)
-	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve interfaces data from instance metadata %v", err)
-		return nil, errors.Wrap(err, "get attached ENIs: failed to retrieve interfaces data")
-	}
-	macsStrs := strings.Fields(macs)
-	log.Debugf("Total number of interfaces found: %d ", len(macsStrs))
+	ctx := context.TODO()
 
-	var enis []ENIMetadata
+	// retrieve number of interfaces
+	macs, err := cache.imds.GetMACs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	log.Debugf("Total number of interfaces found: %d ", len(macs))
+
+	enis := make([]ENIMetadata, len(macs))
 	// retrieve the attached ENIs
-	for _, macStr := range macsStrs {
-		eniMetadata, err := cache.getENIMetadata(macStr)
+	for i, mac := range macs {
+		enis[i], err = cache.getENIMetadata(mac)
 		if err != nil {
-			return nil, errors.Wrapf(err, "get attached ENIs: failed to retrieve ENI metadata for ENI: %s", macStr)
+			return nil, errors.Wrapf(err, "get attached ENIs: failed to retrieve ENI metadata for ENI: %s", mac)
 		}
-		enis = append(enis, eniMetadata)
 	}
 	return enis, nil
 }
 
-func (cache *EC2InstanceMetadataCache) getENIMetadata(macStr string) (ENIMetadata, error) {
-	eniMACList := strings.Split(macStr, "/")
-	eniMAC := eniMACList[0]
+func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadata, error) {
+	ctx := context.TODO()
+
 	log.Debugf("Found ENI MAC address: %s", eniMAC)
 
-	eni, deviceNum, err := cache.getENIDeviceNumber(eniMAC)
+	eniID, err := cache.imds.GetInterfaceID(ctx, eniMAC)
 	if err != nil {
-		return ENIMetadata{}, errors.Wrapf(err, "get ENI metadata: failed to retrieve device and ENI from metadata service: %s", eniMAC)
+		return ENIMetadata{}, err
 	}
-	log.Debugf("Found ENI: %s, MAC %s, device %d", eni, eniMAC, deviceNum)
 
-	imdsIPv4s, cidr, err := cache.getIPsAndCIDR(eniMAC)
+	deviceNum, err := cache.imds.GetDeviceNumber(ctx, eniMAC)
 	if err != nil {
-		return ENIMetadata{}, errors.Wrapf(err, "get ENI metadata: failed to retrieve IPs and CIDR for ENI: %s", eniMAC)
+		return ENIMetadata{}, err
 	}
+
+	primaryMAC, err := cache.imds.GetMAC(ctx)
+	if err != nil {
+		return ENIMetadata{}, err
+	}
+	if eniMAC == primaryMAC && deviceNum != 0 {
+		// Can this even happen? To be backwards compatible, we will always use 0 here and log an error.
+		log.Errorf("Device number of primary ENI is %d! Forcing it to be 0 as expected", deviceNum)
+		deviceNum = 0
+	}
+
+	log.Debugf("Found ENI: %s, MAC %s, device %d", eniID, eniMAC, deviceNum)
+
+	cidr, err := cache.imds.GetSubnetIPv4CIDRBlock(ctx, eniMAC)
+	if err != nil {
+		return ENIMetadata{}, err
+	}
+
+	imdsIPv4s, err := cache.imds.GetLocalIPv4s(ctx, eniMAC)
+	if err != nil {
+		return ENIMetadata{}, err
+	}
+
+	// TODO: return a simpler data structure.
+	ec2ip4s := make([]*ec2.NetworkInterfacePrivateIpAddress, len(imdsIPv4s))
+	for i, ip4 := range imdsIPv4s {
+		ec2ip4s[i] = &ec2.NetworkInterfacePrivateIpAddress{
+			Primary:          aws.Bool(i == 0),
+			PrivateIpAddress: aws.String(ip4.String()),
+		}
+	}
+
 	return ENIMetadata{
-		ENIID:          eni,
+		ENIID:          eniID,
 		MAC:            eniMAC,
 		DeviceNumber:   deviceNum,
-		SubnetIPv4CIDR: cidr,
-		IPv4Addresses:  imdsIPv4s,
+		SubnetIPv4CIDR: cidr.String(),
+		IPv4Addresses:  ec2ip4s,
 	}, nil
-}
-
-// getIPsAndCIDR return list of IPs, CIDR, error
-func (cache *EC2InstanceMetadataCache) getIPsAndCIDR(eniMAC string) ([]*ec2.NetworkInterfacePrivateIpAddress, string, error) {
-	start := time.Now()
-	cidr, err := cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataSubnetCIDR)
-	awsAPILatency.WithLabelValues("GetMetadata", fmt.Sprint(err != nil)).Observe(msSince(start))
-
-	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve subnet-ipv4-cidr-block data from instance metadata %v", err)
-		return nil, "", errors.Wrapf(err, "failed to retrieve subnet-ipv4-cidr-block for ENI %s", eniMAC)
-	}
-	log.Debugf("Found CIDR %s for ENI %s", cidr, eniMAC)
-
-	start = time.Now()
-	ipv4sAsString, err := cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataIPv4s)
-	awsAPILatency.WithLabelValues("GetMetadata", fmt.Sprint(err != nil)).Observe(msSince(start))
-	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve ENI %s local-ipv4s from instance metadata service, %v", eniMAC, err)
-		return nil, "", errors.Wrapf(err, "failed to retrieve ENI %s local-ipv4s", eniMAC)
-	}
-
-	ipv4Strs := strings.Fields(ipv4sAsString)
-	log.Debugf("Found IP addresses %v on ENI %s", ipv4Strs, eniMAC)
-	ipv4s := make([]*ec2.NetworkInterfacePrivateIpAddress, 0, len(ipv4Strs))
-	// network/interfaces/macs/mac/public-ipv4s	The public IP address or Elastic IP addresses associated with the interface.
-	// There may be multiple IPv4 addresses on an instance. https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
-	isFirst := true
-	for _, ipv4 := range ipv4Strs {
-		// The first IP in the list is always the primary IP of that ENI
-		primary := isFirst
-		ip := ipv4
-		ipv4s = append(ipv4s, &ec2.NetworkInterfacePrivateIpAddress{PrivateIpAddress: &ip, Primary: &primary})
-		isFirst = false
-	}
-	return ipv4s, cidr, nil
-}
-
-// getENIDeviceNumber returns ENI ID, device number, error
-func (cache *EC2InstanceMetadataCache) getENIDeviceNumber(eniMAC string) (eniID string, deviceNumber int, err error) {
-	// get device-number
-	start := time.Now()
-	device, err := cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataDeviceNum)
-	awsAPILatency.WithLabelValues("GetMetadata", fmt.Sprint(err != nil)).Observe(msSince(start))
-	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve the device-number of ENI %s, %v", eniMAC, err)
-		return "", -1, errors.Wrapf(err, "failed to retrieve device-number for ENI %s", eniMAC)
-	}
-
-	deviceNumber, err = strconv.Atoi(device)
-	if err != nil {
-		return "", -1, errors.Wrapf(err, "invalid device %s for ENI %s", device, eniMAC)
-	}
-
-	start = time.Now()
-	eniID, err = cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataInterface)
-	awsAPILatency.WithLabelValues("GetMetadata", fmt.Sprint(err != nil)).Observe(msSince(start))
-	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve the interface-id data from instance metadata service, %v", err)
-		return "", -1, errors.Wrapf(err, "get attached ENIs: failed to retrieve interface-id for ENI %s", eniMAC)
-	}
-
-	if cache.primaryENI == eniID {
-		log.Debugf("Using device number 0 for primary ENI: %s", eniID)
-		if deviceNumber != 0 {
-			// Can this even happen? To be backwards compatible, we will always return 0 here and log an error.
-			log.Errorf("Device number of primary ENI is %d! It was expected to be 0", deviceNumber)
-			return eniID, 0, nil
-		}
-		return eniID, deviceNumber, nil
-	}
-	// 0 is reserved for primary ENI
-	return eniID, deviceNumber, nil
 }
 
 // awsGetFreeDeviceNumber calls EC2 API DescribeInstances to get the next free device index
@@ -684,7 +599,7 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int, error) {
 
 	start := time.Now()
 	result, err := cache.ec2SVC.DescribeInstancesWithContext(context.Background(), input, userAgent)
-	awsAPILatency.WithLabelValues("DescribeInstances", fmt.Sprint(err != nil)).Observe(msSince(start))
+	awsAPILatency.WithLabelValues("DescribeInstances", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("DescribeInstances", err)
 		log.Errorf("awsGetFreeDeviceNumber: Unable to retrieve instance data from EC2 control plane %v", err)
@@ -750,7 +665,7 @@ func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string,
 
 	start := time.Now()
 	_, err = cache.ec2SVC.ModifyNetworkInterfaceAttributeWithContext(context.Background(), attributeInput, userAgent)
-	awsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil)).Observe(msSince(start))
+	awsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
 		err := cache.FreeENI(eniID)
@@ -779,7 +694,7 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 	}
 	start := time.Now()
 	attachOutput, err := cache.ec2SVC.AttachNetworkInterfaceWithContext(context.Background(), attachInput, userAgent)
-	awsAPILatency.WithLabelValues("AttachNetworkInterface", fmt.Sprint(err != nil)).Observe(msSince(start))
+	awsAPILatency.WithLabelValues("AttachNetworkInterface", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("AttachNetworkInterface", err)
 		log.Errorf("Failed to attach ENI %s: %v", eniID, err)
@@ -827,7 +742,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 	log.Infof("Creating ENI with security groups: %v in subnet: %s", sgs, *input.SubnetId)
 	start := time.Now()
 	result, err := cache.ec2SVC.CreateNetworkInterfaceWithContext(context.Background(), input, userAgent)
-	awsAPILatency.WithLabelValues("CreateNetworkInterface", fmt.Sprint(err != nil)).Observe(msSince(start))
+	awsAPILatency.WithLabelValues("CreateNetworkInterface", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("CreateNetworkInterface", err)
 		log.Errorf("Failed to CreateNetworkInterface %v", err)
@@ -880,7 +795,7 @@ func (cache *EC2InstanceMetadataCache) tagENI(eniID string, maxBackoffDelay time
 	_ = retry.NWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, maxBackoffDelay, 0.3, 2), 5, func() error {
 		start := time.Now()
 		_, err := cache.ec2SVC.CreateTagsWithContext(context.Background(), input, userAgent)
-		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil)).Observe(msSince(start))
+		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 		if err != nil {
 			awsAPIErrInc("CreateTags", err)
 			log.Warnf("Failed to tag the newly created ENI %s:", eniID)
@@ -970,7 +885,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 	err = retry.NWithBackoff(retry.NewSimpleBackoff(time.Millisecond*200, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
 		start := time.Now()
 		_, ec2Err := cache.ec2SVC.DetachNetworkInterfaceWithContext(context.Background(), detachInput, userAgent)
-		awsAPILatency.WithLabelValues("DetachNetworkInterface", fmt.Sprint(ec2Err != nil)).Observe(msSince(start))
+		awsAPILatency.WithLabelValues("DetachNetworkInterface", fmt.Sprint(ec2Err != nil), awsReqStatus(ec2Err)).Observe(msSince(start))
 		if ec2Err != nil {
 			awsAPIErrInc("DetachNetworkInterface", ec2Err)
 			log.Errorf("Failed to detach ENI %s %v", eniName, ec2Err)
@@ -1005,7 +920,7 @@ func (cache *EC2InstanceMetadataCache) getENIAttachmentID(eniID string) (*string
 
 	start := time.Now()
 	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input, userAgent)
-	awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil)).Observe(msSince(start))
+	awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
@@ -1040,7 +955,7 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string, maxBackoffDelay
 	err := retry.NWithBackoff(retry.NewSimpleBackoff(time.Millisecond*500, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
 		start := time.Now()
 		_, ec2Err := cache.ec2SVC.DeleteNetworkInterfaceWithContext(context.Background(), deleteInput, userAgent)
-		awsAPILatency.WithLabelValues("DeleteNetworkInterface", fmt.Sprint(ec2Err != nil)).Observe(msSince(start))
+		awsAPILatency.WithLabelValues("DeleteNetworkInterface", fmt.Sprint(ec2Err != nil), awsReqStatus(ec2Err)).Observe(msSince(start))
 		if ec2Err != nil {
 			if aerr, ok := ec2Err.(awserr.Error); ok {
 				// If already deleted, we are good
@@ -1067,7 +982,7 @@ func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList [
 
 	start := time.Now()
 	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input, userAgent)
-	awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil)).Observe(msSince(start))
+	awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
@@ -1088,8 +1003,8 @@ func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList [
 	return firstNI.PrivateIpAddresses, nil
 }
 
-// DescribeAllENIs calls EC2 to refrech the ENIMetadata and tags for all attached ENIs
-func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (eniMetadata []ENIMetadata, tagMap map[string]TagMap, trunkENI string, err error) {
+// DescribeAllENIs calls EC2 to refresh the ENIMetadata and tags for all attached ENIs
+func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[string]TagMap, string, error) {
 	// Fetch all local ENI info from metadata
 	allENIs, err := cache.GetAttachedENIs()
 	if err != nil {
@@ -1109,7 +1024,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (eniMetadata []ENIMetad
 		input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: aws.StringSlice(eniIDs)}
 		start := time.Now()
 		ec2Response, err = cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input, userAgent)
-		awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil)).Observe(msSince(start))
+		awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 		if err == nil {
 			// No error, exit the loop
 			break
@@ -1148,7 +1063,8 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (eniMetadata []ENIMetad
 	}
 
 	// Collect ENI response into ENI metadata and tags.
-	tagMap = make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
+	var trunkENI string
+	tagMap := make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
 	for _, ec2res := range ec2Response.NetworkInterfaces {
 		if ec2res.Attachment != nil && aws.Int64Value(ec2res.Attachment.DeviceIndex) == 0 && !aws.BoolValue(ec2res.Attachment.DeleteOnTermination) {
 			log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
@@ -1240,7 +1156,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddress(eniID string) error {
 
 	start := time.Now()
 	output, err := cache.ec2SVC.AssignPrivateIpAddressesWithContext(context.Background(), input, userAgent)
-	awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil)).Observe(msSince(start))
+	awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("AssignPrivateIpAddresses", err)
 		log.Errorf("Failed to allocate a private IP address  %v", err)
@@ -1318,7 +1234,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 
 	start := time.Now()
 	output, err := cache.ec2SVC.AssignPrivateIpAddressesWithContext(context.Background(), input, userAgent)
-	awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil)).Observe(msSince(start))
+	awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		if containsPrivateIPAddressLimitExceededError(err) {
 			log.Debug("AssignPrivateIpAddresses returned PrivateIpAddressLimitExceeded. This can happen if the data store is out of sync." +
@@ -1372,7 +1288,7 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 		log.Debugf("Not able to find the right ENI yet (attempt %d/%d)", attempt, maxENIEC2APIRetries)
 		return ErrENINotFound
 	})
-	awsAPILatency.WithLabelValues("waitForENIAndIPsAttached", fmt.Sprint(err != nil)).Observe(msSince(start))
+	awsAPILatency.WithLabelValues("waitForENIAndIPsAttached", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		// If we have at least 1 Secondary IP, by now return what we have without an error
 		if err == ErrAllSecondaryIPsNotFound {
@@ -1403,7 +1319,7 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []st
 
 	start := time.Now()
 	_, err := cache.ec2SVC.UnassignPrivateIpAddressesWithContext(context.Background(), input, userAgent)
-	awsAPILatency.WithLabelValues("UnassignPrivateIpAddresses", fmt.Sprint(err != nil)).Observe(msSince(start))
+	awsAPILatency.WithLabelValues("UnassignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("UnassignPrivateIpAddresses", err)
 		log.Errorf("Failed to deallocate a private IP address %v", err)
@@ -1461,7 +1377,7 @@ func (cache *EC2InstanceMetadataCache) tagENIcreateTS(eniID string, maxBackoffDe
 	_ = retry.NWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, maxBackoffDelay, 0.3, 2), 5, func() error {
 		start := time.Now()
 		_, err := cache.ec2SVC.CreateTagsWithContext(context.Background(), input, userAgent)
-		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil)).Observe(msSince(start))
+		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 		if err != nil {
 			awsAPIErrInc("CreateTags", err)
 			log.Warnf("Failed to add tag to ENI %s: %v", eniID, err)
@@ -1543,7 +1459,7 @@ func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDRs() []string {
 }
 
 // GetLocalIPv4 returns the primary IP address on the primary interface
-func (cache *EC2InstanceMetadataCache) GetLocalIPv4() string {
+func (cache *EC2InstanceMetadataCache) GetLocalIPv4() net.IP {
 	return cache.localIPv4
 }
 
