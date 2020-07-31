@@ -59,7 +59,6 @@ const (
 	maxENIEC2APIRetries  = 12
 	maxENIBackoffDelay   = time.Minute
 	eniDescriptionPrefix = "aws-K8S-"
-	metadataOwnerID      = "/owner-id"
 
 	// AllocENI need to choose a first free device number between 0 and maxENI
 	maxENIs                 = 128
@@ -171,7 +170,6 @@ type EC2InstanceMetadataCache struct {
 	primaryENImac    string
 	availabilityZone string
 	region           string
-	accountID        string
 
 	ec2Metadata ec2metadata.EC2Metadata
 	ec2SVC      ec2wrapper.EC2
@@ -457,17 +455,6 @@ func (cache *EC2InstanceMetadataCache) setPrimaryENI() error {
 			return errors.Wrapf(err, "set primary ENI: invalid device %s", device)
 		}
 		log.Debugf("Found device-number: %d ", deviceNum)
-
-		if cache.accountID == "" {
-			ownerID, err := cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataOwnerID)
-			if err != nil {
-				awsAPIErrInc("GetMetadata", err)
-				log.Errorf("Failed to retrieve owner ID from instance metadata %v", err)
-				return errors.Wrap(err, "set primary ENI: failed to retrieve ownerID")
-			}
-			log.Debugf("Found account ID: %s", ownerID)
-			cache.accountID = ownerID
-		}
 
 		eni, err := cache.ec2Metadata.GetMetadata(metadataMACPath + eniMAC + metadataInterface)
 		if err != nil {
