@@ -338,14 +338,9 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
-	_, vpcCIDR, err := net.ParseCIDR(c.awsClient.GetVPCIPv4CIDR())
-	if err != nil {
-		return errors.Wrap(err, "ipamd init: failed to retrieve VPC CIDR")
-	}
-
 	vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
 	primaryIP := net.ParseIP(c.awsClient.GetLocalIPv4())
-	err = c.networkClient.SetupHostNetwork(vpcCIDR, vpcCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP)
+	err = c.networkClient.SetupHostNetwork(vpcCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP)
 	if err != nil {
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
