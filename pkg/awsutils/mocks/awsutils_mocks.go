@@ -238,20 +238,6 @@ func (mr *MockAPIsMockRecorder) GetPrimaryENImac() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPrimaryENImac", reflect.TypeOf((*MockAPIs)(nil).GetPrimaryENImac))
 }
 
-// GetVPCIPv4CIDR mocks base method
-func (m *MockAPIs) GetVPCIPv4CIDR() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetVPCIPv4CIDR")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetVPCIPv4CIDR indicates an expected call of GetVPCIPv4CIDR
-func (mr *MockAPIsMockRecorder) GetVPCIPv4CIDR() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVPCIPv4CIDR", reflect.TypeOf((*MockAPIs)(nil).GetVPCIPv4CIDR))
-}
-
 // GetVPCIPv4CIDRs mocks base method
 func (m *MockAPIs) GetVPCIPv4CIDRs() []string {
 	m.ctrl.T.Helper()
