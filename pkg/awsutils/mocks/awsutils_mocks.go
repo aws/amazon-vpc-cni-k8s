@@ -19,6 +19,7 @@
 package mock_awsutils
 
 import (
+	net "net"
 	reflect "reflect"
 
 	awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
@@ -198,10 +199,10 @@ func (mr *MockAPIsMockRecorder) GetIPv4sFromEC2(arg0 interface{}) *gomock.Call {
 }
 
 // GetLocalIPv4 mocks base method
-func (m *MockAPIs) GetLocalIPv4() string {
+func (m *MockAPIs) GetLocalIPv4() net.IP {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetLocalIPv4")
-	ret0, _ := ret[0].(string)
+	ret0, _ := ret[0].(net.IP)
 	return ret0
 }
 

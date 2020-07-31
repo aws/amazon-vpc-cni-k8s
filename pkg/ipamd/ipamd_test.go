@@ -122,7 +122,7 @@ func TestNodeInit(t *testing.T) {
 	m.awsutils.EXPECT().DescribeAllENIs().Return(eniMetadataSlice, map[string]awsutils.TagMap{}, "", nil)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 
-	m.awsutils.EXPECT().GetLocalIPv4().Return(ipaddr01)
+	m.awsutils.EXPECT().GetLocalIPv4().Return(primaryIP)
 
 	var rules []netlink.Rule
 	m.network.EXPECT().GetRuleList().Return(rules, nil)
