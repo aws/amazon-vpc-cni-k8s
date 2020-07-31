@@ -113,7 +113,7 @@ var log = logger.Get()
 // NetworkAPIs defines the host level and the ENI level network related operations
 type NetworkAPIs interface {
 	// SetupNodeNetwork performs node level network configuration
-	SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error
+	SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error
 	// SetupENINetwork performs eni level network configuration
 	SetupENINetwork(eniIP string, mac string, table int, subnetCIDR string) error
 	UseExternalSNAT() bool
@@ -205,22 +205,10 @@ func findPrimaryInterfaceName(primaryMAC string) (string, error) {
 }
 
 // SetupHostNetwork performs node level network configuration
-func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error {
+func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error {
 	log.Info("Setting up host network... ")
 
-	hostRule := n.netLink.NewRule()
-	hostRule.Dst = vpcCIDR
-	hostRule.Table = mainRoutingTable
-	hostRule.Priority = hostRulePriority
-	hostRule.Invert = true
-
-	// Cleanup previous rule first before CNI 1.3
-	err := n.netLink.RuleDel(hostRule)
-	if err != nil && !containsNoSuchRule(err) {
-		log.Errorf("Failed to cleanup old host IP rule: %v", err)
-		return errors.Wrapf(err, "host network setup: failed to delete old host rule")
-	}
-
+	var err error
 	primaryIntf := "eth0"
 	if n.nodePortSupportEnabled {
 		primaryIntf, err = findPrimaryInterfaceName(primaryMAC)
@@ -419,18 +407,6 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []string, p
 			"-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", n.mainENIMark),
 		},
 	})
-
-	// remove pre-1.3 AWS SNAT rules
-	iptableRules = append(iptableRules, iptablesRule{
-		name:        fmt.Sprintf("rule for primary address %s", primaryAddr),
-		shouldExist: false,
-		table:       "nat",
-		chain:       "POSTROUTING",
-		rule: []string{
-			"!", "-d", vpcCIDR.String(),
-			"-m", "comment", "--comment", "AWS, SNAT",
-			"-m", "addrtype", "!", "--dst-type", "LOCAL",
-			"-j", "SNAT", "--to-source", primaryAddr.String()}})
 
 	for _, rule := range iptableRules {
 		log.Debugf("execute iptable rule : %s", rule.name)
