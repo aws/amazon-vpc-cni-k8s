@@ -34,11 +34,6 @@ const (
 	cniPodName = "aws-node"
 )
 
-// K8SAPIs defines interface to use kubelet introspection API
-type K8SAPIs interface {
-	K8SGetLocalPodIPs() ([]*K8SPodInfo, error)
-}
-
 // K8SPodInfo provides pod info
 type K8SPodInfo struct {
 	// Name is pod's name
@@ -53,9 +48,6 @@ type K8SPodInfo struct {
 }
 
 var log = logger.Get()
-
-// ErrInformerNotSynced indicates that it has not synced with API server yet
-var ErrInformerNotSynced = errors.New("discovery: informer not synced")
 
 // Controller defines global context for discovery controller
 type Controller struct {
@@ -160,28 +152,6 @@ func (d *Controller) DiscoverK8SPods(podListWatcher *cache.ListWatch) {
 
 	// Wait forever
 	select {}
-}
-
-// K8SGetLocalPodIPs return the list of pods running on the local nodes
-func (d *Controller) K8SGetLocalPodIPs() ([]*K8SPodInfo, error) {
-	var localPods []*K8SPodInfo
-
-	if !d.synced {
-		log.Info("GetLocalPods: informer not synced yet")
-		return nil, ErrInformerNotSynced
-	}
-
-	log.Debug("GetLocalPods start ...")
-	d.workerPodsLock.Lock()
-	defer d.workerPodsLock.Unlock()
-
-	for _, pod := range d.workerPods {
-		log.Infof("K8SGetLocalPodIPs discovered local Pods: %s %s %s %s",
-			pod.Name, pod.Namespace, pod.IP, pod.UID)
-		localPods = append(localPods, pod)
-	}
-
-	return localPods, nil
 }
 
 // The rest of logic/code are taken from kubernetes/client-go/examples/workqueue
