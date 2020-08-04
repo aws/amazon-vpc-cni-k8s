@@ -13,5 +13,4 @@
 
 package cninswrapper
 
-//go:generate go run github.com/golang/mock/mockgen -destination mocks/cninswrapper_mocks.go -copyright_file ../../scripts/copyright.txt . NS
 //go:generate go run github.com/golang/mock/mockgen -destination mock_ns/netns_mocks.go -copyright_file ../../scripts/copyright.txt github.com/containernetworking/plugins/pkg/ns NetNS

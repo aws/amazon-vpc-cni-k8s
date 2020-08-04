@@ -164,7 +164,6 @@ type EC2InstanceMetadataCache struct {
 	localIPv4        string
 	instanceID       string
 	instanceType     string
-	vpcIPv4CIDR      string
 	vpcIPv4CIDRs     StringSet
 	primaryENI       string
 	primaryENImac    string

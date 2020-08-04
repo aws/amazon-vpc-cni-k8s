@@ -19,8 +19,6 @@ type Timer interface {
 // DefaultTime is a Time that behaves normally
 type DefaultTime struct{}
 
-var _time Time = &DefaultTime{}
-
 // Now returns the current time
 func (*DefaultTime) Now() time.Time {
 	return time.Now()
@@ -41,20 +39,4 @@ func (*DefaultTime) After(d time.Duration) <-chan time.Time {
 // Stop method.
 func (*DefaultTime) AfterFunc(d time.Duration, f func()) Timer {
 	return time.AfterFunc(d, f)
-}
-
-// SetTime configures what 'Time' implementation to use for each of the
-// package-level methods.
-func SetTime(t Time) {
-	_time = t
-}
-
-// Now returns the implementation's current time
-func Now() time.Time {
-	return _time.Now()
-}
-
-// Since returns the time different from Now and the given time t
-func Since(t time.Time) time.Duration {
-	return _time.Now().Sub(t)
 }
