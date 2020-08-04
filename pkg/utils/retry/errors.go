@@ -13,11 +13,6 @@
 
 package retry
 
-import (
-	"fmt"
-	"strings"
-)
-
 type Retriable interface {
 	Retry() bool
 }
@@ -51,26 +46,4 @@ func NewRetriableError(retriable Retriable, err error) RetriableError {
 		retriable,
 		err,
 	}
-}
-
-type AttributeError struct {
-	err string
-}
-
-func (e AttributeError) Error() string {
-	return e.err
-}
-
-// MultiErr Implements error
-type MultiErr struct {
-	errors []error
-}
-
-func (me MultiErr) Error() string {
-	ret := make([]string, len(me.errors)+1)
-	ret[0] = "Multiple error:"
-	for ndx, err := range me.errors {
-		ret[ndx+1] = fmt.Sprintf("\t%d: %s", ndx, err.Error())
-	}
-	return strings.Join(ret, "\n")
 }
