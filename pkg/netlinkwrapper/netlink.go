@@ -166,23 +166,3 @@ func IsNotExistsError(err error) bool {
 	}
 	return false
 }
-
-// IsRouteExistsError returns true if the error type is syscall.EEXIST
-// This helps us determine if we should ignore this error as the route
-// we want to add has been added already in routing table
-func IsRouteExistsError(err error) bool {
-	if errno, ok := err.(syscall.Errno); ok {
-		return errno == syscall.EEXIST
-	}
-	return false
-}
-
-// IsNetworkUnreachableError returns true if the error type is syscall.ENETUNREACH
-// This helps us determine if we should ignore this error as the route the call
-// depends on is not plumbed ready yet
-func IsNetworkUnreachableError(err error) bool {
-	if errno, ok := err.(syscall.Errno); ok {
-		return errno == syscall.ENETUNREACH
-	}
-	return false
-}
