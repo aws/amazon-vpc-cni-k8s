@@ -115,7 +115,7 @@ Specifies whether `NodePort` services are enabled on a worker node's primary net
 
 `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG`
 
-Type: Boolean
+Type: String
 
 Default: `false`
 
@@ -213,7 +213,7 @@ IP rule will be applied. If an item is not a valid ipv4 range it will be skipped
 
 `WARM_ENI_TARGET`
 
-Type: Integer
+Type: String
 
 Default: `1`
 
