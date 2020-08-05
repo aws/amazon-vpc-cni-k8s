@@ -68,7 +68,7 @@ func setup(t *testing.T) (*gomock.Controller,
 func TestInitWithEC2metadata(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
 	defer cancel()
-	ctrl, mockMetadata, _ := setup(t)
+	ctrl, mockMetadata, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
 	metadataVPCIPv4CIDRs := "192.168.0.0/16	100.66.0.0/1"
@@ -77,15 +77,19 @@ func TestInitWithEC2metadata(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil).AnyTimes()
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil).AnyTimes()
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Return(subnetCIDR, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(metadataVPCIPv4CIDRs, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Return("", nil)
 
-	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
+	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata, ec2SVC: mockEC2}
 	err := ins.initWithEC2Metadata(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, az, ins.availabilityZone)
@@ -409,12 +413,15 @@ func TestTagEni(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceType).Return(instanceType, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil).AnyTimes()
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil).AnyTimes()
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Return(subnetCIDR, nil).AnyTimes()
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(vpcCIDR, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Return("", nil)
+	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata, ec2SVC: mockEC2}
 	err := ins.initWithEC2Metadata(ctx)
@@ -424,6 +431,7 @@ func TestTagEni(t *testing.T) {
 	mockEC2.EXPECT().CreateTagsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("tagging failed"))
 	mockEC2.EXPECT().CreateTagsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("tagging failed"))
 	mockEC2.EXPECT().CreateTagsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+
 	ins.tagENI(eniID, time.Millisecond)
 	assert.NoError(t, err)
 }

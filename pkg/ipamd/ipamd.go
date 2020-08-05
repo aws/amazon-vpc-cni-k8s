@@ -194,7 +194,6 @@ type IPAMContext struct {
 	networkClient        networkutils.NetworkAPIs
 	maxIPsPerENI         int
 	maxENI               int
-	unmanagedENIs        UnmanagedENISet // a set of ENIs tagged with "node.k8s.amazonaws.com/no_manage"
 	unmanagedENI         int
 	warmENITarget        int
 	warmIPTarget         int
@@ -211,48 +210,23 @@ type IPAMContext struct {
 	myNodeName             string
 }
 
-// UnmanagedENISet keeps a set of ENI IDs for ENIs tagged with "node.k8s.amazonaws.com/no_manage"
-type UnmanagedENISet struct {
-	sync.RWMutex
-	data map[string]bool
-}
-
-func (u *UnmanagedENISet) isUnmanaged(eniID string) bool {
-	val, ok := u.data[eniID]
-	return ok && val
-}
-
-func (u *UnmanagedENISet) reset() {
-	u.Lock()
-	defer u.Unlock()
-	u.data = make(map[string]bool)
-}
-
-func (u *UnmanagedENISet) add(eniID string) {
-	u.Lock()
-	defer u.Unlock()
-	if len(u.data) == 0 {
-		u.data = make(map[string]bool)
-	}
-	u.data[eniID] = true
-}
-
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
 func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
-	c.unmanagedENIs.reset()
 	if len(tagMap) == 0 {
 		return
 	}
+	var unmanagedENIlist []string
 	for eniID, tags := range tagMap {
 		if tags[eniNoManageTagKey] == "true" {
 			if eniID == c.awsClient.GetPrimaryENI() {
 				log.Debugf("Ignoring no_manage tag on primary ENI %s", eniID)
 			} else {
 				log.Debugf("Marking ENI %s tagged with %s as being unmanaged", eniID, eniNoManageTagKey)
-				c.unmanagedENIs.add(eniID)
+				unmanagedENIlist = append(unmanagedENIlist, eniID)
 			}
 		}
 	}
+	c.awsClient.SetUnmanagedENIs(unmanagedENIlist)
 }
 
 // ReconcileCooldownCache keep track of recently freed IPs to avoid reading stale EC2 metadata
@@ -314,8 +288,9 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 	c.k8sClient = k8sapiClient
 	c.networkClient = networkutils.New()
 	c.eniConfig = eniConfig
+	c.useCustomNetworking = UseCustomNetworkCfg()
 
-	client, err := awsutils.New()
+	client, err := awsutils.New(c.useCustomNetworking)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
@@ -326,11 +301,10 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 	c.warmENITarget = getWarmENITarget()
 	c.warmIPTarget = getWarmIPTarget()
 	c.minimumIPTarget = getMinimumIPTarget()
-	c.useCustomNetworking = UseCustomNetworkCfg()
+
 	c.disableENIProvisioning = disablingENIProvisioning()
 	c.enablePodENI = enablePodENI()
 	c.myNodeName = os.Getenv("MY_NODE_NAME")
-
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer)
 
@@ -1181,7 +1155,7 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 	ret := make([]awsutils.ENIMetadata, 0, len(enis))
 	for _, eni := range enis {
 		// If we have unmanaged ENIs, filter them out
-		if c.unmanagedENIs.isUnmanaged(eni.ENIID) {
+		if c.awsClient.IsUnmanagedENI(eni.ENIID) {
 			log.Debugf("Skipping ENI %s: tagged with %s", eni.ENIID, eniNoManageTagKey)
 			numFiltered++
 			continue

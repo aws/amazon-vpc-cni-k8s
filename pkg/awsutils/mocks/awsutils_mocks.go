@@ -252,3 +252,31 @@ func (mr *MockAPIsMockRecorder) GetVPCIPv4CIDRs() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVPCIPv4CIDRs", reflect.TypeOf((*MockAPIs)(nil).GetVPCIPv4CIDRs))
 }
+
+// IsUnmanagedENI mocks base method
+func (m *MockAPIs) IsUnmanagedENI(arg0 string) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsUnmanagedENI", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsUnmanagedENI indicates an expected call of IsUnmanagedENI
+func (mr *MockAPIsMockRecorder) IsUnmanagedENI(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsUnmanagedENI", reflect.TypeOf((*MockAPIs)(nil).IsUnmanagedENI), arg0)
+}
+
+// SetUnmanagedENIs mocks base method
+func (m *MockAPIs) SetUnmanagedENIs(arg0 []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetUnmanagedENIs", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetUnmanagedENIs indicates an expected call of SetUnmanagedENIs
+func (mr *MockAPIsMockRecorder) SetUnmanagedENIs(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetUnmanagedENIs", reflect.TypeOf((*MockAPIs)(nil).SetUnmanagedENIs), arg0)
+}
