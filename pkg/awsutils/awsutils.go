@@ -154,21 +154,29 @@ type APIs interface {
 
 	// GetPrimaryENImac returns the mac address of the primary ENI
 	GetPrimaryENImac() string
+
+	//Setunmanaged ENI
+	SetUnmanagedENIs(eniID []string) error
+
+	//isUnmanagedENI
+	IsUnmanagedENI(eniID string) bool
 }
 
 // EC2InstanceMetadataCache caches instance metadata
 type EC2InstanceMetadataCache struct {
 	// metadata info
-	securityGroups   StringSet
-	subnetID         string
-	localIPv4        string
-	instanceID       string
-	instanceType     string
-	vpcIPv4CIDRs     StringSet
-	primaryENI       string
-	primaryENImac    string
-	availabilityZone string
-	region           string
+	securityGroups      StringSet
+	subnetID            string
+	localIPv4           string
+	instanceID          string
+	instanceType        string
+	vpcIPv4CIDRs        StringSet
+	primaryENI          string
+	primaryENImac       string
+	availabilityZone    string
+	region              string
+	unmanagedENIs       StringSet
+	useCustomNetworking bool
 
 	ec2Metadata ec2metadata.EC2Metadata
 	ec2SVC      ec2wrapper.EC2
@@ -251,8 +259,14 @@ func (ss *StringSet) Difference(other *StringSet) *StringSet {
 	return &StringSet{data: ss.data.Difference(other.data)}
 }
 
+func (ss *StringSet) Has(item string) bool {
+	ss.RLock()
+	defer ss.RUnlock()
+	return ss.data.Has(item)
+}
+
 // New creates an EC2InstanceMetadataCache
-func New() (*EC2InstanceMetadataCache, error) {
+func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 	//ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
 	ctx := context.Background()
 
@@ -269,6 +283,9 @@ func New() (*EC2InstanceMetadataCache, error) {
 	}
 	cache.region = region
 	log.Debugf("Discovered region: %s", cache.region)
+
+	cache.useCustomNetworking = useCustomNetworking
+	log.Infof("Custom networking %v", cache.useCustomNetworking)
 
 	sess, err := session.NewSession(&aws.Config{Region: aws.String(cache.region), MaxRetries: aws.Int(15)})
 	if err != nil {
@@ -392,15 +409,56 @@ func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
 	newSGs := StringSet{}
 	newSGs.Set(sgIDs)
 	addedSGs := newSGs.Difference(&cache.securityGroups)
+	addedSGsCount := 0
 	deletedSGs := cache.securityGroups.Difference(&newSGs)
+	deletedSGsCount := 0
 
 	for _, sg := range addedSGs.SortedList() {
 		log.Infof("Found %s, added to ipamd cache", sg)
+		addedSGsCount++
 	}
 	for _, sg := range deletedSGs.SortedList() {
 		log.Infof("Removed %s from ipamd cache", sg)
+		deletedSGsCount++
 	}
 	cache.securityGroups.Set(sgIDs)
+
+	if !cache.useCustomNetworking && (addedSGsCount != 0 || deletedSGsCount != 0) {
+		var sgIDsPtrs []*string
+		sgIDsPtrs = aws.StringSlice(sgIDs)
+
+		allENIs, err := cache.GetAttachedENIs()
+		if err != nil {
+			return errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
+		}
+
+		var eniIDs []string
+		for _, eni := range allENIs {
+			eniIDs = append(eniIDs, string(eni.ENIID))
+		}
+
+		newENIs := StringSet{}
+		newENIs.Set(eniIDs)
+
+		filteredENIs := newENIs.Difference(&cache.unmanagedENIs)
+
+		//This will update SG for managed ENIs created by EKS.
+		for _, eniID := range filteredENIs.SortedList() {
+			log.Debugf("Update ENI %s", eniID)
+
+			attributeInput := &ec2.ModifyNetworkInterfaceAttributeInput{
+				Groups:             sgIDsPtrs,
+				NetworkInterfaceId: aws.String(eniID),
+			}
+			start := time.Now()
+			_, err = cache.ec2SVC.ModifyNetworkInterfaceAttributeWithContext(context.Background(), attributeInput, userAgent)
+			awsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil)).Observe(msSince(start))
+			if err != nil {
+				awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
+				return errors.Wrap(err, "refreshSGIDs: unable to update the ENI's SG")
+			}
+		}
+	}
 	return nil
 }
 
@@ -1346,4 +1404,20 @@ func (cache *EC2InstanceMetadataCache) GetPrimaryENI() string {
 // GetPrimaryENImac returns the mac address of primary eni
 func (cache *EC2InstanceMetadataCache) GetPrimaryENImac() string {
 	return cache.primaryENImac
+}
+
+//SetUnmanagedENIs Set unmanaged ENI set
+func (cache *EC2InstanceMetadataCache) SetUnmanagedENIs(eniID []string) error {
+	if len(eniID) != 0 {
+		cache.unmanagedENIs.Set(eniID)
+	}
+	return nil
+}
+
+//IsUnmanagedENI returns if the eni is unmanaged
+func (cache *EC2InstanceMetadataCache) IsUnmanagedENI(eniID string) bool {
+	if len(eniID) != 0 {
+		return cache.unmanagedENIs.Has(eniID)
+	}
+	return false
 }

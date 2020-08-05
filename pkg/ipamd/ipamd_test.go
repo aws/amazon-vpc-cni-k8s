@@ -107,6 +107,8 @@ func TestNodeInit(t *testing.T) {
 	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14, nil)
 	m.awsutils.EXPECT().GetIPv4sFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil)
 	m.awsutils.EXPECT().GetIPv4sFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Addresses, nil)
+	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsUnmanagedENI(eni2.ENIID).Return(false).AnyTimes()
 
 	primaryIP := net.ParseIP(ipaddr01)
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs)
@@ -377,6 +379,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	m.awsutils.EXPECT().GetAttachedENIs().Return(eniMetadata, nil)
 	m.awsutils.EXPECT().GetPrimaryENI().Times(2).Return(primaryENIid)
 	m.awsutils.EXPECT().DescribeAllENIs().Return(eniMetadata, map[string]awsutils.TagMap{}, "", nil)
+	m.awsutils.EXPECT().IsUnmanagedENI(primaryENIid).Return(false).AnyTimes()
 
 	mockContext.nodeIPPoolReconcile(0)
 
@@ -571,19 +574,33 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 	mockAWSUtils.EXPECT().GetPrimaryENI().Times(2).Return(eni1.ENIID)
 
 	tests := []struct {
-		name   string
-		tagMap map[string]awsutils.TagMap
-		enis   []awsutils.ENIMetadata
-		want   []awsutils.ENIMetadata
+		name          string
+		tagMap        map[string]awsutils.TagMap
+		enis          []awsutils.ENIMetadata
+		want          []awsutils.ENIMetadata
+		unmanagedenis []string
 	}{
-		{"No tags at all", nil, allENIs, allENIs},
-		{"Primary ENI unmanaged", eni1TagMap, allENIs, allENIs},
-		{"Secondary ENI unmanaged", eni2TagMap, allENIs, primaryENIonly},
+		{"No tags at all", nil, allENIs, allENIs, nil},
+		{"Primary ENI unmanaged", eni1TagMap, allENIs, allENIs, nil},
+		{"Secondary ENI unmanaged", eni2TagMap, allENIs, primaryENIonly, []string{eni2.ENIID}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &IPAMContext{awsClient: mockAWSUtils}
+			mockAWSUtils.EXPECT().SetUnmanagedENIs(tt.unmanagedenis).Return(nil).AnyTimes()
 			c.setUnmanagedENIs(tt.tagMap)
+
+			mockAWSUtils.EXPECT().IsUnmanagedENI(gomock.Any()).DoAndReturn(
+				func(eni string) (unmanaged bool) {
+					if eni != eni1.ENIID {
+						if _, ok := tt.tagMap[eni]; ok {
+							return true
+						}
+					}
+					return false
+
+				}).AnyTimes()
+
 			if got := c.filterUnmanagedENIs(tt.enis); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("filterUnmanagedENIs() = %v, want %v", got, tt.want)
 			}
