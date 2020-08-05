@@ -104,7 +104,7 @@ The following environment variables are available, and all of them are optional.
 
 `AWS_VPC_CNI_NODE_PORT_SUPPORT`
 
-Type: Boolean
+Type: Boolean as a String
 
 Default: `true`
 
@@ -115,7 +115,7 @@ Specifies whether `NodePort` services are enabled on a worker node's primary net
 
 `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG`
 
-Type: String
+Type: Boolean as a String
 
 Default: `false`
 
@@ -158,7 +158,7 @@ To select an `ENIConfig` based upon availability zone set this to `failure-domai
 
 `AWS_VPC_ENI_MTU` (Since v1.6.0)
 
-Type: Integer
+Type: Integer as a String
 
 Default: 9001
 
@@ -168,7 +168,7 @@ Used to configure the MTU size for attached ENIs. The valid range is from `576` 
 
 `AWS_VPC_K8S_CNI_EXTERNALSNAT`
 
-Type: Boolean
+Type: Boolean as a String
 
 Default: `false`
 
@@ -213,7 +213,7 @@ IP rule will be applied. If an item is not a valid ipv4 range it will be skipped
 
 `WARM_ENI_TARGET`
 
-Type: String
+Type: Integer as a String
 
 Default: `1`
 
@@ -347,7 +347,7 @@ A Unix Domain Socket can be specified with the `unix:` prefix before the socket 
 
 `DISABLE_INTROSPECTION`
 
-Type: Boolean
+Type: Boolean as a String
 
 Default: `false`
 
@@ -358,7 +358,7 @@ information we can get from the node when running the `aws-cni-support.sh` scrip
 
 `DISABLE_METRICS`
 
-Type: Boolean
+Type: Boolean as a String
 
 Default: `false`
 
@@ -396,7 +396,7 @@ string, tag addition will ignored.
 
 `AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER` (Since v1.7.0)
 
-Type: Boolean
+Type: Boolean as a String
 
 Default: `true`
 
