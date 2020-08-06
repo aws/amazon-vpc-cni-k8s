@@ -27,8 +27,8 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/rpc"
 )
 
@@ -47,10 +47,10 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	log.Infof("Received AddNetwork for NS %s, Pod %s, NameSpace %s, Sandbox %s, ifname %s",
 		in.Netns, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID, in.IfName)
 
-	addr, deviceNumber, err := s.ipamContext.dataStore.AssignPodIPv4Address(&k8sapi.K8SPodInfo{
+	addr, deviceNumber, err := s.ipamContext.dataStore.AssignPodIPv4Address(&cri.SandboxInfo{
 		Name:      in.K8S_POD_NAME,
 		Namespace: in.K8S_POD_NAMESPACE,
-		Sandbox:   in.K8S_POD_INFRA_CONTAINER_ID})
+		ID:        in.K8S_POD_INFRA_CONTAINER_ID})
 
 	var pbVPCcidrs []string
 	for _, cidr := range s.ipamContext.awsClient.GetVPCIPv4CIDRs() {
@@ -85,14 +85,14 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		in.IPv4Addr, in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, in.K8S_POD_INFRA_CONTAINER_ID)
 	delIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
 
-	ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(&k8sapi.K8SPodInfo{
+	ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(&cri.SandboxInfo{
 		Name:      in.K8S_POD_NAME,
 		Namespace: in.K8S_POD_NAMESPACE,
-		Sandbox:   in.K8S_POD_INFRA_CONTAINER_ID})
+		ID:        in.K8S_POD_INFRA_CONTAINER_ID})
 
 	if err != nil && err == datastore.ErrUnknownPod {
 		// If L-IPAMD restarts, the pod's IP address are assigned by only pod's name and namespace due to kubelet's introspection.
-		ip, deviceNumber, err = s.ipamContext.dataStore.UnassignPodIPv4Address(&k8sapi.K8SPodInfo{
+		ip, deviceNumber, err = s.ipamContext.dataStore.UnassignPodIPv4Address(&cri.SandboxInfo{
 			Name:      in.K8S_POD_NAME,
 			Namespace: in.K8S_POD_NAMESPACE})
 	}

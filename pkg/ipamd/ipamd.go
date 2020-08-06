@@ -29,12 +29,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 )
 
@@ -167,7 +167,7 @@ var (
 type IPAMContext struct {
 	awsClient            awsutils.APIs
 	dataStore            *datastore.DataStore
-	k8sClient            k8sapi.K8SAPIs
+	k8sClient            kubernetes.Interface
 	useCustomNetworking  bool
 	eniConfig            eniconfig.ENIConfig
 	criClient            cri.APIs
@@ -283,7 +283,7 @@ func prometheusRegister() {
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
-func New(k8sapiClient k8sapi.K8SAPIs, eniConfig *eniconfig.ENIConfigController) (*IPAMContext, error) {
+func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigController) (*IPAMContext, error) {
 	prometheusRegister()
 	c := &IPAMContext{}
 
@@ -386,9 +386,8 @@ func (c *IPAMContext) nodeInit() error {
 	}
 	localPods, err := c.getLocalPodsWithRetry()
 	if err != nil {
-		log.Warnf("During ipamd init, failed to get Pod information from Kubernetes API Server %v", err)
-		ipamdErrInc("nodeInitK8SGetLocalPodIPsFailed")
-		// This can happens when L-IPAMD starts before kubelet.
+		log.Warnf("During ipamd init, failed to get Pod information from CRI %v", err)
+		ipamdErrInc("nodeInitGetRunningPodSandboxesFailed")
 		return errors.Wrap(err, "failed to get running pods!")
 	}
 	log.Debugf("getLocalPodsWithRetry() found %d local pods", len(localPods))
@@ -399,28 +398,24 @@ func (c *IPAMContext) nodeInit() error {
 		return nil
 	}
 
-	for _, ip := range localPods {
-		if ip.Sandbox == "" {
-			log.Infof("Skipping Pod %s, Namespace %s, due to no matching sandbox", ip.Name, ip.Namespace)
+	for _, sandboxInfo := range localPods {
+		if sandboxInfo.IP == "" {
+			log.Infof("Skipping Pod %s, Namespace %s, due to no IP", sandboxInfo.Name, sandboxInfo.Namespace)
 			continue
 		}
-		if ip.IP == "" {
-			log.Infof("Skipping Pod %s, Namespace %s, due to no IP", ip.Name, ip.Namespace)
-			continue
-		}
-		log.Infof("Recovered AddNetwork for Pod %s, Namespace %s, Sandbox %s", ip.Name, ip.Namespace, ip.Sandbox)
-		_, _, err = c.dataStore.AssignPodIPv4Address(ip)
+		log.Infof("Recovered AddNetwork for Pod %s, Namespace %s, Sandbox %s", sandboxInfo.Name, sandboxInfo.Namespace, sandboxInfo.ID)
+		_, _, err = c.dataStore.AssignPodIPv4Address(sandboxInfo)
 		if err != nil {
 			ipamdErrInc("nodeInitAssignPodIPv4AddressFailed")
-			log.Warnf("During ipamd init, failed to use pod IP %s returned from Kubernetes API Server %v", ip.IP, err)
+			log.Warnf("During ipamd init, failed to use pod IP %s returned from CRI %v", sandboxInfo.IP, err)
 		}
 
 		// Update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
-		srcIPNet := net.IPNet{IP: net.ParseIP(ip.IP), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		srcIPNet := net.IPNet{IP: net.ParseIP(sandboxInfo.IP), Mask: net.IPv4Mask(255, 255, 255, 255)}
 
 		err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet, pbVPCcidrs, !c.networkClient.UseExternalSNAT())
 		if err != nil {
-			log.Errorf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", ip.IP, err)
+			log.Errorf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", sandboxInfo.IP, err)
 		}
 	}
 	// For a new node, attach IPs
@@ -436,42 +431,10 @@ func (c *IPAMContext) updateIPStats(unmanaged int) {
 	enisMax.Set(float64(c.maxENI - unmanaged))
 }
 
-func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
-	var pods []*k8sapi.K8SPodInfo
-	var err error
-	for retry := 1; retry <= maxK8SRetries; retry++ {
-		pods, err = c.k8sClient.K8SGetLocalPodIPs()
-		if err == nil {
-			// Check for pods with no IP since the API server might not have the latest state of the node.
-			allPodsHaveAnIP := true
-			for _, pod := range pods {
-				if pod.IP == "" {
-					log.Infof("Pod %s, Namespace %s, has no IP", pod.Name, pod.Namespace)
-					allPodsHaveAnIP = false
-				}
-			}
-			if allPodsHaveAnIP {
-				break
-			}
-			log.Warnf("Not all pods have an IP, trying again in %v seconds.", retryK8SInterval.Seconds())
-		}
-		log.Infof("Not able to get local pods yet (attempt %d/%d): %v", retry, maxK8SRetries, err)
-		time.Sleep(retryK8SInterval)
-	}
-
-	if err != nil {
-		return nil, errors.Wrap(err, "no pods because apiserver not running.")
-	}
-
-	if pods == nil {
-		return nil, nil
-	}
-
-	// Ask the CRI for the set of running pod sandboxes. These sandboxes are
-	// what the CNI operates on, but the Kubernetes API doesn't expose any
-	// information about them. If we relied only on the Kubernetes API, we
-	// could leak IPs or unassign an IP from a still-running pod.
+func (c *IPAMContext) getLocalPodsWithRetry() (map[string]*cri.SandboxInfo, error) {
 	var sandboxes map[string]*cri.SandboxInfo
+	var err error
+
 	for retry := 1; retry <= maxK8SRetries; retry++ {
 		sandboxes, err = c.criClient.GetRunningPodSandboxes(log)
 		if err == nil {
@@ -484,18 +447,7 @@ func (c *IPAMContext) getLocalPodsWithRetry() ([]*k8sapi.K8SPodInfo, error) {
 		return nil, errors.Wrap(err, "Unable to get local pod sandboxes")
 	}
 
-	// TODO consider using map
-	for _, pod := range pods {
-		// Fill in the sandbox ID by matching against the pod's UID
-		for _, sandbox := range sandboxes {
-			if sandbox.K8SUID == pod.UID {
-				log.Debugf("Found pod(%v)'s sandbox ID: %v ", sandbox.Name, sandbox.ID)
-				pod.Sandbox = sandbox.ID
-				break
-			}
-		}
-	}
-	return pods, nil
+	return sandboxes, nil
 }
 
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
