@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -263,55 +263,55 @@ func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string, force bo
 
 // AssignPodIPv4Address assigns an IPv4 address to pod
 // It returns the assigned IPv4 address, device number, error
-func (ds *DataStore) AssignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (ip string, deviceNumber int, err error) {
+func (ds *DataStore) AssignPodIPv4Address(sandbox *cri.SandboxInfo) (ip string, deviceNumber int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
 	ds.log.Debugf("AssignIPv4Address: IP address pool stats: total: %d, assigned %d", ds.total, ds.assigned)
 	podKey := PodKey{
-		name:      k8sPod.Name,
-		namespace: k8sPod.Namespace,
-		sandbox:   k8sPod.Sandbox,
+		name:      sandbox.Name,
+		namespace: sandbox.Namespace,
+		sandbox:   sandbox.ID,
 	}
 	ipAddr, ok := ds.podsIP[podKey]
 	if ok {
-		if ipAddr.IP == k8sPod.IP && k8sPod.IP != "" {
+		if ipAddr.IP == sandbox.IP && sandbox.IP != "" {
 			// The caller invoke multiple times to assign(PodName/NameSpace --> same IPAddress). It is not a error, but not very efficient.
 			ds.log.Infof("AssignPodIPv4Address: duplicate pod assign for IP %s, name %s, namespace %s, sandbox %s",
-				k8sPod.IP, k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox)
+				sandbox.IP, sandbox.Name, sandbox.Namespace, sandbox.ID)
 			return ipAddr.IP, ipAddr.DeviceNumber, nil
 		}
 		ds.log.Errorf("AssignPodIPv4Address: current IP %s is changed to IP %s for pod(name %s, namespace %s, sandbox %s)",
-			ipAddr, k8sPod.IP, k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox)
+			ipAddr, sandbox.IP, sandbox.Name, sandbox.Namespace, sandbox.ID)
 		return "", 0, errors.New("AssignPodIPv4Address: invalid pod with multiple IP addresses")
 	}
-	return ds.assignPodIPv4AddressUnsafe(podKey, k8sPod)
+	return ds.assignPodIPv4AddressUnsafe(podKey, sandbox)
 }
 
 // It returns the assigned IPv4 address, device number, error
-func (ds *DataStore) assignPodIPv4AddressUnsafe(podKey PodKey, k8sPod *k8sapi.K8SPodInfo) (ip string, deviceNumber int, err error) {
+func (ds *DataStore) assignPodIPv4AddressUnsafe(podKey PodKey, sandbox *cri.SandboxInfo) (ip string, deviceNumber int, err error) {
 	for _, eni := range ds.eniIPPools {
-		if (k8sPod.IP == "") && (len(eni.IPv4Addresses) == eni.AssignedIPv4Addresses) {
+		if (sandbox.IP == "") && (len(eni.IPv4Addresses) == eni.AssignedIPv4Addresses) {
 			// Skip this ENI, since it has no available IP addresses
 			ds.log.Debugf("AssignPodIPv4Address: Skip ENI %s that does not have available addresses", eni.ID)
 			continue
 		}
 		for _, addr := range eni.IPv4Addresses {
-			if k8sPod.IP == addr.Address {
+			if sandbox.IP == addr.Address {
 				// After L-IPAM restart and built IP warm-pool, it needs to take the existing running pod IP out of the pool.
 				if !addr.Assigned {
 					incrementAssignedCount(ds, eni, addr)
 				}
 				ds.log.Infof("AssignPodIPv4Address: Reassign IP %v to pod (name %s, namespace %s)",
-					addr.Address, k8sPod.Name, k8sPod.Namespace)
+					addr.Address, sandbox.Name, sandbox.Namespace)
 				ds.podsIP[podKey] = PodIPInfo{IP: addr.Address, DeviceNumber: eni.DeviceNumber}
 				return addr.Address, eni.DeviceNumber, nil
 			}
-			if !addr.Assigned && k8sPod.IP == "" && !addr.inCoolingPeriod() {
+			if !addr.Assigned && sandbox.IP == "" && !addr.inCoolingPeriod() {
 				// This is triggered by a pod's Add Network command from CNI plugin
 				incrementAssignedCount(ds, eni, addr)
 				ds.log.Infof("AssignPodIPv4Address: Assign IP %v to pod (name %s, namespace %s sandbox %s)",
-					addr.Address, k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox)
+					addr.Address, sandbox.Name, sandbox.Namespace, sandbox.ID)
 				ds.podsIP[podKey] = PodIPInfo{IP: addr.Address, DeviceNumber: eni.DeviceNumber}
 				return addr.Address, eni.DeviceNumber, nil
 			}
@@ -517,21 +517,21 @@ func (ds *DataStore) RemoveENIFromDataStore(eni string, force bool) error {
 
 // UnassignPodIPv4Address a) find out the IP address based on PodName and PodNameSpace
 // b)  mark IP address as unassigned c) returns IP address, ENI's device number, error
-func (ds *DataStore) UnassignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (ip string, deviceNumber int, err error) {
+func (ds *DataStore) UnassignPodIPv4Address(sandbox *cri.SandboxInfo) (ip string, deviceNumber int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	ds.log.Debugf("UnassignPodIPv4Address: IP address pool stats: total:%d, assigned %d, pod(Name: %s, Namespace: %s, Sandbox %s)",
-		ds.total, ds.assigned, k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox)
+		ds.total, ds.assigned, sandbox.Name, sandbox.Namespace, sandbox.ID)
 
 	podKey := PodKey{
-		name:      k8sPod.Name,
-		namespace: k8sPod.Namespace,
-		sandbox:   k8sPod.Sandbox,
+		name:      sandbox.Name,
+		namespace: sandbox.Namespace,
+		sandbox:   sandbox.ID,
 	}
 	ipAddr, ok := ds.podsIP[podKey]
 	if !ok {
 		ds.log.Warnf("UnassignPodIPv4Address: Failed to find pod %s namespace %q, sandbox %q",
-			k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox)
+			sandbox.Name, sandbox.Namespace, sandbox.ID)
 		return "", 0, ErrUnknownPod
 	}
 
@@ -540,14 +540,14 @@ func (ds *DataStore) UnassignPodIPv4Address(k8sPod *k8sapi.K8SPodInfo) (ip strin
 		if ok && ip.Assigned {
 			decrementAssignedCount(ds, eni, ip)
 			ds.log.Infof("UnassignPodIPv4Address: pod (Name: %s, NameSpace %s Sandbox %s)'s ipAddr %s, DeviceNumber%d",
-				k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox, ip.Address, eni.DeviceNumber)
+				sandbox.Name, sandbox.Namespace, sandbox.ID, ip.Address, eni.DeviceNumber)
 			delete(ds.podsIP, podKey)
 			return ip.Address, eni.DeviceNumber, nil
 		}
 	}
 
 	ds.log.Warnf("UnassignPodIPv4Address: Failed to find pod %s namespace %s sandbox %s using IP %s",
-		k8sPod.Name, k8sPod.Namespace, k8sPod.Sandbox, ipAddr.IP)
+		sandbox.Name, sandbox.Namespace, sandbox.ID, ipAddr.IP)
 	return "", 0, ErrUnknownPodIP
 }
 
