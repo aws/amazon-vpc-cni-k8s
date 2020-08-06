@@ -19,10 +19,11 @@
 package mock_awsutils
 
 import (
+	reflect "reflect"
+
 	awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	ec2 "github.com/aws/aws-sdk-go/service/ec2"
 	gomock "github.com/golang/mock/gomock"
-	reflect "reflect"
 )
 
 // MockAPIs is a mock of APIs interface

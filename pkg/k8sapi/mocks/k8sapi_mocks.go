@@ -19,9 +19,10 @@
 package mock_k8sapi
 
 import (
+	reflect "reflect"
+
 	k8sapi "github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	gomock "github.com/golang/mock/gomock"
-	reflect "reflect"
 )
 
 // MockK8SAPIs is a mock of K8SAPIs interface
