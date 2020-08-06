@@ -8,7 +8,6 @@ language: go
 # Any older versions are considered deprecated.
 go:
   - "1.13.x"
-  - "1.12.x"
 
 # Only clone the most recent commit.
 git:
@@ -16,14 +15,26 @@ git:
 
 go_import_path: github.com/aws/amazon-vpc-cni-k8s
 
+arch:
+  - amd64
+  - arm64
+
+os: linux
+
+env:
+  - GO111MODULE=on
 # Install needed tools
 install:
   - go get -u golang.org/x/lint/golint
+  - go get -u golang.org/x/tools/cmd/goimports
 
 # Tests to run
 script:
-  - GO111MODULE=on make check-format
-  - GO111MODULE=on make build-linux
-  - GO111MODULE=on make lint
-  - GO111MODULE=on make vet
-  - GO111MODULE=on make unit-test
+  - make check-format
+  - make build-linux
+  - make lint LINT_FLAGS=
+  - make vet
+  - make unit-test
+
+after_success:
+  - bash <(curl -s https://codecov.io/bash)

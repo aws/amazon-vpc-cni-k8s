@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.6.4-rc1
+* Bug - [Use docker/CRI to discover pods at node init](https://github.com/aws/amazon-vpc-cni-k8s/pull/1118) (#1118, @fawadkhaliq)
+
 ## v1.6.3
 * Bug - [Handle stale instance metadata](https://github.com/aws/amazon-vpc-cni-k8s/pull/1011) (#1011, @mogren)
 * Improvement - [Add support for c5a and c5ad](https://github.com/aws/amazon-vpc-cni-k8s/pull/1003) (#1003, @mogren)
