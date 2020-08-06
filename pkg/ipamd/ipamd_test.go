@@ -14,6 +14,11 @@
 package ipamd
 
 import (
+	"net"
+	"os"
+	"reflect"
+	"testing"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
@@ -28,10 +33,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/vishvananda/netlink"
 	k8s_fake "k8s.io/client-go/kubernetes/fake"
-	"net"
-	"os"
-	"reflect"
-	"testing"
 )
 
 const (

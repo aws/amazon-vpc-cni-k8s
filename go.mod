@@ -35,10 +35,10 @@ require (
 	github.com/stretchr/testify v1.5.1
 	github.com/vishvananda/netlink v1.1.0
 	go.uber.org/zap v1.13.0
-	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550 // indirect
-	golang.org/x/net v0.0.0-20200202094626-16171245cfb2
-	golang.org/x/sys v0.0.0-20190826190057-c7b8b68b1456
+	golang.org/x/net v0.0.0-20200625001655-4c5254603344
+	golang.org/x/sys v0.0.0-20200323222414-85ca7c5b95cd
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
+	golang.org/x/tools v0.0.0-20200806220301-41a9f6dc6634 // indirect
 	google.golang.org/grpc v1.29.0
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
