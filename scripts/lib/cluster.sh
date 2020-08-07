@@ -12,6 +12,7 @@ function down-test-cluster() {
 }
 
 function up-test-cluster() {
+    MNGS='{"GetRef.Name-mng-for-cni":{"name":"GetRef.Name-mng-for-cni","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":3,"asg-max-size":3,"asg-desired-capacity":3,"instance-types":["c5.xlarge"],"volume-size":40}}'
     echo -n "Configuring cluster $CLUSTER_NAME"
     AWS_K8S_TESTER_EKS_NAME=$CLUSTER_NAME \
         AWS_K8S_TESTER_EKS_LOG_COLOR=true \
