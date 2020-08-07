@@ -56,7 +56,7 @@ KUBECTL_PATH=${KUBECTL_PATH:-$TESTER_DIR/kubectl}
 LOCAL_GIT_VERSION=$(git describe --tags --always --dirty)
 # The stable image version is the image tag used in the latest stable
 # aws-k8s-cni.yaml manifest
-STABLE_IMAGE_VERSION=${STABLE_IMAGE_VERSION:-v1.6.2}
+STABLE_IMAGE_VERSION=${STABLE_IMAGE_VERSION:-v1.6.3}
 TEST_IMAGE_VERSION=${IMAGE_VERSION:-$LOCAL_GIT_VERSION}
 # The CNI version we will start our k8s clusters with. We will then perform an
 # upgrade from this CNI to the CNI being tested (TEST_IMAGE_VERSION)
@@ -79,6 +79,14 @@ AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account -
 AWS_ECR_REGISTRY=${AWS_ECR_REGISTRY:-"$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"}
 AWS_ECR_REPO_NAME=${AWS_ECR_REPO_NAME:-"amazon-k8s-cni"}
 IMAGE_NAME=${IMAGE_NAME:-"$AWS_ECR_REGISTRY/$AWS_ECR_REPO_NAME"}
+
+# Create a new role
+: "${ROLE_CREATE:=true}"
+: "${ROLE_ARN:=""}"
+
+# S3 bucket initialization
+: "${S3_BUCKET_CREATE:=true}"
+: "${S3_BUCKET_NAME:=""}"
 
 # `aws ec2 get-login` returns a docker login string, which we eval here to
 # login to the ECR registry
@@ -168,9 +176,13 @@ popd
 
 if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
+  go install github.com/onsi/ginkgo/ginkgo
   wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
-  /tmp/e2e.test --ginkgo.focus="Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
-    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)"
+  $GOPATH/bin/ginkgo -p --focus="Conformance"  --failFast --flakeAttempts 2 \
+   --skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" /tmp/e2e.test -- --kubeconfig=$KUBECONFIG
+
+  /tmp/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
+    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
 fi
 
 if [[ "$DEPROVISION" == true ]]; then
