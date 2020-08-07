@@ -52,10 +52,28 @@ const (
 	UnknownENIError = "datastore: unknown ENI"
 )
 
-// Enable temporary checkpoint upgrade logic.  If checkpoint file is
-// not found, query CRI to learn current pods and currently-allocated
-// IPs.  Will be disabled/removed after next release.
-const BackfillMissingCheckpointFromCRI = true
+// We need to know which IPs are already allocated across
+// ipamd/datastore restarts.  In vpc-cni <=1.6, we "stored" the
+// allocated IPs by querying kubelet's CRI.  Since this requires scary
+// access to CRI socket, and may race with CRI's internal logic, we
+// are transitioning away from from this to storing allocations
+// ourself in a file (similar to host-ipam CNI plugin).
+//
+// Because we don't want to require a node restart during CNI
+// upgrade/downgrade, we need an "expand/contract" style upgrade to
+// keep the two stores in sync:
+//
+// Migration phase0 (CNI 1.6): Read/write from CRI only.
+// Migration phase1 (CNI 1.7): Read from CRI.  Write to CRI+file.
+// Migration phase2 (CNI 1.8?): Read from file. Write to CRI+file.
+// Migration phase3 (hypothetical): Read/write from file only.
+//
+// Note phase3 is not necessary since writes to CRI are implicit.
+// At/after phase2, we can remove any code protected by
+// CheckpointMigrationPhase<2.
+const CheckpointMigrationPhase = 1
+
+// Placeholders used for unknown values when reading from CRI.
 const BackfillNetworkName = "_migrated-from-cri"
 const BackfillNetworkIface = "unknown"
 
@@ -201,13 +219,14 @@ type PodIPInfo struct {
 
 // DataStore contains node level ENI/IP
 type DataStore struct {
-	total        int
-	assigned     int
-	eniPool      ENIPool
-	lock         sync.Mutex
-	log          logger.Logger
-	backingStore Checkpointer
-	cri          cri.APIs
+	total                    int
+	assigned                 int
+	eniPool                  ENIPool
+	lock                     sync.Mutex
+	log                      logger.Logger
+	CheckpointMigrationPhase int
+	backingStore             Checkpointer
+	cri                      cri.APIs
 }
 
 // ENIInfos contains ENI IP information
@@ -235,10 +254,11 @@ func prometheusRegister() {
 func NewDataStore(log logger.Logger, backingStore Checkpointer) *DataStore {
 	prometheusRegister()
 	return &DataStore{
-		eniPool:      make(ENIPool),
-		log:          log,
-		backingStore: backingStore,
-		cri:          cri.New(),
+		eniPool:                  make(ENIPool),
+		log:                      log,
+		backingStore:             backingStore,
+		cri:                      cri.New(),
+		CheckpointMigrationPhase: CheckpointMigrationPhase,
 	}
 }
 
@@ -264,13 +284,13 @@ type CheckpointEntry struct {
 // configured backing store.  Should be called before using data
 // store.
 func (ds *DataStore) ReadBackingStore() error {
-	ds.log.Infof("Reading ipam state from backing store")
-
 	var data CheckpointData
-	err := ds.backingStore.Restore(&data)
-	ds.log.Debugf("backing store restore returned err %v", err)
-	if BackfillMissingCheckpointFromCRI && os.IsNotExist(err) {
-		ds.log.Infof("Backing store not found. Querying CRI.")
+
+	switch ds.CheckpointMigrationPhase {
+	case 1:
+		// Phase1: Read from CRI
+		ds.log.Infof("Reading ipam state from CRI")
+
 		sandboxes, err := ds.cri.GetRunningPodSandboxes(ds.log)
 		if err != nil {
 			return err
@@ -293,18 +313,28 @@ func (ds *DataStore) ReadBackingStore() error {
 			Allocations: entries,
 		}
 
-	} else if os.IsNotExist(err) {
-		// Assume that no file == no containers are
-		// currently in use, eg a fresh reboot just
-		// cleared everything out.  This is ok, and a
-		// no-op.
-		return nil
-	} else if err != nil {
-		return fmt.Errorf("datastore: error reading backing store: %v", err)
-	}
+	case 2:
+		// Phase2: Read from checkpoint file
+		ds.log.Infof("Reading ipam state from backing store")
 
-	if data.Version != CheckpointFormatVersion {
-		return fmt.Errorf("datastore: unknown backing store format (%s != %s) - wrong CNI/ipamd version? (Rebooting this node will restart local pods and probably help)", data.Version, CheckpointFormatVersion)
+		err := ds.backingStore.Restore(&data)
+		ds.log.Debugf("backing store restore returned err %v", err)
+		if os.IsNotExist(err) {
+			// Assume that no file == no containers are
+			// currently in use, eg a fresh reboot just
+			// cleared everything out.  This is ok, and a
+			// no-op.
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("datastore: error reading backing store: %v", err)
+		}
+
+		if data.Version != CheckpointFormatVersion {
+			return fmt.Errorf("datastore: unknown backing store format (%s != %s) - wrong CNI/ipamd version? (Rebooting this node will restart local pods and probably help)", data.Version, CheckpointFormatVersion)
+		}
+
+	default:
+		panic(fmt.Sprintf("Unexpected value of CheckpointMigrationPhase: %v", ds.CheckpointMigrationPhase))
 	}
 
 	ds.lock.Lock()
@@ -329,7 +359,7 @@ func (ds *DataStore) ReadBackingStore() error {
 		ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
 	}
 
-	ds.log.Debugf("Completed reading ipam state from backing store")
+	ds.log.Debugf("Completed ipam state recovery")
 	return nil
 }
 
@@ -701,7 +731,16 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (ip string, deviceN
 
 	eni, addr := ds.eniPool.FindAddressForSandbox(ipamKey)
 
-	if BackfillMissingCheckpointFromCRI && addr == nil {
+	if addr == nil {
+		// This `if` block should be removed when the CRI
+		// migration code is finally removed.  Leaving a
+		// compile dependency here to make that obvious :P
+		var _ = CheckpointMigrationPhase
+
+		// If the entry was discovered by querying CRI at
+		// restart rather than by observing an ADD operation
+		// directly, then we won't have captured the true
+		// networkname/ifname.
 		ds.log.Debugf("UnassignPodIPv4Address: Failed to find IPAM entry under full key, trying CRI-migrated version")
 		ipamKey.NetworkName = BackfillNetworkName
 		ipamKey.IfName = BackfillNetworkIface
