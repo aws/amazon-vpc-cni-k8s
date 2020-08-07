@@ -92,6 +92,7 @@ func TestNodeInit(t *testing.T) {
 		networkClient: m.network,
 		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint)),
 	}
+	mockContext.dataStore.CheckpointMigrationPhase = 2
 
 	eni1, eni2 := getDummyENIMetadata()
 
@@ -503,7 +504,9 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 }
 
 func testDatastore() *datastore.DataStore {
-	return datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}))
+	ds := datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}))
+	ds.CheckpointMigrationPhase = 2
+	return ds
 }
 
 func datastoreWith3FreeIPs() *datastore.DataStore {
