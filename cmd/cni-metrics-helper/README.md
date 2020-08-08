@@ -15,10 +15,10 @@ The following diagram shows how `cni-metrics-helper` works in a cluster:
 
 ### Installing the cni-metrics-helper
 ```
-kubectl apply -f v1.5/cni-metrics-helper.yaml
+kubectl apply -f v1.6/cni-metrics-helper.yaml
 ```
 
-Adding this will publish the following metrics to CloudWatch:
+Adding the CNI metrics helper will publish the following metrics to CloudWatch:
 ```
 "addReqCount",
 "assignIPAddresses",
@@ -31,6 +31,7 @@ Adding this will publish the following metrics to CloudWatch:
 "ipamdActionInProgress",
 "ipamdErr",
 "maxIPAddresses",
+"podENIErr",
 "reconcileCount",
 "totalIPAddresses",
 ```

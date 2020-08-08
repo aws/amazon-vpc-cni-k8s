@@ -20,6 +20,9 @@ import (
 	"reflect"
 	"testing"
 
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
@@ -49,6 +52,7 @@ const (
 	ipaddr11      = "10.10.20.11"
 	ipaddr12      = "10.10.20.12"
 	vpcCIDR       = "10.10.0.0/16"
+	myNodeName    = "testNodeName"
 )
 
 type testMocks struct {
@@ -83,6 +87,7 @@ func TestNodeInit(t *testing.T) {
 
 	mockContext := &IPAMContext{
 		awsClient:     m.awsutils,
+		k8sClient:     m.clientset,
 		maxIPsPerENI:  14,
 		maxENI:        4,
 		warmENITarget: 1,
@@ -91,6 +96,7 @@ func TestNodeInit(t *testing.T) {
 		terminating:   int32(0),
 		networkClient: m.network,
 		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint)),
+		myNodeName:    myNodeName,
 	}
 
 	eni1, eni2 := getDummyENIMetadata()
@@ -104,12 +110,12 @@ func TestNodeInit(t *testing.T) {
 	primaryIP := net.ParseIP(ipaddr01)
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs)
 	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
-	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP).Return(nil)
+	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false).Return(nil)
 
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 
 	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
-	m.awsutils.EXPECT().DescribeAllENIs().Return(eniMetadataSlice, map[string]awsutils.TagMap{}, nil)
+	m.awsutils.EXPECT().DescribeAllENIs().Return(eniMetadataSlice, map[string]awsutils.TagMap{}, "", nil)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 
 	m.awsutils.EXPECT().GetLocalIPv4().Return(ipaddr01)
@@ -119,6 +125,15 @@ func TestNodeInit(t *testing.T) {
 
 	m.network.EXPECT().UseExternalSNAT().Return(false)
 	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any(), gomock.Any(), true)
+
+	fakeNode := v1.Node{
+		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
+		Spec:       v1.NodeSpec{},
+		Status:     v1.NodeStatus{},
+	}
+	_, _ = m.clientset.CoreV1().Nodes().Create(&fakeNode)
+
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
 
@@ -360,7 +375,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	}
 	m.awsutils.EXPECT().GetAttachedENIs().Return(eniMetadata, nil)
 	m.awsutils.EXPECT().GetPrimaryENI().Times(2).Return(primaryENIid)
-	m.awsutils.EXPECT().DescribeAllENIs().Return(eniMetadata, map[string]awsutils.TagMap{}, nil)
+	m.awsutils.EXPECT().DescribeAllENIs().Return(eniMetadata, map[string]awsutils.TagMap{}, "", nil)
 
 	mockContext.nodeIPPoolReconcile(0)
 
@@ -437,7 +452,7 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	assert.Equal(t, 0, over)
 
 	// add 2 addresses to datastore
-	_ = mockContext.dataStore.AddENI("eni-1", 1, true)
+	_ = mockContext.dataStore.AddENI("eni-1", 1, true, false)
 	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.1")
 	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.2")
 
@@ -508,7 +523,7 @@ func testDatastore() *datastore.DataStore {
 
 func datastoreWith3FreeIPs() *datastore.DataStore {
 	datastoreWith3FreeIPs := testDatastore()
-	_ = datastoreWith3FreeIPs.AddENI(primaryENIid, 1, true)
+	_ = datastoreWith3FreeIPs.AddENI(primaryENIid, 1, true, false)
 	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr01)
 	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr02)
 	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr03)
@@ -583,5 +598,18 @@ func TestDisablingENIProvisioning(t *testing.T) {
 
 	_ = os.Unsetenv(envDisableENIProvisioning)
 	disabled = disablingENIProvisioning()
+	assert.False(t, disabled)
+}
+
+func TestPodENIConfigFlag(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	_ = os.Setenv(envEnablePodENI, "true")
+	disabled := enablePodENI()
+	assert.True(t, disabled)
+
+	_ = os.Unsetenv(envEnablePodENI)
+	disabled = enablePodENI()
 	assert.False(t, disabled)
 }
