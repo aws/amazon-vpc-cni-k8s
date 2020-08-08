@@ -126,7 +126,7 @@ type APIs interface {
 	GetIPv4sFromEC2(eniID string) (addrList []*ec2.NetworkInterfacePrivateIpAddress, err error)
 
 	// DescribeAllENIs calls EC2 and returns the ENIMetadata and a tag map for each ENI
-	DescribeAllENIs() ([]ENIMetadata, map[string]TagMap, error)
+	DescribeAllENIs() (eniMetadata []ENIMetadata, tagMap map[string]TagMap, trunkENI string, err error)
 
 	// AllocIPAddress allocates an IP address for an ENI
 	AllocIPAddress(eniID string) error
@@ -729,6 +729,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 	} else {
 		log.Info("Using same config as the primary interface for the new ENI")
 	}
+
 	var sgs []string
 	for i := range input.Groups {
 		sgs = append(sgs, *input.Groups[i])
@@ -998,11 +999,11 @@ func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList [
 }
 
 // DescribeAllENIs calls EC2 to refrech the ENIMetadata and tags for all attached ENIs
-func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[string]TagMap, error) {
+func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (eniMetadata []ENIMetadata, tagMap map[string]TagMap, trunkENI string, err error) {
 	// Fetch all local ENI info from metadata
 	allENIs, err := cache.GetAttachedENIs()
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
+		return nil, nil, "", errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
 	}
 
 	eniMap := make(map[string]ENIMetadata, len(allENIs))
@@ -1047,7 +1048,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[str
 	}
 
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	// Collect the verified ENIs
@@ -1057,13 +1058,18 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[str
 	}
 
 	// Collect ENI response into ENI metadata and tags.
-	tagMap := make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
+	tagMap = make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
 	for _, ec2res := range ec2Response.NetworkInterfaces {
 		if ec2res.Attachment != nil && aws.Int64Value(ec2res.Attachment.DeviceIndex) == 0 && !aws.BoolValue(ec2res.Attachment.DeleteOnTermination) {
 			log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
 		}
 		eniID := aws.StringValue(ec2res.NetworkInterfaceId)
 		eniMetadata := eniMap[eniID]
+		interfaceType := aws.StringValue(ec2res.InterfaceType)
+		// This assumes we only have one trunk attached to the node..
+		if interfaceType == "trunk" {
+			trunkENI = eniID
+		}
 		// Check IPv4 addresses
 		logOutOfSyncState(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
 		tags := make(map[string]string, len(ec2res.TagSet))
@@ -1078,7 +1084,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[str
 			tagMap[eniMetadata.ENIID] = tags
 		}
 	}
-	return verifiedENIs, tagMap, nil
+	return verifiedENIs, tagMap, trunkENI, nil
 }
 
 var eniErrorMessageRegex = regexp.MustCompile("'([a-zA-Z0-9-]+)'")
