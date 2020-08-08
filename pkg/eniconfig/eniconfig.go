@@ -126,12 +126,17 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 					val = eniConfigDefault
 				}
 			}
-
+			// If value changes
 			if h.controller.myENI != val {
 				h.controller.eniLock.Lock()
 				defer h.controller.eniLock.Unlock()
 				h.controller.myENI = val
 				log.Debugf("Setting myENI to: %s", val)
+				if val != eniConfigDefault {
+					labels := o.GetLabels()
+					labels["vpc.amazonaws.com/eniConfig"] = val
+					o.SetLabels(labels)
+				}
 			}
 		}
 	}

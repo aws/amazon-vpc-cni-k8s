@@ -21,6 +21,7 @@ package mock_networkutils
 import (
 	net "net"
 	reflect "reflect"
+	"time"
 
 	gomock "github.com/golang/mock/gomock"
 	netlink "github.com/vishvananda/netlink"
@@ -122,17 +123,17 @@ func (mr *MockNetworkAPIsMockRecorder) SetupENINetwork(arg0, arg1, arg2, arg3 in
 }
 
 // SetupHostNetwork mocks base method
-func (m *MockNetworkAPIs) SetupHostNetwork(arg0 []string, arg1 string, arg2 *net.IP) error {
+func (m *MockNetworkAPIs) SetupHostNetwork(arg0 []string, arg1 string, arg2 *net.IP, arg3 bool) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetupHostNetwork", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "SetupHostNetwork", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetupHostNetwork indicates an expected call of SetupHostNetwork
-func (mr *MockNetworkAPIsMockRecorder) SetupHostNetwork(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockNetworkAPIsMockRecorder) SetupHostNetwork(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupHostNetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupHostNetwork), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupHostNetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupHostNetwork), arg0, arg1, arg2, arg3)
 }
 
 // UpdateRuleListBySrc mocks base method
@@ -161,4 +162,19 @@ func (m *MockNetworkAPIs) UseExternalSNAT() bool {
 func (mr *MockNetworkAPIsMockRecorder) UseExternalSNAT() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UseExternalSNAT", reflect.TypeOf((*MockNetworkAPIs)(nil).UseExternalSNAT))
+}
+
+// GetLinkByMac mocks base method
+func (m *MockNetworkAPIs) GetLinkByMac(arg0 string, arg1 time.Duration) (netlink.Link, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLinkByMac", arg0, arg1)
+	ret0, _ := ret[0].(netlink.Link)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLinkByMac indicates an expected call of GetLinkByMac
+func (mr *MockNetworkAPIsMockRecorder) GetLinkByMac(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLinkByMac", reflect.TypeOf((*MockNetworkAPIs)(nil).GetLinkByMac), arg0, arg1)
 }

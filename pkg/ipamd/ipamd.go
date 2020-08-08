@@ -24,6 +24,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
@@ -114,6 +117,12 @@ const (
 	// Specify where ipam should persist its current IP<->container allocations.
 	envBackingStorePath     = "AWS_VPC_K8S_CNI_BACKING_STORE"
 	defaultBackingStorePath = "/var/run/aws-node/ipam.json"
+
+	// envEnablePodENI is used to attach a Trunk ENI to every node. Required in order to give Branch ENIs to pods.
+	envEnablePodENI = "ENABLE_POD_ENI"
+
+	// vpcENIConfigLabel is used by the VPC resource controller to pick the right ENI config.
+	vpcENIConfigLabel = "vpc.amazonaws.com/eniConfig"
 )
 
 var log = logger.Get()
@@ -165,6 +174,13 @@ var (
 		},
 		[]string{"reason"},
 	)
+	podENIErr = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "awscni_pod_eni_error_count",
+			Help: "The number of errors encountered for pod ENIs",
+		},
+		[]string{"fn"},
+	)
 	prometheusRegistered = false
 )
 
@@ -191,6 +207,8 @@ type IPAMContext struct {
 	reconcileCooldownCache ReconcileCooldownCache
 	terminating            int32 // Flag to warn that the pod is about to shut down.
 	disableENIProvisioning bool
+	enablePodENI           bool
+	myNodeName             string
 }
 
 // UnmanagedENISet keeps a set of ENI IDs for ENIs tagged with "node.k8s.amazonaws.com/no_manage"
@@ -282,6 +300,7 @@ func prometheusRegister() {
 		prometheus.MustRegister(reconcileCnt)
 		prometheus.MustRegister(addIPCnt)
 		prometheus.MustRegister(delIPCnt)
+		prometheus.MustRegister(podENIErr)
 		prometheusRegistered = true
 	}
 }
@@ -309,6 +328,8 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 	c.minimumIPTarget = getMinimumIPTarget()
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.disableENIProvisioning = disablingENIProvisioning()
+	c.enablePodENI = enablePodENI()
+	c.myNodeName = os.Getenv("MY_NODE_NAME")
 
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer)
@@ -340,12 +361,12 @@ func (c *IPAMContext) nodeInit() error {
 
 	vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
 	primaryIP := net.ParseIP(c.awsClient.GetLocalIPv4())
-	err = c.networkClient.SetupHostNetwork(vpcCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP)
+	err = c.networkClient.SetupHostNetwork(vpcCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP, c.enablePodENI)
 	if err != nil {
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
 
-	eniMetadata, tagMap, err := c.awsClient.DescribeAllENIs()
+	eniMetadata, tagMap, trunkENI, err := c.awsClient.DescribeAllENIs()
 	if err != nil {
 		return errors.New("ipamd init: failed to retrieve attached ENIs info")
 	}
@@ -359,7 +380,7 @@ func (c *IPAMContext) nodeInit() error {
 		retry := 0
 		for {
 			retry++
-			if err = c.setupENI(eni.ENIID, eni); err == nil {
+			if err = c.setupENI(eni.ENIID, eni, trunkENI); err == nil {
 				log.Infof("ENI %s set up.", eni.ENIID)
 				break
 			}
@@ -387,6 +408,39 @@ func (c *IPAMContext) nodeInit() error {
 
 	if err = c.configureIPRulesForPods(vpcCIDRs); err != nil {
 		return err
+	}
+
+	if c.useCustomNetworking && c.eniConfig.Getter().MyENI != "default" {
+		// Signal to VPC Resource Controller that the node is using custom networking
+		err := c.SetNodeLabel(vpcENIConfigLabel, c.eniConfig.Getter().MyENI)
+		if err != nil {
+			log.Errorf("Failed to set eniConfig node label", err)
+			podENIErrInc("nodeInit")
+			return err
+		}
+	} else {
+		// Remove the custom networking label
+		err := c.SetNodeLabel(vpcENIConfigLabel, "")
+		if err != nil {
+			log.Errorf("Failed to delete eniConfig node label", err)
+			podENIErrInc("nodeInit")
+			return err
+		}
+	}
+
+	// If we started on a node with a trunk ENI already attached, add the node label.
+	if trunkENI != "" {
+		// Signal to VPC Resource Controller that the node has a trunk already
+		err := c.SetNodeLabel("vpc.amazonaws.com/has-trunk-attached", "true")
+		if err != nil {
+			log.Errorf("Failed to set node label", err)
+			podENIErrInc("nodeInit")
+			// If this fails, we probably can't talk to the API server. Let the pod restart
+			return err
+		}
+	} else {
+		// Check if we want to ask for one
+		c.askForTrunkENIIfNeeded()
 	}
 
 	// For a new node, attach IPs
@@ -451,6 +505,7 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 }
 
 func (c *IPAMContext) updateIPPoolIfRequired() {
+	c.askForTrunkENIIfNeeded()
 	if c.nodeIPPoolTooLow() {
 		c.increaseIPPool()
 	} else if c.nodeIPPoolTooHigh() {
@@ -589,13 +644,19 @@ func (c *IPAMContext) increaseIPPool() {
 	if increasedPool {
 		c.updateLastNodeIPPoolAction()
 	} else {
+		// Check if we need to make room for the VPC Resource Controller to attach a trunk ENI
+		reserveSlotForTrunkENI := 0
+		if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
+			reserveSlotForTrunkENI = 1
+		}
 		// If we did not add an IP, try to add an ENI instead.
-		if c.dataStore.GetENIs() < (c.maxENI - c.unmanagedENI) {
+		if c.dataStore.GetENIs() < (c.maxENI - c.unmanagedENI - reserveSlotForTrunkENI) {
 			if err = c.tryAllocateENI(); err == nil {
 				c.updateLastNodeIPPoolAction()
 			}
 		} else {
-			log.Debugf("Skipping ENI allocation as the instance's max ENI limit of %d is already reached (accounting for %d unmanaged ENIs)", c.maxENI, c.unmanagedENI)
+			log.Debugf("Skipping ENI allocation as the max ENI limit of %d is already reached (accounting for %d unmanaged ENIs and %d trunk ENIs)",
+				c.maxENI, c.unmanagedENI, reserveSlotForTrunkENI)
 		}
 	}
 }
@@ -653,14 +714,13 @@ func (c *IPAMContext) tryAllocateENI() error {
 		log.Errorf("Failed to increase pool size: Unable to discover attached ENI from metadata service %v", err)
 		return err
 	}
-
-	err = c.setupENI(eni, eniMetadata)
+	err = c.setupENI(eni, eniMetadata, c.dataStore.GetTrunkENI())
 	if err != nil {
 		ipamdErrInc("increaseIPPoolsetupENIFailed")
 		log.Errorf("Failed to increase pool size: %v", err)
 		return err
 	}
-	return nil
+	return err
 }
 
 // For an ENI, try to fill in missing IPs on an existing ENI
@@ -702,9 +762,9 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 // 1) add ENI to datastore
 // 2) set up linux ENI related networking stack.
 // 3) add all ENI's secondary IP addresses to datastore
-func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata) error {
+func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, trunkENI string) error {
 	// Add the ENI to the datastore
-	err := c.dataStore.AddENI(eni, eniMetadata.DeviceNumber, eni == c.awsClient.GetPrimaryENI())
+	err := c.dataStore.AddENI(eni, eniMetadata.DeviceNumber, eni == c.awsClient.GetPrimaryENI(), eni == trunkENI)
 	if err != nil && err.Error() != datastore.DuplicatedENIError {
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
@@ -812,6 +872,18 @@ func logPoolStats(total, used, maxAddrsPerENI int) {
 	log.Debugf("IP pool stats: total = %d, used = %d, c.maxIPsPerENI = %d", total, used, maxAddrsPerENI)
 }
 
+func (c *IPAMContext) askForTrunkENIIfNeeded() {
+	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
+		// We need to signal that VPC Resource Controller needs to attach a trunk ENI
+		err := c.SetNodeLabel("vpc.amazonaws.com/has-trunk-attached", "false")
+		if err != nil {
+			podENIErrInc("askForTrunkENIIfNeeded")
+			log.Errorf("Failed to set node label", err)
+		}
+		return
+	}
+}
+
 // nodeIPPoolTooLow returns true if IP pool is below low threshold
 func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	short, _, warmIPTargetDefined := c.ipTargetState()
@@ -864,6 +936,10 @@ func ipamdErrInc(fn string) {
 	ipamdErr.With(prometheus.Labels{"fn": fn}).Inc()
 }
 
+func podENIErrInc(fn string) {
+	podENIErr.With(prometheus.Labels{"fn": fn}).Inc()
+}
+
 // nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
 func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	curTime := time.Now()
@@ -884,8 +960,9 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	}
 	attachedENIs := c.filterUnmanagedENIs(allENIs)
 	currentENIIPPools := c.dataStore.GetENIInfos().ENIs
+	trunkENI := c.dataStore.GetTrunkENI()
 
-	// Check if a new ENI was added, if so we need to update the tags
+	// Check if a new ENI was added, if so we need to update the tags.
 	needToUpdateTags := false
 	for _, attachedENI := range attachedENIs {
 		if _, ok := currentENIIPPools[attachedENI.ENIID]; !ok {
@@ -895,11 +972,23 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	}
 	if needToUpdateTags {
 		log.Debugf("A new ENI added but not by ipamd, updating tags")
-		allENIs, tagMap, err := c.awsClient.DescribeAllENIs()
+		allENIs, tagMap, trunk, err := c.awsClient.DescribeAllENIs()
 		if err != nil {
 			log.Warnf("Failed to call EC2 to describe ENIs, aborting reconcile: %v", err)
 			return
 		}
+
+		if c.enablePodENI && trunk != "" {
+			// Label the node that we have a trunk
+			err = c.SetNodeLabel("vpc.amazonaws.com/has-trunk-attached", "true")
+			if err != nil {
+				podENIErrInc("askForTrunkENIIfNeeded")
+				log.Errorf("Failed to set node label for trunk. Aborting reconcile", err)
+				return
+			}
+		}
+		// Update trunk ENI
+		trunkENI = trunk
 		c.setUnmanagedENIs(tagMap)
 		attachedENIs = c.filterUnmanagedENIs(allENIs)
 	}
@@ -919,7 +1008,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 
 		// Add new ENI
 		log.Debugf("Reconcile and add a new ENI %s", attachedENI)
-		err = c.setupENI(attachedENI.ENIID, attachedENI)
+		err = c.setupENI(attachedENI.ENIID, attachedENI, trunkENI)
 		if err != nil {
 			log.Errorf("IP pool reconcile: Failed to set up ENI %s network: %v", attachedENI.ENIID, err)
 			ipamdErrInc("eniReconcileAdd")
@@ -1079,7 +1168,11 @@ func getMinimumIPTarget() int {
 }
 
 func disablingENIProvisioning() bool {
-	return getEnvBoolWithDefault(envDisableENIProvisioning, noDisableENIProvisioning)
+	return getEnvBoolWithDefault(envDisableENIProvisioning, false)
+}
+
+func enablePodENI() bool {
+	return getEnvBoolWithDefault(envEnablePodENI, false)
 }
 
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag
@@ -1157,4 +1250,61 @@ func min(x, y int) int {
 		return y
 	}
 	return x
+}
+
+func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
+	trunkENI := c.dataStore.GetTrunkENI()
+	attachedENIs, err := c.awsClient.GetAttachedENIs()
+	if err != nil {
+		return -1, err
+	}
+	for _, eni := range attachedENIs {
+		if eni.ENIID == trunkENI {
+			retryLinkByMacInterval := 100 * time.Millisecond
+			link, err := c.networkClient.GetLinkByMac(eni.MAC, retryLinkByMacInterval)
+			if err != nil {
+				return -1, err
+			}
+			return link.Attrs().Index, nil
+
+		}
+	}
+	return -1, errors.New("No trunk!")
+}
+
+func (c *IPAMContext) SetNodeLabel(key, value string) error {
+	// Find my node
+	node, err := c.k8sClient.CoreV1().Nodes().Get(c.myNodeName, metav1.GetOptions{})
+	if err != nil {
+		log.Errorf("Failed to get node: %v", err)
+		return err
+	}
+
+	if labelValue, ok := node.Labels[key]; ok && labelValue == value {
+		log.Debugf("Node label %q is already %q", key, labelValue)
+		return nil
+	}
+	// Make deep copy for modification
+	updateNode := node.DeepCopy()
+
+	// Set node label
+	if value != "" {
+		updateNode.Labels[key] = value
+	} else {
+		// Empty value, delete the label
+		log.Debugf("Deleting label %q", key)
+		delete(updateNode.Labels, key)
+	}
+
+	// Update node status to advertise the resource.
+	_, err = c.k8sClient.CoreV1().Nodes().Update(updateNode)
+	if err != nil {
+		log.Errorf("Failed to update node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
+	}
+	log.Infof("Updated node %s with label %q: %q", c.myNodeName, key, value)
+	return nil
+}
+
+func (c *IPAMContext) GetPod(podName, namespace string) (*v1.Pod, error) {
+	return c.k8sClient.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
 }
