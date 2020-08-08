@@ -40,8 +40,13 @@ local awsnode = {
       },
       {
         apiGroups: [""],
-        resources: ["pods", "nodes", "namespaces"],
+        resources: ["pods", "namespaces"],
         verbs: ["list", "watch", "get"],
+      },
+      {
+        apiGroups: [""],
+        resources: ["nodes"],
+        verbs: ["list", "watch", "get", "update"],
       },
       {
         apiGroups: ["extensions"],
@@ -155,26 +160,27 @@ local awsnode = {
                 initialDelaySeconds: 60,
               },
               env_:: {
+                ADDITIONAL_ENI_TAGS: "{}",
                 AWS_VPC_CNI_NODE_PORT_SUPPORT: "true",
-                AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG: "false",
                 AWS_VPC_ENI_MTU: "9001",
+                AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER: "false",
+                AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG: "false",
                 AWS_VPC_K8S_CNI_EXTERNALSNAT: "false",
-                AWS_VPC_K8S_CNI_RANDOMIZESNAT: "prng",
-                WARM_ENI_TARGET: "1",
                 AWS_VPC_K8S_CNI_LOGLEVEL: "DEBUG",
                 AWS_VPC_K8S_CNI_LOG_FILE: "/host/var/log/aws-routed-eni/ipamd.log",
+                AWS_VPC_K8S_CNI_RANDOMIZESNAT: "prng",
+                AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
                 AWS_VPC_K8S_PLUGIN_LOG_FILE: "/var/log/aws-routed-eni/plugin.log",
                 AWS_VPC_K8S_PLUGIN_LOG_LEVEL: "DEBUG",
                 DISABLE_INTROSPECTION: "false",
                 DISABLE_METRICS: "false",
-                AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
-                ADDITIONAL_ENI_TAGS: "{}",
-                AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER: "false",
+                ENABLE_POD_ENI: "false",
                 MY_NODE_NAME: {
                   valueFrom: {
                     fieldRef: {fieldPath: "spec.nodeName"},
                   },
                 },
+                WARM_ENI_TARGET: "1",
               },
               env: [
                 {name: kv[0]} + if std.isObject(kv[1]) then kv[1] else {value: kv[1]}

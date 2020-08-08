@@ -107,13 +107,14 @@ func (mr *MockAPIsMockRecorder) DeallocIPAddresses(arg0, arg1 interface{}) *gomo
 }
 
 // DescribeAllENIs mocks base method
-func (m *MockAPIs) DescribeAllENIs() ([]awsutils.ENIMetadata, map[string]awsutils.TagMap, error) {
+func (m *MockAPIs) DescribeAllENIs() ([]awsutils.ENIMetadata, map[string]awsutils.TagMap, string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DescribeAllENIs")
 	ret0, _ := ret[0].([]awsutils.ENIMetadata)
 	ret1, _ := ret[1].(map[string]awsutils.TagMap)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret2, _ := ret[2].(string)
+	ret3, _ := ret[3].(error)
+	return ret0, ret1, ret2, ret3
 }
 
 // DescribeAllENIs indicates an expected call of DescribeAllENIs

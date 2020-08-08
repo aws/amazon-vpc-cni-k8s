@@ -115,13 +115,15 @@ func (k IPAMKey) String() string {
 	return fmt.Sprintf("%s/%s/%s", k.NetworkName, k.ContainerID, k.IfName)
 }
 
-// ENI represents a single ENI.
+// ENI represents a single ENI. Exported fields will be marshaled for introspection.
 type ENI struct {
 	// AWS ENI ID
 	ID         string
 	createTime time.Time
 	// IsPrimary indicates whether ENI is a primary ENI
 	IsPrimary bool
+	// IsTrunk indicates whether this ENI is used to provide pods with dedicated ENIs
+	IsTrunk bool
 	// DeviceNumber is the device number of ENI (0 means the primary ENI)
 	DeviceNumber int
 	// IPv4Addresses shows whether each address is assigned, the key is IP address, which must
@@ -355,7 +357,7 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 }
 
 // AddENI add ENI to data store
-func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary bool) error {
+func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk bool) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
@@ -368,6 +370,7 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary bool) erro
 	ds.eniPool[eniID] = &ENI{
 		createTime:    time.Now(),
 		IsPrimary:     isPrimary,
+		IsTrunk:       isTrunk,
 		ID:            eniID,
 		DeviceNumber:  deviceNumber,
 		IPv4Addresses: make(map[string]*AddressInfo)}
@@ -505,6 +508,17 @@ func (ds *DataStore) GetStats() (int, int) {
 	return ds.total, ds.assigned
 }
 
+func (ds *DataStore) GetTrunkENI() string {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+	for _, eni := range ds.eniPool {
+		if eni.IsTrunk {
+			return eni.ID
+		}
+	}
+	return ""
+}
+
 // IsRequiredForWarmIPTarget determines if this ENI has warm IPs that are required to fulfill whatever WARM_IP_TARGET is
 // set to.
 func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENI) bool {
@@ -558,6 +572,11 @@ func (ds *DataStore) getDeletableENI(warmIPTarget int, minimumIPTarget int) *ENI
 
 		if minimumIPTarget != 0 && ds.isRequiredForMinimumIPTarget(minimumIPTarget, eni) {
 			ds.log.Debugf("ENI %s cannot be deleted because it is required for MINIMUM_IP_TARGET: %d", eni.ID, minimumIPTarget)
+			continue
+		}
+
+		if eni.IsTrunk {
+			ds.log.Debugf("ENI %s cannot be deleted because it is a trunk ENI", eni.ID)
 			continue
 		}
 
