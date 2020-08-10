@@ -308,10 +308,11 @@ func TestCmdDelForPodENINetwork(t *testing.T) {
 
 	stdinData, _ := json.Marshal(netConf)
 
-	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
-		Netns:     netNS,
-		IfName:    ifName,
-		StdinData: stdinData}
+	cmdArgs := &skel.CmdArgs{
+		ContainerID: containerID,
+		Netns:       netNS,
+		IfName:      ifName,
+		StdinData:   stdinData}
 
 	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
 

@@ -35,7 +35,7 @@ import (
 
 const (
 	// vlan rule priority
-	vlanRulePriority = 1
+	vlanRulePriority = 10
 	// IP rules priority, leaving a 512 gap for the future
 	toContainerRulePriority = 512
 	// 1024 is reserved for (IP rule not to <VPC's subnet> table main)
@@ -489,11 +489,14 @@ func (os *linuxNetwork) TeardownPodENINetwork(vlanId int, log logger.Logger) err
 	vlanRule.Table = vlanId + 100
 	vlanRule.Priority = vlanRulePriority
 
-	for i := 0; i < 2; i++ {
+	for {
+		// Loop until both the rules are deleted.
+		// one of them handles vlan traffic and other is for pod host veth traffic.
 		if err := os.netLink.RuleDel(vlanRule); err != nil {
 			if !containsNoSuchRule(err) {
 				return errors.Wrapf(err, "TeardownPodENINetwork: failed to delete container rule for %d", vlanId)
 			}
+			break
 		}
 	}
 	return nil

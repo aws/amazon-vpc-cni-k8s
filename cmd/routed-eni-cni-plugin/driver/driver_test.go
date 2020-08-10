@@ -14,15 +14,16 @@
 package driver
 
 import (
-	"errors"
 	"net"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
 	"github.com/golang/mock/gomock"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/vishvananda/netlink"
@@ -495,7 +496,7 @@ func TestTeardownPodENINetworkHappyCase(t *testing.T) {
 		m.netlink.EXPECT().LinkDel(mockVlan).Return(nil),
 		// delete ip rules for the pod.
 		m.netlink.EXPECT().RuleDel(gomock.Eq(expectedRule)).Return(nil),
-		m.netlink.EXPECT().RuleDel(gomock.Eq(expectedRule)).Return(nil),
+		m.netlink.EXPECT().RuleDel(gomock.Eq(expectedRule)).Return(syscall.ENOENT),
 	)
 
 	err := linuxNetwork.TeardownPodENINetwork(1, log)

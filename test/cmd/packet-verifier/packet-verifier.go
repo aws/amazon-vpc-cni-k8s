@@ -24,9 +24,9 @@ var (
 	version = "unknown"
 
 	// ip to monitor on the interfaces
-	ipToMonitor string
-	receiverIP  string
-	device      string
+	ipAddress  string
+	receiverIP string
+	device     string
 
 	// vlan ID to monitor on the interfaces
 	vlanIDToMonitor int
@@ -35,10 +35,6 @@ var (
 	snapshot_len int32 = 1024
 	promiscuous        = false
 	timeout            = 30 * time.Second
-	handle       *pcap.Handle
-
-	// list of enis to monitor
-	enis []eniConfig
 )
 
 // eniConfig details regarding ENIs
@@ -49,11 +45,14 @@ type eniConfig struct {
 }
 
 func main() {
+	// list of enis to monitor
+	var enis []eniConfig
+
 	fmt.Print("Verifying packet flow...\n")
 
 	helpFlag := flag.Bool("help", false, "displays usage information")
 	versionFlag := flag.Bool("version", false, "displays version information")
-	flag.StringVar(&ipToMonitor, "ip-to-monitor", "", "pod ip to monitor.")
+	flag.StringVar(&ipAddress, "ip-to-monitor", "", "pod ip to monitor.")
 	flag.StringVar(&receiverIP, "receiver-ip", "", "other IP that interacts with the pod.")
 	flag.IntVar(&vlanIDToMonitor, "vlanid-to-monitor", 0, "pod vlan id to monitor.")
 	flag.StringVar(&device, "host-device", "eth0", "host device of the node.")
@@ -73,10 +72,11 @@ func main() {
 		os.Exit(0)
 	}
 
-	if ipToMonitor == "" {
-		fmt.Println("tracking-ip can't be empty")
+	if ipAddress == "" {
+		fmt.Println("ip-to-monitor can't be empty")
 		os.Exit(1)
 	}
+	ipToMonitor := net.ParseIP(ipAddress)
 
 	hostName, err := os.Hostname()
 	if err != nil {
@@ -85,10 +85,11 @@ func main() {
 	}
 
 	// if its host ip then just use eth0 and skip rest of the operation
-	if hostName == ipToMonitor {
+	if hostName == ipToMonitor.String() {
 		hostENI := eniConfig{name: device}
 		enis = append(enis, hostENI)
 	} else {
+
 		// read route tables to find the hostveth
 		routeFilter := &netlink.Route{
 			Table: vlanIDToMonitor + 100,
@@ -99,7 +100,7 @@ func main() {
 			os.Exit(1)
 		}
 		for _, route := range routes {
-			if route.Dst != nil && route.Dst.IP.Equal(net.ParseIP(ipToMonitor)) {
+			if route.Dst != nil && ipToMonitor.Equal(route.Dst.IP) {
 				linkIndex := route.LinkIndex
 				link, err := netlink.LinkByIndex(linkIndex)
 				if err != nil {
@@ -139,7 +140,7 @@ func main() {
 			}
 			for _, rule := range rules {
 				// Find the ENI in the route table associated with the pod
-				if rule.Src != nil && net.ParseIP(ipToMonitor).Equal(rule.Src.IP) {
+				if rule.Src != nil && ipToMonitor.Equal(rule.Src.IP) {
 					routeFilter := &netlink.Route{
 						Table: rule.Table,
 					}
@@ -181,11 +182,11 @@ func main() {
 }
 
 // monitorPacketOnInterfaces invokes monitorPackets for each interface
-func monitorPacketOnInterfaces(ipAddress string, vlanIDToMonitor int, enis []eniConfig) error {
+func monitorPacketOnInterfaces(ipToMonitor net.IP, vlanIDToMonitor int, enis []eniConfig) error {
 
 	for _, iface := range enis {
 		fmt.Printf("Verifying interface: %+v\n", iface)
-		err := monitorPackets(ipAddress, vlanIDToMonitor, iface)
+		err := monitorPackets(ipToMonitor, vlanIDToMonitor, iface)
 		if err != nil {
 			return err
 		}
@@ -195,7 +196,7 @@ func monitorPacketOnInterfaces(ipAddress string, vlanIDToMonitor int, enis []eni
 }
 
 // monitorPackets monitors the packets on the interfaces
-func monitorPackets(ipAddress string, vlanIDToMonitor int, iface eniConfig) error {
+func monitorPackets(ipToMonitor net.IP, vlanIDToMonitor int, iface eniConfig) error {
 	handle, err := pcap.OpenLive(iface.name, snapshot_len, promiscuous, timeout)
 	if err != nil {
 		return err
@@ -211,16 +212,17 @@ func monitorPackets(ipAddress string, vlanIDToMonitor int, iface eniConfig) erro
 
 		network := packet.Layer(layers.LayerTypeIPv4)
 		if network != nil {
-			if iface.shouldCheckSrc && packet.NetworkLayer().NetworkFlow().Src().String() != ipAddress &&
-				packet.NetworkLayer().NetworkFlow().Dst().String() != ipAddress {
+			srcIP := net.ParseIP(packet.NetworkLayer().NetworkFlow().Src().String())
+			dstIP := net.ParseIP(packet.NetworkLayer().NetworkFlow().Dst().String())
+
+			if iface.shouldCheckSrc && srcIP.Equal(ipToMonitor) && dstIP.Equal(ipToMonitor) {
 				fmt.Printf("Src/Dst is different. Src %s Dst %s\n", packet.NetworkLayer().NetworkFlow().Src(),
 					packet.NetworkLayer().NetworkFlow().Dst())
 				return errors.New("SRC/Dst is different")
 			}
 
 			// Verify vlan tag (on ENIs we could see other IP pkts as well)
-			if packet.NetworkLayer().NetworkFlow().Src().String() == ipAddress ||
-				packet.NetworkLayer().NetworkFlow().Dst().String() == ipAddress {
+			if srcIP.Equal(ipToMonitor) || dstIP.Equal(ipToMonitor) {
 				if iface.shouldVerifyVlanTag {
 
 					dot1QPkt := packet.Layer(layers.LayerTypeDot1Q)
@@ -242,7 +244,7 @@ func monitorPackets(ipAddress string, vlanIDToMonitor int, iface eniConfig) erro
 					log.Infof("Icmp packet sequence: %d", icmpData.Seq)
 				}*/
 
-				if packet.NetworkLayer().NetworkFlow().Src().String() == ipAddress {
+				if srcIP.Equal(ipToMonitor) {
 					fmt.Printf("Source pkt is verified on the iface %s\n", iface.name)
 					srcPacketsProcessed++
 				} else {
