@@ -70,7 +70,7 @@ export GOPROXY = direct
 # LDFLAGS is the set of flags used when building golang executables.
 LDFLAGS = -X main.version=$(VERSION)
 # ALLPKGS is the set of packages provided in source.
-ALLPKGS = $(shell go list ./...)
+ALLPKGS = $(shell go list ./... | grep -v cmd/packet-verifier)
 # BINS is the set of built command executables.
 BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper
 # Plugin binaries
@@ -240,7 +240,7 @@ lint:
 
 # Run go vet on source code.
 vet:
-	go vet ./...
+	go vet $(ALLPKGS)
 
 # Run go vet inside of a container.
 docker-vet: build-docker-test

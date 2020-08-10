@@ -173,20 +173,26 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.New("add cmd: failed to assign an IP address to container")
 	}
 
-	log.Infof("Received add network response for container %s interface %s: %s, table %d, external-SNAT: %v, vpcCIDR: %v",
-		args.ContainerID, args.IfName,
-		r.IPv4Addr, r.DeviceNumber, r.UseExternalSNAT, r.VPCcidrs)
+	log.Infof("Received add network response for container %s interface %s: %+v",
+		args.ContainerID, args.IfName, r)
 
 	addr := &net.IPNet{
 		IP:   net.ParseIP(r.IPv4Addr),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 
-	// build hostVethName
-	// Note: the maximum length for linux interface name is 15
-	hostVethName := generateHostVethName(conf.VethPrefix, conf.Name, args.ContainerID, args.IfName)
+	if r.PodVlanId != 0 {
+		hostVethName := generateHostVethName("vlan", conf.Name, args.ContainerID, args.IfName)
 
-	err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber), r.VPCcidrs, r.UseExternalSNAT, mtu, log)
+		err = driverClient.SetupPodENINetwork(hostVethName, args.IfName, args.Netns, addr, int(r.PodVlanId), r.PodENIMAC,
+			r.PodENISubnetGW, int(r.ParentIfIndex), mtu, log)
+	} else {
+		// build hostVethName
+		// Note: the maximum length for linux interface name is 15
+		hostVethName := generateHostVethName(conf.VethPrefix, conf.Name, args.ContainerID, args.IfName)
+
+		err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber), r.VPCcidrs, r.UseExternalSNAT, mtu, log)
+	}
 
 	if err != nil {
 		log.Errorf("Failed SetupPodNetwork for container %s: %v",
@@ -299,13 +305,22 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.New("del cmd: failed to process delete request")
 	}
 
+	log.Infof("Received del network response for pod %s namespace %s sandbox %s: %+v", string(k8sArgs.K8S_POD_NAME),
+		string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), r)
+
 	deletedPodIP := net.ParseIP(r.IPv4Addr)
 	if deletedPodIP != nil {
 		addr := &net.IPNet{
 			IP:   deletedPodIP,
 			Mask: net.IPv4Mask(255, 255, 255, 255),
 		}
-		err = driverClient.TeardownNS(addr, int(r.DeviceNumber), log)
+
+		if r.PodVlanId != 0 {
+			err = driverClient.TeardownPodENINetwork(int(r.PodVlanId), log)
+		} else {
+			err = driverClient.TeardownNS(addr, int(r.DeviceNumber), log)
+		}
+
 		if err != nil {
 			log.Errorf("Failed on TeardownPodNetwork for container ID %s: %v",
 				args.ContainerID, err)
