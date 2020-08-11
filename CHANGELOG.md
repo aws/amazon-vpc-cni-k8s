@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.7.0-rc2
+
+* Improvement - [Add ipamd changes for sg support](https://github.com/aws/amazon-vpc-cni-k8s/pull/1126) (#1126, @mogren)
+* Improvement - [Add support to setup pod network using VLANss](https://github.com/aws/amazon-vpc-cni-k8s/pull/1125) (#1125, @SaranBalaji90)
+* Improvement - [Improve CRI->checkpoint logic in the face of downgrades](https://github.com/aws/amazon-vpc-cni-k8s/pull/1123) (#1123, @anguslees)
+* Docs - [Changed data type for variables in README](https://github.com/aws/amazon-vpc-cni-k8s/pull/1116) (#1116, @abhinavmpandey08)
+* Improvement - [Slash and burn unused code](https://github.com/aws/amazon-vpc-cni-k8s/pull/1115) (#1115, @anguslees)
+* Improvement - [Remove references to unused metadata `owner-id`](https://github.com/aws/amazon-vpc-cni-k8s/pull/1111) (#1111, @anguslees)
+* Improvement - [Remove old pre-1.3 migration code](https://github.com/aws/amazon-vpc-cni-k8s/pull/1110) (#1110, @anguslees)
+* Testing - [Create script to run all release tests](https://github.com/aws/amazon-vpc-cni-k8s/pull/1106) (#1106, @bnapolitan)
+* Improvement - [Enable log config for the metrics agent](https://github.com/aws/amazon-vpc-cni-k8s/pull/1104) (#1104, @mogren)
+* Improvement - [Refactor ENI limit struct](https://github.com/aws/amazon-vpc-cni-k8s/pull/1035) (#1035, @mogren)
+* Testing - [Cover bottlerocket cluster test](https://github.com/aws/amazon-vpc-cni-k8s/pull/1096) (#1096, @bnapolitan)
+* Testing - [Introduce automated performance testing](https://github.com/aws/amazon-vpc-cni-k8s/pull/1068) (#1068, @bnapolitan)
+
 ## v1.7.0-rc1
 * Bug - [Use limits from API for g4dn.16xlarge](https://github.com/aws/amazon-vpc-cni-k8s/pull/1086) (#1086, @mogren)
 * Improvement - [Use sed as a stream editor and redirect to file](https://github.com/aws/amazon-vpc-cni-k8s/pull/1069) (#1069, @willejs)
