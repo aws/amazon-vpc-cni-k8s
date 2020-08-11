@@ -46,7 +46,8 @@ func updateNodeAnnotation(hdlr sdk.Handler, nodeName string, configName string, 
 	node := corev1.Node{
 		TypeMeta: metav1.TypeMeta{APIVersion: corev1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: nodeName,
+			Name:   nodeName,
+			Labels: make(map[string]string),
 		},
 	}
 	accessor, err := meta.Accessor(&node)

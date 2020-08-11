@@ -128,6 +128,13 @@ var InterestingCNIMetrics = map[string]metricsConvert{
 				actionFunc: metricsAdd,
 				data:       &dataPoints{},
 				logToFile:  true}}},
+	"awscni_pod_eni_error_count": {
+		actions: []metricsAction{
+			{cwMetricName: "podENIErr",
+				matchFunc:  matchAny,
+				actionFunc: metricsAdd,
+				data:       &dataPoints{},
+				logToFile:  true}}},
 }
 
 // CNIMetricsTarget defines data structure for kube-state-metric target

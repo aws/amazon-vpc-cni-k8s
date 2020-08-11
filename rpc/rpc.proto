@@ -25,7 +25,15 @@ message AddNetworkReply {
   int32 DeviceNumber = 4;
   bool UseExternalSNAT = 5;
   repeated string VPCcidrs = 6;
-  // next field: 7
+
+  // start of pod-eni parameters
+  int32 PodVlanId = 7;
+  string PodENIMAC = 8;
+  string PodENISubnetGW = 9;
+  int32 ParentIfIndex = 10;
+  // end of pod-eni parameters
+
+  // next field: 11
 }
 
 message DelNetworkRequest {
@@ -43,5 +51,10 @@ message DelNetworkReply {
   bool Success = 1;
   string IPv4Addr = 2;
   int32 DeviceNumber = 3;
-  // next field: 4
+
+  // start of pod-eni parameters
+  int32 PodVlanId = 4;
+  // end of pod-eni parameters
+
+  // next field: 5
 }

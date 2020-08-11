@@ -34,6 +34,12 @@ const (
 	cniPodName = "aws-node"
 )
 
+// K8SAPIs defines interface to use kubelet introspection API
+type K8SAPIs interface {
+	SetNodeLabel(key, value string) error
+	GetPod(podName, namespace string) (*v1.Pod, error)
+}
+
 // K8SPodInfo provides pod info
 type K8SPodInfo struct {
 	// Name is pod's name
@@ -152,6 +158,43 @@ func (d *Controller) DiscoverK8SPods(podListWatcher *cache.ListWatch) {
 
 	// Wait forever
 	select {}
+}
+
+func (d *Controller) SetNodeLabel(key, value string) error {
+	// Find my node
+	node, err := d.kubeClient.CoreV1().Nodes().Get(d.myNodeName, metav1.GetOptions{})
+	if err != nil {
+		log.Errorf("Failed to get node: %v", err)
+		return err
+	}
+
+	if labelValue, ok := node.Labels[key]; ok && labelValue == value {
+		log.Debugf("Node label %q is already %q", key, labelValue)
+		return nil
+	}
+	// Make deep copy for modification
+	updateNode := node.DeepCopy()
+
+	// Set node label
+	if value != "" {
+		updateNode.Labels[key] = value
+	} else {
+		// Empty value, delete the label
+		log.Debugf("Deleting label %q", key)
+		delete(updateNode.Labels, key)
+	}
+
+	// Update node status to advertise the resource.
+	_, err = d.kubeClient.CoreV1().Nodes().Update(updateNode)
+	if err != nil {
+		log.Errorf("Failed to update node %s with label %q: %q, error: %v", d.myNodeName, key, value, err)
+	}
+	log.Infof("Updated node %s with label %q: %q", d.myNodeName, key, value)
+	return nil
+}
+
+func (d *Controller) GetPod(podName, namespace string) (*v1.Pod, error) {
+	return d.kubeClient.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
 }
 
 // The rest of logic/code are taken from kubernetes/client-go/examples/workqueue
