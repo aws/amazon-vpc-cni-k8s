@@ -90,6 +90,7 @@ spec:
                     operator: In
                     values:
                       - amd64
+                      - arm64  
                   - key: "eks.amazonaws.com/compute-type"
                     operator: NotIn
                     values:
@@ -99,7 +100,7 @@ spec:
       tolerations:
         - operator: Exists
       containers:
-        - image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni:v1.6.3
+        - image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni:v1.6.4
           imagePullPolicy: Always
           ports:
             - containerPort: 61678
