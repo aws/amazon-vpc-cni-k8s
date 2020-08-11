@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.6.4-rc1
+## v1.6.4
 * Bug - [Use docker/CRI to discover pods at node init](https://github.com/aws/amazon-vpc-cni-k8s/pull/1118) (#1118, @fawadkhaliq)
 
 ## v1.6.3
