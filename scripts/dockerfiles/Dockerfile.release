@@ -1,9 +1,14 @@
-ARG docker_arch
-ARG golang_image=golang:1.13-stretch
+# syntax=docker/dockerfile:1.1.3-experimental
 
-FROM $golang_image as builder
+FROM --platform=$BUILDPLATFORM golang:1.13-stretch as builder
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
-ARG GOARCH
+ARG TARGETARCH
+ARG TARGETOS
+ARG TARGETVARIANT
+ENV GOARCH=${TARGETARCH}
+ENV GOOS=${TARGETOS}
+ENV GOVARIANT=${TARGETVARIANT}
+ENV CGO_ENABLED=0
 # Configure build with Go modules
 ENV GO111MODULE=on
 ENV GOPROXY=direct
@@ -16,15 +21,50 @@ COPY Makefile ./
 RUN make plugins && make debug-script
 
 COPY . ./
-RUN make build-linux
+# -buildmode=pie invokes linker incorrectly on arm64 with CGO_ENABLED=0 ?
+RUN --mount=type=cache,target=/root/.cache make build-linux BUILD_MODE=
+
+FROM --platform=$BUILDPLATFORM amazonlinux:2 as yum
+
+RUN yum install -y yum-utils
+
+COPY scripts/dockerfiles/alplatform /usr/local/bin/
+
+ARG TARGETPLATFORM
+
+# This should not be necessary, but it seems "default" region is
+# broken for aarch64 (mirror list URL returns 403)
+# TODO: report as AL bug.
+# It all redirects to a region-agnostic cdn cache afaics anyway..
+RUN echo us-west-2 > /etc/yum/vars/awsregion
+
+# Override architecture.  There is probably a cleaner way to do this(?)
+RUN alplatform > /etc/yum/vars/basearch
+
+WORKDIR /tmp/pkgs
+RUN echo "fetching for --archlist=$(alplatform)"
+RUN yumdownloader --archlist=$(alplatform) --resolve --downloadonly \
+        iptables.$(alplatform) iproute.$(alplatform)
+
+# This only works because running the post-install scripts for these
+# packages is not strictly required.
+RUN rpm -i -r /target --noscripts --nodeps --ignorearch --ignoreos --replacefiles *.rpm
+
+# .. well, post-install scripts are *almost* not required
+RUN set -xe; \
+        for f in {iptables,ip6tables}{,-save,-restore}; do \
+          ln -s xtables-legacy-multi /target/usr/sbin/$f; \
+        done
+
+RUN rm -rf /target/var/lib/rpm
+RUN find /target -ls
 
 # Build the architecture specific container image:
-FROM $docker_arch/amazonlinux:2
-RUN yum update -y && \
-    yum install -y iptables iproute && \
-    yum clean all
+FROM --platform=$TARGETPLATFORM amazonlinux:2
 
 WORKDIR /app
+
+COPY --from=yum /target /
 
 COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/misc/10-aws.conflist \
