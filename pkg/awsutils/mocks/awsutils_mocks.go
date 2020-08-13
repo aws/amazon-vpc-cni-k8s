@@ -280,3 +280,18 @@ func (mr *MockAPIsMockRecorder) SetUnmanagedENIs(arg0 interface{}) *gomock.Call 
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetUnmanagedENIs", reflect.TypeOf((*MockAPIs)(nil).SetUnmanagedENIs), arg0)
 }
+
+// WaitForENIAndIPsAttached mocks base method
+func (m *MockAPIs) WaitForENIAndIPsAttached(arg0 string, arg1 int) (awsutils.ENIMetadata, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "WaitForENIAndIPsAttached", arg0, arg1)
+	ret0, _ := ret[0].(awsutils.ENIMetadata)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// WaitForENIAndIPsAttached indicates an expected call of WaitForENIAndIPsAttached
+func (mr *MockAPIsMockRecorder) WaitForENIAndIPsAttached(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForENIAndIPsAttached", reflect.TypeOf((*MockAPIs)(nil).WaitForENIAndIPsAttached), arg0, arg1)
+}

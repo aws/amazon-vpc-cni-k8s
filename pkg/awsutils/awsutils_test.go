@@ -16,8 +16,11 @@ package awsutils
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"reflect"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -780,6 +783,83 @@ func Test_badENIID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := badENIID(tt.errMsg); got != tt.want {
 				t.Errorf("badENIID() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEC2InstanceMetadataCache_waitForENIAndIPsAttached(t *testing.T) {
+	type args struct {
+		eni                string
+		foundSecondaryIPs  int
+		wantedSecondaryIPs int
+		maxBackoffDelay    time.Duration
+		times              int
+	}
+	eni1Metadata := ENIMetadata{
+		ENIID:         eniID,
+		IPv4Addresses: nil,
+	}
+	isPrimary := true
+	notPrimary := false
+	primaryIP := eni2PrivateIP
+	secondaryIP1 := primaryIP + "0"
+	secondaryIP2 := primaryIP + "1"
+	eni2Metadata := ENIMetadata{
+		ENIID:          eni2ID,
+		MAC:            eni2MAC,
+		DeviceNumber:   2,
+		SubnetIPv4CIDR: subnetCIDR,
+		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			{
+				Primary:          &isPrimary,
+				PrivateIpAddress: &primaryIP,
+			}, {
+				Primary:          &notPrimary,
+				PrivateIpAddress: &secondaryIP1,
+			}, {
+				Primary:          &notPrimary,
+				PrivateIpAddress: &secondaryIP2,
+			},
+		},
+	}
+	eniList := []ENIMetadata{eni1Metadata, eni2Metadata}
+	tests := []struct {
+		name            string
+		args            args
+		wantEniMetadata ENIMetadata
+		wantErr         bool
+	}{
+		{"Test wait success", args{eni: eni2ID, foundSecondaryIPs: 2, wantedSecondaryIPs: 2, maxBackoffDelay: 5 * time.Millisecond, times: 1}, eniList[1], false},
+		{"Test partial success", args{eni: eni2ID, foundSecondaryIPs: 2, wantedSecondaryIPs: 12, maxBackoffDelay: 5 * time.Millisecond, times: maxENIEC2APIRetries}, eniList[1], false},
+		{"Test wait fail", args{eni: eni2ID, foundSecondaryIPs: 0, wantedSecondaryIPs: 12, maxBackoffDelay: 5 * time.Millisecond, times: maxENIEC2APIRetries}, ENIMetadata{}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl, mockMetadata, mockEC2 := setup(t)
+			defer ctrl.Finish()
+			eniIPs := eni2PrivateIP
+			for i := 0; i < tt.args.foundSecondaryIPs; i++ {
+				eniIPs += " " + eni2PrivateIP + strconv.Itoa(i)
+			}
+			fmt.Println("eniips", eniIPs)
+			mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC+" "+eni2MAC, nil).Times(tt.args.times)
+			mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil).Times(tt.args.times)
+			mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryeniID, nil).Times(tt.args.times)
+			mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Return(subnetCIDR, nil).Times(tt.args.times)
+			mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Return(eni1PrivateIP, nil).Times(tt.args.times)
+			mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataDeviceNum).Return(eni2Device, nil).Times(tt.args.times)
+			mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataInterface).Return(eni2ID, nil).Times(tt.args.times)
+			mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataSubnetCIDR).Return(subnetCIDR, nil).Times(tt.args.times)
+			mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataIPv4s).Return(eniIPs, nil).Times(tt.args.times)
+			cache := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata, ec2SVC: mockEC2}
+			gotEniMetadata, err := cache.waitForENIAndIPsAttached(tt.args.eni, tt.args.wantedSecondaryIPs, tt.args.maxBackoffDelay)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("waitForENIAndIPsAttached() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(gotEniMetadata, tt.wantEniMetadata) {
+				t.Errorf("waitForENIAndIPsAttached() gotEniMetadata = %v, want %v", gotEniMetadata, tt.wantEniMetadata)
 			}
 		})
 	}
