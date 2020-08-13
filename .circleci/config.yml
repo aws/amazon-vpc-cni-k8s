@@ -9,7 +9,7 @@ orbs:
 references:
   build_job: &build
     docker:
-      - image: circleci/golang:1.13-stretch
+      - image: circleci/golang:1.14-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment: &env
       GO111MODULE: "on"
@@ -54,7 +54,7 @@ jobs:
 
   integration_test:
     docker:
-      - image: circleci/golang:1.13-stretch
+      - image: circleci/golang:1.14-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
       <<: *env
@@ -85,7 +85,7 @@ jobs:
 
   performance_test:
     docker:
-      - image: circleci/golang:1.13-stretch
+      - image: circleci/golang:1.14-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
       <<: *env
@@ -118,7 +118,7 @@ jobs:
 
   kops_test:
     docker:
-      - image: circleci/golang:1.13-stretch
+      - image: circleci/golang:1.14-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
       <<: *env
@@ -150,7 +150,7 @@ jobs:
 
   warm_ip_test:
     docker:
-      - image: circleci/golang:1.13-stretch
+      - image: circleci/golang:1.14-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
       <<: *env
@@ -181,7 +181,7 @@ jobs:
 
   warm_eni_test:
     docker:
-      - image: circleci/golang:1.13-stretch
+      - image: circleci/golang:1.14-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
       <<: *env
@@ -212,7 +212,7 @@ jobs:
 
   bottlerocket_test:
     docker:
-      - image: circleci/golang:1.13-stretch
+      - image: circleci/golang:1.14-stretch
     working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     environment:
       <<: *env
