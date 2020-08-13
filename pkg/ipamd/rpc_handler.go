@@ -120,6 +120,10 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 		}
 	}
 	if addr == "" {
+		if in.ContainerID == "" || in.IfName == "" || in.NetworkName == "" {
+			log.Errorf("Unable to generate IPAMKey from %+v", in)
+			return &failureResponse, nil
+		}
 		ipamKey := datastore.IPAMKey{
 			ContainerID: in.ContainerID,
 			IfName:      in.IfName,
