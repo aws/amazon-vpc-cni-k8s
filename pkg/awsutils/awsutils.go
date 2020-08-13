@@ -79,8 +79,11 @@ const (
 var (
 	// ErrENINotFound is an error when ENI is not found.
 	ErrENINotFound = errors.New("ENI is not found")
-	// ErrNoNetworkInterfaces occurs when
-	// DesribeNetworkInterfaces(eniID) returns no network interfaces
+	// ErrAllSecondaryIPsNotFound is returned when not all secondary IPs on an ENI have been assigned
+	ErrAllSecondaryIPsNotFound = errors.New("All secondary IPs not found")
+	// ErrNoSecondaryIPsFound is returned when not all secondary IPs on an ENI have been assigned
+	ErrNoSecondaryIPsFound = errors.New("No secondary IPs have been assigned to this ENI")
+	// ErrNoNetworkInterfaces occurs when DescribeNetworkInterfaces(eniID) returns no network interfaces
 	ErrNoNetworkInterfaces = errors.New("No network interfaces found for ENI")
 	// Custom user agent
 	userAgent = request.WithAppendUserAgent("amazon-vpc-cni-k8s")
@@ -162,6 +165,9 @@ type APIs interface {
 
 	//isUnmanagedENI
 	IsUnmanagedENI(eniID string) bool
+
+	// WaitForENIAndIPsAttached waits until the ENI has been attached and the secondary IPs have been added
+	WaitForENIAndIPsAttached(eni string, wantedSecondaryIPs int) (ENIMetadata, error)
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -1305,18 +1311,71 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	output, err := cache.ec2SVC.AssignPrivateIpAddressesWithContext(context.Background(), input, userAgent)
 	awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil)).Observe(msSince(start))
 	if err != nil {
-		log.Errorf("Failed to allocate a private IP addresses on ENI %v: %v", eniID, err)
-		awsAPIErrInc("AssignPrivateIpAddresses", err)
 		if containsPrivateIPAddressLimitExceededError(err) {
-			log.Debug("AssignPrivateIpAddresses returned PrivateIpAddressLimitExceeded")
+			log.Debug("AssignPrivateIpAddresses returned PrivateIpAddressLimitExceeded. This can happen if the data store is out of sync." +
+				"Returning without an error here since we will verify the actual state by calling EC2 to see what addresses have already assigned to this ENI.")
 			return nil
 		}
+		log.Errorf("Failed to allocate a private IP addresses on ENI %v: %v", eniID, err)
+		awsAPIErrInc("AssignPrivateIpAddresses", err)
 		return errors.Wrap(err, "allocate IP address: failed to allocate a private IP address")
 	}
 	if output != nil {
 		log.Infof("Allocated %d private IP addresses", len(output.AssignedPrivateIpAddresses))
 	}
 	return nil
+}
+
+func (cache *EC2InstanceMetadataCache) WaitForENIAndIPsAttached(eni string, wantedSecondaryIPs int) (eniMetadata ENIMetadata, err error) {
+	return cache.waitForENIAndIPsAttached(eni, wantedSecondaryIPs, maxENIBackoffDelay)
+}
+
+func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, wantedSecondaryIPs int, maxBackoffDelay time.Duration) (eniMetadata ENIMetadata, err error) {
+	start := time.Now()
+	attempt := 0
+	// Wait until the ENI shows up in the instance metadata service and has at least some secondary IPs
+	err = retry.RetryNWithBackoff(retry.NewSimpleBackoff(time.Millisecond*100, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
+		attempt++
+		enis, err := cache.GetAttachedENIs()
+		if err != nil {
+			log.Warnf("Failed to increase pool, error trying to discover attached ENIs on attempt %d/%d: %v ", attempt, maxENIEC2APIRetries, err)
+			return ErrNoNetworkInterfaces
+		}
+		// Verify that the ENI we are waiting for is in the returned list
+		for _, returnedENI := range enis {
+			if eni == returnedENI.ENIID {
+				// Check how many Secondary IPs have been attached
+				eniIPCount := len(returnedENI.IPv4Addresses)
+				if eniIPCount <= 1 {
+					log.Debugf("No secondary IPv4 addresses available yet on ENI %s", returnedENI.ENIID)
+					return ErrNoSecondaryIPsFound
+				}
+				// At least some are attached
+				eniMetadata = returnedENI
+				// ipsToAllocate will be at most 1 less then the IP limit for the ENI because of the primary IP
+				if eniIPCount > wantedSecondaryIPs {
+					return nil
+				}
+				return ErrAllSecondaryIPsNotFound
+			}
+		}
+		log.Debugf("Not able to find the right ENI yet (attempt %d/%d)", attempt, maxENIEC2APIRetries)
+		return ErrENINotFound
+	})
+	awsAPILatency.WithLabelValues("waitForENIAndIPsAttached", fmt.Sprint(err != nil)).Observe(msSince(start))
+	if err != nil {
+		// If we have at least 1 Secondary IP, by now return what we have without an error
+		if err == ErrAllSecondaryIPsNotFound {
+			if len(eniMetadata.IPv4Addresses) > 1 {
+				// We have some Secondary IPs, return the ones we have
+				log.Warnf("This ENI only has %d IP addresses, we wanted %d", len(eniMetadata.IPv4Addresses), wantedSecondaryIPs)
+				return eniMetadata, nil
+			}
+		}
+		awsAPIErrInc("waitENIAttachedFailedToAssignIPs", err)
+		return ENIMetadata{}, errors.New("waitForENIAndIPsAttached: giving up trying to retrieve ENIs from metadata service")
+	}
+	return eniMetadata, nil
 }
 
 // DeallocIPAddresses allocates numIPs of IP address on an ENI
