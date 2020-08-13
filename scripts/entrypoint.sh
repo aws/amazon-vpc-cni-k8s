@@ -78,6 +78,9 @@ if [[ "$AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER" != "false" ]]; then
     done
 fi
 
+log_in_json info "Install CNI binary.."
+install aws-cni "$HOST_CNI_BIN_PATH"
+
 log_in_json info "Starting IPAM daemon in the background ... "
 ./aws-k8s-agent | tee -i "$AGENT_LOG_PATH" 2>&1 &
 
@@ -89,9 +92,7 @@ if ! wait_for_ipam; then
     exit 1
 fi
 
-log_in_json info "Copying CNI plugin binary and config file ... "
-
-install aws-cni "$HOST_CNI_BIN_PATH"
+log_in_json info "Copying config file ... "
 
 # modify the static config to populate it with the env vars
 sed \
