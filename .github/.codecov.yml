@@ -3,12 +3,12 @@
 
 codecov:
   notify:
-    require_ci_to_pass: no
+    require_ci_to_pass: yes
 
 coverage:
   precision: 2
   round: down
-  range: "70...100"
+  range: "50...75"
 
   status:
     project:
@@ -19,22 +19,13 @@ coverage:
         only_pulls: true
         flags:
           - "unittest"
-    patch:
-      default:
-        threshold: 1
-        only_pulls: true
-      unittest:
-        threshold: 1
-        only_pulls: true
-        flags:
-          - "unittest"
-    changes: no
 
 comment: false
 
 ignore:
-  - "docs/**/*"
   - "config/**/*"
+  - "docs/**/*"
+  - "misc/**/*"
   - "rpc/**/*"
   - "scripts/**/*"
   - "test/**/*"
