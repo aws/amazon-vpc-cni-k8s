@@ -713,7 +713,7 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 
 	ds.total -= len(eni.IPv4Addresses)
 	ds.log.Infof("RemoveENIFromDataStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
-		eni, len(eni.IPv4Addresses), ds.total, ds.assigned)
+		eniID, len(eni.IPv4Addresses), ds.total, ds.assigned)
 	delete(ds.eniPool, eniID)
 
 	// Prometheus gauge
