@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.7.0-latest
+
+* Improvement - [Reject version skew between gRPC client and server](https://github.com/aws/amazon-vpc-cni-k8s/pull/1141) (#1141, @anguslees)
+* Improvement - [Write to IPAM checkpoint file immediately after reading from CRI](https://github.com/aws/amazon-vpc-cni-k8s/pull/1140) (#1140, @anguslees)
+* Improvement - [Fix a log message](https://github.com/aws/amazon-vpc-cni-k8s/pull/1138) (#1138, @anguslees)
+
 ## v1.7.0-rc2
 
 * Improvement - [Add ipamd changes for sg support](https://github.com/aws/amazon-vpc-cni-k8s/pull/1126) (#1126, @mogren)
