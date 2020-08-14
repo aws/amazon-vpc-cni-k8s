@@ -22,8 +22,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
-const binaryName = "ipamd"
-
 var version string
 
 func main() {
@@ -33,7 +31,8 @@ func main() {
 func _main() int {
 	//Do not add anything before initializing logger
 	logConfig := logger.Configuration{
-		BinaryName: binaryName,
+		LogLevel:    logger.GetLogLevel(),
+		LogLocation: logger.GetLogLocation(),
 	}
 	log := logger.New(&logConfig)
 

@@ -20,28 +20,25 @@ import (
 const (
 	defaultLogFilePath = "/host/var/log/aws-routed-eni/ipamd.log"
 	defaultLogLevel    = "Debug"
-	binaryName         = "L-IPamD"
 	envLogLevel        = "AWS_VPC_K8S_CNI_LOGLEVEL"
 	envLogFilePath     = "AWS_VPC_K8S_CNI_LOG_FILE"
 )
 
 // Configuration stores the config for the logger
 type Configuration struct {
-	BinaryName  string
 	LogLevel    string
 	LogLocation string
 }
 
 func LoadLogConfig() *Configuration {
 	return &Configuration{
-		BinaryName:  binaryName,
 		LogLevel:    GetLogLevel(),
-		LogLocation: getLogFileLocation(),
+		LogLocation: GetLogLocation(),
 	}
 }
 
 // GetLogFileLocation returns the log file path
-func getLogFileLocation() string {
+func GetLogLocation() string {
 	logFilePath := os.Getenv(envLogFilePath)
 	if logFilePath == "" {
 		logFilePath = defaultLogFilePath
