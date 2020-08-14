@@ -21,7 +21,7 @@ package mock_networkutils
 import (
 	net "net"
 	reflect "reflect"
-	"time"
+	time "time"
 
 	gomock "github.com/golang/mock/gomock"
 	netlink "github.com/vishvananda/netlink"
@@ -76,6 +76,21 @@ func (m *MockNetworkAPIs) GetExcludeSNATCIDRs() []string {
 func (mr *MockNetworkAPIsMockRecorder) GetExcludeSNATCIDRs() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetExcludeSNATCIDRs", reflect.TypeOf((*MockNetworkAPIs)(nil).GetExcludeSNATCIDRs))
+}
+
+// GetLinkByMac mocks base method
+func (m *MockNetworkAPIs) GetLinkByMac(arg0 string, arg1 time.Duration) (netlink.Link, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLinkByMac", arg0, arg1)
+	ret0, _ := ret[0].(netlink.Link)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLinkByMac indicates an expected call of GetLinkByMac
+func (mr *MockNetworkAPIsMockRecorder) GetLinkByMac(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLinkByMac", reflect.TypeOf((*MockNetworkAPIs)(nil).GetLinkByMac), arg0, arg1)
 }
 
 // GetRuleList mocks base method
@@ -162,19 +177,4 @@ func (m *MockNetworkAPIs) UseExternalSNAT() bool {
 func (mr *MockNetworkAPIsMockRecorder) UseExternalSNAT() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UseExternalSNAT", reflect.TypeOf((*MockNetworkAPIs)(nil).UseExternalSNAT))
-}
-
-// GetLinkByMac mocks base method
-func (m *MockNetworkAPIs) GetLinkByMac(arg0 string, arg1 time.Duration) (netlink.Link, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetLinkByMac", arg0, arg1)
-	ret0, _ := ret[0].(netlink.Link)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetLinkByMac indicates an expected call of GetLinkByMac
-func (mr *MockNetworkAPIsMockRecorder) GetLinkByMac(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLinkByMac", reflect.TypeOf((*MockNetworkAPIs)(nil).GetLinkByMac), arg0, arg1)
 }
