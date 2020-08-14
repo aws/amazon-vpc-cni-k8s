@@ -64,7 +64,7 @@ func (mr *MockNetworkAPIsMockRecorder) SetupNS(arg0, arg1, arg2, arg3, arg4, arg
 }
 
 // SetupPodENINetwork mocks base method
-func (m *MockNetworkAPIs) SetupPodENINetwork(arg0, arg1, arg2 string, arg3 *net.IPNet, arg4 int, arg5, arg6 string, arg7 int, arg8 int, arg9 logger.Logger) error {
+func (m *MockNetworkAPIs) SetupPodENINetwork(arg0, arg1, arg2 string, arg3 *net.IPNet, arg4 int, arg5, arg6 string, arg7, arg8 int, arg9 logger.Logger) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SetupPodENINetwork", arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
 	ret0, _ := ret[0].(error)
@@ -72,8 +72,7 @@ func (m *MockNetworkAPIs) SetupPodENINetwork(arg0, arg1, arg2 string, arg3 *net.
 }
 
 // SetupPodENINetwork indicates an expected call of SetupPodENINetwork
-func (mr *MockNetworkAPIsMockRecorder) SetupPodENINetwork(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8,
-	arg9 interface{}) *gomock.Call {
+func (mr *MockNetworkAPIsMockRecorder) SetupPodENINetwork(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupPodENINetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupPodENINetwork), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
 }
