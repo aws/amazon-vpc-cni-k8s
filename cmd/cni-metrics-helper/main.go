@@ -29,8 +29,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 )
 
-const binaryName = "cni-metrics-helper"
-
 type options struct {
 	submitCW bool
 	help     bool
@@ -40,7 +38,6 @@ func main() {
 	// Do not add anything before initializing logger
 	logLevel := logger.GetLogLevel()
 	logConfig := logger.Configuration{
-		BinaryName:  binaryName,
 		LogLevel:    logLevel,
 		LogLocation: "stdout",
 	}

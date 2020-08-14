@@ -13,8 +13,6 @@
 
 package logger
 
-const ipamdBinaryName = "aws-k8s-agent"
-
 //Log is global variable so that log functions can be directly accessed
 var log Logger
 
@@ -64,11 +62,6 @@ func (logf *structuredLogger) isEmpty() bool {
 
 //New logger initializes logger
 func New(inputLogConfig *Configuration) Logger {
-	if inputLogConfig.BinaryName == ipamdBinaryName {
-		logConfig := LoadLogConfig()
-		log = logConfig.newZapLogger()
-		return log
-	}
 	log = inputLogConfig.newZapLogger()
 	return log
 }
