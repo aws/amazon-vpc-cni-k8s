@@ -24,6 +24,60 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestServer_VersionCheck(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:     m.awsutils,
+		maxIPsPerENI:  14,
+		maxENI:        4,
+		warmENITarget: 1,
+		warmIPTarget:  3,
+		networkClient: m.network,
+		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}),
+	}
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{})
+	m.network.EXPECT().UseExternalSNAT().Return(true)
+
+	rpcServer := server{
+		version:     "1.2.3",
+		ipamContext: mockContext,
+	}
+
+	// Happy path
+
+	addReq := &pb.AddNetworkRequest{
+		ClientVersion: "1.2.3",
+		Netns:         "netns",
+		NetworkName:   "net0",
+		ContainerID:   "cid",
+		IfName:        "eni",
+	}
+
+	_, err := rpcServer.AddNetwork(context.TODO(), addReq)
+	assert.NoError(t, err)
+
+	delReq := &pb.DelNetworkRequest{
+		ClientVersion: "1.2.3",
+		NetworkName:   "net0",
+		ContainerID:   "cid",
+		IfName:        "eni",
+	}
+	_, err = rpcServer.DelNetwork(context.TODO(), delReq)
+	assert.EqualError(t, err, datastore.ErrUnknownPod.Error())
+
+	// Sad path
+
+	addReq.ClientVersion = "1.2.4"
+	_, err = rpcServer.AddNetwork(context.TODO(), addReq)
+	assert.Error(t, err)
+
+	delReq.ClientVersion = "1.2.4"
+	_, err = rpcServer.DelNetwork(context.TODO(), delReq)
+	assert.Error(t, err)
+}
+
 func TestServer_AddNetwork(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
@@ -38,13 +92,17 @@ func TestServer_AddNetwork(t *testing.T) {
 		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}),
 	}
 
-	rpcServer := server{ipamContext: mockContext}
+	rpcServer := server{
+		version:     "1.2.3",
+		ipamContext: mockContext,
+	}
 
 	addNetworkRequest := &pb.AddNetworkRequest{
-		Netns:       "netns",
-		NetworkName: "net0",
-		ContainerID: "cid",
-		IfName:      "eni",
+		ClientVersion: "1.2.3",
+		Netns:         "netns",
+		NetworkName:   "net0",
+		ContainerID:   "cid",
+		IfName:        "eni",
 	}
 
 	vpcCIDRs := []string{vpcCIDR}

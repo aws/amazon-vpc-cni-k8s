@@ -67,7 +67,7 @@ func _main() int {
 	go ipamContext.ServeIntrospection()
 
 	// Start the RPC listener
-	err = ipamContext.RunRPCHandler()
+	err = ipamContext.RunRPCHandler(version)
 	if err != nil {
 		log.Errorf("Failed to set up gRPC handler: %v", err)
 		return 1
