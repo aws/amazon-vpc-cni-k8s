@@ -75,7 +75,7 @@ spec:
     spec:
       serviceAccountName: cni-metrics-helper
       containers:
-      - image: 013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/cni-metrics-helper:v1.6.3
+      - image: 013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/cni-metrics-helper:v1.6.3-eksbuild.1
         imagePullPolicy: Always
         name: cni-metrics-helper
         env:
