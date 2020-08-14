@@ -25,9 +25,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
@@ -42,6 +44,7 @@ const (
 
 // server controls RPC service responses.
 type server struct {
+	version     string
 	ipamContext *IPAMContext
 }
 
@@ -58,7 +61,14 @@ type PodENIData struct {
 func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rpc.AddNetworkReply, error) {
 	log.Infof("Received AddNetwork for NS %s, Sandbox %s, ifname %s",
 		in.Netns, in.ContainerID, in.IfName)
+	log.Debugf("AddNetworkRequest: %s", in)
 	addIPCnt.Inc()
+
+	// Do this early, but after logging trace
+	if err := s.validateVersion(in.ClientVersion); err != nil {
+		log.Warnf("Rejecting AddNetwork request: %v", err)
+		return nil, err
+	}
 
 	failureResponse := rpc.AddNetworkReply{Success: false}
 	var deviceNumber, vlanId, trunkENILinkIndex int
@@ -160,9 +170,24 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	return &resp, nil
 }
 
+func (s *server) validateVersion(clientVersion string) error {
+	if s.version != clientVersion {
+		return status.Errorf(codes.FailedPrecondition, "wrong client version %q (!= %q)", clientVersion, s.version)
+	}
+	return nil
+}
+
 func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rpc.DelNetworkReply, error) {
 	log.Infof("Received DelNetwork for Sandbox %s", in.ContainerID)
+	log.Debugf("DelNetworkRequest: %s", in)
 	delIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
+
+	// Do this early, but after logging trace
+	if err := s.validateVersion(in.ClientVersion); err != nil {
+		log.Warnf("Rejecting DelNetwork request: %v", err)
+		return nil, err
+	}
+
 	if s.ipamContext.enablePodENI {
 		pod, err := s.ipamContext.GetPod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
 		if err != nil {
@@ -201,15 +226,15 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 }
 
 // RunRPCHandler handles request from gRPC
-func (c *IPAMContext) RunRPCHandler() error {
-	log.Infof("Serving RPC Handler on %s", ipamdgRPCaddress)
+func (c *IPAMContext) RunRPCHandler(version string) error {
+	log.Infof("Serving RPC Handler version %s on %s", version, ipamdgRPCaddress)
 	listener, err := net.Listen("tcp", ipamdgRPCaddress)
 	if err != nil {
 		log.Errorf("Failed to listen gRPC port: %v", err)
 		return errors.Wrap(err, "ipamd: failed to listen to gRPC port")
 	}
 	grpcServer := grpc.NewServer()
-	rpc.RegisterCNIBackendServer(grpcServer, &server{ipamContext: c})
+	rpc.RegisterCNIBackendServer(grpcServer, &server{version: version, ipamContext: c})
 	healthServer := health.NewServer()
 	// If ipamd can talk to the API server and to the EC2 API, the pod is healthy.
 	// No need to ever change this to HealthCheckResponse_NOT_SERVING since it's a local service only

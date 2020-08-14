@@ -9,6 +9,7 @@ service CNIBackend {
 }
 
 message AddNetworkRequest {
+  string ClientVersion = 8;
   string K8S_POD_NAME = 1;
   string K8S_POD_NAMESPACE = 2;
   string K8S_POD_INFRA_CONTAINER_ID = 3;
@@ -16,7 +17,7 @@ message AddNetworkRequest {
   string IfName = 5;
   string NetworkName = 6;
   string Netns = 4;
-  // next field: 8
+  // next field: 9
 }
 
 message AddNetworkReply {
@@ -37,6 +38,7 @@ message AddNetworkReply {
 }
 
 message DelNetworkRequest {
+  string ClientVersion = 9;
   string K8S_POD_NAME = 1;
   string K8S_POD_NAMESPACE = 2;
   string K8S_POD_INFRA_CONTAINER_ID = 3;
@@ -44,7 +46,7 @@ message DelNetworkRequest {
   string ContainerID = 8;
   string IfName = 6;
   string NetworkName = 7;
-  // next field: 9
+  // next field: 10
 }
 
 message DelNetworkReply {
