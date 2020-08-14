@@ -359,6 +359,16 @@ func (ds *DataStore) ReadBackingStore() error {
 		ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
 	}
 
+	if ds.CheckpointMigrationPhase == 1 {
+		// For phase1: write whatever we just read above from
+		// CRI to backingstore immediately - just in case we
+		// _never_ see an add/del request before we upgrade to
+		// phase2.
+		if err := ds.writeBackingStoreUnsafe(); err != nil {
+			return err
+		}
+	}
+
 	ds.log.Debugf("Completed ipam state recovery")
 	return nil
 }
