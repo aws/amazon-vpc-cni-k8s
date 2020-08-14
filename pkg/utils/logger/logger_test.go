@@ -26,12 +26,12 @@ func TestEnvLogFilePath(t *testing.T) {
 	_ = os.Setenv(envLogFilePath, path)
 	defer os.Unsetenv(envLogFilePath)
 
-	assert.Equal(t, path, getLogFileLocation())
+	assert.Equal(t, path, GetLogLocation())
 }
 
 func TestGetLogFileLocationReturnsDefaultPath(t *testing.T) {
 	defaultPath := "/host/var/log/aws-routed-eni/ipamd.log"
-	assert.Equal(t, defaultPath, getLogFileLocation())
+	assert.Equal(t, defaultPath, GetLogLocation())
 }
 
 func TestLogLevelReturnsOverriddenLevel(t *testing.T) {

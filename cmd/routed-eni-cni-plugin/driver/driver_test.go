@@ -49,7 +49,6 @@ const (
 )
 
 var logConfig = logger.Configuration{
-	BinaryName:  "aws-cni",
 	LogLevel:    "Debug",
 	LogLocation: "stdout",
 }
