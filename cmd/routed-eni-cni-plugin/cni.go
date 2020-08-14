@@ -151,6 +151,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	r, err := c.AddNetwork(context.Background(),
 		&pb.AddNetworkRequest{
+			ClientVersion:              version,
 			K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
 			K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 			K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
@@ -200,6 +201,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 		// return allocated IP back to IP pool
 		r, delErr := c.DelNetwork(context.Background(), &pb.DelNetworkRequest{
+			ClientVersion:              version,
 			K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
 			K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 			K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
@@ -277,6 +279,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	c := rpcClient.NewCNIBackendClient(conn)
 
 	r, err := c.DelNetwork(context.Background(), &pb.DelNetworkRequest{
+		ClientVersion:              version,
 		K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
 		K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 		K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
