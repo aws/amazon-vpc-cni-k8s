@@ -152,6 +152,21 @@ func (mr *MockAPIsMockRecorder) GetAttachedENIs() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAttachedENIs", reflect.TypeOf((*MockAPIs)(nil).GetAttachedENIs))
 }
 
+// GetENIIPv4Limit mocks base method
+func (m *MockAPIs) GetENIIPv4Limit() (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetENIIPv4Limit")
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetENIIPv4Limit indicates an expected call of GetENIIPv4Limit
+func (mr *MockAPIsMockRecorder) GetENIIPv4Limit() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetENIIPv4Limit", reflect.TypeOf((*MockAPIs)(nil).GetENIIPv4Limit))
+}
+
 // GetENILimit mocks base method
 func (m *MockAPIs) GetENILimit() (int, error) {
 	m.ctrl.T.Helper()
@@ -165,21 +180,6 @@ func (m *MockAPIs) GetENILimit() (int, error) {
 func (mr *MockAPIsMockRecorder) GetENILimit() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetENILimit", reflect.TypeOf((*MockAPIs)(nil).GetENILimit))
-}
-
-// GetENIIPv4Limit mocks base method
-func (m *MockAPIs) GetENIIPv4Limit() (int, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetENIIPv4Limit")
-	ret0, _ := ret[0].(int)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetENIIPv4Limit indicates an expected call of GetENIIPv4Limit
-func (mr *MockAPIsMockRecorder) GetENIipLimit() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetENIIPv4Limit", reflect.TypeOf((*MockAPIs)(nil).GetENIIPv4Limit))
 }
 
 // GetIPv4sFromEC2 mocks base method
