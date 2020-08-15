@@ -124,7 +124,7 @@ default via 10.0.96.1 dev eth1
 #### CNI Plugin Sequence
 Here are the wiring steps to enable pod to pod communication:
 
-* Get a Secondary IP address assigned to the instance by IPAMD
+* Get a Secondary IP address assigned to the instance by L-IPAMD
 
 * Create a veth pair and have one veth on host namespace and one veth on Pod's namespace
 
