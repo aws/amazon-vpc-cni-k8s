@@ -136,7 +136,7 @@ Here are the wiring steps to enable pod to pod communication:
 	```
 
 * Perform following inside Pod's name space:
-	* Assign the secondary IP address to Pod's eth0
+	* Assign the IP address to Pod's eth0
 	* Add default gateway and default route to Pod's route table
 	* Add a static ARP entry for default gateway
 
