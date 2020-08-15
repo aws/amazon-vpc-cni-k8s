@@ -124,7 +124,9 @@ default via 10.0.96.1 dev eth1
 #### CNI Plugin Sequence
 Here are the wiring steps to enable pod to pod communication:
 
-* create a veth pair and have one veth on host namespace and one veth on Pod's namespace
+* Get a Secondary IP address assigned to the instance by L-IPAMD
+
+* Create a veth pair and have one veth on host namespace and one veth on Pod's namespace
 
 	```
 	ip link add veth-1 type veth peer name veth-1c  /* on host namespace */
@@ -133,8 +135,8 @@ Here are the wiring steps to enable pod to pod communication:
 	ip netns exec ns1 ip link set veth-1c up /* bring up veth-1c */
 	```
 
-* Get an Secondary IP address assigned to the instance and perform following inside Pod's name space:
-	* Assign this IP address to Pod's eth0
+* Perform following inside Pod's name space:
+	* Assign the IP address to Pod's eth0
 	* Add default gateway and default route to Pod's route table
 	* Add a static ARP entry for default gateway
 
