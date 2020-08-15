@@ -12,33 +12,31 @@ function check_for_timeout() {
 }
 
 function save_results_to_file() {
-    echo $filename
-    echo "Date", "\"slot1\"", "\"slot2\"" >> $filename
-    echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> $filename
-    echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> $filename
-    echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> $filename
+    echo "$filename"
+    echo "Date", "\"slot1\"", "\"slot2\"" >> "$filename"
+    echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> "$filename"
+    echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> "$filename"
+    echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> "$filename"
 
     cat $filename
     if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
-        aws s3 cp $filename ${PERFORMANCE_TEST_S3_BUCKET_NAME}${1}
+        aws s3 cp "$filename" "${PERFORMANCE_TEST_S3_BUCKET_NAME}${1}"
     else
         echo "No S3 bucket name given, skipping test result upload."
     fi
 }
 
 function check_for_slow_performance() {
-    BUCKET=s3://cni-scale-test-data${1}
-    FILE1=`aws s3 ls ${BUCKET} | sort | tail -n 2 | sed -n '1 p' | awk '{print $4}'`
-    FILE2=`aws s3 ls ${BUCKET} | sort | tail -n 3 | sed -n '1 p' | awk '{print $4}'`
-    FILE3=`aws s3 ls ${BUCKET} | sort | tail -n 4 | sed -n '1 p' | awk '{print $4}'`
+    BUCKET=s3://${PERFORMANCE_TEST_S3_BUCKET_NAME}${1}
+    FILE1=$(aws s3 ls "${BUCKET}" | sort | tail -n 2 | sed -n '1 p' | awk '{print $4}')
+    FILE2=$(aws s3 ls "${BUCKET}" | sort | tail -n 3 | sed -n '1 p' | awk '{print $4}')
+    FILE3=$(aws s3 ls "${BUCKET}" | sort | tail -n 4 | sed -n '1 p' | awk '{print $4}')
     
     PAST_PERFORMANCE_UP_AVERAGE_SUM=0
-    PAST_PERFORMANCE_DOWN_AVERAGE_SUM=0
     find_performance_duration_average $FILE1 1
     find_performance_duration_average $FILE2 2
     find_performance_duration_average $FILE3 3
     PAST_PERFORMANCE_UP_AVERAGE=$((PAST_PERFORMANCE_UP_AVERAGE_SUM / 3))
-    PAST_PERFORMANCE_DOWN_AVERAGE=$((PAST_PERFORMANCE_DOWN_AVERAGE_SUM / 3))
 
     # Divided by 3 to get current average, multiply past averages by 5/4 to get 25% window
     if [[ $((CURRENT_PERFORMANCE_UP_SUM / 3)) -gt $((PAST_PERFORMANCE_UP_AVERAGE * 5 / 4)) ]]; then
@@ -134,7 +132,9 @@ function run_performance_test_130_pods() {
     
     echo "TIMELINE: 130 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
-    check_for_slow_performance "/130-pods/"
+    if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
+        check_for_slow_performance "/130-pods/"
+    fi
     $KUBECTL_PATH delete -f ./testdata/deploy-130-pods.yaml
 }
 
@@ -205,24 +205,17 @@ function run_performance_test_730_pods() {
     
     echo "TIMELINE: 730 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
-    check_for_slow_performance "/730-pods/"
+    if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
+        check_for_slow_performance "/730-pods/"
+    fi
     $KUBECTL_PATH delete -f ./testdata/deploy-730-pods.yaml
 }
 
 function scale_nodes_for_5000_pod_test() {
-    AUTO_SCALE_GROUP_INFO=$(aws autoscaling describe-auto-scaling-groups | grep -B44 100,)
-    echo "Group info ${AUTO_SCALE_GROUP_INFO}"
-    AUTO_SCALE_GROUP_NAME_WITH_QUOTES=${AUTO_SCALE_GROUP_INFO%%,*}
-    echo "Group name with quotes ${AUTO_SCALE_GROUP_NAME_WITH_QUOTES}"
-    AUTO_SCALE_GROUP_NAME_WITH_QUOTES=${AUTO_SCALE_GROUP_NAME_WITH_QUOTES##* }
-    echo "Group name with quotes ${AUTO_SCALE_GROUP_NAME_WITH_QUOTES}"
-    AUTO_SCALE_GROUP_NAME="${AUTO_SCALE_GROUP_NAME_WITH_QUOTES%\"}"
-    echo "Group name ${AUTO_SCALE_GROUP_NAME}"
-    AUTO_SCALE_GROUP_NAME=$(echo $AUTO_SCALE_GROUP_NAME | cut -c2-)
-    echo $AUTO_SCALE_GROUP_NAME
-
+    AUTO_SCALE_GROUP_NAME=$(aws autoscaling describe-auto-scaling-groups | jq --raw-output '.AutoScalingGroups[0].AutoScalingGroupName')
+    echo "$AUTO_SCALE_GROUP_NAME"
     aws autoscaling update-auto-scaling-group \
-        --auto-scaling-group-name $AUTO_SCALE_GROUP_NAME \
+        --auto-scaling-group-name "$AUTO_SCALE_GROUP_NAME" \
         --desired-capacity 99
 }
 
@@ -293,6 +286,8 @@ function run_performance_test_5000_pods() {
     
     echo "TIMELINE: 5000 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
-    check_for_slow_performance "/5000-pods/"
+    if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
+        check_for_slow_performance "/5000-pods/"
+    fi
     $KUBECTL_PATH delete -f ./testdata/deploy-5000-pods.yaml
 }
