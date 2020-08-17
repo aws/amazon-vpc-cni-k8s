@@ -183,13 +183,13 @@ metrics-unit-test:
 # Run metrics helper unit test suite in a container.
 docker-metrics-test:
 	docker run $(DOCKER_RUN_FLAGS) \
-		-v $(shell pwd -P):/src --workdir=/src \
+		-v $(CURDIR):/src --workdir=/src \
 		-e GOARCH -e GOOS -e GO111MODULE \
 		$(GOLANG_IMAGE) \
 		make metrics-unit-test
 
 generate:
-	go generate -x ./...
+	PATH=$(CURDIR)/scripts:$(PATH) go generate -x ./...
 	$(MAKE) format
 
 # Generate limit file go code
@@ -220,7 +220,7 @@ debug-script:
 	@echo
 	curl -L $(FETCH_URL) -o ./aws-cni-support.sh
 	chmod +x ./aws-cni-support.sh
-	
+
 # Run all source code checks.
 check: check-format lint vet
 
