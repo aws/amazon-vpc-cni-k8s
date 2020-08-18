@@ -8,7 +8,7 @@
 
 # Performance
     * run from cni test account to upload test results
-        * set PERFORMANCE_TEST_S3_BUCKET_NAME to the name of the bucket (likely s3://cni-performance-tests)
+        * set PERFORMANCE_TEST_S3_BUCKET_NAME to the name of the bucket (likely `cni-performance-tests`)
     * set RUN_PERFORMANCE_TESTS=true
     * to view data graph:
         * Go to Isengard and open 719533996208 account (vpc-cni-ci-test) as admin

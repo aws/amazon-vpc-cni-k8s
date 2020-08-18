@@ -11,7 +11,7 @@ function check_for_timeout() {
     fi
 }
 
-function uplaod_results_to_s3_bucket() {
+function upload_results_to_s3_bucket() {
     echo "$filename"
     echo "Date", "\"slot1\"", "\"slot2\"" >> "$filename"
     echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> "$filename"
@@ -128,7 +128,7 @@ function run_performance_test_130_pods() {
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
     filename="pod-130-Test-${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
-    uplaod_results_to_s3_bucket "130-pods"
+    upload_results_to_s3_bucket "130-pods"
     
     echo "TIMELINE: 130 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
@@ -201,7 +201,7 @@ function run_performance_test_730_pods() {
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
     filename="pod-730-Test-${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
-    uplaod_results_to_s3_bucket "730-pods"
+    upload_results_to_s3_bucket "730-pods"
     
     echo "TIMELINE: 730 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
@@ -282,7 +282,7 @@ function run_performance_test_5000_pods() {
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
     filename="pod-5000-Test-${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
-    uplaod_results_to_s3_bucket "5000-pods"
+    upload_results_to_s3_bucket "5000-pods"
     
     echo "TIMELINE: 5000 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
