@@ -11,23 +11,23 @@ function check_for_timeout() {
     fi
 }
 
-function save_results_to_file() {
+function uplaod_results_to_s3_bucket() {
     echo "$filename"
     echo "Date", "\"slot1\"", "\"slot2\"" >> "$filename"
     echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> "$filename"
     echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> "$filename"
     echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> "$filename"
 
-    cat $filename
+    cat "$filename"
     if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
-        aws s3 cp "$filename" "${PERFORMANCE_TEST_S3_BUCKET_NAME}${1}"
+        aws s3 cp "$filename" "s3://${PERFORMANCE_TEST_S3_BUCKET_NAME}/${1}/"
     else
         echo "No S3 bucket name given, skipping test result upload."
     fi
 }
 
 function check_for_slow_performance() {
-    BUCKET=s3://${PERFORMANCE_TEST_S3_BUCKET_NAME}${1}
+    BUCKET="s3://${PERFORMANCE_TEST_S3_BUCKET_NAME}/${1}/"
     FILE1=$(aws s3 ls "${BUCKET}" | sort | tail -n 2 | sed -n '1 p' | awk '{print $4}')
     FILE2=$(aws s3 ls "${BUCKET}" | sort | tail -n 3 | sed -n '1 p' | awk '{print $4}')
     FILE3=$(aws s3 ls "${BUCKET}" | sort | tail -n 4 | sed -n '1 p' | awk '{print $4}')
@@ -127,13 +127,13 @@ function run_performance_test_130_pods() {
     echo ""
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
-    filename="pod-130-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
-    save_results_to_file "/130-pods/"
+    filename="pod-130-Test-${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
+    uplaod_results_to_s3_bucket "130-pods"
     
     echo "TIMELINE: 130 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
     if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
-        check_for_slow_performance "/130-pods/"
+        check_for_slow_performance "130-pods"
     fi
     $KUBECTL_PATH delete -f ./testdata/deploy-130-pods.yaml
 }
@@ -200,13 +200,13 @@ function run_performance_test_730_pods() {
     echo ""
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
-    filename="pod-730-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
-    save_results_to_file "/730-pods/"
+    filename="pod-730-Test-${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
+    uplaod_results_to_s3_bucket "730-pods"
     
     echo "TIMELINE: 730 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
     if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
-        check_for_slow_performance "/730-pods/"
+        check_for_slow_performance "730-pods"
     fi
     $KUBECTL_PATH delete -f ./testdata/deploy-730-pods.yaml
 }
@@ -281,13 +281,13 @@ function run_performance_test_5000_pods() {
     echo ""
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
 
-    filename="pod-5000-Test#${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
-    save_results_to_file "/5000-pods/"
+    filename="pod-5000-Test-${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
+    uplaod_results_to_s3_bucket "5000-pods"
     
     echo "TIMELINE: 5000 Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
     if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
-        check_for_slow_performance "/5000-pods/"
+        check_for_slow_performance "5000-pods"
     fi
     $KUBECTL_PATH delete -f ./testdata/deploy-5000-pods.yaml
 }
