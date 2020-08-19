@@ -447,7 +447,7 @@ func (c *IPAMContext) nodeInit() error {
 	increasedPool, err := c.tryAssignIPs()
 	if err == nil && increasedPool {
 		c.updateLastNodeIPPoolAction()
-	} else {
+	} else if err != nil {
 		return err
 	}
 
