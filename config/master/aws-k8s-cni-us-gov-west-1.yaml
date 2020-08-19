@@ -96,6 +96,7 @@
                 "operator": "In"
                 "values":
                 - "amd64"
+                - "arm64"
               - "key": "eks.amazonaws.com/compute-type"
                 "operator": "NotIn"
                 "values":
@@ -109,6 +110,7 @@
                 "operator": "In"
                 "values":
                 - "amd64"
+                - "arm64"
               - "key": "eks.amazonaws.com/compute-type"
                 "operator": "NotIn"
                 "values":
