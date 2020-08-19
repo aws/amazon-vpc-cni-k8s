@@ -125,7 +125,7 @@ local awsnode = {
                       {
                         key: prefix + "kubernetes.io/arch",
                         operator: "In",
-                        values: ["amd64"],
+                        values: ["amd64", "arm64"],
                       },
                       {
                         key: "eks.amazonaws.com/compute-type",
