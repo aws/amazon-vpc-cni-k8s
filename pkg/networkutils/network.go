@@ -889,7 +889,7 @@ func (n *linuxNetwork) DeleteRuleListBySrc(src net.IPNet) error {
 
 // UpdateRuleListBySrc modify IP rules that have a matching source IP
 func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet, toCIDRs []string, requiresSNAT bool) error {
-	log.Infof("Update Rule List[%v] for source[%v] with toCIDRs[%v], excludeSNATCIDRs[%v], requiresSNAT[%v]",
+	log.Debugf("Update Rule List[%v] for source[%v] with toCIDRs[%v], excludeSNATCIDRs[%v], requiresSNAT[%v]",
 		ruleList, src, toCIDRs, n.excludeSNATCIDRs, requiresSNAT)
 
 	srcRuleList, err := n.GetRuleListBySrc(ruleList, src)
