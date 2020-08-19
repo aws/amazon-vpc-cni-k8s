@@ -153,7 +153,7 @@
               "fieldPath": "spec.nodeName"
         - "name": "WARM_ENI_TARGET"
           "value": "1"
-        "image": "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni:latest"
+        "image": "961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/amazon-k8s-cni:v1.7"
         "imagePullPolicy": "Always"
         "livenessProbe":
           "exec":
@@ -191,7 +191,7 @@
           "name": "dockershim"
       "hostNetwork": true
       "initContainers":
-      - "image": "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni-init:latest"
+      - "image": "961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/amazon-k8s-cni-init:v1.7"
         "imagePullPolicy": "Always"
         "name": "aws-vpc-cni-init"
         "securityContext":
