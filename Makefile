@@ -20,7 +20,7 @@
 		metrics-unit-test docker-metrics-test
 
 # VERSION is the source revision that executables and images are built from.
-VERSION = $(shell git describe --tags --always --dirty || echo "unknown")
+VERSION ?= $(shell git describe --tags --always --dirty || echo "unknown")
 
 # DESTDIR is where distribution output (container images) is placed.
 DESTDIR = .
