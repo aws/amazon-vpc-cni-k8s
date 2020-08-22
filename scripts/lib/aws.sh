@@ -6,6 +6,7 @@ check_aws_credentials() {
 }
 
 ensure_ecr_repo() {
+    echo "Ensuring that $2 exists for account $1"
     local __registry_account_id="$1"
     local __repo_name="$2"
     if ! `aws ecr describe-repositories --registry-id "$__registry_account_id" --repository-names "$__repo_name" >/dev/null 2>&1`; then
@@ -28,6 +29,9 @@ ensure_aws_k8s_tester() {
 }
 
 ensure_eksctl() {
-    curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
-    sudo mv -v /tmp/eksctl /usr/local/bin
+    EKS_BIN=/usr/local/bin/eksctl
+    if [[ ! -e $EKS_BIN ]]; then
+        curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+        sudo mv -v /tmp/eksctl $EKS_BIN
+    fi
 }

@@ -11,6 +11,7 @@ function run_kops_conformance() {
     done
     echo "Updated!"
 
+    GOPATH=$(go env GOPATH)
     go install github.com/onsi/ginkgo/ginkgo
     wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
 

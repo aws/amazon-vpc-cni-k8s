@@ -1,0 +1,100 @@
+name: Integration tests
+
+on:
+  pull_request_target:
+  repository_dispatch:
+    types: [ok-to-test-command]
+
+jobs:
+  # Branch-based pull request from this repo
+  integration-trusted:
+    runs-on: self-hosted
+    if: github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Set up Go 1.14
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.14
+        id: go
+
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v2
+
+      - name: Get dependencies
+        run: |
+          go get -u golang.org/x/lint/golint
+          go get -u golang.org/x/tools/cmd/goimports
+
+      - name: Run e2e tests
+        env:
+          DISABLE_PROMPT: true
+          RUN_CONFORMANCE: true
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          S3_BUCKET_CREATE: false
+          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+        run: |
+          ./scripts/run-integration-tests.sh
+
+  # Repo owner has commented /ok-to-test on a fork-based pull request
+  integration-fork:
+    runs-on: self-hosted
+    if:
+      github.event_name == 'repository_dispatch' &&
+      github.event.client_payload.slash_command.sha != '' &&
+      contains(github.event.client_payload.pull_request.head.sha, github.event.client_payload.slash_command.sha)
+    steps:
+      - name: Set up Go 1.14
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.14
+        id: go
+
+      # Check out a merge commit
+      - name: Fork based /ok-to-test checkout
+        uses: actions/checkout@v2
+        with:
+          ref: 'refs/pull/${{ github.event.client_payload.pull_request.number }}/merge'
+
+      - name: Get dependencies
+        run: |
+          go get -u golang.org/x/lint/golint
+          go get -u golang.org/x/tools/cmd/goimports
+
+      - name: Run e2e tests
+        env:
+          DISABLE_PROMPT: true
+          RUN_CONFORMANCE: true
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          S3_BUCKET_CREATE: false
+          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+        run: |
+          ./scripts/run-integration-tests.sh
+
+      # Update check run called "integration-fork" to be completed
+      - uses: actions/github-script@v1
+        id: update-check-run-completed
+        env:
+          number: ${{ github.event.client_payload.pull_request.number }}
+          job: ${{ github.job }}
+          # Conveniently, job.status maps to https://developer.github.com/v3/checks/runs/#update-a-check-run
+          conclusion: ${{ job.status }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: pull } = await github.pulls.get({
+              ...context.repo,
+              pull_number: process.env.number
+            });
+            const ref = pull.head.sha;
+            const { data: checks } = await github.checks.listForRef({
+              ...context.repo,
+              ref
+            });
+            const check = checks.check_runs.filter(c => c.name === process.env.job);
+            const { data: result } = await github.checks.update({
+              ...context.repo,
+              check_run_id: check[0].id,
+              status: 'completed',
+              conclusion: process.env.conclusion
+            });
+            return result;

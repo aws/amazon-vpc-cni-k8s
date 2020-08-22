@@ -21,6 +21,7 @@ ARCH=$(go env GOARCH)
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
 : "${RUN_CONFORMANCE:=false}"
+: "${RUN_TESTER_LB_ADDONS:=false}"
 : "${RUN_KOPS_TEST:=false}"
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
@@ -51,7 +52,8 @@ on_error() {
 
 # test specific config, results location
 : "${TEST_ID:=$RANDOM}"
-TEST_DIR=/tmp/cni-test/$(date "+%Y%M%d%H%M%S")-$TEST_ID
+: "${TEST_BASE_DIR:=${DIR}/cni-test}"
+TEST_DIR=${TEST_BASE_DIR}/$(date "+%Y%M%d%H%M%S")-$TEST_ID
 REPORT_DIR=${TEST_DIR}/report
 TEST_CONFIG_DIR="$TEST_DIR/config"
 
@@ -59,16 +61,17 @@ TEST_CONFIG_DIR="$TEST_DIR/config"
 # Pass in CLUSTER_ID to reuse a test cluster
 : "${CLUSTER_ID:=$RANDOM}"
 CLUSTER_NAME=cni-test-$CLUSTER_ID
-TEST_CLUSTER_DIR=/tmp/cni-test/cluster-$CLUSTER_NAME
+TEST_CLUSTER_DIR=${TEST_BASE_DIR}/cluster-$CLUSTER_NAME
 CLUSTER_MANAGE_LOG_PATH=$TEST_CLUSTER_DIR/cluster-manage.log
 : "${CLUSTER_CONFIG:=${TEST_CLUSTER_DIR}/${CLUSTER_NAME}.yaml}"
 : "${KUBECONFIG_PATH:=${TEST_CLUSTER_DIR}/kubeconfig}"
 : "${ADDONS_CNI_IMAGE:=""}"
 
 # shared binaries
-: "${TESTER_DIR:=/tmp/aws-k8s-tester}"
+: "${TESTER_DIR:=${DIR}/aws-k8s-tester}"
 : "${TESTER_PATH:=$TESTER_DIR/aws-k8s-tester}"
 : "${KUBECTL_PATH:=$TESTER_DIR/kubectl}"
+export PATH=${PATH}:$TESTER_DIR
 
 LOCAL_GIT_VERSION=$(git describe --tags --always --dirty)
 # The manifest image version is the image tag we need to replace in the
@@ -104,9 +107,8 @@ ensure_aws_k8s_tester
 : "${S3_BUCKET_CREATE:=true}"
 : "${S3_BUCKET_NAME:=""}"
 
-# `aws ec2 get-login` returns a docker login string, which we eval here to login to the ECR registry
-# shellcheck disable=SC2046
-eval $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email) >/dev/null 2>&1
+echo "Logging in to docker repo"
+aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${AWS_ECR_REGISTRY}
 ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
 ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_INIT_ECR_REPO_NAME"
 
@@ -119,7 +121,7 @@ if [[ $(docker images -q "$IMAGE_NAME:$TEST_IMAGE_VERSION" 2> /dev/null) ]]; the
 else
     echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION does not exist in repository."
     if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
-        __cni_source_tmpdir="/tmp/cni-src-$IMAGE_VERSION"
+        __cni_source_tmpdir="${TEST_BASE_DIR}/cni-src-$IMAGE_VERSION"
         echo "Checking out CNI source code for $IMAGE_VERSION ..."
 
         git clone --depth=1 --branch "$TEST_IMAGE_VERSION" \
@@ -240,12 +242,15 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
   START=$SECONDS
 
-  go install github.com/onsi/ginkgo/ginkgo
-  wget -O- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
-  $GOPATH/bin/ginkgo -p --focus="Conformance"  --failFast --flakeAttempts 2 \
-   --skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" /tmp/e2e.test -- --kubeconfig=$KUBECONFIG
+  GOPATH=$(go env GOPATH)
+  echo "PATH: $PATH"
 
-  /tmp/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
+  go install github.com/onsi/ginkgo/ginkgo
+  wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C ${TEST_BASE_DIR}  kubernetes/platforms/linux/amd64/e2e.test
+  $GOPATH/bin/ginkgo -p --focus="Conformance" --failFast --flakeAttempts 2 \
+   --skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" ${TEST_BASE_DIR}/e2e.test -- --kubeconfig=$KUBECONFIG
+
+  ${TEST_BASE_DIR}/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
     --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
 
   CONFORMANCE_DURATION=$((SECONDS - START))
