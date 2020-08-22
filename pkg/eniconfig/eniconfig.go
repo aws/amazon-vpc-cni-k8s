@@ -46,11 +46,13 @@ const (
 	envEniConfigLabelDef      = "ENI_CONFIG_LABEL_DEF"
 )
 
+// ENIConfig interface
 type ENIConfig interface {
 	MyENIConfig() (*v1alpha1.ENIConfigSpec, error)
 	Getter() *ENIConfigInfo
 }
 
+// ErrNoENIConfig is the missing ENIConfig error
 var ErrNoENIConfig = errors.New("eniconfig: eniconfig is not available")
 
 var log = logger.Get()

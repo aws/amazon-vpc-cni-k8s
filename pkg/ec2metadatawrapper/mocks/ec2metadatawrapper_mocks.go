@@ -8,46 +8,46 @@ import (
 	gomock "github.com/golang/mock/gomock"
 )
 
-// Mock of HttpClient interface
-type MockHttpClient struct {
+// Mock of HTTPClient interface
+type MockHTTPClient struct {
 	ctrl     *gomock.Controller
-	recorder *_MockHttpClientRecorder
+	recorder *_MockHTTPClientRecorder
 }
 
-// Recorder for MockHttpClient (not exported)
-type _MockHttpClientRecorder struct {
-	mock *MockHttpClient
+// Recorder for MockHTTPClient (not exported)
+type _MockHTTPClientRecorder struct {
+	mock *MockHTTPClient
 }
 
-func NewMockHttpClient(ctrl *gomock.Controller) *MockHttpClient {
-	mock := &MockHttpClient{ctrl: ctrl}
-	mock.recorder = &_MockHttpClientRecorder{mock}
+func NewMockHTTPClient(ctrl *gomock.Controller) *MockHTTPClient {
+	mock := &MockHTTPClient{ctrl: ctrl}
+	mock.recorder = &_MockHTTPClientRecorder{mock}
 	return mock
 }
 
-func (_m *MockHttpClient) EXPECT() *_MockHttpClientRecorder {
+func (_m *MockHTTPClient) EXPECT() *_MockHTTPClientRecorder {
 	return _m.recorder
 }
 
-func (_m *MockHttpClient) GetInstanceIdentityDocument() (ec2metadata.EC2InstanceIdentityDocument, error) {
+func (_m *MockHTTPClient) GetInstanceIdentityDocument() (ec2metadata.EC2InstanceIdentityDocument, error) {
 	ret := _m.ctrl.Call(_m, "GetInstanceIdentityDocument")
 	ret0, _ := ret[0].(ec2metadata.EC2InstanceIdentityDocument)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-func (_mr *_MockHttpClientRecorder) GetInstanceIdentityDocument() *gomock.Call {
+func (_mr *_MockHTTPClientRecorder) GetInstanceIdentityDocument() *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "GetInstanceIdentityDocument")
 }
 
-func (_m *MockHttpClient) Region() (string, error) {
+func (_m *MockHTTPClient) Region() (string, error) {
 	ret := _m.ctrl.Call(_m, "Region")
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-func (_mr *_MockHttpClientRecorder) Region() *gomock.Call {
+func (_mr *_MockHTTPClientRecorder) Region() *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "Region")
 }
 
