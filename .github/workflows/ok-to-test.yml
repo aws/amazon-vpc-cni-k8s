@@ -1,0 +1,26 @@
+# If someone with write access comments "/ok-to-test" on a pull request, emit a repository_dispatch event
+name: Label
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  ok-to-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log
+        env:
+          PAYLOAD_CONTEXT: ${{ toJson(github.event.client_payload) }}
+        run: |
+          echo "$PAYLOAD_CONTEXT"
+          echo "${{ github.event.client_payload.issue_comment.head.sha }}"
+      - name: Slash Command Dispatch
+        uses: peter-evans/slash-command-dispatch@v1
+        with:
+          token: ${{ secrets.OK_TO_TEST_TOKEN }} # GitHub access token with public repo access only
+          reaction-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-type: pull-request
+          commands: ok-to-test
+          named-args: true
+          permission: write

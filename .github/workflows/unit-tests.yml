@@ -30,7 +30,7 @@ jobs:
     - name: Run code checks
       run: |
         make check-format
-        make lint LINT_FLAGS=
+        # make lint LINT_FLAGS=
         make vet
 
     - name: Build
