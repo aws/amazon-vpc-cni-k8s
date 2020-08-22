@@ -53,16 +53,13 @@ function check_for_slow_performance() {
 function find_performance_duration_average() {
     aws s3 cp ${BUCKET}${1} performance_test${2}.csv
     SCALE_UP_TEMP_DURATION_SUM=0
-    SCALE_DOWN_TEMP_DURATION_SUM=0
     for i in {2..4}
     do
         TEMP=$(sed -n "${i} p" performance_test${2}.csv)
         PAIR=${TEMP#*,}
         SCALE_UP_TEMP_DURATION_SUM=$((SCALE_UP_TEMP_DURATION_SUM + ${PAIR%%,*}))
-        SCALE_DOWN_TEMP_DURATION_SUM=$((SCALE_DOWN_TEMP_DURATION_SUM + ${PAIR##*,}))
     done
     PAST_PERFORMANCE_UP_AVERAGE_SUM=$(($PAST_PERFORMANCE_UP_AVERAGE_SUM + $((SCALE_UP_TEMP_DURATION_SUM / 3))))
-    PAST_PERFORMANCE_DOWN_AVERAGE_SUM=$(($PAST_PERFORMANCE_DOWN_AVERAGE_SUM + $((SCALE_DOWN_TEMP_DURATION_SUM / 3))))
 }
 
 function run_performance_test_130_pods() {
