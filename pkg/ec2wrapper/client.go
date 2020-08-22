@@ -20,6 +20,7 @@ import (
 	ec2svc "github.com/aws/aws-sdk-go/service/ec2"
 )
 
+// EC2 is the EC2 wrapper interface
 type EC2 interface {
 	CreateNetworkInterfaceWithContext(ctx aws.Context, input *ec2svc.CreateNetworkInterfaceInput, opts ...request.Option) (*ec2svc.CreateNetworkInterfaceOutput, error)
 	DescribeInstancesWithContext(ctx aws.Context, input *ec2svc.DescribeInstancesInput, opts ...request.Option) (*ec2svc.DescribeInstancesOutput, error)
@@ -34,6 +35,7 @@ type EC2 interface {
 	CreateTagsWithContext(ctx aws.Context, input *ec2svc.CreateTagsInput, opts ...request.Option) (*ec2svc.CreateTagsOutput, error)
 }
 
+// New creates a new EC2 wrapper
 func New(sess *session.Session) EC2 {
 	return ec2svc.New(sess)
 }

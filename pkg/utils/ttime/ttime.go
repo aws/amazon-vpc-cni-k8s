@@ -11,6 +11,7 @@ type Time interface {
 	AfterFunc(d time.Duration, f func()) Timer
 }
 
+// Timer is the timer interface
 type Timer interface {
 	Reset(d time.Duration) bool
 	Stop() bool

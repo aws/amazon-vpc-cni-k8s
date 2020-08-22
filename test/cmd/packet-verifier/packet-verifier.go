@@ -32,9 +32,9 @@ var (
 	vlanIDToMonitor int
 
 	// pcap parameters (requires libpcap-devel to be installed on the host)
-	snapshot_len int32 = 1024
-	promiscuous        = false
-	timeout            = 30 * time.Second
+	snapshotLen int32 = 1024
+	promiscuous       = false
+	timeout           = 30 * time.Second
 )
 
 // eniConfig details regarding ENIs
@@ -197,7 +197,7 @@ func monitorPacketOnInterfaces(ipToMonitor net.IP, vlanIDToMonitor int, enis []e
 
 // monitorPackets monitors the packets on the interfaces
 func monitorPackets(ipToMonitor net.IP, vlanIDToMonitor int, iface eniConfig) error {
-	handle, err := pcap.OpenLive(iface.name, snapshot_len, promiscuous, timeout)
+	handle, err := pcap.OpenLive(iface.name, snapshotLen, promiscuous, timeout)
 	if err != nil {
 		return err
 	}

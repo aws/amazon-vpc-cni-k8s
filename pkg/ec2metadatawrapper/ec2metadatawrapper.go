@@ -13,8 +13,8 @@ const (
 
 // TODO: Move away from using mock
 
-// HttpClient is used to help with testing
-type HttpClient interface {
+// HTTPClient is used to help with testing
+type HTTPClient interface {
 	GetInstanceIdentityDocument() (ec2metadata.EC2InstanceIdentityDocument, error)
 	Region() (string, error)
 }
@@ -26,11 +26,11 @@ type EC2MetadataClient interface {
 }
 
 type ec2MetadataClientImpl struct {
-	client HttpClient
+	client HTTPClient
 }
 
 // New creates an ec2metadata client to retrieve metadata
-func New(client HttpClient) EC2MetadataClient {
+func New(client HTTPClient) EC2MetadataClient {
 	if client == nil {
 		awsSession := session.Must(session.NewSession(aws.NewConfig().
 			WithMaxRetries(metadataRetries),

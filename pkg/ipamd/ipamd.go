@@ -1218,9 +1218,10 @@ func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
 
 		}
 	}
-	return -1, errors.New("No trunk!")
+	return -1, errors.New("no trunk!")
 }
 
+// SetNodeLabel sets or deletes a node label
 func (c *IPAMContext) SetNodeLabel(key, value string) error {
 	// Find my node
 	node, err := c.k8sClient.CoreV1().Nodes().Get(c.myNodeName, metav1.GetOptions{})
@@ -1254,6 +1255,7 @@ func (c *IPAMContext) SetNodeLabel(key, value string) error {
 	return nil
 }
 
+// GetPod returns the pod matching the name and namespace
 func (c *IPAMContext) GetPod(podName, namespace string) (*v1.Pod, error) {
 	return c.k8sClient.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
 }

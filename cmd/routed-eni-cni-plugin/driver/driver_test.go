@@ -285,7 +285,7 @@ func (m *testMocks) setupMockForVethCreation(failAt string) *mock_netlink.MockLi
 	m.netlink.EXPECT().LinkByName(testHostVethName).Return(mockHostVeth, nil)
 
 	if failAt == "veth-procsys" {
-		m.procsys.EXPECT().Set("net/ipv6/conf/"+testHostVethName+"/accept_ra", "0").Return(errors.New("Error writing to /proc/sys/..."))
+		m.procsys.EXPECT().Set("net/ipv6/conf/"+testHostVethName+"/accept_ra", "0").Return(errors.New("error writing to /proc/sys/"))
 		return nil
 	}
 	var procsysRet error
