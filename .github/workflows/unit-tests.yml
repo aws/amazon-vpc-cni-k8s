@@ -1,0 +1,41 @@
+name: Run unit tests
+
+on:
+  pull_request_target:
+    branches: [ master ]
+
+jobs:
+
+  build_x86_64:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Set up Go 1.14
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^1.14
+      id: go
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+
+    - name: Get dependencies
+      run: |
+        go get -u golang.org/x/lint/golint
+        go get -u golang.org/x/tools/cmd/goimports
+
+    - name: Run code checks
+      run: |
+        make check-format
+        # make lint LINT_FLAGS=
+        make vet
+
+    - name: Build
+      run: make build-linux
+
+    - name: Unit Tests
+      run: make unit-test
+
+    - name: Upload code coverage
+      run: bash <(curl -s https://codecov.io/bash)

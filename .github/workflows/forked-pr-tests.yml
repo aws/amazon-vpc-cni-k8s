@@ -1,0 +1,78 @@
+name: Manual test runner workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: 'PR number we want to run tests on'
+        default: ''
+        required: true
+
+jobs:
+  # Repo owner has triggered this run
+  integration-fork:
+    runs-on: self-hosted
+    if:
+      github.event.inputs.pull_request_number != ''
+    steps:
+      - name: Set up Go 1.14
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.14
+        id: go
+
+      # Check out a merge commit
+      - name: Check out latest commit in the PR as a merge commit
+        uses: actions/checkout@v2
+        with:
+          ref: 'refs/pull/${{ github.event.inputs.pull_request_number }}/merge'
+
+      - name: Get dependencies
+        run: |
+          go get -u golang.org/x/lint/golint
+          go get -u golang.org/x/tools/cmd/goimports
+
+      - name: Clean up stale docker images
+        run: docker image prune -f
+
+      - name: Run e2e tests
+        env:
+          DISABLE_PROMPT: true
+          ROLE_CREATE: false
+          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+          MNG_ROLE_ARN: ${{ secrets.MNG_ROLE_ARN }}
+          RUN_CONFORMANCE: true
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          S3_BUCKET_CREATE: false
+          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+        run: |
+          ./scripts/run-integration-tests.sh
+
+      # Update check run called "integration-fork" to be completed
+      - uses: actions/github-script@v1
+        id: update-check-run-completed
+        env:
+          number: ${{ github.event.inputs.pull_request_number }}
+          job: ${{ github.job }}
+          # Conveniently, job.status maps to https://developer.github.com/v3/checks/runs/#update-a-check-run
+          conclusion: ${{ job.status }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: pull } = await github.pulls.get({
+              ...context.repo,
+              pull_number: process.env.number
+            });
+            const ref = pull.head.sha;
+            const { data: checks } = await github.checks.listForRef({
+              ...context.repo,
+              ref
+            });
+            const check = checks.check_runs.filter(c => c.name === process.env.job);
+            const { data: result } = await github.checks.update({
+              ...context.repo,
+              check_run_id: check[0].id,
+              status: 'completed',
+              conclusion: process.env.conclusion
+            });
+            return result;
