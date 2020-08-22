@@ -33,12 +33,15 @@ type SandboxInfo struct {
 	IP string
 }
 
+// APIs is the CRI interface
 type APIs interface {
 	GetRunningPodSandboxes(log logger.Logger) ([]*SandboxInfo, error)
 }
 
+// Client is an empty struct
 type Client struct{}
 
+// New creates a new CRI client
 func New() *Client {
 	return &Client{}
 }

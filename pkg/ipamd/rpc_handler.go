@@ -53,7 +53,7 @@ type PodENIData struct {
 	ENIID      string `json:"eniId"`
 	IfAddress  string `json:"ifAddress"`
 	PrivateIP  string `json:"privateIp"`
-	VlanID     int    `json:"vlanId"`
+	VlanID     int    `json:"vlanID"`
 	SubnetCIDR string `json:"subnetCidr"`
 }
 
@@ -71,7 +71,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	}
 
 	failureResponse := rpc.AddNetworkReply{Success: false}
-	var deviceNumber, vlanId, trunkENILinkIndex int
+	var deviceNumber, vlanID, trunkENILinkIndex int
 	var addr, branchENIMAC, podENISubnetGW string
 	var err error
 	if s.ipamContext.enablePodENI {
@@ -108,8 +108,8 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 					firstENI := podENIData[0]
 					addr = firstENI.PrivateIP
 					branchENIMAC = firstENI.IfAddress
-					vlanId = firstENI.VlanID
-					if addr == "" || branchENIMAC == "" || vlanId == 0 {
+					vlanID = firstENI.VlanID
+					if addr == "" || branchENIMAC == "" || vlanID == 0 {
 						log.Errorf("Failed to parse pod-ENI annotation: %s", val)
 						return &failureResponse, nil
 					}
@@ -160,7 +160,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 		DeviceNumber:    int32(deviceNumber),
 		UseExternalSNAT: useExternalSNAT,
 		VPCcidrs:        pbVPCcidrs,
-		PodVlanId:       int32(vlanId),
+		PodVlanId:       int32(vlanID),
 		PodENIMAC:       branchENIMAC,
 		PodENISubnetGW:  podENISubnetGW,
 		ParentIfIndex:   int32(trunkENILinkIndex),
