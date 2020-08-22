@@ -235,7 +235,7 @@ lint:
 	@command -v golint >/dev/null || { echo "ERROR: golint not installed"; exit 1; }
 	find . \
 	  -type f -name '*.go' \
-	  -not -name 'mock_*' -not -name 'mocks_*' \
+	  -not -name 'mock_*' -not -name '*mocks.go' -not -name "cni.go" \
 	  -print0 | sort -z | xargs -0 -L1 -- golint $(LINT_FLAGS) 2>/dev/null
 
 # Run go vet on source code.

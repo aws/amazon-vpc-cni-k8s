@@ -48,9 +48,9 @@ const (
 type NetworkAPIs interface {
 	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, table int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error
 	TeardownNS(addr *net.IPNet, table int, log logger.Logger) error
-	SetupPodENINetwork(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, vlanId int, eniMAC string,
+	SetupPodENINetwork(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, vlanID int, eniMAC string,
 		subnetGW string, parentIfIndex int, mtu int, log logger.Logger) error
-	TeardownPodENINetwork(vlanId int, log logger.Logger) error
+	TeardownPodENINetwork(vlanID int, log logger.Logger) error
 }
 
 type linuxNetwork struct {
@@ -300,15 +300,15 @@ func setupVeth(hostVethName string, contVethName string, netnsPath string, addr 
 
 // SetupPodENINetwork sets up the network ns for pods requesting its own security group
 func (os *linuxNetwork) SetupPodENINetwork(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet,
-	vlanId int, eniMAC string, subnetGW string, parentIfIndex int, mtu int, log logger.Logger) error {
+	vlanID int, eniMAC string, subnetGW string, parentIfIndex int, mtu int, log logger.Logger) error {
 
 	hostVeth, err := setupVeth(hostVethName, contVethName, netnsPath, addr, os.netLink, os.ns, mtu, os.procSys, log)
 	if err != nil {
 		return errors.Wrapf(err, "SetupPodENINetwork failed to setup veth pair.")
 	}
 
-	vlanTableId := vlanId + 100
-	vlanLink := buildVlanLink(vlanId, parentIfIndex, eniMAC)
+	vlanTableID := vlanID + 100
+	vlanLink := buildVlanLink(vlanID, parentIfIndex, eniMAC)
 
 	// 1. clean up if vlan already exists (necessary when trunk ENI changes).
 	if oldVlan, err := os.netLink.LinkByName(vlanLink.Name); err == nil {
@@ -330,7 +330,7 @@ func (os *linuxNetwork) SetupPodENINetwork(hostVethName string, contVethName str
 	}
 
 	// 4. create default routes for vlan
-	routes := buildRoutesForVlan(vlanTableId, vlanLink.Index, net.ParseIP(subnetGW))
+	routes := buildRoutesForVlan(vlanTableID, vlanLink.Index, net.ParseIP(subnetGW))
 	for _, r := range routes {
 		if err := os.netLink.RouteReplace(&r); err != nil {
 			return errors.Wrapf(err, "SetupPodENINetwork: unable to replace route entry %s via %s", r.Dst.IP.String(), subnetGW)
@@ -342,7 +342,7 @@ func (os *linuxNetwork) SetupPodENINetwork(hostVethName string, contVethName str
 		LinkIndex: hostVeth.Attrs().Index,
 		Scope:     netlink.SCOPE_LINK,
 		Dst:       addr,
-		Table:     vlanTableId,
+		Table:     vlanTableID,
 	}
 	if err := os.netLink.RouteReplace(&route); err != nil {
 		return errors.Wrapf(err, "SetupPodENINetwork: unable to add or replace route entry for %s", route.Dst.IP.String())
@@ -352,7 +352,7 @@ func (os *linuxNetwork) SetupPodENINetwork(hostVethName string, contVethName str
 
 	// 6. Add ip rules for the pod.
 	vlanRule := os.netLink.NewRule()
-	vlanRule.Table = vlanTableId
+	vlanRule.Table = vlanTableID
 	vlanRule.Priority = vlanRulePriority
 	vlanRule.IifName = vlanLink.Name
 	err = os.netLink.RuleAdd(vlanRule)
@@ -369,32 +369,32 @@ func (os *linuxNetwork) SetupPodENINetwork(hostVethName string, contVethName str
 }
 
 // buildRoutesForVlan builds routes required for the vlan link.
-func buildRoutesForVlan(vlanTableId int, vlanIndex int, gw net.IP) []netlink.Route {
+func buildRoutesForVlan(vlanTableID int, vlanIndex int, gw net.IP) []netlink.Route {
 	return []netlink.Route{
 		// Add a direct link route for the pod vlan link only.
 		{
 			LinkIndex: vlanIndex,
 			Dst:       &net.IPNet{IP: gw, Mask: net.CIDRMask(32, 32)},
 			Scope:     netlink.SCOPE_LINK,
-			Table:     vlanTableId,
+			Table:     vlanTableID,
 		},
 		{
 			LinkIndex: vlanIndex,
 			Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
 			Scope:     netlink.SCOPE_UNIVERSE,
 			Gw:        gw,
-			Table:     vlanTableId,
+			Table:     vlanTableID,
 		},
 	}
 }
 
 // buildVlanLink builds vlan link for the pod.
-func buildVlanLink(vlanId int, parentIfIndex int, eniMAC string) *netlink.Vlan {
+func buildVlanLink(vlanID int, parentIfIndex int, eniMAC string) *netlink.Vlan {
 	la := netlink.NewLinkAttrs()
-	la.Name = fmt.Sprintf("vlan.eth.%d", vlanId)
+	la.Name = fmt.Sprintf("vlan.eth.%d", vlanID)
 	la.ParentIndex = parentIfIndex
 	la.HardwareAddr, _ = net.ParseMAC(eniMAC)
-	return &netlink.Vlan{LinkAttrs: la, VlanId: vlanId}
+	return &netlink.Vlan{LinkAttrs: la, VlanId: vlanID}
 }
 
 func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *net.IPNet, table int) error {
@@ -472,21 +472,21 @@ func tearDownNS(addr *net.IPNet, table int, netLink netlinkwrapper.NetLink, log 
 }
 
 // TeardownPodENINetwork tears down the vlan and corresponding ip rules.
-func (os *linuxNetwork) TeardownPodENINetwork(vlanId int, log logger.Logger) error {
+func (os *linuxNetwork) TeardownPodENINetwork(vlanID int, log logger.Logger) error {
 	log.Infof("Tear down of pod ENI namespace")
 
 	// 1. delete vlan
 	if vlan, err := os.netLink.LinkByName(fmt.Sprintf("vlan.eth.%d",
-		vlanId)); err == nil {
+		vlanID)); err == nil {
 		err := os.netLink.LinkDel(vlan)
 		if err != nil {
-			return errors.Wrapf(err, "TeardownPodENINetwork: failed to delete vlan link for %d", vlanId)
+			return errors.Wrapf(err, "TeardownPodENINetwork: failed to delete vlan link for %d", vlanID)
 		}
 	}
 
 	// 2. delete two ip rules associated with the vlan
 	vlanRule := os.netLink.NewRule()
-	vlanRule.Table = vlanId + 100
+	vlanRule.Table = vlanID + 100
 	vlanRule.Priority = vlanRulePriority
 
 	for {
@@ -494,7 +494,7 @@ func (os *linuxNetwork) TeardownPodENINetwork(vlanId int, log logger.Logger) err
 		// one of them handles vlan traffic and other is for pod host veth traffic.
 		if err := os.netLink.RuleDel(vlanRule); err != nil {
 			if !containsNoSuchRule(err) {
-				return errors.Wrapf(err, "TeardownPodENINetwork: failed to delete container rule for %d", vlanId)
+				return errors.Wrapf(err, "TeardownPodENINetwork: failed to delete container rule for %d", vlanID)
 			}
 			break
 		}
