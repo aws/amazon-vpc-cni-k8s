@@ -182,14 +182,14 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	if r.PodVlanId != 0 {
-		hostVethName := generateHostVethName("vlan", conf.Name, args.ContainerID, args.IfName)
+		hostVethName := generateHostVethName("vlan", string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 
 		err = driverClient.SetupPodENINetwork(hostVethName, args.IfName, args.Netns, addr, int(r.PodVlanId), r.PodENIMAC,
 			r.PodENISubnetGW, int(r.ParentIfIndex), mtu, log)
 	} else {
 		// build hostVethName
 		// Note: the maximum length for linux interface name is 15
-		hostVethName := generateHostVethName(conf.VethPrefix, conf.Name, args.ContainerID, args.IfName)
+		hostVethName := generateHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 
 		err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber), r.VPCcidrs, r.UseExternalSNAT, mtu, log)
 	}
@@ -237,9 +237,11 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 }
 
 // generateHostVethName returns a name to be used on the host-side veth device.
-func generateHostVethName(prefix, netname, containerid, ifname string) string {
+// The veth name is generated such that it aligns with the value expected
+// by Calico for NetworkPolicy enforcement.
+func generateHostVethName(prefix, namespace, podname string) string {
 	h := sha1.New()
-	fmt.Fprintf(h, "%s.%s.%s", netname, containerid, ifname)
+	h.Write([]byte(fmt.Sprintf("%s.%s", namespace, podname)))
 	return fmt.Sprintf("%s%s", prefix, hex.EncodeToString(h.Sum(nil))[:11])
 }
 
