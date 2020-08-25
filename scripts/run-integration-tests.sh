@@ -26,6 +26,7 @@ ARCH=$(go env GOARCH)
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
+: "${RUN_CALICO_TEST:=true}"
 
 __cluster_created=0
 __cluster_deprovisioned=0
@@ -82,9 +83,15 @@ TEST_IMAGE_VERSION=${IMAGE_VERSION:-$LOCAL_GIT_VERSION}
 : "${MANIFEST_CNI_VERSION:=master}"
 BASE_CONFIG_PATH="$DIR/../config/$MANIFEST_CNI_VERSION/aws-k8s-cni.yaml"
 TEST_CONFIG_PATH="$TEST_CONFIG_DIR/aws-k8s-cni.yaml"
+TEST_CALICO_PATH="$DIR/../config/$MANIFEST_CNI_VERSION/calico.yaml"
 
 if [[ ! -f "$BASE_CONFIG_PATH" ]]; then
     echo "$BASE_CONFIG_PATH DOES NOT exist. Set \$MANIFEST_CNI_VERSION to an existing directory in ./config/"
+    exit
+fi
+
+if [[ ! -f "$TEST_CALICO_PATH" && $RUN_CALICO_TEST == true ]]; then
+    echo "$TEST_CALICO_PATH DOES NOT exist."
     exit
 fi
 
@@ -226,6 +233,18 @@ echo "Updated!"
 
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
+
+if [[ $RUN_CALICO_TEST == true ]]; then
+    $KUBECTL_PATH apply -f "$TEST_CALICO_PATH"
+    sleep 5
+    while [[ $($KUBECTL_PATH describe ds calico-node -n=kube-system | grep "Available Pods: 0") ]]
+    do
+        sleep 5
+        echo "Waiting for calico daemonset update"
+    done
+    echo "Updated calico daemonset!"
+    sleep 5
+fi
 
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"

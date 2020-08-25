@@ -210,6 +210,36 @@ jobs:
       - store_artifacts:
           path: /tmp/cni-test
 
+  calico_test:
+    docker:
+      - image: circleci/golang:1.14-stretch
+    working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    environment:
+      <<: *env
+      RUN_CALICO_TEST: "true"
+    steps:
+      - checkout
+      - setup_remote_docker
+      - aws-cli/setup:
+          profile-name: awstester
+      - restore_cache:
+          keys:
+            - dependency-packages-store-{{ checksum "test/integration/go.mod" }}
+            - dependency-packages-store-
+      - k8s/install-kubectl:
+          # requires 1.14.9 for k8s testing, since it uses log api.
+          kubectl-version: v1.14.9
+      - run:
+          name: Run the integration tests
+          command: ./scripts/run-integration-tests.sh
+          no_output_timeout: 15m
+      - save_cache:
+          key: dependency-packages-store-{{ checksum "test/integration/go.mod" }}
+          paths:
+            - /go/pkg
+          when: always
+      - store_artifacts:
+          path: /tmp/cni-test
   bottlerocket_test:
     docker:
       - image: circleci/golang:1.14-stretch
@@ -291,6 +321,7 @@ workflows:
                 - master
     jobs:
       - performance_test
+      - calico_test
       - kops_test:
           requires:
             - performance_test
