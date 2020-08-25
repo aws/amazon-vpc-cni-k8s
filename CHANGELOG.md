@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.7.1
+
+* Bug - [Calico deletes routes when using CNI v1.7.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/1166) (#1166, @jayanthvn)
+* Improvement - [enable manual override for VERSION in images](https://github.com/aws/amazon-vpc-cni-k8s/pull/1156) (#1156, @nprab428) 
+
 ## v1.7.0
 
 * Improvement - [Reject version skew between gRPC client and server](https://github.com/aws/amazon-vpc-cni-k8s/pull/1141) (#1141, @anguslees)
