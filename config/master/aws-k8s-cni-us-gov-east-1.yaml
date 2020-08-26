@@ -187,8 +187,8 @@
           "name": "log-dir"
         - "mountPath": "/var/run/aws-node"
           "name": "run-dir"
-        - "mountPath": "/var/run/dockershim.sock"
-          "name": "dockershim"
+        - "mountPath": "/var/run/cri.sock"
+          "name": "cri-sock"
         - "mountPath": "/run/xtables.lock"
           "name": "xtables-lock"
       "hostNetwork": true
@@ -218,7 +218,7 @@
         "name": "cni-net-dir"
       - "hostPath":
           "path": "/var/run/dockershim.sock"
-        "name": "dockershim"
+        "name": "cri-sock"
       - "hostPath":
           "path": "/run/xtables.lock"
         "name": "xtables-lock"
