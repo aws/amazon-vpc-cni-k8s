@@ -161,10 +161,10 @@ type APIs interface {
 	// GetPrimaryENImac returns the mac address of the primary ENI
 	GetPrimaryENImac() string
 
-	//Setunmanaged ENI
-	SetUnmanagedENIs(eniID []string) error
+	// SetUnmanagedENIs sets the list of unmanaged ENI IDs
+	SetUnmanagedENIs(eniIDs []string)
 
-	//isUnmanagedENI
+	// IsUnmanagedENI checks if an ENI is unmanaged
 	IsUnmanagedENI(eniID string) bool
 
 	// WaitForENIAndIPsAttached waits until the ENI has been attached and the secondary IPs have been added
@@ -439,9 +439,6 @@ func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
 	cache.securityGroups.Set(sgIDs)
 
 	if !cache.useCustomNetworking && (addedSGsCount != 0 || deletedSGsCount != 0) {
-		var sgIDsPtrs []*string
-		sgIDsPtrs = aws.StringSlice(sgIDs)
-
 		allENIs, err := cache.GetAttachedENIs()
 		if err != nil {
 			return errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
@@ -449,7 +446,7 @@ func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
 
 		var eniIDs []string
 		for _, eni := range allENIs {
-			eniIDs = append(eniIDs, string(eni.ENIID))
+			eniIDs = append(eniIDs, eni.ENIID)
 		}
 
 		newENIs := StringSet{}
@@ -457,7 +454,8 @@ func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
 
 		filteredENIs := newENIs.Difference(&cache.unmanagedENIs)
 
-		//This will update SG for managed ENIs created by EKS.
+		sgIDsPtrs := aws.StringSlice(sgIDs)
+		// This will update SG for managed ENIs created by EKS.
 		for _, eniID := range filteredENIs.SortedList() {
 			log.Debugf("Update ENI %s", eniID)
 
@@ -1554,11 +1552,8 @@ func (cache *EC2InstanceMetadataCache) GetPrimaryENImac() string {
 }
 
 //SetUnmanagedENIs Set unmanaged ENI set
-func (cache *EC2InstanceMetadataCache) SetUnmanagedENIs(eniID []string) error {
-	if len(eniID) != 0 {
-		cache.unmanagedENIs.Set(eniID)
-	}
-	return nil
+func (cache *EC2InstanceMetadataCache) SetUnmanagedENIs(eniIDs []string) {
+	cache.unmanagedENIs.Set(eniIDs)
 }
 
 //IsUnmanagedENI returns if the eni is unmanaged
