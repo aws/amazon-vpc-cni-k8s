@@ -690,7 +690,7 @@ func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget int, minimumIPTarget 
 	return removableENI
 }
 
-// RemoveENIFromDataStore removes an ENI from the datastore.  It return nil on success or an error.
+// RemoveENIFromDataStore removes an ENI from the datastore. It returns nil on success, or an error.
 func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
@@ -704,9 +704,9 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 		if !force {
 			return errors.New(ENIInUseError)
 		}
-		// This scenario can occur if the reconciliation process discovered this eni was detached
-		// from the EC2 instance outside of the control of ipamd.  If this happens, there's nothing
-		// we can do other than force all pods to be unassigned from the IPs on this eni.
+		// This scenario can occur if the reconciliation process discovered this ENI was detached
+		// from the EC2 instance outside of the control of ipamd. If this happens, there's nothing
+		// we can do other than force all pods to be unassigned from the IPs on this ENI.
 		ds.log.Warnf("Force removing eni %s with %d assigned pods", eniID, eni.AssignedIPv4Addresses())
 		forceRemovedENIs.Inc()
 		forceRemovedIPs.Add(float64(eni.AssignedIPv4Addresses()))

@@ -268,11 +268,9 @@ func (mr *MockAPIsMockRecorder) IsUnmanagedENI(arg0 interface{}) *gomock.Call {
 }
 
 // SetUnmanagedENIs mocks base method
-func (m *MockAPIs) SetUnmanagedENIs(arg0 []string) error {
+func (m *MockAPIs) SetUnmanagedENIs(arg0 []string) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetUnmanagedENIs", arg0)
-	ret0, _ := ret[0].(error)
-	return ret0
+	m.ctrl.Call(m, "SetUnmanagedENIs", arg0)
 }
 
 // SetUnmanagedENIs indicates an expected call of SetUnmanagedENIs
