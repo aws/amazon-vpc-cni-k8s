@@ -14,6 +14,7 @@
 package ipamd
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -270,9 +271,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	m.awsutils.EXPECT().WaitForENIAndIPsAttached(secENIid, 14).Return(eniMetadata[1], nil)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
-
 	m.awsutils.EXPECT().AllocIPAddresses(eni2, 14)
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
 
 	mockContext.increaseIPPool()
 }
@@ -339,7 +338,6 @@ func TestTryAddIPToENI(t *testing.T) {
 	m.awsutils.EXPECT().WaitForENIAndIPsAttached(secENIid, 3).Return(eniMetadata[1], nil)
 	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
 
 	mockContext.increaseIPPool()
 }
@@ -358,39 +356,23 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	mockContext.dataStore = testDatastore()
 
 	primary := true
-	notPrimary := false
-	testAddr1 := ipaddr01
-	testAddr2 := ipaddr02
-
-	eniMetadata := []awsutils.ENIMetadata{
-		{
-			ENIID:          primaryENIid,
-			MAC:            primaryMAC,
-			DeviceNumber:   primaryDevice,
-			SubnetIPv4CIDR: primarySubnet,
-			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
-				{
-					PrivateIpAddress: &testAddr1, Primary: &primary,
-				},
-				{
-					PrivateIpAddress: &testAddr2, Primary: &notPrimary,
-				},
-			},
-		},
-	}
-	m.awsutils.EXPECT().GetAttachedENIs().Return(eniMetadata, nil)
-	m.awsutils.EXPECT().GetPrimaryENI().Times(2).Return(primaryENIid)
-	m.awsutils.EXPECT().DescribeAllENIs().Return(eniMetadata, map[string]awsutils.TagMap{}, "", nil)
-	m.awsutils.EXPECT().IsUnmanagedENI(primaryENIid).Return(false).AnyTimes()
+	primaryENIMetadata := getPrimaryENIMetadata()
+	testAddr1 := *primaryENIMetadata.IPv4Addresses[0].PrivateIpAddress
+	// Always the primary ENI
+	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+	m.awsutils.EXPECT().IsUnmanagedENI(primaryENIid).AnyTimes().Return(false)
+	eniMetadataList := []awsutils.ENIMetadata{primaryENIMetadata}
+	m.awsutils.EXPECT().GetAttachedENIs().Return(eniMetadataList, nil)
+	m.awsutils.EXPECT().DescribeAllENIs().Return(eniMetadataList, map[string]awsutils.TagMap{}, "", nil)
 
 	mockContext.nodeIPPoolReconcile(0)
 
 	curENIs := mockContext.dataStore.GetENIInfos()
-	assert.Equal(t, len(curENIs.ENIs), 1)
-	assert.Equal(t, curENIs.TotalIPs, 1)
+	assert.Equal(t, 1, len(curENIs.ENIs))
+	assert.Equal(t, 2, curENIs.TotalIPs)
 
-	// remove 1 IP
-	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
+	// 1 secondary IP lost in IMDS
+	oneIPUnassigned := []awsutils.ENIMetadata{
 		{
 			ENIID:          primaryENIid,
 			MAC:            primaryMAC,
@@ -402,20 +384,40 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 				},
 			},
 		},
-	}, nil)
+	}
+	m.awsutils.EXPECT().GetAttachedENIs().Return(oneIPUnassigned, nil)
+	m.awsutils.EXPECT().GetIPv4sFromEC2(primaryENIid).Return(oneIPUnassigned[0].IPv4Addresses, nil)
 
 	mockContext.nodeIPPoolReconcile(0)
 	curENIs = mockContext.dataStore.GetENIInfos()
-	assert.Equal(t, len(curENIs.ENIs), 1)
-	assert.Equal(t, curENIs.TotalIPs, 0)
+	assert.Equal(t, 1, len(curENIs.ENIs))
+	assert.Equal(t, 0, curENIs.TotalIPs)
 
-	// remove eni
-	m.awsutils.EXPECT().GetAttachedENIs().Return(nil, nil)
+	// New ENI attached
+	newENIMetadata := getSecondaryENIMetadata()
+
+	twoENIs := append(oneIPUnassigned, newENIMetadata)
+
+	// Two ENIs found
+	m.awsutils.EXPECT().GetAttachedENIs().Return(twoENIs, nil)
+	m.awsutils.EXPECT().IsUnmanagedENI(secENIid).Times(2).Return(false)
+	m.awsutils.EXPECT().DescribeAllENIs().Return(twoENIs, map[string]awsutils.TagMap{}, "", nil)
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, primarySubnet)
+
+	mockContext.nodeIPPoolReconcile(0)
+
+	// Verify that we now have 2 ENIs, primary ENI with 0 secondary IPs, and secondary ENI with 1 secondary IP
+	curENIs = mockContext.dataStore.GetENIInfos()
+	assert.Equal(t, 2, len(curENIs.ENIs))
+	assert.Equal(t, 1, curENIs.TotalIPs)
+
+	// Remove the secondary ENI in the IMDS metadata
+	m.awsutils.EXPECT().GetAttachedENIs().Return(oneIPUnassigned, nil)
 
 	mockContext.nodeIPPoolReconcile(0)
 	curENIs = mockContext.dataStore.GetENIInfos()
-	assert.Equal(t, len(curENIs.ENIs), 0)
-	assert.Equal(t, curENIs.TotalIPs, 0)
+	assert.Equal(t, 1, len(curENIs.ENIs))
+	assert.Equal(t, 0, curENIs.TotalIPs)
 }
 
 func TestGetWarmENITarget(t *testing.T) {
@@ -589,7 +591,7 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &IPAMContext{awsClient: mockAWSUtils}
-			mockAWSUtils.EXPECT().SetUnmanagedENIs(tt.unmanagedenis).Return(nil).AnyTimes()
+			mockAWSUtils.EXPECT().SetUnmanagedENIs(tt.unmanagedenis).AnyTimes()
 			c.setUnmanagedENIs(tt.tagMap)
 
 			mockAWSUtils.EXPECT().IsUnmanagedENI(gomock.Any()).DoAndReturn(
@@ -634,4 +636,183 @@ func TestPodENIConfigFlag(t *testing.T) {
 	_ = os.Unsetenv(envEnablePodENI)
 	disabled = enablePodENI()
 	assert.False(t, disabled)
+}
+
+func TestNodeIPPoolReconcileBadIMDSData(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:     m.awsutils,
+		networkClient: m.network,
+		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
+	}
+
+	mockContext.dataStore = testDatastore()
+
+	primaryENIMetadata := getPrimaryENIMetadata()
+	testAddr1 := *primaryENIMetadata.IPv4Addresses[0].PrivateIpAddress
+	// Add ENI and IPs to datastore
+	eniID := primaryENIMetadata.ENIID
+	_ = mockContext.dataStore.AddENI(eniID, primaryENIMetadata.DeviceNumber, true, false)
+	mockContext.primaryIP[eniID] = testAddr1
+	mockContext.addENIaddressesToDataStore(primaryENIMetadata.IPv4Addresses, eniID)
+	curENIs := mockContext.dataStore.GetENIInfos()
+	assert.Equal(t, 1, len(curENIs.ENIs))
+	assert.Equal(t, 2, curENIs.TotalIPs)
+	eniMetadataList := []awsutils.ENIMetadata{primaryENIMetadata}
+	m.awsutils.EXPECT().GetAttachedENIs().Return(eniMetadataList, nil)
+	m.awsutils.EXPECT().IsUnmanagedENI(eniID).Return(false).AnyTimes()
+
+	// First reconcile, IMDS returns correct IPs so no change needed
+	mockContext.nodeIPPoolReconcile(0)
+
+	// IMDS returns no secondary IPs, the EC2 call fails
+	primary := true
+	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
+		{
+			ENIID:          primaryENIid,
+			MAC:            primaryMAC,
+			DeviceNumber:   primaryDevice,
+			SubnetIPv4CIDR: primarySubnet,
+			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+				{
+					PrivateIpAddress: &testAddr1, Primary: &primary,
+				},
+			},
+		},
+	}, nil)
+
+	// eniIPPoolReconcile() calls EC2 to get the actual count, but that call fails
+	m.awsutils.EXPECT().GetIPv4sFromEC2(primaryENIid).Return(nil, errors.New("ec2 API call failed"))
+	mockContext.nodeIPPoolReconcile(0)
+	curENIs = mockContext.dataStore.GetENIInfos()
+	assert.Equal(t, 1, len(curENIs.ENIs))
+	assert.Equal(t, 2, curENIs.TotalIPs)
+
+	// IMDS returns no secondary IPs
+	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
+		{
+			ENIID:          primaryENIid,
+			MAC:            primaryMAC,
+			DeviceNumber:   primaryDevice,
+			SubnetIPv4CIDR: primarySubnet,
+			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+				{
+					PrivateIpAddress: &testAddr1, Primary: &primary,
+				},
+			},
+		},
+	}, nil)
+
+	// eniIPPoolReconcile() calls EC2 to get the actual count that should still be 2
+	m.awsutils.EXPECT().GetIPv4sFromEC2(primaryENIid).Return(primaryENIMetadata.IPv4Addresses, nil)
+	mockContext.nodeIPPoolReconcile(0)
+	curENIs = mockContext.dataStore.GetENIInfos()
+	assert.Equal(t, 1, len(curENIs.ENIs))
+	assert.Equal(t, 2, curENIs.TotalIPs)
+
+	// If no ENI is found, we abort the reconcile
+	m.awsutils.EXPECT().GetAttachedENIs().Return(nil, nil)
+	mockContext.nodeIPPoolReconcile(0)
+	curENIs = mockContext.dataStore.GetENIInfos()
+	assert.Equal(t, 1, len(curENIs.ENIs))
+	assert.Equal(t, 2, curENIs.TotalIPs)
+}
+
+func getPrimaryENIMetadata() awsutils.ENIMetadata {
+	primary := true
+	notPrimary := false
+	testAddr1 := ipaddr01
+	testAddr2 := ipaddr02
+	testAddr3 := ipaddr03
+
+	eniMetadata := awsutils.ENIMetadata{
+		ENIID:          primaryENIid,
+		MAC:            primaryMAC,
+		DeviceNumber:   primaryDevice,
+		SubnetIPv4CIDR: primarySubnet,
+		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			{
+				PrivateIpAddress: &testAddr1, Primary: &primary,
+			},
+			{
+				PrivateIpAddress: &testAddr2, Primary: &notPrimary,
+			},
+			{
+				PrivateIpAddress: &testAddr3, Primary: &notPrimary,
+			},
+		},
+	}
+	return eniMetadata
+}
+
+func getSecondaryENIMetadata() awsutils.ENIMetadata {
+	primary := true
+	notPrimary := false
+	testAddr3 := ipaddr11
+	testAddr4 := ipaddr12
+	newENIMetadata := awsutils.ENIMetadata{
+		ENIID:          secENIid,
+		MAC:            secMAC,
+		DeviceNumber:   secDevice,
+		SubnetIPv4CIDR: primarySubnet,
+		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			{
+				PrivateIpAddress: &testAddr3, Primary: &primary,
+			},
+			{
+				PrivateIpAddress: &testAddr4, Primary: &notPrimary,
+			},
+		},
+	}
+	return newENIMetadata
+}
+
+func TestIPAMContext_setupENI(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:     m.awsutils,
+		networkClient: m.network,
+		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
+	}
+	//mockContext.primaryIP[]
+
+	mockContext.dataStore = testDatastore()
+	primary := true
+	notPrimary := false
+	testAddr1 := ipaddr01
+	testAddr2 := ipaddr02
+	primaryENIMetadata := awsutils.ENIMetadata{
+		ENIID:          primaryENIid,
+		MAC:            primaryMAC,
+		DeviceNumber:   primaryDevice,
+		SubnetIPv4CIDR: primarySubnet,
+		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			{
+				PrivateIpAddress: &testAddr1, Primary: &primary,
+			},
+			{
+				PrivateIpAddress: &testAddr2, Primary: &notPrimary,
+			},
+		},
+	}
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	err := mockContext.setupENI(primaryENIMetadata.ENIID, primaryENIMetadata, "")
+	assert.NoError(t, err)
+	// Primary ENI added
+	assert.Equal(t, 1, len(mockContext.primaryIP))
+
+	newENIMetadata := getSecondaryENIMetadata()
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, primarySubnet).Return(errors.New("not able to set route 0.0.0.0/0 via 10.10.10.1 table 2"))
+
+	err = mockContext.setupENI(newENIMetadata.ENIID, newENIMetadata, "")
+	assert.Error(t, err)
+	assert.Equal(t, 1, len(mockContext.primaryIP))
+
 }

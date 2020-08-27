@@ -878,3 +878,15 @@ func TestEC2InstanceMetadataCache_waitForENIAndIPsAttached(t *testing.T) {
 		})
 	}
 }
+
+func TestEC2InstanceMetadataCache_SetUnmanagedENIs(t *testing.T) {
+	_, mockMetadata, _ := setup(t)
+	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
+	ins.SetUnmanagedENIs(nil)
+	assert.False(t, ins.IsUnmanagedENI("eni-1"))
+	ins.SetUnmanagedENIs([]string{"eni-1", "eni-2"})
+	assert.True(t, ins.IsUnmanagedENI("eni-1"))
+	assert.False(t, ins.IsUnmanagedENI("eni-99"))
+	ins.SetUnmanagedENIs(nil)
+	assert.False(t, ins.IsUnmanagedENI("eni-1"))
+}
