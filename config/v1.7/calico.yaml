@@ -32,7 +32,7 @@ spec:
         # container programs network policy and routes on each
         # host.
         - name: calico-node
-          image: quay.io/calico/node:v3.13.4
+          image: quay.io/calico/node:v3.15.1
           env:
             # Use Kubernetes API as the backing datastore.
             - name: DATASTORE_TYPE
@@ -71,6 +71,8 @@ spec:
               value: "none"
             - name: FELIX_PROMETHEUSMETRICSENABLED
               value: "true"
+            - name: FELIX_ROUTESOURCE
+              value: "WorkloadIPs"
             - name: NO_DEFAULT_POOLS
               value: "true"
             # Set based on the k8s node name.
@@ -547,7 +549,7 @@ spec:
       securityContext:
         fsGroup: 65534
       containers:
-        - image: quay.io/calico/typha:v3.13.4
+        - image: quay.io/calico/typha:v3.15.1
           name: calico-typha
           ports:
             - containerPort: 5473
