@@ -819,7 +819,7 @@ func (ds *DataStore) FreeableIPs(eniID string) []string {
 	return freeable
 }
 
-// GetENIInfos provides ENI IP information to introspection endpoint
+// GetENIInfos provides ENI and IP information about the datastore
 func (ds *DataStore) GetENIInfos() *ENIInfos {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
@@ -831,7 +831,14 @@ func (ds *DataStore) GetENIInfos() *ENIInfos {
 	}
 
 	for eni, eniInfo := range ds.eniPool {
-		eniInfos.ENIs[eni] = *eniInfo
+		tmpENIInfo := *eniInfo
+		tmpENIInfo.IPv4Addresses = make(map[string]*AddressInfo, len(eniInfo.IPv4Addresses))
+		// Since IP Addresses might get removed, we need to make a deep copy here.
+		for eni, ipAddrInfoRef := range eniInfo.IPv4Addresses {
+			ipAddrInfo := *ipAddrInfoRef
+			tmpENIInfo.IPv4Addresses[eni] = &ipAddrInfo
+		}
+		eniInfos.ENIs[eni] = tmpENIInfo
 	}
 	return &eniInfos
 }
