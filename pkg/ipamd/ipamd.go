@@ -908,13 +908,13 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		return
 	}
 	attachedENIs := c.filterUnmanagedENIs(allENIs)
-	currentENIIPPools := c.dataStore.GetENIInfos().ENIs
+	currentENIs := c.dataStore.GetENIInfos().ENIs
 	trunkENI := c.dataStore.GetTrunkENI()
 
 	// Check if a new ENI was added, if so we need to update the tags.
 	needToUpdateTags := false
 	for _, attachedENI := range attachedENIs {
-		if _, ok := currentENIIPPools[attachedENI.ENIID]; !ok {
+		if _, ok := currentENIs[attachedENI.ENIID]; !ok {
 			needToUpdateTags = true
 			break
 		}
@@ -950,8 +950,8 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 			log.Debugf("Reconcile existing ENI %s IP pool", attachedENI.ENIID)
 			// Reconcile IP pool
 			c.eniIPPoolReconcile(eniIPPool, attachedENI, attachedENI.ENIID)
-			// Mark action, remove this ENI from currentENIIPPools map
-			delete(currentENIIPPools, attachedENI.ENIID)
+			// Mark action, remove this ENI from currentENIs map
+			delete(currentENIs, attachedENI.ENIID)
 			continue
 		}
 
@@ -968,7 +968,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	}
 
 	// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
-	for eni := range currentENIIPPools {
+	for eni := range currentENIs {
 		log.Infof("Reconcile and delete detached ENI %s", eni)
 		// Force the delete, since aws local metadata has told us that this ENI is no longer
 		// attached, so any IPs assigned from this ENI will no longer work.
