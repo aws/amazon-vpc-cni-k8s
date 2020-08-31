@@ -12,7 +12,11 @@ If you think you have found a potential security issue, please do not post it as
 -->
 
 **What happened**:
-<!-- include log lines if possible -->
+<!--
+ Inclue log lines if possible
+
+ Please upload the logs by running [CNI Log Collection tool](https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html#troubleshoot-cni)
+ -->
 
 **What you expected to happen**:
 
