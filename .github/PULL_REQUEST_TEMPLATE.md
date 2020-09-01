@@ -23,8 +23,28 @@ feature
 **What this PR does / why we need it**:
 
 
+**If issue # is not available please add repro steps and logs from IPAMD/CNI showing the issue**:
+
+
 **Testing**:
-<!--output of manual testing/integration tests results-->
+<!--
+output of manual testing/integration tests results and also attach logs
+showing the fix being resolved
+-->
+
+**Automation added to e2e**:
+<!-- 
+Test case added to lib/integration.sh 
+If no, create an issue with enhancement/testing label
+-->
+
+**Will this break upgrades and downgrades. Has it been tested?**:
+
+
+**Does this require config only upgrades?**:
+<!--
+If this change does not support kubectl patch please add the reason.
+-->
 
 
 **Does this PR introduce a user-facing change?**:
@@ -34,6 +54,8 @@ If yes, a release note is required:
 Enter your extended release note in the block below. If the PR requires additional action from users switching to the new release, include the string "action required".
 
 -->
+
+
 ```release-note
 
 ```
