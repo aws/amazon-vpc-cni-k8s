@@ -311,6 +311,7 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 	if err != nil {
 		return nil, err
 	}
+
 	return c, nil
 }
 
@@ -426,6 +427,7 @@ func (c *IPAMContext) nodeInit() error {
 
 	// Spawning updateCIDRsRulesOnChange go-routine
 	go wait.Forever(func() { vpcCIDRs = c.updateCIDRsRulesOnChange(vpcCIDRs) }, 30*time.Second)
+	go wait.Forever(func() { _ = c.dataStore.CleanupCooldownIPs() }, 30*time.Second)
 	return nil
 }
 

@@ -189,6 +189,9 @@ func (addr AddressInfo) inCoolingPeriod() bool {
 // ENIPool is a collection of ENI, keyed by ENI ID
 type ENIPool map[string]*ENI
 
+// CooldownCache
+type CooldownCache map[string]*ENI
+
 // AssignedIPv4Addresses is the number of IP addresses already assigned
 func (p *ENIPool) AssignedIPv4Addresses() int {
 	count := 0
@@ -227,6 +230,7 @@ type DataStore struct {
 	CheckpointMigrationPhase int
 	backingStore             Checkpointer
 	cri                      cri.APIs
+	cooldownCache            CooldownCache
 }
 
 // ENIInfos contains ENI IP information
@@ -259,6 +263,7 @@ func NewDataStore(log logger.Logger, backingStore Checkpointer) *DataStore {
 		backingStore:             backingStore,
 		cri:                      cri.New(),
 		CheckpointMigrationPhase: CheckpointMigrationPhase,
+		cooldownCache:            make(CooldownCache),
 	}
 }
 
@@ -277,7 +282,8 @@ type CheckpointData struct {
 // in checkpoints.
 type CheckpointEntry struct {
 	IPAMKey
-	IPv4 string `json:"ipv4"`
+	IPv4           string    `json:"ipv4"`
+	UnassignedTime time.Time `json:"UnassignedTime"`
 }
 
 // ReadBackingStore initialises the IP allocation state from the
@@ -355,8 +361,15 @@ func (ds *DataStore) ReadBackingStore() error {
 		}
 
 		addr := eni.IPv4Addresses[allocation.IPv4]
+		addr.UnassignedTime = allocation.UnassignedTime
+
 		ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
 		ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
+		// In migration step 2 - if the pod was deleted and IPAMD restarted then time will be non-zero
+		// add it back to cooldown cache
+		if !addr.UnassignedTime.IsZero() {
+			ds.cooldownCache[addr.Address] = eni
+		}
 	}
 
 	if ds.CheckpointMigrationPhase == 1 {
@@ -380,8 +393,9 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 		for _, addr := range eni.IPv4Addresses {
 			if addr.Assigned() {
 				entry := CheckpointEntry{
-					IPAMKey: addr.IPAMKey,
-					IPv4:    addr.Address,
+					IPAMKey:        addr.IPAMKey,
+					IPv4:           addr.Address,
+					UnassignedTime: addr.UnassignedTime,
 				}
 				allocations = append(allocations, entry)
 			}
@@ -495,7 +509,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 
 	for _, eni := range ds.eniPool {
 		for _, addr := range eni.IPv4Addresses {
-			if !addr.Assigned() && !addr.inCoolingPeriod() {
+			if !addr.Assigned() {
 				ds.assignPodIPv4AddressUnsafe(ipamKey, eni, addr)
 				if err := ds.writeBackingStoreUnsafe(); err != nil {
 					ds.log.Warnf("Failed to update backing store: %v", err)
@@ -521,12 +535,11 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(ipamKey IPAMKey, eni *ENI, addr 
 	if addr.Assigned() {
 		panic("addr already assigned")
 	}
-	addr.IPAMKey = ipamKey // This marks the addr as assigned
 
+	addr.IPAMKey = ipamKey // This marks the addr as assigned
 	ds.assigned++
 	// Prometheus gauge
 	assignedIPs.Set(float64(ds.assigned))
-
 	return addr.Address, eni.DeviceNumber
 }
 
@@ -537,7 +550,7 @@ func (ds *DataStore) unassignPodIPv4AddressUnsafe(eni *ENI, addr *AddressInfo) {
 	}
 	ds.log.Infof("UnAssignPodIPv4Address: Unassign IP %v from sandbox %s",
 		addr.Address, addr.IPAMKey)
-	addr.IPAMKey = IPAMKey{} // unassign the addr
+
 	ds.assigned--
 	// Prometheus gauge
 	assignedIPs.Set(float64(ds.assigned))
@@ -762,13 +775,20 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (ip string, deviceN
 		return "", 0, ErrUnknownPod
 	}
 
-	ds.unassignPodIPv4AddressUnsafe(eni, addr)
+	// Updating the file with unassigned time this will be needed to rebuild
+	// cooldown cache in restart cases
+
+	addr.UnassignedTime = time.Now()
+	ds.log.Infof("Writing to backing store current TS")
 	if err := ds.writeBackingStoreUnsafe(); err != nil {
 		// Unwind un-assignment
 		ds.assignPodIPv4AddressUnsafe(ipamKey, eni, addr)
 		return "", 0, err
 	}
-	addr.UnassignedTime = time.Now()
+	//Now zero the IPAMKey since this is used to check if the IP is assigned
+	//addr.IPAMKey = IPAMKey{}
+	ds.cooldownCache[addr.Address] = eni
+	ds.unassignPodIPv4AddressUnsafe(eni, addr)
 
 	ds.log.Infof("UnassignPodIPv4Address: sandbox %s's ipAddr %s, DeviceNumber %d",
 		ipamKey, addr.Address, eni.DeviceNumber)
@@ -865,4 +885,26 @@ func (ds *DataStore) GetENIIPs(eniID string) ([]string, error) {
 		ipPool = append(ipPool, ip)
 	}
 	return ipPool, nil
+}
+
+// CleanupCooldownIPs cleans up cooldown cache every 30
+func (ds *DataStore) CleanupCooldownIPs() error {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	for ipaddr, eni := range ds.cooldownCache {
+		addr := eni.IPv4Addresses[ipaddr]
+		ds.log.Debugf("Cooldown thread - %v", addr.Address)
+		if !addr.inCoolingPeriod() {
+			ds.log.Debugf("Out of cooldown period- %v", addr.Address)
+			addr.IPAMKey = IPAMKey{} // unassign the addr
+			delete(ds.cooldownCache, addr.Address)
+		}
+	}
+	// No need to update the backing store, next update should take care of updating the file
+	// Case 1 - Removed from cooldown cache -> store not updated -> upgraded to migration phase 2
+	// IP will be added back to cooldown cache in restore
+	// Case 2 - Removed from cooldown cache -> store not updated -> Next pod with same ip will rewrite
+
+	return nil
 }
