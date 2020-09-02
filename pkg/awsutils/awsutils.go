@@ -117,8 +117,8 @@ type APIs interface {
 	// GetIPv4sFromEC2 returns the IPv4 addresses for a given ENI
 	GetIPv4sFromEC2(eniID string) (addrList []*ec2.NetworkInterfacePrivateIpAddress, err error)
 
-	// DescribeAllENIs calls EC2 and returns the ENIMetadata and a tag map for each ENI
-	DescribeAllENIs() (eniMetadata []ENIMetadata, tagMap map[string]TagMap, trunkENI string, err error)
+	// DescribeAllENIs calls EC2 and returns a fully populated DescribeAllENIsResult struct and an error
+	DescribeAllENIs() (DescribeAllENIsResult, error)
 
 	// AllocIPAddress allocates an IP address for an ENI
 	AllocIPAddress(eniID string) error
@@ -212,6 +212,14 @@ func (eni ENIMetadata) PrimaryIPv4Address() string {
 
 // TagMap keeps track of the EC2 tags on each ENI
 type TagMap map[string]string
+
+// DescribeAllENIsResult contains the fully
+type DescribeAllENIsResult struct {
+	ENIMetadata []ENIMetadata
+	TagMap      map[string]TagMap
+	TrunkENI    string
+	EFAENIs     map[string]bool
+}
 
 // msSince returns milliseconds since start.
 func msSince(start time.Time) float64 {
@@ -967,11 +975,11 @@ func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList [
 }
 
 // DescribeAllENIs calls EC2 to refresh the ENIMetadata and tags for all attached ENIs
-func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[string]TagMap, string, error) {
+func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult, error) {
 	// Fetch all local ENI info from metadata
 	allENIs, err := cache.GetAttachedENIs()
 	if err != nil {
-		return nil, nil, "", errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
+		return DescribeAllENIsResult{}, errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
 	}
 
 	eniMap := make(map[string]ENIMetadata, len(allENIs))
@@ -1016,7 +1024,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[str
 	}
 
 	if err != nil {
-		return nil, nil, "", err
+		return DescribeAllENIsResult{}, err
 	}
 
 	// Collect the verified ENIs
@@ -1027,6 +1035,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[str
 
 	// Collect ENI response into ENI metadata and tags.
 	var trunkENI string
+	efaENIs := make(map[string]bool, 0)
 	tagMap := make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
 	for _, ec2res := range ec2Response.NetworkInterfaces {
 		if ec2res.Attachment != nil && aws.Int64Value(ec2res.Attachment.DeviceIndex) == 0 && !aws.BoolValue(ec2res.Attachment.DeleteOnTermination) {
@@ -1039,6 +1048,9 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[str
 		if interfaceType == "trunk" {
 			trunkENI = eniID
 		}
+		if interfaceType == "efa" {
+			efaENIs[eniID] = true
+		}
 		// Check IPv4 addresses
 		logOutOfSyncState(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
 		tags := getTags(ec2res, eniMetadata.ENIID)
@@ -1046,7 +1058,12 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[str
 			tagMap[eniMetadata.ENIID] = tags
 		}
 	}
-	return verifiedENIs, tagMap, trunkENI, nil
+	return DescribeAllENIsResult{
+		ENIMetadata: verifiedENIs,
+		TagMap:      tagMap,
+		TrunkENI:    trunkENI,
+		EFAENIs:     efaENIs,
+	}, nil
 }
 
 // getTags collects tags from an EC2 DescribeNetworkInterfaces call
