@@ -189,6 +189,8 @@
           "name": "run-dir"
         - "mountPath": "/var/run/dockershim.sock"
           "name": "dockershim"
+        - "mountPath": "/run/xtables.lock"
+          "name": "xtables-lock"
       "hostNetwork": true
       "initContainers":
       - "image": "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni-init:v1.7.1"
@@ -214,6 +216,9 @@
       - "hostPath":
           "path": "/var/run/dockershim.sock"
         "name": "dockershim"
+      - "hostPath":
+          "path": "/run/xtables.lock"
+        "name": "xtables-lock"
       - "hostPath":
           "path": "/var/log/aws-routed-eni"
           "type": "DirectoryOrCreate"
