@@ -339,13 +339,13 @@ func (c *IPAMContext) nodeInit() error {
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
 
-	eniMetadata, tagMap, trunkENI, err := c.awsClient.DescribeAllENIs()
+	metadataResult, err := c.awsClient.DescribeAllENIs()
 	if err != nil {
 		return errors.New("ipamd init: failed to retrieve attached ENIs info")
 	}
-	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(eniMetadata), len(tagMap))
-	c.setUnmanagedENIs(tagMap)
-	enis := c.filterUnmanagedENIs(eniMetadata)
+	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
+	c.setUnmanagedENIs(metadataResult.TagMap)
+	enis := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
@@ -353,7 +353,7 @@ func (c *IPAMContext) nodeInit() error {
 		retry := 0
 		for {
 			retry++
-			if err = c.setupENI(eni.ENIID, eni, trunkENI); err == nil {
+			if err = c.setupENI(eni.ENIID, eni, eni.ENIID == metadataResult.TrunkENI, metadataResult.EFAENIs[eni.ENIID]); err == nil {
 				log.Infof("ENI %s set up.", eni.ENIID)
 				break
 			}
@@ -402,7 +402,7 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	// If we started on a node with a trunk ENI already attached, add the node label.
-	if trunkENI != "" {
+	if metadataResult.TrunkENI != "" {
 		// Signal to VPC Resource Controller that the node has a trunk already
 		err := c.SetNodeLabel("vpc.amazonaws.com/has-trunk-attached", "true")
 		if err != nil {
@@ -688,7 +688,8 @@ func (c *IPAMContext) tryAllocateENI() error {
 		return err
 	}
 
-	err = c.setupENI(eni, eniMetadata, c.dataStore.GetTrunkENI())
+	// The CNI does not create trunk or EFA ENIs, so they will always be false here
+	err = c.setupENI(eni, eniMetadata, false, false)
 	if err != nil {
 		ipamdErrInc("increaseIPPoolsetupENIFailed")
 		log.Errorf("Failed to increase pool size: %v", err)
@@ -736,10 +737,10 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 // 1) add ENI to datastore
 // 2) set up linux ENI related networking stack.
 // 3) add all ENI's secondary IP addresses to datastore
-func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, trunkENI string) error {
+func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isTrunkENI, isEFAENI bool) error {
 	primaryENI := c.awsClient.GetPrimaryENI()
 	// Add the ENI to the datastore
-	err := c.dataStore.AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, eni == trunkENI)
+	err := c.dataStore.AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI)
 	if err != nil && err.Error() != datastore.DuplicatedENIError {
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
@@ -924,6 +925,8 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	attachedENIs := c.filterUnmanagedENIs(allENIs)
 	currentENIs := c.dataStore.GetENIInfos().ENIs
 	trunkENI := c.dataStore.GetTrunkENI()
+	// Initialize the set with the known EFA interfaces
+	efaENIs := c.dataStore.GetEFAENIs()
 
 	// Check if a new ENI was added, if so we need to update the tags.
 	needToUpdateTags := false
@@ -934,14 +937,14 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		}
 	}
 	if needToUpdateTags {
-		log.Debugf("A new ENI added but not by ipamd, updating tags")
-		allENIs, tagMap, trunk, err := c.awsClient.DescribeAllENIs()
+		log.Debugf("A new ENI added but not by ipamd, updating tags by calling EC2")
+		metadataResult, err := c.awsClient.DescribeAllENIs()
 		if err != nil {
 			log.Warnf("Failed to call EC2 to describe ENIs, aborting reconcile: %v", err)
 			return
 		}
 
-		if c.enablePodENI && trunk != "" {
+		if c.enablePodENI && metadataResult.TrunkENI != "" {
 			// Label the node that we have a trunk
 			err = c.SetNodeLabel("vpc.amazonaws.com/has-trunk-attached", "true")
 			if err != nil {
@@ -951,9 +954,11 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 			}
 		}
 		// Update trunk ENI
-		trunkENI = trunk
-		c.setUnmanagedENIs(tagMap)
-		attachedENIs = c.filterUnmanagedENIs(allENIs)
+		trunkENI = metadataResult.TrunkENI
+		// Just copy values of the EFA set
+		efaENIs = metadataResult.EFAENIs
+		c.setUnmanagedENIs(metadataResult.TagMap)
+		attachedENIs = c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 	}
 
 	// Mark phase
@@ -971,7 +976,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 
 		// Add new ENI
 		log.Debugf("Reconcile and add a new ENI %s", attachedENI)
-		err = c.setupENI(attachedENI.ENIID, attachedENI, trunkENI)
+		err = c.setupENI(attachedENI.ENIID, attachedENI, attachedENI.ENIID == trunkENI, efaENIs[attachedENI.ENIID])
 		if err != nil {
 			log.Errorf("IP pool reconcile: Failed to set up ENI %s network: %v", attachedENI.ENIID, err)
 			ipamdErrInc("eniReconcileAdd")

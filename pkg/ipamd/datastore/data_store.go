@@ -142,6 +142,8 @@ type ENI struct {
 	IsPrimary bool
 	// IsTrunk indicates whether this ENI is used to provide pods with dedicated ENIs
 	IsTrunk bool
+	// IsEFA indicates whether this ENI is tagged as an EFA
+	IsEFA bool
 	// DeviceNumber is the device number of ENI (0 means the primary ENI)
 	DeviceNumber int
 	// IPv4Addresses shows whether each address is assigned, the key is IP address, which must
@@ -397,7 +399,7 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 }
 
 // AddENI add ENI to data store
-func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk bool) error {
+func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, isEFA bool) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
@@ -411,6 +413,7 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk b
 		createTime:    time.Now(),
 		IsPrimary:     isPrimary,
 		IsTrunk:       isTrunk,
+		IsEFA:         isEFA,
 		ID:            eniID,
 		DeviceNumber:  deviceNumber,
 		IPv4Addresses: make(map[string]*AddressInfo)}
@@ -559,6 +562,19 @@ func (ds *DataStore) GetTrunkENI() string {
 	return ""
 }
 
+// GetEFAENIs returns the a map containing all attached EFA ENIs
+func (ds *DataStore) GetEFAENIs() map[string]bool {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+	ret := make(map[string]bool)
+	for _, eni := range ds.eniPool {
+		if eni.IsEFA {
+			ret[eni.ID] = true
+		}
+	}
+	return ret
+}
+
 // IsRequiredForWarmIPTarget determines if this ENI has warm IPs that are required to fulfill whatever WARM_IP_TARGET is
 // set to.
 func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENI) bool {
@@ -617,6 +633,11 @@ func (ds *DataStore) getDeletableENI(warmIPTarget int, minimumIPTarget int) *ENI
 
 		if eni.IsTrunk {
 			ds.log.Debugf("ENI %s cannot be deleted because it is a trunk ENI", eni.ID)
+			continue
+		}
+
+		if eni.IsEFA {
+			ds.log.Debugf("ENI %s cannot be deleted because it is an EFA ENI", eni.ID)
 			continue
 		}
 
