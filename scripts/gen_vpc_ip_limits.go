@@ -149,15 +149,7 @@ func addManualLimits(limitMap map[string]awsutils.InstanceTypeLimits) map[string
 		"u-6tb1.metal":  {ENILimit: 5, IPv4Limit: 30},
 		"u-9tb1.metal":  {ENILimit: 5, IPv4Limit: 30},
 		"c5a.metal":     {ENILimit: 15, IPv4Limit: 50},
-		"c5ad.12xlarge": {ENILimit: 8, IPv4Limit: 30},
-		"c5ad.16xlarge": {ENILimit: 15, IPv4Limit: 50},
-		"c5ad.24xlarge": {ENILimit: 15, IPv4Limit: 50},
-		"c5ad.2xlarge":  {ENILimit: 4, IPv4Limit: 15},
-		"c5ad.4xlarge":  {ENILimit: 8, IPv4Limit: 30},
-		"c5ad.8xlarge":  {ENILimit: 8, IPv4Limit: 30},
-		"c5ad.large":    {ENILimit: 3, IPv4Limit: 10},
 		"c5ad.metal":    {ENILimit: 15, IPv4Limit: 50},
-		"c5ad.xlarge":   {ENILimit: 4, IPv4Limit: 15},
 	}
 	for instanceType, instanceLimits := range manuallyAddedLimits {
 		val, ok := limitMap[instanceType]
@@ -219,7 +211,7 @@ var eksMaxPodsTemplate = template.Must(template.New("").Parse(`# Copyright Amazo
 #
 # Mapping is calculated from AWS EC2 API using the following formula:
 # * First IP on each ENI is not used for pods
-# * 2 additional host-networking pods (AWS ENI and kube-proxy) are accounted for
+# * +2 for for the pods that use host-networking (AWS CNI and kube-proxy)
 #
 #   # of ENI * (# of IPv4 per ENI - 1) + 2
 #
