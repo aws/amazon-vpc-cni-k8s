@@ -25,6 +25,8 @@ ARCH=$(go env GOARCH)
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
+: "${RUN_WARM_IP_TEST:=false}"
+: "${RUN_WARM_ENI_TEST:=false}"
 
 __cluster_created=0
 __cluster_deprovisioned=0
@@ -223,6 +225,13 @@ echo "Updated!"
 
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
+
+if [[ $RUN_WARM_IP_TEST == true ]]; then
+    setup_warm_ip_test
+fi
+if [[ $RUN_WARM_ENI_TEST == true ]]; then
+    setup_warm_eni_test
+fi
 
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"
