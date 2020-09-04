@@ -17,16 +17,16 @@ documentation
 feature
 -->
 
-**Which issue(s) this PR fixes**:
+**Which issue does this PR fix**:
 
 
-**What this PR does / why we need it**:
+**What does this PR do / Why do we need it**:
 
 
-**If issue # is not available please add repro steps and logs from IPAMD/CNI showing the issue**:
+**If an issue # is not available please add repro steps and logs from IPAMD/CNI showing the issue**:
 
 
-**Testing**:
+**Testing done on this change**:
 <!--
 output of manual testing/integration tests results and also attach logs
 showing the fix being resolved
@@ -38,23 +38,20 @@ Test case added to lib/integration.sh
 If no, create an issue with enhancement/testing label
 -->
 
-**Will this break upgrades and downgrades. Has it been tested?**:
+**Will this break upgrades or downgrades. Has updating a running cluster been tested?**:
 
 
-**Does this require config only upgrades?**:
+**Does this change require updates to the CNI daemonset config files to work?**:
 <!--
-If this change does not support kubectl patch please add the reason.
+If this change does not work with a "kubectl patch" of the image tag, please explain why.
 -->
 
-
-**Does this PR introduce a user-facing change?**:
+**Does this PR introduce any user-facing change?**:
 <!--
-If no, just write "NONE" in the release-note block below.
-If yes, a release note is required:
-Enter your extended release note in the block below. If the PR requires additional action from users switching to the new release, include the string "action required".
-
+If yes, a release note update is required:
+Enter your extended release note in the block below. If the PR requires additional actions
+from users switching to the new release, include the string "action required".
 -->
-
 
 ```release-note
 
