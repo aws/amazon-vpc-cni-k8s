@@ -42,7 +42,7 @@ func (c *IPAMContext) ServeMetrics() {
 	server := c.setupMetricsServer()
 	for {
 		once := sync.Once{}
-		_ = retry.RetryWithBackoff(retry.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
+		_ = retry.WithBackoff(retry.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
 			err := server.ListenAndServe()
 			once.Do(func() {
 				log.Warnf("Error running http API: %v", err)

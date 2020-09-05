@@ -1260,7 +1260,7 @@ func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
 
 		}
 	}
-	return -1, errors.New("no trunk!")
+	return -1, errors.New("no trunk found")
 }
 
 // SetNodeLabel sets or deletes a node label

@@ -160,6 +160,7 @@ func (d *Controller) DiscoverK8SPods(podListWatcher *cache.ListWatch) {
 	select {}
 }
 
+// SetNodeLabel sets or deletes a label on the current node
 func (d *Controller) SetNodeLabel(key, value string) error {
 	// Find my node
 	node, err := d.kubeClient.CoreV1().Nodes().Get(d.myNodeName, metav1.GetOptions{})
@@ -193,6 +194,7 @@ func (d *Controller) SetNodeLabel(key, value string) error {
 	return nil
 }
 
+// GetPod returns a pod based on name and namespace
 func (d *Controller) GetPod(podName, namespace string) (*v1.Pod, error) {
 	return d.kubeClient.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
 }

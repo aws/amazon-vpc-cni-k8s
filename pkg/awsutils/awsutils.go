@@ -877,7 +877,7 @@ func (cache *EC2InstanceMetadataCache) tagENI(eniID string, maxBackoffDelay time
 		Tags: tags,
 	}
 
-	_ = retry.RetryNWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, maxBackoffDelay, 0.3, 2), 5, func() error {
+	_ = retry.NWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, maxBackoffDelay, 0.3, 2), 5, func() error {
 		start := time.Now()
 		_, err := cache.ec2SVC.CreateTagsWithContext(context.Background(), input, userAgent)
 		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil)).Observe(msSince(start))
@@ -967,7 +967,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 	}
 
 	// Retry detaching the ENI from the instance
-	err = retry.RetryNWithBackoff(retry.NewSimpleBackoff(time.Millisecond*200, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
+	err = retry.NWithBackoff(retry.NewSimpleBackoff(time.Millisecond*200, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
 		start := time.Now()
 		_, ec2Err := cache.ec2SVC.DetachNetworkInterfaceWithContext(context.Background(), detachInput, userAgent)
 		awsAPILatency.WithLabelValues("DetachNetworkInterface", fmt.Sprint(ec2Err != nil)).Observe(msSince(start))
@@ -1037,7 +1037,7 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string, maxBackoffDelay
 	deleteInput := &ec2.DeleteNetworkInterfaceInput{
 		NetworkInterfaceId: aws.String(eniName),
 	}
-	err := retry.RetryNWithBackoff(retry.NewSimpleBackoff(time.Millisecond*500, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
+	err := retry.NWithBackoff(retry.NewSimpleBackoff(time.Millisecond*500, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
 		start := time.Now()
 		_, ec2Err := cache.ec2SVC.DeleteNetworkInterfaceWithContext(context.Background(), deleteInput, userAgent)
 		awsAPILatency.WithLabelValues("DeleteNetworkInterface", fmt.Sprint(ec2Err != nil)).Observe(msSince(start))
@@ -1335,6 +1335,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	return nil
 }
 
+// WaitForENIAndIPsAttached waits until the ENI has been attached and the secondary IPs have been added
 func (cache *EC2InstanceMetadataCache) WaitForENIAndIPsAttached(eni string, wantedSecondaryIPs int) (eniMetadata ENIMetadata, err error) {
 	return cache.waitForENIAndIPsAttached(eni, wantedSecondaryIPs, maxENIBackoffDelay)
 }
@@ -1343,7 +1344,7 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 	start := time.Now()
 	attempt := 0
 	// Wait until the ENI shows up in the instance metadata service and has at least some secondary IPs
-	err = retry.RetryNWithBackoff(retry.NewSimpleBackoff(time.Millisecond*100, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
+	err = retry.NWithBackoff(retry.NewSimpleBackoff(time.Millisecond*100, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
 		attempt++
 		enis, err := cache.GetAttachedENIs()
 		if err != nil {
@@ -1452,7 +1453,7 @@ func (cache *EC2InstanceMetadataCache) tagENIcreateTS(eniID string, maxBackoffDe
 		Tags: tags,
 	}
 
-	_ = retry.RetryNWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, maxBackoffDelay, 0.3, 2), 5, func() error {
+	_ = retry.NWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, maxBackoffDelay, 0.3, 2), 5, func() error {
 		start := time.Now()
 		_, err := cache.ec2SVC.CreateTagsWithContext(context.Background(), input, userAgent)
 		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil)).Observe(msSince(start))

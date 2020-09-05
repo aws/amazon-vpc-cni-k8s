@@ -89,12 +89,11 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 				if trunkENI == "" {
 					log.Warn("Send AddNetworkReply: No trunk ENI found, cannot add a pod ENI")
 					return &failureResponse, nil
-				} else {
-					trunkENILinkIndex, err = s.ipamContext.getTrunkLinkIndex()
-					if err != nil {
-						log.Warn("Send AddNetworkReply: No trunk ENI Link Index found, cannot add a pod ENI")
-						return &failureResponse, nil
-					}
+				}
+				trunkENILinkIndex, err = s.ipamContext.getTrunkLinkIndex()
+				if err != nil {
+					log.Warn("Send AddNetworkReply: No trunk ENI Link Index found, cannot add a pod ENI")
+					return &failureResponse, nil
 				}
 				val, branch := pod.Annotations["vpc.amazonaws.com/pod-eni"]
 				if branch {
@@ -197,20 +196,19 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 			}
 			log.Warnf("Send DelNetworkReply: Failed to get pod spec: %v", err)
 			return &rpc.DelNetworkReply{Success: false}, err
-		} else {
-			val, branch := pod.Annotations["vpc.amazonaws.com/pod-eni"]
-			if branch {
-				// Parse JSON data
-				var podENIData []PodENIData
-				err := json.Unmarshal([]byte(val), &podENIData)
-				if err != nil || len(podENIData) < 1 {
-					log.Errorf("Failed to unmarshal PodENIData JSON: %v", err)
-				}
-				return &rpc.DelNetworkReply{
-					Success:   true,
-					PodVlanId: int32(podENIData[0].VlanID),
-					IPv4Addr:  podENIData[0].PrivateIP}, err
+		}
+		val, branch := pod.Annotations["vpc.amazonaws.com/pod-eni"]
+		if branch {
+			// Parse JSON data
+			var podENIData []PodENIData
+			err := json.Unmarshal([]byte(val), &podENIData)
+			if err != nil || len(podENIData) < 1 {
+				log.Errorf("Failed to unmarshal PodENIData JSON: %v", err)
 			}
+			return &rpc.DelNetworkReply{
+				Success:   true,
+				PodVlanId: int32(podENIData[0].VlanID),
+				IPv4Addr:  podENIData[0].PrivateIP}, err
 		}
 	}
 	ipamKey := datastore.IPAMKey{

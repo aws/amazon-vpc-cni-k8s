@@ -70,12 +70,12 @@ const (
 //
 // Note phase3 is not necessary since writes to CRI are implicit.
 // At/after phase2, we can remove any code protected by
-// CheckpointMigrationPhase<2.
-const CheckpointMigrationPhase = 1
+// checkpointMigrationPhase<2.
+const checkpointMigrationPhase = 1
 
 // Placeholders used for unknown values when reading from CRI.
-const BackfillNetworkName = "_migrated-from-cri"
-const BackfillNetworkIface = "unknown"
+const backfillNetworkName = "_migrated-from-cri"
+const backfillNetworkIface = "unknown"
 
 // ErrUnknownPod is an error when there is no pod in data store matching pod name, namespace, sandbox id
 var ErrUnknownPod = errors.New("datastore: unknown pod")
@@ -258,7 +258,7 @@ func NewDataStore(log logger.Logger, backingStore Checkpointer) *DataStore {
 		log:                      log,
 		backingStore:             backingStore,
 		cri:                      cri.New(),
-		CheckpointMigrationPhase: CheckpointMigrationPhase,
+		CheckpointMigrationPhase: checkpointMigrationPhase,
 	}
 }
 
@@ -301,9 +301,9 @@ func (ds *DataStore) ReadBackingStore() error {
 			entries = append(entries, CheckpointEntry{
 				// NB: These Backfill values are also assumed in UnassignPodIPv4Address
 				IPAMKey: IPAMKey{
-					NetworkName: BackfillNetworkName,
+					NetworkName: backfillNetworkName,
 					ContainerID: s.ID,
-					IfName:      BackfillNetworkIface,
+					IfName:      backfillNetworkIface,
 				},
 				IPv4: s.IP,
 			})
@@ -334,7 +334,7 @@ func (ds *DataStore) ReadBackingStore() error {
 		}
 
 	default:
-		panic(fmt.Sprintf("Unexpected value of CheckpointMigrationPhase: %v", ds.CheckpointMigrationPhase))
+		panic(fmt.Sprintf("Unexpected value of checkpointMigrationPhase: %v", ds.CheckpointMigrationPhase))
 	}
 
 	ds.lock.Lock()
@@ -464,7 +464,7 @@ func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string, force bo
 		}
 		ds.log.Warnf("Force deleting assigned ip %s on eni %s", ipv4, eniID)
 		forceRemovedIPs.Inc()
-		ds.unassignPodIPv4AddressUnsafe(curENI, ipAddr)
+		ds.unassignPodIPv4AddressUnsafe(ipAddr)
 		if err := ds.writeBackingStoreUnsafe(); err != nil {
 			ds.log.Warnf("Unable to update backing store: %v", err)
 			// Continuing because 'force'
@@ -500,7 +500,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 				if err := ds.writeBackingStoreUnsafe(); err != nil {
 					ds.log.Warnf("Failed to update backing store: %v", err)
 					// Important! Unwind assignment
-					ds.unassignPodIPv4AddressUnsafe(eni, addr)
+					ds.unassignPodIPv4AddressUnsafe(addr)
 					return "", -1, err
 				}
 
@@ -530,7 +530,7 @@ func (ds *DataStore) assignPodIPv4AddressUnsafe(ipamKey IPAMKey, eni *ENI, addr 
 	return addr.Address, eni.DeviceNumber
 }
 
-func (ds *DataStore) unassignPodIPv4AddressUnsafe(eni *ENI, addr *AddressInfo) {
+func (ds *DataStore) unassignPodIPv4AddressUnsafe(addr *AddressInfo) {
 	if !addr.Assigned() {
 		// Already unassigned
 		return
@@ -548,6 +548,7 @@ func (ds *DataStore) GetStats() (int, int) {
 	return ds.total, ds.assigned
 }
 
+// GetTrunkENI returns the trunk ENI ID or an empty string
 func (ds *DataStore) GetTrunkENI() string {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
@@ -712,7 +713,7 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 		forceRemovedIPs.Add(float64(eni.AssignedIPv4Addresses()))
 		for _, addr := range eni.IPv4Addresses {
 			if addr.Assigned() {
-				ds.unassignPodIPv4AddressUnsafe(eni, addr)
+				ds.unassignPodIPv4AddressUnsafe(addr)
 			}
 		}
 		if err := ds.writeBackingStoreUnsafe(); err != nil {
@@ -745,15 +746,15 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (ip string, deviceN
 		// This `if` block should be removed when the CRI
 		// migration code is finally removed.  Leaving a
 		// compile dependency here to make that obvious :P
-		var _ = CheckpointMigrationPhase
+		var _ = checkpointMigrationPhase
 
 		// If the entry was discovered by querying CRI at
 		// restart rather than by observing an ADD operation
 		// directly, then we won't have captured the true
 		// networkname/ifname.
 		ds.log.Debugf("UnassignPodIPv4Address: Failed to find IPAM entry under full key, trying CRI-migrated version")
-		ipamKey.NetworkName = BackfillNetworkName
-		ipamKey.IfName = BackfillNetworkIface
+		ipamKey.NetworkName = backfillNetworkName
+		ipamKey.IfName = backfillNetworkIface
 		eni, addr = ds.eniPool.FindAddressForSandbox(ipamKey)
 	}
 	if addr == nil {
@@ -762,7 +763,7 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (ip string, deviceN
 		return "", 0, ErrUnknownPod
 	}
 
-	ds.unassignPodIPv4AddressUnsafe(eni, addr)
+	ds.unassignPodIPv4AddressUnsafe(addr)
 	if err := ds.writeBackingStoreUnsafe(); err != nil {
 		// Unwind un-assignment
 		ds.assignPodIPv4AddressUnsafe(ipamKey, eni, addr)

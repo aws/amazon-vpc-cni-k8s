@@ -17,6 +17,7 @@ import (
 	cnitypes "github.com/containernetworking/cni/pkg/types"
 )
 
+// CNITYPES is the wrapper interface for containernetworking types package
 type CNITYPES interface {
 	LoadArgs(args string, container interface{}) error
 	PrintResult(result cnitypes.Result, version string) error
@@ -24,6 +25,7 @@ type CNITYPES interface {
 
 type cniTYPES struct{}
 
+// New returns a new CNITYPES
 func New() CNITYPES {
 	return &cniTYPES{}
 }

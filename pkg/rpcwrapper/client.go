@@ -18,12 +18,14 @@ import (
 	grpc "google.golang.org/grpc"
 )
 
+// RPC is the wrapper interface for the CNI gRPC backend client
 type RPC interface {
 	NewCNIBackendClient(cc *grpc.ClientConn) rpc.CNIBackendClient
 }
 
 type cniRPC struct{}
 
+// New returns a new RPC
 func New() RPC {
 	return &cniRPC{}
 }
