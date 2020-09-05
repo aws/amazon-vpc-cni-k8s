@@ -20,6 +20,7 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
+// IP is the wrapper interface for containernetworking ip plugin
 type IP interface {
 	AddDefaultRoute(gw net.IP, dev netlink.Link) error
 }
@@ -27,6 +28,7 @@ type IP interface {
 type ipRoute struct {
 }
 
+// NewIP returns a new IP
 func NewIP() IP {
 	return &ipRoute{}
 }

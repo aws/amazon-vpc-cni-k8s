@@ -785,7 +785,7 @@ func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCID
 			return errors.Wrap(err, "setupENINetwork: failed to clean up old routes")
 		}
 
-		err = retry.RetryNWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, retryRouteAddInterval, 0.15, 2.0), maxRetryRouteAdd, func() error {
+		err = retry.NWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, retryRouteAddInterval, 0.15, 2.0), maxRetryRouteAdd, func() error {
 			if err := netLink.RouteReplace(&r); err != nil {
 				log.Debugf("Not able to set route %s/0 via %s table %d", r.Dst.IP.String(), gw.String(), tableNumber)
 				return errors.Wrapf(err, "setupENINetwork: unable to replace route entry %s", r.Dst.IP.String())

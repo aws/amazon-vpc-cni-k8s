@@ -30,6 +30,7 @@ type Configuration struct {
 	LogLocation string
 }
 
+// LoadLogConfig returns the log configuration
 func LoadLogConfig() *Configuration {
 	return &Configuration{
 		LogLevel:    GetLogLevel(),
@@ -37,7 +38,7 @@ func LoadLogConfig() *Configuration {
 	}
 }
 
-// GetLogFileLocation returns the log file path
+// GetLogLocation returns the log file path
 func GetLogLocation() string {
 	logFilePath := os.Getenv(envLogFilePath)
 	if logFilePath == "" {
@@ -46,6 +47,7 @@ func GetLogLocation() string {
 	return logFilePath
 }
 
+// GetLogLevel returns the log level
 func GetLogLevel() string {
 	logLevel := os.Getenv(envLogLevel)
 	switch logLevel {

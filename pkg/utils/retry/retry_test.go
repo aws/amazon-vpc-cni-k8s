@@ -35,7 +35,7 @@ func TestRetryWithBackoff(t *testing.T) {
 	t.Run("retries", func(t *testing.T) {
 		mocktime.EXPECT().Sleep(100 * time.Millisecond).Times(3)
 		counter := 3
-		_ = RetryWithBackoff(NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), func() error {
+		_ = WithBackoff(NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), func() error {
 			if counter == 0 {
 				return nil
 			}
@@ -47,7 +47,7 @@ func TestRetryWithBackoff(t *testing.T) {
 
 	t.Run("no retries", func(t *testing.T) {
 		// no sleeps
-		_ = RetryWithBackoff(NewSimpleBackoff(10*time.Millisecond, 20*time.Millisecond, 0, 2), func() error {
+		_ = WithBackoff(NewSimpleBackoff(10*time.Millisecond, 20*time.Millisecond, 0, 2), func() error {
 			return NewRetriableError(NewRetriable(false), errors.New("can't retry"))
 		})
 	})
@@ -63,7 +63,7 @@ func TestRetryWithBackoffCtx(t *testing.T) {
 	t.Run("retries", func(t *testing.T) {
 		mocktime.EXPECT().Sleep(100 * time.Millisecond).Times(3)
 		counter := 3
-		_ = RetryWithBackoffCtx(context.TODO(), NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), func() error {
+		_ = WithBackoffCtx(context.TODO(), NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), func() error {
 			if counter == 0 {
 				return nil
 			}
@@ -75,7 +75,7 @@ func TestRetryWithBackoffCtx(t *testing.T) {
 
 	t.Run("no retries", func(t *testing.T) {
 		// no sleeps
-		_ = RetryWithBackoffCtx(context.TODO(), NewSimpleBackoff(10*time.Millisecond, 20*time.Millisecond, 0, 2), func() error {
+		_ = WithBackoffCtx(context.TODO(), NewSimpleBackoff(10*time.Millisecond, 20*time.Millisecond, 0, 2), func() error {
 			return NewRetriableError(NewRetriable(false), errors.New("can't retry"))
 		})
 	})
@@ -84,7 +84,7 @@ func TestRetryWithBackoffCtx(t *testing.T) {
 		mocktime.EXPECT().Sleep(100 * time.Millisecond).Times(2)
 		counter := 2
 		ctx, cancel := context.WithCancel(context.TODO())
-		_ = RetryWithBackoffCtx(ctx, NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), func() error {
+		_ = WithBackoffCtx(ctx, NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), func() error {
 			counter--
 			if counter == 0 {
 				cancel()
@@ -107,7 +107,7 @@ func TestRetryNWithBackoff(t *testing.T) {
 		// 2 tries, 1 sleep
 		mocktime.EXPECT().Sleep(100 * time.Millisecond).Times(1)
 		counter := 3
-		err := RetryNWithBackoff(NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), 2, func() error {
+		err := NWithBackoff(NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), 2, func() error {
 			counter--
 			return errors.New("err")
 		})
@@ -119,7 +119,7 @@ func TestRetryNWithBackoff(t *testing.T) {
 		// 3 tries, 2 sleeps
 		mocktime.EXPECT().Sleep(100 * time.Millisecond).Times(2)
 		counter := 3
-		err := RetryNWithBackoff(NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), 5, func() error {
+		err := NWithBackoff(NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), 5, func() error {
 			counter--
 			if counter == 0 {
 				return nil
@@ -142,7 +142,7 @@ func TestRetryNWithBackoffCtx(t *testing.T) {
 		// 2 tries, 1 sleep
 		mocktime.EXPECT().Sleep(100 * time.Millisecond).Times(1)
 		counter := 3
-		err := RetryNWithBackoffCtx(context.TODO(), NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), 2, func() error {
+		err := NWithBackoffCtx(context.TODO(), NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), 2, func() error {
 			counter--
 			return errors.New("err")
 		})
@@ -154,7 +154,7 @@ func TestRetryNWithBackoffCtx(t *testing.T) {
 		// 3 tries, 2 sleeps
 		mocktime.EXPECT().Sleep(100 * time.Millisecond).Times(2)
 		counter := 3
-		err := RetryNWithBackoffCtx(context.TODO(), NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), 5, func() error {
+		err := NWithBackoffCtx(context.TODO(), NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), 5, func() error {
 			counter--
 			if counter == 0 {
 				return nil
@@ -170,7 +170,7 @@ func TestRetryNWithBackoffCtx(t *testing.T) {
 		mocktime.EXPECT().Sleep(100 * time.Millisecond).Times(2)
 		counter := 3
 		ctx, cancel := context.WithCancel(context.TODO())
-		err := RetryNWithBackoffCtx(ctx, NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), 5, func() error {
+		err := NWithBackoffCtx(ctx, NewSimpleBackoff(100*time.Millisecond, 100*time.Millisecond, 0, 1), 5, func() error {
 			counter--
 			if counter == 1 {
 				cancel()

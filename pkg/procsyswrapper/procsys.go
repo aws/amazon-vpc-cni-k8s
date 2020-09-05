@@ -17,6 +17,7 @@ import (
 	"io/ioutil"
 )
 
+// ProcSys is the /proc/sys interface wrapper
 type ProcSys interface {
 	Get(key string) (string, error)
 	Set(key, value string) error
@@ -26,6 +27,7 @@ type procSys struct {
 	prefix string
 }
 
+// NewProcSys returns a new ProcSys
 func NewProcSys() ProcSys {
 	return &procSys{prefix: "/proc/sys/"}
 }

@@ -60,7 +60,7 @@ func (c *IPAMContext) ServeIntrospection() {
 
 	server := c.setupIntrospectionServer()
 	for {
-		_ = retry.RetryWithBackoff(retry.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
+		_ = retry.WithBackoff(retry.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
 			var ln net.Listener
 			var err error
 
