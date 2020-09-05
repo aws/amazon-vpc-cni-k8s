@@ -150,15 +150,14 @@ func main() {
 						os.Exit(1)
 					}
 
-					for _, route := range routes {
-						parentLink, err := netlink.LinkByIndex(route.LinkIndex)
+					if len(routes) > 0 {
+						parentLink, err := netlink.LinkByIndex(routes[0].LinkIndex)
 						if err != nil {
 							fmt.Printf("unable to get parent ENI for the link %+v", err)
 							os.Exit(1)
 						}
 						eniToMonitor := eniConfig{name: parentLink.Attrs().Name}
 						enis = append(enis, eniToMonitor)
-						break
 					}
 				}
 			}
