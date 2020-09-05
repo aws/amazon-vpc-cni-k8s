@@ -114,6 +114,9 @@ func main() {
 		Timestamp: time.Now().Format(time.RFC3339),
 		ENILimits: eniLimits,
 	})
+	if err != nil {
+		log.Fatalf("Failed to generate template: %v\n", err)
+	}
 	log.Infof("Generated %s", ipLimitFileName)
 
 	// Generate --max-pods file for awslabs/amazon-eks-ami
@@ -132,10 +135,10 @@ func main() {
 		Timestamp: time.Now().Format(time.RFC3339),
 		ENIPods:   eniPods,
 	})
-	log.Infof("Generated %s", eniMaxPodsFileName)
 	if err != nil {
 		log.Fatalf("Failed to generate template: %v\n", err)
 	}
+	log.Infof("Generated %s", eniMaxPodsFileName)
 }
 
 // addManualLimits has the list of faulty or missing instance types
