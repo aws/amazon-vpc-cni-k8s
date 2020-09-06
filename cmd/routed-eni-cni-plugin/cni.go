@@ -84,32 +84,25 @@ func init() {
 
 // LoadNetConf converts inputs (i.e. stdin) to NetConf
 func LoadNetConf(bytes []byte) (*NetConf, logger.Logger, error) {
-	var conf NetConf
+	// Default config
+	conf := NetConf{
+		MTU:        "9001",
+		VethPrefix: "eni",
+	}
+
 	if err := json.Unmarshal(bytes, &conf); err != nil {
 		return nil, nil, errors.Wrap(err, "add cmd: error loading config from args")
 	}
 
-	//logConfig
 	logConfig := logger.Configuration{
 		LogLevel:    conf.PluginLogLevel,
 		LogLocation: conf.PluginLogFile,
 	}
 	log := logger.New(&logConfig)
 
-	// MTU
-	if conf.MTU == "" {
-		log.Debug("MTU not set, defaulting to 9001")
-		conf.MTU = "9001"
-	}
-
-	// Default the host-side veth prefix to 'eni'.
-	if conf.VethPrefix == "" {
-		conf.VethPrefix = "eni"
-	}
 	if len(conf.VethPrefix) > 4 {
 		return nil, nil, errors.New("conf.VethPrefix can be at most 4 characters long")
 	}
-
 	return &conf, log, nil
 }
 
