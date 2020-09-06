@@ -13,6 +13,7 @@ require (
 	github.com/golang/mock v1.4.1
 	github.com/golang/protobuf v1.3.5
 	github.com/google/btree v1.0.0 // indirect
+	github.com/google/go-cmp v0.2.0
 	github.com/google/go-jsonnet v0.16.0
 	github.com/google/gofuzz v0.0.0-20170612174753-24818f796faf // indirect
 	github.com/google/gopacket v1.1.18

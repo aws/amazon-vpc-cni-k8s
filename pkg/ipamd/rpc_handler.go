@@ -72,7 +72,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 
 	failureResponse := rpc.AddNetworkReply{Success: false}
 	var deviceNumber, vlanID, trunkENILinkIndex int
-	var addr, branchENIMAC, podENISubnetGW string
+	var ipv4, ipv6, branchENIMAC, podENISubnetGW string
 	var err error
 	if s.ipamContext.enablePodENI {
 		// Check pod spec for Branch ENI
@@ -105,10 +105,10 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 						return &failureResponse, nil
 					}
 					firstENI := podENIData[0]
-					addr = firstENI.PrivateIP
+					ipv4 = firstENI.PrivateIP
 					branchENIMAC = firstENI.IfAddress
 					vlanID = firstENI.VlanID
-					if addr == "" || branchENIMAC == "" || vlanID == 0 {
+					if ipv4 == "" || branchENIMAC == "" || vlanID == 0 {
 						log.Errorf("Failed to parse pod-ENI annotation: %s", val)
 						return &failureResponse, nil
 					}
@@ -128,7 +128,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			}
 		}
 	}
-	if addr == "" {
+	if ipv4 == "" {
 		if in.ContainerID == "" || in.IfName == "" || in.NetworkName == "" {
 			log.Errorf("Unable to generate IPAMKey from %+v", in)
 			return &failureResponse, nil
@@ -138,34 +138,41 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			IfName:      in.IfName,
 			NetworkName: in.NetworkName,
 		}
-		addr, deviceNumber, err = s.ipamContext.dataStore.AssignPodIPv4Address(ipamKey)
+		ipv4, ipv6, deviceNumber, err = s.ipamContext.dataStore.AssignPodAddress(ipamKey)
 	}
-	pbVPCcidrs := s.ipamContext.awsClient.GetVPCIPv4CIDRs()
-	for _, cidr := range pbVPCcidrs {
-		log.Debugf("VPC CIDR %s", cidr)
+	vpcCIDRsv4 := s.ipamContext.awsClient.GetVPCIPv4CIDRs()
+	for _, cidr := range vpcCIDRsv4 {
+		log.Debugf("VPC IPv4 CIDR %s", cidr)
+	}
+
+	vpcCIDRsv6 := s.ipamContext.awsClient.GetVPCIPv6CIDRs()
+	for _, cidr := range vpcCIDRsv6 {
+		log.Debugf("VPC IPv6 CIDR %s", cidr)
 	}
 
 	useExternalSNAT := s.ipamContext.networkClient.UseExternalSNAT()
 	if !useExternalSNAT {
 		for _, cidr := range s.ipamContext.networkClient.GetExcludeSNATCIDRs() {
 			log.Debugf("CIDR SNAT Exclusion %s", cidr)
-			pbVPCcidrs = append(pbVPCcidrs, cidr)
+			vpcCIDRsv4 = append(vpcCIDRsv4, cidr)
 		}
 	}
 
 	resp := rpc.AddNetworkReply{
 		Success:         err == nil,
-		IPv4Addr:        addr,
+		IPv4Addr:        ipv4,
+		IPv6Addr:        ipv6,
 		DeviceNumber:    int32(deviceNumber),
 		UseExternalSNAT: useExternalSNAT,
-		VPCcidrs:        pbVPCcidrs,
+		VPCCIDRsv4:      vpcCIDRsv4,
+		VPCCIDRsv6:      vpcCIDRsv6,
 		PodVlanId:       int32(vlanID),
 		PodENIMAC:       branchENIMAC,
 		PodENISubnetGW:  podENISubnetGW,
 		ParentIfIndex:   int32(trunkENILinkIndex),
 	}
 
-	log.Infof("Send AddNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", addr, deviceNumber, err)
+	log.Infof("Send AddNetworkReply: IPv4Addr %s, IPv6Addr %s,, DeviceNumber: %d, err: %v", ipv4, ipv6, deviceNumber, err)
 	return &resp, nil
 }
 
@@ -216,11 +223,16 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		IfName:      in.IfName,
 		NetworkName: in.NetworkName,
 	}
-	ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
+	ipv4, ipv6, deviceNumber, err := s.ipamContext.dataStore.UnassignPodAddress(ipamKey)
 
-	log.Infof("Send DelNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", ip, deviceNumber, err)
+	log.Infof("Send DelNetworkReply: IPv4Addr %s, IPv6Addr %s, DeviceNumber: %d, err: %v", ipv4, ipv6, deviceNumber, err)
 
-	return &rpc.DelNetworkReply{Success: err == nil, IPv4Addr: ip, DeviceNumber: int32(deviceNumber)}, err
+	return &rpc.DelNetworkReply{
+		Success:      err == nil,
+		IPv4Addr:     ipv4,
+		IPv6Addr:     ipv6,
+		DeviceNumber: int32(deviceNumber),
+	}, err
 }
 
 // RunRPCHandler handles request from gRPC

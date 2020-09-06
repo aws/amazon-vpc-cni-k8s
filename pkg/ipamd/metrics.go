@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -66,5 +68,5 @@ func (c *IPAMContext) setupMetricsServer() *http.Server {
 
 // disableMetrics returns true if we should disable metrics
 func disableMetrics() bool {
-	return getEnvBoolWithDefault(envDisableMetrics, false)
+	return utils.GetBoolEnvVar(log, envDisableMetrics, false)
 }
