@@ -5,8 +5,8 @@ go 1.14
 require (
 	github.com/aws/aws-sdk-go v1.33.14
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 // indirect
-	github.com/containernetworking/cni v0.7.1
-	github.com/containernetworking/plugins v0.8.6
+	github.com/containernetworking/cni v0.8.0
+	github.com/containernetworking/plugins v0.8.7
 	github.com/coreos/go-iptables v0.4.5
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
