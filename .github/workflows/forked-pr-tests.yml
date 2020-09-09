@@ -47,32 +47,3 @@ jobs:
           S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
         run: |
           ./scripts/run-integration-tests.sh
-
-      # Update check run called "integration-fork" to be completed
-      - uses: actions/github-script@v1
-        id: update-check-run-completed
-        env:
-          number: ${{ github.event.inputs.pull_request_number }}
-          job: ${{ github.job }}
-          # Conveniently, job.status maps to https://developer.github.com/v3/checks/runs/#update-a-check-run
-          conclusion: ${{ job.status }}
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { data: pull } = await github.pulls.get({
-              ...context.repo,
-              pull_number: process.env.number
-            });
-            const ref = pull.head.sha;
-            const { data: checks } = await github.checks.listForRef({
-              ...context.repo,
-              ref
-            });
-            const check = checks.check_runs.filter(c => c.name === process.env.job);
-            const { data: result } = await github.checks.update({
-              ...context.repo,
-              check_run_id: check[0].id,
-              status: 'completed',
-              conclusion: process.env.conclusion
-            });
-            return result;
