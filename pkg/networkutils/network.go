@@ -447,17 +447,6 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 		},
 	})
 
-	iptableRules = append(iptableRules, iptablesRule{
-		name:        "connmark restore for primary ENI from vlan",
-		shouldExist: n.nodePortSupportEnabled,
-		table:       "mangle",
-		chain:       "PREROUTING",
-		rule: []string{
-			"-m", "comment", "--comment", "AWS, primary ENI",
-			"-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", n.mainENIMark),
-		},
-	})
-
 	for _, rule := range iptableRules {
 		log.Debugf("execute iptable rule : %s", rule.name)
 
