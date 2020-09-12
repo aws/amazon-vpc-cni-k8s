@@ -412,7 +412,6 @@ Default: `""`
 
 Specifies the cluster name to tag allocated ENIs with. See the "Cluster Name tag" section below.
 
-
 ---
 
 `ENABLE_POD_ENI` (Since v1.7.0)

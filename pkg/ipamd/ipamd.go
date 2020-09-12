@@ -827,13 +827,17 @@ func logPoolStats(total, used, maxAddrsPerENI int) {
 
 func (c *IPAMContext) askForTrunkENIIfNeeded() {
 	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
+		// Check that there is room for a trunk ENI to be attached:
+		if c.dataStore.GetENIs() >= (c.maxENI - c.unmanagedENI) {
+			log.Debug("No slot available for a trunk ENI to be attached. Not labeling the node")
+			return
+		}
 		// We need to signal that VPC Resource Controller needs to attach a trunk ENI
 		err := c.SetNodeLabel("vpc.amazonaws.com/has-trunk-attached", "false")
 		if err != nil {
 			podENIErrInc("askForTrunkENIIfNeeded")
 			log.Errorf("Failed to set node label", err)
 		}
-		return
 	}
 }
 

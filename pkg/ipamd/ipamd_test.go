@@ -814,5 +814,50 @@ func TestIPAMContext_setupENI(t *testing.T) {
 	err = mockContext.setupENI(newENIMetadata.ENIID, newENIMetadata, "")
 	assert.Error(t, err)
 	assert.Equal(t, 1, len(mockContext.primaryIP))
+}
 
+func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		k8sClient:     m.clientset,
+		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion})),
+		awsClient:     m.awsutils,
+		networkClient: m.network,
+		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
+		maxENI:        1,
+		myNodeName:    myNodeName,
+	}
+
+	labels := make(map[string]string)
+	fakeNode := v1.Node{
+		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName, Labels: labels},
+		Spec:       v1.NodeSpec{},
+		Status:     v1.NodeStatus{},
+	}
+	_, _ = m.clientset.CoreV1().Nodes().Create(&fakeNode)
+
+	_ = mockContext.dataStore.AddENI("eni-1", 1, true, false)
+	// If ENABLE_POD_ENI is not set, nothing happens
+	mockContext.askForTrunkENIIfNeeded()
+
+	mockContext.enablePodENI = true
+	// Enabled, we should try to set the label if there is room
+	mockContext.askForTrunkENIIfNeeded()
+	notUpdatedNode, err := m.clientset.CoreV1().Nodes().Get(myNodeName, metav1.GetOptions{})
+	// Since there was no room, no label should be added
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(notUpdatedNode.Labels))
+
+	mockContext.maxENI = 4
+	// Now there is room!
+	mockContext.askForTrunkENIIfNeeded()
+
+	// Fetch the updated node and verify that the label is set
+	updatedNode, err := m.clientset.CoreV1().Nodes().Get(myNodeName, metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.Equal(t, "false", updatedNode.Labels["vpc.amazonaws.com/has-trunk-attached"])
 }
