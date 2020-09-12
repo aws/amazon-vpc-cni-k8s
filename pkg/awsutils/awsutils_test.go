@@ -890,3 +890,25 @@ func TestEC2InstanceMetadataCache_SetUnmanagedENIs(t *testing.T) {
 	ins.SetUnmanagedENIs(nil)
 	assert.False(t, ins.IsUnmanagedENI("eni-1"))
 }
+
+func TestEC2InstanceMetadataCache_cleanUpLeakedENIsInternal(t *testing.T) {
+	ctrl, _, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	description := eniDescriptionPrefix + "test"
+	result := &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: []*ec2.NetworkInterface{{
+			Description: &description,
+			TagSet: []*ec2.Tag{
+				{Key: aws.String(eniNodeTagKey), Value: aws.String("test-value")},
+			},
+		}},
+	}
+
+	mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+	mockEC2.EXPECT().CreateTagsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	// Test checks that both mocks gets called.
+	ins.cleanUpLeakedENIsInternal(time.Millisecond)
+}
