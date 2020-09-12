@@ -1430,6 +1430,8 @@ func (cache *EC2InstanceMetadataCache) cleanUpLeakedENIs() {
 			if err != nil {
 				awsUtilsErrInc("cleanUpLeakedENIDeleteErr", err)
 				log.Warnf("Failed to clean up leaked ENI %s: %v", eniID, err)
+			} else {
+				log.Debugf("Cleaned up leaked CNI ENI %s", eniID)
 			}
 		}
 	}
@@ -1528,7 +1530,7 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 		return nil, nil
 	}
 
-	log.Debugf("Found %d available instances with the AWS CNI tag.", len(networkInterfaces))
+	log.Debugf("Found %d leaked ENIs with the AWS CNI tag.", len(networkInterfaces))
 	return networkInterfaces, nil
 }
 
