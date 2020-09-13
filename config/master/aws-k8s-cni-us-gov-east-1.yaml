@@ -193,7 +193,10 @@
           "name": "xtables-lock"
       "hostNetwork": true
       "initContainers":
-      - "image": "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni-init:latest"
+      - "env":
+        - "name": "DISABLE_TCP_EARLY_DEMUX"
+          "value": "false"
+        "image": "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni-init:latest"
         "imagePullPolicy": "Always"
         "name": "aws-vpc-cni-init"
         "securityContext":
