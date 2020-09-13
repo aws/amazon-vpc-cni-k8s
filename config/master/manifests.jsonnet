@@ -227,6 +227,11 @@ local awsnode = {
               image: "%s/amazon-k8s-cni-init:%s" % [$.ecrRepo, $.version],
               imagePullPolicy: "Always",
               securityContext: {privileged: true},
+              env: [
+                {
+                  name: "DISABLE_TCP_EARLY_DEMUX", value: "false",
+                },
+              ],
               volumeMounts: [
                 {mountPath: "/host/opt/cni/bin", name: "cni-bin-dir"},
               ],
