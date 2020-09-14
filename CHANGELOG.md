@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.7.2
+
+* Bug - [Avoid deleting ENIs being created by older CNI versions](https://github.com/aws/amazon-vpc-cni-k8s/pull/1109) (#1109, @jayanthvn)
+* Bug - [Add iptables fix and update to v1.7.x](https://github.com/aws/amazon-vpc-cni-k8s/pull/1187) (#1187, @mogren)
+* Bug - [Handle stale IMDS metadata for secondary IPs](https://github.com/aws/amazon-vpc-cni-k8s/pull/1177) (#1177, @mogren)
+* Bug - [Mount /run/xtables.lock to prevent unwanted race conditions](https://github.com/aws/amazon-vpc-cni-k8s/pull/1186) (#1186, @kgtw)
+* Bug - [Make a deep copy for introspection](https://github.com/aws/amazon-vpc-cni-k8s/pull/1179) (#1179, @mogren)
+* Bug - [Wait for ENI and secondary IPs](https://github.com/aws/amazon-vpc-cni-k8s/pull/1174) (#1174, @mogren)
+* Improvement - [Update Calico images to v3.15.1 & set routeSource=WorkloadIPs for v1.7](https://github.com/aws/amazon-vpc-cni-k8s/pull/1182) (#1182, @realgaurav)
+* Improvement - [Update Calico to v3.15.1 & set routeSource=WorkloadIPs](https://github.com/aws/amazon-vpc-cni-k8s/pull/1165) (#1165, @realgaurav)
+* Improvement - [Clean up go lint warnings](https://github.com/aws/amazon-vpc-cni-k8s/pull/1162) (#1162, @mogren)
+* Improvement - [Update SG on secondary ENIs](https://github.com/aws/amazon-vpc-cni-k8s/pull/1098) (#1098, @jayanthvn)
+* Improvement - [Fix device number and update table name the device index](https://github.com/aws/amazon-vpc-cni-k8s/pull/1071) (#1071, @mogren)
+
+## v1.7.1
+
+* Bug - [Calico deletes routes when using CNI v1.7.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/1166) (#1166, @jayanthvn)
+* Improvement - [enable manual override for VERSION in images](https://github.com/aws/amazon-vpc-cni-k8s/pull/1156) (#1156, @nprab428) 
+
 ## v1.7.0
 
 * Improvement - [Reject version skew between gRPC client and server](https://github.com/aws/amazon-vpc-cni-k8s/pull/1141) (#1141, @anguslees)
