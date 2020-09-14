@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.7.2-rc1
+## v1.7.2
 
 * Bug - [Avoid deleting ENIs being created by older CNI versions](https://github.com/aws/amazon-vpc-cni-k8s/pull/1109) (#1109, @jayanthvn)
 * Bug - [Add iptables fix and update to v1.7.x](https://github.com/aws/amazon-vpc-cni-k8s/pull/1187) (#1187, @mogren)
