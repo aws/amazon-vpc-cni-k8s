@@ -48,3 +48,5 @@ require (
 	k8s.io/cri-api v0.0.0-20191107035106-03d130a7dc28
 	k8s.io/kube-openapi v0.0.0-20190510232812-a01b7d5d6c22 // indirect
 )
+
+replace github.com/operator-framework/operator-sdk => github.com/grosser/operator-sdk v0.0.8-0.20200914235856-4b738c6ed745
