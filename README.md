@@ -423,6 +423,19 @@ Default: `false`
 To enable security groups for pods you need to have at least an EKS 1.17 eks.3 cluster. Setting `ENABLE_POD_ENI` to `true`
 will add the `vpc.amazonaws.com/has-trunk-attached` label to the node if it is possible to attach an additional ENI.
 
+---
+
+`DISABLE_TCP_EARLY_DEMUX` (Since v1.7.3)
+
+Type: Boolean as a String
+
+Default: `false`
+
+If `ENABLE_POD_ENI` is set to `true`, in order for the kubelet on the node to talk to pods using the per pod security group feature,
+`DISABLE_TCP_EARLY_DEMUX` should be set to `true`. This will increase the local TCP connection latency slightly, that is why it is not
+ on by default. Details on why this is needed can be found in this [#1212 comment](https://github.com/aws/amazon-vpc-cni-k8s/pull/1212#issuecomment-693540666).
+
+
 ### ENI tags related to Allocation
 
 This plugin interacts with the following tags on ENIs:
