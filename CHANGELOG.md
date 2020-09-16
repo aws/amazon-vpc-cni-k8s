@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7.3
+
+* Bug - [Add support to toggle TCP early demux](https://github.com/aws/amazon-vpc-cni-k8s/pull/1212) (#1212, @SaranBalaji90)
+
 ## v1.7.2
 
 * Bug - [Avoid deleting ENIs being created by older CNI versions](https://github.com/aws/amazon-vpc-cni-k8s/pull/1109) (#1109, @jayanthvn)
