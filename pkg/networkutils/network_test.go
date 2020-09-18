@@ -161,7 +161,7 @@ func TestSetupHostNetworkNodePortDisabled(t *testing.T) {
 	mockNetLink.EXPECT().RuleDel(&mainENIRule)
 
 	var vpcCIDRs []string
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, nil, loopback, &testENINetIP, false)
 	assert.NoError(t, err)
 }
 
@@ -287,7 +287,7 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 
 	var vpcCIDRs []string
 
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, nil, loopback, &testENINetIP, false)
 	assert.NoError(t, err)
 
 	assert.Equal(t, map[string]map[string][][]string{
@@ -360,7 +360,7 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, nil, loopback, &testENINetIP, false)
 	assert.NoError(t, err)
 	assert.Equal(t,
 		map[string]map[string][][]string{
@@ -413,7 +413,7 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 	_ = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, nil, loopback, &testENINetIP, false)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -467,7 +467,7 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 
 	// remove exclusions
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, nil, loopback, &testENINetIP, false)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -512,7 +512,7 @@ func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
 	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, nil, loopback, &testENINetIP, false)
 	assert.NoError(t, err)
 }
 
@@ -563,7 +563,7 @@ func TestSetupHostNetworkIgnoringRpFilterUpdate(t *testing.T) {
 	setupNetLinkMocks(ctrl, mockNetLink)
 
 	var vpcCIDRs []string
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, nil, loopback, &testENINetIP, false)
 	assert.NoError(t, err)
 }
 
@@ -591,7 +591,7 @@ func TestSetupHostNetworkUpdateLocalRule(t *testing.T) {
 	mockNetLink.EXPECT()
 
 	var vpcCIDRs []string
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, true)
+	err := ln.SetupHostNetwork(vpcCIDRs, nil, loopback, &testENINetIP, true)
 	assert.NoError(t, err)
 }
 
@@ -701,4 +701,39 @@ func (ipt *mockIptables) ListChains(table string) ([]string, error) {
 func (ipt *mockIptables) HasRandomFully() bool {
 	// TODO: Work out how to write a test case for this
 	return true
+}
+
+func TestIpToCIDR(t *testing.T) {
+	cases := []struct {
+		in  net.IP
+		out net.IPNet
+	}{
+		{
+			in: net.IPv4(127, 0, 0, 1).To4(), // 4-byte version
+			out: net.IPNet{
+				IP:   net.IPv4(127, 0, 0, 1),
+				Mask: net.IPv4Mask(255, 255, 255, 255),
+			},
+		},
+		{
+			in: net.IPv4(127, 0, 0, 1).To16(), // 16-byte (4in6) version
+			out: net.IPNet{
+				IP:   net.IPv4(127, 0, 0, 1),
+				Mask: net.IPv4Mask(255, 255, 255, 255),
+			},
+		},
+		{
+			in: net.IPv6loopback,
+			out: net.IPNet{
+				IP:   net.IPv6loopback,
+				Mask: net.CIDRMask(128, 128),
+			},
+		},
+	}
+	for _, test := range cases {
+		result := IpToCIDR(&test.in)
+		if result.String() != test.out.String() {
+			t.Errorf("IpToCIDR(%v) returned %v not %v", test.in, result, test.out)
+		}
+	}
 }

@@ -96,8 +96,9 @@ func TestNodeInit(t *testing.T) {
 		primaryIP:     make(map[string]string),
 		terminating:   int32(0),
 		networkClient: m.network,
-		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint)),
+		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true, false),
 		myNodeName:    myNodeName,
+		assignIPv4:    true,
 	}
 	mockContext.dataStore.CheckpointMigrationPhase = 2
 
@@ -106,15 +107,16 @@ func TestNodeInit(t *testing.T) {
 	var cidrs []string
 	m.awsutils.EXPECT().GetENILimit().Return(4, nil)
 	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14, nil)
-	m.awsutils.EXPECT().GetIPv4sFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil)
-	m.awsutils.EXPECT().GetIPv4sFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Addresses, nil)
+	m.awsutils.EXPECT().GetIPsFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil, nil)
+	m.awsutils.EXPECT().GetIPsFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Addresses, nil, nil)
 	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
 	m.awsutils.EXPECT().IsUnmanagedENI(eni2.ENIID).Return(false).AnyTimes()
 
 	primaryIP := net.ParseIP(ipaddr01)
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs)
+	m.awsutils.EXPECT().GetVPCIPv6CIDRs().AnyTimes().Return(cidrs)
 	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
-	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false).Return(nil)
+	m.network.EXPECT().SetupHostNetwork(cidrs, nil, "", &primaryIP, false).Return(nil)
 
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 
@@ -127,9 +129,6 @@ func TestNodeInit(t *testing.T) {
 	var rules []netlink.Rule
 	m.network.EXPECT().GetRuleList().Return(rules, nil)
 
-	m.network.EXPECT().UseExternalSNAT().Return(false)
-	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any(), gomock.Any(), true)
-
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
@@ -139,7 +138,7 @@ func TestNodeInit(t *testing.T) {
 	_, _ = m.clientset.CoreV1().Nodes().Create(&fakeNode)
 
 	// Add IPs
-	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
+	m.awsutils.EXPECT().AllocIPv4Addresses(gomock.Any(), gomock.Any())
 
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
@@ -174,7 +173,7 @@ func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata) {
 		SubnetIPv4CIDR: secSubnet,
 		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
 			{
-				PrivateIpAddress: &testAddr11, Primary: &notPrimary,
+				PrivateIpAddress: &testAddr11, Primary: &primary,
 			},
 			{
 				PrivateIpAddress: &testAddr12, Primary: &notPrimary,
@@ -271,7 +270,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	m.awsutils.EXPECT().WaitForENIAndIPsAttached(secENIid, 14).Return(eniMetadata[1], nil)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
-	m.awsutils.EXPECT().AllocIPAddresses(eni2, 14)
+	//m.awsutils.EXPECT().AllocIPv4Addresses(eni2, 14)
 
 	mockContext.increaseIPPool()
 }
@@ -304,7 +303,7 @@ func TestTryAddIPToENI(t *testing.T) {
 	mockContext.dataStore = testDatastore()
 
 	m.awsutils.EXPECT().AllocENI(false, nil, "").Return(secENIid, nil)
-	m.awsutils.EXPECT().AllocIPAddresses(secENIid, warmIPTarget)
+	//m.awsutils.EXPECT().AllocIPv4Addresses(secENIid, warmIPTarget)
 	eniMetadata := []awsutils.ENIMetadata{
 		{
 			ENIID:          primaryENIid,
@@ -351,6 +350,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 		networkClient: m.network,
 		primaryIP:     make(map[string]string),
 		terminating:   int32(0),
+		assignIPv4:    true,
 	}
 
 	mockContext.dataStore = testDatastore()
@@ -386,7 +386,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 		},
 	}
 	m.awsutils.EXPECT().GetAttachedENIs().Return(oneIPUnassigned, nil)
-	m.awsutils.EXPECT().GetIPv4sFromEC2(primaryENIid).Return(oneIPUnassigned[0].IPv4Addresses, nil)
+	m.awsutils.EXPECT().GetIPsFromEC2(primaryENIid).Return(oneIPUnassigned[0].IPv4Addresses, nil, nil)
 
 	mockContext.nodeIPPoolReconcile(0)
 	curENIs = mockContext.dataStore.GetENIInfos()
@@ -461,8 +461,8 @@ func TestGetWarmIPTargetState(t *testing.T) {
 
 	// add 2 addresses to datastore
 	_ = mockContext.dataStore.AddENI("eni-1", 1, true, false)
-	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.1")
-	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.2")
+	_ = mockContext.dataStore.AddAddressToStore("eni-1", "1.1.1.1", "")
+	_ = mockContext.dataStore.AddAddressToStore("eni-1", "1.1.1.2", "")
 
 	short, over, warmIPTargetDefined = mockContext.ipTargetState()
 	assert.True(t, warmIPTargetDefined)
@@ -470,9 +470,9 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	assert.Equal(t, 0, over)
 
 	// add 3 more addresses to datastore
-	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.3")
-	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.4")
-	_ = mockContext.dataStore.AddIPv4AddressToStore("eni-1", "1.1.1.5")
+	_ = mockContext.dataStore.AddAddressToStore("eni-1", "1.1.1.3", "")
+	_ = mockContext.dataStore.AddAddressToStore("eni-1", "1.1.1.4", "")
+	_ = mockContext.dataStore.AddAddressToStore("eni-1", "1.1.1.5", "")
 
 	short, over, warmIPTargetDefined = mockContext.ipTargetState()
 	assert.True(t, warmIPTargetDefined)
@@ -517,6 +517,7 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 				maxENI:              -1,
 				warmENITarget:       tt.fields.warmENITarget,
 				warmIPTarget:        tt.fields.warmIPTarget,
+				assignIPv4:          true,
 			}
 			if got := c.nodeIPPoolTooLow(); got != tt.want {
 				t.Errorf("nodeIPPoolTooLow() = %v, want %v", got, tt.want)
@@ -526,7 +527,7 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 }
 
 func testDatastore() *datastore.DataStore {
-	ds := datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}))
+	ds := datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), true, false)
 	ds.CheckpointMigrationPhase = 2
 	return ds
 }
@@ -534,16 +535,15 @@ func testDatastore() *datastore.DataStore {
 func datastoreWith3FreeIPs() *datastore.DataStore {
 	datastoreWith3FreeIPs := testDatastore()
 	_ = datastoreWith3FreeIPs.AddENI(primaryENIid, 1, true, false)
-	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr01)
-	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr02)
-	_ = datastoreWith3FreeIPs.AddIPv4AddressToStore(primaryENIid, ipaddr03)
+	_ = datastoreWith3FreeIPs.AddAddressToStore(primaryENIid, ipaddr01, "")
+	_ = datastoreWith3FreeIPs.AddAddressToStore(primaryENIid, ipaddr02, "")
+	_ = datastoreWith3FreeIPs.AddAddressToStore(primaryENIid, ipaddr03, "")
 	return datastoreWith3FreeIPs
 }
 
 func datastoreWith1Pod1() *datastore.DataStore {
 	datastoreWith1Pod1 := datastoreWith3FreeIPs()
-
-	_, _, _ = datastoreWith1Pod1.AssignPodIPv4Address(datastore.IPAMKey{
+	_, _, _, _ = datastoreWith1Pod1.AssignPodAddress(datastore.IPAMKey{
 		NetworkName: "net0",
 		ContainerID: "sandbox-1",
 		IfName:      "eth0",
@@ -560,7 +560,7 @@ func datastoreWith3Pods() *datastore.DataStore {
 			ContainerID: fmt.Sprintf("sandbox-%d", i),
 			IfName:      "eth0",
 		}
-		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key)
+		_, _, _, _ = datastoreWith3Pods.AssignPodAddress(key)
 	}
 	return datastoreWith3Pods
 }
@@ -657,7 +657,7 @@ func TestNodeIPPoolReconcileBadIMDSData(t *testing.T) {
 	eniID := primaryENIMetadata.ENIID
 	_ = mockContext.dataStore.AddENI(eniID, primaryENIMetadata.DeviceNumber, true, false)
 	mockContext.primaryIP[eniID] = testAddr1
-	mockContext.addENIaddressesToDataStore(primaryENIMetadata.IPv4Addresses, eniID)
+	mockContext.addENIaddressesToDataStore(primaryENIMetadata)
 	curENIs := mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 2, curENIs.TotalIPs)
@@ -685,7 +685,7 @@ func TestNodeIPPoolReconcileBadIMDSData(t *testing.T) {
 	}, nil)
 
 	// eniIPPoolReconcile() calls EC2 to get the actual count, but that call fails
-	m.awsutils.EXPECT().GetIPv4sFromEC2(primaryENIid).Return(nil, errors.New("ec2 API call failed"))
+	m.awsutils.EXPECT().GetIPsFromEC2(primaryENIid).Return(nil, nil, errors.New("ec2 API call failed"))
 	mockContext.nodeIPPoolReconcile(0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
@@ -707,7 +707,7 @@ func TestNodeIPPoolReconcileBadIMDSData(t *testing.T) {
 	}, nil)
 
 	// eniIPPoolReconcile() calls EC2 to get the actual count that should still be 2
-	m.awsutils.EXPECT().GetIPv4sFromEC2(primaryENIid).Return(primaryENIMetadata.IPv4Addresses, nil)
+	m.awsutils.EXPECT().GetIPsFromEC2(primaryENIid).Return(primaryENIMetadata.IPv4Addresses, nil, nil)
 	mockContext.nodeIPPoolReconcile(0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
@@ -822,7 +822,7 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 
 	mockContext := &IPAMContext{
 		k8sClient:     m.clientset,
-		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion})),
+		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), true, false),
 		awsClient:     m.awsutils,
 		networkClient: m.network,
 		primaryIP:     make(map[string]string),

@@ -35,9 +35,10 @@ func TestServer_VersionCheck(t *testing.T) {
 		warmENITarget: 1,
 		warmIPTarget:  3,
 		networkClient: m.network,
-		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}),
+		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}, true, false),
 	}
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{})
+	m.awsutils.EXPECT().GetVPCIPv6CIDRs().Return([]string{})
 	m.network.EXPECT().UseExternalSNAT().Return(true)
 
 	rpcServer := server{
@@ -89,7 +90,8 @@ func TestServer_AddNetwork(t *testing.T) {
 		warmENITarget: 1,
 		warmIPTarget:  3,
 		networkClient: m.network,
-		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}),
+		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}, true, false),
+		assignIPv4:    true,
 	}
 
 	rpcServer := server{
@@ -127,6 +129,7 @@ func TestServer_AddNetwork(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return(tc.vpcCIDRs)
+		m.awsutils.EXPECT().GetVPCIPv6CIDRs().Return(nil)
 		m.network.EXPECT().UseExternalSNAT().Return(tc.useExternalSNAT)
 		if !tc.useExternalSNAT {
 			m.network.EXPECT().GetExcludeSNATCIDRs().Return(tc.snatExclusionCIDRs)
@@ -138,6 +141,6 @@ func TestServer_AddNetwork(t *testing.T) {
 		assert.Equal(t, tc.useExternalSNAT, addNetworkReply.UseExternalSNAT, tc.name)
 
 		expectedCIDRs := append([]string{vpcCIDR}, tc.snatExclusionCIDRs...)
-		assert.Equal(t, expectedCIDRs, addNetworkReply.VPCcidrs, tc.name)
+		assert.Equal(t, expectedCIDRs, addNetworkReply.VPCCIDRsv4, tc.name)
 	}
 }

@@ -90,14 +90,11 @@ func TestCmdAdd(t *testing.T) {
 
 	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
-
-	addr := &net.IPNet{
-		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
+	addr := net.ParseIP(addNetworkReply.IPv4Addr)
+	addrs := []*net.IP{&addr}
 
 	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+		addrs, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -154,13 +151,11 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
-	addr := &net.IPNet{
-		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
+	addr := net.ParseIP(addNetworkReply.IPv4Addr)
+	addrs := []*net.IP{&addr}
 
 	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
+		addrs, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
 
 	// when SetupPodNetwork fails, expect to return IP back to datastore
 	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
@@ -194,12 +189,10 @@ func TestCmdDel(t *testing.T) {
 
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
-	addr := &net.IPNet{
-		IP:   net.ParseIP(delNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
+	addr := net.ParseIP(delNetworkReply.IPv4Addr)
+	addrs := []*net.IP{&addr}
 
-	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().TeardownNS(addrs, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(nil)
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Nil(t, err)
@@ -255,12 +248,10 @@ func TestCmdDelErrTeardown(t *testing.T) {
 
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
-	addr := &net.IPNet{
-		IP:   net.ParseIP(delNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
+	addr := net.ParseIP(delNetworkReply.IPv4Addr)
+	addrs := []*net.IP{&addr}
 
-	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(errors.New("error on teardown"))
+	mocksNetwork.EXPECT().TeardownNS(addrs, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(errors.New("error on teardown"))
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Error(t, err)

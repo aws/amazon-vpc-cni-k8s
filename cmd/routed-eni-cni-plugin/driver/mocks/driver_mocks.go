@@ -50,7 +50,7 @@ func (m *MockNetworkAPIs) EXPECT() *MockNetworkAPIsMockRecorder {
 }
 
 // SetupNS mocks base method
-func (m *MockNetworkAPIs) SetupNS(arg0, arg1, arg2 string, arg3 *net.IPNet, arg4 int, arg5 []string, arg6 bool, arg7 int, arg8 logger.Logger) error {
+func (m *MockNetworkAPIs) SetupNS(arg0, arg1, arg2 string, arg3 []*net.IP, arg4 int, arg5 []string, arg6 bool, arg7 int, arg8 logger.Logger) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SetupNS", arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
 	ret0, _ := ret[0].(error)
@@ -78,7 +78,7 @@ func (mr *MockNetworkAPIsMockRecorder) SetupPodENINetwork(arg0, arg1, arg2, arg3
 }
 
 // TeardownNS mocks base method
-func (m *MockNetworkAPIs) TeardownNS(arg0 *net.IPNet, arg1 int, arg2 logger.Logger) error {
+func (m *MockNetworkAPIs) TeardownNS(arg0 []*net.IP, arg1 int, arg2 logger.Logger) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "TeardownNS", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)

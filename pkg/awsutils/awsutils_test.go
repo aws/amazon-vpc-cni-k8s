@@ -16,16 +16,17 @@ package awsutils
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
-	"reflect"
 	"sort"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -47,6 +48,7 @@ const (
 	sgs           = sg1 + " " + sg2
 	subnetID      = "subnet-6b245523"
 	vpcCIDR       = "10.0.0.0/16"
+	vpc6CIDR      = "2001:db8::/56"
 	subnetCIDR    = "10.0.1.0/24"
 	primaryeniID  = "eni-00000000"
 	eniID         = "eni-5731da78"
@@ -87,8 +89,10 @@ func TestInitWithEC2metadata(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil).AnyTimes()
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil).AnyTimes()
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Return(subnetCIDR, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(metadataVPCIPv4CIDRs, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCv4cidrs).Return(metadataVPCIPv4CIDRs, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCv6cidrs).Return(vpc6CIDR, nil).AnyTimes()
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Return("", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv6s).Return("", nil)
 
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
@@ -253,10 +257,12 @@ func TestGetAttachedENIs(t *testing.T) {
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(eniID, nil),
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Return(subnetCIDR, nil),
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Return("", nil),
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv6s).Return("", nil),
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataDeviceNum).Return(eni2Device, nil),
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataInterface).Return(eni2ID, nil),
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataSubnetCIDR).Return(subnetCIDR, nil),
 		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataIPv4s).Return("", nil),
+		mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataIPv6s).Return("", nil),
 	)
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
@@ -396,6 +402,7 @@ func TestDescribeAllENIs(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Times(len(testCases)).Return(eniID, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Times(len(testCases)).Return(subnetCIDR, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Times(len(testCases)).Return("", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv6s).Times(len(testCases)).Return("", nil)
 
 	for _, tc := range testCases {
 		mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Times(tc.n).Return(result, tc.awsErr)
@@ -422,8 +429,10 @@ func TestTagEni(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil).AnyTimes()
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Return(subnetCIDR, nil).AnyTimes()
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(vpcCIDR, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCv4cidrs).Return(vpcCIDR, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCv6cidrs).Return(vpc6CIDR, nil).AnyTimes()
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Return("", nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv6s).Return("", nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata, ec2SVC: mockEC2}
@@ -671,28 +680,6 @@ func TestDescribeInstanceTypes(t *testing.T) {
 	assert.Equal(t, 98, pv4Limit)
 }
 
-func TestAllocIPAddress(t *testing.T) {
-	ctrl, _, mockEC2 := setup(t)
-	defer ctrl.Finish()
-
-	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(&ec2.AssignPrivateIpAddressesOutput{}, nil)
-
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := ins.AllocIPAddress("eni-id")
-	assert.NoError(t, err)
-}
-
-func TestAllocIPAddressOnErr(t *testing.T) {
-	ctrl, _, mockEC2 := setup(t)
-	defer ctrl.Finish()
-
-	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("Error on AssignPrivateIpAddressesWithContext"))
-
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := ins.AllocIPAddress("eni-id")
-	assert.Error(t, err)
-}
-
 func TestAllocIPAddresses(t *testing.T) {
 	ctrl, _, mockEC2 := setup(t)
 	defer ctrl.Finish()
@@ -702,10 +689,14 @@ func TestAllocIPAddresses(t *testing.T) {
 		NetworkInterfaceId:             aws.String("eni-id"),
 		SecondaryPrivateIpAddressCount: aws.Int64(5),
 	}
-	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, nil)
+	output := &ec2.AssignPrivateIpAddressesOutput{
+		AssignedPrivateIpAddresses: nil,
+		NetworkInterfaceId:         nil,
+	}
+	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(output, nil)
 
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
-	err := ins.AllocIPAddresses("eni-id", 5)
+	_, err := ins.AllocIPv4Addresses("eni-id", 5)
 	assert.NoError(t, err)
 
 	// when required IP numbers(50) is higher than ENI's limit(49)
@@ -713,14 +704,14 @@ func TestAllocIPAddresses(t *testing.T) {
 		NetworkInterfaceId:             aws.String("eni-id"),
 		SecondaryPrivateIpAddressCount: aws.Int64(49),
 	}
-	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, nil)
+	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(output, nil)
 
 	ins = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
-	err = ins.AllocIPAddresses("eni-id", 50)
+	_, err = ins.AllocIPv4Addresses("eni-id", 50)
 	assert.NoError(t, err)
 
 	// Adding 0 should do nothing
-	err = ins.AllocIPAddresses("eni-id", 0)
+	_, err = ins.AllocIPv4Addresses("eni-id", 0)
 	assert.NoError(t, err)
 }
 
@@ -836,6 +827,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndIPsAttached(t *testing.T) {
 				PrivateIpAddress: &secondaryIP2,
 			},
 		},
+		IPv6Addresses: []string{},
 	}
 	eniList := []ENIMetadata{eni1Metadata, eni2Metadata}
 	tests := []struct {
@@ -856,24 +848,25 @@ func TestEC2InstanceMetadataCache_waitForENIAndIPsAttached(t *testing.T) {
 			for i := 0; i < tt.args.foundSecondaryIPs; i++ {
 				eniIPs += " " + eni2PrivateIP + strconv.Itoa(i)
 			}
-			fmt.Println("eniips", eniIPs)
 			mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return(primaryMAC+" "+eni2MAC, nil).Times(tt.args.times)
 			mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil).Times(tt.args.times)
 			mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryeniID, nil).Times(tt.args.times)
 			mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetCIDR).Return(subnetCIDR, nil).Times(tt.args.times)
 			mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv4s).Return(eni1PrivateIP, nil).Times(tt.args.times)
+			mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataIPv6s).Return("", nil).Times(tt.args.times)
 			mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataDeviceNum).Return(eni2Device, nil).Times(tt.args.times)
 			mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataInterface).Return(eni2ID, nil).Times(tt.args.times)
 			mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataSubnetCIDR).Return(subnetCIDR, nil).Times(tt.args.times)
 			mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataIPv4s).Return(eniIPs, nil).Times(tt.args.times)
+			mockMetadata.EXPECT().GetMetadata(metadataMACPath+eni2MAC+metadataIPv6s).Return("", nil).Times(tt.args.times)
 			cache := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata, ec2SVC: mockEC2}
 			gotEniMetadata, err := cache.waitForENIAndIPsAttached(tt.args.eni, tt.args.wantedSecondaryIPs, tt.args.maxBackoffDelay)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("waitForENIAndIPsAttached() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(gotEniMetadata, tt.wantEniMetadata) {
-				t.Errorf("waitForENIAndIPsAttached() gotEniMetadata = %v, want %v", gotEniMetadata, tt.wantEniMetadata)
+			if !cmp.Equal(gotEniMetadata, tt.wantEniMetadata, cmpopts.IgnoreUnexported(ec2.NetworkInterfacePrivateIpAddress{})) {
+				t.Errorf("waitForENIAndIPsAttached() Diff: %v", cmp.Diff(gotEniMetadata, tt.wantEniMetadata, cmpopts.IgnoreUnexported(ec2.NetworkInterfacePrivateIpAddress{})))
 			}
 		})
 	}

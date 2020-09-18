@@ -44,10 +44,15 @@ const (
 	mainRouteTable = unix.RT_TABLE_MAIN
 )
 
+var (
+	dummyLinkLocalIPv4 = net.IPv4(169, 254, 1, 1)
+	dummyLinkLocalIPv6 = net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
+)
+
 // NetworkAPIs defines network API calls
 type NetworkAPIs interface {
-	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error
-	TeardownNS(addr *net.IPNet, deviceNumber int, log logger.Logger) error
+	SetupNS(hostVethName string, contVethName string, netnsPath string, addrs []*net.IP, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error
+	TeardownNS(addrs []*net.IP, deviceNumber int, log logger.Logger) error
 	SetupPodENINetwork(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, vlanID int, eniMAC string,
 		subnetGW string, parentIfIndex int, mtu int, log logger.Logger) error
 	TeardownPodENINetwork(vlanID int, log logger.Logger) error
@@ -73,17 +78,17 @@ func New() NetworkAPIs {
 type createVethPairContext struct {
 	contVethName string
 	hostVethName string
-	addr         *net.IPNet
+	addrs        []*net.IP
 	netLink      netlinkwrapper.NetLink
 	ip           ipwrapper.IP
 	mtu          int
 }
 
-func newCreateVethPairContext(contVethName string, hostVethName string, addr *net.IPNet, mtu int) *createVethPairContext {
+func newCreateVethPairContext(contVethName string, hostVethName string, addrs []*net.IP, mtu int) *createVethPairContext {
 	return &createVethPairContext{
 		contVethName: contVethName,
 		hostVethName: hostVethName,
-		addr:         addr,
+		addrs:        addrs,
 		netLink:      netlinkwrapper.NewNetLink(),
 		ip:           ipwrapper.NewIP(),
 		mtu:          mtu,
@@ -127,41 +132,52 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		return errors.Wrapf(err, "setup NS network: failed to set link %q up", createVethContext.contVethName)
 	}
 
-	// Add a connected route to a dummy next hop (169.254.1.1)
-	// # ip route show
-	// default via 169.254.1.1 dev eth0
-	// 169.254.1.1 dev eth0
-	gw := net.IPv4(169, 254, 1, 1)
-	gwNet := &net.IPNet{IP: gw, Mask: net.CIDRMask(32, 32)}
+	for _, addr := range createVethContext.addrs {
+		var gw net.IP
+		if addr4 := addr.To4(); addr4 != nil {
+			// Add a connected route to a dummy next hop (169.254.1.1)
+			// # ip route show
+			// default via 169.254.1.1 dev eth0
+			// 169.254.1.1 dev eth0
+			gw = dummyLinkLocalIPv4
+		} else {
+			// IPv6 version
+			// # ip -6 route show
+			// default via fe80::1 dev eth0
+			// fe80::/64 dev eth0
+			gw = dummyLinkLocalIPv6
+		}
 
-	if err = createVethContext.netLink.RouteReplace(&netlink.Route{
-		LinkIndex: contVeth.Attrs().Index,
-		Scope:     netlink.SCOPE_LINK,
-		Dst:       gwNet}); err != nil {
-		return errors.Wrap(err, "setup NS network: failed to add default gateway")
-	}
+		// Add or replace default gateway route
+		if err = createVethContext.netLink.RouteReplace(&netlink.Route{
+			LinkIndex: contVeth.Attrs().Index,
+			Scope:     netlink.SCOPE_LINK,
+			Dst:       networkutils.IpToCIDR(&gw)}); err != nil {
+			return errors.Wrap(err, "setup NS network: failed to add default gateway")
+		}
 
-	// Add a default route via dummy next hop(169.254.1.1). Then all outgoing traffic will be routed by this
-	// default route via dummy next hop (169.254.1.1).
-	if err = createVethContext.ip.AddDefaultRoute(gwNet.IP, contVeth); err != nil {
-		return errors.Wrap(err, "setup NS network: failed to add default route")
-	}
+		// Add a default route via dummy next hop(169.254.1.1). Then all outgoing traffic will be routed by this
+		// default route via dummy next hop (169.254.1.1).
+		if err = createVethContext.ip.AddDefaultRoute(gw, contVeth); err != nil {
+			return errors.Wrap(err, "setup NS network: failed to add default route")
+		}
 
-	if err = createVethContext.netLink.AddrAdd(contVeth, &netlink.Addr{IPNet: createVethContext.addr}); err != nil {
-		return errors.Wrapf(err, "setup NS network: failed to add IP addr to %q", createVethContext.contVethName)
-	}
+		if err = createVethContext.netLink.AddrAdd(contVeth, &netlink.Addr{IPNet: networkutils.IpToCIDR(addr)}); err != nil {
+			return errors.Wrapf(err, "setup NS network: failed to add IP addr to %q", createVethContext.contVethName)
+		}
 
-	// add static ARP entry for default gateway
-	// we are using routed mode on the host and container need this static ARP entry to resolve its default gateway.
-	neigh := &netlink.Neigh{
-		LinkIndex:    contVeth.Attrs().Index,
-		State:        netlink.NUD_PERMANENT,
-		IP:           gwNet.IP,
-		HardwareAddr: hostVeth.Attrs().HardwareAddr,
-	}
+		// add static ARP entry for default gateway
+		// we are using routed mode on the host and container need this static ARP entry to resolve its default gateway.
+		neigh := &netlink.Neigh{
+			LinkIndex:    contVeth.Attrs().Index,
+			State:        netlink.NUD_PERMANENT,
+			IP:           gw,
+			HardwareAddr: hostVeth.Attrs().HardwareAddr,
+		}
 
-	if err = createVethContext.netLink.NeighAdd(neigh); err != nil {
-		return errors.Wrap(err, "setup NS network: failed to add static ARP")
+		if err = createVethContext.netLink.NeighAdd(neigh); err != nil {
+			return errors.Wrap(err, "setup NS network: failed to add static ARP")
+		}
 	}
 
 	// Now that the everything has been successfully set up in the container, move the "host" end of the
@@ -172,82 +188,92 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	return nil
 }
 
-// SetupNS wires up linux networking for a pod's network
-func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error {
-	log.Debugf("SetupNS: hostVethName=%s, contVethName=%s, netnsPath=%s, deviceNumber=%d, mtu=%d", hostVethName, contVethName, netnsPath, deviceNumber, mtu)
-	return setupNS(hostVethName, contVethName, netnsPath, addr, deviceNumber, vpcCIDRs, useExternalSNAT, os.netLink, os.ns, mtu, log, os.procSys)
+func matchAddrFamily(ip, x *net.IP) bool {
+	return ip.To4() != nil && x.To4() != nil || ip.To16() != nil && ip.To4() == nil && x.To16() != nil && x.To4() == nil
 }
 
-func setupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool,
+// SetupNS wires up linux networking for a pod's network
+func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addrs []*net.IP, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error {
+	log.Debugf("SetupNS: hostVethName=%s, contVethName=%s, netnsPath=%s, deviceNumber=%d, mtu=%d", hostVethName, contVethName, netnsPath, deviceNumber, mtu)
+	return setupNS(hostVethName, contVethName, netnsPath, addrs, deviceNumber, vpcCIDRs, useExternalSNAT, os.netLink, os.ns, mtu, log, os.procSys)
+}
+
+func setupNS(hostVethName string, contVethName string, netnsPath string, addrs []*net.IP, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool,
 	netLink netlinkwrapper.NetLink, ns nswrapper.NS, mtu int, log logger.Logger, procSys procsyswrapper.ProcSys) error {
 
-	hostVeth, err := setupVeth(hostVethName, contVethName, netnsPath, addr, netLink, ns, mtu, procSys, log)
+	hostVeth, err := setupVeth(hostVethName, contVethName, netnsPath, addrs, netLink, ns, mtu, procSys, log)
 	if err != nil {
 		return errors.Wrapf(err, "setupNS network: failed to setup veth pair.")
 	}
 
-	log.Debugf("Setup host route outgoing hostVeth, LinkIndex %d", hostVeth.Attrs().Index)
-	addrHostAddr := &net.IPNet{
-		IP:   addr.IP,
-		Mask: net.CIDRMask(32, 32)}
+	for _, addr := range addrs {
+		log.Debugf("Setup host route outgoing hostVeth, LinkIndex %d", hostVeth.Attrs().Index)
 
-	// Add host route
-	route := netlink.Route{
-		LinkIndex: hostVeth.Attrs().Index,
-		Scope:     netlink.SCOPE_LINK,
-		Dst:       addrHostAddr}
+		// Add host route
+		route := netlink.Route{
+			LinkIndex: hostVeth.Attrs().Index,
+			Scope:     netlink.SCOPE_LINK,
+			Dst:       networkutils.IpToCIDR(addr),
+		}
 
-	// Add or replace route
-	if err := netLink.RouteReplace(&route); err != nil {
-		return errors.Wrapf(err, "setupNS: unable to add or replace route entry for %s", route.Dst.IP.String())
-	}
-	log.Debugf("Successfully set host route to be %s/0", route.Dst.IP.String())
+		// Add or replace route
+		if err := netLink.RouteReplace(&route); err != nil {
+			return errors.Wrapf(err, "setupNS: unable to add or replace route entry for %s", route.Dst.IP.String())
+		}
+		log.Debugf("Successfully set host route to be %s/0", route.Dst.IP.String())
 
-	err = addContainerRule(netLink, true, addr, mainRouteTable)
+		err = addContainerRule(netLink, true, networkutils.IpToCIDR(addr), mainRouteTable)
 
-	if err != nil {
-		log.Errorf("Failed to add toContainer rule for %s err=%v, ", addr.String(), err)
-		return errors.Wrap(err, "setupNS network: failed to add toContainer")
-	}
+		if err != nil {
+			log.Errorf("Failed to add toContainer rule for %s err=%v, ", addr.String(), err)
+			return errors.Wrap(err, "setupNS network: failed to add toContainer")
+		}
 
-	log.Infof("Added toContainer rule for %s", addr.String())
+		log.Infof("Added toContainer rule for %s", addr.String())
 
-	// add from-pod rule, only need it when it is not primary ENI
-	if deviceNumber > 0 {
-		// To be backwards compatible, we will have to keep this off-by one setting
-		tableNumber := deviceNumber + 1
-		if useExternalSNAT {
-			// add rule: 1536: from <podIP> use table <table>
-			err = addContainerRule(netLink, false, addr, tableNumber)
-			if err != nil {
-				log.Errorf("Failed to add fromContainer rule for %s err: %v", addr.String(), err)
-				return errors.Wrap(err, "add NS network: failed to add fromContainer rule")
-			}
-			log.Infof("Added rule priority %d from %s table %d", fromContainerRulePriority, addr.String(), tableNumber)
-		} else {
-			// add rule: 1536: list of from <podIP> to <vpcCIDR> use table <table>
-			for _, cidr := range vpcCIDRs {
-				podRule := netLink.NewRule()
-				_, podRule.Dst, _ = net.ParseCIDR(cidr)
-				podRule.Src = addr
-				podRule.Table = tableNumber
-				podRule.Priority = fromContainerRulePriority
-
-				err = netLink.RuleAdd(podRule)
-				if isRuleExistsError(err) {
-					log.Warnf("Rule already exists [%v]", podRule)
-				} else {
+		// add from-pod rule, only need it when it is not primary ENI
+		if deviceNumber > 0 {
+			// To be backwards compatible, we will have to keep this off-by one setting
+			tableNumber := deviceNumber + 1
+			if useExternalSNAT {
+				// add rule: 1536: from <podIP> use table <table>
+				err = addContainerRule(netLink, false, networkutils.IpToCIDR(addr), tableNumber)
+				if err != nil {
+					log.Errorf("Failed to add fromContainer rule for %s err: %v", addr.String(), err)
+					return errors.Wrap(err, "add NS network: failed to add fromContainer rule")
+				}
+				log.Infof("Added rule priority %d from %s table %d", fromContainerRulePriority, addr.String(), tableNumber)
+			} else {
+				// add rule: 1536: list of from <podIP> to <vpcCIDR> use table <table>
+				for _, cidr := range vpcCIDRs {
+					podRule := netLink.NewRule()
+					_, cidrParsed, err := net.ParseCIDR(cidr)
 					if err != nil {
-						log.Errorf("Failed to add pod IP rule [%v]: %v", podRule, err)
-						return errors.Wrapf(err, "setupNS: failed to add pod rule [%v]", podRule)
+						log.Warnf("Skipping VPC CIDR %q due to %s", cidr, err)
+						continue
+					}
+					if !matchAddrFamily(&cidrParsed.IP, addr) {
+						log.Debugf("VPC CIDR %s wrong family for %s - skipping", cidrParsed, addr)
+						continue
+					}
+					podRule.Dst = cidrParsed
+					podRule.Src = networkutils.IpToCIDR(addr)
+					podRule.Table = tableNumber
+					podRule.Priority = fromContainerRulePriority
+
+					err = netLink.RuleAdd(podRule)
+					if isRuleExistsError(err) {
+						log.Warnf("Rule already exists [%v]", podRule)
+					} else {
+						if err != nil {
+							log.Errorf("Failed to add pod IP rule [%v]: %v", podRule, err)
+							return errors.Wrapf(err, "setupNS: failed to add pod rule [%v]", podRule)
+						}
+					}
+					if podRule.Dst != nil {
+						log.Infof("Successfully added pod rule[%v] to %s", podRule, podRule.Dst.String())
 					}
 				}
-				var toDst string
-
-				if podRule.Dst != nil {
-					toDst = podRule.Dst.String()
-				}
-				log.Infof("Successfully added pod rule[%v] to %s", podRule, toDst)
 			}
 		}
 	}
@@ -255,7 +281,7 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 }
 
 // setupVeth sets up veth for the pod.
-func setupVeth(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, netLink netlinkwrapper.NetLink,
+func setupVeth(hostVethName string, contVethName string, netnsPath string, addrs []*net.IP, netLink netlinkwrapper.NetLink,
 	ns nswrapper.NS, mtu int, procSys procsyswrapper.ProcSys, log logger.Logger) (netlink.Link, error) {
 	// Clean up if hostVeth exists.
 	if oldHostVeth, err := netLink.LinkByName(hostVethName); err == nil {
@@ -265,7 +291,7 @@ func setupVeth(hostVethName string, contVethName string, netnsPath string, addr 
 		log.Debugf("Cleaned up old hostVeth: %v\n", hostVethName)
 	}
 
-	createVethContext := newCreateVethPairContext(contVethName, hostVethName, addr, mtu)
+	createVethContext := newCreateVethPairContext(contVethName, hostVethName, addrs, mtu)
 	if err := ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		log.Errorf("Failed to setup veth network %v", err)
 		return nil, errors.Wrap(err, "setupVeth network: failed to setup veth network")
@@ -304,7 +330,8 @@ func setupVeth(hostVethName string, contVethName string, netnsPath string, addr 
 func (os *linuxNetwork) SetupPodENINetwork(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet,
 	vlanID int, eniMAC string, subnetGW string, parentIfIndex int, mtu int, log logger.Logger) error {
 
-	hostVeth, err := setupVeth(hostVethName, contVethName, netnsPath, addr, os.netLink, os.ns, mtu, os.procSys, log)
+	ipv4Addrs := []*net.IP{&addr.IP}
+	hostVeth, err := setupVeth(hostVethName, contVethName, netnsPath, ipv4Addrs, os.netLink, os.ns, mtu, os.procSys, log)
 	if err != nil {
 		return errors.Wrapf(err, "SetupPodENINetwork failed to setup veth pair.")
 	}
@@ -428,48 +455,51 @@ func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *
 }
 
 // TeardownPodNetwork cleanup ip rules
-func (os *linuxNetwork) TeardownNS(addr *net.IPNet, deviceNumber int, log logger.Logger) error {
-	log.Debugf("TeardownNS: addr %s, deviceNumber %d", addr.String(), deviceNumber)
-	return tearDownNS(addr, deviceNumber, os.netLink, log)
+func (os *linuxNetwork) TeardownNS(addrs []*net.IP, deviceNumber int, log logger.Logger) error {
+	log.Debugf("TeardownNS: addrs %s, deviceNumber %d", addrs, deviceNumber)
+	return tearDownNS(addrs, deviceNumber, os.netLink, log)
 }
 
-func tearDownNS(addr *net.IPNet, deviceNumber int, netLink netlinkwrapper.NetLink, log logger.Logger) error {
-	if addr == nil {
+func tearDownNS(addrs []*net.IP, deviceNumber int, netLink netlinkwrapper.NetLink, log logger.Logger) error {
+	if len(addrs) == 0 {
 		return errors.New("can't tear down network namespace with no IP address")
 	}
-	// Remove to-pod rule
-	toContainerRule := netLink.NewRule()
-	toContainerRule.Dst = addr
-	toContainerRule.Priority = toContainerRulePriority
-	err := netLink.RuleDel(toContainerRule)
-
-	if err != nil {
-		log.Errorf("Failed to delete toContainer rule for %s err %v", addr.String(), err)
-	} else {
-		log.Infof("Delete toContainer rule for %s ", addr.String())
-	}
-
-	if deviceNumber > 0 {
-		// remove from-pod rule only for non main table
-		err := deleteRuleListBySrc(*addr)
-		if err != nil {
-			log.Errorf("Failed to delete fromContainer for %s %v", addr.String(), err)
-			return errors.Wrapf(err, "delete NS network: failed to delete fromContainer rule for %s", addr.String())
+	for _, addr := range addrs {
+		if addr == nil {
+			panic("addr is nil. This should not be possible.")
 		}
-		tableNumber := deviceNumber + 1
-		log.Infof("Delete fromContainer rule for %s in table %d", addr.String(), tableNumber)
+
+		// Remove to-pod rule
+		toContainerRule := netLink.NewRule()
+		toContainerRule.Dst = networkutils.IpToCIDR(addr)
+		toContainerRule.Priority = toContainerRulePriority
+		err := netLink.RuleDel(toContainerRule)
+
+		if err != nil {
+			log.Errorf("Failed to delete toContainer rule for %s err %v", addr.String(), err)
+		} else {
+			log.Infof("Delete toContainer rule for %s ", addr.String())
+		}
+
+		if deviceNumber > 0 {
+			tableNumber := deviceNumber + 1
+			// remove from-pod rule only for non main table
+			err := deleteRuleListBySrc(*networkutils.IpToCIDR(addr))
+			if err != nil {
+				log.Errorf("Failed to delete fromContainer for %s %v", addr.String(), err)
+				return errors.Wrapf(err, "delete NS network: failed to delete fromContainer rule for %s", addr.String())
+			}
+			log.Infof("Delete fromContainer rule for %s in table %d", addr.String(), tableNumber)
+		}
+
+		// cleanup host route:
+		if err = netLink.RouteDel(&netlink.Route{
+			Scope: netlink.SCOPE_LINK,
+			Dst:   networkutils.IpToCIDR(addr)}); err != nil {
+			log.Errorf("delete NS network: failed to delete host route for %s, %v", addr.String(), err)
+		}
 	}
 
-	addrHostAddr := &net.IPNet{
-		IP:   addr.IP,
-		Mask: net.CIDRMask(32, 32)}
-
-	// cleanup host route:
-	if err = netLink.RouteDel(&netlink.Route{
-		Scope: netlink.SCOPE_LINK,
-		Dst:   addrHostAddr}); err != nil {
-		log.Errorf("delete NS network: failed to delete host route for %s, %v", addr.String(), err)
-	}
 	log.Debug("Tear down of NS complete")
 	return nil
 }

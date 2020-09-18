@@ -26,6 +26,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 
 	"github.com/pkg/errors"
@@ -120,7 +122,7 @@ var log = logger.Get()
 // NetworkAPIs defines the host level and the ENI level network related operations
 type NetworkAPIs interface {
 	// SetupNodeNetwork performs node level network configuration
-	SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool) error
+	SetupHostNetwork(vpcIPv4CIDRs []string, vpcIPv6CIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool) error
 	// SetupENINetwork performs ENI level network configuration. Not needed on the primary ENI
 	SetupENINetwork(eniIP string, mac string, deviceNumber int, subnetCIDR string) error
 	UseExternalSNAT() bool
@@ -213,7 +215,7 @@ func findPrimaryInterfaceName(primaryMAC string) (string, error) {
 }
 
 // SetupHostNetwork performs node level network configuration
-func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool) error {
+func (n *linuxNetwork) SetupHostNetwork(vpcIPv4CIDRs []string, vpcIPv6CIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool) error {
 	log.Info("Setting up host network... ")
 
 	var err error
@@ -308,7 +310,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 		isExclusion bool
 	}
 	var allCIDRs []snatCIDR
-	for _, cidr := range vpcCIDRs {
+	for _, cidr := range vpcIPv4CIDRs {
 		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
 	}
 	for _, cidr := range n.excludeSNATCIDRs {
@@ -559,7 +561,7 @@ func (n *linuxNetwork) UseExternalSNAT() bool {
 }
 
 func useExternalSNAT() bool {
-	return getBoolEnvVar(envExternalSNAT, false)
+	return utils.GetBoolEnvVar(log, envExternalSNAT, false)
 }
 
 // GetExcludeSNATCIDRs returns a list of cidrs that should be excluded from SNAT if UseExternalSNAT is false,
@@ -614,23 +616,11 @@ func typeOfSNAT() snatType {
 }
 
 func nodePortSupportEnabled() bool {
-	return getBoolEnvVar(envNodePortSupport, true)
+	return utils.GetBoolEnvVar(log, envNodePortSupport, true)
 }
 
 func shouldConfigureRpFilter() bool {
-	return getBoolEnvVar(envConfigureRpfilter, true)
-}
-
-func getBoolEnvVar(name string, defaultValue bool) bool {
-	if strValue := os.Getenv(name); strValue != "" {
-		parsedValue, err := strconv.ParseBool(strValue)
-		if err != nil {
-			log.Errorf("Failed to parse "+name+"; using default: "+fmt.Sprint(defaultValue), err.Error())
-			return defaultValue
-		}
-		return parsedValue
-	}
-	return defaultValue
+	return utils.GetBoolEnvVar(log, envConfigureRpfilter, true)
 }
 
 func getConnmark() uint32 {
@@ -966,4 +956,16 @@ func GetEthernetMTU(envMTUValue string) int {
 		return mtu
 	}
 	return maximumMTU
+}
+
+// IpToCIDR converts 192.0.2.27 -> 192.0.2.27/32 for IPv4 and IPv6
+func IpToCIDR(ip *net.IP) *net.IPNet {
+	bits := net.IPv6len * 8
+	if ip.To4() != nil {
+		bits = net.IPv4len * 8
+	}
+	return &net.IPNet{
+		IP:   *ip,
+		Mask: net.CIDRMask(bits, bits),
+	}
 }
