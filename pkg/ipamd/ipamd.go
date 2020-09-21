@@ -333,6 +333,9 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
+	for _, cidr := range c.networkClient.GetIncludeSNATCIDRs() {
+		vpcCIDRs = append(vpcCIDRs, cidr)
+	}
 	primaryIP := net.ParseIP(c.awsClient.GetLocalIPv4())
 	err = c.networkClient.SetupHostNetwork(vpcCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP, c.enablePodENI)
 	if err != nil {
@@ -1305,3 +1308,4 @@ func (c *IPAMContext) SetNodeLabel(key, value string) error {
 func (c *IPAMContext) GetPod(podName, namespace string) (*v1.Pod, error) {
 	return c.k8sClient.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
 }
+
