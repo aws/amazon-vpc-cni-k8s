@@ -282,7 +282,7 @@ workflows:
           requires:
             - build_x86_64
             - build_aarch64
-      - integration_test:
+      - calico_test:
           requires:
             - hold
 
