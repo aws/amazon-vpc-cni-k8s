@@ -228,7 +228,7 @@ jobs:
             - dependency-packages-store-
       - k8s/install-kubectl:
           # requires 1.14.9 for k8s testing, since it uses log api.
-          kubectl-version: v1.14.9
+          kubectl-version: v1.17.9
       - run:
           name: Run the integration tests
           command: ./scripts/run-integration-tests.sh
