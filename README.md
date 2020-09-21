@@ -211,6 +211,17 @@ IP rule will be applied. If an item is not a valid ipv4 range it will be skipped
 
 ---
 
+`AWS_VPC_K8S_CNI_INCLUDE_SNAT_CIDRS`
+
+Type: String
+
+Default: empty
+
+Specify a comma separated list of IPv4 CIDRs to include in SNAT. For every item in the list an `iptables` rule and off\-VPC
+IP rule will be applied. If an item is not a valid ipv4 range it will be skipped. This should be used when `AWS_VPC_K8S_CNI_EXTERNALSNAT=false`.
+
+---
+
 `WARM_ENI_TARGET`
 
 Type: Integer as a String
