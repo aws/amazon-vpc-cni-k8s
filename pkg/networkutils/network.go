@@ -130,6 +130,7 @@ type NetworkAPIs interface {
 	SetupENINetwork(eniIP string, mac string, deviceNumber int, subnetCIDR string) error
 	UseExternalSNAT() bool
 	GetExcludeSNATCIDRs() []string
+	GetIncludeSNATCIDRs() []string
 	GetRuleList() ([]netlink.Rule, error)
 	GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error)
 	UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet, toCIDRs []string, toFlag bool) error
