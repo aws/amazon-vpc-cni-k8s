@@ -333,9 +333,6 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
-	for _, cidr := range c.networkClient.GetIncludeSNATCIDRs() {
-		vpcCIDRs = append(vpcCIDRs, cidr)
-	}
 	primaryIP := net.ParseIP(c.awsClient.GetLocalIPv4())
 	err = c.networkClient.SetupHostNetwork(vpcCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP, c.enablePodENI)
 	if err != nil {

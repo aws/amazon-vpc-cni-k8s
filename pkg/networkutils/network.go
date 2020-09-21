@@ -141,6 +141,7 @@ type NetworkAPIs interface {
 type linuxNetwork struct {
 	useExternalSNAT         bool
 	excludeSNATCIDRs        []string
+	includeSNATCIDRs        []string
 	typeOfSNAT              snatType
 	nodePortSupportEnabled  bool
 	shouldConfigureRpFilter bool
@@ -179,6 +180,7 @@ func New() NetworkAPIs {
 	return &linuxNetwork{
 		useExternalSNAT:         useExternalSNAT(),
 		excludeSNATCIDRs:        getExcludeSNATCIDRs(),
+		includeSNATCIDRs:        getIncludeSNATCIDRs(),
 		typeOfSNAT:              typeOfSNAT(),
 		nodePortSupportEnabled:  nodePortSupportEnabled(),
 		shouldConfigureRpFilter: shouldConfigureRpFilter(),
@@ -319,6 +321,9 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 	}
 	for _, cidr := range n.excludeSNATCIDRs {
 		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: true})
+	}
+	for _, cidr := range n.includeSNATCIDRs {
+		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
 	}
 
 	// if excludeSNATCIDRs or vpcCIDRs have changed they need to be cleared
@@ -937,7 +942,7 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 	}
 
 	if requiresSNAT {
-		allCIDRs := append(toCIDRs, n.excludeSNATCIDRs...)
+		allCIDRs := append(toCIDRs, n.excludeSNATCIDRs..., n.includeSNATCIDRs...)
 		for _, cidr := range allCIDRs {
 			podRule := n.netLink.NewRule()
 			_, podRule.Dst, _ = net.ParseCIDR(cidr)
