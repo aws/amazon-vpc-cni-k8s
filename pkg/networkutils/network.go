@@ -69,6 +69,11 @@ const (
 	// Defaults to empty.
 	envExcludeSNATCIDRs = "AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS"
 
+	// This environment is used to specify a comma separated list of ipv4 CIDRs to include in SNAT. An additional rule
+	// will be written to the iptables for each item. If an item is not an ipv4 range it will be skipped.
+	// Defaults to empty.
+	envIncludeSNATCIDRs = "AWS_VPC_K8S_CNI_INCLUDE_SNAT_CIDRS"
+
 	// This environment is used to specify weather the SNAT rule added to iptables should randomize port allocation for
 	// outgoing connections. If set to "hashrandom" the SNAT iptables rule will have the "--random" flag added to it.
 	// Use "prng" if you want to use pseudo random numbers, i.e. "--random-fully".
@@ -544,6 +549,7 @@ func GetConfigForDebug() map[string]interface{} {
 		envConfigureRpfilter: shouldConfigureRpFilter(),
 		envConnmark:          getConnmark(),
 		envExcludeSNATCIDRs:  getExcludeSNATCIDRs(),
+		envIncludeSNATCIDRs:  getIncludeSNATCIDRs(),
 		envExternalSNAT:      useExternalSNAT(),
 		envMTU:               GetEthernetMTU(""),
 		envNodePortSupport:   nodePortSupportEnabled(),
@@ -582,6 +588,33 @@ func getExcludeSNATCIDRs() []string {
 		_, parseCIDR, err := net.ParseCIDR(excludeCIDR)
 		if err != nil {
 			log.Errorf("getExcludeSNATCIDRs : ignoring %v is not a valid IPv4 CIDR", excludeCIDR)
+		} else {
+			cidrs = append(cidrs, parseCIDR.String())
+		}
+	}
+	return cidrs
+}
+
+// GetIncludeSNATCIDRs returns a list of cidrs that should be included in SNAT if UseExternalSNAT is false,
+// otherwise it returns an empty list.
+func (n *linuxNetwork) GetIncludeSNATCIDRs() []string {
+	return getIncludeSNATCIDRs()
+}
+
+func getIncludeSNATCIDRs() []string {
+	if useExternalSNAT() {
+		return nil
+	}
+
+	excludeCIDRs := os.Getenv(envIncludeSNATCIDRs)
+	if includeCIDRs == "" {
+		return nil
+	}
+	var cidrs []string
+	for _, includeCIDRs := range strings.Split(includeCIDRs, ",") {
+		_, parseCIDR, err := net.ParseCIDR(includeCIDRs)
+		if err != nil {
+			log.Errorf("getIncludeSNATCIDRs : ignoring %v is not a valid IPv4 CIDR", includeCIDR)
 		} else {
 			cidrs = append(cidrs, parseCIDR.String())
 		}
