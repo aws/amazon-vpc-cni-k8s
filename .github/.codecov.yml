@@ -19,6 +19,11 @@ coverage:
         only_pulls: true
         flags:
           - "unittest"
+    # Disable patch since it is noisy and not correct
+    patch:
+      default:
+        enabled: no
+        if_not_found: success
 
 comment: false
 
