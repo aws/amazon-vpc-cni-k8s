@@ -207,7 +207,7 @@ Type: String
 Default: empty
 
 Specify a comma separated list of IPv4 CIDRs to exclude from SNAT. For every item in the list an `iptables` rule and off\-VPC
-IP rule will be applied. If an item is not a valid ipv4 range it will be skipped. This should be used when `AWS_VPC_K8S_CNI_EXTERNALSNAT=false`.
+IP rule will be applied. If an item is not a valid ipv4 range it will be skipped. This should be used when `AWS_VPC_K8S_CNI_EXTERNALSNAT=false` and `AWS_VPC_K8S_CNI_INCLUDE_SNAT_CIDRS=""`.
 
 ---
 
@@ -218,7 +218,7 @@ Type: String
 Default: empty
 
 Specify a comma separated list of IPv4 CIDRs to include in SNAT. For every item in the list an `iptables` rule and off\-VPC
-IP rule will be applied. If an item is not a valid ipv4 range it will be skipped. This should be used when `AWS_VPC_K8S_CNI_EXTERNALSNAT=false`.
+IP rule will be applied. If an item is not a valid ipv4 range it will be skipped. This should be used when `AWS_VPC_K8S_CNI_EXTERNALSNAT=false` and `AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS=""`.
 
 ---
 
