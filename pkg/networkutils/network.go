@@ -612,13 +612,13 @@ func getIncludeSNATCIDRs() []string {
 		return nil
 	}
 
-	excludeCIDRs := os.Getenv(envIncludeSNATCIDRs)
+	includeCIDRs := os.Getenv(envIncludeSNATCIDRs)
 	if includeCIDRs == "" {
 		return nil
 	}
 	var cidrs []string
-	for _, includeCIDRs := range strings.Split(includeCIDRs, ",") {
-		_, parseCIDR, err := net.ParseCIDR(includeCIDRs)
+	for _, includeCIDR := range strings.Split(includeCIDRs, ",") {
+		_, parseCIDR, err := net.ParseCIDR(includeCIDR)
 		if err != nil {
 			log.Errorf("getIncludeSNATCIDRs : ignoring %v is not a valid IPv4 CIDR", includeCIDR)
 		} else {
@@ -942,7 +942,8 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 	}
 
 	if requiresSNAT {
-		allCIDRs := append(toCIDRs, n.excludeSNATCIDRs..., n.includeSNATCIDRs...)
+		allCIDRs := append(toCIDRs, n.excludeSNATCIDRs...)
+		allCIDRs = append(allCIDRs, n.includeSNATCIDRs...)
 		for _, cidr := range allCIDRs {
 			podRule := n.netLink.NewRule()
 			_, podRule.Dst, _ = net.ParseCIDR(cidr)
