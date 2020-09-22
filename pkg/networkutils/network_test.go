@@ -349,7 +349,7 @@ func TestLoadExcludeIncludeSNATCIDRsFromEnv(t *testing.T) {
 	_ = os.Setenv(envExcludeSNATCIDRs, "10.12.0.0/16,10.13.0.0/16")
 	_ = os.Setenv(envIncludeSNATCIDRs, "10.14.0.0/16,10.15.0.0/16")
 
-	expected := []string{""}
+	expected := []string(nil)
 	assert.Equal(t, getExcludeSNATCIDRs(), expected)
 	assert.Equal(t, getIncludeSNATCIDRs(), expected)
 }
