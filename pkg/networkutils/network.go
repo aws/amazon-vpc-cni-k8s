@@ -314,16 +314,20 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 	type snatCIDR struct {
 		cidr        string
 		isExclusion bool
+		isInclusion bool
 	}
 	var allCIDRs []snatCIDR
 	for _, cidr := range vpcCIDRs {
-		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
+		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false, isInclusion: false})
 	}
 	for _, cidr := range n.excludeSNATCIDRs {
-		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: true})
+		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: true, isInclusion: false})
 	}
-	for _, cidr := range n.includeSNATCIDRs {
-		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
+	if n.includeSNATCIDRs != nil {
+		allCIDRs = allCIDRs[:0]
+		for _, cidr := range n.includeSNATCIDRs {
+			allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false, isInclusion: true})
+		}
 	}
 
 	// if excludeSNATCIDRs or vpcCIDRs have changed they need to be cleared
@@ -364,16 +368,30 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 		if cidr.isExclusion {
 			comment += " EXCLUSION"
 		}
-		log.Debugf("Setup Host Network: iptables -A %s ! -d %s -t nat -j %s", curChain, cidr, nextChain)
+		if cidr.isInclusion {
+			comment += " INCLUSION"
+			log.Debugf("Setup Host Network: iptables -A %s -d %s -t nat -j %s", curChain, cidr, nextChain)
 
-		iptableRules = append(iptableRules, iptablesRule{
-			name:        curName,
-			shouldExist: !n.useExternalSNAT,
-			table:       "nat",
-			chain:       curChain,
-			rule: []string{
-				"!", "-d", cidr.cidr, "-m", "comment", "--comment", comment, "-j", nextChain,
-			}})
+			iptableRules = append(iptableRules, iptablesRule{
+				name:        curName,
+				shouldExist: !n.useExternalSNAT,
+				table:       "nat",
+				chain:       curChain,
+				rule: []string{
+					"-d", cidr.cidr, "-m", "comment", "--comment", comment, "-j", nextChain,
+				}})	
+		}else{
+			log.Debugf("Setup Host Network: iptables -A %s ! -d %s -t nat -j %s", curChain, cidr, nextChain)
+
+			iptableRules = append(iptableRules, iptablesRule{
+				name:        curName,
+				shouldExist: !n.useExternalSNAT,
+				table:       "nat",
+				chain:       curChain,
+				rule: []string{
+					"!", "-d", cidr.cidr, "-m", "comment", "--comment", comment, "-j", nextChain,
+				}})
+		}	
 	}
 
 	// Prepare the Desired Rule for SNAT Rule for non-pod ENIs
@@ -574,7 +592,7 @@ func useExternalSNAT() bool {
 	return getBoolEnvVar(envExternalSNAT, false)
 }
 
-// GetExcludeSNATCIDRs returns a list of cidrs that should be excluded from SNAT if UseExternalSNAT is false,
+// GetExcludeSNATCIDRs returns a list of cidrs that should be excluded from SNAT if UseExternalSNAT is false, and if IncludeSNATCIDR is empty,
 // otherwise it returns an empty list.
 func (n *linuxNetwork) GetExcludeSNATCIDRs() []string {
 	return getExcludeSNATCIDRs()
@@ -589,6 +607,10 @@ func getExcludeSNATCIDRs() []string {
 	if excludeCIDRs == "" {
 		return nil
 	}
+	includeCIDRs := os.Getenv(envIncludeSNATCIDRs)
+	if includeCIDRs != "" {
+		return nil
+	}
 	var cidrs []string
 	for _, excludeCIDR := range strings.Split(excludeCIDRs, ",") {
 		_, parseCIDR, err := net.ParseCIDR(excludeCIDR)
@@ -601,7 +623,7 @@ func getExcludeSNATCIDRs() []string {
 	return cidrs
 }
 
-// GetIncludeSNATCIDRs returns a list of cidrs that should be included in SNAT if UseExternalSNAT is false,
+// GetIncludeSNATCIDRs returns a list of cidrs that should be included in SNAT if UseExternalSNAT is false, and if ExcludeSNATCIDR is empty,
 // otherwise it returns an empty list.
 func (n *linuxNetwork) GetIncludeSNATCIDRs() []string {
 	return getIncludeSNATCIDRs()
@@ -614,6 +636,10 @@ func getIncludeSNATCIDRs() []string {
 
 	includeCIDRs := os.Getenv(envIncludeSNATCIDRs)
 	if includeCIDRs == "" {
+		return nil
+	}
+	excludeCIDRs := os.Getenv(envExcludeSNATCIDRs)
+	if excludeCIDRs != "" {
 		return nil
 	}
 	var cidrs []string
