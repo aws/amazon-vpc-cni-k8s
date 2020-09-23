@@ -140,7 +140,10 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 		}
 		addr, deviceNumber, err = s.ipamContext.dataStore.AssignPodIPv4Address(ipamKey)
 	}
-	pbVPCcidrs := s.ipamContext.awsClient.GetVPCIPv4CIDRs()
+	pbVPCcidrs, err := s.ipamContext.awsClient.GetVPCIPv4CIDRs()
+	if err != nil {
+		return nil, err
+	}
 	for _, cidr := range pbVPCcidrs {
 		log.Debugf("VPC CIDR %s", cidr)
 	}

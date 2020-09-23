@@ -112,7 +112,7 @@ func TestNodeInit(t *testing.T) {
 	m.awsutils.EXPECT().IsUnmanagedENI(eni2.ENIID).Return(false).AnyTimes()
 
 	primaryIP := net.ParseIP(ipaddr01)
-	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs)
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
 	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
 	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false).Return(nil)
 

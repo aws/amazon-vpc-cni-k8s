@@ -37,7 +37,7 @@ func TestServer_VersionCheck(t *testing.T) {
 		networkClient: m.network,
 		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}),
 	}
-	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{})
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil)
 	m.network.EXPECT().UseExternalSNAT().Return(true)
 
 	rpcServer := server{
@@ -126,18 +126,19 @@ func TestServer_AddNetwork(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return(tc.vpcCIDRs)
+		m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return(tc.vpcCIDRs, nil)
 		m.network.EXPECT().UseExternalSNAT().Return(tc.useExternalSNAT)
 		if !tc.useExternalSNAT {
 			m.network.EXPECT().GetExcludeSNATCIDRs().Return(tc.snatExclusionCIDRs)
 		}
 
 		addNetworkReply, err := rpcServer.AddNetwork(context.TODO(), addNetworkRequest)
-		assert.NoError(t, err, tc.name)
+		if assert.NoError(t, err, tc.name) {
 
-		assert.Equal(t, tc.useExternalSNAT, addNetworkReply.UseExternalSNAT, tc.name)
+			assert.Equal(t, tc.useExternalSNAT, addNetworkReply.UseExternalSNAT, tc.name)
 
-		expectedCIDRs := append([]string{vpcCIDR}, tc.snatExclusionCIDRs...)
-		assert.Equal(t, expectedCIDRs, addNetworkReply.VPCcidrs, tc.name)
+			expectedCIDRs := append([]string{vpcCIDR}, tc.snatExclusionCIDRs...)
+			assert.Equal(t, expectedCIDRs, addNetworkReply.VPCcidrs, tc.name)
+		}
 	}
 }
