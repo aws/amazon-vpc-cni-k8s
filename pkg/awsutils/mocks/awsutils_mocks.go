@@ -241,11 +241,12 @@ func (mr *MockAPIsMockRecorder) GetPrimaryENImac() *gomock.Call {
 }
 
 // GetVPCIPv4CIDRs mocks base method
-func (m *MockAPIs) GetVPCIPv4CIDRs() []string {
+func (m *MockAPIs) GetVPCIPv4CIDRs() ([]string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetVPCIPv4CIDRs")
 	ret0, _ := ret[0].([]string)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetVPCIPv4CIDRs indicates an expected call of GetVPCIPv4CIDRs

@@ -124,7 +124,6 @@ func TestInitWithEC2metadata(t *testing.T) {
 		assert.Equal(t, ins.primaryENI, primaryeniID)
 		assert.Equal(t, len(ins.securityGroups.SortedList()), 2)
 		assert.Equal(t, subnetID, ins.subnetID)
-		assert.Equal(t, len(ins.vpcIPv4CIDRs.SortedList()), 2)
 	}
 }
 

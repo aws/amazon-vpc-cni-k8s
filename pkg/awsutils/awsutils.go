@@ -129,7 +129,7 @@ type APIs interface {
 	DeallocIPAddresses(eniID string, ips []string) error
 
 	// GetVPCIPv4CIDRs returns VPC's CIDRs from instance metadata
-	GetVPCIPv4CIDRs() []string
+	GetVPCIPv4CIDRs() ([]string, error)
 
 	// GetLocalIPv4 returns the primary IP address on the primary ENI interface
 	GetLocalIPv4() net.IP
@@ -164,7 +164,6 @@ type EC2InstanceMetadataCache struct {
 	localIPv4           net.IP
 	instanceID          string
 	instanceType        string
-	vpcIPv4CIDRs        StringSet
 	primaryENI          string
 	primaryENImac       string
 	availabilityZone    string
@@ -401,16 +400,9 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 		return err
 	}
 
-	// retrieve VPC IPv4 CIDR blocks
-	err = cache.refreshVPCIPv4CIDRs(mac)
-	if err != nil {
-		return err
-	}
-
 	// Refresh security groups and VPC CIDR blocks in the background
 	// Ignoring errors since we will retry in 30s
 	go wait.Forever(func() { _ = cache.refreshSGIDs(mac) }, 30*time.Second)
-	go wait.Forever(func() { _ = cache.refreshVPCIPv4CIDRs(mac) }, 30*time.Second)
 
 	// We use the ctx here for testing, since we spawn go-routines above which will run forever.
 	select {
@@ -481,36 +473,6 @@ func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
 			}
 		}
 	}
-	return nil
-}
-
-// refreshVPCIPv4CIDRs retrieves VPC IPv4 CIDR blocks
-func (cache *EC2InstanceMetadataCache) refreshVPCIPv4CIDRs(mac string) error {
-	ctx := context.TODO()
-
-	ipnets, err := cache.imds.GetVPCIPv4CIDRBlocks(ctx, mac)
-	if err != nil {
-		return err
-	}
-
-	// TODO: keep as net.IPNet and remove this round-trip to/from string
-	vpcIPv4CIDRs := make([]string, len(ipnets))
-	for i, ipnet := range ipnets {
-		vpcIPv4CIDRs[i] = ipnet.String()
-	}
-
-	newVpcIPv4CIDRs := StringSet{}
-	newVpcIPv4CIDRs.Set(vpcIPv4CIDRs)
-	addedVpcIPv4CIDRs := newVpcIPv4CIDRs.Difference(&cache.vpcIPv4CIDRs)
-	deletedVpcIPv4CIDRs := cache.vpcIPv4CIDRs.Difference(&newVpcIPv4CIDRs)
-
-	for _, vpcIPv4CIDR := range addedVpcIPv4CIDRs.SortedList() {
-		log.Infof("Found %s, added to ipamd cache", vpcIPv4CIDR)
-	}
-	for _, vpcIPv4CIDR := range deletedVpcIPv4CIDRs.SortedList() {
-		log.Infof("Removed %s from ipamd cache", vpcIPv4CIDR)
-	}
-	cache.vpcIPv4CIDRs.Set(vpcIPv4CIDRs)
 	return nil
 }
 
@@ -1454,8 +1416,21 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 }
 
 // GetVPCIPv4CIDRs returns VPC CIDRs
-func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDRs() []string {
-	return cache.vpcIPv4CIDRs.SortedList()
+func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDRs() ([]string, error) {
+	ctx := context.TODO()
+
+	ipnets, err := cache.imds.GetVPCIPv4CIDRBlocks(ctx, cache.primaryENImac)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: keep as net.IPNet and remove this round-trip to/from string
+	asStrs := make([]string, len(ipnets))
+	for i, ipnet := range ipnets {
+		asStrs[i] = ipnet.String()
+	}
+
+	return asStrs, nil
 }
 
 // GetLocalIPv4 returns the primary IP address on the primary interface

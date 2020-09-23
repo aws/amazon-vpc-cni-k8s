@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,6 +35,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 )
@@ -332,7 +332,10 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
-	vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
+	vpcCIDRs, err := c.awsClient.GetVPCIPv4CIDRs()
+	if err != nil {
+		return err
+	}
 	primaryIP := c.awsClient.GetLocalIPv4()
 	err = c.networkClient.SetupHostNetwork(vpcCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP, c.enablePodENI)
 	if err != nil {
@@ -382,6 +385,10 @@ func (c *IPAMContext) nodeInit() error {
 	if err = c.configureIPRulesForPods(vpcCIDRs); err != nil {
 		return err
 	}
+	// Spawning updateCIDRsRulesOnChange go-routine
+	go wait.Forever(func() {
+		vpcCIDRs = c.updateCIDRsRulesOnChange(vpcCIDRs)
+	}, 30*time.Second)
 
 	if c.useCustomNetworking && c.eniConfig.Getter().MyENI != "default" {
 		// Signal to VPC Resource Controller that the node is using custom networking
@@ -424,8 +431,6 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
-	// Spawning updateCIDRsRulesOnChange go-routine
-	go wait.Forever(func() { vpcCIDRs = c.updateCIDRsRulesOnChange(vpcCIDRs) }, 30*time.Second)
 	return nil
 }
 
@@ -450,10 +455,16 @@ func (c *IPAMContext) configureIPRulesForPods(pbVPCcidrs []string) error {
 	return nil
 }
 
-func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCidrs []string) []string {
-	newVPCCIDRs := c.awsClient.GetVPCIPv4CIDRs()
+func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
+	newVPCCIDRs, err := c.awsClient.GetVPCIPv4CIDRs()
+	if err != nil {
+		log.Warnf("skipping periodic update to VPC CIDRs due to error: %v", err)
+		return oldVPCCIDRs
+	}
 
-	if len(oldVPCCidrs) != len(newVPCCIDRs) || !reflect.DeepEqual(oldVPCCidrs, newVPCCIDRs) {
+	old := sets.NewString(oldVPCCIDRs...)
+	new := sets.NewString(newVPCCIDRs...)
+	if !old.Equal(new) {
 		_ = c.configureIPRulesForPods(newVPCCIDRs)
 	}
 	return newVPCCIDRs
