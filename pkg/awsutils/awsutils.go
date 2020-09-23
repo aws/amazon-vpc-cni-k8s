@@ -232,7 +232,7 @@ type StringSet struct {
 	data sets.String
 }
 
-// SortedList returnsa sorted string slice from this set
+// SortedList returns a sorted string slice from this set
 func (ss *StringSet) SortedList() []string {
 	ss.RLock()
 	defer ss.RUnlock()
@@ -1392,7 +1392,7 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 				cache.tagENIcreateTS(aws.StringValue(networkInterface.NetworkInterfaceId), maxENIBackoffDelay)
 			}
 			if time.Since(parsedTime) < eniDeleteCooldownTime {
-				log.Infof("Found an ENI created less than 5 mins so not cleaning it up")
+				log.Infof("Found an ENI created less than 5 minutes ago, so not cleaning it up")
 				continue
 			}
 			log.Debugf("%v", value)
