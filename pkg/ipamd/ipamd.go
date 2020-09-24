@@ -1305,4 +1305,3 @@ func (c *IPAMContext) SetNodeLabel(key, value string) error {
 func (c *IPAMContext) GetPod(podName, namespace string) (*v1.Pod, error) {
 	return c.k8sClient.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
 }
-
