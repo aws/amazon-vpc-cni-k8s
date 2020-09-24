@@ -1032,7 +1032,7 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 			log.Errorf("Failed to add pod IP rule: %v", err)
 			return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule")
 		}
-		log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v]", podRule)		
+		log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v]", podRule)
 	}
 	return nil
 }
