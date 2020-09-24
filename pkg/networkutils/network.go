@@ -967,9 +967,8 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 		return nil
 	}
 
-	if requiresSNAT {
+	if requiresSNAT && n.includeSNATCIDRs == nil {
 		allCIDRs := append(toCIDRs, n.excludeSNATCIDRs...)
-		allCIDRs = append(allCIDRs, n.includeSNATCIDRs...)
 		for _, cidr := range allCIDRs {
 			podRule := n.netLink.NewRule()
 			_, podRule.Dst, _ = net.ParseCIDR(cidr)
@@ -989,6 +988,38 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 			}
 			log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v] to %s", podRule, toDst)
 		}
+	}else if n.includeSNATCIDRs != nil {
+		for _, cidr := range n.includeSNATCIDRs {
+			podRule := n.netLink.NewRule()
+			_, podRule.Dst, _ = net.ParseCIDR(cidr)
+			podRule.Src = &src
+			podRule.Table = 254 // main
+			podRule.Priority = fromPodRulePriority - 1
+
+			err = n.netLink.RuleAdd(podRule)
+			if err != nil {
+				log.Errorf("Failed to add pod IP rule for external SNAT: %v", err)
+				return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule for CIDR %s", cidr)
+			}
+			var toDst string
+
+			if podRule.Dst != nil {
+				toDst = podRule.Dst.String()
+			}
+			log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v] to %s", podRule, toDst)
+		}
+
+		podRule := n.netLink.NewRule()
+		podRule.Src = &src
+		podRule.Table = srcRuleTable
+		podRule.Priority = fromPodRulePriority
+
+		err = n.netLink.RuleAdd(podRule)
+		if err != nil {
+			log.Errorf("Failed to add pod IP rule: %v", err)
+			return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule")
+		}
+		log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v]", podRule)	
 	} else {
 		podRule := n.netLink.NewRule()
 
@@ -1001,7 +1032,7 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 			log.Errorf("Failed to add pod IP rule: %v", err)
 			return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule")
 		}
-		log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v]", podRule)
+		log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v]", podRule)		
 	}
 	return nil
 }
