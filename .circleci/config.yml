@@ -69,7 +69,7 @@ jobs:
             - dependency-packages-store-{{ checksum "test/integration/go.mod" }}
             - dependency-packages-store-
       - k8s/install-kubectl:
-          # Requires at least 1.14.9 for k8s testing, since it uses log api.
+          # Requires at least 1.14.9+ for k8s testing, since it uses log api.
           kubectl-version: v1.17.9
       - run:
           name: Run the integration tests
@@ -102,8 +102,8 @@ jobs:
             - dependency-packages-store-{{ checksum "test/integration/go.mod" }}
             - dependency-packages-store-
       - k8s/install-kubectl:
-          # requires 1.14.9 for k8s testing, since it uses log api.
-          kubectl-version: v1.14.9
+          # requires 1.14.9+ for k8s testing, since it uses log api.
+          kubectl-version: v1.17.9
       - run:
           name: Run the integration tests
           command: ./scripts/run-integration-tests.sh
@@ -134,8 +134,8 @@ jobs:
             - dependency-packages-store-{{ checksum "test/integration/go.mod" }}
             - dependency-packages-store-
       - k8s/install-kubectl:
-          # requires 1.14.9 for k8s testing, since it uses log api.
-          kubectl-version: v1.14.9
+          # requires 1.14.9+ for k8s testing, since it uses log api.
+          kubectl-version: v1.17.9
       - run:
           name: Run the integration tests
           command: ./scripts/run-integration-tests.sh
@@ -165,8 +165,8 @@ jobs:
             - dependency-packages-store-{{ checksum "test/integration/go.mod" }}
             - dependency-packages-store-
       - k8s/install-kubectl:
-          # requires 1.14.9 for k8s testing, since it uses log api.
-          kubectl-version: v1.14.9
+          # requires 1.14.9+ for k8s testing, since it uses log api.
+          kubectl-version: v1.17.9
       - run:
           name: Run the integration tests
           command: ./scripts/run-integration-tests.sh
@@ -196,8 +196,8 @@ jobs:
             - dependency-packages-store-{{ checksum "test/integration/go.mod" }}
             - dependency-packages-store-
       - k8s/install-kubectl:
-          # requires 1.14.9 for k8s testing, since it uses log api.
-          kubectl-version: v1.14.9
+          # requires 1.14.9+ for k8s testing, since it uses log api.
+          kubectl-version: v1.17.9
       - run:
           name: Run the integration tests
           command: ./scripts/run-integration-tests.sh
@@ -227,8 +227,8 @@ jobs:
             - dependency-packages-store-{{ checksum "test/integration/go.mod" }}
             - dependency-packages-store-
       - k8s/install-kubectl:
-          # requires 1.14.9 for k8s testing, since it uses log api.
-          kubectl-version: v1.14.9
+          # requires 1.14.9+ for k8s testing, since it uses log api.
+          kubectl-version: v1.17.9
       - run:
           name: Run the integration tests
           command: ./scripts/run-integration-tests.sh
@@ -241,6 +241,37 @@ jobs:
       - store_artifacts:
           path: /tmp/cni-test
 
+  calico_test:
+    docker:
+      - image: circleci/golang:1.14-stretch
+    working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    environment:
+      <<: *env
+      RUN_CALICO_TEST: "true"
+    steps:
+      - checkout
+      - setup_remote_docker
+      - aws-cli/setup:
+          profile-name: awstester
+      - restore_cache:
+          keys:
+            - dependency-packages-store-{{ checksum "test/integration/go.mod" }}
+            - dependency-packages-store-
+      - k8s/install-kubectl:
+          # requires 1.14.9+ for k8s testing, since it uses log api.
+          kubectl-version: v1.17.9
+      - run:
+          name: Run the integration tests
+          command: ./scripts/run-integration-tests.sh
+          no_output_timeout: 20m
+      - save_cache:
+          key: dependency-packages-store-{{ checksum "test/integration/go.mod" }}
+          paths:
+            - /go/pkg
+          when: always
+      - store_artifacts:
+          path: /tmp/cni-test
+          
 workflows:
   version: 2
   check:
@@ -303,3 +334,6 @@ workflows:
       - bottlerocket_test:
           requires:
             - warm_eni_test
+      - calico_test:
+          requires:
+            - bottlerocket_test      
