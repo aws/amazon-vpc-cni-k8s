@@ -11,6 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
+// Util package to interact with EC2
 package awsutils
 
 import (
@@ -59,7 +60,7 @@ const (
 
 	// Stagger cleanup start time to avoid calling EC2 too much. Time in seconds.
 	eniCleanupStartupDelayMax = 300
-	eniDeleteCooldownTime     = (5 * time.Minute)
+	eniDeleteCooldownTime     = 5 * time.Minute
 )
 
 var (

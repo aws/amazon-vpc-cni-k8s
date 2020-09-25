@@ -11,6 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
+// CNI metrics helper binary publishing metrics to CloudWatch
 package main
 
 import (

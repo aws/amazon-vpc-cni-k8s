@@ -1,3 +1,4 @@
+// Standard gRPC health probe
 package main
 
 import (
