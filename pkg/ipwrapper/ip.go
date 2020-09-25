@@ -11,6 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
+// Wrapper interface for the containernetworking ip plugin
 package ipwrapper
 
 import (
@@ -20,7 +21,7 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-// IP is the wrapper interface for containernetworking ip plugin
+// IP is the wrapper interface for the containernetworking ip plugin
 type IP interface {
 	AddDefaultRoute(gw net.IP, dev netlink.Link) error
 }

@@ -11,13 +11,14 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
+// Wrapper interface for the containernetworking ns plugin
 package nswrapper
 
 import (
 	"github.com/containernetworking/plugins/pkg/ns"
 )
 
-// NS is the wrapper interface for containernetworking ns plugin
+// NS is the wrapper interface for the containernetworking ns plugin
 type NS interface {
 	WithNetNSPath(nspath string, toRun func(ns.NetNS) error) error
 }
