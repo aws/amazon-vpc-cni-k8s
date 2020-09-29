@@ -950,7 +950,9 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 	log.Infof("Remove current list [%v]", srcRuleList)
 	var srcRuleTable int
 	for _, rule := range srcRuleList {
-		srcRuleTable = rule.Table
+		if rule.Table != mainRoutingTable {
+			srcRuleTable = rule.Table
+		}
 		if err := n.netLink.RuleDel(&rule); err != nil && !containsNoSuchRule(err) {
 			log.Errorf("Failed to cleanup old IP rule: %v", err)
 			return errors.Wrapf(err, "UpdateRuleListBySrc: failed to delete old rule")
@@ -993,7 +995,7 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 			podRule := n.netLink.NewRule()
 			_, podRule.Dst, _ = net.ParseCIDR(cidr)
 			podRule.Src = &src
-			podRule.Table = 254 // main
+			podRule.Table = mainRoutingTable
 			podRule.Priority = fromPodRulePriority - 1
 
 			err = n.netLink.RuleAdd(podRule)
