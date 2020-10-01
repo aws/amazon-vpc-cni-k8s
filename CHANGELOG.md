@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7.4
+
+* Bug - [Ignore error on enabling TCP early demux for old kernels](https://github.com/aws/amazon-vpc-cni-k8s/pull/1242) (#1242, @mogren)
+
 ## v1.7.3
 
 * Bug - [Add support to toggle TCP early demux](https://github.com/aws/amazon-vpc-cni-k8s/pull/1212) (#1212, @SaranBalaji90)
