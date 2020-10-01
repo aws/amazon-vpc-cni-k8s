@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-// CNI network driver setting up iptables, routes and rules
+// Package driver is the CNI network driver setting up iptables, routes and rules
 package driver
 
 import (

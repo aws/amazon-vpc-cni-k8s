@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-// Wrapper interface for the containernetworking ns plugin
+// Package nswrapper is a wrapper interface for the containernetworking ns plugin
 package nswrapper
 
 import (

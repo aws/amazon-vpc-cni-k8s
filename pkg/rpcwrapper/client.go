@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-// Wrapper for the CNI IPAMD pod connection
+// Package rpcwrapper is a wrapper for the CNI IPAMD pod connection
 package rpcwrapper
 
 import (

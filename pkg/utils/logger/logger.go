@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-// CNI Logger interface, using zap
+// Package logger is the CNI Logger interface, using zap
 package logger
 
 //Log is global variable so that log functions can be directly accessed

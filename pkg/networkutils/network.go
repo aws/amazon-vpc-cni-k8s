@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-// Collection of iptables and netlink functions
+// Package networkutils is a collection of iptables and netlink functions
 package networkutils
 
 import (

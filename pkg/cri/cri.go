@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-// Package to get running sandboxes from the CRI socket
+// Package cri is used to get running sandboxes from the CRI socket
 package cri
 
 import (
