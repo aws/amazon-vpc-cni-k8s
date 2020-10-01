@@ -32,7 +32,7 @@ install:
 script:
   - make check-format
   - make build-linux
-  - make lint LINT_FLAGS=
+  - make lint
   - make vet
   - make unit-test
 

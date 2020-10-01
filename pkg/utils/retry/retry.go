@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-// Retry with backoff implementation
+// Package retry is a retry with backoff implementation
 package retry
 
 import (

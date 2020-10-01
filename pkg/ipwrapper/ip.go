@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-// Wrapper interface for the containernetworking ip plugin
+// Package ipwrapper is a wrapper interface for the containernetworking ip plugin
 package ipwrapper
 
 import (

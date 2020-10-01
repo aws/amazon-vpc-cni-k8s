@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-// Wrapper package for doing /proc/sys calls
+// Package procsyswrapper contains helper functions for doing /proc/sys calls
 package procsyswrapper
 
 import (
