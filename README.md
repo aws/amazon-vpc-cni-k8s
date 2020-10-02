@@ -431,10 +431,11 @@ Type: Boolean as a String
 
 Default: `false`
 
-If `ENABLE_POD_ENI` is set to `true`, in order for the kubelet on the node to talk to pods using the per pod security group feature,
-`DISABLE_TCP_EARLY_DEMUX` should be set to `true`. This will increase the local TCP connection latency slightly, that is why it is not
- on by default. Details on why this is needed can be found in this [#1212 comment](https://github.com/aws/amazon-vpc-cni-k8s/pull/1212#issuecomment-693540666).
-
+If `ENABLE_POD_ENI` is set to `true`, in order for the kubelet on the node to connect via TCP to pods that are using 
+per pod security groups, `DISABLE_TCP_EARLY_DEMUX` should be set to `true`. This will increase the local TCP connection 
+latency slightly, that is why it is not on by default. Details on why this is needed can be found in 
+this [#1212 comment](https://github.com/aws/amazon-vpc-cni-k8s/pull/1212#issuecomment-693540666).
+To use this setting, a Linux kernel version of at least 4.6 is needed on the worker node.
 
 ### ENI tags related to Allocation
 
