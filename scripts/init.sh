@@ -25,7 +25,7 @@ done
 echo "Configure rp_filter loose... "
 TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
 HOST_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
-PRIMARY_IF=$(ip -4 -o a | grep "$HOST_IP" | awk '{print $2}')
+PRIMARY_IF=$(ip -4 -o a | grep "$HOST_IP/" | awk '{print $2}')
 sysctl -w "net.ipv4.conf.$PRIMARY_IF.rp_filter=2"
 cat "/proc/sys/net/ipv4/conf/$PRIMARY_IF/rp_filter"
 
