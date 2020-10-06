@@ -34,7 +34,7 @@ cat "/proc/sys/net/ipv4/conf/$PRIMARY_IF/rp_filter"
 if [ "${DISABLE_TCP_EARLY_DEMUX:-false}" == "true" ]; then
     sysctl -w "net.ipv4.tcp_early_demux=0"
 else
-    sysctl -w "net.ipv4.tcp_early_demux=1"
+    sysctl -e -w "net.ipv4.tcp_early_demux=1"
 fi
 
 echo "CNI init container done"
