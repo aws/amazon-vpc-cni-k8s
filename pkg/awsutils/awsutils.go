@@ -1156,6 +1156,9 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (eniMetadata []ENIMetad
 		eniID := aws.StringValue(ec2res.NetworkInterfaceId)
 		eniMetadata := eniMap[eniID]
 		interfaceType := aws.StringValue(ec2res.InterfaceType)
+
+		log.Infof("%s is of type: %s", eniID, interfaceType)
+
 		// This assumes we only have one trunk attached to the node..
 		if interfaceType == "trunk" {
 			trunkENI = eniID
