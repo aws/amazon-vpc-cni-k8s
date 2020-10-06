@@ -35,6 +35,15 @@ log_in_json()
     printf '{"level":"%s","ts":"%s","caller":"%s","msg":"%s"}\n' "$LOGTYPE" "$TIMESTAMP" "$FILENAME" "$MSG"
 }
 
+validate_env_var()
+{
+    log_in_json info "Validating env variables ..."
+    if [[ "${AWS_VPC_K8S_PLUGIN_LOG_FILE,,}" == "stdout" ]]; then
+        log_in_json error "AWS_VPC_K8S_PLUGIN_LOG_FILE cannot be set to stdout"
+        exit 1     
+    fi 
+}
+
 # Check for all the required binaries before we go forward
 if [ ! -f aws-k8s-agent ]; then
     log_in_json error "Required aws-k8s-agent executable not found."
@@ -54,6 +63,8 @@ AWS_VPC_K8S_PLUGIN_LOG_FILE=${AWS_VPC_K8S_PLUGIN_LOG_FILE:-"/var/log/aws-routed-
 AWS_VPC_K8S_PLUGIN_LOG_LEVEL=${AWS_VPC_K8S_PLUGIN_LOG_LEVEL:-"Debug"}
 
 AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER=${AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER:-"true"}
+
+validate_env_var
 
 # Check for ipamd connectivity on localhost port 50051
 wait_for_ipam() {
