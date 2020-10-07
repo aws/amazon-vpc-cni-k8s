@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7.5
+
+* Bug - [Match primary ENI IP correctly](https://github.com/aws/amazon-vpc-cni-k8s/pull/1247) (#1247 , @mogren)
+
 ## v1.7.4
 
 * Bug - [Ignore error on enabling TCP early demux for old kernels](https://github.com/aws/amazon-vpc-cni-k8s/pull/1242) (#1242, @mogren)
