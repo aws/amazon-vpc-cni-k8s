@@ -117,42 +117,13 @@
                 - "fargate"
       "containers":
       - "env":
-        - "name": "ADDITIONAL_ENI_TAGS"
-          "value": "{}"
-        - "name": "AWS_VPC_CNI_NODE_PORT_SUPPORT"
-          "value": "true"
-        - "name": "AWS_VPC_ENI_MTU"
-          "value": "9001"
-        - "name": "AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER"
-          "value": "false"
-        - "name": "AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG"
-          "value": "false"
-        - "name": "AWS_VPC_K8S_CNI_EXTERNALSNAT"
-          "value": "false"
-        - "name": "AWS_VPC_K8S_CNI_LOGLEVEL"
-          "value": "DEBUG"
-        - "name": "AWS_VPC_K8S_CNI_LOG_FILE"
-          "value": "/host/var/log/aws-routed-eni/ipamd.log"
-        - "name": "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
-          "value": "prng"
-        - "name": "AWS_VPC_K8S_CNI_VETHPREFIX"
-          "value": "eni"
-        - "name": "AWS_VPC_K8S_PLUGIN_LOG_FILE"
-          "value": "/var/log/aws-routed-eni/plugin.log"
-        - "name": "AWS_VPC_K8S_PLUGIN_LOG_LEVEL"
-          "value": "DEBUG"
-        - "name": "DISABLE_INTROSPECTION"
-          "value": "false"
-        - "name": "DISABLE_METRICS"
-          "value": "false"
-        - "name": "ENABLE_POD_ENI"
-          "value": "false"
         - "name": "MY_NODE_NAME"
           "valueFrom":
             "fieldRef":
               "fieldPath": "spec.nodeName"
-        - "name": "WARM_ENI_TARGET"
-          "value": "1"
+        "envFrom":
+        - "configMapRef":
+            "name": "amazon-vpc-cni"
         "image": "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:latest"
         "imagePullPolicy": "Always"
         "livenessProbe":
@@ -193,9 +164,9 @@
           "name": "xtables-lock"
       "hostNetwork": true
       "initContainers":
-      - "env":
-        - "name": "DISABLE_TCP_EARLY_DEMUX"
-          "value": "false"
+      - "envFrom":
+        - "configMapRef":
+            "name": "amazon-vpc-cni"
         "image": "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init:latest"
         "imagePullPolicy": "Always"
         "name": "aws-vpc-cni-init"

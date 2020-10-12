@@ -198,6 +198,11 @@ generate-limits: GOOS=
 generate-limits:
 	go run scripts/gen_vpc_ip_limits.go
 
+# Generate master config file
+generate-manifests: GOOS=
+generate-manifests:
+	go run github.com/google/go-jsonnet/cmd/jsonnet -S -m config/master/. config/master/manifests.jsonnet
+
 # Fetch the CNI plugins
 plugins: FETCH_VERSION=0.8.6
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz

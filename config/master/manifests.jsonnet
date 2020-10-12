@@ -27,6 +27,39 @@ local regions = {
   },
 };
 
+local awsnodecm = {
+  configMap: {
+    apiVersion: "v1",
+    kind: "ConfigMap",
+    metadata: {
+      name: "aws-k8s-cni-configmap",
+      namespace: "kube-system",
+      labels: {
+        "k8s-app": "aws-node-cm",
+      },
+    },
+    data: {
+      AWS_VPC_CNI_NODE_PORT_SUPPORT: "true",
+      AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG: "false",
+      AWS_VPC_ENI_MTU: "9001",
+      AWS_VPC_K8S_CNI_EXTERNALSNAT: "false",
+      AWS_VPC_K8S_CNI_RANDOMIZESNAT: "prng",
+      WARM_ENI_TARGET: "1",
+      AWS_VPC_K8S_CNI_LOGLEVEL: "DEBUG",
+      AWS_VPC_K8S_CNI_LOG_FILE: "/host/var/log/aws-routed-eni/ipamd.log",
+      AWS_VPC_K8S_PLUGIN_LOG_FILE: "/var/log/aws-routed-eni/plugin.log",
+      AWS_VPC_K8S_PLUGIN_LOG_LEVEL: "DEBUG",
+      DISABLE_INTROSPECTION: "false",
+      DISABLE_METRICS: "false",
+      AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
+      ADDITIONAL_ENI_TAGS: "{}",
+      AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER: "false",
+      DISABLE_TCP_EARLY_DEMUX: "false",
+      ENABLE_POD_ENI: "false"
+    },
+  },
+};
+
 local awsnode = {
   clusterRole: {
     apiVersion: "rbac.authorization.k8s.io/v1",
@@ -159,28 +192,15 @@ local awsnode = {
               livenessProbe: self.readinessProbe + {
                 initialDelaySeconds: 60,
               },
+              envFrom: [
+                {configMapRef: {name: "amazon-vpc-cni"}},
+              ],
               env_:: {
-                ADDITIONAL_ENI_TAGS: "{}",
-                AWS_VPC_CNI_NODE_PORT_SUPPORT: "true",
-                AWS_VPC_ENI_MTU: "9001",
-                AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER: "false",
-                AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG: "false",
-                AWS_VPC_K8S_CNI_EXTERNALSNAT: "false",
-                AWS_VPC_K8S_CNI_LOGLEVEL: "DEBUG",
-                AWS_VPC_K8S_CNI_LOG_FILE: "/host/var/log/aws-routed-eni/ipamd.log",
-                AWS_VPC_K8S_CNI_RANDOMIZESNAT: "prng",
-                AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
-                AWS_VPC_K8S_PLUGIN_LOG_FILE: "/var/log/aws-routed-eni/plugin.log",
-                AWS_VPC_K8S_PLUGIN_LOG_LEVEL: "DEBUG",
-                DISABLE_INTROSPECTION: "false",
-                DISABLE_METRICS: "false",
-                ENABLE_POD_ENI: "false",
                 MY_NODE_NAME: {
                   valueFrom: {
                     fieldRef: {fieldPath: "spec.nodeName"},
                   },
                 },
-                WARM_ENI_TARGET: "1",
               },
               env: [
                 {name: kv[0]} + if std.isObject(kv[1]) then kv[1] else {value: kv[1]}
@@ -227,10 +247,8 @@ local awsnode = {
               image: "%s/amazon-k8s-cni-init:%s" % [$.ecrRepo, $.version],
               imagePullPolicy: "Always",
               securityContext: {privileged: true},
-              env: [
-                {
-                  name: "DISABLE_TCP_EARLY_DEMUX", value: "false",
-                },
+              envFrom: [
+                {configMapRef: {name: "amazon-vpc-cni"}},
               ],
               volumeMounts: [
                 {mountPath: "/host/opt/cni/bin", name: "cni-bin-dir"},
@@ -394,7 +412,8 @@ local byRegion(basename, template) = {
 // Output values, as jsonnet objects
 local output =
 byRegion("aws-k8s-cni", awsnode) +
-byRegion("cni-metrics-helper", metricsHelper);
+byRegion("cni-metrics-helper", metricsHelper) +
+{"aws-k8s-cni-configmap": awsnodecm};
 
 // Yaml-ified output values
 {
