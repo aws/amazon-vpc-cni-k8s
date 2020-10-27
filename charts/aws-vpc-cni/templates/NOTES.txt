@@ -1,0 +1,4 @@
+
+{{ .Release.Name }} has been installed or updated. To check the status of pods, run:
+
+kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "aws-vpc-cni.name" . }},app.kubernetes.io/instance={{ .Release.Name }}"
