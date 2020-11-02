@@ -318,7 +318,9 @@ Default: `/var/log/aws-routed-eni/plugin.log`
 Valid Values: `stderr` or a file path
 
 Specifies where to write the logging output for `aws-cni` plugin. Either to `stderr` or to override the default file (i.e., `/var/log/aws-routed-eni/plugin.log`).
-`Stdout` cannot be supported for plugin log, please refer to #1248 for more details.
+`Stdout` cannot be supported for plugin log, please refer to [#1248](https://github.com/aws/amazon-vpc-cni-k8s/issues/1248) for more details.
+
+Note: If chaining an external plugin (i.e Cilium) that does not provide a `pluginLogFile` in its config file, the CNI plugin will by default write to `os.Stderr`. The output of `cmdAdd` are available in the Kubelet logs.
 
 ---
 

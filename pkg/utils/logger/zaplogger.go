@@ -105,17 +105,11 @@ func getEncoder() zapcore.Encoder {
 
 func (logConfig *Configuration) newZapLogger() *structuredLogger {
 	var cores []zapcore.Core
-	var writer zapcore.WriteSyncer
 
 	logLevel := getZapLevel(logConfig.LogLevel)
 
-	logFilePath := logConfig.LogLocation
+	writer := getPluginLogFilePath(logConfig.LogLocation)
 
-	if logFilePath != "" && strings.ToLower(logFilePath) != "stdout" {
-		writer = getLogWriter(logFilePath)
-	} else {
-		writer = zapcore.Lock(os.Stdout)
-	}
 	cores = append(cores, zapcore.NewCore(getEncoder(), writer, logLevel))
 
 	combinedCore := zapcore.NewTee(cores...)
@@ -130,6 +124,21 @@ func (logConfig *Configuration) newZapLogger() *structuredLogger {
 	return &structuredLogger{
 		zapLogger: sugar,
 	}
+}
+
+// getPluginLogFilePath returns the writer
+func getPluginLogFilePath(logFilePath string) zapcore.WriteSyncer {
+	var writer zapcore.WriteSyncer
+
+	if logFilePath == "" {
+		writer = zapcore.Lock(os.Stderr)
+	} else if strings.ToLower(logFilePath) != "stdout" {
+		writer = getLogWriter(logFilePath)
+	} else {
+		writer = zapcore.Lock(os.Stdout)
+	}
+
+	return writer
 }
 
 //getLogWriter is for lumberjack
