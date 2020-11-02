@@ -19,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 func TestEnvLogFilePath(t *testing.T) {
@@ -57,4 +58,28 @@ func TestLogLevelReturnsDefaultLevelWhenEnvSetToInvalidValue(t *testing.T) {
 	inputLogLevel := GetLogLevel()
 	expectedLogLevel = zapcore.DebugLevel
 	assert.Equal(t, expectedLogLevel, getZapLevel(inputLogLevel))
+}
+
+func TestGetPluginLogFilePathEmpty(t *testing.T) {
+	expectedWriter := zapcore.Lock(os.Stderr)
+	inputPluginLogFile := ""
+	assert.Equal(t, expectedWriter, getPluginLogFilePath(inputPluginLogFile))
+}
+
+func TestGetPluginLogFilePathStdout(t *testing.T) {
+	expectedWriter := zapcore.Lock(os.Stdout)
+	inputPluginLogFile := "stdout"
+	assert.Equal(t, expectedWriter, getPluginLogFilePath(inputPluginLogFile))
+}
+
+func TestGetPluginLogFilePath(t *testing.T) {
+	inputPluginLogFile := "/var/log/aws-routed-eni/plugin.log"
+	expectedLumberJackLogger := &lumberjack.Logger{
+		Filename:   "/var/log/aws-routed-eni/plugin.log",
+		MaxSize:    100,
+		MaxBackups: 5,
+		MaxAge:     30,
+		Compress:   true,
+	}
+	assert.Equal(t, zapcore.AddSync(expectedLumberJackLogger), getPluginLogFilePath(inputPluginLogFile))
 }
