@@ -45,11 +45,13 @@ import (
 // the minimum threshold and frees them back when the pool size goes above max threshold.
 
 const (
-	ipPoolMonitorInterval       = 5 * time.Second
-	maxRetryCheckENI            = 5
-	eniAttachTime               = 10 * time.Second
-	nodeIPPoolReconcileInterval = 60 * time.Second
-	decreaseIPPoolInterval      = 30 * time.Second
+	ipPoolMonitorInterval              = 5 * time.Second
+	maxRetryCheckENI                   = 5
+	eniAttachTime                      = 10 * time.Second
+	envNodeIPPoolReconcileInterval     = "NODE_IP_POOL_RECONCILE_INTERVAL"
+	defaultNodeIPPoolReconcileInterval = 60 * time.Second
+	envDecreaseIPPoolInterval          = "DECREASE_IP_POOL_INTERVAL"
+	defaultDecreaseIPPoolInterval      = 30 * time.Second
 
 	// ipReconcileCooldown is the amount of time that an IP address must wait until it can be added to the data store
 	// during reconciliation after being discovered on the EC2 instance metadata.
@@ -185,24 +187,27 @@ var (
 
 // IPAMContext contains node level control information
 type IPAMContext struct {
-	awsClient            awsutils.APIs
-	dataStore            *datastore.DataStore
-	k8sClient            kubernetes.Interface
-	useCustomNetworking  bool
-	eniConfig            eniconfig.ENIConfig
-	networkClient        networkutils.NetworkAPIs
-	maxIPsPerENI         int
-	maxENI               int
-	unmanagedENI         int
-	warmENITarget        int
-	warmIPTarget         int
-	minimumIPTarget      int
-	primaryIP            map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
-	lastNodeIPPoolAction time.Time
-	lastDecreaseIPPool   time.Time
+	awsClient                   awsutils.APIs
+	dataStore                   *datastore.DataStore
+	k8sClient                   kubernetes.Interface
+	useCustomNetworking         bool
+	eniConfig                   eniconfig.ENIConfig
+	networkClient               networkutils.NetworkAPIs
+	maxIPsPerENI                int
+	maxENI                      int
+	unmanagedENI                int
+	warmENITarget               int
+	warmIPTarget                int
+	minimumIPTarget             int
+	primaryIP                   map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
+	lastNodeIPPoolAction        time.Time
+	decreaseIPPoolInterval      time.Duration
+	nodeIPPoolReconcileInterval time.Duration
+	lastDecreaseIPPool          time.Time
 	// reconcileCooldownCache keeps timestamps of the last time an IP address was unassigned from an ENI,
 	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
 	reconcileCooldownCache ReconcileCooldownCache
+
 	terminating            int32 // Flag to warn that the pod is about to shut down.
 	disableENIProvisioning bool
 	enablePodENI           bool
@@ -306,6 +311,9 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 	c.myNodeName = os.Getenv("MY_NODE_NAME")
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer)
+
+	c.decreaseIPPoolInterval = getDecreaseIPPoolInterval()
+	c.nodeIPPoolReconcileInterval = getNodeIPPoolReconcileInterval()
 
 	err = c.nodeInit()
 	if err != nil {
@@ -484,7 +492,7 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 			c.updateIPPoolIfRequired()
 		}
 		time.Sleep(sleepDuration)
-		c.nodeIPPoolReconcile(nodeIPPoolReconcileInterval)
+		c.nodeIPPoolReconcile(c.nodeIPPoolReconcileInterval)
 	}
 }
 
@@ -493,7 +501,7 @@ func (c *IPAMContext) updateIPPoolIfRequired() {
 	if c.nodeIPPoolTooLow() {
 		c.increaseIPPool()
 	} else if c.nodeIPPoolTooHigh() {
-		c.decreaseIPPool(decreaseIPPoolInterval)
+		c.decreaseIPPool(c.decreaseIPPoolInterval)
 	}
 
 	if c.shouldRemoveExtraENIs() {
@@ -831,6 +839,40 @@ func getWarmENITarget() int {
 		return input
 	}
 	return defaultWarmENITarget
+}
+
+func getDecreaseIPPoolInterval() time.Duration {
+	inputStr, found := os.LookupEnv(envDecreaseIPPoolInterval)
+
+	if !found {
+		return defaultDecreaseIPPoolInterval
+	}
+
+	if input, err := time.ParseDuration(inputStr); err == nil {
+		if input < 0 {
+			return defaultDecreaseIPPoolInterval
+		}
+		log.Debugf("Using %s %v", envDecreaseIPPoolInterval, input)
+		return input
+	}
+	return defaultDecreaseIPPoolInterval
+}
+
+func getNodeIPPoolReconcileInterval() time.Duration {
+	inputStr, found := os.LookupEnv(envNodeIPPoolReconcileInterval)
+
+	if !found {
+		return defaultNodeIPPoolReconcileInterval
+	}
+
+	if input, err := time.ParseDuration(inputStr); err == nil {
+		if input < 0 {
+			return defaultNodeIPPoolReconcileInterval
+		}
+		log.Debugf("Using %s %v", envDecreaseIPPoolInterval, input)
+		return input
+	}
+	return defaultNodeIPPoolReconcileInterval
 }
 
 func logPoolStats(total, used, maxAddrsPerENI int) {
