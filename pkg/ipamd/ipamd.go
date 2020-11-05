@@ -312,8 +312,8 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer)
 
-	c.decreaseIPPoolInterval = getDecreaseIPPoolInterval()
-	c.nodeIPPoolReconcileInterval = getNodeIPPoolReconcileInterval()
+	c.decreaseIPPoolInterval = getEnvDurationWithDefault(envDecreaseIPPoolInterval, defaultDecreaseIPPoolInterval)
+	c.nodeIPPoolReconcileInterval = getEnvDurationWithDefault(envNodeIPPoolReconcileInterval, defaultNodeIPPoolReconcileInterval)
 
 	err = c.nodeInit()
 	if err != nil {
@@ -839,40 +839,6 @@ func getWarmENITarget() int {
 		return input
 	}
 	return defaultWarmENITarget
-}
-
-func getDecreaseIPPoolInterval() time.Duration {
-	inputStr, found := os.LookupEnv(envDecreaseIPPoolInterval)
-
-	if !found {
-		return defaultDecreaseIPPoolInterval
-	}
-
-	if input, err := time.ParseDuration(inputStr); err == nil {
-		if input < 0 {
-			return defaultDecreaseIPPoolInterval
-		}
-		log.Debugf("Using %s %v", envDecreaseIPPoolInterval, input)
-		return input
-	}
-	return defaultDecreaseIPPoolInterval
-}
-
-func getNodeIPPoolReconcileInterval() time.Duration {
-	inputStr, found := os.LookupEnv(envNodeIPPoolReconcileInterval)
-
-	if !found {
-		return defaultNodeIPPoolReconcileInterval
-	}
-
-	if input, err := time.ParseDuration(inputStr); err == nil {
-		if input < 0 {
-			return defaultNodeIPPoolReconcileInterval
-		}
-		log.Debugf("Using %s %v", envDecreaseIPPoolInterval, input)
-		return input
-	}
-	return defaultNodeIPPoolReconcileInterval
 }
 
 func logPoolStats(total, used, maxAddrsPerENI int) {

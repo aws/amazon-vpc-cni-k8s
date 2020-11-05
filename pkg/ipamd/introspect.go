@@ -197,3 +197,20 @@ func getEnvBoolWithDefault(envName string, def bool) bool {
 	}
 	return def
 }
+
+func getEnvDurationWithDefault(envName string, def time.Duration) time.Duration {
+	inputStr, found := os.LookupEnv(envName)
+
+	if !found {
+		return def
+	}
+
+	if input, err := time.ParseDuration(inputStr); err == nil {
+		if input < 0 {
+			return def
+		}
+		log.Debugf("Using %s %v", envName, input)
+		return input
+	}
+	return def
+}
