@@ -32,7 +32,7 @@ spec:
         # container programs network policy and routes on each
         # host.
         - name: calico-node
-          image: quay.io/calico/node:v3.13.4
+          image: calico/node:v3.15.1
           env:
             # Use Kubernetes API as the backing datastore.
             - name: DATASTORE_TYPE
@@ -547,7 +547,7 @@ spec:
       securityContext:
         fsGroup: 65534
       containers:
-        - image: quay.io/calico/typha:v3.13.4
+        - image: calico/typha:v3.15.1
           name: calico-typha
           ports:
             - containerPort: 5473
@@ -684,7 +684,7 @@ spec:
       nodeSelector:
         beta.kubernetes.io/os: linux
       containers:
-        - image: k8s.gcr.io/cluster-proportional-autoscaler-amd64:1.7.1
+        - image: k8s.gcr.io/cpa/cluster-proportional-autoscaler:1.8.3 
           name: autoscaler
           command:
             - /cluster-proportional-autoscaler
