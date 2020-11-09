@@ -10,6 +10,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/pkg/errors"
+	"net/http"
+	"os"
+	"strconv"
+	"time"
 )
 
 const (
@@ -17,9 +21,17 @@ const (
 	resourceID   = "resource-id"
 	resourceKey  = "key"
 	clusterIDTag = "CLUSTER_ID"
+
+	// Http client timeout env for sessions
+	httpTimeoutEnv = "HTTP_TIMEOUT"
 )
 
-var log = logger.Get()
+var (
+	log = logger.Get()
+
+	// HTTP timeout default value in seconds (10 seconds)
+	httpTimeoutValue = 10 * time.Second
+)
 
 // EC2Wrapper is used to wrap around EC2 service APIs to obtain ClusterID from
 // the ec2 instance tags
@@ -30,7 +42,24 @@ type EC2Wrapper struct {
 
 //NewMetricsClient returns an instance of the EC2 wrapper
 func NewMetricsClient() (*EC2Wrapper, error) {
-	metricsSession := session.Must(session.NewSession())
+
+	httpTimeoutEnvInput := os.Getenv(httpTimeoutEnv)
+	// if httpTimeout is not empty, we convert value to int and overwrite default httpTimeoutValue
+	if httpTimeoutEnvInput != "" {
+		if input, err := strconv.Atoi(httpTimeoutEnvInput); err == nil && input >= 1 {
+			log.Debugf("Using HTTP_TIMEOUT %v", input)
+			httpTimeoutValue = time.Duration(input) * time.Second
+		}
+	}
+
+	metricsSession := session.Must(session.NewSession(
+		&aws.Config{
+			MaxRetries: aws.Int(15),
+			HTTPClient: &http.Client{
+				Timeout: httpTimeoutValue,
+			},
+		},
+	))
 	ec2MetadataClient := ec2metadatawrapper.New(nil)
 
 	instanceIdentityDocument, err := ec2MetadataClient.GetInstanceIdentityDocument()
