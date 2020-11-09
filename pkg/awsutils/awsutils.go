@@ -20,8 +20,10 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -61,6 +63,9 @@ const (
 	// Stagger cleanup start time to avoid calling EC2 too much. Time in seconds.
 	eniCleanupStartupDelayMax = 300
 	eniDeleteCooldownTime     = 5 * time.Minute
+
+	// Http client timeout env for sessions
+	httpTimeoutEnv = "HTTP_TIMEOUT"
 )
 
 var (
@@ -74,6 +79,8 @@ var (
 	ErrNoNetworkInterfaces = errors.New("No network interfaces found for ENI")
 	// Custom user agent
 	userAgent = request.WithAppendUserAgent("amazon-vpc-cni-k8s")
+	// HTTP timeout default value in seconds (5 seconds)
+	httpTimeoutValue = 10 * time.Second
 )
 
 var log = logger.Get()
@@ -312,8 +319,23 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 	// Initializes prometheus metrics
 	prometheusRegister()
 
-	awsSession := session.Must(session.NewSession(aws.NewConfig().
-		WithMaxRetries(10),
+	httpTimeoutEnvInput := os.Getenv(httpTimeoutEnv)
+	// if httpTimeout is not empty, we convert value to int and overwrite default httpTimeoutValue
+	if httpTimeoutEnvInput != "" {
+		if input, err := strconv.Atoi(httpTimeoutEnvInput); err == nil && input >= 1 {
+			log.Debugf("Using HTTP_TIMEOUT %v", input)
+			httpTimeoutValue = time.Duration(input) * time.Second
+		}
+	}
+
+	awsSession := session.Must(
+		session.NewSession(
+			&aws.Config{
+				MaxRetries: aws.Int(10),
+				HTTPClient: &http.Client{
+					Timeout: httpTimeoutValue,
+				},
+			},
 	))
 	ec2Metadata := ec2metadata.New(awsSession)
 
@@ -331,7 +353,15 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 	cache.useCustomNetworking = useCustomNetworking
 	log.Infof("Custom networking %v", cache.useCustomNetworking)
 
-	sess, err := session.NewSession(&aws.Config{Region: aws.String(cache.region), MaxRetries: aws.Int(15)})
+	sess, err := session.NewSession(
+		&aws.Config{
+			Region: aws.String(cache.region), 
+			MaxRetries: aws.Int(15),
+			HTTPClient: &http.Client{
+				Timeout: httpTimeoutValue,
+			},
+		},
+	)
 	if err != nil {
 		log.Errorf("Failed to initialize AWS SDK session %v", err)
 		return nil, errors.Wrap(err, "instance metadata: failed to initialize AWS SDK session")
