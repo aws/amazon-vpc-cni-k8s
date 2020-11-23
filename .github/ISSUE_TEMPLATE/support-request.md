@@ -1,7 +1,9 @@
 ---
 name: Support Request/Question
 about: Support request or question relating to amazon-vpc-cni-k8s project.
-labels: question, needs investigation
+title: ''
+labels: needs investigation, question
+assignees: ''
 
 ---
 
