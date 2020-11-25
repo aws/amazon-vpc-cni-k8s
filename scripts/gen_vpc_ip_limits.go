@@ -149,15 +149,8 @@ func addManualLimits(limitMap map[string]awsutils.InstanceTypeLimits) map[string
 		"u-6tb1.metal":  {ENILimit: 5, IPv4Limit: 30},
 		"u-9tb1.metal":  {ENILimit: 5, IPv4Limit: 30},
 		"c5a.metal":     {ENILimit: 15, IPv4Limit: 50},
-		"c5ad.12xlarge": {ENILimit: 8, IPv4Limit: 30},
-		"c5ad.16xlarge": {ENILimit: 15, IPv4Limit: 50},
-		"c5ad.24xlarge": {ENILimit: 15, IPv4Limit: 50},
-		"c5ad.2xlarge":  {ENILimit: 4, IPv4Limit: 15},
-		"c5ad.4xlarge":  {ENILimit: 8, IPv4Limit: 30},
-		"c5ad.8xlarge":  {ENILimit: 8, IPv4Limit: 30},
-		"c5ad.large":    {ENILimit: 3, IPv4Limit: 10},
 		"c5ad.metal":    {ENILimit: 15, IPv4Limit: 50},
-		"c5ad.xlarge":   {ENILimit: 4, IPv4Limit: 15},
+                "p4d.24xlarge":  {ENILimit: 15, IPv4Limit: 50},
 	}
 	for instanceType, instanceLimits := range manuallyAddedLimits {
 		val, ok := limitMap[instanceType]
