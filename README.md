@@ -421,7 +421,7 @@ Type: Boolean as a String
 Default: `false`
 
 To enable security groups for pods you need to have at least an EKS 1.17 eks.3 cluster. Setting `ENABLE_POD_ENI` to `true`
-will add the `vpc.amazonaws.com/has-trunk-attached` label to the node, signifying that the feature is enabled. 
+will add the `vpc.amazonaws.com/has-trunk-attached` label to the node if it is possible to attach an additional ENI.
 
 ---
 
