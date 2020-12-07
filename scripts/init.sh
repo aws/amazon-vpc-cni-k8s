@@ -2,6 +2,26 @@
 
 set -euxo pipefail
 
+get_metadata()
+{
+    TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+    attempts=60
+    false
+    while [ "${?}" -gt 0 ]; do
+        if [ "${attempts}" -eq 0 ]; then
+        echo "Failed to get metdata"
+        exit 1
+        fi
+        meta=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/${1})
+        if [ "${?}" -gt 0 ]; then
+            let attempts--
+            sleep 0.5
+            false
+        fi
+    done
+    echo "$meta"
+}
+
 PLUGIN_BINS="loopback portmap bandwidth aws-cni-support.sh"
 
 for b in $PLUGIN_BINS; do
@@ -23,9 +43,10 @@ done
 
 # Configure rp_filter
 echo "Configure rp_filter loose... "
-TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
-HOST_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
-PRIMARY_IF=$(ip -4 -o a | grep "$HOST_IP/" | awk '{print $2}')
+
+HOST_IP=$(get_metadata 'local-ipv4')
+PRIMARY_MAC=$(get_metadata 'mac')
+PRIMARY_IF=$(ip -o link show | grep -F "link/ether $PRIMARY_MAC" | awk -F'[ :]+' '{print $2}')
 sysctl -w "net.ipv4.conf.$PRIMARY_IF.rp_filter=2"
 cat "/proc/sys/net/ipv4/conf/$PRIMARY_IF/rp_filter"
 
