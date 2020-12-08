@@ -440,6 +440,12 @@ container under `initcontainers`. This will increase the local TCP connection la
 Details on why this is needed can be found in this [#1212 comment](https://github.com/aws/amazon-vpc-cni-k8s/pull/1212#issuecomment-693540666).
 To use this setting, a Linux kernel version of at least 4.6 is needed on the worker node.
 
+You can use the below command to enable `DISABLE_TCP_EARLY_DEMUX` to `true` -
+
+```
+kubectl patch daemonset aws-node -n kube-system -p '{"spec": {"template": {"spec": {"initContainers": [{"env":[{"name":"DISABLE_TCP_EARLY_DEMUX","value":"true"}],"name":"aws-vpc-cni-init"}]}}}}'
+```
+
 ### ENI tags related to Allocation
 
 This plugin interacts with the following tags on ENIs:
