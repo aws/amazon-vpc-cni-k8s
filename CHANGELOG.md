@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7.7
+
+* Bug - [Rearrange Pod deletion workflow](https://github.com/aws/amazon-vpc-cni-k8s/pull/1315) (#1315, @SaranBalaji90)
+
 ## v1.7.6
 
 * Improvement - [Avoid detaching EFA ENIs](https://github.com/aws/amazon-vpc-cni-k8s/pull/1237) (#1237 , @mogren)
