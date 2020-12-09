@@ -3,7 +3,7 @@ module github.com/aws/amazon-vpc-cni-k8s
 go 1.14
 
 require (
-	github.com/aws/aws-sdk-go v1.37.23
+	github.com/aws/aws-sdk-go v1.37.23 
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 // indirect
 	github.com/containernetworking/cni v0.8.0
 	github.com/containernetworking/plugins v0.9.0
@@ -15,7 +15,6 @@ require (
 	github.com/google/btree v1.0.0 // indirect
 	github.com/google/go-jsonnet v0.16.0
 	github.com/google/gofuzz v0.0.0-20170612174753-24818f796faf // indirect
-	github.com/google/gopacket v1.1.18
 	github.com/googleapis/gnostic v0.2.0 // indirect
 	github.com/gregjones/httpcache v0.0.0-20190212212710-3befbb6ad0cc // indirect
 	github.com/hashicorp/golang-lru v0.5.1 // indirect
@@ -50,3 +49,5 @@ require (
 	k8s.io/cri-api v0.0.0-20191107035106-03d130a7dc28
 	k8s.io/kube-openapi v0.0.0-20190510232812-a01b7d5d6c22 // indirect
 )
+
+replace github.com/aws/aws-sdk-go => ./vendor/github.com/aws/aws-sdk-go

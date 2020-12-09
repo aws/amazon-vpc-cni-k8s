@@ -122,6 +122,13 @@ const (
 
 	// vpcENIConfigLabel is used by the VPC resource controller to pick the right ENI config.
 	vpcENIConfigLabel = "vpc.amazonaws.com/eniConfig"
+
+	//envEnableIpv4PrefixDelegation is used to allocate /28 prefix instead of secondary IP for an ENI.
+	envEnableIpv4PrefixDelegation = "ENABLE_PREFIX_DELEGATION"
+
+	//envWarmPrefixTarget is used to keep a /28 prefix in warm pool. It defaults to 1.
+	envWarmPrefixTarget     = "WARM_PREFIX_TARGET"
+	defaultWarmPrefixTarget = 1
 )
 
 var log = logger.Get()
@@ -197,16 +204,18 @@ type IPAMContext struct {
 	warmENITarget        int
 	warmIPTarget         int
 	minimumIPTarget      int
+	warmPrefixTarget     int
 	primaryIP            map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
 	lastNodeIPPoolAction time.Time
 	lastDecreaseIPPool   time.Time
 	// reconcileCooldownCache keeps timestamps of the last time an IP address was unassigned from an ENI,
 	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
-	reconcileCooldownCache ReconcileCooldownCache
-	terminating            int32 // Flag to warn that the pod is about to shut down.
-	disableENIProvisioning bool
-	enablePodENI           bool
-	myNodeName             string
+	reconcileCooldownCache     ReconcileCooldownCache
+	terminating                int32 // Flag to warn that the pod is about to shut down.
+	disableENIProvisioning     bool
+	enablePodENI               bool
+	myNodeName                 string
+	enableIpv4PrefixDelegation bool
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -300,9 +309,11 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 	c.warmENITarget = getWarmENITarget()
 	c.warmIPTarget = getWarmIPTarget()
 	c.minimumIPTarget = getMinimumIPTarget()
+	c.warmPrefixTarget = getWarmPrefixTarget()
 
 	c.disableENIProvisioning = disablingENIProvisioning()
 	c.enablePodENI = enablePodENI()
+	c.enableIpv4PrefixDelegation = enableIpv4PrefixDelegation()
 	c.myNodeName = os.Getenv("MY_NODE_NAME")
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer)
@@ -850,6 +861,23 @@ func getWarmENITarget() int {
 	return defaultWarmENITarget
 }
 
+func getWarmPrefixTarget() int {
+	inputStr, found := os.LookupEnv(envWarmPrefixTarget)
+
+	if !found {
+		return defaultWarmPrefixTarget
+	}
+
+	if input, err := strconv.Atoi(inputStr); err == nil {
+		if input < 0 {
+			return defaultWarmPrefixTarget
+		}
+		log.Debugf("Using WARM_PREFIX_TARGET %v", input)
+		return input
+	}
+	return defaultWarmPrefixTarget
+}
+
 func logPoolStats(total, used, maxAddrsPerENI int) {
 	log.Debugf("IP pool stats: total = %d, used = %d, c.maxIPsPerENI = %d", total, used, maxAddrsPerENI)
 }
@@ -1202,6 +1230,10 @@ func disablingENIProvisioning() bool {
 
 func enablePodENI() bool {
 	return getEnvBoolWithDefault(envEnablePodENI, false)
+}
+
+func enableIpv4PrefixDelegation() bool {
+	return getEnvBoolWithDefault(envEnableIpv4PrefixDelegation, true)
 }
 
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag

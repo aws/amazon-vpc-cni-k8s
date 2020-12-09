@@ -109,9 +109,9 @@ dist: all
 BUILD_MODE ?= -buildmode=pie
 build-linux: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
 build-linux:    ## Build the VPC CNI plugin agent using the host's Go toolchain.
-	go build $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
-	go build $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
-	go build $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
+	go build -mod=mod $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
+	go build -mod=mod $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
+	go build -mod=mod $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
 
 # Build VPC CNI plugin & agent container image.
 docker:      ## Build VPC CNI plugin & agent container image.
