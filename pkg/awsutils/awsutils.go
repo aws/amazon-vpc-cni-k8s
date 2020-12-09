@@ -79,7 +79,7 @@ var (
 	ErrNoNetworkInterfaces = errors.New("No network interfaces found for ENI")
 	// Custom user agent
 	userAgent = request.WithAppendUserAgent("amazon-vpc-cni-k8s")
-	// HTTP timeout default value in seconds (5 seconds)
+	// HTTP timeout default value in seconds (10 seconds)
 	httpTimeoutValue = 10 * time.Second
 )
 
