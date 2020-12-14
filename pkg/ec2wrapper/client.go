@@ -33,6 +33,7 @@ type EC2 interface {
 	DescribeNetworkInterfacesWithContext(ctx aws.Context, input *ec2svc.DescribeNetworkInterfacesInput, opts ...request.Option) (*ec2svc.DescribeNetworkInterfacesOutput, error)
 	ModifyNetworkInterfaceAttributeWithContext(ctx aws.Context, input *ec2svc.ModifyNetworkInterfaceAttributeInput, opts ...request.Option) (*ec2svc.ModifyNetworkInterfaceAttributeOutput, error)
 	CreateTagsWithContext(ctx aws.Context, input *ec2svc.CreateTagsInput, opts ...request.Option) (*ec2svc.CreateTagsOutput, error)
+	DescribeNetworkInterfacesPagesWithContext(ctx aws.Context, input *ec2svc.DescribeNetworkInterfacesInput, fn func(*ec2svc.DescribeNetworkInterfacesOutput, bool) bool, opts ...request.Option) error
 }
 
 // New creates a new EC2 wrapper

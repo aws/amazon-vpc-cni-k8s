@@ -66,6 +66,9 @@ const (
 
 	// Http client timeout env for sessions
 	httpTimeoutEnv = "HTTP_TIMEOUT"
+
+	// the default page size when paginating the DescribeNetworkInterfaces call
+	describeENIPageSize = 1000
 )
 
 var (
@@ -355,7 +358,7 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 
 	sess, err := session.NewSession(
 		&aws.Config{
-			Region: aws.String(cache.region), 
+			Region: aws.String(cache.region),
 			MaxRetries: aws.Int(15),
 			HTTPClient: &http.Client{
 				Timeout: httpTimeoutValue,
@@ -1425,14 +1428,16 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 
 	input := &ec2.DescribeNetworkInterfacesInput{
 		Filters: []*ec2.Filter{tagFilter, statusFilter},
+		MaxResults: aws.Int64(describeENIPageSize),
 	}
-	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input, userAgent)
+
+	outputENIs, err := cache.getENIsFromPaginatedDescribeNetworkInterfaces(input)
 	if err != nil {
 		return nil, errors.Wrap(err, "awsutils: unable to obtain filtered list of network interfaces")
 	}
 
 	networkInterfaces := make([]*ec2.NetworkInterface, 0)
-	for _, networkInterface := range result.NetworkInterfaces {
+	for _, networkInterface := range outputENIs {
 		// Verify the description starts with "aws-K8S-"
 		if !strings.HasPrefix(aws.StringValue(networkInterface.Description), eniDescriptionPrefix) {
 			continue
@@ -1514,4 +1519,23 @@ func (cache *EC2InstanceMetadataCache) IsUnmanagedENI(eniID string) bool {
 		return cache.unmanagedENIs.Has(eniID)
 	}
 	return false
+}
+
+func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterfaces(
+	input *ec2.DescribeNetworkInterfacesInput) ([]*ec2.NetworkInterface, error) {
+	outputENIs := make([]*ec2.NetworkInterface, 0)
+	pageNum := 0
+	log.Debugf("Paginating describe ENI has page size: %d", *input.MaxResults)
+	pageFn := func(output *ec2.DescribeNetworkInterfacesOutput, lastPage bool) (nextPage bool) {
+		pageNum++
+		log.Debugf("EC2 DescribeNetworkInterfaces succeeded with %d results on page %d",
+			len(output.NetworkInterfaces), pageNum)
+
+		outputENIs = append(outputENIs, output.NetworkInterfaces...)
+		// Loop is guided by nextToken, the func expect a false to exit.
+		return output.NextToken != nil
+	}
+
+	err := cache.ec2SVC.DescribeNetworkInterfacesPagesWithContext(context.Background(), input, pageFn, userAgent)
+	return outputENIs, err
 }
