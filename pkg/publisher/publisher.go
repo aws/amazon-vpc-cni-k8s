@@ -16,9 +16,6 @@ package publisher
 
 import (
 	"context"
-	"net/http"
-	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -54,9 +51,6 @@ const (
 
 	// Default cluster id if unable to detect something more suitable
 	defaultClusterID = "k8s-cluster"
-
-	// Http client timeout env for sessions
-	httpTimeoutEnv = "HTTP_TIMEOUT"
 )
 
 var (
@@ -66,9 +60,6 @@ var (
 		"CLUSTER_ID",
 		"Name",
 	}
-
-	// HTTP timeout default value in seconds (5 seconds)
-	httpTimeoutValue = 10 * time.Second
 )
 
 var log = logger.Get()
@@ -99,25 +90,8 @@ type cloudWatchPublisher struct {
 
 // New returns a new instance of `Publisher`
 func New(ctx context.Context) (Publisher, error) {
-
-	httpTimeoutEnvInput := os.Getenv(httpTimeoutEnv)
-	// if httpTimeout is not empty, we convert value to int and overwrite default httpTimeoutValue
-	if httpTimeoutEnvInput != "" {
-		if input, err := strconv.Atoi(httpTimeoutEnvInput); err == nil && input >= 1 {
-			log.Debugf("Using HTTP_TIMEOUT %v", input)
-			httpTimeoutValue = time.Duration(input) * time.Second
-		}
-	}
-
 	// Get AWS session
-	awsSession := session.Must(session.NewSession(
-		&aws.Config{
-			MaxRetries: aws.Int(15),
-			HTTPClient: &http.Client{
-				Timeout: httpTimeoutValue,
-				},
-		},
-	))
+	awsSession := session.Must(session.NewSession())
 
 	// Get cluster-ID
 	ec2Client, err := ec2wrapper.NewMetricsClient()
