@@ -75,6 +75,9 @@ const (
 	// Stagger cleanup start time to avoid calling EC2 too much. Time in seconds.
 	eniCleanupStartupDelayMax = 300
 	eniDeleteCooldownTime     = (5 * time.Minute)
+
+	// the default page size when paginating the DescribeNetworkInterfaces call
+	describeENIPageSize = 1000
 )
 
 var (
@@ -1506,18 +1509,15 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 	}
 
 	input := &ec2.DescribeNetworkInterfacesInput{
-		Filters: []*ec2.Filter{tagFilter, statusFilter},
-	}
-	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input, userAgent)
-	if err != nil {
-		return nil, errors.Wrap(err, "awsutils: unable to obtain filtered list of network interfaces")
+		Filters:    []*ec2.Filter{tagFilter, statusFilter},
+		MaxResults: aws.Int64(describeENIPageSize),
 	}
 
-	networkInterfaces := make([]*ec2.NetworkInterface, 0)
-	for _, networkInterface := range result.NetworkInterfaces {
+	var networkInterfaces []*ec2.NetworkInterface
+	filterFn := func(networkInterface *ec2.NetworkInterface) error {
 		// Verify the description starts with "aws-K8S-"
 		if !strings.HasPrefix(aws.StringValue(networkInterface.Description), eniDescriptionPrefix) {
-			continue
+			return nil
 		}
 		// Check that it's not a newly created ENI
 		tags := getTags(networkInterface, aws.StringValue(networkInterface.NetworkInterfaceId))
@@ -1529,8 +1529,8 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 				cache.tagENIcreateTS(aws.StringValue(networkInterface.NetworkInterfaceId), maxENIBackoffDelay)
 			}
 			if time.Since(parsedTime) < eniDeleteCooldownTime {
-				log.Infof("Found an ENI created less than 5 mins so not cleaning it up")
-				continue
+				log.Infof("Found an ENI created less than 5 minutes ago, so not cleaning it up")
+				return nil
 			}
 			log.Debugf("%v", value)
 		} else {
@@ -1538,9 +1538,16 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 			 * process of being attached by CNI versions v1.5.x or earlier.
 			 */
 			cache.tagENIcreateTS(aws.StringValue(networkInterface.NetworkInterfaceId), maxENIBackoffDelay)
-			continue
+			return nil
 		}
 		networkInterfaces = append(networkInterfaces, networkInterface)
+		return nil
+	}
+
+	err := cache.getENIsFromPaginatedDescribeNetworkInterfaces(input, filterFn)
+
+	if err != nil {
+		return nil, errors.Wrap(err, "awsutils: unable to obtain filtered list of network interfaces")
 	}
 
 	if len(networkInterfaces) < 1 {
@@ -1583,4 +1590,27 @@ func (cache *EC2InstanceMetadataCache) IsUnmanagedENI(eniID string) bool {
 		return cache.unmanagedENIs.Has(eniID)
 	}
 	return false
+}
+
+func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterfaces(
+	input *ec2.DescribeNetworkInterfacesInput, filterFn func(networkInterface *ec2.NetworkInterface) error) error {
+	pageNum := 0
+	var innerErr error
+	pageFn := func(output *ec2.DescribeNetworkInterfacesOutput, lastPage bool) (nextPage bool) {
+		pageNum++
+		log.Debugf("EC2 DescribeNetworkInterfaces succeeded with %d results on page %d",
+			len(output.NetworkInterfaces), pageNum)
+		for _, eni := range output.NetworkInterfaces {
+			if err := filterFn(eni); err != nil {
+				innerErr = err
+				return false
+			}
+		}
+		return true
+	}
+
+	if err := cache.ec2SVC.DescribeNetworkInterfacesPagesWithContext(context.TODO(), input, pageFn, userAgent); err != nil {
+		return err
+	}
+	return innerErr
 }

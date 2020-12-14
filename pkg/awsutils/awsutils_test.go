@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -748,10 +749,8 @@ func TestEC2InstanceMetadataCache_getFilteredListOfNetworkInterfaces_OneResult(t
 	attachment := &ec2.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
 	cureniID := eniID
 
-	result := &ec2.DescribeNetworkInterfacesOutput{
-		NetworkInterfaces: []*ec2.NetworkInterface{{Attachment: attachment, Status: &status, TagSet: tag, Description: &description, NetworkInterfaceId: &cureniID}}}
-	mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
-
+	interfaces := []*ec2.NetworkInterface{{Attachment: attachment, Status: &status, TagSet: tag, Description: &description, NetworkInterfaceId: &cureniID}}
+	setupDescribeNetworkInterfacesPagesWithContextMock(t, mockEC2, interfaces, nil, 1)
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
 	got, err := ins.getFilteredListOfNetworkInterfaces()
 	assert.NotNil(t, got)
@@ -762,10 +761,7 @@ func TestEC2InstanceMetadataCache_getFilteredListOfNetworkInterfaces_NoResult(t 
 	ctrl, _, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
-	result := &ec2.DescribeNetworkInterfacesOutput{
-		NetworkInterfaces: []*ec2.NetworkInterface{}}
-	mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
-
+	setupDescribeNetworkInterfacesPagesWithContextMock(t, mockEC2, []*ec2.NetworkInterface{}, nil, 1)
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
 	got, err := ins.getFilteredListOfNetworkInterfaces()
 	assert.Nil(t, got)
@@ -776,7 +772,12 @@ func TestEC2InstanceMetadataCache_getFilteredListOfNetworkInterfaces_Error(t *te
 	ctrl, _, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
-	mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("dummy error"))
+	interfaces := []*ec2.NetworkInterface{{
+		TagSet: []*ec2.Tag{
+			{Key: aws.String("foo"), Value: aws.String("foo-value")},
+		},
+	}}
+	setupDescribeNetworkInterfacesPagesWithContextMock(t, mockEC2, interfaces, errors.New("dummy error"), 1)
 
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
 	got, err := ins.getFilteredListOfNetworkInterfaces()
@@ -889,4 +890,17 @@ func TestEC2InstanceMetadataCache_SetUnmanagedENIs(t *testing.T) {
 	assert.False(t, ins.IsUnmanagedENI("eni-99"))
 	ins.SetUnmanagedENIs(nil)
 	assert.False(t, ins.IsUnmanagedENI("eni-1"))
+}
+
+func setupDescribeNetworkInterfacesPagesWithContextMock(
+	t *testing.T, mockEC2 *mock_ec2wrapper.MockEC2, interfaces []*ec2.NetworkInterface, err error, times int) {
+	mockEC2.EXPECT().
+		DescribeNetworkInterfacesPagesWithContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(times).
+		DoAndReturn(func(_ context.Context, _ *ec2.DescribeNetworkInterfacesInput,
+			fn func(*ec2.DescribeNetworkInterfacesOutput, bool) bool, userAgent request.Option) error {
+			assert.Equal(t, true, fn(&ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: interfaces,
+			}, true))
+			return err
+		})
 }
