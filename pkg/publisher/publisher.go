@@ -67,7 +67,7 @@ var (
 		"Name",
 	}
 
-	// HTTP timeout default value in seconds (10 seconds)
+	// HTTP timeout default value in seconds (5 seconds)
 	httpTimeoutValue = 10 * time.Second
 )
 

@@ -29,7 +29,7 @@ const (
 var (
 	log = logger.Get()
 
-	// HTTP timeout default value in seconds (10 seconds)
+	// HTTP timeout default value in seconds (5 seconds)
 	httpTimeoutValue = 10 * time.Second
 )
 
