@@ -879,7 +879,7 @@ func setupDescribeNetworkInterfacesPagesWithContextMock(
 		DescribeNetworkInterfacesPagesWithContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(times).
 		DoAndReturn(func(_ context.Context, _ *ec2.DescribeNetworkInterfacesInput,
 			fn func(*ec2.DescribeNetworkInterfacesOutput, bool) bool, userAgent request.Option) error {
-			assert.Equal(t, false, fn(&ec2.DescribeNetworkInterfacesOutput{
+			assert.Equal(t, true, fn(&ec2.DescribeNetworkInterfacesOutput{
 				NetworkInterfaces: interfaces,
 			}, true))
 			return err

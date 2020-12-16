@@ -1431,16 +1431,11 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 		MaxResults: aws.Int64(describeENIPageSize),
 	}
 
-	outputENIs, err := cache.getENIsFromPaginatedDescribeNetworkInterfaces(input)
-	if err != nil {
-		return nil, errors.Wrap(err, "awsutils: unable to obtain filtered list of network interfaces")
-	}
-
-	networkInterfaces := make([]*ec2.NetworkInterface, 0)
-	for _, networkInterface := range outputENIs {
+	var networkInterfaces []*ec2.NetworkInterface
+	filterFn := func(networkInterface *ec2.NetworkInterface) error {
 		// Verify the description starts with "aws-K8S-"
 		if !strings.HasPrefix(aws.StringValue(networkInterface.Description), eniDescriptionPrefix) {
-			continue
+			return nil
 		}
 		// Check that it's not a newly created ENI
 		tags := getTags(networkInterface, aws.StringValue(networkInterface.NetworkInterfaceId))
@@ -1453,7 +1448,7 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 			}
 			if time.Since(parsedTime) < eniDeleteCooldownTime {
 				log.Infof("Found an ENI created less than 5 minutes ago, so not cleaning it up")
-				continue
+				return nil
 			}
 			log.Debugf("%v", value)
 		} else {
@@ -1461,9 +1456,16 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 			 * process of being attached by CNI versions v1.5.x or earlier.
 			 */
 			cache.tagENIcreateTS(aws.StringValue(networkInterface.NetworkInterfaceId), maxENIBackoffDelay)
-			continue
+			return nil
 		}
 		networkInterfaces = append(networkInterfaces, networkInterface)
+		return nil
+	}
+
+	err := cache.getENIsFromPaginatedDescribeNetworkInterfaces(input, filterFn)
+
+	if err != nil {
+		return nil, errors.Wrap(err, "awsutils: unable to obtain filtered list of network interfaces")
 	}
 
 	if len(networkInterfaces) < 1 {
@@ -1522,20 +1524,24 @@ func (cache *EC2InstanceMetadataCache) IsUnmanagedENI(eniID string) bool {
 }
 
 func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterfaces(
-	input *ec2.DescribeNetworkInterfacesInput) ([]*ec2.NetworkInterface, error) {
-	outputENIs := make([]*ec2.NetworkInterface, 0)
+	input *ec2.DescribeNetworkInterfacesInput, filterFn func(networkInterface *ec2.NetworkInterface) error) error {
 	pageNum := 0
-	log.Debugf("Paginating describe ENI has page size: %d", *input.MaxResults)
+	var innerErr error
 	pageFn := func(output *ec2.DescribeNetworkInterfacesOutput, lastPage bool) (nextPage bool) {
 		pageNum++
 		log.Debugf("EC2 DescribeNetworkInterfaces succeeded with %d results on page %d",
 			len(output.NetworkInterfaces), pageNum)
-
-		outputENIs = append(outputENIs, output.NetworkInterfaces...)
-		// Loop is guided by nextToken, the func expect a false to exit.
-		return output.NextToken != nil
+		for _, eni := range output.NetworkInterfaces {
+			if err := filterFn(eni); err != nil {
+				innerErr = err
+				return false
+			}
+		}
+		return true
 	}
 
-	err := cache.ec2SVC.DescribeNetworkInterfacesPagesWithContext(context.Background(), input, pageFn, userAgent)
-	return outputENIs, err
+	if err := cache.ec2SVC.DescribeNetworkInterfacesPagesWithContext(context.TODO(), input, pageFn, userAgent); err != nil {
+		return err
+	}
+	return innerErr
 }
