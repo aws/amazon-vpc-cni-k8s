@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7.8
+
+* Improvement - [Replace DescribeNetworkInterfaces with paginated version](https://github.com/aws/amazon-vpc-cni-k8s/pull/1333) (#1333, @haouc)
+
 ## v1.7.7
 
 * Bug - [Rearrange Pod deletion workflow](https://github.com/aws/amazon-vpc-cni-k8s/pull/1315) (#1315, @SaranBalaji90)
