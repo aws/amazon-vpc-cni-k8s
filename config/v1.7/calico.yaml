@@ -32,12 +32,7 @@ spec:
         # container programs network policy and routes on each
         # host.
         - name: calico-node
-          image: quay.io/calico/node:v3.16.2
-          envFrom:
-          - configMapRef:
-              # Allow KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT to be overridden for eBPF mode.
-              name: kubernetes-services-endpoint
-              optional: true
+          image: quay.io/calico/node:v3.15.1
           env:
             # Use Kubernetes API as the backing datastore.
             - name: DATASTORE_TYPE
@@ -119,13 +114,6 @@ spec:
             - mountPath: /var/lib/calico
               name: var-lib-calico
               readOnly: false
-            # For eBPF mode, we need to be able to mount the BPF filesystem at /sys/fs/bpf so we mount in the
-            # parent directory.
-            - name: sysfs
-              mountPath: /sys/fs/
-              # Bidirectional means that, if we mount the BPF filesystem at /sys/fs/bpf it will propagate to the host.
-              # If the host is known to mount that filesystem already then Bidirectional can be omitted.
-              mountPropagation: Bidirectional
       volumes:
         # Used to ensure proper kmods are installed.
         - name: lib-modules
@@ -141,10 +129,6 @@ spec:
           hostPath:
             path: /run/xtables.lock
             type: FileOrCreate
-        - name: sysfs
-          hostPath:
-            path: /sys/fs/
-            type: DirectoryOrCreate
       tolerations:
         # Make sure calico/node gets scheduled on all nodes.
         - effect: NoSchedule
@@ -565,17 +549,12 @@ spec:
       securityContext:
         fsGroup: 65534
       containers:
-        - image: quay.io/calico/typha:v3.16.2
+        - image: quay.io/calico/typha:v3.15.1
           name: calico-typha
           ports:
             - containerPort: 5473
               name: calico-typha
               protocol: TCP
-          envFrom:
-          - configMapRef:
-              # Allow KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT to be overridden for eBPF mode.
-              name: kubernetes-services-endpoint
-              optional: true
           env:
             # Use eni not cali for interface prefix
             - name: FELIX_INTERFACEPREFIX
