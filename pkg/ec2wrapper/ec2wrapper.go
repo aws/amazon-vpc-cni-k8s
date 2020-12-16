@@ -2,6 +2,11 @@
 package ec2wrapper
 
 import (
+	"net/http"
+	"os"
+	"strconv"
+	"time"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go/aws"
@@ -10,10 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/pkg/errors"
-	"net/http"
-	"os"
-	"strconv"
-	"time"
 )
 
 const (

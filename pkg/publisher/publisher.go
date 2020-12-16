@@ -115,7 +115,7 @@ func New(ctx context.Context) (Publisher, error) {
 			MaxRetries: aws.Int(15),
 			HTTPClient: &http.Client{
 				Timeout: httpTimeoutValue,
-				},
+			},
 		},
 	))
 

@@ -339,7 +339,7 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 					Timeout: httpTimeoutValue,
 				},
 			},
-	))
+		))
 	ec2Metadata := ec2metadata.New(awsSession)
 
 	cache := &EC2InstanceMetadataCache{}
@@ -358,7 +358,7 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 
 	sess, err := session.NewSession(
 		&aws.Config{
-			Region: aws.String(cache.region),
+			Region:     aws.String(cache.region),
 			MaxRetries: aws.Int(15),
 			HTTPClient: &http.Client{
 				Timeout: httpTimeoutValue,
@@ -1427,7 +1427,7 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 	}
 
 	input := &ec2.DescribeNetworkInterfacesInput{
-		Filters: []*ec2.Filter{tagFilter, statusFilter},
+		Filters:    []*ec2.Filter{tagFilter, statusFilter},
 		MaxResults: aws.Int64(describeENIPageSize),
 	}
 
