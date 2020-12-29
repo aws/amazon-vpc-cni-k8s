@@ -94,7 +94,7 @@ DOCKER_BUILD_FLAGS = --build-arg GOARCH="$(ARCH)" \
 .DEFAULT_GOAL = build-linux
 
 # Build both CNI and metrics helper container images.
-all: docker docker-init docker-metrics
+all: docker docker-init docker-metrics   ## Builds Init, CNI and metrics helper container images.
 
 dist: all
 	mkdir -p $(DESTDIR)
@@ -105,20 +105,20 @@ dist: all
 # Build the VPC CNI plugin agent using the host's Go toolchain.
 BUILD_MODE ?= -buildmode=pie
 build-linux: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
-build-linux:
+build-linux:    ## Build the VPC CNI plugin agent using the host's Go toolchain.
 	go build $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
 	go build $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
 	go build $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
 
 # Build VPC CNI plugin & agent container image.
-docker:
+docker:      ## Build VPC CNI plugin & agent container image.
 	docker build $(DOCKER_BUILD_FLAGS) \
 		-f scripts/dockerfiles/Dockerfile.release \
 		-t "$(IMAGE_NAME)" \
 		.
 	@echo "Built Docker image \"$(IMAGE_NAME)\""
 
-docker-init:
+docker-init:     ## Build VPC CNI plugin Init container image.
 	docker build $(DOCKER_BUILD_FLAGS) \
 		-f scripts/dockerfiles/Dockerfile.init \
 		-t "$(INIT_IMAGE_NAME)" \
@@ -126,20 +126,20 @@ docker-init:
 	@echo "Built Docker image \"$(INIT_IMAGE_NAME)\""
 
 # Run the built CNI container image to use in functional testing
-docker-func-test: docker
+docker-func-test: docker     ## Run the built CNI container image to use in functional testing
 	docker run $(DOCKER_RUN_FLAGS) \
 		"$(IMAGE_NAME)"
 
 # Run unit tests
 unit-test: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
-unit-test:
+unit-test:    ## Run unit tests
 	go test -v -coverprofile=coverage.txt -covermode=atomic $(ALLPKGS)
 
 # Run unit tests with race detection (can only be run natively)
 unit-test-race: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
 unit-test-race: CGO_ENABLED=1
 unit-test-race: GOARCH=
-unit-test-race:
+unit-test-race:     ## Run unit tests with race detection (can only be run natively)
 	go test -v -cover -race -timeout 10s  ./cmd/...
 	go test -v -cover -race -timeout 150s ./pkg/awsutils/...
 	go test -v -cover -race -timeout 10s  ./pkg/k8sapi/...
@@ -149,24 +149,24 @@ unit-test-race:
 	go test -v -cover -race -timeout 10s  ./pkg/ipamd/...
 
 # Build the unit test driver container image.
-build-docker-test:
+build-docker-test:     ## Build the unit test driver container image.
 	docker build $(DOCKER_BUILD_FLAGS) \
 		-f scripts/dockerfiles/Dockerfile.test \
 		-t $(TEST_IMAGE_NAME) \
 		.
 
 # Run unit tests inside of the testing container image.
-docker-unit-test: build-docker-test
+docker-unit-test: build-docker-test     ## Run unit tests inside of the testing container image.
 	docker run $(DOCKER_RUN_ARGS) \
 		$(TEST_IMAGE_NAME) \
 		make unit-test
 
 # Build metrics helper agent.
-build-metrics:
+build-metrics:     ## Build metrics helper agent.
 	go build -ldflags="-s -w" -o cni-metrics-helper ./cmd/cni-metrics-helper
 
 # Build metrics helper agent Docker image.
-docker-metrics:
+docker-metrics:    ## Build metrics helper agent Docker image.
 	docker build $(DOCKER_BUILD_FLAGS) \
 		-f scripts/dockerfiles/Dockerfile.metrics \
 		-t "$(METRICS_IMAGE_NAME)" \
@@ -176,12 +176,12 @@ docker-metrics:
 # Run metrics helper unit test suite (must be run natively).
 metrics-unit-test: CGO_ENABLED=1
 metrics-unit-test: GOARCH=
-metrics-unit-test:
+metrics-unit-test:       ## Run metrics helper unit test suite (must be run natively).
 	go test -v -cover -race -timeout 10s \
 		./cmd/cni-metrics-helper/metrics/...
 
 # Run metrics helper unit test suite in a container.
-docker-metrics-test:
+docker-metrics-test:     ## Run metrics helper unit test suite in a container.
 	docker run $(DOCKER_RUN_FLAGS) \
 		-v $(CURDIR):/src --workdir=/src \
 		-e GOARCH -e GOOS -e GO111MODULE \
@@ -195,14 +195,14 @@ generate:
 # Generate limit file go code
 # Generate eni-max-pods.txt file for EKS AMI
 generate-limits: GOOS=
-generate-limits:
+generate-limits:    ## Generate limit file go code
 	go run scripts/gen_vpc_ip_limits.go
 
 # Fetch the CNI plugins
 plugins: FETCH_VERSION=0.8.6
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
-plugins:
+plugins:   ## Fetch the CNI plugins
 	@echo "Fetching Container networking plugins v$(FETCH_VERSION) from upstream release"
 	@echo
 	@echo "Visit upstream project for plugin details:"
@@ -212,7 +212,7 @@ plugins:
 
 debug-script: FETCH_URL=https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/log-collector-script/linux/eks-log-collector.sh
 debug-script: VISIT_URL=https://github.com/awslabs/amazon-eks-ami/tree/master/log-collector-script/linux
-debug-script:
+debug-script:    ## Fetching debug script from awslabs/amazon-eks-ami
 	@echo "Fetching debug script from awslabs/amazon-eks-ami"
 	@echo
 	@echo "Visit upstream project for debug script details:"
@@ -222,7 +222,7 @@ debug-script:
 	chmod +x ./aws-cni-support.sh
 
 # Run all source code checks.
-check: check-format lint vet
+check: check-format lint vet   ## Run all source code checks.
 
 # Run golint on source code.
 #
@@ -231,7 +231,7 @@ check: check-format lint vet
 #   go get -u golang.org/x/lint/golint
 #
 lint: LINT_FLAGS = -set_exit_status
-lint:
+lint:   ## Run golint on source code.
 	@command -v golint >/dev/null || { echo "ERROR: golint not installed"; exit 1; }
 	find . \
 	  -type f -name '*.go' \
@@ -239,16 +239,15 @@ lint:
 	  -print0 | sort -z | xargs -0 -L1 -- golint $(LINT_FLAGS) 2>/dev/null
 
 # Run go vet on source code.
-vet:
+vet:    ## Run go vet on source code.
 	go vet $(ALLPKGS)
 
-# Run go vet inside of a container.
-docker-vet: build-docker-test
+
+docker-vet: build-docker-test   ## Run go vet inside of a container.
 	docker run $(DOCKER_RUN_FLAGS) \
 		$(TEST_IMAGE_NAME) make vet
 
-# Format all Go source code files. (Note! integration_test.go has an upstream import dependency that doesn't match)
-format:
+format:       ## Format all Go source code files. (Note! integration_test.go has an upstream import dependency that doesn't match)
 	@command -v goimports >/dev/null || { echo "ERROR: goimports not installed"; exit 1; }
 	@exit $(shell find ./* \
 	  -type f \
@@ -262,8 +261,23 @@ format:
 check-format: FORMAT_FLAGS = -l
 check-format: format
 
+version:
+	@echo ${VERSION}
+
+upload-resources-to-github:
+	${MAKEFILE_PATH}/scripts/upload-resources-to-github
+
+generate-k8s-yaml:
+	${MAKEFILE_PATH}/scripts/generate-k8s-yaml
+
+release: generate-k8s-yaml upload-resources-to-github
+
 # Clean temporary files and build artifacts from the project.
-clean:
+clean:    ## Clean temporary files and build artifacts from the project.
 	@rm -f -- $(BINS)
 	@rm -f -- $(PLUGIN_BINS)
 	@rm -f -- coverage.txt
+
+help:           ## Show this help.
+	@grep -F -h "##" $(MAKEFILE_LIST) | grep -F -v grep | sed -e 's/\\$$//' \
+		| awk -F'[:#]' '{print $$1 = sprintf("%-30s", $$1), $$4}'

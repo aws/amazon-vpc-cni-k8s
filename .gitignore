@@ -11,3 +11,4 @@ portmap
 grpc-health-probe
 cni-metrics-helper
 coverage.txt
+build/

@@ -1,0 +1,22 @@
+ [
+    {
+       "ecrRegion": "us-west-2",
+       "ecrAccount": "602401143452",
+       "ecrDomain": "amazonaws.com"
+    },
+    {
+        "ecrRegion": "us-gov-east-1",
+        "ecrAccount": "151742754352",
+        "ecrDomain": "amazonaws.com"
+    },
+    { 
+        "ecrRegion": "us-gov-west-1",
+        "ecrAccount": "013241004608",
+        "ecrDomain": "amazonaws.com"
+    },
+    {
+        "ecrRegion": "cn-northwest-1",
+        "ecrAccount": "961992271922",
+        "ecrDomain": "amazonaws.com.cn"
+    }
+] 

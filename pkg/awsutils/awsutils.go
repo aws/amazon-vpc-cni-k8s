@@ -20,8 +20,10 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -61,6 +63,12 @@ const (
 	// Stagger cleanup start time to avoid calling EC2 too much. Time in seconds.
 	eniCleanupStartupDelayMax = 300
 	eniDeleteCooldownTime     = 5 * time.Minute
+
+	// Http client timeout env for sessions
+	httpTimeoutEnv = "HTTP_TIMEOUT"
+
+	// the default page size when paginating the DescribeNetworkInterfaces call
+	describeENIPageSize = 1000
 )
 
 var (
@@ -74,6 +82,8 @@ var (
 	ErrNoNetworkInterfaces = errors.New("No network interfaces found for ENI")
 	// Custom user agent
 	userAgent = request.WithAppendUserAgent("amazon-vpc-cni-k8s")
+	// HTTP timeout default value in seconds (10 seconds)
+	httpTimeoutValue = 10 * time.Second
 )
 
 var log = logger.Get()
@@ -312,9 +322,24 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 	// Initializes prometheus metrics
 	prometheusRegister()
 
-	awsSession := session.Must(session.NewSession(aws.NewConfig().
-		WithMaxRetries(10),
-	))
+	httpTimeoutEnvInput := os.Getenv(httpTimeoutEnv)
+	// if httpTimeout is not empty, we convert value to int and overwrite default httpTimeoutValue
+	if httpTimeoutEnvInput != "" {
+		if input, err := strconv.Atoi(httpTimeoutEnvInput); err == nil && input >= 1 {
+			log.Debugf("Using HTTP_TIMEOUT %v", input)
+			httpTimeoutValue = time.Duration(input) * time.Second
+		}
+	}
+
+	awsSession := session.Must(
+		session.NewSession(
+			&aws.Config{
+				MaxRetries: aws.Int(10),
+				HTTPClient: &http.Client{
+					Timeout: httpTimeoutValue,
+				},
+			},
+		))
 	ec2Metadata := ec2metadata.New(awsSession)
 
 	cache := &EC2InstanceMetadataCache{}
@@ -331,7 +356,15 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 	cache.useCustomNetworking = useCustomNetworking
 	log.Infof("Custom networking %v", cache.useCustomNetworking)
 
-	sess, err := session.NewSession(&aws.Config{Region: aws.String(cache.region), MaxRetries: aws.Int(15)})
+	sess, err := session.NewSession(
+		&aws.Config{
+			Region:     aws.String(cache.region),
+			MaxRetries: aws.Int(15),
+			HTTPClient: &http.Client{
+				Timeout: httpTimeoutValue,
+			},
+		},
+	)
 	if err != nil {
 		log.Errorf("Failed to initialize AWS SDK session %v", err)
 		return nil, errors.Wrap(err, "instance metadata: failed to initialize AWS SDK session")
@@ -700,7 +733,11 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 
 	if useCustomCfg {
 		log.Info("Using a custom network config for the new ENI")
-		input.Groups = sg
+		if len(sg) != 0 {
+			input.Groups = sg
+		} else {
+			log.Warnf("No custom networking security group found, will use the node's primary ENI's SG: %s", input.Groups)
+		}
 		input.SubnetId = aws.String(subnet)
 	} else {
 		log.Info("Using same config as the primary interface for the new ENI")
@@ -1390,18 +1427,15 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 	}
 
 	input := &ec2.DescribeNetworkInterfacesInput{
-		Filters: []*ec2.Filter{tagFilter, statusFilter},
-	}
-	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input, userAgent)
-	if err != nil {
-		return nil, errors.Wrap(err, "awsutils: unable to obtain filtered list of network interfaces")
+		Filters:    []*ec2.Filter{tagFilter, statusFilter},
+		MaxResults: aws.Int64(describeENIPageSize),
 	}
 
-	networkInterfaces := make([]*ec2.NetworkInterface, 0)
-	for _, networkInterface := range result.NetworkInterfaces {
+	var networkInterfaces []*ec2.NetworkInterface
+	filterFn := func(networkInterface *ec2.NetworkInterface) error {
 		// Verify the description starts with "aws-K8S-"
 		if !strings.HasPrefix(aws.StringValue(networkInterface.Description), eniDescriptionPrefix) {
-			continue
+			return nil
 		}
 		// Check that it's not a newly created ENI
 		tags := getTags(networkInterface, aws.StringValue(networkInterface.NetworkInterfaceId))
@@ -1414,7 +1448,7 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 			}
 			if time.Since(parsedTime) < eniDeleteCooldownTime {
 				log.Infof("Found an ENI created less than 5 minutes ago, so not cleaning it up")
-				continue
+				return nil
 			}
 			log.Debugf("%v", value)
 		} else {
@@ -1422,9 +1456,16 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 			 * process of being attached by CNI versions v1.5.x or earlier.
 			 */
 			cache.tagENIcreateTS(aws.StringValue(networkInterface.NetworkInterfaceId), maxENIBackoffDelay)
-			continue
+			return nil
 		}
 		networkInterfaces = append(networkInterfaces, networkInterface)
+		return nil
+	}
+
+	err := cache.getENIsFromPaginatedDescribeNetworkInterfaces(input, filterFn)
+
+	if err != nil {
+		return nil, errors.Wrap(err, "awsutils: unable to obtain filtered list of network interfaces")
 	}
 
 	if len(networkInterfaces) < 1 {
@@ -1480,4 +1521,27 @@ func (cache *EC2InstanceMetadataCache) IsUnmanagedENI(eniID string) bool {
 		return cache.unmanagedENIs.Has(eniID)
 	}
 	return false
+}
+
+func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterfaces(
+	input *ec2.DescribeNetworkInterfacesInput, filterFn func(networkInterface *ec2.NetworkInterface) error) error {
+	pageNum := 0
+	var innerErr error
+	pageFn := func(output *ec2.DescribeNetworkInterfacesOutput, lastPage bool) (nextPage bool) {
+		pageNum++
+		log.Debugf("EC2 DescribeNetworkInterfaces succeeded with %d results on page %d",
+			len(output.NetworkInterfaces), pageNum)
+		for _, eni := range output.NetworkInterfaces {
+			if err := filterFn(eni); err != nil {
+				innerErr = err
+				return false
+			}
+		}
+		return true
+	}
+
+	if err := cache.ec2SVC.DescribeNetworkInterfacesPagesWithContext(context.TODO(), input, pageFn, userAgent); err != nil {
+		return err
+	}
+	return innerErr
 }

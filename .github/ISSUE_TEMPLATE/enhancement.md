@@ -1,9 +1,12 @@
 ---
 name: Enhancement Request
 about: Suggest an enhancement to the amazon-vpc-cni-k8s project
+title: ''
 labels: enhancement, feature request
+assignees: ''
 
 ---
+
 <!--
 For urgent operational issues, please contact AWS Support directly at https://aws.amazon.com/premiumsupport/
 

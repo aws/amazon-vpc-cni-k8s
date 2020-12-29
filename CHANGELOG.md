@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.7.8
+
+* Improvement - [Replace DescribeNetworkInterfaces with paginated version](https://github.com/aws/amazon-vpc-cni-k8s/pull/1333) (#1333, @haouc)
+
+## v1.7.7
+
+* Bug - [Rearrange Pod deletion workflow](https://github.com/aws/amazon-vpc-cni-k8s/pull/1315) (#1315, @SaranBalaji90)
+
+## v1.7.6
+
+* Improvement - [Avoid detaching EFA ENIs](https://github.com/aws/amazon-vpc-cni-k8s/pull/1237) (#1237 , @mogren)
+* Improvement - [Add t4g instance type](https://github.com/aws/amazon-vpc-cni-k8s/pull/1219) (#1219 , @mogren)
+* Improvement - [Add p4d.24xlarge instance type](https://github.com/aws/amazon-vpc-cni-k8s/pull/1238) (#1238 , @mogren)
+* Improvement - [Update calico to v3.16.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/1235) (#1235 , @lwr20)
+* Improvement - [Update readme on stdout support for plugin log file](https://github.com/aws/amazon-vpc-cni-k8s/pull/1251) (#1251 , @jayanthvn)
+* Bug - [Make p3dn.24xlarge examples more realistic](https://github.com/aws/amazon-vpc-cni-k8s/pull/1263) (#1263 , @mogren)
+* Bug - [Make sure we have space for a trunk ENI](https://github.com/aws/amazon-vpc-cni-k8s/pull/1210) (#1210 , @mogren)
+* Bug - [Update README for DISABLE_TCP_EARLY_DEMUX](https://github.com/aws/amazon-vpc-cni-k8s/pull/1273) (#1273 , @SaranBalaji90)
+* Bug - [Update p4 instance limits](https://github.com/aws/amazon-vpc-cni-k8s/pull/1289) (#1289 , @varavaj)
+
 ## v1.7.5
 
 * Bug - [Match primary ENI IP correctly](https://github.com/aws/amazon-vpc-cni-k8s/pull/1247) (#1247 , @mogren)
