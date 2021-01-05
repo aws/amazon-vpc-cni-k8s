@@ -123,9 +123,16 @@ type IPAMKey struct {
 	IfName      string `json:"ifName"`
 }
 
-// IsZero returns true iff object is equal to the golang zero/null value.
+// IsZero returns true if object is equal to the golang zero/null value.
 func (k IPAMKey) IsZero() bool {
 	return k == IPAMKey{}
+}
+
+// NoContainer returns true if IPAMKey exists but there is not ContainerID associated
+// Eventually it should be t // should be processed by tryUnassignIPsFromAll in ipamd.go
+// Which will decrease DS usage counter
+func (k IPAMKey) NoContainer() bool {
+       return k.ContainerID == ""
 }
 
 // String() implements the fmt.Stringer interface.
@@ -178,9 +185,12 @@ func (e *ENI) AssignedIPv4Addresses() int {
 	return count
 }
 
-// Assigned returns true iff the address is allocated to a pod/sandbox.
+// Assigned returns true if the address is allocated to a pod/sandbox.
 func (addr AddressInfo) Assigned() bool {
-	return !addr.IPAMKey.IsZero()
+	if addr.IPAMKey.IsZero() {
+		return false
+	}
+	return !addr.IPAMKey.NoContainer()
 }
 
 // InCoolingPeriod checks whether an addr is in addressCoolingPeriod

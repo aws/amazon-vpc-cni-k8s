@@ -300,9 +300,14 @@ func TestPodIPv4Address(t *testing.T) {
 	key4 := IPAMKey{"net0", "sandbox-4", "eth0"}
 	_, _, err = ds.AssignPodIPv4Address(key4)
 	assert.Error(t, err)
+
 	// Unassign unknown Pod
 	_, _, err = ds.UnassignPodIPv4Address(key4)
 	assert.Error(t, err)
+
+        // IPAddress not associated with any container should be considered freeable
+	ds.eniPool["eni-1"].IPv4Addresses["1.1.1.2"].IPAMKey.ContainerID = ""
+	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 1)
 
 	_, deviceNum, err := ds.UnassignPodIPv4Address(key2)
 	assert.NoError(t, err)
@@ -311,7 +316,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, deviceNum, pod1Ns2Device)
 	assert.Equal(t, len(ds.eniPool["eni-2"].IPv4Addresses), 1)
 	assert.Equal(t, ds.eniPool["eni-2"].AssignedIPv4Addresses(), 0)
-	assert.Equal(t, len(checkpoint.Data.(*CheckpointData).Allocations), 2)
+	assert.Equal(t, len(checkpoint.Data.(*CheckpointData).Allocations), 1)
 
 	noWarmIPTarget := 0
 	noMinimumIPTarget := 0
