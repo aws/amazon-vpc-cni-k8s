@@ -132,7 +132,7 @@ func (k IPAMKey) IsZero() bool {
 // Eventually it should be t // should be processed by tryUnassignIPsFromAll in ipamd.go
 // Which will decrease DS usage counter
 func (k IPAMKey) NoContainer() bool {
-       return k.ContainerID == ""
+	return k.ContainerID == ""
 }
 
 // String() implements the fmt.Stringer interface.

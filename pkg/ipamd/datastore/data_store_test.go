@@ -305,7 +305,7 @@ func TestPodIPv4Address(t *testing.T) {
 	_, _, err = ds.UnassignPodIPv4Address(key4)
 	assert.Error(t, err)
 
-        // IPAddress not associated with any container should be considered freeable
+	// IPAddress not associated with any container should be considered freeable
 	ds.eniPool["eni-1"].IPv4Addresses["1.1.1.2"].IPAMKey.ContainerID = ""
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 1)
 
