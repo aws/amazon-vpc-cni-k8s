@@ -192,7 +192,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		pod, err := s.ipamContext.GetPod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
 		if err != nil {
 			if k8serror.IsNotFound(err) {
-				log.Warn("Send AddNetworkReply: pod not found")
+				log.Warn("Send DelNetworkReply: pod not found")
 				return &rpc.DelNetworkReply{Success: true}, nil
 			}
 			log.Warnf("Send DelNetworkReply: Failed to get pod spec: %v", err)
