@@ -16,7 +16,7 @@ OS=$(go env GOOS)
 ARCH=$(go env GOARCH)
 
 : "${AWS_DEFAULT_REGION:=us-west-2}"
-: "${K8S_VERSION:=1.16.10}"
+: "${K8S_VERSION:=1.18.14}"
 : "${PROVISION:=true}"
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
@@ -26,6 +26,7 @@ ARCH=$(go env GOARCH)
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
+
 
 __cluster_created=0
 __cluster_deprovisioned=0
