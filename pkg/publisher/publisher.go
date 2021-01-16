@@ -16,20 +16,16 @@ package publisher
 
 import (
 	"context"
-	"net/http"
-	"os"
-	"strconv"
 	"sync"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/pkg/errors"
 )
 
@@ -46,17 +42,11 @@ const (
 	// localMetricData is the default size for the local queue(slice)
 	localMetricDataSize = 100
 
-	// cloudwatchClientMaxRetries for configuring CloudWatch client with maximum retries
-	cloudwatchClientMaxRetries = 20
-
 	// maxDataPoints is the maximum number of data points per PutMetricData API request
 	maxDataPoints = 20
 
 	// Default cluster id if unable to detect something more suitable
 	defaultClusterID = "k8s-cluster"
-
-	// Http client timeout env for sessions
-	httpTimeoutEnv = "HTTP_TIMEOUT"
 )
 
 var (
@@ -66,9 +56,6 @@ var (
 		"CLUSTER_ID",
 		"Name",
 	}
-
-	// HTTP timeout default value in seconds (10 seconds)
-	httpTimeoutValue = 10 * time.Second
 )
 
 var log = logger.Get()
@@ -99,26 +86,7 @@ type cloudWatchPublisher struct {
 
 // New returns a new instance of `Publisher`
 func New(ctx context.Context) (Publisher, error) {
-
-	httpTimeoutEnvInput := os.Getenv(httpTimeoutEnv)
-	// if httpTimeout is not empty, we convert value to int and overwrite default httpTimeoutValue
-	if httpTimeoutEnvInput != "" {
-		if input, err := strconv.Atoi(httpTimeoutEnvInput); err == nil && input >= 1 {
-			log.Debugf("Using HTTP_TIMEOUT %v", input)
-			httpTimeoutValue = time.Duration(input) * time.Second
-		}
-	}
-
-	// Get AWS session
-	awsSession := session.Must(session.NewSession(
-		&aws.Config{
-			MaxRetries: aws.Int(15),
-			HTTPClient: &http.Client{
-				Timeout: httpTimeoutValue,
-			},
-		},
-	))
-
+	sess := awssession.New()
 	// Get cluster-ID
 	ec2Client, err := ec2wrapper.NewMetricsClient()
 	if err != nil {
@@ -126,14 +94,22 @@ func New(ctx context.Context) (Publisher, error) {
 	}
 	clusterID := getClusterID(ec2Client)
 
-	// Get CloudWatch client
-	ec2MetadataClient := ec2metadatawrapper.New(nil)
+	// Get ec2metadata client
+	ec2MetadataClient := ec2metadatawrapper.New(sess)
 
 	region, err := ec2MetadataClient.Region()
 	if err != nil {
 		return nil, errors.Wrap(err, "publisher: Unable to obtain region")
 	}
-	cloudwatchClient := cloudwatch.New(awsSession, aws.NewConfig().WithMaxRetries(cloudwatchClientMaxRetries).WithRegion(region))
+
+	// Get AWS session
+	awsCfg := aws.Config{
+		Region: aws.String(region),
+	}
+	sess = sess.Copy(&awsCfg)
+
+	// Get CloudWatch client
+	cloudwatchClient := cloudwatch.New(sess)
 
 	// Build derived context
 	derivedContext, cancel := context.WithCancel(ctx)
