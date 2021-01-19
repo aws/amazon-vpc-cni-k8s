@@ -71,7 +71,7 @@ const (
 // Note phase3 is not necessary since writes to CRI are implicit.
 // At/after phase2, we can remove any code protected by
 // checkpointMigrationPhase<2.
-const checkpointMigrationPhase = 1
+const checkpointMigrationPhase = 2
 
 // Placeholders used for unknown values when reading from CRI.
 const backfillNetworkName = "_migrated-from-cri"
