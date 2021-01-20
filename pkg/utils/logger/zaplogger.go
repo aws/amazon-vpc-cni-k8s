@@ -43,7 +43,7 @@ func getZapLevel(inputLogLevel string) zapcore.Level {
 	case "fatal":
 		return zapcore.FatalLevel
 	default:
-		return zapcore.DebugLevel
+		return zapcore.InfoLevel
 	}
 }
 

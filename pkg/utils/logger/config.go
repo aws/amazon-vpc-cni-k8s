@@ -19,7 +19,7 @@ import (
 
 const (
 	defaultLogFilePath = "/host/var/log/aws-routed-eni/ipamd.log"
-	defaultLogLevel    = "Debug"
+	defaultLogLevel    = "Info"
 	envLogLevel        = "AWS_VPC_K8S_CNI_LOGLEVEL"
 	envLogFilePath     = "AWS_VPC_K8S_CNI_LOG_FILE"
 )
