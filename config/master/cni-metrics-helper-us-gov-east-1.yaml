@@ -88,7 +88,6 @@
         - "name": "USE_CLOUDWATCH"
           "value": "true"
         "image": "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/cni-metrics-helper:latest"
-        "imagePullPolicy": "Always"
         "name": "cni-metrics-helper"
       "serviceAccountName": "cni-metrics-helper"
 ---

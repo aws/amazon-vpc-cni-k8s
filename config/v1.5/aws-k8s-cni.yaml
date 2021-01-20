@@ -87,7 +87,6 @@ spec:
         - operator: Exists
       containers:
         - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:v1.5.7
-          imagePullPolicy: Always
           ports:
             - containerPort: 61678
               name: metrics
