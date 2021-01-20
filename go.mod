@@ -37,10 +37,12 @@ require (
 	github.com/stretchr/testify v1.5.1
 	github.com/vishvananda/netlink v1.1.0
 	go.uber.org/zap v1.15.0
+	golang.org/x/lint v0.0.0-20201208152925-83fdc39ff7b5 // indirect
+	golang.org/x/mod v0.4.0 // indirect
 	golang.org/x/net v0.0.0-20201021035429-f5854403a974
-	golang.org/x/sys v0.0.0-20210119212857-b64e53b001e4
+	golang.org/x/sys v0.0.0-20200930185726-fdedc70b468f
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
-	golang.org/x/tools v0.1.0 // indirect
+	golang.org/x/tools v0.0.0-20210113180300-f96436850f18 // indirect
 	google.golang.org/grpc v1.29.0
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0

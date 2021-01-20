@@ -68,7 +68,7 @@ export GO111MODULE = on
 export GOPROXY = direct
 
 # LDFLAGS is the set of flags used when building golang executables.
-LDFLAGS = -X main.version=$(VERSION)
+LDFLAGS = -X main.version=$(VERSION) -X pkg/awsutils/awssession.version=$(VERSION)
 # ALLPKGS is the set of packages provided in source.
 ALLPKGS = $(shell go list ./... | grep -v cmd/packet-verifier)
 # BINS is the set of built command executables.
