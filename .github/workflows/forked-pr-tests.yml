@@ -41,7 +41,7 @@ jobs:
           ROLE_CREATE: false
           ROLE_ARN: ${{ secrets.ROLE_ARN }}
           MNG_ROLE_ARN: ${{ secrets.MNG_ROLE_ARN }}
-          RUN_CONFORMANCE: true
+          RUN_CONFORMANCE: false
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
           S3_BUCKET_CREATE: false
           S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
