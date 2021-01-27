@@ -199,7 +199,7 @@ generate-limits:
 	go run scripts/gen_vpc_ip_limits.go
 
 # Fetch the CNI plugins
-plugins: FETCH_VERSION=0.8.6
+plugins: FETCH_VERSION=0.9.0
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
 plugins:
