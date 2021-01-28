@@ -209,7 +209,7 @@ function run_performance_test_730_pods() {
 }
 
 function scale_nodes_for_5000_pod_test() {
-    AUTO_SCALE_GROUP_NAME=$(aws autoscaling describe-auto-scaling-groups | jq --raw-output '.AutoScalingGroups[0].AutoScalingGroupName')
+    AUTO_SCALE_GROUP_NAME=$(aws eks describe-nodegroup --cluster-name $CLUSTER_NAME --nodegroup-name cni-test-multi-node-mng | jq -r '.nodegroup.resources.autoScalingGroups[].name') 
     echo "$AUTO_SCALE_GROUP_NAME"
     aws autoscaling update-auto-scaling-group \
         --auto-scaling-group-name "$AUTO_SCALE_GROUP_NAME" \
