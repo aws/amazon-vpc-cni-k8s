@@ -91,7 +91,7 @@ if [[ ! -f "$BASE_CONFIG_PATH" ]]; then
     exit
 fi
 
-if [[ ! -f "$TEST_CALICO_PATH" && $RUN_CALICO_TEST == true ]]; then
+if [[ $RUN_CALICO_TEST == true && ! -f "$TEST_CALICO_PATH" ]]; then
     echo "$TEST_CALICO_PATH DOES NOT exist."
     exit
 fi
