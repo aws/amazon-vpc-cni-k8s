@@ -30,13 +30,13 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadata"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -313,11 +313,10 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 	cache.useCustomNetworking = useCustomNetworking
 	log.Infof("Custom networking %v", cache.useCustomNetworking)
 
-	sess, err := session.NewSession(&aws.Config{Region: aws.String(cache.region), MaxRetries: aws.Int(15)})
-	if err != nil {
-		log.Errorf("Failed to initialize AWS SDK session %v", err)
-		return nil, errors.Wrap(err, "instance metadata: failed to initialize AWS SDK session")
-	}
+	sess := awssession.New()
+
+	awsCfg := aws.NewConfig().WithRegion(cache.region)
+	sess = sess.Copy(awsCfg)
 
 	ec2SVC := ec2wrapper.New(sess)
 	cache.ec2SVC = ec2SVC
