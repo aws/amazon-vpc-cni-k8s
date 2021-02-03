@@ -4318,7 +4318,6 @@ spec:
       containers:
         - name: tigera-operator
           image: quay.io/tigera/operator:v1.13.2
-          imagePullPolicy: IfNotPresent
           command:
             - operator
           volumeMounts:

@@ -144,7 +144,6 @@ local awsnode = {
           containers_:: {
             awsnode: {
               image: "%s/amazon-k8s-cni:%s" % [$.ecrRepo, $.version],
-              imagePullPolicy: "Always",
               ports: [{
                 containerPort: 61678,
                 name: "metrics"
@@ -225,7 +224,6 @@ local awsnode = {
             {
               name: "aws-vpc-cni-init",
               image: "%s/amazon-k8s-cni-init:%s" % [$.ecrRepo, $.version],
-              imagePullPolicy: "Always",
               securityContext: {privileged: true},
               env: [
                 {
@@ -366,7 +364,6 @@ local metricsHelper = {
           containers_:: {
             metricshelper: {
               image: "%s/cni-metrics-helper:%s" % [$.ecrRepo, $.version],
-              imagePullPolicy: "Always",
               name: "cni-metrics-helper",
               env_:: {
                 USE_CLOUDWATCH: "true",
