@@ -25,3 +25,10 @@ export RUN_CALICO_TEST=true
 echo "Running calico test"
 ./scripts/run-integration-tests.sh
 unset RUN_CALICO_TEST
+
+export RUN_CUSTOM_NETWORKING_TEST=true
+echo "Running custom networking test"
+./scripts/run-integration-tests.sh
+unset RUN_CUSTOM_NETWORKING_TEST
+
+

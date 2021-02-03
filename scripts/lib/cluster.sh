@@ -12,17 +12,39 @@ function down-test-cluster() {
 }
 
 function up-test-cluster() {
-    MNGS=""
-    if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
-        MNGS='{"GetRef.Name-single-node-mng":{"name":"GetRef.Name-single-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":1,"asg-desired-capacity":1,"instance-types":["m5.16xlarge"],"volume-size":40}, "cni-test-multi-node-mng":{"name":"cni-test-multi-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":100,"asg-desired-capacity":3,"instance-types":["m5.xlarge"],"volume-size":40,"cluster-autoscaler":{"enable":true}}}'
-        export RUN_CONFORMANCE="false"
-        : "${PERFORMANCE_TEST_S3_BUCKET_NAME:=""}"
-    else
-        MNGS='{"GetRef.Name-mng-for-cni":{"name":"GetRef.Name-mng-for-cni","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":3,"asg-max-size":3,"asg-desired-capacity":3,"instance-types":["c5.xlarge"],"volume-size":40}}'
-    fi
 
     echo -n "Configuring cluster $CLUSTER_NAME"
-    AWS_K8S_TESTER_EKS_NAME=$CLUSTER_NAME \
+
+    if [[ "$RUN_CUSTOM_NETWORKING_TESTS" == true ]]; then
+        #maxPods = (15 - 1) * (50 - 1) + 2 = 688
+        ASGS='{"GetRef.Name-cn-mng-for-cni":{"name":"GetRef.Name-cn-mng-for-cni","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":1,"asg-desired-capacity":1,"image-id":"","image-id-ssm-parameter":"/aws/service/eks/optimized-ami/1.17/amazon-linux-2/recommended/image_id","instance-types":["m5.16xlarge"],"volume-size":40,"kubelet-extra-args":"--max-pods=688","bootstrap-args":"--use-max-pods false","cluster-autoscaler":{"enable":true}}}'
+        AWS_K8S_TESTER_EKS_NAME=$CLUSTER_NAME \
+        AWS_K8S_TESTER_EKS_LOG_COLOR=true \
+        AWS_K8S_TESTER_EKS_KUBECONFIG_PATH=$KUBECONFIG_PATH \
+        AWS_K8S_TESTER_EKS_KUBECTL_PATH=$KUBECTL_PATH \
+        AWS_K8S_TESTER_EKS_S3_BUCKET_NAME=$S3_BUCKET_NAME \
+        AWS_K8S_TESTER_EKS_S3_BUCKET_CREATE=$S3_BUCKET_CREATE \
+        AWS_K8S_TESTER_EKS_PARAMETERS_VERSION=1.17 \
+        AWS_K8S_TESTER_EKS_PARAMETERS_ENCRYPTION_CMK_CREATE=false \
+        AWS_K8S_TESTER_EKS_PARAMETERS_ROLE_CREATE=true \
+        AWS_K8S_TESTER_EKS_PARAMETERS_ROLE_ARN=$ROLE_ARN \
+        AWS_K8S_TESTER_EKS_ADD_ON_NODE_GROUPS_ENABLE=true \
+        AWS_K8S_TESTER_EKS_ADD_ON_NODE_GROUPS_ROLE_CREATE=true \
+        AWS_K8S_TESTER_EKS_ADD_ON_NODE_GROUPS_ASGS=$ASGS \
+        AWS_K8S_TESTER_EKS_ADD_ON_NODE_GROUPS_FETCH_LOGS=false \
+        AWS_K8S_TESTER_EKS_ADD_ON_NLB_HELLO_WORLD_ENABLE=true \
+        AWS_K8S_TESTER_EKS_ADD_ON_ALB_2048_ENABLE=true \
+        $TESTER_PATH eks create config --path $CLUSTER_CONFIG 1>&2
+    else  
+        MNGS=""
+        if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
+            MNGS='{"GetRef.Name-single-node-mng":{"name":"GetRef.Name-single-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":1,"asg-desired-capacity":1,"instance-types":["m5.16xlarge"],"volume-size":40}, "cni-test-multi-node-mng":{"name":"cni-test-multi-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":100,"asg-desired-capacity":3,"instance-types":["m5.xlarge"],"volume-size":40,"cluster-autoscaler":{"enable":true}}}'
+            export RUN_CONFORMANCE="false"
+            : "${PERFORMANCE_TEST_S3_BUCKET_NAME:=""}"
+        else
+            MNGS='{"GetRef.Name-mng-for-cni":{"name":"GetRef.Name-mng-for-cni","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":3,"asg-max-size":3,"asg-desired-capacity":3,"instance-types":["c5.xlarge"],"volume-size":40}}'
+        fi
+        AWS_K8S_TESTER_EKS_NAME=$CLUSTER_NAME \
         AWS_K8S_TESTER_EKS_LOG_COLOR=true \
         AWS_K8S_TESTER_EKS_KUBECONFIG_PATH=$KUBECONFIG_PATH \
         AWS_K8S_TESTER_EKS_KUBECTL_PATH=$KUBECTL_PATH \
@@ -40,7 +62,8 @@ function up-test-cluster() {
         AWS_K8S_TESTER_EKS_ADD_ON_NLB_HELLO_WORLD_ENABLE=$RUN_TESTER_LB_ADDONS \
         AWS_K8S_TESTER_EKS_ADD_ON_ALB_2048_ENABLE=$RUN_TESTER_LB_ADDONS \
         $TESTER_PATH eks create config --path $CLUSTER_CONFIG 1>&2
-
+    fi
+    
     if [[ -n "${CIRCLE_JOB:-}" || -n "${DISABLE_PROMPT:-}" ]]; then
         $TESTER_PATH eks create cluster --enable-prompt=false --path $CLUSTER_CONFIG || (echo "failed!" && exit 1)
     else

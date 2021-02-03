@@ -1,0 +1,41 @@
+name: Weekly tests
+
+on:
+  schedule:
+    - cron: "0 0 * * 0"  # every sunday at 00:00
+
+jobs:
+  custom-networking:
+    runs-on: self-hosted
+    steps:
+      - name: Set up Go 1.14
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.14
+        id: go
+
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v2
+
+      - name: Clean up stale docker images
+        run: docker image prune -f
+
+      - name: Get dependencies
+        run: |
+          go get -u golang.org/x/lint/golint
+          go get -u golang.org/x/tools/cmd/goimports
+
+      - name: Run e2e tests with custom networking
+        env:
+          DISABLE_PROMPT: true
+          ROLE_CREATE: false
+          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+          MNG_ROLE_ARN: ${{ secrets.MNG_ROLE_ARN }}
+          RUN_CONFORMANCE: true
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          RUN_TESTER_LB_ADDONS: true
+          S3_BUCKET_CREATE: false
+          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+          CUSTOM_NETWORKING_TESTS: true
+        run: |
+          ./scripts/run-integration-tests.sh

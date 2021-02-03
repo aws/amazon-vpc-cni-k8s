@@ -10,6 +10,7 @@ source "$DIR"/lib/aws.sh
 source "$DIR"/lib/cluster.sh
 source "$DIR"/lib/integration.sh
 source "$DIR"/lib/performance_tests.sh
+source "$DIR"/lib/custom_networking.sh
 
 # Variables used in /lib/aws.sh
 OS=$(go env GOOS)
@@ -27,6 +28,7 @@ ARCH=$(go env GOARCH)
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
 : "${RUN_CALICO_TEST:=false}"
+: "${RUN_CUSTOM_NETWORKING_TESTS:=false}"
 
 
 __cluster_created=0
@@ -250,6 +252,14 @@ if [[ $RUN_CALICO_TEST == true ]]; then
     done
     echo "Updated calico daemonset!"
     sleep 5
+fi
+
+
+if [[ "$RUN_CUSTOM_NETWORKING_TESTS" == true ]]; then
+    echo "*******************************************************************************"
+    echo "Enabling custom networking tests on current image:"
+    echo ""
+    configure_custom_networking
 fi
 
 echo "*******************************************************************************"
