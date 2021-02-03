@@ -21,6 +21,5 @@ spec:
           ports:
             - name: http
               containerPort: 80
-          imagePullPolicy: IfNotPresent
       nodeSelector:
         eks.amazonaws.com/nodegroup: cni-test-multi-node-mng
