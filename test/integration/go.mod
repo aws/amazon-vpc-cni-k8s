@@ -53,6 +53,7 @@ replace k8s.io/sample-controller => k8s.io/sample-controller v0.0.0-201908191433
 require (
 	github.com/onsi/ginkgo v1.8.0
 	github.com/onsi/gomega v1.5.0
+	golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2 // indirect
 	k8s.io/api v0.0.0
 	k8s.io/apimachinery v0.0.0
 	k8s.io/client-go v0.0.0

@@ -2,9 +2,8 @@
 package ec2metadatawrapper
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
-	"github.com/aws/aws-sdk-go/aws/session"
 )
 
 const (
@@ -32,9 +31,7 @@ type ec2MetadataClientImpl struct {
 // New creates an ec2metadata client to retrieve metadata
 func New(client HTTPClient) EC2MetadataClient {
 	if client == nil {
-		awsSession := session.Must(session.NewSession(aws.NewConfig().
-			WithMaxRetries(metadataRetries),
-		))
+		awsSession := awssession.New()
 		return &ec2MetadataClientImpl{client: ec2metadata.New(awsSession)}
 	}
 	return &ec2MetadataClientImpl{client: client}

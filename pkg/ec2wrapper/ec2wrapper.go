@@ -2,11 +2,11 @@
 package ec2wrapper
 
 import (
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/pkg/errors"
@@ -30,7 +30,7 @@ type EC2Wrapper struct {
 
 //NewMetricsClient returns an instance of the EC2 wrapper
 func NewMetricsClient() (*EC2Wrapper, error) {
-	metricsSession := session.Must(session.NewSession())
+	sess := awssession.New()
 	ec2MetadataClient := ec2metadatawrapper.New(nil)
 
 	instanceIdentityDocument, err := ec2MetadataClient.GetInstanceIdentityDocument()
@@ -38,7 +38,9 @@ func NewMetricsClient() (*EC2Wrapper, error) {
 		return &EC2Wrapper{}, err
 	}
 
-	ec2ServiceClient := ec2.New(metricsSession, aws.NewConfig().WithMaxRetries(maxRetries).WithRegion(instanceIdentityDocument.Region))
+	awsCfg := aws.NewConfig().WithRegion(instanceIdentityDocument.Region)
+	sess = sess.Copy(awsCfg)
+	ec2ServiceClient := ec2.New(sess)
 
 	return &EC2Wrapper{
 		ec2ServiceClient:         ec2ServiceClient,

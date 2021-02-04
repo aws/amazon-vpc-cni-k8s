@@ -19,10 +19,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
 
@@ -91,7 +91,7 @@ type cloudWatchPublisher struct {
 // New returns a new instance of `Publisher`
 func New(ctx context.Context) (Publisher, error) {
 	// Get AWS session
-	awsSession := session.Must(session.NewSession())
+	sess := awssession.New()
 
 	// Get cluster-ID
 	ec2Client, err := ec2wrapper.NewMetricsClient()
@@ -107,7 +107,10 @@ func New(ctx context.Context) (Publisher, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "publisher: Unable to obtain region")
 	}
-	cloudwatchClient := cloudwatch.New(awsSession, aws.NewConfig().WithMaxRetries(cloudwatchClientMaxRetries).WithRegion(region))
+
+	awsCfg := aws.NewConfig().WithRegion(region)
+	sess = sess.Copy(awsCfg)
+	cloudwatchClient := cloudwatch.New(sess)
 
 	// Build derived context
 	derivedContext, cancel := context.WithCancel(ctx)
