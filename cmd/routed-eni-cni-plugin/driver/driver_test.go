@@ -514,6 +514,15 @@ func (m *testMocks) mockSetupPodENINetworkWithFailureAt(t *testing.T, addr *net.
 	m.netlink.EXPECT().LinkByName(testVlanName).Return(nil,
 		errors.New("link not found"))
 
+	actualRule := &netlink.Rule{}
+	m.netlink.EXPECT().NewRule().Return(actualRule)
+
+	oldVethRule := &netlink.Rule{
+		IifName:  testHostVethName,
+		Priority: vlanRulePriority,
+	}
+	m.netlink.EXPECT().RuleDel(gomock.Eq(oldVethRule)).Return(syscall.ENOENT)
+
 	vlanLink := buildVlanLink(1, 2, "eniMacAddress")
 	// add the link
 	m.netlink.EXPECT().LinkAdd(gomock.Eq(vlanLink)).Return(nil)
@@ -544,7 +553,6 @@ func (m *testMocks) mockSetupPodENINetworkWithFailureAt(t *testing.T, addr *net.
 	}
 	m.netlink.EXPECT().RouteReplace(gomock.Eq(&route)).Return(nil)
 
-	actualRule := &netlink.Rule{}
 	m.netlink.EXPECT().NewRule().Return(actualRule)
 
 	// add two ip rules based on iff interfaces

@@ -313,12 +313,26 @@ func (os *linuxNetwork) SetupPodENINetwork(hostVethName string, contVethName str
 	vlanTableID := vlanID + 100
 	vlanLink := buildVlanLink(vlanID, parentIfIndex, eniMAC)
 
-	// 1. clean up if vlan already exists (necessary when trunk ENI changes).
+	// 1a. clean up if vlan already exists (necessary when trunk ENI changes).
 	if oldVlan, err := os.netLink.LinkByName(vlanLink.Name); err == nil {
 		if err = os.netLink.LinkDel(oldVlan); err != nil {
 			return errors.Wrapf(err, "SetupPodENINetwork: failed to delete old vlan %s", vlanLink.Name)
 		}
 		log.Debugf("Cleaned up old vlan: %s", vlanLink.Name)
+	}
+
+	// 1b. clean up any previous hostVeth ip rule
+	oldVlanRule := os.netLink.NewRule()
+	oldVlanRule.IifName = hostVethName
+	oldVlanRule.Priority = vlanRulePriority
+	// loop is required to clean up all existing rules created on the host (when pod with same name are recreated multiple times)
+	for {
+		if err := os.netLink.RuleDel(oldVlanRule); err != nil {
+			if !containsNoSuchRule(err) {
+				return errors.Wrapf(err, "SetupPodENINetwork: failed to delete hostveth rule for %s", hostVeth.Attrs().Name)
+			}
+			break
+		}
 	}
 
 	// 2. add new vlan link
