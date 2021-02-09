@@ -207,6 +207,13 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 			log.Warnf("Send DelNetworkReply: Failed to get pod spec: %v", err)
 			return &rpc.DelNetworkReply{Success: false}, err
 		}
+
+		// TODO: remove this when https://github.com/aws/amazon-vpc-cni-k8s/issues/1313 is addressed
+		if pod.DeletionTimestamp == nil {
+			log.Warn("Send DelNetworkReply: pod might have been recreated, skip cleaning up.")
+			return &rpc.DelNetworkReply{Success: true}, nil
+		}
+
 		val, branch := pod.Annotations["vpc.amazonaws.com/pod-eni"]
 		if branch {
 			// Parse JSON data
