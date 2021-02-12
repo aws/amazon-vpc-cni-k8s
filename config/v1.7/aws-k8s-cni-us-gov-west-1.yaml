@@ -153,7 +153,7 @@
               "fieldPath": "spec.nodeName"
         - "name": "WARM_ENI_TARGET"
           "value": "1"
-        "image": "013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/amazon-k8s-cni:v1.7.8"
+        "image": "013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/amazon-k8s-cni:v1.7.9"
         "livenessProbe":
           "exec":
             "command":
@@ -195,7 +195,7 @@
       - "env":
         - "name": "DISABLE_TCP_EARLY_DEMUX"
           "value": "false"
-        "image": "013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/amazon-k8s-cni-init:v1.7.8"
+        "image": "013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/amazon-k8s-cni-init:v1.7.9"
         "name": "aws-vpc-cni-init"
         "securityContext":
           "privileged": true
