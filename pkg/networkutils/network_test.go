@@ -335,6 +335,25 @@ func TestLoadExcludeSNATCIDRsFromEnv(t *testing.T) {
 	assert.Equal(t, getExcludeSNATCIDRs(), expected)
 }
 
+func TestLoadIncludeSNATCIDRsFromEnv(t *testing.T) {
+	_ = os.Setenv(envExternalSNAT, "false")
+	_ = os.Setenv(envExcludeSNATCIDRs, "")
+	_ = os.Setenv(envIncludeSNATCIDRs, "10.14.0.0/16,10.15.0.0/16")
+
+	expected := []string{"10.14.0.0/16","10.15.0.0/16"}
+	assert.Equal(t, getIncludeSNATCIDRs(), expected)
+}
+
+func TestLoadExcludeIncludeSNATCIDRsFromEnv(t *testing.T) {
+	_ = os.Setenv(envExternalSNAT, "false")
+	_ = os.Setenv(envExcludeSNATCIDRs, "10.12.0.0/16,10.13.0.0/16")
+	_ = os.Setenv(envIncludeSNATCIDRs, "10.14.0.0/16,10.15.0.0/16")
+
+	expected := []string(nil)
+	assert.Equal(t, getExcludeSNATCIDRs(), expected)
+	assert.Equal(t, getIncludeSNATCIDRs(), expected)
+}
+
 func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
 	defer ctrl.Finish()
@@ -381,6 +400,50 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 		}, mockIptables.dataplaneState)
 }
 
+func TestSetupHostNetworkWithIncludeSNATCIDRs(t *testing.T) {
+	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{
+		useExternalSNAT:         false,
+		includeSNATCIDRs:        []string{"10.14.0.0/16", "10.15.0.0/16"},
+		nodePortSupportEnabled:  true,
+		shouldConfigureRpFilter: true,
+		mainENIMark:             defaultConnmark,
+		mtu:                     testMTU,
+
+		netLink: mockNetLink,
+		ns:      mockNS,
+		newIptables: func() (iptablesIface, error) {
+			return mockIptables, nil
+		},
+		procSys: mockProcSys,
+	}
+
+	setupNetLinkMocks(ctrl, mockNetLink)
+
+	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
+
+	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false)
+	assert.NoError(t, err)
+	assert.Equal(t,
+		map[string]map[string][][]string{
+			"nat": {
+				"AWS-SNAT-CHAIN-0": [][]string{{"-d", "10.14.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN INCLUSION", "-j", "AWS-SNAT-CHAIN-1"}},
+				"AWS-SNAT-CHAIN-1": [][]string{{"-d", "10.15.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN INCLUSION", "-j", "AWS-SNAT-CHAIN-2"}},
+				"AWS-SNAT-CHAIN-2": [][]string{{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
+				"POSTROUTING":      [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}}},
+			"mangle": {
+				"PREROUTING": [][]string{
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "lo", "-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in", "-j", "CONNMARK", "--set-mark", "0x80/0x80"},
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+				},
+			},
+		}, mockIptables.dataplaneState)
+}
+
 func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
 	defer ctrl.Finish()
@@ -388,6 +451,7 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 	ln := &linuxNetwork{
 		useExternalSNAT:         false,
 		excludeSNATCIDRs:        nil,
+		includeSNATCIDRs:        nil,
 		nodePortSupportEnabled:  true,
 		shouldConfigureRpFilter: true,
 		mainENIMark:             defaultConnmark,
@@ -404,7 +468,7 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 
 	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-1") //AWS SNAT CHAN proves backwards compatibility
+	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-1") //AWS SNAT CHAN proves backwards compatibility
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2")
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-2", "!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-3")
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-3", "!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-4")
@@ -478,6 +542,56 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 				"AWS-SNAT-CHAIN-2": [][]string{{"!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-3"}},
 				"AWS-SNAT-CHAIN-3": [][]string{{"!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-4"}},
 				"AWS-SNAT-CHAIN-4": [][]string{{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
+				"POSTROUTING":      [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}}},
+			"mangle": {
+				"PREROUTING": [][]string{
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "lo", "-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in", "-j", "CONNMARK", "--set-mark", "0x80/0x80"},
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+				},
+			},
+		}, mockIptables.dataplaneState)
+}
+
+func TestSetupHostNetworkIncludedSNATCIDRsIdempotent(t *testing.T) {
+	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{
+		useExternalSNAT:         false,
+		includeSNATCIDRs:        []string{"10.14.0.0/16", "10.15.0.0/16"},
+		nodePortSupportEnabled:  true,
+		shouldConfigureRpFilter: true,
+		mainENIMark:             defaultConnmark,
+		mtu:                     testMTU,
+
+		netLink: mockNetLink,
+		ns:      mockNS,
+		newIptables: func() (iptablesIface, error) {
+			return mockIptables, nil
+		},
+		procSys: mockProcSys,
+	}
+	setupNetLinkMocks(ctrl, mockNetLink)
+
+	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
+
+	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-d", "10.14.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN INCLUSION", "-j", "AWS-SNAT-CHAIN-1")
+	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "-d", "10.15.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN INCLUSION", "-j", "AWS-SNAT-CHAIN-2")
+	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-2", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
+	_ = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
+
+	// remove exclusions
+	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false)
+	assert.NoError(t, err)
+
+	assert.Equal(t,
+		map[string]map[string][][]string{
+			"nat": {
+				"AWS-SNAT-CHAIN-0": [][]string{{"-d", "10.14.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN INCLUSION", "-j", "AWS-SNAT-CHAIN-1"}},
+				"AWS-SNAT-CHAIN-1": [][]string{{"-d", "10.15.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN INCLUSION", "-j", "AWS-SNAT-CHAIN-2"}},
+				"AWS-SNAT-CHAIN-2": [][]string{{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
 				"POSTROUTING":      [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}}},
 			"mangle": {
 				"PREROUTING": [][]string{
