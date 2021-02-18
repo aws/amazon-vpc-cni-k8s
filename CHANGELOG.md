@@ -1,15 +1,15 @@
 # Changelog
 
-## v1.7.9-rc1
+## v1.7.9
 
-* Bug - Fix deletion of hostVeth rule for pods using security group (#1376 by SaranBalaji90)
 * Improvement - Adds http timeout to aws sessions (#1370 by couralex6)
-* Improvement - Switch calico to be deployed with the Tigera operator
+* Improvement - Switch calico to be deployed with the Tigera operator (#1297 by tmjd)
 * Improvement - Update calico to v3.17.1 (#1328 by lwr20)
 * Improvement - update plugins to v0.9.0 (#1362 by fr0stbyte)
 * Improvement - update github.com/containernetworking/plugins to v0.9.0 (#1350 by fr0stbyte)
 * Bug - Fix regex match for getting primary interface (#1311 by Jayanthvn)
 * Bug - Output to stderr when no log file path is passed (#1275 by couralex6)
+* Bug - Fix deletion of hostVeth rule for pods using security group (#1376 by SaranBalaji90)
 
 
 ## v1.7.8
