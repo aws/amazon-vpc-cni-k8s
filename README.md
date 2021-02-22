@@ -318,7 +318,9 @@ Default: `/var/log/aws-routed-eni/plugin.log`
 Valid Values: `stderr` or a file path
 
 Specifies where to write the logging output for `aws-cni` plugin. Either to `stderr` or to override the default file (i.e., `/var/log/aws-routed-eni/plugin.log`).
-`Stdout` cannot be supported for plugin log, please refer to #1248 for more details.
+`Stdout` cannot be supported for plugin log, please refer to [#1248](https://github.com/aws/amazon-vpc-cni-k8s/issues/1248) for more details.
+
+Note: If chaining an external plugin (i.e Cilium) that does not provide a `pluginLogFile` in its config file, the CNI plugin will by default write to `os.Stderr`. The output of `cmdAdd` are available in the Kubelet logs.
 
 ---
 
@@ -421,8 +423,13 @@ Type: Boolean as a String
 
 Default: `false`
 
-To enable security groups for pods you need to have at least an EKS 1.17 eks.3 cluster. Setting `ENABLE_POD_ENI` to `true`
-will add the `vpc.amazonaws.com/has-trunk-attached` label to the node if it is possible to attach an additional ENI.
+To enable security groups for pods you need to have at least an EKS 1.17 eks.3 cluster. 
+
+Setting `ENABLE_POD_ENI` to `true` will allow IPAMD to add the `vpc.amazonaws.com/has-trunk-attached` label to the node if the instance has capacity to attach an additional ENI. 
+
+The label notifies vpc-resource-controller (https://github.com/aws/amazon-vpc-resource-controller-k8s) to attach a Trunk ENI to the instance. The label value is initially set to `false` and is marked to `true` by IPAMD when vpc-resource-controller attaches a Trunk ENI to the instance. However, there might be cases where the label value will remain `false` if the instance doesn't support ENI Trunking. 
+
+**NOTE!** Toggling `ENABLE_POD_ENI` from `true` to `false` will not detach the Trunk ENI from instance. To delete/detach the Trunk ENI from instance, you need recycle the instance.
 
 ---
 
@@ -437,6 +444,12 @@ to pods that are using per pod security groups, `DISABLE_TCP_EARLY_DEMUX` should
 container under `initcontainers`. This will increase the local TCP connection latency slightly.
 Details on why this is needed can be found in this [#1212 comment](https://github.com/aws/amazon-vpc-cni-k8s/pull/1212#issuecomment-693540666).
 To use this setting, a Linux kernel version of at least 4.6 is needed on the worker node.
+
+You can use the below command to enable `DISABLE_TCP_EARLY_DEMUX` to `true` -
+
+```
+kubectl patch daemonset aws-node -n kube-system -p '{"spec": {"template": {"spec": {"initContainers": [{"env":[{"name":"DISABLE_TCP_EARLY_DEMUX","value":"true"}],"name":"aws-vpc-cni-init"}]}}}}'
+```
 
 ### ENI tags related to Allocation
 

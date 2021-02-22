@@ -154,7 +154,6 @@
         - "name": "WARM_ENI_TARGET"
           "value": "1"
         "image": "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:latest"
-        "imagePullPolicy": "Always"
         "livenessProbe":
           "exec":
             "command":
@@ -198,7 +197,6 @@
         - "name": "DISABLE_TCP_EARLY_DEMUX"
           "value": "false"
         "image": "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init:latest"
-        "imagePullPolicy": "Always"
         "name": "aws-vpc-cni-init"
         "securityContext":
           "privileged": true

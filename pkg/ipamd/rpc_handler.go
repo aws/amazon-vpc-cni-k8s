@@ -190,11 +190,18 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		return nil, err
 	}
 
-	if s.ipamContext.enablePodENI {
+	ipamKey := datastore.IPAMKey{
+		ContainerID: in.ContainerID,
+		IfName:      in.IfName,
+		NetworkName: in.NetworkName,
+	}
+	ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
+
+	if err == datastore.ErrUnknownPod && s.ipamContext.enablePodENI {
 		pod, err := s.ipamContext.GetPod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
 		if err != nil {
 			if k8serror.IsNotFound(err) {
-				log.Warn("Send AddNetworkReply: pod not found")
+				log.Warn("Send DelNetworkReply: pod not found")
 				return &rpc.DelNetworkReply{Success: true}, nil
 			}
 			log.Warnf("Send DelNetworkReply: Failed to get pod spec: %v", err)
@@ -214,12 +221,6 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 				IPv4Addr:  podENIData[0].PrivateIP}, err
 		}
 	}
-	ipamKey := datastore.IPAMKey{
-		ContainerID: in.ContainerID,
-		IfName:      in.IfName,
-		NetworkName: in.NetworkName,
-	}
-	ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
 
 	log.Infof("Send DelNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", ip, deviceNumber, err)
 

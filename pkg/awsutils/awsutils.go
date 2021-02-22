@@ -26,14 +26,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -61,6 +60,9 @@ const (
 	// Stagger cleanup start time to avoid calling EC2 too much. Time in seconds.
 	eniCleanupStartupDelayMax = 300
 	eniDeleteCooldownTime     = 5 * time.Minute
+
+	// the default page size when paginating the DescribeNetworkInterfaces call
+	describeENIPageSize = 1000
 )
 
 var (
@@ -72,8 +74,6 @@ var (
 	ErrNoSecondaryIPsFound = errors.New("No secondary IPs have been assigned to this ENI")
 	// ErrNoNetworkInterfaces occurs when DescribeNetworkInterfaces(eniID) returns no network interfaces
 	ErrNoNetworkInterfaces = errors.New("No network interfaces found for ENI")
-	// Custom user agent
-	userAgent = request.WithAppendUserAgent("amazon-vpc-cni-k8s")
 )
 
 var log = logger.Get()
@@ -312,10 +312,8 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 	// Initializes prometheus metrics
 	prometheusRegister()
 
-	awsSession := session.Must(session.NewSession(aws.NewConfig().
-		WithMaxRetries(10),
-	))
-	ec2Metadata := ec2metadata.New(awsSession)
+	sess := awssession.New()
+	ec2Metadata := ec2metadata.New(sess)
 
 	cache := &EC2InstanceMetadataCache{}
 	cache.imds = TypedIMDS{instrumentedIMDS{ec2Metadata}}
@@ -331,11 +329,8 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 	cache.useCustomNetworking = useCustomNetworking
 	log.Infof("Custom networking %v", cache.useCustomNetworking)
 
-	sess, err := session.NewSession(&aws.Config{Region: aws.String(cache.region), MaxRetries: aws.Int(15)})
-	if err != nil {
-		log.Errorf("Failed to initialize AWS SDK session %v", err)
-		return nil, errors.Wrap(err, "instance metadata: failed to initialize AWS SDK session")
-	}
+	awsCfg := aws.NewConfig().WithRegion(region)
+	sess = sess.Copy(awsCfg)
 
 	ec2SVC := ec2wrapper.New(sess)
 	cache.ec2SVC = ec2SVC
@@ -474,7 +469,7 @@ func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
 				NetworkInterfaceId: aws.String(eniID),
 			}
 			start := time.Now()
-			_, err = cache.ec2SVC.ModifyNetworkInterfaceAttributeWithContext(context.Background(), attributeInput, userAgent)
+			_, err = cache.ec2SVC.ModifyNetworkInterfaceAttributeWithContext(context.Background(), attributeInput)
 			awsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 			if err != nil {
 				awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
@@ -569,7 +564,7 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int, error) {
 	}
 
 	start := time.Now()
-	result, err := cache.ec2SVC.DescribeInstancesWithContext(context.Background(), input, userAgent)
+	result, err := cache.ec2SVC.DescribeInstancesWithContext(context.Background(), input)
 	awsAPILatency.WithLabelValues("DescribeInstances", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("DescribeInstances", err)
@@ -635,7 +630,7 @@ func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string,
 	}
 
 	start := time.Now()
-	_, err = cache.ec2SVC.ModifyNetworkInterfaceAttributeWithContext(context.Background(), attributeInput, userAgent)
+	_, err = cache.ec2SVC.ModifyNetworkInterfaceAttributeWithContext(context.Background(), attributeInput)
 	awsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
@@ -664,7 +659,7 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 		NetworkInterfaceId: aws.String(eniID),
 	}
 	start := time.Now()
-	attachOutput, err := cache.ec2SVC.AttachNetworkInterfaceWithContext(context.Background(), attachInput, userAgent)
+	attachOutput, err := cache.ec2SVC.AttachNetworkInterfaceWithContext(context.Background(), attachInput)
 	awsAPILatency.WithLabelValues("AttachNetworkInterface", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("AttachNetworkInterface", err)
@@ -716,7 +711,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 	}
 	log.Infof("Creating ENI with security groups: %v in subnet: %s", sgs, *input.SubnetId)
 	start := time.Now()
-	result, err := cache.ec2SVC.CreateNetworkInterfaceWithContext(context.Background(), input, userAgent)
+	result, err := cache.ec2SVC.CreateNetworkInterfaceWithContext(context.Background(), input)
 	awsAPILatency.WithLabelValues("CreateNetworkInterface", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("CreateNetworkInterface", err)
@@ -769,7 +764,7 @@ func (cache *EC2InstanceMetadataCache) tagENI(eniID string, maxBackoffDelay time
 
 	_ = retry.NWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, maxBackoffDelay, 0.3, 2), 5, func() error {
 		start := time.Now()
-		_, err := cache.ec2SVC.CreateTagsWithContext(context.Background(), input, userAgent)
+		_, err := cache.ec2SVC.CreateTagsWithContext(context.Background(), input)
 		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 		if err != nil {
 			awsAPIErrInc("CreateTags", err)
@@ -859,7 +854,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 	// Retry detaching the ENI from the instance
 	err = retry.NWithBackoff(retry.NewSimpleBackoff(time.Millisecond*200, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
 		start := time.Now()
-		_, ec2Err := cache.ec2SVC.DetachNetworkInterfaceWithContext(context.Background(), detachInput, userAgent)
+		_, ec2Err := cache.ec2SVC.DetachNetworkInterfaceWithContext(context.Background(), detachInput)
 		awsAPILatency.WithLabelValues("DetachNetworkInterface", fmt.Sprint(ec2Err != nil), awsReqStatus(ec2Err)).Observe(msSince(start))
 		if ec2Err != nil {
 			awsAPIErrInc("DetachNetworkInterface", ec2Err)
@@ -894,7 +889,7 @@ func (cache *EC2InstanceMetadataCache) getENIAttachmentID(eniID string) (*string
 	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIds}
 
 	start := time.Now()
-	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input, userAgent)
+	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input)
 	awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
@@ -929,7 +924,7 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string, maxBackoffDelay
 	}
 	err := retry.NWithBackoff(retry.NewSimpleBackoff(time.Millisecond*500, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
 		start := time.Now()
-		_, ec2Err := cache.ec2SVC.DeleteNetworkInterfaceWithContext(context.Background(), deleteInput, userAgent)
+		_, ec2Err := cache.ec2SVC.DeleteNetworkInterfaceWithContext(context.Background(), deleteInput)
 		awsAPILatency.WithLabelValues("DeleteNetworkInterface", fmt.Sprint(ec2Err != nil), awsReqStatus(ec2Err)).Observe(msSince(start))
 		if ec2Err != nil {
 			if aerr, ok := ec2Err.(awserr.Error); ok {
@@ -956,7 +951,7 @@ func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList [
 	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIds}
 
 	start := time.Now()
-	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input, userAgent)
+	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input)
 	awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
@@ -998,7 +993,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 	for retryCount := 0; retryCount < maxENIEC2APIRetries && len(eniIDs) > 0; retryCount++ {
 		input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: aws.StringSlice(eniIDs)}
 		start := time.Now()
-		ec2Response, err = cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input, userAgent)
+		ec2Response, err = cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input)
 		awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 		if err == nil {
 			// No error, exit the loop
@@ -1142,7 +1137,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddress(eniID string) error {
 	}
 
 	start := time.Now()
-	output, err := cache.ec2SVC.AssignPrivateIpAddressesWithContext(context.Background(), input, userAgent)
+	output, err := cache.ec2SVC.AssignPrivateIpAddressesWithContext(context.Background(), input)
 	awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("AssignPrivateIpAddresses", err)
@@ -1171,7 +1166,7 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
 	if !ok {
 		// Fetch from EC2 API
 		describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{InstanceTypes: []*string{aws.String(cache.instanceType)}}
-		output, err := cache.ec2SVC.DescribeInstanceTypesWithContext(context.Background(), describeInstanceTypesInput, userAgent)
+		output, err := cache.ec2SVC.DescribeInstanceTypesWithContext(context.Background(), describeInstanceTypesInput)
 		if err != nil || len(output.InstanceTypes) != 1 {
 			log.Errorf("", err)
 			return 0, errors.New(fmt.Sprintf("Failed calling DescribeInstanceTypes for `%s`: %v", cache.instanceType, err))
@@ -1220,7 +1215,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	}
 
 	start := time.Now()
-	output, err := cache.ec2SVC.AssignPrivateIpAddressesWithContext(context.Background(), input, userAgent)
+	output, err := cache.ec2SVC.AssignPrivateIpAddressesWithContext(context.Background(), input)
 	awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		if containsPrivateIPAddressLimitExceededError(err) {
@@ -1305,7 +1300,7 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []st
 	}
 
 	start := time.Now()
-	_, err := cache.ec2SVC.UnassignPrivateIpAddressesWithContext(context.Background(), input, userAgent)
+	_, err := cache.ec2SVC.UnassignPrivateIpAddressesWithContext(context.Background(), input)
 	awsAPILatency.WithLabelValues("UnassignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		awsAPIErrInc("UnassignPrivateIpAddresses", err)
@@ -1363,7 +1358,7 @@ func (cache *EC2InstanceMetadataCache) tagENIcreateTS(eniID string, maxBackoffDe
 
 	_ = retry.NWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, maxBackoffDelay, 0.3, 2), 5, func() error {
 		start := time.Now()
-		_, err := cache.ec2SVC.CreateTagsWithContext(context.Background(), input, userAgent)
+		_, err := cache.ec2SVC.CreateTagsWithContext(context.Background(), input)
 		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 		if err != nil {
 			awsAPIErrInc("CreateTags", err)
@@ -1394,18 +1389,15 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 	}
 
 	input := &ec2.DescribeNetworkInterfacesInput{
-		Filters: []*ec2.Filter{tagFilter, statusFilter},
-	}
-	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input, userAgent)
-	if err != nil {
-		return nil, errors.Wrap(err, "awsutils: unable to obtain filtered list of network interfaces")
+		Filters:    []*ec2.Filter{tagFilter, statusFilter},
+		MaxResults: aws.Int64(describeENIPageSize),
 	}
 
-	networkInterfaces := make([]*ec2.NetworkInterface, 0)
-	for _, networkInterface := range result.NetworkInterfaces {
+	var networkInterfaces []*ec2.NetworkInterface
+	filterFn := func(networkInterface *ec2.NetworkInterface) error {
 		// Verify the description starts with "aws-K8S-"
 		if !strings.HasPrefix(aws.StringValue(networkInterface.Description), eniDescriptionPrefix) {
-			continue
+			return nil
 		}
 		// Check that it's not a newly created ENI
 		tags := getTags(networkInterface, aws.StringValue(networkInterface.NetworkInterfaceId))
@@ -1418,7 +1410,7 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 			}
 			if time.Since(parsedTime) < eniDeleteCooldownTime {
 				log.Infof("Found an ENI created less than 5 minutes ago, so not cleaning it up")
-				continue
+				return nil
 			}
 			log.Debugf("%v", value)
 		} else {
@@ -1426,9 +1418,16 @@ func (cache *EC2InstanceMetadataCache) getFilteredListOfNetworkInterfaces() ([]*
 			 * process of being attached by CNI versions v1.5.x or earlier.
 			 */
 			cache.tagENIcreateTS(aws.StringValue(networkInterface.NetworkInterfaceId), maxENIBackoffDelay)
-			continue
+			return nil
 		}
 		networkInterfaces = append(networkInterfaces, networkInterface)
+		return nil
+	}
+
+	err := cache.getENIsFromPaginatedDescribeNetworkInterfaces(input, filterFn)
+
+	if err != nil {
+		return nil, errors.Wrap(err, "awsutils: unable to obtain filtered list of network interfaces")
 	}
 
 	if len(networkInterfaces) < 1 {
@@ -1484,4 +1483,27 @@ func (cache *EC2InstanceMetadataCache) IsUnmanagedENI(eniID string) bool {
 		return cache.unmanagedENIs.Has(eniID)
 	}
 	return false
+}
+
+func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterfaces(
+	input *ec2.DescribeNetworkInterfacesInput, filterFn func(networkInterface *ec2.NetworkInterface) error) error {
+	pageNum := 0
+	var innerErr error
+	pageFn := func(output *ec2.DescribeNetworkInterfacesOutput, lastPage bool) (nextPage bool) {
+		pageNum++
+		log.Debugf("EC2 DescribeNetworkInterfaces succeeded with %d results on page %d",
+			len(output.NetworkInterfaces), pageNum)
+		for _, eni := range output.NetworkInterfaces {
+			if err := filterFn(eni); err != nil {
+				innerErr = err
+				return false
+			}
+		}
+		return true
+	}
+
+	if err := cache.ec2SVC.DescribeNetworkInterfacesPagesWithContext(context.TODO(), input, pageFn); err != nil {
+		return err
+	}
+	return innerErr
 }

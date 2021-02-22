@@ -1,7 +1,9 @@
 ---
 name: Bug Report
 about: Report a bug in amazon-vpc-cni-k8s project.
+title: ''
 labels: bug
+assignees: ''
 
 ---
 
@@ -13,10 +15,14 @@ If you think you have found a potential security issue, please do not post it as
 
 **What happened**:
 <!--
- Inclue log lines if possible
-
- Please upload the logs by running [CNI Log Collection tool](https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html#troubleshoot-cni)
+ Include log lines if possible
  -->
+
+**Attach logs**
+<!--
+Please upload the logs by running [CNI Log Collection tool] since it will help faster resolution
+`sudo bash /opt/cni/bin/aws-cni-support.sh`
+-->
 
 **What you expected to happen**:
 
