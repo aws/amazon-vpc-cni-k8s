@@ -197,7 +197,6 @@ local awsnode = {
                 {mountPath: "/host/etc/cni/net.d", name: "cni-net-dir"},
                 {mountPath: "/host/var/log/aws-routed-eni", name: "log-dir"},
                 {mountPath: "/var/run/aws-node", name: "run-dir"},
-                {mountPath: "/var/run/dockershim.sock", name: "dockershim"},
                 {mountPath: "/run/xtables.lock", name: "xtables-lock"},
               ],
             },
@@ -206,7 +205,6 @@ local awsnode = {
           volumes: [
             {name: "cni-bin-dir", hostPath: {path: "/opt/cni/bin"}},
             {name: "cni-net-dir", hostPath: {path: "/etc/cni/net.d"}},
-            {name: "dockershim", hostPath: {path: "/var/run/dockershim.sock"}},
             {name: "xtables-lock", hostPath: {path: "/run/xtables.lock"}},
             {name: "log-dir",
               hostPath: {
