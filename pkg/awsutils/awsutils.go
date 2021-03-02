@@ -126,7 +126,7 @@ type APIs interface {
 	GetIPv4sFromEC2(eniID string) (addrList []*ec2.NetworkInterfacePrivateIpAddress, err error)
 
 	// DescribeAllENIs calls EC2 and returns the ENIMetadata and a tag map for each ENI
-	DescribeAllENIs() (eniMetadata []ENIMetadata, tagMap map[string]TagMap, trunkENI string, err error)
+	DescribeAllENIs() (eniMetadata []ENIMetadata, tagMap map[string]TagMap, trunkENI string, multiCardENIIDs []string, err error)
 
 	// AllocIPAddress allocates an IP address for an ENI
 	AllocIPAddress(eniID string) error
@@ -160,6 +160,19 @@ type APIs interface {
 
 	//isUnmanagedENI
 	IsUnmanagedENI(eniID string) bool
+
+	//SetCNIunmanaged ENI
+	SetCNIUnmanagedENIs(eniID []string) error
+
+	//isCNIUnmanagedENI
+	IsCNIUnmanagedENI(eniID string) bool
+
+	//RefreshSGIDs
+	RefreshSGIDs(mac string) error
+
+	//RefreshVPCIPv4CIDRs
+	RefreshVPCIPv4CIDRs(mac string) error
+	
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -176,6 +189,7 @@ type EC2InstanceMetadataCache struct {
 	availabilityZone    string
 	region              string
 	unmanagedENIs       StringSet
+	cniunmanagedENIs    StringSet
 	useCustomNetworking bool
 
 	ec2Metadata ec2metadata.EC2Metadata
@@ -369,23 +383,6 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 	}
 	log.Debugf("Found subnet-id: %s ", cache.subnetID)
 
-	// retrieve security groups
-	err = cache.refreshSGIDs(mac)
-	if err != nil {
-		return err
-	}
-
-	// retrieve VPC IPv4 CIDR blocks
-	err = cache.refreshVPCIPv4CIDRs(mac)
-	if err != nil {
-		return err
-	}
-
-	// Refresh security groups and VPC CIDR blocks in the background
-	// Ignoring errors since we will retry in 30s
-	go wait.Forever(func() { _ = cache.refreshSGIDs(mac) }, 30*time.Second)
-	go wait.Forever(func() { _ = cache.refreshVPCIPv4CIDRs(mac) }, 30*time.Second)
-
 	// We use the ctx here for testing, since we spawn go-routines above which will run forever.
 	select {
 	case <-ctx.Done():
@@ -395,8 +392,8 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 	return nil
 }
 
-// refreshSGIDs retrieves security groups
-func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
+// RefreshSGIDs retrieves security groups
+func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 	metadataSGIDs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataSGs)
 	if err != nil {
 		awsAPIErrInc("GetMetadata", err)
@@ -440,7 +437,8 @@ func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
 		newENIs := StringSet{}
 		newENIs.Set(eniIDs)
 
-		filteredENIs := newENIs.Difference(&cache.unmanagedENIs)
+		tempfilteredENIs := newENIs.Difference(&cache.cniunmanagedENIs) 
+		filteredENIs := tempfilteredENIs.Difference(&cache.unmanagedENIs)
 
 		//This will update SG for managed ENIs created by EKS.
 		for _, eniID := range filteredENIs.SortedList() {
@@ -462,8 +460,8 @@ func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
 	return nil
 }
 
-// refreshVPCIPv4CIDRs retrieves VPC IPv4 CIDR blocks
-func (cache *EC2InstanceMetadataCache) refreshVPCIPv4CIDRs(mac string) error {
+// RefreshVPCIPv4CIDRs retrieves VPC IPv4 CIDR blocks
+func (cache *EC2InstanceMetadataCache) RefreshVPCIPv4CIDRs(mac string) error {
 	metadataVPCIPv4CIDRs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataVPCcidrs)
 	if err != nil {
 		awsAPIErrInc("GetMetadata", err)
@@ -1057,11 +1055,11 @@ func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList [
 }
 
 // DescribeAllENIs calls EC2 to refrech the ENIMetadata and tags for all attached ENIs
-func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (eniMetadata []ENIMetadata, tagMap map[string]TagMap, trunkENI string, err error) {
+func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (eniMetadata []ENIMetadata, tagMap map[string]TagMap, trunkENI string, multiCardENIIDs []string, err error) {
 	// Fetch all local ENI info from metadata
 	allENIs, err := cache.GetAttachedENIs()
 	if err != nil {
-		return nil, nil, "", errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
+		return nil, nil, "", nil, errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
 	}
 
 	eniMap := make(map[string]ENIMetadata, len(allENIs))
@@ -1106,7 +1104,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (eniMetadata []ENIMetad
 	}
 
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, "", nil, err
 	}
 
 	// Collect the verified ENIs
@@ -1117,11 +1115,16 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (eniMetadata []ENIMetad
 
 	// Collect ENI response into ENI metadata and tags.
 	tagMap = make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
+	//var multiCardENIIDs []string
 	for _, ec2res := range ec2Response.NetworkInterfaces {
+        log.Infof("Got network cardindex %v for ENI %v", aws.Int64Value(ec2res.Attachment.NetworkCardIndex), aws.StringValue(ec2res.NetworkInterfaceId))
 		if ec2res.Attachment != nil && aws.Int64Value(ec2res.Attachment.DeviceIndex) == 0 && !aws.BoolValue(ec2res.Attachment.DeleteOnTermination) {
 			log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
 		}
 		eniID := aws.StringValue(ec2res.NetworkInterfaceId)
+		if aws.Int64Value(ec2res.Attachment.NetworkCardIndex) > 0 {
+			multiCardENIIDs = append(multiCardENIIDs, eniID)
+		}
 		eniMetadata := eniMap[eniID]
 		interfaceType := aws.StringValue(ec2res.InterfaceType)
 		// This assumes we only have one trunk attached to the node..
@@ -1142,7 +1145,8 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (eniMetadata []ENIMetad
 			tagMap[eniMetadata.ENIID] = tags
 		}
 	}
-	return verifiedENIs, tagMap, trunkENI, nil
+	//cniUnmanagedENIs.Set(multiCardENIIDs)
+	return verifiedENIs, tagMap, trunkENI, multiCardENIIDs, nil
 }
 
 var eniErrorMessageRegex = regexp.MustCompile("'([a-zA-Z0-9-]+)'")
@@ -1418,6 +1422,22 @@ func (cache *EC2InstanceMetadataCache) SetUnmanagedENIs(eniID []string) error {
 func (cache *EC2InstanceMetadataCache) IsUnmanagedENI(eniID string) bool {
 	if len(eniID) != 0 {
 		return cache.unmanagedENIs.Has(eniID)
+	}
+	return false
+}
+
+//SetCNIUnmanagedENIs Set unmanaged ENI set
+func (cache *EC2InstanceMetadataCache) SetCNIUnmanagedENIs(eniID []string) error {
+	if len(eniID) != 0 {
+		cache.cniunmanagedENIs.Set(eniID)
+	}
+	return nil
+}
+
+//IsCNIUnmanagedENI returns if the eni is unmanaged
+func (cache *EC2InstanceMetadataCache) IsCNIUnmanagedENI(eniID string) bool {
+	if len(eniID) != 0 {
+		return cache.cniunmanagedENIs.Has(eniID)
 	}
 	return false
 }

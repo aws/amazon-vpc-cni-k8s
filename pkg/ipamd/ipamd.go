@@ -195,6 +195,7 @@ type IPAMContext struct {
 	maxIPsPerENI         int
 	maxENI               int
 	unmanagedENI         int
+	cniunmanagedENI 	 int
 	warmENITarget        int
 	warmIPTarget         int
 	minimumIPTarget      int
@@ -312,6 +313,25 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 	if err != nil {
 		return nil, err
 	}
+    
+	mac := c.awsClient.GetPrimaryENImac()
+	// retrieve security groups
+	err = c.awsClient.RefreshSGIDs(mac)
+	if err != nil {
+		return nil, err
+	}
+
+	// retrieve VPC IPv4 CIDR blocks
+	err = c.awsClient.RefreshVPCIPv4CIDRs(mac)
+	if err != nil {
+		return nil, err
+	}
+
+	// Refresh security groups and VPC CIDR blocks in the background
+	// Ignoring errors since we will retry in 30s
+	go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
+	go wait.Forever(func() { _ = c.awsClient.RefreshVPCIPv4CIDRs(mac) }, 30*time.Second)
+
 	return c, nil
 }
 
@@ -340,13 +360,15 @@ func (c *IPAMContext) nodeInit() error {
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
 
-	eniMetadata, tagMap, trunkENI, err := c.awsClient.DescribeAllENIs()
+	eniMetadata, tagMap, trunkENI, multiCardENIIDs, err := c.awsClient.DescribeAllENIs()
 	if err != nil {
 		return errors.New("ipamd init: failed to retrieve attached ENIs info")
 	}
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(eniMetadata), len(tagMap))
 	c.setUnmanagedENIs(tagMap)
-	enis := c.filterUnmanagedENIs(eniMetadata)
+	c.awsClient.SetCNIUnmanagedENIs(multiCardENIIDs)
+	tempENIIsMetadata := c.filterCNIUnmanagedENIs(eniMetadata)
+	enis := c.filterUnmanagedENIs(tempENIIsMetadata)
 
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
@@ -354,6 +376,11 @@ func (c *IPAMContext) nodeInit() error {
 		retry := 0
 		for {
 			retry++
+
+			if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
+				log.Infof("Skipping ENI %s since it is not on network card 0", eni.ENIID)
+				continue
+			}
 			if err = c.setupENI(eni.ENIID, eni, trunkENI); err == nil {
 				log.Infof("ENI %s set up.", eni.ENIID)
 				break
@@ -932,7 +959,8 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		ipamdErrInc("reconcileFailedGetENIs")
 		return
 	}
-	attachedENIs := c.filterUnmanagedENIs(allENIs)
+	tempattachedENIs := c.filterCNIUnmanagedENIs(allENIs)
+	attachedENIs := c.filterUnmanagedENIs(tempattachedENIs)
 	currentENIIPPools := c.dataStore.GetENIInfos().ENIs
 	trunkENI := c.dataStore.GetTrunkENI()
 
@@ -946,7 +974,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	}
 	if needToUpdateTags {
 		log.Debugf("A new ENI added but not by ipamd, updating tags")
-		allENIs, tagMap, trunk, err := c.awsClient.DescribeAllENIs()
+		allENIs, tagMap, trunk, cniUnmanagedENIs, err := c.awsClient.DescribeAllENIs()
 		if err != nil {
 			log.Warnf("Failed to call EC2 to describe ENIs, aborting reconcile: %v", err)
 			return
@@ -964,7 +992,9 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		// Update trunk ENI
 		trunkENI = trunk
 		c.setUnmanagedENIs(tagMap)
-		attachedENIs = c.filterUnmanagedENIs(allENIs)
+		c.awsClient.SetCNIUnmanagedENIs(cniUnmanagedENIs)
+		tempattachedENIs = c.filterCNIUnmanagedENIs(allENIs)
+		attachedENIs = c.filterUnmanagedENIs(tempattachedENIs)
 	}
 
 	// Mark phase
@@ -1163,6 +1193,24 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 		ret = append(ret, eni)
 	}
 	c.unmanagedENI = numFiltered
+	c.updateIPStats(numFiltered)
+	return ret
+}
+
+// filterCNIUnmanagedENIs filters out ENIs on non-zero network cards such as p4 family
+func (c *IPAMContext) filterCNIUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
+	numFiltered := 0
+	ret := make([]awsutils.ENIMetadata, 0, len(enis))
+	for _, eni := range enis {
+		// If we have CNI unmanaged ENIs, filter them out
+		if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
+			log.Debugf("Skipping ENI %s: since on non-zero network card", eni.ENIID)
+			numFiltered++
+			continue
+		}
+		ret = append(ret, eni)
+	}
+	c.cniunmanagedENI = numFiltered
 	c.updateIPStats(numFiltered)
 	return ret
 }
