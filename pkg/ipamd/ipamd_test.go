@@ -110,6 +110,8 @@ func TestNodeInit(t *testing.T) {
 	m.awsutils.EXPECT().GetIPv4sFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Addresses, nil)
 	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
 	m.awsutils.EXPECT().IsUnmanagedENI(eni2.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsCNIUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsCNIUnmanagedENI(eni2.ENIID).Return(false).AnyTimes()
 
 	primaryIP := net.ParseIP(ipaddr01)
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs)
@@ -124,10 +126,12 @@ func TestNodeInit(t *testing.T) {
 		TagMap:      map[string]awsutils.TagMap{},
 		TrunkENI:    "",
 		EFAENIs:     make(map[string]bool),
+		MultiCardENIIDs: nil,
 	}
 	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 
+	m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp.MultiCardENIIDs).AnyTimes()
 	m.awsutils.EXPECT().GetLocalIPv4().Return(ipaddr01)
 
 	var rules []netlink.Rule
@@ -367,6 +371,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	// Always the primary ENI
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.awsutils.EXPECT().IsUnmanagedENI(primaryENIid).AnyTimes().Return(false)
+	m.awsutils.EXPECT().IsCNIUnmanagedENI(primaryENIid).AnyTimes().Return(false)
 	eniMetadataList := []awsutils.ENIMetadata{primaryENIMetadata}
 	m.awsutils.EXPECT().GetAttachedENIs().Return(eniMetadataList, nil)
 	resp := awsutils.DescribeAllENIsResult{
@@ -374,9 +379,11 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 		TagMap:      map[string]awsutils.TagMap{},
 		TrunkENI:    "",
 		EFAENIs:     make(map[string]bool),
+		MultiCardENIIDs : nil,
 	}
 	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
 
+	m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp.MultiCardENIIDs).AnyTimes()
 	mockContext.nodeIPPoolReconcile(0)
 
 	curENIs := mockContext.dataStore.GetENIInfos()
@@ -413,14 +420,17 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	// Two ENIs found
 	m.awsutils.EXPECT().GetAttachedENIs().Return(twoENIs, nil)
 	m.awsutils.EXPECT().IsUnmanagedENI(secENIid).Times(2).Return(false)
+	m.awsutils.EXPECT().IsCNIUnmanagedENI(secENIid).Times(2).Return(false)
 	resp2 := awsutils.DescribeAllENIsResult{
 		ENIMetadata: twoENIs,
 		TagMap:      map[string]awsutils.TagMap{},
 		TrunkENI:    "",
 		EFAENIs:     make(map[string]bool),
+		MultiCardENIIDs : nil,
 	}
 	m.awsutils.EXPECT().DescribeAllENIs().Return(resp2, nil)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, primarySubnet)
+	m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp2.MultiCardENIIDs).AnyTimes()
 
 	mockContext.nodeIPPoolReconcile(0)
 
@@ -622,7 +632,12 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 					return false
 
 				}).AnyTimes()
-
+			mockAWSUtils.EXPECT().IsCNIUnmanagedENI(gomock.Any()).DoAndReturn(
+				func(eni string) (unmanaged bool) {
+					return false
+   
+				}).AnyTimes()	
+						
 			if got := c.filterUnmanagedENIs(tt.enis); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("filterUnmanagedENIs() = %v, want %v", got, tt.want)
 			}
@@ -682,6 +697,7 @@ func TestNodeIPPoolReconcileBadIMDSData(t *testing.T) {
 	eniMetadataList := []awsutils.ENIMetadata{primaryENIMetadata}
 	m.awsutils.EXPECT().GetAttachedENIs().Return(eniMetadataList, nil)
 	m.awsutils.EXPECT().IsUnmanagedENI(eniID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsCNIUnmanagedENI(eniID).Return(false).AnyTimes()
 
 	// First reconcile, IMDS returns correct IPs so no change needed
 	mockContext.nodeIPPoolReconcile(0)

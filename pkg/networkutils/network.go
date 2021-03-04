@@ -309,9 +309,11 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 	}
 	var allCIDRs []snatCIDR
 	for _, cidr := range vpcCIDRs {
+		log.Debugf("Adding %s CIDR to NAT chain")
 		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
 	}
 	for _, cidr := range n.excludeSNATCIDRs {
+		log.Debugf("Adding %s Excluded CIDR to NAT chain")
 		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: true})
 	}
 
@@ -321,6 +323,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 		return errors.Wrapf(err, "host network setup: failed to get SNAT chain rules to clear")
 	}
 
+	log.Debugf("Total CIDRs to program - %d", len(allCIDRs))
 	// build IPTABLES chain for SNAT of non-VPC outbound traffic and excluded CIDRs
 	var chains []string
 	for i := 0; i <= len(allCIDRs); i++ {

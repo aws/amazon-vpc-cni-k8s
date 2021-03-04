@@ -3,9 +3,9 @@ module github.com/aws/amazon-vpc-cni-k8s
 go 1.13
 
 require (
-	github.com/aws/aws-sdk-go v1.33.14
+	github.com/aws/aws-sdk-go v1.37.23
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 // indirect
-	github.com/containernetworking/cni v0.7.1
+	github.com/containernetworking/cni v0.8.0
 	github.com/containernetworking/plugins v0.9.0
 	github.com/coreos/go-iptables v0.4.5
 	github.com/ghodss/yaml v1.0.0 // indirect
@@ -37,13 +37,12 @@ require (
 	go.uber.org/zap v1.15.0
 	golang.org/x/lint v0.0.0-20201208152925-83fdc39ff7b5 // indirect
 	golang.org/x/mod v0.4.0 // indirect
-	golang.org/x/net v0.0.0-20201021035429-f5854403a974
+	golang.org/x/net v0.0.0-20201110031124-69a78807bb2b
 	golang.org/x/sys v0.0.0-20201117170446-d9b008d0a637
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
 	google.golang.org/grpc v1.29.0
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
-	gopkg.in/yaml.v2 v2.2.7 // indirect
 	k8s.io/api v0.0.0-20180712090710-2d6f90ab1293
 	k8s.io/apimachinery v0.0.0-20180621070125-103fd098999d
 	k8s.io/client-go v0.0.0-20180806134042-1f13a808da65
