@@ -194,6 +194,7 @@ type IPAMContext struct {
 	maxIPsPerENI         int
 	maxENI               int
 	unmanagedENI         int
+	cniunmanagedENI      int
 	warmENITarget        int
 	warmIPTarget         int
 	minimumIPTarget      int
@@ -311,6 +312,17 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 	if err != nil {
 		return nil, err
 	}
+
+	mac := c.awsClient.GetPrimaryENImac()
+	// retrieve security groups
+	err = c.awsClient.RefreshSGIDs(mac)
+	if err != nil {
+		return nil, err
+	}
+
+	// Refresh security groups and VPC CIDR blocks in the background
+	// Ignoring errors since we will retry in 30s
+	go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
 	return c, nil
 }
 
@@ -347,8 +359,10 @@ func (c *IPAMContext) nodeInit() error {
 		return errors.New("ipamd init: failed to retrieve attached ENIs info")
 	}
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
+	c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
 	c.setUnmanagedENIs(metadataResult.TagMap)
-	enis := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
+	tempENIIsMetadata := c.filterCNIUnmanagedENIs(metadataResult.ENIMetadata)
+	enis := c.filterUnmanagedENIs(tempENIIsMetadata)
 
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
@@ -356,6 +370,12 @@ func (c *IPAMContext) nodeInit() error {
 		retry := 0
 		for {
 			retry++
+
+			if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
+				log.Infof("Skipping ENI %s since it is not on network card 0", eni.ENIID)
+				continue
+			}
+
 			if err = c.setupENI(eni.ENIID, eni, eni.ENIID == metadataResult.TrunkENI, metadataResult.EFAENIs[eni.ENIID]); err == nil {
 				log.Infof("ENI %s set up.", eni.ENIID)
 				break
@@ -933,7 +953,8 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		ipamdErrInc("reconcileFailedGetENIs")
 		return
 	}
-	attachedENIs := c.filterUnmanagedENIs(allENIs)
+	tempattachedENIs := c.filterCNIUnmanagedENIs(allENIs)
+	attachedENIs := c.filterUnmanagedENIs(tempattachedENIs)
 	currentENIs := c.dataStore.GetENIInfos().ENIs
 	trunkENI := c.dataStore.GetTrunkENI()
 	// Initialize the set with the known EFA interfaces
@@ -969,7 +990,9 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		// Just copy values of the EFA set
 		efaENIs = metadataResult.EFAENIs
 		c.setUnmanagedENIs(metadataResult.TagMap)
-		attachedENIs = c.filterUnmanagedENIs(metadataResult.ENIMetadata)
+		c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
+		tempattachedENIs = c.filterCNIUnmanagedENIs(metadataResult.ENIMetadata)
+		attachedENIs = c.filterUnmanagedENIs(tempattachedENIs)
 	}
 
 	// Mark phase
@@ -1320,4 +1343,22 @@ func (c *IPAMContext) SetNodeLabel(key, value string) error {
 // GetPod returns the pod matching the name and namespace
 func (c *IPAMContext) GetPod(podName, namespace string) (*v1.Pod, error) {
 	return c.k8sClient.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
+}
+
+// filterCNIUnmanagedENIs filters out ENIs on non-zero network cards such as p4 family
+func (c *IPAMContext) filterCNIUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
+	numFiltered := 0
+	ret := make([]awsutils.ENIMetadata, 0, len(enis))
+	for _, eni := range enis {
+		// If we have CNI unmanaged ENIs, filter them out
+		if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
+			log.Debugf("Skipping ENI %s: since on non-zero network card", eni.ENIID)
+			numFiltered++
+			continue
+		}
+		ret = append(ret, eni)
+	}
+	c.cniunmanagedENI = numFiltered
+	c.updateIPStats(numFiltered)
+	return ret
 }

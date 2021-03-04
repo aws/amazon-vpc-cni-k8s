@@ -19,12 +19,11 @@
 package mock_awsutils
 
 import (
-	net "net"
-	reflect "reflect"
-
 	awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	ec2 "github.com/aws/aws-sdk-go/service/ec2"
 	gomock "github.com/golang/mock/gomock"
+	net "net"
+	reflect "reflect"
 )
 
 // MockAPIs is a mock of APIs interface
@@ -253,6 +252,20 @@ func (mr *MockAPIsMockRecorder) GetVPCIPv4CIDRs() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVPCIPv4CIDRs", reflect.TypeOf((*MockAPIs)(nil).GetVPCIPv4CIDRs))
 }
 
+// IsCNIUnmanagedENI mocks base method
+func (m *MockAPIs) IsCNIUnmanagedENI(arg0 string) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsCNIUnmanagedENI", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsCNIUnmanagedENI indicates an expected call of IsCNIUnmanagedENI
+func (mr *MockAPIsMockRecorder) IsCNIUnmanagedENI(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsCNIUnmanagedENI", reflect.TypeOf((*MockAPIs)(nil).IsCNIUnmanagedENI), arg0)
+}
+
 // IsUnmanagedENI mocks base method
 func (m *MockAPIs) IsUnmanagedENI(arg0 string) bool {
 	m.ctrl.T.Helper()
@@ -265,6 +278,34 @@ func (m *MockAPIs) IsUnmanagedENI(arg0 string) bool {
 func (mr *MockAPIsMockRecorder) IsUnmanagedENI(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsUnmanagedENI", reflect.TypeOf((*MockAPIs)(nil).IsUnmanagedENI), arg0)
+}
+
+// RefreshSGIDs mocks base method
+func (m *MockAPIs) RefreshSGIDs(arg0 string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RefreshSGIDs", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RefreshSGIDs indicates an expected call of RefreshSGIDs
+func (mr *MockAPIsMockRecorder) RefreshSGIDs(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshSGIDs", reflect.TypeOf((*MockAPIs)(nil).RefreshSGIDs), arg0)
+}
+
+// SetCNIUnmanagedENIs mocks base method
+func (m *MockAPIs) SetCNIUnmanagedENIs(arg0 []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetCNIUnmanagedENIs", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetCNIUnmanagedENIs indicates an expected call of SetCNIUnmanagedENIs
+func (mr *MockAPIsMockRecorder) SetCNIUnmanagedENIs(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetCNIUnmanagedENIs", reflect.TypeOf((*MockAPIs)(nil).SetCNIUnmanagedENIs), arg0)
 }
 
 // SetUnmanagedENIs mocks base method

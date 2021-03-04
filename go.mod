@@ -3,7 +3,7 @@ module github.com/aws/amazon-vpc-cni-k8s
 go 1.14
 
 require (
-	github.com/aws/aws-sdk-go v1.35.27
+	github.com/aws/aws-sdk-go v1.37.23
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 // indirect
 	github.com/containernetworking/cni v0.8.0
 	github.com/containernetworking/plugins v0.9.0
@@ -37,7 +37,7 @@ require (
 	go.uber.org/zap v1.15.0
 	golang.org/x/lint v0.0.0-20201208152925-83fdc39ff7b5 // indirect
 	golang.org/x/mod v0.4.0 // indirect
-	golang.org/x/net v0.0.0-20201021035429-f5854403a974
+	golang.org/x/net v0.0.0-20201110031124-69a78807bb2b
 	golang.org/x/sys v0.0.0-20201117170446-d9b008d0a637
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
 	golang.org/x/tools v0.0.0-20210113180300-f96436850f18 // indirect
