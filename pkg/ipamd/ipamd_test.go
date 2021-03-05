@@ -513,6 +513,7 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	type fields struct {
+		maxENI        int
 		maxIPsPerENI  int
 		warmENITarget int
 		warmIPTarget  int
@@ -524,14 +525,18 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 		fields fields
 		want   bool
 	}{
-		{"Test new ds, all defaults", fields{14, 1, 0, testDatastore()}, true},
-		{"Test new ds, 0 ENIs", fields{14, 0, 0, testDatastore()}, true},
-		{"Test new ds, 3 warm IPs", fields{14, 0, 3, testDatastore()}, true},
-		{"Test 3 unused IPs, 1 warm", fields{3, 1, 1, datastoreWith3FreeIPs()}, false},
-		{"Test 1 used, 1 warm ENI", fields{3, 1, 0, datastoreWith1Pod1()}, true},
-		{"Test 1 used, 0 warm ENI", fields{3, 0, 0, datastoreWith1Pod1()}, false},
-		{"Test 3 used, 1 warm ENI", fields{3, 1, 0, datastoreWith3Pods()}, true},
-		{"Test 3 used, 0 warm ENI", fields{3, 0, 0, datastoreWith3Pods()}, true},
+		{"Test new ds, all defaults", fields{1,14, 1, 0, testDatastore()}, true},
+		{"Test new ds, 0 ENIs", fields{1,14, 0, 0, testDatastore()}, true},
+		{"Test new ds, 3 warm IPs", fields{1,14, 0, 3, testDatastore()}, true},
+		{"Test 3 unused IPs, 1 warm", fields{1,3, 1, 1, datastoreWith3FreeIPs()}, false},
+		{"Test 3 unused IPs, 4 warm", fields{1,3, 1, 4, datastoreWith3FreeIPs()}, false},
+		{"Test 3 unused IPs, 4 warm", fields{2,3, 1, 4, datastoreWith3FreeIPs()}, true},
+		{"Test 3 unused IPs, 4 warm IP", fields{1,3, 2, 4, datastoreWith3FreeIPs()}, false},
+		{"Test 1 used, 1 warm ENI, maxENI is 1", fields{1,3, 1, 0, datastoreWith1Pod1()}, false},
+		{"Test 1 used, 1 warm ENI, maxENI is 2", fields{2,3, 1, 0, datastoreWith1Pod1()}, true},
+		{"Test 1 used, 0 warm ENI", fields{1,3, 0, 0, datastoreWith1Pod1()}, false},
+		{"Test 3 used, 1 warm ENI", fields{2,3, 1, 0, datastoreWith3Pods()}, true},
+		{"Test 3 used, 0 warm ENI", fields{2,3, 0, 0, datastoreWith3Pods()}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -542,13 +547,70 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 				eniConfig:           m.eniconfig,
 				networkClient:       m.network,
 				maxIPsPerENI:        tt.fields.maxIPsPerENI,
-				maxENI:              -1,
+				maxENI:              tt.fields.maxENI,
 				warmENITarget:       tt.fields.warmENITarget,
 				warmIPTarget:        tt.fields.warmIPTarget,
 			}
 			if got := c.nodeIPPoolTooLow(); got != tt.want {
 				t.Errorf("nodeIPPoolTooLow() = %v, want %v", got, tt.want)
 			}
+		})
+	}
+}
+
+func TestCanAllocateMoreIPs(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	type fields struct {
+		maxENI        int
+		maxIPsPerENI  int
+		warmENITarget int
+		warmIPTarget  int
+		enablePodENI  bool
+		datastore     *datastore.DataStore
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   bool
+	}{
+		{"Test 3 unused IPs, 1 warm ENI, 5 IPs per ENI, instance max ENI is 1", fields{
+			1, 5, 1, 0, false, datastoreWith3FreeIPs()},
+			true},
+		{"Test 3 unused IPs, 1 warm ENI, 3 IPs per ENI, instance max ENI is 1", fields{
+			1, 3, 1, 0, false, datastoreWith3FreeIPs()},
+			false},
+		{"Test 3 unused IPs, 2 warm ENI, 3 IPs per ENI, instance max ENI is 1", fields{
+			1, 3, 2, 0, false, datastoreWith3FreeIPs()},
+			false},
+		{"Test 3 unused IPs, 2 warm ENI, 3 IPs per ENI, instance max ENI is 2", fields{
+			2, 3, 2, 0, false, datastoreWith3FreeIPs()},
+			true},
+		{"Test 3 unused IPs, 2 warm ENI, 3 IPs per ENI, instance max ENI is 2, trunk ENI added", fields{
+			2, 3, 2, 0, true, datastoreWith3FreeIPs()},
+			false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &IPAMContext{
+				awsClient:           m.awsutils,
+				dataStore:           tt.fields.datastore,
+				useCustomNetworking: false,
+				eniConfig:           m.eniconfig,
+				networkClient:       m.network,
+				maxIPsPerENI:        tt.fields.maxIPsPerENI,
+				maxENI:              tt.fields.maxENI,
+				warmENITarget:       tt.fields.warmENITarget,
+				warmIPTarget:        tt.fields.warmIPTarget,
+				enablePodENI:        tt.fields.enablePodENI,
+			}
+			if tt.fields.enablePodENI {
+				c.dataStore.AddENI("", 2, false, true, false)
+			}
+			fmt.Printf("Trunk ENI ID is: %s \n", c.dataStore.GetTrunkENI())
+			assert.Equal(t, tt.want, c.canAllocateMoreIPs())
 		})
 	}
 }

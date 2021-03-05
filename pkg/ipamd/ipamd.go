@@ -699,7 +699,7 @@ func (c *IPAMContext) tryAllocateENI() error {
 	ipsToAllocate := c.maxIPsPerENI
 	short, _, warmIPTargetDefined := c.ipTargetState()
 	if warmIPTargetDefined {
-		ipsToAllocate = short
+		ipsToAllocate = min(short, ipsToAllocate)
 	}
 
 	err = c.awsClient.AllocIPAddresses(eni, ipsToAllocate)
@@ -872,6 +872,12 @@ func (c *IPAMContext) askForTrunkENIIfNeeded() {
 
 // nodeIPPoolTooLow returns true if IP pool is below low threshold
 func (c *IPAMContext) nodeIPPoolTooLow() bool {
+	if !c.canAllocateMoreIPs() {
+		// if the max IP addresses have been allocated, we don't try increase IP pool size,
+		// no matter how big the WARM_ENI_TARGET or WARM_IP_TARGET are set.
+		return false
+	}
+
 	short, _, warmIPTargetDefined := c.ipTargetState()
 	if warmIPTargetDefined {
 		return short > 0
@@ -880,12 +886,34 @@ func (c *IPAMContext) nodeIPPoolTooLow() bool {
 	total, used := c.dataStore.GetStats()
 
 	available := total - used
-	poolTooLow := available < c.maxIPsPerENI*c.warmENITarget || (c.warmENITarget == 0 && available == 0)
+	// instance max ENI is equal to or greater than 1, we want the smaller number of maxENI and WARM_ENI_TARGET.
+	poolTooLow := available < c.maxIPsPerENI * min(c.maxENI, c.warmENITarget) || (c.warmENITarget == 0 && available == 0)
 	if poolTooLow {
 		logPoolStats(total, used, c.maxIPsPerENI)
 		log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
 	}
 	return poolTooLow
+}
+
+// check if already added maximal number of IP addresses that the instance can support.
+func (c *IPAMContext) canAllocateMoreIPs() bool {
+	total, used := c.dataStore.GetStats()
+	reserveSlotForTrunkENI := 0
+	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
+		reserveSlotForTrunkENI = 1
+	}
+	maxAllocatableENIs := c.maxENI - c.unmanagedENI - reserveSlotForTrunkENI
+	maxAllocatableIPs := maxAllocatableENIs * c.maxIPsPerENI
+
+	if total >= maxAllocatableIPs {
+		log.Infof("Instance has loaded the max ENIs and IPs. Will not allocate more IPs. " +
+			"Total allocated IPs count is %d, max allowed IPs is %d, assigned IPs is %d, max allowed ENIs is %d, " +
+			"unmanaged ENIs is %d, reserved ENI for trunk is %d, allocated ENIs in datastore is %d",
+			total, maxAllocatableIPs, used, c.maxENI, c.unmanagedENI, reserveSlotForTrunkENI, c.dataStore.GetENIs())
+		return false
+	}
+
+	return true
 }
 
 // nodeIPPoolTooHigh returns true if IP pool is above high threshold
