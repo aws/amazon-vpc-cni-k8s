@@ -632,6 +632,12 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 					return false
 
 				}).AnyTimes()
+			
+			mockAWSUtils.EXPECT().IsCNIUnmanagedENI(gomock.Any()).DoAndReturn(
+				func(eni string) (unmanaged bool) {
+					return false
+					
+				}).AnyTimes()	
 
 			if got := c.filterUnmanagedENIs(tt.enis); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("filterUnmanagedENIs() = %v, want %v", got, tt.want)

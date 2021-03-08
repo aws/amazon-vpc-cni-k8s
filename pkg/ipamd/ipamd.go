@@ -361,8 +361,7 @@ func (c *IPAMContext) nodeInit() error {
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
 	c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
 	c.setUnmanagedENIs(metadataResult.TagMap)
-	tempENIIsMetadata := c.filterCNIUnmanagedENIs(metadataResult.ENIMetadata)
-	enis := c.filterUnmanagedENIs(tempENIIsMetadata)
+	enis := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
@@ -953,8 +952,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		ipamdErrInc("reconcileFailedGetENIs")
 		return
 	}
-	tempattachedENIs := c.filterCNIUnmanagedENIs(allENIs)
-	attachedENIs := c.filterUnmanagedENIs(tempattachedENIs)
+	attachedENIs := c.filterUnmanagedENIs(allENIs)
 	currentENIs := c.dataStore.GetENIInfos().ENIs
 	trunkENI := c.dataStore.GetTrunkENI()
 	// Initialize the set with the known EFA interfaces
@@ -991,8 +989,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		efaENIs = metadataResult.EFAENIs
 		c.setUnmanagedENIs(metadataResult.TagMap)
 		c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
-		tempattachedENIs = c.filterCNIUnmanagedENIs(metadataResult.ENIMetadata)
-		attachedENIs = c.filterUnmanagedENIs(tempattachedENIs)
+		attachedENIs = c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 	}
 
 	// Mark phase
@@ -1219,7 +1216,12 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 			log.Debugf("Skipping ENI %s: tagged with %s", eni.ENIID, eniNoManageTagKey)
 			numFiltered++
 			continue
+		} else if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
+			log.Debugf("Skipping ENI %s: since on non-zero network card", eni.ENIID)
+			numFiltered++
+			continue
 		}
+
 		ret = append(ret, eni)
 	}
 	c.unmanagedENI = numFiltered
@@ -1343,22 +1345,4 @@ func (c *IPAMContext) SetNodeLabel(key, value string) error {
 // GetPod returns the pod matching the name and namespace
 func (c *IPAMContext) GetPod(podName, namespace string) (*v1.Pod, error) {
 	return c.k8sClient.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
-}
-
-// filterCNIUnmanagedENIs filters out ENIs on non-zero network cards such as p4 family
-func (c *IPAMContext) filterCNIUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
-	numFiltered := 0
-	ret := make([]awsutils.ENIMetadata, 0, len(enis))
-	for _, eni := range enis {
-		// If we have CNI unmanaged ENIs, filter them out
-		if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
-			log.Debugf("Skipping ENI %s: since on non-zero network card", eni.ENIID)
-			numFiltered++
-			continue
-		}
-		ret = append(ret, eni)
-	}
-	c.cniunmanagedENI = numFiltered
-	c.updateIPStats(numFiltered)
-	return ret
 }
