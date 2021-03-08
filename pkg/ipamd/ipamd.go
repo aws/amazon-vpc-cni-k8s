@@ -194,7 +194,6 @@ type IPAMContext struct {
 	maxIPsPerENI         int
 	maxENI               int
 	unmanagedENI         int
-	cniunmanagedENI      int
 	warmENITarget        int
 	warmIPTarget         int
 	minimumIPTarget      int
