@@ -16,7 +16,7 @@ OS=$(go env GOOS)
 ARCH=$(go env GOARCH)
 
 : "${AWS_DEFAULT_REGION:=us-west-2}"
-: "${K8S_VERSION:=1.16.10}"
+: "${K8S_VERSION:=1.18.16}"
 : "${PROVISION:=true}"
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
@@ -100,7 +100,6 @@ fi
 check_is_installed docker
 check_is_installed aws
 check_aws_credentials
-ensure_aws_k8s_tester
 
 : "${AWS_ACCOUNT_ID:=$(aws sts get-caller-identity --query Account --output text)}"
 : "${AWS_ECR_REGISTRY:="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com"}"
@@ -175,6 +174,7 @@ if [[ "$PROVISION" == true ]]; then
     elif [[ "$RUN_KOPS_TEST" == true ]]; then
         up-kops-cluster
     else
+        ensure_eksctl
         up-test-cluster
     fi
     UP_CLUSTER_DURATION=$((SECONDS - START))
@@ -195,12 +195,8 @@ sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PA
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
 sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
 
-if [[ $RUN_KOPS_TEST == true || $RUN_BOTTLEROCKET_TEST == true ]]; then
-    KUBECTL_PATH=kubectl
-    export KUBECONFIG=~/.kube/config
-else
-    export KUBECONFIG=$KUBECONFIG_PATH
-fi
+KUBECTL_PATH=kubectl
+export KUBECONFIG=~/.kube/config
 
 if [[ $RUN_KOPS_TEST == true ]]; then
     run_kops_conformance
@@ -269,15 +265,20 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   START=$SECONDS
 
   GOPATH=$(go env GOPATH)
-  echo "PATH: $PATH"
 
   go install github.com/onsi/ginkgo/ginkgo
-  wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C ${TEST_BASE_DIR}  kubernetes/platforms/linux/amd64/e2e.test
-  $GOPATH/bin/ginkgo -p --focus="Conformance" --failFast --flakeAttempts 2 \
-   --skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" ${TEST_BASE_DIR}/e2e.test -- --kubeconfig=$KUBECONFIG
 
-  ${TEST_BASE_DIR}/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
-    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
+  echo "Downloading e2e tests from https://dl.k8s.io/v$K8S_VERSION/kubernetes-test-linux-amd64.tar.gz"
+  wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test-linux-amd64.tar.gz | tar -zxvf - --strip-components=3 -C ${TEST_BASE_DIR}  kubernetes/test/bin/e2e.test
+
+  echo 'Running: ginkgo -p --focus="Conformance"'
+
+  $GOPATH/bin/ginkgo -p --focus="Conformance" --flakeAttempts 5 \
+   --skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|(works for CRD preserving unknown fields in an embedded object)|(should be able to change the type from ExternalName to NodePort)|(should be able to create a functioning NodePort service)|(should be able to retrieve and filter logs)|\[Slow\]|\[Serial\]" ${TEST_BASE_DIR}/e2e.test -- --kubeconfig=$KUBECONFIG
+
+#  echo 'Running: e2e.test --ginkgo.focus="\[Serial\].*Conformance"'
+#  ${TEST_BASE_DIR}/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
+#    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|(works for CRD preserving unknown fields in an embedded object)|(should be able to change the type from ExternalName to NodePort)|(should be able to create a functioning NodePort service)|(should be able to retrieve and filter logs)|\[Slow\]"
 
   CONFORMANCE_DURATION=$((SECONDS - START))
   echo "TIMELINE: Conformance tests took $CONFORMANCE_DURATION seconds."
