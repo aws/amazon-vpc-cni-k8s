@@ -365,14 +365,13 @@ func (c *IPAMContext) nodeInit() error {
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
 		// Retry ENI sync
+		if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
+			log.Infof("Skipping ENI %s since it is not on network card 0", eni.ENIID)
+			continue
+		}
 		retry := 0
 		for {
 			retry++
-
-			if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
-				log.Infof("Skipping ENI %s since it is not on network card 0", eni.ENIID)
-				continue
-			}
 
 			if err = c.setupENI(eni.ENIID, eni, eni.ENIID == metadataResult.TrunkENI, metadataResult.EFAENIs[eni.ENIID]); err == nil {
 				log.Infof("ENI %s set up.", eni.ENIID)
