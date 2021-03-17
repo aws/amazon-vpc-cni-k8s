@@ -110,8 +110,6 @@ func TestInitWithEC2metadata(t *testing.T) {
 	defer ctrl.Finish()
 	mockMetadata := testMetadata(nil)
 
-	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-
 	ins := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
 	err := ins.initWithEC2Metadata(ctx)
 	if assert.NoError(t, err) {
@@ -120,7 +118,6 @@ func TestInitWithEC2metadata(t *testing.T) {
 		assert.Equal(t, ins.instanceID, instanceID)
 		assert.Equal(t, ins.primaryENImac, primaryMAC)
 		assert.Equal(t, ins.primaryENI, primaryeniID)
-		assert.Equal(t, len(ins.securityGroups.SortedList()), 2)
 		assert.Equal(t, subnetID, ins.subnetID)
 	}
 }
@@ -131,8 +128,6 @@ func TestInitWithEC2metadataErr(t *testing.T) {
 
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
-
-	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	var keys []string
 	for k := range testMetadata(nil) {
@@ -275,6 +270,9 @@ func TestDescribeAllENIs(t *testing.T) {
 			TagSet: []*ec2.Tag{
 				{Key: aws.String("foo"), Value: aws.String("foo-value")},
 			},
+			Attachment: &ec2.NetworkInterfaceAttachment{
+				NetworkCardIndex: aws.Int64(0),
+			},
 		}},
 	}
 
@@ -312,8 +310,6 @@ func TestTagEni(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
 	mockMetadata := testMetadata(nil)
-
-	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	ins := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
 
