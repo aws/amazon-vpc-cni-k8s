@@ -76,6 +76,6 @@ func injectUserAgent(handlers *request.Handlers) {
 		Name: fmt.Sprintf("%s/user-agent", "amazon-vpc-cni-k8s"),
 		Fn: request.MakeAddToUserAgentHandler(
 			"amazon-vpc-cni-k8s",
-			fmt.Sprintf("version/%s",version)),
+			fmt.Sprintf("version/%s", version)),
 	})
 }
