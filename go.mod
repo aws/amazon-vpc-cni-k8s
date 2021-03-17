@@ -5,7 +5,7 @@ go 1.13
 require (
 	github.com/aws/aws-sdk-go v1.37.23
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 // indirect
-	github.com/containernetworking/cni v0.8.0
+	github.com/containernetworking/cni v0.7.1
 	github.com/containernetworking/plugins v0.9.0
 	github.com/coreos/go-iptables v0.4.5
 	github.com/ghodss/yaml v1.0.0 // indirect
