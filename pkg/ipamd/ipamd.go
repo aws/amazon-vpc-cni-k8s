@@ -311,6 +311,17 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 	if err != nil {
 		return nil, err
 	}
+
+	mac := c.awsClient.GetPrimaryENImac()
+	// retrieve security groups
+	err = c.awsClient.RefreshSGIDs(mac)
+	if err != nil {
+		return nil, err
+	}
+
+	// Refresh security groups and VPC CIDR blocks in the background
+	// Ignoring errors since we will retry in 30s
+	go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
 	return c, nil
 }
 
@@ -347,15 +358,21 @@ func (c *IPAMContext) nodeInit() error {
 		return errors.New("ipamd init: failed to retrieve attached ENIs info")
 	}
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
+	c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
 	c.setUnmanagedENIs(metadataResult.TagMap)
 	enis := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
 		// Retry ENI sync
+		if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
+			log.Infof("Skipping ENI %s since it is not on network card 0", eni.ENIID)
+			continue
+		}
 		retry := 0
 		for {
 			retry++
+
 			if err = c.setupENI(eni.ENIID, eni, eni.ENIID == metadataResult.TrunkENI, metadataResult.EFAENIs[eni.ENIID]); err == nil {
 				log.Infof("ENI %s set up.", eni.ENIID)
 				break
@@ -969,6 +986,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 		// Just copy values of the EFA set
 		efaENIs = metadataResult.EFAENIs
 		c.setUnmanagedENIs(metadataResult.TagMap)
+		c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
 		attachedENIs = c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 	}
 
@@ -1196,7 +1214,12 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 			log.Debugf("Skipping ENI %s: tagged with %s", eni.ENIID, eniNoManageTagKey)
 			numFiltered++
 			continue
+		} else if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
+			log.Debugf("Skipping ENI %s: since on non-zero network card", eni.ENIID)
+			numFiltered++
+			continue
 		}
+
 		ret = append(ret, eni)
 	}
 	c.unmanagedENI = numFiltered
