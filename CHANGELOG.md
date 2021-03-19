@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.7.10-rc1
+## v1.7.10
 
 * Improvement - Multi card support - Prevent route override for primary ENI across multi-cards ENAs (#1396 by jayanthvn)
 
