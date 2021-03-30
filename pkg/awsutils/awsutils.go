@@ -117,6 +117,9 @@ type APIs interface {
 	// GetIPv4sFromEC2 returns the IPv4 addresses for a given ENI
 	GetIPv4sFromEC2(eniID string) (addrList []*ec2.NetworkInterfacePrivateIpAddress, err error)
 
+	// GetIPv4PrefixesFromEC2 returns the IPv4 addresses for a given ENI
+	GetIPv4PrefixesFromEC2(eniID string) (addrList []*ec2.Ipv4PrefixSpecification, err error)
+
 	// DescribeAllENIs calls EC2 and returns a fully populated DescribeAllENIsResult struct and an error
 	DescribeAllENIs() (DescribeAllENIsResult, error)
 
@@ -124,10 +127,10 @@ type APIs interface {
 	AllocIPAddress(eniID string) error
 
 	// AllocIPAddresses allocates numIPs IP addresses on a ENI
-	AllocIPAddresses(eniID string, numIPs int) error
+	AllocIPAddresses(eniID string, numIPs int, enableIpv4PrefixDelegation bool) error
 
 	// DeallocIPAddresses deallocates the list of IP addresses from a ENI
-	DeallocIPAddresses(eniID string, ips []string) error
+	DeallocIPAddresses(eniID string, ips []string, enableIpv4PrefixDelegation bool) error
 
 	// GetVPCIPv4CIDRs returns VPC's CIDRs from instance metadata
 	GetVPCIPv4CIDRs() ([]string, error)
@@ -202,6 +205,9 @@ type ENIMetadata struct {
 
 	// The ip addresses allocated for the network interface
 	IPv4Addresses []*ec2.NetworkInterfacePrivateIpAddress
+
+	// IPv4 Prefixes allocated for the network interface
+	IPv4Prefixes []*ec2.Ipv4PrefixSpecification
 }
 
 // InstanceTypeLimits keeps track of limits for an instance type
@@ -550,12 +556,24 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		}
 	}
 
+	imdsIPv4Prefixes, err := cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
+	if err != nil {
+		return ENIMetadata{}, err	
+	}
+
+	ec2ipv4Prefixes := make([]*ec2.Ipv4PrefixSpecification, len(imdsIPv4Prefixes))
+	for i, ipv4prefix := range imdsIPv4Prefixes {
+		ec2ipv4Prefixes[i] = &ec2.Ipv4PrefixSpecification{
+			Ipv4Prefix: aws.String(ipv4prefix),
+		}
+	}
 	return ENIMetadata{
 		ENIID:          eniID,
 		MAC:            eniMAC,
 		DeviceNumber:   deviceNum,
 		SubnetIPv4CIDR: cidr.String(),
 		IPv4Addresses:  ec2ip4s,
+		IPv4Prefixes:   ec2ipv4Prefixes, 
 	}, nil
 }
 
@@ -975,6 +993,35 @@ func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList [
 	return firstNI.PrivateIpAddresses, nil
 }
 
+// GetIPv4PrefixesFromEC2 calls EC2 and returns a list of all addresses on the ENI
+func (cache *EC2InstanceMetadataCache) GetIPv4PrefixesFromEC2(eniID string) (addrList []*ec2.Ipv4PrefixSpecification, err error) {
+	eniIds := make([]*string, 0)
+	eniIds = append(eniIds, aws.String(eniID))
+	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIds}
+
+	start := time.Now()
+	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input, userAgent)
+	awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+				return nil, ErrENINotFound
+			}
+		}
+		awsAPIErrInc("DescribeNetworkInterfaces", err)
+		log.Errorf("Failed to get ENI %s information from EC2 control plane %v", eniID, err)
+		return nil, errors.Wrap(err, "failed to describe network interface")
+	}
+
+	// Shouldn't happen, but let's be safe
+	if len(result.NetworkInterfaces) == 0 {
+		return nil, ErrNoNetworkInterfaces
+	}
+	firstNI := result.NetworkInterfaces[0]
+
+	return firstNI.Ipv4Prefixes, nil
+}
+
 // DescribeAllENIs calls EC2 to refresh the ENIMetadata and tags for all attached ENIs
 func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult, error) {
 	// Fetch all local ENI info from metadata
@@ -1199,7 +1246,7 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
 }
 
 // AllocIPAddresses allocates numIPs of IP address on an ENI
-func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int) error {
+func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int, enableIpv4PrefixDelegation bool) error {
 	var needIPs = numIPs
 
 	ipLimit, err := cache.GetENIIPv4Limit()
@@ -1218,9 +1265,22 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	}
 
 	log.Infof("Trying to allocate %d IP addresses on ENI %s", needIPs, eniID)
-	input := &ec2.AssignPrivateIpAddressesInput{
-		NetworkInterfaceId:             aws.String(eniID),
-		SecondaryPrivateIpAddressCount: aws.Int64(int64(needIPs)),
+
+	input := &ec2.AssignPrivateIpAddressesInput{}
+
+	if enableIpv4PrefixDelegation {
+		//needPrefixes := (needIPs / 16) + 1
+		needPrefixes := needIPs
+		input = &ec2.AssignPrivateIpAddressesInput{
+			NetworkInterfaceId: aws.String(eniID),
+			Ipv4PrefixCount:    aws.Int64(int64(needPrefixes)),
+		}
+
+	} else {
+		input = &ec2.AssignPrivateIpAddressesInput{
+			NetworkInterfaceId:             aws.String(eniID),
+			SecondaryPrivateIpAddressCount: aws.Int64(int64(needIPs)),
+		}
 	}
 
 	start := time.Now()
@@ -1236,8 +1296,13 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 		awsAPIErrInc("AssignPrivateIpAddresses", err)
 		return errors.Wrap(err, "allocate IP address: failed to allocate a private IP address")
 	}
+	log.Infof("**************************************")
+	log.Infof("Printing output - %s", output)
+	log.Infof("**************************************")
 	if output != nil {
-		log.Infof("Allocated %d private IP addresses", len(output.AssignedPrivateIpAddresses))
+		if enableIpv4PrefixDelegation { 
+			log.Infof("Allocated %d private IP addresses", len(output.AssignedIpv4Prefixes))
+		}
 	}
 	return nil
 }
@@ -1296,7 +1361,7 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 }
 
 // DeallocIPAddresses allocates numIPs of IP address on an ENI
-func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []string) error {
+func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []string, enableIpv4PrefixDelegation bool) error {
 	log.Infof("Trying to unassign the following IPs %s from ENI %s", ips, eniID)
 	var ipsInput []*string
 	for _, ip := range ips {

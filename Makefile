@@ -25,6 +25,8 @@ VERSION ?= $(shell git describe --tags --always --dirty || echo "unknown")
 # DESTDIR is where distribution output (container images) is placed.
 DESTDIR = .
 
+EC2_SDK_OVERRIDE ?= "y"
+
 # IMAGE is the primary AWS VPC CNI plugin container image.
 IMAGE = amazon/amazon-k8s-cni
 IMAGE_NAME = $(IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
@@ -284,6 +286,16 @@ generate-k8s-yaml:
 	${MAKEFILE_PATH}/scripts/generate-k8s-yaml
 
 release: generate-k8s-yaml upload-resources-to-github
+
+setup-ec2-sdk-override:
+	@if [ "$(EC2_SDK_OVERRIDE)" = "y" ] ; then \
+	    ./scripts/ec2_model_override/setup.sh ; \
+	fi
+
+cleanup-ec2-sdk-override:
+	@if [ "$(EC2_SDK_OVERRIDE)" = "y" ] ; then \
+	    ./scripts/ec2_model_override/cleanup.sh ; \
+	fi
 
 # Clean temporary files and build artifacts from the project.
 clean:    ## Clean temporary files and build artifacts from the project.
