@@ -295,7 +295,7 @@ type CheckpointEntry struct {
 // ReadBackingStore initialises the IP allocation state from the
 // configured backing store.  Should be called before using data
 // store.
-func (ds *DataStore) ReadBackingStore() error {
+func (ds *DataStore) ReadBackingStore(enableIpv4PrefixDelegation bool) error {
 	var data CheckpointData
 
 	switch ds.CheckpointMigrationPhase {
@@ -353,22 +353,32 @@ func (ds *DataStore) ReadBackingStore() error {
 	defer ds.lock.Unlock()
 
 	eniIPs := make(ENIPool)
+	eniPrefixes := make(ENIPool)
+
 	for _, eni := range ds.eniPool {
 		for _, addr := range eni.IPv4Addresses {
 			eniIPs[addr.Address] = eni
 		}
+		for _, prefix := range eni.IPv4Prefixes {
+			eniPrefixes[prefix.Prefix] = eni
+		}
 	}
+    ds.log.Infof("Build prefix DB - JAYANTH")
+	
 
 	for _, allocation := range data.Allocations {
-		eni := eniIPs[allocation.IPv4]
-		if eni == nil {
-			ds.log.Infof("datastore: Sandbox %s uses unknown IPv4 %s - presuming stale/dead", allocation.IPAMKey, allocation.IPv4)
-			continue
-		}
+		if !enableIpv4PrefixDelegation {
+			eni := eniIPs[allocation.IPv4]
+			if eni == nil {
+				ds.log.Infof("datastore: Sandbox %s uses unknown IPv4 %s - presuming stale/dead", allocation.IPAMKey, allocation.IPv4)
+				continue
+			}
 
-		addr := eni.IPv4Addresses[allocation.IPv4]
-		ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
-		if eni.IsPDenabled {
+			addr := eni.IPv4Addresses[allocation.IPv4]
+			ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
+			ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
+		} else if enableIpv4PrefixDelegation {
+
 			ds.log.Infof("Got IP to recover %s\n", allocation.IPv4)
 			ipv4Prefix := net.ParseIP(allocation.IPv4)
 			ipv4PrefixMask := net.CIDRMask(28, 32)
@@ -376,6 +386,11 @@ func (ds *DataStore) ReadBackingStore() error {
 			ipv4Prefix = ipv4Prefix.Mask(ipv4PrefixMask)
 			ds.log.Infof("Retrieved prefix %s", ipv4Prefix.String())
 			//TODO first time create
+			eni := eniPrefixes[ipv4Prefix.String()]
+			if eni == nil {
+				ds.log.Infof("datastore: Sandbox %s uses unknown prefix IPv4 %s - presuming stale/dead", allocation.IPAMKey, allocation.IPv4)
+				continue
+			}	
 			eniPrefixDB := ds.eniPool[eni.ID].IPv4Prefixes[ipv4Prefix.String()]
 			if eniPrefixDB == nil {
 				eniPrefixDB.Prefix = ipv4Prefix.String()
@@ -392,11 +407,32 @@ func (ds *DataStore) ReadBackingStore() error {
 			ipv4Addr = ipv4Addr.To4()
 			ipv4Addr = ipv4Addr.Mask(ipv4AddrMask)
 
-			index := ipv4Addr[3] - ipv4Prefix[3]
-			eniPrefixDB.AllocatedIPs.SetUnset(int64(index))
-			ds.log.Debugf("Recovered PD prefix %s index %d", ipv4Prefix.String(), index)
+			IPindex := ipv4Addr[3] - ipv4Prefix[3]
+			
+			//eniPrefixDB.AllocatedIPs.SetUnset(int64(index))
+			octet := IPindex/8
+			index := IPindex%8
+			eniPrefixDB.AllocatedIPs.UsedIPs[octet] = eniPrefixDB.AllocatedIPs.UsedIPs[octet] ^ (1 << index) 
+
+
+
+			err := ds.AddPrefixIPv4AddressToStore(eni.ID, allocation.IPv4)
+			if err != nil && err.Error() != IPAlreadyInStoreError {
+				ds.log.Infof("Did it come here in restore?")
+				ds.log.Errorf("Failed to ADD PD IP %s on ENI %s", allocation.IPv4, eni.ID)
+				return err
+			}
+					
+			addr := eni.IPv4Addresses[allocation.IPv4]
+			ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
+
+
+			addr.Prefix = ipv4Prefix.String() 
+			addr.IPIndex = int64(IPindex)
+
+			ds.log.Debugf("Recovered PD prefix %s index %d", ipv4Prefix.String(), IPindex)
+			ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
 		}
-		ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
 	}
 
 	if ds.CheckpointMigrationPhase == 1 {
@@ -1044,6 +1080,8 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (ip string, deviceN
 		return "", 0, err
 	}
 	addr.UnassignedTime = time.Now()
+	ds.log.Infof("Dump for prefix %v", addr.Prefix)
+	ds.log.Infof("DUMP - %v", eni.IPv4Prefixes[addr.Prefix])
 	eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.CooldownIPs[addr.IPIndex] = addr.UnassignedTime
 	ds.log.Infof("Setting cooldown for index %d at time %v", addr.IPIndex, addr.UnassignedTime)
 	octet := addr.IPIndex/8

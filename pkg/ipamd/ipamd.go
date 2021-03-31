@@ -412,7 +412,7 @@ func (c *IPAMContext) nodeInit() error {
 		}
 	}
 
-	if err := c.dataStore.ReadBackingStore(); err != nil {
+	if err := c.dataStore.ReadBackingStore(c.enableIpv4PrefixDelegation); err != nil {
 		return err
 	}
 
