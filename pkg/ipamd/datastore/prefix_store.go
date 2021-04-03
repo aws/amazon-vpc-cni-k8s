@@ -122,7 +122,7 @@ func (prefix PrefixIPsStore) getPosOfRightMostUnsetBit(n byte, octetlen int) int
 
 // getIpfromPrefix - Returns a free IP in the prefix
 func (prefix PrefixIPsStore) getIPfromPrefix() (int64, error) {
-	DBlen := (int)(prefix.IPsPerPrefix/8 + 1)
+	DBlen := (int)(prefix.IPsPerPrefix/8) 
     log.Infof("In get IP from prefix - %d", DBlen)
 	var octet int
 	for octet = 0; octet < DBlen; octet++ {

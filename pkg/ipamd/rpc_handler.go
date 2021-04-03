@@ -195,7 +195,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		IfName:      in.IfName,
 		NetworkName: in.NetworkName,
 	}
-	ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
+	ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey, s.ipamContext.enableIpv4PrefixDelegation)
 
 	if err == datastore.ErrUnknownPod && s.ipamContext.enablePodENI {
 		pod, err := s.ipamContext.GetPod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)

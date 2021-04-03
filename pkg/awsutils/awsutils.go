@@ -1308,11 +1308,11 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 }
 
 // WaitForENIAndIPsAttached waits until the ENI has been attached and the secondary IPs have been added
-func (cache *EC2InstanceMetadataCache) WaitForENIAndIPsAttached(eni string, wantedSecondaryIPs int) (eniMetadata ENIMetadata, err error) {
-	return cache.waitForENIAndIPsAttached(eni, wantedSecondaryIPs, maxENIBackoffDelay)
+func (cache *EC2InstanceMetadataCache) WaitForENIAndIPsAttached(eni string, wantedSecondaryIPs int, enableIpv4PrefixDelegation bool) (eniMetadata ENIMetadata, err error) {
+	return cache.waitForENIAndIPsAttached(eni, wantedSecondaryIPs, maxENIBackoffDelay, enableIpv4PrefixDelegation)
 }
 
-func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, wantedSecondaryIPs int, maxBackoffDelay time.Duration) (eniMetadata ENIMetadata, err error) {
+func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, wantedSecondaryIPs int, maxBackoffDelay time.Duration, enableIpv4PrefixDelegation bool) (eniMetadata ENIMetadata, err error) {
 	start := time.Now()
 	attempt := 0
 	// Wait until the ENI shows up in the instance metadata service and has at least some secondary IPs
@@ -1327,11 +1327,20 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 		for _, returnedENI := range enis {
 			if eni == returnedENI.ENIID {
 				// Check how many Secondary IPs have been attached
-				eniIPCount := len(returnedENI.IPv4Addresses)
-				if eniIPCount <= 1 {
-					log.Debugf("No secondary IPv4 addresses available yet on ENI %s", returnedENI.ENIID)
-					return ErrNoSecondaryIPsFound
+				var eniIPCount int
+
+				if enableIpv4PrefixDelegation {
+					eniIPCount = len(returnedENI.IPv4Prefixes)
+				} else {
+					eniIPCount = len(returnedENI.IPv4Addresses)	
 				}
+				if eniIPCount <= 1 && !enableIpv4PrefixDelegation{
+					log.Debugf("No IPv4 addresses available yet on ENI %s", returnedENI.ENIID)
+					return ErrNoSecondaryIPsFound
+				} else if enableIpv4PrefixDelegation && eniIPCount < 1 {
+					log.Debugf("No IPv4 addresses available yet on ENI %s", returnedENI.ENIID)
+					return ErrNoSecondaryIPsFound	
+				} 
 				// At least some are attached
 				eniMetadata = returnedENI
 				// ipsToAllocate will be at most 1 less then the IP limit for the ENI because of the primary IP
@@ -1348,10 +1357,14 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 	if err != nil {
 		// If we have at least 1 Secondary IP, by now return what we have without an error
 		if err == ErrAllSecondaryIPsNotFound {
-			if len(eniMetadata.IPv4Addresses) > 1 {
+			if !enableIpv4PrefixDelegation && len(eniMetadata.IPv4Addresses) > 1 {
 				// We have some Secondary IPs, return the ones we have
 				log.Warnf("This ENI only has %d IP addresses, we wanted %d", len(eniMetadata.IPv4Addresses), wantedSecondaryIPs)
 				return eniMetadata, nil
+			} else if enableIpv4PrefixDelegation && len(eniMetadata.IPv4Prefixes) > 1 {
+				// We have some prefixes, return the ones we have
+				log.Warnf("This ENI only has %d Prefixes, we wanted %d", len(eniMetadata.IPv4Prefixes), wantedSecondaryIPs)
+				return eniMetadata, nil	
 			}
 		}
 		awsAPIErrInc("waitENIAttachedFailedToAssignIPs", err)
@@ -1367,10 +1380,18 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []st
 	for _, ip := range ips {
 		ipsInput = append(ipsInput, aws.String(ip))
 	}
-
-	input := &ec2.UnassignPrivateIpAddressesInput{
-		NetworkInterfaceId: aws.String(eniID),
-		PrivateIpAddresses: ipsInput,
+    
+	input := &ec2.UnassignPrivateIpAddressesInput{}
+	if !enableIpv4PrefixDelegation {
+		input = &ec2.UnassignPrivateIpAddressesInput{
+			NetworkInterfaceId: aws.String(eniID),
+			PrivateIpAddresses: ipsInput,
+		}
+	} else {
+		input = &ec2.UnassignPrivateIpAddressesInput{
+			NetworkInterfaceId: aws.String(eniID),
+			Ipv4Prefixes: ipsInput,
+		}	
 	}
 
 	start := time.Now()
