@@ -2,7 +2,7 @@ package datastore
 
 import (
 	"fmt"
-	//"math"
+	"net"
 	"time"
 	"encoding/binary"
 
@@ -59,15 +59,11 @@ func getIPlocation(pos int64) (int64, int64) {
 	return octet, bitpos
 }
 
-//SetUnset - Bit will be changes to 0 <-> 1
-func (prefix PrefixIPsStore) SetUnset(pos int64) {
-	octet, bitpos := getIPlocation(pos)
-
-	if bitpos == 1 {
-		prefix.UsedIPs[octet] = prefix.UsedIPs[octet] ^ 1
-	} else {
-		prefix.UsedIPs[octet] = prefix.UsedIPs[octet] ^ (1 << int(bitpos-1))
-	}
+//SetUnsetIPallocation - Bit will be changes to 0 <-> 1
+func (prefix PrefixIPsStore) SetUnsetIPallocation(IPindex byte) {
+	octet := IPindex/8
+	index := IPindex%8
+	prefix.UsedIPs[octet] = prefix.UsedIPs[octet] ^ (1 << index) 
 }
 
 // isIPUsed - Checks if the IP is already used
@@ -85,29 +81,6 @@ func (prefix PrefixIPsStore) isIPUsed(pos int64) bool {
 }
 
 func (prefix PrefixIPsStore) getPosOfRightMostUnsetBit(n byte, octetlen int) int {
-	/*
-	if n == 1 && octet == 0 {
-		return -1
-	}
-
-	value := (float64)(^n & (n + 1))
-	return math.Log(value) / math.Log(2)
-	*/
-	/*
-	// if n = 0, return 1
-    if (n == 0) {
-        return 1
-	}
-      
-    // if all bits of 'n' are set
-    if ((n & (n + 1)) == 0) {  
-        return -1
-	}
-      
-    n = ^n
-	value := (float64)(n & -n)
-    return math.Log2(value)  
-	*/ 
 	log.Infof("Size of byte array %d", octetlen)
 	var i int
 	for i = 0; i < octetlen * 8; i++ {
@@ -140,10 +113,48 @@ func (prefix PrefixIPsStore) getIPfromPrefix() (int64, error) {
 	return -1, errors.New("No free index")
 }
 
-func (prefix PrefixIPsStore) freeIPtoPrefix(IPindex int64) error {
-	if err := prefix.Validate(IPindex); err != nil {
-		return err
+func getIPv4AddrfromPrefix(prefix *ENIPrefix) (string, int64, error) {
+	IPoffset, err := prefix.AllocatedIPs.getIPfromPrefix()
+	if err != nil {
+		log.Errorf("Mismtach between prefix free IPs and available IPs: %v", err)
+		return "", -1, err
 	}
-	prefix.SetUnset(IPindex)
-	return nil
+	prefix.FreeIps--
+	prefix.UsedIPs++
+
+	log.Infof("Got ip offset - %d", IPoffset)
+    strPrivateIPv4 := getIPfromPrefix(prefix, IPoffset)
+	return strPrivateIPv4, IPoffset, nil
+}
+
+func getPrefixFromIPv4Addr(IPaddr string) (net.IP) {
+	ipv4Prefix := net.ParseIP(IPaddr)
+	ipv4PrefixMask := net.CIDRMask(28, 32)
+	ipv4Prefix = ipv4Prefix.To4()
+	ipv4Prefix = ipv4Prefix.Mask(ipv4PrefixMask)
+	return ipv4Prefix
+}
+
+func getPrefixIndexfromIP(ipAddr string, ipv4Prefix net.IP) (byte) {
+	ipv4Addr := net.ParseIP(ipAddr)
+	ipv4AddrMask := net.CIDRMask(32, 32)
+	ipv4Addr = ipv4Addr.To4()
+	ipv4Addr = ipv4Addr.Mask(ipv4AddrMask)
+
+	IPindex := ipv4Addr[3] - ipv4Prefix[3]
+	return IPindex
+}
+
+func getIPfromPrefix(prefix *ENIPrefix, IPoffset int64) string {
+	ipv4Addr := net.ParseIP(prefix.Prefix)
+	ipv4Mask := net.CIDRMask(prefix.PrefixLen, 32)
+	ipv4Addr = ipv4Addr.To4()
+	ipv4Addr = ipv4Addr.Mask(ipv4Mask)
+	offset := make([]byte, 8)
+					
+	binary.LittleEndian.PutUint64(offset, uint64(IPoffset))
+	log.Infof("BEFORE Last octet - %d", ipv4Addr[3])
+	ipv4Addr[3] = ipv4Addr[3] + offset[0]
+	log.Infof("AFTER Last octet - %d", ipv4Addr[3])
+	return ipv4Addr.String() 
 }

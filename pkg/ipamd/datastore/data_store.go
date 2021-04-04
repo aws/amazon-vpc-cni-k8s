@@ -14,9 +14,9 @@
 package datastore
 
 import (
-	"encoding/binary"
+	//"encoding/binary"
 	"fmt"
-	"net"
+	//"net"
 	"os"
 	"sync"
 	"time"
@@ -381,10 +381,7 @@ func (ds *DataStore) ReadBackingStore(enableIpv4PrefixDelegation bool) error {
 		} else if enableIpv4PrefixDelegation {
 
 			ds.log.Infof("Got IP to recover %s\n", allocation.IPv4)
-			ipv4Prefix := net.ParseIP(allocation.IPv4)
-			ipv4PrefixMask := net.CIDRMask(28, 32)
-			ipv4Prefix = ipv4Prefix.To4()
-			ipv4Prefix = ipv4Prefix.Mask(ipv4PrefixMask)
+			ipv4Prefix := getPrefixFromIPv4Addr(allocation.IPv4)
 			ds.log.Infof("Retrieved prefix %s", ipv4Prefix.String())
 			//TODO first time create
 			eni := eniPrefixes[ipv4Prefix.String()]
@@ -404,19 +401,9 @@ func (ds *DataStore) ReadBackingStore(enableIpv4PrefixDelegation bool) error {
 			eniPrefixDB.UsedIPs++
 			eniPrefixDB.FreeIps--
 
-			ipv4Addr := net.ParseIP(allocation.IPv4)
-			ipv4AddrMask := net.CIDRMask(32, 32)
-			ipv4Addr = ipv4Addr.To4()
-			ipv4Addr = ipv4Addr.Mask(ipv4AddrMask)
 
-			IPindex := ipv4Addr[3] - ipv4Prefix[3]
-			
-			//eniPrefixDB.AllocatedIPs.SetUnset(int64(index))
-			octet := IPindex/8
-			index := IPindex%8
-			eniPrefixDB.AllocatedIPs.UsedIPs[octet] = eniPrefixDB.AllocatedIPs.UsedIPs[octet] ^ (1 << index) 
-
-
+			IPindex := getPrefixIndexfromIP(allocation.IPv4, ipv4Prefix)
+			eniPrefixDB.AllocatedIPs.SetUnsetIPallocation(IPindex)
 
 			err := ds.AddPrefixIPv4AddressToStore(eni.ID, allocation.IPv4)
 			if err != nil && err.Error() != IPAlreadyInStoreError {
@@ -675,15 +662,7 @@ func (ds *DataStore) DelIPv4PrefixFromStore(eniID string, ipv4Prefix string, for
 			var index int
 			for index = 0; index < 8; index++ {
 				if (data | (1 << index) == 1){
-					ipv4Addr := net.ParseIP(ipPrefix.Prefix)
-					ipv4Mask := net.CIDRMask(ipPrefix.PrefixLen, 32)
-					ipv4Addr = ipv4Addr.To4()
-					ipv4Addr = ipv4Addr.Mask(ipv4Mask)
-					offset := make([]byte, 8)
-					binary.LittleEndian.PutUint64(offset, uint64(index))
-					ipv4Addr[3] = ipv4Addr[3] + offset[0]
-
-					strPrivateIPv4 := ipv4Addr.String()
+					strPrivateIPv4 := getIPfromPrefix(ipPrefix, int64(index))
 					ds.log.Infof("New IP - %s", strPrivateIPv4)
 					addr := curENI.IPv4Addresses[strPrivateIPv4]	
 				    ds.unassignPodIPv4AddressUnsafe(addr)	
@@ -741,26 +720,11 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 			for _, prefix := range eni.IPv4Prefixes {
 				ds.log.Infof("Found a prefix %s", prefix)
 				if prefix.FreeIps > 0 {
-					IPoffset, err := prefix.AllocatedIPs.getIPfromPrefix()
+					strPrivateIPv4, IPoffset, err:= getIPv4AddrfromPrefix(prefix)
 					if err != nil {
-						ds.log.Errorf("Mismtach between prefix free IPs and available IPs: %v", err)
+						ds.log.Errorf("Unable to get IP address from prefix: %v", err)
 						return "", -1, err
-					}
-					prefix.FreeIps--
-					prefix.UsedIPs++
-
-					ds.log.Infof("Got ip offset - %d", IPoffset)
-					ipv4Addr := net.ParseIP(prefix.Prefix)
-					ipv4Mask := net.CIDRMask(prefix.PrefixLen, 32)
-					ipv4Addr = ipv4Addr.To4()
-					ipv4Addr = ipv4Addr.Mask(ipv4Mask)
-					offset := make([]byte, 8)
-					
-					binary.LittleEndian.PutUint64(offset, uint64(IPoffset))
-					ds.log.Infof("BEFORE Last octet - %d", ipv4Addr[3])
-					ipv4Addr[3] = ipv4Addr[3] + offset[0]
-					ds.log.Infof("AFTER Last octet - %d", ipv4Addr[3])
-					strPrivateIPv4 := ipv4Addr.String()
+					}	
 					ds.log.Infof("New IP - %s", strPrivateIPv4)
 					// Try to add the IP
 					
@@ -1099,10 +1063,7 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey, enableIpv4PrefixDel
 		ds.log.Infof("DUMP - %v", eni.IPv4Prefixes[addr.Prefix])
 		eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.CooldownIPs[addr.IPIndex] = addr.UnassignedTime
 		ds.log.Infof("Setting cooldown for index %d at time %v", addr.IPIndex, addr.UnassignedTime)
-		octet := addr.IPIndex/8
-		index := addr.IPIndex%8 
-		ds.log.Infof("Found the index to reset IPindex %d octet %d index %d", addr.IPIndex, octet, index)
-		eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.UsedIPs[octet] = eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.UsedIPs[octet] ^ (1 << index)
+        eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.SetUnsetIPallocation(byte(addr.IPIndex))  
 
 		eni.IPv4Prefixes[addr.Prefix].FreeIps++
 		eni.IPv4Prefixes[addr.Prefix].UsedIPs--
@@ -1259,22 +1220,6 @@ func (ds *DataStore) GetENIPrefixes(eniID string) ([]string, error) {
 		ipPool = append(ipPool, ip)
 	}
 	return ipPool, nil
-}
-
-// CleanupCooldownIPs cleans up cooldown cache every 30
-func (ds *DataStore) CleanupCooldownIPs() error {
-	ds.lock.Lock()
-	defer ds.lock.Unlock()
-
-	for _, eni := range ds.eniPool {
-		for _, addr := range eni.IPv4Addresses {
-			if !addr.Assigned() && !addr.inCoolingPeriod() {
-				//Update the PD DB
-				eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.freeIPtoPrefix(addr.IPIndex)
-			}
-		}
-	}
-	return nil
 }
 
 func (ds *DataStore) GetFreePrefixes() int {

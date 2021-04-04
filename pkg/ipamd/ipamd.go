@@ -22,7 +22,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-//	"math"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -425,11 +424,7 @@ func (c *IPAMContext) nodeInit() error {
 	go wait.Forever(func() {
 		vpcCIDRs = c.updateCIDRsRulesOnChange(vpcCIDRs)
 	}, 30*time.Second)
-/*
-	go wait.Forever(func() {
-		_ = c.dataStore.CleanupCooldownIPs()
-	}, 30*time.Second)
-*/
+	
 	if c.useCustomNetworking && c.eniConfig.Getter().MyENI != "default" {
 		// Signal to VPC Resource Controller that the node is using custom networking
 		err := c.SetNodeLabel(vpcENIConfigLabel, c.eniConfig.Getter().MyENI)
@@ -1556,27 +1551,7 @@ func (c *IPAMContext) ipTargetState() (short int, over int, enabled bool) {
 		//TODO - See if this can be optimized. If there are holes in the subnet, can it be considered as 1 prefix, 
 		//for instance prefix 1 -> used [8] free [8], prefix 2 -> used [8] free [8], available = 16, so if warm prefix target is 2, then we shouldnt allocate
 		//one more prefix.
-        /*
-		short = max((c.warmPrefixTarget * defaultIpsPerPrefix)-available, 0)
-		short = (int)(math.Ceil((float64)(short/defaultIpsPerPrefix)))
-
-		over = max(available-(c.warmPrefixTarget*defaultIpsPerPrefix), 0)
-		over = (int)(math.Ceil((float64)(over/defaultIpsPerPrefix)))
-		over = max(over - c.warmPrefixTarget, 0)
-        */
 		freePrefixes := c.dataStore.GetFreePrefixes()
-		/*
-		freePrefixes := 0
-		for _, eni := range ds.eniPool {
-			for _, prefixes := range eni.IPv4Prefixes {
-				if refixes.UsedIPs == 0 {
-					freePrefixes++
-				}
-			}
-			
-		}
-		*/
-		//usedPrefixes := totalPrefix - freePrefixes
 
 		short = max(c.warmPrefixTarget-freePrefixes, 0)
 		over = max(freePrefixes-c.warmPrefixTarget, 0)
