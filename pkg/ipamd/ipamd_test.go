@@ -122,10 +122,10 @@ func TestNodeInit(t *testing.T) {
 
 	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
 	resp := awsutils.DescribeAllENIsResult{
-		ENIMetadata: eniMetadataSlice,
-		TagMap:      map[string]awsutils.TagMap{},
-		TrunkENI:    "",
-		EFAENIs:     make(map[string]bool),
+		ENIMetadata:     eniMetadataSlice,
+		TagMap:          map[string]awsutils.TagMap{},
+		TrunkENI:        "",
+		EFAENIs:         make(map[string]bool),
 		MultiCardENIIDs: nil,
 	}
 	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
@@ -375,11 +375,11 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	eniMetadataList := []awsutils.ENIMetadata{primaryENIMetadata}
 	m.awsutils.EXPECT().GetAttachedENIs().Return(eniMetadataList, nil)
 	resp := awsutils.DescribeAllENIsResult{
-		ENIMetadata: eniMetadataList,
-		TagMap:      map[string]awsutils.TagMap{},
-		TrunkENI:    "",
-		EFAENIs:     make(map[string]bool),
-		MultiCardENIIDs : nil,
+		ENIMetadata:     eniMetadataList,
+		TagMap:          map[string]awsutils.TagMap{},
+		TrunkENI:        "",
+		EFAENIs:         make(map[string]bool),
+		MultiCardENIIDs: nil,
 	}
 	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
 
@@ -422,11 +422,11 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	m.awsutils.EXPECT().IsUnmanagedENI(secENIid).Times(2).Return(false)
 	m.awsutils.EXPECT().IsCNIUnmanagedENI(secENIid).Times(2).Return(false)
 	resp2 := awsutils.DescribeAllENIsResult{
-		ENIMetadata: twoENIs,
-		TagMap:      map[string]awsutils.TagMap{},
-		TrunkENI:    "",
-		EFAENIs:     make(map[string]bool),
-		MultiCardENIIDs : nil,
+		ENIMetadata:     twoENIs,
+		TagMap:          map[string]awsutils.TagMap{},
+		TrunkENI:        "",
+		EFAENIs:         make(map[string]bool),
+		MultiCardENIIDs: nil,
 	}
 	m.awsutils.EXPECT().DescribeAllENIs().Return(resp2, nil)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, primarySubnet)
@@ -632,12 +632,12 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 					return false
 
 				}).AnyTimes()
-			
+
 			mockAWSUtils.EXPECT().IsCNIUnmanagedENI(gomock.Any()).DoAndReturn(
 				func(eni string) (unmanaged bool) {
 					return false
-					
-				}).AnyTimes()	
+
+				}).AnyTimes()
 
 			if got := c.filterUnmanagedENIs(tt.enis); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("filterUnmanagedENIs() = %v, want %v", got, tt.want)
