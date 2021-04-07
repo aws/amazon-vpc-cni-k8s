@@ -16,10 +16,10 @@ package metrics
 
 import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"golang.org/x/net/context"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 )
 
@@ -141,26 +141,27 @@ var InterestingCNIMetrics = map[string]metricsConvert{
 type CNIMetricsTarget struct {
 	interestingMetrics  map[string]metricsConvert
 	cwMetricsPublisher  publisher.Publisher
-	kubeClient          clientset.Interface
-	discoveryController *k8sapi.Controller
+	kubeClient          kubernetes.Interface
+	podWatcher          *defaultPodWatcher
 	submitCW            bool
 	log                 logger.Logger
 }
 
 // CNIMetricsNew creates a new metricsTarget
-func CNIMetricsNew(c clientset.Interface, cw publisher.Publisher, d *k8sapi.Controller, submitCW bool, l logger.Logger) *CNIMetricsTarget {
+func CNIMetricsNew(k8sClient kubernetes.Interface, cw publisher.Publisher, submitCW bool, l logger.Logger,
+	watcher *defaultPodWatcher) *CNIMetricsTarget {
 	return &CNIMetricsTarget{
 		interestingMetrics:  InterestingCNIMetrics,
 		cwMetricsPublisher:  cw,
-		kubeClient:          c,
-		discoveryController: d,
+		kubeClient:          k8sClient,
+		podWatcher:          watcher,
 		submitCW:            submitCW,
 		log:                 l,
 	}
 }
 
-func (t *CNIMetricsTarget) grabMetricsFromTarget(cniPod string) ([]byte, error) {
-	output, err := getMetricsFromPod(t.kubeClient, cniPod, metav1.NamespaceSystem, metricsPort)
+func (t *CNIMetricsTarget) grabMetricsFromTarget(ctx context.Context, cniPod string) ([]byte, error) {
+	output, err := getMetricsFromPod(ctx, t.kubeClient, cniPod, metav1.NamespaceSystem, metricsPort)
 	if err != nil {
 		t.log.Errorf("grabMetricsFromTarget: Failed to grab CNI endpoint: %v", err)
 		return nil, err
@@ -178,9 +179,12 @@ func (t *CNIMetricsTarget) getCWMetricsPublisher() publisher.Publisher {
 	return t.cwMetricsPublisher
 }
 
-func (t *CNIMetricsTarget) getTargetList() []string {
-	pods := t.discoveryController.GetCNIPods()
-	return pods
+func (t *CNIMetricsTarget) getTargetList(ctx context.Context) ([]string, error) {
+	pods, err := t.podWatcher.GetCNIPods(ctx)
+	if err != nil {
+		return pods, err
+	}
+	return pods, nil
 }
 
 func (t *CNIMetricsTarget) submitCloudWatch() bool {

@@ -52,6 +52,8 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
 		flags.PrintDefaults()
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	err := flags.Parse(os.Args)
 	if err != nil {
@@ -80,20 +82,17 @@ func main() {
 
 	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, LogLevel %s", options.submitCW, logConfig.LogLevel)
 
-	kubeClient, err := k8sapi.CreateKubeClient()
+	clientSet, err := k8sapi.GetKubeClientSet()
+
+	_, k8sClient, err := k8sapi.CreateKubeClients()
 	if err != nil {
-		log.Fatalf("Failed to create client: %v", err)
+		panic(err.Error())
 	}
 
-	discoverController := k8sapi.NewController(kubeClient)
-	go discoverController.DiscoverCNIK8SPods()
 
 	var cw publisher.Publisher
 
 	if options.submitCW {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
 		cw, err = publisher.New(ctx)
 		if err != nil {
 			log.Fatalf("Failed to create publisher: %v", err)
@@ -102,12 +101,13 @@ func main() {
 		defer cw.Stop()
 	}
 
-	var cniMetric = metrics.CNIMetricsNew(kubeClient, cw, discoverController, options.submitCW, log)
+	podWatcher := metrics.NewDefaultPodWatcher(k8sClient, log)
+	var cniMetric = metrics.CNIMetricsNew(clientSet, cw, options.submitCW, log, podWatcher)
 
 	// metric loop
 	var pullInterval = 30 // seconds
 	for range time.Tick(time.Duration(pullInterval) * time.Second) {
 		log.Info("Collecting metrics ...")
-		metrics.Handler(cniMetric)
+		metrics.Handler(ctx, cniMetric)
 	}
 }

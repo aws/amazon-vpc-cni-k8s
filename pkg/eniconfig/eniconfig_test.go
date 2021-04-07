@@ -14,205 +14,215 @@ package eniconfig
 
 import (
 	"context"
-	"fmt"
+	//"fmt"
 	"os"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/stretchr/testify/assert"
 
+	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func updateENIConfig(hdlr sdk.Handler, name string, eniConfig v1alpha1.ENIConfigSpec, toDelete bool) {
-	event := sdk.Event{
-		Object: &v1alpha1.ENIConfig{
-			TypeMeta: metav1.TypeMeta{APIVersion: v1alpha1.SchemeGroupVersion.String()},
-			ObjectMeta: metav1.ObjectMeta{
-				Name: name,
+func TestMyENIConfig(t *testing.T) {
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+	}
+
+	testENIConfigAZ1 := &v1alpha1.ENIConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "az1",
+		},
+		Spec: v1alpha1.ENIConfigSpec{
+			SecurityGroups: []string{"SG1"},
+			Subnet: "SB1",
+		},
+	}
+
+	testENIConfigAZ2 := &v1alpha1.ENIConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "az2",
+		},
+		Spec: v1alpha1.ENIConfigSpec{
+			SecurityGroups: []string{"SG2"},
+			Subnet: "SB2",
+		},
+	}
+
+	type env struct {
+		nodes                  []*corev1.Node
+		eniconfigs             []*v1alpha1.ENIConfig
+		Labels                 map[string]string
+		Annotations            map[string]string
+		eniConfigLabelKey      string
+		eniConfigAnnotationKey string
+	}
+
+	tests := []struct {
+		name    string
+		env     env
+		want    *v1alpha1.ENIConfigSpec
+		wantErr error
+	}{
+		{
+			name: "Matching ENIConfig available - Using Default Labels",
+			env: env{
+				nodes: []*corev1.Node{testNode},
+				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
+				Labels: map[string]string{
+					"k8s.amazonaws.com/eniConfig": "az1",
+				},
 			},
-			Spec: eniConfig},
-		Deleted: toDelete,
-	}
-
-	_ = hdlr.Handle(context.TODO(), event)
-}
-
-func updateNodeAnnotation(hdlr sdk.Handler, nodeName string, configName string, toDelete bool) {
-	node := corev1.Node{
-		TypeMeta: metav1.TypeMeta{APIVersion: corev1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   nodeName,
-			Labels: make(map[string]string),
+			want: &testENIConfigAZ1.Spec,
+			wantErr: nil,
+		},
+		{
+			name: "No Matching ENIConfig available - Using Default Labels",
+			env: env{
+				nodes: []*corev1.Node{testNode},
+				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ2},
+				Labels: map[string]string{
+					"k8s.amazonaws.com/eniConfig": "az1",
+				},
+			},
+			want: nil,
+			wantErr: errors.New("eniconfig: eniconfig is not available"),
+		},
+		{
+			name: "Matching ENIConfig available - Using Custom Label Key exposed via ENI_CONFIG_LABEL_DEF",
+			env: env{
+				nodes: []*corev1.Node{testNode},
+				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
+				Labels: map[string]string{
+					"failure-domain.beta.kubernetes.io/zone": "az1",
+				},
+				eniConfigLabelKey: "failure-domain.beta.kubernetes.io/zone",
+			},
+			want: &testENIConfigAZ1.Spec,
+			wantErr: nil,
+		},
+		{
+			name: "No Matching ENIConfig available - Using Custom Label Key exposed via ENI_CONFIG_LABEL_DEF",
+			env: env{
+				nodes: []*corev1.Node{testNode},
+				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
+				Labels: map[string]string{
+					"failure-domain.beta.kubernetes.io/zone": "az2",
+				},
+				eniConfigLabelKey: "failure-domain.beta.kubernetes.io/zone",
+			},
+			want: nil,
+			wantErr: errors.New("eniconfig: eniconfig is not available"),
+		},
+		{
+			name: "Matching ENIConfig available - Using Default Annotation",
+			env: env{
+				nodes: []*corev1.Node{testNode},
+				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
+				Labels: map[string]string{
+					"failure-domain.beta.kubernetes.io/zone": "az2",
+				},
+				Annotations: map[string]string{
+					"k8s.amazonaws.com/eniConfig": "az1",
+				},
+			},
+			want: &testENIConfigAZ1.Spec,
+			wantErr: nil,
+		},
+		{
+			name: "No Matching ENIConfig available - Using Default Annotation",
+			env: env{
+				nodes: []*corev1.Node{testNode},
+				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ2},
+				Labels: map[string]string{
+					"failure-domain.beta.kubernetes.io/zone": "az2",
+				},
+				Annotations: map[string]string{
+					"k8s.amazonaws.com/eniConfig": "az1",
+				},
+			},
+			want: nil,
+			wantErr: errors.New("eniconfig: eniconfig is not available"),
+		},
+		{
+			name: "Matching ENIConfig available - Using Custom Annotation Key exposed via ENI_CONFIG_ANNOTATION_DEF",
+			env: env{
+				nodes: []*corev1.Node{testNode},
+				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
+				Labels: map[string]string{
+					"failure-domain.beta.kubernetes.io/zone": "az2",
+				},
+				Annotations: map[string]string{
+					"k8s.amazonaws.com/myENIConfig": "az1",
+				},
+				eniConfigAnnotationKey: "k8s.amazonaws.com/myENIConfig",
+			},
+			want: &testENIConfigAZ1.Spec,
+			wantErr: nil,
+		},
+		{
+			name: "No Matching ENIConfig available - Using Custom Label Key exposed via ENI_CONFIG_ANNOTATION_DEF",
+			env: env{
+				nodes: []*corev1.Node{testNode},
+				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ2},
+				Labels: map[string]string{
+					"failure-domain.beta.kubernetes.io/zone": "az2",
+				},
+				Annotations: map[string]string{
+					"k8s.amazonaws.com/myENIConfig": "az1",
+				},
+				eniConfigAnnotationKey: "k8s.amazonaws.com/myENIConfig",
+			},
+			want: nil,
+			wantErr: errors.New("eniconfig: eniconfig is not available"),
 		},
 	}
-	accessor, err := meta.Accessor(&node)
 
-	if err != nil {
-		fmt.Printf("Failed to call meta.Access %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			k8sSchema := runtime.NewScheme()
+			clientgoscheme.AddToScheme(k8sSchema)
+			eniconfigscheme.AddToScheme(k8sSchema)
+			k8sClient := testclient.NewFakeClientWithScheme(k8sSchema)
+
+			for _, node := range tt.env.nodes {
+				_ = os.Setenv("MY_NODE_NAME", node.Name)
+				node.Labels = tt.env.Labels
+				node.Annotations = tt.env.Annotations
+				if tt.env.eniConfigAnnotationKey != "" {
+					_ = os.Setenv(envEniConfigAnnotationDef, tt.env.eniConfigAnnotationKey)
+				}
+				if tt.env.eniConfigLabelKey != "" {
+					_ = os.Setenv(envEniConfigLabelDef, tt.env.eniConfigLabelKey)
+				}
+				err := k8sClient.Create(ctx, node.DeepCopy())
+				assert.NoError(t, err)
+			}
+
+			for _, eniconfig := range tt.env.eniconfigs {
+				err := k8sClient.Create(ctx, eniconfig.DeepCopy())
+				assert.NoError(t, err)
+			}
+
+			myENIConfig, err := MyENIConfig(ctx, k8sClient)
+			if tt.wantErr != nil {
+				assert.EqualError(t, err, tt.wantErr.Error())
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, myENIConfig, tt.want)
+			}
+		})
 	}
-
-	event := sdk.Event{
-		Object:  &node,
-		Deleted: toDelete,
-	}
-	eniAnnotations := make(map[string]string)
-	eniConfigAnnotationDef := getEniConfigAnnotationDef()
-
-	if !toDelete {
-		eniAnnotations[eniConfigAnnotationDef] = configName
-	}
-	accessor.SetAnnotations(eniAnnotations)
-	_ = hdlr.Handle(context.TODO(), event)
-}
-
-func updateNodeLabel(hdlr sdk.Handler, nodeName string, configName string, toDelete bool) {
-
-	node := corev1.Node{
-		TypeMeta: metav1.TypeMeta{APIVersion: corev1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: nodeName,
-		},
-	}
-	accessor, err := meta.Accessor(&node)
-
-	if err != nil {
-		fmt.Printf("Failed to call meta.Access %v", err)
-	}
-
-	event := sdk.Event{
-		Object:  &node,
-		Deleted: toDelete,
-	}
-	eniLabels := make(map[string]string)
-	eniConfigLabelDef := getEniConfigLabelDef()
-
-	if !toDelete {
-		eniLabels[eniConfigLabelDef] = configName
-	}
-	accessor.SetLabels(eniLabels)
-	_ = hdlr.Handle(context.TODO(), event)
-}
-
-func TestENIConfig(t *testing.T) {
-	testENIConfigController := NewENIConfigController()
-
-	testHandler := NewHandler(testENIConfigController)
-
-	// If there is no default ENI config
-	_, err := testENIConfigController.MyENIConfig()
-	assert.Error(t, err)
-
-	// Start with default config
-	defaultSGs := []string{"sg1-id", "sg2-id"}
-	defaultSubnet := "subnet1"
-	defaultCfg := v1alpha1.ENIConfigSpec{
-		SecurityGroups: defaultSGs,
-		Subnet:         defaultSubnet}
-
-	updateENIConfig(testHandler, eniConfigDefault, defaultCfg, false)
-
-	outputCfg, err := testENIConfigController.MyENIConfig()
-	assert.NoError(t, err)
-	assert.Equal(t, defaultCfg, *outputCfg)
-
-	// Add one more ENI config, but it should NOT impact default
-	group1Cfg := v1alpha1.ENIConfigSpec{
-		SecurityGroups: []string{"sg11-id", "sg12-id"},
-		Subnet:         "subnet11"}
-	group1Name := "group1ENIconfig"
-	updateENIConfig(testHandler, group1Name, group1Cfg, false)
-
-	outputCfg, err = testENIConfigController.MyENIConfig()
-	assert.NoError(t, err)
-	assert.Equal(t, defaultCfg, *outputCfg)
-
-}
-
-func TestNodeENIConfig(t *testing.T) {
-	myNodeName := "testMyNodeWithAnnotation"
-	myENIConfig := "testMyENIConfig"
-	_ = os.Setenv("MY_NODE_NAME", myNodeName)
-	testENIConfigController := NewENIConfigController()
-
-	testHandler := NewHandler(testENIConfigController)
-	updateNodeAnnotation(testHandler, myNodeName, myENIConfig, false)
-
-	// If there is no ENI config
-	_, err := testENIConfigController.MyENIConfig()
-	assert.Error(t, err)
-
-	// Add eniconfig for myENIConfig
-	group1Cfg := v1alpha1.ENIConfigSpec{
-		SecurityGroups: []string{"sg21-id", "sg22-id"},
-		Subnet:         "subnet21"}
-	updateENIConfig(testHandler, myENIConfig, group1Cfg, false)
-	outputCfg, err := testENIConfigController.MyENIConfig()
-	assert.NoError(t, err)
-	assert.Equal(t, group1Cfg, *outputCfg)
-
-	// Add default config
-	defaultSGs := []string{"sg1-id", "sg2-id"}
-	defaultSubnet := "subnet1"
-	defaultCfg := v1alpha1.ENIConfigSpec{
-		SecurityGroups: defaultSGs,
-		Subnet:         defaultSubnet}
-	updateENIConfig(testHandler, eniConfigDefault, defaultCfg, false)
-	outputCfg, err = testENIConfigController.MyENIConfig()
-	assert.NoError(t, err)
-	assert.Equal(t, group1Cfg, *outputCfg)
-
-	// Delete node's myENIConfig annotation, then the value should fallback to default
-	updateNodeAnnotation(testHandler, myNodeName, myENIConfig, true)
-	outputCfg, err = testENIConfigController.MyENIConfig()
-	assert.NoError(t, err)
-	assert.Equal(t, defaultCfg, *outputCfg)
-
-}
-
-func TestNodeENIConfigLabel(t *testing.T) {
-	myNodeName := "testMyNodeWithLabel"
-	myENIConfig := "testMyENIConfig"
-	_ = os.Setenv("MY_NODE_NAME", myNodeName)
-	testENIConfigController := NewENIConfigController()
-
-	testHandler := NewHandler(testENIConfigController)
-	updateNodeLabel(testHandler, myNodeName, myENIConfig, false)
-
-	// If there is no ENI config
-	_, err := testENIConfigController.MyENIConfig()
-	assert.Error(t, err)
-
-	// Add eniconfig for myENIConfig
-	group1Cfg := v1alpha1.ENIConfigSpec{
-		SecurityGroups: []string{"sg21-id", "sg22-id"},
-		Subnet:         "subnet21"}
-	updateENIConfig(testHandler, myENIConfig, group1Cfg, false)
-	outputCfg, err := testENIConfigController.MyENIConfig()
-	assert.NoError(t, err)
-	assert.Equal(t, group1Cfg, *outputCfg)
-
-	// Add default config
-	defaultSGs := []string{"sg1-id", "sg2-id"}
-	defaultSubnet := "subnet1"
-	defaultCfg := v1alpha1.ENIConfigSpec{
-		SecurityGroups: defaultSGs,
-		Subnet:         defaultSubnet}
-	updateENIConfig(testHandler, eniConfigDefault, defaultCfg, false)
-	outputCfg, err = testENIConfigController.MyENIConfig()
-	assert.NoError(t, err)
-	assert.Equal(t, group1Cfg, *outputCfg)
-
-	// Delete node's myENIConfig annotation, then the value should fallback to default
-	updateNodeLabel(testHandler, myNodeName, myENIConfig, true)
-	outputCfg, err = testENIConfigController.MyENIConfig()
-	assert.NoError(t, err)
-	assert.Equal(t, defaultCfg, *outputCfg)
-
 }
 
 func TestGetEniConfigAnnotationDefDefault(t *testing.T) {

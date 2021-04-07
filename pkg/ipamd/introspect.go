@@ -15,6 +15,7 @@ package ipamd
 
 import (
 	"encoding/json"
+	"golang.org/x/net/context"
 	"net"
 	"net/http"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 )
@@ -142,7 +144,9 @@ func eniV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 
 func eniConfigRequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		responseJSON, err := json.Marshal(ipam.eniConfig.Getter())
+		ctx := context.Background()
+		myENIConfig, _ := eniconfig.GetNodeSpecificENIConfigName(ctx, ipam.k8sClient)
+		responseJSON, err := json.Marshal(myENIConfig)
 		if err != nil {
 			log.Errorf("Failed to marshal ENI config: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)

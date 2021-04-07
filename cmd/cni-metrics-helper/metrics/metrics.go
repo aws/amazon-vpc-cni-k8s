@@ -15,8 +15,11 @@
 package metrics
 
 import (
+	"context"
 	"bytes"
 	"fmt"
+	"github.com/prometheus/common/log"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -24,17 +27,16 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-	clientset "k8s.io/client-go/kubernetes"
 )
 
 type metricMatcher func(metric *dto.Metric) bool
 type actionFuncType func(aggregatedValue *float64, sampleValue float64)
 
 type metricsTarget interface {
-	grabMetricsFromTarget(target string) ([]byte, error)
+	grabMetricsFromTarget(ctx context.Context, target string) ([]byte, error)
 	getInterestingMetrics() map[string]metricsConvert
 	getCWMetricsPublisher() publisher.Publisher
-	getTargetList() []string
+	getTargetList(ctx context.Context) ([]string, error)
 	submitCloudWatch() bool
 	getLogger() logger.Logger
 }
@@ -81,14 +83,15 @@ func metricsMax(aggregatedValue *float64, sampleValue float64) {
 	}
 }
 
-func getMetricsFromPod(client clientset.Interface, podName string, namespace string, port int) ([]byte, error) {
-	rawOutput, err := client.CoreV1().RESTClient().Get().
+func getMetricsFromPod(ctx context.Context, k8sClient kubernetes.Interface, podName string, namespace string, port int) ([]byte, error) {
+	rawOutput, err := k8sClient.CoreV1().RESTClient().Get().
 		Namespace(namespace).
 		Resource("pods").
 		SubResource("proxy").
 		Name(fmt.Sprintf("%v:%v", podName, port)).
 		Suffix("metrics").
-		Do().Raw()
+		Do(ctx).Raw()
+
 	if err != nil {
 		return nil, err
 	}
@@ -365,16 +368,17 @@ func resetMetrics(interestingMetrics map[string]metricsConvert) {
 	}
 }
 
-func metricsListGrabAggregateConvert(t metricsTarget) (map[string]*dto.MetricFamily, map[string]metricsConvert, bool, error) {
+func metricsListGrabAggregateConvert(ctx context.Context, t metricsTarget) (map[string]*dto.MetricFamily, map[string]metricsConvert, bool, error) {
 	var resetDetected = false
 	var families map[string]*dto.MetricFamily
 
 	interestingMetrics := t.getInterestingMetrics()
 	resetMetrics(interestingMetrics)
 
-	targetList := t.getTargetList()
+	targetList, _ := t.getTargetList(ctx)
+	log.Debugf("Total TargetList pod count:- %v", len(targetList))
 	for _, target := range targetList {
-		rawOutput, err := t.grabMetricsFromTarget(target)
+		rawOutput, err := t.grabMetricsFromTarget(ctx, target)
 		if err != nil {
 			// it may take times to remove some metric targets
 			continue
@@ -413,8 +417,8 @@ func metricsListGrabAggregateConvert(t metricsTarget) (map[string]*dto.MetricFam
 }
 
 // Handler grabs metrics from target, aggregates the metrics and convert them into cloudwatch metrics
-func Handler(t metricsTarget) {
-	families, interestingMetrics, resetDetected, err := metricsListGrabAggregateConvert(t)
+func Handler(ctx context.Context, t metricsTarget) {
+	families, interestingMetrics, resetDetected, err := metricsListGrabAggregateConvert(ctx, t)
 
 	if err != nil || resetDetected {
 		t.getLogger().Infof("Skipping 1st poll after reset, error: %v", err)

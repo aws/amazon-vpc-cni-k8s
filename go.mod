@@ -23,7 +23,6 @@ require (
 	github.com/json-iterator/go v1.1.5 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/modern-go/reflect2 v0.0.0-20180701023420-4b7aa43c6742 // indirect
-	github.com/operator-framework/operator-sdk v0.0.7
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v0.8.0
@@ -44,9 +43,10 @@ require (
 	google.golang.org/grpc v1.29.0
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
-	k8s.io/api v0.0.0-20180712090710-2d6f90ab1293
-	k8s.io/apimachinery v0.0.0-20180621070125-103fd098999d
-	k8s.io/client-go v0.0.0-20180806134042-1f13a808da65
+	k8s.io/api v0.18.6
+	k8s.io/apimachinery v0.18.6
+	k8s.io/client-go v0.18.6
 	k8s.io/cri-api v0.0.0-20191107035106-03d130a7dc28
-	k8s.io/kube-openapi v0.0.0-20190510232812-a01b7d5d6c22 // indirect
+	k8s.io/klog v0.0.0-20181102134211-b9b56d5dfc92 // indirect
+	sigs.k8s.io/controller-runtime v0.6.3
 )

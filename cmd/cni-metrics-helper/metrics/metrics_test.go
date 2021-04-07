@@ -14,6 +14,7 @@
 package metrics
 
 import (
+	"golang.org/x/net/context"
 	"io/ioutil"
 	"testing"
 
@@ -37,7 +38,7 @@ func newTestMetricsTarget(metricFile string, interestingMetrics map[string]metri
 		interestingMetrics: interestingMetrics}
 }
 
-func (target *testMetricsTarget) grabMetricsFromTarget(targetName string) ([]byte, error) {
+func (target *testMetricsTarget) grabMetricsFromTarget(ctx context.Context, targetName string) ([]byte, error) {
 	testMetrics, _ := ioutil.ReadFile(target.metricFile)
 
 	return testMetrics, nil
@@ -51,8 +52,8 @@ func (target *testMetricsTarget) getCWMetricsPublisher() publisher.Publisher {
 	return nil
 }
 
-func (target *testMetricsTarget) getTargetList() []string {
-	return []string{target.metricFile}
+func (target *testMetricsTarget) getTargetList(ctx context.Context) ([]string, error) {
+	return []string{target.metricFile}, nil
 }
 
 func (target *testMetricsTarget) submitCloudWatch() bool {
@@ -61,8 +62,8 @@ func (target *testMetricsTarget) submitCloudWatch() bool {
 
 func TestAPIServerMetric(t *testing.T) {
 	testTarget := newTestMetricsTarget("cni_test1.data", InterestingCNIMetrics)
-
-	_, _, resetDetected, err := metricsListGrabAggregateConvert(testTarget)
+    ctx := context.Background()
+	_, _, resetDetected, err := metricsListGrabAggregateConvert(ctx, testTarget)
 	assert.NoError(t, err)
 	assert.True(t, resetDetected)
 
