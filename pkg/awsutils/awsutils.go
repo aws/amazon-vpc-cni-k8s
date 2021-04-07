@@ -158,13 +158,12 @@ type APIs interface {
 
 	//SetCNIunmanaged ENI
 	SetCNIUnmanagedENIs(eniID []string) error
-    
+
 	//isCNIUnmanagedENI
 	IsCNIUnmanagedENI(eniID string) bool
-    
+
 	//RefreshSGIDs
-	RefreshSGIDs(mac string) error 
-    
+	RefreshSGIDs(mac string) error
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -226,10 +225,10 @@ type TagMap map[string]string
 
 // DescribeAllENIsResult contains the fully
 type DescribeAllENIsResult struct {
-	ENIMetadata []ENIMetadata
-	TagMap      map[string]TagMap
-	TrunkENI    string
-	EFAENIs     map[string]bool
+	ENIMetadata     []ENIMetadata
+	TagMap          map[string]TagMap
+	TrunkENI        string
+	EFAENIs         map[string]bool
 	MultiCardENIIDs []string
 }
 
@@ -409,7 +408,7 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 		return err
 	}
 	log.Debugf("Found subnet-id: %s ", cache.subnetID)
-	
+
 	// We use the ctx here for testing, since we spawn go-routines above which will run forever.
 	select {
 	case <-ctx.Done():
@@ -1070,10 +1069,10 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		}
 	}
 	return DescribeAllENIsResult{
-		ENIMetadata: verifiedENIs,
-		TagMap:      tagMap,
-		TrunkENI:    trunkENI,
-		EFAENIs:     efaENIs,
+		ENIMetadata:     verifiedENIs,
+		TagMap:          tagMap,
+		TrunkENI:        trunkENI,
+		EFAENIs:         efaENIs,
 		MultiCardENIIDs: multiCardENIIDs,
 	}, nil
 }
@@ -1520,9 +1519,9 @@ func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterf
 
 //SetCNIUnmanagedENIs Set unmanaged ENI set
 func (cache *EC2InstanceMetadataCache) SetCNIUnmanagedENIs(eniID []string) error {
-    if len(eniID) != 0 {
+	if len(eniID) != 0 {
 		cache.cniunmanagedENIs.Set(eniID)
- 	}
+	}
 	return nil
 }
 

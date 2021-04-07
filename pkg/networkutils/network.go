@@ -310,7 +310,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 	}
 	var allCIDRs []snatCIDR
 	for _, cidr := range vpcCIDRs {
-	    log.Debugf("Adding %s CIDR to NAT chain", cidr)
+		log.Debugf("Adding %s CIDR to NAT chain", cidr)
 		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
 	}
 	for _, cidr := range n.excludeSNATCIDRs {
