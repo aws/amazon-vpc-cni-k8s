@@ -474,6 +474,11 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 			_, err = cache.ec2SVC.ModifyNetworkInterfaceAttributeWithContext(context.Background(), attributeInput)
 			awsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 			if err != nil {
+				if aerr, ok := err.(awserr.Error); ok {
+					if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+						awsAPIErrInc("IMDSMetaDataOutOfSync", err)
+					}
+				}
 				awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
 				//No need to return error here since retry will happen in 30seconds and also
 				//If update failed due to stale ENI then returning error will prevent updating SG 
