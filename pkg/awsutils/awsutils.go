@@ -1269,7 +1269,6 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	input := &ec2.AssignPrivateIpAddressesInput{}
 
 	if enableIpv4PrefixDelegation {
-		//needPrefixes := (needIPs / 16) + 1
 		needPrefixes := needIPs
 		input = &ec2.AssignPrivateIpAddressesInput{
 			NetworkInterfaceId: aws.String(eniID),
@@ -1331,6 +1330,7 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 
 				if enableIpv4PrefixDelegation {
 					eniIPCount = len(returnedENI.IPv4Prefixes)
+					log.Debugf("Found prefix count - %d", eniIPCount)
 				} else {
 					eniIPCount = len(returnedENI.IPv4Addresses)	
 				}
@@ -1344,7 +1344,7 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 				// At least some are attached
 				eniMetadata = returnedENI
 				// ipsToAllocate will be at most 1 less then the IP limit for the ENI because of the primary IP
-				if eniIPCount > wantedSecondaryIPs {
+				if (eniIPCount > wantedSecondaryIPs && !enableIpv4PrefixDelegation) || (eniIPCount >= wantedSecondaryIPs && enableIpv4PrefixDelegation) {
 					return nil
 				}
 				return ErrAllSecondaryIPsNotFound

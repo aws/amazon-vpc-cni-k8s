@@ -165,7 +165,7 @@ type AddressInfo struct {
 	Address        string
 	UnassignedTime time.Time
 	Prefix         string
-	IPIndex        int64
+	IPIndex        int
 }
 
 func (e *ENI) findAddressForSandbox(ipamKey IPAMKey) *AddressInfo {
@@ -403,7 +403,10 @@ func (ds *DataStore) ReadBackingStore(enableIpv4PrefixDelegation bool) error {
 
 
 			IPindex := getPrefixIndexfromIP(allocation.IPv4, ipv4Prefix)
-			eniPrefixDB.AllocatedIPs.SetUnsetIPallocation(IPindex)
+			if err := eniPrefixDB.AllocatedIPs.SetUnsetIPallocation(IPindex); err != nil {
+				ds.log.Infof("Invalid index, verify getPrefixIndex")
+				return err
+			}
 
 			err := ds.AddPrefixIPv4AddressToStore(eni.ID, allocation.IPv4)
 			if err != nil && err.Error() != IPAlreadyInStoreError {
@@ -417,7 +420,7 @@ func (ds *DataStore) ReadBackingStore(enableIpv4PrefixDelegation bool) error {
 
 
 			addr.Prefix = ipv4Prefix.String() 
-			addr.IPIndex = int64(IPindex)
+			addr.IPIndex = int(IPindex)
 
 			ds.log.Debugf("Recovered PD prefix %s index %d", ipv4Prefix.String(), IPindex)
 			ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
@@ -655,14 +658,14 @@ func (ds *DataStore) DelIPv4PrefixFromStore(eniID string, ipv4Prefix string, for
 		prefixDB := ipPrefix.AllocatedIPs
 		len := prefixDB.IPsPerPrefix/8
     	log.Infof("In del IP from prefix - %d", len)
-		var octet int64
+		var octet int
 		//prefixDB := ipPrefix.AllocatedIPs
 		for octet = 0; octet < len; octet++ {
-			data := (int64)(prefixDB.UsedIPs[octet])
+			data := (int)(prefixDB.UsedIPs[octet])
 			var index int
 			for index = 0; index < 8; index++ {
 				if (data | (1 << index) == 1){
-					strPrivateIPv4 := getIPfromPrefix(ipPrefix, int64(index))
+					strPrivateIPv4 := getIPfromPrefix(ipPrefix, index)
 					ds.log.Infof("New IP - %s", strPrivateIPv4)
 					addr := curENI.IPv4Addresses[strPrivateIPv4]	
 				    ds.unassignPodIPv4AddressUnsafe(addr)	
@@ -1063,7 +1066,9 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey, enableIpv4PrefixDel
 		ds.log.Infof("DUMP - %v", eni.IPv4Prefixes[addr.Prefix])
 		eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.CooldownIPs[addr.IPIndex] = addr.UnassignedTime
 		ds.log.Infof("Setting cooldown for index %d at time %v", addr.IPIndex, addr.UnassignedTime)
-        eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.SetUnsetIPallocation(byte(addr.IPIndex))  
+        if err := eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.SetUnsetIPallocation(byte(addr.IPIndex)); err != nil {
+			ds.log.Infof("Invalid index but continue to release, maybe addr has invalid index")
+		} 
 
 		eni.IPv4Prefixes[addr.Prefix].FreeIps++
 		eni.IPv4Prefixes[addr.Prefix].UsedIPs--
