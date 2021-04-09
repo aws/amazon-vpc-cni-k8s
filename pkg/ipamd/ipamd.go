@@ -315,6 +315,15 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 	c.disableENIProvisioning = disablingENIProvisioning()
 	c.enablePodENI = enablePodENI()
 	c.enableIpv4PrefixDelegation = enableIpv4PrefixDelegation()
+	hypervisorType, err := c.awsClient.GetInstanceHypervisorFamily() 
+	if err != nil {
+		log.Error("Failed to get hypervisor type")
+		return nil, err	
+	}
+	if hypervisorType != "nitro" {
+		log.Debugf("Hypervisor is not nitro based and prefix delegation is not supported")
+		c.enableIpv4PrefixDelegation = false	
+	}
 	c.myNodeName = os.Getenv("MY_NODE_NAME")
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer)

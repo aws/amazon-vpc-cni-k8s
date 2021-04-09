@@ -167,6 +167,9 @@ type APIs interface {
 
 	//RefreshSGIDs
 	RefreshSGIDs(mac string) error
+
+	//GetInstanceHypervisorFamily returns the hypervisor family for the instance 
+	GetInstanceHypervisorFamily() (string, error)
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -214,6 +217,7 @@ type ENIMetadata struct {
 type InstanceTypeLimits struct {
 	ENILimit  int
 	IPv4Limit int
+	HypervisorType string
 }
 
 // PrimaryIPv4Address returns the primary IP of this node
@@ -1243,6 +1247,17 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
 		}
 	}
 	return eniLimits.ENILimit, nil
+}
+
+// GetInstanceHypervisorFamily return hypervior of EC2 instance type
+func (cache *EC2InstanceMetadataCache) GetInstanceHypervisorFamily () (string, error) {
+	eniLimits, ok := InstanceNetworkingLimits[cache.instanceType]
+	if !ok {
+		log.Errorf("Failed to get hypervisor info due to unknown instance type %s", cache.instanceType)
+		return "", errors.New(UnknownInstanceType)
+	}
+	log.Debugf("Instance hypervisor family %s", eniLimits.HypervisorType)
+	return eniLimits.HypervisorType, nil
 }
 
 // AllocIPAddresses allocates numIPs of IP address on an ENI

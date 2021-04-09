@@ -75,8 +75,9 @@ func main() {
 			instanceType := aws.StringValue(info.InstanceType)
 			eniLimit := int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
 			ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
+			hypervisorType := aws.StringValue(info.Hypervisor)
 			if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
-				eniLimitMap[instanceType] = awsutils.InstanceTypeLimits{ENILimit: eniLimit, IPv4Limit: ipv4Limit}
+				eniLimitMap[instanceType] = awsutils.InstanceTypeLimits{ENILimit: eniLimit, IPv4Limit: ipv4Limit, HypervisorType: hypervisorType}
 			}
 		}
 		// Paginate to the next request
@@ -144,16 +145,16 @@ func main() {
 // addManualLimits has the list of faulty or missing instance types
 func addManualLimits(limitMap map[string]awsutils.InstanceTypeLimits) map[string]awsutils.InstanceTypeLimits {
 	manuallyAddedLimits := map[string]awsutils.InstanceTypeLimits{
-		"cr1.8xlarge":   {ENILimit: 8, IPv4Limit: 30},
-		"hs1.8xlarge":   {ENILimit: 8, IPv4Limit: 30},
-		"u-12tb1.metal": {ENILimit: 5, IPv4Limit: 30},
-		"u-18tb1.metal": {ENILimit: 15, IPv4Limit: 50},
-		"u-24tb1.metal": {ENILimit: 15, IPv4Limit: 50},
-		"u-6tb1.metal":  {ENILimit: 5, IPv4Limit: 30},
-		"u-9tb1.metal":  {ENILimit: 5, IPv4Limit: 30},
-		"c5a.metal":     {ENILimit: 15, IPv4Limit: 50},
-		"c5ad.metal":    {ENILimit: 15, IPv4Limit: 50},
-		"p4d.24xlarge":  {ENILimit: 15, IPv4Limit: 50},
+		"cr1.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "unkown"},
+		"hs1.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "unkown"},
+		"u-12tb1.metal": {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unkown"},
+		"u-18tb1.metal": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unkown"},
+		"u-24tb1.metal": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unkown"},
+		"u-6tb1.metal":  {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unkown"},
+		"u-9tb1.metal":  {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unkown"},
+		"c5a.metal":     {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unkown"},
+		"c5ad.metal":    {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unkown"},
+		"p4d.24xlarge":  {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unkown"},
 	}
 	for instanceType, instanceLimits := range manuallyAddedLimits {
 		val, ok := limitMap[instanceType]
