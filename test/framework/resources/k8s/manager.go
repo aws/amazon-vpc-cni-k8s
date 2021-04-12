@@ -16,6 +16,8 @@ package k8s
 import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/resources"
 
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -26,6 +28,8 @@ type ResourceManagers interface {
 	NamespaceManager() resources.NamespaceManager
 	ServiceManager() resources.ServiceManager
 	NodeManager() resources.NodeManager
+	PodManager() resources.PodManager
+	DaemonSetManager() resources.DaemonSetManager
 }
 
 type defaultManager struct {
@@ -35,9 +39,12 @@ type defaultManager struct {
 	namespaceManager      resources.NamespaceManager
 	serviceManager        resources.ServiceManager
 	nodeManager           resources.NodeManager
+	podManager            resources.PodManager
+	daemonSetManager      resources.DaemonSetManager
 }
 
-func NewResourceManager(k8sClient client.DelegatingClient) ResourceManagers {
+func NewResourceManager(k8sClient client.DelegatingClient,
+	scheme *runtime.Scheme, config *rest.Config) ResourceManagers {
 	return &defaultManager{
 		jobManager:            resources.NewDefaultJobManager(k8sClient),
 		deploymentManager:     resources.NewDefaultDeploymentManager(k8sClient),
@@ -45,6 +52,8 @@ func NewResourceManager(k8sClient client.DelegatingClient) ResourceManagers {
 		namespaceManager:      resources.NewDefaultNamespaceManager(k8sClient),
 		serviceManager:        resources.NewDefaultServiceManager(k8sClient),
 		nodeManager:           resources.NewDefaultNodeManager(k8sClient),
+		podManager:            resources.NewDefaultPodManager(k8sClient, scheme, config),
+		daemonSetManager:      resources.NewDefaultDaemonSetManager(k8sClient),
 	}
 }
 
@@ -70,4 +79,12 @@ func (m *defaultManager) ServiceManager() resources.ServiceManager {
 
 func (m *defaultManager) NodeManager() resources.NodeManager {
 	return m.nodeManager
+}
+
+func (m *defaultManager) PodManager() resources.PodManager {
+	return m.podManager
+}
+
+func (m *defaultManager) DaemonSetManager() resources.DaemonSetManager {
+	return m.daemonSetManager
 }

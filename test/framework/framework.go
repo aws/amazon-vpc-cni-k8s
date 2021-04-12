@@ -74,6 +74,6 @@ func New(options Options) *Framework {
 		Options:             options,
 		K8sClient:           k8sClient,
 		CloudServices:       aws.NewCloud(cloudConfig),
-		K8sResourceManagers: k8s.NewResourceManager(k8sClient),
+		K8sResourceManagers: k8s.NewResourceManager(k8sClient, k8sSchema, config),
 	}
 }
