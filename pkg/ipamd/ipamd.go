@@ -538,18 +538,10 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 
 func (c *IPAMContext) updateIPPoolIfRequired() {
 	c.askForTrunkENIIfNeeded()
-	if !c.enableIpv4PrefixDelegation {
-		if c.nodeIPPoolTooLow() {
-			c.increaseIPPool()
-		} else if c.nodeIPPoolTooHigh() {
-			c.decreaseIPPool(decreaseIPPoolInterval)
-		}
-	} else if c.enableIpv4PrefixDelegation {
-		if c.nodePrefixPoolTooLow() {
-			c.increaseIPPool()
-		} else if c.nodePrefixPoolTooHigh() {
-			c.decreaseIPPool(decreaseIPPoolInterval)
-		}
+	if ((!c.enableIpv4PrefixDelegation && c.nodeIPPoolTooLow()) || (c.enableIpv4PrefixDelegation && c.nodePrefixPoolTooLow())) {
+		c.increaseIPPool()
+	} else if ((!c.enableIpv4PrefixDelegation && c.nodeIPPoolTooHigh()) || (c.enableIpv4PrefixDelegation && c.nodePrefixPoolTooHigh())) {
+		c.decreaseIPPool(decreaseIPPoolInterval)
 	}
 	
 	if c.shouldRemoveExtraENIs() {
@@ -791,11 +783,10 @@ func (c *IPAMContext) tryAssignIPs(isNodeInit bool) (increasedPool bool, err err
 		log.Infof("Warm target set and short is 0 so not assigning IPs")
 		return false, nil
 	}
-    // JAYANTH - Check if on nodeInit allocate 1 PD and reconciler allocate all PDs
+    // Optimization TODO - Check if on nodeInit allocate 1 PD and reconciler allocate all PDs
 
 	// Find an ENI where we can add more IPs
 	eni := c.dataStore.GetENINeedsIP(c.maxIPsPerENI, c.useCustomNetworking)
-	log.Infof("JAY adding IPs to this %s",eni)
 	if eni != nil {
 		if !c.enableIpv4PrefixDelegation && len(eni.IPv4Addresses) < c.maxIPsPerENI {
 			currentNumberOfAllocatedIPs := len(eni.IPv4Addresses)
@@ -1379,8 +1370,6 @@ func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIIPs
 		*/
 
 		// Check if this IP was recently freed
-		//TODO add the prefix to cooldown - JAYANTh check
-		log.Infof("Implement cooldown")
 		found, recentlyFreed := c.reconcileCooldownCache.RecentlyFreed(strPrivateIPv4)
 		if found {
 			log.Infof("found in cooldown")
