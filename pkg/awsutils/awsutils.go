@@ -112,7 +112,7 @@ type APIs interface {
 	FreeENI(eniName string) error
 
 	// GetAttachedENIs retrieves eni information from instance metadata service
-	GetAttachedENIs() (eniList []ENIMetadata, err error)
+	GetAttachedENIs(skipPrimary bool) (eniList []ENIMetadata, err error)
 
 	// GetIPv4sFromEC2 returns the IPv4 addresses for a given ENI
 	GetIPv4sFromEC2(eniID string) (addrList []*ec2.NetworkInterfacePrivateIpAddress, err error)
@@ -455,7 +455,7 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 	cache.securityGroups.Set(sgIDs)
 
 	if !cache.useCustomNetworking && (addedSGsCount != 0 || deletedSGsCount != 0) {
-		allENIs, err := cache.GetAttachedENIs()
+		allENIs, err := cache.GetAttachedENIs(cache.useCustomNetworking)
 		if err != nil {
 			return errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
 		}
@@ -493,7 +493,7 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 }
 
 // GetAttachedENIs retrieves ENI information from meta data service
-func (cache *EC2InstanceMetadataCache) GetAttachedENIs() (eniList []ENIMetadata, err error) {
+func (cache *EC2InstanceMetadataCache) GetAttachedENIs(skipPrimary bool) (eniList []ENIMetadata, err error) {
 	ctx := context.TODO()
 
 	// retrieve number of interfaces
@@ -506,7 +506,7 @@ func (cache *EC2InstanceMetadataCache) GetAttachedENIs() (eniList []ENIMetadata,
 	enis := make([]ENIMetadata, len(macs))
 	// retrieve the attached ENIs
 	for i, mac := range macs {
-		enis[i], err = cache.getENIMetadata(mac)
+		enis[i], err = cache.getENIMetadata(mac, skipPrimary)
 		if err != nil {
 			return nil, errors.Wrapf(err, "get attached ENIs: failed to retrieve ENI metadata for ENI: %s", mac)
 		}
@@ -514,7 +514,7 @@ func (cache *EC2InstanceMetadataCache) GetAttachedENIs() (eniList []ENIMetadata,
 	return enis, nil
 }
 
-func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadata, error) {
+func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string, skipPrimary bool) (ENIMetadata, error) {
 	ctx := context.TODO()
 
 	log.Debugf("Found ENI MAC address: %s", eniMAC)
@@ -559,10 +559,13 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			PrivateIpAddress: aws.String(ip4.String()),
 		}
 	}
-
-	imdsIPv4Prefixes, err := cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
-	if err != nil {
-		return ENIMetadata{}, err	
+   
+	var imdsIPv4Prefixes []string 
+	if ((eniMAC == primaryMAC && !skipPrimary) || (eniMAC != primaryMAC)) { 
+		imdsIPv4Prefixes, err = cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
+		if err != nil {
+			return ENIMetadata{}, err	
+		}
 	}
 
 	ec2ipv4Prefixes := make([]*ec2.Ipv4PrefixSpecification, len(imdsIPv4Prefixes))
@@ -1029,7 +1032,7 @@ func (cache *EC2InstanceMetadataCache) GetIPv4PrefixesFromEC2(eniID string) (add
 // DescribeAllENIs calls EC2 to refresh the ENIMetadata and tags for all attached ENIs
 func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult, error) {
 	// Fetch all local ENI info from metadata
-	allENIs, err := cache.GetAttachedENIs()
+	allENIs, err := cache.GetAttachedENIs(cache.useCustomNetworking)
 	if err != nil {
 		return DescribeAllENIsResult{}, errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
 	}
@@ -1332,7 +1335,7 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 	// Wait until the ENI shows up in the instance metadata service and has at least some secondary IPs
 	err = retry.NWithBackoff(retry.NewSimpleBackoff(time.Millisecond*100, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
 		attempt++
-		enis, err := cache.GetAttachedENIs()
+		enis, err := cache.GetAttachedENIs(cache.useCustomNetworking)
 		if err != nil {
 			log.Warnf("Failed to increase pool, error trying to discover attached ENIs on attempt %d/%d: %v ", attempt, maxENIEC2APIRetries, err)
 			return ErrNoNetworkInterfaces

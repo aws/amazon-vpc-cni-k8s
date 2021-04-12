@@ -1095,7 +1095,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	defer ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
 
 	log.Debugf("Reconciling ENI/IP pool info because time since last %v <= %v", timeSinceLast, interval)
-	allENIs, err := c.awsClient.GetAttachedENIs()
+	allENIs, err := c.awsClient.GetAttachedENIs(c.useCustomNetworking)
 	if err != nil {
 		log.Errorf("IP pool reconcile: Failed to get attached ENI info: %v", err.Error())
 		ipamdErrInc("reconcileFailedGetENIs")
@@ -1604,7 +1604,7 @@ func min(x, y int) int {
 
 func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
 	trunkENI := c.dataStore.GetTrunkENI()
-	attachedENIs, err := c.awsClient.GetAttachedENIs()
+	attachedENIs, err := c.awsClient.GetAttachedENIs(c.useCustomNetworking)
 	if err != nil {
 		return -1, err
 	}
