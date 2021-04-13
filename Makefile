@@ -33,6 +33,7 @@ IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(IMAGE_NAME)).tar.gz
 INIT_IMAGE = amazon/amazon-k8s-cni-init
 INIT_IMAGE_NAME = $(INIT_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
 INIT_IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(INIT_IMAGE_NAME)).tar.gz
+MAKEFILE_PATH = $(dir $(realpath -s $(firstword $(MAKEFILE_LIST))))
 # METRICS_IMAGE is the CNI metrics publisher sidecar container image.
 METRICS_IMAGE = amazon/cni-metrics-helper
 METRICS_IMAGE_NAME = $(METRICS_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
@@ -237,6 +238,9 @@ lint:   ## Run golint on source code.
 	  -type f -name '*.go' \
 	  -not -name 'mock_*' -not -name '*mocks.go' -not -name "cni.go" -not -name "eniconfig.go" \
 	  -print0 | sort -z | xargs -0 -L1 -- golint $(LINT_FLAGS) 2>/dev/null
+
+helm-lint:
+	@${MAKEFILE_PATH}test/helm/helm-lint.sh
 
 # Run go vet on source code.
 vet:    ## Run go vet on source code.
