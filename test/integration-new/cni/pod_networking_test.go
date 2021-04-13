@@ -42,6 +42,9 @@ var _ = Describe("test pod networking", func() {
 		// The function that generates command which will be sent from
 		// tester pod to receiver pod
 		testConnectionCommandFunc func(serverPod coreV1.Pod, port int) []string
+		// The functions reinforces that the positive test is working as
+		// expected by creating a negative test command that should fail
+		testFailedConnectionCommandFunc func(serverPod coreV1.Pod, port int) []string
 		// Expected stdout from the exec command on testing connection
 		// from tester to server
 		testerExpectedStdOut string
@@ -200,12 +203,23 @@ var _ = Describe("test pod networking", func() {
 			testConnectionCommandFunc = func(receiverPod coreV1.Pod, port int) []string {
 				return []string{"nc", "-u", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port)}
 			}
+
+			// Create a negative test case with the wrong port number. This is to reinforce the
+			// positive test case work by verifying negative cases do throw error
+			testFailedConnectionCommandFunc = func(receiverPod coreV1.Pod, port int) []string {
+				return []string{"nc", "-u", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port + 1)}
+			}
 		})
 
 		It("connection should be established", func() {
 			CheckConnectivityForMultiplePodPlacement(
 				interfaceToPodListOnPrimaryNode, interfaceToPodListOnSecondaryNode,
 				serverPort, testerExpectedStdOut, testerExpectedStdErr, testConnectionCommandFunc)
+
+			By("verifying connection fails for unreachable port")
+			VerifyConnectivityFailsForNegativeCase(interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI[0],
+				interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI[1], serverPort,
+				testFailedConnectionCommandFunc)
 		})
 	})
 
@@ -228,15 +242,40 @@ var _ = Describe("test pod networking", func() {
 			testConnectionCommandFunc = func(receiverPod coreV1.Pod, port int) []string {
 				return []string{"nc", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port)}
 			}
+
+			// Create a negative test case with the wrong port number. This is to reinforce the
+			// positive test case work by verifying negative cases do throw error
+			testFailedConnectionCommandFunc = func(receiverPod coreV1.Pod, port int) []string {
+				return []string{"nc", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port + 1)}
+			}
 		})
 
 		It("should allow connection across nodes and across interface types", func() {
 			CheckConnectivityForMultiplePodPlacement(
 				interfaceToPodListOnPrimaryNode, interfaceToPodListOnSecondaryNode,
 				serverPort, testerExpectedStdOut, testerExpectedStdErr, testConnectionCommandFunc)
+
+			By("verifying connection fails for unreachable port")
+			VerifyConnectivityFailsForNegativeCase(interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI[0],
+				interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI[1], serverPort,
+				testFailedConnectionCommandFunc)
 		})
 	})
 })
+
+func VerifyConnectivityFailsForNegativeCase(senderPod coreV1.Pod, receiverPod coreV1.Pod, port int,
+	getTestCommandFunc func(receiverPod coreV1.Pod, port int) []string) {
+
+	testerCommand := getTestCommandFunc(receiverPod, port)
+
+	fmt.Fprintf(GinkgoWriter, "verifying connectivity fails from pod %s on node %s with IP %s to pod"+
+		" %s on node %s with IP %s\n", senderPod.Name, senderPod.Spec.NodeName, senderPod.Status.PodIP,
+		receiverPod.Name, receiverPod.Spec.NodeName, receiverPod.Status.PodIP)
+
+	_, _, err := f.K8sResourceManagers.PodManager().
+		PodExec(senderPod.Namespace, senderPod.Name, testerCommand)
+	Expect(err).To(HaveOccurred())
+}
 
 // CheckConnectivityForMultiplePodPlacement checks connectivity for various scenarios, an example
 // connection from Pod on Node 1 having IP from Primary Network Interface to Pod on Node 2 having
@@ -249,7 +288,7 @@ func CheckConnectivityForMultiplePodPlacement(interfaceToPodListOnPrimaryNode In
 	By("checking connection on same node, primary to primary")
 	testConnectivity(
 		interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI[0],
-		interfaceToPodListOnPrimaryNode.PodsOnSecondaryENI[1],
+		interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI[1],
 		testerExpectedStdOut, testerExpectedStdErr, port, getTestCommandFunc)
 
 	By("checking connection on same node, primary to secondary")
