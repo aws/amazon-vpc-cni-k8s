@@ -14,13 +14,14 @@
 package metrics
 
 import (
-	"golang.org/x/net/context"
+	"context"
 	"io/ioutil"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-	"github.com/stretchr/testify/assert"
 )
 
 type testMetricsTarget struct {
@@ -62,7 +63,7 @@ func (target *testMetricsTarget) submitCloudWatch() bool {
 
 func TestAPIServerMetric(t *testing.T) {
 	testTarget := newTestMetricsTarget("cni_test1.data", InterestingCNIMetrics)
-    ctx := context.Background()
+	ctx := context.Background()
 	_, _, resetDetected, err := metricsListGrabAggregateConvert(ctx, testTarget)
 	assert.NoError(t, err)
 	assert.True(t, resetDetected)

@@ -15,10 +15,11 @@
 package main
 
 import (
+	"os"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-	"os"
 )
 
 var version string
@@ -38,16 +39,21 @@ func _main() int {
 	log.Infof("Starting L-IPAMD %s  ...", version)
 
 	//Check API Server Connectivity
-	if k8sapi.CheckAPIServerConnectivity() != nil{
+	if k8sapi.CheckAPIServerConnectivity() != nil {
 		return 1
 	}
 
-	standaloneK8SClient, k8sClient, err := k8sapi.CreateKubeClients()
-	if err != nil{
+	rawK8SClient, err := k8sapi.CreateKubeClient()
+	if err != nil {
 		return 1
 	}
 
-	ipamContext, err := ipamd.New(standaloneK8SClient, k8sClient)
+	cacheK8SClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient)
+	if err != nil {
+		return 1
+	}
+
+	ipamContext, err := ipamd.New(rawK8SClient, cacheK8SClient)
 
 	if err != nil {
 		log.Errorf("Initialization failure: %v", err)

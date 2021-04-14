@@ -25,20 +25,20 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // The package ipamd is a long running daemon which manages a warm pool of available IP addresses.
@@ -191,8 +191,8 @@ var (
 type IPAMContext struct {
 	awsClient            awsutils.APIs
 	dataStore            *datastore.DataStore
-	standalonek8sClient  client.Client
-	k8sClient            client.Client
+	rawK8SClient         client.Client
+	cachedK8SClient      client.Client
 	useCustomNetworking  bool
 	networkClient        networkutils.NetworkAPIs
 	maxIPsPerENI         int
@@ -284,11 +284,12 @@ func prometheusRegister() {
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
-func New(k8sapiClient client.Client, k8sClient client.Client) (*IPAMContext, error) {	prometheusRegister()
+func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContext, error) {
+	prometheusRegister()
 	c := &IPAMContext{}
 
-	c.standalonek8sClient = k8sapiClient
-	c.k8sClient = k8sClient
+	c.rawK8SClient = rawK8SClient
+	c.cachedK8SClient = cachedK8SClient
 	c.networkClient = networkutils.New()
 	c.useCustomNetworking = UseCustomNetworkCfg()
 
@@ -332,7 +333,7 @@ func (c *IPAMContext) nodeInit() error {
 	ipamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
 	var err error
-	ctx := context.Background()
+	ctx := context.TODO()
 
 	log.Debugf("Start node init")
 
@@ -411,8 +412,8 @@ func (c *IPAMContext) nodeInit() error {
 		vpcCIDRs = c.updateCIDRsRulesOnChange(vpcCIDRs)
 	}, 30*time.Second)
 
-	eniConfigName,_ := eniconfig.GetNodeSpecificENIConfigName(ctx, c.k8sClient)
-	if c.useCustomNetworking && eniConfigName != "default" {
+	eniConfigName, err := eniconfig.GetNodeSpecificENIConfigName(ctx, c.cachedK8SClient)
+	if err == nil && c.useCustomNetworking && eniConfigName != "default" {
 		// Signal to VPC Resource Controller that the node is using custom networking
 		err := c.SetNodeLabel(ctx, vpcENIConfigLabel, eniConfigName)
 		if err != nil {
@@ -680,7 +681,7 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 	var subnet string
 
 	if c.useCustomNetworking {
-		eniCfg, err := eniconfig.MyENIConfig(ctx, c.k8sClient)
+		eniCfg, err := eniconfig.MyENIConfig(ctx, c.cachedK8SClient)
 
 		if err != nil {
 			log.Errorf("Failed to get pod ENI config")
@@ -980,7 +981,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 
 		if c.enablePodENI && metadataResult.TrunkENI != "" {
 			// Label the node that we have a trunk
-			err = c.SetNodeLabel(ctx,"vpc.amazonaws.com/has-trunk-attached", "true")
+			err = c.SetNodeLabel(ctx, "vpc.amazonaws.com/has-trunk-attached", "true")
 			if err != nil {
 				podENIErrInc("askForTrunkENIIfNeeded")
 				log.Errorf("Failed to set node label for trunk. Aborting reconcile", err)
@@ -1316,7 +1317,7 @@ func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
 func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error {
 	var node corev1.Node
 	// Find my node
-	err := c.k8sClient.Get(ctx, types.NamespacedName{Name: c.myNodeName}, &node)
+	err := c.cachedK8SClient.Get(ctx, types.NamespacedName{Name: c.myNodeName}, &node)
 	log.Debugf("Node found %q - labels - %q", node.Name, len(node.Labels))
 
 	if err != nil {
@@ -1342,7 +1343,7 @@ func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error
 	}
 
 	// Update node status to advertise the resource.
-	err = c.k8sClient.Update(ctx, updateNode)
+	err = c.cachedK8SClient.Update(ctx, updateNode)
 	if err != nil {
 		log.Errorf("Failed to update node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
 	}
@@ -1353,14 +1354,14 @@ func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error
 
 // GetPod returns the pod matching the name and namespace
 func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
-	ctx := context.Background()
+	ctx := context.TODO()
 	var pod corev1.Pod
 
 	podKey := types.NamespacedName{
 		Namespace: namespace,
 		Name:      podName,
 	}
-	err := c.standalonek8sClient.Get(ctx, podKey ,&pod)
+	err := c.rawK8SClient.Get(ctx, podKey, &pod)
 	if err != nil {
 		return nil, fmt.Errorf("Error while trying to retrieve Pod Info: %s", err)
 	}

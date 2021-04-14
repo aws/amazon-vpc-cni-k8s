@@ -139,24 +139,24 @@ var InterestingCNIMetrics = map[string]metricsConvert{
 
 // CNIMetricsTarget defines data structure for kube-state-metric target
 type CNIMetricsTarget struct {
-	interestingMetrics  map[string]metricsConvert
-	cwMetricsPublisher  publisher.Publisher
-	kubeClient          kubernetes.Interface
-	podWatcher          *defaultPodWatcher
-	submitCW            bool
-	log                 logger.Logger
+	interestingMetrics map[string]metricsConvert
+	cwMetricsPublisher publisher.Publisher
+	kubeClient         kubernetes.Interface
+	podWatcher         *defaultPodWatcher
+	submitCW           bool
+	log                logger.Logger
 }
 
 // CNIMetricsNew creates a new metricsTarget
 func CNIMetricsNew(k8sClient kubernetes.Interface, cw publisher.Publisher, submitCW bool, l logger.Logger,
 	watcher *defaultPodWatcher) *CNIMetricsTarget {
 	return &CNIMetricsTarget{
-		interestingMetrics:  InterestingCNIMetrics,
-		cwMetricsPublisher:  cw,
-		kubeClient:          k8sClient,
-		podWatcher:          watcher,
-		submitCW:            submitCW,
-		log:                 l,
+		interestingMetrics: InterestingCNIMetrics,
+		cwMetricsPublisher: cw,
+		kubeClient:         k8sClient,
+		podWatcher:         watcher,
+		submitCW:           submitCW,
+		log:                l,
 	}
 }
 

@@ -16,8 +16,29 @@ import (
 var log = logger.Get()
 
 // CreateKubeClient creates a k8s client
-func CreateKubeClients() (client.Client, client.Client, error) {
-	restCfg := ctrl.GetConfigOrDie()
+func CreateKubeClient() (client.Client, error) {
+	restCfg, err := ctrl.GetConfig()
+	if err != nil {
+		return nil, err
+	}
+	vpcCniScheme := runtime.NewScheme()
+	clientgoscheme.AddToScheme(vpcCniScheme)
+	eniconfigscheme.AddToScheme(vpcCniScheme)
+
+	rawK8SClient, err := client.New(restCfg, client.Options{Scheme: vpcCniScheme})
+	if err != nil {
+		return nil, err
+	}
+
+	return rawK8SClient, nil
+}
+
+// CreateKubeClient creates a k8s client
+func CreateCachedKubeClient(rawK8SClient client.Client) (client.Client, error) {
+	restCfg, err := ctrl.GetConfig()
+	if err != nil {
+		return nil, err
+	}
 	vpcCniScheme := runtime.NewScheme()
 	clientgoscheme.AddToScheme(vpcCniScheme)
 	eniconfigscheme.AddToScheme(vpcCniScheme)
@@ -25,30 +46,28 @@ func CreateKubeClients() (client.Client, client.Client, error) {
 	stopChan := ctrl.SetupSignalHandler()
 	cache, err := cache.New(restCfg, cache.Options{Scheme: vpcCniScheme})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	go func() {
 		cache.Start(stopChan)
 	}()
 	cache.WaitForCacheSync(stopChan)
 
-	standaloneK8SClient, err := client.New(restCfg, client.Options{Scheme: vpcCniScheme})
-	k8sClient := client.DelegatingClient{
+	cachedK8SClient := client.DelegatingClient{
 		Reader: &client.DelegatingReader{
 			CacheReader:  cache,
-			ClientReader: standaloneK8SClient,
+			ClientReader: rawK8SClient,
 		},
-		Writer: standaloneK8SClient,
-		StatusClient: standaloneK8SClient,
+		Writer:       rawK8SClient,
+		StatusClient: rawK8SClient,
 	}
-	return standaloneK8SClient, k8sClient, nil
+	return cachedK8SClient, nil
 }
-
 func GetKubeClientSet() (kubernetes.Interface, error) {
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
 
 	// creates the clientset
@@ -60,18 +79,19 @@ func GetKubeClientSet() (kubernetes.Interface, error) {
 }
 
 func CheckAPIServerConnectivity() error {
-	restCfg := ctrl.GetConfigOrDie()
-    clientSet,_ := kubernetes.NewForConfig(restCfg)
+	restCfg, err := ctrl.GetConfig()
+	if err != nil {
+		return err
+	}
+	clientSet, _ := kubernetes.NewForConfig(restCfg)
 
 	log.Infof("Testing communication with server")
 	version, err := clientSet.Discovery().ServerVersion()
-    if err !=nil {
+	if err != nil {
 		return fmt.Errorf("error communicating with apiserver: %v", err)
 	}
 	log.Infof("Successful communication with the Cluster! Cluster Version is: v%s.%s. git version: %s. git tree state: %s. commit: %s. platform: %s",
 		version.Major, version.Minor, version.GitVersion, version.GitTreeState, version.GitCommit, version.Platform)
 
-    return nil
+	return nil
 }
-
-

@@ -17,13 +17,15 @@ package eniconfig
 import (
 	"context"
 	"fmt"
-	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"os"
+
+	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -45,7 +47,7 @@ const (
 // ENIConfig interface
 type ENIConfig interface {
 	MyENIConfig(client.Client) (*v1alpha1.ENIConfigSpec, error)
-    GetENIConfigName(context.Context, client.Client) (string, error)
+	GetENIConfigName(context.Context, client.Client) (string, error)
 }
 
 // ErrNoENIConfig is the missing ENIConfig error
@@ -65,26 +67,21 @@ type ENIConfigInfo struct {
 func MyENIConfig(ctx context.Context, k8sClient client.Client) (*v1alpha1.ENIConfigSpec, error) {
 	eniConfigName, err := GetNodeSpecificENIConfigName(ctx, k8sClient)
 	if err != nil {
-        log.Debugf("Error while retrieving Node name")
+		log.Debugf("Error while retrieving Node name")
 	}
 
 	log.Infof("Found ENI Config Name: %s", eniConfigName)
-
-	eniConfigsList := v1alpha1.ENIConfigList{}
-	err = k8sClient.List(ctx, &eniConfigsList)
+	var eniConfig v1alpha1.ENIConfig
+	err = k8sClient.Get(ctx, types.NamespacedName{Name: eniConfigName}, &eniConfig)
 	if err != nil {
-		fmt.Errorf("Error while EniConfig List Get: %s", err)
+		fmt.Errorf("error while retrieving eniconfig: %s", err)
+		return nil, ErrNoENIConfig
 	}
-	for _, eni := range eniConfigsList.Items {
-		if eniConfigName == eni.Name {
-			log.Debugf("Matching ENIConfig found: %s - %s - %s ", eni.Name, eni.Spec.Subnet, eni.Spec.SecurityGroups)
-			return &v1alpha1.ENIConfigSpec{
-				SecurityGroups: eni.Spec.SecurityGroups,
-				Subnet:         eni.Spec.Subnet,
-			}, nil
-		}
-	}
-	return nil, ErrNoENIConfig
+
+	return &v1alpha1.ENIConfigSpec{
+		SecurityGroups: eniConfig.Spec.SecurityGroups,
+		Subnet:         eniConfig.Spec.Subnet,
+	}, nil
 }
 
 // getEniConfigAnnotationDef returns eniConfigAnnotation
@@ -116,30 +113,31 @@ func getEniConfigLabelDef() string {
 }
 
 func GetNodeSpecificENIConfigName(ctx context.Context, k8sClient client.Client) (string, error) {
-    var eniConfigName string
-	nodeList := corev1.NodeList{}
-	err := k8sClient.List(ctx, &nodeList)
+	var eniConfigName string
+
+	log.Infof("Get Node Info for: %s", os.Getenv("MY_NODE_NAME"))
+	var node corev1.Node
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: os.Getenv("MY_NODE_NAME")}, &node)
 	if err != nil {
-		fmt.Errorf("Error while Node List Get: %s", err)
+		fmt.Errorf("error retrieving node: %s", err)
+		return eniConfigName, err
 	}
-	log.Debugf("Node Count: ", len(nodeList.Items))
-	for _, node := range nodeList.Items {
-		if node.Name == os.Getenv("MY_NODE_NAME") {
-			log.Debugf("Node Info: %s", node.Name)
-			val, ok := node.GetAnnotations()[getEniConfigAnnotationDef()]
-			if !ok {
-				val, ok = node.GetLabels()[getEniConfigLabelDef()]
-				if !ok {
-					val = eniConfigDefault
-				}
-			}
-			eniConfigName = val
-			if val != eniConfigDefault {
-				labels := node.GetLabels()
-				labels["vpc.amazonaws.com/eniConfig"] = eniConfigName
-				node.SetLabels(labels)
-			}
+
+	//Derive ENIConfig Name from either Node Annotations or Labels
+	val, ok := node.GetAnnotations()[getEniConfigAnnotationDef()]
+	if !ok {
+		val, ok = node.GetLabels()[getEniConfigLabelDef()]
+		if !ok {
+			val = eniConfigDefault
 		}
 	}
+
+	eniConfigName = val
+	if val != eniConfigDefault {
+		labels := node.GetLabels()
+		labels["vpc.amazonaws.com/eniConfig"] = eniConfigName
+		node.SetLabels(labels)
+	}
+
 	return eniConfigName, nil
 }

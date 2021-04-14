@@ -1,20 +1,21 @@
 package metrics
 
 import (
-	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
-	"golang.org/x/net/context"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"testing"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher/mock_publisher"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/net/context"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher/mock_publisher"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
 var logConfig = logger.Configuration{
@@ -25,9 +26,9 @@ var logConfig = logger.Configuration{
 var testLog = logger.New(&logConfig)
 
 type testMocks struct {
-	clientset          *k8sfake.Clientset
-    podWatcher         *defaultPodWatcher
-	mockPublisher      *mock_publisher.MockPublisher
+	clientset     *k8sfake.Clientset
+	podWatcher    *defaultPodWatcher
+	mockPublisher *mock_publisher.MockPublisher
 }
 
 func setup(t *testing.T) *testMocks {
@@ -38,9 +39,9 @@ func setup(t *testing.T) *testMocks {
 	eniconfigscheme.AddToScheme(k8sSchema)
 	podWatcher := NewDefaultPodWatcher(testclient.NewFakeClientWithScheme(k8sSchema), testLog)
 	return &testMocks{
-		clientset:          fakeClientset,
-		podWatcher:         podWatcher,
-		mockPublisher:      mock_publisher.NewMockPublisher(ctrl),
+		clientset:     fakeClientset,
+		podWatcher:    podWatcher,
+		mockPublisher: mock_publisher.NewMockPublisher(ctrl),
 	}
 }
 

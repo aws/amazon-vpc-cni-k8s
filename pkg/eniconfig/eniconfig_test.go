@@ -14,21 +14,19 @@ package eniconfig
 
 import (
 	"context"
-	//"fmt"
 	"os"
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
-	"github.com/stretchr/testify/assert"
-
-	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 )
 
 func TestMyENIConfig(t *testing.T) {
@@ -44,7 +42,7 @@ func TestMyENIConfig(t *testing.T) {
 		},
 		Spec: v1alpha1.ENIConfigSpec{
 			SecurityGroups: []string{"SG1"},
-			Subnet: "SB1",
+			Subnet:         "SB1",
 		},
 	}
 
@@ -54,7 +52,7 @@ func TestMyENIConfig(t *testing.T) {
 		},
 		Spec: v1alpha1.ENIConfigSpec{
 			SecurityGroups: []string{"SG2"},
-			Subnet: "SB2",
+			Subnet:         "SB2",
 		},
 	}
 
@@ -76,57 +74,57 @@ func TestMyENIConfig(t *testing.T) {
 		{
 			name: "Matching ENIConfig available - Using Default Labels",
 			env: env{
-				nodes: []*corev1.Node{testNode},
+				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
 				Labels: map[string]string{
 					"k8s.amazonaws.com/eniConfig": "az1",
 				},
 			},
-			want: &testENIConfigAZ1.Spec,
+			want:    &testENIConfigAZ1.Spec,
 			wantErr: nil,
 		},
 		{
 			name: "No Matching ENIConfig available - Using Default Labels",
 			env: env{
-				nodes: []*corev1.Node{testNode},
+				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ2},
 				Labels: map[string]string{
 					"k8s.amazonaws.com/eniConfig": "az1",
 				},
 			},
-			want: nil,
+			want:    nil,
 			wantErr: errors.New("eniconfig: eniconfig is not available"),
 		},
 		{
 			name: "Matching ENIConfig available - Using Custom Label Key exposed via ENI_CONFIG_LABEL_DEF",
 			env: env{
-				nodes: []*corev1.Node{testNode},
+				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
 				Labels: map[string]string{
 					"failure-domain.beta.kubernetes.io/zone": "az1",
 				},
 				eniConfigLabelKey: "failure-domain.beta.kubernetes.io/zone",
 			},
-			want: &testENIConfigAZ1.Spec,
+			want:    &testENIConfigAZ1.Spec,
 			wantErr: nil,
 		},
 		{
 			name: "No Matching ENIConfig available - Using Custom Label Key exposed via ENI_CONFIG_LABEL_DEF",
 			env: env{
-				nodes: []*corev1.Node{testNode},
+				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
 				Labels: map[string]string{
 					"failure-domain.beta.kubernetes.io/zone": "az2",
 				},
 				eniConfigLabelKey: "failure-domain.beta.kubernetes.io/zone",
 			},
-			want: nil,
+			want:    nil,
 			wantErr: errors.New("eniconfig: eniconfig is not available"),
 		},
 		{
 			name: "Matching ENIConfig available - Using Default Annotation",
 			env: env{
-				nodes: []*corev1.Node{testNode},
+				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
 				Labels: map[string]string{
 					"failure-domain.beta.kubernetes.io/zone": "az2",
@@ -135,13 +133,13 @@ func TestMyENIConfig(t *testing.T) {
 					"k8s.amazonaws.com/eniConfig": "az1",
 				},
 			},
-			want: &testENIConfigAZ1.Spec,
+			want:    &testENIConfigAZ1.Spec,
 			wantErr: nil,
 		},
 		{
 			name: "No Matching ENIConfig available - Using Default Annotation",
 			env: env{
-				nodes: []*corev1.Node{testNode},
+				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ2},
 				Labels: map[string]string{
 					"failure-domain.beta.kubernetes.io/zone": "az2",
@@ -150,13 +148,13 @@ func TestMyENIConfig(t *testing.T) {
 					"k8s.amazonaws.com/eniConfig": "az1",
 				},
 			},
-			want: nil,
+			want:    nil,
 			wantErr: errors.New("eniconfig: eniconfig is not available"),
 		},
 		{
 			name: "Matching ENIConfig available - Using Custom Annotation Key exposed via ENI_CONFIG_ANNOTATION_DEF",
 			env: env{
-				nodes: []*corev1.Node{testNode},
+				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
 				Labels: map[string]string{
 					"failure-domain.beta.kubernetes.io/zone": "az2",
@@ -166,13 +164,13 @@ func TestMyENIConfig(t *testing.T) {
 				},
 				eniConfigAnnotationKey: "k8s.amazonaws.com/myENIConfig",
 			},
-			want: &testENIConfigAZ1.Spec,
+			want:    &testENIConfigAZ1.Spec,
 			wantErr: nil,
 		},
 		{
 			name: "No Matching ENIConfig available - Using Custom Label Key exposed via ENI_CONFIG_ANNOTATION_DEF",
 			env: env{
-				nodes: []*corev1.Node{testNode},
+				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ2},
 				Labels: map[string]string{
 					"failure-domain.beta.kubernetes.io/zone": "az2",
@@ -182,7 +180,7 @@ func TestMyENIConfig(t *testing.T) {
 				},
 				eniConfigAnnotationKey: "k8s.amazonaws.com/myENIConfig",
 			},
-			want: nil,
+			want:    nil,
 			wantErr: errors.New("eniconfig: eniconfig is not available"),
 		},
 	}

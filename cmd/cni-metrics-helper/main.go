@@ -84,11 +84,16 @@ func main() {
 
 	clientSet, err := k8sapi.GetKubeClientSet()
 
-	_, k8sClient, err := k8sapi.CreateKubeClients()
+	rawK8SClient, err := k8sapi.CreateKubeClient()
 	if err != nil {
-		panic(err.Error())
+		log.Fatalf("Error creating Kubernetes Client: %s", err)
+		os.Exit(1)
 	}
-
+	k8sClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient)
+	if err != nil {
+		log.Fatalf("Error creating Cached Kubernetes Client: %s", err)
+		os.Exit(1)
+	}
 
 	var cw publisher.Publisher
 

@@ -15,7 +15,6 @@ package ipamd
 
 import (
 	"encoding/json"
-	"golang.org/x/net/context"
 	"net"
 	"net/http"
 	"os"
@@ -144,8 +143,13 @@ func eniV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 
 func eniConfigRequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.Background()
-		myENIConfig, _ := eniconfig.GetNodeSpecificENIConfigName(ctx, ipam.k8sClient)
+		ctx := r.Context()
+		myENIConfig, err := eniconfig.GetNodeSpecificENIConfigName(ctx, ipam.cachedK8SClient)
+		if err != nil {
+			log.Errorf("Failed to get ENI config: %v", err)
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			return
+		}
 		responseJSON, err := json.Marshal(myENIConfig)
 		if err != nil {
 			log.Errorf("Failed to marshal ENI config: %v", err)
