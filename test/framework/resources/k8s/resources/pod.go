@@ -1,0 +1,105 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"). You may
+// not use this file except in compliance with the License. A copy of the
+// License is located at
+//
+//     http://aws.amazon.com/apache2.0/
+//
+// or in the "license" file accompanying this file. This file is distributed
+// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+// express or implied. See the License for the specific language governing
+// permissions and limitations under the License.
+
+package resources
+
+import (
+	"bytes"
+	"context"
+	"net/http"
+
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/remotecommand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+)
+
+type PodManager interface {
+	PodExec(namespace string, name string, command []string) (string, string, error)
+	GetPodsWithLabelSelector(labelKey string, labelVal string) (v1.PodList, error)
+}
+
+type defaultPodManager struct {
+	k8sClient client.DelegatingClient
+	k8sSchema *runtime.Scheme
+	config    *rest.Config
+}
+
+func NewDefaultPodManager(k8sClient client.DelegatingClient, k8sSchema *runtime.Scheme,
+	config *rest.Config) PodManager {
+
+	return &defaultPodManager{
+		k8sClient: k8sClient,
+		k8sSchema: k8sSchema,
+		config:    config,
+	}
+}
+
+func (d *defaultPodManager) PodExec(namespace string, name string, command []string) (string, string, error) {
+	pod := &v1.Pod{}
+	err := d.k8sClient.Get(context.Background(), types.NamespacedName{
+		Namespace: namespace,
+		Name:      name,
+	}, pod)
+	if err != nil {
+		return "", "", err
+	}
+
+	gkv, err := apiutil.GVKForObject(pod, d.k8sSchema)
+	if err != nil {
+		return "", "", err
+	}
+	restClient, err := apiutil.RESTClientForGVK(gkv, d.config, serializer.NewCodecFactory(d.k8sSchema))
+	if err != nil {
+		return "", "", err
+	}
+
+	execOptions := &v1.PodExecOptions{
+		Stdout:  true,
+		Stderr:  true,
+		Command: command,
+	}
+
+	req := restClient.Post().
+		Resource("pods").
+		Name(pod.Name).
+		Namespace(pod.Namespace).
+		SubResource("exec").
+		VersionedParams(execOptions, runtime.NewParameterCodec(d.k8sSchema))
+
+	exec, err := remotecommand.NewSPDYExecutor(d.config, http.MethodPost, req.URL())
+	if err != nil {
+		return "", "", err
+	}
+
+	var stdout, stderr bytes.Buffer
+	err = exec.Stream(remotecommand.StreamOptions{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+
+	return stdout.String(), stderr.String(), err
+}
+
+func (d *defaultPodManager) GetPodsWithLabelSelector(labelKey string, labelVal string) (v1.PodList, error) {
+	ctx := context.Background()
+	podList := v1.PodList{}
+	err := d.k8sClient.List(ctx, &podList, client.MatchingLabels{
+		labelKey: labelVal,
+	})
+	return podList, err
+}

@@ -14,7 +14,7 @@
 package manifest
 
 import (
-	utils "github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	"github.com/aws/aws-sdk-go/aws"
 	v1 "k8s.io/api/apps/v1"
@@ -38,8 +38,16 @@ func NewBusyBoxDeploymentBuilder() *DeploymentBuilder {
 		name:                   "deployment-test",
 		replicas:               10,
 		container:              NewBusyBoxContainerBuilder().Build(),
-		labels:                 map[string]string{"d": "d"},
+		labels:                 map[string]string{"role": "test"},
 		terminationGracePeriod: 0,
+	}
+}
+
+func NewDefaultDeploymentBuilder() *DeploymentBuilder {
+	return &DeploymentBuilder{
+		namespace:              utils.DefaultTestNamespace,
+		terminationGracePeriod: 0,
+		labels:                 map[string]string{"role": "test"},
 	}
 }
 
