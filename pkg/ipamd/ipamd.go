@@ -298,8 +298,9 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 	c.networkClient = networkutils.New()
 	c.eniConfig = eniConfig
 	c.useCustomNetworking = UseCustomNetworkCfg()
+	c.enableIpv4PrefixDelegation = enableIpv4PrefixDelegation()
 
-	client, err := awsutils.New(c.useCustomNetworking)
+	client, err := awsutils.New(c.useCustomNetworking, c.enableIpv4PrefixDelegation)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
@@ -314,7 +315,7 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 
 	c.disableENIProvisioning = disablingENIProvisioning()
 	c.enablePodENI = enablePodENI()
-	c.enableIpv4PrefixDelegation = enableIpv4PrefixDelegation()
+	
 	hypervisorType, err := c.awsClient.GetInstanceHypervisorFamily() 
 	if err != nil {
 		log.Error("Failed to get hypervisor type")
@@ -426,6 +427,9 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
+	if c.enableIpv4PrefixDelegation {
+		c.tryUnassignIPsFromENIs()
+	}
 	if err = c.configureIPRulesForPods(vpcCIDRs); err != nil {
 		return err
 	}
@@ -863,7 +867,12 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 	}
 
 	if c.enableIpv4PrefixDelegation {
-		c.addENIprefixesToDataStore(eniMetadata.IPv4Prefixes, eni)
+		if (len(eniMetadata.IPv4Addresses) > 1) {
+			log.Infof("Found ENIs having secondary IPs while PD is enabled")
+			c.addENIaddressesToDataStore(eniMetadata.IPv4Addresses, eni)	
+		} else {
+			c.addENIprefixesToDataStore(eniMetadata.IPv4Prefixes, eni)
+		}
 	} else {
 		c.addENIaddressesToDataStore(eniMetadata.IPv4Addresses, eni)
 	}
@@ -1648,4 +1657,37 @@ func (c *IPAMContext) SetNodeLabel(key, value string) error {
 // GetPod returns the pod matching the name and namespace
 func (c *IPAMContext) GetPod(podName, namespace string) (*v1.Pod, error) {
 	return c.k8sClient.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
+}
+
+func (c *IPAMContext) tryUnassignIPsFromENIs() {
+	eniInfos := c.dataStore.GetENIInfos()
+	for eniID := range eniInfos.ENIs {
+		freeableIPs := c.dataStore.FreeableIPs(eniID)
+
+		if len(freeableIPs) == 0 {
+			continue
+		}
+
+		// Delete IPs from datastore
+		var deletedIPs []string
+		for _, toDelete := range freeableIPs {
+			// Don't force the delete, since a freeable IP might have been assigned to a pod
+			// before we get around to deleting it.
+			err := c.dataStore.DelIPv4AddressFromStore(eniID, toDelete, false /* force */)
+			if err != nil {
+				log.Warnf("Failed to delete IP %s on ENI %s from datastore: %s", toDelete, eniID, err)
+				ipamdErrInc("decreaseIPPool")
+				continue
+			} else {
+				deletedIPs = append(deletedIPs, toDelete)
+			}
+		}
+
+		// Deallocate IPs from the instance if they aren't used by pods.
+		if err := c.awsClient.DeallocIPAddresses(eniID, deletedIPs, !c.enableIpv4PrefixDelegation); err != nil {
+			log.Warnf("Failed to decrease IP pool by removing IPs %v from ENI %s: %s", deletedIPs, eniID, err)
+		} else {
+			log.Debugf("Successfully decreased IP pool by removing IPs %v from ENI %s", deletedIPs, eniID)
+		}
+	}
 }

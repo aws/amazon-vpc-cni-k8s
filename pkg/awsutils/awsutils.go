@@ -187,7 +187,7 @@ type EC2InstanceMetadataCache struct {
 	unmanagedENIs       StringSet
 	useCustomNetworking bool
 	cniunmanagedENIs    StringSet
-
+	ipv4PrefixDelegation bool
 	imds   TypedIMDS
 	ec2SVC ec2wrapper.EC2
 }
@@ -326,7 +326,7 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 }
 
 // New creates an EC2InstanceMetadataCache
-func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
+func New(useCustomNetworking, ipv4PrefixDelegation bool) (*EC2InstanceMetadataCache, error) {
 	//ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
 	ctx := context.Background()
 
@@ -349,6 +349,9 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 
 	cache.useCustomNetworking = useCustomNetworking
 	log.Infof("Custom networking %v", cache.useCustomNetworking)
+	
+        cache.ipv4PrefixDelegation = ipv4PrefixDelegation
+	log.Infof("PD enabled %v", cache.ipv4PrefixDelegation)
 
 	awsCfg := aws.NewConfig().WithRegion(region)
 	sess = sess.Copy(awsCfg)
@@ -561,7 +564,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string, skipPrimary
 	}
    
 	var imdsIPv4Prefixes []string 
-	if ((eniMAC == primaryMAC && !skipPrimary) || (eniMAC != primaryMAC)) { 
+	if (((eniMAC == primaryMAC && !skipPrimary) || (eniMAC != primaryMAC)) && cache.ipv4PrefixDelegation) { 
 		imdsIPv4Prefixes, err = cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
 		if err != nil {
 			return ENIMetadata{}, err	

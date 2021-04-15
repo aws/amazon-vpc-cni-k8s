@@ -364,10 +364,66 @@ func (ds *DataStore) ReadBackingStore(enableIpv4PrefixDelegation bool) error {
 			eniPrefixes[prefix.Prefix] = eni
 		}
 	}
-    ds.log.Infof("Build prefix DB - JAYANTH")
-	
 
 	for _, allocation := range data.Allocations {
+		eni := eniIPs[allocation.IPv4]
+		if eni == nil {
+			if !enableIpv4PrefixDelegation { 
+				ds.log.Infof("datastore: Sandbox %s uses unknown IPv4 %s - presuming stale/dead", allocation.IPAMKey, allocation.IPv4)
+				continue
+			} else if enableIpv4PrefixDelegation {
+				ds.log.Infof("Got IP to recover %s\n", allocation.IPv4)
+				ipv4Prefix := getPrefixFromIPv4Addr(allocation.IPv4)
+				ds.log.Infof("Retrieved prefix %s", ipv4Prefix.String())
+				//TODO first time create
+				eni := eniPrefixes[ipv4Prefix.String()]
+				if eni == nil {
+					ds.log.Infof("datastore: Sandbox %s uses unknown prefix IPv4 %s - presuming stale/dead", allocation.IPAMKey, allocation.IPv4)
+					continue
+				}	
+				eniPrefixDB := ds.eniPool[eni.ID].IPv4Prefixes[ipv4Prefix.String()]
+				if eniPrefixDB == nil {
+					eniPrefixDB.Prefix = ipv4Prefix.String()
+					eniPrefixDB.PrefixLen = 28
+					eniPrefixDB.FreeIps = 16
+					eniPrefixDB.UsedIPs = 0
+					eniPrefixDB.AllocatedIPs = NewPrefixStore(16)
+
+				}
+				eniPrefixDB.UsedIPs++
+				eniPrefixDB.FreeIps--
+
+
+				IPindex := getPrefixIndexfromIP(allocation.IPv4, ipv4Prefix)
+				if err := eniPrefixDB.AllocatedIPs.SetUnsetIPallocation(IPindex); err != nil {
+					ds.log.Infof("Invalid index, verify getPrefixIndex")
+					return err
+				}
+
+				err := ds.AddPrefixIPv4AddressToStore(eni.ID, allocation.IPv4)
+				if err != nil && err.Error() != IPAlreadyInStoreError {
+					ds.log.Infof("Did it come here in restore?")
+					ds.log.Errorf("Failed to ADD PD IP %s on ENI %s", allocation.IPv4, eni.ID)
+					return err
+				}
+					
+				addr := eni.IPv4Addresses[allocation.IPv4]
+				ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
+
+
+				addr.Prefix = ipv4Prefix.String() 
+				addr.IPIndex = int(IPindex)
+
+				ds.log.Debugf("Recovered PD prefix %s index %d", ipv4Prefix.String(), IPindex)
+				ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
+			} 
+		} else {
+			addr := eni.IPv4Addresses[allocation.IPv4]
+			ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
+			ds.log.Debugf("Recovered %s => %s/%s and prefix delegation is %d", allocation.IPAMKey, eni.ID, addr.Address, enableIpv4PrefixDelegation)	
+		}	
+
+/*
 		if !enableIpv4PrefixDelegation {
 			eni := eniIPs[allocation.IPv4]
 			if eni == nil {
@@ -379,43 +435,44 @@ func (ds *DataStore) ReadBackingStore(enableIpv4PrefixDelegation bool) error {
 			ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
 			ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
 		} else if enableIpv4PrefixDelegation {
+			eni := eniIPs[allocation.IPv4]
+			if eni == nil { 
+				ds.log.Infof("Got IP to recover %s\n", allocation.IPv4)
+				ipv4Prefix := getPrefixFromIPv4Addr(allocation.IPv4)
+				ds.log.Infof("Retrieved prefix %s", ipv4Prefix.String())
+				//TODO first time create
+				eni := eniPrefixes[ipv4Prefix.String()]
+				if eni == nil {
+					ds.log.Infof("datastore: Sandbox %s uses unknown prefix IPv4 %s - presuming stale/dead", allocation.IPAMKey, allocation.IPv4)
+					continue
+				}	
+				eniPrefixDB := ds.eniPool[eni.ID].IPv4Prefixes[ipv4Prefix.String()]
+				if eniPrefixDB == nil {
+					eniPrefixDB.Prefix = ipv4Prefix.String()
+					eniPrefixDB.PrefixLen = 28
+					eniPrefixDB.FreeIps = 16
+					eniPrefixDB.UsedIPs = 0
+					eniPrefixDB.AllocatedIPs = NewPrefixStore(16)
 
-			ds.log.Infof("Got IP to recover %s\n", allocation.IPv4)
-			ipv4Prefix := getPrefixFromIPv4Addr(allocation.IPv4)
-			ds.log.Infof("Retrieved prefix %s", ipv4Prefix.String())
-			//TODO first time create
-			eni := eniPrefixes[ipv4Prefix.String()]
-			if eni == nil {
-				ds.log.Infof("datastore: Sandbox %s uses unknown prefix IPv4 %s - presuming stale/dead", allocation.IPAMKey, allocation.IPv4)
-				continue
-			}	
-			eniPrefixDB := ds.eniPool[eni.ID].IPv4Prefixes[ipv4Prefix.String()]
-			if eniPrefixDB == nil {
-				eniPrefixDB.Prefix = ipv4Prefix.String()
-				eniPrefixDB.PrefixLen = 28
-				eniPrefixDB.FreeIps = 16
-				eniPrefixDB.UsedIPs = 0
-				eniPrefixDB.AllocatedIPs = NewPrefixStore(16)
-
-			}
-			eniPrefixDB.UsedIPs++
-			eniPrefixDB.FreeIps--
+				}
+				eniPrefixDB.UsedIPs++
+				eniPrefixDB.FreeIps--
 
 
-			IPindex := getPrefixIndexfromIP(allocation.IPv4, ipv4Prefix)
-			if err := eniPrefixDB.AllocatedIPs.SetUnsetIPallocation(IPindex); err != nil {
-				ds.log.Infof("Invalid index, verify getPrefixIndex")
-				return err
-			}
+				IPindex := getPrefixIndexfromIP(allocation.IPv4, ipv4Prefix)
+				if err := eniPrefixDB.AllocatedIPs.SetUnsetIPallocation(IPindex); err != nil {
+					ds.log.Infof("Invalid index, verify getPrefixIndex")
+					return err
+				}
 
-			err := ds.AddPrefixIPv4AddressToStore(eni.ID, allocation.IPv4)
-			if err != nil && err.Error() != IPAlreadyInStoreError {
-				ds.log.Infof("Did it come here in restore?")
-				ds.log.Errorf("Failed to ADD PD IP %s on ENI %s", allocation.IPv4, eni.ID)
-				return err
-			}
+				err := ds.AddPrefixIPv4AddressToStore(eni.ID, allocation.IPv4)
+				if err != nil && err.Error() != IPAlreadyInStoreError {
+					ds.log.Infof("Did it come here in restore?")
+					ds.log.Errorf("Failed to ADD PD IP %s on ENI %s", allocation.IPv4, eni.ID)
+					return err
+				}
 					
-			addr := eni.IPv4Addresses[allocation.IPv4]
+				addr := eni.IPv4Addresses[allocation.IPv4]
 			ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
 
 
@@ -424,7 +481,9 @@ func (ds *DataStore) ReadBackingStore(enableIpv4PrefixDelegation bool) error {
 
 			ds.log.Debugf("Recovered PD prefix %s index %d", ipv4Prefix.String(), IPindex)
 			ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
+			}
 		}
+		*/
 	}
 
 	if ds.CheckpointMigrationPhase == 1 {
@@ -475,29 +534,17 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, 
 	if ok {
 		return errors.New(DuplicatedENIError)
 	}
-	if isPDenabled {
-		ds.eniPool[eniID] = &ENI{
-			createTime:    time.Now(),
-			IsPrimary:     isPrimary,
-			IsTrunk:       isTrunk,
-			IsEFA:         isEFA,
-			IsPDenabled:   true,
-			ID:            eniID,
-			DeviceNumber:  deviceNumber,
-			IPv4Addresses: make(map[string]*AddressInfo),
-			IPv4Prefixes:  make(map[string]*ENIPrefix)}
+	ds.eniPool[eniID] = &ENI{
+		createTime:    time.Now(),
+		IsPrimary:     isPrimary,
+		IsTrunk:       isTrunk,
+		IsEFA:         isEFA,
+		IsPDenabled:   isPDenabled,
+		ID:            eniID,
+		DeviceNumber:  deviceNumber,
+		IPv4Addresses: make(map[string]*AddressInfo),
+		IPv4Prefixes:  make(map[string]*ENIPrefix)}
 
-	} else {
-		ds.eniPool[eniID] = &ENI{
-			createTime:    time.Now(),
-			IsPrimary:     isPrimary,
-			IsTrunk:       isTrunk,
-			IsEFA:         isEFA,
-			IsPDenabled:   false,
-			ID:            eniID,
-			DeviceNumber:  deviceNumber,
-			IPv4Addresses: make(map[string]*AddressInfo)}
-	}
 	enis.Set(float64(len(ds.eniPool)))
 	return nil
 }
@@ -1025,7 +1072,7 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 
 // UnassignPodIPv4Address a) find out the IP address based on PodName and PodNameSpace
 // b)  mark IP address as unassigned c) returns IP address, ENI's device number, error
-func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey, enableIpv4PrefixDelegation bool) (ip string, deviceNumber int, err error) {
+func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey, enableIpv4PrefixDelegation bool) (e *ENI, ip string, deviceNumber int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	ds.log.Debugf("UnassignPodIPv4Address: IP address pool stats: total:%d, assigned %d, sandbox %s",
@@ -1051,35 +1098,40 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey, enableIpv4PrefixDel
 	if addr == nil {
 		ds.log.Warnf("UnassignPodIPv4Address: Failed to find sandbox %s",
 			ipamKey)
-		return "", 0, ErrUnknownPod
+		return nil, "", 0, ErrUnknownPod
 	}
 
 	ds.unassignPodIPv4AddressUnsafe(addr)
 	if err := ds.writeBackingStoreUnsafe(); err != nil {
 		// Unwind un-assignment
 		ds.assignPodIPv4AddressUnsafe(ipamKey, eni, addr)
-		return "", 0, err
+		return nil, "", 0, err
 	}
 	addr.UnassignedTime = time.Now()
 	if enableIpv4PrefixDelegation {
-		ds.log.Infof("Dump for prefix %v", addr.Prefix)
-		ds.log.Infof("DUMP - %v", eni.IPv4Prefixes[addr.Prefix])
-		eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.CooldownIPs[addr.IPIndex] = addr.UnassignedTime
-		ds.log.Infof("Setting cooldown for index %d at time %v", addr.IPIndex, addr.UnassignedTime)
-        if err := eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.SetUnsetIPallocation(byte(addr.IPIndex)); err != nil {
-			ds.log.Infof("Invalid index but continue to release, maybe addr has invalid index")
-		} 
+		if addr.Prefix == "" {
+			ds.log.Infof("Prefix delegation is enbled and the IP is from secondary pool hence no need to update prefix pool")
+			ds.total--
+		} else {
+			ds.log.Infof("Dump for prefix %v", addr.Prefix)
+			ds.log.Infof("DUMP - %v", eni.IPv4Prefixes[addr.Prefix])
+			eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.CooldownIPs[addr.IPIndex] = addr.UnassignedTime
+			ds.log.Infof("Setting cooldown for index %d at time %v", addr.IPIndex, addr.UnassignedTime)
+  	      if err := eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.SetUnsetIPallocation(byte(addr.IPIndex)); err != nil {
+				ds.log.Infof("Invalid index but continue to release, maybe addr has invalid index")
+		  	} 
 
-		eni.IPv4Prefixes[addr.Prefix].FreeIps++
-		eni.IPv4Prefixes[addr.Prefix].UsedIPs--
+			eni.IPv4Prefixes[addr.Prefix].FreeIps++
+			eni.IPv4Prefixes[addr.Prefix].UsedIPs--
 		
-		//Remove the IP from eni DB
-		delete(eni.IPv4Addresses, addr.Address) 
+			//Remove the IP from eni DB
+			delete(eni.IPv4Addresses, addr.Address) 
+		}
 	}
 
 	ds.log.Infof("UnassignPodIPv4Address: sandbox %s's ipAddr %s, DeviceNumber %d",
 		ipamKey, addr.Address, eni.DeviceNumber)
-	return addr.Address, eni.DeviceNumber, nil
+	return eni, addr.Address, eni.DeviceNumber, nil
 }
 
 // AllocatedIPs returns a recent snapshot of allocated sandbox<->IPs.
