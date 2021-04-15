@@ -1,0 +1,26 @@
+name: VPC CNI Release
+
+on: [push, pull_request, workflow_dispatch]
+
+env:
+  DEFAULT_GO_VERSION: ^1.15
+  GITHUB_USERNAME: ${{ secrets.EKS_BOT_GITHUB_USERNAME }}
+  GITHUB_TOKEN: ${{ secrets.EKS_BOT_GITHUB_TOKEN }}
+
+jobs:
+
+  release:
+    name: Release
+    runs-on: ubuntu-20.04
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+    steps:
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v2
+      with:
+        go-version: ${{ env.DEFAULT_GO_VERSION }}
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+    
+    - name: Create eks-charts PR
+      run: make ekscharts-sync-release
