@@ -33,7 +33,7 @@ var _ = Describe("cni env test", func() {
 			}
 		})
 
-		FIt("Changing AWS_VPC_ENI_MTU and AWS_VPC_K8S_CNI_VETHPREFIX", func() {
+		It("Changing AWS_VPC_ENI_MTU and AWS_VPC_K8S_CNI_VETHPREFIX", func() {
 			currMTUVal := getEnvValueForKey(AWS_VPC_ENI_MTU)
 			Expect(currMTUVal).NotTo(Equal(""))
 
