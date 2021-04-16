@@ -34,7 +34,7 @@ __cluster_deprovisioned=0
 
 on_error() {
     # Make sure we destroy any cluster that was created if we hit run into an
-    # error when attempting to run tests against the 
+    # error when attempting to run tests against the
     if [[ $RUNNING_PERFORMANCE == false ]]; then
         if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
             # prevent double-deprovisioning with ctrl-c during deprovisioning...
@@ -138,13 +138,11 @@ else
         pushd "$__cni_source_tmpdir"
     fi
     START=$SECONDS
-    make docker IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
-    docker push "$IMAGE_NAME:$TEST_IMAGE_VERSION"
+    make docker DOCKER_BUILD_FLAGS="--push" IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
     DOCKER_BUILD_DURATION=$((SECONDS - START))
     echo "TIMELINE: Docker build took $DOCKER_BUILD_DURATION seconds."
     # Build matching init container
-    make docker-init INIT_IMAGE="$INIT_IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
-    docker push "$INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
+    make docker-init DOCKER_BUILD_FLAGS="--push" INIT_IMAGE="$INIT_IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
     if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
         popd
     fi
@@ -243,7 +241,7 @@ if [[ $RUN_CALICO_TEST == true ]]; then
             echo "Calico pods seems to be down check the config"
             exit 1
         fi
-        
+
         let attempts--
         sleep 5
         echo "Waiting for calico daemonset update"

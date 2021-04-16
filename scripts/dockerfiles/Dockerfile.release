@@ -1,32 +1,135 @@
-ARG docker_arch
-ARG golang_image
+ARG AL2=public.ecr.aws/amazonlinux/amazonlinux:2
 
-FROM $golang_image as builder
-WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
-ARG GOARCH
+# ------------
+
+FROM --platform=$BUILDPLATFORM $AL2 AS go-builder
+
+RUN yum update -y
+RUN yum install -y \
+    git make golang tar
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+ARG GOOS=${TARGETOS}
+ARG GOARCH=${TARGETARCH}
+
 # Configure build with Go modules
 ENV GO111MODULE=on
 ENV GOPROXY=direct
+
+WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
 
 # Copy modules in before the rest of the source to only expire cache on module changes:
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY Makefile ./
-RUN make plugins && make debug-script
+RUN make plugins debug-script ARCH=$GOARCH GOARM=${TARGETVARIANT#v}
 
 COPY . ./
-RUN make build-linux
+RUN make build-linux build-metrics BUILD_MODE=-buildmode=exe ARCH=$GOARCH GOARM=${TARGETVARIANT#v}
 
-# Build the architecture specific container image:
-FROM $docker_arch/amazonlinux:2
-RUN yum update -y && \
-    yum install -y iptables iproute && \
-    yum clean all
+# ------------
+
+FROM --platform=$TARGETPLATFORM $AL2 AS init-runtime-deps
+
+COPY scripts/dockerfiles/copy-bins /usr/local/bin/
+
+RUN yum update -y
+RUN yum install -y iproute
+
+RUN copy-bins /out /usr/sbin/ip /bin/sh
+
+# TODO: Rewrite init.sh into a go binary, and drop these dependencies
+RUN yum install -y bash env curl coreutils procps-ng gawk grep
+RUN copy-bins /out \
+    /usr/bin/env /bin/bash /usr/bin/curl /usr/bin/install /usr/sbin/sysctl /usr/bin/cat /usr/bin/sleep /usr/bin/false /usr/bin/awk /usr/bin/grep
+
+# ------------
+
+FROM --platform=$TARGETPLATFORM init-runtime-deps AS cni-runtime-deps
+
+RUN yum install -y iptables
+
+RUN copy-bins /out /usr/sbin/*tables*
+RUN find /usr/lib*/xtables -depth -print0 | cpio -p0Ldmuv /out
+
+# TODO: Rewrite entrypoint.sh into a go binary, and drop these dependencies
+RUN yum install -y bash env coreutils sed
+RUN copy-bins /out \
+    /usr/bin/env /bin/bash /usr/bin/date /usr/bin/printf /usr/bin/sleep /usr/bin/install /usr/bin/tee /usr/bin/cat /usr/bin/sed /usr/bin/rm
+
+# ------------
+
+FROM --platform=$BUILDPLATFORM $AL2 AS scratch-builder
+
+WORKDIR /build
+COPY scripts/dockerfiles/nsswitch.conf .
+
+WORKDIR /out
+RUN install -d -m 755 etc
+RUN install -m 644 /build/nsswitch.conf etc/
+
+RUN install -d -m 1777 tmp
+
+# ------------
+
+FROM --platform=$TARGETPLATFORM scratch AS minimal-base
+COPY --from=scratch-builder /out /
+
+# ------------
+
+# Build the architecture specific container 'init' image:
+FROM --platform=$TARGETPLATFORM minimal-base AS final-init
+
+COPY --from=init-runtime-deps /out /
+
+WORKDIR /init
+
+COPY --from=go-builder \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/loopback \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/portmap \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/bandwidth \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni-support.sh \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/init.sh /init/
+
+ENTRYPOINT ["/init/init.sh"]
+
+# ------------
+
+# Build the architecture specific CNI container image:
+FROM --platform=$TARGETPLATFORM minimal-base AS final-metrics
+
+# Copy our bundled certs to the first place go will check: see
+# https://golang.org/src/pkg/crypto/x509/root_unix.go
+COPY ./misc/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
 
-COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
+COPY --from=go-builder /go/src/github.com/aws/amazon-vpc-cni-k8s/cni-metrics-helper /app
+
+ENTRYPOINT ["/app/cni-metrics-helper", "--cloudwatch=false"]
+
+# ------------
+
+# Build the architecture specific CNI container image:
+FROM --platform=$TARGETPLATFORM minimal-base AS final-release
+
+# Copy our bundled certs to the first place go will check: see
+# https://golang.org/src/pkg/crypto/x509/root_unix.go
+COPY ./misc/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+WORKDIR /app
+
+COPY --from=cni-runtime-deps /out /
+
+# TODO: aws-cni-support.sh
+# TODO: scripts/entrypoint.sh
+
+COPY --from=go-builder \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/misc/10-aws.conflist \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/loopback \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/portmap \

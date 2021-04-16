@@ -6,3 +6,8 @@ portmap
 loopback
 bandwidth
 routed-eni-cni-plugin
+
+# Docker doesn't need the actual Dockerfile in the context.
+# Ignoring these allows us to iterate on Dockerfiles without
+# invalidating the docker cache on every change.
+scripts/dockerfiles/Dockerfile.*

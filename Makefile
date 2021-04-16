@@ -27,23 +27,23 @@ DESTDIR = .
 
 # IMAGE is the primary AWS VPC CNI plugin container image.
 IMAGE = amazon/amazon-k8s-cni
-IMAGE_NAME = $(IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
+IMAGE_NAME = $(IMAGE):$(VERSION)
 IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(IMAGE_NAME)).tar.gz
 # INIT_IMAGE is the init container for AWS VPC CNI.
 INIT_IMAGE = amazon/amazon-k8s-cni-init
-INIT_IMAGE_NAME = $(INIT_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
+INIT_IMAGE_NAME = $(INIT_IMAGE):$(VERSION)
 INIT_IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(INIT_IMAGE_NAME)).tar.gz
 MAKEFILE_PATH = $(dir $(realpath -s $(firstword $(MAKEFILE_LIST))))
 # METRICS_IMAGE is the CNI metrics publisher sidecar container image.
 METRICS_IMAGE = amazon/cni-metrics-helper
-METRICS_IMAGE_NAME = $(METRICS_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
+METRICS_IMAGE_NAME = $(METRICS_IMAGE):$(VERSION)
 METRICS_IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(METRICS_IMAGE_NAME)).tar.gz
 REPO_FULL_NAME=aws/amazon-vpc-cni-k8s
 HELM_CHART_NAME ?= "aws-vpc-cni"
 # TEST_IMAGE is the testing environment container image.
 TEST_IMAGE = amazon-k8s-cni-test
-TEST_IMAGE_NAME = $(TEST_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
-# These values derive ARCH and DOCKER_ARCH which are needed by dependencies in
+TEST_IMAGE_NAME = $(TEST_IMAGE):$(VERSION)
+# These values derive ARCH which are needed by dependencies in
 # image build defaulting to system's architecture when not specified.
 #
 # UNAME_ARCH is the runtime architecture of the building host.
@@ -51,17 +51,7 @@ UNAME_ARCH = $(shell uname -m)
 # ARCH is the target architecture which is being built for.
 #
 # These are pairs of input_arch to derived_arch separated by colons:
-ARCH = $(lastword $(subst :, ,$(filter $(UNAME_ARCH):%,x86_64:amd64 aarch64:arm64)))
-# DOCKER_ARCH is the docker specific architecture specifier used for building on
-# multiarch container images.
-DOCKER_ARCH = $(lastword $(subst :, ,$(filter $(ARCH):%,amd64:amd64 arm64:arm64v8)))
-# IMAGE_ARCH_SUFFIX is the `-arch` suffix included in the container image name.
-#
-# This is only applied to the arm64 container image by default. Override to
-# provide an alternate suffix or to omit.
-IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(ARCH),arm64))
-# GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE = golang:1.14-stretch
+ARCH ?= $(lastword $(subst :, ,$(filter $(UNAME_ARCH):%,x86_64:amd64 aarch64:arm64)))
 # For the requested build, these are the set of Go specific build environment variables.
 export GOARCH ?= $(ARCH)
 export GOOS = linux
@@ -95,11 +85,7 @@ DOCKER_ARGS =
 DOCKER_RUN_FLAGS = --rm -ti $(DOCKER_ARGS)
 # DOCKER_BUILD_FLAGS is the set of flags passed during container image builds
 # based on the requested build.
-DOCKER_BUILD_FLAGS = --build-arg GOARCH="$(ARCH)" \
-					  --build-arg docker_arch="$(DOCKER_ARCH)" \
-					  --build-arg golang_image="$(GOLANG_IMAGE)" \
-					  --network=host \
-	  		          $(DOCKER_ARGS)
+DOCKER_BUILD_FLAGS = --platform=linux/amd64,linux/arm64 $(DOCKER_ARGS)
 
 # Default to building an executable using the host's Go toolchain.
 .DEFAULT_GOAL = build-linux
@@ -123,15 +109,17 @@ build-linux:    ## Build the VPC CNI plugin agent using the host's Go toolchain.
 
 # Build VPC CNI plugin & agent container image.
 docker:	setup-ec2-sdk-override	   ## Build VPC CNI plugin & agent container image.
-	docker build $(DOCKER_BUILD_FLAGS) \
+	docker buildx build $(DOCKER_BUILD_FLAGS) \
 		-f scripts/dockerfiles/Dockerfile.release \
+		--target final-release \
 		-t "$(IMAGE_NAME)" \
 		.
 	@echo "Built Docker image \"$(IMAGE_NAME)\""
 
 docker-init:     ## Build VPC CNI plugin Init container image.
-	docker build $(DOCKER_BUILD_FLAGS) \
-		-f scripts/dockerfiles/Dockerfile.init \
+	docker buildx build $(DOCKER_BUILD_FLAGS) \
+		-f scripts/dockerfiles/Dockerfile.release \
+		--target final-init \
 		-t "$(INIT_IMAGE_NAME)" \
 		.
 	@echo "Built Docker image \"$(INIT_IMAGE_NAME)\""
@@ -179,7 +167,8 @@ build-metrics:     ## Build metrics helper agent.
 # Build metrics helper agent Docker image.
 docker-metrics:    ## Build metrics helper agent Docker image.
 	docker build $(DOCKER_BUILD_FLAGS) \
-		-f scripts/dockerfiles/Dockerfile.metrics \
+		-f scripts/dockerfiles/Dockerfile.release \
+		--target final-metrics \
 		-t "$(METRICS_IMAGE_NAME)" \
 		.
 	@echo "Built Docker image \"$(METRICS_IMAGE_NAME)\""

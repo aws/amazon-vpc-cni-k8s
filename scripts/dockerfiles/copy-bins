@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -e
+
+DESTDIR=$1; shift
+
+for bin; do
+    echo "$bin"
+    ldd "$bin" | grep -v 'not a dynamic executable' |
+        awk '!/:|linux-vdso/{print $(NF-1)}'
+done |
+    sort | uniq |
+    cpio -pLdmuv "$DESTDIR"
