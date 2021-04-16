@@ -11,8 +11,10 @@ import (
 )
 
 const (
+	//IP tracking bitmap is stored in size of octets
 	octetSize = 8
 
+	//"/32" IPv4 prefix
 	ipv4DefaultPrefixSize = 32
 )
 
@@ -69,6 +71,7 @@ func (prefix PrefixIPsStore) SetUnsetIPallocation(IPindex byte) error {
 	return nil
 }
 
+//Gets the next free bit
 func (prefix PrefixIPsStore) getPosOfRightMostUnsetBit(n byte, octetlen int) int {
 	log.Infof("Size of byte array %d", octetlen)
 	var i int
@@ -102,6 +105,7 @@ func (prefix PrefixIPsStore) getIPfromPrefix() (int, error) {
 	return -1, errors.New("No free index")
 }
 
+//Given prefix, this function gets a bit index and returns a free IP
 func getIPv4AddrfromPrefix(prefix *ENIPrefix) (string, int, error) {
 	IPoffset, err := prefix.AllocatedIPs.getIPfromPrefix()
 	if err != nil {
@@ -112,10 +116,11 @@ func getIPv4AddrfromPrefix(prefix *ENIPrefix) (string, int, error) {
 	prefix.UsedIPs++
 
 	log.Infof("Got ip offset - %d", IPoffset)
-    strPrivateIPv4 := getIPfromPrefix(prefix, IPoffset)
+    strPrivateIPv4 := getIPfromPrefixAndIndex(prefix, IPoffset)
 	return strPrivateIPv4, IPoffset, nil
 }
 
+//Given a IPv4 address, this will compute the associated prefix
 func getPrefixFromIPv4Addr(IPaddr string) (net.IP) {
     _, _, supportedPrefixLen := GetPrefixDelegationDefaults()
 	ipv4Prefix := net.ParseIP(IPaddr)
@@ -125,6 +130,7 @@ func getPrefixFromIPv4Addr(IPaddr string) (net.IP) {
 	return ipv4Prefix
 }
 
+//Given an IP, this function will return the index consumed in the prefix
 func getPrefixIndexfromIP(ipAddr string, ipv4Prefix net.IP) (byte) {
 	_, _, supportedPrefixLen := GetPrefixDelegationDefaults()
 	octetToModify := ipv4DefaultPrefixSize - supportedPrefixLen - 1 
@@ -137,7 +143,8 @@ func getPrefixIndexfromIP(ipAddr string, ipv4Prefix net.IP) (byte) {
 	return IPindex
 }
 
-func getIPfromPrefix(prefix *ENIPrefix, IPoffset int) string {
+//Given a prefix and Index, computes the IP
+func getIPfromPrefixAndIndex(prefix *ENIPrefix, IPoffset int) string {
 	_, _, supportedPrefixLen := GetPrefixDelegationDefaults()
 	octetToModify := ipv4DefaultPrefixSize - supportedPrefixLen - 1 
 	ipv4Addr := net.ParseIP(prefix.Prefix)
@@ -153,6 +160,7 @@ func getIPfromPrefix(prefix *ENIPrefix, IPoffset int) string {
 	return ipv4Addr.String() 
 }
 
+//Function to return PD defaults supported by VPC
 func GetPrefixDelegationDefaults()(int, int, int) {
 	numPrefixesPerENI := 1
 	numIPsPerPrefix   := 16

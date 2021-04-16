@@ -649,7 +649,7 @@ func (ds *DataStore) DelIPv4PrefixFromStore(eniID string, ipv4Prefix string, for
 			var index int
 			for index = 0; index < 8; index++ {
 				if (data | (1 << index) == 1){
-					strPrivateIPv4 := getIPfromPrefix(ipPrefix, index)
+					strPrivateIPv4 := getIPfromPrefixAndIndex(ipPrefix, index)
 					ds.log.Infof("New IP - %s", strPrivateIPv4)
 					addr := curENI.IPv4Addresses[strPrivateIPv4]	
 				    ds.unassignPodIPv4AddressUnsafe(addr)	

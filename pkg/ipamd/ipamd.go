@@ -590,7 +590,7 @@ func (c *IPAMContext) tryFreeENI() {
 // tryUnassignIPsorPrefixesFromAll determines if there are IPs to free when we have extra IPs beyond the target and warmIPTargetDefined
 // is enabled, deallocate extra IP addresses
 func (c *IPAMContext) tryUnassignIPsOrPrefixesFromAll() {
-	if _, over, warmTargetDefined := c.ipTargetState(); warmTargetDefined && over > 0 {
+	if _, over, warmTargetDefined := c.datastoreTargetState(); warmTargetDefined && over > 0 {
 		eniInfos := c.dataStore.GetENIInfos()
 		for eniID := range eniInfos.ENIs {
 			//Either returns prefixes or IPs
@@ -645,7 +645,7 @@ func (c *IPAMContext) findFreeableIPsOrPrefixes(eni string) ([]string, error) {
 	} 
 	// Free the number of IPs `over` the warm IP target, unless `over` is greater than the number of available IPs on
 	// this ENI. In that case we should only free the number of available IPs.
-	_, over, _ := c.ipTargetState()
+	_, over, _ := c.datastoreTargetState()
 	numFreeable := min(over, len(freeableIPs))
 	freeableIPs = freeableIPs[:numFreeable]
 
@@ -657,7 +657,7 @@ func (c *IPAMContext) increaseDatastorePool() {
 	ipamdActionsInprogress.WithLabelValues("increaseDatastorePool").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("increaseDatastorePool").Sub(float64(1))
 
-	short, _, warmTargetDefined := c.ipTargetState()
+	short, _, warmTargetDefined := c.datastoreTargetState()
 	if warmTargetDefined && short == 0 {
 		log.Debugf("Skipping increase Datastore pool, warm target reached")
 		return
@@ -732,7 +732,7 @@ func (c *IPAMContext) tryAllocateENI() error {
 	}
 
 	resourcesToAllocate := c.GetENIResourcesToAllocate()
-	short, _, warmTargetDefined := c.ipTargetState()
+	short, _, warmTargetDefined := c.datastoreTargetState()
 	if warmTargetDefined {
 		if !c.enableIpv4PrefixDelegation {
 			resourcesToAllocate = short
@@ -768,7 +768,7 @@ func (c *IPAMContext) tryAllocateENI() error {
 
 // For an ENI, try to fill in missing IPs on an existing ENI
 func (c *IPAMContext) tryAssignIPsOrPrefixes() (increasedPool bool, err error) {
-	short, _, warmTargetDefined := c.ipTargetState()
+	short, _, warmTargetDefined := c.datastoreTargetState()
 	if warmTargetDefined && short == 0 {
 		log.Infof("Warm target set and short is 0 so not assigning IPs or Prefixes")
 		return false, nil
@@ -990,7 +990,7 @@ func (c *IPAMContext) askForTrunkENIIfNeeded() {
 // shouldRemoveExtraENIs returns true if we should attempt to find an ENI to free. When WARM_IP_TARGET is set, we
 // always check and do verification in getDeletableENI()
 func (c *IPAMContext) shouldRemoveExtraENIs() bool {
-	_, _, warmTargetDefined := c.ipTargetState()
+	_, _, warmTargetDefined := c.datastoreTargetState()
 	if warmTargetDefined {
 		return true
 	}
@@ -1462,9 +1462,10 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 	return ret
 }
 
-// ipTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET,
-// accounting for the MINIMUM_IP_TARGET
-func (c *IPAMContext) ipTargetState() (short int, over int, enabled bool) {
+// datastoreTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET,
+// accounting for the MINIMUM_IP_TARGET without prefix delegation enabled.
+// With prefix delegation this function accounts for WARM_PREFIX_TARGET
+func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool) {
 	if c.warmIPTarget == noWarmIPTarget && c.minimumIPTarget == noMinimumIPTarget && !c.enableIpv4PrefixDelegation {
 		// there is no WARM_IP_TARGET defined and no MINIMUM_IP_TARGET, fallback to use all IP addresses on ENI
 		return 0, 0, false
@@ -1656,7 +1657,7 @@ func (c *IPAMContext) GetIPv4Limit() (int, int, error) {
 }
 
 func (c *IPAMContext) isDatastorePoolTooLow() bool {
-	short, _, warmTargetDefined := c.ipTargetState()
+	short, _, warmTargetDefined := c.datastoreTargetState()
 	if warmTargetDefined {
 		return short > 0
 	}
@@ -1682,7 +1683,7 @@ func (c *IPAMContext) isDatastorePoolTooLow() bool {
 }
 
 func (c *IPAMContext) isDatastorePoolTooHigh() bool {
-	_, over, warmTargetDefined := c.ipTargetState()
+	_, over, warmTargetDefined := c.datastoreTargetState()
 	if warmTargetDefined {
 		return over > 0
 	}
