@@ -30,6 +30,7 @@ type DeploymentBuilder struct {
 	labels                 map[string]string
 	terminationGracePeriod int
 	nodeName               string
+	hostNetwork            bool
 }
 
 func NewBusyBoxDeploymentBuilder() *DeploymentBuilder {
@@ -86,6 +87,11 @@ func (d *DeploymentBuilder) PodLabel(labelKey string, labelValue string) *Deploy
 	return d
 }
 
+func (d *DeploymentBuilder) HostNetwork(hostNetwork bool) *DeploymentBuilder {
+	d.hostNetwork = hostNetwork
+	return d
+}
+
 func (d *DeploymentBuilder) Build() *v1.Deployment {
 	return &v1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -103,6 +109,7 @@ func (d *DeploymentBuilder) Build() *v1.Deployment {
 					Labels: d.labels,
 				},
 				Spec: corev1.PodSpec{
+					HostNetwork:                   d.hostNetwork,
 					Containers:                    []corev1.Container{d.container},
 					TerminationGracePeriodSeconds: aws.Int64(int64(d.terminationGracePeriod)),
 					NodeName:                      d.nodeName,

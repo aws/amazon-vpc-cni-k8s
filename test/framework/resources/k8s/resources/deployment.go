@@ -20,6 +20,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	v1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,6 +29,7 @@ import (
 type DeploymentManager interface {
 	CreateAndWaitTillDeploymentIsReady(deployment *v1.Deployment) (*v1.Deployment, error)
 	DeleteAndWaitTillDeploymentIsDeleted(deployment *v1.Deployment) error
+	MountVolume(deployment *v1.Deployment, name string, mountpath string)
 }
 
 type defaultDeploymentManager struct {
@@ -75,6 +77,26 @@ func (d defaultDeploymentManager) DeleteAndWaitTillDeploymentIsDeleted(deploymen
 		}
 		return false, nil
 	}, ctx.Done())
+}
+
+func (d defaultDeploymentManager) MountVolume(deployment *v1.Deployment, name string, mountpath string) {
+	deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
+		{
+			Name: name,
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: mountpath,
+				},
+			},
+		},
+	}
+
+	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{
+		{
+			Name:      name,
+			MountPath: name,
+		},
+	}
 }
 
 func NewDefaultDeploymentManager(k8sClient client.DelegatingClient) DeploymentManager {

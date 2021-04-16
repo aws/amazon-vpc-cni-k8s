@@ -22,6 +22,7 @@ import (
 
 type NodeManager interface {
 	GetNodes(nodeLabelKey string, nodeLabelVal string) (v1.NodeList, error)
+	GetAllNodes() (v1.NodeList, error)
 }
 
 type defaultNodeManager struct {
@@ -38,5 +39,12 @@ func (d *defaultNodeManager) GetNodes(nodeLabelKey string, nodeLabelVal string) 
 	err := d.k8sClient.List(ctx, &nodeList, client.MatchingLabels{
 		nodeLabelKey: nodeLabelVal,
 	})
+	return nodeList, err
+}
+
+func (d *defaultNodeManager) GetAllNodes() (v1.NodeList, error) {
+	ctx := context.Background()
+	nodeList := v1.NodeList{}
+	err := d.k8sClient.List(ctx, &nodeList)
 	return nodeList, err
 }
