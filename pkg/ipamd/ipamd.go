@@ -766,7 +766,8 @@ func (c *IPAMContext) tryAllocateENI() error {
 	return err
 }
 
-// For an ENI, try to fill in missing IPs on an existing ENI
+// For an ENI, try to fill in missing IPs on an existing ENI with PD disabled
+// try to fill in missing Prefixes on an existing ENI with PD enabled
 func (c *IPAMContext) tryAssignIPsOrPrefixes() (increasedPool bool, err error) {
 	short, _, warmTargetDefined := c.datastoreTargetState()
 	if warmTargetDefined && short == 0 {
@@ -863,6 +864,7 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 	}
 
 	if c.enableIpv4PrefixDelegation {
+		//During upgrade or when PD knob is disabled->enabled then SIPs will be attached hence add to DS
 		if (len(eniMetadata.IPv4Addresses) > 1) {
 			log.Infof("Found ENIs having secondary IPs while PD is enabled")
 			c.addENIaddressesToDataStore(eniMetadata.IPv4Addresses, eni)	
@@ -1673,7 +1675,8 @@ func (c *IPAMContext) isDatastorePoolTooLow() bool {
 			log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
 		}
 	} else {
-		poolTooLow := available < c.maxIPsPerENI*c.warmPrefixTarget || (c.warmPrefixTarget == 0 && available == 0)
+		_, maxIpsPerPrefix, _ := datastore.GetPrefixDelegationDefaults() 
+		poolTooLow := available < maxIpsPerPrefix*c.warmPrefixTarget || (c.warmPrefixTarget == 0 && available == 0)
 		if poolTooLow {
 			logPoolStats(total, used, c.maxIPsPerENI, c.enableIpv4PrefixDelegation)
 			log.Debugf("Prefix pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d) * 16", available, c.warmPrefixTarget, c.maxIPsPerENI)
