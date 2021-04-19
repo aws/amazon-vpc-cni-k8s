@@ -28,4 +28,4 @@ WORKDIR /app
 
 COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/cni-metrics-helper /app
 
-ENTRYPOINT /app/cni-metrics-helper --cloudwatch=false
+ENTRYPOINT ["/app/cni-metrics-helper", "--cloudwatch=false"]
