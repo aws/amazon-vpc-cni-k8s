@@ -28,4 +28,4 @@ COPY --from=builder \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni-support.sh \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/init.sh /init/
 
-ENTRYPOINT /init/init.sh
+ENTRYPOINT ["/init/init.sh"]
