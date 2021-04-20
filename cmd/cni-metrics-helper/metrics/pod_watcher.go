@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"context"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,9 +32,15 @@ func NewDefaultPodWatcher(k8sClient client.Client, log logger.Logger) *defaultPo
 func (d *defaultPodWatcher) GetCNIPods(ctx context.Context) ([]string, error) {
 	var CNIPods []string
 	var podList corev1.PodList
+	labelSelector, _ := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"k8s-app": "aws-node",
+		},
+	})
+
 	listOptions := client.ListOptions{
 		Namespace: metav1.NamespaceSystem,
-		Limit:     500,
+		LabelSelector: labelSelector,
 	}
 
 	err := d.k8sClient.List(ctx, &podList, &listOptions)
@@ -44,11 +49,9 @@ func (d *defaultPodWatcher) GetCNIPods(ctx context.Context) ([]string, error) {
 	}
 
 	for _, pod := range podList.Items {
-		if strings.HasPrefix(pod.Name, "aws-node") {
-			CNIPods = append(CNIPods, pod.Name)
-		}
+		CNIPods = append(CNIPods, pod.Name)
 	}
 
-	d.log.Debugf("Total aws-node pod count:- ", len(CNIPods))
+	d.log.Infof("Total aws-node pod count:- ", len(CNIPods))
 	return CNIPods, nil
 }
