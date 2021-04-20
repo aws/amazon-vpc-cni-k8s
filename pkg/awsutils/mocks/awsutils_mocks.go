@@ -19,12 +19,11 @@
 package mock_awsutils
 
 import (
-	net "net"
-	reflect "reflect"
-
 	awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	ec2 "github.com/aws/aws-sdk-go/service/ec2"
 	gomock "github.com/golang/mock/gomock"
+	net "net"
+	reflect "reflect"
 )
 
 // MockAPIs is a mock of APIs interface
@@ -80,31 +79,31 @@ func (mr *MockAPIsMockRecorder) AllocIPAddress(arg0 interface{}) *gomock.Call {
 }
 
 // AllocIPAddresses mocks base method
-func (m *MockAPIs) AllocIPAddresses(arg0 string, arg1 int) error {
+func (m *MockAPIs) AllocIPAddresses(arg0 string, arg1 int, arg2 bool) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AllocIPAddresses", arg0, arg1)
+	ret := m.ctrl.Call(m, "AllocIPAddresses", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // AllocIPAddresses indicates an expected call of AllocIPAddresses
-func (mr *MockAPIsMockRecorder) AllocIPAddresses(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockAPIsMockRecorder) AllocIPAddresses(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).AllocIPAddresses), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).AllocIPAddresses), arg0, arg1, arg2)
 }
 
 // DeallocIPAddresses mocks base method
-func (m *MockAPIs) DeallocIPAddresses(arg0 string, arg1 []string) error {
+func (m *MockAPIs) DeallocIPAddresses(arg0 string, arg1 []string, arg2 bool) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeallocIPAddresses", arg0, arg1)
+	ret := m.ctrl.Call(m, "DeallocIPAddresses", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeallocIPAddresses indicates an expected call of DeallocIPAddresses
-func (mr *MockAPIsMockRecorder) DeallocIPAddresses(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockAPIsMockRecorder) DeallocIPAddresses(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeallocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).DeallocIPAddresses), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeallocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).DeallocIPAddresses), arg0, arg1, arg2)
 }
 
 // DescribeAllENIs mocks base method
@@ -137,18 +136,18 @@ func (mr *MockAPIsMockRecorder) FreeENI(arg0 interface{}) *gomock.Call {
 }
 
 // GetAttachedENIs mocks base method
-func (m *MockAPIs) GetAttachedENIs() ([]awsutils.ENIMetadata, error) {
+func (m *MockAPIs) GetAttachedENIs(arg0 bool) ([]awsutils.ENIMetadata, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetAttachedENIs")
+	ret := m.ctrl.Call(m, "GetAttachedENIs", arg0)
 	ret0, _ := ret[0].([]awsutils.ENIMetadata)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetAttachedENIs indicates an expected call of GetAttachedENIs
-func (mr *MockAPIsMockRecorder) GetAttachedENIs() *gomock.Call {
+func (mr *MockAPIsMockRecorder) GetAttachedENIs(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAttachedENIs", reflect.TypeOf((*MockAPIs)(nil).GetAttachedENIs))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAttachedENIs", reflect.TypeOf((*MockAPIs)(nil).GetAttachedENIs), arg0)
 }
 
 // GetENIIPv4Limit mocks base method
@@ -181,6 +180,21 @@ func (mr *MockAPIsMockRecorder) GetENILimit() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetENILimit", reflect.TypeOf((*MockAPIs)(nil).GetENILimit))
 }
 
+// GetIPv4PrefixesFromEC2 mocks base method
+func (m *MockAPIs) GetIPv4PrefixesFromEC2(arg0 string) ([]*ec2.Ipv4PrefixSpecification, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetIPv4PrefixesFromEC2", arg0)
+	ret0, _ := ret[0].([]*ec2.Ipv4PrefixSpecification)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetIPv4PrefixesFromEC2 indicates an expected call of GetIPv4PrefixesFromEC2
+func (mr *MockAPIsMockRecorder) GetIPv4PrefixesFromEC2(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIPv4PrefixesFromEC2", reflect.TypeOf((*MockAPIs)(nil).GetIPv4PrefixesFromEC2), arg0)
+}
+
 // GetIPv4sFromEC2 mocks base method
 func (m *MockAPIs) GetIPv4sFromEC2(arg0 string) ([]*ec2.NetworkInterfacePrivateIpAddress, error) {
 	m.ctrl.T.Helper()
@@ -194,6 +208,21 @@ func (m *MockAPIs) GetIPv4sFromEC2(arg0 string) ([]*ec2.NetworkInterfacePrivateI
 func (mr *MockAPIsMockRecorder) GetIPv4sFromEC2(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIPv4sFromEC2", reflect.TypeOf((*MockAPIs)(nil).GetIPv4sFromEC2), arg0)
+}
+
+// GetInstanceHypervisorFamily mocks base method
+func (m *MockAPIs) GetInstanceHypervisorFamily() (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetInstanceHypervisorFamily")
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetInstanceHypervisorFamily indicates an expected call of GetInstanceHypervisorFamily
+func (mr *MockAPIsMockRecorder) GetInstanceHypervisorFamily() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceHypervisorFamily", reflect.TypeOf((*MockAPIs)(nil).GetInstanceHypervisorFamily))
 }
 
 // GetLocalIPv4 mocks base method
@@ -322,16 +351,16 @@ func (mr *MockAPIsMockRecorder) SetUnmanagedENIs(arg0 interface{}) *gomock.Call 
 }
 
 // WaitForENIAndIPsAttached mocks base method
-func (m *MockAPIs) WaitForENIAndIPsAttached(arg0 string, arg1 int) (awsutils.ENIMetadata, error) {
+func (m *MockAPIs) WaitForENIAndIPsAttached(arg0 string, arg1 int, arg2 bool) (awsutils.ENIMetadata, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WaitForENIAndIPsAttached", arg0, arg1)
+	ret := m.ctrl.Call(m, "WaitForENIAndIPsAttached", arg0, arg1, arg2)
 	ret0, _ := ret[0].(awsutils.ENIMetadata)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // WaitForENIAndIPsAttached indicates an expected call of WaitForENIAndIPsAttached
-func (mr *MockAPIsMockRecorder) WaitForENIAndIPsAttached(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockAPIsMockRecorder) WaitForENIAndIPsAttached(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForENIAndIPsAttached", reflect.TypeOf((*MockAPIs)(nil).WaitForENIAndIPsAttached), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForENIAndIPsAttached", reflect.TypeOf((*MockAPIs)(nil).WaitForENIAndIPsAttached), arg0, arg1, arg2)
 }

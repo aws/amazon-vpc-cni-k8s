@@ -28,18 +28,18 @@ var logConfig = logger.Configuration{
 	LogLocation: "stdout",
 }
 
-var log = logger.New(&logConfig)
+var Testlog = logger.New(&logConfig)
 
 func TestAddENI(t *testing.T) {
-	ds := NewDataStore(log, NullCheckpoint{})
+	ds := NewDataStore(Testlog, NullCheckpoint{})
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
+	err := ds.AddENI("eni-1", 1, true, false, false, false)
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-1", 1, true, false, false)
+	err = ds.AddENI("eni-1", 1, true, false, false, false)
 	assert.Error(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false)
+	err = ds.AddENI("eni-2", 2, false, false, false, false)
 	assert.NoError(t, err)
 
 	assert.Equal(t, len(ds.eniPool), 2)
@@ -49,15 +49,15 @@ func TestAddENI(t *testing.T) {
 }
 
 func TestDeleteENI(t *testing.T) {
-	ds := NewDataStore(log, NullCheckpoint{})
+	ds := NewDataStore(Testlog, NullCheckpoint{})
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
+	err := ds.AddENI("eni-1", 1, true, false, false, false)
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false)
+	err = ds.AddENI("eni-2", 2, false, false, false, false)
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-3", 3, false, false, false)
+	err = ds.AddENI("eni-3", 3, false, false, false, false)
 	assert.NoError(t, err)
 
 	eniInfos := ds.GetENIInfos()
@@ -92,12 +92,12 @@ func TestDeleteENI(t *testing.T) {
 }
 
 func TestAddENIIPv4Address(t *testing.T) {
-	ds := NewDataStore(log, NullCheckpoint{})
+	ds := NewDataStore(Testlog, NullCheckpoint{})
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
+	err := ds.AddENI("eni-1", 1, true, false, false, false)
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false)
+	err = ds.AddENI("eni-2", 2, false, false, false, false)
 	assert.NoError(t, err)
 
 	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
@@ -130,12 +130,12 @@ func TestAddENIIPv4Address(t *testing.T) {
 }
 
 func TestGetENIIPs(t *testing.T) {
-	ds := NewDataStore(log, NullCheckpoint{})
+	ds := NewDataStore(Testlog, NullCheckpoint{})
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
+	err := ds.AddENI("eni-1", 1, true, false, false, false)
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false)
+	err = ds.AddENI("eni-2", 2, false, false, false, false)
 	assert.NoError(t, err)
 
 	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
@@ -163,8 +163,8 @@ func TestGetENIIPs(t *testing.T) {
 }
 
 func TestDelENIIPv4Address(t *testing.T) {
-	ds := NewDataStore(log, NullCheckpoint{})
-	err := ds.AddENI("eni-1", 1, true, false, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{})
+	err := ds.AddENI("eni-1", 1, true, false, false, false)
 	assert.NoError(t, err)
 
 	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
@@ -215,12 +215,12 @@ func TestDelENIIPv4Address(t *testing.T) {
 
 func TestPodIPv4Address(t *testing.T) {
 	checkpoint := NewTestCheckpoint(struct{}{})
-	ds := NewDataStore(log, checkpoint)
+	ds := NewDataStore(Testlog, checkpoint)
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
+	err := ds.AddENI("eni-1", 1, true, false, false, false)
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false)
+	err = ds.AddENI("eni-2", 2, false, false, false, false)
 	assert.NoError(t, err)
 
 	err = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
@@ -301,10 +301,10 @@ func TestPodIPv4Address(t *testing.T) {
 	_, _, err = ds.AssignPodIPv4Address(key4)
 	assert.Error(t, err)
 	// Unassign unknown Pod
-	_, _, err = ds.UnassignPodIPv4Address(key4)
+	_, _, _, err = ds.UnassignPodIPv4Address(key4)
 	assert.Error(t, err)
 
-	_, deviceNum, err := ds.UnassignPodIPv4Address(key2)
+	_, _, deviceNum, err := ds.UnassignPodIPv4Address(key2)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, ds.assigned, 2)
@@ -315,14 +315,15 @@ func TestPodIPv4Address(t *testing.T) {
 
 	noWarmIPTarget := 0
 	noMinimumIPTarget := 0
+	noWarmPrefixTarget := 0
 
 	// Should not be able to free this ENI
-	eni := ds.RemoveUnusedENIFromStore(noWarmIPTarget, noMinimumIPTarget)
+	eni := ds.RemoveUnusedENIFromStore(noWarmIPTarget, noMinimumIPTarget, noWarmPrefixTarget)
 	assert.True(t, eni == "")
 
 	ds.eniPool["eni-2"].createTime = time.Time{}
 	ds.eniPool["eni-2"].IPv4Addresses["1.1.2.2"].UnassignedTime = time.Time{}
-	eni = ds.RemoveUnusedENIFromStore(noWarmIPTarget, noMinimumIPTarget)
+	eni = ds.RemoveUnusedENIFromStore(noWarmIPTarget, noMinimumIPTarget, noWarmPrefixTarget)
 	assert.Equal(t, eni, "eni-2")
 
 	assert.Equal(t, ds.total, 2)
@@ -330,11 +331,11 @@ func TestPodIPv4Address(t *testing.T) {
 }
 
 func TestWarmENIInteractions(t *testing.T) {
-	ds := NewDataStore(log, NullCheckpoint{})
+	ds := NewDataStore(Testlog, NullCheckpoint{})
 
-	_ = ds.AddENI("eni-1", 1, true, false, false)
-	_ = ds.AddENI("eni-2", 2, false, false, false)
-	_ = ds.AddENI("eni-3", 3, false, false, false)
+	_ = ds.AddENI("eni-1", 1, true, false, false, false)
+	_ = ds.AddENI("eni-2", 2, false, false, false, false)
+	_ = ds.AddENI("eni-3", 3, false, false, false, false)
 
 	_ = ds.AddIPv4AddressToStore("eni-1", "1.1.1.1")
 	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
@@ -357,33 +358,33 @@ func TestWarmENIInteractions(t *testing.T) {
 
 	// We have three ENIs, 5 IPs and two pods on ENI 1. Each ENI can handle two pods.
 	// We should not be able to remove any ENIs if either warmIPTarget >= 3 or minimumWarmIPTarget >= 5
-	eni := ds.RemoveUnusedENIFromStore(3, 1)
+	eni := ds.RemoveUnusedENIFromStore(3, 1, 0)
 	assert.Equal(t, "", eni)
 	// Should not be able to free this ENI because we want at least 5 IPs, which requires at least three ENIs
-	eni = ds.RemoveUnusedENIFromStore(1, 5)
+	eni = ds.RemoveUnusedENIFromStore(1, 5, 0)
 	assert.Equal(t, "", eni)
 	// Should be able to free an ENI because both warmIPTarget and minimumWarmIPTarget are both effectively 4
-	removedEni := ds.RemoveUnusedENIFromStore(2, 4)
+	removedEni := ds.RemoveUnusedENIFromStore(2, 4, 0)
 	assert.Contains(t, []string{"eni-2", "eni-3"}, removedEni)
 
 	// Should not be able to free an ENI because minimumWarmIPTarget requires at least two ENIs and no warm IP target
-	eni = ds.RemoveUnusedENIFromStore(noWarmIPTarget, 3)
+	eni = ds.RemoveUnusedENIFromStore(noWarmIPTarget, 3, 0)
 	assert.Equal(t, "", eni)
 	// Should be able to free an ENI because one ENI can provide a minimum count of 2 IPs
-	secondRemovedEni := ds.RemoveUnusedENIFromStore(noWarmIPTarget, 2)
+	secondRemovedEni := ds.RemoveUnusedENIFromStore(noWarmIPTarget, 2, 0)
 	assert.Contains(t, []string{"eni-2", "eni-3"}, secondRemovedEni)
 
 	assert.NotEqual(t, removedEni, secondRemovedEni, "The two removed ENIs should not be the same ENI.")
 
-	_ = ds.AddENI("eni-4", 3, false, true, false)
-	_ = ds.AddENI("eni-5", 3, false, false, true)
+	_ = ds.AddENI("eni-4", 3, false, true, false, false)
+	_ = ds.AddENI("eni-5", 3, false, false, true, false)
 
 	_ = ds.AddIPv4AddressToStore("eni-4", "1.1.4.1")
 	_ = ds.AddIPv4AddressToStore("eni-5", "1.1.5.1")
 
 	ds.eniPool["eni-4"].createTime = time.Time{}
 	ds.eniPool["eni-5"].createTime = time.Time{}
-	thirdRemovedEni := ds.RemoveUnusedENIFromStore(noWarmIPTarget, 2)
+	thirdRemovedEni := ds.RemoveUnusedENIFromStore(noWarmIPTarget, 2, 0)
 	// None of the others can be removed...
 	assert.Equal(t, "", thirdRemovedEni)
 	assert.Equal(t, 3, ds.GetENIs())

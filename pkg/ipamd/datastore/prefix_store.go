@@ -120,6 +120,18 @@ func getIPv4AddrfromPrefix(prefix *ENIPrefix) (string, int, error) {
 	return strPrivateIPv4, IPoffset, nil
 }
 
+//Given prefix, this function frees the used IP
+func deleteIPv4AddrfromPrefix(prefix *ENIPrefix, addr *AddressInfo) {
+	prefix.AllocatedIPs.CooldownIPs[addr.IPIndex] = addr.UnassignedTime
+	log.Infof("Setting cooldown for index %d at time %v", addr.IPIndex, addr.UnassignedTime)
+	if err := prefix.AllocatedIPs.SetUnsetIPallocation(byte(addr.IPIndex)); err != nil {
+		log.Infof("Invalid index but continue to release, maybe addr has invalid index")
+	} 
+
+	prefix.FreeIps++
+	prefix.UsedIPs--	
+}
+
 //Given a IPv4 address, this will compute the associated prefix
 func getPrefixFromIPv4Addr(IPaddr string) (net.IP) {
     _, _, supportedPrefixLen := GetPrefixDelegationDefaults()

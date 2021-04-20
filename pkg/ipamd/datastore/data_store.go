@@ -461,7 +461,7 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 }
 
 // AddENI add ENI to data store
-func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, isEFA bool, isPDenabled bool) error {
+func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, isEFA, isPDenabled bool) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
@@ -733,6 +733,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 						ds.log.Warnf("Failed to update backing store: %v", err)
 						// Important! Unwind assignment
 						ds.unassignPodIPv4AddressUnsafe(addr)
+						deleteIPv4AddrfromPrefix(prefix, addr)
 						return "", -1, err
 					}
 					return addr.Address, eni.DeviceNumber, nil
@@ -867,12 +868,12 @@ func (ds *DataStore) getDeletableENI(warmIPTarget, minimumIPTarget, warmPrefixTa
 			continue
 		}
 
-		if warmIPTarget != 0 && ds.isRequiredForWarmIPTarget(warmIPTarget, eni) {
+		if !eni.IsPDenabled && warmIPTarget != 0 && ds.isRequiredForWarmIPTarget(warmIPTarget, eni) {
 			ds.log.Debugf("ENI %s cannot be deleted because it is required for WARM_IP_TARGET: %d", eni.ID, warmIPTarget)
 			continue
 		}
 
-		if minimumIPTarget != 0 && ds.isRequiredForMinimumIPTarget(minimumIPTarget, eni) {
+		if !eni.IsPDenabled && minimumIPTarget != 0 && ds.isRequiredForMinimumIPTarget(minimumIPTarget, eni) {
 			ds.log.Debugf("ENI %s cannot be deleted because it is required for MINIMUM_IP_TARGET: %d", eni.ID, minimumIPTarget)
 			continue
 		}
@@ -1009,7 +1010,7 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 
 // UnassignPodIPv4Address a) find out the IP address based on PodName and PodNameSpace
 // b)  mark IP address as unassigned c) returns IP address, ENI's device number, error
-func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey, enableIpv4PrefixDelegation bool) (e *ENI, ip string, deviceNumber int, err error) {
+func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string, deviceNumber int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	ds.log.Debugf("UnassignPodIPv4Address: IP address pool stats: total:%d, assigned %d, sandbox %s",
@@ -1045,22 +1046,24 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey, enableIpv4PrefixDel
 		return nil, "", 0, err
 	}
 	addr.UnassignedTime = time.Now()
-	if enableIpv4PrefixDelegation {
+	if eni.IsPDenabled {
 		if addr.Prefix == "" {
 			ds.log.Infof("Prefix delegation is enbled and the IP is from secondary pool hence no need to update prefix pool")
 			ds.total--
 		} else {
 			ds.log.Infof("Dump for prefix %v", addr.Prefix)
 			ds.log.Infof("DUMP - %v", eni.IPv4Prefixes[addr.Prefix])
+			deleteIPv4AddrfromPrefix(eni.IPv4Prefixes[addr.Prefix], addr)
+			/*
 			eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.CooldownIPs[addr.IPIndex] = addr.UnassignedTime
 			ds.log.Infof("Setting cooldown for index %d at time %v", addr.IPIndex, addr.UnassignedTime)
-  	      if err := eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.SetUnsetIPallocation(byte(addr.IPIndex)); err != nil {
+  	      	if err := eni.IPv4Prefixes[addr.Prefix].AllocatedIPs.SetUnsetIPallocation(byte(addr.IPIndex)); err != nil {
 				ds.log.Infof("Invalid index but continue to release, maybe addr has invalid index")
 		  	} 
 
 			eni.IPv4Prefixes[addr.Prefix].FreeIps++
 			eni.IPv4Prefixes[addr.Prefix].UsedIPs--
-		
+			*/
 			//Remove the IP from eni DB
 			delete(eni.IPv4Addresses, addr.Address) 
 		}

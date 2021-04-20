@@ -195,7 +195,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		IfName:      in.IfName,
 		NetworkName: in.NetworkName,
 	}
-	eni, ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey, s.ipamContext.enableIpv4PrefixDelegation)
+	eni, ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
 	if eni != nil && s.ipamContext.enableIpv4PrefixDelegation {
 		addr := eni.IPv4Addresses[ip]
 		if addr != nil && addr.Prefix == ""{
