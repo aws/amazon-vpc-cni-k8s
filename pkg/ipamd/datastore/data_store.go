@@ -919,7 +919,6 @@ func (e *ENI) hasPods() bool {
 func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENI {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
-
 	for _, eni := range ds.eniPool {
 		if skipPrimary && eni.IsPrimary {
 			ds.log.Debugf("Skip the primary ENI for need IP check")

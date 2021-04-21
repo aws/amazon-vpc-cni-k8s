@@ -364,6 +364,7 @@ func (c *IPAMContext) nodeInit() error {
 	if err != nil {
 		return err
 	}
+	log.Debugf("Max ip per ENI %d and max prefixes per ENI %d", c.maxIPsPerENI, c.maxPrefixesPerENI)
 
 	vpcCIDRs, err := c.awsClient.GetVPCIPv4CIDRs()
 	if err != nil {
@@ -667,7 +668,6 @@ func (c *IPAMContext) increaseDatastorePool() {
 		log.Debug("AWS CNI is terminating, will not try to attach any new IPs or ENIs right now")
 		return
 	}
-
 	// Try to add more IPs to existing ENIs first.
 	increasedPool, err := c.tryAssignIPsOrPrefixes()
 	if err != nil {
@@ -1642,20 +1642,24 @@ func (c *IPAMContext) GetENIResourcesToAllocate() int {
 }
 
 func (c *IPAMContext) GetIPv4Limit() (int, int, error) {
-	var maxIPsPerENI, maxPrefixesPerENI int
+	var maxIPsPerENI, maxPrefixesPerENI, maxIpsPerPrefix int
 	var err error
 	if !c.enableIpv4PrefixDelegation {
 		maxIPsPerENI, err = c.awsClient.GetENIIPv4Limit()
+		maxPrefixesPerENI = 0
 		if err != nil {
 			return 0, 0, err
 		}
+		return maxIPsPerENI, maxPrefixesPerENI, nil
 	} else if c.enableIpv4PrefixDelegation {
 		//Single PD - allocate one prefix per ENI and new add will be new ENI + prefix
 		//Multi - allocate one prefix per ENI and new add will be new prefix or new ENI + prefix
-		maxPrefixesPerENI, maxIpsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
-		maxIPsPerENI = maxPrefixesPerENI * maxIpsPerPrefix
+		maxPrefixesPerENI, maxIpsPerPrefix, _ = datastore.GetPrefixDelegationDefaults()
+		maxIPsPerENI := maxPrefixesPerENI * maxIpsPerPrefix
+		log.Infof("max prefix %d max ips %d", maxPrefixesPerENI, maxIPsPerENI)
+		return maxIPsPerENI, maxPrefixesPerENI, nil
 	}
-	return maxIPsPerENI, maxPrefixesPerENI, nil
+	return 0, 0, nil
 }
 
 func (c *IPAMContext) isDatastorePoolTooLow() bool {
