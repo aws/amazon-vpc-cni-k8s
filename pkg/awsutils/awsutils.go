@@ -112,7 +112,7 @@ type APIs interface {
 	FreeENI(eniName string) error
 
 	// GetAttachedENIs retrieves eni information from instance metadata service
-	GetAttachedENIs(skipPrimary bool) (eniList []ENIMetadata, err error)
+	GetAttachedENIs() (eniList []ENIMetadata, err error)
 
 	// GetIPv4sFromEC2 returns the IPv4 addresses for a given ENI
 	GetIPv4sFromEC2(eniID string) (addrList []*ec2.NetworkInterfacePrivateIpAddress, err error)
@@ -127,10 +127,10 @@ type APIs interface {
 	AllocIPAddress(eniID string) error
 
 	// AllocIPAddresses allocates numIPs IP addresses on a ENI
-	AllocIPAddresses(eniID string, numIPs int, enableIpv4PrefixDelegation bool) error
+	AllocIPAddresses(eniID string, numIPs int) error
 
 	// DeallocIPAddresses deallocates the list of IP addresses from a ENI
-	DeallocIPAddresses(eniID string, ips []string, enableIpv4PrefixDelegation bool) error
+	DeallocIPAddresses(eniID string, ips []string, igonoreCachedPDflag bool) error
 
 	// GetVPCIPv4CIDRs returns VPC's CIDRs from instance metadata
 	GetVPCIPv4CIDRs() ([]string, error)
@@ -458,7 +458,7 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 	cache.securityGroups.Set(sgIDs)
 
 	if !cache.useCustomNetworking && (addedSGsCount != 0 || deletedSGsCount != 0) {
-		allENIs, err := cache.GetAttachedENIs(cache.useCustomNetworking)
+		allENIs, err := cache.GetAttachedENIs()
 		if err != nil {
 			return errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
 		}
@@ -496,7 +496,7 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 }
 
 // GetAttachedENIs retrieves ENI information from meta data service
-func (cache *EC2InstanceMetadataCache) GetAttachedENIs(skipPrimary bool) (eniList []ENIMetadata, err error) {
+func (cache *EC2InstanceMetadataCache) GetAttachedENIs() (eniList []ENIMetadata, err error) {
 	ctx := context.TODO()
 
 	// retrieve number of interfaces
@@ -509,7 +509,7 @@ func (cache *EC2InstanceMetadataCache) GetAttachedENIs(skipPrimary bool) (eniLis
 	enis := make([]ENIMetadata, len(macs))
 	// retrieve the attached ENIs
 	for i, mac := range macs {
-		enis[i], err = cache.getENIMetadata(mac, skipPrimary)
+		enis[i], err = cache.getENIMetadata(mac)
 		if err != nil {
 			return nil, errors.Wrapf(err, "get attached ENIs: failed to retrieve ENI metadata for ENI: %s", mac)
 		}
@@ -517,7 +517,7 @@ func (cache *EC2InstanceMetadataCache) GetAttachedENIs(skipPrimary bool) (eniLis
 	return enis, nil
 }
 
-func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string, skipPrimary bool) (ENIMetadata, error) {
+func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadata, error) {
 	ctx := context.TODO()
 
 	log.Debugf("Found ENI MAC address: %s", eniMAC)
@@ -564,7 +564,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string, skipPrimary
 	}
    
 	var imdsIPv4Prefixes []string 
-	if (((eniMAC == primaryMAC && !skipPrimary) || (eniMAC != primaryMAC)) && cache.ipv4PrefixDelegation) { 
+	if (((eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC)) && cache.ipv4PrefixDelegation) { 
 		imdsIPv4Prefixes, err = cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
 		if err != nil {
 			return ENIMetadata{}, err	
@@ -577,6 +577,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string, skipPrimary
 			Ipv4Prefix: aws.String(ipv4prefix),
 		}
 	}
+	
 	return ENIMetadata{
 		ENIID:          eniID,
 		MAC:            eniMAC,
@@ -1027,15 +1028,15 @@ func (cache *EC2InstanceMetadataCache) GetIPv4PrefixesFromEC2(eniID string) (add
 	if len(result.NetworkInterfaces) == 0 {
 		return nil, ErrNoNetworkInterfaces
 	}
-	firstNI := result.NetworkInterfaces[0]
+	returnedENI := result.NetworkInterfaces[0]
 
-	return firstNI.Ipv4Prefixes, nil
+	return returnedENI.Ipv4Prefixes, nil
 }
 
 // DescribeAllENIs calls EC2 to refresh the ENIMetadata and tags for all attached ENIs
 func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult, error) {
 	// Fetch all local ENI info from metadata
-	allENIs, err := cache.GetAttachedENIs(cache.useCustomNetworking)
+	allENIs, err := cache.GetAttachedENIs()
 	if err != nil {
 		return DescribeAllENIsResult{}, errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
 	}
@@ -1267,7 +1268,7 @@ func (cache *EC2InstanceMetadataCache) GetInstanceHypervisorFamily () (string, e
 }
 
 // AllocIPAddresses allocates numIPs of IP address on an ENI
-func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int, enableIpv4PrefixDelegation bool) error {
+func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int) error {
 	var needIPs = numIPs
 
 	ipLimit, err := cache.GetENIIPv4Limit()
@@ -1289,7 +1290,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 
 	input := &ec2.AssignPrivateIpAddressesInput{}
 
-	if enableIpv4PrefixDelegation {
+	if cache.ipv4PrefixDelegation {
 		needPrefixes := needIPs
 		input = &ec2.AssignPrivateIpAddressesInput{
 			NetworkInterfaceId: aws.String(eniID),
@@ -1316,29 +1317,28 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 		awsAPIErrInc("AssignPrivateIpAddresses", err)
 		return errors.Wrap(err, "allocate IP address: failed to allocate a private IP address")
 	}
-	log.Infof("**************************************")
-	log.Infof("Printing output - %s", output)
-	log.Infof("**************************************")
 	if output != nil {
-		if enableIpv4PrefixDelegation { 
+		if cache.ipv4PrefixDelegation { 
 			log.Infof("Allocated %d private IP addresses", len(output.AssignedIpv4Prefixes))
+		} else {
+			log.Infof("Allocated %d private IP addresses", len(output.AssignedPrivateIpAddresses))
 		}
 	}
 	return nil
 }
 
 // WaitForENIAndIPsAttached waits until the ENI has been attached and the secondary IPs have been added
-func (cache *EC2InstanceMetadataCache) WaitForENIAndIPsAttached(eni string, wantedSecondaryIPs int, enableIpv4PrefixDelegation bool) (eniMetadata ENIMetadata, err error) {
-	return cache.waitForENIAndIPsAttached(eni, wantedSecondaryIPs, maxENIBackoffDelay, enableIpv4PrefixDelegation)
+func (cache *EC2InstanceMetadataCache) WaitForENIAndIPsAttached(eni string, wantedSecondaryIPs int) (eniMetadata ENIMetadata, err error) {
+	return cache.waitForENIAndIPsAttached(eni, wantedSecondaryIPs, maxENIBackoffDelay)
 }
 
-func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, wantedSecondaryIPs int, maxBackoffDelay time.Duration, enableIpv4PrefixDelegation bool) (eniMetadata ENIMetadata, err error) {
+func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, wantedSecondaryIPs int, maxBackoffDelay time.Duration) (eniMetadata ENIMetadata, err error) {
 	start := time.Now()
 	attempt := 0
 	// Wait until the ENI shows up in the instance metadata service and has at least some secondary IPs
 	err = retry.NWithBackoff(retry.NewSimpleBackoff(time.Millisecond*100, maxBackoffDelay, 0.15, 2.0), maxENIEC2APIRetries, func() error {
 		attempt++
-		enis, err := cache.GetAttachedENIs(cache.useCustomNetworking)
+		enis, err := cache.GetAttachedENIs()
 		if err != nil {
 			log.Warnf("Failed to increase pool, error trying to discover attached ENIs on attempt %d/%d: %v ", attempt, maxENIEC2APIRetries, err)
 			return ErrNoNetworkInterfaces
@@ -1349,23 +1349,23 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 				// Check how many Secondary IPs have been attached
 				var eniIPCount int
 
-				if enableIpv4PrefixDelegation {
+				if cache.ipv4PrefixDelegation {
 					eniIPCount = len(returnedENI.IPv4Prefixes)
 					log.Debugf("Found prefix count - %d", eniIPCount)
 				} else {
 					eniIPCount = len(returnedENI.IPv4Addresses)	
 				}
-				if eniIPCount <= 1 && !enableIpv4PrefixDelegation{
+				if eniIPCount <= 1 && !cache.ipv4PrefixDelegation{
 					log.Debugf("No IPv4 addresses available yet on ENI %s", returnedENI.ENIID)
 					return ErrNoSecondaryIPsFound
-				} else if enableIpv4PrefixDelegation && eniIPCount < 1 {
+				} else if cache.ipv4PrefixDelegation && eniIPCount < 1 {
 					log.Debugf("No IPv4 addresses available yet on ENI %s", returnedENI.ENIID)
 					return ErrNoSecondaryIPsFound	
 				} 
 				// At least some are attached
 				eniMetadata = returnedENI
 				// ipsToAllocate will be at most 1 less then the IP limit for the ENI because of the primary IP
-				if (eniIPCount > wantedSecondaryIPs && !enableIpv4PrefixDelegation) || (eniIPCount >= wantedSecondaryIPs && enableIpv4PrefixDelegation) {
+				if (eniIPCount > wantedSecondaryIPs && !cache.ipv4PrefixDelegation) || (eniIPCount >= wantedSecondaryIPs && cache.ipv4PrefixDelegation) {
 					return nil
 				}
 				return ErrAllSecondaryIPsNotFound
@@ -1378,11 +1378,11 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 	if err != nil {
 		// If we have at least 1 Secondary IP, by now return what we have without an error
 		if err == ErrAllSecondaryIPsNotFound {
-			if !enableIpv4PrefixDelegation && len(eniMetadata.IPv4Addresses) > 1 {
+			if !cache.ipv4PrefixDelegation && len(eniMetadata.IPv4Addresses) > 1 {
 				// We have some Secondary IPs, return the ones we have
 				log.Warnf("This ENI only has %d IP addresses, we wanted %d", len(eniMetadata.IPv4Addresses), wantedSecondaryIPs)
 				return eniMetadata, nil
-			} else if enableIpv4PrefixDelegation && len(eniMetadata.IPv4Prefixes) > 1 {
+			} else if cache.ipv4PrefixDelegation && len(eniMetadata.IPv4Prefixes) > 1 {
 				// We have some prefixes, return the ones we have
 				log.Warnf("This ENI only has %d Prefixes, we wanted %d", len(eniMetadata.IPv4Prefixes), wantedSecondaryIPs)
 				return eniMetadata, nil	
@@ -1395,7 +1395,7 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 }
 
 // DeallocIPAddresses allocates numIPs of IP address on an ENI
-func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []string, enableIpv4PrefixDelegation bool) error {
+func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []string, igonoreCachedPDflag bool) error {
 	log.Infof("Trying to unassign the following IPs %s from ENI %s", ips, eniID)
 	var ipsInput []*string
 	for _, ip := range ips {
@@ -1403,7 +1403,7 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []st
 	}
     
 	input := &ec2.UnassignPrivateIpAddressesInput{}
-	if !enableIpv4PrefixDelegation {
+	if !cache.ipv4PrefixDelegation || igonoreCachedPDflag {
 		input = &ec2.UnassignPrivateIpAddressesInput{
 			NetworkInterfaceId: aws.String(eniID),
 			PrivateIpAddresses: ipsInput,

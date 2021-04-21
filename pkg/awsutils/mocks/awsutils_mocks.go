@@ -79,17 +79,17 @@ func (mr *MockAPIsMockRecorder) AllocIPAddress(arg0 interface{}) *gomock.Call {
 }
 
 // AllocIPAddresses mocks base method
-func (m *MockAPIs) AllocIPAddresses(arg0 string, arg1 int, arg2 bool) error {
+func (m *MockAPIs) AllocIPAddresses(arg0 string, arg1 int) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AllocIPAddresses", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "AllocIPAddresses", arg0, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // AllocIPAddresses indicates an expected call of AllocIPAddresses
-func (mr *MockAPIsMockRecorder) AllocIPAddresses(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockAPIsMockRecorder) AllocIPAddresses(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).AllocIPAddresses), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).AllocIPAddresses), arg0, arg1)
 }
 
 // DeallocIPAddresses mocks base method
@@ -136,18 +136,18 @@ func (mr *MockAPIsMockRecorder) FreeENI(arg0 interface{}) *gomock.Call {
 }
 
 // GetAttachedENIs mocks base method
-func (m *MockAPIs) GetAttachedENIs(arg0 bool) ([]awsutils.ENIMetadata, error) {
+func (m *MockAPIs) GetAttachedENIs() ([]awsutils.ENIMetadata, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetAttachedENIs", arg0)
+	ret := m.ctrl.Call(m, "GetAttachedENIs")
 	ret0, _ := ret[0].([]awsutils.ENIMetadata)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetAttachedENIs indicates an expected call of GetAttachedENIs
-func (mr *MockAPIsMockRecorder) GetAttachedENIs(arg0 interface{}) *gomock.Call {
+func (mr *MockAPIsMockRecorder) GetAttachedENIs() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAttachedENIs", reflect.TypeOf((*MockAPIs)(nil).GetAttachedENIs), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAttachedENIs", reflect.TypeOf((*MockAPIs)(nil).GetAttachedENIs))
 }
 
 // GetENIIPv4Limit mocks base method
@@ -351,16 +351,16 @@ func (mr *MockAPIsMockRecorder) SetUnmanagedENIs(arg0 interface{}) *gomock.Call 
 }
 
 // WaitForENIAndIPsAttached mocks base method
-func (m *MockAPIs) WaitForENIAndIPsAttached(arg0 string, arg1 int, arg2 bool) (awsutils.ENIMetadata, error) {
+func (m *MockAPIs) WaitForENIAndIPsAttached(arg0 string, arg1 int) (awsutils.ENIMetadata, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WaitForENIAndIPsAttached", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "WaitForENIAndIPsAttached", arg0, arg1)
 	ret0, _ := ret[0].(awsutils.ENIMetadata)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // WaitForENIAndIPsAttached indicates an expected call of WaitForENIAndIPsAttached
-func (mr *MockAPIsMockRecorder) WaitForENIAndIPsAttached(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockAPIsMockRecorder) WaitForENIAndIPsAttached(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForENIAndIPsAttached", reflect.TypeOf((*MockAPIs)(nil).WaitForENIAndIPsAttached), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForENIAndIPsAttached", reflect.TypeOf((*MockAPIs)(nil).WaitForENIAndIPsAttached), arg0, arg1)
 }

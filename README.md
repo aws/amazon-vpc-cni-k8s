@@ -452,11 +452,11 @@ kubectl patch daemonset aws-node -n kube-system -p '{"spec": {"template": {"spec
 ```
 ---
 
-`ENABLE_PREFIX_DELEGATION` (Since v2.0)
+`ENABLE_PREFIX_DELEGATION` (Since v1.9)
 
 Type: Boolean as a String
 
-Default: `true`
+Default: `false`
 
 To enable IPv4 prefix delegation on nitro instances. Setting `ENABLE_PREFIX_DELEGATION` to `true` will start allocating a /28 prefix 
 instead of a secondary IP in the ENIs subnet. The total number of prefixes and private IP addresses will be less than the

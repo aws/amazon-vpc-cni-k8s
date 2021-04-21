@@ -620,7 +620,7 @@ func (c *IPAMContext) tryUnassignIPsOrPrefixesFromAll() {
 				}
 				
 				// Deallocate IPs from the instance if they aren't used by pods.
-				if err = c.awsClient.DeallocIPAddresses(eniID, deletedIPsOrPrefixes, c.enableIpv4PrefixDelegation); err != nil {
+				if err = c.awsClient.DeallocIPAddresses(eniID, deletedIPsOrPrefixes, false); err != nil {
 					log.Warnf("Failed to decrease pool by removing IPs %v from ENI %s: %s", deletedIPsOrPrefixes, eniID, err)
 				} else {
 					log.Debugf("Successfully decreased pool by removing IPs %v from ENI %s", deletedIPsOrPrefixes, eniID)
@@ -742,14 +742,14 @@ func (c *IPAMContext) tryAllocateENI() error {
 		}
 	}
 
-	err = c.awsClient.AllocIPAddresses(eni, resourcesToAllocate, c.enableIpv4PrefixDelegation)
+	err = c.awsClient.AllocIPAddresses(eni, resourcesToAllocate)
 	if err != nil {
 		log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", resourcesToAllocate, err)
 		// Continue to process the allocated IP addresses
 		ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 	}
 
-	eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni, resourcesToAllocate, c.enableIpv4PrefixDelegation)
+	eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni, resourcesToAllocate)
 	if err != nil {
 		ipamdErrInc("increaseIPPoolwaitENIAttachedFailed")
 		log.Errorf("Failed to increase pool size: Unable to discover attached ENI from metadata service %v", err)
@@ -786,11 +786,11 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 	if eni != nil && len(eni.IPv4Addresses) < c.maxIPsPerENI {
 		currentNumberOfAllocatedIPs := len(eni.IPv4Addresses)
 		// Try to allocate all available IPs for this ENI
-		err = c.awsClient.AllocIPAddresses(eni.ID, c.maxIPsPerENI-currentNumberOfAllocatedIPs, c.enableIpv4PrefixDelegation)
+		err = c.awsClient.AllocIPAddresses(eni.ID, c.maxIPsPerENI-currentNumberOfAllocatedIPs)
 		if err != nil {
 			log.Warnf("failed to allocate all available IP addresses on ENI %s, err: %v", eni.ID, err)
 			// Try to just get one more IP
-			err = c.awsClient.AllocIPAddresses(eni.ID, 1, c.enableIpv4PrefixDelegation)
+			err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 			if err != nil {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err: %v", eni.ID, err))
@@ -814,11 +814,11 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 	if eni != nil {
 		currentNumberOfAllocatedPrefixes := len(eni.IPv4Prefixes)
 			
-		err = c.awsClient.AllocIPAddresses(eni.ID, c.maxPrefixesPerENI-currentNumberOfAllocatedPrefixes, c.enableIpv4PrefixDelegation)
+		err = c.awsClient.AllocIPAddresses(eni.ID, c.maxPrefixesPerENI-currentNumberOfAllocatedPrefixes)
 		if err != nil {
 			log.Warnf("failed to allocate all available IPv4 Prefixes on ENI %s, err: %v", eni.ID, err)
 			// Try to just get one more prefix
-			err = c.awsClient.AllocIPAddresses(eni.ID, 1, c.enableIpv4PrefixDelegation)
+			err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 			if err != nil {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err))
@@ -1035,7 +1035,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 	defer ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
 
 	log.Debugf("Reconciling ENI/IP pool info because time since last %v <= %v", timeSinceLast, interval)
-	allENIs, err := c.awsClient.GetAttachedENIs(c.useCustomNetworking)
+	allENIs, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		log.Errorf("IP pool reconcile: Failed to get attached ENI info: %v", err.Error())
 		ipamdErrInc("reconcileFailedGetENIs")
@@ -1543,7 +1543,7 @@ func min(x, y int) int {
 
 func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
 	trunkENI := c.dataStore.GetTrunkENI()
-	attachedENIs, err := c.awsClient.GetAttachedENIs(c.useCustomNetworking)
+	attachedENIs, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		return -1, err
 	}
@@ -1625,7 +1625,7 @@ func (c *IPAMContext) tryUnassignIPsFromENIs() {
 		}
 
 		// Deallocate IPs from the instance if they aren't used by pods.
-		if err := c.awsClient.DeallocIPAddresses(eniID, deletedIPs, !c.enableIpv4PrefixDelegation); err != nil {
+		if err := c.awsClient.DeallocIPAddresses(eniID, deletedIPs, true); err != nil {
 			log.Warnf("Failed to decrease IP pool by removing IPs %v from ENI %s: %s", deletedIPs, eniID, err)
 		} else {
 			log.Debugf("Successfully decreased IP pool by removing IPs %v from ENI %s", deletedIPs, eniID)
@@ -1667,13 +1667,13 @@ func (c *IPAMContext) isDatastorePoolTooLow() bool {
 	total, used, _:= c.dataStore.GetStats()
 
 	available := total - used
-	var poolTooLow bool
 	if (!c.enableIpv4PrefixDelegation) {
 		poolTooLow := available < c.maxIPsPerENI*c.warmENITarget || (c.warmENITarget == 0 && available == 0)
 		if poolTooLow {
 			logPoolStats(total, used, c.maxIPsPerENI, c.enableIpv4PrefixDelegation)
 			log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, c.warmENITarget, c.maxIPsPerENI)
 		}
+		return poolTooLow
 	} else {
 		_, maxIpsPerPrefix, _ := datastore.GetPrefixDelegationDefaults() 
 		poolTooLow := available < maxIpsPerPrefix*c.warmPrefixTarget || (c.warmPrefixTarget == 0 && available == 0)
@@ -1681,8 +1681,8 @@ func (c *IPAMContext) isDatastorePoolTooLow() bool {
 			logPoolStats(total, used, c.maxIPsPerENI, c.enableIpv4PrefixDelegation)
 			log.Debugf("Prefix pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d) * 16", available, c.warmPrefixTarget, c.maxIPsPerENI)
 		}
+		return poolTooLow
 	}
-	return poolTooLow 
 }
 
 func (c *IPAMContext) isDatastorePoolTooHigh() bool {

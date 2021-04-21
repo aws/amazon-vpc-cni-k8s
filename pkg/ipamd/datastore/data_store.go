@@ -561,8 +561,8 @@ func (ds *DataStore) AddIPv4PrefixToStore(eniID string, ipv4Prefix string) error
 	if ok {
 		return errors.New(IPAlreadyInStoreError)
 	}
-    //TODO - make it configurable
-	ds.total = ds.total + 16
+	_, numIPsPerPrefix, _ := GetPrefixDelegationDefaults()
+	ds.total = ds.total + numIPsPerPrefix 
 	ds.allocatedPrefix++
 	// Prometheus gauge
 	totalIPs.Set(float64(ds.total))
@@ -625,7 +625,6 @@ func (ds *DataStore) DelIPv4PrefixFromStore(eniID string, ipv4Prefix string, for
 	Ipv4PrefixSplit := strings.Split(ipv4Prefix, "/")
 	ipv4, prefixLen := Ipv4PrefixSplit[0], Ipv4PrefixSplit[1]
 	ds.log.Infof("IP %s and prefix %s", ipv4, prefixLen)
-	//prefix, _ := strconv.Atoi(prefixLen)
 
 	ipPrefix, ok := curENI.IPv4Prefixes[ipv4]
 	if !ok {
@@ -643,7 +642,6 @@ func (ds *DataStore) DelIPv4PrefixFromStore(eniID string, ipv4Prefix string, for
 		len := prefixDB.IPsPerPrefix/8
     	log.Infof("In del IP from prefix - %d", len)
 		var octet int
-		//prefixDB := ipPrefix.AllocatedIPs
 		for octet = 0; octet < len; octet++ {
 			data := (int)(prefixDB.UsedIPs[octet])
 			var index int
