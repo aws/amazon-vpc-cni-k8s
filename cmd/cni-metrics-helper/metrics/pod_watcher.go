@@ -32,18 +32,22 @@ func NewDefaultPodWatcher(k8sClient client.Client, log logger.Logger) *defaultPo
 func (d *defaultPodWatcher) GetCNIPods(ctx context.Context) ([]string, error) {
 	var CNIPods []string
 	var podList corev1.PodList
-	labelSelector, _ := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
+	labelSelector, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"k8s-app": "aws-node",
 		},
 	})
+
+	if err != nil {
+		panic(err.Error())
+	}
 
 	listOptions := client.ListOptions{
 		Namespace: metav1.NamespaceSystem,
 		LabelSelector: labelSelector,
 	}
 
-	err := d.k8sClient.List(ctx, &podList, &listOptions)
+	err = d.k8sClient.List(ctx, &podList, &listOptions)
 	if err != nil {
 		return CNIPods, err
 	}
