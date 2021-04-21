@@ -4,7 +4,7 @@ set -e
 
 mkdir -p ./vendor/github.com/aws
 
-SDK_MODEL_SOURCE=/home/varavaj/AWS/src/github.com/aws/aws-sdk-go/models/apis/ec2/2016-11-15
+SDK_MODEL_SOURCE=/home/varavaj/AWS/tmp/release-automation/staging-sdk211076960/sdk/src/github.com/aws/aws-sdk-go/models/apis/ec2/2016-11-15
 SDK_VENDOR_PATH=./vendor/github.com/aws/aws-sdk-go
 API_VERSION=2016-11-15
 API_PATH=$SDK_VENDOR_PATH/models/apis/ec2/$API_VERSION
