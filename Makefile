@@ -33,10 +33,13 @@ IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(IMAGE_NAME)).tar.gz
 INIT_IMAGE = amazon/amazon-k8s-cni-init
 INIT_IMAGE_NAME = $(INIT_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
 INIT_IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(INIT_IMAGE_NAME)).tar.gz
+MAKEFILE_PATH = $(dir $(realpath -s $(firstword $(MAKEFILE_LIST))))
 # METRICS_IMAGE is the CNI metrics publisher sidecar container image.
 METRICS_IMAGE = amazon/cni-metrics-helper
 METRICS_IMAGE_NAME = $(METRICS_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
 METRICS_IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(METRICS_IMAGE_NAME)).tar.gz
+REPO_FULL_NAME=aws/amazon-vpc-cni-k8s
+HELM_CHART_NAME ?= "aws-vpc-cni"
 # TEST_IMAGE is the testing environment container image.
 TEST_IMAGE = amazon-k8s-cni-test
 TEST_IMAGE_NAME = $(TEST_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
@@ -238,6 +241,9 @@ lint:   ## Run golint on source code.
 	  -not -name 'mock_*' -not -name '*mocks.go' -not -name "cni.go" -not -name "eniconfig.go" \
 	  -print0 | sort -z | xargs -0 -L1 -- golint $(LINT_FLAGS) 2>/dev/null
 
+helm-lint:
+	@${MAKEFILE_PATH}test/helm/helm-lint.sh
+
 # Run go vet on source code.
 vet:    ## Run go vet on source code.
 	go vet $(ALLPKGS)
@@ -263,6 +269,13 @@ check-format: format
 
 version:
 	@echo ${VERSION}
+
+ekscharts-sync:
+	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME}
+
+ekscharts-sync-release:
+	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME} -n
+
 
 upload-resources-to-github:
 	${MAKEFILE_PATH}/scripts/upload-resources-to-github

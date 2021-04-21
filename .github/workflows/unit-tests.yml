@@ -14,7 +14,7 @@ jobs:
     - name: Set up Go 1.14
       uses: actions/setup-go@v2
       with:
-        go-version: ^1.14
+        go-version: '1.14.3' 
       id: go
 
     - name: Check out code into the Go module directory
@@ -33,6 +33,9 @@ jobs:
 
     - name: Build
       run: make build-linux
+
+    - name: helm v2 and v3 lint
+      run: make helm-lint
 
     - name: Unit Tests
       run: make unit-test

@@ -1,5 +1,4 @@
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_bgpconfigurations.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -131,7 +130,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_bgppeers.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -234,7 +232,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_blockaffinities.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -296,7 +293,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_clusterinformations.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -361,7 +357,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_felixconfigurations.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -914,7 +909,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_globalnetworkpolicies.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -1686,7 +1680,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_globalnetworksets.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -1740,7 +1733,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_hostendpoints.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -1849,7 +1841,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_ipamblocks.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -1931,7 +1922,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_ipamconfigs.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -1988,7 +1978,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_ipamhandles.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -2045,7 +2034,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_ippools.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -2145,7 +2133,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_kubecontrollersconfigurations.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -2369,7 +2356,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_networkpolicies.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -3122,7 +3108,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/calico/kdd/crd.projectcalico.org_networksets.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -3174,7 +3159,6 @@ status:
   storedVersions: []
 
 ---
-# Source: crds/operator.tigera.io_installations_crd.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -3954,7 +3938,6 @@ spec:
       status: {}
 
 ---
-# Source: crds/operator.tigera.io_tigerastatuses_crd.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -4052,7 +4035,6 @@ spec:
       status: {}
 
 ---
-# Source: tigera-operator/templates/tigera-operator/00-namespace-tigera-operator.yaml
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -4061,9 +4043,6 @@ metadata:
   labels:
     name: tigera-operator
 ---
-# Source: tigera-operator/templates/tigera-operator/02-podsecuritypolicy-tigera-operator.yaml
-# This should not be rendered for an OpenShift install.
-# OpenShift uses SecurityContextConstraints instead.
 apiVersion: policy/v1beta1
 kind: PodSecurityPolicy
 metadata:
@@ -4108,14 +4087,12 @@ spec:
         max: 65535
   readOnlyRootFilesystem: false
 ---
-# Source: tigera-operator/templates/tigera-operator/02-serviceaccount-tigera-operator.yaml
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: tigera-operator
   namespace: tigera-operator
 ---
-# Source: tigera-operator/templates/tigera-operator/02-role-tigera-operator.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -4271,7 +4248,6 @@ rules:
       - create
       - update
 ---
-# Source: tigera-operator/templates/tigera-operator/02-rolebinding-tigera-operator.yaml
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -4285,7 +4261,6 @@ roleRef:
   name: tigera-operator
   apiGroup: rbac.authorization.k8s.io
 ---
-# Source: tigera-operator/templates/tigera-operator/02-tigera-operator.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -4343,15 +4318,3 @@ spec:
         - name: var-lib-calico
           hostPath:
             path: /var/lib/calico
-
----
-# This section includes base Calico installation configuration.
-# For more information, see: https://docs.projectcalico.org/v3.17/reference/installation/api#operator.tigera.io/v1.Installation
-apiVersion: operator.tigera.io/v1
-kind: Installation
-metadata:
-  name: default
-spec:
-  # Configures Calico policy configured to work with AmazonVPC CNI networking.
-  cni:
-    type: AmazonVPC

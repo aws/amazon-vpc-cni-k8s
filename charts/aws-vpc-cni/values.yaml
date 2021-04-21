@@ -6,12 +6,10 @@
 # existing naming
 nameOverride: aws-node
 
-initContainers:
+init:
   image:
-    tag: v1.7.3
+    tag: v1.7.5
     region: us-west-2
-    account: "602401143452"
-    domain: amazonaws.com
     pullPolicy: Always
     # Set to use custom image
     # override: "repo/org/image:tag"
@@ -22,12 +20,8 @@ initContainers:
 
 image:
   region: us-west-2
-  account: "602401143452"
-  domain: amazonaws.com
-  tag: v1.7.3
+  tag: v1.7.5
   pullPolicy: Always
-  port:
-    containerPort: 61678
   # Set to use custom image
   # override: "repo/org/image:tag"
 
@@ -54,6 +48,10 @@ env:
 # this flag enables you to use the match label that was present in the original daemonset deployed by EKS
 # You can then annotate and label the original aws-node resources and 'adopt' them into a helm release
 originalMatchLabels: false
+
+cniConfig: 
+  enabled: false
+  fileContents: ""
 
 imagePullSecrets: []
 
@@ -109,4 +107,55 @@ nodeSelector: {}
 
 tolerations: []
 
-affinity: {}
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: "beta.kubernetes.io/os"
+              operator: In
+              values:
+                - linux
+            - key: "beta.kubernetes.io/arch"
+              operator: In
+              values:
+                - amd64
+                - arm64
+            - key: "eks.amazonaws.com/compute-type"
+              operator: NotIn
+              values:
+                - fargate
+        - matchExpressions:
+            - key: "kubernetes.io/os"
+              operator: In
+              values:
+                - linux
+            - key: "kubernetes.io/arch"
+              operator: In
+              values:
+                - amd64
+                - arm64
+            - key: "eks.amazonaws.com/compute-type"
+              operator: NotIn
+              values:
+                - fargate
+
+eniConfig:
+  # Specifies whether ENIConfigs should be created
+  create: false
+  region: us-west-2
+  subnets:
+    # Key identifies the AZ
+    # Value contains the subnet ID and security group IDs within that AZ
+    # a:
+    #   id: subnet-123
+    #   securityGroups:
+    #   - sg-123
+    # b:
+    #   id: subnet-456
+    #   securityGroups:
+    #   - sg-456
+    # c:
+    #   id: subnet-789
+    #   securityGroups:
+    #   - sg-789
