@@ -536,15 +536,15 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &IPAMContext{
-				awsClient:           m.awsutils,
-				dataStore:           tt.fields.datastore,
-				useCustomNetworking: false,
-				eniConfig:           m.eniconfig,
-				networkClient:       m.network,
-				maxIPsPerENI:        tt.fields.maxIPsPerENI,
-				maxENI:              -1,
-				warmENITarget:       tt.fields.warmENITarget,
-				warmIPTarget:        tt.fields.warmIPTarget,
+				awsClient:                  m.awsutils,
+				dataStore:                  tt.fields.datastore,
+				useCustomNetworking:        false,
+				eniConfig:                  m.eniconfig,
+				networkClient:              m.network,
+				maxIPsPerENI:               tt.fields.maxIPsPerENI,
+				maxENI:                     -1,
+				warmENITarget:              tt.fields.warmENITarget,
+				warmIPTarget:               tt.fields.warmIPTarget,
 				enableIpv4PrefixDelegation: false,
 			}
 			if got := c.isDatastorePoolTooLow(); got != tt.want {

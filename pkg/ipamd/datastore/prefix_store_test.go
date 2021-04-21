@@ -109,14 +109,14 @@ func TestAddENIIPv4Prefix(t *testing.T) {
 
 	var strPrivateIPv4 string
 	strPrivateIPv4, _, err = getIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
-	assert.NoError(t, err)	
+	assert.NoError(t, err)
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-1", strPrivateIPv4)
 	assert.NoError(t, err)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 1)
-	
+
 	strPrivateIPv4, _, err = getIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
-	assert.NoError(t, err)	
+	assert.NoError(t, err)
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-1", strPrivateIPv4)
 	assert.NoError(t, err)
@@ -160,14 +160,14 @@ func TestGetENIIPswithPDEnabled(t *testing.T) {
 
 	var strPrivateIPv4 string
 	strPrivateIPv4, _, err = getIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
-	assert.NoError(t, err)	
+	assert.NoError(t, err)
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-1", strPrivateIPv4)
 	assert.NoError(t, err)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 1)
-	
+
 	strPrivateIPv4, _, err = getIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
-	assert.NoError(t, err)	
+	assert.NoError(t, err)
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-1", strPrivateIPv4)
 	assert.NoError(t, err)
@@ -200,7 +200,6 @@ func TestDelENIIPv4Prefix(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{})
 	err := ds.AddENI("eni-1", 1, true, false, false, true)
 	assert.NoError(t, err)
-
 
 	err = ds.AddIPv4PrefixToStore("eni-1", "1.1.1.0/28")
 	assert.NoError(t, err)
@@ -301,7 +300,6 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 3)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 3)
 	assert.Equal(t, len(checkpoint.Data.(*CheckpointData).Allocations), 3)
-
 
 	key4 := IPAMKey{"net0", "sandbox-4", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key4)
@@ -461,18 +459,16 @@ func TestWarmPrefixInteractions(t *testing.T) {
 	_ = ds.AddENI("eni-2", 2, false, false, false, true)
 	_ = ds.AddENI("eni-3", 3, false, false, false, true)
 
-
 	err := ds.AddIPv4PrefixToStore("eni-1", "1.1.1.0/28")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.allocatedPrefix, 1)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Prefixes), 1)
 
-
 	err = ds.AddIPv4PrefixToStore("eni-2", "2.1.1.0/28")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.allocatedPrefix, 2)
 	assert.Equal(t, len(ds.eniPool["eni-2"].IPv4Prefixes), 1)
-	
+
 	err = ds.AddIPv4PrefixToStore("eni-3", "1.1.1.0/28")
 	assert.NoError(t, err)
 	assert.Equal(t, ds.allocatedPrefix, 3)
@@ -486,13 +482,13 @@ func TestWarmPrefixInteractions(t *testing.T) {
 	// We should not be able to remove any ENIs if either warmPrefixTarget >= 3
 	eni := ds.RemoveUnusedENIFromStore(1, 1, 3)
 	assert.Equal(t, "", eni)
-	
+
 	// Should be able to free 2 ENI because prefix target is 1
 	removedEni := ds.RemoveUnusedENIFromStore(2, 4, 1)
 	assert.Contains(t, []string{"eni-2", "eni-3"}, removedEni)
 
 	noWarmPrefixTarget := 0
-	// Should be able to free 2 ENI 
+	// Should be able to free 2 ENI
 	secondRemovedEni := ds.RemoveUnusedENIFromStore(1, 2, noWarmPrefixTarget)
 	assert.Contains(t, []string{"eni-2", "eni-3"}, secondRemovedEni)
 

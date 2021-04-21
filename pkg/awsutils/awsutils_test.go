@@ -152,10 +152,10 @@ func TestInitWithEC2metadataErr(t *testing.T) {
 func TestGetAttachedENIs(t *testing.T) {
 	mockMetadata := testMetadata(map[string]interface{}{
 		metadataMACPath: primaryMAC + " " + eni2MAC,
-		metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
-		metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
-		metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
-		metadataMACPath + eni2MAC + metadataIPv4s:      eni2PrivateIP,
+		metadataMACPath + eni2MAC + metadataDeviceNum:    eni2Device,
+		metadataMACPath + eni2MAC + metadataInterface:    eni2ID,
+		metadataMACPath + eni2MAC + metadataSubnetCIDR:   subnetCIDR,
+		metadataMACPath + eni2MAC + metadataIPv4s:        eni2PrivateIP,
 		metadataMACPath + eni2MAC + metadataIPv4Prefixes: nil,
 	})
 
@@ -765,17 +765,17 @@ func Test_badENIID(t *testing.T) {
 
 func TestEC2InstanceMetadataCache_waitForENIAndIPsAttached(t *testing.T) {
 	type args struct {
-		eni                string
-		foundSecondaryIPs  int
-		wantedSecondaryIPs int
-		maxBackoffDelay    time.Duration
-		times              int
+		eni                        string
+		foundSecondaryIPs          int
+		wantedSecondaryIPs         int
+		maxBackoffDelay            time.Duration
+		times                      int
 		enableIpv4PrefixDelegation bool
 	}
 	eni1Metadata := ENIMetadata{
 		ENIID:         eniID,
 		IPv4Addresses: nil,
-		IPv4Prefixes: nil,
+		IPv4Prefixes:  nil,
 	}
 	isPrimary := true
 	notPrimary := false

@@ -198,17 +198,17 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 	eni, ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
 	if eni != nil && s.ipamContext.enableIpv4PrefixDelegation {
 		addr := eni.IPv4Addresses[ip]
-		if addr != nil && addr.Prefix == ""{
+		if addr != nil && addr.Prefix == "" {
 			log.Debugf("IP belongs to secondary pool with PD enabled so free from EC2")
 			var deletedIPs []string
 			deletedIPs = append(deletedIPs, ip)
-			if err = s.ipamContext.awsClient.DeallocIPAddresses(eni.ID, deletedIPs, !s.ipamContext.enableIpv4PrefixDelegation); err != nil {
+			if err = s.ipamContext.awsClient.DeallocIPAddresses(eni.ID, deletedIPs, true); err != nil {
 				log.Warnf("Failed to remove IP %v from ENI %s: %s", deletedIPs, eni.ID, err)
 			} else {
 				log.Debugf("Successfully removed IPs %v from ENI %s", deletedIPs, eni.ID)
 			}
 		}
-	} 
+	}
 
 	if err == datastore.ErrUnknownPod && s.ipamContext.enablePodENI {
 		pod, err := s.ipamContext.GetPod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)

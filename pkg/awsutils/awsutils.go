@@ -168,28 +168,28 @@ type APIs interface {
 	//RefreshSGIDs
 	RefreshSGIDs(mac string) error
 
-	//GetInstanceHypervisorFamily returns the hypervisor family for the instance 
+	//GetInstanceHypervisorFamily returns the hypervisor family for the instance
 	GetInstanceHypervisorFamily() (string, error)
 }
 
 // EC2InstanceMetadataCache caches instance metadata
 type EC2InstanceMetadataCache struct {
 	// metadata info
-	securityGroups      StringSet
-	subnetID            string
-	localIPv4           net.IP
-	instanceID          string
-	instanceType        string
-	primaryENI          string
-	primaryENImac       string
-	availabilityZone    string
-	region              string
-	unmanagedENIs       StringSet
-	useCustomNetworking bool
-	cniunmanagedENIs    StringSet
+	securityGroups       StringSet
+	subnetID             string
+	localIPv4            net.IP
+	instanceID           string
+	instanceType         string
+	primaryENI           string
+	primaryENImac        string
+	availabilityZone     string
+	region               string
+	unmanagedENIs        StringSet
+	useCustomNetworking  bool
+	cniunmanagedENIs     StringSet
 	ipv4PrefixDelegation bool
-	imds   TypedIMDS
-	ec2SVC ec2wrapper.EC2
+	imds                 TypedIMDS
+	ec2SVC               ec2wrapper.EC2
 }
 
 // ENIMetadata contains information about an ENI
@@ -215,8 +215,8 @@ type ENIMetadata struct {
 
 // InstanceTypeLimits keeps track of limits for an instance type
 type InstanceTypeLimits struct {
-	ENILimit  int
-	IPv4Limit int
+	ENILimit       int
+	IPv4Limit      int
 	HypervisorType string
 }
 
@@ -349,8 +349,8 @@ func New(useCustomNetworking, ipv4PrefixDelegation bool) (*EC2InstanceMetadataCa
 
 	cache.useCustomNetworking = useCustomNetworking
 	log.Infof("Custom networking %v", cache.useCustomNetworking)
-	
-        cache.ipv4PrefixDelegation = ipv4PrefixDelegation
+
+	cache.ipv4PrefixDelegation = ipv4PrefixDelegation
 	log.Infof("PD enabled %v", cache.ipv4PrefixDelegation)
 
 	awsCfg := aws.NewConfig().WithRegion(region)
@@ -562,12 +562,12 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			PrivateIpAddress: aws.String(ip4.String()),
 		}
 	}
-   
-	var imdsIPv4Prefixes []string 
-	if (((eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC)) && cache.ipv4PrefixDelegation) { 
+
+	var imdsIPv4Prefixes []string
+	if ((eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC)) && cache.ipv4PrefixDelegation {
 		imdsIPv4Prefixes, err = cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
 		if err != nil {
-			return ENIMetadata{}, err	
+			return ENIMetadata{}, err
 		}
 	}
 
@@ -577,14 +577,14 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			Ipv4Prefix: aws.String(ipv4prefix),
 		}
 	}
-	
+
 	return ENIMetadata{
 		ENIID:          eniID,
 		MAC:            eniMAC,
 		DeviceNumber:   deviceNum,
 		SubnetIPv4CIDR: cidr.String(),
 		IPv4Addresses:  ec2ip4s,
-		IPv4Prefixes:   ec2ipv4Prefixes, 
+		IPv4Prefixes:   ec2ipv4Prefixes,
 	}, nil
 }
 
@@ -1257,7 +1257,7 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
 }
 
 // GetInstanceHypervisorFamily return hypervior of EC2 instance type
-func (cache *EC2InstanceMetadataCache) GetInstanceHypervisorFamily () (string, error) {
+func (cache *EC2InstanceMetadataCache) GetInstanceHypervisorFamily() (string, error) {
 	eniLimits, ok := InstanceNetworkingLimits[cache.instanceType]
 	if !ok {
 		log.Errorf("Failed to get hypervisor info due to unknown instance type %s", cache.instanceType)
@@ -1318,7 +1318,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 		return errors.Wrap(err, "allocate IP address: failed to allocate a private IP address")
 	}
 	if output != nil {
-		if cache.ipv4PrefixDelegation { 
+		if cache.ipv4PrefixDelegation {
 			log.Infof("Allocated %d private IP addresses", len(output.AssignedIpv4Prefixes))
 		} else {
 			log.Infof("Allocated %d private IP addresses", len(output.AssignedPrivateIpAddresses))
@@ -1353,15 +1353,15 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 					eniIPCount = len(returnedENI.IPv4Prefixes)
 					log.Debugf("Found prefix count - %d", eniIPCount)
 				} else {
-					eniIPCount = len(returnedENI.IPv4Addresses)	
+					eniIPCount = len(returnedENI.IPv4Addresses)
 				}
-				if eniIPCount <= 1 && !cache.ipv4PrefixDelegation{
+				if eniIPCount <= 1 && !cache.ipv4PrefixDelegation {
 					log.Debugf("No IPv4 addresses available yet on ENI %s", returnedENI.ENIID)
 					return ErrNoSecondaryIPsFound
 				} else if cache.ipv4PrefixDelegation && eniIPCount < 1 {
 					log.Debugf("No IPv4 addresses available yet on ENI %s", returnedENI.ENIID)
-					return ErrNoSecondaryIPsFound	
-				} 
+					return ErrNoSecondaryIPsFound
+				}
 				// At least some are attached
 				eniMetadata = returnedENI
 				// ipsToAllocate will be at most 1 less then the IP limit for the ENI because of the primary IP
@@ -1385,7 +1385,7 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 			} else if cache.ipv4PrefixDelegation && len(eniMetadata.IPv4Prefixes) > 1 {
 				// We have some prefixes, return the ones we have
 				log.Warnf("This ENI only has %d Prefixes, we wanted %d", len(eniMetadata.IPv4Prefixes), wantedSecondaryIPs)
-				return eniMetadata, nil	
+				return eniMetadata, nil
 			}
 		}
 		awsAPIErrInc("waitENIAttachedFailedToAssignIPs", err)
@@ -1401,7 +1401,7 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []st
 	for _, ip := range ips {
 		ipsInput = append(ipsInput, aws.String(ip))
 	}
-    
+
 	input := &ec2.UnassignPrivateIpAddressesInput{}
 	if !cache.ipv4PrefixDelegation || igonoreCachedPDflag {
 		input = &ec2.UnassignPrivateIpAddressesInput{
@@ -1411,8 +1411,8 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []st
 	} else {
 		input = &ec2.UnassignPrivateIpAddressesInput{
 			NetworkInterfaceId: aws.String(eniID),
-			Ipv4Prefixes: ipsInput,
-		}	
+			Ipv4Prefixes:       ipsInput,
+		}
 	}
 
 	start := time.Now()
