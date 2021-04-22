@@ -20,5 +20,7 @@ const (
 )
 
 const (
-	PollIntervalShort = time.Second * 2
+	PollIntervalShort  = time.Second * 2
+	PollIntervalMedium = time.Second * 5
+	PollIntervalLong   = time.Second * 20
 )
