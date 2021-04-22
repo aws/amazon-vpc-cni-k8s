@@ -29,7 +29,7 @@ var _ = Describe("cni env test", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				len := len(instance.NetworkInterfaces)
-				Expect(len).To(Equal(2))
+				Expect(len).To(BeNumerically(">=", 2))
 			}
 		})
 
@@ -45,12 +45,14 @@ var _ = Describe("cni env test", func() {
 				AWS_VPC_K8S_CNI_VETHPREFIX: "veth",
 			})
 
-			By("Deploying a BusyBox deployment", func() {
+			By("Deploying a BusyBox deployment")
+			{
 				deploymentSpec := manifest.NewBusyBoxDeploymentBuilder().
 					Namespace("default").
 					Name("busybox").
 					Replicas(1).
-					NodeName(primaryNode.Name).Build()
+					NodeName(primaryNode.Name).
+					Build()
 
 				_, err := f.K8sResourceManagers.
 					DeploymentManager().
@@ -70,14 +72,16 @@ var _ = Describe("cni env test", func() {
 				re = regexp.MustCompile(`MTU:[0-9]*`)
 				mtus := re.FindAllStringSubmatch(eth, -1)
 
-				By("Validating new MTU value", func() {
+				By("Validating new MTU value")
+				{
 					// Validate MTU
 					for _, m := range mtus {
 						Expect(m[0]).To(Equal("MTU:1300"))
 					}
-				})
+				}
 
-				By("Validating new VETH Prefix", func() {
+				By("Validating new VETH Prefix")
+				{
 					// Validate VETH Prefix
 					// Adding the new MTU value to below regex ensures that we are checking the recently created
 					// veth and not any older entries
@@ -85,17 +89,21 @@ var _ = Describe("cni env test", func() {
 					veth := re.FindAllString(input, -1)
 
 					Expect(len(veth)).NotTo(Equal(0))
-				})
+				}
 
-				By("Deleting BusyBox Deployment", func() {
+				By("Deleting BusyBox Deployment")
+				{
 					err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deploymentSpec)
 					Expect(err).NotTo(HaveOccurred())
+				}
+			}
+			By("Restoring old value on daemonset")
+			{
+				restoreOldValues(map[string]string{
+					AWS_VPC_ENI_MTU:            currMTUVal,
+					AWS_VPC_K8S_CNI_VETHPREFIX: currVETHPrefix,
 				})
-			})
-			restoreOldValues(map[string]string{
-				AWS_VPC_ENI_MTU:            currMTUVal,
-				AWS_VPC_K8S_CNI_VETHPREFIX: currVETHPrefix,
-			})
+			}
 		})
 
 		It("Changing AWS_VPC_K8S_CNI_LOG_FILE", func() {
@@ -112,9 +120,12 @@ var _ = Describe("cni env test", func() {
 
 			Expect(stdout).NotTo(Equal(""))
 
-			restoreOldValues(map[string]string{
-				AWS_VPC_K8S_CNI_LOG_FILE: currLogFilepath,
-			})
+			By("Restoring old value on daemonset")
+			{
+				restoreOldValues(map[string]string{
+					AWS_VPC_K8S_CNI_LOG_FILE: currLogFilepath,
+				})
+			}
 		})
 	})
 })
@@ -130,7 +141,5 @@ func getEnvValueForKey(key string) string {
 }
 
 func restoreOldValues(oldVals map[string]string) {
-	By("Restoring old value on daemonset", func() {
-		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, DAEMONSET, NAMESPACE, DAEMONSET, oldVals)
-	})
+	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, DAEMONSET, NAMESPACE, DAEMONSET, oldVals)
 }

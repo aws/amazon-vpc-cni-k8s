@@ -31,6 +31,8 @@ type DeploymentBuilder struct {
 	terminationGracePeriod int
 	nodeName               string
 	hostNetwork            bool
+	volume                 []corev1.Volume
+	volumeMount            []corev1.VolumeMount
 }
 
 func NewBusyBoxDeploymentBuilder() *DeploymentBuilder {
@@ -92,8 +94,29 @@ func (d *DeploymentBuilder) HostNetwork(hostNetwork bool) *DeploymentBuilder {
 	return d
 }
 
+func (d *DeploymentBuilder) MountVolume(name string, mountpath string) *DeploymentBuilder {
+	d.volume = []corev1.Volume{
+		{
+			Name: name,
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: mountpath,
+				},
+			},
+		},
+	}
+
+	d.volumeMount = []corev1.VolumeMount{
+		{
+			Name:      name,
+			MountPath: name,
+		},
+	}
+	return d
+}
+
 func (d *DeploymentBuilder) Build() *v1.Deployment {
-	return &v1.Deployment{
+	deploymentSpec := &v1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      d.name,
 			Namespace: d.namespace,
@@ -117,4 +140,10 @@ func (d *DeploymentBuilder) Build() *v1.Deployment {
 			},
 		},
 	}
+
+	if len(d.volume) > 0 && len(d.volumeMount) > 0 {
+		deploymentSpec.Spec.Template.Spec.Volumes = d.volume
+		deploymentSpec.Spec.Template.Spec.Containers[0].VolumeMounts = d.volumeMount
+	}
+	return deploymentSpec
 }

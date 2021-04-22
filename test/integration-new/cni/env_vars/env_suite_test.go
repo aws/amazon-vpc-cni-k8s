@@ -56,9 +56,10 @@ var _ = BeforeSuite(func() {
 		HostNetwork(true).
 		PodLabel(HOST_POD_LABEL_KEY, HOST_POD_LABEL_VAL).
 		NodeName(primaryNode.Name).
+		MountVolume("ipamd-logs", "/var/log/aws-routed-eni/").
 		Build()
 
-	f.K8sResourceManagers.DeploymentManager().MountVolume(hostNetworkDeploymentSpec, "ipamd-logs", "/var/log/aws-routed-eni/")
+	//f.K8sResourceManagers.DeploymentManager().MountVolume(hostNetworkDeploymentSpec, "ipamd-logs", "/var/log/aws-routed-eni/")
 	hostNetworkDeployment, err = f.K8sResourceManagers.
 		DeploymentManager().
 		CreateAndWaitTillDeploymentIsReady(hostNetworkDeploymentSpec)
