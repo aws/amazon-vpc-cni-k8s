@@ -1683,7 +1683,7 @@ func (c *IPAMContext) isDatastorePoolTooLow() bool {
 		poolTooLow := available < maxIpsPerPrefix*c.warmPrefixTarget || (c.warmPrefixTarget == 0 && available == 0)
 		if poolTooLow {
 			logPoolStats(total, used, c.maxIPsPerENI, c.enableIpv4PrefixDelegation)
-			log.Debugf("Prefix pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d) * 16", available, c.warmPrefixTarget, c.maxIPsPerENI)
+			log.Debugf("Prefix pool is too low: available (%d) < Warm IP target (%d) * maxIpsPerPrefix (%d)", available, c.warmPrefixTarget, maxIpsPerPrefix)
 		}
 		return poolTooLow
 	}

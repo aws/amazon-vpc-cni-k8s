@@ -832,6 +832,54 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	assert.Equal(t, 0, over)
 }
 
+func TestGetWarmPrefixTargetState(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:     m.awsutils,
+		networkClient: m.network,
+		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
+		enableIpv4PrefixDelegation: true,
+	}
+
+	mockContext.dataStore = testDatastore()
+
+	_, _, warmPrefixTargetDefined := mockContext.datastoreTargetState()
+	assert.False(t, warmPrefixTargetDefined)
+
+	mockContext.warmPrefixTarget = 5
+	short, over, warmPrefixTargetDefined := mockContext.datastoreTargetState()
+	assert.True(t, warmPrefixTargetDefined)
+	assert.Equal(t, 5, short)
+	assert.Equal(t, 0, over)
+
+	// add 2 addresses to datastore
+	_ = mockContext.dataStore.AddENI("eni-1", 1, true, false, false, true)
+	_ = mockContext.dataStore.AddIPv4PrefixToStore("eni-1", "10.1.1.0/28")
+	_ = mockContext.dataStore.AddENI("eni-2", 2, true, false, false, true)
+	_ = mockContext.dataStore.AddIPv4PrefixToStore("eni-1", "20.1.1.0/28")
+
+	short, over, warmPrefixTargetDefined = mockContext.datastoreTargetState()
+	assert.True(t, warmPrefixTargetDefined)
+	assert.Equal(t, 3, short)
+	assert.Equal(t, 0, over)
+
+	//Add 3 more
+	_ = mockContext.dataStore.AddENI("eni-3", 3, true, false, false, true)
+	_ = mockContext.dataStore.AddIPv4PrefixToStore("eni-3", "30.1.1.0/28")
+	_ = mockContext.dataStore.AddENI("eni-4", 4, true, false, false, true)
+	_ = mockContext.dataStore.AddIPv4PrefixToStore("eni-4", "40.1.1.0/28")
+	_ = mockContext.dataStore.AddENI("eni-5", 5, true, false, false, true)
+	_ = mockContext.dataStore.AddIPv4PrefixToStore("eni-5", "50.1.1.0/28")
+
+	short, over, warmPrefixTargetDefined = mockContext.datastoreTargetState()
+	assert.True(t, warmPrefixTargetDefined)
+	assert.Equal(t, 0, short)
+	assert.Equal(t, 0, over)
+}
+
 func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
@@ -878,6 +926,49 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 	}
 }
 
+func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	type fields struct {
+		maxIPsPerENI  int
+		warmPrefixTarget int
+		datastore     *datastore.DataStore
+	}
+
+	tests := []struct {
+		name   string
+		fields fields
+		want   bool
+	}{
+		{"Test new ds, all defaults", fields{16, 1, testDatastore()}, true},
+		{"Test new ds, 0 ENIs", fields{16, 0, testDatastore()}, true},
+		{"Test 3 unused IPs, 1 warm", fields{16, 1, datastoreWithFreeIPsFromPrefix()}, false},
+		{"Test 1 used, 1 warm Prefix", fields{16, 1, datastoreWith1Pod1FromPrefix()}, true},
+		{"Test 1 used, 0 warm Prefix", fields{16, 0, datastoreWith1Pod1FromPrefix()}, false},
+		{"Test 3 used, 1 warm Prefix", fields{16, 1, datastoreWith3PodsFromPrefix()}, true},
+		{"Test 3 used, 0 warm Prefix", fields{16, 0, datastoreWith3PodsFromPrefix()}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &IPAMContext{
+				awsClient:           m.awsutils,
+				dataStore:           tt.fields.datastore,
+				useCustomNetworking: false,
+				eniConfig:           m.eniconfig,
+				networkClient:       m.network,
+				maxIPsPerENI:        tt.fields.maxIPsPerENI,
+				maxENI:              -1,
+				warmPrefixTarget:    tt.fields.warmPrefixTarget,
+				enableIpv4PrefixDelegation: true,
+			}
+			if got := c.isDatastorePoolTooLow(); got != tt.want {
+				t.Errorf("nodeIPPoolTooLow() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func testDatastore() *datastore.DataStore {
 	ds := datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}))
 	ds.CheckpointMigrationPhase = 2
@@ -906,6 +997,38 @@ func datastoreWith1Pod1() *datastore.DataStore {
 
 func datastoreWith3Pods() *datastore.DataStore {
 	datastoreWith3Pods := datastoreWith3FreeIPs()
+
+	for i := 0; i < 3; i++ {
+		key := datastore.IPAMKey{
+			NetworkName: "net0",
+			ContainerID: fmt.Sprintf("sandbox-%d", i),
+			IfName:      "eth0",
+		}
+		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key)
+	}
+	return datastoreWith3Pods
+}
+
+func datastoreWithFreeIPsFromPrefix() *datastore.DataStore {
+	datastoreWithFreeIPs := testDatastore()
+	_ = datastoreWithFreeIPs.AddENI(primaryENIid, 1, true, false, false, true)
+	_ = datastoreWithFreeIPs.AddIPv4PrefixToStore(primaryENIid, prefix01)
+	return datastoreWithFreeIPs
+}
+
+func datastoreWith1Pod1FromPrefix() *datastore.DataStore {
+	datastoreWith1Pod1 := datastoreWithFreeIPsFromPrefix()
+
+	_, _, _ = datastoreWith1Pod1.AssignPodIPv4Address(datastore.IPAMKey{
+		NetworkName: "net0",
+		ContainerID: "sandbox-1",
+		IfName:      "eth0",
+	})
+	return datastoreWith1Pod1
+}
+
+func datastoreWith3PodsFromPrefix() *datastore.DataStore {
+	datastoreWith3Pods := datastoreWithFreeIPsFromPrefix()
 
 	for i := 0; i < 3; i++ {
 		key := datastore.IPAMKey{
