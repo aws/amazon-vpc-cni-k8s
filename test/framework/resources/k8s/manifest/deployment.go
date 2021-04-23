@@ -40,7 +40,7 @@ func NewBusyBoxDeploymentBuilder() *DeploymentBuilder {
 		namespace:              utils.DefaultTestNamespace,
 		name:                   "deployment-test",
 		replicas:               10,
-		container:              NewBusyBoxContainerBuilder().Build(),
+		container:              NewContainerWithCurlerBuilder().Build(),
 		labels:                 map[string]string{"role": "test"},
 		terminationGracePeriod: 0,
 	}
