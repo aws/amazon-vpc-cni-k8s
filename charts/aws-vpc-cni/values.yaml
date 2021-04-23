@@ -63,6 +63,8 @@ podSecurityContext: {}
 
 podAnnotations: {}
 
+podLabels: {}
+
 securityContext:
   capabilities:
     add:
