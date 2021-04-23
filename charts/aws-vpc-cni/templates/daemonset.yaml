@@ -14,6 +14,9 @@ spec:
 {{- else }}
       app.kubernetes.io/name: {{ include "aws-vpc-cni.name" . }}
       app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- if .Values.podLabels }}
+{{ toYaml .Values.podLabels | indent 6 }}
+      {{- end }}
 {{- end }}
   template:
     metadata:
@@ -27,6 +30,9 @@ spec:
         app.kubernetes.io/name: {{ include "aws-vpc-cni.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
         k8s-app: aws-node
+        {{- if .Values.podLabels }}
+{{ toYaml .Values.podLabels | indent 8 }}
+        {{- end }}
     spec:
       priorityClassName: "{{ .Values.priorityClassName }}"
       serviceAccountName: {{ template "aws-vpc-cni.serviceAccountName" . }}
