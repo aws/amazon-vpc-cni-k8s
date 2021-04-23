@@ -1655,7 +1655,7 @@ func (c *IPAMContext) GetIPv4Limit() (int, int, error) {
 		//Single PD - allocate one prefix per ENI and new add will be new ENI + prefix
 		//Multi - allocate one prefix per ENI and new add will be new prefix or new ENI + prefix
 		maxPrefixesPerENI, maxIpsPerPrefix, _ = datastore.GetPrefixDelegationDefaults()
-		maxIPsPerENI := maxPrefixesPerENI * maxIpsPerPrefix
+		maxIPsPerENI = maxPrefixesPerENI * maxIpsPerPrefix
 		log.Infof("max prefix %d max ips %d", maxPrefixesPerENI, maxIPsPerENI)
 		return maxIPsPerENI, maxPrefixesPerENI, nil
 	}

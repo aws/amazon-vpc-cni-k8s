@@ -463,7 +463,7 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, 
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	ds.log.Debugf("DataStore Add an ENI %s", eniID)
+	ds.log.Debugf("DataStore Add an ENI %s and is PD enabled %d", eniID, isPDenabled)
 
 	_, ok := ds.eniPool[eniID]
 	if ok {
@@ -920,6 +920,8 @@ func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENI {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	for _, eni := range ds.eniPool {
+		ds.log.Debugf("Found eni %v", eni)
+		ds.log.Debugf("JAYANTH maxIPperENI %d and is pd enabled %d", maxIPperENI, eni.IsPDenabled)
 		if skipPrimary && eni.IsPrimary {
 			ds.log.Debugf("Skip the primary ENI for need IP check")
 			continue
@@ -993,9 +995,17 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 		}
 	}
 
-	ds.total -= len(eni.IPv4Addresses)
-	ds.log.Infof("RemoveENIFromDataStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
-		eniID, len(eni.IPv4Addresses), ds.total, ds.assigned)
+	if !eni.IsPDenabled {
+		ds.total -= len(eni.IPv4Addresses)
+		ds.log.Infof("RemoveENIFromDataStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
+			eniID, len(eni.IPv4Addresses), ds.total, ds.assigned)
+	} else {
+		_, numIPsPerPrefix, _ := GetPrefixDelegationDefaults()
+		ds.total = ds.total - (len(eni.IPv4Prefixes) * numIPsPerPrefix)
+		ds.allocatedPrefix -= len(eni.IPv4Prefixes)
+		ds.log.Infof("RemoveENIFromDataStore %s: Prefix address pool stats: free %d addresses, total: %d, assigned: %d total prefixes: %d",
+			eniID, len(eni.IPv4Prefixes), ds.total, ds.assigned, ds.allocatedPrefix)
+	}
 	delete(ds.eniPool, eniID)
 
 	// Prometheus gauge
