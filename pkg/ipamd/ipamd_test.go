@@ -1204,6 +1204,89 @@ func TestNodeIPPoolReconcileBadIMDSData(t *testing.T) {
 	assert.Equal(t, 2, curENIs.TotalIPs)
 }
 
+func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:     m.awsutils,
+		networkClient: m.network,
+		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
+		enableIpv4PrefixDelegation: true,
+	}
+
+	mockContext.dataStore = testDatastore()
+
+	primaryENIMetadata := getPrimaryENIMetadataPDenabled()
+	testAddr1 := *primaryENIMetadata.IPv4Addresses[0].PrivateIpAddress
+	// Add ENI and IPs to datastore
+	eniID := primaryENIMetadata.ENIID
+	_ = mockContext.dataStore.AddENI(eniID, primaryENIMetadata.DeviceNumber, true, false, false, true)
+	mockContext.primaryIP[eniID] = testAddr1
+	mockContext.addENIprefixesToDataStore(primaryENIMetadata.IPv4Prefixes, eniID)
+	curENIs := mockContext.dataStore.GetENIInfos()
+	assert.Equal(t, 1, len(curENIs.ENIs))
+	assert.Equal(t, 16, curENIs.TotalIPs)
+	eniMetadataList := []awsutils.ENIMetadata{primaryENIMetadata}
+	m.awsutils.EXPECT().GetAttachedENIs().Return(eniMetadataList, nil)
+	m.awsutils.EXPECT().IsUnmanagedENI(eniID).Return(false).AnyTimes()
+
+	// First reconcile, IMDS returns correct IPs so no change needed
+	mockContext.nodeIPPoolReconcile(0)
+
+	// IMDS returns no prefixes, the EC2 call fails
+	primary := true
+	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
+		{
+			ENIID:          primaryENIid,
+			MAC:            primaryMAC,
+			DeviceNumber:   primaryDevice,
+			SubnetIPv4CIDR: primarySubnet,
+			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+				{
+					PrivateIpAddress: &testAddr1, Primary: &primary,
+				},
+			},
+		},
+	}, nil)
+
+	// eniIPPoolReconcile() calls EC2 to get the actual count, but that call fails
+	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(primaryENIid).Return(nil, errors.New("ec2 API call failed"))
+	mockContext.nodeIPPoolReconcile(0)
+	curENIs = mockContext.dataStore.GetENIInfos()
+	assert.Equal(t, 1, len(curENIs.ENIs))
+	assert.Equal(t, 16, curENIs.TotalIPs)
+
+	// IMDS returns no prefixes
+	m.awsutils.EXPECT().GetAttachedENIs().Return([]awsutils.ENIMetadata{
+		{
+			ENIID:          primaryENIid,
+			MAC:            primaryMAC,
+			DeviceNumber:   primaryDevice,
+			SubnetIPv4CIDR: primarySubnet,
+			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+				{
+					PrivateIpAddress: &testAddr1, Primary: &primary,
+				},
+			},
+		},
+	}, nil)
+
+	// eniIPPoolReconcile() calls EC2 to get the actual count that should still be 16
+	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(primaryENIid).Return(primaryENIMetadata.IPv4Prefixes, nil)
+	mockContext.nodeIPPoolReconcile(0)
+	curENIs = mockContext.dataStore.GetENIInfos()
+	assert.Equal(t, 1, len(curENIs.ENIs))
+	assert.Equal(t, 16, curENIs.TotalIPs)
+
+	// If no ENI is found, we abort the reconcile
+	m.awsutils.EXPECT().GetAttachedENIs().Return(nil, nil)
+	mockContext.nodeIPPoolReconcile(0)
+	curENIs = mockContext.dataStore.GetENIInfos()
+	assert.Equal(t, 1, len(curENIs.ENIs))
+	assert.Equal(t, 16, curENIs.TotalIPs)
+}
 func getPrimaryENIMetadata() awsutils.ENIMetadata {
 	primary := true
 	notPrimary := false
@@ -1303,6 +1386,53 @@ func getSecondaryENIMetadataPDenabled() awsutils.ENIMetadata {
 }
 
 func TestIPAMContext_setupENI(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:     m.awsutils,
+		networkClient: m.network,
+		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
+	}
+	//mockContext.primaryIP[]
+
+	mockContext.dataStore = testDatastore()
+	primary := true
+	notPrimary := false
+	testAddr1 := ipaddr01
+	testAddr2 := ipaddr02
+	primaryENIMetadata := awsutils.ENIMetadata{
+		ENIID:          primaryENIid,
+		MAC:            primaryMAC,
+		DeviceNumber:   primaryDevice,
+		SubnetIPv4CIDR: primarySubnet,
+		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			{
+				PrivateIpAddress: &testAddr1, Primary: &primary,
+			},
+			{
+				PrivateIpAddress: &testAddr2, Primary: &notPrimary,
+			},
+		},
+	}
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	err := mockContext.setupENI(primaryENIMetadata.ENIID, primaryENIMetadata, false, false)
+	assert.NoError(t, err)
+	// Primary ENI added
+	assert.Equal(t, 1, len(mockContext.primaryIP))
+
+	newENIMetadata := getSecondaryENIMetadata()
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, primarySubnet).Return(errors.New("not able to set route 0.0.0.0/0 via 10.10.10.1 table 2"))
+
+	err = mockContext.setupENI(newENIMetadata.ENIID, newENIMetadata, false, false)
+	assert.Error(t, err)
+	assert.Equal(t, 1, len(mockContext.primaryIP))
+}
+
+
+func TestIPAMContext_setupENIwithPDenabled(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 
