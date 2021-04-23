@@ -14,6 +14,8 @@
 package manifest
 
 import (
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+
 	v1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -26,14 +28,17 @@ type ServiceBuilder struct {
 	nodePort    int32
 	protocol    v1.Protocol
 	selector    map[string]string
+	annotation  map[string]string
 	serviceType v1.ServiceType
 }
 
 func NewHTTPService() *ServiceBuilder {
 	return &ServiceBuilder{
-		port:     80,
-		protocol: v1.ProtocolTCP,
-		selector: map[string]string{},
+		namespace:  utils.DefaultTestNamespace,
+		port:       80,
+		protocol:   v1.ProtocolTCP,
+		selector:   map[string]string{},
+		annotation: map[string]string{},
 	}
 }
 
@@ -72,11 +77,17 @@ func (s *ServiceBuilder) ServiceType(serviceType v1.ServiceType) *ServiceBuilder
 	return s
 }
 
-func (s *ServiceBuilder) Build() v1.Service {
-	return v1.Service{
+func (s *ServiceBuilder) Annotations(annotations map[string]string) *ServiceBuilder {
+	s.annotation = annotations
+	return s
+}
+
+func (s *ServiceBuilder) Build() *v1.Service {
+	return &v1.Service{
 		ObjectMeta: metaV1.ObjectMeta{
-			Name:      s.name,
-			Namespace: s.namespace,
+			Name:        s.name,
+			Namespace:   s.namespace,
+			Annotations: s.annotation,
 		},
 		Spec: v1.ServiceSpec{
 			Ports: []v1.ServicePort{{
