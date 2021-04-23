@@ -17,6 +17,8 @@ const (
 	DAEMONSET          = "aws-node"
 	HOST_POD_LABEL_KEY = "network"
 	HOST_POD_LABEL_VAL = "host"
+	VOLUME_NAME        = "ipamd-logs"
+	VOLUME_MOUNT_PATH  = "/var/log/aws-routed-eni/"
 )
 
 var (
@@ -36,9 +38,7 @@ func TestCni(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	globalOptions := framework.GlobalOptions
-	globalOptions.IgnoreOptional = true
-	f = framework.New(globalOptions)
+	f = framework.New(framework.GlobalOptions)
 	ds, err = f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(NAMESPACE, DAEMONSET)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -49,17 +49,35 @@ var _ = BeforeSuite(func() {
 	primaryNode = nodes.Items[0]
 	primaryInstanceId = k8sUtils.GetInstanceIDFromNode(primaryNode)
 
+	curlContainer := manifest.NewBusyBoxContainerBuilder().Image("curlimages/curl:7.76.1").Name("curler").Build()
+
+	volume := []v1.Volume{
+		{
+			Name: VOLUME_NAME,
+			VolumeSource: v1.VolumeSource{
+				HostPath: &v1.HostPathVolumeSource{
+					Path: VOLUME_MOUNT_PATH,
+				},
+			},
+		},
+	}
+
+	volumeMount := []v1.VolumeMount{
+		{
+			Name:      VOLUME_NAME,
+			MountPath: VOLUME_NAME,
+		},
+	}
 	hostNetworkDeploymentSpec = manifest.NewBusyBoxDeploymentBuilder().
 		Namespace("default").
 		Name("host-network").
 		Replicas(1).
 		HostNetwork(true).
 		PodLabel(HOST_POD_LABEL_KEY, HOST_POD_LABEL_VAL).
+		MountVolume(volume, volumeMount).
 		NodeName(primaryNode.Name).
-		MountVolume("ipamd-logs", "/var/log/aws-routed-eni/").
 		Build()
 
-	//f.K8sResourceManagers.DeploymentManager().MountVolume(hostNetworkDeploymentSpec, "ipamd-logs", "/var/log/aws-routed-eni/")
 	hostNetworkDeployment, err = f.K8sResourceManagers.
 		DeploymentManager().
 		CreateAndWaitTillDeploymentIsReady(hostNetworkDeploymentSpec)

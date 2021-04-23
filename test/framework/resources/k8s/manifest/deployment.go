@@ -40,7 +40,7 @@ func NewBusyBoxDeploymentBuilder() *DeploymentBuilder {
 		namespace:              utils.DefaultTestNamespace,
 		name:                   "deployment-test",
 		replicas:               10,
-		container:              NewContainerWithCurlerBuilder().Build(),
+		container:              NewBusyBoxContainerBuilder().Build(),
 		labels:                 map[string]string{"role": "test"},
 		terminationGracePeriod: 0,
 	}
@@ -94,24 +94,9 @@ func (d *DeploymentBuilder) HostNetwork(hostNetwork bool) *DeploymentBuilder {
 	return d
 }
 
-func (d *DeploymentBuilder) MountVolume(name string, mountpath string) *DeploymentBuilder {
-	d.volume = []corev1.Volume{
-		{
-			Name: name,
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: mountpath,
-				},
-			},
-		},
-	}
-
-	d.volumeMount = []corev1.VolumeMount{
-		{
-			Name:      name,
-			MountPath: name,
-		},
-	}
+func (d *DeploymentBuilder) MountVolume(volume []corev1.Volume, volumeMount []corev1.VolumeMount) *DeploymentBuilder {
+	d.volume = volume
+	d.volumeMount = volumeMount
 	return d
 }
 

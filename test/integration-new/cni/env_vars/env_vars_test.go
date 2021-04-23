@@ -46,64 +46,54 @@ var _ = Describe("cni env test", func() {
 			})
 
 			By("Deploying a BusyBox deployment")
-			{
-				deploymentSpec := manifest.NewBusyBoxDeploymentBuilder().
-					Namespace("default").
-					Name("busybox").
-					Replicas(1).
-					NodeName(primaryNode.Name).
-					Build()
+			deploymentSpec := manifest.NewBusyBoxDeploymentBuilder().
+				Namespace("default").
+				Name("busybox").
+				Replicas(1).
+				NodeName(primaryNode.Name).
+				Build()
 
-				_, err := f.K8sResourceManagers.
-					DeploymentManager().
-					CreateAndWaitTillDeploymentIsReady(deploymentSpec)
+			_, err := f.K8sResourceManagers.
+				DeploymentManager().
+				CreateAndWaitTillDeploymentIsReady(deploymentSpec)
+			Expect(err).ToNot(HaveOccurred())
 
-				Expect(err).ToNot(HaveOccurred())
+			stdout, _, err := f.K8sResourceManagers.PodManager().PodExec("default", hostNetworkPod.Name, []string{"ifconfig"})
+			Expect(err).NotTo(HaveOccurred())
 
-				stdout, _, err := f.K8sResourceManagers.PodManager().PodExec("default", hostNetworkPod.Name, []string{"ifconfig"})
-				Expect(err).NotTo(HaveOccurred())
+			re := regexp.MustCompile(`\n`)
+			input := re.ReplaceAllString(stdout, "")
 
-				re := regexp.MustCompile(`\n`)
-				input := re.ReplaceAllString(stdout, "")
+			re = regexp.MustCompile(`eth.*lo`)
+			eth := re.FindStringSubmatch(input)[0]
 
-				re = regexp.MustCompile(`eth.*lo`)
-				eth := re.FindStringSubmatch(input)[0]
+			re = regexp.MustCompile(`MTU:[0-9]*`)
+			mtus := re.FindAllStringSubmatch(eth, -1)
 
-				re = regexp.MustCompile(`MTU:[0-9]*`)
-				mtus := re.FindAllStringSubmatch(eth, -1)
-
-				By("Validating new MTU value")
-				{
-					// Validate MTU
-					for _, m := range mtus {
-						Expect(m[0]).To(Equal("MTU:1300"))
-					}
-				}
-
-				By("Validating new VETH Prefix")
-				{
-					// Validate VETH Prefix
-					// Adding the new MTU value to below regex ensures that we are checking the recently created
-					// veth and not any older entries
-					re = regexp.MustCompile(`veth.*MTU:1300`)
-					veth := re.FindAllString(input, -1)
-
-					Expect(len(veth)).NotTo(Equal(0))
-				}
-
-				By("Deleting BusyBox Deployment")
-				{
-					err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deploymentSpec)
-					Expect(err).NotTo(HaveOccurred())
-				}
+			By("Validating new MTU value")
+			// Validate MTU
+			for _, m := range mtus {
+				Expect(m[0]).To(Equal("MTU:1300"))
 			}
+
+			By("Validating new VETH Prefix")
+			// Validate VETH Prefix
+			// Adding the new MTU value to below regex ensures that we are checking the recently created
+			// veth and not any older entries
+			re = regexp.MustCompile(`veth.*MTU:1300`)
+			veth := re.FindAllString(input, -1)
+
+			Expect(len(veth)).NotTo(Equal(0))
+
+			By("Deleting BusyBox Deployment")
+			err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deploymentSpec)
+			Expect(err).NotTo(HaveOccurred())
+
 			By("Restoring old value on daemonset")
-			{
-				restoreOldValues(map[string]string{
-					AWS_VPC_ENI_MTU:            currMTUVal,
-					AWS_VPC_K8S_CNI_VETHPREFIX: currVETHPrefix,
-				})
-			}
+			restoreOldValues(map[string]string{
+				AWS_VPC_ENI_MTU:            currMTUVal,
+				AWS_VPC_K8S_CNI_VETHPREFIX: currVETHPrefix,
+			})
 		})
 
 		It("Changing AWS_VPC_K8S_CNI_LOG_FILE", func() {
@@ -117,7 +107,6 @@ var _ = Describe("cni env test", func() {
 
 			stdout, _, err := f.K8sResourceManagers.PodManager().PodExec("default", hostNetworkPod.Name, []string{"tail", "-n", "5", "ipamd-logs/ipamd_test.log"})
 			Expect(err).NotTo(HaveOccurred())
-
 			Expect(stdout).NotTo(Equal(""))
 
 			By("Restoring old value on daemonset")

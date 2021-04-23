@@ -1,4 +1,4 @@
-package env_vars
+package ipamd
 
 import (
 	"regexp"
@@ -17,8 +17,6 @@ const (
 var _ = Describe("IP Leak Test", func() {
 	Context("IP Released on Pod Deletion", func() {
 		It("Verify that on Pod Deletion, Warm Pool State is restored", func() {
-			totalIps := 0
-			assignedIps := 0
 			deploymentSpec := manifest.NewBusyBoxDeploymentBuilder().
 				Namespace("default").
 				Name("busybox").
@@ -27,48 +25,37 @@ var _ = Describe("IP Leak Test", func() {
 				Build()
 
 			By("Recording the initial count of IP before new deployment")
-			{
-				totalIps, assignedIps = getTotalAndAssignedIps()
-			}
+			totalIps, assignedIps := getTotalAndAssignedIps()
 
 			By("Deploying a large number of Busybox Deployment")
-			{
-				_, err := f.K8sResourceManagers.
-					DeploymentManager().
-					CreateAndWaitTillDeploymentIsReady(deploymentSpec)
-
-				Expect(err).ToNot(HaveOccurred())
-			}
+			_, err := f.K8sResourceManagers.
+				DeploymentManager().
+				CreateAndWaitTillDeploymentIsReady(deploymentSpec)
+			Expect(err).ToNot(HaveOccurred())
 
 			By("Recording the count of IP after deployment")
-			{
-				currTotal, currAssigned := getTotalAndAssignedIps()
-				Expect(currTotal).To(Equal(totalIps))
-				// Diff should be equal to number of replicas in new deployment
-				Expect(currAssigned - assignedIps).To(Equal(10))
-			}
+			currTotal, currAssigned := getTotalAndAssignedIps()
+			Expect(currTotal).To(Equal(totalIps))
+			// Diff should be equal to number of replicas in new deployment
+			Expect(currAssigned - assignedIps).To(Equal(10))
 
 			By("Deleting the deployment")
-			{
-				err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deploymentSpec)
-				Expect(err).NotTo(HaveOccurred())
-			}
+			err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deploymentSpec)
+			Expect(err).NotTo(HaveOccurred())
 
 			By("Validating that count of IP is same as before")
-			{
-				ip := 0
-				assigned := 0
-				for i := 0; i < 3; i++ {
-					// It takes some time to unassign IP addresses
-					time.Sleep(120 * time.Second)
-					ip, assigned = getTotalAndAssignedIps()
-					if assigned == assignedIps {
-						break
-					}
+			ip := 0
+			assigned := 0
+			for i := 0; i < 3; i++ {
+				// It takes some time to unassign IP addresses
+				time.Sleep(120 * time.Second)
+				ip, assigned = getTotalAndAssignedIps()
+				if assigned == assignedIps {
+					break
 				}
-				Expect(ip).To(Equal(totalIps))
-				Expect(assigned).To(Equal(assignedIps))
 			}
+			Expect(ip).To(Equal(totalIps))
+			Expect(assigned).To(Equal(assignedIps))
 		})
 	})
 })

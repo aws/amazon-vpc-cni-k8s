@@ -25,10 +25,10 @@ type Container struct {
 	args            []string
 }
 
-func NewContainerWithCurlerBuilder() *Container {
+func NewBusyBoxContainerBuilder() *Container {
 	return &Container{
-		name:            "curler",
-		image:           "curlimages/curl:7.76.1",
+		name:            "busybox",
+		image:           "busybox",
 		imagePullPolicy: v1.PullIfNotPresent,
 		command:         []string{"sleep", "3600"},
 		args:            []string{},
