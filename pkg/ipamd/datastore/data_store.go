@@ -1196,7 +1196,11 @@ func (ds *DataStore) GetENIIPs(eniID string) ([]string, error) {
 	}
 
 	var ipPool = make([]string, 0, len(eni.IPv4Addresses))
-	for ip := range eni.IPv4Addresses {
+	for ip, addr := range eni.IPv4Addresses {
+		if !eni.IsPDenabled && addr.Prefix != "" {
+			ds.log.Debugf("IP %s belongs to prefix pool so do not account", ip)
+			continue
+		}
 		ipPool = append(ipPool, ip)
 	}
 	return ipPool, nil
