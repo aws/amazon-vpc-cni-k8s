@@ -161,3 +161,7 @@ eniConfig:
     #   id: subnet-789
     #   securityGroups:
     #   - sg-789
+
+cri:
+  enabled: false
+  hostPath: ""

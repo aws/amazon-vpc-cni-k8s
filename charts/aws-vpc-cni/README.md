@@ -66,6 +66,8 @@ The following table lists the configurable parameters for this chart and their d
 | `crd.create`            | Specifies whether to create the VPC-CNI CRD             | `true`                              |
 | `tolerations`           | Optional deployment tolerations                         | `[]`                                |
 | `updateStrategy`        | Optional update strategy                                | `type: RollingUpdate`               |
+| `cri.enabled`           | Enable alternative container runtime                    | `false`                             |
+| `cri.hostPath`          | Required if cri.enabled is true                         | `nil`                               |
 
 Specify each parameter using the `--set key=value[,key=value]` argument to `helm install` or provide a YAML file containing the values for the above parameters:
 
