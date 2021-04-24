@@ -562,9 +562,8 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			PrivateIpAddress: aws.String(ip4.String()),
 		}
 	}
-
-	var imdsIPv4Prefixes []string
-	if ((eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC)) && cache.ipv4PrefixDelegation {
+	var imdsIPv4Prefixes []string 
+	if (((eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC))) { 
 		imdsIPv4Prefixes, err = cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
 		if err != nil {
 			return ENIMetadata{}, err
