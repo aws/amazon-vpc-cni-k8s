@@ -426,7 +426,10 @@ func (c *IPAMContext) nodeInit() error {
 	//might have secondary IPs attached to ENIs so doing a cleanup if not used before moving on
 	if c.enableIpv4PrefixDelegation {
 		c.tryUnassignIPsFromENIs()
+	} else {
+		c.tryUnassignPrefixesFromENIs()
 	}
+
 	if err = c.configureIPRulesForPods(vpcCIDRs); err != nil {
 		return err
 	}
@@ -872,7 +875,12 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 			c.addENIprefixesToDataStore(eniMetadata.IPv4Prefixes, eni)
 		}
 	} else {
-		c.addENIaddressesToDataStore(eniMetadata.IPv4Addresses, eni)
+		if (len(eniMetadata.IPv4Prefixes) > 0) {
+			log.Infof("Found ENIs having prefixes while PD is disabled")
+			c.addENIprefixesToDataStore(eniMetadata.IPv4Prefixes, eni)
+		} else {
+			c.addENIaddressesToDataStore(eniMetadata.IPv4Addresses, eni)
+		}
 	}
 	return nil
 }
@@ -1633,7 +1641,42 @@ func (c *IPAMContext) tryUnassignIPsFromENIs() {
 	}
 }
 
-func (c *IPAMContext) GetENIResourcesToAllocate() int {
+func (c *IPAMContext) tryUnassignPrefixesFromENIs() {
+	eniInfos := c.dataStore.GetENIInfos()
+	for eniID := range eniInfos.ENIs {
+		c.tryUnassignPrefixFromENI(eniID)
+	}
+}
+
+func (c *IPAMContext) tryUnassignPrefixFromENI(eniID string) {
+	FreeablePrefixes := c.dataStore.FreeablePrefixes(eniID)
+	if len(FreeablePrefixes) == 0 {
+		return
+	}
+	// Delete Prefixes from datastore
+	var deletedPrefixes []string
+	for _, toDelete := range FreeablePrefixes {
+		// Don't force the delete, since a freeable Prefix might have been assigned to a pod
+		// before we get around to deleting it.
+		err := c.dataStore.DelIPv4PrefixFromStore(eniID, toDelete, false /* force */)
+		if err != nil {
+			log.Warnf("Failed to delete Prefix %s on ENI %s from datastore: %s", toDelete, eniID, err)
+			ipamdErrInc("decreaseIPPool")
+			return
+		} else {
+			deletedPrefixes = append(deletedPrefixes, toDelete)
+		}
+	}
+
+	// Deallocate IPs from the instance if they aren't used by pods.
+	if err := c.awsClient.DeallocIPAddresses(eniID, deletedPrefixes, true); err != nil {
+		log.Warnf("Failed to delete prefix %v from ENI %s: %s", deletedPrefixes, eniID, err)
+	} else {
+		log.Debugf("Successfully prefix removing IPs %v from ENI %s", deletedPrefixes, eniID)
+	}
+}
+
+func (c *IPAMContext) GetENIResourcesToAllocate() (int) {
 	if !c.enableIpv4PrefixDelegation {
 		return c.maxIPsPerENI
 	} else {
