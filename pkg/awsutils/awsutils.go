@@ -132,6 +132,9 @@ type APIs interface {
 	// DeallocIPAddresses deallocates the list of IP addresses from a ENI
 	DeallocIPAddresses(eniID string, ips []string, igonoreCachedPDflag bool) error
 
+	// DeallocPrefixAddresses deallocates the list of IP addresses from a ENI
+	DeallocPrefixAddresses(eniID string, ips []string) error
+
 	// GetVPCIPv4CIDRs returns VPC's CIDRs from instance metadata
 	GetVPCIPv4CIDRs() ([]string, error)
 
@@ -1414,6 +1417,30 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []st
 		}
 	}
 
+	start := time.Now()
+	_, err := cache.ec2SVC.UnassignPrivateIpAddressesWithContext(context.Background(), input)
+	awsAPILatency.WithLabelValues("UnassignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+	if err != nil {
+		awsAPIErrInc("UnassignPrivateIpAddresses", err)
+		log.Errorf("Failed to deallocate a private IP address %v", err)
+		return errors.Wrap(err, fmt.Sprintf("deallocate IP addresses: failed to deallocate private IP addresses: %s", ips))
+	}
+	return nil
+}
+
+// DeallocPrefixAddresses allocates numIPs of IP address on an ENI
+func (cache *EC2InstanceMetadataCache) DeallocPrefixAddresses(eniID string, ips []string) error {
+	log.Infof("Trying to unassign the following IPs %s from ENI %s", ips, eniID)
+	var ipsInput []*string
+	for _, ip := range ips {
+		ipsInput = append(ipsInput, aws.String(ip))
+	}
+    
+	input := &ec2.UnassignPrivateIpAddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv4Prefixes: ipsInput,
+	}	
+	
 	start := time.Now()
 	_, err := cache.ec2SVC.UnassignPrivateIpAddressesWithContext(context.Background(), input)
 	awsAPILatency.WithLabelValues("UnassignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))

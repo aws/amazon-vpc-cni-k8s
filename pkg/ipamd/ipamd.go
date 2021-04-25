@@ -866,22 +866,19 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 		}
 	}
 
-	if c.enableIpv4PrefixDelegation {
+	if c.enableIpv4PrefixDelegation && len(eniMetadata.IPv4Addresses) > 1 {
 		//During upgrade or when PD knob is disabled->enabled then SIPs will be attached hence add to DS
-		if len(eniMetadata.IPv4Addresses) > 1 {
-			log.Infof("Found ENIs having secondary IPs while PD is enabled")
-			c.addENIaddressesToDataStore(eniMetadata.IPv4Addresses, eni)
-		} else {
-			c.addENIprefixesToDataStore(eniMetadata.IPv4Prefixes, eni)
-		}
-	} else {
-		if (len(eniMetadata.IPv4Prefixes) > 0) {
-			log.Infof("Found ENIs having prefixes while PD is disabled")
-			c.addENIprefixesToDataStore(eniMetadata.IPv4Prefixes, eni)
-		} else {
-			c.addENIaddressesToDataStore(eniMetadata.IPv4Addresses, eni)
-		}
+		log.Infof("Found ENIs having secondary IPs while PD is enabled")
+	} else if !c.enableIpv4PrefixDelegation && len(eniMetadata.IPv4Prefixes) > 0 {
+		//When PD mode is toggled from enabled->disabled
+		log.Infof("Found ENIs having prefixes while PD is disabled")
 	}
+	//Either case add the IPs and prefixes to datastore. Reconiler will ensure 
+	//if pd enabled then reconcile only prefix
+	//if pd not enabled then reconcile only SIPs.
+	c.addENIaddressesToDataStore(eniMetadata.IPv4Addresses, eni)
+	c.addENIprefixesToDataStore(eniMetadata.IPv4Prefixes, eni)	
+
 	return nil
 }
 
@@ -1669,7 +1666,7 @@ func (c *IPAMContext) tryUnassignPrefixFromENI(eniID string) {
 	}
 
 	// Deallocate IPs from the instance if they aren't used by pods.
-	if err := c.awsClient.DeallocIPAddresses(eniID, deletedPrefixes, true); err != nil {
+	if err := c.awsClient.DeallocPrefixAddresses(eniID, deletedPrefixes); err != nil {
 		log.Warnf("Failed to delete prefix %v from ENI %s: %s", deletedPrefixes, eniID, err)
 	} else {
 		log.Debugf("Successfully prefix removing IPs %v from ENI %s", deletedPrefixes, eniID)
