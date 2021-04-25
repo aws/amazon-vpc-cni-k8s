@@ -366,55 +366,55 @@ func (ds *DataStore) ReadBackingStore(enableIpv4PrefixDelegation bool) error {
 	for _, allocation := range data.Allocations {
 		eni := eniIPs[allocation.IPv4]
 		if eni == nil {
-			//if !enableIpv4PrefixDelegation { 
+			//if !enableIpv4PrefixDelegation {
 			//	ds.log.Infof("datastore: Sandbox %s uses unknown IPv4 %s - presuming stale/dead", allocation.IPAMKey, allocation.IPv4)
 			//	continue
 			//} else if enableIpv4PrefixDelegation {
-				//Check if this IP belongs to prefix, this can happen when knob is toggled from enable to disable with pods assigned
-				ds.log.Infof("Got IP to recover %s\n", allocation.IPv4)
-				ipv4Prefix := getPrefixFromIPv4Addr(allocation.IPv4)
-				ds.log.Infof("Retrieved prefix %s", ipv4Prefix.String())
-				//TODO first time create
-				eni := eniPrefixes[ipv4Prefix.String()]
-				if eni == nil {
-					ds.log.Infof("datastore: Sandbox %s uses unknown IPv4 %s - presuming stale/dead", allocation.IPAMKey, allocation.IPv4)
-					continue
-				}
-				eniPrefixDB := ds.eniPool[eni.ID].IPv4Prefixes[ipv4Prefix.String()]
-				if eniPrefixDB == nil {
-					eniPrefixDB.Prefix = ipv4Prefix.String()
-					_, numIPsPerPrefix, supportedPrefixLen := GetPrefixDelegationDefaults()
-					eniPrefixDB.FreeIps = numIPsPerPrefix
-					eniPrefixDB.PrefixLen = supportedPrefixLen
-					eniPrefixDB.UsedIPs = 0
-					eniPrefixDB.AllocatedIPs = NewPrefixStore(numIPsPerPrefix)
+			//Check if this IP belongs to prefix, this can happen when knob is toggled from enable to disable with pods assigned
+			ds.log.Infof("Got IP to recover %s\n", allocation.IPv4)
+			ipv4Prefix := getPrefixFromIPv4Addr(allocation.IPv4)
+			ds.log.Infof("Retrieved prefix %s", ipv4Prefix.String())
+			//TODO first time create
+			eni := eniPrefixes[ipv4Prefix.String()]
+			if eni == nil {
+				ds.log.Infof("datastore: Sandbox %s uses unknown IPv4 %s - presuming stale/dead", allocation.IPAMKey, allocation.IPv4)
+				continue
+			}
+			eniPrefixDB := ds.eniPool[eni.ID].IPv4Prefixes[ipv4Prefix.String()]
+			if eniPrefixDB == nil {
+				eniPrefixDB.Prefix = ipv4Prefix.String()
+				_, numIPsPerPrefix, supportedPrefixLen := GetPrefixDelegationDefaults()
+				eniPrefixDB.FreeIps = numIPsPerPrefix
+				eniPrefixDB.PrefixLen = supportedPrefixLen
+				eniPrefixDB.UsedIPs = 0
+				eniPrefixDB.AllocatedIPs = NewPrefixStore(numIPsPerPrefix)
 
-				}
-				eniPrefixDB.UsedIPs++
-				eniPrefixDB.FreeIps--
+			}
+			eniPrefixDB.UsedIPs++
+			eniPrefixDB.FreeIps--
 
-				IPindex := getPrefixIndexfromIP(allocation.IPv4, ipv4Prefix)
-				if err := eniPrefixDB.AllocatedIPs.SetUnsetIPallocation(IPindex); err != nil {
-					ds.log.Infof("Invalid index, verify getPrefixIndex")
-					return err
-				}
+			IPindex := getPrefixIndexfromIP(allocation.IPv4, ipv4Prefix)
+			if err := eniPrefixDB.AllocatedIPs.SetUnsetIPallocation(IPindex); err != nil {
+				ds.log.Infof("Invalid index, verify getPrefixIndex")
+				return err
+			}
 
-				err := ds.AddPrefixIPv4AddressToStore(eni.ID, allocation.IPv4)
-				if err != nil && err.Error() != IPAlreadyInStoreError {
-					ds.log.Infof("Did it come here in restore?")
-					ds.log.Errorf("Failed to ADD PD IP %s on ENI %s", allocation.IPv4, eni.ID)
-					return err
-				}
+			err := ds.AddPrefixIPv4AddressToStore(eni.ID, allocation.IPv4)
+			if err != nil && err.Error() != IPAlreadyInStoreError {
+				ds.log.Infof("Did it come here in restore?")
+				ds.log.Errorf("Failed to ADD PD IP %s on ENI %s", allocation.IPv4, eni.ID)
+				return err
+			}
 
-				addr := eni.IPv4Addresses[allocation.IPv4]
-				ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
+			addr := eni.IPv4Addresses[allocation.IPv4]
+			ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
 
-				addr.Prefix = ipv4Prefix.String()
-				addr.IPIndex = int(IPindex)
+			addr.Prefix = ipv4Prefix.String()
+			addr.IPIndex = int(IPindex)
 
-				ds.log.Debugf("Recovered PD prefix %s index %d", ipv4Prefix.String(), IPindex)
-				ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
-			//} 
+			ds.log.Debugf("Recovered PD prefix %s index %d", ipv4Prefix.String(), IPindex)
+			ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
+			//}
 		} else {
 			addr := eni.IPv4Addresses[allocation.IPv4]
 			ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
@@ -1023,7 +1023,7 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string,
 		ds.total, ds.assigned, ipamKey)
 
 	eni, addr := ds.eniPool.FindAddressForSandbox(ipamKey)
-    mismatchedStore = false
+	mismatchedStore = false
 	if addr == nil {
 		// This `if` block should be removed when the CRI
 		// migration code is finally removed.  Leaving a
@@ -1044,7 +1044,7 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string,
 			ipamKey)
 		return nil, "", 0, false, ErrUnknownPod
 	}
-	
+
 	ds.unassignPodIPv4AddressUnsafe(addr)
 	if err := ds.writeBackingStoreUnsafe(); err != nil {
 		// Unwind un-assignment
@@ -1053,21 +1053,21 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string,
 	}
 	addr.UnassignedTime = time.Now()
 	//if eni.IsPDenabled {
-		if eni.IsPDenabled && addr.Prefix == "" {
-			ds.log.Infof("Prefix delegation is enbled and the IP is from secondary pool hence no need to update prefix pool")
-			ds.total--
+	if eni.IsPDenabled && addr.Prefix == "" {
+		ds.log.Infof("Prefix delegation is enbled and the IP is from secondary pool hence no need to update prefix pool")
+		ds.total--
+		mismatchedStore = true
+	} else if addr.Prefix != "" {
+		//Regular pod deletes for PD enabled and if pd is disabled but prefix is populated i.e, knob disable scenario
+		ds.log.Infof("Dump for prefix %v", addr.Prefix)
+		ds.log.Infof("DUMP - %v", eni.IPv4Prefixes[addr.Prefix])
+		deleteIPv4AddrfromPrefix(eni.IPv4Prefixes[addr.Prefix], addr)
+		//Remove the IP from eni DB
+		delete(eni.IPv4Addresses, addr.Address)
+		if !eni.IsPDenabled {
 			mismatchedStore = true
-		} else if addr.Prefix != "" {
-			//Regular pod deletes for PD enabled and if pd is disabled but prefix is populated i.e, knob disable scenario
-			ds.log.Infof("Dump for prefix %v", addr.Prefix)
-			ds.log.Infof("DUMP - %v", eni.IPv4Prefixes[addr.Prefix])
-			deleteIPv4AddrfromPrefix(eni.IPv4Prefixes[addr.Prefix], addr)
-			//Remove the IP from eni DB
-			delete(eni.IPv4Addresses, addr.Address)
-			if !eni.IsPDenabled {
-				mismatchedStore = true
-			}
 		}
+	}
 	//}
 
 	ds.log.Infof("UnassignPodIPv4Address: sandbox %s's ipAddr %s, DeviceNumber %d",

@@ -565,8 +565,8 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			PrivateIpAddress: aws.String(ip4.String()),
 		}
 	}
-	var imdsIPv4Prefixes []string 
-	if (((eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC))) { 
+	var imdsIPv4Prefixes []string
+	if (eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC) {
 		imdsIPv4Prefixes, err = cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
 		if err != nil {
 			return ENIMetadata{}, err
@@ -1435,12 +1435,12 @@ func (cache *EC2InstanceMetadataCache) DeallocPrefixAddresses(eniID string, ips 
 	for _, ip := range ips {
 		ipsInput = append(ipsInput, aws.String(ip))
 	}
-    
+
 	input := &ec2.UnassignPrivateIpAddressesInput{
 		NetworkInterfaceId: aws.String(eniID),
-		Ipv4Prefixes: ipsInput,
-	}	
-	
+		Ipv4Prefixes:       ipsInput,
+	}
+
 	start := time.Now()
 	_, err := cache.ec2SVC.UnassignPrivateIpAddressesWithContext(context.Background(), input)
 	awsAPILatency.WithLabelValues("UnassignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))

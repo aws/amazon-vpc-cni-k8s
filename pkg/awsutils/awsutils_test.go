@@ -66,10 +66,10 @@ const (
 	eniAttachID          = "eni-attach-beb21856"
 	eni1Device           = "0"
 	eni1PrivateIP        = "10.0.0.1"
-	eni1Prefix 			 = "10.0.1.0/28"
+	eni1Prefix           = "10.0.1.0/28"
 	eni2Device           = "1"
 	eni2PrivateIP        = "10.0.0.2"
-	eni2Prefix			 = "10.0.2.0/28"
+	eni2Prefix           = "10.0.2.0/28"
 	eni2ID               = "eni-12341234"
 	metadataVPCIPv4CIDRs = "192.168.0.0/16	100.66.0.0/1"
 )
@@ -106,14 +106,14 @@ func testMetadataWithPrefixes(overrides map[string]interface{}) FakeIMDS {
 		metadataInstanceType: instanceType,
 		metadataMAC:          primaryMAC,
 		metadataMACPath:      primaryMAC,
-		metadataMACPath + primaryMAC + metadataDeviceNum:  eni1Device,
-		metadataMACPath + primaryMAC + metadataInterface:  primaryeniID,
-		metadataMACPath + primaryMAC + metadataSGs:        sgs,
-		metadataMACPath + primaryMAC + metadataIPv4s:      eni1PrivateIP,
-		metadataMACPath + primaryMAC + metadataIPv4Prefixes:      eni1Prefix,
-		metadataMACPath + primaryMAC + metadataSubnetID:   subnetID,
-		metadataMACPath + primaryMAC + metadataSubnetCIDR: subnetCIDR,
-		metadataMACPath + primaryMAC + metadataVPCcidrs:   metadataVPCIPv4CIDRs,
+		metadataMACPath + primaryMAC + metadataDeviceNum:    eni1Device,
+		metadataMACPath + primaryMAC + metadataInterface:    primaryeniID,
+		metadataMACPath + primaryMAC + metadataSGs:          sgs,
+		metadataMACPath + primaryMAC + metadataIPv4s:        eni1PrivateIP,
+		metadataMACPath + primaryMAC + metadataIPv4Prefixes: eni1Prefix,
+		metadataMACPath + primaryMAC + metadataSubnetID:     subnetID,
+		metadataMACPath + primaryMAC + metadataSubnetCIDR:   subnetCIDR,
+		metadataMACPath + primaryMAC + metadataVPCcidrs:     metadataVPCIPv4CIDRs,
 	}
 
 	for k, v := range overrides {
@@ -219,10 +219,10 @@ func TestGetAttachedENIs(t *testing.T) {
 func TestGetAttachedENIsWithPrefixes(t *testing.T) {
 	mockMetadata := testMetadata(map[string]interface{}{
 		metadataMACPath: primaryMAC + " " + eni2MAC,
-		metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
-		metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
-		metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
-		metadataMACPath + eni2MAC + metadataIPv4s:      eni2PrivateIP,
+		metadataMACPath + eni2MAC + metadataDeviceNum:    eni2Device,
+		metadataMACPath + eni2MAC + metadataInterface:    eni2ID,
+		metadataMACPath + eni2MAC + metadataSubnetCIDR:   subnetCIDR,
+		metadataMACPath + eni2MAC + metadataIPv4s:        eni2PrivateIP,
 		metadataMACPath + eni2MAC + metadataIPv4Prefixes: eni2Prefix,
 	})
 
@@ -758,8 +758,8 @@ func TestAllocPrefixAddresses(t *testing.T) {
 
 	//Allocate 1 prefix for the ENI
 	input := &ec2.AssignPrivateIpAddressesInput{
-		NetworkInterfaceId:             aws.String(eniID),
-		Ipv4PrefixCount: 				aws.Int64(1),
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv4PrefixCount:    aws.Int64(1),
 	}
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, nil)
 
@@ -777,8 +777,8 @@ func TestAllocPrefixesAlreadyFull(t *testing.T) {
 	defer ctrl.Finish()
 	// The required Prefixes (1) is the ENI's limit(1)
 	input := &ec2.AssignPrivateIpAddressesInput{
-		NetworkInterfaceId:             aws.String(eniID),
-		Ipv4PrefixCount: aws.Int64(1),
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv4PrefixCount:    aws.Int64(1),
 	}
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "t3.xlarge", ipv4PrefixDelegation: true}
 
@@ -948,7 +948,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndIPsAttached(t *testing.T) {
 func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 	type args struct {
 		eni                string
-		foundPrefixes  int
+		foundPrefixes      int
 		wantedSecondaryIPs int
 		maxBackoffDelay    time.Duration
 		times              int
@@ -956,7 +956,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 	eni1Metadata := ENIMetadata{
 		ENIID:         eniID,
 		IPv4Addresses: nil,
-		IPv4Prefixes: nil,
+		IPv4Prefixes:  nil,
 	}
 	isPrimary := true
 	primaryIP := eni2PrivateIP
@@ -974,7 +974,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 		},
 		IPv4Prefixes: []*ec2.Ipv4PrefixSpecification{
 			{
-				Ipv4Prefix: &prefixIP,	
+				Ipv4Prefix: &prefixIP,
 			},
 		},
 	}
@@ -1001,10 +1001,10 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 			fmt.Println("eniips", eniIPs)
 			mockMetadata := testMetadata(map[string]interface{}{
 				metadataMACPath: primaryMAC + " " + eni2MAC,
-				metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
-				metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
-				metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
-				metadataMACPath + eni2MAC + metadataIPv4s:      eniIPs,
+				metadataMACPath + eni2MAC + metadataDeviceNum:    eni2Device,
+				metadataMACPath + eni2MAC + metadataInterface:    eni2ID,
+				metadataMACPath + eni2MAC + metadataSubnetCIDR:   subnetCIDR,
+				metadataMACPath + eni2MAC + metadataIPv4s:        eniIPs,
 				metadataMACPath + eni2MAC + metadataIPv4Prefixes: eniPrefixes,
 			})
 			cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, ipv4PrefixDelegation: true}

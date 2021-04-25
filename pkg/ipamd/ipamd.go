@@ -873,11 +873,11 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 		//When PD mode is toggled from enabled->disabled
 		log.Infof("Found ENIs having prefixes while PD is disabled")
 	}
-	//Either case add the IPs and prefixes to datastore. Reconiler will ensure 
+	//Either case add the IPs and prefixes to datastore. Reconiler will ensure
 	//if pd enabled then reconcile only prefix
 	//if pd not enabled then reconcile only SIPs.
 	c.addENIaddressesToDataStore(eniMetadata.IPv4Addresses, eni)
-	c.addENIprefixesToDataStore(eniMetadata.IPv4Prefixes, eni)	
+	c.addENIprefixesToDataStore(eniMetadata.IPv4Prefixes, eni)
 
 	return nil
 }
@@ -1673,7 +1673,7 @@ func (c *IPAMContext) tryUnassignPrefixFromENI(eniID string) {
 	}
 }
 
-func (c *IPAMContext) GetENIResourcesToAllocate() (int) {
+func (c *IPAMContext) GetENIResourcesToAllocate() int {
 	if !c.enableIpv4PrefixDelegation {
 		return c.maxIPsPerENI
 	} else {

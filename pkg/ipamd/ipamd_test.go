@@ -55,9 +55,9 @@ const (
 	vpcCIDR       = "10.10.0.0/16"
 	myNodeName    = "testNodeName"
 	prefix01      = "10.10.30.0/28"
-	prefix02 	  = "10.10.40.0/28"
+	prefix02      = "10.10.40.0/28"
 	ipaddrPD01    = "10.10.30.0"
-	ipaddrPD02 	  = "10.10.40.0"
+	ipaddrPD02    = "10.10.40.0"
 )
 
 type testMocks struct {
@@ -171,18 +171,18 @@ func TestNodeInitwithPDenabled(t *testing.T) {
 	}
 
 	mockContext := &IPAMContext{
-		awsClient:     m.awsutils,
-		k8sClient:     m.clientset,
-		maxIPsPerENI:  16,
-		maxPrefixesPerENI: 1,
-		maxENI:        4,
-		warmENITarget: 1,
-		warmIPTarget:  3,
-		primaryIP:     make(map[string]string),
-		terminating:   int32(0),
-		networkClient: m.network,
-		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint)),
-		myNodeName:    myNodeName,
+		awsClient:                  m.awsutils,
+		k8sClient:                  m.clientset,
+		maxIPsPerENI:               16,
+		maxPrefixesPerENI:          1,
+		maxENI:                     4,
+		warmENITarget:              1,
+		warmIPTarget:               3,
+		primaryIP:                  make(map[string]string),
+		terminating:                int32(0),
+		networkClient:              m.network,
+		dataStore:                  datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint)),
+		myNodeName:                 myNodeName,
 		enableIpv4PrefixDelegation: true,
 	}
 	mockContext.dataStore.CheckpointMigrationPhase = 2
@@ -277,9 +277,9 @@ func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata) {
 
 func getDummyENIMetadataWithPrefix() (awsutils.ENIMetadata, awsutils.ENIMetadata) {
 	primary := true
-	testAddr1 := ipaddr01 
+	testAddr1 := ipaddr01
 	testPrefix1 := prefix01
-	testAddr2 := ipaddr11 
+	testAddr2 := ipaddr11
 	eni1 := awsutils.ENIMetadata{
 		ENIID:          primaryENIid,
 		MAC:            primaryMAC,
@@ -292,7 +292,7 @@ func getDummyENIMetadataWithPrefix() (awsutils.ENIMetadata, awsutils.ENIMetadata
 		},
 		IPv4Prefixes: []*ec2.Ipv4PrefixSpecification{
 			{
-				Ipv4Prefix: &testPrefix1,	
+				Ipv4Prefix: &testPrefix1,
 			},
 		},
 	}
@@ -418,16 +418,16 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	defer m.ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:           m.awsutils,
-		maxIPsPerENI:        16,
-		maxPrefixesPerENI:   1,
-		maxENI:              4,
-		warmENITarget:       1,
-		networkClient:       m.network,
-		useCustomNetworking: UseCustomNetworkCfg(),
-		eniConfig:           m.eniconfig,
-		primaryIP:           make(map[string]string),
-		terminating:         int32(0),
+		awsClient:                  m.awsutils,
+		maxIPsPerENI:               16,
+		maxPrefixesPerENI:          1,
+		maxENI:                     4,
+		warmENITarget:              1,
+		networkClient:              m.network,
+		useCustomNetworking:        UseCustomNetworkCfg(),
+		eniConfig:                  m.eniconfig,
+		primaryIP:                  make(map[string]string),
+		terminating:                int32(0),
 		enableIpv4PrefixDelegation: true,
 	}
 
@@ -470,7 +470,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 			},
 			IPv4Prefixes: []*ec2.Ipv4PrefixSpecification{
 				{
-					Ipv4Prefix: &testPrefix1,	
+					Ipv4Prefix: &testPrefix1,
 				},
 			},
 		},
@@ -486,7 +486,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 			},
 			IPv4Prefixes: []*ec2.Ipv4PrefixSpecification{
 				{
-					Ipv4Prefix: &testPrefix2,	
+					Ipv4Prefix: &testPrefix2,
 				},
 			},
 		},
@@ -662,16 +662,15 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	assert.Equal(t, 0, curENIs.TotalIPs)
 }
 
-
 func TestNodePrefixPoolReconcile(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:     m.awsutils,
-		networkClient: m.network,
-		primaryIP:     make(map[string]string),
-		terminating:   int32(0),
+		awsClient:                  m.awsutils,
+		networkClient:              m.network,
+		primaryIP:                  make(map[string]string),
+		terminating:                int32(0),
 		enableIpv4PrefixDelegation: true,
 	}
 
@@ -837,10 +836,10 @@ func TestGetWarmPrefixTargetState(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:     m.awsutils,
-		networkClient: m.network,
-		primaryIP:     make(map[string]string),
-		terminating:   int32(0),
+		awsClient:                  m.awsutils,
+		networkClient:              m.network,
+		primaryIP:                  make(map[string]string),
+		terminating:                int32(0),
 		enableIpv4PrefixDelegation: true,
 	}
 
@@ -931,9 +930,9 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	type fields struct {
-		maxIPsPerENI  int
+		maxIPsPerENI     int
 		warmPrefixTarget int
-		datastore     *datastore.DataStore
+		datastore        *datastore.DataStore
 	}
 
 	tests := []struct {
@@ -952,14 +951,14 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &IPAMContext{
-				awsClient:           m.awsutils,
-				dataStore:           tt.fields.datastore,
-				useCustomNetworking: false,
-				eniConfig:           m.eniconfig,
-				networkClient:       m.network,
-				maxIPsPerENI:        tt.fields.maxIPsPerENI,
-				maxENI:              -1,
-				warmPrefixTarget:    tt.fields.warmPrefixTarget,
+				awsClient:                  m.awsutils,
+				dataStore:                  tt.fields.datastore,
+				useCustomNetworking:        false,
+				eniConfig:                  m.eniconfig,
+				networkClient:              m.network,
+				maxIPsPerENI:               tt.fields.maxIPsPerENI,
+				maxENI:                     -1,
+				warmPrefixTarget:           tt.fields.warmPrefixTarget,
 				enableIpv4PrefixDelegation: true,
 			}
 			if got := c.isDatastorePoolTooLow(); got != tt.want {
@@ -1209,10 +1208,10 @@ func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:     m.awsutils,
-		networkClient: m.network,
-		primaryIP:     make(map[string]string),
-		terminating:   int32(0),
+		awsClient:                  m.awsutils,
+		networkClient:              m.network,
+		primaryIP:                  make(map[string]string),
+		terminating:                int32(0),
 		enableIpv4PrefixDelegation: true,
 	}
 
@@ -1336,11 +1335,10 @@ func getSecondaryENIMetadata() awsutils.ENIMetadata {
 	return newENIMetadata
 }
 
-
 func getPrimaryENIMetadataPDenabled() awsutils.ENIMetadata {
 	primary := true
 	testAddr1 := ipaddr01
-    testPrefix1 := prefix01
+	testPrefix1 := prefix01
 
 	eniMetadata := awsutils.ENIMetadata{
 		ENIID:          primaryENIid,
@@ -1354,7 +1352,7 @@ func getPrimaryENIMetadataPDenabled() awsutils.ENIMetadata {
 		},
 		IPv4Prefixes: []*ec2.Ipv4PrefixSpecification{
 			{
-				Ipv4Prefix: &testPrefix1,	
+				Ipv4Prefix: &testPrefix1,
 			},
 		},
 	}
@@ -1378,7 +1376,7 @@ func getSecondaryENIMetadataPDenabled() awsutils.ENIMetadata {
 		},
 		IPv4Prefixes: []*ec2.Ipv4PrefixSpecification{
 			{
-				Ipv4Prefix: &testPrefix2,	
+				Ipv4Prefix: &testPrefix2,
 			},
 		},
 	}
@@ -1430,7 +1428,6 @@ func TestIPAMContext_setupENI(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, 1, len(mockContext.primaryIP))
 }
-
 
 func TestIPAMContext_setupENIwithPDenabled(t *testing.T) {
 	m := setup(t)
