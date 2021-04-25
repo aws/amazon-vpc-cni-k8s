@@ -922,7 +922,6 @@ func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENI {
 	defer ds.lock.Unlock()
 	for _, eni := range ds.eniPool {
 		ds.log.Debugf("Found eni %v", eni)
-		ds.log.Debugf("JAYANTH maxIPperENI %d and is pd enabled %d", maxIPperENI, eni.IsPDenabled)
 		if skipPrimary && eni.IsPrimary {
 			ds.log.Debugf("Skip the primary ENI for need IP check")
 			continue
