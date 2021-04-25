@@ -366,15 +366,11 @@ func (ds *DataStore) ReadBackingStore(enableIpv4PrefixDelegation bool) error {
 	for _, allocation := range data.Allocations {
 		eni := eniIPs[allocation.IPv4]
 		if eni == nil {
-			//if !enableIpv4PrefixDelegation {
-			//	ds.log.Infof("datastore: Sandbox %s uses unknown IPv4 %s - presuming stale/dead", allocation.IPAMKey, allocation.IPv4)
-			//	continue
-			//} else if enableIpv4PrefixDelegation {
 			//Check if this IP belongs to prefix, this can happen when knob is toggled from enable to disable with pods assigned
 			ds.log.Infof("Got IP to recover %s\n", allocation.IPv4)
 			ipv4Prefix := getPrefixFromIPv4Addr(allocation.IPv4)
 			ds.log.Infof("Retrieved prefix %s", ipv4Prefix.String())
-			//TODO first time create
+
 			eni := eniPrefixes[ipv4Prefix.String()]
 			if eni == nil {
 				ds.log.Infof("datastore: Sandbox %s uses unknown IPv4 %s - presuming stale/dead", allocation.IPAMKey, allocation.IPv4)
@@ -414,7 +410,6 @@ func (ds *DataStore) ReadBackingStore(enableIpv4PrefixDelegation bool) error {
 
 			ds.log.Debugf("Recovered PD prefix %s index %d", ipv4Prefix.String(), IPindex)
 			ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
-			//}
 		} else {
 			addr := eni.IPv4Addresses[allocation.IPv4]
 			ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
@@ -530,7 +525,6 @@ func (ds *DataStore) AddPrefixIPv4AddressToStore(eniID string, ipv4 string) erro
 		return errors.New(IPAlreadyInStoreError)
 	}
 
-	//ds.total++
 	// Prometheus gauge
 	totalIPs.Set(float64(ds.total))
 
@@ -659,7 +653,8 @@ func (ds *DataStore) DelIPv4PrefixFromStore(eniID string, ipv4Prefix string, for
 		}
 	}
 
-	ds.total = ds.total - 16
+	_, numIPsPerPrefix, _ := GetPrefixDelegationDefaults()
+	ds.total = ds.total - numIPsPerPrefix
 	ds.allocatedPrefix--
 	// Prometheus gauge
 	totalIPs.Set(float64(ds.total))
@@ -1051,9 +1046,8 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string,
 		return nil, "", 0, false, err
 	}
 	addr.UnassignedTime = time.Now()
-	//if eni.IsPDenabled {
 	if eni.IsPDenabled && addr.Prefix == "" {
-		ds.log.Infof("Prefix delegation is enbled and the IP is from secondary pool hence no need to update prefix pool")
+		ds.log.Infof("Prefix delegation is enabled and the IP is from secondary pool hence no need to update prefix pool")
 		ds.total--
 		mismatchedStore = true
 	} else if addr.Prefix != "" {
@@ -1064,10 +1058,10 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string,
 		//Remove the IP from eni DB
 		delete(eni.IPv4Addresses, addr.Address)
 		if !eni.IsPDenabled {
+			ds.log.Infof("Prefix delegation is disabled but IP belongs to prefix pool")
 			mismatchedStore = true
 		}
 	}
-	//}
 
 	ds.log.Infof("UnassignPodIPv4Address: sandbox %s's ipAddr %s, DeviceNumber %d",
 		ipamKey, addr.Address, eni.DeviceNumber)
@@ -1135,11 +1129,9 @@ func (ds *DataStore) FreeablePrefixes(eniID string) []string {
 	for _, prefix := range eni.IPv4Prefixes {
 		DBlen := (int)(prefix.AllocatedIPs.IPsPerPrefix / 8)
 
-		ds.log.Infof("In get IP from prefix - %d", DBlen)
-		ds.log.Infof("DUMP - %s", prefix)
+		ds.log.Infof("In get IP from prefix - %s and octet len %d", prefix, DBlen)
 		var octet int
 		for octet = 0; octet < DBlen; octet++ {
-			ds.log.Infof("DUMP %v", prefix.AllocatedIPs.UsedIPs[octet])
 			if prefix.AllocatedIPs.UsedIPs[octet]&0xFF != 0 {
 				break
 			}
@@ -1196,6 +1188,9 @@ func (ds *DataStore) GetENIIPs(eniID string) ([]string, error) {
 
 	var ipPool = make([]string, 0, len(eni.IPv4Addresses))
 	for ip, addr := range eni.IPv4Addresses {
+		// /32 IPs from SIP or PD pool will be in eni.IPv4Addresses
+		// hence this has to be checked, IP belonging to a prefix can be
+		// a possibility because of PD enable/disable knob toggle
 		if !eni.IsPDenabled && addr.Prefix != "" {
 			ds.log.Debugf("IP %s belongs to prefix pool so do not account", ip)
 			continue

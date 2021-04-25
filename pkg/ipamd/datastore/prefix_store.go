@@ -77,9 +77,7 @@ func (prefix PrefixIPsStore) getPosOfRightMostUnsetBit(n byte, octetlen int) int
 	log.Infof("Size of byte array %d", octetlen)
 	var i int
 	for i = 0; i < octetlen*octetSize; i++ {
-		log.Infof("Current time since - %v and cooldown %d", time.Since(prefix.CooldownIPs[i]), addressCoolingPeriod)
 		if (((n >> i) & 1) == 0) && !(time.Since(prefix.CooldownIPs[i]) <= addressCoolingPeriod) {
-			log.Infof("Cooldown at index %d - %d", i, prefix.CooldownIPs[i])
 			return i
 		}
 	}
@@ -89,17 +87,14 @@ func (prefix PrefixIPsStore) getPosOfRightMostUnsetBit(n byte, octetlen int) int
 // getIpfromPrefix - Returns a free IP in the prefix
 func (prefix PrefixIPsStore) getIPfromPrefix() (int, error) {
 	DBlen := (prefix.IPsPerPrefix / octetSize)
-	log.Infof("In get IP from prefix - %d", DBlen)
 	var octet int
 	for octet = 0; octet < DBlen; octet++ {
-		log.Infof("O/p of DATA %d", prefix.UsedIPs[octet])
 		var index = (int)(prefix.getPosOfRightMostUnsetBit(prefix.UsedIPs[octet], binary.Size((prefix.UsedIPs[octet]))))
-		log.Infof("Found Index %d", index)
+		log.Infof("Found a free Index %d", index)
 		if index != -1 {
 			IPindex := (int)((octet * octetSize) + index)
-			log.Infof("Return IPindex is %d", IPindex)
+			log.Infof("Regenrated IPindex is %d", IPindex)
 			prefix.UsedIPs[octet] = prefix.UsedIPs[octet] ^ (1 << int(index))
-			log.Infof("DUMP - %x", prefix.UsedIPs[octet])
 			return IPindex, nil
 		}
 	}
@@ -167,9 +162,7 @@ func getIPfromPrefixAndIndex(prefix *ENIPrefix, IPoffset int) string {
 	offset := make([]byte, octetSize)
 
 	binary.LittleEndian.PutUint32(offset, uint32(IPoffset))
-	log.Infof("BEFORE Last octet - %d", ipv4Addr[octetToModify])
 	ipv4Addr[octetToModify] = ipv4Addr[octetToModify] + offset[0]
-	log.Infof("AFTER Last octet - %d", ipv4Addr[octetToModify])
 	return ipv4Addr.String()
 }
 
