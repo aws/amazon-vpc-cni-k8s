@@ -177,25 +177,16 @@ func (imds TypedIMDS) getCIDRs(ctx context.Context, key string) ([]net.IPNet, er
 	return cidrs, nil
 }
 
-func (imds TypedIMDS) getPrefixes(ctx context.Context, key string) ([]string, error) {
-	list, err := imds.getList(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-
-	return list, nil
-}
-
 // GetLocalIPv4s returns the private IPv4 addresses associated with the interface.  First returned address is the primary address.
 func (imds TypedIMDS) GetLocalIPv4s(ctx context.Context, mac string) ([]net.IP, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/local-ipv4s", mac)
 	return imds.getIPs(ctx, key)
 }
 
-// GetLocalIPv4Prefixes returns the private IPv4 addresses associated with the interface.  First returned address is the primary address.
-func (imds TypedIMDS) GetLocalIPv4Prefixes(ctx context.Context, mac string) ([]string, error) {
+// GetLocalIPv4Prefixes returns the IPv4 prefixes delegated to this interface
+func (imds TypedIMDS) GetLocalIPv4Prefixes(ctx context.Context, mac string) ([]net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/ipv4-prefix", mac)
-	prefixes, err := imds.getPrefixes(ctx, key)
+	prefixes, err := imds.getCIDRs(ctx, key)
 	if IsNotFound(err) {
 		return nil, nil
 	}

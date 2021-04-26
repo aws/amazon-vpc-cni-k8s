@@ -298,7 +298,7 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 	c.networkClient = networkutils.New()
 	c.eniConfig = eniConfig
 	c.useCustomNetworking = UseCustomNetworkCfg()
-	c.enableIpv4PrefixDelegation = enableIpv4PrefixDelegation()
+	c.enableIpv4PrefixDelegation = useIpv4PrefixDelegation()
 
 	client, err := awsutils.New(c.useCustomNetworking, c.enableIpv4PrefixDelegation)
 	if err != nil {
@@ -322,7 +322,7 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 		return nil, err
 	}
 	if hypervisorType != "nitro" && c.enableIpv4PrefixDelegation {
-		log.Error("Hypervisor is not nitro based and prefix delegation is not supported")
+		log.Error("Prefix delegation is not supported non-nitro instance - " + c.awsClient.GetInstanceType())
 		return nil, err
 	}
 	c.myNodeName = os.Getenv("MY_NODE_NAME")
@@ -418,7 +418,7 @@ func (c *IPAMContext) nodeInit() error {
 		}
 	}
 
-	if err := c.dataStore.ReadBackingStore(c.enableIpv4PrefixDelegation); err != nil {
+	if err := c.dataStore.ReadBackingStore(); err != nil {
 		return err
 	}
 
@@ -622,13 +622,13 @@ func (c *IPAMContext) tryUnassignIPsOrPrefixesFromAll() {
 				} else {
 					deletedIPsOrPrefixes = append(deletedIPsOrPrefixes, toDelete)
 				}
+			}
 
-				// Deallocate IPs from the instance if they aren't used by pods.
-				if err = c.awsClient.DeallocIPAddresses(eniID, deletedIPsOrPrefixes, false); err != nil {
-					log.Warnf("Failed to decrease pool by removing IPs %v from ENI %s: %s", deletedIPsOrPrefixes, eniID, err)
-				} else {
-					log.Debugf("Successfully decreased pool by removing IPs %v from ENI %s", deletedIPsOrPrefixes, eniID)
-				}
+			// Deallocate IPs from the instance if they aren't used by pods.
+			if err = c.awsClient.DeallocIPAddresses(eniID, deletedIPsOrPrefixes, false); err != nil {
+				log.Warnf("Failed to decrease pool by removing IPs %v from ENI %s: %s", deletedIPsOrPrefixes, eniID, err)
+			} else {
+				log.Debugf("Successfully decreased pool by removing IPs %v from ENI %s", deletedIPsOrPrefixes, eniID)
 			}
 
 			// Track the last time we unassigned IPs from an ENI. We won't reconcile any IPs in this cache
@@ -900,7 +900,7 @@ func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfac
 }
 
 func (c *IPAMContext) addENIprefixesToDataStore(ec2Addrs []*ec2.Ipv4PrefixSpecification, eni string) {
-	log.Infof("In addENIPrefixedToDataStore for %s and no of prefixes %d", eni, len(ec2Addrs))
+	log.Debugf("In addENIPrefixedToDataStore for %s and no of prefixes %d", eni, len(ec2Addrs))
 	for _, ec2Addr := range ec2Addrs {
 		err := c.dataStore.AddIPv4PrefixToStore(eni, aws.StringValue(ec2Addr.Ipv4Prefix))
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
@@ -973,8 +973,8 @@ func getWarmPrefixTarget() int {
 func logPoolStats(total int, used int, maxAddrsPerENI int, Ipv4PrefixDelegation bool) {
 	if !Ipv4PrefixDelegation {
 		log.Debugf("IP pool stats: total = %d, used = %d, c.maxIPsPerENI = %d", total, used, maxAddrsPerENI)
-	} else if Ipv4PrefixDelegation {
-		log.Debugf("IP pool stats: total = %d, used = %d, c.maxIPsPerENI = %d", total, used, maxAddrsPerENI)
+	} else {
+		log.Debugf("Prefix pool stats: total = %d, used = %d, c.maxIPsPerENI = %d", total, used, maxAddrsPerENI)
 	}
 }
 
@@ -1194,13 +1194,7 @@ func (c *IPAMContext) eniPrefixPoolReconcile(ipPool []string, attachedENI awsuti
 	attachedENIIPs := attachedENI.IPv4Prefixes
 	needEC2Reconcile := true
 	// Here we can't trust attachedENI since the IMDS metadata can be stale. We need to check with EC2 API.
-	log.Infof("Found prefix pool count %d for eni %s\n", len(ipPool), eni)
-	for _, dumpIP := range ipPool {
-		log.Infof("DUMP from eni pool %s", dumpIP)
-	}
-	for _, attachIP := range attachedENIIPs {
-		log.Infof("DUMP from attached ENI prefix %s", attachIP)
-	}
+	log.Debugf("Found prefix pool count %d for eni %s\n", len(ipPool), eni)
 
 	if len(ipPool) != len(attachedENIIPs) {
 		log.Warnf("Instance metadata does not match data store! ipPool: %v, metadata: %v", ipPool, attachedENIIPs)
@@ -1442,7 +1436,7 @@ func enablePodENI() bool {
 	return getEnvBoolWithDefault(envEnablePodENI, false)
 }
 
-func enableIpv4PrefixDelegation() bool {
+func useIpv4PrefixDelegation() bool {
 	return getEnvBoolWithDefault(envEnableIpv4PrefixDelegation, false)
 }
 
@@ -1690,16 +1684,14 @@ func (c *IPAMContext) GetIPv4Limit() (int, int, error) {
 		if err != nil {
 			return 0, 0, err
 		}
-		return maxIPsPerENI, maxPrefixesPerENI, nil
 	} else if c.enableIpv4PrefixDelegation {
 		//Single PD - allocate one prefix per ENI and new add will be new ENI + prefix
 		//Multi - allocate one prefix per ENI and new add will be new prefix or new ENI + prefix
 		maxPrefixesPerENI, maxIpsPerPrefix, _ = datastore.GetPrefixDelegationDefaults()
 		maxIPsPerENI = maxPrefixesPerENI * maxIpsPerPrefix
-		log.Infof("max prefix %d max ips %d", maxPrefixesPerENI, maxIPsPerENI)
-		return maxIPsPerENI, maxPrefixesPerENI, nil
+		log.Debugf("max prefix %d max ips %d", maxPrefixesPerENI, maxIPsPerENI)
 	}
-	return 0, 0, nil
+	return maxIPsPerENI, maxPrefixesPerENI, nil
 }
 
 func (c *IPAMContext) isDatastorePoolTooLow() bool {

@@ -150,29 +150,6 @@ func TestInitWithEC2metadata(t *testing.T) {
 	}
 }
 
-func TestInitWithEC2metadataWithPrefix(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
-	defer cancel()
-
-	ctrl, mockEC2 := setup(t)
-	defer ctrl.Finish()
-	mockMetadata := testMetadataWithPrefixes(nil)
-
-	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-
-	ins := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
-	err := ins.initWithEC2Metadata(ctx)
-	if assert.NoError(t, err) {
-		assert.Equal(t, az, ins.availabilityZone)
-		assert.Equal(t, localIP, ins.localIPv4.String())
-		assert.Equal(t, ins.instanceID, instanceID)
-		assert.Equal(t, ins.primaryENImac, primaryMAC)
-		assert.Equal(t, ins.primaryENI, primaryeniID)
-		assert.Equal(t, len(ins.securityGroups.SortedList()), 2)
-		assert.Equal(t, subnetID, ins.subnetID)
-	}
-}
-
 func TestInitWithEC2metadataErr(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
@@ -202,11 +179,10 @@ func TestInitWithEC2metadataErr(t *testing.T) {
 func TestGetAttachedENIs(t *testing.T) {
 	mockMetadata := testMetadata(map[string]interface{}{
 		metadataMACPath: primaryMAC + " " + eni2MAC,
-		metadataMACPath + eni2MAC + metadataDeviceNum:    eni2Device,
-		metadataMACPath + eni2MAC + metadataInterface:    eni2ID,
-		metadataMACPath + eni2MAC + metadataSubnetCIDR:   subnetCIDR,
-		metadataMACPath + eni2MAC + metadataIPv4s:        eni2PrivateIP,
-		metadataMACPath + eni2MAC + metadataIPv4Prefixes: nil,
+		metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
+		metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
+		metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
+		metadataMACPath + eni2MAC + metadataIPv4s:      eni2PrivateIP,
 	})
 
 	ins := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}}

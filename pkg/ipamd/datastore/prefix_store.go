@@ -52,6 +52,10 @@ func (prefix PrefixIPsStore) getPrefixSize() int {
 	return prefix.IPsPerPrefix
 }
 
+func (prefix PrefixIPsStore) isUsed(octet int) bool {
+	return (prefix.UsedIPs[octet] & 0xFF) != 0
+}
+
 // Validate - validates if the IP can be used
 func (prefix PrefixIPsStore) Validate(pos int) error {
 	if pos >= prefix.getPrefixSize() || pos < 0 {

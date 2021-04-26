@@ -201,7 +201,7 @@ generate:
 # Generate eni-max-pods.txt file for EKS AMI
 generate-limits: GOOS=
 generate-limits:    ## Generate limit file go code
-	go run scripts/gen_vpc_ip_limits.go
+	go run -mod=mod scripts/gen_vpc_ip_limits.go
 
 # Fetch the CNI plugins
 plugins: FETCH_VERSION=0.9.0

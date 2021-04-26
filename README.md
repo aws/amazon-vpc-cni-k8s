@@ -458,9 +458,9 @@ Type: Boolean as a String
 
 Default: `false`
 
-To enable IPv4 prefix delegation on nitro instances. Setting `ENABLE_PREFIX_DELEGATION` to `true` will start allocating a /28 prefix 
+To enable IPv4 prefix delegation on nitro instances. Setting `ENABLE_PREFIX_DELEGATION` flag toggle to `true` will start allocating a /28 prefix 
 instead of a secondary IP in the ENIs subnet. The total number of prefixes and private IP addresses will be less than the
-limit on private IPs allowed by your instance. Beta release will support a single /28 prefix per ENI. Knob toggle while pods are running or if
+limit on private IPs allowed by your instance. The current preview will support a single /28 prefix per ENI. Knob toggle while pods are running or if
 ENIs are attached is not supported. On toggling the knob, node should be recycled to set the new kubelet max pods value.
 
 ---
@@ -472,8 +472,8 @@ Type: Integer
 Default: None
 
 Specifies the number of free IPv4(/28) prefixes that the `ipamd` daemon should attempt to keep available for pod assignment on the node.
-This environment variable overrides `WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` and supported only with `ENABLE_PREFIX_DELEGATION`  
-set to `true`. Beta release will support a single /28 prefix per ENI hence setting this will cause additional ENIs to be allocated.
+This environment variable overrides `WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` and works when `ENABLE_PREFIX_DELEGATION`  
+is set to `true`. The current preview release will support a single /28 prefix per ENI hence setting this will cause additional ENIs to be allocated.
 
 ### ENI tags related to Allocation
 
