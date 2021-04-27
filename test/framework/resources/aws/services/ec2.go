@@ -30,6 +30,17 @@ type EC2 interface {
 	RevokeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
 	AuthorizeSecurityGroupEgress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
 	RevokeSecurityGroupEgress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
+	AssociateVPCCIDRBlock(vpcId string, cidrBlock string) (*ec2.AssociateVpcCidrBlockOutput, error)
+	DisAssociateVPCCIDRBlock(associationID string) error
+	DescribeSubnet(subnetID string) (*ec2.DescribeSubnetsOutput, error)
+	CreateSubnet(cidrBlock string, vpcID string, az string) (*ec2.CreateSubnetOutput, error)
+	DeleteSubnet(subnetID string) error
+	DescribeRouteTables(subnetID string) (*ec2.DescribeRouteTablesOutput, error)
+	CreateSecurityGroup(groupName string, description string, vpcID string) (*ec2.CreateSecurityGroupOutput, error)
+	DeleteSecurityGroup(groupID string) error
+	AssociateRouteTableToSubnet(routeTableId string, subnetID string) error
+	CreateKey(keyName string) (*ec2.CreateKeyPairOutput, error)
+	DeleteKey(keyName string) error
 }
 
 type defaultEC2 struct {
@@ -148,6 +159,103 @@ func (d *defaultEC2) DescribeNetworkInterface(interfaceIDs []string) (*ec2.Descr
 	}
 
 	return d.EC2API.DescribeNetworkInterfaces(describeNetworkInterfaceInput)
+}
+
+func (d *defaultEC2) AssociateVPCCIDRBlock(vpcId string, cidrBlock string) (*ec2.AssociateVpcCidrBlockOutput, error) {
+	associateVPCCidrBlockInput := &ec2.AssociateVpcCidrBlockInput{
+		CidrBlock: aws.String(cidrBlock),
+		VpcId:     aws.String(vpcId),
+	}
+
+	return d.EC2API.AssociateVpcCidrBlock(associateVPCCidrBlockInput)
+}
+
+func (d *defaultEC2) DisAssociateVPCCIDRBlock(associationID string) error {
+	disassociateVPCCidrBlockInput := &ec2.DisassociateVpcCidrBlockInput{
+		AssociationId: aws.String(associationID),
+	}
+
+	_, err := d.EC2API.DisassociateVpcCidrBlock(disassociateVPCCidrBlockInput)
+	return err
+}
+
+func (d *defaultEC2) CreateSubnet(cidrBlock string, vpcID string, az string) (*ec2.CreateSubnetOutput, error) {
+	createSubnetInput := &ec2.CreateSubnetInput{
+		AvailabilityZone: aws.String(az),
+		CidrBlock:        aws.String(cidrBlock),
+		VpcId:            aws.String(vpcID),
+	}
+	return d.EC2API.CreateSubnet(createSubnetInput)
+}
+
+func (d *defaultEC2) DescribeSubnet(subnetID string) (*ec2.DescribeSubnetsOutput, error) {
+	describeSubnetInput := &ec2.DescribeSubnetsInput{
+		SubnetIds: aws.StringSlice([]string{subnetID}),
+	}
+	return d.EC2API.DescribeSubnets(describeSubnetInput)
+}
+
+func (d *defaultEC2) DeleteSubnet(subnetID string) error {
+	deleteSubnetInput := &ec2.DeleteSubnetInput{
+		SubnetId: aws.String(subnetID),
+	}
+	_, err := d.EC2API.DeleteSubnet(deleteSubnetInput)
+	return err
+}
+
+func (d *defaultEC2) DescribeRouteTables(subnetID string) (*ec2.DescribeRouteTablesOutput, error) {
+	describeRouteTableInput := &ec2.DescribeRouteTablesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("association.subnet-id"),
+				Values: aws.StringSlice([]string{subnetID}),
+			},
+		},
+	}
+	return d.EC2API.DescribeRouteTables(describeRouteTableInput)
+}
+
+func (d *defaultEC2) AssociateRouteTableToSubnet(routeTableId string, subnetID string) error {
+	associateRouteTableInput := &ec2.AssociateRouteTableInput{
+		RouteTableId: aws.String(routeTableId),
+		SubnetId:     aws.String(subnetID),
+	}
+	_, err := d.EC2API.AssociateRouteTable(associateRouteTableInput)
+	return err
+}
+
+func (d *defaultEC2) DeleteSecurityGroup(groupID string) error {
+	deleteSecurityGroupInput := &ec2.DeleteSecurityGroupInput{
+		GroupId: aws.String(groupID),
+	}
+
+	_, err := d.EC2API.DeleteSecurityGroup(deleteSecurityGroupInput)
+	return err
+}
+
+func (d *defaultEC2) CreateSecurityGroup(groupName string, description string, vpcID string) (*ec2.CreateSecurityGroupOutput, error) {
+	createSecurityGroupInput := &ec2.CreateSecurityGroupInput{
+		Description: aws.String(description),
+		GroupName:   aws.String(groupName),
+		VpcId:       aws.String(vpcID),
+	}
+
+	return d.EC2API.CreateSecurityGroup(createSecurityGroupInput)
+}
+
+func (d *defaultEC2) CreateKey(keyName string) (*ec2.CreateKeyPairOutput, error) {
+	createKeyInput := &ec2.CreateKeyPairInput{
+		KeyName: aws.String(keyName),
+	}
+	return d.EC2API.CreateKeyPair(createKeyInput)
+}
+
+func (d *defaultEC2) DeleteKey(keyName string) error {
+	deleteKeyPairInput := &ec2.DeleteKeyPairInput{
+		KeyName: aws.String(keyName),
+	}
+	_, err := d.EC2API.DeleteKeyPair(deleteKeyPairInput)
+	return err
 }
 
 func NewEC2(session *session.Session) EC2 {

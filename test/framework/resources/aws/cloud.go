@@ -21,19 +21,24 @@ import (
 )
 
 type CloudConfig struct {
-	VpcID  string
-	Region string
+	VpcID       string
+	Region      string
+	EKSEndpoint string
 }
 
 type Cloud interface {
+	EKS() services.EKS
 	EC2() services.EC2
 	AutoScaling() services.AutoScaling
+	CloudFormation() services.CloudFormation
 }
 
 type defaultCloud struct {
-	cfg         CloudConfig
-	ec2         services.EC2
-	autoScaling services.AutoScaling
+	cfg            CloudConfig
+	ec2            services.EC2
+	eks            services.EKS
+	autoScaling    services.AutoScaling
+	cloudFormation services.CloudFormation
 }
 
 func NewCloud(config CloudConfig) Cloud {
@@ -41,9 +46,11 @@ func NewCloud(config CloudConfig) Cloud {
 		Region: aws.String(config.Region)}))
 
 	return &defaultCloud{
-		cfg:         config,
-		ec2:         services.NewEC2(session),
-		autoScaling: services.NewAutoScaling(session),
+		cfg:            config,
+		ec2:            services.NewEC2(session),
+		eks:            services.NewEKS(session, config.EKSEndpoint),
+		autoScaling:    services.NewAutoScaling(session),
+		cloudFormation: services.NewCloudFormation(session),
 	}
 }
 
@@ -53,4 +60,12 @@ func (c *defaultCloud) EC2() services.EC2 {
 
 func (c *defaultCloud) AutoScaling() services.AutoScaling {
 	return c.autoScaling
+}
+
+func (c *defaultCloud) CloudFormation() services.CloudFormation {
+	return c.cloudFormation
+}
+
+func (c *defaultCloud) EKS() services.EKS {
+	return c.eks
 }

@@ -16,12 +16,16 @@ package resources
 import (
 	"context"
 
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type NodeManager interface {
 	GetNodes(nodeLabelKey string, nodeLabelVal string) (v1.NodeList, error)
+	WaitTillNodesReady(nodeLabelKey string, nodeLabelVal string, asgSize int) error
 }
 
 type defaultNodeManager struct {
@@ -39,4 +43,26 @@ func (d *defaultNodeManager) GetNodes(nodeLabelKey string, nodeLabelVal string) 
 		nodeLabelKey: nodeLabelVal,
 	})
 	return nodeList, err
+}
+
+func (d *defaultNodeManager) WaitTillNodesReady(nodeLabelKey string, nodeLabelVal string, asgSize int) error {
+	return wait.PollImmediateUntil(utils.PollIntervalLong, func() (done bool, err error) {
+		nodeList, err := d.GetNodes(nodeLabelKey, nodeLabelVal)
+		if err != nil {
+			return false, err
+		}
+		if len(nodeList.Items) != asgSize {
+			return false, nil
+		}
+		for _, node := range nodeList.Items {
+			for _, condition := range node.Status.Conditions {
+				if condition.Type == v1.NodeReady && condition.Status != v1.ConditionTrue {
+					return false, nil
+				}
+			}
+		}
+
+		return true, nil
+
+	}, context.Background().Done())
 }
