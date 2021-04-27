@@ -107,6 +107,20 @@ func (mr *MockAPIsMockRecorder) DeallocIPAddresses(arg0, arg1, arg2 interface{})
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeallocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).DeallocIPAddresses), arg0, arg1, arg2)
 }
 
+// DeallocPrefixAddresses mocks base method
+func (m *MockAPIs) DeallocPrefixAddresses(arg0 string, arg1 []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeallocPrefixAddresses", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeallocPrefixAddresses indicates an expected call of DeallocPrefixAddresses
+func (mr *MockAPIsMockRecorder) DeallocPrefixAddresses(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeallocPrefixAddresses", reflect.TypeOf((*MockAPIs)(nil).DeallocPrefixAddresses), arg0, arg1)
+}
+
 // DescribeAllENIs mocks base method
 func (m *MockAPIs) DescribeAllENIs() (awsutils.DescribeAllENIsResult, error) {
 	m.ctrl.T.Helper()
@@ -224,6 +238,20 @@ func (m *MockAPIs) GetInstanceHypervisorFamily() (string, error) {
 func (mr *MockAPIsMockRecorder) GetInstanceHypervisorFamily() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceHypervisorFamily", reflect.TypeOf((*MockAPIs)(nil).GetInstanceHypervisorFamily))
+}
+
+// GetInstanceType mocks base method
+func (m *MockAPIs) GetInstanceType() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetInstanceType")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetInstanceType indicates an expected call of GetInstanceType
+func (mr *MockAPIsMockRecorder) GetInstanceType() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceType", reflect.TypeOf((*MockAPIs)(nil).GetInstanceType))
 }
 
 // GetLocalIPv4 mocks base method

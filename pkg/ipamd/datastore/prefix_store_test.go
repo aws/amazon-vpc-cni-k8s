@@ -108,15 +108,15 @@ func TestAddENIIPv4Prefix(t *testing.T) {
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Prefixes), 1)
 
 	var strPrivateIPv4 string
-	strPrivateIPv4, _, err = getIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
-	assert.NoError(t, err)
+	strPrivateIPv4, err = getFreeIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
+	assert.NoError(t, err)	
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-1", strPrivateIPv4)
 	assert.NoError(t, err)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 1)
-
-	strPrivateIPv4, _, err = getIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
-	assert.NoError(t, err)
+	
+	strPrivateIPv4, err = getFreeIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
+	assert.NoError(t, err)	
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-1", strPrivateIPv4)
 	assert.NoError(t, err)
@@ -127,7 +127,7 @@ func TestAddENIIPv4Prefix(t *testing.T) {
 	assert.Equal(t, ds.allocatedPrefix, 2)
 	assert.Equal(t, len(ds.eniPool["eni-2"].IPv4Prefixes), 1)
 
-	strPrivateIPv4, _, err = getIPv4AddrfromPrefix(ds.eniPool["eni-2"].IPv4Prefixes["2.1.1.0"])
+	strPrivateIPv4, err = getFreeIPv4AddrfromPrefix(ds.eniPool["eni-2"].IPv4Prefixes["2.1.1.0"])
 	assert.NoError(t, err)
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-2", strPrivateIPv4)
@@ -159,15 +159,15 @@ func TestGetENIIPswithPDEnabled(t *testing.T) {
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Prefixes), 1)
 
 	var strPrivateIPv4 string
-	strPrivateIPv4, _, err = getIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
-	assert.NoError(t, err)
+	strPrivateIPv4, err = getFreeIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
+	assert.NoError(t, err)	
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-1", strPrivateIPv4)
 	assert.NoError(t, err)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 1)
-
-	strPrivateIPv4, _, err = getIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
-	assert.NoError(t, err)
+	
+	strPrivateIPv4, err = getFreeIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
+	assert.NoError(t, err)	
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-1", strPrivateIPv4)
 	assert.NoError(t, err)
@@ -178,7 +178,7 @@ func TestGetENIIPswithPDEnabled(t *testing.T) {
 	assert.Equal(t, ds.allocatedPrefix, 2)
 	assert.Equal(t, len(ds.eniPool["eni-2"].IPv4Prefixes), 1)
 
-	strPrivateIPv4, _, err = getIPv4AddrfromPrefix(ds.eniPool["eni-2"].IPv4Prefixes["2.1.1.0"])
+	strPrivateIPv4, err = getFreeIPv4AddrfromPrefix(ds.eniPool["eni-2"].IPv4Prefixes["2.1.1.0"])
 	assert.NoError(t, err)
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-2", strPrivateIPv4)
@@ -280,10 +280,11 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 		},
 	})
 	checkpoint.Error = nil
-
+    
+    //1.1.1.1 will be added to cooldown, so we will get another 14 IPS
 	ip, pod1Ns2Device, err := ds.AssignPodIPv4Address(key2)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.1")
+	assert.Equal(t, ip, "1.1.1.2")
 	assert.Equal(t, ds.assigned, 2)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 2)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 2)
@@ -295,7 +296,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	key3 := IPAMKey{"net0", "sandbox-3", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key3)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.2")
+	assert.Equal(t, ip, "1.1.1.3")
 	assert.Equal(t, ds.assigned, 3)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 3)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 3)
@@ -304,7 +305,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	key4 := IPAMKey{"net0", "sandbox-4", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key4)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.3")
+	assert.Equal(t, ip, "1.1.1.4")
 	assert.Equal(t, ds.assigned, 4)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 4)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 4)
@@ -313,7 +314,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	key5 := IPAMKey{"net0", "sandbox-5", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key5)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.4")
+	assert.Equal(t, ip, "1.1.1.5")
 	assert.Equal(t, ds.assigned, 5)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 5)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 5)
@@ -322,7 +323,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	key6 := IPAMKey{"net0", "sandbox-6", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key6)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.5")
+	assert.Equal(t, ip, "1.1.1.6")
 	assert.Equal(t, ds.assigned, 6)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 6)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 6)
@@ -331,7 +332,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	key7 := IPAMKey{"net0", "sandbox-7", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key7)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.6")
+	assert.Equal(t, ip, "1.1.1.7")
 	assert.Equal(t, ds.assigned, 7)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 7)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 7)
@@ -340,7 +341,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	key8 := IPAMKey{"net0", "sandbox-8", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key8)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.7")
+	assert.Equal(t, ip, "1.1.1.8")
 	assert.Equal(t, ds.assigned, 8)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 8)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 8)
@@ -349,7 +350,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	key9 := IPAMKey{"net0", "sandbox-9", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key9)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.8")
+	assert.Equal(t, ip, "1.1.1.9")
 	assert.Equal(t, ds.assigned, 9)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 9)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 9)
@@ -358,7 +359,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	key10 := IPAMKey{"net0", "sandbox-10", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key10)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.9")
+	assert.Equal(t, ip, "1.1.1.10")
 	assert.Equal(t, ds.assigned, 10)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 10)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 10)
@@ -367,7 +368,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	key11 := IPAMKey{"net0", "sandbox-11", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key11)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.10")
+	assert.Equal(t, ip, "1.1.1.11")
 	assert.Equal(t, ds.assigned, 11)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 11)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 11)
@@ -376,7 +377,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	key12 := IPAMKey{"net0", "sandbox-12", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key12)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.11")
+	assert.Equal(t, ip, "1.1.1.12")
 	assert.Equal(t, ds.assigned, 12)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 12)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 12)
@@ -385,7 +386,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	key13 := IPAMKey{"net0", "sandbox-13", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key13)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.12")
+	assert.Equal(t, ip, "1.1.1.13")
 	assert.Equal(t, ds.assigned, 13)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 13)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 13)
@@ -394,7 +395,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	key14 := IPAMKey{"net0", "sandbox-14", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key14)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.13")
+	assert.Equal(t, ip, "1.1.1.14")
 	assert.Equal(t, ds.assigned, 14)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 14)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 14)
@@ -403,35 +404,25 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	key15 := IPAMKey{"net0", "sandbox-15", "eth0"}
 	ip, _, err = ds.AssignPodIPv4Address(key15)
 	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.14")
+	assert.Equal(t, ip, "1.1.1.15")
 	assert.Equal(t, ds.assigned, 15)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 15)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 15)
 	assert.Equal(t, len(checkpoint.Data.(*CheckpointData).Allocations), 15)
 
-	key16 := IPAMKey{"net0", "sandbox-16", "eth0"}
-	ip, _, err = ds.AssignPodIPv4Address(key16)
-	assert.NoError(t, err)
-	assert.Equal(t, ip, "1.1.1.15")
-	assert.Equal(t, ds.assigned, 16)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 16)
-	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 16)
-	assert.Equal(t, len(checkpoint.Data.(*CheckpointData).Allocations), 16)
-
 	// no more IP addresses
-	key17 := IPAMKey{"net0", "sandbox-17", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key17)
+	key16 := IPAMKey{"net0", "sandbox-16", "eth0"}
+	_, _, err = ds.AssignPodIPv4Address(key16)
 	assert.Error(t, err)
 	// Unassign unknown Pod
-	_, _, _, err = ds.UnassignPodIPv4Address(key17)
+	_, _, _, _,err = ds.UnassignPodIPv4Address(key16)
 	assert.Error(t, err)
 
-	_, _, deviceNum, err := ds.UnassignPodIPv4Address(key2)
+	_, _, deviceNum, _, err := ds.UnassignPodIPv4Address(key2)
 	assert.NoError(t, err)
-	assert.Equal(t, ds.assigned, 15)
+	assert.Equal(t, ds.assigned, 14)
 	assert.Equal(t, deviceNum, pod1Ns2Device)
-	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 15)
-	//assert.Equal(t, len(checkpoint.Data.(*CheckpointData).Allocations), 15)
+	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 14)
 
 	//Index will be in cooldown so IP won't be available
 	_, _, err = ds.AssignPodIPv4Address(key2)
@@ -449,7 +440,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	eni = ds.RemoveUnusedENIFromStore(noWarmIPTarget, noMinimumIPTarget, noWarmPrefixTarget)
 	assert.Equal(t, eni, "eni-2")
 
-	assert.Equal(t, ds.assigned, 15)
+	assert.Equal(t, ds.assigned, 14)
 }
 
 func TestWarmPrefixInteractions(t *testing.T) {

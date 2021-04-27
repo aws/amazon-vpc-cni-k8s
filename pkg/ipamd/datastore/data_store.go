@@ -706,6 +706,8 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 						// Important! Unwind assignment
 						ds.unassignPodIPv4AddressUnsafe(addr)
 						deleteIPv4AddrfromPrefix(prefix, addr)
+						//Remove the IP from eni DB
+						delete(eni.IPv4Addresses, addr.Address)
 						return "", -1, err
 					}
 					return addr.Address, eni.DeviceNumber, nil
@@ -1025,14 +1027,15 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string,
 		return nil, "", 0, false, err
 	}
 	addr.UnassignedTime = time.Now()
-	retrievedPrefix := addr.Prefix.String() 
-	if eni.IsPDenabled && retrievedPrefix == "" {
+	retrievedPrefix := addr.Prefix
+	if eni.IsPDenabled && retrievedPrefix == nil {
 		ds.log.Infof("Prefix delegation is enabled and the IP is from secondary pool hence no need to update prefix pool")
 		ds.total--
 		isSecondaryIP = true
-	} else if retrievedPrefix != "" {
+	} else if retrievedPrefix != nil {
+		ds.log.Infof("Retrieved Prefix %s", retrievedPrefix.String())
 		//Regular pod deletes for PD enabled and if pd is disabled but prefix is populated i.e, knob disable scenario
-		deleteIPv4AddrfromPrefix(eni.IPv4Prefixes[retrievedPrefix], addr)
+		deleteIPv4AddrfromPrefix(eni.IPv4Prefixes[retrievedPrefix.String()], addr)
 		//Remove the IP from eni DB
 		delete(eni.IPv4Addresses, addr.Address)
 		if !eni.IsPDenabled {
@@ -1159,7 +1162,7 @@ func (ds *DataStore) GetENIIPs(eniID string) ([]string, error) {
 		// /32 IPs from SIP or PD pool will be in eni.IPv4Addresses
 		// hence this has to be checked, IP belonging to a prefix can be
 		// a possibility because of PD enable/disable knob toggle
-		if !eni.IsPDenabled && addr.Prefix.String() != "" {
+		if !eni.IsPDenabled && addr.Prefix != nil {
 			ds.log.Debugf("IP %s belongs to prefix pool so do not account", ip)
 			continue
 		}

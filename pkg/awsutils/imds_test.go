@@ -240,11 +240,11 @@ func TestGetLocalIPv4Prefixes(t *testing.T) {
 
 	ips, err := f.GetLocalIPv4Prefixes(context.TODO(), "02:c5:f8:3e:6b:27")
 	if assert.NoError(t, err) {
-		assert.Equal(t, ips, []string{"10.1.1.0/28"})
+		assert.Equal(t, ips, []net.IPNet{{IP: net.IPv4(10, 1, 1, 0), Mask: net.CIDRMask(28, 32)}})
 	}
 
 	ips, err = f.GetLocalIPv4Prefixes(context.TODO(), "00:00:de:ad:be:ef")
 	if assert.NoError(t, err) {
-		assert.Equal(t, ips, []string(nil))
+		assert.ElementsMatch(t, ips, []net.IPNet{})
 	}
 }
