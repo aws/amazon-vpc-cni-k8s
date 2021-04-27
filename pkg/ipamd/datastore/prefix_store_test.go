@@ -109,14 +109,14 @@ func TestAddENIIPv4Prefix(t *testing.T) {
 
 	var strPrivateIPv4 string
 	strPrivateIPv4, err = getFreeIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
-	assert.NoError(t, err)	
+	assert.NoError(t, err)
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-1", strPrivateIPv4)
 	assert.NoError(t, err)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 1)
-	
+
 	strPrivateIPv4, err = getFreeIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
-	assert.NoError(t, err)	
+	assert.NoError(t, err)
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-1", strPrivateIPv4)
 	assert.NoError(t, err)
@@ -160,14 +160,14 @@ func TestGetENIIPswithPDEnabled(t *testing.T) {
 
 	var strPrivateIPv4 string
 	strPrivateIPv4, err = getFreeIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
-	assert.NoError(t, err)	
+	assert.NoError(t, err)
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-1", strPrivateIPv4)
 	assert.NoError(t, err)
 	assert.Equal(t, len(ds.eniPool["eni-1"].IPv4Addresses), 1)
-	
+
 	strPrivateIPv4, err = getFreeIPv4AddrfromPrefix(ds.eniPool["eni-1"].IPv4Prefixes["1.1.1.0"])
-	assert.NoError(t, err)	
+	assert.NoError(t, err)
 
 	err = ds.AddPrefixIPv4AddressToStore("eni-1", strPrivateIPv4)
 	assert.NoError(t, err)
@@ -280,8 +280,8 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 		},
 	})
 	checkpoint.Error = nil
-    
-    //1.1.1.1 will be added to cooldown, so we will get another 14 IPS
+
+	//1.1.1.1 will be added to cooldown, so we will get another 14 IPS
 	ip, pod1Ns2Device, err := ds.AssignPodIPv4Address(key2)
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "1.1.1.2")
@@ -415,7 +415,7 @@ func TestPodIPv4AddresswithPDEnabled(t *testing.T) {
 	_, _, err = ds.AssignPodIPv4Address(key16)
 	assert.Error(t, err)
 	// Unassign unknown Pod
-	_, _, _, _,err = ds.UnassignPodIPv4Address(key16)
+	_, _, _, _, err = ds.UnassignPodIPv4Address(key16)
 	assert.Error(t, err)
 
 	_, _, deviceNum, _, err := ds.UnassignPodIPv4Address(key2)
