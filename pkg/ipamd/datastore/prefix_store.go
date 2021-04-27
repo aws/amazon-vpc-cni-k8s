@@ -1,8 +1,6 @@
 package datastore
 
 import (
-	"encoding/binary"
-	"fmt"
 	"net"
 	"time"
 
@@ -11,28 +9,23 @@ import (
 )
 
 const (
-	//IP tracking bitmap is stored in size of octets
-	octetSize = 8
-
 	//"/32" IPv4 prefix
 	ipv4DefaultPrefixSize = 32
 )
 
 var log = logger.Get()
 
-// PrefixIPsStore will hold the size of the prefix Eg: 16 for /28 prefix
-// UsedIPs will be a bitmap of size - IPsPerPrefix which will keep track of IPs used
+// PrefixIPsStore will hold the size of the prefix Eg: 16 for /28 prefix. In future if prefix sizes are customizable
+// UsedIPs will be a map of <IP, cooldowntime>
 type PrefixIPsStore struct {
-	UsedIPs      []byte
-	CooldownIPs  []time.Time
+	UsedIPs      map[string]time.Time
 	IPsPerPrefix int
 }
 
 // ENIPrefix will have the prefixes allocated for an ENI and the list of allocated IPs under
 // the prefix
 type ENIPrefix struct {
-	Prefix       string
-	PrefixLen    int
+	Prefix       net.IPNet
 	AllocatedIPs PrefixIPsStore
 	UsedIPs      int
 	FreeIps      int
@@ -40,93 +33,101 @@ type ENIPrefix struct {
 
 //New - allocate a PrefixIPsStore per prefix of size "prefixsize"
 func NewPrefixStore(prefixsize int) PrefixIPsStore {
-	//No of bytes needed for the bits
-	len := prefixsize / octetSize
-	log.Infof("IPsperPrefix - %d and UsedIPs len %d", prefixsize, len+1)
-	return PrefixIPsStore{IPsPerPrefix: prefixsize, UsedIPs: make([]byte, len), CooldownIPs: make([]time.Time, prefixsize)}
+	return PrefixIPsStore{IPsPerPrefix: prefixsize, UsedIPs: make(map[string]time.Time)}
 }
 
-// Size returns the size of a bitmap. This is the number
-// of bits.
+// Size returns the number of IPs per prefix
 func (prefix PrefixIPsStore) getPrefixSize() int {
 	return prefix.IPsPerPrefix
 }
 
-func (prefix PrefixIPsStore) isUsed(octet int) bool {
-	return (prefix.UsedIPs[octet] & 0xFF) != 0
+func isOutofCoolingPeriod(cooldown time.Time) bool {
+	return (!(time.Since(cooldown) <= addressCoolingPeriod))
 }
 
-// Validate - validates if the IP can be used
-func (prefix PrefixIPsStore) Validate(pos int) error {
-	if pos >= prefix.getPrefixSize() || pos < 0 {
-		return fmt.Errorf("Invalid index requested")
-	}
-	return nil
-}
-
-//SetUnsetIPallocation - Bit will be changes to 0 <-> 1
-func (prefix PrefixIPsStore) SetUnsetIPallocation(IPindex byte) error {
-	if err := prefix.Validate(int(IPindex)); err != nil {
-		log.Infof("Invalid IPindex - %d", IPindex)
-		return err
-	}
-	octet := IPindex / octetSize
-	index := IPindex % octetSize
-	prefix.UsedIPs[octet] = prefix.UsedIPs[octet] ^ (1 << index)
-	return nil
-}
-
-//Gets the next free bit
-func (prefix PrefixIPsStore) getPosOfRightMostUnsetBit(n byte, octetlen int) int {
-	log.Infof("Size of byte array %d", octetlen)
-	var i int
-	for i = 0; i < octetlen*octetSize; i++ {
-		if (((n >> i) & 1) == 0) && !(time.Since(prefix.CooldownIPs[i]) <= addressCoolingPeriod) {
-			return i
+func getNextIP(ip net.IP) {
+	for j := len(ip) - 1; j >= 0; j-- {
+		ip[j]++
+		if ip[j] > 0 {
+			break
 		}
 	}
-	return -1
 }
 
-// getIpfromPrefix - Returns a free IP in the prefix
-func (prefix PrefixIPsStore) getIPfromPrefix() (int, error) {
-	DBlen := (prefix.IPsPerPrefix / octetSize)
-	var octet int
-	for octet = 0; octet < DBlen; octet++ {
-		var index = (int)(prefix.getPosOfRightMostUnsetBit(prefix.UsedIPs[octet], binary.Size((prefix.UsedIPs[octet]))))
-		log.Infof("Found a free Index %d", index)
-		if index != -1 {
-			IPindex := (int)((octet * octetSize) + index)
-			log.Infof("Regenrated IPindex is %d", IPindex)
-			prefix.UsedIPs[octet] = prefix.UsedIPs[octet] ^ (1 << int(index))
-			return IPindex, nil
+func (prefix PrefixIPsStore) getUnusedIP(eniPrefix string) (string, error) {
+	//Check if there is any IP out of cooldown
+	var cachedIP string
+	for ipv4, cooldown := range prefix.UsedIPs {
+		//Currently we have 2 DB's, IP allocated from the prefixDB is added to
+		//IP pool so instead of checking if the IP is assigned from IPAMKey [ipAddr.Assigned()] considering an
+		//ip with 0 cooldown time as assigned. Will fix this up as part of merging the 2 DBs.
+		if isOutofCoolingPeriod(cooldown) && !cooldown.IsZero() {
+			//if the IP is out of cooldown and not assigned then cache the first available IP
+			//continue cleaning up the DB, this is to avoid stale entries and a new thread :)
+			if cachedIP == "" {
+				cachedIP = ipv4
+			}
+			delete(prefix.UsedIPs, ipv4)
 		}
 	}
-	return -1, errors.New("No free index")
-}
+	if cachedIP != "" {
+		prefix.UsedIPs[cachedIP] = time.Time{}
+		return cachedIP, nil
+	}
 
-//Given prefix, this function gets a bit index and returns a free IP
-func getIPv4AddrfromPrefix(prefix *ENIPrefix) (string, int, error) {
-	IPoffset, err := prefix.AllocatedIPs.getIPfromPrefix()
+	//If not in cooldown then generate next IP
+	ip, ipnet, err := net.ParseCIDR(eniPrefix)
 	if err != nil {
-		log.Errorf("Mismtach between prefix free IPs and available IPs: %v", err)
-		return "", -1, err
+		return "", err
 	}
+
+	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); getNextIP(ip) {
+		strPrivateIPv4 := ip.String()
+		if _, ok := prefix.UsedIPs[strPrivateIPv4]; ok {
+			continue
+		}
+		log.Debugf("Found a free IP not in DB - %s", strPrivateIPv4)
+		return strPrivateIPv4, nil
+	}
+
+	return "", errors.New("No free IP in the prefix store")
+}
+
+func (prefix PrefixIPsStore) restorePrefixIP(recoveredIP string) error {
+	// Already there
+	_, ok := prefix.UsedIPs[recoveredIP]
+	if ok {
+		log.Debugf("IP already in DS")
+		return errors.New(IPAlreadyInStoreError)
+	}
+	prefix.UsedIPs[recoveredIP] = time.Time{}
+	log.Debugf("Recovered IP in prefix store %s", recoveredIP)
+	return nil
+
+}
+
+//Given prefix, this function returns a free IP in the prefix
+func getFreeIPv4AddrfromPrefix(prefix *ENIPrefix) (string, error) {
+	if prefix == nil {
+		log.Errorf("Prefix datastore not initialized")
+		return "", errors.New("Prefix datastore not initialized")
+	}
+	strPrivateIPv4, err := prefix.AllocatedIPs.getUnusedIP(prefix.Prefix.String())
+	if err != nil {
+		log.Debugf("Get free IP from prefix failed %v", err)
+		return "", err
+	}
+	prefix.AllocatedIPs.UsedIPs[strPrivateIPv4] = time.Time{}
 	prefix.FreeIps--
 	prefix.UsedIPs++
-
-	log.Infof("Got ip offset - %d", IPoffset)
-	strPrivateIPv4 := getIPfromPrefixAndIndex(prefix, IPoffset)
-	return strPrivateIPv4, IPoffset, nil
+	log.Debugf("Returning Free IP %s", strPrivateIPv4)
+	return strPrivateIPv4, nil
 }
 
-//Given prefix, this function frees the used IP
+//This function sets the cooldown for the IP freed from the prefix
 func deleteIPv4AddrfromPrefix(prefix *ENIPrefix, addr *AddressInfo) {
-	prefix.AllocatedIPs.CooldownIPs[addr.IPIndex] = addr.UnassignedTime
-	log.Infof("Setting cooldown for index %d at time %v", addr.IPIndex, addr.UnassignedTime)
-	if err := prefix.AllocatedIPs.SetUnsetIPallocation(byte(addr.IPIndex)); err != nil {
-		log.Infof("Invalid index but continue to release, maybe addr has invalid index")
-	}
+	prefix.AllocatedIPs.UsedIPs[addr.Address] = addr.UnassignedTime
+	log.Debugf("Setting cooldown for IP address %s at time %v", addr.Address, addr.UnassignedTime)
 
 	prefix.FreeIps++
 	prefix.UsedIPs--
@@ -140,34 +141,6 @@ func getPrefixFromIPv4Addr(IPaddr string) net.IP {
 	ipv4Prefix = ipv4Prefix.To4()
 	ipv4Prefix = ipv4Prefix.Mask(ipv4PrefixMask)
 	return ipv4Prefix
-}
-
-//Given an IP, this function will return the index consumed in the prefix
-func getPrefixIndexfromIP(ipAddr string, ipv4Prefix net.IP) byte {
-	_, _, supportedPrefixLen := GetPrefixDelegationDefaults()
-	octetToModify := ipv4DefaultPrefixSize - supportedPrefixLen - 1
-	ipv4Addr := net.ParseIP(ipAddr)
-	ipv4AddrMask := net.CIDRMask(ipv4DefaultPrefixSize, ipv4DefaultPrefixSize)
-	ipv4Addr = ipv4Addr.To4()
-	ipv4Addr = ipv4Addr.Mask(ipv4AddrMask)
-
-	IPindex := ipv4Addr[octetToModify] - ipv4Prefix[octetToModify]
-	return IPindex
-}
-
-//Given a prefix and Index, computes the IP
-func getIPfromPrefixAndIndex(prefix *ENIPrefix, IPoffset int) string {
-	_, _, supportedPrefixLen := GetPrefixDelegationDefaults()
-	octetToModify := ipv4DefaultPrefixSize - supportedPrefixLen - 1
-	ipv4Addr := net.ParseIP(prefix.Prefix)
-	ipv4Mask := net.CIDRMask(prefix.PrefixLen, ipv4DefaultPrefixSize)
-	ipv4Addr = ipv4Addr.To4()
-	ipv4Addr = ipv4Addr.Mask(ipv4Mask)
-	offset := make([]byte, octetSize)
-
-	binary.LittleEndian.PutUint32(offset, uint32(IPoffset))
-	ipv4Addr[octetToModify] = ipv4Addr[octetToModify] + offset[0]
-	return ipv4Addr.String()
 }
 
 //Function to return PD defaults supported by VPC

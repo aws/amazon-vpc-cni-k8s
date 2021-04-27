@@ -1308,19 +1308,12 @@ func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIIPs
 	seenIPs := make(map[string]bool)
 	for _, privateIPv4 := range attachedENIIPs {
 		strPrivateIPv4 := aws.StringValue(privateIPv4.Ipv4Prefix)
-		log.Infof("Check in coolddown Found prefix %s", strPrivateIPv4)
-		/*
-			//WIll this even happen???
-			if strPrivateIPv4 == c.primaryIP[eni] {
-				log.Debugf("Reconcile and skip primary IP %s on ENI %s", strPrivateIPv4, eni)
-				continue
-			}
-		*/
+		log.Debugf("Check in coolddown Found prefix %s", strPrivateIPv4)
 
 		// Check if this IP was recently freed
 		found, recentlyFreed := c.reconcileCooldownCache.RecentlyFreed(strPrivateIPv4)
 		if found {
-			log.Infof("found in cooldown")
+			log.Debugf("found in cooldown")
 			if recentlyFreed {
 				log.Debugf("Reconcile skipping IP %s on ENI %s because it was recently unassigned from the ENI.", strPrivateIPv4, eni)
 				continue

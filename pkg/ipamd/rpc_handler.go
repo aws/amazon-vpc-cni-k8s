@@ -199,7 +199,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 	if eni != nil && mismatchedStore {
 		if s.ipamContext.enableIpv4PrefixDelegation {
 			addr := eni.IPv4Addresses[ip]
-			if addr != nil && addr.Prefix == "" {
+			if addr != nil && addr.Prefix.String() == "" {
 				log.Debugf("IP belongs to secondary pool with PD enabled so free from EC2")
 				var deletedIPs []string
 				deletedIPs = append(deletedIPs, ip)
