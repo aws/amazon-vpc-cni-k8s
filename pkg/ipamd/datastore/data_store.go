@@ -145,8 +145,8 @@ type ENI struct {
 	IsTrunk bool
 	// IsEFA indicates whether this ENI is tagged as an EFA
 	IsEFA bool
-	// IsPDenabled indicates whether prefix delegation is enabled
-	IsPDenabled bool
+	// IsPDEnabled indicates whether prefix delegation is enabled
+	IsPDEnabled bool
 	// DeviceNumber is the device number of ENI (0 means the primary ENI)
 	DeviceNumber int
 	// IPv4Addresses shows whether each address is assigned, the key is IP address, which must
@@ -443,11 +443,11 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 }
 
 // AddENI add ENI to data store
-func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, isEFA, isPDenabled bool) error {
+func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, isEFA, isPDEnabled bool) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	ds.log.Debugf("DataStore Add an ENI %s and is PD enabled %d", eniID, isPDenabled)
+	ds.log.Debugf("DataStore Add an ENI %s and is PD enabled %d", eniID, isPDEnabled)
 
 	_, ok := ds.eniPool[eniID]
 	if ok {
@@ -458,7 +458,7 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, 
 		IsPrimary:     isPrimary,
 		IsTrunk:       isTrunk,
 		IsEFA:         isEFA,
-		IsPDenabled:   isPDenabled,
+		IsPDEnabled:   isPDEnabled,
 		ID:            eniID,
 		DeviceNumber:  deviceNumber,
 		IPv4Addresses: make(map[string]*AddressInfo),
@@ -662,7 +662,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 
 	for _, eni := range ds.eniPool {
 		ds.log.Debugf("Checking for eni %v", eni)
-		if !eni.IsPDenabled {
+		if !eni.IsPDEnabled {
 			for _, addr := range eni.IPv4Addresses {
 				if !addr.Assigned() && !addr.inCoolingPeriod() {
 					ds.assignPodIPv4AddressUnsafe(ipamKey, eni, addr)
@@ -842,12 +842,12 @@ func (ds *DataStore) getDeletableENI(warmIPTarget, minimumIPTarget, warmPrefixTa
 			continue
 		}
 
-		if !eni.IsPDenabled && warmIPTarget != 0 && ds.isRequiredForWarmIPTarget(warmIPTarget, eni) {
+		if !eni.IsPDEnabled && warmIPTarget != 0 && ds.isRequiredForWarmIPTarget(warmIPTarget, eni) {
 			ds.log.Debugf("ENI %s cannot be deleted because it is required for WARM_IP_TARGET: %d", eni.ID, warmIPTarget)
 			continue
 		}
 
-		if !eni.IsPDenabled && minimumIPTarget != 0 && ds.isRequiredForMinimumIPTarget(minimumIPTarget, eni) {
+		if !eni.IsPDEnabled && minimumIPTarget != 0 && ds.isRequiredForMinimumIPTarget(minimumIPTarget, eni) {
 			ds.log.Debugf("ENI %s cannot be deleted because it is required for MINIMUM_IP_TARGET: %d", eni.ID, minimumIPTarget)
 			continue
 		}
@@ -862,7 +862,7 @@ func (ds *DataStore) getDeletableENI(warmIPTarget, minimumIPTarget, warmPrefixTa
 			continue
 		}
 
-		if eni.IsPDenabled && warmPrefixTarget != 0 && ds.isRequiredForWarmPrefixTarget(warmPrefixTarget, eni) {
+		if eni.IsPDEnabled && warmPrefixTarget != 0 && ds.isRequiredForWarmPrefixTarget(warmPrefixTarget, eni) {
 			ds.log.Debugf("ENI %s cannot be deleted because it is required for WARM_PREFIX_TARGET: %d", eni.ID, warmPrefixTarget)
 			continue
 		}
@@ -902,11 +902,11 @@ func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENI {
 			ds.log.Debugf("Skip the primary ENI for need IP check")
 			continue
 		}
-		if !eni.IsPDenabled && len(eni.IPv4Addresses) < maxIPperENI {
+		if !eni.IsPDEnabled && len(eni.IPv4Addresses) < maxIPperENI {
 			ds.log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d",
 				eni.ID, len(eni.IPv4Addresses), maxIPperENI)
 			return eni
-		} else if eni.IsPDenabled && len(eni.IPv4Prefixes) < maxIPperENI {
+		} else if eni.IsPDEnabled && len(eni.IPv4Prefixes) < maxIPperENI {
 			ds.log.Debugf("Found ENI %s that has less than the maximum number of v4 Prefixes allocated: cur=%d, max=%d",
 				eni.ID, len(eni.IPv4Prefixes), maxIPperENI)
 			return eni
@@ -971,7 +971,7 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 		}
 	}
 
-	if !eni.IsPDenabled {
+	if !eni.IsPDEnabled {
 		ds.total -= len(eni.IPv4Addresses)
 		ds.log.Infof("RemoveENIFromDataStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
 			eniID, len(eni.IPv4Addresses), ds.total, ds.assigned)
@@ -1028,7 +1028,7 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string,
 	}
 	addr.UnassignedTime = time.Now()
 	retrievedPrefix := addr.Prefix
-	if eni.IsPDenabled && retrievedPrefix == nil {
+	if eni.IsPDEnabled && retrievedPrefix == nil {
 		ds.log.Infof("Prefix delegation is enabled and the IP is from secondary pool hence no need to update prefix pool")
 		ds.total--
 		isSecondaryIP = true
@@ -1038,7 +1038,7 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string,
 		deleteIPv4AddrfromPrefix(eni.IPv4Prefixes[retrievedPrefix.String()], addr)
 		//Remove the IP from eni DB
 		delete(eni.IPv4Addresses, addr.Address)
-		if !eni.IsPDenabled {
+		if !eni.IsPDEnabled {
 			ds.log.Infof("Prefix delegation is disabled but IP belongs to prefix pool")
 			isSecondaryIP = true
 		}
@@ -1162,7 +1162,7 @@ func (ds *DataStore) GetENIIPs(eniID string) ([]string, error) {
 		// /32 IPs from SIP or PD pool will be in eni.IPv4Addresses
 		// hence this has to be checked, IP belonging to a prefix can be
 		// a possibility because of PD enable/disable knob toggle
-		if !eni.IsPDenabled && addr.Prefix != nil {
+		if !eni.IsPDEnabled && addr.Prefix != nil {
 			ds.log.Debugf("IP %s belongs to prefix pool so do not account", ip)
 			continue
 		}
