@@ -1205,9 +1205,6 @@ func (ds *DataStore) GetFreePrefixes() int {
 }
 
 func (ds *DataStore) CleanupDataStore(eniID string, ipv4 string, force bool, enableIpv4PrefixDelegation bool) error {
-	ds.lock.Lock()
-	defer ds.lock.Unlock()
-
 	var err error
 	if !enableIpv4PrefixDelegation {
 		err = ds.DelIPv4AddressFromStore(eniID, ipv4, force)
