@@ -17,6 +17,8 @@ import "time"
 
 const (
 	DefaultTestNamespace = "cni-automation"
+	AwsNodeNamespace     = "kube-system"
+	AwsNodeName          = "aws-node"
 )
 
 const (

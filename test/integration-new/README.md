@@ -7,6 +7,7 @@ The integration test requires
 - At least 2 nodes in a node group.
 - Nodes in the nodegroup shouldn't have existing pods.
 - Ginkgo installed on your environment. To install `go get github.com/onsi/ginkgo/ginkgo`
+- Supports instance types having at least 3 ENIs and 16+ Secondary IPv4 Addresses across all ENIs.
 
 ####Testing
 Set the environment variables that will be passed to Ginkgo script. If you want to directly pass the arguments you can skip to next step.
