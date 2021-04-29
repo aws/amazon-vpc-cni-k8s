@@ -331,7 +331,8 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 	return result, nil
 }
 
-func (cache *EC2InstanceMetadataCache) getNetworkInterfacesWithContext(ctx context.Context, eniIds []*string) (*ec2.DescribeNetworkInterfacesOutput, error) {
+func (cache *EC2InstanceMetadataCache) getNetworkInterfacesWithContext(ctx context.Context, eniID string) (*ec2.DescribeNetworkInterfacesOutput, error) {
+	eniIds := []*string{aws.String(eniID)}
 	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIds}
 
 	start := time.Now()
@@ -941,8 +942,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 
 // getENIAttachmentID calls EC2 to fetch the attachmentID of a given ENI
 func (cache *EC2InstanceMetadataCache) getENIAttachmentID(eniID string) (*string, error) {
-	eniIds := []*string{aws.String(eniID)}
-	result, err := cache.getNetworkInterfacesWithContext(context.Background(), eniIds)
+	result, err := cache.getNetworkInterfacesWithContext(context.Background(), eniID)
 	if err != nil {
 		return nil, err
 	}
@@ -991,8 +991,7 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string, maxBackoffDelay
 
 // GetIPv4sFromEC2 calls EC2 and returns a list of all addresses on the ENI
 func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList []*ec2.NetworkInterfacePrivateIpAddress, err error) {
-	eniIds := []*string{aws.String(eniID)}
-	result, err := cache.getNetworkInterfacesWithContext(context.Background(), eniIds)
+	result, err := cache.getNetworkInterfacesWithContext(context.Background(), eniID)
 	if err != nil {
 		return nil, err
 	}
@@ -1008,8 +1007,7 @@ func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList [
 
 // GetIPv4PrefixesFromEC2 calls EC2 and returns a list of all addresses on the ENI
 func (cache *EC2InstanceMetadataCache) GetIPv4PrefixesFromEC2(eniID string) (addrList []*ec2.Ipv4PrefixSpecification, err error) {
-	eniIds := []*string{aws.String(eniID)}
-	result, err := cache.getNetworkInterfacesWithContext(context.Background(), eniIds)
+	result, err := cache.getNetworkInterfacesWithContext(context.Background(), eniID)
 	if err != nil {
 		return nil, err
 	}
