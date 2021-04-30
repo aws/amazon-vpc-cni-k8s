@@ -181,21 +181,21 @@ type APIs interface {
 // EC2InstanceMetadataCache caches instance metadata
 type EC2InstanceMetadataCache struct {
 	// metadata info
-	securityGroups       StringSet
-	subnetID             string
-	localIPv4            net.IP
-	instanceID           string
-	instanceType         string
-	primaryENI           string
-	primaryENImac        string
-	availabilityZone     string
-	region               string
-	unmanagedENIs        StringSet
-	useCustomNetworking  bool
-	cniunmanagedENIs     StringSet
+	securityGroups          StringSet
+	subnetID                string
+	localIPv4               net.IP
+	instanceID              string
+	instanceType            string
+	primaryENI              string
+	primaryENImac           string
+	availabilityZone        string
+	region                  string
+	unmanagedENIs           StringSet
+	useCustomNetworking     bool
+	cniunmanagedENIs        StringSet
 	useIPv4PrefixDelegation bool
-	imds                 TypedIMDS
-	ec2SVC               ec2wrapper.EC2
+	imds                    TypedIMDS
+	ec2SVC                  ec2wrapper.EC2
 }
 
 // ENIMetadata contains information about an ENI
@@ -376,7 +376,7 @@ func New(useCustomNetworking, useIPv4PrefixDelegation bool) (*EC2InstanceMetadat
 	cache.useCustomNetworking = useCustomNetworking
 	log.Infof("Custom networking enabled %v", cache.useCustomNetworking)
 
-	cache.useIPv4PrefixDelegation = useIPv4PrefixDelegation 
+	cache.useIPv4PrefixDelegation = useIPv4PrefixDelegation
 	log.Infof("Prefix Delegation enabled %v", cache.useIPv4PrefixDelegation)
 
 	awsCfg := aws.NewConfig().WithRegion(region)
@@ -588,21 +588,29 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			PrivateIpAddress: aws.String(ip4.String()),
 		}
 	}
-	
+
 	var ec2ipv4Prefixes []*ec2.Ipv4PrefixSpecification
-	//Get prefix on primary ENI when custom networking is enabled is not needed. Everytime we 
-	//call attached ENIs, the call will return prefix not found in the logs and that will pollute 
+	//Get prefix on primary ENI when custom networking is enabled is not needed. Everytime we
+	//call attached ENIs, the call will return prefix not found in the logs and that will pollute
 	//ipamd.log hence skipping.
-	if (eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC) {
-		imdsIPv4Prefixes, err := cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
-		if err != nil {
-			return ENIMetadata{}, err
+
+	//Prefix get is taking more time, so adding a check for preview. Will remove this for GA.
+	if cache.useIPv4PrefixDelegation {
+		start := time.Now()
+		log.Debugf("Querying for prefix")
+		if (eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC) {
+			imdsIPv4Prefixes, err := cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
+			if err != nil {
+				return ENIMetadata{}, err
+			}
+			for _, ipv4prefix := range imdsIPv4Prefixes {
+				ec2ipv4Prefixes = append(ec2ipv4Prefixes, &ec2.Ipv4PrefixSpecification{
+					Ipv4Prefix: aws.String(ipv4prefix.String()),
+				})
+			}
 		}
-		for _, ipv4prefix := range imdsIPv4Prefixes {
-			ec2ipv4Prefixes = append(ec2ipv4Prefixes, &ec2.Ipv4PrefixSpecification{
-				Ipv4Prefix: aws.String(ipv4prefix.String()),
-			})
-		}
+		elapsed := time.Since(start)
+		log.Debugf("Time taken to return prefix query %s", elapsed)
 	}
 
 	return ENIMetadata{

@@ -928,10 +928,18 @@ func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget, minimumIPTarget, war
 	}
 
 	removableENI := deletableENI.ID
-	eniIPCount := len(ds.eniPool[removableENI].IPv4Addresses)
-	ds.total -= eniIPCount
-	ds.log.Infof("RemoveUnusedENIFromStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
-		removableENI, eniIPCount, ds.total, ds.assigned)
+	if !ds.eniPool[removableENI].IsPDEnabled {
+		eniIPCount := len(ds.eniPool[removableENI].IPv4Addresses)
+		ds.total -= eniIPCount
+		ds.log.Infof("RemoveUnusedENIFromStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
+			removableENI, eniIPCount, ds.total, ds.assigned)
+	} else {
+		_, numIPsPerPrefix, _ := GetPrefixDelegationDefaults()
+		ds.total = ds.total - (len(ds.eniPool[removableENI].IPv4Prefixes) * numIPsPerPrefix)
+		ds.allocatedPrefix -= len(ds.eniPool[removableENI].IPv4Prefixes)
+		ds.log.Infof("RemoveUnusedENIFromStore %s: Prefix address pool stats: free %d addresses, total: %d, assigned: %d total prefixes: %d",
+			removableENI, len(ds.eniPool[removableENI].IPv4Prefixes), ds.total, ds.assigned, ds.allocatedPrefix)
+	}
 	delete(ds.eniPool, removableENI)
 
 	// Prometheus update
