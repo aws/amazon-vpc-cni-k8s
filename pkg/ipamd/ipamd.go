@@ -1010,7 +1010,8 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 		shouldRemoveExtra = available >= (c.warmENITarget+1)*c.maxIPsPerENI
 	} else if c.enableIpv4PrefixDelegation {
 		// All Ips are available so see if we need to remove some ENIs
-		shouldRemoveExtra = available == (totalPrefix * 16)
+		_, maxIpsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
+		shouldRemoveExtra = available == (totalPrefix * maxIpsPerPrefix)
 		log.Debugf("Total available IPs %d and prefixes available %d", available, totalPrefix)
 	}
 	if shouldRemoveExtra {
