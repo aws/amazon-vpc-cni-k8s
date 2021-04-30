@@ -109,9 +109,9 @@ dist: all
 BUILD_MODE ?= -buildmode=pie
 build-linux: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
 build-linux:    ## Build the VPC CNI plugin agent using the host's Go toolchain.
-	go build $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
-	go build $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
-	go build $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
+	go build -mod=mod $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
+	go build -mod=mod $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
+	go build -mod=mod $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
 
 # Build VPC CNI plugin & agent container image.
 docker:      ## Build VPC CNI plugin & agent container image.
@@ -136,7 +136,7 @@ docker-func-test: docker     ## Run the built CNI container image to use in func
 # Run unit tests
 unit-test: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
 unit-test:    ## Run unit tests
-	go test -v -coverprofile=coverage.txt -covermode=atomic $(ALLPKGS)
+	 go test -v -mod=mod -coverprofile=coverage.txt -covermode=atomic $(ALLPKGS)
 
 # Run unit tests with race detection (can only be run natively)
 unit-test-race: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
@@ -199,7 +199,7 @@ generate:
 # Generate eni-max-pods.txt file for EKS AMI
 generate-limits: GOOS=
 generate-limits:    ## Generate limit file go code
-	go run scripts/gen_vpc_ip_limits.go
+	go run -mod=mod scripts/gen_vpc_ip_limits.go
 
 # Fetch the CNI plugins
 plugins: FETCH_VERSION=0.9.0

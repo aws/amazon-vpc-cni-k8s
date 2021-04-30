@@ -450,6 +450,30 @@ You can use the below command to enable `DISABLE_TCP_EARLY_DEMUX` to `true` -
 ```
 kubectl patch daemonset aws-node -n kube-system -p '{"spec": {"template": {"spec": {"initContainers": [{"env":[{"name":"DISABLE_TCP_EARLY_DEMUX","value":"true"}],"name":"aws-vpc-cni-init"}]}}}}'
 ```
+---
+
+`ENABLE_PREFIX_DELEGATION` (Since v1.9)
+
+Type: Boolean as a String
+
+Default: `false`
+
+To enable IPv4 prefix delegation on nitro instances. Setting `ENABLE_PREFIX_DELEGATION` flag toggle to `true` will start allocating a /28 prefix 
+instead of a secondary IP in the ENIs subnet. The total number of prefixes and private IP addresses will be less than the
+limit on private IPs allowed by your instance. The current preview will support a single /28 prefix per ENI. Knob toggle while pods are running or if
+ENIs are attached is not supported. On toggling the knob, node should be recycled to set the new kubelet max pods value.
+
+---
+
+`WARM_PREFIX_TARGET` 
+
+Type: Integer
+
+Default: None
+
+Specifies the number of free IPv4(/28) prefixes that the `ipamd` daemon should attempt to keep available for pod assignment on the node.
+This environment variable overrides `WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` and works when `ENABLE_PREFIX_DELEGATION`  
+is set to `true`. The current preview release will support a single /28 prefix per ENI hence setting this will cause additional ENIs to be allocated.
 
 ### ENI tags related to Allocation
 
