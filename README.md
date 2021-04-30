@@ -484,6 +484,15 @@ value for the Kubelet's `--max-pods` configuration option. Consider also
 updating the `MAX_ENI` and `--max-pods` configuration options on this plugin
 and the kubelet respectively if you are making use of this tag.
 
+### Container Runtime 
+
+Currently IPAMD uses dockershim socket to pull pod sandboxes information upon its starting. The runtime can be set to others.
+The mountPath should be changed to `/var/run/cri.sock` and hostPath should be pointed to the wanted socket, such as 
+`/var/run/containerd/containerd.sock` for containerd. If using helm chart, the flag `--set cri.hostPath=/var/run/containerd/containerd.sock`
+can set the paths for you.
+
+*Note*: When using other container runtime instead of dockershim, make sure also setting kubelet in instances.
+
 ### Notes
 
 `L-IPAMD`(aws-node daemonSet) running on every worker node requires access to kubernetes API server. If it can **not** reach

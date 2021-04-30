@@ -163,5 +163,4 @@ eniConfig:
     #   - sg-789
 
 cri:
-  enabled: false
-  hostPath: ""
+  hostPath: # "/var/run/containerd/containerd.sock"

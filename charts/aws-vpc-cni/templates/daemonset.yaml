@@ -98,7 +98,7 @@ spec:
 {{- end }}
           - mountPath: /host/var/log/aws-routed-eni
             name: log-dir
-{{- if .Values.cri.enabled }}
+{{- if .Values.cri.hostPath }}
           - mountPath: /var/run/cri.sock
             name: cri
 {{- else }}
@@ -121,7 +121,7 @@ spec:
         configMap:
           name: {{ include "aws-vpc-cni.fullname" . }}
 {{- end }}
-{{- if .Values.cri.enabled }}
+{{- if .Values.cri.hostPath }}
       - name: cri
         hostPath:
           path: {{- toYaml .Values.cri.hostPath | nindent 18 }}
