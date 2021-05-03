@@ -29,12 +29,12 @@ import (
 var _ = Describe("Custom Networking Test", func() {
 
 	var (
-		deployment *v1.Deployment
-		podList coreV1.PodList
-		podLabelKey string
-		podLabelVal string
-		port int
-		replicaCount int
+		deployment    *v1.Deployment
+		podList       coreV1.PodList
+		podLabelKey   string
+		podLabelVal   string
+		port          int
+		replicaCount  int
 		shouldConnect bool
 	)
 
@@ -87,7 +87,7 @@ var _ = Describe("Custom Networking Test", func() {
 
 				_, err := f.K8sResourceManagers.JobManager().
 					CreateAndWaitTillJobCompleted(testJob)
-				if shouldConnect  {
+				if shouldConnect {
 					By("verifying connection to pod succeeds on port " + strconv.Itoa(port))
 					Expect(err).ToNot(HaveOccurred())
 				} else {
