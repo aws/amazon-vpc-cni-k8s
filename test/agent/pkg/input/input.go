@@ -16,4 +16,11 @@ package input
 type TestStatus struct {
 	SuccessCount int
 	FailureCount int
+	SourcePod    string
+	Failures     []Failure
+}
+
+type Failure struct {
+	DestinationIP string
+	FailureReason string
 }

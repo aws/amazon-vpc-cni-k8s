@@ -1,11 +1,11 @@
-###Test Agent
+### Test Agent
 The test agent contains multiple binaries that are used by Ginkgo Automation tests. 
 
-###List of Go Binaries in the Agent
+### List of Go Binaries in the Agent
 
 Currently the agent supports the following Go Binaries.
 
-####Traffic Testing
+#### Traffic Testing
 
 For traffic validation across multiple pods we have the following 3 Go binaries.
 
@@ -26,13 +26,13 @@ One way to run the traffic test is as follows
 - Deploy M Client pods and pass the IP Address of N Servers as input.
 - Query the metric server to see the Success/Failure Rate.
 
-####Networking Testing
+#### Networking Testing
 Networking testing binary must be invoked on a pod that runs in Host Networking mode. It is capable of testing the Pod networking is setup correctly and once the Pod has been deleted the networking has been teared down correctly by the CNI Plugin.
 
-###How to test the Agent locally
+### How to test the Agent locally
 Apart from running the tests on your local environment. For some test cases where we want to run test on Pod (for instance Pod networking tests) we can copy over the binary to the Pod and execute it. For e2e testing, we can push docker image to ECR and use the image in automation test suite.
 
-####Running individual test component inside a Pod
+#### Running individual test component inside a Pod
 - While development you could generate the binary for the component you want to test. Let's say you would like to test the pod networking setup on a host network pod.
   ```
   COMPONENT=networking #Example, when testing networking go binary
@@ -54,7 +54,7 @@ Apart from running the tests on your local environment. For some test cases wher
   ./tmp/<component> --<flags>
   ```
 
-####Running the docker Image
+#### Running the docker Image
 
 Run the following command to build the agent image and push to ECR. This needs an existing repository with name "amazon/amazon-k8s-cni/test/agent"
 ```
@@ -62,7 +62,7 @@ AWS_ACCOUNT=<account> AWS_REGION=<region> make docker-build docker-push
 ``` 
 Change the agent image in the Go code and run the test case as usual.
 
-####Finalizing the changes
+#### Finalizing the changes
 - Submit PR with the change to Agent.
 - One of the AWS Maintainer will push the image to ECR (Till we have pipeline that does this for us)
 - Use the updated image tag wherever you want to update the docker image in automation tests.

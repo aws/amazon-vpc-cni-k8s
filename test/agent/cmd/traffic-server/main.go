@@ -34,7 +34,7 @@ func main() {
 
 	flag.Parse()
 
-	addr := fmt.Sprintf("%s:%s", "localhost", serverPort)
+	addr := fmt.Sprintf(":%s", serverPort)
 
 	if serverMode == "tcp" {
 		StartTCPServer(addr)

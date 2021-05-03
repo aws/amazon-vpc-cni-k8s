@@ -21,6 +21,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -58,32 +59,37 @@ func main() {
 	log.Printf("will test connection %s to the list of server %v on port %s",
 		connectionMode, serverList, serverPort)
 
+	hostName, err := os.Hostname()
+	if err != nil {
+		log.Fatalf("failed to get the host name: %v", err)
+	}
+
+	var failureList []input.Failure
 	for _, server := range serverList {
 		serverAddr := fmt.Sprintf("%s:%s", server, serverPort)
 
 		// Get connection based on the server mode - tcp/udp
-		conn, err := getConnection(serverAddr, connectionMode)
-		if err != nil {
-			log.Printf("failed to get connection to server %s: %v", serverAddr, err)
-			failure++
+		conn, failure := getConnection(serverAddr, connectionMode)
+		if failure != nil {
+			failureList = append(failureList, *failure)
 			continue
 		}
 
 		// Send data to the server and wait for response from the server (this sequence is
 		// expected from the server)
-		err = sendAndReceiveResponse(conn, serverAddr)
-		if err != nil {
-			log.Printf("failed to send/receive response from server %s: %v", serverAddr, err)
-			failure++
+		failure = sendAndReceiveResponse(conn, serverAddr)
+		if failure != nil {
+			failureList = append(failureList, *failure)
 			continue
 		}
 
 		// Connection successfully tested, mark as success and test next server
 		success++
-
 	}
 
-	fmt.Printf("Success: %d, Failure: %d", success, failure)
+	failure = len(failureList)
+
+	fmt.Printf("Success: %d, Failure: %d, Failure Reason: %v", success, failure, failureList)
 
 	// Report metrics to the aggregator address from all the clients if provided
 	// Otherwise the results can be read from stdout
@@ -91,6 +97,8 @@ func main() {
 		body, _ := json.Marshal(input.TestStatus{
 			SuccessCount: success,
 			FailureCount: failure,
+			SourcePod:    hostName,
+			Failures:     failureList,
 		})
 		resp, err := http.Post(metricAggregatorAddr, "application/json", bytes.NewBuffer(body))
 		if err != nil {
@@ -105,38 +113,51 @@ func main() {
 	}
 }
 
-func getConnection(serverAddr string, serverMode string) (net.Conn, error) {
+func getConnection(serverAddr string, serverMode string) (net.Conn, *input.Failure) {
+	failure := &input.Failure{
+		DestinationIP: serverAddr,
+	}
+
 	if serverMode == "tcp" {
 		conn, err := net.DialTimeout("tcp", serverAddr, TcpTimeout)
 		if err != nil {
-			return nil, fmt.Errorf("failed to connect to server %s: %v", serverAddr, err)
+			failure.FailureReason = fmt.Sprintf("failed to connect to server %v", err)
+			return nil, failure
 		}
 		return conn, nil
 	}
 	if serverMode == "udp" {
 		udpAddr, err := net.ResolveUDPAddr("udp", serverAddr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve the server address: %v", err)
+			failure.FailureReason = fmt.Sprintf("failed to resolve the server address: %v", err)
+			return nil, failure
 		}
 
 		conn, err := net.DialUDP("udp", nil, udpAddr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to connect to udp server: %v", err)
+			failure.FailureReason = fmt.Sprintf("failed to connect to udp server: %v", err)
+			return nil, failure
 		}
 		return conn, nil
 	}
 
-	return nil, fmt.Errorf("invalid server mode provided %s", serverMode)
+	failure.FailureReason = fmt.Sprintf("invalid server mode provided %s", serverMode)
+	return nil, failure
 }
 
-func sendAndReceiveResponse(conn net.Conn, serverAddr string) error {
+func sendAndReceiveResponse(conn net.Conn, serverAddr string) *input.Failure {
 	defer conn.Close()
+
+	failure := &input.Failure{
+		DestinationIP: serverAddr,
+	}
 
 	data := []byte(ClientRequestData)
 
 	_, err := conn.Write(data)
 	if err != nil {
-		return fmt.Errorf("failed to write to server: %v", err)
+		failure.FailureReason = fmt.Sprintf("failed to write to server: %v", err)
+		return failure
 	}
 
 	log.Printf("successfully sent data to the server %s", serverAddr)
@@ -144,7 +165,8 @@ func sendAndReceiveResponse(conn net.Conn, serverAddr string) error {
 	buffer := make([]byte, 1024)
 	respLen, err := conn.Read(buffer)
 	if err != nil || respLen == 0 {
-		return fmt.Errorf("failed to read from the server, resp length %d: %v", respLen, err)
+		failure.FailureReason = fmt.Sprintf("failed to read from the server, resp length %d: %v", respLen, err)
+		return failure
 	}
 
 	log.Printf("successfully recieved response from server %s: %s", serverAddr, string(buffer))
