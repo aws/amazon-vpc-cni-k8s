@@ -18,8 +18,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-
 	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -39,10 +37,6 @@ func TestIPAMD(t *testing.T) {
 var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
 
-	By("creating test namespace")
-	f.K8sResourceManagers.NamespaceManager().
-		CreateNamespace(utils.DefaultTestNamespace)
-
 	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey,
 		f.Options.NgNameLabelVal)
 	Expect(err).ToNot(HaveOccurred())
@@ -54,10 +48,4 @@ var _ = BeforeSuite(func() {
 	instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
 	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(instanceID)
 	Expect(err).ToNot(HaveOccurred())
-})
-
-var _ = AfterSuite(func() {
-	By("deleting test namespace")
-	f.K8sResourceManagers.NamespaceManager().
-		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 })

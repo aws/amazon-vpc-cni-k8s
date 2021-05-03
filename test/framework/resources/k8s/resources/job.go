@@ -68,6 +68,7 @@ func (d *defaultJobManager) DeleteAndWaitTillJobIsDeleted(job *v1.Job) error {
 	if err != nil {
 		return err
 	}
+
 	observedJob := &v1.Job{}
 	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
 		if err := d.k8sClient.Get(ctx, utils.NamespacedName(job), observedJob); err != nil {
