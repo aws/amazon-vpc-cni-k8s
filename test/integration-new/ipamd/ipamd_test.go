@@ -14,18 +14,19 @@ const (
 
 var _ = Describe("ENI/IP Leak Test", func() {
 	Context("ENI/IP Released on Pod Deletion", func() {
-		It("Verify that on Pod Deletion, ENI/IP State is restored", func() {
+		FIt("Verify that on Pod Deletion, ENI/IP State is restored", func() {
 			By("Recording the initial count of IP before new deployment")
 			oldIP, oldENI := getCountOfIPAndENI(primaryInstanceId)
 
+			maxPods := getMaxApplicationPodsOnPrimaryInstance()
 			deploymentSpec := manifest.NewBusyBoxDeploymentBuilder().
 				Namespace("default").
 				Name("busybox").
 				NodeName(primaryNode.Name).
-				Replicas(17).
+				Replicas(int(maxPods)).
 				Build()
 
-			By("Deploying a large number of Busybox Deployment")
+			By("Deploying a max number of Busybox pods")
 			_, err := f.K8sResourceManagers.
 				DeploymentManager().
 				CreateAndWaitTillDeploymentIsReady(deploymentSpec)
@@ -53,13 +54,25 @@ var _ = Describe("ENI/IP Leak Test", func() {
 })
 
 func getCountOfIPAndENI(instanceId string) (int, int) {
-	instance, err := f.CloudServices.EC2().DescribeInstance(instanceId)
-	Expect(err).NotTo(HaveOccurred())
-
-	eni := len(instance.NetworkInterfaces)
+	eni := len(primaryInstance.NetworkInterfaces)
 	ip := 0
-	for _, ni := range instance.NetworkInterfaces {
+	for _, ni := range primaryInstance.NetworkInterfaces {
 		ip += len(ni.PrivateIpAddresses)
 	}
-	return eni, ip
+	return ip, eni
+}
+
+func getMaxApplicationPodsOnPrimaryInstance() int64 {
+	instanceType := primaryInstance.InstanceType
+	instaceInfo, err := f.CloudServices.EC2().DescribeInstanceType(*instanceType)
+	Expect(err).NotTo(HaveOccurred())
+
+	currInstance := instaceInfo[0]
+	maxENI := currInstance.NetworkInfo.MaximumNetworkInterfaces
+	maxIPPerENI := currInstance.NetworkInfo.Ipv4AddressesPerInterface
+
+	// If core-dns pods are running on this instance then we need to exclude them as well
+	// additional 1 for hostNetworkPod scheduled in beforesuite
+	maxPods := *maxENI*(*maxIPPerENI-1) - int64(numOfNodes) - 1
+	return maxPods
 }

@@ -54,30 +54,12 @@ var _ = BeforeSuite(func() {
 
 	primaryNodePublicIP = *instance.PublicIpAddress
 
-	volume := []v1.Volume{
-		{
-			Name: VOLUME_NAME,
-			VolumeSource: v1.VolumeSource{
-				HostPath: &v1.HostPathVolumeSource{
-					Path: VOLUME_MOUNT_PATH,
-				},
-			},
-		},
-	}
-
-	volumeMount := []v1.VolumeMount{
-		{
-			Name:      VOLUME_NAME,
-			MountPath: VOLUME_NAME,
-		},
-	}
 	hostNetworkDeploymentSpec = manifest.NewBusyBoxDeploymentBuilder().
 		Namespace("default").
 		Name("host-network").
 		Replicas(1).
 		HostNetwork(true).
 		PodLabel(HOST_POD_LABEL_KEY, HOST_POD_LABEL_VAL).
-		MountVolume(volume, volumeMount).
 		NodeName(primaryNode.Name).
 		Build()
 

@@ -10,6 +10,7 @@ require (
 	github.com/onsi/ginkgo v1.12.1
 	github.com/onsi/gomega v1.11.0
 	github.com/pkg/errors v0.9.1
+	github.com/vishvananda/netlink v1.1.1-0.20201029203352-d40f9887b852
 	k8s.io/api v0.18.6
 	k8s.io/apimachinery v0.18.6
 	k8s.io/client-go v0.18.6

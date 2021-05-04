@@ -1,11 +1,11 @@
 package env_vars
 
 import (
-	"fmt"
-	"net"
+	"regexp"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
+	v1 "k8s.io/api/core/v1"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -15,6 +15,8 @@ const (
 	AWS_VPC_ENI_MTU            = "AWS_VPC_ENI_MTU"
 	AWS_VPC_K8S_CNI_LOG_FILE   = "AWS_VPC_K8S_CNI_LOG_FILE"
 	AWS_VPC_K8S_CNI_VETHPREFIX = "AWS_VPC_K8S_CNI_VETHPREFIX"
+	POD_VOL_LABEL_KEY          = "MountVolume"
+	POD_VOL_LABEL_VAL          = "true"
 )
 
 var _ = Describe("cni env test", func() {
@@ -59,42 +61,32 @@ var _ = Describe("cni env test", func() {
 				CreateAndWaitTillDeploymentIsReady(deploymentSpec)
 			Expect(err).ToNot(HaveOccurred())
 
-			conn, err := net.Dial("tcp", primaryNodePublicIP)
+			stdout, _, err := f.K8sResourceManagers.PodManager().PodExec("default", hostNetworkPod.Name, []string{"ifconfig"})
 			Expect(err).NotTo(HaveOccurred())
 
-			interfaces, err := net.Interfaces()
-			Expect(err).NotTo(HaveOccurred())
+			re := regexp.MustCompile(`\n`)
+			input := re.ReplaceAllString(stdout, "")
 
-			for _, ni := range interfaces {
-				fmt.Printf("Name:%s, MTU: %d\n", ni.Name, ni.MTU)
+			re = regexp.MustCompile(`eth.*lo`)
+			eth := re.FindStringSubmatch(input)[0]
+
+			re = regexp.MustCompile(`MTU:[0-9]*`)
+			mtus := re.FindAllStringSubmatch(eth, -1)
+
+			By("Validating new MTU value")
+			// Validate MTU
+			for _, m := range mtus {
+				Expect(m[0]).To(Equal("MTU:1300"))
 			}
 
-			// stdout, _, err := f.K8sResourceManagers.PodManager().PodExec("default", hostNetworkPod.Name, []string{"ifconfig"})
-			// Expect(err).NotTo(HaveOccurred())
+			By("Validating new VETH Prefix")
+			// Validate VETH Prefix
+			// Adding the new MTU value to below regex ensures that we are checking the recently created
+			// veth and not any older entries
+			re = regexp.MustCompile(`veth.*MTU:1300`)
+			veth := re.FindAllString(input, -1)
 
-			// re := regexp.MustCompile(`\n`)
-			// input := re.ReplaceAllString(stdout, "")
-
-			// re = regexp.MustCompile(`eth.*lo`)
-			// eth := re.FindStringSubmatch(input)[0]
-
-			// re = regexp.MustCompile(`MTU:[0-9]*`)
-			// mtus := re.FindAllStringSubmatch(eth, -1)
-
-			// By("Validating new MTU value")
-			// // Validate MTU
-			// for _, m := range mtus {
-			// 	Expect(m[0]).To(Equal("MTU:1300"))
-			// }
-
-			// By("Validating new VETH Prefix")
-			// // Validate VETH Prefix
-			// // Adding the new MTU value to below regex ensures that we are checking the recently created
-			// // veth and not any older entries
-			// re = regexp.MustCompile(`veth.*MTU:1300`)
-			// veth := re.FindAllString(input, -1)
-
-			// Expect(len(veth)).NotTo(Equal(0))
+			Expect(len(veth)).NotTo(Equal(0))
 
 			By("Deleting BusyBox Deployment")
 			err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deploymentSpec)
@@ -108,6 +100,47 @@ var _ = Describe("cni env test", func() {
 		})
 
 		It("Changing AWS_VPC_K8S_CNI_LOG_FILE", func() {
+			By("Deploying a host network deployment with Volume mount")
+			curlContainer := manifest.NewBusyBoxContainerBuilder().Image("curlimages/curl:7.76.1").Name("curler").Build()
+
+			volume := []v1.Volume{
+				{
+					Name: VOLUME_NAME,
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: VOLUME_MOUNT_PATH,
+						},
+					},
+				},
+			}
+
+			volumeMount := []v1.VolumeMount{
+				{
+					Name:      VOLUME_NAME,
+					MountPath: VOLUME_NAME,
+				},
+			}
+
+			deploymentSpecWithVol := manifest.NewDefaultDeploymentBuilder().
+				Namespace("default").
+				Name("host-network").
+				Replicas(1).
+				HostNetwork(true).
+				Container(curlContainer).
+				PodLabel(POD_VOL_LABEL_KEY, POD_VOL_LABEL_VAL).
+				MountVolume(volume, volumeMount).
+				NodeName(primaryNode.Name).
+				Build()
+
+			_, err := f.K8sResourceManagers.
+				DeploymentManager().
+				CreateAndWaitTillDeploymentIsReady(deploymentSpecWithVol)
+			Expect(err).NotTo(HaveOccurred())
+
+			pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(POD_VOL_LABEL_KEY, POD_VOL_LABEL_VAL)
+			Expect(err).NotTo(HaveOccurred())
+
+			podWithVol := pods.Items[0]
 			currLogFilepath := getEnvValueForKey(AWS_VPC_K8S_CNI_LOG_FILE)
 			Expect(currLogFilepath).NotTo(Equal(""))
 
@@ -116,16 +149,18 @@ var _ = Describe("cni env test", func() {
 				AWS_VPC_K8S_CNI_LOG_FILE: "/host/var/log/aws-routed-eni/" + newLogFile,
 			})
 
-			stdout, _, err := f.K8sResourceManagers.PodManager().PodExec("default", hostNetworkPod.Name, []string{"tail", "-n", "5", "ipamd-logs/ipamd_test.log"})
+			stdout, _, err := f.K8sResourceManagers.PodManager().PodExec("default", podWithVol.Name, []string{"tail", "-n", "5", "ipamd-logs/ipamd_test.log"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).NotTo(Equal(""))
 
 			By("Restoring old value on daemonset")
-			{
-				restoreOldValues(map[string]string{
-					AWS_VPC_K8S_CNI_LOG_FILE: currLogFilepath,
-				})
-			}
+			restoreOldValues(map[string]string{
+				AWS_VPC_K8S_CNI_LOG_FILE: currLogFilepath,
+			})
+
+			By("Deleing deployment with Volume Mount")
+			err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(hostNetworkDeploymentSpec)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })
