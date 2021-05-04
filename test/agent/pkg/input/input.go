@@ -24,3 +24,24 @@ type Failure struct {
 	DestinationIP string
 	FailureReason string
 }
+
+type PodNetworkingValidationInput struct {
+	// CIDR Range associated with the VPC
+	VPCCidrRange []string
+	// Prefix for the veth pair on host network ns
+	VethPrefix string
+	// List of pod to validate the networking
+	PodList []Pod
+}
+
+type Pod struct {
+	// Name of the pod
+	PodName string
+	// Namespace of the pod, used to generate the Link
+	PodNamespace string
+	// IPv4 Address of the pod
+	PodIPv4Address string
+	// Set to true when the Pod is scheduled on IP
+	// from the Secondary ENI
+	IsIPFromSecondaryENI bool
+}
