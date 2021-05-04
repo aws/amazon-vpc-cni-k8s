@@ -31,6 +31,7 @@ type EC2 interface {
 	AuthorizeSecurityGroupEgress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
 	RevokeSecurityGroupEgress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
 	AssociateVPCCIDRBlock(vpcId string, cidrBlock string) (*ec2.AssociateVpcCidrBlockOutput, error)
+	TerminateInstance(instanceIDs []string) error
 	DisAssociateVPCCIDRBlock(associationID string) error
 	DescribeSubnet(subnetID string) (*ec2.DescribeSubnetsOutput, error)
 	CreateSubnet(cidrBlock string, vpcID string, az string) (*ec2.CreateSubnetOutput, error)
@@ -255,6 +256,15 @@ func (d *defaultEC2) DeleteKey(keyName string) error {
 		KeyName: aws.String(keyName),
 	}
 	_, err := d.EC2API.DeleteKeyPair(deleteKeyPairInput)
+	return err
+}
+
+func (d *defaultEC2) TerminateInstance(instanceIDs []string) error {
+	terminateInstanceInput := &ec2.TerminateInstancesInput{
+		DryRun:      nil,
+		InstanceIds: aws.StringSlice(instanceIDs),
+	}
+	_, err := d.EC2API.TerminateInstances(terminateInstanceInput)
 	return err
 }
 

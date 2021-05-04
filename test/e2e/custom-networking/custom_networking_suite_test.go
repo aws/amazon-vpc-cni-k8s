@@ -124,18 +124,18 @@ var _ = BeforeSuite(func() {
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
+		// For deleting later
+		customNetworkingSubnetIDList = append(customNetworkingSubnetIDList, subnetID)
+		eniConfigList = append(eniConfigList, eniConfig.DeepCopy())
+
 		By("creating the ENIConfig with az name")
 		err = f.K8sResourceManagers.CustomResourceManager().CreateResource(eniConfig)
 		Expect(err).ToNot(HaveOccurred())
-
-		// For deleting later
-		customNetworkingSubnetIDList = append(customNetworkingSubnetIDList, subnetID)
-		eniConfigList = append(eniConfigList, eniConfig)
 	}
 
 	By("enabling custom networking on aws-node DaemonSet")
-	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node",
-		"kube-system", "aws-node", map[string]string{
+	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
+		utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
 			"AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG": "true",
 			"ENI_CONFIG_LABEL_DEF":               "failure-domain.beta.kubernetes.io/zone",
 			"WARM_ENI_TARGET":                    "0",
@@ -186,8 +186,8 @@ var _ = AfterSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	By("disabling custom networking on aws-node DaemonSet")
-	k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, "aws-node",
-		"kube-system", "aws-node", map[string]struct{}{
+	k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
+		utils.AwsNodeNamespace, utils.AwsNodeName, map[string]struct{}{
 			"AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG": {},
 			"ENI_CONFIG_LABEL_DEF":               {},
 			"WARM_ENI_TARGET":                    {},

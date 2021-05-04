@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 
@@ -96,7 +98,7 @@ var _ = Describe("test pod networking", func() {
 
 		primaryNodeDeployment, err = f.K8sResourceManagers.
 			DeploymentManager().
-			CreateAndWaitTillDeploymentIsReady(primaryNodeDeployment)
+			CreateAndWaitTillDeploymentIsReady(primaryNodeDeployment, utils.DefaultDeploymentReadyTimeout)
 		Expect(err).ToNot(HaveOccurred())
 
 		interfaceToPodListOnPrimaryNode =
@@ -121,7 +123,7 @@ var _ = Describe("test pod networking", func() {
 
 		secondaryNodeDeployment, err = f.K8sResourceManagers.
 			DeploymentManager().
-			CreateAndWaitTillDeploymentIsReady(secondaryNodeDeployment)
+			CreateAndWaitTillDeploymentIsReady(secondaryNodeDeployment, utils.DefaultDeploymentReadyTimeout)
 		Expect(err).ToNot(HaveOccurred())
 
 		interfaceToPodListOnSecondaryNode =
