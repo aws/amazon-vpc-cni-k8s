@@ -1015,6 +1015,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
 				badENIID := badENIID(aerr.Message())
 				log.Debugf("Could not find interface: %s, ID: %s", aerr.Message(), badENIID)
+				awsAPIErrInc("IMDSMetaDataOutOfSync", err)
 				// Remove this ENI from the map
 				delete(eniMap, badENIID)
 				// Remove the failing ENI ID from the EC2 API request and try again
