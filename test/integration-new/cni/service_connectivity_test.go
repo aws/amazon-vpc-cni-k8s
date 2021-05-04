@@ -71,7 +71,7 @@ var _ = Describe("test service connectivity", func() {
 
 		By("creating and waiting for deployment to be ready")
 		deployment, err = f.K8sResourceManagers.DeploymentManager().
-			CreateAndWaitTillDeploymentIsReady(deployment)
+			CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
 		Expect(err).ToNot(HaveOccurred())
 
 		service = manifest.NewHTTPService().

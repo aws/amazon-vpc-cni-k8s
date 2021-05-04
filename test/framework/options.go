@@ -33,6 +33,7 @@ type Options struct {
 	AWSVPCID       string
 	NgNameLabelKey string
 	NgNameLabelVal string
+	EKSEndpoint    string
 }
 
 func (options *Options) BindFlags() {
@@ -42,6 +43,7 @@ func (options *Options) BindFlags() {
 	flag.StringVar(&options.AWSVPCID, "aws-vpc-id", "", `AWS VPC ID for the kubernetes cluster`)
 	flag.StringVar(&options.NgNameLabelKey, "ng-name-label-key", "eks.amazonaws.com/nodegroup", "label key used to identify nodegroup name")
 	flag.StringVar(&options.NgNameLabelVal, "ng-name-label-val", "", "label value with the nodegroup name")
+	flag.StringVar(&options.EKSEndpoint, "eks-endpoint", "", "optional eks api server endpoint")
 }
 
 func (options *Options) Validate() error {

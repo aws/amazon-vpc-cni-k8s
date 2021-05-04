@@ -26,7 +26,7 @@ import (
 )
 
 type DeploymentManager interface {
-	CreateAndWaitTillDeploymentIsReady(deployment *v1.Deployment) (*v1.Deployment, error)
+	CreateAndWaitTillDeploymentIsReady(deployment *v1.Deployment, timeout time.Duration) (*v1.Deployment, error)
 	DeleteAndWaitTillDeploymentIsDeleted(deployment *v1.Deployment) error
 }
 
@@ -34,7 +34,9 @@ type defaultDeploymentManager struct {
 	k8sClient client.DelegatingClient
 }
 
-func (d defaultDeploymentManager) CreateAndWaitTillDeploymentIsReady(deployment *v1.Deployment) (*v1.Deployment, error) {
+// CreateAndWaitTillDeploymentIsReady creates and waits for deployment to become ready or timeout
+// with error if deployment doesn't become ready.
+func (d defaultDeploymentManager) CreateAndWaitTillDeploymentIsReady(deployment *v1.Deployment, timeout time.Duration) (*v1.Deployment, error) {
 	ctx := context.Background()
 	err := d.k8sClient.Create(ctx, deployment)
 	if err != nil {
@@ -45,7 +47,7 @@ func (d defaultDeploymentManager) CreateAndWaitTillDeploymentIsReady(deployment 
 	time.Sleep(utils.PollIntervalShort)
 
 	observed := &v1.Deployment{}
-	return observed, wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+	return observed, wait.PollImmediate(utils.PollIntervalShort, timeout, func() (bool, error) {
 		if err := d.k8sClient.Get(ctx, utils.NamespacedName(deployment), observed); err != nil {
 			return false, err
 		}
@@ -56,9 +58,10 @@ func (d defaultDeploymentManager) CreateAndWaitTillDeploymentIsReady(deployment 
 			return true, nil
 		}
 		return false, nil
-	}, ctx.Done())
+	})
 }
 
+//
 func (d defaultDeploymentManager) DeleteAndWaitTillDeploymentIsDeleted(deployment *v1.Deployment) error {
 	ctx := context.Background()
 	err := d.k8sClient.Delete(ctx, deployment)

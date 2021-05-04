@@ -28,6 +28,7 @@ type DeploymentBuilder struct {
 	replicas               int
 	container              corev1.Container
 	labels                 map[string]string
+	nodeSelector           map[string]string
 	terminationGracePeriod int
 	nodeName               string
 	hostNetwork            bool
@@ -42,6 +43,7 @@ func NewBusyBoxDeploymentBuilder() *DeploymentBuilder {
 		replicas:               10,
 		container:              NewBusyBoxContainerBuilder().Build(),
 		labels:                 map[string]string{"role": "test"},
+		nodeSelector:           map[string]string{},
 		terminationGracePeriod: 0,
 	}
 }
@@ -52,6 +54,11 @@ func NewDefaultDeploymentBuilder() *DeploymentBuilder {
 		terminationGracePeriod: 0,
 		labels:                 map[string]string{"role": "test"},
 	}
+}
+
+func (d *DeploymentBuilder) NodeSelector(labelKey string, labelVal string) *DeploymentBuilder {
+	d.nodeSelector[labelKey] = labelVal
+	return d
 }
 
 func (d *DeploymentBuilder) Namespace(namespace string) *DeploymentBuilder {
@@ -118,6 +125,7 @@ func (d *DeploymentBuilder) Build() *v1.Deployment {
 				},
 				Spec: corev1.PodSpec{
 					HostNetwork:                   d.hostNetwork,
+					NodeSelector:                  d.nodeSelector,
 					Containers:                    []corev1.Container{d.container},
 					TerminationGracePeriodSeconds: aws.Int64(int64(d.terminationGracePeriod)),
 					NodeName:                      d.nodeName,

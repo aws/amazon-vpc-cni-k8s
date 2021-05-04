@@ -68,7 +68,8 @@ func New(options Options) *Framework {
 		StatusClient: realClient,
 	}
 
-	cloudConfig := aws.CloudConfig{Region: options.AWSRegion, VpcID: options.AWSVPCID}
+	cloudConfig := aws.CloudConfig{Region: options.AWSRegion, VpcID: options.AWSVPCID,
+		EKSEndpoint: options.EKSEndpoint}
 
 	return &Framework{
 		Options:             options,
