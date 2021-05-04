@@ -132,7 +132,7 @@ var _ = Describe("Custom Networking Test", func() {
 
 	Context("when creating deployment on nodes that don't have ENIConfig", func() {
 		JustBeforeEach(func() {
-			By("deleting all existing ENIConfigs")
+			By("deleting ENIConfig for all availability zones")
 			for _, eniConfig := range eniConfigList {
 				err = f.K8sResourceManagers.CustomResourceManager().
 					DeleteResource(eniConfig)
@@ -141,7 +141,7 @@ var _ = Describe("Custom Networking Test", func() {
 		})
 
 		JustAfterEach(func() {
-			By("creating the deleted ENIConfigs")
+			By("re-creating ENIConfig for all availability zones")
 			for _, eniConfig := range eniConfigList {
 				err = f.K8sResourceManagers.CustomResourceManager().
 					CreateResource(eniConfig)
