@@ -50,6 +50,8 @@ replace k8s.io/sample-cli-plugin => k8s.io/sample-cli-plugin v0.0.0-201908191442
 
 replace k8s.io/sample-controller => k8s.io/sample-controller v0.0.0-20190819143301-7c475f5e1313
 
+replace github.com/mholt/caddy => github.com/caddyserver/caddy v1.0.3
+
 require (
 	github.com/onsi/ginkgo v1.8.0
 	github.com/onsi/gomega v1.5.0

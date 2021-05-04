@@ -60,6 +60,7 @@ func AddOrUpdateEnvironmentVariable(containers []v1.Container, containerName str
 // RemoveEnvironmentVariables removes the environment variable from the specified container
 func RemoveEnvironmentVariables(containers []v1.Container, containerName string,
 	envVars map[string]struct{}) error {
+	var updatedEnvVar []v1.EnvVar
 	containerIndex := -1
 	for i, container := range containers {
 		if container.Name != containerName {
@@ -67,9 +68,8 @@ func RemoveEnvironmentVariables(containers []v1.Container, containerName string,
 		}
 		containerIndex = i
 		for j := 0; j < len(container.Env); j++ {
-			if _, ok := envVars[container.Env[j].Name]; ok {
-				container.Env = append(container.Env[:j], container.Env[j+1:]...)
-				j--
+			if _, ok := envVars[container.Env[j].Name]; !ok {
+				updatedEnvVar = append(updatedEnvVar, container.Env[j])
 			}
 		}
 	}
@@ -78,6 +78,8 @@ func RemoveEnvironmentVariables(containers []v1.Container, containerName string,
 		return fmt.Errorf("failed to find cotnainer %s in list of containers",
 			containerName)
 	}
+
+	containers[containerIndex].Env = updatedEnvVar
 
 	return nil
 }

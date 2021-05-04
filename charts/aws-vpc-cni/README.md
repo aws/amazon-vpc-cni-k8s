@@ -54,6 +54,7 @@ The following table lists the configurable parameters for this chart and their d
 | `nodeSelector`          | Node labels for pod assignment                          | `{}`                                |
 | `podSecurityContext`    | Pod Security Context                                    | `{}`                                |
 | `podAnnotations`        | annotations to add to each pod                          | `{}`                                |
+| `podLabels`             | Labels to add to each pod                               | `{}`                                |
 | `priorityClassName`     | Name of the priorityClass                               | `system-node-critical`              |
 | `resources`             | Resources for the pods                                  | `requests.cpu: 10m`                 |
 | `securityContext`       | Container Security context                              | `capabilities: add: - "NET_ADMIN"`  |

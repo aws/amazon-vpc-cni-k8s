@@ -11,18 +11,25 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package utils
+package tester
 
-import "time"
+type PodNetworkingValidationInput struct {
+	// CIDR Range associated with the VPC
+	VPCCidrRange []string
+	// Prefix for the veth pair on host network ns
+	VethPrefix string
+	// List of pod to validate the networking
+	PodList []Pod
+}
 
-const (
-	DefaultTestNamespace = "cni-automation"
-	AwsNodeNamespace     = "kube-system"
-	AwsNodeName          = "aws-node"
-)
-
-const (
-	PollIntervalShort  = time.Second * 2
-	PollIntervalMedium = time.Second * 5
-	PollIntervalLong   = time.Second * 20
-)
+type Pod struct {
+	// Name of the pod
+	PodName string
+	// Namespace of the pod, used to generate the Link
+	PodNamespace string
+	// IPv4 Address of the pod
+	PodIPv4Address string
+	// Set to true when the Pod is scheduled on IP
+	// from the Secondary ENI
+	IsIPFromSecondaryENI bool
+}

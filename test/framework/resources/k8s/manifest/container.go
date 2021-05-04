@@ -35,6 +35,14 @@ func NewBusyBoxContainerBuilder() *Container {
 	}
 }
 
+func NewCurlContainer() *Container {
+	return &Container{
+		name:            "curl",
+		image:           "curlimages/curl:latest",
+		imagePullPolicy: v1.PullIfNotPresent,
+	}
+}
+
 func NewNetCatAlpineContainer() *Container {
 	return &Container{
 		name:            "net-cat",

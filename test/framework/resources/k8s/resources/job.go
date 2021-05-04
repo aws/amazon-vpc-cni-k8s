@@ -21,12 +21,14 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	v1 "k8s.io/api/batch/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type JobManager interface {
 	CreateAndWaitTillJobCompleted(job *v1.Job) (*v1.Job, error)
+	DeleteAndWaitTillJobIsDeleted(job *v1.Job) error
 }
 
 type defaultJobManager struct {
@@ -55,6 +57,25 @@ func (d *defaultJobManager) CreateAndWaitTillJobCompleted(job *v1.Job) (*v1.Job,
 			return false, fmt.Errorf("failed to execute job :%v", observedJob.Status)
 		} else if observedJob.Status.Succeeded == (*job.Spec.Parallelism) {
 			return true, nil
+		}
+		return false, nil
+	}, ctx.Done())
+}
+
+func (d *defaultJobManager) DeleteAndWaitTillJobIsDeleted(job *v1.Job) error {
+	ctx := context.Background()
+	err := d.k8sClient.Delete(ctx, job)
+	if err != nil {
+		return err
+	}
+
+	observedJob := &v1.Job{}
+	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+		if err := d.k8sClient.Get(ctx, utils.NamespacedName(job), observedJob); err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
 		}
 		return false, nil
 	}, ctx.Done())

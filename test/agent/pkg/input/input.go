@@ -11,18 +11,16 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package utils
+package input
 
-import "time"
+type TestStatus struct {
+	SuccessCount int
+	FailureCount int
+	SourcePod    string
+	Failures     []Failure
+}
 
-const (
-	DefaultTestNamespace = "cni-automation"
-	AwsNodeNamespace     = "kube-system"
-	AwsNodeName          = "aws-node"
-)
-
-const (
-	PollIntervalShort  = time.Second * 2
-	PollIntervalMedium = time.Second * 5
-	PollIntervalLong   = time.Second * 20
-)
+type Failure struct {
+	DestinationIP string
+	FailureReason string
+}

@@ -30,6 +30,7 @@ var (
 	hostNetworkDeployment     *appsV1.Deployment
 	err                       error
 	hostNetworkPod            v1.Pod
+	primaryNodePublicIP       string
 )
 
 func TestCni(t *testing.T) {
@@ -48,6 +49,10 @@ var _ = BeforeSuite(func() {
 
 	primaryNode = nodes.Items[0]
 	primaryInstanceId = k8sUtils.GetInstanceIDFromNode(primaryNode)
+	instance, err := f.CloudServices.EC2().DescribeInstance(primaryInstanceId)
+	Expect(err).NotTo(HaveOccurred())
+
+	primaryNodePublicIP = *instance.PublicIpAddress
 
 	volume := []v1.Volume{
 		{

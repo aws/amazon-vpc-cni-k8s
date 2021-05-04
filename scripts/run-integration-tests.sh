@@ -271,11 +271,10 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   GOPATH=$(go env GOPATH)
   echo "PATH: $PATH"
 
-  go install github.com/onsi/ginkgo/ginkgo
+  echo "Downloading kubernetes test from: https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz"
   wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C ${TEST_BASE_DIR}  kubernetes/platforms/linux/amd64/e2e.test
-  $GOPATH/bin/ginkgo -p --focus="Conformance" --failFast --flakeAttempts 2 \
-   --skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" ${TEST_BASE_DIR}/e2e.test -- --kubeconfig=$KUBECONFIG
 
+  echo "Running e2e tests: "
   ${TEST_BASE_DIR}/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
     --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
 
