@@ -11,10 +11,10 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 
-VERSION ?= $(shell git describe --tags --always || echo "unknown")
-IMAGE_NAME = amazon/amazon-k8s-cni/test/agent
-REPO=$(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(IMAGE_NAME)
-IMAGE ?= $(REPO):$(VERSION)
+VERSION ?= $(shell git rev-parse --short HEAD || echo "unknown")
+IMAGE_NAME =aws-vpc-cni-test-helper
+PUBLIC_REPO_IMAGE=public.ecr.aws/$(REGISTRY_ID)/${IMAGE_NAME}:$(VERSION)
+PRIVATE_REPO_IMAGE=$(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(IMAGE_NAME):$(VERSION)
 
 fmt:
 	go fmt .
@@ -24,14 +24,21 @@ vet:
 	go vet .
 
 docker-build: check-env
-	docker build . -t ${IMAGE}
+	docker build . -t ${PRIVATE_REPO_IMAGE}
 
 docker-push: check-env
-	docker push ${IMAGE}
+	docker push ${PRIVATE_REPO_IMAGE}
+
+publish-public-image: check-env-public
+	docker build . -t ${PUBLIC_REPO_IMAGE}
+	docker push ${PUBLIC_REPO_IMAGE}
 
 check-env:
 	@:$(call check_var, AWS_ACCOUNT, AWS account ID for publishing docker images)
 	@:$(call check_var, AWS_REGION, AWS region for publishing docker images)
+
+check-env-public:
+	@:$(call check_var, REGISTRY_ID, Registery ID for publishing docker images to public ECR Repo)
 
 check_var = \
     $(strip $(foreach 1,$1, \

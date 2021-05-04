@@ -56,7 +56,7 @@ Apart from running the tests on your local environment. For some test cases wher
 
 #### Running the docker Image
 
-Run the following command to build the agent image and push to ECR. This needs an existing repository with name "amazon/amazon-k8s-cni/test/agent"
+Run the following command to build the agent image and push to ECR. This needs an existing repository with name "aws-vpc-cni-test-helper"
 ```
 AWS_ACCOUNT=<account> AWS_REGION=<region> make docker-build docker-push
 ``` 

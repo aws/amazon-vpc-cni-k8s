@@ -23,13 +23,15 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
+
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
 
 // TestNetworkingSetupForRegularPod tests networking set by the CNI Plugin for a list of Pod is as
 // expected
-func TestNetworkingSetupForRegularPod(podNetworkingValidationInput PodNetworkingValidationInput) []error {
+func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetworkingValidationInput) []error {
 	// Get the list of IP rules
 	ruleList, err := netlink.RuleList(netlink.FAMILY_V4)
 	if err != nil {
@@ -180,7 +182,7 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput PodNetworking
 // TestNetworkTearedDownForRegularPods test pod networking is correctly teared down by the CNI Plugin
 // The test assumes that the IP assigned to the older Pod is not assigned to a new Pod while this test
 // is being executed
-func TestNetworkTearedDownForRegularPods(podNetworkingValidationInput PodNetworkingValidationInput) []error {
+func TestNetworkTearedDownForRegularPods(podNetworkingValidationInput input.PodNetworkingValidationInput) []error {
 	// Get the list of IP rules
 	ruleList, err := netlink.RuleList(netlink.FAMILY_V4)
 	if err != nil {
@@ -260,7 +262,7 @@ func isRuleToOrFromIP(rule netlink.Rule, ip net.IP) bool {
 	return false
 }
 
-func getHostVethPairName(input Pod, vethPrefix string) string {
+func getHostVethPairName(input input.Pod, vethPrefix string) string {
 	h := sha1.New()
 	h.Write([]byte(fmt.Sprintf("%s.%s", input.PodNamespace, input.PodName)))
 	return fmt.Sprintf("%s%s", vethPrefix, hex.EncodeToString(h.Sum(nil))[:11])

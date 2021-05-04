@@ -19,12 +19,13 @@ import (
 	"log"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/cmd/networking/tester"
+	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 )
 
 // TODO: Instead of passing the list of pods, get the pods from API Server so this agent can run as DS
 // TODO: Export metrics via Prometheus for debugging and analysis purposes
 func main() {
-	var podNetworkingValidationInput tester.PodNetworkingValidationInput
+	var podNetworkingValidationInput input.PodNetworkingValidationInput
 	var podNetworkingValidationInputString string
 	var shouldTestSetup bool
 	var shouldTestCleanup bool
