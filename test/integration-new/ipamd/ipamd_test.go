@@ -14,7 +14,7 @@ const (
 
 var _ = Describe("ENI/IP Leak Test", func() {
 	Context("ENI/IP Released on Pod Deletion", func() {
-		FIt("Verify that on Pod Deletion, ENI/IP State is restored", func() {
+		It("Verify that on Pod Deletion, ENI/IP State is restored", func() {
 			By("Recording the initial count of IP before new deployment")
 			oldIP, oldENI := getCountOfIPAndENI(primaryInstanceId)
 
