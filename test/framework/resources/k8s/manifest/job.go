@@ -29,6 +29,7 @@ type JobBuilder struct {
 	labels                 map[string]string
 	terminationGracePeriod int
 	nodeName               string
+	hostNetwork            bool
 }
 
 func NewDefaultJobBuilder() *JobBuilder {
@@ -37,6 +38,7 @@ func NewDefaultJobBuilder() *JobBuilder {
 		name:                   "test-job",
 		parallelism:            1,
 		terminationGracePeriod: 0,
+		labels:                 map[string]string{},
 	}
 }
 
@@ -75,6 +77,11 @@ func (j *JobBuilder) Parallelism(parallelism int) *JobBuilder {
 	return j
 }
 
+func (j *JobBuilder) HostNetwork(hostNetwork bool) *JobBuilder {
+	j.hostNetwork = hostNetwork
+	return j
+}
+
 func (j *JobBuilder) Build() *batchV1.Job {
 	return &batchV1.Job{
 		ObjectMeta: metaV1.ObjectMeta{
@@ -88,6 +95,7 @@ func (j *JobBuilder) Build() *batchV1.Job {
 					Labels: j.labels,
 				},
 				Spec: v1.PodSpec{
+					HostNetwork:                   j.hostNetwork,
 					Containers:                    []v1.Container{j.container},
 					TerminationGracePeriodSeconds: aws.Int64(int64(j.terminationGracePeriod)),
 					RestartPolicy:                 v1.RestartPolicyNever,
