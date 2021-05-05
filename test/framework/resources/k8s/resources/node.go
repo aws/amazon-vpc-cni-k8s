@@ -39,6 +39,9 @@ func NewDefaultNodeManager(k8sClient client.DelegatingClient) NodeManager {
 }
 
 func (d *defaultNodeManager) GetNodes(nodeLabelKey string, nodeLabelVal string) (v1.NodeList, error) {
+	if nodeLabelVal == "" {
+		return d.GetAllNodes()
+	}
 	ctx := context.Background()
 	nodeList := v1.NodeList{}
 	err := d.k8sClient.List(ctx, &nodeList, client.MatchingLabels{

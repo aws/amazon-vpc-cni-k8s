@@ -1,14 +1,21 @@
-package env_vars
+package ipamd
 
 import (
 	"regexp"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
-	v1 "k8s.io/api/core/v1"
-
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	appsV1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
+)
+
+var (
+	ds                        *appsV1.DaemonSet
+	hostNetworkDeploymentSpec *appsV1.Deployment
+	hostNetworkPod            v1.Pod
 )
 
 const (
@@ -17,26 +24,15 @@ const (
 	AWS_VPC_K8S_CNI_VETHPREFIX = "AWS_VPC_K8S_CNI_VETHPREFIX"
 	POD_VOL_LABEL_KEY          = "MountVolume"
 	POD_VOL_LABEL_VAL          = "true"
+	VOLUME_NAME                = "ipamd-logs"
+	VOLUME_MOUNT_PATH          = "/var/log/aws-routed-eni/"
 )
 
 var _ = Describe("cni env test", func() {
-
 	Context("CNI Environment Variables", func() {
-		It("Verifying that secondary ENI is created", func() {
-			nodes, err := f.K8sResourceManagers.NodeManager().GetAllNodes()
-			Expect(err).NotTo(HaveOccurred())
+		It("Changing AWS_VPC_ENI_MTU and AWS_VPC_K8S_CNI_VETHPREFIX", func() {
+			setupHostNetworkPod()
 
-			for _, node := range nodes.Items {
-				instanceId := k8sUtils.GetInstanceIDFromNode(node)
-				instance, err := f.CloudServices.EC2().DescribeInstance(instanceId)
-				Expect(err).NotTo(HaveOccurred())
-
-				len := len(instance.NetworkInterfaces)
-				Expect(len).To(BeNumerically(">=", 2))
-			}
-		})
-
-		FIt("Changing AWS_VPC_ENI_MTU and AWS_VPC_K8S_CNI_VETHPREFIX", func() {
 			currMTUVal := getEnvValueForKey(AWS_VPC_ENI_MTU)
 			Expect(currMTUVal).NotTo(Equal(""))
 
@@ -58,7 +54,7 @@ var _ = Describe("cni env test", func() {
 
 			_, err := f.K8sResourceManagers.
 				DeploymentManager().
-				CreateAndWaitTillDeploymentIsReady(deploymentSpec)
+				CreateAndWaitTillDeploymentIsReady(deploymentSpec, utils.DefaultDeploymentReadyTimeout)
 			Expect(err).ToNot(HaveOccurred())
 
 			stdout, _, err := f.K8sResourceManagers.PodManager().PodExec("default", hostNetworkPod.Name, []string{"ifconfig"})
@@ -97,9 +93,10 @@ var _ = Describe("cni env test", func() {
 				AWS_VPC_ENI_MTU:            currMTUVal,
 				AWS_VPC_K8S_CNI_VETHPREFIX: currVETHPrefix,
 			})
+			cleanupHostNetworkPod()
 		})
 
-		It("Changing AWS_VPC_K8S_CNI_LOG_FILE", func() {
+		FIt("Changing AWS_VPC_K8S_CNI_LOG_FILE", func() {
 			By("Deploying a host network deployment with Volume mount")
 			curlContainer := manifest.NewBusyBoxContainerBuilder().Image("curlimages/curl:7.76.1").Name("curler").Build()
 
@@ -134,11 +131,12 @@ var _ = Describe("cni env test", func() {
 
 			_, err := f.K8sResourceManagers.
 				DeploymentManager().
-				CreateAndWaitTillDeploymentIsReady(deploymentSpecWithVol)
-			Expect(err).NotTo(HaveOccurred())
+				CreateAndWaitTillDeploymentIsReady(deploymentSpecWithVol, utils.DefaultDeploymentReadyTimeout)
+			Expect(err).ToNot(HaveOccurred())
 
 			pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(POD_VOL_LABEL_KEY, POD_VOL_LABEL_VAL)
 			Expect(err).NotTo(HaveOccurred())
+			Expect(len(pods.Items)).Should(BeNumerically(">", 0))
 
 			podWithVol := pods.Items[0]
 			currLogFilepath := getEnvValueForKey(AWS_VPC_K8S_CNI_LOG_FILE)
@@ -159,13 +157,16 @@ var _ = Describe("cni env test", func() {
 			})
 
 			By("Deleing deployment with Volume Mount")
-			err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(hostNetworkDeploymentSpec)
+			err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deploymentSpecWithVol)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })
 
 func getEnvValueForKey(key string) string {
+	ds, err = f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(NAMESPACE, DAEMONSET)
+	Expect(err).NotTo(HaveOccurred())
+
 	envVar := ds.Spec.Template.Spec.Containers[0].Env
 	for _, env := range envVar {
 		if env.Name == key {
@@ -173,6 +174,37 @@ func getEnvValueForKey(key string) string {
 		}
 	}
 	return ""
+}
+
+func setupHostNetworkPod() {
+	By("Deploying a Host Network Pod")
+	curlContainer := manifest.NewBusyBoxContainerBuilder().Image("curlimages/curl:7.76.1").Name("curler").Build()
+
+	hostNetworkDeploymentSpec = manifest.NewDefaultDeploymentBuilder().
+		Namespace("default").
+		Name("host-network").
+		Replicas(1).
+		HostNetwork(true).
+		Container(curlContainer).
+		PodLabel(HOST_POD_LABEL_KEY, HOST_POD_LABEL_VAL).
+		NodeName(primaryNode.Name).
+		Build()
+
+	_, err := f.K8sResourceManagers.
+		DeploymentManager().
+		CreateAndWaitTillDeploymentIsReady(hostNetworkDeploymentSpec, utils.DefaultDeploymentReadyTimeout)
+	Expect(err).NotTo(HaveOccurred())
+
+	pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(HOST_POD_LABEL_KEY, HOST_POD_LABEL_VAL)
+	Expect(err).NotTo(HaveOccurred())
+
+	hostNetworkPod = pods.Items[0]
+}
+
+func cleanupHostNetworkPod() {
+	err = f.K8sResourceManagers.DeploymentManager().
+		DeleteAndWaitTillDeploymentIsDeleted(hostNetworkDeploymentSpec)
+	Expect(err).ToNot(HaveOccurred())
 }
 
 func restoreOldValues(oldVals map[string]string) {
