@@ -16,9 +16,10 @@ package cni
 import (
 	"encoding/json"
 	"fmt"
+	"time"
+
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 	v1 "k8s.io/api/core/v1"
-	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
