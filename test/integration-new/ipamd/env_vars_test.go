@@ -96,7 +96,7 @@ var _ = Describe("cni env test", func() {
 			cleanupHostNetworkPod()
 		})
 
-		FIt("Changing AWS_VPC_K8S_CNI_LOG_FILE", func() {
+		It("Changing AWS_VPC_K8S_CNI_LOG_FILE", func() {
 			By("Deploying a host network deployment with Volume mount")
 			curlContainer := manifest.NewBusyBoxContainerBuilder().Image("curlimages/curl:7.76.1").Name("curler").Build()
 
