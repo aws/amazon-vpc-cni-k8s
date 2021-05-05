@@ -33,7 +33,7 @@ jobs:
           go get -u golang.org/x/tools/cmd/goimports
 
       - name: Clean up stale docker images
-        run: docker image prune -f
+        run: sudo docker image prune -f
 
       - name: Run e2e tests
         env:
