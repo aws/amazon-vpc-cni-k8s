@@ -14,6 +14,8 @@
 package manifest
 
 import (
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -39,6 +41,15 @@ func NewCurlContainer() *Container {
 	return &Container{
 		name:            "curl",
 		image:           "curlimages/curl:latest",
+		imagePullPolicy: v1.PullIfNotPresent,
+	}
+}
+
+// See test/agent/README.md in this repository for more details
+func NewTestHelperContainer() *Container {
+	return &Container{
+		name:            "test-helper",
+		image:           utils.TestAgentImage,
 		imagePullPolicy: v1.PullIfNotPresent,
 	}
 }
