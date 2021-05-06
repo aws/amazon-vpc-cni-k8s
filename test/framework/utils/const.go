@@ -19,6 +19,9 @@ const (
 	DefaultTestNamespace = "cni-automation"
 	AwsNodeNamespace     = "kube-system"
 	AwsNodeName          = "aws-node"
+
+	// See https://gallery.ecr.aws/r3i6j7b0/aws-vpc-cni-test-helper
+	TestAgentImage = "public.ecr.aws/r3i6j7b0/aws-vpc-cni-test-helper:07ac7548"
 )
 
 const (

@@ -25,6 +25,7 @@ import (
 type EC2 interface {
 	DescribeInstanceType(instanceType string) ([]*ec2.InstanceTypeInfo, error)
 	DescribeInstance(instanceID string) (*ec2.Instance, error)
+	DescribeVPC(vpcID string) (*ec2.DescribeVpcsOutput, error)
 	DescribeNetworkInterface(interfaceIDs []string) (*ec2.DescribeNetworkInterfacesOutput, error)
 	AuthorizeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
 	RevokeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
@@ -266,6 +267,13 @@ func (d *defaultEC2) TerminateInstance(instanceIDs []string) error {
 	}
 	_, err := d.EC2API.TerminateInstances(terminateInstanceInput)
 	return err
+}
+
+func (d *defaultEC2) DescribeVPC(vpcID string) (*ec2.DescribeVpcsOutput, error) {
+	describeVPCInput := &ec2.DescribeVpcsInput{
+		VpcIds: aws.StringSlice([]string{vpcID}),
+	}
+	return d.EC2API.DescribeVpcs(describeVPCInput)
 }
 
 func NewEC2(session *session.Session) EC2 {
