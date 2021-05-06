@@ -28,6 +28,7 @@ var err error
 var f *framework.Framework
 var primaryNode v1.Node
 var primaryInstance *ec2.Instance
+var numOfNodes int
 
 func TestIPAMD(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -40,7 +41,9 @@ var _ = BeforeSuite(func() {
 	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey,
 		f.Options.NgNameLabelVal)
 	Expect(err).ToNot(HaveOccurred())
-	Expect(len(nodeList.Items)).Should(BeNumerically(">", 1))
+
+	numOfNodes = len(nodeList.Items)
+	Expect(numOfNodes).Should(BeNumerically(">", 1))
 
 	// Nominate the first node as the primary node
 	primaryNode = nodeList.Items[0]

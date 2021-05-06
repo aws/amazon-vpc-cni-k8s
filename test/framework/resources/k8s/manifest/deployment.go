@@ -31,6 +31,9 @@ type DeploymentBuilder struct {
 	nodeSelector           map[string]string
 	terminationGracePeriod int
 	nodeName               string
+	hostNetwork            bool
+	volume                 []corev1.Volume
+	volumeMount            []corev1.VolumeMount
 }
 
 func NewBusyBoxDeploymentBuilder() *DeploymentBuilder {
@@ -93,8 +96,19 @@ func (d *DeploymentBuilder) PodLabel(labelKey string, labelValue string) *Deploy
 	return d
 }
 
+func (d *DeploymentBuilder) HostNetwork(hostNetwork bool) *DeploymentBuilder {
+	d.hostNetwork = hostNetwork
+	return d
+}
+
+func (d *DeploymentBuilder) MountVolume(volume []corev1.Volume, volumeMount []corev1.VolumeMount) *DeploymentBuilder {
+	d.volume = volume
+	d.volumeMount = volumeMount
+	return d
+}
+
 func (d *DeploymentBuilder) Build() *v1.Deployment {
-	return &v1.Deployment{
+	deploymentSpec := &v1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      d.name,
 			Namespace: d.namespace,
@@ -110,6 +124,7 @@ func (d *DeploymentBuilder) Build() *v1.Deployment {
 					Labels: d.labels,
 				},
 				Spec: corev1.PodSpec{
+					HostNetwork:                   d.hostNetwork,
 					NodeSelector:                  d.nodeSelector,
 					Containers:                    []corev1.Container{d.container},
 					TerminationGracePeriodSeconds: aws.Int64(int64(d.terminationGracePeriod)),
@@ -118,4 +133,10 @@ func (d *DeploymentBuilder) Build() *v1.Deployment {
 			},
 		},
 	}
+
+	if len(d.volume) > 0 && len(d.volumeMount) > 0 {
+		deploymentSpec.Spec.Template.Spec.Volumes = d.volume
+		deploymentSpec.Spec.Template.Spec.Containers[0].VolumeMounts = d.volumeMount
+	}
+	return deploymentSpec
 }

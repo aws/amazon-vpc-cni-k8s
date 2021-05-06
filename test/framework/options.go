@@ -59,12 +59,5 @@ func (options *Options) Validate() error {
 	if len(options.AWSVPCID) == 0 {
 		return errors.Errorf("%s must be set!", "aws-vpc-id")
 	}
-	if len(options.NgNameLabelKey) == 0 {
-		return errors.Errorf("%s must be set!", "ng-name-label-key")
-	}
-	if len(options.NgNameLabelVal) == 0 {
-		return errors.Errorf("%s must be set!", "ng-name-label-val")
-	}
-
 	return nil
 }

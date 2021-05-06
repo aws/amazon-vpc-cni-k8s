@@ -25,6 +25,7 @@ import (
 
 type NodeManager interface {
 	GetNodes(nodeLabelKey string, nodeLabelVal string) (v1.NodeList, error)
+	GetAllNodes() (v1.NodeList, error)
 	UpdateNode(oldNode *v1.Node, newNode *v1.Node) error
 	WaitTillNodesReady(nodeLabelKey string, nodeLabelVal string, asgSize int) error
 }
@@ -38,11 +39,21 @@ func NewDefaultNodeManager(k8sClient client.DelegatingClient) NodeManager {
 }
 
 func (d *defaultNodeManager) GetNodes(nodeLabelKey string, nodeLabelVal string) (v1.NodeList, error) {
+	if nodeLabelVal == "" {
+		return d.GetAllNodes()
+	}
 	ctx := context.Background()
 	nodeList := v1.NodeList{}
 	err := d.k8sClient.List(ctx, &nodeList, client.MatchingLabels{
 		nodeLabelKey: nodeLabelVal,
 	})
+	return nodeList, err
+}
+
+func (d *defaultNodeManager) GetAllNodes() (v1.NodeList, error) {
+	ctx := context.Background()
+	nodeList := v1.NodeList{}
+	err := d.k8sClient.List(ctx, &nodeList)
 	return nodeList, err
 }
 
