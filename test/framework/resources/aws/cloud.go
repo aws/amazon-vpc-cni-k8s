@@ -15,7 +15,6 @@ package aws
 
 import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/services"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 )
@@ -29,6 +28,7 @@ type CloudConfig struct {
 type Cloud interface {
 	EKS() services.EKS
 	EC2() services.EC2
+	IAM() services.IAM
 	AutoScaling() services.AutoScaling
 	CloudFormation() services.CloudFormation
 }
@@ -37,6 +37,7 @@ type defaultCloud struct {
 	cfg            CloudConfig
 	ec2            services.EC2
 	eks            services.EKS
+	iam            services.IAM
 	autoScaling    services.AutoScaling
 	cloudFormation services.CloudFormation
 }
@@ -48,6 +49,7 @@ func NewCloud(config CloudConfig) Cloud {
 	return &defaultCloud{
 		cfg:            config,
 		ec2:            services.NewEC2(session),
+		iam:            services.NewIAM(session),
 		eks:            services.NewEKS(session, config.EKSEndpoint),
 		autoScaling:    services.NewAutoScaling(session),
 		cloudFormation: services.NewCloudFormation(session),
@@ -68,4 +70,8 @@ func (c *defaultCloud) CloudFormation() services.CloudFormation {
 
 func (c *defaultCloud) EKS() services.EKS {
 	return c.eks
+}
+
+func (c *defaultCloud) IAM() services.IAM {
+	return c.iam
 }
