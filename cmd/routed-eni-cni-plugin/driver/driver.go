@@ -47,7 +47,8 @@ const (
 
 // NetworkAPIs defines network API calls
 type NetworkAPIs interface {
-	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error
+	SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool,
+		mtu int, log logger.Logger, secondaryENIConnmark int) error
 	TeardownNS(addr *net.IPNet, deviceNumber int, log logger.Logger) error
 	SetupPodENINetwork(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, vlanID int, eniMAC string,
 		subnetGW string, parentIfIndex int, mtu int, log logger.Logger) error
@@ -174,13 +175,13 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 }
 
 // SetupNS wires up linux networking for a pod's network
-func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error {
+func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger, secondaryENIConnmark int) error {
 	log.Debugf("SetupNS: hostVethName=%s, contVethName=%s, netnsPath=%s, deviceNumber=%d, mtu=%d", hostVethName, contVethName, netnsPath, deviceNumber, mtu)
-	return setupNS(hostVethName, contVethName, netnsPath, addr, deviceNumber, vpcCIDRs, useExternalSNAT, os.netLink, os.ns, mtu, log, os.procSys)
+	return setupNS(hostVethName, contVethName, netnsPath, addr, deviceNumber, vpcCIDRs, useExternalSNAT, os.netLink, os.ns, mtu, log, os.procSys, secondaryENIConnmark)
 }
 
 func setupNS(hostVethName string, contVethName string, netnsPath string, addr *net.IPNet, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool,
-	netLink netlinkwrapper.NetLink, ns nswrapper.NS, mtu int, log logger.Logger, procSys procsyswrapper.ProcSys) error {
+	netLink netlinkwrapper.NetLink, ns nswrapper.NS, mtu int, log logger.Logger, procSys procsyswrapper.ProcSys, secondaryENIConnmark int) error {
 
 	hostVeth, err := setupVeth(hostVethName, contVethName, netnsPath, addr, netLink, ns, mtu, procSys, log)
 	if err != nil {
@@ -250,6 +251,20 @@ func setupNS(hostVethName string, contVethName string, netnsPath string, addr *n
 				}
 				log.Infof("Successfully added pod rule[%v] to %s", podRule, toDst)
 			}
+			// add rule: 1536: from <podIP> witn secondary ENI connmark to use table <table>
+			podRule := netLink.NewRule()
+			podRule.Src = addr
+			podRule.Table = tableNumber
+			podRule.Priority = fromContainerRulePriority
+			podRule.Mark = secondaryENIConnmark
+			podRule.Mask = secondaryENIConnmark
+
+			err := netLink.RuleAdd(podRule)
+			if err != nil && !isRuleExistsError(err) {
+				log.Errorf("Failed to add pod IP rule [%v]: %v", podRule, err)
+				return errors.Wrapf(err, "setupNS: failed to add pod rule [%v]", podRule)
+			}
+			log.Infof("Successfully added pod rule[%v] for secondaryENIMark", podRule)
 		}
 	}
 	return nil

@@ -42,13 +42,18 @@ for b in $PLUGIN_BINS; do
 done
 
 # Configure rp_filter
-echo "Configure rp_filter loose... "
+echo "Configure default rp_filter loose... "
+sysctl -w "net.ipv4.conf.default.rp_filter=2"
+cat "/proc/sys/net/ipv4/conf/default/rp_filter"
 
-HOST_IP=$(get_metadata 'local-ipv4')
-PRIMARY_MAC=$(get_metadata 'mac')
-PRIMARY_IF=$(ip -o link show | grep -F "link/ether $PRIMARY_MAC" | awk -F'[ :]+' '{print $2}')
-sysctl -w "net.ipv4.conf.$PRIMARY_IF.rp_filter=2"
-cat "/proc/sys/net/ipv4/conf/$PRIMARY_IF/rp_filter"
+echo "Configure rp_filter loose... "
+interfaces=$(ip -o link show | grep -F " link/ether" | grep -v "@" | awk -F'[ :]+' '{print $2}')
+for iface in $interfaces; do
+  echo "Configure rp_filter loose for interface $iface... "
+  sysctl -w "net.ipv4.conf.$iface.rp_filter=2"
+  cat "/proc/sys/net/ipv4/conf/$iface/rp_filter"
+done
+
 
 # Set DISABLE_TCP_EARLY_DEMUX to true to enable kubelet to pod-eni TCP communication
 # https://lwn.net/Articles/503420/ and https://github.com/aws/amazon-vpc-cni-k8s/pull/1212 for background

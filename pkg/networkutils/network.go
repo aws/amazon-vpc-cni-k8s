@@ -90,13 +90,24 @@ const (
 	envConnmark = "AWS_VPC_K8S_CNI_CONNMARK"
 
 	// This environment variable indicates if ipamd should configure rp filter for primary interface. Default value is
-	// true. If set to false, then rp filter should be configured through init container.
+	// true. If set to false, then rp filter should be configured through init container. This will be used only when the
+	// external SNAT is disabled.
 	envConfigureRpfilter = "AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER"
 
 	// defaultConnmark is the default value for the connmark described above. Note: the mark space is a little crowded,
 	// - kube-proxy uses 0x0000c000
 	// - Calico uses 0xffff0000.
 	defaultConnmark = 0x80
+
+	// envSecondaryConnMark is the name of the environment variable that overrides the default connection mark used
+	// to mark traffic ingress from the secondary ENIs. This mark is used to ensure that the non-VPC traffic, for example
+	// traffic from NLB for IP targets with preserve client IP enabled, ingress from the secondary ENI goes out through
+	// the same interface.
+	envSecondaryConnMark = "AWS_VPC_K8S_CNI_SECONDARY_CONNMARK"
+
+	// defaultSecondaryConnmark is the default value for the connmark to use for non-VPC traffic ingress from the secondary
+	// network interfaces. This will be used for the return traffic to follow the same path as the ingress traffic.
+	defaultSecondaryConnmark = 0x100
 
 	// envMTU gives a way to configure the MTU size for new ENIs attached. Range is from 576 to 9001.
 	envMTU = "AWS_VPC_ENI_MTU"
@@ -141,11 +152,12 @@ type linuxNetwork struct {
 	shouldConfigureRpFilter bool
 	mtu                     int
 
-	netLink     netlinkwrapper.NetLink
-	ns          nswrapper.NS
-	newIptables func() (iptablesIface, error)
-	mainENIMark uint32
-	procSys     procsyswrapper.ProcSys
+	netLink          netlinkwrapper.NetLink
+	ns               nswrapper.NS
+	newIptables      func() (iptablesIface, error)
+	mainENIMark      uint32
+	secondaryENIMark uint32
+	procSys          procsyswrapper.ProcSys
 }
 
 type iptablesIface interface {
@@ -178,6 +190,7 @@ func New() NetworkAPIs {
 		nodePortSupportEnabled:  nodePortSupportEnabled(),
 		shouldConfigureRpFilter: shouldConfigureRpFilter(),
 		mainENIMark:             getConnmark(),
+		secondaryENIMark:        GetSecondaryConnmark(""),
 		mtu:                     GetEthernetMTU(""),
 
 		netLink: netlinkwrapper.NewNetLink(),
@@ -234,6 +247,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 		// - In "strict" mode, the RPF check fails because the return path uses a different interface to the incoming
 		//   packet. In "loose" mode, the check passes because some route was found.
 		primaryIntfRPFilter := "net/ipv4/conf/" + primaryIntf + "/rp_filter"
+		defaultIntfRPFilter := "net/ipv4/conf/default/rp_filter"
 		const rpFilterLoose = "2"
 
 		if n.shouldConfigureRpFilter {
@@ -242,8 +256,13 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 			if err != nil {
 				return errors.Wrapf(err, "failed to configure %s RPF check", primaryIntf)
 			}
+			log.Debugf("Setting default RPF")
+			err = n.procSys.Set(defaultIntfRPFilter, rpFilterLoose)
+			if err != nil {
+				return errors.Wrapf(err, "failed to configure default RPF check")
+			}
 		} else {
-			log.Infof("Skip updating RPF for primary interface: %s", primaryIntfRPFilter)
+			log.Infof("Skip updating RPF for primary interface: %s and default", primaryIntfRPFilter)
 		}
 	}
 
@@ -451,6 +470,17 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 		},
 	})
 
+	iptableRules = append(iptableRules, iptablesRule{
+		name:        "connmark restore for secondary ENI",
+		shouldExist: !n.useExternalSNAT,
+		table:       "mangle",
+		chain:       "PREROUTING",
+		rule: []string{
+			"-m", "comment", "--comment", "AWS, secondary ENI traffic",
+			"-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", n.secondaryENIMark),
+		},
+	})
+
 	for _, rule := range iptableRules {
 		log.Debugf("execute iptable rule : %s", rule.name)
 
@@ -547,6 +577,7 @@ func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
 		envConfigureRpfilter: shouldConfigureRpFilter(),
 		envConnmark:          getConnmark(),
+		envSecondaryConnMark: GetSecondaryConnmark(""),
 		envExcludeSNATCIDRs:  getExcludeSNATCIDRs(),
 		envExternalSNAT:      useExternalSNAT(),
 		envMTU:               GetEthernetMTU(""),
@@ -638,19 +669,33 @@ func getBoolEnvVar(name string, defaultValue bool) bool {
 }
 
 func getConnmark() uint32 {
-	if connmark := os.Getenv(envConnmark); connmark != "" {
+	return getConnmarkFromEnv(envConnmark, "", defaultConnmark)
+}
+
+// GetSecondaryConnmark gets connmark from environment variable AWS_VPC_K8S_CNI_SECONDARY_CONNMARK if set, or the passed in inputString.
+// It returns the default value defaultSecondaryConnmark if the env is not set and the inputString is empty.
+func GetSecondaryConnmark(inputString string) uint32 {
+	return getConnmarkFromEnv(envSecondaryConnMark, inputString, defaultSecondaryConnmark)
+}
+
+func getConnmarkFromEnv(envString, inputString string, defaultValue uint32) uint32 {
+	connmark, found := os.LookupEnv(envString)
+	if found {
+		inputString = connmark
+	}
+	if inputString != "" {
 		mark, err := strconv.ParseInt(connmark, 0, 64)
 		if err != nil {
-			log.Infof("Failed to parse %s; will use %d, error: %v", envConnmark, defaultConnmark, err)
-			return defaultConnmark
+			log.Infof("Failed to parse %s; will use %d, error: %v", envString, defaultValue, err)
+			return defaultValue
 		}
 		if mark > math.MaxUint32 || mark <= 0 {
-			log.Infof("%s out of range; will use %s", envConnmark, defaultConnmark)
-			return defaultConnmark
+			log.Infof("%s out of range; will use %s", envString, defaultValue)
+			return defaultValue
 		}
 		return uint32(mark)
 	}
-	return defaultConnmark
+	return defaultValue
 }
 
 // GetLinkByMac returns linux netlink based on interface MAC
@@ -693,7 +738,10 @@ func linkByMac(mac string, netLink netlinkwrapper.NetLink, retryInterval time.Du
 
 // SetupENINetwork adds default route to route table (eni-<eni_table>), so it does not need to be called on the primary ENI
 func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCIDR string) error {
-	return setupENINetwork(eniIP, eniMAC, deviceNumber, eniSubnetCIDR, n.netLink, retryLinkByMacInterval, retryRouteAddInterval, n.mtu)
+	if err := setupENINetwork(eniIP, eniMAC, deviceNumber, eniSubnetCIDR, n.netLink, retryLinkByMacInterval, retryRouteAddInterval, n.mtu); err != nil {
+		return err
+	}
+	return n.setupSecondaryENIMarkRules(eniMAC, n.netLink)
 }
 
 func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink,
@@ -827,6 +875,56 @@ func IncrementIPv4Addr(ip net.IP) (net.IP, error) {
 	return nextIPv4, nil
 }
 
+func (n *linuxNetwork) setupSecondaryENIMarkRules(eniMAC string, netLink netlinkwrapper.NetLink) error {
+	link, err := linkByMac(eniMAC, netLink, retryLinkByMacInterval)
+	if err != nil {
+		return errors.Wrapf(err, "setupENINetwork: failed to find the link which uses MAC address %s", eniMAC)
+	}
+	// Insert iptables PREROUTING rule to mark connections ingress from secondary ENI
+	ipt, err := n.newIptables()
+	if err != nil {
+		return errors.Wrap(err, "secondary ENI setup: failed to create iptables")
+	}
+	var iptableRules []iptablesRule
+	log.Debugf("Setup ENI: iptables -t mangle -A PREROUTING -i %v -m comment --comment \"AWS, secondary ENI\" -j CONNMARK --set-xmark 0x800/0x800",
+		link.Attrs().Name)
+	iptableRules = append(iptableRules, iptablesRule{
+		name:        "connmark for secondary ENI",
+		shouldExist: !n.useExternalSNAT,
+		table:       "mangle",
+		chain:       "PREROUTING",
+		rule: []string{
+			"-m", "comment", "--comment", "AWS, secondary ENI",
+			"-i", link.Attrs().Name,
+			"-j", "CONNMARK", "--set-xmark", fmt.Sprintf("%#x/%#x", n.secondaryENIMark, n.secondaryENIMark),
+		},
+	})
+	for _, rule := range iptableRules {
+		log.Debugf("execute iptable rule : %s", rule.name)
+
+		exists, err := ipt.Exists(rule.table, rule.chain, rule.rule...)
+		if err != nil {
+			log.Errorf("setup ENI: failed to check existence of %v, %v", rule, err)
+			return errors.Wrapf(err, "setup ENI: failed to check existence of %v", rule)
+		}
+
+		if !exists && rule.shouldExist {
+			err = ipt.Append(rule.table, rule.chain, rule.rule...)
+			if err != nil {
+				log.Errorf("setup ENI: failed to add %v, %v", rule, err)
+				return errors.Wrapf(err, "setup ENI: failed to add %v", rule)
+			}
+		} else if exists && !rule.shouldExist {
+			err = ipt.Delete(rule.table, rule.chain, rule.rule...)
+			if err != nil {
+				log.Errorf("setup ENI: failed to delete %v, %v", rule, err)
+				return errors.Wrapf(err, "setup ENI: failed to delete %v", rule)
+			}
+		}
+	}
+	return nil
+}
+
 // GetRuleList returns IP rules
 func (n *linuxNetwork) GetRuleList() ([]netlink.Rule, error) {
 	return n.netLink.RuleList(unix.AF_INET)
@@ -927,6 +1025,19 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 			}
 			log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v] to %s", podRule, toDst)
 		}
+		podRule := n.netLink.NewRule()
+		podRule.Src = &src
+		podRule.Table = srcRuleTable
+		podRule.Priority = fromPodRulePriority
+		podRule.Mark = int(n.secondaryENIMark)
+		podRule.Mask = int(n.secondaryENIMark)
+
+		err := n.netLink.RuleAdd(podRule)
+		if err != nil {
+			log.Error("Failed to add pod rule for secondaryENIMark")
+			return errors.Wrapf(err, "failed to add pod rule for secondaryENIMark")
+		}
+		log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v] for secondaryENIMark", podRule)
 	} else {
 		podRule := n.netLink.NewRule()
 

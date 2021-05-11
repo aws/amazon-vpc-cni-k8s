@@ -61,6 +61,10 @@ type NetConf struct {
 	PluginLogFile string `json:"pluginLogFile"`
 
 	PluginLogLevel string `json:"pluginLogLevel"`
+
+	// SecondaryENIConnmark is the iptables connmark for traffic ingress
+	// from the secondary ENIs.
+	SecondaryENIConnmark string `json:"secondaryENIConnmark"`
 }
 
 // K8sArgs is the valid CNI_ARGS used for Kubernetes
@@ -131,6 +135,9 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	mtu := networkutils.GetEthernetMTU(conf.MTU)
 	log.Debugf("MTU value set is %d:", mtu)
 
+	secondaryENIConnmark := networkutils.GetSecondaryConnmark(conf.SecondaryENIConnmark)
+	log.Debugf("Secondary ENI Connmark is set to %d:", secondaryENIConnmark)
+
 	// Set up a connection to the ipamD server.
 	conn, err := grpcClient.Dial(ipamdAddress, grpc.WithInsecure())
 	if err != nil {
@@ -185,7 +192,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		// Note: the maximum length for linux interface name is 15
 		hostVethName := generateHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 
-		err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber), r.VPCcidrs, r.UseExternalSNAT, mtu, log)
+		err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber), r.VPCcidrs, r.UseExternalSNAT, mtu, log, int(secondaryENIConnmark))
 	}
 
 	if err != nil {

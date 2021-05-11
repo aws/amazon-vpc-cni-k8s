@@ -8,7 +8,8 @@
       "vethPrefix": "__VETHPREFIX__",
       "mtu": "__MTU__",
       "pluginLogFile": "__PLUGINLOGFILE__",
-      "pluginLogLevel": "__PLUGINLOGLEVEL__"
+      "pluginLogLevel": "__PLUGINLOGLEVEL__",
+      "secondaryENIConnmark": "__SECONDARYENICONNMARK__"
     },
     {
       "type": "portmap",
