@@ -29,16 +29,20 @@ type CloudConfig struct {
 type Cloud interface {
 	EKS() services.EKS
 	EC2() services.EC2
+	IAM() services.IAM
 	AutoScaling() services.AutoScaling
 	CloudFormation() services.CloudFormation
+	CloudWatch() services.CloudWatch
 }
 
 type defaultCloud struct {
 	cfg            CloudConfig
 	ec2            services.EC2
 	eks            services.EKS
+	iam            services.IAM
 	autoScaling    services.AutoScaling
 	cloudFormation services.CloudFormation
+	cloudWatch     services.CloudWatch
 }
 
 func NewCloud(config CloudConfig) Cloud {
@@ -48,9 +52,11 @@ func NewCloud(config CloudConfig) Cloud {
 	return &defaultCloud{
 		cfg:            config,
 		ec2:            services.NewEC2(session),
+		iam:            services.NewIAM(session),
 		eks:            services.NewEKS(session, config.EKSEndpoint),
 		autoScaling:    services.NewAutoScaling(session),
 		cloudFormation: services.NewCloudFormation(session),
+		cloudWatch:     services.NewCloudWatch(session),
 	}
 }
 
@@ -68,4 +74,12 @@ func (c *defaultCloud) CloudFormation() services.CloudFormation {
 
 func (c *defaultCloud) EKS() services.EKS {
 	return c.eks
+}
+
+func (c *defaultCloud) IAM() services.IAM {
+	return c.iam
+}
+
+func (c *defaultCloud) CloudWatch() services.CloudWatch {
+	return c.cloudWatch
 }
