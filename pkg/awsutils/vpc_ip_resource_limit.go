@@ -271,11 +271,7 @@ var InstanceNetworkingLimits = map[string]InstanceTypeLimits{
 	"p3.2xlarge":    {ENILimit: 4, IPv4Limit: 15},
 	"p3.8xlarge":    {ENILimit: 8, IPv4Limit: 30},
 	"p3dn.24xlarge": {ENILimit: 15, IPv4Limit: 50},
-<<<<<<< HEAD
 	"p4d.24xlarge":  {ENILimit: 15, IPv4Limit: 50},
-=======
-	"p4d.24xlarge":  {ENILimit: 60, IPv4Limit: 50},
->>>>>>> New instance types update
 	"r3.2xlarge":    {ENILimit: 4, IPv4Limit: 15},
 	"r3.4xlarge":    {ENILimit: 8, IPv4Limit: 30},
 	"r3.8xlarge":    {ENILimit: 8, IPv4Limit: 30},
