@@ -16,7 +16,13 @@ package resources
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
+	"time"
+
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,7 +36,11 @@ import (
 
 type PodManager interface {
 	PodExec(namespace string, name string, command []string) (string, string, error)
+	PodLogs(namespace string, name string) (string, error)
 	GetPodsWithLabelSelector(labelKey string, labelVal string) (v1.PodList, error)
+	CreatAndWaitTillRunning(pod *v1.Pod) (*v1.Pod, error)
+	CreateAndWaitTillPodCompleted(pod *v1.Pod) (*v1.Pod, error)
+	DeleteAndWaitTillPodDeleted(pod *v1.Pod) error
 }
 
 type defaultPodManager struct {
@@ -49,21 +59,97 @@ func NewDefaultPodManager(k8sClient client.DelegatingClient, k8sSchema *runtime.
 	}
 }
 
-func (d *defaultPodManager) PodExec(namespace string, name string, command []string) (string, string, error) {
-	pod := &v1.Pod{}
-	err := d.k8sClient.Get(context.Background(), types.NamespacedName{
-		Namespace: namespace,
-		Name:      name,
-	}, pod)
+func (d *defaultPodManager) CreatAndWaitTillRunning(pod *v1.Pod) (*v1.Pod, error) {
+	err := d.k8sClient.Create(context.Background(), pod)
 	if err != nil {
-		return "", "", err
+		return nil, fmt.Errorf("faield to create pod: %v", err)
+	}
+	// Allow the cache to sync
+	time.Sleep(utils.PollIntervalShort)
+
+	observedPod := &v1.Pod{}
+	err = wait.PollImmediate(utils.PollIntervalShort, time.Second*120, func() (done bool, err error) {
+		err = d.k8sClient.Get(context.Background(), utils.NamespacedName(pod), observedPod)
+		if err != nil {
+			return true, err
+		}
+		if observedPod.Status.Phase == v1.PodRunning {
+			return true, nil
+		}
+		return false, nil
+	})
+
+	return observedPod, err
+}
+
+func (d *defaultPodManager) CreateAndWaitTillPodCompleted(pod *v1.Pod) (*v1.Pod, error) {
+	err := d.k8sClient.Create(context.Background(), pod)
+	if err != nil {
+		return nil, fmt.Errorf("faield to create pod: %v", err)
+	}
+	// Allow the cache to sync
+	time.Sleep(utils.PollIntervalShort)
+
+	observedPod := &v1.Pod{}
+	err = wait.PollImmediate(utils.PollIntervalShort, time.Second*120, func() (done bool, err error) {
+		err = d.k8sClient.Get(context.Background(), utils.NamespacedName(pod), observedPod)
+		if err != nil {
+			return true, err
+		}
+		if observedPod.Status.Phase == v1.PodSucceeded {
+			return true, nil
+		} else if observedPod.Status.Phase == v1.PodFailed {
+			return false, fmt.Errorf("pod failed to run")
+		}
+		return false, nil
+	})
+
+	return observedPod, err
+}
+
+func (d *defaultPodManager) DeleteAndWaitTillPodDeleted(pod *v1.Pod) error {
+	err := d.k8sClient.Delete(context.Background(), pod)
+	if err != nil {
+		return err
+	}
+	observedPod := &v1.Pod{}
+	return wait.PollImmediate(utils.PollIntervalShort, time.Second*120, func() (done bool, err error) {
+		err = d.k8sClient.Get(context.Background(), utils.NamespacedName(pod), observedPod)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return true, err
+		}
+		return false, nil
+	})
+}
+
+func (d *defaultPodManager) PodLogs(namespace string, name string) (string, error) {
+	restClient, err := d.getRestClientForPod(namespace, name)
+	if err != nil {
+		return "", err
 	}
 
-	gkv, err := apiutil.GVKForObject(pod, d.k8sSchema)
+	req := restClient.Get().
+		Resource("pods").
+		Namespace(namespace).
+		Name(name).
+		SubResource("log")
+
+	readCloser, err := req.Stream(context.Background())
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
-	restClient, err := apiutil.RESTClientForGVK(gkv, d.config, serializer.NewCodecFactory(d.k8sSchema))
+	defer readCloser.Close()
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(readCloser)
+
+	return string(buf.Bytes()), err
+}
+
+func (d *defaultPodManager) PodExec(namespace string, name string, command []string) (string, string, error) {
+	restClient, err := d.getRestClientForPod(namespace, name)
 	if err != nil {
 		return "", "", err
 	}
@@ -74,10 +160,11 @@ func (d *defaultPodManager) PodExec(namespace string, name string, command []str
 		Command: command,
 	}
 
+	restClient.Get()
 	req := restClient.Post().
 		Resource("pods").
-		Name(pod.Name).
-		Namespace(pod.Namespace).
+		Name(name).
+		Namespace(namespace).
 		SubResource("exec").
 		VersionedParams(execOptions, runtime.NewParameterCodec(d.k8sSchema))
 
@@ -102,4 +189,21 @@ func (d *defaultPodManager) GetPodsWithLabelSelector(labelKey string, labelVal s
 		labelKey: labelVal,
 	})
 	return podList, err
+}
+
+func (d *defaultPodManager) getRestClientForPod(namespace string, name string) (rest.Interface, error) {
+	pod := &v1.Pod{}
+	err := d.k8sClient.Get(context.Background(), types.NamespacedName{
+		Namespace: namespace,
+		Name:      name,
+	}, pod)
+	if err != nil {
+		return nil, err
+	}
+
+	gkv, err := apiutil.GVKForObject(pod, d.k8sSchema)
+	if err != nil {
+		return nil, err
+	}
+	return apiutil.RESTClientForGVK(gkv, d.config, serializer.NewCodecFactory(d.k8sSchema))
 }

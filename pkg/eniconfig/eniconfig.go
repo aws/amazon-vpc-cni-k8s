@@ -16,18 +16,16 @@ package eniconfig
 
 import (
 	"context"
+	"fmt"
+	"k8s.io/apimachinery/pkg/types"
 	"os"
-	"runtime"
-	"sync"
-	"time"
 
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-	sdkVersion "github.com/operator-framework/operator-sdk/version"
-	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -48,24 +46,14 @@ const (
 
 // ENIConfig interface
 type ENIConfig interface {
-	MyENIConfig() (*v1alpha1.ENIConfigSpec, error)
-	Getter() *ENIConfigInfo
+	MyENIConfig(client.Client) (*v1alpha1.ENIConfigSpec, error)
+	GetENIConfigName(context.Context, client.Client) (string, error)
 }
 
 // ErrNoENIConfig is the missing ENIConfig error
 var ErrNoENIConfig = errors.New("eniconfig: eniconfig is not available")
 
 var log = logger.Get()
-
-// ENIConfigController defines global context for ENIConfig controller
-type ENIConfigController struct {
-	eni                    map[string]*v1alpha1.ENIConfigSpec
-	myENI                  string
-	eniLock                sync.RWMutex
-	myNodeName             string
-	eniConfigAnnotationDef string
-	eniConfigLabelDef      string
-}
 
 // ENIConfigInfo returns locally cached ENIConfigs
 type ENIConfigInfo struct {
@@ -75,129 +63,25 @@ type ENIConfigInfo struct {
 	EniConfigLabelDef      string
 }
 
-// NewENIConfigController creates a new ENIConfig controller
-func NewENIConfigController() *ENIConfigController {
-	return &ENIConfigController{
-		myNodeName:             os.Getenv("MY_NODE_NAME"),
-		eni:                    make(map[string]*v1alpha1.ENIConfigSpec),
-		myENI:                  eniConfigDefault,
-		eniConfigAnnotationDef: getEniConfigAnnotationDef(),
-		eniConfigLabelDef:      getEniConfigLabelDef(),
+// MyENIConfig returns the ENIConfig applicable to the particular node
+func MyENIConfig(ctx context.Context, k8sClient client.Client) (*v1alpha1.ENIConfigSpec, error) {
+	eniConfigName, err := GetNodeSpecificENIConfigName(ctx, k8sClient)
+	if err != nil {
+		log.Debugf("Error while retrieving Node name")
 	}
-}
 
-// NewHandler creates a new handler for sdk
-func NewHandler(controller *ENIConfigController) sdk.Handler {
-	return &Handler{controller: controller}
-}
-
-// Handler stores the ENIConfigController
-type Handler struct {
-	controller *ENIConfigController
-}
-
-// Handle handles ENIConfig updates from API Server and store them in local cache
-func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
-	switch o := event.Object.(type) {
-	case *v1alpha1.ENIConfig:
-		eniConfigName := o.GetName()
-		if event.Deleted {
-			log.Debugf("Deleting ENIConfig: %s", eniConfigName)
-			h.controller.eniLock.Lock()
-			defer h.controller.eniLock.Unlock()
-			delete(h.controller.eni, eniConfigName)
-			return nil
-		}
-
-		curENIConfig := o.DeepCopy()
-
-		log.Debugf("Handle ENIConfig Add/Update: %s, %v, %s", eniConfigName, curENIConfig.Spec.SecurityGroups, curENIConfig.Spec.Subnet)
-
-		h.controller.eniLock.Lock()
-		defer h.controller.eniLock.Unlock()
-		h.controller.eni[eniConfigName] = &curENIConfig.Spec
-
-	case *corev1.Node:
-		log.Debugf("Handle corev1.Node: %s, %v, %v", o.GetName(), o.GetAnnotations(), o.GetLabels())
-		// Get annotations if not found get labels if not found fallback use default
-		if h.controller.myNodeName == o.GetName() {
-			val, ok := o.GetAnnotations()[h.controller.eniConfigAnnotationDef]
-			if !ok {
-				val, ok = o.GetLabels()[h.controller.eniConfigLabelDef]
-				if !ok {
-					val = eniConfigDefault
-				}
-			}
-			// If value changes
-			if h.controller.myENI != val {
-				h.controller.eniLock.Lock()
-				defer h.controller.eniLock.Unlock()
-				h.controller.myENI = val
-				log.Debugf("Setting myENI to: %s", val)
-				if val != eniConfigDefault {
-					labels := o.GetLabels()
-					labels["vpc.amazonaws.com/eniConfig"] = val
-					o.SetLabels(labels)
-				}
-			}
-		}
+	log.Infof("Found ENI Config Name: %s", eniConfigName)
+	var eniConfig v1alpha1.ENIConfig
+	err = k8sClient.Get(ctx, types.NamespacedName{Name: eniConfigName}, &eniConfig)
+	if err != nil {
+		fmt.Errorf("error while retrieving eniconfig: %s", err)
+		return nil, ErrNoENIConfig
 	}
-	return nil
-}
 
-func printVersion() {
-	log.Infof("Go Version: %s", runtime.Version())
-	log.Infof("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH)
-	log.Infof("operator-sdk Version: %v", sdkVersion.Version)
-}
-
-// Start kicks off ENIConfig controller
-func (eniCfg *ENIConfigController) Start() {
-	printVersion()
-
-	sdk.ExposeMetricsPort()
-
-	resource := "crd.k8s.amazonaws.com/v1alpha1"
-	kind := "ENIConfig"
-	resyncPeriod := time.Second * 5
-	log.Infof("Watching %s, %s, every %v s", resource, kind, resyncPeriod.Seconds())
-	sdk.Watch(resource, kind, "", resyncPeriod)
-	sdk.Watch("/v1", "Node", corev1.NamespaceAll, resyncPeriod)
-	sdk.Handle(NewHandler(eniCfg))
-	sdk.Run(context.TODO())
-}
-
-func (eniCfg *ENIConfigController) Getter() *ENIConfigInfo {
-	output := &ENIConfigInfo{
-		ENI: make(map[string]v1alpha1.ENIConfigSpec),
-	}
-	eniCfg.eniLock.Lock()
-	defer eniCfg.eniLock.Unlock()
-
-	output.MyENI = eniCfg.myENI
-	output.EniConfigAnnotationDef = getEniConfigAnnotationDef()
-	output.EniConfigLabelDef = getEniConfigLabelDef()
-
-	for name, val := range eniCfg.eni {
-		output.ENI[name] = *val
-	}
-	return output
-}
-
-// MyENIConfig returns the security
-func (eniCfg *ENIConfigController) MyENIConfig() (*v1alpha1.ENIConfigSpec, error) {
-	eniCfg.eniLock.Lock()
-	defer eniCfg.eniLock.Unlock()
-
-	myENIConfig, ok := eniCfg.eni[eniCfg.myENI]
-
-	if ok {
-		return &v1alpha1.ENIConfigSpec{
-			SecurityGroups: myENIConfig.SecurityGroups,
-			Subnet:         myENIConfig.Subnet,
-		}, nil
-	}
-	return nil, ErrNoENIConfig
+	return &v1alpha1.ENIConfigSpec{
+		SecurityGroups: eniConfig.Spec.SecurityGroups,
+		Subnet:         eniConfig.Spec.Subnet,
+	}, nil
 }
 
 // getEniConfigAnnotationDef returns eniConfigAnnotation
@@ -226,4 +110,34 @@ func getEniConfigLabelDef() string {
 		return inputStr
 	}
 	return defaultEniConfigLabelDef
+}
+
+func GetNodeSpecificENIConfigName(ctx context.Context, k8sClient client.Client) (string, error) {
+	var eniConfigName string
+
+	log.Infof("Get Node Info for: %s", os.Getenv("MY_NODE_NAME"))
+	var node corev1.Node
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: os.Getenv("MY_NODE_NAME")}, &node)
+	if err != nil {
+		fmt.Errorf("error retrieving node: %s", err)
+		return eniConfigName, err
+	}
+
+	//Derive ENIConfig Name from either Node Annotations or Labels
+	val, ok := node.GetAnnotations()[getEniConfigAnnotationDef()]
+	if !ok {
+		val, ok = node.GetLabels()[getEniConfigLabelDef()]
+		if !ok {
+			val = eniConfigDefault
+		}
+	}
+
+	eniConfigName = val
+	if val != eniConfigDefault {
+		labels := node.GetLabels()
+		labels["vpc.amazonaws.com/eniConfig"] = eniConfigName
+		node.SetLabels(labels)
+	}
+
+	return eniConfigName, nil
 }

@@ -17,7 +17,6 @@ package main
 import (
 	"os"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -39,18 +38,22 @@ func _main() int {
 
 	log.Infof("Starting L-IPAMD %s  ...", version)
 
-	kubeClient, err := k8sapi.CreateKubeClient()
-	if err != nil {
-		log.Errorf("Failed to create client: %v", err)
+	//Check API Server Connectivity
+	if k8sapi.CheckAPIServerConnectivity() != nil {
 		return 1
 	}
 
-	eniConfigController := eniconfig.NewENIConfigController()
-	if ipamd.UseCustomNetworkCfg() {
-		go eniConfigController.Start()
+	rawK8SClient, err := k8sapi.CreateKubeClient()
+	if err != nil {
+		return 1
 	}
 
-	ipamContext, err := ipamd.New(kubeClient, eniConfigController)
+	cacheK8SClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient)
+	if err != nil {
+		return 1
+	}
+
+	ipamContext, err := ipamd.New(rawK8SClient, cacheK8SClient)
 
 	if err != nil {
 		log.Errorf("Initialization failure: %v", err)
