@@ -151,9 +151,11 @@ type ENI struct {
 	DeviceNumber int
 	// IPv4Addresses shows whether each address is assigned, the key is IP address, which must
 	// be in dot-decimal notation with no leading zeros and no whitespace(eg: "10.1.0.253")
-	IPv4Addresses map[string]*AddressInfo
+	//IPv4Addresses map[string]*AddressInfo
 	// Key is the prefix and value is prefix, used IPs under the prefix
 	IPv4Prefixes map[string]*ENIPrefix
+    //Key will be a /32 secondary cidr or /28 prefix
+	AvailableIPv4Cidrs map[net.IPNet]*AssignedIPv4Addresses
 }
 
 // AddressInfo contains information about an IP, Exported fields will be marshaled for introspection.
@@ -164,9 +166,14 @@ type AddressInfo struct {
 	Prefix         net.IP
 }
 
+type AssignedIPv4Addresses struct {
+	//Key is the /32 IP either secondary IP or free /32 IP allocated from /28 prefix
+	IPv4Addresses map[string]*AddressInfo	
+}
+
 func (e *ENI) findAddressForSandbox(ipamKey IPAMKey) *AddressInfo {
-	for _, addr := range e.IPv4Addresses {
-		if addr.IPAMKey == ipamKey {
+	for cidr, addr := range e.AvailableIPv4Cidrs {
+		if addr.AssignedIPv4Addresses.IPv4Addresses[cidr.IP.String()].IPAMKey == ipamKey {
 			return addr
 		}
 	}
@@ -176,8 +183,8 @@ func (e *ENI) findAddressForSandbox(ipamKey IPAMKey) *AddressInfo {
 // AssignedIPv4Addresses is the number of IP addresses already assigned
 func (e *ENI) AssignedIPv4Addresses() int {
 	count := 0
-	for _, addr := range e.IPv4Addresses {
-		if addr.Assigned() {
+	for cidr, addr := range e.AvailableIPv4Cidrs {
+		if addr.AssignedIPv4Addresses.IPv4Addresses[cidr.IP.String()].Assigned() {
 			count++
 		}
 	}
@@ -353,8 +360,8 @@ func (ds *DataStore) ReadBackingStore() error {
 	eniPrefixes := make(ENIPool)
 
 	for _, eni := range ds.eniPool {
-		for _, addr := range eni.IPv4Addresses {
-			eniIPs[addr.Address] = eni
+		for cidr, assignedaddr := range eni.AvailableIPv4Cidrs {
+			eniIPs[assignedaddr.IPv4Addresses[cidr.IP.String()].Address] = eni
 		}
 		for _, prefix := range eni.IPv4Prefixes {
 			eniPrefixes[prefix.Prefix.IP.String()] = eni
@@ -391,7 +398,8 @@ func (ds *DataStore) ReadBackingStore() error {
 				return err
 			}
 
-			addr := eni.IPv4Addresses[allocation.IPv4]
+			cidr := net.IPNet{IP: allocation.IPv4, Mask: net.IPv4Mask(255, 255, 255, 255) }
+			addr := eni.AvailableIPv4Cidrs[cidr].AssignedIPv4Addresses.IPv4Addresses[allocation.IPv4]
 			ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
 
 			addr.Prefix = ipv4Prefix
@@ -399,7 +407,8 @@ func (ds *DataStore) ReadBackingStore() error {
 			ds.log.Debugf("Recovered PD prefix %s ", ipv4Prefix.String())
 			ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
 		} else {
-			addr := eni.IPv4Addresses[allocation.IPv4]
+			cidr := net.IPNet{IP: allocation.IPv4, Mask: net.IPv4Mask(255, 255, 255, 255) }
+			addr := eni.AvailableIPv4Cidrs[cidr].AssignedIPv4Addresses.IPv4Addresses[allocation.IPv4]
 			ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
 			ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
 		}
@@ -423,8 +432,8 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 	allocations := make([]CheckpointEntry, 0, ds.assigned)
 
 	for _, eni := range ds.eniPool {
-		for _, addr := range eni.IPv4Addresses {
-			if addr.Assigned() {
+		for cidr, assignedAddr := range eni.AvailableIPv4Cidrs {
+			if assignedAddr.IPv4Addresses[cidr.IP.String()].Assigned() {
 				entry := CheckpointEntry{
 					IPAMKey: addr.IPAMKey,
 					IPv4:    addr.Address,
@@ -461,7 +470,8 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, 
 		IsPDEnabled:   isPDEnabled,
 		ID:            eniID,
 		DeviceNumber:  deviceNumber,
-		IPv4Addresses: make(map[string]*AddressInfo),
+		AvailableIPv4Cidrs: make(map[net.IPNet]*AssignedIPv4Addresses)
+		//IPv4Addresses: make(map[string]*AddressInfo),
 		IPv4Prefixes:  make(map[string]*ENIPrefix)}
 
 	enis.Set(float64(len(ds.eniPool)))
@@ -480,8 +490,10 @@ func (ds *DataStore) AddIPv4AddressToStore(eniID string, ipv4 string) error {
 		return errors.New("add ENI's IP to datastore: unknown ENI")
 	}
 
+	cidr := net.IPNet{IP: ipv4, Mask: net.IPv4Mask(255, 255, 255, 255) }
+
 	// Already there
-	_, ok = curENI.IPv4Addresses[ipv4]
+	_, ok = curENI.AvailableIPv4Cidrs[cidr]
 	if ok {
 		ds.log.Infof("IP already in DS")
 		return errors.New(IPAlreadyInStoreError)
@@ -491,7 +503,8 @@ func (ds *DataStore) AddIPv4AddressToStore(eniID string, ipv4 string) error {
 	// Prometheus gauge
 	totalIPs.Set(float64(ds.total))
 
-	curENI.IPv4Addresses[ipv4] = &AddressInfo{Address: ipv4}
+	curENI.AvailableIPv4Cidrs[cidr] = make(map[string]*AssignedIPv4Addresses)
+	curENI.AvailableIPv4Cidrs[cidr].AssignedIPv4Addresses.IPv4Addresses[ipv4] = &AddressInfo{Address: ipv4}
 	ds.log.Infof("Added ENI(%s)'s IP %s to datastore", eniID, ipv4)
 	return nil
 }
@@ -505,9 +518,10 @@ func (ds *DataStore) AddPrefixIPv4AddressToStore(eniID string, ipv4 string) erro
 		ds.log.Infof("unkown ENI")
 		return errors.New("add ENI's IP to datastore: unknown ENI")
 	}
-
+	cidr := net.IPNet{IP: ipv4, Mask: net.IPv4Mask(255, 255, 255, 255) }
 	// Already there
-	_, ok = curENI.IPv4Addresses[ipv4]
+	//_, ok = curENI.IPv4Addresses[ipv4]
+	_, ok = curENI.AvailableIPv4Cidrs[cidr]
 	if ok {
 		ds.log.Infof("IP already in DS")
 		return errors.New(IPAlreadyInStoreError)
@@ -516,7 +530,9 @@ func (ds *DataStore) AddPrefixIPv4AddressToStore(eniID string, ipv4 string) erro
 	// Prometheus gauge
 	totalIPs.Set(float64(ds.total))
 
-	curENI.IPv4Addresses[ipv4] = &AddressInfo{Address: ipv4}
+	curENI.AvailableIPv4Cidrs[cidr] = make(map[string]*AssignedIPv4Addresses)
+	curENI.AvailableIPv4Cidrs[cidr].AssignedIPv4Addresses.IPv4Addresses[ipv4] = &AddressInfo{Address: ipv4}
+	//curENI.IPv4Addresses[ipv4] = &AddressInfo{Address: ipv4}
 	ds.log.Infof("Added ENI(%s)'s IP %s to datastore", eniID, ipv4)
 	return nil
 }
@@ -562,12 +578,14 @@ func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string, force bo
 	if !ok {
 		return errors.New(UnknownENIError)
 	}
-
-	ipAddr, ok := curENI.IPv4Addresses[ipv4]
+	
+	cidr := net.IPNet{IP: ipv4, Mask: net.IPv4Mask(255, 255, 255, 255) }
+	_, ok := curENI.AvailableIPv4Cidrs[cidr]
 	if !ok {
 		return errors.New(UnknownIPError)
 	}
 
+	ipAddr := curENI.AvailableIPv4Cidrs[cidr].AssignedIPv4Addresses.IPv4Addresses[ipv4] 
 	if ipAddr.Assigned() {
 		if !force {
 			return errors.New(IPInUseError)
@@ -585,7 +603,7 @@ func (ds *DataStore) DelIPv4AddressFromStore(eniID string, ipv4 string, force bo
 	// Prometheus gauge
 	totalIPs.Set(float64(ds.total))
 
-	delete(curENI.IPv4Addresses, ipv4)
+	delete(curENI.AvailableIPv4Cidrs[cidr].AssignedIPv4Addresses.IPv4Addresses, ipv4)
 
 	ds.log.Infof("Deleted ENI(%s)'s IP %s from datastore", eniID, ipv4)
 	return nil
@@ -626,7 +644,8 @@ func (ds *DataStore) DelIPv4PrefixFromStore(eniID string, ipv4Prefix string, for
 		prefixDB := ipPrefix.AllocatedIPs
 
 		for strPrivateIPv4, _ := range prefixDB.UsedIPs {
-			addr := curENI.IPv4Addresses[strPrivateIPv4]
+			cidr := net.IPNet{IP: strPrivateIPv4, Mask: net.IPv4Mask(255, 255, 255, 255) } 
+			addr := curENI.AvailableIPv4Cidrs[cidr].AssignedIPv4Addresses.IPv4Addresses[strPrivateIPv4]
 			ds.unassignPodIPv4AddressUnsafe(addr)
 		}
 		if err := ds.writeBackingStoreUnsafe(); err != nil {
@@ -663,17 +682,19 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 	for _, eni := range ds.eniPool {
 		ds.log.Debugf("Checking for eni %v", eni)
 		if !eni.IsPDEnabled {
-			for _, addr := range eni.IPv4Addresses {
-				if !addr.Assigned() && !addr.inCoolingPeriod() {
-					ds.assignPodIPv4AddressUnsafe(ipamKey, eni, addr)
-					if err := ds.writeBackingStoreUnsafe(); err != nil {
-						ds.log.Warnf("Failed to update backing store: %v", err)
-						// Important! Unwind assignment
-						ds.unassignPodIPv4AddressUnsafe(addr)
-						return "", -1, err
-					}
+			for _, assignedaddr := range eni.AvailableIPv4Cidrs {
+				for _, addr := range assignedaddr
+					if !addr.Assigned() && !addr.inCoolingPeriod() {
+						ds.assignPodIPv4AddressUnsafe(ipamKey, eni, addr)
+						if err := ds.writeBackingStoreUnsafe(); err != nil {
+							ds.log.Warnf("Failed to update backing store: %v", err)
+							// Important! Unwind assignment
+							ds.unassignPodIPv4AddressUnsafe(addr)
+							return "", -1, err
+						}
 
-					return addr.Address, eni.DeviceNumber, nil
+						return addr.Address, eni.DeviceNumber, nil
+					}
 				}
 			}
 		} else {
@@ -695,8 +716,10 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 						return "", -1, err
 					}
 
+					cidr := net.IPNet{IP: strPrivateIPv4, Mask: net.IPv4Mask(255, 255, 255, 255) }
 					//Adding here to eni DB, need to be removed while deleteing.
-					addr := eni.IPv4Addresses[strPrivateIPv4]
+					addr := eni.AvailableIPv4Cidrs[cidr].AssignedIPv4Addresses.IPv4Addresses[strPrivateIPv4] 
+					//IPv4Addresses[strPrivateIPv4]
 					ds.assignPodIPv4AddressUnsafe(ipamKey, eni, addr)
 
 					addr.Prefix = prefix.Prefix.IP
@@ -707,7 +730,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 						ds.unassignPodIPv4AddressUnsafe(addr)
 						deleteIPv4AddrfromPrefix(prefix, addr)
 						//Remove the IP from eni DB
-						delete(eni.IPv4Addresses, addr.Address)
+						delete(eni.AvailableIPv4Cidrs[cidr].AssignedIPv4Addresses.IPv4Addresses, addr.Address)
 						return "", -1, err
 					}
 					return addr.Address, eni.DeviceNumber, nil
@@ -786,7 +809,7 @@ func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENI) bool 
 	otherWarmIPs := 0
 	for _, other := range ds.eniPool {
 		if other.ID != eni.ID {
-			otherWarmIPs += len(other.IPv4Addresses) - other.AssignedIPv4Addresses()
+			otherWarmIPs += len(other.AvailableIPv4Cidrs) - other.AssignedIPv4Addresses()
 		}
 	}
 	return otherWarmIPs < warmIPTarget
@@ -798,7 +821,7 @@ func (ds *DataStore) isRequiredForMinimumIPTarget(minimumIPTarget int, eni *ENI)
 	otherIPs := 0
 	for _, other := range ds.eniPool {
 		if other.ID != eni.ID {
-			otherIPs += len(other.IPv4Addresses)
+			otherIPs += len(other.AvailableIPv4Cidrs)
 		}
 	}
 	return otherIPs < minimumIPTarget
@@ -880,9 +903,11 @@ func (e *ENI) isTooYoung() bool {
 
 // HasIPInCooling returns true if an IP address was unassigned recently.
 func (e *ENI) hasIPInCooling() bool {
-	for _, addr := range e.IPv4Addresses {
-		if addr.inCoolingPeriod() {
-			return true
+	for _, assignedaddr := range e.AvailableIPv4Cidrs {
+		for _, addr := assignedaddr {
+			if addr.inCoolingPeriod() {
+				return true
+			}
 		}
 	}
 	return false
@@ -902,9 +927,9 @@ func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENI {
 			ds.log.Debugf("Skip the primary ENI for need IP check")
 			continue
 		}
-		if !eni.IsPDEnabled && len(eni.IPv4Addresses) < maxIPperENI {
+		if !eni.IsPDEnabled && len(eni.AvailableIPv4Cidrs) < maxIPperENI {
 			ds.log.Debugf("Found ENI %s that has less than the maximum number of IP addresses allocated: cur=%d, max=%d",
-				eni.ID, len(eni.IPv4Addresses), maxIPperENI)
+				eni.ID, len(eni.AvailableIPv4Cidrs), maxIPperENI)
 			return eni
 		} else if eni.IsPDEnabled && len(eni.IPv4Prefixes) < maxIPperENI {
 			ds.log.Debugf("Found ENI %s that has less than the maximum number of v4 Prefixes allocated: cur=%d, max=%d",
@@ -929,7 +954,7 @@ func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget, minimumIPTarget, war
 
 	removableENI := deletableENI.ID
 	if !ds.eniPool[removableENI].IsPDEnabled {
-		eniIPCount := len(ds.eniPool[removableENI].IPv4Addresses)
+		eniIPCount := len(ds.eniPool[removableENI].AvailableIPv4Cidrs)
 		ds.total -= eniIPCount
 		ds.log.Infof("RemoveUnusedENIFromStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
 			removableENI, eniIPCount, ds.total, ds.assigned)
@@ -968,9 +993,11 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 		ds.log.Warnf("Force removing eni %s with %d assigned pods", eniID, eni.AssignedIPv4Addresses())
 		forceRemovedENIs.Inc()
 		forceRemovedIPs.Add(float64(eni.AssignedIPv4Addresses()))
-		for _, addr := range eni.IPv4Addresses {
-			if addr.Assigned() {
-				ds.unassignPodIPv4AddressUnsafe(addr)
+		for _, assignedaddr := range eni.AvailableIPv4Cidrs {
+			for _, addr := assignedaddr {
+				if addr.Assigned() {
+					ds.unassignPodIPv4AddressUnsafe(addr)
+				}
 			}
 		}
 		if err := ds.writeBackingStoreUnsafe(); err != nil {
@@ -980,9 +1007,9 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 	}
 
 	if !eni.IsPDEnabled {
-		ds.total -= len(eni.IPv4Addresses)
+		ds.total -= len(eni.AvailableIPv4Cidrs)
 		ds.log.Infof("RemoveENIFromDataStore %s: IP address pool stats: free %d addresses, total: %d, assigned: %d",
-			eniID, len(eni.IPv4Addresses), ds.total, ds.assigned)
+			eniID, len(eni.AvailableIPv4Cidrs), ds.total, ds.assigned)
 	} else {
 		_, numIPsPerPrefix, _ := GetPrefixDelegationDefaults()
 		ds.total = ds.total - (len(eni.IPv4Prefixes) * numIPsPerPrefix)
@@ -1045,7 +1072,9 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string,
 		//Regular pod deletes for PD enabled and if pd is disabled but prefix is populated i.e, knob disable scenario
 		deleteIPv4AddrfromPrefix(eni.IPv4Prefixes[retrievedPrefix.String()], addr)
 		//Remove the IP from eni DB
-		delete(eni.IPv4Addresses, addr.Address)
+	
+		cidr := net.IPNet{IP: addr.Address, Mask: net.IPv4Mask(255, 255, 255, 255) }
+		delete(eni.AvailableIPv4Cidrs[cidr].AssignedIPv4Addresses, addr.Address)
 		if !eni.IsPDEnabled {
 			ds.log.Infof("Prefix delegation is disabled but IP belongs to prefix pool")
 			isSecondaryIP = true
@@ -1065,14 +1094,16 @@ func (ds *DataStore) AllocatedIPs() []PodIPInfo {
 
 	ret := make([]PodIPInfo, 0, ds.eniPool.AssignedIPv4Addresses())
 	for _, eni := range ds.eniPool {
-		for _, addr := range eni.IPv4Addresses {
-			if addr.Assigned() {
-				info := PodIPInfo{
-					IPAMKey:      addr.IPAMKey,
-					IP:           addr.Address,
-					DeviceNumber: eni.DeviceNumber,
+		for _, assignedaddr := range eni.AvailableIPv4Cidrs {
+			for _, addr := range assignedaddr {
+				if addr.Assigned() {
+					info := PodIPInfo{
+						IPAMKey:      addr.IPAMKey,
+						IP:           addr.Address,
+						DeviceNumber: eni.DeviceNumber,
+					}
+					ret = append(ret, info)
 				}
-				ret = append(ret, info)
 			}
 		}
 	}
@@ -1091,10 +1122,12 @@ func (ds *DataStore) FreeableIPs(eniID string) []string {
 		return []string{}
 	}
 
-	freeable := make([]string, 0, len(eni.IPv4Addresses))
-	for _, addr := range eni.IPv4Addresses {
-		if !addr.Assigned() {
-			freeable = append(freeable, addr.Address)
+	freeable := make([]string, 0, len(eni.AvailableIPv4Cidrs))
+	for _, assignedaddr := range eni.AvailableIPv4Cidrs {
+		for _, addr := range assignedaddr {
+			if !addr.Assigned() {
+				freeable = append(freeable, addr.Address)
+			}
 		}
 	}
 
@@ -1137,11 +1170,13 @@ func (ds *DataStore) GetENIInfos() *ENIInfos {
 
 	for eni, eniInfo := range ds.eniPool {
 		tmpENIInfo := *eniInfo
-		tmpENIInfo.IPv4Addresses = make(map[string]*AddressInfo, len(eniInfo.IPv4Addresses))
-		// Since IP Addresses might get removed, we need to make a deep copy here.
-		for eni, ipAddrInfoRef := range eniInfo.IPv4Addresses {
-			ipAddrInfo := *ipAddrInfoRef
-			tmpENIInfo.IPv4Addresses[eni] = &ipAddrInfo
+        tmpENIInfo.AvailableIPv4Cidrs = make(map[net.IPNet]*AssignedIPv4Addresses, len(eniInfo.AvailableIPv4Cidrs))
+		for cidr, _ := range eniInfo.AvailableIPv4Cidrs {
+			tmpENIInfo.AvailableIPv4Cidrs[cidr] = make(map[string]*AddressInfo, len(eniInfo.AvailableIPv4Cidrs[cidr].AssignedIPv4Addresses))
+			for ip, ipAddrInfoRef := range eniInfo.AvailableIPv4Cidrs[cidr].AssignedIPv4Addresses {
+				ipAddrInfo := *ipAddrInfoRef
+				tmpENIInfo.AvailableIPv4Cidrs[cidr].AssignedIPv4Addresses.IPv4Addresses[ip] = &ipAddrInfo
+			}
 		}
 		eniInfos.ENIs[eni] = tmpENIInfo
 	}
@@ -1165,16 +1200,18 @@ func (ds *DataStore) GetENIIPs(eniID string) ([]string, error) {
 		return nil, errors.New(UnknownENIError)
 	}
 
-	var ipPool = make([]string, 0, len(eni.IPv4Addresses))
-	for ip, addr := range eni.IPv4Addresses {
+	var ipPool = make([]string, 0)
+	for cidr, assignedAddr := range eni.AvailableIPv4Cidrs {
 		// /32 IPs from SIP or PD pool will be in eni.IPv4Addresses
 		// hence this has to be checked, IP belonging to a prefix can be
 		// a possibility because of PD enable/disable knob toggle
-		if !eni.IsPDEnabled && addr.Prefix != nil {
-			ds.log.Debugf("IP %s belongs to prefix pool so do not account", ip)
-			continue
+		for ip, addr := range assignedAddr {
+			if !eni.IsPDEnabled && addr.Prefix != nil {
+				ds.log.Debugf("IP %s belongs to prefix pool so do not account", ip)
+				continue
+			}
+			ipPool = append(ipPool, ip)
 		}
-		ipPool = append(ipPool, ip)
 	}
 	return ipPool, nil
 }
