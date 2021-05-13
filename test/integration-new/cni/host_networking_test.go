@@ -14,7 +14,6 @@
 package cni
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -63,18 +62,6 @@ var _ = Describe("test host networking", func() {
 				NodeName(primaryNode.Name).
 				Build()
 
-			By("Configuring Veth Prefix and MTU value on aws-node daemonset")
-			ds, err := f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(utils.NAMESPACE, utils.DAEMONSET)
-			Expect(err).NotTo(HaveOccurred())
-
-			oldMTU := utils.GetEnvValueForKeyFromDaemonSet(AWS_VPC_ENI_MTU, ds)
-			oldVethPrefix := utils.GetEnvValueForKeyFromDaemonSet(AWS_VPC_K8S_CNI_VETHPREFIX, ds)
-
-			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.DAEMONSET, utils.NAMESPACE, utils.DAEMONSET, map[string]string{
-				AWS_VPC_ENI_MTU:            strconv.Itoa(NEW_MTU_VAL),
-				AWS_VPC_K8S_CNI_VETHPREFIX: NEW_VETH_PREFIX,
-			})
-
 			By("creating a deployment to launch pod using primary and secondary ENI IP")
 			deployment, err = f.K8sResourceManagers.DeploymentManager().
 				CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
@@ -92,9 +79,10 @@ var _ = Describe("test host networking", func() {
 				Should(BeNumerically(">", 0))
 
 			By("generating the pod networking validation input to be passed to tester")
-			input := GetPodNetworkingValidationInput(interfaceTypeToPodList)
+			input, err := GetPodNetworkingValidationInput(interfaceTypeToPodList).Serialize()
+			Expect(err).NotTo(HaveOccurred())
 
-			By("validating host networking setup is setup correctly")
+			By("validating host, networking setup is setup correctly")
 			ValidateHostNetworking(NetworkingSetupSucceeds, input)
 
 			By("deleting the deployment to test teardown")
@@ -107,6 +95,46 @@ var _ = Describe("test host networking", func() {
 
 			By("validating host networking is teared down correctly")
 			ValidateHostNetworking(NetworkingTearDownSucceeds, input)
+		})
+
+		It("Validate Host Networking setup after changing MTU and Veth Prefix", func() {
+			deployment := manifest.NewBusyBoxDeploymentBuilder().
+				Replicas(6).
+				PodLabel(podLabelKey, podLabelVal).
+				NodeName(primaryNode.Name).
+				Build()
+
+			By("creating a deployment to launch pods")
+			deployment, err = f.K8sResourceManagers.DeploymentManager().
+				CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Configuring Veth Prefix and MTU value on aws-node daemonset")
+			ds, err := f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(utils.NAMESPACE, utils.DAEMONSET)
+			Expect(err).NotTo(HaveOccurred())
+
+			oldMTU := utils.GetEnvValueForKeyFromDaemonSet(AWS_VPC_ENI_MTU, ds)
+			oldVethPrefix := utils.GetEnvValueForKeyFromDaemonSet(AWS_VPC_K8S_CNI_VETHPREFIX, ds)
+
+			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.DAEMONSET, utils.NAMESPACE, utils.DAEMONSET, map[string]string{
+				AWS_VPC_ENI_MTU:            strconv.Itoa(NEW_MTU_VAL),
+				AWS_VPC_K8S_CNI_VETHPREFIX: NEW_VETH_PREFIX,
+			})
+
+			By("getting the list of pods using IP from primary and secondary ENI")
+			interfaceTypeToPodList :=
+				GetPodsOnPrimaryAndSecondaryInterface(primaryNode, podLabelKey, podLabelVal)
+
+			By("generating the pod networking validation input to be passed to tester")
+			podNetworkingValidationInput := GetPodNetworkingValidationInput(interfaceTypeToPodList)
+			podNetworkingValidationInput.VethPrefix = NEW_VETH_PREFIX
+			podNetworkingValidationInput.ValidateMTU = true
+			podNetworkingValidationInput.MTU = NEW_MTU_VAL
+			input, err := podNetworkingValidationInput.Serialize()
+			Expect(err).NotTo(HaveOccurred())
+
+			By("validating host networking setup is setup correctly with MTU check as well")
+			ValidateHostNetworking(NetworkingSetupSucceedsAfterChangingMTU, input)
 
 			// Restore MTU and Veth Prefix
 			By("Restoring MTU value and Veth Prefix to old values")
@@ -114,6 +142,17 @@ var _ = Describe("test host networking", func() {
 				AWS_VPC_ENI_MTU:            oldMTU,
 				AWS_VPC_K8S_CNI_VETHPREFIX: oldVethPrefix,
 			})
+
+			By("deleting the deployment to test teardown")
+			err = f.K8sResourceManagers.DeploymentManager().
+				DeleteAndWaitTillDeploymentIsDeleted(deployment)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("waiting to allow CNI to tear down networking for terminated pods")
+			time.Sleep(time.Second * 60)
+
+			By("validating host networking is teared down correctly")
+			ValidateHostNetworking(NetworkingTearDownSucceeds, input)
 		})
 	})
 
@@ -131,9 +170,10 @@ var _ = Describe("test host networking", func() {
 				CreatAndWaitTillRunning(parkingPod)
 			Expect(err).ToNot(HaveOccurred())
 
-			validInput := GetPodNetworkingValidationInput(InterfaceTypeToPodList{
+			validInput, err := GetPodNetworkingValidationInput(InterfaceTypeToPodList{
 				PodsOnPrimaryENI: []v1.Pod{*parkingPod},
-			})
+			}).Serialize()
+			Expect(err).NotTo(HaveOccurred())
 
 			By("first validating the tester work on valid input")
 			ValidateHostNetworking(NetworkingSetupSucceeds, validInput)
@@ -142,9 +182,11 @@ var _ = Describe("test host networking", func() {
 			invalidPod := parkingPod.DeepCopy()
 			invalidPod.Status.PodIP = "1.1.1.1"
 
-			invalidInput := GetPodNetworkingValidationInput(InterfaceTypeToPodList{
+			invalidInput, err := GetPodNetworkingValidationInput(InterfaceTypeToPodList{
 				PodsOnPrimaryENI: []v1.Pod{*invalidPod},
-			})
+			}).Serialize()
+			Expect(err).NotTo(HaveOccurred())
+
 			ValidateHostNetworking(NetworkingSetupFails, invalidInput)
 
 			By("validating the tester fails when invalid namespace is passed")
@@ -152,9 +194,10 @@ var _ = Describe("test host networking", func() {
 			// veth pair name is generated using namespace+name so the test should fail
 			invalidPod.Namespace = "different"
 
-			invalidInput = GetPodNetworkingValidationInput(InterfaceTypeToPodList{
+			invalidInput, err = GetPodNetworkingValidationInput(InterfaceTypeToPodList{
 				PodsOnPrimaryENI: []v1.Pod{*invalidPod},
-			})
+			}).Serialize()
+			Expect(err).NotTo(HaveOccurred())
 
 			ValidateHostNetworking(NetworkingSetupFails, invalidInput)
 
@@ -222,13 +265,13 @@ func ValidateHostNetworking(testType TestType, podValidationInputString string) 
 
 // GetPodNetworkingValidationInput returns input string containing the list of pods for which
 // the host networking has to be tested
-func GetPodNetworkingValidationInput(interfaceTypeToPodList InterfaceTypeToPodList) string {
+func GetPodNetworkingValidationInput(interfaceTypeToPodList InterfaceTypeToPodList) input.PodNetworkingValidationInput {
 
 	ip := input.PodNetworkingValidationInput{
 		VPCCidrRange: vpcCIDRs,
-		VethPrefix:   NEW_VETH_PREFIX,
+		VethPrefix:   "eni",
 		PodList:      []input.Pod{},
-		MTU:          NEW_MTU_VAL,
+		ValidateMTU:  false,
 	}
 
 	for _, primaryENIPod := range interfaceTypeToPodList.PodsOnPrimaryENI {
@@ -249,8 +292,5 @@ func GetPodNetworkingValidationInput(interfaceTypeToPodList InterfaceTypeToPodLi
 		})
 	}
 
-	inputBytes, err := json.Marshal(ip)
-	Expect(err).ToNot(HaveOccurred())
-
-	return string(inputBytes)
+	return ip
 }
