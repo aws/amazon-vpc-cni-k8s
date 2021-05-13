@@ -14,7 +14,14 @@
 package controller
 
 const (
+	// CNI Metrics Helper Constants
 	CNIMetricsHelperChartDir    = "/test/helm/charts/cni-metrics-helper"
 	CNIMetricsHelperReleaseName = "cni-metrics-helper"
 	CNIMetricHelperNamespace    = "kube-system"
+
+	// Calico Constants
+	CalicoNamespace    = "kube-system"
+	CalicoReleaseName  = "aws-calico"
+	CalicoChartName    = "aws-calico"
+	CalicoChartRepoURL = "https://aws.github.io/eks-charts"
 )

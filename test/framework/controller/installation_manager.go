@@ -24,6 +24,9 @@ import (
 type InstallationManager interface {
 	InstallCNIMetricsHelper(image string, tag string) error
 	UnInstallCNIMetricsHelper() error
+
+	InstallCalico() error
+	UninstallCalico() error
 }
 
 func NewDefaultInstallationManager(manager helm.ReleaseManager) InstallationManager {
@@ -37,7 +40,6 @@ type defaultInstallationManager struct {
 func (d *defaultInstallationManager) InstallCNIMetricsHelper(image string, tag string) error {
 	dir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
 	projectRoot := strings.SplitAfter(dir, "amazon-vpc-cni-k8s")[0]
-
 	values := map[string]interface{}{
 		"image": map[string]interface{}{
 			"repository": image,
@@ -52,5 +54,16 @@ func (d *defaultInstallationManager) InstallCNIMetricsHelper(image string, tag s
 
 func (d *defaultInstallationManager) UnInstallCNIMetricsHelper() error {
 	_, err := d.releaseManager.UninstallRelease(CNIMetricHelperNamespace, CNIMetricsHelperReleaseName)
+	return err
+}
+
+func (d *defaultInstallationManager) InstallCalico() error {
+	_, err := d.releaseManager.InstallRelease(CalicoChartRepoURL, CalicoChartName,
+		CalicoNamespace, CalicoReleaseName, map[string]interface{}{})
+	return err
+}
+
+func (d *defaultInstallationManager) UninstallCalico() error {
+	_, err := d.releaseManager.UninstallRelease(CalicoNamespace, CalicoReleaseName)
 	return err
 }
