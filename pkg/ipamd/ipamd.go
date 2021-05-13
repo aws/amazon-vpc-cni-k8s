@@ -336,6 +336,7 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 
 	mac := c.awsClient.GetPrimaryENImac()
 	// retrieve security groups
+
 	err = c.awsClient.RefreshSGIDs(mac)
 	if err != nil {
 		return nil, err
@@ -470,7 +471,7 @@ func (c *IPAMContext) nodeInit() error {
 		// Check if we want to ask for one
 		c.askForTrunkENIIfNeeded()
 	}
-
+	log.Debugf("Try assign IP/prefix")
 	// For a new node, attach IPs
 	increasedPool, err := c.tryAssignIPsOrPrefixes()
 	if err == nil && increasedPool {
@@ -478,7 +479,7 @@ func (c *IPAMContext) nodeInit() error {
 	} else if err != nil {
 		return err
 	}
-
+	log.Debugf("Out of nodeInit")
 	return nil
 }
 
@@ -786,8 +787,8 @@ func (c *IPAMContext) tryAssignIPsOrPrefixes() (increasedPool bool, err error) {
 
 func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 	eni := c.dataStore.GetENINeedsIP(c.maxIPsPerENI, c.useCustomNetworking)
-	if eni != nil && len(eni.IPv4Addresses) < c.maxIPsPerENI {
-		currentNumberOfAllocatedIPs := len(eni.IPv4Addresses)
+	if eni != nil && len(eni.AvailableIPv4Cidrs) < c.maxIPsPerENI {
+		currentNumberOfAllocatedIPs := len(eni.AvailableIPv4Cidrs)
 		// Try to allocate all available IPs for this ENI
 		err = c.awsClient.AllocIPAddresses(eni.ID, c.maxIPsPerENI-currentNumberOfAllocatedIPs)
 		if err != nil {
@@ -806,17 +807,18 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 			return true, errors.Wrap(err, "failed to get ENI IP addresses during IP allocation")
 		}
 
-		c.addENIaddressesToDataStore(ec2Addrs, eni.ID)
+		c.addENIaddressesToDataStore(ec2Addrs, nil, eni.ID)
 		return true, nil
 	}
 	return false, nil
 }
 
 func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
+	log.Debugf("In tryAssignPrefixes")
 	eni := c.dataStore.GetENINeedsIP(c.maxPrefixesPerENI, c.useCustomNetworking)
 	if eni != nil {
-		currentNumberOfAllocatedPrefixes := len(eni.IPv4Prefixes)
-
+		currentNumberOfAllocatedPrefixes := len(eni.AvailableIPv4Cidrs)
+		log.Debugf("Adding prefix to ENi %s ", eni.ID)
 		err = c.awsClient.AllocIPAddresses(eni.ID, c.maxPrefixesPerENI-currentNumberOfAllocatedPrefixes)
 		if err != nil {
 			log.Warnf("failed to allocate all available IPv4 Prefixes on ENI %s, err: %v", eni.ID, err)
@@ -832,9 +834,11 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 			ipamdErrInc("increaseIPPoolGetENIprefixedFailed")
 			return true, errors.Wrap(err, "failed to get ENI Prefix addresses during IP allocation")
 		}
-		c.addENIprefixesToDataStore(ec2Prefixes, eni.ID)
+		c.addENIaddressesToDataStore(nil, ec2Prefixes, eni.ID)
+		//c.addENIprefixesToDataStore(ec2Prefixes, eni.ID)
 		return true, nil
 	}
+	log.Debugf("Didnt find an ENI")
 	return false, nil
 }
 
@@ -876,41 +880,44 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 	//Either case add the IPs and prefixes to datastore. Reconiler will ensure
 	//if pd enabled then reconcile only prefix
 	//if pd not enabled then reconcile only SIPs.
-	c.addENIaddressesToDataStore(eniMetadata.IPv4Addresses, eni)
-	c.addENIprefixesToDataStore(eniMetadata.IPv4Prefixes, eni)
+	c.addENIaddressesToDataStore(eniMetadata.IPv4Addresses, eniMetadata.IPv4Prefixes, eni)
 
 	return nil
 }
 
-// return primary ip address on the interface
-func (c *IPAMContext) addENIaddressesToDataStore(ec2Addrs []*ec2.NetworkInterfacePrivateIpAddress, eni string) {
-	for _, ec2Addr := range ec2Addrs {
-		if aws.BoolValue(ec2Addr.Primary) {
+func (c *IPAMContext) addENIaddressesToDataStore(ec2PrivateIpAddrs []*ec2.NetworkInterfacePrivateIpAddress, ec2PrefixAddrs []*ec2.Ipv4PrefixSpecification, eni string) {
+	//Add all the secondary IPs
+	for _, ec2PrivateIpAddr := range ec2PrivateIpAddrs {
+		if aws.BoolValue(ec2PrivateIpAddr.Primary) {
 			continue
 		}
-		err := c.dataStore.AddIPv4AddressToStore(eni, aws.StringValue(ec2Addr.PrivateIpAddress))
+		cidr := net.IPNet{IP: net.ParseIP(aws.StringValue(ec2PrivateIpAddr.PrivateIpAddress)), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		err := c.dataStore.AddIPv4CidrToStore(eni, cidr, false)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
-			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store", ec2Addr.PrivateIpAddress)
+			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store", ec2PrivateIpAddr.PrivateIpAddress)
 			// continue to add next address
 			ipamdErrInc("addENIaddressesToDataStoreAddENIIPv4AddressFailed")
 		}
 	}
-	total, assigned, _ := c.dataStore.GetStats()
-	log.Debugf("IP Address Pool stats: total: %d, assigned: %d", total, assigned)
-}
-
-func (c *IPAMContext) addENIprefixesToDataStore(ec2Addrs []*ec2.Ipv4PrefixSpecification, eni string) {
-	log.Debugf("In addENIPrefixedToDataStore for %s and no of prefixes %d", eni, len(ec2Addrs))
-	for _, ec2Addr := range ec2Addrs {
-		err := c.dataStore.AddIPv4PrefixToStore(eni, aws.StringValue(ec2Addr.Ipv4Prefix))
+	//Walk thru all prefixes
+	for _, ec2PrefixAddr := range ec2PrefixAddrs {
+		strIpv4Prefix := aws.StringValue(ec2PrefixAddr.Ipv4Prefix)
+		_, ipnet, err := net.ParseCIDR(strIpv4Prefix)
+		if err != nil {
+			//Parsing failed, get next prefix
+			log.Debugf("Parsing failed, moving on to next prefix")
+			continue
+		}
+		cidr := *ipnet
+		err = c.dataStore.AddIPv4CidrToStore(eni, cidr, true)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
-			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store", ec2Addr)
+			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store", ec2PrefixAddr.Ipv4Prefix)
 			// continue to add next address
 			ipamdErrInc("addENIaddressesToDataStoreAddENIIPv4PrefixFailed")
 		}
 	}
 	total, assigned, totalPrefix := c.dataStore.GetStats()
-	log.Debugf("Prefix Address Pool stats: total: %d, assigned: %d, total prefixes: %d", total, assigned, totalPrefix)
+	log.Debugf("Datastore Pool stats: total(/32): %d, assigned(/32): %d, total prefixes(/28): %d", total, assigned, totalPrefix)
 }
 
 // getMaxENI returns the maximum number of ENIs to attach to this instance. This is calculated as the lesser of
@@ -1095,28 +1102,19 @@ func (c *IPAMContext) nodeIPPoolReconcile(interval time.Duration) {
 
 	// Mark phase
 	for _, attachedENI := range attachedENIs {
-		if !c.enableIpv4PrefixDelegation {
-			eniIPPool, err := c.dataStore.GetENIIPs(attachedENI.ENIID)
-			if err == nil {
-				// If the attached ENI is in the data store
-				log.Debugf("Reconcile existing ENI %s IP pool", attachedENI.ENIID)
-				// Reconcile IP pool
-				c.eniIPPoolReconcile(eniIPPool, attachedENI, attachedENI.ENIID)
-				// Mark action, remove this ENI from currentENIs map
-				delete(currentENIs, attachedENI.ENIID)
-				continue
-			}
-		} else {
-			eniPrefixPool, err := c.dataStore.GetENIPrefixes(attachedENI.ENIID)
-			if err == nil {
-				// If the attached ENI is in the data store
-				log.Debugf("Reconcile existing ENI %s IP prefixes", attachedENI.ENIID)
-				// Reconcile IP pool
-				c.eniPrefixPoolReconcile(eniPrefixPool, attachedENI, attachedENI.ENIID)
-				// Mark action, remove this ENI from currentENIs map
-				delete(currentENIs, attachedENI.ENIID)
-				continue
-			}
+		eniIPPool, eniPrefixPool, err := c.dataStore.GetENICIDRs(attachedENI.ENIID)
+		if err == nil {
+			// If the attached ENI is in the data store
+			log.Debugf("Reconcile existing ENI %s IP pool", attachedENI.ENIID)
+			// Reconcile IP pool
+			c.eniIPPoolReconcile(eniIPPool, attachedENI, attachedENI.ENIID)
+			// If the attached ENI is in the data store
+			log.Debugf("Reconcile existing ENI %s IP prefixes", attachedENI.ENIID)
+			// Reconcile IP pool
+			c.eniPrefixPoolReconcile(eniPrefixPool, attachedENI, attachedENI.ENIID)
+			// Mark action, remove this ENI from currentENIs map
+			delete(currentENIs, attachedENI.ENIID)
+			continue
 		}
 
 		// Add new ENI
@@ -1180,7 +1178,8 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool []string, attachedENI awsutils.E
 
 		log.Debugf("Reconcile and delete IP %s on ENI %s", existingIP, eni)
 		// Force the delete, since we have verified with EC2 that these secondary IPs are no longer assigned to this ENI
-		err := c.dataStore.DelIPv4AddressFromStore(eni, existingIP, true /* force */)
+		ipv4Addr := net.IPNet{IP: net.ParseIP(existingIP), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		err := c.dataStore.DelIPv4CidrFromStore(eni, ipv4Addr, true /* force */)
 		if err != nil {
 			log.Errorf("Failed to reconcile and delete IP %s on ENI %s, %v", existingIP, eni, err)
 			ipamdErrInc("ipReconcileDel")
@@ -1221,7 +1220,12 @@ func (c *IPAMContext) eniPrefixPoolReconcile(ipPool []string, attachedENI awsuti
 
 		log.Debugf("Reconcile and delete Prefix %s on ENI %s", existingIP, eni)
 		// Force the delete, since we have verified with EC2 that these secondary IPs are no longer assigned to this ENI
-		err := c.dataStore.DelIPv4PrefixFromStore(eni, existingIP, true /* force */)
+		_, ipv4Cidr, err := net.ParseCIDR(existingIP)
+		if err != nil {
+			log.Debugf("Failed to parse so continuing with next prefix")
+			continue
+		}
+		err = c.dataStore.DelIPv4CidrFromStore(eni, *ipv4Cidr, true /* force */)
 		if err != nil {
 			log.Errorf("Failed to reconcile and delete IP %s on ENI %s, %v", existingIP, eni, err)
 			ipamdErrInc("ipReconcileDel")
@@ -1287,7 +1291,8 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []*e
 		}
 
 		// Try to add the IP
-		err := c.dataStore.AddIPv4AddressToStore(eni, strPrivateIPv4)
+		cidr := net.IPNet{IP: net.ParseIP(strPrivateIPv4), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		err := c.dataStore.AddIPv4CidrToStore(eni, cidr, false)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
 			log.Errorf("Failed to reconcile IP %s on ENI %s", strPrivateIPv4, eni)
 			ipamdErrInc("ipReconcileAdd")
@@ -1355,7 +1360,8 @@ func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIIPs
 		}
 
 		// Try to add the IP
-		err := c.dataStore.AddIPv4PrefixToStore(eni, strPrivateIPv4)
+		_, ipv4CidrPtr, _ := net.ParseCIDR(strPrivateIPv4)
+		err := c.dataStore.AddIPv4CidrToStore(eni, *ipv4CidrPtr, true)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
 			log.Errorf("Failed to reconcile IP %s on ENI %s", strPrivateIPv4, eni)
 			ipamdErrInc("ipReconcileAdd")
@@ -1594,35 +1600,42 @@ func (c *IPAMContext) GetPod(podName, namespace string) (*v1.Pod, error) {
 }
 
 func (c *IPAMContext) tryUnassignIPsFromENIs() {
+	log.Debugf("In tryUnassignIPsFromENIs")
 	eniInfos := c.dataStore.GetENIInfos()
 	for eniID := range eniInfos.ENIs {
-		freeableIPs := c.dataStore.FreeableIPs(eniID)
+		c.tryUnassignIPFromENI(eniID)
+	}
+}
 
-		if len(freeableIPs) == 0 {
+func (c *IPAMContext) tryUnassignIPFromENI(eniID string) {
+	freeableIPs := c.dataStore.FreeableIPs(eniID)
+
+	if len(freeableIPs) == 0 {
+		log.Debugf("No freeable IPs")
+		return
+	}
+
+	// Delete IPs from datastore
+	var deletedIPs []string
+	for _, toDelete := range freeableIPs {
+		// Don't force the delete, since a freeable IP might have been assigned to a pod
+		// before we get around to deleting it.
+		cidr := net.IPNet{IP: net.ParseIP(toDelete), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		err := c.dataStore.DelIPv4CidrFromStore(eniID, cidr, false /* force */)
+		if err != nil {
+			log.Warnf("Failed to delete IP %s on ENI %s from datastore: %s", toDelete, eniID, err)
+			ipamdErrInc("decreaseIPPool")
 			continue
-		}
-
-		// Delete IPs from datastore
-		var deletedIPs []string
-		for _, toDelete := range freeableIPs {
-			// Don't force the delete, since a freeable IP might have been assigned to a pod
-			// before we get around to deleting it.
-			err := c.dataStore.DelIPv4AddressFromStore(eniID, toDelete, false /* force */)
-			if err != nil {
-				log.Warnf("Failed to delete IP %s on ENI %s from datastore: %s", toDelete, eniID, err)
-				ipamdErrInc("decreaseIPPool")
-				continue
-			} else {
-				deletedIPs = append(deletedIPs, toDelete)
-			}
-		}
-
-		// Deallocate IPs from the instance if they aren't used by pods.
-		if err := c.awsClient.DeallocIPAddresses(eniID, deletedIPs, true); err != nil {
-			log.Warnf("Failed to decrease IP pool by removing IPs %v from ENI %s: %s", deletedIPs, eniID, err)
 		} else {
-			log.Debugf("Successfully decreased IP pool by removing IPs %v from ENI %s", deletedIPs, eniID)
+			deletedIPs = append(deletedIPs, toDelete)
 		}
+	}
+
+	// Deallocate IPs from the instance if they aren't used by pods.
+	if err := c.awsClient.DeallocIPAddresses(eniID, deletedIPs, true); err != nil {
+		log.Warnf("Failed to decrease IP pool by removing IPs %v from ENI %s: %s", deletedIPs, eniID, err)
+	} else {
+		log.Debugf("Successfully decreased IP pool by removing IPs %v from ENI %s", deletedIPs, eniID)
 	}
 }
 
@@ -1643,7 +1656,8 @@ func (c *IPAMContext) tryUnassignPrefixFromENI(eniID string) {
 	for _, toDelete := range FreeablePrefixes {
 		// Don't force the delete, since a freeable Prefix might have been assigned to a pod
 		// before we get around to deleting it.
-		err := c.dataStore.DelIPv4PrefixFromStore(eniID, toDelete, false /* force */)
+		_, toDeleteCidr, _ := net.ParseCIDR(toDelete)
+		err := c.dataStore.DelIPv4CidrFromStore(eniID, *toDeleteCidr, false /* force */)
 		if err != nil {
 			log.Warnf("Failed to delete Prefix %s on ENI %s from datastore: %s", toDelete, eniID, err)
 			ipamdErrInc("decreaseIPPool")

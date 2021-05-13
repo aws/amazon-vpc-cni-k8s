@@ -133,14 +133,15 @@ func deleteIPv4AddrfromPrefix(prefix *ENIPrefix, addr *AddressInfo) {
 	prefix.UsedIPs--
 }
 
+/*
 //Given a IPv4 address, this will compute the associated prefix
-func getPrefixFromIPv4Addr(IPaddr string) net.IP {
+func getPrefixFromIPv4Addr(IPaddr string) net.IPNet {
 	_, _, supportedPrefixLen := GetPrefixDelegationDefaults()
 	ipv4Prefix := net.ParseIP(IPaddr)
 	ipv4PrefixMask := net.CIDRMask(supportedPrefixLen, ipv4DefaultPrefixSize)
 	ipv4Prefix = ipv4Prefix.To4()
 	ipv4Prefix = ipv4Prefix.Mask(ipv4PrefixMask)
-	return ipv4Prefix
+	return net.IPNet {IP: net.ParseIP(ipv4Prefix.String()), Mask: ipv4PrefixMask}
 }
 
 //Function to return PD defaults supported by VPC
@@ -151,3 +152,4 @@ func GetPrefixDelegationDefaults() (int, int, int) {
 
 	return numPrefixesPerENI, numIPsPerPrefix, supportedPrefixLen
 }
+*/
