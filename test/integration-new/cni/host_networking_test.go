@@ -82,7 +82,7 @@ var _ = Describe("test host networking", func() {
 			input, err := GetPodNetworkingValidationInput(interfaceTypeToPodList).Serialize()
 			Expect(err).NotTo(HaveOccurred())
 
-			By("validating host, networking setup is setup correctly")
+			By("validating host networking setup is setup correctly")
 			ValidateHostNetworking(NetworkingSetupSucceeds, input)
 
 			By("deleting the deployment to test teardown")
