@@ -14,8 +14,14 @@
 package utils
 
 import (
+	appsV1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+)
+
+const (
+	NAMESPACE = "kube-system"
+	DAEMONSET = "aws-node"
 )
 
 // NamespacedName returns the namespaced name for k8s objects
@@ -24,4 +30,14 @@ func NamespacedName(obj v1.Object) types.NamespacedName {
 		Namespace: obj.GetNamespace(),
 		Name:      obj.GetName(),
 	}
+}
+
+func GetEnvValueForKeyFromDaemonSet(key string, ds *appsV1.DaemonSet) string {
+	envVar := ds.Spec.Template.Spec.Containers[0].Env
+	for _, env := range envVar {
+		if env.Name == key {
+			return env.Value
+		}
+	}
+	return ""
 }

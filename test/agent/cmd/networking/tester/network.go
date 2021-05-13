@@ -69,6 +69,12 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 			continue
 		}
 
+		// Validate MTU value
+		if link.Attrs().MTU != podNetworkingValidationInput.MTU {
+			validationErrors = append(validationErrors,
+				fmt.Errorf("failed to match expected MTU value %v for veth pair: %s", hostVethName, link.Attrs().MTU))
+		}
+
 		// Verify IP Link for the Pod is UP
 		isLinkUp := strings.Contains(link.Attrs().Flags.String(), "up")
 		if !isLinkUp {

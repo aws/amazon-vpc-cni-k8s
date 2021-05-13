@@ -16,12 +16,14 @@ package cni
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
+	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	. "github.com/onsi/ginkgo"
@@ -39,6 +41,13 @@ const (
 	NetworkingSetupFails
 )
 
+const (
+	AWS_VPC_ENI_MTU            = "AWS_VPC_ENI_MTU"
+	AWS_VPC_K8S_CNI_VETHPREFIX = "AWS_VPC_K8S_CNI_VETHPREFIX"
+	NEW_MTU_VAL                = 1300
+	NEW_VETH_PREFIX            = "veth"
+)
+
 var _ = Describe("test host networking", func() {
 	var err error
 	var podLabelKey = "app"
@@ -53,6 +62,18 @@ var _ = Describe("test host networking", func() {
 				PodLabel(podLabelKey, podLabelVal).
 				NodeName(primaryNode.Name).
 				Build()
+
+			By("Configuring Veth Prefix and MTU value on aws-node daemonset")
+			ds, err := f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(utils.NAMESPACE, utils.DAEMONSET)
+			Expect(err).NotTo(HaveOccurred())
+
+			oldMTU := utils.GetEnvValueForKeyFromDaemonSet(AWS_VPC_ENI_MTU, ds)
+			oldVethPrefix := utils.GetEnvValueForKeyFromDaemonSet(AWS_VPC_K8S_CNI_VETHPREFIX, ds)
+
+			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.DAEMONSET, utils.NAMESPACE, utils.DAEMONSET, map[string]string{
+				AWS_VPC_ENI_MTU:            strconv.Itoa(NEW_MTU_VAL),
+				AWS_VPC_K8S_CNI_VETHPREFIX: NEW_VETH_PREFIX,
+			})
 
 			By("creating a deployment to launch pod using primary and secondary ENI IP")
 			deployment, err = f.K8sResourceManagers.DeploymentManager().
@@ -86,6 +107,13 @@ var _ = Describe("test host networking", func() {
 
 			By("validating host networking is teared down correctly")
 			ValidateHostNetworking(NetworkingTearDownSucceeds, input)
+
+			// Restore MTU and Veth Prefix
+			By("Restoring MTU value and Veth Prefix to old values")
+			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.DAEMONSET, utils.NAMESPACE, utils.DAEMONSET, map[string]string{
+				AWS_VPC_ENI_MTU:            oldMTU,
+				AWS_VPC_K8S_CNI_VETHPREFIX: oldVethPrefix,
+			})
 		})
 	})
 
@@ -198,8 +226,9 @@ func GetPodNetworkingValidationInput(interfaceTypeToPodList InterfaceTypeToPodLi
 
 	ip := input.PodNetworkingValidationInput{
 		VPCCidrRange: vpcCIDRs,
-		VethPrefix:   "eni",
+		VethPrefix:   NEW_VETH_PREFIX,
 		PodList:      []input.Pod{},
+		MTU:          NEW_MTU_VAL,
 	}
 
 	for _, primaryENIPod := range interfaceTypeToPodList.PodsOnPrimaryENI {

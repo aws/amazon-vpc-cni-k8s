@@ -32,6 +32,8 @@ type PodNetworkingValidationInput struct {
 	VethPrefix string
 	// List of pod to validate the networking
 	PodList []Pod
+	// Expected MTU value
+	MTU int
 }
 
 type Pod struct {
