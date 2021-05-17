@@ -2,6 +2,7 @@ package k8sapi
 
 import (
 	"fmt"
+
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"k8s.io/apimachinery/pkg/runtime"
