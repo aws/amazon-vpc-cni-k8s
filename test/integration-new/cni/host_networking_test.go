@@ -104,22 +104,22 @@ var _ = Describe("test host networking", func() {
 				NodeName(primaryNode.Name).
 				Build()
 
-			By("creating a deployment to launch pods")
-			deployment, err = f.K8sResourceManagers.DeploymentManager().
-				CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
-			Expect(err).ToNot(HaveOccurred())
-
 			By("Configuring Veth Prefix and MTU value on aws-node daemonset")
-			ds, err := f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(utils.NAMESPACE, utils.DAEMONSET)
+			ds, err := f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(utils.AwsNodeNamespace, utils.AwsNodeName)
 			Expect(err).NotTo(HaveOccurred())
 
 			oldMTU := utils.GetEnvValueForKeyFromDaemonSet(AWS_VPC_ENI_MTU, ds)
 			oldVethPrefix := utils.GetEnvValueForKeyFromDaemonSet(AWS_VPC_K8S_CNI_VETHPREFIX, ds)
 
-			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.DAEMONSET, utils.NAMESPACE, utils.DAEMONSET, map[string]string{
+			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
 				AWS_VPC_ENI_MTU:            strconv.Itoa(NEW_MTU_VAL),
 				AWS_VPC_K8S_CNI_VETHPREFIX: NEW_VETH_PREFIX,
 			})
+
+			By("creating a deployment to launch pods")
+			deployment, err = f.K8sResourceManagers.DeploymentManager().
+				CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
+			Expect(err).ToNot(HaveOccurred())
 
 			By("getting the list of pods using IP from primary and secondary ENI")
 			interfaceTypeToPodList :=
@@ -134,11 +134,11 @@ var _ = Describe("test host networking", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("validating host networking setup is setup correctly with MTU check as well")
-			ValidateHostNetworking(NetworkingSetupSucceedsAfterChangingMTU, input)
+			ValidateHostNetworking(NetworkingSetupSucceeds, input)
 
 			// Restore MTU and Veth Prefix
 			By("Restoring MTU value and Veth Prefix to old values")
-			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.DAEMONSET, utils.NAMESPACE, utils.DAEMONSET, map[string]string{
+			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
 				AWS_VPC_ENI_MTU:            oldMTU,
 				AWS_VPC_K8S_CNI_VETHPREFIX: oldVethPrefix,
 			})

@@ -19,11 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-const (
-	NAMESPACE = "kube-system"
-	DAEMONSET = "aws-node"
-)
-
 // NamespacedName returns the namespaced name for k8s objects
 func NamespacedName(obj v1.Object) types.NamespacedName {
 	return types.NamespacedName{
