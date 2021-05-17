@@ -17,8 +17,9 @@ package eniconfig
 import (
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/types"
 	"os"
+
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
