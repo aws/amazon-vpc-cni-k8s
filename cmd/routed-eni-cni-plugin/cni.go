@@ -332,7 +332,6 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 func main() {
 	log := logger.DefaultLogger()
-	log.Debugf("CNI Plugin version: %s ...", version)
 	about := fmt.Sprintf("AWS CNI %s", version)
 	exitCode := 0
 	if e := skel.PluginMainWithError(cmdAdd, nil, cmdDel, cniSpecVersion.All, about); e != nil {
