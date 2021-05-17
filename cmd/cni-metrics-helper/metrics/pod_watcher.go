@@ -43,7 +43,7 @@ func (d *defaultPodWatcher) GetCNIPods(ctx context.Context) ([]string, error) {
 	}
 
 	listOptions := client.ListOptions{
-		Namespace: metav1.NamespaceSystem,
+		Namespace:     metav1.NamespaceSystem,
 		LabelSelector: labelSelector,
 	}
 
