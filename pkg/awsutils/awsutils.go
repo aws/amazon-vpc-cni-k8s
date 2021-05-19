@@ -454,7 +454,7 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 		for _, eni := range allENIs {
 			eniIDs = append(eniIDs, eni.ENIID)
 		}
-		
+
 		newENIs := StringSet{}
 		newENIs.Set(eniIDs)
 
@@ -481,9 +481,9 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 				}
 				awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
 				//No need to return error here since retry will happen in 30seconds and also
-				//If update failed due to stale ENI then returning error will prevent updating SG 
-				//for following ENIs since the list is sorted 
-			    log.Debugf("refreshSGIDs: unable to update the ENI %s SG - %v", eniID, err)
+				//If update failed due to stale ENI then returning error will prevent updating SG
+				//for following ENIs since the list is sorted
+				log.Debugf("refreshSGIDs: unable to update the ENI %s SG - %v", eniID, err)
 			}
 		}
 	}
