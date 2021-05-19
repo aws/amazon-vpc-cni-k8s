@@ -16,7 +16,6 @@ package eniconfig
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -75,7 +74,7 @@ func MyENIConfig(ctx context.Context, k8sClient client.Client) (*v1alpha1.ENICon
 	var eniConfig v1alpha1.ENIConfig
 	err = k8sClient.Get(ctx, types.NamespacedName{Name: eniConfigName}, &eniConfig)
 	if err != nil {
-		fmt.Errorf("error while retrieving eniconfig: %s", err)
+		log.Errorf("error while retrieving eniconfig: %s", err)
 		return nil, ErrNoENIConfig
 	}
 
@@ -120,7 +119,7 @@ func GetNodeSpecificENIConfigName(ctx context.Context, k8sClient client.Client) 
 	var node corev1.Node
 	err := k8sClient.Get(ctx, types.NamespacedName{Name: os.Getenv("MY_NODE_NAME")}, &node)
 	if err != nil {
-		fmt.Errorf("error retrieving node: %s", err)
+		log.Errorf("error retrieving node: %s", err)
 		return eniConfigName, err
 	}
 
