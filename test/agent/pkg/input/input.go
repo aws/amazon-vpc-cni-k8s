@@ -13,6 +13,8 @@
 
 package input
 
+import "encoding/json"
+
 type TestStatus struct {
 	SuccessCount int
 	FailureCount int
@@ -32,6 +34,10 @@ type PodNetworkingValidationInput struct {
 	VethPrefix string
 	// List of pod to validate the networking
 	PodList []Pod
+	// Should Validate MTU value, by default it will false
+	ValidateMTU bool
+	// Expected MTU value
+	MTU int
 }
 
 type Pod struct {
@@ -44,4 +50,12 @@ type Pod struct {
 	// Set to true when the Pod is scheduled on IP
 	// from the Secondary ENI
 	IsIPFromSecondaryENI bool
+}
+
+func (ip PodNetworkingValidationInput) Serialize() (string, error) {
+	inputBytes, err := json.Marshal(ip)
+	if err != nil {
+		return "", err
+	}
+	return string(inputBytes), nil
 }
