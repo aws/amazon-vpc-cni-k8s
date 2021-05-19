@@ -15,7 +15,6 @@ package aws
 
 import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/services"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 )

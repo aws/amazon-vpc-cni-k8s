@@ -53,6 +53,7 @@ func NewDefaultDeploymentBuilder() *DeploymentBuilder {
 		namespace:              utils.DefaultTestNamespace,
 		terminationGracePeriod: 0,
 		labels:                 map[string]string{"role": "test"},
+		nodeSelector:           map[string]string{},
 	}
 }
 
