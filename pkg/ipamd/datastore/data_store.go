@@ -51,6 +51,9 @@ const (
 
 	// UnknownENIError is an error when caller tries to access an ENI which is unknown to datastore
 	UnknownENIError = "datastore: unknown ENI"
+
+	// IPv4 /32 prefix for host routes
+	ipv4DefaultPrefixSize = 32
 )
 
 // We need to know which IPs are already allocated across
@@ -547,7 +550,7 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 
 	curENI, ok := ds.eniPool[eniID]
 	if !ok {
-		log.Debugf("Unkown %s while deleting the CIDR", eniID)
+		ds.log.Debugf("Unkown %s while deleting the CIDR", eniID)
 		return errors.New(UnknownENIError)
 	}
 	strIPv4Cidr := cidr.String()
@@ -555,7 +558,7 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 
 	_, ok = curENI.AvailableIPv4Cidrs[strIPv4Cidr]
 	if !ok {
-		log.Debugf("Unkown %s CIDR", strIPv4Cidr)
+		ds.log.Debugf("Unkown %s CIDR", strIPv4Cidr)
 		return errors.New(UnknownIPError)
 	}
 
@@ -651,7 +654,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 			ds.log.Debugf("PD is enabled.")
 			for _, availableCidr := range eni.AvailableIPv4Cidrs {
 				if availableCidr.IsPrefix {
-					strPrivateIPv4, err := getFreeIPv4AddrfromCidr(availableCidr)
+					strPrivateIPv4, err := ds.getFreeIPv4AddrfromCidr(availableCidr)
 					if err != nil {
 						ds.log.Debugf("Unable to get IP address from prefix: %v", err)
 						//Check in next CIDR
@@ -1207,18 +1210,18 @@ func (ds *DataStore) CleanupDataStore(eniID string, ipv4 string, force bool, ena
 	return err
 }
 
-func getFreeIPv4AddrfromCidr(availableCidr *AssignedIPv4Addresses) (string, error) {
+func (ds *DataStore) getFreeIPv4AddrfromCidr(availableCidr *AssignedIPv4Addresses) (string, error) {
 	if availableCidr == nil {
-		log.Errorf("Prefix datastore not initialized")
+		ds.log.Errorf("Prefix datastore not initialized")
 		return "", errors.New("Prefix datastore not initialized")
 	}
-	strPrivateIPv4, err := getUnusedIP(availableCidr)
+	strPrivateIPv4, err := ds.getUnusedIP(availableCidr)
 	if err != nil {
-		log.Debugf("Get free IP from prefix failed %v", err)
+		ds.log.Debugf("Get free IP from prefix failed %v", err)
 		return "", err
 	}
 	availableCidr.UsedIPs++
-	log.Debugf("Returning Free IP %s", strPrivateIPv4)
+	ds.log.Debugf("Returning Free IP %s", strPrivateIPv4)
 	return strPrivateIPv4, nil
 }
 
@@ -1229,7 +1232,7 @@ func getFreeIPv4AddrfromCidr(availableCidr *AssignedIPv4Addresses) (string, erro
   return 10.1.1.1/32
 */
 
-func getUnusedIP(availableCidr *AssignedIPv4Addresses) (string, error) {
+func (ds *DataStore) getUnusedIP(availableCidr *AssignedIPv4Addresses) (string, error) {
 	//Check if there is any IP out of cooldown
 	var cachedIP string
 	for _, addr := range availableCidr.IPv4Addresses {
@@ -1258,7 +1261,7 @@ func getUnusedIP(availableCidr *AssignedIPv4Addresses) (string, error) {
 		if _, ok := availableCidr.IPv4Addresses[strPrivateIPv4]; ok {
 			continue
 		}
-		log.Debugf("Found a free IP not in DB - %s", strPrivateIPv4)
+		ds.log.Debugf("Found a free IP not in DB - %s", strPrivateIPv4)
 		return strPrivateIPv4, nil
 	}
 
