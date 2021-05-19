@@ -471,7 +471,7 @@ func (c *IPAMContext) nodeInit() error {
 		// Check if we want to ask for one
 		c.askForTrunkENIIfNeeded()
 	}
-	log.Debugf("Try assign IP/prefix")
+	
 	// For a new node, attach IPs
 	increasedPool, err := c.tryAssignIPsOrPrefixes()
 	if err == nil && increasedPool {
@@ -479,7 +479,6 @@ func (c *IPAMContext) nodeInit() error {
 	} else if err != nil {
 		return err
 	}
-	log.Debugf("Out of nodeInit")
 	return nil
 }
 
@@ -814,7 +813,6 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 }
 
 func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
-	log.Debugf("In tryAssignPrefixes")
 	eni := c.dataStore.GetENINeedsIP(c.maxPrefixesPerENI, c.useCustomNetworking)
 	if eni != nil {
 		currentNumberOfAllocatedPrefixes := len(eni.AvailableIPv4Cidrs)
@@ -835,7 +833,6 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 			return true, errors.Wrap(err, "failed to get ENI Prefix addresses during IP allocation")
 		}
 		c.addENIaddressesToDataStore(nil, ec2Prefixes, eni.ID)
-		//c.addENIprefixesToDataStore(ec2Prefixes, eni.ID)
 		return true, nil
 	}
 	log.Debugf("Didnt find an ENI")
