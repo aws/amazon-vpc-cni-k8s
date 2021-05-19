@@ -37,6 +37,17 @@ ginkgo -v --failOnPending -- \
  --ng-name-label-val=$NG_NAME_LABEL_VAL
 ```
 
+### cni-metrics-helper
+The CNI Metrics Helper Integration test uses helm to install the cni-metrics-helper. The helm charts are present in local test directory and if needed can be published to a repository.
+
+In order to test a custom image you need pass the following tags along with the tags discussed above.
+```
+--cni-metrics-helper-image-repo=<image-repository>
+--cni-metrics-helper-image-tag=<image-tag>
+```
+
+*IMPORTANT*: The CNI Metric test is suitable for release testing of new CNI Metrics Helper manifest only if the manifest and the local helm charts are in sync.
+
 ### Future Work
 Currently the package is named as `integraiton-new` because we already have `integration` directory with existing Ginkgo test cases with a separate `go.mod`. Once the older package is completely deprecated we will rename this package to `integration`.
 

@@ -20,9 +20,23 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 )
 
+type PolicyDocument struct {
+	Version   string
+	Statement []StatementEntry
+}
+
+type StatementEntry struct {
+	Effect   string
+	Action   []string
+	Resource string
+}
+
 type IAM interface {
 	AttachRolePolicy(policyArn string, roleName string) error
 	DetachRolePolicy(policyARN string, roleName string) error
+	CreatePolicy(policyName string, policyDocument string) (*iam.CreatePolicyOutput, error)
+	DeletePolicy(policyARN string) error
+	GetInstanceProfile(instanceProfileName string) (*iam.GetInstanceProfileOutput, error)
 }
 
 type defaultIAM struct {
@@ -45,6 +59,29 @@ func (d *defaultIAM) DetachRolePolicy(policyARN string, roleName string) error {
 	}
 	_, err := d.IAMAPI.DetachRolePolicy(detachRolePolicyInput)
 	return err
+}
+
+func (d *defaultIAM) CreatePolicy(policyName string, policyDocument string) (*iam.CreatePolicyOutput, error) {
+	createPolicyInput := &iam.CreatePolicyInput{
+		PolicyDocument: aws.String(policyDocument),
+		PolicyName:     aws.String(policyName),
+	}
+	return d.IAMAPI.CreatePolicy(createPolicyInput)
+}
+
+func (d *defaultIAM) DeletePolicy(policyARN string) error {
+	deletePolicyInput := &iam.DeletePolicyInput{
+		PolicyArn: aws.String(policyARN),
+	}
+	_, err := d.IAMAPI.DeletePolicy(deletePolicyInput)
+	return err
+}
+
+func (d *defaultIAM) GetInstanceProfile(instanceProfileName string) (*iam.GetInstanceProfileOutput, error) {
+	getInstanceProfileInput := &iam.GetInstanceProfileInput{
+		InstanceProfileName: aws.String(instanceProfileName),
+	}
+	return d.IAMAPI.GetInstanceProfile(getInstanceProfileInput)
 }
 
 func NewIAM(session *session.Session) IAM {
