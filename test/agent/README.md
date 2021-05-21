@@ -29,6 +29,14 @@ One way to run the traffic test is as follows
 #### Networking Testing
 Networking testing binary must be invoked on a pod that runs in Host Networking mode. It is capable of testing the Pod networking is setup correctly and once the Pod has been deleted the networking has been teared down correctly by the CNI Plugin.
 
+### Using the local changes to Agent inside ginkgo 
+Ginkgo tests take dependency on the Agent module for supplying PodValidationInput as of now.
+If you are making changes to the PodValidationValidationInput then gingko must use local copy of agent with your modifications instead of downloading the upstream module to reflect those changes.
+You can modify the go.mod file located inside test folder as below to enable ginkgo to use local copy of the agent
+```
+replace github.com/aws/amazon-vpc-cni-k8s/test/agent => <absolute local path>/amazon-vpc-cni-k8s/test/agent>
+```
+
 ### How to test the Agent locally
 Apart from running the tests on your local environment. For some test cases where we want to run test on Pod (for instance Pod networking tests) we can copy over the binary to the Pod and execute it. For e2e testing, we can push docker image to ECR and use the image in automation test suite.
 
@@ -64,6 +72,19 @@ Change the agent image in the Go code and run the test case as usual.
 
 #### Finalizing the changes
 - Submit PR with the change to Agent.
+- Once the PR is merged get the commit hash and generate a new version for the agent changes 
+```
+go get -d github.com/aws/amazon-vpc-cni-k8s/test/agent@<commit_hash>
+```
+Sample Output
+```
+go: github.com/aws/amazon-vpc-cni-k8s/test/agent 4d1931b480a23d2c6cb0eee8adef5bd3b2fbefac => v0.0.0-20210519174950-4d1931b480a2
+go: downloading github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20210519174950-4d1931b480a2
+```
+- Update the version in the go.mod file under test folder
+```
+github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20210519174950-4d1931b480a2
+```
 - One of the AWS Maintainer will push the image to ECR (Till we have pipeline that does this for us)
 - Use the updated image tag wherever you want to update the docker image in automation tests.
 
