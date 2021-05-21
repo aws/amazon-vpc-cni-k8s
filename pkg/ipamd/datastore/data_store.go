@@ -177,15 +177,15 @@ type AssignedIPv4Addresses struct {
 	UsedIPs int
 }
 
-func (e *ENI) findAddressForSandbox(ipamKey IPAMKey) *AddressInfo {
+func (e *ENI) findAddressForSandbox(ipamKey IPAMKey) (*AddressInfo, *AssignedIPv4Addresses) {
 	for _, availableCidr := range e.AvailableIPv4Cidrs {
 		for _, addr := range availableCidr.IPv4Addresses {
 			if addr.IPAMKey == ipamKey {
-				return addr
+				return addr, availableCidr
 			}
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // AssignedIPv4Addresses is the number of IP addresses already assigned
@@ -224,13 +224,13 @@ func (p *ENIPool) AssignedIPv4Addresses() int {
 }
 
 // FindAddressForSandbox returns ENI and AddressInfo or (nil, nil) if not found
-func (p *ENIPool) FindAddressForSandbox(ipamKey IPAMKey) (*ENI, *AddressInfo) {
+func (p *ENIPool) FindAddressForSandbox(ipamKey IPAMKey) (*ENI, *AddressInfo, *AssignedIPv4Addresses) {
 	for _, eni := range *p {
-		if addr := eni.findAddressForSandbox(ipamKey); addr != nil {
-			return eni, addr
+		if addr, availableCidr := eni.findAddressForSandbox(ipamKey); addr != nil && availableCidr != nil {
+			return eni, addr, availableCidr
 		}
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 // PodIPInfo contains pod's IP and the device number of the ENI
@@ -398,8 +398,6 @@ func (ds *DataStore) ReadBackingStore() error {
 			addr := eni.AvailableIPv4Cidrs[strIpv4Prefix].IPv4Addresses[allocation.IPv4]
 			eni.AvailableIPv4Cidrs[strIpv4Prefix].UsedIPs++
 			ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
-
-			addr.Prefix = ipv4Prefix
 
 			ds.log.Debugf("Recovered PD prefix %s ", strIpv4Prefix)
 			ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
@@ -623,7 +621,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 
 	ds.log.Debugf("AssignIPv4Address: IP address pool stats: total: %d, assigned %d", ds.total, ds.assigned)
 
-	if eni, addr := ds.eniPool.FindAddressForSandbox(ipamKey); addr != nil {
+	if eni, addr, _ := ds.eniPool.FindAddressForSandbox(ipamKey); addr != nil {
 		ds.log.Infof("AssignPodIPv4Address: duplicate pod assign for sandbox %s", ipamKey)
 		return addr.Address, eni.DeviceNumber, nil
 	}
@@ -668,8 +666,6 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 					}
 					addr := availableCidr.IPv4Addresses[strPrivateIPv4]
 					ds.assignPodIPv4AddressUnsafe(ipamKey, eni, addr)
-
-					addr.Prefix = availableCidr.Cidr
 
 					if err := ds.writeBackingStoreUnsafe(); err != nil {
 						ds.log.Warnf("Failed to update backing store: %v", err)
@@ -972,14 +968,13 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 
 // UnassignPodIPv4Address a) find out the IP address based on PodName and PodNameSpace
 // b)  mark IP address as unassigned c) returns IP address, ENI's device number, error
-func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string, deviceNumber int, isSecondaryIP bool, err error) {
+func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string, deviceNumber int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	ds.log.Debugf("UnassignPodIPv4Address: IP address pool stats: total:%d, assigned %d, sandbox %s",
 		ds.total, ds.assigned, ipamKey)
 
-	eni, addr := ds.eniPool.FindAddressForSandbox(ipamKey)
-	isSecondaryIP = false
+	eni, addr, availableCidr := ds.eniPool.FindAddressForSandbox(ipamKey)
 	if addr == nil {
 		// This `if` block should be removed when the CRI
 		// migration code is finally removed.  Leaving a
@@ -993,43 +988,29 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string,
 		ds.log.Debugf("UnassignPodIPv4Address: Failed to find IPAM entry under full key, trying CRI-migrated version")
 		ipamKey.NetworkName = backfillNetworkName
 		ipamKey.IfName = backfillNetworkIface
-		eni, addr = ds.eniPool.FindAddressForSandbox(ipamKey)
+		eni, addr, availableCidr = ds.eniPool.FindAddressForSandbox(ipamKey)
 	}
 	if addr == nil {
 		ds.log.Warnf("UnassignPodIPv4Address: Failed to find sandbox %s",
 			ipamKey)
-		return nil, "", 0, false, ErrUnknownPod
+		return nil, "", 0, ErrUnknownPod
 	}
 
 	ds.unassignPodIPv4AddressUnsafe(addr)
 	if err := ds.writeBackingStoreUnsafe(); err != nil {
 		// Unwind un-assignment
 		ds.assignPodIPv4AddressUnsafe(ipamKey, eni, addr)
-		return nil, "", 0, false, err
+		return nil, "", 0, err
 	}
 	addr.UnassignedTime = time.Now()
-	retrievedPrefix := addr.Prefix
-	if eni.IsPDEnabled && retrievedPrefix.IP == nil {
+	if eni.IsPDEnabled && availableCidr.IsPrefix == false {
 		ds.log.Infof("Prefix delegation is enabled and the IP is from secondary pool hence no need to update prefix pool")
 		ds.total--
-		isSecondaryIP = true
-	} else if retrievedPrefix.IP != nil {
-		ds.log.Infof("Retrieved Prefix %s", retrievedPrefix.String())
-		//Regular pod deletes for PD enabled and if pd is disabled but prefix is populated i.e, knob disable scenario
-		//deleteIPv4AddrfromPrefix(eni.IPv4Prefixes[retrievedPrefix.String()], addr)
-		//Remove the IP from eni DB
-
-		//cidr := net.IPNet{IP: net.ParseIP(addr.Address), Mask: net.IPv4Mask(255, 255, 255, 255) }
-		//delete(eni.AvailableIPv4Cidrs[cidr.String()].IPv4Addresses, addr.Address)
-		if !eni.IsPDEnabled {
-			ds.log.Infof("Prefix delegation is disabled but IP belongs to prefix pool")
-			isSecondaryIP = true
-		}
 	}
 
 	ds.log.Infof("UnassignPodIPv4Address: sandbox %s's ipAddr %s, DeviceNumber %d",
 		ipamKey, addr.Address, eni.DeviceNumber)
-	return eni, addr.Address, eni.DeviceNumber, isSecondaryIP, nil
+	return eni, addr.Address, eni.DeviceNumber, nil
 }
 
 // AllocatedIPs returns a recent snapshot of allocated sandbox<->IPs.

@@ -471,7 +471,7 @@ func (c *IPAMContext) nodeInit() error {
 		// Check if we want to ask for one
 		c.askForTrunkENIIfNeeded()
 	}
-	
+
 	// For a new node, attach IPs
 	increasedPool, err := c.tryAssignIPsOrPrefixes()
 	if err == nil && increasedPool {
