@@ -619,7 +619,7 @@ func (c *IPAMContext) tryUnassignIPsOrPrefixesFromAll() {
 					if err != nil {
 						return
 					}
-					ipv4Cidr = *ipv4CidrPtr	
+					ipv4Cidr = *ipv4CidrPtr
 				} else {
 					ipv4Cidr = net.IPNet{IP: net.ParseIP(toDelete), Mask: net.IPv4Mask(255, 255, 255, 255)}
 				}
@@ -899,13 +899,13 @@ func (c *IPAMContext) addENIsecondaryIPsToDataStore(ec2PrivateIpAddrs []*ec2.Net
 			ipamdErrInc("addENIsecondaryIPsToDataStoreFailed")
 		}
 	}
-	
+
 	total, assigned, totalPrefix := c.dataStore.GetStats()
 	log.Debugf("Datastore Pool stats: total(/32): %d, assigned(/32): %d, total prefixes(/28): %d", total, assigned, totalPrefix)
 }
 
 func (c *IPAMContext) addENIprefixesToDataStore(ec2PrefixAddrs []*ec2.Ipv4PrefixSpecification, eni string) {
-	
+
 	//Walk thru all prefixes
 	for _, ec2PrefixAddr := range ec2PrefixAddrs {
 		strIpv4Prefix := aws.StringValue(ec2PrefixAddr.Ipv4Prefix)
