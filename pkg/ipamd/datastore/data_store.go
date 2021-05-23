@@ -444,11 +444,11 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 }
 
 // AddENI add ENI to data store
-func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, isEFA, isPDEnabled bool) error {
+func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, isEFA bool) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	ds.log.Debugf("DataStore Add an ENI %s and is PD enabled %d", eniID, isPDEnabled)
+	ds.log.Debugf("DataStore Add an ENI %s", eniID)
 
 	_, ok := ds.eniPool[eniID]
 	if ok {
@@ -542,9 +542,9 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 		}
 	}
 	ones, bits := cidr.Mask.Size()
-	ds.total += 1 << (bits - ones)
+	ds.total -= 1 << (bits - ones)
 	if deletableCidr.IsPrefix {
-		ds.allocatedPrefix++
+		ds.allocatedPrefix--
 	}
 	totalIPs.Set(float64(ds.total))
 	delete(deletableCidr.IPv4Addresses, ipv4)
@@ -882,7 +882,15 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 		}
 	}
 
-	ds.log.Infof("RemoveUnusedENIFromStore %s: IP/Prefix address pool stats: free %d addresses, total: %d, assigned: %d, total prefixes: %d",
+	for _, assignedaddr := range eni.AvailableIPv4Cidrs {
+		ones, bits := assignedaddr.Cidr.Mask.Size()
+		ds.total -= 1 << (bits - ones)
+		if assignedaddr.IsPrefix {
+			ds.allocatedPrefix--
+		}
+	}
+
+	ds.log.Infof("RemoveENIFromDataStore %s: IP/Prefix address pool stats: free %d addresses, total: %d, assigned: %d, total prefixes: %d",
 		eniID, len(eni.AvailableIPv4Cidrs), ds.total, ds.assigned, ds.allocatedPrefix)
 	delete(ds.eniPool, eniID)
 

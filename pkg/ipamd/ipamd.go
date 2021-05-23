@@ -856,7 +856,7 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isTrunkENI, isEFAENI bool) error {
 	primaryENI := c.awsClient.GetPrimaryENI()
 	// Add the ENI to the datastore
-	err := c.dataStore.AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI, c.enableIpv4PrefixDelegation)
+	err := c.dataStore.AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI)
 	if err != nil && err.Error() != datastore.DuplicatedENIError {
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
@@ -1251,7 +1251,7 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []*e
 	for _, privateIPv4 := range attachedENIIPs {
 		strPrivateIPv4 := aws.StringValue(privateIPv4.PrivateIpAddress)
 		if strPrivateIPv4 == c.primaryIP[eni] {
-			log.Debugf("Reconcile and skip primary IP %s on ENI %s", strPrivateIPv4, eni)
+			log.Infof("Reconcile and skip primary IP %s on ENI %s", strPrivateIPv4, eni)
 			continue
 		}
 
@@ -1296,7 +1296,7 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []*e
 				c.reconcileCooldownCache.Remove(strPrivateIPv4)
 			}
 		}
-
+		log.Infof("Trying to add %s", strPrivateIPv4)
 		// Try to add the IP
 		cidr := net.IPNet{IP: net.ParseIP(strPrivateIPv4), Mask: net.IPv4Mask(255, 255, 255, 255)}
 		err := c.dataStore.AddIPv4CidrToStore(eni, cidr, false)
