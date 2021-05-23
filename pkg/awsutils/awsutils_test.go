@@ -880,7 +880,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndIPsAttached(t *testing.T) {
 			},
 		},
 		//IPv4Prefixes: make([]*ec2.Ipv4PrefixSpecification, 0),
-		IPv4Prefixes: nil,	
+		IPv4Prefixes: nil,
 	}
 	eniList := []ENIMetadata{eni1Metadata, eni2Metadata}
 	tests := []struct {

@@ -15,9 +15,9 @@ package datastore
 
 import (
 	"errors"
+	"net"
 	"testing"
 	"time"
-	"net"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 

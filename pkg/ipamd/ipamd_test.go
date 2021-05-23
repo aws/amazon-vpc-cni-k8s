@@ -216,7 +216,7 @@ func TestNodeInitwithPDenabled(t *testing.T) {
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 
 	m.awsutils.EXPECT().GetLocalIPv4().Return(primaryIP)
-    m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp.MultiCardENIIDs).AnyTimes()
+	m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp.MultiCardENIIDs).AnyTimes()
 
 	var rules []netlink.Rule
 	m.network.EXPECT().GetRuleList().Return(rules, nil)
@@ -681,7 +681,7 @@ func TestNodePrefixPoolReconcile(t *testing.T) {
 
 	primary := true
 	primaryENIMetadata := getPrimaryENIMetadataPDenabled()
-	
+
 	testAddr1 := *primaryENIMetadata.IPv4Addresses[0].PrivateIpAddress
 	// Always the primary ENI
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
