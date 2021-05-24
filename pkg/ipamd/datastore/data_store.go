@@ -196,6 +196,8 @@ func (e *ENI) AssignedIPv4Addresses() int {
 //AssignedIPv4AddressesInCidr is the number of IP addresses already assigned in the CIDR
 func (cidr *AssignedIPv4Addresses) AssignedIPv4AddressesInCidr() int {
 	count := 0
+	//SIP : This will run just once and count will be 0 if addr is not assigned or addr is not allocated yet(unused IP)
+	//PD : This will return count of number /32 assigned in /28 CIDR.
 	for _, addr := range cidr.IPv4Addresses {
 		if addr.Assigned() {
 			count++
@@ -984,10 +986,8 @@ func (ds *DataStore) FreeableIPs(eniID string) []string {
 
 	freeable := make([]string, 0, len(eni.AvailableIPv4Cidrs))
 	for _, assignedaddr := range eni.AvailableIPv4Cidrs {
-		for _, addr := range assignedaddr.IPv4Addresses {
-			if !addr.Assigned() && !assignedaddr.IsPrefix {
-				freeable = append(freeable, addr.Address)
-			}
+		if !assignedaddr.IsPrefix && assignedaddr.AssignedIPv4AddressesInCidr() == 0 {
+			freeable = append(freeable, assignedaddr.Cidr.IP.String())
 		}
 	}
 
@@ -1066,7 +1066,7 @@ func (ds *DataStore) GetENICIDRs(eniID string) ([]string, []string, error) {
 		if !assignedAddr.IsPrefix {
 			ipPool = append(ipPool, assignedAddr.Cidr.IP.String())
 		} else {
-			prefixPool = append(ipPool, assignedAddr.Cidr.String())
+			prefixPool = append(prefixPool, assignedAddr.Cidr.String())
 		}
 	}
 	return ipPool, prefixPool, nil
