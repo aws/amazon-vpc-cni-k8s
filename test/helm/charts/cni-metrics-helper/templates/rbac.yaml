@@ -1,0 +1,69 @@
+{{- if .Values.rbac.create }}
+apiVersion: "rbac.authorization.k8s.io/v1"
+kind: ClusterRole
+metadata:
+  name: {{ include "cni-metric-helper.fullname" . }}
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - "nodes"
+      - "pods"
+      - "pods/proxy"
+      - "services"
+      - "resourcequotas"
+      - "replicationcontrollers"
+      - "limitranges"
+      - "persistentvolumeclaims"
+      - "persistentvolumes"
+      - "namespaces"
+      - "endpoints"
+    verbs:
+      - "list"
+      - "watch"
+      - "get"
+  - apiGroups:
+      - "extensions"
+    resources:
+      - "daemonsets"
+      - "deployments"
+      - "replicasets"
+    verbs:
+      - "list"
+      - "watch"
+  - apiGroups:
+      - "apps"
+    resources:
+      - "statefulsets"
+    verbs:
+      - "list"
+      - "watch"
+  - apiGroups:
+      - "batch"
+    resources:
+      - "cronjobs"
+      - "jobs"
+    verbs:
+      - "list"
+      - "watch"
+  - apiGroups:
+      - "autoscaling"
+    resources:
+      - "horizontalpodautoscalers"
+    verbs:
+      - "list"
+      - "watch"
+---
+apiVersion: "rbac.authorization.k8s.io/v1"
+kind: "ClusterRoleBinding"
+metadata:
+  name: {{ include "cni-metric-helper.fullname" . }}
+roleRef:
+  apiGroup: "rbac.authorization.k8s.io"
+  kind: "ClusterRole"
+  name: {{ include "cni-metric-helper.fullname" . }}
+subjects:
+  - kind: "ServiceAccount"
+    name: {{ include "cni-metric-helper.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end}}

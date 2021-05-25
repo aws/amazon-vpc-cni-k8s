@@ -474,8 +474,16 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 			_, err = cache.ec2SVC.ModifyNetworkInterfaceAttributeWithContext(context.Background(), attributeInput)
 			awsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 			if err != nil {
+				if aerr, ok := err.(awserr.Error); ok {
+					if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+						awsAPIErrInc("IMDSMetaDataOutOfSync", err)
+					}
+				}
 				awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
-				return errors.Wrap(err, "refreshSGIDs: unable to update the ENI's SG")
+				//No need to return error here since retry will happen in 30seconds and also
+				//If update failed due to stale ENI then returning error will prevent updating SG
+				//for following ENIs since the list is sorted
+				log.Debugf("refreshSGIDs: unable to update the ENI %s SG - %v", eniID, err)
 			}
 		}
 	}
@@ -1007,6 +1015,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
 				badENIID := badENIID(aerr.Message())
 				log.Debugf("Could not find interface: %s, ID: %s", aerr.Message(), badENIID)
+				awsAPIErrInc("IMDSMetaDataOutOfSync", err)
 				// Remove this ENI from the map
 				delete(eniMap, badENIID)
 				// Remove the failing ENI ID from the EC2 API request and try again

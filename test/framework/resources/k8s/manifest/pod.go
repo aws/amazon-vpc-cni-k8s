@@ -30,6 +30,7 @@ type PodBuilder struct {
 	terminationGracePeriod int
 	nodeName               string
 	restartPolicy          v1.RestartPolicy
+	nodeSelector           map[string]string
 }
 
 func NewDefaultPodBuilder() *PodBuilder {
@@ -39,6 +40,7 @@ func NewDefaultPodBuilder() *PodBuilder {
 		labels:                 map[string]string{},
 		terminationGracePeriod: 0,
 		restartPolicy:          v1.RestartPolicyNever,
+		nodeSelector:           map[string]string{},
 	}
 }
 
@@ -72,6 +74,11 @@ func (p *PodBuilder) NodeName(nodeName string) *PodBuilder {
 	return p
 }
 
+func (p *PodBuilder) NodeSelector(nodeLabelKey string, nodeLabelVal string) *PodBuilder {
+	p.nodeSelector[nodeLabelKey] = nodeLabelVal
+	return p
+}
+
 func (p *PodBuilder) TerminationGracePeriod(period int) *PodBuilder {
 	p.terminationGracePeriod = period
 	return p
@@ -95,6 +102,7 @@ func (p *PodBuilder) Build() *v1.Pod {
 			TerminationGracePeriodSeconds: aws.Int64(int64(p.terminationGracePeriod)),
 			NodeName:                      p.nodeName,
 			HostNetwork:                   p.hostNetwork,
+			NodeSelector:                  p.nodeSelector,
 		},
 	}
 }

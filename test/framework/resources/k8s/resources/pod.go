@@ -38,6 +38,7 @@ type PodManager interface {
 	PodExec(namespace string, name string, command []string) (string, string, error)
 	PodLogs(namespace string, name string) (string, error)
 	GetPodsWithLabelSelector(labelKey string, labelVal string) (v1.PodList, error)
+	GetPod(podNamespace string, podName string) (*v1.Pod, error)
 	CreatAndWaitTillRunning(pod *v1.Pod) (*v1.Pod, error)
 	CreateAndWaitTillPodCompleted(pod *v1.Pod) (*v1.Pod, error)
 	DeleteAndWaitTillPodDeleted(pod *v1.Pod) error
@@ -80,6 +81,12 @@ func (d *defaultPodManager) CreatAndWaitTillRunning(pod *v1.Pod) (*v1.Pod, error
 	})
 
 	return observedPod, err
+}
+
+func (d *defaultPodManager) GetPod(podNamespace string, podName string) (*v1.Pod, error) {
+	pod := &v1.Pod{}
+	return pod, d.k8sClient.Get(context.Background(),
+		types.NamespacedName{Name: podName, Namespace: podNamespace}, pod)
 }
 
 func (d *defaultPodManager) CreateAndWaitTillPodCompleted(pod *v1.Pod) (*v1.Pod, error) {

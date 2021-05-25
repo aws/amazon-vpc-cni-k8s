@@ -32,6 +32,11 @@ func AddEnvVarToDaemonSetAndWaitTillUpdated(f *framework.Framework, dsName strin
 	By(fmt.Sprintf("setting the environment variables on the ds to %+v", envVars))
 	err := AddOrUpdateEnvironmentVariable(updatedDs.Spec.Template.Spec.Containers,
 		containerName, envVars)
+	// Check for init containers if the container is not found in list of containers
+	if err != nil {
+		err = AddOrUpdateEnvironmentVariable(updatedDs.Spec.Template.Spec.InitContainers,
+			containerName, envVars)
+	}
 	Expect(err).ToNot(HaveOccurred())
 
 	waitTillDaemonSetUpdated(f, ds, updatedDs)
@@ -46,6 +51,11 @@ func RemoveVarFromDaemonSetAndWaitTillUpdated(f *framework.Framework, dsName str
 	By(fmt.Sprintf("setting the environment variables on the ds to %+v", envVars))
 	err := RemoveEnvironmentVariables(updatedDs.Spec.Template.Spec.Containers,
 		containerName, envVars)
+	// Check for init containers if the container is not found in list of containers
+	if err != nil {
+		err = RemoveEnvironmentVariables(updatedDs.Spec.Template.Spec.InitContainers,
+			containerName, envVars)
+	}
 	Expect(err).ToNot(HaveOccurred())
 
 	waitTillDaemonSetUpdated(f, ds, updatedDs)
