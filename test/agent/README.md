@@ -30,8 +30,8 @@ One way to run the traffic test is as follows
 Networking testing binary must be invoked on a pod that runs in Host Networking mode. It is capable of testing the Pod networking is setup correctly and once the Pod has been deleted the networking has been teared down correctly by the CNI Plugin.
 
 ### Using the local changes to Agent inside ginkgo 
-Ginkgo tests take dependency on the Agent module for supplying PodValidationInput as of now.
-If you are making changes to the PodValidationValidationInput then gingko must use local copy of agent with your modifications instead of downloading the upstream module to reflect those changes.
+Ginkgo tests take dependency on the Agent module for supplying PodNetworkingValidationInput as of now.
+If you are making changes to the PodNetworkingValidationInput then gingko must use local copy of agent with your modifications instead of downloading the upstream module to reflect those changes.
 You can modify the go.mod file located inside test folder as below to enable ginkgo to use local copy of the agent
 ```
 replace github.com/aws/amazon-vpc-cni-k8s/test/agent => <absolute local path>/amazon-vpc-cni-k8s/test/agent>
