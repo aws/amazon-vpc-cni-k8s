@@ -129,8 +129,11 @@ type APIs interface {
 	// AllocIPAddresses allocates numIPs IP addresses on a ENI
 	AllocIPAddresses(eniID string, numIPs int) error
 
+	// DeallocCidrs wrapper around DeallocIPAddresses and DeallocPrefixAddresses
+	DeallocCidrs(eniID string, ips []string) error
+
 	// DeallocIPAddresses deallocates the list of IP addresses from a ENI
-	DeallocIPAddresses(eniID string, ips []string, igonoreCachedPDflag bool) error
+	DeallocIPAddresses(eniID string, ips []string) error
 
 	// DeallocPrefixAddresses deallocates the list of IP addresses from a ENI
 	DeallocPrefixAddresses(eniID string, ips []string) error
@@ -1393,22 +1396,23 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 	return eniMetadata, nil
 }
 
-// DeallocIPAddresses allocates numIPs of IP address on an ENI
-func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []string, ignoreCachedPDflag bool) error {
+//DeallocCidrs
+func (cache *EC2InstanceMetadataCache) DeallocCidrs(eniID string, deletableIPs []string) error {
+	if cache.useIPv4PrefixDelegation {
+		return cache.DeallocPrefixAddresses(eniID, deletableIPs)
+	} else {
+		return cache.DeallocIPAddresses(eniID, deletableIPs)
+	}
+}
+
+// DeallocIPAddresses frees numIPs of IP address on an ENI
+func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []string) error {
 	log.Infof("Trying to unassign the following IPs %s from ENI %s", ips, eniID)
 	ipsInput := aws.StringSlice(ips)
 
-	input := &ec2.UnassignPrivateIpAddressesInput{}
-	if !cache.useIPv4PrefixDelegation || ignoreCachedPDflag {
-		input = &ec2.UnassignPrivateIpAddressesInput{
-			NetworkInterfaceId: aws.String(eniID),
-			PrivateIpAddresses: ipsInput,
-		}
-	} else {
-		input = &ec2.UnassignPrivateIpAddressesInput{
-			NetworkInterfaceId: aws.String(eniID),
-			Ipv4Prefixes:       ipsInput,
-		}
+	input := &ec2.UnassignPrivateIpAddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		PrivateIpAddresses: ipsInput,
 	}
 
 	start := time.Now()
@@ -1422,7 +1426,7 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []st
 	return nil
 }
 
-// DeallocPrefixAddresses allocates numIPs of IP address on an ENI
+// DeallocPrefixAddresses frees numIPs of IP address on an ENI
 func (cache *EC2InstanceMetadataCache) DeallocPrefixAddresses(eniID string, ips []string) error {
 	log.Infof("Trying to unassign the following IPs %s from ENI %s", ips, eniID)
 	ipsInput := aws.StringSlice(ips)
