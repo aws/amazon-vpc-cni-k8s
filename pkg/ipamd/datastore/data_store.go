@@ -152,7 +152,7 @@ type ENI struct {
 	DeviceNumber int
 	// IPv4Addresses shows whether each address is assigned, the key is IP address, which must
 	// be in dot-decimal notation with no leading zeros and no whitespace(eg: "10.1.0.253")
-	// Key is the IP address
+	// Key is the IP address - PD: "IP/28" and SIP: "IP/32"
 	AvailableIPv4Cidrs map[string]*AssignedIPv4Addresses
 }
 
@@ -161,7 +161,6 @@ type AddressInfo struct {
 	IPAMKey        IPAMKey
 	Address        string
 	UnassignedTime time.Time
-	Prefix         net.IPNet
 }
 
 type AssignedIPv4Addresses struct {
