@@ -195,21 +195,15 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		IfName:      in.IfName,
 		NetworkName: in.NetworkName,
 	}
-	eni, ip, deviceNumber, mismatchedStore, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
-	if eni != nil && mismatchedStore {
-		if s.ipamContext.enableIpv4PrefixDelegation {
-			addr := eni.IPv4Addresses[ip]
-			if addr != nil && addr.Prefix == nil {
-				log.Debugf("IP belongs to secondary pool with PD enabled so free from EC2")
-				var deletedIPs []string
-				deletedIPs = append(deletedIPs, ip)
-				if err = s.ipamContext.awsClient.DeallocIPAddresses(eni.ID, deletedIPs, !s.ipamContext.enableIpv4PrefixDelegation); err != nil {
-					log.Warnf("Failed to remove IP %v from ENI %s: %s", deletedIPs, eni.ID, err)
-				} else {
-					log.Debugf("Successfully removed IPs %v from ENI %s", deletedIPs, eni.ID)
-				}
-			}
-		} else {
+	eni, ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
+	cidr := net.IPNet{IP: net.ParseIP(ip), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	cidrStr := cidr.String()
+	if eni != nil && eni.AvailableIPv4Cidrs[cidrStr] != nil {
+		if s.ipamContext.enableIpv4PrefixDelegation && eni.AvailableIPv4Cidrs[cidrStr].IsPrefix == false {
+			log.Debugf("IP belongs to secondary pool with PD enabled so free IP from EC2")
+			s.ipamContext.tryUnassignIPFromENI(eni.ID)
+		} else if !s.ipamContext.enableIpv4PrefixDelegation && eni.AvailableIPv4Cidrs[cidrStr].IsPrefix == true {
+			log.Debugf("IP belongs to prefix pool with PD disabled so try free prefix from EC2")
 			s.ipamContext.tryUnassignPrefixFromENI(eni.ID)
 		}
 	}

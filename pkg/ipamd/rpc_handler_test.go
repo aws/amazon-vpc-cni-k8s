@@ -35,7 +35,7 @@ func TestServer_VersionCheck(t *testing.T) {
 		warmENITarget: 1,
 		warmIPTarget:  3,
 		networkClient: m.network,
-		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}),
+		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}, false),
 	}
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil)
 	m.network.EXPECT().UseExternalSNAT().Return(true)
@@ -89,7 +89,7 @@ func TestServer_AddNetwork(t *testing.T) {
 		warmENITarget: 1,
 		warmIPTarget:  3,
 		networkClient: m.network,
-		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}),
+		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}, false),
 	}
 
 	rpcServer := server{
