@@ -372,14 +372,6 @@ func (ds *DataStore) ReadBackingStore() error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	eniCidrs := make(ENIPool)
-	for _, eni := range ds.eniPool {
-		//This will have /32 or /28 cidr to ENI mapping
-		for cidr, _ := range eni.AvailableIPv4Cidrs {
-			eniCidrs[cidr] = eni
-		}
-	}
-
 	for _, allocation := range data.Allocations {
 		ipv4Addr := net.ParseIP(allocation.IPv4)
 		found := false
@@ -512,15 +504,13 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 		return errors.New(UnknownENIError)
 	}
 	strIPv4Cidr := cidr.String()
-	ipv4 := cidr.IP.String()
 
-	_, ok = curENI.AvailableIPv4Cidrs[strIPv4Cidr]
+	var deletableCidr *CidrInfo 
+	deletableCidr, ok = curENI.AvailableIPv4Cidrs[strIPv4Cidr]
 	if !ok {
 		ds.log.Debugf("Unknown %s CIDR", strIPv4Cidr)
 		return errors.New(UnknownIPError)
 	}
-
-	deletableCidr := curENI.AvailableIPv4Cidrs[strIPv4Cidr]
 
 	// SIP case : This runs just once
 	// PD case : if (force is false) then if there are any unassigned IPs, those will get freed but the first assigned IP will
@@ -548,7 +538,6 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 		ds.allocatedPrefix--
 	}
 	totalIPs.Set(float64(ds.total))
-	delete(deletableCidr.IPv4Addresses, ipv4)
 	delete(curENI.AvailableIPv4Cidrs, strIPv4Cidr)
 	ds.log.Infof("Deleted ENI(%s)'s IP/Prefix %s from datastore", eniID, strIPv4Cidr)
 
