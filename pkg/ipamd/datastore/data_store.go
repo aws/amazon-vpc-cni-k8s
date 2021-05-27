@@ -153,7 +153,7 @@ type ENI struct {
 	// IPv4Addresses shows whether each address is assigned, the key is IP address, which must
 	// be in dot-decimal notation with no leading zeros and no whitespace(eg: "10.1.0.253")
 	// Key is the IP address - PD: "IP/28" and SIP: "IP/32"
-	AvailableIPv4Cidrs map[string]*AssignedIPv4Addresses
+	AvailableIPv4Cidrs map[string]*CidrInfo
 }
 
 // AddressInfo contains information about an IP, Exported fields will be marshaled for introspection.
@@ -163,7 +163,7 @@ type AddressInfo struct {
 	UnassignedTime time.Time
 }
 
-type AssignedIPv4Addresses struct {
+type CidrInfo struct {
 	//Cidr info /32 or /28 prefix
 	Cidr net.IPNet
 	//Key is the /32 IP either secondary IP or free /32 IP allocated from /28 prefix
@@ -172,7 +172,7 @@ type AssignedIPv4Addresses struct {
 	IsPrefix bool
 }
 
-func (e *ENI) findAddressForSandbox(ipamKey IPAMKey) (*AssignedIPv4Addresses, *AddressInfo) {
+func (e *ENI) findAddressForSandbox(ipamKey IPAMKey) (*CidrInfo, *AddressInfo) {
 	for _, availableCidr := range e.AvailableIPv4Cidrs {
 		for _, addr := range availableCidr.IPv4Addresses {
 			if addr.IPAMKey == ipamKey {
@@ -193,7 +193,7 @@ func (e *ENI) AssignedIPv4Addresses() int {
 }
 
 //AssignedIPv4AddressesInCidr is the number of IP addresses already assigned in the CIDR
-func (cidr *AssignedIPv4Addresses) AssignedIPv4AddressesInCidr() int {
+func (cidr *CidrInfo) AssignedIPv4AddressesInCidr() int {
 	count := 0
 	//SIP : This will run just once and count will be 0 if addr is not assigned or addr is not allocated yet(unused IP)
 	//PD : This will return count of number /32 assigned in /28 CIDR.
@@ -228,7 +228,7 @@ func (p *ENIPool) AssignedIPv4Addresses() int {
 }
 
 // FindAddressForSandbox returns ENI and AddressInfo or (nil, nil) if not found
-func (p *ENIPool) FindAddressForSandbox(ipamKey IPAMKey) (*ENI, *AssignedIPv4Addresses, *AddressInfo) {
+func (p *ENIPool) FindAddressForSandbox(ipamKey IPAMKey) (*ENI, *CidrInfo, *AddressInfo) {
 	for _, eni := range *p {
 		if availableCidr, addr := eni.findAddressForSandbox(ipamKey); addr != nil && availableCidr != nil {
 			return eni, availableCidr, addr
@@ -462,7 +462,7 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, 
 		IsEFA:              isEFA,
 		ID:                 eniID,
 		DeviceNumber:       deviceNumber,
-		AvailableIPv4Cidrs: make(map[string]*AssignedIPv4Addresses)}
+		AvailableIPv4Cidrs: make(map[string]*CidrInfo)}
 
 	enis.Set(float64(len(ds.eniPool)))
 	return nil
@@ -493,7 +493,7 @@ func (ds *DataStore) AddIPv4CidrToStore(eniID string, ipv4Cidr net.IPNet, isPref
 		ds.allocatedPrefix++
 	}
 	totalIPs.Set(float64(ds.total))
-	curENI.AvailableIPv4Cidrs[strIPv4Cidr] = &AssignedIPv4Addresses{
+	curENI.AvailableIPv4Cidrs[strIPv4Cidr] = &CidrInfo{
 		Cidr:          ipv4Cidr,
 		IPv4Addresses: make(map[string]*AddressInfo),
 		IsPrefix:      isPrefix,
@@ -508,7 +508,7 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 
 	curENI, ok := ds.eniPool[eniID]
 	if !ok {
-		ds.log.Debugf("Unkown ENI %s while deleting the CIDR", eniID)
+		ds.log.Debugf("Unknown ENI %s while deleting the CIDR", eniID)
 		return errors.New(UnknownENIError)
 	}
 	strIPv4Cidr := cidr.String()
@@ -516,7 +516,7 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 
 	_, ok = curENI.AvailableIPv4Cidrs[strIPv4Cidr]
 	if !ok {
-		ds.log.Debugf("Unkown %s CIDR", strIPv4Cidr)
+		ds.log.Debugf("Unknown %s CIDR", strIPv4Cidr)
 		return errors.New(UnknownIPError)
 	}
 
@@ -1028,9 +1028,13 @@ func (ds *DataStore) GetENIInfos() *ENIInfos {
 
 	for eni, eniInfo := range ds.eniPool {
 		tmpENIInfo := *eniInfo
-		tmpENIInfo.AvailableIPv4Cidrs = make(map[string]*AssignedIPv4Addresses, len(eniInfo.AvailableIPv4Cidrs))
+		tmpENIInfo.AvailableIPv4Cidrs = make(map[string]*CidrInfo, len(eniInfo.AvailableIPv4Cidrs))
 		for cidr, _ := range eniInfo.AvailableIPv4Cidrs {
-			tmpENIInfo.AvailableIPv4Cidrs[cidr] = &AssignedIPv4Addresses{Cidr: eniInfo.AvailableIPv4Cidrs[cidr].Cidr, IPv4Addresses: make(map[string]*AddressInfo, len(eniInfo.AvailableIPv4Cidrs[cidr].IPv4Addresses))}
+			tmpENIInfo.AvailableIPv4Cidrs[cidr] = &CidrInfo{
+				Cidr: eniInfo.AvailableIPv4Cidrs[cidr].Cidr, 
+				IPv4Addresses: make(map[string]*AddressInfo, len(eniInfo.AvailableIPv4Cidrs[cidr].IPv4Addresses)),
+				IsPrefix: eniInfo.AvailableIPv4Cidrs[cidr].IsPrefix, 
+			}
 			// Since IP Addresses might get removed, we need to make a deep copy here.
 			for ip, ipAddrInfoRef := range eniInfo.AvailableIPv4Cidrs[cidr].IPv4Addresses {
 				ipAddrInfo := *ipAddrInfoRef
@@ -1106,7 +1110,7 @@ func (ds *DataStore) GetFreePrefixes() int {
 	return freePrefixes
 }
 
-func (ds *DataStore) getFreeIPv4AddrfromCidr(availableCidr *AssignedIPv4Addresses) (string, error) {
+func (ds *DataStore) getFreeIPv4AddrfromCidr(availableCidr *CidrInfo) (string, error) {
 	if availableCidr == nil {
 		ds.log.Errorf("Prefix datastore not initialized")
 		return "", errors.New("Prefix datastore not initialized")
@@ -1127,7 +1131,7 @@ func (ds *DataStore) getFreeIPv4AddrfromCidr(availableCidr *AssignedIPv4Addresse
   return 10.1.1.1/32
 */
 
-func (ds *DataStore) getUnusedIP(availableCidr *AssignedIPv4Addresses) (string, error) {
+func (ds *DataStore) getUnusedIP(availableCidr *CidrInfo) (string, error) {
 	//Check if there is any IP out of cooldown
 	var cachedIP string
 	for _, addr := range availableCidr.IPv4Addresses {
