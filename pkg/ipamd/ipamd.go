@@ -405,7 +405,7 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
-	if err = c.configureIPRulesForPods(vpcCIDRs); err != nil {
+	if err = c.configureIPRulesForPods(); err != nil {
 		return err
 	}
 	// Spawning updateCIDRsRulesOnChange go-routine
@@ -458,7 +458,7 @@ func (c *IPAMContext) nodeInit() error {
 	return nil
 }
 
-func (c *IPAMContext) configureIPRulesForPods(pbVPCcidrs []string) error {
+func (c *IPAMContext) configureIPRulesForPods() error {
 	rules, err := c.networkClient.GetRuleList()
 	if err != nil {
 		log.Errorf("During ipamd init: failed to retrieve IP rule list %v", err)
@@ -471,7 +471,7 @@ func (c *IPAMContext) configureIPRulesForPods(pbVPCcidrs []string) error {
 		// Update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
 		srcIPNet := net.IPNet{IP: net.ParseIP(info.IP), Mask: net.IPv4Mask(255, 255, 255, 255)}
 
-		err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet, pbVPCcidrs, !c.networkClient.UseExternalSNAT())
+		err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet)
 		if err != nil {
 			log.Warnf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", info.IP, err)
 		}
@@ -489,7 +489,11 @@ func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 	old := sets.NewString(oldVPCCIDRs...)
 	new := sets.NewString(newVPCCIDRs...)
 	if !old.Equal(new) {
-		_ = c.configureIPRulesForPods(newVPCCIDRs)
+		primaryIP := c.awsClient.GetLocalIPv4()
+		err = c.networkClient.UpdateHostIptablesRules(newVPCCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP)
+		if err != nil {
+			log.Warnf("unable to update host iptables rules for VPC CIDRs due to error: %v", err)
+		}
 	}
 	return newVPCCIDRs
 }

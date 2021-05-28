@@ -131,11 +131,13 @@ type NetworkAPIs interface {
 	SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool) error
 	// SetupENINetwork performs ENI level network configuration. Not needed on the primary ENI
 	SetupENINetwork(eniIP string, mac string, deviceNumber int, subnetCIDR string) error
+	// UpdateHostIptablesRules updates the nat table iptables rules on the host
+	UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error
 	UseExternalSNAT() bool
 	GetExcludeSNATCIDRs() []string
 	GetRuleList() ([]netlink.Rule, error)
 	GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error)
-	UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet, toCIDRs []string, toFlag bool) error
+	UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) error
 	DeleteRuleListBySrc(src net.IPNet) error
 	GetLinkByMac(mac string, retryInterval time.Duration) (netlink.Link, error)
 }
@@ -308,26 +310,38 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 		}
 	}
 
+	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr)
+}
+
+// UpdateHostIptablesRules updates the NAT table rules based on the VPC CIDRs configuration
+func (n *linuxNetwork) UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error {
+	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr)
+}
+
+func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error {
+	primaryIntf, err := findPrimaryInterfaceName(primaryMAC)
+	if err != nil {
+		return errors.Wrapf(err, "failed to SetupHostNetwork")
+	}
 	ipt, err := n.newIptables()
 	if err != nil {
 		return errors.Wrap(err, "host network setup: failed to create iptables")
 	}
-	iptableRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt)
+	iptablesSNATRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt)
 	if err != nil {
 		return err
 	}
-	if err := n.updateIptablesRules(iptableRules, ipt); err != nil {
+	if err := n.updateIptablesRules(iptablesSNATRules, ipt); err != nil {
 		return err
 	}
 
-	iptableRules, err = n.buildIptablesConnmarkRules(vpcCIDRs, ipt)
+	iptablesConnmarkRules, err := n.buildIptablesConnmarkRules(vpcCIDRs, ipt)
 	if err != nil {
 		return err
 	}
-	if err := n.updateIptablesRules(iptableRules, ipt); err != nil {
+	if err := n.updateIptablesRules(iptablesConnmarkRules, ipt); err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -1014,9 +1028,8 @@ func (n *linuxNetwork) DeleteRuleListBySrc(src net.IPNet) error {
 }
 
 // UpdateRuleListBySrc modify IP rules that have a matching source IP
-func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet, toCIDRs []string, requiresSNAT bool) error {
-	log.Debugf("Update Rule List[%v] for source[%v] with toCIDRs[%v], excludeSNATCIDRs[%v], requiresSNAT[%v]",
-		ruleList, src, toCIDRs, n.excludeSNATCIDRs, requiresSNAT)
+func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) error {
+	log.Debugf("Update Rule List[%v] for source[%v] ", ruleList, src)
 
 	srcRuleList, err := n.GetRuleListBySrc(ruleList, src)
 	if err != nil {
