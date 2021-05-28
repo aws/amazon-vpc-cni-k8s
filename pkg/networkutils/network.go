@@ -102,6 +102,12 @@ const (
 	// envMTU gives a way to configure the MTU size for new ENIs attached. Range is from 576 to 9001.
 	envMTU = "AWS_VPC_ENI_MTU"
 
+	// envVethPrefix is the environment variable to configure the prefix of the host side veth device names
+	envVethPrefix = "AWS_VPC_K8S_CNI_VETHPREFIX"
+
+	// envVethPrefixDefault is the default value for the veth prefix
+	envVethPrefixDefault = "eni"
+
 	// Range of MTU for each ENI and veth pair. Defaults to maximumMTU
 	minimumMTU = 576
 	maximumMTU = 9001
@@ -141,6 +147,7 @@ type linuxNetwork struct {
 	nodePortSupportEnabled  bool
 	shouldConfigureRpFilter bool
 	mtu                     int
+	vethPrefix              string
 
 	netLink     netlinkwrapper.NetLink
 	ns          nswrapper.NS
@@ -180,6 +187,7 @@ func New() NetworkAPIs {
 		shouldConfigureRpFilter: shouldConfigureRpFilter(),
 		mainENIMark:             getConnmark(),
 		mtu:                     GetEthernetMTU(""),
+		vethPrefix:              getVethPrefixName(),
 
 		netLink: netlinkwrapper.NewNetLink(),
 		ns:      nswrapper.NewNS(),
@@ -437,7 +445,7 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 		chain:       "PREROUTING",
 		rule: []string{
 			"-m", "comment", "--comment", "AWS, primary ENI",
-			"-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", n.mainENIMark),
+			"-i", n.vethPrefix + "+", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", n.mainENIMark),
 		},
 	})
 
@@ -475,14 +483,14 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 	}
 
 	var iptableRules []iptablesRule
-	log.Debugf("Setup Host Network: iptables -t nat -A PREROUTING -i eni+ -m comment --comment \"AWS, outbound connections\" -m state --state NEW -j AWS-CONNMARK-CHAIN-0")
+	log.Debugf("Setup Host Network: iptables -t nat -A PREROUTING -i %s+ -m comment --comment \"AWS, outbound connections\" -m state --state NEW -j AWS-CONNMARK-CHAIN-0", n.vethPrefix)
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "connmark rule for non-VPC outbound traffic",
 		shouldExist: !n.useExternalSNAT,
 		table:       "nat",
 		chain:       "PREROUTING",
 		rule: []string{
-			"-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections",
+			"-i", n.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections",
 			"-m", "state", "--state", "NEW", "-j", "AWS-CONNMARK-CHAIN-0",
 		}})
 
@@ -514,6 +522,18 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 		rule: []string{
 			"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK",
 			"--set-xmark", fmt.Sprintf("%#x/%#x", n.mainENIMark, n.mainENIMark),
+		},
+	})
+
+	// Force delete existing restore mark rule so that the subsequent rule gets added to the end
+	iptableRules = append(iptableRules, iptablesRule{
+		name:        "connmark to fwmark copy",
+		shouldExist: false,
+		table:       "nat",
+		chain:       "PREROUTING",
+		rule: []string{
+			"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK",
+			"--restore-mark", "--mask", fmt.Sprintf("%#x", n.mainENIMark),
 		},
 	})
 
@@ -667,6 +687,7 @@ func GetConfigForDebug() map[string]interface{} {
 		envExcludeSNATCIDRs:  getExcludeSNATCIDRs(),
 		envExternalSNAT:      useExternalSNAT(),
 		envMTU:               GetEthernetMTU(""),
+		envVethPrefix:        getVethPrefixName(),
 		envNodePortSupport:   nodePortSupportEnabled(),
 		envRandomizeSNAT:     typeOfSNAT(),
 	}
@@ -1065,4 +1086,12 @@ func GetEthernetMTU(envMTUValue string) int {
 		return mtu
 	}
 	return maximumMTU
+}
+
+// getVethPrefixName gets the name prefix of the veth devices based on the AWS_VPC_K8S_CNI_VETHPREFIX environment variable
+func getVethPrefixName() string {
+	if envVal, found := os.LookupEnv(envVethPrefix); found {
+		return envVal
+	}
+	return envVethPrefixDefault
 }
