@@ -45,6 +45,8 @@ const (
 	AWS_VPC_K8S_CNI_VETHPREFIX = "AWS_VPC_K8S_CNI_VETHPREFIX"
 	NEW_MTU_VAL                = 1300
 	NEW_VETH_PREFIX            = "veth"
+	DEFAULT_MTU_VAL            = "9001"
+	DEFAULT_VETH_PREFIX        = "eni"
 )
 
 var _ = Describe("test host networking", func() {
@@ -53,6 +55,12 @@ var _ = Describe("test host networking", func() {
 	var podLabelVal = "host-networking-test"
 
 	Context("when pods using IP from primary and secondary ENI are created", func() {
+		AfterEach(func() {
+			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
+				AWS_VPC_ENI_MTU:            DEFAULT_MTU_VAL,
+				AWS_VPC_K8S_CNI_VETHPREFIX: DEFAULT_VETH_PREFIX,
+			})
+		})
 		It("should have correct host networking setup when running and cleaned up once terminated", func() {
 			// Launch enough pods so some pods end up using primary ENI IP and some using secondary
 			// ENI IP
