@@ -1550,22 +1550,6 @@ func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool)
 		over = max(min(over, totalPrefix-prefixNeededForMinIP), 0)
 
 	}
-	/*
-	   	if c.enableIpv4PrefixDelegation {
-	   		_, numIPsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
-
-	   		short = ceil(short, numIPsPerPrefix)
-	   		over = c.dataStore.GetFreePrefixes()
-
-	           // Need to check if the free prefixes are needed to maintain warm targets
-	   		if over > 0 {
-	   			usedPrefixesInStore := totalPrefixes - over
-	   			availableFreeIPs := ((usedPrefixesInStore * numIPsPerPrefix) - assigned)
-	           	availableFreeIPs = max(availableFreeIPs - c.warmIPTarget, 0)
-	               over = ceil(availableFreeIPs, numIPsPerPrefix)
-	   		}
-	   	}
-	*/
 	log.Debugf("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, short: %d, over %d", c.warmIPTarget, total, assigned, available, short, over)
 
 	return short, over, true
