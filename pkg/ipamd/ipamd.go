@@ -1531,9 +1531,12 @@ func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool)
 
 	if c.enableIpv4PrefixDelegation {
 
+		//short : number of IPs short to reach warm targets
+		//over : number of IPs over the warm targets
+
 		_, numIPsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
 		// Number of prefixes IPAMD is short of to achieve warm targets
-		short = ceil(short, numIPsPerPrefix)
+		shortPrefix := ceil(short, numIPsPerPrefix)
 
 		// Over will have number of IPs more than needed but with PD we would have allocated in chunks of /28
 		// Say assigned = 1, warm ip target = 16, this will need 2 prefixes. But over will return 15.
@@ -1541,13 +1544,14 @@ func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool)
 		prefixNeededForWarmIP := ceil(assigned+c.warmIPTarget, numIPsPerPrefix)
 		prefixNeededForMinIP := ceil(c.minimumIPTarget, numIPsPerPrefix)
 
-		//over = max(min(totalPrefix-prefixNeededForWarmIP,totalPrefix-prefixNeededForMinIP), 0)
 		// over will be number of prefixes over than needed but could be spread across used prefixes,
 		// say, after couple of pod churns, 3 prefixes are allocated with 1 IP each assigned and warm ip target is 15
 		// (J : is this needed? since we have to walk thru the loop of prefixes)
 		freePrefixes := c.dataStore.GetFreePrefixes()
-		over = max(min(freePrefixes, totalPrefix-prefixNeededForWarmIP), 0)
-		over = max(min(over, totalPrefix-prefixNeededForMinIP), 0)
+		overPrefix := max(min(freePrefixes, totalPrefix-prefixNeededForWarmIP), 0)
+		overPrefix = max(min(overPrefix, totalPrefix-prefixNeededForMinIP), 0)
+		log.Debugf("Current warm IP stats : target: %d, total: %d, assigned: %d, available: %d, short(prefixes): %d, over(prefixes): %d", c.warmIPTarget, total, assigned, available, shortPrefix, overPrefix)
+		return shortPrefix, overPrefix, true
 
 	}
 	log.Debugf("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, short: %d, over %d", c.warmIPTarget, total, assigned, available, short, over)
