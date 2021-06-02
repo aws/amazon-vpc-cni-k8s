@@ -25,39 +25,47 @@ import (
 
 func AddEnvVarToDaemonSetAndWaitTillUpdated(f *framework.Framework, dsName string, dsNamespace string,
 	containerName string, envVars map[string]string) {
-
-	ds := getDaemonSet(f, dsName, dsNamespace)
-	updatedDs := ds.DeepCopy()
-
 	By(fmt.Sprintf("setting the environment variables on the ds to %+v", envVars))
-	err := AddOrUpdateEnvironmentVariable(updatedDs.Spec.Template.Spec.Containers,
-		containerName, envVars)
-	// Check for init containers if the container is not found in list of containers
-	if err != nil {
-		err = AddOrUpdateEnvironmentVariable(updatedDs.Spec.Template.Spec.InitContainers,
-			containerName, envVars)
-	}
-	Expect(err).ToNot(HaveOccurred())
-
-	waitTillDaemonSetUpdated(f, ds, updatedDs)
+	updateDaemonsetEnvVarsAndWait(f, dsName, dsNamespace, containerName, envVars, nil)
 }
 
 func RemoveVarFromDaemonSetAndWaitTillUpdated(f *framework.Framework, dsName string, dsNamespace string,
 	containerName string, envVars map[string]struct{}) {
+	By(fmt.Sprintf("removing the environment variables from the ds %+v", envVars))
+	updateDaemonsetEnvVarsAndWait(f, dsName, dsNamespace, containerName, nil, envVars)
+}
 
+func UpdateEnvVarOnDaemonSetAndWaitUntilReady(f *framework.Framework, dsName string, dsNamespace string,
+	containerName string, addOrUpdateEnv map[string]string, removeEnv map[string]struct{}) {
+	By(fmt.Sprintf("update environment variables %+v, remove %+v", addOrUpdateEnv, removeEnv))
+	updateDaemonsetEnvVarsAndWait(f, dsName, dsNamespace, containerName, addOrUpdateEnv, removeEnv)
+}
+
+func updateDaemonsetEnvVarsAndWait(f *framework.Framework, dsName string, dsNamespace string,
+	containerName string, addOrUpdateEnv map[string]string, removeEnv map[string]struct{}) {
 	ds := getDaemonSet(f, dsName, dsNamespace)
 	updatedDs := ds.DeepCopy()
 
-	By(fmt.Sprintf("setting the environment variables on the ds to %+v", envVars))
-	err := RemoveEnvironmentVariables(updatedDs.Spec.Template.Spec.Containers,
-		containerName, envVars)
-	// Check for init containers if the container is not found in list of containers
-	if err != nil {
-		err = RemoveEnvironmentVariables(updatedDs.Spec.Template.Spec.InitContainers,
-			containerName, envVars)
+	if len(addOrUpdateEnv) > 0 {
+		err := AddOrUpdateEnvironmentVariable(updatedDs.Spec.Template.Spec.Containers,
+			containerName, addOrUpdateEnv)
+		// Check for init containers if the container is not found in list of containers
+		if err != nil {
+			err = AddOrUpdateEnvironmentVariable(updatedDs.Spec.Template.Spec.InitContainers,
+				containerName, addOrUpdateEnv)
+		}
+		Expect(err).ToNot(HaveOccurred())
 	}
-	Expect(err).ToNot(HaveOccurred())
-
+	if len(removeEnv) > 0 {
+		err := RemoveEnvironmentVariables(updatedDs.Spec.Template.Spec.Containers,
+			containerName, removeEnv)
+		// Check for init containers if the container is not found in list of containers
+		if err != nil {
+			err = RemoveEnvironmentVariables(updatedDs.Spec.Template.Spec.InitContainers,
+				containerName, removeEnv)
+		}
+		Expect(err).ToNot(HaveOccurred())
+	}
 	waitTillDaemonSetUpdated(f, ds, updatedDs)
 }
 

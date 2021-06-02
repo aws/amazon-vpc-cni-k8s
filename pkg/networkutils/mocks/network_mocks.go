@@ -151,18 +151,32 @@ func (mr *MockNetworkAPIsMockRecorder) SetupHostNetwork(arg0, arg1, arg2, arg3 i
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupHostNetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupHostNetwork), arg0, arg1, arg2, arg3)
 }
 
-// UpdateRuleListBySrc mocks base method
-func (m *MockNetworkAPIs) UpdateRuleListBySrc(arg0 []netlink.Rule, arg1 net.IPNet, arg2 []string, arg3 bool) error {
+// UpdateHostIptablesRules mocks base method
+func (m *MockNetworkAPIs) UpdateHostIptablesRules(arg0 []string, arg1 string, arg2 *net.IP) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateRuleListBySrc", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "UpdateHostIptablesRules", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateHostIptablesRules indicates an expected call of UpdateHostIptablesRules
+func (mr *MockNetworkAPIsMockRecorder) UpdateHostIptablesRules(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateHostIptablesRules", reflect.TypeOf((*MockNetworkAPIs)(nil).UpdateHostIptablesRules), arg0, arg1, arg2)
+}
+
+// UpdateRuleListBySrc mocks base method
+func (m *MockNetworkAPIs) UpdateRuleListBySrc(arg0 []netlink.Rule, arg1 net.IPNet) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateRuleListBySrc", arg0, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateRuleListBySrc indicates an expected call of UpdateRuleListBySrc
-func (mr *MockNetworkAPIsMockRecorder) UpdateRuleListBySrc(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+func (mr *MockNetworkAPIsMockRecorder) UpdateRuleListBySrc(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateRuleListBySrc", reflect.TypeOf((*MockNetworkAPIs)(nil).UpdateRuleListBySrc), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateRuleListBySrc", reflect.TypeOf((*MockNetworkAPIs)(nil).UpdateRuleListBySrc), arg0, arg1)
 }
 
 // UseExternalSNAT mocks base method

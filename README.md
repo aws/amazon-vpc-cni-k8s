@@ -376,7 +376,7 @@ Type: String
 
 Default: `eni`
 
-Specifies the veth prefix used to generate the host-side veth device name for the CNI. The prefix can be at most 4 characters long.
+Specifies the veth prefix used to generate the host-side veth device name for the CNI. The prefix can be at most 4 characters long. The prefixes `eth`, `vlan` and `lo` are reserved by the CNI plugin and cannot be specified. We recommend using prefix name not shared by any other network interfaces on the worker node instance.
 
 ---
 

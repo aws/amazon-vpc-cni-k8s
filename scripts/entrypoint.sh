@@ -42,6 +42,18 @@ validate_env_var()
         log_in_json error "AWS_VPC_K8S_PLUGIN_LOG_FILE cannot be set to stdout"
         exit 1     
     fi 
+
+    if [[ ${#AWS_VPC_K8S_CNI_VETHPREFIX} -gt 4 ]]; then
+        log_in_json error "AWS_VPC_K8S_CNI_VETHPREFIX cannot be longer than 4 characters"
+        exit 1
+    fi
+
+    case ${AWS_VPC_K8S_CNI_VETHPREFIX} in
+        eth|vlan|lo)
+          log_in_json error "AWS_VPC_K8S_CNI_VETHPREFIX cannot be set to reserved values eth or vlan or lo"
+          exit 1
+          ;;
+    esac
 }
 
 # Check for all the required binaries before we go forward

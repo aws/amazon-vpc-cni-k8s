@@ -45,6 +45,8 @@ const (
 	AWS_VPC_K8S_CNI_VETHPREFIX = "AWS_VPC_K8S_CNI_VETHPREFIX"
 	NEW_MTU_VAL                = 1300
 	NEW_VETH_PREFIX            = "veth"
+	DEFAULT_MTU_VAL            = "9001"
+	DEFAULT_VETH_PREFIX        = "eni"
 )
 
 var _ = Describe("test host networking", func() {
@@ -53,6 +55,12 @@ var _ = Describe("test host networking", func() {
 	var podLabelVal = "host-networking-test"
 
 	Context("when pods using IP from primary and secondary ENI are created", func() {
+		AfterEach(func() {
+			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
+				AWS_VPC_ENI_MTU:            DEFAULT_MTU_VAL,
+				AWS_VPC_K8S_CNI_VETHPREFIX: DEFAULT_VETH_PREFIX,
+			})
+		})
 		It("should have correct host networking setup when running and cleaned up once terminated", func() {
 			// Launch enough pods so some pods end up using primary ENI IP and some using secondary
 			// ENI IP
@@ -105,12 +113,6 @@ var _ = Describe("test host networking", func() {
 				Build()
 
 			By("Configuring Veth Prefix and MTU value on aws-node daemonset")
-			ds, err := f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(utils.AwsNodeNamespace, utils.AwsNodeName)
-			Expect(err).NotTo(HaveOccurred())
-
-			oldMTU := utils.GetEnvValueForKeyFromDaemonSet(AWS_VPC_ENI_MTU, ds)
-			oldVethPrefix := utils.GetEnvValueForKeyFromDaemonSet(AWS_VPC_K8S_CNI_VETHPREFIX, ds)
-
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
 				AWS_VPC_ENI_MTU:            strconv.Itoa(NEW_MTU_VAL),
 				AWS_VPC_K8S_CNI_VETHPREFIX: NEW_VETH_PREFIX,
@@ -135,13 +137,6 @@ var _ = Describe("test host networking", func() {
 
 			By("validating host networking setup is setup correctly with MTU check as well")
 			ValidateHostNetworking(NetworkingSetupSucceeds, input)
-
-			// Restore MTU and Veth Prefix
-			By("Restoring MTU value and Veth Prefix to old values")
-			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
-				AWS_VPC_ENI_MTU:            oldMTU,
-				AWS_VPC_K8S_CNI_VETHPREFIX: oldVethPrefix,
-			})
 
 			By("deleting the deployment to test teardown")
 			err = f.K8sResourceManagers.DeploymentManager().
@@ -244,7 +239,6 @@ func ValidateHostNetworking(testType TestType, podValidationInputString string) 
 	By("creating pod to test host networking setup")
 	testPod, err := f.K8sResourceManagers.PodManager().
 		CreateAndWaitTillPodCompleted(testPod)
-
 	logs, errLogs := f.K8sResourceManagers.PodManager().
 		PodLogs(testPod.Namespace, testPod.Name)
 	Expect(errLogs).ToNot(HaveOccurred())
