@@ -236,10 +236,16 @@ Type: Integer
 
 Default: None
 
-Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node.
-For example, if `WARM_IP_TARGET` is set to 5, then `ipamd` attempts to keep 5 free IP addresses available at all times. If the
+Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node. 
+With `ENABLE_PREFIX_DELGATION` set to `true` IPAMD behavoir is similar and if the existing (/28) prefixes are not enough to maintain the
+`WARM_IP_TARGET` then more prefixes will be attached.
+For example, 
+
+1. if `WARM_IP_TARGET` is set to 5, then `ipamd` attempts to keep 5 free IP addresses available at all times. If the
 elastic network interfaces on the node are unable to provide these free addresses, `ipamd` attempts to allocate more interfaces
-until `WARM_IP_TARGET` free IP addresses are available.
+until `WARM_IP_TARGET` free IP addresses are available. 
+2. `ENABLE_PREFIX_DELGATION` set to `true` and `WARM_IP_TARGET` is 16. Initially 1 (/28) prefix is sufficient but once a single pod is assigned IP then 
+remaining free IPs are 15 hence IPAMD will allocate 1 more prefix to achieve 16 `WARM_IP_TARGET` 
 
 **NOTE!** Avoid this setting for large clusters, or if the cluster has high pod churn. Setting it will cause additional calls to the
 EC2 API and that might cause throttling of the requests. It is strongly suggested to set `MINIMUM_IP_TARGET` when using `WARM_IP_TARGET`.
@@ -248,7 +254,8 @@ If both `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are set, `ipamd` will attempt t
 This environment variable overrides `WARM_ENI_TARGET` behavior. For a detailed explanation, see
 [`WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/eni-and-ip-target.md).
 
-
+`ENABLE_PREFIX_DELGATION` set to `true` and this environment variable overrides `WARM_PREFIX_TARGET` behavoir. For a detailed explanation, see
+[`WARM_PREFIX_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/prefix-and-ip-target.md).
 ---
 
 `MINIMUM_IP_TARGET` (Since v1.6.0)
@@ -458,10 +465,9 @@ Type: Boolean as a String
 
 Default: `false`
 
-To enable IPv4 prefix delegation on nitro instances. Setting `ENABLE_PREFIX_DELEGATION` flag toggle to `true` will start allocating a /28 prefix 
+To enable IPv4 prefix delegation on nitro instances. Setting `ENABLE_PREFIX_DELEGATION` to `true` will start allocating a /28 prefix 
 instead of a secondary IP in the ENIs subnet. The total number of prefixes and private IP addresses will be less than the
-limit on private IPs allowed by your instance. The current preview will support a single /28 prefix per ENI. Knob toggle while pods are running or if
-ENIs are attached is not supported. On toggling the knob, node should be recycled to set the new kubelet max pods value.
+limit on private IPs allowed by your instance. Setting or resetting of `ENABLE_PREFIX_DELEGATION` while pods are running or if ENIs are attached is supported and the new pods allocated will get IPs based on the mode of IPAMD but the max pods of kubelet should be updated which would need either kubelet restart or node recycle.
 
 ---
 
@@ -472,8 +478,7 @@ Type: Integer
 Default: None
 
 Specifies the number of free IPv4(/28) prefixes that the `ipamd` daemon should attempt to keep available for pod assignment on the node.
-This environment variable overrides `WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` and works when `ENABLE_PREFIX_DELEGATION`  
-is set to `true`. The current preview release will support a single /28 prefix per ENI hence setting this will cause additional ENIs to be allocated.
+This environment variable works when `ENABLE_PREFIX_DELEGATION`  is set to `true` and is overriden when `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are configured.
 
 ### ENI tags related to Allocation
 
