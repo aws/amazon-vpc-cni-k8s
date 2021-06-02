@@ -95,6 +95,13 @@ var _ = AfterSuite(func() {
 	f.K8sResourceManagers.NamespaceManager().
 		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
-	k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
-		"aws-node", map[string]struct{}{"WARM_IP_TARGET": {}, "WARM_ENI_TARGET": {}})
+	k8sUtils.UpdateEnvVarOnDaemonSetAndWaitUntilReady(f, "aws-node", "kube-system",
+		"aws-node", map[string]string{
+			AWS_VPC_ENI_MTU:            "9001",
+			AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
+		},
+		map[string]struct{}{
+			"WARM_IP_TARGET":  {},
+			"WARM_ENI_TARGET": {},
+		})
 })
