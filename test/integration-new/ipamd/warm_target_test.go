@@ -172,7 +172,7 @@ var _ = Describe("test warm target variables", func() {
 		})
 	})
 
-	Context("when warm IP target is set with PD enabled", func() {
+	Context("when warm and min IP target is set with PD enabled", func() {
 		var warmIPTarget int
 		var minIPTarget int
 
@@ -209,6 +209,7 @@ var _ = Describe("test warm target variables", func() {
 					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))	
 				if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
 					assigned++
+					break
 				}
 			}
 
@@ -239,7 +240,7 @@ var _ = Describe("test warm target variables", func() {
 				minIPTarget = 0
 			})
 
-			FIt("should have 1 prefix", func() {})
+			It("should have 1 prefix", func() {})
 		})
 
 		Context("when WARM_IP_TARGET = 16", func() {
@@ -276,6 +277,81 @@ var _ = Describe("test warm target variables", func() {
 			})
 
 			It("should have 1 prefix", func() {})
+		})
+	})
+
+	Context("when warm prefix target is set with PD enabled", func() {
+		var warmPrefixTarget int
+
+		JustBeforeEach(func() {
+			var availPrefixes int
+			podLabelKey := "eks.amazonaws.com/component"
+			podLabelVal := "coredns"
+
+			// Set the WARM IP TARGET
+			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,
+				utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName,
+				map[string]string{
+					"WARM_PREFIX_TARGET":    strconv.Itoa(warmPrefixTarget),
+					"ENABLE_PREFIX_DELEGATION": "true",
+				})
+
+			// Allow for IPAMD to reconcile it's state
+			time.Sleep(utils.PollIntervalLong)
+
+			// Query the EC2 Instance to get the list of available Prefixes on the instance
+			primaryInstance, err = f.CloudServices.
+				EC2().DescribeInstance(*primaryInstance.InstanceId)
+			Expect(err).ToNot(HaveOccurred())
+
+			//Query for coredns pods
+	        podList, perr := f.K8sResourceManagers.PodManager().
+				GetPodsWithLabelSelector(podLabelKey, podLabelVal)
+			Expect(perr).ToNot(HaveOccurred())
+
+			assigned := 0
+			for _, pod := range podList.Items {
+				By(fmt.Sprintf("verifying in node %s but pod's IP %s address belongs to node name %s",
+					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))	
+				if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
+					assigned++
+					break
+				}
+			}
+
+			// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
+			for _, networkInterface := range primaryInstance.NetworkInterfaces {
+				availPrefixes += len(networkInterface.Ipv4Prefixes)
+			}
+
+			// Validated avail IP equals the warm IP Size
+			prefixNeededForAssignedPods := ceil(assigned, 16)
+			Expect(availPrefixes).Should(Equal(prefixNeededForAssignedPods+warmPrefixTarget))
+		})
+
+		JustAfterEach(func() {
+			k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f,
+				utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName,
+				map[string]struct{}{
+					"WARM_PREFIX_TARGET": {}, 
+					"ENABLE_PREFIX_DELEGATION": {},
+				})
+		})
+
+		Context("when WARM_PREFIX_TARGET = 2", func() {
+			BeforeEach(func() {
+				warmPrefixTarget = 2
+			})
+
+			It("should have 2 free prefixes", func() {})
+		})
+
+		Context("when WARM_PREFIX_TARGET = 0", func() {
+			BeforeEach(func() {
+				warmPrefixTarget = 0
+			})
+
+			It("should have no free prefixes", func() {})
 		})
 	})
 })
