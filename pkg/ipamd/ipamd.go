@@ -128,7 +128,7 @@ const (
 
 	//envWarmPrefixTarget is used to keep a /28 prefix in warm pool.
 	envWarmPrefixTarget = "WARM_PREFIX_TARGET"
-	noWarmPrefixTarget  = 0
+	noWarmPrefixTarget  = -1
 )
 
 var log = logger.Get()
@@ -1805,7 +1805,7 @@ func (c *IPAMContext) isDatastorePoolTooHigh() bool {
 }
 
 func (c *IPAMContext) warmPrefixTargetDefined() bool {
-	return c.warmPrefixTarget != noWarmPrefixTarget && c.enableIpv4PrefixDelegation
+	return c.warmPrefixTarget > noWarmPrefixTarget && c.enableIpv4PrefixDelegation
 }
 
 func ceil(x, y int) int {
