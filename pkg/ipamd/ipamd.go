@@ -16,6 +16,7 @@ package ipamd
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"strconv"
@@ -746,12 +747,19 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 		return false, nil
 	}
 
+	// If WARM_IP_TARGET is set we only want to allocate up to that target
+	// to avoid overallocating and releasing
+	toAllocate := c.maxIPsPerENI
+	if warmIPTargetDefined {
+		toAllocate = short
+	}
+
 	// Find an ENI where we can add more IPs
 	eni := c.dataStore.GetENINeedsIP(c.maxIPsPerENI, c.useCustomNetworking)
 	if eni != nil && len(eni.IPv4Addresses) < c.maxIPsPerENI {
 		currentNumberOfAllocatedIPs := len(eni.IPv4Addresses)
 		// Try to allocate all available IPs for this ENI
-		err = c.awsClient.AllocIPAddresses(eni.ID, c.maxIPsPerENI-currentNumberOfAllocatedIPs)
+		err = c.awsClient.AllocIPAddresses(eni.ID, int(math.Min(float64(c.maxIPsPerENI-currentNumberOfAllocatedIPs), float64(toAllocate))))
 		if err != nil {
 			log.Warnf("failed to allocate all available IP addresses on ENI %s, err: %v", eni.ID, err)
 			// Try to just get one more IP
