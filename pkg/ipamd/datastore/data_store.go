@@ -172,6 +172,11 @@ type CidrInfo struct {
 	IsPrefix bool
 }
 
+func (cidr *CidrInfo) Size() int {
+	ones, bits := cidr.Cidr.Mask.Size()
+	return (1 << (bits - ones))
+}
+
 func (e *ENI) findAddressForSandbox(ipamKey IPAMKey) (*CidrInfo, *AddressInfo) {
 	for _, availableCidr := range e.AvailableIPv4Cidrs {
 		for _, addr := range availableCidr.IPv4Addresses {
@@ -479,17 +484,18 @@ func (ds *DataStore) AddIPv4CidrToStore(eniID string, ipv4Cidr net.IPNet, isPref
 		return errors.New(IPAlreadyInStoreError)
 	}
 
-	ones, bits := ipv4Cidr.Mask.Size()
-	ds.total += 1 << (bits - ones)
-	if isPrefix {
-		ds.allocatedPrefix++
-	}
-	totalIPs.Set(float64(ds.total))
 	curENI.AvailableIPv4Cidrs[strIPv4Cidr] = &CidrInfo{
 		Cidr:          ipv4Cidr,
 		IPv4Addresses: make(map[string]*AddressInfo),
 		IsPrefix:      isPrefix,
 	}
+
+	ds.total += curENI.AvailableIPv4Cidrs[strIPv4Cidr].Size()
+	if isPrefix {
+		ds.allocatedPrefix++
+	}
+	totalIPs.Set(float64(ds.total))
+
 	ds.log.Infof("Added ENI(%s)'s IP/Prefix %s to datastore", eniID, strIPv4Cidr)
 	return nil
 }
@@ -532,8 +538,7 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 			// Continuing because 'force'
 		}
 	}
-	ones, bits := cidr.Mask.Size()
-	ds.total -= 1 << (bits - ones)
+	ds.total -= deletableCidr.Size() 
 	if deletableCidr.IsPrefix {
 		ds.allocatedPrefix--
 	}
@@ -639,9 +644,23 @@ func (ds *DataStore) unassignPodIPv4AddressUnsafe(addr *AddressInfo) {
 	assignedIPs.Set(float64(ds.assigned))
 }
 
-// GetStats returns total number of IP addresses and number of assigned IP addresses
+// GetStats returns total number of IP addresses, number of assigned IP addresses and total prefixes
 func (ds *DataStore) GetStats() (int, int, int) {
-	return ds.total, ds.assigned, ds.allocatedPrefix
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	totalIPs := 0
+	assignedIPs := 0
+	for _, eni := range ds.eniPool {
+		for _, cidr := range eni.AvailableIPv4Cidrs {
+			if (ds.isPDEnabled && cidr.IsPrefix) || (!ds.isPDEnabled && !cidr.IsPrefix) {
+				assignedIPs += cidr.AssignedIPv4AddressesInCidr()
+				totalIPs += cidr.Size()
+			}
+		}
+
+	}
+	return totalIPs, assignedIPs, ds.allocatedPrefix
 }
 
 // GetTrunkENI returns the trunk ENI ID or an empty string
@@ -817,8 +836,7 @@ func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget, minimumIPTarget, war
 	removableENI := deletableENI.ID
 
 	for _, availableCidr := range ds.eniPool[removableENI].AvailableIPv4Cidrs {
-		ones, bits := availableCidr.Cidr.Mask.Size()
-		ds.total -= 1 << (bits - ones)
+		ds.total -= availableCidr.Size()
 		if availableCidr.IsPrefix {
 			ds.allocatedPrefix--
 		}
@@ -860,8 +878,7 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 					ds.unassignPodIPv4AddressUnsafe(addr)
 				}
 			}
-			ones, bits := assignedaddr.Cidr.Mask.Size()
-			ds.total -= 1 << (bits - ones)
+			ds.total -= assignedaddr.Size()
 			if assignedaddr.IsPrefix {
 				ds.allocatedPrefix--
 			}
@@ -873,8 +890,7 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 	}
 
 	for _, assignedaddr := range eni.AvailableIPv4Cidrs {
-		ones, bits := assignedaddr.Cidr.Mask.Size()
-		ds.total -= 1 << (bits - ones)
+		ds.total -= assignedaddr.Size()
 		if assignedaddr.IsPrefix {
 			ds.allocatedPrefix--
 		}

@@ -597,24 +597,22 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	//call attached ENIs, the call will return prefix not found in the logs and that will pollute
 	//ipamd.log hence skipping.
 
-	//Prefix get is taking more time, so adding a check for preview. Will remove this for GA.
-	if cache.useIPv4PrefixDelegation {
-		start := time.Now()
-		log.Debugf("Querying for prefix")
-		if (eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC) {
-			imdsIPv4Prefixes, err := cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
-			if err != nil {
-				return ENIMetadata{}, err
-			}
-			for _, ipv4prefix := range imdsIPv4Prefixes {
-				ec2ipv4Prefixes = append(ec2ipv4Prefixes, &ec2.Ipv4PrefixSpecification{
-					Ipv4Prefix: aws.String(ipv4prefix.String()),
-				})
-			}
+	//Prefix get is taking more time, so computing the time to return prefix. Will remove this for GA.
+	start := time.Now()
+	log.Debugf("Querying for prefix")
+	if (eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC) {
+		imdsIPv4Prefixes, err := cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
+		if err != nil {
+			return ENIMetadata{}, err
 		}
-		elapsed := time.Since(start)
-		log.Debugf("Time taken to return prefix query %s", elapsed)
+		for _, ipv4prefix := range imdsIPv4Prefixes {
+			ec2ipv4Prefixes = append(ec2ipv4Prefixes, &ec2.Ipv4PrefixSpecification{
+				Ipv4Prefix: aws.String(ipv4prefix.String()),
+			})
+		}
 	}
+	elapsed := time.Since(start)
+	log.Debugf("Time taken to return prefix query %s", elapsed)
 
 	return ENIMetadata{
 		ENIID:          eniID,
