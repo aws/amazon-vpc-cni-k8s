@@ -505,7 +505,7 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 	}
 	strIPv4Cidr := cidr.String()
 
-	var deletableCidr *CidrInfo 
+	var deletableCidr *CidrInfo
 	deletableCidr, ok = curENI.AvailableIPv4Cidrs[strIPv4Cidr]
 	if !ok {
 		ds.log.Debugf("Unknown %s CIDR", strIPv4Cidr)
@@ -1020,9 +1020,9 @@ func (ds *DataStore) GetENIInfos() *ENIInfos {
 		tmpENIInfo.AvailableIPv4Cidrs = make(map[string]*CidrInfo, len(eniInfo.AvailableIPv4Cidrs))
 		for cidr, _ := range eniInfo.AvailableIPv4Cidrs {
 			tmpENIInfo.AvailableIPv4Cidrs[cidr] = &CidrInfo{
-				Cidr: eniInfo.AvailableIPv4Cidrs[cidr].Cidr, 
+				Cidr:          eniInfo.AvailableIPv4Cidrs[cidr].Cidr,
 				IPv4Addresses: make(map[string]*AddressInfo, len(eniInfo.AvailableIPv4Cidrs[cidr].IPv4Addresses)),
-				IsPrefix: eniInfo.AvailableIPv4Cidrs[cidr].IsPrefix, 
+				IsPrefix:      eniInfo.AvailableIPv4Cidrs[cidr].IsPrefix,
 			}
 			// Since IP Addresses might get removed, we need to make a deep copy here.
 			for ip, ipAddrInfoRef := range eniInfo.AvailableIPv4Cidrs[cidr].IPv4Addresses {
