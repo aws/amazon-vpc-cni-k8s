@@ -172,7 +172,7 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 		}
 		log.Printf("validated route table for secondary ENI %d has right routes", index)
 	}
-  // TODO: validate iptables rules get setup correctly
+	// TODO: validate iptables rules get setup correctly
 
 	return validationErrors
 }
