@@ -423,11 +423,11 @@ Type: Boolean as a String
 
 Default: `false`
 
-To enable security groups for pods you need to have at least an EKS 1.17 eks.3 cluster. 
+To enable security groups for pods you need to have at least an EKS 1.17 eks.3 cluster.
 
-Setting `ENABLE_POD_ENI` to `true` will allow IPAMD to add the `vpc.amazonaws.com/has-trunk-attached` label to the node if the instance has capacity to attach an additional ENI. 
+Setting `ENABLE_POD_ENI` to `true` will allow IPAMD to add the `vpc.amazonaws.com/has-trunk-attached` label to the node if the instance has capacity to attach an additional ENI.
 
-The label notifies vpc-resource-controller (https://github.com/aws/amazon-vpc-resource-controller-k8s) to attach a Trunk ENI to the instance. The label value is initially set to `false` and is marked to `true` by IPAMD when vpc-resource-controller attaches a Trunk ENI to the instance. However, there might be cases where the label value will remain `false` if the instance doesn't support ENI Trunking. 
+The label notifies vpc-resource-controller (https://github.com/aws/amazon-vpc-resource-controller-k8s) to attach a Trunk ENI to the instance. The label value is initially set to `false` and is marked to `true` by IPAMD when vpc-resource-controller attaches a Trunk ENI to the instance. However, there might be cases where the label value will remain `false` if the instance doesn't support ENI Trunking.
 
 **NOTE!** Toggling `ENABLE_POD_ENI` from `true` to `false` will not detach the Trunk ENI from instance. To delete/detach the Trunk ENI from instance, you need recycle the instance.
 
@@ -484,11 +484,11 @@ value for the Kubelet's `--max-pods` configuration option. Consider also
 updating the `MAX_ENI` and `--max-pods` configuration options on this plugin
 and the kubelet respectively if you are making use of this tag.
 
-### Container Runtime 
+### Container Runtime
 
 Currently IPAMD uses dockershim socket to pull pod sandboxes information upon its starting. The runtime can be set to others.
-The mountPath should be changed to `/var/run/cri.sock` and hostPath should be pointed to the wanted socket, such as 
-`/var/run/containerd/containerd.sock` for containerd. If using helm chart, the flag `--set cri.hostPath=/var/run/containerd/containerd.sock`
+The mountPath should be changed to `/var/run/cri.sock` and hostPath should be pointed to the wanted socket, such as
+`/var/run/containerd/containerd.sock` for containerd. If using helm chart, the flag `--set cri.hostPath.path=/var/run/containerd/containerd.sock`
 can set the paths for you.
 
 *Note*: When using other container runtime instead of dockershim, make sure also setting kubelet in instances.
