@@ -128,7 +128,7 @@ const (
 
 	//envWarmPrefixTarget is used to keep a /28 prefix in warm pool.
 	envWarmPrefixTarget = "WARM_PREFIX_TARGET"
-	noWarmPrefixTarget  = -1
+	noWarmPrefixTarget  = 0
 )
 
 var log = logger.Get()
@@ -1793,7 +1793,7 @@ func (c *IPAMContext) isDatastorePoolTooHigh() bool {
 		total, used, _ := c.dataStore.GetStats()
 		available := total - used
 		_, maxIpsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
-		poolTooHigh := available >= (maxIpsPerPrefix * (c.warmPrefixTarget + 1))
+		poolTooHigh := available > (maxIpsPerPrefix * (c.warmPrefixTarget+1))
 		if poolTooHigh {
 			logPoolStats(total, used, c.maxIPsPerENI, c.enableIpv4PrefixDelegation)
 			log.Debugf("Prefix pool is high: available (%d) > Warm prefix target (%d)+1 * maxIpsPerPrefix (%d)", available, c.warmPrefixTarget, maxIpsPerPrefix)
@@ -1805,7 +1805,7 @@ func (c *IPAMContext) isDatastorePoolTooHigh() bool {
 }
 
 func (c *IPAMContext) warmPrefixTargetDefined() bool {
-	return c.warmPrefixTarget > noWarmPrefixTarget && c.enableIpv4PrefixDelegation
+	return c.warmPrefixTarget >= noWarmPrefixTarget && c.enableIpv4PrefixDelegation
 }
 
 func ceil(x, y int) int {
