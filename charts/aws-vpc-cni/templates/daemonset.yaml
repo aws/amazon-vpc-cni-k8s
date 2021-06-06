@@ -121,10 +121,10 @@ spec:
         configMap:
           name: {{ include "aws-vpc-cni.fullname" . }}
 {{- end }}
-{{- if .Values.cri.hostPath }}
+{{- with .Values.cri.hostPath }}
       - name: cri
         hostPath:
-          path: {{- toYaml .Values.cri.hostPath | nindent 18 }}
+          {{- toYaml . | nindent 10 }}
 {{- else }}
       - name: dockershim
         hostPath:
