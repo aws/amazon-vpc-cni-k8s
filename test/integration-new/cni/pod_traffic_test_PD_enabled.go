@@ -87,7 +87,7 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 		})
 	})
 
-	Context("when testing TCP traffic between client and server pods", func() {
+	Context("when testing UDP traffic between client and server pods", func() {
 		BeforeEach(func() {
 			enableIPv4PrefixDelegation = "true"
 		})
