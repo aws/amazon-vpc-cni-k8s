@@ -19,8 +19,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"reflect"
-	"sort"
 	"strings"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
@@ -37,10 +35,6 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 	if err != nil {
 		log.Fatalf("failed to list ip rules %v", err)
 	}
-
-	// Sort the VPC CIDR Range as it will be compared with the
-	// IP Routes for Pods using Secondary ENI IPv4Address
-	sort.Strings(podNetworkingValidationInput.VPCCidrRange)
 
 	// Do validation for each Pod and if validation fails instead of failing
 	// entire test add errors to a list for all the failing Pods
@@ -99,6 +93,7 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 				nonMainTableRules = append(nonMainTableRules, rule)
 			}
 		}
+		log.Printf("mainTableRules %v, nonMainTableRules %v", mainTableRules, nonMainTableRules)
 
 		// Both Pod with IP from Primary and Secondary ENI will have 1 rule for main route table
 		if len(mainTableRules) != 1 {
@@ -141,21 +136,13 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 		// Pod with IP from Secondary ENI will have additional rule for destination to each
 		// VPC Cidr block
 		if pod.IsIPFromSecondaryENI {
-			var destinationCidrRange []string
-			for _, rule := range nonMainTableRules {
-				destinationCidrRange = append(destinationCidrRange, rule.Dst.String())
-				// Add the secondary route table Index, we will do validation later
-				secondaryRouteTableIndex[rule.Table] = true
-			}
-			sort.Strings(destinationCidrRange)
-			// Validate there is one rule for each VPC CIDR Range
-			if !reflect.DeepEqual(destinationCidrRange, podNetworkingValidationInput.VPCCidrRange) {
+			if len(nonMainTableRules) != 1 {
 				validationErrors = append(validationErrors,
-					fmt.Errorf("failed to find route to vpc cidr: %v", destinationCidrRange))
-				continue
+					fmt.Errorf("incorrect number of ip rules to the secondary route tables: %+v",
+						nonMainTableRules))
+			} else {
+				secondaryRouteTableIndex[nonMainTableRules[0].Table] = true
 			}
-			log.Printf("validated all routes for VPC CIDR %v are present for secondary ENI",
-				destinationCidrRange)
 		}
 		log.Printf("validation for pod %s/%s succeeded", pod.PodNamespace, pod.PodName)
 	}
@@ -185,6 +172,7 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 		}
 		log.Printf("validated route table for secondary ENI %d has right routes", index)
 	}
+  // TODO: validate iptables rules get setup correctly
 
 	return validationErrors
 }
