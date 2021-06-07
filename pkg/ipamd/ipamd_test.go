@@ -152,8 +152,7 @@ func TestNodeInit(t *testing.T) {
 	var rules []netlink.Rule
 	m.network.EXPECT().GetRuleList().Return(rules, nil)
 
-	m.network.EXPECT().UseExternalSNAT().Return(false)
-	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any(), gomock.Any(), true)
+	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any())
 
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
