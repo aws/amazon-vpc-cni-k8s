@@ -321,6 +321,20 @@ func (mr *MockAPIsMockRecorder) SetUnmanagedENIs(arg0 interface{}) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetUnmanagedENIs", reflect.TypeOf((*MockAPIs)(nil).SetUnmanagedENIs), arg0)
 }
 
+// TagENI mocks base method
+func (m *MockAPIs) TagENI(arg0 string, arg1 map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TagENI", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// TagENI indicates an expected call of TagENI
+func (mr *MockAPIsMockRecorder) TagENI(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TagENI", reflect.TypeOf((*MockAPIs)(nil).TagENI), arg0, arg1)
+}
+
 // WaitForENIAndIPsAttached mocks base method
 func (m *MockAPIs) WaitForENIAndIPsAttached(arg0 string, arg1 int) (awsutils.ENIMetadata, error) {
 	m.ctrl.T.Helper()
