@@ -371,16 +371,24 @@ func (c *IPAMContext) nodeInit() error {
 
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
-		// Retry ENI sync
 		if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
 			log.Infof("Skipping ENI %s since it is not on network card 0", eni.ENIID)
 			continue
 		}
+
+		isTrunkENI := eni.ENIID == metadataResult.TrunkENI
+		isEFAENI := metadataResult.EFAENIs[eni.ENIID]
+		if !isTrunkENI {
+			if err := c.awsClient.TagENI(eni.ENIID, metadataResult.TagMap[eni.ENIID]); err != nil {
+				return errors.Wrapf(err, "ipamd init: failed to tag managed ENI %v", eni.ENIID)
+			}
+		}
+
+		// Retry ENI sync
 		retry := 0
 		for {
 			retry++
-
-			if err = c.setupENI(eni.ENIID, eni, eni.ENIID == metadataResult.TrunkENI, metadataResult.EFAENIs[eni.ENIID]); err == nil {
+			if err = c.setupENI(eni.ENIID, eni, isTrunkENI, isEFAENI); err == nil {
 				log.Infof("ENI %s set up.", eni.ENIID)
 				break
 			}
@@ -984,6 +992,8 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 			break
 		}
 	}
+
+	var eniTagMap map[string]awsutils.TagMap
 	if needToUpdateTags {
 		log.Debugf("A new ENI added but not by ipamd, updating tags by calling EC2")
 		metadataResult, err := c.awsClient.DescribeAllENIs()
@@ -1005,6 +1015,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		trunkENI = metadataResult.TrunkENI
 		// Just copy values of the EFA set
 		efaENIs = metadataResult.EFAENIs
+		eniTagMap = metadataResult.TagMap
 		c.setUnmanagedENIs(metadataResult.TagMap)
 		c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
 		attachedENIs = c.filterUnmanagedENIs(metadataResult.ENIMetadata)
@@ -1023,9 +1034,19 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 			continue
 		}
 
+		isTrunkENI := attachedENI.ENIID == trunkENI
+		isEFAENI := efaENIs[attachedENI.ENIID]
+		if !isTrunkENI {
+			if err := c.awsClient.TagENI(attachedENI.ENIID, eniTagMap[attachedENI.ENIID]); err != nil {
+				log.Errorf("IP pool reconcile: failed to tag managed ENI %v: %v", attachedENI.ENIID, err)
+				ipamdErrInc("eniReconcileAdd")
+				continue
+			}
+		}
+
 		// Add new ENI
 		log.Debugf("Reconcile and add a new ENI %s", attachedENI)
-		err = c.setupENI(attachedENI.ENIID, attachedENI, attachedENI.ENIID == trunkENI, efaENIs[attachedENI.ENIID])
+		err = c.setupENI(attachedENI.ENIID, attachedENI, isTrunkENI, isEFAENI)
 		if err != nil {
 			log.Errorf("IP pool reconcile: Failed to set up ENI %s network: %v", attachedENI.ENIID, err)
 			ipamdErrInc("eniReconcileAdd")
