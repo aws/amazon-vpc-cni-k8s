@@ -87,7 +87,7 @@
       - "env":
         - "name": "USE_CLOUDWATCH"
           "value": "true"
-        "image": "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:latest"
+        "image": "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.8.0"
         "name": "cni-metrics-helper"
       "serviceAccountName": "cni-metrics-helper"
 ---
