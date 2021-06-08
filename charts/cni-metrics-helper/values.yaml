@@ -1,0 +1,23 @@
+# This default name override is to maintain backwards compatability with
+# existing naming
+nameOverride: cni-metrics-helper
+
+image:
+  region: us-west-2
+  tag: v1.7.10
+  # Set to use custom image
+  # override: "repo/org/image:tag"
+
+env:
+  USE_CLOUDWATCH: "true"
+
+fullnameOverride: "cni-metrics-helper"
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name:
+  annotations: {}
+    # eks.amazonaws.com/role-arn: arn:aws:iam::AWS_ACCOUNT_ID:role/IAM_ROLE_NAME  

@@ -278,12 +278,12 @@ ekscharts-sync-release:
 
 
 upload-resources-to-github:
-	${MAKEFILE_PATH}/scripts/upload-resources-to-github
+	${MAKEFILE_PATH}/scripts/upload-resources-to-github.sh
 
-generate-k8s-yaml:
-	${MAKEFILE_PATH}/scripts/generate-k8s-yaml
+generate-cni-yaml:
+	${MAKEFILE_PATH}/scripts/generate-cni-yaml.sh
 
-release: generate-k8s-yaml upload-resources-to-github
+release: generate-cni-yaml upload-resources-to-github
 
 # Clean temporary files and build artifacts from the project.
 clean:    ## Clean temporary files and build artifacts from the project.
