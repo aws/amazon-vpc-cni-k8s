@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.8.0
+* Bug - [Use symmetric return path for non-VPC traffic - alternate solution](https://github.com/aws/amazon-vpc-cni-k8s/pull/1475) (#1475, [@kishorj](https://github.com/kishorj))
+* Bug - [Gracefully handle failed ENI SG update](https://github.com/aws/amazon-vpc-cni-k8s/pull/1341) (#1341, [@jayanthvn](https://github.com/jayanthvn))
+* Improvement - [Address Excessive API Server calls from CNI Pods](https://github.com/aws/amazon-vpc-cni-k8s/pull/1419) (#1419, [@achevuru](https://github.com/achevuru))
+* Improvement - [refine ENI tagging logic](https://github.com/aws/amazon-vpc-cni-k8s/pull/1482) (#1482, [@M00nF1sh](https://github.com/M00nF1sh))
+* Improvement - [Change tryAssignIPs to assign up to configured WARM_IP_TARGET](https://github.com/aws/amazon-vpc-cni-k8s/pull/1279) (#1279, [@jacksontj](https://github.com/jacksontj))
+* Improvement - [Unnecessary logging for each CNI invocation](https://github.com/aws/amazon-vpc-cni-k8s/pull/1469) (#1469, [@jayanthvn](https://github.com/jayanthvn))
+* Improvement - [New instance types](https://github.com/aws/amazon-vpc-cni-k8s/pull/1463) (#1463, [@jayanthvn](https://github.com/jayanthvn))
+* Improvement - [Use 'exec' ENTRYPOINTs](https://github.com/aws/amazon-vpc-cni-k8s/pull/1432) (#1432, [@anguslees](https://github.com/anguslees))
+* HelmChart - [Adding flags to support overriding container runtime endpoint.](https://github.com/aws/amazon-vpc-cni-k8s/pull/1443) (#1443, [@haouc](https://github.com/haouc))
+* HelmChart - [Add podLabels to amazon-vpc-cni chart](https://github.com/aws/amazon-vpc-cni-k8s/pull/1440) (#1440, [@haouc](https://github.com/haouc))
+* HelmChart - [Add workflow to sync aws-vpc-cni helm chart to eks-charts](https://github.com/aws/amazon-vpc-cni-k8s/pull/1430) (#1430, [@fawadkhaliq](https://github.com/fawadkhaliq))
+* Testing - [Remove validation of VPC CIDRs from ip rules](https://github.com/aws/amazon-vpc-cni-k8s/pull/1476) (#1476, [@kishorj](https://github.com/kishorj))
+* Testing - [Updated agent version](https://github.com/aws/amazon-vpc-cni-k8s/pull/1474) (#1474, [@cgchinmay](https://github.com/cgchinmay))
+* Testing - [Fix for CI failure](https://github.com/aws/amazon-vpc-cni-k8s/pull/1470) (#1470, [@achevuru](https://github.com/achevuru))
+* Testing - [Binary for mtu and veth prefix check](https://github.com/aws/amazon-vpc-cni-k8s/pull/1458) (#1458, [@cgchinmay](https://github.com/cgchinmay))
+* Testing - [add test to verify cni-metrics-helper puts metrics to CW](https://github.com/aws/amazon-vpc-cni-k8s/pull/1461) (#1461, [@abhipth](https://github.com/abhipth))
+* Testing - [add e2e test for security group for pods](https://github.com/aws/amazon-vpc-cni-k8s/pull/1459) (#1459, [@abhipth](https://github.com/abhipth))
+* Testing - [Added Test cases for EnvVars check on CNI daemonset](https://github.com/aws/amazon-vpc-cni-k8s/pull/1431) (#1431, [@cgchinmay](https://github.com/cgchinmay))
+* Testing - [add test to verify host networking setup & cleanup](https://github.com/aws/amazon-vpc-cni-k8s/pull/1457) (#1457, [@abhipth](https://github.com/abhipth))
+* Testing - [Runners failing because of docker permissions](https://github.com/aws/amazon-vpc-cni-k8s/pull/1456) (#1456, [@jayanthvn](https://github.com/jayanthvn))
+* Testing - [decouple test helper input struct from netlink library](https://github.com/aws/amazon-vpc-cni-k8s/pull/1455) (#1455, [@abhipth](https://github.com/abhipth))
+* Testing - [add custom networking e2e test suite](https://github.com/aws/amazon-vpc-cni-k8s/pull/1445) (#1445, [@abhipth](https://github.com/abhipth))
+* Testing - [add integration test for ipamd env variables](https://github.com/aws/amazon-vpc-cni-k8s/pull/1453) (#1453, [@abhipth](https://github.com/abhipth))
+* Testing - [add agent for testing pod networking](https://github.com/aws/amazon-vpc-cni-k8s/pull/1448) (#1448, [@abhipth](https://github.com/abhipth))
+* Testing - [fix format of commited code to fix unit test step](https://github.com/aws/amazon-vpc-cni-k8s/pull/1449) (#1449, [@abhipth](https://github.com/abhipth))
+* Testing - [Unblocks Github Action Integration Tests](https://github.com/aws/amazon-vpc-cni-k8s/pull/1435) (#1435, [@couralex6](https://github.com/couralex6))
+* Testing - [add warm ENI/IP target integration tests](https://github.com/aws/amazon-vpc-cni-k8s/pull/1438) (#1438, [@abhipth](https://github.com/abhipth))
+* Testing - [add service connectivity test](https://github.com/aws/amazon-vpc-cni-k8s/pull/1436) (#1436, [@abhipth](https://github.com/abhipth))
+* Testing - [add network connectivity test](https://github.com/aws/amazon-vpc-cni-k8s/pull/1424) (#1424, [@abhipth](https://github.com/abhipth))
+
+
 ## v1.7.10
 
 * Improvement - Multi card support - Prevent route override for primary ENI across multi-cards ENAs (#1396 , [@jayanthvn](https://github.com/Jayanthvn))
