@@ -163,6 +163,7 @@ type AddressInfo struct {
 	UnassignedTime time.Time
 }
 
+// CidrInfo
 type CidrInfo struct {
 	//Cidr info /32 or /28 prefix
 	Cidr net.IPNet
@@ -985,7 +986,7 @@ func (ds *DataStore) FreeableIPs(eniID string) []net.IPNet {
 	eni := ds.eniPool[eniID]
 	if eni == nil {
 		// Can't free any IPs from an ENI we don't know about...
-		return []net.IPNet{}
+		return nil
 	}
 
 	freeable := make([]net.IPNet, 0, len(eni.AvailableIPv4Cidrs))
@@ -1006,8 +1007,8 @@ func (ds *DataStore) FreeablePrefixes(eniID string) []net.IPNet {
 
 	eni := ds.eniPool[eniID]
 	if eni == nil {
-		// Can't free any IPs from an ENI we don't know about...
-		return []net.IPNet{}
+		// Can't free any Prefixes from an ENI we don't know about...
+		return nil
 	}
 
 	freeable := make([]net.IPNet, 0, len(eni.AvailableIPv4Cidrs))
@@ -1187,14 +1188,29 @@ func GetPrefixDelegationDefaults() (int, int, int) {
 	return numPrefixesPerENI, numIPsPerPrefix, supportedPrefixLen
 }
 
-// FindFreeableCidrs finds and returns IPs that are not assigned to Pods but are attached
+// FindFreeableCidrs finds and returns Cidrs that are not assigned to Pods but are attached
 // to ENIs on the node.
-func (ds *DataStore) FindFreeableCidrs(eni string) ([]net.IPNet, error) {
-	var freeableCidrs []net.IPNet
-	if !ds.isPDEnabled {
-		freeableCidrs = ds.FreeableIPs(eni)
-	} else {
-		freeableCidrs = ds.FreeablePrefixes(eni)
+func (ds *DataStore) FindFreeableCidrs(eniID string) ([]CidrInfo) {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	eni := ds.eniPool[eniID]
+	if eni == nil {
+		// Can't free any Cidrs from an ENI we don't know about...
+		return nil
 	}
-	return freeableCidrs, nil
+
+	var freeable []CidrInfo
+	for _, assignedaddr := range eni.AvailableIPv4Cidrs {
+		if assignedaddr.AssignedIPv4AddressesInCidr() == 0 {
+			tempFreeable := CidrInfo{
+				Cidr: assignedaddr.Cidr, 
+				IPv4Addresses: nil,
+				IsPrefix: assignedaddr.IsPrefix, 
+			}
+			freeable = append(freeable, tempFreeable)
+		}
+	}
+	return freeable
+
 }

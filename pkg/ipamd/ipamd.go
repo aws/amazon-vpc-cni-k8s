@@ -238,37 +238,35 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 	c.awsClient.SetUnmanagedENIs(unmanagedENIlist)
 }
 
-// ReconcileCooldownCache keep track of recently freed IPs to avoid reading stale EC2 metadata
+// ReconcileCooldownCache keep track of recently freed CIDRs to avoid reading stale EC2 metadata
 type ReconcileCooldownCache struct {
 	sync.RWMutex
 	cache map[string]time.Time
 }
 
-// Add sets a timestamp for the list of IPs added that says how long they are not to be put back in the data store.
-func (r *ReconcileCooldownCache) Add(ips []string) {
+// Add sets a timestamp for the CIDR added that says how long they are not to be put back in the data store.
+func (r *ReconcileCooldownCache) Add(cidr string) {
 	r.Lock()
 	defer r.Unlock()
 	expiry := time.Now().Add(ipReconcileCooldown)
-	for _, ip := range ips {
-		r.cache[ip] = expiry
-	}
+	r.cache[cidr] = expiry
 }
 
-// Remove removes an IP from the cooldown cache.
-func (r *ReconcileCooldownCache) Remove(ip string) {
+// Remove removes a CIDR from the cooldown cache.
+func (r *ReconcileCooldownCache) Remove(cidr string) {
 	r.Lock()
 	defer r.Unlock()
-	log.Debugf("Removing %s from cooldown cache.", ip)
-	delete(r.cache, ip)
+	log.Debugf("Removing %s from cooldown cache.", cidr)
+	delete(r.cache, cidr)
 }
 
-// RecentlyFreed checks if this IP was recently freed.
-func (r *ReconcileCooldownCache) RecentlyFreed(ip string) (found, recentlyFreed bool) {
+// RecentlyFreed checks if this CIDR was recently freed.
+func (r *ReconcileCooldownCache) RecentlyFreed(cidr string) (found, recentlyFreed bool) {
 	r.Lock()
 	defer r.Unlock()
 	now := time.Now()
-	if expiry, ok := r.cache[ip]; ok {
-		log.Debugf("Checking if IP %s has been recently freed. Cooldown expires at: %s. (Cooldown: %v)", ip, expiry, now.Sub(expiry) < 0)
+	if expiry, ok := r.cache[cidr]; ok {
+		log.Debugf("Checking if CIDR %s has been recently freed. Cooldown expires at: %s. (Cooldown: %v)", cidr, expiry, now.Sub(expiry) < 0)
 		return true, now.Sub(expiry) < 0
 	}
 	return false, false
@@ -605,54 +603,39 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 	if over > 0 {
 		eniInfos := c.dataStore.GetENIInfos()
 		for eniID := range eniInfos.ENIs {
-			//Either returns prefixes or IPs
-			ips, err := c.dataStore.FindFreeableCidrs(eniID)
-			if err != nil {
-				log.Errorf("Error finding unassigned IPs: %s", err)
+			//Either returns prefixes or IPs [Cidrs]
+			cidrs := c.dataStore.FindFreeableCidrs(eniID)
+			if cidrs == nil {
+				log.Errorf("Error finding unassigned IPs for ENI %s", eniID)
 				return
 			}
 
-			// Free the number of IPs `over` the warm IP target, unless `over` is greater than the number of available IPs on
-			// this ENI. In that case we should only free the number of available IPs.
-			numFreeable := min(over, len(ips))
-			ips = ips[:numFreeable]
+			// Free the number of Cidrs `over` the warm IP target, unless `over` is greater than the number of available Cidrs on
+			// this ENI. In that case we should only free the number of available Cidrs.
+			numFreeable := min(over, len(cidrs))
+			cidrs = cidrs[:numFreeable]
 
-			if len(ips) == 0 {
+			if len(cidrs) == 0 {
 				continue
 			}
 
 			// Delete IPs from datastore
-			var deletedIPsOrPrefixes []string
-			for _, toDelete := range ips {
-				// Don't force the delete, since a freeable IP might have been assigned to a pod
+			var deletedCidrs []datastore.CidrInfo
+			for _, toDelete := range cidrs {
+				// Don't force the delete, since a freeable Cidrs might have been assigned to a pod
 				// before we get around to deleting it.
-
-				ipv4Str := toDelete.IP.String()
-				if c.enableIpv4PrefixDelegation {
-					ipv4Str = toDelete.String()
-				}
-
-				err := c.dataStore.DelIPv4CidrFromStore(eniID, toDelete, false /* force */)
-
+				err := c.dataStore.DelIPv4CidrFromStore(eniID, toDelete.Cidr, false /* force */)
 				if err != nil {
-					log.Warnf("Failed to delete IP %s on ENI %s from datastore: %s", toDelete, eniID, err)
+					log.Warnf("Failed to delete Cidr %s on ENI %s from datastore: %s", toDelete, eniID, err)
 					ipamdErrInc("decreaseIPPool")
 					continue
 				} else {
-					deletedIPsOrPrefixes = append(deletedIPsOrPrefixes, ipv4Str)
+					deletedCidrs = append(deletedCidrs, toDelete)
 				}
 			}
-
-			// Deallocate IPs from the instance if they aren't used by pods.
-			if err = c.awsClient.DeallocCidrs(eniID, deletedIPsOrPrefixes); err != nil {
-				log.Warnf("Failed to decrease pool by removing IPs %v from ENI %s: %s", deletedIPsOrPrefixes, eniID, err)
-			} else {
-				log.Debugf("Successfully decreased pool by removing IPs %v from ENI %s", deletedIPsOrPrefixes, eniID)
-			}
-
-			// Track the last time we unassigned IPs from an ENI. We won't reconcile any IPs in this cache
-			// for at least ipReconcileCooldown
-			c.reconcileCooldownCache.Add(deletedIPsOrPrefixes)
+			
+			// Deallocate Cidrs from the instance if they aren't used by pods.
+			c.DeallocCidrs(eniID, deletedCidrs)
 		}
 	}
 }
@@ -1286,6 +1269,7 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []*e
 		}
 
 		// Check if this IP was recently freed
+		ipv4Addr := net.IPNet{IP: net.ParseIP(strPrivateIPv4), Mask: net.IPv4Mask(255, 255, 255, 255)}	
 		found, recentlyFreed := c.reconcileCooldownCache.RecentlyFreed(strPrivateIPv4)
 		if found {
 			if recentlyFreed {
@@ -1328,8 +1312,7 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []*e
 		}
 		log.Infof("Trying to add %s", strPrivateIPv4)
 		// Try to add the IP
-		cidr := net.IPNet{IP: net.ParseIP(strPrivateIPv4), Mask: net.IPv4Mask(255, 255, 255, 255)}
-		err := c.dataStore.AddIPv4CidrToStore(eni, cidr, false)
+		err := c.dataStore.AddIPv4CidrToStore(eni, ipv4Addr, false)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
 			log.Errorf("Failed to reconcile IP %s on ENI %s", strPrivateIPv4, eni)
 			ipamdErrInc("ipReconcileAdd")
@@ -1353,7 +1336,12 @@ func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIIPs
 		strPrivateIPv4 := aws.StringValue(privateIPv4.Ipv4Prefix)
 		log.Debugf("Check in coolddown Found prefix %s", strPrivateIPv4)
 
-		// Check if this IP was recently freed
+		// Check if this Prefix was recently freed
+		_, ipv4CidrPtr, err := net.ParseCIDR(strPrivateIPv4)
+		if err != nil {
+			log.Debugf("Failed to parse so continuing with next prefix")
+			continue
+		}
 		found, recentlyFreed := c.reconcileCooldownCache.RecentlyFreed(strPrivateIPv4)
 		if found {
 			log.Debugf("found in cooldown")
@@ -1396,12 +1384,6 @@ func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIIPs
 			}
 		}
 
-		// Try to add the IP
-		_, ipv4CidrPtr, err := net.ParseCIDR(strPrivateIPv4)
-		if err != nil {
-			log.Debugf("Failed to parse so continuing with next prefix")
-			continue
-		}
 		err = c.dataStore.AddIPv4CidrToStore(eni, *ipv4CidrPtr, true)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
 			log.Errorf("Failed to reconcile IP %s on ENI %s", strPrivateIPv4, eni)
@@ -1536,13 +1518,13 @@ func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool)
 
 		_, numIPsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
 		// Number of prefixes IPAMD is short of to achieve warm targets
-		shortPrefix := ceil(short, numIPsPerPrefix)
+		shortPrefix := divCeil(short, numIPsPerPrefix)
 
 		// Over will have number of IPs more than needed but with PD we would have allocated in chunks of /28
 		// Say assigned = 1, warm ip target = 16, this will need 2 prefixes. But over will return 15.
 		// Hence we need to check if 'over' number of IPs are needed to maintain the warm targets
-		prefixNeededForWarmIP := ceil(assigned+c.warmIPTarget, numIPsPerPrefix)
-		prefixNeededForMinIP := ceil(c.minimumIPTarget, numIPsPerPrefix)
+		prefixNeededForWarmIP := divCeil(assigned+c.warmIPTarget, numIPsPerPrefix)
+		prefixNeededForMinIP := divCeil(c.minimumIPTarget, numIPsPerPrefix)
 
 		// over will be number of prefixes over than needed but could be spread across used prefixes,
 		// say, after couple of pod churns, 3 prefixes are allocated with 1 IP each assigned and warm ip target is 15
@@ -1808,6 +1790,36 @@ func (c *IPAMContext) warmPrefixTargetDefined() bool {
 	return c.warmPrefixTarget >= noWarmPrefixTarget && c.enableIpv4PrefixDelegation
 }
 
-func ceil(x, y int) int {
+func divCeil (x, y int) int {
 	return (x + y - 1) / y
+}
+
+//DeallocCidrs frees IPs and Prefixes from EC2
+func (c *IPAMContext) DeallocCidrs(eniID string, deletableCidrs []datastore.CidrInfo) {
+	var deletableIPs []string
+	var deletablePrefixes []string
+
+	for _, toDeleteCidr := range deletableCidrs {
+		if toDeleteCidr.IsPrefix {
+			strDeletablePrefix := toDeleteCidr.Cidr.String() 
+			deletablePrefixes = append(deletablePrefixes, strDeletablePrefix)
+			// Track the last time we unassigned Cidrs from an ENI. We won't reconcile any Cidrs in this cache
+			// for at least ipReconcileCooldown
+			c.reconcileCooldownCache.Add(strDeletablePrefix)
+		} else {
+			strDeletableIP := toDeleteCidr.Cidr.IP.String()
+			deletableIPs = append(deletableIPs, strDeletableIP)
+			// Track the last time we unassigned IPs from an ENI. We won't reconcile any IPs in this cache
+			// for at least ipReconcileCooldown
+			c.reconcileCooldownCache.Add(strDeletableIP)
+		}
+	}
+
+	if err := c.awsClient.DeallocPrefixAddresses(eniID, deletablePrefixes); err != nil {
+		log.Warnf("Failed to free Prefixes %v from ENI %s: %s", deletablePrefixes, eniID, err)
+	}
+
+	if err := c.awsClient.DeallocIPAddresses(eniID, deletableIPs); err != nil {
+		log.Warnf("Failed to free IPs %v from ENI %s: %s", deletableIPs, eniID, err)
+	}
 }
