@@ -41,6 +41,7 @@ var _ = Describe("Test pod networking with prefix delegation enabled <-> disable
 	)
 
 	JustBeforeEach(func() {
+		// TODO Gingko doesnt support beforeAll so while adding upgrades/downgrades will move this to a suite
 		if firstRun {
 			By("creating test namespace")
 			f.K8sResourceManagers.NamespaceManager().
@@ -78,7 +79,9 @@ var _ = Describe("Test pod networking with prefix delegation enabled <-> disable
 			lastRun = false
 		})
 
-		It("should have 100% success rate", func() {
+		//TODO : Add pod IP validation if IP belongs to prefix
+		//TODO : remove hardcoding from client/server count
+		It("should have 99+% success rate", func() {
 			trafficTester := agent.TrafficTest{
 				Framework:                      f,
 				TrafficServerDeploymentBuilder: serverDeploymentBuilder,
@@ -105,7 +108,9 @@ var _ = Describe("Test pod networking with prefix delegation enabled <-> disable
 			lastRun = true
 		})
 
-		It("should have 100% success rate", func() {
+		//TODO : Add pod IP validation if IP belongs to SIP
+		//TODO : remove hardcoding from client/server count
+		It("should have 99+% success rate", func() {
 			trafficTester := agent.TrafficTest{
 				Framework:                      f,
 				TrafficServerDeploymentBuilder: serverDeploymentBuilder,

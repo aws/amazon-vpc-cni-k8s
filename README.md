@@ -237,8 +237,9 @@ Type: Integer
 Default: None
 
 Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node. 
-With `ENABLE_PREFIX_DELGATION` set to `true` IPAMD behavoir is similar and if the existing (/28) prefixes are not enough to maintain the
-`WARM_IP_TARGET` then more prefixes will be attached.
+With `ENABLE_PREFIX_DELGATION` set to `true` then `ipamd` daemon will check if the existing (/28) prefixes are enough to maintain the
+`WARM_IP_TARGET` if it is not sufficent then more prefixes will be attached.
+
 For example, 
 
 1. if `WARM_IP_TARGET` is set to 5, then `ipamd` attempts to keep 5 free IP addresses available at all times. If the
@@ -254,7 +255,7 @@ If both `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are set, `ipamd` will attempt t
 This environment variable overrides `WARM_ENI_TARGET` behavior. For a detailed explanation, see
 [`WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/eni-and-ip-target.md).
 
-`ENABLE_PREFIX_DELGATION` set to `true` and this environment variable overrides `WARM_PREFIX_TARGET` behavoir. For a detailed explanation, see
+`ENABLE_PREFIX_DELGATION` set to `true` and this environment variable overrides `WARM_PREFIX_TARGET` behavior. For a detailed explanation, see
 [`WARM_PREFIX_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/prefix-and-ip-target.md).
 ---
 
@@ -478,7 +479,7 @@ Type: Integer
 Default: None
 
 Specifies the number of free IPv4(/28) prefixes that the `ipamd` daemon should attempt to keep available for pod assignment on the node.
-This environment variable works when `ENABLE_PREFIX_DELEGATION`  is set to `true` and is overriden when `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are configured.
+This environment variable works when `ENABLE_PREFIX_DELEGATION` is set to `true` and is overriden when `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are configured.
 
 ### ENI tags related to Allocation
 

@@ -67,7 +67,9 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 			enableIPv4PrefixDelegation = "true"
 		})
 
-		It("should have 100% success rate", func() {
+		//TODO : Add pod IP validation if IP belongs to prefix or SIP
+		//TODO : remove hardcoding from client/server count
+		It("should have 99+% success rate", func() {
 			trafficTester := agent.TrafficTest{
 				Framework:                      f,
 				TrafficServerDeploymentBuilder: serverDeploymentBuilder,
@@ -92,7 +94,9 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 			enableIPv4PrefixDelegation = "true"
 		})
 
-		It("should have 100% success rate", func() {
+		//TODO : Add pod IP validation if IP belongs to prefix or SIP
+		//TODO : remove hardcoding from client/server count
+		It("should have 99+% success rate", func() {
 			trafficTester := agent.TrafficTest{
 				Framework:                      f,
 				TrafficServerDeploymentBuilder: serverDeploymentBuilder,
