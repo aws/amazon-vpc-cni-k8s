@@ -130,7 +130,7 @@ type APIs interface {
 	AllocIPAddresses(eniID string, numIPs int) error
 
 	// DeallocIPAddresses deallocates the list of IP addresses from a ENI
-	DeallocIPAddresses(eniID string, ips []string, igonoreCachedPDflag bool) error
+	DeallocIPAddresses(eniID string, ips []string) error
 
 	// DeallocPrefixAddresses deallocates the list of IP addresses from a ENI
 	DeallocPrefixAddresses(eniID string, ips []string) error
@@ -594,24 +594,22 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	//call attached ENIs, the call will return prefix not found in the logs and that will pollute
 	//ipamd.log hence skipping.
 
-	//Prefix get is taking more time, so adding a check for preview. Will remove this for GA.
-	if cache.useIPv4PrefixDelegation {
-		start := time.Now()
-		log.Debugf("Querying for prefix")
-		if (eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC) {
-			imdsIPv4Prefixes, err := cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
-			if err != nil {
-				return ENIMetadata{}, err
-			}
-			for _, ipv4prefix := range imdsIPv4Prefixes {
-				ec2ipv4Prefixes = append(ec2ipv4Prefixes, &ec2.Ipv4PrefixSpecification{
-					Ipv4Prefix: aws.String(ipv4prefix.String()),
-				})
-			}
+	//Prefix get is taking more time, so computing the time to return prefix. Will remove this for GA.
+	start := time.Now()
+	log.Debugf("Querying for prefix")
+	if (eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC) {
+		imdsIPv4Prefixes, err := cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
+		if err != nil {
+			return ENIMetadata{}, err
 		}
-		elapsed := time.Since(start)
-		log.Debugf("Time taken to return prefix query %s", elapsed)
+		for _, ipv4prefix := range imdsIPv4Prefixes {
+			ec2ipv4Prefixes = append(ec2ipv4Prefixes, &ec2.Ipv4PrefixSpecification{
+				Ipv4Prefix: aws.String(ipv4prefix.String()),
+			})
+		}
 	}
+	elapsed := time.Since(start)
+	log.Debugf("Time taken to return prefix query %s", elapsed)
 
 	return ENIMetadata{
 		ENIID:          eniID,
@@ -1393,43 +1391,17 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 	return eniMetadata, nil
 }
 
-// DeallocIPAddresses allocates numIPs of IP address on an ENI
-func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []string, ignoreCachedPDflag bool) error {
-	log.Infof("Trying to unassign the following IPs %s from ENI %s", ips, eniID)
-	ipsInput := aws.StringSlice(ips)
-
-	input := &ec2.UnassignPrivateIpAddressesInput{}
-	if !cache.useIPv4PrefixDelegation || ignoreCachedPDflag {
-		input = &ec2.UnassignPrivateIpAddressesInput{
-			NetworkInterfaceId: aws.String(eniID),
-			PrivateIpAddresses: ipsInput,
-		}
-	} else {
-		input = &ec2.UnassignPrivateIpAddressesInput{
-			NetworkInterfaceId: aws.String(eniID),
-			Ipv4Prefixes:       ipsInput,
-		}
+// DeallocIPAddresses frees IP address on an ENI
+func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []string) error {
+	if len(ips) == 0 {
+		return nil
 	}
-
-	start := time.Now()
-	_, err := cache.ec2SVC.UnassignPrivateIpAddressesWithContext(context.Background(), input)
-	awsAPILatency.WithLabelValues("UnassignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
-	if err != nil {
-		awsAPIErrInc("UnassignPrivateIpAddresses", err)
-		log.Errorf("Failed to deallocate a private IP address %v", err)
-		return errors.Wrap(err, fmt.Sprintf("deallocate IP addresses: failed to deallocate private IP addresses: %s", ips))
-	}
-	return nil
-}
-
-// DeallocPrefixAddresses allocates numIPs of IP address on an ENI
-func (cache *EC2InstanceMetadataCache) DeallocPrefixAddresses(eniID string, ips []string) error {
 	log.Infof("Trying to unassign the following IPs %s from ENI %s", ips, eniID)
 	ipsInput := aws.StringSlice(ips)
 
 	input := &ec2.UnassignPrivateIpAddressesInput{
 		NetworkInterfaceId: aws.String(eniID),
-		Ipv4Prefixes:       ipsInput,
+		PrivateIpAddresses: ipsInput,
 	}
 
 	start := time.Now()
@@ -1440,6 +1412,32 @@ func (cache *EC2InstanceMetadataCache) DeallocPrefixAddresses(eniID string, ips 
 		log.Errorf("Failed to deallocate a private IP address %v", err)
 		return errors.Wrap(err, fmt.Sprintf("deallocate IP addresses: failed to deallocate private IP addresses: %s", ips))
 	}
+	log.Debugf("Successfully freed IPs %v from ENI %s", ips, eniID)
+	return nil
+}
+
+// DeallocPrefixAddresses frees Prefixes on an ENI
+func (cache *EC2InstanceMetadataCache) DeallocPrefixAddresses(eniID string, prefixes []string) error {
+	if len(prefixes) == 0 {
+		return nil
+	}
+	log.Infof("Trying to unassign the following Prefixes %s from ENI %s", prefixes, eniID)
+	prefixesInput := aws.StringSlice(prefixes)
+
+	input := &ec2.UnassignPrivateIpAddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv4Prefixes:       prefixesInput,
+	}
+
+	start := time.Now()
+	_, err := cache.ec2SVC.UnassignPrivateIpAddressesWithContext(context.Background(), input)
+	awsAPILatency.WithLabelValues("UnassignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+	if err != nil {
+		awsAPIErrInc("UnassignPrivateIpAddresses", err)
+		log.Errorf("Failed to deallocate a Prefixes address %v", err)
+		return errors.Wrap(err, fmt.Sprintf("deallocate prefix: failed to deallocate Prefix addresses: %s", prefixes))
+	}
+	log.Debugf("Successfully freed Prefixes %v from ENI %s", prefixes, eniID)
 	return nil
 }
 

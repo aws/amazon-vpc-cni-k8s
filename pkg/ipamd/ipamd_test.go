@@ -191,6 +191,7 @@ func TestNodeInitwithPDenabled(t *testing.T) {
 
 	var cidrs []string
 	m.awsutils.EXPECT().GetENILimit().Return(4, nil)
+	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14, nil)
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Prefixes, nil)
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Prefixes, nil)
 	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
@@ -231,9 +232,6 @@ func TestNodeInitwithPDenabled(t *testing.T) {
 		Status:     v1.NodeStatus{},
 	}
 	_, _ = m.clientset.CoreV1().Nodes().Create(&fakeNode)
-
-	// Add Prefixes
-	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
 
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
@@ -846,7 +844,7 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	assert.Equal(t, 0, over)
 }
 
-func TestGetWarmPrefixTargetState(t *testing.T) {
+func TestGetWarmIPTargetStatewithPDenabled(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 
@@ -860,13 +858,13 @@ func TestGetWarmPrefixTargetState(t *testing.T) {
 
 	mockContext.dataStore = testDatastorewithPrefix()
 
-	_, _, warmPrefixTargetDefined := mockContext.datastoreTargetState()
-	assert.False(t, warmPrefixTargetDefined)
+	_, _, warmIPTargetDefined := mockContext.datastoreTargetState()
+	assert.False(t, warmIPTargetDefined)
 
-	mockContext.warmPrefixTarget = 5
-	short, over, warmPrefixTargetDefined := mockContext.datastoreTargetState()
-	assert.True(t, warmPrefixTargetDefined)
-	assert.Equal(t, 5, short)
+	mockContext.warmIPTarget = 5
+	short, over, warmIPTargetDefined := mockContext.datastoreTargetState()
+	assert.True(t, warmIPTargetDefined)
+	assert.Equal(t, 1, short)
 	assert.Equal(t, 0, over)
 
 	// add 2 addresses to datastore
@@ -877,24 +875,17 @@ func TestGetWarmPrefixTargetState(t *testing.T) {
 	_, ipnet, _ = net.ParseCIDR("20.1.1.0/28")
 	_ = mockContext.dataStore.AddIPv4CidrToStore("eni-1", *ipnet, true)
 
-	short, over, warmPrefixTargetDefined = mockContext.datastoreTargetState()
-	assert.True(t, warmPrefixTargetDefined)
-	assert.Equal(t, 3, short)
-	assert.Equal(t, 0, over)
+	short, over, warmIPTargetDefined = mockContext.datastoreTargetState()
+	assert.True(t, warmIPTargetDefined)
+	assert.Equal(t, 0, short)
+	assert.Equal(t, 1, over)
 
-	//Add 3 more
-	_ = mockContext.dataStore.AddENI("eni-3", 3, true, false, false)
-	_, ipnet, _ = net.ParseCIDR("30.1.1.0/28")
-	_ = mockContext.dataStore.AddIPv4CidrToStore("eni-3", *ipnet, true)
-	_ = mockContext.dataStore.AddENI("eni-4", 4, true, false, false)
-	_, ipnet, _ = net.ParseCIDR("40.1.1.0/28")
-	_ = mockContext.dataStore.AddIPv4CidrToStore("eni-4", *ipnet, true)
-	_ = mockContext.dataStore.AddENI("eni-5", 5, true, false, false)
-	_, ipnet, _ = net.ParseCIDR("50.1.1.0/28")
-	_ = mockContext.dataStore.AddIPv4CidrToStore("eni-5", *ipnet, true)
+	// Del 1 address
+	_, ipnet, _ = net.ParseCIDR("20.1.1.0/28")
+	_ = mockContext.dataStore.DelIPv4CidrFromStore("eni-1", *ipnet, true)
 
-	short, over, warmPrefixTargetDefined = mockContext.datastoreTargetState()
-	assert.True(t, warmPrefixTargetDefined)
+	short, over, warmIPTargetDefined = mockContext.datastoreTargetState()
+	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, 0, short)
 	assert.Equal(t, 0, over)
 }

@@ -93,18 +93,32 @@ func (mr *MockAPIsMockRecorder) AllocIPAddresses(arg0, arg1 interface{}) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).AllocIPAddresses), arg0, arg1)
 }
 
-// DeallocIPAddresses mocks base method
-func (m *MockAPIs) DeallocIPAddresses(arg0 string, arg1 []string, arg2 bool) error {
+// DeallocCidrs mocks base method
+func (m *MockAPIs) DeallocCidrs(arg0 string, arg1 []string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeallocIPAddresses", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "DeallocCidrs", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeallocCidrs indicates an expected call of DeallocCidrs
+func (mr *MockAPIsMockRecorder) DeallocCidrs(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeallocCidrs", reflect.TypeOf((*MockAPIs)(nil).DeallocCidrs), arg0, arg1)
+}
+
+// DeallocIPAddresses mocks base method
+func (m *MockAPIs) DeallocIPAddresses(arg0 string, arg1 []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeallocIPAddresses", arg0, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeallocIPAddresses indicates an expected call of DeallocIPAddresses
-func (mr *MockAPIsMockRecorder) DeallocIPAddresses(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockAPIsMockRecorder) DeallocIPAddresses(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeallocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).DeallocIPAddresses), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeallocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).DeallocIPAddresses), arg0, arg1)
 }
 
 // DeallocPrefixAddresses mocks base method
