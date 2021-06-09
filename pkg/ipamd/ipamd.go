@@ -809,13 +809,14 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 		return true, nil
 	}
 
+	toAllocate -= freePrefixesInStore 
 	// Returns an ENI which has space for more prefixes to be attached, but this
 	// ENI might not suffice the WARM_IP_TARGET
 	eni := c.dataStore.GetENINeedsIP(c.maxPrefixesPerENI, c.useCustomNetworking)
 	if eni != nil {
 		currentNumberOfAllocatedPrefixes := len(eni.AvailableIPv4Cidrs)
 		log.Debugf("Adding prefix to ENI %s ", eni.ID)
-		err = c.awsClient.AllocIPAddresses(eni.ID, min((c.maxPrefixesPerENI-currentNumberOfAllocatedPrefixes), toAllocate))
+		err = c.awsClient.AllocIPAddresses(eni.ID, min((c.maxPrefixesPerENI-currentNumberOfAllocatedPrefixes), max(toAllocate, 0)))
 		if err != nil {
 			log.Warnf("failed to allocate all available IPv4 Prefixes on ENI %s, err: %v", eni.ID, err)
 			// Try to just get one more prefix
