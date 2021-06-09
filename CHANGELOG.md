@@ -3,6 +3,7 @@
 ## v1.8.0
 * Bug - [Use symmetric return path for non-VPC traffic - alternate solution](https://github.com/aws/amazon-vpc-cni-k8s/pull/1475) (#1475, [@kishorj](https://github.com/kishorj))
 * Bug - [Gracefully handle failed ENI SG update](https://github.com/aws/amazon-vpc-cni-k8s/pull/1341) (#1341, [@jayanthvn](https://github.com/jayanthvn))
+* Bug - [Fix CNI crashing when there is no available IP addresses](https://github.com/aws/amazon-vpc-cni-k8s/pull/1499) (#1499, [@M00nF1sh](https://github.com/M00nF1sh))
 * Improvement - [Address Excessive API Server calls from CNI Pods](https://github.com/aws/amazon-vpc-cni-k8s/pull/1419) (#1419, [@achevuru](https://github.com/achevuru))
 * Improvement - [refine ENI tagging logic](https://github.com/aws/amazon-vpc-cni-k8s/pull/1482) (#1482, [@M00nF1sh](https://github.com/M00nF1sh))
 * Improvement - [Change tryAssignIPs to assign up to configured WARM_IP_TARGET](https://github.com/aws/amazon-vpc-cni-k8s/pull/1279) (#1279, [@jacksontj](https://github.com/jacksontj))
