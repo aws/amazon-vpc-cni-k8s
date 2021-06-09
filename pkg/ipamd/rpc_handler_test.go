@@ -37,8 +37,8 @@ func TestServer_VersionCheck(t *testing.T) {
 		networkClient: m.network,
 		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}),
 	}
-	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil)
-	m.network.EXPECT().UseExternalSNAT().Return(true)
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil).AnyTimes()
+	m.network.EXPECT().UseExternalSNAT().Return(true).AnyTimes()
 
 	rpcServer := server{
 		version:     "1.2.3",
@@ -79,66 +79,146 @@ func TestServer_VersionCheck(t *testing.T) {
 }
 
 func TestServer_AddNetwork(t *testing.T) {
-	m := setup(t)
-	defer m.ctrl.Finish()
-
-	mockContext := &IPAMContext{
-		awsClient:     m.awsutils,
-		maxIPsPerENI:  14,
-		maxENI:        4,
-		warmENITarget: 1,
-		warmIPTarget:  3,
-		networkClient: m.network,
-		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}),
+	type getVPCIPv4CIDRsCall struct {
+		cidrs []string
+		err   error
 	}
-
-	rpcServer := server{
-		version:     "1.2.3",
-		ipamContext: mockContext,
+	type useExternalSNATCall struct {
+		useExternalSNAT bool
 	}
-
-	addNetworkRequest := &pb.AddNetworkRequest{
-		ClientVersion: "1.2.3",
-		Netns:         "netns",
-		NetworkName:   "net0",
-		ContainerID:   "cid",
-		IfName:        "eni",
-	}
-
-	vpcCIDRs := []string{vpcCIDR}
-	testCases := []struct {
-		name               string
-		useExternalSNAT    bool
-		vpcCIDRs           []string
+	type getExcludeSNATCIDRsCall struct {
 		snatExclusionCIDRs []string
+	}
+
+	type fields struct {
+		ipV4AddressByENIID       map[string][]string
+		getVPCIPv4CIDRsCalls     []getVPCIPv4CIDRsCall
+		useExternalSNATCalls     []useExternalSNATCall
+		getExcludeSNATCIDRsCalls []getExcludeSNATCIDRsCall
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		want    *pb.AddNetworkReply
+		wantErr error
 	}{
 		{
-			"VPC CIDRs",
-			true,
-			vpcCIDRs,
-			nil,
+			name: "successfully allocated IPAddress & use externalSNAT",
+			fields: fields{
+				ipV4AddressByENIID: map[string][]string{
+					"eni-1": {"192.168.1.100"},
+				},
+				getVPCIPv4CIDRsCalls: []getVPCIPv4CIDRsCall{
+					{
+						cidrs: []string{"10.10.0.0/16"},
+					},
+				},
+				useExternalSNATCalls: []useExternalSNATCall{
+					{
+						useExternalSNAT: true,
+					},
+				},
+			},
+			want: &pb.AddNetworkReply{
+				Success:         true,
+				IPv4Addr:        "192.168.1.100",
+				DeviceNumber:    int32(0),
+				UseExternalSNAT: true,
+				VPCcidrs:        []string{"10.10.0.0/16"},
+			},
 		},
 		{
-			"SNAT Exclusion CIDRs",
-			false,
-			vpcCIDRs,
-			[]string{"10.12.0.0/16", "10.13.0.0/16"},
+			name: "successfully allocated IPAddress & not use externalSNAT",
+			fields: fields{
+				ipV4AddressByENIID: map[string][]string{
+					"eni-1": {"192.168.1.100"},
+				},
+				getVPCIPv4CIDRsCalls: []getVPCIPv4CIDRsCall{
+					{
+						cidrs: []string{"10.10.0.0/16"},
+					},
+				},
+				useExternalSNATCalls: []useExternalSNATCall{
+					{
+						useExternalSNAT: false,
+					},
+				},
+				getExcludeSNATCIDRsCalls: []getExcludeSNATCIDRsCall{
+					{
+						snatExclusionCIDRs: []string{"10.12.0.0/16", "10.13.0.0/16"},
+					},
+				},
+			},
+			want: &pb.AddNetworkReply{
+				Success:         true,
+				IPv4Addr:        "192.168.1.100",
+				DeviceNumber:    int32(0),
+				UseExternalSNAT: false,
+				VPCcidrs:        []string{"10.10.0.0/16", "10.12.0.0/16", "10.13.0.0/16"},
+			},
+		},
+		{
+			name: "failed allocated IPAddress ",
+			fields: fields{
+				ipV4AddressByENIID: map[string][]string{},
+			},
+			want: &pb.AddNetworkReply{
+				Success: false,
+			},
 		},
 	}
-	for _, tc := range testCases {
-		m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return(tc.vpcCIDRs, nil)
-		m.network.EXPECT().UseExternalSNAT().Return(tc.useExternalSNAT)
-		if !tc.useExternalSNAT {
-			m.network.EXPECT().GetExcludeSNATCIDRs().Return(tc.snatExclusionCIDRs)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
 
-		addNetworkReply, err := rpcServer.AddNetwork(context.TODO(), addNetworkRequest)
-		if assert.NoError(t, err, tc.name) {
+			for _, call := range tt.fields.getVPCIPv4CIDRsCalls {
+				m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return(call.cidrs, call.err)
+			}
+			for _, call := range tt.fields.useExternalSNATCalls {
+				m.network.EXPECT().UseExternalSNAT().Return(call.useExternalSNAT)
+			}
+			for _, call := range tt.fields.getExcludeSNATCIDRsCalls {
+				m.network.EXPECT().GetExcludeSNATCIDRs().Return(call.snatExclusionCIDRs)
+			}
+			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{})
+			for eniID, ipv4Addresses := range tt.fields.ipV4AddressByENIID {
+				ds.AddENI(eniID, 0, false, false, false)
+				for _, ipv4Address := range ipv4Addresses {
+					ds.AddIPv4AddressToStore(eniID, ipv4Address)
+				}
+			}
 
-			assert.Equal(t, tc.useExternalSNAT, addNetworkReply.UseExternalSNAT, tc.name)
+			mockContext := &IPAMContext{
+				awsClient:     m.awsutils,
+				maxIPsPerENI:  14,
+				maxENI:        4,
+				warmENITarget: 1,
+				warmIPTarget:  3,
+				networkClient: m.network,
+				dataStore:     ds,
+			}
 
-			expectedCIDRs := append([]string{vpcCIDR}, tc.snatExclusionCIDRs...)
-			assert.Equal(t, expectedCIDRs, addNetworkReply.VPCcidrs, tc.name)
-		}
+			s := &server{
+				version:     "1.2.3",
+				ipamContext: mockContext,
+			}
+
+			req := &pb.AddNetworkRequest{
+				ClientVersion: "1.2.3",
+				Netns:         "netns",
+				NetworkName:   "net0",
+				ContainerID:   "cid",
+				IfName:        "eni",
+			}
+
+			resp, err := s.AddNetwork(context.Background(), req)
+			if tt.wantErr != nil {
+				assert.EqualError(t, err, tt.wantErr.Error())
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.want, resp)
+			}
+		})
 	}
 }
