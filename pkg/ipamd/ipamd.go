@@ -320,8 +320,8 @@ func New(k8sapiClient kubernetes.Interface, eniConfig *eniconfig.ENIConfigContro
 		return nil, err
 	}
 	if hypervisorType != "nitro" && c.enableIpv4PrefixDelegation {
-		log.Error("Prefix delegation is not supported non-nitro instance - " + c.awsClient.GetInstanceType())
-		return nil, err
+		log.Warnf("Prefix delegation is not supported on non-nitro instance %s hence falling back to default (secondary IP) mode", c.awsClient.GetInstanceType())
+		c.enableIpv4PrefixDelegation = false
 	}
 	c.myNodeName = os.Getenv("MY_NODE_NAME")
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
