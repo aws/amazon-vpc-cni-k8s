@@ -207,9 +207,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		if delErr != nil {
 			log.Errorf("Error received from DelNetwork grpc call for container %s: %v",
 				args.ContainerID, delErr)
-		}
-
-		if !r.Success {
+		} else if !r.Success {
 			log.Errorf("Failed to release IP of container %s: %v",
 				args.ContainerID, delErr)
 		}
