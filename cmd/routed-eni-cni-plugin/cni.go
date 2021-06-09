@@ -208,8 +208,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			log.Errorf("Error received from DelNetwork grpc call for container %s: %v",
 				args.ContainerID, delErr)
 		} else if !r.Success {
-			log.Errorf("Failed to release IP of container %s: %v",
-				args.ContainerID, delErr)
+			log.Errorf("Failed to release IP of container %s", args.ContainerID)
 		}
 		return errors.Wrap(err, "add command: failed to setup network")
 	}
