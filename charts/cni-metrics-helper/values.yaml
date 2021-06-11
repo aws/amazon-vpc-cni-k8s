@@ -4,7 +4,7 @@ nameOverride: cni-metrics-helper
 
 image:
   region: us-west-2
-  tag: v1.7.10
+  tag: v1.8.0
   # Set to use custom image
   # override: "repo/org/image:tag"
 
