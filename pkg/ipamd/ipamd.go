@@ -809,6 +809,7 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 		return true, nil
 	}
 
+	toAllocate -= freePrefixesInStore 
 	// Returns an ENI which has space for more prefixes to be attached, but this
 	// ENI might not suffice the WARM_IP_TARGET
 	eni := c.dataStore.GetENINeedsIP(c.maxPrefixesPerENI, c.useCustomNetworking)
