@@ -816,7 +816,7 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 	if eni != nil {
 		currentNumberOfAllocatedPrefixes := len(eni.AvailableIPv4Cidrs)
 		log.Debugf("Adding prefix to ENI %s ", eni.ID)
-		err = c.awsClient.AllocIPAddresses(eni.ID, min((c.maxPrefixesPerENI-currentNumberOfAllocatedPrefixes), max(toAllocate, 0)))
+		err = c.awsClient.AllocIPAddresses(eni.ID, min((c.maxPrefixesPerENI-currentNumberOfAllocatedPrefixes), toAllocate))
 		if err != nil {
 			log.Warnf("failed to allocate all available IPv4 Prefixes on ENI %s, err: %v", eni.ID, err)
 			// Try to just get one more prefix
