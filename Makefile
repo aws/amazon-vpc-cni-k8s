@@ -70,6 +70,14 @@ export CGO_ENABLED = 0
 export GO111MODULE = on
 export GOPROXY = direct
 
+VENDOR_OVERRIDE_FLAG =
+# aws-sdk-go override in case we need to build against a custom version
+EC2_SDK_OVERRIDE ?= "y"
+
+ifeq ($(EC2_SDK_OVERRIDE), "y")
+VENDOR_OVERRIDE_FLAG = -mod=mod
+endif
+
 # LDFLAGS is the set of flags used when building golang executables.
 LDFLAGS = -X main.version=$(VERSION) -X pkg/awsutils/awssession.version=$(VERSION)
 # ALLPKGS is the set of packages provided in source.
@@ -109,12 +117,12 @@ dist: all
 BUILD_MODE ?= -buildmode=pie
 build-linux: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
 build-linux:    ## Build the VPC CNI plugin agent using the host's Go toolchain.
-	go build $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
-	go build $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
-	go build $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
 
 # Build VPC CNI plugin & agent container image.
-docker:      ## Build VPC CNI plugin & agent container image.
+docker:	setup-ec2-sdk-override	   ## Build VPC CNI plugin & agent container image.
 	docker build $(DOCKER_BUILD_FLAGS) \
 		-f scripts/dockerfiles/Dockerfile.release \
 		-t "$(IMAGE_NAME)" \
@@ -284,6 +292,16 @@ generate-cni-yaml:
 	${MAKEFILE_PATH}/scripts/generate-cni-yaml.sh
 
 release: generate-cni-yaml upload-resources-to-github
+
+setup-ec2-sdk-override:
+	@if [ "$(EC2_SDK_OVERRIDE)" = "y" ] ; then \
+	    ./scripts/ec2_model_override/setup.sh ; \
+	fi
+
+cleanup-ec2-sdk-override:
+	@if [ "$(EC2_SDK_OVERRIDE)" = "y" ] ; then \
+	    ./scripts/ec2_model_override/cleanup.sh ; \
+	fi
 
 # Clean temporary files and build artifacts from the project.
 clean:    ## Clean temporary files and build artifacts from the project.
