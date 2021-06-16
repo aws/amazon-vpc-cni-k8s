@@ -1515,13 +1515,13 @@ func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool)
 
 		_, numIPsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
 		// Number of prefixes IPAMD is short of to achieve warm targets
-		shortPrefix := datastore.DivCeil(short, numIPsPerPrefix)
+		shortPrefix := divCeil(short, numIPsPerPrefix)
 
 		// Over will have number of IPs more than needed but with PD we would have allocated in chunks of /28
 		// Say assigned = 1, warm ip target = 16, this will need 2 prefixes. But over will return 15.
 		// Hence we need to check if 'over' number of IPs are needed to maintain the warm targets
-		prefixNeededForWarmIP := datastore.DivCeil(assigned+c.warmIPTarget, numIPsPerPrefix)
-		prefixNeededForMinIP := datastore.DivCeil(c.minimumIPTarget, numIPsPerPrefix)
+		prefixNeededForWarmIP := divCeil(assigned+c.warmIPTarget, numIPsPerPrefix)
+		prefixNeededForMinIP := divCeil(c.minimumIPTarget, numIPsPerPrefix)
 
 		// over will be number of prefixes over than needed but could be spread across used prefixes,
 		// say, after couple of pod churns, 3 prefixes are allocated with 1 IP each assigned and warm ip target is 15
@@ -1800,6 +1800,11 @@ func (c *IPAMContext) isDatastorePoolTooHigh() bool {
 func (c *IPAMContext) warmPrefixTargetDefined() bool {
 	return c.warmPrefixTarget >= noWarmPrefixTarget && c.enableIpv4PrefixDelegation
 }
+
+
+func divCeil(x, y int) int {
+	return (x + y - 1) / y
+ }
 
 //DeallocCidrs frees IPs and Prefixes from EC2
 func (c *IPAMContext) DeallocCidrs(eniID string, deletableCidrs []datastore.CidrInfo) {

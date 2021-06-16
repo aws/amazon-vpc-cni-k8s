@@ -692,42 +692,33 @@ func (ds *DataStore) GetEFAENIs() map[string]bool {
 // IsRequiredForWarmIPTarget determines if this ENI has warm IPs that are required to fulfill whatever WARM_IP_TARGET is
 // set to.
 func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENI) bool {
-	freeCidrs := 0
+	otherWarmIPs := 0
 	for _, other := range ds.eniPool {
-		if other.ID != eni.ID {
-			for _, otherPrefixes := range other.AvailableIPv4Cidrs {
-				if ((ds.isPDEnabled && otherPrefixes.IsPrefix == true) || (!ds.isPDEnabled && otherPrefixes.IsPrefix == false)) && otherPrefixes.AssignedIPv4AddressesInCidr() == 0 {
-					freeCidrs++
-				}
-			}
-		}
-	}
-	if ds.isPDEnabled {
-		_, numIPsPerPrefix, _ := GetPrefixDelegationDefaults()
-		warmIPTarget = DivCeil(warmIPTarget, numIPsPerPrefix)
-	}
-	return freeCidrs < warmIPTarget
+                if other.ID != eni.ID {
+                       for _, otherPrefixes := range other.AvailableIPv4Cidrs {
+                               if (ds.isPDEnabled && otherPrefixes.IsPrefix == true) || (!ds.isPDEnabled && otherPrefixes.IsPrefix == false) {
+                                       otherWarmIPs += otherPrefixes.Size() - otherPrefixes.AssignedIPv4AddressesInCidr() 
+                               }
+                       }
+               }
+       }
+       return otherWarmIPs < warmIPTarget
 }
 
 // IsRequiredForMinimumIPTarget determines if this ENI is necessary to fulfill whatever MINIMUM_IP_TARGET is
 // set to.
 func (ds *DataStore) isRequiredForMinimumIPTarget(minimumIPTarget int, eni *ENI) bool {
-	freeCidrs := 0
-	for _, other := range ds.eniPool {
-		if other.ID != eni.ID {
-			for _, otherPrefixes := range other.AvailableIPv4Cidrs {
-				if (ds.isPDEnabled && otherPrefixes.IsPrefix == true) || (!ds.isPDEnabled && otherPrefixes.IsPrefix == false) {
-					freeCidrs++
-				}
-			}
-		}
-	}
-
-	if ds.isPDEnabled {
-		_, numIPsPerPrefix, _ := GetPrefixDelegationDefaults()
-		minimumIPTarget = DivCeil(minimumIPTarget, numIPsPerPrefix)
-	}
-	return freeCidrs < minimumIPTarget
+       otherIPs := 0
+       for _, other := range ds.eniPool {
+               if other.ID != eni.ID {
+                       for _, otherPrefixes := range other.AvailableIPv4Cidrs {
+                               if (ds.isPDEnabled && otherPrefixes.IsPrefix == true) || (!ds.isPDEnabled && otherPrefixes.IsPrefix == false) {
+                                       otherIPs += otherPrefixes.Size()
+                               }
+                       }
+               }
+       }
+       return otherIPs < minimumIPTarget
 }
 
 // IsRequiredForWarmPrefixTarget determines if this ENI is necessary to fulfill whatever WARM_PREFIX_TARGET is
@@ -1225,8 +1216,4 @@ func (ds *DataStore) FindFreeableCidrs(eniID string) []CidrInfo {
 	}
 	return freeable
 
-}
-
-func DivCeil(x, y int) int {
-	return (x + y - 1) / y
 }
