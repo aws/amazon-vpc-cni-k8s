@@ -128,7 +128,7 @@ const (
 
 	//envWarmPrefixTarget is used to keep a /28 prefix in warm pool.
 	envWarmPrefixTarget = "WARM_PREFIX_TARGET"
-	noWarmPrefixTarget  = 0
+	defaultWarmPrefixTarget  = 0
 )
 
 var log = logger.Get()
@@ -961,17 +961,17 @@ func getWarmPrefixTarget() int {
 	inputStr, found := os.LookupEnv(envWarmPrefixTarget)
 
 	if !found {
-		return noWarmPrefixTarget
+		return defaultWarmPrefixTarget
 	}
 
 	if input, err := strconv.Atoi(inputStr); err == nil {
 		if input < 0 {
-			return noWarmPrefixTarget
+			return defaultWarmPrefixTarget
 		}
 		log.Debugf("Using WARM_PREFIX_TARGET %v", input)
 		return input
 	}
-	return noWarmPrefixTarget
+	return defaultWarmPrefixTarget
 }
 
 func logPoolStats(total int, used int, maxAddrsPerENI int, Ipv4PrefixDelegation bool) {
@@ -1039,19 +1039,8 @@ func (c *IPAMContext) shouldRemoveExtraPrefixes() int {
 	available := total - used
 
 	freePrefixes := c.dataStore.GetFreePrefixes()
-        _, numIPsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
-
 	over = max(freePrefixes-c.warmPrefixTarget, 0)
 
-	//if warm prefix target is 0, we should not make available to reach 0 since reconciler will enter into a churn
-	// of allocating and freeing prefixes similar to issue. This will add continous EC2 calls on nodes which have
-	// no prefixes used. Hence better to handle it. 
-	// [ENI allocates/frees in loop with custom networking and WARM_ENI_TARGET=0 #1451]
-	// But Will sync up internally with the team and see if need to even support WARM_ENI_TARGET = 0 and WARM_PREFIX_TARGET = 0
-	if over > 0 && ((available - (over * numIPsPerPrefix)) <= 0) && c.warmPrefixTarget == 0 {
-		log.Debugf("Warm prefix target is 0 and we will go below available hence capping to have atleast 1 free prefix")
-		over -= 1
-	}
 	logPoolStats(total, used, c.maxIPsPerENI, c.enableIpv4PrefixDelegation)
 	log.Debugf("shouldRemoveExtraPrefixes available %d over %d warm_prefix_target %d", available, over, c.warmPrefixTarget)
 	
@@ -1807,7 +1796,7 @@ func (c *IPAMContext) isDatastorePoolTooHigh() bool {
 }
 
 func (c *IPAMContext) warmPrefixTargetDefined() bool {
-	return c.warmPrefixTarget >= noWarmPrefixTarget && c.enableIpv4PrefixDelegation
+	return c.warmPrefixTarget >= defaultWarmPrefixTarget && c.enableIpv4PrefixDelegation
 }
 
 //DeallocCidrs frees IPs and Prefixes from EC2

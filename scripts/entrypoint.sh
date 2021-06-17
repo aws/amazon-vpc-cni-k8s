@@ -35,6 +35,42 @@ log_in_json()
     printf '{"level":"%s","ts":"%s","caller":"%s","msg":"%s"}\n' "$LOGTYPE" "$TIMESTAMP" "$FILENAME" "$MSG"
 }
 
+unsupported_prefix_target_conf()
+{
+   if [ "${WARM_PREFIX_TARGET}" == "0" ];then
+        true
+   else
+        false
+    fi    
+}
+
+warm_ip_target_not_configured()
+{
+    if [ "${WARM_IP_TARGET}" == "0" ];then
+        true
+    else
+        false
+    fi    
+}
+
+min_ip_target_not_configured()
+{
+    if [ "${MINIMUM_IP_TARGET}" == "0" ]; then
+        true
+    else
+        false
+    fi    
+}
+
+is_prefix_delegation_enabled()
+{
+    if [ "${ENABLE_PREFIX_DELEGATION}" == "true" ]; then
+        true
+    else
+        false
+    fi    
+}
+
 validate_env_var()
 {
     log_in_json info "Validating env variables ..."
@@ -42,6 +78,11 @@ validate_env_var()
         log_in_json error "AWS_VPC_K8S_PLUGIN_LOG_FILE cannot be set to stdout"
         exit 1     
     fi 
+
+    if is_prefix_delegation_enabled && unsupported_prefix_target_conf && warm_ip_target_not_configured && min_ip_target_not_configured ; then
+       log_in_json error "Setting WARM_PREFIX_TARGET = 0 is not supported while WARM_IP_TARGET/MINIMUM_IP_TARGET is not set. Please configure either one of the WARM_{PREFIX/IP}_TARGET or MINIMUM_IP_TARGET env variables"
+       exit 1
+    fi
 }
 
 # Check for all the required binaries before we go forward
@@ -63,6 +104,11 @@ AWS_VPC_K8S_PLUGIN_LOG_FILE=${AWS_VPC_K8S_PLUGIN_LOG_FILE:-"/var/log/aws-routed-
 AWS_VPC_K8S_PLUGIN_LOG_LEVEL=${AWS_VPC_K8S_PLUGIN_LOG_LEVEL:-"Debug"}
 
 AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER=${AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER:-"true"}
+ENABLE_PREFIX_DELEGATION=${ENABLE_PREFIX_DELEGATION:-"false"}
+WARM_IP_TARGET=${WARM_IP_TARGET:-"0"}
+MINIMUM_IP_TARGET=${MINIMUM_IP_TARGET:-"0"}
+WARM_PREFIX_TARGET=${WARM_PREFIX_TARGET:-"0"}
+
 
 validate_env_var
 
