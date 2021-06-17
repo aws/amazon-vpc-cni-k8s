@@ -421,11 +421,13 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
-	//During upgrade or if prefix delgation knob is disabled to enabled then we
-	//might have secondary IPs attached to ENIs so doing a cleanup if not used before moving on
 	if c.enableIpv4PrefixDelegation {
+		//During upgrade or if prefix delgation knob is disabled to enabled then we
+		//might have secondary IPs attached to ENIs so doing a cleanup if not used before moving on
 		c.tryUnassignIPsFromENIs()
 	} else {
+		//When prefix delegation knob is enabled to disabled then we might
+		//have unused prefixes attached to the ENIs so need to cleanup
 		c.tryUnassignPrefixesFromENIs()
 	}
 
@@ -470,8 +472,8 @@ func (c *IPAMContext) nodeInit() error {
 		c.askForTrunkENIIfNeeded()
 	}
 
-	// For a new node, attach IPs
-	increasedPool, err := c.tryAssignIPsOrPrefixes()
+	// For a new node, attach Cidrs (secondary ips/prefixes)
+	increasedPool, err := c.tryAssignCidrs()
 	if err == nil && increasedPool {
 		c.updateLastNodeIPPoolAction()
 	} else if err != nil {
@@ -633,7 +635,7 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 					deletedCidrs = append(deletedCidrs, toDelete)
 				}
 			}
-			
+
 			// Deallocate Cidrs from the instance if they aren't used by pods.
 			c.DeallocCidrs(eniID, deletedCidrs)
 		}
@@ -645,18 +647,26 @@ func (c *IPAMContext) increaseDatastorePool() {
 	ipamdActionsInprogress.WithLabelValues("increaseDatastorePool").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("increaseDatastorePool").Sub(float64(1))
 
-	short, _, warmTargetDefined := c.datastoreTargetState()
-	if warmTargetDefined && short == 0 {
+	short, _, warmIPTargetDefined := c.datastoreTargetState()
+	if warmIPTargetDefined && short == 0 {
 		log.Debugf("Skipping increase Datastore pool, warm target reached")
 		return
+	}
+
+	if !warmIPTargetDefined {
+		shortPrefix, warmTargetDefined := c.datastorePrefixTargetState()
+        	if warmTargetDefined && shortPrefix == 0 {
+               		log.Debugf("Skipping increase Datastore pool, warm prefix target reached")
+               		return
+        	}
 	}
 
 	if c.isTerminating() {
 		log.Debug("AWS CNI is terminating, will not try to attach any new IPs or ENIs right now")
 		return
 	}
-	// Try to add more IPs to existing ENIs first.
-	increasedPool, err := c.tryAssignIPsOrPrefixes()
+	// Try to add more Cidrs to existing ENIs first.
+	increasedPool, err := c.tryAssignCidrs()
 	if err != nil {
 		log.Errorf(err.Error())
 	}
@@ -750,12 +760,21 @@ func (c *IPAMContext) tryAllocateENI() error {
 
 // For an ENI, try to fill in missing IPs on an existing ENI with PD disabled
 // try to fill in missing Prefixes on an existing ENI with PD enabled
-func (c *IPAMContext) tryAssignIPsOrPrefixes() (increasedPool bool, err error) {
-	short, _, warmTargetDefined := c.datastoreTargetState()
-	if warmTargetDefined && short == 0 {
-		log.Infof("Warm target set and short is 0 so not assigning IPs or Prefixes")
+func (c *IPAMContext) tryAssignCidrs() (increasedPool bool, err error) {
+	short, _, warmIPTargetDefined := c.datastoreTargetState()
+	if warmIPTargetDefined && short == 0 {
+		log.Infof("Warm IP target set and short is 0 so not assigning Cidrs (IPs or Prefixes)")
 		return false, nil
 	}
+
+	if !warmIPTargetDefined {
+		shortPrefix, warmTargetDefined := c.datastorePrefixTargetState()
+       		if warmTargetDefined && shortPrefix == 0 {
+               		log.Infof("Warm prefix target set and short is 0 so not assigning Cidrs (Prefixes)")
+               		return false, nil
+       		}
+	}
+
 	if !c.enableIpv4PrefixDelegation {
 		return c.tryAssignIPs()
 	} else {
@@ -792,26 +811,9 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 }
 
 func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
-	short, _, warmIPTargetDefined := c.datastoreTargetState()
-	//By default allocate 1 prefix at a time
-	toAllocate := 1
-	//WARM_IP_TARGET takes precendence over WARM_PREFIX_TARGET
-	if warmIPTargetDefined {
-		toAllocate = max(toAllocate, short)
-	} else if c.warmPrefixTargetDefined() {
-		toAllocate = max(toAllocate, c.warmPrefixTarget)
-	}
-
-	// /28 will consume 16 IPs so let's not allocate if not needed.
-	freePrefixesInStore := c.dataStore.GetFreePrefixes()
-	if toAllocate <= freePrefixesInStore {
-		log.Debugf("DataStore already has %d free prefixes so no need to assign more prefixes", freePrefixesInStore)
-		return true, nil
-	}
-
-	toAllocate -= freePrefixesInStore 
+	toAllocate := c.getPrefixesNeeded()
 	// Returns an ENI which has space for more prefixes to be attached, but this
-	// ENI might not suffice the WARM_IP_TARGET
+	// ENI might not suffice the WARM_IP_TARGET/WARM_PREFIX_TARGET
 	eni := c.dataStore.GetENINeedsIP(c.maxPrefixesPerENI, c.useCustomNetworking)
 	if eni != nil {
 		currentNumberOfAllocatedPrefixes := len(eni.AvailableIPv4Cidrs)
@@ -829,12 +831,11 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 		ec2Prefixes, err := c.awsClient.GetIPv4PrefixesFromEC2(eni.ID)
 		if err != nil {
 			ipamdErrInc("increaseIPPoolGetENIprefixedFailed")
-			return true, errors.Wrap(err, "failed to get ENI Prefix addresses during IP allocation")
+			return true, errors.Wrap(err, "failed to get ENI Prefix addresses during IPv4 Prefix allocation")
 		}
 		c.addENIprefixesToDataStore(ec2Prefixes, eni.ID)
 		return true, nil
 	}
-	log.Debugf("Didnt find an ENI")
 	return false, nil
 }
 
@@ -999,6 +1000,9 @@ func (c *IPAMContext) askForTrunkENIIfNeeded() {
 
 // shouldRemoveExtraENIs returns true if we should attempt to find an ENI to free. When WARM_IP_TARGET is set, we
 // always check and do verification in getDeletableENI()
+// PD enabled : If the WARM_PREFIX_TARGET is spread across ENIs and we have more than needed then this function will return true.
+// but if the number of prefixes are on just one ENI and is more than available even then it returns true so getDeletableENI will
+// recheck if we need the ENI for prefix target.
 func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	_, _, warmTargetDefined := c.datastoreTargetState()
 	if warmTargetDefined {
@@ -1033,20 +1037,25 @@ func (c *IPAMContext) shouldRemoveExtraPrefixes() int {
 
 	total, used, _ := c.dataStore.GetStats()
 	available := total - used
-	var shouldRemoveExtra bool
 
-	warmTarget := (c.warmPrefixTarget + 1)
+	freePrefixes := c.dataStore.GetFreePrefixes()
+        _, numIPsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
 
-	shouldRemoveExtra = available >= (warmTarget)*c.maxPrefixesPerENI
-	if shouldRemoveExtra {
-		freePrefixes := c.dataStore.GetFreePrefixes()
+	over = max(freePrefixes-c.warmPrefixTarget, 0)
 
-		over = max(freePrefixes-c.warmPrefixTarget, 0)
-		logPoolStats(total, used, c.maxIPsPerENI, c.enableIpv4PrefixDelegation)
-		log.Debugf("It might be possible to remove extra prefixes because available (%d) >= (Prefix target + 1 (%d) + 1) * prefixesPerENI (%d)", available, warmTarget, c.maxPrefixesPerENI)
+	//if warm prefix target is 0, we should not make available to reach 0 since reconciler will enter into a churn
+	// of allocating and freeing prefixes similar to issue. This will add continous EC2 calls on nodes which have
+	// no prefixes used. Hence better to handle it. 
+	// [ENI allocates/frees in loop with custom networking and WARM_ENI_TARGET=0 #1451]
+	// But Will sync up internally with the team and see if need to even support WARM_ENI_TARGET = 0 and WARM_PREFIX_TARGET = 0
+	if over > 0 && ((available - (over * numIPsPerPrefix)) <= 0) && c.warmPrefixTarget == 0 {
+		log.Debugf("Warm prefix target is 0 and we will go below available hence capping to have atleast 1 free prefix")
+		over -= 1
 	}
+	logPoolStats(total, used, c.maxIPsPerENI, c.enableIpv4PrefixDelegation)
+	log.Debugf("shouldRemoveExtraPrefixes available %d over %d warm_prefix_target %d", available, over, c.warmPrefixTarget)
+	
 	return over
-
 }
 
 func ipamdErrInc(fn string) {
@@ -1270,7 +1279,7 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []*e
 		}
 
 		// Check if this IP was recently freed
-		ipv4Addr := net.IPNet{IP: net.ParseIP(strPrivateIPv4), Mask: net.IPv4Mask(255, 255, 255, 255)}	
+		ipv4Addr := net.IPNet{IP: net.ParseIP(strPrivateIPv4), Mask: net.IPv4Mask(255, 255, 255, 255)}
 		found, recentlyFreed := c.reconcileCooldownCache.RecentlyFreed(strPrivateIPv4)
 		if found {
 			if recentlyFreed {
@@ -1519,13 +1528,13 @@ func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool)
 
 		_, numIPsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
 		// Number of prefixes IPAMD is short of to achieve warm targets
-		shortPrefix := divCeil(short, numIPsPerPrefix)
+		shortPrefix := datastore.DivCeil(short, numIPsPerPrefix)
 
 		// Over will have number of IPs more than needed but with PD we would have allocated in chunks of /28
 		// Say assigned = 1, warm ip target = 16, this will need 2 prefixes. But over will return 15.
 		// Hence we need to check if 'over' number of IPs are needed to maintain the warm targets
-		prefixNeededForWarmIP := divCeil(assigned+c.warmIPTarget, numIPsPerPrefix)
-		prefixNeededForMinIP := divCeil(c.minimumIPTarget, numIPsPerPrefix)
+		prefixNeededForWarmIP := datastore.DivCeil(assigned+c.warmIPTarget, numIPsPerPrefix)
+		prefixNeededForMinIP := datastore.DivCeil(c.minimumIPTarget, numIPsPerPrefix)
 
 		// over will be number of prefixes over than needed but could be spread across used prefixes,
 		// say, after couple of pod churns, 3 prefixes are allocated with 1 IP each assigned and warm ip target is 15
@@ -1540,6 +1549,19 @@ func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool)
 	log.Debugf("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, short: %d, over %d", c.warmIPTarget, total, assigned, available, short, over)
 
 	return short, over, true
+}
+
+// datastorePrefixTargetState determines the number of prefixes short to reach WARM_PREFIX_TARGET
+func (c *IPAMContext) datastorePrefixTargetState() (short int, enabled bool) {
+	if !c.warmPrefixTargetDefined() {
+		return 0, false
+	}
+	// /28 will consume 16 IPs so let's not allocate if not needed.
+	freePrefixesInStore := c.dataStore.GetFreePrefixes()
+	toAllocate := max(c.warmPrefixTarget-freePrefixesInStore, 0)
+	log.Debugf("Prefix target is %d, short of %d prefixes, free %d prefixes", c.warmPrefixTarget, toAllocate, freePrefixesInStore)
+
+       return toAllocate, true
 }
 
 // setTerminating atomically sets the terminating flag.
@@ -1773,13 +1795,10 @@ func (c *IPAMContext) isDatastorePoolTooHigh() bool {
 
 	//For the existing ENIs check if we can cleanup prefixes
 	if c.warmPrefixTargetDefined() {
-		total, used, _ := c.dataStore.GetStats()
-		available := total - used
-		_, maxIpsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
-		poolTooHigh := available > (maxIpsPerPrefix * (c.warmPrefixTarget+1))
+		freePrefixes := c.dataStore.GetFreePrefixes()
+		poolTooHigh := freePrefixes > c.warmPrefixTarget
 		if poolTooHigh {
-			logPoolStats(total, used, c.maxIPsPerENI, c.enableIpv4PrefixDelegation)
-			log.Debugf("Prefix pool is high: available (%d) > Warm prefix target (%d)+1 * maxIpsPerPrefix (%d)", available, c.warmPrefixTarget, maxIpsPerPrefix)
+			log.Debugf("Prefix pool is high so might be able to deallocate : free prefixes %d and warm prefix target %d", freePrefixes, c.warmPrefixTarget)
 		}
 		return poolTooHigh
 	}
@@ -1791,10 +1810,6 @@ func (c *IPAMContext) warmPrefixTargetDefined() bool {
 	return c.warmPrefixTarget >= noWarmPrefixTarget && c.enableIpv4PrefixDelegation
 }
 
-func divCeil (x, y int) int {
-	return (x + y - 1) / y
-}
-
 //DeallocCidrs frees IPs and Prefixes from EC2
 func (c *IPAMContext) DeallocCidrs(eniID string, deletableCidrs []datastore.CidrInfo) {
 	var deletableIPs []string
@@ -1802,7 +1817,7 @@ func (c *IPAMContext) DeallocCidrs(eniID string, deletableCidrs []datastore.Cidr
 
 	for _, toDeleteCidr := range deletableCidrs {
 		if toDeleteCidr.IsPrefix {
-			strDeletablePrefix := toDeleteCidr.Cidr.String() 
+			strDeletablePrefix := toDeleteCidr.Cidr.String()
 			deletablePrefixes = append(deletablePrefixes, strDeletablePrefix)
 			// Track the last time we unassigned Cidrs from an ENI. We won't reconcile any Cidrs in this cache
 			// for at least ipReconcileCooldown
@@ -1823,4 +1838,25 @@ func (c *IPAMContext) DeallocCidrs(eniID string, deletableCidrs []datastore.Cidr
 	if err := c.awsClient.DeallocIPAddresses(eniID, deletableIPs); err != nil {
 		log.Warnf("Failed to free IPs %v from ENI %s: %s", deletableIPs, eniID, err)
 	}
+}
+
+// getPrefixesNeeded returns the number of prefixes need to be allocated to the ENI
+func (c *IPAMContext) getPrefixesNeeded() int {
+
+	//By default allocate 1 prefix at a time
+	toAllocate := 1
+
+	//TODO - post GA we can evaluate to see if these two calls can be merged.
+	//datastoreTargetState already has complex math so adding Prefix target will make it
+	//even more complex.
+	short, _, warmIPTargetDefined := c.datastoreTargetState()
+	shortPrefixes, warmPrefixTargetDefined := c.datastorePrefixTargetState()
+
+	//WARM_IP_TARGET takes precendence over WARM_PREFIX_TARGET
+	if warmIPTargetDefined {
+		toAllocate = max(toAllocate, short)
+	} else if warmPrefixTargetDefined {
+		toAllocate = max(toAllocate, shortPrefixes)
+	}
+	return toAllocate
 }
