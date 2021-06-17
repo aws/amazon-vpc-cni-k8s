@@ -37,27 +37,9 @@ log_in_json()
 
 unsupported_prefix_target_conf()
 {
-   if [ "${WARM_PREFIX_TARGET}" == "0" ];then
+   if [ "${WARM_PREFIX_TARGET}" == "0" ] && [ "${WARM_IP_TARGET}" == "0" ] && [ "${MINIMUM_IP_TARGET}" == "0" ];then
         true
    else
-        false
-    fi    
-}
-
-warm_ip_target_not_configured()
-{
-    if [ "${WARM_IP_TARGET}" == "0" ];then
-        true
-    else
-        false
-    fi    
-}
-
-min_ip_target_not_configured()
-{
-    if [ "${MINIMUM_IP_TARGET}" == "0" ]; then
-        true
-    else
         false
     fi    
 }
@@ -79,7 +61,7 @@ validate_env_var()
         exit 1     
     fi 
 
-    if is_prefix_delegation_enabled && unsupported_prefix_target_conf && warm_ip_target_not_configured && min_ip_target_not_configured ; then
+    if is_prefix_delegation_enabled && unsupported_prefix_target_conf ; then
        log_in_json error "Setting WARM_PREFIX_TARGET = 0 is not supported while WARM_IP_TARGET/MINIMUM_IP_TARGET is not set. Please configure either one of the WARM_{PREFIX/IP}_TARGET or MINIMUM_IP_TARGET env variables"
        exit 1
     fi
