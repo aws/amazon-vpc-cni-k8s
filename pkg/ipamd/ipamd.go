@@ -750,10 +750,6 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 	}
 
 	resourcesToAllocate := c.GetENIResourcesToAllocate()
-	short, _, warmTargetDefined := c.datastoreTargetState()
-	if warmTargetDefined {
-		resourcesToAllocate = short
-	}
 
 	err = c.awsClient.AllocIPAddresses(eni, resourcesToAllocate)
 	if err != nil {
@@ -853,6 +849,7 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 	eni := c.dataStore.GetENINeedsIP(c.maxPrefixesPerENI, c.useCustomNetworking)
 	if eni != nil {
 		currentNumberOfAllocatedPrefixes := len(eni.AvailableIPv4Cidrs)
+		log.Debugf("JAY %d", min((c.maxPrefixesPerENI-currentNumberOfAllocatedPrefixes), toAllocate))
 		log.Debugf("Adding prefix to ENI %s ", eni.ID)
 		err = c.awsClient.AllocIPAddresses(eni.ID, min((c.maxPrefixesPerENI-currentNumberOfAllocatedPrefixes), toAllocate))
 		if err != nil {
@@ -1784,11 +1781,17 @@ func (c *IPAMContext) tryUnassignPrefixFromENI(eniID string) {
 }
 
 func (c *IPAMContext) GetENIResourcesToAllocate() int {
+	var resourcesToAllocate int
 	if !c.enableIpv4PrefixDelegation {
-		return c.maxIPsPerENI
+		resourcesToAllocate = c.maxIPsPerENI
+		short, _, warmTargetDefined := c.datastoreTargetState()
+		if warmTargetDefined {
+			resourcesToAllocate = short
+		}
 	} else {
-		return c.maxPrefixesPerENI
+		resourcesToAllocate = c.getPrefixesNeeded()
 	}
+	return resourcesToAllocate
 }
 
 func (c *IPAMContext) GetIPv4Limit() (int, int, error) {
@@ -1912,5 +1915,6 @@ func (c *IPAMContext) getPrefixesNeeded() int {
 	} else if warmPrefixTargetDefined {
 		toAllocate = max(toAllocate, shortPrefixes)
 	}
+	log.Debugf("ToAllocate: %d", toAllocate)
 	return toAllocate
 }

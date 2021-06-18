@@ -16,6 +16,7 @@ package ipamd
 import (
 	"context"
 	"testing"
+	"net"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 
@@ -181,11 +182,12 @@ func TestServer_AddNetwork(t *testing.T) {
 			for _, call := range tt.fields.getExcludeSNATCIDRsCalls {
 				m.network.EXPECT().GetExcludeSNATCIDRs().Return(call.snatExclusionCIDRs)
 			}
-			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{})
+			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, false)
 			for eniID, ipv4Addresses := range tt.fields.ipV4AddressByENIID {
 				ds.AddENI(eniID, 0, false, false, false)
 				for _, ipv4Address := range ipv4Addresses {
-					ds.AddIPv4AddressToStore(eniID, ipv4Address)
+					ipv4Addr := net.IPNet{IP: net.ParseIP(ipv4Address), Mask: net.IPv4Mask(255, 255, 255, 255)}
+					ds.AddIPv4CidrToStore(eniID, ipv4Addr, false)
 				}
 			}
 

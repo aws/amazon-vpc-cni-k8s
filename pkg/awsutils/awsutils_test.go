@@ -657,66 +657,6 @@ func TestAllocPrefixesAlreadyFull(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestEC2InstanceMetadataCache_getFilteredListOfNetworkInterfaces_OneResult(t *testing.T) {
-	ctrl, mockEC2 := setup(t)
-	defer ctrl.Finish()
-
-	attachmentID := eniAttachID
-	description := eniDescriptionPrefix + "test"
-	status := "available"
-
-	tag := []*ec2.Tag{
-		{
-			Key:   aws.String(eniNodeTagKey),
-			Value: aws.String("test"),
-		},
-	}
-
-	timein := time.Now().Local().Add(time.Minute * time.Duration(-10))
-
-	tag = append(tag, &ec2.Tag{
-		Key:   aws.String(eniCreatedAtTagKey),
-		Value: aws.String(timein.Format(time.RFC3339)),
-	})
-	attachment := &ec2.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
-	cureniID := eniID
-
-	interfaces := []*ec2.NetworkInterface{{Attachment: attachment, Status: &status, TagSet: tag, Description: &description, NetworkInterfaceId: &cureniID}}
-	setupDescribeNetworkInterfacesPagesWithContextMock(t, mockEC2, interfaces, nil, 1)
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	got, err := ins.getFilteredListOfNetworkInterfaces()
-	assert.NotNil(t, got)
-	assert.NoError(t, err)
-}
-
-func TestEC2InstanceMetadataCache_getFilteredListOfNetworkInterfaces_NoResult(t *testing.T) {
-	ctrl, mockEC2 := setup(t)
-	defer ctrl.Finish()
-
-	setupDescribeNetworkInterfacesPagesWithContextMock(t, mockEC2, []*ec2.NetworkInterface{}, nil, 1)
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	got, err := ins.getFilteredListOfNetworkInterfaces()
-	assert.Nil(t, got)
-	assert.NoError(t, err)
-}
-
-func TestEC2InstanceMetadataCache_getFilteredListOfNetworkInterfaces_Error(t *testing.T) {
-	ctrl, mockEC2 := setup(t)
-	defer ctrl.Finish()
-
-	interfaces := []*ec2.NetworkInterface{{
-		TagSet: []*ec2.Tag{
-			{Key: aws.String("foo"), Value: aws.String("foo-value")},
-		},
-	}}
-	setupDescribeNetworkInterfacesPagesWithContextMock(t, mockEC2, interfaces, errors.New("dummy error"), 1)
-
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	got, err := ins.getFilteredListOfNetworkInterfaces()
-	assert.Nil(t, got)
-	assert.Error(t, err)
-}
-
 func Test_badENIID(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -144,7 +144,7 @@ docker-func-test: docker     ## Run the built CNI container image to use in func
 # Run unit tests
 unit-test: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
 unit-test:    ## Run unit tests
-	 go test -v -mod=mod -coverprofile=coverage.txt -covermode=atomic $(ALLPKGS)
+	 go test -v -mod=mod -coverprofile=coverage.txt -covermode=atomic ./pkg/...
 
 # Run unit tests with race detection (can only be run natively)
 unit-test-race: export AWS_VPC_K8S_CNI_LOG_FILE=stdout

@@ -115,7 +115,7 @@ func TestNodeInit(t *testing.T) {
 		primaryIP:       make(map[string]string),
 		terminating:     int32(0),
 		networkClient:   m.network,
-		dataStore:       datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint)),
+		dataStore:       datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), false),
 		myNodeName:      myNodeName,
 	}
 	mockContext.dataStore.CheckpointMigrationPhase = 2
@@ -165,7 +165,6 @@ func TestNodeInit(t *testing.T) {
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
-	//_, _ = m.clientset.CoreV1().Nodes().Create(&fakeNode)
 	_ = m.cachedK8SClient.Create(ctx, &fakeNode)
 
 	// Add IPs
@@ -178,6 +177,7 @@ func TestNodeInit(t *testing.T) {
 func TestNodeInitwithPDenabled(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
+        ctx := context.Background()
 
 	fakeCheckpoint := datastore.CheckpointData{
 		Version: datastore.CheckpointFormatVersion,
@@ -187,18 +187,19 @@ func TestNodeInitwithPDenabled(t *testing.T) {
 	}
 
 	mockContext := &IPAMContext{
-		awsClient:                  m.awsutils,
-		k8sClient:                  m.clientset,
-		maxIPsPerENI:               16,
-		maxPrefixesPerENI:          1,
-		maxENI:                     4,
-		warmENITarget:              1,
-		warmIPTarget:               3,
-		primaryIP:                  make(map[string]string),
-		terminating:                int32(0),
-		networkClient:              m.network,
-		dataStore:                  datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true),
-		myNodeName:                 myNodeName,
+		awsClient:       m.awsutils,
+		rawK8SClient:    m.rawK8SClient,
+		cachedK8SClient: m.cachedK8SClient,
+		maxIPsPerENI:    224,
+		maxPrefixesPerENI: 14,
+		maxENI:          4,
+		warmENITarget:   1,
+		warmIPTarget:    3,
+		primaryIP:       make(map[string]string),
+		terminating:     int32(0),
+		networkClient:   m.network,
+		dataStore:       datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true),
+		myNodeName:      myNodeName,
 		enableIpv4PrefixDelegation: true,
 	}
 	mockContext.dataStore.CheckpointMigrationPhase = 2
@@ -212,6 +213,7 @@ func TestNodeInitwithPDenabled(t *testing.T) {
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Prefixes, nil)
 	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
 	m.awsutils.EXPECT().IsUnmanagedENI(eni2.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	m.awsutils.EXPECT().IsCNIUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
 	m.awsutils.EXPECT().IsCNIUnmanagedENI(eni2.ENIID).Return(false).AnyTimes()
 
@@ -238,8 +240,8 @@ func TestNodeInitwithPDenabled(t *testing.T) {
 	var rules []netlink.Rule
 	m.network.EXPECT().GetRuleList().Return(rules, nil)
 
-	m.network.EXPECT().UseExternalSNAT().Return(false)
-	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any(), gomock.Any(), true)
+	//m.network.EXPECT().UseExternalSNAT().Return(false)
+	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any())
 
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
@@ -247,7 +249,7 @@ func TestNodeInitwithPDenabled(t *testing.T) {
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
-	_, _ = m.clientset.CoreV1().Nodes().Create(&fakeNode)
+	_ = m.cachedK8SClient.Create(ctx, &fakeNode)
 
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
@@ -463,18 +465,21 @@ func TestIncreasePrefixPoolCustomENI(t *testing.T) {
 func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	m := setup(t)
 	defer m.ctrl.Finish()
+	ctx := context.Background()
 
 	mockContext := &IPAMContext{
-		awsClient:                  m.awsutils,
-		maxIPsPerENI:               16,
-		maxPrefixesPerENI:          1,
-		maxENI:                     4,
-		warmENITarget:              1,
-		networkClient:              m.network,
-		useCustomNetworking:        UseCustomNetworkCfg(),
-		eniConfig:                  m.eniconfig,
-		primaryIP:                  make(map[string]string),
-		terminating:                int32(0),
+		awsClient:           m.awsutils,
+		rawK8SClient:        m.rawK8SClient,
+		cachedK8SClient:     m.cachedK8SClient,
+		maxIPsPerENI:        256,
+		maxPrefixesPerENI:   16,
+		maxENI:              4,
+		warmENITarget:       1,
+		warmPrefixTarget:    1,
+		networkClient:       m.network,
+		useCustomNetworking: UseCustomNetworkCfg(),
+		primaryIP:           make(map[string]string),
+		terminating:         int32(0),
 		enableIpv4PrefixDelegation: true,
 	}
 
@@ -498,7 +503,6 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	}
 
 	if useENIConfig {
-		m.eniconfig.EXPECT().MyENIConfig().Return(podENIConfig, nil)
 		m.awsutils.EXPECT().AllocENI(true, sg, podENIConfig.Subnet).Return(eni2, nil)
 	} else {
 		m.awsutils.EXPECT().AllocENI(false, nil, "").Return(eni2, nil)
@@ -544,7 +548,35 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 	m.awsutils.EXPECT().AllocIPAddresses(eni2, 1)
 
-	mockContext.increaseDatastorePool()
+	if mockContext.useCustomNetworking {
+		mockContext.myNodeName = myNodeName
+
+		labels := map[string]string{
+			"k8s.amazonaws.com/eniConfig": "az1",
+		}
+		//Create a Fake Node
+		fakeNode := v1.Node{
+			TypeMeta:   metav1.TypeMeta{Kind: "Node"},
+			ObjectMeta: metav1.ObjectMeta{Name: myNodeName, Labels: labels},
+			Spec:       v1.NodeSpec{},
+			Status:     v1.NodeStatus{},
+		}
+		_ = m.cachedK8SClient.Create(ctx, &fakeNode)
+
+		//Create a dummy ENIConfig
+		fakeENIConfig := v1alpha1.ENIConfig{
+			TypeMeta:   metav1.TypeMeta{},
+			ObjectMeta: metav1.ObjectMeta{Name: "az1"},
+			Spec: eniconfigscheme.ENIConfigSpec{
+				Subnet:         "subnet1",
+				SecurityGroups: []string{"sg1-id", "sg2-id"},
+			},
+			Status: eniconfigscheme.ENIConfigStatus{},
+		}
+		_ = m.cachedK8SClient.Create(ctx, &fakeENIConfig)
+	}
+
+	mockContext.increaseDatastorePool(ctx)
 }
 
 func TestTryAddIPToENI(t *testing.T) {
@@ -714,6 +746,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 func TestNodePrefixPoolReconcile(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
+	ctx := context.Background()
 
 	mockContext := &IPAMContext{
 		awsClient:                  m.awsutils,
@@ -733,6 +766,7 @@ func TestNodePrefixPoolReconcile(t *testing.T) {
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.awsutils.EXPECT().IsUnmanagedENI(primaryENIid).AnyTimes().Return(false)
 	m.awsutils.EXPECT().IsCNIUnmanagedENI(primaryENIid).AnyTimes().Return(false)
+	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	eniMetadataList := []awsutils.ENIMetadata{primaryENIMetadata}
 	m.awsutils.EXPECT().GetAttachedENIs().Return(eniMetadataList, nil)
 	resp := awsutils.DescribeAllENIsResult{
@@ -744,7 +778,7 @@ func TestNodePrefixPoolReconcile(t *testing.T) {
 	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
 
 	m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp.MultiCardENIIDs).AnyTimes()
-	mockContext.nodeIPPoolReconcile(0)
+	mockContext.nodeIPPoolReconcile(ctx, 0)
 
 	curENIs := mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
@@ -770,7 +804,7 @@ func TestNodePrefixPoolReconcile(t *testing.T) {
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(primaryENIid).Return(oneIPUnassigned[0].IPv4Prefixes, nil)
 	//m.awsutils.EXPECT().GetIPv4sFromEC2(primaryENIid).Return(oneIPUnassigned[0].IPv4Addresses, nil)
 
-	mockContext.nodeIPPoolReconcile(0)
+	mockContext.nodeIPPoolReconcile(ctx, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 0, curENIs.TotalIPs)
@@ -794,7 +828,7 @@ func TestNodePrefixPoolReconcile(t *testing.T) {
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, primarySubnet)
 	m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp2.MultiCardENIIDs).AnyTimes()
 
-	mockContext.nodeIPPoolReconcile(0)
+	mockContext.nodeIPPoolReconcile(ctx, 0)
 
 	// Verify that we now have 2 ENIs, primary ENI with 0 prefixes, and secondary ENI with 1 prefix
 	curENIs = mockContext.dataStore.GetENIInfos()
@@ -804,7 +838,7 @@ func TestNodePrefixPoolReconcile(t *testing.T) {
 	// Remove the secondary ENI in the IMDS metadata
 	m.awsutils.EXPECT().GetAttachedENIs().Return(oneIPUnassigned, nil)
 
-	mockContext.nodeIPPoolReconcile(0)
+	mockContext.nodeIPPoolReconcile(ctx, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 0, curENIs.TotalIPs)
@@ -837,11 +871,11 @@ func TestGetWarmPrefixTarget(t *testing.T) {
 
 	_ = os.Unsetenv("WARM_PREFIX_TARGET")
 	warmPrefixTarget = getWarmPrefixTarget()
-	assert.Equal(t, warmPrefixTarget, noWarmPrefixTarget)
+	assert.Equal(t, warmPrefixTarget, defaultWarmPrefixTarget)
 
 	_ = os.Setenv("WARM_PREFIX_TARGET", "non-integer-string")
 	warmPrefixTarget = getWarmPrefixTarget()
-	assert.Equal(t, warmPrefixTarget, noWarmPrefixTarget)
+	assert.Equal(t, warmPrefixTarget, defaultWarmPrefixTarget)
 }
 
 func TestGetWarmIPTargetState(t *testing.T) {
@@ -989,6 +1023,7 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 
 	type fields struct {
 		maxIPsPerENI     int
+		maxPrefixesPerENI int
 		warmPrefixTarget int
 		datastore        *datastore.DataStore
 	}
@@ -998,13 +1033,13 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 		fields fields
 		want   bool
 	}{
-		{"Test new ds, all defaults", fields{16, 1, testDatastore()}, true},
-		{"Test new ds, 0 ENIs", fields{16, 0, testDatastore()}, true},
-		{"Test 3 unused IPs, 1 warm", fields{16, 1, datastoreWithFreeIPsFromPrefix()}, false},
-		{"Test 1 used, 1 warm Prefix", fields{16, 1, datastoreWith1Pod1FromPrefix()}, true},
-		{"Test 1 used, 0 warm Prefix", fields{16, 0, datastoreWith1Pod1FromPrefix()}, false},
-		{"Test 3 used, 1 warm Prefix", fields{16, 1, datastoreWith3PodsFromPrefix()}, true},
-		{"Test 3 used, 0 warm Prefix", fields{16, 0, datastoreWith3PodsFromPrefix()}, false},
+		{"Test new ds, all defaults", fields{256, 16, 1, testDatastore()}, true},
+		{"Test new ds, 0 ENIs", fields{256, 16, 0, testDatastore()}, true},
+		{"Test 3 unused IPs, 1 warm", fields{256, 16, 1, datastoreWithFreeIPsFromPrefix()}, false},
+		{"Test 1 used, 1 warm Prefix", fields{256, 16, 1, datastoreWith1Pod1FromPrefix()}, true},
+		{"Test 1 used, 0 warm Prefix", fields{256, 16, 0, datastoreWith1Pod1FromPrefix()}, false},
+		{"Test 3 used, 1 warm Prefix", fields{256, 16, 1, datastoreWith3PodsFromPrefix()}, true},
+		{"Test 3 used, 0 warm Prefix", fields{256, 16, 0, datastoreWith3PodsFromPrefix()}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1012,8 +1047,8 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 				awsClient:                  m.awsutils,
 				dataStore:                  tt.fields.datastore,
 				useCustomNetworking:        false,
-				eniConfig:                  m.eniconfig,
 				networkClient:              m.network,
+				maxPrefixesPerENI:          tt.fields.maxPrefixesPerENI,
 				maxIPsPerENI:               tt.fields.maxIPsPerENI,
 				maxENI:                     -1,
 				warmPrefixTarget:           tt.fields.warmPrefixTarget,
@@ -1275,6 +1310,7 @@ func TestNodeIPPoolReconcileBadIMDSData(t *testing.T) {
 func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
+	ctx := context.Background()
 
 	mockContext := &IPAMContext{
 		awsClient:                  m.awsutils,
@@ -1302,7 +1338,7 @@ func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
 	m.awsutils.EXPECT().IsCNIUnmanagedENI(eniID).Return(false).AnyTimes()
 
 	// First reconcile, IMDS returns correct IPs so no change needed
-	mockContext.nodeIPPoolReconcile(0)
+	mockContext.nodeIPPoolReconcile(ctx, 0)
 
 	// IMDS returns no prefixes, the EC2 call fails
 	primary := true
@@ -1322,7 +1358,7 @@ func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
 
 	// eniIPPoolReconcile() calls EC2 to get the actual count, but that call fails
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(primaryENIid).Return(nil, errors.New("ec2 API call failed"))
-	mockContext.nodeIPPoolReconcile(0)
+	mockContext.nodeIPPoolReconcile(ctx, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 16, curENIs.TotalIPs)
@@ -1344,14 +1380,14 @@ func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
 
 	// eniIPPoolReconcile() calls EC2 to get the actual count that should still be 16
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(primaryENIid).Return(primaryENIMetadata.IPv4Prefixes, nil)
-	mockContext.nodeIPPoolReconcile(0)
+	mockContext.nodeIPPoolReconcile(ctx, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 16, curENIs.TotalIPs)
 
 	// If no ENI is found, we abort the reconcile
 	m.awsutils.EXPECT().GetAttachedENIs().Return(nil, nil)
-	mockContext.nodeIPPoolReconcile(0)
+	mockContext.nodeIPPoolReconcile(ctx, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 16, curENIs.TotalIPs)
@@ -1553,7 +1589,7 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 	mockContext := &IPAMContext{
 		rawK8SClient:    m.rawK8SClient,
 		cachedK8SClient: m.cachedK8SClient,
-		dataStore:       datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion})),
+		dataStore:       datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false),
 		awsClient:       m.awsutils,
 		networkClient:   m.network,
 		primaryIP:       make(map[string]string),

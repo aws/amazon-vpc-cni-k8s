@@ -1301,7 +1301,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	}
 
 	log.Infof("Trying to allocate %d IP addresses on ENI %s", needIPs, eniID)
-
+	log.Debugf("PD enabled - %d", cache.useIPv4PrefixDelegation)
 	input := &ec2.AssignPrivateIpAddressesInput{}
 
 	if cache.useIPv4PrefixDelegation {
