@@ -81,7 +81,7 @@ endif
 # LDFLAGS is the set of flags used when building golang executables.
 LDFLAGS = -X main.version=$(VERSION) -X pkg/awsutils/awssession.version=$(VERSION)
 # ALLPKGS is the set of packages provided in source.
-ALLPKGS = $(shell go list ./... | grep -v cmd/packet-verifier)
+ALLPKGS = $(shell go list $(VENDOR_OVERRIDE_FLAG) ./... | grep -v cmd/packet-verifier)
 # BINS is the set of built command executables.
 BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper
 # Plugin binaries
@@ -253,8 +253,8 @@ helm-lint:
 	@${MAKEFILE_PATH}test/helm/helm-lint.sh
 
 # Run go vet on source code.
-vet:    ## Run go vet on source code.
-	go vet $(ALLPKGS)
+vet:    setup-ec2-sdk-override ## Run go vet on source code.
+	go vet $(VENDOR_OVERRIDE_FLAG) $(ALLPKGS)
 
 
 docker-vet: build-docker-test   ## Run go vet inside of a container.
