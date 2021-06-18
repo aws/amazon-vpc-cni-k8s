@@ -194,9 +194,9 @@ type EC2InstanceMetadataCache struct {
 	availabilityZone string
 	region           string
 
-	unmanagedENIs       StringSet
-	useCustomNetworking bool
-	cniunmanagedENIs    StringSet
+	unmanagedENIs           StringSet
+	useCustomNetworking     bool
+	cniunmanagedENIs        StringSet
 	useIPv4PrefixDelegation bool
 
 	clusterName       string

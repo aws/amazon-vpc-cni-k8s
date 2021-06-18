@@ -14,7 +14,6 @@
 package cni
 
 import (
-
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
@@ -28,9 +27,9 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 	var (
 		// The Pod labels for client and server in order to retrieve the
 		// client and server Pods belonging to a Deployment/Jobs
-		labelKey          = "app"
-		serverPodLabelVal = "server-pod"
-		clientPodLabelVal = "client-pod"
+		labelKey                = "app"
+		serverPodLabelVal       = "server-pod"
+		clientPodLabelVal       = "client-pod"
 		serverDeploymentBuilder *manifest.DeploymentBuilder
 		// Value for the Environment variable ENABLE_PREFIX_DELEGATION
 		enableIPv4PrefixDelegation string
@@ -45,18 +44,18 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 		serverDeploymentBuilder = manifest.NewDefaultDeploymentBuilder().
 			Name("traffic-server").
 			NodeSelector(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
-	    
+
 		By("Set PD")
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
 			utils.AwsNodeNamespace, utils.AwsNodeName,
-			map[string]string{"ENABLE_PREFIX_DELEGATION": enableIPv4PrefixDelegation})	
+			map[string]string{"ENABLE_PREFIX_DELEGATION": enableIPv4PrefixDelegation})
 	})
 
 	JustAfterEach(func() {
 		By("deleting test namespace")
 		f.K8sResourceManagers.NamespaceManager().
 			DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
-		
+
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
 			utils.AwsNodeNamespace, utils.AwsNodeName,
 			map[string]string{"ENABLE_PREFIX_DELEGATION": "false"})

@@ -42,8 +42,8 @@ var _ = Describe("test warm target variables", func() {
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,
 				utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName,
 				map[string]string{
-					"WARM_IP_TARGET":    strconv.Itoa(warmIPTarget),
-					"MINIMUM_IP_TARGET": strconv.Itoa(minIPTarget),
+					"WARM_IP_TARGET":           strconv.Itoa(warmIPTarget),
+					"MINIMUM_IP_TARGET":        strconv.Itoa(minIPTarget),
 					"ENABLE_PREFIX_DELEGATION": "true",
 				})
 
@@ -56,14 +56,14 @@ var _ = Describe("test warm target variables", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			//Query for coredns pods
-	        podList, perr := f.K8sResourceManagers.PodManager().
+			podList, perr := f.K8sResourceManagers.PodManager().
 				GetPodsWithLabelSelector(podLabelKey, podLabelVal)
 			Expect(perr).ToNot(HaveOccurred())
 
 			assigned := 0
 			for _, pod := range podList.Items {
 				By(fmt.Sprintf("verifying in node %s but pod's IP %s address belongs to node name %s",
-					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))	
+					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))
 				if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
 					assigned++
 					break
@@ -76,7 +76,7 @@ var _ = Describe("test warm target variables", func() {
 			}
 
 			// Validated avail IP equals the warm IP Size
-			prefixNeededForWarmIPTarget := ceil(assigned + warmIPTarget, 16)
+			prefixNeededForWarmIPTarget := ceil(assigned+warmIPTarget, 16)
 			prefixNeededForMinIPTarget := ceil(minIPTarget, 16)
 			Expect(availPrefixes).Should(Equal(Max(prefixNeededForWarmIPTarget, prefixNeededForMinIPTarget)))
 		})
@@ -85,8 +85,8 @@ var _ = Describe("test warm target variables", func() {
 			k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f,
 				utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName,
 				map[string]struct{}{
-					"WARM_IP_TARGET": {}, 
-					"MINIMUM_IP_TARGET": {},
+					"WARM_IP_TARGET":           {},
+					"MINIMUM_IP_TARGET":        {},
 					"ENABLE_PREFIX_DELEGATION": {},
 				})
 		})
@@ -149,7 +149,7 @@ var _ = Describe("test warm target variables", func() {
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,
 				utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName,
 				map[string]string{
-					"WARM_PREFIX_TARGET":    strconv.Itoa(warmPrefixTarget),
+					"WARM_PREFIX_TARGET":       strconv.Itoa(warmPrefixTarget),
 					"ENABLE_PREFIX_DELEGATION": "true",
 				})
 
@@ -162,14 +162,14 @@ var _ = Describe("test warm target variables", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			//Query for coredns pods
-	        podList, perr := f.K8sResourceManagers.PodManager().
+			podList, perr := f.K8sResourceManagers.PodManager().
 				GetPodsWithLabelSelector(podLabelKey, podLabelVal)
 			Expect(perr).ToNot(HaveOccurred())
 
 			assigned := 0
 			for _, pod := range podList.Items {
 				By(fmt.Sprintf("verifying in node %s but pod's IP %s address belongs to node name %s",
-					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))	
+					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))
 				if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
 					assigned++
 					break
@@ -183,14 +183,14 @@ var _ = Describe("test warm target variables", func() {
 
 			// Validated avail IP equals the warm IP Size
 			prefixNeededForAssignedPods := ceil(assigned, 16)
-			Expect(availPrefixes).Should(Equal(prefixNeededForAssignedPods+warmPrefixTarget))
+			Expect(availPrefixes).Should(Equal(prefixNeededForAssignedPods + warmPrefixTarget))
 		})
 
 		JustAfterEach(func() {
 			k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f,
 				utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName,
 				map[string]struct{}{
-					"WARM_PREFIX_TARGET": {}, 
+					"WARM_PREFIX_TARGET":       {},
 					"ENABLE_PREFIX_DELEGATION": {},
 				})
 		})
@@ -224,9 +224,9 @@ var _ = Describe("test warm target variables", func() {
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,
 				utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName,
 				map[string]string{
-					"WARM_IP_TARGET":        strconv.Itoa(warmIPTarget),
-					"MINIMUM_IP_TARGET":     strconv.Itoa(minIPTarget),
-					"WARM_PREFIX_TARGET":    strconv.Itoa(warmPrefixTarget),
+					"WARM_IP_TARGET":           strconv.Itoa(warmIPTarget),
+					"MINIMUM_IP_TARGET":        strconv.Itoa(minIPTarget),
+					"WARM_PREFIX_TARGET":       strconv.Itoa(warmPrefixTarget),
 					"ENABLE_PREFIX_DELEGATION": "true",
 				})
 
@@ -239,14 +239,14 @@ var _ = Describe("test warm target variables", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			//Query for coredns pods
-	        podList, perr := f.K8sResourceManagers.PodManager().
+			podList, perr := f.K8sResourceManagers.PodManager().
 				GetPodsWithLabelSelector(podLabelKey, podLabelVal)
 			Expect(perr).ToNot(HaveOccurred())
 
 			assigned := 0
 			for _, pod := range podList.Items {
 				By(fmt.Sprintf("verifying in node %s but pod's IP %s address belongs to node name %s",
-					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))	
+					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))
 				if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
 					assigned++
 					break
@@ -259,7 +259,7 @@ var _ = Describe("test warm target variables", func() {
 			}
 
 			// Validated avail IP equals the warm IP Size
-			prefixNeededForWarmIPTarget := ceil(assigned + warmIPTarget, 16)
+			prefixNeededForWarmIPTarget := ceil(assigned+warmIPTarget, 16)
 			prefixNeededForMinIPTarget := ceil(minIPTarget, 16)
 			Expect(availPrefixes).Should(Equal(Max(prefixNeededForWarmIPTarget, prefixNeededForMinIPTarget)))
 		})
@@ -268,9 +268,9 @@ var _ = Describe("test warm target variables", func() {
 			k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f,
 				utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName,
 				map[string]struct{}{
-					"WARM_IP_TARGET": {}, 
-					"MINIMUM_IP_TARGET": {},
-					"WARM_PREFIX_TARGET": {},
+					"WARM_IP_TARGET":           {},
+					"MINIMUM_IP_TARGET":        {},
+					"WARM_PREFIX_TARGET":       {},
 					"ENABLE_PREFIX_DELEGATION": {},
 				})
 		})

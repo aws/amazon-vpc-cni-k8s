@@ -177,7 +177,7 @@ func TestNodeInit(t *testing.T) {
 func TestNodeInitwithPDenabled(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
-        ctx := context.Background()
+	ctx := context.Background()
 
 	fakeCheckpoint := datastore.CheckpointData{
 		Version: datastore.CheckpointFormatVersion,
@@ -187,19 +187,19 @@ func TestNodeInitwithPDenabled(t *testing.T) {
 	}
 
 	mockContext := &IPAMContext{
-		awsClient:       m.awsutils,
-		rawK8SClient:    m.rawK8SClient,
-		cachedK8SClient: m.cachedK8SClient,
-		maxIPsPerENI:    224,
-		maxPrefixesPerENI: 14,
-		maxENI:          4,
-		warmENITarget:   1,
-		warmIPTarget:    3,
-		primaryIP:       make(map[string]string),
-		terminating:     int32(0),
-		networkClient:   m.network,
-		dataStore:       datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true),
-		myNodeName:      myNodeName,
+		awsClient:                  m.awsutils,
+		rawK8SClient:               m.rawK8SClient,
+		cachedK8SClient:            m.cachedK8SClient,
+		maxIPsPerENI:               224,
+		maxPrefixesPerENI:          14,
+		maxENI:                     4,
+		warmENITarget:              1,
+		warmIPTarget:               3,
+		primaryIP:                  make(map[string]string),
+		terminating:                int32(0),
+		networkClient:              m.network,
+		dataStore:                  datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true),
+		myNodeName:                 myNodeName,
 		enableIpv4PrefixDelegation: true,
 	}
 	mockContext.dataStore.CheckpointMigrationPhase = 2
@@ -468,18 +468,18 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	ctx := context.Background()
 
 	mockContext := &IPAMContext{
-		awsClient:           m.awsutils,
-		rawK8SClient:        m.rawK8SClient,
-		cachedK8SClient:     m.cachedK8SClient,
-		maxIPsPerENI:        256,
-		maxPrefixesPerENI:   16,
-		maxENI:              4,
-		warmENITarget:       1,
-		warmPrefixTarget:    1,
-		networkClient:       m.network,
-		useCustomNetworking: UseCustomNetworkCfg(),
-		primaryIP:           make(map[string]string),
-		terminating:         int32(0),
+		awsClient:                  m.awsutils,
+		rawK8SClient:               m.rawK8SClient,
+		cachedK8SClient:            m.cachedK8SClient,
+		maxIPsPerENI:               256,
+		maxPrefixesPerENI:          16,
+		maxENI:                     4,
+		warmENITarget:              1,
+		warmPrefixTarget:           1,
+		networkClient:              m.network,
+		useCustomNetworking:        UseCustomNetworkCfg(),
+		primaryIP:                  make(map[string]string),
+		terminating:                int32(0),
 		enableIpv4PrefixDelegation: true,
 	}
 
@@ -1000,14 +1000,14 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &IPAMContext{
-				awsClient:           m.awsutils,
-				dataStore:           tt.fields.datastore,
-				useCustomNetworking: false,
-				networkClient:       m.network,
-				maxIPsPerENI:        tt.fields.maxIPsPerENI,
-				maxENI:              -1,
-				warmENITarget:       tt.fields.warmENITarget,
-				warmIPTarget:        tt.fields.warmIPTarget,
+				awsClient:                  m.awsutils,
+				dataStore:                  tt.fields.datastore,
+				useCustomNetworking:        false,
+				networkClient:              m.network,
+				maxIPsPerENI:               tt.fields.maxIPsPerENI,
+				maxENI:                     -1,
+				warmENITarget:              tt.fields.warmENITarget,
+				warmIPTarget:               tt.fields.warmIPTarget,
 				enableIpv4PrefixDelegation: false,
 			}
 			if got := c.isDatastorePoolTooLow(); got != tt.want {
@@ -1022,10 +1022,10 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	type fields struct {
-		maxIPsPerENI     int
+		maxIPsPerENI      int
 		maxPrefixesPerENI int
-		warmPrefixTarget int
-		datastore        *datastore.DataStore
+		warmPrefixTarget  int
+		datastore         *datastore.DataStore
 	}
 
 	tests := []struct {

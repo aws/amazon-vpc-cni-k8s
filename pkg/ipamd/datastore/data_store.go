@@ -694,43 +694,43 @@ func (ds *DataStore) GetEFAENIs() map[string]bool {
 func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENI) bool {
 	otherWarmIPs := 0
 	for _, other := range ds.eniPool {
-                if other.ID != eni.ID {
-                       for _, otherPrefixes := range other.AvailableIPv4Cidrs {
-                               if (ds.isPDEnabled && otherPrefixes.IsPrefix == true) || (!ds.isPDEnabled && otherPrefixes.IsPrefix == false) {
-                                       otherWarmIPs += otherPrefixes.Size() - otherPrefixes.AssignedIPv4AddressesInCidr() 
-                               }
-                       }
-               }
-       }
+		if other.ID != eni.ID {
+			for _, otherPrefixes := range other.AvailableIPv4Cidrs {
+				if (ds.isPDEnabled && otherPrefixes.IsPrefix == true) || (!ds.isPDEnabled && otherPrefixes.IsPrefix == false) {
+					otherWarmIPs += otherPrefixes.Size() - otherPrefixes.AssignedIPv4AddressesInCidr()
+				}
+			}
+		}
+	}
 
-       if ds.isPDEnabled {
+	if ds.isPDEnabled {
 		_, numIPsPerPrefix, _ := GetPrefixDelegationDefaults()
 		numPrefixNeeded := DivCeil(warmIPTarget, numIPsPerPrefix)
 		warmIPTarget = numPrefixNeeded * numIPsPerPrefix
-       }
-       return otherWarmIPs < warmIPTarget
+	}
+	return otherWarmIPs < warmIPTarget
 }
 
 // IsRequiredForMinimumIPTarget determines if this ENI is necessary to fulfill whatever MINIMUM_IP_TARGET is
 // set to.
 func (ds *DataStore) isRequiredForMinimumIPTarget(minimumIPTarget int, eni *ENI) bool {
-       otherIPs := 0
-       for _, other := range ds.eniPool {
-               if other.ID != eni.ID {
-                       for _, otherPrefixes := range other.AvailableIPv4Cidrs {
-                               if (ds.isPDEnabled && otherPrefixes.IsPrefix == true) || (!ds.isPDEnabled && otherPrefixes.IsPrefix == false) {
-                                       otherIPs += otherPrefixes.Size()
-                               }
-                       }
-               }
-       }
+	otherIPs := 0
+	for _, other := range ds.eniPool {
+		if other.ID != eni.ID {
+			for _, otherPrefixes := range other.AvailableIPv4Cidrs {
+				if (ds.isPDEnabled && otherPrefixes.IsPrefix == true) || (!ds.isPDEnabled && otherPrefixes.IsPrefix == false) {
+					otherIPs += otherPrefixes.Size()
+				}
+			}
+		}
+	}
 
-       if ds.isPDEnabled {
+	if ds.isPDEnabled {
 		_, numIPsPerPrefix, _ := GetPrefixDelegationDefaults()
 		numPrefixNeeded := DivCeil(minimumIPTarget, numIPsPerPrefix)
 		minimumIPTarget = numPrefixNeeded * numIPsPerPrefix
 	}
-       return otherIPs < minimumIPTarget
+	return otherIPs < minimumIPTarget
 }
 
 // IsRequiredForWarmPrefixTarget determines if this ENI is necessary to fulfill whatever WARM_PREFIX_TARGET is
@@ -783,7 +783,7 @@ func (ds *DataStore) getDeletableENI(warmIPTarget, minimumIPTarget, warmPrefixTa
 
 		if ds.isPDEnabled && warmPrefixTarget != 0 && ds.isRequiredForWarmPrefixTarget(warmPrefixTarget, eni) {
 			ds.log.Debugf("ENI %s cannot be deleted because it is required for WARM_PREFIX_TARGET: %d", eni.ID, warmPrefixTarget)
- 			continue
+			continue
 		}
 
 		if eni.IsTrunk {

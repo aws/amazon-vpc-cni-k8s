@@ -133,8 +133,8 @@ const (
 	envEnableIpv4PrefixDelegation = "ENABLE_PREFIX_DELEGATION"
 
 	//envWarmPrefixTarget is used to keep a /28 prefix in warm pool.
-	envWarmPrefixTarget = "WARM_PREFIX_TARGET"
-	defaultWarmPrefixTarget  = 0
+	envWarmPrefixTarget     = "WARM_PREFIX_TARGET"
+	defaultWarmPrefixTarget = 0
 )
 
 var log = logger.Get()
@@ -676,10 +676,10 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 
 	if !warmIPTargetDefined {
 		shortPrefix, warmTargetDefined := c.datastorePrefixTargetState()
-        	if warmTargetDefined && shortPrefix == 0 {
-               		log.Debugf("Skipping increase Datastore pool, warm prefix target reached")
-               		return
-        	}
+		if warmTargetDefined && shortPrefix == 0 {
+			log.Debugf("Skipping increase Datastore pool, warm prefix target reached")
+			return
+		}
 	}
 
 	if c.isTerminating() {
@@ -786,10 +786,10 @@ func (c *IPAMContext) tryAssignCidrs() (increasedPool bool, err error) {
 
 	if !warmIPTargetDefined {
 		shortPrefix, warmTargetDefined := c.datastorePrefixTargetState()
-       		if warmTargetDefined && shortPrefix == 0 {
-               		log.Infof("Warm prefix target set and short is 0 so not assigning Cidrs (Prefixes)")
-               		return false, nil
-       		}
+		if warmTargetDefined && shortPrefix == 0 {
+			log.Infof("Warm prefix target set and short is 0 so not assigning Cidrs (Prefixes)")
+			return false, nil
+		}
 	}
 
 	if !c.enableIpv4PrefixDelegation {
@@ -1076,7 +1076,7 @@ func (c *IPAMContext) shouldRemoveExtraPrefixes() int {
 
 	logPoolStats(total, used, c.maxIPsPerENI, c.enableIpv4PrefixDelegation)
 	log.Debugf("shouldRemoveExtraPrefixes available %d over %d warm_prefix_target %d", available, over, c.warmPrefixTarget)
-	
+
 	return over
 }
 
@@ -1596,7 +1596,7 @@ func (c *IPAMContext) datastorePrefixTargetState() (short int, enabled bool) {
 	toAllocate := max(c.warmPrefixTarget-freePrefixesInStore, 0)
 	log.Debugf("Prefix target is %d, short of %d prefixes, free %d prefixes", c.warmPrefixTarget, toAllocate, freePrefixesInStore)
 
-       return toAllocate, true
+	return toAllocate, true
 }
 
 // setTerminating atomically sets the terminating flag.

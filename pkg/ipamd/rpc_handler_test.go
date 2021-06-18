@@ -15,8 +15,8 @@ package ipamd
 
 import (
 	"context"
-	"testing"
 	"net"
+	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 
