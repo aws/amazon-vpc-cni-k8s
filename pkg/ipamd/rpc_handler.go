@@ -201,7 +201,18 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		IfName:      in.IfName,
 		NetworkName: in.NetworkName,
 	}
-	ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
+	eni, ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
+	cidr := net.IPNet{IP: net.ParseIP(ip), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	cidrStr := cidr.String()
+	if eni != nil && eni.AvailableIPv4Cidrs[cidrStr] != nil {
+		if s.ipamContext.enableIpv4PrefixDelegation && eni.AvailableIPv4Cidrs[cidrStr].IsPrefix == false {
+			log.Debugf("IP belongs to secondary pool with PD enabled so free IP from EC2")
+			s.ipamContext.tryUnassignIPFromENI(eni.ID)
+		} else if !s.ipamContext.enableIpv4PrefixDelegation && eni.AvailableIPv4Cidrs[cidrStr].IsPrefix == true {
+			log.Debugf("IP belongs to prefix pool with PD disabled so try free prefix from EC2")
+			s.ipamContext.tryUnassignPrefixFromENI(eni.ID)
+		}
+	}
 
 	if err == datastore.ErrUnknownPod && s.ipamContext.enablePodENI {
 		pod, err := s.ipamContext.GetPod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)

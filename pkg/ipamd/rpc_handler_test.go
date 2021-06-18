@@ -35,7 +35,7 @@ func TestServer_VersionCheck(t *testing.T) {
 		warmENITarget: 1,
 		warmIPTarget:  3,
 		networkClient: m.network,
-		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}),
+		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}, false),
 	}
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil).AnyTimes()
 	m.network.EXPECT().UseExternalSNAT().Return(true).AnyTimes()

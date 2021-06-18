@@ -10,8 +10,6 @@ require (
 	github.com/golang/mock v1.4.1
 	github.com/golang/protobuf v1.4.2
 	github.com/google/go-jsonnet v0.16.0
-	github.com/google/gopacket v1.1.18
-	github.com/gregjones/httpcache v0.0.0-20190212212710-3befbb6ad0cc // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.0.0
 	github.com/prometheus/client_model v0.2.0
@@ -33,3 +31,5 @@ require (
 	k8s.io/cri-api v0.0.0-20191107035106-03d130a7dc28
 	sigs.k8s.io/controller-runtime v0.6.3
 )
+
+replace github.com/aws/aws-sdk-go => ./vendor/github.com/aws/aws-sdk-go

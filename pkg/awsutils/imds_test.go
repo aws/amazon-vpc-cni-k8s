@@ -232,3 +232,19 @@ func TestGetVPCIPv6CIDRBlocks(t *testing.T) {
 		assert.True(t, IsNotFound(err))
 	}
 }
+
+func TestGetLocalIPv4Prefixes(t *testing.T) {
+	f := TypedIMDS{FakeIMDS(map[string]interface{}{
+		"network/interfaces/macs/02:c5:f8:3e:6b:27/ipv4-prefix": `10.1.1.0/28`,
+	})}
+
+	ips, err := f.GetLocalIPv4Prefixes(context.TODO(), "02:c5:f8:3e:6b:27")
+	if assert.NoError(t, err) {
+		assert.Equal(t, ips, []net.IPNet{{IP: net.IPv4(10, 1, 1, 0), Mask: net.CIDRMask(28, 32)}})
+	}
+
+	ips, err = f.GetLocalIPv4Prefixes(context.TODO(), "00:00:de:ad:be:ef")
+	if assert.NoError(t, err) {
+		assert.ElementsMatch(t, ips, []net.IPNet{})
+	}
+}
