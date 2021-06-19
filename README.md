@@ -241,13 +241,14 @@ For example, if `WARM_IP_TARGET` is set to 5, then `ipamd` attempts to keep 5 fr
 elastic network interfaces on the node are unable to provide these free addresses, `ipamd` attempts to allocate more interfaces
 until `WARM_IP_TARGET` free IP addresses are available.
 
-**NOTE!** Avoid this setting for large clusters, or if the cluster has high pod churn. Setting it will cause additional calls to the
+**NOTE!** Be careful when setting this for large clusters or clusters with high pod churn. Setting this will cause additional calls to the
 EC2 API and that might cause throttling of the requests. It is strongly suggested to set `MINIMUM_IP_TARGET` when using `WARM_IP_TARGET`.
 
 If both `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are set, `ipamd` will attempt to meet both constraints.
 This environment variable overrides `WARM_ENI_TARGET` behavior. For a detailed explanation, see
 [`WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/eni-and-ip-target.md).
 
+If `WARM_IP_TARGET` is not set and `MINIMUM_IP_TARGET` is set then `ipamd` will be limited to `MINIMUM_IP_TARGET` IPs to assign pods on a given node.
 
 ---
 
