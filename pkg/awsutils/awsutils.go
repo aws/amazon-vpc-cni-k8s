@@ -194,10 +194,10 @@ type EC2InstanceMetadataCache struct {
 	availabilityZone string
 	region           string
 
-	unmanagedENIs           StringSet
-	useCustomNetworking     bool
-	cniunmanagedENIs        StringSet
-	useIPv4PrefixDelegation bool
+	unmanagedENIs              StringSet
+	useCustomNetworking        bool
+	cniunmanagedENIs           StringSet
+	enableIpv4PrefixDelegation bool
 
 	clusterName       string
 	additionalENITags map[string]string
@@ -332,8 +332,7 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 
 	if err != nil {
 		awsAPIErrInc("GetMetadata", err)
-		log.Warnf("Failed to retrieve %s from instance metadata %v", p, err)
-		return "", err
+		return "", newIMDSRequestError(p, err)
 	}
 
 	return result, nil
@@ -360,7 +359,7 @@ func (cache *EC2InstanceMetadataCache) getNetworkInterfacesWithContext(ctx conte
 }
 
 // New creates an EC2InstanceMetadataCache
-func New(useCustomNetworking, useIPv4PrefixDelegation bool) (*EC2InstanceMetadataCache, error) {
+func New(useCustomNetworking, enableIpv4PrefixDelegation bool) (*EC2InstanceMetadataCache, error) {
 	//ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
 	ctx := context.Background()
 
@@ -386,8 +385,8 @@ func New(useCustomNetworking, useIPv4PrefixDelegation bool) (*EC2InstanceMetadat
 	cache.useCustomNetworking = useCustomNetworking
 	log.Infof("Custom networking enabled %v", cache.useCustomNetworking)
 
-	cache.useIPv4PrefixDelegation = useIPv4PrefixDelegation
-	log.Infof("Prefix Delegation enabled %v", cache.useIPv4PrefixDelegation)
+	cache.enableIpv4PrefixDelegation = enableIpv4PrefixDelegation
+	log.Infof("Prefix Delegation enabled %v", cache.enableIpv4PrefixDelegation)
 
 	awsCfg := aws.NewConfig().WithRegion(region)
 	sess = sess.Copy(awsCfg)
@@ -408,7 +407,6 @@ func New(useCustomNetworking, useIPv4PrefixDelegation bool) (*EC2InstanceMetadat
 // InitWithEC2metadata initializes the EC2InstanceMetadataCache with the data retrieved from EC2 metadata service
 func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) error {
 	var err error
-
 	// retrieve availability-zone
 	cache.availabilityZone, err = cache.imds.GetAZ(ctx)
 	if err != nil {
@@ -565,13 +563,15 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	ctx := context.TODO()
 
 	log.Debugf("Found ENI MAC address: %s", eniMAC)
+	var err error
+	var deviceNum int
 
 	eniID, err := cache.imds.GetInterfaceID(ctx, eniMAC)
 	if err != nil {
 		return ENIMetadata{}, err
 	}
 
-	deviceNum, err := cache.imds.GetDeviceNumber(ctx, eniMAC)
+	deviceNum, err = cache.imds.GetDeviceNumber(ctx, eniMAC)
 	if err != nil {
 		return ENIMetadata{}, err
 	}
@@ -611,10 +611,6 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	//Get prefix on primary ENI when custom networking is enabled is not needed. Everytime we
 	//call attached ENIs, the call will return prefix not found in the logs and that will pollute
 	//ipamd.log hence skipping.
-
-	//Prefix get is taking more time, so computing the time to return prefix. Will remove this for GA.
-	start := time.Now()
-	log.Debugf("Querying for prefix")
 	if (eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC) {
 		imdsIPv4Prefixes, err := cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
 		if err != nil {
@@ -626,8 +622,6 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			})
 		}
 	}
-	elapsed := time.Since(start)
-	log.Debugf("Time taken to return prefix query %s", elapsed)
 
 	return ENIMetadata{
 		ENIID:          eniID,
@@ -1301,10 +1295,10 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	}
 
 	log.Infof("Trying to allocate %d IP addresses on ENI %s", needIPs, eniID)
-	log.Debugf("PD enabled - %d", cache.useIPv4PrefixDelegation)
+	log.Debugf("PD enabled - %d", cache.enableIpv4PrefixDelegation)
 	input := &ec2.AssignPrivateIpAddressesInput{}
 
-	if cache.useIPv4PrefixDelegation {
+	if cache.enableIpv4PrefixDelegation {
 		needPrefixes := needIPs
 		input = &ec2.AssignPrivateIpAddressesInput{
 			NetworkInterfaceId: aws.String(eniID),
@@ -1332,7 +1326,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 		return errors.Wrap(err, "allocate IP address: failed to allocate a private IP address")
 	}
 	if output != nil {
-		if cache.useIPv4PrefixDelegation {
+		if cache.enableIpv4PrefixDelegation {
 			log.Infof("Allocated %d private IP prefixes", len(output.AssignedIpv4Prefixes))
 		} else {
 			log.Infof("Allocated %d private IP addresses", len(output.AssignedPrivateIpAddresses))
@@ -1362,7 +1356,7 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 			if eni == returnedENI.ENIID {
 				// Check how many Secondary IPs have been attached
 				var eniIPCount int
-				if cache.useIPv4PrefixDelegation {
+				if cache.enableIpv4PrefixDelegation {
 					eniIPCount = len(returnedENI.IPv4Prefixes)
 				} else {
 					//Ignore primary IP of the ENI
@@ -1377,7 +1371,7 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 				// At least some are attached
 				eniMetadata = returnedENI
 				// ipsToAllocate will be at most 1 less then the IP limit for the ENI because of the primary IP
-				if (eniIPCount > wantedSecondaryIPsOrPrefixes && !cache.useIPv4PrefixDelegation) || (eniIPCount >= wantedSecondaryIPsOrPrefixes && cache.useIPv4PrefixDelegation) {
+				if (eniIPCount > wantedSecondaryIPsOrPrefixes && !cache.enableIpv4PrefixDelegation) || (eniIPCount >= wantedSecondaryIPsOrPrefixes && cache.enableIpv4PrefixDelegation) {
 					return nil
 				}
 				return ErrAllSecondaryIPsNotFound
@@ -1390,11 +1384,11 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 	if err != nil {
 		// If we have at least 1 Secondary IP, by now return what we have without an error
 		if err == ErrAllSecondaryIPsNotFound {
-			if !cache.useIPv4PrefixDelegation && len(eniMetadata.IPv4Addresses) > 1 {
+			if !cache.enableIpv4PrefixDelegation && len(eniMetadata.IPv4Addresses) > 1 {
 				// We have some Secondary IPs, return the ones we have
 				log.Warnf("This ENI only has %d IP addresses, we wanted %d", len(eniMetadata.IPv4Addresses), wantedSecondaryIPsOrPrefixes)
 				return eniMetadata, nil
-			} else if cache.useIPv4PrefixDelegation && len(eniMetadata.IPv4Prefixes) > 1 {
+			} else if cache.enableIpv4PrefixDelegation && len(eniMetadata.IPv4Prefixes) > 1 {
 				// We have some prefixes, return the ones we have
 				log.Warnf("This ENI only has %d Prefixes, we wanted %d", len(eniMetadata.IPv4Prefixes), wantedSecondaryIPsOrPrefixes)
 				return eniMetadata, nil

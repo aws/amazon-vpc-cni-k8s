@@ -170,14 +170,18 @@ func TestGetIPv6s(t *testing.T) {
 	})}
 
 	ips, err = nov6.GetIPv6s(context.TODO(), "02:c5:f8:3e:6b:27")
-	if assert.NoError(t, err) {
-		assert.ElementsMatch(t, ips, []net.IP{})
+	if imdsErr, ok := err.(*imdsRequestError); ok {
+		if assert.NoError(t, imdsErr.err) {
+			assert.ElementsMatch(t, ips, []net.IP{})
+		}
 	}
 
 	// Note can't tell the difference between bad mac and no ipv6 :(
 	ips, err = f.GetIPv6s(context.TODO(), "00:00:de:ad:be:ef")
-	if assert.NoError(t, err) {
-		assert.ElementsMatch(t, ips, []net.IP{})
+	if imdsErr, ok := err.(*imdsRequestError); ok {
+		if assert.NoError(t, imdsErr.err) {
+			assert.ElementsMatch(t, ips, []net.IP{})
+		}
 	}
 }
 
@@ -223,13 +227,17 @@ func TestGetVPCIPv6CIDRBlocks(t *testing.T) {
 	})}
 
 	ips, err = nov6.GetVPCIPv6CIDRBlocks(context.TODO(), "02:c5:f8:3e:6b:27")
-	if assert.NoError(t, err) {
-		assert.ElementsMatch(t, ips, []net.IPNet{})
+	if imdsErr, ok := err.(*imdsRequestError); ok {
+		if assert.NoError(t, imdsErr.err) {
+			assert.ElementsMatch(t, ips, []net.IP{})
+		}
 	}
 
 	_, err = f.GetLocalIPv4s(context.TODO(), "00:00:de:ad:be:ef")
-	if assert.Error(t, err) {
-		assert.True(t, IsNotFound(err))
+	if imdsErr, ok := err.(*imdsRequestError); ok {
+		if assert.Error(t, imdsErr.err) {
+			assert.True(t, IsNotFound(imdsErr.err))
+		}
 	}
 }
 
@@ -239,12 +247,16 @@ func TestGetLocalIPv4Prefixes(t *testing.T) {
 	})}
 
 	ips, err := f.GetLocalIPv4Prefixes(context.TODO(), "02:c5:f8:3e:6b:27")
-	if assert.NoError(t, err) {
-		assert.Equal(t, ips, []net.IPNet{{IP: net.IPv4(10, 1, 1, 0), Mask: net.CIDRMask(28, 32)}})
+	if imdsErr, ok := err.(*imdsRequestError); ok {
+		if assert.NoError(t, imdsErr.err) {
+			assert.Equal(t, ips, []net.IPNet{{IP: net.IPv4(10, 1, 1, 0), Mask: net.CIDRMask(28, 32)}})
+		}
 	}
 
 	ips, err = f.GetLocalIPv4Prefixes(context.TODO(), "00:00:de:ad:be:ef")
-	if assert.NoError(t, err) {
-		assert.ElementsMatch(t, ips, []net.IPNet{})
+	if imdsErr, ok := err.(*imdsRequestError); ok {
+		if assert.NoError(t, imdsErr.err) {
+			assert.ElementsMatch(t, ips, []net.IPNet{})
+		}
 	}
 }

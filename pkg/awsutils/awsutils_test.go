@@ -631,7 +631,7 @@ func TestAllocPrefixAddresses(t *testing.T) {
 	}
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, nil)
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", useIPv4PrefixDelegation: true}
+	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enableIpv4PrefixDelegation: true}
 	err := ins.AllocIPAddresses(eniID, 1)
 	assert.NoError(t, err)
 
@@ -648,7 +648,7 @@ func TestAllocPrefixesAlreadyFull(t *testing.T) {
 		NetworkInterfaceId: aws.String(eniID),
 		Ipv4PrefixCount:    aws.Int64(1),
 	}
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "t3.xlarge", useIPv4PrefixDelegation: true}
+	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "t3.xlarge", enableIpv4PrefixDelegation: true}
 
 	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, retErr)
@@ -816,7 +816,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 				metadataMACPath + eni2MAC + metadataIPv4s:        eniIPs,
 				metadataMACPath + eni2MAC + metadataIPv4Prefixes: eniPrefixes,
 			})
-			cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, useIPv4PrefixDelegation: true}
+			cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, enableIpv4PrefixDelegation: true}
 			gotEniMetadata, err := cache.waitForENIAndIPsAttached(tt.args.eni, tt.args.wantedSecondaryIPs, tt.args.maxBackoffDelay)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("waitForENIAndIPsAttached() error = %v, wantErr %v", err, tt.wantErr)

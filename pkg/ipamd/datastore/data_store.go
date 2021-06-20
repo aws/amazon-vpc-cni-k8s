@@ -1238,3 +1238,36 @@ func (ds *DataStore) FindFreeableCidrs(eniID string) []CidrInfo {
 func DivCeil(x, y int) int {
 	return (x + y - 1) / y
 }
+
+// CheckFreeableENIexists will return true if there is an ENI which is unused.
+// Could have just called getDeletbleENI, this is just to optimize a bit.
+func (ds *DataStore) CheckFreeableENIexists() bool {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	for _, eni := range ds.eniPool {
+		if eni.IsPrimary {
+			ds.log.Debugf("ENI %s cannot be deleted because it is primary", eni.ID)
+			continue
+		}
+
+		if eni.hasPods() {
+			ds.log.Debugf("ENI %s cannot be deleted because it has pods assigned", eni.ID)
+			continue
+		}
+
+		if eni.IsTrunk {
+			ds.log.Debugf("ENI %s cannot be deleted because it is a trunk ENI", eni.ID)
+			continue
+		}
+
+		if eni.IsEFA {
+			ds.log.Debugf("ENI %s cannot be deleted because it is an EFA ENI", eni.ID)
+			continue
+		}
+
+		ds.log.Debugf("Found a deletable ENI %s and we might be able to free", eni.ID)
+		return true
+	}
+	return false
+}

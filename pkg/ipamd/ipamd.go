@@ -849,8 +849,6 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 	eni := c.dataStore.GetENINeedsIP(c.maxPrefixesPerENI, c.useCustomNetworking)
 	if eni != nil {
 		currentNumberOfAllocatedPrefixes := len(eni.AvailableIPv4Cidrs)
-		log.Debugf("JAY %d", min((c.maxPrefixesPerENI-currentNumberOfAllocatedPrefixes), toAllocate))
-		log.Debugf("Adding prefix to ENI %s ", eni.ID)
 		err = c.awsClient.AllocIPAddresses(eni.ID, min((c.maxPrefixesPerENI-currentNumberOfAllocatedPrefixes), toAllocate))
 		if err != nil {
 			log.Warnf("failed to allocate all available IPv4 Prefixes on ENI %s, err: %v", eni.ID, err)
@@ -1058,6 +1056,10 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	if shouldRemoveExtra {
 		logPoolStats(total, used, c.maxIPsPerENI, c.enableIpv4PrefixDelegation)
 		log.Debugf("It might be possible to remove extra ENIs because available (%d) >= (ENI/Prefix target + 1 (%d) + 1) * addrsPerENI (%d)", available, warmTarget, c.maxIPsPerENI)
+	} else if c.enableIpv4PrefixDelegation {
+		// When prefix target count is reduced, datastorehigh would have deleted extra prefixes hence available will be less than prefix target
+		// but there can be some extra ENIs which are not used hence see if we can clean it up.
+		shouldRemoveExtra = c.dataStore.CheckFreeableENIexists()
 	}
 	return shouldRemoveExtra
 }
