@@ -144,7 +144,7 @@ docker-func-test: docker     ## Run the built CNI container image to use in func
 # Run unit tests
 unit-test: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
 unit-test:    ## Run unit tests
-	 go test -v -mod=mod -coverprofile=coverage.txt -covermode=atomic ./pkg/...
+	go test -v $(VENDOR_OVERRIDE_FLAG) -coverprofile=coverage.txt -covermode=atomic ./pkg/...
 
 # Run unit tests with race detection (can only be run natively)
 unit-test-race: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
@@ -207,7 +207,7 @@ generate:
 # Generate eni-max-pods.txt file for EKS AMI
 generate-limits: GOOS=
 generate-limits:    ## Generate limit file go code
-	go run -mod=mod scripts/gen_vpc_ip_limits.go
+	go run $(VENDOR_OVERRIDE_FLAG) scripts/gen_vpc_ip_limits.go
 
 # Fetch the CNI plugins
 plugins: FETCH_VERSION=0.9.0
