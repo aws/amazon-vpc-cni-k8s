@@ -1371,7 +1371,7 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 
 				// At least some are attached
 				eniMetadata = returnedENI
-				
+
 				if eniIPCount >= wantedCidrs {
 					return nil
 				}

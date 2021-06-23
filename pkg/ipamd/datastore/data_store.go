@@ -1240,7 +1240,7 @@ func DivCeil(x, y int) int {
 }
 
 // CheckFreeableENIexists will return true if there is an ENI which is unused.
-// Could have just called getDeletbleENI, this is just to optimize a bit.
+// Could have just called getDeletaleENI, this is just to optimize a bit.
 func (ds *DataStore) CheckFreeableENIexists() bool {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()

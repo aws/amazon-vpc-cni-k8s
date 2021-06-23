@@ -1057,8 +1057,8 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 		logPoolStats(total, used, c.maxIPsPerENI, c.enableIpv4PrefixDelegation)
 		log.Debugf("It might be possible to remove extra ENIs because available (%d) >= (ENI/Prefix target + 1 (%d) + 1) * addrsPerENI (%d)", available, warmTarget, c.maxIPsPerENI)
 	} else if c.enableIpv4PrefixDelegation {
-		// When prefix target count is reduced, datastorehigh would have deleted extra prefixes hence available will be less than prefix target
-		// but there can be some extra ENIs which are not used hence see if we can clean it up.
+		// When prefix target count is reduced, datastorehigh would have deleted extra prefixes over the warm prefix target.
+		// Hence available will be less than (warmTarget)*c.maxIPsPerENI but there can be some extra ENIs which are not used hence see if we can clean it up.
 		shouldRemoveExtra = c.dataStore.CheckFreeableENIexists()
 	}
 	return shouldRemoveExtra
