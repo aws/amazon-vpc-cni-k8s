@@ -51,9 +51,6 @@ const (
 
 	// UnknownENIError is an error when caller tries to access an ENI which is unknown to datastore
 	UnknownENIError = "datastore: unknown ENI"
-
-	// IPv4 /32 prefix for host routes
-	ipv4DefaultPrefixSize = 32
 )
 
 // We need to know which IPs are already allocated across
@@ -475,7 +472,7 @@ func (ds *DataStore) AddIPv4CidrToStore(eniID string, ipv4Cidr net.IPNet, isPref
 	ds.log.Infof("Adding %s to DS for %s", strIPv4Cidr, eniID)
 	curENI, ok := ds.eniPool[eniID]
 	if !ok {
-		ds.log.Infof("unkown ENI")
+		ds.log.Infof("unknown ENI")
 		return errors.New("add ENI's IP to datastore: unknown ENI")
 	}
 	// Already there
@@ -485,13 +482,15 @@ func (ds *DataStore) AddIPv4CidrToStore(eniID string, ipv4Cidr net.IPNet, isPref
 		return errors.New(IPAlreadyInStoreError)
 	}
 
-	curENI.AvailableIPv4Cidrs[strIPv4Cidr] = &CidrInfo{
+	newCidrInfo := &CidrInfo{
 		Cidr:          ipv4Cidr,
 		IPv4Addresses: make(map[string]*AddressInfo),
 		IsPrefix:      isPrefix,
 	}
 
-	ds.total += curENI.AvailableIPv4Cidrs[strIPv4Cidr].Size()
+	curENI.AvailableIPv4Cidrs[strIPv4Cidr] = newCidrInfo
+
+	ds.total += newCidrInfo.Size()
 	if isPrefix {
 		ds.allocatedPrefix++
 	}
@@ -569,32 +568,30 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 			var strPrivateIPv4 string
 			var err error
 
-			if ds.isPDEnabled && availableCidr.IsPrefix {
+			if (ds.isPDEnabled && availableCidr.IsPrefix) || (!ds.isPDEnabled && !availableCidr.IsPrefix) {
 				strPrivateIPv4, err = ds.getFreeIPv4AddrfromCidr(availableCidr)
 				if err != nil {
 					ds.log.Debugf("Unable to get IP address from prefix: %v", err)
 					//Check in next CIDR
 					continue
 				}
-				ds.log.Debugf("New IP from PD pool- %s", strPrivateIPv4)
+				ds.log.Debugf("New IP from CIDR pool- %s", strPrivateIPv4)
 				if availableCidr.IPv4Addresses == nil {
 					availableCidr.IPv4Addresses = make(map[string]*AddressInfo)
 				}
-			} else if !ds.isPDEnabled && !availableCidr.IsPrefix {
-				strPrivateIPv4 = availableCidr.Cidr.IP.String()
 			} else {
 				//This can happen during upgrade or PD enable/disable knob toggle
 				//ENI can have prefixes attached and no space for SIPs or vice versa
 				continue
 			}
+
 			addr = availableCidr.IPv4Addresses[strPrivateIPv4]
 			if addr == nil {
 				// addr is nil when we are using a new IP from prefix or SIP pool
 				// if addr is out of cooldown or not assigned, we can reuse addr
 				addr = &AddressInfo{Address: strPrivateIPv4}
-			} else if addr.Assigned() || addr.inCoolingPeriod() {
-				continue
 			}
+
 			availableCidr.IPv4Addresses[strPrivateIPv4] = addr
 			ds.assignPodIPv4AddressUnsafe(ipamKey, eni, addr)
 
@@ -963,7 +960,7 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string,
 		return nil, "", 0, err
 	}
 	addr.UnassignedTime = time.Now()
-	if ds.isPDEnabled && availableCidr.IsPrefix == false {
+	if ds.isPDEnabled && !availableCidr.IsPrefix {
 		ds.log.Infof("Prefix delegation is enabled and the IP is from secondary pool hence no need to update prefix pool")
 		ds.total--
 	}
@@ -1100,25 +1097,7 @@ func (ds *DataStore) GetENICIDRs(eniID string) ([]string, []string, error) {
 	return ipPool, prefixPool, nil
 }
 
-// GetENIPrefixes returns the known (allocated & unallocated) ENI Prefixed.
-func (ds *DataStore) GetENIPrefixes(eniID string) ([]string, error) {
-	ds.lock.Lock()
-	defer ds.lock.Unlock()
-
-	eni, ok := ds.eniPool[eniID]
-	if !ok {
-		return nil, errors.New(UnknownENIError)
-	}
-
-	var ipPool []string
-	for _, prefixData := range eni.AvailableIPv4Cidrs {
-		if prefixData.IsPrefix {
-			ipPool = append(ipPool, prefixData.Cidr.String())
-		}
-	}
-	return ipPool, nil
-}
-
+// GetFreePrefixes return free prefixes
 func (ds *DataStore) GetFreePrefixes() int {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
@@ -1135,6 +1114,7 @@ func (ds *DataStore) GetFreePrefixes() int {
 	return freePrefixes
 }
 
+// getFreeIPv4AddrfromCidr returs a free IP/32 address from CIDR
 func (ds *DataStore) getFreeIPv4AddrfromCidr(availableCidr *CidrInfo) (string, error) {
 	if availableCidr == nil {
 		ds.log.Errorf("Prefix datastore not initialized")
@@ -1187,7 +1167,7 @@ func (ds *DataStore) getUnusedIP(availableCidr *CidrInfo) (string, error) {
 		return strPrivateIPv4, nil
 	}
 
-	return "", errors.New("No free IP in the prefix store")
+	return "", errors.New("No free IP in the CIDR store")
 }
 
 func getNextIPv4Addr(ip net.IP) {

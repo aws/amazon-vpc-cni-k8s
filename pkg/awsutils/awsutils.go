@@ -338,26 +338,6 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 	return result, nil
 }
 
-func (cache *EC2InstanceMetadataCache) getNetworkInterfacesWithContext(ctx context.Context, eniID string) (*ec2.DescribeNetworkInterfacesOutput, error) {
-	eniIds := []*string{aws.String(eniID)}
-	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIds}
-
-	start := time.Now()
-	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input)
-	awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
-				return nil, ErrENINotFound
-			}
-		}
-		awsAPIErrInc("DescribeNetworkInterfaces", err)
-		log.Errorf("Failed to get ENI %s information from EC2 control plane %v", eniIds, err)
-		return nil, errors.Wrap(err, "failed to describe network interface")
-	}
-	return result, nil
-}
-
 // New creates an EC2InstanceMetadataCache
 func New(useCustomNetworking, enableIpv4PrefixDelegation bool) (*EC2InstanceMetadataCache, error) {
 	//ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
@@ -608,9 +588,10 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	}
 
 	var ec2ipv4Prefixes []*ec2.Ipv4PrefixSpecification
-	//Get prefix on primary ENI when custom networking is enabled is not needed. Everytime we
-	//call attached ENIs, the call will return prefix not found in the logs and that will pollute
-	//ipamd.log hence skipping.
+	// Get prefix on primary ENI when custom networking is enabled is not needed.
+	// If primary ENI has prefixes attached and then we move to custom networking, we don't need to fetch
+	// the prefix since recommendation is to terminate the nodes and that would have deleted the prefix on the
+	// primary ENI.
 	if (eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC) {
 		imdsIPv4Prefixes, err := cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
 		if err != nil {
@@ -917,9 +898,22 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 
 // getENIAttachmentID calls EC2 to fetch the attachmentID of a given ENI
 func (cache *EC2InstanceMetadataCache) getENIAttachmentID(eniID string) (*string, error) {
-	result, err := cache.getNetworkInterfacesWithContext(context.Background(), eniID)
+	eniIds := make([]*string, 0)
+	eniIds = append(eniIds, aws.String(eniID))
+	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIds}
+
+	start := time.Now()
+	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input)
+	awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		return nil, err
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+				return nil, ErrENINotFound
+			}
+		}
+		awsAPIErrInc("DescribeNetworkInterfaces", err)
+		log.Errorf("Failed to get ENI %s information from EC2 control plane %v", eniID, err)
+		return nil, errors.Wrap(err, "failed to describe network interface")
 	}
 	// Shouldn't happen, but let's be safe
 	if len(result.NetworkInterfaces) == 0 {
@@ -966,9 +960,22 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string, maxBackoffDelay
 
 // GetIPv4sFromEC2 calls EC2 and returns a list of all addresses on the ENI
 func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList []*ec2.NetworkInterfacePrivateIpAddress, err error) {
-	result, err := cache.getNetworkInterfacesWithContext(context.Background(), eniID)
+	eniIds := make([]*string, 0)
+	eniIds = append(eniIds, aws.String(eniID))
+	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIds}
+
+	start := time.Now()
+	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input)
+	awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		return nil, err
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+				return nil, ErrENINotFound
+			}
+		}
+		awsAPIErrInc("DescribeNetworkInterfaces", err)
+		log.Errorf("Failed to get ENI %s information from EC2 control plane %v", eniID, err)
+		return nil, errors.Wrap(err, "failed to describe network interface")
 	}
 
 	// Shouldn't happen, but let's be safe
@@ -982,9 +989,22 @@ func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList [
 
 // GetIPv4PrefixesFromEC2 calls EC2 and returns a list of all addresses on the ENI
 func (cache *EC2InstanceMetadataCache) GetIPv4PrefixesFromEC2(eniID string) (addrList []*ec2.Ipv4PrefixSpecification, err error) {
-	result, err := cache.getNetworkInterfacesWithContext(context.Background(), eniID)
+	eniIds := make([]*string, 0)
+	eniIds = append(eniIds, aws.String(eniID))
+	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIds}
+
+	start := time.Now()
+	result, err := cache.ec2SVC.DescribeNetworkInterfacesWithContext(context.Background(), input)
+	awsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		return nil, err
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+				return nil, ErrENINotFound
+			}
+		}
+		awsAPIErrInc("DescribeNetworkInterfaces", err)
+		log.Errorf("Failed to get ENI %s information from EC2 control plane %v", eniID, err)
+		return nil, errors.Wrap(err, "failed to describe network interface")
 	}
 
 	// Shouldn't happen, but let's be safe

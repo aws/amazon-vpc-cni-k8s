@@ -35,7 +35,7 @@ type TypedIMDS struct {
 	EC2MetadataIface
 }
 
-// IMDSResponse to provide the caller on the request status
+// imdsRequestError to provide the caller on the request status
 type imdsRequestError struct {
 	requestKey string
 	err        error

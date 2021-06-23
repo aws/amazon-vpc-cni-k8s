@@ -620,7 +620,7 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 
 	//WARM IP targets not defined then check if WARM_PREFIX_TARGET is defined.
 	if !warmTargetDefined {
-		over = c.shouldRemoveExtraPrefixes()
+		over = c.computeExtraPrefixesOverWarmTarget()
 	}
 
 	if over > 0 {
@@ -1064,7 +1064,7 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	return shouldRemoveExtra
 }
 
-func (c *IPAMContext) shouldRemoveExtraPrefixes() int {
+func (c *IPAMContext) computeExtraPrefixesOverWarmTarget() int {
 	over := 0
 	if !c.warmPrefixTargetDefined() {
 		return over
@@ -1077,7 +1077,7 @@ func (c *IPAMContext) shouldRemoveExtraPrefixes() int {
 	over = max(freePrefixes-c.warmPrefixTarget, 0)
 
 	logPoolStats(total, used, c.maxIPsPerENI, c.enableIpv4PrefixDelegation)
-	log.Debugf("shouldRemoveExtraPrefixes available %d over %d warm_prefix_target %d", available, over, c.warmPrefixTarget)
+	log.Debugf("computeExtraPrefixesOverWarmTarget available %d over %d warm_prefix_target %d", available, over, c.warmPrefixTarget)
 
 	return over
 }
@@ -1369,80 +1369,79 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []*e
 		}
 		// Mark action
 		seenIPs[strPrivateIPv4] = true
-		reconcileCnt.With(prometheus.Labels{"fn": "eniIPPoolReconcileAdd"}).Inc()
+		reconcileCnt.With(prometheus.Labels{"fn": "eniDataStorePoolReconcileAdd"}).Inc()
 	}
 	return seenIPs
 }
 
 // verifyAndAddPrefixesToDatastore updates the datastore with the known Prefixes. Prefixes who are out of cooldown gets added
 // back to the datastore after being verified against EC2.
-func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIIPs []*ec2.Ipv4PrefixSpecification, needEC2Reconcile bool) map[string]bool {
+func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIPrefixes []*ec2.Ipv4PrefixSpecification, needEC2Reconcile bool) map[string]bool {
 	var ec2VerifiedAddresses []*ec2.Ipv4PrefixSpecification
 	seenIPs := make(map[string]bool)
-	for _, privateIPv4 := range attachedENIIPs {
-		strPrivateIPv4 := aws.StringValue(privateIPv4.Ipv4Prefix)
-		log.Debugf("Check in coolddown Found prefix %s", strPrivateIPv4)
+	for _, privateIPv4Cidr := range attachedENIPrefixes {
+		strPrivateIPv4Cidr := aws.StringValue(privateIPv4Cidr.Ipv4Prefix)
+		log.Debugf("Check in coolddown Found prefix %s", strPrivateIPv4Cidr)
 
 		// Check if this Prefix was recently freed
-		_, ipv4CidrPtr, err := net.ParseCIDR(strPrivateIPv4)
+		_, ipv4CidrPtr, err := net.ParseCIDR(strPrivateIPv4Cidr)
 		if err != nil {
 			log.Debugf("Failed to parse so continuing with next prefix")
 			continue
 		}
-		found, recentlyFreed := c.reconcileCooldownCache.RecentlyFreed(strPrivateIPv4)
+		found, recentlyFreed := c.reconcileCooldownCache.RecentlyFreed(strPrivateIPv4Cidr)
 		if found {
-			log.Debugf("found in cooldown")
 			if recentlyFreed {
-				log.Debugf("Reconcile skipping IP %s on ENI %s because it was recently unassigned from the ENI.", strPrivateIPv4, eni)
+				log.Debugf("Reconcile skipping IP %s on ENI %s because it was recently unassigned from the ENI.", strPrivateIPv4Cidr, eni)
 				continue
 			} else {
 				if needEC2Reconcile {
 					// IMDS data might be stale
 					log.Debugf("This IP was recently freed, but is now out of cooldown. We need to verify with EC2 control plane.")
-					// Only call EC2 once for this ENI
+					// Only call EC2 once for this ENI and post GA fix this logic for both prefixes
+					// and secondary IPs as per "split the loop" comment
 					if ec2VerifiedAddresses == nil {
 						var err error
-						// Call EC2 to verify IPs on this ENI
+						// Call EC2 to verify Prefixes on this ENI
 						ec2VerifiedAddresses, err = c.awsClient.GetIPv4PrefixesFromEC2(eni)
 						if err != nil {
 							log.Errorf("Failed to fetch ENI IP addresses from EC2! %v", err)
-							// Do not delete this IP from the datastore or cooldown until we have confirmed with EC2
-							seenIPs[strPrivateIPv4] = true
+							// Do not delete this Prefix from the datastore or cooldown until we have confirmed with EC2
+							seenIPs[strPrivateIPv4Cidr] = true
 							continue
 						}
 					}
-					// Verify that the IP really belongs to this ENI
+					// Verify that the Prefix really belongs to this ENI
 					isReallyAttachedToENI := false
 					for _, ec2Addr := range ec2VerifiedAddresses {
-						if strPrivateIPv4 == aws.StringValue(ec2Addr.Ipv4Prefix) {
+						if strPrivateIPv4Cidr == aws.StringValue(ec2Addr.Ipv4Prefix) {
 							isReallyAttachedToENI = true
-							log.Debugf("Verified that IP %s is attached to ENI %s", strPrivateIPv4, eni)
+							log.Debugf("Verified that IP %s is attached to ENI %s", strPrivateIPv4Cidr, eni)
 							break
 						}
 					}
 					if !isReallyAttachedToENI {
-						log.Warnf("Skipping IP %s on ENI %s because it does not belong to this ENI!", strPrivateIPv4, eni)
+						log.Warnf("Skipping IP %s on ENI %s because it does not belong to this ENI!", strPrivateIPv4Cidr, eni)
 						continue
 					}
 				}
 				// The IP can be removed from the cooldown cache
-				// TODO: Here we could check if the IP is still used by a pod stuck in Terminating state. (Issue #1091)
-				c.reconcileCooldownCache.Remove(strPrivateIPv4)
+				// TODO: Here we could check if the Prefix is still used by a pod stuck in Terminating state. (Issue #1091)
+				c.reconcileCooldownCache.Remove(strPrivateIPv4Cidr)
 			}
 		}
 
 		err = c.dataStore.AddIPv4CidrToStore(eni, *ipv4CidrPtr, true)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
-			log.Errorf("Failed to reconcile IP %s on ENI %s", strPrivateIPv4, eni)
-			ipamdErrInc("ipReconcileAdd")
-			// Continue to check the other IPs instead of bailout due to one wrong IP
+			log.Errorf("Failed to reconcile Prefix %s on ENI %s", strPrivateIPv4Cidr, eni)
+			ipamdErrInc("prefixReconcileAdd")
+			// Continue to check the other Prefixs instead of bailout due to one wrong IP
 			continue
 
 		}
 		// Mark action
-		seenIPs[strPrivateIPv4] = true
-		log.Infof("Marked %s as seen", strPrivateIPv4)
-		reconcileCnt.With(prometheus.Labels{"fn": "eniIPPoolReconcileAdd"}).Inc()
+		seenIPs[strPrivateIPv4Cidr] = true
+		reconcileCnt.With(prometheus.Labels{"fn": "eniDataStorePoolReconcileAdd"}).Inc()
 	}
 	return seenIPs
 }
@@ -1755,13 +1754,13 @@ func (c *IPAMContext) tryUnassignPrefixesFromENIs() {
 }
 
 func (c *IPAMContext) tryUnassignPrefixFromENI(eniID string) {
-	FreeablePrefixes := c.dataStore.FreeablePrefixes(eniID)
-	if len(FreeablePrefixes) == 0 {
+	freeablePrefixes := c.dataStore.FreeablePrefixes(eniID)
+	if len(freeablePrefixes) == 0 {
 		return
 	}
 	// Delete Prefixes from datastore
 	var deletedPrefixes []string
-	for _, toDelete := range FreeablePrefixes {
+	for _, toDelete := range freeablePrefixes {
 		// Don't force the delete, since a freeable Prefix might have been assigned to a pod
 		// before we get around to deleting it.
 		err := c.dataStore.DelIPv4CidrFromStore(eniID, toDelete, false /* force */)
