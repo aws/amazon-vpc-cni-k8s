@@ -571,7 +571,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 			if (ds.isPDEnabled && availableCidr.IsPrefix) || (!ds.isPDEnabled && !availableCidr.IsPrefix) {
 				strPrivateIPv4, err = ds.getFreeIPv4AddrfromCidr(availableCidr)
 				if err != nil {
-					ds.log.Debugf("Unable to get IP address from prefix: %v", err)
+					ds.log.Debugf("Unable to get IP address from CIDR: %v", err)
 					//Check in next CIDR
 					continue
 				}
@@ -608,8 +608,8 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 		ds.log.Debugf("AssignPodIPv4Address: ENI %s does not have available addresses", eni.ID)
 	}
 
-	ds.log.Errorf("DataStore has no available IP addresses")
-	return "", -1, errors.New("assignPodIPv4AddressUnsafe: no available IP addresses")
+	ds.log.Errorf("DataStore has no available IP/Prefix addresses")
+	return "", -1, errors.New("assignPodIPv4AddressUnsafe: no available IP/Prefix addresses")
 }
 
 // It returns the assigned IPv4 address, device number
