@@ -201,7 +201,23 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		IfName:      in.IfName,
 		NetworkName: in.NetworkName,
 	}
-	ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
+	eni, ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
+	cidr := net.IPNet{IP: net.ParseIP(ip), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	cidrStr := cidr.String()
+	if eni != nil {
+		//cidrStr will be pod IP i.e, IP/32.
+		// Case 1: PD is enabled but IP/32 key in AvailableIPv4Cidrs[cidrStr] exists, this means it is a secondary IP. Added IsPrefix check just for sanity.
+		// So this IP should be released immediately.
+		// Case 2: PD is disabled then IP/32 key in AvailableIPv4Cidrs[cidrStr] will not exists since key to AvailableIPv4Cidrs will be either /28 prefix or /32
+		// secondary IP. Hence now see if we need free up a prefix is no other pods are using it.
+		if s.ipamContext.enableIpv4PrefixDelegation && eni.AvailableIPv4Cidrs[cidrStr] != nil && eni.AvailableIPv4Cidrs[cidrStr].IsPrefix == false {
+			log.Debugf("IP belongs to secondary pool with PD enabled so free IP from EC2")
+			s.ipamContext.tryUnassignIPFromENI(eni.ID)
+		} else if !s.ipamContext.enableIpv4PrefixDelegation && eni.AvailableIPv4Cidrs[cidrStr] == nil {
+			log.Debugf("IP belongs to prefix pool with PD disabled so try free prefix from EC2")
+			s.ipamContext.tryUnassignPrefixFromENI(eni.ID)
+		}
+	}
 
 	if err == datastore.ErrUnknownPod && s.ipamContext.enablePodENI {
 		pod, err := s.ipamContext.GetPod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)

@@ -81,7 +81,7 @@ endif
 # LDFLAGS is the set of flags used when building golang executables.
 LDFLAGS = -X main.version=$(VERSION) -X pkg/awsutils/awssession.version=$(VERSION)
 # ALLPKGS is the set of packages provided in source.
-ALLPKGS = $(shell go list ./... | grep -v cmd/packet-verifier)
+ALLPKGS = $(shell go list $(VENDOR_OVERRIDE_FLAG) ./... | grep -v cmd/packet-verifier)
 # BINS is the set of built command executables.
 BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper
 # Plugin binaries
@@ -144,7 +144,7 @@ docker-func-test: docker     ## Run the built CNI container image to use in func
 # Run unit tests
 unit-test: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
 unit-test:    ## Run unit tests
-	go test -v -coverprofile=coverage.txt -covermode=atomic $(ALLPKGS)
+	go test -v $(VENDOR_OVERRIDE_FLAG) -coverprofile=coverage.txt -covermode=atomic ./pkg/...
 
 # Run unit tests with race detection (can only be run natively)
 unit-test-race: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
@@ -207,7 +207,7 @@ generate:
 # Generate eni-max-pods.txt file for EKS AMI
 generate-limits: GOOS=
 generate-limits:    ## Generate limit file go code
-	go run scripts/gen_vpc_ip_limits.go
+	go run $(VENDOR_OVERRIDE_FLAG) scripts/gen_vpc_ip_limits.go
 
 # Fetch the CNI plugins
 plugins: FETCH_VERSION=0.9.0
@@ -253,8 +253,8 @@ helm-lint:
 	@${MAKEFILE_PATH}test/helm/helm-lint.sh
 
 # Run go vet on source code.
-vet:    ## Run go vet on source code.
-	go vet $(ALLPKGS)
+vet:    setup-ec2-sdk-override ## Run go vet on source code.
+	go vet $(VENDOR_OVERRIDE_FLAG) $(ALLPKGS)
 
 
 docker-vet: build-docker-test   ## Run go vet inside of a container.

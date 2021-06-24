@@ -93,6 +93,20 @@ func (mr *MockAPIsMockRecorder) AllocIPAddresses(arg0, arg1 interface{}) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).AllocIPAddresses), arg0, arg1)
 }
 
+// DeallocCidrs mocks base method
+func (m *MockAPIs) DeallocCidrs(arg0 string, arg1 []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeallocCidrs", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeallocCidrs indicates an expected call of DeallocCidrs
+func (mr *MockAPIsMockRecorder) DeallocCidrs(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeallocCidrs", reflect.TypeOf((*MockAPIs)(nil).DeallocCidrs), arg0, arg1)
+}
+
 // DeallocIPAddresses mocks base method
 func (m *MockAPIs) DeallocIPAddresses(arg0 string, arg1 []string) error {
 	m.ctrl.T.Helper()
@@ -105,6 +119,20 @@ func (m *MockAPIs) DeallocIPAddresses(arg0 string, arg1 []string) error {
 func (mr *MockAPIsMockRecorder) DeallocIPAddresses(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeallocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).DeallocIPAddresses), arg0, arg1)
+}
+
+// DeallocPrefixAddresses mocks base method
+func (m *MockAPIs) DeallocPrefixAddresses(arg0 string, arg1 []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeallocPrefixAddresses", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeallocPrefixAddresses indicates an expected call of DeallocPrefixAddresses
+func (mr *MockAPIsMockRecorder) DeallocPrefixAddresses(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeallocPrefixAddresses", reflect.TypeOf((*MockAPIs)(nil).DeallocPrefixAddresses), arg0, arg1)
 }
 
 // DescribeAllENIs mocks base method
@@ -181,6 +209,21 @@ func (mr *MockAPIsMockRecorder) GetENILimit() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetENILimit", reflect.TypeOf((*MockAPIs)(nil).GetENILimit))
 }
 
+// GetIPv4PrefixesFromEC2 mocks base method
+func (m *MockAPIs) GetIPv4PrefixesFromEC2(arg0 string) ([]*ec2.Ipv4PrefixSpecification, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetIPv4PrefixesFromEC2", arg0)
+	ret0, _ := ret[0].([]*ec2.Ipv4PrefixSpecification)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetIPv4PrefixesFromEC2 indicates an expected call of GetIPv4PrefixesFromEC2
+func (mr *MockAPIsMockRecorder) GetIPv4PrefixesFromEC2(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIPv4PrefixesFromEC2", reflect.TypeOf((*MockAPIs)(nil).GetIPv4PrefixesFromEC2), arg0)
+}
+
 // GetIPv4sFromEC2 mocks base method
 func (m *MockAPIs) GetIPv4sFromEC2(arg0 string) ([]*ec2.NetworkInterfacePrivateIpAddress, error) {
 	m.ctrl.T.Helper()
@@ -194,6 +237,35 @@ func (m *MockAPIs) GetIPv4sFromEC2(arg0 string) ([]*ec2.NetworkInterfacePrivateI
 func (mr *MockAPIsMockRecorder) GetIPv4sFromEC2(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIPv4sFromEC2", reflect.TypeOf((*MockAPIs)(nil).GetIPv4sFromEC2), arg0)
+}
+
+// GetInstanceHypervisorFamily mocks base method
+func (m *MockAPIs) GetInstanceHypervisorFamily() (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetInstanceHypervisorFamily")
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetInstanceHypervisorFamily indicates an expected call of GetInstanceHypervisorFamily
+func (mr *MockAPIsMockRecorder) GetInstanceHypervisorFamily() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceHypervisorFamily", reflect.TypeOf((*MockAPIs)(nil).GetInstanceHypervisorFamily))
+}
+
+// GetInstanceType mocks base method
+func (m *MockAPIs) GetInstanceType() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetInstanceType")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetInstanceType indicates an expected call of GetInstanceType
+func (mr *MockAPIsMockRecorder) GetInstanceType() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceType", reflect.TypeOf((*MockAPIs)(nil).GetInstanceType))
 }
 
 // GetLocalIPv4 mocks base method
