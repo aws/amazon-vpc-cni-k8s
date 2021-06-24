@@ -1315,7 +1315,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	}
 
 	log.Infof("Trying to allocate %d IP addresses on ENI %s", needIPs, eniID)
-	log.Debugf("PD enabled - %d", cache.enableIpv4PrefixDelegation)
+	log.Debugf("PD enabled - %t", cache.enableIpv4PrefixDelegation)
 	input := &ec2.AssignPrivateIpAddressesInput{}
 
 	if cache.enableIpv4PrefixDelegation {
@@ -1426,7 +1426,7 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []st
 	if len(ips) == 0 {
 		return nil
 	}
-	log.Infof("Trying to unassign the following IPs %s from ENI %s", ips, eniID)
+	log.Infof("Trying to unassign the following IPs %v from ENI %s", ips, eniID)
 	ipsInput := aws.StringSlice(ips)
 
 	input := &ec2.UnassignPrivateIpAddressesInput{
@@ -1451,7 +1451,7 @@ func (cache *EC2InstanceMetadataCache) DeallocPrefixAddresses(eniID string, pref
 	if len(prefixes) == 0 {
 		return nil
 	}
-	log.Infof("Trying to unassign the following Prefixes %s from ENI %s", prefixes, eniID)
+	log.Infof("Trying to unassign the following Prefixes %v from ENI %s", prefixes, eniID)
 	prefixesInput := aws.StringSlice(prefixes)
 
 	input := &ec2.UnassignPrivateIpAddressesInput{
@@ -1465,7 +1465,7 @@ func (cache *EC2InstanceMetadataCache) DeallocPrefixAddresses(eniID string, pref
 	if err != nil {
 		awsAPIErrInc("UnassignPrivateIpAddresses", err)
 		log.Errorf("Failed to deallocate a Prefixes address %v", err)
-		return errors.Wrap(err, fmt.Sprintf("deallocate prefix: failed to deallocate Prefix addresses: %s", prefixes))
+		return errors.Wrap(err, fmt.Sprintf("deallocate prefix: failed to deallocate Prefix addresses: %v", prefixes))
 	}
 	log.Debugf("Successfully freed Prefixes %v from ENI %s", prefixes, eniID)
 	return nil
