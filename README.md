@@ -102,7 +102,7 @@ The following environment variables are available, and all of them are optional.
 
 ---
 
-`AWS_VPC_CNI_NODE_PORT_SUPPORT`
+#### `AWS_VPC_CNI_NODE_PORT_SUPPORT`
 
 Type: Boolean as a String
 
@@ -113,7 +113,7 @@ Specifies whether `NodePort` services are enabled on a worker node's primary net
 
 ---
 
-`AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG`
+#### `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG`
 
 Type: Boolean as a String
 
@@ -131,7 +131,7 @@ in the Amazon EKS User Guide.
 
 ---
 
-`ENI_CONFIG_ANNOTATION_DEF`
+#### `ENI_CONFIG_ANNOTATION_DEF`
 
 Type: String
 
@@ -142,7 +142,7 @@ will be used to set `ENIConfig` name. Note that annotations take precedence over
 
 ---
 
-`ENI_CONFIG_LABEL_DEF`
+#### `ENI_CONFIG_LABEL_DEF`
 
 Type: String
 
@@ -156,7 +156,7 @@ To select an `ENIConfig` based upon availability zone set this to `failure-domai
 
 ---
 
-`AWS_VPC_ENI_MTU` (Since v1.6.0)
+#### `AWS_VPC_ENI_MTU` (Since v1.6.0)
 
 Type: Integer as a String
 
@@ -166,7 +166,7 @@ Used to configure the MTU size for attached ENIs. The valid range is from `576` 
 
 ---
 
-`AWS_VPC_K8S_CNI_EXTERNALSNAT`
+#### `AWS_VPC_K8S_CNI_EXTERNALSNAT`
 
 Type: Boolean as a String
 
@@ -180,7 +180,7 @@ private subnet and connected to the internet through an AWS NAT Gateway or anoth
 
 ---
 
-`AWS_VPC_K8S_CNI_RANDOMIZESNAT`
+#### `AWS_VPC_K8S_CNI_RANDOMIZESNAT`
 
 Type: String
 
@@ -200,7 +200,7 @@ customers that might have NACLs restricting traffic based on the port range foun
 
 ---
 
-`AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS` (Since v1.6.0)
+#### `AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS` (Since v1.6.0)
 
 Type: String
 
@@ -211,7 +211,7 @@ IP rule will be applied. If an item is not a valid ipv4 range it will be skipped
 
 ---
 
-`WARM_ENI_TARGET`
+#### `WARM_ENI_TARGET`
 
 Type: Integer as a String
 
@@ -230,7 +230,7 @@ If `WARM_IP_TARGET` is set, then this environment variable is ignored and the `W
 
 ---
 
-`WARM_IP_TARGET`
+#### `WARM_IP_TARGET`
 
 Type: Integer
 
@@ -255,11 +255,12 @@ If both `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are set, `ipamd` will attempt t
 This environment variable overrides `WARM_ENI_TARGET` behavior. For a detailed explanation, see
 [`WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/eni-and-ip-target.md).
 
-`ENABLE_PREFIX_DELEGATION` set to `true` and this environment variable overrides `WARM_PREFIX_TARGET` behavior. For a detailed explanation, see
+If `ENABLE_PREFIX_DELEGATION` set to `true` and `WARM_IP_TARGET` overrides `WARM_PREFIX_TARGET` behavior. For a detailed explanation, see
 [`WARM_PREFIX_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/prefix-and-ip-target.md).
+
 ---
 
-`MINIMUM_IP_TARGET` (Since v1.6.0)
+#### `MINIMUM_IP_TARGET` (Since v1.6.0)
 
 Type: Integer
 
@@ -281,7 +282,7 @@ private IPs, which may be throttled, especially at scaling-related times.
 
 ---
 
-`MAX_ENI`
+#### `MAX_ENI`
 
 Type: Integer
 
@@ -293,7 +294,7 @@ is not used, and the maximum number of ENIs is always equal to the maximum numbe
 
 ---
 
-`AWS_VPC_K8S_CNI_LOGLEVEL`
+#### `AWS_VPC_K8S_CNI_LOGLEVEL`
 
 Type: String
 
@@ -305,7 +306,7 @@ Specifies the loglevel for `ipamd`.
 
 ---
 
-`AWS_VPC_K8S_CNI_LOG_FILE`
+#### `AWS_VPC_K8S_CNI_LOG_FILE`
 
 Type: String
 
@@ -317,7 +318,7 @@ Specifies where to write the logging output of `ipamd`. Either to stdout or to o
 
 ---
 
-`AWS_VPC_K8S_PLUGIN_LOG_FILE`
+#### `AWS_VPC_K8S_PLUGIN_LOG_FILE`
 
 Type: String
 
@@ -332,7 +333,7 @@ Note: If chaining an external plugin (i.e Cilium) that does not provide a `plugi
 
 ---
 
-`AWS_VPC_K8S_PLUGIN_LOG_LEVEL`
+#### `AWS_VPC_K8S_PLUGIN_LOG_LEVEL`
 
 Type: String
 
@@ -344,7 +345,7 @@ Specifies the loglevel for `aws-cni` plugin.
 
 ---
 
-`INTROSPECTION_BIND_ADDRESS`
+#### `INTROSPECTION_BIND_ADDRESS`
 
 Type: String
 
@@ -356,7 +357,7 @@ A Unix Domain Socket can be specified with the `unix:` prefix before the socket 
 
 ---
 
-`DISABLE_INTROSPECTION`
+#### `DISABLE_INTROSPECTION`
 
 Type: Boolean as a String
 
@@ -367,7 +368,7 @@ information we can get from the node when running the `aws-cni-support.sh` scrip
 
 ---
 
-`DISABLE_METRICS`
+#### `DISABLE_METRICS`
 
 Type: Boolean as a String
 
@@ -378,7 +379,7 @@ on `:61678/metrics`.
 
 ---
 
-`AWS_VPC_K8S_CNI_VETHPREFIX`
+#### `AWS_VPC_K8S_CNI_VETHPREFIX`
 
 Type: String
 
@@ -388,7 +389,7 @@ Specifies the veth prefix used to generate the host-side veth device name for th
 
 ---
 
-`ADDITIONAL_ENI_TAGS` (Since v1.6.0)
+#### `ADDITIONAL_ENI_TAGS` (Since v1.6.0)
 
 Type: String
 
@@ -405,7 +406,7 @@ string, tag addition will ignored.
 
 ---
 
-`AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER`
+#### `AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER`
 
 Type: Boolean as a String
 
@@ -415,7 +416,7 @@ Specifies whether ipamd should configure rp filter for primary interface. Settin
 
 ---
 
-`CLUSTER_NAME`
+#### `CLUSTER_NAME`
 
 Type: String
 
@@ -425,7 +426,7 @@ Specifies the cluster name to tag allocated ENIs with. See the "Cluster Name tag
 
 ---
 
-`ENABLE_POD_ENI` (Since v1.7.0)
+#### `ENABLE_POD_ENI` (Since v1.7.0)
 
 Type: Boolean as a String
 
@@ -441,7 +442,7 @@ The label notifies vpc-resource-controller (https://github.com/aws/amazon-vpc-re
 
 ---
 
-`DISABLE_TCP_EARLY_DEMUX` (Since v1.7.3)
+#### `DISABLE_TCP_EARLY_DEMUX` (Since v1.7.3)
 
 Type: Boolean as a String
 
@@ -458,9 +459,10 @@ You can use the below command to enable `DISABLE_TCP_EARLY_DEMUX` to `true` -
 ```
 kubectl patch daemonset aws-node -n kube-system -p '{"spec": {"template": {"spec": {"initContainers": [{"env":[{"name":"DISABLE_TCP_EARLY_DEMUX","value":"true"}],"name":"aws-vpc-cni-init"}]}}}}'
 ```
+
 ---
 
-`ENABLE_PREFIX_DELEGATION` (Since v1.9)
+#### `ENABLE_PREFIX_DELEGATION` (Since v1.9)
 
 Type: Boolean as a String
 
@@ -472,7 +474,7 @@ limit on private IPs allowed by your instance. Setting or resetting of `ENABLE_P
 
 ---
 
-`WARM_PREFIX_TARGET` 
+#### `WARM_PREFIX_TARGET` (Since v1.9)
 
 Type: Integer
 
