@@ -156,7 +156,7 @@ To select an `ENIConfig` based upon availability zone set this to `failure-domai
 
 ---
 
-#### `AWS_VPC_ENI_MTU` (Since v1.6.0)
+#### `AWS_VPC_ENI_MTU` (v1.6.0+)
 
 Type: Integer as a String
 
@@ -200,7 +200,7 @@ customers that might have NACLs restricting traffic based on the port range foun
 
 ---
 
-#### `AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS` (Since v1.6.0)
+#### `AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS` (v1.6.0+)
 
 Type: String
 
@@ -260,7 +260,7 @@ If `ENABLE_PREFIX_DELEGATION` set to `true` and `WARM_IP_TARGET` overrides `WARM
 
 ---
 
-#### `MINIMUM_IP_TARGET` (Since v1.6.0)
+#### `MINIMUM_IP_TARGET` (v1.6.0+)
 
 Type: Integer
 
@@ -389,7 +389,7 @@ Specifies the veth prefix used to generate the host-side veth device name for th
 
 ---
 
-#### `ADDITIONAL_ENI_TAGS` (Since v1.6.0)
+#### `ADDITIONAL_ENI_TAGS` (v1.6.0+)
 
 Type: String
 
@@ -426,7 +426,7 @@ Specifies the cluster name to tag allocated ENIs with. See the "Cluster Name tag
 
 ---
 
-#### `ENABLE_POD_ENI` (Since v1.7.0)
+#### `ENABLE_POD_ENI` (v1.7.0+)
 
 Type: Boolean as a String
 
@@ -442,7 +442,7 @@ The label notifies vpc-resource-controller (https://github.com/aws/amazon-vpc-re
 
 ---
 
-#### `DISABLE_TCP_EARLY_DEMUX` (Since v1.7.3)
+#### `DISABLE_TCP_EARLY_DEMUX` (v1.7.3+)
 
 Type: Boolean as a String
 
@@ -462,7 +462,7 @@ kubectl patch daemonset aws-node -n kube-system -p '{"spec": {"template": {"spec
 
 ---
 
-#### `ENABLE_PREFIX_DELEGATION` (Since v1.9)
+#### `ENABLE_PREFIX_DELEGATION` (v1.9.0+)
 
 Type: Boolean as a String
 
@@ -474,7 +474,7 @@ limit on private IPs allowed by your instance. Setting or resetting of `ENABLE_P
 
 ---
 
-#### `WARM_PREFIX_TARGET` (Since v1.9)
+#### `WARM_PREFIX_TARGET` (v1.9.0+)
 
 Type: Integer
 
