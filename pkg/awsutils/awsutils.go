@@ -180,8 +180,8 @@ type APIs interface {
 	//GetInstanceType returns the EC2 instance type
 	GetInstanceType() string
 
-        //Update cached prefix delegation flag
-	InitCachedPrefixDelegation (bool)
+	//Update cached prefix delegation flag
+	InitCachedPrefixDelegation(bool)
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -384,7 +384,7 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 	return cache, nil
 }
 
-func (cache *EC2InstanceMetadataCache) InitCachedPrefixDelegation (enableIpv4PrefixDelegation bool) {
+func (cache *EC2InstanceMetadataCache) InitCachedPrefixDelegation(enableIpv4PrefixDelegation bool) {
 	cache.enableIpv4PrefixDelegation = enableIpv4PrefixDelegation
 	log.Infof("Prefix Delegation enabled %v", cache.enableIpv4PrefixDelegation)
 }

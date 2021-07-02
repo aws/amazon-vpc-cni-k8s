@@ -329,7 +329,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 		log.Warnf("Prefix delegation is not supported on non-nitro instance %s hence falling back to default (secondary IP) mode", c.awsClient.GetInstanceType())
 		c.enableIpv4PrefixDelegation = false
 	}
-        c.awsClient.InitCachedPrefixDelegation(c.enableIpv4PrefixDelegation)
+	c.awsClient.InitCachedPrefixDelegation(c.enableIpv4PrefixDelegation)
 	c.myNodeName = os.Getenv("MY_NODE_NAME")
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer, c.enableIpv4PrefixDelegation)
