@@ -304,7 +304,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.enableIpv4PrefixDelegation = useIpv4PrefixDelegation()
 
-	client, err := awsutils.New(c.useCustomNetworking, c.enableIpv4PrefixDelegation)
+	client, err := awsutils.New(c.useCustomNetworking)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
@@ -329,6 +329,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 		log.Warnf("Prefix delegation is not supported on non-nitro instance %s hence falling back to default (secondary IP) mode", c.awsClient.GetInstanceType())
 		c.enableIpv4PrefixDelegation = false
 	}
+        c.awsClient.InitCachedPrefixDelegation(c.enableIpv4PrefixDelegation)
 	c.myNodeName = os.Getenv("MY_NODE_NAME")
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer, c.enableIpv4PrefixDelegation)
