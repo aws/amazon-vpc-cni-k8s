@@ -93,20 +93,6 @@ func (mr *MockAPIsMockRecorder) AllocIPAddresses(arg0, arg1 interface{}) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).AllocIPAddresses), arg0, arg1)
 }
 
-// DeallocCidrs mocks base method
-func (m *MockAPIs) DeallocCidrs(arg0 string, arg1 []string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeallocCidrs", arg0, arg1)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// DeallocCidrs indicates an expected call of DeallocCidrs
-func (mr *MockAPIsMockRecorder) DeallocCidrs(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeallocCidrs", reflect.TypeOf((*MockAPIs)(nil).DeallocCidrs), arg0, arg1)
-}
-
 // DeallocIPAddresses mocks base method
 func (m *MockAPIs) DeallocIPAddresses(arg0 string, arg1 []string) error {
 	m.ctrl.T.Helper()
@@ -323,6 +309,18 @@ func (m *MockAPIs) GetVPCIPv4CIDRs() ([]string, error) {
 func (mr *MockAPIsMockRecorder) GetVPCIPv4CIDRs() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVPCIPv4CIDRs", reflect.TypeOf((*MockAPIs)(nil).GetVPCIPv4CIDRs))
+}
+
+// InitCachedPrefixDelegation mocks base method
+func (m *MockAPIs) InitCachedPrefixDelegation(arg0 bool) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "InitCachedPrefixDelegation", arg0)
+}
+
+// InitCachedPrefixDelegation indicates an expected call of InitCachedPrefixDelegation
+func (mr *MockAPIsMockRecorder) InitCachedPrefixDelegation(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitCachedPrefixDelegation", reflect.TypeOf((*MockAPIs)(nil).InitCachedPrefixDelegation), arg0)
 }
 
 // IsCNIUnmanagedENI mocks base method
