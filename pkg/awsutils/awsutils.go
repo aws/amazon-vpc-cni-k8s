@@ -179,6 +179,9 @@ type APIs interface {
 
 	//GetInstanceType returns the EC2 instance type
 	GetInstanceType() string
+
+	//Update cached prefix delegation flag
+	InitCachedPrefixDelegation(bool)
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -339,7 +342,7 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 }
 
 // New creates an EC2InstanceMetadataCache
-func New(useCustomNetworking, enableIpv4PrefixDelegation bool) (*EC2InstanceMetadataCache, error) {
+func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 	//ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
 	ctx := context.Background()
 
@@ -365,9 +368,6 @@ func New(useCustomNetworking, enableIpv4PrefixDelegation bool) (*EC2InstanceMeta
 	cache.useCustomNetworking = useCustomNetworking
 	log.Infof("Custom networking enabled %v", cache.useCustomNetworking)
 
-	cache.enableIpv4PrefixDelegation = enableIpv4PrefixDelegation
-	log.Infof("Prefix Delegation enabled %v", cache.enableIpv4PrefixDelegation)
-
 	awsCfg := aws.NewConfig().WithRegion(region)
 	sess = sess.Copy(awsCfg)
 
@@ -382,6 +382,11 @@ func New(useCustomNetworking, enableIpv4PrefixDelegation bool) (*EC2InstanceMeta
 	go wait.Forever(cache.cleanUpLeakedENIs, time.Hour)
 
 	return cache, nil
+}
+
+func (cache *EC2InstanceMetadataCache) InitCachedPrefixDelegation(enableIpv4PrefixDelegation bool) {
+	cache.enableIpv4PrefixDelegation = enableIpv4PrefixDelegation
+	log.Infof("Prefix Delegation enabled %v", cache.enableIpv4PrefixDelegation)
 }
 
 // InitWithEC2metadata initializes the EC2InstanceMetadataCache with the data retrieved from EC2 metadata service
