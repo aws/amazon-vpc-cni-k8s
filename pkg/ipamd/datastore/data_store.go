@@ -601,7 +601,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 				}
 				//Update prometheus for ips per cidr
 				//Secondary IP mode will have /32:1 and Prefix mode will have /28:<number of /32s>
-				ipsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Inc()	
+				ipsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Inc()
 			} else {
 				//This can happen during upgrade or PD enable/disable knob toggle
 				//ENI can have prefixes attached and no space for SIPs or vice versa
