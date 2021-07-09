@@ -112,6 +112,19 @@ var (
 			Help: "The number of IPs force removed while they had assigned pods",
 		},
 	)
+	totalPrefixes = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "awscni_total_ipv4_prefixes",
+			Help: "The total number of IPv4 prefixes",
+		},
+	)
+	ipsPerCidr = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "awscni_assigned_ip_per_ipv4cidr",
+			Help: "The total number of IP addresses assigned per cidr",
+		},
+		[]string{"cidr"},
+	)
 	prometheusRegistered = false
 )
 
@@ -280,6 +293,8 @@ func prometheusRegister() {
 		prometheus.MustRegister(assignedIPs)
 		prometheus.MustRegister(forceRemovedENIs)
 		prometheus.MustRegister(forceRemovedIPs)
+		prometheus.MustRegister(totalPrefixes)
+		prometheus.MustRegister(ipsPerCidr)
 		prometheusRegistered = true
 	}
 }
@@ -391,6 +406,9 @@ func (ds *DataStore) ReadBackingStore() error {
 					cidr.IPv4Addresses[allocation.IPv4] = addr
 					ds.assignPodIPv4AddressUnsafe(allocation.IPAMKey, eni, addr)
 					ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
+					//Update prometheus for ips per cidr
+					//Secondary IP mode will have /32:1 and Prefix mode will have /28:<number of /32s>
+					ipsPerCidr.With(prometheus.Labels{"cidr": cidr.Cidr.String()}).Inc()
 					break eniloop
 				}
 			}
@@ -493,6 +511,7 @@ func (ds *DataStore) AddIPv4CidrToStore(eniID string, ipv4Cidr net.IPNet, isPref
 	ds.total += newCidrInfo.Size()
 	if isPrefix {
 		ds.allocatedPrefix++
+		totalPrefixes.Set(float64(ds.allocatedPrefix))
 	}
 	totalIPs.Set(float64(ds.total))
 
@@ -541,6 +560,7 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 	ds.total -= deletableCidr.Size()
 	if deletableCidr.IsPrefix {
 		ds.allocatedPrefix--
+		totalPrefixes.Set(float64(ds.allocatedPrefix))
 	}
 	totalIPs.Set(float64(ds.total))
 	delete(curENI.AvailableIPv4Cidrs, strIPv4Cidr)
@@ -579,6 +599,9 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 				if availableCidr.IPv4Addresses == nil {
 					availableCidr.IPv4Addresses = make(map[string]*AddressInfo)
 				}
+				//Update prometheus for ips per cidr
+				//Secondary IP mode will have /32:1 and Prefix mode will have /28:<number of /32s>
+				ipsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Inc()	
 			} else {
 				//This can happen during upgrade or PD enable/disable knob toggle
 				//ENI can have prefixes attached and no space for SIPs or vice versa
@@ -601,6 +624,8 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 				ds.unassignPodIPv4AddressUnsafe(addr)
 				//Remove the IP from eni DB
 				delete(availableCidr.IPv4Addresses, addr.Address)
+				//Update prometheus for ips per cidr
+				ipsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
 				return "", -1, err
 			}
 			return addr.Address, eni.DeviceNumber, nil
@@ -857,6 +882,7 @@ func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget, minimumIPTarget, war
 		ds.total -= availableCidr.Size()
 		if availableCidr.IsPrefix {
 			ds.allocatedPrefix--
+			totalPrefixes.Set(float64(ds.allocatedPrefix))
 		}
 	}
 	ds.log.Infof("RemoveUnusedENIFromStore %s: IP/Prefix address pool stats: free %d addresses, total: %d, assigned: %d, total prefixes: %d",
@@ -964,6 +990,8 @@ func (ds *DataStore) UnassignPodIPv4Address(ipamKey IPAMKey) (e *ENI, ip string,
 		ds.log.Infof("Prefix delegation is enabled and the IP is from secondary pool hence no need to update prefix pool")
 		ds.total--
 	}
+	//Update prometheus for ips per cidr
+	ipsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
 
 	ds.log.Infof("UnassignPodIPv4Address: sandbox %s's ipAddr %s, DeviceNumber %d",
 		ipamKey, addr.Address, eni.DeviceNumber)
