@@ -15,6 +15,7 @@ package services
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -25,6 +26,7 @@ import (
 type EC2 interface {
 	DescribeInstanceType(instanceType string) ([]*ec2.InstanceTypeInfo, error)
 	DescribeInstance(instanceID string) (*ec2.Instance, error)
+	DescribeInstancesWithFilters(filterMap map[*string][]*string) (*ec2.DescribeInstancesOutput, error)
 	DescribeVPC(vpcID string) (*ec2.DescribeVpcsOutput, error)
 	DescribeNetworkInterface(interfaceIDs []string) (*ec2.DescribeNetworkInterfacesOutput, error)
 	AuthorizeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
@@ -38,15 +40,28 @@ type EC2 interface {
 	CreateSubnet(cidrBlock string, vpcID string, az string) (*ec2.CreateSubnetOutput, error)
 	DeleteSubnet(subnetID string) error
 	DescribeRouteTables(subnetID string) (*ec2.DescribeRouteTablesOutput, error)
+	DescribeRouteTablesWithVPCID(vpcID string) (*ec2.DescribeRouteTablesOutput, error)
 	CreateSecurityGroup(groupName string, description string, vpcID string) (*ec2.CreateSecurityGroupOutput, error)
 	DeleteSecurityGroup(groupID string) error
 	AssociateRouteTableToSubnet(routeTableId string, subnetID string) error
 	CreateKey(keyName string) (*ec2.CreateKeyPairOutput, error)
 	DeleteKey(keyName string) error
+	DescribeKey(keyName string) (*ec2.DescribeKeyPairsOutput, error)
+	ModifyNetworkInterfaceSecurityGroups(securityGroupIds []*string, networkInterfaceId *string) (*ec2.ModifyNetworkInterfaceAttributeOutput, error)
+	GetPrimaryNetworkInterfaceId([]*ec2.InstanceNetworkInterface, *string) *string
 }
 
 type defaultEC2 struct {
 	ec2iface.EC2API
+}
+
+func (d *defaultEC2) GetPrimaryNetworkInterfaceId(networkInterfaces []*ec2.InstanceNetworkInterface, instanceIPAddr *string) *string {
+	for _, ni := range networkInterfaces {
+		if strings.Compare(*ni.PrivateIpAddress, *instanceIPAddr) == 0 {
+			return ni.NetworkInterfaceId
+		}
+	}
+	return nil
 }
 
 func (d *defaultEC2) DescribeInstanceType(instanceType string) ([]*ec2.InstanceTypeInfo, error) {
@@ -63,6 +78,13 @@ func (d *defaultEC2) DescribeInstanceType(instanceType string) ([]*ec2.InstanceT
 	return describeInstanceOp.InstanceTypes, nil
 }
 
+func (d *defaultEC2) ModifyNetworkInterfaceSecurityGroups(securityGroupIds []*string, networkInterfaceId *string) (*ec2.ModifyNetworkInterfaceAttributeOutput, error) {
+	return d.EC2API.ModifyNetworkInterfaceAttribute(&ec2.ModifyNetworkInterfaceAttributeInput{
+		NetworkInterfaceId: networkInterfaceId,
+		Groups:             securityGroupIds,
+	})
+}
+
 func (d *defaultEC2) DescribeInstance(instanceID string) (*ec2.Instance, error) {
 	describeInstanceInput := &ec2.DescribeInstancesInput{
 		InstanceIds: aws.StringSlice([]string{instanceID}),
@@ -76,6 +98,19 @@ func (d *defaultEC2) DescribeInstance(instanceID string) (*ec2.Instance, error) 
 		return nil, fmt.Errorf("failed to find instance %s", instanceID)
 	}
 	return describeInstanceOutput.Reservations[0].Instances[0], nil
+}
+
+func (d *defaultEC2) DescribeInstancesWithFilters(filterMap map[*string][]*string) (*ec2.DescribeInstancesOutput, error) {
+	filters := []*ec2.Filter{}
+	for k, v := range filterMap {
+		filters = append(filters, &ec2.Filter{
+			Name:   k,
+			Values: v,
+		})
+	}
+	return d.EC2API.DescribeInstances(&ec2.DescribeInstancesInput{
+		Filters: filters,
+	})
 }
 
 func (d *defaultEC2) AuthorizeSecurityGroupIngress(groupID string, protocol string,
@@ -197,6 +232,18 @@ func (d *defaultEC2) DescribeSubnet(subnetID string) (*ec2.DescribeSubnetsOutput
 	return d.EC2API.DescribeSubnets(describeSubnetInput)
 }
 
+func (d *defaultEC2) DescribeRouteTablesWithVPCID(vpcID string) (*ec2.DescribeRouteTablesOutput, error) {
+	describeRouteTableInput := &ec2.DescribeRouteTablesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("vpc-id"),
+				Values: aws.StringSlice([]string{vpcID}),
+			},
+		},
+	}
+	return d.EC2API.DescribeRouteTables(describeRouteTableInput)
+}
+
 func (d *defaultEC2) DeleteSubnet(subnetID string) error {
 	deleteSubnetInput := &ec2.DeleteSubnetInput{
 		SubnetId: aws.String(subnetID),
@@ -258,6 +305,15 @@ func (d *defaultEC2) DeleteKey(keyName string) error {
 	}
 	_, err := d.EC2API.DeleteKeyPair(deleteKeyPairInput)
 	return err
+}
+
+func (d *defaultEC2) DescribeKey(keyName string) (*ec2.DescribeKeyPairsOutput, error) {
+	keyPairInput := &ec2.DescribeKeyPairsInput{
+		KeyNames: []*string{
+			&keyName,
+		},
+	}
+	return d.EC2API.DescribeKeyPairs(keyPairInput)
 }
 
 func (d *defaultEC2) TerminateInstance(instanceIDs []string) error {

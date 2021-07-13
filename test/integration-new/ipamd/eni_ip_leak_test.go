@@ -11,8 +11,6 @@ import (
 )
 
 const (
-	NAMESPACE          = "kube-system"
-	DAEMONSET          = "aws-node"
 	HOST_POD_LABEL_KEY = "network"
 	HOST_POD_LABEL_VAL = "host"
 )
