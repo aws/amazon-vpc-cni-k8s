@@ -34,6 +34,8 @@ Adding the CNI metrics helper will publish the following metrics to CloudWatch:
 "podENIErr",
 "reconcileCount",
 "totalIPAddresses",
+"totalIPv4Prefixes",
+"totalAssignedIPv4sPerCidr"
 ```
 
 ### Get cni-metrics-helper logs
