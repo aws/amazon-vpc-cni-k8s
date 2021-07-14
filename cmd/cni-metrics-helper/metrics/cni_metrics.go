@@ -40,6 +40,18 @@ var InterestingCNIMetrics = map[string]metricsConvert{
 				matchFunc:  matchAny,
 				actionFunc: metricsAdd,
 				data:       &dataPoints{}}}},
+	"awscni_total_ipv4_prefixes": {
+		actions: []metricsAction{
+			{cwMetricName: "totalIPv4Prefixes",
+				matchFunc:  matchAny,
+				actionFunc: metricsAdd,
+				data:       &dataPoints{}}}},
+	"awscni_assigned_ip_per_ipv4cidr": {
+		actions: []metricsAction{
+			{cwMetricName: "totalAssignedIPv4sPerCidr",
+				matchFunc:  matchAny,
+				actionFunc: metricsAdd,
+				data:       &dataPoints{}}}},
 	"awscni_eni_allocated": {
 		actions: []metricsAction{
 			{cwMetricName: "eniAllocated",

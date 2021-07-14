@@ -169,7 +169,7 @@ var (
 	reconcileCnt = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "awscni_reconcile_count",
-			Help: "The number of times ipamd reconciles on ENIs and IP addresses",
+			Help: "The number of times ipamd reconciles on ENIs and IP/Prefix addresses",
 		},
 		[]string{"fn"},
 	)
