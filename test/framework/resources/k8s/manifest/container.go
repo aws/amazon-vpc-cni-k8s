@@ -27,6 +27,7 @@ type Container struct {
 	args            []string
 	probe           *v1.Probe
 	ports           []v1.ContainerPort
+	securityContext *v1.SecurityContext
 }
 
 func NewBusyBoxContainerBuilder() *Container {
@@ -62,6 +63,16 @@ func NewNetCatAlpineContainer() *Container {
 		image:           "public.ecr.aws/k4b6w6v3/vpc-cni-tester:latest", // TODO: Add link to instruction
 		imagePullPolicy: v1.PullIfNotPresent,
 	}
+}
+
+func (w *Container) CapabilitiesForSecurityContext(add []v1.Capability, drop []v1.Capability) *Container {
+	w.securityContext = &v1.SecurityContext{
+		Capabilities: &v1.Capabilities{
+			Add:  add,
+			Drop: drop,
+		},
+	}
+	return w
 }
 
 func (w *Container) Name(name string) *Container {
@@ -108,5 +119,6 @@ func (w *Container) Build() v1.Container {
 		ImagePullPolicy: w.imagePullPolicy,
 		LivenessProbe:   w.probe,
 		Ports:           w.ports,
+		SecurityContext: w.securityContext,
 	}
 }
