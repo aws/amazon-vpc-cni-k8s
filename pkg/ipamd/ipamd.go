@@ -39,6 +39,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
@@ -385,8 +386,11 @@ func (c *IPAMContext) nodeInit() error {
 
 	metadataResult, err := c.awsClient.DescribeAllENIs()
 	if err != nil {
+		// Broadcast event in case of missing EC2 permissions
+		c.CheckIAMPermissions(err)
 		return errors.New("ipamd init: failed to retrieve attached ENIs info")
 	}
+
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
 	c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
 	c.setUnmanagedENIs(metadataResult.TagMap)
@@ -1919,4 +1923,31 @@ func (c *IPAMContext) getPrefixesNeeded() int {
 	}
 	log.Debugf("ToAllocate: %d", toAllocate)
 	return toAllocate
+}
+
+func (c *IPAMContext) CheckIAMPermissions(nodeInitErr error) error {
+	if strings.Contains(nodeInitErr.Error(), "UnauthorizedOperation: You are not authorized to perform this operation") {
+		ctx := context.TODO()
+
+		listOptions := client.ListOptions{}
+		fieldSelector := client.MatchingFields{"spec.nodeName": c.myNodeName}
+		labelSelector := client.MatchingLabels{"k8s-app": "aws-node"}
+		fieldSelector.ApplyToList(&listOptions)
+		labelSelector.ApplyToList(&listOptions)
+
+		var podList corev1.PodList
+		err := c.rawK8SClient.List(ctx, &podList, &listOptions)
+		if err != nil {
+			log.Errorf("Failed to get pods: %v", err)
+			return err
+		}
+
+		for _, pod := range podList.Items {
+			log.Debugf("Broadcast event on pod %s", pod.Name)
+			printErr := strings.Replace(nodeInitErr.Error(), "\n", "", 1)
+			k8sapi.BroadcastEvent(&pod, "FailedCreation", fmt.Sprintf("Failed to create pod: Check node EC2 permissions {%v}", printErr),
+				corev1.EventTypeWarning)
+		}
+	}
+	return nil
 }
