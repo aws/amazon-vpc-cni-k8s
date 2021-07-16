@@ -94,3 +94,26 @@ func TestAPIServerMetric(t *testing.T) {
 	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
 	assert.Equal(t, 0.0, actions[0].data.lastSingleDataPoint)
 }
+
+func TestAPIServerMetricwithPDenabled(t *testing.T) {
+	testTarget := newTestMetricsTarget("cni_test2.data", InterestingCNIMetrics)
+	ctx := context.Background()
+	_, _, _, err := metricsListGrabAggregateConvert(ctx, testTarget)
+	assert.NoError(t, err)
+
+	actions := InterestingCNIMetrics["awscni_assigned_ip_addresses"].actions
+	// verify awscni_assigned_ip_addresses value
+	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
+
+	actions = InterestingCNIMetrics["awscni_total_ip_addresses"].actions
+	// verify awscni_total_ip_addresses value
+	assert.Equal(t, 16.0, actions[0].data.curSingleDataPoint)
+
+	actions = InterestingCNIMetrics["awscni_total_ipv4_prefixes"].actions
+	// verify awscni_total_ipv4_prefixes value
+	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
+
+	actions = InterestingCNIMetrics["awscni_assigned_ip_per_ipv4cidr"].actions
+	// verify awscni_assigned_ip_per_ipv4cidr value
+	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
+}

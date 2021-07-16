@@ -79,7 +79,7 @@ VENDOR_OVERRIDE_FLAG = -mod=mod
 endif
 
 # LDFLAGS is the set of flags used when building golang executables.
-LDFLAGS = -X main.version=$(VERSION) -X pkg/awsutils/awssession.version=$(VERSION)
+LDFLAGS = -X pkg/version/info.Version=$(VERSION) -X pkg/awsutils/awssession.version=$(VERSION)
 # ALLPKGS is the set of packages provided in source.
 ALLPKGS = $(shell go list $(VENDOR_OVERRIDE_FLAG) ./... | grep -v cmd/packet-verifier)
 # BINS is the set of built command executables.
@@ -174,7 +174,7 @@ docker-unit-test: build-docker-test     ## Run unit tests inside of the testing 
 
 # Build metrics helper agent.
 build-metrics:     ## Build metrics helper agent.
-	go build -ldflags="-s -w" -o cni-metrics-helper ./cmd/cni-metrics-helper
+	go build $(VENDOR_OVERRIDE_FLAG) -ldflags="-s -w" -o cni-metrics-helper ./cmd/cni-metrics-helper
 
 # Build metrics helper agent Docker image.
 docker-metrics:    ## Build metrics helper agent Docker image.
@@ -188,7 +188,7 @@ docker-metrics:    ## Build metrics helper agent Docker image.
 metrics-unit-test: CGO_ENABLED=1
 metrics-unit-test: GOARCH=
 metrics-unit-test:       ## Run metrics helper unit test suite (must be run natively).
-	go test -v -cover -race -timeout 10s \
+	go test -v $(VENDOR_OVERRIDE_FLAG) -cover -race -timeout 10s \
 		./cmd/cni-metrics-helper/metrics/...
 
 # Run metrics helper unit test suite in a container.

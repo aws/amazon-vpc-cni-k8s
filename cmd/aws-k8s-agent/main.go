@@ -21,9 +21,8 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/version"
 )
-
-var version string
 
 func main() {
 	os.Exit(_main())
@@ -37,7 +36,8 @@ func _main() int {
 	}
 	log := logger.New(&logConfig)
 
-	log.Infof("Starting L-IPAMD %s  ...", version)
+	log.Infof("Starting L-IPAMD %s  ...", version.Version)
+	version.RegisterMetric()
 
 	//Check API Server Connectivity
 	if k8sapi.CheckAPIServerConnectivity() != nil {
@@ -73,7 +73,7 @@ func _main() int {
 	go ipamContext.ServeIntrospection()
 
 	// Start the RPC listener
-	err = ipamContext.RunRPCHandler(version)
+	err = ipamContext.RunRPCHandler(version.Version)
 	if err != nil {
 		log.Errorf("Failed to set up gRPC handler: %v", err)
 		return 1
