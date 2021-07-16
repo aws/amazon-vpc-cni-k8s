@@ -146,7 +146,8 @@ local awsnode = {
               image: "%s/amazon-k8s-cni:%s" % [$.ecrRepo, $.version],
               ports: [{
                 containerPort: 61678,
-                name: "metrics"
+                name: "metrics",
+                protocol: "TCP",
               }],
               name: "aws-node",
               readinessProbe: {
