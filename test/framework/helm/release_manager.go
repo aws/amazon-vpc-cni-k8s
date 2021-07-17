@@ -27,6 +27,7 @@ import (
 type ReleaseManager interface {
 	InstallUnPackagedRelease(chart string, releaseName string, namespace string,
 		values map[string]interface{}) (*release.Release, error)
+	InstallRelease(chartRepo string, chartName string, namespace string, releaseName string, vals map[string]interface{}) (*release.Release, error)
 	UninstallRelease(namespace string, releaseName string) (*release.UninstallReleaseResponse, error)
 }
 
@@ -36,6 +37,28 @@ type defaultReleaseManager struct {
 
 func NewDefaultReleaseManager(kubeConfig string) ReleaseManager {
 	return &defaultReleaseManager{kubeConfig: kubeConfig}
+}
+
+func (d *defaultReleaseManager) InstallRelease(chartRepo string, chartName string, namespace string,
+	releaseName string, vals map[string]interface{}) (*release.Release, error) {
+	actionConfig := d.obtainActionConfig(namespace)
+
+	installAction := action.NewInstall(actionConfig)
+	installAction.Namespace = namespace
+	installAction.Wait = true
+	installAction.ReleaseName = releaseName
+	installAction.ChartPathOptions.RepoURL = chartRepo
+
+	cp, err := installAction.ChartPathOptions.LocateChart(chartName, cli.New())
+	if err != nil {
+		return nil, err
+	}
+	chartRequested, err := loader.Load(cp)
+	if err != nil {
+		return nil, err
+	}
+
+	return installAction.Run(chartRequested, vals)
 }
 
 func (d *defaultReleaseManager) InstallUnPackagedRelease(chart string, releaseName string, namespace string,
