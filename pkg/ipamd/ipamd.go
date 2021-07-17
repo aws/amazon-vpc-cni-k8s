@@ -386,8 +386,8 @@ func (c *IPAMContext) nodeInit() error {
 
 	metadataResult, err := c.awsClient.DescribeAllENIs()
 	if err != nil {
-		// Broadcast event in case of missing EC2 permissions
-		c.CheckIAMPermissions(err)
+		// Check error and broadcast event in case of missing EC2 permissions
+		c.CheckEC2Permissions(err)
 		return errors.New("ipamd init: failed to retrieve attached ENIs info")
 	}
 
@@ -1925,7 +1925,7 @@ func (c *IPAMContext) getPrefixesNeeded() int {
 	return toAllocate
 }
 
-func (c *IPAMContext) CheckIAMPermissions(nodeInitErr error) error {
+func (c *IPAMContext) CheckEC2Permissions(nodeInitErr error) error {
 	if strings.Contains(nodeInitErr.Error(), "UnauthorizedOperation: You are not authorized to perform this operation") {
 		ctx := context.TODO()
 
