@@ -21,7 +21,7 @@ require (
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/net v0.0.0-20210614182718-04defd469f4e
 	golang.org/x/sys v0.0.0-20210616094352-59db8d763f22
-	golang.org/x/tools v0.1.3 // indirect
+	golang.org/x/tools v0.1.5 // indirect
 	google.golang.org/grpc v1.29.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	k8s.io/api v0.18.6
@@ -30,5 +30,3 @@ require (
 	k8s.io/cri-api v0.0.0-20191107035106-03d130a7dc28
 	sigs.k8s.io/controller-runtime v0.6.3
 )
-
-replace github.com/aws/aws-sdk-go => ./vendor/github.com/aws/aws-sdk-go

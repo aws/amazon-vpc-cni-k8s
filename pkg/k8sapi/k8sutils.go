@@ -18,7 +18,25 @@ import (
 )
 
 var log = logger.Get()
-var eventRecorder = initBroadcast()
+
+var eventRecorder record.EventRecorder
+
+func InitRecorder() {
+	restCfg, err := ctrl.GetConfig()
+	if err != nil {
+		panic(err.Error())
+	}
+	clientSet, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: clientSet.CoreV1().Events("")})
+	eventRecorder = eventBroadcaster.NewRecorder(clientgoscheme.Scheme, v1.EventSource{
+		Component: "aws-node",
+	})
+}
 
 // CreateKubeClient creates a k8s client
 func CreateKubeClient() (client.Client, error) {
@@ -99,24 +117,6 @@ func CheckAPIServerConnectivity() error {
 		version.Major, version.Minor, version.GitVersion, version.GitTreeState, version.GitCommit, version.Platform)
 
 	return nil
-}
-
-func initBroadcast() record.EventRecorder {
-	restCfg, err := ctrl.GetConfig()
-	if err != nil {
-		panic(err.Error())
-	}
-	clientSet, err := kubernetes.NewForConfig(restCfg)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: clientSet.CoreV1().Events("")})
-	recorder := eventBroadcaster.NewRecorder(clientgoscheme.Scheme, v1.EventSource{
-		Component: "aws-node",
-	})
-	return recorder
 }
 
 func BroadcastEvent(object runtime.Object, reason string, message string, eventType string) {

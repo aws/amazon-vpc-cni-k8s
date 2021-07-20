@@ -1926,7 +1926,7 @@ func (c *IPAMContext) getPrefixesNeeded() int {
 }
 
 func (c *IPAMContext) CheckEC2Permissions(nodeInitErr error) error {
-	if strings.Contains(nodeInitErr.Error(), "UnauthorizedOperation: You are not authorized to perform this operation") {
+	if strings.Contains(nodeInitErr.Error(), "UnauthorizedOperation") {
 		ctx := context.TODO()
 
 		listOptions := client.ListOptions{}

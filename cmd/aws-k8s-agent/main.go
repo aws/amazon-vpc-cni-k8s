@@ -54,12 +54,15 @@ func _main() int {
 		return 1
 	}
 
+	// Initialize recorder before events can be broadcast
+	k8sapi.InitRecorder()
+
 	ipamContext, err := ipamd.New(rawK8SClient, cacheK8SClient)
 
 	if err != nil {
+		log.Errorf("Initialization failure: %v", err)
 		// Allow time for event to be broadcast in case of missing permissions
 		time.Sleep(100 * time.Millisecond)
-		log.Errorf("Initialization failure: %v", err)
 		return 1
 	}
 
