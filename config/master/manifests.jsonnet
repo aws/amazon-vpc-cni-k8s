@@ -181,6 +181,7 @@ local awsnode = {
                   },
                 },
                 WARM_ENI_TARGET: "1",
+                WARM_PREFIX_TARGET: "1",
               },
               env: [
                 {name: kv[0]} + if std.isObject(kv[1]) then kv[1] else {value: kv[1]}
