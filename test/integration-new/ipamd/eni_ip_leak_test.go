@@ -19,6 +19,12 @@ const (
 
 var _ = Describe("ENI/IP Leak Test", func() {
 	Context("ENI/IP Released on Pod Deletion", func() {
+		BeforeEach(func() {
+			By("creating test namespace")
+			f.K8sResourceManagers.NamespaceManager().
+				CreateNamespace(utils.DefaultTestNamespace)
+		})
+
 		It("Verify that on Pod Deletion, ENI/IP State is restored", func() {
 			// Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
 			By("Setting WARM_ENI_TARGET to 0")
@@ -33,6 +39,7 @@ var _ = Describe("ENI/IP Leak Test", func() {
 				Namespace("default").
 				Name("busybox").
 				NodeName(primaryNode.Name).
+				Namespace(utils.DefaultTestNamespace).
 				Replicas(int(maxPods)).
 				Build()
 
@@ -59,6 +66,12 @@ var _ = Describe("ENI/IP Leak Test", func() {
 			}
 			Expect(ip).To(Equal(oldIP))
 			Expect(eni).To(Equal(oldENI))
+		})
+
+		AfterEach(func() {
+			By("deleting test namespace")
+			f.K8sResourceManagers.NamespaceManager().
+				DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
 			By("Restoring WARM ENI Target value")
 			k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
@@ -85,7 +98,7 @@ func getMaxApplicationPodsOnPrimaryInstance() int64 {
 	maxENI := currInstance.NetworkInfo.MaximumNetworkInterfaces
 	maxIPPerENI := currInstance.NetworkInfo.Ipv4AddressesPerInterface
 
-	// If core-dns pods are running on this instance then we need to exclude them as well
-	maxPods := *maxENI*(*maxIPPerENI-1) - int64(numOfNodes)
-	return maxPods
+	// Deploy 50% of max pod capacity
+	maxPods := *maxENI*(*maxIPPerENI-1) - int64(numOfNodes+1)
+	return maxPods / 2
 }

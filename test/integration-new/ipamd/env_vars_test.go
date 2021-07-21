@@ -20,10 +20,18 @@ const (
 	POD_VOL_LABEL_VAL        = "true"
 	VOLUME_NAME              = "ipamd-logs"
 	VOLUME_MOUNT_PATH        = "/var/log/aws-routed-eni/"
+	OLD_PATH                 = "/host/var/log/aws-routed-eni/ipamd.log"
 )
 
 var _ = Describe("cni env test", func() {
 	Context("CNI Environment Variables", func() {
+		BeforeEach(func() {
+			By("creating test namespace")
+			f.K8sResourceManagers.NamespaceManager().
+				CreateNamespace(utils.DefaultTestNamespace)
+
+		})
+
 		It("Changing AWS_VPC_K8S_CNI_LOG_FILE", func() {
 			By("Deploying a host network deployment with Volume mount")
 			curlContainer := manifest.NewBusyBoxContainerBuilder().Image("curlimages/curl:7.76.1").Name("curler").Build()
@@ -47,7 +55,7 @@ var _ = Describe("cni env test", func() {
 			}
 
 			deploymentSpecWithVol := manifest.NewDefaultDeploymentBuilder().
-				Namespace("default").
+				Namespace(utils.DefaultTestNamespace).
 				Name("host-network").
 				Replicas(1).
 				HostNetwork(true).
@@ -71,30 +79,25 @@ var _ = Describe("cni env test", func() {
 			ds, err = f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(NAMESPACE, DAEMONSET)
 			Expect(err).NotTo(HaveOccurred())
 
-			currLogFilepath := utils.GetEnvValueForKeyFromDaemonSet(AWS_VPC_K8S_CNI_LOG_FILE, ds)
-			Expect(currLogFilepath).NotTo(Equal(""))
-
 			newLogFile := "ipamd_test.log"
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, DAEMONSET, NAMESPACE, DAEMONSET, map[string]string{
 				AWS_VPC_K8S_CNI_LOG_FILE: "/host/var/log/aws-routed-eni/" + newLogFile,
 			})
 
-			stdout, _, err := f.K8sResourceManagers.PodManager().PodExec("default", podWithVol.Name, []string{"tail", "-n", "5", "ipamd-logs/ipamd_test.log"})
+			stdout, _, err := f.K8sResourceManagers.PodManager().PodExec(utils.DefaultTestNamespace, podWithVol.Name, []string{"tail", "-n", "5", "ipamd-logs/ipamd_test.log"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stdout).NotTo(Equal(""))
+		})
+
+		AfterEach(func() {
+			By("deleting test namespace")
+			f.K8sResourceManagers.NamespaceManager().
+				DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
 			By("Restoring old value on daemonset")
-			restoreOldValues(map[string]string{
-				AWS_VPC_K8S_CNI_LOG_FILE: currLogFilepath,
+			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, DAEMONSET, NAMESPACE, DAEMONSET, map[string]string{
+				AWS_VPC_K8S_CNI_LOG_FILE: OLD_PATH,
 			})
-
-			By("Deleing deployment with Volume Mount")
-			err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deploymentSpecWithVol)
-			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })
-
-func restoreOldValues(oldVals map[string]string) {
-	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, DAEMONSET, NAMESPACE, DAEMONSET, oldVals)
-}
