@@ -72,7 +72,7 @@ export GOPROXY = direct
 
 VENDOR_OVERRIDE_FLAG =
 # aws-sdk-go override in case we need to build against a custom version
-EC2_SDK_OVERRIDE ?= "y"
+EC2_SDK_OVERRIDE ?= "n"
 
 ifeq ($(EC2_SDK_OVERRIDE), "y")
 VENDOR_OVERRIDE_FLAG = -mod=mod
