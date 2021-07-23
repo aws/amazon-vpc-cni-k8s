@@ -72,7 +72,8 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
     fi
 
     $BUILD_DIR/helm template charts/aws-vpc-cni \
-      --set initContainers.image.region=$ecrRegion,\
+      --set originalMatchLabels=true,\
+      initContainers.image.region=$ecrRegion,\
       initContainers.image.account=$ecrAccount,\
       initContainers.image.domain=$ecrDomain,\
       image.region=$ecrRegion,\
