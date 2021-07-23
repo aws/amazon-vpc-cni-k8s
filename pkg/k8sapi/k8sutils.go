@@ -5,11 +5,9 @@ import (
 
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -18,25 +16,6 @@ import (
 )
 
 var log = logger.Get()
-
-var eventRecorder record.EventRecorder
-
-func InitRecorder() {
-	restCfg, err := ctrl.GetConfig()
-	if err != nil {
-		panic(err.Error())
-	}
-	clientSet, err := kubernetes.NewForConfig(restCfg)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: clientSet.CoreV1().Events("")})
-	eventRecorder = eventBroadcaster.NewRecorder(clientgoscheme.Scheme, v1.EventSource{
-		Component: "aws-node",
-	})
-}
 
 // CreateKubeClient creates a k8s client
 func CreateKubeClient() (client.Client, error) {
@@ -119,6 +98,7 @@ func CheckAPIServerConnectivity() error {
 	return nil
 }
 
-func BroadcastEvent(object runtime.Object, reason string, message string, eventType string) {
+func BroadcastEvent(eventRecorder record.EventRecorder, object runtime.Object, reason string, message string,
+	eventType string) {
 	eventRecorder.Event(object, eventType, reason, message)
 }

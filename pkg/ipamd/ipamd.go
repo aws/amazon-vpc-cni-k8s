@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,6 +36,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/record"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
@@ -136,6 +140,9 @@ const (
 	//envWarmPrefixTarget is used to keep a /28 prefix in warm pool.
 	envWarmPrefixTarget     = "WARM_PREFIX_TARGET"
 	defaultWarmPrefixTarget = 0
+	specNodeName            = "spec.nodeName"
+	labelK8sapp             = "k8s-app"
+	awsNode                 = "aws-node"
 )
 
 var log = logger.Get()
@@ -224,6 +231,8 @@ type IPAMContext struct {
 	enablePodENI               bool
 	myNodeName                 string
 	enableIpv4PrefixDelegation bool
+	// eventRecorder to broadcast pod events
+	eventRecorder record.EventRecorder
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -335,6 +344,18 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer, c.enableIpv4PrefixDelegation)
 
+	clientSet, err := k8sapi.GetKubeClientSet()
+	if err != nil {
+		log.Errorf("Failed to get client set", err)
+		return nil, err
+	}
+
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: clientSet.CoreV1().Events("")})
+	c.eventRecorder = eventBroadcaster.NewRecorder(clientgoscheme.Scheme, corev1.EventSource{
+		Component: "aws-node",
+	})
+
 	err = c.nodeInit()
 	if err != nil {
 		return nil, err
@@ -386,8 +407,12 @@ func (c *IPAMContext) nodeInit() error {
 
 	metadataResult, err := c.awsClient.DescribeAllENIs()
 	if err != nil {
-		// Check error and broadcast event in case of missing EC2 permissions
-		c.CheckEC2Permissions(err)
+		if aerr, ok := err.(awserr.Error); ok {
+			log.Debugf("awserr = %s", aerr.Code())
+			if aerr.Code() == "UnauthorizedOperation" {
+				c.BroadcastMissingPermissionsEvent(err)
+			}
+		} // Check error and broadcast event in case of missing EC2 permissions
 		return errors.New("ipamd init: failed to retrieve attached ENIs info")
 	}
 
@@ -1925,29 +1950,29 @@ func (c *IPAMContext) getPrefixesNeeded() int {
 	return toAllocate
 }
 
-func (c *IPAMContext) CheckEC2Permissions(nodeInitErr error) error {
-	if strings.Contains(nodeInitErr.Error(), "UnauthorizedOperation") {
-		ctx := context.TODO()
+func (c *IPAMContext) BroadcastMissingPermissionsEvent(nodeInitErr error) {
+	printErr := strings.Replace(nodeInitErr.Error(), "\n", "", 1)
+	log.Errorf("Failed to create pod, please verify AmazonEKS_CNI_Policy is attached to supplied IAM Role: {%v}", printErr)
 
-		listOptions := client.ListOptions{}
-		fieldSelector := client.MatchingFields{"spec.nodeName": c.myNodeName}
-		labelSelector := client.MatchingLabels{"k8s-app": "aws-node"}
-		fieldSelector.ApplyToList(&listOptions)
-		labelSelector.ApplyToList(&listOptions)
+	ctx := context.TODO()
+	listOptions := client.ListOptions{}
+	fieldSelector := client.MatchingFields{specNodeName: c.myNodeName}
+	labelSelector := client.MatchingLabels{labelK8sapp: awsNode}
+	fieldSelector.ApplyToList(&listOptions)
+	labelSelector.ApplyToList(&listOptions)
 
-		var podList corev1.PodList
-		err := c.rawK8SClient.List(ctx, &podList, &listOptions)
-		if err != nil {
-			log.Errorf("Failed to get pods: %v", err)
-			return err
-		}
-
-		for _, pod := range podList.Items {
-			log.Debugf("Broadcast event on pod %s", pod.Name)
-			printErr := strings.Replace(nodeInitErr.Error(), "\n", "", 1)
-			k8sapi.BroadcastEvent(&pod, "FailedCreation", fmt.Sprintf("Failed to create pod: Check node EC2 permissions {%v}", printErr),
-				corev1.EventTypeWarning)
-		}
+	var podList corev1.PodList
+	err := c.rawK8SClient.List(ctx, &podList, &listOptions)
+	if err != nil {
+		log.Errorf("Failed to get pods, cannot broadcast missing permissions event: %v", err)
+		return
 	}
-	return nil
+
+	for _, pod := range podList.Items {
+		log.Debugf("Broadcast event on pod %s", pod.Name)
+		k8sapi.BroadcastEvent(c.eventRecorder, &pod, "MissingIAMPolicy",
+			"aws-node failed to start, not authorized to perform EC2 API calls. Please verify AmazonEKS_CNI_Policy is attached to supplied IAM Role",
+			corev1.EventTypeWarning)
+	}
+
 }
