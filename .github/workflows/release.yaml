@@ -24,3 +24,6 @@ jobs:
     
     - name: Attach release artifacts 
       run: make release
+
+    - name: Create eks-charts PR
+      run: make ekscharts-sync-release  

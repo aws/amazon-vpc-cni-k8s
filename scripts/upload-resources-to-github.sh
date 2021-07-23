@@ -43,9 +43,8 @@ while getopts "b" opt; do
 done
 
 RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-    https://api.github.com/repos/jayanthvn/amazon-vpc-cni-k8s/releases | \
+    https://api.github.com/repos/aws/amazon-vpc-cni-k8s/releases | \
     jq --arg VERSION "$VERSION" '.[] | select(.tag_name==$VERSION) | .id')
-
 ASSET_IDS_UPLOADED=()
 
 trap 'handle_errors_and_cleanup $?' EXIT
@@ -73,7 +72,7 @@ upload_asset() {
         -H "Authorization: token $GITHUB_TOKEN" \
         -H "Content-Type: $(file -b --mime-type $1)" \
         --data-binary @$1 \
-        "https://uploads.github.com/repos/jayanthvn/amazon-vpc-cni-k8s/releases/$RELEASE_ID/assets?name=$(basename $1)")
+        "https://uploads.github.com/repos/aws/amazon-vpc-cni-k8s/releases/$RELEASE_ID/assets?name=$(basename $1)")
 
     response_code=$(echo $resp | sed 's/\(.*\)}//')
     response_content=$(echo $resp | sed "s/$response_code//")
