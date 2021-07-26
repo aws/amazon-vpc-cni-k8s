@@ -1,13 +1,13 @@
 # Changelog
 
 ## v1.9.0
-* Enhancement - [EC2 sdk model override][https://github.com/aws/amazon-vpc-cni-k8s/pull/1508] (#1508, [@jayanthvn](https://github.com/jayanthvn))
-* Enhancement - [Prefix Delegation feature support][https://github.com/aws/amazon-vpc-cni-k8s/pull/1516] (#1516, [@jayanthvn](https://github.com/jayanthvn))
-* Enhancement - [Header formatting for env variable][https://github.com/aws/amazon-vpc-cni-k8s/pull/1522] (#1522, [@jayanthvn](https://github.com/jayanthvn))
-* Enhancement - [non-nitro instances init issues][https://github.com/aws/amazon-vpc-cni-k8s/pull/1527] (#1527, [@jayanthvn](https://github.com/jayanthvn))
-* Enhancement - [Add metrics for total prefix count and ips used per cidr][https://github.com/aws/amazon-vpc-cni-k8s/pull/1530] (#1530, [@jayanthvn](https://github.com/jayanthvn))
-* Enhancement - [Update documentation for PD][https://github.com/aws/amazon-vpc-cni-k8s/pull/1540] (#1540, [@jayanthvn](https://github.com/jayanthvn))
-* Enhancement - [Update SDK Go version][https://github.com/aws/amazon-vpc-cni-k8s/pull/1544] (#1544, [@jayanthvn](https://github.com/jayanthvn))
+* Enhancement - [EC2 sdk model override](https://github.com/aws/amazon-vpc-cni-k8s/pull/1508) (#1508, [@jayanthvn](https://github.com/jayanthvn))
+* Enhancement - [Prefix Delegation feature support](https://github.com/aws/amazon-vpc-cni-k8s/pull/1516) (#1516, [@jayanthvn](https://github.com/jayanthvn))
+* Enhancement - [Header formatting for env variable](https://github.com/aws/amazon-vpc-cni-k8s/pull/1522) (#1522, [@jayanthvn](https://github.com/jayanthvn))
+* Enhancement - [non-nitro instances init issues](https://github.com/aws/amazon-vpc-cni-k8s/pull/1527) (#1527, [@jayanthvn](https://github.com/jayanthvn))
+* Enhancement - [Add metrics for total prefix count and ips used per cidr](https://github.com/aws/amazon-vpc-cni-k8s/pull/1530) (#1530, [@jayanthvn](https://github.com/jayanthvn))
+* Enhancement - [Update documentation for PD](https://github.com/aws/amazon-vpc-cni-k8s/pull/1540) (#1540, [@jayanthvn](https://github.com/jayanthvn))
+* Enhancement - [Update SDK Go version](https://github.com/aws/amazon-vpc-cni-k8s/pull/1544) (#1544, [@jayanthvn](https://github.com/jayanthvn))
 
 ## v1.8.0
 * Bug - [Use symmetric return path for non-VPC traffic - alternate solution](https://github.com/aws/amazon-vpc-cni-k8s/pull/1475) (#1475, [@kishorj](https://github.com/kishorj))
