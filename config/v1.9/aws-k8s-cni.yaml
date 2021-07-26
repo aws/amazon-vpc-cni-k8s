@@ -168,7 +168,6 @@
         "ports":
         - "containerPort": 61678
           "name": "metrics"
-          "protocol": "TCP"
         "readinessProbe":
           "exec":
             "command":
