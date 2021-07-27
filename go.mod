@@ -3,7 +3,7 @@ module github.com/aws/amazon-vpc-cni-k8s
 go 1.14
 
 require (
-	github.com/aws/aws-sdk-go v1.37.23
+	github.com/aws/aws-sdk-go v1.40.6
 	github.com/containernetworking/cni v0.8.0
 	github.com/containernetworking/plugins v0.9.0
 	github.com/coreos/go-iptables v0.4.5
