@@ -53,7 +53,12 @@ func _main() int {
 		return 1
 	}
 
-	ipamContext, err := ipamd.New(rawK8SClient, cacheK8SClient)
+	recorder, err := k8sapi.CreateEventRecorder("ipamd", os.Getenv("NODE_NAME"))
+	if err != nil {
+		return 1
+	}
+
+	ipamContext, err := ipamd.New(rawK8SClient, cacheK8SClient, recorder)
 
 	if err != nil {
 		log.Errorf("Initialization failure: %v", err)
