@@ -5,10 +5,14 @@ import (
 
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -95,4 +99,17 @@ func CheckAPIServerConnectivity() error {
 		version.Major, version.Minor, version.GitVersion, version.GitTreeState, version.GitCommit, version.Platform)
 
 	return nil
+}
+
+func CreateEventRecorder(component, host string) (record.EventRecorder, error) {
+	k8sClientSet, err := GetKubeClientSet()
+	if err != nil {
+		return nil, err
+	}
+
+	eventBroadcaster := record.NewBroadcaster()
+	recorder := eventBroadcaster.NewRecorder(clientgoscheme.Scheme, corev1.EventSource{Component: component, Host: host})
+	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: k8sClientSet.CoreV1().Events(metav1.NamespaceDefault)})
+
+	return recorder, nil
 }
