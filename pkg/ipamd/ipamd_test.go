@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -72,8 +73,20 @@ type testMocks struct {
 	awsutils        *mock_awsutils.MockAPIs
 	rawK8SClient    client.Client
 	cachedK8SClient client.Client
+	recorder        record.EventRecorder
 	network         *mock_networkutils.MockNetworkAPIs
 	eniconfig       *mock_eniconfig.MockENIConfig
+}
+
+type mockEventRecorder struct{}
+
+// we only need the Event function for mockEventRecorder
+func (r mockEventRecorder) Event(object runtime.Object, eventtype, reason, message string) {
+	fmt.Printf("Received event: {Node: %v, eventType: %s, reason: %s, message %s}", object, eventtype, reason, message)
+}
+func (r mockEventRecorder) Eventf(object runtime.Object, eventtype, reason, messageFmt string, args ...interface{}) {
+}
+func (r mockEventRecorder) AnnotatedEventf(object runtime.Object, annotations map[string]string, eventtype, reason, messageFmt string, args ...interface{}) {
 }
 
 func setup(t *testing.T) *testMocks {
@@ -87,6 +100,7 @@ func setup(t *testing.T) *testMocks {
 		awsutils:        mock_awsutils.NewMockAPIs(ctrl),
 		rawK8SClient:    testclient.NewFakeClientWithScheme(k8sSchema),
 		cachedK8SClient: testclient.NewFakeClientWithScheme(k8sSchema),
+		recorder:        mockEventRecorder{},
 		network:         mock_networkutils.NewMockNetworkAPIs(ctrl),
 		eniconfig:       mock_eniconfig.NewMockENIConfig(ctrl),
 	}
@@ -108,6 +122,7 @@ func TestNodeInit(t *testing.T) {
 		awsClient:       m.awsutils,
 		rawK8SClient:    m.rawK8SClient,
 		cachedK8SClient: m.cachedK8SClient,
+		recorder:        m.recorder,
 		maxIPsPerENI:    14,
 		maxENI:          4,
 		warmENITarget:   1,
@@ -350,6 +365,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 		awsClient:           m.awsutils,
 		rawK8SClient:        m.rawK8SClient,
 		cachedK8SClient:     m.cachedK8SClient,
+		recorder:            mockEventRecorder{},
 		maxIPsPerENI:        14,
 		maxENI:              4,
 		warmENITarget:       1,
@@ -471,6 +487,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 		awsClient:                  m.awsutils,
 		rawK8SClient:               m.rawK8SClient,
 		cachedK8SClient:            m.cachedK8SClient,
+		recorder:                   mockEventRecorder{},
 		maxIPsPerENI:               256,
 		maxPrefixesPerENI:          16,
 		maxENI:                     4,
@@ -594,14 +611,16 @@ func TestTryAddIPToENI(t *testing.T) {
 
 	warmIPTarget := 3
 	mockContext := &IPAMContext{
-		awsClient:     m.awsutils,
-		maxIPsPerENI:  14,
-		maxENI:        4,
-		warmENITarget: 1,
-		warmIPTarget:  warmIPTarget,
-		networkClient: m.network,
-		primaryIP:     make(map[string]string),
-		terminating:   int32(0),
+		awsClient:       m.awsutils,
+		cachedK8SClient: m.cachedK8SClient,
+		recorder:        mockEventRecorder{},
+		maxIPsPerENI:    14,
+		maxENI:          4,
+		warmENITarget:   1,
+		warmIPTarget:    warmIPTarget,
+		networkClient:   m.network,
+		primaryIP:       make(map[string]string),
+		terminating:     int32(0),
 	}
 
 	mockContext.dataStore = testDatastore()
