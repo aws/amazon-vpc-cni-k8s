@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/record"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
@@ -202,6 +203,7 @@ type IPAMContext struct {
 	dataStore            *datastore.DataStore
 	rawK8SClient         client.Client
 	cachedK8SClient      client.Client
+	recorder             record.EventRecorder
 	useCustomNetworking  bool
 	networkClient        networkutils.NetworkAPIs
 	maxIPsPerENI         int
@@ -294,12 +296,13 @@ func prometheusRegister() {
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
-func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContext, error) {
+func New(rawK8SClient client.Client, cachedK8SClient client.Client, recorder record.EventRecorder) (*IPAMContext, error) {
 	prometheusRegister()
 	c := &IPAMContext{}
 
 	c.rawK8SClient = rawK8SClient
 	c.cachedK8SClient = cachedK8SClient
+	c.recorder = recorder
 	c.networkClient = networkutils.New()
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.enableIpv4PrefixDelegation = useIpv4PrefixDelegation()
@@ -566,7 +569,7 @@ func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
 		c.decreaseDatastorePool(decreaseIPPoolInterval)
 	}
 	if c.shouldRemoveExtraENIs() {
-		c.tryFreeENI()
+		c.tryFreeENI(ctx)
 	}
 }
 
@@ -593,7 +596,7 @@ func (c *IPAMContext) decreaseDatastorePool(interval time.Duration) {
 }
 
 // tryFreeENI always tries to free one ENI
-func (c *IPAMContext) tryFreeENI() {
+func (c *IPAMContext) tryFreeENI(ctx context.Context) {
 	if c.isTerminating() {
 		log.Debug("AWS CNI is terminating, not detaching any ENIs")
 		return
@@ -611,6 +614,9 @@ func (c *IPAMContext) tryFreeENI() {
 		log.Errorf("Failed to free ENI %s, err: %v", eni, err)
 		return
 	}
+
+	// Send the event after the ENI is dettached
+	c.SendNodeEvent(ctx, corev1.EventTypeNormal, "DettachedENI", fmt.Sprintf("Detached ENI %s", eni))
 }
 
 // tryUnassignIPsorPrefixesFromAll determines if there are IPs to free when we have extra IPs beyond the target and warmIPTargetDefined
@@ -750,6 +756,9 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 		return err
 	}
 
+	// Send the event once the ENI is allocated
+	c.SendNodeEvent(ctx, corev1.EventTypeNormal, "AllocatedENI", fmt.Sprintf("Allocated ENI %s", eni))
+
 	resourcesToAllocate := c.GetENIResourcesToAllocate()
 
 	err = c.awsClient.AllocIPAddresses(eni, resourcesToAllocate)
@@ -773,6 +782,7 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 		log.Errorf("Failed to increase pool size: %v", err)
 		return err
 	}
+
 	return err
 }
 
@@ -1653,13 +1663,18 @@ func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
 	return -1, errors.New("no trunk found")
 }
 
-// SetNodeLabel sets or deletes a node label
-func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error {
+func (c *IPAMContext) findMyNode(ctx context.Context) (corev1.Node, error) {
 	var node corev1.Node
-	// Find my node
 	err := c.cachedK8SClient.Get(ctx, types.NamespacedName{Name: c.myNodeName}, &node)
 	log.Debugf("Node found %q - labels - %q", node.Name, len(node.Labels))
 
+	return node, err
+}
+
+// SetNodeLabel sets or deletes a node label
+func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error {
+	// Find my node
+	node, err := c.findMyNode(ctx)
 	if err != nil {
 		log.Errorf("Failed to get node: %v", err)
 		return err
@@ -1688,6 +1703,27 @@ func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error
 		log.Errorf("Failed to update node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
 	}
 	log.Debugf("Updated node %s with label %q: %q", c.myNodeName, key, value)
+
+	return nil
+}
+
+// SendNodeEvent sends an event regarding node object
+func (c *IPAMContext) SendNodeEvent(ctx context.Context, eventType, reason, message string) error {
+	// Find my node
+	node, err := c.findMyNode(ctx)
+	if err != nil {
+		log.Errorf("Failed to get node: %v", err)
+		return err
+	}
+
+	// make a copy before modifying the UID
+	// Note: kubectl uses the filter involvedObject.uid=NodeName to fetch the events
+	// that are listed in 'kubectl describe node' output. So setting the node UID to
+	// nodename before sending the event
+	nodeCopy := node.DeepCopy()
+	nodeCopy.SetUID(types.UID(c.myNodeName))
+
+	c.recorder.Event(nodeCopy, eventType, reason, message)
 
 	return nil
 }
