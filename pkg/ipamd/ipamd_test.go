@@ -78,17 +78,6 @@ type testMocks struct {
 	eniconfig       *mock_eniconfig.MockENIConfig
 }
 
-type mockEventRecorder struct{}
-
-// we only need the Event function for mockEventRecorder
-func (r mockEventRecorder) Event(object runtime.Object, eventtype, reason, message string) {
-	fmt.Printf("Received event: {Node: %v, eventType: %s, reason: %s, message %s}", object, eventtype, reason, message)
-}
-func (r mockEventRecorder) Eventf(object runtime.Object, eventtype, reason, messageFmt string, args ...interface{}) {
-}
-func (r mockEventRecorder) AnnotatedEventf(object runtime.Object, annotations map[string]string, eventtype, reason, messageFmt string, args ...interface{}) {
-}
-
 func setup(t *testing.T) *testMocks {
 	ctrl := gomock.NewController(t)
 	k8sSchema := runtime.NewScheme()
@@ -100,7 +89,7 @@ func setup(t *testing.T) *testMocks {
 		awsutils:        mock_awsutils.NewMockAPIs(ctrl),
 		rawK8SClient:    testclient.NewFakeClientWithScheme(k8sSchema),
 		cachedK8SClient: testclient.NewFakeClientWithScheme(k8sSchema),
-		recorder:        mockEventRecorder{},
+		recorder:        record.NewFakeRecorder(1),
 		network:         mock_networkutils.NewMockNetworkAPIs(ctrl),
 		eniconfig:       mock_eniconfig.NewMockENIConfig(ctrl),
 	}
@@ -365,7 +354,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 		awsClient:           m.awsutils,
 		rawK8SClient:        m.rawK8SClient,
 		cachedK8SClient:     m.cachedK8SClient,
-		recorder:            mockEventRecorder{},
+		recorder:            record.NewFakeRecorder(1),
 		maxIPsPerENI:        14,
 		maxENI:              4,
 		warmENITarget:       1,
@@ -487,7 +476,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 		awsClient:                  m.awsutils,
 		rawK8SClient:               m.rawK8SClient,
 		cachedK8SClient:            m.cachedK8SClient,
-		recorder:                   mockEventRecorder{},
+		recorder:                   record.NewFakeRecorder(1),
 		maxIPsPerENI:               256,
 		maxPrefixesPerENI:          16,
 		maxENI:                     4,
@@ -613,7 +602,7 @@ func TestTryAddIPToENI(t *testing.T) {
 	mockContext := &IPAMContext{
 		awsClient:       m.awsutils,
 		cachedK8SClient: m.cachedK8SClient,
-		recorder:        mockEventRecorder{},
+		recorder:        record.NewFakeRecorder(1),
 		maxIPsPerENI:    14,
 		maxENI:          4,
 		warmENITarget:   1,
