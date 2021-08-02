@@ -233,6 +233,10 @@ local awsnode = {
                   name: "DISABLE_TCP_EARLY_DEMUX", value: "false",
                 },
               ],
+              resources: {
+                requests: {cpu: "10m", memory: "32Mi"},
+                limits: {cpu: "50m", memory: "64Mi"},
+              },
               volumeMounts: [
                 {mountPath: "/host/opt/cni/bin", name: "cni-bin-dir"},
               ],
