@@ -214,7 +214,7 @@ Right now, ENIs are allocated or freed by L-IPAM on each instance.  All ENIs on 
 
 #### Pod IP address cooling period
 
-When a Pod is deleted, we will keep the Pod IP address in "cooling mode" for cooling period. When the cooling period expires, we will return this Pod IP to the warm-pool. The cooling period is used to prevent CNI plugin recycle this Pod's IP address and assign to a new Pod before controller has finished updating all nodes in the cluster about this deleted pod.
+When a Pod is deleted, we will keep the Pod IP address in "cooling mode" for cooling period of 30 seconds. When the cooling period expires, we will return this Pod IP to the warm-pool. The cooling period is used to prevent CNI plugin recycle this Pod's IP address and assign to a new Pod before controller has finished updating all nodes in the cluster about this deleted pod.
 
 #### Troubleshooting
 

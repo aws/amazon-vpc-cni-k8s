@@ -54,6 +54,9 @@ You can verify if you are in this situation by running the cni-metrics-helper:
 
 To avoid Pod deployment delay, you can configure ipamD to have a higher [**WARM\_ENI\_TARGET**](https://github.com/aws/amazon-vpc-cni-k8s/pull/68).
 
+### Tip: Running CNI on non-EKS AMI
+If ping between pods are not working, please make sure to check if FORWARD policy is set to ACCEPT since by default in iptables it is set to DROP. With EKS AMI, the policy is updated to set ACCEPT in [kubelet.service](https://github.com/awslabs/amazon-eks-ami/blob/master/files/kubelet.service#L8). Please ref: https://github.com/aws/amazon-vpc-cni-k8s/pull/535 and https://github.com/awslabs/amazon-eks-ami/issues/332 for more details.
+
 ## Troubleshooting CNI/ipamD at node level
 
 ### debugging logs are stored in
