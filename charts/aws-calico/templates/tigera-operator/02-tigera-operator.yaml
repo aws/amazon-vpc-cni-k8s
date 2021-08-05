@@ -29,7 +29,7 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: tigera-operator
-          image: {{.Values.tigeraOperator.image}}:{{.Values.tigeraOperator.tag}}
+          image: {{.Values.tigeraOperator.image}}:{{.Values.tigeraOperator.tag}} 
           imagePullPolicy: IfNotPresent
           command:
             - operator
@@ -56,3 +56,30 @@ spec:
         - name: var-lib-calico
           hostPath:
             path: /var/lib/calico
+{{- if eq .Values.installation.kubernetesProvider "openshift" }}
+        - name: calico-resources
+          configMap:
+            defaultMode: 0400
+            name: calico-resources
+        - name: install-resources-script
+          configMap:
+            defaultMode: 0777
+            name: install-resources-script
+      initContainers:
+        - name: create-initial-resources
+          image: {{.Values.calicoctl.image}}:{{.Values.calicoctl.tag}}
+          env:
+            - name: DATASTORE_TYPE
+              value: kubernetes
+          command:
+            - calicoctl
+          args:
+            - create
+            - --skip-exists
+            - --skip-empty
+            - -f
+            - /calico-resources
+          volumeMounts:
+            - name: calico-resources
+              mountPath: /calico-resources
+{{- end}}

@@ -93,7 +93,6 @@ rules:
     - crd.projectcalico.org
     resources:
     - ippools
-    - kubecontrollersconfigurations
     verbs:
     - get
     - list
@@ -134,18 +133,6 @@ rules:
     verbs:
       - list
       - watch
-  # Needed for operator lock
-  - apiGroups:
-      - coordination.k8s.io
-    resources:
-      - leases
-    verbs:
-      - create
-      - get
-      - list
-      - update
-      - delete
-      - watch
 {{- if eq .Values.installation.kubernetesProvider "openshift" }}
   # When running in OpenShift, we need to update networking config.
   - apiGroups:
@@ -178,13 +165,16 @@ rules:
       - update
       - delete
       - watch
-  # For host network access.
+  # The following rule is only for operator certification purposes.
+  # The operator normally runs in a namespace with openshift.io/run-level=0 which bypasses SCC.
+  # However in certification tests, the operator is run in a normal namespace so this
+  # rule is needed for host networking and hostPath volume access.
   - apiGroups:
       - security.openshift.io
     resources:
       - securitycontextconstraints
     resourceNames:
-      - hostnetwork
+      - hostaccess
     verbs:
       - use
   # Need these permissions for the calicoctl init container.
@@ -240,11 +230,4 @@ rules:
       - watch
       - create
       - update
-# Add the permissions to monitor the status of certificatesigningrequests when certificate management is enabled.
-  - apiGroups:
-      - certificates.k8s.io
-    resources:
-      - certificatesigningrequests
-    verbs:
-      - list
 {{- end }}

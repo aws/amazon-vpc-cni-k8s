@@ -49,7 +49,7 @@ env:
 
 # this flag enables you to use the match label that was present in the original daemonset deployed by EKS
 # You can then annotate and label the original aws-node resources and 'adopt' them into a helm release
-originalMatchLabels: false 
+originalMatchLabels: false
 
 cniConfig:
   enabled: false
