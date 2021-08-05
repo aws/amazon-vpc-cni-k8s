@@ -148,7 +148,7 @@ cd $INDV_RESOURCES_DIR/cni-metrics-helper/ && tar cvf $METRICS_TAR_RESOURCES_FIL
 cd $INDV_RESOURCES_DIR/aws-calico/ && tar cvf $CALICO_TAR_RESOURCES_FILE templates/*
 cd $SCRIPTPATH
 
-echo "Generated aws-vpc-cni and cni-metrics-helper kubernetes yaml resources files in:"
+echo "Generated aws-vpc-cni, cni-metrics-helper and calico yaml resources files in:"
 echo "    - $CNI_RESOURCES_YAML"
 echo "    - $METRICS_RESOURCES_YAML"
 echo "    - $CALICO_OPERATOR_RESOURCES_YAML"
