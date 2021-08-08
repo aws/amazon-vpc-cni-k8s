@@ -319,3 +319,20 @@ clean:    ## Clean temporary files and build artifacts from the project.
 help:           ## Show this help.
 	@grep -F -h "##" $(MAKEFILE_LIST) | grep -F -v grep | sed -e 's/\\$$//' \
 		| awk -F'[:#]' '{print $$1 = sprintf("%-30s", $$1), $$4}'
+
+deepcopy:
+	deepcopy-gen --input-dirs github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1 -O zz_generated.deepcopy --bounding-dirs github.com/aws/amazon-vpc-cni-k8s/pkg/apis --go-header-file boilerplate.go.txt
+
+defaults:
+	defaulter-gen --input-dirs github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1 --go-header-file boilerplate.go.txt
+
+listers:
+	lister-gen --input-dirs github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1 --output-package github.com/aws/amazon-vpc-cni-k8s/pkg/client/listers --go-header-file boilerplate.go.txt
+
+client:
+	client-gen --clientset-name versioned --input-base "" --input github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1 --output-package github.com/aws/amazon-vpc-cni-k8s/pkg/client/clientset --go-header-file boilerplate.go.txt
+
+informers:
+	informer-gen --input-dirs github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1 --versioned-clientset-package github.com/aws/amazon-vpc-cni-k8s/pkg/client/clientset/versioned --listers-package github.com/aws/amazon-vpc-cni-k8s/pkg/client/listers --output-package github.com/aws/amazon-vpc-cni-k8s/pkg/client/informers --go-header-file boilerplate.go.txt
+
+all-k8s-artifacts: deepcopy defaults client listers informer

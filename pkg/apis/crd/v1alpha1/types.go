@@ -20,9 +20,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // ENIConfigSpec defines the desired state of ENIConfig
 type ENIConfigSpec struct {
 	SecurityGroups []string `json:"securityGroups"`
@@ -34,27 +31,30 @@ type ENIConfigStatus struct {
 	// Fill me
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +genclient
+// +genclient:nonNamespaced
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // ENIConfig is the Schema for the eniconfigs API
 type ENIConfig struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ENIConfigSpec   `json:"spec,omitempty"`
+	Spec ENIConfigSpec `json:"spec,omitempty"`
+	// +optional
 	Status ENIConfigStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // ENIConfigList contains a list of ENIConfig
 type ENIConfigList struct {
 	metav1.TypeMeta `json:",inline"`
+	// +optional
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ENIConfig `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&ENIConfig{}, &ENIConfigList{})
 }
