@@ -10,7 +10,6 @@ ENV GOPROXY=direct
 
 # Copy modules in before the rest of the source to only expire cache on module changes:
 COPY go.mod go.sum ./
-COPY vendor/ vendor/
 RUN go mod download
 
 COPY Makefile ./

@@ -3,7 +3,7 @@ local objectItems(obj) = [[k, obj[k]] for k in std.objectFields(obj)];
 
 local regions = {
   default: {
-    version:: "latest", // or eg "v1.6.2"
+    version:: "v1.9.0", // or eg "v1.6.2"
     ecrRegion:: "us-west-2",
     ecrAccount:: "602401143452",
     ecrDomain:: "amazonaws.com",
@@ -182,6 +182,7 @@ local awsnode = {
                   },
                 },
                 WARM_ENI_TARGET: "1",
+                WARM_PREFIX_TARGET: "1",
               },
               env: [
                 {name: kv[0]} + if std.isObject(kv[1]) then kv[1] else {value: kv[1]}
@@ -232,6 +233,10 @@ local awsnode = {
                   name: "DISABLE_TCP_EARLY_DEMUX", value: "false",
                 },
               ],
+              resources: {
+                requests: {cpu: "10m", memory: "32Mi"},
+                limits: {cpu: "50m", memory: "64Mi"},
+              },
               volumeMounts: [
                 {mountPath: "/host/opt/cni/bin", name: "cni-bin-dir"},
               ],

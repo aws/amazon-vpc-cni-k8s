@@ -155,7 +155,9 @@
               "fieldPath": "spec.nodeName"
         - "name": "WARM_ENI_TARGET"
           "value": "1"
-        "image": "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:latest"
+        - "name": "WARM_PREFIX_TARGET"
+          "value": "1"
+        "image": "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:v1.9.0"
         "livenessProbe":
           "exec":
             "command":
@@ -198,8 +200,15 @@
       - "env":
         - "name": "DISABLE_TCP_EARLY_DEMUX"
           "value": "false"
-        "image": "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init:latest"
+        "image": "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init:v1.9.0"
         "name": "aws-vpc-cni-init"
+        "resources":
+          "limits":
+            "cpu": "50m"
+            "memory": "64Mi"
+          "requests":
+            "cpu": "10m"
+            "memory": "32Mi"
         "securityContext":
           "privileged": true
         "volumeMounts":
