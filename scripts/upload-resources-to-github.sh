@@ -13,6 +13,8 @@ CALICO_TAR_RESOURCES_FILE=$BUILD_DIR/calico_individual-resources.tar
 CNI_RESOURCES_YAML=$BUILD_DIR/aws-vpc-cni
 METRICS_RESOURCES_YAML=$BUILD_DIR/cni-metrics-helper
 CALICO_RESOURCES_YAML=$BUILD_DIR/calico.yaml
+CALICO_OPERATOR_RESOURCES_YAML=$BUILD_DIR/calico-operator.yaml
+CALICO_CRS_RESOURCES_YAML=$BUILD_DIR/calico-crs.yaml
 REGIONS_FILE=$SCRIPTPATH/../charts/regions.json
 
 BINARIES_ONLY="false"
@@ -43,7 +45,6 @@ done
 RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
     https://api.github.com/repos/aws/amazon-vpc-cni-k8s/releases | \
     jq --arg VERSION "$VERSION" '.[] | select(.tag_name==$VERSION) | .id')
-
 ASSET_IDS_UPLOADED=()
 
 trap 'handle_errors_and_cleanup $?' EXIT
@@ -113,7 +114,7 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
     done
 done    
 
-RESOURCES_TO_UPLOAD=("$CALICO_RESOURCES_YAML" "$CNI_TAR_RESOURCES_FILE" "$METRICS_TAR_RESOURCES_FILE" "$CALICO_TAR_RESOURCES_FILE")
+RESOURCES_TO_UPLOAD=("$CALICO_OPERATOR_RESOURCES_YAML" "CALICO_CRS_RESOURCES_YAML" "$CNI_TAR_RESOURCES_FILE" "$METRICS_TAR_RESOURCES_FILE" "$CALICO_TAR_RESOURCES_FILE")
 
 COUNT=1
 echo -e "\nUploading release assets for release id '$RELEASE_ID' to Github"
