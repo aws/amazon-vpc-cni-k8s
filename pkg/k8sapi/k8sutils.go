@@ -9,7 +9,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -96,9 +95,4 @@ func CheckAPIServerConnectivity() error {
 		version.Major, version.Minor, version.GitVersion, version.GitTreeState, version.GitCommit, version.Platform)
 
 	return nil
-}
-
-func BroadcastEvent(eventRecorder record.EventRecorder, object runtime.Object, reason string, message string,
-	eventType string) {
-	eventRecorder.Event(object, eventType, reason, message)
 }

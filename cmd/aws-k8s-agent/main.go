@@ -16,7 +16,6 @@ package main
 
 import (
 	"os"
-	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
@@ -58,8 +57,6 @@ func _main() int {
 
 	if err != nil {
 		log.Errorf("Initialization failure: %v", err)
-		// Allow time for event to be broadcast in case of missing permissions
-		time.Sleep(time.Second)
 		return 1
 	}
 
