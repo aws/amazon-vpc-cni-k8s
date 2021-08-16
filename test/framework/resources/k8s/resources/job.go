@@ -32,10 +32,10 @@ type JobManager interface {
 }
 
 type defaultJobManager struct {
-	k8sClient client.DelegatingClient
+	k8sClient client.Client
 }
 
-func NewDefaultJobManager(k8sClient client.DelegatingClient) JobManager {
+func NewDefaultJobManager(k8sClient client.Client) JobManager {
 	return &defaultJobManager{k8sClient: k8sClient}
 }
 
