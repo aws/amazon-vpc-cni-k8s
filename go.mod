@@ -30,5 +30,3 @@ require (
 	k8s.io/cri-api v0.0.0-20191107035106-03d130a7dc28
 	sigs.k8s.io/controller-runtime v0.6.3
 )
-
-replace github.com/aws/aws-sdk-go => ./vendor/github.com/aws/aws-sdk-go
