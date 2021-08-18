@@ -224,7 +224,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	hostInterface := &current.Interface{Name: hostVethName}
-	containerInterface := &current.Interface{Name: args.IfName, Sandbox: args.ContainerID}
+	containerInterface := &current.Interface{Name: args.IfName, Sandbox: args.Netns}
 
 	result := &current.Result{
 		IPs: ips,
