@@ -1,4 +1,52 @@
 ---
+# Source: aws-calico/templates/crds/crd.projectcalico.org_apiservers.yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: apiservers.operator.tigera.io
+spec:
+  group: operator.tigera.io
+  names:
+    kind: APIServer
+    listKind: APIServerList
+    plural: apiservers
+    singular: apiserver
+  scope: Cluster
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: APIServer installs the Tigera API server and related resources.
+          At most one instance of this resource is supported. It must be named "tigera-secure".
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Specification of the desired state for the Tigera API server.
+            type: object
+          status:
+            description: Most recently observed status for the Tigera API server.
+            properties:
+              state:
+                description: State provides user-readable status.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
 # Source: aws-calico/templates/crds/crd.projectcalico.org_bgpconfigurations.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -1841,6 +1889,83 @@ status:
   conditions: []
   storedVersions: []
 ---
+# Source: aws-calico/templates/crds/crd.projectcalico.org_imagesets.yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.3.0
+  name: imagesets.operator.tigera.io
+spec:
+  group: operator.tigera.io
+  names:
+    kind: ImageSet
+    listKind: ImageSetList
+    plural: imagesets
+    singular: imageset
+  scope: Cluster
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: ImageSet is used to specify image digests for the images that
+          the operator deploys. The name of the ImageSet is expected to be in the
+          format `<variang>-<release>`. The `variant` used is `enterprise` if the
+          InstallationSpec Variant is `TigeraSecureEnterprise` otherwise it is `calico`.
+          The `release` must match the version of the variant that the operator is
+          built to deploy, this version can be obtained by passing the `--version`
+          flag to the operator binary.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ImageSetSpec defines the desired state of ImageSet.
+            properties:
+              images:
+                description: Images is the list of images to use digests. All images
+                  that the operator will deploy must be specified.
+                items:
+                  properties:
+                    digest:
+                      description: Digest is the image identifier that will be used
+                        for the Image. The field should not include a leading `@`
+                        and must be prefixed with `sha256:`.
+                      type: string
+                    image:
+                      description: Image is an image that the operator deploys and
+                        instead of using the built in tag the operator will use the
+                        Digest for the image identifier. The value should be the image
+                        name without registry or tag or digest. For the image `docker.io/calico/node:v3.17.1`
+                        it should be represented as `calico/node`
+                      type: string
+                  required:
+                  - digest
+                  - image
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []
+---
 # Source: aws-calico/templates/crds/crd.projectcalico.org_ipamblocks.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -3267,6 +3392,16 @@ spec:
                       - cidr
                       type: object
                     type: array
+                  linuxDataplane:
+                    description: 'LinuxDataplane is used to select the dataplane used
+                      for Linux nodes. In particular, it causes the operator to add
+                      required mounts and environment variables for the particular
+                      dataplane. If not specified, iptables mode is used. Default:
+                      Iptables'
+                    enum:
+                    - Iptables
+                    - BPF
+                    type: string
                   mtu:
                     description: MTU specifies the maximum transmission unit to use
                       on the pod network. If not specified, Calico will perform MTU
@@ -3343,6 +3478,51 @@ spec:
                         type: string
                     type: object
                 type: object
+              certificateManagement:
+                description: CertificateManagement configures pods to submit a CertificateSigningRequest
+                  to the certificates.k8s.io/v1beta1 API in order to obtain TLS certificates.
+                  This feature requires that you bring your own CSR signing and approval
+                  process, otherwise pods will be stuck during initialization.
+                properties:
+                  caCert:
+                    description: Certificate of the authority that signs the CertificateSigningRequests
+                      in PEM format.
+                    format: byte
+                    type: string
+                  keyAlgorithm:
+                    description: 'Specify the algorithm used by pods to generate a
+                      key pair that is associated with the X.509 certificate request.
+                      Default: RSAWithSize2048'
+                    enum:
+                    - ""
+                    - RSAWithSize2048
+                    - RSAWithSize4096
+                    - RSAWithSize8192
+                    - ECDSAWithCurve256
+                    - ECDSAWithCurve384
+                    - ECDSAWithCurve521
+                    type: string
+                  signatureAlgorithm:
+                    description: 'Specify the algorithm used for the signature of
+                      the X.509 certificate request. Default: SHA256WithRSA'
+                    enum:
+                    - ""
+                    - SHA256WithRSA
+                    - SHA384WithRSA
+                    - SHA512WithRSA
+                    - ECDSAWithSHA256
+                    - ECDSAWithSHA384
+                    - ECDSAWithSHA512
+                    type: string
+                  signerName:
+                    description: 'When a CSR is issued to the certificates.k8s.io
+                      API, the signerName is added to the request in order to accommodate
+                      for clusters with multiple signers. Must be formatted as: `<my-domain>/<my-signername>`.'
+                    type: string
+                required:
+                - caCert
+                - signerName
+                type: object
               cni:
                 description: CNI specifies the CNI that will be used by this installation.
                 properties:
@@ -3395,7 +3575,8 @@ spec:
                 type: object
               componentResources:
                 description: ComponentResources can be used to customize the resource
-                  requirements for each component.
+                  requirements for each component. Node, Typha, and KubeControllers
+                  are supported for installations.
                 items:
                   description: The ComponentResource struct associates a ResourceRequirements
                     with a component by name
@@ -3498,9 +3679,21 @@ spec:
                 description: "ImagePath allows for the path part of an image to be
                   specified. If specified then the specified value will be used as
                   the image path for each image. If not specified or empty, the default
-                  for each image will be used. \n Image format:    `<registry>/<imagePath>/<imageName>:<image-tag>`
+                  for each image will be used. A special case value, UseDefault, is
+                  supported to explicitly specify the default image path will be used
+                  for each image. \n Image format:    `<registry>/<imagePath>/<imagePrefix><imageName>:<image-tag>`
                   \n This option allows configuring the `<imagePath>` portion of the
                   above format."
+                type: string
+              imagePrefix:
+                description: "ImagePrefix allows for the prefix part of an image to
+                  be specified. If specified then the given value will be used as
+                  a prefix on each image. If not specified or empty, no prefix will
+                  be used. A special case value, UseDefault, is supported to explicitly
+                  specify the default image prefix will be used for each image. \n
+                  Image format:    `<registry>/<imagePath>/<imagePrefix><imageName>:<image-tag>`
+                  \n This option allows configuring the `<imagePrefix>` portion of
+                  the above format."
                 type: string
               imagePullSecrets:
                 description: ImagePullSecrets is an array of references to container
@@ -3580,7 +3773,8 @@ spec:
                 description: "Registry is the default Docker registry used for component
                   Docker images. If specified, all images will be pulled from this
                   registry. If not specified then the default registries will be used.
-                  \n Image format:    `<registry>/<imagePath>/<imageName>:<image-tag>`
+                  A special case value, UseDefault, is supported to explicitly specify
+                  the default registries will be used. \n Image format:    `<registry>/<imagePath>/<imagePrefix><imageName>:<image-tag>`
                   \n This option allows configuring the `<registry>` portion of the
                   above format."
                 type: string
@@ -3690,6 +3884,110 @@ spec:
                           - weight
                           type: object
                         type: array
+                      requiredDuringSchedulingIgnoredDuringExecution:
+                        description: 'WARNING: Please note that if the affinity requirements
+                          specified by this field are not met at scheduling time,
+                          the pod will NOT be scheduled onto the node. There is no
+                          fallback to another affinity rules with this setting. This
+                          may cause networking disruption or even catastrophic failure!
+                          PreferredDuringSchedulingIgnoredDuringExecution should be
+                          used for affinity unless there is a specific well understood
+                          reason to use RequiredDuringSchedulingIgnoredDuringExecution
+                          and you can guarantee that the RequiredDuringSchedulingIgnoredDuringExecution
+                          will always have sufficient nodes to satisfy the requirement.
+                          NOTE: RequiredDuringSchedulingIgnoredDuringExecution is
+                          set by default for AKS nodes, to avoid scheduling Typhas
+                          on virtual-nodes. If the affinity requirements specified
+                          by this field cease to be met at some point during pod execution
+                          (e.g. due to an update), the system may or may not try to
+                          eventually evict the pod from its node.'
+                        properties:
+                          nodeSelectorTerms:
+                            description: Required. A list of node selector terms.
+                              The terms are ORed.
+                            items:
+                              description: A null or empty node selector term matches
+                                no objects. The requirements of them are ANDed. The
+                                TopologySelectorTerm type implements a subset of the
+                                NodeSelectorTerm.
+                              properties:
+                                matchExpressions:
+                                  description: A list of node selector requirements
+                                    by node's labels.
+                                  items:
+                                    description: A node selector requirement is a
+                                      selector that contains values, a key, and an
+                                      operator that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: Represents a key's relationship
+                                          to a set of values. Valid operators are
+                                          In, NotIn, Exists, DoesNotExist. Gt, and
+                                          Lt.
+                                        type: string
+                                      values:
+                                        description: An array of string values. If
+                                          the operator is In or NotIn, the values
+                                          array must be non-empty. If the operator
+                                          is Exists or DoesNotExist, the values array
+                                          must be empty. If the operator is Gt or
+                                          Lt, the values array must have a single
+                                          element, which will be interpreted as an
+                                          integer. This array is replaced during a
+                                          strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                matchFields:
+                                  description: A list of node selector requirements
+                                    by node's fields.
+                                  items:
+                                    description: A node selector requirement is a
+                                      selector that contains values, a key, and an
+                                      operator that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: Represents a key's relationship
+                                          to a set of values. Valid operators are
+                                          In, NotIn, Exists, DoesNotExist. Gt, and
+                                          Lt.
+                                        type: string
+                                      values:
+                                        description: An array of string values. If
+                                          the operator is In or NotIn, the values
+                                          array must be non-empty. If the operator
+                                          is Exists or DoesNotExist, the values array
+                                          must be empty. If the operator is Gt or
+                                          Lt, the values array must have a single
+                                          element, which will be interpreted as an
+                                          integer. This array is replaced during a
+                                          strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                              type: object
+                            type: array
+                        required:
+                        - nodeSelectorTerms
+                        type: object
                     type: object
                 type: object
               typhaMetricsPort:
@@ -3783,6 +4081,16 @@ spec:
                           - cidr
                           type: object
                         type: array
+                      linuxDataplane:
+                        description: 'LinuxDataplane is used to select the dataplane
+                          used for Linux nodes. In particular, it causes the operator
+                          to add required mounts and environment variables for the
+                          particular dataplane. If not specified, iptables mode is
+                          used. Default: Iptables'
+                        enum:
+                        - Iptables
+                        - BPF
+                        type: string
                       mtu:
                         description: MTU specifies the maximum transmission unit to
                           use on the pod network. If not specified, Calico will perform
@@ -3861,6 +4169,53 @@ spec:
                             type: string
                         type: object
                     type: object
+                  certificateManagement:
+                    description: CertificateManagement configures pods to submit a
+                      CertificateSigningRequest to the certificates.k8s.io/v1beta1
+                      API in order to obtain TLS certificates. This feature requires
+                      that you bring your own CSR signing and approval process, otherwise
+                      pods will be stuck during initialization.
+                    properties:
+                      caCert:
+                        description: Certificate of the authority that signs the CertificateSigningRequests
+                          in PEM format.
+                        format: byte
+                        type: string
+                      keyAlgorithm:
+                        description: 'Specify the algorithm used by pods to generate
+                          a key pair that is associated with the X.509 certificate
+                          request. Default: RSAWithSize2048'
+                        enum:
+                        - ""
+                        - RSAWithSize2048
+                        - RSAWithSize4096
+                        - RSAWithSize8192
+                        - ECDSAWithCurve256
+                        - ECDSAWithCurve384
+                        - ECDSAWithCurve521
+                        type: string
+                      signatureAlgorithm:
+                        description: 'Specify the algorithm used for the signature
+                          of the X.509 certificate request. Default: SHA256WithRSA'
+                        enum:
+                        - ""
+                        - SHA256WithRSA
+                        - SHA384WithRSA
+                        - SHA512WithRSA
+                        - ECDSAWithSHA256
+                        - ECDSAWithSHA384
+                        - ECDSAWithSHA512
+                        type: string
+                      signerName:
+                        description: 'When a CSR is issued to the certificates.k8s.io
+                          API, the signerName is added to the request in order to
+                          accommodate for clusters with multiple signers. Must be
+                          formatted as: `<my-domain>/<my-signername>`.'
+                        type: string
+                    required:
+                    - caCert
+                    - signerName
+                    type: object
                   cni:
                     description: CNI specifies the CNI that will be used by this installation.
                     properties:
@@ -3913,7 +4268,8 @@ spec:
                     type: object
                   componentResources:
                     description: ComponentResources can be used to customize the resource
-                      requirements for each component.
+                      requirements for each component. Node, Typha, and KubeControllers
+                      are supported for installations.
                     items:
                       description: The ComponentResource struct associates a ResourceRequirements
                         with a component by name
@@ -4019,8 +4375,20 @@ spec:
                     description: "ImagePath allows for the path part of an image to
                       be specified. If specified then the specified value will be
                       used as the image path for each image. If not specified or empty,
-                      the default for each image will be used. \n Image format:    `<registry>/<imagePath>/<imageName>:<image-tag>`
+                      the default for each image will be used. A special case value,
+                      UseDefault, is supported to explicitly specify the default image
+                      path will be used for each image. \n Image format:    `<registry>/<imagePath>/<imagePrefix><imageName>:<image-tag>`
                       \n This option allows configuring the `<imagePath>` portion
+                      of the above format."
+                    type: string
+                  imagePrefix:
+                    description: "ImagePrefix allows for the prefix part of an image
+                      to be specified. If specified then the given value will be used
+                      as a prefix on each image. If not specified or empty, no prefix
+                      will be used. A special case value, UseDefault, is supported
+                      to explicitly specify the default image prefix will be used
+                      for each image. \n Image format:    `<registry>/<imagePath>/<imagePrefix><imageName>:<image-tag>`
+                      \n This option allows configuring the `<imagePrefix>` portion
                       of the above format."
                     type: string
                   imagePullSecrets:
@@ -4102,7 +4470,9 @@ spec:
                     description: "Registry is the default Docker registry used for
                       component Docker images. If specified, all images will be pulled
                       from this registry. If not specified then the default registries
-                      will be used. \n Image format:    `<registry>/<imagePath>/<imageName>:<image-tag>`
+                      will be used. A special case value, UseDefault, is supported
+                      to explicitly specify the default registries will be used. \n
+                      Image format:    `<registry>/<imagePath>/<imagePrefix><imageName>:<image-tag>`
                       \n This option allows configuring the `<registry>` portion of
                       the above format."
                     type: string
@@ -4216,6 +4586,115 @@ spec:
                               - weight
                               type: object
                             type: array
+                          requiredDuringSchedulingIgnoredDuringExecution:
+                            description: 'WARNING: Please note that if the affinity
+                              requirements specified by this field are not met at
+                              scheduling time, the pod will NOT be scheduled onto
+                              the node. There is no fallback to another affinity rules
+                              with this setting. This may cause networking disruption
+                              or even catastrophic failure! PreferredDuringSchedulingIgnoredDuringExecution
+                              should be used for affinity unless there is a specific
+                              well understood reason to use RequiredDuringSchedulingIgnoredDuringExecution
+                              and you can guarantee that the RequiredDuringSchedulingIgnoredDuringExecution
+                              will always have sufficient nodes to satisfy the requirement.
+                              NOTE: RequiredDuringSchedulingIgnoredDuringExecution
+                              is set by default for AKS nodes, to avoid scheduling
+                              Typhas on virtual-nodes. If the affinity requirements
+                              specified by this field cease to be met at some point
+                              during pod execution (e.g. due to an update), the system
+                              may or may not try to eventually evict the pod from
+                              its node.'
+                            properties:
+                              nodeSelectorTerms:
+                                description: Required. A list of node selector terms.
+                                  The terms are ORed.
+                                items:
+                                  description: A null or empty node selector term
+                                    matches no objects. The requirements of them are
+                                    ANDed. The TopologySelectorTerm type implements
+                                    a subset of the NodeSelectorTerm.
+                                  properties:
+                                    matchExpressions:
+                                      description: A list of node selector requirements
+                                        by node's labels.
+                                      items:
+                                        description: A node selector requirement is
+                                          a selector that contains values, a key,
+                                          and an operator that relates the key and
+                                          values.
+                                        properties:
+                                          key:
+                                            description: The label key that the selector
+                                              applies to.
+                                            type: string
+                                          operator:
+                                            description: Represents a key's relationship
+                                              to a set of values. Valid operators
+                                              are In, NotIn, Exists, DoesNotExist.
+                                              Gt, and Lt.
+                                            type: string
+                                          values:
+                                            description: An array of string values.
+                                              If the operator is In or NotIn, the
+                                              values array must be non-empty. If the
+                                              operator is Exists or DoesNotExist,
+                                              the values array must be empty. If the
+                                              operator is Gt or Lt, the values array
+                                              must have a single element, which will
+                                              be interpreted as an integer. This array
+                                              is replaced during a strategic merge
+                                              patch.
+                                            items:
+                                              type: string
+                                            type: array
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                    matchFields:
+                                      description: A list of node selector requirements
+                                        by node's fields.
+                                      items:
+                                        description: A node selector requirement is
+                                          a selector that contains values, a key,
+                                          and an operator that relates the key and
+                                          values.
+                                        properties:
+                                          key:
+                                            description: The label key that the selector
+                                              applies to.
+                                            type: string
+                                          operator:
+                                            description: Represents a key's relationship
+                                              to a set of values. Valid operators
+                                              are In, NotIn, Exists, DoesNotExist.
+                                              Gt, and Lt.
+                                            type: string
+                                          values:
+                                            description: An array of string values.
+                                              If the operator is In or NotIn, the
+                                              values array must be non-empty. If the
+                                              operator is Exists or DoesNotExist,
+                                              the values array must be empty. If the
+                                              operator is Gt or Lt, the values array
+                                              must have a single element, which will
+                                              be interpreted as an integer. This array
+                                              is replaced during a strategic merge
+                                              patch.
+                                            items:
+                                              type: string
+                                            type: array
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                  type: object
+                                type: array
+                            required:
+                            - nodeSelectorTerms
+                            type: object
                         type: object
                     type: object
                   typhaMetricsPort:
@@ -4231,6 +4710,11 @@ spec:
                     - TigeraSecureEnterprise
                     type: string
                 type: object
+              imageSet:
+                description: ImageSet is the name of the ImageSet being used, if there
+                  is an ImageSet that is being used. If an ImageSet is not being used
+                  then this will not be set.
+                type: string
               mtu:
                 description: MTU is the most recently observed value for pod network
                   MTU. This may be an explicitly configured value, or based on Calico's
@@ -4250,11 +4734,19 @@ spec:
     storage: true
     subresources:
       status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []
 ---
 # Source: aws-calico/templates/crds/operator.tigera.io_tigerastatuses_crd.yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.3.0
   name: tigerastatuses.operator.tigera.io
 spec:
   group: operator.tigera.io
@@ -4291,16 +4783,17 @@ spec:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
               of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources'
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
             type: string
           kind:
             description: 'Kind is a string value representing the REST resource this
               object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds'
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
             type: string
           metadata:
             type: object
           spec:
+            description: TigeraStatusSpec defines the desired state of TigeraStatus
             type: object
           status:
             description: TigeraStatusStatus defines the observed state of TigeraStatus
@@ -4347,6 +4840,12 @@ spec:
     storage: true
     subresources:
       status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []
 ---
 # Source: aws-calico/templates/tigera-operator/00-namespace-tigera-operator.yaml
 apiVersion: v1
@@ -4403,20 +4902,6 @@ spec:
       - min: 1
         max: 65535
   readOnlyRootFilesystem: false
----
-# Source: aws-calico/templates/tigera-operator/02-rolebinding-tigera-operator.yaml
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: tigera-operator
-subjects:
-- kind: ServiceAccount
-  name: tigera-operator
-  namespace: tigera-operator
-roleRef:
-  kind: ClusterRole
-  name: tigera-operator
-  apiGroup: rbac.authorization.k8s.io
 ---
 # Source: aws-calico/templates/tigera-operator/02-role-tigera-operator.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -4505,15 +4990,30 @@ rules:
       - delete
       - watch
   - apiGroups:
+    - networking.k8s.io
+    resources:
+    - networkpolicies
+    verbs:
+      - create
+      - update
+      - delete
+      - get
+      - list
+      - watch
+  - apiGroups:
     - crd.projectcalico.org
     resources:
     - felixconfigurations
     verbs:
     - patch
+    - list
+    - create
+    - watch
   - apiGroups:
     - crd.projectcalico.org
     resources:
     - ippools
+    - kubecontrollersconfigurations
     verbs:
     - get
     - list
@@ -4554,6 +5054,20 @@ rules:
     verbs:
       - list
       - watch
+      - create 
+      - update
+  # Needed for operator lock
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - get
+      - list
+      - update
+      - delete
+      - watch
   # Add the appropriate pod security policy permissions
   - apiGroups:
       - policy
@@ -4573,6 +5087,28 @@ rules:
       - watch
       - create
       - update
+      - delete
+# Add the permissions to monitor the status of certificatesigningrequests when certificate management is enabled.
+  - apiGroups:
+      - certificates.k8s.io
+    resources:
+      - certificatesigningrequests
+    verbs:
+      - list
+---
+# Source: aws-calico/templates/tigera-operator/02-rolebinding-tigera-operator.yaml
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: tigera-operator
+subjects:
+- kind: ServiceAccount
+  name: tigera-operator
+  namespace: tigera-operator
+roleRef:
+  kind: ClusterRole
+  name: tigera-operator
+  apiGroup: rbac.authorization.k8s.io
 ---
 # Source: aws-calico/templates/tigera-operator/02-serviceaccount-tigera-operator.yaml
 apiVersion: v1
@@ -4613,7 +5149,7 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: tigera-operator
-          image: quay.io/tigera/operator:v1.13.8 
+          image: quay.io/tigera/operator:v1.21.0 
           imagePullPolicy: IfNotPresent
           command:
             - operator
@@ -4631,7 +5167,7 @@ spec:
             - name: OPERATOR_NAME
               value: "tigera-operator"
             - name: TIGERA_OPERATOR_INIT_IMAGE_VERSION
-              value: v1.13.8
+              value: v1.21.0
           envFrom:
             - configMapRef:
                 name: kubernetes-services-endpoint
