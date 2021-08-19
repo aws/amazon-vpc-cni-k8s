@@ -175,15 +175,16 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 
+	var hostVethName string
 	if r.PodVlanId != 0 {
-		hostVethName := generateHostVethName("vlan", string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+		hostVethName = generateHostVethName("vlan", string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 
 		err = driverClient.SetupPodENINetwork(hostVethName, args.IfName, args.Netns, addr, int(r.PodVlanId), r.PodENIMAC,
 			r.PodENISubnetGW, int(r.ParentIfIndex), mtu, log)
 	} else {
 		// build hostVethName
 		// Note: the maximum length for linux interface name is 15
-		hostVethName := generateHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+		hostVethName = generateHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 
 		err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, addr, int(r.DeviceNumber), r.VPCcidrs, r.UseExternalSNAT, mtu, log)
 	}
@@ -213,15 +214,24 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.Wrap(err, "add command: failed to setup network")
 	}
 
+	containerInterfaceIndex := 1
 	ips := []*current.IPConfig{
 		{
-			Version: "4",
-			Address: *addr,
+			Version:   "4",
+			Address:   *addr,
+			Interface: &containerInterfaceIndex,
 		},
 	}
 
+	hostInterface := &current.Interface{Name: hostVethName}
+	containerInterface := &current.Interface{Name: args.IfName, Sandbox: args.Netns}
+
 	result := &current.Result{
 		IPs: ips,
+		Interfaces: []*current.Interface{
+			hostInterface,
+			containerInterface,
+		},
 	}
 
 	return cniTypes.PrintResult(result, conf.CNIVersion)
