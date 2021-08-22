@@ -87,7 +87,7 @@ BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper
 # Plugin binaries
 # Not copied: bridge dhcp firewall flannel host-device host-local ipvlan macvlan ptp sbr static tuning vlan
 # For gnu tar, the full path in the tar file is required
-PLUGIN_BINS = ./loopback ./portmap ./bandwidth
+PLUGIN_BINS = ./loopback ./portmap ./bandwidth ./host-local
 
 # DOCKER_ARGS is extra arguments passed during container image build.
 DOCKER_ARGS =
@@ -120,6 +120,7 @@ build-linux:    ## Build the VPC CNI plugin agent using the host's Go toolchain.
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o egress-v4-cni     ./cmd/egress-v4-cni-plugin
 
 # Build VPC CNI plugin & agent container image.
 docker:	setup-ec2-sdk-override	   ## Build VPC CNI plugin & agent container image.

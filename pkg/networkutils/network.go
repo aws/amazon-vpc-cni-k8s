@@ -128,11 +128,12 @@ var log = logger.Get()
 // NetworkAPIs defines the host level and the ENI level network related operations
 type NetworkAPIs interface {
 	// SetupNodeNetwork performs node level network configuration
-	SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool) error
+	SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool,
+		v4Enabled bool, v6Enabled bool) error
 	// SetupENINetwork performs ENI level network configuration. Not needed on the primary ENI
 	SetupENINetwork(eniIP string, mac string, deviceNumber int, subnetCIDR string) error
 	// UpdateHostIptablesRules updates the nat table iptables rules on the host
-	UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error
+	UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v4Enabled bool, v6Enabled bool) error
 	UseExternalSNAT() bool
 	GetExcludeSNATCIDRs() []string
 	GetRuleList() ([]netlink.Rule, error)
@@ -153,7 +154,7 @@ type linuxNetwork struct {
 
 	netLink     netlinkwrapper.NetLink
 	ns          nswrapper.NS
-	newIptables func() (iptablesIface, error)
+	newIptables func(IPProtocol iptables.Protocol) (iptablesIface, error)
 	mainENIMark uint32
 	procSys     procsyswrapper.ProcSys
 }
@@ -193,8 +194,8 @@ func New() NetworkAPIs {
 
 		netLink: netlinkwrapper.NewNetLink(),
 		ns:      nswrapper.NewNS(),
-		newIptables: func() (iptablesIface, error) {
-			ipt, err := iptables.New()
+		newIptables: func(IPProtocol iptables.Protocol) (iptablesIface, error) {
+			ipt, err := iptables.NewWithProtocol(IPProtocol)
 			return ipt, err
 		},
 		procSys: procsyswrapper.NewProcSys(),
@@ -224,13 +225,38 @@ func findPrimaryInterfaceName(primaryMAC string) (string, error) {
 	return "", errors.New("no primary interface found")
 }
 
+func (n *linuxNetwork) enableIPv6() (err error) {
+	//Make sure IPv6 is enabled on host interfaces
+	if err = n.procSys.Set(fmt.Sprintf("net/ipv6/conf/all/disable_ipv6"), "0"); err != nil {
+		if !os.IsNotExist(err) {
+			return errors.Wrapf(err, "setupVeth network: failed to enable IPv6 on hostVeth interface")
+		}
+	}
+	//Make sure IPv6 forwarding is enabled on all host interfaces
+	if err = n.procSys.Set(fmt.Sprintf("net/ipv6/conf/all/forwarding"), "1"); err != nil {
+		if !os.IsNotExist(err) {
+			return errors.Wrapf(err, "setupVeth network: failed to enable IPv6 forwarding on all host interfaces")
+		}
+	}
+
+	//Let's disable ipv6 forwarding on eth0 (Primary ENI). We will direct external v6 traffic via GW
+	if err = n.procSys.Set(fmt.Sprintf("net/ipv6/conf/eth0/forwarding"), "0"); err != nil {
+		if !os.IsNotExist(err) {
+			return errors.Wrapf(err, "setupVeth network: failed to disable IPv6 forwarding on eth0 interface")
+		}
+	}
+	return nil
+}
+
 // SetupHostNetwork performs node level network configuration
-func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool) error {
+func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool,
+	v4Enabled bool, v6Enabled bool) error {
 	log.Info("Setting up host network... ")
 
 	var err error
 	primaryIntf := "eth0"
-	if n.nodePortSupportEnabled {
+	//RP Filter setting is only needed if IPv4 mode is enabled.
+	if v4Enabled && n.nodePortSupportEnabled {
 		primaryIntf, err = findPrimaryInterfaceName(primaryMAC)
 		if err != nil {
 			return errors.Wrapf(err, "failed to SetupHostNetwork")
@@ -266,16 +292,27 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 		return errors.Wrapf(err, "setupHostNetwork: failed to set MTU to %d for %s", n.mtu, primaryIntf)
 	}
 
+	ipFamily := unix.AF_INET
+	if v6Enabled {
+		ipFamily = unix.AF_INET6
+		if err := n.enableIPv6(); err != nil {
+			return errors.Wrapf(err, "failed to enable IPv6")
+		}
+	}
+
 	// If node port support is enabled, add a rule that will force force marked traffic out of the main ENI.  We then
 	// add iptables rules below that will mark traffic that needs this special treatment.  In particular NodePort
 	// traffic always comes in via the main ENI but response traffic would go out of the pod's assigned ENI if we
 	// didn't handle it specially. This is because the routing decision is done before the NodePort's DNAT is
 	// reversed so, to the routing table, it looks like the traffic is pod traffic instead of NodePort traffic.
+	// Note: With v6 PD mode support, all the pods will be behind Primary ENI of the node and so we might not even need
+	// to mark the packets entering via Primary ENI for NodePort support.
 	mainENIRule := n.netLink.NewRule()
 	mainENIRule.Mark = int(n.mainENIMark)
 	mainENIRule.Mask = int(n.mainENIMark)
 	mainENIRule.Table = mainRoutingTable
 	mainENIRule.Priority = hostRulePriority
+	mainENIRule.Family = ipFamily
 	// If this is a restart, cleanup previous rule first
 	err = n.netLink.RuleDel(mainENIRule)
 	if err != nil && !containsNoSuchRule(err) {
@@ -293,7 +330,9 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 
 	// If we want per pod ENIs, we need to give pod ENIs veth bridges a lower priority that the local table,
 	// or the rp_filter check will fail.
-	if enablePodENI {
+	// Note: Per Pod Security Group is not supported for V6 yet. So, cordoning off the PPSG rule (for now)
+	// with v4 specific check.
+	if v4Enabled && enablePodENI {
 		localRule := n.netLink.NewRule()
 		localRule.Table = localRouteTable
 		localRule.Priority = localRulePriority
@@ -310,37 +349,52 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 		}
 	}
 
-	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr)
+	return n.updateHostIptablesRules(vpcv4CIDRs, primaryMAC, primaryAddr, v4Enabled, v6Enabled)
 }
 
 // UpdateHostIptablesRules updates the NAT table rules based on the VPC CIDRs configuration
-func (n *linuxNetwork) UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error {
-	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr)
+func (n *linuxNetwork) UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v4Enabled bool,
+	v6Enabled bool) error {
+	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr, v4Enabled, v6Enabled)
 }
 
-func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error {
+func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v4Enabled bool,
+	v6Enabled bool) error {
 	primaryIntf, err := findPrimaryInterfaceName(primaryMAC)
 	if err != nil {
 		return errors.Wrapf(err, "failed to SetupHostNetwork")
 	}
-	ipt, err := n.newIptables()
+
+	ipProtocol := iptables.ProtocolIPv4
+	if v6Enabled{
+		//Essentially a stub function for now in V6 mode. We will need it when we support v6 in secondary IP and
+		//custom networking modes. We don't need to install any SNAT rules in v6 mode and currently there is no need
+		//to mark packets entering via Primary ENI as all the pods in v6 mode will be behind primary ENI. Will have to
+		//start doing that once we start supporting custom networking mode in v6.
+		ipProtocol = iptables.ProtocolIPv6
+	}
+
+	ipt, err := n.newIptables(ipProtocol)
 	if err != nil {
 		return errors.Wrap(err, "host network setup: failed to create iptables")
 	}
-	iptablesSNATRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt)
-	if err != nil {
-		return err
-	}
-	if err := n.updateIptablesRules(iptablesSNATRules, ipt); err != nil {
-		return err
-	}
 
-	iptablesConnmarkRules, err := n.buildIptablesConnmarkRules(vpcCIDRs, ipt)
-	if err != nil {
-		return err
-	}
-	if err := n.updateIptablesRules(iptablesConnmarkRules, ipt); err != nil {
-		return err
+	if v4Enabled {
+		iptablesSNATRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt)
+		if err != nil {
+			return err
+		}
+		if err := n.updateIptablesRules(iptablesSNATRules, ipt); err != nil {
+			return err
+		}
+
+		iptablesConnmarkRules, err := n.buildIptablesConnmarkRules(vpcCIDRs, ipt)
+		if err != nil {
+			return err
+		}
+		if err := n.updateIptablesRules(iptablesConnmarkRules, ipt); err != nil {
+			return err
+		}
 	}
 	return nil
 }

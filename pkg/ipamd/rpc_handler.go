@@ -72,9 +72,9 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 
 	failureResponse := rpc.AddNetworkReply{Success: false}
 	var deviceNumber, vlanID, trunkENILinkIndex int
-	var addr, branchENIMAC, podENISubnetGW string
+	var ipv4Addr, ipv6Addr, branchENIMAC, podENISubnetGW string
 	var err error
-	if s.ipamContext.enablePodENI {
+	if !s.ipamContext.enableIPv6 && s.ipamContext.enablePodENI {
 		// Check pod spec for Branch ENI
 		pod, err := s.ipamContext.GetPod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
 		if err != nil {
@@ -105,10 +105,10 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 						return &failureResponse, nil
 					}
 					firstENI := podENIData[0]
-					addr = firstENI.PrivateIP
+					ipv4Addr = firstENI.PrivateIP
 					branchENIMAC = firstENI.IfAddress
 					vlanID = firstENI.VlanID
-					if addr == "" || branchENIMAC == "" || vlanID == 0 {
+					if ipv4Addr == "" || branchENIMAC == "" || vlanID == 0 {
 						log.Errorf("Failed to parse pod-ENI annotation: %s", val)
 						return &failureResponse, nil
 					}
@@ -128,7 +128,9 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			}
 		}
 	}
-	if addr == "" {
+
+	if s.ipamContext.enableIPv4 && ipv4Addr == "" ||
+		s.ipamContext.enableIPv6 && ipv6Addr == "" {
 		if in.ContainerID == "" || in.IfName == "" || in.NetworkName == "" {
 			log.Errorf("Unable to generate IPAMKey from %+v", in)
 			return &failureResponse, nil
@@ -138,43 +140,52 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			IfName:      in.IfName,
 			NetworkName: in.NetworkName,
 		}
-		addr, deviceNumber, err = s.ipamContext.dataStore.AssignPodIPv4Address(ipamKey)
+		//addr, deviceNumber, err = s.ipamContext.dataStore.AssignPodIPv4Address(ipamKey)
+		ipv4Addr, ipv6Addr, deviceNumber, err = s.ipamContext.dataStore.AssignPodIPAddress(ipamKey, s.ipamContext.enableIPv4, s.ipamContext.enableIPv6)
+	}
+
+	var pbVPCV4cidrs, pbVPCV6cidrs []string
+	var useExternalSNAT bool
+	if s.ipamContext.enableIPv4 && ipv4Addr != "" {
+		pbVPCV4cidrs, err = s.ipamContext.awsClient.GetVPCIPv4CIDRs()
 		if err != nil {
-			log.Warnf("Send AddNetworkReply: unable to assign IPv4 address for pod, err: %v", err)
-			return &failureResponse, nil
+			return nil, err
 		}
-	}
-
-	pbVPCcidrs, err := s.ipamContext.awsClient.GetVPCIPv4CIDRs()
-	if err != nil {
-		log.Errorf("Send AddNetworkReply: unable to obtain VPC CIDRs, err: %v", err)
-		return &failureResponse, nil
-	}
-	for _, cidr := range pbVPCcidrs {
-		log.Debugf("VPC CIDR %s", cidr)
-	}
-
-	useExternalSNAT := s.ipamContext.networkClient.UseExternalSNAT()
-	if !useExternalSNAT {
-		for _, cidr := range s.ipamContext.networkClient.GetExcludeSNATCIDRs() {
-			log.Debugf("CIDR SNAT Exclusion %s", cidr)
-			pbVPCcidrs = append(pbVPCcidrs, cidr)
+		for _, cidr := range pbVPCV4cidrs {
+			log.Debugf("VPC CIDR %s", cidr)
+		}
+		useExternalSNAT = s.ipamContext.networkClient.UseExternalSNAT()
+		if !useExternalSNAT {
+			for _, cidr := range s.ipamContext.networkClient.GetExcludeSNATCIDRs() {
+				log.Debugf("CIDR SNAT Exclusion %s", cidr)
+				pbVPCV4cidrs = append(pbVPCV4cidrs, cidr)
+			}
+		}
+	} else if s.ipamContext.enableIPv6 && ipv6Addr != "" {
+		pbVPCV6cidrs, err = s.ipamContext.awsClient.GetVPCIPv6CIDRs()
+		if err != nil {
+			return nil, err
+		}
+		for _, cidr := range pbVPCV6cidrs {
+			log.Debugf("VPC V6 CIDR %s", cidr)
 		}
 	}
 
 	resp := rpc.AddNetworkReply{
 		Success:         err == nil,
-		IPv4Addr:        addr,
+		IPv4Addr:        ipv4Addr,
+		IPv6Addr:        ipv6Addr,
 		DeviceNumber:    int32(deviceNumber),
 		UseExternalSNAT: useExternalSNAT,
-		VPCcidrs:        pbVPCcidrs,
+		VPCV4Cidrs:      pbVPCV4cidrs,
+		VPCV6Cidrs:      pbVPCV6cidrs,
 		PodVlanId:       int32(vlanID),
 		PodENIMAC:       branchENIMAC,
 		PodENISubnetGW:  podENISubnetGW,
 		ParentIfIndex:   int32(trunkENILinkIndex),
 	}
 
-	log.Infof("Send AddNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", addr, deviceNumber, err)
+	log.Infof("Send AddNetworkReply: IPv4Addr %s, IPv6Addr: %s, DeviceNumber: %d, err: %v", ipv4Addr, ipv6Addr, deviceNumber, err)
 	return &resp, nil
 }
 
@@ -201,19 +212,19 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		IfName:      in.IfName,
 		NetworkName: in.NetworkName,
 	}
-	eni, ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPv4Address(ipamKey)
+	eni, ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPAddress(ipamKey)
 	cidr := net.IPNet{IP: net.ParseIP(ip), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	cidrStr := cidr.String()
-	if eni != nil {
-		//cidrStr will be pod IP i.e, IP/32.
+	if s.ipamContext.enableIPv4 && eni != nil {
+		//cidrStr will be pod IP i.e, IP/32 for v4 (or) IP/128 for v6.
 		// Case 1: PD is enabled but IP/32 key in AvailableIPv4Cidrs[cidrStr] exists, this means it is a secondary IP. Added IsPrefix check just for sanity.
 		// So this IP should be released immediately.
 		// Case 2: PD is disabled then IP/32 key in AvailableIPv4Cidrs[cidrStr] will not exists since key to AvailableIPv4Cidrs will be either /28 prefix or /32
 		// secondary IP. Hence now see if we need free up a prefix is no other pods are using it.
-		if s.ipamContext.enableIpv4PrefixDelegation && eni.AvailableIPv4Cidrs[cidrStr] != nil && eni.AvailableIPv4Cidrs[cidrStr].IsPrefix == false {
+		if s.ipamContext.enablePrefixDelegation && eni.AvailableIPv4Cidrs[cidrStr] != nil && eni.AvailableIPv4Cidrs[cidrStr].IsPrefix == false {
 			log.Debugf("IP belongs to secondary pool with PD enabled so free IP from EC2")
 			s.ipamContext.tryUnassignIPFromENI(eni.ID)
-		} else if !s.ipamContext.enableIpv4PrefixDelegation && eni.AvailableIPv4Cidrs[cidrStr] == nil {
+		} else if !s.ipamContext.enablePrefixDelegation && eni.AvailableIPv4Cidrs[cidrStr] == nil {
 			log.Debugf("IP belongs to prefix pool with PD disabled so try free prefix from EC2")
 			s.ipamContext.tryUnassignPrefixFromENI(eni.ID)
 		}

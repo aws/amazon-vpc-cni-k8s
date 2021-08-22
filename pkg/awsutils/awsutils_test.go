@@ -48,6 +48,7 @@ const (
 	metadataSubnetCIDR   = "/subnet-ipv4-cidr-block"
 	metadataIPv4s        = "/local-ipv4s"
 	metadataIPv4Prefixes = "/ipv4-prefix"
+	metadataIPv6Prefixes = "/ipv6-prefix"
 
 	az                   = "us-east-1a"
 	localIP              = "10.0.0.10"
@@ -69,6 +70,7 @@ const (
 	eni2Device           = "1"
 	eni2PrivateIP        = "10.0.0.2"
 	eni2Prefix           = "10.0.2.0/28"
+	eni2v6Prefix         = "2001:db8::/64"
 	eni2ID               = "eni-12341234"
 	metadataVPCIPv4CIDRs = "192.168.0.0/16	100.66.0.0/1"
 )
@@ -631,7 +633,7 @@ func TestAllocPrefixAddresses(t *testing.T) {
 	}
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, nil)
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enableIpv4PrefixDelegation: true}
+	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
 	err := ins.AllocIPAddresses(eniID, 1)
 	assert.NoError(t, err)
 
@@ -648,7 +650,7 @@ func TestAllocPrefixesAlreadyFull(t *testing.T) {
 		NetworkInterfaceId: aws.String(eniID),
 		Ipv4PrefixCount:    aws.Int64(1),
 	}
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "t3.xlarge", enableIpv4PrefixDelegation: true}
+	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "t3.xlarge", enablePrefixDelegation: true}
 
 	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, retErr)
@@ -760,17 +762,15 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 		foundPrefixes      int
 		wantedSecondaryIPs int
 		maxBackoffDelay    time.Duration
+		v4Enabled          bool
+		v6Enabled          bool
 		times              int
 	}
-	eni1Metadata := ENIMetadata{
-		ENIID:         eniID,
-		IPv4Addresses: nil,
-		IPv4Prefixes:  nil,
-	}
+
 	isPrimary := true
 	primaryIP := eni2PrivateIP
 	prefixIP := eni2Prefix
-	eni2Metadata := ENIMetadata{
+	eni1Metadata := ENIMetadata{
 		ENIID:          eni2ID,
 		MAC:            eni2MAC,
 		DeviceNumber:   1,
@@ -787,15 +787,33 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 			},
 		},
 	}
-	eniList := []ENIMetadata{eni1Metadata, eni2Metadata}
+	v6PrefixIP := eni2v6Prefix
+	eni2Metadata := ENIMetadata{
+		ENIID:          eni2ID,
+		MAC:            eni2MAC,
+		DeviceNumber:   1,
+		SubnetIPv4CIDR: subnetCIDR,
+		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			{
+				Primary:          &isPrimary,
+				PrivateIpAddress: &primaryIP,
+			},
+		},
+		IPv6Prefixes: []*ec2.Ipv6PrefixSpecification{
+			{
+				Ipv6Prefix: &v6PrefixIP,
+			},
+		},
+	}
 	tests := []struct {
 		name            string
 		args            args
 		wantEniMetadata ENIMetadata
 		wantErr         bool
 	}{
-		{"Test wait success", args{eni: eni2ID, foundPrefixes: 1, wantedSecondaryIPs: 1, maxBackoffDelay: 5 * time.Millisecond, times: 1}, eniList[1], false},
-		{"Test partial success", args{eni: eni2ID, foundPrefixes: 1, wantedSecondaryIPs: 1, maxBackoffDelay: 5 * time.Millisecond, times: maxENIEC2APIRetries}, eniList[1], false},
+		{"Test wait v4 success", args{eni: eni2ID, foundPrefixes: 1, wantedSecondaryIPs: 1, maxBackoffDelay: 5 * time.Millisecond, times: 1, v4Enabled: true, v6Enabled: false}, eni1Metadata, false},
+		{"Test partial v4 success", args{eni: eni2ID, foundPrefixes: 1, wantedSecondaryIPs: 1, maxBackoffDelay: 5 * time.Millisecond, times: maxENIEC2APIRetries, v4Enabled: true, v6Enabled: false}, eni1Metadata, false},
+		{"Test wait v6 success", args{eni: eni2ID, foundPrefixes: 1, wantedSecondaryIPs: 1, maxBackoffDelay: 5 * time.Millisecond, times: maxENIEC2APIRetries, v4Enabled: false, v6Enabled: true}, eni2Metadata, false},
 		{"Test wait fail", args{eni: eni2ID, foundPrefixes: 0, wantedSecondaryIPs: 1, maxBackoffDelay: 5 * time.Millisecond, times: maxENIEC2APIRetries}, ENIMetadata{}, true},
 	}
 	for _, tt := range tests {
@@ -804,19 +822,24 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 			defer ctrl.Finish()
 			eniIPs := eni2PrivateIP
 			eniPrefixes := eni2Prefix
+			metaDataPrefixPath := metadataIPv4Prefixes
+			if tt.args.v6Enabled {
+				eniPrefixes = eni2v6Prefix
+				metaDataPrefixPath = metadataIPv6Prefixes
+			}
 			if tt.args.foundPrefixes == 0 {
 				eniPrefixes = ""
 			}
-			fmt.Println("eniips", eniIPs)
 			mockMetadata := testMetadata(map[string]interface{}{
 				metadataMACPath: primaryMAC + " " + eni2MAC,
 				metadataMACPath + eni2MAC + metadataDeviceNum:    eni2Device,
 				metadataMACPath + eni2MAC + metadataInterface:    eni2ID,
 				metadataMACPath + eni2MAC + metadataSubnetCIDR:   subnetCIDR,
 				metadataMACPath + eni2MAC + metadataIPv4s:        eniIPs,
-				metadataMACPath + eni2MAC + metadataIPv4Prefixes: eniPrefixes,
+				metadataMACPath + eni2MAC + metaDataPrefixPath:   eniPrefixes,
 			})
-			cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, enableIpv4PrefixDelegation: true}
+			cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2,
+				enablePrefixDelegation: true, v4Enabled: tt.args.v4Enabled, v6Enabled: tt.args.v6Enabled}
 			gotEniMetadata, err := cache.waitForENIAndIPsAttached(tt.args.eni, tt.args.wantedSecondaryIPs, tt.args.maxBackoffDelay)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("waitForENIAndIPsAttached() error = %v, wantErr %v", err, tt.wantErr)
@@ -828,6 +851,8 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 		})
 	}
 }
+
+
 func TestEC2InstanceMetadataCache_SetUnmanagedENIs(t *testing.T) {
 	mockMetadata := testMetadata(nil)
 	ins := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}}

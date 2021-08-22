@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package rpc;
 
+option go_package = "rpc/;rpc";
+
 // The service definition.
 service CNIBackend {
   rpc AddNetwork (AddNetworkRequest) returns (AddNetworkReply) {}
@@ -23,18 +25,21 @@ message AddNetworkRequest {
 message AddNetworkReply {
   bool Success = 1;
   string IPv4Addr = 2;
+  string IPv6Addr = 3;
   int32 DeviceNumber = 4;
   bool UseExternalSNAT = 5;
-  repeated string VPCcidrs = 6;
+  repeated string VPCV4cidrs = 6;
+  repeated string VPCV6cidrs = 7;
+
 
   // start of pod-eni parameters
-  int32 PodVlanId = 7;
-  string PodENIMAC = 8;
-  string PodENISubnetGW = 9;
-  int32 ParentIfIndex = 10;
+  int32 PodVlanId = 8;
+  string PodENIMAC = 9;
+  string PodENISubnetGW = 10;
+  int32 ParentIfIndex = 11;
   // end of pod-eni parameters
 
-  // next field: 11
+  // next field: 12
 }
 
 message DelNetworkRequest {

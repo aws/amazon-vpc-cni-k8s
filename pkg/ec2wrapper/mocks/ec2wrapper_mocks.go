@@ -63,11 +63,31 @@ func (m *MockEC2) AssignPrivateIpAddressesWithContext(arg0 context.Context, arg1
 	return ret0, ret1
 }
 
-// AssignPrivateIpAddressesWithContext indicates an expected call of AssignPrivateIpAddressesWithContext
+// AssignPrivateIpAddressesWithContext indicates an expected call of AssignIpv6AddressesWithContext
 func (mr *MockEC2MockRecorder) AssignPrivateIpAddressesWithContext(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0, arg1}, arg2...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AssignPrivateIpAddressesWithContext", reflect.TypeOf((*MockEC2)(nil).AssignPrivateIpAddressesWithContext), varargs...)
+}
+
+// AssignIpv6AddressesWithContext mocks base method
+func (m *MockEC2) AssignIpv6AddressesWithContext(arg0 context.Context, arg1 *ec2.AssignIpv6AddressesInput, arg2 ...request.Option) (*ec2.AssignIpv6AddressesOutput, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "AssignIpv6AddressesWithContext", varargs...)
+	ret0, _ := ret[0].(*ec2.AssignIpv6AddressesOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AssignIpv6AddressesWithContext indicates an expected call of AssignIpv6AddressesWithContext
+func (mr *MockEC2MockRecorder) AssignIpv6AddressesWithContext(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AssignIpv6AddressesWithContext", reflect.TypeOf((*MockEC2)(nil).AssignIpv6AddressesWithContext), varargs...)
 }
 
 // AttachNetworkInterfaceWithContext mocks base method
@@ -287,4 +307,24 @@ func (mr *MockEC2MockRecorder) UnassignPrivateIpAddressesWithContext(arg0, arg1 
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0, arg1}, arg2...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnassignPrivateIpAddressesWithContext", reflect.TypeOf((*MockEC2)(nil).UnassignPrivateIpAddressesWithContext), varargs...)
+}
+
+// UnassignIpv6AddressesWithContext mocks base method
+func (m *MockEC2) UnassignIpv6AddressesWithContext(arg0 context.Context, arg1 *ec2.UnassignIpv6AddressesInput, arg2 ...request.Option) (*ec2.UnassignIpv6AddressesOutput, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "UnassignIpv6AddressesWithContext", varargs...)
+	ret0, _ := ret[0].(*ec2.UnassignIpv6AddressesOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UnassignIpv6AddressesWithContext indicates an expected call of UnassignPrivateIpAddressesWithContext
+func (mr *MockEC2MockRecorder) UnassignIpv6AddressesWithContext(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnassignPrivateIpAddressesWithContext", reflect.TypeOf((*MockEC2)(nil).UnassignIpv6AddressesWithContext), varargs...)
 }

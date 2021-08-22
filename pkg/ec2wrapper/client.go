@@ -30,6 +30,8 @@ type EC2 interface {
 	DetachNetworkInterfaceWithContext(ctx aws.Context, input *ec2svc.DetachNetworkInterfaceInput, opts ...request.Option) (*ec2svc.DetachNetworkInterfaceOutput, error)
 	AssignPrivateIpAddressesWithContext(ctx aws.Context, input *ec2svc.AssignPrivateIpAddressesInput, opts ...request.Option) (*ec2svc.AssignPrivateIpAddressesOutput, error)
 	UnassignPrivateIpAddressesWithContext(ctx aws.Context, input *ec2svc.UnassignPrivateIpAddressesInput, opts ...request.Option) (*ec2svc.UnassignPrivateIpAddressesOutput, error)
+    AssignIpv6AddressesWithContext(ctx aws.Context, input *ec2svc.AssignIpv6AddressesInput, opts ...request.Option) (*ec2svc.AssignIpv6AddressesOutput, error)
+    UnassignIpv6AddressesWithContext(ctx aws.Context, input *ec2svc.UnassignIpv6AddressesInput, opts ...request.Option) (*ec2svc.UnassignIpv6AddressesOutput, error)
 	DescribeNetworkInterfacesWithContext(ctx aws.Context, input *ec2svc.DescribeNetworkInterfacesInput, opts ...request.Option) (*ec2svc.DescribeNetworkInterfacesOutput, error)
 	ModifyNetworkInterfaceAttributeWithContext(ctx aws.Context, input *ec2svc.ModifyNetworkInterfaceAttributeInput, opts ...request.Option) (*ec2svc.ModifyNetworkInterfaceAttributeOutput, error)
 	CreateTagsWithContext(ctx aws.Context, input *ec2svc.CreateTagsInput, opts ...request.Option) (*ec2svc.CreateTagsOutput, error)
