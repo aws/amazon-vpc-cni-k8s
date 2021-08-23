@@ -495,6 +495,16 @@ This environment variable works when `ENABLE_PREFIX_DELEGATION` is set to `true`
 
 ---
 
+#### `DISABLE_NETWORK_RESOURCE_PROVISIONING` (v1.9.1+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Setting `DISABLE_NETWORK_RESOURCE_PROVISIONING` to `true` will make IPAMD to depend only on IMDS to get attached ENIs and IPs/prefixes. `AmazonEKS_CNI_Policy` doesn't need to be attached to the nodeInstanceRole since no EC2 calls will be made to allocate new ENIs, assign IPs/prefixes, tag ENIs and refresh security groups across ENIs.
+
+---
+
 ### ENI tags related to Allocation
 
 This plugin interacts with the following tags on ENIs:
