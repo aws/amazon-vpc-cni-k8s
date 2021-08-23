@@ -189,7 +189,7 @@ spec:
         - "--multus-conf-file=auto"
         - "--cni-version=0.3.1"
         - "--multus-master-cni-file-name=10-aws.conflist"
-        - "--multus-log-level=debug"
+        - "--multus-log-level=error"
         - "--multus-log-file=/var/log/aws-routed-eni/multus.log"
         resources:
           requests:
