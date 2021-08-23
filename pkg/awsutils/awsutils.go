@@ -1348,7 +1348,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 		}
 		log.Errorf("Failed to allocate a private IP/Prefix addresses on ENI %v: %v", eniID, err)
 		awsAPIErrInc("AssignPrivateIpAddresses", err)
-		return errors.Wrap(err, "allocate IP/Prefix address: failed to allocate a private IP/Prefix address")
+		return err
 	}
 	if output != nil {
 		if cache.enableIpv4PrefixDelegation {

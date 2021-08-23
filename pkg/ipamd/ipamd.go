@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -292,6 +293,14 @@ func prometheusRegister() {
 	}
 }
 
+// containsInsufficientCidrBlocksError returns whether exceeds ENI's IP address limit
+func containsInsufficientCidrBlocksError(err error) bool {
+	if aerr, ok := err.(awserr.Error); ok {
+		return aerr.Code() == "InsufficientCidrBlocks"
+	}
+	return false
+}
+
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
 func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContext, error) {
@@ -494,6 +503,10 @@ func (c *IPAMContext) nodeInit() error {
 	if err == nil && increasedPool {
 		c.updateLastNodeIPPoolAction()
 	} else if err != nil {
+		if containsInsufficientCidrBlocksError(err) {
+			log.Errorf("Unable to attach IP/Prefixes for the ENI, reconciler will try again")
+			return nil
+		}
 		return err
 	}
 	return nil
@@ -691,6 +704,10 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 	increasedPool, err := c.tryAssignCidrs()
 	if err != nil {
 		log.Errorf(err.Error())
+		if containsInsufficientCidrBlocksError(err) {
+			log.Errorf("Unable to attach IP/Prefixes for the ENI, reconciler will try again")
+			return
+		}
 	}
 	if increasedPool {
 		c.updateLastNodeIPPoolAction()
@@ -757,6 +774,10 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 		log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", resourcesToAllocate, err)
 		// Continue to process the allocated IP addresses
 		ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
+		if containsInsufficientCidrBlocksError(err) {
+			log.Errorf("Unable to attach IP/Prefixes for the ENI, reconciler will try again")
+			return err
+		}
 	}
 
 	eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni, resourcesToAllocate)
@@ -827,7 +848,8 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 			err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 			if err != nil {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err: %v", eni.ID, err))
+				log.Errorf("failed to allocate one IP addresses on ENI %s, err: %v", eni.ID, err)
+				return false, err
 			}
 		}
 		// This call to EC2 is needed to verify which IPs got attached to this ENI.
@@ -857,7 +879,8 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 			err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 			if err != nil {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err))
+				log.Errorf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err)
+				return false, err
 			}
 		}
 		ec2Prefixes, err := c.awsClient.GetIPv4PrefixesFromEC2(eni.ID)
