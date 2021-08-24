@@ -248,7 +248,7 @@ local awsnode = {
   },
 
   crd: {
-    apiVersion: "apiextensions.k8s.io/v1beta1",
+    apiVersion: "apiextensions.k8s.io/v1",
     kind: "CustomResourceDefinition",
     metadata: {
       name: "eniconfigs.crd.k8s.amazonaws.com",
@@ -256,10 +256,16 @@ local awsnode = {
     spec: {
       scope: "Cluster",
       group: "crd.k8s.amazonaws.com",
+      preserveUnknownFields: false,
       versions: [{
         name: "v1alpha1",
         served: true,
         storage: true,
+        schema: {
+            openAPIV3Schema: {
+              type: "object",
+              "x-kubernetes-preserve-unknown-fields": true,
+            }},
       }],
       names: {
         plural: "eniconfigs",
