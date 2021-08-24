@@ -36,10 +36,6 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 	)
 
 	JustBeforeEach(func() {
-		By("creating test namespace")
-		f.K8sResourceManagers.NamespaceManager().
-			CreateNamespace(utils.DefaultTestNamespace)
-
 		By("creating deployment")
 		serverDeploymentBuilder = manifest.NewDefaultDeploymentBuilder().
 			Name("traffic-server").
@@ -52,10 +48,6 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 	})
 
 	JustAfterEach(func() {
-		By("deleting test namespace")
-		f.K8sResourceManagers.NamespaceManager().
-			DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
-
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
 			utils.AwsNodeNamespace, utils.AwsNodeName,
 			map[string]string{"ENABLE_PREFIX_DELEGATION": "false"})
