@@ -31,7 +31,7 @@ type DeploymentManager interface {
 }
 
 type defaultDeploymentManager struct {
-	k8sClient client.DelegatingClient
+	k8sClient client.Client
 }
 
 // CreateAndWaitTillDeploymentIsReady creates and waits for deployment to become ready or timeout
@@ -80,6 +80,6 @@ func (d defaultDeploymentManager) DeleteAndWaitTillDeploymentIsDeleted(deploymen
 	}, ctx.Done())
 }
 
-func NewDefaultDeploymentManager(k8sClient client.DelegatingClient) DeploymentManager {
+func NewDefaultDeploymentManager(k8sClient client.Client) DeploymentManager {
 	return &defaultDeploymentManager{k8sClient: k8sClient}
 }

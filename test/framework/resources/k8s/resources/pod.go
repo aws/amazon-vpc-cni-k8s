@@ -45,12 +45,12 @@ type PodManager interface {
 }
 
 type defaultPodManager struct {
-	k8sClient client.DelegatingClient
+	k8sClient client.Client
 	k8sSchema *runtime.Scheme
 	config    *rest.Config
 }
 
-func NewDefaultPodManager(k8sClient client.DelegatingClient, k8sSchema *runtime.Scheme,
+func NewDefaultPodManager(k8sClient client.Client, k8sSchema *runtime.Scheme,
 	config *rest.Config) PodManager {
 
 	return &defaultPodManager{
@@ -212,5 +212,5 @@ func (d *defaultPodManager) getRestClientForPod(namespace string, name string) (
 	if err != nil {
 		return nil, err
 	}
-	return apiutil.RESTClientForGVK(gkv, d.config, serializer.NewCodecFactory(d.k8sSchema))
+	return apiutil.RESTClientForGVK(gkv, false, d.config, serializer.NewCodecFactory(d.k8sSchema))
 }
