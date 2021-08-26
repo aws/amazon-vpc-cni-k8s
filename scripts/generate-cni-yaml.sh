@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 PLATFORM=$(uname | tr '[:upper:]' '[:lower:]')
-HELM_VERSION="3.0.2"
+HELM_VERSION="3.6.3"
 NAMESPACE="kube-system"
 
 MAKEFILEPATH=$SCRIPTPATH/../Makefile
@@ -70,7 +70,7 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
         NEW_METRICS_RESOURCES_YAML="${METRICS_RESOURCES_YAML}-${ecrRegion}.yaml"
     fi
 
-    $BUILD_DIR/helm template charts/aws-vpc-cni \
+    $BUILD_DIR/helm template aws-vpc-cni \
       --set originalMatchLabels=true,\
       --set init.image.region=$ecrRegion,\
       --set init.image.account=$ecrAccount,\
@@ -83,7 +83,7 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
     cat $NEW_CNI_RESOURCES_YAML | grep -v 'helm.sh\|app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
     mv $BUILD_DIR/helm_annotations_removed.yaml $NEW_CNI_RESOURCES_YAML
 
-    $BUILD_DIR/helm template charts/cni-metrics-helper \
+    $BUILD_DIR/helm template cni-metrics-helper \
       --set image.region=$ecrRegion,\
       --set image.account=$ecrAccount,\
       --set image.domain=$ecrDomain \
