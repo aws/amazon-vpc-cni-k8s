@@ -501,7 +501,7 @@ Type: Boolean as a String
 
 Default: `false`
 
-Setting `DISABLE_NETWORK_RESOURCE_PROVISIONING` to `true` will make IPAMD to depend only on IMDS to get attached ENIs and IPs/prefixes. `AmazonEKS_CNI_Policy` doesn't need to be attached to the nodeInstanceRole since no EC2 calls will be made to allocate new ENIs, assign IPs/prefixes, tag ENIs and refresh security groups across ENIs.
+Setting `DISABLE_NETWORK_RESOURCE_PROVISIONING` to `true` will make IPAMD to depend only on IMDS to get attached ENIs and IPs/prefixes. `AmazonEKS_CNI_Policy` doesn't need to be attached to the nodeInstanceRole since no EC2 calls will be made to allocate new ENIs, assign IPs/prefixes, tag ENIs, refresh security groups across ENIs and clean up leaked ENIs in the account. This environment variable won't be supported with IRSA since IPAM-D would need `AmazonEKSWorkerNodePolicy` for EC2 describe calls to list and read.
 
 ---
 

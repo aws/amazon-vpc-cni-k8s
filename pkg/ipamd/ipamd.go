@@ -303,8 +303,9 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.networkClient = networkutils.New()
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.enableIpv4PrefixDelegation = useIpv4PrefixDelegation()
+	c.disableENIProvisioning = disablingENIProvisioning()
 
-	client, err := awsutils.New(c.useCustomNetworking)
+	client, err := awsutils.New(c.useCustomNetworking, c.disableENIProvisioning)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
@@ -317,7 +318,6 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.minimumIPTarget = getMinimumIPTarget()
 	c.warmPrefixTarget = getWarmPrefixTarget()
 
-	c.disableENIProvisioning = disablingENIProvisioning()
 	c.enablePodENI = enablePodENI()
 
 	hypervisorType, err := c.awsClient.GetInstanceHypervisorFamily()
