@@ -136,6 +136,12 @@ const (
 	//envWarmPrefixTarget is used to keep a /28 prefix in warm pool.
 	envWarmPrefixTarget     = "WARM_PREFIX_TARGET"
 	defaultWarmPrefixTarget = 0
+
+	//insufficientCidrErrorCooldown is the amount of time reconciler will wait before trying to fetch
+	//more IPs/prefixes for an ENI. With InsufficientCidr we know the subnet doesn't have enough IPs so
+	//instead of retrying every 5s which would lead to increase in EC2 AllocIPAddress calls, we wait for
+	//120 seconds for a retry.
+	insufficientCidrErrorCooldown = 120 * time.Second
 )
 
 var log = logger.Get()
@@ -224,6 +230,7 @@ type IPAMContext struct {
 	enablePodENI               bool
 	myNodeName                 string
 	enableIpv4PrefixDelegation bool
+	lastInsufficientCidrError  time.Time
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -299,6 +306,11 @@ func containsInsufficientCidrBlocksError(err error) bool {
 		return aerr.Code() == "InsufficientCidrBlocks"
 	}
 	return false
+}
+
+// inInsufficientCidrCoolingPeriod checks whether IPAMD is in insufficientCidrErrorCooldown
+func (c *IPAMContext) inInsufficientCidrCoolingPeriod() bool {
+	return time.Since(c.lastInsufficientCidrError) <= insufficientCidrErrorCooldown
 }
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
@@ -504,7 +516,8 @@ func (c *IPAMContext) nodeInit() error {
 		c.updateLastNodeIPPoolAction()
 	} else if err != nil {
 		if containsInsufficientCidrBlocksError(err) {
-			log.Errorf("Unable to attach IP/Prefixes for the ENI, reconciler will try again")
+			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
+			c.lastInsufficientCidrError = time.Now()
 			return nil
 		}
 		return err
@@ -701,11 +714,17 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 		return
 	}
 	// Try to add more Cidrs to existing ENIs first.
+	if c.inInsufficientCidrCoolingPeriod() {
+		log.Debug("Recently we had InsufficientCidr Error hence will wait for 2 mins before retrying")
+		return
+	}
+
 	increasedPool, err := c.tryAssignCidrs()
 	if err != nil {
 		log.Errorf(err.Error())
 		if containsInsufficientCidrBlocksError(err) {
-			log.Errorf("Unable to attach IP/Prefixes for the ENI, reconciler will try again")
+			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
+			c.lastInsufficientCidrError = time.Now()
 			return
 		}
 	}
@@ -775,7 +794,8 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 		// Continue to process the allocated IP addresses
 		ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 		if containsInsufficientCidrBlocksError(err) {
-			log.Errorf("Unable to attach IP/Prefixes for the ENI, reconciler will try again")
+			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
+			c.lastInsufficientCidrError = time.Now()
 			return err
 		}
 	}
