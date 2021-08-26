@@ -10,7 +10,9 @@ init:
   image:
     tag: v1.9.0
     region: us-west-2
+    account: "602401143452"   
     pullPolicy: Always
+    domain: "amazonaws.com"  
     # Set to use custom image
     # override: "repo/org/image:tag"
   env:
@@ -21,6 +23,8 @@ init:
 image:
   region: us-west-2
   tag: v1.9.0
+  account: "602401143452"   
+  domain: "amazonaws.com"  
   pullPolicy: Always
   # Set to use custom image
   # override: "repo/org/image:tag"
