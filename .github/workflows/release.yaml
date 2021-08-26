@@ -22,5 +22,8 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v2
     
+    - name: Attach release artifacts 
+      run: make release
+
     - name: Create eks-charts PR
-      run: make ekscharts-sync-release
+      run: make ekscharts-sync-release  

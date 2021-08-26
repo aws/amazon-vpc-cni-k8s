@@ -2,6 +2,7 @@ kind: DaemonSet
 apiVersion: apps/v1
 metadata:
   name: {{ include "aws-vpc-cni.fullname" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
 {{ include "aws-vpc-cni.labels" . | indent 4 }}
 spec:

@@ -33,7 +33,7 @@ ginkgo -v --failOnPending -- \
  --cluster-name=$CLUSTER_NAME \
  --aws-region=$AWS_REGION \
  --aws-vpc-id=$VPC_ID \
- --ng-name-label-val=$NG_NAME_LABEL_KEY \
+ --ng-name-label-key=$NG_NAME_LABEL_KEY \
  --ng-name-label-val=$NG_NAME_LABEL_VAL
 ```
 
@@ -49,7 +49,7 @@ In order to test a custom image you need pass the following tags along with the 
 *IMPORTANT*: The CNI Metric test is suitable for release testing of new CNI Metrics Helper manifest only if the manifest and the local helm charts are in sync.
 
 ### Future Work
-Currently the package is named as `integraiton-new` because we already have `integration` directory with existing Ginkgo test cases with a separate `go.mod`. Once the older package is completely deprecated we will rename this package to `integration`.
+Currently the package is named as `integration-new` because we already have `integration` directory with existing Ginkgo test cases with a separate `go.mod`. Once the older package is completely deprecated we will rename this package to `integration`.
 
 
 

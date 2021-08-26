@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "0 3 * * *"  # every night
 
+permissions:
+  contents: read
+
 jobs:
   # Run nightly e2e tests on self-hosted runner
   integration-cron:

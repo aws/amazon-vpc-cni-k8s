@@ -2,6 +2,7 @@ kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: {{ include "cni-metrics-helper.fullname" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
     k8s-app: cni-metrics-helper
 spec:
