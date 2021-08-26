@@ -1181,7 +1181,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 
 		isTrunkENI := attachedENI.ENIID == trunkENI
 		isEFAENI := efaENIs[attachedENI.ENIID]
-		if !isTrunkENI {
+		if !isTrunkENI && !c.disableENIProvisioning {
 			if err := c.awsClient.TagENI(attachedENI.ENIID, eniTagMap[attachedENI.ENIID]); err != nil {
 				log.Errorf("IP pool reconcile: failed to tag managed ENI %v: %v", attachedENI.ENIID, err)
 				ipamdErrInc("eniReconcileAdd")
