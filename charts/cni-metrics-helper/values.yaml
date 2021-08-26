@@ -5,7 +5,8 @@ nameOverride: cni-metrics-helper
 image:
   region: us-west-2
   tag: v1.9.0
-  account: "602401143452"   
+  account: "602401143452"
+  domain: "amazonaws.com"   
   # Set to use custom image
   # override: "repo/org/image:tag"
 
