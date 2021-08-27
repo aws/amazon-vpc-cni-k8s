@@ -518,14 +518,14 @@ func (c *IPAMContext) nodeInit() error {
 		if err == nil && increasedPool {
 			c.updateLastNodeIPPoolAction()
 		} else if err != nil {
-      if containsInsufficientCidrBlocksError(err) {
-			  log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
-			   c.lastInsufficientCidrError = time.Now()
-			   return nil
-		  }
+			if containsInsufficientCidrBlocksError(err) {
+				log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
+				c.lastInsufficientCidrError = time.Now()
+				return nil
+			}
 			return err
-    }
-  }
+		}
+	}
 	return nil
 }
 
