@@ -342,7 +342,7 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 }
 
 // New creates an EC2InstanceMetadataCache
-func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
+func New(useCustomNetworking, disableENIProvisioning bool) (*EC2InstanceMetadataCache, error) {
 	//ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
 	ctx := context.Background()
 
@@ -379,7 +379,9 @@ func New(useCustomNetworking bool) (*EC2InstanceMetadataCache, error) {
 	}
 
 	// Clean up leaked ENIs in the background
-	go wait.Forever(cache.cleanUpLeakedENIs, time.Hour)
+	if !disableENIProvisioning {
+		go wait.Forever(cache.cleanUpLeakedENIs, time.Hour)
+	}
 
 	return cache, nil
 }

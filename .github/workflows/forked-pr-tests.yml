@@ -8,6 +8,9 @@ on:
         default: ''
         required: true
 
+permissions:
+  contents: read
+
 jobs:
   # Repo owner has triggered this run
   integration-fork:

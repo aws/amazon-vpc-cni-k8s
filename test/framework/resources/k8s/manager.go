@@ -45,7 +45,7 @@ type defaultManager struct {
 	configMapManager      resources.ConfigMapManager
 }
 
-func NewResourceManager(k8sClient client.DelegatingClient,
+func NewResourceManager(k8sClient client.Client,
 	scheme *runtime.Scheme, config *rest.Config) ResourceManagers {
 	return &defaultManager{
 		jobManager:            resources.NewDefaultJobManager(k8sClient),

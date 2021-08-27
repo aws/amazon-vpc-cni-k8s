@@ -324,8 +324,9 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.networkClient = networkutils.New()
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.enableIpv4PrefixDelegation = useIpv4PrefixDelegation()
+	c.disableENIProvisioning = disablingENIProvisioning()
 
-	client, err := awsutils.New(c.useCustomNetworking)
+	client, err := awsutils.New(c.useCustomNetworking, c.disableENIProvisioning)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
@@ -338,7 +339,6 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.minimumIPTarget = getMinimumIPTarget()
 	c.warmPrefixTarget = getWarmPrefixTarget()
 
-	c.disableENIProvisioning = disablingENIProvisioning()
 	c.enablePodENI = enablePodENI()
 
 	hypervisorType, err := c.awsClient.GetInstanceHypervisorFamily()
@@ -362,15 +362,17 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 
 	mac := c.awsClient.GetPrimaryENImac()
 	// retrieve security groups
+	if !c.disableENIProvisioning {
+		err = c.awsClient.RefreshSGIDs(mac)
+		if err != nil {
+			return nil, err
+		}
 
-	err = c.awsClient.RefreshSGIDs(mac)
-	if err != nil {
-		return nil, err
+		// Refresh security groups and VPC CIDR blocks in the background
+		// Ignoring errors since we will retry in 30s
+		go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
 	}
 
-	// Refresh security groups and VPC CIDR blocks in the background
-	// Ignoring errors since we will retry in 30s
-	go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
 	return c, nil
 }
 
@@ -422,7 +424,7 @@ func (c *IPAMContext) nodeInit() error {
 
 		isTrunkENI := eni.ENIID == metadataResult.TrunkENI
 		isEFAENI := metadataResult.EFAENIs[eni.ENIID]
-		if !isTrunkENI {
+		if !isTrunkENI && !c.disableENIProvisioning {
 			if err := c.awsClient.TagENI(eni.ENIID, metadataResult.TagMap[eni.ENIID]); err != nil {
 				return errors.Wrapf(err, "ipamd init: failed to tag managed ENI %v", eni.ENIID)
 			}
@@ -510,18 +512,20 @@ func (c *IPAMContext) nodeInit() error {
 		c.askForTrunkENIIfNeeded(ctx)
 	}
 
-	// For a new node, attach Cidrs (secondary ips/prefixes)
-	increasedPool, err := c.tryAssignCidrs()
-	if err == nil && increasedPool {
-		c.updateLastNodeIPPoolAction()
-	} else if err != nil {
-		if containsInsufficientCidrBlocksError(err) {
-			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
-			c.lastInsufficientCidrError = time.Now()
-			return nil
-		}
-		return err
-	}
+	if !c.disableENIProvisioning {
+		// For a new node, attach Cidrs (secondary ips/prefixes)
+		increasedPool, err := c.tryAssignCidrs()
+		if err == nil && increasedPool {
+			c.updateLastNodeIPPoolAction()
+		} else if err != nil {
+      if containsInsufficientCidrBlocksError(err) {
+			  log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
+			   c.lastInsufficientCidrError = time.Now()
+			   return nil
+		  }
+			return err
+    }
+  }
 	return nil
 }
 
@@ -1220,7 +1224,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 
 		isTrunkENI := attachedENI.ENIID == trunkENI
 		isEFAENI := efaENIs[attachedENI.ENIID]
-		if !isTrunkENI {
+		if !isTrunkENI && !c.disableENIProvisioning {
 			if err := c.awsClient.TagENI(attachedENI.ENIID, eniTagMap[attachedENI.ENIID]); err != nil {
 				log.Errorf("IP pool reconcile: failed to tag managed ENI %v: %v", attachedENI.ENIID, err)
 				ipamdErrInc("eniReconcileAdd")
