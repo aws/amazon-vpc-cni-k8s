@@ -2,6 +2,7 @@ kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: {{ include "cni-metrics-helper.fullname" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
     k8s-app: cni-metrics-helper
 spec:
@@ -20,5 +21,5 @@ spec:
           value: {{ $value | quote }}
 {{- end }}
         name: cni-metrics-helper
-        image: "{{- if .Values.image.override }}{{- .Values.image.override }}{{- else }}602401143452.dkr.ecr.{{- .Values.image.region }}.amazonaws.com/cni-metrics-helper:{{- .Values.image.tag }}{{- end}}"
+        image: "{{- if .Values.image.override }}{{- .Values.image.override }}{{- else }}{{- .Values.image.account }}.dkr.ecr.{{- .Values.image.region }}.{{- .Values.image.domain }}/cni-metrics-helper:{{- .Values.image.tag }}{{- end}}"
       serviceAccountName: {{ template "cni-metrics-helper.serviceAccountName" . }} 
