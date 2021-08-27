@@ -223,6 +223,9 @@ type ENIMetadata struct {
 	// SubnetIPv4CIDR is the ipv4 cider of network interface
 	SubnetIPv4CIDR string
 
+	// PrimaryVPCIPv4CIDRBlock is the ipv4 CIDR of the primary network interface's VPC
+	PrimaryVPCIPv4CIDRBlock string
+
 	// The ip addresses allocated for the network interface
 	IPv4Addresses []*ec2.NetworkInterfacePrivateIpAddress
 
@@ -585,6 +588,15 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		return ENIMetadata{}, err
 	}
 
+	vpcCidrBlocks, err := cache.imds.GetVPCIPv4CIDRBlocks(ctx, eniMAC)
+	if err != nil {
+		return ENIMetadata{}, err
+	}
+	if len(vpcCidrBlocks) == 0 {
+		return ENIMetadata{}, errors.New(fmt.Sprintf("unable to find the primary VPC CIDR block for ENI %s", eniMAC))
+	}
+	primaryVPCCIDRBlock := vpcCidrBlocks[0]
+
 	// TODO: return a simpler data structure.
 	ec2ip4s := make([]*ec2.NetworkInterfacePrivateIpAddress, len(imdsIPv4s))
 	for i, ip4 := range imdsIPv4s {
@@ -612,12 +624,13 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	}
 
 	return ENIMetadata{
-		ENIID:          eniID,
-		MAC:            eniMAC,
-		DeviceNumber:   deviceNum,
-		SubnetIPv4CIDR: cidr.String(),
-		IPv4Addresses:  ec2ip4s,
-		IPv4Prefixes:   ec2ipv4Prefixes,
+		ENIID:                   eniID,
+		MAC:                     eniMAC,
+		DeviceNumber:            deviceNum,
+		SubnetIPv4CIDR:          cidr.String(),
+		PrimaryVPCIPv4CIDRBlock: primaryVPCCIDRBlock.String(),
+		IPv4Addresses:           ec2ip4s,
+		IPv4Prefixes:            ec2ipv4Prefixes,
 	}, nil
 }
 

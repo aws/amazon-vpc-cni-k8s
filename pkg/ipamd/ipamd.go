@@ -374,6 +374,8 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 	log.Debugf("Max ip per ENI %d and max prefixes per ENI %d", c.maxIPsPerENI, c.maxPrefixesPerENI)
+	c.minimumIPTarget = c.maxIPsPerENI * (nodeMaxENI - 1) // provisions all service ENIs and IPs, no matter which instance type
+	log.Infof("Using %d (%d * %d) as the minimum IP target", c.minimumIPTarget, c.maxIPsPerENI, nodeMaxENI-1)
 
 	vpcCIDRs, err := c.awsClient.GetVPCIPv4CIDRs()
 	if err != nil {
@@ -1516,9 +1518,17 @@ func useIpv4PrefixDelegation() bool {
 
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag
 func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
+	primaryENI, err := c.findPrimaryENI(enis)
+	if err != nil {
+		log.Infof("Unexpected: unable to find the primary ENI...using an empty value instead...")
+		primaryENI = awsutils.ENIMetadata{}
+	}
+
 	numFiltered := 0
 	ret := make([]awsutils.ENIMetadata, 0, len(enis))
 	for _, eni := range enis {
+		log.Infof("Checking if ENI %s (devNum: %d) should be unmanaged", eni.ENIID, eni.DeviceNumber)
+
 		// If we have unmanaged ENIs, filter them out
 		if c.awsClient.IsUnmanagedENI(eni.ENIID) {
 			log.Debugf("Skipping ENI %s: tagged with %s", eni.ENIID, eniNoManageTagKey)
@@ -1530,11 +1540,31 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 			continue
 		}
 
+		// Consider ENIs with VPC CIDR != service VPC CIDR to be unmanaged
+		if eni.PrimaryVPCIPv4CIDRBlock != primaryENI.PrimaryVPCIPv4CIDRBlock {
+			log.Infof("Treating ENI %s as unmanaged because it's VPC CIDR (%s) doesn't match the VPC CIDR of the primary ENI (%s)",
+				eni.ENIID, eni.PrimaryVPCIPv4CIDRBlock, primaryENI.PrimaryVPCIPv4CIDRBlock)
+			numFiltered++
+			continue
+		}
+		log.Infof("Filtered all unmanaged ENIs: %d", numFiltered)
+
 		ret = append(ret, eni)
 	}
 	c.unmanagedENI = numFiltered
 	c.updateIPStats(numFiltered)
 	return ret
+}
+
+func (c *IPAMContext) findPrimaryENI(enis []awsutils.ENIMetadata) (awsutils.ENIMetadata, error) {
+	primaryENIId := c.awsClient.GetPrimaryENI()
+	for _, eni := range enis {
+		if eni.ENIID == primaryENIId {
+			return eni, nil
+		}
+	}
+
+	return awsutils.ENIMetadata{}, errors.New("unable to find the primary ENI")
 }
 
 // datastoreTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET,
