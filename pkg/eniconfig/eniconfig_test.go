@@ -56,6 +56,16 @@ func TestMyENIConfig(t *testing.T) {
 		},
 	}
 
+	testENIConfigCustom := &v1alpha1.ENIConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "custom",
+		},
+		Spec: v1alpha1.ENIConfigSpec{
+			SecurityGroups: []string{"SG1"},
+			Subnet:         "SB1",
+		},
+	}
+
 	type env struct {
 		nodes                  []*corev1.Node
 		eniconfigs             []*v1alpha1.ENIConfig
@@ -165,6 +175,20 @@ func TestMyENIConfig(t *testing.T) {
 				eniConfigAnnotationKey: "k8s.amazonaws.com/myENIConfig",
 			},
 			want:    &testENIConfigAZ1.Spec,
+			wantErr: nil,
+		},
+		{
+			name: "Matching ENIConfig available - Using label",
+			env: env{
+				nodes:      []*corev1.Node{testNode},
+				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1, testENIConfigCustom},
+				Labels: map[string]string{
+					"vpc.amazonaws.com/eniConfig":            "custom",
+					"failure-domain.beta.kubernetes.io/zone": "az2",
+				},
+				eniConfigLabelKey: "failure-domain.beta.kubernetes.io/zone",
+			},
+			want:    &testENIConfigCustom.Spec,
 			wantErr: nil,
 		},
 		{

@@ -32,6 +32,7 @@ const (
 	defaultEniConfigAnnotationDef = "k8s.amazonaws.com/eniConfig"
 	defaultEniConfigLabelDef      = "k8s.amazonaws.com/eniConfig"
 	eniConfigDefault              = "default"
+	eniConfigLabel                = "vpc.amazonaws.com/eniConfig"
 
 	// when "ENI_CONFIG_LABEL_DEF is defined, ENIConfigController will use that label key to
 	// search if is setting value for eniConfigLabelDef
@@ -135,8 +136,13 @@ func GetNodeSpecificENIConfigName(ctx context.Context, k8sClient client.Client) 
 	eniConfigName = val
 	if val != eniConfigDefault {
 		labels := node.GetLabels()
-		labels["vpc.amazonaws.com/eniConfig"] = eniConfigName
-		node.SetLabels(labels)
+		if labels[eniConfigLabel] == "" {
+			//Only set if the label is not already set.
+			labels[eniConfigLabel] = eniConfigName
+			node.SetLabels(labels)
+		} else {
+			return labels[eniConfigLabel], nil
+		}
 	}
 
 	return eniConfigName, nil
