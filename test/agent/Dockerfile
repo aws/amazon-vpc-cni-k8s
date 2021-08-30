@@ -26,8 +26,12 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build \
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build \
     -a -o metric-server cmd/metric-server/main.go
 
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build \
+    -a -o snat-utils cmd/snat-utils/main.go
+
 FROM public.ecr.aws/amazonlinux/amazonlinux:2
 RUN yum update -y && \
+    yum install -y iptables && \
     yum clean all
 
 WORKDIR /
