@@ -51,7 +51,7 @@
   - "list"
   - "watch"
 ---
-"apiVersion": "apiextensions.k8s.io/v1beta1"
+"apiVersion": "apiextensions.k8s.io/v1"
 "kind": "CustomResourceDefinition"
 "metadata":
   "name": "eniconfigs.crd.k8s.amazonaws.com"
@@ -62,10 +62,15 @@
     "plural": "eniconfigs"
     "singular": "eniconfig"
   "scope": "Cluster"
+  "preserveUnknownFields": false
   "versions":
-  - "name": "v1alpha1"
-    "served": true
-    "storage": true
+    - "name": "v1alpha1"
+      "served": true
+      "storage": true
+      "schema":
+        "openAPIV3Schema":
+          "type": object
+          "x-kubernetes-preserve-unknown-fields": true
 ---
 "apiVersion": "apps/v1"
 "kind": "DaemonSet"
@@ -145,6 +150,8 @@
           "value": "false"
         - "name": "DISABLE_METRICS"
           "value": "false"
+        - "name": "DISABLE_NETWORK_RESOURCE_PROVISIONING"
+          "value": "false"
         - "name": "ENABLE_POD_ENI"
           "value": "false"
         - "name": "ENABLE_PREFIX_DELEGATION"
@@ -202,6 +209,13 @@
           "value": "false"
         "image": "961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/amazon-k8s-cni-init:v1.9.0"
         "name": "aws-vpc-cni-init"
+        "resources":
+          "limits":
+            "cpu": "50m"
+            "memory": "64Mi"
+          "requests":
+            "cpu": "10m"
+            "memory": "32Mi"
         "securityContext":
           "privileged": true
         "volumeMounts":
