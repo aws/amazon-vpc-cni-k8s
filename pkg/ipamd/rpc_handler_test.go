@@ -137,7 +137,7 @@ func TestServer_AddNetwork(t *testing.T) {
 				IPv4Addr:        "192.168.1.100",
 				DeviceNumber:    int32(0),
 				UseExternalSNAT: true,
-				VPCV4Cidrs:      []string{"10.10.0.0/16"},
+				VPCv4CIDRs:      []string{"10.10.0.0/16"},
 			},
 		},
 		{
@@ -169,7 +169,7 @@ func TestServer_AddNetwork(t *testing.T) {
 				IPv4Addr:        "192.168.1.100",
 				DeviceNumber:    int32(0),
 				UseExternalSNAT: false,
-				VPCV4Cidrs:      []string{"10.10.0.0/16", "10.12.0.0/16", "10.13.0.0/16"},
+				VPCv4CIDRs:      []string{"10.10.0.0/16", "10.12.0.0/16", "10.13.0.0/16"},
 			},
 		},
 		{
@@ -203,7 +203,7 @@ func TestServer_AddNetwork(t *testing.T) {
 				Success:      true,
 				IPv6Addr:     "2001:db8::",
 				DeviceNumber: int32(0),
-				VPCV6Cidrs:   []string{"2001:db8::/56"},
+				VPCv6CIDRs:   []string{"2001:db8::/56"},
 			},
 		},
 		{

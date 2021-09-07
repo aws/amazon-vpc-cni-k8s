@@ -102,7 +102,7 @@ func TestNodeInit(t *testing.T) {
 	fakeCheckpoint := datastore.CheckpointData{
 		Version: datastore.CheckpointFormatVersion,
 		Allocations: []datastore.CheckpointEntry{
-			{IPAMKey: datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IP: ipaddr02},
+			{IPAMKey: datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IPv4: ipaddr02},
 		},
 	}
 
@@ -186,7 +186,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	fakeCheckpoint := datastore.CheckpointData{
 		Version: datastore.CheckpointFormatVersion,
 		Allocations: []datastore.CheckpointEntry{
-			{IPAMKey: datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IP: ipaddrPD01},
+			{IPAMKey: datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IPv4: ipaddrPD01},
 		},
 	}
 
@@ -269,7 +269,7 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 	fakeCheckpoint := datastore.CheckpointData{
 		Version: datastore.CheckpointFormatVersion,
 		Allocations: []datastore.CheckpointEntry{
-			{IPAMKey: datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IP: ipaddrPD01},
+			{IPAMKey: datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IPv6: ipaddrPD01},
 		},
 	}
 
@@ -306,7 +306,6 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.awsutils.EXPECT().GetPrimaryENImac().Return(eni1.MAC)
 	m.awsutils.EXPECT().IsPrimaryENI(primaryENIid).Return(true).AnyTimes()
-
 
 	eniMetadataSlice := []awsutils.ENIMetadata{eni1}
 	resp := awsutils.DescribeAllENIsResult{

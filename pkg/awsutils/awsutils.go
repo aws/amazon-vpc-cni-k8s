@@ -211,9 +211,9 @@ type EC2InstanceMetadataCache struct {
 	availabilityZone string
 	region           string
 
-	unmanagedENIs       StringSet
-	useCustomNetworking bool
-	cniunmanagedENIs    StringSet
+	unmanagedENIs          StringSet
+	useCustomNetworking    bool
+	cniunmanagedENIs       StringSet
 	enablePrefixDelegation bool
 
 	clusterName       string
@@ -623,7 +623,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 
 	// If IPv6 is enabled, get attached v6 prefixes.
 	if cache.v6Enabled {
-		imdsIPv6Prefixes, err := cache.imds.GetLocalIPv6Prefixes(ctx, eniMAC)
+		imdsIPv6Prefixes, err := cache.imds.GetIPv6Prefixes(ctx, eniMAC)
 		if err != nil {
 			return ENIMetadata{}, err
 		}
@@ -637,7 +637,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		// If primary ENI has prefixes attached and then we move to custom networking, we don't need to fetch
 		// the prefix since recommendation is to terminate the nodes and that would have deleted the prefix on the
 		// primary ENI.
-		imdsIPv4Prefixes, err := cache.imds.GetLocalIPv4Prefixes(ctx, eniMAC)
+		imdsIPv4Prefixes, err := cache.imds.GetIPv4Prefixes(ctx, eniMAC)
 		if err != nil {
 			return ENIMetadata{}, err
 		}
@@ -1034,8 +1034,7 @@ func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList [
 
 // GetIPv4PrefixesFromEC2 calls EC2 and returns a list of all addresses on the ENI
 func (cache *EC2InstanceMetadataCache) GetIPv4PrefixesFromEC2(eniID string) (addrList []*ec2.Ipv4PrefixSpecification, err error) {
-	eniIds := make([]*string, 0)
-	eniIds = append(eniIds, aws.String(eniID))
+	eniIds := []*string{aws.String(eniID)}
 	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIds}
 
 	start := time.Now()
@@ -1063,8 +1062,7 @@ func (cache *EC2InstanceMetadataCache) GetIPv4PrefixesFromEC2(eniID string) (add
 
 // GetIPv6PrefixesFromEC2 calls EC2 and returns a list of all addresses on the ENI
 func (cache *EC2InstanceMetadataCache) GetIPv6PrefixesFromEC2(eniID string) (addrList []*ec2.Ipv6PrefixSpecification, err error) {
-	eniIds := make([]*string, 0)
-	eniIds = append(eniIds, aws.String(eniID))
+	eniIds := []*string{aws.String(eniID)}
 	input := &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIds}
 
 	start := time.Now()

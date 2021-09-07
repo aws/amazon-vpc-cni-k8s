@@ -146,13 +146,6 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 				return errors.Wrapf(err, "setupVeth network: failed to enable IPv6 on container's lo interface")
 			}
 		}
-
-		//Enable v6 forwarding on Container's veth interface. We will set the same on Host side veth after we move it to host netns.
-		if err = createVethContext.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/forwarding", createVethContext.contVethName), "1"); err != nil {
-			if !os.IsNotExist(err) {
-				return errors.Wrapf(err, "setupVeth network: failed to enable IPv6 forwarding container veth interface")
-			}
-		}
 	}
 
 	// Add a connected route to a dummy next hop (169.254.1.1 or fe80::1)
@@ -160,24 +153,23 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	// default via 169.254.1.1 dev eth0
 	// 169.254.1.1 dev eth0
 
-	var gwIP string
+	var gw net.IP
 	var maskLen int
 	var addr *netlink.Addr
 	var defNet *net.IPNet
 
 	if createVethContext.v4Addr != nil {
-		gwIP = "169.254.1.1"
+		gw = net.IPv4(169, 254, 1, 1)
 		maskLen = 32
 		addr = &netlink.Addr{IPNet: createVethContext.v4Addr}
-		_, defNet, _ = net.ParseCIDR("0.0.0.0/0")
+		defNet = &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, maskLen)}
 	} else if createVethContext.v6Addr != nil {
-		gwIP = "fe80::1"
+		gw = net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
 		maskLen = 128
 		addr = &netlink.Addr{IPNet: createVethContext.v6Addr}
-		_, defNet, _ = net.ParseCIDR("::/0")
+		defNet = &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, maskLen)}
 	}
 
-	gw := net.ParseIP(gwIP)
 	gwNet := &net.IPNet{IP: gw, Mask: net.CIDRMask(maskLen, maskLen)}
 
 	if err = createVethContext.netLink.RouteReplace(&netlink.Route{

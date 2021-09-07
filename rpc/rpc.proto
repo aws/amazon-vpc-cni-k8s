@@ -28,16 +28,17 @@ message AddNetworkReply {
   string IPv6Addr = 3;
   int32 DeviceNumber = 4;
   bool UseExternalSNAT = 5;
-  repeated string VPCV4cidrs = 6;
-  repeated string VPCV6cidrs = 7;
+  repeated string VPCv4CIDRs = 6;
 
 
   // start of pod-eni parameters
-  int32 PodVlanId = 8;
-  string PodENIMAC = 9;
-  string PodENISubnetGW = 10;
-  int32 ParentIfIndex = 11;
+  int32 PodVlanId = 7;
+  string PodENIMAC = 8;
+  string PodENISubnetGW = 9;
+  int32 ParentIfIndex = 10;
   // end of pod-eni parameters
+
+  repeated string VPCv6CIDRs = 11;
 
   // next field: 12
 }

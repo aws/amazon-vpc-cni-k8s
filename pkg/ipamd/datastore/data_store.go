@@ -78,8 +78,6 @@ const checkpointMigrationPhase = 1
 const backfillNetworkName = "_migrated-from-cri"
 const backfillNetworkIface = "unknown"
 
-const defaultMaxIPv6addresses = 250
-
 // ErrUnknownPod is an error when there is no pod in data store matching pod name, namespace, sandbox id
 var ErrUnknownPod = errors.New("datastore: unknown pod")
 
@@ -344,7 +342,8 @@ type CheckpointData struct {
 // in checkpoints.
 type CheckpointEntry struct {
 	IPAMKey
-	IP string `json:"ip"`
+	IPv4 string `json:"ipv4,omitempty"`
+	IPv6 string `json:"ipv6,omitempty"`
 }
 
 // ReadBackingStore initialises the IP allocation state from the
@@ -357,7 +356,7 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 	case 1:
 		// Phase1: Read from CRI
 		ds.log.Infof("Reading ipam state from CRI")
-
+		var ipv4Addr, ipv6Addr string
 		sandboxes, err := ds.cri.GetRunningPodSandboxes(ds.log)
 		if err != nil {
 			return err
@@ -366,6 +365,11 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 		entries := make([]CheckpointEntry, 0, len(sandboxes))
 		for _, s := range sandboxes {
 			ds.log.Debugf("Adding container ID: %v", s.ID)
+			if isv6Enabled {
+				ipv6Addr = s.IP
+			} else {
+				ipv4Addr = s.IP
+			}
 			entries = append(entries, CheckpointEntry{
 				// NB: These Backfill values are also assumed in UnassignPodIPAddress
 				IPAMKey: IPAMKey{
@@ -373,7 +377,8 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 					ContainerID: s.ID,
 					IfName:      backfillNetworkIface,
 				},
-				IP: s.IP,
+				IPv4: ipv4Addr,
+				IPv6: ipv6Addr,
 			})
 		}
 		data = CheckpointData{
@@ -409,25 +414,29 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 	defer ds.lock.Unlock()
 
 	for _, allocation := range data.Allocations {
-		ipAddr := net.ParseIP(allocation.IP)
+		ipv4Addr := net.ParseIP(allocation.IPv4)
+		ipv6Addr := net.ParseIP(allocation.IPv6)
+		var ipAddr net.IP
 		found := false
 	eniloop:
 		for _, eni := range ds.eniPool {
 			eniCidrs := eni.AvailableIPv4Cidrs
+			ipAddr = ipv4Addr
 			if isv6Enabled {
 				ds.log.Debugf("v6 is enabled")
 				eniCidrs = eni.IPv6Cidrs
+				ipAddr = ipv6Addr
 			}
 			for _, cidr := range eniCidrs {
 				ds.log.Debugf("Checking if IP: %v belongs to CIDR: %v", ipAddr, cidr.Cidr)
 				if cidr.Cidr.Contains(ipAddr) {
 					// Found!
 					found = true
-					if _, ok := cidr.IPAddresses[allocation.IP]; ok {
+					if _, ok := cidr.IPAddresses[ipAddr.String()]; ok {
 						return errors.New(IPAlreadyInStoreError)
 					}
 					addr := &AddressInfo{Address: ipAddr.String()}
-					cidr.IPAddresses[allocation.IP] = addr
+					cidr.IPAddresses[ipAddr.String()] = addr
 					ds.assignPodIPAddressUnsafe(allocation.IPAMKey, eni, addr)
 					ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
 					//Update prometheus for ips per cidr
@@ -438,7 +447,8 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 			}
 		}
 		if !found {
-			ds.log.Infof("datastore: Sandbox %s uses unknown IP Address %s - presuming stale/dead", allocation.IPAMKey, allocation.IP)
+			ds.log.Infof("datastore: Sandbox %s uses unknown IP Address %s - presuming stale/dead",
+				allocation.IPAMKey, ipAddr.String())
 		}
 	}
 
@@ -466,7 +476,7 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 				if addr.Assigned() {
 					entry := CheckpointEntry{
 						IPAMKey: addr.IPAMKey,
-						IP:    addr.Address,
+						IPv4:    addr.Address,
 					}
 					allocations = append(allocations, entry)
 				}
@@ -478,7 +488,7 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 				if addr.Assigned() {
 					entry := CheckpointEntry{
 						IPAMKey: addr.IPAMKey,
-						IP:    addr.Address,
+						IPv6:    addr.Address,
 					}
 					allocations = append(allocations, entry)
 				}
@@ -539,7 +549,7 @@ func (ds *DataStore) AddIPv4CidrToStore(eniID string, ipv4Cidr net.IPNet, isPref
 
 	newCidrInfo := &CidrInfo{
 		Cidr:          ipv4Cidr,
-		IPAddresses: make(map[string]*AddressInfo),
+		IPAddresses:   make(map[string]*AddressInfo),
 		IsPrefix:      isPrefix,
 		AddressFamily: "4",
 	}
@@ -630,18 +640,16 @@ func (ds *DataStore) AddIPv6CidrToStore(eniID string, ipv6Cidr net.IPNet, isPref
 	}
 
 	ds.log.Debugf("Assigning IPv6CIDRs")
-	if curENI.IPv6Cidrs == nil { curENI.IPv6Cidrs = make(map[string]*CidrInfo) }
+	if curENI.IPv6Cidrs == nil {
+		curENI.IPv6Cidrs = make(map[string]*CidrInfo)
+	}
 	curENI.IPv6Cidrs[strIPv6Cidr] = &CidrInfo{
 		Cidr:          ipv6Cidr,
 		IPAddresses:   make(map[string]*AddressInfo),
 		IsPrefix:      isPrefix,
 		AddressFamily: "6",
 	}
-
-	//curENI.IPv6Cidrs[strIPv6Cidr].Size() will end up with a huge number. So, instead capping it to Max Pods ceiling on
-	//an EKS Node. TODO - Should we increase the default value further as VPC CNI can also be used in a Self Managed K8S
-	//cluster with no such upper bound?
-	ds.total += defaultMaxIPv6addresses
+	ds.total += curENI.IPv6Cidrs[strIPv6Cidr].Size()
 	if isPrefix {
 		ds.allocatedPrefix++
 	}
@@ -830,7 +838,7 @@ func (ds *DataStore) GetStats(addressFamily string) (int, int, int) {
 				assignedIPs += cidr.AssignedIPAddressesInCidr()
 				//Set to default Max pods we support on an instance, otherwise we will end up displaying
 				//a huge number.
-				totalIPs += defaultMaxIPv6addresses
+				totalIPs += cidr.Size()
 			}
 		}
 	}
@@ -1233,9 +1241,9 @@ func (ds *DataStore) GetENIInfos() *ENIInfos {
 		tmpENIInfo.IPv6Cidrs = make(map[string]*CidrInfo, len(eniInfo.IPv6Cidrs))
 		for cidr, _ := range eniInfo.AvailableIPv4Cidrs {
 			tmpENIInfo.AvailableIPv4Cidrs[cidr] = &CidrInfo{
-				Cidr:          eniInfo.AvailableIPv4Cidrs[cidr].Cidr,
+				Cidr:        eniInfo.AvailableIPv4Cidrs[cidr].Cidr,
 				IPAddresses: make(map[string]*AddressInfo, len(eniInfo.AvailableIPv4Cidrs[cidr].IPAddresses)),
-				IsPrefix:      eniInfo.AvailableIPv4Cidrs[cidr].IsPrefix,
+				IsPrefix:    eniInfo.AvailableIPv4Cidrs[cidr].IsPrefix,
 			}
 			// Since IP Addresses might get removed, we need to make a deep copy here.
 			for ip, ipAddrInfoRef := range eniInfo.AvailableIPv4Cidrs[cidr].IPAddresses {
@@ -1245,9 +1253,9 @@ func (ds *DataStore) GetENIInfos() *ENIInfos {
 		}
 		for cidr, _ := range eniInfo.IPv6Cidrs {
 			tmpENIInfo.IPv6Cidrs[cidr] = &CidrInfo{
-				Cidr:          eniInfo.IPv6Cidrs[cidr].Cidr,
+				Cidr:        eniInfo.IPv6Cidrs[cidr].Cidr,
 				IPAddresses: make(map[string]*AddressInfo, len(eniInfo.IPv6Cidrs[cidr].IPAddresses)),
-				IsPrefix:      eniInfo.IPv6Cidrs[cidr].IsPrefix,
+				IsPrefix:    eniInfo.IPv6Cidrs[cidr].IsPrefix,
 			}
 			// Since IP Addresses might get removed, we need to make a deep copy here.
 			for ip, ipAddrInfoRef := range eniInfo.IPv6Cidrs[cidr].IPAddresses {
@@ -1412,7 +1420,7 @@ func (ds *DataStore) FindFreeableCidrs(eniID string) []CidrInfo {
 		if assignedaddr.AssignedIPAddressesInCidr() == 0 {
 			tempFreeable := CidrInfo{
 				Cidr:          assignedaddr.Cidr,
-				IPAddresses: nil,
+				IPAddresses:   nil,
 				IsPrefix:      assignedaddr.IsPrefix,
 				AddressFamily: assignedaddr.AddressFamily,
 			}

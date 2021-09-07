@@ -752,12 +752,24 @@ func TestSetupHostNetworkWithIPv6Enabled(t *testing.T) {
 	setupNetLinkMocks(ctrl, mockNetLink)
 	mockProcSys.EXPECT().Set("net/ipv6/conf/all/disable_ipv6", "0").Return(nil)
 	mockProcSys.EXPECT().Set("net/ipv6/conf/all/forwarding", "1").Return(nil)
-	mockProcSys.EXPECT().Set("net/ipv6/conf/eth0/forwarding", "0").Return(nil)
-
+	mockProcSys.EXPECT().Set("net/ipv6/conf/eth0/accept_ra", "2").Return(nil)
 
 	var vpcCIDRs []string
 	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, false, true)
 	assert.NoError(t, err)
+
+	assert.Equal(t, map[string]map[string][][]string{
+		"filter": {
+			"FORWARD": [][]string{
+				{
+					"-d", "169.254.172.0/22",
+					"-m", "conntrack", "--ctstate", "NEW",
+					"-m", "comment", "--comment", "Block Node Local Pod access via IPv4",
+					"-j", "REJECT",
+				},
+			},
+		},
+	}, mockIptables.dataplaneState)
 }
 
 func TestIncrementIPv4Addr(t *testing.T) {
@@ -878,6 +890,10 @@ func (ipt *mockIptables) Exists(table, chainName string, rulespec ...string) (bo
 }
 
 func (ipt *mockIptables) Insert(table, chain string, pos int, rulespec ...string) error {
+	if ipt.dataplaneState[table] == nil {
+		ipt.dataplaneState[table] = map[string][][]string{}
+	}
+	ipt.dataplaneState[table][chain] = append(ipt.dataplaneState[table][chain], rulespec)
 	return nil
 }
 

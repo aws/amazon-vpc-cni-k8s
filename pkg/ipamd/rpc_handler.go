@@ -140,7 +140,6 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			IfName:      in.IfName,
 			NetworkName: in.NetworkName,
 		}
-		//addr, deviceNumber, err = s.ipamContext.dataStore.AssignPodIPv4Address(ipamKey)
 		ipv4Addr, ipv6Addr, deviceNumber, err = s.ipamContext.dataStore.AssignPodIPAddress(ipamKey, s.ipamContext.enableIPv4, s.ipamContext.enableIPv6)
 	}
 
@@ -177,8 +176,8 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 		IPv6Addr:        ipv6Addr,
 		DeviceNumber:    int32(deviceNumber),
 		UseExternalSNAT: useExternalSNAT,
-		VPCV4Cidrs:      pbVPCV4cidrs,
-		VPCV6Cidrs:      pbVPCV6cidrs,
+		VPCv4CIDRs:      pbVPCV4cidrs,
+		VPCv6CIDRs:      pbVPCV6cidrs,
 		PodVlanId:       int32(vlanID),
 		PodENIMAC:       branchENIMAC,
 		PodENISubnetGW:  podENISubnetGW,

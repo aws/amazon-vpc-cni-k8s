@@ -42,17 +42,6 @@ func iptRules4(target, src net.IP, chain, comment string, useRandomFully bool) [
 	return rules
 }
 
-//Setup a rule to block egress traffic directed to 169.254.172.0/22 from the Pod
-func SetupRuleToBlockNodeLocalV4Access() error{
-	ipt, _ := iptables.NewWithProtocol(iptables.ProtocolIPv4)
-	if err := ipt.AppendUnique("filter", "OUTPUT", "-d", "169.254.172.0/22", "-m", "comment",
-			"--comment", "Block Node Local Pod access via IPv4", "-j", "DROP"); err != nil {
-			return fmt.Errorf("failed adding v4 drop route: %v", err)
-			}
-
-	return nil
-}
-
 // Snat4 SNATs IPv4 connections from `src` to `target`
 func Snat4(target, src net.IP, chain, comment string) error {
 	ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4)

@@ -713,7 +713,6 @@ func TestEC2InstanceMetadataCache_waitForENIAndIPsAttached(t *testing.T) {
 				PrivateIpAddress: &secondaryIP2,
 			},
 		},
-		//IPv4Prefixes: make([]*ec2.Ipv4PrefixSpecification, 0),
 		IPv4Prefixes: nil,
 	}
 	eniList := []ENIMetadata{eni1Metadata, eni2Metadata}
@@ -832,11 +831,11 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 			}
 			mockMetadata := testMetadata(map[string]interface{}{
 				metadataMACPath: primaryMAC + " " + eni2MAC,
-				metadataMACPath + eni2MAC + metadataDeviceNum:    eni2Device,
-				metadataMACPath + eni2MAC + metadataInterface:    eni2ID,
-				metadataMACPath + eni2MAC + metadataSubnetCIDR:   subnetCIDR,
-				metadataMACPath + eni2MAC + metadataIPv4s:        eniIPs,
-				metadataMACPath + eni2MAC + metaDataPrefixPath:   eniPrefixes,
+				metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
+				metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
+				metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
+				metadataMACPath + eni2MAC + metadataIPv4s:      eniIPs,
+				metadataMACPath + eni2MAC + metaDataPrefixPath: eniPrefixes,
 			})
 			cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2,
 				enablePrefixDelegation: true, v4Enabled: tt.args.v4Enabled, v6Enabled: tt.args.v6Enabled}
@@ -851,7 +850,6 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 		})
 	}
 }
-
 
 func TestEC2InstanceMetadataCache_SetUnmanagedENIs(t *testing.T) {
 	mockMetadata := testMetadata(nil)

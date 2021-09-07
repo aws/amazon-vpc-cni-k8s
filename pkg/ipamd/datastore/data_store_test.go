@@ -255,7 +255,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, checkpoint.Data, &CheckpointData{
 		Version: CheckpointFormatVersion,
 		Allocations: []CheckpointEntry{
-			{IPAMKey: IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"}, IP: "1.1.1.1"},
+			{IPAMKey: IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"}, IPv4: "1.1.1.1"},
 		},
 	})
 
@@ -285,7 +285,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, checkpoint.Data, &CheckpointData{
 		Version: CheckpointFormatVersion,
 		Allocations: []CheckpointEntry{
-			{IPAMKey: IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"}, IP: "1.1.1.1"},
+			{IPAMKey: IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"}, IPv4: "1.1.1.1"},
 		},
 	})
 	checkpoint.Error = nil

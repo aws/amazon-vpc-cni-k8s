@@ -239,11 +239,34 @@ func (n *linuxNetwork) enableIPv6() (err error) {
 		}
 	}
 
-	//Let's disable ipv6 forwarding on eth0 (Primary ENI). We will direct external v6 traffic via GW
-	if err = n.procSys.Set(fmt.Sprintf("net/ipv6/conf/eth0/forwarding"), "0"); err != nil {
+	//Set accept_ra to '2' for eth0. Allows us to overrule forwarding behaviour for the Node's Primary interface and
+	//will allow eth0 to accept Router Advertisements even though forwarding is enabled on *all* interfaces on the host netns.
+	if err = n.procSys.Set(fmt.Sprintf("net/ipv6/conf/eth0/accept_ra"), "2"); err != nil {
 		if !os.IsNotExist(err) {
-			return errors.Wrapf(err, "setupVeth network: failed to disable IPv6 forwarding on eth0 interface")
+			return errors.Wrapf(err, "setupVeth network: failed to set accept_ra to 2 for eth0")
 		}
+	}
+
+	if err = n.setupRuleToBlockNodeLocalV4Access(); err != nil {
+		return errors.Wrapf(err, "setupVeth network: failed to setup route to block pod access via IPv4 address")
+	}
+	return nil
+}
+
+func (n *linuxNetwork) SetupRuleToBlockNodeLocalV4Access() error {
+	return n.setupRuleToBlockNodeLocalV4Access()
+}
+
+//Setup a rule to block traffic directed to v4 interface of the Pod
+func (n *linuxNetwork) setupRuleToBlockNodeLocalV4Access() error {
+	ipt, err := n.newIptables(iptables.ProtocolIPv4)
+	if err != nil {
+		return errors.Wrap(err, "failed to create iptables")
+	}
+
+	if err := ipt.Insert("filter", "FORWARD", 1, "-d", "169.254.172.0/22", "-m", "conntrack",
+		"--ctstate", "NEW", "-m", "comment", "--comment", "Block Node Local Pod access via IPv4", "-j", "REJECT"); err != nil {
+		return fmt.Errorf("failed adding v4 drop route: %v", err)
 	}
 	return nil
 }
@@ -366,7 +389,7 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 	}
 
 	ipProtocol := iptables.ProtocolIPv4
-	if v6Enabled{
+	if v6Enabled {
 		//Essentially a stub function for now in V6 mode. We will need it when we support v6 in secondary IP and
 		//custom networking modes. We don't need to install any SNAT rules in v6 mode and currently there is no need
 		//to mark packets entering via Primary ENI as all the pods in v6 mode will be behind primary ENI. Will have to

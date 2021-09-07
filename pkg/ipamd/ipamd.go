@@ -146,7 +146,6 @@ const (
 	ipV6AddrFamily = "6"
 )
 
-
 var log = logger.Get()
 
 var (
@@ -442,7 +441,6 @@ func (c *IPAMContext) nodeInit() error {
 	if err := c.dataStore.ReadBackingStore(c.enableIPv6); err != nil {
 		return err
 	}
-
 
 	if c.enableIPv6 {
 		//We will not support upgrading/converting an existing IPv4 cluster to operate in IPv6 mode. So, we will always
@@ -871,8 +869,7 @@ func (c *IPAMContext) assignIPv6Prefix(eniID string) (err error) {
 	//Let's make an EC2 API call to get a list of IPv6 prefixes (if any) that are already attached to the
 	//current ENI. We will make this call only once during boot up/init and doing so will shield us from any
 	//IMDS out of sync issues. We only need one v6 prefix per ENI/Node.
-	var ec2v6Prefixes []*ec2.Ipv6PrefixSpecification
-	ec2v6Prefixes, err = c.awsClient.GetIPv6PrefixesFromEC2(eniID)
+	ec2v6Prefixes, err := c.awsClient.GetIPv6PrefixesFromEC2(eniID)
 	if err != nil {
 		log.Errorf("assignIPv6Prefix; err: %s", err)
 		return err
@@ -896,6 +893,11 @@ func (c *IPAMContext) assignIPv6Prefix(eniID string) (err error) {
 			ec2v6Prefixes = append(ec2v6Prefixes, &ec2.Ipv6PrefixSpecification{Ipv6Prefix: v6Prefix})
 		}
 		log.Debugf("Successfully allocated an IPv6Prefix for ENI: %s", eniID)
+	} else if len(ec2v6Prefixes) > 1 {
+		//Found more than one v6 prefix attached to the ENI. VPC CNI will only attach a single v6 prefix
+		//and it will not attempt to free any additional Prefixes that are already attached.
+		//Will use the first IPv6 Prefix attached for IP address allocation.
+		ec2v6Prefixes = []*ec2.Ipv6PrefixSpecification{ec2v6Prefixes[0]}
 	}
 	c.addENIv6prefixesToDataStore(ec2v6Prefixes, eniID)
 	return nil
@@ -2081,7 +2083,6 @@ func (c *IPAMContext) isConfigValid() bool {
 		log.Warnf("Prefix delegation is not supported on non-nitro instance %s hence falling back to default (secondary IP) mode", c.awsClient.GetInstanceType())
 		c.enablePrefixDelegation = false
 	}
-
 
 	return true
 }

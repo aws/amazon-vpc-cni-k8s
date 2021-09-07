@@ -93,11 +93,6 @@ func (imds TypedIMDS) GetLocalIPv4(ctx context.Context) (net.IP, error) {
 	return imds.getIP(ctx, "local-ipv4")
 }
 
-// GetLocalIPv6s returns the IPv6 addresses of the instance.
-func (imds TypedIMDS) GetLocalIPv6s(ctx context.Context) (net.IP, error) {
-	return imds.getIP(ctx, "ipv6s")
-}
-
 // GetInstanceID returns the ID of this instance.
 func (imds TypedIMDS) GetInstanceID(ctx context.Context) (string, error) {
 	instanceID, err := imds.GetMetadataWithContext(ctx, "instance-id")
@@ -292,8 +287,8 @@ func (imds TypedIMDS) GetLocalIPv4s(ctx context.Context, mac string) ([]net.IP, 
 	return ips, err
 }
 
-// GetLocalIPv4Prefixes returns the IPv4 prefixes delegated to this interface
-func (imds TypedIMDS) GetLocalIPv4Prefixes(ctx context.Context, mac string) ([]net.IPNet, error) {
+// GetIPv4Prefixes returns the IPv4 prefixes delegated to this interface
+func (imds TypedIMDS) GetIPv4Prefixes(ctx context.Context, mac string) ([]net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/ipv4-prefix", mac)
 	prefixes, err := imds.getCIDRs(ctx, key)
 	if err != nil {
@@ -309,8 +304,8 @@ func (imds TypedIMDS) GetLocalIPv4Prefixes(ctx context.Context, mac string) ([]n
 	return prefixes, err
 }
 
-// GetLocalIPv6Prefixes returns the IPv6 prefixes delegated to this interface
-func (imds TypedIMDS) GetLocalIPv6Prefixes(ctx context.Context, mac string) ([]net.IPNet, error) {
+// GetIPv6Prefixes returns the IPv6 prefixes delegated to this interface
+func (imds TypedIMDS) GetIPv6Prefixes(ctx context.Context, mac string) ([]net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/ipv6-prefix", mac)
 	prefixes, err := imds.getCIDRs(ctx, key)
 	if err != nil {
@@ -366,7 +361,7 @@ func (imds TypedIMDS) GetVPCIPv4CIDRBlocks(ctx context.Context, mac string) ([]n
 
 // GetVPCIPv6CIDRBlocks returns the IPv6 CIDR blocks for the VPC.
 func (imds TypedIMDS) GetVPCIPv6CIDRBlocks(ctx context.Context, mac string) ([]net.IPNet, error) {
-	key := fmt.Sprintf("network/interfaces/macs/%s/subnet-ipv6-cidr-blocks", mac)
+	key := fmt.Sprintf("network/interfaces/macs/%s/vpc-ipv6-cidr-blocks", mac)
 	ipnets, err := imds.getCIDRs(ctx, key)
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
@@ -380,6 +375,12 @@ func (imds TypedIMDS) GetVPCIPv6CIDRBlocks(ctx context.Context, mac string) ([]n
 		return nil, nil
 	}
 	return ipnets, err
+}
+
+// GetSubnetIPv6CIDRBlocks returns the IPv4 CIDR block for the subnet in which the interface resides.
+func (imds TypedIMDS) GetSubnetIPv6CIDRBlocks(ctx context.Context, mac string) (net.IPNet, error) {
+	key := fmt.Sprintf("network/interfaces/macs/%s/subnet-ipv6-cidr-blocks", mac)
+	return imds.getCIDR(ctx, key)
 }
 
 // IsNotFound returns true if the error was caused by an AWS API 404 response.

@@ -201,7 +201,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		// Note: the maximum length for linux interface name is 15
 		hostVethName = generateHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 
-		err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, v4Addr, v6Addr, int(r.DeviceNumber), r.VPCV4Cidrs, r.UseExternalSNAT, mtu, log)
+		err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, v4Addr, v6Addr, int(r.DeviceNumber), r.VPCv4CIDRs, r.UseExternalSNAT, mtu, log)
 	}
 
 	if err != nil {
@@ -232,8 +232,8 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	containerInterfaceIndex := 1
 	ips := []*current.IPConfig{
 		{
-			Version: addrFamily,
-			Address: *addr,
+			Version:   addrFamily,
+			Address:   *addr,
 			Interface: &containerInterfaceIndex,
 		},
 	}

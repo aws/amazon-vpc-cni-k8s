@@ -30,7 +30,6 @@ import (
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containernetworking/plugins/pkg/utils"
 	"github.com/vishvananda/netlink"
-	"github.com/containernetworking/plugins/pkg/utils/sysctl"
 
 	"github.com/aws/amazon-vpc-cni-k8s/cmd/egress-v4-cni-plugin/snat"
 )
@@ -167,7 +166,7 @@ func setupContainerVeth(netns ns.NetNS, ifName string, mtu int, pr *current.Resu
 
 			for _, r := range []netlink.Route{
 				{
-					LinkIndex: contVeth.Index, //TODO - Should be default route
+					LinkIndex: contVeth.Index,
 					Dst: &net.IPNet{
 						IP:   ipc.Gateway,
 						Mask: net.CIDRMask(addrBits, addrBits),
@@ -190,17 +189,6 @@ func setupContainerVeth(netns ns.NetNS, ifName string, mtu int, pr *current.Resu
 					return fmt.Errorf("failed to add route %v: %v", r, err)
 				}
 			}
-		}
-
-		//Disable IPv6 on this interface
-		_, err = sysctl.Sysctl("net/ipv6/conf/"+ifName+"/disable_ipv6", "1")
-		if err != nil {
-			return fmt.Errorf("failed to disable IPv6 for interface: %v", err)
-		}
-		//Block traffic directed to 169.254.172.0/22 from the Pod
-		err = snat.SetupRuleToBlockNodeLocalV4Access()
-		if err != nil {
-			return err
 		}
 		return nil
 	})
@@ -343,7 +331,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	//Copy interfaces over to result, but not IPs.
 	result.Interfaces = append(result.Interfaces, tmpResult.Interfaces...)
 	//Note: Useful for debug, will do away with the below log prior to release
-	for _,v := range result.IPs {
+	for _, v := range result.IPs {
 		log.Debugf("Interface Name: %v; IP: %s", v.Interface, v.Address)
 	}
 
@@ -388,7 +376,7 @@ func cmdDel(args *skel.CmdArgs) error {
 			}
 
 			//Retrieve IP addresses assigned to the interface
-			addrs, err := netlink.AddrList(iface, netlink.FAMILY_ALL)
+			addrs, err := netlink.AddrList(iface, netlink.FAMILY_V4)
 			if err != nil {
 				return fmt.Errorf("failed to get IP addresses for %q: %v", netConf.IfName, err)
 			}
@@ -410,10 +398,8 @@ func cmdDel(args *skel.CmdArgs) error {
 		})
 
 		//DEL should be best effort. We should clean up as much as we can and avoid returning error
-		//CNI Spec: TODO
 		if err != nil {
 			log.Debugf("DEL: Executing in container ns errored out, returning", err)
-			return err
 		}
 	}
 
