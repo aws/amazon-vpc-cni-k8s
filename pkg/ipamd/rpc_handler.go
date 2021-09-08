@@ -199,6 +199,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 	log.Infof("Received DelNetwork for Sandbox %s", in.ContainerID)
 	log.Debugf("DelNetworkRequest: %s", in)
 	delIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
+	var ipv4Addr, ipv6Addr, cidrStr string
 
 	// Do this early, but after logging trace
 	if err := s.validateVersion(in.ClientVersion); err != nil {
@@ -212,8 +213,14 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		NetworkName: in.NetworkName,
 	}
 	eni, ip, deviceNumber, err := s.ipamContext.dataStore.UnassignPodIPAddress(ipamKey)
-	cidr := net.IPNet{IP: net.ParseIP(ip), Mask: net.IPv4Mask(255, 255, 255, 255)}
-	cidrStr := cidr.String()
+	if s.ipamContext.enableIPv4 {
+		ipv4Addr = ip
+		cidr := net.IPNet{IP: net.ParseIP(ip), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		cidrStr = cidr.String()
+	} else if s.ipamContext.enableIPv6 {
+		ipv6Addr = ip
+	}
+
 	if s.ipamContext.enableIPv4 && eni != nil {
 		//cidrStr will be pod IP i.e, IP/32 for v4 (or) IP/128 for v6.
 		// Case 1: PD is enabled but IP/32 key in AvailableIPv4Cidrs[cidrStr] exists, this means it is a secondary IP. Added IsPrefix check just for sanity.
@@ -256,7 +263,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 
 	log.Infof("Send DelNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", ip, deviceNumber, err)
 
-	return &rpc.DelNetworkReply{Success: err == nil, IPv4Addr: ip, DeviceNumber: int32(deviceNumber)}, err
+	return &rpc.DelNetworkReply{Success: err == nil, IPv4Addr: ipv4Addr, IPv6Addr: ipv6Addr, DeviceNumber: int32(deviceNumber)}, err
 }
 
 // RunRPCHandler handles request from gRPC

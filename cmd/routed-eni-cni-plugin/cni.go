@@ -328,11 +328,21 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	log.Infof("Received del network response for pod %s namespace %s sandbox %s: %+v", string(k8sArgs.K8S_POD_NAME),
 		string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), r)
 
-	deletedPodIP := net.ParseIP(r.IPv4Addr)
+	var deletedPodIP net.IP
+	var maskLen int
+	if r.IPv4Addr != "" {
+		deletedPodIP = net.ParseIP(r.IPv4Addr)
+		maskLen = 32
+	} else if r.IPv6Addr != "" {
+		log.Debug("Deleting Pod NS - V6 Mode")
+		deletedPodIP = net.ParseIP(r.IPv6Addr)
+		maskLen = 128
+	}
+
 	if deletedPodIP != nil {
 		addr := &net.IPNet{
 			IP:   deletedPodIP,
-			Mask: net.IPv4Mask(255, 255, 255, 255),
+			Mask: net.CIDRMask(maskLen, maskLen),
 		}
 
 		if r.PodVlanId != 0 {
