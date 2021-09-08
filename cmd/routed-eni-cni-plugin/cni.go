@@ -334,7 +334,6 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		deletedPodIP = net.ParseIP(r.IPv4Addr)
 		maskLen = 32
 	} else if r.IPv6Addr != "" {
-		log.Debug("Deleting Pod NS - V6 Mode")
 		deletedPodIP = net.ParseIP(r.IPv6Addr)
 		maskLen = 128
 	}
