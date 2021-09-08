@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 PLATFORM=$(uname | tr '[:upper:]' '[:lower:]')
-HELM_VERSION="3.0.2"
+HELM_VERSION="3.6.3"
 NAMESPACE="kube-system"
 
 MAKEFILEPATH=$SCRIPTPATH/../Makefile
@@ -16,7 +16,7 @@ INDV_RESOURCES_DIR=$BUILD_DIR/individual-resources
 CNI_TAR_RESOURCES_FILE=$BUILD_DIR/cni_individual-resources.tar
 METRICS_TAR_RESOURCES_FILE=$BUILD_DIR/cni_metrics_individual-resources.tar
 CALICO_TAR_RESOURCES_FILE=$BUILD_DIR/calico_individual-resources.tar
-CNI_RESOURCES_YAML=$BUILD_DIR/aws-vpc-cni
+CNI_RESOURCES_YAML=$BUILD_DIR/aws-k8s-cni
 METRICS_RESOURCES_YAML=$BUILD_DIR/cni-metrics-helper
 CALICO_OPERATOR_RESOURCES_YAML=$BUILD_DIR/calico-operator.yaml
 CALICO_CRS_RESOURCES_YAML=$BUILD_DIR/calico-crs.yaml
@@ -59,7 +59,6 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
     ecrRegion=`echo $i | jq '.ecrRegion' -r`
     ecrAccount=`echo $i | jq '.ecrAccount' -r`
     ecrDomain=`echo $i | jq '.ecrDomain' -r`
-          
     if [ "$ecrRegion" = "us-west-2" ]; then
         NEW_CNI_RESOURCES_YAML="${CNI_RESOURCES_YAML}.yaml"
         NEW_METRICS_RESOURCES_YAML="${METRICS_RESOURCES_YAML}.yaml"
@@ -71,29 +70,24 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
         NEW_METRICS_RESOURCES_YAML="${METRICS_RESOURCES_YAML}-${ecrRegion}.yaml"
     fi
 
-    $BUILD_DIR/helm template charts/aws-vpc-cni \
+    $BUILD_DIR/helm template aws-vpc-cni \
       --set originalMatchLabels=true,\
-      initContainers.image.region=$ecrRegion,\
-      initContainers.image.account=$ecrAccount,\
-      initContainers.image.domain=$ecrDomain,\
-      image.region=$ecrRegion,\
-      image.account=$ecrAccount,\
-      image.domain=$ecrDomain \
+      --set init.image.region=$ecrRegion,\
+      --set init.image.account=$ecrAccount,\
+      --set init.image.domain=$ecrDomain,\
+      --set image.region=$ecrRegion,\
+      --set image.account=$ecrAccount,\
+      --set image.domain=$ecrDomain \
       --namespace $NAMESPACE \
-      --name-template aws-vpc-cni \
       $SCRIPTPATH/../charts/aws-vpc-cni > $NEW_CNI_RESOURCES_YAML
     cat $NEW_CNI_RESOURCES_YAML | grep -v 'helm.sh\|app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
     mv $BUILD_DIR/helm_annotations_removed.yaml $NEW_CNI_RESOURCES_YAML
 
-    $BUILD_DIR/helm template charts/cni-metrics-helper \
-      --set initContainers.image.region=$ecrRegion,\
-      initContainers.image.account=$ecrAccount,\
-      initContainers.image.domain=$ecrDomain,\
-      image.region=$ecrRegion,\
-      image.account=$ecrAccount,\
-      image.domain=$ecrDomain \
+    $BUILD_DIR/helm template cni-metrics-helper \
+      --set image.region=$ecrRegion,\
+      --set image.account=$ecrAccount,\
+      --set image.domain=$ecrDomain \
       --namespace $NAMESPACE \
-      --name-template cni-metrics-helper \
       $SCRIPTPATH/../charts/cni-metrics-helper > $NEW_METRICS_RESOURCES_YAML
     cat $NEW_METRICS_RESOURCES_YAML | grep -v 'helm.sh\|app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
     mv $BUILD_DIR/helm_annotations_removed.yaml $NEW_METRICS_RESOURCES_YAML
@@ -126,7 +120,7 @@ $BUILD_DIR/helm template \
 
 
 for i in $INDV_RESOURCES_DIR/aws-calico/templates/crs/*; do
-  cat $i | grep -v 'helm.sh\|app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
+  cat $i | grep -v 'app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
   mv $BUILD_DIR/helm_annotations_removed.yaml $i
   cat $i >> $CALICO_CRS_RESOURCES_YAML
 done
