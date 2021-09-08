@@ -19,11 +19,12 @@
 package mock_eniconfig
 
 import (
+	context "context"
 	reflect "reflect"
 
 	v1alpha1 "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
-	eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	gomock "github.com/golang/mock/gomock"
+	client "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // MockENIConfig is a mock of ENIConfig interface
@@ -49,31 +50,32 @@ func (m *MockENIConfig) EXPECT() *MockENIConfigMockRecorder {
 	return m.recorder
 }
 
-// Getter mocks base method
-func (m *MockENIConfig) Getter() *eniconfig.ENIConfigInfo {
+// GetENIConfigName mocks base method
+func (m *MockENIConfig) GetENIConfigName(arg0 context.Context, arg1 client.Client) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Getter")
-	ret0, _ := ret[0].(*eniconfig.ENIConfigInfo)
-	return ret0
+	ret := m.ctrl.Call(m, "GetENIConfigName", arg0, arg1)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
-// Getter indicates an expected call of Getter
-func (mr *MockENIConfigMockRecorder) Getter() *gomock.Call {
+// GetENIConfigName indicates an expected call of GetENIConfigName
+func (mr *MockENIConfigMockRecorder) GetENIConfigName(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Getter", reflect.TypeOf((*MockENIConfig)(nil).Getter))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetENIConfigName", reflect.TypeOf((*MockENIConfig)(nil).GetENIConfigName), arg0, arg1)
 }
 
 // MyENIConfig mocks base method
-func (m *MockENIConfig) MyENIConfig() (*v1alpha1.ENIConfigSpec, error) {
+func (m *MockENIConfig) MyENIConfig(arg0 client.Client) (*v1alpha1.ENIConfigSpec, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MyENIConfig")
+	ret := m.ctrl.Call(m, "MyENIConfig", arg0)
 	ret0, _ := ret[0].(*v1alpha1.ENIConfigSpec)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // MyENIConfig indicates an expected call of MyENIConfig
-func (mr *MockENIConfigMockRecorder) MyENIConfig() *gomock.Call {
+func (mr *MockENIConfigMockRecorder) MyENIConfig(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MyENIConfig", reflect.TypeOf((*MockENIConfig)(nil).MyENIConfig))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MyENIConfig", reflect.TypeOf((*MockENIConfig)(nil).MyENIConfig), arg0)
 }
