@@ -199,6 +199,8 @@ docker-metrics-test:     ## Run metrics helper unit test suite in a container.
 		$(GOLANG_IMAGE) \
 		make metrics-unit-test
 
+generate: GOARCH=
+generate: GOOS=
 generate:
 	PATH=$(CURDIR)/scripts:$(PATH) go generate -x ./...
 	$(MAKE) format
@@ -206,6 +208,7 @@ generate:
 # Generate limit file go code
 # Generate eni-max-pods.txt file for EKS AMI
 generate-limits: GOOS=
+generate-limits: GOARCH=
 generate-limits:    ## Generate limit file go code
 	go run $(VENDOR_OVERRIDE_FLAG) scripts/gen_vpc_ip_limits.go
 
