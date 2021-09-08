@@ -13,4 +13,4 @@
 
 package ec2metadatawrapper
 
-//go:generate go run github.com/golang/mock/mockgen -destination mocks/ec2metadatawrapper_mocks.go -copyright_file ../../scripts/copyright.txt . EC2MetadataClient
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/ec2metadatawrapper_mocks.go -copyright_file ../../scripts/copyright.txt . HTTPClient,EC2MetadataClient
