@@ -135,6 +135,16 @@ const (
 	//envWarmPrefixTarget is used to keep a /28 prefix in warm pool.
 	envWarmPrefixTarget     = "WARM_PREFIX_TARGET"
 	defaultWarmPrefixTarget = 0
+
+	// eniManageTagKey is the tag that may be set on an ENI to indicate ipamd
+	// that it is customer managed and IPs associated with only these ENIs to be used for pods.
+	eniManageTagKey = "node.k8s.amazonaws.com/manage"
+
+	// envENIManageMode is used to specify user manages the ENI and those ENIs should be only used
+	// for pods along with primary ENI.
+	envENIManageMode = "ENI_MANAGE_MODE"
+
+	eniNodeTagKey = "node.k8s.amazonaws.com/instance_id"
 )
 
 var log = logger.Get()
@@ -223,20 +233,22 @@ type IPAMContext struct {
 	enablePodENI               bool
 	myNodeName                 string
 	enableIpv4PrefixDelegation bool
+	enableENIManageMode        bool
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
+// or IPAMD internally considers ENIs which are not tagged as "manage" as unmanaged with ENABLE_MANAGE_MODE set to true
 func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 	if len(tagMap) == 0 {
 		return
 	}
 	var unmanagedENIlist []string
 	for eniID, tags := range tagMap {
-		if tags[eniNoManageTagKey] == "true" {
+		if tags[eniNoManageTagKey] == "true" || (c.enableENIManageMode && (tags[eniManageTagKey] != "true" && tags[eniNodeTagKey] != c.awsClient.GetInstanceID())) {
 			if eniID == c.awsClient.GetPrimaryENI() {
 				log.Debugf("Ignoring no_manage tag on primary ENI %s", eniID)
 			} else {
-				log.Debugf("Marking ENI %s tagged with %s as being unmanaged", eniID, eniNoManageTagKey)
+				log.Debugf("Marking ENI %s as being unmanaged", eniID)
 				unmanagedENIlist = append(unmanagedENIlist, eniID)
 			}
 		}
@@ -304,6 +316,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.enableIpv4PrefixDelegation = useIpv4PrefixDelegation()
 	c.disableENIProvisioning = disablingENIProvisioning()
+	c.enableENIManageMode = enableENIManageMode()
 
 	client, err := awsutils.New(c.useCustomNetworking, c.disableENIProvisioning)
 	if err != nil {
@@ -1512,6 +1525,10 @@ func enablePodENI() bool {
 
 func useIpv4PrefixDelegation() bool {
 	return getEnvBoolWithDefault(envEnableIpv4PrefixDelegation, false)
+}
+
+func enableENIManageMode() bool {
+	return getEnvBoolWithDefault(envENIManageMode, false)
 }
 
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag

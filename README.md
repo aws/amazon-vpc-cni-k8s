@@ -442,7 +442,10 @@ The label notifies vpc-resource-controller (https://github.com/aws/amazon-vpc-re
 Once enabled the VPC resource controller will then advertise branch network interfaces as extended resources on these nodes in your cluster. Branch interface capacity is additive to existing instance type limits for secondary IP addresses and prefixes. For example, a c5.4xlarge can continue to have up to 234 secondary IP addresses or 234 /28 prefixes assigned to standard network interfaces and up to 54 branch network interfaces. Each branch network interface only receives a single primary IP address and this IP address will be allocated to pods with security group(branch ENI pods).
 
 Any of the WARM targets do not impact the scale of the branch ENI pods so you will have to set the WARM_{ENI/IP/PREFIX}_TARGET based on the number of non-branch ENI pods. If you are having the cluster mostly using pods with security group consider setting WARM_IP_TARGET to a very low value instead of default WARM_ENI_TARGET or WARM_PREFIX_TARGET to reduce wastage of IPs/ENIs.
+<<<<<<< HEAD
 
+=======
+>>>>>>> 2726b96e (Support for manage tag)
 
 **NOTE!** Toggling `ENABLE_POD_ENI` from `true` to `false` will not detach the Trunk ENI from instance. To delete/detach the Trunk ENI from instance, you need recycle the instance.
 
@@ -505,6 +508,17 @@ Setting `DISABLE_NETWORK_RESOURCE_PROVISIONING` to `true` will make IPAMD to dep
 
 ---
 
+#### `ENI_MANAGE_MODE` (v1.9.1+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Setting `ENI_MANAGE_MODE` to `true` will make IPAMD to use primary ENI and ENIs tagged with `node.k8s.amazonaws.com/manage` to `true` for pod assignment.
+
+---
+
+=======
 ### ENI tags related to Allocation
 
 This plugin interacts with the following tags on ENIs:
