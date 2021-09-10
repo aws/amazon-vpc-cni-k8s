@@ -84,15 +84,31 @@ rules:
       - delete
       - watch
   - apiGroups:
+    - networking.k8s.io
+    resources:
+    - networkpolicies
+    verbs:
+      - create
+      - update
+      - delete
+      - get
+      - list
+      - watch
+  - apiGroups:
     - crd.projectcalico.org
     resources:
     - felixconfigurations
     verbs:
+    - create
     - patch
+    - list
+    - get
+    - watch
   - apiGroups:
     - crd.projectcalico.org
     resources:
     - ippools
+    - kubecontrollersconfigurations
     verbs:
     - get
     - list
@@ -132,6 +148,20 @@ rules:
       - apiservices
     verbs:
       - list
+      - watch
+      - create 
+      - update
+  # Needed for operator lock
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - get
+      - list
+      - update
+      - delete
       - watch
 {{- if eq .Values.installation.kubernetesProvider "openshift" }}
   # When running in OpenShift, we need to update networking config.
@@ -199,6 +229,13 @@ rules:
       - ipamblocks
     verbs:
       - list
+  # Need this permission for the calicoctl version mismatch checking
+  - apiGroups:
+      - crd.projectcalico.org
+    resources:
+      - clusterinformations
+    verbs:
+      - get
   # For AWS security group setup.
   - apiGroups:
       - batch
@@ -230,4 +267,12 @@ rules:
       - watch
       - create
       - update
+      - delete
+# Add the permissions to monitor the status of certificatesigningrequests when certificate management is enabled.
+  - apiGroups:
+      - certificates.k8s.io
+    resources:
+      - certificatesigningrequests
+    verbs:
+      - list
 {{- end }}
