@@ -19,12 +19,11 @@
 package mock_awsutils
 
 import (
-	net "net"
-	reflect "reflect"
-
 	awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	ec2 "github.com/aws/aws-sdk-go/service/ec2"
 	gomock "github.com/golang/mock/gomock"
+	net "net"
+	reflect "reflect"
 )
 
 // MockAPIs is a mock of APIs interface
@@ -238,6 +237,20 @@ func (m *MockAPIs) GetInstanceHypervisorFamily() (string, error) {
 func (mr *MockAPIsMockRecorder) GetInstanceHypervisorFamily() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceHypervisorFamily", reflect.TypeOf((*MockAPIs)(nil).GetInstanceHypervisorFamily))
+}
+
+// GetInstanceID mocks base method
+func (m *MockAPIs) GetInstanceID() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetInstanceID")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetInstanceID indicates an expected call of GetInstanceID
+func (mr *MockAPIsMockRecorder) GetInstanceID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceID", reflect.TypeOf((*MockAPIs)(nil).GetInstanceID))
 }
 
 // GetInstanceType mocks base method
