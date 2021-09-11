@@ -142,6 +142,12 @@ const (
 	//instead of retrying every 5s which would lead to increase in EC2 AllocIPAddress calls, we wait for
 	//120 seconds for a retry.
 	insufficientCidrErrorCooldown = 120 * time.Second
+
+	// envManageUntaggedENI is used to determine if untagged ENIs should be managed or unmanaged
+	envManageUntaggedENI = "MANAGE_UNTAGGED_ENI"
+
+	eniNodeTagKey = "node.k8s.amazonaws.com/instance_id"
+
 )
 
 var log = logger.Get()
@@ -231,6 +237,7 @@ type IPAMContext struct {
 	myNodeName                 string
 	enableIpv4PrefixDelegation bool
 	lastInsufficientCidrError  time.Time
+	enableManageUntaggedMode   bool
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -239,14 +246,27 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 		return
 	}
 	var unmanagedENIlist []string
+	// if "no_manage" tag is present and is true - ENI is unmanaged
+	// if "no_manage" tag is present and is "not true" - ENI is managed
+	// if "instance_id" tag is present and is set to instanceID - ENI is managed since this was created by IPAMD
+	// if "no_manage" tag is not present or not IPAMD created ENI, check if we are in Manage Untagged Mode, default is true.
+	// if enableManageUntaggedMode is false, then consider all untagged ENIs as unmanaged.
 	for eniID, tags := range tagMap {
-		if tags[eniNoManageTagKey] == "true" {
-			if eniID == c.awsClient.GetPrimaryENI() {
-				log.Debugf("Ignoring no_manage tag on primary ENI %s", eniID)
-			} else {
-				log.Debugf("Marking ENI %s tagged with %s as being unmanaged", eniID, eniNoManageTagKey)
-				unmanagedENIlist = append(unmanagedENIlist, eniID)
+		if _, found := tags[eniNoManageTagKey]; found {
+			if tags[eniNoManageTagKey] != "true" {
+				continue
 			}
+		} else if _, found := tags[eniNodeTagKey]; found && tags[eniNodeTagKey] == c.awsClient.GetInstanceID() {
+			continue
+		} else if c.enableManageUntaggedMode {
+			continue
+		}
+
+		if eniID == c.awsClient.GetPrimaryENI() {
+			log.Debugf("Ignoring primary ENI %s since it is always managed", eniID)
+		} else {
+			log.Debugf("Marking ENI %s as being unmanaged", eniID)
+			unmanagedENIlist = append(unmanagedENIlist, eniID)
 		}
 	}
 	c.awsClient.SetUnmanagedENIs(unmanagedENIlist)
@@ -341,6 +361,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.warmPrefixTarget = getWarmPrefixTarget()
 
 	c.enablePodENI = enablePodENI()
+	c.enableManageUntaggedMode = enableManageUntaggedMode()
 
 	hypervisorType, err := c.awsClient.GetInstanceHypervisorFamily()
 	if err != nil {
@@ -1554,6 +1575,10 @@ func enablePodENI() bool {
 
 func useIpv4PrefixDelegation() bool {
 	return getEnvBoolWithDefault(envEnableIpv4PrefixDelegation, false)
+}
+
+func enableManageUntaggedMode() bool {
+	return getEnvBoolWithDefault(envManageUntaggedENI, true)
 }
 
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag

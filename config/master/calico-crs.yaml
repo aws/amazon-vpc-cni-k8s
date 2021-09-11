@@ -6,6 +6,8 @@ apiVersion: operator.tigera.io/v1
 kind: Installation
 metadata:
   name: default
+  annotations:
+    "helm.sh/hook": post-install
 spec:
   # Configures Calico policy configured to work with AmazonVPC CNI networking.
   cni:
