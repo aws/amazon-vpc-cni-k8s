@@ -302,8 +302,9 @@ func prometheusRegister() {
 
 // containsInsufficientCidrBlocksError returns whether exceeds ENI's IP address limit
 func containsInsufficientCidrBlocksError(err error) bool {
-	if aerr, ok := err.(awserr.Error); ok {
-		return aerr.Code() == "InsufficientCidrBlocks"
+	var awsErr awserr.Error
+	if errors.As(err, &awsErr) {
+		return awsErr.Code() == "InsufficientCidrBlocks"
 	}
 	return false
 }
@@ -719,7 +720,7 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 	}
 	// Try to add more Cidrs to existing ENIs first.
 	if c.inInsufficientCidrCoolingPeriod() {
-		log.Debug("Recently we had InsufficientCidr Error hence will wait for 2 mins before retrying")
+		log.Debugf("Recently we had InsufficientCidr error hence will wait for %v mins before retrying", insufficientCidrErrorCooldown)
 		return
 	}
 
@@ -872,8 +873,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 			err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 			if err != nil {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-				log.Errorf("failed to allocate one IP addresses on ENI %s, err: %v", eni.ID, err)
-				return false, err
+				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err: %v", eni.ID, err))
 			}
 		}
 		// This call to EC2 is needed to verify which IPs got attached to this ENI.
@@ -903,8 +903,7 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 			err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 			if err != nil {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-				log.Errorf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err)
-				return false, err
+				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err: %v", eni.ID, err))
 			}
 		}
 		ec2Prefixes, err := c.awsClient.GetIPv4PrefixesFromEC2(eni.ID)
