@@ -240,6 +240,20 @@ func (mr *MockAPIsMockRecorder) GetInstanceHypervisorFamily() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceHypervisorFamily", reflect.TypeOf((*MockAPIs)(nil).GetInstanceHypervisorFamily))
 }
 
+// GetInstanceID mocks base method
+func (m *MockAPIs) GetInstanceID() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetInstanceID")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetInstanceID indicates an expected call of GetInstanceID
+func (mr *MockAPIsMockRecorder) GetInstanceID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceID", reflect.TypeOf((*MockAPIs)(nil).GetInstanceID))
+}
+
 // GetInstanceType mocks base method
 func (m *MockAPIs) GetInstanceType() string {
 	m.ctrl.T.Helper()

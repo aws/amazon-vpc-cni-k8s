@@ -182,6 +182,9 @@ type APIs interface {
 
 	//Update cached prefix delegation flag
 	InitCachedPrefixDelegation(bool)
+
+	// GetInstanceID returns the instance ID
+	GetInstanceID() string
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -1649,6 +1652,11 @@ func (cache *EC2InstanceMetadataCache) GetPrimaryENImac() string {
 //SetUnmanagedENIs Set unmanaged ENI set
 func (cache *EC2InstanceMetadataCache) SetUnmanagedENIs(eniIDs []string) {
 	cache.unmanagedENIs.Set(eniIDs)
+}
+
+// GetInstanceID returns the instance ID
+func (cache *EC2InstanceMetadataCache) GetInstanceID() string {
+	return cache.instanceID
 }
 
 //IsUnmanagedENI returns if the eni is unmanaged
