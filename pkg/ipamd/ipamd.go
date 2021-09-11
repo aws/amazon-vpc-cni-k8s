@@ -240,7 +240,7 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 	// if "no_manage" tag is present and is true - ENI is unmanaged
 	// if "no_manage" tag is present and is "not true" - ENI is managed
 	// if "instance_id" tag is present and is set to instanceID - ENI is managed since this was created by IPAMD
-	// if "no_manage" or "instance_id" tag is not set, check if we are in Manage Untagged Mode, default is true.
+	// if "no_manage" tag is not present or not IPAMD created ENI, check if we are in Manage Untagged Mode, default is true.
 	// if enableManageUntaggedMode is false, then consider all untagged ENIs as unmanaged.
 	for eniID, tags := range tagMap {
 		if _, found := tags[eniNoManageTagKey]; found {
@@ -254,7 +254,7 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 		}
 
 		if eniID == c.awsClient.GetPrimaryENI() {
-			log.Debugf("Ignoring no_manage tag on primary ENI %s", eniID)
+			log.Debugf("Ignoring primary ENI %s since it is always managed", eniID)
 		} else {
 			log.Debugf("Marking ENI %s as being unmanaged", eniID)
 			unmanagedENIlist = append(unmanagedENIlist, eniID)
