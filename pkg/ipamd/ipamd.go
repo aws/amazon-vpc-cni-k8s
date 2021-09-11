@@ -720,7 +720,7 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 	}
 	// Try to add more Cidrs to existing ENIs first.
 	if c.inInsufficientCidrCoolingPeriod() {
-		log.Debugf("Recently we had InsufficientCidr error hence will wait for %v mins before retrying", insufficientCidrErrorCooldown)
+		log.Debugf("Recently we had InsufficientCidr error hence will wait for %v before retrying", insufficientCidrErrorCooldown)
 		return
 	}
 
@@ -903,7 +903,7 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 			err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 			if err != nil {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err: %v", eni.ID, err))
+				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err))
 			}
 		}
 		ec2Prefixes, err := c.awsClient.GetIPv4PrefixesFromEC2(eni.ID)
