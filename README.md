@@ -483,6 +483,18 @@ Default: None
 Specifies the number of free IPv4(/28) prefixes that the `ipamd` daemon should attempt to keep available for pod assignment on the node.
 This environment variable works when `ENABLE_PREFIX_DELEGATION` is set to `true` and is overriden when `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are configured.
 
+---
+
+#### `DISABLE_NETWORK_RESOURCE_PROVISIONING` (v1.9.1+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Setting `DISABLE_NETWORK_RESOURCE_PROVISIONING` to `true` will make IPAMD to depend only on IMDS to get attached ENIs and IPs/prefixes.
+
+---
+
 ### ENI tags related to Allocation
 
 This plugin interacts with the following tags on ENIs:
