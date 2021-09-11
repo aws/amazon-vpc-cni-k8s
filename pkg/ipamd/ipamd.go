@@ -147,7 +147,6 @@ const (
 	envManageUntaggedENI = "MANAGE_UNTAGGED_ENI"
 
 	eniNodeTagKey = "node.k8s.amazonaws.com/instance_id"
-
 )
 
 var log = logger.Get()
