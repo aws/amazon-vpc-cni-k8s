@@ -37,7 +37,7 @@ log_in_json()
 
 unsupported_prefix_target_conf()
 {
-   if [ "${WARM_PREFIX_TARGET}" == "0" ] && [ "${WARM_IP_TARGET}" == "0" ] && [ "${MINIMUM_IP_TARGET}" == "0" ];then
+   if [ "${WARM_PREFIX_TARGET}" -le "0" ] && [ "${WARM_IP_TARGET}" -le "0" ] && [ "${MINIMUM_IP_TARGET}" -le "0" ];then
         true
    else
         false

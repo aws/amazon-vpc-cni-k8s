@@ -182,6 +182,9 @@ type APIs interface {
 
 	//Update cached prefix delegation flag
 	InitCachedPrefixDelegation(bool)
+
+	// GetInstanceID returns the instance ID
+	GetInstanceID() string
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -1350,7 +1353,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 		}
 		log.Errorf("Failed to allocate a private IP/Prefix addresses on ENI %v: %v", eniID, err)
 		awsAPIErrInc("AssignPrivateIpAddresses", err)
-		return errors.Wrap(err, "allocate IP/Prefix address: failed to allocate a private IP/Prefix address")
+		return err
 	}
 	if output != nil {
 		if cache.enableIpv4PrefixDelegation {
@@ -1651,6 +1654,11 @@ func (cache *EC2InstanceMetadataCache) GetPrimaryENImac() string {
 //SetUnmanagedENIs Set unmanaged ENI set
 func (cache *EC2InstanceMetadataCache) SetUnmanagedENIs(eniIDs []string) {
 	cache.unmanagedENIs.Set(eniIDs)
+}
+
+// GetInstanceID returns the instance ID
+func (cache *EC2InstanceMetadataCache) GetInstanceID() string {
+	return cache.instanceID
 }
 
 //IsUnmanagedENI returns if the eni is unmanaged

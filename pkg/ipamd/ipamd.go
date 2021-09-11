@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -135,6 +136,17 @@ const (
 	//envWarmPrefixTarget is used to keep a /28 prefix in warm pool.
 	envWarmPrefixTarget     = "WARM_PREFIX_TARGET"
 	defaultWarmPrefixTarget = 0
+
+	//insufficientCidrErrorCooldown is the amount of time reconciler will wait before trying to fetch
+	//more IPs/prefixes for an ENI. With InsufficientCidr we know the subnet doesn't have enough IPs so
+	//instead of retrying every 5s which would lead to increase in EC2 AllocIPAddress calls, we wait for
+	//120 seconds for a retry.
+	insufficientCidrErrorCooldown = 120 * time.Second
+
+	// envManageUntaggedENI is used to determine if untagged ENIs should be managed or unmanaged
+	envManageUntaggedENI = "MANAGE_UNTAGGED_ENI"
+
+	eniNodeTagKey = "node.k8s.amazonaws.com/instance_id"
 )
 
 var log = logger.Get()
@@ -223,6 +235,8 @@ type IPAMContext struct {
 	enablePodENI               bool
 	myNodeName                 string
 	enableIpv4PrefixDelegation bool
+	lastInsufficientCidrError  time.Time
+	enableManageUntaggedMode   bool
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -231,14 +245,27 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 		return
 	}
 	var unmanagedENIlist []string
+	// if "no_manage" tag is present and is true - ENI is unmanaged
+	// if "no_manage" tag is present and is "not true" - ENI is managed
+	// if "instance_id" tag is present and is set to instanceID - ENI is managed since this was created by IPAMD
+	// if "no_manage" tag is not present or not IPAMD created ENI, check if we are in Manage Untagged Mode, default is true.
+	// if enableManageUntaggedMode is false, then consider all untagged ENIs as unmanaged.
 	for eniID, tags := range tagMap {
-		if tags[eniNoManageTagKey] == "true" {
-			if eniID == c.awsClient.GetPrimaryENI() {
-				log.Debugf("Ignoring no_manage tag on primary ENI %s", eniID)
-			} else {
-				log.Debugf("Marking ENI %s tagged with %s as being unmanaged", eniID, eniNoManageTagKey)
-				unmanagedENIlist = append(unmanagedENIlist, eniID)
+		if _, found := tags[eniNoManageTagKey]; found {
+			if tags[eniNoManageTagKey] != "true" {
+				continue
 			}
+		} else if _, found := tags[eniNodeTagKey]; found && tags[eniNodeTagKey] == c.awsClient.GetInstanceID() {
+			continue
+		} else if c.enableManageUntaggedMode {
+			continue
+		}
+
+		if eniID == c.awsClient.GetPrimaryENI() {
+			log.Debugf("Ignoring primary ENI %s since it is always managed", eniID)
+		} else {
+			log.Debugf("Marking ENI %s as being unmanaged", eniID)
+			unmanagedENIlist = append(unmanagedENIlist, eniID)
 		}
 	}
 	c.awsClient.SetUnmanagedENIs(unmanagedENIlist)
@@ -292,6 +319,20 @@ func prometheusRegister() {
 	}
 }
 
+// containsInsufficientCidrBlocksError returns whether exceeds ENI's IP address limit
+func containsInsufficientCidrBlocksError(err error) bool {
+	var awsErr awserr.Error
+	if errors.As(err, &awsErr) {
+		return awsErr.Code() == "InsufficientCidrBlocks"
+	}
+	return false
+}
+
+// inInsufficientCidrCoolingPeriod checks whether IPAMD is in insufficientCidrErrorCooldown
+func (c *IPAMContext) inInsufficientCidrCoolingPeriod() bool {
+	return time.Since(c.lastInsufficientCidrError) <= insufficientCidrErrorCooldown
+}
+
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
 func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContext, error) {
@@ -319,6 +360,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.warmPrefixTarget = getWarmPrefixTarget()
 
 	c.enablePodENI = enablePodENI()
+	c.enableManageUntaggedMode = enableManageUntaggedMode()
 
 	hypervisorType, err := c.awsClient.GetInstanceHypervisorFamily()
 	if err != nil {
@@ -497,6 +539,11 @@ func (c *IPAMContext) nodeInit() error {
 		if err == nil && increasedPool {
 			c.updateLastNodeIPPoolAction()
 		} else if err != nil {
+			if containsInsufficientCidrBlocksError(err) {
+				log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
+				c.lastInsufficientCidrError = time.Now()
+				return nil
+			}
 			return err
 		}
 	}
@@ -692,9 +739,19 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 		return
 	}
 	// Try to add more Cidrs to existing ENIs first.
+	if c.inInsufficientCidrCoolingPeriod() {
+		log.Debugf("Recently we had InsufficientCidr error hence will wait for %v before retrying", insufficientCidrErrorCooldown)
+		return
+	}
+
 	increasedPool, err := c.tryAssignCidrs()
 	if err != nil {
 		log.Errorf(err.Error())
+		if containsInsufficientCidrBlocksError(err) {
+			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
+			c.lastInsufficientCidrError = time.Now()
+			return
+		}
 	}
 	if increasedPool {
 		c.updateLastNodeIPPoolAction()
@@ -761,6 +818,11 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 		log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", resourcesToAllocate, err)
 		// Continue to process the allocated IP addresses
 		ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
+		if containsInsufficientCidrBlocksError(err) {
+			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
+			c.lastInsufficientCidrError = time.Now()
+			return err
+		}
 	}
 
 	eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni, resourcesToAllocate)
@@ -1512,6 +1574,10 @@ func enablePodENI() bool {
 
 func useIpv4PrefixDelegation() bool {
 	return getEnvBoolWithDefault(envEnableIpv4PrefixDelegation, false)
+}
+
+func enableManageUntaggedMode() bool {
+	return getEnvBoolWithDefault(envManageUntaggedENI, true)
 }
 
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag
