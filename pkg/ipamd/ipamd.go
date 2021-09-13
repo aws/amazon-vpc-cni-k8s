@@ -1587,7 +1587,7 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 	for _, eni := range enis {
 		// If we have unmanaged ENIs, filter them out
 		if c.awsClient.IsUnmanagedENI(eni.ENIID) {
-			log.Debugf("Skipping ENI %s: tagged with %s", eni.ENIID, eniNoManageTagKey)
+			log.Debugf("Skipping ENI %s: since it is unmanaged", eni.ENIID)
 			numFiltered++
 			continue
 		} else if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
