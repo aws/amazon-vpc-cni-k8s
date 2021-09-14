@@ -362,11 +362,14 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.enablePodENI = enablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 
-	hypervisorType, err := c.awsClient.GetInstanceHypervisorFamily()
+	err = c.awsClient.VerifyElseFetchLimitsFromEC2()
 	if err != nil {
-		log.Error("Failed to get hypervisor type")
+		log.Errorf("Failed to get ENI limits from file:vpc_ip_limits or EC2 for %s", c.awsClient.GetInstanceType())
 		return nil, err
 	}
+
+	hypervisorType := c.awsClient.GetInstanceHypervisorFamily()
+
 	if hypervisorType != "nitro" && c.enableIpv4PrefixDelegation {
 		log.Warnf("Prefix delegation is not supported on non-nitro instance %s hence falling back to default (secondary IP) mode", c.awsClient.GetInstanceType())
 		c.enableIpv4PrefixDelegation = false
@@ -1019,10 +1022,8 @@ func (c *IPAMContext) addENIprefixesToDataStore(ec2PrefixAddrs []*ec2.Ipv4Prefix
 // the limit for the instance type and the value configured via the MAX_ENI environment variable. If the value of
 // the environment variable is 0 or less, it will be ignored and the maximum for the instance is returned.
 func (c *IPAMContext) getMaxENI() (int, error) {
-	instanceMaxENI, err := c.awsClient.GetENILimit()
-	if err != nil {
-		return 0, err
-	}
+	instanceMaxENI := c.awsClient.GetENILimit()
+
 	inputStr, found := os.LookupEnv(envMaxENI)
 	envMax := defaultMaxENI
 	if found {
@@ -1868,21 +1869,14 @@ func (c *IPAMContext) GetENIResourcesToAllocate() int {
 
 func (c *IPAMContext) GetIPv4Limit() (int, int, error) {
 	var maxIPsPerENI, maxPrefixesPerENI, maxIpsPerPrefix int
-	var err error
 	if !c.enableIpv4PrefixDelegation {
-		maxIPsPerENI, err = c.awsClient.GetENIIPv4Limit()
+		maxIPsPerENI = c.awsClient.GetENIIPv4Limit()
 		maxPrefixesPerENI = 0
-		if err != nil {
-			return 0, 0, err
-		}
 	} else if c.enableIpv4PrefixDelegation {
 		//Single PD - allocate one prefix per ENI and new add will be new ENI + prefix
 		//Multi - allocate one prefix per ENI and new add will be new prefix or new ENI + prefix
 		_, maxIpsPerPrefix, _ = datastore.GetPrefixDelegationDefaults()
-		maxPrefixesPerENI, err = c.awsClient.GetENIIPv4Limit()
-		if err != nil {
-			return 0, 0, err
-		}
+		maxPrefixesPerENI = c.awsClient.GetENIIPv4Limit()
 		maxIPsPerENI = maxPrefixesPerENI * maxIpsPerPrefix
 		log.Debugf("max prefix %d max ips %d", maxPrefixesPerENI, maxIPsPerENI)
 	}
