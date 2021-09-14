@@ -186,8 +186,8 @@ type APIs interface {
 	// GetInstanceID returns the instance ID
 	GetInstanceID() string
 
-	// Verify if the InstanceNetworkingLimits has the ENI limits else make EC2 call to fill cache.
-	VerifyElseFetchLimitsFromEC2() error
+	// FetchInstanceTypeLimits Verify if the InstanceNetworkingLimits has the ENI limits else make EC2 call to fill cache.
+	FetchInstanceTypeLimits() error
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -1252,7 +1252,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddress(eniID string) error {
 	return nil
 }
 
-func (cache *EC2InstanceMetadataCache) VerifyElseFetchLimitsFromEC2() error {
+func (cache *EC2InstanceMetadataCache) FetchInstanceTypeLimits() error {
 	_, ok := InstanceNetworkingLimits[cache.instanceType]
 	if ok {
 		return nil
@@ -1263,7 +1263,6 @@ func (cache *EC2InstanceMetadataCache) VerifyElseFetchLimitsFromEC2() error {
 	describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{InstanceTypes: []*string{aws.String(cache.instanceType)}}
 	output, err := cache.ec2SVC.DescribeInstanceTypesWithContext(context.Background(), describeInstanceTypesInput)
 	if err != nil || len(output.InstanceTypes) != 1 {
-		log.Errorf("", err)
 		return errors.New(fmt.Sprintf("Failed calling DescribeInstanceTypes for `%s`: %v", cache.instanceType, err))
 	}
 	info := output.InstanceTypes[0]

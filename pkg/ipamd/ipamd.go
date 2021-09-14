@@ -362,7 +362,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.enablePodENI = enablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 
-	err = c.awsClient.VerifyElseFetchLimitsFromEC2()
+	err = c.awsClient.FetchInstanceTypeLimits()
 	if err != nil {
 		log.Errorf("Failed to get ENI limits from file:vpc_ip_limits or EC2 for %s", c.awsClient.GetInstanceType())
 		return nil, err

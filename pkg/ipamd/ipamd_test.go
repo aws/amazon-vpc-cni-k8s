@@ -123,8 +123,8 @@ func TestNodeInit(t *testing.T) {
 	eni1, eni2 := getDummyENIMetadata()
 
 	var cidrs []string
-	m.awsutils.EXPECT().GetENILimit().Return(4, nil)
-	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14, nil)
+	m.awsutils.EXPECT().GetENILimit().Return(4)
+	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14)
 	m.awsutils.EXPECT().GetIPv4sFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil)
 	m.awsutils.EXPECT().GetIPv4sFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Addresses, nil)
 	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
@@ -207,8 +207,8 @@ func TestNodeInitwithPDenabled(t *testing.T) {
 	eni1, eni2 := getDummyENIMetadataWithPrefix()
 
 	var cidrs []string
-	m.awsutils.EXPECT().GetENILimit().Return(4, nil)
-	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14, nil)
+	m.awsutils.EXPECT().GetENILimit().Return(4)
+	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14)
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Prefixes, nil)
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Prefixes, nil)
 	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
