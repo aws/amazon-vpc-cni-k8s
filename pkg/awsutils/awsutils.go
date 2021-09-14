@@ -148,10 +148,10 @@ type APIs interface {
 	GetPrimaryENI() string
 
 	// GetENIIPv4Limit return IP address limit per ENI based on EC2 instance type
-	GetENIIPv4Limit() (int, error)
+	GetENIIPv4Limit() int
 
 	// GetENILimit returns the number of ENIs that can be attached to an instance
-	GetENILimit() (int, error)
+	GetENILimit() int
 
 	// GetPrimaryENImac returns the mac address of the primary ENI
 	GetPrimaryENImac() string
@@ -175,7 +175,7 @@ type APIs interface {
 	RefreshSGIDs(mac string) error
 
 	//GetInstanceHypervisorFamily returns the hypervisor family for the instance
-	GetInstanceHypervisorFamily() (string, error)
+	GetInstanceHypervisorFamily() string
 
 	//GetInstanceType returns the EC2 instance type
 	GetInstanceType() string
@@ -185,6 +185,9 @@ type APIs interface {
 
 	// GetInstanceID returns the instance ID
 	GetInstanceID() string
+
+	// FetchInstanceTypeLimits Verify if the InstanceNetworkingLimits has the ENI limits else make EC2 call to fill cache.
+	FetchInstanceTypeLimits() error
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -1249,55 +1252,57 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddress(eniID string) error {
 	return nil
 }
 
-// GetENIIPv4Limit return IP address limit per ENI based on EC2 instance type
-func (cache *EC2InstanceMetadataCache) GetENIIPv4Limit() (int, error) {
-	eniLimits, ok := InstanceNetworkingLimits[cache.instanceType]
-	if !ok {
-		log.Errorf("Failed to get ENI IP limit due to unknown instance type %s", cache.instanceType)
-		return 0, errors.New(UnknownInstanceType)
+func (cache *EC2InstanceMetadataCache) FetchInstanceTypeLimits() error {
+	_, ok := InstanceNetworkingLimits[cache.instanceType]
+	if ok {
+		return nil
 	}
+
+	log.Debugf("Instance type limits are missing from vpc_ip_limits.go hence making an EC2 call to fetch the limits")
+	var eniLimits InstanceTypeLimits
+	describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{InstanceTypes: []*string{aws.String(cache.instanceType)}}
+	output, err := cache.ec2SVC.DescribeInstanceTypesWithContext(context.Background(), describeInstanceTypesInput)
+	if err != nil || len(output.InstanceTypes) != 1 {
+		return errors.New(fmt.Sprintf("Failed calling DescribeInstanceTypes for `%s`: %v", cache.instanceType, err))
+	}
+	info := output.InstanceTypes[0]
+	// Ignore any missing values
+	instanceType := aws.StringValue(info.InstanceType)
+	eniLimit := int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
+	ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
+	hypervisorType := aws.StringValue(info.Hypervisor)
+	//Not checking for empty hypervisorType since have seen certain instances not getting this filled.
+	if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
+		eniLimits = InstanceTypeLimits{
+			ENILimit:       eniLimit,
+			IPv4Limit:      ipv4Limit,
+			HypervisorType: hypervisorType,
+		}
+		InstanceNetworkingLimits[instanceType] = eniLimits
+	} else {
+		return errors.New(fmt.Sprintf("%s: %s", UnknownInstanceType, cache.instanceType))
+	}
+	return nil
+}
+
+// GetENIIPv4Limit return IP address limit per ENI based on EC2 instance type
+func (cache *EC2InstanceMetadataCache) GetENIIPv4Limit() int {
+	eniLimits, _ := InstanceNetworkingLimits[cache.instanceType]
 	// Subtract one from the IPv4Limit since we don't use the primary IP on each ENI for pods.
-	return eniLimits.IPv4Limit - 1, nil
+	return eniLimits.IPv4Limit - 1
 }
 
 // GetENILimit returns the number of ENIs can be attached to an instance
-func (cache *EC2InstanceMetadataCache) GetENILimit() (int, error) {
-	eniLimits, ok := InstanceNetworkingLimits[cache.instanceType]
-	if !ok {
-		// Fetch from EC2 API
-		describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{InstanceTypes: []*string{aws.String(cache.instanceType)}}
-		output, err := cache.ec2SVC.DescribeInstanceTypesWithContext(context.Background(), describeInstanceTypesInput)
-		if err != nil || len(output.InstanceTypes) != 1 {
-			log.Errorf("", err)
-			return 0, errors.New(fmt.Sprintf("Failed calling DescribeInstanceTypes for `%s`: %v", cache.instanceType, err))
-		}
-		info := output.InstanceTypes[0]
-		// Ignore any missing values
-		instanceType := aws.StringValue(info.InstanceType)
-		eniLimit := int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
-		ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
-		if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
-			eniLimits = InstanceTypeLimits{
-				ENILimit:  eniLimit,
-				IPv4Limit: ipv4Limit,
-			}
-			InstanceNetworkingLimits[instanceType] = eniLimits
-		} else {
-			return 0, errors.New(fmt.Sprintf("%s: %s", UnknownInstanceType, cache.instanceType))
-		}
-	}
-	return eniLimits.ENILimit, nil
+func (cache *EC2InstanceMetadataCache) GetENILimit() int {
+	eniLimits, _ := InstanceNetworkingLimits[cache.instanceType]
+	return eniLimits.ENILimit
 }
 
 // GetInstanceHypervisorFamily return hypervior of EC2 instance type
-func (cache *EC2InstanceMetadataCache) GetInstanceHypervisorFamily() (string, error) {
-	eniLimits, ok := InstanceNetworkingLimits[cache.instanceType]
-	if !ok {
-		log.Errorf("Failed to get hypervisor info due to unknown instance type %s", cache.instanceType)
-		return "", errors.New(UnknownInstanceType)
-	}
+func (cache *EC2InstanceMetadataCache) GetInstanceHypervisorFamily() string {
+	eniLimits, _ := InstanceNetworkingLimits[cache.instanceType]
 	log.Debugf("Instance hypervisor family %s", eniLimits.HypervisorType)
-	return eniLimits.HypervisorType, nil
+	return eniLimits.HypervisorType
 }
 
 // GetInstanceType return EC2 instance type
@@ -1309,11 +1314,7 @@ func (cache *EC2InstanceMetadataCache) GetInstanceType() string {
 func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int) error {
 	var needIPs = numIPs
 
-	ipLimit, err := cache.GetENIIPv4Limit()
-	if err != nil {
-		awsUtilsErrInc("UnknownInstanceType", err)
-		return err
-	}
+	ipLimit := cache.GetENIIPv4Limit()
 
 	if ipLimit < needIPs {
 		needIPs = ipLimit
