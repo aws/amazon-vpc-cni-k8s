@@ -1,14 +1,14 @@
 # Changelog
 
 ## v1.9.1
-* Enhancement - [Support DISABLE_NETWORK_RESOURCE_PROVISIONING][https://github.com/aws/amazon-vpc-cni-k8s/pull/1586] (#1586, [@jayanthvn](https://github.com/jayanthvn))
-* Enhancement - [Allow reconciler retry for InsufficientCIDR EC2 error][https://github.com/aws/amazon-vpc-cni-k8s/pull/1585] (#1585, [@jayanthvn](https://github.com/jayanthvn))
-* Enhancement - [Support for setting no_manage=false][https://github.com/aws/amazon-vpc-cni-k8s/pull/1607] (#1607, [@jayanthvn](https://github.com/jayanthvn))
-* Enhancement - [Support for m6i instances][https://github.com/aws/amazon-vpc-cni-k8s/pull/1601] (#1601, [@causton81](https://github.com/causton81))
-* Bug - [Fallback for get hypervisor type and eni ipv4 limits][https://github.com/aws/amazon-vpc-cni-k8s/pull/1616] (#1616, [@jayanthvn](https://github.com/jayanthvn))
-* Bug - [fix typo and regenerate limits file ][https://github.com/aws/amazon-vpc-cni-k8s/pull/1597] (#1597, [@jayanthvn](https://github.com/jayanthvn))
-* Testing - [UTs for no_manage=false][https://github.com/aws/amazon-vpc-cni-k8s/pull/1612] (#1612, [@jayanthvn](https://github.com/jayanthvn))
-* Testing - [Run integration test on release branch][https://github.com/aws/amazon-vpc-cni-k8s/pull/1615] (#1615, [@vikasmb](https://github.com/vikasmb))
+* Enhancement - [Support DISABLE_NETWORK_RESOURCE_PROVISIONING](https://github.com/aws/amazon-vpc-cni-k8s/pull/1586) (#1586, [@jayanthvn](https://github.com/jayanthvn))
+* Enhancement - [Allow reconciler retry for InsufficientCIDR EC2 error](https://github.com/aws/amazon-vpc-cni-k8s/pull/1585) (#1585, [@jayanthvn](https://github.com/jayanthvn))
+* Enhancement - [Support for setting no_manage=false](https://github.com/aws/amazon-vpc-cni-k8s/pull/1607) (#1607, [@jayanthvn](https://github.com/jayanthvn))
+* Enhancement - [Support for m6i instances](https://github.com/aws/amazon-vpc-cni-k8s/pull/1601) (#1601, [@causton81](https://github.com/causton81))
+* Bug - [Fallback for get hypervisor type and eni ipv4 limits](https://github.com/aws/amazon-vpc-cni-k8s/pull/1616) (#1616, [@jayanthvn](https://github.com/jayanthvn))
+* Bug - [fix typo and regenerate limits file ](https://github.com/aws/amazon-vpc-cni-k8s/pull/1597) (#1597, [@jayanthvn](https://github.com/jayanthvn))
+* Testing - [UTs for no_manage=false](https://github.com/aws/amazon-vpc-cni-k8s/pull/1612) (#1612, [@jayanthvn](https://github.com/jayanthvn))
+* Testing - [Run integration test on release branch](https://github.com/aws/amazon-vpc-cni-k8s/pull/1615) (#1615, [@vikasmb](https://github.com/vikasmb))
 
 ## v1.9.0
 * Enhancement - [EC2 sdk model override](https://github.com/aws/amazon-vpc-cni-k8s/pull/1508) (#1508, [@jayanthvn](https://github.com/jayanthvn))
