@@ -495,7 +495,7 @@ This environment variable works when `ENABLE_PREFIX_DELEGATION` is set to `true`
 
 ---
 
-#### `ENABLE_BANDWIDTH_PLUGIN (v1.10.0+)
+#### `ENABLE_BANDWIDTH_PLUGIN` (v1.10.0+)
 
 Type: Boolean as a String
 
