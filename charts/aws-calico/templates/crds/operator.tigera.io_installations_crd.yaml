@@ -105,6 +105,16 @@ spec:
                       - cidr
                       type: object
                     type: array
+                  linuxDataplane:
+                    description: 'LinuxDataplane is used to select the dataplane used
+                      for Linux nodes. In particular, it causes the operator to add
+                      required mounts and environment variables for the particular
+                      dataplane. If not specified, iptables mode is used. Default:
+                      Iptables'
+                    enum:
+                    - Iptables
+                    - BPF
+                    type: string
                   mtu:
                     description: MTU specifies the maximum transmission unit to use
                       on the pod network. If not specified, Calico will perform MTU
@@ -181,6 +191,51 @@ spec:
                         type: string
                     type: object
                 type: object
+              certificateManagement:
+                description: CertificateManagement configures pods to submit a CertificateSigningRequest
+                  to the certificates.k8s.io/v1beta1 API in order to obtain TLS certificates.
+                  This feature requires that you bring your own CSR signing and approval
+                  process, otherwise pods will be stuck during initialization.
+                properties:
+                  caCert:
+                    description: Certificate of the authority that signs the CertificateSigningRequests
+                      in PEM format.
+                    format: byte
+                    type: string
+                  keyAlgorithm:
+                    description: 'Specify the algorithm used by pods to generate a
+                      key pair that is associated with the X.509 certificate request.
+                      Default: RSAWithSize2048'
+                    enum:
+                    - ""
+                    - RSAWithSize2048
+                    - RSAWithSize4096
+                    - RSAWithSize8192
+                    - ECDSAWithCurve256
+                    - ECDSAWithCurve384
+                    - ECDSAWithCurve521
+                    type: string
+                  signatureAlgorithm:
+                    description: 'Specify the algorithm used for the signature of
+                      the X.509 certificate request. Default: SHA256WithRSA'
+                    enum:
+                    - ""
+                    - SHA256WithRSA
+                    - SHA384WithRSA
+                    - SHA512WithRSA
+                    - ECDSAWithSHA256
+                    - ECDSAWithSHA384
+                    - ECDSAWithSHA512
+                    type: string
+                  signerName:
+                    description: 'When a CSR is issued to the certificates.k8s.io
+                      API, the signerName is added to the request in order to accommodate
+                      for clusters with multiple signers. Must be formatted as: `<my-domain>/<my-signername>`.'
+                    type: string
+                required:
+                - caCert
+                - signerName
+                type: object
               cni:
                 description: CNI specifies the CNI that will be used by this installation.
                 properties:
@@ -233,7 +288,8 @@ spec:
                 type: object
               componentResources:
                 description: ComponentResources can be used to customize the resource
-                  requirements for each component.
+                  requirements for each component. Node, Typha, and KubeControllers
+                  are supported for installations.
                 items:
                   description: The ComponentResource struct associates a ResourceRequirements
                     with a component by name
@@ -336,9 +392,21 @@ spec:
                 description: "ImagePath allows for the path part of an image to be
                   specified. If specified then the specified value will be used as
                   the image path for each image. If not specified or empty, the default
-                  for each image will be used. \n Image format:    `<registry>/<imagePath>/<imageName>:<image-tag>`
+                  for each image will be used. A special case value, UseDefault, is
+                  supported to explicitly specify the default image path will be used
+                  for each image. \n Image format:    `<registry>/<imagePath>/<imagePrefix><imageName>:<image-tag>`
                   \n This option allows configuring the `<imagePath>` portion of the
                   above format."
+                type: string
+              imagePrefix:
+                description: "ImagePrefix allows for the prefix part of an image to
+                  be specified. If specified then the given value will be used as
+                  a prefix on each image. If not specified or empty, no prefix will
+                  be used. A special case value, UseDefault, is supported to explicitly
+                  specify the default image prefix will be used for each image. \n
+                  Image format:    `<registry>/<imagePath>/<imagePrefix><imageName>:<image-tag>`
+                  \n This option allows configuring the `<imagePrefix>` portion of
+                  the above format."
                 type: string
               imagePullSecrets:
                 description: ImagePullSecrets is an array of references to container
@@ -418,7 +486,8 @@ spec:
                 description: "Registry is the default Docker registry used for component
                   Docker images. If specified, all images will be pulled from this
                   registry. If not specified then the default registries will be used.
-                  \n Image format:    `<registry>/<imagePath>/<imageName>:<image-tag>`
+                  A special case value, UseDefault, is supported to explicitly specify
+                  the default registries will be used. \n Image format:    `<registry>/<imagePath>/<imagePrefix><imageName>:<image-tag>`
                   \n This option allows configuring the `<registry>` portion of the
                   above format."
                 type: string
@@ -528,6 +597,110 @@ spec:
                           - weight
                           type: object
                         type: array
+                      requiredDuringSchedulingIgnoredDuringExecution:
+                        description: 'WARNING: Please note that if the affinity requirements
+                          specified by this field are not met at scheduling time,
+                          the pod will NOT be scheduled onto the node. There is no
+                          fallback to another affinity rules with this setting. This
+                          may cause networking disruption or even catastrophic failure!
+                          PreferredDuringSchedulingIgnoredDuringExecution should be
+                          used for affinity unless there is a specific well understood
+                          reason to use RequiredDuringSchedulingIgnoredDuringExecution
+                          and you can guarantee that the RequiredDuringSchedulingIgnoredDuringExecution
+                          will always have sufficient nodes to satisfy the requirement.
+                          NOTE: RequiredDuringSchedulingIgnoredDuringExecution is
+                          set by default for AKS nodes, to avoid scheduling Typhas
+                          on virtual-nodes. If the affinity requirements specified
+                          by this field cease to be met at some point during pod execution
+                          (e.g. due to an update), the system may or may not try to
+                          eventually evict the pod from its node.'
+                        properties:
+                          nodeSelectorTerms:
+                            description: Required. A list of node selector terms.
+                              The terms are ORed.
+                            items:
+                              description: A null or empty node selector term matches
+                                no objects. The requirements of them are ANDed. The
+                                TopologySelectorTerm type implements a subset of the
+                                NodeSelectorTerm.
+                              properties:
+                                matchExpressions:
+                                  description: A list of node selector requirements
+                                    by node's labels.
+                                  items:
+                                    description: A node selector requirement is a
+                                      selector that contains values, a key, and an
+                                      operator that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: Represents a key's relationship
+                                          to a set of values. Valid operators are
+                                          In, NotIn, Exists, DoesNotExist. Gt, and
+                                          Lt.
+                                        type: string
+                                      values:
+                                        description: An array of string values. If
+                                          the operator is In or NotIn, the values
+                                          array must be non-empty. If the operator
+                                          is Exists or DoesNotExist, the values array
+                                          must be empty. If the operator is Gt or
+                                          Lt, the values array must have a single
+                                          element, which will be interpreted as an
+                                          integer. This array is replaced during a
+                                          strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                matchFields:
+                                  description: A list of node selector requirements
+                                    by node's fields.
+                                  items:
+                                    description: A node selector requirement is a
+                                      selector that contains values, a key, and an
+                                      operator that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: Represents a key's relationship
+                                          to a set of values. Valid operators are
+                                          In, NotIn, Exists, DoesNotExist. Gt, and
+                                          Lt.
+                                        type: string
+                                      values:
+                                        description: An array of string values. If
+                                          the operator is In or NotIn, the values
+                                          array must be non-empty. If the operator
+                                          is Exists or DoesNotExist, the values array
+                                          must be empty. If the operator is Gt or
+                                          Lt, the values array must have a single
+                                          element, which will be interpreted as an
+                                          integer. This array is replaced during a
+                                          strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                              type: object
+                            type: array
+                        required:
+                        - nodeSelectorTerms
+                        type: object
                     type: object
                 type: object
               typhaMetricsPort:
@@ -621,6 +794,16 @@ spec:
                           - cidr
                           type: object
                         type: array
+                      linuxDataplane:
+                        description: 'LinuxDataplane is used to select the dataplane
+                          used for Linux nodes. In particular, it causes the operator
+                          to add required mounts and environment variables for the
+                          particular dataplane. If not specified, iptables mode is
+                          used. Default: Iptables'
+                        enum:
+                        - Iptables
+                        - BPF
+                        type: string
                       mtu:
                         description: MTU specifies the maximum transmission unit to
                           use on the pod network. If not specified, Calico will perform
@@ -699,6 +882,53 @@ spec:
                             type: string
                         type: object
                     type: object
+                  certificateManagement:
+                    description: CertificateManagement configures pods to submit a
+                      CertificateSigningRequest to the certificates.k8s.io/v1beta1
+                      API in order to obtain TLS certificates. This feature requires
+                      that you bring your own CSR signing and approval process, otherwise
+                      pods will be stuck during initialization.
+                    properties:
+                      caCert:
+                        description: Certificate of the authority that signs the CertificateSigningRequests
+                          in PEM format.
+                        format: byte
+                        type: string
+                      keyAlgorithm:
+                        description: 'Specify the algorithm used by pods to generate
+                          a key pair that is associated with the X.509 certificate
+                          request. Default: RSAWithSize2048'
+                        enum:
+                        - ""
+                        - RSAWithSize2048
+                        - RSAWithSize4096
+                        - RSAWithSize8192
+                        - ECDSAWithCurve256
+                        - ECDSAWithCurve384
+                        - ECDSAWithCurve521
+                        type: string
+                      signatureAlgorithm:
+                        description: 'Specify the algorithm used for the signature
+                          of the X.509 certificate request. Default: SHA256WithRSA'
+                        enum:
+                        - ""
+                        - SHA256WithRSA
+                        - SHA384WithRSA
+                        - SHA512WithRSA
+                        - ECDSAWithSHA256
+                        - ECDSAWithSHA384
+                        - ECDSAWithSHA512
+                        type: string
+                      signerName:
+                        description: 'When a CSR is issued to the certificates.k8s.io
+                          API, the signerName is added to the request in order to
+                          accommodate for clusters with multiple signers. Must be
+                          formatted as: `<my-domain>/<my-signername>`.'
+                        type: string
+                    required:
+                    - caCert
+                    - signerName
+                    type: object
                   cni:
                     description: CNI specifies the CNI that will be used by this installation.
                     properties:
@@ -751,7 +981,8 @@ spec:
                     type: object
                   componentResources:
                     description: ComponentResources can be used to customize the resource
-                      requirements for each component.
+                      requirements for each component. Node, Typha, and KubeControllers
+                      are supported for installations.
                     items:
                       description: The ComponentResource struct associates a ResourceRequirements
                         with a component by name
@@ -857,8 +1088,20 @@ spec:
                     description: "ImagePath allows for the path part of an image to
                       be specified. If specified then the specified value will be
                       used as the image path for each image. If not specified or empty,
-                      the default for each image will be used. \n Image format:    `<registry>/<imagePath>/<imageName>:<image-tag>`
+                      the default for each image will be used. A special case value,
+                      UseDefault, is supported to explicitly specify the default image
+                      path will be used for each image. \n Image format:    `<registry>/<imagePath>/<imagePrefix><imageName>:<image-tag>`
                       \n This option allows configuring the `<imagePath>` portion
+                      of the above format."
+                    type: string
+                  imagePrefix:
+                    description: "ImagePrefix allows for the prefix part of an image
+                      to be specified. If specified then the given value will be used
+                      as a prefix on each image. If not specified or empty, no prefix
+                      will be used. A special case value, UseDefault, is supported
+                      to explicitly specify the default image prefix will be used
+                      for each image. \n Image format:    `<registry>/<imagePath>/<imagePrefix><imageName>:<image-tag>`
+                      \n This option allows configuring the `<imagePrefix>` portion
                       of the above format."
                     type: string
                   imagePullSecrets:
@@ -940,7 +1183,9 @@ spec:
                     description: "Registry is the default Docker registry used for
                       component Docker images. If specified, all images will be pulled
                       from this registry. If not specified then the default registries
-                      will be used. \n Image format:    `<registry>/<imagePath>/<imageName>:<image-tag>`
+                      will be used. A special case value, UseDefault, is supported
+                      to explicitly specify the default registries will be used. \n
+                      Image format:    `<registry>/<imagePath>/<imagePrefix><imageName>:<image-tag>`
                       \n This option allows configuring the `<registry>` portion of
                       the above format."
                     type: string
@@ -1054,6 +1299,115 @@ spec:
                               - weight
                               type: object
                             type: array
+                          requiredDuringSchedulingIgnoredDuringExecution:
+                            description: 'WARNING: Please note that if the affinity
+                              requirements specified by this field are not met at
+                              scheduling time, the pod will NOT be scheduled onto
+                              the node. There is no fallback to another affinity rules
+                              with this setting. This may cause networking disruption
+                              or even catastrophic failure! PreferredDuringSchedulingIgnoredDuringExecution
+                              should be used for affinity unless there is a specific
+                              well understood reason to use RequiredDuringSchedulingIgnoredDuringExecution
+                              and you can guarantee that the RequiredDuringSchedulingIgnoredDuringExecution
+                              will always have sufficient nodes to satisfy the requirement.
+                              NOTE: RequiredDuringSchedulingIgnoredDuringExecution
+                              is set by default for AKS nodes, to avoid scheduling
+                              Typhas on virtual-nodes. If the affinity requirements
+                              specified by this field cease to be met at some point
+                              during pod execution (e.g. due to an update), the system
+                              may or may not try to eventually evict the pod from
+                              its node.'
+                            properties:
+                              nodeSelectorTerms:
+                                description: Required. A list of node selector terms.
+                                  The terms are ORed.
+                                items:
+                                  description: A null or empty node selector term
+                                    matches no objects. The requirements of them are
+                                    ANDed. The TopologySelectorTerm type implements
+                                    a subset of the NodeSelectorTerm.
+                                  properties:
+                                    matchExpressions:
+                                      description: A list of node selector requirements
+                                        by node's labels.
+                                      items:
+                                        description: A node selector requirement is
+                                          a selector that contains values, a key,
+                                          and an operator that relates the key and
+                                          values.
+                                        properties:
+                                          key:
+                                            description: The label key that the selector
+                                              applies to.
+                                            type: string
+                                          operator:
+                                            description: Represents a key's relationship
+                                              to a set of values. Valid operators
+                                              are In, NotIn, Exists, DoesNotExist.
+                                              Gt, and Lt.
+                                            type: string
+                                          values:
+                                            description: An array of string values.
+                                              If the operator is In or NotIn, the
+                                              values array must be non-empty. If the
+                                              operator is Exists or DoesNotExist,
+                                              the values array must be empty. If the
+                                              operator is Gt or Lt, the values array
+                                              must have a single element, which will
+                                              be interpreted as an integer. This array
+                                              is replaced during a strategic merge
+                                              patch.
+                                            items:
+                                              type: string
+                                            type: array
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                    matchFields:
+                                      description: A list of node selector requirements
+                                        by node's fields.
+                                      items:
+                                        description: A node selector requirement is
+                                          a selector that contains values, a key,
+                                          and an operator that relates the key and
+                                          values.
+                                        properties:
+                                          key:
+                                            description: The label key that the selector
+                                              applies to.
+                                            type: string
+                                          operator:
+                                            description: Represents a key's relationship
+                                              to a set of values. Valid operators
+                                              are In, NotIn, Exists, DoesNotExist.
+                                              Gt, and Lt.
+                                            type: string
+                                          values:
+                                            description: An array of string values.
+                                              If the operator is In or NotIn, the
+                                              values array must be non-empty. If the
+                                              operator is Exists or DoesNotExist,
+                                              the values array must be empty. If the
+                                              operator is Gt or Lt, the values array
+                                              must have a single element, which will
+                                              be interpreted as an integer. This array
+                                              is replaced during a strategic merge
+                                              patch.
+                                            items:
+                                              type: string
+                                            type: array
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                  type: object
+                                type: array
+                            required:
+                            - nodeSelectorTerms
+                            type: object
                         type: object
                     type: object
                   typhaMetricsPort:
@@ -1069,6 +1423,11 @@ spec:
                     - TigeraSecureEnterprise
                     type: string
                 type: object
+              imageSet:
+                description: ImageSet is the name of the ImageSet being used, if there
+                  is an ImageSet that is being used. If an ImageSet is not being used
+                  then this will not be set.
+                type: string
               mtu:
                 description: MTU is the most recently observed value for pod network
                   MTU. This may be an explicitly configured value, or based on Calico's
@@ -1088,3 +1447,9 @@ spec:
     storage: true
     subresources:
       status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

@@ -202,14 +202,6 @@ var _ = Describe("test warm target variables", func() {
 
 			It("should have 2 free prefixes", func() {})
 		})
-
-		Context("when WARM_PREFIX_TARGET = 0", func() {
-			BeforeEach(func() {
-				warmPrefixTarget = 0
-			})
-
-			It("should have no free prefixes", func() {})
-		})
 	})
 
 	Context("when warm prefix, warm IP and min IP target is set with PD enabled", func() {
@@ -326,27 +318,6 @@ var _ = Describe("test warm target variables", func() {
 		})
 	})
 })
-
-func Max(x, y int) int {
-	if x < y {
-		return y
-	}
-	return x
-}
-
-// MinIgnoreZero returns smaller of two number, if any number is zero returns the other number
-func MinIgnoreZero(x, y int) int {
-	if x == 0 {
-		return y
-	}
-	if y == 0 {
-		return x
-	}
-	if x < y {
-		return x
-	}
-	return y
-}
 
 func ceil(x, y int) int {
 	return (x + y - 1) / y

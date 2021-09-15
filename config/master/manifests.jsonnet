@@ -3,7 +3,7 @@ local objectItems(obj) = [[k, obj[k]] for k in std.objectFields(obj)];
 
 local regions = {
   default: {
-    version:: "v1.9.0", // or eg "v1.6.2"
+    version:: "v1.9.1", // or eg "v1.6.2"
     ecrRegion:: "us-west-2",
     ecrAccount:: "602401143452",
     ecrDomain:: "amazonaws.com",
@@ -176,6 +176,7 @@ local awsnode = {
                 DISABLE_METRICS: "false",
                 ENABLE_POD_ENI: "false",
                 ENABLE_PREFIX_DELEGATION: "false",
+                DISABLE_NETWORK_RESOURCE_PROVISIONING: "false",
                 MY_NODE_NAME: {
                   valueFrom: {
                     fieldRef: {fieldPath: "spec.nodeName"},
@@ -248,7 +249,7 @@ local awsnode = {
   },
 
   crd: {
-    apiVersion: "apiextensions.k8s.io/v1beta1",
+    apiVersion: "apiextensions.k8s.io/v1",
     kind: "CustomResourceDefinition",
     metadata: {
       name: "eniconfigs.crd.k8s.amazonaws.com",
@@ -256,10 +257,16 @@ local awsnode = {
     spec: {
       scope: "Cluster",
       group: "crd.k8s.amazonaws.com",
+      preserveUnknownFields: false,
       versions: [{
         name: "v1alpha1",
         served: true,
         storage: true,
+        schema: {
+            openAPIV3Schema: {
+              type: "object",
+              "x-kubernetes-preserve-unknown-fields": true,
+            }},
       }],
       names: {
         plural: "eniconfigs",
