@@ -176,7 +176,6 @@ local awsnode = {
                 DISABLE_METRICS: "false",
                 ENABLE_POD_ENI: "false",
                 ENABLE_PREFIX_DELEGATION: "false",
-                ENABLE_BANDWIDTH_PLUGIN: "false",
                 MY_NODE_NAME: {
                   valueFrom: {
                     fieldRef: {fieldPath: "spec.nodeName"},
