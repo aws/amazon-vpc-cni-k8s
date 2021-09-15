@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -135,6 +136,17 @@ const (
 	//envWarmPrefixTarget is used to keep a /28 prefix in warm pool.
 	envWarmPrefixTarget     = "WARM_PREFIX_TARGET"
 	defaultWarmPrefixTarget = 0
+
+	//insufficientCidrErrorCooldown is the amount of time reconciler will wait before trying to fetch
+	//more IPs/prefixes for an ENI. With InsufficientCidr we know the subnet doesn't have enough IPs so
+	//instead of retrying every 5s which would lead to increase in EC2 AllocIPAddress calls, we wait for
+	//120 seconds for a retry.
+	insufficientCidrErrorCooldown = 120 * time.Second
+
+	// envManageUntaggedENI is used to determine if untagged ENIs should be managed or unmanaged
+	envManageUntaggedENI = "MANAGE_UNTAGGED_ENI"
+
+	eniNodeTagKey = "node.k8s.amazonaws.com/instance_id"
 )
 
 var log = logger.Get()
@@ -223,6 +235,8 @@ type IPAMContext struct {
 	enablePodENI               bool
 	myNodeName                 string
 	enableIpv4PrefixDelegation bool
+	lastInsufficientCidrError  time.Time
+	enableManageUntaggedMode   bool
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -231,14 +245,27 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 		return
 	}
 	var unmanagedENIlist []string
+	// if "no_manage" tag is present and is true - ENI is unmanaged
+	// if "no_manage" tag is present and is "not true" - ENI is managed
+	// if "instance_id" tag is present and is set to instanceID - ENI is managed since this was created by IPAMD
+	// if "no_manage" tag is not present or not IPAMD created ENI, check if we are in Manage Untagged Mode, default is true.
+	// if enableManageUntaggedMode is false, then consider all untagged ENIs as unmanaged.
 	for eniID, tags := range tagMap {
-		if tags[eniNoManageTagKey] == "true" {
-			if eniID == c.awsClient.GetPrimaryENI() {
-				log.Debugf("Ignoring no_manage tag on primary ENI %s", eniID)
-			} else {
-				log.Debugf("Marking ENI %s tagged with %s as being unmanaged", eniID, eniNoManageTagKey)
-				unmanagedENIlist = append(unmanagedENIlist, eniID)
+		if _, found := tags[eniNoManageTagKey]; found {
+			if tags[eniNoManageTagKey] != "true" {
+				continue
 			}
+		} else if _, found := tags[eniNodeTagKey]; found && tags[eniNodeTagKey] == c.awsClient.GetInstanceID() {
+			continue
+		} else if c.enableManageUntaggedMode {
+			continue
+		}
+
+		if eniID == c.awsClient.GetPrimaryENI() {
+			log.Debugf("Ignoring primary ENI %s since it is always managed", eniID)
+		} else {
+			log.Debugf("Marking ENI %s as being unmanaged", eniID)
+			unmanagedENIlist = append(unmanagedENIlist, eniID)
 		}
 	}
 	c.awsClient.SetUnmanagedENIs(unmanagedENIlist)
@@ -292,6 +319,20 @@ func prometheusRegister() {
 	}
 }
 
+// containsInsufficientCidrBlocksError returns whether exceeds ENI's IP address limit
+func containsInsufficientCidrBlocksError(err error) bool {
+	var awsErr awserr.Error
+	if errors.As(err, &awsErr) {
+		return awsErr.Code() == "InsufficientCidrBlocks"
+	}
+	return false
+}
+
+// inInsufficientCidrCoolingPeriod checks whether IPAMD is in insufficientCidrErrorCooldown
+func (c *IPAMContext) inInsufficientCidrCoolingPeriod() bool {
+	return time.Since(c.lastInsufficientCidrError) <= insufficientCidrErrorCooldown
+}
+
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
 func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContext, error) {
@@ -303,8 +344,9 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.networkClient = networkutils.New()
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.enableIpv4PrefixDelegation = useIpv4PrefixDelegation()
+	c.disableENIProvisioning = disablingENIProvisioning()
 
-	client, err := awsutils.New(c.useCustomNetworking)
+	client, err := awsutils.New(c.useCustomNetworking, c.disableENIProvisioning)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
@@ -317,14 +359,17 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.minimumIPTarget = getMinimumIPTarget()
 	c.warmPrefixTarget = getWarmPrefixTarget()
 
-	c.disableENIProvisioning = disablingENIProvisioning()
 	c.enablePodENI = enablePodENI()
+	c.enableManageUntaggedMode = enableManageUntaggedMode()
 
-	hypervisorType, err := c.awsClient.GetInstanceHypervisorFamily()
+	err = c.awsClient.FetchInstanceTypeLimits()
 	if err != nil {
-		log.Error("Failed to get hypervisor type")
+		log.Errorf("Failed to get ENI limits from file:vpc_ip_limits or EC2 for %s", c.awsClient.GetInstanceType())
 		return nil, err
 	}
+
+	hypervisorType := c.awsClient.GetInstanceHypervisorFamily()
+
 	if hypervisorType != "nitro" && c.enableIpv4PrefixDelegation {
 		log.Warnf("Prefix delegation is not supported on non-nitro instance %s hence falling back to default (secondary IP) mode", c.awsClient.GetInstanceType())
 		c.enableIpv4PrefixDelegation = false
@@ -341,15 +386,17 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 
 	mac := c.awsClient.GetPrimaryENImac()
 	// retrieve security groups
+	if !c.disableENIProvisioning {
+		err = c.awsClient.RefreshSGIDs(mac)
+		if err != nil {
+			return nil, err
+		}
 
-	err = c.awsClient.RefreshSGIDs(mac)
-	if err != nil {
-		return nil, err
+		// Refresh security groups and VPC CIDR blocks in the background
+		// Ignoring errors since we will retry in 30s
+		go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
 	}
 
-	// Refresh security groups and VPC CIDR blocks in the background
-	// Ignoring errors since we will retry in 30s
-	go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
 	return c, nil
 }
 
@@ -401,7 +448,7 @@ func (c *IPAMContext) nodeInit() error {
 
 		isTrunkENI := eni.ENIID == metadataResult.TrunkENI
 		isEFAENI := metadataResult.EFAENIs[eni.ENIID]
-		if !isTrunkENI {
+		if !isTrunkENI && !c.disableENIProvisioning {
 			if err := c.awsClient.TagENI(eni.ENIID, metadataResult.TagMap[eni.ENIID]); err != nil {
 				return errors.Wrapf(err, "ipamd init: failed to tag managed ENI %v", eni.ENIID)
 			}
@@ -489,12 +536,19 @@ func (c *IPAMContext) nodeInit() error {
 		c.askForTrunkENIIfNeeded(ctx)
 	}
 
-	// For a new node, attach Cidrs (secondary ips/prefixes)
-	increasedPool, err := c.tryAssignCidrs()
-	if err == nil && increasedPool {
-		c.updateLastNodeIPPoolAction()
-	} else if err != nil {
-		return err
+	if !c.disableENIProvisioning {
+		// For a new node, attach Cidrs (secondary ips/prefixes)
+		increasedPool, err := c.tryAssignCidrs()
+		if err == nil && increasedPool {
+			c.updateLastNodeIPPoolAction()
+		} else if err != nil {
+			if containsInsufficientCidrBlocksError(err) {
+				log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
+				c.lastInsufficientCidrError = time.Now()
+				return nil
+			}
+			return err
+		}
 	}
 	return nil
 }
@@ -688,9 +742,19 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 		return
 	}
 	// Try to add more Cidrs to existing ENIs first.
+	if c.inInsufficientCidrCoolingPeriod() {
+		log.Debugf("Recently we had InsufficientCidr error hence will wait for %v before retrying", insufficientCidrErrorCooldown)
+		return
+	}
+
 	increasedPool, err := c.tryAssignCidrs()
 	if err != nil {
 		log.Errorf(err.Error())
+		if containsInsufficientCidrBlocksError(err) {
+			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
+			c.lastInsufficientCidrError = time.Now()
+			return
+		}
 	}
 	if increasedPool {
 		c.updateLastNodeIPPoolAction()
@@ -757,6 +821,11 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 		log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", resourcesToAllocate, err)
 		// Continue to process the allocated IP addresses
 		ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
+		if containsInsufficientCidrBlocksError(err) {
+			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
+			c.lastInsufficientCidrError = time.Now()
+			return err
+		}
 	}
 
 	eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni, resourcesToAllocate)
@@ -953,10 +1022,8 @@ func (c *IPAMContext) addENIprefixesToDataStore(ec2PrefixAddrs []*ec2.Ipv4Prefix
 // the limit for the instance type and the value configured via the MAX_ENI environment variable. If the value of
 // the environment variable is 0 or less, it will be ignored and the maximum for the instance is returned.
 func (c *IPAMContext) getMaxENI() (int, error) {
-	instanceMaxENI, err := c.awsClient.GetENILimit()
-	if err != nil {
-		return 0, err
-	}
+	instanceMaxENI := c.awsClient.GetENILimit()
+
 	inputStr, found := os.LookupEnv(envMaxENI)
 	envMax := defaultMaxENI
 	if found {
@@ -1177,7 +1244,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 
 		isTrunkENI := attachedENI.ENIID == trunkENI
 		isEFAENI := efaENIs[attachedENI.ENIID]
-		if !isTrunkENI {
+		if !isTrunkENI && !c.disableENIProvisioning {
 			if err := c.awsClient.TagENI(attachedENI.ENIID, eniTagMap[attachedENI.ENIID]); err != nil {
 				log.Errorf("IP pool reconcile: failed to tag managed ENI %v: %v", attachedENI.ENIID, err)
 				ipamdErrInc("eniReconcileAdd")
@@ -1510,6 +1577,10 @@ func useIpv4PrefixDelegation() bool {
 	return getEnvBoolWithDefault(envEnableIpv4PrefixDelegation, false)
 }
 
+func enableManageUntaggedMode() bool {
+	return getEnvBoolWithDefault(envManageUntaggedENI, true)
+}
+
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag
 func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
 	numFiltered := 0
@@ -1517,7 +1588,7 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 	for _, eni := range enis {
 		// If we have unmanaged ENIs, filter them out
 		if c.awsClient.IsUnmanagedENI(eni.ENIID) {
-			log.Debugf("Skipping ENI %s: tagged with %s", eni.ENIID, eniNoManageTagKey)
+			log.Debugf("Skipping ENI %s: since it is unmanaged", eni.ENIID)
 			numFiltered++
 			continue
 		} else if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
@@ -1798,21 +1869,14 @@ func (c *IPAMContext) GetENIResourcesToAllocate() int {
 
 func (c *IPAMContext) GetIPv4Limit() (int, int, error) {
 	var maxIPsPerENI, maxPrefixesPerENI, maxIpsPerPrefix int
-	var err error
 	if !c.enableIpv4PrefixDelegation {
-		maxIPsPerENI, err = c.awsClient.GetENIIPv4Limit()
+		maxIPsPerENI = c.awsClient.GetENIIPv4Limit()
 		maxPrefixesPerENI = 0
-		if err != nil {
-			return 0, 0, err
-		}
 	} else if c.enableIpv4PrefixDelegation {
 		//Single PD - allocate one prefix per ENI and new add will be new ENI + prefix
 		//Multi - allocate one prefix per ENI and new add will be new prefix or new ENI + prefix
 		_, maxIpsPerPrefix, _ = datastore.GetPrefixDelegationDefaults()
-		maxPrefixesPerENI, err = c.awsClient.GetENIIPv4Limit()
-		if err != nil {
-			return 0, 0, err
-		}
+		maxPrefixesPerENI = c.awsClient.GetENIIPv4Limit()
 		maxIPsPerENI = maxPrefixesPerENI * maxIpsPerPrefix
 		log.Debugf("max prefix %d max ips %d", maxPrefixesPerENI, maxIPsPerENI)
 	}

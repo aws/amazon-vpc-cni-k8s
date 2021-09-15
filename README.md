@@ -495,6 +495,16 @@ This environment variable works when `ENABLE_PREFIX_DELEGATION` is set to `true`
 
 ---
 
+#### `DISABLE_NETWORK_RESOURCE_PROVISIONING` (v1.9.1+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Setting `DISABLE_NETWORK_RESOURCE_PROVISIONING` to `true` will make IPAMD to depend only on IMDS to get attached ENIs and IPs/prefixes.
+
+---
+
 #### `ENABLE_BANDWIDTH_PLUGIN (v1.10.0+)
 
 Type: Boolean as a String
@@ -502,6 +512,8 @@ Type: Boolean as a String
 Default: `false`
 
 Setting `ENABLE_BANDWIDTH_PLUGIN` to `true` will update `10-aws.conflist` to include upstream [bandwidth plugin](https://www.cni.dev/plugins/current/meta/bandwidth/) as a chained plugin. 
+
+---
 
 ### ENI tags related to Allocation
 
