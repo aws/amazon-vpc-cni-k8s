@@ -101,7 +101,9 @@ ENABLE_PREFIX_DELEGATION=${ENABLE_PREFIX_DELEGATION:-"false"}
 WARM_IP_TARGET=${WARM_IP_TARGET:-"0"}
 MINIMUM_IP_TARGET=${MINIMUM_IP_TARGET:-"0"}
 WARM_PREFIX_TARGET=${WARM_PREFIX_TARGET:-"0"}
-
+ENABLE_BANDWIDTH_PLUGIN=${ENABLE_BANDWIDTH_PLUGIN:-"false"}
+TMP_AWS_CONFLIST_FILE="/tmp/10-aws.conflist"
+TMP_AWS_BW_CONFLIST_FILE="/tmp/10-aws-bandwidth-plugin.conflist"
 
 validate_env_var
 
@@ -150,7 +152,14 @@ sed \
   -e s~__MTU__~"${AWS_VPC_ENI_MTU}"~g \
   -e s~__PLUGINLOGFILE__~"${AWS_VPC_K8S_PLUGIN_LOG_FILE}"~g \
   -e s~__PLUGINLOGLEVEL__~"${AWS_VPC_K8S_PLUGIN_LOG_LEVEL}"~g \
-  10-aws.conflist > "$HOST_CNI_CONFDIR_PATH/10-aws.conflist"
+  10-aws.conflist > "$TMP_AWS_CONFLIST_FILE"
+
+if [[ "$ENABLE_BANDWIDTH_PLUGIN" == "true" ]]; then
+    jq '.plugins += [{"type": "bandwidth","capabilities": {"bandwidth": true}}]' "$TMP_AWS_CONFLIST_FILE" > "$TMP_AWS_BW_CONFLIST_FILE"
+    mv "$TMP_AWS_BW_CONFLIST_FILE" "$TMP_AWS_CONFLIST_FILE" 
+fi
+
+mv "$TMP_AWS_CONFLIST_FILE" "$HOST_CNI_CONFDIR_PATH/10-aws.conflist"
 
 log_in_json info "Successfully copied CNI plugin binary and config file."
 

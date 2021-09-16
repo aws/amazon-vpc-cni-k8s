@@ -21,7 +21,7 @@ RUN make build-linux
 # Build the architecture specific container image:
 FROM $docker_arch/amazonlinux:2
 RUN yum update -y && \
-    yum install -y iptables iproute && \
+    yum install -y iptables iproute jq && \
     yum clean all
 
 WORKDIR /app
