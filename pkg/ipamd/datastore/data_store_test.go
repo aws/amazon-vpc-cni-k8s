@@ -350,6 +350,45 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, ds.assigned, 2)
 }
 
+func TestGetStats(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+
+	_ = ds.AddENI("eni-1", 1, true, false, false)
+
+	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
+	_, _, err := ds.AssignPodIPv4Address(key1)
+	assert.NoError(t, err)
+
+	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
+	_, _, err = ds.AssignPodIPv4Address(key2)
+	assert.NoError(t, err)
+
+	total, assigned, _, cooldown := ds.GetStats()
+	assert.Equal(t, 2, total)
+	assert.Equal(t, 2, assigned)
+	assert.Equal(t, 0, cooldown)
+
+	_, _, _, err = ds.UnassignPodIPv4Address(key2)
+	assert.NoError(t, err)
+
+	total, assigned, _, cooldown = ds.GetStats()
+	assert.Equal(t, 2, total)
+	assert.Equal(t, 1, assigned)
+	assert.Equal(t, 1, cooldown)
+
+	// wait 30s (cooldown period)
+	time.Sleep(30 * time.Second)
+
+	total, assigned, _, cooldown = ds.GetStats()
+	assert.Equal(t, 2, total)
+	assert.Equal(t, 1, assigned)
+	assert.Equal(t, 0, cooldown)
+}
+
 func TestWarmENIInteractions(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
 
