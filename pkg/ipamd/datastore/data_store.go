@@ -236,6 +236,20 @@ func (cidr *CidrInfo) AssignedIPAddressesInCidr() int {
 	return count
 }
 
+// Gets number of assigned IPs and the IPs in cooldown from a given CIDR
+func (cidr *CidrInfo) GetIPStatsFromCidr() (int, int) {
+	assignedIPs := 0
+	cooldownIPs := 0
+	for _, addr := range cidr.IPv4Addresses {
+		if addr.Assigned() {
+			assignedIPs++
+		} else if addr.inCoolingPeriod() {
+			cooldownIPs++
+		}
+	}
+	return assignedIPs, cooldownIPs
+}
+
 // Assigned returns true iff the address is allocated to a pod/sandbox.
 func (addr AddressInfo) Assigned() bool {
 	return !addr.IPAMKey.IsZero()
@@ -818,13 +832,15 @@ func (ds *DataStore) unassignPodIPAddressUnsafe(addr *AddressInfo) {
 	assignedIPs.Set(float64(ds.assigned))
 }
 
-// GetStats returns total number of IP addresses, number of assigned IP addresses and total prefixes
-func (ds *DataStore) GetStats(addressFamily string) (int, int, int) {
+
+// GetStats returns total number of IP addresses, number of assigned IP addresses, total prefixes and IPs in cooldown period
+func (ds *DataStore) GetStats(addressFamily string) (int, int, int, int) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
 	totalIPs := 0
 	assignedIPs := 0
+	cooldownIPs := 0
 	for _, eni := range ds.eniPool {
 		AssignedCIDRs := eni.AvailableIPv4Cidrs
 		if addressFamily == "6" {
@@ -832,17 +848,17 @@ func (ds *DataStore) GetStats(addressFamily string) (int, int, int) {
 		}
 		for _, cidr := range AssignedCIDRs {
 			if addressFamily == "4" && ((ds.isPDEnabled && cidr.IsPrefix) || (!ds.isPDEnabled && !cidr.IsPrefix)) {
-				assignedIPs += cidr.AssignedIPAddressesInCidr()
+				assignedCount, cooldownCount := cidr.GetIPStatsFromCidr()
+        assignedIPs += assignedCount
+        cooldownIPs += cooldownCount
 				totalIPs += cidr.Size()
 			} else if addressFamily == "6" {
 				assignedIPs += cidr.AssignedIPAddressesInCidr()
-				//Set to default Max pods we support on an instance, otherwise we will end up displaying
-				//a huge number.
 				totalIPs += cidr.Size()
 			}
 		}
 	}
-	return totalIPs, assignedIPs, ds.allocatedPrefix
+	return totalIPs, assignedIPs, ds.allocatedPrefix, cooldownIPs
 }
 
 // GetTrunkENI returns the trunk ENI ID or an empty string
@@ -877,7 +893,7 @@ func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENI) bool 
 	for _, other := range ds.eniPool {
 		if other.ID != eni.ID {
 			for _, otherPrefixes := range other.AvailableIPv4Cidrs {
-				if (ds.isPDEnabled && otherPrefixes.IsPrefix == true) || (!ds.isPDEnabled && otherPrefixes.IsPrefix == false) {
+				if (ds.isPDEnabled && otherPrefixes.IsPrefix) || (!ds.isPDEnabled && !otherPrefixes.IsPrefix) {
 					otherWarmIPs += otherPrefixes.Size() - otherPrefixes.AssignedIPAddressesInCidr()
 				}
 			}
@@ -899,7 +915,7 @@ func (ds *DataStore) isRequiredForMinimumIPTarget(minimumIPTarget int, eni *ENI)
 	for _, other := range ds.eniPool {
 		if other.ID != eni.ID {
 			for _, otherPrefixes := range other.AvailableIPv4Cidrs {
-				if (ds.isPDEnabled && otherPrefixes.IsPrefix == true) || (!ds.isPDEnabled && otherPrefixes.IsPrefix == false) {
+				if (ds.isPDEnabled && otherPrefixes.IsPrefix) || (!ds.isPDEnabled && !otherPrefixes.IsPrefix) {
 					otherIPs += otherPrefixes.Size()
 				}
 			}

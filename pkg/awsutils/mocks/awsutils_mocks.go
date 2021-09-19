@@ -150,6 +150,20 @@ func (mr *MockAPIsMockRecorder) DescribeAllENIs() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeAllENIs", reflect.TypeOf((*MockAPIs)(nil).DescribeAllENIs))
 }
 
+// FetchInstanceTypeLimits mocks base method
+func (m *MockAPIs) FetchInstanceTypeLimits() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FetchInstanceTypeLimits")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// FetchInstanceTypeLimits indicates an expected call of FetchInstanceTypeLimits
+func (mr *MockAPIsMockRecorder) FetchInstanceTypeLimits() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchInstanceTypeLimits", reflect.TypeOf((*MockAPIs)(nil).FetchInstanceTypeLimits))
+}
+
 // FreeENI mocks base method
 func (m *MockAPIs) FreeENI(arg0 string) error {
 	m.ctrl.T.Helper()
@@ -180,12 +194,11 @@ func (mr *MockAPIsMockRecorder) GetAttachedENIs() *gomock.Call {
 }
 
 // GetENIIPv4Limit mocks base method
-func (m *MockAPIs) GetENIIPv4Limit() (int, error) {
+func (m *MockAPIs) GetENIIPv4Limit() int {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetENIIPv4Limit")
 	ret0, _ := ret[0].(int)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	return ret0
 }
 
 // GetENIIPv4Limit indicates an expected call of GetENIIPv4Limit
@@ -195,12 +208,11 @@ func (mr *MockAPIsMockRecorder) GetENIIPv4Limit() *gomock.Call {
 }
 
 // GetENILimit mocks base method
-func (m *MockAPIs) GetENILimit() (int, error) {
+func (m *MockAPIs) GetENILimit() int {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetENILimit")
 	ret0, _ := ret[0].(int)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	return ret0
 }
 
 // GetENILimit indicates an expected call of GetENILimit
@@ -255,18 +267,31 @@ func (mr *MockAPIsMockRecorder) GetIPv6PrefixesFromEC2(arg0 interface{}) *gomock
 }
 
 // GetInstanceHypervisorFamily mocks base method
-func (m *MockAPIs) GetInstanceHypervisorFamily() (string, error) {
+func (m *MockAPIs) GetInstanceHypervisorFamily() string {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetInstanceHypervisorFamily")
 	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	return ret0
 }
 
 // GetInstanceHypervisorFamily indicates an expected call of GetInstanceHypervisorFamily
 func (mr *MockAPIsMockRecorder) GetInstanceHypervisorFamily() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceHypervisorFamily", reflect.TypeOf((*MockAPIs)(nil).GetInstanceHypervisorFamily))
+}
+
+// GetInstanceID mocks base method
+func (m *MockAPIs) GetInstanceID() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetInstanceID")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetInstanceID indicates an expected call of GetInstanceID
+func (mr *MockAPIsMockRecorder) GetInstanceID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceID", reflect.TypeOf((*MockAPIs)(nil).GetInstanceID))
 }
 
 // GetInstanceType mocks base method

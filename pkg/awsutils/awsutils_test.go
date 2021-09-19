@@ -539,11 +539,11 @@ func TestDescribeInstanceTypes(t *testing.T) {
 
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
 	ins.instanceType = "not-there"
-	value, err := ins.GetENILimit()
+	err := ins.FetchInstanceTypeLimits()
 	assert.NoError(t, err)
+	value := ins.GetENILimit()
 	assert.Equal(t, 9, value)
-	pv4Limit, err := ins.GetENIIPv4Limit()
-	assert.NoError(t, err)
+	pv4Limit := ins.GetENIIPv4Limit()
 	assert.Equal(t, 98, pv4Limit)
 }
 

@@ -48,17 +48,23 @@ import (
 const (
 	primaryENIid  = "eni-00000000"
 	secENIid      = "eni-00000001"
+	terENIid      = "eni-00000002"
 	primaryMAC    = "12:ef:2a:98:e5:5a"
 	secMAC        = "12:ef:2a:98:e5:5b"
+	terMAC        = "12:ef:2a:98:e5:5c"
 	primaryDevice = 0
 	secDevice     = 2
+	terDevice     = 3
 	primarySubnet = "10.10.10.0/24"
 	secSubnet     = "10.10.20.0/24"
+	terSubnet     = "10.10.30.0/24"
 	ipaddr01      = "10.10.10.11"
 	ipaddr02      = "10.10.10.12"
 	ipaddr03      = "10.10.10.13"
 	ipaddr11      = "10.10.20.11"
 	ipaddr12      = "10.10.20.12"
+	ipaddr21      = "10.10.30.11"
+	ipaddr22      = "10.10.30.12"
 	vpcCIDR       = "10.10.0.0/16"
 	myNodeName    = "testNodeName"
 	prefix01      = "10.10.30.0/28"
@@ -67,6 +73,7 @@ const (
 	ipaddrPD02    = "10.10.40.0"
 	v6ipaddr01    = "2001:db8::1/128"
 	v6prefix01    = "2001:db8::/64"
+	instanceID    = "i-0e1f3b9eb950e4980"
 )
 
 type testMocks struct {
@@ -124,11 +131,11 @@ func TestNodeInit(t *testing.T) {
 	}
 	mockContext.dataStore.CheckpointMigrationPhase = 2
 
-	eni1, eni2 := getDummyENIMetadata()
+	eni1, eni2, _ := getDummyENIMetadata()
 
 	var cidrs []string
-	m.awsutils.EXPECT().GetENILimit().Return(4, nil)
-	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14, nil)
+	m.awsutils.EXPECT().GetENILimit().Return(4)
+	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14)
 	m.awsutils.EXPECT().GetIPv4sFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil)
 	m.awsutils.EXPECT().GetIPv4sFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Addresses, nil)
 	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
@@ -213,8 +220,8 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	eni1, eni2 := getDummyENIMetadataWithPrefix()
 
 	var cidrs []string
-	m.awsutils.EXPECT().GetENILimit().Return(4, nil)
-	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14, nil)
+	m.awsutils.EXPECT().GetENILimit().Return(4)
+	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14)
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Prefixes, nil)
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Prefixes, nil)
 	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
@@ -330,13 +337,15 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata) {
+func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata, awsutils.ENIMetadata) {
 	primary := true
 	notPrimary := false
 	testAddr1 := ipaddr01
 	testAddr2 := ipaddr02
 	testAddr11 := ipaddr11
 	testAddr12 := ipaddr12
+	testAddr21 := ipaddr21
+	testAddr22 := ipaddr22
 	eni1 := awsutils.ENIMetadata{
 		ENIID:          primaryENIid,
 		MAC:            primaryMAC,
@@ -366,7 +375,22 @@ func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata) {
 			},
 		},
 	}
-	return eni1, eni2
+
+	eni3 := awsutils.ENIMetadata{
+		ENIID:          terENIid,
+		MAC:            terMAC,
+		DeviceNumber:   terDevice,
+		SubnetIPv4CIDR: terSubnet,
+		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			{
+				PrivateIpAddress: &testAddr21, Primary: &notPrimary,
+			},
+			{
+				PrivateIpAddress: &testAddr22, Primary: &notPrimary,
+			},
+		},
+	}
+	return eni1, eni2, eni3
 }
 
 func getDummyENIMetadataWithPrefix() (awsutils.ENIMetadata, awsutils.ENIMetadata) {
@@ -1245,14 +1269,27 @@ func datastoreWith3PodsFromPrefix() *datastore.DataStore {
 func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	eni1, eni2 := getDummyENIMetadata()
-	allENIs := []awsutils.ENIMetadata{eni1, eni2}
+	eni1, eni2, eni3 := getDummyENIMetadata()
+	allENIs := []awsutils.ENIMetadata{eni1, eni2, eni3}
 	primaryENIonly := []awsutils.ENIMetadata{eni1}
-	eni1TagMap := map[string]awsutils.TagMap{eni1.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
-	eni2TagMap := map[string]awsutils.TagMap{eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
+	filteredENIonly := []awsutils.ENIMetadata{eni1, eni3}
+	Test1TagMap := map[string]awsutils.TagMap{eni1.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
+	Test2TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
+		eni3.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
+	Test3TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
+		eni3.ENIID: {"hi": "tag", eniNoManageTagKey: "false"}}
+	Test4TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
+		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
+	Test5TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNodeTagKey: "i-abcdabcdabcd"},
+		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
 
 	mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
-	mockAWSUtils.EXPECT().GetPrimaryENI().Times(2).Return(eni1.ENIID)
+	mockAWSUtils.EXPECT().GetPrimaryENI().Times(6).Return(eni1.ENIID)
+	mockAWSUtils.EXPECT().GetInstanceID().Times(3).Return(instanceID)
 
 	tests := []struct {
 		name          string
@@ -1262,19 +1299,105 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 		unmanagedenis []string
 	}{
 		{"No tags at all", nil, allENIs, allENIs, nil},
-		{"Primary ENI unmanaged", eni1TagMap, allENIs, allENIs, nil},
-		{"Secondary ENI unmanaged", eni2TagMap, allENIs, primaryENIonly, []string{eni2.ENIID}},
+		{"Primary ENI unmanaged", Test1TagMap, allENIs, allENIs, nil},
+		{"Secondary/Tertiary ENI unmanaged", Test2TagMap, allENIs, primaryENIonly, []string{eni2.ENIID, eni3.ENIID}},
+		{"Secondary ENI unmanaged", Test3TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
+		{"Secondary ENI unmanaged and Tertiary ENI CNI created", Test4TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
+		{"Secondary ENI not CNI created and Tertiary ENI CNI created", Test5TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &IPAMContext{awsClient: mockAWSUtils}
+			c := &IPAMContext{
+				awsClient:                mockAWSUtils,
+				enableManageUntaggedMode: true}
 			mockAWSUtils.EXPECT().SetUnmanagedENIs(tt.unmanagedenis).AnyTimes()
 			c.setUnmanagedENIs(tt.tagMap)
 
 			mockAWSUtils.EXPECT().IsUnmanagedENI(gomock.Any()).DoAndReturn(
 				func(eni string) (unmanaged bool) {
 					if eni != eni1.ENIID {
-						if _, ok := tt.tagMap[eni]; ok {
+						tags := tt.tagMap[eni]
+						if _, ok := tags[eniNoManageTagKey]; ok {
+							if tags[eniNoManageTagKey] == "true" {
+								return true
+							}
+						} else if _, ok := tags[eniNodeTagKey]; ok && tags[eniNodeTagKey] != instanceID {
+							return true
+						}
+					}
+					return false
+
+				}).AnyTimes()
+
+			mockAWSUtils.EXPECT().IsCNIUnmanagedENI(gomock.Any()).DoAndReturn(
+				func(eni string) (unmanaged bool) {
+					return false
+
+				}).AnyTimes()
+
+			if got := c.filterUnmanagedENIs(tt.enis); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("filterUnmanagedENIs() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	eni1, eni2, eni3 := getDummyENIMetadata()
+	allENIs := []awsutils.ENIMetadata{eni1, eni2, eni3}
+	primaryENIonly := []awsutils.ENIMetadata{eni1}
+	filteredENIonly := []awsutils.ENIMetadata{eni1, eni3}
+	Test1TagMap := map[string]awsutils.TagMap{eni1.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
+	Test2TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
+		eni3.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
+	Test3TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
+		eni3.ENIID: {"hi": "tag", eniNoManageTagKey: "false"}}
+	Test4TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
+		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
+	Test5TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNodeTagKey: "i-abcdabcdabcd"},
+		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
+
+	mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
+	mockAWSUtils.EXPECT().GetPrimaryENI().Times(6).Return(eni1.ENIID)
+	mockAWSUtils.EXPECT().GetInstanceID().Times(3).Return(instanceID)
+
+	tests := []struct {
+		name          string
+		tagMap        map[string]awsutils.TagMap
+		enis          []awsutils.ENIMetadata
+		want          []awsutils.ENIMetadata
+		unmanagedenis []string
+	}{
+		{"No tags at all", nil, allENIs, allENIs, []string{eni2.ENIID, eni3.ENIID}},
+		{"Primary ENI unmanaged", Test1TagMap, allENIs, allENIs, nil},
+		{"Secondary/Tertiary ENI unmanaged", Test2TagMap, allENIs, primaryENIonly, []string{eni2.ENIID, eni3.ENIID}},
+		{"Secondary ENI unmanaged", Test3TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
+		{"Secondary ENI unmanaged and Tertiary ENI CNI created", Test4TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
+		{"Secondary ENI not CNI created and Tertiary ENI CNI created", Test5TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &IPAMContext{
+				awsClient:                mockAWSUtils,
+				enableManageUntaggedMode: false}
+			mockAWSUtils.EXPECT().SetUnmanagedENIs(tt.unmanagedenis).AnyTimes()
+			c.setUnmanagedENIs(tt.tagMap)
+
+			mockAWSUtils.EXPECT().IsUnmanagedENI(gomock.Any()).DoAndReturn(
+				func(eni string) (unmanaged bool) {
+					if eni != eni1.ENIID {
+						tags := tt.tagMap[eni]
+						if _, ok := tags[eniNoManageTagKey]; ok {
+							if tags[eniNoManageTagKey] == "true" {
+								return true
+							}
+						} else if _, ok := tags[eniNodeTagKey]; ok && tags[eniNodeTagKey] != instanceID {
 							return true
 						}
 					}
