@@ -321,10 +321,10 @@ func TestPodIPv4Address(t *testing.T) {
 	_, _, err = ds.AssignPodIPv4Address(key4)
 	assert.Error(t, err)
 	// Unassign unknown Pod
-	_, _, _, err = ds.UnassignPodIPv4Address(key4)
+	_, _, _, err = ds.UnassignPodIPAddress(key4)
 	assert.Error(t, err)
 
-	_, _, deviceNum, err := ds.UnassignPodIPv4Address(key2)
+	_, _, deviceNum, err := ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, ds.assigned, 2)
@@ -342,7 +342,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.True(t, eni == "")
 
 	ds.eniPool["eni-2"].createTime = time.Time{}
-	ds.eniPool["eni-2"].AvailableIPv4Cidrs[ipv4Addr2.String()].IPv4Addresses["1.1.2.2"].UnassignedTime = time.Time{}
+	ds.eniPool["eni-2"].AvailableIPv4Cidrs[ipv4Addr2.String()].IPAddresses["1.1.2.2"].UnassignedTime = time.Time{}
 	eni = ds.RemoveUnusedENIFromStore(noWarmIPTarget, noMinimumIPTarget, noWarmPrefixTarget)
 	assert.Equal(t, eni, "eni-2")
 

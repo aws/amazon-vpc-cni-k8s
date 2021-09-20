@@ -31,9 +31,11 @@ COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/loopback \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/portmap \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/bandwidth \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/host-local \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni-support.sh \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-k8s-agent  \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/grpc-health-probe \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/egress-v4-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/entrypoint.sh /app/
 
 ENTRYPOINT ["/app/entrypoint.sh"]

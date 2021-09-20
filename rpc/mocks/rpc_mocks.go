@@ -20,11 +20,10 @@ package mock_rpc
 
 import (
 	context "context"
-	reflect "reflect"
-
 	rpc "github.com/aws/amazon-vpc-cni-k8s/rpc"
 	gomock "github.com/golang/mock/gomock"
 	grpc "google.golang.org/grpc"
+	reflect "reflect"
 )
 
 // MockCNIBackendClient is a mock of CNIBackendClient interface

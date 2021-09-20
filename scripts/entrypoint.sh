@@ -95,6 +95,8 @@ AWS_VPC_K8S_CNI_VETHPREFIX=${AWS_VPC_K8S_CNI_VETHPREFIX:-"eni"}
 AWS_VPC_ENI_MTU=${AWS_VPC_ENI_MTU:-"9001"}
 AWS_VPC_K8S_PLUGIN_LOG_FILE=${AWS_VPC_K8S_PLUGIN_LOG_FILE:-"/var/log/aws-routed-eni/plugin.log"}
 AWS_VPC_K8S_PLUGIN_LOG_LEVEL=${AWS_VPC_K8S_PLUGIN_LOG_LEVEL:-"Debug"}
+AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE=${AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE:-"/var/log/aws-routed-eni/egress-v4-plugin.log"}
+NODE_IP=${NODE_IP:=""}
 
 AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER=${AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER:-"true"}
 ENABLE_PREFIX_DELEGATION=${ENABLE_PREFIX_DELEGATION:-"false"}
@@ -119,19 +121,33 @@ wait_for_ipam() {
     done
 }
 
+#NodeIP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)
+get_node_primary_v4_address() {
+    while :
+    do
+        NODE_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)
+        if [[ "${NODE_IP}" != "" ]]; then
+            return 0
+        fi
+        # We sleep for 1 second between each retry
+        sleep 1
+    done
+}
+
 # If there is no init container, copy the required files
 if [[ "$AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER" != "false" ]]; then
     # Copy files
     log_in_json info "Copying CNI plugin binaries ... "
-    PLUGIN_BINS="loopback portmap bandwidth aws-cni-support.sh"
+    PLUGIN_BINS="loopback portmap bandwidth host-local aws-cni-support.sh"
     for b in $PLUGIN_BINS; do
         # Install the binary
         install "$b" "$HOST_CNI_BIN_PATH"
     done
 fi
 
-log_in_json info "Install CNI binary.."
+log_in_json info "Install CNI binaries.."
 install aws-cni "$HOST_CNI_BIN_PATH"
+install egress-v4-cni "$HOST_CNI_BIN_PATH"
 
 log_in_json info "Starting IPAM daemon in the background ... "
 ./aws-k8s-agent | tee -i "$AGENT_LOG_PATH" 2>&1 &
@@ -144,6 +160,7 @@ if ! wait_for_ipam; then
     exit 1
 fi
 
+get_node_primary_v4_address
 log_in_json info "Copying config file ... "
 
 # modify the static config to populate it with the env vars
@@ -152,6 +169,9 @@ sed \
   -e s~__MTU__~"${AWS_VPC_ENI_MTU}"~g \
   -e s~__PLUGINLOGFILE__~"${AWS_VPC_K8S_PLUGIN_LOG_FILE}"~g \
   -e s~__PLUGINLOGLEVEL__~"${AWS_VPC_K8S_PLUGIN_LOG_LEVEL}"~g \
+  -e s~__EGRESSV4PLUGINLOGFILE__~"${AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE}"~g \
+  -e s~__EGRESSV4PLUGINENABLED__~"${ENABLE_IPv6}"~g \
+  -e s~__NODEIP__~"${NODE_IP}"~g \
   10-aws.conflist > "$TMP_AWS_CONFLIST_FILE"
 
 if [[ "$ENABLE_BANDWIDTH_PLUGIN" == "true" ]]; then
