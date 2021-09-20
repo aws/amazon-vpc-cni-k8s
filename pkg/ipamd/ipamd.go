@@ -146,7 +146,7 @@ const (
 	ipV4AddrFamily = "4"
 	ipV6AddrFamily = "6"
 
-  //insufficientCidrErrorCooldown is the amount of time reconciler will wait before trying to fetch
+	//insufficientCidrErrorCooldown is the amount of time reconciler will wait before trying to fetch
 	//more IPs/prefixes for an ENI. With InsufficientCidr we know the subnet doesn't have enough IPs so
 	//instead of retrying every 5s which would lead to increase in EC2 AllocIPAddress calls, we wait for
 	//120 seconds for a retry.
@@ -240,14 +240,14 @@ type IPAMContext struct {
 	lastDecreaseIPPool   time.Time
 	// reconcileCooldownCache keeps timestamps of the last time an IP address was unassigned from an ENI,
 	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
-	reconcileCooldownCache ReconcileCooldownCache
-	terminating            int32 // Flag to warn that the pod is about to shut down.
-	disableENIProvisioning bool
-	enablePodENI           bool
-	myNodeName             string
-	enablePrefixDelegation bool
-	lastInsufficientCidrError  time.Time
-	enableManageUntaggedMode   bool
+	reconcileCooldownCache    ReconcileCooldownCache
+	terminating               int32 // Flag to warn that the pod is about to shut down.
+	disableENIProvisioning    bool
+	enablePodENI              bool
+	myNodeName                string
+	enablePrefixDelegation    bool
+	lastInsufficientCidrError time.Time
+	enableManageUntaggedMode  bool
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -377,12 +377,12 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.enablePodENI = enablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 
-  err = c.awsClient.FetchInstanceTypeLimits()
+	err = c.awsClient.FetchInstanceTypeLimits()
 	if err != nil {
 		log.Errorf("Failed to get ENI limits from file:vpc_ip_limits or EC2 for %s", c.awsClient.GetInstanceType())
 		return nil, err
 	}
-  
+
 	//Let's validate if the configured combination of env variables is supported before we
 	//proceed any further
 	if !c.isConfigValid() {
@@ -1111,7 +1111,7 @@ func (c *IPAMContext) addENIv6prefixesToDataStore(ec2PrefixAddrs []*ec2.Ipv6Pref
 			ipamdErrInc("addENIv6prefixesToDataStoreFailed")
 		}
 	}
-	_, _, totalPrefix := c.dataStore.GetStats(ipV6AddrFamily)
+	_, _, totalPrefix,_ := c.dataStore.GetStats(ipV6AddrFamily)
 	log.Debugf("Datastore Pool stats: total v6 prefixes(/80): %d", totalPrefix)
 }
 
@@ -2122,11 +2122,7 @@ func (c *IPAMContext) initENIAndIPLimits() (err error) {
 
 func (c *IPAMContext) isConfigValid() bool {
 	//Get Instance type
-	hypervisorType, err := c.awsClient.GetInstanceHypervisorFamily()
-	if err != nil {
-		log.Error("Failed to get hypervisor type")
-		return false
-	}
+	hypervisorType := c.awsClient.GetInstanceHypervisorFamily()
 
 	//Validate that only one among v4 and v6 is enabled.
 	if c.enableIPv4 && c.enableIPv6 {

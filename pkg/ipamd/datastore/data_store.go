@@ -240,7 +240,7 @@ func (cidr *CidrInfo) AssignedIPAddressesInCidr() int {
 func (cidr *CidrInfo) GetIPStatsFromCidr() (int, int) {
 	assignedIPs := 0
 	cooldownIPs := 0
-	for _, addr := range cidr.IPv4Addresses {
+	for _, addr := range cidr.IPAddresses {
 		if addr.Assigned() {
 			assignedIPs++
 		} else if addr.inCoolingPeriod() {
@@ -832,7 +832,6 @@ func (ds *DataStore) unassignPodIPAddressUnsafe(addr *AddressInfo) {
 	assignedIPs.Set(float64(ds.assigned))
 }
 
-
 // GetStats returns total number of IP addresses, number of assigned IP addresses, total prefixes and IPs in cooldown period
 func (ds *DataStore) GetStats(addressFamily string) (int, int, int, int) {
 	ds.lock.Lock()
@@ -849,8 +848,8 @@ func (ds *DataStore) GetStats(addressFamily string) (int, int, int, int) {
 		for _, cidr := range AssignedCIDRs {
 			if addressFamily == "4" && ((ds.isPDEnabled && cidr.IsPrefix) || (!ds.isPDEnabled && !cidr.IsPrefix)) {
 				assignedCount, cooldownCount := cidr.GetIPStatsFromCidr()
-        assignedIPs += assignedCount
-        cooldownIPs += cooldownCount
+				assignedIPs += assignedCount
+				cooldownIPs += cooldownCount
 				totalIPs += cidr.Size()
 			} else if addressFamily == "6" {
 				assignedIPs += cidr.AssignedIPAddressesInCidr()
