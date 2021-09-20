@@ -1111,7 +1111,7 @@ func (c *IPAMContext) addENIv6prefixesToDataStore(ec2PrefixAddrs []*ec2.Ipv6Pref
 			ipamdErrInc("addENIv6prefixesToDataStoreFailed")
 		}
 	}
-	_, _, totalPrefix,_ := c.dataStore.GetStats(ipV6AddrFamily)
+	_, _, totalPrefix, _ := c.dataStore.GetStats(ipV6AddrFamily)
 	log.Debugf("Datastore Pool stats: total v6 prefixes(/80): %d", totalPrefix)
 }
 
