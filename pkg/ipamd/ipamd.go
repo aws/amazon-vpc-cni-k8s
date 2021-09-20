@@ -1681,6 +1681,7 @@ func isIPv4Enabled() bool {
 
 func isIPv6Enabled() bool {
 	return getEnvBoolWithDefault(envEnableIPv6, false)
+}
 
 func enableManageUntaggedMode() bool {
 	return getEnvBoolWithDefault(envManageUntaggedENI, true)
