@@ -40,8 +40,13 @@ local awsnode = {
       },
       {
         apiGroups: [""],
-        resources: ["pods", "namespaces"],
+        resources: ["namespaces"],
         verbs: ["list", "watch", "get"],
+      },
+      {
+        apiGroups: [""],
+        resources: ["pods"],
+        verbs: ["list", "watch", "get", "patch"],
       },
       {
         apiGroups: [""],

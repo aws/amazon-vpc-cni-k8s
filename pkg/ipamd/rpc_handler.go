@@ -40,6 +40,8 @@ import (
 const (
 	ipamdgRPCaddress      = "127.0.0.1:50051"
 	grpcHealthServiceName = "grpc.health.v1.aws-node"
+
+	calicoPodIPKey = "cni.projectcalico.org/podIPs"
 )
 
 // server controls RPC service responses.
@@ -170,6 +172,9 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 		}
 	}
 
+	if s.ipamContext.enableCalicoOptimization {
+		s.ipamContext.AnnotatePod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, calicoPodIPKey, ipv4Addr)
+	}
 	resp := rpc.AddNetworkReply{
 		Success:         err == nil,
 		IPv4Addr:        ipv4Addr,
@@ -259,6 +264,10 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 				PodVlanId: int32(podENIData[0].VlanID),
 				IPv4Addr:  podENIData[0].PrivateIP}, err
 		}
+	}
+
+	if s.ipamContext.enableCalicoOptimization {
+		s.ipamContext.AnnotatePod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, calicoPodIPKey, "")
 	}
 
 	log.Infof("Send DelNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", ip, deviceNumber, err)
