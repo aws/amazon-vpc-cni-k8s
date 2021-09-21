@@ -61,16 +61,16 @@
     "kind": "ENIConfig"
     "plural": "eniconfigs"
     "singular": "eniconfig"
-  "scope": "Cluster"
   "preserveUnknownFields": false
+  "scope": "Cluster"
   "versions":
-    - "name": "v1alpha1"
-      "served": true
-      "storage": true
-      "schema":
-        "openAPIV3Schema":
-          "type": object
-          "x-kubernetes-preserve-unknown-fields": true
+  - "name": "v1alpha1"
+    "schema":
+      "openAPIV3Schema":
+        "type": "object"
+        "x-kubernetes-preserve-unknown-fields": true
+    "served": true
+    "storage": true
 ---
 "apiVersion": "apps/v1"
 "kind": "DaemonSet"
@@ -152,11 +152,11 @@
           "value": "false"
         - "name": "DISABLE_NETWORK_RESOURCE_PROVISIONING"
           "value": "false"
-        - "name": "ENABLE_POD_ENI"
-          "value": "false"
         - "name": "ENABLE_IPv4"
           "value": "true"
         - "name": "ENABLE_IPv6"
+          "value": "false"
+        - "name": "ENABLE_POD_ENI"
           "value": "false"
         - "name": "ENABLE_PREFIX_DELEGATION"
           "value": "false"

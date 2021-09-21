@@ -1967,10 +1967,10 @@ func TestIsConfigValid(t *testing.T) {
 			defer m.ctrl.Finish()
 
 			if tt.fields.isNitroInstance {
-				m.awsutils.EXPECT().GetInstanceHypervisorFamily().Return("nitro", nil)
+				m.awsutils.EXPECT().GetInstanceHypervisorFamily().Return("nitro")
 			} else {
 				m.awsutils.EXPECT().GetInstanceType().Return("dummy-instance")
-				m.awsutils.EXPECT().GetInstanceHypervisorFamily().Return("non-nitro", nil)
+				m.awsutils.EXPECT().GetInstanceHypervisorFamily().Return("non-nitro")
 			}
 			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled)
 

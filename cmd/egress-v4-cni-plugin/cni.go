@@ -16,10 +16,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"net"
 	"os"
 	"runtime"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
