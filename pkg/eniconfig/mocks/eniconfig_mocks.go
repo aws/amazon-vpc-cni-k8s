@@ -20,9 +20,10 @@ package mock_eniconfig
 
 import (
 	context "context"
+	reflect "reflect"
+
 	v1alpha1 "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	gomock "github.com/golang/mock/gomock"
-	reflect "reflect"
 	client "sigs.k8s.io/controller-runtime/pkg/client"
 )
 

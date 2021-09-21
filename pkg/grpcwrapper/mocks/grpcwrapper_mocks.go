@@ -19,9 +19,10 @@
 package mock_grpcwrapper
 
 import (
+	reflect "reflect"
+
 	gomock "github.com/golang/mock/gomock"
 	grpc "google.golang.org/grpc"
-	reflect "reflect"
 )
 
 // MockGRPC is a mock of GRPC interface

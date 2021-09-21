@@ -19,9 +19,10 @@
 package mock_typeswrapper
 
 import (
+	reflect "reflect"
+
 	types "github.com/containernetworking/cni/pkg/types"
 	gomock "github.com/golang/mock/gomock"
-	reflect "reflect"
 )
 
 // MockCNITYPES is a mock of CNITYPES interface

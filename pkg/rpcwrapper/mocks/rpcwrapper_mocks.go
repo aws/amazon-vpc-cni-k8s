@@ -19,10 +19,11 @@
 package mock_rpcwrapper
 
 import (
+	reflect "reflect"
+
 	rpc "github.com/aws/amazon-vpc-cni-k8s/rpc"
 	gomock "github.com/golang/mock/gomock"
 	grpc "google.golang.org/grpc"
-	reflect "reflect"
 )
 
 // MockRPC is a mock of RPC interface

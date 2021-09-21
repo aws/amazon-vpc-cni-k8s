@@ -19,9 +19,10 @@
 package mock_ec2metadatawrapper
 
 import (
+	reflect "reflect"
+
 	ec2metadata "github.com/aws/aws-sdk-go/aws/ec2metadata"
 	gomock "github.com/golang/mock/gomock"
-	reflect "reflect"
 )
 
 // MockHTTPClient is a mock of HTTPClient interface

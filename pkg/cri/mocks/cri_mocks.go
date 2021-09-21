@@ -19,10 +19,11 @@
 package mock_cri
 
 import (
+	reflect "reflect"
+
 	cri "github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	logger "github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	gomock "github.com/golang/mock/gomock"
-	reflect "reflect"
 )
 
 // MockAPIs is a mock of APIs interface
