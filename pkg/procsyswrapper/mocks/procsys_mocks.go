@@ -19,9 +19,8 @@
 package mock_procsyswrapper
 
 import (
-	reflect "reflect"
-
 	gomock "github.com/golang/mock/gomock"
+	reflect "reflect"
 )
 
 // MockProcSys is a mock of ProcSys interface

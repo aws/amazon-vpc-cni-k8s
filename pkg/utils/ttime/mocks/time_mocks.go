@@ -19,11 +19,10 @@
 package mock_ttime
 
 import (
-	reflect "reflect"
-	time "time"
-
 	ttime "github.com/aws/amazon-vpc-cni-k8s/pkg/utils/ttime"
 	gomock "github.com/golang/mock/gomock"
+	reflect "reflect"
+	time "time"
 )
 
 // MockTime is a mock of Time interface
