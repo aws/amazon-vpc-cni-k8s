@@ -19,6 +19,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
+	"os"
+	"runtime"
+	"strings"
+
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/types/current"
@@ -26,10 +31,6 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"net"
-	"os"
-	"runtime"
-	"strings"
 
 	"github.com/aws/amazon-vpc-cni-k8s/cmd/routed-eni-cni-plugin/driver"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/grpcwrapper"

@@ -159,7 +159,7 @@ const (
 	eniNodeTagKey = "node.k8s.amazonaws.com/instance_id"
 
 	// envEnableCalicoOptimization is used to annotate[cni.projectcalico.org/podIPs] pod's with IPs
-	// Ref : https://github.com/projectcalico/calico/issues/3530  
+	// Ref : https://github.com/projectcalico/calico/issues/3530
 	// not present; in which case we fall back to the k8s podIP
 	// Present and set to an IP; in which case we use it
 	// Present and set to the empty string, which we use to mean "CNI DEL had occurred; networking has been removed from this pod"
@@ -1916,7 +1916,7 @@ func (c *IPAMContext) AnnotatePod(podNamespace, podName, key, val string) error 
 		if pod, err = c.GetPod(podNamespace, podName); err != nil {
 			return err
 		}
-		
+
 		newPod := pod.DeepCopy()
 		newPod.Annotations[key] = val
 		if err = c.rawK8SClient.Patch(ctx, newPod, client.MergeFrom(pod)); err != nil {
@@ -1929,7 +1929,6 @@ func (c *IPAMContext) AnnotatePod(podNamespace, podName, key, val string) error 
 
 	return err
 }
-
 
 func (c *IPAMContext) tryUnassignIPsFromENIs() {
 	log.Debugf("In tryUnassignIPsFromENIs")
