@@ -237,7 +237,7 @@ func WaitForAddressesToBeStable(ifName string, timeout int) error {
 
 	deadline := time.Now().Add(time.Duration(timeout) * time.Second)
 	for {
-		addrs, err := netlink.AddrList(link, netlink.FAMILY_ALL)
+		addrs, err := netlink.AddrList(link, netlink.FAMILY_V6)
 		if err != nil {
 			return fmt.Errorf("could not list addresses: %v", err)
 		}
