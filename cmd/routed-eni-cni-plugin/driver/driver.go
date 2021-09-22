@@ -212,7 +212,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	}
 
 	if createVethContext.v6Addr != nil && createVethContext.v6Addr.IP.To16() != nil {
-			if err := WaitForAddressesToBeStable(createVethContext.contVethName, 10); err != nil {
+		if err := WaitForAddressesToBeStable(createVethContext.contVethName, 10); err != nil {
 			return errors.Wrap(err, "setup NS network: failed while waiting for v6 addresses to be stable")
 		}
 	}
