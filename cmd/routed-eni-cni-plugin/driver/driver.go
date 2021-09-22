@@ -46,6 +46,10 @@ const (
 	mainRouteTable = unix.RT_TABLE_MAIN
 
 	WAIT_INTERVAL = 50 * time.Millisecond
+
+	//Time duration CNI waits for an IPv6 address assigned to an interface
+	//to move to stable state before error'ing out.
+	v6DADTimeout = 10 * time.Second
 )
 
 // NetworkAPIs defines network API calls
@@ -212,7 +216,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	}
 
 	if createVethContext.v6Addr != nil && createVethContext.v6Addr.IP.To16() != nil {
-		if err := WaitForAddressesToBeStable(createVethContext.contVethName, 10); err != nil {
+		if err := WaitForAddressesToBeStable(createVethContext.contVethName, v6DADTimeout); err != nil {
 			return errors.Wrap(err, "setup NS network: failed while waiting for v6 addresses to be stable")
 		}
 	}
@@ -229,21 +233,17 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 // WaitForAddressesToBeStable waits for all addresses on a link to leave tentative state.
 // Will be particularly useful for ipv6, where all addresses need to do DAD.
 // If any addresses are still tentative after timeout seconds, then error.
-func WaitForAddressesToBeStable(ifName string, timeout int) error {
+func WaitForAddressesToBeStable(ifName string, timeout time.Duration) error {
 	link, err := netlink.LinkByName(ifName)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve link: %v", err)
 	}
 
-	deadline := time.Now().Add(time.Duration(timeout) * time.Second)
+	deadline := time.Now().Add(timeout)
 	for {
-		addrs, err := netlink.AddrList(link, netlink.FAMILY_ALL)
+		addrs, err := netlink.AddrList(link, netlink.FAMILY_V6)
 		if err != nil {
 			return fmt.Errorf("could not list addresses: %v", err)
-		}
-
-		if len(addrs) == 0 {
-			return nil
 		}
 
 		ok := true
