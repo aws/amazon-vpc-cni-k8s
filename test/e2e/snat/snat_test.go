@@ -18,60 +18,70 @@ const (
 	EXTERNAL_DOMAIN      = "https://aws.amazon.com/"
 )
 
-var _ = Describe("SNAT test", func() {
-	It("Pod in private subnet should have Internet access with External SNAT disabled", func() {
-		By("Setting External SNAT to false")
-		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
-			"AWS_VPC_K8S_CNI_EXTERNALSNAT": "false",
+var _ = Describe("SNAT tests", func() {
+	Context("ExternalSnat=false", func() {
+		BeforeEach(func() {
+			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
+				"AWS_VPC_K8S_CNI_EXTERNALSNAT": "false",
+			})
 		})
 
-		By("Checking External Domain Connectivity")
-		ValidateExternalDomainConnectivity(EXTERNAL_DOMAIN)
+		It("Pod in private subnet should have Internet access with External SNAT disabled", func() {
+			By("Checking External Domain Connectivity")
+			ValidateExternalDomainConnectivity(EXTERNAL_DOMAIN)
+		})
 	})
 
-	It("Pod in private subnet should have Internet access with External SNAT enabled", func() {
-		By("Setting External SNAT to true")
-		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
-			"AWS_VPC_K8S_CNI_EXTERNALSNAT": "true",
+	Context("ExternSnat=true", func() {
+		BeforeEach(func() {
+			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
+				"AWS_VPC_K8S_CNI_EXTERNALSNAT": "true",
+			})
 		})
 
-		By("Checking External Domain Connectivity")
-		ValidateExternalDomainConnectivity(EXTERNAL_DOMAIN)
+		It("Pod in private subnet should have Internet access with External SNAT enabled", func() {
+			By("Checking External Domain Connectivity")
+			ValidateExternalDomainConnectivity(EXTERNAL_DOMAIN)
+		})
 	})
 
-	It("Verify SNAT IP table rule by changing AWS_VPC_K8S_CNI_RANDOMIZESNAT", func() {
-		vpcOutput, err := f.CloudServices.EC2().DescribeVPC(f.Options.AWSVPCID)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(len(vpcOutput.Vpcs)).To(BeNumerically(">", 0))
+	Context("Validate AWS_VPC_K8S_CNI_RANDOMIZESNAT", func() {
+		It("Verify SNAT IP table rule by changing AWS_VPC_K8S_CNI_RANDOMIZESNAT", func() {
+			vpcOutput, err := f.CloudServices.EC2().DescribeVPC(f.Options.AWSVPCID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(vpcOutput.Vpcs)).To(BeNumerically(">", 0))
 
-		numOfCidrs := len(vpcOutput.Vpcs[0].CidrBlockAssociationSet)
+			numOfCidrs := len(vpcOutput.Vpcs[0].CidrBlockAssociationSet)
 
-		By("Check whether SNAT IP table has random-fully with AWS_VPC_K8S_CNI_RANDOMIZESNAT set to default value of prng")
-		ValidateIPTableRules("prng", numOfCidrs)
+			By("Check whether SNAT IP table has random-fully with AWS_VPC_K8S_CNI_RANDOMIZESNAT set to default value of prng")
+			ValidateIPTableRules("prng", numOfCidrs)
 
-		By("Setting AWS_VPC_K8S_CNI_RANDOMIZESNAT to none")
-		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
-			"AWS_VPC_K8S_CNI_RANDOMIZESNAT": "none",
+			By("Setting AWS_VPC_K8S_CNI_RANDOMIZESNAT to none")
+			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
+				"AWS_VPC_K8S_CNI_RANDOMIZESNAT": "none",
+			})
+
+			By("Check where SNAT IP table rule is updated and it doesn't contain random port allocation")
+			ValidateIPTableRules("none", numOfCidrs)
 		})
-
-		By("Check where SNAT IP table rule is updated and it doesn't contain random port allocation")
-		ValidateIPTableRules("none", numOfCidrs)
 	})
 
-	It("Verify External Domain Connectivity by modifying AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS", func() {
-		By("Getting CIDR for primary node's private subnet")
-		out, err := f.CloudServices.EC2().DescribeSubnet(privateSubnetId)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(len(out.Subnets)).To(BeNumerically(">", 0))
+	Context("Validate AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS", func() {
+		It("Verify External Domain Connectivity by modifying AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS", func() {
+			By("Getting CIDR for primary node's private subnet")
+			out, err := f.CloudServices.EC2().DescribeSubnet(privateSubnetId)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(out.Subnets)).To(BeNumerically(">", 0))
 
-		cidrBlock := out.Subnets[0].CidrBlock
-		By("Updating AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS with private subnet CIDR")
-		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
-			"AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS": aws.StringValue(cidrBlock),
+			cidrBlock := out.Subnets[0].CidrBlock
+			By("Updating AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS with private subnet CIDR")
+			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
+				"AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS": aws.StringValue(cidrBlock),
+			})
+
+			By("Check External domain connectivity from this private subnet CIDR block")
+			ValidateExternalDomainConnectivity(EXTERNAL_DOMAIN)
 		})
-
-		By("Check External domain connectivity from this private subnet CIDR block")
-		ValidateExternalDomainConnectivity(EXTERNAL_DOMAIN)
 	})
 
 	AfterEach(func() {

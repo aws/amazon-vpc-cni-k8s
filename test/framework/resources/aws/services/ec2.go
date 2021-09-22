@@ -15,7 +15,6 @@ package services
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -26,7 +25,6 @@ import (
 type EC2 interface {
 	DescribeInstanceType(instanceType string) ([]*ec2.InstanceTypeInfo, error)
 	DescribeInstance(instanceID string) (*ec2.Instance, error)
-	DescribeInstancesWithFilters(filterMap map[*string][]*string) (*ec2.DescribeInstancesOutput, error)
 	DescribeVPC(vpcID string) (*ec2.DescribeVpcsOutput, error)
 	DescribeNetworkInterface(interfaceIDs []string) (*ec2.DescribeNetworkInterfacesOutput, error)
 	AuthorizeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
@@ -48,20 +46,10 @@ type EC2 interface {
 	DeleteKey(keyName string) error
 	DescribeKey(keyName string) (*ec2.DescribeKeyPairsOutput, error)
 	ModifyNetworkInterfaceSecurityGroups(securityGroupIds []*string, networkInterfaceId *string) (*ec2.ModifyNetworkInterfaceAttributeOutput, error)
-	GetPrimaryNetworkInterfaceId([]*ec2.InstanceNetworkInterface, *string) *string
 }
 
 type defaultEC2 struct {
 	ec2iface.EC2API
-}
-
-func (d *defaultEC2) GetPrimaryNetworkInterfaceId(networkInterfaces []*ec2.InstanceNetworkInterface, instanceIPAddr *string) *string {
-	for _, ni := range networkInterfaces {
-		if strings.Compare(*ni.PrivateIpAddress, *instanceIPAddr) == 0 {
-			return ni.NetworkInterfaceId
-		}
-	}
-	return nil
 }
 
 func (d *defaultEC2) DescribeInstanceType(instanceType string) ([]*ec2.InstanceTypeInfo, error) {
@@ -98,19 +86,6 @@ func (d *defaultEC2) DescribeInstance(instanceID string) (*ec2.Instance, error) 
 		return nil, fmt.Errorf("failed to find instance %s", instanceID)
 	}
 	return describeInstanceOutput.Reservations[0].Instances[0], nil
-}
-
-func (d *defaultEC2) DescribeInstancesWithFilters(filterMap map[*string][]*string) (*ec2.DescribeInstancesOutput, error) {
-	filters := []*ec2.Filter{}
-	for k, v := range filterMap {
-		filters = append(filters, &ec2.Filter{
-			Name:   k,
-			Values: v,
-		})
-	}
-	return d.EC2API.DescribeInstances(&ec2.DescribeInstancesInput{
-		Filters: filters,
-	})
 }
 
 func (d *defaultEC2) AuthorizeSecurityGroupIngress(groupID string, protocol string,

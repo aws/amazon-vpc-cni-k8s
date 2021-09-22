@@ -2,12 +2,15 @@ package snat
 
 import (
 	"fmt"
+	"net/url"
+	"path"
+	"strings"
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
 	testUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
@@ -68,9 +71,9 @@ var _ = BeforeSuite(func() {
 	}
 
 	if exists {
-		fmt.Println("KeyPair already exists")
+		fmt.Fprintln(GinkgoWriter, "KeyPair already exists")
 	} else {
-		fmt.Println("KeyPair doesn't exist, will be created")
+		fmt.Fprintln(GinkgoWriter, "KeyPair doesn't exist, will be created")
 		_, err := f.CloudServices.EC2().CreateKey(DEFAULT_KEY_PAIR)
 		Expect(err).NotTo(HaveOccurred())
 	}
@@ -107,22 +110,22 @@ var _ = BeforeSuite(func() {
 
 	// Get ref to the only node from newly created nodegroup
 	primaryNodeInPrivateSubnet = nodeList.Items[0]
+	providerID := primaryNodeInPrivateSubnet.Spec.ProviderID
+	Expect(len(providerID)).To(BeNumerically(">", 0))
+
+	awsUrl, err := url.Parse(providerID)
+	Expect(err).NotTo(HaveOccurred())
+
+	instanceID := path.Base(awsUrl.Path)
+	Expect(len(instanceID)).To(BeNumerically(">", 0))
 
 	By("Fetching existing Security Groups from the newly created node group instance")
-	instanceOutput, err := f.CloudServices.EC2().DescribeInstancesWithFilters(map[*string][]*string{
-		aws.String("private-dns-name"): {
-			aws.String(primaryNodeInPrivateSubnet.Name),
-		},
-	})
 
+	instance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
 	Expect(err).NotTo(HaveOccurred())
-	Expect(len(instanceOutput.Reservations)).To(BeNumerically(">", 0))
-	Expect(len(instanceOutput.Reservations[0].Instances)).To(BeNumerically(">", 0))
-
-	instance := instanceOutput.Reservations[0].Instances[0]
 
 	existingSecurityGroups := instance.SecurityGroups
-	networkInterfaceId := f.CloudServices.EC2().GetPrimaryNetworkInterfaceId(instance.NetworkInterfaces, instance.PrivateIpAddress)
+	networkInterfaceId := getPrimaryNetworkInterfaceId(instance.NetworkInterfaces, instance.PrivateIpAddress)
 	Expect(networkInterfaceId).NotTo(Equal(BeNil()))
 
 	securityGroupIds := make([]*string, 0, len(existingSecurityGroups)+1)
@@ -151,3 +154,12 @@ var _ = AfterSuite(func() {
 	err := utils.DeleteAndWaitTillSelfManagedNGStackDeleted(f, props)
 	Expect(err).NotTo(HaveOccurred())
 })
+
+func getPrimaryNetworkInterfaceId(networkInterfaces []*ec2.InstanceNetworkInterface, instanceIPAddr *string) *string {
+	for _, ni := range networkInterfaces {
+		if strings.Compare(*ni.PrivateIpAddress, *instanceIPAddr) == 0 {
+			return ni.NetworkInterfaceId
+		}
+	}
+	return nil
+}
