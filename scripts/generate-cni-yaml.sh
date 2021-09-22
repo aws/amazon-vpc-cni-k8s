@@ -120,7 +120,7 @@ $BUILD_DIR/helm template \
 
 
 for i in $INDV_RESOURCES_DIR/aws-calico/templates/crs/*; do
-  cat $i | grep -v 'helm.sh\|app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
+  cat $i | grep -v 'app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
   mv $BUILD_DIR/helm_annotations_removed.yaml $i
   cat $i >> $CALICO_CRS_RESOURCES_YAML
 done

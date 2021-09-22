@@ -505,6 +505,16 @@ Setting `DISABLE_NETWORK_RESOURCE_PROVISIONING` to `true` will make IPAMD to dep
 
 ---
 
+#### `ENABLE_BANDWIDTH_PLUGIN` (v1.10.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Setting `ENABLE_BANDWIDTH_PLUGIN` to `true` will update `10-aws.conflist` to include upstream [bandwidth plugin](https://www.cni.dev/plugins/current/meta/bandwidth/) as a chained plugin. 
+
+---
+
 ### ENI tags related to Allocation
 
 This plugin interacts with the following tags on ENIs:

@@ -48,23 +48,32 @@ import (
 const (
 	primaryENIid  = "eni-00000000"
 	secENIid      = "eni-00000001"
+	terENIid      = "eni-00000002"
 	primaryMAC    = "12:ef:2a:98:e5:5a"
 	secMAC        = "12:ef:2a:98:e5:5b"
+	terMAC        = "12:ef:2a:98:e5:5c"
 	primaryDevice = 0
 	secDevice     = 2
+	terDevice     = 3
 	primarySubnet = "10.10.10.0/24"
 	secSubnet     = "10.10.20.0/24"
+	terSubnet     = "10.10.30.0/24"
 	ipaddr01      = "10.10.10.11"
 	ipaddr02      = "10.10.10.12"
 	ipaddr03      = "10.10.10.13"
 	ipaddr11      = "10.10.20.11"
 	ipaddr12      = "10.10.20.12"
+	ipaddr21      = "10.10.30.11"
+	ipaddr22      = "10.10.30.12"
 	vpcCIDR       = "10.10.0.0/16"
 	myNodeName    = "testNodeName"
 	prefix01      = "10.10.30.0/28"
 	prefix02      = "10.10.40.0/28"
 	ipaddrPD01    = "10.10.30.0"
 	ipaddrPD02    = "10.10.40.0"
+	v6ipaddr01    = "2001:db8::1/128"
+	v6prefix01    = "2001:db8::/64"
+	instanceID    = "i-0e1f3b9eb950e4980"
 )
 
 type testMocks struct {
@@ -117,14 +126,16 @@ func TestNodeInit(t *testing.T) {
 		networkClient:   m.network,
 		dataStore:       datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), false),
 		myNodeName:      myNodeName,
+		enableIPv4:      true,
+		enableIPv6:      false,
 	}
 	mockContext.dataStore.CheckpointMigrationPhase = 2
 
-	eni1, eni2 := getDummyENIMetadata()
+	eni1, eni2, _ := getDummyENIMetadata()
 
 	var cidrs []string
-	m.awsutils.EXPECT().GetENILimit().Return(4, nil)
-	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14, nil)
+	m.awsutils.EXPECT().GetENILimit().Return(4)
+	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14)
 	m.awsutils.EXPECT().GetIPv4sFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil)
 	m.awsutils.EXPECT().GetIPv4sFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Addresses, nil)
 	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
@@ -136,7 +147,7 @@ func TestNodeInit(t *testing.T) {
 	primaryIP := net.ParseIP(ipaddr01)
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
 	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
-	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false).Return(nil)
+	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false, true, false).Return(nil)
 
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 
@@ -174,7 +185,7 @@ func TestNodeInit(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestNodeInitwithPDenabled(t *testing.T) {
+func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 	ctx := context.Background()
@@ -187,28 +198,30 @@ func TestNodeInitwithPDenabled(t *testing.T) {
 	}
 
 	mockContext := &IPAMContext{
-		awsClient:                  m.awsutils,
-		rawK8SClient:               m.rawK8SClient,
-		cachedK8SClient:            m.cachedK8SClient,
-		maxIPsPerENI:               224,
-		maxPrefixesPerENI:          14,
-		maxENI:                     4,
-		warmENITarget:              1,
-		warmIPTarget:               3,
-		primaryIP:                  make(map[string]string),
-		terminating:                int32(0),
-		networkClient:              m.network,
-		dataStore:                  datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true),
-		myNodeName:                 myNodeName,
-		enableIpv4PrefixDelegation: true,
+		awsClient:              m.awsutils,
+		rawK8SClient:           m.rawK8SClient,
+		cachedK8SClient:        m.cachedK8SClient,
+		maxIPsPerENI:           224,
+		maxPrefixesPerENI:      14,
+		maxENI:                 4,
+		warmENITarget:          1,
+		warmIPTarget:           3,
+		primaryIP:              make(map[string]string),
+		terminating:            int32(0),
+		networkClient:          m.network,
+		dataStore:              datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true),
+		myNodeName:             myNodeName,
+		enablePrefixDelegation: true,
+		enableIPv4:             true,
+		enableIPv6:             false,
 	}
 	mockContext.dataStore.CheckpointMigrationPhase = 2
 
 	eni1, eni2 := getDummyENIMetadataWithPrefix()
 
 	var cidrs []string
-	m.awsutils.EXPECT().GetENILimit().Return(4, nil)
-	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14, nil)
+	m.awsutils.EXPECT().GetENILimit().Return(4)
+	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14)
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Prefixes, nil)
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Prefixes, nil)
 	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
@@ -220,7 +233,7 @@ func TestNodeInitwithPDenabled(t *testing.T) {
 	primaryIP := net.ParseIP(ipaddr01)
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
 	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
-	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false).Return(nil)
+	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false, true, false).Return(nil)
 
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 
@@ -255,13 +268,84 @@ func TestNodeInitwithPDenabled(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata) {
+func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	fakeCheckpoint := datastore.CheckpointData{
+		Version: datastore.CheckpointFormatVersion,
+		Allocations: []datastore.CheckpointEntry{
+			{IPAMKey: datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IPv6: ipaddrPD01},
+		},
+	}
+
+	mockContext := &IPAMContext{
+		awsClient:              m.awsutils,
+		rawK8SClient:           m.rawK8SClient,
+		cachedK8SClient:        m.cachedK8SClient,
+		maxIPsPerENI:           224,
+		maxPrefixesPerENI:      1,
+		maxENI:                 1,
+		warmENITarget:          1,
+		warmIPTarget:           1,
+		primaryIP:              make(map[string]string),
+		terminating:            int32(0),
+		networkClient:          m.network,
+		dataStore:              datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true),
+		myNodeName:             myNodeName,
+		enablePrefixDelegation: true,
+		enableIPv4:             false,
+		enableIPv6:             true,
+	}
+	mockContext.dataStore.CheckpointMigrationPhase = 2
+
+	eni1 := getDummyENIMetadataWithV6Prefix()
+
+	var cidrs []string
+	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	m.awsutils.EXPECT().IsCNIUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
+
+	primaryIP := net.ParseIP(ipaddr01)
+	m.network.EXPECT().SetupHostNetwork(cidrs, eni1.MAC, &primaryIP, false, false, true).Return(nil)
+	m.awsutils.EXPECT().GetIPv6PrefixesFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv6Prefixes, nil)
+	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+	m.awsutils.EXPECT().GetPrimaryENImac().Return(eni1.MAC)
+	m.awsutils.EXPECT().IsPrimaryENI(primaryENIid).Return(true).AnyTimes()
+
+	eniMetadataSlice := []awsutils.ENIMetadata{eni1}
+	resp := awsutils.DescribeAllENIsResult{
+		ENIMetadata: eniMetadataSlice,
+		TagMap:      map[string]awsutils.TagMap{},
+		TrunkENI:    "",
+		EFAENIs:     make(map[string]bool),
+	}
+	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
+	m.awsutils.EXPECT().GetLocalIPv4().Return(primaryIP)
+	m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp.MultiCardENIIDs).AnyTimes()
+
+	fakeNode := v1.Node{
+		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
+		Spec:       v1.NodeSpec{},
+		Status:     v1.NodeStatus{},
+	}
+	_ = m.cachedK8SClient.Create(ctx, &fakeNode)
+
+	err := mockContext.nodeInit()
+	assert.NoError(t, err)
+}
+
+func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata, awsutils.ENIMetadata) {
 	primary := true
 	notPrimary := false
 	testAddr1 := ipaddr01
 	testAddr2 := ipaddr02
 	testAddr11 := ipaddr11
 	testAddr12 := ipaddr12
+	testAddr21 := ipaddr21
+	testAddr22 := ipaddr22
 	eni1 := awsutils.ENIMetadata{
 		ENIID:          primaryENIid,
 		MAC:            primaryMAC,
@@ -291,7 +375,22 @@ func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata) {
 			},
 		},
 	}
-	return eni1, eni2
+
+	eni3 := awsutils.ENIMetadata{
+		ENIID:          terENIid,
+		MAC:            terMAC,
+		DeviceNumber:   terDevice,
+		SubnetIPv4CIDR: terSubnet,
+		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			{
+				PrivateIpAddress: &testAddr21, Primary: &notPrimary,
+			},
+			{
+				PrivateIpAddress: &testAddr22, Primary: &notPrimary,
+			},
+		},
+	}
+	return eni1, eni2, eni3
 }
 
 func getDummyENIMetadataWithPrefix() (awsutils.ENIMetadata, awsutils.ENIMetadata) {
@@ -328,6 +427,30 @@ func getDummyENIMetadataWithPrefix() (awsutils.ENIMetadata, awsutils.ENIMetadata
 		},
 	}
 	return eni1, eni2
+}
+
+func getDummyENIMetadataWithV6Prefix() awsutils.ENIMetadata {
+	primary := true
+	testAddr1 := v6ipaddr01
+	testv6Prefix := v6prefix01
+	eni1 := awsutils.ENIMetadata{
+		ENIID:          primaryENIid,
+		MAC:            primaryMAC,
+		DeviceNumber:   primaryDevice,
+		SubnetIPv4CIDR: primarySubnet,
+		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			{
+				PrivateIpAddress: &testAddr1, Primary: &primary,
+			},
+		},
+		IPv6Prefixes: []*ec2.Ipv6PrefixSpecification{
+			{
+				Ipv6Prefix: &testv6Prefix,
+			},
+		},
+	}
+
+	return eni1
 }
 
 func TestIncreaseIPPoolDefault(t *testing.T) {
@@ -468,19 +591,19 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	ctx := context.Background()
 
 	mockContext := &IPAMContext{
-		awsClient:                  m.awsutils,
-		rawK8SClient:               m.rawK8SClient,
-		cachedK8SClient:            m.cachedK8SClient,
-		maxIPsPerENI:               256,
-		maxPrefixesPerENI:          16,
-		maxENI:                     4,
-		warmENITarget:              1,
-		warmPrefixTarget:           1,
-		networkClient:              m.network,
-		useCustomNetworking:        UseCustomNetworkCfg(),
-		primaryIP:                  make(map[string]string),
-		terminating:                int32(0),
-		enableIpv4PrefixDelegation: true,
+		awsClient:              m.awsutils,
+		rawK8SClient:           m.rawK8SClient,
+		cachedK8SClient:        m.cachedK8SClient,
+		maxIPsPerENI:           256,
+		maxPrefixesPerENI:      16,
+		maxENI:                 4,
+		warmENITarget:          1,
+		warmPrefixTarget:       1,
+		networkClient:          m.network,
+		useCustomNetworking:    UseCustomNetworkCfg(),
+		primaryIP:              make(map[string]string),
+		terminating:            int32(0),
+		enablePrefixDelegation: true,
 	}
 
 	mockContext.dataStore = testDatastorewithPrefix()
@@ -749,11 +872,11 @@ func TestNodePrefixPoolReconcile(t *testing.T) {
 	ctx := context.Background()
 
 	mockContext := &IPAMContext{
-		awsClient:                  m.awsutils,
-		networkClient:              m.network,
-		primaryIP:                  make(map[string]string),
-		terminating:                int32(0),
-		enableIpv4PrefixDelegation: true,
+		awsClient:              m.awsutils,
+		networkClient:          m.network,
+		primaryIP:              make(map[string]string),
+		terminating:            int32(0),
+		enablePrefixDelegation: true,
 	}
 
 	mockContext.dataStore = testDatastorewithPrefix()
@@ -931,11 +1054,11 @@ func TestGetWarmIPTargetStatewithPDenabled(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:                  m.awsutils,
-		networkClient:              m.network,
-		primaryIP:                  make(map[string]string),
-		terminating:                int32(0),
-		enableIpv4PrefixDelegation: true,
+		awsClient:              m.awsutils,
+		networkClient:          m.network,
+		primaryIP:              make(map[string]string),
+		terminating:            int32(0),
+		enablePrefixDelegation: true,
 	}
 
 	mockContext.dataStore = testDatastorewithPrefix()
@@ -1000,15 +1123,15 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &IPAMContext{
-				awsClient:                  m.awsutils,
-				dataStore:                  tt.fields.datastore,
-				useCustomNetworking:        false,
-				networkClient:              m.network,
-				maxIPsPerENI:               tt.fields.maxIPsPerENI,
-				maxENI:                     -1,
-				warmENITarget:              tt.fields.warmENITarget,
-				warmIPTarget:               tt.fields.warmIPTarget,
-				enableIpv4PrefixDelegation: false,
+				awsClient:              m.awsutils,
+				dataStore:              tt.fields.datastore,
+				useCustomNetworking:    false,
+				networkClient:          m.network,
+				maxIPsPerENI:           tt.fields.maxIPsPerENI,
+				maxENI:                 -1,
+				warmENITarget:          tt.fields.warmENITarget,
+				warmIPTarget:           tt.fields.warmIPTarget,
+				enablePrefixDelegation: false,
 			}
 			if got := c.isDatastorePoolTooLow(); got != tt.want {
 				t.Errorf("nodeIPPoolTooLow() = %v, want %v", got, tt.want)
@@ -1044,15 +1167,15 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &IPAMContext{
-				awsClient:                  m.awsutils,
-				dataStore:                  tt.fields.datastore,
-				useCustomNetworking:        false,
-				networkClient:              m.network,
-				maxPrefixesPerENI:          tt.fields.maxPrefixesPerENI,
-				maxIPsPerENI:               tt.fields.maxIPsPerENI,
-				maxENI:                     -1,
-				warmPrefixTarget:           tt.fields.warmPrefixTarget,
-				enableIpv4PrefixDelegation: true,
+				awsClient:              m.awsutils,
+				dataStore:              tt.fields.datastore,
+				useCustomNetworking:    false,
+				networkClient:          m.network,
+				maxPrefixesPerENI:      tt.fields.maxPrefixesPerENI,
+				maxIPsPerENI:           tt.fields.maxIPsPerENI,
+				maxENI:                 -1,
+				warmPrefixTarget:       tt.fields.warmPrefixTarget,
+				enablePrefixDelegation: true,
 			}
 			if got := c.isDatastorePoolTooLow(); got != tt.want {
 				t.Errorf("nodeIPPoolTooLow() = %v, want %v", got, tt.want)
@@ -1146,14 +1269,27 @@ func datastoreWith3PodsFromPrefix() *datastore.DataStore {
 func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	eni1, eni2 := getDummyENIMetadata()
-	allENIs := []awsutils.ENIMetadata{eni1, eni2}
+	eni1, eni2, eni3 := getDummyENIMetadata()
+	allENIs := []awsutils.ENIMetadata{eni1, eni2, eni3}
 	primaryENIonly := []awsutils.ENIMetadata{eni1}
-	eni1TagMap := map[string]awsutils.TagMap{eni1.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
-	eni2TagMap := map[string]awsutils.TagMap{eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
+	filteredENIonly := []awsutils.ENIMetadata{eni1, eni3}
+	Test1TagMap := map[string]awsutils.TagMap{eni1.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
+	Test2TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
+		eni3.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
+	Test3TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
+		eni3.ENIID: {"hi": "tag", eniNoManageTagKey: "false"}}
+	Test4TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
+		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
+	Test5TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNodeTagKey: "i-abcdabcdabcd"},
+		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
 
 	mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
-	mockAWSUtils.EXPECT().GetPrimaryENI().Times(2).Return(eni1.ENIID)
+	mockAWSUtils.EXPECT().GetPrimaryENI().Times(6).Return(eni1.ENIID)
+	mockAWSUtils.EXPECT().GetInstanceID().Times(3).Return(instanceID)
 
 	tests := []struct {
 		name          string
@@ -1163,19 +1299,105 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 		unmanagedenis []string
 	}{
 		{"No tags at all", nil, allENIs, allENIs, nil},
-		{"Primary ENI unmanaged", eni1TagMap, allENIs, allENIs, nil},
-		{"Secondary ENI unmanaged", eni2TagMap, allENIs, primaryENIonly, []string{eni2.ENIID}},
+		{"Primary ENI unmanaged", Test1TagMap, allENIs, allENIs, nil},
+		{"Secondary/Tertiary ENI unmanaged", Test2TagMap, allENIs, primaryENIonly, []string{eni2.ENIID, eni3.ENIID}},
+		{"Secondary ENI unmanaged", Test3TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
+		{"Secondary ENI unmanaged and Tertiary ENI CNI created", Test4TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
+		{"Secondary ENI not CNI created and Tertiary ENI CNI created", Test5TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &IPAMContext{awsClient: mockAWSUtils}
+			c := &IPAMContext{
+				awsClient:                mockAWSUtils,
+				enableManageUntaggedMode: true}
 			mockAWSUtils.EXPECT().SetUnmanagedENIs(tt.unmanagedenis).AnyTimes()
 			c.setUnmanagedENIs(tt.tagMap)
 
 			mockAWSUtils.EXPECT().IsUnmanagedENI(gomock.Any()).DoAndReturn(
 				func(eni string) (unmanaged bool) {
 					if eni != eni1.ENIID {
-						if _, ok := tt.tagMap[eni]; ok {
+						tags := tt.tagMap[eni]
+						if _, ok := tags[eniNoManageTagKey]; ok {
+							if tags[eniNoManageTagKey] == "true" {
+								return true
+							}
+						} else if _, ok := tags[eniNodeTagKey]; ok && tags[eniNodeTagKey] != instanceID {
+							return true
+						}
+					}
+					return false
+
+				}).AnyTimes()
+
+			mockAWSUtils.EXPECT().IsCNIUnmanagedENI(gomock.Any()).DoAndReturn(
+				func(eni string) (unmanaged bool) {
+					return false
+
+				}).AnyTimes()
+
+			if got := c.filterUnmanagedENIs(tt.enis); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("filterUnmanagedENIs() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	eni1, eni2, eni3 := getDummyENIMetadata()
+	allENIs := []awsutils.ENIMetadata{eni1, eni2, eni3}
+	primaryENIonly := []awsutils.ENIMetadata{eni1}
+	filteredENIonly := []awsutils.ENIMetadata{eni1, eni3}
+	Test1TagMap := map[string]awsutils.TagMap{eni1.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
+	Test2TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
+		eni3.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
+	Test3TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
+		eni3.ENIID: {"hi": "tag", eniNoManageTagKey: "false"}}
+	Test4TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
+		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
+	Test5TagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {"hi": "tag", eniNodeTagKey: "i-abcdabcdabcd"},
+		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
+
+	mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
+	mockAWSUtils.EXPECT().GetPrimaryENI().Times(6).Return(eni1.ENIID)
+	mockAWSUtils.EXPECT().GetInstanceID().Times(3).Return(instanceID)
+
+	tests := []struct {
+		name          string
+		tagMap        map[string]awsutils.TagMap
+		enis          []awsutils.ENIMetadata
+		want          []awsutils.ENIMetadata
+		unmanagedenis []string
+	}{
+		{"No tags at all", nil, allENIs, allENIs, []string{eni2.ENIID, eni3.ENIID}},
+		{"Primary ENI unmanaged", Test1TagMap, allENIs, allENIs, nil},
+		{"Secondary/Tertiary ENI unmanaged", Test2TagMap, allENIs, primaryENIonly, []string{eni2.ENIID, eni3.ENIID}},
+		{"Secondary ENI unmanaged", Test3TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
+		{"Secondary ENI unmanaged and Tertiary ENI CNI created", Test4TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
+		{"Secondary ENI not CNI created and Tertiary ENI CNI created", Test5TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &IPAMContext{
+				awsClient:                mockAWSUtils,
+				enableManageUntaggedMode: false}
+			mockAWSUtils.EXPECT().SetUnmanagedENIs(tt.unmanagedenis).AnyTimes()
+			c.setUnmanagedENIs(tt.tagMap)
+
+			mockAWSUtils.EXPECT().IsUnmanagedENI(gomock.Any()).DoAndReturn(
+				func(eni string) (unmanaged bool) {
+					if eni != eni1.ENIID {
+						tags := tt.tagMap[eni]
+						if _, ok := tags[eniNoManageTagKey]; ok {
+							if tags[eniNoManageTagKey] == "true" {
+								return true
+							}
+						} else if _, ok := tags[eniNodeTagKey]; ok && tags[eniNodeTagKey] != instanceID {
 							return true
 						}
 					}
@@ -1313,11 +1535,11 @@ func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
 	ctx := context.Background()
 
 	mockContext := &IPAMContext{
-		awsClient:                  m.awsutils,
-		networkClient:              m.network,
-		primaryIP:                  make(map[string]string),
-		terminating:                int32(0),
-		enableIpv4PrefixDelegation: true,
+		awsClient:              m.awsutils,
+		networkClient:          m.network,
+		primaryIP:              make(map[string]string),
+		terminating:            int32(0),
+		enablePrefixDelegation: true,
 	}
 
 	mockContext.dataStore = testDatastorewithPrefix()
@@ -1328,7 +1550,7 @@ func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
 	eniID := primaryENIMetadata.ENIID
 	_ = mockContext.dataStore.AddENI(eniID, primaryENIMetadata.DeviceNumber, true, false, false)
 	mockContext.primaryIP[eniID] = testAddr1
-	mockContext.addENIprefixesToDataStore(primaryENIMetadata.IPv4Prefixes, eniID)
+	mockContext.addENIv4prefixesToDataStore(primaryENIMetadata.IPv4Prefixes, eniID)
 	curENIs := mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 16, curENIs.TotalIPs)
@@ -1636,4 +1858,136 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 	err = m.cachedK8SClient.Get(ctx, NodeKey, &updatedNode)
 	assert.NoError(t, err)
 	assert.Equal(t, "false", updatedNode.Labels["vpc.amazonaws.com/has-trunk-attached"])
+}
+
+func TestIsConfigValid(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	type fields struct {
+		ipV4Enabled             bool
+		ipV6Enabled             bool
+		prefixDelegationEnabled bool
+		customNetworkingEnabled bool
+		podENIEnabled           bool
+		isNitroInstance         bool
+	}
+
+	tests := []struct {
+		name   string
+		fields fields
+		want   bool
+	}{
+		{
+			name: "v4 enabled in non-PD mode and v6 disabled",
+			fields: fields{
+				ipV4Enabled:             true,
+				ipV6Enabled:             false,
+				prefixDelegationEnabled: false,
+				isNitroInstance:         true,
+			},
+			want: true,
+		},
+		{
+			name: "v4 enabled in PD mode and v6 disabled",
+			fields: fields{
+				ipV4Enabled:             true,
+				ipV6Enabled:             false,
+				prefixDelegationEnabled: true,
+				isNitroInstance:         true,
+			},
+			want: true,
+		},
+		{
+			name: "v4 disabled and v6 enabled in PD mode",
+			fields: fields{
+				ipV4Enabled:             false,
+				ipV6Enabled:             true,
+				prefixDelegationEnabled: true,
+				isNitroInstance:         true,
+			},
+			want: true,
+		},
+		{
+			name: "v4 disabled and v6 enabled in non-PD mode",
+			fields: fields{
+				ipV4Enabled:             false,
+				ipV6Enabled:             true,
+				prefixDelegationEnabled: false,
+				isNitroInstance:         true,
+			},
+			want: false,
+		},
+		{
+			name: "both v4 and v6 enabled",
+			fields: fields{
+				ipV4Enabled:     true,
+				ipV6Enabled:     true,
+				isNitroInstance: true,
+			},
+			want: false,
+		},
+		{
+			name: "v4 disabled and v6 enabled in PD mode on Non-Nitro instance",
+			fields: fields{
+				ipV4Enabled:             false,
+				ipV6Enabled:             true,
+				prefixDelegationEnabled: true,
+				isNitroInstance:         false,
+			},
+			want: false,
+		},
+		{
+			name: "ppsg enabled in v6 mode",
+			fields: fields{
+				ipV4Enabled:             false,
+				ipV6Enabled:             true,
+				prefixDelegationEnabled: true,
+				podENIEnabled:           true,
+				isNitroInstance:         true,
+			},
+			want: false,
+		},
+		{
+			name: "ppsg enabled in v4 mode",
+			fields: fields{
+				ipV4Enabled:             true,
+				ipV6Enabled:             false,
+				prefixDelegationEnabled: true,
+				podENIEnabled:           true,
+				isNitroInstance:         true,
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
+
+			if tt.fields.isNitroInstance {
+				m.awsutils.EXPECT().GetInstanceHypervisorFamily().Return("nitro")
+			} else {
+				m.awsutils.EXPECT().GetInstanceType().Return("dummy-instance")
+				m.awsutils.EXPECT().GetInstanceHypervisorFamily().Return("non-nitro")
+			}
+			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled)
+
+			mockContext := &IPAMContext{
+				awsClient:              m.awsutils,
+				networkClient:          m.network,
+				enableIPv4:             tt.fields.ipV4Enabled,
+				enableIPv6:             tt.fields.ipV6Enabled,
+				enablePrefixDelegation: tt.fields.prefixDelegationEnabled,
+				enablePodENI:           tt.fields.podENIEnabled,
+				useCustomNetworking:    tt.fields.customNetworkingEnabled,
+				dataStore:              ds,
+			}
+
+			resp := mockContext.isConfigValid()
+			assert.Equal(t, tt.want, resp)
+		})
+	}
+
 }

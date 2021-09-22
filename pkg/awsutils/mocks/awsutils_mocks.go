@@ -93,6 +93,21 @@ func (mr *MockAPIsMockRecorder) AllocIPAddresses(arg0, arg1 interface{}) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocIPAddresses", reflect.TypeOf((*MockAPIs)(nil).AllocIPAddresses), arg0, arg1)
 }
 
+// AllocIPv6Prefixes mocks base method
+func (m *MockAPIs) AllocIPv6Prefixes(arg0 string) ([]*string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AllocIPv6Prefixes", arg0)
+	ret0, _ := ret[0].([]*string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AllocIPv6Prefixes indicates an expected call of AllocIPv6Prefixes
+func (mr *MockAPIsMockRecorder) AllocIPv6Prefixes(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocIPv6Prefixes", reflect.TypeOf((*MockAPIs)(nil).AllocIPv6Prefixes), arg0)
+}
+
 // DeallocIPAddresses mocks base method
 func (m *MockAPIs) DeallocIPAddresses(arg0 string, arg1 []string) error {
 	m.ctrl.T.Helper()
@@ -136,6 +151,20 @@ func (mr *MockAPIsMockRecorder) DescribeAllENIs() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeAllENIs", reflect.TypeOf((*MockAPIs)(nil).DescribeAllENIs))
 }
 
+// FetchInstanceTypeLimits mocks base method
+func (m *MockAPIs) FetchInstanceTypeLimits() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FetchInstanceTypeLimits")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// FetchInstanceTypeLimits indicates an expected call of FetchInstanceTypeLimits
+func (mr *MockAPIsMockRecorder) FetchInstanceTypeLimits() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchInstanceTypeLimits", reflect.TypeOf((*MockAPIs)(nil).FetchInstanceTypeLimits))
+}
+
 // FreeENI mocks base method
 func (m *MockAPIs) FreeENI(arg0 string) error {
 	m.ctrl.T.Helper()
@@ -166,12 +195,11 @@ func (mr *MockAPIsMockRecorder) GetAttachedENIs() *gomock.Call {
 }
 
 // GetENIIPv4Limit mocks base method
-func (m *MockAPIs) GetENIIPv4Limit() (int, error) {
+func (m *MockAPIs) GetENIIPv4Limit() int {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetENIIPv4Limit")
 	ret0, _ := ret[0].(int)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	return ret0
 }
 
 // GetENIIPv4Limit indicates an expected call of GetENIIPv4Limit
@@ -181,12 +209,11 @@ func (mr *MockAPIsMockRecorder) GetENIIPv4Limit() *gomock.Call {
 }
 
 // GetENILimit mocks base method
-func (m *MockAPIs) GetENILimit() (int, error) {
+func (m *MockAPIs) GetENILimit() int {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetENILimit")
 	ret0, _ := ret[0].(int)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	return ret0
 }
 
 // GetENILimit indicates an expected call of GetENILimit
@@ -225,19 +252,47 @@ func (mr *MockAPIsMockRecorder) GetIPv4sFromEC2(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIPv4sFromEC2", reflect.TypeOf((*MockAPIs)(nil).GetIPv4sFromEC2), arg0)
 }
 
+// GetIPv6PrefixesFromEC2 mocks base method
+func (m *MockAPIs) GetIPv6PrefixesFromEC2(arg0 string) ([]*ec2.Ipv6PrefixSpecification, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetIPv6PrefixesFromEC2", arg0)
+	ret0, _ := ret[0].([]*ec2.Ipv6PrefixSpecification)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetIPv6PrefixesFromEC2 indicates an expected call of GetIPv6PrefixesFromEC2
+func (mr *MockAPIsMockRecorder) GetIPv6PrefixesFromEC2(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIPv6PrefixesFromEC2", reflect.TypeOf((*MockAPIs)(nil).GetIPv6PrefixesFromEC2), arg0)
+}
+
 // GetInstanceHypervisorFamily mocks base method
-func (m *MockAPIs) GetInstanceHypervisorFamily() (string, error) {
+func (m *MockAPIs) GetInstanceHypervisorFamily() string {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetInstanceHypervisorFamily")
 	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	return ret0
 }
 
 // GetInstanceHypervisorFamily indicates an expected call of GetInstanceHypervisorFamily
 func (mr *MockAPIsMockRecorder) GetInstanceHypervisorFamily() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceHypervisorFamily", reflect.TypeOf((*MockAPIs)(nil).GetInstanceHypervisorFamily))
+}
+
+// GetInstanceID mocks base method
+func (m *MockAPIs) GetInstanceID() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetInstanceID")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetInstanceID indicates an expected call of GetInstanceID
+func (mr *MockAPIsMockRecorder) GetInstanceID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceID", reflect.TypeOf((*MockAPIs)(nil).GetInstanceID))
 }
 
 // GetInstanceType mocks base method
@@ -311,6 +366,21 @@ func (mr *MockAPIsMockRecorder) GetVPCIPv4CIDRs() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVPCIPv4CIDRs", reflect.TypeOf((*MockAPIs)(nil).GetVPCIPv4CIDRs))
 }
 
+// GetVPCIPv6CIDRs mocks base method
+func (m *MockAPIs) GetVPCIPv6CIDRs() ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVPCIPv6CIDRs")
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetVPCIPv6CIDRs indicates an expected call of GetVPCIPv6CIDRs
+func (mr *MockAPIsMockRecorder) GetVPCIPv6CIDRs() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVPCIPv6CIDRs", reflect.TypeOf((*MockAPIs)(nil).GetVPCIPv6CIDRs))
+}
+
 // InitCachedPrefixDelegation mocks base method
 func (m *MockAPIs) InitCachedPrefixDelegation(arg0 bool) {
 	m.ctrl.T.Helper()
@@ -335,6 +405,20 @@ func (m *MockAPIs) IsCNIUnmanagedENI(arg0 string) bool {
 func (mr *MockAPIsMockRecorder) IsCNIUnmanagedENI(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsCNIUnmanagedENI", reflect.TypeOf((*MockAPIs)(nil).IsCNIUnmanagedENI), arg0)
+}
+
+// IsPrimaryENI mocks base method
+func (m *MockAPIs) IsPrimaryENI(arg0 string) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsPrimaryENI", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsPrimaryENI indicates an expected call of IsPrimaryENI
+func (mr *MockAPIsMockRecorder) IsPrimaryENI(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsPrimaryENI", reflect.TypeOf((*MockAPIs)(nil).IsPrimaryENI), arg0)
 }
 
 // IsUnmanagedENI mocks base method
