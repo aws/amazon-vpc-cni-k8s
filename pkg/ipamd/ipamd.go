@@ -826,8 +826,11 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 
 		log.Infof("ipamd: using custom network config: %v, %s", eniCfg.SecurityGroups, eniCfg.Subnet)
 		for _, sgID := range eniCfg.SecurityGroups {
-			log.Debugf("Found security-group id: %s", sgID)
-			securityGroups = append(securityGroups, aws.String(sgID))
+			// skip null string - issue 1626
+			if len(sgID) > 0 {
+				log.Debugf("Found security-group id: %s", sgID)
+				securityGroups = append(securityGroups, aws.String(sgID))
+			}
 		}
 		subnet = eniCfg.Subnet
 	}
