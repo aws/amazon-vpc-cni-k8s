@@ -1,4 +1,10 @@
 ---
+"apiVersion": "v1"
+"kind": "ServiceAccount"
+"metadata":
+  "name": "cni-metrics-helper"
+  "namespace": "kube-system"
+---
 "apiVersion": "rbac.authorization.k8s.io/v1"
 "kind": "ClusterRoleBinding"
 "metadata":
@@ -90,10 +96,4 @@
         "image": "961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/cni-metrics-helper:v1.9.1"
         "name": "cni-metrics-helper"
       "serviceAccountName": "cni-metrics-helper"
----
-"apiVersion": "v1"
-"kind": "ServiceAccount"
-"metadata":
-  "name": "cni-metrics-helper"
-  "namespace": "kube-system"
 ...
