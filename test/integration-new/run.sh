@@ -33,9 +33,7 @@ kubectl set env daemonset aws-node -n kube-system ENABLE_POD_ENI=true
 #Start the test
 echo "Starting the ginkgo test suite" 
 
-(cd $SCRIPT_DIR/cni && CGO_ENABLED=0 GOOS=$OS_OVERRIDE ginkgo -v -- -cluster-kubeconfig=$KUBE_CONFIG_PATH -cluster-name=$CLUSTER_NAME --aws-region=$REGION --aws-vpc-id $VPC_ID)
-(cd $SCRIPT_DIR/ipamd && CGO_ENABLED=0 GOOS=$OS_OVERRIDE ginkgo -v -- -cluster-kubeconfig=$KUBE_CONFIG_PATH -cluster-name=$CLUSTER_NAME --aws-region=$REGION --aws-vpc-id $VPC_ID)
-(cd $SCRIPT_DIR/metrics-helper && CGO_ENABLED=0 GOOS=$OS_OVERRIDE ginkgo -v -- -cluster-kubeconfig=$KUBE_CONFIG_PATH -cluster-name=$CLUSTER_NAME --aws-region=$REGION --aws-vpc-id $VPC_ID)
+(cd $SCRIPT_DIR/cni && CGO_ENABLED=0 GOOS=$OS_OVERRIDE ginkgo -v -r -- --cluster-kubeconfig=$KUBE_CONFIG_PATH --cluster-name=$CLUSTER_NAME --aws-region=$REGION --aws-vpc-id $VPC_ID)
 
 echo "Successfully finished the test suite"
 
