@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # This script runs integration tests on the EKS Amazon VPC CNI K8s
+set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "Running VPC CNI K8s integration test with the following variables
@@ -33,7 +34,8 @@ kubectl set env daemonset aws-node -n kube-system ENABLE_POD_ENI=true
 #Start the test
 echo "Starting the ginkgo test suite" 
 
-(cd $SCRIPT_DIR/cni && CGO_ENABLED=0 GOOS=$OS_OVERRIDE ginkgo -v -r -- --cluster-kubeconfig=$KUBE_CONFIG_PATH --cluster-name=$CLUSTER_NAME --aws-region=$REGION --aws-vpc-id $VPC_ID)
+# CGO_ENABLED=0 GOOS=$OS_OVERRIDE
+(cd $SCRIPT_DIR && ginkgo -v -r -- --cluster-kubeconfig=$KUBE_CONFIG_PATH --cluster-name=$CLUSTER_NAME --aws-region=$REGION --aws-vpc-id=$VPC_ID)
 
 echo "Successfully finished the test suite"
 
