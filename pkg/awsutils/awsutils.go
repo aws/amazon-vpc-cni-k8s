@@ -54,6 +54,11 @@ const (
 	eniClusterTagKey        = "cluster.k8s.amazonaws.com/name"
 	additionalEniTagsEnvVar = "ADDITIONAL_ENI_TAGS"
 	reservedTagKeyPrefix    = "k8s.amazonaws.com"
+	clusterNameTagKeyFormat = "kubernetes.io/cluster/%s"
+	clusterNameTagValue     = "owned"
+
+	networkInterfaceOwnerTagKey   = "eks:eni:owner"
+	networkInterfaceOwnerTagValue = "amazon-vpc-cni"
 	// UnknownInstanceType indicates that the instance type is not yet supported
 	UnknownInstanceType = "vpc ip resource(eni ip limit): unknown instance type"
 
@@ -371,7 +376,7 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 }
 
 // New creates an EC2InstanceMetadataCache
-func New(useCustomNetworking, disableENIProvisioning, v4Enabled, v6Enabled bool) (*EC2InstanceMetadataCache, error) {
+func New(useCustomNetworking, disableENIProvisioning, v4Enabled, v6Enabled, disableLeakedENICollection bool) (*EC2InstanceMetadataCache, error) {
 	//ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
 	ctx := context.Background()
 
@@ -411,7 +416,7 @@ func New(useCustomNetworking, disableENIProvisioning, v4Enabled, v6Enabled bool)
 	}
 
 	// Clean up leaked ENIs in the background
-	if !disableENIProvisioning {
+	if !disableENIProvisioning && !disableLeakedENICollection {
 		go wait.Forever(cache.cleanUpLeakedENIs, time.Hour)
 	}
 
@@ -828,13 +833,16 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 // buildENITags computes the desired AWS Tags for eni
 func (cache *EC2InstanceMetadataCache) buildENITags() map[string]string {
 	tags := map[string]string{
-		eniNodeTagKey: cache.instanceID,
+		eniNodeTagKey:               cache.instanceID,
+		networkInterfaceOwnerTagKey: networkInterfaceOwnerTagValue,
 	}
 
 	// If clusterName is provided,
 	// tag the ENI with "cluster.k8s.amazonaws.com/name=<cluster_name>"
+	// and "kubernetes.io/cluster/<cluster-name>: owned"
 	if cache.clusterName != "" {
 		tags[eniClusterTagKey] = cache.clusterName
+		tags[fmt.Sprintf(clusterNameTagKeyFormat, cache.clusterName)] = clusterNameTagValue
 	}
 	for key, value := range cache.additionalENITags {
 		tags[key] = value

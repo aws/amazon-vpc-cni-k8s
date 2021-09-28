@@ -156,6 +156,9 @@ const (
 	envManageUntaggedENI = "MANAGE_UNTAGGED_ENI"
 
 	eniNodeTagKey = "node.k8s.amazonaws.com/instance_id"
+
+	//envDisableLeakedENICollection is used to disable leaked eni go routine in aws-node
+	envDisableLeakedENICollection = "DISABLE_LEAKED_ENI_COLLECTION"
 )
 
 var log = logger.Get()
@@ -248,6 +251,7 @@ type IPAMContext struct {
 	enablePrefixDelegation    bool
 	lastInsufficientCidrError time.Time
 	enableManageUntaggedMode  bool
+	disableLeakedENICollection bool
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -359,8 +363,9 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.enableIPv6 = isIPv6Enabled()
 
 	c.disableENIProvisioning = disablingENIProvisioning()
+	c.disableLeakedENICollection = isLeakedENICollectionDisabled()
 
-	client, err := awsutils.New(c.useCustomNetworking, c.disableENIProvisioning, c.enableIPv4, c.enableIPv6)
+	client, err := awsutils.New(c.useCustomNetworking, c.disableENIProvisioning, c.enableIPv4, c.enableIPv6, c.disableLeakedENICollection)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
@@ -1685,6 +1690,10 @@ func isIPv6Enabled() bool {
 
 func enableManageUntaggedMode() bool {
 	return getEnvBoolWithDefault(envManageUntaggedENI, true)
+}
+
+func isLeakedENICollectionDisabled() bool {
+	return getEnvBoolWithDefault(envDisableENIProvisioning, false)
 }
 
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag

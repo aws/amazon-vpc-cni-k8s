@@ -522,16 +522,22 @@ This plugin interacts with the following tags on ENIs:
 * `cluster.k8s.amazonaws.com/name`
 * `node.k8s.amazonaws.com/instance_id`
 * `node.k8s.amazonaws.com/no_manage`
+* `kubernetes.io/cluster/<cluster-name>`
+* `eks:eni:owner`
 
 #### Cluster Name tag
 
-The tag `cluster.k8s.amazonaws.com/name` will be set to the cluster name of the
+The tag `cluster.k8s.amazonaws.com/name` and `kubernetes.io/cluster/<cluster-name>` will be set to the cluster name of the
 aws-node daemonset which created the ENI.
 
 #### Instance ID tag
 
 The tag `node.k8s.amazonaws.com/instance_id` will be set to the instance ID of
 the aws-node instance that allocated this ENI.
+
+#### ENI owner tag
+
+The tag `eks:eni:owner` will be set to `amazon-vpc-cni` since aws-node created this ENI.
 
 #### No Manage tag
 
