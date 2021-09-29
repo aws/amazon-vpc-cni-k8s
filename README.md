@@ -515,6 +515,18 @@ Setting `ENABLE_BANDWIDTH_PLUGIN` to `true` will update `10-aws.conflist` to inc
 
 ---
 
+#### `ANNOTATE_POD_IP` (v1.10.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Setting `ANNOTATE_POD_IP` to `true` will allow IPAMD to add an annotation `vpc.amazonaws.com/pod-ips` to the pod with pod IP.
+
+There is a known [issue](https://github.com/kubernetes/kubernetes/issues/39113) with kubelet taking time to update `Pod.Status.PodIP` leading to calico being blocked on programming the policy. Setting `ANNOTATE_POD_IP` to `true` will enable AWS VPC CNI similar to the optimization added in Calico CNI plugin to write the IP address back to the pod as an annotation to close this race condition. 
+
+---
+
 ### ENI tags related to Allocation
 
 This plugin interacts with the following tags on ENIs:
