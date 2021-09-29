@@ -31,10 +31,10 @@ type NamespaceManager interface {
 }
 
 type defaultNamespaceManager struct {
-	k8sClient client.Client
+	k8sClient client.DelegatingClient
 }
 
-func NewDefaultNamespaceManager(k8sClient client.Client) NamespaceManager {
+func NewDefaultNamespaceManager(k8sClient client.DelegatingClient) NamespaceManager {
 	return &defaultNamespaceManager{k8sClient: k8sClient}
 }
 

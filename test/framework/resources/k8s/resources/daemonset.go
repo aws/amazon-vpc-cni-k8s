@@ -29,10 +29,10 @@ type DaemonSetManager interface {
 }
 
 type defaultDaemonSetManager struct {
-	k8sClient client.Client
+	k8sClient client.DelegatingClient
 }
 
-func NewDefaultDaemonSetManager(k8sClient client.Client) DaemonSetManager {
+func NewDefaultDaemonSetManager(k8sClient client.DelegatingClient) DaemonSetManager {
 	return &defaultDaemonSetManager{k8sClient: k8sClient}
 }
 

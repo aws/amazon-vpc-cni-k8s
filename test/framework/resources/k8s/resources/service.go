@@ -32,10 +32,10 @@ type ServiceManager interface {
 }
 
 type defaultServiceManager struct {
-	k8sClient client.Client
+	k8sClient client.DelegatingClient
 }
 
-func NewDefaultServiceManager(k8sClient client.Client) ServiceManager {
+func NewDefaultServiceManager(k8sClient client.DelegatingClient) ServiceManager {
 	return &defaultServiceManager{k8sClient: k8sClient}
 }
 
