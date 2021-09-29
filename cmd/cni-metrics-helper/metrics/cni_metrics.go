@@ -46,7 +46,7 @@ var InterestingCNIMetrics = map[string]metricsConvert{
 				matchFunc:  matchAny,
 				actionFunc: metricsAdd,
 				data:       &dataPoints{}}}},
-	"awscni_assigned_ip_per_ipv4cidr": {
+	"awscni_assigned_ip_per_cidr": {
 		actions: []metricsAction{
 			{cwMetricName: "totalAssignedIPv4sPerCidr",
 				matchFunc:  matchAny,

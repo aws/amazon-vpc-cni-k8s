@@ -56,7 +56,7 @@ local awsnode = {
     ],
   },
 
-  serviceAccount: {
+  account: {
     apiVersion: "v1",
     kind: "ServiceAccount",
     metadata: {
@@ -77,9 +77,9 @@ local awsnode = {
       name: $.clusterRole.metadata.name,
     },
     subjects: [{
-      kind: $.serviceAccount.kind,
-      name: $.serviceAccount.metadata.name,
-      namespace: $.serviceAccount.metadata.namespace,
+      kind: $.account.kind,
+      name: $.account.metadata.name,
+      namespace: $.account.metadata.namespace,
     }],
   },
 
@@ -138,7 +138,7 @@ local awsnode = {
               },
             },
           },
-          serviceAccountName: $.serviceAccount.metadata.name,
+          serviceAccountName: $.account.metadata.name,
           hostNetwork: true,
           tolerations: [{operator: "Exists"}],
           containers_:: {
@@ -231,11 +231,14 @@ local awsnode = {
               name: "aws-vpc-cni-init",
               image: "%s/amazon-k8s-cni-init:%s" % [$.ecrRepo, $.version],
               securityContext: {privileged: true},
+              env_:: {
+                DISABLE_TCP_EARLY_DEMUX: "false",
+                ENABLE_IPv6: "false",
+              },
               env: [
-                {
-                  name: "DISABLE_TCP_EARLY_DEMUX", value: "false",
-                },
-              ],
+                {name: kv[0]} + if std.isObject(kv[1]) then kv[1] else {value: kv[1]}
+                for kv in objectItems(self.env_)
+               ],
               resources: {
                 requests: {cpu: "10m", memory: "32Mi"},
                 limits: {cpu: "50m", memory: "64Mi"},
@@ -327,7 +330,7 @@ local metricsHelper = {
     ],
   },
 
-  serviceAccount: {
+  account: {
     apiVersion: "v1",
     kind: "ServiceAccount",
     metadata: {
@@ -348,9 +351,9 @@ local metricsHelper = {
       name: $.clusterRole.metadata.name,
     },
     subjects: [{
-      kind: $.serviceAccount.kind,
-      name: $.serviceAccount.metadata.name,
-      namespace: $.serviceAccount.metadata.namespace,
+      kind: $.account.kind,
+      name: $.account.metadata.name,
+      namespace: $.account.metadata.namespace,
     }],
   },
 
@@ -376,7 +379,7 @@ local metricsHelper = {
           },
         },
         spec: {
-          serviceAccountName: $.serviceAccount.metadata.name,
+          serviceAccountName: $.account.metadata.name,
           containers_:: {
             metricshelper: {
               image: "%s/cni-metrics-helper:%s" % [$.ecrRepo, $.version],

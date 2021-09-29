@@ -120,7 +120,7 @@ var (
 	)
 	ipsPerCidr = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "awscni_assigned_ip_per_ipv4cidr",
+			Name: "awscni_assigned_ip_per_cidr",
 			Help: "The total number of IP addresses assigned per cidr",
 		},
 		[]string{"cidr"},

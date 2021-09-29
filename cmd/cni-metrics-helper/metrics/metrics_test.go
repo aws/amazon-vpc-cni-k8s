@@ -113,7 +113,7 @@ func TestAPIServerMetricwithPDenabled(t *testing.T) {
 	// verify awscni_total_ipv4_prefixes value
 	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
 
-	actions = InterestingCNIMetrics["awscni_assigned_ip_per_ipv4cidr"].actions
-	// verify awscni_assigned_ip_per_ipv4cidr value
+	actions = InterestingCNIMetrics["awscni_assigned_ip_per_cidr"].actions
+	// verify awscni_assigned_ip_per_cidr value
 	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
 }

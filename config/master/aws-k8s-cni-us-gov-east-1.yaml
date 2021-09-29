@@ -1,4 +1,10 @@
 ---
+"apiVersion": "v1"
+"kind": "ServiceAccount"
+"metadata":
+  "name": "aws-node"
+  "namespace": "kube-system"
+---
 "apiVersion": "rbac.authorization.k8s.io/v1"
 "kind": "ClusterRoleBinding"
 "metadata":
@@ -211,6 +217,8 @@
       - "env":
         - "name": "DISABLE_TCP_EARLY_DEMUX"
           "value": "false"
+        - "name": "ENABLE_IPv6"
+          "value": "false"
         "image": "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni-init:v1.9.1"
         "name": "aws-vpc-cni-init"
         "resources":
@@ -255,10 +263,4 @@
     "rollingUpdate":
       "maxUnavailable": "10%"
     "type": "RollingUpdate"
----
-"apiVersion": "v1"
-"kind": "ServiceAccount"
-"metadata":
-  "name": "aws-node"
-  "namespace": "kube-system"
 ...
