@@ -158,13 +158,13 @@ const (
 
 	eniNodeTagKey = "node.k8s.amazonaws.com/instance_id"
 
-	// envEnableCalicoOptimization is used to annotate[vpc.amazonaws.com/pod-ips] pod's with IPs
+	// envAnnotatePodIP is used to annotate[vpc.amazonaws.com/pod-ips] pod's with IPs
 	// Ref : https://github.com/projectcalico/calico/issues/3530
 	// not present; in which case we fall back to the k8s podIP
 	// Present and set to an IP; in which case we use it
 	// Present and set to the empty string, which we use to mean "CNI DEL had occurred; networking has been removed from this pod"
 	// The empty string one helps close a trace at pod shutdown where it looks like the pod still has its IP when the IP has been released
-	envEnableCalicoOptimization = "ENABLE_CALICO_OPTIMIZATION"
+	envAnnotatePodIP = "ANNOTATE_POD_IP"
 )
 
 var log = logger.Get()
@@ -257,7 +257,7 @@ type IPAMContext struct {
 	enablePrefixDelegation    bool
 	lastInsufficientCidrError time.Time
 	enableManageUntaggedMode  bool
-	enableCalicoOptimization  bool
+	enablePodIPAnnotation     bool
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -386,7 +386,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 
 	c.enablePodENI = enablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
-	c.enableCalicoOptimization = enableCalicoOptimization()
+	c.enablePodIPAnnotation = enablePodIPAnnotation()
 
 	err = c.awsClient.FetchInstanceTypeLimits()
 	if err != nil {
@@ -1698,8 +1698,8 @@ func enableManageUntaggedMode() bool {
 	return getEnvBoolWithDefault(envManageUntaggedENI, true)
 }
 
-func enableCalicoOptimization() bool {
-	return getEnvBoolWithDefault(envEnableCalicoOptimization, false)
+func enablePodIPAnnotation() bool {
+	return getEnvBoolWithDefault(envAnnotatePodIP, false)
 }
 
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag
