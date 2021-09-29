@@ -158,7 +158,7 @@ const (
 
 	eniNodeTagKey = "node.k8s.amazonaws.com/instance_id"
 
-	// envEnableCalicoOptimization is used to annotate[cni.projectcalico.org/podIPs] pod's with IPs
+	// envEnableCalicoOptimization is used to annotate[vpc.amazonaws.com/pod-ips] pod's with IPs
 	// Ref : https://github.com/projectcalico/calico/issues/3530
 	// not present; in which case we fall back to the k8s podIP
 	// Present and set to an IP; in which case we use it
