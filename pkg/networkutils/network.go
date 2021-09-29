@@ -226,27 +226,6 @@ func findPrimaryInterfaceName(primaryMAC string) (string, error) {
 }
 
 func (n *linuxNetwork) enableIPv6() (err error) {
-	//Make sure IPv6 is enabled on host interfaces
-	if err = n.procSys.Set(fmt.Sprintf("net/ipv6/conf/all/disable_ipv6"), "0"); err != nil {
-		if !os.IsNotExist(err) {
-			return errors.Wrapf(err, "setupVeth network: failed to enable IPv6 on hostVeth interface")
-		}
-	}
-	//Make sure IPv6 forwarding is enabled on all host interfaces
-	if err = n.procSys.Set(fmt.Sprintf("net/ipv6/conf/all/forwarding"), "1"); err != nil {
-		if !os.IsNotExist(err) {
-			return errors.Wrapf(err, "setupVeth network: failed to enable IPv6 forwarding on all host interfaces")
-		}
-	}
-
-	//Set accept_ra to '2' for eth0. Allows us to overrule forwarding behaviour for the Node's Primary interface and
-	//will allow eth0 to accept Router Advertisements even though forwarding is enabled on *all* interfaces on the host netns.
-	if err = n.procSys.Set(fmt.Sprintf("net/ipv6/conf/eth0/accept_ra"), "2"); err != nil {
-		if !os.IsNotExist(err) {
-			return errors.Wrapf(err, "setupVeth network: failed to set accept_ra to 2 for eth0")
-		}
-	}
-
 	if err = n.setupRuleToBlockNodeLocalV4Access(); err != nil {
 		return errors.Wrapf(err, "setupVeth network: failed to setup route to block pod access via IPv4 address")
 	}
