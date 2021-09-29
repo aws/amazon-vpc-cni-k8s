@@ -231,11 +231,14 @@ local awsnode = {
               name: "aws-vpc-cni-init",
               image: "%s/amazon-k8s-cni-init:%s" % [$.ecrRepo, $.version],
               securityContext: {privileged: true},
+              env_:: {
+                DISABLE_TCP_EARLY_DEMUX: "false",
+                ENABLE_IPv6: "false",
+              },
               env: [
-                {
-                  name: "DISABLE_TCP_EARLY_DEMUX", value: "false",
-                },
-              ],
+                {name: kv[0]} + if std.isObject(kv[1]) then kv[1] else {value: kv[1]}
+                for kv in objectItems(self.env_)
+               ],
               resources: {
                 requests: {cpu: "10m", memory: "32Mi"},
                 limits: {cpu: "50m", memory: "64Mi"},
