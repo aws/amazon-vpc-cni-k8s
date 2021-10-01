@@ -39,22 +39,24 @@ func _main() int {
 	version.RegisterMetric()
 
 	//Check API Server Connectivity
-	if k8sapi.CheckAPIServerConnectivity() != nil {
+	if err := k8sapi.CheckAPIServerConnectivity(); err != nil {
+		log.Errorf("Failed check API server connectivity: %s", err)
 		return 1
 	}
 
 	rawK8SClient, err := k8sapi.CreateKubeClient()
 	if err != nil {
+		log.Errorf("Failed create kube client: %s", err)
 		return 1
 	}
 
 	cacheK8SClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient)
 	if err != nil {
+		log.Errorf("Failed create cached kube client: %s", err)
 		return 1
 	}
 
 	ipamContext, err := ipamd.New(rawK8SClient, cacheK8SClient)
-
 	if err != nil {
 		log.Errorf("Initialization failure: %v", err)
 		return 1
