@@ -119,27 +119,25 @@ local awsnode = {
           affinity: {
             nodeAffinity: {
               requiredDuringSchedulingIgnoredDuringExecution: {
-                nodeSelectorTerms: [
-                  {
-                    matchExpressions: [
-                      {
-                        key: prefix + "kubernetes.io/os",
-                        operator: "In",
-                        values: ["linux"],
-                      },
-                      {
-                        key: prefix + "kubernetes.io/arch",
-                        operator: "In",
-                        values: ["amd64", "arm64"],
-                      },
-                      {
-                        key: "eks.amazonaws.com/compute-type",
-                        operator: "NotIn",
-                        values: ["fargate"],
-                      },
-                    ],
-                  } for prefix in ["beta.", ""]
-                ],
+                nodeSelectorTerms: [{ 
+                  matchExpressions: [
+                    {
+                      key: "kubernetes.io/os",
+                      operator: "In",
+                      values: ["linux"],
+                    },
+                    {
+                      key: "kubernetes.io/arch",
+                      operator: "In",
+                      values: ["amd64", "arm64"],
+                    },
+                    {
+                      key: "eks.amazonaws.com/compute-type",
+                      operator: "NotIn",
+                      values: ["fargate"],
+                    },
+                  ],
+                }],
               },
             },
           },
