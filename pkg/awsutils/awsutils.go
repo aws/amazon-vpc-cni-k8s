@@ -570,7 +570,7 @@ func (cache *EC2InstanceMetadataCache) GetAttachedENIs() (eniList []ENIMetadata,
 	// retrieve number of interfaces
 	macs, err := cache.imds.GetMACs(ctx)
 	if err != nil {
-		awsAPIErrInc("GetMACS", err)
+		awsAPIErrInc("GetMACs", err)
 		return nil, err
 	}
 	log.Debugf("Total number of interfaces found: %d ", len(macs))
