@@ -30,8 +30,12 @@ import (
 // TestNetworkingSetupForRegularPod tests networking set by the CNI Plugin for a list of Pod is as
 // expected
 func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetworkingValidationInput) []error {
+	ipFamily := netlink.FAMILY_V4
+	if podNetworkingValidationInput.IPFamily == "IPv6" {
+		ipFamily = netlink.FAMILY_V6
+	}
 	// Get the list of IP rules
-	ruleList, err := netlink.RuleList(netlink.FAMILY_V4)
+	ruleList, err := netlink.RuleList(ipFamily)
 	if err != nil {
 		log.Fatalf("failed to list ip rules %v", err)
 	}
@@ -39,6 +43,7 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 	// Do validation for each Pod and if validation fails instead of failing
 	// entire test add errors to a list for all the failing Pods
 	var validationErrors []error
+	var podIP net.IP
 
 	secondaryRouteTableIndex := make(map[int]bool)
 
@@ -49,10 +54,13 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 		var mainTableRules []netlink.Rule
 		var nonMainTableRules []netlink.Rule
 
-		podIP := net.ParseIP(pod.PodIPv4Address)
+		podIP = net.ParseIP(pod.PodIPv4Address)
+		if podNetworkingValidationInput.IPFamily == "IPv6" {
+			podIP = net.ParseIP(pod.PodIPv6Address)
+		}
 
 		log.Printf("testing for Pod name: %s Namespace: %s, IP: %s, IP on secondary ENI: %t",
-			pod.PodName, pod.PodNamespace, pod.PodIPv4Address, pod.IsIPFromSecondaryENI)
+			pod.PodName, pod.PodNamespace, podIP, pod.IsIPFromSecondaryENI)
 
 		// Get the veth pair for pod in host network namespace
 		hostVethName := getHostVethPairName(pod, podNetworkingValidationInput.VethPrefix)
@@ -107,7 +115,7 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 			mainTableRules[0].Dst, mainTableRules[0].IifName)
 
 		// Verify main table route for pod IP go through the veth pair when destination is Pod IP
-		toContainerRoutes, err := netlink.RouteListFiltered(netlink.FAMILY_V4,
+		toContainerRoutes, err := netlink.RouteListFiltered(ipFamily,
 			&netlink.Route{
 				Dst: mainTableRules[0].Dst,
 			}, netlink.RT_FILTER_DST)
@@ -149,7 +157,7 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 
 	// Finally validate that the route table for secondary ENI has the right routes
 	for index, _ := range secondaryRouteTableIndex {
-		routes, err := netlink.RouteListFiltered(netlink.FAMILY_V4,
+		routes, err := netlink.RouteListFiltered(ipFamily,
 			&netlink.Route{
 				Table: index,
 			}, netlink.RT_FILTER_TABLE)
@@ -181,17 +189,27 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 // The test assumes that the IP assigned to the older Pod is not assigned to a new Pod while this test
 // is being executed
 func TestNetworkTearedDownForRegularPods(podNetworkingValidationInput input.PodNetworkingValidationInput) []error {
+	ipFamily := netlink.FAMILY_V4
+	maskLen := "32"
+	if podNetworkingValidationInput.IPFamily == "IPv6" {
+		ipFamily = netlink.FAMILY_V6
+		maskLen = "128"
+	}
 	// Get the list of IP rules
-	ruleList, err := netlink.RuleList(netlink.FAMILY_V4)
+	ruleList, err := netlink.RuleList(ipFamily)
 	if err != nil {
 		log.Fatalf("failed to list ip rules %v", err)
 	}
 
 	var validationError []error
+	var podIP string
 
 	for _, pod := range podNetworkingValidationInput.PodList {
-
-		podIP, podIPNet, err := net.ParseCIDR(pod.PodIPv4Address + "/32")
+        podIP =  pod.PodIPv4Address
+		if podNetworkingValidationInput.IPFamily == "IPv6" {
+			podIP = pod.PodIPv6Address
+		}
+		podIP, podIPNet, err := net.ParseCIDR(podIP + "/" + maskLen)
 		if err != nil {
 			validationError = append(validationError,
 				fmt.Errorf("failed to parse pod IP %s", pod.PodIPv4Address))
@@ -230,7 +248,7 @@ func TestNetworkTearedDownForRegularPods(podNetworkingValidationInput input.PodN
 		log.Printf("found no rules for the pod's IP %s", pod.PodIPv4Address)
 
 		// Make sure there's no route to Pod IP Address
-		toContainerRoutes, err := netlink.RouteListFiltered(netlink.FAMILY_V4,
+		toContainerRoutes, err := netlink.RouteListFiltered(ipFamily,
 			&netlink.Route{
 				Dst: podIPNet,
 			}, netlink.RT_FILTER_DST)
