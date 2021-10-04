@@ -30,6 +30,7 @@ import (
 )
 
 type TestType int
+
 const (
 	NetworkingTearDownSucceeds TestType = iota
 	NetworkingTearDownFails
@@ -45,7 +46,6 @@ const (
 	DEFAULT_MTU_VAL            = "9001"
 	DEFAULT_VETH_PREFIX        = "eni"
 )
-
 
 var _ = Describe("test ipv6 host netns setup", func() {
 	var err error
@@ -262,10 +262,10 @@ func GetIPv6Pods(podLabelKey string, podLabelVal string) (podList v1.PodList) {
 // the host networking has to be tested
 func GetIPv6PodNetworkingValidationInput(podList v1.PodList) input.PodNetworkingValidationInput {
 	ip := input.PodNetworkingValidationInput{
-		VethPrefix:   "eni",
-		PodList:      []input.Pod{},
-		ValidateMTU:  false,
-		IPFamily: "IPv6",
+		VethPrefix:  "eni",
+		PodList:     []input.Pod{},
+		ValidateMTU: false,
+		IPFamily:    "IPv6",
 	}
 
 	for _, pod := range podList.Items {

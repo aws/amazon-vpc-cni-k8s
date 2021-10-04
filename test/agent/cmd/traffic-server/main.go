@@ -25,7 +25,7 @@ const ServerResponse = "message from the server!"
 
 // Server that listens to client connection and first reads data and then writes data to the client.
 func main() {
-	// Supported modes are tcp, udp
+	// Supported modes are tcp, udp, http
 	var serverMode string
 	// Port on which Server will listen for incoming connections
 	var serverPort string

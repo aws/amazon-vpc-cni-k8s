@@ -73,7 +73,7 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 				ServerPodLabelVal:              serverPodLabelVal,
 				ClientPodLabelKey:              labelKey,
 				ClientPodLabelVal:              clientPodLabelVal,
-                IsV6Enabled:                    true,
+				IsV6Enabled:                    true,
 			}
 
 			successRate, err := trafficTester.TestTraffic()
