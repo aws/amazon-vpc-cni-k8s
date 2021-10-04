@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 )
 
 const ServerResponse = "message from the server!"
@@ -40,8 +41,10 @@ func main() {
 		StartTCPServer(addr)
 	} else if serverMode == "udp" {
 		StartUDPServer(addr)
+	} else if serverMode == "http" {
+		StartHTTPServer()
 	} else {
-		log.Fatal("invalid server mode, can accept tcp/udp only")
+		log.Fatal("invalid server mode, can accept tcp/udp/http only")
 	}
 }
 
@@ -131,4 +134,13 @@ func StartUDPServer(serverAddr string) {
 
 		log.Printf("sucessfully wrote back to remote client %v", clientAddr)
 	}
+}
+
+func h(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, ServerResponse)
+}
+
+func StartHTTPServer() {
+	http.HandleFunc("/", h)
+	http.ListenAndServe(":80", nil)
 }
