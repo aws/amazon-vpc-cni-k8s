@@ -750,9 +750,6 @@ func TestSetupHostNetworkWithIPv6Enabled(t *testing.T) {
 	}
 
 	setupNetLinkMocks(ctrl, mockNetLink)
-	mockProcSys.EXPECT().Set("net/ipv6/conf/all/disable_ipv6", "0").Return(nil)
-	mockProcSys.EXPECT().Set("net/ipv6/conf/all/forwarding", "1").Return(nil)
-	mockProcSys.EXPECT().Set("net/ipv6/conf/eth0/accept_ra", "2").Return(nil)
 
 	var vpcCIDRs []string
 	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, false, true)

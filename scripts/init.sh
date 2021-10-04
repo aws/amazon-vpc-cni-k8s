@@ -58,4 +58,15 @@ else
     sysctl -e -w "net.ipv4.tcp_early_demux=1"
 fi
 
+# If IPv6 is enabled,set `disable_ipv6` to `0` and ipv6 `forwarding` to `1`
+# We also set `accept_ra` to `2` on primary interface to allow it to honor RA packets.
+if [ "${ENABLE_IPv6:-false}" == "true" ]; then
+    sysctl -w "net.ipv6.conf.all.disable_ipv6=0"
+    sysctl -w "net.ipv6.conf.all.forwarding=1"
+    sysctl -w "net.ipv6.conf.$PRIMARY_IF.accept_ra=2"
+    cat "/proc/sys/net/ipv6/conf/all/disable_ipv6"
+    cat "/proc/sys/net/ipv6/conf/all/forwarding"
+    cat "/proc/sys/net/ipv6/conf/$PRIMARY_IF/accept_ra"
+fi
+
 echo "CNI init container done"

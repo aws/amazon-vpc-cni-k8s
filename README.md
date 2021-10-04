@@ -238,7 +238,7 @@ Default: None
 
 Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting this to a non-positive value is same as setting this to 0 or not setting the variable.
 With `ENABLE_PREFIX_DELEGATION` set to `true` then `ipamd` daemon will check if the existing (/28) prefixes are enough to maintain the
-`WARM_IP_TARGET` if it is not sufficent then more prefixes will be attached.
+`WARM_IP_TARGET` if it is not sufficient then more prefixes will be attached.
 
 For example, 
 
@@ -512,6 +512,18 @@ Type: Boolean as a String
 Default: `false`
 
 Setting `ENABLE_BANDWIDTH_PLUGIN` to `true` will update `10-aws.conflist` to include upstream [bandwidth plugin](https://www.cni.dev/plugins/current/meta/bandwidth/) as a chained plugin. 
+
+---
+
+#### `ANNOTATE_POD_IP` (v1.10.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Setting `ANNOTATE_POD_IP` to `true` will allow IPAMD to add an annotation `vpc.amazonaws.com/pod-ips` to the pod with pod IP.
+
+There is a known [issue](https://github.com/kubernetes/kubernetes/issues/39113) with kubelet taking time to update `Pod.Status.PodIP` leading to calico being blocked on programming the policy. Setting `ANNOTATE_POD_IP` to `true` will enable AWS VPC CNI similar to the optimization added in Calico CNI plugin to write the IP address back to the pod as an annotation to close this race condition. 
 
 ---
 
