@@ -30,4 +30,7 @@ require (
 	k8s.io/client-go v0.18.6
 	k8s.io/cri-api v0.0.0-20191107035106-03d130a7dc28
 	sigs.k8s.io/controller-runtime v0.6.3
+        golang.org/x/sys v0.0.0-20210423082822-04245dca01da
+	golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1
+	golang.org/x/text v0.3.6
 )
