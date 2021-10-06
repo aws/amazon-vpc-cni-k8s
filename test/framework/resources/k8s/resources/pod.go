@@ -63,7 +63,7 @@ func NewDefaultPodManager(k8sClient client.DelegatingClient, k8sSchema *runtime.
 func (d *defaultPodManager) CreatAndWaitTillRunning(pod *v1.Pod) (*v1.Pod, error) {
 	err := d.k8sClient.Create(context.Background(), pod)
 	if err != nil {
-		return nil, fmt.Errorf("faield to create pod: %v", err)
+		return nil, fmt.Errorf("failed to create pod: %v", err)
 	}
 	// Allow the cache to sync
 	time.Sleep(utils.PollIntervalShort)
@@ -92,7 +92,7 @@ func (d *defaultPodManager) GetPod(podNamespace string, podName string) (*v1.Pod
 func (d *defaultPodManager) CreateAndWaitTillPodCompleted(pod *v1.Pod) (*v1.Pod, error) {
 	err := d.k8sClient.Create(context.Background(), pod)
 	if err != nil {
-		return nil, fmt.Errorf("faield to create pod: %v", err)
+		return nil, fmt.Errorf("failed to create pod: %v", err)
 	}
 	// Allow the cache to sync
 	time.Sleep(utils.PollIntervalShort)

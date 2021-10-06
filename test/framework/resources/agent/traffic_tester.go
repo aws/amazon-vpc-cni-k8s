@@ -105,7 +105,7 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 	// server
 	clientJob, err := t.startTrafficClient(strings.Join(serverIPs, ","), metricServerPod.Status.PodIP)
 	if err != nil {
-		return 0, fmt.Errorf("faield to start client jobs: %v", err)
+		return 0, fmt.Errorf("failed to start client jobs: %v", err)
 	}
 
 	fmt.Fprintln(GinkgoWriter, "successfully created traffic client")
@@ -143,17 +143,17 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 	// Clean up all the resources
 	err = t.Framework.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(clientJob)
 	if err != nil {
-		return 0, fmt.Errorf("faield to delete client job: %v", err)
+		return 0, fmt.Errorf("failed to delete client job: %v", err)
 	}
 
 	err = t.Framework.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(metricServerPod)
 	if err != nil {
-		return 0, fmt.Errorf("faield to delete metric server pod: %v", err)
+		return 0, fmt.Errorf("failed to delete metric server pod: %v", err)
 	}
 
 	err = t.Framework.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(serverDeployment)
 	if err != nil {
-		return 0, fmt.Errorf("faield to delete server deployment: %v", err)
+		return 0, fmt.Errorf("failed to delete server deployment: %v", err)
 	}
 
 	return successRate, nil
