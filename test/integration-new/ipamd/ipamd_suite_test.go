@@ -60,7 +60,7 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	if addonDeleteError == nil {
-		By("Restore coredns deployment")
+		By("Restore coredns addon")
 		_, err := f.CloudServices.EKS().CreateAddon("coredns", f.Options.ClusterName)
 		Expect(err).NotTo(HaveOccurred())
 	}
