@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Clean up stale docker images
-        run: docker image prune -f
+        run: sudo docker image prune -f
 
       - name: Get dependencies
         run: |
