@@ -132,7 +132,7 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 	}
 
 	metricServerIP := metricServerPod.Status.PodIP
-	if t.IsV6Enabled{
+	if t.IsV6Enabled {
 		metricServerIP = fmt.Sprintf("[%s]", metricServerPod.Status.PodIP)
 	}
 	// Get the aggregated response from the metric server for calculating the connection success rate

@@ -73,6 +73,8 @@ github.com/aws/amazon-vpc-cni-k8s v1.7.10/go.mod h1:DvKcToLCSKRXnnoIE5u1Bphq97bd
 github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20210504235351-07ac754880d8/go.mod h1:S9uWML/tLwNzmgjeeRJC1gncEa/4z2xIxWvLdEt1GlQ=
 github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20210519174950-4d1931b480a2 h1:g3zjwqtsPu8ufcwB3itAXZPEwg5ymrQNXpq5DHT/zCk=
 github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20210519174950-4d1931b480a2/go.mod h1:rVKUK/i11rmmbRY40+vRjAGF74qjkZ+eHuceB8NPg+s=
+github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20211004205253-0aa6baf97e0f h1:FKFn4fbEASxr/JpiD2RqwErd/n5X7REQEGJ2vn9lNlM=
+github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20211004205253-0aa6baf97e0f/go.mod h1:QBpwHZBwf6mRICQxl25bFTvxZHaNXbXmKbs1AbUuTho=
 github.com/aws/amazon-vpc-resource-controller-k8s v1.0.7 h1:F2/ilyN24aDrgwMVXjZoQM9Q0JsZUGrR5BxTOOVi7Iw=
 github.com/aws/amazon-vpc-resource-controller-k8s v1.0.7/go.mod h1:iObLR7LsAf1BUb9+5rGpHHXQ1nwkX8On6BFp+dk4VVk=
 github.com/aws/aws-lambda-go v1.13.3/go.mod h1:4UKl9IzQMoD+QF79YdCuzCwp8VbmG4VAQwij/eHl5CU=
