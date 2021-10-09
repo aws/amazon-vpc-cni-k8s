@@ -24,16 +24,11 @@
     * set RUN_KOPS_TEST=true
     * WARNING: will occassionally fail/flake tests, try re-running test a couple times to ensure there is a 
     
-# Warm IP
-    * set RUN_WARM_IP_TEST=true
-
-# Warm eni
-    * set RUN_WARM_ENI_TEST=true
-
 # Bottlerocket
     * set RUN_BOTTLEROCKET_TEST=true
 
-
+# Calico
+    * set RUN_CALICO_TEST=true
 
 ## Conformance test duration log 
 
