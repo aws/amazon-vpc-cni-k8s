@@ -190,6 +190,10 @@ spec:
               value: "false"
             - name: DISABLE_NETWORK_RESOURCE_PROVISIONING
               value: "false"
+            - name: ENABLE_IPv4
+              value: "true"
+            - name: ENABLE_IPv6
+              value: "false"
             - name: ENABLE_POD_ENI
               value: "false"
             - name: ENABLE_PREFIX_DELEGATION
