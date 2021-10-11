@@ -155,9 +155,10 @@ local awsnode = {
               name: "aws-node",
               readinessProbe: {
                 exec: {
-                  command: ["/app/grpc-health-probe", "-addr=:50051"],
+                  command: ["/app/grpc-health-probe", "-addr=:50051", "-connect-timeout=2s", "-rpc-timeout=2s"],
                 },
                 initialDelaySeconds: 1,
+                timeoutSeconds: 5,
               },
               livenessProbe: self.readinessProbe + {
                 initialDelaySeconds: 60,
