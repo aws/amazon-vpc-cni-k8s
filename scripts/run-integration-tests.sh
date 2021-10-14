@@ -16,7 +16,7 @@ OS=$(go env GOOS)
 ARCH=$(go env GOARCH)
 
 : "${AWS_DEFAULT_REGION:=us-west-2}"
-: "${K8S_VERSION:=1.16.10}"
+: "${K8S_VERSION:=1.21.2}"
 : "${PROVISION:=true}"
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
@@ -271,8 +271,8 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   GOPATH=$(go env GOPATH)
   echo "PATH: $PATH"
 
-  echo "Downloading kubernetes test from: https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz"
-  wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C ${TEST_BASE_DIR}  kubernetes/platforms/linux/amd64/e2e.test
+  echo "Downloading kubernetes test from: https://dl.k8s.io/v$K8S_VERSION/kubernetes-test-linux-amd64.tar.gz"
+  wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test-linux-amd64.tar.gz | tar -zxvf - --strip-components=3 -C ${TEST_BASE_DIR}  kubernetes/test/bin/e2e.test
 
   echo "Running e2e tests: "
   ${TEST_BASE_DIR}/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
