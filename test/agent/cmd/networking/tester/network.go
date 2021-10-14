@@ -205,7 +205,7 @@ func TestNetworkTearedDownForRegularPods(podNetworkingValidationInput input.PodN
 	var podIP string
 
 	for _, pod := range podNetworkingValidationInput.PodList {
-        podIP =  pod.PodIPv4Address
+		podIP = pod.PodIPv4Address
 		if podNetworkingValidationInput.IPFamily == "IPv6" {
 			podIP = pod.PodIPv6Address
 		}
