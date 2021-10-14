@@ -36,6 +36,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
@@ -147,6 +148,14 @@ const (
 	envManageUntaggedENI = "MANAGE_UNTAGGED_ENI"
 
 	eniNodeTagKey = "node.k8s.amazonaws.com/instance_id"
+
+	// envAnnotatePodIP is used to annotate[vpc.amazonaws.com/pod-ips] pod's with IPs
+	// Ref : https://github.com/projectcalico/calico/issues/3530
+	// not present; in which case we fall back to the k8s podIP
+	// Present and set to an IP; in which case we use it
+	// Present and set to the empty string, which we use to mean "CNI DEL had occurred; networking has been removed from this pod"
+	// The empty string one helps close a trace at pod shutdown where it looks like the pod still has its IP when the IP has been released
+	envAnnotatePodIP = "ANNOTATE_POD_IP"
 )
 
 var log = logger.Get()
@@ -229,14 +238,15 @@ type IPAMContext struct {
 	lastDecreaseIPPool   time.Time
 	// reconcileCooldownCache keeps timestamps of the last time an IP address was unassigned from an ENI,
 	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
-	reconcileCooldownCache     ReconcileCooldownCache
-	terminating                int32 // Flag to warn that the pod is about to shut down.
-	disableENIProvisioning     bool
-	enablePodENI               bool
-	myNodeName                 string
-	enableIpv4PrefixDelegation bool
-	lastInsufficientCidrError  time.Time
-	enableManageUntaggedMode   bool
+	reconcileCooldownCache    ReconcileCooldownCache
+	terminating               int32 // Flag to warn that the pod is about to shut down.
+	disableENIProvisioning    bool
+	enablePodENI              bool
+	myNodeName                string
+	enablePrefixDelegation    bool
+	lastInsufficientCidrError time.Time
+	enableManageUntaggedMode  bool
+	enablePodIPAnnotation     bool
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -361,6 +371,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 
 	c.enablePodENI = enablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
+	c.enablePodIPAnnotation = enablePodIPAnnotation()
 
 	err = c.awsClient.FetchInstanceTypeLimits()
 	if err != nil {
@@ -1581,6 +1592,10 @@ func enableManageUntaggedMode() bool {
 	return getEnvBoolWithDefault(envManageUntaggedENI, true)
 }
 
+func enablePodIPAnnotation() bool {
+	return getEnvBoolWithDefault(envAnnotatePodIP, false)
+}
+
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag
 func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
 	numFiltered := 0
@@ -1777,6 +1792,30 @@ func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
 		return nil, fmt.Errorf("Error while trying to retrieve Pod Info: %s", err)
 	}
 	return &pod, nil
+}
+
+// AnnotatePod annotates the pod with the provided key and value
+func (c *IPAMContext) AnnotatePod(podNamespace, podName, key, val string) error {
+	ctx := context.TODO()
+	var pod *corev1.Pod
+	var err error
+
+	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if pod, err = c.GetPod(podNamespace, podName); err != nil {
+			return err
+		}
+
+		newPod := pod.DeepCopy()
+		newPod.Annotations[key] = val
+		if err = c.rawK8SClient.Patch(ctx, newPod, client.MergeFrom(pod)); err != nil {
+			log.Errorf("Failed to annotate %s the pod with %s, error %v", key, val, err)
+			return err
+		}
+		log.Debugf("Annotates pod %s with %s: %s", podName, key, val)
+		return nil
+	})
+
+	return err
 }
 
 func (c *IPAMContext) tryUnassignIPsFromENIs() {
