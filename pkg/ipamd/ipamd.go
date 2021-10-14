@@ -238,15 +238,15 @@ type IPAMContext struct {
 	lastDecreaseIPPool   time.Time
 	// reconcileCooldownCache keeps timestamps of the last time an IP address was unassigned from an ENI,
 	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
-	reconcileCooldownCache    ReconcileCooldownCache
-	terminating               int32 // Flag to warn that the pod is about to shut down.
-	disableENIProvisioning    bool
-	enablePodENI              bool
-	myNodeName                string
-	enablePrefixDelegation    bool
-	lastInsufficientCidrError time.Time
-	enableManageUntaggedMode  bool
-	enablePodIPAnnotation     bool
+	reconcileCooldownCache     ReconcileCooldownCache
+	terminating                int32 // Flag to warn that the pod is about to shut down.
+	disableENIProvisioning     bool
+	enablePodENI               bool
+	myNodeName                 string
+	enableIpv4PrefixDelegation bool
+	lastInsufficientCidrError  time.Time
+	enableManageUntaggedMode   bool
+	enablePodIPAnnotation      bool
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"

@@ -165,7 +165,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	}
 
 	if s.ipamContext.enablePodIPAnnotation {
-		s.ipamContext.AnnotatePod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, vpccniPodIPKey, ipv4Addr)
+		s.ipamContext.AnnotatePod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, vpccniPodIPKey, addr)
 	}
 	resp := rpc.AddNetworkReply{
 		Success:         err == nil,
