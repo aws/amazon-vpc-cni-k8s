@@ -40,8 +40,13 @@ local awsnode = {
       },
       {
         apiGroups: [""],
-        resources: ["pods", "namespaces"],
+        resources: ["namespaces"],
         verbs: ["list", "watch", "get"],
+      },
+      {
+        apiGroups: [""],
+        resources: ["pods"],
+        verbs: ["list", "watch", "get", "patch"],
       },
       {
         apiGroups: [""],
@@ -56,7 +61,7 @@ local awsnode = {
     ],
   },
 
-  serviceAccount: {
+  account: {
     apiVersion: "v1",
     kind: "ServiceAccount",
     metadata: {
@@ -77,9 +82,9 @@ local awsnode = {
       name: $.clusterRole.metadata.name,
     },
     subjects: [{
-      kind: $.serviceAccount.kind,
-      name: $.serviceAccount.metadata.name,
-      namespace: $.serviceAccount.metadata.namespace,
+      kind: $.account.kind,
+      name: $.account.metadata.name,
+      namespace: $.account.metadata.namespace,
     }],
   },
 
@@ -138,7 +143,7 @@ local awsnode = {
               },
             },
           },
-          serviceAccountName: $.serviceAccount.metadata.name,
+          serviceAccountName: $.account.metadata.name,
           hostNetwork: true,
           tolerations: [{operator: "Exists"}],
           containers_:: {
@@ -314,7 +319,7 @@ local metricsHelper = {
     ],
   },
 
-  serviceAccount: {
+  account: {
     apiVersion: "v1",
     kind: "ServiceAccount",
     metadata: {
@@ -335,9 +340,9 @@ local metricsHelper = {
       name: $.clusterRole.metadata.name,
     },
     subjects: [{
-      kind: $.serviceAccount.kind,
-      name: $.serviceAccount.metadata.name,
-      namespace: $.serviceAccount.metadata.namespace,
+      kind: $.account.kind,
+      name: $.account.metadata.name,
+      namespace: $.account.metadata.namespace,
     }],
   },
 
@@ -363,7 +368,7 @@ local metricsHelper = {
           },
         },
         spec: {
-          serviceAccountName: $.serviceAccount.metadata.name,
+          serviceAccountName: $.account.metadata.name,
           containers_:: {
             metricshelper: {
               image: "%s/cni-metrics-helper:%s" % [$.ecrRepo, $.version],
