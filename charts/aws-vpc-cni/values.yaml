@@ -8,7 +8,7 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.9.1
+    tag: v1.9.3
     region: us-west-2
     pullPolicy: Always
     # Set to use custom image
@@ -20,7 +20,7 @@ init:
 
 image:
   region: us-west-2
-  tag: v1.9.1
+  tag: v1.9.3
   pullPolicy: Always
   # Set to use custom image
   # override: "repo/org/image:tag"
