@@ -14,7 +14,7 @@ function down-test-cluster() {
 function up-test-cluster() {
     MNGS=""
     if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
-        MNGS='{"GetRef.Name-single-node-mng":{"name":"GetRef.Name-single-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":1,"asg-desired-capacity":1,"instance-types":["m5.16xlarge"],"volume-size":40}, "cni-test-multi-node-mng":{"name":"cni-test-multi-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":100,"asg-desired-capacity":99,"instance-types":["m5.xlarge"],"volume-size":40,"cluster-autoscaler":{"enable":true}}}'
+        MNGS='{"cni-test-single-node-mng":{"name":"cni-test-single-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":1,"asg-desired-capacity":1,"instance-types":["m5.16xlarge"],"volume-size":40}, "cni-test-multi-node-mng":{"name":"cni-test-multi-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":100,"asg-desired-capacity":99,"instance-types":["m5.xlarge"],"volume-size":40,"cluster-autoscaler":{"enable":true}}}'
         export RUN_CONFORMANCE="false"
         : "${PERFORMANCE_TEST_S3_BUCKET_NAME:=""}"
     else

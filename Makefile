@@ -168,7 +168,7 @@ build-docker-test:     ## Build the unit test driver container image.
 		.
 
 # Run unit tests inside of the testing container image.
-docker-unit-test: build-docker-test     ## Run unit tests inside of the testing container image.
+docker-unit-tests: build-docker-test     ## Run unit tests inside of the testing container image.
 	docker run $(DOCKER_RUN_ARGS) \
 		$(TEST_IMAGE_NAME) \
 		make unit-test
