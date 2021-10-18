@@ -46,7 +46,7 @@ local awsnode = {
       {
         apiGroups: [""],
         resources: ["pods"],
-        verbs: ["list", "watch", "get", "patch"],
+        verbs: ["list", "watch", "get"],
       },
       {
         apiGroups: [""],
@@ -156,12 +156,13 @@ local awsnode = {
               name: "aws-node",
               readinessProbe: {
                 exec: {
-                  command: ["/app/grpc-health-probe", "-addr=:50051"],
+                  command: ["/app/grpc-health-probe", "-addr=:50051", "-connect-timeout=2s", "-rpc-timeout=2s"],
                 },
                 initialDelaySeconds: 1,
               },
               livenessProbe: self.readinessProbe + {
                 initialDelaySeconds: 60,
+                timeoutSeconds: 5,
               },
               env_:: {
                 ADDITIONAL_ENI_TAGS: "{}",
