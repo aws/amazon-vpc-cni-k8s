@@ -34,8 +34,15 @@
 - "apiGroups":
   - ""
   "resources":
-  - "pods"
   - "namespaces"
+  "verbs":
+  - "list"
+  - "watch"
+  - "get"
+- "apiGroups":
+  - ""
+  "resources":
+  - "pods"
   "verbs":
   - "list"
   - "watch"
@@ -171,7 +178,10 @@
             "command":
             - "/app/grpc-health-probe"
             - "-addr=:50051"
+            - "-connect-timeout=2s"
+            - "-rpc-timeout=2s"
           "initialDelaySeconds": 60
+          "timeoutSeconds": 5
         "name": "aws-node"
         "ports":
         - "containerPort": 61678
@@ -181,6 +191,8 @@
             "command":
             - "/app/grpc-health-probe"
             - "-addr=:50051"
+            - "-connect-timeout=2s"
+            - "-rpc-timeout=2s"
           "initialDelaySeconds": 1
         "resources":
           "requests":
