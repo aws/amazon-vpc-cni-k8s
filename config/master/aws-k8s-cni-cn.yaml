@@ -61,7 +61,7 @@ rules:
   - apiGroups: [""]
     resources:
       - pods
-    verbs: ["list", "watch", "get", "patch"]
+    verbs: ["list", "watch", "get"]        
   - apiGroups: [""]
     resources:
       - nodes
