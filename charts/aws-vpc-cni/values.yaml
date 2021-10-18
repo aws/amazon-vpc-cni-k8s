@@ -8,7 +8,7 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.9.1
+    tag: v1.9.3
     region: us-west-2
     account: "602401143452"   
     pullPolicy: Always
@@ -22,7 +22,7 @@ init:
 
 image:
   region: us-west-2
-  tag: v1.9.1
+  tag: v1.9.3
   account: "602401143452"   
   domain: "amazonaws.com"  
   pullPolicy: Always
@@ -52,7 +52,7 @@ env:
   WARM_PREFIX_TARGET: "1"
   DISABLE_NETWORK_RESOURCE_PROVISIONING: "false"
   ENABLE_IPv4: "true"
-  ENABLE_IPv6: "false"  
+  ENABLE_IPv6: "false"
 
 # this flag enables you to use the match label that was present in the original daemonset deployed by EKS
 # You can then annotate and label the original aws-node resources and 'adopt' them into a helm release
