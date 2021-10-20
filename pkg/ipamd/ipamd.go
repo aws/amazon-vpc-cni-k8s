@@ -397,7 +397,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	//Let's validate if the configured combination of env variables is supported before we
 	//proceed any further
 	if !c.isConfigValid() {
-		return nil, err
+		return nil, fmt.Errorf("ipamd: failed to validate configuration")
 	}
 
 	c.awsClient.InitCachedPrefixDelegation(c.enablePrefixDelegation)
