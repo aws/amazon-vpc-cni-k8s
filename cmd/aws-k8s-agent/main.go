@@ -46,13 +46,13 @@ func _main() int {
 
 	rawK8SClient, err := k8sapi.CreateKubeClient()
 	if err != nil {
-		log.Errorf("Failed create kube client: %s", err)
+		log.Errorf("Failed to create kube client: %s", err)
 		return 1
 	}
 
 	cacheK8SClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient)
 	if err != nil {
-		log.Errorf("Failed create cached kube client: %s", err)
+		log.Errorf("Failed to create cached kube client: %s", err)
 		return 1
 	}
 
