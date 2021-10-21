@@ -367,39 +367,58 @@ func TestGetStats(t *testing.T) {
 	_, _, err = ds.AssignPodIPv4Address(key2)
 	assert.NoError(t, err)
 
-	total, assigned, _, cooldown := ds.GetStats("4")
-	assert.Equal(t, 2, total)
-	assert.Equal(t, 2, assigned)
-	assert.Equal(t, 0, cooldown)
+	assert.Equal(t,
+		DataStoreStats{
+			TotalIPs:    2,
+			AssignedIPs: 2,
+			CooldownIPs: 0,
+		},
+		ds.GetStats("4"),
+	)
 
 	_, _, _, err = ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 
-	total, assigned, _, cooldown = ds.GetStats("4")
-	assert.Equal(t, 2, total)
-	assert.Equal(t, 1, assigned)
-	assert.Equal(t, 1, cooldown)
+	assert.Equal(t,
+		DataStoreStats{
+			TotalIPs:    2,
+			AssignedIPs: 1,
+			CooldownIPs: 1,
+		},
+		ds.GetStats("4"),
+	)
 
 	// wait 30s (cooldown period)
 	time.Sleep(30 * time.Second)
 
-	total, assigned, _, cooldown = ds.GetStats("4")
-	assert.Equal(t, 2, total)
-	assert.Equal(t, 1, assigned)
-	assert.Equal(t, 0, cooldown)
+	assert.Equal(t,
+		DataStoreStats{
+			TotalIPs:    2,
+			AssignedIPs: 1,
+			CooldownIPs: 0,
+		},
+		ds.GetStats("4"),
+	)
+}
 
+func TestGetStatsV6(t *testing.T) {
 	v6ds := NewDataStore(Testlog, NullCheckpoint{}, true)
 	_ = v6ds.AddENI("eni-1", 1, true, false, false)
 	ipv6Addr := net.IPNet{IP: net.IP{0x21, 0xdb, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: net.CIDRMask(80, 128)}
 	_ = v6ds.AddIPv6CidrToStore("eni-1", ipv6Addr, true)
 	key3 := IPAMKey{"netv6", "sandbox-3", "eth0"}
-	_, _, err = v6ds.AssignPodIPv6Address(key3)
+	_, _, err := v6ds.AssignPodIPv6Address(key3)
 	assert.NoError(t, err)
 
-	//v6 mode
-	total, assigned, _, cooldown = v6ds.GetStats("6")
-	assert.Equal(t, 1, assigned)
-	assert.Equal(t, 0, cooldown)
+	assert.Equal(t,
+		DataStoreStats{
+			TotalIPs: 281474976710656,
+			TotalPrefixes: 1,
+			AssignedIPs: 1,
+			CooldownIPs: 0,
+		},
+		v6ds.GetStats("6"),
+	)
 }
 
 func TestWarmENIInteractions(t *testing.T) {
