@@ -63,8 +63,8 @@ Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](
 * `make` defaults to `make build-linux` that builds the Linux binaries.
 * `unit-test`, `format`,`lint` and `vet` provide ways to run the respective tests/tools and should be run before submitting a PR.
 * `make docker` will create a docker container using the docker-build with the finished binaries, with a tag of `amazon/amazon-k8s-cni:latest`
-* `make docker-build` uses a docker container (golang:1.14) to build the binaries.
-* `make docker-unit-tests` uses a docker container (golang:1.14) to run all unit tests.
+* `make docker-build` uses a docker container (golang:1.16) to build the binaries.
+* `make docker-unit-tests` uses a docker container (golang:1.16) to run all unit tests.
 
 ## Components
 
@@ -238,7 +238,7 @@ Default: None
 
 Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting this to a non-positive value is same as setting this to 0 or not setting the variable.
 With `ENABLE_PREFIX_DELEGATION` set to `true` then `ipamd` daemon will check if the existing (/28) prefixes are enough to maintain the
-`WARM_IP_TARGET` if it is not sufficent then more prefixes will be attached.
+`WARM_IP_TARGET` if it is not sufficient then more prefixes will be attached.
 
 For example, 
 
@@ -503,6 +503,44 @@ Default: `false`
 
 Setting `DISABLE_NETWORK_RESOURCE_PROVISIONING` to `true` will make IPAMD to depend only on IMDS to get attached ENIs and IPs/prefixes.
 
+---
+
+#### `ENABLE_BANDWIDTH_PLUGIN` (v1.10.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Setting `ENABLE_BANDWIDTH_PLUGIN` to `true` will update `10-aws.conflist` to include upstream [bandwidth plugin](https://www.cni.dev/plugins/current/meta/bandwidth/) as a chained plugin. 
+
+---
+
+#### `ANNOTATE_POD_IP` (v1.9.3+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Setting `ANNOTATE_POD_IP` to `true` will allow IPAMD to add an annotation `vpc.amazonaws.com/pod-ips` to the pod with pod IP.
+ 
+There is a known [issue](https://github.com/kubernetes/kubernetes/issues/39113) with kubelet taking time to update `Pod.Status.PodIP` leading to calico being blocked on programming the policy. Setting `ANNOTATE_POD_IP` to `true` will enable AWS VPC CNI plugin to add Pod IP as an annotation to the pod spec to address this race condition.
+
+To annotate the pod with pod IP, you will have to add "patch" permission for pods resource in aws-node clusterrole. You can use the below command - 
+
+```
+cat << EOF > append.yaml
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - patch
+EOF
+```
+
+```
+kubectl apply -f <(cat <(kubectl get clusterrole aws-node -o yaml) append.yaml)
+```
 ---
 
 ### ENI tags related to Allocation
