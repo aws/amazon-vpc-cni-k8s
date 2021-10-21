@@ -710,7 +710,7 @@ func (c *IPAMContext) tryFreeENI() {
 	}
 }
 
-// tryUnassignIPsorPrefixesFromAll determines if there are IPs to free when we have extra IPs beyond the target and warmIPTargetDefined
+// tryUnassignCidrsFromAll determines if there are IPs to free when we have extra IPs beyond the target and warmIPTargetDefined
 // is enabled, deallocate extra IP addresses
 func (c *IPAMContext) tryUnassignCidrsFromAll() {
 

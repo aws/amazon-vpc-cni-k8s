@@ -34,6 +34,9 @@ const (
 	// in addressCoolingPeriod
 	addressCoolingPeriod = 30 * time.Second
 
+	// addressDelayedReleasePeriod is used to release unused IP after a period of inactivity.
+	addressDelayedReleasePeriod = 10 * time.Minute
+
 	// DuplicatedENIError is an error when caller tries to add an duplicate ENI to data store
 	DuplicatedENIError = "data store: duplicate ENI"
 
@@ -244,10 +247,10 @@ func (cidr *CidrInfo) AssignedIPAddressesInCidr() int {
 	}
 	return count
 }
-
 type CidrStats struct {
 	AssignedIPs int
 	CooldownIPs int
+	DelayedReleaseIPs int
 }
 
 // Gets number of assigned IPs and the IPs in cooldown from a given CIDR
@@ -258,6 +261,8 @@ func (cidr *CidrInfo) GetIPStatsFromCidr() CidrStats {
 			stats.AssignedIPs++
 		} else if addr.inCoolingPeriod() {
 			stats.CooldownIPs++
+		} else if addr.inDelayedReleasePeriod() {
+			stats.DelayedReleaseIPs++
 		}
 	}
 	return stats
@@ -265,12 +270,17 @@ func (cidr *CidrInfo) GetIPStatsFromCidr() CidrStats {
 
 // Assigned returns true iff the address is allocated to a pod/sandbox.
 func (addr AddressInfo) Assigned() bool {
-	return !addr.IPAMKey.IsZero()
+	return !addr.IPAMKey.IsZero() || !addr.inDelayedReleasePeriod()
 }
 
 // InCoolingPeriod checks whether an addr is in addressCoolingPeriod
 func (addr AddressInfo) inCoolingPeriod() bool {
 	return time.Since(addr.UnassignedTime) <= addressCoolingPeriod
+}
+
+// InDelayedRelease checks whether an addr is in addressDelayedReleasePeriod
+func (addr AddressInfo) inDelayedReleasePeriod() bool {
+	return time.Since(addr.UnassignedTime) <= addressDelayedReleasePeriod
 }
 
 // ENIPool is a collection of ENI, keyed by ENI ID
@@ -877,15 +887,17 @@ type DataStoreStats struct {
 	AssignedIPs int
 	// Number of addresses in cooldown
 	CooldownIPs int
+	// Number of addresses in delayed release state
+	DelayedReleaseIPs int
 }
 
 func (stats *DataStoreStats) String() string {
-	return fmt.Sprintf("Total IPs/Prefixes = %d/%d, AssignedIPs/CooldownIPs: %d/%d",
-		stats.TotalIPs, stats.TotalPrefixes, stats.AssignedIPs, stats.CooldownIPs)
+	return fmt.Sprintf("Total IPs/Prefixes = %d/%d, AssignedIPs/CooldownIPs/DelayedReleaseIPs: %d/%d/%d",
+		stats.TotalIPs, stats.TotalPrefixes, stats.AssignedIPs, stats.CooldownIPs, stats.DelayedReleaseIPs)
 }
 
 func (stats *DataStoreStats) AvailableAddresses() int {
-	return stats.TotalIPs - stats.AssignedIPs
+	return stats.TotalIPs - stats.AssignedIPs - stats.CooldownIPs
 }
 
 // GetIPStats returns DataStoreStats for addressFamily
@@ -906,6 +918,7 @@ func (ds *DataStore) GetIPStats(addressFamily string) *DataStoreStats {
 				cidrStats := cidr.GetIPStatsFromCidr()
 				stats.AssignedIPs += cidrStats.AssignedIPs
 				stats.CooldownIPs += cidrStats.CooldownIPs
+				stats.DelayedReleaseIPs += cidrStats.DelayedReleaseIPs
 				stats.TotalIPs += cidr.Size()
 			} else if addressFamily == "6" {
 				stats.AssignedIPs += cidr.AssignedIPAddressesInCidr()
