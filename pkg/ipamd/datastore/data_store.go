@@ -857,7 +857,7 @@ func (stats *DataStoreStats) AvailableAddresses() int {
 	return stats.TotalIPs - stats.AssignedIPs
 }
 
-// GetStats returns total number of IP addresses, number of assigned IP addresses, total prefixes and IPs in cooldown period
+// GetStats returns DataStoreStats for addressFamily
 func (ds *DataStore) GetStats(addressFamily string) DataStoreStats {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()

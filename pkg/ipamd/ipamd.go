@@ -1240,15 +1240,12 @@ func (c *IPAMContext) computeExtraPrefixesOverWarmTarget() int {
 		return over
 	}
 
-	stats := c.dataStore.GetStats(ipV4AddrFamily)
-	available := stats.AvailableAddresses()
-
 	freePrefixes := c.dataStore.GetFreePrefixes()
 	over = max(freePrefixes-c.warmPrefixTarget, 0)
 
+	stats := c.dataStore.GetStats(ipV4AddrFamily)
+	log.Debugf("computeExtraPrefixesOverWarmTarget available %d over %d warm_prefix_target %d", stats.AvailableAddresses(), over, c.warmPrefixTarget)
 	c.logPoolStats(stats)
-	log.Debugf("computeExtraPrefixesOverWarmTarget available %d over %d warm_prefix_target %d", available, over, c.warmPrefixTarget)
-
 	return over
 }
 
@@ -1770,11 +1767,11 @@ func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool)
 		freePrefixes := c.dataStore.GetFreePrefixes()
 		overPrefix := max(min(freePrefixes, stats.TotalPrefixes-prefixNeededForWarmIP), 0)
 		overPrefix = max(min(overPrefix, stats.TotalPrefixes-prefixNeededForMinIP), 0)
-		log.Debugf("Current warm IP stats : target: %d, total: %d, assigned: %d, available: %d, short(prefixes): %d, over(prefixes): %d", c.warmIPTarget, total, assigned, available, shortPrefix, overPrefix)
+		log.Debugf("Current warm IP stats : target: %d, short(prefixes): %d, over(prefixes): %d, stats: %s", c.warmIPTarget, shortPrefix, overPrefix, stats)
 		return shortPrefix, overPrefix, true
 
 	}
-	log.Debugf("Current warm IP stats: target: %d, total: %d, assigned: %d, available: %d, cooldown: %d, short: %d, over %d", c.warmIPTarget, total, assigned, available, cooldownIPs, short, over)
+	log.Debugf("Current warm IP stats : target: %d, short(prefixes): %d, over(prefixes): %d, stats: %s", c.warmIPTarget, short, over, stats)
 
 	return short, over, true
 }
