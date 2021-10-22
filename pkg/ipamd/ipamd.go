@@ -1176,9 +1176,9 @@ func getWarmPrefixTarget() int {
 }
 
 func (c *IPAMContext) logPoolStats(dataStoreStats datastore.DataStoreStats) {
-	prefix := "IP pool stats:"
+	prefix := "IP pool stats"
 	if c.enablePrefixDelegation {
-		prefix = "Prefix pool stats:"
+		prefix = "Prefix pool stats"
 	}
 	log.Debugf("%s: %s, c.maxIPsPerENI = %d", prefix, dataStoreStats, c.maxIPsPerENI)
 }

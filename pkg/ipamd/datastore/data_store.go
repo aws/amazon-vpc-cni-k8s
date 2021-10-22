@@ -848,7 +848,7 @@ type DataStoreStats struct {
 	CooldownIPs int
 }
 
-func (stats *DataStoreStats) String() string {
+func (stats DataStoreStats) String() string {
 	return fmt.Sprintf("Total IPs/Prefixes = %d/%d, AssignedIPs/CooldownIPs: %d/%d,",
 		stats.TotalIPs, stats.TotalPrefixes, stats.AssignedIPs, stats.CooldownIPs)
 }
