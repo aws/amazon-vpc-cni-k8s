@@ -838,7 +838,7 @@ func (ds *DataStore) unassignPodIPAddressUnsafe(addr *AddressInfo) {
 
 type DataStoreStats struct {
 	// Total number of addresses allocated
-	TotalIPs  int
+	TotalIPs int
 	// Total number of prefixes allocated
 	TotalPrefixes int
 

@@ -412,10 +412,10 @@ func TestGetStatsV6(t *testing.T) {
 
 	assert.Equal(t,
 		DataStoreStats{
-			TotalIPs: 281474976710656,
+			TotalIPs:      281474976710656,
 			TotalPrefixes: 1,
-			AssignedIPs: 1,
-			CooldownIPs: 0,
+			AssignedIPs:   1,
+			CooldownIPs:   0,
 		},
 		v6ds.GetStats("6"),
 	)
