@@ -1771,7 +1771,7 @@ func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool)
 		return shortPrefix, overPrefix, true
 
 	}
-	log.Debugf("Current warm IP stats : target: %d, short(prefixes): %d, over(prefixes): %d, stats: %s", c.warmIPTarget, short, over, stats)
+	log.Debugf("Current warm IP stats : target: %d, short: %d, over: %d, stats: %s", c.warmIPTarget, short, over, stats)
 
 	return short, over, true
 }
