@@ -178,12 +178,12 @@ func TestMyENIConfig(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "Matching ENIConfig available - Using label",
+			name: "Matching ENIConfig available - Using external label",
 			env: env{
 				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1, testENIConfigCustom},
 				Labels: map[string]string{
-					"vpc.amazonaws.com/eniConfig":            "custom",
+					"vpc.amazonaws.com/externalEniConfig":    "custom",
 					"failure-domain.beta.kubernetes.io/zone": "az2",
 				},
 				eniConfigLabelKey: "failure-domain.beta.kubernetes.io/zone",
