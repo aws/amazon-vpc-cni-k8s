@@ -350,7 +350,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, ds.assigned, 2)
 }
 
-func TestGetStats(t *testing.T) {
+func TestGetStatsV4(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false)
