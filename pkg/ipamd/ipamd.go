@@ -1117,7 +1117,7 @@ func (c *IPAMContext) addENIv6prefixesToDataStore(ec2PrefixAddrs []*ec2.Ipv6Pref
 			ipamdErrInc("addENIv6prefixesToDataStoreFailed")
 		}
 	}
-	c.logPoolStats(c.dataStore.GetStats(ipV4AddrFamily))
+	c.logPoolStats(c.dataStore.GetStats(ipV6AddrFamily))
 }
 
 // getMaxENI returns the maximum number of ENIs to attach to this instance. This is calculated as the lesser of
@@ -1259,7 +1259,6 @@ func podENIErrInc(fn string) {
 
 // nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
 func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Duration) {
-	curTime := time.Now()
 	timeSinceLast := curTime.Sub(c.lastNodeIPPoolAction)
 	if timeSinceLast <= interval {
 		return
@@ -1377,7 +1376,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		delete(c.primaryIP, eni)
 		reconcileCnt.With(prometheus.Labels{"fn": "eniReconcileDel"}).Inc()
 	}
-	c.lastNodeIPPoolAction = curTime
+	c.lastNodeIPPoolAction = time.Now()
 
 	log.Debug("Successfully Reconciled ENI/IP pool")
 	c.logPoolStats(c.dataStore.GetStats(ipV4AddrFamily))
