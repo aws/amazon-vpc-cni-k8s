@@ -32,6 +32,11 @@ const (
 	defaultEniConfigAnnotationDef = "k8s.amazonaws.com/eniConfig"
 	defaultEniConfigLabelDef      = "k8s.amazonaws.com/eniConfig"
 	eniConfigDefault              = "default"
+	eniConfigLabel                = "vpc.amazonaws.com/eniConfig"
+
+	// when this is defined, it is to be treated as the source of truth for the eniconfig.
+	// it is meant to be used for out-of-band mananagement of the eniConfig - i.e. on the kubelet or elsewhere
+	externalEniConfigLabel = "vpc.amazonaws.com/externalEniConfig"
 
 	// when "ENI_CONFIG_LABEL_DEF is defined, ENIConfigController will use that label key to
 	// search if is setting value for eniConfigLabelDef
@@ -123,12 +128,15 @@ func GetNodeSpecificENIConfigName(ctx context.Context, k8sClient client.Client) 
 		return eniConfigName, err
 	}
 
-	//Derive ENIConfig Name from either Node Annotations or Labels
-	val, ok := node.GetAnnotations()[getEniConfigAnnotationDef()]
+	//Derive ENIConfig Name from either externally managed label, Node Annotations or Labels
+	val, ok := node.GetLabels()[externalEniConfigLabel]
 	if !ok {
-		val, ok = node.GetLabels()[getEniConfigLabelDef()]
+		val, ok = node.GetAnnotations()[getEniConfigAnnotationDef()]
 		if !ok {
-			val = eniConfigDefault
+			val, ok = node.GetLabels()[getEniConfigLabelDef()]
+			if !ok {
+				val = eniConfigDefault
+			}
 		}
 	}
 
