@@ -1,7 +1,7 @@
 fullnameOverride: calico
 
 tigeraOperator:
-  tag: "v1.20.1"
+  tag: "v1.22.4"
   image: quay.io/tigera/operator
 
 installation:
