@@ -1259,8 +1259,7 @@ func podENIErrInc(fn string) {
 
 // nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
 func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Duration) {
-	timeSinceLast := curTime.Sub(c.lastNodeIPPoolAction)
-	if timeSinceLast <= interval {
+	if time.Since(c.lastNodeIPPoolAction) <= interval {
 		return
 	}
 
