@@ -1,9 +1,11 @@
 #!/bin/bash
 
-# The script runs amazon-vpc-cni integration tests on the supplied add-on version.
+# The script runs amazon-vpc-cni Canary tests on the default
+# addon version and then runs smoke test on the latest addon version.
 
 set -e
 
+SECONDS=0
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration-new"
 VPC_CNI_ADDON_NAME="vpc-cni"
@@ -68,20 +70,27 @@ function install_add_on() {
       wait_for_addon_status "DELETED"
     else
       echo "addon version $current_addon_version already installed"
+      patch_aws_node_maxunavialable
       return
     fi
   fi
 
   echo "installing addon $new_addon_version"
   aws eks create-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --resolve-conflicts OVERWRITE --addon-version $new_addon_version
+  patch_aws_node_maxunavialable
   wait_for_addon_status "ACTIVE"
+}
+
+function patch_aws_node_maxunavialable() {
+   # Patch the aws-node, so any update in aws-node happens parallely for faster overall test execution
+   kubectl patch ds -n kube-system aws-node -p '{"spec":{"updateStrategy":{"rollingUpdate":{"maxUnavailable": "100%"}}}}'
 }
 
 function run_ginkgo_test() {
   local focus=$1
   echo "Running ginkgo tests with focus: $focus"
-  (cd "$INTEGRATION_TEST_DIR/cni" && ginkgo --focus="$focus" -v --timeout 20m --failOnPending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID")
-  (cd "$INTEGRATION_TEST_DIR/ipamd" && ginkgo --focus="$focus" -v --timeout 10m --failOnPending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID")
+  (cd "$INTEGRATION_TEST_DIR/cni" && ginkgo --focus="$focus" -v --timeout 20m --failOnPending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+  (cd "$INTEGRATION_TEST_DIR/ipamd" && ginkgo --focus="$focus" -v --timeout 10m --failOnPending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
 }
 
 load_cluster_details
@@ -99,3 +108,5 @@ run_ginkgo_test "CANARY"
 echo "Running Smoke tests on the latest addon version"
 install_add_on "$LATEST_ADDON_VERSION"
 run_ginkgo_test "SMOKE"
+
+echo "all tests ran successfully in $(($SECONDS / 60)) minutes and $(($SECONDS % 60)) seconds"

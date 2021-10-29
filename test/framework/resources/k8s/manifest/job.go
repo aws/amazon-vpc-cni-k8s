@@ -49,7 +49,7 @@ func (j *JobBuilder) Name(name string) *JobBuilder {
 	return j
 }
 
-func(j *JobBuilder) NodeSelector(selectorKey string, selectorVal string) *JobBuilder {
+func (j *JobBuilder) NodeSelector(selectorKey string, selectorVal string) *JobBuilder {
 	j.nodeSelector[selectorKey] = selectorVal
 	return j
 }
