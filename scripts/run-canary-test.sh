@@ -10,7 +10,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration-new"
 VPC_CNI_ADDON_NAME="vpc-cni"
 
-echo "Running Canary tests for amazon-vpc-cni-k8s with the following varialbes
+echo "Running Canary tests for amazon-vpc-cni-k8s with the following variables
 KUBE_CONFIG_PATH:  $KUBE_CONFIG_PATH
 CLUSTER_NAME: $CLUSTER_NAME
 REGION: $REGION
@@ -54,7 +54,7 @@ function wait_for_addon_status() {
       echo "addon status matches expected status"
       return
     fi
-    echo "addon status is not euqal to $expected_status"
+    echo "addon status is not equal to $expected_status"
     sleep 5
   done
 }
