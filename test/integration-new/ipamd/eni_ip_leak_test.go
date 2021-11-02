@@ -17,7 +17,7 @@ const (
 	HOST_POD_LABEL_VAL = "host"
 )
 
-var _ = Describe("ENI/IP Leak Test", func() {
+var _ = Describe("[CANARY] ENI/IP Leak Test", func() {
 	Context("ENI/IP Released on Pod Deletion", func() {
 		BeforeEach(func() {
 			By("creating test namespace")

@@ -34,7 +34,7 @@ const (
 )
 
 // Verifies connectivity to deployment behind different service types
-var _ = Describe("test service connectivity", func() {
+var _ = Describe("[CANARY] test service connectivity", func() {
 	var err error
 
 	// Deployment running the http server
