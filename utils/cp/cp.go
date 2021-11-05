@@ -60,8 +60,7 @@ func InstallBinaries(pluginBins []string, hostCNIBinPath string) error {
 		source := fmt.Sprintf("%s", plugin)
 
 		if err := CopyFile(source, target); err != nil {
-			fmt.Errorf("Failed to install %s", target)
-			return err
+			return fmt.Errorf("Failed to install %s : %s", target, err)
 		}
 		fmt.Printf("Installed %s\n", target)
 	}
