@@ -10,25 +10,21 @@ require (
 	github.com/golang/mock v1.4.1
 	github.com/golang/protobuf v1.4.2
 	github.com/google/go-jsonnet v0.16.0
-	github.com/json-iterator/go v1.1.10 // indirect
-	github.com/nmrshll/go-cp v0.0.0-20180115193924-61436d3b7cfa // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.0.0
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.4.1
-	github.com/sirupsen/logrus v1.4.2 // indirect
+	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.5.1
 	github.com/vishvananda/netlink v1.1.1-0.20201029203352-d40f9887b852
-	github.com/clarketm/json v1.14.1
 	go.uber.org/zap v1.15.0
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/net v0.0.0-20210805182204-aaa1db679c0d
-	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45 // indirect
 	golang.org/x/sys v0.0.0-20210616094352-59db8d763f22
 	golang.org/x/tools v0.1.5 // indirect
 	google.golang.org/grpc v1.29.0
-	google.golang.org/protobuf v1.23.0 // indirect
+	google.golang.org/protobuf v1.23.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	k8s.io/api v0.18.6
 	k8s.io/apimachinery v0.18.6
