@@ -8,16 +8,17 @@ ARG GOARCH
 ENV GO111MODULE=on
 ENV GOPROXY=direct
 
+COPY go.mod go.sum ./
+RUN go mod download
+
 COPY Makefile ./
 RUN make plugins && make debug-script
 
 COPY . ./
+RUN make build-aws-vpc-cni-init
 
 # Build the architecture specific container image:
-FROM $docker_arch/amazonlinux:2
-RUN yum update -y && \
-    yum install -y iproute procps-ng && \
-    yum clean all
+FROM public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-iptables:2021-08-06-1628283264
 
 WORKDIR /init
 
@@ -26,6 +27,6 @@ COPY --from=builder \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/portmap \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/bandwidth \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni-support.sh \
-    /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/init.sh /init/
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-vpc-cni-init /init/
 
-ENTRYPOINT ["/init/init.sh"]
+CMD ["/init/aws-vpc-cni-init"]

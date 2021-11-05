@@ -16,13 +16,10 @@ COPY Makefile ./
 RUN make plugins && make debug-script
 
 COPY . ./
-RUN make build-linux
+RUN make build-aws-vpc-cni && make build-linux
 
 # Build the architecture specific container image:
-FROM $docker_arch/amazonlinux:2
-RUN yum update -y && \
-    yum install -y iptables iproute jq && \
-    yum clean all
+FROM public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-iptables:2021-08-06-1628283264
 
 WORKDIR /app
 
@@ -36,6 +33,6 @@ COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-k8s-agent  \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/grpc-health-probe \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/egress-v4-cni \
-    /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/entrypoint.sh /app/
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-vpc-cni /app/
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/app/aws-vpc-cni"]

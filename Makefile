@@ -14,7 +14,7 @@
 
 .PHONY: all dist check clean \
 		lint format check-format vet docker-vet \
-		build-linux docker docker-init \
+		build-linux build-init docker docker-init \
 		unit-test unit-test-race build-docker-test docker-func-test \
 		build-metrics docker-metrics \
 		metrics-unit-test docker-metrics-test
@@ -102,7 +102,7 @@ DOCKER_BUILD_FLAGS = --build-arg GOARCH="$(ARCH)" \
 	  		          $(DOCKER_ARGS)
 
 # Default to building an executable using the host's Go toolchain.
-.DEFAULT_GOAL = build-linux
+.DEFAULT_GOAL = build-linux && build-init
 
 # Build both CNI and metrics helper container images.
 all: docker docker-init docker-metrics   ## Builds Init, CNI and metrics helper container images.
@@ -121,6 +121,14 @@ build-linux:    ## Build the VPC CNI plugin agent using the host's Go toolchain.
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o egress-v4-cni     ./cmd/egress-v4-cni-plugin
+
+build-aws-vpc-cni-init: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
+build-aws-vpc-cni-init:    ## Build the VPC CNI init container using the host's Go toolchain.
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-vpc-cni-init     ./cmd/aws-vpc-cni-init
+
+build-aws-vpc-cni: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
+build-aws-vpc-cni:    ## Build the VPC CNI container using the host's Go toolchain.
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-vpc-cni     ./cmd/aws-vpc-cni
 
 # Build VPC CNI plugin & agent container image.
 docker:	setup-ec2-sdk-override	   ## Build VPC CNI plugin & agent container image.

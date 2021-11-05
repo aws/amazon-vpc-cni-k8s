@@ -13,7 +13,7 @@
     {
       "name": "egress-v4-cni",
       "type": "egress-v4-cni",
-      "mtu": 9001,
+      "mtu": "9001",
       "enabled": "__EGRESSV4PLUGINENABLED__",
       "nodeIP": "__NODEIP__",
       "ipam": {
