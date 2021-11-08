@@ -3,7 +3,7 @@ local objectItems(obj) = [[k, obj[k]] for k in std.objectFields(obj)];
 
 local regions = {
   default: {
-    version:: "v1.9.1", // or eg "v1.6.2"
+    version:: "v1.10.0", // or eg "v1.6.2"
     ecrRegion:: "us-west-2",
     ecrAccount:: "602401143452",
     ecrDomain:: "amazonaws.com",
@@ -255,6 +255,7 @@ local awsnode = {
       },
     },
   },
+
 
   crd: {
     apiVersion: "apiextensions.k8s.io/v1",

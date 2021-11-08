@@ -474,13 +474,15 @@ Type: Boolean as a String
 
 Default: `false`
 
-To enable IPv4 prefix delegation on nitro instances. Setting `ENABLE_PREFIX_DELEGATION` to `true` will start allocating a /28 prefix 
-instead of a secondary IP in the ENIs subnet. The total number of prefixes and private IP addresses will be less than the
+To enable prefix delegation on nitro instances. Setting `ENABLE_PREFIX_DELEGATION` to `true` will start allocating a prefix (/28 for IPv4 
+and /80 for IPv6) instead of a secondary IP in the ENIs subnet. The total number of prefixes and private IP addresses will be less than the
 limit on private IPs allowed by your instance. Setting or resetting of `ENABLE_PREFIX_DELEGATION` while pods are running or if ENIs are attached is supported and the new pods allocated will get IPs based on the mode of IPAMD but the max pods of kubelet should be updated which would need either kubelet restart or node recycle.
 
 Custom networking and Security group per pods are supported with this feature.
 
 Setting ENABLE_PREFIX_DELEGATION to true will not increase the density of branch ENI pods. The limit on number of branch network interfaces per instance type will remain the same - https://docs.aws.amazon.com/eks/latest/userguide/security-groups-for-pods.html#supported-instance-types. Each branch network will be allocated a primary IP and this IP will be allocated for the branch ENI pods.
+
+**Note:** `ENABLE_PREFIX_DELEGATION` needs to be set to `true` when VPC CNI is configured to operate in IPv6 mode (supported in v1.10.0+).
 
 ---
 
@@ -524,6 +526,64 @@ Default: `false`
 Setting `ANNOTATE_POD_IP` to `true` will allow IPAMD to add an annotation `vpc.amazonaws.com/pod-ips` to the pod with pod IP.
 
 There is a known [issue](https://github.com/kubernetes/kubernetes/issues/39113) with kubelet taking time to update `Pod.Status.PodIP` leading to calico being blocked on programming the policy. Setting `ANNOTATE_POD_IP` to `true` will enable AWS VPC CNI similar to the optimization added in Calico CNI plugin to write the IP address back to the pod as an annotation to close this race condition. 
+
+---
+
+#### `ENABLE_IPv4` (v1.10.0+)
+
+Type: Boolean as a String
+
+Default: `true`
+
+VPC CNI can operate in either IPv4 or IPv6 mode. Setting `ENABLE_IPv4` to `true` will configure it in IPv4 mode (default mode).
+
+**Note:** Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration.
+
+---
+
+#### `ENABLE_IPv6` (v1.10.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+VPC CNI can operate in either IPv4 or IPv6 mode. Setting `ENABLE_IPv6` to `true` (both under `aws-node` and `aws-vpc-cni-init` containers in the manifest) 
+will configure it in IPv6 mode. IPv6 is only supported in Prefix Delegation mode, so `ENABLE_PREFIX_DELEGATION` needs to set to `true` if VPC CNI is 
+configured to operate in IPv6 mode. Since, IPv6 is only supported in Prefix delegation mode it can only be used with nitro instances. 
+
+**IAM Policy:** VPC CNI in IPv6 mode will require below permissions to be able to assign IPv6 addresses to Pods. Below policy can either be applied to 
+NodeInstanceRole of your worker nodes (or) can be used as an IRSA. We recommend IRSA approach - https://docs.aws.amazon.com/eks/latest/userguide/cni-iam-role.html.
+`AmazonEKS_CNI_Policy` is no longer required in IPv6 mode.
+
+`
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:AssignIpv6Addresses",
+                "ec2:DescribeInstances",
+                "ec2:DescribeTags",
+                "ec2:DescribeNetworkInterfaces",
+                "ec2:DescribeInstanceTypes"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:CreateTags"
+            ],
+            "Resource": [
+                "arn:aws:ec2:*:*:network-interface/*"
+            ]
+        }
+    ]
+}
+`
+
+**Note:** Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration. 
 
 ---
 
