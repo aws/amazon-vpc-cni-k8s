@@ -27,7 +27,11 @@ scheduling that exceeds the IP address resources available to the kubelet.
 
 The default manifest expects `--cni-conf-dir=/etc/cni/net.d` and `--cni-bin-dir=/opt/cni/bin`.
 
-L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html):
+## IAM Policy
+
+L-IPAM requires one of the following [IAM policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html) depending on the IP Family configured:
+
+**IPv4 Mode:**
 
 ```
       {
@@ -54,6 +58,31 @@ L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/Us
           ],
           "Resource": ["arn:aws:ec2:*:*:network-interface/*"]
       }
+```
+
+**IPv6 Mode:**
+
+```
+       {
+         "Effect": "Allow",
+         "Action": [
+           "ec2:AssignIpv6Addresses",
+           "ec2:DescribeInstances",
+           "ec2:DescribeTags",
+           "ec2:DescribeNetworkInterfaces",
+           "ec2:DescribeInstanceTypes"
+          ],
+          "Resource": "*"
+       },
+       {
+         "Effect": "Allow",
+         "Action": [
+           "ec2:CreateTags"
+         ],
+         "Resource": [
+             "arn:aws:ec2:*:*:network-interface/*"
+         ]
+       }
 ```
 
 Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
@@ -551,39 +580,8 @@ VPC CNI can operate in either IPv4 or IPv6 mode. Setting `ENABLE_IPv6` to `true`
 will configure it in IPv6 mode. IPv6 is only supported in Prefix Delegation mode, so `ENABLE_PREFIX_DELEGATION` needs to set to `true` if VPC CNI is 
 configured to operate in IPv6 mode. Since, IPv6 is only supported in Prefix delegation mode it can only be used with nitro instances. 
 
-**IAM Policy:** VPC CNI in IPv6 mode will require below permissions to be able to assign IPv6 addresses to Pods. Below policy can either be applied to 
-NodeInstanceRole of your worker nodes (or) can be used as an IRSA. We recommend IRSA approach - https://docs.aws.amazon.com/eks/latest/userguide/cni-iam-role.html.
-`AmazonEKS_CNI_Policy` is no longer required in IPv6 mode.
 
-`
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "ec2:AssignIpv6Addresses",
-                "ec2:DescribeInstances",
-                "ec2:DescribeTags",
-                "ec2:DescribeNetworkInterfaces",
-                "ec2:DescribeInstanceTypes"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Effect": "Allow",
-            "Action": [
-                "ec2:CreateTags"
-            ],
-            "Resource": [
-                "arn:aws:ec2:*:*:network-interface/*"
-            ]
-        }
-    ]
-}
-`
-
-**Note:** Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration. 
+**Note:** Please make sure that the required IPv6 IAM policy is applied (Refer to `IAM Policy` section above). Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration. 
 
 ---
 
