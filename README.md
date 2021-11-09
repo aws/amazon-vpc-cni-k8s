@@ -509,7 +509,7 @@ limit on private IPs allowed by your instance. Setting or resetting of `ENABLE_P
 
 Setting ENABLE_PREFIX_DELEGATION to true will not increase the density of branch ENI pods. The limit on number of branch network interfaces per instance type will remain the same - https://docs.aws.amazon.com/eks/latest/userguide/security-groups-for-pods.html#supported-instance-types. Each branch network will be allocated a primary IP and this IP will be allocated for the branch ENI pods.
 
-Please refer to `VPC CNI Feature Matrix` section below for additional information around using Prefix delegation with Custom Networking and Security Groups Per Pod features.
+Please refer to [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information around using Prefix delegation with Custom Networking and Security Groups Per Pod features.
 
 **Note:** `ENABLE_PREFIX_DELEGATION` needs to be set to `true` when VPC CNI is configured to operate in IPv6 mode (supported in v1.10.0+).
 
@@ -597,7 +597,7 @@ will configure it in IPv6 mode. IPv6 is only supported in Prefix Delegation mode
 configured to operate in IPv6 mode. Prefix delegation is only supported on nitro instances. 
 
 
-**Note:** Please make sure that the required IPv6 IAM policy is applied (Refer to `IAM Policy` section above). Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration. Please refer to the `VPC CNI Feature Matrix` section below for additional information.
+**Note:** Please make sure that the required IPv6 IAM policy is applied (Refer to [IAM Policy](https://github.com/aws/amazon-vpc-cni-k8s#iam-policy) section above). Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration. Please refer to the [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information.
 
 ---
 
