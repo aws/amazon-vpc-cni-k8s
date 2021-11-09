@@ -585,7 +585,7 @@ configured to operate in IPv6 mode. Prefix delegation is only supported on nitro
 
 ---
 
-### VPC CNI Support Matrix
+### VPC CNI Feature Matrix
 
 IP Mode | Secondary IP Mode | Prefix Delegation | Security Group Per Pod | WARM & MIN IP/Prefix Targets | External SNAT
 ------ | ------ | ------ | ------ | ------ | ------
