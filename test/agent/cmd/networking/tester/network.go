@@ -190,6 +190,7 @@ func TestNetworkingSetupForPodsUsingSecurityGroup(podNetworkingValidationInput i
 	var validationErrors []error
 	var podIP net.IP
 	interfaceToVlanTableMap := make(map[string]int)
+	vlanTableToBranchENIMap := make(map[int]string)
 
 	ipFamily := netlink.FAMILY_V4
 	if podNetworkingValidationInput.IPFamily == "IPv6" {
@@ -203,7 +204,9 @@ func TestNetworkingSetupForPodsUsingSecurityGroup(podNetworkingValidationInput i
 	}
 
 	for _, rule := range ruleList {
-		if rule.IifName != "" && rule.Table != 0 {
+		if strings.HasPrefix(rule.IifName, "vlan.eth") && rule.Table != 0 {
+			vlanTableToBranchENIMap[rule.Table] = rule.IifName
+		} else if rule.IifName != "" && rule.Table != 0 {
 			interfaceToVlanTableMap[rule.IifName] = rule.Table
 		}
 	}
@@ -232,6 +235,28 @@ func TestNetworkingSetupForPodsUsingSecurityGroup(podNetworkingValidationInput i
 				fmt.Errorf("Missing Rule for pod: %s, podNamespace: %s, veth: %s", pod.PodName, pod.PodNamespace, hostVethName))
 		} else {
 			vlanTable = table
+		}
+
+		// Check if branch ENI exists for given pod
+		if branchENI, ok := vlanTableToBranchENIMap[vlanTable]; !ok {
+			validationErrors = append(validationErrors,
+				fmt.Errorf("Missing Branch ENI for pod: %s, podNamespace: %s", pod.PodName, pod.PodNamespace))
+		} else {
+			// Check if branchENI is in UP state
+			eniLink, err := netlink.LinkByName(branchENI)
+			if err != nil {
+				validationErrors = append(validationErrors,
+					fmt.Errorf("failed to find netlink %s: %v", branchENI, err))
+			} else {
+				isENILinkUp := strings.Contains(eniLink.Attrs().Flags.String(), "up")
+				if !isENILinkUp {
+					validationErrors = append(validationErrors,
+						fmt.Errorf("branch eni %s is not up %s", branchENI, link.Attrs().Flags.String()))
+				} else {
+					log.Printf("Found Branch ENI: %s for Pod: %s Namespace: %s, IP: %s in UP state", branchENI,
+						pod.PodName, pod.PodNamespace, podIP)
+				}
+			}
 		}
 
 		// Validate MTU value if it is set to true
@@ -377,6 +402,7 @@ func TestNetworkTearedDownForPodsUsingSecurityGroup(podNetworkingValidationInput
 	var validationErrors []error
 	var podIP net.IP
 	interfaceToVlanTableMap := make(map[string]int)
+	vlanTableToBranchENIMap := make(map[int]string)
 
 	ipFamily := netlink.FAMILY_V4
 	if podNetworkingValidationInput.IPFamily == "IPv6" {
@@ -389,8 +415,19 @@ func TestNetworkTearedDownForPodsUsingSecurityGroup(podNetworkingValidationInput
 	}
 
 	for _, rule := range ruleList {
-		if rule.IifName != "" && rule.Table != 0 {
+		if strings.HasPrefix(rule.IifName, "vlan.eth") && rule.Table != 0 {
+			vlanTableToBranchENIMap[rule.Table] = rule.IifName
+		} else if rule.IifName != "" && rule.Table != 0 {
 			interfaceToVlanTableMap[rule.IifName] = rule.Table
+		}
+	}
+
+	// Check if branchENI's are cleanup
+	if len(vlanTableToBranchENIMap) != 0 {
+		validationErrors = append(validationErrors,
+			fmt.Errorf("found leaked branch ENI"))
+		for _, eni := range vlanTableToBranchENIMap {
+			log.Printf("Leaked branch ENI: %s", eni)
 		}
 	}
 
