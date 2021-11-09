@@ -191,6 +191,13 @@ go_goroutines 20
 ...
 ```
 
+## IMDS
+
+If you're using v1.10, `aws-node` daemonset pod requires IMDSv1 access to obtain Primary IPv4 address assigned to the Node. Please refer to `Block access to IMDSv1 and IMDSv2 for all containers that don't use host networking` section in this [doc](https://docs.aws.amazon.com/eks/latest/userguide/best-practices-security.html) 
+
+## Known Issues
+- **Liveness/Readiness Probe failures** - If frequent probe failures are observed for `aws-node` pods in v1.20+ clusters, please bump up the liveness/readiness probe timeout values and/or CPU requests/limts in the CNI Manifest. Refer to this github [issue](https://github.com/aws/amazon-vpc-cni-k8s/issues/1425)
+
 ## cni-metrics-helper
 
 See the [cni-metrics-helper README](../cmd/cni-metrics-helper/README.md).
