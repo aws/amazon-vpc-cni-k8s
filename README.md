@@ -267,7 +267,7 @@ Default: None
 
 Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting this to a non-positive value is same as setting this to 0 or not setting the variable.
 With `ENABLE_PREFIX_DELEGATION` set to `true` then `ipamd` daemon will check if the existing (/28) prefixes are enough to maintain the
-`WARM_IP_TARGET` if it is not sufficent then more prefixes will be attached.
+`WARM_IP_TARGET` if it is not sufficient then more prefixes will be attached.
 
 For example, 
 
@@ -509,7 +509,7 @@ limit on private IPs allowed by your instance. Setting or resetting of `ENABLE_P
 
 Setting ENABLE_PREFIX_DELEGATION to true will not increase the density of branch ENI pods. The limit on number of branch network interfaces per instance type will remain the same - https://docs.aws.amazon.com/eks/latest/userguide/security-groups-for-pods.html#supported-instance-types. Each branch network will be allocated a primary IP and this IP will be allocated for the branch ENI pods.
 
-Please refer to `VPC CNI Support Matrix` section below for additional information around using Prefix delegation with Custom Networking and Security Groups Per Pod features.
+Please refer to [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information around using Prefix delegation with Custom Networking and Security Groups Per Pod features.
 
 **Note:** `ENABLE_PREFIX_DELEGATION` needs to be set to `true` when VPC CNI is configured to operate in IPv6 mode (supported in v1.10.0+).
 
@@ -546,7 +546,7 @@ Setting `ENABLE_BANDWIDTH_PLUGIN` to `true` will update `10-aws.conflist` to inc
 
 ---
 
-#### `ANNOTATE_POD_IP` (v1.10.0+)
+#### `ANNOTATE_POD_IP` (v1.9.3+)
 
 Type: Boolean as a String
 
@@ -554,8 +554,24 @@ Default: `false`
 
 Setting `ANNOTATE_POD_IP` to `true` will allow IPAMD to add an annotation `vpc.amazonaws.com/pod-ips` to the pod with pod IP.
 
-There is a known [issue](https://github.com/kubernetes/kubernetes/issues/39113) with kubelet taking time to update `Pod.Status.PodIP` leading to calico being blocked on programming the policy. Setting `ANNOTATE_POD_IP` to `true` will enable AWS VPC CNI similar to the optimization added in Calico CNI plugin to write the IP address back to the pod as an annotation to close this race condition. 
+There is a known [issue](https://github.com/kubernetes/kubernetes/issues/39113) with kubelet taking time to update `Pod.Status.PodIP` leading to calico being blocked on programming the policy. Setting `ANNOTATE_POD_IP` to `true` will enable AWS VPC CNI plugin to add Pod IP as an annotation to the pod spec to address this race condition.
 
+To annotate the pod with pod IP, you will have to add "patch" permission for pods resource in aws-node clusterrole. You can use the below command -
+
+```
+cat << EOF > append.yaml
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - patch
+EOF
+```
+
+```
+kubectl apply -f <(cat <(kubectl get clusterrole aws-node -o yaml) append.yaml)
+```
 ---
 
 #### `ENABLE_IPv4` (v1.10.0+)
@@ -581,13 +597,13 @@ will configure it in IPv6 mode. IPv6 is only supported in Prefix Delegation mode
 configured to operate in IPv6 mode. Prefix delegation is only supported on nitro instances. 
 
 
-**Note:** Please make sure that the required IPv6 IAM policy is applied (Refer to `IAM Policy` section above). Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration. Please refer to the `VPC CNI Support Matrix` section below for additional information.
+**Note:** Please make sure that the required IPv6 IAM policy is applied (Refer to [IAM Policy](https://github.com/aws/amazon-vpc-cni-k8s#iam-policy) section above). Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration. Please refer to the [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information.
 
 ---
 
 ### VPC CNI Feature Matrix
 
-IP Mode | Secondary IP Mode | Prefix Delegation | Security Group Per Pod | WARM & MIN IP/Prefix Targets | External SNAT
+IP Mode | Secondary IP Mode | Prefix Delegation | Security Groups Per Pod | WARM & MIN IP/Prefix Targets | External SNAT
 ------ | ------ | ------ | ------ | ------ | ------
 `IPv4` |   Yes|   Yes |   Yes |  Yes |   Yes |   Yes
 `IPv6` |   No |   Yes |   No |   No  |   No  | No
