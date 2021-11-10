@@ -1,4 +1,14 @@
 # Changelog
+## v1.10.1
+* Bug - [Use IMDSv2 token when fetching node ip in entrypoint](https://github.com/aws/amazon-vpc-cni-k8s/pull/1727) (#1727, [@chlunde](https://github.com/chlunde)) 
+
+## v1.10.0
+* Feature - [IPv6 Support](https://github.com/aws/amazon-vpc-cni-k8s/pull/1587) (#1587, [@achevuru](https://github.com/achevuru))
+* Enhancement - [Handle delays tied to V6 interfaces](https://github.com/aws/amazon-vpc-cni-k8s/pull/1631) (#1631, [@achevuru](https://github.com/achevuru))
+* Enhancement - [Support for Bandwidth Plugin](https://github.com/aws/amazon-vpc-cni-k8s/pull/1560) (#1560, [@jayanthvn](https://github.com/jayanthvn))
+* Enhancement - [Knob to enable bandwidth plugin](https://github.com/aws/amazon-vpc-cni-k8s/pull/1580) (#1580, [@jayanthvn](https://github.com/jayanthvn))
+* Testing - [IPv6 Integration test suite](https://github.com/aws/amazon-vpc-cni-k8s/pull/1658) (#1658, [@achevuru](https://github.com/achevuru))
+
 
 ## v1.9.1
 * Enhancement - [Support DISABLE_NETWORK_RESOURCE_PROVISIONING](https://github.com/aws/amazon-vpc-cni-k8s/pull/1586) (#1586, [@jayanthvn](https://github.com/jayanthvn))

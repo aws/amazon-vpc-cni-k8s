@@ -101,6 +101,8 @@ livenessProbe:
       - '-rpc-timeout=2s'
   initialDelaySeconds: 60
 
+livenessProbeTimeoutSeconds: 5
+
 readinessProbe:
   exec:
     command:
