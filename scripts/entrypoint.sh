@@ -118,6 +118,7 @@ wait_for_ipam() {
         fi
         # We sleep for 1 second between each retry
         sleep 1
+	log_in_json info "Retrying waiting for IPAM-D"
     done
 }
 
@@ -125,12 +126,14 @@ wait_for_ipam() {
 get_node_primary_v4_address() {
     while :
     do
-        NODE_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)
+	token=$(curl -Ss -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+        NODE_IP=$(curl -H "X-aws-ec2-metadata-token: $token" -Ss http://169.254.169.254/latest/meta-data/local-ipv4)
         if [[ "${NODE_IP}" != "" ]]; then
             return 0
         fi
         # We sleep for 1 second between each retry
         sleep 1
+	log_in_json info "Retrying fetching node-IP"
     done
 }
 
