@@ -62,7 +62,7 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 			Command(nil).
 			Port(v1.ContainerPort{
 				ContainerPort: 80,
-				Protocol: "TCP",
+				Protocol:      "TCP",
 			}).Build()
 
 		deployment = manifest.NewDefaultDeploymentBuilder().
