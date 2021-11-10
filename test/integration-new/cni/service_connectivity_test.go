@@ -58,9 +58,12 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 
 	JustBeforeEach(func() {
 		deploymentContainer = manifest.NewBusyBoxContainerBuilder().
-			Image("python").
-			Command([]string{"python3"}).
-			Args([]string{"-m", "http.server", "80"}).Build()
+			Image("nginx:1.21.4").
+			Command(nil).
+			Port(v1.ContainerPort{
+				ContainerPort: 80,
+				Protocol: "TCP",
+			}).Build()
 
 		deployment = manifest.NewDefaultDeploymentBuilder().
 			Name("http-server").
@@ -93,7 +96,7 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 
 		testerContainer = manifest.NewBusyBoxContainerBuilder().
 			Command([]string{"wget"}).
-			Args([]string{"--spider", "-T", "1", fmt.Sprintf("%s:%d", service.Spec.ClusterIP,
+			Args([]string{"--spider", "-T", "5", fmt.Sprintf("%s:%d", service.Spec.ClusterIP,
 				service.Spec.Ports[0].Port)}).
 			Build()
 
@@ -132,7 +135,7 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 		err = f.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(negativeTesterJob)
 		Expect(err).ToNot(HaveOccurred())
 
-		err = f.K8sResourceManagers.ServiceManager().DeleteService(context.Background(), service)
+		err = f.K8sResourceManagers.ServiceManager().DeleteAndWaitTillServiceDeleted(context.Background(), service)
 		Expect(err).ToNot(HaveOccurred())
 
 		err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
