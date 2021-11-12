@@ -20,12 +20,12 @@ const (
 	AwsNodeNamespace     = "kube-system"
 	AwsNodeName          = "aws-node"
 	AWSInitContainerName = "aws-vpc-cni-init"
+	MultusNodeName       = "kube-multus-ds"
+	MultusContainerName  = "kube-multus"
 
 	// See https://gallery.ecr.aws/r3i6j7b0/aws-vpc-cni-test-helper
-	TestAgentImage = "public.ecr.aws/r3i6j7b0/aws-vpc-cni-test-helper:a03867f5"
-)
+	TestAgentImage = "public.ecr.aws/r3i6j7b0/aws-vpc-cni-test-helper:5c99fc7b"
 
-const (
 	PollIntervalShort  = time.Second * 2
 	PollIntervalMedium = time.Second * 5
 	PollIntervalLong   = time.Second * 20

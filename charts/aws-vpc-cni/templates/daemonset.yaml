@@ -68,8 +68,10 @@ spec:
               name: metrics
           livenessProbe:
 {{ toYaml .Values.livenessProbe | indent 12 }}
+            timeoutSeconds: {{ .Values.livenessProbeTimeoutSeconds }}
           readinessProbe:
 {{ toYaml .Values.readinessProbe | indent 12 }}
+            timeoutSeconds: {{ .Values.readinessProbeTimeoutSeconds }}
           env:
 {{- range $key, $value := .Values.env }}
             - name: {{ $key }}

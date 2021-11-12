@@ -19,6 +19,7 @@ import (
 	"net"
 	"os"
 	"syscall"
+	"time"
 
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
@@ -43,6 +44,12 @@ const (
 	fromContainerRulePriority = 1536
 	// Main routing table number
 	mainRouteTable = unix.RT_TABLE_MAIN
+
+	WAIT_INTERVAL = 50 * time.Millisecond
+
+	//Time duration CNI waits for an IPv6 address assigned to an interface
+	//to move to stable state before error'ing out.
+	v6DADTimeout = 10 * time.Second
 )
 
 // NetworkAPIs defines network API calls
@@ -208,12 +215,56 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		return errors.Wrap(err, "setup NS network: failed to add static ARP")
 	}
 
+	if createVethContext.v6Addr != nil && createVethContext.v6Addr.IP.To16() != nil {
+		if err := WaitForAddressesToBeStable(createVethContext.contVethName, v6DADTimeout); err != nil {
+			return errors.Wrap(err, "setup NS network: failed while waiting for v6 addresses to be stable")
+		}
+	}
+
 	// Now that the everything has been successfully set up in the container, move the "host" end of the
 	// veth into the host namespace.
 	if err = createVethContext.netLink.LinkSetNsFd(hostVeth, int(hostNS.Fd())); err != nil {
 		return errors.Wrap(err, "setup NS network: failed to move veth to host netns")
 	}
 	return nil
+}
+
+// Implements `SettleAddresses` functionality of the `ip` package.
+// WaitForAddressesToBeStable waits for all addresses on a link to leave tentative state.
+// Will be particularly useful for ipv6, where all addresses need to do DAD.
+// If any addresses are still tentative after timeout seconds, then error.
+func WaitForAddressesToBeStable(ifName string, timeout time.Duration) error {
+	link, err := netlink.LinkByName(ifName)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve link: %v", err)
+	}
+
+	deadline := time.Now().Add(timeout)
+	for {
+		addrs, err := netlink.AddrList(link, netlink.FAMILY_V6)
+		if err != nil {
+			return fmt.Errorf("could not list addresses: %v", err)
+		}
+
+		ok := true
+		for _, addr := range addrs {
+			if addr.Flags&(syscall.IFA_F_TENTATIVE|syscall.IFA_F_DADFAILED) > 0 {
+				ok = false
+				break
+			}
+		}
+
+		if ok {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("link %s still has tentative addresses after %d seconds",
+				ifName,
+				timeout)
+		}
+
+		time.Sleep(WAIT_INTERVAL)
+	}
 }
 
 // SetupNS wires up linux networking for a pod's network

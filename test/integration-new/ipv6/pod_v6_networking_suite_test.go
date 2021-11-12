@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package cni
+package ipv6
 
 import (
 	"fmt"
@@ -29,13 +29,9 @@ import (
 const InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
 
 var f *framework.Framework
-var maxIPPerInterface int
 var primaryNode v1.Node
-var secondaryNode v1.Node
-var instanceSecurityGroupID string
-var vpcCIDRs []string
 
-func TestCNIPodNetworking(t *testing.T) {
+func TestCNIv6PodNetworking(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "CNI Pod Networking Suite")
 }
@@ -52,43 +48,11 @@ var _ = BeforeSuite(func() {
 	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	Expect(err).ToNot(HaveOccurred())
 
-	By("verifying more than 1 nodes are present for the test")
+	By("verifying that more than 1 node is available for the test")
 	Expect(len(nodes.Items)).Should(BeNumerically(">", 1))
 
-	// Set the primary and secondary node for testing
+	// Set the primary node used for testing
 	primaryNode = nodes.Items[0]
-	secondaryNode = nodes.Items[1]
-
-	// Get the node security group
-	instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
-	primaryInstance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
-	Expect(err).ToNot(HaveOccurred())
-
-	// This won't work if the first SG is only associated with the primary instance.
-	// Need a robust substring in the SGP name to identify node SGP
-	instanceSecurityGroupID = *primaryInstance.NetworkInterfaces[0].Groups[0].GroupId
-
-	By("getting the instance type from node label " + InstanceTypeNodeLabelKey)
-	instanceType := primaryNode.Labels[InstanceTypeNodeLabelKey]
-
-	By("getting the network interface details from ec2")
-	instanceOutput, err := f.CloudServices.EC2().DescribeInstanceType(instanceType)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Pods often get stuck due insufficient capacity, so adding some buffer to the maxIPPerInterface
-	maxIPPerInterface = int(*instanceOutput[0].NetworkInfo.Ipv4AddressesPerInterface) - 5
-
-	By("describing the VPC to get the VPC CIDRs")
-	describeVPCOutput, err := f.CloudServices.EC2().DescribeVPC(f.Options.AWSVPCID)
-	Expect(err).ToNot(HaveOccurred())
-
-	for _, cidrBlockAssociationSet := range describeVPCOutput.Vpcs[0].CidrBlockAssociationSet {
-		vpcCIDRs = append(vpcCIDRs, *cidrBlockAssociationSet.CidrBlock)
-	}
-
-	// Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
-	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
-		"aws-node", map[string]string{"WARM_IP_TARGET": "3", "WARM_ENI_TARGET": "0"})
 })
 
 var _ = AfterSuite(func() {

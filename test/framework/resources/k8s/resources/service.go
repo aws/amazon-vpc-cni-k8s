@@ -20,6 +20,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,14 +29,14 @@ import (
 type ServiceManager interface {
 	GetService(ctx context.Context, namespace string, name string) (*v1.Service, error)
 	CreateService(ctx context.Context, service *v1.Service) (*v1.Service, error)
-	DeleteService(ctx context.Context, service *v1.Service) error
+	DeleteAndWaitTillServiceDeleted(ctx context.Context, service *v1.Service) error
 }
 
 type defaultServiceManager struct {
-	k8sClient client.Client
+	k8sClient client.DelegatingClient
 }
 
-func NewDefaultServiceManager(k8sClient client.Client) ServiceManager {
+func NewDefaultServiceManager(k8sClient client.DelegatingClient) ServiceManager {
 	return &defaultServiceManager{k8sClient: k8sClient}
 }
 
@@ -69,11 +70,20 @@ func (s *defaultServiceManager) CreateService(ctx context.Context, service *v1.S
 	}, ctx.Done())
 }
 
-func (s *defaultServiceManager) DeleteService(ctx context.Context, service *v1.Service) error {
+func (s *defaultServiceManager) DeleteAndWaitTillServiceDeleted(ctx context.Context, service *v1.Service) error {
 	err := s.k8sClient.Delete(ctx, service)
 	if err != nil {
 		return err
 	}
 
-	return nil
+	observed := &v1.Service{}
+	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+		if err := s.k8sClient.Get(ctx, utils.NamespacedName(service), observed); err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return false, nil
+	}, ctx.Done())
 }

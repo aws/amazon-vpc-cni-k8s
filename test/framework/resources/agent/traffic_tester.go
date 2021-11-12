@@ -56,6 +56,8 @@ type TrafficTest struct {
 	// For instance, to validate server/client pods are using Branch ENI
 	ValidateServerPods func(list v1.PodList) error
 	ValidateClientPods func(list v1.PodList) error
+	// Boolean that indicates if IPv6 mode is enabled
+	IsV6Enabled bool
 }
 
 // Tests traffic by creating multiple server pods using a deployment and multiple client pods
@@ -98,14 +100,18 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 
 	var serverIPs []string
 	for _, pod := range podList.Items {
-		serverIPs = append(serverIPs, pod.Status.PodIP)
+		podIP := pod.Status.PodIP
+		if t.IsV6Enabled {
+			podIP = fmt.Sprintf("[%s]", pod.Status.PodIP)
+		}
+		serverIPs = append(serverIPs, podIP)
 	}
 
 	// To the Client Job pass the list of Server IPs, so each client Pod tests connectivity to each
 	// server
 	clientJob, err := t.startTrafficClient(strings.Join(serverIPs, ","), metricServerPod.Status.PodIP)
 	if err != nil {
-		return 0, fmt.Errorf("faield to start client jobs: %v", err)
+		return 0, fmt.Errorf("failed to start client jobs: %v", err)
 	}
 
 	fmt.Fprintln(GinkgoWriter, "successfully created traffic client")
@@ -125,8 +131,12 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 		fmt.Fprintln(GinkgoWriter, "successfully validated the server pod list")
 	}
 
+	metricServerIP := metricServerPod.Status.PodIP
+	if t.IsV6Enabled {
+		metricServerIP = fmt.Sprintf("[%s]", metricServerPod.Status.PodIP)
+	}
 	// Get the aggregated response from the metric server for calculating the connection success rate
-	testInputs, err := t.getTestStatusFromMetricServer(metricServerPod.Status.PodIP)
+	testInputs, err := t.getTestStatusFromMetricServer(metricServerIP)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get test status from metric server: %v", err)
 	}
@@ -143,17 +153,17 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 	// Clean up all the resources
 	err = t.Framework.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(clientJob)
 	if err != nil {
-		return 0, fmt.Errorf("faield to delete client job: %v", err)
+		return 0, fmt.Errorf("failed to delete client job: %v", err)
 	}
 
 	err = t.Framework.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(metricServerPod)
 	if err != nil {
-		return 0, fmt.Errorf("faield to delete metric server pod: %v", err)
+		return 0, fmt.Errorf("failed to delete metric server pod: %v", err)
 	}
 
 	err = t.Framework.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(serverDeployment)
 	if err != nil {
-		return 0, fmt.Errorf("faield to delete server deployment: %v", err)
+		return 0, fmt.Errorf("failed to delete server deployment: %v", err)
 	}
 
 	return successRate, nil

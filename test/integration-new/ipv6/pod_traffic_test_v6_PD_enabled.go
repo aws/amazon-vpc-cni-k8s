@@ -11,21 +11,17 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package cni
+package ipv6
 
 import (
-	"fmt"
-
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
-	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Test pod networking with prefix delegation enabled <-> disabled", func() {
+var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 	var (
 		// The Pod labels for client and server in order to retrieve the
 		// client and server Pods belonging to a Deployment/Jobs
@@ -33,53 +29,16 @@ var _ = Describe("Test pod networking with prefix delegation enabled <-> disable
 		serverPodLabelVal       = "server-pod"
 		clientPodLabelVal       = "client-pod"
 		serverDeploymentBuilder *manifest.DeploymentBuilder
-		// Value for the Environment variable ENABLE_PREFIX_DELEGATION
-		enableIPv4PrefixDelegation string
-		firstRun                   bool
-		lastRun                    bool
 	)
 
 	JustBeforeEach(func() {
-		// TODO Gingko doesnt support beforeAll so while adding upgrades/downgrades will move this to a suite
-		if firstRun {
-			By("creating test namespace")
-			f.K8sResourceManagers.NamespaceManager().
-				CreateNamespace(utils.DefaultTestNamespace)
-
-			By("creating deployment")
-			serverDeploymentBuilder = manifest.NewDefaultDeploymentBuilder().
-				Name("traffic-server").
-				NodeSelector(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
-		}
-
-		By(fmt.Sprintf("Setting PD - %v", enableIPv4PrefixDelegation))
-		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
-			utils.AwsNodeNamespace, utils.AwsNodeName,
-			map[string]string{"ENABLE_PREFIX_DELEGATION": enableIPv4PrefixDelegation})
-
+		By("creating deployment")
+		serverDeploymentBuilder = manifest.NewDefaultDeploymentBuilder().
+			Name("traffic-server").
+			NodeSelector(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	})
 
-	JustAfterEach(func() {
-		if lastRun {
-			By("deleting test namespace")
-			f.K8sResourceManagers.NamespaceManager().
-				DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
-
-			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
-				utils.AwsNodeNamespace, utils.AwsNodeName,
-				map[string]string{"ENABLE_PREFIX_DELEGATION": "false"})
-		}
-	})
-
-	Context("when testing TCP traffic between client and server pods on enabling PD", func() {
-		BeforeEach(func() {
-			enableIPv4PrefixDelegation = "true"
-			firstRun = true
-			lastRun = false
-		})
-
-		//TODO : Add pod IP validation if IP belongs to prefix
-		//TODO : remove hardcoding from client/server count
+	Context("when testing TCP traffic between client and server pods", func() {
 		It("should have 99+% success rate", func() {
 			trafficTester := agent.TrafficTest{
 				Framework:                      f,
@@ -92,6 +51,7 @@ var _ = Describe("Test pod networking with prefix delegation enabled <-> disable
 				ServerPodLabelVal:              serverPodLabelVal,
 				ClientPodLabelKey:              labelKey,
 				ClientPodLabelVal:              clientPodLabelVal,
+				IsV6Enabled:                    true,
 			}
 
 			successRate, err := trafficTester.TestTraffic()
@@ -100,27 +60,20 @@ var _ = Describe("Test pod networking with prefix delegation enabled <-> disable
 		})
 	})
 
-	Context("when testing TCP traffic between client and server pods on disabling PD", func() {
-		BeforeEach(func() {
-			enableIPv4PrefixDelegation = "false"
-			firstRun = false
-			lastRun = true
-		})
-
-		//TODO : Add pod IP validation if IP belongs to SIP
-		//TODO : remove hardcoding from client/server count
+	Context("when testing UDP traffic between client and server pods", func() {
 		It("should have 99+% success rate", func() {
 			trafficTester := agent.TrafficTest{
 				Framework:                      f,
 				TrafficServerDeploymentBuilder: serverDeploymentBuilder,
 				ServerPort:                     2273,
-				ServerProtocol:                 "tcp",
+				ServerProtocol:                 "udp",
 				ClientCount:                    20,
 				ServerCount:                    20,
 				ServerPodLabelKey:              labelKey,
 				ServerPodLabelVal:              serverPodLabelVal,
 				ClientPodLabelKey:              labelKey,
 				ClientPodLabelVal:              clientPodLabelVal,
+				IsV6Enabled:                    true,
 			}
 
 			successRate, err := trafficTester.TestTraffic()

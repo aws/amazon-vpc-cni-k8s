@@ -189,7 +189,7 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 	err = f.K8sResourceManagers.NodeManager().
 		WaitTillNodesReady(properties.NgLabelKey, properties.NgLabelVal, properties.AsgSize)
 	if err != nil {
-		return fmt.Errorf("faield to list nodegroup with label key %s:%v: %v",
+		return fmt.Errorf("failed to list nodegroup with label key %s:%v: %v",
 			properties.NgLabelKey, properties.NgLabelVal, err)
 	}
 

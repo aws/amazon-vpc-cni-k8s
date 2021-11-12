@@ -11,7 +11,7 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package cni
+package ipv6
 
 import (
 	"context"
@@ -34,12 +34,12 @@ const (
 )
 
 // Verifies connectivity to deployment behind different service types
-var _ = Describe("[CANARY] test service connectivity", func() {
+var _ = Describe("test service connectivity", func() {
 	var err error
 
 	// Deployment running the http server
 	var deployment *appsV1.Deployment
-	var deploymentContainer v1.Container
+	var serverContainer v1.Container
 
 	// Service front ending the http server deployment
 	var service *v1.Service
@@ -57,17 +57,18 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 	var negativeTesterContainer v1.Container
 
 	JustBeforeEach(func() {
-		deploymentContainer = manifest.NewBusyBoxContainerBuilder().
-			Image("nginx:1.21.4").
-			Command(nil).
-			Port(v1.ContainerPort{
-				ContainerPort: 80,
-				Protocol:      "TCP",
-			}).Build()
+		serverContainer = manifest.NewTestHelperContainer().
+			Name("server").
+			Command([]string{"./traffic-server"}).
+			Args([]string{
+				fmt.Sprintf("-server-port=%d", 80),
+				fmt.Sprintf("-server-mode=%s", "http"),
+			}).
+			Build()
 
 		deployment = manifest.NewDefaultDeploymentBuilder().
 			Name("http-server").
-			Container(deploymentContainer).
+			Container(serverContainer).
 			Replicas(20).
 			PodLabel(serviceLabelSelectorKey, serviceLabelSelectorVal).
 			Build()
@@ -96,7 +97,7 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 
 		testerContainer = manifest.NewBusyBoxContainerBuilder().
 			Command([]string{"wget"}).
-			Args([]string{"--spider", "-T", "5", fmt.Sprintf("%s:%d", service.Spec.ClusterIP,
+			Args([]string{"--spider", "-T", "1", fmt.Sprintf("[%s]:%d", service.Spec.ClusterIP,
 				service.Spec.Ports[0].Port)}).
 			Build()
 
@@ -113,7 +114,7 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 		// Test connection to an unreachable port should fail
 		negativeTesterContainer = manifest.NewBusyBoxContainerBuilder().
 			Command([]string{"wget"}).
-			Args([]string{"--spider", "-T", "1", fmt.Sprintf("%s:%d", service.Spec.ClusterIP, 2273)}).
+			Args([]string{"--spider", "-T", "1", fmt.Sprintf("[%s]:%d", service.Spec.ClusterIP, 2273)}).
 			Build()
 
 		negativeTesterJob = manifest.NewDefaultJobBuilder().
@@ -142,24 +143,6 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 		Expect(err).ToNot(HaveOccurred())
 	})
 
-	Context("when a deployment behind clb service is created", func() {
-		BeforeEach(func() {
-			serviceType = v1.ServiceTypeLoadBalancer
-		})
-
-		It("clb service pod should be reachable", func() {})
-	})
-
-	Context("when a deployment behind nlb service is created", func() {
-		BeforeEach(func() {
-			serviceType = v1.ServiceTypeLoadBalancer
-			serviceAnnotation = map[string]string{"service.beta.kubernetes.io/" +
-				"aws-load-balancer-type": "nlb"}
-		})
-
-		It("nlb service pod should be reachable", func() {})
-	})
-
 	Context("when a deployment behind cluster IP is created", func() {
 		BeforeEach(func() {
 			serviceType = v1.ServiceTypeClusterIP
@@ -175,6 +158,4 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 
 		It("node port service pod should be reachable", func() {})
 	})
-
-	//TODO: Add test case to install lb controller and test with nlb-ip mode
 })

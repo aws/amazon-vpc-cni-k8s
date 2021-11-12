@@ -7,9 +7,9 @@ awscni_assigned_ip_addresses 1
 # HELP awscni_total_ipv4_prefixes The total number of IPv4 prefixes
 # TYPE awscni_total_ipv4_prefixes gauge
 awscni_total_ipv4_prefixes 1
-# HELP awscni_assigned_ip_per_ipv4cidr The total number of IP addresses assigned per cidr
-# TYPE awscni_assigned_ip_per_ipv4cidr gauge
-awscni_assigned_ip_per_ipv4cidr 1
+# HELP awscni_assigned_ip_per_cidr The total number of IP addresses assigned per cidr
+# TYPE awscni_assigned_ip_per_cidr gauge
+awscni_assigned_ip_per_cidr{cidr="192.168.20.0/28"} 1
 # HELP awscni_aws_api_error_count The number of times AWS API returns an error
 # TYPE awscni_aws_api_error_count counter
 awscni_aws_api_error_count{api="DeleteNetworkInterface",error="InvalidParameterValue"} 14
