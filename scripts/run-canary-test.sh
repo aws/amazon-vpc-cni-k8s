@@ -39,7 +39,7 @@ function wait_for_addon_status() {
   local expected_status=$1
 
   if [ "$expected_status" =  "DELETED" ]; then
-    while $(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME); do
+    while $(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --region "$REGION"); do
       echo "addon is still not deleted"
       sleep 5
     done
@@ -49,7 +49,7 @@ function wait_for_addon_status() {
 
   while true
   do
-    STATUS=$(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME | jq -r '.addon.status')
+    STATUS=$(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --region "$REGION" | jq -r '.addon.status')
     if [ "$STATUS" = "$expected_status" ]; then
       echo "addon status matches expected status"
       return
@@ -62,11 +62,11 @@ function wait_for_addon_status() {
 function install_add_on() {
   local new_addon_version=$1
 
-  if DESCRIBE_ADDON=$(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME); then
+  if DESCRIBE_ADDON=$(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --region "$REGION"); then
     local current_addon_version=$(echo "$DESCRIBE_ADDON" | jq '.addon.addonVersion' -r)
     if [ "$new_addon_version" != "$current_addon_version" ]; then
       echo "deleting the $current_addon_version to install $new_addon_version"
-      aws eks delete-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name "$VPC_CNI_ADDON_NAME"
+      aws eks delete-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name "$VPC_CNI_ADDON_NAME" --region "$REGION"
       wait_for_addon_status "DELETED"
     else
       echo "addon version $current_addon_version already installed"
@@ -76,7 +76,7 @@ function install_add_on() {
   fi
 
   echo "installing addon $new_addon_version"
-  aws eks create-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --resolve-conflicts OVERWRITE --addon-version $new_addon_version
+  aws eks create-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --resolve-conflicts OVERWRITE --addon-version $new_addon_version --region "$REGION"
   patch_aws_node_maxunavialable
   wait_for_addon_status "ACTIVE"
 }
@@ -89,8 +89,8 @@ function patch_aws_node_maxunavialable() {
 function run_ginkgo_test() {
   local focus=$1
   echo "Running ginkgo tests with focus: $focus"
-  (cd "$INTEGRATION_TEST_DIR/cni" && ginkgo --focus="$focus" -v --timeout 20m --failOnPending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-  (cd "$INTEGRATION_TEST_DIR/ipamd" && ginkgo --focus="$focus" -v --timeout 10m --failOnPending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+  (cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 20m --failOnPending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+  (cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 10m --failOnPending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
 }
 
 load_cluster_details
