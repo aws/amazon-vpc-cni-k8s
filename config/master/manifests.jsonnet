@@ -196,7 +196,7 @@ local awsnode = {
                 for kv in objectItems(self.env_)
               ],
               resources: {
-                requests: {cpu: "10m"},
+                requests: {cpu: "25m"},
               },
               securityContext: {
                 capabilities: {add: ["NET_ADMIN"]},
