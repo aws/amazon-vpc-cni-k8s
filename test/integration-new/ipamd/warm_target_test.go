@@ -171,3 +171,24 @@ var _ = Describe("test warm target variables", func() {
 		})
 	})
 })
+
+func Max(x, y int) int {
+	if x < y {
+		return y
+	}
+	return x
+}
+
+// MinIgnoreZero returns smaller of two number, if any number is zero returns the other number
+func MinIgnoreZero(x, y int) int {
+	if x == 0 {
+		return y
+	}
+	if y == 0 {
+		return x
+	}
+	if x < y {
+		return x
+	}
+	return y
+}
