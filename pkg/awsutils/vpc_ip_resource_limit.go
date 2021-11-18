@@ -457,4 +457,3 @@ var InstanceNetworkingLimits = map[string]InstanceTypeLimits{
 	"z1d.metal":         {ENILimit: 15, IPv4Limit: 50, HypervisorType: ""},
 	"z1d.xlarge":        {ENILimit: 4, IPv4Limit: 15, HypervisorType: "nitro"},
 }
-
