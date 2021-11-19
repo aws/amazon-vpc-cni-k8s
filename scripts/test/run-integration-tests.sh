@@ -37,9 +37,9 @@ do
 
     cd "${dir%*/}"  
     if [ -n "$FOCUS" ]; then
-        ginkgo --focus="$FOCUS" -v  -- --cluster-kubeconfig=$KUBECONFIG --cluster-name=$CLUSTER_NAME --aws-region=$AWS_REGION --aws-vpc-id=$VPC_ID
+        ginkgo --focus="$FOCUS" -v -r -- --cluster-kubeconfig=$KUBECONFIG --cluster-name=$CLUSTER_NAME --aws-region=$AWS_REGION --aws-vpc-id=$VPC_ID
     else
-        ginkgo -v  -- --cluster-kubeconfig=$KUBECONFIG --cluster-name=$CLUSTER_NAME --aws-region=$AWS_REGION --aws-vpc-id=$VPC_ID
+        ginkgo -v -r -- --cluster-kubeconfig=$KUBECONFIG --cluster-name=$CLUSTER_NAME --aws-region=$AWS_REGION --aws-vpc-id=$VPC_ID
     fi
     cd ..    
      
