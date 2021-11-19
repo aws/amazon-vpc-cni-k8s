@@ -103,7 +103,12 @@ Say for instance, The cni test and suite files in the cni folder has functionali
 
 ### Structure of test suite 
 
-Most of the test suites follow the following structure. Some of the functions used below are just an example for illustration of functionality. Additions or deletions to the below snippet may be required for any new test.
+#### Logic Components
+
+- ```BeforeSuite``` : All common steps that should be performed before the suite are added here.
+- ```AfterSuite``` : All common steps that should be performed after the suite are added here.
+
+Most of the test suites follow the following structure. Some of the functions used below are just an example for illustration of functionality. Additions or deletions to the below snippet may be required for any new test suite.
 
 ```go
 package <package_name>
@@ -125,6 +130,8 @@ import (
  
         //v1 imported for Node libraries
 	v1 "k8s.io/api/core/v1"
+	
+        ...
 )
 
 //Global variables for the suite are defined here
@@ -140,7 +147,6 @@ func TestSample(t *testing.T) {
 }
 
 //The following function has checks and setup needed before running the suite.
-//All common steps that should be performed before the suite are added here. 
 var _ = BeforeSuite(func() {
 
 	f = framework.New(framework.GlobalOptions)
@@ -160,15 +166,131 @@ var _ = BeforeSuite(func() {
 })
 
 //The following function has checks and setup needed after running the suite.
-//All common steps that should be performed after the suite are added here. 
 var _ = AfterSuite(func() {
 
         ...
 
 })
+
+```
+### Structure of tests corresponding to each suite
+
+
+#### Logic Components
+
+- ```It```: Individual spec specified by It. It is the innermost component that holds the core testing logic. The other components listed below are hierarchically arranged before and after It in order to provision/deprovision the setup required to run the individual spec (It).
+- ```Describe``` : This blocks is used describe the individual behaviors of code.
+- ```Context``` : Context block is used to execute the behavior used by Describe block under different scenarios 
+- ```JustBeforeEach``` : Executed immediately before each test, however following the execution order from outside blocks to inside blocks before an It(spec) in case of multipe JustBeforeEach blocks.
+- ```JustAfterEach``` : Executed immediately after each test, however following the execution order from inside blocks to outside blocks after an It(spec) in case of multipe JustAfterEach blocks.
+- ```BeforeEach``` : Executed (not immediately) before each test, however following the execution order from outside blocks to inside blocks before an It(spec) in case of multipe BeforeEach blocks.
+- ```AfterEach``` : Executed (not immediately) after each test, however following the execution order from inside blocks to outside blocks after an It(spec) in case of multipe AfterEach blocks.
+
+Each of the above components are arranged hierarchically in a way that makes most sense for abstracting the common logic from the rest of the code. 
+
+Every ```BeforeEach``` precedes every ```JustBeforeEach``` before execution of an It.
+Every ```JustAfterEach``` precedes every ```AfterEach``` after execution of an It.
+
+
+Below is a sample test structure and may largely vary based on requirement. Some of the functions used below are just an example for illustration of functionality. Additions or deletions to the below snippet may be required for any new test.
+
+
+```go
+package <package_name>
+
+import (
+        // fmt is imported for printing
+	"fmt"
+	"strconv"
+
+	// The below folders are similar to the ones discussed above
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
+	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
+	
+	//ginkgo and the assertion library: gomega are imported below
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+	
+	///misc packages imported eg: Node libraries etc
+	v1 "k8s.io/api/apps/v1"
+        ...
+)
+
+// This blocks is used describe the individual behaviors of code eg: "test pod networking"
+var _ = Describe("test sample xyz", func() {
+  
+	var (
+                // List of global variables used for the tests below
+		err error
+		...
+		
+	)
+        
+	JustBeforeEach(func() {
+
+                // Can include var declarations as shown below
+		var x1 = 5;
+
+                // Can include logic + assertions as shown below 
+		By("Checking output on input to sampleFunc")
+		output,err = sampleFunc(input)
+		Expect(err).ToNot(HaveOccurred())
+
+                ...
+		
+	})
+
+
+	JustAfterEach(func() {
+		
+		// Can include var declarations or logic + assertions 
+		//similar to JustBeforeEach
+
+		...
+	})
+
+        // Context block is used to execute the behavior used by Describe block
+        // under different scenarios eg. "when testing ICMP traffic" could be a context
+	Context("when testing xyz under pqr", func() {
+	
+		BeforeEach(func() {
+			// Can include var declarations or logic + assertions 
+		        //similar to JustBeforeEach
+
+		        ...
+		})
+		
+		AfterEach(func() {
+			// Can include var declarations or logic + assertions 
+		        //similar to JustBeforeEach
+
+		        ...
+		})
+ 
+                // Below is example of individual spec specified by It
+                // eg "should allow connection across nodes and across interface types"
+		It("should allow abc", func() {
+			//Test Logic here with assertions
+			sampleFunc()
+		})
+	})
+
+
+	
+})
+
+
+type sampleTypeStruct struct {
+	...
+}
+
+func sampleFunc bool {
+	if <logic> {
+	     return true
+	}
+	return false
+}
 ```
 
-
-
-
-
+More info can be found here https://github.com/onsi/ginkgo
