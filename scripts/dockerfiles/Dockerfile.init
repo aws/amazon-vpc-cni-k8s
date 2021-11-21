@@ -18,7 +18,10 @@ COPY . ./
 RUN make build-aws-vpc-cni-init
 
 # Build the architecture specific container image:
-FROM public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-iptables:2021-08-06-1628283264
+FROM $docker_arch/amazonlinux:2
+RUN yum update -y && \
+    yum install -y iproute procps-ng && \
+    yum clean all
 
 WORKDIR /init
 
