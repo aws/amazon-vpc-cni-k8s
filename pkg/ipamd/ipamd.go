@@ -2043,7 +2043,7 @@ func (c *IPAMContext) isDatastorePoolTooLow() bool {
 
 	poolTooLow := available < totalIPs*warmTarget || (warmTarget == 0 && available == 0)
 	if poolTooLow {
-		log.Debugf("IP pool is too low")
+		log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, warmTarget, totalIPs)
 		c.logPoolStats(stats)
 	}
 	return poolTooLow
