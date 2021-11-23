@@ -373,7 +373,7 @@ func TestGetIPStatsV4(t *testing.T) {
 			AssignedIPs: 2,
 			CooldownIPs: 0,
 		},
-		ds.GetIPStats("4"),
+		*ds.GetIPStats("4"),
 	)
 
 	_, _, _, err = ds.UnassignPodIPAddress(key2)
@@ -385,7 +385,7 @@ func TestGetIPStatsV4(t *testing.T) {
 			AssignedIPs: 1,
 			CooldownIPs: 1,
 		},
-		ds.GetIPStats("4"),
+		*ds.GetIPStats("4"),
 	)
 
 	// wait 30s (cooldown period)
@@ -397,7 +397,7 @@ func TestGetIPStatsV4(t *testing.T) {
 			AssignedIPs: 1,
 			CooldownIPs: 0,
 		},
-		ds.GetIPStats("4"),
+		*ds.GetIPStats("4"),
 	)
 }
 
@@ -411,13 +411,13 @@ func TestGetIPStatsV6(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t,
-		DataStoreStats{
+		&DataStoreStats{
 			TotalIPs:      281474976710656,
 			TotalPrefixes: 1,
 			AssignedIPs:   1,
 			CooldownIPs:   0,
 		},
-		v6ds.GetIPStats("6"),
+		*v6ds.GetIPStats("6"),
 	)
 }
 
