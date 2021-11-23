@@ -1175,6 +1175,7 @@ func getWarmPrefixTarget() int {
 	return defaultWarmPrefixTarget
 }
 
+// logPoolStats logs usage information for allocated addresses/prefixes.
 func (c *IPAMContext) logPoolStats(dataStoreStats *datastore.DataStoreStats) {
 	prefix := "IP pool stats"
 	if c.enablePrefixDelegation {
