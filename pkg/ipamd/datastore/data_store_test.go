@@ -411,7 +411,7 @@ func TestGetIPStatsV6(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t,
-		&DataStoreStats{
+		DataStoreStats{
 			TotalIPs:      281474976710656,
 			TotalPrefixes: 1,
 			AssignedIPs:   1,
