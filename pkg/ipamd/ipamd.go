@@ -678,7 +678,7 @@ func (c *IPAMContext) decreaseDatastorePool(interval time.Duration) {
 	c.lastNodeIPPoolAction = now
 
 	log.Debugf("Successfully decreased IP pool")
-	c.logPoolStats(c.dataStore.GetStats(ipV4AddrFamily))
+	c.logPoolStats(c.dataStore.GetIPStats(ipV4AddrFamily))
 }
 
 // tryFreeENI always tries to free one ENI
@@ -813,7 +813,7 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 
 func (c *IPAMContext) updateLastNodeIPPoolAction() {
 	c.lastNodeIPPoolAction = time.Now()
-	stats := c.dataStore.GetStats(ipV4AddrFamily)
+	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
 	if !c.enablePrefixDelegation {
 		log.Debugf("Successfully increased IP pool: %s", stats)
 	} else {
@@ -1073,7 +1073,7 @@ func (c *IPAMContext) addENIsecondaryIPsToDataStore(ec2PrivateIpAddrs []*ec2.Net
 			ipamdErrInc("addENIsecondaryIPsToDataStoreFailed")
 		}
 	}
-	c.logPoolStats(c.dataStore.GetStats(ipV4AddrFamily))
+	c.logPoolStats(c.dataStore.GetIPStats(ipV4AddrFamily))
 }
 
 func (c *IPAMContext) addENIv4prefixesToDataStore(ec2PrefixAddrs []*ec2.Ipv4PrefixSpecification, eni string) {
@@ -1095,7 +1095,7 @@ func (c *IPAMContext) addENIv4prefixesToDataStore(ec2PrefixAddrs []*ec2.Ipv4Pref
 			ipamdErrInc("addENIv4prefixesToDataStoreFailed")
 		}
 	}
-	c.logPoolStats(c.dataStore.GetStats(ipV4AddrFamily))
+	c.logPoolStats(c.dataStore.GetIPStats(ipV4AddrFamily))
 }
 
 func (c *IPAMContext) addENIv6prefixesToDataStore(ec2PrefixAddrs []*ec2.Ipv6PrefixSpecification, eni string) {
@@ -1117,7 +1117,7 @@ func (c *IPAMContext) addENIv6prefixesToDataStore(ec2PrefixAddrs []*ec2.Ipv6Pref
 			ipamdErrInc("addENIv6prefixesToDataStoreFailed")
 		}
 	}
-	c.logPoolStats(c.dataStore.GetStats(ipV6AddrFamily))
+	c.logPoolStats(c.dataStore.GetIPStats(ipV6AddrFamily))
 }
 
 // getMaxENI returns the maximum number of ENIs to attach to this instance. This is calculated as the lesser of
@@ -1210,7 +1210,7 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 		return true
 	}
 
-	stats := c.dataStore.GetStats(ipV4AddrFamily)
+	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
 	available := stats.AvailableAddresses()
 	var shouldRemoveExtra bool
 
@@ -1243,7 +1243,7 @@ func (c *IPAMContext) computeExtraPrefixesOverWarmTarget() int {
 	freePrefixes := c.dataStore.GetFreePrefixes()
 	over = max(freePrefixes-c.warmPrefixTarget, 0)
 
-	stats := c.dataStore.GetStats(ipV4AddrFamily)
+	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
 	log.Debugf("computeExtraPrefixesOverWarmTarget available %d over %d warm_prefix_target %d", stats.AvailableAddresses(), over, c.warmPrefixTarget)
 	c.logPoolStats(stats)
 	return over
@@ -1379,7 +1379,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 	c.lastNodeIPPoolAction = time.Now()
 
 	log.Debug("Successfully Reconciled ENI/IP pool")
-	c.logPoolStats(c.dataStore.GetStats(ipV4AddrFamily))
+	c.logPoolStats(c.dataStore.GetIPStats(ipV4AddrFamily))
 }
 
 func (c *IPAMContext) eniIPPoolReconcile(ipPool []string, attachedENI awsutils.ENIMetadata, eni string) {
@@ -1730,7 +1730,7 @@ func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool)
 		return 0, 0, false
 	}
 
-	stats := c.dataStore.GetStats(ipV4AddrFamily)
+	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
 	available := stats.AvailableAddresses()
 
 	// short is greater than 0 when we have fewer available IPs than the warm IP target
@@ -2029,7 +2029,7 @@ func (c *IPAMContext) isDatastorePoolTooLow() bool {
 		return short > 0
 	}
 
-	stats := c.dataStore.GetStats(ipV4AddrFamily)
+	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
 	available := stats.AvailableAddresses()
 
 	warmTarget := c.warmENITarget

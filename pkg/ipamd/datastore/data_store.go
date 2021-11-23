@@ -848,7 +848,7 @@ type DataStoreStats struct {
 	CooldownIPs int
 }
 
-func (stats DataStoreStats) String() string {
+func (stats *DataStoreStats) String() string {
 	return fmt.Sprintf("Total IPs/Prefixes = %d/%d, AssignedIPs/CooldownIPs: %d/%d",
 		stats.TotalIPs, stats.TotalPrefixes, stats.AssignedIPs, stats.CooldownIPs)
 }
@@ -858,11 +858,11 @@ func (stats *DataStoreStats) AvailableAddresses() int {
 }
 
 // GetStats returns DataStoreStats for addressFamily
-func (ds *DataStore) GetStats(addressFamily string) DataStoreStats {
+func (ds *DataStore) GetIPStats(addressFamily string) *DataStoreStats {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	stats := DataStoreStats{
+	stats := &DataStoreStats{
 		TotalPrefixes: ds.allocatedPrefix,
 	}
 	for _, eni := range ds.eniPool {
