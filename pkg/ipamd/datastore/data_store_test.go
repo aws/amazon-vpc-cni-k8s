@@ -350,7 +350,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, ds.assigned, 2)
 }
 
-func TestGetStatsV4(t *testing.T) {
+func TestGetIPStatsV4(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false)
@@ -373,7 +373,7 @@ func TestGetStatsV4(t *testing.T) {
 			AssignedIPs: 2,
 			CooldownIPs: 0,
 		},
-		ds.GetStats("4"),
+		ds.GetIPStats("4"),
 	)
 
 	_, _, _, err = ds.UnassignPodIPAddress(key2)
@@ -385,7 +385,7 @@ func TestGetStatsV4(t *testing.T) {
 			AssignedIPs: 1,
 			CooldownIPs: 1,
 		},
-		ds.GetStats("4"),
+		ds.GetIPStats("4"),
 	)
 
 	// wait 30s (cooldown period)
@@ -397,11 +397,11 @@ func TestGetStatsV4(t *testing.T) {
 			AssignedIPs: 1,
 			CooldownIPs: 0,
 		},
-		ds.GetStats("4"),
+		ds.GetIPStats("4"),
 	)
 }
 
-func TestGetStatsV6(t *testing.T) {
+func TestGetIPStatsV6(t *testing.T) {
 	v6ds := NewDataStore(Testlog, NullCheckpoint{}, true)
 	_ = v6ds.AddENI("eni-1", 1, true, false, false)
 	ipv6Addr := net.IPNet{IP: net.IP{0x21, 0xdb, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: net.CIDRMask(80, 128)}
@@ -417,7 +417,7 @@ func TestGetStatsV6(t *testing.T) {
 			AssignedIPs:   1,
 			CooldownIPs:   0,
 		},
-		v6ds.GetStats("6"),
+		v6ds.GetIPStats("6"),
 	)
 }
 

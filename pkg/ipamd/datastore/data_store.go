@@ -857,7 +857,7 @@ func (stats *DataStoreStats) AvailableAddresses() int {
 	return stats.TotalIPs - stats.AssignedIPs
 }
 
-// GetStats returns DataStoreStats for addressFamily
+// GetIPStats returns DataStoreStats for addressFamily
 func (ds *DataStore) GetIPStats(addressFamily string) *DataStoreStats {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
