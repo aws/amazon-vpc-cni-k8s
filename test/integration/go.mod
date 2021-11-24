@@ -1,6 +1,6 @@
 module github.com/aws/amazon-vpc-cni-k8s/test/integration
 
-go 1.14
+go 1.16
 
 replace k8s.io/api => k8s.io/api v0.21.5
 
