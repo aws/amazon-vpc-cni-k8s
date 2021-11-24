@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+echoerr() { echo -e "$@" 1>&2; }
+
 check_is_installed() {
     local __name="$1"
     if ! is_installed "$__name"; then

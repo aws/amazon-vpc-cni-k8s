@@ -1,0 +1,17 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: CLUSTER_NAME
+  region: CLUSTER_REGION
+  version: "K8S_VERSION"
+nodeGroups:
+  - name: linux-instance
+    instanceType: c5.large  # For SGP Tests, this must be a Nitro-based Instance
+    desiredCapacity: 3
+    iam:
+      instanceRoleName: INSTANCE_ROLE_NAME # Static IAM Role Name for easily adding IAM Policies after creation
+      attachPolicyARNs:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
