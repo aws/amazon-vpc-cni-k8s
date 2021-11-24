@@ -40,7 +40,7 @@ func NewDefaultPodBuilder() *PodBuilder {
 		labels:                 map[string]string{},
 		terminationGracePeriod: 0,
 		restartPolicy:          v1.RestartPolicyNever,
-		nodeSelector:           map[string]string{},
+		nodeSelector:           map[string]string{"kubernetes.io/os": "linux"},
 	}
 }
 

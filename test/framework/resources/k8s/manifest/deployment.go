@@ -43,7 +43,7 @@ func NewBusyBoxDeploymentBuilder() *DeploymentBuilder {
 		replicas:               10,
 		container:              NewBusyBoxContainerBuilder().Build(),
 		labels:                 map[string]string{"role": "test"},
-		nodeSelector:           map[string]string{},
+		nodeSelector:           map[string]string{"kubernetes.io/os": "linux"},
 		terminationGracePeriod: 0,
 	}
 }
@@ -53,7 +53,7 @@ func NewDefaultDeploymentBuilder() *DeploymentBuilder {
 		namespace:              utils.DefaultTestNamespace,
 		terminationGracePeriod: 0,
 		labels:                 map[string]string{"role": "test"},
-		nodeSelector:           map[string]string{},
+		nodeSelector:           map[string]string{"kubernetes.io/os": "linux"},
 	}
 }
 
