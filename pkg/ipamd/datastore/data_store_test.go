@@ -402,7 +402,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, ds.assigned, 2)
 	assert.Equal(t, deviceNum, pod1Ns2Device)
 	assert.Equal(t, len(ds.eniPool["eni-2"].AvailableIPv4Cidrs), 1)
-	assert.Equal(t, ds.eniPool["eni-2"].AssignedIPv4Addresses(), 0)
+	assert.Equal(t, ds.eniPool["eni-2"].AssignedIPv4Addresses(), 1)
 	expectedCheckpointData = &CheckpointData{
 		Version: CheckpointFormatVersion,
 		Allocations: []CheckpointEntry{
