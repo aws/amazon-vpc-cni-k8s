@@ -483,9 +483,9 @@ func TestGetIPStatsV4(t *testing.T) {
 
 	assert.Equal(t,
 		DataStoreStats{
-			TotalIPs:    2,
-			AssignedIPs: 1,
-			CooldownIPs: 0,
+			TotalIPs:          2,
+			AssignedIPs:       1,
+			CooldownIPs:       0,
 			DelayedReleaseIPs: 1,
 		},
 		*ds.GetIPStats("4"),

@@ -247,9 +247,10 @@ func (cidr *CidrInfo) AssignedIPAddressesInCidr() int {
 	}
 	return count
 }
+
 type CidrStats struct {
-	AssignedIPs int
-	CooldownIPs int
+	AssignedIPs       int
+	CooldownIPs       int
 	DelayedReleaseIPs int
 }
 
