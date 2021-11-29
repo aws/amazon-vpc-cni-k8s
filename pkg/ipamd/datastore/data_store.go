@@ -241,7 +241,7 @@ func (cidr *CidrInfo) AssignedIPAddressesInCidr() int {
 	//SIP : This will run just once and count will be 0 if addr is not assigned or addr is not allocated yet(unused IP)
 	//PD : This will return count of number /32 assigned in /28 CIDR.
 	for _, addr := range cidr.IPAddresses {
-		if addr.Assigned() {
+		if addr.Assigned() || addr.inDelayedReleasePeriod() {
 			count++
 		}
 	}
@@ -271,7 +271,7 @@ func (cidr *CidrInfo) GetIPStatsFromCidr() CidrStats {
 
 // Assigned returns true iff the address is allocated to a pod/sandbox.
 func (addr AddressInfo) Assigned() bool {
-	return !addr.IPAMKey.IsZero() || !addr.inDelayedReleasePeriod()
+	return !addr.IPAMKey.IsZero()
 }
 
 // InCoolingPeriod checks whether an addr is in addressCoolingPeriod
@@ -1032,6 +1032,11 @@ func (ds *DataStore) getDeletableENI(warmIPTarget, minimumIPTarget, warmPrefixTa
 			continue
 		}
 
+		if eni.hasIPInDelayedDelayedRelease() {
+			ds.log.Debugf("ENI %s cannot be deleted because has IPs in delayed release state", eni.ID)
+			continue
+		}
+
 		if eni.hasPods() {
 			ds.log.Debugf("ENI %s cannot be deleted because it has pods assigned", eni.ID)
 			continue
@@ -1078,6 +1083,17 @@ func (e *ENI) hasIPInCooling() bool {
 	for _, assignedaddr := range e.AvailableIPv4Cidrs {
 		for _, addr := range assignedaddr.IPAddresses {
 			if addr.inCoolingPeriod() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (e *ENI) hasIPInDelayedDelayedRelease() bool {
+	for _, assignedaddr := range e.AvailableIPv4Cidrs {
+		for _, addr := range assignedaddr.IPAddresses {
+			if addr.inDelayedReleasePeriod() {
 				return true
 			}
 		}
