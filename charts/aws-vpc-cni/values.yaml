@@ -8,7 +8,7 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.9.3
+    tag: v1.10.0
     region: us-west-2
     account: "602401143452"   
     pullPolicy: Always
@@ -17,12 +17,13 @@ init:
     # override: "repo/org/image:tag"
   env:
     DISABLE_TCP_EARLY_DEMUX: "false"
+    ENABLE_IPv6: "false"
   securityContext:
     privileged: true
 
 image:
   region: us-west-2
-  tag: v1.9.3
+  tag: v1.10.0
   account: "602401143452"   
   domain: "amazonaws.com"  
   pullPolicy: Always
