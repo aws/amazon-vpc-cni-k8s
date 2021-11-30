@@ -15,8 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubernetes/test/e2e/framework"
-	e2epod "k8s.io/kubernetes/test/e2e/framework/pod"
 	e2enode "k8s.io/kubernetes/test/e2e/framework/node"
+	e2epod "k8s.io/kubernetes/test/e2e/framework/pod"
 )
 
 const (
@@ -111,14 +111,13 @@ func newTestPod() *v1.Pod {
 			Containers: []v1.Container{
 				{
 					Name:    "c",
-					Image:   framework.BusyBoxImage,
+					Image:   "nginx:latest",
 					Ports: []v1.ContainerPort{
 						{
 							ContainerPort: 8080,
-							HostPort: 8080,
 						},
 					},
-					Command: []string{"sleep", "60"},
+					Command: []string{"sleep", "180"},
 				},
 			},
 			RestartPolicy: v1.RestartPolicyNever,
