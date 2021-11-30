@@ -42,3 +42,7 @@ jobs:
           S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
         run: |
           ./scripts/run-integration-tests.sh
+
+      - name: Run new integration tests
+        run: |
+          ./scripts/test/run-integration-tests.sh 
