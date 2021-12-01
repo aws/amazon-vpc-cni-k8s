@@ -110,11 +110,11 @@ func newTestPod() *v1.Pod {
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{
 				{
-					Name:    "c",
-					Image:   "nginx:latest",
+					Name:    "nginx-server",
+					Image:   "public.ecr.aws/nginx/nginx:stable",
 					Ports: []v1.ContainerPort{
 						{
-							ContainerPort: 8080,
+							ContainerPort: 80,
 						},
 					},
 					Command: []string{"sleep", "180"},
