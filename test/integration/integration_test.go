@@ -86,7 +86,7 @@ var _ = ginkgo.Describe("[cni-integration]", func() {
 		framework.ExpectNoError(err, "getting pod")
 
 		framework.ExpectNoError(
-			checkConnectivityToHost(f, "", "client-pod", serverPod.Status.PodIP, 8080, 30))
+			checkConnectivityToHost(f, "", "client-pod", serverPod.Status.PodIP, 80, 30))
 		err = f.ClientSet.CoreV1().Pods(f.Namespace.Name).Delete(ctx, "server-pod", metav1.DeleteOptions{})
 		framework.ExpectNoError(err, "deleting pod")
 	})
@@ -97,7 +97,7 @@ var _ = ginkgo.Describe("[cni-integration]", func() {
 		internalIP := getNodeInternalIP(&nodeList.Items[0])
 		fmt.Printf("Obtained node internal IP as %s", internalIP)
 		framework.ExpectNoError(
-			checkConnectivityToHost(f, "", "client-pod", internalIP, 8080, 30))
+			checkConnectivityToHost(f, "", "client-pod", internalIP, 80, 30))
 	})
 
 })
