@@ -20,8 +20,7 @@ If you think you have found a potential security issue, please do not post it as
 
 **Attach logs**
 <!--
-Please upload the logs by running [CNI Log Collection tool] since it will help faster resolution
-`sudo bash /opt/cni/bin/aws-cni-support.sh`
+Please collect the logs by running [CNI Log Collection tool] `sudo bash /opt/cni/bin/aws-cni-support.sh` and email the log archive to k8s-awscni-triage@amazon.com
 -->
 
 **What you expected to happen**:
