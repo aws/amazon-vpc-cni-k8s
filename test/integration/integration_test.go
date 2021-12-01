@@ -117,7 +117,6 @@ func newTestPod() *v1.Pod {
 							ContainerPort: 80,
 						},
 					},
-					Command: []string{"sleep", "180"},
 				},
 			},
 			RestartPolicy: v1.RestartPolicyNever,
