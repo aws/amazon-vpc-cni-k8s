@@ -165,6 +165,10 @@ const (
 	// Present and set to the empty string, which we use to mean "CNI DEL had occurred; networking has been removed from this pod"
 	// The empty string one helps close a trace at pod shutdown where it looks like the pod still has its IP when the IP has been released
 	envAnnotatePodIP = "ANNOTATE_POD_IP"
+
+	// aws error codes for insufficient IP address scenario
+	INSUFFICIENT_CIDR_BLOCKS    = "InsufficientCidrBlocks"
+	INSUFFICIENT_FREE_IP_SUBNET = "InsufficientFreeAddressesInSubnet"
 )
 
 var log = logger.Get()
@@ -340,11 +344,14 @@ func prometheusRegister() {
 	}
 }
 
-// containsInsufficientCidrBlocksError returns whether exceeds ENI's IP address limit
-func containsInsufficientCidrBlocksError(err error) bool {
+// containsInsufficientCIDRsOrSubnetIPs returns whether a CIDR cannot be carved in the subnet or subnet is running out of IP addresses
+func containsInsufficientCIDRsOrSubnetIPs(err error) bool {
 	var awsErr awserr.Error
+	// IP exhaustion can be due to Insufficient Cidr blocks or Insufficient Free Address in a Subnet
+	// In these 2 cases we will back off for 2 minutes before retrying
 	if errors.As(err, &awsErr) {
-		return awsErr.Code() == "InsufficientCidrBlocks"
+		log.Debugf("Insufficient IP Addresses due to: %v\n", awsErr.Code())
+		return awsErr.Code() == INSUFFICIENT_CIDR_BLOCKS || awsErr.Code() == INSUFFICIENT_FREE_IP_SUBNET
 	}
 	return false
 }
@@ -570,7 +577,7 @@ func (c *IPAMContext) nodeInit() error {
 		if err == nil && increasedPool {
 			c.updateLastNodeIPPoolAction()
 		} else if err != nil {
-			if containsInsufficientCidrBlocksError(err) {
+			if containsInsufficientCIDRsOrSubnetIPs(err) {
 				log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
 				c.lastInsufficientCidrError = time.Now()
 				return nil
@@ -785,7 +792,7 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 	increasedPool, err := c.tryAssignCidrs()
 	if err != nil {
 		log.Errorf(err.Error())
-		if containsInsufficientCidrBlocksError(err) {
+		if containsInsufficientCIDRsOrSubnetIPs(err) {
 			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
 			c.lastInsufficientCidrError = time.Now()
 			return
@@ -856,7 +863,7 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 		log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", resourcesToAllocate, err)
 		// Continue to process the allocated IP addresses
 		ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-		if containsInsufficientCidrBlocksError(err) {
+		if containsInsufficientCIDRsOrSubnetIPs(err) {
 			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
 			c.lastInsufficientCidrError = time.Now()
 			return err
