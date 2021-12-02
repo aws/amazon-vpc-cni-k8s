@@ -58,7 +58,7 @@ function up-kops-cluster {
     chmod +x kops-linux-amd64
     sudo mv kops-linux-amd64 /usr/local/bin/kops
     CLUSTER_NAME=kops-cni-test-cluster-${TEST_ID}.k8s.local
-    export KOPS_STATE_STORE=s3://kops-cni-test-temp
+    export KOPS_STATE_STORE=s3://kops-cni-test-eks
 
     SSH_KEYS=~/.ssh/devopsinuse
     if [ ! -f "$SSH_KEYS" ]
