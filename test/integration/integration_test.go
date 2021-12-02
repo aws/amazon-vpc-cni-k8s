@@ -86,7 +86,7 @@ var _ = ginkgo.Describe("[cni-integration]", func() {
 		framework.ExpectNoError(err, "getting pod")
 
 		framework.ExpectNoError(
-			checkConnectivityToHost(f, "", "client-pod", serverPod.Status.PodIP, 80, 30))
+			checkConnectivityToPod(f, "", "client-pod", serverPod.Status.PodIP, 80, 30))
 		err = f.ClientSet.CoreV1().Pods(f.Namespace.Name).Delete(ctx, "server-pod", metav1.DeleteOptions{})
 		framework.ExpectNoError(err, "deleting pod")
 	})
@@ -95,9 +95,9 @@ var _ = ginkgo.Describe("[cni-integration]", func() {
 		nodeList, err := e2enode.GetReadySchedulableNodes(f.ClientSet)
 		framework.ExpectNoError(err)
 		internalIP := getNodeInternalIP(&nodeList.Items[0])
-		fmt.Printf("Obtained node internal IP as %s", internalIP)
+		fmt.Printf("Obtained node internal IP as %s\n", internalIP)
 		framework.ExpectNoError(
-			checkConnectivityToHost(f, "", "client-pod", internalIP, 80, 30))
+			checkConnectivityToHost(f, "", "client-pod", internalIP, 30))
 	})
 
 })
@@ -129,7 +129,23 @@ func newTestPod() *v1.Pod {
 // host. An error will be returned if the host is not reachable from the pod.
 //
 // An empty nodeName will use the schedule to choose where the pod is executed.
-func checkConnectivityToHost(f *framework.Framework, nodeName, podName, host string, port, timeout int) error {
+func checkConnectivityToHost(f *framework.Framework, nodeName, podName, host string, timeout int) error {
+	command := []string{
+		"ping",
+		"-c", "3", // send 3 pings
+		"-W", "2", // wait at most 2 seconds for a reply
+		"-w", strconv.Itoa(timeout),
+		host,
+	}
+	return executeClientCommand(f, command, nodeName, podName)
+}
+
+
+// checkConnectivityToHost launches a pod to test connectivity to the specified
+// host. An error will be returned if the other pod is not reachable from the pod.
+//
+// An empty nodeName will use the schedule to choose where the pod is executed.
+func checkConnectivityToPod(f *framework.Framework, nodeName, podName, host string, port, timeout int) error {
 	command := []string{
 		"nc",
 		"-vz",
@@ -138,6 +154,10 @@ func checkConnectivityToHost(f *framework.Framework, nodeName, podName, host str
 		strconv.Itoa(port),
 	}
 
+	return executeClientCommand(f, command, nodeName, podName)
+}
+
+func executeClientCommand(f *framework.Framework, command []string, nodeName, podName string) error {
 	pod := e2epod.NewAgnhostPod(f.Namespace.Name, podName, nil, nil, nil)
 	pod.Spec.Containers[0].Command = command
 	pod.Spec.Containers[0].Args = nil // otherwise 'pause` is magically an argument to nc, which causes all hell to break loose
