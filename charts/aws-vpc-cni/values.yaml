@@ -97,22 +97,22 @@ livenessProbe:
     command:
       - /app/grpc-health-probe
       - '-addr=:50051'
-      - '-connect-timeout=2s'
-      - '-rpc-timeout=2s'
+      - '-connect-timeout=5s'
+      - '-rpc-timeout=5s'
   initialDelaySeconds: 60
 
-livenessProbeTimeoutSeconds: 5
+livenessProbeTimeoutSeconds: 10
 
 readinessProbe:
   exec:
     command:
       - /app/grpc-health-probe
       - '-addr=:50051'
-      - '-connect-timeout=2s'
-      - '-rpc-timeout=2s'
+      - '-connect-timeout=5s'
+      - '-rpc-timeout=5s'
   initialDelaySeconds: 1
 
-readinessProbeTimeoutSeconds: 5
+readinessProbeTimeoutSeconds: 10
 
 resources:
   requests:

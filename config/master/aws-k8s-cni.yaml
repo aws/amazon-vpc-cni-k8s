@@ -148,19 +148,19 @@ spec:
               command:
               - /app/grpc-health-probe
               - -addr=:50051
-              - -connect-timeout=2s
-              - -rpc-timeout=2s
+              - -connect-timeout=5s
+              - -rpc-timeout=5s
             initialDelaySeconds: 60
-            timeoutSeconds: 5
+            timeoutSeconds: 10
           readinessProbe:
             exec:
               command:
               - /app/grpc-health-probe
               - -addr=:50051
-              - -connect-timeout=2s
-              - -rpc-timeout=2s
+              - -connect-timeout=5s
+              - -rpc-timeout=5s
             initialDelaySeconds: 1
-            timeoutSeconds: 5
+            timeoutSeconds: 10
           env:
             - name: ADDITIONAL_ENI_TAGS
               value: "{}"
