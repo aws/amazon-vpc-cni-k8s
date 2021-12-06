@@ -101,12 +101,13 @@ Say for instance, The cni test and suite files in the cni folder has functionali
   - ```cni``` 
   - ```...```
 
-### Structure of sample test suite 
+### Structure of sample test suite: 
+```cni/pod_networking_suite_test.go```
 
 #### Logic Components
 
-- ```BeforeSuite``` : All common steps that should be performed before the suite are added here.
-- ```AfterSuite``` : All common steps that should be performed after the suite are added here.
+- ```BeforeSuite``` : All common steps that should be performed before the suite are added here. In the sample BeforeSuite below, we can  see a few prerequistes for the tests that run under the suite, like namespace creation and setting of env variables like WARM_IP_TARGET. 
+- ```AfterSuite``` : All common steps that should be performed after the suite are added here. In the sample AfterSuite below, we can  see cleanup to be followed after running the tests under the suite like namespace deletion and resetting of env variables.
 
 ```go
 
@@ -132,11 +133,8 @@ import (
 const InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
 
 var f *framework.Framework
-var maxIPPerInterface int
-var primaryNode v1.Node
-var secondaryNode v1.Node
-var instanceSecurityGroupID string
-var vpcCIDRs []string
+...
+
 
 //The function below is the starter function for running tests 
 //for each suite and attaching a fail handler for the same
@@ -156,44 +154,8 @@ var _ = BeforeSuite(func() {
 	f.K8sResourceManagers.NamespaceManager().
 		CreateNamespace(utils.DefaultTestNamespace)
 
-	By(fmt.Sprintf("getting the node with the node label key %s and value %s",
-		f.Options.NgNameLabelKey, f.Options.NgNameLabelVal))
-	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
-	Expect(err).ToNot(HaveOccurred())
-
-	By("verifying more than 1 nodes are present for the test")
-	Expect(len(nodes.Items)).Should(BeNumerically(">", 1))
-
-	// Set the primary and secondary node for testing
-	primaryNode = nodes.Items[0]
-	secondaryNode = nodes.Items[1]
-
-	// Get the node security group
-	instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
-	primaryInstance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
-	Expect(err).ToNot(HaveOccurred())
-
-	// This won't work if the first SG is only associated with the primary instance.
-	// Need a robust substring in the SGP name to identify node SGP
-	instanceSecurityGroupID = *primaryInstance.NetworkInterfaces[0].Groups[0].GroupId
-
-	By("getting the instance type from node label " + InstanceTypeNodeLabelKey)
-	instanceType := primaryNode.Labels[InstanceTypeNodeLabelKey]
-
-	By("getting the network interface details from ec2")
-	instanceOutput, err := f.CloudServices.EC2().DescribeInstanceType(instanceType)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Pods often get stuck due insufficient capacity, so adding some buffer to the maxIPPerInterface
-	maxIPPerInterface = int(*instanceOutput[0].NetworkInfo.Ipv4AddressesPerInterface) - 5
-
-	By("describing the VPC to get the VPC CIDRs")
-	describeVPCOutput, err := f.CloudServices.EC2().DescribeVPC(f.Options.AWSVPCID)
-	Expect(err).ToNot(HaveOccurred())
-
-	for _, cidrBlockAssociationSet := range describeVPCOutput.Vpcs[0].CidrBlockAssociationSet {
-		vpcCIDRs = append(vpcCIDRs, *cidrBlockAssociationSet.CidrBlock)
-	}
+	...
+        ...
 
 	// Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
 	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
@@ -219,8 +181,8 @@ var _ = AfterSuite(func() {
 
 ```
 
-### Structure of sample test corresponding to a suite
-
+### Structure of sample test corresponding to a suite:
+```cni/pod_traffic_test_PD_enabled.go```
 
 #### Logic Components
 
@@ -238,22 +200,13 @@ Every ```BeforeEach``` precedes every ```JustBeforeEach``` before execution of a
 Every ```JustAfterEach``` precedes every ```AfterEach``` after execution of an It.
 
 
-Below is a sample test structure and may largely vary based on requirement. Some of the functions used below are just an example for illustration of functionality. Additions or deletions to the below snippet may be required for any new test.
-
-
 ```go
 
 package cni
 
 import (
-        // The below folders are similar to the ones discussed above
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
-	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-        //ginkgo and the assertion library: gomega are imported below
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+        // Imports similar to above test suite found here 
+	...
 )
 
 // This blocks is used describe the individual behaviors of code
@@ -271,9 +224,6 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 	)
 
 	JustBeforeEach(func() {
-		By("creating test namespace")
-		f.K8sResourceManagers.NamespaceManager().
-			CreateNamespace(utils.DefaultTestNamespace)
 
 		By("creating deployment")
 		serverDeploymentBuilder = manifest.NewDefaultDeploymentBuilder().
@@ -287,9 +237,6 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 	})
 
 	JustAfterEach(func() {
-		By("deleting test namespace")
-		f.K8sResourceManagers.NamespaceManager().
-			DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
 			utils.AwsNodeNamespace, utils.AwsNodeName,
@@ -307,12 +254,7 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 			trafficTester := agent.TrafficTest{
 				Framework:                      f,
 				TrafficServerDeploymentBuilder: serverDeploymentBuilder,
-				ServerPort:                     2273,
-				ServerProtocol:                 "tcp",
-				ClientCount:                    20,
-				ServerCount:                    20,
-				ServerPodLabelKey:              labelKey,
-				ServerPodLabelVal:              serverPodLabelVal,
+				...
 				ClientPodLabelKey:              labelKey,
 				ClientPodLabelVal:              clientPodLabelVal,
 			}
@@ -323,30 +265,8 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 		})
 	})
 
-	Context("when testing UDP traffic between client and server pods", func() {
-		BeforeEach(func() {
-			enableIPv4PrefixDelegation = "true"
-		})
-                
-		It("should have 99+% success rate", func() {
-			trafficTester := agent.TrafficTest{
-				Framework:                      f,
-				TrafficServerDeploymentBuilder: serverDeploymentBuilder,
-				ServerPort:                     2273,
-				ServerProtocol:                 "udp",
-				ClientCount:                    20,
-				ServerCount:                    20,
-				ServerPodLabelKey:              labelKey,
-				ServerPodLabelVal:              serverPodLabelVal,
-				ClientPodLabelKey:              labelKey,
-				ClientPodLabelVal:              clientPodLabelVal,
-			}
-
-			successRate, err := trafficTester.TestTraffic()
-			Expect(err).ToNot(HaveOccurred())
-			Expect(successRate).Should(BeNumerically(">=", float64(99)))
-		})
-	})
+	// Similarly we can also test for  UDP traffic between 
+        // client and server pods in another context here 
 })
 ```
 
