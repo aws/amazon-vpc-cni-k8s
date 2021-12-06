@@ -60,6 +60,8 @@ L-IPAM requires one of the following [IAM policies](https://docs.aws.amazon.com/
       }
 ```
 
+The above policy is available under: `arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy` as a part of [AWS managed policies for EKS](https://docs.aws.amazon.com/eks/latest/userguide/security-iam-awsmanpol.html).
+
 **IPv6 Mode:**
 
 ```
