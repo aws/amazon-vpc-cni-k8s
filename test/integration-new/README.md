@@ -110,7 +110,6 @@ Say for instance, The cni test and suite files in the cni folder has functionali
 - ```AfterSuite``` : All common steps that should be performed after the suite are added here. In the sample AfterSuite below, we can  see cleanup to be followed after running the tests under the suite like namespace deletion and resetting of env variables.
 
 ```go
-
 package cni
 
 import (
@@ -134,7 +133,6 @@ const InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
 
 var f *framework.Framework
 ...
-
 
 //The function below is the starter function for running tests 
 //for each suite and attaching a fail handler for the same
@@ -186,22 +184,21 @@ var _ = AfterSuite(func() {
 
 #### Logic Components
 
-- ```It```: Individual spec specified by It. It is the innermost component that holds the core testing logic. The other components listed below are hierarchically arranged before and after It in order to provision/deprovision the setup required to run the individual spec (It).
-- ```Describe``` : This blocks is used describe the individual behaviors of code.
-- ```Context``` : Context block is used to execute the behavior used by Describe block under different scenarios 
-- ```JustBeforeEach``` : Executed immediately before each test, however following the execution order from outside blocks to inside blocks before an It(spec) in case of multipe JustBeforeEach blocks.
-- ```JustAfterEach``` : Executed immediately after each test, however following the execution order from inside blocks to outside blocks after an It(spec) in case of multipe JustAfterEach blocks.
+- ```It```: Individual spec specified by It. It is the innermost component that holds the core testing logic. The other components listed below are hierarchically arranged before and after It in order to provision/deprovision the setup required to run the individual spec (It). In the sample test below, our It tests for 99+% success rate between client and server pods.
+- ```Describe``` : This blocks is used describe the individual behaviors of code. In the sample test below, we try to describe a behaviour of pod traffic with PD (Prefix delegation) enabled.
+- ```Context``` : Context block is used to execute the behavior used by Describe block under different scenarios. We can have different Context or scenarios for our sample test below, like testing TCP pod traffic or UPD pod traffic.
+- ```JustBeforeEach``` : Executed immediately before each test, however following the execution order from outside blocks to inside blocks before an It(spec) in case of multipe JustBeforeEach blocks. We can see that in the JustBeforeEach function below, we setup server deployment and enable PD just before we run the It.
+- ```JustAfterEach``` : Executed immediately after each test, however following the execution order from inside blocks to outside blocks after an It(spec) in case of multipe JustAfterEach blocks. We can see that in the JustAfterEach function below, we reset PD to false after running It.
 - ```BeforeEach``` : Executed (not immediately) before each test, however following the execution order from outside blocks to inside blocks before an It(spec) in case of multipe BeforeEach blocks.
 - ```AfterEach``` : Executed (not immediately) after each test, however following the execution order from inside blocks to outside blocks after an It(spec) in case of multipe AfterEach blocks.
 
 Each of the above components are arranged hierarchically in a way that makes most sense for abstracting the common logic from the rest of the code. 
 
-Every ```BeforeEach``` precedes every ```JustBeforeEach``` before execution of an It.
-Every ```JustAfterEach``` precedes every ```AfterEach``` after execution of an It.
+Every ```BeforeEach``` precedes every ```JustBeforeEach``` in execution before execution of an It.
+Every ```JustAfterEach``` precedes every ```AfterEach``` in execution after execution of an It.
 
 
 ```go
-
 package cni
 
 import (
