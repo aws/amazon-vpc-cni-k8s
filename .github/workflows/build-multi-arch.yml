@@ -21,6 +21,9 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v2
 
+    - name: Clean up stale docker images
+      run: sudo docker image prune -f
+
     - name: Build
       run: make docker all
       
@@ -38,5 +41,8 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v2
 
+    - name: Clean up stale docker images
+      run: sudo docker image prune -f
+      
     - name: Build
       run: make docker all
