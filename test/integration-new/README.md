@@ -60,11 +60,11 @@ Currently the package is named as `integration-new` because we already have `int
 
 
 
-## Development of Integration Tests
+## Development of New Integration Tests
 
 This section is written to give a high level overview for the process of developing integration tests in the VPC CNI repo. 
 
-### Important folder to re-use while writing tests
+### Test helpers
 
 - ```amazon-vpc-cni-k8s/test/framework``` : This is the main folder that has the modules that will be used in writing tests. It has number of other folder like ```controller``` , ```helm```, ```resources``` and ```utils``` providing different use cases. A very useful folder is ```resources``` and is explained in detail below. 
 
@@ -101,79 +101,125 @@ Say for instance, The cni test and suite files in the cni folder has functionali
   - ```cni``` 
   - ```...```
 
-### Structure of test suite 
+### Structure of sample test suite 
 
 #### Logic Components
 
 - ```BeforeSuite``` : All common steps that should be performed before the suite are added here.
 - ```AfterSuite``` : All common steps that should be performed after the suite are added here.
 
-Most of the test suites follow the following structure. Some of the functions used below are just an example for illustration of functionality. Additions or deletions to the below snippet may be required for any new test suite.
-
 ```go
-package <package_name>
+
+package cni
 
 import (
         // fmt is imported for printing
 	"fmt"
         // testing is imported as it is the original go testing module used by ginkgo
 	"testing"
-
         // The below folders are similar to the ones discussed above
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework" 
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-
         //ginkgo and the assertion library: gomega are imported below
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
- 
         //v1 imported for Node libraries
 	v1 "k8s.io/api/core/v1"
-	
-        ...
 )
 
 //Global variables for the suite are defined here
+const InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
+
 var f *framework.Framework
+var maxIPPerInterface int
 var primaryNode v1.Node
-...
+var secondaryNode v1.Node
+var instanceSecurityGroupID string
+var vpcCIDRs []string
 
 //The function below is the starter function for running tests 
 //for each suite and attaching a fail handler for the same
-func TestSample(t *testing.T) {
+func TestCNIPodNetworking(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Sample Suite")
+	RunSpecs(t, "CNI Pod Networking Suite")
 }
 
 //The following function has checks and setup needed before running the suite.
 var _ = BeforeSuite(func() {
-
 	f = framework.New(framework.GlobalOptions)
-         ...
-         
+        
         // The Sequence of By and Expect are provided by the omega package and 
         // ensure the correct functionality by providing assertions at every step 
-	input := ...
 
-	By("getting the output for xyz using input ")
-	output, err := func_xyz(input)
+	By("creating test namespace")
+	f.K8sResourceManagers.NamespaceManager().
+		CreateNamespace(utils.DefaultTestNamespace)
+
+	By(fmt.Sprintf("getting the node with the node label key %s and value %s",
+		f.Options.NgNameLabelKey, f.Options.NgNameLabelVal))
+	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	Expect(err).ToNot(HaveOccurred())
- 
-        ...
-  
 
+	By("verifying more than 1 nodes are present for the test")
+	Expect(len(nodes.Items)).Should(BeNumerically(">", 1))
+
+	// Set the primary and secondary node for testing
+	primaryNode = nodes.Items[0]
+	secondaryNode = nodes.Items[1]
+
+	// Get the node security group
+	instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
+	primaryInstance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
+	Expect(err).ToNot(HaveOccurred())
+
+	// This won't work if the first SG is only associated with the primary instance.
+	// Need a robust substring in the SGP name to identify node SGP
+	instanceSecurityGroupID = *primaryInstance.NetworkInterfaces[0].Groups[0].GroupId
+
+	By("getting the instance type from node label " + InstanceTypeNodeLabelKey)
+	instanceType := primaryNode.Labels[InstanceTypeNodeLabelKey]
+
+	By("getting the network interface details from ec2")
+	instanceOutput, err := f.CloudServices.EC2().DescribeInstanceType(instanceType)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Pods often get stuck due insufficient capacity, so adding some buffer to the maxIPPerInterface
+	maxIPPerInterface = int(*instanceOutput[0].NetworkInfo.Ipv4AddressesPerInterface) - 5
+
+	By("describing the VPC to get the VPC CIDRs")
+	describeVPCOutput, err := f.CloudServices.EC2().DescribeVPC(f.Options.AWSVPCID)
+	Expect(err).ToNot(HaveOccurred())
+
+	for _, cidrBlockAssociationSet := range describeVPCOutput.Vpcs[0].CidrBlockAssociationSet {
+		vpcCIDRs = append(vpcCIDRs, *cidrBlockAssociationSet.CidrBlock)
+	}
+
+	// Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
+	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
+		"aws-node", map[string]string{"WARM_IP_TARGET": "3", "WARM_ENI_TARGET": "0"})
 })
 
 //The following function has checks and setup needed after running the suite.
 var _ = AfterSuite(func() {
+	By("deleting test namespace")
+	f.K8sResourceManagers.NamespaceManager().
+		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
-        ...
-
+	k8sUtils.UpdateEnvVarOnDaemonSetAndWaitUntilReady(f, "aws-node", "kube-system",
+		"aws-node", map[string]string{
+			AWS_VPC_ENI_MTU:            "9001",
+			AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
+		},
+		map[string]struct{}{
+			"WARM_IP_TARGET":  {},
+			"WARM_ENI_TARGET": {},
+		})
 })
 
 ```
-### Structure of tests corresponding to each suite
+
+### Structure of sample test corresponding to a suite
 
 
 #### Logic Components
@@ -196,101 +242,112 @@ Below is a sample test structure and may largely vary based on requirement. Some
 
 
 ```go
-package <package_name>
+
+package cni
 
 import (
-        // fmt is imported for printing
-	"fmt"
-	"strconv"
-
-	// The below folders are similar to the ones discussed above
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+        // The below folders are similar to the ones discussed above
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
-	
-	//ginkgo and the assertion library: gomega are imported below
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+        //ginkgo and the assertion library: gomega are imported below
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	
-	///misc packages imported eg: Node libraries etc
-	v1 "k8s.io/api/apps/v1"
-        ...
 )
 
-// This blocks is used describe the individual behaviors of code eg: "test pod networking"
-var _ = Describe("test sample xyz", func() {
-  
-	var (
-                // List of global variables used for the tests below
-		err error
-		...
-		
+// This blocks is used describe the individual behaviors of code
+var _ = Describe("Test pod networking with prefix delegation enabled", func() {
+	var (     
+	        // List of global variables used for the tests below
+		// The Pod labels for client and server in order to retrieve the
+		// client and server Pods belonging to a Deployment/Jobs
+		labelKey                = "app"
+		serverPodLabelVal       = "server-pod"
+		clientPodLabelVal       = "client-pod"
+		serverDeploymentBuilder *manifest.DeploymentBuilder
+		// Value for the Environment variable ENABLE_PREFIX_DELEGATION
+		enableIPv4PrefixDelegation string
 	)
-        
+
 	JustBeforeEach(func() {
+		By("creating test namespace")
+		f.K8sResourceManagers.NamespaceManager().
+			CreateNamespace(utils.DefaultTestNamespace)
 
-                // Can include var declarations as shown below
-		var x1 = 5;
+		By("creating deployment")
+		serverDeploymentBuilder = manifest.NewDefaultDeploymentBuilder().
+			Name("traffic-server").
+			NodeSelector(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 
-                // Can include logic + assertions as shown below 
-		By("Checking output on input to sampleFunc")
-		output,err = sampleFunc(input)
-		Expect(err).ToNot(HaveOccurred())
-
-                ...
-		
+		By("Set PD")
+		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
+			utils.AwsNodeNamespace, utils.AwsNodeName,
+			map[string]string{"ENABLE_PREFIX_DELEGATION": enableIPv4PrefixDelegation})
 	})
-
 
 	JustAfterEach(func() {
-		
-		// Can include var declarations or logic + assertions 
-		//similar to JustBeforeEach
+		By("deleting test namespace")
+		f.K8sResourceManagers.NamespaceManager().
+			DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
-		...
+		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
+			utils.AwsNodeNamespace, utils.AwsNodeName,
+			map[string]string{"ENABLE_PREFIX_DELEGATION": "false"})
 	})
-
-        // Context block is used to execute the behavior used by Describe block
-        // under different scenarios eg. "when testing ICMP traffic" could be a context
-	Context("when testing xyz under pqr", func() {
-	
+        // Context block is used to execute the behavior used 
+        // by Describe block under different scenarios 
+	Context("when testing TCP traffic between client and server pods", func() {
 		BeforeEach(func() {
-			// Can include var declarations or logic + assertions 
-		        //similar to JustBeforeEach
-
-		        ...
+			enableIPv4PrefixDelegation = "true"
 		})
-		
-		AfterEach(func() {
-			// Can include var declarations or logic + assertions 
-		        //similar to JustBeforeEach
-
-		        ...
-		})
- 
+                
                 // Below is example of individual spec specified by It
-                // eg "should allow connection across nodes and across interface types"
-		It("should allow abc", func() {
-			//Test Logic here with assertions
-			sampleFunc()
+		It("should have 99+% success rate", func() {
+			trafficTester := agent.TrafficTest{
+				Framework:                      f,
+				TrafficServerDeploymentBuilder: serverDeploymentBuilder,
+				ServerPort:                     2273,
+				ServerProtocol:                 "tcp",
+				ClientCount:                    20,
+				ServerCount:                    20,
+				ServerPodLabelKey:              labelKey,
+				ServerPodLabelVal:              serverPodLabelVal,
+				ClientPodLabelKey:              labelKey,
+				ClientPodLabelVal:              clientPodLabelVal,
+			}
+
+			successRate, err := trafficTester.TestTraffic()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(successRate).Should(BeNumerically(">=", float64(99)))
 		})
 	})
 
+	Context("when testing UDP traffic between client and server pods", func() {
+		BeforeEach(func() {
+			enableIPv4PrefixDelegation = "true"
+		})
+                
+		It("should have 99+% success rate", func() {
+			trafficTester := agent.TrafficTest{
+				Framework:                      f,
+				TrafficServerDeploymentBuilder: serverDeploymentBuilder,
+				ServerPort:                     2273,
+				ServerProtocol:                 "udp",
+				ClientCount:                    20,
+				ServerCount:                    20,
+				ServerPodLabelKey:              labelKey,
+				ServerPodLabelVal:              serverPodLabelVal,
+				ClientPodLabelKey:              labelKey,
+				ClientPodLabelVal:              clientPodLabelVal,
+			}
 
-	
+			successRate, err := trafficTester.TestTraffic()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(successRate).Should(BeNumerically(">=", float64(99)))
+		})
+	})
 })
-
-
-type sampleTypeStruct struct {
-	...
-}
-
-func sampleFunc bool {
-	if <logic> {
-	     return true
-	}
-	return false
-}
 ```
 
 More info can be found here https://github.com/onsi/ginkgo
