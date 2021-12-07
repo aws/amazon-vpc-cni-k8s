@@ -24,6 +24,8 @@ type EKS interface {
 	DescribeCluster(clusterName string) (*eks.DescribeClusterOutput, error)
 	CreateAddon(addon string, clusterName string) (*eks.CreateAddonOutput, error)
 	DeleteAddon(addon string, clusterName string) (*eks.DeleteAddonOutput, error)
+	DescribeAddonVersions(addon string, k8sVersion string) (*eks.DescribeAddonVersionsOutput, error)
+	DescribeAddon(addon string, clusterName string) (*eks.DescribeAddonOutput, error)
 }
 
 type defaultEKS struct {
@@ -53,6 +55,22 @@ func (d defaultEKS) DeleteAddon(addon string, clusterName string) (*eks.DeleteAd
 		ClusterName: aws.String(clusterName),
 	}
 	return d.EKSAPI.DeleteAddon(deleteAddonInput)
+}
+
+func (d defaultEKS) DescribeAddonVersions(addon string, k8sVersion string) (*eks.DescribeAddonVersionsOutput, error) {
+	describeAddonVersionsInput := &eks.DescribeAddonVersionsInput{
+		AddonName:         aws.String(addon),
+		KubernetesVersion: aws.String(k8sVersion),
+	}
+	return d.EKSAPI.DescribeAddonVersions(describeAddonVersionsInput)
+}
+
+func (d defaultEKS) DescribeAddon(addon string, clusterName string) (*eks.DescribeAddonOutput, error) {
+	describeAddonInput := &eks.DescribeAddonInput{
+		AddonName:   aws.String(addon),
+		ClusterName: aws.String(clusterName),
+	}
+	return d.EKSAPI.DescribeAddon(describeAddonInput)
 }
 
 func (d defaultEKS) DescribeCluster(clusterName string) (*eks.DescribeClusterOutput, error) {
