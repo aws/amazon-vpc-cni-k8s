@@ -116,7 +116,9 @@ ensure_aws_k8s_tester
 : "${S3_BUCKET_CREATE:=true}"
 : "${S3_BUCKET_NAME:=""}"
 
+echo "Running on $(uname -a)"
 echo "Logging in to docker repo"
+
 aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${AWS_ECR_REGISTRY}
 ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
 ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_INIT_ECR_REPO_NAME"
