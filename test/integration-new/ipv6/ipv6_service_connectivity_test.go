@@ -136,7 +136,7 @@ var _ = Describe("test service connectivity", func() {
 		err = f.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(negativeTesterJob)
 		Expect(err).ToNot(HaveOccurred())
 
-		err = f.K8sResourceManagers.ServiceManager().DeleteService(context.Background(), service)
+		err = f.K8sResourceManagers.ServiceManager().DeleteAndWaitTillServiceDeleted(context.Background(), service)
 		Expect(err).ToNot(HaveOccurred())
 
 		err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)

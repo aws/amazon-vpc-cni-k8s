@@ -30,6 +30,7 @@ type JobBuilder struct {
 	terminationGracePeriod int
 	nodeName               string
 	hostNetwork            bool
+	nodeSelector           map[string]string
 }
 
 func NewDefaultJobBuilder() *JobBuilder {
@@ -39,11 +40,17 @@ func NewDefaultJobBuilder() *JobBuilder {
 		parallelism:            1,
 		terminationGracePeriod: 0,
 		labels:                 map[string]string{},
+		nodeSelector:           map[string]string{"kubernetes.io/os": "linux"},
 	}
 }
 
 func (j *JobBuilder) Name(name string) *JobBuilder {
 	j.name = name
+	return j
+}
+
+func (j *JobBuilder) NodeSelector(selectorKey string, selectorVal string) *JobBuilder {
+	j.nodeSelector[selectorKey] = selectorVal
 	return j
 }
 
@@ -100,6 +107,7 @@ func (j *JobBuilder) Build() *batchV1.Job {
 					TerminationGracePeriodSeconds: aws.Int64(int64(j.terminationGracePeriod)),
 					RestartPolicy:                 v1.RestartPolicyNever,
 					NodeName:                      j.nodeName,
+					NodeSelector:                  j.nodeSelector,
 				},
 			},
 		},

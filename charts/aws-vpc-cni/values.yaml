@@ -8,7 +8,7 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.9.3
+    tag: v1.10.1
     region: us-west-2
     account: "602401143452"   
     pullPolicy: Always
@@ -17,12 +17,13 @@ init:
     # override: "repo/org/image:tag"
   env:
     DISABLE_TCP_EARLY_DEMUX: "false"
+    ENABLE_IPv6: "false"
   securityContext:
     privileged: true
 
 image:
   region: us-west-2
-  tag: v1.9.3
+  tag: v1.10.1
   account: "602401143452"   
   domain: "amazonaws.com"  
   pullPolicy: Always
@@ -96,22 +97,22 @@ livenessProbe:
     command:
       - /app/grpc-health-probe
       - '-addr=:50051'
-      - '-connect-timeout=2s'
-      - '-rpc-timeout=2s'
+      - '-connect-timeout=5s'
+      - '-rpc-timeout=5s'
   initialDelaySeconds: 60
 
-livenessProbeTimeoutSeconds: 5
+livenessProbeTimeoutSeconds: 10
 
 readinessProbe:
   exec:
     command:
       - /app/grpc-health-probe
       - '-addr=:50051'
-      - '-connect-timeout=2s'
-      - '-rpc-timeout=2s'
+      - '-connect-timeout=5s'
+      - '-rpc-timeout=5s'
   initialDelaySeconds: 1
 
-readinessProbeTimeoutSeconds: 5
+readinessProbeTimeoutSeconds: 10
 
 resources:
   requests:
