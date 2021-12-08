@@ -269,8 +269,39 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 
 More info can be found here https://github.com/onsi/ginkgo
 
-#### To make debugging efforts easier, you can do the following:
 
-1. Adding focus to individual failing tests to selectively run them in case of troubleshooting. The most straightforward way would be to add an F in front of your It for the failing test. Another simple way would be to add --focus=<focus_value> in ginkgo command where the <focus_value> provided would be matached to the string description of the tests.
+### Troubleshooting Test Failure
+
+Everytime you run a ginkgo test suite, you will get stats on number of tests passed/failed/pending/skipped as follows:
+
+```
+<PASS/FAIL>! -- <> Passed | <> Failed | <> Pending | <> Skipped
+```
+
+
+In case of an error, the error message will be printed in ginkgo error stack. For instance, in case kubeconfig is not correctly set, you will get an error message similar to below:
+
+```
+  Unexpected error:
+      <*errors.fundamental | xxxx>: {
+          msg: "kubeconfig must be set!",
+          stack: [xxx,xxx,...],
+      }
+      kubeconfig must be set!
+  occurred
+
+  ...
+  Test Panicked
+  runtime error: invalid memory address or nil pointer dereference
+ ..
+
+  Full Stack Trace
+  ..
+Test Suite Failed
+```
+
+To make debugging efforts easier, you can do the following:
+
+1. Adding focus to individual failing tests to selectively run them in case of troubleshooting. The most straightforward way would be to add an F in front of your It for the failing test. Another simple way would be to add --focus=<focus_value> in ginkgo command where the <focus_value> provided would be matched to the string description of the tests.
 2. Comment out the AfterEach or AfterSuite section which cleans up your test resources, rerun the failing test in focussed mode and inspect for any errors using pod logs or pod events
 
