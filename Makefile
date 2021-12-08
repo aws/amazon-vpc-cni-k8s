@@ -127,7 +127,7 @@ docker:	setup-ec2-sdk-override	   ## Build VPC CNI plugin & agent container imag
 	docker build $(DOCKER_BUILD_FLAGS) \
 		-f scripts/dockerfiles/Dockerfile.release \
 		-t "$(IMAGE_NAME)" \
-		--no-cache=true \
+		--no-cache \
 		.
 	@echo "Built Docker image \"$(IMAGE_NAME)\""
 
