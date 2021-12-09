@@ -10,7 +10,7 @@ permissions:
 jobs:
   # Run weekly tests on self-hosted runner
   weekly-cron:
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux, x64]
     steps:
       - name: Set up Go 1.16
         uses: actions/setup-go@v2
