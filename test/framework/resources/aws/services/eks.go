@@ -23,6 +23,7 @@ import (
 type EKS interface {
 	DescribeCluster(clusterName string) (*eks.DescribeClusterOutput, error)
 	CreateAddon(addon string, clusterName string) (*eks.CreateAddonOutput, error)
+	CreateAddonWithVersion(addon string, clusterName string, addonVersion string) (*eks.CreateAddonOutput, error)
 	DeleteAddon(addon string, clusterName string) (*eks.DeleteAddonOutput, error)
 	DescribeAddonVersions(addon string, k8sVersion string) (*eks.DescribeAddonVersionsOutput, error)
 	DescribeAddon(addon string, clusterName string) (*eks.DescribeAddonOutput, error)
@@ -45,6 +46,15 @@ func (d defaultEKS) CreateAddon(addon string, clusterName string) (*eks.CreateAd
 	createAddonInput := &eks.CreateAddonInput{
 		AddonName:   aws.String(addon),
 		ClusterName: aws.String(clusterName),
+	}
+	return d.EKSAPI.CreateAddon(createAddonInput)
+}
+
+func (d defaultEKS) CreateAddonWithVersion(addon string, clusterName string, addonVersion string) (*eks.CreateAddonOutput, error) {
+	createAddonInput := &eks.CreateAddonInput{
+		AddonName:    aws.String(addon),
+		ClusterName:  aws.String(clusterName),
+		AddonVersion: aws.String(addonVersion),
 	}
 	return d.EKSAPI.CreateAddon(createAddonInput)
 }
