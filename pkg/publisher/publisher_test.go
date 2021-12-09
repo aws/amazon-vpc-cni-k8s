@@ -33,6 +33,18 @@ const (
 	testMonitorDuration = time.Millisecond * 10
 )
 
+func TestCloudWatchPublisherWithNoIMDS(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
+
+	region := "us-west-2"
+	clusterID := testClusterID
+
+	cw, err := New(ctx, region, clusterID)
+	assert.NoError(t, err)
+	assert.NotNil(t, cw)
+}
+
 func TestCloudWatchPublisherWithSingleDatum(t *testing.T) {
 	cloudwatchPublisher := getCloudWatchPublisher(t)
 

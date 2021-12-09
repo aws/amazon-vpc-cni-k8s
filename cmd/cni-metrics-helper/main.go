@@ -80,9 +80,23 @@ func main() {
 		}
 	}
 
+	// Fetch region, if using IRSA it be will auto injected as env variable in pod spec
+	// If not found then it will be empty, in which case we will try to fetch it from IMDS (existing approach)
+	// This can also mean that Cx is not using IRSA and we shouldn't enforce IRSA requirement
+	region, _ := os.LookupEnv("AWS_REGION")
+
+	// should be name/identifier for the cluster if specified
+	clusterID, _ := os.LookupEnv("AWS_CLUSTER_ID")
+
+	log.Infof("Using REGION=%s and CLUSTER_ID=%s", region, clusterID)
+
 	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, LogLevel %s", options.submitCW, logConfig.LogLevel)
 
 	clientSet, err := k8sapi.GetKubeClientSet()
+	if err != nil {
+		log.Fatalf("Error Fetching Kubernetes Client: %s", err)
+		os.Exit(1)
+	}
 
 	rawK8SClient, err := k8sapi.CreateKubeClient()
 	if err != nil {
@@ -98,7 +112,7 @@ func main() {
 	var cw publisher.Publisher
 
 	if options.submitCW {
-		cw, err = publisher.New(ctx)
+		cw, err = publisher.New(ctx, region, clusterID)
 		if err != nil {
 			log.Fatalf("Failed to create publisher: %v", err)
 		}
