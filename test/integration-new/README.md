@@ -85,13 +85,13 @@ This section is written to give a high level overview for the process of develop
 Currently the test folders are located at ```amazon-vpc-cni-k8s/tree/master/test/integration-new``` It has the following sub-folders ```cni```, ```ipamd```, ```ipv6``` and ```metrics-helper```.
 
 The ginkgo test for any component has generally two main components:
-- ```ginkgo suite file```: Every ginkgo suite file will have ```RegisterFailHandler``` and ```RunSpecs```. A Ginkgo test signals failure by calling Ginkgo’s Fail function passed to RegisterFailHandler. RunSpec tells Ginkgo to start the test suite. Running ginkgo inside the sub-folder containing the test suite, should trigger the ```RunSpecs``` function in the suite.
+- ```ginkgo suite file```: Every ginkgo suite file will have ```RegisterFailHandler``` and ```RunSpecs```. A Ginkgo test signals failure by calling Ginkgo’s Fail function passed to RegisterFailHandler. RunSpec tells Ginkgo to start the test suite. Running ginkgo inside the sub-folder containing the test suite should trigger the ```RunSpecs``` function in the suite.
 
 - ```ginkgo test files```: By default, test files in the same folder as ginkgo suite file will be run on the trigger of the ```RunSpecs``` function in the ginkgo test suite. 
 
 ### Adding new test folder
 
-Say for instance, The cni test and suite files in the cni folder has functionality related to CNI component in VPC CNI as you would expect. If you want to add a test that does not belong to any of the modules in the integration-new folder, you will have to create a new folder structure as below
+Say for instance, the cni test and suite files in the cni folder has functionality related to CNI component in VPC CNI as you would expect. If you want to add a test that does not belong to any of the modules in the integration-new folder, you will have to create a new folder structure as below
 - ```integration-new``` 
   - ```new_component_test_xyz``` 
        - ```new_component_test_xyz/new_component_xyz_suite_test.go```)
@@ -184,7 +184,7 @@ var _ = AfterSuite(func() {
 
 #### Logic Components
 
-- ```It```: Individual spec specified by It. It is the innermost component that holds the core testing logic. The other components listed below are hierarchically arranged before and after It in order to provision/deprovision the setup required to run the individual spec (It). In the sample test below, our It tests for 99+% success rate between client and server pods.
+- ```It```: Individual spec specified by It. It is the innermost component that holds the core testing logic. The other components listed below are hierarchically arranged before and after It in order to provision/deprovision the setup required to run the individual spec (It). In the sample test below, our It tests for 99+% traffic success rate between client and server pods.
 - ```Describe``` : This block is used describe the individual behaviors of code. In the sample test below, we try to describe a behaviour of pod traffic with PD (Prefix delegation) enabled.
 - ```Context``` : Context block is used to execute the behavior used by Describe block under different scenarios. We can have different Context or scenarios for our sample test below, like testing TCP pod traffic or UDP pod traffic.
 - ```JustBeforeEach``` : Executed immediately before each test, however following the execution order from outside blocks to inside blocks before an It(spec) in case of multipe JustBeforeEach blocks. We can see that in the JustBeforeEach function below, we setup server deployment and enable PD just before we run the It.
