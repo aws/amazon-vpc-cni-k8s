@@ -76,7 +76,7 @@ This section is written to give a high level overview for the process of develop
 
 - ```k8s```: The k8s folder has modules that comprise of the building blocks for writing the tests. It has the following subfolders:
   - ```manifest```: This folder has modules for building pods, services, jobs, deployments, containers and more. These are responsible for determining the structure, say for instance the build configuration of the pod. 
-  - ```resources```: This folder has modules for actual creation of the k8s elements built by the modules in the manifest folder. Not just creation/deletion, it has other useful functionalities related to the k8s element in considersation. For instance, getting status and logs for the element or functionalities like exec for a pod k8s element. 
+  - ```resources```: This folder has modules for actual creation of the k8s elements built by the modules in the manifest folder. Not just creation/deletion, it has other useful functionalities related to the k8s element in consideration. For instance, getting status and logs for the element or functionalities like exec for a pod k8s element. 
   - ```utils```: Has helper utilities related to node, daemonset and containers. 
 
 
@@ -85,7 +85,7 @@ This section is written to give a high level overview for the process of develop
 Currently the test folders are located at ```amazon-vpc-cni-k8s/tree/master/test/integration-new``` It has the following sub-folders ```cni```, ```ipamd```, ```ipv6``` and ```metrics-helper```.
 
 The ginkgo test for any component has generally two main components:
-- ```ginkgo suite file```: Every ginkgo suite file will have ```RegisterFailHandler``` and ```RunSpecs```. A Ginkgo test signals failure by calling Ginkgo’s Fail function passed to RegisterFailHandler. RunSpec tells Ginkgo to start the test suite. Running ginkgo inside the sub-folder conatining the test suite, should trigger the ```RunSpecs``` function in the suite.
+- ```ginkgo suite file```: Every ginkgo suite file will have ```RegisterFailHandler``` and ```RunSpecs```. A Ginkgo test signals failure by calling Ginkgo’s Fail function passed to RegisterFailHandler. RunSpec tells Ginkgo to start the test suite. Running ginkgo inside the sub-folder containing the test suite, should trigger the ```RunSpecs``` function in the suite.
 
 - ```ginkgo test files```: By default, test files in the same folder as ginkgo suite file will be run on the trigger of the ```RunSpecs``` function in the ginkgo test suite. 
 
@@ -185,8 +185,8 @@ var _ = AfterSuite(func() {
 #### Logic Components
 
 - ```It```: Individual spec specified by It. It is the innermost component that holds the core testing logic. The other components listed below are hierarchically arranged before and after It in order to provision/deprovision the setup required to run the individual spec (It). In the sample test below, our It tests for 99+% success rate between client and server pods.
-- ```Describe``` : This blocks is used describe the individual behaviors of code. In the sample test below, we try to describe a behaviour of pod traffic with PD (Prefix delegation) enabled.
-- ```Context``` : Context block is used to execute the behavior used by Describe block under different scenarios. We can have different Context or scenarios for our sample test below, like testing TCP pod traffic or UPD pod traffic.
+- ```Describe``` : This block is used describe the individual behaviors of code. In the sample test below, we try to describe a behaviour of pod traffic with PD (Prefix delegation) enabled.
+- ```Context``` : Context block is used to execute the behavior used by Describe block under different scenarios. We can have different Context or scenarios for our sample test below, like testing TCP pod traffic or UDP pod traffic.
 - ```JustBeforeEach``` : Executed immediately before each test, however following the execution order from outside blocks to inside blocks before an It(spec) in case of multipe JustBeforeEach blocks. We can see that in the JustBeforeEach function below, we setup server deployment and enable PD just before we run the It.
 - ```JustAfterEach``` : Executed immediately after each test, however following the execution order from inside blocks to outside blocks after an It(spec) in case of multipe JustAfterEach blocks. We can see that in the JustAfterEach function below, we reset PD to false after running It.
 - ```BeforeEach``` : Executed (not immediately) before each test, however following the execution order from outside blocks to inside blocks before an It(spec) in case of multipe BeforeEach blocks.
