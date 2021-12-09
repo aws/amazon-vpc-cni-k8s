@@ -14,7 +14,7 @@ permissions:
 jobs:
   # Repo owner has triggered this run
   integration-fork:
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux, x64]
     if:
       github.event.inputs.pull_request_number != ''
     steps:
