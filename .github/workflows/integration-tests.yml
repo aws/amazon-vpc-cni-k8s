@@ -25,8 +25,8 @@ jobs:
 
       - name: Get dependencies
         run: |
-          go install golang.org/x/lint/golint
-          go install golang.org/x/tools/cmd/goimports
+          go install golang.org/x/lint/golint@latest
+          go install golang.org/x/tools/cmd/goimports@latest
 
       - name: Clean up stale docker images
         run: sudo docker image prune -f
