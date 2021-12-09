@@ -29,10 +29,13 @@ func main() {
 	var podNetworkingValidationInputString string
 	var shouldTestSetup bool
 	var shouldTestCleanup bool
+	// per pod security group
+	var ppsg bool
 
 	flag.StringVar(&podNetworkingValidationInputString, "pod-networking-validation-input", "", "json string containing the array of pods whose networking needs to be validated")
 	flag.BoolVar(&shouldTestCleanup, "test-cleanup", false, "bool flag when set to true tests that networking is teared down after pod has been deleted")
 	flag.BoolVar(&shouldTestSetup, "test-setup", false, "bool flag when set to true tests the networking is setup correctly after pod is running")
+	flag.BoolVar(&ppsg, "test-ppsg", false, "bool flag when set to true tests the networking setup for pods using security groups")
 
 	flag.Parse()
 
@@ -47,7 +50,19 @@ func main() {
 
 	log.Printf("list of pod against which test will be run %v", podNetworkingValidationInput.PodList)
 
-	if shouldTestSetup {
+	if ppsg && shouldTestSetup {
+		log.Print("testing networking is setup for pods using security groups")
+		err := tester.TestNetworkingSetupForPodsUsingSecurityGroup(podNetworkingValidationInput)
+		if err != nil {
+			log.Fatalf("found 1 or more pod setup validation failure: %v", err)
+		}
+	} else if ppsg && shouldTestCleanup {
+		log.Print("testing networking is teared down for pods using security groups")
+		err := tester.TestNetworkTearedDownForPodsUsingSecurityGroup(podNetworkingValidationInput)
+		if err != nil {
+			log.Fatalf("found 1 or more pod setup validation failure: %v", err)
+		}
+	} else if !ppsg && shouldTestSetup {
 		log.Print("testing networking is setup for regular pods")
 		err := tester.TestNetworkingSetupForRegularPod(podNetworkingValidationInput)
 		if err != nil {
