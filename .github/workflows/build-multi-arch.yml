@@ -8,7 +8,7 @@ on:
 
 jobs:
   build_x64:
-    name: Build x64
+    name: Build x86
     runs-on: ubuntu-latest
     steps:
 
