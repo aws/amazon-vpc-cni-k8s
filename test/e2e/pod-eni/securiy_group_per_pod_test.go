@@ -18,11 +18,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
+	"github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"
 	vpcControllerFW "github.com/aws/amazon-vpc-resource-controller-k8s/test/framework/manifest"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -31,17 +33,26 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+type TestType int
+
+const (
+	NetworkingTearDownSucceeds TestType = iota
+	NetworkingSetupSucceeds
+)
+
 var _ = Describe("Security Group for Pods Test", func() {
 	var (
 		// The Pod labels for client and server in order to retrieve the
 		// client and server Pods belonging to a Deployment/Jobs
-		labelKey          = "app"
-		serverPodLabelVal = "server-pod"
-		clientPodLabelVal = "client-pod"
+		labelKey           = "app"
+		serverPodLabelVal  = "server-pod"
+		clientPodLabelVal  = "client-pod"
+		busyboxPodLabelVal = "busybox-pod"
 		// The Security Group Policy take list of Pod Label Value and if the
 		// Pod has any label in the list, it should get Branch ENI
 		branchPodLabelVal       []string
 		serverDeploymentBuilder *manifest.DeploymentBuilder
+		securityGroupPolicy     *v1beta1.SecurityGroupPolicy
 	)
 
 	JustBeforeEach(func() {
@@ -53,7 +64,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 			Name("traffic-server").
 			NodeSelector(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal)
 
-		sgp, err := vpcControllerFW.NewSGPBuilder().
+		securityGroupPolicy, err = vpcControllerFW.NewSGPBuilder().
 			Namespace(utils.DefaultTestNamespace).
 			Name("test-sgp").
 			SecurityGroup([]string{securityGroupId}).
@@ -63,7 +74,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 
 		By("creating the Security Group Policy")
 		err = f.K8sResourceManagers.
-			CustomResourceManager().CreateResource(sgp)
+			CustomResourceManager().CreateResource(securityGroupPolicy)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -71,6 +82,9 @@ var _ = Describe("Security Group for Pods Test", func() {
 		By("deleting test namespace")
 		f.K8sResourceManagers.NamespaceManager().
 			DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
+
+		By("Deleting Security Group Policy")
+		f.K8sResourceManagers.CustomResourceManager().DeleteResource(securityGroupPolicy)
 
 		By("waiting for the branch ENI to be cooled down")
 		time.Sleep(time.Second * 60)
@@ -107,6 +121,11 @@ var _ = Describe("Security Group for Pods Test", func() {
 		BeforeEach(func() {
 			// Both the Server and Client Pods will get Branch ENI
 			branchPodLabelVal = []string{serverPodLabelVal, clientPodLabelVal}
+
+			// Allow Ingress on NodeSecurityGroup so that client-pods can communicate with metric pod
+			// 8080: metric-pod listener port
+			By("Adding an additional Ingress Rule on NodeSecurityGroupID to allow client-to-metric traffic")
+			f.CloudServices.EC2().AuthorizeSecurityGroupIngress(nodeSecurityGroupID, "tcp", openPort, 8080, "0.0.0.0/0")
 		})
 
 		It("should have 99%+ success rate", func() {
@@ -128,6 +147,12 @@ var _ = Describe("Security Group for Pods Test", func() {
 			successRate, err := t.TestTraffic()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(successRate).Should(BeNumerically(">=", float64(99)))
+		})
+
+		AfterEach(func() {
+			// Revoke the Ingress rule for traffic from client pods added to Node Security Group
+			By("Revoking the additional Ingress rule added to allow client-to-metric traffic")
+			f.CloudServices.EC2().RevokeSecurityGroupIngress(nodeSecurityGroupID, "tcp", openPort, 8080, "0.0.0.0/0")
 		})
 	})
 
@@ -248,7 +273,106 @@ var _ = Describe("Security Group for Pods Test", func() {
 			It("TCP liveness probe will succeed", func() {})
 		})
 	})
+
+	Context("Verify HostNetworking", func() {
+		BeforeEach(func() {
+			// BusyBox Pods will get Branch ENI
+			branchPodLabelVal = []string{busyboxPodLabelVal}
+		})
+		It("Deploy BusyBox Pods with branch ENI and verify HostNetworking", func() {
+			deployment := manifest.NewBusyBoxDeploymentBuilder().
+				Replicas(totalBranchInterface/asgSize).
+				PodLabel(labelKey, busyboxPodLabelVal).
+				NodeName(node.Name).
+				Build()
+
+			By("creating a deployment to launch pod using Branch ENI")
+			_, err = f.K8sResourceManagers.DeploymentManager().
+				CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("getting the list of pods using BranchENI")
+			podList, err := f.K8sResourceManagers.
+				PodManager().
+				GetPodsWithLabelSelector(labelKey, busyboxPodLabelVal)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("generating the pod networking validation input to be passed to tester")
+			input, err := GetPodNetworkingValidationInput(podList).Serialize()
+			Expect(err).NotTo(HaveOccurred())
+
+			By("validating host networking setup is setup correctly")
+			ValidateHostNetworking(NetworkingSetupSucceeds, input)
+
+			By("deleting the deployment to test teardown")
+			err = f.K8sResourceManagers.DeploymentManager().
+				DeleteAndWaitTillDeploymentIsDeleted(deployment)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("waiting to allow CNI to tear down networking for terminated pods")
+			time.Sleep(time.Second * 60)
+
+			By("validating host networking is teared down correctly")
+			ValidateHostNetworking(NetworkingTearDownSucceeds, input)
+		})
+	})
 })
+
+func GetPodNetworkingValidationInput(podList v1.PodList) input.PodNetworkingValidationInput {
+	ip := input.PodNetworkingValidationInput{
+		VethPrefix:  "vlan",
+		PodList:     []input.Pod{},
+		ValidateMTU: true,
+		MTU:         9001,
+	}
+
+	for _, pod := range podList.Items {
+		ip.PodList = append(ip.PodList, input.Pod{
+			PodName:        pod.Name,
+			PodNamespace:   pod.Namespace,
+			PodIPv4Address: pod.Status.PodIP,
+		})
+	}
+	return ip
+}
+
+func ValidateHostNetworking(testType TestType, podValidationInputString string) {
+	testerArgs := []string{fmt.Sprintf("-pod-networking-validation-input=%s",
+		podValidationInputString)}
+
+	if NetworkingSetupSucceeds == testType {
+		testerArgs = append(testerArgs, "-test-setup=true", "-test-ppsg=true")
+	} else if NetworkingTearDownSucceeds == testType {
+		testerArgs = append(testerArgs, "-test-cleanup=true", "-test-ppsg=true")
+	}
+
+	testContainer := manifest.NewTestHelperContainer().
+		Command([]string{"./networking"}).
+		Args(testerArgs).
+		Build()
+
+	testPod := manifest.NewDefaultPodBuilder().
+		Container(testContainer).
+		NodeName(node.Name).
+		HostNetwork(true).
+		Build()
+
+	By("creating pod to test host networking setup")
+	testPod, err := f.K8sResourceManagers.PodManager().
+		CreateAndWaitTillPodCompleted(testPod)
+	Expect(err).ToNot(HaveOccurred())
+
+	logs, errLogs := f.K8sResourceManagers.PodManager().
+		PodLogs(testPod.Namespace, testPod.Name)
+	Expect(errLogs).ToNot(HaveOccurred())
+
+	fmt.Fprintln(GinkgoWriter, logs)
+
+	By("deleting the host networking setup pod")
+	err = f.K8sResourceManagers.PodManager().
+		DeleteAndWaitTillPodDeleted(testPod)
+	Expect(err).ToNot(HaveOccurred())
+}
 
 func ValidatePodsHaveBranchENI(podList v1.PodList) error {
 	for _, pod := range podList.Items {

@@ -14,6 +14,8 @@
 package pod_eni
 
 import (
+	"net/url"
+	"path"
 	"strings"
 	"testing"
 
@@ -21,8 +23,9 @@ import (
 	awsUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/vpc"
+	v1 "k8s.io/api/core/v1"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -48,6 +51,10 @@ var (
 	nodeGroupProperties awsUtils.NodeGroupProperties
 	// Cluster Role name derived from cluster Role ARN, used to attach VPC Controller Policy
 	clusterRoleName string
+	// NodeSecurityGroupId for Node-Node communication
+	nodeSecurityGroupID string
+
+	node v1.Node
 )
 
 func TestSecurityGroupForPods(t *testing.T) {
@@ -103,6 +110,40 @@ var _ = BeforeSuite(func() {
 	By("creating a new self managed node group")
 	err = awsUtils.CreateAndWaitTillSelfManagedNGReady(f, nodeGroupProperties)
 	Expect(err).ToNot(HaveOccurred())
+
+	By("Get Reference to any node from the self managed node group")
+	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(nodeGroupProperties.NgLabelKey,
+		nodeGroupProperties.NgLabelVal)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(len(nodeList.Items)).Should(BeNumerically(">", 0))
+
+	// Get ref to any node from newly created nodegroup
+	By("Getting providerID of the node")
+	node = nodeList.Items[0]
+	providerID := node.Spec.ProviderID
+	Expect(len(providerID)).To(BeNumerically(">", 0))
+
+	By("Get InstanceID from the node")
+	awsUrl, err := url.Parse(providerID)
+	Expect(err).NotTo(HaveOccurred())
+
+	instanceID := path.Base(awsUrl.Path)
+	Expect(len(instanceID)).To(BeNumerically(">", 0))
+
+	By("Fetching Node Security GroupId")
+	instance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
+	Expect(err).NotTo(HaveOccurred())
+
+	networkInterface := instance.NetworkInterfaces[0]
+	securityGroups := networkInterface.Groups
+	nodeSecurityGroupPrefix := nodeGroupProperties.NgLabelVal + "-NodeSecurityGroup"
+	for _, group := range securityGroups {
+		if strings.HasPrefix(*group.GroupName, nodeSecurityGroupPrefix) {
+			nodeSecurityGroupID = *group.GroupId
+			break
+		}
+	}
+	Expect(len(nodeSecurityGroupID)).To(BeNumerically(">", 0))
 
 	By("enabling pod eni on aws-node DaemonSet")
 	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,

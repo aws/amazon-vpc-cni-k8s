@@ -22,6 +22,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/containernetworking/cni/pkg/skel"
@@ -43,6 +44,7 @@ import (
 )
 
 const ipamdAddress = "127.0.0.1:50051"
+const vlanInterfaceName = "vlanId"
 
 var version string
 
@@ -95,6 +97,12 @@ func LoadNetConf(bytes []byte) (*NetConf, logger.Logger, error) {
 		return nil, nil, errors.Wrap(err, "add cmd: error loading config from args")
 	}
 
+	if conf.RawPrevResult != nil {
+		if err := cniSpecVersion.ParsePrevResult(&conf.NetConf); err != nil {
+			return nil, nil, fmt.Errorf("could not parse prevResult: %v", err)
+		}
+	}
+
 	logConfig := logger.Configuration{
 		LogLevel:    conf.PluginLogLevel,
 		LogLocation: conf.PluginLogFile,
@@ -121,6 +129,8 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	log.Infof("Received CNI add request: ContainerID(%s) Netns(%s) IfName(%s) Args(%s) Path(%s) argsStdinData(%s)",
 		args.ContainerID, args.Netns, args.IfName, args.Args, args.Path, args.StdinData)
+
+	log.Infof("Prev Result: %v\n", conf.PrevResult)
 
 	var k8sArgs K8sArgs
 	if err := cniTypes.LoadArgs(args.Args, &k8sArgs); err != nil {
@@ -194,14 +204,12 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	var hostVethName string
 	if r.PodVlanId != 0 {
 		hostVethName = generateHostVethName("vlan", string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
-
 		err = driverClient.SetupPodENINetwork(hostVethName, args.IfName, args.Netns, v4Addr, v6Addr, int(r.PodVlanId), r.PodENIMAC,
 			r.PodENISubnetGW, int(r.ParentIfIndex), mtu, log)
 	} else {
 		// build hostVethName
 		// Note: the maximum length for linux interface name is 15
 		hostVethName = generateHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
-
 		err = driverClient.SetupNS(hostVethName, args.IfName, args.Netns, v4Addr, v6Addr, int(r.DeviceNumber), r.VPCv4CIDRs, r.UseExternalSNAT, mtu, log)
 	}
 
@@ -241,12 +249,15 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	hostInterface := &current.Interface{Name: hostVethName}
 	containerInterface := &current.Interface{Name: args.IfName, Sandbox: args.Netns}
+	vlanInterface := &current.Interface{Name: vlanInterfaceName, Mac: fmt.Sprint(r.PodVlanId)}
+	log.Infof("Using vlanInterface: %v", vlanInterface)
 
 	result := &current.Result{
 		IPs: ips,
 		Interfaces: []*current.Interface{
 			hostInterface,
 			containerInterface,
+			vlanInterface,
 		},
 	}
 
@@ -270,6 +281,8 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	driverClient driver.NetworkAPIs) error {
 
 	conf, log, err := LoadNetConf(args.StdinData)
+	log.Infof("Prev Result: %v\n", conf.PrevResult)
+
 	if err != nil {
 		return errors.Wrap(err, "add cmd: error loading config from args")
 	}
@@ -281,6 +294,39 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	if err := cniTypes.LoadArgs(args.Args, &k8sArgs); err != nil {
 		log.Errorf("Failed to load k8s config from args: %v", err)
 		return errors.Wrap(err, "del cmd: failed to load k8s config from args")
+	}
+
+	if args.Netns == "" {
+		log.Info("Netns() is empty, so network already cleanedup. Nothing to do")
+		return nil
+	}
+	prevResult, ok := conf.PrevResult.(*current.Result)
+
+	// Try to use prevResult if available
+	// prevResult might not be availabe, if we are still using older cni spec < 0.4.0.
+	// So we should fallback to the old clean up method
+	if ok {
+		for _, iface := range prevResult.Interfaces {
+			if iface.Name == vlanInterfaceName {
+				podVlanId, err := strconv.Atoi(iface.Mac)
+				if err != nil {
+					return errors.Wrap(err, "Failed to parse vlanId from prevResult")
+				}
+				// podVlanId == 0 means pod is not using branch ENI
+				// then fallback to existing cleanup
+				if podVlanId == 0 {
+					break
+				}
+				// if podVlanId != 0 means pod is using branch ENI
+				err = cleanUpPodENI(podVlanId, log, args.ContainerID, driverClient)
+				if err != nil {
+					return err
+				}
+				log.Infof("Received del network response for pod %s namespace %s sandbox %s with vlanId: %v", string(k8sArgs.K8S_POD_NAME),
+					string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), podVlanId)
+				return nil
+			}
+		}
 	}
 
 	// notify local IP address manager to free secondary IP
@@ -358,6 +404,16 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		}
 	} else {
 		log.Warnf("Container %s did not have a valid IP %s", args.ContainerID, r.IPv4Addr)
+	}
+	return nil
+}
+
+func cleanUpPodENI(podVlanId int, log logger.Logger, containerId string, driverClient driver.NetworkAPIs) error {
+	err := driverClient.TeardownPodENINetwork(podVlanId, log)
+	if err != nil {
+		log.Errorf("Failed on TeardownPodNetwork for container ID %s: %v",
+			containerId, err)
+		return errors.Wrap(err, "del cmd: failed on tear down pod network")
 	}
 	return nil
 }
