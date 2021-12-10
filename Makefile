@@ -263,8 +263,8 @@ docker-vet: build-docker-test   ## Run go vet inside of a container.
 		$(TEST_IMAGE_NAME) make vet
 
 format:       ## Format all Go source code files. (Note! integration_test.go has an upstream import dependency that doesn't match)
-    LOC = $(shell which goimports); echo $$LOC
-	@command -v goimports >/dev/null || { echo "ERROR: goimports not installed"; exit 1; }
+	echo $(shell which goimports)
+    @command -v goimports >/dev/null || { echo "ERROR: goimports not installed"; exit 1; }
 	$(shell find ./* \
 		  -type f \
 		  -not -name 'integration_test.go' \
