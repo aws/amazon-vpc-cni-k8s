@@ -1,4 +1,4 @@
-name: Build x64 and ARM64 images 
+name: Build x86 and ARM64 images
 
 on:
   pull_request:
