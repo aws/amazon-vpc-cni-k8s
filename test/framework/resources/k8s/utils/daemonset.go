@@ -17,6 +17,9 @@ import (
 	"fmt"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -67,6 +70,19 @@ func updateDaemonsetEnvVarsAndWait(f *framework.Framework, dsName string, dsName
 		Expect(err).ToNot(HaveOccurred())
 	}
 	waitTillDaemonSetUpdated(f, ds, updatedDs)
+
+	// update multus daemonset if it exists
+	// to avoid being stuck in recursive loop, we need below check
+	if dsName != utils.MultusNodeName {
+		_, err := f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(dsNamespace, utils.MultusNodeName)
+		if err == nil {
+			By("Restarting Multus daemonset")
+			td := time.Now()
+			updateDaemonsetEnvVarsAndWait(f, utils.MultusNodeName, dsNamespace, utils.MultusContainerName, map[string]string{
+				"forceUpdatedAt": td.String(),
+			}, nil)
+		}
+	}
 }
 
 func getDaemonSet(f *framework.Framework, dsName string, dsNamespace string) *v1.DaemonSet {

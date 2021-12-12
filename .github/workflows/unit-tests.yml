@@ -2,10 +2,11 @@ name: Run unit tests
 
 on:
   pull_request:
-    branches: [ master ]
+    branches:
+      - 'master'
+      - 'release*'
 
 jobs:
-
   build_x86_64:
     name: Build
     runs-on: ubuntu-latest

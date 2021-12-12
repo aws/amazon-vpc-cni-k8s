@@ -50,6 +50,7 @@ type ClusterVPCConfig struct {
 	PublicSubnetList   []string
 	AvailZones         []string
 	PublicRouteTableID string
+	PrivateSubnetList  []string
 }
 
 type AWSAuthMapRole struct {
@@ -188,7 +189,7 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 	err = f.K8sResourceManagers.NodeManager().
 		WaitTillNodesReady(properties.NgLabelKey, properties.NgLabelVal, properties.AsgSize)
 	if err != nil {
-		return fmt.Errorf("faield to list nodegroup with label key %s:%v: %v",
+		return fmt.Errorf("failed to list nodegroup with label key %s:%v: %v",
 			properties.NgLabelKey, properties.NgLabelVal, err)
 	}
 
@@ -207,8 +208,9 @@ func DeleteAndWaitTillSelfManagedNGStackDeleted(f *framework.Framework, properti
 
 func GetClusterVPCConfig(f *framework.Framework) (*ClusterVPCConfig, error) {
 	clusterConfig := &ClusterVPCConfig{
-		PublicSubnetList: []string{},
-		AvailZones:       []string{},
+		PublicSubnetList:  []string{},
+		AvailZones:        []string{},
+		PrivateSubnetList: []string{},
 	}
 
 	describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
@@ -221,11 +223,17 @@ func GetClusterVPCConfig(f *framework.Framework) (*ClusterVPCConfig, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to describe subnet %s: %v", *subnet, err)
 		}
+
+		isPublic := false
 		for _, route := range describeRouteOutput.RouteTables[0].Routes {
 			if route.GatewayId != nil && strings.Contains(*route.GatewayId, "igw-") {
+				isPublic = true
 				clusterConfig.PublicSubnetList = append(clusterConfig.PublicSubnetList, *subnet)
 				clusterConfig.PublicRouteTableID = *describeRouteOutput.RouteTables[0].RouteTableId
 			}
+		}
+		if !isPublic {
+			clusterConfig.PrivateSubnetList = append(clusterConfig.PrivateSubnetList, *subnet)
 		}
 	}
 

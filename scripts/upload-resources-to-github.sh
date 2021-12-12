@@ -10,7 +10,7 @@ BINARY_DIR=$SCRIPTPATH/../build/bin
 CNI_TAR_RESOURCES_FILE=$BUILD_DIR/cni_individual-resources.tar
 METRICS_TAR_RESOURCES_FILE=$BUILD_DIR/cni_metrics_individual-resources.tar
 CALICO_TAR_RESOURCES_FILE=$BUILD_DIR/calico_individual-resources.tar
-CNI_RESOURCES_YAML=$BUILD_DIR/aws-vpc-cni
+CNI_RESOURCES_YAML=$BUILD_DIR/aws-k8s-cni
 METRICS_RESOURCES_YAML=$BUILD_DIR/cni-metrics-helper
 CALICO_RESOURCES_YAML=$BUILD_DIR/calico.yaml
 CALICO_OPERATOR_RESOURCES_YAML=$BUILD_DIR/calico-operator.yaml
@@ -88,6 +88,16 @@ upload_asset() {
     fi
 }
 
+RESOURCES_TO_UPLOAD=("$CALICO_OPERATOR_RESOURCES_YAML" "$CALICO_CRS_RESOURCES_YAML" "$CNI_TAR_RESOURCES_FILE" "$METRICS_TAR_RESOURCES_FILE" "$CALICO_TAR_RESOURCES_FILE")
+
+COUNT=1
+echo -e "\nUploading release assets for release id '$RELEASE_ID' to Github"
+for asset in ${RESOURCES_TO_UPLOAD[@]}; do
+    name=$(echo $asset | tr '/' '\n' | tail -1)
+    echo -e "\n  $((COUNT++)). $name"
+    upload_asset $asset
+done
+
 jq -c '.[]' $REGIONS_FILE | while read i; do
     ecrRegion=`echo $i | jq '.ecrRegion' -r`
     ecrAccount=`echo $i | jq '.ecrAccount' -r`
@@ -113,13 +123,3 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
         upload_asset $asset
     done
 done    
-
-RESOURCES_TO_UPLOAD=("$CALICO_OPERATOR_RESOURCES_YAML" "CALICO_CRS_RESOURCES_YAML" "$CNI_TAR_RESOURCES_FILE" "$METRICS_TAR_RESOURCES_FILE" "$CALICO_TAR_RESOURCES_FILE")
-
-COUNT=1
-echo -e "\nUploading release assets for release id '$RELEASE_ID' to Github"
-for asset in ${RESOURCES_TO_UPLOAD[@]}; do
-    name=$(echo $asset | tr '/' '\n' | tail -1)
-    echo -e "\n  $((COUNT++)). $name"
-    upload_asset $asset
-done
