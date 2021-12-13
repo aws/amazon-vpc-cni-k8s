@@ -88,8 +88,6 @@ func main() {
 	// should be name/identifier for the cluster if specified
 	clusterID, _ := os.LookupEnv("AWS_CLUSTER_ID")
 
-	log.Infof("Using REGION=%s and CLUSTER_ID=%s", region, clusterID)
-
 	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, LogLevel %s", options.submitCW, logConfig.LogLevel)
 
 	clientSet, err := k8sapi.GetKubeClientSet()
@@ -112,7 +110,7 @@ func main() {
 	var cw publisher.Publisher
 
 	if options.submitCW {
-		cw, err = publisher.New(ctx, region, clusterID)
+		cw, err = publisher.New(ctx, region, clusterID, log)
 		if err != nil {
 			log.Fatalf("Failed to create publisher: %v", err)
 		}
