@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
@@ -32,6 +33,24 @@ const (
 	testMetricOne       = "TEST_METRIC_ONE"
 	testMonitorDuration = time.Millisecond * 10
 )
+
+func TestCloudWatchPublisherWithNoIMDS(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
+
+	logConfig := logger.Configuration{
+		LogLevel:    "Debug",
+		LogLocation: "stdout",
+	}
+	log := logger.New(&logConfig)
+
+	region := "us-west-2"
+	clusterID := testClusterID
+
+	cw, err := New(ctx, region, clusterID, log)
+	assert.NoError(t, err)
+	assert.NotNil(t, cw)
+}
 
 func TestCloudWatchPublisherWithSingleDatum(t *testing.T) {
 	cloudwatchPublisher := getCloudWatchPublisher(t)
