@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
@@ -34,13 +35,18 @@ const (
 )
 
 func TestCloudWatchPublisherWithNoIMDS(t *testing.T) {
+	logConfig := logger.Configuration{
+		LogLevel:    "Debug",
+		LogLocation: "stdout",
+	}
+	log := logger.New(&logConfig)
 	ctx, cancel := context.WithCancel(context.TODO())
 	defer cancel()
 
 	region := "us-west-2"
 	clusterID := testClusterID
 
-	cw, err := New(ctx, region, clusterID)
+	cw, err := New(ctx, region, clusterID, log)
 	assert.NoError(t, err)
 	assert.NotNil(t, cw)
 }
