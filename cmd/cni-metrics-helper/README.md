@@ -88,7 +88,7 @@ spec:
       - env:
         - name: USE_CLOUDWATCH
           value: "true"
-        - name: CLUSTER_ID
+        - name: AWS_CLUSTER_ID
           value: "demo-cluster"  
         name: cni-metrics-helper
         image: <image>
