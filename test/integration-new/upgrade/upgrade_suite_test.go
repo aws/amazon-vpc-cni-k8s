@@ -15,12 +15,10 @@ package upgrade
 
 import (
 	"fmt"
-	"github.com/aws/aws-sdk-go/service/eks"
-	"testing"
-
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"testing"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -35,10 +33,13 @@ var primaryNode v1.Node
 var secondaryNode v1.Node
 var instanceSecurityGroupID string
 var vpcCIDRs []string
-var describeAddonVersionsOutput *eks.DescribeAddonVersionsOutput
-var describeAddonOutput *eks.DescribeAddonOutput
+
 var latestAddOnVersion string
 var currentAddOnVersion string
+
+var k8sVersion string
+var initialCNIVersion string
+var finalCNIVersion string
 
 func TestCNIUpgrade(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -91,36 +92,14 @@ var _ = BeforeSuite(func() {
 		vpcCIDRs = append(vpcCIDRs, *cidrBlockAssociationSet.CidrBlock)
 	}
 
-	// Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
-	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
-		"aws-node", map[string]string{"WARM_IP_TARGET": "3", "WARM_ENI_TARGET": "0"})
-
 	By("getting the cluster k8s version")
 	describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
 	Expect(err).ToNot(HaveOccurred())
-	k8sVersion := *describeClusterOutput.Cluster.Version
 
-	By("getting the addon versions")
-	describeAddonVersionsOutput, err = f.CloudServices.EKS().DescribeAddonVersions("vpc-cni", k8sVersion)
-	Expect(err).ToNot(HaveOccurred())
+	k8sVersion = *describeClusterOutput.Cluster.Version
+	initialCNIVersion = f.Options.InitialCNIVersion
+	finalCNIVersion = f.Options.FinalCNIVersion
 
-	latestAddOnVersion := *describeAddonVersionsOutput.Addons[0].AddonVersions[0].AddonVersion
-	By("apply latest addon version")
-	_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, latestAddOnVersion)
-	Expect(err).ToNot(HaveOccurred())
-
-	fmt.Sprintf("Latest addon version: "+
-		"%s", latestAddOnVersion)
-	/*
-		By("getting the current addon")
-		describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
-		Expect(err).ToNot(HaveOccurred())
-
-		currentAddOnVersion := *describeAddonOutput.Addon.AddonVersion
-
-		fmt.Sprintf("Current addon version: "+
-			"%s", currentAddOnVersion)
-	*/
 })
 
 var _ = AfterSuite(func() {
@@ -128,13 +107,4 @@ var _ = AfterSuite(func() {
 	f.K8sResourceManagers.NamespaceManager().
 		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
-	k8sUtils.UpdateEnvVarOnDaemonSetAndWaitUntilReady(f, "aws-node", "kube-system",
-		"aws-node", map[string]string{
-			AWS_VPC_ENI_MTU:            "9001",
-			AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
-		},
-		map[string]struct{}{
-			"WARM_IP_TARGET":  {},
-			"WARM_ENI_TARGET": {},
-		})
 })

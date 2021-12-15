@@ -52,9 +52,10 @@ func (d defaultEKS) CreateAddon(addon string, clusterName string) (*eks.CreateAd
 
 func (d defaultEKS) CreateAddonWithVersion(addon string, clusterName string, addonVersion string) (*eks.CreateAddonOutput, error) {
 	createAddonInput := &eks.CreateAddonInput{
-		AddonName:    aws.String(addon),
-		ClusterName:  aws.String(clusterName),
-		AddonVersion: aws.String(addonVersion),
+		AddonName:        aws.String(addon),
+		ClusterName:      aws.String(clusterName),
+		AddonVersion:     aws.String(addonVersion),
+		ResolveConflicts: aws.String("OVERWRITE"),
 	}
 	return d.EKSAPI.CreateAddon(createAddonInput)
 }

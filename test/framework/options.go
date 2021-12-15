@@ -27,13 +27,15 @@ func init() {
 }
 
 type Options struct {
-	KubeConfig     string
-	ClusterName    string
-	AWSRegion      string
-	AWSVPCID       string
-	NgNameLabelKey string
-	NgNameLabelVal string
-	EKSEndpoint    string
+	KubeConfig        string
+	ClusterName       string
+	AWSRegion         string
+	AWSVPCID          string
+	NgNameLabelKey    string
+	NgNameLabelVal    string
+	EKSEndpoint       string
+	InitialCNIVersion string
+	FinalCNIVersion   string
 }
 
 func (options *Options) BindFlags() {
@@ -44,6 +46,8 @@ func (options *Options) BindFlags() {
 	flag.StringVar(&options.NgNameLabelKey, "ng-name-label-key", "eks.amazonaws.com/nodegroup", "label key used to identify nodegroup name")
 	flag.StringVar(&options.NgNameLabelVal, "ng-name-label-val", "", "label value with the nodegroup name")
 	flag.StringVar(&options.EKSEndpoint, "eks-endpoint", "", "optional eks api server endpoint")
+	flag.StringVar(&options.InitialCNIVersion, "initial-version", "", "Initial CNI version before upgrade applied")
+	flag.StringVar(&options.FinalCNIVersion, "final-version", "", "Final CNI version after upgrade applied")
 }
 
 func (options *Options) Validate() error {
