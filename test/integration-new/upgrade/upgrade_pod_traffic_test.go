@@ -133,31 +133,32 @@ type TestStack struct {
 	serverListenCmdArgs []string
 }
 
-func (s TestStack) Deploy() {
-	DeployStack(s.protocol, s.serverPort, s.serverListenCmd, s.serverListenCmdArgs)
+func (s TestStack) Deploy() error {
+	err := DeployStack(s.protocol, s.serverPort, s.serverListenCmd, s.serverListenCmdArgs)
+	return err
 }
 
-func (s TestStack) ConnectivityPerStack() {
+func (s TestStack) ConnectivityPerStack() error {
 
 	protocolVal := s.protocol
 	switch {
 	case protocolVal == "icmp":
-		ConnectivityPerStack(s.serverPort, fmt.Sprintf("%d packets transmitted, "+
+		CheckConnectivityForMultiplePodPlacement(s.serverPort, fmt.Sprintf("%d packets transmitted, "+
 			"%d packets received", 5, 5), "", func(receiverPod coreV1.Pod, port int) []string {
 			return []string{"ping", "-c", strconv.Itoa(5), receiverPod.Status.PodIP}
 		})
 	case protocolVal == "tcp":
-		ConnectivityPerStack(s.serverPort, "", "succeeded!", func(receiverPod coreV1.Pod, port int) []string {
+		CheckConnectivityForMultiplePodPlacement(s.serverPort, "", "succeeded!", func(receiverPod coreV1.Pod, port int) []string {
 			return []string{"nc", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port)}
 		})
 	case protocolVal == "udp":
-		ConnectivityPerStack(s.serverPort, "", "succeeded!", func(receiverPod coreV1.Pod, port int) []string {
+		CheckConnectivityForMultiplePodPlacement(s.serverPort, "", "succeeded!", func(receiverPod coreV1.Pod, port int) []string {
 			return []string{"nc", "-u", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port)}
 		})
 	default:
 		fmt.Println("Invalid")
 	}
-
+	return nil
 }
 
 func (s TestStack) Cleanup() {
@@ -175,14 +176,21 @@ func testPodNetworking() {
 	testStacks := []TestStack{icmpStack, tcpStack, udpStack}
 
 	for _, testStackVal := range testStacks {
-		testStackVal.Deploy()
-		testStackVal.ConnectivityPerStack()
+		err := testStackVal.Deploy()
+		if err != nil {
+			testStackVal.Cleanup()
+		}
+		err = testStackVal.ConnectivityPerStack()
+		if err != nil {
+			testStackVal.Cleanup()
+		}
 		testStackVal.Cleanup()
+
 	}
 
 }
 
-func DeployStack(protocol string, serverPort int, serverListenCmd []string, serverListenCmdArgs []string) {
+func DeployStack(protocol string, serverPort int, serverListenCmd []string, serverListenCmdArgs []string) error {
 	By("authorizing security group ingress on instance security group")
 	err = f.CloudServices.EC2().
 		AuthorizeSecurityGroupIngress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
@@ -247,6 +255,7 @@ func DeployStack(protocol string, serverPort int, serverListenCmd []string, serv
 		Should(BeNumerically(">", 1))
 	Expect(len(interfaceToPodListOnSecondaryNode.PodsOnSecondaryENI)).
 		Should(BeNumerically(">", 1))
+	return err
 }
 
 func CleanupStack(protocol string, serverPort int) {
@@ -271,14 +280,6 @@ func CleanupStack(protocol string, serverPort int) {
 	Expect(err).ToNot(HaveOccurred())
 }
 
-// CheckConnectivityForMultiplePodPlacement checks connectivity for various scenarios, an example
-// connection from Pod on Node 1 having IP from Primary Network Interface to Pod on Node 2 having
-// IP from Secondary Network Interface
-func ConnectivityPerStack(port int,
-	testerExpectedStdOut string, testerExpectedStdErr string,
-	getTestCommandFunc func(receiverPod coreV1.Pod, port int) []string) {
-	CheckConnectivityForMultiplePodPlacement(port, testerExpectedStdOut, testerExpectedStdErr, getTestCommandFunc)
-}
 func CheckConnectivityForMultiplePodPlacement(port int,
 	testerExpectedStdOut string, testerExpectedStdErr string,
 	getTestCommandFunc func(receiverPod coreV1.Pod, port int) []string) {
