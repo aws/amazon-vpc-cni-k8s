@@ -11,14 +11,16 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package upgrade
+package versiontesting
 
 import (
 	"fmt"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/aws-sdk-go/service/eks"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -34,18 +36,18 @@ var secondaryNode v1.Node
 var instanceSecurityGroupID string
 var vpcCIDRs []string
 
-var latestAddOnVersion string
-var currentAddOnVersion string
-
 var k8sVersion string
 var initialCNIVersion string
 var finalCNIVersion string
 
-func TestCNIUpgrade(t *testing.T) {
+func TestCNIVersion(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "CNI Upgrade Testing Suite")
+	RunSpecs(t, "CNI Upgrade/Downgrade Testing Suite")
 }
 
+var (
+	describeAddonOutput *eks.DescribeAddonOutput
+)
 var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
 
@@ -108,3 +110,44 @@ var _ = AfterSuite(func() {
 		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
 })
+
+func ApplyAddOn(versionName string) {
+	By("getting the current addon")
+	describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
+	if err == nil {
+		fmt.Printf("%s,%s", *describeAddonOutput.Addon.AddonVersion, versionName)
+		By("checking if the current addon is same as initial addon")
+		if *describeAddonOutput.Addon.AddonVersion != versionName {
+
+			By("deleting the current vpc cni addon ")
+			_, err = f.CloudServices.EKS().DeleteAddon("vpc-cni", f.Options.ClusterName)
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
+			for err == nil {
+				time.Sleep(5 * time.Second)
+				_, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
+
+			}
+
+			By("apply initial addon version")
+			_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, versionName)
+			Expect(err).ToNot(HaveOccurred())
+
+		}
+	} else {
+		By("apply initial addon version")
+		_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, versionName)
+		Expect(err).ToNot(HaveOccurred())
+	}
+
+	var status string = ""
+
+	By("waiting for initial addon to be ACTIVE")
+	for status != "ACTIVE" {
+		describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
+		Expect(err).ToNot(HaveOccurred())
+		status = *describeAddonOutput.Addon.Status
+		time.Sleep(5 * time.Second)
+	}
+}

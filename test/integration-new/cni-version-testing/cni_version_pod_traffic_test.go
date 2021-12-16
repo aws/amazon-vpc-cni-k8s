@@ -11,23 +11,19 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package upgrade
+package versiontesting
 
 import (
 	"fmt"
-	"github.com/aws/aws-sdk-go/service/eks"
-	"strconv"
-
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
-
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/apps/v1"
 	coreV1 "k8s.io/api/core/v1"
+	"strconv"
 )
 
 var (
@@ -65,38 +61,10 @@ var (
 	interfaceToPodListOnSecondaryNode InterfaceTypeToPodList
 )
 
-var _ = Describe("test  CNI upgrade", func() {
+var _ = Describe("test pod traffic on upgrade/downgrade", func() {
 
-	var (
-		describeAddonOutput *eks.DescribeAddonOutput
-		err                 error
-	)
-
-	It("should successfully run on initial addon version", func() {
-		By("getting the current addon")
-		describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
-		if err == nil {
-
-			if *describeAddonOutput.Addon.AddonVersion != initialCNIVersion {
-				By("apply initial addon version")
-				_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, initialCNIVersion)
-				Expect(err).ToNot(HaveOccurred())
-
-			}
-		} else {
-			By("apply initial addon version")
-			_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, initialCNIVersion)
-			Expect(err).ToNot(HaveOccurred())
-		}
-
-		var status string = ""
-
-		By("getting the initial addon...")
-		for status != "ACTIVE" {
-			describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
-			Expect(err).ToNot(HaveOccurred())
-			status = *describeAddonOutput.Addon.Status
-		}
+	It("should apply initial addon version successfully", func() {
+		ApplyAddOn(initialCNIVersion)
 		//Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
 			"aws-node", map[string]string{"WARM_IP_TARGET": "3", "WARM_ENI_TARGET": "0"})
@@ -107,32 +75,9 @@ var _ = Describe("test  CNI upgrade", func() {
 		testPodNetworking()
 	})
 
-	It("should successfully run on final addon version", func() {
+	It("should apply final addon version successfully", func() {
 
-		By("getting the current addon")
-		describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
-
-		if err == nil {
-
-			if *describeAddonOutput.Addon.AddonVersion != finalCNIVersion {
-				By("apply final addon version")
-				_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, finalCNIVersion)
-				Expect(err).ToNot(HaveOccurred())
-			}
-		} else {
-			By("apply final addon version")
-			_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, finalCNIVersion)
-			Expect(err).ToNot(HaveOccurred())
-		}
-
-		var status string = ""
-
-		By("getting the final addon...")
-		for status != "ACTIVE" {
-			describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
-			Expect(err).ToNot(HaveOccurred())
-			status = *describeAddonOutput.Addon.Status
-		}
+		ApplyAddOn(finalCNIVersion)
 		//Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
 			"aws-node", map[string]string{"WARM_IP_TARGET": "3", "WARM_ENI_TARGET": "0"})
