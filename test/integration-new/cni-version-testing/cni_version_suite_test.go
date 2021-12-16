@@ -18,27 +18,52 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/eks"
-	"testing"
-	"time"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	coreV1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
+	"testing"
+	"time"
 )
 
 const InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
 
-var f *framework.Framework
-var maxIPPerInterface int
-var primaryNode v1.Node
-var secondaryNode v1.Node
-var instanceSecurityGroupID string
-var vpcCIDRs []string
+var (
+	f                       *framework.Framework
+	maxIPPerInterface       int
+	primaryNode             v1.Node
+	secondaryNode           v1.Node
+	instanceSecurityGroupID string
+	vpcCIDRs                []string
 
-var k8sVersion string
-var initialCNIVersion string
-var finalCNIVersion string
+	k8sVersion        string
+	initialCNIVersion string
+	finalCNIVersion   string
+	err               error
+	// The command to run on server pods, to allow incoming
+	// connections for different traffic type
+	serverListenCmd []string
+	// Arguments to the server listen command
+	serverListenCmdArgs []string
+	// The function that generates command which will be sent from
+	// tester pod to receiver pod
+	testConnectionCommandFunc func(serverPod coreV1.Pod, port int) []string
+	// The functions reinforces that the positive test is working as
+	// expected by creating a negative test command that should fail
+	testFailedConnectionCommandFunc func(serverPod coreV1.Pod, port int) []string
+	// Expected stdout from the exec command on testing connection
+	// from tester to server
+	testerExpectedStdOut string
+	// Expected stderr from the exec command on testing connection
+	// from tester to server
+	testerExpectedStdErr string
+	// The port on which server is listening for new connections
+	serverPort int
+	// Protocol for establishing connection to server
+	protocol string
+)
 
 func TestCNIVersion(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -115,8 +140,8 @@ func ApplyAddOn(versionName string) {
 	By("getting the current addon")
 	describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
 	if err == nil {
-		fmt.Printf("%s,%s", *describeAddonOutput.Addon.AddonVersion, versionName)
-		By("checking if the current addon is same as initial addon")
+		fmt.Printf("By applying addon %s\n", versionName)
+		By("checking if the current addon is same as addon to be applied")
 		if *describeAddonOutput.Addon.AddonVersion != versionName {
 
 			By("deleting the current vpc cni addon ")
@@ -136,18 +161,72 @@ func ApplyAddOn(versionName string) {
 
 		}
 	} else {
-		By("apply initial addon version")
+		By("apply addon version")
 		_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, versionName)
 		Expect(err).ToNot(HaveOccurred())
 	}
 
 	var status string = ""
 
-	By("waiting for initial addon to be ACTIVE")
+	By("waiting for  addon to be ACTIVE")
 	for status != "ACTIVE" {
 		describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
 		Expect(err).ToNot(HaveOccurred())
 		status = *describeAddonOutput.Addon.Status
 		time.Sleep(5 * time.Second)
 	}
+}
+
+type InterfaceTypeToPodList struct {
+	PodsOnPrimaryENI   []coreV1.Pod
+	PodsOnSecondaryENI []coreV1.Pod
+}
+
+// GetPodsOnPrimaryAndSecondaryInterface returns the list of Pods on Primary Networking
+// Interface and Secondary Network Interface on a given Node
+func GetPodsOnPrimaryAndSecondaryInterface(node coreV1.Node,
+	podLabelKey string, podLabelVal string) InterfaceTypeToPodList {
+	podList, err := f.K8sResourceManagers.
+		PodManager().
+		GetPodsWithLabelSelector(podLabelKey, podLabelVal)
+	Expect(err).ToNot(HaveOccurred())
+
+	instance, err := f.CloudServices.EC2().
+		DescribeInstance(k8sUtils.GetInstanceIDFromNode(node))
+	Expect(err).ToNot(HaveOccurred())
+
+	interfaceToPodList := InterfaceTypeToPodList{
+		PodsOnPrimaryENI:   []coreV1.Pod{},
+		PodsOnSecondaryENI: []coreV1.Pod{},
+	}
+
+	ipToPod := map[string]coreV1.Pod{}
+	for _, pod := range podList.Items {
+		ipToPod[pod.Status.PodIP] = pod
+	}
+
+	for _, nwInterface := range instance.NetworkInterfaces {
+		isPrimary := IsPrimaryENI(nwInterface, instance.PrivateIpAddress)
+		for _, ip := range nwInterface.PrivateIpAddresses {
+			if pod, found := ipToPod[*ip.PrivateIpAddress]; found {
+				if isPrimary {
+					interfaceToPodList.PodsOnPrimaryENI =
+						append(interfaceToPodList.PodsOnPrimaryENI, pod)
+				} else {
+					interfaceToPodList.PodsOnSecondaryENI =
+						append(interfaceToPodList.PodsOnSecondaryENI, pod)
+				}
+			}
+		}
+	}
+	return interfaceToPodList
+}
+
+func IsPrimaryENI(nwInterface *ec2.InstanceNetworkInterface, instanceIPAddr *string) bool {
+	for _, privateIPAddress := range nwInterface.PrivateIpAddresses {
+		if *privateIPAddress.PrivateIpAddress == *instanceIPAddr {
+			return true
+		}
+	}
+	return false
 }

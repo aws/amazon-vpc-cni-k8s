@@ -13,6 +13,8 @@
 
 package versiontesting
 
+import v1 "k8s.io/api/apps/v1"
+
 import (
 	"fmt"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
@@ -21,35 +23,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	v1 "k8s.io/api/apps/v1"
 	coreV1 "k8s.io/api/core/v1"
 	"strconv"
 )
 
 var (
-	err error
-	// The command to run on server pods, to allow incoming
-	// connections for different traffic type
-	serverListenCmd []string
-	// Arguments to the server listen command
-	serverListenCmdArgs []string
-	// The function that generates command which will be sent from
-	// tester pod to receiver pod
-	testConnectionCommandFunc func(serverPod coreV1.Pod, port int) []string
-	// The functions reinforces that the positive test is working as
-	// expected by creating a negative test command that should fail
-	testFailedConnectionCommandFunc func(serverPod coreV1.Pod, port int) []string
-	// Expected stdout from the exec command on testing connection
-	// from tester to server
-	testerExpectedStdOut string
-	// Expected stderr from the exec command on testing connection
-	// from tester to server
-	testerExpectedStdErr string
-	// The port on which server is listening for new connections
-	serverPort int
-	// Protocol for establishing connection to server
-	protocol string
-
 	// Primary node server deployment
 	primaryNodeDeployment *v1.Deployment
 	// Secondary node Server deployment
@@ -363,58 +341,4 @@ func testConnectivity(senderPod coreV1.Pod, receiverPod coreV1.Pod, expectedStdo
 
 	Expect(stdErr).To(ContainSubstring(expectedStderr))
 	Expect(stdOut).To(ContainSubstring(expectedStdout))
-}
-
-type InterfaceTypeToPodList struct {
-	PodsOnPrimaryENI   []coreV1.Pod
-	PodsOnSecondaryENI []coreV1.Pod
-}
-
-// GetPodsOnPrimaryAndSecondaryInterface returns the list of Pods on Primary Networking
-// Interface and Secondary Network Interface on a given Node
-func GetPodsOnPrimaryAndSecondaryInterface(node coreV1.Node,
-	podLabelKey string, podLabelVal string) InterfaceTypeToPodList {
-	podList, err := f.K8sResourceManagers.
-		PodManager().
-		GetPodsWithLabelSelector(podLabelKey, podLabelVal)
-	Expect(err).ToNot(HaveOccurred())
-
-	instance, err := f.CloudServices.EC2().
-		DescribeInstance(k8sUtils.GetInstanceIDFromNode(node))
-	Expect(err).ToNot(HaveOccurred())
-
-	interfaceToPodList := InterfaceTypeToPodList{
-		PodsOnPrimaryENI:   []coreV1.Pod{},
-		PodsOnSecondaryENI: []coreV1.Pod{},
-	}
-
-	ipToPod := map[string]coreV1.Pod{}
-	for _, pod := range podList.Items {
-		ipToPod[pod.Status.PodIP] = pod
-	}
-
-	for _, nwInterface := range instance.NetworkInterfaces {
-		isPrimary := IsPrimaryENI(nwInterface, instance.PrivateIpAddress)
-		for _, ip := range nwInterface.PrivateIpAddresses {
-			if pod, found := ipToPod[*ip.PrivateIpAddress]; found {
-				if isPrimary {
-					interfaceToPodList.PodsOnPrimaryENI =
-						append(interfaceToPodList.PodsOnPrimaryENI, pod)
-				} else {
-					interfaceToPodList.PodsOnSecondaryENI =
-						append(interfaceToPodList.PodsOnSecondaryENI, pod)
-				}
-			}
-		}
-	}
-	return interfaceToPodList
-}
-
-func IsPrimaryENI(nwInterface *ec2.InstanceNetworkInterface, instanceIPAddr *string) bool {
-	for _, privateIPAddress := range nwInterface.PrivateIpAddresses {
-		if *privateIPAddress.PrivateIpAddress == *instanceIPAddr {
-			return true
-		}
-	}
-	return false
 }
