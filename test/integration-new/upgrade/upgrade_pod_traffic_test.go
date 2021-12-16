@@ -15,11 +15,13 @@ package upgrade
 
 import (
 	"fmt"
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
-	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/aws-sdk-go/service/eks"
 	"strconv"
+
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
+	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo"
@@ -63,29 +65,29 @@ var (
 	interfaceToPodListOnSecondaryNode InterfaceTypeToPodList
 )
 
-var _ = Describe("test applying  older version", func() {
+var _ = Describe("test  CNI upgrade", func() {
 
 	var (
 		describeAddonOutput *eks.DescribeAddonOutput
 		err                 error
 	)
 
-	BeforeEach(func() {
+	It("should successfully run on initial addon version", func() {
 		By("getting the current addon")
 		describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
 		if err == nil {
 
-			By("deleting the current vpc cni addon ")
-			_, err = f.CloudServices.EKS().DeleteAddon("vpc-cni", f.Options.ClusterName)
+			if *describeAddonOutput.Addon.AddonVersion != initialCNIVersion {
+				By("apply initial addon version")
+				_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, initialCNIVersion)
+				Expect(err).ToNot(HaveOccurred())
+
+			}
+		} else {
+			By("apply initial addon version")
+			_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, initialCNIVersion)
 			Expect(err).ToNot(HaveOccurred())
-
 		}
-	})
-
-	It("should successfully run on initial addon version", func() {
-		By("apply initial addon version")
-		_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, initialCNIVersion)
-		Expect(err).ToNot(HaveOccurred())
 
 		var status string = ""
 
@@ -99,14 +101,29 @@ var _ = Describe("test applying  older version", func() {
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
 			"aws-node", map[string]string{"WARM_IP_TARGET": "3", "WARM_ENI_TARGET": "0"})
 
-		testPodNetworking()
+	})
 
+	Context("when testing pod traffic on initial version", func() {
+		testPodNetworking()
 	})
 
 	It("should successfully run on final addon version", func() {
-		By("apply final addon version")
-		_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, finalCNIVersion)
-		Expect(err).ToNot(HaveOccurred())
+
+		By("getting the current addon")
+		describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
+
+		if err == nil {
+
+			if *describeAddonOutput.Addon.AddonVersion != finalCNIVersion {
+				By("apply final addon version")
+				_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, finalCNIVersion)
+				Expect(err).ToNot(HaveOccurred())
+			}
+		} else {
+			By("apply final addon version")
+			_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, finalCNIVersion)
+			Expect(err).ToNot(HaveOccurred())
+		}
 
 		var status string = ""
 
@@ -120,167 +137,229 @@ var _ = Describe("test applying  older version", func() {
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
 			"aws-node", map[string]string{"WARM_IP_TARGET": "3", "WARM_ENI_TARGET": "0"})
 
-		testPodNetworking()
+	})
 
+	Context("when testing pod traffic on final version", func() {
+		testPodNetworking()
 	})
 
 })
 
-type TestStack struct {
-	protocol            string
-	serverPort          int
-	serverListenCmd     []string
-	serverListenCmdArgs []string
-}
-
-func (s TestStack) Deploy() error {
-	err := DeployStack(s.protocol, s.serverPort, s.serverListenCmd, s.serverListenCmdArgs)
-	return err
-}
-
-func (s TestStack) ConnectivityPerStack() error {
-
-	protocolVal := s.protocol
-	switch {
-	case protocolVal == "icmp":
-		CheckConnectivityForMultiplePodPlacement(s.serverPort, fmt.Sprintf("%d packets transmitted, "+
-			"%d packets received", 5, 5), "", func(receiverPod coreV1.Pod, port int) []string {
-			return []string{"ping", "-c", strconv.Itoa(5), receiverPod.Status.PodIP}
-		})
-	case protocolVal == "tcp":
-		CheckConnectivityForMultiplePodPlacement(s.serverPort, "", "succeeded!", func(receiverPod coreV1.Pod, port int) []string {
-			return []string{"nc", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port)}
-		})
-	case protocolVal == "udp":
-		CheckConnectivityForMultiplePodPlacement(s.serverPort, "", "succeeded!", func(receiverPod coreV1.Pod, port int) []string {
-			return []string{"nc", "-u", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port)}
-		})
-	default:
-		fmt.Println("Invalid")
-	}
-	return nil
-}
-
-func (s TestStack) Cleanup() {
-	CleanupStack(s.protocol, s.serverPort)
-}
-
 func testPodNetworking() {
-	icmpStack :=
-		TestStack{"icmp", 0, []string{"sleep"}, []string{"1000"}}
-	tcpStack :=
-		TestStack{ec2.ProtocolTcp, 2273, []string{"nc"}, []string{"-k", "-l", strconv.Itoa(2273)}}
-	udpStack :=
-		TestStack{ec2.ProtocolUdp, 2273, []string{"nc"}, []string{"-u", "-l", "-k", strconv.Itoa(2273)}}
+	JustBeforeEach(func() {
+		By("authorizing security group ingress on instance security group")
+		err = f.CloudServices.EC2().
+			AuthorizeSecurityGroupIngress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
+		Expect(err).ToNot(HaveOccurred())
 
-	testStacks := []TestStack{icmpStack, tcpStack, udpStack}
+		By("authorizing security group egress on instance security group")
+		err = f.CloudServices.EC2().
+			AuthorizeSecurityGroupEgress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
+		Expect(err).ToNot(HaveOccurred())
 
-	for _, testStackVal := range testStacks {
-		err := testStackVal.Deploy()
-		if err != nil {
-			testStackVal.Cleanup()
-		}
-		err = testStackVal.ConnectivityPerStack()
-		if err != nil {
-			testStackVal.Cleanup()
-		}
-		testStackVal.Cleanup()
+		serverContainer := manifest.
+			NewNetCatAlpineContainer().
+			Command(serverListenCmd).
+			Args(serverListenCmdArgs).
+			Build()
 
-	}
+		By("creating server deployment on the primary node")
+		primaryNodeDeployment = manifest.
+			NewDefaultDeploymentBuilder().
+			Container(serverContainer).
+			Replicas(maxIPPerInterface*2). // X2 so Pods are created on secondary ENI too
+			NodeName(primaryNode.Name).
+			PodLabel("node", "primary").
+			Name("primary-node-server").
+			Build()
 
+		primaryNodeDeployment, err = f.K8sResourceManagers.
+			DeploymentManager().
+			CreateAndWaitTillDeploymentIsReady(primaryNodeDeployment, utils.DefaultDeploymentReadyTimeout)
+		Expect(err).ToNot(HaveOccurred())
+
+		interfaceToPodListOnPrimaryNode =
+			GetPodsOnPrimaryAndSecondaryInterface(primaryNode, "node", "primary")
+
+		// At least two Pods should be placed on the Primary and Secondary Interface
+		// on the Primary and Secondary Node in order to test all possible scenarios
+		Expect(len(interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI)).
+			Should(BeNumerically(">", 1))
+		Expect(len(interfaceToPodListOnPrimaryNode.PodsOnSecondaryENI)).
+			Should(BeNumerically(">", 1))
+
+		By("creating server deployment on secondary node")
+		secondaryNodeDeployment = manifest.
+			NewDefaultDeploymentBuilder().
+			Container(serverContainer).
+			Replicas(maxIPPerInterface*2). // X2 so Pods are created on secondary ENI too
+			NodeName(secondaryNode.Name).
+			PodLabel("node", "secondary").
+			Name("secondary-node-server").
+			Build()
+
+		secondaryNodeDeployment, err = f.K8sResourceManagers.
+			DeploymentManager().
+			CreateAndWaitTillDeploymentIsReady(secondaryNodeDeployment, utils.DefaultDeploymentReadyTimeout)
+		Expect(err).ToNot(HaveOccurred())
+
+		interfaceToPodListOnSecondaryNode =
+			GetPodsOnPrimaryAndSecondaryInterface(secondaryNode, "node", "secondary")
+
+		// Same reason as mentioned above
+		Expect(len(interfaceToPodListOnSecondaryNode.PodsOnPrimaryENI)).
+			Should(BeNumerically(">", 1))
+		Expect(len(interfaceToPodListOnSecondaryNode.PodsOnSecondaryENI)).
+			Should(BeNumerically(">", 1))
+	})
+
+	JustAfterEach(func() {
+		By("revoking security group ingress on instance security group")
+		err = f.CloudServices.EC2().
+			RevokeSecurityGroupIngress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
+		Expect(err).ToNot(HaveOccurred())
+
+		By("revoking security group egress on instance security group")
+		err = f.CloudServices.EC2().
+			RevokeSecurityGroupEgress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
+		Expect(err).ToNot(HaveOccurred())
+
+		By("deleting the primary node server deployment")
+		err = f.K8sResourceManagers.DeploymentManager().
+			DeleteAndWaitTillDeploymentIsDeleted(primaryNodeDeployment)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("deleting the secondary node server deployment")
+		err = f.K8sResourceManagers.DeploymentManager().
+			DeleteAndWaitTillDeploymentIsDeleted(secondaryNodeDeployment)
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	Context("when testing ICMP traffic", func() {
+		BeforeEach(func() {
+			// The number of packets to be sent
+			packetCount := 5
+			// Protocol needs to be set allow ICMP traffic on the EC2 SG
+			protocol = "ICMP"
+			// ICMP doesn't need any port to be opened on the SG
+			serverPort = 0
+			// Since ping doesn't need any server, just sleep on the server pod
+			serverListenCmd = []string{"sleep"}
+			serverListenCmdArgs = []string{"1000"}
+
+			// Verify all the packets were transmitted and received successfully
+			testerExpectedStdOut = fmt.Sprintf("%d packets transmitted, "+
+				"%d packets received", packetCount, packetCount)
+			testerExpectedStdErr = ""
+
+			testConnectionCommandFunc = func(receiverPod coreV1.Pod, port int) []string {
+				return []string{"ping", "-c", strconv.Itoa(packetCount), receiverPod.Status.PodIP}
+			}
+		})
+
+		It("should allow ICMP traffic", func() {
+			CheckConnectivityForMultiplePodPlacement(
+				interfaceToPodListOnPrimaryNode, interfaceToPodListOnSecondaryNode,
+				serverPort, testerExpectedStdOut, testerExpectedStdErr, testConnectionCommandFunc)
+		})
+	})
+	Context("[CANARY][SMOKE] when establishing UDP connection from tester to server", func() {
+		BeforeEach(func() {
+			serverPort = 2273
+			protocol = ec2.ProtocolUdp
+			serverListenCmd = []string{"nc"}
+			// The nc flag "-l" for listen mode, "-k" to keep server up and not close
+			// connection after each connection, "-u" for udp
+			serverListenCmdArgs = []string{"-u", "-l", "-k", strconv.Itoa(serverPort)}
+
+			// Verbose output from nc is being redirected to stderr instead of stdout
+			testerExpectedStdErr = "succeeded!"
+			testerExpectedStdOut = ""
+
+			// The nc flag "-u" for UDP traffic, "-v" for verbose output and "-wn" for timing out
+			// in n seconds
+			testConnectionCommandFunc = func(receiverPod coreV1.Pod, port int) []string {
+				return []string{"nc", "-u", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port)}
+			}
+
+			// Create a negative test case with the wrong port number. This is to reinforce the
+			// positive test case work by verifying negative cases do throw error
+			testFailedConnectionCommandFunc = func(receiverPod coreV1.Pod, port int) []string {
+				return []string{"nc", "-u", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port + 1)}
+			}
+		})
+
+		It("connection should be established", func() {
+			CheckConnectivityForMultiplePodPlacement(
+				interfaceToPodListOnPrimaryNode, interfaceToPodListOnSecondaryNode,
+				serverPort, testerExpectedStdOut, testerExpectedStdErr, testConnectionCommandFunc)
+
+			By("verifying connection fails for unreachable port")
+			VerifyConnectivityFailsForNegativeCase(interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI[0],
+				interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI[1], serverPort,
+				testFailedConnectionCommandFunc)
+		})
+	})
+
+	Context("[CANARY][SMOKE] when establishing TCP connection from tester to server", func() {
+
+		BeforeEach(func() {
+			serverPort = 2273
+			protocol = ec2.ProtocolTcp
+			// Test tcp connection using netcat
+			serverListenCmd = []string{"nc"}
+			// The nc flag "-l" for listen mode, "-k" to keep server up and not close
+			// connection after each connection
+			serverListenCmdArgs = []string{"-k", "-l", strconv.Itoa(serverPort)}
+
+			// netcat verbose output is being redirected to stderr instead of stdout
+			testerExpectedStdErr = "succeeded!"
+			testerExpectedStdOut = ""
+
+			// The nc flag "-v" for verbose output and "-wn" for timing out in n seconds
+			testConnectionCommandFunc = func(receiverPod coreV1.Pod, port int) []string {
+				return []string{"nc", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port)}
+			}
+
+			// Create a negative test case with the wrong port number. This is to reinforce the
+			// positive test case work by verifying negative cases do throw error
+			testFailedConnectionCommandFunc = func(receiverPod coreV1.Pod, port int) []string {
+				return []string{"nc", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port + 1)}
+			}
+		})
+
+		It("should allow connection across nodes and across interface types", func() {
+			CheckConnectivityForMultiplePodPlacement(
+				interfaceToPodListOnPrimaryNode, interfaceToPodListOnSecondaryNode,
+				serverPort, testerExpectedStdOut, testerExpectedStdErr, testConnectionCommandFunc)
+
+			By("verifying connection fails for unreachable port")
+			VerifyConnectivityFailsForNegativeCase(interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI[0],
+				interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI[1], serverPort,
+				testFailedConnectionCommandFunc)
+		})
+	})
 }
 
-func DeployStack(protocol string, serverPort int, serverListenCmd []string, serverListenCmdArgs []string) error {
-	By("authorizing security group ingress on instance security group")
-	err = f.CloudServices.EC2().
-		AuthorizeSecurityGroupIngress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
-	Expect(err).ToNot(HaveOccurred())
+func VerifyConnectivityFailsForNegativeCase(senderPod coreV1.Pod, receiverPod coreV1.Pod, port int,
+	getTestCommandFunc func(receiverPod coreV1.Pod, port int) []string) {
 
-	By("authorizing security group egress on instance security group")
-	err = f.CloudServices.EC2().
-		AuthorizeSecurityGroupEgress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
-	Expect(err).ToNot(HaveOccurred())
+	testerCommand := getTestCommandFunc(receiverPod, port)
 
-	serverContainer := manifest.
-		NewNetCatAlpineContainer().
-		Command(serverListenCmd).
-		Args(serverListenCmdArgs).
-		Build()
+	fmt.Fprintf(GinkgoWriter, "verifying connectivity fails from pod %s on node %s with IP %s to pod"+
+		" %s on node %s with IP %s\n", senderPod.Name, senderPod.Spec.NodeName, senderPod.Status.PodIP,
+		receiverPod.Name, receiverPod.Spec.NodeName, receiverPod.Status.PodIP)
 
-	By("creating server deployment on the primary node")
-	primaryNodeDeployment = manifest.
-		NewDefaultDeploymentBuilder().
-		Container(serverContainer).
-		Replicas(maxIPPerInterface*2). // X2 so Pods are created on secondary ENI too
-		NodeName(primaryNode.Name).
-		PodLabel("node", "primary").
-		Name("primary-node-server").
-		Build()
-
-	primaryNodeDeployment, err = f.K8sResourceManagers.
-		DeploymentManager().
-		CreateAndWaitTillDeploymentIsReady(primaryNodeDeployment, utils.DefaultDeploymentReadyTimeout)
-	Expect(err).ToNot(HaveOccurred())
-
-	interfaceToPodListOnPrimaryNode =
-		GetPodsOnPrimaryAndSecondaryInterface(primaryNode, "node", "primary")
-
-	// At least two Pods should be placed on the Primary and Secondary Interface
-	// on the Primary and Secondary Node in order to test all possible scenarios
-	Expect(len(interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI)).
-		Should(BeNumerically(">", 1))
-	Expect(len(interfaceToPodListOnPrimaryNode.PodsOnSecondaryENI)).
-		Should(BeNumerically(">", 1))
-
-	By("creating server deployment on secondary node")
-	secondaryNodeDeployment = manifest.
-		NewDefaultDeploymentBuilder().
-		Container(serverContainer).
-		Replicas(maxIPPerInterface*2). // X2 so Pods are created on secondary ENI too
-		NodeName(secondaryNode.Name).
-		PodLabel("node", "secondary").
-		Name("secondary-node-server").
-		Build()
-
-	secondaryNodeDeployment, err = f.K8sResourceManagers.
-		DeploymentManager().
-		CreateAndWaitTillDeploymentIsReady(secondaryNodeDeployment, utils.DefaultDeploymentReadyTimeout)
-	Expect(err).ToNot(HaveOccurred())
-
-	interfaceToPodListOnSecondaryNode =
-		GetPodsOnPrimaryAndSecondaryInterface(secondaryNode, "node", "secondary")
-
-	// Same reason as mentioned above
-	Expect(len(interfaceToPodListOnSecondaryNode.PodsOnPrimaryENI)).
-		Should(BeNumerically(">", 1))
-	Expect(len(interfaceToPodListOnSecondaryNode.PodsOnSecondaryENI)).
-		Should(BeNumerically(">", 1))
-	return err
+	_, _, err := f.K8sResourceManagers.PodManager().
+		PodExec(senderPod.Namespace, senderPod.Name, testerCommand)
+	Expect(err).To(HaveOccurred())
 }
 
-func CleanupStack(protocol string, serverPort int) {
-	By("revoking security group ingress on instance security group")
-	err = f.CloudServices.EC2().
-		RevokeSecurityGroupIngress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
-	Expect(err).ToNot(HaveOccurred())
-
-	By("revoking security group egress on instance security group")
-	err = f.CloudServices.EC2().
-		RevokeSecurityGroupEgress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
-	Expect(err).ToNot(HaveOccurred())
-
-	By("deleting the primary node server deployment")
-	err = f.K8sResourceManagers.DeploymentManager().
-		DeleteAndWaitTillDeploymentIsDeleted(primaryNodeDeployment)
-	Expect(err).ToNot(HaveOccurred())
-
-	By("deleting the secondary node server deployment")
-	err = f.K8sResourceManagers.DeploymentManager().
-		DeleteAndWaitTillDeploymentIsDeleted(secondaryNodeDeployment)
-	Expect(err).ToNot(HaveOccurred())
-}
-
-func CheckConnectivityForMultiplePodPlacement(port int,
+// CheckConnectivityForMultiplePodPlacement checks connectivity for various scenarios, an example
+// connection from Pod on Node 1 having IP from Primary Network Interface to Pod on Node 2 having
+// IP from Secondary Network Interface
+func CheckConnectivityForMultiplePodPlacement(interfaceToPodListOnPrimaryNode InterfaceTypeToPodList,
+	interfaceToPodListOnSecondaryNode InterfaceTypeToPodList, port int,
 	testerExpectedStdOut string, testerExpectedStdErr string,
 	getTestCommandFunc func(receiverPod coreV1.Pod, port int) []string) {
 
