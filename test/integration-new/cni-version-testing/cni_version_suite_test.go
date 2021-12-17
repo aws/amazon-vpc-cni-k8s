@@ -15,6 +15,9 @@ package versiontesting
 
 import (
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -24,8 +27,6 @@ import (
 	. "github.com/onsi/gomega"
 	coreV1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
-	"testing"
-	"time"
 )
 
 const InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"

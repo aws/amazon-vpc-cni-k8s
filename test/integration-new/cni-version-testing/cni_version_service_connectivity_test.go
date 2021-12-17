@@ -16,8 +16,9 @@ package versiontesting
 import (
 	"context"
 	"fmt"
-	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"time"
+
+	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
