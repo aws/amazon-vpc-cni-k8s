@@ -166,7 +166,7 @@ func ApplyAddOn(versionName string) {
 		Expect(err).ToNot(HaveOccurred())
 	}
 
-	var status string = ""
+	var status = ""
 
 	By("waiting for  addon to be ACTIVE")
 	for status != "ACTIVE" {
