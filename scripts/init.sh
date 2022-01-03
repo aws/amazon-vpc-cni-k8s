@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-set -euxo pipefail
+set -euo pipefail
 
 get_metadata()
 {
-    TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+    TOKEN=$(curl -Ss -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
     attempts=60
     false
     while [ "${?}" -gt 0 ]; do
@@ -12,7 +12,7 @@ get_metadata()
         echo "Failed to get metdata"
         exit 1
         fi
-        meta=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/${1})
+        meta=$(curl -Ss -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/${1})
         if [ "${?}" -gt 0 ]; then
             let attempts--
             sleep 0.5
