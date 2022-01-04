@@ -38,4 +38,3 @@ COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/entrypoint.sh /app/
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-cd
