@@ -1268,7 +1268,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 	ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
 
-	log.Debugf("Reconciling ENI/IP pool info because time since last %v <= %v", timeSinceLast, interval)
+	log.Debugf("Reconciling ENI/IP pool info because time since last %v > %v", timeSinceLast, interval)
 	allENIs, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		log.Errorf("IP pool reconcile: Failed to get attached ENI info: %v", err.Error())
