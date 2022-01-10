@@ -63,10 +63,10 @@ const (
 	// This environment variable is used to specify the desired number of free IPs always available in the "warm pool".
 	// When it is not set, ipamd defaults to use all available IPs per ENI for that instance type.
 	// For example, for a m4.4xlarge node,
-	//     If WARM-IP-TARGET is set to 1, and there are 9 pods running on the node, ipamd will try
+	//     If WARM_IP_TARGET is set to 1, and there are 9 pods running on the node, ipamd will try
 	//     to make the "warm pool" have 10 IP addresses with 9 being assigned to pods and 1 free IP.
 	//
-	//     If "WARM-IP-TARGET is not set, it will default to 30 (which the maximum number of IPs per ENI).
+	//     If "WARM_IP_TARGET is not set, it will default to 30 (which the maximum number of IPs per ENI).
 	//     If there are 9 pods running on the node, ipamd will try to make the "warm pool" have 39 IPs with 9 being
 	//     assigned to pods and 30 free IPs.
 	envWarmIPTarget = "WARM_IP_TARGET"
@@ -87,7 +87,7 @@ const (
 	// always available in "warm pool".
 	// When it is not set, it is default to 1.
 	//
-	// when "WARM-IP-TARGET" is defined, ipamd will use behavior defined for "WARM-IP-TARGET".
+	// when "WARM_IP_TARGET" is defined, ipamd will use behavior defined for "WARM_IP_TARGET".
 	//
 	// For example, for a m4.4xlarge node
 	//     If WARM_ENI_TARGET is set to 2, and there are 9 pods running on the node, ipamd will try to
@@ -1268,7 +1268,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 	ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
 
-	log.Debugf("Reconciling ENI/IP pool info because time since last %v <= %v", timeSinceLast, interval)
+	log.Debugf("Reconciling ENI/IP pool info because time since last %v > %v", timeSinceLast, interval)
 	allENIs, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		log.Errorf("IP pool reconcile: Failed to get attached ENI info: %v", err.Error())
