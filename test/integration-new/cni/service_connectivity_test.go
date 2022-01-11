@@ -34,7 +34,9 @@ const (
 )
 
 // Verifies connectivity to deployment behind different service types
-var _ = Describe("[CANARY] test service connectivity", func() {
+var _ = Describe("[CANARY] test service connectivity", ServiceConnectivityTest)
+
+func ServiceConnectivityTest() {
 	var err error
 
 	// Deployment running the http server
@@ -177,4 +179,4 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 	})
 
 	//TODO: Add test case to install lb controller and test with nlb-ip mode
-})
+}

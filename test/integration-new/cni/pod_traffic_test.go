@@ -32,7 +32,9 @@ import (
 // Verifies network connectivity across Pods placed on different combination of
 // primary and second Elastic Networking Interface on two nodes. The test verifies
 // different traffic type for instance TCP, UDP, ICMP
-var _ = Describe("test pod networking", func() {
+var _ = Describe("test pod networking", PodTrafficTest)
+
+func PodTrafficTest() {
 
 	var (
 		err error
@@ -263,7 +265,7 @@ var _ = Describe("test pod networking", func() {
 				testFailedConnectionCommandFunc)
 		})
 	})
-})
+}
 
 func VerifyConnectivityFailsForNegativeCase(senderPod coreV1.Pod, receiverPod coreV1.Pod, port int,
 	getTestCommandFunc func(receiverPod coreV1.Pod, port int) []string) {

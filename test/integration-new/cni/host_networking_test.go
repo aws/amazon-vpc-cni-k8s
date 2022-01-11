@@ -49,7 +49,10 @@ const (
 	DEFAULT_VETH_PREFIX        = "eni"
 )
 
-var _ = Describe("test host networking", func() {
+var _ = Describe("test host networking", HostNetworkingTest)
+
+func HostNetworkingTest() {
+
 	var err error
 	var podLabelKey = "app"
 	var podLabelVal = "host-networking-test"
@@ -205,7 +208,7 @@ var _ = Describe("test host networking", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})
-})
+}
 
 // Validate host networking for the list of pods supplied
 func ValidateHostNetworking(testType TestType, podValidationInputString string) {
