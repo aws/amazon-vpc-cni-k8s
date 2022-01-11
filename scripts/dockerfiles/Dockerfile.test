@@ -1,4 +1,3 @@
-ARG docker_arch
 ARG golang_image
 FROM $golang_image
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s

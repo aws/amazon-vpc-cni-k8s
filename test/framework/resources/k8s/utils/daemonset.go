@@ -74,9 +74,9 @@ func updateDaemonsetEnvVarsAndWait(f *framework.Framework, dsName string, dsName
 	// update multus daemonset if it exists
 	// to avoid being stuck in recursive loop, we need below check
 	if dsName != utils.MultusNodeName {
-		By("Restarting Multus daemonset if it exists")
 		_, err := f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(dsNamespace, utils.MultusNodeName)
 		if err == nil {
+			By("Restarting Multus daemonset")
 			td := time.Now()
 			updateDaemonsetEnvVarsAndWait(f, utils.MultusNodeName, dsNamespace, utils.MultusContainerName, map[string]string{
 				"forceUpdatedAt": td.String(),
