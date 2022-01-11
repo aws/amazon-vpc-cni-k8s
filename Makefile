@@ -43,7 +43,7 @@ HELM_CHART_NAME ?= "aws-vpc-cni"
 # TEST_IMAGE is the testing environment container image.
 TEST_IMAGE = amazon-k8s-cni-test
 TEST_IMAGE_NAME = $(TEST_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
-# These values derive ARCH and DOCKER_ARCH which are needed by dependencies in
+# These values derive ARCH  which is needed by dependencies in
 # image build defaulting to system's architecture when not specified.
 #
 # UNAME_ARCH is the runtime architecture of the building host.
@@ -52,16 +52,13 @@ UNAME_ARCH = $(shell uname -m)
 #
 # These are pairs of input_arch to derived_arch separated by colons:
 ARCH = $(lastword $(subst :, ,$(filter $(UNAME_ARCH):%,x86_64:amd64 aarch64:arm64)))
-# DOCKER_ARCH is the docker specific architecture specifier used for building on
-# multiarch container images.
-DOCKER_ARCH = $(lastword $(subst :, ,$(filter $(ARCH):%,amd64:amd64 arm64:arm64v8)))
 # IMAGE_ARCH_SUFFIX is the `-arch` suffix included in the container image name.
 #
 # This is only applied to the arm64 container image by default. Override to
 # provide an alternate suffix or to omit.
 IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(ARCH),arm64))
 # GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE = golang:1.16-stretch
+GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.16-stretch
 # For the requested build, these are the set of Go specific build environment variables.
 export GOARCH ?= $(ARCH)
 export GOOS = linux
@@ -96,7 +93,6 @@ DOCKER_RUN_FLAGS = --rm -ti $(DOCKER_ARGS)
 # DOCKER_BUILD_FLAGS is the set of flags passed during container image builds
 # based on the requested build.
 DOCKER_BUILD_FLAGS = --build-arg GOARCH="$(ARCH)" \
-					  --build-arg docker_arch="$(DOCKER_ARCH)" \
 					  --build-arg golang_image="$(GOLANG_IMAGE)" \
 					  --network=host \
 	  		          $(DOCKER_ARGS)
