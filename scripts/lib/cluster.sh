@@ -14,7 +14,7 @@ function down-test-cluster() {
 function up-test-cluster() {
     MNGS=""
     if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
-        MNGS='{"GetRef.Name-single-node-mng":{"name":"GetRef.Name-single-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":1,"asg-desired-capacity":1,"instance-types":["m5.16xlarge"],"volume-size":40}, "cni-test-multi-node-mng":{"name":"cni-test-multi-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":100,"asg-desired-capacity":99,"instance-types":["m5.xlarge"],"volume-size":40,"cluster-autoscaler":{"enable":true}}}'
+        MNGS='{"cni-test-single-node-mng":{"name":"cni-test-single-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":1,"asg-desired-capacity":1,"instance-types":["m5.16xlarge"],"volume-size":40}, "cni-test-multi-node-mng":{"name":"cni-test-multi-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":100,"asg-desired-capacity":99,"instance-types":["m5.xlarge"],"volume-size":40,"cluster-autoscaler":{"enable":true}}}'
         export RUN_CONFORMANCE="false"
         : "${PERFORMANCE_TEST_S3_BUCKET_NAME:=""}"
     else
@@ -53,12 +53,12 @@ function up-test-cluster() {
 }
 
 function up-kops-cluster {
-    aws s3api create-bucket --bucket kops-cni-test-temp --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
+    aws s3api create-bucket --bucket kops-cni-test-eks --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
     curl -LO https://github.com/kubernetes/kops/releases/download/$(curl -s https://api.github.com/repos/kubernetes/kops/releases/latest | grep tag_name | cut -d '"' -f 4)/kops-linux-amd64
     chmod +x kops-linux-amd64
     sudo mv kops-linux-amd64 /usr/local/bin/kops
     CLUSTER_NAME=kops-cni-test-cluster-${TEST_ID}.k8s.local
-    export KOPS_STATE_STORE=s3://kops-cni-test-temp
+    export KOPS_STATE_STORE=s3://kops-cni-test-eks
 
     SSH_KEYS=~/.ssh/devopsinuse
     if [ ! -f "$SSH_KEYS" ]
@@ -83,11 +83,11 @@ function up-kops-cluster {
         sleep 5
         echo "Waiting for cluster validation"
     done
-    kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/${MANIFEST_CNI_VERSION}/config/v1.6/cni-metrics-helper.yaml
+    kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/${MANIFEST_CNI_VERSION}/config/master/cni-metrics-helper.yaml
 }
 
 function down-kops-cluster {
     kops delete cluster --name ${CLUSTER_NAME} --yes
     aws s3 rm ${KOPS_STATE_STORE} --recursive
-    aws s3 rb ${KOPS_STATE_STORE} --region us-west-2
+    aws s3 rb ${KOPS_STATE_STORE} --region $AWS_DEFAULT_REGION
 }
