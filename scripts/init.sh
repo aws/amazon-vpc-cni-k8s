@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-set -euxo pipefail
+set -euo pipefail
 
 get_metadata()
 {
-    TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+    TOKEN=$(curl -Ss -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
     attempts=60
     false
     while [ "${?}" -gt 0 ]; do
@@ -12,7 +12,7 @@ get_metadata()
         echo "Failed to get metdata"
         exit 1
         fi
-        meta=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/${1})
+        meta=$(curl -Ss -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/${1})
         if [ "${?}" -gt 0 ]; then
             let attempts--
             sleep 0.5
@@ -56,6 +56,17 @@ if [ "${DISABLE_TCP_EARLY_DEMUX:-false}" == "true" ]; then
     sysctl -w "net.ipv4.tcp_early_demux=0"
 else
     sysctl -e -w "net.ipv4.tcp_early_demux=1"
+fi
+
+# If IPv6 is enabled,set `disable_ipv6` to `0` and ipv6 `forwarding` to `1`
+# We also set `accept_ra` to `2` on primary interface to allow it to honor RA packets.
+if [ "${ENABLE_IPv6:-false}" == "true" ]; then
+    sysctl -w "net.ipv6.conf.all.disable_ipv6=0"
+    sysctl -w "net.ipv6.conf.all.forwarding=1"
+    sysctl -w "net.ipv6.conf.$PRIMARY_IF.accept_ra=2"
+    cat "/proc/sys/net/ipv6/conf/all/disable_ipv6"
+    cat "/proc/sys/net/ipv6/conf/all/forwarding"
+    cat "/proc/sys/net/ipv6/conf/$PRIMARY_IF/accept_ra"
 fi
 
 echo "CNI init container done"

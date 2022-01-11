@@ -91,13 +91,14 @@ func TestCmdAdd(t *testing.T) {
 	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
-	addr := &net.IPNet{
+	v4Addr := &net.IPNet{
 		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
+	v6Addr := &net.IPNet{}
 
 	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+		v4Addr, v6Addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -160,7 +161,7 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 	}
 
 	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
+		addr, nil, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
 
 	// when SetupPodNetwork fails, expect to return IP back to datastore
 	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
@@ -293,7 +294,7 @@ func TestCmdAddForPodENINetwork(t *testing.T) {
 		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	mocksNetwork.EXPECT().SetupPodENINetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns, addr, 1, "eniHardwareAddr",
+	mocksNetwork.EXPECT().SetupPodENINetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns, addr, nil, 1, "eniHardwareAddr",
 		"10.0.0.1", 2, gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)

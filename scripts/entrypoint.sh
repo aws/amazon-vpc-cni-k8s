@@ -37,7 +37,7 @@ log_in_json()
 
 unsupported_prefix_target_conf()
 {
-   if [ "${WARM_PREFIX_TARGET}" <= "0" ] && [ "${WARM_IP_TARGET}" <= "0" ] && [ "${MINIMUM_IP_TARGET}" <= "0" ];then
+   if [ "${WARM_PREFIX_TARGET}" -le "0" ] && [ "${WARM_IP_TARGET}" -le "0" ] && [ "${MINIMUM_IP_TARGET}" -le "0" ];then
         true
    else
         false
@@ -95,13 +95,17 @@ AWS_VPC_K8S_CNI_VETHPREFIX=${AWS_VPC_K8S_CNI_VETHPREFIX:-"eni"}
 AWS_VPC_ENI_MTU=${AWS_VPC_ENI_MTU:-"9001"}
 AWS_VPC_K8S_PLUGIN_LOG_FILE=${AWS_VPC_K8S_PLUGIN_LOG_FILE:-"/var/log/aws-routed-eni/plugin.log"}
 AWS_VPC_K8S_PLUGIN_LOG_LEVEL=${AWS_VPC_K8S_PLUGIN_LOG_LEVEL:-"Debug"}
+AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE=${AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE:-"/var/log/aws-routed-eni/egress-v4-plugin.log"}
+NODE_IP=${NODE_IP:=""}
 
 AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER=${AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER:-"true"}
 ENABLE_PREFIX_DELEGATION=${ENABLE_PREFIX_DELEGATION:-"false"}
 WARM_IP_TARGET=${WARM_IP_TARGET:-"0"}
 MINIMUM_IP_TARGET=${MINIMUM_IP_TARGET:-"0"}
 WARM_PREFIX_TARGET=${WARM_PREFIX_TARGET:-"0"}
-
+ENABLE_BANDWIDTH_PLUGIN=${ENABLE_BANDWIDTH_PLUGIN:-"false"}
+TMP_AWS_CONFLIST_FILE="/tmp/10-aws.conflist"
+TMP_AWS_BW_CONFLIST_FILE="/tmp/10-aws-bandwidth-plugin.conflist"
 
 validate_env_var
 
@@ -114,6 +118,22 @@ wait_for_ipam() {
         fi
         # We sleep for 1 second between each retry
         sleep 1
+	log_in_json info "Retrying waiting for IPAM-D"
+    done
+}
+
+#NodeIP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)
+get_node_primary_v4_address() {
+    while :
+    do
+	token=$(curl -Ss -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+        NODE_IP=$(curl -H "X-aws-ec2-metadata-token: $token" -Ss http://169.254.169.254/latest/meta-data/local-ipv4)
+        if [[ "${NODE_IP}" != "" ]]; then
+            return 0
+        fi
+        # We sleep for 1 second between each retry
+        sleep 1
+	log_in_json info "Retrying fetching node-IP"
     done
 }
 
@@ -121,15 +141,16 @@ wait_for_ipam() {
 if [[ "$AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER" != "false" ]]; then
     # Copy files
     log_in_json info "Copying CNI plugin binaries ... "
-    PLUGIN_BINS="loopback portmap bandwidth aws-cni-support.sh"
+    PLUGIN_BINS="loopback portmap bandwidth host-local aws-cni-support.sh"
     for b in $PLUGIN_BINS; do
         # Install the binary
         install "$b" "$HOST_CNI_BIN_PATH"
     done
 fi
 
-log_in_json info "Install CNI binary.."
+log_in_json info "Install CNI binaries.."
 install aws-cni "$HOST_CNI_BIN_PATH"
+install egress-v4-cni "$HOST_CNI_BIN_PATH"
 
 log_in_json info "Starting IPAM daemon in the background ... "
 ./aws-k8s-agent | tee -i "$AGENT_LOG_PATH" 2>&1 &
@@ -142,6 +163,7 @@ if ! wait_for_ipam; then
     exit 1
 fi
 
+get_node_primary_v4_address
 log_in_json info "Copying config file ... "
 
 # modify the static config to populate it with the env vars
@@ -150,7 +172,17 @@ sed \
   -e s~__MTU__~"${AWS_VPC_ENI_MTU}"~g \
   -e s~__PLUGINLOGFILE__~"${AWS_VPC_K8S_PLUGIN_LOG_FILE}"~g \
   -e s~__PLUGINLOGLEVEL__~"${AWS_VPC_K8S_PLUGIN_LOG_LEVEL}"~g \
-  10-aws.conflist > "$HOST_CNI_CONFDIR_PATH/10-aws.conflist"
+  -e s~__EGRESSV4PLUGINLOGFILE__~"${AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE}"~g \
+  -e s~__EGRESSV4PLUGINENABLED__~"${ENABLE_IPv6}"~g \
+  -e s~__NODEIP__~"${NODE_IP}"~g \
+  10-aws.conflist > "$TMP_AWS_CONFLIST_FILE"
+
+if [[ "$ENABLE_BANDWIDTH_PLUGIN" == "true" ]]; then
+    jq '.plugins += [{"type": "bandwidth","capabilities": {"bandwidth": true}}]' "$TMP_AWS_CONFLIST_FILE" > "$TMP_AWS_BW_CONFLIST_FILE"
+    mv "$TMP_AWS_BW_CONFLIST_FILE" "$TMP_AWS_CONFLIST_FILE" 
+fi
+
+mv "$TMP_AWS_CONFLIST_FILE" "$HOST_CNI_CONFDIR_PATH/10-aws.conflist"
 
 log_in_json info "Successfully copied CNI plugin binary and config file."
 

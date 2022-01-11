@@ -18,7 +18,7 @@ If you think you have found a potential security issue, please do not post it as
 <!--
 If you're looking for help, check the [troubleshooting guide](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/troubleshooting.md)
 
-If you're unable to find the answers and would like to create an issue, upload the logs by running [CNI Log Collection tool](https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html#troubleshoot-cni)
+If you're unable to find the answers and would like to create an issue, upload the logs by running [CNI Log Collection tool](https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html#troubleshoot-cni) and email the log archive to k8s-awscni-triage@amazon.com
 -->
 
 **Environment**:

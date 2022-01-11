@@ -1,4 +1,3 @@
-ARG docker_arch
 ARG golang_image
 FROM $golang_image
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
@@ -17,7 +16,6 @@ RUN go get -u golang.org/x/tools/cmd/goimports
 # go.mod and go.sum go into their own layers.
 COPY go.mod .
 COPY go.sum .
-COPY vendor/ vendor/
 
 # This ensures `go mod download` happens only when go.mod and go.sum change.
 RUN go mod download

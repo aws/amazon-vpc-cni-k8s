@@ -145,16 +145,17 @@ func main() {
 // addManualLimits has the list of faulty or missing instance types
 func addManualLimits(limitMap map[string]awsutils.InstanceTypeLimits) map[string]awsutils.InstanceTypeLimits {
 	manuallyAddedLimits := map[string]awsutils.InstanceTypeLimits{
-		"cr1.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "unkown"},
-		"hs1.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "unkown"},
-		"u-12tb1.metal": {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unkown"},
-		"u-18tb1.metal": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unkown"},
-		"u-24tb1.metal": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unkown"},
-		"u-6tb1.metal":  {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unkown"},
-		"u-9tb1.metal":  {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unkown"},
-		"c5a.metal":     {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unkown"},
-		"c5ad.metal":    {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unkown"},
-		"p4d.24xlarge":  {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unkown"},
+		"cr1.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "unknown"},
+		"hs1.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "unknown"},
+		"u-12tb1.metal": {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unknown"},
+		"u-18tb1.metal": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown"},
+		"u-24tb1.metal": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown"},
+		"u-6tb1.metal":  {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unknown"},
+		"u-9tb1.metal":  {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unknown"},
+		"c5a.metal":     {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown"},
+		"c5ad.metal":    {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown"},
+		"p4d.24xlarge":  {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown"},
+		"dl1.24xlarge":  {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown"},
 	}
 	for instanceType, instanceLimits := range manuallyAddedLimits {
 		val, ok := limitMap[instanceType]

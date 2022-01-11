@@ -1,4 +1,3 @@
-ARG docker_arch
 ARG golang_image
 
 FROM $golang_image as builder
@@ -19,9 +18,9 @@ COPY . ./
 RUN make build-linux
 
 # Build the architecture specific container image:
-FROM $docker_arch/amazonlinux:2
+FROM public.ecr.aws/amazonlinux/amazonlinux:2
 RUN yum update -y && \
-    yum install -y iptables iproute && \
+    yum install -y iptables iproute jq && \
     yum clean all
 
 WORKDIR /app
@@ -31,9 +30,11 @@ COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/loopback \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/portmap \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/bandwidth \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/host-local \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni-support.sh \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-k8s-agent  \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/grpc-health-probe \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/egress-v4-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/entrypoint.sh /app/
 
 ENTRYPOINT ["/app/entrypoint.sh"]

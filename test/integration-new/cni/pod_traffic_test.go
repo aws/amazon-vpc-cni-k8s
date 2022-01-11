@@ -187,7 +187,7 @@ var _ = Describe("test pod networking", func() {
 		})
 	})
 
-	Context("when establishing UDP connection from tester to server", func() {
+	Context("[CANARY][SMOKE] when establishing UDP connection from tester to server", func() {
 		BeforeEach(func() {
 			serverPort = 2273
 			protocol = ec2.ProtocolUdp
@@ -225,7 +225,7 @@ var _ = Describe("test pod networking", func() {
 		})
 	})
 
-	Context("when establishing TCP connection from tester to server", func() {
+	Context("[CANARY][SMOKE] when establishing TCP connection from tester to server", func() {
 
 		BeforeEach(func() {
 			serverPort = 2273
