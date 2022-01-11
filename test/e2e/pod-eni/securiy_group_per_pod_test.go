@@ -23,6 +23,7 @@ import (
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
+	"github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"
 	vpcControllerFW "github.com/aws/amazon-vpc-resource-controller-k8s/test/framework/manifest"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -42,6 +43,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 		// Pod has any label in the list, it should get Branch ENI
 		branchPodLabelVal       []string
 		serverDeploymentBuilder *manifest.DeploymentBuilder
+		securityGroupPolicy     *v1beta1.SecurityGroupPolicy
 	)
 
 	JustBeforeEach(func() {
@@ -53,7 +55,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 			Name("traffic-server").
 			NodeSelector(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal)
 
-		sgp, err := vpcControllerFW.NewSGPBuilder().
+		securityGroupPolicy, err = vpcControllerFW.NewSGPBuilder().
 			Namespace(utils.DefaultTestNamespace).
 			Name("test-sgp").
 			SecurityGroup([]string{securityGroupId}).
@@ -63,7 +65,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 
 		By("creating the Security Group Policy")
 		err = f.K8sResourceManagers.
-			CustomResourceManager().CreateResource(sgp)
+			CustomResourceManager().CreateResource(securityGroupPolicy)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -71,6 +73,9 @@ var _ = Describe("Security Group for Pods Test", func() {
 		By("deleting test namespace")
 		f.K8sResourceManagers.NamespaceManager().
 			DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
+
+		By("Deleting Security Group Policy")
+		f.K8sResourceManagers.CustomResourceManager().DeleteResource(securityGroupPolicy)
 
 		By("waiting for the branch ENI to be cooled down")
 		time.Sleep(time.Second * 60)
@@ -107,6 +112,11 @@ var _ = Describe("Security Group for Pods Test", func() {
 		BeforeEach(func() {
 			// Both the Server and Client Pods will get Branch ENI
 			branchPodLabelVal = []string{serverPodLabelVal, clientPodLabelVal}
+
+			// Allow Ingress on NodeSecurityGroup so that client-pods can communicate with metric pod
+			// 8080: metric-pod listener port
+			By("Adding an additional Ingress Rule on NodeSecurityGroupID to allow client-to-metric traffic")
+			f.CloudServices.EC2().AuthorizeSecurityGroupIngress(nodeSecurityGroupID, "tcp", openPort, 8080, "0.0.0.0/0")
 		})
 
 		It("should have 99%+ success rate", func() {
@@ -128,6 +138,12 @@ var _ = Describe("Security Group for Pods Test", func() {
 			successRate, err := t.TestTraffic()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(successRate).Should(BeNumerically(">=", float64(99)))
+		})
+
+		AfterEach(func() {
+			// Revoke the Ingress rule for traffic from client pods added to Node Security Group
+			By("Revoking the additional Ingress rule added to allow client-to-metric traffic")
+			f.CloudServices.EC2().RevokeSecurityGroupIngress(nodeSecurityGroupID, "tcp", openPort, 8080, "0.0.0.0/0")
 		})
 	})
 

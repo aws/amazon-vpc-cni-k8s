@@ -79,7 +79,7 @@ func (d *defaultCloudFormation) WaitTillStackDeleted(stackName string) error {
 	}
 	_, err := d.CloudFormationAPI.DeleteStack(deleteStackInput)
 	if err != nil {
-		return fmt.Errorf("faield to delete stack %s: %v", stackName, err)
+		return fmt.Errorf("failed to delete stack %s: %v", stackName, err)
 	}
 
 	describeStackInput := &cloudformation.DescribeStacksInput{

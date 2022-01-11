@@ -22,6 +22,8 @@ import (
 
 type EKS interface {
 	DescribeCluster(clusterName string) (*eks.DescribeClusterOutput, error)
+	CreateAddon(addon string, clusterName string) (*eks.CreateAddonOutput, error)
+	DeleteAddon(addon string, clusterName string) (*eks.DeleteAddonOutput, error)
 }
 
 type defaultEKS struct {
@@ -35,6 +37,22 @@ func NewEKS(session *session.Session, endpoint string) EKS {
 			Region:   session.Config.Region,
 		}),
 	}
+}
+
+func (d defaultEKS) CreateAddon(addon string, clusterName string) (*eks.CreateAddonOutput, error) {
+	createAddonInput := &eks.CreateAddonInput{
+		AddonName:   aws.String(addon),
+		ClusterName: aws.String(clusterName),
+	}
+	return d.EKSAPI.CreateAddon(createAddonInput)
+}
+
+func (d defaultEKS) DeleteAddon(addon string, clusterName string) (*eks.DeleteAddonOutput, error) {
+	deleteAddonInput := &eks.DeleteAddonInput{
+		AddonName:   aws.String(addon),
+		ClusterName: aws.String(clusterName),
+	}
+	return d.EKSAPI.DeleteAddon(deleteAddonInput)
 }
 
 func (d defaultEKS) DescribeCluster(clusterName string) (*eks.DescribeClusterOutput, error) {

@@ -12,9 +12,19 @@ rules:
     verbs: ["list", "watch", "get"]
   - apiGroups: [""]
     resources:
-      - pods
       - namespaces
     verbs: ["list", "watch", "get"]
+{{- if .Values.env.ANNOTATE_POD_IP }}
+  - apiGroups: [""]
+    resources:
+      - pods
+    verbs: ["list", "watch", "get", "patch"]
+{{- else }}
+  - apiGroups: [""]
+    resources:
+      - pods
+    verbs: ["list", "watch", "get"]
+{{- end }}        
   - apiGroups: [""]
     resources:
       - nodes

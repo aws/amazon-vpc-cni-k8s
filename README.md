@@ -27,7 +27,11 @@ scheduling that exceeds the IP address resources available to the kubelet.
 
 The default manifest expects `--cni-conf-dir=/etc/cni/net.d` and `--cni-bin-dir=/opt/cni/bin`.
 
-L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html):
+## IAM Policy
+
+L-IPAM requires one of the following [IAM policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html) depending on the IP Family configured:
+
+**IPv4 Mode:**
 
 ```
       {
@@ -56,6 +60,33 @@ L-IPAM requires following [IAM policy](https://docs.aws.amazon.com/IAM/latest/Us
       }
 ```
 
+The above policy is available under: `arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy` as a part of [AWS managed policies for EKS](https://docs.aws.amazon.com/eks/latest/userguide/security-iam-awsmanpol.html).
+
+**IPv6 Mode:**
+
+```
+       {
+         "Effect": "Allow",
+         "Action": [
+           "ec2:AssignIpv6Addresses",
+           "ec2:DescribeInstances",
+           "ec2:DescribeTags",
+           "ec2:DescribeNetworkInterfaces",
+           "ec2:DescribeInstanceTypes"
+          ],
+          "Resource": "*"
+       },
+       {
+         "Effect": "Allow",
+         "Action": [
+           "ec2:CreateTags"
+         ],
+         "Resource": [
+             "arn:aws:ec2:*:*:network-interface/*"
+         ]
+       }
+```
+
 Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
 
 ## Building
@@ -63,8 +94,8 @@ Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](
 * `make` defaults to `make build-linux` that builds the Linux binaries.
 * `unit-test`, `format`,`lint` and `vet` provide ways to run the respective tests/tools and should be run before submitting a PR.
 * `make docker` will create a docker container using the docker-build with the finished binaries, with a tag of `amazon/amazon-k8s-cni:latest`
-* `make docker-build` uses a docker container (golang:1.14) to build the binaries.
-* `make docker-unit-tests` uses a docker container (golang:1.14) to run all unit tests.
+* `make docker-build` uses a docker container (golang:1.16) to build the binaries.
+* `make docker-unit-tests` uses a docker container (golang:1.16) to run all unit tests.
 
 ## Components
 
@@ -238,7 +269,7 @@ Default: None
 
 Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting this to a non-positive value is same as setting this to 0 or not setting the variable.
 With `ENABLE_PREFIX_DELEGATION` set to `true` then `ipamd` daemon will check if the existing (/28) prefixes are enough to maintain the
-`WARM_IP_TARGET` if it is not sufficent then more prefixes will be attached.
+`WARM_IP_TARGET` if it is not sufficient then more prefixes will be attached.
 
 For example, 
 
@@ -474,13 +505,15 @@ Type: Boolean as a String
 
 Default: `false`
 
-To enable IPv4 prefix delegation on nitro instances. Setting `ENABLE_PREFIX_DELEGATION` to `true` will start allocating a /28 prefix 
-instead of a secondary IP in the ENIs subnet. The total number of prefixes and private IP addresses will be less than the
+To enable prefix delegation on nitro instances. Setting `ENABLE_PREFIX_DELEGATION` to `true` will start allocating a prefix (/28 for IPv4 
+and /80 for IPv6) instead of a secondary IP in the ENIs subnet. The total number of prefixes and private IP addresses will be less than the
 limit on private IPs allowed by your instance. Setting or resetting of `ENABLE_PREFIX_DELEGATION` while pods are running or if ENIs are attached is supported and the new pods allocated will get IPs based on the mode of IPAMD but the max pods of kubelet should be updated which would need either kubelet restart or node recycle.
 
-Custom networking and Security group per pods are supported with this feature.
-
 Setting ENABLE_PREFIX_DELEGATION to true will not increase the density of branch ENI pods. The limit on number of branch network interfaces per instance type will remain the same - https://docs.aws.amazon.com/eks/latest/userguide/security-groups-for-pods.html#supported-instance-types. Each branch network will be allocated a primary IP and this IP will be allocated for the branch ENI pods.
+
+Please refer to [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information around using Prefix delegation with Custom Networking and Security Groups Per Pod features.
+
+**Note:** `ENABLE_PREFIX_DELEGATION` needs to be set to `true` when VPC CNI is configured to operate in IPv6 mode (supported in v1.10.0+).
 
 ---
 
@@ -514,6 +547,68 @@ Default: `false`
 Setting `ENABLE_BANDWIDTH_PLUGIN` to `true` will update `10-aws.conflist` to include upstream [bandwidth plugin](https://www.cni.dev/plugins/current/meta/bandwidth/) as a chained plugin. 
 
 ---
+
+#### `ANNOTATE_POD_IP` (v1.9.3+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Setting `ANNOTATE_POD_IP` to `true` will allow IPAMD to add an annotation `vpc.amazonaws.com/pod-ips` to the pod with pod IP.
+
+There is a known [issue](https://github.com/kubernetes/kubernetes/issues/39113) with kubelet taking time to update `Pod.Status.PodIP` leading to calico being blocked on programming the policy. Setting `ANNOTATE_POD_IP` to `true` will enable AWS VPC CNI plugin to add Pod IP as an annotation to the pod spec to address this race condition.
+
+To annotate the pod with pod IP, you will have to add "patch" permission for pods resource in aws-node clusterrole. You can use the below command -
+
+```
+cat << EOF > append.yaml
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - patch
+EOF
+```
+
+```
+kubectl apply -f <(cat <(kubectl get clusterrole aws-node -o yaml) append.yaml)
+```
+---
+
+#### `ENABLE_IPv4` (v1.10.0+)
+
+Type: Boolean as a String
+
+Default: `true`
+
+VPC CNI can operate in either IPv4 or IPv6 mode. Setting `ENABLE_IPv4` to `true` will configure it in IPv4 mode (default mode).
+
+**Note:** Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration.
+
+---
+
+#### `ENABLE_IPv6` (v1.10.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+VPC CNI can operate in either IPv4 or IPv6 mode. Setting `ENABLE_IPv6` to `true` (both under `aws-node` and `aws-vpc-cni-init` containers in the manifest) 
+will configure it in IPv6 mode. IPv6 is only supported in Prefix Delegation mode, so `ENABLE_PREFIX_DELEGATION` needs to set to `true` if VPC CNI is 
+configured to operate in IPv6 mode. Prefix delegation is only supported on nitro instances. 
+
+
+**Note:** Please make sure that the required IPv6 IAM policy is applied (Refer to [IAM Policy](https://github.com/aws/amazon-vpc-cni-k8s#iam-policy) section above). Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration. Please refer to the [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information.
+
+---
+
+### VPC CNI Feature Matrix
+
+IP Mode | Secondary IP Mode | Prefix Delegation | Security Groups Per Pod | WARM & MIN IP/Prefix Targets | External SNAT
+------ | ------ | ------ | ------ | ------ | ------
+`IPv4` |   Yes|   Yes |   Yes |  Yes |   Yes |   Yes
+`IPv6` |   No |   Yes |   No |   No  |   No  | No
 
 ### ENI tags related to Allocation
 

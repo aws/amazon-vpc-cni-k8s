@@ -38,6 +38,8 @@ type PodNetworkingValidationInput struct {
 	ValidateMTU bool
 	// Expected MTU value
 	MTU int
+	// Cluster's IP Family mode
+	IPFamily string
 }
 
 type Pod struct {
@@ -47,6 +49,8 @@ type Pod struct {
 	PodNamespace string
 	// IPv4 Address of the pod
 	PodIPv4Address string
+	// IPv6 Address of the pod
+	PodIPv6Address string
 	// Set to true when the Pod is scheduled on IP
 	// from the Secondary ENI
 	IsIPFromSecondaryENI bool

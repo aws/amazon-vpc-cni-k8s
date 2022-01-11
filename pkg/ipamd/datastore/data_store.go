@@ -120,7 +120,7 @@ var (
 	)
 	ipsPerCidr = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "awscni_assigned_ip_per_ipv4cidr",
+			Name: "awscni_assigned_ip_per_cidr",
 			Help: "The total number of IP addresses assigned per cidr",
 		},
 		[]string{"cidr"},
@@ -236,18 +236,22 @@ func (cidr *CidrInfo) AssignedIPAddressesInCidr() int {
 	return count
 }
 
+type CidrStats struct {
+	AssignedIPs int
+	CooldownIPs int
+}
+
 // Gets number of assigned IPs and the IPs in cooldown from a given CIDR
-func (cidr *CidrInfo) GetIPStatsFromCidr() (int, int) {
-	assignedIPs := 0
-	cooldownIPs := 0
+func (cidr *CidrInfo) GetIPStatsFromCidr() CidrStats {
+	stats := CidrStats{}
 	for _, addr := range cidr.IPAddresses {
 		if addr.Assigned() {
-			assignedIPs++
+			stats.AssignedIPs++
 		} else if addr.inCoolingPeriod() {
-			cooldownIPs++
+			stats.CooldownIPs++
 		}
 	}
-	return assignedIPs, cooldownIPs
+	return stats
 }
 
 // Assigned returns true iff the address is allocated to a pod/sandbox.
@@ -832,14 +836,35 @@ func (ds *DataStore) unassignPodIPAddressUnsafe(addr *AddressInfo) {
 	assignedIPs.Set(float64(ds.assigned))
 }
 
-// GetStats returns total number of IP addresses, number of assigned IP addresses, total prefixes and IPs in cooldown period
-func (ds *DataStore) GetStats(addressFamily string) (int, int, int, int) {
+type DataStoreStats struct {
+	// Total number of addresses allocated
+	TotalIPs int
+	// Total number of prefixes allocated
+	TotalPrefixes int
+
+	// Number of assigned addresses
+	AssignedIPs int
+	// Number of addresses in cooldown
+	CooldownIPs int
+}
+
+func (stats *DataStoreStats) String() string {
+	return fmt.Sprintf("Total IPs/Prefixes = %d/%d, AssignedIPs/CooldownIPs: %d/%d",
+		stats.TotalIPs, stats.TotalPrefixes, stats.AssignedIPs, stats.CooldownIPs)
+}
+
+func (stats *DataStoreStats) AvailableAddresses() int {
+	return stats.TotalIPs - stats.AssignedIPs
+}
+
+// GetIPStats returns DataStoreStats for addressFamily
+func (ds *DataStore) GetIPStats(addressFamily string) *DataStoreStats {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	totalIPs := 0
-	assignedIPs := 0
-	cooldownIPs := 0
+	stats := &DataStoreStats{
+		TotalPrefixes: ds.allocatedPrefix,
+	}
 	for _, eni := range ds.eniPool {
 		AssignedCIDRs := eni.AvailableIPv4Cidrs
 		if addressFamily == "6" {
@@ -847,17 +872,17 @@ func (ds *DataStore) GetStats(addressFamily string) (int, int, int, int) {
 		}
 		for _, cidr := range AssignedCIDRs {
 			if addressFamily == "4" && ((ds.isPDEnabled && cidr.IsPrefix) || (!ds.isPDEnabled && !cidr.IsPrefix)) {
-				assignedCount, cooldownCount := cidr.GetIPStatsFromCidr()
-				assignedIPs += assignedCount
-				cooldownIPs += cooldownCount
-				totalIPs += cidr.Size()
+				cidrStats := cidr.GetIPStatsFromCidr()
+				stats.AssignedIPs += cidrStats.AssignedIPs
+				stats.CooldownIPs += cidrStats.CooldownIPs
+				stats.TotalIPs += cidr.Size()
 			} else if addressFamily == "6" {
-				assignedIPs += cidr.AssignedIPAddressesInCidr()
-				totalIPs += cidr.Size()
+				stats.AssignedIPs += cidr.AssignedIPAddressesInCidr()
+				stats.TotalIPs += cidr.Size()
 			}
 		}
 	}
-	return totalIPs, assignedIPs, ds.allocatedPrefix, cooldownIPs
+	return stats
 }
 
 // GetTrunkENI returns the trunk ENI ID or an empty string

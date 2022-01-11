@@ -3,7 +3,7 @@ local objectItems(obj) = [[k, obj[k]] for k in std.objectFields(obj)];
 
 local regions = {
   default: {
-    version:: "v1.9.1", // or eg "v1.6.2"
+    version:: "v1.10.0", // or eg "v1.6.2"
     ecrRegion:: "us-west-2",
     ecrAccount:: "602401143452",
     ecrDomain:: "amazonaws.com",
@@ -40,8 +40,13 @@ local awsnode = {
       },
       {
         apiGroups: [""],
-        resources: ["pods", "namespaces"],
+        resources: ["namespaces"],
         verbs: ["list", "watch", "get"],
+      },
+      {
+        apiGroups: [""],
+        resources: ["pods"],
+        verbs: ["list", "watch", "get", "patch"],
       },
       {
         apiGroups: [""],
@@ -114,27 +119,25 @@ local awsnode = {
           affinity: {
             nodeAffinity: {
               requiredDuringSchedulingIgnoredDuringExecution: {
-                nodeSelectorTerms: [
-                  {
-                    matchExpressions: [
-                      {
-                        key: prefix + "kubernetes.io/os",
-                        operator: "In",
-                        values: ["linux"],
-                      },
-                      {
-                        key: prefix + "kubernetes.io/arch",
-                        operator: "In",
-                        values: ["amd64", "arm64"],
-                      },
-                      {
-                        key: "eks.amazonaws.com/compute-type",
-                        operator: "NotIn",
-                        values: ["fargate"],
-                      },
-                    ],
-                  } for prefix in ["beta.", ""]
-                ],
+                nodeSelectorTerms: [{ 
+                  matchExpressions: [
+                    {
+                      key: "kubernetes.io/os",
+                      operator: "In",
+                      values: ["linux"],
+                    },
+                    {
+                      key: "kubernetes.io/arch",
+                      operator: "In",
+                      values: ["amd64", "arm64"],
+                    },
+                    {
+                      key: "eks.amazonaws.com/compute-type",
+                      operator: "NotIn",
+                      values: ["fargate"],
+                    },
+                  ],
+                }],
               },
             },
           },
@@ -152,9 +155,10 @@ local awsnode = {
               name: "aws-node",
               readinessProbe: {
                 exec: {
-                  command: ["/app/grpc-health-probe", "-addr=:50051"],
+                  command: ["/app/grpc-health-probe", "-addr=:50051", "-connect-timeout=2s", "-rpc-timeout=2s"],
                 },
                 initialDelaySeconds: 1,
+                timeoutSeconds: 5,
               },
               livenessProbe: self.readinessProbe + {
                 initialDelaySeconds: 60,
@@ -231,11 +235,14 @@ local awsnode = {
               name: "aws-vpc-cni-init",
               image: "%s/amazon-k8s-cni-init:%s" % [$.ecrRepo, $.version],
               securityContext: {privileged: true},
+              env_:: {
+                DISABLE_TCP_EARLY_DEMUX: "false",
+                ENABLE_IPv6: "false",
+              },
               env: [
-                {
-                  name: "DISABLE_TCP_EARLY_DEMUX", value: "false",
-                },
-              ],
+                {name: kv[0]} + if std.isObject(kv[1]) then kv[1] else {value: kv[1]}
+                for kv in objectItems(self.env_)
+               ],
               resources: {
                 requests: {cpu: "10m", memory: "32Mi"},
                 limits: {cpu: "50m", memory: "64Mi"},
