@@ -18,14 +18,10 @@ var (
 
 var _ = Describe("test cluster upgrade/downgrade", func() {
 
-	initialCNIVersion = f.Options.InitialCNIVersion
-	finalCNIVersion = f.Options.FinalCNIVersion
-
 	It("should apply initial addon version successfully", func() {
+		By("getting initial cni version")
+		initialCNIVersion = f.Options.InitialCNIVersion
 		ApplyAddOn(initialCNIVersion)
-		//Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
-		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
-			"aws-node", map[string]string{"WARM_IP_TARGET": "3", "WARM_ENI_TARGET": "0"})
 
 	})
 
@@ -36,10 +32,9 @@ var _ = Describe("test cluster upgrade/downgrade", func() {
 	})
 
 	It("should apply final addon version successfully", func() {
+		By("getting final cni version")
+		finalCNIVersion = f.Options.FinalCNIVersion
 		ApplyAddOn(finalCNIVersion)
-		//Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
-		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
-			"aws-node", map[string]string{"WARM_IP_TARGET": "3", "WARM_ENI_TARGET": "0"})
 
 	})
 
@@ -52,6 +47,7 @@ var _ = Describe("test cluster upgrade/downgrade", func() {
 })
 
 func ApplyAddOn(versionName string) {
+
 	By("getting the current addon")
 	describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
 	if err == nil {
@@ -70,12 +66,13 @@ func ApplyAddOn(versionName string) {
 
 			}
 
-			By("apply initial addon version")
+			By("apply addon version")
 			_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, versionName)
 			Expect(err).ToNot(HaveOccurred())
 
 		}
 	} else {
+		fmt.Printf("By applying addon %s\n", versionName)
 		By("apply addon version")
 		_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, versionName)
 		Expect(err).ToNot(HaveOccurred())
@@ -90,4 +87,8 @@ func ApplyAddOn(versionName string) {
 		status = *describeAddonOutput.Addon.Status
 		time.Sleep(5 * time.Second)
 	}
+
+	//Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
+	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
+		"aws-node", map[string]string{"WARM_IP_TARGET": "3", "WARM_ENI_TARGET": "0"})
 }
