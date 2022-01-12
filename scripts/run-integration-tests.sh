@@ -28,6 +28,7 @@ ARCH=$(go env GOARCH)
 : "${RUNNING_PERFORMANCE:=false}"
 : "${RUN_CALICO_TEST:=false}"
 
+export AWS_REGION=$AWS_DEFAULT_REGION
 
 __cluster_created=0
 __cluster_deprovisioned=0
@@ -216,6 +217,11 @@ DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
 
 echo "*******************************************************************************"
+echo "Running new integration tests on default CNI version, $ADDONS_CNI_IMAGE"
+echo ""
+sh "$DIR"/test/run-new-integration-tests.sh
+
+echo "*******************************************************************************"
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
@@ -259,6 +265,11 @@ TEST_PASS=$?
 popd
 CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
+
+echo "*******************************************************************************"
+echo "Running new integration tests on current image:"
+echo ""
+sh "$DIR"/test/run-new-integration-tests.sh
 
 if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
