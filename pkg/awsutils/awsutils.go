@@ -200,6 +200,9 @@ type APIs interface {
 
 	// FetchInstanceTypeLimits Verify if the InstanceNetworkingLimits has the ENI limits else make EC2 call to fill cache.
 	FetchInstanceTypeLimits() error
+
+	//ValidateSecurityGroups Validates a list of security group ids
+	ValidateSecurityGroups(securityGroupIds []string) error
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -490,7 +493,7 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 	return nil
 }
 
-// RefreshSGIDs retrieves security groups
+// RefreshSGIDs retrieves security groups attached to an interface
 func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 	ctx := context.TODO()
 
@@ -888,6 +891,18 @@ func (cache *EC2InstanceMetadataCache) TagENI(eniID string, currentTags map[stri
 		log.Debugf("Successfully tagged ENI: %s", eniID)
 		return nil
 	})
+}
+
+func (cache *EC2InstanceMetadataCache) ValidateSecurityGroups(securityGroups []string) error {
+	_, err := cache.ec2SVC.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
+		GroupIds: aws.StringSlice(securityGroups),
+	})
+
+	if err != nil {
+		return errors.Wrap(err, "Invalid Security Group Id")
+	}
+
+	return nil
 }
 
 // containsPrivateIPAddressLimitExceededError returns whether exceeds ENI's IP address limit

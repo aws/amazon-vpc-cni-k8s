@@ -249,6 +249,21 @@ func (mr *MockEC2MockRecorder) DescribeNetworkInterfacesWithContext(arg0, arg1 i
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeNetworkInterfacesWithContext", reflect.TypeOf((*MockEC2)(nil).DescribeNetworkInterfacesWithContext), varargs...)
 }
 
+// DescribeSecurityGroups mocks base method
+func (m *MockEC2) DescribeSecurityGroups(arg0 *ec2.DescribeSecurityGroupsInput) (*ec2.DescribeSecurityGroupsOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DescribeSecurityGroups", arg0)
+	ret0, _ := ret[0].(*ec2.DescribeSecurityGroupsOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DescribeSecurityGroups indicates an expected call of DescribeSecurityGroups
+func (mr *MockEC2MockRecorder) DescribeSecurityGroups(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeSecurityGroups", reflect.TypeOf((*MockEC2)(nil).DescribeSecurityGroups), arg0)
+}
+
 // DetachNetworkInterfaceWithContext mocks base method
 func (m *MockEC2) DetachNetworkInterfaceWithContext(arg0 context.Context, arg1 *ec2.DetachNetworkInterfaceInput, arg2 ...request.Option) (*ec2.DetachNetworkInterfaceOutput, error) {
 	m.ctrl.T.Helper()

@@ -253,15 +253,16 @@ type IPAMContext struct {
 	lastDecreaseIPPool   time.Time
 	// reconcileCooldownCache keeps timestamps of the last time an IP address was unassigned from an ENI,
 	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
-	reconcileCooldownCache    ReconcileCooldownCache
-	terminating               int32 // Flag to warn that the pod is about to shut down.
-	disableENIProvisioning    bool
-	enablePodENI              bool
-	myNodeName                string
-	enablePrefixDelegation    bool
-	lastInsufficientCidrError time.Time
-	enableManageUntaggedMode  bool
-	enablePodIPAnnotation     bool
+	reconcileCooldownCache      ReconcileCooldownCache
+	terminating                 int32 // Flag to warn that the pod is about to shut down.
+	disableENIProvisioning      bool
+	enablePodENI                bool
+	myNodeName                  string
+	enablePrefixDelegation      bool
+	lastInsufficientCidrError   time.Time
+	enableManageUntaggedMode    bool
+	enablePodIPAnnotation       bool
+	securityGroupsFromEniConfig awsutils.StringSet
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -459,6 +460,20 @@ func (c *IPAMContext) nodeInit() error {
 	if err != nil {
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
+
+	// Retrieve the security groups attached the eniconfig, validate, cache them in ipam context.
+	eniCfg, err := eniconfig.MyENIConfig(ctx, c.cachedK8SClient)
+	if err != nil {
+		return errors.Wrap(err, "ipamd init: unable to retrieve eniconfig.")
+	}
+
+	err = c.awsClient.ValidateSecurityGroups(eniCfg.SecurityGroups)
+
+	if err != nil {
+		return errors.Wrap(err, "ipamd init: Security Groups provided for ENIConfig are invalid.")
+	}
+
+	c.securityGroupsFromEniConfig.Set(eniCfg.SecurityGroups)
 
 	metadataResult, err := c.awsClient.DescribeAllENIs()
 	if err != nil {
@@ -839,6 +854,24 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 		if err != nil {
 			log.Errorf("Failed to get pod ENI config")
 			return err
+		}
+
+		newSGsFromEniCfg := awsutils.StringSet{}
+		newSGsFromEniCfg.Set(eniCfg.SecurityGroups)
+		newSGsStringSet := newSGsFromEniCfg.Difference(&c.securityGroupsFromEniConfig)
+		newSGs := newSGsStringSet.SortedList()
+
+		if len(newSGs) > 0 {
+			err = c.awsClient.ValidateSecurityGroups(newSGs)
+			if err != nil {
+				log.Errorf("Security Groups are Invalid: %v", securityGroups)
+				return errors.Wrap(err, "AllocENI: Security Groups are Invalid.")
+			}
+
+			// Update cached security groups from eniConfig with new security groups
+			cachedSecurityGroupsFromEniConfig := c.securityGroupsFromEniConfig.SortedList()
+			cachedSecurityGroupsFromEniConfig = append(cachedSecurityGroupsFromEniConfig, newSGs...)
+			c.securityGroupsFromEniConfig.Set(cachedSecurityGroupsFromEniConfig)
 		}
 
 		log.Infof("ipamd: using custom network config: %v, %s", eniCfg.SecurityGroups, eniCfg.Subnet)

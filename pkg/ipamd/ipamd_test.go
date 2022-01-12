@@ -88,8 +88,8 @@ type testMocks struct {
 func setup(t *testing.T) *testMocks {
 	ctrl := gomock.NewController(t)
 	k8sSchema := runtime.NewScheme()
-	clientgoscheme.AddToScheme(k8sSchema)
-	eniconfigscheme.AddToScheme(k8sSchema)
+	_ = clientgoscheme.AddToScheme(k8sSchema)
+	_ = eniconfigscheme.AddToScheme(k8sSchema)
 
 	return &testMocks{
 		ctrl:            ctrl,
@@ -134,6 +134,7 @@ func TestNodeInit(t *testing.T) {
 	eni1, eni2, _ := getDummyENIMetadata()
 
 	var cidrs []string
+
 	m.awsutils.EXPECT().GetENILimit().Return(4)
 	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14)
 	m.awsutils.EXPECT().GetIPv4sFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil)
@@ -170,9 +171,13 @@ func TestNodeInit(t *testing.T) {
 
 	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any())
 
+	labels := map[string]string{
+		"k8s.amazonaws.com/eniConfig": "az1",
+	}
+
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
-		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName, Labels: labels},
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
@@ -180,6 +185,22 @@ func TestNodeInit(t *testing.T) {
 
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
+
+	fakeENIConfigSpec := v1alpha1.ENIConfigSpec{
+		SecurityGroups: []string{"sg1-id", "sg2-id"},
+		Subnet:         "subnet1",
+	}
+
+	fakeENIConfig := v1alpha1.ENIConfig{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{Name: "az1"},
+		Spec:       fakeENIConfigSpec,
+		Status:     eniconfigscheme.ENIConfigStatus{},
+	}
+	_ = m.cachedK8SClient.Create(ctx, &fakeENIConfig)
+	_ = os.Setenv("MY_NODE_NAME", myNodeName)
+
+	m.awsutils.EXPECT().ValidateSecurityGroups(fakeENIConfigSpec.SecurityGroups).Return(nil)
 
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
@@ -256,13 +277,33 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	//m.network.EXPECT().UseExternalSNAT().Return(false)
 	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any())
 
+	labels := map[string]string{
+		"k8s.amazonaws.com/eniConfig": "az1",
+	}
+
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
-		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName, Labels: labels},
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
 	_ = m.cachedK8SClient.Create(ctx, &fakeNode)
+
+	fakeENIConfigSpec := eniconfigscheme.ENIConfigSpec{
+		SecurityGroups: []string{"sg1-id", "sg2-id"},
+		Subnet:         "subnet1",
+	}
+
+	fakeENIConfig := v1alpha1.ENIConfig{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{Name: "az1"},
+		Spec:       fakeENIConfigSpec,
+		Status:     eniconfigscheme.ENIConfigStatus{},
+	}
+	_ = m.cachedK8SClient.Create(ctx, &fakeENIConfig)
+	_ = os.Setenv("MY_NODE_NAME", myNodeName)
+
+	m.awsutils.EXPECT().ValidateSecurityGroups(fakeENIConfigSpec.SecurityGroups).Return(nil)
 
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
@@ -325,16 +366,189 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 	m.awsutils.EXPECT().GetLocalIPv4().Return(primaryIP)
 	m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp.MultiCardENIIDs).AnyTimes()
 
+	labels := map[string]string{
+		"k8s.amazonaws.com/eniConfig": "az1",
+	}
+
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
-		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName, Labels: labels},
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
 	_ = m.cachedK8SClient.Create(ctx, &fakeNode)
 
+	fakeENIConfigSpec := eniconfigscheme.ENIConfigSpec{
+		SecurityGroups: []string{"sg1-id", "sg2-id"},
+		Subnet:         "subnet1",
+	}
+
+	fakeENIConfig := v1alpha1.ENIConfig{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{Name: "az1"},
+		Spec:       fakeENIConfigSpec,
+		Status:     eniconfigscheme.ENIConfigStatus{},
+	}
+	_ = m.cachedK8SClient.Create(ctx, &fakeENIConfig)
+	_ = os.Setenv("MY_NODE_NAME", myNodeName)
+
+	m.awsutils.EXPECT().ValidateSecurityGroups(fakeENIConfigSpec.SecurityGroups).Return(nil)
+
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
+}
+
+func TestNodeInitAndIncreaseIPPoolUsesSGCacheForValidation(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	_ = os.Setenv(envCustomNetworkCfg, "true")
+	_ = os.Setenv("MY_NODE_NAME", myNodeName)
+
+	fakeCheckpoint := datastore.CheckpointData{
+		Version: datastore.CheckpointFormatVersion,
+		Allocations: []datastore.CheckpointEntry{
+			{IPAMKey: datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IPv4: ipaddr02},
+		},
+	}
+
+	mockContext := &IPAMContext{
+		awsClient:           m.awsutils,
+		rawK8SClient:        m.rawK8SClient,
+		cachedK8SClient:     m.cachedK8SClient,
+		maxIPsPerENI:        14,
+		maxENI:              4,
+		warmENITarget:       1,
+		networkClient:       m.network,
+		primaryIP:           make(map[string]string),
+		terminating:         int32(0),
+		useCustomNetworking: UseCustomNetworkCfg(),
+		dataStore:           datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), false),
+		enableIPv4:          true,
+		enableIPv6:          false,
+	}
+
+	mockContext.dataStore.CheckpointMigrationPhase = 2
+
+	eni1, eni2, _ := getDummyENIMetadata()
+
+	var cidrs []string
+
+	m.awsutils.EXPECT().GetENILimit().Return(4)
+	m.awsutils.EXPECT().GetENIIPv4Limit().Return(2)
+	m.awsutils.EXPECT().GetIPv4sFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil)
+	m.awsutils.EXPECT().GetIPv4sFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Addresses, nil)
+	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsUnmanagedENI(eni2.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	m.awsutils.EXPECT().IsCNIUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsCNIUnmanagedENI(eni2.ENIID).Return(false).AnyTimes()
+
+	primaryIP := net.ParseIP(ipaddr01)
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
+	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
+	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false, true, false).Return(nil)
+
+	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+
+	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
+	resp := awsutils.DescribeAllENIsResult{
+		ENIMetadata:     eniMetadataSlice,
+		TagMap:          map[string]awsutils.TagMap{},
+		TrunkENI:        "",
+		EFAENIs:         make(map[string]bool),
+		MultiCardENIIDs: nil,
+	}
+	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
+
+	m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp.MultiCardENIIDs).AnyTimes()
+	m.awsutils.EXPECT().GetLocalIPv4().Return(primaryIP)
+
+	var rules []netlink.Rule
+	m.network.EXPECT().GetRuleList().Return(rules, nil)
+
+	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any())
+
+	labels := map[string]string{
+		"k8s.amazonaws.com/eniConfig": "az1",
+	}
+
+	fakeNode := v1.Node{
+		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName, Labels: labels},
+		Spec:       v1.NodeSpec{},
+		Status:     v1.NodeStatus{},
+	}
+	_ = m.cachedK8SClient.Create(ctx, &fakeNode)
+
+	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
+
+	securityGroupsForEni1 := []string{"sg1-id", "sg2-id", "sg3-id"}
+
+	fakeENIConfigSpec := eniconfigscheme.ENIConfigSpec{
+		SecurityGroups: securityGroupsForEni1,
+		Subnet:         "subnet1",
+	}
+
+	aws.StringSlice(securityGroupsForEni1)
+
+	fakeENIConfig := v1alpha1.ENIConfig{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{Name: "az1"},
+		Spec:       fakeENIConfigSpec,
+		Status:     eniconfigscheme.ENIConfigStatus{},
+	}
+	_ = m.cachedK8SClient.Create(ctx, &fakeENIConfig)
+	m.awsutils.EXPECT().ValidateSecurityGroups(fakeENIConfigSpec.SecurityGroups).Return(nil)
+
+	secondaryEni := secENIid
+
+	m.awsutils.EXPECT().AllocENI(true, gomock.Any(), fakeENIConfigSpec.Subnet).Return(secondaryEni, nil)
+	m.awsutils.EXPECT().WaitForENIAndIPsAttached(secENIid, 2).Return(eni2, nil)
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
+
+	_ = mockContext.nodeInit()
+
+	// Verify only new security groups are verified.
+
+	newSecurityGroups := []string{"sg4-id", "sg5-id"}
+	securityGroupsForEni2 := append(securityGroupsForEni1, newSecurityGroups...)
+
+	// Force a new eni look up in test by overriding MY_NODE_NAME
+	newnode := "testNode-2"
+	mockContext.myNodeName = newnode
+	_ = os.Setenv("MY_NODE_NAME", newnode)
+	fakeENIConfigSpec = eniconfigscheme.ENIConfigSpec{
+		SecurityGroups: securityGroupsForEni2,
+		Subnet:         "subnet1",
+	}
+
+	labels = map[string]string{
+		"k8s.amazonaws.com/eniConfig": "az2",
+	}
+
+	fakeNode = v1.Node{
+		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
+		ObjectMeta: metav1.ObjectMeta{Name: newnode, Labels: labels},
+		Spec:       v1.NodeSpec{},
+		Status:     v1.NodeStatus{},
+	}
+	_ = m.cachedK8SClient.Create(ctx, &fakeNode)
+
+	fakeENIConfig = eniconfigscheme.ENIConfig{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{Name: "az2"},
+		Spec:       fakeENIConfigSpec,
+		Status:     eniconfigscheme.ENIConfigStatus{},
+	}
+	_ = m.cachedK8SClient.Create(ctx, &fakeENIConfig)
+
+	// Only new Security Groups are verified.
+	m.awsutils.EXPECT().ValidateSecurityGroups(newSecurityGroups).Return(nil)
+
+	mockContext.increaseDatastorePool(ctx)
 }
 
 func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata, awsutils.ENIMetadata) {
@@ -544,6 +758,11 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 	m.awsutils.EXPECT().AllocIPAddresses(eni2, 14)
 
+	fakeENIConfigSpec := eniconfigscheme.ENIConfigSpec{
+		SecurityGroups: []string{"sg1-id", "sg2-id"},
+		Subnet:         "subnet1",
+	}
+
 	if mockContext.useCustomNetworking {
 		mockContext.myNodeName = myNodeName
 
@@ -563,13 +782,12 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 		fakeENIConfig := v1alpha1.ENIConfig{
 			TypeMeta:   metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{Name: "az1"},
-			Spec: eniconfigscheme.ENIConfigSpec{
-				Subnet:         "subnet1",
-				SecurityGroups: []string{"sg1-id", "sg2-id"},
-			},
-			Status: eniconfigscheme.ENIConfigStatus{},
+			Spec:       fakeENIConfigSpec,
+			Status:     eniconfigscheme.ENIConfigStatus{},
 		}
 		_ = m.cachedK8SClient.Create(ctx, &fakeENIConfig)
+
+		m.awsutils.EXPECT().ValidateSecurityGroups(fakeENIConfigSpec.SecurityGroups).Return(nil)
 	}
 
 	mockContext.increaseDatastorePool(ctx)
@@ -671,6 +889,11 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
 	m.awsutils.EXPECT().AllocIPAddresses(eni2, 1)
 
+	fakeENIConfigSpec := eniconfigscheme.ENIConfigSpec{
+		SecurityGroups: []string{"sg1-id", "sg2-id"},
+		Subnet:         "subnet1",
+	}
+
 	if mockContext.useCustomNetworking {
 		mockContext.myNodeName = myNodeName
 
@@ -697,6 +920,8 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 			Status: eniconfigscheme.ENIConfigStatus{},
 		}
 		_ = m.cachedK8SClient.Create(ctx, &fakeENIConfig)
+
+		m.awsutils.EXPECT().ValidateSecurityGroups(fakeENIConfigSpec.SecurityGroups).Return(nil)
 	}
 
 	mockContext.increaseDatastorePool(ctx)
