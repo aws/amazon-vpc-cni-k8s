@@ -63,7 +63,7 @@ TEST_CONFIG_DIR="$TEST_DIR/config"
 # test cluster config location
 # Pass in CLUSTER_ID to reuse a test cluster
 : "${CLUSTER_ID:=$RANDOM}"
-CLUSTER_NAME=cni-test-$CLUSTER_ID
+export CLUSTER_NAME=cni-test-$CLUSTER_ID
 TEST_CLUSTER_DIR=${TEST_BASE_DIR}/cluster-$CLUSTER_NAME
 CLUSTER_MANAGE_LOG_PATH=$TEST_CLUSTER_DIR/cluster-manage.log
 : "${CLUSTER_CONFIG:=${TEST_CLUSTER_DIR}/${CLUSTER_NAME}.yaml}"
@@ -219,7 +219,7 @@ echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION
 echo "*******************************************************************************"
 echo "Running new integration tests on default CNI version, $ADDONS_CNI_IMAGE"
 echo ""
-sh "$DIR"/test/run-new-integration-tests.sh
+sh "$DIR"/test/run-integration-tests.sh
 
 echo "*******************************************************************************"
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
@@ -269,7 +269,7 @@ echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_
 echo "*******************************************************************************"
 echo "Running new integration tests on current image:"
 echo ""
-sh "$DIR"/test/run-new-integration-tests.sh
+sh "$DIR"/test/run-integration-tests.sh
 
 if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
