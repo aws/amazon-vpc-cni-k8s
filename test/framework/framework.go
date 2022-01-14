@@ -19,6 +19,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/helm"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/crd"
 	sgp "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,6 +36,7 @@ type Framework struct {
 	CloudServices       aws.Cloud
 	K8sResourceManagers k8s.ResourceManagers
 	InstallationManager controller.InstallationManager
+	CrdManager          crd.CrdManager
 }
 
 func New(options Options) *Framework {
@@ -82,5 +84,6 @@ func New(options Options) *Framework {
 		K8sResourceManagers: k8s.NewResourceManager(k8sClient, k8sSchema, config),
 		InstallationManager: controller.NewDefaultInstallationManager(
 			helm.NewDefaultReleaseManager(options.KubeConfig)),
+		CrdManager: crd.NewCrdManager(config),
 	}
 }

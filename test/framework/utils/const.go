@@ -16,12 +16,13 @@ package utils
 import "time"
 
 const (
-	DefaultTestNamespace = "cni-automation"
-	AwsNodeNamespace     = "kube-system"
-	AwsNodeName          = "aws-node"
-	AWSInitContainerName = "aws-vpc-cni-init"
-	MultusNodeName       = "kube-multus-ds"
-	MultusContainerName  = "kube-multus"
+	NetworkAttachmentDefinitionName = "network-attachment-definitions.k8s.cni.cncf.io"
+	DefaultTestNamespace            = "cni-automation"
+	AwsNodeNamespace                = "kube-system"
+	AwsNodeName                     = "aws-node"
+	AWSInitContainerName            = "aws-vpc-cni-init"
+	MultusNodeName                  = "kube-multus-ds"
+	MultusContainerName             = "kube-multus"
 
 	// See https://gallery.ecr.aws/r3i6j7b0/aws-vpc-cni-test-helper
 	TestAgentImage = "public.ecr.aws/r3i6j7b0/aws-vpc-cni-test-helper:5c99fc7b"
@@ -31,4 +32,6 @@ const (
 	PollIntervalLong   = time.Second * 20
 
 	DefaultDeploymentReadyTimeout = time.Second * 120
+	MultusResourceName            = "multus"
+	MultusImage                   = "602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/multus-cni:v3.7.2-eksbuild.2"
 )
