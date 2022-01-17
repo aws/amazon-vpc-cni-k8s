@@ -157,12 +157,12 @@ func (d *defaultDaemonSetManager) DeleteDaemonSet(name string, namespace string)
 	if err != nil {
 		return err
 	}
-	return waitTillDaemonsetIsDeleted(name, namespace, d)
+	return waitTillDaemonSetIsDeleted(name, namespace, d)
 }
 
 // Private method to check if the Daemonset is Deleted
 // It takes some time so we wait until Daemonset is cleaned up
-func waitTillDaemonsetIsDeleted(name string, namespace string, d *defaultDaemonSetManager) error {
+func waitTillDaemonSetIsDeleted(name string, namespace string, d *defaultDaemonSetManager) error {
 	attempts := 0
 	for {
 		_, err := d.GetDaemonSet(namespace, name)
