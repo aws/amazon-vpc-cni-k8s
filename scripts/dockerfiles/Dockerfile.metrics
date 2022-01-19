@@ -1,4 +1,3 @@
-ARG docker_arch
 ARG golang_image
 
 FROM $golang_image as builder
@@ -16,7 +15,7 @@ RUN go mod download
 COPY . ./
 RUN make build-metrics
 
-FROM $docker_arch/amazonlinux:2
+FROM public.ecr.aws/amazonlinux/amazonlinux:2
 RUN yum update -y && \
 	yum clean all
 
