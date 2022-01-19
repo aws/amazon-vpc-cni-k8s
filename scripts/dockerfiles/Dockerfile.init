@@ -1,4 +1,3 @@
-ARG docker_arch
 ARG golang_image
 
 FROM $golang_image as builder
@@ -14,7 +13,7 @@ RUN make plugins && make debug-script
 COPY . ./
 
 # Build the architecture specific container image:
-FROM $docker_arch/amazonlinux:2
+FROM public.ecr.aws/amazonlinux/amazonlinux:2
 RUN yum update -y && \
     yum install -y iproute procps-ng && \
     yum clean all

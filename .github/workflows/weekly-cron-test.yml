@@ -2,7 +2,7 @@ name: Weekly CNI tests
 
 on:
   schedule:
-    - cron: "0 6 * * 6"  # every saturday
+    - cron: "0 16 * * 5"  # every friday
 
 permissions:
   contents: read
@@ -10,12 +10,12 @@ permissions:
 jobs:
   # Run weekly tests on self-hosted runner
   weekly-cron:
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux, x64]
     steps:
-      - name: Set up Go 1.14
+      - name: Set up Go 1.16
         uses: actions/setup-go@v2
         with:
-          go-version: ^1.14
+          go-version: '1.16'
         id: go
 
       - name: Check out code into the Go module directory
@@ -26,8 +26,8 @@ jobs:
 
       - name: Get dependencies
         run: |
-          go install golang.org/x/lint/golint
-          go install golang.org/x/tools/cmd/goimports
+          go install golang.org/x/lint/golint@latest
+          go install golang.org/x/tools/cmd/goimports@latest
 
       - name: Run perf tests
         env:
