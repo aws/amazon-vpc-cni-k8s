@@ -2042,10 +2042,14 @@ func (c *IPAMContext) isDatastorePoolTooLow() bool {
 		totalIPs = maxIpsPerPrefix
 	}
 
-	poolTooLow := available < totalIPs*warmTarget || (warmTarget == 0 && available == 0)
+	poolTooLow := c.dataStore.GetENIs() == 0 || available < totalIPs*warmTarget
 	if poolTooLow {
 		log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, warmTarget, totalIPs)
 		c.logPoolStats(stats)
+	} else if warmTarget == 0 && c.dataStore.IsIPStarvedInDS() {
+		poolTooLow = available <= 0
+		log.Debugf("Ipamd knows WARM_ENI_TARGET is 0 and DS may need more IP. Returning poolToLow (%v)(available is %d) and set ds IP starvation to false.", poolTooLow, available)
+		c.dataStore.SetIPStarvedInDS(false)
 	}
 	return poolTooLow
 

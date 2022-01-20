@@ -307,6 +307,7 @@ type DataStore struct {
 	backingStore             Checkpointer
 	cri                      cri.APIs
 	isPDEnabled              bool
+	ipStarved                bool
 }
 
 // ENIInfos contains ENI IP information
@@ -803,6 +804,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 	}
 
 	ds.log.Errorf("DataStore has no available IP/Prefix addresses")
+	ds.ipStarved = true
 	return "", -1, errors.New("assignPodIPv4AddressUnsafe: no available IP/Prefix addresses")
 }
 
@@ -1506,4 +1508,18 @@ func (ds *DataStore) CheckFreeableENIexists() bool {
 		return true
 	}
 	return false
+}
+
+func (ds *DataStore) IsIPStarvedInDS() bool {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+	ds.log.Debugf("Data Store is starved on IP addresses? %v", ds.ipStarved)
+	return ds.ipStarved
+}
+
+func (ds *DataStore) SetIPStarvedInDS(starved bool) {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+	ds.log.Debugf("Data Store IP starvation is set to %v", starved)
+	ds.ipStarved = starved
 }

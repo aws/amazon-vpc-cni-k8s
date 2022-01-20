@@ -1118,7 +1118,8 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 		{"Test 1 used, 1 warm ENI", fields{3, 1, 0, datastoreWith1Pod1()}, true},
 		{"Test 1 used, 0 warm ENI", fields{3, 0, 0, datastoreWith1Pod1()}, false},
 		{"Test 3 used, 1 warm ENI", fields{3, 1, 0, datastoreWith3Pods()}, true},
-		{"Test 3 used, 0 warm ENI", fields{3, 0, 0, datastoreWith3Pods()}, true},
+		{"Test 3 used, 0 warm ENI", fields{3, 0, 0, datastoreWith3Pods()}, false},
+		{"Test no free IPs, 0 warm ENI", fields{3, 0, 0, datastoreWith0FreeIPsWithIPStarved()}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1206,6 +1207,13 @@ func datastoreWith3FreeIPs() *datastore.DataStore {
 	ipv4Addr = net.IPNet{IP: net.ParseIP(ipaddr03), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = datastoreWith3FreeIPs.AddIPv4CidrToStore(primaryENIid, ipv4Addr, false)
 	return datastoreWith3FreeIPs
+}
+
+func datastoreWith0FreeIPsWithIPStarved() *datastore.DataStore {
+	ds := testDatastore()
+	ds.AddENI("eni-1", 1, true, false, false)
+	ds.AssignPodIPv4Address(datastore.IPAMKey{NetworkName: "net1", ContainerID: "sandbox1", IfName: "eth0"})
+	return ds
 }
 
 func datastoreWith1Pod1() *datastore.DataStore {

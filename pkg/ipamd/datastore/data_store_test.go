@@ -49,6 +49,45 @@ func TestAddENI(t *testing.T) {
 	assert.Equal(t, len(eniInfos.ENIs), 2)
 }
 
+func TestIPStarvedSignal(t *testing.T) {
+	tests := []struct {
+		msg       string
+		ds        *DataStore
+		IPStarved bool
+	}{
+		{
+			"Testing activating IP starvation signal in data store",
+			func() *DataStore {
+				ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+				ds.AddENI("eni-1", 1, true, false, false)
+				ds.AssignPodIPv4Address(IPAMKey{"net1", "sandbox1", "eth0"})
+				return ds
+			}(),
+			true,
+		},
+		{
+			"Testing NOT activating IP starvation signal in data store",
+			func() *DataStore {
+				ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+				ds.AddENI("eni-1", 1, true, false, false)
+				ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+				err := ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+				assert.NoError(t, err)
+				_, _, err = ds.AssignPodIPv4Address(IPAMKey{"net1", "sandbox1", "eth0"})
+				assert.NoError(t, err)
+				return ds
+			}(),
+			false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.msg, func(t *testing.T) {
+			assert.Equal(t, tt.IPStarved, tt.ds.ipStarved)
+		})
+	}
+}
+
 func TestDeleteENI(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
 
