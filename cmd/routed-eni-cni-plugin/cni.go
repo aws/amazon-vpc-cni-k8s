@@ -45,8 +45,8 @@ import (
 
 const ipamdAddress = "127.0.0.1:50051"
 
-const vlanHostVethInterfacePrefix = "vlan"
-const vlanIdInterfacePrifix = "vlanId"
+const vlanInterfacePrefix = "vlan"
+const dummyVlanInterfacePrefix = "dummy"
 
 var version string
 
@@ -205,7 +205,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	var hostVethName string
 	if r.PodVlanId != 0 {
-		hostVethName = generateHostVethName(vlanHostVethInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+		hostVethName = generateHostVethName(vlanInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		err = driverClient.SetupPodENINetwork(hostVethName, args.IfName, args.Netns, v4Addr, v6Addr, int(r.PodVlanId), r.PodENIMAC,
 			r.PodENISubnetGW, int(r.ParentIfIndex), mtu, log)
 	} else {
@@ -251,16 +251,19 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	hostInterface := &current.Interface{Name: hostVethName}
 	containerInterface := &current.Interface{Name: args.IfName, Sandbox: args.Netns}
-	vlanInterfaceName := generateHostVethName(vlanIdInterfacePrifix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
-	vlanInterface := &current.Interface{Name: vlanInterfaceName, Mac: fmt.Sprint(r.PodVlanId)}
-	log.Infof("Using vlanInterface: %v", vlanInterface)
+
+	// This is a dummyVlanInterface is created only to send podVlanId information as a part of the Result struct
+	// The podVlanId is used by DEL cmd fetched from the prevResult struct to cleanup pod network
+	dummyVlanInterfaceName := generateHostVethName(dummyVlanInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+	dummyVlanInterface := &current.Interface{Name: dummyVlanInterfaceName, Mac: fmt.Sprint(r.PodVlanId)}
+	log.Infof("Using dummy vlanInterface: %v", dummyVlanInterface)
 
 	result := &current.Result{
 		IPs: ips,
 		Interfaces: []*current.Interface{
 			hostInterface,
 			containerInterface,
-			vlanInterface,
+			dummyVlanInterface,
 		},
 	}
 
@@ -309,9 +312,9 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	// prevResult might not be availabe, if we are still using older cni spec < 0.4.0.
 	// So we should fallback to the old clean up method
 	if ok {
-		vlanInterfaceName := generateHostVethName(vlanIdInterfacePrifix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+		dummyVlanInterfaceName := generateHostVethName(dummyVlanInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		for _, iface := range prevResult.Interfaces {
-			if iface.Name == vlanInterfaceName {
+			if iface.Name == dummyVlanInterfaceName {
 				podVlanId, err := strconv.Atoi(iface.Mac)
 				if err != nil {
 					return errors.Wrap(err, "Failed to parse vlanId from prevResult")
