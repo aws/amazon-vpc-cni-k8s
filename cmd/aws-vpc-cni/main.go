@@ -278,9 +278,13 @@ func validate_env_variable() bool {
 }
 
 func main() {
+	os.Exit(_main())
+}
+
+func _main() int {
 	log.Debug("Started aws-node container")
 	if !validate_env_variable() {
-		os.Exit(1)
+		return 1
 	}
 
 	hostCNIBinPath := getEnv(envHostCniBinPath, defaultHostCNIBinPath)
@@ -291,7 +295,7 @@ func main() {
 		err := cp.InstallBinaries(pluginBins, hostCNIBinPath)
 		if err != nil {
 			log.WithError(err).Errorf("Failed to install binaries")
-			os.Exit(1)
+			return 1
 		}
 	}
 
@@ -300,7 +304,7 @@ func main() {
 	err := cp.InstallBinaries(pluginBins, hostCNIBinPath)
 	if err != nil {
 		log.WithError(err).Errorf("Failed to install binaries")
-		os.Exit(1)
+		return 1
 	}
 
 	log.Infof("Starting IPAM daemon ... ")
@@ -312,7 +316,7 @@ func main() {
 	err = ipamdDaemon.Start()
 	if err != nil {
 		log.WithError(err).Errorf("Failed to execute command: %s", cmd)
-		os.Exit(1)
+		return 1
 	}
 
 	log.Infof("Checking for IPAM connectivity ... ")
@@ -324,20 +328,20 @@ func main() {
 			log.WithError(err).Errorf("Failed to read %s", agentLogPath)
 		}
 		log.Infof("%s", string(byteValue))
-		os.Exit(1)
+		return 1
 	}
 
 	log.Infof("Copying config file ... ")
 	err = generateJson(defaultAWSconflistFile, tmpAWSconflistFile)
 	if err != nil {
 		log.WithError(err).Errorf("Failed to update 10-awsconflist")
-		os.Exit(1)
+		return 1
 	}
 
 	err = cp.CopyFile(tmpAWSconflistFile, defaultHostCNIConfDirPath+awsConflistFile)
 	if err != nil {
 		log.WithError(err).Errorf("Failed to update 10-awsconflist")
-		os.Exit(1)
+		return 1
 	}
 
 	log.Infof("Successfully copied CNI plugin binary and config file.")
@@ -347,14 +351,15 @@ func main() {
 		err = os.Remove(awsConfFile)
 		if err != nil {
 			log.WithError(err).Errorf("Failed to delete file %s", awsConfFile)
-			os.Exit(1)
+			return 1
 		}
 	}
 
 	err = ipamdDaemon.Wait()
 	if err != nil {
 		log.WithError(err).Errorf("Failed to wait for IPAM daemon to complete")
-		os.Exit(1)
+		return 1
 	}
 	log.Infof("IPAMD stopped hence exiting ...")
+	return 0
 }

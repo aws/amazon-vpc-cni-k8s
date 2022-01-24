@@ -164,6 +164,5 @@ func _main() int {
 	}
 
 	log.Infof("CNI init container done")
-
 	return 0
 }
