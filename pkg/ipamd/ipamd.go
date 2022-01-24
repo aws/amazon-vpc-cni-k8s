@@ -168,7 +168,6 @@ const (
 	// Present and set to the empty string, which we use to mean "CNI DEL had occurred; networking has been removed from this pod"
 	// The empty string one helps close a trace at pod shutdown where it looks like the pod still has its IP when the IP has been released
 	envAnnotatePodIP = "ANNOTATE_POD_IP"
-
 )
 
 var log = logger.Get()
@@ -262,8 +261,7 @@ type IPAMContext struct {
 	lastInsufficientCidrError  time.Time
 	enableManageUntaggedMode   bool
 	disableLeakedENICollection bool
-	enablePodIPAnnotation     bool
-
+	enablePodIPAnnotation      bool
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -1694,7 +1692,6 @@ func isIPv6Enabled() bool {
 func enableManageUntaggedMode() bool {
 	return getEnvBoolWithDefault(envManageUntaggedENI, true)
 }
-
 
 func isLeakedENICollectionDisabled() bool {
 	return getEnvBoolWithDefault(envDisableENIProvisioning, false)
