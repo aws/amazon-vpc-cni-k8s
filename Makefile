@@ -230,7 +230,7 @@ debug-script:    ## Fetching debug script from awslabs/amazon-eks-ami
 	chmod +x ./aws-cni-support.sh
 
 # Run all source code checks.
-check: check-format   ## Run all source code checks.
+check: check-format lint vet ## Run all source code checks.
 
 # Run golint on source code.
 #
