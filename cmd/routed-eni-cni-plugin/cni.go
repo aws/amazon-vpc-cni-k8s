@@ -263,7 +263,6 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		Interfaces: []*current.Interface{
 			hostInterface,
 			containerInterface,
-			dummyVlanInterface,
 		},
 	}
 
