@@ -204,10 +204,16 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	var hostVethName string
+	var dummyVlanInterface *current.Interface
 	if r.PodVlanId != 0 {
 		hostVethName = generateHostVethName(vlanInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		err = driverClient.SetupPodENINetwork(hostVethName, args.IfName, args.Netns, v4Addr, v6Addr, int(r.PodVlanId), r.PodENIMAC,
 			r.PodENISubnetGW, int(r.ParentIfIndex), mtu, log)
+		// This is a dummyVlanInterface is created only to send podVlanId information as a part of the Result struct
+		// The podVlanId is used by DEL cmd fetched from the prevResult struct to cleanup pod network
+		dummyVlanInterfaceName := generateHostVethName(dummyVlanInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+		dummyVlanInterface = &current.Interface{Name: dummyVlanInterfaceName, Mac: fmt.Sprint(r.PodVlanId)}
+		log.Infof("Using dummy vlanInterface: %v", dummyVlanInterface)
 	} else {
 		// build hostVethName
 		// Note: the maximum length for linux interface name is 15
@@ -252,12 +258,6 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	hostInterface := &current.Interface{Name: hostVethName}
 	containerInterface := &current.Interface{Name: args.IfName, Sandbox: args.Netns}
 
-	// This is a dummyVlanInterface is created only to send podVlanId information as a part of the Result struct
-	// The podVlanId is used by DEL cmd fetched from the prevResult struct to cleanup pod network
-	dummyVlanInterfaceName := generateHostVethName(dummyVlanInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
-	dummyVlanInterface := &current.Interface{Name: dummyVlanInterfaceName, Mac: fmt.Sprint(r.PodVlanId)}
-	log.Infof("Using dummy vlanInterface: %v", dummyVlanInterface)
-
 	result := &current.Result{
 		IPs: ips,
 		Interfaces: []*current.Interface{
@@ -265,6 +265,11 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			containerInterface,
 			dummyVlanInterface,
 		},
+	}
+
+	// We append dummyVlanInterface only for SGP pods
+	if dummyVlanInterface != nil {
+		result.Interfaces = append(result.Interfaces, dummyVlanInterface)
 	}
 
 	return cniTypes.PrintResult(result, conf.CNIVersion)
