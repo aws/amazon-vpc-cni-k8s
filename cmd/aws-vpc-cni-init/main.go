@@ -119,13 +119,13 @@ func _main() int {
 	if disableIPv4EarlyDemux == "true" {
 		err = sys.SetSysctl(entry, 0)
 		if err != nil {
-			log.WithError(err).Fatalf("Failed disable tcp_early_demux\n")
+			log.WithError(err).Fatalf("Failed to disable tcp_early_demux\n")
 			return 1
 		}
 	} else {
 		err = sys.SetSysctl(entry, 1)
 		if err != nil {
-			log.WithError(err).Fatalf("Failed enable tcp_early_demux\n")
+			log.WithError(err).Fatalf("Failed to enable tcp_early_demux\n")
 			return 1
 		}
 	}
@@ -138,7 +138,7 @@ func _main() int {
 		entry = "net/ipv6/conf/all/disable_ipv6"
 		err = sys.SetSysctl(entry, 0)
 		if err != nil {
-			log.WithError(err).Fatalf("Failed enable tcp_early_demux\n")
+			log.WithError(err).Fatalf("Failed to enable disable_ipv6\n")
 			return 1
 		}
 		val, _ = sys.GetSysctl(entry)
@@ -147,7 +147,7 @@ func _main() int {
 		entry = "net/ipv6/conf/all/forwarding"
 		err = sys.SetSysctl(entry, 1)
 		if err != nil {
-			log.WithError(err).Fatalf("Failed enable tcp_early_demux\n")
+			log.WithError(err).Fatalf("Failed to enable ipv6 forwarding\n")
 			return 1
 		}
 		val, _ = sys.GetSysctl(entry)
@@ -156,7 +156,7 @@ func _main() int {
 		entry = "net/ipv6/conf/" + primaryIF + "/accept_ra"
 		err = sys.SetSysctl(entry, 2)
 		if err != nil {
-			log.WithError(err).Fatalf("Failed enable tcp_early_demux\n")
+			log.WithError(err).Fatalf("Failed to enable ipv6 accept_ra\n")
 			return 1
 		}
 		val, _ = sys.GetSysctl(entry)
