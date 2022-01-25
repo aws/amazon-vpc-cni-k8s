@@ -266,7 +266,7 @@ format:       ## Format all Go source code files. (Note! integration_test.go has
 	  -not -name 'mock_publisher.go' \
 	  -not -name 'rpc.pb.go' \
 	  -name '*.go' \
-	  -print0 | sort -z | xargs -0 -- goimports -w | wc -l | bc)
+	  -print0 | sort -z | xargs -0 -- goimports $(or $(FORMAT_FLAGS),-w) | wc -l | bc)
 
 # Check formatting of source code files without modification.
 check-format: FORMAT_FLAGS = -l
