@@ -202,3 +202,120 @@ If you're using v1.10.0, `aws-node` daemonset pod requires IMDSv1 access to obta
 
 See the [cni-metrics-helper README](../cmd/cni-metrics-helper/README.md).
 
+
+## Debugging Unit Test Failures on PR submission
+
+### Run unit tests / Unit-tests (pull_request)
+The above workflow gets triggered for every PR. It setups up a self hosted github runner with ubuntu:latest image and runs the unit tests. 
+To debug failures, click on details and check the phase in which the workflow failed. Expand the failed phase and check for the failed command. Try one of the ways to debug further
+
+- Run the failed command on your machine  
+OR  
+- Provision an EC2 instance with ubuntu:latest image (as used by self hosted runner)  
+OR  
+- Launch a container with ubuntu:latest image  
+
+- Once you have a system to run commands, install the matching Go version and required dependencies. 
+Go to the [workflow file](https://github.com/aws/amazon-vpc-cni-k8s/actions/runs/1743148738/workflow) under Summary tab and check for the Go version and required dependencies. 
+
+- Once you have Go and required dependencies, you should be able to run the failed command and check for errors.
+
+Here is a **sample** of debugging a Failed [Unit-tests workflow](https://github.com/aws/amazon-vpc-cni-k8s/runs/4930236418?check_suite_focus=true)
+1. The workflow has failed due to Error in Run Code checks phase
+2. Expanding the Run code checks tells us that make check-format target has failed.
+3. In your local repo, open Makefile and see what this target does  
+
+```
+format:       ## Format all Go source code files. (Note! integration_test.go has an upstream import dependency that doesn't match)
+	@command -v goimports >/dev/null || { echo "ERROR: goimports not installed"; exit 1; }
+	@exit $(shell find ./* \
+	  -type f \
+	  -not -name 'integration_test.go' \
+	  -not -name 'mock_publisher.go' \
+	  -not -name 'rpc.pb.go' \
+	  -name '*.go' \
+	  -print0 | sort -z | xargs -0 -- goimports $(or $(FORMAT_FLAGS),-w) | wc -l | bc)
+
+# Check formatting of source code files without modification.
+check-format: FORMAT_FLAGS = -l
+check-format: format
+```
+
+4. Run make check-format in your local repo and we see the same error  
+
+```
+make: *** [Makefile:263: format] Error 1
+```
+
+5. Instead of running the make target, lets just run the standalone command. This command uses the FORMAT_FLAGS if available, if not then it uses the '-w' flag instead. So replace the value of the FORMAT_FLAGS and run the equivalent command.  
+
+```
+find ./* \
+	  -type f \
+	  -not -name 'integration_test.go' \
+	  -not -name 'mock_publisher.go' \
+	  -not -name 'rpc.pb.go' \
+	  -name '*.go' \
+	  -print0 | sort -z | xargs -0 -- goimports -l | wc -l | bc
+```
+
+6. Running above command outputs a non-zero value. On checking what 'goimports -l' does, we find that it outputs files whose formatting differs from goimport's string
+
+```
+goimports --help
+usage: goimports [flags] [path ...]
+  -cpuprofile string
+    	CPU profile output
+  -d	display diffs instead of rewriting files
+  -e	report all errors (not just the first 10 on different lines)
+  -format-only
+    	if true, don't fix imports and only format. In this mode, goimports is effectively gofmt, with the addition that imports are grouped into sections.
+  -l	list files whose formatting differs from goimport's
+  -local string
+    	put imports beginning with this string after 3rd-party packages; comma-separated list
+  -memprofile string
+    	memory profile output
+  -memrate int
+    	if > 0, sets runtime.MemProfileRate
+  -srcdir dir
+    	choose imports as if source code is from dir. When operating on a single file, dir may instead be the complete file name.
+  -trace string
+    	trace profile output
+  -v	verbose logging
+  -w	write result to (source) file instead of stdout
+```  
+
+7. To fix formatting, we will rerun above command with '-w' flag. As seen from above output, it will write the formatted result in the source file itself
+
+```
+find ./* \
+	  -type f \
+	  -not -name 'integration_test.go' \
+	  -not -name 'mock_publisher.go' \
+	  -not -name 'rpc.pb.go' \
+	  -name '*.go' \
+	  -print0 | sort -z | xargs -0 -- goimports -w | wc -l | bc
+```
+
+After you run the above command, you will find few updated files in your git log with updated formatting.
+
+8. Now rerun the earlier command with '-l' flag. This time we shouldn't get any formatting errors
+
+```
+find ./* \
+	  -type f \
+	  -not -name 'integration_test.go' \
+	  -not -name 'mock_publisher.go' \
+	  -not -name 'rpc.pb.go' \
+	  -name '*.go' \
+	  -print0 | sort -z | xargs -0 -- goimports -l | wc -l | bc
+```
+
+9. After running above command, we would see a 0 as the output which means all files have expected formatting.
+
+10. Now commit the files with updated formatting and that will fix the failing workflow
+
+
+
+
+
