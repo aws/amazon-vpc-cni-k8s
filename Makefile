@@ -94,7 +94,6 @@ DOCKER_RUN_FLAGS = --rm -ti $(DOCKER_ARGS)
 # based on the requested build.
 DOCKER_BUILD_FLAGS = --build-arg GOARCH="$(ARCH)" \
 					  --build-arg golang_image="$(GOLANG_IMAGE)" \
-					  --network=host \
 	  		          $(DOCKER_ARGS)
 
 MULTI_PLATFORM_BUILD_TARGETS = 	linux/amd64,linux/arm64
