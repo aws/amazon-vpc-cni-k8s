@@ -461,19 +461,21 @@ func (c *IPAMContext) nodeInit() error {
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
 
-	// Retrieve the security groups attached the eniconfig, validate, cache them in ipam context.
-	eniCfg, err := eniconfig.MyENIConfig(ctx, c.cachedK8SClient)
-	if err != nil {
-		return errors.Wrap(err, "ipamd init: unable to retrieve eniconfig.")
+	if c.useCustomNetworking {
+		// Retrieve the security groups attached the eniconfig, validate, cache them in ipam context.
+		eniCfg, err := eniconfig.MyENIConfig(ctx, c.cachedK8SClient)
+		if err != nil {
+			return errors.Wrap(err, "ipamd init: unable to retrieve eniconfig.")
+		}
+
+		err = c.awsClient.ValidateSecurityGroups(eniCfg.SecurityGroups)
+
+		if err != nil {
+			return errors.Wrap(err, "ipamd init: Security Groups provided for ENIConfig are invalid.")
+		}
+
+		c.securityGroupsFromEniConfig.Set(eniCfg.SecurityGroups)
 	}
-
-	err = c.awsClient.ValidateSecurityGroups(eniCfg.SecurityGroups)
-
-	if err != nil {
-		return errors.Wrap(err, "ipamd init: Security Groups provided for ENIConfig are invalid.")
-	}
-
-	c.securityGroupsFromEniConfig.Set(eniCfg.SecurityGroups)
 
 	metadataResult, err := c.awsClient.DescribeAllENIs()
 	if err != nil {
