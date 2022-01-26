@@ -131,12 +131,11 @@ if [[ $(docker images -q "$IMAGE_NAME:$TEST_IMAGE_VERSION" 2> /dev/null) ]]; the
 else
     echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION does not exist in repository."
     START=$SECONDS
-    make docker IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
-    docker push "$IMAGE_NAME:$TEST_IMAGE_VERSION"
+    make multi-arch-cni-build-push IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
     DOCKER_BUILD_DURATION=$((SECONDS - START))
     echo "TIMELINE: Docker build took $DOCKER_BUILD_DURATION seconds."
     # Build matching init container
-    make docker-init INIT_IMAGE="$INIT_IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
+    make multi-arch-cni-init-build-push IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
     docker push "$INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
     if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
         popd

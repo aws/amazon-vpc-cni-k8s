@@ -97,6 +97,8 @@ DOCKER_BUILD_FLAGS = --build-arg GOARCH="$(ARCH)" \
 					  --network=host \
 	  		          $(DOCKER_ARGS)
 
+MULTI_PLATFORM_BUILD_TARGETS = 	linux/amd64,linux/arm64
+
 # Default to building an executable using the host's Go toolchain.
 .DEFAULT_GOAL = build-linux
 
@@ -206,6 +208,19 @@ generate-limits: GOOS=
 generate-limits:    ## Generate limit file go code
 	go run $(VENDOR_OVERRIDE_FLAG) scripts/gen_vpc_ip_limits.go
 
+multi-arch-cni-build-push:		## Build multi-arch VPC CNI container image.
+	docker buildx build $(DOCKER_BUILD_FLAGS) \
+    		-f scripts/dockerfiles/Dockerfile.release \
+    		-t "$(IMAGE_NAME)" \
+    		--push \
+    		.
+
+multi-arch-cni-init-build-push:     ## Build VPC CNI plugin Init container image.
+	docker buildx build $(DOCKER_BUILD_FLAGS) \
+		-f scripts/dockerfiles/Dockerfile.init \
+		-t "$(INIT_IMAGE_NAME)" \
+		--push \
+		.
 # Fetch the CNI plugins
 plugins: FETCH_VERSION=0.9.0
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
