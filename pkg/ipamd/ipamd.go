@@ -413,7 +413,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	mac := c.awsClient.GetPrimaryENImac()
 
 	// retrieve security groups
-	if c.enableIPv4 || !c.disableENIProvisioning {
+	if c.enableIPv4 && !c.disableENIProvisioning {
 		err = c.awsClient.RefreshSGIDs(mac)
 		if err != nil {
 			return nil, err
