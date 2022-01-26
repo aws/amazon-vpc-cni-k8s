@@ -15,7 +15,7 @@ RUN go mod download
 COPY . ./
 RUN make build-metrics
 
-FROM public.ecr.aws/amazonlinux/amazonlinux:2
+FROM public.ecr.aws/amazonlinux/amazonlinux:1
 RUN yum update -y && \
 	yum clean all
 
