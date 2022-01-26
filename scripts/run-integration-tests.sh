@@ -133,7 +133,7 @@ else
     echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION does not exist in repository."
     START=$SECONDS
     # create the buildx container only if it doesn't exist already and set the driver version explicitly in order to workaround https://github.com/docker/buildx/issues/327
-    docker buildx inspect $(BUILDX_BUILDER) >/dev/null 2<&1 || docker buildx create --name=$(BUILDX_BUILDER) --driver-opt=image=moby/buildkit:v0.9.0 >/dev/null
+    docker buildx inspect $(BUILDX_BUILDER) >/dev/null 2<&1 || docker buildx create --name=$(BUILDX_BUILDER) --driver-opt=image=moby/buildkit:v0.9.0 --use >/dev/null
     make multi-arch-cni-build-push IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
     DOCKER_BUILD_DURATION=$((SECONDS - START))
     echo "TIMELINE: Docker build took $DOCKER_BUILD_DURATION seconds."
