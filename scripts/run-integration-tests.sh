@@ -136,7 +136,6 @@ else
     echo "TIMELINE: Docker build took $DOCKER_BUILD_DURATION seconds."
     # Build matching init container
     make multi-arch-cni-init-build-push IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
-    docker push "$INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
     if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
         popd
     fi

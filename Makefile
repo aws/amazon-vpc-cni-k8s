@@ -211,6 +211,7 @@ generate-limits:    ## Generate limit file go code
 multi-arch-cni-build-push:		## Build multi-arch VPC CNI container image.
 	docker buildx build $(DOCKER_BUILD_FLAGS) \
     		-f scripts/dockerfiles/Dockerfile.release \
+    		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
     		-t "$(IMAGE_NAME)" \
     		--push \
     		.
@@ -218,6 +219,7 @@ multi-arch-cni-build-push:		## Build multi-arch VPC CNI container image.
 multi-arch-cni-init-build-push:     ## Build VPC CNI plugin Init container image.
 	docker buildx build $(DOCKER_BUILD_FLAGS) \
 		-f scripts/dockerfiles/Dockerfile.init \
+		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
 		-t "$(INIT_IMAGE_NAME)" \
 		--push \
 		.
