@@ -314,6 +314,10 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.Wrap(err, "del cmd: failed to load k8s config from args")
 	}
 
+	// With containerd as the runtime, it was observed that sometimes spurious delete requests
+	// are triggered from kubelet with an empty Netns. This check safeguards against such
+	// scenarios and we just return
+	// ref: https://github.com/kubernetes/kubernetes/issues/44100#issuecomment-329780382
 	if args.Netns == "" {
 		log.Info("Netns() is empty, so network already cleanedup. Nothing to do")
 		return nil
