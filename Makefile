@@ -60,7 +60,7 @@ IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(ARCH),arm64))
 # GOLANG_IMAGE is the building golang container image used.
 GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.16-stretch
 # For the requested build, these are the set of Go specific build environment variables.
-export GOARCH = $(TARGETPLATFORM)
+export GOARCH = $(TARGETARCH)
 export GOOS = linux
 export CGO_ENABLED = 0
 # NOTE: Provided for local toolchains that require explicit module feature flag.

@@ -2,7 +2,7 @@ ARG golang_image
 
 FROM $golang_image as builder
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
-ARG TARGETPLATFORM
+ARG TARGETARCH
 # Configure build with Go modules
 ENV GO111MODULE=on
 ENV GOPROXY=direct
