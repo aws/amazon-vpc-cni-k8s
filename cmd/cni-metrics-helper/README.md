@@ -33,7 +33,7 @@ As per [AWS EKS Security Best Practice](https://docs.aws.amazon.com/eks/latest/u
 }
 ```
 
-2. You should have following ClusterRole and ClusterRoleBinding for the IRSA 
+2. You should have similar ClusterRole and ClusterRoleBinding for the IRSA 
 
 ``` 
 apiVersion: rbac.authorization.k8s.io/v1
@@ -54,7 +54,7 @@ metadata:
   labels:
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
-    app.kubernetes.io/version: "v1.9.3"
+    app.kubernetes.io/version: "v1.10.2"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
