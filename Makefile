@@ -96,8 +96,8 @@ DOCKER_ARGS =
 DOCKER_RUN_FLAGS = --rm -ti $(DOCKER_ARGS)
 # DOCKER_BUILD_FLAGS is the set of flags passed during container image builds
 # based on the requested build.
-DOCKER_BUILD_FLAGS = --build-arg GOARCH="$(ARCH)" \
-					  --build-arg golang_image="$(GOLANG_IMAGE)" \
+DOCKER_BUILD_FLAGS = --build-arg golang_image="$(GOLANG_IMAGE)" \
+					  --network=host \
 	  		          $(DOCKER_ARGS)
 
 MULTI_PLATFORM_BUILD_TARGETS = 	linux/amd64,linux/arm64
