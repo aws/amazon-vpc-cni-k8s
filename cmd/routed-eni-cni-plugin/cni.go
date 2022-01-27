@@ -333,15 +333,16 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			if iface.Name == dummyVlanInterfaceName {
 				podVlanId, err := strconv.Atoi(iface.Mac)
 				if err != nil {
-					return errors.Wrap(err, "Failed to parse vlanId from prevResult")
+					log.Errorf("Failed to parse vlanId from prevResult: %v", err)
+					return errors.Wrap(err, "del cmd: failed to parse vlanId from prevResult")
 				}
 
 				// podVlanID can not be 0 as we add dummyVlanInterface only for ppsg
 				// if it is 0 for whatever reason then we log it and
 				// fallback to older cleanup method
 				if podVlanId == 0 {
-					log.Debugf("Found SG pod:%s namespace:%s with 0 vlanID", k8sArgs.K8S_POD_NAME, k8sArgs.K8S_POD_NAMESPACE)
-					break
+					log.Errorf("Found SG pod:%s namespace:%s with 0 vlanID", k8sArgs.K8S_POD_NAME, k8sArgs.K8S_POD_NAMESPACE)
+					return errors.Wrap(err, "del cmd: found Incorrect 0 vlandId for ppsg")
 				}
 
 				err = cleanUpPodENI(podVlanId, log, args.ContainerID, driverClient)
