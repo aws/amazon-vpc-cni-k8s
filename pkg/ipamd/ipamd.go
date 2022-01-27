@@ -417,20 +417,6 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 		return nil, err
 	}
 
-	mac := c.awsClient.GetPrimaryENImac()
-
-	// retrieve security groups
-	if c.enableIPv4 && !c.disableENIProvisioning {
-		err = c.awsClient.RefreshSGIDs(mac)
-		if err != nil {
-			return nil, err
-		}
-
-		// Refresh security groups and VPC CIDR blocks in the background
-		// Ignoring errors since we will retry in 30s
-		go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
-	}
-
 	return c, nil
 }
 
@@ -571,19 +557,22 @@ func (c *IPAMContext) nodeInit() error {
 		c.askForTrunkENIIfNeeded(ctx)
 	}
 
-	if !c.disableENIProvisioning {
-		// For a new node, attach Cidrs (secondary ips/prefixes)
-		increasedPool, err := c.tryAssignCidrs()
-		if err == nil && increasedPool {
-			c.updateLastNodeIPPoolAction()
-		} else if err != nil {
-			if containsInsufficientCIDRsOrSubnetIPs(err) {
-				log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
-				c.lastInsufficientCidrError = time.Now()
-				return nil
-			}
+	mac := c.awsClient.GetPrimaryENImac()
+	// retrieve security groups
+	if c.enableIPv4 && !c.disableENIProvisioning {
+		err = c.awsClient.RefreshSGIDs(mac)
+		if err != nil {
 			return err
 		}
+
+		// Refresh security groups in the background
+		// Ignoring errors since we will retry in 30s
+		go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
+	}
+
+	if !c.disableENIProvisioning && c.isDatastorePoolTooLow() {
+		// For a new node, attach Cidrs (secondary ips/prefixes)
+		c.increaseDatastorePool(ctx)
 	}
 
 	return nil
