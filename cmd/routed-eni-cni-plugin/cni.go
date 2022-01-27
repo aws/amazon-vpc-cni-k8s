@@ -338,8 +338,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 				}
 
 				// podVlanID can not be 0 as we add dummyVlanInterface only for ppsg
-				// if it is 0 for whatever reason then we log it and
-				// fallback to older cleanup method
+				// if it is 0 then we should return an error
 				if podVlanId == 0 {
 					log.Errorf("Found SG pod:%s namespace:%s with 0 vlanID", k8sArgs.K8S_POD_NAME, k8sArgs.K8S_POD_NAMESPACE)
 					return errors.Wrap(err, "del cmd: found Incorrect 0 vlandId for ppsg")
