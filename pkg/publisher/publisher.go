@@ -84,24 +84,37 @@ type cloudWatchPublisher struct {
 	lock                 sync.RWMutex
 }
 
+// Logic to fetch Region and CLUSTER_ID
+// Case 1: Cx not using IRSA, we need to get region and clusterID using IMDS
+// Case 2: Cx using IRSA but not specified clusterID, we can still get this info if IMDS is not blocked
+// Case 3: Cx blocked IMDS access and not using IRSA (which means region == "") AND
+// not specified clusterID then its a Cx error
 // New returns a new instance of `Publisher`
-func New(ctx context.Context) (Publisher, error) {
+func New(ctx context.Context, region string, clusterID string, log logger.Logger) (Publisher, error) {
 	sess := awssession.New()
-	// Get cluster-ID
-	ec2Client, err := ec2wrapper.NewMetricsClient()
-	if err != nil {
-		return nil, errors.Wrap(err, "publisher: unable to obtain EC2 service client")
-	}
-	clusterID := getClusterID(ec2Client)
 
-	// Get ec2metadata client
-	ec2MetadataClient := ec2metadatawrapper.New(sess)
+	// If Customers have explicitly specified clusterID then skip generating it
+	if clusterID == "" {
+		ec2Client, err := ec2wrapper.NewMetricsClient()
+		if err != nil {
+			return nil, errors.Wrap(err, "publisher: unable to obtain EC2 service client")
+		}
 
-	region, err := ec2MetadataClient.Region()
-	if err != nil {
-		return nil, errors.Wrap(err, "publisher: Unable to obtain region")
+		clusterID = getClusterID(ec2Client)
 	}
 
+	// Try to fetch region if not available
+	if region == "" {
+		// Get ec2metadata client
+		ec2MetadataClient := ec2metadatawrapper.New(sess)
+		val, err := ec2MetadataClient.Region()
+		if err != nil {
+			return nil, errors.Wrap(err, "publisher: Unable to obtain region")
+		}
+		region = val
+	}
+
+	log.Infof("Using REGION=%s and CLUSTER_ID=%s", region, clusterID)
 	// Get AWS session
 	awsCfg := aws.Config{
 		Region: aws.String(region),
