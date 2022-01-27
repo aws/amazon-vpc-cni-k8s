@@ -16,7 +16,7 @@ The following diagram shows how `cni-metrics-helper` works in a cluster:
 ### Using IRSA
 As per [AWS EKS Security Best Practice](https://docs.aws.amazon.com/eks/latest/userguide/best-practices-security.html), if you are using IRSA for pods then following requirements must be satisfied to succesfully publish metrics to CloudWatch
 
-1. The IAM Role for your SA must have following policy attached
+1. The IAM Role for your SA [(IRSA)](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) must have following policy attached
 
 ```
 {
@@ -65,7 +65,15 @@ subjects:
     namespace: kube-system
 ```
 
-3. Specify this IRSA in the cni-metrics-helper deployment spec alongwith CLUSTER_ID as the metric dimension
+3. Specify the IRSA name in the cni-metrics-helper deployment spec alongwith the AWS_CLUSTER_ID (as described below). The value that you specify here will show up under the dimension 'CLUSTER_ID' for your published metrics. Specifying value for this field is mandatory only if you are blocking IMDS access  
+
+#### `AWS_CLUSTER_ID`
+
+Type: String
+
+Default: `""`
+
+An Identifier for your Cluster which will be used as the dimension for published metrics. Ideally it should be ClusterName or ClusterID.
 
 ```
 kind: Deployment
@@ -89,17 +97,17 @@ spec:
         - name: USE_CLOUDWATCH
           value: "true"
         - name: AWS_CLUSTER_ID
-          value: "demo-cluster"  
+          value: ""  
         name: cni-metrics-helper
         image: <image>
       serviceAccountName: <IRSA name>
 ```
-With IRSA, the above deployment spec will be auto-injected with AWS_REGION parameter and it will be used to fetch Region information.  
+With IRSA, the above deployment spec will be auto-injected with AWS_REGION parameter and it will be used to fetch Region information when we publish metrics. 
 Possible Scenarios for above configuration
-1. If you are not using IRSA, then Region and CLUSTER_ID will be fetched using IMDS (should have access)
-2. If you are using IRSA but have not specified CLUSTER_ID, we can still get this information if IMDS access is not blocked
-3. If you have blocked IMDS access, then you must specify a value for CLUSTER_ID (metric dimension) in the deployment spec
-4. If you have not blocked IMDS access but have specified CLUSTER_ID value, then it will be used. 
+1. If you are not using IRSA, then Region and CLUSTER_ID information will be fetched using IMDS (should have access)
+2. If you are using IRSA but have not specified AWS_CLUSTER_ID, we will fetch the value for CLUSTER_ID if IMDS access is not blocked
+3. If you have blocked IMDS access, then you must specify a value for AWS_CLUSTER_ID in the deployment spec
+4. If you have not blocked IMDS access but have specified AWS_CLUSTER_ID value, then this value will be used. 
 
 ### Installing the cni-metrics-helper
 ```
