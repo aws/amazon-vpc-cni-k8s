@@ -114,6 +114,7 @@ func New(ctx context.Context, region string, clusterID string, log logger.Logger
 	}
 
 	log.Infof("Using REGION=%s and CLUSTER_ID=%s", region, clusterID)
+
 	// Get AWS session
 	awsCfg := aws.Config{
 		Region: aws.String(region),

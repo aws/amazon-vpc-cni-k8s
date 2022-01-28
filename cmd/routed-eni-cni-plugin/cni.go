@@ -44,7 +44,6 @@ import (
 )
 
 const ipamdAddress = "127.0.0.1:50051"
-const vlanInterfaceName = "vlanId"
 
 const vlanInterfacePrefix = "vlan"
 const dummyVlanInterfacePrefix = "dummy"
@@ -132,7 +131,6 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	log.Infof("Received CNI add request: ContainerID(%s) Netns(%s) IfName(%s) Args(%s) Path(%s) argsStdinData(%s)",
 		args.ContainerID, args.Netns, args.IfName, args.Args, args.Path, args.StdinData)
-
 	log.Debugf("Prev Result: %v\n", conf.PrevResult)
 
 	var k8sArgs K8sArgs
@@ -266,15 +264,12 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	hostInterface := &current.Interface{Name: hostVethName}
 	containerInterface := &current.Interface{Name: args.IfName, Sandbox: args.Netns}
-	vlanInterface := &current.Interface{Name: vlanInterfaceName, Mac: fmt.Sprint(r.PodVlanId)}
-	log.Infof("Using vlanInterface: %v", vlanInterface)
 
 	result := &current.Result{
 		IPs: ips,
 		Interfaces: []*current.Interface{
 			hostInterface,
 			containerInterface,
-			vlanInterface,
 		},
 	}
 

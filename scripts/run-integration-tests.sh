@@ -75,7 +75,8 @@ CLUSTER_MANAGE_LOG_PATH=$TEST_CLUSTER_DIR/cluster-manage.log
 : "${KUBECTL_PATH:=$TESTER_DIR/kubectl}"
 export PATH=${PATH}:$TESTER_DIR
 
-LOCAL_GIT_VERSION=$(git describe --tags --always --dirty)
+LOCAL_GIT_VERSION=$(git rev-parse HEAD)
+echo "Testing git repository at commit $LOCAL_GIT_VERSION"
 # The manifest image version is the image tag we need to replace in the
 # aws-k8s-cni.yaml manifest
 : "${MANIFEST_IMAGE_VERSION:=latest}"
@@ -129,14 +130,6 @@ if [[ $(docker images -q "$IMAGE_NAME:$TEST_IMAGE_VERSION" 2> /dev/null) ]]; the
     DOCKER_BUILD_DURATION=0
 else
     echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION does not exist in repository."
-    if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
-        __cni_source_tmpdir="${TEST_BASE_DIR}/cni-src-$IMAGE_VERSION"
-        echo "Checking out CNI source code for $IMAGE_VERSION ..."
-
-        git clone --depth=1 --branch "$TEST_IMAGE_VERSION" \
-            https://github.com/aws/amazon-vpc-cni-k8s "$__cni_source_tmpdir" || exit 1
-        pushd "$__cni_source_tmpdir"
-    fi
     START=$SECONDS
     make docker IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
     docker push "$IMAGE_NAME:$TEST_IMAGE_VERSION"
