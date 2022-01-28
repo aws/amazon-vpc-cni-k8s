@@ -43,28 +43,18 @@ HELM_CHART_NAME ?= "aws-vpc-cni"
 # TEST_IMAGE is the testing environment container image.
 TEST_IMAGE = amazon-k8s-cni-test
 TEST_IMAGE_NAME = $(TEST_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
-# These values derive ARCH  which is needed by dependencies in
-# image build defaulting to system's architecture when not specified.
-#
-# UNAME_ARCH is the runtime architecture of the building host.
-UNAME_ARCH = $(shell uname -m)
-# ARCH is the target architecture which is being built for.
-#
-# These are pairs of input_arch to derived_arch separated by colons:
-ARCH = $(lastword $(subst :, ,$(filter $(UNAME_ARCH):%,x86_64:amd64 aarch64:arm64)))
-# IMAGE_ARCH_SUFFIX is the `-arch` suffix included in the container image name.
-#
+
+# Mandate usage of docker buildkit as platform arguments are available only with buildkit
+# Refer to https://docs.docker.com/engine/reference/builder/#automatic-platform-args-in-the-global-scope
+# and https://docs.docker.com/develop/develop-images/build_enhancements/#to-enable-buildkit-builds
+export DOCKER_BUILDKIT=1
+GOARCH = $(TARGETARCH)
 # This is only applied to the arm64 container image by default. Override to
 # provide an alternate suffix or to omit.
-IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(ARCH),arm64))
+IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(GOARCH),arm64))
 # GOLANG_IMAGE is the building golang container image used.
 GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.16-stretch
-# For the requested build, these are the set of Go specific build environment variables.
-ifdef TARGETARCH
-export GOARCH = $(TARGETARCH)
-else
-export GOARCH = $(ARCH)
-endif
+
 export GOOS = linux
 export CGO_ENABLED = 0
 # NOTE: Provided for local toolchains that require explicit module feature flag.
