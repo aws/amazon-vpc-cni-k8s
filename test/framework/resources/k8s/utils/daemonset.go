@@ -76,7 +76,7 @@ func updateDaemonsetEnvVarsAndWait(f *framework.Framework, dsName string, dsName
 	if dsName != utils.MultusNodeName {
 		_, err := f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(dsNamespace, utils.MultusNodeName)
 		if err == nil {
-			By("Restarting Multus daemonset")
+			By("Restarting Multus daemonset to use the updated aws-node changes")
 			td := time.Now()
 			updateDaemonsetEnvVarsAndWait(f, utils.MultusNodeName, dsNamespace, utils.MultusContainerName, map[string]string{
 				"forceUpdatedAt": td.String(),

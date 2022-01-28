@@ -30,6 +30,11 @@ import (
 
 const CreateNodeGroupCFNTemplateURL = "https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/amazon-eks-nodegroup.yaml"
 
+// Docker will be default, if not specified
+const (
+	CONTAINERD = "containerd"
+)
+
 type NodeGroupProperties struct {
 	// Required to verify the node is up and ready
 	NgLabelKey string
@@ -44,6 +49,9 @@ type NodeGroupProperties struct {
 	Subnet       []string
 	InstanceType string
 	KeyPairName  string
+
+	// optional: specify container runtime
+	ContainerRuntime string
 }
 
 type ClusterVPCConfig struct {
@@ -93,6 +101,11 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 
 		bootstrapArgs += " --use-max-pods false"
 		kubeletExtraArgs += fmt.Sprintf(" --max-pods=%d", maxPods)
+	}
+
+	containerRuntime := properties.ContainerRuntime
+	if containerRuntime != "" {
+		bootstrapArgs += fmt.Sprintf(" --container-runtime %s", containerRuntime)
 	}
 
 	asgSizeString := strconv.Itoa(properties.AsgSize)

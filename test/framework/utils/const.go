@@ -24,7 +24,7 @@ const (
 	MultusContainerName  = "kube-multus"
 
 	// See https://gallery.ecr.aws/r3i6j7b0/aws-vpc-cni-test-helper
-	TestAgentImage = "public.ecr.aws/r3i6j7b0/aws-vpc-cni-test-helper:5c99fc7b"
+	TestAgentImage = "public.ecr.aws/r3i6j7b0/aws-vpc-cni-test-helper:86ece934"
 
 	PollIntervalShort  = time.Second * 2
 	PollIntervalMedium = time.Second * 5
