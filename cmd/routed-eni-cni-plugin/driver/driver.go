@@ -466,6 +466,33 @@ func (os *linuxNetwork) SetupPodENINetwork(hostVethName string, contVethName str
 	if err != nil && !isRuleExistsError(err) {
 		return errors.Wrapf(err, "SetupPodENINetwork: unable to add ip rule for host veth %s", hostVethName)
 	}
+
+	// 7. Add route for NLDNS workaround "ip route add local 169.254.20.10 table $RT_ID proto kernel scope host dev nodelocaldns"
+	if nldns, err := os.netLink.LinkByName("nodelocaldns"); err == nil {
+		route := netlink.Route{
+			LinkIndex: nldns.Attrs().Index,
+			Scope:     netlink.SCOPE_HOST,
+			Dst:       &net.IPNet{IP: net.IPv4(169, 254, 20, 10), Mask: net.CIDRMask(32, 32)},
+			Table:     vlanTableID,
+		}
+		if err := os.netLink.RouteReplace(&route); err != nil {
+			return errors.Wrapf(err, "SetupPodENINetwork: unable to add or replace route entry for %s", route.Dst.IP.String())
+		}
+
+		log.Debugf("Successfully set host route to be %s/0", route.Dst.IP.String())
+	}
+
+	// 8. Add rule for NLDNS workaround "ip rule add from 169.254.20.10 to $POD_IP pref 9 table $RT_ID"
+	nldnsRule := os.netLink.NewRule()
+	nldnsRule.Table = vlanTableID
+	nldnsRule.Priority = 9
+	nldnsRule.Src = &net.IPNet{IP: net.IPv4(169, 254, 20, 10), Mask: net.CIDRMask(32, 32)}
+	nldnsRule.Dst = addr
+	err = os.netLink.RuleAdd(nldnsRule)
+	if err != nil && !isRuleExistsError(err) {
+		return errors.Wrapf(err, "SetupPodENINetwork: unable to add ip rule for nodelocaldns workaround")
+	}
+
 	return nil
 }
 
