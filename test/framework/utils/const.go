@@ -25,9 +25,7 @@ const (
 
 	// See https://gallery.ecr.aws/r3i6j7b0/aws-vpc-cni-test-helper
 	TestAgentImage = "public.ecr.aws/r3i6j7b0/aws-vpc-cni-test-helper:86ece934"
-)
 
-const (
 	PollIntervalShort  = time.Second * 2
 	PollIntervalMedium = time.Second * 5
 	PollIntervalLong   = time.Second * 20

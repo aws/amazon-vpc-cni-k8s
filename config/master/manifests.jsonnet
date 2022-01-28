@@ -297,39 +297,10 @@ local metricsHelper = {
       {
         apiGroups: [""],
         resources: [
-          "nodes",
           "pods",
-          "pods/proxy",
-          "services",
-          "resourcequotas",
-          "replicationcontrollers",
-          "limitranges",
-          "persistentvolumeclaims",
-          "persistentvolumes",
-          "namespaces",
-          "endpoints",
+          "pods/proxy"
         ],
         verbs: ["list", "watch", "get"],
-      },
-      {
-        apiGroups: ["extensions"],
-        resources: ["daemonsets", "deployments", "replicasets"],
-        verbs: ["list", "watch"],
-      },
-      {
-        apiGroups: ["apps"],
-        resources: ["statefulsets"],
-        verbs: ["list", "watch"],
-      },
-      {
-        apiGroups: ["batch"],
-        resources: ["cronjobs", "jobs"],
-        verbs: ["list", "watch"],
-      },
-      {
-        apiGroups: ["autoscaling"],
-        resources: ["horizontalpodautoscalers"],
-        verbs: ["list", "watch"],
       },
     ],
   },
@@ -390,6 +361,7 @@ local metricsHelper = {
               name: "cni-metrics-helper",
               env_:: {
                 USE_CLOUDWATCH: "true",
+                AWS_CLUSTER_ID: "",
               },
               env: [
                 {name: kv[0]} + if std.isObject(kv[1]) then kv[1] else {value: kv[1]}

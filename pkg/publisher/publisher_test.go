@@ -35,14 +35,14 @@ const (
 )
 
 func TestCloudWatchPublisherWithNoIMDS(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.TODO())
-	defer cancel()
-
 	logConfig := logger.Configuration{
 		LogLevel:    "Debug",
 		LogLocation: "stdout",
 	}
 	log := logger.New(&logConfig)
+
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
 
 	region := "us-west-2"
 	clusterID := testClusterID
