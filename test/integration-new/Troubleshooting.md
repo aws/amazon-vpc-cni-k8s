@@ -3,6 +3,26 @@
 To make debugging efforts easier, you can do the following:
 
 1. Adding focus to individual failing tests to selectively run them in case of troubleshooting. The most straightforward way would be to add an F in front of your It for the failing test. Another simple way would be to add --focus=<focus_value> in ginkgo command where the <focus_value> provided would be matched to the string description of the tests.
+
+```
+FIt("connection should be established", func() {
+			CheckConnectivityForMultiplePodPlacement(
+				interfaceToPodListOnPrimaryNode, interfaceToPodListOnSecondaryNode,
+				serverPort, testerExpectedStdOut, testerExpectedStdErr, testConnectionCommandFunc)
+
+			By("verifying connection fails for unreachable port")
+			VerifyConnectivityFailsForNegativeCase(interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI[0],
+				interfaceToPodListOnPrimaryNode.PodsOnPrimaryENI[1], serverPort,
+				testFailedConnectionCommandFunc)
+		})
+
+Running Suite: CNI Pod Networking Suite
+=======================================
+Random Seed: 1643400657
+Will run 2 of 15 specs
+```
+With 'Focus' added, ginkgo will run only those specs
+
 2. Comment out the AfterEach or AfterSuite section which cleans up your test resources, rerun the failing test in focussed mode and inspect for any errors using pod logs or pod events
 3. If a test fails, resource cleanup might not happen. To recover you can just delete the test namespace
 
@@ -12,12 +32,8 @@ kubectl delete ns cni-automation
 
 ### Few other things to check if you run into Failures
 **cni tests**  
-Ensure that you pass 'ng-name-label-key' and 'ng-name-label-val' to trigger ginkgo tests
-
-```
-ginkgo -v -r -- --cluster-kubeconfig=<kubeconfig> --cluster-name=<cluster-name> --aws-region=<region> --aws-vpc-id=<vpc_id> --ng-name-label-key=eks.amazonaws.com/nodegroup --ng-name-label-val=nodegroup
-``` 
-You can get any label that identifies your nodes by describing your nodes
+Ensure that you pass 'ng-name-label-key' and 'ng-name-label-val' to trigger ginkgo tests  
+You can get any label that identifies your nodes by describing your nodes   
 
 ```
 kubectl describe nodes
@@ -38,7 +54,22 @@ Labels:             alpha.eksctl.io/cluster-name=cni-rc-test
 .....
 ```
 
-For pod_traffic_test you need to have atleast 2 pods running on primary and seconday ENI of the node being tested. So we already schedule pods to the max limit of the Node. It's okay if some of the pods are stuck in Container Creating. That shouldn't cause any test failures
+<em>Recommended to run tests from individual files by adding focus instead of running tests from all files at once</em>.  
+For instance, you could run all tests from host_networking_test.go first, followed by pod_traffic_test_PD_enabled.go and so on.
+
+```
+cd test/integration-new/cni
+Added Focus for all specs in host_networking_test.go
+
+ginkgo -v -r -- --cluster-kubeconfig=<kubeconfig> --cluster-name=<cluster-name> --aws-region=<region> --aws-vpc-id=<vpc_id> --ng-name-label-key=eks.amazonaws.com/nodegroup --ng-name-label-val=nodegroup
+
+Running Suite: CNI Pod Networking Suite
+=======================================
+Random Seed: 1643401684
+Will run 3 of 15 specs (Running only tests from host_networking_test.go)
+``` 
+
+For pod_traffic_test you need to have atleast 2 pods running on primary and seconday ENI of the node being tested. So we already schedule pods to the max limit of the Node.
 
 **ipamd tests**  
 Delete coredns pods if your test fails, as those pods may be using secondary ENI and it would cause problems if you are testing MAX_ENI as 1. 
