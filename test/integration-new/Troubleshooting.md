@@ -50,7 +50,22 @@ This test requires to be run on an IPv6 Cluster. You can create one using this [
 
 Ensure that you pass 'ng-name-label-key' and 'ng-name-label-val' to trigger ginkgo tests, similar to what was described for cni tests
 
+**metrics-helper tests**  
+Ensure that you dont have any existing clusterrole,clusterrolebinding or serviceaccount with following name 'cni-metrics-helper' in your cluster. Else the test will fail to install cni-metrics-helper via helm
 
-
+```
+Unexpected error:
+      <*errors.withStack | 0xc0020c4390>: {
+          error: <*errors.withMessage | 0xc0020c1600>{
+              cause: <*errors.errorString | 0xc0012875f0>{
+                  s: "ClusterRole \"cni-metrics-helper\" in namespace \"\" exists and cannot be imported into the current release: invalid ownership metadata; label validation error: missing key \"app.kubernetes.io/managed-by\": must be set to \"Helm\"; annotation validation error: missing key \"meta.helm.sh/release-name\": must be set to \"cni-metrics-helper\"; annotation validation error: missing key \"meta.helm.sh/release-namespace\": must be set to \"kube-system\"",
+              },
+              msg: "rendered manifests contain a resource that already exists. Unable to continue with install",
+          },
+          stack: [0x21cd848, 0x21d45b8, 0x21d4b0a, 0x2775ba6, 0x1c2215a, 0x1c21b25, 0x1c22686, 0x1c297a4, 0x1c29353, 0x1c2b5f2, 0x1c2d2a5, 0x1c2cf6b, 0x2774d45, 0x110bba2, 0x106abe1],
+      }
+      rendered manifests contain a resource that already exists. Unable to continue with install: ClusterRole "cni-metrics-helper" in namespace "" exists and cannot be imported into the current release: invalid ownership metadata; label validation error: missing key "app.kubernetes.io/managed-by": must be set to "Helm"; annotation validation error: missing key "meta.helm.sh/release-name": must be set to "cni-metrics-helper"; annotation validation error: missing key "meta.helm.sh/release-namespace": must be set to "kube-system"
+  occurred
+```
 
 
