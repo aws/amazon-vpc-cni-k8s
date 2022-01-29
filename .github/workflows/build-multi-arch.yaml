@@ -23,7 +23,7 @@ jobs:
 
     - name: Clean up stale docker images
       run: sudo docker image prune -f
-    
+      
     - name: Build
       run: make docker all
       
