@@ -7,7 +7,7 @@ require (
 	github.com/containernetworking/cni v0.8.0
 	github.com/containernetworking/plugins v0.9.0
 	github.com/coreos/go-iptables v0.4.5
-	github.com/golang/mock v1.6.0
+	github.com/golang/mock v1.4.1
 	github.com/golang/protobuf v1.4.2
 	github.com/google/go-jsonnet v0.16.0
 	github.com/pkg/errors v0.9.1
@@ -18,9 +18,7 @@ require (
 	github.com/stretchr/testify v1.5.1
 	github.com/vishvananda/netlink v1.1.1-0.20201029203352-d40f9887b852
 	go.uber.org/zap v1.15.0
-	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/net v0.0.0-20210805182204-aaa1db679c0d
-	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45 // indirect
 	golang.org/x/sys v0.0.0-20210616094352-59db8d763f22
 	google.golang.org/grpc v1.29.0
 	google.golang.org/protobuf v1.23.0
@@ -62,9 +60,10 @@ require (
 	go.uber.org/atomic v1.6.0 // indirect
 	go.uber.org/multierr v1.5.0 // indirect
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9 // indirect
+	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
+	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45 // indirect
 	golang.org/x/text v0.3.6 // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
-	golang.org/x/tools v0.1.5 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.0.1 // indirect
 	google.golang.org/appengine v1.5.0 // indirect
 	google.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55 // indirect
