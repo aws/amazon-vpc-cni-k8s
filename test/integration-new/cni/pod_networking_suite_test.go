@@ -75,8 +75,7 @@ var _ = BeforeSuite(func() {
 	instanceOutput, err := f.CloudServices.EC2().DescribeInstanceType(instanceType)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Pods often get stuck due insufficient capacity, so adding some buffer to the maxIPPerInterface
-	maxIPPerInterface = int(*instanceOutput[0].NetworkInfo.Ipv4AddressesPerInterface) - 5
+	maxIPPerInterface = int(*instanceOutput[0].NetworkInfo.Ipv4AddressesPerInterface)
 
 	By("describing the VPC to get the VPC CIDRs")
 	describeVPCOutput, err := f.CloudServices.EC2().DescribeVPC(f.Options.AWSVPCID)

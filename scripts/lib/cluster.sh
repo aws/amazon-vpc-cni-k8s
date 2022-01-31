@@ -78,6 +78,8 @@ function up-kops-cluster {
     ${CLUSTER_NAME}
     kops update cluster --name ${CLUSTER_NAME} --yes
     sleep 100
+    kops export kubeconfig --admin
+    sleep 10
     while [[ ! $(kops validate cluster | grep "is ready") ]]
     do
         sleep 5
