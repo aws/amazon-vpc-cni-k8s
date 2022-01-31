@@ -12,6 +12,7 @@ image:
 
 env:
   USE_CLOUDWATCH: "true"
+  AWS_CLUSTER_ID: ""
 
 fullnameOverride: "cni-metrics-helper"
 
