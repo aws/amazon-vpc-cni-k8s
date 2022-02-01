@@ -7,6 +7,7 @@ SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 VERSION=$(make -s -f $SCRIPTPATH/../Makefile version)
 BUILD_DIR=$SCRIPTPATH/../build/cni-rel-yamls/$VERSION
 BINARY_DIR=$SCRIPTPATH/../build/bin
+
 CNI_TAR_RESOURCES_FILE=$BUILD_DIR/cni_individual-resources.tar
 METRICS_TAR_RESOURCES_FILE=$BUILD_DIR/cni_metrics_individual-resources.tar
 CALICO_TAR_RESOURCES_FILE=$BUILD_DIR/calico_individual-resources.tar
@@ -18,6 +19,17 @@ CALICO_CRS_RESOURCES_YAML=$BUILD_DIR/calico-crs.yaml
 REGIONS_FILE=$SCRIPTPATH/../charts/regions.json
 
 BINARIES_ONLY="false"
+PR_ID=$(uuidgen | cut -d '-' -f1)
+BINARY_BASE="aws-vpc-cni-k8s"
+
+REPO="aws/amazon-vpc-cni-k8s"
+GH_CLI_VERSION="0.10.1"
+GH_CLI_CONFIG_PATH="${HOME}/.config/gh/config.yml"
+KERNEL=$(uname -s | tr '[:upper:]' '[:lower:]')
+OS="${KERNEL}"
+if [[ "${KERNEL}" == "darwin" ]]; then 
+  OS="macOS"
+fi
 
 USAGE=$(cat << 'EOM'
   Usage: upload-resources-to-github  [-b]
@@ -81,7 +93,7 @@ upload_asset() {
     if [[ $response_code -eq 201 ]]; then
         asset_id=$(echo $response_content | jq '.id')
         ASSET_IDS_UPLOADED+=("$asset_id")
-        echo "Created asset ID $asset_id successfully"
+        echo "✅ Created asset ID $asset_id successfully"
     else
         echo -e "❌ Upload failed with response code $response_code and message \n$response_content ❌"
         exit 1
@@ -89,6 +101,7 @@ upload_asset() {
 }
 
 RESOURCES_TO_UPLOAD=("$CALICO_OPERATOR_RESOURCES_YAML" "$CALICO_CRS_RESOURCES_YAML" "$CNI_TAR_RESOURCES_FILE" "$METRICS_TAR_RESOURCES_FILE" "$CALICO_TAR_RESOURCES_FILE")
+RESOURCES_TO_COPY=("$CALICO_OPERATOR_RESOURCES_YAML" "$CALICO_CRS_RESOURCES_YAML")
 
 COUNT=1
 echo -e "\nUploading release assets for release id '$RELEASE_ID' to Github"
@@ -98,7 +111,7 @@ for asset in ${RESOURCES_TO_UPLOAD[@]}; do
     upload_asset $asset
 done
 
-jq -c '.[]' $REGIONS_FILE | while read i; do
+while read i; do
     ecrRegion=`echo $i | jq '.ecrRegion' -r`
     ecrAccount=`echo $i | jq '.ecrAccount' -r`
     ecrDomain=`echo $i | jq '.ecrDomain' -r`
@@ -114,7 +127,7 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
         NEW_METRICS_RESOURCES_YAML="${METRICS_RESOURCES_YAML}-${ecrRegion}.yaml"
     fi
     RESOURCES_TO_UPLOAD=("$NEW_CNI_RESOURCES_YAML" "$NEW_METRICS_RESOURCES_YAML")
-
+    RESOURCES_TO_COPY=(${RESOURCES_TO_COPY[@]} "$NEW_CNI_RESOURCES_YAML" "$NEW_METRICS_RESOURCES_YAML")
     COUNT=1
     echo -e "\nUploading release assets for release id '$RELEASE_ID' to Github"
     for asset in ${RESOURCES_TO_UPLOAD[@]}; do
@@ -122,4 +135,115 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
         echo -e "\n  $((COUNT++)). $name"
         upload_asset $asset
     done
-done    
+done < <(jq -c '.[]' $REGIONS_FILE)
+
+echo "✅ Attach artifacts to release page done"
+
+echo $REPO
+
+if [[ -z $(command -v gh) ]] || [[ ! $(gh --version) =~ $GH_CLI_VERSION ]]; then
+  mkdir -p "${BUILD_DIR}"/gh
+  curl -Lo "${BUILD_DIR}"/gh/gh.tar.gz "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_${OS}_amd64.tar.gz"
+  tar -C "${BUILD_DIR}"/gh -xvf "${BUILD_DIR}/gh/gh.tar.gz"
+  export PATH="${BUILD_DIR}/gh/gh_${GH_CLI_VERSION}_${OS}_amd64/bin:$PATH"
+  if [[ ! $(gh --version) =~ $GH_CLI_VERSION ]]; then
+    echo "❌ Failed install of github cli"
+    exit 4
+  fi
+fi
+
+function fail() {
+  echo "❌ Create PR failed"
+  exit 5
+}
+
+CLONE_DIR="${BUILD_DIR}/config-sync"
+SYNC_DIR="$CLONE_DIR"
+echo $SYNC_DIR
+rm -rf "${SYNC_DIR}"
+mkdir -p "${SYNC_DIR}"
+cd "${SYNC_DIR}"
+gh repo clone aws/amazon-vpc-cni-k8s
+DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD | tr -d '\n')
+  CONFIG_DIR=amazon-vpc-cni-k8s/config/master
+  cd $CONFIG_DIR
+  REPO_NAME=$(echo ${REPO} | cut -d'/' -f2)
+  git remote set-url origin https://"${GITHUB_USERNAME}":"${GITHUB_TOKEN}"@github.com/"${GITHUB_USERNAME}"/"${REPO_NAME}".git
+
+  git config user.name "eks-bot"
+  git config user.email "eks-bot@users.noreply.github.com"
+
+  FORK_RELEASE_BRANCH="${BINARY_BASE}-${VERSION}-${PR_ID}"
+  git checkout -b "${FORK_RELEASE_BRANCH}" origin
+
+  COUNT=1
+  for asset in ${RESOURCES_TO_COPY[@]}; do
+          name=$(echo $asset | tr '/' '\n' | tail -1)
+          echo -e "\n  $((COUNT++)). $name"
+          cp "$asset" .
+  done
+
+  git add --all
+  git commit -m "${BINARY_BASE}: ${VERSION}"
+
+PR_BODY=$(cat << EOM
+## ${BINARY_BASE} ${VERSION} Automated manifest folder Sync! 🤖🤖
+
+### Description 📝
+
+Updating all the generated release artifacts in master/config for master branch.
+
+EOM
+)
+
+  git push -u origin "${FORK_RELEASE_BRANCH}"
+  gh pr create --title "🥳 ${BINARY_BASE} ${VERSION} Automated manifest sync! 🥑" \
+      --body "${PR_BODY}" --repo ${REPO}
+
+  echo "✅ Manifest folder PR created for master"
+
+CLONE_DIR="${BUILD_DIR}/config-sync-release"
+SYNC_DIR="$CLONE_DIR"
+echo $SYNC_DIR
+rm -rf "${SYNC_DIR}"
+mkdir -p "${SYNC_DIR}"
+cd "${SYNC_DIR}"
+gh repo clone aws/amazon-vpc-cni-k8s
+RELEASE_BRANCH=$(git branch -a --contains $VERSION | grep "upstream" | cut -d '/' -f3)
+echo "Release branch $RELEASE_BRANCH"
+  CONFIG_DIR=amazon-vpc-cni-k8s/config/master
+  cd $CONFIG_DIR
+  REPO_NAME=$(echo ${REPO} | cut -d'/' -f2)
+  git remote set-url origin https://"${GITHUB_USERNAME}":"${GITHUB_TOKEN}"@github.com/"${GITHUB_USERNAME}"/"${REPO_NAME}".git
+
+  git config user.name "eks-bot"
+  git config user.email "eks-bot@users.noreply.github.com"
+
+  FORK_RELEASE_BRANCH="${BINARY_BASE}-${VERSION}-${PR_ID}"
+  git checkout -b "${FORK_RELEASE_BRANCH}" origin/$RELEASE_BRANCH
+
+  COUNT=1
+  for asset in ${RESOURCES_TO_COPY[@]}; do
+          name=$(echo $asset | tr '/' '\n' | tail -1)
+          echo -e "\n  $((COUNT++)). $name"
+          cp "$asset" .
+  done
+
+  git add --all
+  git commit -m "${BINARY_BASE}: ${VERSION}"
+
+PR_BODY=$(cat << EOM
+## ${BINARY_BASE} ${VERSION} Automated manifest folder Sync! 🤖🤖
+
+### Description 📝
+
+Updating all the generated release artifacts in master/config for $RELEASE_BRANCH branch.
+
+EOM
+)
+
+  git push -u origin "${FORK_RELEASE_BRANCH}":$RELEASE_BRANCH
+  gh pr create --title "🥳 ${BINARY_BASE} ${VERSION} Automated manifest sync! 🥑" \
+      --body "${PR_BODY}" --repo ${REPO} --base ${RELEASE_BRANCH}
+
+  echo "✅ Manifest folder PR created for $RELEASE_BRANCH"
