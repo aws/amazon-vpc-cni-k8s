@@ -17,6 +17,7 @@ ARCH=$(go env GOARCH)
 
 : "${AWS_DEFAULT_REGION:=us-west-2}"
 : "${K8S_VERSION:=1.21.2}"
+: "${EKS_CLUSTER_VERSION:=1.21}"
 : "${PROVISION:=true}"
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
