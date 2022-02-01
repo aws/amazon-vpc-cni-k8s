@@ -58,7 +58,7 @@ ARCH = $(lastword $(subst :, ,$(filter $(UNAME_ARCH):%,x86_64:amd64 aarch64:arm6
 # provide an alternate suffix or to omit.
 IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(ARCH),arm64))
 # GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.16-stretch
+GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.17-stretch
 # For the requested build, these are the set of Go specific build environment variables.
 export GOARCH ?= $(ARCH)
 export GOOS = linux
