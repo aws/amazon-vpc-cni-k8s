@@ -187,9 +187,12 @@ cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
 # Daemonset template
 echo "IMAGE NAME ${IMAGE_NAME} "
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," "$TEST_CONFIG_PATH"
+grep -r -q $IMAGE_NAME $TEST_CONFIG_PATH || { echo 'sed replacement for CNI image name failed' ; exit 1; }
 sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
+grep -r -q $TEST_IMAGE_VERSION $TEST_CONFIG_PATH || { echo 'sed replacement for test image version failed' ; exit 1; }
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
-sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
+grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH || { echo 'sed replacement for CNI init image  failed' ; exit 1; }
+
 
 if [[ $RUN_KOPS_TEST == true || $RUN_BOTTLEROCKET_TEST == true ]]; then
     KUBECTL_PATH=kubectl

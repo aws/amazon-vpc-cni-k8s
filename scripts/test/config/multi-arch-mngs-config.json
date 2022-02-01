@@ -1,0 +1,34 @@
+{
+  "GetRef.Name-arm64-mng-for-cni": {
+    "name": "GetRef.Name-arm64-mng-for-cni",
+    "remote-access-user-name": "ec2-user",
+    "tags": {
+      "group": "amazon-vpc-cni-k8s-arm64"
+    },
+    "release-version": "",
+    "ami-type": "AL2_ARM_64",
+    "asg-min-size": 3,
+    "asg-max-size": 3,
+    "asg-desired-capacity": 3,
+    "instance-types": [
+      "c6g.xlarge"
+    ],
+    "volume-size": 40
+  },
+  "GetRef.Name-x86-mng-for-cni": {
+    "name": "GetRef.Name-x86-mng-for-cni",
+    "remote-access-user-name": "ec2-user",
+    "tags": {
+      "group": "amazon-vpc-cni-k8s-x86"
+    },
+    "release-version": "",
+    "ami-type": "AL2_x86_64",
+    "asg-min-size": 3,
+    "asg-max-size": 3,
+    "asg-desired-capacity": 3,
+    "instance-types": [
+      "c5.xlarge"
+    ],
+    "volume-size": 40
+  }
+}

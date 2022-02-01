@@ -18,7 +18,9 @@ function up-test-cluster() {
         export RUN_CONFORMANCE="false"
         : "${PERFORMANCE_TEST_S3_BUCKET_NAME:=""}"
     else
-        MNGS='{"GetRef.Name-mng-for-cni":{"name":"GetRef.Name-mng-for-cni","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":3,"asg-max-size":3,"asg-desired-capacity":3,"instance-types":["c5.xlarge"],"volume-size":40}}'
+        DIR=$(cd "$(dirname "$0")"; pwd)
+        mng_multi_arch_config=`cat $DIR/test/config/multi-arch-mngs-config.json`
+        MNGS=$mng_multi_arch_config
     fi
 
     echo -n "Configuring cluster $CLUSTER_NAME"
