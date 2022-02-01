@@ -75,6 +75,8 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
       --set init.image.region=$ecrRegion,\
       --set init.image.account=$ecrAccount,\
       --set init.image.domain=$ecrDomain,\
+      --set init.image.tag=$VERSION,\
+      --set image.tag=$VERSION,\
       --set image.region=$ecrRegion,\
       --set image.account=$ecrAccount,\
       --set image.domain=$ecrDomain \
@@ -87,6 +89,7 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
       --set image.region=$ecrRegion,\
       --set image.account=$ecrAccount,\
       --set image.domain=$ecrDomain \
+      --set image.tag=$VERSION,\
       --namespace $NAMESPACE \
       $SCRIPTPATH/../charts/cni-metrics-helper > $NEW_METRICS_RESOURCES_YAML
     cat $NEW_METRICS_RESOURCES_YAML | grep -v 'helm.sh\|app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
