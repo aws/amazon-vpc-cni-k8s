@@ -229,8 +229,8 @@ START=$SECONDS
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 NODE_COUNT=$($KUBECTL_PATH get nodes --no-headers=true | wc -l)
 echo "Number of nodes in the test cluster is $NODE_COUNT"
-UPDATED_PODS_COUNT = 0
-MAX_RETRIES = 20
+UPDATED_PODS_COUNT=0
+MAX_RETRIES=20
 RETRY_ATTEMPT=0
 sleep 5
 while [[ $UPDATED_PODS_COUNT -lt $NODE_COUNT && $RETRY_ATTEMPT -lt $MAX_RETRIES ]]; do
