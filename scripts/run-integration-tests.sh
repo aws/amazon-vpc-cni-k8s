@@ -79,15 +79,15 @@ export PATH=${PATH}:$TESTER_DIR
 
 LOCAL_GIT_VERSION=$(git rev-parse HEAD)
 echo "Testing git repository at commit $LOCAL_GIT_VERSION"
-# The manifest image version is the image tag we need to replace in the
-# aws-k8s-cni.yaml manifest
-: "${MANIFEST_IMAGE_VERSION:=latest}"
 TEST_IMAGE_VERSION=${IMAGE_VERSION:-$LOCAL_GIT_VERSION}
 # We perform an upgrade to this manifest, with image replaced
 : "${MANIFEST_CNI_VERSION:=master}"
 BASE_CONFIG_PATH="$DIR/../config/$MANIFEST_CNI_VERSION/aws-k8s-cni.yaml"
 TEST_CONFIG_PATH="$TEST_CONFIG_DIR/aws-k8s-cni.yaml"
 TEST_CALICO_PATH="$DIR/../config/$MANIFEST_CNI_VERSION/calico.yaml"
+# The manifest image version is the image tag we need to replace in the
+# aws-k8s-cni.yaml manifest
+MANIFEST_IMAGE_VERSION=`grep "image:" $BASE_CONFIG_PATH | cut -d ":" -f3 | cut -d "\"" -f1`
 
 if [[ ! -f "$BASE_CONFIG_PATH" ]]; then
     echo "$BASE_CONFIG_PATH DOES NOT exist. Set \$MANIFEST_CNI_VERSION to an existing directory in ./config/"
@@ -191,6 +191,7 @@ cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
 echo "IMAGE NAME ${IMAGE_NAME} "
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," "$TEST_CONFIG_PATH"
 grep -r -q $IMAGE_NAME $TEST_CONFIG_PATH
+echo "Replacing manifest image tag $MANIFEST_IMAGE_VERSION with image version of $TEST_IMAGE_VERSION"
 sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
 grep -r -q $TEST_IMAGE_VERSION $TEST_CONFIG_PATH
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
