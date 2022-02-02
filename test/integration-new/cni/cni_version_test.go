@@ -63,7 +63,6 @@ func ApplyAddOn(versionName string) {
 	By("getting the current addon")
 	describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
 	if err == nil {
-		fmt.Printf("By applying addon %s\n", versionName)
 		By("checking if the current addon is same as addon to be applied")
 		if *describeAddonOutput.Addon.AddonVersion != versionName {
 
@@ -78,14 +77,13 @@ func ApplyAddOn(versionName string) {
 
 			}
 
-			By("apply addon version")
+			By(fmt.Sprintf("By applying addon %s\n", versionName))
 			_, err = f.CloudServices.EKS().CreateAddon(services.AddOnInput{AddonName: "vpc-cni", ClusterName: f.Options.ClusterName, AddonVersion: versionName})
 			Expect(err).ToNot(HaveOccurred())
 
 		}
 	} else {
-		fmt.Printf("By applying addon %s\n", versionName)
-		By("apply addon version")
+		By(fmt.Sprintf("By applying addon %s\n", versionName))
 		_, err = f.CloudServices.EKS().CreateAddon(services.AddOnInput{AddonName: "vpc-cni", ClusterName: f.Options.ClusterName, AddonVersion: versionName})
 		Expect(err).ToNot(HaveOccurred())
 	}
