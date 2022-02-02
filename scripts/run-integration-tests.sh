@@ -87,7 +87,7 @@ TEST_CONFIG_PATH="$TEST_CONFIG_DIR/aws-k8s-cni.yaml"
 TEST_CALICO_PATH="$DIR/../config/$MANIFEST_CNI_VERSION/calico.yaml"
 # The manifest image version is the image tag we need to replace in the
 # aws-k8s-cni.yaml manifest
-MANIFEST_IMAGE_VERSION=`grep "image:" $BASE_CONFIG_PATH | cut -d ":" -f3 | cut -d "\"" -f1`
+MANIFEST_IMAGE_VERSION=`grep "image:" $BASE_CONFIG_PATH | cut -d ":" -f3 | cut -d "\"" -f1 | head -1`
 
 if [[ ! -f "$BASE_CONFIG_PATH" ]]; then
     echo "$BASE_CONFIG_PATH DOES NOT exist. Set \$MANIFEST_CNI_VERSION to an existing directory in ./config/"
@@ -227,11 +227,17 @@ echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
+NODE_COUNT=$($KUBECTL_PATH get nodes --no-headers=true | wc -l)
+echo "Number of nodes in the test cluster is $NODE_COUNT"
+UPDATED_PODS_COUNT = 0
+MAX_RETRIES = 20
+RETRY_ATTEMPT=0
 sleep 5
-while [[ $($KUBECTL_PATH describe ds aws-node -n=kube-system | grep "Available Pods: 0") ]]
-do
+while [[ $UPDATED_PODS_COUNT -lt $NODE_COUNT && $RETRY_ATTEMPT -lt $MAX_RETRIES ]]; do
+    UPDATED_PODS_COUNT=$($KUBECTL_PATH get pods -A --field-selector=status.phase=Running -l k8s-app=aws-node --no-headers=true | wc -l)
+    let RETRY_ATTEMPT=RETRY_ATTEMPT+1
     sleep 5
-    echo "Waiting for daemonset update"
+    echo "Waiting for cni daemonset update. $UPDATED_PODS_COUNT are in ready state in retry attempt $RETRY_ATTEMPT"
 done
 echo "Updated!"
 
