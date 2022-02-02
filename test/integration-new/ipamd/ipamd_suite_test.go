@@ -14,8 +14,9 @@
 package ipamd
 
 import (
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/services"
 	"testing"
+
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/services"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"

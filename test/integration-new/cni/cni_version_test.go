@@ -2,9 +2,10 @@ package cni
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/services"
 	"github.com/pkg/errors"
-	"time"
 
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/aws-sdk-go/service/eks"
