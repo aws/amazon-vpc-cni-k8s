@@ -2,7 +2,7 @@
 
 set -Euo pipefail
 
-trap 'on_error $LINENO' ERR
+trap 'on_error $? $LINENO' ERR
 
 DIR=$(cd "$(dirname "$0")"; pwd)
 source "$DIR"/lib/common.sh
@@ -34,6 +34,7 @@ __cluster_created=0
 __cluster_deprovisioned=0
 
 on_error() {
+    echo "Error with exit code $1 occurred on line $2"
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the 
     if [[ $RUNNING_PERFORMANCE == false ]]; then
@@ -186,13 +187,14 @@ echo "Using $BASE_CONFIG_PATH as a template"
 cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
 
 # Daemonset template
+# Replace image value and tag in cni manifest and grep (to verify that replacement was successful)
 echo "IMAGE NAME ${IMAGE_NAME} "
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," "$TEST_CONFIG_PATH"
-grep -r -q $IMAGE_NAME $TEST_CONFIG_PATH || { echo 'sed replacement for CNI image name failed' ; exit 1; }
+grep -r -q $IMAGE_NAME $TEST_CONFIG_PATH
 sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
-grep -r -q $TEST_IMAGE_VERSION $TEST_CONFIG_PATH || { echo 'sed replacement for test image version failed' ; exit 1; }
+grep -r -q $TEST_IMAGE_VERSION $TEST_CONFIG_PATH
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
-grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH || { echo 'sed replacement for CNI init image  failed' ; exit 1; }
+grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH
 
 
 if [[ $RUN_KOPS_TEST == true || $RUN_BOTTLEROCKET_TEST == true ]]; then
