@@ -79,14 +79,14 @@ func ApplyAddOn(versionName string) {
 			}
 
 			By("apply addon version")
-			_, err = f.CloudServices.EKS().CreateAddon(services.CreateAddOnParams{AddonName: "vpc-cni", ClusterName: f.Options.ClusterName, AddonVersion: versionName})
+			_, err = f.CloudServices.EKS().CreateAddon(services.AddOnInput{AddonName: "vpc-cni", ClusterName: f.Options.ClusterName, AddonVersion: versionName})
 			Expect(err).ToNot(HaveOccurred())
 
 		}
 	} else {
 		fmt.Printf("By applying addon %s\n", versionName)
 		By("apply addon version")
-		_, err = f.CloudServices.EKS().CreateAddon(services.CreateAddOnParams{AddonName: "vpc-cni", ClusterName: f.Options.ClusterName, AddonVersion: versionName})
+		_, err = f.CloudServices.EKS().CreateAddon(services.AddOnInput{AddonName: "vpc-cni", ClusterName: f.Options.ClusterName, AddonVersion: versionName})
 		Expect(err).ToNot(HaveOccurred())
 	}
 

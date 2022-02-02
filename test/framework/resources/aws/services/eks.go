@@ -22,7 +22,7 @@ import (
 
 type EKS interface {
 	DescribeCluster(clusterName string) (*eks.DescribeClusterOutput, error)
-	CreateAddon(createAddOnParams CreateAddOnParams) (*eks.CreateAddonOutput, error)
+	CreateAddon(createAddOnParams AddOnInput) (*eks.CreateAddonOutput, error)
 	DeleteAddon(addon string, clusterName string) (*eks.DeleteAddonOutput, error)
 	DescribeAddonVersions(addon string, k8sVersion string) (*eks.DescribeAddonVersionsOutput, error)
 	DescribeAddon(addon string, clusterName string) (*eks.DescribeAddonOutput, error)
@@ -32,12 +32,13 @@ type defaultEKS struct {
 	eksiface.EKSAPI
 }
 
-type CreateAddOnParams struct {
+// struct added to make params passing extensible
+type AddOnInput struct {
 	_ struct{} `type:"structure"`
 
 	AddonName    string `locationName:"addonName" type:"string" required:"true"`
 	ClusterName  string `location:"uri" locationName:"name" min:"1" type:"string" required:"true"`
-	AddonVersion string `locationName:"addonVersion" type:"string"`
+	AddonVersion string `locationName:"addonVersion" type:"string"` // eg format: v1.9.3-eksbuild.1
 }
 
 func NewEKS(session *session.Session, endpoint string) EKS {
@@ -49,13 +50,13 @@ func NewEKS(session *session.Session, endpoint string) EKS {
 	}
 }
 
-func (d defaultEKS) CreateAddon(createAddOnParams CreateAddOnParams) (*eks.CreateAddonOutput, error) {
+func (d defaultEKS) CreateAddon(addOnInput AddOnInput) (*eks.CreateAddonOutput, error) {
 	createAddonInput := &eks.CreateAddonInput{
-		AddonName:   aws.String(createAddOnParams.AddonName),
-		ClusterName: aws.String(createAddOnParams.ClusterName),
+		AddonName:   aws.String(addOnInput.AddonName),
+		ClusterName: aws.String(addOnInput.ClusterName),
 	}
-	if createAddOnParams.AddonVersion != "" {
-		createAddonInput.SetAddonVersion(createAddOnParams.AddonVersion)
+	if addOnInput.AddonVersion != "" {
+		createAddonInput.SetAddonVersion(addOnInput.AddonVersion)
 		createAddonInput.SetResolveConflicts("OVERWRITE")
 	}
 	return d.EKSAPI.CreateAddon(createAddonInput)
