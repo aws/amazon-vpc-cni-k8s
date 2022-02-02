@@ -14,6 +14,7 @@
 package ipamd
 
 import (
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/services"
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
@@ -61,7 +62,7 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	if addonDeleteError == nil {
 		By("Restore coredns addon")
-		_, err := f.CloudServices.EKS().CreateAddon("coredns", f.Options.ClusterName)
+		_, err := f.CloudServices.EKS().CreateAddon(services.CreateAddOnParams{AddonName: "coredns", ClusterName: f.Options.ClusterName})
 		Expect(err).NotTo(HaveOccurred())
 	}
 })

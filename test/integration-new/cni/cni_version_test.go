@@ -2,6 +2,8 @@ package cni
 
 import (
 	"fmt"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/services"
+	"github.com/pkg/errors"
 	"time"
 
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
@@ -21,6 +23,10 @@ var _ = Describe("test cluster upgrade/downgrade", func() {
 
 	It("should apply initial addon version successfully", func() {
 		By("getting initial cni version")
+		if len(f.Options.InitialCNIVersion) == 0 {
+			err = errors.Errorf("%s must be set!", "initial-version")
+		}
+		Expect(err).ToNot(HaveOccurred())
 		initialCNIVersion = f.Options.InitialCNIVersion
 		ApplyAddOn(initialCNIVersion)
 
@@ -34,6 +40,10 @@ var _ = Describe("test cluster upgrade/downgrade", func() {
 
 	It("should apply final addon version successfully", func() {
 		By("getting final cni version")
+		if len(f.Options.FinalCNIVersion) == 0 {
+			err = errors.Errorf("%s must be set!", "final-version")
+		}
+		Expect(err).ToNot(HaveOccurred())
 		finalCNIVersion = f.Options.FinalCNIVersion
 		ApplyAddOn(finalCNIVersion)
 
@@ -68,14 +78,14 @@ func ApplyAddOn(versionName string) {
 			}
 
 			By("apply addon version")
-			_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, versionName)
+			_, err = f.CloudServices.EKS().CreateAddon(services.CreateAddOnParams{AddonName: "vpc-cni", ClusterName: f.Options.ClusterName, AddonVersion: versionName})
 			Expect(err).ToNot(HaveOccurred())
 
 		}
 	} else {
 		fmt.Printf("By applying addon %s\n", versionName)
 		By("apply addon version")
-		_, err = f.CloudServices.EKS().CreateAddonWithVersion("vpc-cni", f.Options.ClusterName, versionName)
+		_, err = f.CloudServices.EKS().CreateAddon(services.CreateAddOnParams{AddonName: "vpc-cni", ClusterName: f.Options.ClusterName, AddonVersion: versionName})
 		Expect(err).ToNot(HaveOccurred())
 	}
 

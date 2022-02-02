@@ -22,8 +22,7 @@ import (
 
 type EKS interface {
 	DescribeCluster(clusterName string) (*eks.DescribeClusterOutput, error)
-	CreateAddon(addon string, clusterName string) (*eks.CreateAddonOutput, error)
-	CreateAddonWithVersion(addon string, clusterName string, addonVersion string) (*eks.CreateAddonOutput, error)
+	CreateAddon(createAddOnParams CreateAddOnParams) (*eks.CreateAddonOutput, error)
 	DeleteAddon(addon string, clusterName string) (*eks.DeleteAddonOutput, error)
 	DescribeAddonVersions(addon string, k8sVersion string) (*eks.DescribeAddonVersionsOutput, error)
 	DescribeAddon(addon string, clusterName string) (*eks.DescribeAddonOutput, error)
@@ -31,6 +30,14 @@ type EKS interface {
 
 type defaultEKS struct {
 	eksiface.EKSAPI
+}
+
+type CreateAddOnParams struct {
+	_ struct{} `type:"structure"`
+
+	AddonName    string `locationName:"addonName" type:"string" required:"true"`
+	ClusterName  string `location:"uri" locationName:"name" min:"1" type:"string" required:"true"`
+	AddonVersion string `locationName:"addonVersion" type:"string"`
 }
 
 func NewEKS(session *session.Session, endpoint string) EKS {
@@ -42,20 +49,14 @@ func NewEKS(session *session.Session, endpoint string) EKS {
 	}
 }
 
-func (d defaultEKS) CreateAddon(addon string, clusterName string) (*eks.CreateAddonOutput, error) {
+func (d defaultEKS) CreateAddon(createAddOnParams CreateAddOnParams) (*eks.CreateAddonOutput, error) {
 	createAddonInput := &eks.CreateAddonInput{
-		AddonName:   aws.String(addon),
-		ClusterName: aws.String(clusterName),
+		AddonName:   aws.String(createAddOnParams.AddonName),
+		ClusterName: aws.String(createAddOnParams.ClusterName),
 	}
-	return d.EKSAPI.CreateAddon(createAddonInput)
-}
-
-func (d defaultEKS) CreateAddonWithVersion(addon string, clusterName string, addonVersion string) (*eks.CreateAddonOutput, error) {
-	createAddonInput := &eks.CreateAddonInput{
-		AddonName:        aws.String(addon),
-		ClusterName:      aws.String(clusterName),
-		AddonVersion:     aws.String(addonVersion),
-		ResolveConflicts: aws.String("OVERWRITE"),
+	if createAddOnParams.AddonVersion != "" {
+		createAddonInput.SetAddonVersion(createAddOnParams.AddonVersion)
+		createAddonInput.SetResolveConflicts("OVERWRITE")
 	}
 	return d.EKSAPI.CreateAddon(createAddonInput)
 }
