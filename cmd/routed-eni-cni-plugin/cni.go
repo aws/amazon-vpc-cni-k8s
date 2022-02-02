@@ -219,7 +219,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 		// The dummyVlanInterface is purely virtual and relevent only for ppsg, so we decided to keep it separate
 		// and not overload the already available hostVethInterface
-		dummyVlanInterface = &current.Interface{Name: dummyVlanInterfaceName, Mac: fmt.Sprint(r.PodVlanId)}
+		dummyVlanInterface = &current.Interface{Name: dummyVlanInterfaceName, Mac: fmt.Sprint(r.PodVlanId), Sandbox: args.ContainerID}
 		log.Debugf("Using dummy vlanInterface: %v", dummyVlanInterface)
 	} else {
 		// build hostVethName
