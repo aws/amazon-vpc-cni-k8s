@@ -71,8 +71,24 @@ Will run 3 of 15 specs (Running only tests from host_networking_test.go)
 
 For pod_traffic_test you need to have atleast 2 pods running on primary and seconday ENI of the node being tested. So we already schedule pods to the max limit of the Node.
 
+We have observed some flakyness with pod_traffic_test and this might happen if there are any PD related cni configuration changes from earlier runs. In this case, its better to redeploy cni manifest and rerun this test. 
+
 **ipamd tests**  
 Delete coredns pods if your test fails, as those pods may be using secondary ENI and it would cause problems if you are testing MAX_ENI as 1. 
+If coredns is installed as addon delete using follow command
+```
+aws eks delete-addon --addon-name coredns --cluster-name <cluster_name>
+```
+
+OR if its not installed as addon
+```
+kubectl delete deploy/coredns -n kube-system
+``` 
+
+Ensure that you install coredns back after you complete running tests in this suite as it's needed by other tests such as cni-metrics-helper and e2e tests
+```
+aws eks create-addon --addon-name coredns --cluster-name <cluster_name>
+```
 
 Ensure that you do not have any Trunk ENI, you might not be running any SG pods but this ENI won't get detached. You will have to manually remove it
 
