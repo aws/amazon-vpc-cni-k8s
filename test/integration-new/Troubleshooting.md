@@ -75,7 +75,7 @@ We have observed some flakyness with pod_traffic_test and this might happen if t
 
 **ipamd tests**  
 Delete coredns pods if your test fails, as those pods may be using secondary ENI and it would cause problems if you are testing MAX_ENI as 1. 
-If coredns is installed as addon delete using follow command
+If coredns is installed as addon then delete using following command
 ```
 aws eks delete-addon --addon-name coredns --cluster-name <cluster_name>
 ```
