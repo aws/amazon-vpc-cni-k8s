@@ -44,7 +44,9 @@ import (
 )
 
 const ipamdAddress = "127.0.0.1:50051"
-const vlanInterfaceName = "vlanId"
+
+const vlanInterfacePrefix = "vlan"
+const dummyVlanInterfacePrefix = "dummy"
 
 var version string
 
@@ -129,8 +131,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	log.Infof("Received CNI add request: ContainerID(%s) Netns(%s) IfName(%s) Args(%s) Path(%s) argsStdinData(%s)",
 		args.ContainerID, args.Netns, args.IfName, args.Args, args.Path, args.StdinData)
-
-	log.Infof("Prev Result: %v\n", conf.PrevResult)
+	log.Debugf("Prev Result: %v\n", conf.PrevResult)
 
 	var k8sArgs K8sArgs
 	if err := cniTypes.LoadArgs(args.Args, &k8sArgs); err != nil {
@@ -202,10 +203,24 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	var hostVethName string
+	var dummyVlanInterface *current.Interface
+
+	// Non-zero value means pods are using branch ENI
 	if r.PodVlanId != 0 {
-		hostVethName = generateHostVethName("vlan", string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+		hostVethName = generateHostVethName(vlanInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		err = driverClient.SetupPodENINetwork(hostVethName, args.IfName, args.Netns, v4Addr, v6Addr, int(r.PodVlanId), r.PodENIMAC,
 			r.PodENISubnetGW, int(r.ParentIfIndex), mtu, log)
+
+		// This is a dummyVlanInterfaceName generated to identify dummyVlanInterface
+		// which will be created for PPSG scenario to pass along the vlanId information
+		// as a part of the ADD cmd Result struct
+		// The podVlanId is used by DEL cmd, fetched from the prevResult struct to cleanup the pod network
+		dummyVlanInterfaceName := generateHostVethName(dummyVlanInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+
+		// The dummyVlanInterface is purely virtual and relevent only for ppsg, so we decided to keep it separate
+		// and not overload the already available hostVethInterface
+		dummyVlanInterface = &current.Interface{Name: dummyVlanInterfaceName, Mac: fmt.Sprint(r.PodVlanId), Sandbox: args.ContainerID}
+		log.Debugf("Using dummy vlanInterface: %v", dummyVlanInterface)
 	} else {
 		// build hostVethName
 		// Note: the maximum length for linux interface name is 15
@@ -249,16 +264,18 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	hostInterface := &current.Interface{Name: hostVethName}
 	containerInterface := &current.Interface{Name: args.IfName, Sandbox: args.Netns}
-	vlanInterface := &current.Interface{Name: vlanInterfaceName, Mac: fmt.Sprint(r.PodVlanId)}
-	log.Infof("Using vlanInterface: %v", vlanInterface)
 
 	result := &current.Result{
 		IPs: ips,
 		Interfaces: []*current.Interface{
 			hostInterface,
 			containerInterface,
-			vlanInterface,
 		},
+	}
+
+	// We append dummyVlanInterface only for pods using branch ENI
+	if dummyVlanInterface != nil {
+		result.Interfaces = append(result.Interfaces, dummyVlanInterface)
 	}
 
 	return cniTypes.PrintResult(result, conf.CNIVersion)
@@ -281,7 +298,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	driverClient driver.NetworkAPIs) error {
 
 	conf, log, err := LoadNetConf(args.StdinData)
-	log.Infof("Prev Result: %v\n", conf.PrevResult)
+	log.Debugf("Prev Result: %v\n", conf.PrevResult)
 
 	if err != nil {
 		return errors.Wrap(err, "add cmd: error loading config from args")
@@ -296,6 +313,10 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.Wrap(err, "del cmd: failed to load k8s config from args")
 	}
 
+	// With containerd as the runtime, it was observed that sometimes spurious delete requests
+	// are triggered from kubelet with an empty Netns. This check safeguards against such
+	// scenarios and we just return
+	// ref: https://github.com/kubernetes/kubernetes/issues/44100#issuecomment-329780382
 	if args.Netns == "" {
 		log.Info("Netns() is empty, so network already cleanedup. Nothing to do")
 		return nil
@@ -306,18 +327,22 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	// prevResult might not be availabe, if we are still using older cni spec < 0.4.0.
 	// So we should fallback to the old clean up method
 	if ok {
+		dummyVlanInterfaceName := generateHostVethName(dummyVlanInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		for _, iface := range prevResult.Interfaces {
-			if iface.Name == vlanInterfaceName {
+			if iface.Name == dummyVlanInterfaceName {
 				podVlanId, err := strconv.Atoi(iface.Mac)
 				if err != nil {
-					return errors.Wrap(err, "Failed to parse vlanId from prevResult")
+					log.Errorf("Failed to parse vlanId from prevResult: %v", err)
+					return errors.Wrap(err, "del cmd: failed to parse vlanId from prevResult")
 				}
-				// podVlanId == 0 means pod is not using branch ENI
-				// then fallback to existing cleanup
+
+				// podVlanID can not be 0 as we add dummyVlanInterface only for ppsg
+				// if it is 0 then we should return an error
 				if podVlanId == 0 {
-					break
+					log.Errorf("Found SG pod:%s namespace:%s with 0 vlanID", k8sArgs.K8S_POD_NAME, k8sArgs.K8S_POD_NAMESPACE)
+					return errors.Wrap(err, "del cmd: found Incorrect 0 vlandId for ppsg")
 				}
-				// if podVlanId != 0 means pod is using branch ENI
+
 				err = cleanUpPodENI(podVlanId, log, args.ContainerID, driverClient)
 				if err != nil {
 					return err

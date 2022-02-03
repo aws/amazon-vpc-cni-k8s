@@ -99,7 +99,6 @@ func New(ctx context.Context, region string, clusterID string, log logger.Logger
 		if err != nil {
 			return nil, errors.Wrap(err, "publisher: unable to obtain EC2 service client")
 		}
-
 		clusterID = getClusterID(ec2Client)
 	}
 
