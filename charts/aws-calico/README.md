@@ -5,7 +5,7 @@
 - You should submit new requests to Calico directly
     - For Calico, please send issues to [Calico repository](http://github.com/projectcalico/calico)
     - For Tigera Operator, please send issues to [Operator repository](http://github.com/tigera/operator)
-- We will update and maintain the AWS docs for Calico installation after the deprecation
+- We will update and maintain the [AWS docs](https://docs.aws.amazon.com/eks/latest/userguide/calico.html) for Calico installation after the deprecation
 
 
 # Calico on AWS
