@@ -14,10 +14,10 @@ jobs:
   integration-trusted:
     runs-on: [self-hosted, linux, x64]
     steps:
-      - name: Set up Go 1.16
+      - name: Set up Go 1.17
         uses: actions/setup-go@v2
         with:
-          go-version: '1.16'
+          go-version: '1.17'
         id: go
 
       - name: Check out code into the Go module directory
@@ -29,7 +29,7 @@ jobs:
           go install golang.org/x/tools/cmd/goimports@latest
 
       - name: Clean up stale docker images
-        run: sudo docker image prune -f
+        run:  docker image prune -f
 
       - name: Run e2e tests
         env:

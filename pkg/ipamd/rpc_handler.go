@@ -110,7 +110,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 					ipv4Addr = firstENI.PrivateIP
 					branchENIMAC = firstENI.IfAddress
 					vlanID = firstENI.VlanID
-					log.Infof("Pod vlandId: %d", vlanID)
+					log.Debugf("Pod vlandId: %d", vlanID)
 
 					if ipv4Addr == "" || branchENIMAC == "" || vlanID == 0 {
 						log.Errorf("Failed to parse pod-ENI annotation: %s", val)
