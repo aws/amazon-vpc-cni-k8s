@@ -27,11 +27,3 @@ ensure_aws_k8s_tester() {
         chmod +x $TESTER_PATH
     fi
 }
-
-ensure_eksctl() {
-    EKS_BIN=/usr/local/bin/eksctl
-    if [[ ! -e $EKS_BIN ]]; then
-        curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
-        mv -v /tmp/eksctl $EKS_BIN
-    fi
-}
