@@ -5,6 +5,8 @@ The package contains e2e tests suites for `amazon-vpc-cni-k8s` .
 ###Prerequisites
 - Custom Networking Test
   - No existing node group should be present the test creates new self managed node group with the reduced MAX_POD value.
+  - Need to pass 'custom-networking-cidr-range' flag with VPC CIDR that doesn't conflict with an existing one. So if existing VPC cidr is 192.168.0.0/16 then you can use something like 'custom-networking-cidr-range=192.169.0.0/16'. You can go to your cluster VPC to check existing CIDRs
+
 - Security Group For Pods Test
   - EKS Cluster should be v1.16+. This tests creates an additional Trunk ENI on all Nitro based instance present in the cluster. This could interfere with running integration test that test WARM_ENI_TARGET. For this reasons the test should either be run without any node group present in the cluster or at the very end.
 - Snat Test
