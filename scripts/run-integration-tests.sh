@@ -168,7 +168,6 @@ START=$SECONDS
 if [[ "$PROVISION" == true ]]; then
     START=$SECONDS
     if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
-        ensure_eksctl
         eksctl create cluster --config-file ./testdata/bottlerocket.yaml
     elif [[ "$RUN_KOPS_TEST" == true ]]; then
         up-kops-cluster
