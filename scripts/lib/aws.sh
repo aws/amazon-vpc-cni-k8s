@@ -32,6 +32,6 @@ ensure_eksctl() {
     EKS_BIN=/usr/local/bin/eksctl
     if [[ ! -e $EKS_BIN ]]; then
         curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
-        sudo mv -v /tmp/eksctl $EKS_BIN
+        mv -v /tmp/eksctl $EKS_BIN
     fi
 }
