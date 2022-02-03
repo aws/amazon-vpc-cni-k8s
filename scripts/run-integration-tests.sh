@@ -2,7 +2,7 @@
 
 set -Euo pipefail
 
-trap 'on_error $LINENO' ERR
+trap 'on_error $? $LINENO' ERR
 
 DIR=$(cd "$(dirname "$0")"; pwd)
 source "$DIR"/lib/common.sh
@@ -17,6 +17,7 @@ ARCH=$(go env GOARCH)
 
 : "${AWS_DEFAULT_REGION:=us-west-2}"
 : "${K8S_VERSION:=1.21.2}"
+: "${EKS_CLUSTER_VERSION:=1.21}"
 : "${PROVISION:=true}"
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
@@ -33,6 +34,7 @@ __cluster_created=0
 __cluster_deprovisioned=0
 
 on_error() {
+    echo "Error with exit code $1 occurred on line $2"
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the 
     if [[ $RUNNING_PERFORMANCE == false ]]; then
@@ -77,15 +79,15 @@ export PATH=${PATH}:$TESTER_DIR
 
 LOCAL_GIT_VERSION=$(git rev-parse HEAD)
 echo "Testing git repository at commit $LOCAL_GIT_VERSION"
-# The manifest image version is the image tag we need to replace in the
-# aws-k8s-cni.yaml manifest
-: "${MANIFEST_IMAGE_VERSION:=latest}"
 TEST_IMAGE_VERSION=${IMAGE_VERSION:-$LOCAL_GIT_VERSION}
 # We perform an upgrade to this manifest, with image replaced
 : "${MANIFEST_CNI_VERSION:=master}"
 BASE_CONFIG_PATH="$DIR/../config/$MANIFEST_CNI_VERSION/aws-k8s-cni.yaml"
 TEST_CONFIG_PATH="$TEST_CONFIG_DIR/aws-k8s-cni.yaml"
 TEST_CALICO_PATH="$DIR/../config/$MANIFEST_CNI_VERSION/calico.yaml"
+# The manifest image version is the image tag we need to replace in the
+# aws-k8s-cni.yaml manifest
+MANIFEST_IMAGE_VERSION=`grep "image:" $BASE_CONFIG_PATH | cut -d ":" -f3 | cut -d "\"" -f1 | head -1`
 
 if [[ ! -f "$BASE_CONFIG_PATH" ]]; then
     echo "$BASE_CONFIG_PATH DOES NOT exist. Set \$MANIFEST_CNI_VERSION to an existing directory in ./config/"
@@ -185,11 +187,16 @@ echo "Using $BASE_CONFIG_PATH as a template"
 cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
 
 # Daemonset template
+# Replace image value and tag in cni manifest and grep (to verify that replacement was successful)
 echo "IMAGE NAME ${IMAGE_NAME} "
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," "$TEST_CONFIG_PATH"
+grep -r -q $IMAGE_NAME $TEST_CONFIG_PATH
+echo "Replacing manifest image tag $MANIFEST_IMAGE_VERSION with image version of $TEST_IMAGE_VERSION"
 sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
+grep -r -q $TEST_IMAGE_VERSION $TEST_CONFIG_PATH
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
-sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
+grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH
+
 
 if [[ $RUN_KOPS_TEST == true || $RUN_BOTTLEROCKET_TEST == true ]]; then
     KUBECTL_PATH=kubectl
@@ -220,11 +227,17 @@ echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
+NODE_COUNT=$($KUBECTL_PATH get nodes --no-headers=true | wc -l)
+echo "Number of nodes in the test cluster is $NODE_COUNT"
+UPDATED_PODS_COUNT=0
+MAX_RETRIES=20
+RETRY_ATTEMPT=0
 sleep 5
-while [[ $($KUBECTL_PATH describe ds aws-node -n=kube-system | grep "Available Pods: 0") ]]
-do
+while [[ $UPDATED_PODS_COUNT -lt $NODE_COUNT && $RETRY_ATTEMPT -lt $MAX_RETRIES ]]; do
+    UPDATED_PODS_COUNT=$($KUBECTL_PATH get pods -A --field-selector=status.phase=Running -l k8s-app=aws-node --no-headers=true | wc -l)
+    let RETRY_ATTEMPT=RETRY_ATTEMPT+1
     sleep 5
-    echo "Waiting for daemonset update"
+    echo "Waiting for cni daemonset update. $UPDATED_PODS_COUNT are in ready state in retry attempt $RETRY_ATTEMPT"
 done
 echo "Updated!"
 
