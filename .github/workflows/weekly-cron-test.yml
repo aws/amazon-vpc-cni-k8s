@@ -2,7 +2,7 @@ name: Weekly CNI tests
 
 on:
   schedule:
-    - cron: "0 16 * * 5"  # every friday
+    - cron: "0 16 * * 1"  # every Monday
 
 permissions:
   contents: read
