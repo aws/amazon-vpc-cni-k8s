@@ -280,4 +280,3 @@ var eksMaxPodsTemplate = template.Must(template.New("").Parse(`# Copyright Amazo
 {{ printf "%s" $instanceLimit }}
 {{- end }}
 `))
-
