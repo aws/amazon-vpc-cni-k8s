@@ -36,6 +36,8 @@ import (
 const ipLimitFileName = "pkg/awsutils/vpc_ip_resource_limit.go"
 const eniMaxPodsFileName = "misc/eni-max-pods.txt"
 
+var log = logger.DefaultLogger()
+
 // Helper to quote the type in order to print the map correctly
 func printMapLine(instanceType string, l awsutils.InstanceTypeLimits) string {
 	indentedInstanceType := fmt.Sprintf("\"%s\":", instanceType)
@@ -48,45 +50,12 @@ func printPodLimit(instanceType string, l awsutils.InstanceTypeLimits) string {
 	return fmt.Sprintf("%s %d", instanceType, maxPods)
 }
 
-// Helper function to call the EC2 DescribeInstanceTypes API and generate the IP limit file.
 func main() {
-	log := logger.DefaultLogger()
-
-	// Get session
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-	}))
-	_, err := sess.Config.Credentials.Get()
-	if err != nil {
-		log.Fatalf("Failed to get session credentials: %v", err)
-	}
-	svc := ec2.New(sess)
-	describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{}
-
+	// Get instance types limits across all regions
+	regions := describeRegions()
 	eniLimitMap := make(map[string]awsutils.InstanceTypeLimits)
-	for {
-		output, err := svc.DescribeInstanceTypes(describeInstanceTypesInput)
-		if err != nil {
-			log.Fatalf("Failed to call EC2 DescribeInstanceTypes: %v", err)
-		}
-		// We just want the type name, ENI and IP limits
-		for _, info := range output.InstanceTypes {
-			// Ignore any missing values
-			instanceType := aws.StringValue(info.InstanceType)
-			eniLimit := int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
-			ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
-			hypervisorType := aws.StringValue(info.Hypervisor)
-			if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
-				eniLimitMap[instanceType] = awsutils.InstanceTypeLimits{ENILimit: eniLimit, IPv4Limit: ipv4Limit, HypervisorType: hypervisorType}
-			}
-		}
-		// Paginate to the next request
-		if output.NextToken == nil {
-			break
-		}
-		describeInstanceTypesInput = &ec2.DescribeInstanceTypesInput{
-			NextToken: output.NextToken,
-		}
+	for _, region := range regions {
+		describeInstanceTypes(region, eniLimitMap)
 	}
 
 	// Override faulty values and add missing instance types
@@ -111,9 +80,11 @@ func main() {
 	err = limitsTemplate.Execute(f, struct {
 		Timestamp string
 		ENILimits []string
+		Regions   []string
 	}{
 		Timestamp: time.Now().Format(time.RFC3339),
 		ENILimits: eniLimits,
+		Regions:   regions,
 	})
 	if err != nil {
 		log.Fatalf("Failed to generate template: %v\n", err)
@@ -132,14 +103,87 @@ func main() {
 	err = eksMaxPodsTemplate.Execute(f, struct {
 		Timestamp string
 		ENIPods   []string
+		Regions   []string
 	}{
 		Timestamp: time.Now().Format(time.RFC3339),
 		ENIPods:   eniPods,
+		Regions:   regions,
 	})
 	if err != nil {
 		log.Fatalf("Failed to generate template: %v\n", err)
 	}
 	log.Infof("Generated %s", eniMaxPodsFileName)
+}
+
+// Helper function to call the EC2 DescribeRegions API, returning sorted region names
+// Note that the credentials being used may not be opted-in to all regions
+func describeRegions() []string {
+	// Get session
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		SharedConfigState: session.SharedConfigEnable,
+	}))
+	_, err := sess.Config.Credentials.Get()
+	if err != nil {
+		log.Fatalf("Failed to get session credentials: %v", err)
+	}
+	svc := ec2.New(sess)
+	output, err := svc.DescribeRegions(&ec2.DescribeRegionsInput{})
+	if err != nil {
+		log.Fatalf("Failed to call EC2 DescribeRegions: %v", err)
+	}
+	var regionNames []string
+	for _, region := range output.Regions {
+		regionNames = append(regionNames, *region.RegionName)
+	}
+	sort.Strings(regionNames)
+	return regionNames
+}
+
+// Helper function to call the EC2 DescribeInstanceTypes API for a region and merge the respective instance-type limits into eniLimitMap
+func describeInstanceTypes(region string, eniLimitMap map[string]awsutils.InstanceTypeLimits) {
+	log.Infof("Describing instance types in region=%s", region)
+
+	// Get session
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		SharedConfigState: session.SharedConfigEnable,
+		Config:            *aws.NewConfig().WithRegion(region),
+	}))
+	_, err := sess.Config.Credentials.Get()
+	if err != nil {
+		log.Fatalf("Failed to get session credentials: %v", err)
+	}
+	svc := ec2.New(sess)
+	describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{}
+
+	for {
+		output, err := svc.DescribeInstanceTypes(describeInstanceTypesInput)
+		if err != nil {
+			log.Fatalf("Failed to call EC2 DescribeInstanceTypes: %v", err)
+		}
+		// We just want the type name, ENI and IP limits
+		for _, info := range output.InstanceTypes {
+			// Ignore any missing values
+			instanceType := aws.StringValue(info.InstanceType)
+			eniLimit := int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
+			ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
+			hypervisorType := aws.StringValue(info.Hypervisor)
+			if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
+				limits := awsutils.InstanceTypeLimits{ENILimit: eniLimit, IPv4Limit: ipv4Limit, HypervisorType: hypervisorType}
+				if existingLimits, contains := eniLimitMap[instanceType]; contains && existingLimits != limits {
+					// this should never happen
+					log.Fatalf("A previous region has different limits for instanceType=%s than region=%s", instanceType, region)
+				}
+				eniLimitMap[instanceType] = limits
+			}
+		}
+		// Paginate to the next request
+		if output.NextToken == nil {
+			break
+		}
+		describeInstanceTypesInput = &ec2.DescribeInstanceTypesInput{
+			NextToken: output.NextToken,
+		}
+	}
 }
 
 // addManualLimits has the list of faulty or missing instance types
@@ -188,7 +232,11 @@ var limitsTemplate = template.Must(template.New("").Parse(`// Copyright Amazon.c
 
 // Code generated by go generate; DO NOT EDIT.
 // This file was generated at {{ .Timestamp }}
-
+//
+// The regions queried were:
+{{- range $region := .Regions}}
+{{ printf "// - %s" $region }}
+{{- end }}
 package awsutils
 
 // InstanceNetworkingLimits contains a mapping from instance type to networking limits for the type. Documentation found at
@@ -215,6 +263,11 @@ var eksMaxPodsTemplate = template.Must(template.New("").Parse(`# Copyright Amazo
 #
 # This file was generated at {{ .Timestamp }}
 #
+# The regions queried were:
+{{- range $region := .Regions}}
+{{ printf "# - %s" $region }}
+{{- end }}
+#
 # Mapping is calculated from AWS EC2 API using the following formula:
 # * First IP on each ENI is not used for pods
 # * +2 for the pods that use host-networking (AWS CNI and kube-proxy)
@@ -227,3 +280,4 @@ var eksMaxPodsTemplate = template.Must(template.New("").Parse(`# Copyright Amazo
 {{ printf "%s" $instanceLimit }}
 {{- end }}
 `))
+
