@@ -64,6 +64,9 @@ spec:
           value: ""
         - name: USE_CLOUDWATCH
           value: "true"
+        # Optional: Should be ClusterName/ClusterIdentifier used as the metric dimension 
+        - name: AWS_CLUSTER_ID
+          value: ""
         name: cni-metrics-helper
         image: "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.10.2"
       serviceAccountName: cni-metrics-helper
