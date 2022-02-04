@@ -1,4 +1,13 @@
 # Changelog
+## v1.10.2
+* Improvement - [Fetch Region and CLUSTER_ID information from cni-metrics-helper env](https://github.com/aws/amazon-vpc-cni-k8s/pull/1715) (@cgchinmay )
+* Improvement - [Add VlanId in the cmdAdd Result struct](https://github.com/aws/amazon-vpc-cni-k8s/pull/1705) (@cgchinmay )
+* Improvement - [Update Insufficient IP address logic in ipamd](https://github.com/aws/amazon-vpc-cni-k8s/pull/1773) (@cgchinmay )
+* Improvement - [go version updated to 1.17](https://github.com/aws/amazon-vpc-cni-k8s/pull/1832) (@cgchinmay )
+* Improvement - [use public ecr for AL2](https://github.com/aws/amazon-vpc-cni-k8s/pull/1804) (@vikasmb )
+* Improvement - [remove set -x from bash, add -Ss to curl](https://github.com/aws/amazon-vpc-cni-k8s/pull/1802) (@skpy )
+* Bug - [Fix condition for disable provisioning](https://github.com/aws/amazon-vpc-cni-k8s/pull/1823) (@jayanthvn )
+
 ## v1.10.1
 * Bug - [Use IMDSv2 token when fetching node ip in entrypoint](https://github.com/aws/amazon-vpc-cni-k8s/pull/1727) (#1727, [@chlunde](https://github.com/chlunde)) 
 
@@ -9,6 +18,13 @@
 * Enhancement - [Knob to enable bandwidth plugin](https://github.com/aws/amazon-vpc-cni-k8s/pull/1580) (#1580, [@jayanthvn](https://github.com/jayanthvn))
 * Testing - [IPv6 Integration test suite](https://github.com/aws/amazon-vpc-cni-k8s/pull/1658) (#1658, [@achevuru](https://github.com/achevuru))
 
+## v1.9.3
+* Improvement - [Update golang](https://github.com/aws/amazon-vpc-cni-k8s/pull/1665) (#1665, [@jayanthvn](https://github.com/jayanthvn))
+* Improvement - [Pod startup latency with Calico and EKS](https://github.com/aws/amazon-vpc-cni-k8s/pull/1629) (#1629, [@jayanthvn](https://github.com/jayanthvn))
+* Bug - [Make error count granular](https://github.com/aws/amazon-vpc-cni-k8s/pull/1651) (#1651, [@jayanthvn](https://github.com/jayanthvn))
+* Bug - [ServiceAccount should precede DaemonSet in yaml aws](https://github.com/aws/amazon-vpc-cni-k8s/pull/1637) (#1637, [@sramabad1](https://github.com/sramabad1))
+* Testing - [Enable unit tests upon PR to release branch](https://github.com/aws/amazon-vpc-cni-k8s/pull/1684) (#1684, [@vikasmb](https://github.com/vikasmb))
+* Testing - [Upgrade EKS cluster version](https://github.com/aws/amazon-vpc-cni-k8s/pull/1680) (#1680, [@vikasmb](https://github.com/vikasmb)) 
 
 ## v1.9.1
 * Enhancement - [Support DISABLE_NETWORK_RESOURCE_PROVISIONING](https://github.com/aws/amazon-vpc-cni-k8s/pull/1586) (#1586, [@jayanthvn](https://github.com/jayanthvn))
