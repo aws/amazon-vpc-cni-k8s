@@ -20,6 +20,12 @@ if [[ -n "${ENDPOINT}" ]]; then
   ENDPOINT_FLAG="--endpoint $ENDPOINT"
 fi
 
+# Request timesout in China Regions with default proxy
+if [[ $REGION == "cn-north-1" || $REGION == "cn-northwest-1" ]]; then
+  go env -w GOPROXY=https://goproxy.cn,direct
+  go env -w GOSUMDB=sum.golang.google.cn
+fi
+
 function load_cluster_details() {
   echo "loading cluster details $CLUSTER_NAME"
   DESCRIBE_CLUSTER_OP=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" $ENDPOINT_FLAG)
@@ -37,16 +43,22 @@ function load_addon_details() {
 
 function wait_for_addon_status() {
   local expected_status=$1
-
+  local retry_attempt=0
   if [ "$expected_status" =  "DELETED" ]; then
     while $(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --region "$REGION"); do
+      if [ $retry_attempt -ge 20 ]; then
+        echo "failed to delete addon, qutting after too many attempts"
+        exit 1
+      fi
       echo "addon is still not deleted"
       sleep 5
+      ((retry_attempt=retry_attempt+1))
     done
     echo "addon deleted"
     return
   fi
 
+  retry_attempt=0
   while true
   do
     STATUS=$(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --region "$REGION" | jq -r '.addon.status')
@@ -54,8 +66,15 @@ function wait_for_addon_status() {
       echo "addon status matches expected status"
       return
     fi
+    # We have seen the canary test get stuck, we don't know what causes this but most likely suspect is
+    # the addon update/delete attempts. So adding limited retries.
+    if [ $retry_attempt -ge 30 ]; then
+      echo "failed to get desired add-on status: $STATUS, qutting after too many attempts"
+      exit 1
+    fi
     echo "addon status is not equal to $expected_status"
     sleep 5
+    ((retry_attempt=retry_attempt+1))
   done
 }
 
