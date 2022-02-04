@@ -1,4 +1,4 @@
-# Important Announcement: We have decided to stop maintaining and updating Calico charts in this repository #
+# Important Announcement: AWS EKS will no longer maintain and update Calico charts in this repository #
 - The current Calico charts will not be updated
 - The current Calico charts will be removed from this repository on March 31, 2023
 - Current open requests will be redirected to Calico
