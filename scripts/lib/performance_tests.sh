@@ -5,7 +5,7 @@ function check_for_timeout() {
         if [[ $FAILURE_COUNT -gt 1 ]]; then
             RUNNING_PERFORMANCE=false
             echo "Failed twice, deprovisioning cluster"
-            on_error
+            on_error 1 $LINENO
         fi
         echo "Failed once, retrying"
     fi
@@ -46,7 +46,7 @@ function check_for_slow_performance() {
         echo "********************************"
         echo "Look into how current changes could cause cni inefficiency."
         echo "********************************"
-        on_error
+        on_error 1 $LINENO
     fi
 }
 
