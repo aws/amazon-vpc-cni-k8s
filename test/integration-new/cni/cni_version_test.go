@@ -3,6 +3,7 @@ package cni
 import (
 	"context"
 	"fmt"
+
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/services"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/pkg/errors"
