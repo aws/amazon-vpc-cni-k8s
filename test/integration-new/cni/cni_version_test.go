@@ -1,11 +1,12 @@
 package cni
 
 import (
+	"context"
 	"fmt"
-	"time"
-
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/services"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/pkg/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/aws-sdk-go/service/eks"
@@ -33,10 +34,10 @@ var _ = Describe("test cluster upgrade/downgrade", func() {
 
 	})
 
-	Context("when testing host networking on initial version", func() {
+	Context("when testing pod networking on initial version", func() {
 		HostNetworkingTest()
-		PodTrafficTest()
-		ServiceConnectivityTest()
+		//PodTrafficTest()
+		//ServiceConnectivityTest()
 	})
 
 	It("should apply final addon version successfully", func() {
@@ -50,10 +51,10 @@ var _ = Describe("test cluster upgrade/downgrade", func() {
 
 	})
 
-	Context("when testing host networking on final version", func() {
+	Context("when testing pod networking on final version", func() {
 		HostNetworkingTest()
-		PodTrafficTest()
-		ServiceConnectivityTest()
+		//PodTrafficTest()
+		//ServiceConnectivityTest()
 	})
 
 })
@@ -70,12 +71,9 @@ func ApplyAddOn(versionName string) {
 			_, err = f.CloudServices.EKS().DeleteAddon("vpc-cni", f.Options.ClusterName)
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
-			for err == nil {
-				time.Sleep(5 * time.Second)
-				_, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
-
-			}
+			By("waiting for addon to be deleted")
+			err = DeleteAddOnAndWaitTillReady("vpc-cni", f.Options.ClusterName)
+			Expect(err).ToNot(HaveOccurred())
 
 			By(fmt.Sprintf("By applying addon %s\n", versionName))
 			_, err = f.CloudServices.EKS().CreateAddon(services.AddOnInput{AddonName: "vpc-cni", ClusterName: f.Options.ClusterName, AddonVersion: versionName})
@@ -88,17 +86,41 @@ func ApplyAddOn(versionName string) {
 		Expect(err).ToNot(HaveOccurred())
 	}
 
-	var status = ""
-
-	By("waiting for  addon to be ACTIVE")
-	for status != "ACTIVE" {
-		describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon("vpc-cni", f.Options.ClusterName)
-		Expect(err).ToNot(HaveOccurred())
-		status = *describeAddonOutput.Addon.Status
-		time.Sleep(5 * time.Second)
-	}
+	By("waiting for addon to be ACTIVE")
+	err = UpdateAddOnAndWaitTillReady("vpc-cni", f.Options.ClusterName)
+	Expect(err).ToNot(HaveOccurred())
 
 	//Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
 	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
 		"aws-node", map[string]string{"WARM_IP_TARGET": "3", "WARM_ENI_TARGET": "0"})
+}
+
+func DeleteAddOnAndWaitTillReady(addOnName string, clusterName string) error {
+
+	ctx := context.Background()
+	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+		_, err = f.CloudServices.EKS().DescribeAddon(addOnName, clusterName)
+		if err != nil {
+			return true, nil
+		}
+		return false, nil
+	}, ctx.Done())
+
+}
+
+func UpdateAddOnAndWaitTillReady(addOnName string, clusterName string) error {
+
+	ctx := context.Background()
+	var status = ""
+	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+		describeAddonOutput, err = f.CloudServices.EKS().DescribeAddon(addOnName, clusterName)
+		if err != nil {
+			return false, err
+		}
+		status = *describeAddonOutput.Addon.Status
+		if status == "ACTIVE" {
+			return true, nil
+		}
+		return false, nil
+	}, ctx.Done())
 }
