@@ -44,13 +44,19 @@ func _main() int {
 		return 1
 	}
 
-	rawK8SClient, err := k8sapi.CreateKubeClient()
+	mapper, err := k8sapi.InitializeRestMapper()
+	if err != nil {
+		log.Errorf("Failed to initialize kube client mapper: %s", err)
+		return 1
+	}
+
+	rawK8SClient, err := k8sapi.CreateKubeClient(mapper)
 	if err != nil {
 		log.Errorf("Failed to create kube client: %s", err)
 		return 1
 	}
 
-	cacheK8SClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient)
+	cacheK8SClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient, mapper)
 	if err != nil {
 		log.Errorf("Failed to create cached kube client: %s", err)
 		return 1

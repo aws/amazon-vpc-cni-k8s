@@ -2,12 +2,15 @@ package k8sapi
 
 import (
 	"fmt"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -15,18 +18,38 @@ import (
 )
 
 var log = logger.Get()
+var restMapper  meta.RESTMapper
+
+func InitializeRestMapper() (meta.RESTMapper, error) {
+	if restMapper != nil {
+		return restMapper, nil
+	}
+    restCfg, err := ctrl.GetConfig()
+    restCfg.Burst = 200
+    if err != nil {
+    	return nil, err
+	}
+	mapper, err := apiutil.NewDynamicRESTMapper(restCfg)
+	if err != nil {
+		return nil, err
+	}
+	return mapper, nil
+}
 
 // CreateKubeClient creates a k8s client
-func CreateKubeClient() (client.Client, error) {
+func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
 		return nil, err
 	}
 	vpcCniScheme := runtime.NewScheme()
-	clientgoscheme.AddToScheme(vpcCniScheme)
+	corev1.AddToScheme(vpcCniScheme)
 	eniconfigscheme.AddToScheme(vpcCniScheme)
 
-	rawK8SClient, err := client.New(restCfg, client.Options{Scheme: vpcCniScheme})
+	log.Infof(fmt.Sprintf("raw client starting"))
+	rawK8SClient, err := client.New(restCfg, client.Options{Scheme: vpcCniScheme, Mapper: mapper})
+	log.Infof(fmt.Sprintf("raw client started"))
+
 	if err != nil {
 		return nil, err
 	}
@@ -35,8 +58,10 @@ func CreateKubeClient() (client.Client, error) {
 }
 
 // CreateKubeClient creates a k8s client
-func CreateCachedKubeClient(rawK8SClient client.Client) (client.Client, error) {
+func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper) (client.Client, error) {
 	restCfg, err := ctrl.GetConfig()
+	restCfg.Burst = 100
+
 	if err != nil {
 		return nil, err
 	}
@@ -45,14 +70,19 @@ func CreateCachedKubeClient(rawK8SClient client.Client) (client.Client, error) {
 	eniconfigscheme.AddToScheme(vpcCniScheme)
 
 	stopChan := ctrl.SetupSignalHandler()
-	cache, err := cache.New(restCfg, cache.Options{Scheme: vpcCniScheme})
+	log.Infof(fmt.Sprintf("cache client starting"))
+	cache, err := cache.New(restCfg, cache.Options{Scheme: vpcCniScheme, Mapper: mapper})
+	log.Infof(fmt.Sprintf("cache client started"))
 	if err != nil {
 		return nil, err
 	}
 	go func() {
+			log.Infof(fmt.Sprintf("cache starting"))
 		cache.Start(stopChan)
 	}()
-	cache.WaitForCacheSync(stopChan)
+	_result := cache.WaitForCacheSync(stopChan)
+				log.Infof(fmt.Sprintf("cache complete"))
+	log.Infof(fmt.Sprintf("%f", _result))
 
 	cachedK8SClient := client.DelegatingClient{
 		Reader: &client.DelegatingReader{
