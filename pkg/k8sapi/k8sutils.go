@@ -2,6 +2,7 @@ package k8sapi
 
 import (
 	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -18,16 +19,12 @@ import (
 )
 
 var log = logger.Get()
-var restMapper  meta.RESTMapper
 
 func InitializeRestMapper() (meta.RESTMapper, error) {
-	if restMapper != nil {
-		return restMapper, nil
-	}
-    restCfg, err := ctrl.GetConfig()
-    restCfg.Burst = 200
-    if err != nil {
-    	return nil, err
+	restCfg, err := ctrl.GetConfig()
+	restCfg.Burst = 200
+	if err != nil {
+		return nil, err
 	}
 	mapper, err := apiutil.NewDynamicRESTMapper(restCfg)
 	if err != nil {
@@ -77,11 +74,11 @@ func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper) 
 		return nil, err
 	}
 	go func() {
-			log.Infof(fmt.Sprintf("cache starting"))
+		log.Infof(fmt.Sprintf("cache starting"))
 		cache.Start(stopChan)
 	}()
 	_result := cache.WaitForCacheSync(stopChan)
-				log.Infof(fmt.Sprintf("cache complete"))
+	log.Infof(fmt.Sprintf("cache complete"))
 	log.Infof(fmt.Sprintf("%f", _result))
 
 	cachedK8SClient := client.DelegatingClient{
