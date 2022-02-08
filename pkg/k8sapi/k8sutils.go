@@ -3,7 +3,6 @@ package k8sapi
 import (
 	"fmt"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -40,7 +39,7 @@ func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
 		return nil, err
 	}
 	vpcCniScheme := runtime.NewScheme()
-	corev1.AddToScheme(vpcCniScheme)
+	clientgoscheme.AddToScheme(vpcCniScheme)
 	eniconfigscheme.AddToScheme(vpcCniScheme)
 
 	log.Infof(fmt.Sprintf("raw client starting"))
