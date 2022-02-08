@@ -42,9 +42,7 @@ func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
 	clientgoscheme.AddToScheme(vpcCniScheme)
 	eniconfigscheme.AddToScheme(vpcCniScheme)
 
-	log.Infof(fmt.Sprintf("raw client starting"))
 	rawK8SClient, err := client.New(restCfg, client.Options{Scheme: vpcCniScheme, Mapper: mapper})
-	log.Infof(fmt.Sprintf("raw client started"))
 
 	if err != nil {
 		return nil, err
@@ -66,19 +64,14 @@ func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper) 
 	eniconfigscheme.AddToScheme(vpcCniScheme)
 
 	stopChan := ctrl.SetupSignalHandler()
-	log.Infof(fmt.Sprintf("cache client starting"))
 	cache, err := cache.New(restCfg, cache.Options{Scheme: vpcCniScheme, Mapper: mapper})
-	log.Infof(fmt.Sprintf("cache client started"))
 	if err != nil {
 		return nil, err
 	}
 	go func() {
-		log.Infof(fmt.Sprintf("cache starting"))
 		cache.Start(stopChan)
 	}()
-	_result := cache.WaitForCacheSync(stopChan)
-	log.Infof(fmt.Sprintf("cache complete"))
-	log.Infof(fmt.Sprintf("%f", _result))
+	cache.WaitForCacheSync(stopChan)
 
 	cachedK8SClient := client.DelegatingClient{
 		Reader: &client.DelegatingReader{
