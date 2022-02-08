@@ -96,12 +96,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	rawK8SClient, err := k8sapi.CreateKubeClient()
+	mapper, err := k8sapi.InitializeRestMapper()
+	if err != nil {
+		log.Errorf("Failed to initialize kube client mapper: %s", err)
+		os.Exit(1)
+	}
+
+	rawK8SClient, err := k8sapi.CreateKubeClient(mapper)
 	if err != nil {
 		log.Fatalf("Error creating Kubernetes Client: %s", err)
 		os.Exit(1)
 	}
-	k8sClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient)
+	k8sClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient, mapper)
 	if err != nil {
 		log.Fatalf("Error creating Cached Kubernetes Client: %s", err)
 		os.Exit(1)
