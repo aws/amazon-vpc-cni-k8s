@@ -16,7 +16,7 @@ ensure_ecr_repo() {
 }
 
 ensure_aws_k8s_tester() {
-    TESTER_RELEASE=${TESTER_RELEASE:-v1.6.5}
+    TESTER_RELEASE=${TESTER_RELEASE:-v1.6.6}
     TESTER_DOWNLOAD_URL=https://github.com/aws/aws-k8s-tester/releases/download/$TESTER_RELEASE/aws-k8s-tester-$TESTER_RELEASE-$OS-$ARCH
 
     # Download aws-k8s-tester if not yet
@@ -25,13 +25,5 @@ ensure_aws_k8s_tester() {
         echo "Downloading aws-k8s-tester from $TESTER_DOWNLOAD_URL to $TESTER_PATH"
         curl -s -L -X GET $TESTER_DOWNLOAD_URL -o $TESTER_PATH
         chmod +x $TESTER_PATH
-    fi
-}
-
-ensure_eksctl() {
-    EKS_BIN=/usr/local/bin/eksctl
-    if [[ ! -e $EKS_BIN ]]; then
-        curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
-        sudo mv -v /tmp/eksctl $EKS_BIN
     fi
 }

@@ -18,7 +18,9 @@ function up-test-cluster() {
         export RUN_CONFORMANCE="false"
         : "${PERFORMANCE_TEST_S3_BUCKET_NAME:=""}"
     else
-        MNGS='{"GetRef.Name-mng-for-cni":{"name":"GetRef.Name-mng-for-cni","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":3,"asg-max-size":3,"asg-desired-capacity":3,"instance-types":["c5.xlarge"],"volume-size":40}}'
+        DIR=$(cd "$(dirname "$0")"; pwd)
+        mng_multi_arch_config=`cat $DIR/test/config/multi-arch-mngs-config.json`
+        MNGS=$mng_multi_arch_config
     fi
 
     echo -n "Configuring cluster $CLUSTER_NAME"
@@ -29,7 +31,7 @@ function up-test-cluster() {
         AWS_K8S_TESTER_EKS_KUBECTL_PATH=$KUBECTL_PATH \
         AWS_K8S_TESTER_EKS_S3_BUCKET_NAME=$S3_BUCKET_NAME \
         AWS_K8S_TESTER_EKS_S3_BUCKET_CREATE=$S3_BUCKET_CREATE \
-        AWS_K8S_TESTER_EKS_PARAMETERS_VERSION=${K8S_VERSION%.*} \
+        AWS_K8S_TESTER_EKS_VERSION=${EKS_CLUSTER_VERSION} \
         AWS_K8S_TESTER_EKS_PARAMETERS_ENCRYPTION_CMK_CREATE=false \
         AWS_K8S_TESTER_EKS_PARAMETERS_ROLE_CREATE=$ROLE_CREATE \
         AWS_K8S_TESTER_EKS_PARAMETERS_ROLE_ARN=$ROLE_ARN \
@@ -56,7 +58,9 @@ function up-kops-cluster {
     aws s3api create-bucket --bucket kops-cni-test-eks --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
     curl -LO https://github.com/kubernetes/kops/releases/download/$(curl -s https://api.github.com/repos/kubernetes/kops/releases/latest | grep tag_name | cut -d '"' -f 4)/kops-linux-amd64
     chmod +x kops-linux-amd64
-    sudo mv kops-linux-amd64 /usr/local/bin/kops
+    mkdir -p ~/kops_bin
+    KOPS_BIN=~/kops_bin/kops
+    mv kops-linux-amd64 $KOPS_BIN
     CLUSTER_NAME=kops-cni-test-cluster-${TEST_ID}.k8s.local
     export KOPS_STATE_STORE=s3://kops-cni-test-eks
 
@@ -69,18 +73,18 @@ function up-kops-cluster {
         echo -e "\nSSH keys are already in place!"
     fi
 
-    kops create cluster \
+    $KOPS_BIN create cluster \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
     --networking amazon-vpc-routed-eni \
     --node-count 2 \
     --ssh-public-key=~/.ssh/devopsinuse.pub \
     --kubernetes-version ${K8S_VERSION} \
     ${CLUSTER_NAME}
-    kops update cluster --name ${CLUSTER_NAME} --yes
+    $KOPS_BIN update cluster --name ${CLUSTER_NAME} --yes
     sleep 100
-    kops export kubeconfig --admin
+    $KOPS_BIN export kubeconfig --admin
     sleep 10
-    while [[ ! $(kops validate cluster | grep "is ready") ]]
+    while [[ ! $($KOPS_BIN validate cluster | grep "is ready") ]]
     do
         sleep 5
         echo "Waiting for cluster validation"
@@ -89,7 +93,8 @@ function up-kops-cluster {
 }
 
 function down-kops-cluster {
-    kops delete cluster --name ${CLUSTER_NAME} --yes
+    KOPS_BIN=~/kops_bin/kops
+    $KOPS_BIN delete cluster --name ${CLUSTER_NAME} --yes
     aws s3 rm ${KOPS_STATE_STORE} --recursive
     aws s3 rb ${KOPS_STATE_STORE} --region $AWS_DEFAULT_REGION
 }
