@@ -1,3 +1,13 @@
+# Important Announcement: AWS EKS will no longer maintain and update Calico charts in this repository #
+- The current Calico charts will not be updated
+- The current Calico charts will be removed from this repository on March 31, 2023
+- Current open requests will be redirected to Calico
+- You should submit new requests to Calico directly
+    - For Calico, please send issues to [Calico repository](http://github.com/projectcalico/calico)
+    - For Tigera Operator, please send issues to [Operator repository](http://github.com/tigera/operator)
+- We will update and maintain the [AWS docs](https://docs.aws.amazon.com/eks/latest/userguide/calico.html) for Calico installation after the deprecation
+
+
 # Calico on AWS
 
 This chart installs Calico on AWS: https://docs.aws.amazon.com/eks/latest/userguide/calico.html
