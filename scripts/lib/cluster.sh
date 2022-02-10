@@ -5,9 +5,12 @@ function down-test-cluster() {
         $TESTER_PATH eks delete cluster --enable-prompt=false --path $CLUSTER_CONFIG || (echo "failed!" && exit 1)
     else
         echo -n "Deleting cluster $CLUSTER_NAME (this may take ~10 mins) ... "
-        $TESTER_PATH eks delete cluster --enable-prompt=false --path $CLUSTER_CONFIG >>$CLUSTER_MANAGE_LOG_PATH 2>&1 ||
-            (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
-        echo "ok."
+        if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
+          eksctl delete cluster --name $CLUSTER_NAME
+        else
+          $TESTER_PATH eks delete cluster --enable-prompt=false --path $CLUSTER_CONFIG >>$CLUSTER_MANAGE_LOG_PATH 2>&1 ||
+              (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
+          echo "ok."
     fi
 }
 
@@ -15,23 +18,54 @@ function up-test-cluster() {
     MNGS=""
     DIR=$(cd "$(dirname "$0")"; pwd)
     if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
-        PERF_CLUSTER_CONFIG_PATH=$DIR/test/config/perf-cluster.yml
-        let AMI_ID=`aws ssm get-parameter --name /aws/service/eks/optimized-ami/${EKS_CLUSTER_VERSION}/amazon-linux-2/recommended/image_id --region region-code --query "Parameter.Value" --output text`
-        echo "Obtained ami_id as $ami_id"
-        sed -i'.bak' "s,AMI_ID_PLACEHOLDER,$AMI_ID," "$PERF_CLUSTER_CONFIG_PATH"
-        grep -r -q $AMI_ID $DIR/test/config/perf-cluster.yml
-        sed -i'.bak' "s,CLUSTER_NAME_PLACEHOLDER,$CLUSTER_NAME," "$PERF_CLUSTER_CONFIG_PATH"
-        grep -r -q $CLUSTER_NAME $DIR/test/config/perf-cluster.yml
+        PERF_CLUSTER_TEMPLATE_PATH=$DIR/test/config/perf-cluster.yml
+        PERF_TEST_CONFIG_PATH=$DIR/test/config/perf-cluster-$CLUSTER_NAME.yml
+        cp $PERF_CLUSTER_TEMPLATE_PATH $PERF_TEST_CONFIG_PATH
+        AMI_ID=`aws ssm get-parameter --name /aws/service/eks/optimized-ami/${EKS_CLUSTER_VERSION}/amazon-linux-2/recommended/image_id --region us-west-2 --query "Parameter.Value" --output text`
+        echo "Obtained ami_id as $AMI_ID"
+        sed -i'.bak' "s,AMI_ID_PLACEHOLDER,$AMI_ID," $PERF_TEST_CONFIG_PATH
+        grep -r -q $AMI_ID $PERF_TEST_CONFIG_PATH
+        sed -i'.bak' "s,CLUSTER_NAME_PLACEHOLDER,$CLUSTER_NAME," $PERF_TEST_CONFIG_PATH
+        grep -r -q $CLUSTER_NAME $PERF_TEST_CONFIG_PATH
         export RUN_CONFORMANCE="false"
         : "${PERFORMANCE_TEST_S3_BUCKET_NAME:=""}"
-        eksctl create cluster -f $PERF_CLUSTER_CONFIG_PATH
+        eksctl create cluster -f $PERF_TEST_CONFIG_PATH
         kubectl create -f $DIR/test/config/cluster-autoscaler-autodiscover.yml
-
+        return
     else
         mng_multi_arch_config=`cat $DIR/test/config/multi-arch-mngs-config.json`
         MNGS=$mng_multi_arch_config
     fi
 
+    echo -n "Configuring cluster $CLUSTER_NAME"
+    AWS_K8S_TESTER_EKS_NAME=$CLUSTER_NAME \
+        AWS_K8S_TESTER_EKS_LOG_COLOR=false \
+        AWS_K8S_TESTER_EKS_LOG_COLOR_OVERRIDE=true \
+        AWS_K8S_TESTER_EKS_KUBECONFIG_PATH=$KUBECONFIG_PATH \
+        AWS_K8S_TESTER_EKS_KUBECTL_PATH=$KUBECTL_PATH \
+        AWS_K8S_TESTER_EKS_S3_BUCKET_NAME=$S3_BUCKET_NAME \
+        AWS_K8S_TESTER_EKS_S3_BUCKET_CREATE=$S3_BUCKET_CREATE \
+        AWS_K8S_TESTER_EKS_VERSION=${EKS_CLUSTER_VERSION} \
+        AWS_K8S_TESTER_EKS_PARAMETERS_ENCRYPTION_CMK_CREATE=false \
+        AWS_K8S_TESTER_EKS_PARAMETERS_ROLE_CREATE=$ROLE_CREATE \
+        AWS_K8S_TESTER_EKS_PARAMETERS_ROLE_ARN=$ROLE_ARN \
+        AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_ENABLE=true \
+        AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_ROLE_CREATE=$ROLE_CREATE \
+        AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_ROLE_ARN=$MNG_ROLE_ARN \
+        AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_MNGS=$MNGS \
+        AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_FETCH_LOGS=true \
+        AWS_K8S_TESTER_EKS_ADD_ON_NLB_HELLO_WORLD_ENABLE=$RUN_TESTER_LB_ADDONS \
+        AWS_K8S_TESTER_EKS_ADD_ON_ALB_2048_ENABLE=$RUN_TESTER_LB_ADDONS \
+        $TESTER_PATH eks create config --path $CLUSTER_CONFIG 1>&2
+
+    if [[ -n "${CIRCLE_JOB:-}" || -n "${DISABLE_PROMPT:-}" ]]; then
+        $TESTER_PATH eks create cluster --enable-prompt=false --path $CLUSTER_CONFIG || (echo "failed!" && exit 1)
+    else
+        echo -n "Creating cluster $CLUSTER_NAME (this may take ~20 mins. details: tail -f $CLUSTER_MANAGE_LOG_PATH)... "
+        $TESTER_PATH eks create cluster --path $CLUSTER_CONFIG >>$CLUSTER_MANAGE_LOG_PATH 1>&2 ||
+            (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
+        echo "ok."
+    fi
 }
 
 function up-kops-cluster {

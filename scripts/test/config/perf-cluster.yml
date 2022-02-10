@@ -12,11 +12,16 @@ managedNodeGroups:
     ami: AMI_ID_PLACEHOLDER
     instanceType: m5.16xlarge
     desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
     volumeSize: 100
     volumeName: /dev/xvda
+    iam:
+      withAddonPolicies:
+        autoScaler: true
     overrideBootstrapCommand: |
       #!/bin/bash
-      /etc/eks/bootstrap.sh latest-mixed-cluster --kubelet-extra-args '--max-pods=740'
+      /etc/eks/bootstrap.sh CLUSTER_NAME_PLACEHOLDER --kubelet-extra-args '--max-pods=740'
 
   - name: cni-test-multi-node-mng
     instanceType: m5.xlarge

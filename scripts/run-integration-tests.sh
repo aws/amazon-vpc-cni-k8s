@@ -74,7 +74,7 @@ CLUSTER_MANAGE_LOG_PATH=$TEST_CLUSTER_DIR/cluster-manage.log
 # shared binaries
 : "${TESTER_DIR:=${DIR}/aws-k8s-tester}"
 : "${TESTER_PATH:=$TESTER_DIR/aws-k8s-tester}"
-: "${KUBECTL_PATH:=$TESTER_DIR/kubectl}"
+: "${KUBECTL_PATH:=kubectl}"
 export PATH=${PATH}:$TESTER_DIR
 
 LOCAL_GIT_VERSION=$(git rev-parse HEAD)
@@ -197,8 +197,7 @@ sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init
 grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH
 
 
-if [[ $RUN_KOPS_TEST == true || $RUN_BOTTLEROCKET_TEST == true ]]; then
-    KUBECTL_PATH=kubectl
+if [[ $RUN_KOPS_TEST == true || $RUN_BOTTLEROCKET_TEST == true || $RUN_PERFORMANCE_TESTS == true ]]; then
     export KUBECONFIG=~/.kube/config
 else
     export KUBECONFIG=$KUBECONFIG_PATH
