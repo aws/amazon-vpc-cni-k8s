@@ -10,7 +10,11 @@
 
 # Calico on AWS
 
-This chart installs Calico on AWS: https://docs.aws.amazon.com/eks/latest/userguide/calico.html
+## The instructions and charts provided in this repo have been deprecated and will not be updated. The recommended way to install Calico on EKS is via [Tigera Operator](https://github.com/tigera/operator) instead of this helm-chart.
+You can follow https://docs.aws.amazon.com/eks/latest/userguide/calico.html for detailed instructions.
+
+<details>
+  <summary>Click to expand the older and now deprecated installation instructions</summary>
 
 ## Prerequisites
 
@@ -74,3 +78,4 @@ Specify each parameter using the `--set key=value[,key=value]` argument to `helm
 ```shell
 $ helm install --name aws-calico --namespace kube-system eks/aws-calico --values values.yaml
 ```
+</details>
