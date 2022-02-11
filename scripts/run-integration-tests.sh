@@ -46,6 +46,8 @@ on_error() {
                 down-kops-cluster
             elif [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
                 eksctl delete cluster bottlerocket
+            elif [[ $RUN_PERFORMANCE_TESTS == true ]]; then
+                eksctl delete cluster $CLUSTER_NAME
             else
                 down-test-cluster
             fi
@@ -307,6 +309,8 @@ if [[ "$DEPROVISION" == true ]]; then
         down-kops-cluster
     elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
         eksctl delete cluster bottlerocket
+    elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
+        eksctl delete cluster $CLUSTER_NAME
     else
         down-test-cluster
     fi

@@ -5,12 +5,9 @@ function down-test-cluster() {
         $TESTER_PATH eks delete cluster --enable-prompt=false --path $CLUSTER_CONFIG || (echo "failed!" && exit 1)
     else
         echo -n "Deleting cluster $CLUSTER_NAME (this may take ~10 mins) ... "
-        if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
-          eksctl delete cluster --name $CLUSTER_NAME
-        else
-          $TESTER_PATH eks delete cluster --enable-prompt=false --path $CLUSTER_CONFIG >>$CLUSTER_MANAGE_LOG_PATH 2>&1 ||
-              (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
-          echo "ok."
+        $TESTER_PATH eks delete cluster --enable-prompt=false --path $CLUSTER_CONFIG >>$CLUSTER_MANAGE_LOG_PATH 2>&1 ||
+            (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
+        echo "ok."
     fi
 }
 
