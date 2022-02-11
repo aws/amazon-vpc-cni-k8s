@@ -1,0 +1,35 @@
+# A cluster with two managed nodegroups.
+---
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: CLUSTER_NAME_PLACEHOLDER
+  region: us-west-2
+
+managedNodeGroups:
+  - name: cni-test-single-node-mng
+    ami: AMI_ID_PLACEHOLDER
+    instanceType: m5.16xlarge
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    volumeSize: 100
+    volumeName: /dev/xvda
+    iam:
+      withAddonPolicies:
+        autoScaler: true
+    overrideBootstrapCommand: |
+      #!/bin/bash
+      /etc/eks/bootstrap.sh CLUSTER_NAME_PLACEHOLDER --kubelet-extra-args '--max-pods=740'
+
+  - name: cni-test-multi-node-mng
+    instanceType: m5.xlarge
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 100
+    iam:
+      withAddonPolicies:
+        autoScaler: true
+    volumeSize: 100
+    volumeName: /dev/xvda
