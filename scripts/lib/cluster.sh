@@ -105,7 +105,7 @@ function up-kops-cluster {
     do
         sleep 60
         let RETRY_ATTEMPT=RETRY_ATTEMPT+1
-        echo "Waiting for cluster validation"
+        echo "In attempt# $RETRY_ATTEMPT, waiting for cluster validation"
     done
     kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/${MANIFEST_CNI_VERSION}/config/master/cni-metrics-helper.yaml
 }
