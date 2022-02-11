@@ -20,6 +20,7 @@ FORK_DIR="${SYNC_DIR}/${CHARTS_REPO_NAME}"
 
 BINARY_BASE=""
 INCLUDE_NOTES=0
+MANUAL_VERIFY=1
 
 GH_CLI_VERSION="0.10.1"
 GH_CLI_CONFIG_PATH="${HOME}/.config/gh/config.yml"
@@ -42,12 +43,13 @@ USAGE=$(cat << EOM
           Optional:
             -r          Github repo to sync to in the form of "org/name"  (i.e. -r "${REPO}")
             -n          Include application release notes in the sync PR
+            -y          Without asking for manual confirmation before creating PR to upstream
 EOM
 )
 
 # Process our input arguments
-while getopts "b:r:n" opt; do
-  case ${opt} in
+while getopts b:r:ny opt; do
+  case "${opt}" in
     r ) # Github repo
         REPO="$OPTARG"
       ;;
@@ -57,6 +59,9 @@ while getopts "b:r:n" opt; do
     n ) # Include release notes
         INCLUDE_NOTES=1
       ;;
+    y ) # Manual verify
+        MANUAL_VERIFY=0
+      ;;
     \? )
         echo "$USAGE" 1>&2
         exit
@@ -64,6 +69,10 @@ while getopts "b:r:n" opt; do
   esac
 done
 
+if [[ -n "${BINARY_BASE}" ]]; then
+  HELM_CHART_DIR="${HELM_CHART_BASE_BIR}/${BINARY_BASE}"
+  HELM_CHART_NAME=${BINARY_BASE}
+fi
 
 if [[ -z "${REPO}" ]]; then 
   echo "Repo (-r) must be specified if no \"make repo-full-name\" target exists"
@@ -163,6 +172,18 @@ EOM
 fi
 
   git push -u origin "${FORK_RELEASE_BRANCH}"
+
+  while [[ "$MANUAL_VERIFY" -eq 1 ]]; do
+    read -p "Please check your github and make sure ok to create a PR. (Y/N)" yn
+    case $yn in
+      [Yy]* ) break;;
+      [Nn]* ) echo "You can cancel the PR in your account and restart."; exit;;
+      * ) echo "Please answer yes or no.";;
+    esac
+  done
+
+  echo "Auto creating the PR to upstream!"
+
   gh pr create --title "🥳 ${BINARY_BASE} ${VERSION} Automated Release! 🥑" \
     --body "${PR_BODY}" --repo ${CHARTS_REPO}
 
