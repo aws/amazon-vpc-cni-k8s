@@ -13,12 +13,23 @@ function down-test-cluster() {
 
 function up-test-cluster() {
     MNGS=""
+    DIR=$(cd "$(dirname "$0")"; pwd)
     if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
-        MNGS='{"cni-test-single-node-mng":{"name":"cni-test-single-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":1,"asg-desired-capacity":1,"instance-types":["m5.16xlarge"],"volume-size":40}, "cni-test-multi-node-mng":{"name":"cni-test-multi-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":100,"asg-desired-capacity":99,"instance-types":["m5.xlarge"],"volume-size":40,"cluster-autoscaler":{"enable":true}}}'
+        PERF_CLUSTER_TEMPLATE_PATH=$DIR/test/config/perf-cluster.yml
+        PERF_TEST_CONFIG_PATH=$DIR/test/config/perf-cluster-$CLUSTER_NAME.yml
+        cp $PERF_CLUSTER_TEMPLATE_PATH $PERF_TEST_CONFIG_PATH
+        AMI_ID=`aws ssm get-parameter --name /aws/service/eks/optimized-ami/${EKS_CLUSTER_VERSION}/amazon-linux-2/recommended/image_id --region us-west-2 --query "Parameter.Value" --output text`
+        echo "Obtained ami_id as $AMI_ID"
+        sed -i'.bak' "s,AMI_ID_PLACEHOLDER,$AMI_ID," $PERF_TEST_CONFIG_PATH
+        grep -r -q $AMI_ID $PERF_TEST_CONFIG_PATH
+        sed -i'.bak' "s,CLUSTER_NAME_PLACEHOLDER,$CLUSTER_NAME," $PERF_TEST_CONFIG_PATH
+        grep -r -q $CLUSTER_NAME $PERF_TEST_CONFIG_PATH
         export RUN_CONFORMANCE="false"
         : "${PERFORMANCE_TEST_S3_BUCKET_NAME:=""}"
+        eksctl create cluster -f $PERF_TEST_CONFIG_PATH
+        kubectl create -f $DIR/test/config/cluster-autoscaler-autodiscover.yml
+        return
     else
-        DIR=$(cd "$(dirname "$0")"; pwd)
         mng_multi_arch_config=`cat $DIR/test/config/multi-arch-mngs-config.json`
         MNGS=$mng_multi_arch_config
     fi
