@@ -17,7 +17,8 @@
 		build-linux docker docker-init \
 		unit-test unit-test-race build-docker-test docker-func-test \
 		build-metrics docker-metrics \
-		metrics-unit-test docker-metrics-test
+		metrics-unit-test docker-metrics-test \
+		k8s-deepcopy k8s-defaults k8s-client k8s-listers k8s-informers k8s-artifacts
 
 # VERSION is the source revision that executables and images are built from.
 VERSION ?= $(shell git describe --tags --always --dirty || echo "unknown")
@@ -320,19 +321,19 @@ help:           ## Show this help.
 	@grep -F -h "##" $(MAKEFILE_LIST) | grep -F -v grep | sed -e 's/\\$$//' \
 		| awk -F'[:#]' '{print $$1 = sprintf("%-30s", $$1), $$4}'
 
-deepcopy:
+k8s-deepcopy:
 	deepcopy-gen --input-dirs github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1 -O zz_generated.deepcopy --bounding-dirs github.com/aws/amazon-vpc-cni-k8s/pkg/apis --go-header-file boilerplate.go.txt
 
-defaults:
+k8s-defaults:
 	defaulter-gen --input-dirs github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1 --go-header-file boilerplate.go.txt
 
-listers:
+k8s-listers:
 	lister-gen --input-dirs github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1 --output-package github.com/aws/amazon-vpc-cni-k8s/pkg/client/listers --go-header-file boilerplate.go.txt
 
-client:
+k8s-client:
 	client-gen --clientset-name versioned --input-base "" --input github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1 --output-package github.com/aws/amazon-vpc-cni-k8s/pkg/client/clientset --go-header-file boilerplate.go.txt
 
-informers:
+k8s-informers:
 	informer-gen --input-dirs github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1 --versioned-clientset-package github.com/aws/amazon-vpc-cni-k8s/pkg/client/clientset/versioned --listers-package github.com/aws/amazon-vpc-cni-k8s/pkg/client/listers --output-package github.com/aws/amazon-vpc-cni-k8s/pkg/client/informers --go-header-file boilerplate.go.txt
 
-all-k8s-artifacts: deepcopy defaults client listers informer
+k8s-artifacts: k8s-deepcopy k8s-defaults k8s-client k8s-listers k8s-informers

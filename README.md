@@ -40,6 +40,22 @@ See [here](./docs/iam-policy.md) for required IAM policies.
 * `make docker` will create a docker container using the docker-build with the finished binaries, with a tag of `amazon/amazon-k8s-cni:latest`
 * `make docker-build` uses a docker container (golang:1.16) to build the binaries.
 * `make docker-unit-tests` uses a docker container (golang:1.16) to run all unit tests.
+* `make k8s-artifacts` generates all the K8s client go libraries in the pkg/client/ directory (check the K8s code generation section for how to setup your system before running this)
+
+### K8s code generation
+
+In order to be able to run the `k8s-artifacts` target you need to first ensure that the correct tools have been installed in your system.
+In order to do that you need to go get `k8s.io/code-generator` ([github repo](https://github.com/kubernetes/code-generator/)). Then checkout
+the tag that is the same version as the version of the `k8s.io/api` dependency of this project and run `go install` for the following tools:
+* deepcopy-gen
+* defaulter-gen
+* lister-gen
+* client-gen
+* informer-gen
+
+If the version of the code generation tools doesn't match the one that this repository is using, there is a high probability that the generated
+code will have bugs because it could be importing packages that no longer exist for example.
+`go install k8s.io/code-generator/cmd/deepcopy-gen@v0.18.6` unfortunately will not work, more info here [#44840](https://github.com/golang/go/issues/44840)
 
 ## Components
 

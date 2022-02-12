@@ -61,7 +61,7 @@ func (c *FakeENIConfigs) Watch(ctx context.Context, opts v1.ListOptions) (watch.
 }
 
 // Create takes the representation of a eNIConfig and creates it.  Returns the server's representation of the eNIConfig, and an error, if there is any.
-func (c *FakeENIConfigs) Create(ctx context.Context, eNIConfig *v1alpha1.ENIConfig) (result *v1alpha1.ENIConfig, err error) {
+func (c *FakeENIConfigs) Create(ctx context.Context, eNIConfig *v1alpha1.ENIConfig, opts v1.CreateOptions) (result *v1alpha1.ENIConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootCreateAction(eniconfigsResource, eNIConfig), &v1alpha1.ENIConfig{})
 	if obj == nil {
@@ -71,7 +71,7 @@ func (c *FakeENIConfigs) Create(ctx context.Context, eNIConfig *v1alpha1.ENIConf
 }
 
 // Update takes the representation of a eNIConfig and updates it. Returns the server's representation of the eNIConfig, and an error, if there is any.
-func (c *FakeENIConfigs) Update(ctx context.Context, eNIConfig *v1alpha1.ENIConfig) (result *v1alpha1.ENIConfig, err error) {
+func (c *FakeENIConfigs) Update(ctx context.Context, eNIConfig *v1alpha1.ENIConfig, opts v1.UpdateOptions) (result *v1alpha1.ENIConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootUpdateAction(eniconfigsResource, eNIConfig), &v1alpha1.ENIConfig{})
 	if obj == nil {
@@ -82,7 +82,7 @@ func (c *FakeENIConfigs) Update(ctx context.Context, eNIConfig *v1alpha1.ENIConf
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeENIConfigs) UpdateStatus(ctx context.Context, eNIConfig *v1alpha1.ENIConfig) (*v1alpha1.ENIConfig, error) {
+func (c *FakeENIConfigs) UpdateStatus(ctx context.Context, eNIConfig *v1alpha1.ENIConfig, opts v1.UpdateOptions) (*v1alpha1.ENIConfig, error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootUpdateSubresourceAction(eniconfigsResource, "status", eNIConfig), &v1alpha1.ENIConfig{})
 	if obj == nil {
@@ -92,22 +92,22 @@ func (c *FakeENIConfigs) UpdateStatus(ctx context.Context, eNIConfig *v1alpha1.E
 }
 
 // Delete takes name of the eNIConfig and deletes it. Returns an error if one occurs.
-func (c *FakeENIConfigs) Delete(ctx context.Context, name string, options *v1.DeleteOptions) error {
+func (c *FakeENIConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
 		Invokes(testing.NewRootDeleteAction(eniconfigsResource, name), &v1alpha1.ENIConfig{})
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *FakeENIConfigs) DeleteCollection(ctx context.Context, options *v1.DeleteOptions, listOptions v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(eniconfigsResource, listOptions)
+func (c *FakeENIConfigs) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+	action := testing.NewRootDeleteCollectionAction(eniconfigsResource, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1alpha1.ENIConfigList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched eNIConfig.
-func (c *FakeENIConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, subresources ...string) (result *v1alpha1.ENIConfig, err error) {
+func (c *FakeENIConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ENIConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootPatchSubresourceAction(eniconfigsResource, name, pt, data, subresources...), &v1alpha1.ENIConfig{})
 	if obj == nil {

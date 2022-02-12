@@ -22,15 +22,15 @@ type ENIConfigsGetter interface {
 
 // ENIConfigInterface has methods to work with ENIConfig resources.
 type ENIConfigInterface interface {
-	Create(context.Context, *v1alpha1.ENIConfig) (*v1alpha1.ENIConfig, error)
-	Update(context.Context, *v1alpha1.ENIConfig) (*v1alpha1.ENIConfig, error)
-	UpdateStatus(context.Context, *v1alpha1.ENIConfig) (*v1alpha1.ENIConfig, error)
-	Delete(ctx context.Context, name string, options *v1.DeleteOptions) error
-	DeleteCollection(ctx context.Context, options *v1.DeleteOptions, listOptions v1.ListOptions) error
-	Get(ctx context.Context, name string, options v1.GetOptions) (*v1alpha1.ENIConfig, error)
+	Create(ctx context.Context, eNIConfig *v1alpha1.ENIConfig, opts v1.CreateOptions) (*v1alpha1.ENIConfig, error)
+	Update(ctx context.Context, eNIConfig *v1alpha1.ENIConfig, opts v1.UpdateOptions) (*v1alpha1.ENIConfig, error)
+	UpdateStatus(ctx context.Context, eNIConfig *v1alpha1.ENIConfig, opts v1.UpdateOptions) (*v1alpha1.ENIConfig, error)
+	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
+	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
+	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1alpha1.ENIConfig, error)
 	List(ctx context.Context, opts v1.ListOptions) (*v1alpha1.ENIConfigList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, subresources ...string) (result *v1alpha1.ENIConfig, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ENIConfig, err error)
 	ENIConfigExpansion
 }
 
@@ -89,10 +89,11 @@ func (c *eNIConfigs) Watch(ctx context.Context, opts v1.ListOptions) (watch.Inte
 }
 
 // Create takes the representation of a eNIConfig and creates it.  Returns the server's representation of the eNIConfig, and an error, if there is any.
-func (c *eNIConfigs) Create(ctx context.Context, eNIConfig *v1alpha1.ENIConfig) (result *v1alpha1.ENIConfig, err error) {
+func (c *eNIConfigs) Create(ctx context.Context, eNIConfig *v1alpha1.ENIConfig, opts v1.CreateOptions) (result *v1alpha1.ENIConfig, err error) {
 	result = &v1alpha1.ENIConfig{}
 	err = c.client.Post().
 		Resource("eniconfigs").
+		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(eNIConfig).
 		Do(ctx).
 		Into(result)
@@ -100,11 +101,12 @@ func (c *eNIConfigs) Create(ctx context.Context, eNIConfig *v1alpha1.ENIConfig) 
 }
 
 // Update takes the representation of a eNIConfig and updates it. Returns the server's representation of the eNIConfig, and an error, if there is any.
-func (c *eNIConfigs) Update(ctx context.Context, eNIConfig *v1alpha1.ENIConfig) (result *v1alpha1.ENIConfig, err error) {
+func (c *eNIConfigs) Update(ctx context.Context, eNIConfig *v1alpha1.ENIConfig, opts v1.UpdateOptions) (result *v1alpha1.ENIConfig, err error) {
 	result = &v1alpha1.ENIConfig{}
 	err = c.client.Put().
 		Resource("eniconfigs").
 		Name(eNIConfig.Name).
+		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(eNIConfig).
 		Do(ctx).
 		Into(result)
@@ -113,13 +115,13 @@ func (c *eNIConfigs) Update(ctx context.Context, eNIConfig *v1alpha1.ENIConfig) 
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-
-func (c *eNIConfigs) UpdateStatus(ctx context.Context, eNIConfig *v1alpha1.ENIConfig) (result *v1alpha1.ENIConfig, err error) {
+func (c *eNIConfigs) UpdateStatus(ctx context.Context, eNIConfig *v1alpha1.ENIConfig, opts v1.UpdateOptions) (result *v1alpha1.ENIConfig, err error) {
 	result = &v1alpha1.ENIConfig{}
 	err = c.client.Put().
 		Resource("eniconfigs").
 		Name(eNIConfig.Name).
 		SubResource("status").
+		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(eNIConfig).
 		Do(ctx).
 		Into(result)
@@ -127,37 +129,38 @@ func (c *eNIConfigs) UpdateStatus(ctx context.Context, eNIConfig *v1alpha1.ENICo
 }
 
 // Delete takes name of the eNIConfig and deletes it. Returns an error if one occurs.
-func (c *eNIConfigs) Delete(ctx context.Context, name string, options *v1.DeleteOptions) error {
+func (c *eNIConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	return c.client.Delete().
 		Resource("eniconfigs").
 		Name(name).
-		Body(options).
+		Body(&opts).
 		Do(ctx).
 		Error()
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *eNIConfigs) DeleteCollection(ctx context.Context, options *v1.DeleteOptions, listOptions v1.ListOptions) error {
+func (c *eNIConfigs) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
 	var timeout time.Duration
-	if listOptions.TimeoutSeconds != nil {
-		timeout = time.Duration(*listOptions.TimeoutSeconds) * time.Second
+	if listOpts.TimeoutSeconds != nil {
+		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
 	}
 	return c.client.Delete().
 		Resource("eniconfigs").
-		VersionedParams(&listOptions, scheme.ParameterCodec).
+		VersionedParams(&listOpts, scheme.ParameterCodec).
 		Timeout(timeout).
-		Body(options).
+		Body(&opts).
 		Do(ctx).
 		Error()
 }
 
 // Patch applies the patch and returns the patched eNIConfig.
-func (c *eNIConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, subresources ...string) (result *v1alpha1.ENIConfig, err error) {
+func (c *eNIConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ENIConfig, err error) {
 	result = &v1alpha1.ENIConfig{}
 	err = c.client.Patch(pt).
 		Resource("eniconfigs").
-		SubResource(subresources...).
 		Name(name).
+		SubResource(subresources...).
+		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(data).
 		Do(ctx).
 		Into(result)
