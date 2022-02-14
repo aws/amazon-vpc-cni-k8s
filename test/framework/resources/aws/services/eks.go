@@ -22,12 +22,25 @@ import (
 
 type EKS interface {
 	DescribeCluster(clusterName string) (*eks.DescribeClusterOutput, error)
-	CreateAddon(addon string, clusterName string) (*eks.CreateAddonOutput, error)
-	DeleteAddon(addon string, clusterName string) (*eks.DeleteAddonOutput, error)
+	CreateAddon(addonInput *AddonInput) (*eks.CreateAddonOutput, error)
+	DescribeAddonVersions(AddonInput *AddonInput) (*eks.DescribeAddonVersionsOutput, error)
+	DescribeAddon(addonInput *AddonInput) (*eks.DescribeAddonOutput, error)
+	DeleteAddon(AddOnInput *AddonInput) (*eks.DeleteAddonOutput, error)
+	GetLatestVersion(addonInput *AddonInput) (string, error)
 }
 
 type defaultEKS struct {
 	eksiface.EKSAPI
+}
+
+// Internal Addon Input struct
+// subset of eks.AddonInput
+// used by ginkgo tests
+type AddonInput struct {
+	AddonName    string
+	ClusterName  string
+	AddonVersion string
+	K8sVersion   string
 }
 
 func NewEKS(session *session.Session, endpoint string) EKS {
@@ -39,20 +52,40 @@ func NewEKS(session *session.Session, endpoint string) EKS {
 	}
 }
 
-func (d defaultEKS) CreateAddon(addon string, clusterName string) (*eks.CreateAddonOutput, error) {
+func (d defaultEKS) CreateAddon(addonInput *AddonInput) (*eks.CreateAddonOutput, error) {
 	createAddonInput := &eks.CreateAddonInput{
-		AddonName:   aws.String(addon),
-		ClusterName: aws.String(clusterName),
+		AddonName:   aws.String(addonInput.AddonName),
+		ClusterName: aws.String(addonInput.ClusterName),
+	}
+	if addonInput.AddonVersion != "" {
+		createAddonInput.SetAddonVersion(addonInput.AddonVersion)
+		createAddonInput.SetResolveConflicts("OVERWRITE")
 	}
 	return d.EKSAPI.CreateAddon(createAddonInput)
 }
 
-func (d defaultEKS) DeleteAddon(addon string, clusterName string) (*eks.DeleteAddonOutput, error) {
+func (d defaultEKS) DeleteAddon(addonInput *AddonInput) (*eks.DeleteAddonOutput, error) {
 	deleteAddonInput := &eks.DeleteAddonInput{
-		AddonName:   aws.String(addon),
-		ClusterName: aws.String(clusterName),
+		AddonName:   aws.String(addonInput.AddonName),
+		ClusterName: aws.String(addonInput.ClusterName),
 	}
 	return d.EKSAPI.DeleteAddon(deleteAddonInput)
+}
+
+func (d defaultEKS) DescribeAddonVersions(addonInput *AddonInput) (*eks.DescribeAddonVersionsOutput, error) {
+	describeAddonVersionsInput := &eks.DescribeAddonVersionsInput{
+		AddonName:         aws.String(addonInput.AddonName),
+		KubernetesVersion: aws.String(addonInput.K8sVersion),
+	}
+	return d.EKSAPI.DescribeAddonVersions(describeAddonVersionsInput)
+}
+
+func (d defaultEKS) DescribeAddon(addonInput *AddonInput) (*eks.DescribeAddonOutput, error) {
+	describeAddonInput := &eks.DescribeAddonInput{
+		AddonName:   aws.String(addonInput.AddonName),
+		ClusterName: aws.String(addonInput.ClusterName),
+	}
+	return d.EKSAPI.DescribeAddon(describeAddonInput)
 }
 
 func (d defaultEKS) DescribeCluster(clusterName string) (*eks.DescribeClusterOutput, error) {
@@ -61,4 +94,12 @@ func (d defaultEKS) DescribeCluster(clusterName string) (*eks.DescribeClusterOut
 	}
 
 	return d.EKSAPI.DescribeCluster(describeClusterInput)
+}
+
+func (d defaultEKS) GetLatestVersion(addonInput *AddonInput) (string, error) {
+	addonOutput, err := d.DescribeAddonVersions(addonInput)
+	if err != nil {
+		return "", err
+	}
+	return *addonOutput.Addons[0].AddonVersions[0].AddonVersion, nil
 }
