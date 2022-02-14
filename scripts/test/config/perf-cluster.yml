@@ -25,7 +25,7 @@ managedNodeGroups:
 
   - name: cni-test-multi-node-mng
     instanceType: m5.xlarge
-    desiredCapacity: 1
+    desiredCapacity: 99
     minSize: 1
     maxSize: 100
     iam:
