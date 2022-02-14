@@ -66,14 +66,18 @@ function up-test-cluster() {
 }
 
 function up-kops-cluster {
-    aws s3api create-bucket --bucket kops-cni-test-eks --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
-    curl -LO https://github.com/kubernetes/kops/releases/download/$(curl -s https://api.github.com/repos/kubernetes/kops/releases/latest | grep tag_name | cut -d '"' -f 4)/kops-linux-amd64
+    KOPS_S3_BUCKET=kops-cni-test-eks-$AWS_ACCOUNT_ID
+    echo "Using $KOPS_S3_BUCKET as kops state store"
+    aws s3api create-bucket --bucket $KOPS_S3_BUCKET --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
+    kops_version=$(curl -s https://api.github.com/repos/kubernetes/kops/releases/latest | grep tag_name | cut -d '"' -f 4)
+    echo "Using kops version $kops_version"
+    curl -LO https://github.com/kubernetes/kops/releases/download/$kops_version/kops-linux-amd64
     chmod +x kops-linux-amd64
     mkdir -p ~/kops_bin
     KOPS_BIN=~/kops_bin/kops
     mv kops-linux-amd64 $KOPS_BIN
     CLUSTER_NAME=kops-cni-test-cluster-${TEST_ID}.k8s.local
-    export KOPS_STATE_STORE=s3://kops-cni-test-eks
+    export KOPS_STATE_STORE=s3://${KOPS_S3_BUCKET}
 
     SSH_KEYS=~/.ssh/devopsinuse
     if [ ! -f "$SSH_KEYS" ]
@@ -87,6 +91,7 @@ function up-kops-cluster {
     $KOPS_BIN create cluster \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
     --networking amazon-vpc-routed-eni \
+    --container-runtime docker \
     --node-count 2 \
     --ssh-public-key=~/.ssh/devopsinuse.pub \
     --kubernetes-version ${K8S_VERSION} \
@@ -95,10 +100,13 @@ function up-kops-cluster {
     sleep 100
     $KOPS_BIN export kubeconfig --admin
     sleep 10
-    while [[ ! $($KOPS_BIN validate cluster | grep "is ready") ]]
+    MAX_RETRIES=15
+    RETRY_ATTEMPT=0
+    while [[ ! $($KOPS_BIN validate cluster | grep "is ready") && $RETRY_ATTEMPT -lt $MAX_RETRIES ]]
     do
-        sleep 5
-        echo "Waiting for cluster validation"
+        sleep 60
+        let RETRY_ATTEMPT=RETRY_ATTEMPT+1
+        echo "In attempt# $RETRY_ATTEMPT, waiting for cluster validation"
     done
     kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/${MANIFEST_CNI_VERSION}/config/master/cni-metrics-helper.yaml
 }
