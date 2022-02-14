@@ -27,13 +27,17 @@ func init() {
 }
 
 type Options struct {
-	KubeConfig     string
-	ClusterName    string
-	AWSRegion      string
-	AWSVPCID       string
-	NgNameLabelKey string
-	NgNameLabelVal string
-	EKSEndpoint    string
+	KubeConfig      string
+	ClusterName     string
+	AWSRegion       string
+	AWSVPCID        string
+	NgNameLabelKey  string
+	NgNameLabelVal  string
+	EKSEndpoint     string
+	InitialAddon    string
+	TargetAddon     string
+	InitialManifest string
+	TargetManifest  string
 }
 
 func (options *Options) BindFlags() {
@@ -44,6 +48,10 @@ func (options *Options) BindFlags() {
 	flag.StringVar(&options.NgNameLabelKey, "ng-name-label-key", "eks.amazonaws.com/nodegroup", "label key used to identify nodegroup name")
 	flag.StringVar(&options.NgNameLabelVal, "ng-name-label-val", "", "label value with the nodegroup name")
 	flag.StringVar(&options.EKSEndpoint, "eks-endpoint", "", "optional eks api server endpoint")
+	flag.StringVar(&options.InitialAddon, "initial-addon-version", "", "Initial CNI addon version before upgrade applied")
+	flag.StringVar(&options.TargetAddon, "target-addon-version", "", "Target CNI addon version after upgrade applied")
+	flag.StringVar(&options.InitialManifest, "initial-manifest-file", "", "Initial CNI manifest, can be local file path or remote Url")
+	flag.StringVar(&options.TargetManifest, "target-manifest-file", "", "Target CNI manifest, can be local file path or remote Url")
 }
 
 func (options *Options) Validate() error {
