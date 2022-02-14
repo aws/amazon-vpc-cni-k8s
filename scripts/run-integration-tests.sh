@@ -131,7 +131,7 @@ ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_INIT_ECR_REPO_NAME"
 # not, check out the CNI source code for that image tag, build the CNI
 # image and push it to the Docker repository
 ecr_image_query_result=$(aws ecr batch-get-image --repository-name=amazon-k8s-cni --image-ids imageTag=$TEST_IMAGE_VERSION --query 'images[].imageId.imageTag' --region us-west-2)
-if [[ -n "$ecr_image_query_result" ]]; then
+if [[ $ecr_image_query_result != "[]" ]]; then
     echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION already exists in repository. Skipping image build..."
     DOCKER_BUILD_DURATION=0
 else

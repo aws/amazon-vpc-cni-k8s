@@ -77,7 +77,7 @@ function up-kops-cluster {
     KOPS_BIN=~/kops_bin/kops
     mv kops-linux-amd64 $KOPS_BIN
     CLUSTER_NAME=kops-cni-test-cluster-${TEST_ID}.k8s.local
-    export KOPS_STATE_STORE=s3://KOPS_S3_BUCKET
+    export KOPS_STATE_STORE=s3://${KOPS_S3_BUCKET}
 
     SSH_KEYS=~/.ssh/devopsinuse
     if [ ! -f "$SSH_KEYS" ]
@@ -91,6 +91,7 @@ function up-kops-cluster {
     $KOPS_BIN create cluster \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
     --networking amazon-vpc-routed-eni \
+    --container-runtime docker \
     --node-count 2 \
     --ssh-public-key=~/.ssh/devopsinuse.pub \
     --kubernetes-version ${K8S_VERSION} \
