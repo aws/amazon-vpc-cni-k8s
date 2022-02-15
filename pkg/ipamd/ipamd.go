@@ -16,6 +16,7 @@ package ipamd
 import (
 	"context"
 	"fmt"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"math"
 	"net"
 	"os"
@@ -55,6 +56,7 @@ const (
 	eniAttachTime               = 10 * time.Second
 	nodeIPPoolReconcileInterval = 60 * time.Second
 	decreaseIPPoolInterval      = 30 * time.Second
+	maxAttemptsLinkByMac        = 5
 
 	// ipReconcileCooldown is the amount of time that an IP address must wait until it can be added to the data store
 	// during reconciliation after being discovered on the EC2 instance metadata.
@@ -239,6 +241,7 @@ type IPAMContext struct {
 	enableIPv4           bool
 	enableIPv6           bool
 	useCustomNetworking  bool
+	netlink              netlinkwrapper.NetLink
 	networkClient        networkutils.NetworkAPIs
 	maxIPsPerENI         int
 	maxENI               int
@@ -369,11 +372,13 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 
 	c.rawK8SClient = rawK8SClient
 	c.cachedK8SClient = cachedK8SClient
-	c.networkClient = networkutils.New()
-	c.useCustomNetworking = UseCustomNetworkCfg()
-	c.enablePrefixDelegation = usePrefixDelegation()
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
+	c.enablePodENI = enablePodENI()
+	c.netlink = netlinkwrapper.NewNetLink()
+	c.networkClient = networkutils.NewNetworkAPIs(c.enableIPv4, c.enableIPv6, c.enablePodENI)
+	c.useCustomNetworking = UseCustomNetworkCfg()
+	c.enablePrefixDelegation = usePrefixDelegation()
 
 	c.disableENIProvisioning = disablingENIProvisioning()
 
@@ -391,7 +396,6 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.minimumIPTarget = getMinimumIPTarget()
 	c.warmPrefixTarget = getWarmPrefixTarget()
 
-	c.enablePodENI = enablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = enablePodIPAnnotation()
 
@@ -454,8 +458,7 @@ func (c *IPAMContext) nodeInit() error {
 		}
 	}
 
-	err = c.networkClient.SetupHostNetwork(vpcV4CIDRs, c.awsClient.GetPrimaryENImac(), &primaryV4IP, c.enablePodENI, c.enableIPv4,
-		c.enableIPv6)
+	err = c.networkClient.SetupHostNetwork(c.awsClient.GetPrimaryENImac(), primaryV4IP, vpcV4CIDRs)
 	if err != nil {
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
@@ -530,9 +533,6 @@ func (c *IPAMContext) nodeInit() error {
 		c.tryUnassignPrefixesFromENIs()
 	}
 
-	if err = c.configureIPRulesForPods(); err != nil {
-		return err
-	}
 	// Spawning updateCIDRsRulesOnChange go-routine
 	go wait.Forever(func() {
 		vpcV4CIDRs = c.updateCIDRsRulesOnChange(vpcV4CIDRs)
@@ -589,27 +589,6 @@ func (c *IPAMContext) nodeInit() error {
 	return nil
 }
 
-func (c *IPAMContext) configureIPRulesForPods() error {
-	rules, err := c.networkClient.GetRuleList()
-	if err != nil {
-		log.Errorf("During ipamd init: failed to retrieve IP rule list %v", err)
-		return nil
-	}
-
-	for _, info := range c.dataStore.AllocatedIPs() {
-		// TODO(gus): This should really be done via CNI CHECK calls, rather than in ipam (requires upstream k8s changes).
-
-		// Update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
-		srcIPNet := net.IPNet{IP: net.ParseIP(info.IP), Mask: net.IPv4Mask(255, 255, 255, 255)}
-
-		err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet)
-		if err != nil {
-			log.Warnf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", info.IP, err)
-		}
-	}
-	return nil
-}
-
 func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 	newVPCCIDRs, err := c.awsClient.GetVPCIPv4CIDRs()
 	if err != nil {
@@ -621,8 +600,7 @@ func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 	new := sets.NewString(newVPCCIDRs...)
 	if !old.Equal(new) {
 		primaryIP := c.awsClient.GetLocalIPv4()
-		err = c.networkClient.UpdateHostIptablesRules(newVPCCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP, c.enableIPv4,
-			c.enableIPv6)
+		err = c.networkClient.UpdateHostIptablesRules(c.awsClient.GetPrimaryENImac(), primaryIP, newVPCCIDRs)
 		if err != nil {
 			log.Warnf("unable to update host iptables rules for VPC CIDRs due to error: %v", err)
 		}
@@ -1046,7 +1024,7 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 	} else {
 		// For secondary ENIs, set up the network
 		if eni != primaryENI {
-			err = c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.DeviceNumber, eniMetadata.SubnetIPv4CIDR)
+			err = c.networkClient.SetupENINetwork(eniMetadata.MAC, net.ParseIP(c.primaryIP[eni]), eniMetadata.DeviceNumber, eniMetadata.SubnetIPv4CIDR)
 			if err != nil {
 				// Failed to set up the ENI
 				errRemove := c.dataStore.RemoveENIFromDataStore(eni, true)
@@ -1837,7 +1815,7 @@ func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
 	for _, eni := range attachedENIs {
 		if eni.ENIID == trunkENI {
 			retryLinkByMacInterval := 100 * time.Millisecond
-			link, err := c.networkClient.GetLinkByMac(eni.MAC, retryLinkByMacInterval)
+			link, err := c.netlink.LinkByMacWithRetry(eni.MAC, retryLinkByMacInterval, 5)
 			if err != nil {
 				return -1, err
 			}

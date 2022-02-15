@@ -15,7 +15,6 @@
 package networkutils
 
 import (
-	"encoding/binary"
 	"encoding/csv"
 	"fmt"
 	"math"
@@ -24,7 +23,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
@@ -40,7 +38,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
 )
 
 const (
@@ -51,9 +48,6 @@ const (
 
 	// 1024 is reserved for (ip rule not to <VPC's subnet> table main)
 	hostRulePriority = 1024
-
-	// 1025 - 1535 can be used priority lower than fromPodRulePriority but higher than default nonVPC CIDR rule
-	fromPodRulePriority = 1536
 
 	// Main route table
 	mainRoutingTable = unix.RT_TABLE_MAIN
@@ -77,11 +71,6 @@ const (
 	// Default is "prng".
 	envRandomizeSNAT = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 
-	// envNodePortSupport is the name of environment variable that configures whether we implement support for
-	// NodePorts on the primary ENI. This requires that we add additional iptables rules and loosen the kernel's
-	// RPF check as described below. Defaults to true.
-	envNodePortSupport = "AWS_VPC_CNI_NODE_PORT_SUPPORT"
-
 	// envConnmark is the name of the environment variable that overrides the default connection mark, used to
 	// mark traffic coming from the primary ENI so that return traffic can be forced out of the same interface.
 	// Without using a mark, NodePort DNAT and our source-based routing do not work together if the target pod
@@ -89,10 +78,6 @@ const (
 	// routing, resulting in the packet being sent out of the pod's ENI, when the NodePort traffic should be
 	// sent over the main ENI.
 	envConnmark = "AWS_VPC_K8S_CNI_CONNMARK"
-
-	// This environment variable indicates if ipamd should configure rp filter for primary interface. Default value is
-	// true. If set to false, then rp filter should be configured through init container.
-	envConfigureRpfilter = "AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER"
 
 	// defaultConnmark is the default value for the connmark described above. Note: the mark space is a little crowded,
 	// - kube-proxy uses 0x0000c000
@@ -113,64 +98,12 @@ const (
 	maximumMTU = 9001
 
 	// number of retries to add a route
-	maxRetryRouteAdd = 5
-
-	retryRouteAddInterval = 5 * time.Second
-
+	maxRetryRouteAdd             = 5
+	defaultRetryRouteAddInterval = 5 * time.Second
 	// number of attempts to find an ENI by MAC address after it is attached
-	maxAttemptsLinkByMac = 5
-
-	retryLinkByMacInterval = 3 * time.Second
+	maxAttemptsLinkByMac          = 5
+	defaultRetryLinkByMacInterval = 3 * time.Second
 )
-
-var log = logger.Get()
-
-// NetworkAPIs defines the host level and the ENI level network related operations
-type NetworkAPIs interface {
-	// SetupNodeNetwork performs node level network configuration
-	SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool,
-		v4Enabled bool, v6Enabled bool) error
-	// SetupENINetwork performs ENI level network configuration. Not needed on the primary ENI
-	SetupENINetwork(eniIP string, mac string, deviceNumber int, subnetCIDR string) error
-	// UpdateHostIptablesRules updates the nat table iptables rules on the host
-	UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v4Enabled bool, v6Enabled bool) error
-	UseExternalSNAT() bool
-	GetExcludeSNATCIDRs() []string
-	GetRuleList() ([]netlink.Rule, error)
-	GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error)
-	UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) error
-	DeleteRuleListBySrc(src net.IPNet) error
-	GetLinkByMac(mac string, retryInterval time.Duration) (netlink.Link, error)
-}
-
-type linuxNetwork struct {
-	useExternalSNAT         bool
-	excludeSNATCIDRs        []string
-	typeOfSNAT              snatType
-	nodePortSupportEnabled  bool
-	shouldConfigureRpFilter bool
-	mtu                     int
-	vethPrefix              string
-
-	netLink     netlinkwrapper.NetLink
-	ns          nswrapper.NS
-	newIptables func(IPProtocol iptables.Protocol) (iptablesIface, error)
-	mainENIMark uint32
-	procSys     procsyswrapper.ProcSys
-}
-
-type iptablesIface interface {
-	Exists(table, chain string, rulespec ...string) (bool, error)
-	Insert(table, chain string, pos int, rulespec ...string) error
-	Append(table, chain string, rulespec ...string) error
-	Delete(table, chain string, rulespec ...string) error
-	List(table, chain string) ([]string, error)
-	NewChain(table, chain string) error
-	ClearChain(table, chain string) error
-	DeleteChain(table, chain string) error
-	ListChains(table string) ([]string, error)
-	HasRandomFully() bool
-}
 
 type snatType uint32
 
@@ -180,49 +113,147 @@ const (
 	randomPRNGSNAT
 )
 
-// New creates a linuxNetwork object
-func New() NetworkAPIs {
-	return &linuxNetwork{
-		useExternalSNAT:         useExternalSNAT(),
-		excludeSNATCIDRs:        getExcludeSNATCIDRs(),
-		typeOfSNAT:              typeOfSNAT(),
-		nodePortSupportEnabled:  nodePortSupportEnabled(),
-		shouldConfigureRpFilter: shouldConfigureRpFilter(),
-		mainENIMark:             getConnmark(),
-		mtu:                     GetEthernetMTU(""),
-		vethPrefix:              getVethPrefixName(),
+var log = logger.Get()
 
-		netLink: netlinkwrapper.NewNetLink(),
-		ns:      nswrapper.NewNS(),
-		newIptables: func(IPProtocol iptables.Protocol) (iptablesIface, error) {
-			ipt, err := iptables.NewWithProtocol(IPProtocol)
-			return ipt, err
-		},
-		procSys: procsyswrapper.NewProcSys(),
+// NetworkAPIs defines the host level and the ENI level network related operations
+type NetworkAPIs interface {
+	// SetupHostNetwork performs node level network configuration.
+	SetupHostNetwork(primaryMAC string, primaryIP net.IP, vpcV4CIDRs []string) error
+
+	// SetupENINetwork performs ENI level network configuration on secondary ENIs.
+	SetupENINetwork(eniMAC string, eniIP net.IP, deviceNumber int, eniSubnetCIDR string) error
+
+	// UpdateHostIptablesRules updates the nat table iptables rules on the host.
+	// TODO: this API might be replaced by invoke SetupHostNetwork directly when CIDR changes, once we make SetupHostNetwork idempotent.
+	UpdateHostIptablesRules(primaryMAC string, primaryIP net.IP, vpcV4CIDRs []string) error
+
+	// TODO: such configuration better be a centralized place instead of here.
+	UseExternalSNAT() bool
+	GetExcludeSNATCIDRs() []string
+}
+
+var _ NetworkAPIs = &linuxNetwork{}
+
+type linuxNetwork struct {
+	ipv4Enabled   bool
+	ipv6Enabled   bool
+	podENIEnabled bool
+
+	useExternalSNAT  bool
+	excludeSNATCIDRs []string
+	typeOfSNAT       snatType
+
+	mainENIMark uint32
+	mtu         int
+	vethPrefix  string
+
+	retryRouteAddInterval  time.Duration
+	retryLinkByMacInterval time.Duration
+
+	netLink          netlinkwrapper.NetLink
+	ns               nswrapper.NS
+	ipTablesProvider func(IPProtocol iptables.Protocol) (IPTables, error)
+}
+
+// NewNetworkAPIs creates a linuxNetwork object
+func NewNetworkAPIs(ipv4Enabled bool, ipv6Enabled bool, podENIEnabled bool) NetworkAPIs {
+	return &linuxNetwork{
+		ipv4Enabled:   ipv4Enabled,
+		ipv6Enabled:   ipv6Enabled,
+		podENIEnabled: podENIEnabled,
+
+		useExternalSNAT:  useExternalSNAT(),
+		excludeSNATCIDRs: getExcludeSNATCIDRs(),
+		typeOfSNAT:       typeOfSNAT(),
+
+		mainENIMark: getConnmark(),
+		mtu:         GetEthernetMTU(""),
+		vethPrefix:  getVethPrefixName(),
+
+		retryRouteAddInterval:  defaultRetryRouteAddInterval,
+		retryLinkByMacInterval: defaultRetryLinkByMacInterval,
+
+		netLink:          netlinkwrapper.NewNetLink(),
+		ns:               nswrapper.NewNS(),
+		ipTablesProvider: NewIPTablesWithProtocol,
 	}
 }
 
-// find out the primary interface name
-func findPrimaryInterfaceName(primaryMAC string) (string, error) {
-	log.Debugf("Trying to find primary interface that has mac : %s", primaryMAC)
+// SetupHostNetwork performs node level network configuration
+func (n *linuxNetwork) SetupHostNetwork(primaryMAC string, primaryIP net.IP, vpcV4CIDRs []string) error {
+	log.Infof("Setting up host network with primaryMAC: %s, primaryIP: %v, vpcV4CIDRs: %v",
+		primaryMAC, primaryIP, vpcV4CIDRs)
 
-	interfaces, err := net.Interfaces()
+	link, err := n.netLink.LinkByMacWithRetry(primaryMAC, n.retryLinkByMacInterval, maxAttemptsLinkByMac)
 	if err != nil {
-		log.Errorf("Failed to read all interfaces: %v", err)
-		return "", errors.Wrapf(err, "findPrimaryInterfaceName: failed to find interfaces")
+		return errors.Wrapf(err, "setupHostNetwork: failed to find the link which uses MAC address %s", primaryMAC)
+	}
+	if err := n.netLink.LinkSetMTU(link, n.mtu); err != nil {
+		return errors.Wrapf(err, "setupHostNetwork: failed to set MTU to %d for %s", n.mtu, link.Attrs().Name)
 	}
 
-	for _, intf := range interfaces {
-		log.Debugf("Discovered interface: %v, mac: %v", intf.Name, intf.HardwareAddr)
-
-		if strings.Compare(primaryMAC, intf.HardwareAddr.String()) == 0 {
-			log.Infof("Discovered primary interface: %s", intf.Name)
-			return intf.Name, nil
+	ipFamily := unix.AF_INET
+	if n.ipv6Enabled {
+		ipFamily = unix.AF_INET6
+		if err := n.enableIPv6(); err != nil {
+			return errors.Wrap(err, "setupHostNetwork: failed to enable IPv6")
 		}
 	}
 
-	log.Errorf("No primary interface found")
-	return "", errors.New("no primary interface found")
+	if err := n.ensureMainENIMarkedTrafficRule(ipFamily); err != nil {
+		return errors.Wrap(err, "setupHostNetwork: failed to ensureMainENIMarkedTrafficRule")
+	}
+
+	// Note: Per Pod Security Group is not supported for V6 yet. So, cordoning off the PPSG rule (for now) with v4 specific check.
+	if n.podENIEnabled && n.ipv4Enabled {
+		if err := n.ensureLocalRouteHasLowerPriority(); err != nil {
+			return errors.Wrap(err, "setupHostNetwork: failed to ensureLocalRouteHasLowerPriority")
+		}
+	}
+
+	return n.ensureHostNetworkIPTablesRules(link.Attrs().Name, primaryIP, vpcV4CIDRs)
+}
+
+// SetupENINetwork adds default route to route table (eni-<eni_table>), so it does not need to be called on the primary ENI
+func (n *linuxNetwork) SetupENINetwork(eniMAC string, eniIP net.IP, deviceNumber int, eniSubnetCIDR string) error {
+	if deviceNumber == 0 {
+		return errors.New("setupENINetwork should never be called on the primary ENI")
+	}
+	routeTableNumber := deviceNumber + 1
+	log.Infof("Setting up ENI network with eniMAC: %s, eniIP: %v, subnetCIDR: %s, routeTableNumber: %d",
+		eniMAC, eniIP, eniSubnetCIDR, routeTableNumber)
+
+	link, err := n.netLink.LinkByMacWithRetry(eniMAC, n.retryLinkByMacInterval, maxAttemptsLinkByMac)
+	if err != nil {
+		return errors.Wrapf(err, "setupHostNetwork: failed to find the link which uses MAC address %s", eniMAC)
+	}
+	if err := n.netLink.LinkSetMTU(link, n.mtu); err != nil {
+		return errors.Wrapf(err, "setupENINetwork: failed to set MTU to %d for %s", n.mtu, link.Attrs().Name)
+	}
+	if err := n.netLink.LinkSetUp(link); err != nil {
+		return errors.Wrapf(err, "setupENINetwork: failed to bring up ENI %s", link.Attrs().Name)
+	}
+	_, eniNet, err := net.ParseCIDR(eniSubnetCIDR)
+	if err != nil {
+		return errors.Wrapf(err, "setupENINetwork: invalid IPv4 CIDR block %s", eniSubnetCIDR)
+	}
+	if err := n.ensureSecondaryENIIPAttachment(link, eniIP, eniNet); err != nil {
+		return errors.Wrapf(err, "setupENINetwork: failed to ensureENIIPAttachment for %s", link.Attrs().Name)
+	}
+	if err := n.ensureSecondaryENIRoutes(link, eniIP, eniNet, routeTableNumber); err != nil {
+		return errors.Wrapf(err, "setupENINetwork: failed to ensureSecondaryENIRoutes for %s", link.Attrs().Name)
+	}
+
+	return nil
+}
+
+// UpdateHostIptablesRules updates the NAT table rules based on the VPC CIDRs configuration
+func (n *linuxNetwork) UpdateHostIptablesRules(primaryMAC string, primaryIP net.IP, vpcV4CIDRs []string) error {
+	link, err := n.netLink.LinkByMacWithRetry(primaryMAC, n.retryLinkByMacInterval, maxAttemptsLinkByMac)
+	if err != nil {
+		return errors.Wrapf(err, "updateHostIptablesRules: failed to find the link which uses MAC address %s", primaryMAC)
+	}
+	return n.ensureHostNetworkIPTablesRules(link.Attrs().Name, primaryIP, vpcV4CIDRs)
 }
 
 func (n *linuxNetwork) enableIPv6() (err error) {
@@ -232,16 +263,14 @@ func (n *linuxNetwork) enableIPv6() (err error) {
 	return nil
 }
 
-func (n *linuxNetwork) SetupRuleToBlockNodeLocalV4Access() error {
-	return n.setupRuleToBlockNodeLocalV4Access()
-}
-
-//Setup a rule to block traffic directed to v4 interface of the Pod
+// setupRuleToBlockNodeLocalV4Access setups a rule to block traffic directed to v4 interface of the Pod
 func (n *linuxNetwork) setupRuleToBlockNodeLocalV4Access() error {
-	ipt, err := n.newIptables(iptables.ProtocolIPv4)
+	ipt, err := n.ipTablesProvider(iptables.ProtocolIPv4)
 	if err != nil {
 		return errors.Wrap(err, "failed to create iptables")
 	}
+
+	// TODO: this logic should be changed to be more robust to make zero changes if desired rule is already in-place.
 
 	if err := ipt.Insert("filter", "FORWARD", 1, "-d", "169.254.172.0/22", "-m", "conntrack",
 		"--ctstate", "NEW", "-m", "comment", "--comment", "Block Node Local Pod access via IPv4", "-j", "REJECT"); err != nil {
@@ -250,125 +279,147 @@ func (n *linuxNetwork) setupRuleToBlockNodeLocalV4Access() error {
 	return nil
 }
 
-// SetupHostNetwork performs node level network configuration
-func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool,
-	v4Enabled bool, v6Enabled bool) error {
-	log.Info("Setting up host network... ")
-
-	var err error
-	primaryIntf := "eth0"
-	//RP Filter setting is only needed if IPv4 mode is enabled.
-	if v4Enabled && n.nodePortSupportEnabled {
-		primaryIntf, err = findPrimaryInterfaceName(primaryMAC)
-		if err != nil {
-			return errors.Wrapf(err, "failed to SetupHostNetwork")
-		}
-		// If node port support is enabled, configure the kernel's reverse path filter check on eth0 for "loose"
-		// filtering. This is required because
-		// - NodePorts are exposed on eth0
-		// - The kernel's RPF check happens after incoming packets to NodePorts are DNATted to the pod IP.
-		// - For pods assigned to secondary ENIs, the routing table includes source-based routing. When the kernel does
-		//   the RPF check, it looks up the route using the pod IP as the source.
-		// - Thus, it finds the source-based route that leaves via the secondary ENI.
-		// - In "strict" mode, the RPF check fails because the return path uses a different interface to the incoming
-		//   packet. In "loose" mode, the check passes because some route was found.
-		primaryIntfRPFilter := "net/ipv4/conf/" + primaryIntf + "/rp_filter"
-		const rpFilterLoose = "2"
-
-		if n.shouldConfigureRpFilter {
-			log.Debugf("Setting RPF for primary interface: %s", primaryIntfRPFilter)
-			err = n.procSys.Set(primaryIntfRPFilter, rpFilterLoose)
-			if err != nil {
-				return errors.Wrapf(err, "failed to configure %s RPF check", primaryIntf)
-			}
-		} else {
-			log.Infof("Skip updating RPF for primary interface: %s", primaryIntfRPFilter)
-		}
-	}
-
-	link, err := linkByMac(primaryMAC, n.netLink, retryLinkByMacInterval)
-	if err != nil {
-		return errors.Wrapf(err, "setupHostNetwork: failed to find the link primary ENI with MAC address %s", primaryMAC)
-	}
-	if err = n.netLink.LinkSetMTU(link, n.mtu); err != nil {
-		return errors.Wrapf(err, "setupHostNetwork: failed to set MTU to %d for %s", n.mtu, primaryIntf)
-	}
-
-	ipFamily := unix.AF_INET
-	if v6Enabled {
-		ipFamily = unix.AF_INET6
-		if err := n.enableIPv6(); err != nil {
-			return errors.Wrapf(err, "failed to enable IPv6")
-		}
-	}
-
-	// If node port support is enabled, add a rule that will force force marked traffic out of the main ENI.  We then
-	// add iptables rules below that will mark traffic that needs this special treatment.  In particular NodePort
-	// traffic always comes in via the main ENI but response traffic would go out of the pod's assigned ENI if we
-	// didn't handle it specially. This is because the routing decision is done before the NodePort's DNAT is
-	// reversed so, to the routing table, it looks like the traffic is pod traffic instead of NodePort traffic.
-	// Note: With v6 PD mode support, all the pods will be behind Primary ENI of the node and so we might not even need
-	// to mark the packets entering via Primary ENI for NodePort support.
+// ensureMainENIMarkedTrafficRule adds a rule that will force traffic marked with mainENIMark to out from the main ENI. This rule is used by both NodePort & SNAT.
+// NodePort support: traffic always comes in via the main ENI but response traffic would go out of the pod's assigned ENI if we didn't handle it specially.
+// 	This is because the routing decision is done before the NodePort's DNAT is reversed so, to the routing table, it looks like the traffic is pod traffic instead of NodePort traffic.
+// SNAT support: we mark new connection originated from pod to have mainENI mark, so the traffic can be routed out via mainENI along with our SNAT rule.
+// Note: With v6 PD mode support, all the pods will be behind Primary ENI of the node and so we might not even need to mark the packets entering via Primary ENI for NodePort support.
+func (n *linuxNetwork) ensureMainENIMarkedTrafficRule(ipFamily int) error {
 	mainENIRule := n.netLink.NewRule()
 	mainENIRule.Mark = int(n.mainENIMark)
 	mainENIRule.Mask = int(n.mainENIMark)
 	mainENIRule.Table = mainRoutingTable
 	mainENIRule.Priority = hostRulePriority
 	mainENIRule.Family = ipFamily
+
+	// TODO: this logic should be changed to be more robust to make zero changes if desired rule is already in-place.
+
 	// If this is a restart, cleanup previous rule first
-	err = n.netLink.RuleDel(mainENIRule)
-	if err != nil && !containsNoSuchRule(err) {
+	if err := n.netLink.RuleDel(mainENIRule); err != nil && !netlinkwrapper.IsNoSuchRuleError(err) {
 		log.Errorf("Failed to cleanup old main ENI rule: %v", err)
-		return errors.Wrapf(err, "host network setup: failed to delete old main ENI rule")
+		return errors.Wrapf(err, "failed to delete old main ENI rule")
 	}
-
-	if n.nodePortSupportEnabled {
-		err = n.netLink.RuleAdd(mainENIRule)
-		if err != nil {
-			log.Errorf("Failed to add host main ENI rule: %v", err)
-			return errors.Wrapf(err, "host network setup: failed to add main ENI rule")
-		}
+	if err := n.netLink.RuleAdd(mainENIRule); err != nil {
+		log.Errorf("Failed to add host main ENI rule: %v", err)
+		return errors.Wrapf(err, "failed to add new main ENI rule")
 	}
-
-	// If we want per pod ENIs, we need to give pod ENIs veth bridges a lower priority that the local table,
-	// or the rp_filter check will fail.
-	// Note: Per Pod Security Group is not supported for V6 yet. So, cordoning off the PPSG rule (for now)
-	// with v4 specific check.
-	if v4Enabled && enablePodENI {
-		localRule := n.netLink.NewRule()
-		localRule.Table = localRouteTable
-		localRule.Priority = localRulePriority
-		// Add new rule with higher priority
-		err := n.netLink.RuleAdd(localRule)
-		if err != nil && !isRuleExistsError(err) {
-			return errors.Wrap(err, "ChangeLocalRulePriority: unable to update local rule priority")
-		}
-		// Delete the priority 0 rule
-		localRule.Priority = 0
-		err = n.netLink.RuleDel(localRule)
-		if err != nil && !containsNoSuchRule(err) {
-			return errors.Wrap(err, "ChangeLocalRulePriority: failed to delete priority 0 local rule")
-		}
-	}
-
-	return n.updateHostIptablesRules(vpcv4CIDRs, primaryMAC, primaryAddr, v4Enabled, v6Enabled)
+	return nil
 }
 
-// UpdateHostIptablesRules updates the NAT table rules based on the VPC CIDRs configuration
-func (n *linuxNetwork) UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v4Enabled bool,
-	v6Enabled bool) error {
-	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr, v4Enabled, v6Enabled)
+// ensureLocalRouteHasLowerPriority will move the local route to a lower priority thus podENI rules can have higher priority,
+// otherwise, the rp_filter check will fail.
+func (n *linuxNetwork) ensureLocalRouteHasLowerPriority() error {
+	localRule := n.netLink.NewRule()
+	localRule.Table = localRouteTable
+	localRule.Priority = localRulePriority
+
+	// Add new rule with higher priority
+	if err := n.netLink.RuleAdd(localRule); err != nil && !netlinkwrapper.IsRuleExistsError(err) {
+		return errors.Wrap(err, "changeLocalRulePriority: unable to update local rule priority")
+	}
+
+	// Delete the priority 0 rule
+	localRule.Priority = 0
+	if err := n.netLink.RuleDel(localRule); err != nil && !netlinkwrapper.IsNoSuchRuleError(err) {
+		return errors.Wrap(err, "changeLocalRulePriority: failed to delete priority 0 local rule")
+	}
+	return nil
 }
 
-func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v4Enabled bool,
-	v6Enabled bool) error {
-	primaryIntf, err := findPrimaryInterfaceName(primaryMAC)
+// ensureSecondaryENIIPAttachment explicitly set the IP on the device if not already set.
+// Required for older kernels.
+// ip addr show
+// ip addr del <eniIP> dev <link> (if necessary)
+// ip addr add <eniIP> dev <link>
+func (n *linuxNetwork) ensureSecondaryENIIPAttachment(eniLink netlink.Link, eniIP net.IP, eniNet *net.IPNet) error {
+	log.Debugf("Setting up primary IP %v on ENI %s", eniIP, eniLink.Attrs().Name)
+	addrs, err := n.netLink.AddrList(eniLink, unix.AF_INET)
 	if err != nil {
-		return errors.Wrapf(err, "failed to SetupHostNetwork")
+		return errors.Wrapf(err, "failed to list IP address for ENI %s", eniLink.Attrs().Name)
 	}
 
+	// TODO: this logic should be changed to be more robust to make zero changes if desired IPAddresses is already in-place.
+	for _, addr := range addrs {
+		log.Debugf("Deleting existing IP address %s", addr.String())
+		if err := n.netLink.AddrDel(eniLink, &addr); err != nil {
+			return errors.Wrapf(err, "failed to delete IP addr from ENI %s", eniLink.Attrs().Name)
+		}
+	}
+	eniAddr := &net.IPNet{
+		IP:   eniIP,
+		Mask: eniNet.Mask,
+	}
+	log.Debugf("Adding IP address %s", eniAddr.String())
+	if err := n.netLink.AddrAdd(eniLink, &netlink.Addr{IPNet: eniAddr}); err != nil {
+		return errors.Wrapf(err, "failed to add IP addr to ENI %s", eniLink.Attrs().Name)
+	}
+	return nil
+}
+
+func (n *linuxNetwork) ensureSecondaryENIRoutes(eniLink netlink.Link, eniIP net.IP, eniNet *net.IPNet, routeTableNumber int) error {
+	gatewayIP, err := IncrementIPv4Addr(eniNet.IP)
+	if err != nil {
+		return errors.Wrapf(err, "setupENINetwork: failed to define gateway address from %v", eniNet.IP)
+	}
+	linkIndex := eniLink.Attrs().Index
+	log.Debugf("Setting up ENI's default gateway %v, table %d, linkIndex %d on ENI %s", gatewayIP, routeTableNumber, linkIndex, eniLink.Attrs().Name)
+
+	routes := []netlink.Route{
+		// Add a direct link route for the host's ENI IP only
+		{
+			LinkIndex: linkIndex,
+			Dst:       &net.IPNet{IP: gatewayIP, Mask: net.CIDRMask(32, 32)},
+			Scope:     netlink.SCOPE_LINK,
+			Table:     routeTableNumber,
+		},
+		// Route all other traffic via the host's ENI IP
+		{
+			LinkIndex: linkIndex,
+			Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
+			Scope:     netlink.SCOPE_UNIVERSE,
+			Gw:        gatewayIP,
+			Table:     routeTableNumber,
+		},
+	}
+
+	// TODO: this logic should be changed to be more robust to make zero changes if desired routes is already in-place.
+	for _, r := range routes {
+		if err := n.netLink.RouteDel(&r); err != nil && !netlinkwrapper.IsNotExistsError(err) {
+			return errors.Wrap(err, "failed to clean up old routes")
+		}
+
+		if err := retry.NWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, n.retryRouteAddInterval, 0.15, 2.0), maxRetryRouteAdd, func() error {
+			if err := n.netLink.RouteReplace(&r); err != nil {
+				log.Debugf("Not able to set route %s/0 via %s table %d", r.Dst.IP.String(), gatewayIP.String(), routeTableNumber)
+				return errors.Wrapf(err, "unable to replace route entry %s", r.Dst.IP.String())
+			}
+			log.Debugf("Successfully added/replaced route to be %s/0", r.Dst.IP.String())
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+
+	// Remove the route that default out to ENI-x out of main route table
+	defaultRoute := netlink.Route{
+		Dst:   eniNet,
+		Src:   eniIP,
+		Table: mainRoutingTable,
+		Scope: netlink.SCOPE_LINK,
+	}
+
+	if err := n.netLink.RouteDel(&defaultRoute); err != nil {
+		if !netlinkwrapper.IsNotExistsError(err) {
+			return errors.Wrapf(err, "unable to delete default route %s for source IP %s", eniNet.String(), eniIP.String())
+		}
+	}
+	return nil
+}
+
+// ensureHostNetworkIPTablesRules ensures the IPTables rules for host network are configured properly.
+func (n *linuxNetwork) ensureHostNetworkIPTablesRules(primaryInterfaceName string, primaryIP net.IP, vpcV4CIDRs []string) error {
 	ipProtocol := iptables.ProtocolIPv4
-	if v6Enabled {
+	if n.ipv6Enabled {
 		//Essentially a stub function for now in V6 mode. We will need it when we support v6 in secondary IP and
 		//custom networking modes. We don't need to install any SNAT rules in v6 mode and currently there is no need
 		//to mark packets entering via Primary ENI as all the pods in v6 mode will be behind primary ENI. Will have to
@@ -376,13 +427,13 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 		ipProtocol = iptables.ProtocolIPv6
 	}
 
-	ipt, err := n.newIptables(ipProtocol)
+	ipt, err := n.ipTablesProvider(ipProtocol)
 	if err != nil {
-		return errors.Wrap(err, "host network setup: failed to create iptables")
+		return errors.Wrap(err, "ensureHostNetworkIPTablesRules: failed to create iptables")
 	}
 
-	if v4Enabled {
-		iptablesSNATRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt)
+	if n.ipv4Enabled {
+		iptablesSNATRules, err := n.buildIptablesSNATRules(vpcV4CIDRs, primaryIP, primaryInterfaceName, ipt)
 		if err != nil {
 			return err
 		}
@@ -390,7 +441,7 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 			return err
 		}
 
-		iptablesConnmarkRules, err := n.buildIptablesConnmarkRules(vpcCIDRs, ipt)
+		iptablesConnmarkRules, err := n.buildIptablesConnmarkRules(vpcV4CIDRs, ipt)
 		if err != nil {
 			return err
 		}
@@ -401,13 +452,13 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 	return nil
 }
 
-func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *net.IP, primaryIntf string, ipt iptablesIface) ([]iptablesRule, error) {
+func (n *linuxNetwork) buildIptablesSNATRules(vpcV4CIDRs []string, primaryIP net.IP, primaryIntf string, ipt IPTables) ([]iptablesRule, error) {
 	type snatCIDR struct {
 		cidr        string
 		isExclusion bool
 	}
 	var allCIDRs []snatCIDR
-	for _, cidr := range vpcCIDRs {
+	for _, cidr := range vpcV4CIDRs {
 		log.Debugf("Adding %s CIDR to NAT chain", cidr)
 		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
 	}
@@ -422,7 +473,7 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 	for i := 0; i <= len(allCIDRs); i++ {
 		chain := fmt.Sprintf("AWS-SNAT-CHAIN-%d", i)
 		log.Debugf("Setup Host Network: iptables -N %s -t nat", chain)
-		if err := ipt.NewChain("nat", chain); err != nil && !containChainExistErr(err) {
+		if err := ipt.NewChain("nat", chain); err != nil && !IsChainExistErr(err) {
 			log.Errorf("ipt.NewChain error for chain [%s]: %v", chain, err)
 			return []iptablesRule{}, errors.Wrapf(err, "host network setup: failed to add chain")
 		}
@@ -465,7 +516,7 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 	snatRule := []string{"!", "-o", "vlan+",
 		"-m", "comment", "--comment", "AWS, SNAT",
 		"-m", "addrtype", "!", "--dst-type", "LOCAL",
-		"-j", "SNAT", "--to-source", primaryAddr.String()}
+		"-j", "SNAT", "--to-source", primaryIP.String()}
 	if n.typeOfSNAT == randomHashSNAT {
 		snatRule = append(snatRule, "--random")
 	}
@@ -497,7 +548,7 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "connmark for primary ENI",
-		shouldExist: n.nodePortSupportEnabled,
+		shouldExist: true,
 		table:       "mangle",
 		chain:       "PREROUTING",
 		rule: []string{
@@ -510,7 +561,7 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "connmark restore for primary ENI",
-		shouldExist: n.nodePortSupportEnabled,
+		shouldExist: true,
 		table:       "mangle",
 		chain:       "PREROUTING",
 		rule: []string{
@@ -521,7 +572,7 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "connmark restore for primary ENI from vlan",
-		shouldExist: n.nodePortSupportEnabled,
+		shouldExist: true,
 		table:       "mangle",
 		chain:       "PREROUTING",
 		rule: []string{
@@ -534,7 +585,7 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 	return iptableRules, nil
 }
 
-func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptablesIface) ([]iptablesRule, error) {
+func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt IPTables) ([]iptablesRule, error) {
 	var allCIDRs []string
 	allCIDRs = append(allCIDRs, vpcCIDRs...)
 	allCIDRs = append(allCIDRs, n.excludeSNATCIDRs...)
@@ -545,7 +596,7 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 	for i := 0; i <= len(allCIDRs); i++ {
 		chain := fmt.Sprintf("AWS-CONNMARK-CHAIN-%d", i)
 		log.Debugf("Setup Host Network: iptables -N %s -t nat", chain)
-		if err := ipt.NewChain("nat", chain); err != nil && !containChainExistErr(err) {
+		if err := ipt.NewChain("nat", chain); err != nil && !IsChainExistErr(err) {
 			log.Errorf("ipt.NewChain error for chain [%s]: %v", chain, err)
 			return []iptablesRule{}, errors.Wrapf(err, "host network setup: failed to add chain")
 		}
@@ -628,7 +679,7 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 	return iptableRules, nil
 }
 
-func (n *linuxNetwork) updateIptablesRules(iptableRules []iptablesRule, ipt iptablesIface) error {
+func (n *linuxNetwork) updateIptablesRules(iptableRules []iptablesRule, ipt IPTables) error {
 	for _, rule := range iptableRules {
 		log.Debugf("execute iptable rule : %s", rule.name)
 
@@ -656,7 +707,7 @@ func (n *linuxNetwork) updateIptablesRules(iptableRules []iptablesRule, ipt ipta
 	return nil
 }
 
-func listCurrentIptablesRules(ipt iptablesIface, table, chainPrefix string) ([]iptablesRule, error) {
+func listCurrentIptablesRules(ipt IPTables, table, chainPrefix string) ([]iptablesRule, error) {
 	var toClear []iptablesRule
 	log.Debugf("Setup Host Network: loading existing iptables %s rules with chain prefix %s", table, chainPrefix)
 	existingChains, err := ipt.ListChains(table)
@@ -691,7 +742,7 @@ func listCurrentIptablesRules(ipt iptablesIface, table, chainPrefix string) ([]i
 	return toClear, nil
 }
 
-func computeStaleIptablesRules(ipt iptablesIface, table, chainPrefix string, newRules []iptablesRule, chains []string) ([]iptablesRule, error) {
+func computeStaleIptablesRules(ipt IPTables, table, chainPrefix string, newRules []iptablesRule, chains []string) ([]iptablesRule, error) {
 	var staleRules []iptablesRule
 	existingRules, err := listCurrentIptablesRules(ipt, table, chainPrefix)
 	if err != nil {
@@ -720,10 +771,6 @@ func computeStaleIptablesRules(ipt iptablesIface, table, chainPrefix string, new
 	return staleRules, nil
 }
 
-func containChainExistErr(err error) bool {
-	return strings.Contains(err.Error(), "Chain already exists")
-}
-
 type iptablesRule struct {
 	name         string
 	shouldExist  bool
@@ -735,31 +782,15 @@ func (r iptablesRule) String() string {
 	return fmt.Sprintf("%s/%s rule %s shouldExist %v rule %v", r.table, r.chain, r.name, r.shouldExist, r.rule)
 }
 
-func containsNoSuchRule(err error) bool {
-	if errno, ok := err.(syscall.Errno); ok {
-		return errno == syscall.ENOENT
-	}
-	return false
-}
-
-func isRuleExistsError(err error) bool {
-	if errno, ok := err.(syscall.Errno); ok {
-		return errno == syscall.EEXIST
-	}
-	return false
-}
-
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
 func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
-		envConfigureRpfilter: shouldConfigureRpFilter(),
-		envConnmark:          getConnmark(),
-		envExcludeSNATCIDRs:  getExcludeSNATCIDRs(),
-		envExternalSNAT:      useExternalSNAT(),
-		envMTU:               GetEthernetMTU(""),
-		envVethPrefix:        getVethPrefixName(),
-		envNodePortSupport:   nodePortSupportEnabled(),
-		envRandomizeSNAT:     typeOfSNAT(),
+		envConnmark:         getConnmark(),
+		envExcludeSNATCIDRs: getExcludeSNATCIDRs(),
+		envExternalSNAT:     useExternalSNAT(),
+		envMTU:              GetEthernetMTU(""),
+		envVethPrefix:       getVethPrefixName(),
+		envRandomizeSNAT:    typeOfSNAT(),
 	}
 }
 
@@ -825,14 +856,6 @@ func typeOfSNAT() snatType {
 	}
 }
 
-func nodePortSupportEnabled() bool {
-	return getBoolEnvVar(envNodePortSupport, true)
-}
-
-func shouldConfigureRpFilter() bool {
-	return getBoolEnvVar(envConfigureRpfilter, true)
-}
-
 func getBoolEnvVar(name string, defaultValue bool) bool {
 	if strValue := os.Getenv(name); strValue != "" {
 		parsedValue, err := strconv.ParseBool(strValue)
@@ -859,274 +882,6 @@ func getConnmark() uint32 {
 		return uint32(mark)
 	}
 	return defaultConnmark
-}
-
-// GetLinkByMac returns linux netlink based on interface MAC
-func (n *linuxNetwork) GetLinkByMac(mac string, retryInterval time.Duration) (netlink.Link, error) {
-	return linkByMac(mac, n.netLink, retryInterval)
-}
-
-// linkByMac returns linux netlink based on interface MAC
-func linkByMac(mac string, netLink netlinkwrapper.NetLink, retryInterval time.Duration) (netlink.Link, error) {
-	// The adapter might not be immediately available, so we perform retries
-	var lastErr error
-	attempt := 0
-	for {
-		attempt++
-		if attempt > maxAttemptsLinkByMac {
-			return nil, lastErr
-		} else if attempt > 1 {
-			time.Sleep(retryInterval)
-		}
-
-		links, err := netLink.LinkList()
-		if err != nil {
-			lastErr = errors.Errorf("%s (attempt %d/%d)", err, attempt, maxAttemptsLinkByMac)
-			log.Debugf(lastErr.Error())
-			continue
-		}
-
-		for _, link := range links {
-			if mac == link.Attrs().HardwareAddr.String() {
-				log.Debugf("Found the Link that uses mac address %s and its index is %d (attempt %d/%d)",
-					mac, link.Attrs().Index, attempt, maxAttemptsLinkByMac)
-				return link, nil
-			}
-		}
-
-		lastErr = errors.Errorf("no interface found which uses mac address %s (attempt %d/%d)", mac, attempt, maxAttemptsLinkByMac)
-		log.Debugf(lastErr.Error())
-	}
-}
-
-// SetupENINetwork adds default route to route table (eni-<eni_table>), so it does not need to be called on the primary ENI
-func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCIDR string) error {
-	return setupENINetwork(eniIP, eniMAC, deviceNumber, eniSubnetCIDR, n.netLink, retryLinkByMacInterval, retryRouteAddInterval, n.mtu)
-}
-
-func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink,
-	retryLinkByMacInterval time.Duration, retryRouteAddInterval time.Duration, mtu int) error {
-	if deviceNumber == 0 {
-		return errors.New("setupENINetwork should never be called on the primary ENI")
-	}
-	tableNumber := deviceNumber + 1
-	log.Infof("Setting up network for an ENI with IP address %s, MAC address %s, CIDR %s and route table %d",
-		eniIP, eniMAC, eniSubnetCIDR, tableNumber)
-	link, err := linkByMac(eniMAC, netLink, retryLinkByMacInterval)
-	if err != nil {
-		return errors.Wrapf(err, "setupENINetwork: failed to find the link which uses MAC address %s", eniMAC)
-	}
-
-	if err = netLink.LinkSetMTU(link, mtu); err != nil {
-		return errors.Wrapf(err, "setupENINetwork: failed to set MTU to %d for %s", mtu, eniIP)
-	}
-
-	if err = netLink.LinkSetUp(link); err != nil {
-		return errors.Wrapf(err, "setupENINetwork: failed to bring up ENI %s", eniIP)
-	}
-
-	_, ipnet, err := net.ParseCIDR(eniSubnetCIDR)
-	if err != nil {
-		return errors.Wrapf(err, "setupENINetwork: invalid IPv4 CIDR block %s", eniSubnetCIDR)
-	}
-
-	gw, err := IncrementIPv4Addr(ipnet.IP)
-	if err != nil {
-		return errors.Wrapf(err, "setupENINetwork: failed to define gateway address from %v", ipnet.IP)
-	}
-
-	// Explicitly set the IP on the device if not already set.
-	// Required for older kernels.
-	// ip addr show
-	// ip add del <eniIP> dev <link> (if necessary)
-	// ip add add <eniIP> dev <link>
-	log.Debugf("Setting up ENI's primary IP %s", eniIP)
-	addrs, err := netLink.AddrList(link, unix.AF_INET)
-	if err != nil {
-		return errors.Wrap(err, "setupENINetwork: failed to list IP address for ENI")
-	}
-
-	for _, addr := range addrs {
-		log.Debugf("Deleting existing IP address %s", addr.String())
-		if err = netLink.AddrDel(link, &addr); err != nil {
-			return errors.Wrap(err, "setupENINetwork: failed to delete IP addr from ENI")
-		}
-	}
-	eniAddr := &net.IPNet{
-		IP:   net.ParseIP(eniIP),
-		Mask: ipnet.Mask,
-	}
-	log.Debugf("Adding IP address %s", eniAddr.String())
-	if err = netLink.AddrAdd(link, &netlink.Addr{IPNet: eniAddr}); err != nil {
-		return errors.Wrap(err, "setupENINetwork: failed to add IP addr to ENI")
-	}
-
-	linkIndex := link.Attrs().Index
-	log.Debugf("Setting up ENI's default gateway %v, table %d, linkIndex %d", gw, tableNumber, linkIndex)
-	routes := []netlink.Route{
-		// Add a direct link route for the host's ENI IP only
-		{
-			LinkIndex: linkIndex,
-			Dst:       &net.IPNet{IP: gw, Mask: net.CIDRMask(32, 32)},
-			Scope:     netlink.SCOPE_LINK,
-			Table:     tableNumber,
-		},
-		// Route all other traffic via the host's ENI IP
-		{
-			LinkIndex: linkIndex,
-			Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
-			Scope:     netlink.SCOPE_UNIVERSE,
-			Gw:        gw,
-			Table:     tableNumber,
-		},
-	}
-	for _, r := range routes {
-		err := netLink.RouteDel(&r)
-		if err != nil && !netlinkwrapper.IsNotExistsError(err) {
-			return errors.Wrap(err, "setupENINetwork: failed to clean up old routes")
-		}
-
-		err = retry.NWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, retryRouteAddInterval, 0.15, 2.0), maxRetryRouteAdd, func() error {
-			if err := netLink.RouteReplace(&r); err != nil {
-				log.Debugf("Not able to set route %s/0 via %s table %d", r.Dst.IP.String(), gw.String(), tableNumber)
-				return errors.Wrapf(err, "setupENINetwork: unable to replace route entry %s", r.Dst.IP.String())
-			}
-			log.Debugf("Successfully added/replaced route to be %s/0", r.Dst.IP.String())
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	// Remove the route that default out to ENI-x out of main route table
-	_, cidr, err := net.ParseCIDR(eniSubnetCIDR)
-	if err != nil {
-		return errors.Wrapf(err, "setupENINetwork: invalid IPv4 CIDR block %s", eniSubnetCIDR)
-	}
-	defaultRoute := netlink.Route{
-		Dst:   cidr,
-		Src:   net.ParseIP(eniIP),
-		Table: mainRoutingTable,
-		Scope: netlink.SCOPE_LINK,
-	}
-
-	if err := netLink.RouteDel(&defaultRoute); err != nil {
-		if !netlinkwrapper.IsNotExistsError(err) {
-			return errors.Wrapf(err, "setupENINetwork: unable to delete default route %s for source IP %s", cidr.String(), eniIP)
-		}
-	}
-	return nil
-}
-
-// IncrementIPv4Addr returns incremented IPv4 address
-func IncrementIPv4Addr(ip net.IP) (net.IP, error) {
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return nil, fmt.Errorf("%q is not a valid IPv4 Address", ip)
-	}
-	intIP := binary.BigEndian.Uint32(ip4)
-	if intIP == (1<<32 - 1) {
-		return nil, fmt.Errorf("%q will be overflowed", ip)
-	}
-	intIP++
-	nextIPv4 := make(net.IP, 4)
-	binary.BigEndian.PutUint32(nextIPv4, intIP)
-	return nextIPv4, nil
-}
-
-// GetRuleList returns IP rules
-func (n *linuxNetwork) GetRuleList() ([]netlink.Rule, error) {
-	return n.netLink.RuleList(unix.AF_INET)
-}
-
-// GetRuleListBySrc returns IP rules with matching source IP
-func (n *linuxNetwork) GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error) {
-	var srcRuleList []netlink.Rule
-	for _, rule := range ruleList {
-		if rule.Src != nil && rule.Src.IP.Equal(src.IP) {
-			srcRuleList = append(srcRuleList, rule)
-		}
-	}
-	return srcRuleList, nil
-}
-
-// DeleteRuleListBySrc deletes IP rules that have a matching source IP
-func (n *linuxNetwork) DeleteRuleListBySrc(src net.IPNet) error {
-	log.Infof("Delete Rule List By Src [%v]", src)
-
-	ruleList, err := n.GetRuleList()
-	if err != nil {
-		log.Errorf("DeleteRuleListBySrc: failed to get rule list %v", err)
-		return err
-	}
-
-	srcRuleList, err := n.GetRuleListBySrc(ruleList, src)
-	if err != nil {
-		log.Errorf("DeleteRuleListBySrc: failed to retrieve rule list %v", err)
-		return err
-	}
-
-	log.Infof("Remove current list [%v]", srcRuleList)
-	for _, rule := range srcRuleList {
-		if err := n.netLink.RuleDel(&rule); err != nil && !containsNoSuchRule(err) {
-			log.Errorf("Failed to cleanup old IP rule: %v", err)
-			return errors.Wrapf(err, "DeleteRuleListBySrc: failed to delete old rule")
-		}
-
-		var toDst string
-		if rule.Dst != nil {
-			toDst = rule.Dst.String()
-		}
-		log.Debugf("DeleteRuleListBySrc: Successfully removed current rule [%v] to %s", rule, toDst)
-	}
-	return nil
-}
-
-// UpdateRuleListBySrc modify IP rules that have a matching source IP
-func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) error {
-	log.Debugf("Update Rule List[%v] for source[%v] ", ruleList, src)
-
-	srcRuleList, err := n.GetRuleListBySrc(ruleList, src)
-	if err != nil {
-		log.Errorf("UpdateRuleListBySrc: failed to retrieve rule list %v", err)
-		return err
-	}
-
-	log.Infof("Remove current list [%v]", srcRuleList)
-	var srcRuleTable int
-	for _, rule := range srcRuleList {
-		srcRuleTable = rule.Table
-		if err := n.netLink.RuleDel(&rule); err != nil && !containsNoSuchRule(err) {
-			log.Errorf("Failed to cleanup old IP rule: %v", err)
-			return errors.Wrapf(err, "UpdateRuleListBySrc: failed to delete old rule")
-		}
-		var toDst string
-		if rule.Dst != nil {
-			toDst = rule.Dst.String()
-		}
-		log.Debugf("UpdateRuleListBySrc: Successfully removed current rule [%v] to %s", rule, toDst)
-	}
-
-	if len(srcRuleList) == 0 {
-		log.Debug("UpdateRuleListBySrc: empty list, no need to update")
-		return nil
-	}
-
-	podRule := n.netLink.NewRule()
-
-	podRule.Src = &src
-	podRule.Table = srcRuleTable
-	podRule.Priority = fromPodRulePriority
-
-	err = n.netLink.RuleAdd(podRule)
-	if err != nil {
-		log.Errorf("Failed to add pod IP rule: %v", err)
-		return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule")
-	}
-	log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v]", podRule)
-
-	return nil
 }
 
 // GetEthernetMTU gets the MTU setting from AWS_VPC_ENI_MTU if set, or takes the passed in string. Defaults to 9001 if not set.

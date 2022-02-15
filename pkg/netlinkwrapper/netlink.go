@@ -15,13 +15,17 @@
 package netlinkwrapper
 
 import (
+	"fmt"
+	"github.com/pkg/errors"
+	"github.com/prometheus/common/log"
 	"syscall"
+	"time"
 
 	"github.com/vishvananda/netlink"
 )
 
-// NetLink wraps methods used from the vishvananda/netlink package
-type NetLink interface {
+// goNetLink directly wraps methods exposed by the "github.com/vishvananda/netlink" package
+type goNetLink interface {
 	// LinkByName gets a link object given the device name
 	LinkByName(name string) (netlink.Link, error)
 	// LinkSetNsFd is equivalent to `ip link set $link netns $ns`
@@ -66,96 +70,145 @@ type NetLink interface {
 	LinkSetMTU(link netlink.Link, mtu int) error
 }
 
-type netLink struct {
-}
+var _ goNetLink = &goNetLinkWrapper{}
 
-// NewNetLink creates a new NetLink object
-func NewNetLink() NetLink {
-	return &netLink{}
-}
+type goNetLinkWrapper struct{}
 
-func (*netLink) LinkAdd(link netlink.Link) error {
+func (*goNetLinkWrapper) LinkAdd(link netlink.Link) error {
 	return netlink.LinkAdd(link)
 }
 
-func (*netLink) LinkByName(name string) (netlink.Link, error) {
+func (*goNetLinkWrapper) LinkByName(name string) (netlink.Link, error) {
 	return netlink.LinkByName(name)
 }
 
-func (*netLink) LinkSetNsFd(link netlink.Link, fd int) error {
+func (*goNetLinkWrapper) LinkSetNsFd(link netlink.Link, fd int) error {
 	return netlink.LinkSetNsFd(link, fd)
 }
 
-func (*netLink) ParseAddr(s string) (*netlink.Addr, error) {
+func (*goNetLinkWrapper) ParseAddr(s string) (*netlink.Addr, error) {
 	return netlink.ParseAddr(s)
 }
 
-func (*netLink) AddrAdd(link netlink.Link, addr *netlink.Addr) error {
+func (*goNetLinkWrapper) AddrAdd(link netlink.Link, addr *netlink.Addr) error {
 	return netlink.AddrAdd(link, addr)
 }
 
-func (*netLink) AddrDel(link netlink.Link, addr *netlink.Addr) error {
+func (*goNetLinkWrapper) AddrDel(link netlink.Link, addr *netlink.Addr) error {
 	return netlink.AddrDel(link, addr)
 }
 
-func (*netLink) LinkSetUp(link netlink.Link) error {
+func (*goNetLinkWrapper) LinkSetUp(link netlink.Link) error {
 	return netlink.LinkSetUp(link)
 }
 
-func (*netLink) LinkList() ([]netlink.Link, error) {
+func (*goNetLinkWrapper) LinkList() ([]netlink.Link, error) {
 	return netlink.LinkList()
 }
 
-func (*netLink) LinkSetDown(link netlink.Link) error {
+func (*goNetLinkWrapper) LinkSetDown(link netlink.Link) error {
 	return netlink.LinkSetDown(link)
 }
 
-func (*netLink) RouteList(link netlink.Link, family int) ([]netlink.Route, error) {
+func (*goNetLinkWrapper) RouteList(link netlink.Link, family int) ([]netlink.Route, error) {
 	return netlink.RouteList(link, family)
 }
 
-func (*netLink) RouteAdd(route *netlink.Route) error {
+func (*goNetLinkWrapper) RouteAdd(route *netlink.Route) error {
 	return netlink.RouteAdd(route)
 }
 
-func (*netLink) RouteReplace(route *netlink.Route) error {
+func (*goNetLinkWrapper) RouteReplace(route *netlink.Route) error {
 	return netlink.RouteReplace(route)
 }
 
-func (*netLink) RouteDel(route *netlink.Route) error {
+func (*goNetLinkWrapper) RouteDel(route *netlink.Route) error {
 	return netlink.RouteDel(route)
 }
 
-func (*netLink) AddrList(link netlink.Link, family int) ([]netlink.Addr, error) {
+func (*goNetLinkWrapper) AddrList(link netlink.Link, family int) ([]netlink.Addr, error) {
 	return netlink.AddrList(link, family)
 }
 
-func (*netLink) NeighAdd(neigh *netlink.Neigh) error {
+func (*goNetLinkWrapper) NeighAdd(neigh *netlink.Neigh) error {
 	return netlink.NeighAdd(neigh)
 }
 
-func (*netLink) LinkDel(link netlink.Link) error {
+func (*goNetLinkWrapper) LinkDel(link netlink.Link) error {
 	return netlink.LinkDel(link)
 }
 
-func (*netLink) NewRule() *netlink.Rule {
+func (*goNetLinkWrapper) NewRule() *netlink.Rule {
 	return netlink.NewRule()
 }
 
-func (*netLink) RuleAdd(rule *netlink.Rule) error {
+func (*goNetLinkWrapper) RuleAdd(rule *netlink.Rule) error {
 	return netlink.RuleAdd(rule)
 }
 
-func (*netLink) RuleDel(rule *netlink.Rule) error {
+func (*goNetLinkWrapper) RuleDel(rule *netlink.Rule) error {
 	return netlink.RuleDel(rule)
 }
 
-func (*netLink) RuleList(family int) ([]netlink.Rule, error) {
+func (*goNetLinkWrapper) RuleList(family int) ([]netlink.Rule, error) {
 	return netlink.RuleList(family)
 }
 
-func (*netLink) LinkSetMTU(link netlink.Link, mtu int) error {
+func (*goNetLinkWrapper) LinkSetMTU(link netlink.Link, mtu int) error {
 	return netlink.LinkSetMTU(link, mtu)
+}
+
+type NetLink interface {
+	goNetLink
+
+	// LinkByMac gets a link object given the device mac
+	LinkByMac(mac string) (netlink.Link, error)
+
+	// LinkByMacWithRetry retries to get a link object given the device mac.
+	LinkByMacWithRetry(mac string, interval time.Duration, maxAttempts int) (netlink.Link, error)
+}
+
+var _ NetLink = &netLink{}
+
+type netLink struct {
+	*goNetLinkWrapper
+}
+
+// NewNetLink creates a new netLink object
+func NewNetLink() NetLink {
+	return &netLink{
+		goNetLinkWrapper: &goNetLinkWrapper{},
+	}
+}
+
+func (n *netLink) LinkByMac(mac string) (netlink.Link, error) {
+	links, err := n.LinkList()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, link := range links {
+		if link.Attrs().HardwareAddr.String() == mac {
+			return link, nil
+		}
+	}
+	return nil, fmt.Errorf("link mac %s not found", mac)
+}
+
+func (n *netLink) LinkByMacWithRetry(mac string, interval time.Duration, maxAttempt int) (netlink.Link, error) {
+	var lastErr error
+	for round := 1; round <= maxAttempt; round++ {
+		if round > 1 {
+			time.Sleep(interval)
+		}
+		link, err := n.LinkByMac(mac)
+		if err != nil {
+			lastErr = errors.Wrapf(err, "attempt %d/%d", round, maxAttempt)
+			log.Debugf(lastErr.Error())
+		}
+		return link, nil
+	}
+	return nil, lastErr
 }
 
 // IsNotExistsError returns true if the error type is syscall.ESRCH
@@ -164,6 +217,22 @@ func (*netLink) LinkSetMTU(link netlink.Link, mtu int) error {
 func IsNotExistsError(err error) bool {
 	if errno, ok := err.(syscall.Errno); ok {
 		return errno == syscall.ESRCH
+	}
+	return false
+}
+
+// IsNoSuchRuleError returns true if the error type is syscall.ENOENT.
+func IsNoSuchRuleError(err error) bool {
+	if errno, ok := err.(syscall.Errno); ok {
+		return errno == syscall.ENOENT
+	}
+	return false
+}
+
+// IsRuleExistsError returns true if the error type is syscall.EEXIST.
+func IsRuleExistsError(err error) bool {
+	if errno, ok := err.(syscall.Errno); ok {
+		return errno == syscall.EEXIST
 	}
 	return false
 }

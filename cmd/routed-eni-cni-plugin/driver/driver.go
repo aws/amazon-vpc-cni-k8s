@@ -29,7 +29,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -526,6 +525,16 @@ func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *
 	return nil
 }
 
+func delFromContainerRule(netLink netlinkwrapper.NetLink, addr *net.IPNet) error {
+	fromContainerRule := netLink.NewRule()
+	fromContainerRule.Src = addr
+	fromContainerRule.Priority = fromContainerRulePriority
+	if err := netLink.RuleDel(fromContainerRule); err != nil && !containsNoSuchRule(err) {
+		return errors.Wrapf(err, "delFromContainerRule: failed to delete old rule")
+	}
+	return nil
+}
+
 // TeardownPodNetwork cleanup ip rules
 func (os *linuxNetwork) TeardownNS(addr *net.IPNet, deviceNumber int, log logger.Logger) error {
 	log.Debugf("TeardownNS: addr %s, deviceNumber %d", addr.String(), deviceNumber)
@@ -550,7 +559,7 @@ func tearDownNS(addr *net.IPNet, deviceNumber int, netLink netlinkwrapper.NetLin
 
 	if deviceNumber > 0 {
 		// remove from-pod rule only for non main table
-		err := deleteRuleListBySrc(*addr)
+		err := delFromContainerRule(netLink, addr)
 		if err != nil {
 			log.Errorf("Failed to delete fromContainer for %s %v", addr.String(), err)
 			return errors.Wrapf(err, "delete NS network: failed to delete fromContainer rule for %s", addr.String())
@@ -602,11 +611,6 @@ func (os *linuxNetwork) TeardownPodENINetwork(vlanID int, log logger.Logger) err
 		}
 	}
 	return nil
-}
-
-func deleteRuleListBySrc(src net.IPNet) error {
-	networkClient := networkutils.New()
-	return networkClient.DeleteRuleListBySrc(src)
 }
 
 func containsNoSuchRule(err error) bool {
