@@ -11,7 +11,26 @@
 # express or implied. See the License for the specific language governing
 # permissions and limitations under the License.
 #
-# This file was generated at 2022-02-15T18:25:14Z
+# This file was generated at 2022-02-15T18:47:49Z
+#
+# The regions queried were:
+# - ap-northeast-1
+# - ap-northeast-2
+# - ap-northeast-3
+# - ap-south-1
+# - ap-southeast-1
+# - ap-southeast-2
+# - ca-central-1
+# - eu-central-1
+# - eu-north-1
+# - eu-west-1
+# - eu-west-2
+# - eu-west-3
+# - sa-east-1
+# - us-east-1
+# - us-east-2
+# - us-west-1
+# - us-west-2
 #
 # Mapping is calculated from AWS EC2 API using the following formula:
 # * First IP on each ENI is not used for pods
@@ -184,6 +203,7 @@ h1.16xlarge 737
 h1.2xlarge 58
 h1.4xlarge 234
 h1.8xlarge 234
+hpc6a.48xlarge 100
 hs1.8xlarge 234
 i2.2xlarge 58
 i2.4xlarge 234
