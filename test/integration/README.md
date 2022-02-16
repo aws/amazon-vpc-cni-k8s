@@ -11,12 +11,12 @@
         * set PERFORMANCE_TEST_S3_BUCKET_NAME to the name of the bucket (likely `cni-performance-tests`)
     * set RUN_PERFORMANCE_TESTS=true
     * to view data graph:
-        * Go to Isengard and open 719533996208 account (vpc-cni-ci-test) as admin
+        * Go to Isengard and open aws-wesley+vpc-cni-ci-test@amazon.com as admin
         * Go to QuickSight and signup with your email email (it does not need an additional password)
         * Open dashboards:
-            * 130-pod test graph: https://us-east-1.quicksight.aws.amazon.com/sn/dashboards/5b0ac811-114e-40cd-b0c9-07f006c5d840
-            * 730-pod test graph: https://us-east-1.quicksight.aws.amazon.com/sn/dashboards/aa1b6544-88e0-47f0-9da7-8e0b7cbd1d88
-            * 5000-pod test graph: https://us-east-1.quicksight.aws.amazon.com/sn/dashboards/029169df-7a56-4249-bb69-53b57eabfa9f
+            * 130-pods test - https://us-west-2.quicksight.aws.amazon.com/sn/dashboards/af137b24-a4c1-4ecd-addb-2056486e2022/views/4facfa4f-4b29-42d7-bdf5-5335d9114533
+	    * 5000-pods test - https://us-west-2.quicksight.aws.amazon.com/sn/dashboards/55b56360-dbc3-4fc4-917a-167249a0eb8c/views/1cb4c112-cea3-4ea2-84f6-32d0436b0711
+            * 730-pods test - https://us-west-2.quicksight.aws.amazon.com/sn/dashboards/8e10011a-a29f-4218-a62d-691fd41c71f3/views/f78feb6c-f45b-4788-82c4-0fc348e793d0
 
     * NOTE: if running on previous versions, change the date inside of the file to the date of release so as to not confuse graphing order
 
