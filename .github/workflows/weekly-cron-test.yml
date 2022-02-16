@@ -2,7 +2,7 @@ name: Weekly CNI tests
 
 on:
   schedule:
-    - cron: "0 16 * * 2"  # every Tuesday
+    - cron: "0 22 * * 3"  # every Wednesday
 
 permissions:
   contents: read
@@ -56,7 +56,8 @@ jobs:
           S3_BUCKET_CREATE: false
           S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
         run: |
-          ./scripts/run-integration-tests.sh  
+          ./scripts/run-integration-tests.sh
+        if: always()
     
       - name: Run bottlerocket tests
         env:
@@ -70,7 +71,8 @@ jobs:
           S3_BUCKET_CREATE: false
           S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
         run: |
-          ./scripts/run-integration-tests.sh  
+          ./scripts/run-integration-tests.sh
+        if: always()
     
       - name: Run calico tests
         env:
@@ -84,4 +86,5 @@ jobs:
           S3_BUCKET_CREATE: false
           S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
         run: |
-          ./scripts/run-integration-tests.sh  
+          ./scripts/run-integration-tests.sh
+        if: always()
