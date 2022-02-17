@@ -88,7 +88,7 @@ func (d defaultClusterRoleManager) CreateClusterRole(name string, rules []v1.Pol
 
 	ruleList = append(ruleList, rules...)
 
-	clusterRole = v1.ClusterRole{
+	clusterRole := v1.ClusterRole{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ClusterRole",
 			APIVersion: "rbac.authorization.k8s.io/v1",
