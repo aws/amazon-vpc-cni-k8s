@@ -5,7 +5,7 @@ go 1.14
 require (
 	github.com/apparentlymart/go-cidr v1.0.1
 	github.com/aws/amazon-vpc-cni-k8s v1.7.10
-	github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20211007200130-5c99fc7bd508
+	github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20211209222755-86ece934e91a
 	github.com/aws/amazon-vpc-resource-controller-k8s v1.0.7
 	github.com/aws/aws-sdk-go v1.40.6
 	github.com/onsi/ginkgo v1.13.0

@@ -13,12 +13,25 @@ function down-test-cluster() {
 
 function up-test-cluster() {
     MNGS=""
+    DIR=$(cd "$(dirname "$0")"; pwd)
     if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
-        MNGS='{"cni-test-single-node-mng":{"name":"cni-test-single-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":1,"asg-desired-capacity":1,"instance-types":["m5.16xlarge"],"volume-size":40}, "cni-test-multi-node-mng":{"name":"cni-test-multi-node-mng","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":1,"asg-max-size":100,"asg-desired-capacity":99,"instance-types":["m5.xlarge"],"volume-size":40,"cluster-autoscaler":{"enable":true}}}'
+        PERF_CLUSTER_TEMPLATE_PATH=$DIR/test/config/perf-cluster.yml
+        PERF_TEST_CONFIG_PATH=$DIR/test/config/perf-cluster-$CLUSTER_NAME.yml
+        cp $PERF_CLUSTER_TEMPLATE_PATH $PERF_TEST_CONFIG_PATH
+        AMI_ID=`aws ssm get-parameter --name /aws/service/eks/optimized-ami/${EKS_CLUSTER_VERSION}/amazon-linux-2/recommended/image_id --region us-west-2 --query "Parameter.Value" --output text`
+        echo "Obtained ami_id as $AMI_ID"
+        sed -i'.bak' "s,AMI_ID_PLACEHOLDER,$AMI_ID," $PERF_TEST_CONFIG_PATH
+        grep -r -q $AMI_ID $PERF_TEST_CONFIG_PATH
+        sed -i'.bak' "s,CLUSTER_NAME_PLACEHOLDER,$CLUSTER_NAME," $PERF_TEST_CONFIG_PATH
+        grep -r -q $CLUSTER_NAME $PERF_TEST_CONFIG_PATH
         export RUN_CONFORMANCE="false"
         : "${PERFORMANCE_TEST_S3_BUCKET_NAME:=""}"
+        eksctl create cluster -f $PERF_TEST_CONFIG_PATH
+        kubectl create -f $DIR/test/config/cluster-autoscaler-autodiscover.yml
+        return
     else
-        MNGS='{"GetRef.Name-mng-for-cni":{"name":"GetRef.Name-mng-for-cni","remote-access-user-name":"ec2-user","tags":{"group":"amazon-vpc-cni-k8s"},"release-version":"","ami-type":"AL2_x86_64","asg-min-size":3,"asg-max-size":3,"asg-desired-capacity":3,"instance-types":["c5.xlarge"],"volume-size":40}}'
+        mng_multi_arch_config=`cat $DIR/test/config/multi-arch-mngs-config.json`
+        MNGS=$mng_multi_arch_config
     fi
 
     echo -n "Configuring cluster $CLUSTER_NAME"
@@ -29,7 +42,7 @@ function up-test-cluster() {
         AWS_K8S_TESTER_EKS_KUBECTL_PATH=$KUBECTL_PATH \
         AWS_K8S_TESTER_EKS_S3_BUCKET_NAME=$S3_BUCKET_NAME \
         AWS_K8S_TESTER_EKS_S3_BUCKET_CREATE=$S3_BUCKET_CREATE \
-        AWS_K8S_TESTER_EKS_PARAMETERS_VERSION=${K8S_VERSION%.*} \
+        AWS_K8S_TESTER_EKS_VERSION=${EKS_CLUSTER_VERSION} \
         AWS_K8S_TESTER_EKS_PARAMETERS_ENCRYPTION_CMK_CREATE=false \
         AWS_K8S_TESTER_EKS_PARAMETERS_ROLE_CREATE=$ROLE_CREATE \
         AWS_K8S_TESTER_EKS_PARAMETERS_ROLE_ARN=$ROLE_ARN \
@@ -53,12 +66,18 @@ function up-test-cluster() {
 }
 
 function up-kops-cluster {
-    aws s3api create-bucket --bucket kops-cni-test-eks --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
-    curl -LO https://github.com/kubernetes/kops/releases/download/$(curl -s https://api.github.com/repos/kubernetes/kops/releases/latest | grep tag_name | cut -d '"' -f 4)/kops-linux-amd64
+    KOPS_S3_BUCKET=kops-cni-test-eks-$AWS_ACCOUNT_ID
+    echo "Using $KOPS_S3_BUCKET as kops state store"
+    aws s3api create-bucket --bucket $KOPS_S3_BUCKET --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
+    kops_version=$(curl -s https://api.github.com/repos/kubernetes/kops/releases/latest | grep tag_name | cut -d '"' -f 4)
+    echo "Using kops version $kops_version"
+    curl -LO https://github.com/kubernetes/kops/releases/download/$kops_version/kops-linux-amd64
     chmod +x kops-linux-amd64
-    sudo mv kops-linux-amd64 /usr/local/bin/kops
+    mkdir -p ~/kops_bin
+    KOPS_BIN=~/kops_bin/kops
+    mv kops-linux-amd64 $KOPS_BIN
     CLUSTER_NAME=kops-cni-test-cluster-${TEST_ID}.k8s.local
-    export KOPS_STATE_STORE=s3://kops-cni-test-eks
+    export KOPS_STATE_STORE=s3://${KOPS_S3_BUCKET}
 
     SSH_KEYS=~/.ssh/devopsinuse
     if [ ! -f "$SSH_KEYS" ]
@@ -69,25 +88,32 @@ function up-kops-cluster {
         echo -e "\nSSH keys are already in place!"
     fi
 
-    kops create cluster \
+    $KOPS_BIN create cluster \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
     --networking amazon-vpc-routed-eni \
+    --container-runtime docker \
     --node-count 2 \
     --ssh-public-key=~/.ssh/devopsinuse.pub \
     --kubernetes-version ${K8S_VERSION} \
     ${CLUSTER_NAME}
-    kops update cluster --name ${CLUSTER_NAME} --yes
+    $KOPS_BIN update cluster --name ${CLUSTER_NAME} --yes
     sleep 100
-    while [[ ! $(kops validate cluster | grep "is ready") ]]
+    $KOPS_BIN export kubeconfig --admin
+    sleep 10
+    MAX_RETRIES=15
+    RETRY_ATTEMPT=0
+    while [[ ! $($KOPS_BIN validate cluster | grep "is ready") && $RETRY_ATTEMPT -lt $MAX_RETRIES ]]
     do
-        sleep 5
-        echo "Waiting for cluster validation"
+        sleep 60
+        let RETRY_ATTEMPT=RETRY_ATTEMPT+1
+        echo "In attempt# $RETRY_ATTEMPT, waiting for cluster validation"
     done
     kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/${MANIFEST_CNI_VERSION}/config/master/cni-metrics-helper.yaml
 }
 
 function down-kops-cluster {
-    kops delete cluster --name ${CLUSTER_NAME} --yes
+    KOPS_BIN=~/kops_bin/kops
+    $KOPS_BIN delete cluster --name ${CLUSTER_NAME} --yes
     aws s3 rm ${KOPS_STATE_STORE} --recursive
     aws s3 rb ${KOPS_STATE_STORE} --region $AWS_DEFAULT_REGION
 }

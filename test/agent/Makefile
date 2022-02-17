@@ -12,6 +12,7 @@
 # language governing permissions and limitations under the License.
 
 VERSION ?= $(shell git rev-parse --short HEAD || echo "unknown")
+MULTI_PLATFORM_BUILD_TARGETS = 	linux/amd64,linux/arm64
 IMAGE_NAME =aws-vpc-cni-test-helper
 PUBLIC_REPO_IMAGE=public.ecr.aws/$(REGISTRY_ID)/${IMAGE_NAME}:$(VERSION)
 PRIVATE_REPO_IMAGE=$(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(IMAGE_NAME):$(VERSION)
@@ -23,15 +24,14 @@ fmt:
 vet:
 	go vet .
 
-docker-build: check-env
-	docker build . -t ${PRIVATE_REPO_IMAGE}
-
-docker-push: check-env
-	docker push ${PRIVATE_REPO_IMAGE}
+#Ensure to authenticate
+publish-private-image: check-env
+	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com
+	docker buildx build --platform "$(MULTI_PLATFORM_BUILD_TARGETS)" -t ${PRIVATE_REPO_IMAGE} --push .
 
 publish-public-image: check-env-public
-	docker build . -t ${PUBLIC_REPO_IMAGE}
-	docker push ${PUBLIC_REPO_IMAGE}
+	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin public.ecr.aws/$(REGISTRY_ID)/
+	docker buildx build --platform "$(MULTI_PLATFORM_BUILD_TARGETS)" -t ${PUBLIC_REPO_IMAGE} --push .
 
 check-env:
 	@:$(call check_var, AWS_ACCOUNT, AWS account ID for publishing docker images)

@@ -1,4 +1,22 @@
 # Changelog
+## v1.10.2
+* Improvement - [Fetch Region and CLUSTER_ID information from cni-metrics-helper env](https://github.com/aws/amazon-vpc-cni-k8s/pull/1715) (@cgchinmay )
+* Improvement - [Add VlanId in the cmdAdd Result struct](https://github.com/aws/amazon-vpc-cni-k8s/pull/1705) (@cgchinmay )
+* Improvement - [Update Insufficient IP address logic in ipamd](https://github.com/aws/amazon-vpc-cni-k8s/pull/1773) (@cgchinmay )
+* Improvement - [go version updated to 1.17](https://github.com/aws/amazon-vpc-cni-k8s/pull/1832) (@cgchinmay )
+* Improvement - [use public ecr for AL2](https://github.com/aws/amazon-vpc-cni-k8s/pull/1804) (@vikasmb )
+* Improvement - [remove set -x from bash, add -Ss to curl](https://github.com/aws/amazon-vpc-cni-k8s/pull/1802) (@skpy )
+* Bug - [Fix condition for disable provisioning](https://github.com/aws/amazon-vpc-cni-k8s/pull/1823) (@jayanthvn )
+
+## v1.10.1
+* Bug - [Use IMDSv2 token when fetching node ip in entrypoint](https://github.com/aws/amazon-vpc-cni-k8s/pull/1727) (#1727, [@chlunde](https://github.com/chlunde)) 
+
+## v1.10.0
+* Feature - [IPv6 Support](https://github.com/aws/amazon-vpc-cni-k8s/pull/1587) (#1587, [@achevuru](https://github.com/achevuru))
+* Enhancement - [Handle delays tied to V6 interfaces](https://github.com/aws/amazon-vpc-cni-k8s/pull/1631) (#1631, [@achevuru](https://github.com/achevuru))
+* Enhancement - [Support for Bandwidth Plugin](https://github.com/aws/amazon-vpc-cni-k8s/pull/1560) (#1560, [@jayanthvn](https://github.com/jayanthvn))
+* Enhancement - [Knob to enable bandwidth plugin](https://github.com/aws/amazon-vpc-cni-k8s/pull/1580) (#1580, [@jayanthvn](https://github.com/jayanthvn))
+* Testing - [IPv6 Integration test suite](https://github.com/aws/amazon-vpc-cni-k8s/pull/1658) (#1658, [@achevuru](https://github.com/achevuru))
 
 ## v1.9.3
 * Improvement - [Update golang](https://github.com/aws/amazon-vpc-cni-k8s/pull/1665) (#1665, [@jayanthvn](https://github.com/jayanthvn))

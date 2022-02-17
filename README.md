@@ -27,67 +27,11 @@ scheduling that exceeds the IP address resources available to the kubelet.
 
 The default manifest expects `--cni-conf-dir=/etc/cni/net.d` and `--cni-bin-dir=/opt/cni/bin`.
 
+Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
+
 ## IAM Policy
 
-L-IPAM requires one of the following [IAM policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html) depending on the IP Family configured:
-
-**IPv4 Mode:**
-
-```
-      {
-        "Effect": "Allow",
-        "Action": [
-          "ec2:AssignPrivateIpAddresses",
-          "ec2:AttachNetworkInterface",
-          "ec2:CreateNetworkInterface",
-          "ec2:DeleteNetworkInterface",
-          "ec2:DescribeInstances",
-          "ec2:DescribeInstanceTypes",
-          "ec2:DescribeTags",
-          "ec2:DescribeNetworkInterfaces",
-          "ec2:DetachNetworkInterface",
-          "ec2:ModifyNetworkInterfaceAttribute",
-          "ec2:UnassignPrivateIpAddresses"
-        ],
-        "Resource": "*"
-      },
-      {
-         "Effect": "Allow",
-         "Action": [
-            "ec2:CreateTags"
-          ],
-          "Resource": ["arn:aws:ec2:*:*:network-interface/*"]
-      }
-```
-
-The above policy is available under: `arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy` as a part of [AWS managed policies for EKS](https://docs.aws.amazon.com/eks/latest/userguide/security-iam-awsmanpol.html).
-
-**IPv6 Mode:**
-
-```
-       {
-         "Effect": "Allow",
-         "Action": [
-           "ec2:AssignIpv6Addresses",
-           "ec2:DescribeInstances",
-           "ec2:DescribeTags",
-           "ec2:DescribeNetworkInterfaces",
-           "ec2:DescribeInstanceTypes"
-          ],
-          "Resource": "*"
-       },
-       {
-         "Effect": "Allow",
-         "Action": [
-           "ec2:CreateTags"
-         ],
-         "Resource": [
-             "arn:aws:ec2:*:*:network-interface/*"
-         ]
-       }
-```
-
-Alternatively there is also a [Helm](https://helm.sh/) chart: [eks/aws-vpc-cni](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
+See [here](./docs/iam-policy.md) for required IAM policies.
 
 ## Building
 
