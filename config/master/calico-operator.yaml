@@ -4942,14 +4942,6 @@ rules:
       - update
       - delete
       - watch
-  # EndpointSlices are used for Service-based network policy rule
-  # enforcement.
-  - apiGroups: ["discovery.k8s.io"]
-    resources:
-      - endpointslices
-    verbs:
-      - watch 
-      - list
   - apiGroups:
       - ""
     resources:
