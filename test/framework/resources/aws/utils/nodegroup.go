@@ -155,6 +155,10 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 			ParameterKey:   aws.String("KeyName"),
 			ParameterValue: aws.String(properties.KeyPairName),
 		},
+		{
+			ParameterKey:   aws.String("DisableIMDSv1"),
+			ParameterValue: aws.String("true"),
+		},
 	}
 
 	describeStackOutput, err := f.CloudServices.CloudFormation().
