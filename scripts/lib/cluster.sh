@@ -69,7 +69,7 @@ function up-kops-cluster {
     KOPS_S3_BUCKET=kops-cni-test-eks-$AWS_ACCOUNT_ID
     echo "Using $KOPS_S3_BUCKET as kops state store"
     aws s3api create-bucket --bucket $KOPS_S3_BUCKET --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
-    kops_version=$(curl -s https://api.github.com/repos/kubernetes/kops/releases/latest | grep tag_name | cut -d '"' -f 4)
+    kops_version='v$K8S_VERSION'
     echo "Using kops version $kops_version"
     curl -LO https://github.com/kubernetes/kops/releases/download/$kops_version/kops-linux-amd64
     chmod +x kops-linux-amd64
