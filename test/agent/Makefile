@@ -30,7 +30,6 @@ publish-private-image: check-env
 	docker buildx build --platform "$(MULTI_PLATFORM_BUILD_TARGETS)" -t ${PRIVATE_REPO_IMAGE} --push .
 
 publish-public-image: check-env-public
-	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin public.ecr.aws/$(REGISTRY_ID)/
 	docker buildx build --platform "$(MULTI_PLATFORM_BUILD_TARGETS)" -t ${PUBLIC_REPO_IMAGE} --push .
 
 check-env:
