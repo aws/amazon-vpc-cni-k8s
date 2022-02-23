@@ -24,11 +24,11 @@ fmt:
 vet:
 	go vet .
 
-#Ensure to authenticate
 publish-private-image: check-env
 	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com
 	docker buildx build --platform "$(MULTI_PLATFORM_BUILD_TARGETS)" -t ${PRIVATE_REPO_IMAGE} --push .
 
+#Ensure to authenticate to public ECR repo.
 publish-public-image: check-env-public
 	docker buildx build --platform "$(MULTI_PLATFORM_BUILD_TARGETS)" -t ${PUBLIC_REPO_IMAGE} --push .
 
