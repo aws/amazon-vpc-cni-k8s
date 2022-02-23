@@ -1311,7 +1311,13 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 			c := &IPAMContext{
 				awsClient:                mockAWSUtils,
 				enableManageUntaggedMode: true}
-			mockAWSUtils.EXPECT().SetUnmanagedENIs(tt.unmanagedenis).AnyTimes()
+
+			mockAWSUtils.EXPECT().SetUnmanagedENIs(gomock.Any()).
+				Do(func(args []string) {
+					sort.Strings(tt.unmanagedenis)
+					sort.Strings(args)
+					assert.Equal(t, tt.unmanagedenis, args)
+				})
 			c.setUnmanagedENIs(tt.tagMap)
 
 			mockAWSUtils.EXPECT().IsUnmanagedENI(gomock.Any()).DoAndReturn(
