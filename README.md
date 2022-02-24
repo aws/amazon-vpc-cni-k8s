@@ -620,7 +620,10 @@ The mountPath should be changed to `/var/run/cri.sock` and hostPath should be po
 `/var/run/containerd/containerd.sock` for containerd. If using helm chart, the flag `--set cri.hostPath.path=/var/run/containerd/containerd.sock`
 can set the paths for you.
 
-*Note*: When using other container runtime instead of dockershim, make sure also setting kubelet in instances.
+*Note*: 
+
+* When using other container runtime instead of dockershim, make sure also setting kubelet in instances.
+* If you are using EKS provided AMI, there is no need to containerd.sock to cri.sock, as EKS AMI [symlinks containerd.sock to dockershim.sock](https://github.com/awslabs/amazon-eks-ami/blob/2289937fe9fb3933d066b6ae72a4299b2624e154/files/bootstrap.sh#L470). In addition, if planning upgrade to containerd runtime while using EKS provided AMI, please follow the instructions in our documentation.
 
 ### Notes
 
