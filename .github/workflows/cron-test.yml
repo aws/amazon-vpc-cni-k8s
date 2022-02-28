@@ -37,7 +37,7 @@ jobs:
           MNG_ROLE_ARN: ${{ secrets.MNG_ROLE_ARN }}
           RUN_CONFORMANCE: true
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
-          RUN_TESTER_LB_ADDONS: true
+          RUN_TESTER_LB_ADDONS: false 
           S3_BUCKET_CREATE: false
           S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
         run: |
