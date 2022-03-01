@@ -57,6 +57,14 @@ func NewDefaultDeploymentBuilder() *DeploymentBuilder {
 	}
 }
 
+func NewCalicoStarDeploymentBuilder(namespace string, name string, labels map[string]string) *DeploymentBuilder {
+	return &DeploymentBuilder{
+		namespace: namespace,
+		name:      name,
+		labels:    labels,
+	}
+}
+
 func (d *DeploymentBuilder) NodeSelector(labelKey string, labelVal string) *DeploymentBuilder {
 	d.nodeSelector[labelKey] = labelVal
 	return d
