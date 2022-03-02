@@ -12,9 +12,6 @@ iam:
    serviceRoleARN: "ROLE_ARN_PLACEHOLDER"
 managedNodeGroups:
   - name: cni-test-arm64-mng
-    ssh:
-      allow: true
-      publicKeyName: ec2-user
     instanceType: c6g.xlarge
     ami: ARM_AMI_ID_PLACEHOLDER
     overrideBootstrapCommand: |
@@ -29,9 +26,6 @@ managedNodeGroups:
       group: amazon-vpc-cni-k8s-arm64
 
   - name: cni-test-x86-mng
-    ssh:
-        allow: true
-        publicKeyName: ec2-user
     instanceType: c5.xlarge
     ami: X86_AMI_ID_PLACEHOLDER
     overrideBootstrapCommand: |
