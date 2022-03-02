@@ -35,6 +35,7 @@ __cluster_deprovisioned=0
 
 on_error() {
     echo "Error with exit code $1 occurred on line $2"
+    emit_cloudwatch_metric "error_occurred" "1"
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the 
     if [[ $RUNNING_PERFORMANCE == false ]]; then
@@ -273,6 +274,7 @@ TEST_PASS=$?
 popd
 CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
+emit_cloudwatch_metric "integration_test_status" "1"
 
 if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
@@ -289,6 +291,7 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
     --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
 
   CONFORMANCE_DURATION=$((SECONDS - START))
+  emit_cloudwatch_metric "conformance_test_status" "1"
   echo "TIMELINE: Conformance tests took $CONFORMANCE_DURATION seconds."
 fi
 

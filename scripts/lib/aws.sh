@@ -27,3 +27,7 @@ ensure_aws_k8s_tester() {
         chmod +x $TESTER_PATH
     fi
 }
+
+emit_cloudwatch_metric() {
+    aws cloudwatch put-metric-data --metric-name $1 --namespace TestExecution --unit None --value $2 --region $AWS_DEFAULT_REGION
+}
