@@ -43,13 +43,17 @@ func iptRules4(target, src net.IP, chain, comment string, useRandomFully bool) [
 }
 
 // Snat4 SNATs IPv4 connections from `src` to `target`
-func Snat4(target, src net.IP, chain, comment string) error {
+func Snat4(target, src net.IP, chain, comment, randomizeSNAT string) error {
 	ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4)
 	if err != nil {
 		return fmt.Errorf("failed to locate iptables: %v", err)
 	}
 
-	rules := iptRules4(target, src, chain, comment, ipt.HasRandomFully())
+	useRandomFully := true
+	if randomizeSNAT == "none" {
+		useRandomFully = false
+	}
+	rules := iptRules4(target, src, chain, comment, useRandomFully)
 
 	chains, err := ipt.ListChains("nat")
 	if err != nil {

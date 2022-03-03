@@ -16,6 +16,7 @@
       "type": "egress-v4-cni",
       "mtu": 9001,
       "enabled": "__EGRESSV4PLUGINENABLED__",
+      "randomizeSNAT": "__RANDOMIZESNAT__",
       "nodeIP": "__NODEIP__",
       "ipam": {
          "type": "host-local",
