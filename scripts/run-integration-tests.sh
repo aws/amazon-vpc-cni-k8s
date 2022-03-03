@@ -99,7 +99,7 @@ fi
 
 if [[ $RUN_CALICO_TEST == true && ! -f "$TEST_CALICO_PATH" ]]; then
     echo "$TEST_CALICO_PATH DOES NOT exist."
-    exit
+    exit 1
 fi
 
 # double-check all our preconditions and requirements have been met
@@ -260,6 +260,7 @@ if [[ $RUN_CALICO_TEST == true ]]; then
         echo "Waiting for calico daemonset update"
     done
     echo "Updated calico daemonset!"
+    emit_cloudwatch_metric "calico_test_status" "1"
     sleep 5
 fi
 
@@ -274,7 +275,9 @@ TEST_PASS=$?
 popd
 CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
-emit_cloudwatch_metric "integration_test_status" "1"
+if [[ $TEST_PASS -eq 0 ]]; then
+  emit_cloudwatch_metric "integration_test_status" "1"
+fi
 
 if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
@@ -313,8 +316,10 @@ if [[ "$DEPROVISION" == true ]]; then
         down-kops-cluster
     elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
         eksctl delete cluster bottlerocket
+        emit_cloudwatch_metric "bottlerocket_test_status" "1"
     elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
         eksctl delete cluster $CLUSTER_NAME
+        emit_cloudwatch_metric "performance_test_status" "1"
     else
         down-test-cluster
     fi
