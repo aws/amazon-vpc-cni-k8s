@@ -45,10 +45,6 @@ on_error() {
             echo "Cluster was provisioned already. Deprovisioning it..."
             if [[ $RUN_KOPS_TEST == true ]]; then
                 down-kops-cluster
-            elif [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
-                eksctl delete cluster bottlerocket
-            elif [[ $RUN_PERFORMANCE_TESTS == true ]]; then
-                eksctl delete cluster $CLUSTER_NAME
             else
                 down-test-cluster
             fi
@@ -106,7 +102,6 @@ fi
 check_is_installed docker
 check_is_installed aws
 check_aws_credentials
-ensure_aws_k8s_tester
 
 : "${AWS_ACCOUNT_ID:=$(aws sts get-caller-identity --query Account --output text)}"
 : "${AWS_ECR_REGISTRY:="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com"}"
@@ -171,15 +166,11 @@ mkdir -p "$TEST_CONFIG_DIR"
 START=$SECONDS
 if [[ "$PROVISION" == true ]]; then
     START=$SECONDS
-    if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
-        eksctl create cluster --config-file ./testdata/bottlerocket.yaml
-    elif [[ "$RUN_KOPS_TEST" == true ]]; then
+    if [[ "$RUN_KOPS_TEST" == true ]]; then
         up-kops-cluster
     else
         up-test-cluster
     fi
-    UP_CLUSTER_DURATION=$((SECONDS - START))
-    echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
 fi
 __cluster_created=1
 
@@ -201,7 +192,7 @@ sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init
 grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH
 
 
-if [[ $RUN_KOPS_TEST == true || $RUN_BOTTLEROCKET_TEST == true || $RUN_PERFORMANCE_TESTS == true ]]; then
+if [[ $RUN_KOPS_TEST == true ]]; then
     export KUBECONFIG=~/.kube/config
 else
     export KUBECONFIG=$KUBECONFIG_PATH
@@ -311,10 +302,6 @@ if [[ "$DEPROVISION" == true ]]; then
 
     if [[ "$RUN_KOPS_TEST" == true ]]; then
         down-kops-cluster
-    elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
-        eksctl delete cluster bottlerocket
-    elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
-        eksctl delete cluster $CLUSTER_NAME
     else
         down-test-cluster
     fi

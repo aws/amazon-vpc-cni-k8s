@@ -8,67 +8,53 @@ function load_cluster_details() {
 }
 
 function down-test-cluster() {
-    if [[ -n "${CIRCLE_JOB:-}" || -n "${DISABLE_PROMPT:-}" ]]; then
-        $TESTER_PATH eks delete cluster --enable-prompt=false --path $CLUSTER_CONFIG || (echo "failed!" && exit 1)
-    else
-        echo -n "Deleting cluster $CLUSTER_NAME (this may take ~10 mins) ... "
-        $TESTER_PATH eks delete cluster --enable-prompt=false --path $CLUSTER_CONFIG >>$CLUSTER_MANAGE_LOG_PATH 2>&1 ||
-            (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
-        echo "ok."
-    fi
+    echo -n "Deleting cluster  (this may take ~10 mins) ... "
+    eksctl delete cluster $CLUSTER_NAME >>$CLUSTER_MANAGE_LOG_PATH 2>&1 ||
+        (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
+    echo "ok."
 }
 
 function up-test-cluster() {
-    MNGS=""
     DIR=$(cd "$(dirname "$0")"; pwd)
-    if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
-        PERF_CLUSTER_TEMPLATE_PATH=$DIR/test/config/perf-cluster.yml
-        PERF_TEST_CONFIG_PATH=$DIR/test/config/perf-cluster-$CLUSTER_NAME.yml
-        cp $PERF_CLUSTER_TEMPLATE_PATH $PERF_TEST_CONFIG_PATH
+    CLUSTER_TEMPLATE_PATH=$DIR/test/config
+    if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
+        echo "Copying bottlerocket config to $CLUSTER_CONFIG"
+        cp $CLUSTER_TEMPLATE_PATH/bottlerocket.yaml $CLUSTER_CONFIG
+
+    elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
+        echo "Copying perf test cluster config to $CLUSTER_CONFIG"
+        cp $CLUSTER_TEMPLATE_PATH/perf-cluster.yml $CLUSTER_CONFIG
         AMI_ID=`aws ssm get-parameter --name /aws/service/eks/optimized-ami/${EKS_CLUSTER_VERSION}/amazon-linux-2/recommended/image_id --region us-west-2 --query "Parameter.Value" --output text`
         echo "Obtained ami_id as $AMI_ID"
-        sed -i'.bak' "s,AMI_ID_PLACEHOLDER,$AMI_ID," $PERF_TEST_CONFIG_PATH
-        grep -r -q $AMI_ID $PERF_TEST_CONFIG_PATH
-        sed -i'.bak' "s,CLUSTER_NAME_PLACEHOLDER,$CLUSTER_NAME," $PERF_TEST_CONFIG_PATH
-        grep -r -q $CLUSTER_NAME $PERF_TEST_CONFIG_PATH
+        sed -i'.bak' "s,AMI_ID_PLACEHOLDER,$AMI_ID," $CLUSTER_CONFIG
+        grep -r -q $AMI_ID $CLUSTER_CONFIG
         export RUN_CONFORMANCE="false"
         : "${PERFORMANCE_TEST_S3_BUCKET_NAME:=""}"
-        eksctl create cluster -f $PERF_TEST_CONFIG_PATH
-        kubectl create -f $DIR/test/config/cluster-autoscaler-autodiscover.yml
-        return
+    
     else
-        mng_multi_arch_config=`cat $DIR/test/config/multi-arch-mngs-config.json`
-        MNGS=$mng_multi_arch_config
+        echo "Copying test cluster config to $CLUSTER_CONFIG"
+        cp $CLUSTER_TEMPLATE_PATH/test-cluster.yaml $CLUSTER_CONFIG
+        sed -i'.bak' "s,K8S_VERSION_PLACEHOLDER,$EKS_CLUSTER_VERSION," $CLUSTER_CONFIG
+        AMI_ID=`aws ssm get-parameter --name /aws/service/eks/optimized-ami/${EKS_CLUSTER_VERSION}/amazon-linux-2/recommended/image_id --region us-west-2 --query "Parameter.Value" --output text`
+        ARM_AMI_ID=`aws ssm get-parameter --name /aws/service/eks/optimized-ami/${EKS_CLUSTER_VERSION}/amazon-linux-2-arm64/recommended/image_id --region us-west-2 --query "Parameter.Value" --output text`
+        sed -i'.bak' "s,X86_AMI_ID_PLACEHOLDER,$AMI_ID," $CLUSTER_CONFIG
+        sed -i'.bak' "s,ARM_AMI_ID_PLACEHOLDER,$ARM_AMI_ID," $CLUSTER_CONFIG
+        grep -r -q $EKS_CLUSTER_VERSION $CLUSTER_CONFIG
+        grep -r -q $AMI_ID $CLUSTER_CONFIG
+        grep -r -q $ARM_AMI_ID $CLUSTER_CONFIG
+        : "${ROLE_ARN:=""}"
+        sed -i'.bak' "s,ROLE_ARN_PLACEHOLDER,$ROLE_ARN," $CLUSTER_CONFIG
     fi
 
-    echo -n "Configuring cluster $CLUSTER_NAME"
-    AWS_K8S_TESTER_EKS_NAME=$CLUSTER_NAME \
-        AWS_K8S_TESTER_EKS_LOG_COLOR=false \
-        AWS_K8S_TESTER_EKS_LOG_COLOR_OVERRIDE=true \
-        AWS_K8S_TESTER_EKS_KUBECONFIG_PATH=$KUBECONFIG_PATH \
-        AWS_K8S_TESTER_EKS_KUBECTL_PATH=$KUBECTL_PATH \
-        AWS_K8S_TESTER_EKS_S3_BUCKET_NAME=$S3_BUCKET_NAME \
-        AWS_K8S_TESTER_EKS_S3_BUCKET_CREATE=$S3_BUCKET_CREATE \
-        AWS_K8S_TESTER_EKS_VERSION=${EKS_CLUSTER_VERSION} \
-        AWS_K8S_TESTER_EKS_PARAMETERS_ENCRYPTION_CMK_CREATE=false \
-        AWS_K8S_TESTER_EKS_PARAMETERS_ROLE_CREATE=$ROLE_CREATE \
-        AWS_K8S_TESTER_EKS_PARAMETERS_ROLE_ARN=$ROLE_ARN \
-        AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_ENABLE=true \
-        AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_ROLE_CREATE=$ROLE_CREATE \
-        AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_ROLE_ARN=$MNG_ROLE_ARN \
-        AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_MNGS=$MNGS \
-        AWS_K8S_TESTER_EKS_ADD_ON_MANAGED_NODE_GROUPS_FETCH_LOGS=true \
-        AWS_K8S_TESTER_EKS_ADD_ON_NLB_HELLO_WORLD_ENABLE=$RUN_TESTER_LB_ADDONS \
-        AWS_K8S_TESTER_EKS_ADD_ON_ALB_2048_ENABLE=$RUN_TESTER_LB_ADDONS \
-        $TESTER_PATH eks create config --path $CLUSTER_CONFIG 1>&2
+    sed -i'.bak' "s,CLUSTER_NAME_PLACEHOLDER,$CLUSTER_NAME," $CLUSTER_CONFIG
+    grep -r -q $CLUSTER_NAME $CLUSTER_CONFIG
+    echo -n "Creating cluster $CLUSTER_NAME (this may take ~20 mins. details: tail -f $CLUSTER_MANAGE_LOG_PATH)... "
+    eksctl create cluster -f $CLUSTER_CONFIG --kubeconfig $KUBECONFIG_PATH >>$CLUSTER_MANAGE_LOG_PATH 1>&2 ||
+        (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
+    echo "ok."
 
-    if [[ -n "${CIRCLE_JOB:-}" || -n "${DISABLE_PROMPT:-}" ]]; then
-        $TESTER_PATH eks create cluster --enable-prompt=false --path $CLUSTER_CONFIG || (echo "failed!" && exit 1)
-    else
-        echo -n "Creating cluster $CLUSTER_NAME (this may take ~20 mins. details: tail -f $CLUSTER_MANAGE_LOG_PATH)... "
-        $TESTER_PATH eks create cluster --path $CLUSTER_CONFIG >>$CLUSTER_MANAGE_LOG_PATH 1>&2 ||
-            (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
-        echo "ok."
+    if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
+        kubectl create -f $DIR/test/config/cluster-autoscaler-autodiscover.yml
     fi
 }
 
