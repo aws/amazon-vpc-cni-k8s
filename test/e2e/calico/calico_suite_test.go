@@ -54,10 +54,14 @@ var _ = BeforeSuite(func() {
 		ImagePullPolicy(v1.PullAlways).
 		Port(v1.ContainerPort{ContainerPort: 9001}).
 		Build()
-	uiDeployment := manifest.NewCalicoStarDeploymentBuilder(uiNamespace, "management-ui", map[string]string{"role": "management-ui"}).
+	uiDeployment := manifest.NewCalicoStarDeploymentBuilder().
+		Namespace(uiNamespace).
+		Name("management-ui").
 		Container(uiContainer).
 		Replicas(1).
 		PodLabel("role", "management-ui").
+		NodeSelector("beta.kubernetes.io/arch", "amd64").
+		Labels(map[string]string{"role": "management-ui"}).
 		Build()
 	_, err = f.K8sResourceManagers.DeploymentManager().CreateAndWaitTillDeploymentIsReady(uiDeployment, utils.DefaultDeploymentReadyTimeout)
 	Expect(err).ToNot(HaveOccurred())
@@ -69,10 +73,14 @@ var _ = BeforeSuite(func() {
 		Command([]string{"probe", "--urls=http://frontend.stars:80/status,http://backend.stars:6379/status"}).
 		Port(v1.ContainerPort{ContainerPort: 9000}).
 		Build()
-	clientDeployment := manifest.NewCalicoStarDeploymentBuilder(clientNamespace, "client", map[string]string{"role": "client"}).
+	clientDeployment := manifest.NewCalicoStarDeploymentBuilder().
+		Namespace(clientNamespace).
+		Name("client").
 		Container(clientContainer).
 		Replicas(1).
 		PodLabel("role", "client").
+		NodeSelector("beta.kubernetes.io/arch", "amd64").
+		Labels(map[string]string{"role": "client"}).
 		Build()
 	_, err = f.K8sResourceManagers.DeploymentManager().CreateAndWaitTillDeploymentIsReady(clientDeployment, utils.DefaultDeploymentReadyTimeout)
 	Expect(err).ToNot(HaveOccurred())
@@ -88,10 +96,14 @@ var _ = BeforeSuite(func() {
 		}).
 		Port(v1.ContainerPort{ContainerPort: 80}).
 		Build()
-	feDeployment := manifest.NewCalicoStarDeploymentBuilder(starsNamespace, "frontend", map[string]string{"role": "frontend"}).
+	feDeployment := manifest.NewCalicoStarDeploymentBuilder().
+		Namespace(starsNamespace).
+		Name("frontend").
 		Container(feContainer).
 		Replicas(1).
 		PodLabel("role", "frontend").
+		NodeSelector("beta.kubernetes.io/arch", "amd64").
+		Labels(map[string]string{"role": "frontend"}).
 		Build()
 	_, err = f.K8sResourceManagers.DeploymentManager().CreateAndWaitTillDeploymentIsReady(feDeployment, utils.DefaultDeploymentReadyTimeout)
 	Expect(err).ToNot(HaveOccurred())
@@ -107,10 +119,14 @@ var _ = BeforeSuite(func() {
 		}).
 		Port(v1.ContainerPort{ContainerPort: 6379}).
 		Build()
-	beDeployment := manifest.NewCalicoStarDeploymentBuilder(starsNamespace, "backend", map[string]string{"role": "backend"}).
+	beDeployment := manifest.NewCalicoStarDeploymentBuilder().
+		Namespace(starsNamespace).
+		Name("backend").
 		Container(beContainer).
 		Replicas(1).
 		PodLabel("role", "backend").
+		NodeSelector("beta.kubernetes.io/arch", "amd64").
+		Labels(map[string]string{"role": "backend"}).
 		Build()
 	_, err = f.K8sResourceManagers.DeploymentManager().CreateAndWaitTillDeploymentIsReady(beDeployment, utils.DefaultDeploymentReadyTimeout)
 	Expect(err).ToNot(HaveOccurred())

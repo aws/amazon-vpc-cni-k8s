@@ -28,6 +28,8 @@ ARCH=$(go env GOARCH)
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
 : "${RUN_CALICO_TEST:=false}"
+: "${RUN_LATEST_CALICO_VERSION:=false}"
+: "${CALICO_VERSION:=3.22.0}"
 
 
 __cluster_created=0
@@ -231,14 +233,13 @@ echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
 if [[ $RUN_CALICO_TEST == true ]]; then
   echo "Starting Helm installing Tigera operator and running Calico STAR tests"
-  pushd ../test
+  pushd ./test
   VPC_ID=$(eksctl get cluster $CLUSTER_NAME -oyaml | grep vpc | cut -d ":" -f 2 | awk '{$1=$1};1')
-  version_tag=$(curl -i https://api.github.com/repos/projectcalico/calico/releases/latest | grep "tag_name")
-  latest_calico_version=$(echo $version_tag | cut -d ":" -f 2 | cut -d '"' -f 2 )
   # we can automatically use latest version in Calico repo, or use the known highest version (currently v3.22.0)
-  calico_version="3.22.0"
+  calico_version=$CALICO_VERSION
   if [[ $RUN_LATEST_CALICO_VERSION == true ]]; then
-    calico_version=$latest_calico_version
+    version_tag=$(curl -i https://api.github.com/repos/projectcalico/calico/releases/latest | grep "tag_name")
+    calico_version=$(echo $version_tag | cut -d ":" -f 2 | cut -d '"' -f 2 )
   fi
   echo "Using Calico version $calico_version to test"
   ginkgo -v e2e/calico -- --cluster-kubeconfig=$KUBECONFIG --cluster-name=$CLUSTER_NAME --aws-region=$AWS_DEFAULT_REGION --aws-vpc-id=$VPC_ID --calico-version=$calico_version
