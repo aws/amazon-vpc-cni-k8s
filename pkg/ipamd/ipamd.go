@@ -1882,7 +1882,7 @@ func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error
 			delete(updateNode.Labels, key)
 		}
 
-		if err = c.rawK8SClient.Patch(ctx, updateNode, client.MergeFrom(node)); err != nil {
+		if err = c.rawK8SClient.Patch(ctx, updateNode, client.StrategicMergeFrom(node)); err != nil {
 			log.Errorf("Failed to patch node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
 			return err
 		}
