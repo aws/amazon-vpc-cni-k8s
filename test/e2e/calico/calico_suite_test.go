@@ -2,13 +2,14 @@ package calico
 
 import (
 	"context"
+	"testing"
+
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
-	"testing"
 )
 
 var (
@@ -38,6 +39,10 @@ var _ = BeforeSuite(func() {
 
 	tigeraVersion := f.Options.CalicoVersion
 	err := f.InstallationManager.InstallTigeraOperator(tigeraVersion)
+	Expect(err).ToNot(HaveOccurred())
+
+	By("Patching ARM64 node unschedulable")
+	err = updateNodesSchedulability("beta.kubernetes.io/arch", "arm64", true)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("installing Calico Start Policy Tests Resources")
@@ -209,6 +214,9 @@ var _ = AfterSuite(func() {
 
 	By("Helm Uninstall Calico Installation")
 	f.InstallationManager.UninstallTigeraOperator()
+
+	By("Restore ARM64 Nodes Schedulability")
+	updateNodesSchedulability("beta.kubernetes.io/arch", "arm64", false)
 })
 
 func installNetcatToolInContainer(name string, namespace string) error {
@@ -241,4 +249,21 @@ func assignPodsMetadataForTests() {
 	fePort = int(fePod.Spec.Containers[0].Ports[0].ContainerPort)
 	beIP = bePod.Status.PodIP
 	bePort = int(bePod.Spec.Containers[0].Ports[0].ContainerPort)
+}
+
+func updateNodesSchedulability(key string, value string, unschedule bool) error {
+	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(key, value)
+	if err != nil {
+		return err
+	}
+
+	for _, node := range nodes.Items {
+		newNode := node.DeepCopy()
+		newNode.Spec.Unschedulable = unschedule
+
+		if err = f.K8sResourceManagers.NodeManager().UpdateNode(&node, newNode); err != nil {
+			return err
+		}
+	}
+	return err
 }

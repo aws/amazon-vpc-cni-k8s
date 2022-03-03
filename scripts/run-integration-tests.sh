@@ -238,8 +238,12 @@ if [[ $RUN_CALICO_TEST == true ]]; then
   # we can automatically use latest version in Calico repo, or use the known highest version (currently v3.22.0)
   calico_version=$CALICO_VERSION
   if [[ $RUN_LATEST_CALICO_VERSION == true ]]; then
-    version_tag=$(curl -i https://api.github.com/repos/projectcalico/calico/releases/latest | grep "tag_name")
-    calico_version=$(echo $version_tag | cut -d ":" -f 2 | cut -d '"' -f 2 )
+    version_tag=$(curl -i https://api.github.com/repos/projectcalico/calico/releases/latest | grep "tag_name") || true
+    if [[ -n $version_tag ]]; then
+      calico_version=$(echo $version_tag | cut -d ":" -f 2 | cut -d '"' -f 2 )
+    else
+      echo "Getting Calico latest version failed, will fall back to default/set version $calico_version instead"
+    fi
   fi
   echo "Using Calico version $calico_version to test"
   ginkgo -v e2e/calico -- --cluster-kubeconfig=$KUBECONFIG --cluster-name=$CLUSTER_NAME --aws-region=$AWS_DEFAULT_REGION --aws-vpc-id=$VPC_ID --calico-version=$calico_version
