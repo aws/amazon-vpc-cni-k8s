@@ -35,6 +35,7 @@ __cluster_deprovisioned=0
 
 on_error() {
     echo "Error with exit code $1 occurred on line $2"
+    emit_cloudwatch_metric "error_occurred" "1"
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the 
     if [[ $RUNNING_PERFORMANCE == false ]]; then
@@ -44,10 +45,6 @@ on_error() {
             echo "Cluster was provisioned already. Deprovisioning it..."
             if [[ $RUN_KOPS_TEST == true ]]; then
                 down-kops-cluster
-            elif [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
-                eksctl delete cluster bottlerocket
-            elif [[ $RUN_PERFORMANCE_TESTS == true ]]; then
-                eksctl delete cluster $CLUSTER_NAME
             else
                 down-test-cluster
             fi
@@ -98,14 +95,13 @@ fi
 
 if [[ $RUN_CALICO_TEST == true && ! -f "$TEST_CALICO_PATH" ]]; then
     echo "$TEST_CALICO_PATH DOES NOT exist."
-    exit
+    exit 1
 fi
 
 # double-check all our preconditions and requirements have been met
 check_is_installed docker
 check_is_installed aws
 check_aws_credentials
-ensure_aws_k8s_tester
 
 : "${AWS_ACCOUNT_ID:=$(aws sts get-caller-identity --query Account --output text)}"
 : "${AWS_ECR_REGISTRY:="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com"}"
@@ -170,15 +166,11 @@ mkdir -p "$TEST_CONFIG_DIR"
 START=$SECONDS
 if [[ "$PROVISION" == true ]]; then
     START=$SECONDS
-    if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
-        eksctl create cluster --config-file ./testdata/bottlerocket.yaml
-    elif [[ "$RUN_KOPS_TEST" == true ]]; then
+    if [[ "$RUN_KOPS_TEST" == true ]]; then
         up-kops-cluster
     else
         up-test-cluster
     fi
-    UP_CLUSTER_DURATION=$((SECONDS - START))
-    echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
 fi
 __cluster_created=1
 
@@ -200,7 +192,7 @@ sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init
 grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH
 
 
-if [[ $RUN_KOPS_TEST == true || $RUN_BOTTLEROCKET_TEST == true || $RUN_PERFORMANCE_TESTS == true ]]; then
+if [[ $RUN_KOPS_TEST == true ]]; then
     export KUBECONFIG=~/.kube/config
 else
     export KUBECONFIG=$KUBECONFIG_PATH
@@ -259,6 +251,7 @@ if [[ $RUN_CALICO_TEST == true ]]; then
         echo "Waiting for calico daemonset update"
     done
     echo "Updated calico daemonset!"
+    emit_cloudwatch_metric "calico_test_status" "1"
     sleep 5
 fi
 
@@ -273,6 +266,9 @@ TEST_PASS=$?
 popd
 CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
+if [[ $TEST_PASS -eq 0 ]]; then
+  emit_cloudwatch_metric "integration_test_status" "1"
+fi
 
 if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
@@ -289,6 +285,7 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
     --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
 
   CONFORMANCE_DURATION=$((SECONDS - START))
+  emit_cloudwatch_metric "conformance_test_status" "1"
   echo "TIMELINE: Conformance tests took $CONFORMANCE_DURATION seconds."
 fi
 
@@ -310,8 +307,10 @@ if [[ "$DEPROVISION" == true ]]; then
         down-kops-cluster
     elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
         eksctl delete cluster bottlerocket
+        emit_cloudwatch_metric "bottlerocket_test_status" "1"
     elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
         eksctl delete cluster $CLUSTER_NAME
+        emit_cloudwatch_metric "performance_test_status" "1"
     else
         down-test-cluster
     fi
