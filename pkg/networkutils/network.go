@@ -243,8 +243,8 @@ func (n *linuxNetwork) setupRuleToBlockNodeLocalV4Access() error {
 		return errors.Wrap(err, "failed to create iptables")
 	}
 
-	v4DenyRule := iptablesRule {
-		name: "Block Node Local Pod access via IPv4",
+	v4DenyRule := iptablesRule{
+		name:  "Block Node Local Pod access via IPv4",
 		table: "filter",
 		chain: "FORWARD",
 		rule: []string{
