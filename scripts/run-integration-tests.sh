@@ -323,3 +323,4 @@ fi
 if [[ $TEST_PASS -ne 0 ]]; then
     exit 1
 fi
+emit_cloudwatch_metric "error_occurred" "0"
