@@ -242,6 +242,9 @@ TEST_PASS=$?
 popd
 CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
+if [[ $TEST_PASS -eq 0 ]]; then
+  emit_cloudwatch_metric "integration_test_status" "1"
+fi
 
 if [[ $RUN_CALICO_TEST == true ]]; then
   echo "Starting Helm installing Tigera operator and running Calico STAR tests"
@@ -268,26 +271,10 @@ if [[ $RUN_CALICO_TEST == true ]]; then
       echo "Waiting 15 minutes for new nodes being ready"
       sleep 900
   fi
+
+  emit_cloudwatch_metric "calico_test_status" "1"
 fi
 
-<<<<<<< HEAD
-echo "*******************************************************************************"
-echo "Running integration tests on current image:"
-echo ""
-START=$SECONDS
-pushd ./test/integration
-GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \
-    --assets=./assets
-TEST_PASS=$?
-popd
-CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
-echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
-if [[ $TEST_PASS -eq 0 ]]; then
-  emit_cloudwatch_metric "integration_test_status" "1"
-fi
-
-=======
->>>>>>> we should run new image CNI test and then calico tests
 if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
   START=$SECONDS
