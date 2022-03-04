@@ -1858,7 +1858,7 @@ func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error
 		node := &corev1.Node{}
 		// Find my node
 		err := c.cachedK8SClient.Get(ctx, request, node)
-		log.Debugf("Node found %q - labels - %q", node.Name, len(node.Labels))
+		log.Debugf("Node found %q - no of labels - %d", node.Name, len(node.Labels))
 
 		if err != nil {
 			log.Errorf("Failed to get node: %v", err)
@@ -1882,7 +1882,7 @@ func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error
 			delete(updateNode.Labels, key)
 		}
 
-		if err = c.rawK8SClient.Patch(ctx, updateNode, client.StrategicMergeFrom(node)); err != nil {
+		if err = c.cachedK8SClient.Patch(ctx, updateNode, client.StrategicMergeFrom(node)); err != nil {
 			log.Errorf("Failed to patch node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
 			return err
 		}
