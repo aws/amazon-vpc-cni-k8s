@@ -44,8 +44,8 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v2
 
-    - name: Clean up stale docker images
-      run: sudo docker image prune -f
+    - name: Clean up docker
+      run:  docker system prune -a --volumes -f
 
     - name: Clean up stale docker images
       run: sudo docker image prune -f
