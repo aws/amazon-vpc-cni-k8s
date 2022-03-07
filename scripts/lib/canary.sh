@@ -3,7 +3,6 @@
 # Helper script used for running canary test for CNI IPv4 and IPv6
 
 SECONDS=0
-INTEGRATION_TEST_DIR="$SCRIPT_DIR/../../test/integration-new"
 VPC_CNI_ADDON_NAME="vpc-cni"
 
 echo "Running Canary tests for amazon-vpc-cni-k8s with the following variables
