@@ -35,6 +35,9 @@ jobs:
           go install golang.org/x/lint/golint@latest
           go install golang.org/x/tools/cmd/goimports@latest
 
+      - name: Clean up docker
+        run:  docker system prune -a --volumes
+
       - name: Clean up stale docker images
         run:  docker image prune -f
 
