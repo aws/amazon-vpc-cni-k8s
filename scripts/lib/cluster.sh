@@ -52,7 +52,8 @@ function up-test-cluster() {
     eksctl create cluster -f $CLUSTER_CONFIG --kubeconfig $KUBECONFIG_PATH >>$CLUSTER_MANAGE_LOG_PATH 1>&2 ||
         (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
     echo "ok."
-
+    export KUBECONFIG=$KUBECONFIG_PATH
+    
     if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
         kubectl create -f $DIR/test/config/cluster-autoscaler-autodiscover.yml
     fi

@@ -3,7 +3,6 @@
 # Helper script used for running canary test for CNI IPv4 and IPv6
 
 SECONDS=0
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 INTEGRATION_TEST_DIR="$SCRIPT_DIR/../../test/integration-new"
 VPC_CNI_ADDON_NAME="vpc-cni"
 
