@@ -31,6 +31,7 @@ type ResourceManagers interface {
 	PodManager() resources.PodManager
 	DaemonSetManager() resources.DaemonSetManager
 	ConfigMapManager() resources.ConfigMapManager
+	NetworkPolicyManager() resources.NetworkPolicyManager
 }
 
 type defaultManager struct {
@@ -43,6 +44,7 @@ type defaultManager struct {
 	podManager            resources.PodManager
 	daemonSetManager      resources.DaemonSetManager
 	configMapManager      resources.ConfigMapManager
+	networkPolicyManager  resources.NetworkPolicyManager
 }
 
 func NewResourceManager(k8sClient client.DelegatingClient,
@@ -57,6 +59,7 @@ func NewResourceManager(k8sClient client.DelegatingClient,
 		podManager:            resources.NewDefaultPodManager(k8sClient, scheme, config),
 		daemonSetManager:      resources.NewDefaultDaemonSetManager(k8sClient),
 		configMapManager:      resources.NewConfigMapManager(k8sClient),
+		networkPolicyManager:  resources.NewNetworkPolicyManager(k8sClient),
 	}
 }
 
@@ -94,4 +97,8 @@ func (m *defaultManager) DaemonSetManager() resources.DaemonSetManager {
 
 func (m *defaultManager) ConfigMapManager() resources.ConfigMapManager {
 	return m.configMapManager
+}
+
+func (m *defaultManager) NetworkPolicyManager() resources.NetworkPolicyManager {
+	return m.networkPolicyManager
 }

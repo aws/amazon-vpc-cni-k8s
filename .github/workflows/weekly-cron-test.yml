@@ -84,6 +84,7 @@ jobs:
           ROLE_ARN: ${{ secrets.ROLE_ARN }}
           MNG_ROLE_ARN: ${{ secrets.MNG_ROLE_ARN }}
           RUN_CALICO_TEST: true
+          RUN_LATEST_CALICO_VERSION: true
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
           RUN_TESTER_LB_ADDONS: true
           S3_BUCKET_CREATE: false
