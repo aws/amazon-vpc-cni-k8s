@@ -1858,12 +1858,11 @@ func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error
 		node := &corev1.Node{}
 		// Find my node
 		err := c.cachedK8SClient.Get(ctx, request, node)
-		log.Debugf("Node found %q - no of labels - %d", node.Name, len(node.Labels))
-
 		if err != nil {
 			log.Errorf("Failed to get node: %v", err)
 			return err
 		}
+		log.Debugf("Node found %q - no of labels - %d", node.Name, len(node.Labels))
 
 		if labelValue, ok := node.Labels[key]; ok && labelValue == value {
 			log.Debugf("Node label %q is already %q", key, labelValue)
