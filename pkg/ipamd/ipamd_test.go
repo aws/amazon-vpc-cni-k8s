@@ -95,8 +95,8 @@ func setup(t *testing.T) *testMocks {
 	return &testMocks{
 		ctrl:            ctrl,
 		awsutils:        mock_awsutils.NewMockAPIs(ctrl),
-		rawK8SClient:    testclient.NewFakeClientWithScheme(k8sSchema),
-		cachedK8SClient: testclient.NewFakeClientWithScheme(k8sSchema),
+		rawK8SClient:    testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
+		cachedK8SClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
 		network:         mock_networkutils.NewMockNetworkAPIs(ctrl),
 		eniconfig:       mock_eniconfig.NewMockENIConfig(ctrl),
 	}

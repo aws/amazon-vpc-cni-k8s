@@ -54,15 +54,16 @@ func CreateCachedKubeClient(rawK8SClient client.Client) (client.Client, error) {
 	}()
 	cache.WaitForCacheSync(stopChan)
 
-	cachedK8SClient := client.DelegatingClient{
-		Reader: &client.DelegatingReader{
-			CacheReader:  cache,
-			ClientReader: rawK8SClient,
-		},
-		Writer:       rawK8SClient,
-		StatusClient: rawK8SClient,
+	cachedK8SClient := client.NewDelegatingClientInput{
+		CacheReader: cache,
+		Client:      rawK8SClient,
 	}
-	return cachedK8SClient, nil
+
+	returnedCachedK8SClient, err := client.NewDelegatingClient(cachedK8SClient)
+	if err != nil {
+		return nil, err
+	}
+	return returnedCachedK8SClient, nil
 }
 func GetKubeClientSet() (kubernetes.Interface, error) {
 	// creates the in-cluster config
