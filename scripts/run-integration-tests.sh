@@ -194,8 +194,6 @@ grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH
 
 if [[ $RUN_KOPS_TEST == true ]]; then
     export KUBECONFIG=~/.kube/config
-else
-    export KUBECONFIG=$KUBECONFIG_PATH
 fi
 
 if [[ $RUN_KOPS_TEST == true ]]; then
@@ -306,7 +304,7 @@ if [[ "$DEPROVISION" == true ]]; then
     if [[ "$RUN_KOPS_TEST" == true ]]; then
         down-kops-cluster
     elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
-        eksctl delete cluster bottlerocket
+        eksctl delete cluster $CLUSTER_NAME
         emit_cloudwatch_metric "bottlerocket_test_status" "1"
     elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
         eksctl delete cluster $CLUSTER_NAME
