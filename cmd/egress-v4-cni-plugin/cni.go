@@ -56,6 +56,8 @@ type NetConf struct {
 
 	Enabled string `json:"enabled"`
 
+	RandomizeSNAT string `json:"randomizeSNAT"`
+
 	// IP to use as SNAT target
 	NodeIP net.IP `json:"nodeIP"`
 
@@ -322,7 +324,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		for _, ipc := range tmpResult.IPs {
 			if ipc.Version == "4" {
 				//log.Printf("Configuring SNAT %s -> %s", ipc.Address.IP, netConf.SnatIP)
-				if err := snat.Snat4(netConf.NodeIP, ipc.Address.IP, chain, comment); err != nil {
+				if err := snat.Snat4(netConf.NodeIP, ipc.Address.IP, chain, comment, netConf.RandomizeSNAT); err != nil {
 					return err
 				}
 			}
