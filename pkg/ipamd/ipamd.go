@@ -1850,41 +1850,45 @@ func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
 
 // SetNodeLabel sets or deletes a node label
 func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error {
-	var node corev1.Node
-	// Find my node
-	err := c.cachedK8SClient.Get(ctx, types.NamespacedName{Name: c.myNodeName}, &node)
-	log.Debugf("Node found %q - labels - %q", node.Name, len(node.Labels))
-
-	if err != nil {
-		log.Errorf("Failed to get node: %v", err)
-		return err
+	request := types.NamespacedName{
+		Name: c.myNodeName,
 	}
 
-	if labelValue, ok := node.Labels[key]; ok && labelValue == value {
-		log.Debugf("Node label %q is already %q", key, labelValue)
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		node := &corev1.Node{}
+		// Find my node
+		err := c.cachedK8SClient.Get(ctx, request, node)
+		if err != nil {
+			log.Errorf("Failed to get node: %v", err)
+			return err
+		}
+		log.Debugf("Node found %q - no of labels - %d", node.Name, len(node.Labels))
+
+		if labelValue, ok := node.Labels[key]; ok && labelValue == value {
+			log.Debugf("Node label %q is already %q", key, labelValue)
+			return nil
+		}
+
+		// Make deep copy for modification
+		updateNode := node.DeepCopy()
+
+		// Set node label
+		if value != "" {
+			updateNode.Labels[key] = value
+		} else {
+			// Empty value, delete the label
+			log.Debugf("Deleting label %q", key)
+			delete(updateNode.Labels, key)
+		}
+
+		if err = c.cachedK8SClient.Patch(ctx, updateNode, client.StrategicMergeFrom(node)); err != nil {
+			log.Errorf("Failed to patch node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
+			return err
+		}
+		log.Debugf("Updated node %s with label %q: %q", c.myNodeName, key, value)
 		return nil
-	}
-
-	// Make deep copy for modification
-	updateNode := node.DeepCopy()
-
-	// Set node label
-	if value != "" {
-		updateNode.Labels[key] = value
-	} else {
-		// Empty value, delete the label
-		log.Debugf("Deleting label %q", key)
-		delete(updateNode.Labels, key)
-	}
-
-	// Update node status to advertise the resource.
-	err = c.cachedK8SClient.Update(ctx, updateNode)
-	if err != nil {
-		log.Errorf("Failed to update node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
-	}
-	log.Debugf("Updated node %s with label %q: %q", c.myNodeName, key, value)
-
-	return nil
+	})
+	return err
 }
 
 // GetPod returns the pod matching the name and namespace
@@ -1906,10 +1910,10 @@ func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
 // AnnotatePod annotates the pod with the provided key and value
 func (c *IPAMContext) AnnotatePod(podNamespace, podName, key, val string) error {
 	ctx := context.TODO()
-	var pod *corev1.Pod
 	var err error
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		pod := &corev1.Pod{}
 		if pod, err = c.GetPod(podNamespace, podName); err != nil {
 			return err
 		}

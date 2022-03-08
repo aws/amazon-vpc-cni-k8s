@@ -819,7 +819,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 		if len(sg) != 0 {
 			input.Groups = sg
 		} else {
-			log.Warnf("No custom networking security group found, will use the node's primary ENI's SG: %s", input.Groups)
+			log.Warnf("No custom networking security group found, will use the node's primary ENI's SG: %v", aws.StringValueSlice(input.Groups))
 		}
 		input.SubnetId = aws.String(subnet)
 	} else {
