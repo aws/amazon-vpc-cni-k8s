@@ -5,9 +5,12 @@
 
 set -e
 
-source lib/add-on.sh
-source lib/cluster.sh
-source lib/canary.sh
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration-new"
+
+source "$SCRIPT_DIR"/lib/add-on.sh
+source "$SCRIPT_DIR"/lib/cluster.sh
+source "$SCRIPT_DIR"/lib/canary.sh
 
 function run_ginkgo_test() {
   local focus=$1
