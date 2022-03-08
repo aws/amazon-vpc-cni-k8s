@@ -38,6 +38,7 @@ type PodManager interface {
 	PodExec(namespace string, name string, command []string) (string, string, error)
 	PodLogs(namespace string, name string) (string, error)
 	GetPodsWithLabelSelector(labelKey string, labelVal string) (v1.PodList, error)
+	GetPodsWithLabelSelectorMap(labels map[string]string) (v1.PodList, error)
 	GetPod(podNamespace string, podName string) (*v1.Pod, error)
 	CreatAndWaitTillRunning(pod *v1.Pod) (*v1.Pod, error)
 	CreateAndWaitTillPodCompleted(pod *v1.Pod) (*v1.Pod, error)
@@ -195,6 +196,13 @@ func (d *defaultPodManager) GetPodsWithLabelSelector(labelKey string, labelVal s
 	err := d.k8sClient.List(ctx, &podList, client.MatchingLabels{
 		labelKey: labelVal,
 	})
+	return podList, err
+}
+
+func (d *defaultPodManager) GetPodsWithLabelSelectorMap(labels map[string]string) (v1.PodList, error) {
+	ctx := context.Background()
+	podList := v1.PodList{}
+	err := d.k8sClient.List(ctx, &podList, client.MatchingLabels(labels))
 	return podList, err
 }
 
