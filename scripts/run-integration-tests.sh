@@ -30,6 +30,7 @@ ARCH=$(go env GOARCH)
 : "${RUN_CALICO_TEST:=false}"
 : "${RUN_LATEST_CALICO_VERSION:=false}"
 : "${CALICO_VERSION:=3.22.0}"
+: "${RUN_CALICO_TEST_WITH_PD:=true}"
 
 
 __cluster_created=0
@@ -247,29 +248,16 @@ if [[ $TEST_PASS -eq 0 ]]; then
 fi
 
 if [[ $RUN_CALICO_TEST == true ]]; then
-  echo "Starting Helm installing Tigera operator and running Calico STAR tests"
-  pushd ./test
-  VPC_ID=$(eksctl get cluster $CLUSTER_NAME -oyaml | grep vpc | cut -d ":" -f 2 | awk '{$1=$1};1')
-  # we can automatically use latest version in Calico repo, or use the known highest version (currently v3.22.0)
-  calico_version=$CALICO_VERSION
-  if [[ $RUN_LATEST_CALICO_VERSION == true ]]; then
-    version_tag=$(curl -i https://api.github.com/repos/projectcalico/calico/releases/latest | grep "tag_name") || true
-    if [[ -n $version_tag ]]; then
-      calico_version=$(echo $version_tag | cut -d ":" -f 2 | cut -d '"' -f 2 )
-    else
-      echo "Getting Calico latest version failed, will fall back to default/set version $calico_version instead"
-    fi
-  fi
-  echo "Using Calico version $calico_version to test"
-  ginkgo -v e2e/calico -- --cluster-kubeconfig=$KUBECONFIG --cluster-name=$CLUSTER_NAME --aws-region=$AWS_DEFAULT_REGION --aws-vpc-id=$VPC_ID --calico-version=$calico_version
-  popd
-  
-  if [[ "$DEPROVISION" == false ]]; then
-      # if we reuse the cluster, we need terminate all nodes to restore iptables rules for following tests
+  run_calico_test
+  if [[ "$RUN_CALICO_TEST_WITH_PD" == true ]]; then
+      # if we run prefix delegation tests as well, we need update CNI env and terminate all nodes to restore iptables rules for following tests
+      echo "Run Calico tests with Prefix Delegation enabled"
+      $KUBECTL_PATH set env daemonset aws-node -n kube-system ENABLE_PREFIX_DELEGATION=true
       ids=( $(aws ec2 describe-instances --filters Name=vpc-id,Values=$VPC_ID --query 'Reservations[*].Instances[*].InstanceId' --output text) )
       aws ec2 terminate-instances --instance-ids $ids
       echo "Waiting 15 minutes for new nodes being ready"
       sleep 900
+      run_calico_test
   fi
 
   emit_cloudwatch_metric "calico_test_status" "1"

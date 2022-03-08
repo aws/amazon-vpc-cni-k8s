@@ -26,7 +26,6 @@ type InstallationManager interface {
 	UnInstallCNIMetricsHelper() error
 	InstallTigeraOperator(version string) error
 	UninstallTigeraOperator() error
-	//AddAndUpdateRepository(entry repo.Entry)
 }
 
 func NewDefaultInstallationManager(manager helm.ReleaseManager) InstallationManager {

@@ -13,19 +13,22 @@ import (
 )
 
 var (
-	f               *framework.Framework
-	err             error
-	uiNamespace     = "management-ui"
-	clientNamespace = "client"
-	starsNamespace  = "stars"
-	uiLabel         = map[string]string{"role": "management-ui"}
-	clientLabel     = map[string]string{"role": "client"}
-	feLabel         = map[string]string{"role": "frontend"}
-	beLabel         = map[string]string{"role": "backend"}
-	uiPod           v1.Pod
-	clientPod       v1.Pod
-	fePod           v1.Pod
-	bePod           v1.Pod
+	f                *framework.Framework
+	err              error
+	uiNamespace      = "management-ui"
+	clientNamespace  = "client"
+	starsNamespace   = "stars"
+	uiLabel          = map[string]string{"role": "management-ui"}
+	clientLabel      = map[string]string{"role": "client"}
+	feLabel          = map[string]string{"role": "frontend"}
+	beLabel          = map[string]string{"role": "backend"}
+	nodeArchKey      = "kubernetes.io/arch"
+	nodeArchARMValue = "arm64"
+	nodeArchAMDValue = "amd64"
+	uiPod            v1.Pod
+	clientPod        v1.Pod
+	fePod            v1.Pod
+	bePod            v1.Pod
 )
 
 func TestCalicoPoliciesWithVPCCNI(t *testing.T) {
@@ -42,7 +45,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	By("Patching ARM64 node unschedulable")
-	err = updateNodesSchedulability("beta.kubernetes.io/arch", "arm64", true)
+	err = updateNodesSchedulability(nodeArchKey, nodeArchARMValue, true)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("installing Calico Start Policy Tests Resources")
@@ -65,7 +68,7 @@ var _ = BeforeSuite(func() {
 		Container(uiContainer).
 		Replicas(1).
 		PodLabel("role", "management-ui").
-		NodeSelector("beta.kubernetes.io/arch", "amd64").
+		NodeSelector(nodeArchKey, nodeArchAMDValue).
 		Labels(map[string]string{"role": "management-ui"}).
 		Build()
 	_, err = f.K8sResourceManagers.DeploymentManager().CreateAndWaitTillDeploymentIsReady(uiDeployment, utils.DefaultDeploymentReadyTimeout)
@@ -84,7 +87,7 @@ var _ = BeforeSuite(func() {
 		Container(clientContainer).
 		Replicas(1).
 		PodLabel("role", "client").
-		NodeSelector("beta.kubernetes.io/arch", "amd64").
+		NodeSelector(nodeArchKey, nodeArchAMDValue).
 		Labels(map[string]string{"role": "client"}).
 		Build()
 	_, err = f.K8sResourceManagers.DeploymentManager().CreateAndWaitTillDeploymentIsReady(clientDeployment, utils.DefaultDeploymentReadyTimeout)
@@ -107,7 +110,7 @@ var _ = BeforeSuite(func() {
 		Container(feContainer).
 		Replicas(1).
 		PodLabel("role", "frontend").
-		NodeSelector("beta.kubernetes.io/arch", "amd64").
+		NodeSelector(nodeArchKey, nodeArchAMDValue).
 		Labels(map[string]string{"role": "frontend"}).
 		Build()
 	_, err = f.K8sResourceManagers.DeploymentManager().CreateAndWaitTillDeploymentIsReady(feDeployment, utils.DefaultDeploymentReadyTimeout)
@@ -130,7 +133,7 @@ var _ = BeforeSuite(func() {
 		Container(beContainer).
 		Replicas(1).
 		PodLabel("role", "backend").
-		NodeSelector("beta.kubernetes.io/arch", "amd64").
+		NodeSelector(nodeArchKey, nodeArchAMDValue).
 		Labels(map[string]string{"role": "backend"}).
 		Build()
 	_, err = f.K8sResourceManagers.DeploymentManager().CreateAndWaitTillDeploymentIsReady(beDeployment, utils.DefaultDeploymentReadyTimeout)
@@ -216,7 +219,7 @@ var _ = AfterSuite(func() {
 	f.InstallationManager.UninstallTigeraOperator()
 
 	By("Restore ARM64 Nodes Schedulability")
-	updateNodesSchedulability("beta.kubernetes.io/arch", "arm64", false)
+	updateNodesSchedulability(nodeArchKey, nodeArchARMValue, false)
 })
 
 func installNetcatToolInContainer(name string, namespace string) error {
