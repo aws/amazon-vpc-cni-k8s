@@ -13,10 +13,6 @@ iam:
 managedNodeGroups:
   - name: cni-test-arm64-mng
     instanceType: c6g.xlarge
-    ami: ARM_AMI_ID_PLACEHOLDER
-    overrideBootstrapCommand: |
-      #!/bin/bash
-      /etc/eks/bootstrap.sh CLUSTER_NAME_PLACEHOLDER
     desiredCapacity: 3
     minSize: 3
     maxSize: 3
@@ -27,10 +23,6 @@ managedNodeGroups:
 
   - name: cni-test-x86-mng
     instanceType: c5.xlarge
-    ami: X86_AMI_ID_PLACEHOLDER
-    overrideBootstrapCommand: |
-      #!/bin/bash
-      /etc/eks/bootstrap.sh CLUSTER_NAME_PLACEHOLDER
     desiredCapacity: 3
     minSize: 3
     maxSize: 3

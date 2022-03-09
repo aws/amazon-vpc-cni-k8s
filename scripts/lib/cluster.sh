@@ -35,13 +35,7 @@ function up-test-cluster() {
         echo "Copying test cluster config to $CLUSTER_CONFIG"
         cp $CLUSTER_TEMPLATE_PATH/test-cluster.yaml $CLUSTER_CONFIG
         sed -i'.bak' "s,K8S_VERSION_PLACEHOLDER,$EKS_CLUSTER_VERSION," $CLUSTER_CONFIG
-        AMI_ID=`aws ssm get-parameter --name /aws/service/eks/optimized-ami/${EKS_CLUSTER_VERSION}/amazon-linux-2/recommended/image_id --region us-west-2 --query "Parameter.Value" --output text`
-        ARM_AMI_ID=`aws ssm get-parameter --name /aws/service/eks/optimized-ami/${EKS_CLUSTER_VERSION}/amazon-linux-2-arm64/recommended/image_id --region us-west-2 --query "Parameter.Value" --output text`
-        sed -i'.bak' "s,X86_AMI_ID_PLACEHOLDER,$AMI_ID," $CLUSTER_CONFIG
-        sed -i'.bak' "s,ARM_AMI_ID_PLACEHOLDER,$ARM_AMI_ID," $CLUSTER_CONFIG
         grep -r -q $EKS_CLUSTER_VERSION $CLUSTER_CONFIG
-        grep -r -q $AMI_ID $CLUSTER_CONFIG
-        grep -r -q $ARM_AMI_ID $CLUSTER_CONFIG
         : "${ROLE_ARN:=""}"
         sed -i'.bak' "s,ROLE_ARN_PLACEHOLDER,$ROLE_ARN," $CLUSTER_CONFIG
     fi
