@@ -39,6 +39,20 @@ __cluster_deprovisioned=0
 on_error() {
     echo "Error with exit code $1 occurred on line $2"
     emit_cloudwatch_metric "error_occurred" "1"
+
+    #Emit test specific error metric 
+    if [[ $RUN_KOPS_TEST == true ]]; then
+        emit_cloudwatch_metric "kops_test_status" "0"
+    fi
+    if [[ $RUN_CALICO_TEST == true ]]; then
+        emit_cloudwatch_metric "calico_test_status" "0"
+    fi
+    if [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
+        emit_cloudwatch_metric "bottlerocket_test_status" "0"
+    fi
+    if [[ $RUN_PERFORMANCE_TESTS == true ]]; then
+        emit_cloudwatch_metric "performance_test_status" "0"
+    fi
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the 
     if [[ $RUNNING_PERFORMANCE == false ]]; then
