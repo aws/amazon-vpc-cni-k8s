@@ -67,6 +67,10 @@ func NewNetCatAlpineContainer() *Container {
 	}
 }
 
+func NewBaseContainer() *Container {
+	return &Container{}
+}
+
 func (w *Container) CapabilitiesForSecurityContext(add []v1.Capability, drop []v1.Capability) *Container {
 	w.securityContext = &v1.SecurityContext{
 		Capabilities: &v1.Capabilities{
