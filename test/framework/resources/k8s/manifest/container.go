@@ -59,10 +59,16 @@ func NewTestHelperContainer() *Container {
 
 func NewNetCatAlpineContainer() *Container {
 	return &Container{
-		name:            "net-cat",
-		image:           "public.ecr.aws/k4b6w6v3/vpc-cni-tester:latest", // TODO: Add link to instruction
+		name: "net-cat",
+		// simple netcat OpenBSD version with alpine as the base image
+		// compatible with arm64 and amd64
+		image:           "public.ecr.aws/e6v3k1j4/netcat-openbsd:v1.0",
 		imagePullPolicy: v1.PullIfNotPresent,
 	}
+}
+
+func NewBaseContainer() *Container {
+	return &Container{}
 }
 
 func (w *Container) CapabilitiesForSecurityContext(add []v1.Capability, drop []v1.Capability) *Container {
