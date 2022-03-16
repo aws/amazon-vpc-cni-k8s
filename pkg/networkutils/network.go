@@ -243,8 +243,23 @@ func (n *linuxNetwork) setupRuleToBlockNodeLocalV4Access() error {
 		return errors.Wrap(err, "failed to create iptables")
 	}
 
-	if err := ipt.Insert("filter", "FORWARD", 1, "-d", "169.254.172.0/22", "-m", "conntrack",
-		"--ctstate", "NEW", "-m", "comment", "--comment", "Block Node Local Pod access via IPv4", "-j", "REJECT"); err != nil {
+	v4DenyRule := iptablesRule{
+		name:  "Block Node Local Pod access via IPv4",
+		table: "filter",
+		chain: "FORWARD",
+		rule: []string{
+			"-d", "169.254.172.0/22", "-m", "conntrack",
+			"--ctstate", "NEW", "-m", "comment", "--comment", "Block Node Local Pod access via IPv4", "-j", "REJECT",
+		},
+	}
+
+	if exists, err := ipt.Exists(v4DenyRule.table, v4DenyRule.chain, v4DenyRule.rule...); exists && err == nil {
+		log.Info("Rule to block Node Local Pod access via IPv4 is already present. Moving on.. ")
+		return nil
+	}
+
+	//Let's add the rule. Rule is either missing (or) we're not able to validate it's presence.
+	if err := ipt.Insert(v4DenyRule.table, v4DenyRule.chain, 1, v4DenyRule.rule...); err != nil {
 		return fmt.Errorf("failed adding v4 drop route: %v", err)
 	}
 	return nil

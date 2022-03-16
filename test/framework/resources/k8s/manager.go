@@ -33,6 +33,7 @@ type ResourceManagers interface {
 	ConfigMapManager() resources.ConfigMapManager
 	ClusterRoleManager() resources.ClusterRoleManager
 	ServiceAccountManager() resources.ServiceAccountManager
+	NetworkPolicyManager() resources.NetworkPolicyManager
 }
 
 type defaultManager struct {
@@ -47,6 +48,7 @@ type defaultManager struct {
 	configMapManager      resources.ConfigMapManager
 	clusterRoleManager    resources.ClusterRoleManager
 	serviceAccountManager resources.ServiceAccountManager
+	networkPolicyManager  resources.NetworkPolicyManager
 }
 
 func NewResourceManager(k8sClient client.DelegatingClient,
@@ -63,6 +65,7 @@ func NewResourceManager(k8sClient client.DelegatingClient,
 		configMapManager:      resources.NewConfigMapManager(k8sClient),
 		clusterRoleManager:    resources.NewClusterRoleManager(k8sClient),
 		serviceAccountManager: resources.NewServiceAccountManager(k8sClient),
+		networkPolicyManager:  resources.NewNetworkPolicyManager(k8sClient),
 	}
 }
 
@@ -108,4 +111,8 @@ func (m *defaultManager) DaemonSetManager() resources.DaemonSetManager {
 
 func (m *defaultManager) ConfigMapManager() resources.ConfigMapManager {
 	return m.configMapManager
+}
+
+func (m *defaultManager) NetworkPolicyManager() resources.NetworkPolicyManager {
+	return m.networkPolicyManager
 }

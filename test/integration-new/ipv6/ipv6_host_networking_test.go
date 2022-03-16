@@ -47,7 +47,7 @@ const (
 	DEFAULT_VETH_PREFIX        = "eni"
 )
 
-var _ = Describe("test ipv6 host netns setup", func() {
+var _ = Describe("[CANARY] test ipv6 host netns setup", func() {
 	var err error
 	var podLabelKey = "app"
 	var podLabelVal = "host-networking-test"
