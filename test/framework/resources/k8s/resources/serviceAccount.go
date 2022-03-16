@@ -37,7 +37,7 @@ func (d defaultServiceAccountManager) GetServiceAccount(name string, namespace s
 }
 
 func (d defaultServiceAccountManager) CreateServiceAccount(name string, namespace string) error {
-	serviceAccount = corev1.ServiceAccount{
+	serviceAccount := corev1.ServiceAccount{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       v1.ServiceAccountKind,
 			APIVersion: "v1",
