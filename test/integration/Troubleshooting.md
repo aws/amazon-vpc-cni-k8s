@@ -58,7 +58,7 @@ Labels:             alpha.eksctl.io/cluster-name=cni-rc-test
 For instance, you could run all tests from host_networking_test.go first, followed by pod_traffic_test_PD_enabled.go and so on.
 
 ```
-cd test/integration-new/cni
+cd test/integration/cni
 Added Focus for all specs in host_networking_test.go
 
 ginkgo -v -r -- --cluster-kubeconfig=<kubeconfig> --cluster-name=<cluster-name> --aws-region=<region> --aws-vpc-id=<vpc_id> --ng-name-label-key=eks.amazonaws.com/nodegroup --ng-name-label-val=nodegroup

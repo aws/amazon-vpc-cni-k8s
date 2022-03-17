@@ -5,7 +5,7 @@ set -Euo pipefail
 trap 'on_error $? $LINENO' ERR
 
 DIR=$(cd "$(dirname "$0")"; pwd)
-INTEGRATION_TEST_DIR="$DIR"/../test/integration-new
+INTEGRATION_TEST_DIR="$DIR"/../test/integration
 
 source "$DIR"/lib/common.sh
 source "$DIR"/lib/aws.sh
