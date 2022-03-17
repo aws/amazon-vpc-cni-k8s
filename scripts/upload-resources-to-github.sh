@@ -59,7 +59,7 @@ RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
     jq --arg VERSION "$VERSION" '.[] | select(.tag_name==$VERSION) | .id')
 
 RELEASE_BRANCH=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-    https://api.github.com/repos/jayanthvn/amazon-vpc-cni-k8s/releases | \
+    https://api.github.com/repos/aws/amazon-vpc-cni-k8s/releases | \
     jq -r --arg VERSION "$VERSION" '.[] | select(.tag_name==$VERSION) | .target_commitish')
 
 ASSET_IDS_UPLOADED=()
