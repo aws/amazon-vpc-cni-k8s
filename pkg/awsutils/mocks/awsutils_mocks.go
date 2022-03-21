@@ -19,12 +19,11 @@
 package mock_awsutils
 
 import (
-	net "net"
-	reflect "reflect"
-
 	awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	ec2 "github.com/aws/aws-sdk-go/service/ec2"
 	gomock "github.com/golang/mock/gomock"
+	net "net"
+	reflect "reflect"
 )
 
 // MockAPIs is a mock of APIs interface
@@ -405,6 +404,20 @@ func (m *MockAPIs) IsCNIUnmanagedENI(arg0 string) bool {
 func (mr *MockAPIsMockRecorder) IsCNIUnmanagedENI(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsCNIUnmanagedENI", reflect.TypeOf((*MockAPIs)(nil).IsCNIUnmanagedENI), arg0)
+}
+
+// IsPrefixDelegationSupported mocks base method
+func (m *MockAPIs) IsPrefixDelegationSupported() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsPrefixDelegationSupported")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsPrefixDelegationSupported indicates an expected call of IsPrefixDelegationSupported
+func (mr *MockAPIsMockRecorder) IsPrefixDelegationSupported() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsPrefixDelegationSupported", reflect.TypeOf((*MockAPIs)(nil).IsPrefixDelegationSupported))
 }
 
 // IsPrimaryENI mocks base method

@@ -167,8 +167,10 @@ func describeInstanceTypes(region string, eniLimitMap map[string]awsutils.Instan
 			eniLimit := int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
 			ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
 			hypervisorType := aws.StringValue(info.Hypervisor)
+			isBareMetalInstance := aws.BoolValue(info.BareMetal)
 			if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
-				limits := awsutils.InstanceTypeLimits{ENILimit: eniLimit, IPv4Limit: ipv4Limit, HypervisorType: hypervisorType}
+				limits := awsutils.InstanceTypeLimits{ENILimit: eniLimit, IPv4Limit: ipv4Limit, HypervisorType: hypervisorType,
+					IsBareMetal: isBareMetalInstance}
 				if existingLimits, contains := eniLimitMap[instanceType]; contains && existingLimits != limits {
 					// this should never happen
 					log.Fatalf("A previous region has different limits for instanceType=%s than region=%s", instanceType, region)
