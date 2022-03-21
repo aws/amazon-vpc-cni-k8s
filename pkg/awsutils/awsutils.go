@@ -1405,7 +1405,7 @@ func (cache *EC2InstanceMetadataCache) GetInstanceType() string {
 }
 
 // IsPrefixDelegationSupported return true if the instance type supports Prefix Assignment/Delegation
-func (cache *EC2InstanceMetadataCache) IsPrefixDelegationSupported() bool{
+func (cache *EC2InstanceMetadataCache) IsPrefixDelegationSupported() bool {
 	log.Debugf("Check if instance supports Prefix Delegation")
 	if cache.GetInstanceHypervisorFamily() == "nitro" || cache.IsInstanceBareMetal() {
 		log.Debugf("Instance supports Prefix Delegation")
