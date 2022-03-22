@@ -57,6 +57,11 @@ done
 RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
     https://api.github.com/repos/aws/amazon-vpc-cni-k8s/releases | \
     jq --arg VERSION "$VERSION" '.[] | select(.tag_name==$VERSION) | .id')
+
+RELEASE_BRANCH=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+    https://api.github.com/repos/aws/amazon-vpc-cni-k8s/releases | \
+    jq -r --arg VERSION "$VERSION" '.[] | select(.tag_name==$VERSION) | .target_commitish')
+
 ASSET_IDS_UPLOADED=()
 
 trap 'handle_errors_and_cleanup $?' EXIT
@@ -165,26 +170,26 @@ mkdir -p "${SYNC_DIR}"
 cd "${SYNC_DIR}"
 gh repo clone aws/amazon-vpc-cni-k8s
 DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD | tr -d '\n')
-  CONFIG_DIR=amazon-vpc-cni-k8s/config/master
-  cd $CONFIG_DIR
-  REPO_NAME=$(echo ${REPO} | cut -d'/' -f2)
-  git remote set-url origin https://"${GITHUB_USERNAME}":"${GITHUB_TOKEN}"@github.com/"${GITHUB_USERNAME}"/"${REPO_NAME}".git
+CONFIG_DIR=amazon-vpc-cni-k8s/config/master
+cd $CONFIG_DIR
+REPO_NAME=$(echo ${REPO} | cut -d'/' -f2)
+git remote set-url origin https://"${GITHUB_USERNAME}":"${GITHUB_TOKEN}"@github.com/"${GITHUB_USERNAME}"/"${REPO_NAME}".git
 
-  git config user.name "eks-bot"
-  git config user.email "eks-bot@users.noreply.github.com"
+git config user.name "eks-bot"
+git config user.email "eks-bot@users.noreply.github.com"
 
-  FORK_RELEASE_BRANCH="${BINARY_BASE}-${VERSION}-${PR_ID}"
-  git checkout -b "${FORK_RELEASE_BRANCH}" origin
+FORK_RELEASE_BRANCH="${BINARY_BASE}-${VERSION}-${PR_ID}"
+git checkout -b "${FORK_RELEASE_BRANCH}" origin
 
-  COUNT=1
-  for asset in ${RESOURCES_TO_COPY[@]}; do
-          name=$(echo $asset | tr '/' '\n' | tail -1)
-          echo -e "\n  $((COUNT++)). $name"
-          cp "$asset" .
-  done
+COUNT=1
+for asset in ${RESOURCES_TO_COPY[@]}; do
+        name=$(echo $asset | tr '/' '\n' | tail -1)
+        echo -e "\n  $((COUNT++)). $name"
+        cp "$asset" .
+done
 
-  git add --all
-  git commit -m "${BINARY_BASE}: ${VERSION}"
+git add --all
+git commit -m "${BINARY_BASE}: ${VERSION}"
 
 PR_BODY=$(cat << EOM
 ## ${BINARY_BASE} ${VERSION} Automated manifest folder Sync! 🤖🤖
@@ -196,11 +201,11 @@ Updating all the generated release artifacts in master/config for master branch.
 EOM
 )
 
-  git push -u origin "${FORK_RELEASE_BRANCH}"
-  gh pr create --title "🥳 ${BINARY_BASE} ${VERSION} Automated manifest sync! 🥑" \
-      --body "${PR_BODY}" --repo ${REPO}
+git push -u origin "${FORK_RELEASE_BRANCH}"
+gh pr create --title "🥳 ${BINARY_BASE} ${VERSION} Automated manifest sync! 🥑" \
+    --body "${PR_BODY}" --repo ${REPO}
 
-  echo "✅ Manifest folder PR created for master"
+echo "✅ Manifest folder PR created for master"
 
 CLONE_DIR="${BUILD_DIR}/config-sync-release"
 SYNC_DIR="$CLONE_DIR"
@@ -209,28 +214,27 @@ rm -rf "${SYNC_DIR}"
 mkdir -p "${SYNC_DIR}"
 cd "${SYNC_DIR}"
 gh repo clone aws/amazon-vpc-cni-k8s
-RELEASE_BRANCH=$(git branch -a --contains $VERSION | grep "upstream" | cut -d '/' -f3)
 echo "Release branch $RELEASE_BRANCH"
-  CONFIG_DIR=amazon-vpc-cni-k8s/config/master
-  cd $CONFIG_DIR
-  REPO_NAME=$(echo ${REPO} | cut -d'/' -f2)
-  git remote set-url origin https://"${GITHUB_USERNAME}":"${GITHUB_TOKEN}"@github.com/"${GITHUB_USERNAME}"/"${REPO_NAME}".git
+CONFIG_DIR=amazon-vpc-cni-k8s/config/master
+cd $CONFIG_DIR
+REPO_NAME=$(echo ${REPO} | cut -d'/' -f2)
+git remote set-url origin https://"${GITHUB_USERNAME}":"${GITHUB_TOKEN}"@github.com/"${GITHUB_USERNAME}"/"${REPO_NAME}".git
 
-  git config user.name "eks-bot"
-  git config user.email "eks-bot@users.noreply.github.com"
+git config user.name "eks-bot"
+git config user.email "eks-bot@users.noreply.github.com"
 
-  FORK_RELEASE_BRANCH="${BINARY_BASE}-${VERSION}-${PR_ID}"
-  git checkout -b "${FORK_RELEASE_BRANCH}" origin/$RELEASE_BRANCH
+FORK_RELEASE_BRANCH="${BINARY_BASE}-${VERSION}-${PR_ID}"
+git checkout -b "${FORK_RELEASE_BRANCH}" origin/$RELEASE_BRANCH
 
-  COUNT=1
-  for asset in ${RESOURCES_TO_COPY[@]}; do
-          name=$(echo $asset | tr '/' '\n' | tail -1)
-          echo -e "\n  $((COUNT++)). $name"
-          cp "$asset" .
-  done
+COUNT=1
+for asset in ${RESOURCES_TO_COPY[@]}; do
+        name=$(echo $asset | tr '/' '\n' | tail -1)
+        echo -e "\n  $((COUNT++)). $name"
+        cp "$asset" .
+done
 
-  git add --all
-  git commit -m "${BINARY_BASE}: ${VERSION}"
+git add --all
+git commit -m "${BINARY_BASE}: ${VERSION}"
 
 PR_BODY=$(cat << EOM
 ## ${BINARY_BASE} ${VERSION} Automated manifest folder Sync! 🤖🤖
@@ -242,8 +246,8 @@ Updating all the generated release artifacts in master/config for $RELEASE_BRANC
 EOM
 )
 
-  git push -u origin "${FORK_RELEASE_BRANCH}":$RELEASE_BRANCH
-  gh pr create --title "🥳 ${BINARY_BASE} ${VERSION} Automated manifest sync! 🥑" \
-      --body "${PR_BODY}" --repo ${REPO} --base ${RELEASE_BRANCH}
+git push -u origin "${FORK_RELEASE_BRANCH}":$RELEASE_BRANCH
+gh pr create --title "🥳 ${BINARY_BASE} ${VERSION} Automated manifest sync! 🥑" \
+    --body "${PR_BODY}" --repo ${REPO} --base ${RELEASE_BRANCH}
 
-  echo "✅ Manifest folder PR created for $RELEASE_BRANCH"
+echo "✅ Manifest folder PR created for $RELEASE_BRANCH"
