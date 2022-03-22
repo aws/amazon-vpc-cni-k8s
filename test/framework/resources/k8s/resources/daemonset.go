@@ -16,9 +16,6 @@ package resources
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
-	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	v1 "k8s.io/api/apps/v1"
@@ -29,8 +26,7 @@ import (
 
 type DaemonSetManager interface {
 	GetDaemonSet(namespace string, name string) (*v1.DaemonSet, error)
-	UpdateAndWaitTillDaemonSetReady(*v1.DaemonSet, *v1.DaemonSet) (*v1.DaemonSet, error)
-	DeleteDaemonSet(string, string) error
+	UpdateAndWaitTillDaemonSetReady(old *v1.DaemonSet, new *v1.DaemonSet) (*v1.DaemonSet, error)
 	CheckIfDaemonSetIsReady(namespace string, name string) error
 }
 
@@ -40,39 +36,6 @@ type defaultDaemonSetManager struct {
 
 func NewDefaultDaemonSetManager(k8sClient client.DelegatingClient) DaemonSetManager {
 	return &defaultDaemonSetManager{k8sClient: k8sClient}
-}
-
-func (d *defaultDaemonSetManager) DeleteDaemonSet(name string, namespace string) error {
-	ds, err := d.GetDaemonSet(namespace, name)
-	if err != nil {
-		return err
-	}
-	err = d.k8sClient.Delete(context.Background(), ds)
-	if err != nil {
-		return err
-	}
-	return waitTillDaemonSetIsDeleted(name, namespace, d)
-}
-
-// Private method to check if the Daemonset is Deleted
-// It takes some time so we wait until Daemonset is cleaned up
-func waitTillDaemonSetIsDeleted(name string, namespace string, d *defaultDaemonSetManager) error {
-	attempts := 0
-	for {
-		_, err := d.GetDaemonSet(namespace, name)
-		attempts += 1
-		// If we get DaemonSet not found error
-		// means DS is deleted and we return
-		notFoundError := fmt.Sprintf("DaemonSet.apps \"%v\" not found", name)
-		if err != nil && strings.Contains(err.Error(), notFoundError) {
-			return nil
-		}
-		if attempts > 5 {
-			break
-		}
-		time.Sleep(10 * time.Second)
-	}
-	return errors.New("DaemonSet taking too long to delete")
 }
 
 func (d *defaultDaemonSetManager) GetDaemonSet(namespace string, name string) (*v1.DaemonSet, error) {

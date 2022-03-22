@@ -82,6 +82,5 @@ func New(options Options) *Framework {
 		K8sResourceManagers: k8s.NewResourceManager(k8sClient, k8sSchema, config),
 		InstallationManager: controller.NewDefaultInstallationManager(
 			helm.NewDefaultReleaseManager(options.KubeConfig)),
-		CrdManager: crd.NewCrdManager(config),
 	}
 }
