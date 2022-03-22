@@ -31,8 +31,6 @@ type ResourceManagers interface {
 	PodManager() resources.PodManager
 	DaemonSetManager() resources.DaemonSetManager
 	ConfigMapManager() resources.ConfigMapManager
-	ClusterRoleManager() resources.ClusterRoleManager
-	ServiceAccountManager() resources.ServiceAccountManager
 	NetworkPolicyManager() resources.NetworkPolicyManager
 }
 
@@ -46,8 +44,6 @@ type defaultManager struct {
 	podManager            resources.PodManager
 	daemonSetManager      resources.DaemonSetManager
 	configMapManager      resources.ConfigMapManager
-	clusterRoleManager    resources.ClusterRoleManager
-	serviceAccountManager resources.ServiceAccountManager
 	networkPolicyManager  resources.NetworkPolicyManager
 }
 
@@ -63,18 +59,8 @@ func NewResourceManager(k8sClient client.DelegatingClient,
 		podManager:            resources.NewDefaultPodManager(k8sClient, scheme, config),
 		daemonSetManager:      resources.NewDefaultDaemonSetManager(k8sClient),
 		configMapManager:      resources.NewConfigMapManager(k8sClient),
-		clusterRoleManager:    resources.NewClusterRoleManager(k8sClient),
-		serviceAccountManager: resources.NewServiceAccountManager(k8sClient),
 		networkPolicyManager:  resources.NewNetworkPolicyManager(k8sClient),
 	}
-}
-
-func (m *defaultManager) ServiceAccountManager() resources.ServiceAccountManager {
-	return m.serviceAccountManager
-}
-
-func (m *defaultManager) ClusterRoleManager() resources.ClusterRoleManager {
-	return m.clusterRoleManager
 }
 
 func (m *defaultManager) JobManager() resources.JobManager {

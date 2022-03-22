@@ -20,25 +20,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	v1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type DaemonSetManager interface {
-	MultusDaemonSetManager
-	GetDaemonSet(string, string) (*v1.DaemonSet, error)
+	GetDaemonSet(namespace string, name string) (*v1.DaemonSet, error)
 	UpdateAndWaitTillDaemonSetReady(*v1.DaemonSet, *v1.DaemonSet) (*v1.DaemonSet, error)
 	DeleteDaemonSet(string, string) error
-}
-
-type MultusDaemonSetManager interface {
-	CreateAndWaitTillMultusDaemonSetReady(string, string, string) error
+	CheckIfDaemonSetIsReady(namespace string, name string) error
 }
 
 type defaultDaemonSetManager struct {
@@ -47,105 +40,6 @@ type defaultDaemonSetManager struct {
 
 func NewDefaultDaemonSetManager(k8sClient client.DelegatingClient) DaemonSetManager {
 	return &defaultDaemonSetManager{k8sClient: k8sClient}
-}
-
-func (d *defaultDaemonSetManager) CreateAndWaitTillMultusDaemonSetReady(name string, namespace string, multusImage string) error {
-	daemonSet := &v1.DaemonSet{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "DaemonSet",
-			APIVersion: "apps/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Labels: map[string]string{
-				"tier": "node",
-				"app":  "multus",
-				"name": "multus",
-			},
-		},
-		Spec: v1.DaemonSetSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"name": "multus",
-				},
-			},
-			UpdateStrategy: v1.DaemonSetUpdateStrategy{
-				Type: v1.RollingUpdateDaemonSetStrategyType,
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"tier": "node",
-						"app":  "multus",
-						"name": "multus",
-					},
-				},
-				Spec: corev1.PodSpec{
-					Affinity: &corev1.Affinity{
-						NodeAffinity: &corev1.NodeAffinity{
-							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
-								NodeSelectorTerms: []corev1.NodeSelectorTerm{
-									{
-										MatchExpressions: []corev1.NodeSelectorRequirement{
-											{
-												Key:      "kubernetes.io/os",
-												Operator: corev1.NodeSelectorOpIn,
-												Values: []string{
-													"linux",
-												},
-											},
-											{
-												Key:      "eks.amazonaws.com/compute-type",
-												Operator: corev1.NodeSelectorOpNotIn,
-												Values: []string{
-													"fargate",
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-					HostNetwork: true,
-					Tolerations: []corev1.Toleration{
-						{
-							Operator: corev1.TolerationOpExists,
-							Effect:   corev1.TaintEffectNoSchedule,
-						},
-					},
-					ServiceAccountName: "multus",
-					Containers: []corev1.Container{
-						manifest.NewMultusContainer(namespace, multusImage),
-					},
-					TerminationGracePeriodSeconds: &[]int64{10}[0],
-					Volumes: []corev1.Volume{
-						{
-							Name: "cni",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: "/etc/cni/net.d",
-								},
-							},
-						},
-						{
-							Name: "cnibin",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: "/opt/cni/bin",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	if err := d.k8sClient.Create(context.Background(), daemonSet); err != nil {
-		return err
-	}
-	return waitTillDaemonSetReady(name, namespace, d)
 }
 
 func (d *defaultDaemonSetManager) DeleteDaemonSet(name string, namespace string) error {
@@ -213,13 +107,19 @@ func (d *defaultDaemonSetManager) UpdateAndWaitTillDaemonSetReady(old *v1.Daemon
 	}, ctx.Done())
 }
 
-func waitTillDaemonSetReady(name string, namespace string, d *defaultDaemonSetManager) error {
+func (d *defaultDaemonSetManager) CheckIfDaemonSetIsReady(namespace string, name string) error {
 	ds, err := d.GetDaemonSet(namespace, name)
 	if err != nil {
 		return err
 	}
 	ctx := context.Background()
+	attempts := 0
 	return wait.PollImmediateUntil(utils.PollIntervalMedium, func() (bool, error) {
+		attempts += 1
+		if attempts > 4 {
+			return false, errors.New("daemonset taking too long to become ready")
+		}
+
 		if err := d.k8sClient.Get(ctx, utils.NamespacedName(ds), ds); err != nil {
 			return false, err
 		}

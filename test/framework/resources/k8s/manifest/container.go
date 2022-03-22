@@ -17,7 +17,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 type Container struct {
@@ -65,46 +64,6 @@ func NewNetCatAlpineContainer() *Container {
 		// compatible with arm64 and amd64
 		image:           "public.ecr.aws/e6v3k1j4/netcat-openbsd:v1.0",
 		imagePullPolicy: v1.PullIfNotPresent,
-	}
-}
-
-func NewMultusContainer(name string, image string) v1.Container {
-	return v1.Container{
-		Name:  name,
-		Image: image,
-		Command: []string{
-			"/entrypoint.sh",
-		},
-		Args: []string{
-			"--multus-conf-file=auto",
-			"--cni-version=0.3.1",
-			"--multus-master-cni-file-name=10-aws.conflist",
-			"--multus-log-level=error",
-			"--multus-log-file=/var/log/aws-routed-eni/multus.log",
-		},
-		Resources: v1.ResourceRequirements{
-			Requests: v1.ResourceList{
-				v1.ResourceCPU:    resource.MustParse("100m"),
-				v1.ResourceMemory: resource.MustParse("50Mi"),
-			},
-			Limits: v1.ResourceList{
-				v1.ResourceCPU:    resource.MustParse("100m"),
-				v1.ResourceMemory: resource.MustParse("50Mi"),
-			},
-		},
-		SecurityContext: &v1.SecurityContext{
-			Privileged: &[]bool{true}[0],
-		},
-		VolumeMounts: []v1.VolumeMount{
-			{
-				Name:      "cni",
-				MountPath: "/host/etc/cni/net.d",
-			},
-			{
-				Name:      "cnibin",
-				MountPath: "/host/opt/cni/bin",
-			},
-		},
 	}
 }
 
