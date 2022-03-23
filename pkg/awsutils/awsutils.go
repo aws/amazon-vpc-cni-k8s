@@ -200,6 +200,8 @@ type APIs interface {
 
 	// FetchInstanceTypeLimits Verify if the InstanceNetworkingLimits has the ENI limits else make EC2 call to fill cache.
 	FetchInstanceTypeLimits() error
+
+	IsPrefixDelegationSupported() bool
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -264,6 +266,7 @@ type InstanceTypeLimits struct {
 	ENILimit       int
 	IPv4Limit      int
 	HypervisorType string
+	IsBareMetal    bool
 }
 
 // PrimaryIPv4Address returns the primary IPv4 address of this node
@@ -1352,13 +1355,16 @@ func (cache *EC2InstanceMetadataCache) FetchInstanceTypeLimits() error {
 	eniLimit := int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
 	ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
 	hypervisorType := aws.StringValue(info.Hypervisor)
+	isBareMetalInstance := aws.BoolValue(info.BareMetal)
 	//Not checking for empty hypervisorType since have seen certain instances not getting this filled.
 	if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
 		eniLimits = InstanceTypeLimits{
 			ENILimit:       eniLimit,
 			IPv4Limit:      ipv4Limit,
 			HypervisorType: hypervisorType,
+			IsBareMetal:    isBareMetalInstance,
 		}
+
 		InstanceNetworkingLimits[instanceType] = eniLimits
 	} else {
 		return errors.New(fmt.Sprintf("%s: %s", UnknownInstanceType, cache.instanceType))
@@ -1379,16 +1385,33 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() int {
 	return eniLimits.ENILimit
 }
 
-// GetInstanceHypervisorFamily return hypervior of EC2 instance type
+// GetInstanceHypervisorFamily returns hypervisor of EC2 instance type
 func (cache *EC2InstanceMetadataCache) GetInstanceHypervisorFamily() string {
 	eniLimits, _ := InstanceNetworkingLimits[cache.instanceType]
 	log.Debugf("Instance hypervisor family %s", eniLimits.HypervisorType)
 	return eniLimits.HypervisorType
 }
 
+// IsInstanceBareMetal derives bare metal value of the instance
+func (cache *EC2InstanceMetadataCache) IsInstanceBareMetal() bool {
+	instanceProperties, _ := InstanceNetworkingLimits[cache.instanceType]
+	log.Debugf("Bare Metal Instance %s", instanceProperties.IsBareMetal)
+	return instanceProperties.IsBareMetal
+}
+
 // GetInstanceType return EC2 instance type
 func (cache *EC2InstanceMetadataCache) GetInstanceType() string {
 	return cache.instanceType
+}
+
+// IsPrefixDelegationSupported return true if the instance type supports Prefix Assignment/Delegation
+func (cache *EC2InstanceMetadataCache) IsPrefixDelegationSupported() bool {
+	log.Debugf("Check if instance supports Prefix Delegation")
+	if cache.GetInstanceHypervisorFamily() == "nitro" || cache.IsInstanceBareMetal() {
+		log.Debugf("Instance supports Prefix Delegation")
+		return true
+	}
+	return false
 }
 
 // AllocIPAddresses allocates numIPs of IP address on an ENI
