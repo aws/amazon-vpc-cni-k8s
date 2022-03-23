@@ -8,6 +8,7 @@ function load_addon_details() {
 
   LATEST_ADDON_VERSION=$(echo "$DESCRIBE_ADDON_VERSIONS" | jq '.addons[0].addonVersions[0].addonVersion' -r)
   DEFAULT_ADDON_VERSION=$(echo "$DESCRIBE_ADDON_VERSIONS" | jq -r '.addons[].addonVersions[] | select(.compatibilities[0].defaultVersion == true) | .addonVersion')
+  EXISTING_SERVICE_ACCOUNT_ROLE_ARN=$(kubectl get serviceaccount -n kube-system aws-node -o json | jq '.metadata.annotations."eks.amazonaws.com/role-arn"' -r)
 }
 
 function wait_for_addon_status() {
@@ -15,7 +16,7 @@ function wait_for_addon_status() {
   local retry_attempt=0
   if [ "$expected_status" =  "DELETED" ]; then
     while $(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --region "$REGION"); do
-      if [ $retry_attempt -ge 20 ]; then
+      if [ $retry_attempt -ge 30 ]; then
         echo "failed to delete addon, qutting after too many attempts"
         exit 1
       fi
@@ -24,6 +25,8 @@ function wait_for_addon_status() {
       ((retry_attempt=retry_attempt+1))
     done
     echo "addon deleted"
+    # Even after the addon API Returns an error, if you immediately try to create a new addon it sometimes fails
+    sleep 10
     return
   fi
 
@@ -42,14 +45,24 @@ function wait_for_addon_status() {
       exit 1
     fi
     echo "addon status is not equal to $expected_status"
-    sleep 5
+    sleep 10
     ((retry_attempt=retry_attempt+1))
   done
 }
 
 function patch_aws_node_maxunavialable() {
-   # Patch the aws-node, so any update in aws-node happens parallely for faster overall test execution
-   kubectl patch ds -n kube-system aws-node -p '{"spec":{"updateStrategy":{"rollingUpdate":{"maxUnavailable": "100%"}}}}'
+   # Patch the aws-node, so any update in aws-node happens in parallel for faster overall test execution
+   local retry=0
+   while [ $retry -le 10 ]; do
+     if kubectl patch ds -n kube-system aws-node -p '{"spec":{"updateStrategy":{"rollingUpdate":{"maxUnavailable": "100%"}}}}'; then
+       break
+     else
+       # It's possible the ds is not yet created by the Addon APIs, so have couple of retries
+       echo "failed to patch ds, will retry"
+       sleep 5
+       ((retry=retry+1))
+     fi
+   done
 }
 
 function install_add_on() {
@@ -69,7 +82,13 @@ function install_add_on() {
   fi
 
   echo "installing addon $new_addon_version"
-  aws eks create-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --resolve-conflicts OVERWRITE --addon-version $new_addon_version --region "$REGION"
+
+  # If installing the addon after deleting it once, we should retain the Service Account Role ARN of the Addon
+  if [ "$EXISTING_SERVICE_ACCOUNT_ROLE_ARN" != "null" ]; then
+     SA_ROLE_ARN_ARG="--service-account-role-arn $EXISTING_SERVICE_ACCOUNT_ROLE_ARN"
+  fi
+
+  aws eks create-addon $ENDPOINT_FLAG $SA_ROLE_ARN_ARG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --resolve-conflicts OVERWRITE --addon-version $new_addon_version --region "$REGION"
   patch_aws_node_maxunavialable
   wait_for_addon_status "ACTIVE"
 }

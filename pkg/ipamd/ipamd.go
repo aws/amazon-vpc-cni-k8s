@@ -2161,9 +2161,6 @@ func (c *IPAMContext) initENIAndIPLimits() (err error) {
 }
 
 func (c *IPAMContext) isConfigValid() bool {
-	//Get Instance type
-	hypervisorType := c.awsClient.GetInstanceHypervisorFamily()
-
 	//Validate that only one among v4 and v6 is enabled.
 	if c.enableIPv4 && c.enableIPv6 {
 		log.Errorf("IPv4 and IPv6 are both enabled. VPC CNI currently doesn't support dual stack mode")
@@ -2181,7 +2178,7 @@ func (c *IPAMContext) isConfigValid() bool {
 	}
 
 	//Validate Prefix Delegation against v4 and v6 modes.
-	if hypervisorType != "nitro" && c.enablePrefixDelegation {
+	if c.enablePrefixDelegation && !c.awsClient.IsPrefixDelegationSupported() {
 		if c.enableIPv6 {
 			log.Errorf("Prefix Delegation is not supported on non-nitro instance %s. IPv6 is only supported in Prefix delegation Mode. ", c.awsClient.GetInstanceType())
 			return false
