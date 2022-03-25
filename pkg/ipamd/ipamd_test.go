@@ -1982,11 +1982,13 @@ func TestIsConfigValid(t *testing.T) {
 			m := setup(t)
 			defer m.ctrl.Finish()
 
-			if tt.fields.isNitroInstance {
-				m.awsutils.EXPECT().GetInstanceHypervisorFamily().Return("nitro")
-			} else {
-				m.awsutils.EXPECT().GetInstanceType().Return("dummy-instance")
-				m.awsutils.EXPECT().GetInstanceHypervisorFamily().Return("non-nitro")
+			if tt.fields.prefixDelegationEnabled && !(tt.fields.podENIEnabled && tt.fields.ipV6Enabled) {
+				if tt.fields.isNitroInstance {
+					m.awsutils.EXPECT().IsPrefixDelegationSupported().Return(true)
+				} else {
+					m.awsutils.EXPECT().GetInstanceType().Return("dummy-instance")
+					m.awsutils.EXPECT().IsPrefixDelegationSupported().Return(false)
+				}
 			}
 			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled)
 

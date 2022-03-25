@@ -457,7 +457,7 @@ Setting ENABLE_PREFIX_DELEGATION to true will not increase the density of branch
 
 Please refer to [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information around using Prefix delegation with Custom Networking and Security Groups Per Pod features.
 
-**Note:** `ENABLE_PREFIX_DELEGATION` needs to be set to `true` when VPC CNI is configured to operate in IPv6 mode (supported in v1.10.0+).
+**Note:** `ENABLE_PREFIX_DELEGATION` needs to be set to `true` when VPC CNI is configured to operate in IPv6 mode (supported in v1.10.0+). Prefix Delegation in IPv4 and IPv6 modes is supported on Nitro based Bare Metal instances as well from v1.11+. If you're using Prefix Delegation feature on Bare Metal instances, downgrading to an earlier version of VPC CNI from v1.11+ will be disruptive and not supported.
 
 ---
 

@@ -407,6 +407,20 @@ func (mr *MockAPIsMockRecorder) IsCNIUnmanagedENI(arg0 interface{}) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsCNIUnmanagedENI", reflect.TypeOf((*MockAPIs)(nil).IsCNIUnmanagedENI), arg0)
 }
 
+// IsPrefixDelegationSupported mocks base method
+func (m *MockAPIs) IsPrefixDelegationSupported() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsPrefixDelegationSupported")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsPrefixDelegationSupported indicates an expected call of IsPrefixDelegationSupported
+func (mr *MockAPIsMockRecorder) IsPrefixDelegationSupported() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsPrefixDelegationSupported", reflect.TypeOf((*MockAPIs)(nil).IsPrefixDelegationSupported))
+}
+
 // IsPrimaryENI mocks base method
 func (m *MockAPIs) IsPrimaryENI(arg0 string) bool {
 	m.ctrl.T.Helper()
