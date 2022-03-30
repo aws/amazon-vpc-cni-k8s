@@ -3,7 +3,7 @@ module github.com/aws/amazon-vpc-cni-k8s
 go 1.17
 
 require (
-	github.com/aws/aws-sdk-go v1.40.6
+	github.com/aws/aws-sdk-go v1.43.29
 	github.com/containernetworking/cni v0.8.0
 	github.com/containernetworking/plugins v0.9.0
 	github.com/coreos/go-iptables v0.4.5
@@ -18,8 +18,8 @@ require (
 	github.com/stretchr/testify v1.6.1
 	github.com/vishvananda/netlink v1.1.1-0.20201029203352-d40f9887b852
 	go.uber.org/zap v1.15.0
-	golang.org/x/net v0.0.0-20210805182204-aaa1db679c0d
-	golang.org/x/sys v0.0.0-20210616094352-59db8d763f22
+	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd
+	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e
 	google.golang.org/grpc v1.29.0
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
@@ -63,7 +63,7 @@ require (
 	golang.org/x/crypto v0.0.0-20201002170205-7f63de1d35b0 // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect
-	golang.org/x/text v0.3.6 // indirect
+	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
 	golang.org/x/tools v0.1.5 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.1.0 // indirect
