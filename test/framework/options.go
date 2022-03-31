@@ -34,6 +34,7 @@ type Options struct {
 	NgNameLabelKey string
 	NgNameLabelVal string
 	EKSEndpoint    string
+	CalicoVersion  string
 }
 
 func (options *Options) BindFlags() {
@@ -44,6 +45,7 @@ func (options *Options) BindFlags() {
 	flag.StringVar(&options.NgNameLabelKey, "ng-name-label-key", "eks.amazonaws.com/nodegroup", "label key used to identify nodegroup name")
 	flag.StringVar(&options.NgNameLabelVal, "ng-name-label-val", "", "label value with the nodegroup name")
 	flag.StringVar(&options.EKSEndpoint, "eks-endpoint", "", "optional eks api server endpoint")
+	flag.StringVar(&options.CalicoVersion, "calico-version", "3.22.0", "calico version to be tested")
 }
 
 func (options *Options) Validate() error {

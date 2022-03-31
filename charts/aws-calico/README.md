@@ -1,6 +1,33 @@
+# Important Announcement: AWS EKS will no longer maintain and update Calico charts in this repository #
+- The current Calico charts will not be updated
+- The current Calico charts will be removed from this repository on March 31, 2023
+- Current open requests will be redirected to Calico
+- You should submit new requests to Calico directly
+    - For Calico, please send issues to [Calico repository](http://github.com/projectcalico/calico)
+    - For Tigera Operator, please send issues to [Operator repository](http://github.com/tigera/operator)
+- We will update and maintain the [AWS docs](https://docs.aws.amazon.com/eks/latest/userguide/calico.html) for Calico installation after the deprecation
+- For users who want to migrate their Calico installation from Calico manifests based to operator based
+  - Making sure your Calico resources are in good working state
+  - Following [this Tigera instruction](https://projectcalico.docs.tigera.io/maintenance/operator-migration) to migrate
+  - Waiting till Calico resources migrated from `kube-system` namespace to `calico-system` namespace 
+  - You should run network policy tests before you apply this migrated resources on prod environment
+- For users who want to upgrade their operator based Calico installation
+  - Till now, Tigera doesn't officially support migrating manifests installed operator to helm installed operator
+  - For users on manifests installed operator, you should follow [this instruction](https://projectcalico.docs.tigera.io/getting-started/kubernetes/quickstart) to upgrade your operator and managed Calico resources
+    - If you are upgrading Tigera operator, you should use `kubectl apply` instead of `kubectl create`
+  - For users on helm installed operator, you can follow [this instruction](https://projectcalico.docs.tigera.io/getting-started/kubernetes/helm) to use helm command to upgrade operator and its managed Calico to certain version
+- For users who want to stay on manifests installed Calico instead of Tigera operator
+  - Please be aware that this is a still supported method by Tigera but not preferred
+  - You can follow [this instruction](https://projectcalico.docs.tigera.io/getting-started/kubernetes/self-managed-onprem/onpremises) to upgrade to latest Calico resources
+
+
 # Calico on AWS
 
-This chart installs Calico on AWS: https://docs.aws.amazon.com/eks/latest/userguide/calico.html
+## The instructions and charts provided in this repo have been deprecated and will not be updated. The recommended way to install Calico on EKS is via [Tigera Operator](https://github.com/tigera/operator) instead of this helm-chart.
+You can follow https://docs.aws.amazon.com/eks/latest/userguide/calico.html for detailed instructions.
+
+<details>
+  <summary>Click to expand the older and now deprecated installation instructions</summary>
 
 ## Prerequisites
 
@@ -64,3 +91,4 @@ Specify each parameter using the `--set key=value[,key=value]` argument to `helm
 ```shell
 $ helm install --name aws-calico --namespace kube-system eks/aws-calico --values values.yaml
 ```
+</details>

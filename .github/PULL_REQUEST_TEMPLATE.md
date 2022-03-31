@@ -38,6 +38,11 @@ Test case added to lib/integration.sh
 If no, create an issue with enhancement/testing label
 -->
 
+**Will this PR introduce any new dependencies?**:
+<!-- 
+e.g. new EC2/K8s API, IMDS API, dependency on specific kernel module/version or binary in container OS.
+-->
+
 **Will this break upgrades or downgrades. Has updating a running cluster been tested?**:
 
 
