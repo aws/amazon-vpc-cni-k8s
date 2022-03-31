@@ -15,8 +15,8 @@ package helm
 
 import (
 	"fmt"
+	"log"
 
-	"github.com/prometheus/common/log"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
@@ -110,7 +110,7 @@ func (d *defaultReleaseManager) obtainActionConfig(namespace string) *action.Con
 	actionConfig := new(action.Configuration)
 	actionConfig.Init(cfgFlag, namespace, "secrets", func(format string, v ...interface{}) {
 		message := fmt.Sprintf(format, v...)
-		log.Info(message)
+		log.Println(message)
 	})
 	return actionConfig
 }
