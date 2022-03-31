@@ -11,7 +11,26 @@
 # express or implied. See the License for the specific language governing
 # permissions and limitations under the License.
 #
-# This file was generated at 2021-09-10T21:50:00Z
+# This file was generated at 2022-03-20T00:58:08-07:00
+#
+# The regions queried were:
+# - ap-northeast-1
+# - ap-northeast-2
+# - ap-northeast-3
+# - ap-south-1
+# - ap-southeast-1
+# - ap-southeast-2
+# - ca-central-1
+# - eu-central-1
+# - eu-north-1
+# - eu-west-1
+# - eu-west-2
+# - eu-west-3
+# - sa-east-1
+# - us-east-1
+# - us-east-2
+# - us-west-1
+# - us-west-2
 #
 # Mapping is calculated from AWS EC2 API using the following formula:
 # * First IP on each ENI is not used for pods
@@ -108,6 +127,25 @@ c6gn.8xlarge 234
 c6gn.large 29
 c6gn.medium 8
 c6gn.xlarge 58
+c6i.12xlarge 234
+c6i.16xlarge 737
+c6i.24xlarge 737
+c6i.2xlarge 58
+c6i.32xlarge 737
+c6i.4xlarge 234
+c6i.8xlarge 234
+c6i.large 29
+c6i.metal 737
+c6i.xlarge 58
+c7g.12xlarge 234
+c7g.16xlarge 737
+c7g.2xlarge 58
+c7g.4xlarge 234
+c7g.8xlarge 234
+c7g.large 29
+c7g.medium 8
+c7g.metal 737
+c7g.xlarge 58
 cc2.8xlarge 234
 cr1.8xlarge 234
 d2.2xlarge 58
@@ -430,6 +468,22 @@ x2gd.large 29
 x2gd.medium 8
 x2gd.metal 737
 x2gd.xlarge 58
+x2idn.16xlarge 737
+x2idn.24xlarge 737
+x2idn.32xlarge 737
+x2iedn.16xlarge 737
+x2iedn.24xlarge 737
+x2iedn.2xlarge 58
+x2iedn.32xlarge 737
+x2iedn.4xlarge 234
+x2iedn.8xlarge 234
+x2iedn.xlarge 58
+x2iezn.12xlarge 737
+x2iezn.2xlarge 58
+x2iezn.4xlarge 234
+x2iezn.6xlarge 234
+x2iezn.8xlarge 234
+x2iezn.metal 737
 z1d.12xlarge 737
 z1d.2xlarge 58
 z1d.3xlarge 234
