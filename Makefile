@@ -297,7 +297,7 @@ ekscharts-sync-release:
 
 build-test-binaries:
 	mkdir -p ${MAKEFILE_PATH}build
-	find ${MAKEFILE_PATH} -name '*suite_test.go' -type f  | xargs dirname  | xargs ginkgo build
+	find . -name '*suite_test.go' -type f  | xargs dirname  | xargs ginkgo build
 	find ${MAKEFILE_PATH} -name "*.test" -print0 | xargs -0 -I {} mv {} ${MAKEFILE_PATH}build
 
 upload-resources-to-github:
