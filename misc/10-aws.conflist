@@ -8,6 +8,7 @@
       "type": "aws-cni",
       "vethPrefix": "__VETHPREFIX__",
       "mtu": "__MTU__",
+      "podSGEnforcingMode": "__PODSGENFORCINGMODE__",
       "pluginLogFile": "__PLUGINLOGFILE__",
       "pluginLogLevel": "__PLUGINLOGLEVEL__"
     },
@@ -16,6 +17,7 @@
       "type": "egress-v4-cni",
       "mtu": 9001,
       "enabled": "__EGRESSV4PLUGINENABLED__",
+      "randomizeSNAT": "__RANDOMIZESNAT__",
       "nodeIP": "__NODEIP__",
       "ipam": {
          "type": "host-local",

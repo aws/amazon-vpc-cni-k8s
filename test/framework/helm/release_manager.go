@@ -15,12 +15,15 @@ package helm
 
 import (
 	"fmt"
+	"log"
 
-	"github.com/prometheus/common/log"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/getter"
+	"helm.sh/helm/v3/pkg/helmpath"
 	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/repo"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
@@ -28,6 +31,8 @@ type ReleaseManager interface {
 	InstallUnPackagedRelease(chart string, releaseName string, namespace string,
 		values map[string]interface{}) (*release.Release, error)
 	UninstallRelease(namespace string, releaseName string) (*release.UninstallReleaseResponse, error)
+	InstallPackagedRelease(chart string, releaseName string, version string, namespace string,
+		values map[string]interface{}) (*release.Release, error)
 }
 
 type defaultReleaseManager struct {
@@ -47,6 +52,37 @@ func (d *defaultReleaseManager) InstallUnPackagedRelease(chart string, releaseNa
 	installAction.Wait = true
 	installAction.ReleaseName = releaseName
 
+	return installCharts(installAction, chart, values)
+}
+
+func (d *defaultReleaseManager) InstallPackagedRelease(chart string, releaseName string, version string, namespace string,
+	values map[string]interface{}) (*release.Release, error) {
+	entry := &repo.Entry{
+		Name:                  "projectcalico",
+		URL:                   "https://projectcalico.docs.tigera.io/charts",
+		InsecureSkipTLSverify: true,
+	}
+	setting := cli.New()
+	r, err := repo.NewChartRepository(entry, getter.All(setting))
+	_, err = r.DownloadIndexFile()
+
+	file := repo.NewFile()
+	file.Update(entry)
+
+	err = file.WriteFile(helmpath.ConfigPath("repositories.yaml"), 0644)
+
+	actionConfig := d.obtainActionConfig(namespace)
+	client := action.NewInstall(actionConfig)
+	client.Version = version
+	client.ReleaseName = releaseName
+	client.Namespace = namespace
+	cp, err := client.ChartPathOptions.LocateChart(chart, setting)
+	chartReq, err := loader.Load(cp)
+	release, err := client.Run(chartReq, values)
+	return release, err
+}
+
+func installCharts(installAction *action.Install, chart string, values map[string]interface{}) (*release.Release, error) {
 	cp, err := installAction.ChartPathOptions.LocateChart(chart, cli.New())
 	if err != nil {
 		return nil, err
@@ -74,7 +110,7 @@ func (d *defaultReleaseManager) obtainActionConfig(namespace string) *action.Con
 	actionConfig := new(action.Configuration)
 	actionConfig.Init(cfgFlag, namespace, "secrets", func(format string, v ...interface{}) {
 		message := fmt.Sprintf(format, v...)
-		log.Info(message)
+		log.Println(message)
 	})
 	return actionConfig
 }

@@ -20,7 +20,7 @@ import (
 	"github.com/coreos/go-iptables/iptables"
 )
 
-func iptRules4(target, src net.IP, chain, comment string, useRandomFully bool) [][]string {
+func iptRules4(target, src net.IP, chain, comment string, useRandomFully, useHashRandom bool) [][]string {
 	var rules [][]string
 
 	// Accept/ignore multicast (just because we can)
@@ -33,9 +33,13 @@ func iptRules4(target, src net.IP, chain, comment string, useRandomFully bool) [
 		"--to-source", target.String(),
 		"-m", "comment", "--comment", comment,
 	}
+
 	if useRandomFully {
 		args = append(args, "--random-fully")
+	} else if useHashRandom {
+		args = append(args, "--random")
 	}
+
 	rules = append(rules, args)
 	rules = append(rules, []string{"POSTROUTING", "-s", src.String(), "-j", chain, "-m", "comment", "--comment", comment})
 
@@ -43,13 +47,23 @@ func iptRules4(target, src net.IP, chain, comment string, useRandomFully bool) [
 }
 
 // Snat4 SNATs IPv4 connections from `src` to `target`
-func Snat4(target, src net.IP, chain, comment string) error {
+func Snat4(target, src net.IP, chain, comment, randomizeSNAT string) error {
 	ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4)
 	if err != nil {
 		return fmt.Errorf("failed to locate iptables: %v", err)
 	}
 
-	rules := iptRules4(target, src, chain, comment, ipt.HasRandomFully())
+	//Defaults to `random-fully` unless a different option is explicitly set via
+	//`AWS_VPC_K8S_CNI_RANDOMIZESNAT`. If the underlying iptables version doesn't support
+	//'random-fully`, we will fall back to `random`.
+	useRandomFully, useHashRandom := true, false
+	if randomizeSNAT == "none" {
+		useRandomFully = false
+	} else if randomizeSNAT == "hashrandom" || !ipt.HasRandomFully() {
+		useHashRandom, useRandomFully = true, false
+	}
+
+	rules := iptRules4(target, src, chain, comment, useRandomFully, useHashRandom)
 
 	chains, err := ipt.ListChains("nat")
 	if err != nil {

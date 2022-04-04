@@ -38,6 +38,7 @@ type Options struct {
 	TargetAddon     string
 	InitialManifest string
 	TargetManifest  string
+	CalicoVersion   string
 }
 
 func (options *Options) BindFlags() {
@@ -52,6 +53,7 @@ func (options *Options) BindFlags() {
 	flag.StringVar(&options.TargetAddon, "target-addon-version", "", "Target CNI addon version after upgrade applied")
 	flag.StringVar(&options.InitialManifest, "initial-manifest-file", "", "Initial CNI manifest, can be local file path or remote Url")
 	flag.StringVar(&options.TargetManifest, "target-manifest-file", "", "Target CNI manifest, can be local file path or remote Url")
+	flag.StringVar(&options.CalicoVersion, "calico-version", "3.22.0", "calico version to be tested")
 }
 
 func (options *Options) Validate() error {
