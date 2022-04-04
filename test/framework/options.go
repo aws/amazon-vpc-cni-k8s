@@ -36,6 +36,7 @@ type Options struct {
 	EKSEndpoint    string
 	InitialAddon   string
 	TargetAddon    string
+	CalicoVersion  string
 }
 
 func (options *Options) BindFlags() {
@@ -48,6 +49,7 @@ func (options *Options) BindFlags() {
 	flag.StringVar(&options.EKSEndpoint, "eks-endpoint", "", "optional eks api server endpoint")
 	flag.StringVar(&options.InitialAddon, "initial-addon-version", "", "Initial CNI addon version before upgrade applied")
 	flag.StringVar(&options.TargetAddon, "target-addon-version", "", "Target CNI addon version after upgrade applied")
+	flag.StringVar(&options.CalicoVersion, "calico-version", "3.22.0", "calico version to be tested")
 }
 
 func (options *Options) Validate() error {

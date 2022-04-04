@@ -5,111 +5,18 @@
 
 set -e
 
-SECONDS=0
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration-new"
-VPC_CNI_ADDON_NAME="vpc-cni"
+GINKGO_TEST_BUILD="$SCRIPT_DIR/../build"
 
-echo "Running Canary tests for amazon-vpc-cni-k8s with the following variables
-KUBE_CONFIG_PATH:  $KUBE_CONFIG_PATH
-CLUSTER_NAME: $CLUSTER_NAME
-REGION: $REGION
-ENDPOINT: $ENDPOINT"
-
-if [[ -n "${ENDPOINT}" ]]; then
-  ENDPOINT_FLAG="--endpoint $ENDPOINT"
-fi
-
-# Request timesout in China Regions with default proxy
-if [[ $REGION == "cn-north-1" || $REGION == "cn-northwest-1" ]]; then
-  go env -w GOPROXY=https://goproxy.cn,direct
-  go env -w GOSUMDB=sum.golang.google.cn
-fi
-
-function load_cluster_details() {
-  echo "loading cluster details $CLUSTER_NAME"
-  DESCRIBE_CLUSTER_OP=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" $ENDPOINT_FLAG)
-  VPC_ID=$(echo "$DESCRIBE_CLUSTER_OP" | jq -r '.cluster.resourcesVpcConfig.vpcId')
-  K8S_VERSION=$(echo "$DESCRIBE_CLUSTER_OP" | jq .cluster.version -r)
-}
-
-function load_addon_details() {
-  echo "loading $VPC_CNI_ADDON_NAME addon details"
-  DESCRIBE_ADDON_VERSIONS=$(aws eks describe-addon-versions --addon-name $VPC_CNI_ADDON_NAME --kubernetes-version "$K8S_VERSION")
-
-  LATEST_ADDON_VERSION=$(echo "$DESCRIBE_ADDON_VERSIONS" | jq '.addons[0].addonVersions[0].addonVersion' -r)
-  DEFAULT_ADDON_VERSION=$(echo "$DESCRIBE_ADDON_VERSIONS" | jq -r '.addons[].addonVersions[] | select(.compatibilities[0].defaultVersion == true) | .addonVersion')
-}
-
-function wait_for_addon_status() {
-  local expected_status=$1
-  local retry_attempt=0
-  if [ "$expected_status" =  "DELETED" ]; then
-    while $(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --region "$REGION"); do
-      if [ $retry_attempt -ge 20 ]; then
-        echo "failed to delete addon, qutting after too many attempts"
-        exit 1
-      fi
-      echo "addon is still not deleted"
-      sleep 5
-      ((retry_attempt=retry_attempt+1))
-    done
-    echo "addon deleted"
-    return
-  fi
-
-  retry_attempt=0
-  while true
-  do
-    STATUS=$(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --region "$REGION" | jq -r '.addon.status')
-    if [ "$STATUS" = "$expected_status" ]; then
-      echo "addon status matches expected status"
-      return
-    fi
-    # We have seen the canary test get stuck, we don't know what causes this but most likely suspect is
-    # the addon update/delete attempts. So adding limited retries.
-    if [ $retry_attempt -ge 30 ]; then
-      echo "failed to get desired add-on status: $STATUS, qutting after too many attempts"
-      exit 1
-    fi
-    echo "addon status is not equal to $expected_status"
-    sleep 5
-    ((retry_attempt=retry_attempt+1))
-  done
-}
-
-function install_add_on() {
-  local new_addon_version=$1
-
-  if DESCRIBE_ADDON=$(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --region "$REGION"); then
-    local current_addon_version=$(echo "$DESCRIBE_ADDON" | jq '.addon.addonVersion' -r)
-    if [ "$new_addon_version" != "$current_addon_version" ]; then
-      echo "deleting the $current_addon_version to install $new_addon_version"
-      aws eks delete-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name "$VPC_CNI_ADDON_NAME" --region "$REGION"
-      wait_for_addon_status "DELETED"
-    else
-      echo "addon version $current_addon_version already installed"
-      patch_aws_node_maxunavialable
-      return
-    fi
-  fi
-
-  echo "installing addon $new_addon_version"
-  aws eks create-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --resolve-conflicts OVERWRITE --addon-version $new_addon_version --region "$REGION"
-  patch_aws_node_maxunavialable
-  wait_for_addon_status "ACTIVE"
-}
-
-function patch_aws_node_maxunavialable() {
-   # Patch the aws-node, so any update in aws-node happens parallely for faster overall test execution
-   kubectl patch ds -n kube-system aws-node -p '{"spec":{"updateStrategy":{"rollingUpdate":{"maxUnavailable": "100%"}}}}'
-}
+source "$SCRIPT_DIR"/lib/add-on.sh
+source "$SCRIPT_DIR"/lib/cluster.sh
+source "$SCRIPT_DIR"/lib/canary.sh
 
 function run_ginkgo_test() {
   local focus=$1
   echo "Running ginkgo tests with focus: $focus"
-  (cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 20m --failOnPending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-  (cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 10m --failOnPending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+  (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --focus="$focus" -v --timeout 20m --failOnPending $GINKGO_TEST_BUILD/cni.test -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+  (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --focus="$focus" -v --timeout 10m --failOnPending $GINKGO_TEST_BUILD/ipamd.test -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
 }
 
 load_cluster_details
@@ -136,6 +43,5 @@ load_addon_details
 echo "Running Canary tests on the latest addon version"
 install_add_on "$LATEST_ADDON_VERSION"
 run_ginkgo_test "CANARY"
-
 
 echo "all tests ran successfully in $(($SECONDS / 60)) minutes and $(($SECONDS % 60)) seconds"

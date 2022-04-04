@@ -17,11 +17,11 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Test pod networking with prefix delegation enabled", func() {
+var _ = Describe("[CANARY] Test pod networking with prefix delegation enabled", func() {
 	var (
 		// The Pod labels for client and server in order to retrieve the
 		// client and server Pods belonging to a Deployment/Jobs
