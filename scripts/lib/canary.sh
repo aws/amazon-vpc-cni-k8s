@@ -30,6 +30,13 @@ if [[ -n "${ENDPOINT}" ]]; then
   ENDPOINT_FLAG="--endpoint $ENDPOINT"
 fi
 
+if [[ -z "${SKIP_MAKE_TEST_BINARIES}" ]]; then
+  echo "making ginkgo test binaries"
+  (cd $SCRIPT_DIR/.. && make build-test-binaries)
+else
+  echo "skipping making ginkgo test binaries"
+fi
+
 # Request timesout in China Regions with default proxy
 if [[ $REGION == "cn-north-1" || $REGION == "cn-northwest-1" ]]; then
   go env -w GOPROXY=https://goproxy.cn,direct
