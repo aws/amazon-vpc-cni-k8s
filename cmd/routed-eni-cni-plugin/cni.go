@@ -178,7 +178,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.New("add cmd: failed to assign an IP address to container")
 	}
 
-	log.Infof("Received add network response for container %s interface %s: %+v",
+	log.Infof("Received add network response from ipamd for container %s interface %s: %+v",
 		args.ContainerID, args.IfName, r)
 
 	//We will let the values in result struct guide us in terms of IP Address Family configured.
@@ -313,14 +313,6 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.Wrap(err, "del cmd: failed to load k8s config from args")
 	}
 
-	// With containerd as the runtime, it was observed that sometimes spurious delete requests
-	// are triggered from kubelet with an empty Netns. This check safeguards against such
-	// scenarios and we just return
-	// ref: https://github.com/kubernetes/kubernetes/issues/44100#issuecomment-329780382
-	if args.Netns == "" {
-		log.Info("Netns() is empty, so network already cleanedup. Nothing to do")
-		return nil
-	}
 	prevResult, ok := conf.PrevResult.(*current.Result)
 
 	// Try to use prevResult if available
@@ -341,6 +333,11 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 				if podVlanId == 0 {
 					log.Errorf("Found SG pod:%s namespace:%s with 0 vlanID", k8sArgs.K8S_POD_NAME, k8sArgs.K8S_POD_NAMESPACE)
 					return errors.Wrap(err, "del cmd: found Incorrect 0 vlandId for ppsg")
+				}
+
+				if isNetnsEmpty(args.Netns) {
+					log.Infof("Ignoring TeardownPodENI as Netns is empty for SG pod:%s namespace: %s containerID:%s", k8sArgs.K8S_POD_NAME, k8sArgs.K8S_POD_NAMESPACE, k8sArgs.K8S_POD_INFRA_CONTAINER_ID)
+					return nil
 				}
 
 				err = cleanUpPodENI(podVlanId, log, args.ContainerID, driverClient)
@@ -397,7 +394,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.New("del cmd: failed to process delete request")
 	}
 
-	log.Infof("Received del network response for pod %s namespace %s sandbox %s: %+v", string(k8sArgs.K8S_POD_NAME),
+	log.Infof("Received del network response from ipamd for pod %s namespace %s sandbox %s: %+v", string(k8sArgs.K8S_POD_NAME),
 		string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), r)
 
 	var deletedPodIP net.IP
@@ -416,7 +413,12 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			Mask: net.CIDRMask(maskLen, maskLen),
 		}
 
+		// vlanID != 0 means pod using security group
 		if r.PodVlanId != 0 {
+			if isNetnsEmpty(args.Netns) {
+				log.Infof("Ignoring TeardownPodENI as Netns is empty for SG pod:%s namespace: %s containerID:%s", k8sArgs.K8S_POD_NAME, k8sArgs.K8S_POD_NAMESPACE, k8sArgs.K8S_POD_INFRA_CONTAINER_ID)
+				return nil
+			}
 			err = driverClient.TeardownPodENINetwork(int(r.PodVlanId), log)
 		} else {
 			err = driverClient.TeardownNS(addr, int(r.DeviceNumber), log)
@@ -441,6 +443,14 @@ func cleanUpPodENI(podVlanId int, log logger.Logger, containerId string, driverC
 		return errors.Wrap(err, "del cmd: failed on tear down pod network")
 	}
 	return nil
+}
+
+// Scope usage of this function to only SG pods scenario (https://harbinger.amazon.com/notices/65203)
+// Don't process deletes when NetNS is empty
+// as it implies that veth for this request is already deleted
+// ref: https://github.com/kubernetes/kubernetes/issues/44100#issuecomment-329780382
+func isNetnsEmpty(Netns string) bool {
+	return Netns == ""
 }
 
 func main() {
