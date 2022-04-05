@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   integration-trusted:
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux, x64]
     steps:
       - name: Set up Go 1.14
         uses: actions/setup-go@v2
@@ -29,7 +29,7 @@ jobs:
           go get -u golang.org/x/tools/cmd/goimports
 
       - name: Clean up stale docker images
-        run: sudo docker image prune -f
+        run: docker image prune -f
 
       - name: Run e2e tests
         env:
