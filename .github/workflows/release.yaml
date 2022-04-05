@@ -1,9 +1,9 @@
 name: VPC CNI Release
 
-on: [push, pull_request, workflow_dispatch]
+on: [push, workflow_dispatch]
 
 env:
-  DEFAULT_GO_VERSION: ^1.15
+  DEFAULT_GO_VERSION: ^1.17
   GITHUB_USERNAME: ${{ secrets.EKS_BOT_GITHUB_USERNAME }}
   GITHUB_TOKEN: ${{ secrets.EKS_BOT_GITHUB_TOKEN }}
 
