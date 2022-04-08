@@ -28,15 +28,29 @@ const (
 	dockerSocketPath = "unix:///var/run/dockershim.sock"
 )
 
+// PodSandboxMetadata contains metadata about pod sandboxes.
+type PodSandboxMetadata struct {
+	// Pod's namespace
+	Namespace string
+	// Pod's name
+	Name string
+}
+
 // SandboxInfo provides container information
 type SandboxInfo struct {
+	// Pod sandbox's ID.
 	ID string
-	IP string
+	// Pod sandbox's IP addresses
+	IPs []string
+	// Timestamp(in nanoSec) when sandbox was created
+	CreationTimestamp int64
+	// Pod sandbox's metadata if any.
+	Metadata *PodSandboxMetadata
 }
 
 // APIs is the CRI interface
 type APIs interface {
-	GetRunningPodSandboxes(log logger.Logger) ([]*SandboxInfo, error)
+	GetRunningPodSandboxes(log logger.Logger) ([]SandboxInfo, error)
 }
 
 // Client is an empty struct
@@ -48,7 +62,7 @@ func New() *Client {
 }
 
 //GetRunningPodSandboxes get running sandboxIDs
-func (c *Client) GetRunningPodSandboxes(log logger.Logger) ([]*SandboxInfo, error) {
+func (c *Client) GetRunningPodSandboxes(log logger.Logger) ([]SandboxInfo, error) {
 	ctx := context.TODO()
 
 	socketPath := dockerSocketPath
@@ -76,7 +90,7 @@ func (c *Client) GetRunningPodSandboxes(log logger.Logger) ([]*SandboxInfo, erro
 		return nil, err
 	}
 
-	sandboxInfos := make([]*SandboxInfo, 0, len(sandboxes.GetItems()))
+	sandboxInfos := make([]SandboxInfo, 0, len(sandboxes.GetItems()))
 	for _, sandbox := range sandboxes.GetItems() {
 		status, err := client.PodSandboxStatus(ctx, &runtimeapi.PodSandboxStatusRequest{
 			PodSandboxId: sandbox.GetId(),
@@ -99,14 +113,19 @@ func (c *Client) GetRunningPodSandboxes(log logger.Logger) ([]*SandboxInfo, erro
 		for _, ip := range status.GetStatus().GetNetwork().GetAdditionalIps() {
 			ips = append(ips, ip.GetIp())
 		}
-
-		for _, ip := range ips {
-			info := SandboxInfo{
-				ID: sandbox.GetId(),
-				IP: ip,
-			}
-			sandboxInfos = append(sandboxInfos, &info)
+		sandBoxInfo := SandboxInfo{
+			ID:                sandbox.GetId(),
+			IPs:               ips,
+			CreationTimestamp: status.GetStatus().GetCreatedAt(),
 		}
+		if metadata := status.GetStatus().GetMetadata(); metadata != nil {
+			sandBoxInfo.Metadata = &PodSandboxMetadata{
+				Namespace: metadata.GetNamespace(),
+				Name:      metadata.GetName(),
+			}
+		}
+
+		sandboxInfos = append(sandboxInfos, sandBoxInfo)
 	}
 	return sandboxInfos, nil
 }

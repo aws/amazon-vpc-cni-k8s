@@ -1216,6 +1216,9 @@ func datastoreWith1Pod1() *datastore.DataStore {
 		NetworkName: "net0",
 		ContainerID: "sandbox-1",
 		IfName:      "eth0",
+	}, datastore.IPAMMetadata{
+		K8SPodNamespace: "default",
+		K8SPodName:      "sample-pod",
 	})
 	return datastoreWith1Pod1
 }
@@ -1229,7 +1232,10 @@ func datastoreWith3Pods() *datastore.DataStore {
 			ContainerID: fmt.Sprintf("sandbox-%d", i),
 			IfName:      "eth0",
 		}
-		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key)
+		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key, datastore.IPAMMetadata{
+			K8SPodNamespace: "default",
+			K8SPodName:      fmt.Sprintf("sample-pod-%d", i),
+		})
 	}
 	return datastoreWith3Pods
 }
@@ -1249,6 +1255,9 @@ func datastoreWith1Pod1FromPrefix() *datastore.DataStore {
 		NetworkName: "net0",
 		ContainerID: "sandbox-1",
 		IfName:      "eth0",
+	}, datastore.IPAMMetadata{
+		K8SPodNamespace: "default",
+		K8SPodName:      "sample-pod",
 	})
 	return datastoreWith1Pod1
 }
@@ -1262,7 +1271,11 @@ func datastoreWith3PodsFromPrefix() *datastore.DataStore {
 			ContainerID: fmt.Sprintf("sandbox-%d", i),
 			IfName:      "eth0",
 		}
-		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key)
+		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key,
+			datastore.IPAMMetadata{
+				K8SPodNamespace: "default",
+				K8SPodName:      fmt.Sprintf("sample-pod-%d", i),
+			})
 	}
 	return datastoreWith3Pods
 }
