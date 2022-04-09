@@ -27,14 +27,15 @@ import (
 
 type NamespaceManager interface {
 	CreateNamespace(namespace string) error
+	CreateNamespaceWithLabels(namespace string, labels map[string]string) error
 	DeleteAndWaitTillNamespaceDeleted(namespace string) error
 }
 
 type defaultNamespaceManager struct {
-	k8sClient client.DelegatingClient
+	k8sClient client.Client
 }
 
-func NewDefaultNamespaceManager(k8sClient client.DelegatingClient) NamespaceManager {
+func NewDefaultNamespaceManager(k8sClient client.Client) NamespaceManager {
 	return &defaultNamespaceManager{k8sClient: k8sClient}
 }
 
@@ -44,6 +45,13 @@ func (m *defaultNamespaceManager) CreateNamespace(namespace string) error {
 	}
 	ctx := context.Background()
 	return m.k8sClient.Create(ctx, &v1.Namespace{ObjectMeta: metaV1.ObjectMeta{Name: namespace}})
+}
+
+func (m *defaultNamespaceManager) CreateNamespaceWithLabels(namespace string, labels map[string]string) error {
+	if namespace == "" || namespace == "default" {
+		return nil
+	}
+	return m.k8sClient.Create(context.Background(), &v1.Namespace{ObjectMeta: metaV1.ObjectMeta{Name: namespace, Labels: labels}})
 }
 
 func (m *defaultNamespaceManager) DeleteAndWaitTillNamespaceDeleted(namespace string) error {

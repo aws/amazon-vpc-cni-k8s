@@ -16,29 +16,28 @@ package resources
 import (
 	"context"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type CustomResourceManager interface {
-	CreateResource(resource runtime.Object) error
-	DeleteResource(resource runtime.Object) error
+	CreateResource(resource client.Object) error
+	DeleteResource(resource client.Object) error
 }
 
 type defaultCustomResourceManager struct {
-	k8sClient client.DelegatingClient
+	k8sClient client.Client
 }
 
-func NewCustomResourceManager(k8sClient client.DelegatingClient) CustomResourceManager {
+func NewCustomResourceManager(k8sClient client.Client) CustomResourceManager {
 	return &defaultCustomResourceManager{k8sClient: k8sClient}
 }
 
-func (d *defaultCustomResourceManager) CreateResource(resource runtime.Object) error {
+func (d *defaultCustomResourceManager) CreateResource(resource client.Object) error {
 	ctx := context.Background()
 	return d.k8sClient.Create(ctx, resource)
 }
 
-func (d *defaultCustomResourceManager) DeleteResource(resource runtime.Object) error {
+func (d *defaultCustomResourceManager) DeleteResource(resource client.Object) error {
 	ctx := context.Background()
 	return d.k8sClient.Delete(ctx, resource)
 }

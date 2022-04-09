@@ -19,6 +19,11 @@ import (
 	"net"
 	"testing"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/containernetworking/cni/pkg/types/current"
+
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/golang/mock/gomock"
@@ -52,8 +57,9 @@ var netConf = &NetConf{
 		Name:       cniName,
 		Type:       cniType,
 	},
-	PluginLogLevel: pluginLogLevel,
-	PluginLogFile:  pluginLogFile,
+	PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+	PluginLogLevel:     pluginLogLevel,
+	PluginLogFile:      pluginLogFile,
 }
 
 func setup(t *testing.T) (*gomock.Controller,
@@ -95,10 +101,8 @@ func TestCmdAdd(t *testing.T) {
 		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	v6Addr := &net.IPNet{}
-
-	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		v4Addr, v6Addr, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
+		v4Addr, nil, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -160,8 +164,8 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 
-	mocksNetwork.EXPECT().SetupNS(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		addr, nil, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
+		addr, nil, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
 
 	// when SetupPodNetwork fails, expect to return IP back to datastore
 	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
@@ -200,7 +204,7 @@ func TestCmdDel(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 
-	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().TeardownPodNetwork(addr, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(nil)
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Nil(t, err)
@@ -261,7 +265,7 @@ func TestCmdDelErrTeardown(t *testing.T) {
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 
-	mocksNetwork.EXPECT().TeardownNS(addr, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(errors.New("error on teardown"))
+	mocksNetwork.EXPECT().TeardownPodNetwork(addr, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(errors.New("error on teardown"))
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Error(t, err)
@@ -294,8 +298,8 @@ func TestCmdAddForPodENINetwork(t *testing.T) {
 		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
-	mocksNetwork.EXPECT().SetupPodENINetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns, addr, nil, 1, "eniHardwareAddr",
-		"10.0.0.1", 2, gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupBranchENIPodNetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns, addr, nil, 1, "eniHardwareAddr",
+		"10.0.0.1", 2, gomock.Any(), sgpp.EnforcingModeStrict, gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -327,8 +331,415 @@ func TestCmdDelForPodENINetwork(t *testing.T) {
 
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
-	mocksNetwork.EXPECT().TeardownPodENINetwork(1, gomock.Any()).Return(nil)
+	addr := &net.IPNet{
+		IP:   net.ParseIP(delNetworkReply.IPv4Addr),
+		Mask: net.IPv4Mask(255, 255, 255, 255),
+	}
+	mocksNetwork.EXPECT().TeardownBranchENIPodNetwork(addr, 1, sgpp.EnforcingModeStrict, gomock.Any()).Return(nil)
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Nil(t, err)
+}
+
+func Test_tryDelWithPrevResult(t *testing.T) {
+	type teardownBranchENIPodNetworkCall struct {
+		containerAddr      *net.IPNet
+		vlanID             int
+		podSGEnforcingMode sgpp.EnforcingMode
+		err                error
+	}
+	type fields struct {
+		teardownBranchENIPodNetworkCalls []teardownBranchENIPodNetworkCall
+	}
+	type args struct {
+		conf         *NetConf
+		k8sArgs      K8sArgs
+		contVethName string
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    bool
+		wantErr error
+	}{
+		{
+			name: "successfully deleted with information from prevResult - with enforcing mode standard",
+			fields: fields{
+				teardownBranchENIPodNetworkCalls: []teardownBranchENIPodNetworkCall{
+					{
+						containerAddr: &net.IPNet{
+							IP:   net.ParseIP("192.168.1.1"),
+							Mask: net.CIDRMask(32, 32),
+						},
+						vlanID:             7,
+						podSGEnforcingMode: sgpp.EnforcingModeStandard,
+					},
+				},
+			},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name: "dummycc21c2d7785",
+									Mac:  "7",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+					PodSGEnforcingMode: sgpp.EnforcingModeStandard,
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			want: true,
+		},
+		{
+			name: "successfully deleted with information from prevResult - with enforcing mode strict",
+			fields: fields{
+				teardownBranchENIPodNetworkCalls: []teardownBranchENIPodNetworkCall{
+					{
+						containerAddr: &net.IPNet{
+							IP:   net.ParseIP("192.168.1.1"),
+							Mask: net.CIDRMask(32, 32),
+						},
+						vlanID:             7,
+						podSGEnforcingMode: sgpp.EnforcingModeStrict,
+					},
+				},
+			},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name: "dummycc21c2d7785",
+									Mac:  "7",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+					PodSGEnforcingMode: sgpp.EnforcingModeStrict,
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			want: true,
+		},
+		{
+			name: "failed to delete due to teardownBranchENIPodNetworkCall failed",
+			fields: fields{
+				teardownBranchENIPodNetworkCalls: []teardownBranchENIPodNetworkCall{
+					{
+						containerAddr: &net.IPNet{
+							IP:   net.ParseIP("192.168.1.1"),
+							Mask: net.CIDRMask(32, 32),
+						},
+						vlanID:             7,
+						podSGEnforcingMode: sgpp.EnforcingModeStandard,
+						err:                errors.New("some error"),
+					},
+				},
+			},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name: "dummycc21c2d7785",
+									Mac:  "7",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+					PodSGEnforcingMode: sgpp.EnforcingModeStandard,
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			wantErr: errors.New("some error"),
+		},
+		{
+			name:   "dummy interface don't exists",
+			fields: fields{},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+					PodSGEnforcingMode: sgpp.EnforcingModeStandard,
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			want: false,
+		},
+		{
+			name:   "malformed vlanID in prevResult - xxx",
+			fields: fields{},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name: "dummycc21c2d7785",
+									Mac:  "xxx",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+					PodSGEnforcingMode: sgpp.EnforcingModeStandard,
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			wantErr: errors.New("malformed vlanID in prevResult: xxx"),
+		},
+		{
+			name:   "malformed vlanID in prevResult - 0",
+			fields: fields{},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name: "dummycc21c2d7785",
+									Mac:  "0",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+					PodSGEnforcingMode: sgpp.EnforcingModeStandard,
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			wantErr: errors.New("malformed vlanID in prevResult: 0"),
+		},
+		{
+			name:   "confVeth don't exists",
+			fields: fields{},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name: "dummycc21c2d7785",
+									Mac:  "7",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+					PodSGEnforcingMode: sgpp.EnforcingModeStandard,
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			wantErr: errors.New("cannot find contVethName eth0 in prevResult"),
+		},
+		{
+			name:   "container IP don't exists",
+			fields: fields{},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name: "dummycc21c2d7785",
+									Mac:  "7",
+								},
+							},
+							IPs: []*current.IPConfig{},
+						},
+					},
+					PodSGEnforcingMode: sgpp.EnforcingModeStandard,
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			wantErr: errors.New("found 0 containerIP for eth0 in prevResult"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testLogCfg := logger.Configuration{
+				LogLevel:    "Debug",
+				LogLocation: "stdout",
+			}
+			testLogger := logger.New(&testLogCfg)
+
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			driverClient := mock_driver.NewMockNetworkAPIs(ctrl)
+			for _, call := range tt.fields.teardownBranchENIPodNetworkCalls {
+				driverClient.EXPECT().TeardownBranchENIPodNetwork(call.containerAddr, call.vlanID, call.podSGEnforcingMode, gomock.Any()).Return(call.err)
+			}
+
+			got, err := tryDelWithPrevResult(driverClient, tt.args.conf, tt.args.k8sArgs, tt.args.contVethName, "/proc/1/ns", testLogger)
+			if tt.wantErr != nil {
+				assert.EqualError(t, err, tt.wantErr.Error())
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
 }
