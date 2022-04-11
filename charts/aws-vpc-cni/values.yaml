@@ -8,7 +8,7 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.10.2
+    tag: v1.10.3
     region: us-west-2
     account: "602401143452"   
     pullPolicy: Always
@@ -23,7 +23,7 @@ init:
 
 image:
   region: us-west-2
-  tag: v1.10.2
+  tag: v1.10.3
   account: "602401143452"   
   domain: "amazonaws.com"  
   pullPolicy: Always
