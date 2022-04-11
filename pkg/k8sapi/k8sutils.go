@@ -5,12 +5,15 @@ import (
 	"os"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -19,8 +22,21 @@ import (
 
 var log = logger.Get()
 
+func InitializeRestMapper() (meta.RESTMapper, error) {
+	restCfg, err := ctrl.GetConfig()
+	restCfg.Burst = 200
+	if err != nil {
+		return nil, err
+	}
+	mapper, err := apiutil.NewDynamicRESTMapper(restCfg)
+	if err != nil {
+		return nil, err
+	}
+	return mapper, nil
+}
+
 // CreateKubeClient creates a k8s client
-func CreateKubeClient() (client.Client, error) {
+func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
 		return nil, err
@@ -29,7 +45,8 @@ func CreateKubeClient() (client.Client, error) {
 	clientgoscheme.AddToScheme(vpcCniScheme)
 	eniconfigscheme.AddToScheme(vpcCniScheme)
 
-	rawK8SClient, err := client.New(restCfg, client.Options{Scheme: vpcCniScheme})
+	rawK8SClient, err := client.New(restCfg, client.Options{Scheme: vpcCniScheme, Mapper: mapper})
+
 	if err != nil {
 		return nil, err
 	}
@@ -38,8 +55,10 @@ func CreateKubeClient() (client.Client, error) {
 }
 
 // CreateKubeClient creates a k8s client
-func CreateCachedKubeClient(rawK8SClient client.Client) (client.Client, error) {
+func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper) (client.Client, error) {
 	restCfg, err := ctrl.GetConfig()
+	restCfg.Burst = 100
+
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +67,7 @@ func CreateCachedKubeClient(rawK8SClient client.Client) (client.Client, error) {
 	eniconfigscheme.AddToScheme(vpcCniScheme)
 
 	stopChan := ctrl.SetupSignalHandler()
-	cache, err := cache.New(restCfg, cache.Options{Scheme: vpcCniScheme})
+	cache, err := cache.New(restCfg, cache.Options{Scheme: vpcCniScheme, Mapper: mapper})
 	if err != nil {
 		return nil, err
 	}
