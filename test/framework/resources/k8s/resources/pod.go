@@ -38,6 +38,7 @@ type PodManager interface {
 	PodExec(namespace string, name string, command []string) (string, string, error)
 	PodLogs(namespace string, name string) (string, error)
 	GetPodsWithLabelSelector(labelKey string, labelVal string) (v1.PodList, error)
+	GetPodsWithLabelSelectorMap(labels map[string]string) (v1.PodList, error)
 	GetPod(podNamespace string, podName string) (*v1.Pod, error)
 	CreatAndWaitTillRunning(pod *v1.Pod) (*v1.Pod, error)
 	CreateAndWaitTillPodCompleted(pod *v1.Pod) (*v1.Pod, error)
@@ -45,12 +46,12 @@ type PodManager interface {
 }
 
 type defaultPodManager struct {
-	k8sClient client.DelegatingClient
+	k8sClient client.Client
 	k8sSchema *runtime.Scheme
 	config    *rest.Config
 }
 
-func NewDefaultPodManager(k8sClient client.DelegatingClient, k8sSchema *runtime.Scheme,
+func NewDefaultPodManager(k8sClient client.Client, k8sSchema *runtime.Scheme,
 	config *rest.Config) PodManager {
 
 	return &defaultPodManager{
@@ -198,6 +199,13 @@ func (d *defaultPodManager) GetPodsWithLabelSelector(labelKey string, labelVal s
 	return podList, err
 }
 
+func (d *defaultPodManager) GetPodsWithLabelSelectorMap(labels map[string]string) (v1.PodList, error) {
+	ctx := context.Background()
+	podList := v1.PodList{}
+	err := d.k8sClient.List(ctx, &podList, client.MatchingLabels(labels))
+	return podList, err
+}
+
 func (d *defaultPodManager) getRestClientForPod(namespace string, name string) (rest.Interface, error) {
 	pod := &v1.Pod{}
 	err := d.k8sClient.Get(context.Background(), types.NamespacedName{
@@ -212,5 +220,5 @@ func (d *defaultPodManager) getRestClientForPod(namespace string, name string) (
 	if err != nil {
 		return nil, err
 	}
-	return apiutil.RESTClientForGVK(gkv, d.config, serializer.NewCodecFactory(d.k8sSchema))
+	return apiutil.RESTClientForGVK(gkv, false, d.config, serializer.NewCodecFactory(d.k8sSchema))
 }

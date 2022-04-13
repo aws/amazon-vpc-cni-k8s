@@ -45,14 +45,18 @@ HELM_CHART_NAME ?= "aws-vpc-cni"
 TEST_IMAGE = amazon-k8s-cni-test
 TEST_IMAGE_NAME = $(TEST_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
 
+UNAME_ARCH = $(shell uname -m)
+ARCH = $(lastword $(subst :, ,$(filter $(UNAME_ARCH):%,x86_64:amd64 aarch64:arm64)))
+# This is only applied to the arm64 container image by default. Override to
+# provide an alternate suffix or to omit.
+IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(ARCH),arm64))
+
 # Mandate usage of docker buildkit as platform arguments are available only with buildkit
 # Refer to https://docs.docker.com/engine/reference/builder/#automatic-platform-args-in-the-global-scope
 # and https://docs.docker.com/develop/develop-images/build_enhancements/#to-enable-buildkit-builds
 export DOCKER_BUILDKIT=1
 GOARCH = $(TARGETARCH)
-# This is only applied to the arm64 container image by default. Override to
-# provide an alternate suffix or to omit.
-IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(GOARCH),arm64))
+
 # GOLANG_IMAGE is the building golang container image used.
 GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.17-stretch
 # For the requested build, these are the set of Go specific build environment variables.
@@ -292,6 +296,10 @@ ekscharts-sync:
 ekscharts-sync-release:
 	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME} -n -y
 
+build-test-binaries:
+	mkdir -p ${MAKEFILE_PATH}build
+	find ${MAKEFILE_PATH} -name '*suite_test.go' -type f  | xargs dirname  | xargs ginkgo build
+	find ${MAKEFILE_PATH} -name "*.test" -print0 | xargs -0 -I {} mv {} ${MAKEFILE_PATH}build
 
 upload-resources-to-github:
 	${MAKEFILE_PATH}/scripts/upload-resources-to-github.sh

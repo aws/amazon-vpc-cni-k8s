@@ -26,7 +26,7 @@ import (
 
 	"github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"
 	vpcControllerFW "github.com/aws/amazon-vpc-resource-controller-k8s/test/framework/manifest"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -202,7 +202,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 				map[string]string{"DISABLE_TCP_EARLY_DEMUX": disableTCPEarlyDemux})
 
 			tcpProbe := &v1.Probe{
-				Handler: v1.Handler{
+				ProbeHandler: v1.ProbeHandler{
 					TCPSocket: &v1.TCPSocketAction{
 						Port: intstr.IntOrString{IntVal: 80},
 					},

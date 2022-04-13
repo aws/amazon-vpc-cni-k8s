@@ -20,6 +20,7 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -94,8 +95,8 @@ func setup(t *testing.T) *testMocks {
 	return &testMocks{
 		ctrl:            ctrl,
 		awsutils:        mock_awsutils.NewMockAPIs(ctrl),
-		rawK8SClient:    testclient.NewFakeClientWithScheme(k8sSchema),
-		cachedK8SClient: testclient.NewFakeClientWithScheme(k8sSchema),
+		rawK8SClient:    testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
+		cachedK8SClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
 		network:         mock_networkutils.NewMockNetworkAPIs(ctrl),
 		eniconfig:       mock_eniconfig.NewMockENIConfig(ctrl),
 	}
@@ -1215,6 +1216,9 @@ func datastoreWith1Pod1() *datastore.DataStore {
 		NetworkName: "net0",
 		ContainerID: "sandbox-1",
 		IfName:      "eth0",
+	}, datastore.IPAMMetadata{
+		K8SPodNamespace: "default",
+		K8SPodName:      "sample-pod",
 	})
 	return datastoreWith1Pod1
 }
@@ -1228,7 +1232,10 @@ func datastoreWith3Pods() *datastore.DataStore {
 			ContainerID: fmt.Sprintf("sandbox-%d", i),
 			IfName:      "eth0",
 		}
-		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key)
+		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key, datastore.IPAMMetadata{
+			K8SPodNamespace: "default",
+			K8SPodName:      fmt.Sprintf("sample-pod-%d", i),
+		})
 	}
 	return datastoreWith3Pods
 }
@@ -1248,6 +1255,9 @@ func datastoreWith1Pod1FromPrefix() *datastore.DataStore {
 		NetworkName: "net0",
 		ContainerID: "sandbox-1",
 		IfName:      "eth0",
+	}, datastore.IPAMMetadata{
+		K8SPodNamespace: "default",
+		K8SPodName:      "sample-pod",
 	})
 	return datastoreWith1Pod1
 }
@@ -1261,7 +1271,11 @@ func datastoreWith3PodsFromPrefix() *datastore.DataStore {
 			ContainerID: fmt.Sprintf("sandbox-%d", i),
 			IfName:      "eth0",
 		}
-		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key)
+		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key,
+			datastore.IPAMMetadata{
+				K8SPodNamespace: "default",
+				K8SPodName:      fmt.Sprintf("sample-pod-%d", i),
+			})
 	}
 	return datastoreWith3Pods
 }
@@ -1303,14 +1317,20 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 		{"Secondary/Tertiary ENI unmanaged", Test2TagMap, allENIs, primaryENIonly, []string{eni2.ENIID, eni3.ENIID}},
 		{"Secondary ENI unmanaged", Test3TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
 		{"Secondary ENI unmanaged and Tertiary ENI CNI created", Test4TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
-		{"Secondary ENI not CNI created and Tertiary ENI CNI created", Test5TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
+		{"Secondary ENI not CNI created and Tertiary ENI CNI created", Test5TagMap, allENIs, filteredENIonly, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &IPAMContext{
 				awsClient:                mockAWSUtils,
 				enableManageUntaggedMode: true}
-			mockAWSUtils.EXPECT().SetUnmanagedENIs(tt.unmanagedenis).AnyTimes()
+
+			mockAWSUtils.EXPECT().SetUnmanagedENIs(gomock.Any()).
+				Do(func(args []string) {
+					sort.Strings(tt.unmanagedenis)
+					sort.Strings(args)
+					assert.Equal(t, tt.unmanagedenis, args)
+				})
 			c.setUnmanagedENIs(tt.tagMap)
 
 			mockAWSUtils.EXPECT().IsUnmanagedENI(gomock.Any()).DoAndReturn(
@@ -1386,7 +1406,16 @@ func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T)
 			c := &IPAMContext{
 				awsClient:                mockAWSUtils,
 				enableManageUntaggedMode: false}
-			mockAWSUtils.EXPECT().SetUnmanagedENIs(tt.unmanagedenis).AnyTimes()
+
+			mockAWSUtils.
+				EXPECT().
+				SetUnmanagedENIs(gomock.Any()).
+				Do(func(args []string) {
+					sort.Strings(tt.unmanagedenis)
+					sort.Strings(args)
+					assert.Equal(t, tt.unmanagedenis, args)
+				})
+
 			c.setUnmanagedENIs(tt.tagMap)
 
 			mockAWSUtils.EXPECT().IsUnmanagedENI(gomock.Any()).DoAndReturn(
@@ -1966,11 +1995,13 @@ func TestIsConfigValid(t *testing.T) {
 			m := setup(t)
 			defer m.ctrl.Finish()
 
-			if tt.fields.isNitroInstance {
-				m.awsutils.EXPECT().GetInstanceHypervisorFamily().Return("nitro")
-			} else {
-				m.awsutils.EXPECT().GetInstanceType().Return("dummy-instance")
-				m.awsutils.EXPECT().GetInstanceHypervisorFamily().Return("non-nitro")
+			if tt.fields.prefixDelegationEnabled && !(tt.fields.podENIEnabled && tt.fields.ipV6Enabled) {
+				if tt.fields.isNitroInstance {
+					m.awsutils.EXPECT().IsPrefixDelegationSupported().Return(true)
+				} else {
+					m.awsutils.EXPECT().GetInstanceType().Return("dummy-instance")
+					m.awsutils.EXPECT().IsPrefixDelegationSupported().Return(false)
+				}
 			}
 			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled)
 

@@ -156,6 +156,7 @@ spec:
             - --cloud-provider=aws
             - --skip-nodes-with-local-storage=false
             - --expander=least-waste
+            - --scale-down-utilization-threshold=0
             - --node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled
           volumeMounts:
             - name: ssl-certs

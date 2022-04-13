@@ -167,8 +167,10 @@ func describeInstanceTypes(region string, eniLimitMap map[string]awsutils.Instan
 			eniLimit := int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
 			ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
 			hypervisorType := aws.StringValue(info.Hypervisor)
+			isBareMetalInstance := aws.BoolValue(info.BareMetal)
 			if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
-				limits := awsutils.InstanceTypeLimits{ENILimit: eniLimit, IPv4Limit: ipv4Limit, HypervisorType: hypervisorType}
+				limits := awsutils.InstanceTypeLimits{ENILimit: eniLimit, IPv4Limit: ipv4Limit, HypervisorType: hypervisorType,
+					IsBareMetal: isBareMetalInstance}
 				if existingLimits, contains := eniLimitMap[instanceType]; contains && existingLimits != limits {
 					// this should never happen
 					log.Fatalf("A previous region has different limits for instanceType=%s than region=%s", instanceType, region)
@@ -189,17 +191,27 @@ func describeInstanceTypes(region string, eniLimitMap map[string]awsutils.Instan
 // addManualLimits has the list of faulty or missing instance types
 func addManualLimits(limitMap map[string]awsutils.InstanceTypeLimits) map[string]awsutils.InstanceTypeLimits {
 	manuallyAddedLimits := map[string]awsutils.InstanceTypeLimits{
-		"cr1.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "unknown"},
-		"hs1.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "unknown"},
-		"u-12tb1.metal": {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unknown"},
-		"u-18tb1.metal": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown"},
-		"u-24tb1.metal": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown"},
-		"u-6tb1.metal":  {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unknown"},
-		"u-9tb1.metal":  {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unknown"},
-		"c5a.metal":     {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown"},
-		"c5ad.metal":    {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown"},
-		"p4d.24xlarge":  {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown"},
-		"dl1.24xlarge":  {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown"},
+		"cr1.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "unknown", IsBareMetal: false},
+		"hs1.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "unknown", IsBareMetal: false},
+		"u-12tb1.metal": {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unknown", IsBareMetal: true},
+		"u-18tb1.metal": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: true},
+		"u-24tb1.metal": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: true},
+		"u-6tb1.metal":  {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unknown", IsBareMetal: true},
+		"u-9tb1.metal":  {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unknown", IsBareMetal: true},
+		"c5a.metal":     {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: true},
+		"c5ad.metal":    {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: true},
+		"p4d.24xlarge":  {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: false},
+		"dl1.24xlarge":  {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: false},
+		"c6g.xlarge":    {ENILimit: 4, IPv4Limit: 15, HypervisorType: "nitro", IsBareMetal: false},
+		"c7g.12xlarge":  {ENILimit: 8, IPv4Limit: 30, HypervisorType: "nitro", IsBareMetal: false},
+		"c7g.16xlarge":  {ENILimit: 15, IPv4Limit: 50, HypervisorType: "nitro", IsBareMetal: false},
+		"c7g.2xlarge":   {ENILimit: 4, IPv4Limit: 15, HypervisorType: "nitro", IsBareMetal: false},
+		"c7g.4xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "nitro", IsBareMetal: false},
+		"c7g.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "nitro", IsBareMetal: false},
+		"c7g.large":     {ENILimit: 3, IPv4Limit: 10, HypervisorType: "nitro", IsBareMetal: false},
+		"c7g.medium":    {ENILimit: 2, IPv4Limit: 4, HypervisorType: "nitro", IsBareMetal: false},
+		"c7g.xlarge":    {ENILimit: 4, IPv4Limit: 15, HypervisorType: "nitro", IsBareMetal: false},
+		"c7g.metal":     {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: true},
 	}
 	for instanceType, instanceLimits := range manuallyAddedLimits {
 		val, ok := limitMap[instanceType]

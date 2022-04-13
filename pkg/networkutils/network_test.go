@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
+
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -831,6 +833,7 @@ func TestSetupHostNetworkUpdateLocalRule(t *testing.T) {
 		shouldConfigureRpFilter: false,
 		mainENIMark:             defaultConnmark,
 		mtu:                     testMTU,
+		podSGEnforcingMode:      sgpp.EnforcingModeStrict,
 		vethPrefix:              eniPrefix,
 
 		netLink: mockNetLink,

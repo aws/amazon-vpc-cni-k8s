@@ -198,6 +198,28 @@ If you're using v1.10.0, `aws-node` daemonset pod requires IMDSv1 access to obta
 ## Known Issues
 - **Liveness/Readiness Probe failures** - If frequent probe failures are observed for `aws-node` pods in v1.20+ clusters, please bump up the liveness/readiness probe timeout values and/or CPU requests/limts in the CNI Manifest. Refer to this github [issue](https://github.com/aws/amazon-vpc-cni-k8s/issues/1425)
 
+- **aws-node crashing with below error** 
+
+```
+{"level":"info","ts":"2022-02-04T22:24:55.014Z","caller":"entrypoint.sh","msg":"Checking for IPAM connectivity ... "}
+I0204 22:24:56.095582      12 request.go:621] Throttling request took 1.047064274s, request: GET:https://10.100.0.1:443/apis/coordination.k8s.io/v1beta1?timeout=32s
+{"level":"info","ts":"2022-02-04T22:24:57.022Z","caller":"entrypoint.sh","msg":"Retrying waiting for IPAM-D"}
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x39 pc=0x5597a7c2b3f8]
+
+goroutine 380 [running]:
+github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd.(*IPAMContext).StartNodeIPPoolManager(0xc000281560)
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/ipamd.go:640 +0x18
+created by main._main
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/cmd/aws-k8s-agent/main.go:64 +0x2bb
+{"level":"info","ts":"2022-02-04T22:24:59.030Z","caller":"entrypoint.sh","msg":"Retrying waiting for IPAM-D"}
+```
+
+cni v1.10.x introduced 2 new env varibales - ENABLE_IPv4 and ENABLE_IPv6. The above error can be caused if you miss adding these env variables to your cni daemonset. So the recommendation is to apply the entire manifest file corresponding to the correct [release](https://github.com/aws/amazon-vpc-cni-k8s/releases) instead of just updating the image value in existing cni daemonset. For instance, to apply the latest v1.10.x, use the below command
+```
+kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
+```
+
 ## cni-metrics-helper
 
 See the [cni-metrics-helper README](../cmd/cni-metrics-helper/README.md).

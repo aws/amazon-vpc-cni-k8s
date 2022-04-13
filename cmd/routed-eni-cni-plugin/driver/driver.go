@@ -21,6 +21,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
+
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 
@@ -29,7 +31,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -42,8 +43,6 @@ const (
 	toContainerRulePriority = 512
 	// 1024 is reserved for (IP rule not to <VPC's subnet> table main)
 	fromContainerRulePriority = 1536
-	// Main routing table number
-	mainRouteTable = unix.RT_TABLE_MAIN
 
 	WAIT_INTERVAL = 50 * time.Millisecond
 
@@ -54,11 +53,16 @@ const (
 
 // NetworkAPIs defines network API calls
 type NetworkAPIs interface {
-	SetupNS(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error
-	TeardownNS(addr *net.IPNet, deviceNumber int, log logger.Logger) error
-	SetupPodENINetwork(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet, vlanID int, eniMAC string,
-		subnetGW string, parentIfIndex int, mtu int, log logger.Logger) error
-	TeardownPodENINetwork(vlanID int, log logger.Logger) error
+	// SetupPodNetwork sets up pod network for normal ENI based pods
+	SetupPodNetwork(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet, deviceNumber int, mtu int, log logger.Logger) error
+	// TeardownPodNetwork clean up pod network for normal ENI based pods
+	TeardownPodNetwork(containerAddr *net.IPNet, deviceNumber int, log logger.Logger) error
+
+	// SetupBranchENIPodNetwork sets up pod network for branch ENI based pods
+	SetupBranchENIPodNetwork(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet, vlanID int, eniMAC string,
+		subnetGW string, parentIfIndex int, mtu int, podSGEnforcingMode sgpp.EnforcingMode, log logger.Logger) error
+	// TeardownBranchENIPodNetwork cleans up pod network for branch ENI based pods
+	TeardownBranchENIPodNetwork(containerAddr *net.IPNet, vlanID int, podSGEnforcingMode sgpp.EnforcingMode, log logger.Logger) error
 }
 
 type linuxNetwork struct {
@@ -216,7 +220,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	}
 
 	if createVethContext.v6Addr != nil && createVethContext.v6Addr.IP.To16() != nil {
-		if err := WaitForAddressesToBeStable(createVethContext.contVethName, v6DADTimeout); err != nil {
+		if err := waitForAddressesToBeStable(createVethContext.netLink, createVethContext.contVethName, v6DADTimeout); err != nil {
 			return errors.Wrap(err, "setup NS network: failed while waiting for v6 addresses to be stable")
 		}
 	}
@@ -230,18 +234,18 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 }
 
 // Implements `SettleAddresses` functionality of the `ip` package.
-// WaitForAddressesToBeStable waits for all addresses on a link to leave tentative state.
+// waitForAddressesToBeStable waits for all addresses on a link to leave tentative state.
 // Will be particularly useful for ipv6, where all addresses need to do DAD.
 // If any addresses are still tentative after timeout seconds, then error.
-func WaitForAddressesToBeStable(ifName string, timeout time.Duration) error {
-	link, err := netlink.LinkByName(ifName)
+func waitForAddressesToBeStable(netLink netlinkwrapper.NetLink, ifName string, timeout time.Duration) error {
+	link, err := netLink.LinkByName(ifName)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve link: %v", err)
 	}
 
 	deadline := time.Now().Add(timeout)
 	for {
-		addrs, err := netlink.AddrList(link, netlink.FAMILY_V6)
+		addrs, err := netLink.AddrList(link, netlink.FAMILY_V6)
 		if err != nil {
 			return fmt.Errorf("could not list addresses: %v", err)
 		}
@@ -267,205 +271,334 @@ func WaitForAddressesToBeStable(ifName string, timeout time.Duration) error {
 	}
 }
 
-// SetupNS wires up linux networking for a pod's network
-func (os *linuxNetwork) SetupNS(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet,
-	deviceNumber int, vpcCIDRs []string, useExternalSNAT bool, mtu int, log logger.Logger) error {
-	log.Debugf("SetupNS: hostVethName=%s, contVethName=%s, netnsPath=%s, deviceNumber=%d, mtu=%d", hostVethName, contVethName, netnsPath, deviceNumber, mtu)
-	return setupNS(hostVethName, contVethName, netnsPath, v4Addr, v6Addr, deviceNumber, vpcCIDRs, useExternalSNAT, os.netLink, os.ns, mtu, log, os.procSys)
-}
+// SetupPodNetwork wires up linux networking for a pod's network
+// we expect v4Addr and v6Addr to have correct IPAddress Family.
+func (n *linuxNetwork) SetupPodNetwork(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet,
+	deviceNumber int, mtu int, log logger.Logger) error {
+	log.Debugf("SetupPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, v4Addr=%v, v6Addr=%v, deviceNumber=%d, mtu=%d",
+		hostVethName, contVethName, netnsPath, v4Addr, v6Addr, deviceNumber, mtu)
 
-func setupNS(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet, deviceNumber int, vpcCIDRs []string, useExternalSNAT bool,
-	netLink netlinkwrapper.NetLink, ns nswrapper.NS, mtu int, log logger.Logger, procSys procsyswrapper.ProcSys) error {
-
-	hostVeth, err := setupVeth(hostVethName, contVethName, netnsPath, v4Addr, v6Addr, netLink, ns, mtu, procSys, log)
+	hostVeth, err := n.setupVeth(hostVethName, contVethName, netnsPath, v4Addr, v6Addr, mtu, log)
 	if err != nil {
-		return errors.Wrapf(err, "setupNS network: failed to setup veth pair.")
+		return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
 	}
 
-	log.Debugf("Setup host route outgoing hostVeth, LinkIndex %d", hostVeth.Attrs().Index)
-
-	var addrHostAddr *net.IPNet
-	//We only support either v4 or v6 modes.
-	if v4Addr != nil && v4Addr.IP.To4() != nil {
-		addrHostAddr = &net.IPNet{
-			IP:   v4Addr.IP,
-			Mask: net.CIDRMask(32, 32)}
-	} else if v6Addr != nil && v6Addr.IP.To16() != nil {
-		addrHostAddr = &net.IPNet{
-			IP:   v6Addr.IP,
-			Mask: net.CIDRMask(128, 128)}
+	var containerAddr *net.IPNet
+	if v4Addr != nil {
+		containerAddr = v4Addr
+	} else if v6Addr != nil {
+		containerAddr = v6Addr
 	}
 
-	// Add host route
-	route := netlink.Route{
-		LinkIndex: hostVeth.Attrs().Index,
-		Scope:     netlink.SCOPE_LINK,
-		Dst:       addrHostAddr}
-
-	// Add or replace route
-	if err := netLink.RouteReplace(&route); err != nil {
-		return errors.Wrapf(err, "setupNS: unable to add or replace route entry for %s", route.Dst.IP.String())
-	}
-	log.Debugf("Successfully set host route to be %s/0", route.Dst.IP.String())
-
-	err = addContainerRule(netLink, true, addrHostAddr, mainRouteTable)
-
-	if err != nil {
-		log.Errorf("Failed to add toContainer rule for %s err=%v, ", addrHostAddr.String(), err)
-		return errors.Wrap(err, "setupNS network: failed to add toContainer")
-	}
-
-	log.Infof("Added toContainer rule for %s", addrHostAddr.String())
-
-	// add from-pod rule, only need it when it is not primary ENI
+	rtTable := unix.RT_TABLE_MAIN
 	if deviceNumber > 0 {
-		// To be backwards compatible, we will have to keep this off-by one setting
-		tableNumber := deviceNumber + 1
-		// add rule: 1536: from <podIP> use table <table>
-		err = addContainerRule(netLink, false, addrHostAddr, tableNumber)
-		if err != nil {
-			log.Errorf("Failed to add fromContainer rule for %s err: %v", addrHostAddr.String(), err)
-			return errors.Wrap(err, "add NS network: failed to add fromContainer rule")
-		}
-		log.Infof("Added rule priority %d from %s table %d", fromContainerRulePriority, addrHostAddr.String(), tableNumber)
+		rtTable = deviceNumber + 1
+	}
+	if err := n.setupIPBasedContainerRouteRules(hostVeth, containerAddr, rtTable, log); err != nil {
+		return errors.Wrapf(err, "SetupPodNetwork: unable to setup IP based container routes and rules")
 	}
 	return nil
 }
 
-// setupVeth sets up veth for the pod.
-func setupVeth(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet, netLink netlinkwrapper.NetLink,
-	ns nswrapper.NS, mtu int, procSys procsyswrapper.ProcSys, log logger.Logger) (netlink.Link, error) {
-	// Clean up if hostVeth exists.
-	if oldHostVeth, err := netLink.LinkByName(hostVethName); err == nil {
-		if err = netLink.LinkDel(oldHostVeth); err != nil {
-			return nil, errors.Wrapf(err, "setupVeth network: failed to delete old hostVeth %q", hostVethName)
-		}
-		log.Debugf("Cleaned up old hostVeth: %v\n", hostVethName)
-	}
+// TeardownPodNetwork cleanup ip rules
+func (n *linuxNetwork) TeardownPodNetwork(containerAddr *net.IPNet, deviceNumber int, log logger.Logger) error {
+	log.Debugf("TeardownPodNetwork: containerAddr=%s, deviceNumber=%d", containerAddr.String(), deviceNumber)
 
-	log.Debugf("v4addr: %v; v6Addr: %v\n", v4Addr, v6Addr)
-	createVethContext := newCreateVethPairContext(contVethName, hostVethName, v4Addr, v6Addr, mtu)
-	if err := ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
-		log.Errorf("Failed to setup veth network %v", err)
-		return nil, errors.Wrap(err, "setupVeth network: failed to setup veth network")
+	rtTable := unix.RT_TABLE_MAIN
+	if deviceNumber > 0 {
+		rtTable = deviceNumber + 1
 	}
+	if err := n.teardownIPBasedContainerRouteRules(containerAddr, rtTable, log); err != nil {
+		return errors.Wrapf(err, "TeardownPodNetwork: unable to teardown IP based container routes and rules")
+	}
+	return nil
+}
 
-	hostVeth, err := netLink.LinkByName(hostVethName)
+// SetupBranchENIPodNetwork sets up the network ns for pods requesting its own security group
+// we expect v4Addr and v6Addr to have correct IPAddress Family.
+func (n *linuxNetwork) SetupBranchENIPodNetwork(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet,
+	vlanID int, eniMAC string, subnetGW string, parentIfIndex int, mtu int, podSGEnforcingMode sgpp.EnforcingMode, log logger.Logger) error {
+	log.Debugf("SetupBranchENIPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, v4Addr=%v, v6Addr=%v, vlanID=%d, eniMAC=%s, subnetGW=%s, parentIfIndex=%d, mtu=%d, podSGEnforcingMode=%v",
+		hostVethName, contVethName, netnsPath, v4Addr, v6Addr, vlanID, eniMAC, subnetGW, parentIfIndex, mtu, podSGEnforcingMode)
+
+	hostVeth, err := n.setupVeth(hostVethName, contVethName, netnsPath, v4Addr, v6Addr, mtu, log)
 	if err != nil {
-		return nil, errors.Wrapf(err, "setupVeth network: failed to find link %q", hostVethName)
+		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup veth pair")
 	}
 
-	if err := procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", hostVethName), "0"); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, errors.Wrapf(err, "setupVeth network: failed to disable IPv6 router advertisements")
-		}
-		log.Debugf("setupVeth network: Ignoring '%s' writing to accept_ra: Assuming kernel lacks IPv6 support", err)
+	// clean up any previous hostVeth ip rule recursively. (when pod with same name are recreated multiple times).
+	//
+	// per our understanding, previous we obtain vlanID from pod spec, it could be possible the vlanID is already updated when deleting old pod, thus the hostVeth been cleaned up during oldPod deletion is incorrect.
+	// now since we obtain vlanID from prevResult during pod deletion, we should be able to correctly purge hostVeth during pod deletion and thus don't need this logic.
+	// this logic is kept here for safety purpose.
+	oldFromHostVethRule := n.netLink.NewRule()
+	oldFromHostVethRule.IifName = hostVethName
+	oldFromHostVethRule.Priority = vlanRulePriority
+	if err := netLinkRuleDelAll(n.netLink, oldFromHostVethRule); err != nil {
+		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to delete hostVeth rule for %s", hostVethName)
 	}
 
-	if err := procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", hostVethName), "0"); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, errors.Wrapf(err, "setupVeth network: failed to disable IPv6 ICMP redirects")
-		}
-		log.Debugf("setupVeth network: Ignoring '%s' writing to accept_redirects: Assuming kernel lacks IPv6 support", err)
+	rtTable := vlanID + 100
+	vlanLink, err := n.setupVlan(vlanID, eniMAC, subnetGW, parentIfIndex, rtTable, log)
+	if err != nil {
+		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup vlan")
 	}
-	log.Debugf("setupVeth network: disabled IPv6 RA and ICMP redirects on %s", hostVethName)
+
+	var containerAddr *net.IPNet
+	if v4Addr != nil {
+		containerAddr = v4Addr
+	} else if v6Addr != nil {
+		containerAddr = v6Addr
+	}
+
+	switch podSGEnforcingMode {
+	case sgpp.EnforcingModeStrict:
+		if err := n.setupIIFBasedContainerRouteRules(hostVeth, containerAddr, vlanLink, rtTable, log); err != nil {
+			return errors.Wrapf(err, "SetupBranchENIPodNetwork: unable to setup IIF based container routes and rules")
+		}
+	case sgpp.EnforcingModeStandard:
+		if err := n.setupIPBasedContainerRouteRules(hostVeth, containerAddr, rtTable, log); err != nil {
+			return errors.Wrapf(err, "SetupBranchENIPodNetwork: unable to setup IP based container routes and rules")
+		}
+	}
+	return nil
+}
+
+// TeardownBranchENIPodNetwork tears down the vlan and corresponding ip rules.
+func (n *linuxNetwork) TeardownBranchENIPodNetwork(containerAddr *net.IPNet, vlanID int, _ sgpp.EnforcingMode, log logger.Logger) error {
+	log.Debugf("TeardownBranchENIPodNetwork: containerAddr=%s, vlanID=%d", containerAddr.String(), vlanID)
+
+	if err := n.teardownVlan(vlanID, log); err != nil {
+		return errors.Wrapf(err, "TeardownBranchENIPodNetwork: failed to teardown vlan")
+	}
+
+	// to handle the migration between different enforcingMode, we try to clean up rules under both mode since the pod might be setup with a different mode.
+	rtTable := vlanID + 100
+	if err := n.teardownIIFBasedContainerRouteRules(rtTable, log); err != nil {
+		return errors.Wrapf(err, "TeardownBranchENIPodNetwork: unable to teardown IIF based container routes and rules")
+	}
+	if err := n.teardownIPBasedContainerRouteRules(containerAddr, rtTable, log); err != nil {
+		return errors.Wrapf(err, "TeardownBranchENIPodNetwork: unable to teardown IP based container routes and rules")
+	}
+
+	return nil
+}
+
+// setupVeth sets up veth for the pod.
+func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet, mtu int, log logger.Logger) (netlink.Link, error) {
+	// Clean up if hostVeth exists.
+	if oldHostVeth, err := n.netLink.LinkByName(hostVethName); err == nil {
+		if err = n.netLink.LinkDel(oldHostVeth); err != nil {
+			return nil, errors.Wrapf(err, "failed to delete old hostVeth %s", hostVethName)
+		}
+		log.Debugf("Successfully deleted old hostVeth %s", hostVethName)
+	}
+
+	createVethContext := newCreateVethPairContext(contVethName, hostVethName, v4Addr, v6Addr, mtu)
+	if err := n.ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
+		return nil, errors.Wrap(err, "failed to setup veth network")
+	}
+
+	hostVeth, err := n.netLink.LinkByName(hostVethName)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to find hostVeth %s", hostVethName)
+	}
+
+	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", hostVethName), "0"); err != nil {
+		if !os.IsNotExist(err) {
+			return nil, errors.Wrapf(err, "failed to disable IPv6 router advertisements")
+		}
+		log.Debugf("Ignoring '%v' writing to accept_ra: Assuming kernel lacks IPv6 support", err)
+	}
+
+	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", hostVethName), "0"); err != nil {
+		if !os.IsNotExist(err) {
+			return nil, errors.Wrapf(err, "failed to disable IPv6 ICMP redirects")
+		}
+		log.Debugf("Ignoring '%v' writing to accept_redirects: Assuming kernel lacks IPv6 support", err)
+	}
+	log.Debugf("Successfully disabled IPv6 RA and ICMP redirects on hostVeth %s", hostVethName)
 
 	// Explicitly set the veth to UP state, because netlink doesn't always do that on all the platforms with net.FlagUp.
 	// veth won't get a link local address unless it's set to UP state.
-	if err = netLink.LinkSetUp(hostVeth); err != nil {
-		return nil, errors.Wrapf(err, "setupVeth network: failed to set link %q up", hostVethName)
+	if err = n.netLink.LinkSetUp(hostVeth); err != nil {
+		return nil, errors.Wrapf(err, "failed to setup hostVeth %s", hostVethName)
 	}
 	return hostVeth, nil
 }
 
-// SetupPodENINetwork sets up the network ns for pods requesting its own security group
-func (os *linuxNetwork) SetupPodENINetwork(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet,
-	v6Addr *net.IPNet, vlanID int, eniMAC string, subnetGW string, parentIfIndex int, mtu int, log logger.Logger) error {
-
-	hostVeth, err := setupVeth(hostVethName, contVethName, netnsPath, v4Addr, v6Addr, os.netLink, os.ns, mtu, os.procSys, log)
-	if err != nil {
-		return errors.Wrapf(err, "SetupPodENINetwork failed to setup veth pair.")
-	}
-
-	vlanTableID := vlanID + 100
-	vlanLink := buildVlanLink(vlanID, parentIfIndex, eniMAC)
-
-	// 1a. clean up if vlan already exists (necessary when trunk ENI changes).
-	if oldVlan, err := os.netLink.LinkByName(vlanLink.Name); err == nil {
-		if err = os.netLink.LinkDel(oldVlan); err != nil {
-			return errors.Wrapf(err, "SetupPodENINetwork: failed to delete old vlan %s", vlanLink.Name)
+// setupVlan sets up the vlan interface for branchENI, and configures default routes in specified route table
+func (n *linuxNetwork) setupVlan(vlanID int, eniMAC string, subnetGW string, parentIfIndex int, rtTable int, log logger.Logger) (netlink.Link, error) {
+	vlanLinkName := buildVlanLinkName(vlanID)
+	// 1. clean up if vlan already exists (necessary when trunk ENI changes).
+	if oldVlan, err := n.netLink.LinkByName(vlanLinkName); err == nil {
+		if err := n.netLink.LinkDel(oldVlan); err != nil {
+			return nil, errors.Wrapf(err, "failed to delete old vlan link %s", vlanLinkName)
 		}
-		log.Debugf("Cleaned up old vlan: %s", vlanLink.Name)
-	}
-
-	// 1b. clean up any previous hostVeth ip rule
-	oldVlanRule := os.netLink.NewRule()
-	oldVlanRule.IifName = hostVethName
-	oldVlanRule.Priority = vlanRulePriority
-	// loop is required to clean up all existing rules created on the host (when pod with same name are recreated multiple times)
-	for {
-		if err := os.netLink.RuleDel(oldVlanRule); err != nil {
-			if !containsNoSuchRule(err) {
-				return errors.Wrapf(err, "SetupPodENINetwork: failed to delete hostveth rule for %s", hostVeth.Attrs().Name)
-			}
-			break
-		}
+		log.Debugf("Successfully deleted old vlan link: %s", vlanLinkName)
 	}
 
 	// 2. add new vlan link
-	err = os.netLink.LinkAdd(vlanLink)
-	if err != nil {
-		return errors.Wrapf(err, "SetupPodENINetwork: failed to add vlan link.")
+	vlanLink := buildVlanLink(vlanLinkName, vlanID, parentIfIndex, eniMAC)
+	if err := n.netLink.LinkAdd(vlanLink); err != nil {
+		return nil, errors.Wrapf(err, "failed to add vlan link %s", vlanLinkName)
 	}
 
 	// 3. bring up the vlan
-	if err = os.netLink.LinkSetUp(vlanLink); err != nil {
-		return errors.Wrapf(err, "SetupPodENINetwork: failed to set link %q up", vlanLink.Name)
+	if err := n.netLink.LinkSetUp(vlanLink); err != nil {
+		return nil, errors.Wrapf(err, "failed to setUp vlan link %s", vlanLinkName)
 	}
 
 	// 4. create default routes for vlan
-	routes := buildRoutesForVlan(vlanTableID, vlanLink.Index, net.ParseIP(subnetGW))
+	routes := buildRoutesForVlan(rtTable, vlanLink.Index, net.ParseIP(subnetGW))
 	for _, r := range routes {
-		if err := os.netLink.RouteReplace(&r); err != nil {
-			return errors.Wrapf(err, "SetupPodENINetwork: unable to replace route entry %s via %s", r.Dst.IP.String(), subnetGW)
+		if err := n.netLink.RouteReplace(&r); err != nil {
+			return nil, errors.Wrapf(err, "failed to replace route entry %s via %s", r.Dst.IP.String(), subnetGW)
 		}
 	}
+	return vlanLink, nil
+}
 
-	var addr *net.IPNet
-	if v4Addr != nil {
-		addr = v4Addr
-	} else if v6Addr != nil {
-		addr = v6Addr
+func (n *linuxNetwork) teardownVlan(vlanID int, log logger.Logger) error {
+	vlanLinkName := buildVlanLinkName(vlanID)
+	if vlan, err := n.netLink.LinkByName(vlanLinkName); err == nil {
+		if err := n.netLink.LinkDel(vlan); err != nil {
+			return errors.Wrapf(err, "failed to delete vlan link %s", vlanLinkName)
+		}
+		log.Debugf("Successfully deleted vlan link %s", vlanLinkName)
 	}
+	return nil
+}
 
-	// 5. create route entry for hostveth.
+// setupIPBasedContainerRouteRules setups the routes and route rules for containers based on IP.
+// traffic to container(to containerAddr) will be routed via the `main` route table.
+// traffic from container(from containerAddr) will be routed via the specified rtTable.
+func (n *linuxNetwork) setupIPBasedContainerRouteRules(hostVeth netlink.Link, containerAddr *net.IPNet, rtTable int, log logger.Logger) error {
 	route := netlink.Route{
 		LinkIndex: hostVeth.Attrs().Index,
 		Scope:     netlink.SCOPE_LINK,
-		Dst:       addr,
-		Table:     vlanTableID,
+		Dst:       containerAddr,
+		Table:     unix.RT_TABLE_MAIN,
 	}
-	if err := os.netLink.RouteReplace(&route); err != nil {
-		return errors.Wrapf(err, "SetupPodENINetwork: unable to add or replace route entry for %s", route.Dst.IP.String())
+	if err := n.netLink.RouteReplace(&route); err != nil {
+		return errors.Wrapf(err, "failed to setup container route, containerAddr=%s, hostVeth=%s, rtTable=%v",
+			containerAddr.String(), hostVeth.Attrs().Name, "main")
+	}
+	log.Debugf("Successfully setup container route, containerAddr=%s, hostVeth=%s, rtTable=%v",
+		containerAddr.String(), hostVeth.Attrs().Name, "main")
+
+	toContainerRule := n.netLink.NewRule()
+	toContainerRule.Dst = containerAddr
+	toContainerRule.Priority = toContainerRulePriority
+	toContainerRule.Table = unix.RT_TABLE_MAIN
+	if err := n.netLink.RuleAdd(toContainerRule); err != nil && !isRuleExistsError(err) {
+		return errors.Wrapf(err, "failed to setup toContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), "main")
 	}
 
-	log.Debugf("Successfully set host route to be %s/0", route.Dst.IP.String())
+	log.Debugf("Successfully setup toContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), "main")
 
-	// 6. Add ip rules for the pod.
-	vlanRule := os.netLink.NewRule()
-	vlanRule.Table = vlanTableID
-	vlanRule.Priority = vlanRulePriority
-	vlanRule.IifName = vlanLink.Name
-	err = os.netLink.RuleAdd(vlanRule)
-	if err != nil && !isRuleExistsError(err) {
-		return errors.Wrapf(err, "SetupPodENINetwork: unable to add ip rule for vlan link %s ", vlanLink.Name)
+	if rtTable != unix.RT_TABLE_MAIN {
+		fromContainerRule := n.netLink.NewRule()
+		fromContainerRule.Src = containerAddr
+		fromContainerRule.Priority = fromContainerRulePriority
+		fromContainerRule.Table = rtTable
+		if err := n.netLink.RuleAdd(fromContainerRule); err != nil && !isRuleExistsError(err) {
+			return errors.Wrapf(err, "failed to setup fromContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), rtTable)
+		}
+		log.Debugf("Successfully setup fromContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), rtTable)
 	}
 
-	vlanRule.IifName = hostVeth.Attrs().Name
-	err = os.netLink.RuleAdd(vlanRule)
-	if err != nil && !isRuleExistsError(err) {
-		return errors.Wrapf(err, "SetupPodENINetwork: unable to add ip rule for host veth %s", hostVethName)
+	return nil
+}
+
+func (n *linuxNetwork) teardownIPBasedContainerRouteRules(containerAddr *net.IPNet, rtTable int, log logger.Logger) error {
+	toContainerRule := n.netLink.NewRule()
+	toContainerRule.Dst = containerAddr
+	toContainerRule.Priority = toContainerRulePriority
+	toContainerRule.Table = unix.RT_TABLE_MAIN
+	if err := n.netLink.RuleDel(toContainerRule); err != nil && !containsNoSuchRule(err) {
+		return errors.Wrapf(err, "failed to delete toContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), "main")
 	}
+	log.Debugf("Successfully deleted toContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), "main")
+
+	if rtTable != unix.RT_TABLE_MAIN {
+		fromContainerRule := netlink.NewRule()
+		fromContainerRule.Src = containerAddr
+		fromContainerRule.Priority = fromContainerRulePriority
+		fromContainerRule.Table = rtTable
+
+		// note: older version CNI sets up multiple CIDR based from container rule, so we recursively delete them to be backwards-compatible.
+		if err := netLinkRuleDelAll(n.netLink, fromContainerRule); err != nil {
+			return errors.Wrapf(err, "failed to delete fromContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), rtTable)
+		}
+		log.Debugf("Successfully deleted fromContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), rtTable)
+	}
+
+	route := netlink.Route{
+		Scope: netlink.SCOPE_LINK,
+		Dst:   containerAddr,
+		Table: unix.RT_TABLE_MAIN,
+	}
+
+	// routes will be automatically deleted by kernel when the hostVeth is deleted.
+	// we try to delete route and only log a warning even deletion failed.
+	if err := n.netLink.RouteDel(&route); err != nil && !netlinkwrapper.IsNotExistsError(err) {
+		log.Warnf("failed to delete container route, containerAddr=%s, rtTable=%v: %v", containerAddr.String(), "main", err)
+	} else {
+		log.Debugf("Successfully deleted container route, containerAddr=%s, rtTable=%v", containerAddr.String(), "main")
+	}
+
+	return nil
+}
+
+// setupIIFBasedContainerRouteRules setups the routes and route rules for containers based on input network interface.
+// traffic to container(iif hostVlan) will be routed via the specified rtTable.
+// traffic from container(iif hostVeth) will be routed via the specified rtTable.
+func (n *linuxNetwork) setupIIFBasedContainerRouteRules(hostVeth netlink.Link, containerAddr *net.IPNet, hostVlan netlink.Link, rtTable int, log logger.Logger) error {
+	route := netlink.Route{
+		LinkIndex: hostVeth.Attrs().Index,
+		Scope:     netlink.SCOPE_LINK,
+		Dst:       containerAddr,
+		Table:     rtTable,
+	}
+	if err := n.netLink.RouteReplace(&route); err != nil {
+		return errors.Wrapf(err, "failed to setup container route, containerAddr=%s, hostVeth=%s, rtTable=%v",
+			containerAddr.String(), hostVeth.Attrs().Name, rtTable)
+	}
+	log.Debugf("Successfully setup container route, containerAddr=%s, hostVeth=%s, rtTable=%v",
+		containerAddr.String(), hostVeth.Attrs().Name, rtTable)
+
+	fromHostVlanRule := n.netLink.NewRule()
+	fromHostVlanRule.IifName = hostVlan.Attrs().Name
+	fromHostVlanRule.Priority = vlanRulePriority
+	fromHostVlanRule.Table = rtTable
+	if err := n.netLink.RuleAdd(fromHostVlanRule); err != nil && !isRuleExistsError(err) {
+		return errors.Wrapf(err, "unable to setup fromHostVlan rule, hostVlan=%s, rtTable=%v", hostVlan.Attrs().Name, rtTable)
+	}
+	log.Debugf("Successfully setup fromHostVlan rule, hostVlan=%s, rtTable=%v", hostVlan.Attrs().Name, rtTable)
+
+	fromHostVethRule := n.netLink.NewRule()
+	fromHostVethRule.IifName = hostVeth.Attrs().Name
+	fromHostVethRule.Priority = vlanRulePriority
+	fromHostVethRule.Table = rtTable
+	if err := n.netLink.RuleAdd(fromHostVethRule); err != nil && !isRuleExistsError(err) {
+		return errors.Wrapf(err, "unable to setup fromHostVeth rule, hostVeth=%s, rtTable=%v", hostVeth.Attrs().Name, rtTable)
+	}
+	log.Debugf("Successfully setup fromHostVeth rule, hostVeth=%s, rtTable=%v", hostVeth.Attrs().Name, rtTable)
+
+	return nil
+}
+
+func (n *linuxNetwork) teardownIIFBasedContainerRouteRules(rtTable int, log logger.Logger) error {
+	rule := n.netLink.NewRule()
+	rule.Priority = vlanRulePriority
+	rule.Table = rtTable
+
+	if err := netLinkRuleDelAll(n.netLink, rule); err != nil {
+		return errors.Wrapf(err, "failed to delete IIF based rules, rtTable=%v", rtTable)
+	}
+	log.Debugf("Successfully deleted IIF based rules, rtTable=%v", rtTable)
+
 	return nil
 }
 
@@ -489,136 +622,16 @@ func buildRoutesForVlan(vlanTableID int, vlanIndex int, gw net.IP) []netlink.Rou
 	}
 }
 
+// buildVlanLinkName builds the name for vlan link.
+func buildVlanLinkName(vlanID int) string {
+	return fmt.Sprintf("vlan.eth.%d", vlanID)
+}
+
 // buildVlanLink builds vlan link for the pod.
-func buildVlanLink(vlanID int, parentIfIndex int, eniMAC string) *netlink.Vlan {
+func buildVlanLink(vlanName string, vlanID int, parentIfIndex int, eniMAC string) *netlink.Vlan {
 	la := netlink.NewLinkAttrs()
-	la.Name = fmt.Sprintf("vlan.eth.%d", vlanID)
+	la.Name = vlanName
 	la.ParentIndex = parentIfIndex
 	la.HardwareAddr, _ = net.ParseMAC(eniMAC)
 	return &netlink.Vlan{LinkAttrs: la, VlanId: vlanID}
-}
-
-func addContainerRule(netLink netlinkwrapper.NetLink, isToContainer bool, addr *net.IPNet, table int) error {
-	if addr == nil {
-		return errors.New("can't add container rules without an IP address")
-	}
-	containerRule := netLink.NewRule()
-	if isToContainer {
-		// Example: 512:	from all to 10.200.202.222 lookup main
-		containerRule.Dst = addr
-		containerRule.Priority = toContainerRulePriority
-	} else {
-		// Example: 1536:	from 10.200.202.222 to 10.200.0.0/16 lookup 2
-		containerRule.Src = addr
-		containerRule.Priority = fromContainerRulePriority
-	}
-	containerRule.Table = table
-
-	err := netLink.RuleDel(containerRule)
-	if err != nil && !containsNoSuchRule(err) {
-		return errors.Wrapf(err, "addContainerRule: failed to delete old container rule for %s", addr.String())
-	}
-
-	err = netLink.RuleAdd(containerRule)
-	if err != nil {
-		return errors.Wrapf(err, "addContainerRule: failed to add container rule for %s", addr.String())
-	}
-	return nil
-}
-
-// TeardownPodNetwork cleanup ip rules
-func (os *linuxNetwork) TeardownNS(addr *net.IPNet, deviceNumber int, log logger.Logger) error {
-	log.Debugf("TeardownNS: addr %s, deviceNumber %d", addr.String(), deviceNumber)
-	return tearDownNS(addr, deviceNumber, os.netLink, log)
-}
-
-func tearDownNS(addr *net.IPNet, deviceNumber int, netLink netlinkwrapper.NetLink, log logger.Logger) error {
-	if addr == nil {
-		return errors.New("can't tear down network namespace with no IP address")
-	}
-	// Remove to-pod rule
-	toContainerRule := netLink.NewRule()
-	toContainerRule.Dst = addr
-	toContainerRule.Priority = toContainerRulePriority
-	err := netLink.RuleDel(toContainerRule)
-
-	if err != nil {
-		log.Errorf("Failed to delete toContainer rule for %s err %v", addr.String(), err)
-	} else {
-		log.Infof("Delete toContainer rule for %s ", addr.String())
-	}
-
-	if deviceNumber > 0 {
-		// remove from-pod rule only for non main table
-		err := deleteRuleListBySrc(*addr)
-		if err != nil {
-			log.Errorf("Failed to delete fromContainer for %s %v", addr.String(), err)
-			return errors.Wrapf(err, "delete NS network: failed to delete fromContainer rule for %s", addr.String())
-		}
-		tableNumber := deviceNumber + 1
-		log.Infof("Delete fromContainer rule for %s in table %d", addr.String(), tableNumber)
-	}
-
-	addrHostAddr := &net.IPNet{
-		IP:   addr.IP,
-		Mask: net.CIDRMask(32, 32)}
-
-	// cleanup host route:
-	if err = netLink.RouteDel(&netlink.Route{
-		Scope: netlink.SCOPE_LINK,
-		Dst:   addrHostAddr}); err != nil {
-		log.Errorf("delete NS network: failed to delete host route for %s, %v", addr.String(), err)
-	}
-	log.Debug("Tear down of NS complete")
-	return nil
-}
-
-// TeardownPodENINetwork tears down the vlan and corresponding ip rules.
-func (os *linuxNetwork) TeardownPodENINetwork(vlanID int, log logger.Logger) error {
-	log.Infof("Tear down of pod ENI namespace")
-
-	// 1. delete vlan
-	if vlan, err := os.netLink.LinkByName(fmt.Sprintf("vlan.eth.%d",
-		vlanID)); err == nil {
-		err := os.netLink.LinkDel(vlan)
-		if err != nil {
-			return errors.Wrapf(err, "TeardownPodENINetwork: failed to delete vlan link for %d", vlanID)
-		}
-	}
-
-	// 2. delete two ip rules associated with the vlan
-	vlanRule := os.netLink.NewRule()
-	vlanRule.Table = vlanID + 100
-	vlanRule.Priority = vlanRulePriority
-
-	for {
-		// Loop until both the rules are deleted.
-		// one of them handles vlan traffic and other is for pod host veth traffic.
-		if err := os.netLink.RuleDel(vlanRule); err != nil {
-			if !containsNoSuchRule(err) {
-				return errors.Wrapf(err, "TeardownPodENINetwork: failed to delete container rule for %d", vlanID)
-			}
-			break
-		}
-	}
-	return nil
-}
-
-func deleteRuleListBySrc(src net.IPNet) error {
-	networkClient := networkutils.New()
-	return networkClient.DeleteRuleListBySrc(src)
-}
-
-func containsNoSuchRule(err error) bool {
-	if errno, ok := err.(syscall.Errno); ok {
-		return errno == syscall.ENOENT
-	}
-	return false
-}
-
-func isRuleExistsError(err error) bool {
-	if errno, ok := err.(syscall.Errno); ok {
-		return errno == syscall.EEXIST
-	}
-	return false
 }
