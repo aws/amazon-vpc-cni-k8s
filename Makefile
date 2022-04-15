@@ -308,6 +308,9 @@ generate-cni-yaml:
 
 release: generate-cni-yaml upload-resources-to-github
 
+config-folder-sync:
+	${MAKEFILE_PATH}/scripts/sync-to-config-folder.sh
+
 setup-ec2-sdk-override:
 	@if [ "$(EC2_SDK_OVERRIDE)" = "y" ] ; then \
 	    ./scripts/ec2_model_override/setup.sh ; \
