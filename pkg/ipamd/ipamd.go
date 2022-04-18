@@ -1920,6 +1920,9 @@ func (c *IPAMContext) AnnotatePod(podName, podNamespace, key, val string) error 
 		}
 
 		newPod := pod.DeepCopy()
+		if newPod.Annotations == nil {
+			newPod.Annotations = make(map[string]string)
+		}
 		newPod.Annotations[key] = val
 		if err = c.rawK8SClient.Patch(ctx, newPod, client.MergeFrom(pod)); err != nil {
 			log.Errorf("Failed to annotate %s the pod with %s, error %v", key, val, err)
