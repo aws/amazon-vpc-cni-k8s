@@ -462,8 +462,9 @@ func (c *IPAMContext) nodeInit() error {
 
 	metadataResult, err := c.awsClient.DescribeAllENIs()
 	if err != nil {
-		return errors.New("ipamd init: failed to retrieve attached ENIs info")
+		return errors.Wrap(err, "ipamd init: failed to retrieve attached ENIs info")
 	}
+
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
 	c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
 	c.setUnmanagedENIs(metadataResult.TagMap)
@@ -938,7 +939,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 			err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 			if err != nil {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err: %v", eni.ID, err))
+				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
 			}
 		}
 		// This call to EC2 is needed to verify which IPs got attached to this ENI.
@@ -1908,17 +1909,20 @@ func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
 }
 
 // AnnotatePod annotates the pod with the provided key and value
-func (c *IPAMContext) AnnotatePod(podNamespace, podName, key, val string) error {
+func (c *IPAMContext) AnnotatePod(podName, podNamespace, key, val string) error {
 	ctx := context.TODO()
 	var err error
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		pod := &corev1.Pod{}
-		if pod, err = c.GetPod(podNamespace, podName); err != nil {
+		if pod, err = c.GetPod(podName, podNamespace); err != nil {
 			return err
 		}
 
 		newPod := pod.DeepCopy()
+		if newPod.Annotations == nil {
+			newPod.Annotations = make(map[string]string)
+		}
 		newPod.Annotations[key] = val
 		if err = c.rawK8SClient.Patch(ctx, newPod, client.MergeFrom(pod)); err != nil {
 			log.Errorf("Failed to annotate %s the pod with %s, error %v", key, val, err)
