@@ -55,7 +55,7 @@ const (
 
 	// envDelayedReleaseTimeout configures default delayed IP release timeout, defaults to defaultDelayedReleaseTimeout
 	envDelayedReleaseTimeout     = "AWS_VPC_K8S_CNI_DELAYED_RELEASE_TIMEOUT_SECONDS"
-	defaultDelayedReleaseTimeout = 10 * time.Second
+	defaultDelayedReleaseTimeout = 60 * time.Second
 )
 
 // We need to know which IPs are already allocated across

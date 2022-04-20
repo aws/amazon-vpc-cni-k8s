@@ -490,6 +490,18 @@ func TestGetIPStatsV4(t *testing.T) {
 		},
 		*ds.GetIPStats("4"),
 	)
+
+	// wait additional 30s (delayed release period)
+	time.Sleep(30 * time.Second)
+	assert.Equal(t,
+		DataStoreStats{
+			TotalIPs:          2,
+			AssignedIPs:       1,
+			CooldownIPs:       0,
+			DelayedReleaseIPs: 0,
+		},
+		*ds.GetIPStats("4"),
+	)
 }
 
 func TestGetIPStatsV6(t *testing.T) {
