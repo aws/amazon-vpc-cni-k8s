@@ -35,9 +35,6 @@ const (
 	// in addressCoolingPeriod
 	addressCoolingPeriod = 30 * time.Second
 
-	// addressDelayedReleasePeriod is used to release unused IP after a period of inactivity.
-	addressDelayedReleasePeriod = 10 * time.Minute
-
 	// DuplicatedENIError is an error when caller tries to add an duplicate ENI to data store
 	DuplicatedENIError = "data store: duplicate ENI"
 
@@ -134,6 +131,8 @@ var (
 		[]string{"cidr"},
 	)
 	prometheusRegistered = false
+
+	log = logger.Get()
 )
 
 // IPAMKey is the IPAM primary key.  Quoting CNI spec:
@@ -286,7 +285,7 @@ func (addr AddressInfo) inCoolingPeriod() bool {
 
 // InDelayedRelease checks whether an addr is in addressDelayedReleasePeriod
 func (addr AddressInfo) inDelayedReleasePeriod() bool {
-	return time.Since(addr.UnassignedTime) <= addressDelayedReleasePeriod
+	return time.Since(addr.UnassignedTime) <= getDelayedReleaseTimeout()
 }
 
 // ENIPool is a collection of ENI, keyed by ENI ID
