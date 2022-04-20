@@ -35,6 +35,11 @@ const (
 	// in addressCoolingPeriod
 	addressCoolingPeriod = 30 * time.Second
 
+	// envDelayedReleaseTimeout configures default delayed IP release timeout.
+	// IPs in delayed release state are available for allocation by other Pods after addressCoolingPeriod.
+	envDelayedReleaseTimeout     = "AWS_VPC_K8S_CNI_DELAYED_RELEASE_TIMEOUT_SECONDS"
+	defaultDelayedReleaseTimeout = 60 * time.Second
+
 	// DuplicatedENIError is an error when caller tries to add an duplicate ENI to data store
 	DuplicatedENIError = "data store: duplicate ENI"
 
@@ -52,10 +57,6 @@ const (
 
 	// UnknownENIError is an error when caller tries to access an ENI which is unknown to datastore
 	UnknownENIError = "datastore: unknown ENI"
-
-	// envDelayedReleaseTimeout configures default delayed IP release timeout, defaults to defaultDelayedReleaseTimeout
-	envDelayedReleaseTimeout     = "AWS_VPC_K8S_CNI_DELAYED_RELEASE_TIMEOUT_SECONDS"
-	defaultDelayedReleaseTimeout = 60 * time.Second
 )
 
 // We need to know which IPs are already allocated across
