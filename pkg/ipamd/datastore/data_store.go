@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -54,6 +55,10 @@ const (
 
 	// UnknownENIError is an error when caller tries to access an ENI which is unknown to datastore
 	UnknownENIError = "datastore: unknown ENI"
+
+	// envDelayedReleaseTimeout configures default delayed IP release timeout, defaults to defaultDelayedReleaseTimeout
+	envDelayedReleaseTimeout     = "AWS_VPC_K8S_CNI_DELAYED_RELEASE_TIMEOUT_SECONDS"
+	defaultDelayedReleaseTimeout = 10 * time.Second
 )
 
 // We need to know which IPs are already allocated across
@@ -1569,4 +1574,21 @@ func (ds *DataStore) CheckFreeableENIexists() bool {
 		return true
 	}
 	return false
+}
+
+func getDelayedReleaseTimeout() time.Duration {
+	inputStr, found := os.LookupEnv(envDelayedReleaseTimeout)
+	if !found {
+		return defaultDelayedReleaseTimeout
+	}
+
+	if input, err := strconv.Atoi(inputStr); err == nil {
+		if input < 0 {
+			return defaultDelayedReleaseTimeout
+		}
+		delayedReleaseTimeout := time.Duration(input) * time.Second
+		log.Debugf("Using %s %v", envDelayedReleaseTimeout, delayedReleaseTimeout)
+		return delayedReleaseTimeout
+	}
+	return defaultDelayedReleaseTimeout
 }
