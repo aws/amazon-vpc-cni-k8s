@@ -16,7 +16,6 @@ package ipamd
 import (
 	"context"
 	"fmt"
-	"math"
 	"net"
 	"os"
 	"strconv"
@@ -932,7 +931,8 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 	if eni != nil && len(eni.AvailableIPv4Cidrs) < c.maxIPsPerENI {
 		currentNumberOfAllocatedIPs := len(eni.AvailableIPv4Cidrs)
 		// Try to allocate all available IPs for this ENI
-		err = c.awsClient.AllocIPAddresses(eni.ID, int(math.Min(float64(c.maxIPsPerENI-currentNumberOfAllocatedIPs), float64(toAllocate))))
+		resourcesToAllocate := min((c.maxIPsPerENI - currentNumberOfAllocatedIPs), toAllocate)
+		err = c.awsClient.AllocIPAddresses(eni.ID, resourcesToAllocate)
 		if err != nil {
 			log.Warnf("failed to allocate all available IP addresses on ENI %s, err: %v", eni.ID, err)
 			// Try to just get one more IP
@@ -942,13 +942,12 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
 			}
 		}
-		// This call to EC2 is needed to verify which IPs got attached to this ENI.
-		ec2Addrs, err := c.awsClient.GetIPv4sFromEC2(eni.ID)
+		eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni.ID, resourcesToAllocate)
 		if err != nil {
 			ipamdErrInc("increaseIPPoolGetENIaddressesFailed")
 			return true, errors.Wrap(err, "failed to get ENI IP addresses during IP allocation")
 		}
-
+		ec2Addrs := eniMetadata.IPv4Addresses
 		c.addENIsecondaryIPsToDataStore(ec2Addrs, eni.ID)
 		return true, nil
 	}
@@ -1001,7 +1000,8 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 	eni := c.dataStore.GetENINeedsIP(c.maxPrefixesPerENI, c.useCustomNetworking)
 	if eni != nil {
 		currentNumberOfAllocatedPrefixes := len(eni.AvailableIPv4Cidrs)
-		err = c.awsClient.AllocIPAddresses(eni.ID, min((c.maxPrefixesPerENI-currentNumberOfAllocatedPrefixes), toAllocate))
+		resourcesToAllocate := min((c.maxPrefixesPerENI - currentNumberOfAllocatedPrefixes), toAllocate)
+		err = c.awsClient.AllocIPAddresses(eni.ID, resourcesToAllocate)
 		if err != nil {
 			log.Warnf("failed to allocate all available IPv4 Prefixes on ENI %s, err: %v", eni.ID, err)
 			// Try to just get one more prefix
@@ -1011,11 +1011,12 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err))
 			}
 		}
-		ec2Prefixes, err := c.awsClient.GetIPv4PrefixesFromEC2(eni.ID)
+		eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni.ID, resourcesToAllocate)
 		if err != nil {
 			ipamdErrInc("increaseIPPoolGetENIprefixedFailed")
 			return true, errors.Wrap(err, "failed to get ENI Prefix addresses during IPv4 Prefix allocation")
 		}
+		ec2Prefixes := eniMetadata.IPv4Prefixes
 		c.addENIv4prefixesToDataStore(ec2Prefixes, eni.ID)
 		return true, nil
 	}
@@ -2015,10 +2016,10 @@ func (c *IPAMContext) GetENIResourcesToAllocate() int {
 		resourcesToAllocate = c.maxIPsPerENI
 		short, _, warmTargetDefined := c.datastoreTargetState()
 		if warmTargetDefined {
-			resourcesToAllocate = short
+			resourcesToAllocate = min(short, c.maxIPsPerENI)
 		}
 	} else {
-		resourcesToAllocate = c.getPrefixesNeeded()
+		resourcesToAllocate = min(c.getPrefixesNeeded(), c.maxPrefixesPerENI)
 	}
 	return resourcesToAllocate
 }
