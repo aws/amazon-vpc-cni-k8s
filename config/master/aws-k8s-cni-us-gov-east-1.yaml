@@ -70,6 +70,10 @@ rules:
     resources:
       - '*'
     verbs: ["list", "watch"]
+  - apiGroups: ["", "events.k8s.io"]
+    resources:
+      - events
+    verbs: ["create", "patch", "list", "get"]
 ---
 # Source: aws-vpc-cni/templates/clusterrolebinding.yaml
 apiVersion: rbac.authorization.k8s.io/v1

@@ -55,6 +55,8 @@ The following table lists the configurable parameters for this chart and their d
 | `init.securityContext`  | Init container Security context                         | `privileged: true`                  |
 | `originalMatchLabels`   | Use the original daemonset matchLabels                  | `false`                             |
 | `nameOverride`          | Override the name of the chart                          | `aws-node`                          |
+| `extraVolumes`          | Array to add extra volumes                              | `[]`                                |
+| `extraVolumeMounts`     | Array to add extra mount                                | `[]`                                |
 | `nodeSelector`          | Node labels for pod assignment                          | `{}`                                |
 | `podSecurityContext`    | Pod Security Context                                    | `{}`                                |
 | `podAnnotations`        | annotations to add to each pod                          | `{}`                                |
