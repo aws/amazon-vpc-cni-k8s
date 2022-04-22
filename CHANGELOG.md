@@ -1,9 +1,13 @@
 # Changelog
 
-## v1.11.1
+## v1.11.2
 
 * Improvement -  [Update golang to Go 1.18](https://github.com/aws/amazon-vpc-cni-k8s/pull/1991) (@orsenthil)
 * Improvement -  Update containernetworking/cni version to 0.8.1 to address CVE-2021-20206 (@orsenthil)
+
+# v1.11.1
+
+Was Skipped
 
 ## v1.11.0
 
