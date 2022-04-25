@@ -52,6 +52,8 @@ type NodeGroupProperties struct {
 
 	// optional: specify container runtime
 	ContainerRuntime string
+
+	NodeImageId string
 }
 
 type ClusterVPCConfig struct {
@@ -159,6 +161,13 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 			ParameterKey:   aws.String("DisableIMDSv1"),
 			ParameterValue: aws.String("true"),
 		},
+	}
+
+	if properties.NodeImageId != "" {
+		createNgStackParams = append(createNgStackParams, &cloudformation.Parameter{
+			ParameterKey:   aws.String("NodeImageId"),
+			ParameterValue: aws.String(properties.NodeImageId),
+		})
 	}
 
 	describeStackOutput, err := f.CloudServices.CloudFormation().
