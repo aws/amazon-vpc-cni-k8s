@@ -52,16 +52,4 @@ var _ = BeforeSuite(func() {
 	instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
 	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(instanceID)
 	Expect(err).ToNot(HaveOccurred())
-
-	By("Delete coredns addon if it exists")
-	_, addonDeleteError = f.CloudServices.EKS().DeleteAddon("coredns", f.Options.ClusterName)
-
-})
-
-var _ = AfterSuite(func() {
-	if addonDeleteError == nil {
-		By("Restore coredns addon")
-		_, err := f.CloudServices.EKS().CreateAddon("coredns", f.Options.ClusterName)
-		Expect(err).NotTo(HaveOccurred())
-	}
 })

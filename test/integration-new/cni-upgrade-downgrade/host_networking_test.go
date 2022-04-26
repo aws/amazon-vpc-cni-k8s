@@ -1,11 +1,6 @@
 package cni_upgrade_downgrade
 
 import (
-	"bytes"
-	"fmt"
-	"io"
-	"os"
-	"os/exec"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
@@ -36,7 +31,7 @@ var _ = Describe("test host networking", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			if len(initialManifest) != 0 {
-				ApplyCNIManifest(initialManifest)
+				common.ApplyCNIManifest(initialManifest)
 			} else {
 				By("Using existing cni manifest")
 			}
@@ -72,7 +67,7 @@ var _ = Describe("test host networking", func() {
 			common.ValidateHostNetworking(common.NetworkingSetupSucceeds, podInput, primaryNode.Name, f)
 
 			By("update cni to target manifest")
-			ApplyCNIManifest(targetManifest)
+			common.ApplyCNIManifest(targetManifest)
 
 			By("deleting the deployment to test teardown")
 			err = f.K8sResourceManagers.DeploymentManager().
@@ -87,13 +82,3 @@ var _ = Describe("test host networking", func() {
 		})
 	})
 })
-
-func ApplyCNIManifest(filepath string) {
-	var stdoutBuf, stderrBuf bytes.Buffer
-	By(fmt.Sprintf("Applying manifest: %s", filepath))
-	cmd := exec.Command("kubectl", "apply", "-f", filepath)
-	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
-	cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
-	err := cmd.Run()
-	Expect(err).NotTo(HaveOccurred())
-}

@@ -1,7 +1,11 @@
 package common
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
@@ -153,4 +157,14 @@ func IsPrimaryENI(nwInterface *ec2.InstanceNetworkInterface, instanceIPAddr *str
 		}
 	}
 	return false
+}
+
+func ApplyCNIManifest(filepath string) {
+	var stdoutBuf, stderrBuf bytes.Buffer
+	By(fmt.Sprintf("Applying manifest: %s", filepath))
+	cmd := exec.Command("kubectl", "apply", "-f", filepath)
+	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
+	err := cmd.Run()
+	Expect(err).NotTo(HaveOccurred())
 }
