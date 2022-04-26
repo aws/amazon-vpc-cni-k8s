@@ -1,30 +1,15 @@
 #!/bin/bash
 
-# Initialize variables needed for running ginkgo tests 
+# Helper script used for running canary test for CNI IPv4 and IPv6
 
 SECONDS=0
 VPC_CNI_ADDON_NAME="vpc-cni"
 
-echo "Running tests with the following variables
+echo "Running Canary tests for amazon-vpc-cni-k8s with the following variables
 KUBE_CONFIG_PATH:  $KUBE_CONFIG_PATH
 CLUSTER_NAME: $CLUSTER_NAME
 REGION: $REGION
 ENDPOINT: $ENDPOINT"
-
-if [[ ! -n "${KUBE_CONFIG_PATH}" ]]; then
-  echo "KUBE_CONFIG_PATH not set"
-  exit 1
-fi
-
-if [[ ! -n "${CLUSTER_NAME}" ]]; then
-  echo "CLUSTER_NAME not set"
-  exit 1
-fi
-
-if [[ ! -n "${REGION}" ]]; then
-  echo "REGION not set"
-  exit 1
-fi
 
 if [[ -n "${ENDPOINT}" ]]; then
   ENDPOINT_FLAG="--endpoint $ENDPOINT"
