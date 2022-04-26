@@ -28,8 +28,12 @@ rules:
   - apiGroups: [""]
     resources:
       - nodes
-    verbs: ["list", "watch", "get", "update", "patch"]
+    verbs: ["list", "watch", "get", "update"]
   - apiGroups: ["extensions"]
     resources:
       - '*'
     verbs: ["list", "watch"]
+  - apiGroups: ["", "events.k8s.io"]
+    resources:
+      - events
+    verbs: ["create", "patch", "list", "get"]

@@ -19,6 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
 	"github.com/stretchr/testify/assert"
@@ -80,7 +83,9 @@ func TestDeleteENI(t *testing.T) {
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 	assert.NoError(t, err)
-	ip, device, err := ds.AssignPodIPv4Address(IPAMKey{"net1", "sandbox1", "eth0"})
+	ip, device, err := ds.AssignPodIPv4Address(
+		IPAMKey{"net1", "sandbox1", "eth0"},
+		IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod"})
 	assert.NoError(t, err)
 	assert.Equal(t, "1.1.1.1", ip)
 	assert.Equal(t, 1, device)
@@ -185,7 +190,7 @@ func TestDelENIIPv4Address(t *testing.T) {
 
 	// Assign a pod.
 	key := IPAMKey{"net0", "sandbox-1", "eth0"}
-	ip, device, err := ds.AssignPodIPv4Address(key)
+	ip, device, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 	assert.NoError(t, err)
 	assert.Equal(t, "1.1.1.1", ip)
 	assert.Equal(t, 1, device)
@@ -234,6 +239,13 @@ func TestPodIPv4Address(t *testing.T) {
 	checkpoint := NewTestCheckpoint(struct{}{})
 	ds := NewDataStore(Testlog, checkpoint, false)
 
+	checkpointDataCmpOpts := cmp.Options{
+		cmpopts.IgnoreFields(CheckpointEntry{}, "AllocationTimestamp"),
+		cmpopts.SortSlices(func(lhs CheckpointEntry, rhs CheckpointEntry) bool {
+			return lhs.ContainerID < rhs.ContainerID
+		}),
+	}
+
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
 
@@ -245,19 +257,28 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.NoError(t, err)
 
 	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
-	ip, _, err := ds.AssignPodIPv4Address(key1)
+	ip, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 
 	assert.NoError(t, err)
 	assert.Equal(t, "1.1.1.1", ip)
 	assert.Equal(t, 1, ds.total)
 	assert.Equal(t, 1, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs))
 	assert.Equal(t, 1, ds.eniPool["eni-1"].AssignedIPv4Addresses())
-	assert.Equal(t, checkpoint.Data, &CheckpointData{
+
+	expectedCheckpointData := &CheckpointData{
 		Version: CheckpointFormatVersion,
 		Allocations: []CheckpointEntry{
-			{IPAMKey: IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"}, IPv4: "1.1.1.1"},
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"},
+				IPv4:     "1.1.1.1",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"},
+			},
 		},
-	})
+	}
+	assert.True(t,
+		cmp.Equal(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+		cmp.Diff(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+	)
 
 	podsInfos := ds.AllocatedIPs()
 	assert.Equal(t, len(podsInfos), 1)
@@ -267,7 +288,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.NoError(t, err)
 
 	// duplicate add
-	ip, _, err = ds.AssignPodIPv4Address(key1) // same id
+	ip, _, err = ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"}) // same id
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "1.1.1.1")
 	assert.Equal(t, ds.total, 2)
@@ -280,24 +301,52 @@ func TestPodIPv4Address(t *testing.T) {
 	// Checkpoint error
 	checkpoint.Error = errors.New("fake checkpoint error")
 	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key2)
+	_, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.Error(t, err)
-	assert.Equal(t, checkpoint.Data, &CheckpointData{
+
+	expectedCheckpointData = &CheckpointData{
 		Version: CheckpointFormatVersion,
 		Allocations: []CheckpointEntry{
-			{IPAMKey: IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"}, IPv4: "1.1.1.1"},
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"},
+				IPv4:     "1.1.1.1",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"},
+			},
 		},
-	})
+	}
+	assert.True(t,
+		cmp.Equal(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+		cmp.Diff(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+	)
 	checkpoint.Error = nil
 
-	ip, pod1Ns2Device, err := ds.AssignPodIPv4Address(key2)
+	ip, pod1Ns2Device, err := ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "1.1.2.2")
 	assert.Equal(t, ds.total, 2)
 	assert.Equal(t, ds.assigned, 2)
 	assert.Equal(t, len(ds.eniPool["eni-2"].AvailableIPv4Cidrs), 1)
 	assert.Equal(t, ds.eniPool["eni-2"].AssignedIPv4Addresses(), 1)
-	assert.Equal(t, len(checkpoint.Data.(*CheckpointData).Allocations), 2)
+
+	expectedCheckpointData = &CheckpointData{
+		Version: CheckpointFormatVersion,
+		Allocations: []CheckpointEntry{
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"},
+				IPv4:     "1.1.1.1",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"},
+			},
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-2", IfName: "eth0"},
+				IPv4:     "1.1.2.2",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"},
+			},
+		},
+	}
+	assert.True(t,
+		cmp.Equal(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+		cmp.Diff(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+	)
 
 	podsInfos = ds.AllocatedIPs()
 	assert.Equal(t, len(podsInfos), 2)
@@ -307,18 +356,41 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.NoError(t, err)
 
 	key3 := IPAMKey{"net0", "sandbox-3", "eth0"}
-	ip, _, err = ds.AssignPodIPv4Address(key3)
+	ip, _, err = ds.AssignPodIPv4Address(key3, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-3"})
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "1.1.1.2")
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, ds.assigned, 3)
 	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 2)
-	assert.Equal(t, len(checkpoint.Data.(*CheckpointData).Allocations), 3)
+	expectedCheckpointData = &CheckpointData{
+		Version: CheckpointFormatVersion,
+		Allocations: []CheckpointEntry{
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"},
+				IPv4:     "1.1.1.1",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"},
+			},
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-2", IfName: "eth0"},
+				IPv4:     "1.1.2.2",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"},
+			},
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-3", IfName: "eth0"},
+				IPv4:     "1.1.1.2",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-3"},
+			},
+		},
+	}
+	assert.True(t,
+		cmp.Equal(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+		cmp.Diff(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+	)
 
 	// no more IP addresses
 	key4 := IPAMKey{"net0", "sandbox-4", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key4)
+	_, _, err = ds.AssignPodIPv4Address(key4, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-4"})
 	assert.Error(t, err)
 	// Unassign unknown Pod
 	_, _, _, err = ds.UnassignPodIPAddress(key4)
@@ -331,7 +403,25 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, deviceNum, pod1Ns2Device)
 	assert.Equal(t, len(ds.eniPool["eni-2"].AvailableIPv4Cidrs), 1)
 	assert.Equal(t, ds.eniPool["eni-2"].AssignedIPv4Addresses(), 0)
-	assert.Equal(t, len(checkpoint.Data.(*CheckpointData).Allocations), 2)
+	expectedCheckpointData = &CheckpointData{
+		Version: CheckpointFormatVersion,
+		Allocations: []CheckpointEntry{
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"},
+				IPv4:     "1.1.1.1",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"},
+			},
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-3", IfName: "eth0"},
+				IPv4:     "1.1.1.2",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-3"},
+			},
+		},
+	}
+	assert.True(t,
+		cmp.Equal(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+		cmp.Diff(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+	)
 
 	noWarmIPTarget := 0
 	noMinimumIPTarget := 0
@@ -358,13 +448,13 @@ func TestGetIPStatsV4(t *testing.T) {
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
-	_, _, err := ds.AssignPodIPv4Address(key1)
+	_, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 	assert.NoError(t, err)
 
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key2)
+	_, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -407,7 +497,7 @@ func TestGetIPStatsV6(t *testing.T) {
 	ipv6Addr := net.IPNet{IP: net.IP{0x21, 0xdb, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: net.CIDRMask(80, 128)}
 	_ = v6ds.AddIPv6CidrToStore("eni-1", ipv6Addr, true)
 	key3 := IPAMKey{"netv6", "sandbox-3", "eth0"}
-	_, _, err := v6ds.AssignPodIPv6Address(key3)
+	_, _, err := v6ds.AssignPodIPv6Address(key3, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-3"})
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -431,13 +521,13 @@ func TestWarmENIInteractions(t *testing.T) {
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
-	_, _, err := ds.AssignPodIPv4Address(key1)
+	_, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 	assert.NoError(t, err)
 
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key2)
+	_, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.NoError(t, err)
 
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.2.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
