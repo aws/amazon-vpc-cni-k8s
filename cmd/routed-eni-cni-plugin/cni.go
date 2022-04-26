@@ -455,7 +455,7 @@ func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArg
 	return true, nil
 }
 
-// Scope usage of this function to only SG pods scenario (https://harbinger.amazon.com/notices/65203)
+// Scope usage of this function to only SG pods scenario
 // Don't process deletes when NetNS is empty
 // as it implies that veth for this request is already deleted
 // ref: https://github.com/kubernetes/kubernetes/issues/44100#issuecomment-329780382
