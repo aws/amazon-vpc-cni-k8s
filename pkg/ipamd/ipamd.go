@@ -416,6 +416,19 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	if err != nil {
 		return nil, err
 	}
+	mac := c.awsClient.GetPrimaryENImac()
+
+ 	// retrieve security groups
+ 	if c.enableIPv4 && !c.disableENIProvisioning {
+ 		err = c.awsClient.RefreshSGIDs(mac)
+ 		if err != nil {
+ 			return nil, err
+ 		}
+
+ 		// Refresh security groups and VPC CIDR blocks in the background
+ 		// Ignoring errors since we will retry in 30s
+ 		go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
+ 	}
 
 	return c, nil
 }
@@ -555,19 +568,6 @@ func (c *IPAMContext) nodeInit() error {
 	} else {
 		// Check if we want to ask for one
 		c.askForTrunkENIIfNeeded(ctx)
-	}
-
-	mac := c.awsClient.GetPrimaryENImac()
-	// retrieve security groups
-	if c.enableIPv4 && !c.disableENIProvisioning {
-		err = c.awsClient.RefreshSGIDs(mac)
-		if err != nil {
-			return err
-		}
-
-		// Refresh security groups in the background
-		// Ignoring errors since we will retry in 30s
-		go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
 	}
 
 	if !c.disableENIProvisioning && c.isDatastorePoolTooLow() {
