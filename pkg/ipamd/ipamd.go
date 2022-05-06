@@ -418,17 +418,17 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	}
 	mac := c.awsClient.GetPrimaryENImac()
 
- 	// retrieve security groups
- 	if c.enableIPv4 && !c.disableENIProvisioning {
- 		err = c.awsClient.RefreshSGIDs(mac)
- 		if err != nil {
- 			return nil, err
- 		}
+	// retrieve security groups
+	if c.enableIPv4 && !c.disableENIProvisioning {
+		err = c.awsClient.RefreshSGIDs(mac)
+		if err != nil {
+			return nil, err
+		}
 
- 		// Refresh security groups and VPC CIDR blocks in the background
- 		// Ignoring errors since we will retry in 30s
- 		go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
- 	}
+		// Refresh security groups and VPC CIDR blocks in the background
+		// Ignoring errors since we will retry in 30s
+		go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
+	}
 
 	return c, nil
 }
