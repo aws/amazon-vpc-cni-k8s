@@ -54,6 +54,9 @@ In order to test a custom image you need pass the following tags along with the 
 
 *IMPORTANT*: Should use an IPv6 cluster with Prefix Delegation enabled. VPC CNI only supports IPv6 mode with Prefix Delegation.
 
+### Running release tests with scripts/run-cni-release-tests.sh
+`run-cni-release-tests.sh` will run cni, ipamd, and cni-metrics-helper (integration tests)[https://github.com/aws/amazon-vpc-cni-k8s/tree/master/test/integration-new] and (Calico tests)[https://github.com/aws/amazon-vpc-cni-k8s/tree/master/test/e2e/calico]. The script _does not_ create a test cluster, instead it will run the test on cluster specified via variables required in the script. The tests are run on the vpc-cni version installed on the cluster(it does not upgrade/install any specific vpc-cni version). See script `update-cni-images.sh` to update the test cluster with required cni version before running the tests. 
+
 ### Future Work
 Currently the package is named as `integration-new` because we already have `integration` directory with existing Ginkgo test cases with a separate `go.mod`. Once the older package is completely deprecated we will rename this package to `integration`.
 
