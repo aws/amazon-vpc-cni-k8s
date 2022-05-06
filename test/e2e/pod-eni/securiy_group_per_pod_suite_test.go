@@ -23,9 +23,10 @@ import (
 	awsUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/vpc"
-	. "github.com/onsi/ginkgo"
+	v1 "k8s.io/api/core/v1"
+
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
@@ -52,6 +53,8 @@ var (
 	clusterRoleName string
 	// NodeSecurityGroupId for Node-Node communication
 	nodeSecurityGroupID string
+
+	node v1.Node
 )
 
 func TestSecurityGroupForPods(t *testing.T) {
@@ -116,7 +119,7 @@ var _ = BeforeSuite(func() {
 
 	// Get ref to any node from newly created nodegroup
 	By("Getting providerID of the node")
-	node := nodeList.Items[0]
+	node = nodeList.Items[0]
 	providerID := node.Spec.ProviderID
 	Expect(len(providerID)).To(BeNumerically(">", 0))
 

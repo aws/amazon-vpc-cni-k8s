@@ -2,12 +2,18 @@ package k8sapi
 
 import (
 	"fmt"
+	"os"
+	"time"
+
+	"k8s.io/apimachinery/pkg/api/meta"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -16,8 +22,21 @@ import (
 
 var log = logger.Get()
 
+func InitializeRestMapper() (meta.RESTMapper, error) {
+	restCfg, err := ctrl.GetConfig()
+	restCfg.Burst = 200
+	if err != nil {
+		return nil, err
+	}
+	mapper, err := apiutil.NewDynamicRESTMapper(restCfg)
+	if err != nil {
+		return nil, err
+	}
+	return mapper, nil
+}
+
 // CreateKubeClient creates a k8s client
-func CreateKubeClient() (client.Client, error) {
+func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
 		return nil, err
@@ -26,7 +45,8 @@ func CreateKubeClient() (client.Client, error) {
 	clientgoscheme.AddToScheme(vpcCniScheme)
 	eniconfigscheme.AddToScheme(vpcCniScheme)
 
-	rawK8SClient, err := client.New(restCfg, client.Options{Scheme: vpcCniScheme})
+	rawK8SClient, err := client.New(restCfg, client.Options{Scheme: vpcCniScheme, Mapper: mapper})
+
 	if err != nil {
 		return nil, err
 	}
@@ -35,8 +55,10 @@ func CreateKubeClient() (client.Client, error) {
 }
 
 // CreateKubeClient creates a k8s client
-func CreateCachedKubeClient(rawK8SClient client.Client) (client.Client, error) {
+func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper) (client.Client, error) {
 	restCfg, err := ctrl.GetConfig()
+	restCfg.Burst = 100
+
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +67,7 @@ func CreateCachedKubeClient(rawK8SClient client.Client) (client.Client, error) {
 	eniconfigscheme.AddToScheme(vpcCniScheme)
 
 	stopChan := ctrl.SetupSignalHandler()
-	cache, err := cache.New(restCfg, cache.Options{Scheme: vpcCniScheme})
+	cache, err := cache.New(restCfg, cache.Options{Scheme: vpcCniScheme, Mapper: mapper})
 	if err != nil {
 		return nil, err
 	}
@@ -54,15 +76,16 @@ func CreateCachedKubeClient(rawK8SClient client.Client) (client.Client, error) {
 	}()
 	cache.WaitForCacheSync(stopChan)
 
-	cachedK8SClient := client.DelegatingClient{
-		Reader: &client.DelegatingReader{
-			CacheReader:  cache,
-			ClientReader: rawK8SClient,
-		},
-		Writer:       rawK8SClient,
-		StatusClient: rawK8SClient,
+	cachedK8SClient := client.NewDelegatingClientInput{
+		CacheReader: cache,
+		Client:      rawK8SClient,
 	}
-	return cachedK8SClient, nil
+
+	returnedCachedK8SClient, err := client.NewDelegatingClient(cachedK8SClient)
+	if err != nil {
+		return nil, err
+	}
+	return returnedCachedK8SClient, nil
 }
 func GetKubeClientSet() (kubernetes.Interface, error) {
 	// creates the in-cluster config
@@ -84,15 +107,25 @@ func CheckAPIServerConnectivity() error {
 	if err != nil {
 		return err
 	}
-	clientSet, _ := kubernetes.NewForConfig(restCfg)
-
-	log.Infof("Testing communication with server")
-	version, err := clientSet.Discovery().ServerVersion()
+	restCfg.Timeout = 5 * time.Second
+	clientSet, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
-		return fmt.Errorf("error communicating with apiserver: %v", err)
+		return fmt.Errorf("creating kube config, %w", err)
 	}
-	log.Infof("Successful communication with the Cluster! Cluster Version is: v%s.%s. git version: %s. git tree state: %s. commit: %s. platform: %s",
-		version.Major, version.Minor, version.GitVersion, version.GitTreeState, version.GitCommit, version.Platform)
-
-	return nil
+	log.Infof("Testing communication with server")
+	// Reconcile the API server query after waiting for a second, as the request
+	// times out in one second if it fails to connect to the server
+	return wait.PollInfinite(2*time.Second, func() (bool, error) {
+		version, err := clientSet.Discovery().ServerVersion()
+		if err != nil {
+			// When times out return no error, so the PollInfinite will retry with the given interval
+			if os.IsTimeout(err) {
+				return false, nil
+			}
+			return false, fmt.Errorf("error communicating with apiserver: %v", err)
+		}
+		log.Infof("Successful communication with the Cluster! Cluster Version is: v%s.%s. git version: %s. git tree state: %s. commit: %s. platform: %s",
+			version.Major, version.Minor, version.GitVersion, version.GitTreeState, version.GitCommit, version.Platform)
+		return true, nil
+	})
 }

@@ -3,9 +3,8 @@ apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
 metadata:
-  name: bottlerocket
+  name: CLUSTER_NAME_PLACEHOLDER
   region: us-west-2
-  version: '1.15'
 
 nodeGroups:
   - name: ng-bottlerocket

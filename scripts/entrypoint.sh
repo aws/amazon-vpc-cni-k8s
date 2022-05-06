@@ -72,6 +72,16 @@ validate_env_var()
           exit 1
           ;;
     esac
+
+    case ${POD_SECURITY_GROUP_ENFORCING_MODE} in
+        strict|standard)
+          ;;
+        *)
+          log_in_json error "POD_SECURITY_GROUP_ENFORCING_MODE must be set to either strict or standard"
+          exit 1
+          ;;
+    esac
+
     if is_prefix_delegation_enabled && unsupported_prefix_target_conf ; then
        log_in_json error "Setting WARM_PREFIX_TARGET = 0 is not supported while WARM_IP_TARGET/MINIMUM_IP_TARGET is not set. Please configure either one of the WARM_{PREFIX/IP}_TARGET or MINIMUM_IP_TARGET env variables"
        exit 1
@@ -93,6 +103,7 @@ HOST_CNI_BIN_PATH=${HOST_CNI_BIN_PATH:-"/host/opt/cni/bin"}
 HOST_CNI_CONFDIR_PATH=${HOST_CNI_CONFDIR_PATH:-"/host/etc/cni/net.d"}
 AWS_VPC_K8S_CNI_VETHPREFIX=${AWS_VPC_K8S_CNI_VETHPREFIX:-"eni"}
 AWS_VPC_ENI_MTU=${AWS_VPC_ENI_MTU:-"9001"}
+POD_SECURITY_GROUP_ENFORCING_MODE=${POD_SECURITY_GROUP_ENFORCING_MODE:-"strict"}
 AWS_VPC_K8S_PLUGIN_LOG_FILE=${AWS_VPC_K8S_PLUGIN_LOG_FILE:-"/var/log/aws-routed-eni/plugin.log"}
 AWS_VPC_K8S_PLUGIN_LOG_LEVEL=${AWS_VPC_K8S_PLUGIN_LOG_LEVEL:-"Debug"}
 AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE=${AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE:-"/var/log/aws-routed-eni/egress-v4-plugin.log"}
@@ -170,10 +181,12 @@ log_in_json info "Copying config file ... "
 sed \
   -e s~__VETHPREFIX__~"${AWS_VPC_K8S_CNI_VETHPREFIX}"~g \
   -e s~__MTU__~"${AWS_VPC_ENI_MTU}"~g \
+  -e s~__PODSGENFORCINGMODE__~"${POD_SECURITY_GROUP_ENFORCING_MODE}"~g \
   -e s~__PLUGINLOGFILE__~"${AWS_VPC_K8S_PLUGIN_LOG_FILE}"~g \
   -e s~__PLUGINLOGLEVEL__~"${AWS_VPC_K8S_PLUGIN_LOG_LEVEL}"~g \
   -e s~__EGRESSV4PLUGINLOGFILE__~"${AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE}"~g \
   -e s~__EGRESSV4PLUGINENABLED__~"${ENABLE_IPv6}"~g \
+  -e s~__RANDOMIZESNAT__~"${AWS_VPC_K8S_CNI_RANDOMIZESNAT}"~g \
   -e s~__NODEIP__~"${NODE_IP}"~g \
   10-aws.conflist > "$TMP_AWS_CONFLIST_FILE"
 

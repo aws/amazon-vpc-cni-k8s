@@ -461,8 +461,9 @@ func (c *IPAMContext) nodeInit() error {
 
 	metadataResult, err := c.awsClient.DescribeAllENIs()
 	if err != nil {
-		return errors.New("ipamd init: failed to retrieve attached ENIs info")
+		return errors.Wrap(err, "ipamd init: failed to retrieve attached ENIs info")
 	}
+
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
 	c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
 	c.setUnmanagedENIs(metadataResult.TagMap)
@@ -927,7 +928,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 			err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 			if err != nil {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err: %v", eni.ID, err))
+				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
 			}
 		}
 		// This call to EC2 is needed to verify which IPs got attached to this ENI.
@@ -1839,41 +1840,45 @@ func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
 
 // SetNodeLabel sets or deletes a node label
 func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error {
-	var node corev1.Node
-	// Find my node
-	err := c.cachedK8SClient.Get(ctx, types.NamespacedName{Name: c.myNodeName}, &node)
-	log.Debugf("Node found %q - labels - %q", node.Name, len(node.Labels))
-
-	if err != nil {
-		log.Errorf("Failed to get node: %v", err)
-		return err
+	request := types.NamespacedName{
+		Name: c.myNodeName,
 	}
 
-	if labelValue, ok := node.Labels[key]; ok && labelValue == value {
-		log.Debugf("Node label %q is already %q", key, labelValue)
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		node := &corev1.Node{}
+		// Find my node
+		err := c.cachedK8SClient.Get(ctx, request, node)
+		if err != nil {
+			log.Errorf("Failed to get node: %v", err)
+			return err
+		}
+		log.Debugf("Node found %q - no of labels - %d", node.Name, len(node.Labels))
+
+		if labelValue, ok := node.Labels[key]; ok && labelValue == value {
+			log.Debugf("Node label %q is already %q", key, labelValue)
+			return nil
+		}
+
+		// Make deep copy for modification
+		updateNode := node.DeepCopy()
+
+		// Set node label
+		if value != "" {
+			updateNode.Labels[key] = value
+		} else {
+			// Empty value, delete the label
+			log.Debugf("Deleting label %q", key)
+			delete(updateNode.Labels, key)
+		}
+
+		if err = c.cachedK8SClient.Update(ctx, updateNode); err != nil {
+			log.Errorf("Failed to patch node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
+			return err
+		}
+		log.Debugf("Updated node %s with label %q: %q", c.myNodeName, key, value)
 		return nil
-	}
-
-	// Make deep copy for modification
-	updateNode := node.DeepCopy()
-
-	// Set node label
-	if value != "" {
-		updateNode.Labels[key] = value
-	} else {
-		// Empty value, delete the label
-		log.Debugf("Deleting label %q", key)
-		delete(updateNode.Labels, key)
-	}
-
-	// Update node status to advertise the resource.
-	err = c.cachedK8SClient.Update(ctx, updateNode)
-	if err != nil {
-		log.Errorf("Failed to update node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
-	}
-	log.Debugf("Updated node %s with label %q: %q", c.myNodeName, key, value)
-
-	return nil
+	})
+	return err
 }
 
 // GetPod returns the pod matching the name and namespace
@@ -1893,17 +1898,20 @@ func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
 }
 
 // AnnotatePod annotates the pod with the provided key and value
-func (c *IPAMContext) AnnotatePod(podNamespace, podName, key, val string) error {
+func (c *IPAMContext) AnnotatePod(podName, podNamespace, key, val string) error {
 	ctx := context.TODO()
-	var pod *corev1.Pod
 	var err error
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		if pod, err = c.GetPod(podNamespace, podName); err != nil {
+		pod := &corev1.Pod{}
+		if pod, err = c.GetPod(podName, podNamespace); err != nil {
 			return err
 		}
 
 		newPod := pod.DeepCopy()
+		if newPod.Annotations == nil {
+			newPod.Annotations = make(map[string]string)
+		}
 		newPod.Annotations[key] = val
 		if err = c.rawK8SClient.Patch(ctx, newPod, client.MergeFrom(pod)); err != nil {
 			log.Errorf("Failed to annotate %s the pod with %s, error %v", key, val, err)
@@ -2146,9 +2154,6 @@ func (c *IPAMContext) initENIAndIPLimits() (err error) {
 }
 
 func (c *IPAMContext) isConfigValid() bool {
-	//Get Instance type
-	hypervisorType := c.awsClient.GetInstanceHypervisorFamily()
-
 	//Validate that only one among v4 and v6 is enabled.
 	if c.enableIPv4 && c.enableIPv6 {
 		log.Errorf("IPv4 and IPv6 are both enabled. VPC CNI currently doesn't support dual stack mode")
@@ -2166,7 +2171,7 @@ func (c *IPAMContext) isConfigValid() bool {
 	}
 
 	//Validate Prefix Delegation against v4 and v6 modes.
-	if hypervisorType != "nitro" && c.enablePrefixDelegation {
+	if c.enablePrefixDelegation && !c.awsClient.IsPrefixDelegationSupported() {
 		if c.enableIPv6 {
 			log.Errorf("Prefix Delegation is not supported on non-nitro instance %s. IPv6 is only supported in Prefix delegation Mode. ", c.awsClient.GetInstanceType())
 			return false

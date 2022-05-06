@@ -21,7 +21,7 @@ import (
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 )
@@ -75,8 +75,7 @@ var _ = BeforeSuite(func() {
 	instanceOutput, err := f.CloudServices.EC2().DescribeInstanceType(instanceType)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Pods often get stuck due insufficient capacity, so adding some buffer to the maxIPPerInterface
-	maxIPPerInterface = int(*instanceOutput[0].NetworkInfo.Ipv4AddressesPerInterface) - 5
+	maxIPPerInterface = int(*instanceOutput[0].NetworkInfo.Ipv4AddressesPerInterface)
 
 	By("describing the VPC to get the VPC CIDRs")
 	describeVPCOutput, err := f.CloudServices.EC2().DescribeVPC(f.Options.AWSVPCID)

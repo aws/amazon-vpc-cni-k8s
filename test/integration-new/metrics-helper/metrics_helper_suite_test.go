@@ -24,7 +24,7 @@ import (
 	k8sUtil "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
@@ -43,12 +43,25 @@ var (
 	ngName string
 	// node name which has CW publish metric privileges
 	nodeName string
+
+	clusterIDKeys []string
+)
+
+const (
+	DEFAULT_CLUSTER_ID = "k8s-cluster"
 )
 
 // Parse optional flags for setting the cni metrics helper image
 func init() {
 	flag.StringVar(&imageRepository, "cni-metrics-helper-image-repo", "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper", "CNI Metrics Helper Image Repository")
 	flag.StringVar(&imageTag, "cni-metrics-helper-image-tag", "v1.7.10", "CNI Metrics Helper Image Tag")
+
+	// Order in which we try fetch the keys and use it as CLUSTER_ID dimension
+	clusterIDKeys = []string{
+		"eks:cluster-name",
+		"CLUSTER_ID",
+		"Name",
+	}
 }
 
 func TestCNIMetricsHelper(t *testing.T) {
@@ -92,12 +105,28 @@ var _ = BeforeSuite(func() {
 	instance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
 	Expect(err).ToNot(HaveOccurred())
 
+	instanceTagKeyValuePair := map[string]string{
+		"eks:cluster-name": "",
+		"CLUSTER_ID":       "",
+		"Name":             "",
+	}
+
 	for _, instanceTag := range instance.Tags {
-		if *instanceTag.Key == "Name" {
-			ngName = *instanceTag.Value
+		if _, ok := instanceTagKeyValuePair[*instanceTag.Key]; ok {
+			instanceTagKeyValuePair[*instanceTag.Key] = *instanceTag.Value
 		}
 	}
-	Expect(ngName).ToNot(BeEmpty())
+
+	for _, k := range clusterIDKeys {
+		if tagVal, ok := instanceTagKeyValuePair[k]; ok && tagVal != "" {
+			ngName = tagVal
+			break
+		}
+	}
+
+	if ngName == "" {
+		ngName = DEFAULT_CLUSTER_ID
+	}
 
 	By("getting the node instance role")
 	instanceProfileRoleName := strings.Split(*instance.IamInstanceProfile.Arn, "instance-profile/")[1]

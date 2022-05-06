@@ -122,7 +122,7 @@ import (
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
         //ginkgo and the assertion library: gomega are imported below
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
         //v1 imported for Node libraries
 	v1 "k8s.io/api/core/v1"
@@ -300,8 +300,5 @@ In case of an error, the error message will be printed in ginkgo error stack. Fo
 Test Suite Failed
 ```
 
-To make debugging efforts easier, you can do the following:
-
-1. Adding focus to individual failing tests to selectively run them in case of troubleshooting. The most straightforward way would be to add an F in front of your It for the failing test. Another simple way would be to add --focus=<focus_value> in ginkgo command where the <focus_value> provided would be matched to the string description of the tests.
-2. Comment out the AfterEach or AfterSuite section which cleans up your test resources, rerun the failing test in focussed mode and inspect for any errors using pod logs or pod events
+For additional [Debugging Help](./Troubleshooting.md)
 

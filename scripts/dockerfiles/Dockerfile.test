@@ -2,10 +2,6 @@ ARG golang_image
 FROM $golang_image
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
 
-ARG GOARCH
-ARG arch
-ENV ARCH=$arch
-
 # Force the go compiler to use modules.
 ENV GO111MODULE=on
 ENV GOPROXY=direct

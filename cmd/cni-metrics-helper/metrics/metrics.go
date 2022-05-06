@@ -238,11 +238,11 @@ func postProcessingHistogram(convert metricsConvert, log logger.Logger) bool {
 func processMetric(family *dto.MetricFamily, convert metricsConvert, log logger.Logger) (bool, error) {
 	resetDetected := false
 
-	mType := family.GetType()
+	metricType := family.GetType()
 	for _, metric := range family.GetMetric() {
 		for _, act := range convert.actions {
 			if act.matchFunc(metric) {
-				switch mType {
+				switch metricType {
 				case dto.MetricType_GAUGE:
 					processGauge(metric, &act)
 				case dto.MetricType_HISTOGRAM:
@@ -256,7 +256,7 @@ func processMetric(family *dto.MetricFamily, convert metricsConvert, log logger.
 		}
 	}
 
-	switch mType {
+	switch metricType {
 	case dto.MetricType_COUNTER:
 		curResetDetected := postProcessingCounter(convert, log)
 		if curResetDetected {
@@ -316,9 +316,9 @@ func filterMetrics(originalMetrics map[string]*dto.MetricFamily,
 func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFamily, convertDef map[string]metricsConvert, cw publisher.Publisher) {
 	for key, family := range families {
 		convertMetrics := convertDef[key]
-		mType := family.GetType()
+		metricType := family.GetType()
 		for _, action := range convertMetrics.actions {
-			switch mType {
+			switch metricType {
 			case dto.MetricType_COUNTER:
 				if t.submitCloudWatch() {
 					dataPoint := &cloudwatch.MetricDatum{
