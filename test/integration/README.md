@@ -54,6 +54,49 @@ In order to test a custom image you need pass the following tags along with the 
 
 *IMPORTANT*: Should use an IPv6 cluster with Prefix Delegation enabled. VPC CNI only supports IPv6 mode with Prefix Delegation.
 
+### Multus tests
+These tests require multus to be deployed to your cluster using the [manifest](https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/master/config/multus/v3.7.2-eksbuild.2/aws-k8s-multus.yaml) file. Instead test can be triggered by running `run-multus-tests.sh` located under scripts directory. This script installs the multus manifest first and then runs the the ginkgo test suite. 
+You can optionally provide multus tag to install the manifest. If not provided then it will use the default tag
+
+```
+KUBE_CONFIG_PATH=/Users/cgadgil/.kube/config CLUSTER_NAME=eks-MultusInfra REGION=us-west-2 SKIP_MAKE_TEST_BINARIES=true ./scripts/run-multus-tests.sh v3.7.2-eksbuild.2
+
+Running tests with the following variables
+KUBE_CONFIG_PATH:  /Users/cgadgil/.kube/config
+CLUSTER_NAME: eks-MultusInfra
+REGION: us-west-2
+ENDPOINT: 
+skipping making ginkgo test binaries
+loading cluster details eks-MultusInfra
+Installing latest multus manifest with tag: v3.7.2-eksbuild.2
+customresourcedefinition.apiextensions.k8s.io/network-attachment-definitions.k8s.cni.cncf.io unchanged
+clusterrole.rbac.authorization.k8s.io/multus unchanged
+clusterrolebinding.rbac.authorization.k8s.io/multus unchanged
+serviceaccount/multus unchanged
+configmap/multus-cni-config unchanged
+daemonset.apps/kube-multus-ds unchanged
+Running multus ginkgo tests
+Running Suite: Multus Setup Suite
+=================================
+Random Seed: 1647974995
+Will run 1 of 1 specs
+
+STEP: Check if Multus Daemonset is Ready
+...
+...
+
+Ran 1 of 1 Specs in 6.340 seconds
+SUCCESS! -- 1 Passed | 0 Failed | 0 Pending | 0 Skipped
+PASS
+
+Ginkgo ran 1 suite in 14.379316223s
+Test Suite Passed
+all tests ran successfully in 0 minutes and 27 seconds
+```
+
+### Running release tests with scripts/run-cni-release-tests.sh
+`run-cni-release-tests.sh` will run cni, ipamd, and cni-metrics-helper (integration tests)[https://github.com/aws/amazon-vpc-cni-k8s/tree/master/test/integration-new] and (Calico tests)[https://github.com/aws/amazon-vpc-cni-k8s/tree/master/test/e2e/calico]. The script _does not_ create a test cluster, instead it will run the test on cluster specified via variables required in the script. The tests are run on the vpc-cni version installed on the cluster(it does not upgrade/install any specific vpc-cni version). See script `update-cni-images.sh` to update the test cluster with required cni version before running the tests.
+
 ## Development of New Integration Tests
 
 This section is written to give a high level overview for the process of developing integration tests in the VPC CNI repo. 
