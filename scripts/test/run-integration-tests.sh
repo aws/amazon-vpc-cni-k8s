@@ -2,7 +2,7 @@
 
 set -eo pipefail
 
-pushd ./test/integration-new
+pushd ./test/integration
 
 echo "Running integration test with the following configuration:
 KUBECONFIG: $KUBECONFIG
