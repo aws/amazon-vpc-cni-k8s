@@ -13,3 +13,4 @@ cni-metrics-helper
 coverage.txt
 build/
 vendor
+egress-v4-cni
