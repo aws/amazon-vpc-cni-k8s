@@ -51,7 +51,7 @@ function run_integration_test() {
 
 function run_calico_tests(){
   # get version from run-integration-tests.sh
-  : "${CALICO_VERSION:=3.22.0}"
+  : "${CALICO_VERSION:=3.23.0}"
   echo "Running calico tests, version $CALICO_VERSION"
   START=$SECONDS
   TEST_RESULT=success

@@ -3,6 +3,7 @@ package calico
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
@@ -13,22 +14,21 @@ import (
 )
 
 var (
-	f                *framework.Framework
-	err              error
-	uiNamespace      = "management-ui"
-	clientNamespace  = "client"
-	starsNamespace   = "stars"
-	uiLabel          = map[string]string{"role": "management-ui"}
-	clientLabel      = map[string]string{"role": "client"}
-	feLabel          = map[string]string{"role": "frontend"}
-	beLabel          = map[string]string{"role": "backend"}
-	nodeArchKey      = "kubernetes.io/arch"
-	nodeArchARMValue = "arm64"
-	nodeArchAMDValue = "amd64"
-	uiPod            v1.Pod
-	clientPod        v1.Pod
-	fePod            v1.Pod
-	bePod            v1.Pod
+	f               *framework.Framework
+	err             error
+	uiNamespace     = "management-ui"
+	clientNamespace = "client"
+	starsNamespace  = "stars"
+	uiLabel         = map[string]string{"role": "management-ui"}
+	clientLabel     = map[string]string{"role": "client"}
+	feLabel         = map[string]string{"role": "frontend"}
+	beLabel         = map[string]string{"role": "backend"}
+	nodeArchKey     = "kubernetes.io/arch"
+	starImage       = "calico/star-probe:multiarch"
+	uiPod           v1.Pod
+	clientPod       v1.Pod
+	fePod           v1.Pod
+	bePod           v1.Pod
 )
 
 func TestCalicoPoliciesWithVPCCNI(t *testing.T) {
@@ -38,15 +38,16 @@ func TestCalicoPoliciesWithVPCCNI(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
-	By("installing Calico operator")
 
-	tigeraVersion := f.Options.CalicoVersion
-	err := f.InstallationManager.InstallTigeraOperator(tigeraVersion)
-	Expect(err).ToNot(HaveOccurred())
-
-	By("Patching ARM64 node unschedulable")
-	err = updateNodesSchedulability(nodeArchKey, nodeArchARMValue, true)
-	Expect(err).ToNot(HaveOccurred())
+	if f.Options.InstallCalico {
+		By("installing Calico operator")
+		tigeraVersion := f.Options.CalicoVersion
+		err := f.InstallationManager.InstallTigeraOperator(tigeraVersion)
+		// wait for Calico resources being provisioned and setup.
+		// we don't have control on Calico pods metadata thus we may not poll the pods for waiting wisely.
+		time.Sleep(utils.DefaultDeploymentReadyTimeout)
+		Expect(err).ToNot(HaveOccurred())
+	}
 
 	By("installing Calico Start Policy Tests Resources")
 	err = f.K8sResourceManagers.NamespaceManager().CreateNamespaceWithLabels(uiNamespace, map[string]string{"role": "management-ui"})
@@ -58,7 +59,7 @@ var _ = BeforeSuite(func() {
 
 	uiContainer := manifest.NewBaseContainer().
 		Name("management-ui").
-		Image("calico/star-collect:v0.1.0").
+		Image(starImage).
 		ImagePullPolicy(v1.PullAlways).
 		Port(v1.ContainerPort{ContainerPort: 9001}).
 		Build()
@@ -68,7 +69,7 @@ var _ = BeforeSuite(func() {
 		Container(uiContainer).
 		Replicas(1).
 		PodLabel("role", "management-ui").
-		NodeSelector(nodeArchKey, nodeArchAMDValue).
+		NodeSelector(nodeArchKey, f.Options.InstanceType).
 		Labels(map[string]string{"role": "management-ui"}).
 		Build()
 	_, err = f.K8sResourceManagers.DeploymentManager().CreateAndWaitTillDeploymentIsReady(uiDeployment, utils.DefaultDeploymentReadyTimeout)
@@ -76,7 +77,7 @@ var _ = BeforeSuite(func() {
 
 	clientContainer := manifest.NewBaseContainer().
 		Name("client").
-		Image("calico/star-probe:v0.1.0").
+		Image(starImage).
 		ImagePullPolicy(v1.PullAlways).
 		Command([]string{"probe", "--urls=http://frontend.stars:80/status,http://backend.stars:6379/status"}).
 		Port(v1.ContainerPort{ContainerPort: 9000}).
@@ -87,7 +88,7 @@ var _ = BeforeSuite(func() {
 		Container(clientContainer).
 		Replicas(1).
 		PodLabel("role", "client").
-		NodeSelector(nodeArchKey, nodeArchAMDValue).
+		NodeSelector(nodeArchKey, f.Options.InstanceType).
 		Labels(map[string]string{"role": "client"}).
 		Build()
 	_, err = f.K8sResourceManagers.DeploymentManager().CreateAndWaitTillDeploymentIsReady(clientDeployment, utils.DefaultDeploymentReadyTimeout)
@@ -95,7 +96,7 @@ var _ = BeforeSuite(func() {
 
 	feContainer := manifest.NewBaseContainer().
 		Name("frontend").
-		Image("calico/star-probe:v0.1.0").
+		Image(starImage).
 		ImagePullPolicy(v1.PullAlways).
 		Command([]string{
 			"probe",
@@ -110,7 +111,7 @@ var _ = BeforeSuite(func() {
 		Container(feContainer).
 		Replicas(1).
 		PodLabel("role", "frontend").
-		NodeSelector(nodeArchKey, nodeArchAMDValue).
+		NodeSelector(nodeArchKey, f.Options.InstanceType).
 		Labels(map[string]string{"role": "frontend"}).
 		Build()
 	_, err = f.K8sResourceManagers.DeploymentManager().CreateAndWaitTillDeploymentIsReady(feDeployment, utils.DefaultDeploymentReadyTimeout)
@@ -118,7 +119,7 @@ var _ = BeforeSuite(func() {
 
 	beContainer := manifest.NewBaseContainer().
 		Name("backend").
-		Image("calico/star-probe:v0.1.0").
+		Image(starImage).
 		ImagePullPolicy(v1.PullAlways).
 		Command([]string{
 			"probe",
@@ -133,7 +134,7 @@ var _ = BeforeSuite(func() {
 		Container(beContainer).
 		Replicas(1).
 		PodLabel("role", "backend").
-		NodeSelector(nodeArchKey, nodeArchAMDValue).
+		NodeSelector(nodeArchKey, f.Options.InstanceType).
 		Labels(map[string]string{"role": "backend"}).
 		Build()
 	_, err = f.K8sResourceManagers.DeploymentManager().CreateAndWaitTillDeploymentIsReady(beDeployment, utils.DefaultDeploymentReadyTimeout)
@@ -215,11 +216,10 @@ var _ = AfterSuite(func() {
 	f.K8sResourceManagers.NetworkPolicyManager().DeleteNetworkPolicy(&networkPolicyAllowFE)
 	f.K8sResourceManagers.NetworkPolicyManager().DeleteNetworkPolicy(&networkPolicyAllowClient)
 
-	By("Helm Uninstall Calico Installation")
-	f.InstallationManager.UninstallTigeraOperator()
-
-	By("Restore ARM64 Nodes Schedulability")
-	updateNodesSchedulability(nodeArchKey, nodeArchARMValue, false)
+	// TODO: disable Calico uninstallation for now. We can add this back after a number of successful test runs.
+	////we are using dynamic cluster to run the test. Not uninstalling Calico is fine.
+	//By("Helm Uninstall Calico Installation")
+	//f.InstallationManager.UninstallTigeraOperator()
 })
 
 func installNetcatToolInContainer(name string, namespace string) error {
