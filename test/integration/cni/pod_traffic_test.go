@@ -18,7 +18,7 @@ import (
 	"strconv"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-	"github.com/aws/amazon-vpc-cni-k8s/test/integration-new/common"
+	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 

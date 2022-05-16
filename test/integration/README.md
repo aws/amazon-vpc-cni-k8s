@@ -95,7 +95,7 @@ all tests ran successfully in 0 minutes and 27 seconds
 ```
 
 ### Running release tests with scripts/run-cni-release-tests.sh
-`run-cni-release-tests.sh` will run cni, ipamd, and cni-metrics-helper (integration tests)[https://github.com/aws/amazon-vpc-cni-k8s/tree/master/test/integration-new] and (Calico tests)[https://github.com/aws/amazon-vpc-cni-k8s/tree/master/test/e2e/calico]. The script _does not_ create a test cluster, instead it will run the test on cluster specified via variables required in the script. The tests are run on the vpc-cni version installed on the cluster(it does not upgrade/install any specific vpc-cni version). See script `update-cni-images.sh` to update the test cluster with required cni version before running the tests.
+`run-cni-release-tests.sh` will run cni, ipamd, and cni-metrics-helper (integration tests)[https://github.com/aws/amazon-vpc-cni-k8s/tree/master/test/integration] and (Calico tests)[https://github.com/aws/amazon-vpc-cni-k8s/tree/master/test/e2e/calico]. The script _does not_ create a test cluster, instead it will run the test on cluster specified via variables required in the script. The tests are run on the vpc-cni version installed on the cluster(it does not upgrade/install any specific vpc-cni version). See script `update-cni-images.sh` to update the test cluster with required cni version before running the tests.
 
 ## Development of New Integration Tests
 
@@ -159,7 +159,7 @@ import (
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
         //ginkgo and the assertion library: gomega are imported below
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
         //v1 imported for Node libraries
 	v1 "k8s.io/api/core/v1"
