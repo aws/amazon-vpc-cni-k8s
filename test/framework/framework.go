@@ -14,6 +14,7 @@
 package framework
 
 import (
+	"context"
 	"log"
 
 	eniConfig "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
@@ -23,6 +24,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s"
 	sgp "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"
 	. "github.com/onsi/gomega"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
@@ -57,7 +59,10 @@ func New(options Options) *Framework {
 	stopChan := ctrl.SetupSignalHandler()
 	cache, err := cache.New(config, cache.Options{Scheme: k8sSchema})
 	Expect(err).NotTo(HaveOccurred())
-
+	err = cache.IndexField(context.TODO(), &v1.Event{}, "reason", func(o client.Object) []string {
+		return []string{o.(*v1.Event).Reason}
+	}) // default indexing only on ns, need this for ipamd_event_test
+	Expect(err).NotTo(HaveOccurred())
 	go func() {
 		cache.Start(stopChan)
 	}()

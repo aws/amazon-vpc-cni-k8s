@@ -9,7 +9,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.10.2"
+    app.kubernetes.io/version: "v1.10.3"
 ---
 # Source: aws-vpc-cni/templates/customresourcedefinition.yaml
 apiVersion: apiextensions.k8s.io/v1
@@ -20,7 +20,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.10.2"
+    app.kubernetes.io/version: "v1.10.3"
 spec:
   scope: Cluster
   group: crd.k8s.amazonaws.com
@@ -47,7 +47,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.10.2"
+    app.kubernetes.io/version: "v1.10.3"
 rules:
   - apiGroups:
       - crd.k8s.amazonaws.com
@@ -65,11 +65,15 @@ rules:
   - apiGroups: [""]
     resources:
       - nodes
-    verbs: ["list", "watch", "get", "update", "patch"]
+    verbs: ["list", "watch", "get", "update"]
   - apiGroups: ["extensions"]
     resources:
       - '*'
     verbs: ["list", "watch"]
+  - apiGroups: ["", "events.k8s.io"]
+    resources:
+      - events
+    verbs: ["create", "patch", "list", "get"]
 ---
 # Source: aws-vpc-cni/templates/clusterrolebinding.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -80,7 +84,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.10.2"
+    app.kubernetes.io/version: "v1.10.3"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -100,7 +104,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.10.2"
+    app.kubernetes.io/version: "v1.10.3"
 spec:
   updateStrategy:
     rollingUpdate:
@@ -121,7 +125,7 @@ spec:
       hostNetwork: true
       initContainers:
       - name: aws-vpc-cni-init
-        image: "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni-init:v1.10.2"
+        image: "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni-init:v1.10.3"
         env:
           - name: DISABLE_TCP_EARLY_DEMUX
             value: "false"
@@ -139,7 +143,7 @@ spec:
         {}
       containers:
         - name: aws-node
-          image: "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni:v1.10.2"
+          image: "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni:v1.10.3"
           ports:
             - containerPort: 61678
               name: metrics
