@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration-new"
+INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration"
 
 source "$SCRIPT_DIR"/lib/common.sh
 source "$SCRIPT_DIR"/lib/cluster.sh

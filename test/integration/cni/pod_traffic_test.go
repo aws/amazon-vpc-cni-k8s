@@ -18,9 +18,9 @@ import (
 	"strconv"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
-	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo/v2"
@@ -64,9 +64,9 @@ var _ = Describe("test pod networking", func() {
 		secondaryNodeDeployment *v1.Deployment
 
 		// Map of Pods placed on primary/secondary ENI IP on primary node
-		interfaceToPodListOnPrimaryNode InterfaceTypeToPodList
+		interfaceToPodListOnPrimaryNode common.InterfaceTypeToPodList
 		// Map of Pods placed on primary/secondary ENI IP on secondary node
-		interfaceToPodListOnSecondaryNode InterfaceTypeToPodList
+		interfaceToPodListOnSecondaryNode common.InterfaceTypeToPodList
 	)
 
 	JustBeforeEach(func() {
@@ -102,7 +102,7 @@ var _ = Describe("test pod networking", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		interfaceToPodListOnPrimaryNode =
-			GetPodsOnPrimaryAndSecondaryInterface(primaryNode, "node", "primary")
+			common.GetPodsOnPrimaryAndSecondaryInterface(primaryNode, "node", "primary", f)
 
 		// At least two Pods should be placed on the Primary and Secondary Interface
 		// on the Primary and Secondary Node in order to test all possible scenarios
@@ -127,7 +127,7 @@ var _ = Describe("test pod networking", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		interfaceToPodListOnSecondaryNode =
-			GetPodsOnPrimaryAndSecondaryInterface(secondaryNode, "node", "secondary")
+			common.GetPodsOnPrimaryAndSecondaryInterface(secondaryNode, "node", "secondary", f)
 
 		// Same reason as mentioned above
 		Expect(len(interfaceToPodListOnSecondaryNode.PodsOnPrimaryENI)).
@@ -282,8 +282,8 @@ func VerifyConnectivityFailsForNegativeCase(senderPod coreV1.Pod, receiverPod co
 // CheckConnectivityForMultiplePodPlacement checks connectivity for various scenarios, an example
 // connection from Pod on Node 1 having IP from Primary Network Interface to Pod on Node 2 having
 // IP from Secondary Network Interface
-func CheckConnectivityForMultiplePodPlacement(interfaceToPodListOnPrimaryNode InterfaceTypeToPodList,
-	interfaceToPodListOnSecondaryNode InterfaceTypeToPodList, port int,
+func CheckConnectivityForMultiplePodPlacement(interfaceToPodListOnPrimaryNode common.InterfaceTypeToPodList,
+	interfaceToPodListOnSecondaryNode common.InterfaceTypeToPodList, port int,
 	testerExpectedStdOut string, testerExpectedStdErr string,
 	getTestCommandFunc func(receiverPod coreV1.Pod, port int) []string) {
 
@@ -342,58 +342,4 @@ func testConnectivity(senderPod coreV1.Pod, receiverPod coreV1.Pod, expectedStdo
 
 	Expect(stdErr).To(ContainSubstring(expectedStderr))
 	Expect(stdOut).To(ContainSubstring(expectedStdout))
-}
-
-type InterfaceTypeToPodList struct {
-	PodsOnPrimaryENI   []coreV1.Pod
-	PodsOnSecondaryENI []coreV1.Pod
-}
-
-// GetPodsOnPrimaryAndSecondaryInterface returns the list of Pods on Primary Networking
-// Interface and Secondary Network Interface on a given Node
-func GetPodsOnPrimaryAndSecondaryInterface(node coreV1.Node,
-	podLabelKey string, podLabelVal string) InterfaceTypeToPodList {
-	podList, err := f.K8sResourceManagers.
-		PodManager().
-		GetPodsWithLabelSelector(podLabelKey, podLabelVal)
-	Expect(err).ToNot(HaveOccurred())
-
-	instance, err := f.CloudServices.EC2().
-		DescribeInstance(k8sUtils.GetInstanceIDFromNode(node))
-	Expect(err).ToNot(HaveOccurred())
-
-	interfaceToPodList := InterfaceTypeToPodList{
-		PodsOnPrimaryENI:   []coreV1.Pod{},
-		PodsOnSecondaryENI: []coreV1.Pod{},
-	}
-
-	ipToPod := map[string]coreV1.Pod{}
-	for _, pod := range podList.Items {
-		ipToPod[pod.Status.PodIP] = pod
-	}
-
-	for _, nwInterface := range instance.NetworkInterfaces {
-		isPrimary := IsPrimaryENI(nwInterface, instance.PrivateIpAddress)
-		for _, ip := range nwInterface.PrivateIpAddresses {
-			if pod, found := ipToPod[*ip.PrivateIpAddress]; found {
-				if isPrimary {
-					interfaceToPodList.PodsOnPrimaryENI =
-						append(interfaceToPodList.PodsOnPrimaryENI, pod)
-				} else {
-					interfaceToPodList.PodsOnSecondaryENI =
-						append(interfaceToPodList.PodsOnSecondaryENI, pod)
-				}
-			}
-		}
-	}
-	return interfaceToPodList
-}
-
-func IsPrimaryENI(nwInterface *ec2.InstanceNetworkInterface, instanceIPAddr *string) bool {
-	for _, privateIPAddress := range nwInterface.PrivateIpAddresses {
-		if *privateIPAddress.PrivateIpAddress == *instanceIPAddr {
-			return true
-		}
-	}
-	return false
 }

@@ -16,7 +16,7 @@ set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 TEST_DIR="$SCRIPT_DIR/../test"
-INTEGRATION_TEST_DIR="$TEST_DIR/integration-new"
+INTEGRATION_TEST_DIR="$TEST_DIR/integration"
 CALICO_TEST_DIR="$TEST_DIR/e2e/calico"
 
 source "$SCRIPT_DIR"/lib/cluster.sh

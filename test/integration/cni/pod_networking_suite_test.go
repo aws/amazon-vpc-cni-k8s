@@ -75,7 +75,8 @@ var _ = BeforeSuite(func() {
 	instanceOutput, err := f.CloudServices.EC2().DescribeInstanceType(instanceType)
 	Expect(err).ToNot(HaveOccurred())
 
-	maxIPPerInterface = int(*instanceOutput[0].NetworkInfo.Ipv4AddressesPerInterface)
+	// Subtract 2 for coredns pods if any, both could be on same Interface
+	maxIPPerInterface = int(*instanceOutput[0].NetworkInfo.Ipv4AddressesPerInterface) - 2
 
 	By("describing the VPC to get the VPC CIDRs")
 	describeVPCOutput, err := f.CloudServices.EC2().DescribeVPC(f.Options.AWSVPCID)
