@@ -620,7 +620,10 @@ The mountPath should be changed to `/var/run/cri.sock` and hostPath should be po
 `/var/run/containerd/containerd.sock` for containerd. If using helm chart, the flag `--set cri.hostPath.path=/var/run/containerd/containerd.sock`
 can set the paths for you.
 
-*Note*: When using other container runtime instead of dockershim, make sure also setting kubelet in instances.
+*Note*:
+
+* When using a different container runtime instead of dockershim in VPC CNI, make sure kubelet is also configured to use the same CRI.
+* If you want to enable containerd runtime with the support provided by Amazon AMI, please follow the instructions in our documentation, [Enable the containerd runtime bootstrap flag](https://docs.aws.amazon.com/eks/latest/userguide/eks-optimized-ami.html#containerd-bootstrap)
 
 ### Notes
 
