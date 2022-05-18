@@ -28,7 +28,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	"github.com/apparentlymart/go-cidr/cidr"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
@@ -150,6 +150,12 @@ var _ = BeforeSuite(func() {
 		Subnet:                    clusterVPCConfig.PublicSubnetList,
 		InstanceType:              "c5.xlarge",
 		KeyPairName:               keyPairName,
+		ContainerRuntime:          f.Options.ContainerRuntime,
+	}
+
+	if f.Options.InstanceType == "arm64" {
+		nodeGroupProperties.InstanceType = "m6g.large"
+		nodeGroupProperties.NodeImageId = "ami-087fca294139386b6"
 	}
 
 	By("creating a new self managed node group")

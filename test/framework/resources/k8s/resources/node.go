@@ -31,10 +31,10 @@ type NodeManager interface {
 }
 
 type defaultNodeManager struct {
-	k8sClient client.DelegatingClient
+	k8sClient client.Client
 }
 
-func NewDefaultNodeManager(k8sClient client.DelegatingClient) NodeManager {
+func NewDefaultNodeManager(k8sClient client.Client) NodeManager {
 	return &defaultNodeManager{k8sClient: k8sClient}
 }
 

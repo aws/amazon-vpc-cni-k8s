@@ -24,6 +24,8 @@ import (
 type InstallationManager interface {
 	InstallCNIMetricsHelper(image string, tag string) error
 	UnInstallCNIMetricsHelper() error
+	InstallTigeraOperator(version string) error
+	UninstallTigeraOperator() error
 }
 
 func NewDefaultInstallationManager(manager helm.ReleaseManager) InstallationManager {
@@ -37,6 +39,11 @@ type defaultInstallationManager struct {
 func (d *defaultInstallationManager) InstallCNIMetricsHelper(image string, tag string) error {
 	dir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
 	projectRoot := strings.SplitAfter(dir, "amazon-vpc-cni-k8s")[0]
+
+	if dir == projectRoot {
+		// in prow tests, the repository name is "vpc-cni"
+		projectRoot = strings.SplitAfter(dir, "vpc-cni")[0]
+	}
 
 	values := map[string]interface{}{
 		"image": map[string]interface{}{
@@ -52,5 +59,16 @@ func (d *defaultInstallationManager) InstallCNIMetricsHelper(image string, tag s
 
 func (d *defaultInstallationManager) UnInstallCNIMetricsHelper() error {
 	_, err := d.releaseManager.UninstallRelease(CNIMetricHelperNamespace, CNIMetricsHelperReleaseName)
+	return err
+}
+
+func (d *defaultInstallationManager) InstallTigeraOperator(version string) error {
+	// helm SDK doesn't allow empty namepace during creation, we have to use "default" as placeholder
+	_, err := d.releaseManager.InstallPackagedRelease(TigeraOperatorHelmCharts, TigeraOperatorReleaseName, version, "default", map[string]interface{}{})
+	return err
+}
+
+func (d *defaultInstallationManager) UninstallTigeraOperator() error {
+	_, err := d.releaseManager.UninstallRelease("default", TigeraOperatorReleaseName)
 	return err
 }

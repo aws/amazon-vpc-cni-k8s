@@ -1,3 +1,4 @@
+
 # amazon-vpc-cni-k8s
 
 Networking plugin for pod networking in [Kubernetes](https://kubernetes.io/) using [Elastic Network Interfaces](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html) on AWS.
@@ -421,6 +422,31 @@ Any of the WARM targets do not impact the scale of the branch ENI pods so you wi
 
 **NOTE!** Toggling `ENABLE_POD_ENI` from `true` to `false` will not detach the Trunk ENI from instance. To delete/detach the Trunk ENI from instance, you need recycle the instance.
 
+
+---
+
+#### `POD_SECURITY_GROUP_ENFORCING_MODE` (v1.11.0+)
+
+Type: String
+
+Default: `strict`
+
+Valid Values: `strict`, `standard`
+
+Once `ENABLE_POD_ENI` is set to `true`, this value controls how the traffic of pods with security group behaves.
+
+  * `strict` mode: all inbound/outbound traffic from pod with security group will be enforced by security group rules. This is the **default** mode if POD_SECURITY_GROUP_ENFORCING_MODE is not set.
+
+  * `standard` mode: the traffic of pod with security group behaves same as pods without security group, except that each pod occupies a dedicated branch ENI.
+    * inbound traffic to pod with security group from another host will be enforced by security group rules.
+    * outbound traffic from pod with security group to another host in same VPC will be enforced by security group rules.
+    * inbound/outbound traffic from another pod on same host or another service on same host(such as kubelet/nodeLocalDNS) won't be enforced by security group rules.
+    *  outbound traffic from pod with security group to IP address outside VPC
+        * if externalSNAT enabled, traffic won't be SNATed, thus will be enforced by security group rules.
+        * if externalSNAT disabled, traffic will be SNATed via eth0, thus will only be enforced by security group associated with eth0.
+
+**NOTE!**: To make new behavior be in effect after switching the mode, existing pods with security group must be recycled. Alternatively you can restart the nodes as well.
+
 ---
 
 #### `DISABLE_TCP_EARLY_DEMUX` (v1.7.3+)
@@ -457,7 +483,7 @@ Setting ENABLE_PREFIX_DELEGATION to true will not increase the density of branch
 
 Please refer to [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information around using Prefix delegation with Custom Networking and Security Groups Per Pod features.
 
-**Note:** `ENABLE_PREFIX_DELEGATION` needs to be set to `true` when VPC CNI is configured to operate in IPv6 mode (supported in v1.10.0+).
+**Note:** `ENABLE_PREFIX_DELEGATION` needs to be set to `true` when VPC CNI is configured to operate in IPv6 mode (supported in v1.10.0+). Prefix Delegation in IPv4 and IPv6 modes is supported on Nitro based Bare Metal instances as well from v1.11+. If you're using Prefix Delegation feature on Bare Metal instances, downgrading to an earlier version of VPC CNI from v1.11+ will be disruptive and not supported.
 
 ---
 
@@ -594,7 +620,10 @@ The mountPath should be changed to `/var/run/cri.sock` and hostPath should be po
 `/var/run/containerd/containerd.sock` for containerd. If using helm chart, the flag `--set cri.hostPath.path=/var/run/containerd/containerd.sock`
 can set the paths for you.
 
-*Note*: When using other container runtime instead of dockershim, make sure also setting kubelet in instances.
+*Note*:
+
+* When using a different container runtime instead of dockershim in VPC CNI, make sure kubelet is also configured to use the same CRI.
+* If you want to enable containerd runtime with the support provided by Amazon AMI, please follow the instructions in our documentation, [Enable the containerd runtime bootstrap flag](https://docs.aws.amazon.com/eks/latest/userguide/eks-optimized-ami.html#containerd-bootstrap)
 
 ### Notes
 
