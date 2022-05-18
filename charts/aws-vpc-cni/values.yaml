@@ -153,15 +153,15 @@ eniConfig:
   subnets:
     # Key identifies the AZ
     # Value contains the subnet ID and security group IDs within that AZ
-    # a:
+    # us-west-2a:
     #   id: subnet-123
     #   securityGroups:
     #   - sg-123
-    # b:
+    # us-west-2b:
     #   id: subnet-456
     #   securityGroups:
     #   - sg-456
-    # c:
+    # us-west-2c:
     #   id: subnet-789
     #   securityGroups:
     #   - sg-789
