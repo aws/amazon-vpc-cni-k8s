@@ -39,6 +39,8 @@ type Options struct {
 	InstanceType     string
 	InitialAddon     string
 	TargetAddon      string
+	InitialManifest  string
+	TargetManifest   string
 }
 
 func (options *Options) BindFlags() {
@@ -51,6 +53,8 @@ func (options *Options) BindFlags() {
 	flag.StringVar(&options.EKSEndpoint, "eks-endpoint", "", "optional eks api server endpoint")
 	flag.StringVar(&options.InitialAddon, "initial-addon-version", "", "Initial CNI addon version before upgrade applied")
 	flag.StringVar(&options.TargetAddon, "target-addon-version", "", "Target CNI addon version after upgrade applied")
+	flag.StringVar(&options.InitialManifest, "initial-manifest-file", "", "Initial CNI manifest, can be local file path or remote Url")
+	flag.StringVar(&options.TargetManifest, "target-manifest-file", "", "Target CNI manifest, can be local file path or remote Url")
 	flag.StringVar(&options.CalicoVersion, "calico-version", "3.22.0", "calico version to be tested")
 	flag.StringVar(&options.ContainerRuntime, "container-runtime", "", "Optionally can specify it as 'containerd' for the test nodes")
 	flag.StringVar(&options.InstanceType, "instance-type", "amd64", "Optionally specify instance type as arm64 for the test nodes")
