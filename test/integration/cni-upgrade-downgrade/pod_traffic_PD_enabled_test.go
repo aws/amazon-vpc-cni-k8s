@@ -11,9 +11,11 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package cni
+package cni_upgrade_downgrade
 
 import (
+	"fmt"
+
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -30,18 +32,25 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 	)
 
 	JustBeforeEach(func() {
+		By("applying initial cni manifest")
+		common.ApplyCNIManifest(initialManifest)
+
 		By("creating deployment")
 		serverDeploymentBuilder = manifest.NewDefaultDeploymentBuilder().
 			Name("traffic-server").
 			NodeSelector(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 
-		By("Set PD")
+		By("set PD")
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
 			utils.AwsNodeNamespace, utils.AwsNodeName,
 			map[string]string{"ENABLE_PREFIX_DELEGATION": enableIPv4PrefixDelegation})
 	})
 
 	JustAfterEach(func() {
+		// Revert to Initial manifest file
+		By("revert to initial cni manifest")
+		common.ApplyCNIManifest(initialManifest)
+
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
 			utils.AwsNodeNamespace, utils.AwsNodeName,
 			map[string]string{"ENABLE_PREFIX_DELEGATION": "false"})
@@ -55,6 +64,12 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 		//TODO : Add pod IP validation if IP belongs to prefix or SIP
 		//TODO : remove hardcoding from client/server count
 		It("should have 99+% success rate", func() {
+			By("test with initial cni manifest file")
+			common.ValidateTraffic(f, serverDeploymentBuilder, 99, "tcp")
+			targetManifestStr := fmt.Sprintf("Testing with Target CNI Manifest: %s", targetManifest)
+			By(targetManifestStr)
+			By("Applying Taget CNI Manifest")
+			common.ApplyCNIManifest(targetManifest)
 			common.ValidateTraffic(f, serverDeploymentBuilder, 99, "tcp")
 		})
 	})
@@ -67,6 +82,12 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 		//TODO : Add pod IP validation if IP belongs to prefix or SIP
 		//TODO : remove hardcoding from client/server count
 		It("should have 99+% success rate", func() {
+			By("test with initial cni manifest file")
+			common.ValidateTraffic(f, serverDeploymentBuilder, 99, "udp")
+			targetManifestStr := fmt.Sprintf("Testing with Target CNI Manifest: %s", targetManifest)
+			By(targetManifestStr)
+			By("Applying Taget CNI Manifest")
+			common.ApplyCNIManifest(targetManifest)
 			common.ValidateTraffic(f, serverDeploymentBuilder, 99, "udp")
 		})
 	})

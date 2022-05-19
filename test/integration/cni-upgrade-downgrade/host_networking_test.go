@@ -5,9 +5,8 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-	"github.com/aws/amazon-vpc-cni-k8s/test/integration-new/common"
-	"github.com/go-errors/errors"
-	. "github.com/onsi/ginkgo"
+	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/apps/v1"
 )
@@ -18,23 +17,11 @@ var _ = Describe("test host networking", func() {
 	var podLabelVal = "host-networking-test"
 	var deployment *v1.Deployment
 	var podInput string
-	var initialManifest string
-	var targetManifest string
 
 	Context("when pods using IP from primary and secondary ENI are created", func() {
 		It("should have correct host networking setup when pods are running and cleaned up when pods are terminated", func() {
-			initialManifest = f.Options.InitialManifest
-			targetManifest = f.Options.TargetManifest
-			if len(targetManifest) == 0 {
-				err = errors.Errorf("Target Manifest file must be specified")
-			}
-			Expect(err).NotTo(HaveOccurred())
-
-			if len(initialManifest) != 0 {
-				common.ApplyCNIManifest(initialManifest)
-			} else {
-				By("Using existing cni manifest")
-			}
+			By("applying initial cni manifest")
+			common.ApplyCNIManifest(initialManifest)
 
 			// Launch enough pods so some pods end up using primary ENI IP and some using secondary
 			// ENI IP
@@ -66,7 +53,7 @@ var _ = Describe("test host networking", func() {
 			By("validating host networking setup is setup correctly")
 			common.ValidateHostNetworking(common.NetworkingSetupSucceeds, podInput, primaryNode.Name, f)
 
-			By("update cni to target manifest")
+			By("applying target cni manifest")
 			common.ApplyCNIManifest(targetManifest)
 
 			By("deleting the deployment to test teardown")
@@ -79,6 +66,11 @@ var _ = Describe("test host networking", func() {
 
 			By("validating host networking is teared down correctly")
 			common.ValidateHostNetworking(common.NetworkingTearDownSucceeds, podInput, primaryNode.Name, f)
+		})
+
+		AfterEach(func() {
+			By("revert to initial cni manifest")
+			common.ApplyCNIManifest(initialManifest)
 		})
 	})
 })
