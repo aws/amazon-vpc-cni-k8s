@@ -40,10 +40,18 @@ func (d *defaultInstallationManager) InstallCNIMetricsHelper(image string, tag s
 	dir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
 	projectRoot := strings.SplitAfter(dir, "amazon-vpc-cni-k8s")[0]
 
+	if dir == projectRoot {
+		// in prow tests, the repository name is "vpc-cni"
+		projectRoot = strings.SplitAfter(dir, "vpc-cni")[0]
+	}
+
 	values := map[string]interface{}{
 		"image": map[string]interface{}{
 			"repository": image,
 			"tag":        tag,
+		},
+		"nodeSelector": map[string]interface{}{
+			"kubernetes.io/os": "linux",
 		},
 	}
 

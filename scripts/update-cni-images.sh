@@ -25,4 +25,4 @@ grep -r -q $AMAZON_K8S_CNI_INIT $AWS_K8S_CNI_MANIFEST
 echo "Applying aws-k8s-cni.yaml manifest to aws-node daemonset"
 kubectl apply -f $AWS_K8S_CNI_MANIFEST
 
-check_ds_rollout "aws-node" "kube-system"
+check_ds_rollout "aws-node" "kube-system" "4m"
