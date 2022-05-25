@@ -74,7 +74,7 @@ Change the agent image in the Go code and run the test case as usual.
 - Submit PR with the change to Agent.
 - Once the PR is merged get the commit hash and generate a new version for the agent changes 
 ```
-go get -d github.com/aws/amazon-vpc-cni-k8s/test/agent@<commit_hash>
+go install github.com/aws/amazon-vpc-cni-k8s/test/agent@<commit_hash>
 ```
 Sample Output
 ```
