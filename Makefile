@@ -57,7 +57,7 @@ export DOCKER_BUILDKIT=1
 GOARCH = $(TARGETARCH)
 
 # GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.17-stretch
+GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.18-stretch
 # For the requested build, these are the set of Go specific build environment variables.
 export GOOS = linux
 export CGO_ENABLED = 0
@@ -250,7 +250,7 @@ check: check-format lint vet   ## Run all source code checks.
 #
 # To install:
 #
-#   go get -u golang.org/x/lint/golint
+#   go install golang.org/x/lint/golint@latest
 #
 lint: LINT_FLAGS = -set_exit_status
 lint:   ## Run golint on source code.
