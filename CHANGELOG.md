@@ -1,10 +1,10 @@
 # Changelog
 
-## v1.11.2
+## v1.11.1
 
 * Improvement -  [Update golang to Go 1.18](https://github.com/aws/amazon-vpc-cni-k8s/pull/1991) (@orsenthil)
 
-## v1.11.1
+## v1.11.0
 
 * Feature - [Support new SGPP standard mode](https://github.com/aws/amazon-vpc-cni-k8s/pull/1907) (@M00nF1sh )
 * Feature - [IPv4 Randomize SNAT support for IPv6 pods](https://github.com/aws/amazon-vpc-cni-k8s/pull/1903) (@achevuru)
