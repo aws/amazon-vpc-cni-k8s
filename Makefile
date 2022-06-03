@@ -221,7 +221,7 @@ multi-arch-cni-init-build-push:     ## Build VPC CNI plugin Init container image
 		--push \
 		.
 # Fetch the CNI plugins
-plugins: FETCH_VERSION=0.9.0
+plugins: FETCH_VERSION=1.1.1
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
 plugins:   ## Fetch the CNI plugins
