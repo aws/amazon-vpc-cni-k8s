@@ -45,7 +45,7 @@ var _ = BeforeSuite(func() {
 		err := f.InstallationManager.InstallTigeraOperator(tigeraVersion)
 		// wait for Calico resources being provisioned and setup.
 		// we don't have control on Calico pods metadata thus we may not poll the pods for waiting wisely.
-		time.Sleep(utils.DefaultDeploymentReadyTimeout)
+		time.Sleep(utils.DefaultDeploymentReadyTimeout / 2)
 		Expect(err).ToNot(HaveOccurred())
 	}
 
