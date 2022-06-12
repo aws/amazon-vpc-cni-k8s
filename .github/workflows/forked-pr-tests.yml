@@ -18,10 +18,10 @@ jobs:
     if:
       github.event.inputs.pull_request_number != ''
     steps:
-      - name: Set up Go 1.17
+      - name: Set up Go 1.18
         uses: actions/setup-go@v2
         with:
-          go-version: '1.17'
+          go-version: '1.18'
         id: go
 
       # Check out a merge commit
@@ -36,7 +36,7 @@ jobs:
           go install golang.org/x/tools/cmd/goimports@latest
 
       - name: Clean up stale docker images
-        run: sudo docker image prune -f
+        run: docker image prune -f
 
       - name: Run e2e tests
         env:
