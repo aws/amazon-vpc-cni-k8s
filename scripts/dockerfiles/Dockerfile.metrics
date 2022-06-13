@@ -14,9 +14,7 @@ RUN go mod download
 COPY . ./
 RUN make build-metrics
 
-FROM public.ecr.aws/amazonlinux/amazonlinux:2
-RUN yum update -y && \
-	yum clean all
+FROM public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base:latest.2022
 
 # Copy our bundled certs to the first place go will check: see
 # https://golang.org/src/pkg/crypto/x509/root_unix.go

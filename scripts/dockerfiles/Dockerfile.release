@@ -17,11 +17,7 @@ RUN make plugins && make debug-script
 COPY . ./
 RUN make build-linux
 
-# Build the architecture specific container image:
-FROM public.ecr.aws/amazonlinux/amazonlinux:2
-RUN yum update -y && \
-    yum install -y iptables iproute jq && \
-    yum clean all
+FROM public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base:latest.2022
 
 WORKDIR /app
 
