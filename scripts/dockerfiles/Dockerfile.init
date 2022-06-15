@@ -13,7 +13,7 @@ RUN make plugins && make debug-script
 COPY . ./
 
 # Build the architecture specific container image:
-FROM public.ecr.aws/amazonlinux/amazonlinux:2
+FROM public.ecr.aws/amazonlinux/amazonlinux:latest
 RUN yum update -y && \
     yum install -y iproute procps-ng && \
     yum clean all
