@@ -44,16 +44,20 @@ HELM_CHART_NAME ?= "aws-vpc-cni"
 TEST_IMAGE = amazon-k8s-cni-test
 TEST_IMAGE_NAME = $(TEST_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
 
+UNAME_ARCH = $(shell uname -m)
+ARCH = $(lastword $(subst :, ,$(filter $(UNAME_ARCH):%,x86_64:amd64 aarch64:arm64)))
+# This is only applied to the arm64 container image by default. Override to
+# provide an alternate suffix or to omit.
+IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(ARCH),arm64))
+
 # Mandate usage of docker buildkit as platform arguments are available only with buildkit
 # Refer to https://docs.docker.com/engine/reference/builder/#automatic-platform-args-in-the-global-scope
 # and https://docs.docker.com/develop/develop-images/build_enhancements/#to-enable-buildkit-builds
 export DOCKER_BUILDKIT=1
 GOARCH = $(TARGETARCH)
-# This is only applied to the arm64 container image by default. Override to
-# provide an alternate suffix or to omit.
-IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(GOARCH),arm64))
+
 # GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.17-stretch
+GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.18-stretch
 # For the requested build, these are the set of Go specific build environment variables.
 export GOOS = linux
 export CGO_ENABLED = 0
@@ -217,7 +221,7 @@ multi-arch-cni-init-build-push:     ## Build VPC CNI plugin Init container image
 		--push \
 		.
 # Fetch the CNI plugins
-plugins: FETCH_VERSION=0.9.0
+plugins: FETCH_VERSION=1.1.1
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
 plugins:   ## Fetch the CNI plugins
@@ -246,7 +250,7 @@ check: check-format lint vet   ## Run all source code checks.
 #
 # To install:
 #
-#   go get -u golang.org/x/lint/golint
+#   go install golang.org/x/lint/golint@latest
 #
 lint: LINT_FLAGS = -set_exit_status
 lint:   ## Run golint on source code.
@@ -291,6 +295,10 @@ ekscharts-sync:
 ekscharts-sync-release:
 	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME} -n -y
 
+build-test-binaries:
+	mkdir -p ${MAKEFILE_PATH}build
+	find ${MAKEFILE_PATH} -name '*suite_test.go' -type f  | xargs dirname  | xargs ginkgo build
+	find ${MAKEFILE_PATH} -name "*.test" -print0 | xargs -0 -I {} mv {} ${MAKEFILE_PATH}build
 
 upload-resources-to-github:
 	${MAKEFILE_PATH}/scripts/upload-resources-to-github.sh
@@ -299,6 +307,9 @@ generate-cni-yaml:
 	${MAKEFILE_PATH}/scripts/generate-cni-yaml.sh
 
 release: generate-cni-yaml upload-resources-to-github
+
+config-folder-sync:
+	${MAKEFILE_PATH}/scripts/sync-to-config-folder.sh
 
 setup-ec2-sdk-override:
 	@if [ "$(EC2_SDK_OVERRIDE)" = "y" ] ; then \

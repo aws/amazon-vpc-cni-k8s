@@ -15,8 +15,9 @@ package helm
 
 import (
 	"fmt"
+	"log"
+	"time"
 
-	"github.com/prometheus/common/log"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
@@ -51,6 +52,7 @@ func (d *defaultReleaseManager) InstallUnPackagedRelease(chart string, releaseNa
 	installAction.Namespace = namespace
 	installAction.Wait = true
 	installAction.ReleaseName = releaseName
+	installAction.Timeout = time.Minute
 
 	return installCharts(installAction, chart, values)
 }
@@ -110,7 +112,7 @@ func (d *defaultReleaseManager) obtainActionConfig(namespace string) *action.Con
 	actionConfig := new(action.Configuration)
 	actionConfig.Init(cfgFlag, namespace, "secrets", func(format string, v ...interface{}) {
 		message := fmt.Sprintf(format, v...)
-		log.Info(message)
+		log.Println(message)
 	})
 	return actionConfig
 }

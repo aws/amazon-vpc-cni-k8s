@@ -32,6 +32,7 @@ type ResourceManagers interface {
 	DaemonSetManager() resources.DaemonSetManager
 	ConfigMapManager() resources.ConfigMapManager
 	NetworkPolicyManager() resources.NetworkPolicyManager
+	EventManager() resources.EventManager
 }
 
 type defaultManager struct {
@@ -45,9 +46,10 @@ type defaultManager struct {
 	daemonSetManager      resources.DaemonSetManager
 	configMapManager      resources.ConfigMapManager
 	networkPolicyManager  resources.NetworkPolicyManager
+	eventManager          resources.EventManager
 }
 
-func NewResourceManager(k8sClient client.DelegatingClient,
+func NewResourceManager(k8sClient client.Client,
 	scheme *runtime.Scheme, config *rest.Config) ResourceManagers {
 	return &defaultManager{
 		jobManager:            resources.NewDefaultJobManager(k8sClient),
@@ -60,6 +62,7 @@ func NewResourceManager(k8sClient client.DelegatingClient,
 		daemonSetManager:      resources.NewDefaultDaemonSetManager(k8sClient),
 		configMapManager:      resources.NewConfigMapManager(k8sClient),
 		networkPolicyManager:  resources.NewNetworkPolicyManager(k8sClient),
+		eventManager:          resources.NewEventManager(k8sClient),
 	}
 }
 
@@ -101,4 +104,8 @@ func (m *defaultManager) ConfigMapManager() resources.ConfigMapManager {
 
 func (m *defaultManager) NetworkPolicyManager() resources.NetworkPolicyManager {
 	return m.networkPolicyManager
+}
+
+func (m defaultManager) EventManager() resources.EventManager {
+	return m.eventManager
 }

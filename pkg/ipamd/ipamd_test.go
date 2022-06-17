@@ -1229,6 +1229,9 @@ func datastoreWith1Pod1() *datastore.DataStore {
 		NetworkName: "net0",
 		ContainerID: "sandbox-1",
 		IfName:      "eth0",
+	}, datastore.IPAMMetadata{
+		K8SPodNamespace: "default",
+		K8SPodName:      "sample-pod",
 	})
 	return datastoreWith1Pod1
 }
@@ -1242,7 +1245,10 @@ func datastoreWith3Pods() *datastore.DataStore {
 			ContainerID: fmt.Sprintf("sandbox-%d", i),
 			IfName:      "eth0",
 		}
-		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key)
+		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key, datastore.IPAMMetadata{
+			K8SPodNamespace: "default",
+			K8SPodName:      fmt.Sprintf("sample-pod-%d", i),
+		})
 	}
 	return datastoreWith3Pods
 }
@@ -1262,6 +1268,9 @@ func datastoreWith1Pod1FromPrefix() *datastore.DataStore {
 		NetworkName: "net0",
 		ContainerID: "sandbox-1",
 		IfName:      "eth0",
+	}, datastore.IPAMMetadata{
+		K8SPodNamespace: "default",
+		K8SPodName:      "sample-pod",
 	})
 	return datastoreWith1Pod1
 }
@@ -1275,7 +1284,11 @@ func datastoreWith3PodsFromPrefix() *datastore.DataStore {
 			ContainerID: fmt.Sprintf("sandbox-%d", i),
 			IfName:      "eth0",
 		}
-		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key)
+		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key,
+			datastore.IPAMMetadata{
+				K8SPodNamespace: "default",
+				K8SPodName:      fmt.Sprintf("sample-pod-%d", i),
+			})
 	}
 	return datastoreWith3Pods
 }
@@ -1995,11 +2008,13 @@ func TestIsConfigValid(t *testing.T) {
 			m := setup(t)
 			defer m.ctrl.Finish()
 
-			if tt.fields.isNitroInstance {
-				m.awsutils.EXPECT().GetInstanceHypervisorFamily().Return("nitro")
-			} else {
-				m.awsutils.EXPECT().GetInstanceType().Return("dummy-instance")
-				m.awsutils.EXPECT().GetInstanceHypervisorFamily().Return("non-nitro")
+			if tt.fields.prefixDelegationEnabled && !(tt.fields.podENIEnabled && tt.fields.ipV6Enabled) {
+				if tt.fields.isNitroInstance {
+					m.awsutils.EXPECT().IsPrefixDelegationSupported().Return(true)
+				} else {
+					m.awsutils.EXPECT().GetInstanceType().Return("dummy-instance")
+					m.awsutils.EXPECT().IsPrefixDelegationSupported().Return(false)
+				}
 			}
 			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled)
 

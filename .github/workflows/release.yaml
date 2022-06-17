@@ -3,7 +3,7 @@ name: VPC CNI Release
 on: [push, workflow_dispatch]
 
 env:
-  DEFAULT_GO_VERSION: ^1.17
+  DEFAULT_GO_VERSION: ^1.18
   GITHUB_USERNAME: ${{ secrets.EKS_BOT_GITHUB_USERNAME }}
   GITHUB_TOKEN: ${{ secrets.EKS_BOT_GITHUB_TOKEN }}
 
@@ -26,4 +26,7 @@ jobs:
       run: make release
 
     - name: Create eks-charts PR
-      run: make ekscharts-sync-release  
+      run: make ekscharts-sync-release
+
+    - name: Create sample manifests PR
+      run: make config-folder-sync   
