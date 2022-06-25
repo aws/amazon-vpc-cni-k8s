@@ -6,7 +6,7 @@
 set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-GINKGO_TEST_BUILD="$SCRIPT_DIR/../build"
+GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
 
 source "$SCRIPT_DIR"/lib/add-on.sh
 source "$SCRIPT_DIR"/lib/cluster.sh

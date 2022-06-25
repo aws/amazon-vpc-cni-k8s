@@ -5,6 +5,8 @@ set -Euo pipefail
 trap 'on_error $? $LINENO' ERR
 
 DIR=$(cd "$(dirname "$0")"; pwd)
+INTEGRATION_TEST_DIR="$DIR"/../test/integration
+
 source "$DIR"/lib/common.sh
 source "$DIR"/lib/aws.sh
 source "$DIR"/lib/cluster.sh
@@ -29,7 +31,7 @@ ARCH=$(go env GOARCH)
 : "${RUNNING_PERFORMANCE:=false}"
 : "${RUN_CALICO_TEST:=false}"
 : "${RUN_LATEST_CALICO_VERSION:=false}"
-: "${CALICO_VERSION:=3.22.0}"
+: "${CALICO_VERSION:=v3.23.0}"
 : "${RUN_CALICO_TEST_WITH_PD:=true}"
 
 
@@ -110,6 +112,7 @@ if [[ ! -f "$BASE_CONFIG_PATH" ]]; then
 fi
 
 # double-check all our preconditions and requirements have been met
+check_is_installed ginkgo
 check_is_installed docker
 check_is_installed aws
 check_aws_credentials
@@ -188,6 +191,11 @@ __cluster_created=1
 UP_CLUSTER_DURATION=$((SECONDS - START))
 echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
 
+# Fetch VPC_ID from created cluster
+DESCRIBE_CLUSTER_OP=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_DEFAULT_REGION")
+VPC_ID=$(echo "$DESCRIBE_CLUSTER_OP" | jq -r '.cluster.resourcesVpcConfig.vpcId')
+echo "Using VPC_ID: $VPC_ID"
+
 echo "Using $BASE_CONFIG_PATH as a template"
 cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
 
@@ -216,11 +224,12 @@ echo "**************************************************************************
 echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
 echo ""
 START=$SECONDS
-pushd ./test/integration
-GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \
-    --assets=./assets
+
+focus="CANARY"
+echo "Running ginkgo tests with focus: $focus"
+(cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 20m --failOnPending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+(cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 10m --failOnPending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
 TEST_PASS=$?
-popd
 DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
 
@@ -250,11 +259,12 @@ echo "**************************************************************************
 echo "Running integration tests on current image:"
 echo ""
 START=$SECONDS
-pushd ./test/integration
-GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \
-    --assets=./assets
+
+focus="CANARY"
+echo "Running ginkgo tests with focus: $focus"
+(cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+(cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
 TEST_PASS=$?
-popd
 CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
 if [[ $TEST_PASS -eq 0 ]]; then
@@ -262,16 +272,20 @@ if [[ $TEST_PASS -eq 0 ]]; then
 fi
 
 if [[ $RUN_CALICO_TEST == true ]]; then
-  run_calico_test
+  # need to install Calico
+  run_calico_test "true"
   if [[ "$RUN_CALICO_TEST_WITH_PD" == true ]]; then
       # if we run prefix delegation tests as well, we need update CNI env and terminate all nodes to restore iptables rules for following tests
       echo "Run Calico tests with Prefix Delegation enabled"
       $KUBECTL_PATH set env daemonset aws-node -n kube-system ENABLE_PREFIX_DELEGATION=true
+      # we shouldn't rely on other tests to set this required ENV
+      $KUBECTL_PATH set env ds aws-node -n kube-system WARM_PREFIX_TARGET=1
       ids=( $(aws ec2 describe-instances --filters Name=vpc-id,Values=$VPC_ID --query 'Reservations[*].Instances[*].InstanceId' --output text) )
       aws ec2 terminate-instances --instance-ids $ids
       echo "Waiting 15 minutes for new nodes being ready"
       sleep 900
-      run_calico_test
+      # no longer need to install Calico again for PD
+      run_calico_test "false"
   fi
 
   emit_cloudwatch_metric "calico_test_status" "1"
