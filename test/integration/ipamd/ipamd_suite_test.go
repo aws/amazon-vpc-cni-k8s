@@ -18,18 +18,9 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	v1 "k8s.io/api/core/v1"
 )
-
-var err error
-var f *framework.Framework
-var primaryNode v1.Node
-var primaryInstance *ec2.Instance
-var numOfNodes int
-var addonDeleteError error
 
 func TestIPAMD(t *testing.T) {
 	RegisterFailHandler(Fail)
