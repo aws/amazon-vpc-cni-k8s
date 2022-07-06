@@ -15,10 +15,11 @@ package ipamd
 
 import (
 	"fmt"
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	"strconv"
 	"time"
+
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
+	"github.com/aws/aws-sdk-go/service/ec2"
 
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
