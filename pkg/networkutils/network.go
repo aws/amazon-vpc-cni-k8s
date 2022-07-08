@@ -276,7 +276,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, 
 	var err error
 	primaryIntf := "eth0"
 	//RP Filter setting is only needed if IPv4 mode is enabled.
-	if v4Enabled && n.nodePortSupportEnabled {
+	if v4Enabled && (n.nodePortSupportEnabled || !n.useExternalSNAT) {
 		primaryIntf, err = findPrimaryInterfaceName(primaryMAC)
 		if err != nil {
 			return errors.Wrapf(err, "failed to SetupHostNetwork")
@@ -340,7 +340,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, 
 		return errors.Wrapf(err, "host network setup: failed to delete old main ENI rule")
 	}
 
-	if n.nodePortSupportEnabled {
+	if n.nodePortSupportEnabled || !n.useExternalSNAT {
 		err = n.netLink.RuleAdd(mainENIRule)
 		if err != nil {
 			log.Errorf("Failed to add host main ENI rule: %v", err)
@@ -528,7 +528,7 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "connmark restore for primary ENI",
-		shouldExist: n.nodePortSupportEnabled,
+		shouldExist: n.nodePortSupportEnabled || !n.useExternalSNAT,
 		table:       "mangle",
 		chain:       "PREROUTING",
 		rule: []string{
@@ -579,7 +579,7 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 		chain:       "PREROUTING",
 		rule: []string{
 			"-i", n.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections",
-			"-m", "state", "--state", "NEW", "-j", "AWS-CONNMARK-CHAIN-0",
+			"-m", "state", "-j", "AWS-CONNMARK-CHAIN-0",
 		}})
 
 	for i, cidr := range allCIDRs {
@@ -603,7 +603,7 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 	}
 
 	iptableRules = append(iptableRules, iptablesRule{
-		name:        "connmark rule for external  outbound traffic",
+		name:        "connmark rule for external outbound traffic",
 		shouldExist: !n.useExternalSNAT,
 		table:       "nat",
 		chain:       chains[len(chains)-1],
@@ -625,6 +625,8 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 		},
 	})
 
+	// Being in the nat table, this only applies to the first packet of the connection. The mark
+	// will be restored in the mangle table for subsequent packets.
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "connmark to fwmark copy",
 		shouldExist: !n.useExternalSNAT,
