@@ -30,11 +30,7 @@ func main() {
 
 func _main() int {
 	//Do not add anything before initializing logger
-	logConfig := logger.Configuration{
-		LogLevel:    logger.GetLogLevel(),
-		LogLocation: logger.GetLogLocation(),
-	}
-	log := logger.New(&logConfig)
+	log := logger.Get()
 
 	log.Infof("Starting L-IPAMD %s  ...", version.Version)
 	version.RegisterMetric()
