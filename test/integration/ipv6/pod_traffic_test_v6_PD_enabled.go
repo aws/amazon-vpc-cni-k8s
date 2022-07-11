@@ -14,12 +14,15 @@
 package ipv6
 
 import (
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+var f *framework.Framework
 
 var _ = Describe("[CANARY] Test pod networking with prefix delegation enabled", func() {
 	var (

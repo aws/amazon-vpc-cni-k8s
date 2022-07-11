@@ -14,6 +14,7 @@
 package cni
 
 import (
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -21,6 +22,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 )
+
+var f *framework.Framework
 
 var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 	var (

@@ -18,12 +18,19 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
+	"github.com/aws/aws-sdk-go/service/ec2"
+
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+var primaryInstance *ec2.Instance
+var f *framework.Framework
+var err error
 
 // IMPORTANT: THE NODEGROUP TO RUN THE TEST MUST NOT HAVE ANY POD
 // Ideally we should drain the node, but drain from go client is non trivial
@@ -321,4 +328,25 @@ var _ = Describe("test warm target variables", func() {
 
 func ceil(x, y int) int {
 	return (x + y - 1) / y
+}
+
+func Max(x, y int) int {
+	if x < y {
+		return y
+	}
+	return x
+}
+
+// MinIgnoreZero returns smaller of two number, if any number is zero returns the other number
+func MinIgnoreZero(x, y int) int {
+	if x == 0 {
+		return y
+	}
+	if y == 0 {
+		return x
+	}
+	if x < y {
+		return x
+	}
+	return y
 }

@@ -3,6 +3,8 @@ package ipamd
 import (
 	"time"
 
+	v1 "k8s.io/api/core/v1"
+
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -14,6 +16,9 @@ const (
 	HOST_POD_LABEL_KEY = "network"
 	HOST_POD_LABEL_VAL = "host"
 )
+
+var primaryNode v1.Node
+var numOfNodes int
 
 var _ = Describe("[CANARY] ENI/IP Leak Test", func() {
 	Context("ENI/IP Released on Pod Deletion", func() {

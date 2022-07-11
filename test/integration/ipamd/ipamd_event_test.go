@@ -29,7 +29,8 @@ import (
 const EKSCNIPolicyARN = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 const AwsNodeLabelKey = "k8s-app"
 
-var _ = Describe("test aws-node pod event", func() {
+// Changes tested in this case is not released yet, adding future release version label to identify
+var _ = Describe("[1.11.3] test aws-node pod event", func() {
 
 	// Verifies aws-node pod events works as expected
 	Context("when iam role is missing VPC_CNI policy", func() {
