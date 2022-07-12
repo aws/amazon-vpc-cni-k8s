@@ -571,7 +571,7 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 	}
 
 	var iptableRules []iptablesRule
-	log.Debugf("Setup Host Network: iptables -t nat -A PREROUTING -i %s+ -m comment --comment \"AWS, outbound connections\" -m state --state NEW -j AWS-CONNMARK-CHAIN-0", n.vethPrefix)
+	log.Debugf("Setup Host Network: iptables -t nat -A PREROUTING -i %s+ -m comment --comment \"AWS, outbound connections\" -j AWS-CONNMARK-CHAIN-0", n.vethPrefix)
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "connmark rule for non-VPC outbound traffic",
 		shouldExist: !n.useExternalSNAT,
@@ -579,7 +579,7 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 		chain:       "PREROUTING",
 		rule: []string{
 			"-i", n.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections",
-			"-m", "state", "-j", "AWS-CONNMARK-CHAIN-0",
+			"-j", "AWS-CONNMARK-CHAIN-0",
 		}})
 
 	for i, cidr := range allCIDRs {
