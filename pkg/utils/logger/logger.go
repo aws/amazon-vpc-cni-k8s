@@ -47,22 +47,17 @@ type Logger interface {
 
 // Get returns an default instance of the zap logger
 func Get() Logger {
-	var logf = &structuredLogger{}
-	if logf.isEmpty() {
+	if log == nil {
 		logConfig := LoadLogConfig()
 		log = New(logConfig)
-		return log
+		log.Info("Initialized new logger as an existing instance was not found")
 	}
-	log = logf
 	return log
-}
-
-func (logf *structuredLogger) isEmpty() bool {
-	return logf.zapLogger == nil
 }
 
 //New logger initializes logger
 func New(inputLogConfig *Configuration) Logger {
 	log = inputLogConfig.newZapLogger()
+	log.Info("Constructed new logger instance")
 	return log
 }
