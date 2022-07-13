@@ -290,6 +290,8 @@ func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, 
 		// - Thus, it finds the source-based route that leaves via the secondary ENI.
 		// - In "strict" mode, the RPF check fails because the return path uses a different interface to the incoming
 		//   packet. In "loose" mode, the check passes because some route was found.
+		//
+		// The same applies when performing SNAT on Pod traffic.
 		primaryIntfRPFilter := "net/ipv4/conf/" + primaryIntf + "/rp_filter"
 		const rpFilterLoose = "2"
 

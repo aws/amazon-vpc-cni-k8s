@@ -136,7 +136,7 @@ func TestSetupENINetworkMACFail(t *testing.T) {
 	assert.Errorf(t, err, "simulated failure")
 }
 
-func TestSetupENINetowrkErrorOnPrimaryENI(t *testing.T) {
+func TestSetupENINetworkErrorOnPrimaryENI(t *testing.T) {
 	ctrl, mockNetLink, _, _, _, _ := setup(t)
 	defer ctrl.Finish()
 	deviceNumber := 0
