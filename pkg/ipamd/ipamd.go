@@ -680,7 +680,7 @@ func (c *IPAMContext) decreaseDatastorePool(interval time.Duration) {
 
 // tryFreeENI always tries to free one ENI
 func (c *IPAMContext) tryFreeENI() {
-	if c.isTerminating() {
+	if c.isTerminating() || c.isNodeNonSchedulable() {
 		log.Debug("AWS CNI is terminating, not detaching any ENIs")
 		return
 	}
@@ -769,7 +769,7 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 		}
 	}
 
-	if c.isTerminating() {
+	if c.isTerminating() || c.isNodeNonSchedulable() {
 		log.Debug("AWS CNI is terminating, will not try to attach any new IPs or ENIs right now")
 		return
 	}
@@ -1793,6 +1793,34 @@ func (c *IPAMContext) setTerminating() {
 
 func (c *IPAMContext) isTerminating() bool {
 	return atomic.LoadInt32(&c.terminating) > 0
+}
+
+func (c *IPAMContext) isNodeNonSchedulable() bool {
+	ctx := context.TODO()
+
+	request := types.NamespacedName{
+		Name: c.myNodeName,
+	}
+
+	node := &corev1.Node{}
+	// Find my node
+	err := c.cachedK8SClient.Get(ctx, request, node)
+	if err != nil {
+		log.Errorf("Failed to get node while determining schedulability: %v", err)
+		return false
+	}
+	log.Debugf("Node found %q - no of taints - %d", node.Name, len(node.Spec.Taints))
+	taintToMatch := &corev1.Taint{
+		Key:    "node.kubernetes.io/unschedulable",
+		Effect: corev1.TaintEffectNoSchedule,
+	}
+	for _, taint := range node.Spec.Taints {
+		if taint.MatchTaint(taintToMatch) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).

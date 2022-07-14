@@ -12,10 +12,10 @@ jobs:
   weekly-cron:
     runs-on: [self-hosted, linux, x64]
     steps:
-      - name: Set up Go 1.17
+      - name: Set up Go 1.18
         uses: actions/setup-go@v2
         with:
-          go-version: '1.17'
+          go-version: '1.18'
         id: go
 
       - name: Check out code into the Go module directory

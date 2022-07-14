@@ -57,7 +57,7 @@ export DOCKER_BUILDKIT=1
 GOARCH = $(TARGETARCH)
 
 # GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.17-stretch
+GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.18-stretch
 # For the requested build, these are the set of Go specific build environment variables.
 export GOOS = linux
 export CGO_ENABLED = 0
@@ -221,7 +221,7 @@ multi-arch-cni-init-build-push:     ## Build VPC CNI plugin Init container image
 		--push \
 		.
 # Fetch the CNI plugins
-plugins: FETCH_VERSION=0.9.0
+plugins: FETCH_VERSION=1.1.1
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
 plugins:   ## Fetch the CNI plugins
@@ -250,7 +250,7 @@ check: check-format lint vet   ## Run all source code checks.
 #
 # To install:
 #
-#   go get -u golang.org/x/lint/golint
+#   go install golang.org/x/lint/golint@latest
 #
 lint: LINT_FLAGS = -set_exit_status
 lint:   ## Run golint on source code.
@@ -294,11 +294,6 @@ ekscharts-sync:
 
 ekscharts-sync-release:
 	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME} -n -y
-
-build-test-binaries:
-	mkdir -p ${MAKEFILE_PATH}build
-	find ${MAKEFILE_PATH} -name '*suite_test.go' -type f  | xargs dirname  | xargs ginkgo build
-	find ${MAKEFILE_PATH} -name "*.test" -print0 | xargs -0 -I {} mv {} ${MAKEFILE_PATH}build
 
 upload-resources-to-github:
 	${MAKEFILE_PATH}/scripts/upload-resources-to-github.sh
