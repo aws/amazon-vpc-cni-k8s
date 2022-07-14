@@ -718,14 +718,16 @@ func TestTryAddIPToENI(t *testing.T) {
 
 	warmIPTarget := 3
 	mockContext := &IPAMContext{
-		awsClient:     m.awsutils,
-		maxIPsPerENI:  14,
-		maxENI:        4,
-		warmENITarget: 1,
-		warmIPTarget:  warmIPTarget,
-		networkClient: m.network,
-		primaryIP:     make(map[string]string),
-		terminating:   int32(0),
+		rawK8SClient:    m.rawK8SClient,
+		cachedK8SClient: m.cachedK8SClient,
+		awsClient:       m.awsutils,
+		maxIPsPerENI:    14,
+		maxENI:          4,
+		warmENITarget:   1,
+		warmIPTarget:    warmIPTarget,
+		networkClient:   m.network,
+		primaryIP:       make(map[string]string),
+		terminating:     int32(0),
 	}
 
 	mockContext.dataStore = testDatastore()
@@ -765,6 +767,17 @@ func TestTryAddIPToENI(t *testing.T) {
 	m.awsutils.EXPECT().WaitForENIAndIPsAttached(secENIid, 3).Return(eniMetadata[1], nil)
 	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
+
+	mockContext.myNodeName = myNodeName
+
+	//Create a Fake Node
+	fakeNode := v1.Node{
+		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
+		Spec:       v1.NodeSpec{},
+		Status:     v1.NodeStatus{},
+	}
+	_ = m.cachedK8SClient.Create(ctx, &fakeNode)
 
 	mockContext.increaseDatastorePool(ctx)
 }

@@ -149,11 +149,19 @@ Here are the wiring steps to enable pod to pod communication:
 	ip netns exec ns1 arp -i veth-1c -s 169.254.1.1 <veth-1's mac> /* add static ARP entry for default gateway */
 	```
 
-* On host side, add host route so that incoming Pod's traffic can be routed to Pod.
+* On host side, add host route and routing rule so that incoming Pod's traffic can be routed to Pod.
 
 	```
 	/* Pod's IP address is 20.0.49.215 */
 	ip route add 20.0.49.215/32 dev veth-1 /* add host route */
+	ip rule add from all to 20.0.49.215/32 table main prio 512 /* add routing rule */
+	```
+	Note:
+
+	When Pod's ip address is associated with the secondary ENI, the from-pod rule is also added.
+	For example, if the ip address "20.0.49.215" is associated with eth1, add the following rule.
+	```
+	ip rule add from 20.0.49.215/32 table 2 prio 1536  /* add from-pod rule */
 	```
 
 #### Life of a Pod to Pod Ping Packet

@@ -16,6 +16,7 @@ package helm
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart/loader"
@@ -51,6 +52,7 @@ func (d *defaultReleaseManager) InstallUnPackagedRelease(chart string, releaseNa
 	installAction.Namespace = namespace
 	installAction.Wait = true
 	installAction.ReleaseName = releaseName
+	installAction.Timeout = time.Minute
 
 	return installCharts(installAction, chart, values)
 }

@@ -15,6 +15,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	v1 "k8s.io/api/apps/v1"
@@ -26,6 +27,7 @@ import (
 type DaemonSetManager interface {
 	GetDaemonSet(namespace string, name string) (*v1.DaemonSet, error)
 	UpdateAndWaitTillDaemonSetReady(old *v1.DaemonSet, new *v1.DaemonSet) (*v1.DaemonSet, error)
+	CheckIfDaemonSetIsReady(namespace string, name string) error
 }
 
 type defaultDaemonSetManager struct {
@@ -66,4 +68,29 @@ func (d *defaultDaemonSetManager) UpdateAndWaitTillDaemonSetReady(old *v1.Daemon
 		}
 		return false, nil
 	}, ctx.Done())
+}
+
+func (d *defaultDaemonSetManager) CheckIfDaemonSetIsReady(namespace string, name string) error {
+	ds, err := d.GetDaemonSet(namespace, name)
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	attempts := 0
+	return wait.PollImmediateUntil(utils.PollIntervalMedium, func() (bool, error) {
+		attempts += 1
+		if attempts > 4 {
+			return false, errors.New("daemonset taking too long to become ready")
+		}
+
+		if err := d.k8sClient.Get(ctx, utils.NamespacedName(ds), ds); err != nil {
+			return false, err
+		}
+		// Need to ensure the DesiredNumberScheduled is not 0 as it may happen if the DS is still being deleted from previous run
+		if ds.Status.DesiredNumberScheduled != 0 && ds.Status.NumberReady == ds.Status.DesiredNumberScheduled {
+			return true, nil
+		}
+		return false, nil
+	}, ctx.Done())
+
 }

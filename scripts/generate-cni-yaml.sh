@@ -15,11 +15,8 @@ REGIONS_FILE=$SCRIPTPATH/../charts/regions.json
 INDV_RESOURCES_DIR=$BUILD_DIR/individual-resources
 CNI_TAR_RESOURCES_FILE=$BUILD_DIR/cni_individual-resources.tar
 METRICS_TAR_RESOURCES_FILE=$BUILD_DIR/cni_metrics_individual-resources.tar
-CALICO_TAR_RESOURCES_FILE=$BUILD_DIR/calico_individual-resources.tar
 CNI_RESOURCES_YAML=$BUILD_DIR/aws-k8s-cni
 METRICS_RESOURCES_YAML=$BUILD_DIR/cni-metrics-helper
-CALICO_OPERATOR_RESOURCES_YAML=$BUILD_DIR/calico-operator.yaml
-CALICO_CRS_RESOURCES_YAML=$BUILD_DIR/calico-crs.yaml
 
 mkdir -p $INDV_RESOURCES_DIR
 
@@ -116,40 +113,13 @@ for i in $INDV_RESOURCES_DIR/cni-metrics-helper/templates/*; do
   mv $BUILD_DIR/helm_annotations_removed.yaml $i
 done
 
-$BUILD_DIR/helm template \
-    --namespace $NAMESPACE \
-    $SCRIPTPATH/../charts/aws-calico/ \
-    --output-dir $INDV_RESOURCES_DIR/
-
-
-for i in $INDV_RESOURCES_DIR/aws-calico/templates/crs/*; do
-  cat $i | grep -v 'app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
-  mv $BUILD_DIR/helm_annotations_removed.yaml $i
-  cat $i >> $CALICO_CRS_RESOURCES_YAML
-done
-
-for i in $INDV_RESOURCES_DIR/aws-calico/templates/crds/*; do
-  cat $i | grep -v 'helm.sh\|app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
-  mv $BUILD_DIR/helm_annotations_removed.yaml $i
-  cat $i >> $CALICO_OPERATOR_RESOURCES_YAML
-done
-
-for i in $INDV_RESOURCES_DIR/aws-calico/templates/tigera-operator/*; do
-  cat $i | grep -v 'helm.sh\|app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
-  mv $BUILD_DIR/helm_annotations_removed.yaml $i
-  cat $i >> $CALICO_OPERATOR_RESOURCES_YAML
-done
 
 cd $INDV_RESOURCES_DIR/aws-vpc-cni/ && tar cvf $CNI_TAR_RESOURCES_FILE templates/*
 cd $INDV_RESOURCES_DIR/cni-metrics-helper/ && tar cvf $METRICS_TAR_RESOURCES_FILE templates/*
-cd $INDV_RESOURCES_DIR/aws-calico/ && tar cvf $CALICO_TAR_RESOURCES_FILE templates/*
 cd $SCRIPTPATH
 
-echo "Generated aws-vpc-cni, cni-metrics-helper and calico yaml resources files in:"
+echo "Generated aws-vpc-cni and cni-metrics-helper manifest resources files in:"
 echo "    - $CNI_RESOURCES_YAML"
 echo "    - $METRICS_RESOURCES_YAML"
-echo "    - $CALICO_OPERATOR_RESOURCES_YAML"
-echo "    - $CALICO_CRS_RESOURCES_YAML"
 echo "    - $CNI_TAR_RESOURCES_FILE"
 echo "    - $METRICS_TAR_RESOURCES_FILE"
-echo "    - $CALICO_TAR_RESOURCES_FILE"

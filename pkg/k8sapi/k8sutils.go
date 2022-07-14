@@ -120,6 +120,7 @@ func CheckAPIServerConnectivity() error {
 		if err != nil {
 			// When times out return no error, so the PollInfinite will retry with the given interval
 			if os.IsTimeout(err) {
+				log.Errorf("Unable to reach API Server, %v", err)
 				return false, nil
 			}
 			return false, fmt.Errorf("error communicating with apiserver: %v", err)

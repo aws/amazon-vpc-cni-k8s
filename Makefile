@@ -295,11 +295,6 @@ ekscharts-sync:
 ekscharts-sync-release:
 	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME} -n -y
 
-build-test-binaries:
-	mkdir -p ${MAKEFILE_PATH}build
-	find ${MAKEFILE_PATH} -name '*suite_test.go' -type f  | xargs dirname  | xargs ginkgo build
-	find ${MAKEFILE_PATH} -name "*.test" -print0 | xargs -0 -I {} mv {} ${MAKEFILE_PATH}build
-
 upload-resources-to-github:
 	${MAKEFILE_PATH}/scripts/upload-resources-to-github.sh
 
@@ -307,6 +302,9 @@ generate-cni-yaml:
 	${MAKEFILE_PATH}/scripts/generate-cni-yaml.sh
 
 release: generate-cni-yaml upload-resources-to-github
+
+config-folder-sync:
+	${MAKEFILE_PATH}/scripts/sync-to-config-folder.sh
 
 setup-ec2-sdk-override:
 	@if [ "$(EC2_SDK_OVERRIDE)" = "y" ] ; then \
