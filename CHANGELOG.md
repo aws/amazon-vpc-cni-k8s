@@ -32,7 +32,6 @@ Was Skipped
 * Bugfix - [Fix dependabot high sev issue caused by GoGo protobuf](https://github.com/aws/amazon-vpc-cni-k8s/pull/1942) (@jayanthvn)
 * Bugfix - [Fixed empty netns bug](https://github.com/aws/amazon-vpc-cni-k8s/pull/1941 ) (@cgchinmay)
 
-
 ## v1.10.2
 * Improvement - [Fetch Region and CLUSTER_ID information from cni-metrics-helper env](https://github.com/aws/amazon-vpc-cni-k8s/pull/1715) (@cgchinmay )
 * Improvement - [Add VlanId in the cmdAdd Result struct](https://github.com/aws/amazon-vpc-cni-k8s/pull/1705) (@cgchinmay )

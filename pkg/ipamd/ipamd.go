@@ -462,8 +462,9 @@ func (c *IPAMContext) nodeInit() error {
 
 	metadataResult, err := c.awsClient.DescribeAllENIs()
 	if err != nil {
-		return errors.New("ipamd init: failed to retrieve attached ENIs info")
+		return errors.Wrap(err, "ipamd init: failed to retrieve attached ENIs info")
 	}
+
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
 	c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
 	c.setUnmanagedENIs(metadataResult.TagMap)
@@ -690,7 +691,7 @@ func (c *IPAMContext) decreaseDatastorePool(interval time.Duration) {
 
 // tryFreeENI always tries to free one ENI
 func (c *IPAMContext) tryFreeENI() {
-	if c.isTerminating() {
+	if c.isTerminating() || c.isNodeNonSchedulable() {
 		log.Debug("AWS CNI is terminating, not detaching any ENIs")
 		return
 	}
@@ -779,7 +780,7 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 		}
 	}
 
-	if c.isTerminating() {
+	if c.isTerminating() || c.isNodeNonSchedulable() {
 		log.Debug("AWS CNI is terminating, will not try to attach any new IPs or ENIs right now")
 		return
 	}
@@ -938,7 +939,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 			err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 			if err != nil {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err: %v", eni.ID, err))
+				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
 			}
 		}
 		// This call to EC2 is needed to verify which IPs got attached to this ENI.
@@ -1805,6 +1806,34 @@ func (c *IPAMContext) isTerminating() bool {
 	return atomic.LoadInt32(&c.terminating) > 0
 }
 
+func (c *IPAMContext) isNodeNonSchedulable() bool {
+	ctx := context.TODO()
+
+	request := types.NamespacedName{
+		Name: c.myNodeName,
+	}
+
+	node := &corev1.Node{}
+	// Find my node
+	err := c.cachedK8SClient.Get(ctx, request, node)
+	if err != nil {
+		log.Errorf("Failed to get node while determining schedulability: %v", err)
+		return false
+	}
+	log.Debugf("Node found %q - no of taints - %d", node.Name, len(node.Spec.Taints))
+	taintToMatch := &corev1.Taint{
+		Key:    "node.kubernetes.io/unschedulable",
+		Effect: corev1.TaintEffectNoSchedule,
+	}
+	for _, taint := range node.Spec.Taints {
+		if taint.MatchTaint(taintToMatch) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
 func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
@@ -1908,17 +1937,20 @@ func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
 }
 
 // AnnotatePod annotates the pod with the provided key and value
-func (c *IPAMContext) AnnotatePod(podNamespace, podName, key, val string) error {
+func (c *IPAMContext) AnnotatePod(podName, podNamespace, key, val string) error {
 	ctx := context.TODO()
 	var err error
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		pod := &corev1.Pod{}
-		if pod, err = c.GetPod(podNamespace, podName); err != nil {
+		if pod, err = c.GetPod(podName, podNamespace); err != nil {
 			return err
 		}
 
 		newPod := pod.DeepCopy()
+		if newPod.Annotations == nil {
+			newPod.Annotations = make(map[string]string)
+		}
 		newPod.Annotations[key] = val
 		if err = c.rawK8SClient.Patch(ctx, newPod, client.MergeFrom(pod)); err != nil {
 			log.Errorf("Failed to annotate %s the pod with %s, error %v", key, val, err)

@@ -96,13 +96,21 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	nodeGroupProperties = awsUtils.NodeGroupProperties{
-		NgLabelKey:    "node-type",
-		NgLabelVal:    "pod-eni-node",
-		AsgSize:       asgSize,
-		NodeGroupName: "pod-eni-node",
-		Subnet:        clusterVPCConfig.PublicSubnetList,
-		InstanceType:  instanceType,
-		KeyPairName:   keyPairName,
+		NgLabelKey:       "node-type",
+		NgLabelVal:       "pod-eni-node",
+		AsgSize:          asgSize,
+		NodeGroupName:    "pod-eni-node",
+		Subnet:           clusterVPCConfig.PublicSubnetList,
+		InstanceType:     instanceType,
+		KeyPairName:      keyPairName,
+		ContainerRuntime: f.Options.ContainerRuntime,
+	}
+
+	if f.Options.InstanceType == "arm64" {
+		// override instanceType for arm64
+		instanceType = "m6g.large"
+		nodeGroupProperties.InstanceType = instanceType
+		nodeGroupProperties.NodeImageId = "ami-087fca294139386b6"
 	}
 
 	totalBranchInterface = vpc.Limits[instanceType].BranchInterface * asgSize

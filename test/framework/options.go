@@ -27,14 +27,21 @@ func init() {
 }
 
 type Options struct {
-	KubeConfig     string
-	ClusterName    string
-	AWSRegion      string
-	AWSVPCID       string
-	NgNameLabelKey string
-	NgNameLabelVal string
-	EKSEndpoint    string
-	CalicoVersion  string
+	KubeConfig       string
+	ClusterName      string
+	AWSRegion        string
+	AWSVPCID         string
+	NgNameLabelKey   string
+	NgNameLabelVal   string
+	EKSEndpoint      string
+	CalicoVersion    string
+	ContainerRuntime string
+	InstanceType     string
+	InitialAddon     string
+	TargetAddon      string
+	InitialManifest  string
+	TargetManifest   string
+	InstallCalico    bool
 }
 
 func (options *Options) BindFlags() {
@@ -45,7 +52,14 @@ func (options *Options) BindFlags() {
 	flag.StringVar(&options.NgNameLabelKey, "ng-name-label-key", "eks.amazonaws.com/nodegroup", "label key used to identify nodegroup name")
 	flag.StringVar(&options.NgNameLabelVal, "ng-name-label-val", "", "label value with the nodegroup name")
 	flag.StringVar(&options.EKSEndpoint, "eks-endpoint", "", "optional eks api server endpoint")
-	flag.StringVar(&options.CalicoVersion, "calico-version", "3.22.0", "calico version to be tested")
+	flag.StringVar(&options.InitialAddon, "initial-addon-version", "", "Initial CNI addon version before upgrade applied")
+	flag.StringVar(&options.TargetAddon, "target-addon-version", "", "Target CNI addon version after upgrade applied")
+	flag.StringVar(&options.InitialManifest, "initial-manifest-file", "", "Initial CNI manifest, can be local file path or remote Url")
+	flag.StringVar(&options.TargetManifest, "target-manifest-file", "", "Target CNI manifest, can be local file path or remote Url")
+	flag.StringVar(&options.CalicoVersion, "calico-version", "v3.23.0", "calico version to be tested")
+	flag.StringVar(&options.ContainerRuntime, "container-runtime", "", "Optionally can specify it as 'containerd' for the test nodes")
+	flag.StringVar(&options.InstanceType, "instance-type", "amd64", "Optionally specify instance type as arm64 for the test nodes")
+	flag.BoolVar(&options.InstallCalico, "install-calico", true, "Install Calico operator before running e2e tests")
 }
 
 func (options *Options) Validate() error {
