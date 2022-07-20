@@ -2,6 +2,9 @@
 #   cat codecov.yml | curl --data-binary @- https://codecov.io/validate
 
 codecov:
+  # Avoid "Missing base report"
+  # https://docs.codecov.io/docs/comparing-commits
+  allow_coverage_offsets: true
   notify:
     require_ci_to_pass: yes
 

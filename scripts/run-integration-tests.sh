@@ -2,9 +2,11 @@
 
 set -Euo pipefail
 
-trap 'on_error $LINENO' ERR
+trap 'on_error $? $LINENO' ERR
 
 DIR=$(cd "$(dirname "$0")"; pwd)
+INTEGRATION_TEST_DIR="$DIR"/../test/integration
+
 source "$DIR"/lib/common.sh
 source "$DIR"/lib/aws.sh
 source "$DIR"/lib/cluster.sh
@@ -17,6 +19,7 @@ ARCH=$(go env GOARCH)
 
 : "${AWS_DEFAULT_REGION:=us-west-2}"
 : "${K8S_VERSION:=1.21.2}"
+: "${EKS_CLUSTER_VERSION:=1.21}"
 : "${PROVISION:=true}"
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
@@ -27,12 +30,31 @@ ARCH=$(go env GOARCH)
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
 : "${RUN_CALICO_TEST:=false}"
+: "${RUN_LATEST_CALICO_VERSION:=false}"
+: "${CALICO_VERSION:=v3.23.0}"
+: "${RUN_CALICO_TEST_WITH_PD:=true}"
 
 
 __cluster_created=0
 __cluster_deprovisioned=0
 
 on_error() {
+    echo "Error with exit code $1 occurred on line $2"
+    emit_cloudwatch_metric "error_occurred" "1"
+
+    #Emit test specific error metric 
+    if [[ $RUN_KOPS_TEST == true ]]; then
+        emit_cloudwatch_metric "kops_test_status" "0"
+    fi
+    if [[ $RUN_CALICO_TEST == true ]]; then
+        emit_cloudwatch_metric "calico_test_status" "0"
+    fi
+    if [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
+        emit_cloudwatch_metric "bottlerocket_test_status" "0"
+    fi
+    if [[ $RUN_PERFORMANCE_TESTS == true ]]; then
+        emit_cloudwatch_metric "performance_test_status" "0"
+    fi
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the 
     if [[ $RUNNING_PERFORMANCE == false ]]; then
@@ -42,8 +64,6 @@ on_error() {
             echo "Cluster was provisioned already. Deprovisioning it..."
             if [[ $RUN_KOPS_TEST == true ]]; then
                 down-kops-cluster
-            elif [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
-                eksctl delete cluster bottlerocket
             else
                 down-test-cluster
             fi
@@ -72,36 +92,30 @@ CLUSTER_MANAGE_LOG_PATH=$TEST_CLUSTER_DIR/cluster-manage.log
 # shared binaries
 : "${TESTER_DIR:=${DIR}/aws-k8s-tester}"
 : "${TESTER_PATH:=$TESTER_DIR/aws-k8s-tester}"
-: "${KUBECTL_PATH:=$TESTER_DIR/kubectl}"
+: "${KUBECTL_PATH:=kubectl}"
 export PATH=${PATH}:$TESTER_DIR
 
 LOCAL_GIT_VERSION=$(git rev-parse HEAD)
 echo "Testing git repository at commit $LOCAL_GIT_VERSION"
-# The manifest image version is the image tag we need to replace in the
-# aws-k8s-cni.yaml manifest
-: "${MANIFEST_IMAGE_VERSION:=latest}"
 TEST_IMAGE_VERSION=${IMAGE_VERSION:-$LOCAL_GIT_VERSION}
 # We perform an upgrade to this manifest, with image replaced
 : "${MANIFEST_CNI_VERSION:=master}"
 BASE_CONFIG_PATH="$DIR/../config/$MANIFEST_CNI_VERSION/aws-k8s-cni.yaml"
 TEST_CONFIG_PATH="$TEST_CONFIG_DIR/aws-k8s-cni.yaml"
-TEST_CALICO_PATH="$DIR/../config/$MANIFEST_CNI_VERSION/calico.yaml"
+# The manifest image version is the image tag we need to replace in the
+# aws-k8s-cni.yaml manifest
+MANIFEST_IMAGE_VERSION=`grep "image:" $BASE_CONFIG_PATH | cut -d ":" -f3 | cut -d "\"" -f1 | head -1`
 
 if [[ ! -f "$BASE_CONFIG_PATH" ]]; then
     echo "$BASE_CONFIG_PATH DOES NOT exist. Set \$MANIFEST_CNI_VERSION to an existing directory in ./config/"
     exit
 fi
 
-if [[ $RUN_CALICO_TEST == true && ! -f "$TEST_CALICO_PATH" ]]; then
-    echo "$TEST_CALICO_PATH DOES NOT exist."
-    exit
-fi
-
 # double-check all our preconditions and requirements have been met
+check_is_installed ginkgo
 check_is_installed docker
 check_is_installed aws
 check_aws_credentials
-ensure_aws_k8s_tester
 
 : "${AWS_ACCOUNT_ID:=$(aws sts get-caller-identity --query Account --output text)}"
 : "${AWS_ECR_REGISTRY:="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com"}"
@@ -112,6 +126,7 @@ ensure_aws_k8s_tester
 : "${ROLE_CREATE:=true}"
 : "${ROLE_ARN:=""}"
 : "${MNG_ROLE_ARN:=""}"
+: "${BUILDX_BUILDER:="multi-arch-image-builder"}"
 
 # S3 bucket initialization
 : "${S3_BUCKET_CREATE:=true}"
@@ -122,22 +137,25 @@ aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --usernam
 ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
 ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_INIT_ECR_REPO_NAME"
 
-# Check to see if the image already exists in the Docker repository, and if
+# Check to see if the image already exists in the ECR repository, and if
 # not, check out the CNI source code for that image tag, build the CNI
 # image and push it to the Docker repository
-if [[ $(docker images -q "$IMAGE_NAME:$TEST_IMAGE_VERSION" 2> /dev/null) ]]; then
+ecr_image_query_result=$(aws ecr batch-get-image --repository-name=amazon-k8s-cni --image-ids imageTag=$TEST_IMAGE_VERSION --query 'images[].imageId.imageTag' --region us-west-2)
+if [[ $ecr_image_query_result != "[]" ]]; then
     echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION already exists in repository. Skipping image build..."
     DOCKER_BUILD_DURATION=0
 else
     echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION does not exist in repository."
     START=$SECONDS
-    make docker IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
-    docker push "$IMAGE_NAME:$TEST_IMAGE_VERSION"
+    # Refer to https://github.com/docker/buildx#building-multi-platform-images for the multi-arch image build process.
+    # create the buildx container only if it doesn't exist already.
+    docker buildx inspect "$BUILDX_BUILDER" >/dev/null 2<&1 || docker buildx create --name="$BUILDX_BUILDER" --buildkitd-flags '--allow-insecure-entitlement network.host' --use >/dev/null
+    make multi-arch-cni-build-push IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
     DOCKER_BUILD_DURATION=$((SECONDS - START))
     echo "TIMELINE: Docker build took $DOCKER_BUILD_DURATION seconds."
     # Build matching init container
-    make docker-init INIT_IMAGE="$INIT_IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
-    docker push "$INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
+    make multi-arch-cni-init-build-push INIT_IMAGE="$INIT_IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
+    docker buildx rm "$BUILDX_BUILDER"
     if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
         popd
     fi
@@ -162,37 +180,39 @@ mkdir -p "$TEST_CONFIG_DIR"
 START=$SECONDS
 if [[ "$PROVISION" == true ]]; then
     START=$SECONDS
-    if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
-        ensure_eksctl
-        eksctl create cluster --config-file ./testdata/bottlerocket.yaml
-    elif [[ "$RUN_KOPS_TEST" == true ]]; then
+    if [[ "$RUN_KOPS_TEST" == true ]]; then
         up-kops-cluster
     else
         up-test-cluster
     fi
-    UP_CLUSTER_DURATION=$((SECONDS - START))
-    echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
 fi
 __cluster_created=1
 
 UP_CLUSTER_DURATION=$((SECONDS - START))
 echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
 
+# Fetch VPC_ID from created cluster
+DESCRIBE_CLUSTER_OP=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_DEFAULT_REGION")
+VPC_ID=$(echo "$DESCRIBE_CLUSTER_OP" | jq -r '.cluster.resourcesVpcConfig.vpcId')
+echo "Using VPC_ID: $VPC_ID"
+
 echo "Using $BASE_CONFIG_PATH as a template"
 cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
 
 # Daemonset template
+# Replace image value and tag in cni manifest and grep (to verify that replacement was successful)
 echo "IMAGE NAME ${IMAGE_NAME} "
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni,$IMAGE_NAME," "$TEST_CONFIG_PATH"
+grep -r -q $IMAGE_NAME $TEST_CONFIG_PATH
+echo "Replacing manifest image tag $MANIFEST_IMAGE_VERSION with image version of $TEST_IMAGE_VERSION"
 sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
+grep -r -q $TEST_IMAGE_VERSION $TEST_CONFIG_PATH
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
-sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
+grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH
 
-if [[ $RUN_KOPS_TEST == true || $RUN_BOTTLEROCKET_TEST == true ]]; then
-    KUBECTL_PATH=kubectl
+
+if [[ $RUN_KOPS_TEST == true ]]; then
     export KUBECONFIG=~/.kube/config
-else
-    export KUBECONFIG=$KUBECONFIG_PATH
 fi
 
 if [[ $RUN_KOPS_TEST == true ]]; then
@@ -204,11 +224,12 @@ echo "**************************************************************************
 echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
 echo ""
 START=$SECONDS
-pushd ./test/integration
-GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \
-    --assets=./assets
+
+focus="CANARY"
+echo "Running ginkgo tests with focus: $focus"
+(cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 20m --failOnPending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+(cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 10m --failOnPending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
 TEST_PASS=$?
-popd
 DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
 
@@ -217,45 +238,58 @@ echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
+NODE_COUNT=$($KUBECTL_PATH get nodes --no-headers=true | wc -l)
+echo "Number of nodes in the test cluster is $NODE_COUNT"
+UPDATED_PODS_COUNT=0
+MAX_RETRIES=20
+RETRY_ATTEMPT=0
 sleep 5
-while [[ $($KUBECTL_PATH describe ds aws-node -n=kube-system | grep "Available Pods: 0") ]]
-do
+while [[ $UPDATED_PODS_COUNT -lt $NODE_COUNT && $RETRY_ATTEMPT -lt $MAX_RETRIES ]]; do
+    UPDATED_PODS_COUNT=$($KUBECTL_PATH get pods -A --field-selector=status.phase=Running -l k8s-app=aws-node --no-headers=true | wc -l)
+    let RETRY_ATTEMPT=RETRY_ATTEMPT+1
     sleep 5
-    echo "Waiting for daemonset update"
+    echo "Waiting for cni daemonset update. $UPDATED_PODS_COUNT are in ready state in retry attempt $RETRY_ATTEMPT"
 done
 echo "Updated!"
 
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
-if [[ $RUN_CALICO_TEST == true ]]; then
-    $KUBECTL_PATH apply -f "$TEST_CALICO_PATH"
-    attempts=60
-    while [[ $($KUBECTL_PATH describe ds calico-node -n=kube-system | grep "Available Pods: 0") ]]; do
-        if [ "${attempts}" -eq 0 ]; then
-            echo "Calico pods seems to be down check the config"
-            exit 1
-        fi
-        
-        let attempts--
-        sleep 5
-        echo "Waiting for calico daemonset update"
-    done
-    echo "Updated calico daemonset!"
-    sleep 5
-fi
-
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"
 echo ""
 START=$SECONDS
-pushd ./test/integration
-GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \
-    --assets=./assets
+
+focus="CANARY"
+echo "Running ginkgo tests with focus: $focus"
+(cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+(cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
 TEST_PASS=$?
-popd
 CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
+if [[ $TEST_PASS -eq 0 ]]; then
+  emit_cloudwatch_metric "integration_test_status" "1"
+fi
+
+if [[ $RUN_CALICO_TEST == true ]]; then
+  # need to install Calico
+  run_calico_test "true"
+  if [[ "$RUN_CALICO_TEST_WITH_PD" == true ]]; then
+      # if we run prefix delegation tests as well, we need update CNI env and terminate all nodes to restore iptables rules for following tests
+      echo "Run Calico tests with Prefix Delegation enabled"
+      $KUBECTL_PATH set env daemonset aws-node -n kube-system ENABLE_PREFIX_DELEGATION=true
+      # we shouldn't rely on other tests to set this required ENV
+      $KUBECTL_PATH set env ds aws-node -n kube-system WARM_PREFIX_TARGET=1
+      ids=( $(aws ec2 describe-instances --filters Name=vpc-id,Values=$VPC_ID --query 'Reservations[*].Instances[*].InstanceId' --output text) )
+      aws ec2 terminate-instances --instance-ids $ids
+      echo "Waiting 15 minutes for new nodes being ready"
+      sleep 900
+      # no longer need to install Calico again for PD
+      run_calico_test "false"
+  fi
+
+  emit_cloudwatch_metric "calico_test_status" "1"
+fi
 
 if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
@@ -272,6 +306,7 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
     --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
 
   CONFORMANCE_DURATION=$((SECONDS - START))
+  emit_cloudwatch_metric "conformance_test_status" "1"
   echo "TIMELINE: Conformance tests took $CONFORMANCE_DURATION seconds."
 fi
 
@@ -292,7 +327,11 @@ if [[ "$DEPROVISION" == true ]]; then
     if [[ "$RUN_KOPS_TEST" == true ]]; then
         down-kops-cluster
     elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
-        eksctl delete cluster bottlerocket
+        eksctl delete cluster $CLUSTER_NAME
+        emit_cloudwatch_metric "bottlerocket_test_status" "1"
+    elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
+        eksctl delete cluster $CLUSTER_NAME
+        emit_cloudwatch_metric "performance_test_status" "1"
     else
         down-test-cluster
     fi
@@ -305,3 +344,4 @@ fi
 if [[ $TEST_PASS -ne 0 ]]; then
     exit 1
 fi
+emit_cloudwatch_metric "error_occurred" "0"

@@ -27,7 +27,7 @@ type ConfigMapManager interface {
 }
 
 type defaultConfigMapManager struct {
-	k8sClient client.DelegatingClient
+	k8sClient client.Client
 }
 
 func (d defaultConfigMapManager) GetConfigMap(namespace string, name string) (*v1.ConfigMap, error) {
@@ -41,6 +41,6 @@ func (d defaultConfigMapManager) UpdateConfigMap(oldConfigMap *v1.ConfigMap, new
 	return d.k8sClient.Patch(ctx, newConfigMap, client.MergeFrom(oldConfigMap))
 }
 
-func NewConfigMapManager(k8sClient client.DelegatingClient) ConfigMapManager {
+func NewConfigMapManager(k8sClient client.Client) ConfigMapManager {
 	return &defaultConfigMapManager{k8sClient: k8sClient}
 }

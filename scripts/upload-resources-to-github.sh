@@ -7,14 +7,11 @@ SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 VERSION=$(make -s -f $SCRIPTPATH/../Makefile version)
 BUILD_DIR=$SCRIPTPATH/../build/cni-rel-yamls/$VERSION
 BINARY_DIR=$SCRIPTPATH/../build/bin
+
 CNI_TAR_RESOURCES_FILE=$BUILD_DIR/cni_individual-resources.tar
 METRICS_TAR_RESOURCES_FILE=$BUILD_DIR/cni_metrics_individual-resources.tar
-CALICO_TAR_RESOURCES_FILE=$BUILD_DIR/calico_individual-resources.tar
 CNI_RESOURCES_YAML=$BUILD_DIR/aws-k8s-cni
 METRICS_RESOURCES_YAML=$BUILD_DIR/cni-metrics-helper
-CALICO_RESOURCES_YAML=$BUILD_DIR/calico.yaml
-CALICO_OPERATOR_RESOURCES_YAML=$BUILD_DIR/calico-operator.yaml
-CALICO_CRS_RESOURCES_YAML=$BUILD_DIR/calico-crs.yaml
 REGIONS_FILE=$SCRIPTPATH/../charts/regions.json
 
 BINARIES_ONLY="false"
@@ -45,6 +42,7 @@ done
 RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
     https://api.github.com/repos/aws/amazon-vpc-cni-k8s/releases | \
     jq --arg VERSION "$VERSION" '.[] | select(.tag_name==$VERSION) | .id')
+
 ASSET_IDS_UPLOADED=()
 
 trap 'handle_errors_and_cleanup $?' EXIT
@@ -81,14 +79,15 @@ upload_asset() {
     if [[ $response_code -eq 201 ]]; then
         asset_id=$(echo $response_content | jq '.id')
         ASSET_IDS_UPLOADED+=("$asset_id")
-        echo "Created asset ID $asset_id successfully"
+        echo "✅ Created asset ID $asset_id successfully"
     else
         echo -e "❌ Upload failed with response code $response_code and message \n$response_content ❌"
         exit 1
     fi
 }
 
-RESOURCES_TO_UPLOAD=("$CALICO_OPERATOR_RESOURCES_YAML" "$CALICO_CRS_RESOURCES_YAML" "$CNI_TAR_RESOURCES_FILE" "$METRICS_TAR_RESOURCES_FILE" "$CALICO_TAR_RESOURCES_FILE")
+RESOURCES_TO_UPLOAD=("$CNI_TAR_RESOURCES_FILE" "$METRICS_TAR_RESOURCES_FILE")
+RESOURCES_TO_COPY=()
 
 COUNT=1
 echo -e "\nUploading release assets for release id '$RELEASE_ID' to Github"
@@ -98,7 +97,7 @@ for asset in ${RESOURCES_TO_UPLOAD[@]}; do
     upload_asset $asset
 done
 
-jq -c '.[]' $REGIONS_FILE | while read i; do
+while read i; do
     ecrRegion=`echo $i | jq '.ecrRegion' -r`
     ecrAccount=`echo $i | jq '.ecrAccount' -r`
     ecrDomain=`echo $i | jq '.ecrDomain' -r`
@@ -113,8 +112,11 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
         NEW_CNI_RESOURCES_YAML="${CNI_RESOURCES_YAML}-${ecrRegion}.yaml"
         NEW_METRICS_RESOURCES_YAML="${METRICS_RESOURCES_YAML}-${ecrRegion}.yaml"
     fi
+    
     RESOURCES_TO_UPLOAD=("$NEW_CNI_RESOURCES_YAML" "$NEW_METRICS_RESOURCES_YAML")
-
+    RESOURCES_TO_COPY+=("$NEW_CNI_RESOURCES_YAML")
+    RESOURCES_TO_COPY+=("$NEW_METRICS_RESOURCES_YAML")
+    
     COUNT=1
     echo -e "\nUploading release assets for release id '$RELEASE_ID' to Github"
     for asset in ${RESOURCES_TO_UPLOAD[@]}; do
@@ -122,4 +124,6 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
         echo -e "\n  $((COUNT++)). $name"
         upload_asset $asset
     done
-done    
+done < <(jq -c '.[]' $REGIONS_FILE)
+
+echo "✅ Attach artifacts to release page done"

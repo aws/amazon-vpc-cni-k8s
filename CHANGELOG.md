@@ -1,5 +1,56 @@
 # Changelog
 
+## v1.11.2
+
+* Improvement -  [Updated golang to Go 1.18](https://github.com/aws/amazon-vpc-cni-k8s/pull/1991) (@orsenthil)
+* Improvement -  [Updated containernetworking/cni version to 0.8.1 to address CVE-2021-20206](https://github.com/aws/amazon-vpc-cni-k8s/pull/1996) (@orsenthil)
+* Improvement -  [Updated CNI Plugins to v1.1.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/1997) (@orsenthil)
+
+# v1.11.1
+
+Was Skipped
+
+## v1.11.0
+
+* Feature - [Support new SGPP standard mode](https://github.com/aws/amazon-vpc-cni-k8s/pull/1907) (@M00nF1sh )
+* Feature - [IPv4 Randomize SNAT support for IPv6 pods](https://github.com/aws/amazon-vpc-cni-k8s/pull/1903) (@achevuru)
+* Feature - [Respect existing ENIConfig label if set on node](https://github.com/aws/amazon-vpc-cni-k8s/pull/1596) (@backjo)
+* Improvement - [Timeout and reconcile when checking API server connectivity](https://github.com/aws/amazon-vpc-cni-k8s/pull/1943)
+(@prateekgogia)
+* Improvement - [Improve startup performance of IPAMD](https://github.com/aws/amazon-vpc-cni-k8s/pull/1855) (@backjo)
+* Improvement - [Record pod metadata and allocationTime in IP allocation state file](https://github.com/aws/amazon-vpc-cni-k8s/pull/1958) (@M00nF1sh )
+* Bug - [Fixes node label error handling](https://github.com/aws/amazon-vpc-cni-k8s/pull/1892) & [revert to use update for node label update](https://github.com/aws/amazon-vpc-cni-k8s/pull/1959) (@jayanthvn, @M00nF1sh )
+       (#1959)
+* Bug - [IPAMD throw an error on configuration validation failure](https://github.com/aws/amazon-vpc-cni-k8s/pull/1698) (@veshij)
+* Cleanup - [refactoring DataStore.GetStats to simplify adding new fields](https://github.com/aws/amazon-vpc-cni-k8s/pull/1704) (@veshij)
+
+## v1.10.3
+
+* Improvement - [Upgrade AWS SDK GO](https://github.com/aws/amazon-vpc-cni-k8s/pull/1944) (@jayanthvn)
+* Improvement - [C7g instances support](https://github.com/aws/amazon-vpc-cni-k8s/pull/1940) (@jayanthvn)
+* Improvement - [Enable Prefix Delegation on Bare metal instances](https://github.com/aws/amazon-vpc-cni-k8s/pull/1937) (@achevuru)
+* Bugfix - [Fix dependabot high sev issue caused by GoGo protobuf](https://github.com/aws/amazon-vpc-cni-k8s/pull/1942) (@jayanthvn)
+* Bugfix - [Fixed empty netns bug](https://github.com/aws/amazon-vpc-cni-k8s/pull/1941 ) (@cgchinmay)
+
+## v1.10.2
+* Improvement - [Fetch Region and CLUSTER_ID information from cni-metrics-helper env](https://github.com/aws/amazon-vpc-cni-k8s/pull/1715) (@cgchinmay )
+* Improvement - [Add VlanId in the cmdAdd Result struct](https://github.com/aws/amazon-vpc-cni-k8s/pull/1705) (@cgchinmay )
+* Improvement - [Update Insufficient IP address logic in ipamd](https://github.com/aws/amazon-vpc-cni-k8s/pull/1773) (@cgchinmay )
+* Improvement - [go version updated to 1.17](https://github.com/aws/amazon-vpc-cni-k8s/pull/1832) (@cgchinmay )
+* Improvement - [use public ecr for AL2](https://github.com/aws/amazon-vpc-cni-k8s/pull/1804) (@vikasmb )
+* Improvement - [remove set -x from bash, add -Ss to curl](https://github.com/aws/amazon-vpc-cni-k8s/pull/1802) (@skpy )
+* Bug - [Fix condition for disable provisioning](https://github.com/aws/amazon-vpc-cni-k8s/pull/1823) (@jayanthvn )
+
+## v1.10.1
+* Bug - [Use IMDSv2 token when fetching node ip in entrypoint](https://github.com/aws/amazon-vpc-cni-k8s/pull/1727) (#1727, [@chlunde](https://github.com/chlunde)) 
+
+## v1.10.0
+* Feature - [IPv6 Support](https://github.com/aws/amazon-vpc-cni-k8s/pull/1587) (#1587, [@achevuru](https://github.com/achevuru))
+* Enhancement - [Handle delays tied to V6 interfaces](https://github.com/aws/amazon-vpc-cni-k8s/pull/1631) (#1631, [@achevuru](https://github.com/achevuru))
+* Enhancement - [Support for Bandwidth Plugin](https://github.com/aws/amazon-vpc-cni-k8s/pull/1560) (#1560, [@jayanthvn](https://github.com/jayanthvn))
+* Enhancement - [Knob to enable bandwidth plugin](https://github.com/aws/amazon-vpc-cni-k8s/pull/1580) (#1580, [@jayanthvn](https://github.com/jayanthvn))
+* Testing - [IPv6 Integration test suite](https://github.com/aws/amazon-vpc-cni-k8s/pull/1658) (#1658, [@achevuru](https://github.com/achevuru))
+
 ## v1.9.3
 * Improvement - [Update golang](https://github.com/aws/amazon-vpc-cni-k8s/pull/1665) (#1665, [@jayanthvn](https://github.com/jayanthvn))
 * Improvement - [Pod startup latency with Calico and EKS](https://github.com/aws/amazon-vpc-cni-k8s/pull/1629) (#1629, [@jayanthvn](https://github.com/jayanthvn))

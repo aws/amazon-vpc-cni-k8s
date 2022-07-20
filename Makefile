@@ -43,24 +43,22 @@ HELM_CHART_NAME ?= "aws-vpc-cni"
 # TEST_IMAGE is the testing environment container image.
 TEST_IMAGE = amazon-k8s-cni-test
 TEST_IMAGE_NAME = $(TEST_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
-# These values derive ARCH  which is needed by dependencies in
-# image build defaulting to system's architecture when not specified.
-#
-# UNAME_ARCH is the runtime architecture of the building host.
+
 UNAME_ARCH = $(shell uname -m)
-# ARCH is the target architecture which is being built for.
-#
-# These are pairs of input_arch to derived_arch separated by colons:
 ARCH = $(lastword $(subst :, ,$(filter $(UNAME_ARCH):%,x86_64:amd64 aarch64:arm64)))
-# IMAGE_ARCH_SUFFIX is the `-arch` suffix included in the container image name.
-#
 # This is only applied to the arm64 container image by default. Override to
 # provide an alternate suffix or to omit.
 IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(ARCH),arm64))
+
+# Mandate usage of docker buildkit as platform arguments are available only with buildkit
+# Refer to https://docs.docker.com/engine/reference/builder/#automatic-platform-args-in-the-global-scope
+# and https://docs.docker.com/develop/develop-images/build_enhancements/#to-enable-buildkit-builds
+export DOCKER_BUILDKIT=1
+GOARCH = $(TARGETARCH)
+
 # GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.16-stretch
+GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.18-stretch
 # For the requested build, these are the set of Go specific build environment variables.
-export GOARCH ?= $(ARCH)
 export GOOS = linux
 export CGO_ENABLED = 0
 # NOTE: Provided for local toolchains that require explicit module feature flag.
@@ -92,10 +90,11 @@ DOCKER_ARGS =
 DOCKER_RUN_FLAGS = --rm -ti $(DOCKER_ARGS)
 # DOCKER_BUILD_FLAGS is the set of flags passed during container image builds
 # based on the requested build.
-DOCKER_BUILD_FLAGS = --build-arg GOARCH="$(ARCH)" \
-					  --build-arg golang_image="$(GOLANG_IMAGE)" \
+DOCKER_BUILD_FLAGS = --build-arg golang_image="$(GOLANG_IMAGE)" \
 					  --network=host \
 	  		          $(DOCKER_ARGS)
+
+MULTI_PLATFORM_BUILD_TARGETS = 	linux/amd64,linux/arm64
 
 # Default to building an executable using the host's Go toolchain.
 .DEFAULT_GOAL = build-linux
@@ -206,8 +205,23 @@ generate-limits: GOOS=
 generate-limits:    ## Generate limit file go code
 	go run $(VENDOR_OVERRIDE_FLAG) scripts/gen_vpc_ip_limits.go
 
+multi-arch-cni-build-push:		## Build multi-arch VPC CNI container image.
+	docker buildx build $(DOCKER_BUILD_FLAGS) \
+    		-f scripts/dockerfiles/Dockerfile.release \
+    		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
+    		-t "$(IMAGE_NAME)" \
+    		--push \
+    		.
+
+multi-arch-cni-init-build-push:     ## Build VPC CNI plugin Init container image.
+	docker buildx build $(DOCKER_BUILD_FLAGS) \
+		-f scripts/dockerfiles/Dockerfile.init \
+		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
+		-t "$(INIT_IMAGE_NAME)" \
+		--push \
+		.
 # Fetch the CNI plugins
-plugins: FETCH_VERSION=0.9.0
+plugins: FETCH_VERSION=1.1.1
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
 plugins:   ## Fetch the CNI plugins
@@ -236,7 +250,7 @@ check: check-format lint vet   ## Run all source code checks.
 #
 # To install:
 #
-#   go get -u golang.org/x/lint/golint
+#   go install golang.org/x/lint/golint@latest
 #
 lint: LINT_FLAGS = -set_exit_status
 lint:   ## Run golint on source code.
@@ -279,8 +293,7 @@ ekscharts-sync:
 	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME}
 
 ekscharts-sync-release:
-	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME} -n
-
+	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME} -n -y
 
 upload-resources-to-github:
 	${MAKEFILE_PATH}/scripts/upload-resources-to-github.sh
@@ -289,6 +302,9 @@ generate-cni-yaml:
 	${MAKEFILE_PATH}/scripts/generate-cni-yaml.sh
 
 release: generate-cni-yaml upload-resources-to-github
+
+config-folder-sync:
+	${MAKEFILE_PATH}/scripts/sync-to-config-folder.sh
 
 setup-ec2-sdk-override:
 	@if [ "$(EC2_SDK_OVERRIDE)" = "y" ] ; then \

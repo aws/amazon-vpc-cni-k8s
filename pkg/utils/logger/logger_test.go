@@ -30,6 +30,21 @@ func TestEnvLogFilePath(t *testing.T) {
 	assert.Equal(t, path, GetLogLocation())
 }
 
+func TestLoggerGetSameInstance(t *testing.T) {
+	log1 := Get()
+	log2 := Get()
+
+	assert.True(t, log1 == log2)
+}
+
+func TestLoggerNewAndGetSameInstance(t *testing.T) {
+	logConfig := LoadLogConfig()
+	log1 := New(logConfig)
+	log2 := Get()
+
+	assert.True(t, log1 == log2)
+}
+
 func TestGetLogFileLocationReturnsDefaultPath(t *testing.T) {
 	defaultPath := "/host/var/log/aws-routed-eni/ipamd.log"
 	assert.Equal(t, defaultPath, GetLogLocation())

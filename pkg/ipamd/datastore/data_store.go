@@ -147,6 +147,12 @@ func (k IPAMKey) String() string {
 	return fmt.Sprintf("%s/%s/%s", k.NetworkName, k.ContainerID, k.IfName)
 }
 
+// IPAMMetadata is the metadata associated with IP allocations.
+type IPAMMetadata struct {
+	K8SPodNamespace string `json:"k8sPodNamespace,omitempty"`
+	K8SPodName      string `json:"k8sPodName,omitempty"`
+}
+
 // ENI represents a single ENI. Exported fields will be marshaled for introspection.
 type ENI struct {
 	// AWS ENI ID
@@ -170,8 +176,11 @@ type ENI struct {
 
 // AddressInfo contains information about an IP, Exported fields will be marshaled for introspection.
 type AddressInfo struct {
+	Address string
+
 	IPAMKey        IPAMKey
-	Address        string
+	IPAMMetadata   IPAMMetadata
+	AssignedTime   time.Time
 	UnassignedTime time.Time
 }
 
@@ -360,8 +369,10 @@ type CheckpointData struct {
 // in checkpoints.
 type CheckpointEntry struct {
 	IPAMKey
-	IPv4 string `json:"ipv4,omitempty"`
-	IPv6 string `json:"ipv6,omitempty"`
+	IPv4                string       `json:"ipv4,omitempty"`
+	IPv6                string       `json:"ipv6,omitempty"`
+	AllocationTimestamp int64        `json:"allocationTimestamp"`
+	Metadata            IPAMMetadata `json:"metadata"`
 }
 
 // ReadBackingStore initialises the IP allocation state from the
@@ -383,21 +394,35 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 		entries := make([]CheckpointEntry, 0, len(sandboxes))
 		for _, s := range sandboxes {
 			ds.log.Debugf("Adding container ID: %v", s.ID)
-			if isv6Enabled {
-				ipv6Addr = s.IP
-			} else {
-				ipv4Addr = s.IP
+
+			metadata := IPAMMetadata{}
+			// both containerd and dockershim populates the metadata, just be cautious to have this null check.
+			if s.Metadata != nil {
+				metadata.K8SPodNamespace = s.Metadata.Namespace
+				metadata.K8SPodName = s.Metadata.Name
 			}
-			entries = append(entries, CheckpointEntry{
-				// NB: These Backfill values are also assumed in UnassignPodIPAddress
-				IPAMKey: IPAMKey{
-					NetworkName: backfillNetworkName,
-					ContainerID: s.ID,
-					IfName:      backfillNetworkIface,
-				},
-				IPv4: ipv4Addr,
-				IPv6: ipv6Addr,
-			})
+
+			// note: ideally each sandbox should only contain one IP only,
+			// looping through them here is just to keep legacy code's behavior.
+			for _, ip := range s.IPs {
+				if isv6Enabled {
+					ipv6Addr = ip
+				} else {
+					ipv4Addr = ip
+				}
+				entries = append(entries, CheckpointEntry{
+					// NB: These Backfill values are also assumed in UnassignPodIPAddress
+					IPAMKey: IPAMKey{
+						NetworkName: backfillNetworkName,
+						ContainerID: s.ID,
+						IfName:      backfillNetworkIface,
+					},
+					IPv4:                ipv4Addr,
+					IPv6:                ipv6Addr,
+					AllocationTimestamp: s.CreationTimestamp,
+					Metadata:            metadata,
+				})
+			}
 		}
 		data = CheckpointData{
 			Version:     CheckpointFormatVersion,
@@ -455,7 +480,7 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 					}
 					addr := &AddressInfo{Address: ipAddr.String()}
 					cidr.IPAddresses[ipAddr.String()] = addr
-					ds.assignPodIPAddressUnsafe(allocation.IPAMKey, eni, addr)
+					ds.assignPodIPAddressUnsafe(addr, allocation.IPAMKey, allocation.Metadata, time.Unix(0, allocation.AllocationTimestamp))
 					ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
 					//Update prometheus for ips per cidr
 					//Secondary IP mode will have /32:1 and Prefix mode will have /28:<number of /32s>
@@ -493,8 +518,10 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 			for _, addr := range assignedAddr.IPAddresses {
 				if addr.Assigned() {
 					entry := CheckpointEntry{
-						IPAMKey: addr.IPAMKey,
-						IPv4:    addr.Address,
+						IPAMKey:             addr.IPAMKey,
+						IPv4:                addr.Address,
+						AllocationTimestamp: addr.AssignedTime.UnixNano(),
+						Metadata:            addr.IPAMMetadata,
 					}
 					allocations = append(allocations, entry)
 				}
@@ -505,8 +532,10 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 			for _, addr := range assignedAddr.IPAddresses {
 				if addr.Assigned() {
 					entry := CheckpointEntry{
-						IPAMKey: addr.IPAMKey,
-						IPv6:    addr.Address,
+						IPAMKey:             addr.IPAMKey,
+						IPv6:                addr.Address,
+						AllocationTimestamp: addr.AssignedTime.UnixNano(),
+						Metadata:            addr.IPAMMetadata,
 					}
 					allocations = append(allocations, entry)
 				}
@@ -677,19 +706,19 @@ func (ds *DataStore) AddIPv6CidrToStore(eniID string, ipv6Cidr net.IPNet, isPref
 	return nil
 }
 
-func (ds *DataStore) AssignPodIPAddress(ipamKey IPAMKey, isIPv4Enabled bool, isIPv6Enabled bool) (ipv4Address string,
+func (ds *DataStore) AssignPodIPAddress(ipamKey IPAMKey, ipamMetadata IPAMMetadata, isIPv4Enabled bool, isIPv6Enabled bool) (ipv4Address string,
 	ipv6Address string, deviceNumber int, err error) {
 	//Currently it's either v4 or v6. Dual Stack mode isn't supported.
 	if isIPv4Enabled {
-		ipv4Address, deviceNumber, err = ds.AssignPodIPv4Address(ipamKey)
+		ipv4Address, deviceNumber, err = ds.AssignPodIPv4Address(ipamKey, ipamMetadata)
 	} else if isIPv6Enabled {
-		ipv6Address, deviceNumber, err = ds.AssignPodIPv6Address(ipamKey)
+		ipv6Address, deviceNumber, err = ds.AssignPodIPv6Address(ipamKey, ipamMetadata)
 	}
 	return ipv4Address, ipv6Address, deviceNumber, err
 }
 
 // AssignPodIPv6Address assigns an IPv6 address to pod. Returns the assigned IPv6 address along with device number
-func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey) (ipv6Address string, deviceNumber int, err error) {
+func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMetadata) (ipv6Address string, deviceNumber int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
@@ -723,7 +752,7 @@ func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey) (ipv6Address string, 
 			addr := &AddressInfo{Address: ipv6Address}
 			V6Cidr.IPAddresses[ipv6Address] = addr
 
-			ds.assignPodIPAddressUnsafe(ipamKey, eni, addr)
+			ds.assignPodIPAddressUnsafe(addr, ipamKey, ipamMetadata, time.Now())
 			if err := ds.writeBackingStoreUnsafe(); err != nil {
 				ds.log.Warnf("Failed to update backing store: %v", err)
 				// Important! Unwind assignment
@@ -740,7 +769,7 @@ func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey) (ipv6Address string, 
 
 // AssignPodIPv4Address assigns an IPv4 address to pod
 // It returns the assigned IPv4 address, device number, error
-func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, deviceNumber int, err error) {
+func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMetadata) (ipv4address string, deviceNumber int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
@@ -785,7 +814,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 			}
 
 			availableCidr.IPAddresses[strPrivateIPv4] = addr
-			ds.assignPodIPAddressUnsafe(ipamKey, eni, addr)
+			ds.assignPodIPAddressUnsafe(addr, ipamKey, ipamMetadata, time.Now())
 
 			if err := ds.writeBackingStoreUnsafe(); err != nil {
 				ds.log.Warnf("Failed to update backing store: %v", err)
@@ -806,8 +835,8 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey) (ipv4address string, 
 	return "", -1, errors.New("assignPodIPv4AddressUnsafe: no available IP/Prefix addresses")
 }
 
-// It returns the assigned IPv4 address, device number
-func (ds *DataStore) assignPodIPAddressUnsafe(ipamKey IPAMKey, eni *ENI, addr *AddressInfo) (string, int) {
+// assignPodIPAddressUnsafe mark Address as assigned.
+func (ds *DataStore) assignPodIPAddressUnsafe(addr *AddressInfo, ipamKey IPAMKey, ipamMetadata IPAMMetadata, assignedTime time.Time) {
 	ds.log.Infof("AssignPodIPv4Address: Assign IP %v to sandbox %s",
 		addr.Address, ipamKey)
 
@@ -815,14 +844,15 @@ func (ds *DataStore) assignPodIPAddressUnsafe(ipamKey IPAMKey, eni *ENI, addr *A
 		panic("addr already assigned")
 	}
 	addr.IPAMKey = ipamKey // This marks the addr as assigned
+	addr.IPAMMetadata = ipamMetadata
+	addr.AssignedTime = assignedTime
 
 	ds.assigned++
 	// Prometheus gauge
 	assignedIPs.Set(float64(ds.assigned))
-
-	return addr.Address, eni.DeviceNumber
 }
 
+// unassignPodIPAddressUnsafe mark Address as unassigned.
 func (ds *DataStore) unassignPodIPAddressUnsafe(addr *AddressInfo) {
 	if !addr.Assigned() {
 		// Already unassigned
@@ -831,6 +861,7 @@ func (ds *DataStore) unassignPodIPAddressUnsafe(addr *AddressInfo) {
 	ds.log.Infof("UnAssignPodIPAddress: Unassign IP %v from sandbox %s",
 		addr.Address, addr.IPAMKey)
 	addr.IPAMKey = IPAMKey{} // unassign the addr
+	addr.IPAMMetadata = IPAMMetadata{}
 	ds.assigned--
 	// Prometheus gauge
 	assignedIPs.Set(float64(ds.assigned))
@@ -1179,10 +1210,12 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 		return nil, "", 0, ErrUnknownPod
 	}
 
+	originalIPAMMetadata := addr.IPAMMetadata
+	originalAssignedTime := addr.AssignedTime
 	ds.unassignPodIPAddressUnsafe(addr)
 	if err := ds.writeBackingStoreUnsafe(); err != nil {
 		// Unwind un-assignment
-		ds.assignPodIPAddressUnsafe(ipamKey, eni, addr)
+		ds.assignPodIPAddressUnsafe(addr, ipamKey, originalIPAMMetadata, originalAssignedTime)
 		return nil, "", 0, err
 	}
 	addr.UnassignedTime = time.Now()

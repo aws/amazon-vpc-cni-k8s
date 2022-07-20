@@ -19,6 +19,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/version"
 )
@@ -29,11 +30,7 @@ func main() {
 
 func _main() int {
 	//Do not add anything before initializing logger
-	logConfig := logger.Configuration{
-		LogLevel:    logger.GetLogLevel(),
-		LogLocation: logger.GetLogLocation(),
-	}
-	log := logger.New(&logConfig)
+	log := logger.Get()
 
 	log.Infof("Starting L-IPAMD %s  ...", version.Version)
 	version.RegisterMetric()
@@ -44,17 +41,25 @@ func _main() int {
 		return 1
 	}
 
-	rawK8SClient, err := k8sapi.CreateKubeClient()
+	mapper, err := k8sapi.InitializeRestMapper()
+	if err != nil {
+		log.Errorf("Failed to initialize kube client mapper: %s", err)
+		return 1
+	}
+
+	rawK8SClient, err := k8sapi.CreateKubeClient(mapper)
 	if err != nil {
 		log.Errorf("Failed to create kube client: %s", err)
 		return 1
 	}
 
-	cacheK8SClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient)
+	cacheK8SClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient, mapper)
 	if err != nil {
 		log.Errorf("Failed to create cached kube client: %s", err)
 		return 1
 	}
+
+	eventrecorder.InitEventRecorder(rawK8SClient)
 
 	ipamContext, err := ipamd.New(rawK8SClient, cacheK8SClient)
 	if err != nil {

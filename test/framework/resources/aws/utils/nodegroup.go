@@ -30,6 +30,11 @@ import (
 
 const CreateNodeGroupCFNTemplateURL = "https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/amazon-eks-nodegroup.yaml"
 
+// Docker will be default, if not specified
+const (
+	CONTAINERD = "containerd"
+)
+
 type NodeGroupProperties struct {
 	// Required to verify the node is up and ready
 	NgLabelKey string
@@ -44,6 +49,11 @@ type NodeGroupProperties struct {
 	Subnet       []string
 	InstanceType string
 	KeyPairName  string
+
+	// optional: specify container runtime
+	ContainerRuntime string
+
+	NodeImageId string
 }
 
 type ClusterVPCConfig struct {
@@ -95,6 +105,11 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 		kubeletExtraArgs += fmt.Sprintf(" --max-pods=%d", maxPods)
 	}
 
+	containerRuntime := properties.ContainerRuntime
+	if containerRuntime != "" {
+		bootstrapArgs += fmt.Sprintf(" --container-runtime %s", containerRuntime)
+	}
+
 	asgSizeString := strconv.Itoa(properties.AsgSize)
 
 	createNgStackParams := []*cloudformation.Parameter{
@@ -142,6 +157,17 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 			ParameterKey:   aws.String("KeyName"),
 			ParameterValue: aws.String(properties.KeyPairName),
 		},
+		{
+			ParameterKey:   aws.String("DisableIMDSv1"),
+			ParameterValue: aws.String("true"),
+		},
+	}
+
+	if properties.NodeImageId != "" {
+		createNgStackParams = append(createNgStackParams, &cloudformation.Parameter{
+			ParameterKey:   aws.String("NodeImageId"),
+			ParameterValue: aws.String(properties.NodeImageId),
+		})
 	}
 
 	describeStackOutput, err := f.CloudServices.CloudFormation().

@@ -27,6 +27,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -139,7 +141,6 @@ type NetworkAPIs interface {
 	GetRuleList() ([]netlink.Rule, error)
 	GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error)
 	UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) error
-	DeleteRuleListBySrc(src net.IPNet) error
 	GetLinkByMac(mac string, retryInterval time.Duration) (netlink.Link, error)
 }
 
@@ -151,6 +152,7 @@ type linuxNetwork struct {
 	shouldConfigureRpFilter bool
 	mtu                     int
 	vethPrefix              string
+	podSGEnforcingMode      sgpp.EnforcingMode
 
 	netLink     netlinkwrapper.NetLink
 	ns          nswrapper.NS
@@ -191,6 +193,7 @@ func New() NetworkAPIs {
 		mainENIMark:             getConnmark(),
 		mtu:                     GetEthernetMTU(""),
 		vethPrefix:              getVethPrefixName(),
+		podSGEnforcingMode:      sgpp.LoadEnforcingModeFromEnv(),
 
 		netLink: netlinkwrapper.NewNetLink(),
 		ns:      nswrapper.NewNS(),
@@ -243,8 +246,23 @@ func (n *linuxNetwork) setupRuleToBlockNodeLocalV4Access() error {
 		return errors.Wrap(err, "failed to create iptables")
 	}
 
-	if err := ipt.Insert("filter", "FORWARD", 1, "-d", "169.254.172.0/22", "-m", "conntrack",
-		"--ctstate", "NEW", "-m", "comment", "--comment", "Block Node Local Pod access via IPv4", "-j", "REJECT"); err != nil {
+	v4DenyRule := iptablesRule{
+		name:  "Block Node Local Pod access via IPv4",
+		table: "filter",
+		chain: "FORWARD",
+		rule: []string{
+			"-d", "169.254.172.0/22", "-m", "conntrack",
+			"--ctstate", "NEW", "-m", "comment", "--comment", "Block Node Local Pod access via IPv4", "-j", "REJECT",
+		},
+	}
+
+	if exists, err := ipt.Exists(v4DenyRule.table, v4DenyRule.chain, v4DenyRule.rule...); exists && err == nil {
+		log.Info("Rule to block Node Local Pod access via IPv4 is already present. Moving on.. ")
+		return nil
+	}
+
+	//Let's add the rule. Rule is either missing (or) we're not able to validate it's presence.
+	if err := ipt.Insert(v4DenyRule.table, v4DenyRule.chain, 1, v4DenyRule.rule...); err != nil {
 		return fmt.Errorf("failed adding v4 drop route: %v", err)
 	}
 	return nil
@@ -334,7 +352,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, 
 	// or the rp_filter check will fail.
 	// Note: Per Pod Security Group is not supported for V6 yet. So, cordoning off the PPSG rule (for now)
 	// with v4 specific check.
-	if v4Enabled && enablePodENI {
+	if v4Enabled && enablePodENI && n.podSGEnforcingMode == sgpp.EnforcingModeStrict {
 		localRule := n.netLink.NewRule()
 		localRule.Table = localRouteTable
 		localRule.Priority = localRulePriority
@@ -1049,38 +1067,6 @@ func (n *linuxNetwork) GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) 
 		}
 	}
 	return srcRuleList, nil
-}
-
-// DeleteRuleListBySrc deletes IP rules that have a matching source IP
-func (n *linuxNetwork) DeleteRuleListBySrc(src net.IPNet) error {
-	log.Infof("Delete Rule List By Src [%v]", src)
-
-	ruleList, err := n.GetRuleList()
-	if err != nil {
-		log.Errorf("DeleteRuleListBySrc: failed to get rule list %v", err)
-		return err
-	}
-
-	srcRuleList, err := n.GetRuleListBySrc(ruleList, src)
-	if err != nil {
-		log.Errorf("DeleteRuleListBySrc: failed to retrieve rule list %v", err)
-		return err
-	}
-
-	log.Infof("Remove current list [%v]", srcRuleList)
-	for _, rule := range srcRuleList {
-		if err := n.netLink.RuleDel(&rule); err != nil && !containsNoSuchRule(err) {
-			log.Errorf("Failed to cleanup old IP rule: %v", err)
-			return errors.Wrapf(err, "DeleteRuleListBySrc: failed to delete old rule")
-		}
-
-		var toDst string
-		if rule.Dst != nil {
-			toDst = rule.Dst.String()
-		}
-		log.Debugf("DeleteRuleListBySrc: Successfully removed current rule [%v] to %s", rule, toDst)
-	}
-	return nil
 }
 
 // UpdateRuleListBySrc modify IP rules that have a matching source IP

@@ -168,6 +168,10 @@ const (
 	// Present and set to the empty string, which we use to mean "CNI DEL had occurred; networking has been removed from this pod"
 	// The empty string one helps close a trace at pod shutdown where it looks like the pod still has its IP when the IP has been released
 	envAnnotatePodIP = "ANNOTATE_POD_IP"
+
+	// aws error codes for insufficient IP address scenario
+	INSUFFICIENT_CIDR_BLOCKS    = "InsufficientCidrBlocks"
+	INSUFFICIENT_FREE_IP_SUBNET = "InsufficientFreeAddressesInSubnet"
 )
 
 var log = logger.Get()
@@ -344,11 +348,14 @@ func prometheusRegister() {
 	}
 }
 
-// containsInsufficientCidrBlocksError returns whether exceeds ENI's IP address limit
-func containsInsufficientCidrBlocksError(err error) bool {
+// containsInsufficientCIDRsOrSubnetIPs returns whether a CIDR cannot be carved in the subnet or subnet is running out of IP addresses
+func containsInsufficientCIDRsOrSubnetIPs(err error) bool {
 	var awsErr awserr.Error
+	// IP exhaustion can be due to Insufficient Cidr blocks or Insufficient Free Address in a Subnet
+	// In these 2 cases we will back off for 2 minutes before retrying
 	if errors.As(err, &awsErr) {
-		return awsErr.Code() == "InsufficientCidrBlocks"
+		log.Debugf("Insufficient IP Addresses due to: %v\n", awsErr.Code())
+		return awsErr.Code() == INSUFFICIENT_CIDR_BLOCKS || awsErr.Code() == INSUFFICIENT_FREE_IP_SUBNET
 	}
 	return false
 }
@@ -418,7 +425,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	mac := c.awsClient.GetPrimaryENImac()
 
 	// retrieve security groups
-	if c.enableIPv4 || !c.disableENIProvisioning {
+	if c.enableIPv4 && !c.disableENIProvisioning {
 		err = c.awsClient.RefreshSGIDs(mac)
 		if err != nil {
 			return nil, err
@@ -460,8 +467,9 @@ func (c *IPAMContext) nodeInit() error {
 
 	metadataResult, err := c.awsClient.DescribeAllENIs()
 	if err != nil {
-		return errors.New("ipamd init: failed to retrieve attached ENIs info")
+		return errors.Wrap(err, "ipamd init: failed to retrieve attached ENIs info")
 	}
+
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
 	c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
 	c.setUnmanagedENIs(metadataResult.TagMap)
@@ -575,7 +583,7 @@ func (c *IPAMContext) nodeInit() error {
 		if err == nil && increasedPool {
 			c.updateLastNodeIPPoolAction()
 		} else if err != nil {
-			if containsInsufficientCidrBlocksError(err) {
+			if containsInsufficientCIDRsOrSubnetIPs(err) {
 				log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
 				c.lastInsufficientCidrError = time.Now()
 				return nil
@@ -688,7 +696,7 @@ func (c *IPAMContext) decreaseDatastorePool(interval time.Duration) {
 
 // tryFreeENI always tries to free one ENI
 func (c *IPAMContext) tryFreeENI() {
-	if c.isTerminating() {
+	if c.isTerminating() || c.isNodeNonSchedulable() {
 		log.Debug("AWS CNI is terminating, not detaching any ENIs")
 		return
 	}
@@ -777,7 +785,7 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 		}
 	}
 
-	if c.isTerminating() {
+	if c.isTerminating() || c.isNodeNonSchedulable() {
 		log.Debug("AWS CNI is terminating, will not try to attach any new IPs or ENIs right now")
 		return
 	}
@@ -790,7 +798,7 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 	increasedPool, err := c.tryAssignCidrs()
 	if err != nil {
 		log.Errorf(err.Error())
-		if containsInsufficientCidrBlocksError(err) {
+		if containsInsufficientCIDRsOrSubnetIPs(err) {
 			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
 			c.lastInsufficientCidrError = time.Now()
 			return
@@ -861,7 +869,7 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 		log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", resourcesToAllocate, err)
 		// Continue to process the allocated IP addresses
 		ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-		if containsInsufficientCidrBlocksError(err) {
+		if containsInsufficientCIDRsOrSubnetIPs(err) {
 			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
 			c.lastInsufficientCidrError = time.Now()
 			return err
@@ -936,7 +944,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 			err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 			if err != nil {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err: %v", eni.ID, err))
+				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
 			}
 		}
 		// This call to EC2 is needed to verify which IPs got attached to this ENI.
@@ -1807,6 +1815,34 @@ func (c *IPAMContext) isTerminating() bool {
 	return atomic.LoadInt32(&c.terminating) > 0
 }
 
+func (c *IPAMContext) isNodeNonSchedulable() bool {
+	ctx := context.TODO()
+
+	request := types.NamespacedName{
+		Name: c.myNodeName,
+	}
+
+	node := &corev1.Node{}
+	// Find my node
+	err := c.cachedK8SClient.Get(ctx, request, node)
+	if err != nil {
+		log.Errorf("Failed to get node while determining schedulability: %v", err)
+		return false
+	}
+	log.Debugf("Node found %q - no of taints - %d", node.Name, len(node.Spec.Taints))
+	taintToMatch := &corev1.Taint{
+		Key:    "node.kubernetes.io/unschedulable",
+		Effect: corev1.TaintEffectNoSchedule,
+	}
+	for _, taint := range node.Spec.Taints {
+		if taint.MatchTaint(taintToMatch) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
 func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
@@ -1852,41 +1888,45 @@ func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
 
 // SetNodeLabel sets or deletes a node label
 func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error {
-	var node corev1.Node
-	// Find my node
-	err := c.cachedK8SClient.Get(ctx, types.NamespacedName{Name: c.myNodeName}, &node)
-	log.Debugf("Node found %q - labels - %q", node.Name, len(node.Labels))
-
-	if err != nil {
-		log.Errorf("Failed to get node: %v", err)
-		return err
+	request := types.NamespacedName{
+		Name: c.myNodeName,
 	}
 
-	if labelValue, ok := node.Labels[key]; ok && labelValue == value {
-		log.Debugf("Node label %q is already %q", key, labelValue)
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		node := &corev1.Node{}
+		// Find my node
+		err := c.cachedK8SClient.Get(ctx, request, node)
+		if err != nil {
+			log.Errorf("Failed to get node: %v", err)
+			return err
+		}
+		log.Debugf("Node found %q - no of labels - %d", node.Name, len(node.Labels))
+
+		if labelValue, ok := node.Labels[key]; ok && labelValue == value {
+			log.Debugf("Node label %q is already %q", key, labelValue)
+			return nil
+		}
+
+		// Make deep copy for modification
+		updateNode := node.DeepCopy()
+
+		// Set node label
+		if value != "" {
+			updateNode.Labels[key] = value
+		} else {
+			// Empty value, delete the label
+			log.Debugf("Deleting label %q", key)
+			delete(updateNode.Labels, key)
+		}
+
+		if err = c.cachedK8SClient.Update(ctx, updateNode); err != nil {
+			log.Errorf("Failed to patch node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
+			return err
+		}
+		log.Debugf("Updated node %s with label %q: %q", c.myNodeName, key, value)
 		return nil
-	}
-
-	// Make deep copy for modification
-	updateNode := node.DeepCopy()
-
-	// Set node label
-	if value != "" {
-		updateNode.Labels[key] = value
-	} else {
-		// Empty value, delete the label
-		log.Debugf("Deleting label %q", key)
-		delete(updateNode.Labels, key)
-	}
-
-	// Update node status to advertise the resource.
-	err = c.cachedK8SClient.Update(ctx, updateNode)
-	if err != nil {
-		log.Errorf("Failed to update node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
-	}
-	log.Debugf("Updated node %s with label %q: %q", c.myNodeName, key, value)
-
-	return nil
+	})
+	return err
 }
 
 // GetPod returns the pod matching the name and namespace
@@ -1906,17 +1946,20 @@ func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
 }
 
 // AnnotatePod annotates the pod with the provided key and value
-func (c *IPAMContext) AnnotatePod(podNamespace, podName, key, val string) error {
+func (c *IPAMContext) AnnotatePod(podName, podNamespace, key, val string) error {
 	ctx := context.TODO()
-	var pod *corev1.Pod
 	var err error
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		if pod, err = c.GetPod(podNamespace, podName); err != nil {
+		pod := &corev1.Pod{}
+		if pod, err = c.GetPod(podName, podNamespace); err != nil {
 			return err
 		}
 
 		newPod := pod.DeepCopy()
+		if newPod.Annotations == nil {
+			newPod.Annotations = make(map[string]string)
+		}
 		newPod.Annotations[key] = val
 		if err = c.rawK8SClient.Patch(ctx, newPod, client.MergeFrom(pod)); err != nil {
 			log.Errorf("Failed to annotate %s the pod with %s, error %v", key, val, err)
@@ -2159,9 +2202,6 @@ func (c *IPAMContext) initENIAndIPLimits() (err error) {
 }
 
 func (c *IPAMContext) isConfigValid() bool {
-	//Get Instance type
-	hypervisorType := c.awsClient.GetInstanceHypervisorFamily()
-
 	//Validate that only one among v4 and v6 is enabled.
 	if c.enableIPv4 && c.enableIPv6 {
 		log.Errorf("IPv4 and IPv6 are both enabled. VPC CNI currently doesn't support dual stack mode")
@@ -2179,7 +2219,7 @@ func (c *IPAMContext) isConfigValid() bool {
 	}
 
 	//Validate Prefix Delegation against v4 and v6 modes.
-	if hypervisorType != "nitro" && c.enablePrefixDelegation {
+	if c.enablePrefixDelegation && !c.awsClient.IsPrefixDelegationSupported() {
 		if c.enableIPv6 {
 			log.Errorf("Prefix Delegation is not supported on non-nitro instance %s. IPv6 is only supported in Prefix delegation Mode. ", c.awsClient.GetInstanceType())
 			return false

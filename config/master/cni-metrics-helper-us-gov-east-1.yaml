@@ -8,7 +8,7 @@ metadata:
   labels:
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
-    app.kubernetes.io/version: "v1.10.1"
+    app.kubernetes.io/version: "v1.11.2"
 ---
 # Source: cni-metrics-helper/templates/clusterrole.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -18,37 +18,9 @@ metadata:
 rules:
   - apiGroups: [""]
     resources:
-      - nodes
       - pods
       - pods/proxy
-      - services
-      - resourcequotas
-      - replicationcontrollers
-      - limitranges
-      - persistentvolumeclaims
-      - persistentvolumes
-      - namespaces
-      - endpoints
-    verbs: ["list", "watch", "get"]
-  - apiGroups: ["extensions"]
-    resources:
-      - daemonsets
-      - deployments
-      - replicasets
-    verbs: ["list", "watch"]
-  - apiGroups: ["apps"]
-    resources:
-      - statefulsets
-    verbs: ["list", "watch"]
-  - apiGroups: ["batch"]
-    resources:
-      - cronjobs
-      - jobs
-    verbs: ["list", "watch"]
-  - apiGroups: ["autoscaling"]
-    resources:
-      - horizontalpodautoscalers
-    verbs: ["list", "watch"]
+    verbs: ["get", "watch", "list"]
 ---
 # Source: cni-metrics-helper/templates/clusterrolebinding.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -58,7 +30,7 @@ metadata:
   labels:
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
-    app.kubernetes.io/version: "v1.10.1"
+    app.kubernetes.io/version: "v1.11.2"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -87,8 +59,10 @@ spec:
     spec:
       containers:
       - env:
+        - name: AWS_CLUSTER_ID
+          value: ""
         - name: USE_CLOUDWATCH
           value: "true"
         name: cni-metrics-helper
-        image: "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/cni-metrics-helper:v1.10.1"
+        image: "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/cni-metrics-helper:v1.11.2"
       serviceAccountName: cni-metrics-helper
