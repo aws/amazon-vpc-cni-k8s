@@ -942,7 +942,8 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
 			}
 		}
-		eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni.ID, resourcesToAllocate)
+		totalNumberOfAllocatedIPs := currentNumberOfAllocatedIPs + resourcesToAllocate
+		eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni.ID, totalNumberOfAllocatedIPs)
 		if err != nil {
 			ipamdErrInc("increaseIPPoolGetENIaddressesFailed")
 			return true, errors.Wrap(err, "failed to get ENI IP addresses during IP allocation")
@@ -1011,7 +1012,8 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err))
 			}
 		}
-		eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni.ID, resourcesToAllocate)
+		totalNumberOfAllocatedPrefixes := currentNumberOfAllocatedPrefixes + resourcesToAllocate
+		eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni.ID, totalNumberOfAllocatedPrefixes)
 		if err != nil {
 			ipamdErrInc("increaseIPPoolGetENIprefixedFailed")
 			return true, errors.Wrap(err, "failed to get ENI Prefix addresses during IPv4 Prefix allocation")
