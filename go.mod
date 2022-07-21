@@ -16,7 +16,7 @@ require (
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.10.0
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.6.1
+	github.com/stretchr/testify v1.8.0
 	github.com/vishvananda/netlink v1.1.1-0.20201029203352-d40f9887b852
 	go.uber.org/zap v1.15.0
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd
@@ -75,7 +75,7 @@ require (
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.3.0 // indirect
-	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiextensions-apiserver v0.20.1 // indirect
 	k8s.io/component-base v0.20.2 // indirect
 	k8s.io/klog/v2 v2.4.0 // indirect
@@ -84,3 +84,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.0.2 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
+
+replace gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 => gopkg.in/yaml.v3 v3.0.1
