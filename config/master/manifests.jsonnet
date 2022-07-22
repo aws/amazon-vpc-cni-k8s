@@ -155,10 +155,10 @@ local awsnode = {
               name: "aws-node",
               readinessProbe: {
                 exec: {
-                  command: ["/app/grpc-health-probe", "-addr=:50051", "-connect-timeout=2s", "-rpc-timeout=2s"],
+                  command: ["/app/grpc-health-probe", "-addr=:50051", "-connect-timeout=5s", "-rpc-timeout=5s"],
                 },
                 initialDelaySeconds: 1,
-                timeoutSeconds: 5,
+                timeoutSeconds: 10,
               },
               livenessProbe: self.readinessProbe + {
                 initialDelaySeconds: 60,
@@ -196,7 +196,7 @@ local awsnode = {
                 for kv in objectItems(self.env_)
               ],
               resources: {
-                requests: {cpu: "10m"},
+                requests: {cpu: "25m"},
               },
               securityContext: {
                 capabilities: {add: ["NET_ADMIN"]},
