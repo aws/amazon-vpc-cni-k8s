@@ -116,7 +116,7 @@ readinessProbeTimeoutSeconds: 10
 
 resources:
   requests:
-    cpu: 10m
+    cpu: 25m
 
 updateStrategy:
   type: RollingUpdate
