@@ -38,6 +38,26 @@ ginkgo -v --failOnPending -- \
 ```
 
 ### cni-metrics-helper
+
+> #### Prerequisites: 
+>
+> This test expects CNIMetricsHelperPolicy to be present in the test account. Create the policy with below permissions:
+
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "cloudwatch:PutMetricData"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
 The CNI Metrics Helper Integration test uses helm to install the cni-metrics-helper. The helm charts are present in local test directory and if needed can be published to a repository.
 
 In order to test a custom image you need pass the following tags along with the tags discussed above.

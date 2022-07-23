@@ -28,18 +28,6 @@ import (
 
 var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 
-	JustBeforeEach(func() {
-		By("creating test namespace")
-		f.K8sResourceManagers.NamespaceManager().
-			CreateNamespace(utils.DefaultTestNamespace)
-	})
-
-	JustAfterEach(func() {
-		By("deleting test namespace")
-		f.K8sResourceManagers.NamespaceManager().
-			DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
-	})
-
 	Context("when a metric is updated", func() {
 		It("the updated metric is published to CW", func() {
 
