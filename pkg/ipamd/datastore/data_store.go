@@ -1219,10 +1219,7 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 		return nil, "", 0, err
 	}
 	addr.UnassignedTime = time.Now()
-	if ds.isPDEnabled && !availableCidr.IsPrefix {
-		ds.log.Infof("Prefix delegation is enabled and the IP is from secondary pool hence no need to update prefix pool")
-		ds.total--
-	}
+
 	//Update prometheus for ips per cidr
 	ipsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
 	ds.log.Infof("UnassignPodIPAddress: sandbox %s's ipAddr %s, DeviceNumber %d",
