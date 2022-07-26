@@ -14,13 +14,11 @@
 package metrics_helper
 
 import (
-	"encoding/json"
 	"flag"
 	"strings"
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/services"
 	k8sUtil "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
@@ -72,28 +70,11 @@ func TestCNIMetricsHelper(t *testing.T) {
 var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
 
-	// Create a new policy with PutMetric Permission
-	policy := services.PolicyDocument{
-		Version: "2012-10-17",
-		Statement: []services.StatementEntry{
-			{
-				Effect:   "Allow",
-				Action:   []string{"cloudwatch:PutMetricData"},
-				Resource: "*",
-			},
-		},
-	}
+	By("creating test namespace")
+	f.K8sResourceManagers.NamespaceManager().
+		CreateNamespace(utils.DefaultTestNamespace)
 
-	b, err := json.Marshal(policy)
-	Expect(err).ToNot(HaveOccurred())
-
-	By("creating the CNIMetricsHelperPolicy policy")
-	createPolicyOutput, err := f.CloudServices.IAM().
-		CreatePolicy("CNIMetricsHelperPolicy", string(b))
-	Expect(err).ToNot(HaveOccurred())
-	policyARN = *createPolicyOutput.Policy.Arn
-
-	By("getting the node instance profile")
+	By("getting the node list")
 	nodeList, err := f.K8sResourceManagers.NodeManager().GetAllNodes()
 	Expect(err).ToNot(HaveOccurred())
 	Expect(len(nodeList.Items)).To(BeNumerically(">", 0))
@@ -133,9 +114,21 @@ var _ = BeforeSuite(func() {
 	instanceProfileOutput, err := f.CloudServices.IAM().GetInstanceProfile(instanceProfileRoleName)
 	Expect(err).ToNot(HaveOccurred())
 
-	By("attaching policy to the node IAM role")
 	ngRoleName = *instanceProfileOutput.InstanceProfile.Roles[0].RoleName
-	By("attaching the node instance role")
+	By("attaching CNIMetricsHelperPolicy to the node IAM role")
+
+	// We should ideally use the PathPrefix argument to list the policy, but this is returning an empty list. So workaround by listing local policies & filter
+	// SO issue: https://stackoverflow.com/questions/66287626/aws-cli-list-policies-to-find-a-policy-with-a-specific-name
+	policyList, err := f.CloudServices.IAM().ListPolicies("Local")
+	Expect(err).ToNot((HaveOccurred()))
+
+	for _, item := range policyList.Policies {
+		if strings.Contains(*item.PolicyName, "CNIMetricsHelperPolicy") {
+			policyARN = *item.Arn
+			break
+		}
+	}
+
 	err = f.CloudServices.IAM().AttachRolePolicy(policyARN, ngRoleName)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -156,11 +149,11 @@ var _ = AfterSuite(func() {
 	err = f.CloudServices.IAM().DetachRolePolicy(policyARN, ngRoleName)
 	Expect(err).ToNot(HaveOccurred())
 
-	By("deleting the CNIMetricsHelperPolicy policy")
-	err = f.CloudServices.IAM().DeletePolicy(policyARN)
-	Expect(err).ToNot(HaveOccurred())
-
 	By("uninstalling cni-metrics-helper using helm")
 	err := f.InstallationManager.UnInstallCNIMetricsHelper()
 	Expect(err).ToNot(HaveOccurred())
+
+	By("deleting test namespace")
+	f.K8sResourceManagers.NamespaceManager().
+		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 })

@@ -39,9 +39,6 @@ var _ = Describe("test tags are created on Secondary ENI", func() {
 	// sets the desired environment variables and gets the list of new ENIs created after setting
 	// the environment variables
 	JustBeforeEach(func() {
-		By("creating test namespace")
-		f.K8sResourceManagers.NamespaceManager().
-			CreateNamespace(utils.DefaultTestNamespace)
 
 		// To re-initialize for each test case
 		newENIs = []string{}
@@ -84,9 +81,6 @@ var _ = Describe("test tags are created on Secondary ENI", func() {
 	})
 
 	JustAfterEach(func() {
-		By("deleting test namespace")
-		f.K8sResourceManagers.NamespaceManager().
-			DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
 		envVarToRemove := map[string]struct{}{}
 		for key, _ := range environmentVariables {
