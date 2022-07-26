@@ -41,7 +41,7 @@ ginkgo -v --failOnPending -- \
 
 > #### Prerequisites: 
 >
-> This test expects CNIMetricsHelperPolicy to be present in the test account. Create the policy with below permissions:
+> This test expects CNIMetricsHelperPolicy to be present in the test account. Create the policy with below permissions in the test account:
 
 ```
 {
