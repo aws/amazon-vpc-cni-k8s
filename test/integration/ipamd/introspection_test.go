@@ -34,9 +34,6 @@ var _ = Describe("test Environment Variables for IPAMD Introspection ", func() {
 	var curlJob *v1.Job
 
 	JustBeforeEach(func() {
-		By("creating test namespace")
-		f.K8sResourceManagers.NamespaceManager().
-			CreateNamespace(utils.DefaultTestNamespace)
 
 		// Initially the host networking job pod should succeed
 		curlContainer = manifest.NewCurlContainer().
@@ -65,12 +62,6 @@ var _ = Describe("test Environment Variables for IPAMD Introspection ", func() {
 		err = f.K8sResourceManagers.JobManager().
 			DeleteAndWaitTillJobIsDeleted(curlJob)
 		Expect(err).ToNot(HaveOccurred())
-	})
-
-	JustAfterEach(func() {
-		By("deleting test namespace")
-		f.K8sResourceManagers.NamespaceManager().
-			DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 	})
 
 	Context("when disabling introspection by setting DISABLE_INTROSPECTION to true", func() {
