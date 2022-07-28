@@ -52,7 +52,7 @@ const (
 // Parse optional flags for setting the cni metrics helper image
 func init() {
 	flag.StringVar(&imageRepository, "cni-metrics-helper-image-repo", "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper", "CNI Metrics Helper Image Repository")
-	flag.StringVar(&imageTag, "cni-metrics-helper-image-tag", "v1.7.10", "CNI Metrics Helper Image Tag")
+	flag.StringVar(&imageTag, "cni-metrics-helper-image-tag", "v1.11.2", "CNI Metrics Helper Image Tag")
 
 	// Order in which we try fetch the keys and use it as CLUSTER_ID dimension
 	clusterIDKeys = []string{
