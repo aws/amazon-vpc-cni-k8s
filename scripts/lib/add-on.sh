@@ -4,7 +4,7 @@
 
 function load_addon_details() {
   echo "loading $VPC_CNI_ADDON_NAME addon details"
-  DESCRIBE_ADDON_VERSIONS=$(aws eks describe-addon-versions --addon-name $VPC_CNI_ADDON_NAME --kubernetes-version "$K8S_VERSION")
+  DESCRIBE_ADDON_VERSIONS=$(aws eks describe-addon-versions $ENDPOINT_FLAG --addon-name $VPC_CNI_ADDON_NAME --kubernetes-version "$K8S_VERSION")
 
   LATEST_ADDON_VERSION=$(echo "$DESCRIBE_ADDON_VERSIONS" | jq '.addons[0].addonVersions[0].addonVersion' -r)
   DEFAULT_ADDON_VERSION=$(echo "$DESCRIBE_ADDON_VERSIONS" | jq -r '.addons[].addonVersions[] | select(.compatibilities[0].defaultVersion == true) | .addonVersion')
