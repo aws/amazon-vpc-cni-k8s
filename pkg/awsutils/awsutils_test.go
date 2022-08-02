@@ -581,7 +581,7 @@ func TestAllocIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, nil)
 
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
-	err := ins.AllocIPAddresses(eniID, 5)
+	_, err := ins.AllocIPAddresses(eniID, 5)
 	assert.NoError(t, err)
 
 	// when required IP numbers(50) is higher than ENI's limit(49)
@@ -597,11 +597,11 @@ func TestAllocIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(&output, nil)
 
 	ins = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
-	err = ins.AllocIPAddresses(eniID, 50)
+	_, err = ins.AllocIPAddresses(eniID, 50)
 	assert.NoError(t, err)
 
 	// Adding 0 should do nothing
-	err = ins.AllocIPAddresses(eniID, 0)
+	_, err = ins.AllocIPAddresses(eniID, 0)
 	assert.NoError(t, err)
 }
 
@@ -618,7 +618,7 @@ func TestAllocIPAddressesAlreadyFull(t *testing.T) {
 	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, retErr)
 	// If EC2 says that all IPs are already attached, we do nothing
-	err := ins.AllocIPAddresses(eniID, 14)
+	_, err := ins.AllocIPAddresses(eniID, 14)
 	assert.NoError(t, err)
 }
 
@@ -634,11 +634,11 @@ func TestAllocPrefixAddresses(t *testing.T) {
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, nil)
 
 	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
-	err := ins.AllocIPAddresses(eniID, 1)
+	_, err := ins.AllocIPAddresses(eniID, 1)
 	assert.NoError(t, err)
 
 	// Adding 0 should do nothing
-	err = ins.AllocIPAddresses(eniID, 0)
+	_, err = ins.AllocIPAddresses(eniID, 0)
 	assert.NoError(t, err)
 }
 
@@ -655,7 +655,7 @@ func TestAllocPrefixesAlreadyFull(t *testing.T) {
 	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, retErr)
 	// If EC2 says that all IPs are already attached, we do nothing
-	err := ins.AllocIPAddresses(eniID, 1)
+	_, err := ins.AllocIPAddresses(eniID, 1)
 	assert.NoError(t, err)
 }
 
