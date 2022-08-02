@@ -7,7 +7,7 @@ replicaCount: 1
 image:
   repository: 602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper
   pullPolicy: Always
-  tag: "v1.7.10"
+  tag: "v1.11.2"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -56,7 +56,8 @@ autoscaling:
   targetCPUUtilizationPercentage: 80
   # targetMemoryUtilizationPercentage: 80
 
-nodeSelector: {}
+nodeSelector:
+  kubernetes.io/os: "linux"
 
 tolerations: []
 
