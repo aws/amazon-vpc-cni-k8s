@@ -214,7 +214,7 @@ spec:
                   fieldPath: spec.nodeName
           resources:
             requests:
-              cpu: 10m
+              cpu: 25m
           securityContext:
             capabilities:
               add:

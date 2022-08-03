@@ -28,7 +28,6 @@ import (
 
 const InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
 
-var f *framework.Framework
 var primaryNode v1.Node
 
 func TestCNIv6PodNetworking(t *testing.T) {

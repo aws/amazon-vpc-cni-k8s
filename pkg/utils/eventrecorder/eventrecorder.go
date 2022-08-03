@@ -64,7 +64,6 @@ func InitEventRecorder(k8sClient client.Client) error {
 	})
 	recorder.k8sClient = k8sClient
 	eventRecorder = recorder
-	log.Infof("eventrecoder set:", eventRecorder.recorder)
 	return nil
 }
 

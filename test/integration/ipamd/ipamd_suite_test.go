@@ -15,21 +15,14 @@ package ipamd
 
 import (
 	"testing"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	v1 "k8s.io/api/core/v1"
 )
-
-var err error
-var f *framework.Framework
-var primaryNode v1.Node
-var primaryInstance *ec2.Instance
-var numOfNodes int
-var addonDeleteError error
 
 func TestIPAMD(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -38,6 +31,10 @@ func TestIPAMD(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
+
+	By("creating test namespace")
+	f.K8sResourceManagers.NamespaceManager().
+		CreateNamespace(utils.DefaultTestNamespace)
 
 	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey,
 		f.Options.NgNameLabelVal)
@@ -52,4 +49,17 @@ var _ = BeforeSuite(func() {
 	instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
 	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(instanceID)
 	Expect(err).ToNot(HaveOccurred())
+
+	// Remove WARM_ENI_TARGET, WARM_IP_TARGET, MINIMUM_IP_TARGET and WARM_PREFIX_TARGET before running IPAMD tests
+	k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
+		"aws-node", map[string]struct{}{"WARM_ENI_TARGET": {}, "WARM_IP_TARGET": {}, "MINIMUM_IP_TARGET": {}, "WARM_PREFIX_TARGET": {}})
+
+	// Allow reconciler to free up ENIs if any
+	time.Sleep(utils.PollIntervalLong)
+})
+
+var _ = AfterSuite(func() {
+	By("deleting test namespace")
+	f.K8sResourceManagers.NamespaceManager().
+		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 })
