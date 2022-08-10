@@ -36,4 +36,4 @@ rules:
   - apiGroups: ["", "events.k8s.io"]
     resources:
       - events
-    verbs: ["create", "patch", "list", "get"]
+    verbs: ["create", "patch", "list"]
