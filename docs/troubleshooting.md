@@ -215,7 +215,7 @@ created by main._main
 {"level":"info","ts":"2022-02-04T22:24:59.030Z","caller":"entrypoint.sh","msg":"Retrying waiting for IPAM-D"}
 ```
 
-cni v1.10.x introduced 2 new env varibales - ENABLE_IPv4 and ENABLE_IPv6. The above error can be caused if you miss adding these env variables to your cni daemonset. So the recommendation is to apply the entire manifest file corresponding to the correct [release](https://github.com/aws/amazon-vpc-cni-k8s/releases) instead of just updating the image value in existing cni daemonset. For instance, to apply the latest v1.10.x, use the below command
+cni v1.10.x introduced 2 new env variables - ENABLE_IPv4 and ENABLE_IPv6. The above error can be caused if you miss adding these env variables to your cni daemonset. So the recommendation is to apply the entire manifest file corresponding to the correct [release](https://github.com/aws/amazon-vpc-cni-k8s/releases) instead of just updating the image value in existing cni daemonset. For instance, to apply the latest v1.10.x, use the below command
 ```
 kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
 ```
