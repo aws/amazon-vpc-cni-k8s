@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.11.3
+
+* Improvement -  [Increase cpu requests limit](https://github.com/aws/amazon-vpc-cni-k8s/pull/2040) (@vikasmb)
+* Bugfix      -  [Re-use logger instance](https://github.com/aws/amazon-vpc-cni-k8s/pull/2031) (@vikasmb)
+* Improvement -  [Add event recorder utils to raise aws-node pod events](https://github.com/aws/amazon-vpc-cni-k8s/pull/1536) (@sushrk)
+* Improvement -  [chart: Add extraVolumes and extraVolumeMounts](https://github.com/aws/amazon-vpc-cni-k8s/pull/1949) (@jkroepke)
+* Bugfix -       [Fix cni panic due to pod.Annotations is a nil map](https://github.com/aws/amazon-vpc-cni-k8s/pull/1947) (@Downager)
+
 ## v1.11.2
 
 * Improvement -  [Updated golang to Go 1.18](https://github.com/aws/amazon-vpc-cni-k8s/pull/1991) (@orsenthil)
