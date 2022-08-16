@@ -17,7 +17,7 @@ fi
 
 if [[ -z "${SKIP_MAKE_TEST_BINARIES}" ]]; then
   echo "making ginkgo test binaries"
-  (cd $SCRIPT_DIR/.. && make build-test-binaries)
+  (cd $SCRIPT_DIR/../test && make build-test-binaries)
 else
   echo "skipping making ginkgo test binaries"
 fi

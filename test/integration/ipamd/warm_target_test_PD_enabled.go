@@ -73,7 +73,6 @@ var _ = Describe("test warm target variables", func() {
 					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))
 				if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
 					assigned++
-					break
 				}
 			}
 

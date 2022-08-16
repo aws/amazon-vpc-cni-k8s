@@ -32,18 +32,6 @@ var _ = Describe("test IPAMD metric environment variable", func() {
 	// Job's output determines if the API is reachable or not
 	var curlJob *v1.Job
 
-	JustBeforeEach(func() {
-		By("creating test namespace")
-		f.K8sResourceManagers.NamespaceManager().
-			CreateNamespace(utils.DefaultTestNamespace)
-	})
-
-	JustAfterEach(func() {
-		By("deleting test namespace")
-		f.K8sResourceManagers.NamespaceManager().
-			DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
-	})
-
 	Context("when metrics is disabled", func() {
 		metricAddr := "127.0.0.1:61678/metrics"
 		It("should not be accessible anymore", func() {
