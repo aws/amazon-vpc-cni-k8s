@@ -99,6 +99,8 @@ MULTI_PLATFORM_BUILD_TARGETS = 	linux/amd64,linux/arm64
 # Default to building an executable using the host's Go toolchain.
 .DEFAULT_GOAL = build-linux
 
+##@ Building
+
 # Build both CNI and metrics helper container images.
 all: docker docker-init docker-metrics   ## Builds Init, CNI and metrics helper container images.
 
@@ -137,6 +139,23 @@ docker-func-test: docker     ## Run the built CNI container image to use in func
 	docker run $(DOCKER_RUN_FLAGS) \
 		"$(IMAGE_NAME)"
 
+multi-arch-cni-build-push:		## Build multi-arch VPC CNI container image.
+	docker buildx build $(DOCKER_BUILD_FLAGS) \
+    		-f scripts/dockerfiles/Dockerfile.release \
+    		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
+    		-t "$(IMAGE_NAME)" \
+    		--push \
+    		.
+
+multi-arch-cni-init-build-push:     ## Build VPC CNI plugin Init container image.
+	docker buildx build $(DOCKER_BUILD_FLAGS) \
+		-f scripts/dockerfiles/Dockerfile.init \
+		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
+		-t "$(INIT_IMAGE_NAME)" \
+		--push \
+		.
+
+##@ Run Unit Tests 
 # Run unit tests
 unit-test: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
 unit-test:    ## Run unit tests
@@ -155,6 +174,7 @@ unit-test-race:     ## Run unit tests with race detection (can only be run nativ
 	go test -v -cover -race -timeout 10s  ./pkg/eniconfig/...
 	go test -v -cover -race -timeout 10s  ./pkg/ipamd/...
 
+##@ Build and Run Unit Tests 
 # Build the unit test driver container image.
 build-docker-test:     ## Build the unit test driver container image.
 	docker build $(DOCKER_BUILD_FLAGS) \
@@ -167,6 +187,8 @@ docker-unit-tests: build-docker-test     ## Run unit tests inside of the testing
 	docker run $(DOCKER_RUN_ARGS) \
 		$(TEST_IMAGE_NAME) \
 		make unit-test
+ 
+##@ Build metrics helper agent 
 
 # Build metrics helper agent.
 build-metrics:     ## Build metrics helper agent.
@@ -179,6 +201,8 @@ docker-metrics:    ## Build metrics helper agent Docker image.
 		-t "$(METRICS_IMAGE_NAME)" \
 		.
 	@echo "Built Docker image \"$(METRICS_IMAGE_NAME)\""
+
+##@ Run metrics helper Unit Tests 
 
 # Run metrics helper unit test suite (must be run natively).
 metrics-unit-test: CGO_ENABLED=1
@@ -195,31 +219,6 @@ docker-metrics-test:     ## Run metrics helper unit test suite in a container.
 		$(GOLANG_IMAGE) \
 		make metrics-unit-test
 
-generate:
-	PATH=$(CURDIR)/scripts:$(PATH) go generate -x ./...
-	$(MAKE) format
-
-# Generate limit file go code
-# Generate eni-max-pods.txt file for EKS AMI
-generate-limits: GOOS=
-generate-limits:    ## Generate limit file go code
-	go run $(VENDOR_OVERRIDE_FLAG) scripts/gen_vpc_ip_limits.go
-
-multi-arch-cni-build-push:		## Build multi-arch VPC CNI container image.
-	docker buildx build $(DOCKER_BUILD_FLAGS) \
-    		-f scripts/dockerfiles/Dockerfile.release \
-    		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
-    		-t "$(IMAGE_NAME)" \
-    		--push \
-    		.
-
-multi-arch-cni-init-build-push:     ## Build VPC CNI plugin Init container image.
-	docker buildx build $(DOCKER_BUILD_FLAGS) \
-		-f scripts/dockerfiles/Dockerfile.init \
-		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
-		-t "$(INIT_IMAGE_NAME)" \
-		--push \
-		.
 # Fetch the CNI plugins
 plugins: FETCH_VERSION=1.1.1
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
@@ -232,6 +231,8 @@ plugins:   ## Fetch the CNI plugins
 	@echo
 	curl -L $(FETCH_URL) | tar -zx $(PLUGIN_BINS)
 
+##@ Debug script 
+
 debug-script: FETCH_URL=https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/log-collector-script/linux/eks-log-collector.sh
 debug-script: VISIT_URL=https://github.com/awslabs/amazon-eks-ami/tree/master/log-collector-script/linux
 debug-script:    ## Fetching debug script from awslabs/amazon-eks-ami
@@ -242,6 +243,8 @@ debug-script:    ## Fetching debug script from awslabs/amazon-eks-ami
 	@echo
 	curl -L $(FETCH_URL) -o ./aws-cni-support.sh
 	chmod +x ./aws-cni-support.sh
+
+##@ Formatting 
 
 # Run all source code checks.
 check: check-format lint vet   ## Run all source code checks.
@@ -289,6 +292,18 @@ check-format: format
 version:
 	@echo ${VERSION}
 
+##@ Generate ENI/IP limits 
+
+generate:
+	PATH=$(CURDIR)/scripts:$(PATH) go generate -x ./...
+	$(MAKE) format
+
+# Generate limit file go code
+# Generate eni-max-pods.txt file for EKS AMI
+generate-limits: GOOS=
+generate-limits:    ## Generate limit file go code
+	go run $(VENDOR_OVERRIDE_FLAG) scripts/gen_vpc_ip_limits.go
+
 ekscharts-sync:
 	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME}
 
@@ -315,6 +330,8 @@ cleanup-ec2-sdk-override:
 	@if [ "$(EC2_SDK_OVERRIDE)" = "y" ] ; then \
 	    ./scripts/ec2_model_override/cleanup.sh ; \
 	fi
+	
+##@ Cleanup
 
 # Clean temporary files and build artifacts from the project.
 clean:    ## Clean temporary files and build artifacts from the project.
@@ -322,6 +339,7 @@ clean:    ## Clean temporary files and build artifacts from the project.
 	@rm -f -- $(PLUGIN_BINS)
 	@rm -f -- coverage.txt
 
-help:           ## Show this help.
-	@grep -F -h "##" $(MAKEFILE_LIST) | grep -F -v grep | sed -e 's/\\$$//' \
-		| awk -F'[:#]' '{print $$1 = sprintf("%-30s", $$1), $$4}'
+##@ Helpers
+
+help:   ## Display this help
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
