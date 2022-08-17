@@ -199,7 +199,7 @@ local awsnode = {
                 requests: {cpu: "25m"},
               },
               securityContext: {
-                capabilities: {add: ["NET_ADMIN"]},
+                capabilities: {add: ["NET_ADMIN", "NET_RAW"]},
               },
               volumeMounts: [
                 {mountPath: "/host/opt/cni/bin", name: "cni-bin-dir"},
