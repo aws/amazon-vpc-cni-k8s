@@ -574,6 +574,17 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 
 	var iptableRules []iptablesRule
 	log.Debugf("Setup Host Network: iptables -t nat -A PREROUTING -i %s+ -m comment --comment \"AWS, outbound connections\" -j AWS-CONNMARK-CHAIN-0", n.vethPrefix)
+	// Force delete legacy rule: the rule was matching on "-m state --state NEW", which is
+	// always true for packets traversing the nat table
+	iptableRules = append(iptableRules, iptablesRule{
+		name:        "connmark rule for non-VPC outbound traffic",
+		shouldExist: false,
+		table:       "nat",
+		chain:       "PREROUTING",
+		rule: []string{
+			"-i", n.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections",
+			"-m", "state", "--state", "NEW", "-j", "AWS-CONNMARK-CHAIN-0",
+		}})
 	iptableRules = append(iptableRules, iptablesRule{
 		name:        "connmark rule for non-VPC outbound traffic",
 		shouldExist: !n.useExternalSNAT,
@@ -700,7 +711,7 @@ func listCurrentIptablesRules(ipt iptablesIface, table, chainPrefix string) ([]i
 			if err != nil {
 				return nil, errors.Wrap(err, fmt.Sprintf("host network setup: failed to parse iptables nat chain %s rule %s", chain, rule))
 			}
-			log.Debugf("host network setup: found potentially stale SNAT rule for chain %s: %v", chain, ruleSpec)
+			log.Debugf("host network setup: found potentially stale rule for chain %s: %v", chain, ruleSpec)
 			toClear = append(toClear, iptablesRule{
 				name:        fmt.Sprintf("[%d] %s", i, chain),
 				shouldExist: false, // To trigger ipt.Delete for stale rules

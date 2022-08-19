@@ -907,6 +907,47 @@ func TestSetupHostNetworkUpdateLocalRule(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestSetupHostNetworkDeleteOldConnmarkRuleForNonVpcOutboundTraffic(t *testing.T) {
+	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{
+		useExternalSNAT:         false,
+		excludeSNATCIDRs:        []string{"10.12.0.0/16", "10.13.0.0/16"},
+		nodePortSupportEnabled:  true,
+		shouldConfigureRpFilter: true,
+		mainENIMark:             defaultConnmark,
+		mtu:                     testMTU,
+		vethPrefix:              eniPrefix,
+
+		netLink: mockNetLink,
+		ns:      mockNS,
+		newIptables: func(iptables.Protocol) (iptablesIface, error) {
+			return mockIptables, nil
+		},
+		procSys: mockProcSys,
+	}
+
+	setupNetLinkMocks(ctrl, mockNetLink)
+
+	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
+
+	// add the "old" rule used in an ealier version of the CNI
+	_ = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-m", "state", "--state", "NEW", "-j", "AWS-CONNMARK-CHAIN-0")
+
+	var vpcCIDRs []string
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	assert.NoError(t, err)
+
+	var exists bool
+	// after setting up the host network, the "old" rule should no longer be present
+	exists, _ = mockIptables.Exists("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-m", "state", "--state", "NEW", "-j", "AWS-CONNMARK-CHAIN-0")
+	assert.False(t, exists, "old rule is still present")
+	// it should have been replaced by the "new" rule
+	exists, _ = mockIptables.Exists("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
+	assert.True(t, exists, "new rule is not present")
+}
+
 func setupNetLinkMocks(ctrl *gomock.Controller, mockNetLink *mock_netlinkwrapper.MockNetLink) {
 	mockPrimaryInterfaceLookup(ctrl, mockNetLink)
 	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
