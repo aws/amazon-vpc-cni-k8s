@@ -14,7 +14,6 @@
 package ipamd
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 
@@ -42,8 +41,6 @@ var _ = Describe("test warm target variables", func() {
 
 		JustBeforeEach(func() {
 			var availPrefixes int
-			podLabelKey := "eks.amazonaws.com/component"
-			podLabelVal := "coredns"
 
 			// Set the WARM IP TARGET
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,
@@ -62,27 +59,13 @@ var _ = Describe("test warm target variables", func() {
 				EC2().DescribeInstance(*primaryInstance.InstanceId)
 			Expect(err).ToNot(HaveOccurred())
 
-			//Query for coredns pods
-			podList, perr := f.K8sResourceManagers.PodManager().
-				GetPodsWithLabelSelector(podLabelKey, podLabelVal)
-			Expect(perr).ToNot(HaveOccurred())
-
-			assigned := 0
-			for _, pod := range podList.Items {
-				By(fmt.Sprintf("verifying in node %s but pod's IP %s address belongs to node name %s",
-					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))
-				if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
-					assigned++
-				}
-			}
-
 			// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
 			for _, networkInterface := range primaryInstance.NetworkInterfaces {
 				availPrefixes += len(networkInterface.Ipv4Prefixes)
 			}
 
 			// Validated avail IP equals the warm IP Size
-			prefixNeededForWarmIPTarget := ceil(assigned+warmIPTarget, 16)
+			prefixNeededForWarmIPTarget := ceil(warmIPTarget, 16)
 			prefixNeededForMinIPTarget := ceil(minIPTarget, 16)
 			Expect(availPrefixes).Should(Equal(Max(prefixNeededForWarmIPTarget, prefixNeededForMinIPTarget)))
 		})
@@ -148,8 +131,6 @@ var _ = Describe("test warm target variables", func() {
 
 		JustBeforeEach(func() {
 			var availPrefixes int
-			podLabelKey := "eks.amazonaws.com/component"
-			podLabelVal := "coredns"
 
 			// Set the WARM IP TARGET
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,
@@ -167,29 +148,13 @@ var _ = Describe("test warm target variables", func() {
 				EC2().DescribeInstance(*primaryInstance.InstanceId)
 			Expect(err).ToNot(HaveOccurred())
 
-			//Query for coredns pods
-			podList, perr := f.K8sResourceManagers.PodManager().
-				GetPodsWithLabelSelector(podLabelKey, podLabelVal)
-			Expect(perr).ToNot(HaveOccurred())
-
-			assigned := 0
-			for _, pod := range podList.Items {
-				By(fmt.Sprintf("verifying in node %s but pod's IP %s address belongs to node name %s",
-					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))
-				if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
-					assigned++
-					break
-				}
-			}
-
 			// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
 			for _, networkInterface := range primaryInstance.NetworkInterfaces {
 				availPrefixes += len(networkInterface.Ipv4Prefixes)
 			}
 
 			// Validated avail IP equals the warm IP Size
-			prefixNeededForAssignedPods := ceil(assigned, 16)
-			Expect(availPrefixes).Should(Equal(prefixNeededForAssignedPods + warmPrefixTarget))
+			Expect(availPrefixes).Should(Equal(warmPrefixTarget))
 		})
 
 		JustAfterEach(func() {
@@ -215,8 +180,6 @@ var _ = Describe("test warm target variables", func() {
 
 		JustBeforeEach(func() {
 			var availPrefixes int
-			podLabelKey := "eks.amazonaws.com/component"
-			podLabelVal := "coredns"
 
 			// Set the WARM IP TARGET
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,
@@ -236,28 +199,13 @@ var _ = Describe("test warm target variables", func() {
 				EC2().DescribeInstance(*primaryInstance.InstanceId)
 			Expect(err).ToNot(HaveOccurred())
 
-			//Query for coredns pods
-			podList, perr := f.K8sResourceManagers.PodManager().
-				GetPodsWithLabelSelector(podLabelKey, podLabelVal)
-			Expect(perr).ToNot(HaveOccurred())
-
-			assigned := 0
-			for _, pod := range podList.Items {
-				By(fmt.Sprintf("verifying in node %s but pod's IP %s address belongs to node name %s",
-					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))
-				if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
-					assigned++
-					break
-				}
-			}
-
 			// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
 			for _, networkInterface := range primaryInstance.NetworkInterfaces {
 				availPrefixes += len(networkInterface.Ipv4Prefixes)
 			}
 
 			// Validated avail IP equals the warm IP Size
-			prefixNeededForWarmIPTarget := ceil(assigned+warmIPTarget, 16)
+			prefixNeededForWarmIPTarget := ceil(warmIPTarget, 16)
 			prefixNeededForMinIPTarget := ceil(minIPTarget, 16)
 			Expect(availPrefixes).Should(Equal(Max(prefixNeededForWarmIPTarget, prefixNeededForMinIPTarget)))
 		})
