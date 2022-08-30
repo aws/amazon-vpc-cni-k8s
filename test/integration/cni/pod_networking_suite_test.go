@@ -28,7 +28,6 @@ import (
 
 const InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
 
-var f *framework.Framework
 var maxIPPerInterface int
 var primaryNode v1.Node
 var secondaryNode v1.Node

@@ -1,4 +1,45 @@
 # Changelog
+
+## v1.11.3
+
+* Improvement -  [Increase cpu requests limit](https://github.com/aws/amazon-vpc-cni-k8s/pull/2040) (@vikasmb)
+* Bugfix      -  [Re-use logger instance](https://github.com/aws/amazon-vpc-cni-k8s/pull/2031) (@vikasmb)
+* Improvement -  [Add event recorder utils to raise aws-node pod events](https://github.com/aws/amazon-vpc-cni-k8s/pull/1536) (@sushrk)
+* Improvement -  [chart: Add extraVolumes and extraVolumeMounts](https://github.com/aws/amazon-vpc-cni-k8s/pull/1949) (@jkroepke)
+* Bugfix -       [Fix cni panic due to pod.Annotations is a nil map](https://github.com/aws/amazon-vpc-cni-k8s/pull/1947) (@Downager)
+
+## v1.11.2
+
+* Improvement -  [Updated golang to Go 1.18](https://github.com/aws/amazon-vpc-cni-k8s/pull/1991) (@orsenthil)
+* Improvement -  [Updated containernetworking/cni version to 0.8.1 to address CVE-2021-20206](https://github.com/aws/amazon-vpc-cni-k8s/pull/1996) (@orsenthil)
+* Improvement -  [Updated CNI Plugins to v1.1.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/1997) (@orsenthil)
+
+# v1.11.1
+
+Was Skipped
+
+## v1.11.0
+
+* Feature - [Support new SGPP standard mode](https://github.com/aws/amazon-vpc-cni-k8s/pull/1907) (@M00nF1sh )
+* Feature - [IPv4 Randomize SNAT support for IPv6 pods](https://github.com/aws/amazon-vpc-cni-k8s/pull/1903) (@achevuru)
+* Feature - [Respect existing ENIConfig label if set on node](https://github.com/aws/amazon-vpc-cni-k8s/pull/1596) (@backjo)
+* Improvement - [Timeout and reconcile when checking API server connectivity](https://github.com/aws/amazon-vpc-cni-k8s/pull/1943)
+(@prateekgogia)
+* Improvement - [Improve startup performance of IPAMD](https://github.com/aws/amazon-vpc-cni-k8s/pull/1855) (@backjo)
+* Improvement - [Record pod metadata and allocationTime in IP allocation state file](https://github.com/aws/amazon-vpc-cni-k8s/pull/1958) (@M00nF1sh )
+* Bug - [Fixes node label error handling](https://github.com/aws/amazon-vpc-cni-k8s/pull/1892) & [revert to use update for node label update](https://github.com/aws/amazon-vpc-cni-k8s/pull/1959) (@jayanthvn, @M00nF1sh )
+       (#1959)
+* Bug - [IPAMD throw an error on configuration validation failure](https://github.com/aws/amazon-vpc-cni-k8s/pull/1698) (@veshij)
+* Cleanup - [refactoring DataStore.GetStats to simplify adding new fields](https://github.com/aws/amazon-vpc-cni-k8s/pull/1704) (@veshij)
+
+## v1.10.3
+
+* Improvement - [Upgrade AWS SDK GO](https://github.com/aws/amazon-vpc-cni-k8s/pull/1944) (@jayanthvn)
+* Improvement - [C7g instances support](https://github.com/aws/amazon-vpc-cni-k8s/pull/1940) (@jayanthvn)
+* Improvement - [Enable Prefix Delegation on Bare metal instances](https://github.com/aws/amazon-vpc-cni-k8s/pull/1937) (@achevuru)
+* Bugfix - [Fix dependabot high sev issue caused by GoGo protobuf](https://github.com/aws/amazon-vpc-cni-k8s/pull/1942) (@jayanthvn)
+* Bugfix - [Fixed empty netns bug](https://github.com/aws/amazon-vpc-cni-k8s/pull/1941 ) (@cgchinmay)
+
 ## v1.10.2
 * Improvement - [Fetch Region and CLUSTER_ID information from cni-metrics-helper env](https://github.com/aws/amazon-vpc-cni-k8s/pull/1715) (@cgchinmay )
 * Improvement - [Add VlanId in the cmdAdd Result struct](https://github.com/aws/amazon-vpc-cni-k8s/pull/1705) (@cgchinmay )

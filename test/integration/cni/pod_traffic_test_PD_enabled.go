@@ -14,22 +14,19 @@
 package cni
 
 import (
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 
 	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 )
+
+var f *framework.Framework
 
 var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 	var (
-		// The Pod labels for client and server in order to retrieve the
-		// client and server Pods belonging to a Deployment/Jobs
-		labelKey                = "app"
-		serverPodLabelVal       = "server-pod"
-		clientPodLabelVal       = "client-pod"
 		serverDeploymentBuilder *manifest.DeploymentBuilder
 		// Value for the Environment variable ENABLE_PREFIX_DELEGATION
 		enableIPv4PrefixDelegation string
@@ -61,22 +58,7 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 		//TODO : Add pod IP validation if IP belongs to prefix or SIP
 		//TODO : remove hardcoding from client/server count
 		It("should have 99+% success rate", func() {
-			trafficTester := agent.TrafficTest{
-				Framework:                      f,
-				TrafficServerDeploymentBuilder: serverDeploymentBuilder,
-				ServerPort:                     2273,
-				ServerProtocol:                 "tcp",
-				ClientCount:                    20,
-				ServerCount:                    20,
-				ServerPodLabelKey:              labelKey,
-				ServerPodLabelVal:              serverPodLabelVal,
-				ClientPodLabelKey:              labelKey,
-				ClientPodLabelVal:              clientPodLabelVal,
-			}
-
-			successRate, err := trafficTester.TestTraffic()
-			Expect(err).ToNot(HaveOccurred())
-			Expect(successRate).Should(BeNumerically(">=", float64(99)))
+			common.ValidateTraffic(f, serverDeploymentBuilder, 99, "tcp")
 		})
 	})
 
@@ -88,22 +70,7 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 		//TODO : Add pod IP validation if IP belongs to prefix or SIP
 		//TODO : remove hardcoding from client/server count
 		It("should have 99+% success rate", func() {
-			trafficTester := agent.TrafficTest{
-				Framework:                      f,
-				TrafficServerDeploymentBuilder: serverDeploymentBuilder,
-				ServerPort:                     2273,
-				ServerProtocol:                 "udp",
-				ClientCount:                    20,
-				ServerCount:                    20,
-				ServerPodLabelKey:              labelKey,
-				ServerPodLabelVal:              serverPodLabelVal,
-				ClientPodLabelKey:              labelKey,
-				ClientPodLabelVal:              clientPodLabelVal,
-			}
-
-			successRate, err := trafficTester.TestTraffic()
-			Expect(err).ToNot(HaveOccurred())
-			Expect(successRate).Should(BeNumerically(">=", float64(99)))
+			common.ValidateTraffic(f, serverDeploymentBuilder, 99, "udp")
 		})
 	})
 })

@@ -138,7 +138,7 @@ type APIs interface {
 	AllocIPAddress(eniID string) error
 
 	// AllocIPAddresses allocates numIPs IP addresses on a ENI
-	AllocIPAddresses(eniID string, numIPs int) error
+	AllocIPAddresses(eniID string, numIPs int) (*ec2.AssignPrivateIpAddressesOutput, error)
 
 	// DeallocIPAddresses deallocates the list of IP addresses from a ENI
 	DeallocIPAddresses(eniID string, ips []string) error
@@ -1439,7 +1439,7 @@ func (cache *EC2InstanceMetadataCache) IsPrefixDelegationSupported() bool {
 }
 
 // AllocIPAddresses allocates numIPs of IP address on an ENI
-func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int) error {
+func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int) (*ec2.AssignPrivateIpAddressesOutput, error) {
 	var needIPs = numIPs
 
 	ipLimit := cache.GetENIIPv4Limit()
@@ -1450,7 +1450,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 
 	// If we don't need any more IPs, exit
 	if needIPs < 1 {
-		return nil
+		return nil, nil
 	}
 
 	log.Infof("Trying to allocate %d IP addresses on ENI %s", needIPs, eniID)
@@ -1479,11 +1479,11 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 		if containsPrivateIPAddressLimitExceededError(err) {
 			log.Debug("AssignPrivateIpAddresses returned PrivateIpAddressLimitExceeded. This can happen if the data store is out of sync." +
 				"Returning without an error here since we will verify the actual state by calling EC2 to see what addresses have already assigned to this ENI.")
-			return nil
+			return nil, nil
 		}
 		log.Errorf("Failed to allocate a private IP/Prefix addresses on ENI %v: %v", eniID, err)
 		awsAPIErrInc("AssignPrivateIpAddresses", err)
-		return err
+		return nil, err
 	}
 	if output != nil {
 		if cache.enablePrefixDelegation {
@@ -1492,7 +1492,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 			log.Infof("Allocated %d private IP addresses", len(output.AssignedPrivateIpAddresses))
 		}
 	}
-	return nil
+	return output, nil
 }
 
 func (cache *EC2InstanceMetadataCache) AllocIPv6Prefixes(eniID string) ([]*string, error) {

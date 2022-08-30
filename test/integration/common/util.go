@@ -1,10 +1,15 @@
 package common
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -14,6 +19,14 @@ import (
 )
 
 type TestType int
+
+var (
+	// The Pod labels for client and server in order to retrieve the
+	// client and server Pods belonging to a Deployment/Jobs
+	labelKey          = "app"
+	serverPodLabelVal = "server-pod"
+	clientPodLabelVal = "client-pod"
+)
 
 const (
 	NetworkingTearDownSucceeds TestType = iota
@@ -146,6 +159,21 @@ func GetPodsOnPrimaryAndSecondaryInterface(node coreV1.Node,
 	return interfaceToPodList
 }
 
+func GetTrafficTestConfig(f *framework.Framework, protocol string, serverDeploymentBuilder *manifest.DeploymentBuilder, clientCount int, serverCount int) agent.TrafficTest {
+	return agent.TrafficTest{
+		Framework:                      f,
+		TrafficServerDeploymentBuilder: serverDeploymentBuilder,
+		ServerPort:                     2273,
+		ServerProtocol:                 protocol,
+		ClientCount:                    clientCount,
+		ServerCount:                    serverCount,
+		ServerPodLabelKey:              labelKey,
+		ServerPodLabelVal:              serverPodLabelVal,
+		ClientPodLabelKey:              labelKey,
+		ClientPodLabelVal:              clientPodLabelVal,
+	}
+}
+
 func IsPrimaryENI(nwInterface *ec2.InstanceNetworkInterface, instanceIPAddr *string) bool {
 	for _, privateIPAddress := range nwInterface.PrivateIpAddresses {
 		if *privateIPAddress.PrivateIpAddress == *instanceIPAddr {
@@ -153,4 +181,22 @@ func IsPrimaryENI(nwInterface *ec2.InstanceNetworkInterface, instanceIPAddr *str
 		}
 	}
 	return false
+}
+
+func ApplyCNIManifest(filepath string) {
+	var stdoutBuf, stderrBuf bytes.Buffer
+	By(fmt.Sprintf("applying manifest: %s", filepath))
+	cmd := exec.Command("kubectl", "apply", "-f", filepath)
+	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
+	err := cmd.Run()
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func ValidateTraffic(f *framework.Framework, serverDeploymentBuilder *manifest.DeploymentBuilder, succesRate float64, protocol string) {
+	trafficTester := GetTrafficTestConfig(f, protocol, serverDeploymentBuilder, 20, 20)
+	successRate, err := trafficTester.TestTraffic()
+	Expect(err).ToNot(HaveOccurred())
+	Expect(successRate).Should(BeNumerically(">=", succesRate))
+
 }

@@ -80,11 +80,12 @@ func (mr *MockAPIsMockRecorder) AllocIPAddress(arg0 interface{}) *gomock.Call {
 }
 
 // AllocIPAddresses mocks base method
-func (m *MockAPIs) AllocIPAddresses(arg0 string, arg1 int) error {
+func (m *MockAPIs) AllocIPAddresses(arg0 string, arg1 int) (*ec2.AssignPrivateIpAddressesOutput, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AllocIPAddresses", arg0, arg1)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(*ec2.AssignPrivateIpAddressesOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // AllocIPAddresses indicates an expected call of AllocIPAddresses

@@ -14,9 +14,11 @@
 package ipamd
 
 import (
-	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
+	"github.com/aws/aws-sdk-go/service/ec2"
 
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -24,6 +26,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+var primaryInstance *ec2.Instance
+var f *framework.Framework
+var err error
 
 // IMPORTANT: THE NODEGROUP TO RUN THE TEST MUST NOT HAVE ANY POD
 // Ideally we should drain the node, but drain from go client is non trivial
@@ -35,8 +41,6 @@ var _ = Describe("test warm target variables", func() {
 
 		JustBeforeEach(func() {
 			var availPrefixes int
-			podLabelKey := "eks.amazonaws.com/component"
-			podLabelVal := "coredns"
 
 			// Set the WARM IP TARGET
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,
@@ -55,28 +59,13 @@ var _ = Describe("test warm target variables", func() {
 				EC2().DescribeInstance(*primaryInstance.InstanceId)
 			Expect(err).ToNot(HaveOccurred())
 
-			//Query for coredns pods
-			podList, perr := f.K8sResourceManagers.PodManager().
-				GetPodsWithLabelSelector(podLabelKey, podLabelVal)
-			Expect(perr).ToNot(HaveOccurred())
-
-			assigned := 0
-			for _, pod := range podList.Items {
-				By(fmt.Sprintf("verifying in node %s but pod's IP %s address belongs to node name %s",
-					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))
-				if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
-					assigned++
-					break
-				}
-			}
-
 			// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
 			for _, networkInterface := range primaryInstance.NetworkInterfaces {
 				availPrefixes += len(networkInterface.Ipv4Prefixes)
 			}
 
 			// Validated avail IP equals the warm IP Size
-			prefixNeededForWarmIPTarget := ceil(assigned+warmIPTarget, 16)
+			prefixNeededForWarmIPTarget := ceil(warmIPTarget, 16)
 			prefixNeededForMinIPTarget := ceil(minIPTarget, 16)
 			Expect(availPrefixes).Should(Equal(Max(prefixNeededForWarmIPTarget, prefixNeededForMinIPTarget)))
 		})
@@ -142,8 +131,6 @@ var _ = Describe("test warm target variables", func() {
 
 		JustBeforeEach(func() {
 			var availPrefixes int
-			podLabelKey := "eks.amazonaws.com/component"
-			podLabelVal := "coredns"
 
 			// Set the WARM IP TARGET
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,
@@ -161,29 +148,13 @@ var _ = Describe("test warm target variables", func() {
 				EC2().DescribeInstance(*primaryInstance.InstanceId)
 			Expect(err).ToNot(HaveOccurred())
 
-			//Query for coredns pods
-			podList, perr := f.K8sResourceManagers.PodManager().
-				GetPodsWithLabelSelector(podLabelKey, podLabelVal)
-			Expect(perr).ToNot(HaveOccurred())
-
-			assigned := 0
-			for _, pod := range podList.Items {
-				By(fmt.Sprintf("verifying in node %s but pod's IP %s address belongs to node name %s",
-					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))
-				if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
-					assigned++
-					break
-				}
-			}
-
 			// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
 			for _, networkInterface := range primaryInstance.NetworkInterfaces {
 				availPrefixes += len(networkInterface.Ipv4Prefixes)
 			}
 
 			// Validated avail IP equals the warm IP Size
-			prefixNeededForAssignedPods := ceil(assigned, 16)
-			Expect(availPrefixes).Should(Equal(prefixNeededForAssignedPods + warmPrefixTarget))
+			Expect(availPrefixes).Should(Equal(warmPrefixTarget))
 		})
 
 		JustAfterEach(func() {
@@ -209,8 +180,6 @@ var _ = Describe("test warm target variables", func() {
 
 		JustBeforeEach(func() {
 			var availPrefixes int
-			podLabelKey := "eks.amazonaws.com/component"
-			podLabelVal := "coredns"
 
 			// Set the WARM IP TARGET
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,
@@ -230,28 +199,13 @@ var _ = Describe("test warm target variables", func() {
 				EC2().DescribeInstance(*primaryInstance.InstanceId)
 			Expect(err).ToNot(HaveOccurred())
 
-			//Query for coredns pods
-			podList, perr := f.K8sResourceManagers.PodManager().
-				GetPodsWithLabelSelector(podLabelKey, podLabelVal)
-			Expect(perr).ToNot(HaveOccurred())
-
-			assigned := 0
-			for _, pod := range podList.Items {
-				By(fmt.Sprintf("verifying in node %s but pod's IP %s address belongs to node name %s",
-					*primaryInstance.PrivateDnsName, pod.Status.PodIP, pod.Spec.NodeName))
-				if pod.Spec.NodeName == *primaryInstance.PrivateDnsName {
-					assigned++
-					break
-				}
-			}
-
 			// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
 			for _, networkInterface := range primaryInstance.NetworkInterfaces {
 				availPrefixes += len(networkInterface.Ipv4Prefixes)
 			}
 
 			// Validated avail IP equals the warm IP Size
-			prefixNeededForWarmIPTarget := ceil(assigned+warmIPTarget, 16)
+			prefixNeededForWarmIPTarget := ceil(warmIPTarget, 16)
 			prefixNeededForMinIPTarget := ceil(minIPTarget, 16)
 			Expect(availPrefixes).Should(Equal(Max(prefixNeededForWarmIPTarget, prefixNeededForMinIPTarget)))
 		})
@@ -321,4 +275,25 @@ var _ = Describe("test warm target variables", func() {
 
 func ceil(x, y int) int {
 	return (x + y - 1) / y
+}
+
+func Max(x, y int) int {
+	if x < y {
+		return y
+	}
+	return x
+}
+
+// MinIgnoreZero returns smaller of two number, if any number is zero returns the other number
+func MinIgnoreZero(x, y int) int {
+	if x == 0 {
+		return y
+	}
+	if y == 0 {
+		return x
+	}
+	if x < y {
+		return x
+	}
+	return y
 }

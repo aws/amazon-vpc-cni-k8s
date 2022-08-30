@@ -31,7 +31,7 @@ ARCH=$(go env GOARCH)
 : "${RUNNING_PERFORMANCE:=false}"
 : "${RUN_CALICO_TEST:=false}"
 : "${RUN_LATEST_CALICO_VERSION:=false}"
-: "${CALICO_VERSION:=3.22.0}"
+: "${CALICO_VERSION:=v3.23.0}"
 : "${RUN_CALICO_TEST_WITH_PD:=true}"
 
 
@@ -272,16 +272,20 @@ if [[ $TEST_PASS -eq 0 ]]; then
 fi
 
 if [[ $RUN_CALICO_TEST == true ]]; then
-  run_calico_test
+  # need to install Calico
+  run_calico_test "true"
   if [[ "$RUN_CALICO_TEST_WITH_PD" == true ]]; then
       # if we run prefix delegation tests as well, we need update CNI env and terminate all nodes to restore iptables rules for following tests
       echo "Run Calico tests with Prefix Delegation enabled"
       $KUBECTL_PATH set env daemonset aws-node -n kube-system ENABLE_PREFIX_DELEGATION=true
+      # we shouldn't rely on other tests to set this required ENV
+      $KUBECTL_PATH set env ds aws-node -n kube-system WARM_PREFIX_TARGET=1
       ids=( $(aws ec2 describe-instances --filters Name=vpc-id,Values=$VPC_ID --query 'Reservations[*].Instances[*].InstanceId' --output text) )
       aws ec2 terminate-instances --instance-ids $ids
       echo "Waiting 15 minutes for new nodes being ready"
       sleep 900
-      run_calico_test
+      # no longer need to install Calico again for PD
+      run_calico_test "false"
   fi
 
   emit_cloudwatch_metric "calico_test_status" "1"
