@@ -196,7 +196,7 @@ if [[ "$ENABLE_BANDWIDTH_PLUGIN" == "true" ]]; then
     mv "$TMP_AWS_BW_CONFLIST_FILE" "$TMP_AWS_CONFLIST_FILE" 
 fi
 
-mv "$TMP_AWS_CONFLIST_FILE" "$HOST_CNI_CONFDIR_PATH/10-aws.conflist"
+cp "$TMP_AWS_CONFLIST_FILE" "$HOST_CNI_CONFDIR_PATH/10-aws.conflist" && rm -rf "$TMP_AWS_CONFLIST_FILE"
 
 log_in_json info "Successfully copied CNI plugin binary and config file."
 
