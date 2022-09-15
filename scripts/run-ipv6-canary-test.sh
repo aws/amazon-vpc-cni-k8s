@@ -1,14 +1,12 @@
 #!/bin/bash
 
-# The script runs amazon-vpc-cni Canary tests on the default
-# addon version and then runs smoke test on the latest addon version.
+# The script runs amazon-vpc-cni IPv6 canary tests
 
 set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
 
-source "$SCRIPT_DIR"/lib/add-on.sh
 source "$SCRIPT_DIR"/lib/cluster.sh
 source "$SCRIPT_DIR"/lib/canary.sh
 
@@ -19,11 +17,9 @@ function run_ginkgo_test() {
 }
 
 load_cluster_details
-load_addon_details
 
-echo "Running IPv6 Canary tests on the latest addon version"
+echo "Running IPv6 Canary tests"
 
-install_add_on "$LATEST_ADDON_VERSION"
 run_ginkgo_test "CANARY"
 
 echo "all tests ran successfully in $(($SECONDS / 60)) minutes and $(($SECONDS % 60)) seconds"

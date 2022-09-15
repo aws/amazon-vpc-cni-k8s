@@ -9,7 +9,7 @@
 # KUBE_CONFIG_PATH: path to the kubeconfig file, default ~/.kube/config
 # NG_LABEL_KEY: nodegroup label key, default "kubernetes.io/os"
 # NG_LABEL_VAL: nodegroup label val, default "linux"
-# CNI_METRICS_HELPER: cni metrics helper image tag, default "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.7.10"
+# CNI_METRICS_HELPER: cni metrics helper image tag, default "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.11.4"
 # CALICO_VERSION: calico version, default 3.22.0
 
 set -e
@@ -34,7 +34,7 @@ function run_integration_test() {
   cd $INTEGRATION_TEST_DIR/ipamd && CGO_ENABLED=0 ginkgo -v -timeout 90m --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" || TEST_RESULT=fail
   echo "ipamd test took $((SECONDS - START)) seconds."
 
-  : "${CNI_METRICS_HELPER:=602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.7.10}"
+  : "${CNI_METRICS_HELPER:=602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.11.4}"
   REPO_NAME=$(echo $CNI_METRICS_HELPER | cut -d ":" -f 1)
   TAG=$(echo $CNI_METRICS_HELPER | cut -d ":" -f 2)
   echo "Running cni-metrics-helper image($CNI_METRICS_HELPER) tests"
