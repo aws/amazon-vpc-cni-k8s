@@ -27,12 +27,11 @@ function run_integration_test() {
   TEST_RESULT=success
   echo "Running cni integration tests"
   START=$SECONDS
-  # skip tests for changes not released yet and are applicable in future releases only, for now skipping 1.11.3
-  cd $INTEGRATION_TEST_DIR/cni && CGO_ENABLED=0 ginkgo --skip="1.11.3" -v -timeout 60m --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" || TEST_RESULT=fail
+  cd $INTEGRATION_TEST_DIR/cni && CGO_ENABLED=0 ginkgo -v -timeout 60m --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" || TEST_RESULT=fail
   echo "cni test took $((SECONDS - START)) seconds."
   echo "Running ipamd integration tests"
   START=$SECONDS
-  cd $INTEGRATION_TEST_DIR/ipamd && CGO_ENABLED=0 ginkgo --skip="1.11.3" -v -timeout 90m --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" || TEST_RESULT=fail
+  cd $INTEGRATION_TEST_DIR/ipamd && CGO_ENABLED=0 ginkgo -v -timeout 90m --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" || TEST_RESULT=fail
   echo "ipamd test took $((SECONDS - START)) seconds."
 
   : "${CNI_METRICS_HELPER:=602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.7.10}"
@@ -40,7 +39,7 @@ function run_integration_test() {
   TAG=$(echo $CNI_METRICS_HELPER | cut -d ":" -f 2)
   echo "Running cni-metrics-helper image($CNI_METRICS_HELPER) tests"
   START=$SECONDS
-  cd $INTEGRATION_TEST_DIR/metrics-helper && CGO_ENABLED=0 ginkgo --skip="1.11.3" -v -timeout 15m --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" --cni-metrics-helper-image-repo=$REPO_NAME --cni-metrics-helper-image-tag=$TAG || TEST_RESULT=fail
+  cd $INTEGRATION_TEST_DIR/metrics-helper && CGO_ENABLED=0 ginkgo -v -timeout 15m --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" --cni-metrics-helper-image-repo=$REPO_NAME --cni-metrics-helper-image-tag=$TAG || TEST_RESULT=fail
   echo "cni-metrics-helper test took $((SECONDS - START)) seconds."
   if [[ "$TEST_RESULT" == fail ]]; then
       echo "Integration test failed."
