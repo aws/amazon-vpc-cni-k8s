@@ -227,8 +227,8 @@ START=$SECONDS
 
 focus="CANARY"
 echo "Running ginkgo tests with focus: $focus"
-(cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 20m --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-(cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 10m --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+(cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 20m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+(cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 10m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
 TEST_PASS=$?
 DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
@@ -262,8 +262,8 @@ START=$SECONDS
 
 focus="CANARY"
 echo "Running ginkgo tests with focus: $focus"
-(cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-(cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+(cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+(cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
 TEST_PASS=$?
 CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
@@ -302,7 +302,7 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test-linux-amd64.tar.gz | tar -zxvf - --strip-components=3 -C ${TEST_BASE_DIR}  kubernetes/test/bin/e2e.test
 
   echo "Running e2e tests: "
-  ${TEST_BASE_DIR}/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
+  ${TEST_BASE_DIR}/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.noColor --ginkgo.flakeAttempts 2 \
     --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
 
   CONFORMANCE_DURATION=$((SECONDS - START))
