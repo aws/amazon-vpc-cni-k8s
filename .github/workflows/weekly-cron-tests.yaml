@@ -1,0 +1,84 @@
+name: Weekly Cron tests
+
+on:
+  schedule:
+    - cron: "0 16 * * 3" # every Wednesday
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  weekly-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout latest commit in the PR
+        uses: actions/checkout@v3
+      - name: Set up Docker QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.19"
+      - name: Set up tools
+        run: |
+          go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo@latest
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin/
+      - name: Set up AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.OSS_TEST_ROLE_ARN }}
+          role-duration-seconds: 7200
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+      - name: Run perf tests
+        env:
+          DISABLE_PROMPT: true
+          S3_BUCKET_CREATE: false
+          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+          ROLE_CREATE: false
+          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+          PERFORMANCE_TEST_S3_BUCKET_NAME: cni-performance-tests
+          RUN_PERFORMANCE_TESTS: true
+          RUN_TESTER_LB_ADDONS: true
+        run: |
+          ./scripts/run-integration-tests.sh
+      - name: Run kops tests
+        env:
+          DISABLE_PROMPT: true
+          S3_BUCKET_CREATE: false
+          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+          ROLE_CREATE: false
+          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+          RUN_KOPS_TEST: true
+          RUN_TESTER_LB_ADDONS: true
+        run: |
+          ./scripts/run-integration-tests.sh
+        if: always()
+      - name: Run bottlerocket tests
+        env:
+          DISABLE_PROMPT: true
+          S3_BUCKET_CREATE: false
+          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+          ROLE_CREATE: false
+          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+          RUN_BOTTLEROCKET_TEST: true
+          RUN_TESTER_LB_ADDONS: true
+        run: |
+          ./scripts/run-integration-tests.sh
+        if: always()
+      - name: Run calico tests
+        env:
+          DISABLE_PROMPT: true
+          S3_BUCKET_CREATE: false
+          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+          ROLE_CREATE: false
+          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+          RUN_CALICO_TEST: true
+          RUN_LATEST_CALICO_VERSION: true
+          RUN_TESTER_LB_ADDONS: true
+        run: |
+          ./scripts/run-integration-tests.sh
+        if: always()
