@@ -11,7 +11,7 @@
 # express or implied. See the License for the specific language governing
 # permissions and limitations under the License.
 #
-# This file was generated at 2022-09-21T12:56:22-07:00
+# This file was generated at 2022-09-21T13:10:55-07:00
 #
 # The regions queried were:
 # - ap-northeast-1
@@ -215,10 +215,10 @@ g5.8xlarge 234
 g5.xlarge 58
 g5g.16xlarge 737
 g5g.2xlarge 58
-g5g.4xlarge 118
+g5g.4xlarge 234
 g5g.8xlarge 234
 g5g.metal 737
-g5g.xlarge 44
+g5g.xlarge 58
 h1.16xlarge 737
 h1.2xlarge 58
 h1.4xlarge 234
@@ -244,7 +244,7 @@ i3en.6xlarge 234
 i3en.large 29
 i3en.metal 737
 i3en.xlarge 58
-i4i.16xlarge 394
+i4i.16xlarge 737
 i4i.2xlarge 58
 i4i.32xlarge 737
 i4i.4xlarge 234

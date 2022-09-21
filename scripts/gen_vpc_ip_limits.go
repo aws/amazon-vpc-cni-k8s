@@ -164,8 +164,13 @@ func describeInstanceTypes(region string, eniLimitMap map[string]awsutils.Instan
 		for _, info := range output.InstanceTypes {
 			// Ignore any missing values
 			instanceType := aws.StringValue(info.InstanceType)
-			// only one network card is supported, so use the MaximumNetworkInterfaces from the first card instead of the sum (info.NetworkInfo.MaximumNetworkInterfaces)
-			eniLimit := int(aws.Int64Value(info.NetworkInfo.NetworkCards[0].MaximumNetworkInterfaces))
+			// only one network card is supported, so use the MaximumNetworkInterfaces from the default card if more than one are present
+			var eniLimit int
+			if len(info.NetworkInfo.NetworkCards) > 1 {
+				eniLimit = int(aws.Int64Value(info.NetworkInfo.NetworkCards[*info.NetworkInfo.DefaultNetworkCardIndex].MaximumNetworkInterfaces))
+			} else {
+				eniLimit = int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
+			}
 			ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
 			hypervisorType := aws.StringValue(info.Hypervisor)
 			isBareMetalInstance := aws.BoolValue(info.BareMetal)
