@@ -18,6 +18,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration"
 CALICO_TEST_DIR="$SCRIPT_DIR/../test/e2e/calico"
 
+source "$SCRIPT_DIR"/lib/add-on.sh
 source "$SCRIPT_DIR"/lib/cluster.sh
 source "$SCRIPT_DIR"/lib/integration.sh
 
@@ -66,9 +67,14 @@ if [[ -n "${ENDPOINT}" ]]; then
   ENDPOINT_FLAG="--endpoint $ENDPOINT"
 fi
 
-echo "Running release tests on cluster: $CLUSTER_NAME in region: $REGION"
 load_cluster_details
+load_addon_details
+install_add_on "$LATEST_ADDON_VERSION"
+
+echo "Running release tests on cluster: $CLUSTER_NAME in region: $REGION on the latest addon version"
+
 START=$SECONDS
 run_integration_test
 run_calico_tests
+
 echo "Completed running all tests in $((SECONDS - START)) seconds."
