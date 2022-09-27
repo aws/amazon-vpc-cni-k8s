@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.11.4
+
+* Improvement - [update aws-node clusterrole permissions](https://github.com/aws/amazon-vpc-cni-k8s/pull/2058) (@sushrk)
+* Improvement - [IPAMD optimizations and makefile changes](https://github.com/aws/amazon-vpc-cni-k8s/pull/1975) (@jayanthvn)
+* Documentation - [Fix minor typo on documentation](https://github.com/aws/amazon-vpc-cni-k8s/pull/2059) (@guikcd)
+* Documentation - [Fixing prefixes per ENI value in example](https://github.com/aws/amazon-vpc-cni-k8s/pull/2060) (@mkarakas)
+* New release - [multus manifest for release v3.9.0-eksbuild.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/2057) (@sushrk)
+* Bug - [Setting AWS_VPC_K8S_CNI_RANDOMIZESNAT to the default value](https://github.com/aws/amazon-vpc-cni-k8s/pull/2028) (@vgunapati)
+* New instance support - [Updated new instances](https://github.com/aws/amazon-vpc-cni-k8s/pull/2062) (@jayanthvn)
+
+## v1.11.3
+
+* Improvement -  [Increase cpu requests limit](https://github.com/aws/amazon-vpc-cni-k8s/pull/2040) (@vikasmb)
+* Bugfix      -  [Re-use logger instance](https://github.com/aws/amazon-vpc-cni-k8s/pull/2031) (@vikasmb)
+* Improvement -  [Add event recorder utils to raise aws-node pod events](https://github.com/aws/amazon-vpc-cni-k8s/pull/1536) (@sushrk)
+* Improvement -  [chart: Add extraVolumes and extraVolumeMounts](https://github.com/aws/amazon-vpc-cni-k8s/pull/1949) (@jkroepke)
+* Bugfix -       [Fix cni panic due to pod.Annotations is a nil map](https://github.com/aws/amazon-vpc-cni-k8s/pull/1947) (@Downager)
+
 ## v1.11.2
 
 * Improvement -  [Updated golang to Go 1.18](https://github.com/aws/amazon-vpc-cni-k8s/pull/1991) (@orsenthil)

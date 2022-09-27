@@ -37,6 +37,7 @@ type IAM interface {
 	CreatePolicy(policyName string, policyDocument string) (*iam.CreatePolicyOutput, error)
 	DeletePolicy(policyARN string) error
 	GetInstanceProfile(instanceProfileName string) (*iam.GetInstanceProfileOutput, error)
+	ListPolicies(scope string) (*iam.ListPoliciesOutput, error)
 }
 
 type defaultIAM struct {
@@ -82,6 +83,13 @@ func (d *defaultIAM) GetInstanceProfile(instanceProfileName string) (*iam.GetIns
 		InstanceProfileName: aws.String(instanceProfileName),
 	}
 	return d.IAMAPI.GetInstanceProfile(getInstanceProfileInput)
+}
+
+func (d *defaultIAM) ListPolicies(scope string) (*iam.ListPoliciesOutput, error) {
+	listPolicyInput := &iam.ListPoliciesInput{
+		Scope: aws.String(scope),
+	}
+	return d.IAMAPI.ListPolicies(listPolicyInput)
 }
 
 func NewIAM(session *session.Session) IAM {

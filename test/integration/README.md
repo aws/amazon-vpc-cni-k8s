@@ -6,7 +6,7 @@ The package contains automated integration tests suites for `amazon-vpc-cni-k8s`
 The integration test requires 
 - At least 2 nodes in a node group.
 - Nodes in the nodegroup shouldn't have existing pods.
-- Ginkgo installed on your environment. To install `go install github.com/onsi/ginkgo/ginkgo@latest`
+- Ginkgo installed on your environment. To install `go install github.com/onsi/ginkgo/v2/ginkgo@latest`
 - Supports instance types having at least 3 ENIs and 16+ Secondary IPv4 Addresses across all ENIs.
 
 #### Testing
@@ -28,7 +28,7 @@ cd test/integration/cni
 ```
 Run Ginkgo test suite
 ```bash
-ginkgo -v --failOnPending -- \
+ginkgo -v --fail-on-pending -- \
  --cluster-kubeconfig=$KUBECONFIG \
  --cluster-name=$CLUSTER_NAME \
  --aws-region=$AWS_REGION \
@@ -38,6 +38,26 @@ ginkgo -v --failOnPending -- \
 ```
 
 ### cni-metrics-helper
+
+> #### Prerequisites: 
+>
+> This test expects CNIMetricsHelperPolicy to be present in the test account. Create the policy with below permissions in the test account:
+
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "cloudwatch:PutMetricData"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
 The CNI Metrics Helper Integration test uses helm to install the cni-metrics-helper. The helm charts are present in local test directory and if needed can be published to a repository.
 
 In order to test a custom image you need pass the following tags along with the tags discussed above.
