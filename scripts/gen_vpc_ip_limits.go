@@ -164,7 +164,13 @@ func describeInstanceTypes(region string, eniLimitMap map[string]awsutils.Instan
 		for _, info := range output.InstanceTypes {
 			// Ignore any missing values
 			instanceType := aws.StringValue(info.InstanceType)
-			eniLimit := int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
+			// only one network card is supported, so use the MaximumNetworkInterfaces from the default card if more than one are present
+			var eniLimit int
+			if len(info.NetworkInfo.NetworkCards) > 1 {
+				eniLimit = int(aws.Int64Value(info.NetworkInfo.NetworkCards[*info.NetworkInfo.DefaultNetworkCardIndex].MaximumNetworkInterfaces))
+			} else {
+				eniLimit = int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
+			}
 			ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
 			hypervisorType := aws.StringValue(info.Hypervisor)
 			isBareMetalInstance := aws.BoolValue(info.BareMetal)
@@ -200,18 +206,7 @@ func addManualLimits(limitMap map[string]awsutils.InstanceTypeLimits) map[string
 		"u-9tb1.metal":  {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unknown", IsBareMetal: true},
 		"c5a.metal":     {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: true},
 		"c5ad.metal":    {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: true},
-		"p4d.24xlarge":  {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: false},
 		"p4de.24xlarge": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: false},
-		"dl1.24xlarge":  {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: false},
-		"c6g.xlarge":    {ENILimit: 4, IPv4Limit: 15, HypervisorType: "nitro", IsBareMetal: false},
-		"c7g.12xlarge":  {ENILimit: 8, IPv4Limit: 30, HypervisorType: "nitro", IsBareMetal: false},
-		"c7g.16xlarge":  {ENILimit: 15, IPv4Limit: 50, HypervisorType: "nitro", IsBareMetal: false},
-		"c7g.2xlarge":   {ENILimit: 4, IPv4Limit: 15, HypervisorType: "nitro", IsBareMetal: false},
-		"c7g.4xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "nitro", IsBareMetal: false},
-		"c7g.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "nitro", IsBareMetal: false},
-		"c7g.large":     {ENILimit: 3, IPv4Limit: 10, HypervisorType: "nitro", IsBareMetal: false},
-		"c7g.medium":    {ENILimit: 2, IPv4Limit: 4, HypervisorType: "nitro", IsBareMetal: false},
-		"c7g.xlarge":    {ENILimit: 4, IPv4Limit: 15, HypervisorType: "nitro", IsBareMetal: false},
 		"c7g.metal":     {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: true},
 	}
 	for instanceType, instanceLimits := range manuallyAddedLimits {

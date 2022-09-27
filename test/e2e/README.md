@@ -30,7 +30,7 @@ cd test/e2e/custom-networking
 
 Run Ginkgo test suite
 ```bash
-ginkgo -v --failOnPending -- \
+ginkgo -v --fail-on-pending -- \
  --cluster-kubeconfig=$KUBECONFIG \
  --cluster-name=$CLUSTER_NAME \
  --aws-region=$AWS_REGION \
