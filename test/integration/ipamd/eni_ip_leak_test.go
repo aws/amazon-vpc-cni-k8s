@@ -20,7 +20,7 @@ const (
 var primaryNode v1.Node
 var numOfNodes int
 
-var _ = Describe("[CANARY] ENI/IP Leak Test", func() {
+var _ = Describe("[CANARY][SMOKE] ENI/IP Leak Test", func() {
 	Context("ENI/IP Released on Pod Deletion", func() {
 
 		It("Verify that on Pod Deletion, ENI/IP State is restored", func() {

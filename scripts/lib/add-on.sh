@@ -2,6 +2,8 @@
 
 # Helper script for performing operations on vpc-cni addons
 
+VPC_CNI_ADDON_NAME="vpc-cni"
+
 function load_addon_details() {
   echo "loading $VPC_CNI_ADDON_NAME addon details"
   DESCRIBE_ADDON_VERSIONS=$(aws eks describe-addon-versions $ENDPOINT_FLAG --addon-name $VPC_CNI_ADDON_NAME --kubernetes-version "$K8S_VERSION")
