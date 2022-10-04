@@ -573,6 +573,16 @@ configured to operate in IPv6 mode. Prefix delegation is only supported on nitro
 
 ---
 
+#### `AWS_EC2_ENDPOINT` (v1.11.5+)
+
+Type: String
+
+Default: None
+
+Overrides default (`https://ec2.<region>.amazonaws.com`) EC2 API endpoint, useful in case when it's preferred to use private VPC endpoint URLs instead of "public" address.
+
+---
+
 ### VPC CNI Feature Matrix
 
 IP Mode | Secondary IP Mode | Prefix Delegation | Security Groups Per Pod | WARM & MIN IP/Prefix Targets | External SNAT

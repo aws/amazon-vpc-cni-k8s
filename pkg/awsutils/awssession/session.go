@@ -30,8 +30,9 @@ import (
 
 // Http client timeout env for sessions
 const (
-	httpTimeoutEnv = "HTTP_TIMEOUT"
-	maxRetries     = 10
+	httpTimeoutEnv         = "HTTP_TIMEOUT"
+	maxRetries             = 10
+	awsEc2EndpointOverride = "AWS_EC2_ENDPOINT"
 )
 
 var (
@@ -64,6 +65,19 @@ func New() *session.Session {
 			Timeout: getHTTPTimeout(),
 		},
 		STSRegionalEndpoint: endpoints.RegionalSTSEndpoint,
+	}
+	endpoint := os.Getenv(awsEc2EndpointOverride)
+	if endpoint != "" {
+		customResolver := func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+			if service == endpoints.Ec2ServiceID {
+				return endpoints.ResolvedEndpoint{
+					URL:           endpoint,
+					SigningRegion: region,
+				}, nil
+			}
+			return endpoints.DefaultResolver().EndpointFor(service, region, optFns...)
+		}
+		awsCfg.EndpointResolver = endpoints.ResolverFunc(customResolver)
 	}
 	sess := session.Must(session.NewSession(&awsCfg))
 	//injecting session handler info
