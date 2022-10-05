@@ -310,7 +310,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	log.Debugf("Prev Result: %v\n", conf.PrevResult)
 
 	if err != nil {
-		return errors.Wrap(err, "add cmd: error loading config from args")
+		return errors.Wrap(err, "del cmd: error loading config from args")
 	}
 
 	log.Infof("Received CNI del request: ContainerID(%s) Netns(%s) IfName(%s) Args(%s) Path(%s) argsStdinData(%s)",
