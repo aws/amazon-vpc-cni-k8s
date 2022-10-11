@@ -141,7 +141,7 @@ func getPluginLogFilePath(logFilePath string) zapcore.WriteSyncer {
 	return writer
 }
 
-//getLogWriter is for lumberjack
+// getLogWriter is for lumberjack
 func getLogWriter(logFilePath string) zapcore.WriteSyncer {
 	lumberJackLogger := &lumberjack.Logger{
 		Filename:   logFilePath,

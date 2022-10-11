@@ -66,9 +66,12 @@ if [[ -n "${ENDPOINT}" ]]; then
   ENDPOINT_FLAG="--endpoint $ENDPOINT"
 fi
 
+
 echo "Running release tests on cluster: $CLUSTER_NAME in region: $REGION"
+
 load_cluster_details
 START=$SECONDS
 run_integration_test
 run_calico_tests
+
 echo "Completed running all tests in $((SECONDS - START)) seconds."
