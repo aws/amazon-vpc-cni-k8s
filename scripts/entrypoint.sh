@@ -128,8 +128,6 @@ wait_for_ipam() {
         if ./grpc-health-probe -addr 127.0.0.1:50051 >/dev/null 2>&1; then
             return 0
         fi
-        # We sleep for 1 second between each retry
-        sleep 1
 	log_in_json info "Retrying waiting for IPAM-D"
     done
 }
