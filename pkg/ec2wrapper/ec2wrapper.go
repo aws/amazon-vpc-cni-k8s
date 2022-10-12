@@ -1,4 +1,4 @@
-//Package ec2wrapper is used to wrap around the ec2 service APIs
+// Package ec2wrapper is used to wrap around the ec2 service APIs
 package ec2wrapper
 
 import (
@@ -27,7 +27,7 @@ type EC2Wrapper struct {
 	instanceIdentityDocument ec2metadata.EC2InstanceIdentityDocument
 }
 
-//NewMetricsClient returns an instance of the EC2 wrapper
+// NewMetricsClient returns an instance of the EC2 wrapper
 func NewMetricsClient() (*EC2Wrapper, error) {
 	sess := awssession.New()
 	ec2MetadataClient := ec2metadatawrapper.New(sess)

@@ -40,7 +40,7 @@ var _ = BeforeSuite(func() {
 		CreateNamespace(testUtils.DefaultTestNamespace)
 
 	By("Getting existing nodes in the cluster")
-	nodes, err := f.K8sResourceManagers.NodeManager().GetAllNodes()
+	nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("verifying more than 1 nodes are present for the test")

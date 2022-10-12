@@ -2111,7 +2111,7 @@ func (c *IPAMContext) warmPrefixTargetDefined() bool {
 	return c.warmPrefixTarget >= defaultWarmPrefixTarget && c.enablePrefixDelegation
 }
 
-//DeallocCidrs frees IPs and Prefixes from EC2
+// DeallocCidrs frees IPs and Prefixes from EC2
 func (c *IPAMContext) DeallocCidrs(eniID string, deletableCidrs []datastore.CidrInfo) {
 	var deletableIPs []string
 	var deletablePrefixes []string

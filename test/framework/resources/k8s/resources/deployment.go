@@ -54,7 +54,6 @@ func (d defaultDeploymentManager) CreateAndWaitTillDeploymentIsReady(deployment 
 	return d.WaitTillDeploymentReady(deployment, timeout)
 }
 
-//
 func (d defaultDeploymentManager) DeleteAndWaitTillDeploymentIsDeleted(deployment *v1.Deployment) error {
 	ctx := context.Background()
 	err := d.k8sClient.Delete(ctx, deployment)

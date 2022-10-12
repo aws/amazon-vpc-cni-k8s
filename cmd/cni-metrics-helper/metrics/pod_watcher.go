@@ -27,8 +27,8 @@ func NewDefaultPodWatcher(k8sClient client.Client, log logger.Logger) *defaultPo
 	}
 }
 
-//Returns aws-node pod info. Below function assumes CNI pods follow aws-node* naming format
-//and so the function has to be updated if the CNI pod name format changes.
+// Returns aws-node pod info. Below function assumes CNI pods follow aws-node* naming format
+// and so the function has to be updated if the CNI pod name format changes.
 func (d *defaultPodWatcher) GetCNIPods(ctx context.Context) ([]string, error) {
 	var CNIPods []string
 	var podList corev1.PodList

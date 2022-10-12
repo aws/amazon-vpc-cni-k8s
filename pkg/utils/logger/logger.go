@@ -14,13 +14,13 @@
 // Package logger is the CNI Logger interface, using zap
 package logger
 
-//Log is global variable so that log functions can be directly accessed
+// Log is global variable so that log functions can be directly accessed
 var log Logger
 
-//Fields Type to pass when we want to call WithFields for structured logging
+// Fields Type to pass when we want to call WithFields for structured logging
 type Fields map[string]interface{}
 
-//Logger is our contract for the logger
+// Logger is our contract for the logger
 type Logger interface {
 	Debugf(format string, args ...interface{})
 
@@ -55,7 +55,7 @@ func Get() Logger {
 	return log
 }
 
-//New logger initializes logger
+// New logger initializes logger
 func New(inputLogConfig *Configuration) Logger {
 	log = inputLogConfig.newZapLogger()
 	log.Info("Constructed new logger instance")
