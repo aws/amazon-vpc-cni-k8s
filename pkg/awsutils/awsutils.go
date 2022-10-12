@@ -310,7 +310,7 @@ func prometheusRegister() {
 	}
 }
 
-//StringSet is a set of strings
+// StringSet is a set of strings
 type StringSet struct {
 	sync.RWMutex
 	data sets.String
@@ -780,7 +780,7 @@ func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string,
 	return eniID, nil
 }
 
-//  attachENI calls EC2 API to attach the ENI and returns the attachment id
+// attachENI calls EC2 API to attach the ENI and returns the attachment id
 func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 	// attach to instance
 	freeDevice, err := cache.awsGetFreeDeviceNumber()
@@ -1829,7 +1829,7 @@ func (cache *EC2InstanceMetadataCache) GetPrimaryENImac() string {
 	return cache.primaryENImac
 }
 
-//SetUnmanagedENIs Set unmanaged ENI set
+// SetUnmanagedENIs Set unmanaged ENI set
 func (cache *EC2InstanceMetadataCache) SetUnmanagedENIs(eniIDs []string) {
 	cache.unmanagedENIs.Set(eniIDs)
 }
@@ -1839,7 +1839,7 @@ func (cache *EC2InstanceMetadataCache) GetInstanceID() string {
 	return cache.instanceID
 }
 
-//IsUnmanagedENI returns if the eni is unmanaged
+// IsUnmanagedENI returns if the eni is unmanaged
 func (cache *EC2InstanceMetadataCache) IsUnmanagedENI(eniID string) bool {
 	if len(eniID) != 0 {
 		return cache.unmanagedENIs.Has(eniID)
@@ -1872,7 +1872,7 @@ func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterf
 	return innerErr
 }
 
-//SetCNIUnmanagedENIs Set unmanaged ENI set
+// SetCNIUnmanagedENIs Set unmanaged ENI set
 func (cache *EC2InstanceMetadataCache) SetCNIUnmanagedENIs(eniID []string) error {
 	if len(eniID) != 0 {
 		cache.cniunmanagedENIs.Set(eniID)
@@ -1880,7 +1880,7 @@ func (cache *EC2InstanceMetadataCache) SetCNIUnmanagedENIs(eniID []string) error
 	return nil
 }
 
-//IsCNIUnmanagedENI returns if the eni is unmanaged
+// IsCNIUnmanagedENI returns if the eni is unmanaged
 func (cache *EC2InstanceMetadataCache) IsCNIUnmanagedENI(eniID string) bool {
 	if len(eniID) != 0 {
 		return cache.cniunmanagedENIs.Has(eniID)
@@ -1888,7 +1888,7 @@ func (cache *EC2InstanceMetadataCache) IsCNIUnmanagedENI(eniID string) bool {
 	return false
 }
 
-//IsPrimaryENI returns if the eni is unmanaged
+// IsPrimaryENI returns if the eni is unmanaged
 func (cache *EC2InstanceMetadataCache) IsPrimaryENI(eniID string) bool {
 	if len(eniID) != 0 && eniID == cache.GetPrimaryENI() {
 		return true

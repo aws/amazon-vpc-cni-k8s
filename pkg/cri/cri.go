@@ -61,7 +61,7 @@ func New() *Client {
 	return &Client{}
 }
 
-//GetRunningPodSandboxes get running sandboxIDs
+// GetRunningPodSandboxes get running sandboxIDs
 func (c *Client) GetRunningPodSandboxes(log logger.Logger) ([]SandboxInfo, error) {
 	ctx := context.TODO()
 
