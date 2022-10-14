@@ -45,8 +45,7 @@ var _ = Describe("test host networking", func() {
 	var podLabelKey = "app"
 	var podLabelVal = "host-networking-test"
 
-	// For host networking tests, increase WARM_IP_TARGET to speed up test and prevent
-	// long IPAMD warmup.
+	// For host networking tests, increase WARM_IP_TARGET to prevent long IPAMD warmup.
 	BeforeEach(func() {
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
 			WARM_IP_TARGET: strconv.Itoa(maxIPPerInterface - 1),
