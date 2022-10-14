@@ -36,12 +36,27 @@ const (
 	NEW_VETH_PREFIX            = "veth"
 	DEFAULT_MTU_VAL            = "9001"
 	DEFAULT_VETH_PREFIX        = "eni"
+	WARM_IP_TARGET             = "WARM_IP_TARGET"
+	DEFAULT_WARM_IP_TARGET     = "3"
 )
 
 var _ = Describe("test host networking", func() {
 	var err error
 	var podLabelKey = "app"
 	var podLabelVal = "host-networking-test"
+
+	// For host networking tests, increase WARM_IP_TARGET to speed up test and prevent
+	// long IPAMD warmup.
+	BeforeEach(func() {
+		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
+			WARM_IP_TARGET: strconv.Itoa(maxIPPerInterface - 1),
+		})
+	})
+	AfterEach(func() {
+		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
+			WARM_IP_TARGET: DEFAULT_WARM_IP_TARGET,
+		})
+	})
 
 	Context("when pods using IP from primary and secondary ENI are created", func() {
 		AfterEach(func() {

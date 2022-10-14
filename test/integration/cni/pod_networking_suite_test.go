@@ -87,7 +87,10 @@ var _ = BeforeSuite(func() {
 
 	// Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
 	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
-		"aws-node", map[string]string{"WARM_IP_TARGET": "3", "WARM_ENI_TARGET": "0"})
+		"aws-node", map[string]string{
+			"WARM_IP_TARGET":  "3",
+			"WARM_ENI_TARGET": "0",
+		})
 })
 
 var _ = AfterSuite(func() {
