@@ -30,14 +30,8 @@ import (
 
 // TODO: Instead of passing the list of pods to the test helper, have the test helper get the pod on node
 const (
-	AWS_VPC_ENI_MTU            = "AWS_VPC_ENI_MTU"
-	AWS_VPC_K8S_CNI_VETHPREFIX = "AWS_VPC_K8S_CNI_VETHPREFIX"
-	NEW_MTU_VAL                = 1300
-	NEW_VETH_PREFIX            = "veth"
-	DEFAULT_MTU_VAL            = "9001"
-	DEFAULT_VETH_PREFIX        = "eni"
-	WARM_IP_TARGET             = "WARM_IP_TARGET"
-	DEFAULT_WARM_IP_TARGET     = "3"
+	NEW_MTU_VAL     = 1300
+	NEW_VETH_PREFIX = "veth"
 )
 
 var _ = Describe("test host networking", func() {
