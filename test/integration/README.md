@@ -6,7 +6,7 @@ The package contains automated integration tests suites for `amazon-vpc-cni-k8s`
 The integration test requires 
 - At least 2 nodes in a node group.
 - Nodes in the nodegroup shouldn't have existing pods.
-- Ginkgo installed on your environment. To install `go install github.com/onsi/ginkgo/v2/ginkgo@latest`
+- Ginkgo installed on your environment. To install, run `go install github.com/onsi/ginkgo/v2/ginkgo` from the test (parent) directory.
 - Supports instance types having at least 3 ENIs and 16+ Secondary IPv4 Addresses across all ENIs.
 
 #### Testing
