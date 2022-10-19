@@ -26,7 +26,12 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-const InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
+const (
+	InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
+	DEFAULT_VETH_PREFIX      = "eni"
+	DEFAULT_MTU_VAL          = "9001"
+	DEFAULT_WARM_IP_TARGET   = "3"
+)
 
 var maxIPPerInterface int
 var primaryNode v1.Node
@@ -87,7 +92,10 @@ var _ = BeforeSuite(func() {
 
 	// Set the WARM_ENI_TARGET to 0 to prevent all pods being scheduled on secondary ENI
 	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
-		"aws-node", map[string]string{"WARM_IP_TARGET": "3", "WARM_ENI_TARGET": "0"})
+		"aws-node", map[string]string{
+			"WARM_IP_TARGET":  DEFAULT_WARM_IP_TARGET,
+			"WARM_ENI_TARGET": "0",
+		})
 })
 
 var _ = AfterSuite(func() {
@@ -97,8 +105,8 @@ var _ = AfterSuite(func() {
 
 	k8sUtils.UpdateEnvVarOnDaemonSetAndWaitUntilReady(f, "aws-node", "kube-system",
 		"aws-node", map[string]string{
-			AWS_VPC_ENI_MTU:            "9001",
-			AWS_VPC_K8S_CNI_VETHPREFIX: "eni",
+			"AWS_VPC_ENI_MTU":            DEFAULT_MTU_VAL,
+			"AWS_VPC_K8S_CNI_VETHPREFIX": DEFAULT_VETH_PREFIX,
 		},
 		map[string]struct{}{
 			"WARM_IP_TARGET":  {},

@@ -75,7 +75,7 @@ var _ = BeforeSuite(func() {
 		CreateNamespace(utils.DefaultTestNamespace)
 
 	By("getting the node list")
-	nodeList, err := f.K8sResourceManagers.NodeManager().GetAllNodes()
+	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(len(nodeList.Items)).To(BeNumerically(">", 0))
 

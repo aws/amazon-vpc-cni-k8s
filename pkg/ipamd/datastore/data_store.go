@@ -129,8 +129,9 @@ var (
 )
 
 // IPAMKey is the IPAM primary key.  Quoting CNI spec:
-//   Plugins that store state should do so using a primary key of
-//   (network name, CNI_CONTAINERID, CNI_IFNAME).
+//
+//	Plugins that store state should do so using a primary key of
+//	(network name, CNI_CONTAINERID, CNI_IFNAME).
 type IPAMKey struct {
 	NetworkName string `json:"networkName"`
 	ContainerID string `json:"containerID"`
@@ -232,7 +233,7 @@ func (e *ENI) AssignedIPv4Addresses() int {
 	return count
 }
 
-//AssignedIPAddressesInCidr is the number of IP addresses already assigned in the IPv4 CIDR
+// AssignedIPAddressesInCidr is the number of IP addresses already assigned in the IPv4 CIDR
 func (cidr *CidrInfo) AssignedIPAddressesInCidr() int {
 	count := 0
 	//SIP : This will run just once and count will be 0 if addr is not assigned or addr is not allocated yet(unused IP)
@@ -1219,10 +1220,7 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 		return nil, "", 0, err
 	}
 	addr.UnassignedTime = time.Now()
-	if ds.isPDEnabled && !availableCidr.IsPrefix {
-		ds.log.Infof("Prefix delegation is enabled and the IP is from secondary pool hence no need to update prefix pool")
-		ds.total--
-	}
+
 	//Update prometheus for ips per cidr
 	ipsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
 	ds.log.Infof("UnassignPodIPAddress: sandbox %s's ipAddr %s, DeviceNumber %d",
@@ -1467,7 +1465,7 @@ func getNextIPAddr(ip net.IP) {
 	}
 }
 
-//Function to return PD defaults supported by VPC
+// Function to return PD defaults supported by VPC
 func GetPrefixDelegationDefaults() (int, int, int) {
 	numPrefixesPerENI := 1
 	numIPsPerPrefix := 16
