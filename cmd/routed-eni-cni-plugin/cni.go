@@ -15,8 +15,6 @@
 package main
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -216,7 +214,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	// Non-zero value means pods are using branch ENI
 	if r.PodVlanId != 0 {
 		hostVethNamePrefix := sgpp.BuildHostVethNamePrefix(conf.VethPrefix, conf.PodSGEnforcingMode)
-		hostVethName = generateHostVethName(hostVethNamePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+		hostVethName = networkutils.GeneratePodHostVethName(hostVethNamePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		err = driverClient.SetupBranchENIPodNetwork(hostVethName, args.IfName, args.Netns, v4Addr, v6Addr, int(r.PodVlanId), r.PodENIMAC,
 			r.PodENISubnetGW, int(r.ParentIfIndex), mtu, conf.PodSGEnforcingMode, log)
 
@@ -224,7 +222,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		// which will be created for PPSG scenario to pass along the vlanId information
 		// as a part of the ADD cmd Result struct
 		// The podVlanId is used by DEL cmd, fetched from the prevResult struct to cleanup the pod network
-		dummyVlanInterfaceName := generateHostVethName(dummyVlanInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+		dummyVlanInterfaceName := networkutils.GeneratePodHostVethName(dummyVlanInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 
 		// The dummyVlanInterface is purely virtual and relevent only for ppsg, so we decided to keep it separate
 		// and not overload the already available hostVethInterface
@@ -233,7 +231,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	} else {
 		// build hostVethName
 		// Note: the maximum length for linux interface name is 15
-		hostVethName = generateHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+		hostVethName = networkutils.GeneratePodHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		err = driverClient.SetupPodNetwork(hostVethName, args.IfName, args.Netns, v4Addr, v6Addr, int(r.DeviceNumber), mtu, log)
 	}
 
@@ -288,15 +286,6 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	return cniTypes.PrintResult(result, conf.CNIVersion)
-}
-
-// generateHostVethName returns a name to be used on the host-side veth device.
-// The veth name is generated such that it aligns with the value expected
-// by Calico for NetworkPolicy enforcement.
-func generateHostVethName(prefix, namespace, podname string) string {
-	h := sha1.New()
-	h.Write([]byte(fmt.Sprintf("%s.%s", namespace, podname)))
-	return fmt.Sprintf("%s%s", prefix, hex.EncodeToString(h.Sum(nil))[:11])
 }
 
 func cmdDel(args *skel.CmdArgs) error {
@@ -425,7 +414,7 @@ func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArg
 		return false, nil
 	}
 
-	dummyIfaceName := generateHostVethName(dummyVlanInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+	dummyIfaceName := networkutils.GeneratePodHostVethName(dummyVlanInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 	_, dummyIface, found := cniutils.FindInterfaceByName(prevResult.Interfaces, dummyIfaceName)
 	if !found {
 		return false, nil
