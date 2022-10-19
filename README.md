@@ -53,7 +53,14 @@ See [here](./docs/iam-policy.md) for required IAM policies.
 
 The details can be found in [Proposal: CNI plugin for Kubernetes networking over AWS VPC](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/cni-proposal.md).
 
-[Troubleshooting Guide](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/troubleshooting.md) provides tips on how to debug and troubleshoot this CNI.
+## Help & Feedback
+
+For help, please consider the following venues (in order):
+* [Amazon EKS Best Practices Guide for Networking](https://aws.github.io/aws-eks-best-practices/networking/index/)
+* [Troubleshooting Guide](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/troubleshooting.md) provides tips on how to debug and troubleshoot this CNI.
+* [Search open issues](https://github.com/aws/amazon-vpc-cni-k8s/issues)
+* [File an issue](https://github.com/aws/amazon-vpc-cni-k8s/issues/new/choose)
+* Chat with us on the `#aws-vpc-cni` channel in the [Kubernetes Slack](https://kubernetes.slack.com/) community.
 
 ## ENI Allocation
 
