@@ -41,13 +41,14 @@ var _ = Describe("test warm target variables", func() {
 					"MAX_ENI":         strconv.Itoa(maxENI),
 				})
 
-			// Allow for IPAMD to reconcile it's state
+			// Allow for IPAMD to reconcile its state
 			time.Sleep(utils.PollIntervalLong * 5)
 
 			primaryInstance, err = f.CloudServices.
 				EC2().DescribeInstance(*primaryInstance.InstanceId)
 			Expect(err).ToNot(HaveOccurred())
 
+			// Validate number of allocated ENIs
 			Expect(len(primaryInstance.NetworkInterfaces)).
 				Should(Equal(MinIgnoreZero(warmENITarget, maxENI)))
 		})
@@ -58,13 +59,13 @@ var _ = Describe("test warm target variables", func() {
 				map[string]struct{}{"WARM_ENI_TARGET": {}, "MAX_ENI": {}})
 		})
 
-		Context("when WARM_ENI_TARGET = 2 and MAX_ENI = 1", func() {
+		Context("when WARM_ENI_TARGET = 3 and MAX_ENI = 2", func() {
 			BeforeEach(func() {
-				warmENITarget = 2
-				maxENI = 1
+				warmENITarget = 3
+				maxENI = 2
 			})
 
-			It("instance should have only 1 ENI", func() {})
+			It("instance should have only 2 ENIs", func() {})
 		})
 
 		Context("when WARM_ENI_TARGET = 3", func() {
@@ -76,13 +77,13 @@ var _ = Describe("test warm target variables", func() {
 			It("instance should have only 3 ENIs", func() {})
 		})
 
-		Context("when WARM_ENI_TARGET = 1", func() {
+		Context("when WARM_ENI_TARGET = 2", func() {
 			BeforeEach(func() {
-				warmENITarget = 1
+				warmENITarget = 2
 				maxENI = 0
 			})
 
-			It("instance should have only 1 ENI", func() {})
+			It("instance should have only 2 ENIs", func() {})
 		})
 
 	})

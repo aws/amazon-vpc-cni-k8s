@@ -86,7 +86,7 @@ func updateDaemonsetEnvVarsAndWait(f *framework.Framework, dsName string, dsName
 }
 
 func getDaemonSet(f *framework.Framework, dsName string, dsNamespace string) *v1.DaemonSet {
-	By(fmt.Sprintf("getting the %s daemon set in namesapce %s", dsName, dsNamespace))
+	By(fmt.Sprintf("getting the %s daemon set in namespace %s", dsName, dsNamespace))
 	ds, err := f.K8sResourceManagers.
 		DaemonSetManager().
 		GetDaemonSet(dsNamespace, dsName)
