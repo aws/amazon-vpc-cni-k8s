@@ -445,7 +445,7 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 			// Assume that no file == no containers are currently in use, e.g. a fresh reboot just cleared everything out.
 			// This is ok, and no-op.
 			if os.IsNotExist(err) {
-				ds.log.Debugf("backing store don't exists, assuming bootstrap on a new node")
+				ds.log.Debugf("backing store doesn't exists, assuming bootstrap on a new node")
 				return nil
 			}
 			return errors.Wrap(err, "failed ipam state recovery from backing store")
@@ -1547,7 +1547,7 @@ func (ds *DataStore) CheckFreeableENIexists() bool {
 	return false
 }
 
-// NormalizeCheckpointDataByPodVethExistence will normalize checkpoint data by remove allocations that don't have a corresponding pod veth.
+// NormalizeCheckpointDataByPodVethExistence will normalize checkpoint data by removing allocations that don't have a corresponding pod veth.
 // This shouldn't happen unless container runtimes have bugs that failed to invoke the cmdDel for died pods.
 // we use this reconciliation as a safety mechanism during transition from CRI to state file.
 func (ds *DataStore) normalizeCheckpointDataByPodVethExistence(checkpoint CheckpointData) (CheckpointData, error) {
