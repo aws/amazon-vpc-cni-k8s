@@ -42,7 +42,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v1
         with:
           role-to-assume: ${{ secrets.OSS_TEST_ROLE_ARN }}
-          role-duration-seconds: 7200
+          role-duration-seconds: 10800
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
       - name: Run e2e tests
         env:
