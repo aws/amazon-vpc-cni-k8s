@@ -63,8 +63,7 @@ The following table lists the configurable parameters for this chart and their d
 | `podLabels`             | Labels to add to each pod                               | `{}`                                |
 | `priorityClassName`     | Name of the priorityClass                               | `system-node-critical`              |
 | `resources`             | Resources for the pods                                  | `requests.cpu: 10m`                 |
-| `securityContext`       | Container Security context                              | `capabilities: add: - "NET_ADMIN" 
-- "NET_RAW"`  |
+| `securityContext`       | Container Security context                              | `capabilities: add: - "NET_ADMIN" - "NET_RAW"`  |
 | `serviceAccount.name`   | The name of the ServiceAccount to use                   | `nil`                               |
 | `serviceAccount.create` | Specifies whether a ServiceAccount should be created    | `true`                              |
 | `serviceAccount.annotations` | Specifies the annotations for ServiceAccount       | `{}`                                |
