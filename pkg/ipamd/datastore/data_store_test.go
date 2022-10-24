@@ -19,6 +19,10 @@ import (
 	"testing"
 	"time"
 
+	mock_netlinkwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mocks"
+	"github.com/golang/mock/gomock"
+	"github.com/vishvananda/netlink"
+
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
@@ -1069,4 +1073,403 @@ func TestWarmENIInteractions(t *testing.T) {
 	// None of the others can be removed...
 	assert.Equal(t, "", thirdRemovedEni)
 	assert.Equal(t, 3, ds.GetENIs())
+}
+
+func TestDataStore_normalizeCheckpointDataByPodVethExistence(t *testing.T) {
+	type netLinkListCall struct {
+		links []netlink.Link
+		err   error
+	}
+	type fields struct {
+		netLinkListCalls []netLinkListCall
+	}
+	type args struct {
+		checkpoint CheckpointData
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    CheckpointData
+		wantErr error
+	}{
+		{
+			name: "all allocations are valid",
+			fields: fields{
+				netLinkListCalls: []netLinkListCall{
+					{
+						links: []netlink.Link{
+							&netlink.Device{
+								LinkAttrs: netlink.LinkAttrs{
+									Name: "eth0",
+								},
+							},
+							&netlink.Veth{
+								LinkAttrs: netlink.LinkAttrs{
+									Name: "enib5faff8a083",
+								},
+							},
+							&netlink.Veth{
+								LinkAttrs: netlink.LinkAttrs{
+									Name: "eni9571956a6cc",
+								},
+							},
+						},
+					},
+				},
+			},
+			args: args{
+				checkpoint: CheckpointData{
+					Version: CheckpointFormatVersion,
+					Allocations: []CheckpointEntry{
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.9.106",
+							Metadata: IPAMMetadata{
+								K8SPodNamespace: "kube-system",
+								K8SPodName:      "coredns-57ff979f67-qqbdh",
+							},
+						},
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "b4729ce84caa9e585c2ba84fc9f9a058f4cf783292a84608f717035e09553422",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.30.161",
+							Metadata: IPAMMetadata{
+								K8SPodNamespace: "kube-system",
+								K8SPodName:      "coredns-57ff979f67-8ns9b",
+							},
+						},
+					},
+				},
+			},
+			want: CheckpointData{
+				Version: CheckpointFormatVersion,
+				Allocations: []CheckpointEntry{
+					{
+						IPAMKey: IPAMKey{
+							ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+							NetworkName: "aws-cni",
+							IfName:      "eth0",
+						},
+						IPv4: "192.168.9.106",
+						Metadata: IPAMMetadata{
+							K8SPodNamespace: "kube-system",
+							K8SPodName:      "coredns-57ff979f67-qqbdh",
+						},
+					},
+					{
+						IPAMKey: IPAMKey{
+							ContainerID: "b4729ce84caa9e585c2ba84fc9f9a058f4cf783292a84608f717035e09553422",
+							NetworkName: "aws-cni",
+							IfName:      "eth0",
+						},
+						IPv4: "192.168.30.161",
+						Metadata: IPAMMetadata{
+							K8SPodNamespace: "kube-system",
+							K8SPodName:      "coredns-57ff979f67-8ns9b",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "some allocations are invalid and some allocation don't have metadata",
+			fields: fields{
+				netLinkListCalls: []netLinkListCall{
+					{
+						links: []netlink.Link{
+							&netlink.Device{
+								LinkAttrs: netlink.LinkAttrs{
+									Name: "eth0",
+								},
+							},
+							&netlink.Veth{
+								LinkAttrs: netlink.LinkAttrs{
+									Name: "enib5faff8a083",
+								},
+							},
+							&netlink.Veth{
+								LinkAttrs: netlink.LinkAttrs{
+									Name: "enicc21c2d7785",
+								},
+							},
+						},
+					},
+				},
+			},
+			args: args{
+				checkpoint: CheckpointData{
+					Version: CheckpointFormatVersion,
+					Allocations: []CheckpointEntry{
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.9.106",
+							Metadata: IPAMMetadata{
+								K8SPodNamespace: "kube-system",
+								K8SPodName:      "coredns-57ff979f67-qqbdh",
+							},
+						},
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "b4729ce84caa9e585c2ba84fc9f9a058f4cf783292a84608f717035e09553422",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.30.161",
+							Metadata: IPAMMetadata{
+								K8SPodNamespace: "kube-system",
+								K8SPodName:      "coredns-57ff979f67-8ns9b",
+							},
+						},
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "d0437ce84caa9e585c2ba84fc9f9a058f4cf783292a84608f717035e0952341",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.42.42",
+						},
+					},
+				},
+			},
+			want: CheckpointData{
+				Version: CheckpointFormatVersion,
+				Allocations: []CheckpointEntry{
+					{
+						IPAMKey: IPAMKey{
+							ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+							NetworkName: "aws-cni",
+							IfName:      "eth0",
+						},
+						IPv4: "192.168.9.106",
+						Metadata: IPAMMetadata{
+							K8SPodNamespace: "kube-system",
+							K8SPodName:      "coredns-57ff979f67-qqbdh",
+						},
+					},
+					{
+						IPAMKey: IPAMKey{
+							ContainerID: "d0437ce84caa9e585c2ba84fc9f9a058f4cf783292a84608f717035e0952341",
+							NetworkName: "aws-cni",
+							IfName:      "eth0",
+						},
+						IPv4: "192.168.42.42",
+					},
+				},
+			},
+		},
+		{
+			name: "netlink list failed",
+			fields: fields{
+				netLinkListCalls: []netLinkListCall{
+					{
+						err: errors.New("netlink failed"),
+					},
+				},
+			},
+			args: args{
+				checkpoint: CheckpointData{
+					Version: CheckpointFormatVersion,
+					Allocations: []CheckpointEntry{
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.9.106",
+							Metadata: IPAMMetadata{
+								K8SPodNamespace: "kube-system",
+								K8SPodName:      "coredns-57ff979f67-qqbdh",
+							},
+						},
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "b4729ce84caa9e585c2ba84fc9f9a058f4cf783292a84608f717035e09553422",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.30.161",
+							Metadata: IPAMMetadata{
+								K8SPodNamespace: "kube-system",
+								K8SPodName:      "coredns-57ff979f67-8ns9b",
+							},
+						},
+					},
+				},
+			},
+			wantErr: errors.New("netlink failed"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+			for _, call := range tt.fields.netLinkListCalls {
+				netLink.EXPECT().LinkList().Return(call.links, call.err)
+			}
+			ds := &DataStore{netLink: netLink, log: logger.DefaultLogger()}
+			got, err := ds.normalizeCheckpointDataByPodVethExistence(tt.args.checkpoint)
+			if tt.wantErr != nil {
+				assert.EqualError(t, err, tt.wantErr.Error())
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestDataStore_validateAllocationByPodVethExistence(t *testing.T) {
+	type args struct {
+		allocation  CheckpointEntry
+		hostNSLinks []netlink.Link
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr error
+	}{
+		{
+			name: "one veth pair found with matching suffix and eni prefix",
+			args: args{
+				allocation: CheckpointEntry{
+					IPAMKey: IPAMKey{
+						ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+						NetworkName: "aws-cni",
+						IfName:      "eth0",
+					},
+					IPv4: "192.168.9.106",
+					Metadata: IPAMMetadata{
+						K8SPodNamespace: "kube-system",
+						K8SPodName:      "coredns-57ff979f67-qqbdh",
+					},
+				},
+				hostNSLinks: []netlink.Link{
+					&netlink.Device{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "eth0",
+						},
+					},
+					&netlink.Veth{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "enib5faff8a083",
+						},
+					},
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "one veth pair found with matching suffix and custom prefix",
+			args: args{
+				allocation: CheckpointEntry{
+					IPAMKey: IPAMKey{
+						ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+						NetworkName: "aws-cni",
+						IfName:      "eth0",
+					},
+					IPv4: "192.168.9.106",
+					Metadata: IPAMMetadata{
+						K8SPodNamespace: "kube-system",
+						K8SPodName:      "coredns-57ff979f67-qqbdh",
+					},
+				},
+				hostNSLinks: []netlink.Link{
+					&netlink.Device{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "eth0",
+						},
+					},
+					&netlink.Veth{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "customb5faff8a083",
+						},
+					},
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "no veth pair found with matching suffix",
+			args: args{
+				allocation: CheckpointEntry{
+					IPAMKey: IPAMKey{
+						ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+						NetworkName: "aws-cni",
+						IfName:      "eth0",
+					},
+					IPv4: "192.168.9.106",
+					Metadata: IPAMMetadata{
+						K8SPodNamespace: "kube-system",
+						K8SPodName:      "coredns-57ff979f67-qqbdh",
+					},
+				},
+				hostNSLinks: []netlink.Link{
+					&netlink.Device{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "eth0",
+						},
+					},
+					&netlink.Veth{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "eni9571956a6cc",
+						},
+					},
+				},
+			},
+			wantErr: errors.New("host-side veth not found for pod kube-system/coredns-57ff979f67-qqbdh"),
+		},
+		{
+			name: "allocation without metadata should pass validation",
+			args: args{
+				allocation: CheckpointEntry{
+					IPAMKey: IPAMKey{
+						ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+						NetworkName: "aws-cni",
+						IfName:      "eth0",
+					},
+					IPv4:     "192.168.9.106",
+					Metadata: IPAMMetadata{},
+				},
+				hostNSLinks: []netlink.Link{
+					&netlink.Device{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "eth0",
+						},
+					},
+					&netlink.Veth{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "eni9571956a6cc",
+						},
+					},
+				},
+			},
+			wantErr: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ds := &DataStore{}
+			err := ds.validateAllocationByPodVethExistence(tt.args.allocation, tt.args.hostNSLinks)
+			if tt.wantErr != nil {
+				assert.EqualError(t, err, tt.wantErr.Error())
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

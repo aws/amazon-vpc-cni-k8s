@@ -43,6 +43,9 @@ type PodManager interface {
 	CreatAndWaitTillRunning(pod *v1.Pod) (*v1.Pod, error)
 	CreateAndWaitTillPodCompleted(pod *v1.Pod) (*v1.Pod, error)
 	DeleteAndWaitTillPodDeleted(pod *v1.Pod) error
+
+	WaitUntilPodRunning(ctx context.Context, pod *v1.Pod) error
+	WaitUntilPodDeleted(ctx context.Context, pod *v1.Pod) error
 }
 
 type defaultPodManager struct {
@@ -131,6 +134,32 @@ func (d *defaultPodManager) DeleteAndWaitTillPodDeleted(pod *v1.Pod) error {
 		}
 		return false, nil
 	})
+}
+
+func (d *defaultPodManager) WaitUntilPodRunning(ctx context.Context, pod *v1.Pod) error {
+	observedPod := &v1.Pod{}
+	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (done bool, err error) {
+		if err := d.k8sClient.Get(ctx, utils.NamespacedName(pod), observedPod); err != nil {
+			return false, err
+		}
+		if observedPod.Status.Phase == v1.PodRunning {
+			return true, nil
+		}
+		return false, nil
+	}, ctx.Done())
+}
+
+func (d *defaultPodManager) WaitUntilPodDeleted(ctx context.Context, pod *v1.Pod) error {
+	observedPod := &v1.Pod{}
+	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+		if err := d.k8sClient.Get(ctx, utils.NamespacedName(pod), observedPod); err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return false, nil
+	}, ctx.Done())
 }
 
 func (d *defaultPodManager) PodLogs(namespace string, name string) (string, error) {
