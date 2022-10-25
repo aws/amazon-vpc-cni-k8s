@@ -106,6 +106,29 @@ func newCreateVethPairContext(contVethName string, hostVethName string, v4Addr *
 	}
 }
 
+type vethConfiguration struct {
+	dummyRouterAddress net.IP
+	maskLen            int
+	contVethAddress    *netlink.Addr
+	defaultDestination *net.IPNet
+}
+
+func (createVethContext *createVethPairContext) vethConfiguration() vethConfiguration {
+	var configuration vethConfiguration
+	if createVethContext.v4Addr != nil {
+		configuration.dummyRouterAddress = net.IPv4(169, 254, 1, 1)
+		configuration.maskLen = 8 * net.IPv4len
+		configuration.contVethAddress = &netlink.Addr{IPNet: createVethContext.v4Addr}
+		configuration.defaultDestination = &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 8*net.IPv4len)}
+	} else if createVethContext.v6Addr != nil {
+		configuration.dummyRouterAddress = net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
+		configuration.maskLen = 8 * net.IPv6len
+		configuration.contVethAddress = &netlink.Addr{IPNet: createVethContext.v6Addr}
+		configuration.defaultDestination = &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 8*net.IPv6len)}
+	}
+	return configuration
+}
+
 // run defines the closure to execute within the container's namespace to create the veth pair
 func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	veth := &netlink.Veth{
@@ -167,21 +190,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	// Add an onlink route to a dummy next hop (169.254.1.1 or fe80::1)
 	// # ip route show
 	// default via 169.254.1.1 dev eth0 onlink
-
-	var contVethAddress *netlink.Addr
-	var defaultDst *net.IPNet
-	var defaultGateway net.IP
-	if createVethContext.v4Addr != nil {
-		contVethAddress = &netlink.Addr{IPNet: createVethContext.v4Addr}
-		defaultDst = &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 8*net.IPv4len)}
-		defaultGateway = net.IPv4(169, 254, 1, 1)
-	} else if createVethContext.v6Addr != nil {
-		contVethAddress = &netlink.Addr{IPNet: createVethContext.v6Addr}
-		defaultDst = &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 8*net.IPv6len)}
-		defaultGateway = net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
-	}
-
-	if err = createVethContext.netLink.AddrAdd(contVeth, contVethAddress); err != nil {
+	if err = createVethContext.netLink.AddrAdd(contVeth, createVethContext.vethConfiguration().contVethAddress); err != nil {
 		return errors.Wrapf(err, "setup NS network: failed to add IP addr to %q", createVethContext.contVethName)
 	}
 
@@ -190,8 +199,8 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	defaultRoute := &netlink.Route{
 		LinkIndex: contVeth.Attrs().Index,
 		Scope:     netlink.SCOPE_UNIVERSE,
-		Dst:       defaultDst,
-		Gw:        defaultGateway,
+		Dst:       createVethContext.vethConfiguration().defaultDestination,
+		Gw:        createVethContext.vethConfiguration().dummyRouterAddress,
 		Flags:     int(netlink.FLAG_ONLINK),
 	}
 	if err = createVethContext.netLink.RouteAdd(defaultRoute); err != nil {
@@ -379,23 +388,13 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 	}
 
 	// configure host end of veth with a link-local ip address so no static arp entry is required inside pod's net ns.
-	var hostVethIpNet *net.IPNet
-	if createVethContext.v4Addr != nil {
-		hostVethIpNet = &net.IPNet{
-			IP:   net.IPv4(169, 254, 1, 1),
-			Mask: net.CIDRMask(8*net.IPv4len, 8*net.IPv4len),
-		}
-	} else if createVethContext.v4Addr != nil {
-		hostVethIpNet = &net.IPNet{
-			IP:   net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			Mask: net.CIDRMask(8*net.IPv6len, 8*net.IPv6len),
-		}
-	}
 	hostLinkAddress := &netlink.Addr{
-		IPNet: hostVethIpNet,
+		IPNet: &net.IPNet{
+			IP:   createVethContext.vethConfiguration().dummyRouterAddress,
+			Mask: net.CIDRMask(createVethContext.vethConfiguration().maskLen, createVethContext.vethConfiguration().maskLen),
+		},
 		Scope: int(netlink.SCOPE_LINK),
 	}
-
 	if err := createVethContext.netLink.AddrAdd(hostVeth, hostLinkAddress); err != nil {
 		return nil, errors.Wrapf(err, "setup host network: failed to add link-local addr to %q", createVethContext.hostVethName)
 	}
