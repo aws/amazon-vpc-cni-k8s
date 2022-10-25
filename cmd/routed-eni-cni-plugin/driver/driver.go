@@ -141,7 +141,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	}
 
 	if err := createVethContext.netLink.LinkAdd(veth); err != nil {
-		return err
+		return errors.Wrapf(err, "setup NS network: failed to add veth link")
 	}
 
 	hostVeth, err := createVethContext.netLink.LinkByName(createVethContext.hostVethName)
@@ -190,7 +190,8 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	// Add an onlink route to a dummy next hop (169.254.1.1 or fe80::1)
 	// # ip route show
 	// default via 169.254.1.1 dev eth0 onlink
-	if err = createVethContext.netLink.AddrAdd(contVeth, createVethContext.vethConfiguration().contVethAddress); err != nil {
+	vethConfig := createVethContext.vethConfiguration()
+	if err = createVethContext.netLink.AddrAdd(contVeth, vethConfig.contVethAddress); err != nil {
 		return errors.Wrapf(err, "setup NS network: failed to add IP addr to %q", createVethContext.contVethName)
 	}
 
@@ -199,8 +200,8 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	defaultRoute := &netlink.Route{
 		LinkIndex: contVeth.Attrs().Index,
 		Scope:     netlink.SCOPE_UNIVERSE,
-		Dst:       createVethContext.vethConfiguration().defaultDestination,
-		Gw:        createVethContext.vethConfiguration().dummyRouterAddress,
+		Dst:       vethConfig.defaultDestination,
+		Gw:        vethConfig.dummyRouterAddress,
 		Flags:     int(netlink.FLAG_ONLINK),
 	}
 	if err = createVethContext.netLink.RouteAdd(defaultRoute); err != nil {
@@ -388,10 +389,11 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 	}
 
 	// configure host end of veth with a link-local ip address so no static arp entry is required inside pod's net ns.
+	vethConfig := createVethContext.vethConfiguration()
 	hostLinkAddress := &netlink.Addr{
 		IPNet: &net.IPNet{
-			IP:   createVethContext.vethConfiguration().dummyRouterAddress,
-			Mask: net.CIDRMask(createVethContext.vethConfiguration().maskLen, createVethContext.vethConfiguration().maskLen),
+			IP:   vethConfig.dummyRouterAddress,
+			Mask: net.CIDRMask(vethConfig.maskLen, vethConfig.maskLen),
 		},
 		Scope: int(netlink.SCOPE_LINK),
 	}
