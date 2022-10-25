@@ -187,16 +187,15 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		}
 	}
 
-	// Add an onlink route to a dummy next hop (169.254.1.1 or fe80::1)
-	// # ip route show
-	// default via 169.254.1.1 dev eth0 onlink
 	vethConfig := createVethContext.vethConfiguration()
 	if err = createVethContext.netLink.AddrAdd(contVeth, vethConfig.contVethAddress); err != nil {
 		return errors.Wrapf(err, "setup NS network: failed to add IP addr to %q", createVethContext.contVethName)
 	}
 
-	// Add a default route via dummy next hop(169.254.1.1 or fe80::1). Then all outgoing traffic will be routed by this
-	// default route via dummy next hop (169.254.1.1 or fe80::1)
+	// Add a default onlink route via dummy next hop(169.254.1.1 or fe80::1).
+	// Then all outgoing traffic will be routed by this default route via dummy next hop (169.254.1.1 or fe80::1)
+	// # ip route show
+	// default via 169.254.1.1 dev eth0 onlink
 	defaultRoute := &netlink.Route{
 		LinkIndex: contVeth.Attrs().Index,
 		Scope:     netlink.SCOPE_UNIVERSE,
