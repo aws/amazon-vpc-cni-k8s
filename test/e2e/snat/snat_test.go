@@ -141,6 +141,7 @@ func ValidateIPTableRules(randomizedSNATValue string, numOfCidrs int) {
 		Command([]string{"./snat-utils"}).
 		CapabilitiesForSecurityContext([]corev1.Capability{
 			"NET_ADMIN",
+			"NET_RAW",
 		}, nil).
 		Args(testerArgs).
 		Build()
