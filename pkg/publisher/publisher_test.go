@@ -35,11 +35,7 @@ const (
 )
 
 func TestCloudWatchPublisherWithNoIMDS(t *testing.T) {
-	logConfig := logger.Configuration{
-		LogLevel:    "Debug",
-		LogLocation: "stdout",
-	}
-	log := logger.New(&logConfig)
+	log := getCloudWatchLog()
 	ctx, cancel := context.WithCancel(context.TODO())
 	defer cancel()
 
@@ -150,6 +146,7 @@ func TestCloudWatchPublisherWithSingleDatumWithError(t *testing.T) {
 		cloudwatchClient: mockCloudWatch,
 		clusterID:        testClusterID,
 		localMetricData:  make([]*cloudwatch.MetricDatum, 0, localMetricDataSize),
+		log:              getCloudWatchLog(),
 	}
 
 	testCloudwatchMetricDatum := &cloudwatch.MetricDatum{
@@ -188,7 +185,7 @@ func TestGetCloudWatchMetricDatumDimensions(t *testing.T) {
 }
 
 func TestGetCloudWatchMetricDatumDimensionsWithMissingClusterID(t *testing.T) {
-	cloudwatchPublisher := &cloudWatchPublisher{}
+	cloudwatchPublisher := &cloudWatchPublisher{log: getCloudWatchLog()}
 
 	expectedCloudwatchDimensions := []*cloudwatch.Dimension{
 		{
@@ -202,7 +199,7 @@ func TestGetCloudWatchMetricDatumDimensionsWithMissingClusterID(t *testing.T) {
 }
 
 func TestPublishWithNoData(t *testing.T) {
-	cloudwatchPublisher := &cloudWatchPublisher{}
+	cloudwatchPublisher := &cloudWatchPublisher{log: getCloudWatchLog()}
 
 	testMetricDataPoints := []*cloudwatch.MetricDatum{}
 
@@ -211,7 +208,7 @@ func TestPublishWithNoData(t *testing.T) {
 }
 
 func TestPushWithMissingData(t *testing.T) {
-	cloudwatchPublisher := &cloudWatchPublisher{}
+	cloudwatchPublisher := &cloudWatchPublisher{log: getCloudWatchLog()}
 	testMetricDataPoints := []*cloudwatch.MetricDatum{}
 
 	cloudwatchPublisher.push(testMetricDataPoints)
@@ -238,6 +235,14 @@ func (m mockCloudWatchClient) PutMetricData(input *cloudwatch.PutMetricDataInput
 	return &cloudwatch.PutMetricDataOutput{}, m.mockPutMetricDataError
 }
 
+func getCloudWatchLog() logger.Logger {
+	logConfig := logger.Configuration{
+		LogLevel:    "Debug",
+		LogLocation: "stdout",
+	}
+	return logger.New(&logConfig)
+}
+
 func getCloudWatchPublisher(t *testing.T) *cloudWatchPublisher {
 	// Setup context
 	derivedContext, cancel := context.WithCancel(context.TODO())
@@ -248,5 +253,6 @@ func getCloudWatchPublisher(t *testing.T) *cloudWatchPublisher {
 		cloudwatchClient: mockCloudWatchClient{},
 		clusterID:        testClusterID,
 		localMetricData:  make([]*cloudwatch.MetricDatum, 0, localMetricDataSize),
+		log:              getCloudWatchLog(),
 	}
 }
