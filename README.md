@@ -622,8 +622,9 @@ and the kubelet respectively if you are making use of this tag.
 
 ### Container Runtime
 
-For VPC CNI >=v1.12.0, IPAMD have switched to use an on-disk file `/var/run/aws-node/ipam.json` to track IP allocations, thus no longer requires access to Container Runtime Interface(CRI).
-
+For VPC CNI >=v1.12.0, IPAMD have switched to use an on-disk file `/var/run/aws-node/ipam.json` to track IP allocations, thus became container runtime agnostic and no longer requires access to Container Runtime Interface(CRI) socket.
+   * **Note**: 
+     * Helm chart >=v1.2.0 is released with VPC CNI v1.12.0, thus no longer supports the `cri.hostPath.path`. If you need to install a VPC CNI <v1.12.0 with helm chart, a Helm chart version that <v1.2.0 should be used.
 
 For VPC CNI <v1.12.0, IPAMD still depends on CRI to track IP allocations using pod sandboxes information upon its starting.
 * By default the dockershim CRI socket was mounted but can be customized to use other CRI:
