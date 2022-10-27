@@ -622,16 +622,17 @@ and the kubelet respectively if you are making use of this tag.
 
 ### Container Runtime
 
-Currently, IPAMD uses dockershim socket to pull pod sandboxes information upon its starting. The runtime can be set to others.
-The mountPath should be changed to `/var/run/cri.sock` and hostPath should be pointed to the wanted socket, such as
-`/var/run/containerd/containerd.sock` for containerd. If using helm chart, the flag `--set cri.hostPath.path=/var/run/containerd/containerd.sock`
-can set the paths for you.
+For VPC CNI >=v1.12.0, IPAMD have switched to use an on-disk file `/var/run/aws-node/ipam.json` to track IP allocations, thus became container runtime agnostic and no longer requires access to Container Runtime Interface(CRI) socket.
+   * **Note**: 
+     * Helm chart >=v1.2.0 is released with VPC CNI v1.12.0, thus no longer supports the `cri.hostPath.path`. If you need to install a VPC CNI <v1.12.0 with helm chart, a Helm chart version that <v1.2.0 should be used.
 
-*Note*:
-
-* When using a different container runtime instead of dockershim in VPC CNI, make sure kubelet is also configured to use the same CRI.
-* If you want to enable containerd runtime with the support provided by Amazon AMI, please follow the instructions in our documentation, [Enable the containerd runtime bootstrap flag](https://docs.aws.amazon.com/eks/latest/userguide/eks-optimized-ami.html#containerd-bootstrap)
-
+For VPC CNI <v1.12.0, IPAMD still depends on CRI to track IP allocations using pod sandboxes information upon its starting.
+* By default the dockershim CRI socket was mounted but can be customized to use other CRI:
+    * The mountPath should be changed to `/var/run/cri.sock` and hostPath should be pointed to CRI used by kubelet, such as `/var/run/containerd/containerd.sock` for containerd.
+    * With Helm chart <v1.2.0, the flag `--set cri.hostPath.path=/var/run/containerd/containerd.sock` can set above for you.
+* **Note**:
+    * When using a different container runtime instead of the default dockershim in VPC CNI, make sure kubelet is also configured to use the same CRI.
+    * If you want to enable containerd runtime with the support provided by Amazon AMI, please follow the instructions in our documentation, [Enable the containerd runtime bootstrap flag](https://docs.aws.amazon.com/eks/latest/userguide/eks-optimized-ami.html#containerd-bootstrap)
 ### Notes
 
 `L-IPAMD`(aws-node daemonSet) running on every worker node requires access to the Kubernetes API server. If it can **not** reach
