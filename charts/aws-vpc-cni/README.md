@@ -39,14 +39,14 @@ The following table lists the configurable parameters for this chart and their d
 | `env`                   | List of environment variables. See [here](https://github.com/aws/amazon-vpc-cni-k8s#cni-configuration-variables) for options | (see `values.yaml`) |
 | `fullnameOverride`      | Override the fullname of the chart                      | `aws-node`                          |
 | `image.region`          | ECR repository region to use. Should match your cluster | `us-west-2`                         |
-| `image.tag`             | Image tag                                               | `v1.10.2`                           |
+| `image.tag`             | Image tag                                               | `v1.12.0`                           |
 | `image.account`         | ECR repository account number                           | `602401143452`                      |
 | `image.domain`          | ECR repository domain                                   | `amazonaws.com`                     |
 | `image.pullPolicy`      | Container pull policy                                   | `IfNotPresent`                      |
 | `image.override`        | A custom docker image to use                            | `nil`                               |
 | `imagePullSecrets`      | Docker registry pull secret                             | `[]`                                |
 | `init.image.region`     | ECR repository region to use. Should match your cluster | `us-west-2`                         |
-| `init.image.tag`        | Image tag                                               | `v1.10.2`                           |
+| `init.image.tag`        | Image tag                                               | `v1.12.0`                           |
 | `init.image.account`    | ECR repository account number                           | `602401143452`                      |
 | `init.image.domain`     | ECR repository domain                                   | `amazonaws.com`                     |
 | `init.image.pullPolicy` | Container pull policy                                   | `IfNotPresent`                      |
@@ -72,7 +72,6 @@ The following table lists the configurable parameters for this chart and their d
 | `crd.create`            | Specifies whether to create the VPC-CNI CRD             | `true`                              |
 | `tolerations`           | Optional deployment tolerations                         | `[]`                                |
 | `updateStrategy`        | Optional update strategy                                | `type: RollingUpdate`               |
-| `cri.hostPath`          | Optional use alternative container runtime              | `nil`                               |
 
 Specify each parameter using the `--set key=value[,key=value]` argument to `helm install` or provide a YAML file containing the values for the above parameters:
 

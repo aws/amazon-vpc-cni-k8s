@@ -142,12 +142,13 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	k8sUtil.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
-		utils.AwsNodeName, map[string]struct{}{"SOME_NON_EXISTENT_VAR": {}})
 
 	By("detaching role policy from the node IAM Role")
 	err = f.CloudServices.IAM().DetachRolePolicy(policyARN, ngRoleName)
 	Expect(err).ToNot(HaveOccurred())
+
+	k8sUtil.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
+		utils.AwsNodeName, map[string]struct{}{"SOME_NON_EXISTENT_VAR": {}})
 
 	By("uninstalling cni-metrics-helper using helm")
 	err := f.InstallationManager.UnInstallCNIMetricsHelper()

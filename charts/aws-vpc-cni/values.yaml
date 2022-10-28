@@ -8,7 +8,7 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.11.4
+    tag: v1.12.0
     region: us-west-2
     account: "602401143452"   
     pullPolicy: Always
@@ -23,7 +23,7 @@ init:
 
 image:
   region: us-west-2
-  tag: v1.11.4
+  tag: v1.12.0
   account: "602401143452"   
   domain: "amazonaws.com"  
   pullPolicy: Always
@@ -166,7 +166,3 @@ eniConfig:
     #   id: subnet-789
     #   securityGroups:
     #   - sg-789
-
-cri:
-  hostPath:
-#     path: /var/run/containerd/containerd.sock
