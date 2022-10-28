@@ -348,8 +348,14 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 		podSGEnforcingMode sgpp.EnforcingMode
 		err                error
 	}
+	type teardownPodNetworkCall struct {
+		containerAddr *net.IPNet
+		deviceNumber  int
+		err           error
+	}
 	type fields struct {
 		teardownBranchENIPodNetworkCalls []teardownBranchENIPodNetworkCall
+		teardownPodNetworkCalls          []teardownPodNetworkCall
 	}
 	type args struct {
 		conf         *NetConf
@@ -357,11 +363,12 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 		contVethName string
 	}
 	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    bool
-		wantErr error
+		name         string
+		fields       fields
+		args         args
+		want         bool
+		canSkipIpamd bool
+		wantErr      error
 	}{
 		{
 			name: "successfully deleted with information from prevResult - with enforcing mode standard",
@@ -414,7 +421,8 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				},
 				contVethName: "eth0",
 			},
-			want: true,
+			want:         true,
+			canSkipIpamd: true,
 		},
 		{
 			name: "successfully deleted with information from prevResult - with enforcing mode strict",
@@ -467,7 +475,61 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				},
 				contVethName: "eth0",
 			},
-			want: true,
+			want:         true,
+			canSkipIpamd: true,
+		},
+		{
+			name: "successfully deleted with information from prevResult - non-SGPP",
+			fields: fields{
+				teardownPodNetworkCalls: []teardownPodNetworkCall{
+					{
+						containerAddr: &net.IPNet{
+							IP:   net.ParseIP("192.168.1.1"),
+							Mask: net.CIDRMask(32, 32),
+						},
+						deviceNumber: 5,
+					},
+				},
+			},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name:    "dummycc21c2d7785",
+									Mac:     "0",
+									Sandbox: "5",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			want:         true,
+			canSkipIpamd: false,
 		},
 		{
 			name: "failed to delete due to teardownBranchENIPodNetworkCall failed",
@@ -521,7 +583,62 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				},
 				contVethName: "eth0",
 			},
-			wantErr: errors.New("some error"),
+			wantErr:      errors.New("some error"),
+			canSkipIpamd: true,
+		},
+		{
+			name: "failed to delete due to teardownPodNetworkCall failed",
+			fields: fields{
+				teardownPodNetworkCalls: []teardownPodNetworkCall{
+					{
+						containerAddr: &net.IPNet{
+							IP:   net.ParseIP("192.168.1.1"),
+							Mask: net.CIDRMask(32, 32),
+						},
+						deviceNumber: 5,
+						err:          errors.New("some error"),
+					},
+				},
+			},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name:    "dummycc21c2d7785",
+									Mac:     "0",
+									Sandbox: "5",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			wantErr:      errors.New("some error"),
+			canSkipIpamd: false,
 		},
 		{
 			name:   "dummy interface don't exists",
@@ -559,7 +676,8 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				},
 				contVethName: "eth0",
 			},
-			want: false,
+			want:         false,
+			canSkipIpamd: false,
 		},
 		{
 			name:   "malformed vlanID in prevResult - xxx",
@@ -601,10 +719,11 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				},
 				contVethName: "eth0",
 			},
-			wantErr: errors.New("malformed vlanID in prevResult: xxx"),
+			wantErr:      errors.New("malformed vlanID in prevResult: xxx"),
+			canSkipIpamd: false,
 		},
 		{
-			name:   "malformed vlanID in prevResult - 0",
+			name:   "malformed deviceNumber in prevResult - xxx",
 			fields: fields{},
 			args: args{
 				conf: &NetConf{
@@ -619,8 +738,9 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 									Sandbox: "/proc/42/ns/net",
 								},
 								{
-									Name: "dummycc21c2d7785",
-									Mac:  "0",
+									Name:    "dummycc21c2d7785",
+									Mac:     "0",
+									Sandbox: "xxx",
 								},
 							},
 							IPs: []*current.IPConfig{
@@ -635,7 +755,6 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 							},
 						},
 					},
-					PodSGEnforcingMode: sgpp.EnforcingModeStandard,
 				},
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
@@ -643,10 +762,11 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				},
 				contVethName: "eth0",
 			},
-			wantErr: errors.New("malformed vlanID in prevResult: 0"),
+			wantErr:      errors.New("malformed deviceNumber in prevResult: xxx"),
+			canSkipIpamd: false,
 		},
 		{
-			name:   "confVeth don't exists",
+			name:   "confVeth does not exist",
 			fields: fields{},
 			args: args{
 				conf: &NetConf{
@@ -681,10 +801,11 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				},
 				contVethName: "eth0",
 			},
-			wantErr: errors.New("cannot find contVethName eth0 in prevResult"),
+			wantErr:      errors.New("cannot find contVethName eth0 in prevResult"),
+			canSkipIpamd: true,
 		},
 		{
-			name:   "container IP don't exists",
+			name:   "container IP does not exist - SGPP",
 			fields: fields{},
 			args: args{
 				conf: &NetConf{
@@ -714,7 +835,42 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				},
 				contVethName: "eth0",
 			},
-			wantErr: errors.New("found 0 containerIP for eth0 in prevResult"),
+			wantErr:      errors.New("found 0 containerIP for eth0 in prevResult"),
+			canSkipIpamd: true,
+		},
+		{
+			name:   "container IP does not exist - non SGPP",
+			fields: fields{},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name:    "dummycc21c2d7785",
+									Mac:     "0",
+									Sandbox: "5",
+								},
+							},
+							IPs: []*current.IPConfig{},
+						},
+					},
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			wantErr:      errors.New("found 0 containerIP for eth0 in prevResult"),
+			canSkipIpamd: false,
 		},
 	}
 	for _, tt := range tests {
@@ -732,13 +888,18 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 			for _, call := range tt.fields.teardownBranchENIPodNetworkCalls {
 				driverClient.EXPECT().TeardownBranchENIPodNetwork(call.containerAddr, call.vlanID, call.podSGEnforcingMode, gomock.Any()).Return(call.err)
 			}
+			for _, call := range tt.fields.teardownPodNetworkCalls {
+				driverClient.EXPECT().TeardownPodNetwork(call.containerAddr, call.deviceNumber, gomock.Any()).Return(call.err)
+			}
 
-			got, err := tryDelWithPrevResult(driverClient, tt.args.conf, tt.args.k8sArgs, tt.args.contVethName, "/proc/1/ns", testLogger)
+			got, canSkipIpamd, err := tryDelWithPrevResult(driverClient, tt.args.conf, tt.args.k8sArgs, tt.args.contVethName, "/proc/1/ns", testLogger)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
+				assert.Equal(t, tt.canSkipIpamd, canSkipIpamd)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.want, got)
+				assert.Equal(t, tt.canSkipIpamd, canSkipIpamd)
 			}
 		})
 	}
