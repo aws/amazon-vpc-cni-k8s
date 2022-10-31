@@ -75,7 +75,7 @@ var _ = BeforeSuite(func() {
 		CreateNamespace(utils.DefaultTestNamespace)
 
 	By("getting the node list")
-	nodeList, err := f.K8sResourceManagers.NodeManager().GetAllNodes()
+	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(len(nodeList.Items)).To(BeNumerically(">", 0))
 
@@ -142,12 +142,13 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	k8sUtil.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
-		utils.AwsNodeName, map[string]struct{}{"SOME_NON_EXISTENT_VAR": {}})
 
 	By("detaching role policy from the node IAM Role")
 	err = f.CloudServices.IAM().DetachRolePolicy(policyARN, ngRoleName)
 	Expect(err).ToNot(HaveOccurred())
+
+	k8sUtil.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
+		utils.AwsNodeName, map[string]struct{}{"SOME_NON_EXISTENT_VAR": {}})
 
 	By("uninstalling cni-metrics-helper using helm")
 	err := f.InstallationManager.UnInstallCNIMetricsHelper()

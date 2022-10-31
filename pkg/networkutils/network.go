@@ -239,7 +239,7 @@ func (n *linuxNetwork) SetupRuleToBlockNodeLocalV4Access() error {
 	return n.setupRuleToBlockNodeLocalV4Access()
 }
 
-//Setup a rule to block traffic directed to v4 interface of the Pod
+// Setup a rule to block traffic directed to v4 interface of the Pod
 func (n *linuxNetwork) setupRuleToBlockNodeLocalV4Access() error {
 	ipt, err := n.newIptables(iptables.ProtocolIPv4)
 	if err != nil {

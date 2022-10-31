@@ -31,6 +31,8 @@ type PodBuilder struct {
 	nodeName               string
 	restartPolicy          v1.RestartPolicy
 	nodeSelector           map[string]string
+	volume                 []v1.Volume
+	volumeMount            []v1.VolumeMount
 }
 
 func NewDefaultPodBuilder() *PodBuilder {
@@ -89,8 +91,14 @@ func (p *PodBuilder) RestartPolicy(policy v1.RestartPolicy) *PodBuilder {
 	return p
 }
 
+func (p *PodBuilder) MountVolume(volume []v1.Volume, volumeMount []v1.VolumeMount) *PodBuilder {
+	p.volume = volume
+	p.volumeMount = volumeMount
+	return p
+}
+
 func (p *PodBuilder) Build() *v1.Pod {
-	return &v1.Pod{
+	podSpec := &v1.Pod{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:      p.name,
 			Namespace: p.namespace,
@@ -105,4 +113,9 @@ func (p *PodBuilder) Build() *v1.Pod {
 			NodeSelector:                  p.nodeSelector,
 		},
 	}
+	if len(p.volume) > 0 && len(p.volumeMount) > 0 {
+		podSpec.Spec.Volumes = p.volume
+		podSpec.Spec.Containers[0].VolumeMounts = p.volumeMount
+	}
+	return podSpec
 }

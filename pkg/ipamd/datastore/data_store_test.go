@@ -19,6 +19,10 @@ import (
 	"testing"
 	"time"
 
+	mock_netlinkwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mocks"
+	"github.com/golang/mock/gomock"
+	"github.com/vishvananda/netlink"
+
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
@@ -96,6 +100,57 @@ func TestDeleteENI(t *testing.T) {
 	assert.Error(t, err)
 	err = ds.RemoveENIFromDataStore("eni-1", true)
 	assert.NoError(t, err)
+
+}
+
+func TestDeleteENIwithPDEnabled(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+
+	err := ds.AddENI("eni-1", 1, true, false, false)
+	assert.NoError(t, err)
+
+	err = ds.AddENI("eni-2", 2, false, false, false)
+	assert.NoError(t, err)
+
+	err = ds.AddENI("eni-3", 3, false, false, false)
+	assert.NoError(t, err)
+
+	err = ds.AddENI("eni-4", 4, false, false, false)
+	assert.NoError(t, err)
+
+	eniInfos := ds.GetENIInfos()
+	assert.Equal(t, len(eniInfos.ENIs), 4)
+
+	err = ds.RemoveENIFromDataStore("eni-2", false)
+	assert.NoError(t, err)
+
+	eniInfos = ds.GetENIInfos()
+	assert.Equal(t, len(eniInfos.ENIs), 3)
+
+	err = ds.RemoveENIFromDataStore("unknown-eni", false)
+	assert.Error(t, err)
+
+	eniInfos = ds.GetENIInfos()
+	assert.Equal(t, len(eniInfos.ENIs), 3)
+
+	// Add a prefix and assign a pod
+	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-4", ipv4Addr, true)
+	assert.NoError(t, err)
+	ip, device, err := ds.AssignPodIPv4Address(
+		IPAMKey{"net1", "sandbox1", "eth0"},
+		IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod"})
+	assert.NoError(t, err)
+	assert.Equal(t, "10.0.0.0", ip)
+	assert.Equal(t, 4, device)
+
+	// Test force removal.  The first call fails because eni-1 has an IP with a pod assigned to it,
+	// but the second call force-removes it and succeeds.
+	err = ds.RemoveENIFromDataStore("eni-4", false)
+	assert.Error(t, err)
+	err = ds.RemoveENIFromDataStore("eni-4", true)
+	assert.NoError(t, err)
+
 }
 
 func TestAddENIIPv4Address(t *testing.T) {
@@ -141,6 +196,49 @@ func TestAddENIIPv4Address(t *testing.T) {
 
 }
 
+func TestAddENIIPv4AddressWithPDEnabled(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+
+	err := ds.AddENI("eni-1", 1, true, false, false)
+	assert.NoError(t, err)
+
+	err = ds.AddENI("eni-2", 2, false, false, false)
+	assert.NoError(t, err)
+
+	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 16)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
+
+	ipv4Addr = net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
+	assert.Error(t, err)
+	assert.Equal(t, ds.total, 16)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
+
+	ipv4Addr = net.IPNet{IP: net.ParseIP("20.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 32)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
+
+	ipv4Addr = net.IPNet{IP: net.ParseIP("30.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-2", ipv4Addr, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 48)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
+	assert.Equal(t, len(ds.eniPool["eni-2"].AvailableIPv4Cidrs), 1)
+
+	ipv4Addr = net.IPNet{IP: net.ParseIP("40.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("dummy-eni", ipv4Addr, true)
+	assert.Error(t, err)
+	assert.Equal(t, ds.total, 48)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
+	assert.Equal(t, len(ds.eniPool["eni-2"].AvailableIPv4Cidrs), 1)
+
+}
+
 func TestGetENIIPs(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
 
@@ -172,6 +270,42 @@ func TestGetENIIPs(t *testing.T) {
 	eniIPPool, _, err := ds.GetENICIDRs("eni-1")
 	assert.NoError(t, err)
 	assert.Equal(t, len(eniIPPool), 2)
+
+	_, _, err = ds.GetENICIDRs("dummy-eni")
+	assert.Error(t, err)
+}
+
+func TestGetENIIPsWithPDEnabled(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+
+	err := ds.AddENI("eni-1", 1, true, false, false)
+	assert.NoError(t, err)
+
+	err = ds.AddENI("eni-2", 2, false, false, false)
+	assert.NoError(t, err)
+
+	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 16)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
+
+	ipv4Addr = net.IPNet{IP: net.ParseIP("20.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 32)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
+
+	ipv4Addr = net.IPNet{IP: net.ParseIP("30.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-2", ipv4Addr, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 48)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
+	assert.Equal(t, len(ds.eniPool["eni-2"].AvailableIPv4Cidrs), 1)
+
+	_, eniPrefixPool, err := ds.GetENICIDRs("eni-1")
+	assert.NoError(t, err)
+	assert.Equal(t, len(eniPrefixPool), 2)
 
 	_, _, err = ds.GetENICIDRs("dummy-eni")
 	assert.Error(t, err)
@@ -233,6 +367,143 @@ func TestDelENIIPv4Address(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 1)
 	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
+}
+
+func TestDelENIIPv4AddressWithPDEnabled(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	err := ds.AddENI("eni-1", 1, true, false, false)
+	assert.NoError(t, err)
+
+	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 16)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
+
+	// Assign a pod.
+	key := IPAMKey{"net0", "sandbox-1", "eth0"}
+	ip, device, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	assert.NoError(t, err)
+	assert.Equal(t, "10.0.0.0", ip)
+	assert.Equal(t, 1, device)
+
+	ipv4Addr = net.IPNet{IP: net.ParseIP("20.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 32)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
+
+	ipv4Addr = net.IPNet{IP: net.ParseIP("30.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 48)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 3)
+
+	ipv4Addr = net.IPNet{IP: net.ParseIP("30.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.DelIPv4CidrFromStore("eni-1", ipv4Addr, false)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 32)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
+
+	// delete a unknown IP
+	ipv4Addr = net.IPNet{IP: net.ParseIP("10.10.10.10"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.DelIPv4CidrFromStore("eni-1", ipv4Addr, true)
+	assert.Error(t, err)
+	assert.Equal(t, ds.total, 32)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
+
+	// Test force removal.  The first call fails because the IP has a pod assigned to it, but the
+	// second call force-removes it and succeeds.
+	ipv4Addr = net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.DelIPv4CidrFromStore("eni-1", ipv4Addr, false)
+	assert.Error(t, err)
+	assert.Equal(t, ds.total, 32)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
+
+	ipv4Addr = net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.DelIPv4CidrFromStore("eni-1", ipv4Addr, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 16)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
+}
+
+func TestTogglePD(t *testing.T) {
+	//DS is in secondary IP mode
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	err := ds.AddENI("eni-1", 1, true, false, false)
+	assert.NoError(t, err)
+
+	// Add /32 secondary IP
+	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 1)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
+
+	// Assign a pod.
+	key := IPAMKey{"net0", "sandbox-1", "eth0"}
+	ip, device, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	assert.NoError(t, err)
+	assert.Equal(t, "1.1.1.1", ip)
+	assert.Equal(t, 1, device)
+
+	//enable pd mode
+	ds.isPDEnabled = true
+
+	// Add a /28 prefix to the same eni
+	ipv4Addr = net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 17)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
+
+	//Assign a pod
+	key = IPAMKey{"net0", "sandbox-2", "eth0"}
+	ip, device, err = ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	assert.NoError(t, err)
+	assert.Equal(t, "10.0.0.0", ip)
+	assert.Equal(t, 1, device)
+
+	//Pod deletion simulated with force delete
+	//Test force removal.  The first call fails because the IP has a pod assigned to it, but the
+	//second call force-removes it and succeeds.
+	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	err = ds.DelIPv4CidrFromStore("eni-1", ipv4Addr, false)
+	assert.Error(t, err)
+	assert.Equal(t, ds.total, 17)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
+
+	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	err = ds.DelIPv4CidrFromStore("eni-1", ipv4Addr, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 16)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
+
+	//disable pd mode
+	ds.isPDEnabled = false
+
+	//Add /32 secondary IP
+	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 17)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
+
+	//Pod deletion simulated with force delete
+	//Test force removal.  The first call fails because the IP has a pod assigned to it, but the
+	//second call force-removes it and succeeds.
+	ipv4Addr = net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.DelIPv4CidrFromStore("eni-1", ipv4Addr, false)
+	assert.Error(t, err)
+	assert.Equal(t, ds.total, 17)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 2)
+
+	ipv4Addr = net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.DelIPv4CidrFromStore("eni-1", ipv4Addr, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 1)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
+
 }
 
 func TestPodIPv4Address(t *testing.T) {
@@ -440,6 +711,180 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.Equal(t, ds.assigned, 2)
 }
 
+func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
+	checkpoint := NewTestCheckpoint(struct{}{})
+	ds := NewDataStore(Testlog, checkpoint, true)
+
+	checkpointDataCmpOpts := cmp.Options{
+		cmpopts.IgnoreFields(CheckpointEntry{}, "AllocationTimestamp"),
+		cmpopts.SortSlices(func(lhs CheckpointEntry, rhs CheckpointEntry) bool {
+			return lhs.ContainerID < rhs.ContainerID
+		}),
+	}
+
+	err := ds.AddENI("eni-1", 1, true, false, false)
+	assert.NoError(t, err)
+
+	err = ds.AddENI("eni-2", 2, false, false, false)
+	assert.NoError(t, err)
+
+	ipv4Addr1 := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr1, true)
+	assert.NoError(t, err)
+
+	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
+	ip, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+
+	assert.NoError(t, err)
+	assert.Equal(t, "10.0.0.0", ip)
+	assert.Equal(t, 16, ds.total)
+	assert.Equal(t, 1, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs))
+	assert.Equal(t, 1, ds.eniPool["eni-1"].AssignedIPv4Addresses())
+
+	expectedCheckpointData := &CheckpointData{
+		Version: CheckpointFormatVersion,
+		Allocations: []CheckpointEntry{
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"},
+				IPv4:     "10.0.0.0",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"},
+			},
+		},
+	}
+	assert.True(t,
+		cmp.Equal(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+		cmp.Diff(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+	)
+
+	podsInfos := ds.AllocatedIPs()
+	assert.Equal(t, len(podsInfos), 1)
+
+	// duplicate add
+	ip, _, err = ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"}) // same id
+	assert.NoError(t, err)
+	assert.Equal(t, ip, "10.0.0.0")
+	assert.Equal(t, ds.total, 16)
+	assert.Equal(t, ds.assigned, 1)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
+	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 1)
+
+	// Checkpoint error
+	checkpoint.Error = errors.New("fake checkpoint error")
+	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
+	_, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	assert.Error(t, err)
+
+	expectedCheckpointData = &CheckpointData{
+		Version: CheckpointFormatVersion,
+		Allocations: []CheckpointEntry{
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"},
+				IPv4:     "10.0.0.0",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"},
+			},
+		},
+	}
+	assert.True(t,
+		cmp.Equal(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+		cmp.Diff(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+	)
+	checkpoint.Error = nil
+
+	ip, pod1Ns2Device, err := ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	assert.NoError(t, err)
+	assert.Equal(t, ip, "10.0.0.1")
+	assert.Equal(t, ds.total, 16)
+	assert.Equal(t, ds.assigned, 2)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
+	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 2)
+
+	expectedCheckpointData = &CheckpointData{
+		Version: CheckpointFormatVersion,
+		Allocations: []CheckpointEntry{
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"},
+				IPv4:     "10.0.0.0",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"},
+			},
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-2", IfName: "eth0"},
+				IPv4:     "10.0.0.1",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"},
+			},
+		},
+	}
+	assert.True(t,
+		cmp.Equal(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+		cmp.Diff(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+	)
+
+	podsInfos = ds.AllocatedIPs()
+	assert.Equal(t, len(podsInfos), 2)
+
+	key3 := IPAMKey{"net0", "sandbox-3", "eth0"}
+	ip, _, err = ds.AssignPodIPv4Address(key3, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-3"})
+	assert.NoError(t, err)
+	assert.Equal(t, ip, "10.0.0.2")
+	assert.Equal(t, ds.total, 16)
+	assert.Equal(t, ds.assigned, 3)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
+	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 3)
+	expectedCheckpointData = &CheckpointData{
+		Version: CheckpointFormatVersion,
+		Allocations: []CheckpointEntry{
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"},
+				IPv4:     "10.0.0.0",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"},
+			},
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-2", IfName: "eth0"},
+				IPv4:     "10.0.0.1",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"},
+			},
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-3", IfName: "eth0"},
+				IPv4:     "10.0.0.2",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-3"},
+			},
+		},
+	}
+	assert.True(t,
+		cmp.Equal(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+		cmp.Diff(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+	)
+
+	_, _, deviceNum, err := ds.UnassignPodIPAddress(key2)
+	assert.NoError(t, err)
+	assert.Equal(t, ds.total, 16)
+	assert.Equal(t, ds.assigned, 2)
+	assert.Equal(t, deviceNum, pod1Ns2Device)
+	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
+	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 2)
+	expectedCheckpointData = &CheckpointData{
+		Version: CheckpointFormatVersion,
+		Allocations: []CheckpointEntry{
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-1", IfName: "eth0"},
+				IPv4:     "10.0.0.0",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"},
+			},
+			{
+				IPAMKey:  IPAMKey{NetworkName: "net0", ContainerID: "sandbox-3", IfName: "eth0"},
+				IPv4:     "10.0.0.2",
+				Metadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-3"},
+			},
+		},
+	}
+	assert.True(t,
+		cmp.Equal(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+		cmp.Diff(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
+	)
+
+	assert.Equal(t, ds.total, 16)
+	assert.Equal(t, ds.assigned, 2)
+}
+
 func TestGetIPStatsV4(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
 
@@ -486,6 +931,58 @@ func TestGetIPStatsV4(t *testing.T) {
 			TotalIPs:    2,
 			AssignedIPs: 1,
 			CooldownIPs: 0,
+		},
+		*ds.GetIPStats("4"),
+	)
+}
+
+func TestGetIPStatsV4WithPD(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+
+	_ = ds.AddENI("eni-1", 1, true, false, false)
+
+	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
+	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
+	_, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	assert.NoError(t, err)
+
+	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
+	_, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	assert.NoError(t, err)
+
+	assert.Equal(t,
+		DataStoreStats{
+			TotalIPs:      16,
+			TotalPrefixes: 1,
+			AssignedIPs:   2,
+			CooldownIPs:   0,
+		},
+		*ds.GetIPStats("4"),
+	)
+
+	_, _, _, err = ds.UnassignPodIPAddress(key2)
+	assert.NoError(t, err)
+
+	assert.Equal(t,
+		DataStoreStats{
+			TotalIPs:      16,
+			TotalPrefixes: 1,
+			AssignedIPs:   1,
+			CooldownIPs:   1,
+		},
+		*ds.GetIPStats("4"),
+	)
+
+	// wait 30s (cooldown period)
+	time.Sleep(30 * time.Second)
+
+	assert.Equal(t,
+		DataStoreStats{
+			TotalIPs:      16,
+			TotalPrefixes: 1,
+			AssignedIPs:   1,
+			CooldownIPs:   0,
 		},
 		*ds.GetIPStats("4"),
 	)
@@ -576,4 +1073,403 @@ func TestWarmENIInteractions(t *testing.T) {
 	// None of the others can be removed...
 	assert.Equal(t, "", thirdRemovedEni)
 	assert.Equal(t, 3, ds.GetENIs())
+}
+
+func TestDataStore_normalizeCheckpointDataByPodVethExistence(t *testing.T) {
+	type netLinkListCall struct {
+		links []netlink.Link
+		err   error
+	}
+	type fields struct {
+		netLinkListCalls []netLinkListCall
+	}
+	type args struct {
+		checkpoint CheckpointData
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    CheckpointData
+		wantErr error
+	}{
+		{
+			name: "all allocations are valid",
+			fields: fields{
+				netLinkListCalls: []netLinkListCall{
+					{
+						links: []netlink.Link{
+							&netlink.Device{
+								LinkAttrs: netlink.LinkAttrs{
+									Name: "eth0",
+								},
+							},
+							&netlink.Veth{
+								LinkAttrs: netlink.LinkAttrs{
+									Name: "enib5faff8a083",
+								},
+							},
+							&netlink.Veth{
+								LinkAttrs: netlink.LinkAttrs{
+									Name: "eni9571956a6cc",
+								},
+							},
+						},
+					},
+				},
+			},
+			args: args{
+				checkpoint: CheckpointData{
+					Version: CheckpointFormatVersion,
+					Allocations: []CheckpointEntry{
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.9.106",
+							Metadata: IPAMMetadata{
+								K8SPodNamespace: "kube-system",
+								K8SPodName:      "coredns-57ff979f67-qqbdh",
+							},
+						},
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "b4729ce84caa9e585c2ba84fc9f9a058f4cf783292a84608f717035e09553422",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.30.161",
+							Metadata: IPAMMetadata{
+								K8SPodNamespace: "kube-system",
+								K8SPodName:      "coredns-57ff979f67-8ns9b",
+							},
+						},
+					},
+				},
+			},
+			want: CheckpointData{
+				Version: CheckpointFormatVersion,
+				Allocations: []CheckpointEntry{
+					{
+						IPAMKey: IPAMKey{
+							ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+							NetworkName: "aws-cni",
+							IfName:      "eth0",
+						},
+						IPv4: "192.168.9.106",
+						Metadata: IPAMMetadata{
+							K8SPodNamespace: "kube-system",
+							K8SPodName:      "coredns-57ff979f67-qqbdh",
+						},
+					},
+					{
+						IPAMKey: IPAMKey{
+							ContainerID: "b4729ce84caa9e585c2ba84fc9f9a058f4cf783292a84608f717035e09553422",
+							NetworkName: "aws-cni",
+							IfName:      "eth0",
+						},
+						IPv4: "192.168.30.161",
+						Metadata: IPAMMetadata{
+							K8SPodNamespace: "kube-system",
+							K8SPodName:      "coredns-57ff979f67-8ns9b",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "some allocations are invalid and some allocation don't have metadata",
+			fields: fields{
+				netLinkListCalls: []netLinkListCall{
+					{
+						links: []netlink.Link{
+							&netlink.Device{
+								LinkAttrs: netlink.LinkAttrs{
+									Name: "eth0",
+								},
+							},
+							&netlink.Veth{
+								LinkAttrs: netlink.LinkAttrs{
+									Name: "enib5faff8a083",
+								},
+							},
+							&netlink.Veth{
+								LinkAttrs: netlink.LinkAttrs{
+									Name: "enicc21c2d7785",
+								},
+							},
+						},
+					},
+				},
+			},
+			args: args{
+				checkpoint: CheckpointData{
+					Version: CheckpointFormatVersion,
+					Allocations: []CheckpointEntry{
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.9.106",
+							Metadata: IPAMMetadata{
+								K8SPodNamespace: "kube-system",
+								K8SPodName:      "coredns-57ff979f67-qqbdh",
+							},
+						},
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "b4729ce84caa9e585c2ba84fc9f9a058f4cf783292a84608f717035e09553422",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.30.161",
+							Metadata: IPAMMetadata{
+								K8SPodNamespace: "kube-system",
+								K8SPodName:      "coredns-57ff979f67-8ns9b",
+							},
+						},
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "d0437ce84caa9e585c2ba84fc9f9a058f4cf783292a84608f717035e0952341",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.42.42",
+						},
+					},
+				},
+			},
+			want: CheckpointData{
+				Version: CheckpointFormatVersion,
+				Allocations: []CheckpointEntry{
+					{
+						IPAMKey: IPAMKey{
+							ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+							NetworkName: "aws-cni",
+							IfName:      "eth0",
+						},
+						IPv4: "192.168.9.106",
+						Metadata: IPAMMetadata{
+							K8SPodNamespace: "kube-system",
+							K8SPodName:      "coredns-57ff979f67-qqbdh",
+						},
+					},
+					{
+						IPAMKey: IPAMKey{
+							ContainerID: "d0437ce84caa9e585c2ba84fc9f9a058f4cf783292a84608f717035e0952341",
+							NetworkName: "aws-cni",
+							IfName:      "eth0",
+						},
+						IPv4: "192.168.42.42",
+					},
+				},
+			},
+		},
+		{
+			name: "netlink list failed",
+			fields: fields{
+				netLinkListCalls: []netLinkListCall{
+					{
+						err: errors.New("netlink failed"),
+					},
+				},
+			},
+			args: args{
+				checkpoint: CheckpointData{
+					Version: CheckpointFormatVersion,
+					Allocations: []CheckpointEntry{
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.9.106",
+							Metadata: IPAMMetadata{
+								K8SPodNamespace: "kube-system",
+								K8SPodName:      "coredns-57ff979f67-qqbdh",
+							},
+						},
+						{
+							IPAMKey: IPAMKey{
+								ContainerID: "b4729ce84caa9e585c2ba84fc9f9a058f4cf783292a84608f717035e09553422",
+								NetworkName: "aws-cni",
+								IfName:      "eth0",
+							},
+							IPv4: "192.168.30.161",
+							Metadata: IPAMMetadata{
+								K8SPodNamespace: "kube-system",
+								K8SPodName:      "coredns-57ff979f67-8ns9b",
+							},
+						},
+					},
+				},
+			},
+			wantErr: errors.New("netlink failed"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+			for _, call := range tt.fields.netLinkListCalls {
+				netLink.EXPECT().LinkList().Return(call.links, call.err)
+			}
+			ds := &DataStore{netLink: netLink, log: logger.DefaultLogger()}
+			got, err := ds.normalizeCheckpointDataByPodVethExistence(tt.args.checkpoint)
+			if tt.wantErr != nil {
+				assert.EqualError(t, err, tt.wantErr.Error())
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestDataStore_validateAllocationByPodVethExistence(t *testing.T) {
+	type args struct {
+		allocation  CheckpointEntry
+		hostNSLinks []netlink.Link
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr error
+	}{
+		{
+			name: "one veth pair found with matching suffix and eni prefix",
+			args: args{
+				allocation: CheckpointEntry{
+					IPAMKey: IPAMKey{
+						ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+						NetworkName: "aws-cni",
+						IfName:      "eth0",
+					},
+					IPv4: "192.168.9.106",
+					Metadata: IPAMMetadata{
+						K8SPodNamespace: "kube-system",
+						K8SPodName:      "coredns-57ff979f67-qqbdh",
+					},
+				},
+				hostNSLinks: []netlink.Link{
+					&netlink.Device{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "eth0",
+						},
+					},
+					&netlink.Veth{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "enib5faff8a083",
+						},
+					},
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "one veth pair found with matching suffix and custom prefix",
+			args: args{
+				allocation: CheckpointEntry{
+					IPAMKey: IPAMKey{
+						ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+						NetworkName: "aws-cni",
+						IfName:      "eth0",
+					},
+					IPv4: "192.168.9.106",
+					Metadata: IPAMMetadata{
+						K8SPodNamespace: "kube-system",
+						K8SPodName:      "coredns-57ff979f67-qqbdh",
+					},
+				},
+				hostNSLinks: []netlink.Link{
+					&netlink.Device{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "eth0",
+						},
+					},
+					&netlink.Veth{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "customb5faff8a083",
+						},
+					},
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "no veth pair found with matching suffix",
+			args: args{
+				allocation: CheckpointEntry{
+					IPAMKey: IPAMKey{
+						ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+						NetworkName: "aws-cni",
+						IfName:      "eth0",
+					},
+					IPv4: "192.168.9.106",
+					Metadata: IPAMMetadata{
+						K8SPodNamespace: "kube-system",
+						K8SPodName:      "coredns-57ff979f67-qqbdh",
+					},
+				},
+				hostNSLinks: []netlink.Link{
+					&netlink.Device{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "eth0",
+						},
+					},
+					&netlink.Veth{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "eni9571956a6cc",
+						},
+					},
+				},
+			},
+			wantErr: errors.New("host-side veth not found for pod kube-system/coredns-57ff979f67-qqbdh"),
+		},
+		{
+			name: "allocation without metadata should pass validation",
+			args: args{
+				allocation: CheckpointEntry{
+					IPAMKey: IPAMKey{
+						ContainerID: "5a1f9118a7125f87b4b0f2f601c0b55cfab8bcf28963bcf7c4ece3109a8b6b86",
+						NetworkName: "aws-cni",
+						IfName:      "eth0",
+					},
+					IPv4:     "192.168.9.106",
+					Metadata: IPAMMetadata{},
+				},
+				hostNSLinks: []netlink.Link{
+					&netlink.Device{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "eth0",
+						},
+					},
+					&netlink.Veth{
+						LinkAttrs: netlink.LinkAttrs{
+							Name: "eni9571956a6cc",
+						},
+					},
+				},
+			},
+			wantErr: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ds := &DataStore{}
+			err := ds.validateAllocationByPodVethExistence(tt.args.allocation, tt.args.hostNSLinks)
+			if tt.wantErr != nil {
+				assert.EqualError(t, err, tt.wantErr.Error())
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

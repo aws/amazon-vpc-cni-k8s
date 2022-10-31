@@ -14,22 +14,18 @@
 package framework
 
 import (
-	"context"
-	"log"
-
 	eniConfig "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/controller"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/helm"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	sgp "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/gomega"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -39,6 +35,7 @@ type Framework struct {
 	CloudServices       aws.Cloud
 	K8sResourceManagers k8s.ResourceManagers
 	InstallationManager controller.InstallationManager
+	Logger              logr.Logger
 }
 
 func New(options Options) *Framework {
@@ -56,27 +53,8 @@ func New(options Options) *Framework {
 	eniConfig.AddToScheme(k8sSchema)
 	sgp.AddToScheme(k8sSchema)
 
-	stopChan := ctrl.SetupSignalHandler()
-	cache, err := cache.New(config, cache.Options{Scheme: k8sSchema})
+	k8sClient, err := client.New(config, client.Options{Scheme: k8sSchema})
 	Expect(err).NotTo(HaveOccurred())
-	err = cache.IndexField(context.TODO(), &v1.Event{}, "reason", func(o client.Object) []string {
-		return []string{o.(*v1.Event).Reason}
-	}) // default indexing only on ns, need this for ipamd_event_test
-	Expect(err).NotTo(HaveOccurred())
-	go func() {
-		cache.Start(stopChan)
-	}()
-	cache.WaitForCacheSync(stopChan)
-	realClient, err := client.New(config, client.Options{Scheme: k8sSchema})
-	Expect(err).NotTo(HaveOccurred())
-
-	k8sClient, err := client.NewDelegatingClient(client.NewDelegatingClientInput{
-		CacheReader: cache,
-		Client:      realClient,
-	})
-	if err != nil {
-		log.Fatalf("failed to create delegation client: %v", err)
-	}
 
 	cloudConfig := aws.CloudConfig{Region: options.AWSRegion, VpcID: options.AWSVPCID,
 		EKSEndpoint: options.EKSEndpoint}
@@ -88,5 +66,6 @@ func New(options Options) *Framework {
 		K8sResourceManagers: k8s.NewResourceManager(k8sClient, k8sSchema, config),
 		InstallationManager: controller.NewDefaultInstallationManager(
 			helm.NewDefaultReleaseManager(options.KubeConfig)),
+		Logger: utils.NewGinkgoLogger(),
 	}
 }

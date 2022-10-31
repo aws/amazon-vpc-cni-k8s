@@ -31,7 +31,8 @@ function run_integration_test() {
   echo "cni test took $((SECONDS - START)) seconds."
   echo "Running ipamd integration tests"
   START=$SECONDS
-  cd $INTEGRATION_TEST_DIR/ipamd && CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS -v -timeout 90m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" || TEST_RESULT=fail
+  # NOTE: skipping ipamd_event_test.go until it can be triaged further
+  cd $INTEGRATION_TEST_DIR/ipamd && CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --skip-file=ipamd_event_test.go -v -timeout 90m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" || TEST_RESULT=fail
   echo "ipamd test took $((SECONDS - START)) seconds."
 
   : "${CNI_METRICS_HELPER:=602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.11.4}"
@@ -48,27 +49,14 @@ function run_integration_test() {
   echo "Integration tests completed successfully!"
 }
 
-function run_calico_tests(){
-  # get version from run-integration-tests.sh
-  : "${CALICO_VERSION:=v3.23.0}"
-  echo "Running calico tests, version $CALICO_VERSION"
-  START=$SECONDS
-  TEST_RESULT=success
-  ginkgo -v --no-color $CALICO_TEST_DIR -- --cluster-kubeconfig=$KUBE_CONFIG_PATH --cluster-name=$CLUSTER_NAME --aws-region=$REGION --aws-vpc-id=$VPC_ID --calico-version=$CALICO_VERSION || TEST_RESULT=fail
-  if [[ "$TEST_RESULT" == fail ]]; then
-      echo "Calico tests failed."
-      exit 1
-  fi
-  echo "Calico tests completed successfully!"
-}
-
 if [[ -n "${ENDPOINT}" ]]; then
   ENDPOINT_FLAG="--endpoint $ENDPOINT"
 fi
 
 echo "Running release tests on cluster: $CLUSTER_NAME in region: $REGION"
+
 load_cluster_details
 START=$SECONDS
 run_integration_test
-run_calico_tests
+
 echo "Completed running all tests in $((SECONDS - START)) seconds."
