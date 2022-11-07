@@ -69,6 +69,10 @@ function patch_aws_node_maxunavialable() {
 
 function install_add_on() {
   local new_addon_version=$1
+  if [[ -z "$new_addon_version" || "$new_addon_version" == "null" ]]; then
+    echo "addon information for $VPC_CNI_ADDON_NAME not available, skipping EKS-managed addon installation."
+    return
+  fi
 
   if DESCRIBE_ADDON=$(aws eks describe-addon $ENDPOINT_FLAG --cluster-name "$CLUSTER_NAME" --addon-name $VPC_CNI_ADDON_NAME --region "$REGION"); then
     local current_addon_version=$(echo "$DESCRIBE_ADDON" | jq '.addon.addonVersion' -r)
