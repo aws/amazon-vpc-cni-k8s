@@ -119,25 +119,24 @@ spec:
       priorityClassName: "system-node-critical"
       serviceAccountName: aws-node
       hostNetwork: true
-      initContainers:
-      - name: aws-vpc-cni-init
-        image: "961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/amazon-k8s-cni-init:v1.12.0"
-        env:
-          - name: DISABLE_TCP_EARLY_DEMUX
-            value: "false"
-          - name: ENABLE_IPv6
-            value: "false"
-        securityContext:
+      containers:
+        - name: aws-vpc-cni-init
+          image: "961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/amazon-k8s-cni-init:v1.12.0"
+          env:
+            - name: DISABLE_TCP_EARLY_DEMUX
+              value: "false"
+            - name: ENABLE_IPv6
+              value: "false"
+          resources:
+            requests:
+              cpu: 5m
+          securityContext:
             privileged: true
-        volumeMounts:
+          volumeMounts:
           - mountPath: /host/opt/cni/bin
             name: cni-bin-dir
-      terminationGracePeriodSeconds: 10
-      tolerations:
-        - operator: Exists
-      securityContext:
-        {}
-      containers:
+          - name: vpc-cni-init-dir
+            mountPath: /vpc-cni-init
         - name: aws-node
           image: "961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/amazon-k8s-cni:v1.12.0"
           ports:
@@ -227,6 +226,8 @@ spec:
             name: run-dir
           - mountPath: /run/xtables.lock
             name: xtables-lock
+          - name: vpc-cni-init-dir
+            mountPath: /vpc-cni-init
       volumes:
       - name: cni-bin-dir
         hostPath:
@@ -245,6 +246,9 @@ spec:
       - name: xtables-lock
         hostPath:
           path: /run/xtables.lock
+      - name: vpc-cni-init-dir
+        emptyDir:
+          sizeLimit: 1Ki
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -263,3 +267,8 @@ spec:
                 operator: NotIn
                 values:
                 - fargate
+      securityContext:
+        {}
+      terminationGracePeriodSeconds: 10
+      tolerations:
+        - operator: Exists

@@ -390,10 +390,10 @@ func _main() int {
 	}
 
 	// Wait for init container to complete
-	//if err := waitForInit(); err != nil {
-	//	log.WithError(err).Errorf("Init container failed to complete")
-	//	return 1
-	//}
+	if err := waitForInit(); err != nil {
+		log.WithError(err).Errorf("Init container failed to complete")
+		return 1
+	}
 
 	log.Infof("Copying config file... ")
 	err = generateJSON(defaultAWSconflistFile, tmpAWSconflistFile)

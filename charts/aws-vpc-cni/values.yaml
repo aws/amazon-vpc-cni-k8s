@@ -20,6 +20,9 @@ init:
     ENABLE_IPv6: "false"
   securityContext:
     privileged: true
+  resources:
+    requests:
+      cpu: 5m
 
 image:
   region: us-west-2

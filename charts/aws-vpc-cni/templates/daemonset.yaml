@@ -38,29 +38,23 @@ spec:
       priorityClassName: "{{ .Values.priorityClassName }}"
       serviceAccountName: {{ template "aws-vpc-cni.serviceAccountName" . }}
       hostNetwork: true
-      initContainers:
-      - name: aws-vpc-cni-init
-        image: "{{- if .Values.init.image.override }}{{- .Values.init.image.override }}{{- else }}{{- .Values.init.image.account }}.dkr.ecr.{{- .Values.init.image.region }}.{{- .Values.init.image.domain }}/amazon-k8s-cni-init:{{- .Values.init.image.tag }}{{- end}}"
-        env:
+      containers:
+        - name: aws-vpc-cni-init
+          image: "{{- if .Values.init.image.override }}{{- .Values.init.image.override }}{{- else }}{{- .Values.init.image.account }}.dkr.ecr.{{- .Values.init.image.region }}.{{- .Values.init.image.domain }}/amazon-k8s-cni-init:{{- .Values.init.image.tag }}{{- end}}"
+          env:
 {{- range $key, $value := .Values.init.env }}
-          - name: {{ $key }}
-            value: {{ $value | quote }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
 {{- end }}
-        securityContext:
-          {{- toYaml .Values.init.securityContext | nindent 12 }}
-        volumeMounts:
+          resources:
+            {{- toYaml .Values.init.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.init.securityContext | nindent 12 }}
+          volumeMounts:
           - mountPath: /host/opt/cni/bin
             name: cni-bin-dir
-      terminationGracePeriodSeconds: 10
-      tolerations:
-        - operator: Exists
-    {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
-      securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      containers:
+          - name: vpc-cni-init-dir
+            mountPath: /vpc-cni-init
         - name: aws-node
           image: "{{- if .Values.image.override }}{{- .Values.image.override }}{{- else }}{{- .Values.image.account }}.dkr.ecr.{{- .Values.image.region }}.{{- .Values.image.domain }}/amazon-k8s-cni:{{- .Values.image.tag }}{{- end}}"
           ports:
@@ -103,6 +97,8 @@ spec:
             name: run-dir
           - mountPath: /run/xtables.lock
             name: xtables-lock
+          - name: vpc-cni-init-dir
+            mountPath: /vpc-cni-init
           {{- with .Values.extraVolumeMounts  }}
           {{- toYaml .| nindent 10 }}
           {{- end }}
@@ -129,6 +125,9 @@ spec:
       - name: xtables-lock
         hostPath:
           path: /run/xtables.lock
+      - name: vpc-cni-init-dir
+        emptyDir:
+          sizeLimit: 1Ki
       {{- with .Values.extraVolumes  }}
       {{- toYaml .| nindent 6 }}
       {{- end }}
@@ -140,6 +139,15 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
     {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      terminationGracePeriodSeconds: 10
+      tolerations:
+        - operator: Exists
     {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
