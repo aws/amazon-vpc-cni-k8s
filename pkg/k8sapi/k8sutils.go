@@ -23,11 +23,11 @@ import (
 var log = logger.Get()
 
 func InitializeRestMapper() (meta.RESTMapper, error) {
-	restCfg, err := ctrl.GetConfig()
-	restCfg.Burst = 200
+	restCfg, err := getRestConfig(false)
 	if err != nil {
 		return nil, err
 	}
+	restCfg.Burst = 200
 	mapper, err := apiutil.NewDynamicRESTMapper(restCfg)
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func InitializeRestMapper() (meta.RESTMapper, error) {
 
 // CreateKubeClient creates a k8s client
 func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
-	restCfg, err := ctrl.GetConfig()
+	restCfg, err := getRestConfig(false)
 	if err != nil {
 		return nil, err
 	}
@@ -56,12 +56,12 @@ func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
 
 // CreateKubeClient creates a k8s client
 func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper) (client.Client, error) {
-	restCfg, err := ctrl.GetConfig()
-	restCfg.Burst = 100
-
+	restCfg, err := getRestConfig(false)
 	if err != nil {
 		return nil, err
 	}
+	restCfg.Burst = 100
+
 	vpcCniScheme := runtime.NewScheme()
 	clientgoscheme.AddToScheme(vpcCniScheme)
 	eniconfigscheme.AddToScheme(vpcCniScheme)
@@ -89,7 +89,7 @@ func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper) 
 }
 func GetKubeClientSet() (kubernetes.Interface, error) {
 	// creates the in-cluster config
-	config, err := rest.InClusterConfig()
+	config, err := getRestConfig(false)
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +102,8 @@ func GetKubeClientSet() (kubernetes.Interface, error) {
 	return clientSet, nil
 }
 
-func CheckAPIServerConnectivity() error {
-	restCfg, err := ctrl.GetConfig()
+func CheckAPIServerConnectivity(clusterIPOnly bool) error {
+	restCfg, err := getRestConfig(clusterIPOnly)
 	if err != nil {
 		return err
 	}
@@ -129,4 +129,15 @@ func CheckAPIServerConnectivity() error {
 			version.Major, version.Minor, version.GitVersion, version.GitTreeState, version.GitCommit, version.Platform)
 		return true, nil
 	})
+}
+
+func getRestConfig(clusterIPOnly bool) (*rest.Config, error) {
+	restCfg, err := ctrl.GetConfig()
+	if err != nil {
+		return nil, err
+	}
+	if endpoint, ok := os.LookupEnv("CLUSTER_ENDPOINT"); !clusterIPOnly && ok {
+		restCfg.Host = endpoint
+	}
+	return restCfg, nil
 }

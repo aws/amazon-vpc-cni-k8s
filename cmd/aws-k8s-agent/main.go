@@ -29,14 +29,14 @@ func main() {
 }
 
 func _main() int {
-	//Do not add anything before initializing logger
+	// Do not add anything before initializing logger
 	log := logger.Get()
 
 	log.Infof("Starting L-IPAMD %s  ...", version.Version)
 	version.RegisterMetric()
 
-	//Check API Server Connectivity
-	if err := k8sapi.CheckAPIServerConnectivity(); err != nil {
+	// Check API Server Connectivity
+	if err := k8sapi.CheckAPIServerConnectivity(false); err != nil {
 		log.Errorf("Failed to check API server connectivity: %s", err)
 		return 1
 	}
@@ -75,6 +75,12 @@ func _main() int {
 
 	// CNI introspection endpoints
 	go ipamContext.ServeIntrospection()
+
+	// Check API Server Connectivity w/ cluster ip to make sure kube-proxy is finished
+	if err := k8sapi.CheckAPIServerConnectivity(true); err != nil {
+		log.Errorf("Failed to check API server connectivity, there may be something wrong with kube-proxy: %s", err)
+		return 1
+	}
 
 	// Start the RPC listener
 	err = ipamContext.RunRPCHandler(version.Version)

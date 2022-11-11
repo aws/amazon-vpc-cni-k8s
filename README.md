@@ -410,6 +410,17 @@ Specifies the cluster name to tag allocated ENIs with. See the "Cluster Name tag
 
 ---
 
+#### `CLUSTER_ENDPOINT`
+
+Type: String
+
+Default: `""`
+
+Specifies the cluster endpoint to use for connecting to the api-server without relying on kube-proxy. 
+This is an optional configuration parameter that can improve the initialization time of the AWS VPC CNI.
+
+---
+
 #### `ENABLE_POD_ENI` (v1.7.0+)
 
 Type: Boolean as a String
