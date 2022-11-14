@@ -23,7 +23,7 @@ import (
 var log = logger.Get()
 
 func InitializeRestMapper() (meta.RESTMapper, error) {
-	restCfg, err := getRestConfig(false)
+	restCfg, err := getRestConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ func InitializeRestMapper() (meta.RESTMapper, error) {
 
 // CreateKubeClient creates a k8s client
 func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
-	restCfg, err := getRestConfig(false)
+	restCfg, err := getRestConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
 
 // CreateKubeClient creates a k8s client
 func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper) (client.Client, error) {
-	restCfg, err := getRestConfig(false)
+	restCfg, err := getRestConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper) 
 }
 func GetKubeClientSet() (kubernetes.Interface, error) {
 	// creates the in-cluster config
-	config, err := getRestConfig(false)
+	config, err := getRestConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +102,8 @@ func GetKubeClientSet() (kubernetes.Interface, error) {
 	return clientSet, nil
 }
 
-func CheckAPIServerConnectivity(clusterIPOnly bool) error {
-	restCfg, err := getRestConfig(clusterIPOnly)
+func CheckAPIServerConnectivity() error {
+	restCfg, err := getRestConfig()
 	if err != nil {
 		return err
 	}
@@ -131,12 +131,12 @@ func CheckAPIServerConnectivity(clusterIPOnly bool) error {
 	})
 }
 
-func getRestConfig(clusterIPOnly bool) (*rest.Config, error) {
+func getRestConfig() (*rest.Config, error) {
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
 		return nil, err
 	}
-	if endpoint, ok := os.LookupEnv("CLUSTER_ENDPOINT"); !clusterIPOnly && ok {
+	if endpoint, ok := os.LookupEnv("CLUSTER_ENDPOINT"); ok {
 		restCfg.Host = endpoint
 	}
 	return restCfg, nil
