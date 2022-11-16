@@ -410,7 +410,7 @@ Specifies the cluster name to tag allocated ENIs with. See the "Cluster Name tag
 
 ---
 
-#### `CLUSTER_ENDPOINT`
+#### `CLUSTER_ENDPOINT` (v1.12.1+)
 
 Type: String
 
