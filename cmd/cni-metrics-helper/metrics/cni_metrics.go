@@ -147,6 +147,20 @@ var InterestingCNIMetrics = map[string]metricsConvert{
 				actionFunc: metricsAdd,
 				data:       &dataPoints{},
 				logToFile:  true}}},
+	"awscni_ec2api_req_count": {
+		actions: []metricsAction{
+			{cwMetricName: "ec2ApiReqCount",
+				matchFunc:  matchAny,
+				actionFunc: metricsAdd,
+				data:       &dataPoints{},
+				logToFile:  true}}},
+	"awscni_ec2api_error_count": {
+		actions: []metricsAction{
+			{cwMetricName: "ec2ApiErrCount",
+				matchFunc:  matchAny,
+				actionFunc: metricsAdd,
+				data:       &dataPoints{},
+				logToFile:  true}}},
 }
 
 // CNIMetricsTarget defines data structure for kube-state-metric target

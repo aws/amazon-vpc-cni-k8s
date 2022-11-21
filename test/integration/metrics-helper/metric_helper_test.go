@@ -15,6 +15,7 @@ package metrics_helper
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
@@ -84,6 +85,39 @@ var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 
 			By("validating the addReqCount increased on the node after a deployment is created")
 			Expect(addReqCountIncreased).To(BeTrue())
+
+			getMetricStatisticsInput = &cloudwatch.GetMetricStatisticsInput{
+				Dimensions: []*cloudwatch.Dimension{
+					{
+						Name:  aws.String("CLUSTER_ID"),
+						Value: aws.String(ngName),
+					},
+				},
+				MetricName: aws.String("ec2ApiReqCount"),
+				Namespace:  aws.String("Kubernetes"),
+				Period:     aws.Int64(int64(60)),
+				// Start time should sync with when when this test started
+				StartTime:  aws.Time(time.Now().Add(time.Duration(-10) * time.Minute)),
+				EndTime:    aws.Time(time.Now()),
+				Statistics: aws.StringSlice([]string{"Maximum"}),
+			}
+			getMetricOutput, err = f.CloudServices.CloudWatch().GetMetricStatistics(getMetricStatisticsInput)
+			Expect(err).ToNot(HaveOccurred())
+
+			dataPoints = getMetricOutput.Datapoints
+			fmt.Fprintf(GinkgoWriter, "data points: %+v", dataPoints)
+
+			ec2APIRequestsCountIncreased := false
+			lastVal = *dataPoints[0].Maximum
+			for _, dp := range dataPoints {
+				if math.Abs(*dp.Maximum-lastVal) > 0 {
+					ec2APIRequestsCountIncreased = true
+				}
+				lastVal = *dp.Maximum
+			}
+
+			By("validating the ec2ApiReqCount increased after a deployment is created")
+			Expect(ec2APIRequestsCountIncreased).To(BeTrue())
 		})
 	})
 })

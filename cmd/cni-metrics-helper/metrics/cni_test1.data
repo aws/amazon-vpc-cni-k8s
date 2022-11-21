@@ -7,6 +7,16 @@ awscni_assigned_ip_addresses 1
 # HELP awscni_aws_api_error_count The number of times AWS API returns an error
 # TYPE awscni_aws_api_error_count counter
 awscni_aws_api_error_count{api="DeleteNetworkInterface",error="InvalidParameterValue"} 14
+# HELP awscni_ec2api_req_count The number of requests made to EC2 APIs by CNI
+# TYPE awscni_ec2api_req_count counter
+awscni_ec2api_req_count{fn="AssignPrivateIpAddresses"} 1
+awscni_ec2api_req_count{fn="AttachNetworkInterface"} 1
+awscni_ec2api_req_count{fn="CreateNetworkInterface"} 1
+awscni_ec2api_req_count{fn="DeleteNetworkInterface"} 1
+awscni_ec2api_req_count{fn="DescribeInstances"} 1
+awscni_ec2api_req_count{fn="DescribeNetworkInterfaces"} 13
+awscni_ec2api_req_count{fn="DetachNetworkInterface"} 1
+awscni_ec2api_req_count{fn="ModifyNetworkInterfaceAttribute"} 2
 # HELP awscni_aws_api_latency_ms AWS API call latency in ms
 # TYPE awscni_aws_api_latency_ms summary
 awscni_aws_api_latency_ms{api="AssignPrivateIpAddresses",error="false",quantile="0.5"} NaN
