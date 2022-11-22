@@ -32,7 +32,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v1
         with:
           role-to-assume: ${{ secrets.OSS_TEST_ROLE_ARN }}
-          role-duration-seconds: 10800
+          role-duration-seconds: 14400 # 4 hours
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
       - name: Run perf tests
         env:
