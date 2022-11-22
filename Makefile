@@ -57,7 +57,7 @@ export DOCKER_BUILDKIT=1
 GOARCH = $(TARGETARCH)
 
 # GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.19-bullseye
+GOLANG_IMAGE = public.ecr.aws/eks-distro-build-tooling/golang:1.19.2-1-gcc-al2
 # For the requested build, these are the set of Go specific build environment variables.
 export GOOS = linux
 export CGO_ENABLED = 0
