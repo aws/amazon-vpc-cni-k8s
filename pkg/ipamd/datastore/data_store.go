@@ -17,8 +17,13 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
+	"github.com/vishvananda/netlink"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -57,7 +62,7 @@ const (
 // ipamd/datastore restarts.  In vpc-cni <=1.6, we "stored" the
 // allocated IPs by querying kubelet's CRI.  Since this requires scary
 // access to CRI socket, and may race with CRI's internal logic, we
-// are transitioning away from from this to storing allocations
+// are transitioning away from this to storing allocations
 // ourself in a file (similar to host-ipam CNI plugin).
 //
 // Because we don't want to require a node restart during CNI
@@ -72,7 +77,7 @@ const (
 // Note phase3 is not necessary since writes to CRI are implicit.
 // At/after phase2, we can remove any code protected by
 // checkpointMigrationPhase<2.
-const checkpointMigrationPhase = 1
+const checkpointMigrationPhase = 2
 
 // Placeholders used for unknown values when reading from CRI.
 const backfillNetworkName = "_migrated-from-cri"
@@ -138,7 +143,7 @@ type IPAMKey struct {
 	IfName      string `json:"ifName"`
 }
 
-// IsZero returns true iff object is equal to the golang zero/null value.
+// IsZero returns true if object is equal to the golang zero/null value.
 func (k IPAMKey) IsZero() bool {
 	return k == IPAMKey{}
 }
@@ -316,6 +321,7 @@ type DataStore struct {
 	CheckpointMigrationPhase int
 	backingStore             Checkpointer
 	cri                      cri.APIs
+	netLink                  netlinkwrapper.NetLink
 	isPDEnabled              bool
 }
 
@@ -350,6 +356,7 @@ func NewDataStore(log logger.Logger, backingStore Checkpointer, isPDEnabled bool
 		log:                      log,
 		backingStore:             backingStore,
 		cri:                      cri.New(),
+		netLink:                  netlinkwrapper.NewNetLink(),
 		CheckpointMigrationPhase: checkpointMigrationPhase,
 		isPDEnabled:              isPDEnabled,
 	}
@@ -432,24 +439,25 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 
 	case 2:
 		// Phase2: Read from checkpoint file
-		ds.log.Infof("Reading ipam state from backing store")
+		ds.log.Infof("Begin ipam state recovery from backing store")
 
-		err := ds.backingStore.Restore(&data)
-		ds.log.Debugf("backing store restore returned err %v", err)
-		if os.IsNotExist(err) {
-			// Assume that no file == no containers are
-			// currently in use, eg a fresh reboot just
-			// cleared everything out.  This is ok, and a
-			// no-op.
-			return nil
-		} else if err != nil {
-			return fmt.Errorf("datastore: error reading backing store: %v", err)
+		if err := ds.backingStore.Restore(&data); err != nil {
+			// Assume that no file == no containers are currently in use, e.g. a fresh reboot just cleared everything out.
+			// This is ok, and no-op.
+			if os.IsNotExist(err) {
+				ds.log.Debugf("backing store doesn't exists, assuming bootstrap on a new node")
+				return nil
+			}
+			return errors.Wrap(err, "failed ipam state recovery from backing store")
 		}
-
 		if data.Version != CheckpointFormatVersion {
-			return fmt.Errorf("datastore: unknown backing store format (%s != %s) - wrong CNI/ipamd version? (Rebooting this node will restart local pods and probably help)", data.Version, CheckpointFormatVersion)
+			return errors.Errorf("failed ipam state recovery due to unexpected checkpointVersion: %v/%v", data.Version, CheckpointFormatVersion)
 		}
-
+		if normalizedData, err := ds.normalizeCheckpointDataByPodVethExistence(data); err != nil {
+			return errors.Wrap(err, "failed normalize checkpoint data with veth check")
+		} else {
+			data = normalizedData
+		}
 	default:
 		panic(fmt.Sprintf("Unexpected value of checkpointMigrationPhase: %v", ds.CheckpointMigrationPhase))
 	}
@@ -1220,10 +1228,7 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 		return nil, "", 0, err
 	}
 	addr.UnassignedTime = time.Now()
-	if ds.isPDEnabled && !availableCidr.IsPrefix {
-		ds.log.Infof("Prefix delegation is enabled and the IP is from secondary pool hence no need to update prefix pool")
-		ds.total--
-	}
+
 	//Update prometheus for ips per cidr
 	ipsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
 	ds.log.Infof("UnassignPodIPAddress: sandbox %s's ipAddr %s, DeviceNumber %d",
@@ -1540,4 +1545,40 @@ func (ds *DataStore) CheckFreeableENIexists() bool {
 		return true
 	}
 	return false
+}
+
+// NormalizeCheckpointDataByPodVethExistence will normalize checkpoint data by removing allocations that don't have a corresponding pod veth.
+// This shouldn't happen unless container runtimes have bugs that failed to invoke the cmdDel for died pods.
+// we use this reconciliation as a safety mechanism during transition from CRI to state file.
+func (ds *DataStore) normalizeCheckpointDataByPodVethExistence(checkpoint CheckpointData) (CheckpointData, error) {
+	hostNSLinks, err := ds.netLink.LinkList()
+	if err != nil {
+		return CheckpointData{}, err
+	}
+	var validatedAllocations []CheckpointEntry
+	for _, allocation := range checkpoint.Allocations {
+		if err := ds.validateAllocationByPodVethExistence(allocation, hostNSLinks); err != nil {
+			ds.log.Warnf("ignore IP allocation for %v:%v,%v due to %v", allocation.ContainerID, allocation.IPv4, allocation.IPv6, err)
+		} else {
+			validatedAllocations = append(validatedAllocations, allocation)
+		}
+	}
+	checkpoint.Allocations = validatedAllocations
+	return checkpoint, nil
+}
+
+func (ds *DataStore) validateAllocationByPodVethExistence(allocation CheckpointEntry, hostNSLinks []netlink.Link) error {
+	// for backwards compatibility, we skip the validation when metadata contains empty namespace/name.
+	if allocation.Metadata.K8SPodNamespace == "" || allocation.Metadata.K8SPodName == "" {
+		return nil
+	}
+
+	linkNameSuffix := networkutils.GeneratePodHostVethNameSuffix(allocation.Metadata.K8SPodNamespace, allocation.Metadata.K8SPodName)
+	for _, link := range hostNSLinks {
+		linkName := link.Attrs().Name
+		if strings.HasSuffix(linkName, linkNameSuffix) {
+			return nil
+		}
+	}
+	return errors.Errorf("host-side veth not found for pod %v/%v", allocation.Metadata.K8SPodNamespace, allocation.Metadata.K8SPodName)
 }

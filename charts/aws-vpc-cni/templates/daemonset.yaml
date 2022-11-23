@@ -99,13 +99,6 @@ spec:
 {{- end }}
           - mountPath: /host/var/log/aws-routed-eni
             name: log-dir
-{{- if .Values.cri.hostPath }}
-          - mountPath: /var/run/cri.sock
-            name: cri
-{{- else }}
-          - mountPath: /var/run/dockershim.sock
-            name: dockershim
-{{- end }}
           - mountPath: /var/run/aws-node
             name: run-dir
           - mountPath: /run/xtables.lock
@@ -124,15 +117,6 @@ spec:
       - name: cni-config
         configMap:
           name: {{ include "aws-vpc-cni.fullname" . }}
-{{- end }}
-{{- with .Values.cri.hostPath }}
-      - name: cri
-        hostPath:
-          {{- toYaml . | nindent 10 }}
-{{- else }}
-      - name: dockershim
-        hostPath:
-          path: /var/run/dockershim.sock
 {{- end }}
       - name: log-dir
         hostPath:

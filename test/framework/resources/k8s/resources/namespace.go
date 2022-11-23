@@ -29,6 +29,8 @@ type NamespaceManager interface {
 	CreateNamespace(namespace string) error
 	CreateNamespaceWithLabels(namespace string, labels map[string]string) error
 	DeleteAndWaitTillNamespaceDeleted(namespace string) error
+
+	WaitUntilNamespaceDeleted(ctx context.Context, ns *v1.Namespace) error
 }
 
 type defaultNamespaceManager struct {
@@ -73,5 +75,18 @@ func (m *defaultNamespaceManager) DeleteAndWaitTillNamespaceDeleted(namespace st
 			return true, nil
 		}
 		return false, err
+	}, ctx.Done())
+}
+
+func (m *defaultNamespaceManager) WaitUntilNamespaceDeleted(ctx context.Context, ns *v1.Namespace) error {
+	observedNS := &v1.Namespace{}
+	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+		if err := m.k8sClient.Get(ctx, utils.NamespacedName(ns), observedNS); err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return false, nil
 	}, ctx.Done())
 }

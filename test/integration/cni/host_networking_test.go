@@ -30,12 +30,8 @@ import (
 
 // TODO: Instead of passing the list of pods to the test helper, have the test helper get the pod on node
 const (
-	AWS_VPC_ENI_MTU            = "AWS_VPC_ENI_MTU"
-	AWS_VPC_K8S_CNI_VETHPREFIX = "AWS_VPC_K8S_CNI_VETHPREFIX"
-	NEW_MTU_VAL                = 1300
-	NEW_VETH_PREFIX            = "veth"
-	DEFAULT_MTU_VAL            = "9001"
-	DEFAULT_VETH_PREFIX        = "eni"
+	NEW_MTU_VAL     = 1300
+	NEW_VETH_PREFIX = "veth"
 )
 
 var _ = Describe("test host networking", func() {
@@ -43,11 +39,23 @@ var _ = Describe("test host networking", func() {
 	var podLabelKey = "app"
 	var podLabelVal = "host-networking-test"
 
+	// For host networking tests, increase WARM_IP_TARGET to prevent long IPAMD warmup.
+	BeforeEach(func() {
+		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
+			"WARM_IP_TARGET": strconv.Itoa(maxIPPerInterface - 1),
+		})
+	})
+	AfterEach(func() {
+		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
+			"WARM_IP_TARGET": DEFAULT_WARM_IP_TARGET,
+		})
+	})
+
 	Context("when pods using IP from primary and secondary ENI are created", func() {
 		AfterEach(func() {
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
-				AWS_VPC_ENI_MTU:            DEFAULT_MTU_VAL,
-				AWS_VPC_K8S_CNI_VETHPREFIX: DEFAULT_VETH_PREFIX,
+				"AWS_VPC_ENI_MTU":            DEFAULT_MTU_VAL,
+				"AWS_VPC_K8S_CNI_VETHPREFIX": DEFAULT_VETH_PREFIX,
 			})
 		})
 		It("should have correct host networking setup when running and cleaned up once terminated", func() {
@@ -102,8 +110,8 @@ var _ = Describe("test host networking", func() {
 
 			By("Configuring Veth Prefix and MTU value on aws-node daemonset")
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
-				AWS_VPC_ENI_MTU:            strconv.Itoa(NEW_MTU_VAL),
-				AWS_VPC_K8S_CNI_VETHPREFIX: NEW_VETH_PREFIX,
+				"AWS_VPC_ENI_MTU":            strconv.Itoa(NEW_MTU_VAL),
+				"AWS_VPC_K8S_CNI_VETHPREFIX": NEW_VETH_PREFIX,
 			})
 
 			By("creating a deployment to launch pods")

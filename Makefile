@@ -208,6 +208,12 @@ docker-unit-tests: build-docker-test     ## Run unit tests inside of the testing
 		$(TEST_IMAGE_NAME) \
 		make unit-test
  
+##@ Build the Test Binaries files in /test
+build-test-binaries:
+	mkdir -p ${MAKEFILE_PATH}test/build
+	find ${MAKEFILE_PATH}test/ -name '*suite_test.go' -type f  | xargs dirname  | xargs ginkgo build
+	find ${MAKEFILE_PATH}test/ -name "*.test" -print0 | xargs -0 -I {} mv {} ${MAKEFILE_PATH}test/build
+
 ##@ Build metrics helper agent 
 
 # Build metrics helper agent.

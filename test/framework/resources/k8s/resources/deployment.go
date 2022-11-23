@@ -33,6 +33,9 @@ type DeploymentManager interface {
 	UpdateAndWaitTillDeploymentIsReady(deployment *v1.Deployment, timeout time.Duration) error
 	GetDeployment(name, namespace string) (*v1.Deployment, error)
 	WaitTillDeploymentReady(deployment *v1.Deployment, timeout time.Duration) (*v1.Deployment, error)
+
+	WaitUntilDeploymentReady(ctx context.Context, dp *v1.Deployment) (*v1.Deployment, error)
+	WaitUntilDeploymentDeleted(ctx context.Context, dp *v1.Deployment) error
 }
 
 type defaultDeploymentManager struct {
@@ -41,7 +44,7 @@ type defaultDeploymentManager struct {
 
 // CreateAndWaitTillDeploymentIsReady creates and waits for deployment to become ready or timeout
 // with error if deployment doesn't become ready.
-func (d defaultDeploymentManager) CreateAndWaitTillDeploymentIsReady(deployment *v1.Deployment, timeout time.Duration) (*v1.Deployment, error) {
+func (d *defaultDeploymentManager) CreateAndWaitTillDeploymentIsReady(deployment *v1.Deployment, timeout time.Duration) (*v1.Deployment, error) {
 	ctx := context.Background()
 	err := d.k8sClient.Create(ctx, deployment)
 	if err != nil {
@@ -54,7 +57,7 @@ func (d defaultDeploymentManager) CreateAndWaitTillDeploymentIsReady(deployment 
 	return d.WaitTillDeploymentReady(deployment, timeout)
 }
 
-func (d defaultDeploymentManager) DeleteAndWaitTillDeploymentIsDeleted(deployment *v1.Deployment) error {
+func (d *defaultDeploymentManager) DeleteAndWaitTillDeploymentIsDeleted(deployment *v1.Deployment) error {
 	ctx := context.Background()
 	err := d.k8sClient.Delete(ctx, deployment)
 	if err != nil {
@@ -72,7 +75,7 @@ func (d defaultDeploymentManager) DeleteAndWaitTillDeploymentIsDeleted(deploymen
 	}, ctx.Done())
 }
 
-func (d defaultDeploymentManager) UpdateAndWaitTillDeploymentIsReady(deployment *v1.Deployment, timeout time.Duration) error {
+func (d *defaultDeploymentManager) UpdateAndWaitTillDeploymentIsReady(deployment *v1.Deployment, timeout time.Duration) error {
 	ctx := context.Background()
 	observed := &v1.Deployment{}
 
@@ -93,7 +96,7 @@ func (d defaultDeploymentManager) UpdateAndWaitTillDeploymentIsReady(deployment 
 
 }
 
-func (d defaultDeploymentManager) GetDeployment(name, namespace string) (*v1.Deployment, error) {
+func (d *defaultDeploymentManager) GetDeployment(name, namespace string) (*v1.Deployment, error) {
 	ctx := context.Background()
 	deployment := &v1.Deployment{}
 
@@ -105,7 +108,7 @@ func (d defaultDeploymentManager) GetDeployment(name, namespace string) (*v1.Dep
 	return deployment, err
 }
 
-func (d defaultDeploymentManager) WaitTillDeploymentReady(deployment *v1.Deployment, timeout time.Duration) (*v1.Deployment, error) {
+func (d *defaultDeploymentManager) WaitTillDeploymentReady(deployment *v1.Deployment, timeout time.Duration) (*v1.Deployment, error) {
 	ctx := context.Background()
 	observed := &v1.Deployment{}
 	return observed, wait.PollImmediate(utils.PollIntervalShort, timeout, func() (bool, error) {
@@ -120,6 +123,35 @@ func (d defaultDeploymentManager) WaitTillDeploymentReady(deployment *v1.Deploym
 		}
 		return false, nil
 	})
+}
+
+func (d *defaultDeploymentManager) WaitUntilDeploymentReady(ctx context.Context, dp *v1.Deployment) (*v1.Deployment, error) {
+	observedDP := &v1.Deployment{}
+	return observedDP, wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+		if err := d.k8sClient.Get(ctx, utils.NamespacedName(dp), observedDP); err != nil {
+			return false, err
+		}
+		if observedDP.Status.UpdatedReplicas == (*dp.Spec.Replicas) &&
+			observedDP.Status.Replicas == (*dp.Spec.Replicas) &&
+			observedDP.Status.AvailableReplicas == (*dp.Spec.Replicas) &&
+			observedDP.Status.ObservedGeneration >= dp.Generation {
+			return true, nil
+		}
+		return false, nil
+	}, ctx.Done())
+}
+
+func (d *defaultDeploymentManager) WaitUntilDeploymentDeleted(ctx context.Context, dp *v1.Deployment) error {
+	observedDP := &v1.Deployment{}
+	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+		if err := d.k8sClient.Get(ctx, utils.NamespacedName(dp), observedDP); err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return false, nil
+	}, ctx.Done())
 }
 
 func NewDefaultDeploymentManager(k8sClient client.Client) DeploymentManager {

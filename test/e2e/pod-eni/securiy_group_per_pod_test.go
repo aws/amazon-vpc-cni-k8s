@@ -202,7 +202,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 				map[string]string{"DISABLE_TCP_EARLY_DEMUX": disableTCPEarlyDemux})
 
 			tcpProbe := &v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
+				Handler: v1.Handler{
 					TCPSocket: &v1.TCPSocketAction{
 						Port: intstr.IntOrString{IntVal: 80},
 					},

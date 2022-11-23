@@ -14,16 +14,22 @@
 package ipamd
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/apps/v1"
 )
+
+var primaryInstance *ec2.Instance
+var f *framework.Framework
+var err error
 
 const (
 	CoreDNSDeploymentName      = "coredns"
@@ -51,13 +57,14 @@ var _ = BeforeSuite(func() {
 	numOfNodes = len(nodeList.Items)
 	Expect(numOfNodes).Should(BeNumerically(">", 1))
 
-	// Nominate the first node as the 'primary' node and force coredns deployment on this
+	// Nominate the first node as the one to run coredns deployment against
 	By("adding nodeSelector in coredns deployment to be scheduled on single node")
-	instanceID := k8sUtils.GetInstanceIDFromNode(nodeList.Items[0])
+	primaryNode := nodeList.Items[0]
+	fmt.Fprintf(GinkgoWriter, "coredns node is %s\n", primaryNode.Name)
+	instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
 	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(instanceID)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Add nodeSelector label to coredns deployment so coredns pods are scheduled on 'primary' node
 	By("getting node with no pods scheduled to run tests")
 	coreDNSDeployment, err := f.K8sResourceManagers.DeploymentManager().GetDeployment(CoreDNSDeploymentName,
 		CoreDNSDeploymentNameSpace)
@@ -66,16 +73,18 @@ var _ = BeforeSuite(func() {
 	// Copy the deployment to restore later
 	coreDNSDeploymentCopy = coreDNSDeployment.DeepCopy()
 
+	// Add nodeSelector label to coredns deployment so coredns pods are scheduled on 'primary' node
 	coreDNSDeployment.Spec.Template.Spec.NodeSelector = map[string]string{
 		"kubernetes.io/hostname": *primaryInstance.PrivateDnsName,
 	}
-
 	err = f.K8sResourceManagers.DeploymentManager().UpdateAndWaitTillDeploymentIsReady(coreDNSDeployment,
 		utils.DefaultDeploymentReadyTimeout)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Nominate primaryInstance to node without coredns pods
-	instanceID = k8sUtils.GetInstanceIDFromNode(nodeList.Items[1])
+	// Redefine primary node as node without coredns pods. Note that this node may have previously had coredns pods.
+	primaryNode = nodeList.Items[1]
+	fmt.Fprintf(GinkgoWriter, "primary node is %s\n", primaryNode.Name)
+	instanceID = k8sUtils.GetInstanceIDFromNode(primaryNode)
 	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(instanceID)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -90,7 +99,7 @@ var _ = BeforeSuite(func() {
 		})
 
 	// Allow reconciler to free up ENIs if any
-	time.Sleep(utils.PollIntervalLong)
+	time.Sleep(utils.PollIntervalLong * 2)
 })
 
 var _ = AfterSuite(func() {
@@ -103,3 +112,28 @@ var _ = AfterSuite(func() {
 	f.K8sResourceManagers.NamespaceManager().
 		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 })
+
+func ceil(x, y int) int {
+	return (x + y - 1) / y
+}
+
+func Max(x, y int) int {
+	if x < y {
+		return y
+	}
+	return x
+}
+
+// MinIgnoreZero returns smaller of two number, if any number is zero returns the other number
+func MinIgnoreZero(x, y int) int {
+	if x == 0 {
+		return y
+	}
+	if y == 0 {
+		return x
+	}
+	if x < y {
+		return x
+	}
+	return y
+}

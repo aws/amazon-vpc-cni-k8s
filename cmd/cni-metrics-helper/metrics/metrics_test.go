@@ -72,6 +72,14 @@ func TestAPIServerMetric(t *testing.T) {
 	// verify awscni_assigned_ip_addresses value
 	assert.Equal(t, 1.0, actions[0].data.curSingleDataPoint)
 
+	// verify awscni_ec2api_req_count value
+	actions = InterestingCNIMetrics["awscni_ec2api_req_count"].actions
+	assert.Equal(t, 21.0, actions[0].data.curSingleDataPoint)
+
+	// verify awscni_ec2api_error_count value
+	actions = InterestingCNIMetrics["awscni_ec2api_error_count"].actions
+	assert.Equal(t, 0.0, actions[0].data.curSingleDataPoint)
+
 	actions = InterestingCNIMetrics["awscni_total_ip_addresses"].actions
 	// verify awscni_total_ip_addresses value
 	assert.Equal(t, 10.0, actions[0].data.curSingleDataPoint)
