@@ -68,67 +68,67 @@ func getNodePrimaryIF() (string, error) {
 	return primaryIF, nil
 }
 
-func configureSystemParams(sys sysctl.Interface, primaryIF string) error {
+func configureSystemParams(sysctlUtil sysctl.Interface, primaryIF string) error {
 	var err error
 	// Configure rp_filter in loose mode
 	entry := "net/ipv4/conf/" + primaryIF + "/rp_filter"
-	err = sys.SetSysctl(entry, 2)
+	err = sysctlUtil.Set(entry, 2)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to set rp_filter for %s", primaryIF)
 	}
-	val, _ := sys.GetSysctl(entry)
+	val, _ := sysctlUtil.Get(entry)
 	log.Infof("Updated %s to %d", entry, val)
 
 	// Enable or disable TCP early demux based on environment variable
 	// Note that older kernels may not support tcp_early_demux, so we must first check that it exists.
 	entry = "net/ipv4/tcp_early_demux"
-	if _, err := sys.GetSysctl(entry); err != nil {
+	if _, err := sysctlUtil.Get(entry); err != nil {
 		disableIPv4EarlyDemux := getEnv(envDisableIPv4TcpEarlyDemux, "false")
 		if disableIPv4EarlyDemux == "true" {
-			err = sys.SetSysctl(entry, 0)
+			err = sysctlUtil.Set(entry, 0)
 			if err != nil {
 				return errors.Wrap(err, "Failed to disable tcp_early_demux")
 			}
 		} else {
-			err = sys.SetSysctl(entry, 1)
+			err = sysctlUtil.Set(entry, 1)
 			if err != nil {
 				return errors.Wrap(err, "Failed to enable tcp_early_demux")
 			}
 		}
-		val, _ = sys.GetSysctl(entry)
+		val, _ = sysctlUtil.Get(entry)
 		log.Infof("Updated %s to %d", entry, val)
 	}
 	return nil
 }
 
-func configureIPv6Settings(sys sysctl.Interface, primaryIF string) error {
+func configureIPv6Settings(sysctlUtil sysctl.Interface, primaryIF string) error {
 	var err error
 	// Enable IPv6 when environment variable is set
 	// Note that IPv6 is not disabled when environment variable is unset. This is omitted to preserve default host semantics.
 	enableIPv6 := getEnv(envEnableIPv6, "false")
 	if enableIPv6 == "true" {
 		entry := "net/ipv6/conf/all/disable_ipv6"
-		err = sys.SetSysctl(entry, 0)
+		err = sysctlUtil.Set(entry, 0)
 		if err != nil {
 			return errors.Wrap(err, "Failed to set disable_ipv6 to 0")
 		}
-		val, _ := sys.GetSysctl(entry)
+		val, _ := sysctlUtil.Get(entry)
 		log.Infof("Updated %s to %d", entry, val)
 
 		entry = "net/ipv6/conf/all/forwarding"
-		err = sys.SetSysctl(entry, 1)
+		err = sysctlUtil.Set(entry, 1)
 		if err != nil {
 			return errors.Wrap(err, "Failed to enable ipv6 forwarding")
 		}
-		val, _ = sys.GetSysctl(entry)
+		val, _ = sysctlUtil.Get(entry)
 		log.Infof("Updated %s to %d", entry, val)
 
 		entry = "net/ipv6/conf/" + primaryIF + "/accept_ra"
-		err = sys.SetSysctl(entry, 2)
+		err = sysctlUtil.Set(entry, 2)
 		if err != nil {
 			return errors.Wrap(err, "Failed to enable ipv6 accept_ra")
 		}
-		val, _ = sys.GetSysctl(entry)
+		val, _ = sysctlUtil.Get(entry)
 		log.Infof("Updated %s to %d", entry, val)
 	}
 	return nil
@@ -166,14 +166,14 @@ func _main() int {
 	}
 	log.Infof("Found primaryIF %s", primaryIF)
 
-	sys := sysctl.New()
-	err = configureSystemParams(sys, primaryIF)
+	sysctlUtil := sysctl.New()
+	err = configureSystemParams(sysctlUtil, primaryIF)
 	if err != nil {
 		log.WithError(err).Errorf("Failed to configure system parameters")
 		return 1
 	}
 
-	err = configureIPv6Settings(sys, primaryIF)
+	err = configureIPv6Settings(sysctlUtil, primaryIF)
 	if err != nil {
 		log.WithError(err).Errorf("Failed to configure IPv6 settings")
 		return 1

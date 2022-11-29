@@ -15,10 +15,10 @@ const (
 
 // Interface is an injectable interface for running sysctl commands.
 type Interface interface {
-	// GetSysctl returns the value for the specified sysctl setting
-	GetSysctl(sysctl string) (int, error)
-	// SetSysctl modifies the specified sysctl flag to the new value
-	SetSysctl(sysctl string, newVal int) error
+	// Get returns the value for the specified sysctl setting
+	Get(sysctl string) (int, error)
+	// Set modifies the specified sysctl flag to the new value
+	Set(sysctl string, newVal int) error
 }
 
 // New returns a new Interface for accessing sysctl
@@ -30,8 +30,8 @@ func New() Interface {
 type procSysctl struct {
 }
 
-// GetSysctl returns the value for the specified sysctl setting
-func (*procSysctl) GetSysctl(sysctl string) (int, error) {
+// Get returns the value for the specified sysctl setting
+func (*procSysctl) Get(sysctl string) (int, error) {
 	data, err := ioutil.ReadFile(path.Join(sysctlBase, sysctl))
 	if err != nil {
 		return -1, err
@@ -43,7 +43,7 @@ func (*procSysctl) GetSysctl(sysctl string) (int, error) {
 	return val, nil
 }
 
-// SetSysctl modifies the specified sysctl flag to the new value
-func (*procSysctl) SetSysctl(sysctl string, newVal int) error {
+// Set modifies the specified sysctl flag to the new value
+func (*procSysctl) Set(sysctl string, newVal int) error {
 	return ioutil.WriteFile(path.Join(sysctlBase, sysctl), []byte(strconv.Itoa(newVal)), 0640)
 }
