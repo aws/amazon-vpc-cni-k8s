@@ -89,11 +89,11 @@ const (
 	envRandomizeSNAT         = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 )
 
-func getEnv(env, def string) string {
+func getEnv(env, defaultVal string) string {
 	if val, ok := os.LookupEnv(env); ok {
 		return val
 	}
-	return def
+	return defaultVal
 }
 
 // NetConfList describes an ordered list of networks.
@@ -202,7 +202,7 @@ func getNodePrimaryV4Address() (string, error) {
 	for {
 		hostIP, err = imds.GetMetaData("local-ipv4")
 		if err != nil {
-			log.WithError(err).Fatalf("aws-vpc-cni failed\n")
+			log.WithError(err).Fatalf("aws-vpc-cni failed")
 			return "", err
 		}
 		if hostIP != "" {
@@ -274,7 +274,7 @@ func generateJSON(jsonFile string, outFile string) error {
 
 	err = isValidJSON(string(byteValue))
 	if err != nil {
-		log.Fatalf("%s is not a valid json object\nerror: %s", netconf, err)
+		log.Fatalf("%s is not a valid json object, error: %s", netconf, err)
 	}
 
 	err = ioutil.WriteFile(outFile, byteValue, 0644)
@@ -371,7 +371,7 @@ func _main() int {
 	}
 
 	// Wait for init container to complete
-	//if err = waitForInit(); err != nil {
+	//if err := waitForInit(); err != nil {
 	//	log.WithError(err).Errorf("Init container failed to complete")
 	//	return 1
 	//}
@@ -388,7 +388,6 @@ func _main() int {
 		log.WithError(err).Errorf("Failed to update 10-awsconflist")
 		return 1
 	}
-
 	log.Infof("Successfully copied CNI plugin binary and config file.")
 
 	awsConfFile := defaultHostCNIConfDirPath + "/aws.conf"

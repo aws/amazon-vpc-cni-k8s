@@ -20,6 +20,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/utils/cp"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/imds"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/sysctl"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
 )
@@ -35,11 +36,102 @@ const (
 	envHostCniBinPath           = "HOST_CNI_BIN_PATH"
 )
 
-func getEnv(env, def string) string {
+func getEnv(env, defaultVal string) string {
 	if val, ok := os.LookupEnv(env); ok {
 		return val
 	}
-	return def
+	return defaultVal
+}
+
+func getNodePrimaryIF() (string, error) {
+	var primaryIF string
+	primaryMAC, err := imds.GetMetaData("mac")
+	if err != nil {
+		return primaryIF, errors.Wrap(err, "Failed to get primary MAC from IMDS")
+	}
+	log.Infof("Found primaryMAC %s", primaryMAC)
+
+	links, err := netlink.LinkList()
+	if err != nil {
+		return primaryIF, errors.Wrap(err, "Failed to list links")
+	}
+	for _, link := range links {
+		if link.Attrs().HardwareAddr.String() == primaryMAC {
+			primaryIF = link.Attrs().Name
+			break
+		}
+	}
+
+	if primaryIF == "" {
+		return primaryIF, errors.Wrap(err, "Failed to retrieve primary IF")
+	}
+	return primaryIF, nil
+}
+
+func configureSystemParams(sys sysctl.Interface, primaryIF string) error {
+	var err error
+	// Configure rp_filter in loose mode
+	entry := "net/ipv4/conf/" + primaryIF + "/rp_filter"
+	err = sys.SetSysctl(entry, 2)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to set rp_filter for %s", primaryIF)
+	}
+	val, _ := sys.GetSysctl(entry)
+	log.Infof("Updated %s to %d", entry, val)
+
+	// Enable or disable TCP early demux based on environment variable
+	// Note that older kernels may not support tcp_early_demux, so we must first check that it exists.
+	entry = "net/ipv4/tcp_early_demux"
+	if _, err := sys.GetSysctl(entry); err != nil {
+		disableIPv4EarlyDemux := getEnv(envDisableIPv4TcpEarlyDemux, "false")
+		if disableIPv4EarlyDemux == "true" {
+			err = sys.SetSysctl(entry, 0)
+			if err != nil {
+				return errors.Wrap(err, "Failed to disable tcp_early_demux")
+			}
+		} else {
+			err = sys.SetSysctl(entry, 1)
+			if err != nil {
+				return errors.Wrap(err, "Failed to enable tcp_early_demux")
+			}
+		}
+		val, _ = sys.GetSysctl(entry)
+		log.Infof("Updated %s to %d", entry, val)
+	}
+	return nil
+}
+
+func configureIPv6Settings(sys sysctl.Interface, primaryIF string) error {
+	var err error
+	// Enable IPv6 when environment variable is set
+	// Note that IPv6 is not disabled when environment variable is unset. This is omitted to preserve default host semantics.
+	enableIPv6 := getEnv(envEnableIPv6, "false")
+	if enableIPv6 == "true" {
+		entry := "net/ipv6/conf/all/disable_ipv6"
+		err = sys.SetSysctl(entry, 0)
+		if err != nil {
+			return errors.Wrap(err, "Failed to set disable_ipv6 to 0")
+		}
+		val, _ := sys.GetSysctl(entry)
+		log.Infof("Updated %s to %d", entry, val)
+
+		entry = "net/ipv6/conf/all/forwarding"
+		err = sys.SetSysctl(entry, 1)
+		if err != nil {
+			return errors.Wrap(err, "Failed to enable ipv6 forwarding")
+		}
+		val, _ = sys.GetSysctl(entry)
+		log.Infof("Updated %s to %d", entry, val)
+
+		entry = "net/ipv6/conf/" + primaryIF + "/accept_ra"
+		err = sys.SetSysctl(entry, 2)
+		if err != nil {
+			return errors.Wrap(err, "Failed to enable ipv6 accept_ra")
+		}
+		val, _ = sys.GetSysctl(entry)
+		log.Infof("Updated %s to %d", entry, val)
+	}
+	return nil
 }
 
 func main() {
@@ -52,113 +144,39 @@ func _main() int {
 	var err error
 	for _, plugin := range pluginBins {
 		if _, err = os.Stat(plugin); err != nil {
-			log.WithError(err).Fatalf("Required executable: %s not found\n", plugin)
+			log.WithError(err).Fatalf("Required executable: %s not found", plugin)
 			return 1
 		}
 	}
 
-	hostCNIBinPath := getEnv(envHostCniBinPath, defaultHostCNIBinPath)
-
 	log.Infof("Copying CNI plugin binaries ...")
+	hostCNIBinPath := getEnv(envHostCniBinPath, defaultHostCNIBinPath)
 	err = cp.InstallBinaries(pluginBins, hostCNIBinPath)
 	if err != nil {
 		log.WithError(err).Errorf("Failed to install binaries")
 		return 1
 	}
-
-	log.Infof("Copied all CNI plugin binaries to %s\n", hostCNIBinPath)
-
-	var primaryMAC string
-	primaryMAC, err = imds.GetMetaData("mac")
-	if err != nil {
-		log.WithError(err).Fatalf("aws-vpc-cni init failed\n")
-		return 1
-	}
-
-	log.Infof("Found primaryMAC %s", primaryMAC)
-
-	links, err := netlink.LinkList()
-	if err != nil {
-		log.WithError(err).Fatalf("Failed to list links\n")
-		return 1
-	}
+	log.Infof("Copied all CNI plugin binaries to %s", hostCNIBinPath)
 
 	var primaryIF string
-	for _, link := range links {
-		if link.Attrs().HardwareAddr.String() == primaryMAC {
-			primaryIF = link.Attrs().Name
-			break
-		}
-	}
-
-	if primaryIF == "" {
-		log.Errorf("Failed to retrieve primary IF")
+	primaryIF, err = getNodePrimaryIF()
+	if err != nil {
+		log.WithError(err).Errorf("Failed to get primary IF")
 		return 1
 	}
 	log.Infof("Found primaryIF %s", primaryIF)
 
 	sys := sysctl.New()
-	// Configure rp_filter in loose mode
-	entry := "net/ipv4/conf/" + primaryIF + "/rp_filter"
-	err = sys.SetSysctl(entry, 2)
+	err = configureSystemParams(sys, primaryIF)
 	if err != nil {
-		log.WithError(err).Fatalf("Failed to set rp_filter for %s\n", primaryIF)
+		log.WithError(err).Errorf("Failed to configure system parameters")
 		return 1
 	}
 
-	val, _ := sys.GetSysctl(entry)
-	log.Infof("Updated %s to %d", entry, val)
-
-	// Enable or disable TCP early demux based on environment variable
-	disableIPv4EarlyDemux := getEnv(envDisableIPv4TcpEarlyDemux, "false")
-	entry = "net/ipv4/tcp_early_demux"
-	if disableIPv4EarlyDemux == "true" {
-		err = sys.SetSysctl(entry, 0)
-		if err != nil {
-			log.WithError(err).Fatalf("Failed to disable tcp_early_demux\n")
-			return 1
-		}
-	} else {
-		err = sys.SetSysctl(entry, 1)
-		if err != nil {
-			log.WithError(err).Fatalf("Failed to enable tcp_early_demux\n")
-			return 1
-		}
-	}
-
-	val, _ = sys.GetSysctl(entry)
-	log.Infof("Updated %s to %d", entry, val)
-
-	// Enable IPv6 when environment variable is set
-	// Note that IPv6 is not disabled when environment variable is unset. This is omitted to preserve default host semantics.
-	enableIPv6 := getEnv(envEnableIPv6, "false")
-	if enableIPv6 == "true" {
-		entry = "net/ipv6/conf/all/disable_ipv6"
-		err = sys.SetSysctl(entry, 0)
-		if err != nil {
-			log.WithError(err).Fatalf("Failed to set disable_ipv6 to 0\n")
-			return 1
-		}
-		val, _ = sys.GetSysctl(entry)
-		log.Infof("Updated %s to %d", entry, val)
-
-		entry = "net/ipv6/conf/all/forwarding"
-		err = sys.SetSysctl(entry, 1)
-		if err != nil {
-			log.WithError(err).Fatalf("Failed to enable ipv6 forwarding\n")
-			return 1
-		}
-		val, _ = sys.GetSysctl(entry)
-		log.Infof("Updated %s to %d", entry, val)
-
-		entry = "net/ipv6/conf/" + primaryIF + "/accept_ra"
-		err = sys.SetSysctl(entry, 2)
-		if err != nil {
-			log.WithError(err).Fatalf("Failed to enable ipv6 accept_ra\n")
-			return 1
-		}
-		val, _ = sys.GetSysctl(entry)
-		log.Infof("Updated %s to %d", entry, val)
+	err = configureIPv6Settings(sys, primaryIF)
+	if err != nil {
+		log.WithError(err).Errorf("Failed to configure IPv6 settings")
+		return 1
 	}
 
 	// TODO: In order to speed up pod launch time, VPC CNI init container is not a Kubernetes init container.
