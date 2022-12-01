@@ -69,9 +69,6 @@ securityContext:
     - "NET_ADMIN"
     - "NET_RAW"
 
-crd:
-  create: true
-
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
