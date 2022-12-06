@@ -82,7 +82,7 @@ func configureSystemParams(sysctlUtil sysctl.Interface, primaryIF string) error 
 	// Enable or disable TCP early demux based on environment variable
 	// Note that older kernels may not support tcp_early_demux, so we must first check that it exists.
 	entry = "net/ipv4/tcp_early_demux"
-	if _, err := sysctlUtil.Get(entry); err != nil {
+	if _, err := sysctlUtil.Get(entry); err == nil {
 		disableIPv4EarlyDemux := getEnv(envDisableIPv4TcpEarlyDemux, "false")
 		if disableIPv4EarlyDemux == "true" {
 			err = sysctlUtil.Set(entry, 0)
@@ -140,7 +140,7 @@ func main() {
 
 func _main() int {
 	log.Debug("Started Initialization")
-	pluginBins := []string{"loopback", "portmap", "bandwidth", "aws-cni-support.sh"}
+	pluginBins := []string{"loopback", "portmap", "bandwidth", "host-local", "aws-cni-support.sh"}
 	var err error
 	for _, plugin := range pluginBins {
 		if _, err = os.Stat(plugin); err != nil {

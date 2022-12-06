@@ -61,6 +61,7 @@ const (
 	defaultAgentLogPath          = "aws-k8s-agent.log"
 	defaultVethPrefix            = "eni"
 	defaultMTU                   = "9001"
+	defaultEnablePodEni          = "false"
 	defaultPodSGEnforcingMode    = "strict"
 	defaultPluginLogFile         = "/var/log/aws-routed-eni/plugin.log"
 	defaultEgressV4PluginLogFile = "/var/log/aws-routed-eni/egress-v4-plugin.log"
@@ -75,11 +76,11 @@ const (
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
 	envVethPrefix            = "AWS_VPC_K8S_CNI_VETHPREFIX"
 	envEniMTU                = "AWS_VPC_ENI_MTU"
+	envEnablePodEni          = "ENABLE_POD_ENI"
 	envPodSGEnforcingMode    = "POD_SECURITY_GROUP_ENFORCING_MODE"
 	envPluginLogFile         = "AWS_VPC_K8S_PLUGIN_LOG_FILE"
 	envPluginLogLevel        = "AWS_VPC_K8S_PLUGIN_LOG_LEVEL"
 	envEgressV4PluginLogFile = "AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE"
-	envConfRPFfilter         = "AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER"
 	envEnPrefixDelegation    = "ENABLE_PREFIX_DELEGATION"
 	envWarmIPTarget          = "WARM_IP_TARGET"
 	envMinIPTarget           = "MINIMUM_IP_TARGET"
@@ -288,6 +289,7 @@ func validateEnvVars() bool {
 		return false
 	}
 
+	// Validate that veth prefix is less than or equal to four characters and not in reserved set: (eth, lo, vlan)
 	vethPrefix := getEnv(envVethPrefix, defaultVethPrefix)
 	if len(vethPrefix) > 4 {
 		log.Errorf("AWS_VPC_K8S_CNI_VETHPREFIX cannot be longer than 4 characters")
@@ -299,10 +301,14 @@ func validateEnvVars() bool {
 		return false
 	}
 
-	podSGEnforcingMode := getEnv(envPodSGEnforcingMode, defaultPodSGEnforcingMode)
-	if podSGEnforcingMode != "strict" && podSGEnforcingMode != "standard" {
-		log.Errorf("%s must be set to either 'strict' or 'standard'", envPodSGEnforcingMode)
-		return false
+	// When ENABLE_POD_ENI is set, validate security group enforcing mode
+	enablePodEni := getEnv(envEnablePodEni, defaultEnablePodEni)
+	if enablePodEni == "true" {
+		podSGEnforcingMode := getEnv(envPodSGEnforcingMode, defaultPodSGEnforcingMode)
+		if podSGEnforcingMode != "strict" && podSGEnforcingMode != "standard" {
+			log.Errorf("%s must be set to either 'strict' or 'standard'", envPodSGEnforcingMode)
+			return false
+		}
 	}
 
 	prefixDelegationEn := getEnv(envEnPrefixDelegation, "false")
@@ -310,6 +316,7 @@ func validateEnvVars() bool {
 	warmPrefixTarget := getEnv(envWarmPrefixTarget, "0")
 	minimumIPTarget := getEnv(envMinIPTarget, "0")
 
+	// Note that these string values should probably be cast to integers, but the comparison for values greater than 0 works either way
 	if (prefixDelegationEn == "true") && (warmIPTarget <= "0" && warmPrefixTarget <= "0" && minimumIPTarget <= "0") {
 		log.Errorf("Setting WARM_PREFIX_TARGET = 0 is not supported while WARM_IP_TARGET/MINIMUM_IP_TARGET is not set. Please configure either one of the WARM_{PREFIX/IP}_TARGET or MINIMUM_IP_TARGET env variables")
 		return false
@@ -327,20 +334,8 @@ func _main() int {
 		return 1
 	}
 
-	hostCNIBinPath := getEnv(envHostCniBinPath, defaultHostCNIBinPath)
-	configureRPFfilter := getEnv(envConfRPFfilter, "true")
-	if configureRPFfilter != "false" {
-		log.Infof("Copying CNI plugin binaries ... ")
-		pluginBins := []string{"loopback", "portmap", "bandwidth", "aws-cni-support.sh"}
-		err := cp.InstallBinaries(pluginBins, hostCNIBinPath)
-		if err != nil {
-			log.WithError(err).Errorf("Failed to install binaries")
-			return 1
-		}
-	}
-
-	log.Infof("Install CNI binaries..")
 	pluginBins := []string{"aws-cni", "egress-v4-cni"}
+	hostCNIBinPath := getEnv(envHostCniBinPath, defaultHostCNIBinPath)
 	err := cp.InstallBinaries(pluginBins, hostCNIBinPath)
 	if err != nil {
 		log.WithError(err).Errorf("Failed to install CNI binaries")
@@ -379,25 +374,16 @@ func _main() int {
 	log.Infof("Copying config file... ")
 	err = generateJSON(defaultAWSconflistFile, tmpAWSconflistFile)
 	if err != nil {
-		log.WithError(err).Errorf("Failed to update 10-awsconflist")
+		log.WithError(err).Errorf("Failed to generate 10-awsconflist")
 		return 1
 	}
 
 	err = cp.CopyFile(tmpAWSconflistFile, defaultHostCNIConfDirPath+awsConflistFile)
 	if err != nil {
-		log.WithError(err).Errorf("Failed to update 10-awsconflist")
+		log.WithError(err).Errorf("Failed to copy 10-awsconflist")
 		return 1
 	}
 	log.Infof("Successfully copied CNI plugin binary and config file.")
-
-	awsConfFile := defaultHostCNIConfDirPath + "/aws.conf"
-	if _, err := os.Stat(awsConfFile); err == nil {
-		err = os.Remove(awsConfFile)
-		if err != nil {
-			log.WithError(err).Errorf("Failed to delete file %s", awsConfFile)
-			return 1
-		}
-	}
 
 	err = ipamdDaemon.Wait()
 	if err != nil {
