@@ -390,13 +390,15 @@ string, tag addition will be ignored.
 
 ---
 
-#### `AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER`
+#### `AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER` (deprecated v1.13.0+)
 
 Type: Boolean as a String
 
 Default: `true`
 
-Specifies whether ipamd should configure rp filter for primary interface. Setting this to `false` will require rp filter to be configured through init container
+Specifies whether ipamd should configure rp filter for primary interface. Setting this to `false` will require rp filter to be configured through init container.
+
+**NOTE!** `AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER` has been deprecated, so setting this environment variable results in a no-op. The init container unconditionally configures the rp filter for the primary interface.
 
 ---
 
@@ -437,9 +439,7 @@ Once enabled the VPC resource controller will then advertise branch network inte
 
 Any of the WARM targets do not impact the scale of the branch ENI pods so you will have to set the WARM_{ENI/IP/PREFIX}_TARGET based on the number of non-branch ENI pods. If you are having the cluster mostly using pods with a security group consider setting WARM_IP_TARGET to a very low value instead of default WARM_ENI_TARGET or WARM_PREFIX_TARGET to reduce wastage of IPs/ENIs.
 
-
 **NOTE!** Toggling `ENABLE_POD_ENI` from `true` to `false` will not detach the Trunk ENI from an instance. To delete/detach the Trunk ENI from an instance, you need to recycle the instance.
-
 
 ---
 

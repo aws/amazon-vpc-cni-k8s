@@ -36,7 +36,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mock_netlink"
 	mock_netlinkwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mocks"
 	mock_nswrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper/mocks"
-	mock_procsyswrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper/mocks"
 )
 
 const (
@@ -61,19 +60,17 @@ func setup(t *testing.T) (*gomock.Controller,
 	*mock_netlinkwrapper.MockNetLink,
 	*mocks_ip.MockIP,
 	*mock_nswrapper.MockNS,
-	*mockIptables,
-	*mock_procsyswrapper.MockProcSys) {
+	*mockIptables) {
 	ctrl := gomock.NewController(t)
 	return ctrl,
 		mock_netlinkwrapper.NewMockNetLink(ctrl),
 		mocks_ip.NewMockIP(ctrl),
 		mock_nswrapper.NewMockNS(ctrl),
-		newMockIptables(),
-		mock_procsyswrapper.NewMockProcSys(ctrl)
+		newMockIptables()
 }
 
 func TestSetupENINetwork(t *testing.T) {
-	ctrl, mockNetLink, _, _, _, _ := setup(t)
+	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
 	hwAddr, err := net.ParseMAC(testMAC1)
@@ -123,7 +120,7 @@ func TestSetupENINetwork(t *testing.T) {
 }
 
 func TestSetupENINetworkMACFail(t *testing.T) {
-	ctrl, mockNetLink, _, _, _, _ := setup(t)
+	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
 	// Emulate a delay attaching the ENI so a retry is necessary
@@ -137,7 +134,7 @@ func TestSetupENINetworkMACFail(t *testing.T) {
 }
 
 func TestSetupENINetworkErrorOnPrimaryENI(t *testing.T) {
-	ctrl, mockNetLink, _, _, _, _ := setup(t)
+	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
 	deviceNumber := 0
 	err := setupENINetwork(testeniIP, testMAC2, deviceNumber, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
@@ -145,7 +142,7 @@ func TestSetupENINetworkErrorOnPrimaryENI(t *testing.T) {
 }
 
 func TestSetupHostNetworkNodePortDisabledAndSNATDisabled(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, _ := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
@@ -181,7 +178,7 @@ func mockPrimaryInterfaceLookup(ctrl *gomock.Controller, mockNetLink *mock_netli
 }
 
 func TestUpdateRuleListBySrc(t *testing.T) {
-	ctrl, mockNetLink, _, _, _, _ := setup(t)
+	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{netLink: mockNetLink}
@@ -224,33 +221,28 @@ func TestUpdateRuleListBySrc(t *testing.T) {
 }
 
 func TestSetupHostNetworkNodePortEnabledAndSNATDisabled(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:         true,
-		nodePortSupportEnabled:  true,
-		shouldConfigureRpFilter: true,
-		mainENIMark:             defaultConnmark,
-		mtu:                     testMTU,
-		vethPrefix:              eniPrefix,
+		useExternalSNAT:        true,
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
 		newIptables: func(iptables.Protocol) (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		procSys: mockProcSys,
 	}
 
 	log.Debugf("mockIPtables.Dp state: ", mockIptables.dataplaneState)
 	setupNetLinkMocks(ctrl, mockNetLink)
 	log.Debugf("After: mockIPtables.Dp state: ", mockIptables.dataplaneState)
 
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
-
 	var vpcCIDRs []string
-
 	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
 	assert.NoError(t, err)
 
@@ -277,30 +269,26 @@ func TestSetupHostNetworkNodePortEnabledAndSNATDisabled(t *testing.T) {
 }
 
 func TestSetupHostNetworkNodePortDisabledAndSNATEnabled(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:         false,
-		nodePortSupportEnabled:  false,
-		shouldConfigureRpFilter: true,
-		mainENIMark:             defaultConnmark,
-		mtu:                     testMTU,
-		vethPrefix:              eniPrefix,
+		useExternalSNAT:        false,
+		nodePortSupportEnabled: false,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
 		newIptables: func(iptables.Protocol) (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		procSys: mockProcSys,
 	}
 
 	log.Debugf("mockIPtables.Dp state: ", mockIptables.dataplaneState)
 	setupNetLinkMocks(ctrl, mockNetLink)
 	log.Debugf("After: mockIPtables.Dp state: ", mockIptables.dataplaneState)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
 	var vpcCIDRs []string
 
@@ -352,29 +340,24 @@ func TestLoadExcludeSNATCIDRsFromEnv(t *testing.T) {
 }
 
 func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:         false,
-		excludeSNATCIDRs:        []string{"10.12.0.0/16", "10.13.0.0/16"},
-		nodePortSupportEnabled:  true,
-		shouldConfigureRpFilter: true,
-		mainENIMark:             defaultConnmark,
-		mtu:                     testMTU,
-		vethPrefix:              eniPrefix,
+		useExternalSNAT:        false,
+		excludeSNATCIDRs:       []string{"10.12.0.0/16", "10.13.0.0/16"},
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
 		newIptables: func(iptables.Protocol) (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		procSys: mockProcSys,
 	}
-
 	setupNetLinkMocks(ctrl, mockNetLink)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
 	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
@@ -409,28 +392,24 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 }
 
 func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:         false,
-		excludeSNATCIDRs:        nil,
-		nodePortSupportEnabled:  true,
-		shouldConfigureRpFilter: true,
-		mainENIMark:             defaultConnmark,
-		mtu:                     testMTU,
-		vethPrefix:              eniPrefix,
+		useExternalSNAT:        false,
+		excludeSNATCIDRs:       nil,
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
 		newIptables: func(iptables.Protocol) (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		procSys: mockProcSys,
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-1") //AWS SNAT CHAN proves backwards compatibility
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2")
@@ -481,29 +460,24 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 }
 
 func TestSetupHostNetworkWithDifferentVethPrefix(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:         false,
-		excludeSNATCIDRs:        []string{"10.12.0.0/16", "10.13.0.0/16"},
-		nodePortSupportEnabled:  true,
-		shouldConfigureRpFilter: true,
-		mainENIMark:             defaultConnmark,
-		mtu:                     testMTU,
-		vethPrefix:              "veth",
+		useExternalSNAT:        false,
+		excludeSNATCIDRs:       []string{"10.12.0.0/16", "10.13.0.0/16"},
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             "veth",
 
 		netLink: mockNetLink,
 		ns:      mockNS,
 		newIptables: func(iptables.Protocol) (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		procSys: mockProcSys,
 	}
-
 	setupNetLinkMocks(ctrl, mockNetLink)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-1") //AWS SNAT CHAN proves backwards compatibility
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2")
@@ -553,28 +527,24 @@ func TestSetupHostNetworkWithDifferentVethPrefix(t *testing.T) {
 		}, mockIptables.dataplaneState)
 }
 func TestSetupHostNetworkExternalNATCleanupConnmark(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:         true,
-		excludeSNATCIDRs:        []string{"10.12.0.0/16", "10.13.0.0/16"},
-		nodePortSupportEnabled:  true,
-		shouldConfigureRpFilter: true,
-		mainENIMark:             defaultConnmark,
-		mtu:                     testMTU,
-		vethPrefix:              eniPrefix,
+		useExternalSNAT:        true,
+		excludeSNATCIDRs:       []string{"10.12.0.0/16", "10.13.0.0/16"},
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
 		newIptables: func(iptables.Protocol) (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		procSys: mockProcSys,
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-1")
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2")
@@ -621,28 +591,24 @@ func TestSetupHostNetworkExternalNATCleanupConnmark(t *testing.T) {
 		}, mockIptables.dataplaneState)
 }
 func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:         false,
-		excludeSNATCIDRs:        []string{"10.12.0.0/16", "10.13.0.0/16"},
-		nodePortSupportEnabled:  true,
-		shouldConfigureRpFilter: true,
-		mainENIMark:             defaultConnmark,
-		mtu:                     testMTU,
-		vethPrefix:              eniPrefix,
+		useExternalSNAT:        false,
+		excludeSNATCIDRs:       []string{"10.12.0.0/16", "10.13.0.0/16"},
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
 		newIptables: func(iptables.Protocol) (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		procSys: mockProcSys,
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-1")
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2")
@@ -693,28 +659,23 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 }
 
 func TestUpdateHostIptablesRules(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:         false,
-		nodePortSupportEnabled:  true,
-		shouldConfigureRpFilter: true,
-		mainENIMark:             defaultConnmark,
-		mtu:                     testMTU,
-		vethPrefix:              "veth",
+		useExternalSNAT:        false,
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             "veth",
 
 		netLink: mockNetLink,
 		ns:      mockNS,
 		newIptables: func(iptables.Protocol) (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		procSys: mockProcSys,
 	}
-
 	setupNetLinkMocks(ctrl, mockNetLink)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-1") //AWS SNAT CHAN proves backwards compatibility
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
@@ -757,27 +718,23 @@ func TestUpdateHostIptablesRules(t *testing.T) {
 		}, mockIptables.dataplaneState)
 }
 func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:         true,
-		nodePortSupportEnabled:  true,
-		shouldConfigureRpFilter: true,
-		mainENIMark:             defaultConnmark,
-		mtu:                     testMTU,
-		vethPrefix:              eniPrefix,
+		useExternalSNAT:        true,
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
 		newIptables: func(iptables.Protocol) (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		procSys: mockProcSys,
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
 	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
@@ -785,26 +742,23 @@ func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
 }
 
 func TestSetupHostNetworkWithIPv6Enabled(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:         false,
-		excludeSNATCIDRs:        nil,
-		nodePortSupportEnabled:  true,
-		shouldConfigureRpFilter: true,
-		mainENIMark:             defaultConnmark,
-		mtu:                     testMTU,
-		vethPrefix:              eniPrefix,
+		useExternalSNAT:        false,
+		excludeSNATCIDRs:       nil,
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
 		newIptables: func(iptables.Protocol) (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		procSys: mockProcSys,
 	}
-
 	setupNetLinkMocks(ctrl, mockNetLink)
 
 	var vpcCIDRs []string
@@ -852,23 +806,21 @@ func TestIncrementIPv4Addr(t *testing.T) {
 }
 
 func TestSetupHostNetworkIgnoringRpFilterUpdate(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:         true,
-		nodePortSupportEnabled:  true,
-		shouldConfigureRpFilter: false,
-		mainENIMark:             defaultConnmark,
-		mtu:                     testMTU,
-		vethPrefix:              eniPrefix,
+		useExternalSNAT:        true,
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
 		newIptables: func(iptables.Protocol) (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		procSys: mockProcSys,
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
@@ -878,24 +830,22 @@ func TestSetupHostNetworkIgnoringRpFilterUpdate(t *testing.T) {
 }
 
 func TestSetupHostNetworkUpdateLocalRule(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:         true,
-		nodePortSupportEnabled:  true,
-		shouldConfigureRpFilter: false,
-		mainENIMark:             defaultConnmark,
-		mtu:                     testMTU,
-		podSGEnforcingMode:      sgpp.EnforcingModeStrict,
-		vethPrefix:              eniPrefix,
+		useExternalSNAT:        true,
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		podSGEnforcingMode:     sgpp.EnforcingModeStrict,
+		vethPrefix:             eniPrefix,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
 		newIptables: func(iptables.Protocol) (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		procSys: mockProcSys,
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 	setupVethNetLinkMocks(mockNetLink)
@@ -908,29 +858,24 @@ func TestSetupHostNetworkUpdateLocalRule(t *testing.T) {
 }
 
 func TestSetupHostNetworkDeleteOldConnmarkRuleForNonVpcOutboundTraffic(t *testing.T) {
-	ctrl, mockNetLink, _, mockNS, mockIptables, mockProcSys := setup(t)
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 
 	ln := &linuxNetwork{
-		useExternalSNAT:         false,
-		excludeSNATCIDRs:        []string{"10.12.0.0/16", "10.13.0.0/16"},
-		nodePortSupportEnabled:  true,
-		shouldConfigureRpFilter: true,
-		mainENIMark:             defaultConnmark,
-		mtu:                     testMTU,
-		vethPrefix:              eniPrefix,
+		useExternalSNAT:        false,
+		excludeSNATCIDRs:       []string{"10.12.0.0/16", "10.13.0.0/16"},
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
 
 		netLink: mockNetLink,
 		ns:      mockNS,
 		newIptables: func(iptables.Protocol) (iptablesIface, error) {
 			return mockIptables, nil
 		},
-		procSys: mockProcSys,
 	}
-
 	setupNetLinkMocks(ctrl, mockNetLink)
-
-	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
 	// add the "old" rule used in an ealier version of the CNI
 	_ = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-m", "state", "--state", "NEW", "-j", "AWS-CONNMARK-CHAIN-0")
