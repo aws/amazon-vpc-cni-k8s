@@ -78,7 +78,7 @@ LDFLAGS = -X pkg/version/info.Version=$(VERSION) -X pkg/awsutils/awssession.vers
 # ALLPKGS is the set of packages provided in source.
 ALLPKGS = $(shell go list $(VENDOR_OVERRIDE_FLAG) ./... | grep -v cmd/packet-verifier)
 # BINS is the set of built command executables.
-BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper
+BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper aws-vpc-cni aws-vpc-cni-init
 # Plugin binaries
 # Not copied: bridge dhcp firewall flannel host-device host-local ipvlan macvlan ptp sbr static tuning vlan
 # For gnu tar, the full path in the tar file is required
@@ -118,6 +118,16 @@ build-linux:    ## Build the VPC CNI plugin agent using the host's Go toolchain.
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o egress-v4-cni     ./cmd/egress-v4-cni-plugin
+
+# Build VPC CNI init container entrypoint
+build-aws-vpc-cni-init: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
+build-aws-vpc-cni-init:    ## Build the VPC CNI init container using the host's Go toolchain.
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-vpc-cni-init     ./cmd/aws-vpc-cni-init
+
+# Build VPC CNI container entrypoint
+build-aws-vpc-cni: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
+build-aws-vpc-cni:    ## Build the VPC CNI container using the host's Go toolchain.
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-vpc-cni     ./cmd/aws-vpc-cni
 
 # Build VPC CNI plugin & agent container image.
 docker:	setup-ec2-sdk-override	   ## Build VPC CNI plugin & agent container image.
