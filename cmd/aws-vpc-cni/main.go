@@ -68,6 +68,7 @@ const (
 	defaultPluginLogLevel        = "Debug"
 	defaultEnableIPv6            = "false"
 	defaultRandomizeSNAT         = "prng"
+	defaultEnableNftables        = "false"
 	awsConflistFile              = "/10-aws.conflist"
 	vpcCniInitDonePath           = "/vpc-cni-init/done"
 
@@ -88,6 +89,7 @@ const (
 	envEnBandwidthPlugin     = "ENABLE_BANDWIDTH_PLUGIN"
 	envEnIPv6                = "ENABLE_IPv6"
 	envRandomizeSNAT         = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
+	envEnableNftables        = "ENABLE_NFTABLES"
 )
 
 func getEnv(env, defaultVal string) string {
@@ -209,8 +211,6 @@ func getNodePrimaryV4Address() (string, error) {
 		if hostIP != "" {
 			return hostIP, nil
 		}
-
-		time.Sleep(1 * time.Second)
 	}
 }
 
@@ -324,6 +324,26 @@ func validateEnvVars() bool {
 	return true
 }
 
+func configureNftablesIfEnabled() error {
+	// By default, VPC CNI container uses iptables-legacy. Update to iptables-nft when env var is set
+	nftables := getEnv(envEnableNftables, defaultEnableNftables)
+	if nftables == "true" {
+		log.Infof("Updating iptables mode to nft")
+		var cmd *exec.Cmd
+		// Command output is not suppressed so that log shows iptables mode being set
+		cmd = exec.Command("update-alternatives", "--set", "iptables", "/usr/sbin/iptables-nft")
+		if err := cmd.Run(); err != nil {
+			return errors.Wrap(err, "Failed to use iptables-nft")
+		}
+		cmd = exec.Command("update-alternatives", "--set", "ip6tables", "/usr/sbin/ip6tables-nft")
+		if err := cmd.Run(); err != nil {
+			log.WithError(err).Errorf("Failed to use ip6tables-nft")
+			return errors.Wrap(err, "Failed to use iptables6-nft")
+		}
+	}
+	return nil
+}
+
 func main() {
 	os.Exit(_main())
 }
@@ -334,11 +354,15 @@ func _main() int {
 		return 1
 	}
 
+	if err := configureNftablesIfEnabled(); err != nil {
+		log.WithError(err).Error("Failed to enable nftables")
+	}
+
 	pluginBins := []string{"aws-cni", "egress-v4-cni"}
 	hostCNIBinPath := getEnv(envHostCniBinPath, defaultHostCNIBinPath)
 	err := cp.InstallBinaries(pluginBins, hostCNIBinPath)
 	if err != nil {
-		log.WithError(err).Errorf("Failed to install CNI binaries")
+		log.WithError(err).Error("Failed to install CNI binaries")
 		return 1
 	}
 
