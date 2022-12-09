@@ -50,5 +50,6 @@ jobs:
           ROLE_CREATE: false
           ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
           RUN_CONFORMANCE: true
+          RUN_INTEGRATION_DEFAULT_CNI: false
         run: |
           ./scripts/run-integration-tests.sh
