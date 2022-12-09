@@ -591,6 +591,17 @@ configured to operate in IPv6 mode. Prefix delegation is only supported on nitro
 
 ---
 
+#### `ENABLE_NFTABLES` (v1.13.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+VPC CNI uses `iptables-legacy` by default. Setting `ENABLE_NFTABLES` to `true` will update VPC CNI to use `iptables-nft`.
+
+**Note:** VPC CNI image contains `iptables-legacy` and `iptables-nft`. Switching between them is done via `update-alternatives`. It is *strongly* recommended that the iptables mode matches that which is used by the base OS and `kube-proxy`.
+Switching modes while pods are running or rules are installed will not trigger reconciliation. It is recommended that rules are manually updated or nodes are drained and cordoned before updating. If reloading node, ensure that previous rules are not set to be persisted.
+
 ### VPC CNI Feature Matrix
 
 IP Mode | Secondary IP Mode | Prefix Delegation | Security Groups Per Pod | WARM & MIN IP/Prefix Targets | External SNAT
