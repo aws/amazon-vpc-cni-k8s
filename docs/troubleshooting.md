@@ -22,7 +22,7 @@ and requires user intervention.
 
 ### Tip: Make sure there are enough ENIs and IPs for Pods in the cluster
 
-We provide a tool [**cni-metrics-helper**](../config/v1.4/cni-metrics-helper.yaml) which can show aggregated ENI and IP 
+We provide a tool [**cni-metrics-helper**](../config/master/cni-metrics-helper.yaml) which can show aggregated ENI and IP 
 information at the cluster level.
 
 By default these metrics will be pushed to CloudWatch, but it can be disabled by setting `USE_CLOUDWATCH` to `"no"`. 
