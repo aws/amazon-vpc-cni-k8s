@@ -390,13 +390,15 @@ string, tag addition will be ignored.
 
 ---
 
-#### `AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER`
+#### `AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER` (deprecated v1.12.1+)
 
 Type: Boolean as a String
 
 Default: `true`
 
-Specifies whether ipamd should configure rp filter for primary interface. Setting this to `false` will require rp filter to be configured through init container
+Specifies whether ipamd should configure rp filter for primary interface. Setting this to `false` will require rp filter to be configured through init container.
+
+**NOTE!** `AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER` has been deprecated, so setting this environment variable results in a no-op. The init container unconditionally configures the rp filter for the primary interface.
 
 ---
 
@@ -407,6 +409,17 @@ Type: String
 Default: `""`
 
 Specifies the cluster name to tag allocated ENIs with. See the "Cluster Name tag" section below.
+
+---
+
+#### `CLUSTER_ENDPOINT` (v1.12.1+)
+
+Type: String
+
+Default: `""`
+
+Specifies the cluster endpoint to use for connecting to the api-server without relying on kube-proxy. 
+This is an optional configuration parameter that can improve the initialization time of the AWS VPC CNI.
 
 ---
 
@@ -426,9 +439,7 @@ Once enabled the VPC resource controller will then advertise branch network inte
 
 Any of the WARM targets do not impact the scale of the branch ENI pods so you will have to set the WARM_{ENI/IP/PREFIX}_TARGET based on the number of non-branch ENI pods. If you are having the cluster mostly using pods with a security group consider setting WARM_IP_TARGET to a very low value instead of default WARM_ENI_TARGET or WARM_PREFIX_TARGET to reduce wastage of IPs/ENIs.
 
-
 **NOTE!** Toggling `ENABLE_POD_ENI` from `true` to `false` will not detach the Trunk ENI from an instance. To delete/detach the Trunk ENI from an instance, you need to recycle the instance.
-
 
 ---
 
@@ -579,6 +590,17 @@ configured to operate in IPv6 mode. Prefix delegation is only supported on nitro
 **Note:** Please make sure that the required IPv6 IAM policy is applied (Refer to [IAM Policy](https://github.com/aws/amazon-vpc-cni-k8s#iam-policy) section above). Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration. Please refer to the [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information.
 
 ---
+
+#### `ENABLE_NFTABLES` (v1.12.1+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+VPC CNI uses `iptables-legacy` by default. Setting `ENABLE_NFTABLES` to `true` will update VPC CNI to use `iptables-nft`.
+
+**Note:** VPC CNI image contains `iptables-legacy` and `iptables-nft`. Switching between them is done via `update-alternatives`. It is *strongly* recommended that the iptables mode matches that which is used by the base OS and `kube-proxy`.
+Switching modes while pods are running or rules are installed will not trigger reconciliation. It is recommended that rules are manually updated or nodes are drained and cordoned before updating. If reloading node, ensure that previous rules are not set to be persisted.
 
 ### VPC CNI Feature Matrix
 

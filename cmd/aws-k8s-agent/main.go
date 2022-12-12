@@ -29,13 +29,13 @@ func main() {
 }
 
 func _main() int {
-	//Do not add anything before initializing logger
+	// Do not add anything before initializing logger
 	log := logger.Get()
 
 	log.Infof("Starting L-IPAMD %s  ...", version.Version)
 	version.RegisterMetric()
 
-	//Check API Server Connectivity
+	// Check API Server Connectivity
 	if err := k8sapi.CheckAPIServerConnectivity(); err != nil {
 		log.Errorf("Failed to check API server connectivity: %s", err)
 		return 1

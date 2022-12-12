@@ -68,6 +68,7 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
     fi
 
     $BUILD_DIR/helm template aws-vpc-cni \
+      --include-crds \
       --set originalMatchLabels=true,\
       --set init.image.region=$ecrRegion,\
       --set init.image.account=$ecrAccount,\
@@ -93,7 +94,7 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
     mv $BUILD_DIR/helm_annotations_removed.yaml $NEW_METRICS_RESOURCES_YAML
 done    
 
-$BUILD_DIR/helm template \
+$BUILD_DIR/helm template --include-crds \
     --namespace $NAMESPACE \
     --output-dir $INDV_RESOURCES_DIR/ \
     $SCRIPTPATH/../charts/aws-vpc-cni/

@@ -220,6 +220,24 @@ cni v1.10.x introduced 2 new env variables - ENABLE_IPv4 and ENABLE_IPv6. The ab
 kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
 ```
 
+## CNI Compatibility
+
+The [CNI image](../scripts/dockerfiles/Dockerfile.release) built for the `aws-node` manifest uses Amazon Linux 2 as the base image. Support for other Linux distributions (custom AMIs) is best-effort. Known issues with other Linux distributions are captured here:
+
+- **iptables**
+  Prior to v1.12.1, the VPC CNI image only contained `iptables-legacy`. Newer distributions of RHEL (RHEL 8.x+), Ubuntu (Ubuntu 21.x+), etc. have moved to using `nftables`. This leads to issues such as [this](https://github.com/aws/amazon-vpc-cni-k8s/issues/1847) when running IPAMD.
+  
+  To resolve this issue in versions before v1.12.1, there are currently two options:
+  1. Uninstall `nftables` and install `iptables-legacy` in base distribution
+  2. Build a custom CNI image based on `nftables`, such as:
+  ```
+  from $ACCOUNT.dkr.ecr.$REGION.amazonaws.com/amazon-k8s-cni:$IMAGE_TAG
+  run yum install iptables-nft -y
+  run cd /usr/sbin && rm iptables && ln -s xtables-nft-multi iptables
+  ```
+
+  In v1.12.1+, `iptables-legacy` and `iptables-nft` are present in the VPC CNI container image. Setting `ENABLE_NFTABLES` environment variable to `true` instructs VPC CNI to use `iptables-nft`. By default, `iptables-legacy` is used.
+
 ## cni-metrics-helper
 
 See the [cni-metrics-helper README](../cmd/cni-metrics-helper/README.md).

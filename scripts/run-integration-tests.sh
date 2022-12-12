@@ -11,6 +11,7 @@ source "$DIR"/lib/common.sh
 source "$DIR"/lib/aws.sh
 source "$DIR"/lib/cluster.sh
 source "$DIR"/lib/integration.sh
+source "$DIR"/lib/k8s.sh
 source "$DIR"/lib/performance_tests.sh
 
 # Variables used in /lib/aws.sh
@@ -26,6 +27,7 @@ ARCH=$(go env GOARCH)
 : "${RUN_CONFORMANCE:=false}"
 : "${RUN_TESTER_LB_ADDONS:=false}"
 : "${RUN_KOPS_TEST:=false}"
+: "${RUN_INTEGRATION_DEFAULT_CNI:=true}"
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
@@ -210,50 +212,34 @@ grep -r -q $TEST_IMAGE_VERSION $TEST_CONFIG_PATH
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
 grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH
 
-
 if [[ $RUN_KOPS_TEST == true ]]; then
     export KUBECONFIG=~/.kube/config
-fi
-
-if [[ $RUN_KOPS_TEST == true ]]; then
     run_kops_conformance
 fi
-ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 
-echo "*******************************************************************************"
-echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
-echo ""
-START=$SECONDS
+if [[ $RUN_INTEGRATION_DEFAULT_CNI == true ]]; then
+    ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 
-focus="CANARY"
-echo "Running ginkgo tests with focus: $focus"
-(cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 20m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-(cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 10m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-TEST_PASS=$?
-DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
-echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
+    echo "*******************************************************************************"
+    echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
+    echo ""
+    START=$SECONDS
+
+    focus="CANARY"
+    echo "Running ginkgo tests with focus: $focus"
+    (cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+    (cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+    TEST_PASS=$?
+    DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
+    echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
+fi
 
 echo "*******************************************************************************"
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
-NODE_COUNT=$($KUBECTL_PATH get nodes --no-headers=true | wc -l)
-echo "Number of nodes in the test cluster is $NODE_COUNT"
-UPDATED_PODS_COUNT=0
-MAX_RETRIES=20
-RETRY_ATTEMPT=0
-sleep 5
-while [[ $UPDATED_PODS_COUNT -lt $NODE_COUNT && $RETRY_ATTEMPT -lt $MAX_RETRIES ]]; do
-    UPDATED_PODS_COUNT=$($KUBECTL_PATH get pods -A --field-selector=status.phase=Running -l k8s-app=aws-node --no-headers=true | wc -l)
-    let RETRY_ATTEMPT=RETRY_ATTEMPT+1
-    sleep 5
-    echo "Waiting for cni daemonset update. $UPDATED_PODS_COUNT are in ready state in retry attempt $RETRY_ATTEMPT"
-done
-echo "Updated!"
-
-CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
-echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
+check_ds_rollout "aws-node" "kube-system" "10m"
 
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"

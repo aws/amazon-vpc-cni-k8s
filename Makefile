@@ -57,7 +57,7 @@ export DOCKER_BUILDKIT=1
 GOARCH = $(TARGETARCH)
 
 # GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.18-stretch
+GOLANG_IMAGE = public.ecr.aws/eks-distro-build-tooling/golang:1.19.2-1-gcc-al2
 # For the requested build, these are the set of Go specific build environment variables.
 export GOOS = linux
 export CGO_ENABLED = 0
@@ -78,7 +78,7 @@ LDFLAGS = -X pkg/version/info.Version=$(VERSION) -X pkg/awsutils/awssession.vers
 # ALLPKGS is the set of packages provided in source.
 ALLPKGS = $(shell go list $(VENDOR_OVERRIDE_FLAG) ./... | grep -v cmd/packet-verifier)
 # BINS is the set of built command executables.
-BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper
+BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper aws-vpc-cni aws-vpc-cni-init
 # Plugin binaries
 # Not copied: bridge dhcp firewall flannel host-device host-local ipvlan macvlan ptp sbr static tuning vlan
 # For gnu tar, the full path in the tar file is required
@@ -118,6 +118,16 @@ build-linux:    ## Build the VPC CNI plugin agent using the host's Go toolchain.
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o egress-v4-cni     ./cmd/egress-v4-cni-plugin
+
+# Build VPC CNI init container entrypoint
+build-aws-vpc-cni-init: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
+build-aws-vpc-cni-init:    ## Build the VPC CNI init container using the host's Go toolchain.
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-vpc-cni-init     ./cmd/aws-vpc-cni-init
+
+# Build VPC CNI container entrypoint
+build-aws-vpc-cni: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
+build-aws-vpc-cni:    ## Build the VPC CNI container using the host's Go toolchain.
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-vpc-cni     ./cmd/aws-vpc-cni
 
 # Build VPC CNI plugin & agent container image.
 docker:	setup-ec2-sdk-override	   ## Build VPC CNI plugin & agent container image.
@@ -208,6 +218,12 @@ docker-unit-tests: build-docker-test     ## Run unit tests inside of the testing
 		$(TEST_IMAGE_NAME) \
 		make unit-test
  
+##@ Build the Test Binaries files in /test
+build-test-binaries:
+	mkdir -p ${MAKEFILE_PATH}test/build
+	find ${MAKEFILE_PATH}test/ -name '*suite_test.go' -type f  | xargs dirname  | xargs ginkgo build
+	find ${MAKEFILE_PATH}test/ -name "*.test" -print0 | xargs -0 -I {} mv {} ${MAKEFILE_PATH}test/build
+
 ##@ Build metrics helper agent 
 
 # Build metrics helper agent.
