@@ -467,7 +467,7 @@ func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArg
 // teardownPodNetworkWithPrevResult will try to process CNI delete for non-branch ENIs without IPAMD.
 // Returns true if pod network is torn down
 func teardownPodNetworkWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArgs K8sArgs, contVethName string, log logger.Logger) bool {
-	// For non-branch ENI, prevResult is only available in v1.13.0+
+	// For non-branch ENI, prevResult is only available in v1.12.1+
 	prevResult, ok := conf.PrevResult.(*current.Result)
 	if !ok {
 		return false

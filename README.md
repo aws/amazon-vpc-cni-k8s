@@ -390,7 +390,7 @@ string, tag addition will be ignored.
 
 ---
 
-#### `AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER` (deprecated v1.13.0+)
+#### `AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER` (deprecated v1.12.1+)
 
 Type: Boolean as a String
 
@@ -591,7 +591,7 @@ configured to operate in IPv6 mode. Prefix delegation is only supported on nitro
 
 ---
 
-#### `ENABLE_NFTABLES` (v1.13.0+)
+#### `ENABLE_NFTABLES` (v1.12.1+)
 
 Type: Boolean as a String
 
