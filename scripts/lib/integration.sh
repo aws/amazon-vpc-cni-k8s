@@ -63,3 +63,38 @@ function run_calico_test() {
   ginkgo -v e2e/calico -- --cluster-kubeconfig=$KUBECONFIG --cluster-name=$CLUSTER_NAME --aws-region=$AWS_DEFAULT_REGION --aws-vpc-id=$VPC_ID --calico-version=$calico_version --instance-type=$instance_type --install-calico=false
   popd
 }
+
+function check_and_build_image(){
+  repository_name=$1 
+  image_name=$2
+  image_tag=$3
+  command=$4
+  CNI_IMAGES_BUILD=false
+  ecr_image_query_result=$(aws ecr batch-get-image --repository-name=$repository_name --image-ids imageTag=$image_tag --query 'images[].imageId.imageTag' --region us-west-2)
+  if [[ $ecr_image_query_result != "[]" ]]; then
+    echo "CNI image $image_name:$image_tag already exists in repository. Skipping image build..."
+  else
+    echo "CNI image $image_name:$image_tag does not exist in repository."
+    build_and_push_image "$command" "$image_name" "$image_tag"
+    CNI_IMAGES_BUILD=true
+  fi
+  # cleanup if we make docker build and push images
+  if [[ "$CNI_IMAGES_BUILD" == true ]]; then
+    docker buildx rm "$BUILDX_BUILDER"
+    if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
+      popd
+    fi
+  fi
+}
+
+function build_and_push_image(){
+  command=$1
+  image_name=$2
+  image_tag=$3
+  START=$SECONDS
+  # Refer to https://github.com/docker/buildx#building-multi-platform-images for the multi-arch image build process.
+  # create the buildx container only if it doesn't exist already.
+  docker buildx inspect "$BUILDX_BUILDER" >/dev/null 2<&1 || docker buildx create --name="$BUILDX_BUILDER" --buildkitd-flags '--allow-insecure-entitlement network.host' --use >/dev/null
+  make $command IMAGE="$image_name" VERSION="$image_tag"
+  echo "TIMELINE: Docker build took $(($SECONDS - $START)) seconds."
+}
