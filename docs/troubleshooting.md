@@ -220,6 +220,10 @@ cni v1.10.x introduced 2 new env variables - ENABLE_IPv4 and ENABLE_IPv6. The ab
 kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
 ```
 
+- **systemd-udev** - Linux distributions that install the `systemd-udev` package create `/usr/lib/systemd/network/99-default.link` with `Link.MACAddressPolicy` set to `persistent`.
+This policy may cause the MAC address assigned to the host veth interface for a pod to change after the interface is moved to the host network namespace. The CNI plugin installs a static ARP binding for the default gateway in the pod network namespace pointing to the host veth MAC, so the MAC changing leads to pod connectivity issues.
+The workaround for this issue is to set `MACAddressPolicy=none`, as shown [here](https://github.com/aws/amazon-vpc-cni-k8s/issues/2103#issuecomment-1321698870). This issue is known to affect Ubuntu 22.04+, and long-term solutions are being evaluated.
+
 ## CNI Compatibility
 
 The [CNI image](../scripts/dockerfiles/Dockerfile.release) built for the `aws-node` manifest uses Amazon Linux 2 as the base image. Support for other Linux distributions (custom AMIs) is best-effort. Known issues with other Linux distributions are captured here:
