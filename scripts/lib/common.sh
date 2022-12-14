@@ -20,7 +20,6 @@ is_installed() {
 function display_timelines() {
     echo ""
     echo "Displaying all step durations."
-    echo "TIMELINE: Docker build took $DOCKER_BUILD_DURATION seconds."
     echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
     if [[ $RUN_INTEGRATION_DEFAULT_CNI == true ]]; then
         echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
