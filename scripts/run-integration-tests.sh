@@ -142,21 +142,30 @@ ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_INIT_ECR_REPO_NAME"
 # Check to see if the image already exists in the ECR repository, and if
 # not, check out the CNI source code for that image tag, build the CNI
 # image and push it to the Docker repository
-ecr_image_query_result=$(aws ecr batch-get-image --repository-name=amazon-k8s-cni --image-ids imageTag=$TEST_IMAGE_VERSION --query 'images[].imageId.imageTag' --region us-west-2)
-if [[ $ecr_image_query_result != "[]" ]]; then
-    echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION already exists in repository. Skipping image build..."
-    DOCKER_BUILD_DURATION=0
+
+CNI_IMAGES_BUILD=false
+if [[ $(aws ecr batch-get-image --repository-name=$AWS_ECR_REPO_NAME --image-ids imageTag=$TEST_IMAGE_VERSION \
+--query 'images[].imageId.imageTag' --region us-west-2) != "[]" ]]; then
+    echo "Image $AWS_ECR_REPO_NAME:$TEST_IMAGE_VERSION already exists. Skipping image build."
 else
-    echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION does not exist in repository."
-    START=$SECONDS
-    # Refer to https://github.com/docker/buildx#building-multi-platform-images for the multi-arch image build process.
-    # create the buildx container only if it doesn't exist already.
-    docker buildx inspect "$BUILDX_BUILDER" >/dev/null 2<&1 || docker buildx create --name="$BUILDX_BUILDER" --buildkitd-flags '--allow-insecure-entitlement network.host' --use >/dev/null
-    make multi-arch-cni-build-push IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
-    DOCKER_BUILD_DURATION=$((SECONDS - START))
-    echo "TIMELINE: Docker build took $DOCKER_BUILD_DURATION seconds."
-    # Build matching init container
-    make multi-arch-cni-init-build-push INIT_IMAGE="$INIT_IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
+    echo "Image $AWS_ECR_REPO_NAME:$TEST_IMAGE_VERSION does not exist in repository."
+    ## $1=command, $2=args
+    build_and_push_image "multi-arch-cni-build-push" "IMAGE=$IMAGE_NAME VERSION=$TEST_IMAGE_VERSION"
+    CNI_IMAGES_BUILD=true
+fi
+
+if [[ $(aws ecr batch-get-image --repository-name=$AWS_INIT_ECR_REPO_NAME --image-ids imageTag=$TEST_IMAGE_VERSION \
+--query 'images[].imageId.imageTag' --region us-west-2) != "[]" ]]; then
+    echo "Image $AWS_INIT_ECR_REPO_NAME:$TEST_IMAGE_VERSION already exists. Skipping image build."
+else
+    echo "Image $AWS_INIT_ECR_REPO_NAME:$TEST_IMAGE_VERSION does not exist in repository."
+    ## $1=command, $2=args
+    build_and_push_image "multi-arch-cni-init-build-push" "INIT_IMAGE=$INIT_IMAGE_NAME VERSION=$TEST_IMAGE_VERSION"
+    CNI_IMAGES_BUILD=true
+fi
+
+# cleanup if we make docker build and push images
+if [[ "$CNI_IMAGES_BUILD" == true ]]; then
     docker buildx rm "$BUILDX_BUILDER"
     if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
         popd
@@ -236,10 +245,13 @@ fi
 
 echo "*******************************************************************************"
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
-echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
+echo "Updating CNI-INIT to image $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 check_ds_rollout "aws-node" "kube-system" "10m"
+
+CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
+echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"

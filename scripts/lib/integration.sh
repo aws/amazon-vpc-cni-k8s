@@ -63,3 +63,14 @@ function run_calico_test() {
   ginkgo -v e2e/calico -- --cluster-kubeconfig=$KUBECONFIG --cluster-name=$CLUSTER_NAME --aws-region=$AWS_DEFAULT_REGION --aws-vpc-id=$VPC_ID --calico-version=$calico_version --instance-type=$instance_type --install-calico=false
   popd
 }
+
+function build_and_push_image(){
+  command=$1
+  args=$2
+  START=$SECONDS
+  # Refer to https://github.com/docker/buildx#building-multi-platform-images for the multi-arch image build process.
+  # create the buildx container only if it doesn't exist already.
+  docker buildx inspect "$BUILDX_BUILDER" >/dev/null 2<&1 || docker buildx create --name="$BUILDX_BUILDER" --buildkitd-flags '--allow-insecure-entitlement network.host' --use >/dev/null
+  make $command $args
+  echo "TIMELINE: Docker build took $(($SECONDS - $START)) seconds."
+}
