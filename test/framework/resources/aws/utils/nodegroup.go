@@ -229,6 +229,24 @@ func GetClusterVPCConfig(f *framework.Framework) (*ClusterVPCConfig, error) {
 		PrivateSubnetList: []string{},
 	}
 
+	if len(f.Options.PublicSubnets) > 0 {
+		clusterConfig.PublicSubnetList = strings.Split(f.Options.PublicSubnets, ",")
+	}
+	if len(f.Options.PrivateSubnets) > 0 {
+		clusterConfig.PrivateSubnetList = strings.Split(f.Options.PublicSubnets, ",")
+	}
+	if len(f.Options.AvailabilityZones) > 0 {
+		clusterConfig.AvailZones = strings.Split(f.Options.AvailabilityZones, ",")
+	}
+	if f.Options.PublicRouteTableID != "" {
+		clusterConfig.PublicRouteTableID = f.Options.PublicRouteTableID
+	}
+
+	// user provided the info so we don't need to look it up
+	if len(clusterConfig.PublicSubnetList) > 0 || len(clusterConfig.PrivateSubnetList) > 0 || len(clusterConfig.AvailZones) > 0 {
+		return clusterConfig, nil
+	}
+
 	describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe cluster %s: %v", f.Options.ClusterName, err)
