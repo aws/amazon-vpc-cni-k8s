@@ -77,7 +77,9 @@ func (p *PodBuilder) NodeName(nodeName string) *PodBuilder {
 }
 
 func (p *PodBuilder) NodeSelector(nodeLabelKey string, nodeLabelVal string) *PodBuilder {
-	p.nodeSelector[nodeLabelKey] = nodeLabelVal
+	if nodeLabelKey != "" {
+		p.nodeSelector[nodeLabelKey] = nodeLabelVal
+	}
 	return p
 }
 

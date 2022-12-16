@@ -14,11 +14,12 @@
 package manifest
 
 import (
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/aws-sdk-go/aws"
 	batchV1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 )
 
 type JobBuilder struct {
@@ -50,7 +51,9 @@ func (j *JobBuilder) Name(name string) *JobBuilder {
 }
 
 func (j *JobBuilder) NodeSelector(selectorKey string, selectorVal string) *JobBuilder {
-	j.nodeSelector[selectorKey] = selectorVal
+	if selectorKey != "" {
+		j.nodeSelector[selectorKey] = selectorVal
+	}
 	return j
 }
 
