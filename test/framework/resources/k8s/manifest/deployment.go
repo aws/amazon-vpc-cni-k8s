@@ -70,7 +70,9 @@ func (d *DeploymentBuilder) Labels(labels map[string]string) *DeploymentBuilder 
 }
 
 func (d *DeploymentBuilder) NodeSelector(labelKey string, labelVal string) *DeploymentBuilder {
-	d.nodeSelector[labelKey] = labelVal
+	if labelKey != "" {
+		d.nodeSelector[labelKey] = labelVal
+	}
 	return d
 }
 
