@@ -87,7 +87,7 @@ var _ = BeforeSuite(func() {
 
 	// Add nodeSelector label to coredns deployment so coredns pods are scheduled on 'primary' node
 	coreDNSDeployment.Spec.Template.Spec.NodeSelector = map[string]string{
-		"kubernetes.io/hostname": primaryNode.Name,
+		"kubernetes.io/hostname": primaryNode.Labels["kubernetes.io/hostname"],
 	}
 	err = f.K8sResourceManagers.DeploymentManager().UpdateAndWaitTillDeploymentIsReady(coreDNSDeployment,
 		utils.DefaultDeploymentReadyTimeout)
