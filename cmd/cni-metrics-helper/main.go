@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,6 +81,16 @@ func main() {
 		}
 	}
 
+	pullIntervalEnv, found := os.LookupEnv("PULL_INTERVAL")
+	if !found {
+		pullIntervalEnv = "30"
+	}
+	pullInterval, err := strconv.Atoi(pullIntervalEnv)
+	if err != nil {
+		log.Fatalf("pullInterval (%s) format invalid. Integer required. Expecting seconds: %s", pullIntervalEnv, err)
+		os.Exit(1)
+	}
+
 	// Fetch region, if using IRSA it be will auto injected as env variable in pod spec
 	// If not found then it will be empty, in which case we will try to fetch it from IMDS (existing approach)
 	// This can also mean that Cx is not using IRSA and we shouldn't enforce IRSA requirement
@@ -88,7 +99,7 @@ func main() {
 	// should be name/identifier for the cluster if specified
 	clusterID, _ := os.LookupEnv("AWS_CLUSTER_ID")
 
-	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, LogLevel %s", options.submitCW, logConfig.LogLevel)
+	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, LogLevel %s, pullInterval %d", options.submitCW, logConfig.LogLevel, pullInterval)
 
 	clientSet, err := k8sapi.GetKubeClientSet()
 	if err != nil {
@@ -128,7 +139,6 @@ func main() {
 	var cniMetric = metrics.CNIMetricsNew(clientSet, cw, options.submitCW, log, podWatcher)
 
 	// metric loop
-	var pullInterval = 30 // seconds
 	for range time.Tick(time.Duration(pullInterval) * time.Second) {
 		log.Info("Collecting metrics ...")
 		metrics.Handler(ctx, cniMetric)
