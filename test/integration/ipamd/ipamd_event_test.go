@@ -14,10 +14,10 @@
 package ipamd
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/url"
 	"strings"
-	"time"
 
 	k8sUtil "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -103,17 +103,16 @@ var _ = Describe("test aws-node pod event", func() {
 			RestartAwsNodePods()
 
 			By("checking aws-node pods not running")
-			time.Sleep(utils.PollIntervalMedium) // allow time for aws-node to restart
-			podList, err = f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(AwsNodeLabelKey, utils.AwsNodeName)
-			Expect(err).ToNot(HaveOccurred())
-
-			for _, cond := range podList.Items[0].Status.Conditions {
-				if cond.Type == v1.PodReady {
-					Expect(cond.Status).To(BeEquivalentTo(v1.ConditionFalse))
-					break
+			Eventually(func(g Gomega) {
+				podList, err = f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(AwsNodeLabelKey, utils.AwsNodeName)
+				g.Expect(err).ToNot(HaveOccurred())
+				for _, cond := range podList.Items[0].Status.Conditions {
+					if cond.Type == v1.PodReady {
+						g.Expect(cond.Status).To(BeEquivalentTo(v1.ConditionFalse), fmt.Sprintf("%s should not be ready", podList.Items[0].Name))
+						break
+					}
 				}
-			}
-
+			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
 		})
 
 		AfterEach(func() {
@@ -136,16 +135,17 @@ var _ = Describe("test aws-node pod event", func() {
 			RestartAwsNodePods()
 
 			By("checking aws-node pods are running")
-			time.Sleep(utils.PollIntervalMedium * 2) // sleep to allow aws-node to restart
-			podList, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(AwsNodeLabelKey, utils.AwsNodeName)
-			Expect(err).ToNot(HaveOccurred())
-			for _, cond := range podList.Items[0].Status.Conditions {
-				if cond.Type != v1.PodReady {
-					continue
+			Eventually(func(g Gomega) {
+				podList, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(AwsNodeLabelKey, utils.AwsNodeName)
+				g.Expect(err).ToNot(HaveOccurred())
+				for _, cond := range podList.Items[0].Status.Conditions {
+					if cond.Type != v1.PodReady {
+						continue
+					}
+					g.Expect(cond.Status).To(BeEquivalentTo(v1.ConditionTrue))
+					break
 				}
-				Expect(cond.Status).To(BeEquivalentTo(v1.ConditionTrue))
-				break
-			}
+			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
 		})
 
 		It("unauthorized event must be raised on aws-node pod", func() {
@@ -156,7 +156,6 @@ var _ = Describe("test aws-node pod event", func() {
 			eventList, err := f.K8sResourceManagers.EventManager().GetEventsWithOptions(&listOpts)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(eventList.Items).NotTo(BeEmpty())
-
 		})
 	})
 })

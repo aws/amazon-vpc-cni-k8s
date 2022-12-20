@@ -9,14 +9,15 @@ import (
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
-	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	coreV1 "k8s.io/api/core/v1"
+
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/agent"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
+	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 )
 
 type TestType int
@@ -203,6 +204,7 @@ func ValidateTraffic(f *framework.Framework, serverDeploymentBuilder *manifest.D
 }
 
 func WaitToReconcileInitialState(f *framework.Framework, primaryInstance *ec2.Instance, defaultEniCount int, defaultIpsPerEni int, DefaultPrefixPerEni int) {
+	return
 	By("Verifying number of enis, ips and ip prefixes before updating the parameters")
 	Eventually(func(g Gomega) {
 		primaryInstance, err := f.CloudServices.
