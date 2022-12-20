@@ -5,16 +5,12 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-)
-
-const (
-	HOST_POD_LABEL_KEY = "network"
-	HOST_POD_LABEL_VAL = "host"
 )
 
 var primaryNode v1.Node
@@ -52,22 +48,16 @@ var _ = Describe("[CANARY][SMOKE] ENI/IP Leak Test", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Validating that count of ENI/IP is same as before")
-			ip := 0
-			eni := 0
-			for i := 0; i < 3; i++ {
-				// It takes some time to unassign IP addresses
-				time.Sleep(120 * time.Second)
-				ip, eni = getCountOfIPandENIOnPrimaryInstance()
-				if ip == oldIP {
-					break
-				}
-			}
-			Expect(ip).To(Equal(oldIP))
-			Expect(eni).To(Equal(oldENI))
+
+			// It takes some time to unassign IP addresses
+			Eventually(func(g Gomega) {
+				ip, eni := getCountOfIPandENIOnPrimaryInstance()
+				g.Expect(ip).To(Equal(oldIP))
+				g.Expect(eni).To(Equal(oldENI))
+			}).WithTimeout(6 * time.Minute).WithPolling(10 * time.Second)
 		})
 
 		AfterEach(func() {
-
 			By("Restoring WARM ENI Target value")
 			k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, "aws-node", "kube-system",
 				"aws-node", map[string]struct{}{"WARM_IP_TARGET": {}, "WARM_ENI_TARGET": {}})
@@ -86,10 +76,10 @@ func getCountOfIPandENIOnPrimaryInstance() (int, int) {
 
 func getMaxApplicationPodsOnPrimaryInstance() int64 {
 	instanceType := primaryInstance.InstanceType
-	instaceInfo, err := f.CloudServices.EC2().DescribeInstanceType(*instanceType)
+	instanceInfo, err := f.CloudServices.EC2().DescribeInstanceType(*instanceType)
 	Expect(err).NotTo(HaveOccurred())
 
-	currInstance := instaceInfo[0]
+	currInstance := instanceInfo[0]
 	maxENI := currInstance.NetworkInfo.MaximumNetworkInterfaces
 	maxIPPerENI := currInstance.NetworkInfo.Ipv4AddressesPerInterface
 

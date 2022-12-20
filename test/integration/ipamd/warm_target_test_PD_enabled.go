@@ -48,23 +48,23 @@ var _ = Describe("test warm target variables", func() {
 					"ENABLE_PREFIX_DELEGATION": "true",
 				})
 
-			// Allow for IPAMD to reconcile it's state
-			time.Sleep(utils.PollIntervalLong)
+			// We use Eventually to allow for IPAMD to reconcile it's state
+			Eventually(func(g Gomega) {
+				// Query the EC2 Instance to get the list of available Prefixes on the instance
+				primaryInstance, err = f.CloudServices.
+					EC2().DescribeInstance(*primaryInstance.InstanceId)
+				g.Expect(err).ToNot(HaveOccurred())
 
-			// Query the EC2 Instance to get the list of available Prefixes on the instance
-			primaryInstance, err = f.CloudServices.
-				EC2().DescribeInstance(*primaryInstance.InstanceId)
-			Expect(err).ToNot(HaveOccurred())
+				// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
+				for _, networkInterface := range primaryInstance.NetworkInterfaces {
+					availPrefixes += len(networkInterface.Ipv4Prefixes)
+				}
 
-			// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
-			for _, networkInterface := range primaryInstance.NetworkInterfaces {
-				availPrefixes += len(networkInterface.Ipv4Prefixes)
-			}
-
-			// Validated avail IP equals the warm IP Size
-			prefixNeededForWarmIPTarget := ceil(warmIPTarget, 16)
-			prefixNeededForMinIPTarget := ceil(minIPTarget, 16)
-			Expect(availPrefixes).Should(Equal(Max(prefixNeededForWarmIPTarget, prefixNeededForMinIPTarget)))
+				// Validated avail IP equals the warm IP Size
+				prefixNeededForWarmIPTarget := ceil(warmIPTarget, 16)
+				prefixNeededForMinIPTarget := ceil(minIPTarget, 16)
+				Expect(availPrefixes).Should(Equal(Max(prefixNeededForWarmIPTarget, prefixNeededForMinIPTarget)))
+			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
 		})
 
 		JustAfterEach(func() {
@@ -127,8 +127,6 @@ var _ = Describe("test warm target variables", func() {
 		var warmPrefixTarget int
 
 		JustBeforeEach(func() {
-			var availPrefixes int
-
 			common.WaitToReconcileInitialState(f, primaryInstance,
 				defaultEniCount, defaultIpsPerEni, DefaultPrefixPerEni)
 
@@ -140,21 +138,21 @@ var _ = Describe("test warm target variables", func() {
 					"ENABLE_PREFIX_DELEGATION": "true",
 				})
 
-			// Allow for IPAMD to reconcile it's state
-			time.Sleep(utils.PollIntervalLong)
+			Eventually(func(g Gomega) {
+				var availPrefixes int
+				// Query the EC2 Instance to get the list of available Prefixes on the instance
+				primaryInstance, err = f.CloudServices.
+					EC2().DescribeInstance(*primaryInstance.InstanceId)
+				g.Expect(err).ToNot(HaveOccurred())
 
-			// Query the EC2 Instance to get the list of available Prefixes on the instance
-			primaryInstance, err = f.CloudServices.
-				EC2().DescribeInstance(*primaryInstance.InstanceId)
-			Expect(err).ToNot(HaveOccurred())
+				// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
+				for _, networkInterface := range primaryInstance.NetworkInterfaces {
+					availPrefixes += len(networkInterface.Ipv4Prefixes)
+				}
 
-			// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
-			for _, networkInterface := range primaryInstance.NetworkInterfaces {
-				availPrefixes += len(networkInterface.Ipv4Prefixes)
-			}
-
-			// Validated avail IP equals the warm IP Size
-			Expect(availPrefixes).Should(Equal(warmPrefixTarget))
+				// Validated avail IP equals the warm IP Size
+				g.Expect(availPrefixes).Should(Equal(warmPrefixTarget))
+			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
 		})
 
 		JustAfterEach(func() {
