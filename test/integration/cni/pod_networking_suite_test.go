@@ -58,10 +58,21 @@ var _ = BeforeSuite(func() {
 
 	By("verifying more than 1 nodes are present for the test")
 	Expect(len(nodes.Items)).Should(BeNumerically(">", 1))
-
 	// Set the primary and secondary node for testing
-	primaryNode = nodes.Items[0]
-	secondaryNode = nodes.Items[1]
+
+	for i := range nodes.Items {
+		n := nodes.Items[i]
+		if len(n.Spec.Taints) == 0 {
+			if primaryNode.Name == "" {
+				primaryNode = n
+			} else {
+				secondaryNode = n
+				break
+			}
+		}
+	}
+	Expect(primaryNode.Name).To(Not(HaveLen(0)), "expected to find a non-tainted node")
+	Expect(secondaryNode.Name).To(Not(HaveLen(0)), "expected to find a non-tainted secondary node")
 
 	// Get the node security group
 	instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
