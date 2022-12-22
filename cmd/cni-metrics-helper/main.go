@@ -131,7 +131,8 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to create publisher: %v", err)
 		}
-		go cw.Start()
+		var publishInterval = pullInterval * 2
+		go cw.Start(publishInterval)
 		defer cw.Stop()
 	}
 

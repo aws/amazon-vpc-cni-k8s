@@ -30,9 +30,6 @@ import (
 )
 
 const (
-	// defaultInterval for monitoring the watch list
-	defaultInterval = time.Second * 60
-
 	// cloudwatchMetricNamespace for custom metrics
 	cloudwatchMetricNamespace = "Kubernetes"
 
@@ -64,7 +61,7 @@ type Publisher interface {
 	Publish(metricDataPoints ...*cloudwatch.MetricDatum)
 
 	// Start is to initiate the batch and publish operation
-	Start()
+	Start(publishInterval int)
 
 	// Stop is to terminate the batch and publish operation
 	Stop()
@@ -136,10 +133,11 @@ func New(ctx context.Context, region string, clusterID string, log logger.Logger
 	}, nil
 }
 
-// Start is used to setup the monitor loop
-func (p *cloudWatchPublisher) Start() {
-	p.log.Info("Starting monitor loop for CloudWatch publisher")
-	p.monitor(defaultInterval)
+// Start is used to set up the monitor loop
+func (p *cloudWatchPublisher) Start(publishInterval int) {
+	p.log.Infof("Starting monitor loop for CloudWatch publisher with interval (%d)", publishInterval)
+	var publishIntervalDuration = time.Second * time.Duration(publishInterval)
+	p.monitor(publishIntervalDuration)
 }
 
 // Stop is used to cancel the monitor loop
