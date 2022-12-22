@@ -14,15 +14,12 @@
 package controller
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
-
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/helm"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 )
 
 type InstallationManager interface {
-	InstallCNIMetricsHelper(image string, tag string) error
+	InstallCNIMetricsHelper(image string, tag string, clusterId string) error
 	UnInstallCNIMetricsHelper() error
 	InstallTigeraOperator(version string) error
 	UninstallTigeraOperator() error
@@ -36,22 +33,18 @@ type defaultInstallationManager struct {
 	releaseManager helm.ReleaseManager
 }
 
-func (d *defaultInstallationManager) InstallCNIMetricsHelper(image string, tag string) error {
-	dir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
-	projectRoot := strings.SplitAfter(dir, "amazon-vpc-cni-k8s")[0]
-
-	if dir == projectRoot {
-		// in prow tests, the repository name is "vpc-cni"
-		projectRoot = strings.SplitAfter(dir, "vpc-cni")[0]
-	}
-
+func (d *defaultInstallationManager) InstallCNIMetricsHelper(image string, tag string, clusterId string) error {
 	values := map[string]interface{}{
+		"env": map[string]interface{}{
+			"AWS_CLUSTER_ID": clusterId,
+		},
 		"image": map[string]interface{}{
 			"repository": image,
 			"tag":        tag,
 		},
 	}
 
+	projectRoot := utils.GetProjectRoot()
 	_, err := d.releaseManager.InstallUnPackagedRelease(projectRoot+CNIMetricsHelperChartDir,
 		CNIMetricsHelperReleaseName, CNIMetricHelperNamespace, values)
 	return err

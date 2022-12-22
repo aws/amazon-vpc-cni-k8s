@@ -62,7 +62,7 @@ var (
 
 // Parse test specific variable from flag
 func init() {
-	flag.StringVar(&cidrRangeString, "custom-networking-cidr-range", "10.10.0.0/16", "custom networking cidr range to be associated with the VPC")
+	flag.StringVar(&cidrRangeString, "custom-networking-cidr-range", "100.64.0.0/16", "custom networking cidr range to be associated with the VPC")
 }
 
 var _ = BeforeSuite(func() {
@@ -178,6 +178,7 @@ var _ = AfterSuite(func() {
 	By("deleting the key pair")
 	f.CloudServices.EC2().DeleteKey(keyPairName)
 
+	By("deleting security group")
 	err = f.CloudServices.EC2().DeleteSecurityGroup(customNetworkingSGID)
 	Expect(err).ToNot(HaveOccurred())
 
