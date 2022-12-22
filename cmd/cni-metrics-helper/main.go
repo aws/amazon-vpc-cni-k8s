@@ -81,7 +81,7 @@ func main() {
 		}
 	}
 
-	pullIntervalEnv, found := os.LookupEnv("PULL_INTERVAL")
+	pullIntervalEnv, found := os.LookupEnv("METRIC_PULL_INTERVAL")
 	if !found {
 		pullIntervalEnv = "30"
 	}
