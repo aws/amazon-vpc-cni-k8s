@@ -169,6 +169,8 @@ replace gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 => gopkg.in/yaml.v3 
 
 replace github.com/emicklei/go-restful => github.com/emicklei/go-restful/v3 v3.8.0
 
+replace golang.org/x/crypto => golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
+
 // k8s.io/cli-runtime v0.20.2 is incompatible with k8s.io/kube-openapi versions greater than the one pinned
 // This replacement can be removed when cli-runtime is upgraded to v0.21.0+
 // For more information, see https://github.com/kubernetes-sigs/kustomize/blob/master/cmd/depprobcheck/README.md
