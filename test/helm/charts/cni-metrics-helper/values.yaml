@@ -33,6 +33,7 @@ ingress:
 
 env:
    USE_CLOUDWATCH: "true"
+   AWS_CLUSTER_ID: ""
 
 rbac:
   create: true
