@@ -81,13 +81,13 @@ func main() {
 		}
 	}
 
-	pullIntervalEnv, found := os.LookupEnv("METRIC_PULL_INTERVAL")
+	metricUpdateIntervalEnv, found := os.LookupEnv("METRIC_UPDATE_INTERVAL")
 	if !found {
-		pullIntervalEnv = "30"
+		metricUpdateIntervalEnv = "30"
 	}
-	pullInterval, err := strconv.Atoi(pullIntervalEnv)
+	metricUpdateInterval, err := strconv.Atoi(metricUpdateIntervalEnv)
 	if err != nil {
-		log.Fatalf("pullInterval (%s) format invalid. Integer required. Expecting seconds: %s", pullIntervalEnv, err)
+		log.Fatalf("METRIC_UPDATE_INTERVAL (%s) format invalid. Integer required. Expecting seconds: %s", metricUpdateIntervalEnv, err)
 		os.Exit(1)
 	}
 
@@ -131,7 +131,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to create publisher: %v", err)
 		}
-		var publishInterval = pullInterval * 2
+		publishInterval := metricUpdateInterval * 2
 		go cw.Start(publishInterval)
 		defer cw.Stop()
 	}
@@ -140,7 +140,7 @@ func main() {
 	var cniMetric = metrics.CNIMetricsNew(clientSet, cw, options.submitCW, log, podWatcher)
 
 	// metric loop
-	for range time.Tick(time.Duration(pullInterval) * time.Second) {
+	for range time.Tick(time.Duration(metricUpdateInterval) * time.Second) {
 		log.Info("Collecting metrics ...")
 		metrics.Handler(ctx, cniMetric)
 	}
