@@ -63,7 +63,7 @@ func (options *Options) BindFlags() {
 	flag.StringVar(&options.CalicoVersion, "calico-version", "v3.23.0", "calico version to be tested")
 	flag.StringVar(&options.ContainerRuntime, "container-runtime", "", "Optionally can specify it as 'containerd' for the test nodes")
 	flag.StringVar(&options.InstanceType, "instance-type", "amd64", "Optionally specify instance type as arm64 for the test nodes")
-	flag.BoolVar(&options.InstallCalico, "install-calico", true, "Install Calico operator before running e2e tests")
+	flag.BoolVar(&options.InstallCalico, "install-calico", true, "Install Calico operator before running tests")
 	flag.StringVar(&options.PublicSubnets, "public-subnets", "", "Comma separated list of public subnets (optional, if specified you must specify all of public/private-subnets, public-route-table-id,  and availability-zones)")
 	flag.StringVar(&options.PrivateSubnets, "private-subnets", "", "Comma separated list of private subnets (optional, if specified you must specify all of public/private-subnets, public-route-table-id,  and availability-zones)")
 	flag.StringVar(&options.AvailabilityZones, "availability-zones", "", "Comma separated list of private subnets (optional, if specified you must specify all of public/private-subnets, public-route-table-id, and availability-zones)")

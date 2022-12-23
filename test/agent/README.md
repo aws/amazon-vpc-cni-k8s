@@ -38,7 +38,7 @@ replace github.com/aws/amazon-vpc-cni-k8s/test/agent => <absolute local path>/am
 ```
 
 ### How to test the Agent locally
-Apart from running the tests on your local environment. For some test cases where we want to run test on Pod (for instance Pod networking tests) we can copy over the binary to the Pod and execute it. For e2e testing, we can push docker image to ECR and use the image in automation test suite.
+Apart from running the tests on your local environment. For some test cases where we want to run test on Pod (for instance Pod networking tests) we can copy over the binary to the Pod and execute it. For integration testing, we can push docker image to ECR and use the image in automation test suite.
 
 #### Running individual test component inside a Pod
 - While development you could generate the binary for the component you want to test. Let's say you would like to test the pod networking setup on a host network pod.

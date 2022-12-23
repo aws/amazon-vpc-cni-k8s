@@ -35,7 +35,7 @@ import (
 
 func TestCustomNetworking(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "CNI Custom Networking e2e Test Suite")
+	RunSpecs(t, "CNI Custom Networking Test Suite")
 }
 
 var (
