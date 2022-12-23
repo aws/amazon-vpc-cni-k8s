@@ -99,7 +99,7 @@ func main() {
 	// should be name/identifier for the cluster if specified
 	clusterID, _ := os.LookupEnv("AWS_CLUSTER_ID")
 
-	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, LogLevel %s, pullInterval %d", options.submitCW, logConfig.LogLevel, pullInterval)
+	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, LogLevel %s, metricUpdateInterval %d", options.submitCW, logConfig.LogLevel, metricUpdateInterval)
 
 	clientSet, err := k8sapi.GetKubeClientSet()
 	if err != nil {
