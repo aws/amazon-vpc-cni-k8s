@@ -1,5 +1,5 @@
 ## amazon-vpc-cni-k8s Test Framework
-The test framework consists of integration and e2e tests using the Ginkgo framework invoked manually and using collection of bash scripts using GitHub Workflow and Prow(not publicly available).
+The test framework consists of integration tests using the Ginkgo framework invoked manually and using collection of bash scripts using GitHub Workflow and Prow(not publicly available).
 
 ### Types of Tests
 
@@ -41,5 +41,5 @@ S3 - delete bucket
 
 #### Work In Progress
 - Run Upstream Conformance tests as part of Nightly Integration tests.
-- Run All Integration/e2e tests as part of Nightly Integration tests.
-- Run all Integration tests on each Pull Request.
+- Run all integration tests as part of Nightly Integration tests.
+- Run all integration tests on each Pull Request.

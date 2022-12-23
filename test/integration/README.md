@@ -1,9 +1,9 @@
 ## CNI Integration Test Suites
 
-The package contains automated integration tests suites for `amazon-vpc-cni-k8s` .
+The package contains automated integration tests suites for `amazon-vpc-cni-k8s`.
 
 ### Prerequisites
-The integration test requires 
+The integration tests require:
 - At least 2 nodes in a node group.
 - Nodes in the nodegroup shouldn't have existing pods.
 - Ginkgo installed on your environment. To install, run `go install github.com/onsi/ginkgo/v2/ginkgo`.
@@ -22,7 +22,7 @@ NG_NAME_LABEL_VAL=<ng-name-label-tag-value-on-ec2>
 # Example, NG_NAME_LABEL_VAL="nodegroup-name"
 ```
 
-To run the test switch to the integration folder. For instance running the cni integration test from root of the project.
+To run the test switch to the integration folder. For instance, running the cni integration test from root of the project.
 ```bash
 cd test/integration/cni
 ```
@@ -39,7 +39,7 @@ ginkgo -v --fail-on-pending -- \
 
 ### cni-metrics-helper
 
-> #### Prerequisites: 
+> #### Prerequisites:
 >
 > This test expects CNIMetricsHelperPolicy to be present in the test account. Create the policy with below permissions in the test account:
 
@@ -74,8 +74,40 @@ In order to test a custom image you need pass the following tags along with the 
 
 *IMPORTANT*: Should use an IPv6 cluster with Prefix Delegation enabled. VPC CNI only supports IPv6 mode with Prefix Delegation.
 
+### Custom Networking
+
+Custom networking tests validate use of the `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG` environment variable.
+
+Test info:
+  - No existing node group should be present. The test creates a self managed node group with the reduced MAX_POD value.
+  - Pass `custom-networking-cidr-range` flag with *allowed* VPC CIDR that does not conflict with an existing one. So if existing VPC CIDR is `192.168.0.0/16`, you can use `custom-networking-cidr-range=100.64.0.0/16`. You can go to your cluster VPC to check existing/allowed CIDRs.
+
+### SNAT tests
+
+SNAT tests cover pod source NAT behavior with various deployment scenarios.
+
+Test info:
+  - EKS Cluster should have at least one private subnet and at least one public subnet. These tests modify the SNAT related variables in `aws-node` pod, validate the IP table SNAT rules, and check for Internet Connectivity.
+
+### Calico tests
+
+`calico` helps validate compatibility with calico network policies. It does so by running the Calico Stars policy demo.
+
+### Security Groups For Pods tests (pod_eni)
+
+`pod_eni` test suite validates Security Group for Pods implementation from VPC CNI perspective.
+
+Test info:
+  - Requires at least one Nitro-based instance.
+  - EKS Cluster should be v1.16+. This tests creates an additional Trunk ENI on all Nitro-based instances present in the cluster. This could interfere with running integration tests that expect specific values of `WARM_ENI_TARGET`.
+  - For this reason, the test should either be run without any node groups present in the cluster or at the very end.
+
+### Soak
+
+`soak` suite validates IPAMD state file against API server.
+
 ### Multus tests
-These tests require multus to be deployed to your cluster using the [manifest](https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/master/config/multus/v3.7.2-eksbuild.2/aws-k8s-multus.yaml) file. Instead test can be triggered by running `run-multus-tests.sh` located under scripts directory. This script installs the multus manifest first and then runs the the ginkgo test suite. 
+These tests require multus to be deployed to your cluster using the [manifest](https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/master/config/multus/v3.9.2-eksbuild.1/aws-k8s-multus.yaml) file. Instead test can be triggered by running `run-multus-tests.sh` located under scripts directory. This script installs the multus manifest first and then runs the the ginkgo test suite.
 You can optionally provide multus tag to install the manifest. If not provided then it will use the default tag
 
 ```
@@ -85,7 +117,7 @@ Running tests with the following variables
 KUBE_CONFIG_PATH:  /Users/cgadgil/.kube/config
 CLUSTER_NAME: eks-MultusInfra
 REGION: us-west-2
-ENDPOINT: 
+ENDPOINT:
 skipping making ginkgo test binaries
 loading cluster details eks-MultusInfra
 Installing latest multus manifest with tag: v3.7.2-eksbuild.2
@@ -115,55 +147,63 @@ all tests ran successfully in 0 minutes and 27 seconds
 ```
 
 ### Running release tests with scripts/run-cni-release-tests.sh
-`run-cni-release-tests.sh` will run cni, ipamd, and cni-metrics-helper (integration tests)[https://github.com/aws/amazon-vpc-cni-k8s/tree/master/test/integration] and (Calico tests)[https://github.com/aws/amazon-vpc-cni-k8s/tree/master/test/e2e/calico]. The script _does not_ create a test cluster, instead it will run the test on cluster specified via variables required in the script. The tests are run on the vpc-cni version installed on the cluster(it does not upgrade/install any specific vpc-cni version). See script `update-cni-images.sh` to update the test cluster with required cni version before running the tests.
+`run-cni-release-tests.sh` will run cni, ipamd, and cni-metrics-helper (integration tests)[https://github.com/aws/amazon-vpc-cni-k8s/tree/master/test/integration]. The script _does not_ create a test cluster, instead it will run the test on cluster specified via variables required in the script. The tests are run on the vpc-cni version installed on the cluster(it does not upgrade/install any specific vpc-cni version). See script `update-cni-images.sh` to update the test cluster with required cni version before running the tests.
 
 ## Development of New Integration Tests
 
-This section is written to give a high level overview for the process of developing integration tests in the VPC CNI repo. 
+This section is written to give a high level overview for the process of developing integration tests in the VPC CNI repo.
 
 ### Test helpers
 
-- ```amazon-vpc-cni-k8s/test/framework``` : This is the main folder that has the modules that will be used in writing tests. It has number of other folder like ```controller``` , ```helm```, ```resources``` and ```utils``` providing different use cases. A very useful folder is ```resources``` and is explained in detail below. 
+- `amazon-vpc-cni-k8s/test/framework` : This is the main folder that has the modules that will be used in writing tests. It has a number of other folder like `controller` , `helm`, `resources` and `utils` that provide different use cases. A very useful folder is `resources` (explained in detail below).
 
-- ```amazon-vpc-cni-k8s/test/framework/resources``` It has the following sub-folders with their functionality listed:
+- `amazon-vpc-cni-k8s/test/framework/resources` It has the following sub-folders with their functionality listed:
 
-- ```agent```: Used to test traffic by creating multiple server pods using a deployment and multiple client pods using a Job. Each client Pod tests connectivity to each Server Pod.
+- `agent`: Used to test traffic by creating multiple server pods using a deployment and multiple client pods using a Job. Each client Pod tests connectivity to each Server Pod.
 
-- ```aws```: Used for aws functionality related to autoscaling node groups, cloudformation, cloudwatch, ec2, eks, iam and more.  
+- `aws`: Used for aws functionality related to autoscaling node groups, cloudformation, cloudwatch, ec2, eks, iam and more.
 
-- ```k8s```: The k8s folder has modules that comprise of the building blocks for writing the tests. It has the following subfolders:
-  - ```manifest```: This folder has modules for building pods, services, jobs, deployments, containers and more. These are responsible for determining the structure, say for instance the build configuration of the pod. 
-  - ```resources```: This folder has modules for actual creation of the k8s elements built by the modules in the manifest folder. Not just creation/deletion, it has other useful functionalities related to the k8s element in consideration. For instance, getting status and logs for the element or functionalities like exec for a pod k8s element. 
-  - ```utils```: Has helper utilities related to node, daemonset and containers. 
-
+- `k8s`: The k8s folder has modules that comprise of the building blocks for writing the tests. It has the following subfolders:
+  - `manifest`: This folder has modules for building pods, services, jobs, deployments, containers and more. These are responsible for determining the structure, say for instance the build configuration of the pod.
+  - `resources`: This folder has modules for actual creation of the k8s elements built by the modules in the manifest folder. Not just creation/deletion, it has other useful functionalities related to the k8s element in consideration. For instance, getting status and logs for the element or functionalities like exec for a pod k8s element.
+  - `utils`: Has helper utilities related to node, daemonset and containers.
 
 ### Organization of test folders
 
-The test folders are located at ```amazon-vpc-cni-k8s/tree/master/test/integration``` It has the following sub-folders ```cni```, ```ipamd```, ```ipv6``` and ```metrics-helper```.
+The test folders are located at `amazon-vpc-cni-k8s/tree/master/test/integration` It has the following sub-folders:
+ - calico
+ - cni
+ - custom-networking
+ - ipamd
+ - ipv6
+ - metrics-helper
+ - pod-eni
+ - snat
+ - soak
 
 The ginkgo test for any component has generally two main components:
-- ```ginkgo suite file```: Every ginkgo suite file will have ```RegisterFailHandler``` and ```RunSpecs```. A Ginkgo test signals failure by calling Ginkgo’s Fail function passed to RegisterFailHandler. RunSpec tells Ginkgo to start the test suite. Running ginkgo inside the sub-folder containing the test suite should trigger the ```RunSpecs``` function in the suite.
+- `ginkgo suite file`: Every ginkgo suite file will have `RegisterFailHandler` and `RunSpecs`. A Ginkgo test signals failure by calling Ginkgo’s Fail function passed to RegisterFailHandler. RunSpec tells Ginkgo to start the test suite. Running ginkgo inside the sub-folder containing the test suite should trigger the ```RunSpecs``` function in the suite.
 
-- ```ginkgo test files```: By default, test files in the same folder as ginkgo suite file will be run on the trigger of the ```RunSpecs``` function in the ginkgo test suite. 
+- `ginkgo test files`: By default, test files in the same folder as ginkgo suite file will be run on the trigger of the `RunSpecs` function in the ginkgo test suite.
 
 ### Adding new test folder
 
 Say for instance, the cni test and suite files in the cni folder has functionality related to CNI component in VPC CNI as you would expect. If you want to add a test that does not belong to any of the modules in the integration folder, you will have to create a new folder structure as below
-- ```integration``` 
-  - ```new_component_test_xyz``` 
+- `integration`
+  - ```new_component_test_xyz```
        - ```new_component_test_xyz/new_component_xyz_suite_test.go```)
-       - ```new_component_test_xyz/xyz_test_1.go``` 
-       - ```new_component_test_xyz/xyz_test_2.go```) 
+       - ```new_component_test_xyz/xyz_test_1.go```
+       - ```new_component_test_xyz/xyz_test_2.go```)
        - ```...```
-  - ```cni``` 
+  - ```cni```
   - ```...```
 
-### Structure of sample test suite: 
+### Structure of sample test suite:
 ```cni/pod_networking_suite_test.go```
 
 #### Logic Components
 
-- ```BeforeSuite``` : All common steps that should be performed before the suite are added here. In the sample BeforeSuite below, we can  see a few prerequistes for the tests that run under the suite, like namespace creation and setting of env variables like WARM_IP_TARGET. 
+- ```BeforeSuite``` : All common steps that should be performed before the suite are added here. In the sample BeforeSuite below, we can  see a few prerequistes for the tests that run under the suite, like namespace creation and setting of env variables like WARM_IP_TARGET.
 - ```AfterSuite``` : All common steps that should be performed after the suite are added here. In the sample AfterSuite below, we can  see cleanup to be followed after running the tests under the suite like namespace deletion and resetting of env variables.
 
 ```go
@@ -191,7 +231,7 @@ const InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
 var f *framework.Framework
 ...
 
-//The function below is the starter function for running tests 
+//The function below is the starter function for running tests
 //for each suite and attaching a fail handler for the same
 func TestCNIPodNetworking(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -201,9 +241,9 @@ func TestCNIPodNetworking(t *testing.T) {
 //The following function has checks and setup needed before running the suite.
 var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
-        
-        // The Sequence of By and Expect are provided by the omega package and 
-        // ensure the correct functionality by providing assertions at every step 
+
+        // The Sequence of By and Expect are provided by the omega package and
+        // ensure the correct functionality by providing assertions at every step
 
 	By("creating test namespace")
 	f.K8sResourceManagers.NamespaceManager().
@@ -233,7 +273,6 @@ var _ = AfterSuite(func() {
 			"WARM_ENI_TARGET": {},
 		})
 })
-
 ```
 
 ### Structure of sample test corresponding to a suite:
@@ -249,24 +288,23 @@ var _ = AfterSuite(func() {
 - ```BeforeEach``` : Executed (not immediately) before each test, however following the execution order from outside blocks to inside blocks before an It(spec) in case of multipe BeforeEach blocks.
 - ```AfterEach``` : Executed (not immediately) after each test, however following the execution order from inside blocks to outside blocks after an It(spec) in case of multipe AfterEach blocks.
 
-Each of the above components are arranged hierarchically in a way that makes most sense for abstracting the common logic from the rest of the code. 
+Each of the above components are arranged hierarchically in a way that makes most sense for abstracting the common logic from the rest of the code.
 
 Every ```BeforeEach``` precedes every ```JustBeforeEach``` in execution before execution of an It.
 Every ```JustAfterEach``` precedes every ```AfterEach``` in execution after execution of an It.
-
 
 ```go
 package cni
 
 import (
-        // Imports similar to above test suite found here 
+        // Imports similar to above test suite found here
 	...
 )
 
 // This blocks is used describe the individual behaviors of code
 var _ = Describe("Test pod networking with prefix delegation enabled", func() {
-	var (     
-	        // List of global variables used for the tests below
+	var (
+	    // List of global variables used for the tests below
 		// The Pod labels for client and server in order to retrieve the
 		// client and server Pods belonging to a Deployment/Jobs
 		labelKey                = "app"
@@ -278,7 +316,6 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 	)
 
 	JustBeforeEach(func() {
-
 		By("creating deployment")
 		serverDeploymentBuilder = manifest.NewDefaultDeploymentBuilder().
 			Name("traffic-server").
@@ -291,19 +328,19 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 	})
 
 	JustAfterEach(func() {
-
 		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
 			utils.AwsNodeNamespace, utils.AwsNodeName,
 			map[string]string{"ENABLE_PREFIX_DELEGATION": "false"})
 	})
-        // Context block is used to execute the behavior used 
-        // by Describe block under different scenarios 
+
+    // Context block is used to execute the behavior used
+    // by Describe block under different scenarios
 	Context("when testing TCP traffic between client and server pods", func() {
 		BeforeEach(func() {
 			enableIPv4PrefixDelegation = "true"
 		})
-                
-                // Below is example of individual spec specified by It
+
+        // Below is example of individual spec specified by It
 		It("should have 99+% success rate", func() {
 			trafficTester := agent.TrafficTest{
 				Framework:                      f,
@@ -319,13 +356,12 @@ var _ = Describe("Test pod networking with prefix delegation enabled", func() {
 		})
 	})
 
-	// Similarly we can also test for  UDP traffic between 
-        // client and server pods in another context here 
+	// Similarly we can also test for UDP traffic between
+    // client and server pods in another context here
 })
 ```
 
 More info can be found here https://github.com/onsi/ginkgo
-
 
 ### Troubleshooting Test Failure
 
@@ -334,7 +370,6 @@ Everytime you run a ginkgo test suite, you will get stats on number of tests pas
 ```
 <PASS/FAIL>! -- <> Passed | <> Failed | <> Pending | <> Skipped
 ```
-
 
 In case of an error, the error message will be printed in ginkgo error stack. For instance, in case kubeconfig is not correctly set, you will get an error message similar to below:
 
@@ -358,4 +393,3 @@ Test Suite Failed
 ```
 
 For additional [Debugging Help](./Troubleshooting.md)
-

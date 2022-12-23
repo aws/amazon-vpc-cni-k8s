@@ -85,7 +85,7 @@ OR if its not installed as addon
 kubectl delete deploy/coredns -n kube-system
 ``` 
 
-Ensure that you install coredns back after you complete running tests in this suite as it's needed by other tests such as cni-metrics-helper and e2e tests
+Ensure that you install coredns after you complete running tests in this suite as it is needed by other tests, such as cni-metrics-helper.
 ```
 aws eks create-addon --addon-name coredns --cluster-name <cluster_name>
 ```
