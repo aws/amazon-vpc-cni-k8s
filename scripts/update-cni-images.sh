@@ -30,4 +30,4 @@ fi
 echo "Applying amazon-vpc-cni-k8s/config/master/aws-k8s-cni.yaml manifest"
 kubectl apply -f $AWS_K8S_CNI_MANIFEST
 
-check_ds_rollout "aws-node" "kube-system" "4m"
+check_ds_rollout "aws-node" "kube-system" "10m"
