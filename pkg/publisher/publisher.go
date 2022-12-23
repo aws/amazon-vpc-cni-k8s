@@ -136,7 +136,7 @@ func New(ctx context.Context, region string, clusterID string, log logger.Logger
 // Start is used to set up the monitor loop
 func (p *cloudWatchPublisher) Start(publishInterval int) {
 	p.log.Infof("Starting monitor loop for CloudWatch publisher with push interval of %d seconds", publishInterval)
-	publishIntervalDuration := time.Second * publishInterval
+	publishIntervalDuration := time.Second * time.Duration(publishInterval)
 	p.monitor(publishIntervalDuration)
 }
 
