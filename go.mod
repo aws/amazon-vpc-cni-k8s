@@ -83,13 +83,11 @@ require (
 	github.com/go-openapi/jsonreference v0.19.3 // indirect
 	github.com/go-openapi/spec v0.19.3 // indirect
 	github.com/go-openapi/swag v0.19.5 // indirect
-	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/google/btree v1.0.0 // indirect
 	github.com/google/gofuzz v1.1.0 // indirect
-	github.com/google/pprof v0.0.0-20210407192527-94a9f03dee38 // indirect
 	github.com/google/uuid v1.1.2 // indirect
 	github.com/googleapis/gnostic v0.5.1 // indirect
 	github.com/gorilla/mux v1.7.3 // indirect
