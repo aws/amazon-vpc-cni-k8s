@@ -1,0 +1,16 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+            {
+            "Action": [
+                "s3:GetBucketLocation",
+                "s3:GetEncryptionConfiguration",
+                "s3:ListBucket",
+                "s3:ListBucketVersions"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+                "*"
+            ]
+        }]
+}

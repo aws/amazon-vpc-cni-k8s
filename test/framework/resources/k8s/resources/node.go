@@ -44,10 +44,21 @@ func (d *defaultNodeManager) GetNodes(nodeLabelKey string, nodeLabelVal string) 
 	}
 	ctx := context.Background()
 	nodeList := v1.NodeList{}
+
 	err := d.k8sClient.List(ctx, &nodeList, client.MatchingLabels{
 		nodeLabelKey: nodeLabelVal,
 	})
-	return nodeList, err
+
+	var workerNodeList v1.NodeList
+
+	// Filter control plane nodes from the list of nodes
+	for _, node := range nodeList.Items {
+		if _, ok := node.ObjectMeta.Labels["node-role.kubernetes.io/control-plane"]; !ok {
+			workerNodeList.Items = append(workerNodeList.Items, node)
+		}
+	}
+
+	return workerNodeList, err
 }
 
 func (d *defaultNodeManager) GetAllNodes() (v1.NodeList, error) {

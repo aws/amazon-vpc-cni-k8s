@@ -32,11 +32,14 @@ var f *framework.Framework
 var err error
 
 const (
-	CoreDNSDeploymentName      = "coredns"
-	CoreDNSDeploymentNameSpace = "kube-system"
+	CoreDNSDeploymentName           = "coredns"
+	KubeSystemNamespace             = "kube-system"
+	CoreDNSAutoscalerDeploymentName = "coredns-autoscaler"
 )
 
 var coreDNSDeploymentCopy *v1.Deployment
+var coreDNSAutoscalerDeploymentCopy *v1.Deployment
+var ebsCSIDaemonsetCopy *v1.DaemonSet
 
 func TestIPAMD(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -67,7 +70,7 @@ var _ = BeforeSuite(func() {
 
 	By("getting node with no pods scheduled to run tests")
 	coreDNSDeployment, err := f.K8sResourceManagers.DeploymentManager().GetDeployment(CoreDNSDeploymentName,
-		CoreDNSDeploymentNameSpace)
+		KubeSystemNamespace)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Copy the deployment to restore later
@@ -75,11 +78,22 @@ var _ = BeforeSuite(func() {
 
 	// Add nodeSelector label to coredns deployment so coredns pods are scheduled on 'primary' node
 	coreDNSDeployment.Spec.Template.Spec.NodeSelector = map[string]string{
-		"kubernetes.io/hostname": *primaryInstance.PrivateDnsName,
+		"kubernetes.io/hostname": primaryNode.Name,
 	}
 	err = f.K8sResourceManagers.DeploymentManager().UpdateAndWaitTillDeploymentIsReady(coreDNSDeployment,
 		utils.DefaultDeploymentReadyTimeout)
 	Expect(err).ToNot(HaveOccurred())
+
+	coreDNSAutoscalerDeployment, err := f.K8sResourceManagers.DeploymentManager().GetDeployment(CoreDNSAutoscalerDeploymentName,
+		KubeSystemNamespace)
+	if err == nil {
+		coreDNSAutoscalerDeploymentCopy = coreDNSAutoscalerDeployment.DeepCopy()
+		coreDNSAutoscalerDeployment.Spec.Template.Spec.NodeSelector = map[string]string{
+			"kubernetes.io/hostname": primaryNode.Name,
+		}
+		err = f.K8sResourceManagers.DeploymentManager().UpdateAndWaitTillDeploymentIsReady(coreDNSAutoscalerDeployment,
+			utils.DefaultDeploymentReadyTimeout)
+	}
 
 	// Redefine primary node as node without coredns pods. Note that this node may have previously had coredns pods.
 	primaryNode = nodeList.Items[1]
@@ -107,6 +121,19 @@ var _ = AfterSuite(func() {
 	By("restoring coredns deployment")
 	err = f.K8sResourceManagers.DeploymentManager().UpdateAndWaitTillDeploymentIsReady(coreDNSDeploymentCopy,
 		utils.DefaultDeploymentReadyTimeout)
+
+	if coreDNSAutoscalerDeploymentCopy != nil {
+		fmt.Println("restoring corednsautoscaler")
+		err = f.K8sResourceManagers.DeploymentManager().UpdateAndWaitTillDeploymentIsReady(coreDNSAutoscalerDeploymentCopy,
+			utils.DefaultDeploymentReadyTimeout)
+	}
+
+	// if ebsCSIDaemonsetCopy != nil {
+	// 	fmt.Printf("restoring ebs copy desired count %v\n", ebsCSIDaemonsetCopy.Status.DesiredNumberScheduled)
+	// 	ebsCSIDaemonset, _ := f.K8sResourceManagers.DaemonSetManager().GetDaemonSet(KubeSystemNamespace, EbsCSIDaemonsetName)
+	// 	_, err = f.K8sResourceManagers.DaemonSetManager().UpdateAndWaitTillDaemonSetReady(ebsCSIDaemonset,
+	// 		ebsCSIDaemonsetCopy)
+	// }
 
 	By("deleting test namespace")
 	f.K8sResourceManagers.NamespaceManager().

@@ -14,6 +14,8 @@
 package ipamd
 
 import (
+	"io/ioutil"
+	"net/url"
 	"strings"
 	"time"
 
@@ -28,12 +30,15 @@ import (
 
 const EKSCNIPolicyARN = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 const AwsNodeLabelKey = "k8s-app"
+const DummyPolicyDocument = "/testdata/dummy-role-policy.json"
 
 var _ = Describe("test aws-node pod event", func() {
 
 	// Verifies aws-node pod events works as expected
 	Context("when iam role is missing VPC_CNI policy", func() {
 		var role string
+		var rolePolicyDocument string
+		var policyName string
 
 		BeforeEach(func() {
 			// To get the role assumed by CNI, first check the ENV "AWS_ROLE_ARN" on aws-node to get the service account role
@@ -63,9 +68,26 @@ var _ = Describe("test aws-node pod event", func() {
 				role = *instanceProfileOutput.InstanceProfile.Roles[0].RoleName
 			}
 
-			By("detaching VPC_CNI policy and restart aws-node pods")
+			By("Detaching VPC_CNI policy")
 			err = f.CloudServices.IAM().DetachRolePolicy(EKSCNIPolicyARN, role)
 			Expect(err).ToNot(HaveOccurred())
+
+			dummyPolicyDocumentPath := utils.GetProjectRoot() + DummyPolicyDocument
+			dummyRolePolicyBytes, err := ioutil.ReadFile(dummyPolicyDocumentPath)
+			Expect(err).ToNot(HaveOccurred())
+
+			dummyRolePolicyData := string(dummyRolePolicyBytes)
+
+			// For Kops - clusters have an inline role policy defined which has the same name as role name
+			policyName = role
+			rolePolicy, err := f.CloudServices.IAM().GetRolePolicy(policyName, role)
+			if err == nil {
+				By("Detaching the inline role policy")
+				rolePolicyDocument, err = url.QueryUnescape(*rolePolicy.PolicyDocument)
+				err = f.CloudServices.IAM().PutRolePolicy(dummyRolePolicyData, policyName, role)
+				Expect(err).ToNot(HaveOccurred())
+			}
+
 			RestartAwsNodePods()
 
 			By("checking aws-node pods not running")
@@ -83,13 +105,20 @@ var _ = Describe("test aws-node pod event", func() {
 		})
 
 		AfterEach(func() {
-			By("attaching VPC_CNI policy and restart aws-node pods")
+			By("attaching VPC_CNI policy")
 			err = f.CloudServices.IAM().AttachRolePolicy(EKSCNIPolicyARN, role)
 			Expect(err).ToNot(HaveOccurred())
+
+			if rolePolicyDocument != "" {
+				By("Attaching the inline role policy")
+				err = f.CloudServices.IAM().PutRolePolicy(rolePolicyDocument, policyName, role)
+				Expect(err).ToNot(HaveOccurred())
+			}
+
 			RestartAwsNodePods()
 
 			By("checking aws-node pods are running")
-			time.Sleep(utils.PollIntervalMedium * 2) // sleep to allow aws-node to restart
+			time.Sleep(utils.PollIntervalMedium * 3) // sleep to allow aws-node to restart
 			podList, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(AwsNodeLabelKey, utils.AwsNodeName)
 			Expect(err).ToNot(HaveOccurred())
 			for _, cond := range podList.Items[0].Status.Conditions {
@@ -115,6 +144,7 @@ var _ = Describe("test aws-node pod event", func() {
 })
 
 func RestartAwsNodePods() {
+	By("Restart aws-node pods")
 	podList, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector("k8s-app", utils.AwsNodeName)
 	Expect(err).ToNot(HaveOccurred())
 	for _, pod := range podList.Items {
