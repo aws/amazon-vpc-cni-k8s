@@ -25,6 +25,4 @@ serviceAccount:
   annotations: {}
     # eks.amazonaws.com/role-arn: arn:aws:iam::AWS_ACCOUNT_ID:role/IAM_ROLE_NAME  
 
-resources:
-  requests:
-    cpu: 25m
+resources: {}
