@@ -48,11 +48,9 @@ $ helm install my-release ./amazon-vpc-cni-k8s/charts/cni-metrics-helper --set u
 
 ## Resources
 
-You can specify resource limits for the cni-metrics-helper pods by setting the following values:
-
 | Parameter                 | Description                                    | Default |
 |---------------------------|------------------------------------------------|---------|
-| resources.limits.cpu      | CPU limit for the cni-metrics-helper pods      | 25m     |
+|    resources              | Resources for the pods.                        |   `{}`  |
 
 
 for example, to set a CPU limit of 200m and a memory limit of 256Mi for the cni-metrics-helper pods, you can use the following command:
