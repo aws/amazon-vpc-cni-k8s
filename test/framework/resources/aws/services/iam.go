@@ -37,6 +37,8 @@ type IAM interface {
 	CreatePolicy(policyName string, policyDocument string) (*iam.CreatePolicyOutput, error)
 	DeletePolicy(policyARN string) error
 	GetInstanceProfile(instanceProfileName string) (*iam.GetInstanceProfileOutput, error)
+	GetRolePolicy(policyName string, role string) (*iam.GetRolePolicyOutput, error)
+	PutRolePolicy(policyDocument string, policyName string, roleName string) error
 	ListPolicies(scope string) (*iam.ListPoliciesOutput, error)
 }
 
@@ -75,6 +77,24 @@ func (d *defaultIAM) DeletePolicy(policyARN string) error {
 		PolicyArn: aws.String(policyARN),
 	}
 	_, err := d.IAMAPI.DeletePolicy(deletePolicyInput)
+	return err
+}
+
+func (d *defaultIAM) GetRolePolicy(role string, policyName string) (*iam.GetRolePolicyOutput, error) {
+	rolePolicyInput := &iam.GetRolePolicyInput{
+		RoleName:   aws.String(role),
+		PolicyName: aws.String(policyName),
+	}
+	return d.IAMAPI.GetRolePolicy(rolePolicyInput)
+}
+
+func (d *defaultIAM) PutRolePolicy(policyDocument string, policyName string, roleName string) error {
+	policyInput := &iam.PutRolePolicyInput{
+		PolicyDocument: aws.String(policyDocument),
+		PolicyName:     aws.String(policyName),
+		RoleName:       aws.String(roleName),
+	}
+	_, err := d.IAMAPI.PutRolePolicy(policyInput)
 	return err
 }
 
