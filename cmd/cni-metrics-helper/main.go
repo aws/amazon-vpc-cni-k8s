@@ -127,6 +127,8 @@ func main() {
 	podWatcher := metrics.NewDefaultPodWatcher(k8sClient, log)
 	var cniMetric = metrics.CNIMetricsNew(clientSet, cw, options.submitCW, log, podWatcher)
 
+	go metrics.StartPrometheusMetricsServer()
+
 	// metric loop
 	var pullInterval = 30 // seconds
 	for range time.Tick(time.Duration(pullInterval) * time.Second) {

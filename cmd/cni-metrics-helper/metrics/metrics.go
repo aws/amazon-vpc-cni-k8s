@@ -413,7 +413,8 @@ func metricsListGrabAggregateConvert(ctx context.Context, t metricsTarget) (map[
 	if len(targetList) > 1 {
 		resetDetected = false
 	}
-
+	currenicniMax := interestingMetrics["awscni_eni_max"].actions[0].data.curSingleDataPoint
+	enisMax.Set(currenicniMax)
 	return families, interestingMetrics, resetDetected, nil
 }
 
