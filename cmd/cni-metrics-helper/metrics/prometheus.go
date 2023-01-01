@@ -76,11 +76,12 @@ var (
 		},
 		[]string{"fn"},
 	)
-	addIPCnt = prometheus.NewCounter(
+	addIPCnt = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "awscni_add_ip_req_count",
 			Help: "The number of add IP address requests",
 		},
+		[]string{"fn"},
 	)
 	delIPCnt = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -115,17 +116,19 @@ var (
 			Help: "The number of IP addresses assigned to pods",
 		},
 	)
-	forceRemovedENIs = prometheus.NewCounter(
+	forceRemovedENIs = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "awscni_force_removed_enis",
 			Help: "The number of ENIs force removed while they had assigned pods",
 		},
+		[]string{"fn"},
 	)
-	forceRemovedIPs = prometheus.NewCounter(
+	forceRemovedIPs = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "awscni_force_removed_ips",
 			Help: "The number of IPs force removed while they had assigned pods",
 		},
+		[]string{"fn"},
 	)
 	totalPrefixes = prometheus.NewGauge(
 		prometheus.GaugeOpts{
@@ -155,13 +158,13 @@ func(exp *Exporter) Describe(ch chan <- *prometheus.Desc){
 	ch <- ipamdActionsInprogress.WithLabelValues("fn").Desc()
 	ch <- ipMax.Desc()
 	ch <- reconcileCnt.WithLabelValues("fn").Desc()
-	ch <- addIPCnt.Desc()
+	ch <- addIPCnt.WithLabelValues("fn").Desc()
 	ch <- delIPCnt.WithLabelValues("reason").Desc()
 	ch <- podENIErr.WithLabelValues("fn").Desc()
 	ch <- ipsPerCidr.WithLabelValues("cidr").Desc()
 	ch <- totalIPs.Desc()
-	ch <- forceRemovedIPs.Desc()
-	ch <- forceRemovedENIs.Desc()
+	ch <- forceRemovedIPs.WithLabelValues("fn").Desc()
+	ch <- forceRemovedENIs.WithLabelValues("fn").Desc()
 	ch <- totalPrefixes.Desc()
 	ch <- assignedIPs.Desc()
 }
@@ -177,13 +180,13 @@ func(exp *Exporter) Collect(ch chan <- prometheus.Metric){
 	ch <- ipamdActionsInprogress.WithLabelValues("fn")
 	ch <- ipMax
 	ch <- reconcileCnt.WithLabelValues("fn")
-	ch <- addIPCnt
+	ch <- addIPCnt.WithLabelValues("fn")
 	ch <- delIPCnt.WithLabelValues("reason")
 	ch <- podENIErr.WithLabelValues("fn")
 	ch <- ipsPerCidr.WithLabelValues("cidr")
 	ch <- totalIPs
-	ch <- forceRemovedIPs
-	ch <- forceRemovedENIs
+	ch <- forceRemovedIPs.WithLabelValues("fn")
+	ch <- forceRemovedENIs.WithLabelValues("fn")
 	ch <- totalPrefixes
 	ch <- assignedIPs
 }

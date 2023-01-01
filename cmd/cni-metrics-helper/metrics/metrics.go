@@ -422,10 +422,66 @@ func metricsListGrabAggregateConvert(ctx context.Context, t metricsTarget) (map[
 func Handler(ctx context.Context, t metricsTarget) {
 	families, interestingMetrics, resetDetected, err := metricsListGrabAggregateConvert(ctx, t)
 
+	updatePromMetrics(interestingMetrics)
+
 	if err != nil || resetDetected {
 		t.getLogger().Infof("Skipping 1st poll after reset, error: %v", err)
 	}
 
 	cw := t.getCWMetricsPublisher()
 	produceCloudWatchMetrics(t, families, interestingMetrics, cw)
+}
+
+func updatePromMetrics(interestingMetrics map[string]metricsConvert){
+	currenisMax := interestingMetrics["awscni_eni_max"].actions[0].data.curSingleDataPoint
+	currEnis := interestingMetrics["awscni_eni_allocated"].actions[0].data.curSingleDataPoint
+	currawsapiErr := interestingMetrics["awscni_aws_api_error_count"].actions[0].data.curSingleDataPoint
+	currawsutilsErr := interestingMetrics["awscni_aws_utils_error_count"].actions[0].data.curSingleDataPoint
+	currec2apireq := interestingMetrics["awscni_ec2api_req_count"].actions[0].data.curSingleDataPoint
+	currec2apiErr := interestingMetrics["awscni_ec2api_error_count"].actions[0].data.curSingleDataPoint
+	curripamdErr := interestingMetrics["awscni_ipamd_error_count"].actions[0].data.curSingleDataPoint
+	currreconcileCnt := interestingMetrics["awscni_reconcile_count"].actions[0].data.curSingleDataPoint
+	currdelipCnt := interestingMetrics["awscni_del_ip_req_count"].actions[0].data.curSingleDataPoint
+	currpodeniErr := interestingMetrics["awscni_pod_eni_error_count"].actions[0].data.curSingleDataPoint
+	curraddipCnt := interestingMetrics["awscni_add_ip_req_count"].actions[0].data.curSingleDataPoint
+	currforceremovedIps := interestingMetrics["awscni_force_removed_ips"].actions[0].data.curSingleDataPoint
+	currforceremovedEnis := interestingMetrics["awscni_force_removed_enis"].actions[0].data.curSingleDataPoint
+	curripamdactioninProgress := interestingMetrics["awscni_ipamd_action_inprogress"].actions[0].data.curSingleDataPoint
+	curripMax := interestingMetrics["awscni_ip_max"].actions[0].data.lastSingleDataPoint
+	currtotalIps := interestingMetrics["awscni_total_ip_addresses"].actions[0].data.curSingleDataPoint
+	currassignedIps := interestingMetrics["awscni_assigned_ip_addresses"].actions[0].data.curSingleDataPoint
+	currtotalPrefixes := interestingMetrics["awscni_total_ipv4_prefixes"].actions[0].data.curSingleDataPoint
+	curripsperCidr := interestingMetrics["awscni_assigned_ip_per_cidr"].actions[0].data.curSingleDataPoint
+
+	enisMax.Set(currenisMax)
+	enis.Set(currEnis)
+	awsAPIErr.Reset()
+	awsAPIErr.WithLabelValues("error","api").Add(currawsapiErr)
+	awsUtilsErr.Reset()
+	awsUtilsErr.WithLabelValues("fn","error").Add(currawsutilsErr)
+	ec2ApiReq.Reset()
+	ec2ApiReq.WithLabelValues("fn").Add(currec2apireq)
+	ec2ApiErr.Reset()
+	ec2ApiErr.WithLabelValues("fn").Add(currec2apiErr)
+	ipamdErr.Reset()
+	ipamdErr.WithLabelValues("fn").Add(curripamdErr)
+	reconcileCnt.Reset()
+	reconcileCnt.WithLabelValues("fn").Add(currreconcileCnt)
+	delIPCnt.Reset()
+	delIPCnt.WithLabelValues("reason").Add(currdelipCnt)
+	podENIErr.Reset()
+	podENIErr.WithLabelValues("fn").Add(currpodeniErr)
+	addIPCnt.Reset()
+	addIPCnt.WithLabelValues("fn").Add(curraddipCnt)
+	forceRemovedIPs.Reset()
+	forceRemovedIPs.WithLabelValues("fn").Add(currforceremovedIps)
+	forceRemovedENIs.Reset()
+	forceRemovedENIs.WithLabelValues("fn").Add(currforceremovedEnis)
+	ipamdActionsInprogress.WithLabelValues("fn").Set(curripamdactioninProgress)
+	ipMax.Set(curripMax)
+	totalIPs.Set(currtotalIps)
+	assignedIPs.Set(currassignedIps)
+	totalPrefixes.Set(currtotalPrefixes)
+	ipsPerCidr.WithLabelValues("cidr").Set(curripsperCidr)
+
 }
