@@ -48,8 +48,8 @@ func (mr *MockPublisherMockRecorder) Publish(metricDataPoints ...interface{}) *g
 }
 
 // Start mocks base method
-func (m *MockPublisher) Start() {
-	m.ctrl.Call(m, "Start")
+func (m *MockPublisher) Start(publishInterval int) {
+	m.ctrl.Call(m, "Start", publishInterval)
 }
 
 // Start indicates an expected call of Start

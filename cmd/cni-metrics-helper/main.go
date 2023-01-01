@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,6 +81,16 @@ func main() {
 		}
 	}
 
+	metricUpdateIntervalEnv, found := os.LookupEnv("METRIC_UPDATE_INTERVAL")
+	if !found {
+		metricUpdateIntervalEnv = "30"
+	}
+	metricUpdateInterval, err := strconv.Atoi(metricUpdateIntervalEnv)
+	if err != nil {
+		log.Fatalf("METRIC_UPDATE_INTERVAL (%s) format invalid. Integer required. Expecting seconds: %s", metricUpdateIntervalEnv, err)
+		os.Exit(1)
+	}
+
 	// Fetch region, if using IRSA it be will auto injected as env variable in pod spec
 	// If not found then it will be empty, in which case we will try to fetch it from IMDS (existing approach)
 	// This can also mean that Cx is not using IRSA and we shouldn't enforce IRSA requirement
@@ -88,7 +99,7 @@ func main() {
 	// should be name/identifier for the cluster if specified
 	clusterID, _ := os.LookupEnv("AWS_CLUSTER_ID")
 
-	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, LogLevel %s", options.submitCW, logConfig.LogLevel)
+	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, LogLevel %s, metricUpdateInterval %d", options.submitCW, logConfig.LogLevel, metricUpdateInterval)
 
 	clientSet, err := k8sapi.GetKubeClientSet()
 	if err != nil {
@@ -120,7 +131,8 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to create publisher: %v", err)
 		}
-		go cw.Start()
+		publishInterval := metricUpdateInterval * 2
+		go cw.Start(publishInterval)
 		defer cw.Stop()
 	}
 
@@ -130,8 +142,7 @@ func main() {
 	go metrics.StartPrometheusMetricsServer()
 
 	// metric loop
-	var pullInterval = 30 // seconds
-	for range time.Tick(time.Duration(pullInterval) * time.Second) {
+	for range time.Tick(time.Duration(metricUpdateInterval) * time.Second) {
 		log.Info("Collecting metrics ...")
 		metrics.Handler(ctx, cniMetric)
 	}

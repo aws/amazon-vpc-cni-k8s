@@ -15,8 +15,10 @@ package metrics_helper
 
 import (
 	"flag"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	k8sUtil "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
@@ -108,6 +110,7 @@ var _ = BeforeSuite(func() {
 	if ngName == "" {
 		ngName = DEFAULT_CLUSTER_ID
 	}
+	fmt.Fprintf(GinkgoWriter, "cluster name: %s\n", ngName)
 
 	By("getting the node instance role")
 	instanceProfileRoleName := strings.Split(*instance.IamInstanceProfile.Arn, "instance-profile/")[1]
@@ -137,11 +140,17 @@ var _ = BeforeSuite(func() {
 		utils.AwsNodeName, map[string]string{"SOME_NON_EXISTENT_VAR": "0"})
 
 	By("installing cni-metrics-helper using helm")
-	err = f.InstallationManager.InstallCNIMetricsHelper(imageRepository, imageTag)
+	err = f.InstallationManager.InstallCNIMetricsHelper(imageRepository, imageTag, ngName)
 	Expect(err).ToNot(HaveOccurred())
+
+	By("waiting for the metrics helper to publish initial metrics")
+	time.Sleep(time.Minute * 3)
 })
 
 var _ = AfterSuite(func() {
+	By("uninstalling cni-metrics-helper using helm")
+	err := f.InstallationManager.UnInstallCNIMetricsHelper()
+	Expect(err).ToNot(HaveOccurred())
 
 	By("detaching role policy from the node IAM Role")
 	err = f.CloudServices.IAM().DetachRolePolicy(policyARN, ngRoleName)
@@ -149,10 +158,6 @@ var _ = AfterSuite(func() {
 
 	k8sUtil.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
 		utils.AwsNodeName, map[string]struct{}{"SOME_NON_EXISTENT_VAR": {}})
-
-	By("uninstalling cni-metrics-helper using helm")
-	err := f.InstallationManager.UnInstallCNIMetricsHelper()
-	Expect(err).ToNot(HaveOccurred())
 
 	By("deleting test namespace")
 	f.K8sResourceManagers.NamespaceManager().

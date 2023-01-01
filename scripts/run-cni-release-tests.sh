@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# script to run integration and calico tests tests(no cluster creation & deletion/installing addons)
+# script to run integration tests (no cluster creation & deletion/installing addons)
 # use case: run script after CNI images are updated to the image to be verified (see update-cni-images.sh)
 
 # CLUSTER_NAME: name of the cluster to run the test
@@ -10,7 +10,6 @@
 # NG_LABEL_KEY: nodegroup label key, default "kubernetes.io/os"
 # NG_LABEL_VAL: nodegroup label val, default "linux"
 # CNI_METRICS_HELPER: cni metrics helper image tag, default "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.11.4"
-# CALICO_VERSION: calico version, default 3.22.0
 
 set -e
 

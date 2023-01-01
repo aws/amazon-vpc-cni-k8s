@@ -167,6 +167,7 @@ local awsnode = {
                 ADDITIONAL_ENI_TAGS: "{}",
                 AWS_VPC_CNI_NODE_PORT_SUPPORT: "true",
                 AWS_VPC_ENI_MTU: "9001",
+                AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER: "false",
                 AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG: "false",
                 AWS_VPC_K8S_CNI_EXTERNALSNAT: "false",
                 AWS_VPC_K8S_CNI_LOGLEVEL: "DEBUG",

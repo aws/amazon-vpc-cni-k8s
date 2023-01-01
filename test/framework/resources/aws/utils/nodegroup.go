@@ -16,7 +16,6 @@ package utils
 import (
 	"fmt"
 	"io/ioutil"
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -24,11 +23,12 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 )
 
-const CreateNodeGroupCFNTemplateURL = "https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/amazon-eks-nodegroup.yaml"
+const CreateNodeGroupCFNTemplate = "/testdata/amazon-eks-nodegroup.yaml"
 
 // Docker will be default, if not specified
 const (
@@ -69,22 +69,12 @@ type AWSAuthMapRole struct {
 	UserName string   `yaml:"username"`
 }
 
+// Create self managed node group stack
 func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties NodeGroupProperties) error {
-	// Create self managed node group stack
-	resp, err := http.Get(CreateNodeGroupCFNTemplateURL)
+	templatePath := utils.GetProjectRoot() + CreateNodeGroupCFNTemplate
+	templateBytes, err := ioutil.ReadFile(templatePath)
 	if err != nil {
-		return fmt.Errorf("failed to load template from URL %s: %v",
-			CreateNodeGroupCFNTemplateURL, err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("non OK status code on getting node group URL %s: %d",
-			CreateNodeGroupCFNTemplateURL, resp.StatusCode)
-	}
-	defer resp.Body.Close()
-
-	templateBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %v", err)
+		return fmt.Errorf("failed to read from %s, %v", templatePath, err)
 	}
 	template := string(templateBytes)
 
