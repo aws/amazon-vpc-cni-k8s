@@ -147,10 +147,45 @@ type Exporter struct{}
 func(exp *Exporter) Describe(ch chan <- *prometheus.Desc){
 	ch <- enisMax.Desc()
 	ch <- enis.Desc()
+	ch <- awsAPIErr.WithLabelValues("error","api").Desc()
+	ch <- ec2ApiErr.WithLabelValues("fn").Desc()
+	ch <- awsUtilsErr.WithLabelValues("fn","error").Desc()
+	ch <- ec2ApiReq.WithLabelValues("fn").Desc()
+	ch <- ipamdErr.WithLabelValues("fn").Desc()
+	ch <- ipamdActionsInprogress.WithLabelValues("fn").Desc()
+	ch <- ipMax.Desc()
+	ch <- reconcileCnt.WithLabelValues("fn").Desc()
+	ch <- addIPCnt.Desc()
+	ch <- delIPCnt.WithLabelValues("reason").Desc()
+	ch <- podENIErr.WithLabelValues("fn").Desc()
+	ch <- ipsPerCidr.WithLabelValues("cidr").Desc()
+	ch <- totalIPs.Desc()
+	ch <- forceRemovedIPs.Desc()
+	ch <- forceRemovedENIs.Desc()
+	ch <- totalPrefixes.Desc()
+	ch <- assignedIPs.Desc()
 }
 
 func(exp *Exporter) Collect(ch chan <- prometheus.Metric){
 	ch <- enisMax
+	ch <- enis
+	ch <- awsAPIErr.WithLabelValues("error","api")
+	ch <- ec2ApiErr.WithLabelValues("fn")
+	ch <- awsUtilsErr.WithLabelValues("fn","error")
+	ch <- ec2ApiReq.WithLabelValues("fn")
+	ch <- ipamdErr.WithLabelValues("fn")
+	ch <- ipamdActionsInprogress.WithLabelValues("fn")
+	ch <- ipMax
+	ch <- reconcileCnt.WithLabelValues("fn")
+	ch <- addIPCnt
+	ch <- delIPCnt.WithLabelValues("reason")
+	ch <- podENIErr.WithLabelValues("fn")
+	ch <- ipsPerCidr.WithLabelValues("cidr")
+	ch <- totalIPs
+	ch <- forceRemovedIPs
+	ch <- forceRemovedENIs
+	ch <- totalPrefixes
+	ch <- assignedIPs
 }
 
 func StartPrometheusMetricsServer(){
@@ -160,6 +195,5 @@ func StartPrometheusMetricsServer(){
 }
 
 func init(){
-	prometheus.MustRegister(enisMax)
-	prometheus.MustRegister(enis)
+	prometheus.MustRegister(&Exporter{})
 }

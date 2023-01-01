@@ -18,6 +18,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 )
 
 var log = logger.Get()
