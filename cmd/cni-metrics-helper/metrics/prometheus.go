@@ -167,6 +167,7 @@ func(exp *Exporter) Describe(ch chan <- *prometheus.Desc){
 	ch <- forceRemovedENIs.WithLabelValues("fn").Desc()
 	ch <- totalPrefixes.Desc()
 	ch <- assignedIPs.Desc()
+	// ch <- awsAPILatency.WithLabelValues()
 }
 
 func(exp *Exporter) Collect(ch chan <- prometheus.Metric){
@@ -193,10 +194,10 @@ func(exp *Exporter) Collect(ch chan <- prometheus.Metric){
 
 func StartPrometheusMetricsServer(){
 	log.Info("Starting prometehus metrics server for cni-metrics-helper")
-	http.Handle("/metrics",promhttp.Handler())
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(&Exporter{})
+	reg.MustRegister(awsAPILatency)
+	promHandler := promhttp.HandlerFor(reg,promhttp.HandlerOpts{})
+	http.Handle("/metrics",promHandler)
 	http.ListenAndServe("localhost:2112",nil)
-}
-
-func init(){
-	prometheus.MustRegister(&Exporter{})
 }

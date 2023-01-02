@@ -413,8 +413,7 @@ func metricsListGrabAggregateConvert(ctx context.Context, t metricsTarget) (map[
 	if len(targetList) > 1 {
 		resetDetected = false
 	}
-	currenicniMax := interestingMetrics["awscni_eni_max"].actions[0].data.curSingleDataPoint
-	enisMax.Set(currenicniMax)
+	
 	return families, interestingMetrics, resetDetected, nil
 }
 
@@ -452,6 +451,7 @@ func updatePromMetrics(interestingMetrics map[string]metricsConvert){
 	currassignedIps := interestingMetrics["awscni_assigned_ip_addresses"].actions[0].data.curSingleDataPoint
 	currtotalPrefixes := interestingMetrics["awscni_total_ipv4_prefixes"].actions[0].data.curSingleDataPoint
 	curripsperCidr := interestingMetrics["awscni_assigned_ip_per_cidr"].actions[0].data.curSingleDataPoint
+	currawsapiLatency := interestingMetrics["awscni_aws_api_latency_ms"].actions[0].data.curSingleDataPoint
 
 	enisMax.Set(currenisMax)
 	enis.Set(currEnis)
@@ -483,5 +483,5 @@ func updatePromMetrics(interestingMetrics map[string]metricsConvert){
 	assignedIPs.Set(currassignedIps)
 	totalPrefixes.Set(currtotalPrefixes)
 	ipsPerCidr.WithLabelValues("cidr").Set(curripsperCidr)
-
+	awsAPILatency.WithLabelValues("api","error","status").Observe(currawsapiLatency)
 }
