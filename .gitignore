@@ -20,3 +20,6 @@ coverage.txt
 build/
 vendor
 egress-v4-cni
+.stignore
+okteto.yml
+.vscode
