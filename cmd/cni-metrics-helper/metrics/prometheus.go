@@ -145,59 +145,35 @@ var (
 	)
 )
 
-type Exporter struct{}
-
-func(exp *Exporter) Describe(ch chan <- *prometheus.Desc){
-	ch <- enisMax.Desc()
-	ch <- enis.Desc()
-	ch <- awsAPIErr.WithLabelValues("error","api").Desc()
-	ch <- ec2ApiErr.WithLabelValues("fn").Desc()
-	ch <- awsUtilsErr.WithLabelValues("fn","error").Desc()
-	ch <- ec2ApiReq.WithLabelValues("fn").Desc()
-	ch <- ipamdErr.WithLabelValues("fn").Desc()
-	ch <- ipamdActionsInprogress.WithLabelValues("fn").Desc()
-	ch <- ipMax.Desc()
-	ch <- reconcileCnt.WithLabelValues("fn").Desc()
-	ch <- addIPCnt.WithLabelValues("fn").Desc()
-	ch <- delIPCnt.WithLabelValues("reason").Desc()
-	ch <- podENIErr.WithLabelValues("fn").Desc()
-	ch <- ipsPerCidr.WithLabelValues("cidr").Desc()
-	ch <- totalIPs.Desc()
-	ch <- forceRemovedIPs.WithLabelValues("fn").Desc()
-	ch <- forceRemovedENIs.WithLabelValues("fn").Desc()
-	ch <- totalPrefixes.Desc()
-	ch <- assignedIPs.Desc()
-	// ch <- awsAPILatency.WithLabelValues()
-}
-
-func(exp *Exporter) Collect(ch chan <- prometheus.Metric){
-	ch <- enisMax
-	ch <- enis
-	ch <- awsAPIErr.WithLabelValues("error","api")
-	ch <- ec2ApiErr.WithLabelValues("fn")
-	ch <- awsUtilsErr.WithLabelValues("fn","error")
-	ch <- ec2ApiReq.WithLabelValues("fn")
-	ch <- ipamdErr.WithLabelValues("fn")
-	ch <- ipamdActionsInprogress.WithLabelValues("fn")
-	ch <- ipMax
-	ch <- reconcileCnt.WithLabelValues("fn")
-	ch <- addIPCnt.WithLabelValues("fn")
-	ch <- delIPCnt.WithLabelValues("reason")
-	ch <- podENIErr.WithLabelValues("fn")
-	ch <- ipsPerCidr.WithLabelValues("cidr")
-	ch <- totalIPs
-	ch <- forceRemovedIPs.WithLabelValues("fn")
-	ch <- forceRemovedENIs.WithLabelValues("fn")
-	ch <- totalPrefixes
-	ch <- assignedIPs
-}
-
 func StartPrometheusMetricsServer(){
 	log.Info("Starting prometehus metrics server for cni-metrics-helper")
-	reg := prometheus.NewRegistry()
-	reg.MustRegister(&Exporter{})
-	reg.MustRegister(awsAPILatency)
-	promHandler := promhttp.HandlerFor(reg,promhttp.HandlerOpts{})
-	http.Handle("/metrics",promHandler)
 	http.ListenAndServe("localhost:2112",nil)
+}
+
+func init(){
+	reg := prometheus.NewRegistry()
+	promHandler := promhttp.HandlerFor(reg,promhttp.HandlerOpts{})
+
+	reg.MustRegister(awsAPILatency)
+	reg.MustRegister(awsAPIErr)
+	reg.MustRegister(awsUtilsErr)
+	reg.MustRegister(ec2ApiReq)
+	reg.MustRegister(ec2ApiErr)
+	reg.MustRegister(ipamdErr)
+	reg.MustRegister(ipamdActionsInprogress)
+	reg.MustRegister(enisMax)
+	reg.MustRegister(ipMax)
+	reg.MustRegister(reconcileCnt)
+	reg.MustRegister(addIPCnt)
+	reg.MustRegister(delIPCnt)
+	reg.MustRegister(podENIErr)
+	reg.MustRegister(enis)
+	reg.MustRegister(totalIPs)
+	reg.MustRegister(assignedIPs)
+	reg.MustRegister(forceRemovedENIs)
+	reg.MustRegister(forceRemovedIPs)
+	reg.MustRegister(totalPrefixes)
+	reg.MustRegister(ipsPerCidr)
+
+	http.Handle("/metrics",promHandler)
 }
