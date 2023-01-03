@@ -133,7 +133,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	err = f.CloudServices.IAM().AttachRolePolicy(policyARN, ngRoleName)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("unable to attach %s %s", policyARN, ngRoleName))
 
 	By("updating the aws-nodes to restart the metric count")
 	k8sUtil.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
@@ -154,7 +154,7 @@ var _ = AfterSuite(func() {
 
 	By("detaching role policy from the node IAM Role")
 	err = f.CloudServices.IAM().DetachRolePolicy(policyARN, ngRoleName)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("unable to detach %s %s", policyARN, ngRoleName))
 
 	k8sUtil.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
 		utils.AwsNodeName, map[string]struct{}{"SOME_NON_EXISTENT_VAR": {}})
