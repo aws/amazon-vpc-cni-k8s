@@ -32,13 +32,11 @@ var f *framework.Framework
 var err error
 
 const (
-	CoreDNSDeploymentName           = "coredns"
-	KubeSystemNamespace             = "kube-system"
-	CoreDNSAutoscalerDeploymentName = "coredns-autoscaler"
+	CoreDNSDeploymentName = "coredns"
+	KubeSystemNamespace   = "kube-system"
 )
 
 var coreDNSDeploymentCopy *v1.Deployment
-var coreDNSAutoscalerDeploymentCopy *v1.Deployment
 
 func TestIPAMD(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -83,17 +81,6 @@ var _ = BeforeSuite(func() {
 		utils.DefaultDeploymentReadyTimeout)
 	Expect(err).ToNot(HaveOccurred())
 
-	coreDNSAutoscalerDeployment, err := f.K8sResourceManagers.DeploymentManager().GetDeployment(CoreDNSAutoscalerDeploymentName,
-		KubeSystemNamespace)
-	if err == nil {
-		coreDNSAutoscalerDeploymentCopy = coreDNSAutoscalerDeployment.DeepCopy()
-		coreDNSAutoscalerDeployment.Spec.Template.Spec.NodeSelector = map[string]string{
-			"kubernetes.io/hostname": primaryNode.Name,
-		}
-		err = f.K8sResourceManagers.DeploymentManager().UpdateAndWaitTillDeploymentIsReady(coreDNSAutoscalerDeployment,
-			utils.DefaultDeploymentReadyTimeout)
-	}
-
 	// Redefine primary node as node without coredns pods. Note that this node may have previously had coredns pods.
 	primaryNode = nodeList.Items[1]
 	fmt.Fprintf(GinkgoWriter, "primary node is %s\n", primaryNode.Name)
@@ -120,12 +107,6 @@ var _ = AfterSuite(func() {
 	By("restoring coredns deployment")
 	err = f.K8sResourceManagers.DeploymentManager().UpdateAndWaitTillDeploymentIsReady(coreDNSDeploymentCopy,
 		utils.DefaultDeploymentReadyTimeout)
-
-	if coreDNSAutoscalerDeploymentCopy != nil {
-		By("restoring coredns-autoscaler deployment")
-		err = f.K8sResourceManagers.DeploymentManager().UpdateAndWaitTillDeploymentIsReady(coreDNSAutoscalerDeploymentCopy,
-			utils.DefaultDeploymentReadyTimeout)
-	}
 
 	By("deleting test namespace")
 	f.K8sResourceManagers.NamespaceManager().

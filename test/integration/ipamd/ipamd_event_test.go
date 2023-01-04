@@ -86,7 +86,7 @@ var _ = Describe("test aws-node pod event", func() {
 			// For Kops - clusters have an inline role policy defined and has same role and policy name
 			rolePolicy, err := f.CloudServices.IAM().GetRolePolicy(nodePolicyName, nodePolicyName)
 			if err == nil {
-				By("Detaching the inline role policy")
+				By("Detaching the inline role policy for worker instances")
 				rolePolicyDocumentNode, err = url.QueryUnescape(*rolePolicy.PolicyDocument)
 				err = f.CloudServices.IAM().PutRolePolicy(dummyRolePolicyData, nodePolicyName, nodePolicyName)
 				Expect(err).ToNot(HaveOccurred())
@@ -162,7 +162,7 @@ var _ = Describe("test aws-node pod event", func() {
 })
 
 func RestartAwsNodePods() {
-	By("Restart aws-node pods")
+	By("Restarting aws-node pods")
 	podList, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector("k8s-app", utils.AwsNodeName)
 	Expect(err).ToNot(HaveOccurred())
 	for _, pod := range podList.Items {
