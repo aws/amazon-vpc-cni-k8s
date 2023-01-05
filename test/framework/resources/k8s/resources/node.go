@@ -44,10 +44,22 @@ func (d *defaultNodeManager) GetNodes(nodeLabelKey string, nodeLabelVal string) 
 	}
 	ctx := context.Background()
 	nodeList := v1.NodeList{}
+
 	err := d.k8sClient.List(ctx, &nodeList, client.MatchingLabels{
 		nodeLabelKey: nodeLabelVal,
 	})
-	return nodeList, err
+
+	// Filtering control plane nodes from the list of nodes. kOps creates control plane nodes in the
+	// same subnet as worker nodes. Control plane nodes have the label `node-role.kubernetes.io/control-plane`
+	// defined, which can be used to filter out the control plane nodes
+	var workerNodeList v1.NodeList
+	for _, node := range nodeList.Items {
+		if _, ok := node.ObjectMeta.Labels["node-role.kubernetes.io/control-plane"]; !ok {
+			workerNodeList.Items = append(workerNodeList.Items, node)
+		}
+	}
+
+	return workerNodeList, err
 }
 
 func (d *defaultNodeManager) GetAllNodes() (v1.NodeList, error) {

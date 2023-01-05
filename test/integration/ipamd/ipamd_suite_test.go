@@ -32,8 +32,8 @@ var f *framework.Framework
 var err error
 
 const (
-	CoreDNSDeploymentName      = "coredns"
-	CoreDNSDeploymentNameSpace = "kube-system"
+	CoreDNSDeploymentName = "coredns"
+	KubeSystemNamespace   = "kube-system"
 )
 
 var coreDNSDeploymentCopy *v1.Deployment
@@ -67,7 +67,7 @@ var _ = BeforeSuite(func() {
 
 	By("getting node with no pods scheduled to run tests")
 	coreDNSDeployment, err := f.K8sResourceManagers.DeploymentManager().GetDeployment(CoreDNSDeploymentName,
-		CoreDNSDeploymentNameSpace)
+		KubeSystemNamespace)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Copy the deployment to restore later
@@ -75,7 +75,7 @@ var _ = BeforeSuite(func() {
 
 	// Add nodeSelector label to coredns deployment so coredns pods are scheduled on 'primary' node
 	coreDNSDeployment.Spec.Template.Spec.NodeSelector = map[string]string{
-		"kubernetes.io/hostname": *primaryInstance.PrivateDnsName,
+		"kubernetes.io/hostname": primaryNode.Name,
 	}
 	err = f.K8sResourceManagers.DeploymentManager().UpdateAndWaitTillDeploymentIsReady(coreDNSDeployment,
 		utils.DefaultDeploymentReadyTimeout)

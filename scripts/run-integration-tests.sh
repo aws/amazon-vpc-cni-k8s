@@ -203,8 +203,14 @@ UP_CLUSTER_DURATION=$((SECONDS - START))
 echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
 
 # Fetch VPC_ID from created cluster
-DESCRIBE_CLUSTER_OP=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_DEFAULT_REGION")
-VPC_ID=$(echo "$DESCRIBE_CLUSTER_OP" | jq -r '.cluster.resourcesVpcConfig.vpcId')
+if [[ "$RUN_KOPS_TEST" == true ]]; then
+    INSTANCE_ID=$(kubectl get nodes -l node-role.kubernetes.io/node -o jsonpath='{range .items[*]}{@.metadata.name}{"\n"}' | head -1)
+    VPC_ID=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --no-cli-pager | jq -r '.Reservations[].Instances[].VpcId' )
+else
+    DESCRIBE_CLUSTER_OP=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_DEFAULT_REGION")
+    VPC_ID=$(echo "$DESCRIBE_CLUSTER_OP" | jq -r '.cluster.resourcesVpcConfig.vpcId')
+fi
+
 echo "Using VPC_ID: $VPC_ID"
 
 echo "Using $BASE_CONFIG_PATH as a template"

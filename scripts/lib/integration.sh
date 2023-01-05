@@ -24,12 +24,7 @@ function run_kops_conformance() {
     echo "TIMELINE: KOPS tests took $KOPS_TEST_DURATION seconds."
 
     sleep 240 #Workaround to avoid ENI leakage during cluster deletion: https://github.com/aws/amazon-vpc-cni-k8s/issues/1223
-    START=$SECONDS
-    down-kops-cluster
-    emit_cloudwatch_metric "kops_test_status" "1"
-    DOWN_KOPS_DURATION=$((SECONDS - START))
-    echo "TIMELINE: Down KOPS cluster took $DOWN_KOPS_DURATION seconds."
-    exit 0
+
 }
 
 function run_calico_test() {
