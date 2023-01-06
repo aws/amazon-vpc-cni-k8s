@@ -81,8 +81,17 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 	Expect(len(nodeList.Items)).To(BeNumerically(">", 0))
 
-	instanceID := k8sUtil.GetInstanceIDFromNode(nodeList.Items[0])
-	nodeName = nodeList.Items[0].Name
+	// pick a non-tainted node
+	var instanceID string
+	for i := range nodeList.Items {
+		n := nodeList.Items[i]
+		if len(n.Spec.Taints) == 0 {
+			instanceID = k8sUtil.GetInstanceIDFromNode(n)
+			nodeName = n.Name
+			break
+		}
+	}
+	Expect(instanceID).ToNot(Equal(""), "expected to find a non-tainted node")
 
 	By("getting the nodegroup name and instance profile")
 	instance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
@@ -123,7 +132,7 @@ var _ = BeforeSuite(func() {
 	// We should ideally use the PathPrefix argument to list the policy, but this is returning an empty list. So workaround by listing local policies & filter
 	// SO issue: https://stackoverflow.com/questions/66287626/aws-cli-list-policies-to-find-a-policy-with-a-specific-name
 	policyList, err := f.CloudServices.IAM().ListPolicies("Local")
-	Expect(err).ToNot((HaveOccurred()))
+	Expect(err).ToNot(HaveOccurred())
 
 	for _, item := range policyList.Policies {
 		if strings.Contains(*item.PolicyName, "CNIMetricsHelperPolicy") {
@@ -133,7 +142,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	err = f.CloudServices.IAM().AttachRolePolicy(policyARN, ngRoleName)
-	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("unable to attach %s %s", policyARN, ngRoleName))
+	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("unable to attach arn: %s role: %s", policyARN, ngRoleName))
 
 	By("updating the aws-nodes to restart the metric count")
 	k8sUtil.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
