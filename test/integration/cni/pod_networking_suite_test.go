@@ -58,8 +58,8 @@ var _ = BeforeSuite(func() {
 
 	By("verifying more than 1 nodes are present for the test")
 	Expect(len(nodes.Items)).Should(BeNumerically(">", 1))
-	// Set the primary and secondary node for testing
 
+	// Set the primary and secondary node for testing, these are used for a pod traffic test between two pods
 	for i := range nodes.Items {
 		n := nodes.Items[i]
 		if len(n.Spec.Taints) == 0 {

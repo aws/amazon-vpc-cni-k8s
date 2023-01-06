@@ -204,7 +204,6 @@ func ValidateTraffic(f *framework.Framework, serverDeploymentBuilder *manifest.D
 }
 
 func WaitToReconcileInitialState(f *framework.Framework, primaryInstance *ec2.Instance, defaultEniCount int, defaultIpsPerEni int, DefaultPrefixPerEni int) {
-	return
 	By("Verifying number of enis, ips and ip prefixes before updating the parameters")
 	Eventually(func(g Gomega) {
 		primaryInstance, err := f.CloudServices.
