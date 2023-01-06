@@ -19,14 +19,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
 	"github.com/pkg/errors"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
 const (

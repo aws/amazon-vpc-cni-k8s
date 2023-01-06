@@ -376,7 +376,7 @@ func metricsListGrabAggregateConvert(ctx context.Context, t metricsTarget) (map[
 	resetMetrics(interestingMetrics)
 
 	targetList, _ := t.getTargetList(ctx)
-	t.getLogger().Debugf("Total TargetList pod count:- %v", len(targetList))
+	t.getLogger().Debugf("Total TargetList pod count: %d", len(targetList))
 	for _, target := range targetList {
 		rawOutput, err := t.grabMetricsFromTarget(ctx, target)
 		if err != nil {
