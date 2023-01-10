@@ -91,8 +91,8 @@ spec:
           - mountPath: /host/etc/cni/net.d
             name: cni-net-dir
 {{- if .Values.cniConfig.enabled }}
-            # the dockerfile copies the baked in config to this location, lets overwrite it with ours
-            # the entrypoint.sh script will then copy our config to /host/etc/cni/net.d on boot
+            # The dockerfile copies the baked in config to this location, so overwrite it with ours.
+            # The entrypoint process will then copy our config to /host/etc/cni/net.d on boot.
           - name: cni-config
             mountPath: /app/10-aws.conflist
             subPath: 10-aws.conflist
