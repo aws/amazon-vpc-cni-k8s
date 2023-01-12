@@ -129,6 +129,9 @@ spec:
             value: "false"
         securityContext:
             privileged: true
+        resources:
+          requests:
+            cpu: 25m
         volumeMounts:
           - mountPath: /host/opt/cni/bin
             name: cni-bin-dir
