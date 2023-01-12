@@ -16,12 +16,12 @@ package resources
 import (
 	"context"
 
-	v1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type EventManager interface {
-	GetEventsWithOptions(opts *client.ListOptions) (v1.EventList, error)
+	GetEventsWithOptions(opts *client.ListOptions) (eventsv1.EventList, error)
 }
 
 type defaultEventManager struct {
@@ -32,8 +32,8 @@ func NewEventManager(k8sClient client.Client) EventManager {
 	return &defaultEventManager{k8sClient: k8sClient}
 }
 
-func (d defaultEventManager) GetEventsWithOptions(opts *client.ListOptions) (v1.EventList, error) {
-	eventList := v1.EventList{}
+func (d defaultEventManager) GetEventsWithOptions(opts *client.ListOptions) (eventsv1.EventList, error) {
+	eventList := eventsv1.EventList{}
 	err := d.k8sClient.List(context.Background(), &eventList, opts)
 	return eventList, err
 }
