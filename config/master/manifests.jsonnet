@@ -52,11 +52,6 @@ local awsnode = {
         apiGroups: [""],
         resources: ["nodes"],
         verbs: ["list", "watch", "get", "update"],
-      },
-      {
-        apiGroups: ["extensions"],
-        resources: ["*"],
-        verbs: ["list", "watch"],
       }
     ],
   },
