@@ -24,15 +24,15 @@ jobs:
           go-version: "1.19"
       - name: Set up tools
         run: |
-          # Install ginkgo version from go.mod
-          go install github.com/onsi/ginkgo/v2/ginkgo
+          # Download ginkgo version from go.mod
+          go mod download github.com/onsi/ginkgo/v2
           curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin/
       - name: Set up AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
           role-to-assume: ${{ secrets.OSS_TEST_ROLE_ARN }}
-          role-duration-seconds: 14400 # 4 hours
+          role-duration-seconds: 28800 # 8 hours
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
       - name: Run perf tests
         env:
@@ -40,10 +40,11 @@ jobs:
           S3_BUCKET_CREATE: false
           S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
           ROLE_CREATE: false
-          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+          ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
           PERFORMANCE_TEST_S3_BUCKET_NAME: cni-performance-tests
           RUN_PERFORMANCE_TESTS: true
           RUN_TESTER_LB_ADDONS: true
+          RUN_INTEGRATION_DEFAULT_CNI: false
         run: |
           ./scripts/run-integration-tests.sh
       - name: Run kops tests
@@ -52,9 +53,11 @@ jobs:
           S3_BUCKET_CREATE: false
           S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
           ROLE_CREATE: false
-          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+          ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
           RUN_KOPS_TEST: true
           RUN_TESTER_LB_ADDONS: true
+          K8S_VERSION: 1.25.5
+          RUN_INTEGRATION_DEFAULT_CNI: false
         run: |
           ./scripts/run-integration-tests.sh
         if: always()
@@ -64,9 +67,10 @@ jobs:
           S3_BUCKET_CREATE: false
           S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
           ROLE_CREATE: false
-          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+          ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
           RUN_BOTTLEROCKET_TEST: true
           RUN_TESTER_LB_ADDONS: true
+          RUN_INTEGRATION_DEFAULT_CNI: false
         run: |
           ./scripts/run-integration-tests.sh
         if: always()
@@ -76,10 +80,11 @@ jobs:
           S3_BUCKET_CREATE: false
           S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
           ROLE_CREATE: false
-          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+          ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
           RUN_CALICO_TEST: true
           RUN_LATEST_CALICO_VERSION: true
           RUN_TESTER_LB_ADDONS: true
+          RUN_INTEGRATION_DEFAULT_CNI: false
         run: |
           ./scripts/run-integration-tests.sh
         if: always()

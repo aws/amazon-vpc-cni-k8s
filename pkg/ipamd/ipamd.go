@@ -41,6 +41,8 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
@@ -129,6 +131,11 @@ const (
 
 	// vpcENIConfigLabel is used by the VPC resource controller to pick the right ENI config.
 	vpcENIConfigLabel = "vpc.amazonaws.com/eniConfig"
+
+	// trunkInterfaceLabel is used by CNI to check if correct label was added by the VPC resource controller
+	trunkInterfaceLabel = "vpc.amazonaws.com/has-trunk-attached"
+	// VPC resource controller label nodes as not-supported if the EC2 instance doesn't support ENI trunking/branching feature
+	unsupportedInstanceValue = "not-supported"
 
 	//envEnableIpv4PrefixDelegation is used to allocate /28 prefix instead of secondary IP for an ENI.
 	envEnableIpv4PrefixDelegation = "ENABLE_PREFIX_DELEGATION"
@@ -261,6 +268,7 @@ type IPAMContext struct {
 	lastInsufficientCidrError time.Time
 	enableManageUntaggedMode  bool
 	enablePodIPAnnotation     bool
+	eventRecorder             *eventrecorder.EventRecorder
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -374,9 +382,15 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
 
+	eventrecorder, err := eventrecorder.New(rawK8SClient, cachedK8SClient)
+	if err != nil {
+		return nil, errors.Wrap(err, "ipamd: unable to initialize event recorder")
+	}
+	c.eventRecorder = eventrecorder
+
 	c.disableENIProvisioning = disablingENIProvisioning()
 
-	client, err := awsutils.New(c.useCustomNetworking, c.disableENIProvisioning, c.enableIPv4, c.enableIPv6)
+	client, err := awsutils.New(c.useCustomNetworking, c.disableENIProvisioning, c.enableIPv4, c.enableIPv6, c.eventRecorder)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
@@ -407,7 +421,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	}
 
 	c.awsClient.InitCachedPrefixDelegation(c.enablePrefixDelegation)
-	c.myNodeName = os.Getenv("MY_NODE_NAME")
+	c.myNodeName = os.Getenv(envNodeName)
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer, c.enablePrefixDelegation)
 
@@ -442,7 +456,10 @@ func (c *IPAMContext) nodeInit() error {
 	log.Debugf("Start node init")
 
 	primaryV4IP := c.awsClient.GetLocalIPv4()
-	err = c.initENIAndIPLimits()
+	if err = c.initENIAndIPLimits(); err != nil {
+		return err
+	}
+
 	if c.enableIPv4 {
 		//Subnets currently will have both v4 and v6 CIDRs. Once EC2 launches v6 only Subnets, that will no longer
 		//be true and so it is safe (and only required) to get the v4 CIDR info only when IPv4 mode is enabled.
@@ -537,37 +554,34 @@ func (c *IPAMContext) nodeInit() error {
 		vpcV4CIDRs = c.updateCIDRsRulesOnChange(vpcV4CIDRs)
 	}, 30*time.Second)
 
-	eniConfigName, err := eniconfig.GetNodeSpecificENIConfigName(ctx, c.cachedK8SClient)
-	if err == nil && c.useCustomNetworking && eniConfigName != "default" {
-		// Signal to VPC Resource Controller that the node is using custom networking
-		err := c.SetNodeLabel(ctx, vpcENIConfigLabel, eniConfigName)
+	if c.enablePodENI {
+		// call GET labels only once to avoid duplicate the call from labelling trunk and eniconfig
+		labels, err := c.getNodeLabels(ctx)
 		if err != nil {
-			log.Errorf("Failed to set eniConfig node label", err)
-			podENIErrInc("nodeInit")
 			return err
 		}
-	} else {
-		// Remove the custom networking label
-		err := c.SetNodeLabel(ctx, vpcENIConfigLabel, "")
-		if err != nil {
-			log.Errorf("Failed to delete eniConfig node label", err)
-			podENIErrInc("nodeInit")
-			return err
-		}
-	}
 
-	if metadataResult.TrunkENI != "" {
-		// Signal to VPC Resource Controller that the node has a trunk already
-		err := c.SetNodeLabel(ctx, "vpc.amazonaws.com/has-trunk-attached", "true")
-		if err != nil {
-			log.Errorf("Failed to set node label", err)
-			podENIErrInc("nodeInit")
-			// If this fails, we probably can't talk to the API server. Let the pod restart
-			return err
+		unsupported := false
+
+		// if node labels is nil in rare cases, we will log the info instead of failing VPC CNI startup
+		if labels == nil {
+			// if labels is nil, ipamd logs the warning for debugging
+			log.Warn("node labels are nil during ipamd init, may need investigation before using the feature of security group for pods")
+		} else {
+			if value, ok := labels[trunkInterfaceLabel]; ok {
+				unsupported = value == unsupportedInstanceValue
+			}
 		}
-	} else {
-		// Check if we want to ask for one
-		c.askForTrunkENIIfNeeded(ctx)
+
+		// if the node instance is supported, we proceed. Otherwise we stop sending events.
+		if !unsupported {
+			if c.useCustomNetworking {
+				// not doing retry here, don't have to handle error since error has been logged in the called method
+				c.askForENIConfigIfNeeded(ctx, labels)
+			}
+			// we want to ask VPC RC once during node init to cover special cases
+			c.askForTrunkENIIfNeeded(ctx, labels)
+		}
 	}
 
 	if !c.disableENIProvisioning && c.isDatastorePoolTooLow() {
@@ -644,7 +658,31 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 }
 
 func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
-	c.askForTrunkENIIfNeeded(ctx)
+	if c.enablePodENI {
+		if labels, err := c.getNodeLabels(ctx); err == nil {
+			unsupported := false
+			// if node labels is nil in rare cases, we will log the info instead of failing VPC CNI startup
+			if labels == nil {
+				// if labels is nil, ipamd logs the warning for debugging
+				log.Warn("labels are nil during ipamd reconciling resources, may need attention and investigation before using the feature of security group for pods")
+			} else {
+				if value, ok := labels[trunkInterfaceLabel]; ok {
+					unsupported = value == unsupportedInstanceValue
+				}
+			}
+
+			// if the node instance is supported, we proceed. Otherwise we stop sending events.
+			if !unsupported {
+				c.askForTrunkENIIfNeeded(ctx, labels)
+
+				// if custom networking is enabled and SGP is enabled, we should also check for eniConfig
+				if c.useCustomNetworking {
+					c.askForENIConfigIfNeeded(ctx, labels)
+				}
+			}
+		}
+	}
+
 	if c.isDatastorePoolTooLow() {
 		c.increaseDatastorePool(ctx)
 	} else if c.isDatastorePoolTooHigh() {
@@ -696,6 +734,7 @@ func (c *IPAMContext) tryFreeENI() {
 		log.Errorf("Failed to free ENI %s, err: %v", eni, err)
 		return
 	}
+
 }
 
 // tryUnassignIPsorPrefixesFromAll determines if there are IPs to free when we have extra IPs beyond the target and warmIPTargetDefined
@@ -1186,20 +1225,70 @@ func (c *IPAMContext) logPoolStats(dataStoreStats *datastore.DataStoreStats) {
 	log.Debugf("%s: %s, c.maxIPsPerENI = %d", prefix, dataStoreStats, c.maxIPsPerENI)
 }
 
-func (c *IPAMContext) askForTrunkENIIfNeeded(ctx context.Context) {
-	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
+func (c *IPAMContext) askForTrunkENIIfNeeded(ctx context.Context, labels map[string]string) error {
+	var err error
+	hasTrunkLabel := false
+
+	// if node labels is nil map which is rare, ipamd still sends the event and lets resource controller to handle this case
+	if labels != nil {
+		_, hasTrunkLabel = labels[trunkInterfaceLabel]
+	}
+
+	// check if trunk interface is not present OR trunk label is not present that covers special use case
+	// some special settings can boot up nodes with trunk interface attached already
+	// we still need to signal VPC RC to manage the nodes
+	if c.dataStore.GetTrunkENI() == "" || !hasTrunkLabel {
 		// Check that there is room for a trunk ENI to be attached:
 		if c.dataStore.GetENIs() >= (c.maxENI - c.unmanagedENI) {
-			log.Debug("No slot available for a trunk ENI to be attached. Not labeling the node")
-			return
+			log.Debug("No slot available for a trunk ENI to be attached. Will not create a node event for resource controller")
+			return nil
 		}
 		// We need to signal that VPC Resource Controller needs to attach a trunk ENI
-		err := c.SetNodeLabel(ctx, "vpc.amazonaws.com/has-trunk-attached", "false")
+		log.Debug("VPC CNI is asking RC to initialize trunk interface")
+		err = c.eventRecorder.SendNodeEvent(corev1.EventTypeNormal, eventrecorder.EventReason, sgpp.VpcCNINodeEventActionForTrunk, sgpp.TrunkEventNote)
 		if err != nil {
-			podENIErrInc("askForTrunkENIIfNeeded")
-			log.Errorf("Failed to set node label", err)
+			log.Error("Failed sending a node event to VPC RC for enabling trunk interface")
 		}
 	}
+
+	return err
+}
+
+func (c *IPAMContext) getNodeLabels(ctx context.Context) (map[string]string, error) {
+	var node corev1.Node
+	if err := c.cachedK8SClient.Get(ctx, types.NamespacedName{Name: c.myNodeName}, &node); err != nil {
+		return nil, err
+	} else {
+		return node.GetLabels(), err
+	}
+}
+
+func (c *IPAMContext) askForENIConfigIfNeeded(ctx context.Context, labels map[string]string) error {
+	var err error
+	hasLabelled := false
+
+	// if node labels is nil map which is rare, ipamd still sends the event and lets resource controller to handle this case
+	if labels != nil {
+		_, hasLabelled = labels[vpcENIConfigLabel]
+	}
+
+	if !hasLabelled {
+		var eniConfigName string
+		if eniConfigName, err = eniconfig.GetNodeSpecificENIConfigName(ctx, c.cachedK8SClient); err != nil {
+			return err
+		}
+
+		if eniConfigName != eniconfig.EniConfigDefault {
+			// Signal event to VPC RC that the custom networking is enabled
+			err = c.eventRecorder.SendNodeEvent(corev1.EventTypeNormal, eventrecorder.EventReason, sgpp.VpcCNINodeEventActionForEniConfig, vpcENIConfigLabel+"="+eniConfigName)
+			if err == nil {
+				log.Infof("Send an event to notify RC custom networking is enabled. Config name should be labelled on node as %s", eniConfigName)
+			} else {
+				log.Errorf("Failed sending an event to notify RC custom networking is enabled. Error is %s", err.Error())
+			}
+		}
+	}
+	return err
 }
 
 // shouldRemoveExtraENIs returns true if we should attempt to find an ENI to free. When WARM_IP_TARGET is set, we
@@ -1308,13 +1397,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		}
 
 		if c.enablePodENI && metadataResult.TrunkENI != "" {
-			// Label the node that we have a trunk
-			err = c.SetNodeLabel(ctx, "vpc.amazonaws.com/has-trunk-attached", "true")
-			if err != nil {
-				podENIErrInc("askForTrunkENIIfNeeded")
-				log.Errorf("Failed to set node label for trunk. Aborting reconcile", err)
-				return
-			}
+			log.Debugf("Trunk interface (%s) has been added to the node already.", metadataResult.TrunkENI)
 		}
 		// Update trunk ENI
 		trunkENI = metadataResult.TrunkENI
@@ -1871,49 +1954,6 @@ func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
 	return -1, errors.New("no trunk found")
 }
 
-// SetNodeLabel sets or deletes a node label
-func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error {
-	request := types.NamespacedName{
-		Name: c.myNodeName,
-	}
-
-	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		node := &corev1.Node{}
-		// Find my node
-		err := c.cachedK8SClient.Get(ctx, request, node)
-		if err != nil {
-			log.Errorf("Failed to get node: %v", err)
-			return err
-		}
-		log.Debugf("Node found %q - no of labels - %d", node.Name, len(node.Labels))
-
-		if labelValue, ok := node.Labels[key]; ok && labelValue == value {
-			log.Debugf("Node label %q is already %q", key, labelValue)
-			return nil
-		}
-
-		// Make deep copy for modification
-		updateNode := node.DeepCopy()
-
-		// Set node label
-		if value != "" {
-			updateNode.Labels[key] = value
-		} else {
-			// Empty value, delete the label
-			log.Debugf("Deleting label %q", key)
-			delete(updateNode.Labels, key)
-		}
-
-		if err = c.cachedK8SClient.Update(ctx, updateNode); err != nil {
-			log.Errorf("Failed to patch node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
-			return err
-		}
-		log.Debugf("Updated node %s with label %q: %q", c.myNodeName, key, value)
-		return nil
-	})
-	return err
-}
-
 // GetPod returns the pod matching the name and namespace
 func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
 	ctx := context.TODO()
@@ -1925,7 +1965,7 @@ func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
 	}
 	err := c.rawK8SClient.Get(ctx, podKey, &pod)
 	if err != nil {
-		return nil, fmt.Errorf("Error while trying to retrieve Pod Info: %s", err)
+		return nil, fmt.Errorf("error while trying to retrieve pod info: %s", err.Error())
 	}
 	return &pod, nil
 }
@@ -1936,8 +1976,12 @@ func (c *IPAMContext) AnnotatePod(podName, podNamespace, key, val string) error 
 	var err error
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		pod := &corev1.Pod{}
-		if pod, err = c.GetPod(podName, podNamespace); err != nil {
+		var pod *corev1.Pod
+		if pod, err = c.GetPod(podName, podNamespace); err != nil || pod == nil {
+			// if pod is nil and err is nil for any reason, this is not retriable case, returning a nil error to not-retry
+			if err == nil && pod == nil {
+				log.Warnf("get a nil pod for pod name %s and namespace %s", podName, podNamespace)
+			}
 			return err
 		}
 

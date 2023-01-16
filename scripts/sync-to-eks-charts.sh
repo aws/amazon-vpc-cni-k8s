@@ -6,13 +6,12 @@ SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 BUILD_DIR="${SCRIPTPATH}/../build"
 
 REPO="aws/amazon-vpc-cni-k8s"
-HELM_CHART_NAME="aws-vpc-cni"
+HELM_CHART_NAME=${HELM_CHART_NAME:-'aws-vpc-cni'}
 HELM_CHART_BASE_BIR="${SCRIPTPATH}/../charts"
 
 CHARTS_REPO="aws/eks-charts"
 CHARTS_REPO_NAME=$(echo ${CHARTS_REPO} | cut -d'/' -f2)
 
-HELM_CHART_DIR="${HELM_CHART_BASE_BIR}/${HELM_CHART_NAME}"
 PR_ID=$(uuidgen | cut -d '-' -f1)
 
 SYNC_DIR="${BUILD_DIR}/eks-charts-sync"
@@ -30,7 +29,7 @@ if [[ "${KERNEL}" == "darwin" ]]; then
   OS="macOS"
 fi
 
-VERSION=$(make -s -f "${SCRIPTPATH}/../Makefile" version)
+VERSION=$(echo $(make -s -f "${SCRIPTPATH}/../Makefile" version) | cut -d'-' -f1)
 
 USAGE=$(cat << EOM
   Usage: sync-to-eks-charts  -r <repo>
@@ -54,6 +53,7 @@ while getopts b:r:ny opt; do
         REPO="$OPTARG"
       ;;
     b ) # binary basename
+        HELM_CHART_NAME="$OPTARG"
         BINARY_BASE="$OPTARG"
       ;;
     n ) # Include release notes
@@ -72,6 +72,13 @@ done
 if [[ -n "${BINARY_BASE}" ]]; then
   HELM_CHART_DIR="${HELM_CHART_BASE_BIR}/${BINARY_BASE}"
   HELM_CHART_NAME=${BINARY_BASE}
+fi
+
+if [[ "$HELM_CHART_NAME" =~ ^(aws-vpc-cni|cni-metrics-helper)$ ]]; then
+  echo "starting to sync chart $HELM_CHART_NAME"
+else
+  echo "invalid chart name, quit the script"
+  exit 0
 fi
 
 if [[ -z "${REPO}" ]]; then 

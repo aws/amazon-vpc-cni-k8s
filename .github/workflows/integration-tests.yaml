@@ -26,8 +26,8 @@ jobs:
           go-version: "1.19"
       - name: Set up tools
         run: |
-          # Install ginkgo version from go.mod
-          go install github.com/onsi/ginkgo/v2/ginkgo
+          # Download ginkgo version from go.mod
+          go mod download github.com/onsi/ginkgo/v2
           curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin/
       - name: Set up AWS credentials

@@ -56,8 +56,10 @@ function up-test-cluster() {
 function up-kops-cluster {
     KOPS_S3_BUCKET=kops-cni-test-eks-$AWS_ACCOUNT_ID
     echo "Using $KOPS_S3_BUCKET as kops state store"
-    aws s3api create-bucket --bucket $KOPS_S3_BUCKET --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
-    kops_version="v1.22.3"
+    if ! aws s3api head-bucket --bucket $KOPS_S3_BUCKET 2>/dev/null; then
+        aws s3api create-bucket --bucket $KOPS_S3_BUCKET --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
+    fi
+    kops_version="v1.25.3"
     echo "Using kops version $kops_version"
     curl -LO https://github.com/kubernetes/kops/releases/download/$kops_version/kops-linux-amd64
     chmod +x kops-linux-amd64
@@ -77,13 +79,16 @@ function up-kops-cluster {
     fi
 
     $KOPS_BIN create cluster \
+    --cloud aws \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
-    --networking amazon-vpc-routed-eni \
-    --container-runtime docker \
+    --networking amazonvpc \
+    --container-runtime containerd \
     --node-count 2 \
+    --node-size c5.xlarge \
     --ssh-public-key=~/.ssh/devopsinuse.pub \
     --kubernetes-version ${K8S_VERSION} \
     ${CLUSTER_NAME}
+
     $KOPS_BIN update cluster --name ${CLUSTER_NAME} --yes
     sleep 100
     $KOPS_BIN export kubeconfig --admin
@@ -96,6 +101,13 @@ function up-kops-cluster {
         let RETRY_ATTEMPT=RETRY_ATTEMPT+1
         echo "In attempt# $RETRY_ATTEMPT, waiting for cluster validation"
     done
+
+    # kOps cluster by default comes with ebs-csi-node and coredns-autoscaler as an add-on which cannot be excluded on cluster creation
+    # Since CNI tests don't really need any of these components for running tests, we delete these to avoid any flakiness
+
+    kubectl delete daemonset ebs-csi-node -n kube-system
+    kubectl delete deployment coredns-autoscaler -n kube-system
+
     kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/${MANIFEST_CNI_VERSION}/config/master/cni-metrics-helper.yaml
 }
 

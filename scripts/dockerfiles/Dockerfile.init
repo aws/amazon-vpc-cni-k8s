@@ -7,16 +7,18 @@ ARG TARGETARCH
 ENV GO111MODULE=on
 ENV GOPROXY=direct
 
+# Copy modules in before the rest of the source to only expire cache on module changes:
+COPY go.mod go.sum ./
+RUN go mod download
+
 COPY Makefile ./
 RUN make plugins && make debug-script
 
 COPY . ./
+RUN make build-aws-vpc-cni-init
 
-# Build the architecture specific container image:
-FROM public.ecr.aws/amazonlinux/amazonlinux:2
-RUN yum update -y && \
-    yum install -y iproute procps-ng && \
-    yum clean all
+# Build from EKS minimal base + glibc
+FROM public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-glibc:latest.2
 
 WORKDIR /init
 
@@ -24,7 +26,8 @@ COPY --from=builder \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/loopback \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/portmap \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/bandwidth \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/host-local \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni-support.sh \
-    /go/src/github.com/aws/amazon-vpc-cni-k8s/scripts/init.sh /init/
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-vpc-cni-init /init/
 
-ENTRYPOINT ["/init/init.sh"]
+CMD ["/init/aws-vpc-cni-init"]

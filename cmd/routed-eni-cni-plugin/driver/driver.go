@@ -144,14 +144,14 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	}
 
 	if createVethContext.v6Addr != nil && createVethContext.v6Addr.IP.To16() != nil {
-		//Enable v6 support on Container's veth interface.
+		// Enable v6 support on Container's veth interface.
 		if err = createVethContext.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/disable_ipv6", createVethContext.contVethName), "0"); err != nil {
 			if !os.IsNotExist(err) {
 				return errors.Wrapf(err, "setupVeth network: failed to enable IPv6 on container veth interface")
 			}
 		}
 
-		//Enable v6 support on Container's lo interface inside the Pod networking namespace.
+		// Enable v6 support on Container's lo interface inside the Pod networking namespace.
 		if err = createVethContext.procSys.Set(fmt.Sprintf("net/ipv6/conf/lo/disable_ipv6"), "0"); err != nil {
 			if !os.IsNotExist(err) {
 				return errors.Wrapf(err, "setupVeth network: failed to enable IPv6 on container's lo interface")

@@ -31,6 +31,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 
 	mock_ec2wrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/events"
+	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const (
@@ -73,6 +80,7 @@ const (
 	eni2v6Prefix         = "2001:db8::/64"
 	eni2ID               = "eni-12341234"
 	metadataVPCIPv4CIDRs = "192.168.0.0/16	100.66.0.0/1"
+	myNodeName           = "testNodeName"
 )
 
 func testMetadata(overrides map[string]interface{}) FakeIMDS {
@@ -131,6 +139,28 @@ func setup(t *testing.T) (*gomock.Controller,
 		mock_ec2wrapper.NewMockEC2(ctrl)
 }
 
+func setupEventRecorder(t *testing.T) *eventrecorder.EventRecorder {
+	ctx := context.Background()
+	fakeRecorder := events.NewFakeRecorder(3)
+	k8sSchema := runtime.NewScheme()
+	clientgoscheme.AddToScheme(k8sSchema)
+
+	mockEventRecorder := &eventrecorder.EventRecorder{
+		Recorder:        fakeRecorder,
+		RawK8SClient:    testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
+		CachedK8SClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
+	}
+
+	fakeNode := v1.Node{
+		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
+		Spec:       v1.NodeSpec{},
+		Status:     v1.NodeStatus{},
+	}
+	_ = mockEventRecorder.CachedK8SClient.Create(ctx, &fakeNode)
+	return mockEventRecorder
+}
+
 func TestInitWithEC2metadata(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
 	defer cancel()
@@ -139,15 +169,15 @@ func TestInitWithEC2metadata(t *testing.T) {
 	defer ctrl.Finish()
 	mockMetadata := testMetadata(nil)
 
-	ins := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
-	err := ins.initWithEC2Metadata(ctx)
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
+	err := cache.initWithEC2Metadata(ctx)
 	if assert.NoError(t, err) {
-		assert.Equal(t, az, ins.availabilityZone)
-		assert.Equal(t, localIP, ins.localIPv4.String())
-		assert.Equal(t, ins.instanceID, instanceID)
-		assert.Equal(t, ins.primaryENImac, primaryMAC)
-		assert.Equal(t, ins.primaryENI, primaryeniID)
-		assert.Equal(t, subnetID, ins.subnetID)
+		assert.Equal(t, az, cache.availabilityZone)
+		assert.Equal(t, localIP, cache.localIPv4.String())
+		assert.Equal(t, cache.instanceID, instanceID)
+		assert.Equal(t, cache.primaryENImac, primaryMAC)
+		assert.Equal(t, cache.primaryENI, primaryeniID)
+		assert.Equal(t, subnetID, cache.subnetID)
 	}
 }
 
@@ -168,11 +198,11 @@ func TestInitWithEC2metadataErr(t *testing.T) {
 			key: fmt.Errorf("An error with %s", key),
 		})
 
-		ins := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
+		cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
 
 		// This test is a bit silly.  We expect broken metadata to result in an err return here.  But if the code is resilient and _succeeds_, then of course that's ok too.  Mostly we just want it not to panic.
 		assert.NotPanics(t, func() {
-			_ = ins.initWithEC2Metadata(ctx)
+			_ = cache.initWithEC2Metadata(ctx)
 		}, "Broken metadata %s resulted in panic", key)
 	}
 }
@@ -186,8 +216,8 @@ func TestGetAttachedENIs(t *testing.T) {
 		metadataMACPath + eni2MAC + metadataIPv4s:      eni2PrivateIP,
 	})
 
-	ins := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}}
-	ens, err := ins.GetAttachedENIs()
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}}
+	ens, err := cache.GetAttachedENIs()
 	if assert.NoError(t, err) {
 		assert.Equal(t, len(ens), 2)
 	}
@@ -203,8 +233,8 @@ func TestGetAttachedENIsWithPrefixes(t *testing.T) {
 		metadataMACPath + eni2MAC + metadataIPv4Prefixes: eni2Prefix,
 	})
 
-	ins := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}}
-	ens, err := ins.GetAttachedENIs()
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}}
+	ens, err := cache.GetAttachedENIs()
 	if assert.NoError(t, err) {
 		assert.Equal(t, len(ens), 2)
 	}
@@ -217,8 +247,8 @@ func TestAWSGetFreeDeviceNumberOnErr(t *testing.T) {
 	// test error handling
 	mockEC2.EXPECT().DescribeInstancesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("error on DescribeInstancesWithContext"))
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	_, err := ins.awsGetFreeDeviceNumber()
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	_, err := cache.awsGetFreeDeviceNumber()
 	assert.Error(t, err)
 }
 
@@ -240,8 +270,8 @@ func TestAWSGetFreeDeviceNumberNoDevice(t *testing.T) {
 
 	mockEC2.EXPECT().DescribeInstancesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	_, err := ins.awsGetFreeDeviceNumber()
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	_, err := cache.awsGetFreeDeviceNumber()
 	assert.Error(t, err)
 }
 
@@ -300,8 +330,8 @@ func TestGetENIAttachmentID(t *testing.T) {
 	for _, tc := range testCases {
 		mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(tc.output, tc.awsErr)
 
-		ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-		id, err := ins.getENIAttachmentID("test-eni")
+		cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+		id, err := cache.getENIAttachmentID("test-eni")
 		assert.Equal(t, tc.expErr, err)
 		assert.Equal(t, tc.expID, id)
 	}
@@ -343,8 +373,8 @@ func TestDescribeAllENIs(t *testing.T) {
 
 	for _, tc := range testCases {
 		mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Times(tc.n).Return(result, tc.awsErr)
-		ins := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
-		metaData, err := ins.DescribeAllENIs()
+		cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
+		metaData, err := cache.DescribeAllENIs()
 		assert.Equal(t, tc.expErr, err, tc.name)
 		assert.Equal(t, tc.exptags, metaData.TagMap, tc.name)
 	}
@@ -380,11 +410,13 @@ func TestAllocENI(t *testing.T) {
 	mockEC2.EXPECT().AttachNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
-	ins := &EC2InstanceMetadataCache{
-		ec2SVC: mockEC2,
-		imds:   TypedIMDS{mockMetadata},
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:        mockEC2,
+		imds:          TypedIMDS{mockMetadata},
+		eventRecorder: setupEventRecorder(t),
 	}
-	_, err := ins.AllocENI(false, nil, "")
+
+	_, err := cache.AllocENI(false, nil, "")
 	assert.NoError(t, err)
 }
 
@@ -413,11 +445,13 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 	mockEC2.EXPECT().DescribeInstancesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
-	ins := &EC2InstanceMetadataCache{
-		ec2SVC: mockEC2,
-		imds:   TypedIMDS{mockMetadata},
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:        mockEC2,
+		imds:          TypedIMDS{mockMetadata},
+		eventRecorder: setupEventRecorder(t),
 	}
-	_, err := ins.AllocENI(false, nil, "")
+
+	_, err := cache.AllocENI(false, nil, "")
 	assert.Error(t, err)
 }
 
@@ -448,11 +482,13 @@ func TestAllocENIMaxReached(t *testing.T) {
 	mockEC2.EXPECT().AttachNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("AttachmentLimitExceeded"))
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
-	ins := &EC2InstanceMetadataCache{
-		ec2SVC: mockEC2,
-		imds:   TypedIMDS{mockMetadata},
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:        mockEC2,
+		imds:          TypedIMDS{mockMetadata},
+		eventRecorder: setupEventRecorder(t),
 	}
-	_, err := ins.AllocENI(false, nil, "")
+
+	_, err := cache.AllocENI(false, nil, "")
 	assert.Error(t, err)
 }
 
@@ -468,8 +504,12 @@ func TestFreeENI(t *testing.T) {
 	mockEC2.EXPECT().DetachNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := ins.freeENI("test-eni", time.Millisecond, time.Millisecond)
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:        mockEC2,
+		eventRecorder: setupEventRecorder(t),
+	}
+
+	err := cache.freeENI("test-eni", time.Millisecond, time.Millisecond)
 	assert.NoError(t, err)
 }
 
@@ -488,8 +528,12 @@ func TestFreeENIRetry(t *testing.T) {
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("testing retrying delete"))
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := ins.freeENI("test-eni", time.Millisecond, time.Millisecond)
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:        mockEC2,
+		eventRecorder: setupEventRecorder(t),
+	}
+
+	err := cache.freeENI("test-eni", time.Millisecond, time.Millisecond)
 	assert.NoError(t, err)
 }
 
@@ -508,8 +552,12 @@ func TestFreeENIRetryMax(t *testing.T) {
 		mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("testing retrying delete"))
 	}
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := ins.freeENI("test-eni", time.Millisecond, time.Millisecond)
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:        mockEC2,
+		eventRecorder: setupEventRecorder(t),
+	}
+
+	err := cache.freeENI("test-eni", time.Millisecond, time.Millisecond)
 	assert.Error(t, err)
 }
 
@@ -519,8 +567,12 @@ func TestFreeENIDescribeErr(t *testing.T) {
 
 	mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("Error on DescribeNetworkInterfacesWithContext"))
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := ins.FreeENI("test-eni")
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:        mockEC2,
+		eventRecorder: setupEventRecorder(t),
+	}
+
+	err := cache.FreeENI("test-eni")
 	assert.Error(t, err)
 }
 
@@ -537,13 +589,13 @@ func TestDescribeInstanceTypes(t *testing.T) {
 		NextToken: nil,
 	}, nil)
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	ins.instanceType = "not-there"
-	err := ins.FetchInstanceTypeLimits()
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	cache.instanceType = "not-there"
+	err := cache.FetchInstanceTypeLimits()
 	assert.NoError(t, err)
-	value := ins.GetENILimit()
+	value := cache.GetENILimit()
 	assert.Equal(t, 9, value)
-	pv4Limit := ins.GetENIIPv4Limit()
+	pv4Limit := cache.GetENIIPv4Limit()
 	assert.Equal(t, 98, pv4Limit)
 }
 
@@ -553,8 +605,8 @@ func TestAllocIPAddress(t *testing.T) {
 
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(&ec2.AssignPrivateIpAddressesOutput{}, nil)
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := ins.AllocIPAddress("eni-id")
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	err := cache.AllocIPAddress("eni-id")
 	assert.NoError(t, err)
 }
 
@@ -564,8 +616,8 @@ func TestAllocIPAddressOnErr(t *testing.T) {
 
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("Error on AssignPrivateIpAddressesWithContext"))
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := ins.AllocIPAddress("eni-id")
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	err := cache.AllocIPAddress("eni-id")
 	assert.Error(t, err)
 }
 
@@ -580,8 +632,8 @@ func TestAllocIPAddresses(t *testing.T) {
 	}
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, nil)
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
-	_, err := ins.AllocIPAddresses(eniID, 5)
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
+	_, err := cache.AllocIPAddresses(eniID, 5)
 	assert.NoError(t, err)
 
 	// when required IP numbers(50) is higher than ENI's limit(49)
@@ -596,12 +648,12 @@ func TestAllocIPAddresses(t *testing.T) {
 	}
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(&output, nil)
 
-	ins = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
-	_, err = ins.AllocIPAddresses(eniID, 50)
+	cache = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
+	_, err = cache.AllocIPAddresses(eniID, 50)
 	assert.NoError(t, err)
 
 	// Adding 0 should do nothing
-	_, err = ins.AllocIPAddresses(eniID, 0)
+	_, err = cache.AllocIPAddresses(eniID, 0)
 	assert.NoError(t, err)
 }
 
@@ -613,12 +665,12 @@ func TestAllocIPAddressesAlreadyFull(t *testing.T) {
 		NetworkInterfaceId:             aws.String(eniID),
 		SecondaryPrivateIpAddressCount: aws.Int64(14),
 	}
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "t3.xlarge"}
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "t3.xlarge"}
 
 	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, retErr)
 	// If EC2 says that all IPs are already attached, we do nothing
-	_, err := ins.AllocIPAddresses(eniID, 14)
+	_, err := cache.AllocIPAddresses(eniID, 14)
 	assert.NoError(t, err)
 }
 
@@ -633,12 +685,12 @@ func TestAllocPrefixAddresses(t *testing.T) {
 	}
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, nil)
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
-	_, err := ins.AllocIPAddresses(eniID, 1)
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	_, err := cache.AllocIPAddresses(eniID, 1)
 	assert.NoError(t, err)
 
 	// Adding 0 should do nothing
-	_, err = ins.AllocIPAddresses(eniID, 0)
+	_, err = cache.AllocIPAddresses(eniID, 0)
 	assert.NoError(t, err)
 }
 
@@ -650,12 +702,12 @@ func TestAllocPrefixesAlreadyFull(t *testing.T) {
 		NetworkInterfaceId: aws.String(eniID),
 		Ipv4PrefixCount:    aws.Int64(1),
 	}
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "t3.xlarge", enablePrefixDelegation: true}
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "t3.xlarge", enablePrefixDelegation: true}
 
 	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, retErr)
 	// If EC2 says that all IPs are already attached, we do nothing
-	_, err := ins.AllocIPAddresses(eniID, 1)
+	_, err := cache.AllocIPAddresses(eniID, 1)
 	assert.NoError(t, err)
 }
 
@@ -853,14 +905,14 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 
 func TestEC2InstanceMetadataCache_SetUnmanagedENIs(t *testing.T) {
 	mockMetadata := testMetadata(nil)
-	ins := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}}
-	ins.SetUnmanagedENIs(nil)
-	assert.False(t, ins.IsUnmanagedENI("eni-1"))
-	ins.SetUnmanagedENIs([]string{"eni-1", "eni-2"})
-	assert.True(t, ins.IsUnmanagedENI("eni-1"))
-	assert.False(t, ins.IsUnmanagedENI("eni-99"))
-	ins.SetUnmanagedENIs(nil)
-	assert.False(t, ins.IsUnmanagedENI("eni-1"))
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}}
+	cache.SetUnmanagedENIs(nil)
+	assert.False(t, cache.IsUnmanagedENI("eni-1"))
+	cache.SetUnmanagedENIs([]string{"eni-1", "eni-2"})
+	assert.True(t, cache.IsUnmanagedENI("eni-1"))
+	assert.False(t, cache.IsUnmanagedENI("eni-99"))
+	cache.SetUnmanagedENIs(nil)
+	assert.False(t, cache.IsUnmanagedENI("eni-1"))
 }
 
 func TestEC2InstanceMetadataCache_cleanUpLeakedENIsInternal(t *testing.T) {
@@ -878,9 +930,9 @@ func TestEC2InstanceMetadataCache_cleanUpLeakedENIsInternal(t *testing.T) {
 	setupDescribeNetworkInterfacesPagesWithContextMock(t, mockEC2, interfaces, nil, 1)
 	mockEC2.EXPECT().CreateTagsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
-	ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
 	// Test checks that both mocks gets called.
-	ins.cleanUpLeakedENIsInternal(time.Millisecond)
+	cache.cleanUpLeakedENIsInternal(time.Millisecond)
 }
 
 func setupDescribeNetworkInterfacesPagesWithContextMock(
@@ -1382,8 +1434,8 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 						return nil
 					})
 			}
-			ins := &EC2InstanceMetadataCache{ec2SVC: mockEC2, clusterName: tt.fields.clusterName}
-			got, err := ins.getLeakedENIs()
+			cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, clusterName: tt.fields.clusterName}
+			got, err := cache.getLeakedENIs()
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {

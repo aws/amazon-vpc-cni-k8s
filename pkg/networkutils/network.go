@@ -42,7 +42,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
 )
 
 const (
@@ -91,10 +90,6 @@ const (
 	// routing, resulting in the packet being sent out of the pod's ENI, when the NodePort traffic should be
 	// sent over the main ENI.
 	envConnmark = "AWS_VPC_K8S_CNI_CONNMARK"
-
-	// This environment variable indicates if ipamd should configure rp filter for primary interface. Default value is
-	// true. If set to false, then rp filter should be configured through init container.
-	envConfigureRpfilter = "AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER"
 
 	// defaultConnmark is the default value for the connmark described above. Note: the mark space is a little crowded,
 	// - kube-proxy uses 0x0000c000
@@ -145,20 +140,18 @@ type NetworkAPIs interface {
 }
 
 type linuxNetwork struct {
-	useExternalSNAT         bool
-	excludeSNATCIDRs        []string
-	typeOfSNAT              snatType
-	nodePortSupportEnabled  bool
-	shouldConfigureRpFilter bool
-	mtu                     int
-	vethPrefix              string
-	podSGEnforcingMode      sgpp.EnforcingMode
+	useExternalSNAT        bool
+	excludeSNATCIDRs       []string
+	typeOfSNAT             snatType
+	nodePortSupportEnabled bool
+	mtu                    int
+	vethPrefix             string
+	podSGEnforcingMode     sgpp.EnforcingMode
 
 	netLink     netlinkwrapper.NetLink
 	ns          nswrapper.NS
 	newIptables func(IPProtocol iptables.Protocol) (iptablesIface, error)
 	mainENIMark uint32
-	procSys     procsyswrapper.ProcSys
 }
 
 type iptablesIface interface {
@@ -185,15 +178,14 @@ const (
 // New creates a linuxNetwork object
 func New() NetworkAPIs {
 	return &linuxNetwork{
-		useExternalSNAT:         useExternalSNAT(),
-		excludeSNATCIDRs:        getExcludeSNATCIDRs(),
-		typeOfSNAT:              typeOfSNAT(),
-		nodePortSupportEnabled:  nodePortSupportEnabled(),
-		shouldConfigureRpFilter: shouldConfigureRpFilter(),
-		mainENIMark:             getConnmark(),
-		mtu:                     GetEthernetMTU(""),
-		vethPrefix:              getVethPrefixName(),
-		podSGEnforcingMode:      sgpp.LoadEnforcingModeFromEnv(),
+		useExternalSNAT:        useExternalSNAT(),
+		excludeSNATCIDRs:       getExcludeSNATCIDRs(),
+		typeOfSNAT:             typeOfSNAT(),
+		nodePortSupportEnabled: nodePortSupportEnabled(),
+		mainENIMark:            getConnmark(),
+		mtu:                    GetEthernetMTU(""),
+		vethPrefix:             getVethPrefixName(),
+		podSGEnforcingMode:     sgpp.LoadEnforcingModeFromEnv(),
 
 		netLink: netlinkwrapper.NewNetLink(),
 		ns:      nswrapper.NewNS(),
@@ -201,7 +193,6 @@ func New() NetworkAPIs {
 			ipt, err := iptables.NewWithProtocol(IPProtocol)
 			return ipt, err
 		},
-		procSys: procsyswrapper.NewProcSys(),
 	}
 }
 
@@ -273,39 +264,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, 
 	v4Enabled bool, v6Enabled bool) error {
 	log.Info("Setting up host network... ")
 
-	var err error
 	primaryIntf := "eth0"
-	//RP Filter setting is only needed if IPv4 mode is enabled.
-	if v4Enabled && (n.nodePortSupportEnabled || !n.useExternalSNAT) {
-		primaryIntf, err = findPrimaryInterfaceName(primaryMAC)
-		if err != nil {
-			return errors.Wrapf(err, "failed to SetupHostNetwork")
-		}
-		// If node port support is enabled, configure the kernel's reverse path filter check on eth0 for "loose"
-		// filtering. This is required because
-		// - NodePorts are exposed on eth0
-		// - The kernel's RPF check happens after incoming packets to NodePorts are DNATted to the pod IP.
-		// - For pods assigned to secondary ENIs, the routing table includes source-based routing. When the kernel does
-		//   the RPF check, it looks up the route using the pod IP as the source.
-		// - Thus, it finds the source-based route that leaves via the secondary ENI.
-		// - In "strict" mode, the RPF check fails because the return path uses a different interface to the incoming
-		//   packet. In "loose" mode, the check passes because some route was found.
-		//
-		// The same applies when performing SNAT on Pod traffic.
-		primaryIntfRPFilter := "net/ipv4/conf/" + primaryIntf + "/rp_filter"
-		const rpFilterLoose = "2"
-
-		if n.shouldConfigureRpFilter {
-			log.Debugf("Setting RPF for primary interface: %s", primaryIntfRPFilter)
-			err = n.procSys.Set(primaryIntfRPFilter, rpFilterLoose)
-			if err != nil {
-				return errors.Wrapf(err, "failed to configure %s RPF check", primaryIntf)
-			}
-		} else {
-			log.Infof("Skip updating RPF for primary interface: %s", primaryIntfRPFilter)
-		}
-	}
-
 	link, err := linkByMac(primaryMAC, n.netLink, retryLinkByMacInterval)
 	if err != nil {
 		return errors.Wrapf(err, "setupHostNetwork: failed to find the link primary ENI with MAC address %s", primaryMAC)
@@ -785,14 +744,13 @@ func isRuleExistsError(err error) bool {
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
 func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
-		envConfigureRpfilter: shouldConfigureRpFilter(),
-		envConnmark:          getConnmark(),
-		envExcludeSNATCIDRs:  getExcludeSNATCIDRs(),
-		envExternalSNAT:      useExternalSNAT(),
-		envMTU:               GetEthernetMTU(""),
-		envVethPrefix:        getVethPrefixName(),
-		envNodePortSupport:   nodePortSupportEnabled(),
-		envRandomizeSNAT:     typeOfSNAT(),
+		envConnmark:         getConnmark(),
+		envExcludeSNATCIDRs: getExcludeSNATCIDRs(),
+		envExternalSNAT:     useExternalSNAT(),
+		envMTU:              GetEthernetMTU(""),
+		envVethPrefix:       getVethPrefixName(),
+		envNodePortSupport:  nodePortSupportEnabled(),
+		envRandomizeSNAT:    typeOfSNAT(),
 	}
 }
 
@@ -860,10 +818,6 @@ func typeOfSNAT() snatType {
 
 func nodePortSupportEnabled() bool {
 	return getBoolEnvVar(envNodePortSupport, true)
-}
-
-func shouldConfigureRpFilter() bool {
-	return getBoolEnvVar(envConfigureRpfilter, true)
 }
 
 func getBoolEnvVar(name string, defaultValue bool) bool {

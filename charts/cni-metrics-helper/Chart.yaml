@@ -1,23 +1,19 @@
 apiVersion: v2
 name: cni-metrics-helper
-description: A Helm chart for Kubernetes
-
-# A chart can be either an 'application' or a 'library' chart.
-#
-# Application charts are a collection of templates that can be packaged into versioned archives
-# to be deployed.
-#
-# Library charts provide useful utilities or functions for the chart developer. They're included as
-# a dependency of application charts to inject those utilities and functions into the rendering
-# pipeline. Library charts do not define any templates and therefore cannot be deployed.
-type: application
-
-# This is the chart version. This version number should be incremented each time you make changes
-# to the chart and its templates, including the app version.
-# Versions are expected to follow Semantic Versioning (https://semver.org/)
-version: 0.1.12
-
-# This is the version number of the application being deployed. This version number should be
-# incremented each time you make changes to the application. Versions are not expected to
-# follow Semantic Versioning. They should reflect the version the application is using.
-appVersion: v1.11.4
+version: 0.1.15
+appVersion: v1.12.1
+description: A Helm chart for the AWS VPC CNI Metrics Helper
+icon: https://raw.githubusercontent.com/aws/eks-charts/master/docs/logo/aws.png
+home: https://github.com/aws/amazon-vpc-cni-k8s
+sources:
+  - https://github.com/aws/amazon-vpc-cni-k8s
+keywords:
+  - eks
+  - cni
+  - networking
+  - vpc
+maintainers:
+  - name: Jayanth Varavani
+    url: https://github.com/jayanthvn
+    email: jayanthvn@users.noreply.github.com
+engine: gotpl

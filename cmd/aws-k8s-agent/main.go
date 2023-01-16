@@ -59,7 +59,7 @@ func _main() int {
 		return 1
 	}
 
-	eventrecorder.InitEventRecorder(rawK8SClient)
+	eventrecorder.New(rawK8SClient, cacheK8SClient)
 
 	ipamContext, err := ipamd.New(rawK8SClient, cacheK8SClient)
 	if err != nil {

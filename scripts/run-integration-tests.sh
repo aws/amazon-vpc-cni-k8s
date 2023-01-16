@@ -11,6 +11,7 @@ source "$DIR"/lib/common.sh
 source "$DIR"/lib/aws.sh
 source "$DIR"/lib/cluster.sh
 source "$DIR"/lib/integration.sh
+source "$DIR"/lib/k8s.sh
 source "$DIR"/lib/performance_tests.sh
 
 # Variables used in /lib/aws.sh
@@ -26,6 +27,7 @@ ARCH=$(go env GOARCH)
 : "${RUN_CONFORMANCE:=false}"
 : "${RUN_TESTER_LB_ADDONS:=false}"
 : "${RUN_KOPS_TEST:=false}"
+: "${RUN_INTEGRATION_DEFAULT_CNI:=true}"
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
@@ -140,21 +142,30 @@ ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_INIT_ECR_REPO_NAME"
 # Check to see if the image already exists in the ECR repository, and if
 # not, check out the CNI source code for that image tag, build the CNI
 # image and push it to the Docker repository
-ecr_image_query_result=$(aws ecr batch-get-image --repository-name=amazon-k8s-cni --image-ids imageTag=$TEST_IMAGE_VERSION --query 'images[].imageId.imageTag' --region us-west-2)
-if [[ $ecr_image_query_result != "[]" ]]; then
-    echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION already exists in repository. Skipping image build..."
-    DOCKER_BUILD_DURATION=0
+
+CNI_IMAGES_BUILD=false
+if [[ $(aws ecr batch-get-image --repository-name=$AWS_ECR_REPO_NAME --image-ids imageTag=$TEST_IMAGE_VERSION \
+--query 'images[].imageId.imageTag' --region us-west-2) != "[]" ]]; then
+    echo "Image $AWS_ECR_REPO_NAME:$TEST_IMAGE_VERSION already exists. Skipping image build."
 else
-    echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION does not exist in repository."
-    START=$SECONDS
-    # Refer to https://github.com/docker/buildx#building-multi-platform-images for the multi-arch image build process.
-    # create the buildx container only if it doesn't exist already.
-    docker buildx inspect "$BUILDX_BUILDER" >/dev/null 2<&1 || docker buildx create --name="$BUILDX_BUILDER" --buildkitd-flags '--allow-insecure-entitlement network.host' --use >/dev/null
-    make multi-arch-cni-build-push IMAGE="$IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
-    DOCKER_BUILD_DURATION=$((SECONDS - START))
-    echo "TIMELINE: Docker build took $DOCKER_BUILD_DURATION seconds."
-    # Build matching init container
-    make multi-arch-cni-init-build-push INIT_IMAGE="$INIT_IMAGE_NAME" VERSION="$TEST_IMAGE_VERSION"
+    echo "Image $AWS_ECR_REPO_NAME:$TEST_IMAGE_VERSION does not exist in repository."
+    ## $1=command, $2=args
+    build_and_push_image "multi-arch-cni-build-push" "IMAGE=$IMAGE_NAME VERSION=$TEST_IMAGE_VERSION"
+    CNI_IMAGES_BUILD=true
+fi
+
+if [[ $(aws ecr batch-get-image --repository-name=$AWS_INIT_ECR_REPO_NAME --image-ids imageTag=$TEST_IMAGE_VERSION \
+--query 'images[].imageId.imageTag' --region us-west-2) != "[]" ]]; then
+    echo "Image $AWS_INIT_ECR_REPO_NAME:$TEST_IMAGE_VERSION already exists. Skipping image build."
+else
+    echo "Image $AWS_INIT_ECR_REPO_NAME:$TEST_IMAGE_VERSION does not exist in repository."
+    ## $1=command, $2=args
+    build_and_push_image "multi-arch-cni-init-build-push" "INIT_IMAGE=$INIT_IMAGE_NAME VERSION=$TEST_IMAGE_VERSION"
+    CNI_IMAGES_BUILD=true
+fi
+
+# cleanup if we make docker build and push images
+if [[ "$CNI_IMAGES_BUILD" == true ]]; then
     docker buildx rm "$BUILDX_BUILDER"
     if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
         popd
@@ -192,8 +203,14 @@ UP_CLUSTER_DURATION=$((SECONDS - START))
 echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
 
 # Fetch VPC_ID from created cluster
-DESCRIBE_CLUSTER_OP=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_DEFAULT_REGION")
-VPC_ID=$(echo "$DESCRIBE_CLUSTER_OP" | jq -r '.cluster.resourcesVpcConfig.vpcId')
+if [[ "$RUN_KOPS_TEST" == true ]]; then
+    INSTANCE_ID=$(kubectl get nodes -l node-role.kubernetes.io/node -o jsonpath='{range .items[*]}{@.metadata.name}{"\n"}' | head -1)
+    VPC_ID=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --no-cli-pager | jq -r '.Reservations[].Instances[].VpcId' )
+else
+    DESCRIBE_CLUSTER_OP=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_DEFAULT_REGION")
+    VPC_ID=$(echo "$DESCRIBE_CLUSTER_OP" | jq -r '.cluster.resourcesVpcConfig.vpcId')
+fi
+
 echo "Using VPC_ID: $VPC_ID"
 
 echo "Using $BASE_CONFIG_PATH as a template"
@@ -210,47 +227,34 @@ grep -r -q $TEST_IMAGE_VERSION $TEST_CONFIG_PATH
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
 grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH
 
-
 if [[ $RUN_KOPS_TEST == true ]]; then
     export KUBECONFIG=~/.kube/config
-fi
-
-if [[ $RUN_KOPS_TEST == true ]]; then
     run_kops_conformance
 fi
-ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 
-echo "*******************************************************************************"
-echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
-echo ""
-START=$SECONDS
+if [[ $RUN_INTEGRATION_DEFAULT_CNI == true ]]; then
+    ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 
-focus="CANARY"
-echo "Running ginkgo tests with focus: $focus"
-(cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 20m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-(cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 10m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-TEST_PASS=$?
-DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
-echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
+    echo "*******************************************************************************"
+    echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
+    echo ""
+    START=$SECONDS
+
+    focus="CANARY"
+    echo "Running ginkgo tests with focus: $focus"
+    (cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+    (cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+    TEST_PASS=$?
+    DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
+    echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
+fi
 
 echo "*******************************************************************************"
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
-echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
+echo "Updating CNI-INIT to image $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
-NODE_COUNT=$($KUBECTL_PATH get nodes --no-headers=true | wc -l)
-echo "Number of nodes in the test cluster is $NODE_COUNT"
-UPDATED_PODS_COUNT=0
-MAX_RETRIES=20
-RETRY_ATTEMPT=0
-sleep 5
-while [[ $UPDATED_PODS_COUNT -lt $NODE_COUNT && $RETRY_ATTEMPT -lt $MAX_RETRIES ]]; do
-    UPDATED_PODS_COUNT=$($KUBECTL_PATH get pods -A --field-selector=status.phase=Running -l k8s-app=aws-node --no-headers=true | wc -l)
-    let RETRY_ATTEMPT=RETRY_ATTEMPT+1
-    sleep 5
-    echo "Waiting for cni daemonset update. $UPDATED_PODS_COUNT are in ready state in retry attempt $RETRY_ATTEMPT"
-done
-echo "Updated!"
+check_ds_rollout "aws-node" "kube-system" "10m"
 
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."

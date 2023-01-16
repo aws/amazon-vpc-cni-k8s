@@ -604,7 +604,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 			wantErr: errors.New("malformed vlanID in prevResult: xxx"),
 		},
 		{
-			name:   "malformed vlanID in prevResult - 0",
+			name:   "vlanID: 0",
 			fields: fields{},
 			args: args{
 				conf: &NetConf{
@@ -635,7 +635,6 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 							},
 						},
 					},
-					PodSGEnforcingMode: sgpp.EnforcingModeStandard,
 				},
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
@@ -643,7 +642,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				},
 				contVethName: "eth0",
 			},
-			wantErr: errors.New("malformed vlanID in prevResult: 0"),
+			want: false,
 		},
 		{
 			name:   "confVeth don't exists",
@@ -714,7 +713,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				},
 				contVethName: "eth0",
 			},
-			wantErr: errors.New("found 0 containerIP for eth0 in prevResult"),
+			wantErr: errors.New("found 0 containerIPs for eth0 in prevResult"),
 		},
 	}
 	for _, tt := range tests {
@@ -740,6 +739,316 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.want, got)
 			}
+		})
+	}
+}
+
+func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
+	type teardownPodNetworkCall struct {
+		containerAddr *net.IPNet
+		deviceNumber  int
+		err           error
+	}
+	type fields struct {
+		teardownPodNetworkCalls []teardownPodNetworkCall
+	}
+	type args struct {
+		conf         *NetConf
+		k8sArgs      K8sArgs
+		contVethName string
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		handled bool
+	}{
+		{
+			name: "successfully deleted with information from prevResult",
+			fields: fields{
+				teardownPodNetworkCalls: []teardownPodNetworkCall{
+					{
+						containerAddr: &net.IPNet{
+							IP:   net.ParseIP("192.168.1.1"),
+							Mask: net.CIDRMask(32, 32),
+						},
+						deviceNumber: 5,
+					},
+				},
+			},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name:    "dummycc21c2d7785",
+									Mac:     "0",
+									Sandbox: "5",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			handled: true,
+		},
+		{
+			name: "failed to delete due to teardownPodNetworkCall failed",
+			fields: fields{
+				teardownPodNetworkCalls: []teardownPodNetworkCall{
+					{
+						containerAddr: &net.IPNet{
+							IP:   net.ParseIP("192.168.1.1"),
+							Mask: net.CIDRMask(32, 32),
+						},
+						deviceNumber: 5,
+						err:          errors.New("some error"),
+					},
+				},
+			},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name:    "dummycc21c2d7785",
+									Mac:     "0",
+									Sandbox: "5",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			handled: false,
+		},
+		{
+			name:   "dummy interface does not exist",
+			fields: fields{},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			handled: false,
+		},
+		{
+			name:   "malformed vlanID in prevResult - xxx",
+			fields: fields{},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name:    "dummycc21c2d7785",
+									Mac:     "xxx",
+									Sandbox: "5",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			handled: false,
+		},
+		{
+			name:   "vlanID != 0",
+			fields: fields{},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name: "dummycc21c2d7785",
+									Mac:  "7",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			handled: false,
+		},
+		{
+			name:   "missing device number",
+			fields: fields{},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+								},
+								{
+									Name: "dummycc21c2d7785",
+									Mac:  "0",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Version: "4",
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+							},
+						},
+					},
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			handled: false,
+		},
+		// confVeth not existing and container IP not existing are covered by Test_tryDelWithPrevResult
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testLogCfg := logger.Configuration{
+				LogLevel:    "Debug",
+				LogLocation: "stdout",
+			}
+			testLogger := logger.New(&testLogCfg)
+
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			driverClient := mock_driver.NewMockNetworkAPIs(ctrl)
+			for _, call := range tt.fields.teardownPodNetworkCalls {
+				driverClient.EXPECT().TeardownPodNetwork(call.containerAddr, call.deviceNumber, gomock.Any()).Return(call.err)
+			}
+
+			handled := teardownPodNetworkWithPrevResult(driverClient, tt.args.conf, tt.args.k8sArgs, tt.args.contVethName, testLogger)
+			assert.Equal(t, tt.handled, handled)
 		})
 	}
 }

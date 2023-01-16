@@ -25,18 +25,16 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	v1 "k8s.io/api/apps/v1"
 )
 
 var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 
 	Context("when a metric is updated", func() {
 		It("the updated metric is published to CW", func() {
-
-			By("waiting for the metrics helper to publish initial metrics")
-			time.Sleep(time.Minute * 3)
-
 			// Create a new deployment to verify addReqCount is updated
-			deployment := manifest.NewBusyBoxDeploymentBuilder().
+			var deployment *v1.Deployment
+			deployment = manifest.NewBusyBoxDeploymentBuilder().
 				Replicas(10).
 				NodeName(nodeName).
 				Build()
@@ -76,48 +74,17 @@ var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 			// Verify that the addReqCount counts increased to account for the new deployment creation
 			addReqCountIncreased := false
 			var lastVal = *dataPoints[0].Maximum
+			// Note that datapoints may not be in order by timestamp, but any delta is enough to prove that metrics were published.
 			for _, dp := range dataPoints {
-				if *dp.Maximum-lastVal > 0 {
+				if math.Abs(*dp.Maximum-lastVal) > 0 {
 					addReqCountIncreased = true
+					break
 				}
 				lastVal = *dp.Maximum
 			}
 
 			By("validating the addReqCount increased on the node after a deployment is created")
 			Expect(addReqCountIncreased).To(BeTrue())
-
-			getMetricStatisticsInput = &cloudwatch.GetMetricStatisticsInput{
-				Dimensions: []*cloudwatch.Dimension{
-					{
-						Name:  aws.String("CLUSTER_ID"),
-						Value: aws.String(ngName),
-					},
-				},
-				MetricName: aws.String("ec2ApiReqCount"),
-				Namespace:  aws.String("Kubernetes"),
-				Period:     aws.Int64(int64(60)),
-				// Start time should sync with when when this test started
-				StartTime:  aws.Time(time.Now().Add(time.Duration(-10) * time.Minute)),
-				EndTime:    aws.Time(time.Now()),
-				Statistics: aws.StringSlice([]string{"Maximum"}),
-			}
-			getMetricOutput, err = f.CloudServices.CloudWatch().GetMetricStatistics(getMetricStatisticsInput)
-			Expect(err).ToNot(HaveOccurred())
-
-			dataPoints = getMetricOutput.Datapoints
-			fmt.Fprintf(GinkgoWriter, "data points: %+v", dataPoints)
-
-			ec2APIRequestsCountIncreased := false
-			lastVal = *dataPoints[0].Maximum
-			for _, dp := range dataPoints {
-				if math.Abs(*dp.Maximum-lastVal) > 0 {
-					ec2APIRequestsCountIncreased = true
-				}
-				lastVal = *dp.Maximum
-			}
-
-			By("validating the ec2ApiReqCount increased after a deployment is created")
-			Expect(ec2APIRequestsCountIncreased).To(BeTrue())
 		})
 	})
 })

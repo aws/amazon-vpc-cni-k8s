@@ -39,7 +39,7 @@ METRICS_IMAGE = amazon/cni-metrics-helper
 METRICS_IMAGE_NAME = $(METRICS_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
 METRICS_IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(METRICS_IMAGE_NAME)).tar.gz
 REPO_FULL_NAME=aws/amazon-vpc-cni-k8s
-HELM_CHART_NAME ?= "aws-vpc-cni"
+HELM_CHART_NAMES ?= "aws-vpc-cni" "cni-metrics-helper"
 # TEST_IMAGE is the testing environment container image.
 TEST_IMAGE = amazon-k8s-cni-test
 TEST_IMAGE_NAME = $(TEST_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
@@ -57,7 +57,7 @@ export DOCKER_BUILDKIT=1
 GOARCH = $(TARGETARCH)
 
 # GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE = public.ecr.aws/docker/library/golang:1.18-stretch
+GOLANG_IMAGE = public.ecr.aws/eks-distro-build-tooling/golang:1.19.2-1-gcc-al2
 # For the requested build, these are the set of Go specific build environment variables.
 export GOOS = linux
 export CGO_ENABLED = 0
@@ -78,7 +78,7 @@ LDFLAGS = -X pkg/version/info.Version=$(VERSION) -X pkg/awsutils/awssession.vers
 # ALLPKGS is the set of packages provided in source.
 ALLPKGS = $(shell go list $(VENDOR_OVERRIDE_FLAG) ./... | grep -v cmd/packet-verifier)
 # BINS is the set of built command executables.
-BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper
+BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper aws-vpc-cni aws-vpc-cni-init
 # Plugin binaries
 # Not copied: bridge dhcp firewall flannel host-device host-local ipvlan macvlan ptp sbr static tuning vlan
 # For gnu tar, the full path in the tar file is required
@@ -118,6 +118,16 @@ build-linux:    ## Build the VPC CNI plugin agent using the host's Go toolchain.
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o egress-v4-cni     ./cmd/egress-v4-cni-plugin
+
+# Build VPC CNI init container entrypoint
+build-aws-vpc-cni-init: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
+build-aws-vpc-cni-init:    ## Build the VPC CNI init container using the host's Go toolchain.
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-vpc-cni-init     ./cmd/aws-vpc-cni-init
+
+# Build VPC CNI container entrypoint
+build-aws-vpc-cni: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
+build-aws-vpc-cni:    ## Build the VPC CNI container using the host's Go toolchain.
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-vpc-cni     ./cmd/aws-vpc-cni
 
 # Build VPC CNI plugin & agent container image.
 docker:	setup-ec2-sdk-override	   ## Build VPC CNI plugin & agent container image.
@@ -331,10 +341,14 @@ generate-limits:    ## Generate limit file go code
 	go run $(VENDOR_OVERRIDE_FLAG) scripts/gen_vpc_ip_limits.go
 
 ekscharts-sync:
-	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME}
+	for HELM_CHART_NAME in $(HELM_CHART_NAMES) ; do \
+		${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b $$HELM_CHART_NAME -r ${REPO_FULL_NAME} ; \
+	done
 
 ekscharts-sync-release:
-	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME} -n -y
+	for HELM_CHART_NAME in $(HELM_CHART_NAMES) ; do \
+		${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b $$HELM_CHART_NAME -r ${REPO_FULL_NAME} -n -y ; \
+	done
 
 upload-resources-to-github:
 	${MAKEFILE_PATH}/scripts/upload-resources-to-github.sh

@@ -248,6 +248,8 @@ type EC2InstanceMetadataCache struct {
 
 	imds   TypedIMDS
 	ec2SVC ec2wrapper.EC2
+
+	eventRecorder *eventrecorder.EventRecorder
 }
 
 // ENIMetadata contains information about an ENI
@@ -394,7 +396,7 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 }
 
 // New creates an EC2InstanceMetadataCache
-func New(useCustomNetworking, disableENIProvisioning, v4Enabled, v6Enabled bool) (*EC2InstanceMetadataCache, error) {
+func New(useCustomNetworking, disableENIProvisioning, v4Enabled, v6Enabled bool, eventRecorder *eventrecorder.EventRecorder) (*EC2InstanceMetadataCache, error) {
 	//ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
 	ctx := context.Background()
 
@@ -408,6 +410,7 @@ func New(useCustomNetworking, disableENIProvisioning, v4Enabled, v6Enabled bool)
 	cache.imds = TypedIMDS{instrumentedIMDS{ec2Metadata}}
 	cache.clusterName = os.Getenv(clusterNameEnvVar)
 	cache.additionalENITags = loadAdditionalENITags()
+	cache.eventRecorder = eventRecorder
 
 	region, err := ec2Metadata.Region()
 	if err != nil {
@@ -432,8 +435,6 @@ func New(useCustomNetworking, disableENIProvisioning, v4Enabled, v6Enabled bool)
 	if err != nil {
 		return nil, err
 	}
-	// event recorder to raise events for failed EC2 API calls
-	eventRecorder = eventrecorder.Get()
 
 	// Clean up leaked ENIs in the background
 	if !disableENIProvisioning {

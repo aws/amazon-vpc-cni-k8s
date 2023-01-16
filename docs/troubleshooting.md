@@ -22,7 +22,7 @@ and requires user intervention.
 
 ### Tip: Make sure there are enough ENIs and IPs for Pods in the cluster
 
-We provide a tool [**cni-metrics-helper**](../config/v1.4/cni-metrics-helper.yaml) which can show aggregated ENI and IP 
+We provide a tool [**cni-metrics-helper**](../config/master/cni-metrics-helper.yaml) which can show aggregated ENI and IP 
 information at the cluster level.
 
 By default these metrics will be pushed to CloudWatch, but it can be disabled by setting `USE_CLOUDWATCH` to `"no"`. 
@@ -220,13 +220,21 @@ cni v1.10.x introduced 2 new env variables - ENABLE_IPv4 and ENABLE_IPv6. The ab
 kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.10/config/master/aws-k8s-cni.yaml
 ```
 
+- **systemd-udev** - Linux distributions that install the `systemd-udev` package create `/usr/lib/systemd/network/99-default.link` with `Link.MACAddressPolicy` set to `persistent`.
+This policy may cause the MAC address assigned to the host veth interface for a pod to change after the interface is moved to the host network namespace. The CNI plugin installs a static ARP binding for the default gateway in the pod network namespace pointing to the host veth MAC, so the MAC changing leads to pod connectivity issues.
+The workaround for this issue is to set `MACAddressPolicy=none`, as shown [here](https://github.com/aws/amazon-vpc-cni-k8s/issues/2103#issuecomment-1321698870). This issue is known to affect Ubuntu 22.04+, and long-term solutions are being evaluated.
+
+- **NetworkManager-cloud-setup** - The `nm-cloud-setup` service is incompatible with AWS VPC CNI. This service overwrites and clears ip rules installed for pods, which breaks pod networking. This package may be present in RHEL8 AMIs. See [here](https://access.redhat.com/solutions/6319811) for a RedHat thread explaining the issue.
+The symptom for this issue is the presence of routing table 30200 or 30400.
+
 ## CNI Compatibility
 
 The [CNI image](../scripts/dockerfiles/Dockerfile.release) built for the `aws-node` manifest uses Amazon Linux 2 as the base image. Support for other Linux distributions (custom AMIs) is best-effort. Known issues with other Linux distributions are captured here:
 
-- **iptables** - iptables is installed by default in `aws-node` container images. Newer distributions of RHEL (RHEL 8.x+), Ubuntu (Ubuntu 20.x+), etc. have moved to using `nftables`. This leads to issues such as [this](https://github.com/aws/amazon-vpc-cni-k8s/issues/1847) when running IPAMD.
+- **iptables**
+  Prior to v1.12.1, the VPC CNI image only contained `iptables-legacy`. Newer distributions of RHEL (RHEL 8.x+), Ubuntu (Ubuntu 21.x+), etc. have moved to using `nftables`. This leads to issues such as [this](https://github.com/aws/amazon-vpc-cni-k8s/issues/1847) when running IPAMD.
   
-  To resolve this issue on distributions that use `nftables`, there are currently two options:
+  To resolve this issue in versions before v1.12.1, there are currently two options:
   1. Uninstall `nftables` and install `iptables-legacy` in base distribution
   2. Build a custom CNI image based on `nftables`, such as:
   ```
@@ -234,6 +242,8 @@ The [CNI image](../scripts/dockerfiles/Dockerfile.release) built for the `aws-no
   run yum install iptables-nft -y
   run cd /usr/sbin && rm iptables && ln -s xtables-nft-multi iptables
   ```
+
+  In v1.12.1+, `iptables-legacy` and `iptables-nft` are present in the VPC CNI container image. Setting `ENABLE_NFTABLES` environment variable to `true` instructs VPC CNI to use `iptables-nft`. By default, `iptables-legacy` is used.
 
 ## cni-metrics-helper
 

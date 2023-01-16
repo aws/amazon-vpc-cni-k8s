@@ -3,8 +3,12 @@ package sgpp
 type EnforcingMode string
 
 const (
-	EnforcingModeStrict   EnforcingMode = "strict"
-	EnforcingModeStandard EnforcingMode = "standard"
+	EnforcingModeStrict               EnforcingMode = "strict"
+	EnforcingModeStandard             EnforcingMode = "standard"
+	VpcCNINodeEventActionForTrunk     string        = "NeedTrunk"
+	TrunkEventNote                    string        = "vpc.amazonaws.com/has-trunk-attached=false"
+	VpcCNINodeEventActionForEniConfig string        = "NeedEniConfig"
+	VpcCNIEventReason                 string        = "AwsNodeNotificationToRc"
 )
 
 const (

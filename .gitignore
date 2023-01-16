@@ -1,5 +1,11 @@
+# Ignore generated binaries
 aws-k8s-agent
 aws-cni
+aws-vpc-cni
+aws-vpc-cni-init
+bandwidth
+host-local
+loopback
 verify-aws
 verify-network
 *~
