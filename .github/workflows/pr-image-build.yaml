@@ -1,0 +1,85 @@
+name: pr-image-build
+
+# Note that PR number is not available in workflow_run context
+on:
+  workflow_run:
+    workflows: ["Pull Request Unit Tests"]
+    types:
+      - completed
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  docker-build:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Download artifact
+        uses: actions/github-script@v3
+        with:
+          script: |
+            var artifacts = await github.actions.listWorkflowRunArtifacts({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               run_id: ${{ github.event.workflow_run.id }},
+            });
+            var matchArtifact = artifacts.data.artifacts.filter((artifact) => {
+              return artifact.name == "pr"
+            })[0];
+            var download = await github.actions.downloadArtifact({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               artifact_id: matchArtifact.id,
+               archive_format: 'zip',
+            });
+            var fs = require('fs');
+            fs.writeFileSync('${{github.workspace}}/pr.zip', Buffer.from(download.data));
+      - name: Unzip artifact and set env
+        run: |
+          unzip pr.zip
+          echo "pull_request_number=`cat ./NR`" >> $GITHUB_ENV
+      - name: Checkout latest commit in the PR
+        uses: actions/checkout@v3
+        with:
+          ref: "refs/pull/${{ env.pull_request_number }}/merge"
+      - name: Set up AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.AWS_ECR_ROLE_ARN }}
+          role-duration-seconds: 14400 # 4 hours
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+      - name: Login to Amazon ECR Public
+        id: login-ecr-public
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          registry-type: public
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.19"
+      - name: Build CNI images
+        run: make multi-arch-cni-build
+      - name: Build CNI Init images
+        run: make multi-arch-cni-init-build
+      - name: "Pull request comment"
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            var pr_text = "Docker image build [" + ${{ job.status }} + "]"
+            var link = "(https://github.com/" + context.repo.owner + "/" + context.repo.repo + "/actions/runs/" + context.runId + ")"
+            github.rest.issues.createComment({
+              issue_number = ${{ env.pull_request_number }}
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: pr_text + link
+            });
