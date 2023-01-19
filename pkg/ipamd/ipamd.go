@@ -984,7 +984,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 			log.Warnf("failed to allocate all available IP addresses on ENI %s, err: %v", eni.ID, err)
 			// Try to just get one more IP
 			output, err = c.awsClient.AllocIPAddresses(eni.ID, 1)
-			if err != nil {
+			if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
 			}
@@ -1069,7 +1069,7 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 			log.Warnf("failed to allocate all available IPv4 Prefixes on ENI %s, err: %v", eni.ID, err)
 			// Try to just get one more prefix
 			output, err = c.awsClient.AllocIPAddresses(eni.ID, 1)
-			if err != nil {
+			if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err))
 			}
