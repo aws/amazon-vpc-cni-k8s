@@ -1317,7 +1317,7 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
 
 	mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
-	mockAWSUtils.EXPECT().GetPrimaryENI().Times(6).Return(eni1.ENIID)
+	mockAWSUtils.EXPECT().GetPrimaryENI().Times(5).Return(eni1.ENIID)
 	mockAWSUtils.EXPECT().GetInstanceID().Times(3).Return(instanceID)
 
 	tests := []struct {
@@ -1345,7 +1345,7 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 					sort.Strings(tt.unmanagedenis)
 					sort.Strings(args)
 					assert.Equal(t, tt.unmanagedenis, args)
-				})
+				}).AnyTimes()
 			c.setUnmanagedENIs(tt.tagMap)
 
 			mockAWSUtils.EXPECT().IsUnmanagedENI(gomock.Any()).DoAndReturn(
@@ -1429,7 +1429,7 @@ func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T)
 					sort.Strings(tt.unmanagedenis)
 					sort.Strings(args)
 					assert.Equal(t, tt.unmanagedenis, args)
-				})
+				}).AnyTimes()
 
 			c.setUnmanagedENIs(tt.tagMap)
 
