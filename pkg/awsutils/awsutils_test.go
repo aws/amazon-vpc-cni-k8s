@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -940,7 +941,7 @@ func setupDescribeNetworkInterfacesPagesWithContextMock(
 	mockEC2.EXPECT().
 		DescribeNetworkInterfacesPagesWithContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(times).
 		DoAndReturn(func(_ context.Context, _ *ec2.DescribeNetworkInterfacesInput,
-			fn func(*ec2.DescribeNetworkInterfacesOutput, bool) bool) error {
+			fn func(*ec2.DescribeNetworkInterfacesOutput, bool) bool, _ ...request.Option) error {
 			assert.Equal(t, true, fn(&ec2.DescribeNetworkInterfacesOutput{
 				NetworkInterfaces: interfaces,
 			}, true))
@@ -1424,7 +1425,7 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 				mockEC2.EXPECT().
 					DescribeNetworkInterfacesPagesWithContext(gomock.Any(), call.input, gomock.Any(), gomock.Any()).
 					DoAndReturn(func(_ context.Context, _ *ec2.DescribeNetworkInterfacesInput,
-						fn func(*ec2.DescribeNetworkInterfacesOutput, bool) bool) error {
+						fn func(*ec2.DescribeNetworkInterfacesOutput, bool) bool, _ ...request.Option) error {
 						if call.err != nil {
 							return call.err
 						}
