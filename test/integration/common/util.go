@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
@@ -199,4 +200,19 @@ func ValidateTraffic(f *framework.Framework, serverDeploymentBuilder *manifest.D
 	Expect(err).ToNot(HaveOccurred())
 	Expect(successRate).Should(BeNumerically(">=", succesRate))
 
+}
+
+func WaitToReconcileInitialState(f *framework.Framework, primaryInstance *ec2.Instance, defaultEniCount int, defaultIpsPerEni int, DefaultPrefixPerEni int) {
+	By("Verifying number of enis, ips and ip prefixes before updating the parameters")
+	Eventually(func(g Gomega) {
+		primaryInstance, err := f.CloudServices.
+			EC2().DescribeInstance(*primaryInstance.InstanceId)
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(len(primaryInstance.NetworkInterfaces)).Should(Equal(defaultEniCount))
+		g.Expect(len(primaryInstance.NetworkInterfaces[0].PrivateIpAddresses)).
+			Should(Equal(defaultIpsPerEni))
+		g.Expect(len(primaryInstance.NetworkInterfaces[0].Ipv4Prefixes)).
+			Should(Equal(DefaultPrefixPerEni))
+	}).WithTimeout(time.Minute * 3).WithPolling(30 * time.Second).Should(Succeed())
 }
