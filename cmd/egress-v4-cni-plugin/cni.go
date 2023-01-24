@@ -162,9 +162,9 @@ func setupContainerVeth(netns ns.NetNS, ifName string, mtu int, pr *current.Resu
 				return fmt.Errorf("failed to delete route %v: %v", route, err)
 			}
 
-			addrBits := 32
-			if ipc.Version == "6" {
-				addrBits = 128
+			addrBits := 128
+			if ipc.Address.IP.To4() != nil {
+				addrBits = 32
 			}
 
 			for _, r := range []netlink.Route{
@@ -322,7 +322,8 @@ func cmdAdd(args *skel.CmdArgs) error {
 	log.Debugf("Node IP: %s", netConf.NodeIP)
 	if netConf.NodeIP != nil {
 		for _, ipc := range tmpResult.IPs {
-			if ipc.Version == "4" {
+
+			if ipc.Address.IP.To4() != nil {
 				//log.Printf("Configuring SNAT %s -> %s", ipc.Address.IP, netConf.SnatIP)
 				if err := snat.Snat4(netConf.NodeIP, ipc.Address.IP, chain, comment, netConf.RandomizeSNAT); err != nil {
 					return err

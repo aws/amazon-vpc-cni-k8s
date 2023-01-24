@@ -57,15 +57,11 @@ rules:
   - apiGroups: [""]
     resources:
       - pods
-    verbs: ["list", "watch", "get"]        
+    verbs: ["list", "watch", "get"]
   - apiGroups: [""]
     resources:
       - nodes
     verbs: ["list", "watch", "get", "update"]
-  - apiGroups: ["extensions"]
-    resources:
-      - '*'
-    verbs: ["list", "watch"]
   - apiGroups: ["", "events.k8s.io"]
     resources:
       - events
@@ -129,6 +125,9 @@ spec:
             value: "false"
         securityContext:
             privileged: true
+        resources:
+          requests:
+            cpu: 25m
         volumeMounts:
           - mountPath: /host/opt/cni/bin
             name: cni-bin-dir

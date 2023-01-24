@@ -29,10 +29,6 @@ rules:
     resources:
       - nodes
     verbs: ["list", "watch", "get"]
-  - apiGroups: ["extensions"]
-    resources:
-      - '*'
-    verbs: ["list", "watch"]
   - apiGroups: ["", "events.k8s.io"]
     resources:
       - events
