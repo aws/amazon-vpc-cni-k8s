@@ -399,7 +399,7 @@ var InstanceNetworkingLimits = map[string]InstanceTypeLimits{
 	"m6idn.8xlarge":     {ENILimit: 8, IPv4Limit: 30, HypervisorType: "nitro", IsBareMetal: false},
 	"m6idn.large":       {ENILimit: 3, IPv4Limit: 10, HypervisorType: "nitro", IsBareMetal: false},
 	"m6idn.metal":       {ENILimit: 15, IPv4Limit: 50, HypervisorType: "", IsBareMetal: true},
-	"m6idn.xlarge:       {ENILimit: 4, IPv4Limit: 15, HypervisorType: "nitro", IsBareMetal: false},
+	"m6idn.xlarge":      {ENILimit: 4, IPv4Limit: 15, HypervisorType: "nitro", IsBareMetal: false},
 	"m6in.12xlarge":     {ENILimit: 8, IPv4Limit: 30, HypervisorType: "nitro", IsBareMetal: false},
 	"m6in.16xlarge":     {ENILimit: 15, IPv4Limit: 50, HypervisorType: "nitro", IsBareMetal: false},
 	"m6in.24xlarge":     {ENILimit: 15, IPv4Limit: 50, HypervisorType: "nitro", IsBareMetal: false},
