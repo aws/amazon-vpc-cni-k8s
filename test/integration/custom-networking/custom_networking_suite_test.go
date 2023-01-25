@@ -26,6 +26,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/apparentlymart/go-cidr/cidr"
 	. "github.com/onsi/ginkgo/v2"
@@ -34,7 +35,7 @@ import (
 
 func TestCustomNetworking(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "CNI Custom Networking e2e Test Suite")
+	RunSpecs(t, "CNI Custom Networking Test Suite")
 }
 
 var (
@@ -171,26 +172,24 @@ var _ = AfterSuite(func() {
 	By("waiting for some time to allow CNI to delete ENI for IP being cooled down")
 	time.Sleep(time.Second * 60)
 
+	var errs prometheus.MultiError
 	By("deleting the self managed node group")
-	err = awsUtils.DeleteAndWaitTillSelfManagedNGStackDeleted(f, nodeGroupProperties)
-	Expect(err).ToNot(HaveOccurred())
+	// we just accumulate errors instead of immediately failing so we can attempt to clean up everything
+	errs.Append(awsUtils.DeleteAndWaitTillSelfManagedNGStackDeleted(f, nodeGroupProperties))
 
 	By("deleting the key pair")
-	f.CloudServices.EC2().DeleteKey(keyPairName)
+	errs.Append(f.CloudServices.EC2().DeleteKey(keyPairName))
 
 	By("deleting security group")
-	err = f.CloudServices.EC2().DeleteSecurityGroup(customNetworkingSGID)
-	Expect(err).ToNot(HaveOccurred())
+	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(customNetworkingSGID))
 
 	for _, subnet := range customNetworkingSubnetIDList {
 		By(fmt.Sprintf("deleting the subnet %s", subnet))
-		err = f.CloudServices.EC2().DeleteSubnet(subnet)
-		Expect(err).ToNot(HaveOccurred())
+		errs.Append(f.CloudServices.EC2().DeleteSubnet(subnet))
 	}
 
 	By("disassociating the CIDR range to the VPC")
-	err = f.CloudServices.EC2().DisAssociateVPCCIDRBlock(cidrBlockAssociationID)
-	Expect(err).ToNot(HaveOccurred())
+	errs.Append(f.CloudServices.EC2().DisAssociateVPCCIDRBlock(cidrBlockAssociationID))
 
 	By("disabling custom networking on aws-node DaemonSet")
 	k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
@@ -202,7 +201,7 @@ var _ = AfterSuite(func() {
 
 	for _, eniConfig := range eniConfigList {
 		By("deleting ENIConfig")
-		err = f.K8sResourceManagers.CustomResourceManager().DeleteResource(eniConfig)
-		Expect(err).ToNot(HaveOccurred())
+		errs.Append(f.K8sResourceManagers.CustomResourceManager().DeleteResource(eniConfig))
 	}
+	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred())
 })

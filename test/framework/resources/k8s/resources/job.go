@@ -22,6 +22,7 @@ import (
 
 	v1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -64,7 +65,8 @@ func (d *defaultJobManager) CreateAndWaitTillJobCompleted(job *v1.Job) (*v1.Job,
 
 func (d *defaultJobManager) DeleteAndWaitTillJobIsDeleted(job *v1.Job) error {
 	ctx := context.Background()
-	err := d.k8sClient.Delete(ctx, job)
+	propagation := metav1.DeletePropagationForeground
+	err := d.k8sClient.Delete(ctx, job, &client.DeleteOptions{PropagationPolicy: &propagation})
 	if err != nil {
 		return err
 	}

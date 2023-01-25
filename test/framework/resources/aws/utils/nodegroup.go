@@ -21,11 +21,12 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/cloudformation"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudformation"
 )
 
 const CreateNodeGroupCFNTemplate = "/testdata/amazon-eks-nodegroup.yaml"
@@ -227,6 +228,29 @@ func GetClusterVPCConfig(f *framework.Framework) (*ClusterVPCConfig, error) {
 		PublicSubnetList:  []string{},
 		AvailZones:        []string{},
 		PrivateSubnetList: []string{},
+	}
+
+	if len(f.Options.PublicSubnets) > 0 {
+		clusterConfig.PublicSubnetList = strings.Split(f.Options.PublicSubnets, ",")
+	}
+	if len(f.Options.PrivateSubnets) > 0 {
+		clusterConfig.PrivateSubnetList = strings.Split(f.Options.PrivateSubnets, ",")
+	}
+	if len(f.Options.AvailabilityZones) > 0 {
+		clusterConfig.AvailZones = strings.Split(f.Options.AvailabilityZones, ",")
+	}
+	if f.Options.PublicRouteTableID != "" {
+		clusterConfig.PublicRouteTableID = f.Options.PublicRouteTableID
+	}
+
+	// user provided the info so we don't need to look it up
+	if clusterConfig.PublicRouteTableID != "" && len(clusterConfig.PublicSubnetList) > 0 && len(clusterConfig.AvailZones) > 0 {
+		return clusterConfig, nil
+	}
+
+	if clusterConfig.PublicRouteTableID != "" || len(clusterConfig.PublicSubnetList) > 0 ||
+		len(clusterConfig.PrivateSubnetList) > 0 || len(clusterConfig.AvailZones) > 0 {
+		return nil, fmt.Errorf("partial configuration, if supplying config via flags you need to provide at least public route table ID, public subnet list and availibility zone list")
 	}
 
 	describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)

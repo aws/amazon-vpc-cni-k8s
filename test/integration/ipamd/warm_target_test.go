@@ -15,7 +15,6 @@ package ipamd
 
 import (
 	"strconv"
-	"time"
 
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -45,16 +44,15 @@ var _ = Describe("test warm target variables", func() {
 					"MAX_ENI":         strconv.Itoa(maxENI),
 				})
 
-			// Allow for IPAMD to reconcile its state
-			time.Sleep(utils.PollIntervalLong * 5)
+			Eventually(func(g Gomega) {
+				primaryInstance, err = f.CloudServices.
+					EC2().DescribeInstance(*primaryInstance.InstanceId)
+				g.Expect(err).ToNot(HaveOccurred())
 
-			primaryInstance, err = f.CloudServices.
-				EC2().DescribeInstance(*primaryInstance.InstanceId)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Validate number of allocated ENIs
-			Expect(len(primaryInstance.NetworkInterfaces)).
-				Should(Equal(MinIgnoreZero(warmENITarget, maxENI)))
+				// Validate number of allocated ENIs
+				g.Expect(len(primaryInstance.NetworkInterfaces)).
+					Should(Equal(MinIgnoreZero(warmENITarget, maxENI)))
+			}).WithTimeout(5 * utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
 		})
 
 		JustAfterEach(func() {
@@ -97,7 +95,6 @@ var _ = Describe("test warm target variables", func() {
 		var minIPTarget int
 
 		JustBeforeEach(func() {
-			var availIPs int
 
 			common.WaitToReconcileInitialState(f, primaryInstance,
 				defaultEniCount, defaultIpsPerEni, DefaultPrefixPerEni)
@@ -110,21 +107,21 @@ var _ = Describe("test warm target variables", func() {
 					"MINIMUM_IP_TARGET": strconv.Itoa(minIPTarget),
 				})
 
-			// Allow for IPAMD to reconcile it's state
-			time.Sleep(utils.PollIntervalLong)
+			Eventually(func(g Gomega) {
+				var availIPs int
+				// Query the EC2 Instance to get the list of available IPs on the instance
+				primaryInstance, err = f.CloudServices.
+					EC2().DescribeInstance(*primaryInstance.InstanceId)
+				g.Expect(err).ToNot(HaveOccurred())
 
-			// Query the EC2 Instance to get the list of available IPs on the instance
-			primaryInstance, err = f.CloudServices.
-				EC2().DescribeInstance(*primaryInstance.InstanceId)
-			Expect(err).ToNot(HaveOccurred())
+				// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
+				for _, networkInterface := range primaryInstance.NetworkInterfaces {
+					availIPs += len(networkInterface.PrivateIpAddresses) - 1
+				}
 
-			// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
-			for _, networkInterface := range primaryInstance.NetworkInterfaces {
-				availIPs += len(networkInterface.PrivateIpAddresses) - 1
-			}
-
-			// Validated avail IP equals the warm IP Size
-			Expect(availIPs).Should(Equal(Max(warmIPTarget, minIPTarget)))
+				// Validated avail IP equals the warm IP Size
+				g.Expect(availIPs).Should(Equal(Max(warmIPTarget, minIPTarget)))
+			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
 		})
 
 		JustAfterEach(func() {

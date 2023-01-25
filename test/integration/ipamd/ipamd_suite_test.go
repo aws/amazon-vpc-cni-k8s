@@ -18,13 +18,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
-	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
+	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 )
 
 var primaryInstance *ec2.Instance
@@ -60,11 +62,18 @@ var _ = BeforeSuite(func() {
 	numOfNodes = len(nodeList.Items)
 	Expect(numOfNodes).Should(BeNumerically(">", 1))
 
-	// Nominate the first node as the one to run coredns deployment against
+	// Nominate the first untainted node as the one to run coredns deployment against
 	By("adding nodeSelector in coredns deployment to be scheduled on single node")
-	primaryNode := nodeList.Items[0]
+	var primaryNode *corev1.Node
+	for _, n := range nodeList.Items {
+		if len(n.Spec.Taints) == 0 {
+			primaryNode = &n
+			break
+		}
+	}
+	Expect(primaryNode).To(Not(BeNil()), "expected to find a non-tainted node")
 	fmt.Fprintf(GinkgoWriter, "coredns node is %s\n", primaryNode.Name)
-	instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
+	instanceID := k8sUtils.GetInstanceIDFromNode(*primaryNode)
 	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(instanceID)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -78,16 +87,21 @@ var _ = BeforeSuite(func() {
 
 	// Add nodeSelector label to coredns deployment so coredns pods are scheduled on 'primary' node
 	coreDNSDeployment.Spec.Template.Spec.NodeSelector = map[string]string{
-		"kubernetes.io/hostname": primaryNode.Name,
+		"kubernetes.io/hostname": primaryNode.Labels["kubernetes.io/hostname"],
 	}
 	err = f.K8sResourceManagers.DeploymentManager().UpdateAndWaitTillDeploymentIsReady(coreDNSDeployment,
 		utils.DefaultDeploymentReadyTimeout)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Redefine primary node as node without coredns pods. Note that this node may have previously had coredns pods.
-	primaryNode = nodeList.Items[1]
+	for _, n := range nodeList.Items {
+		if len(n.Spec.Taints) == 0 && n.Name != primaryNode.Name {
+			primaryNode = &n
+			break
+		}
+	}
 	fmt.Fprintf(GinkgoWriter, "primary node is %s\n", primaryNode.Name)
-	instanceID = k8sUtils.GetInstanceIDFromNode(primaryNode)
+	instanceID = k8sUtils.GetInstanceIDFromNode(*primaryNode)
 	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(instanceID)
 	Expect(err).ToNot(HaveOccurred())
 

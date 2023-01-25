@@ -14,8 +14,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/cmd/networking/tester"
@@ -71,8 +73,15 @@ func main() {
 	} else {
 		log.Print("testing network is teared down for regular pods")
 		err := tester.TestNetworkTearedDownForRegularPods(podNetworkingValidationInput)
-		if err != nil {
-			log.Fatalf("found 1 or more pod teardown validation failure: %v", err)
+		if len(err) > 0 {
+			var errs bytes.Buffer
+			for _, e := range err {
+				if errs.Len() > 0 {
+					fmt.Fprint(&errs, " / ")
+				}
+				fmt.Fprint(&errs, e.Error())
+			}
+			log.Fatalf("found 1 or more pod teardown validation failure: %s", errs)
 		}
 	}
 }

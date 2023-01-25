@@ -59,7 +59,7 @@ var (
 
 func TestSecurityGroupForPods(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Security Group for Pods e2e Test Suite")
+	RunSpecs(t, "Security Group for Pods Test Suite")
 }
 
 var _ = BeforeSuite(func() {

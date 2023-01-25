@@ -27,21 +27,25 @@ func init() {
 }
 
 type Options struct {
-	KubeConfig       string
-	ClusterName      string
-	AWSRegion        string
-	AWSVPCID         string
-	NgNameLabelKey   string
-	NgNameLabelVal   string
-	EKSEndpoint      string
-	CalicoVersion    string
-	ContainerRuntime string
-	InstanceType     string
-	InitialAddon     string
-	TargetAddon      string
-	InitialManifest  string
-	TargetManifest   string
-	InstallCalico    bool
+	KubeConfig         string
+	ClusterName        string
+	AWSRegion          string
+	AWSVPCID           string
+	NgNameLabelKey     string
+	NgNameLabelVal     string
+	EKSEndpoint        string
+	CalicoVersion      string
+	ContainerRuntime   string
+	InstanceType       string
+	InitialAddon       string
+	TargetAddon        string
+	InitialManifest    string
+	TargetManifest     string
+	InstallCalico      bool
+	PublicSubnets      string
+	PrivateSubnets     string
+	AvailabilityZones  string
+	PublicRouteTableID string
 }
 
 func (options *Options) BindFlags() {
@@ -59,7 +63,11 @@ func (options *Options) BindFlags() {
 	flag.StringVar(&options.CalicoVersion, "calico-version", "v3.23.0", "calico version to be tested")
 	flag.StringVar(&options.ContainerRuntime, "container-runtime", "", "Optionally can specify it as 'containerd' for the test nodes")
 	flag.StringVar(&options.InstanceType, "instance-type", "amd64", "Optionally specify instance type as arm64 for the test nodes")
-	flag.BoolVar(&options.InstallCalico, "install-calico", true, "Install Calico operator before running e2e tests")
+	flag.BoolVar(&options.InstallCalico, "install-calico", true, "Install Calico operator before running tests")
+	flag.StringVar(&options.PublicSubnets, "public-subnets", "", "Comma separated list of public subnets (optional, if specified you must specify all of public/private-subnets, public-route-table-id,  and availability-zones)")
+	flag.StringVar(&options.PrivateSubnets, "private-subnets", "", "Comma separated list of private subnets (optional, if specified you must specify all of public/private-subnets, public-route-table-id,  and availability-zones)")
+	flag.StringVar(&options.AvailabilityZones, "availability-zones", "", "Comma separated list of private subnets (optional, if specified you must specify all of public/private-subnets, public-route-table-id, and availability-zones)")
+	flag.StringVar(&options.PublicRouteTableID, "public-route-table-id", "", "Public route table ID (optional, if specified you must specify all of public/private-subnets, public-route-table-id, and availability-zones)")
 }
 
 func (options *Options) Validate() error {

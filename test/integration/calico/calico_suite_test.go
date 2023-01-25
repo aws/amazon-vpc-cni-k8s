@@ -33,7 +33,7 @@ var (
 
 func TestCalicoPoliciesWithVPCCNI(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Calico with VPC CNI e2e Test Suite")
+	RunSpecs(t, "Calico with VPC CNI Test Suite")
 }
 
 var _ = BeforeSuite(func() {
