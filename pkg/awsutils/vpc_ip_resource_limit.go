@@ -206,7 +206,7 @@ var InstanceNetworkingLimits = map[string]InstanceTypeLimits{
 	"g5.16xlarge":       {ENILimit: 8, IPv4Limit: 30, HypervisorType: "nitro", IsBareMetal: false},
 	"g5.24xlarge":       {ENILimit: 15, IPv4Limit: 50, HypervisorType: "nitro", IsBareMetal: false},
 	"g5.2xlarge":        {ENILimit: 4, IPv4Limit: 15, HypervisorType: "nitro", IsBareMetal: false},
-	"g5.48xlarge":       {ENILimit: 7, IPv4Limit: 50, HypervisorType:"nitro", IsBareMetal:false},
+	"g5.48xlarge":       {ENILimit: 7, IPv4Limit: 50, HypervisorType: "nitro", IsBareMetal: false},
 	"g5.4xlarge":        {ENILimit: 8, IPv4Limit: 30, HypervisorType: "nitro", IsBareMetal: false},
 	"g5.8xlarge":        {ENILimit: 8, IPv4Limit: 30, HypervisorType: "nitro", IsBareMetal: false},
 	"g5.xlarge":         {ENILimit: 4, IPv4Limit: 15, HypervisorType: "nitro", IsBareMetal: false},
