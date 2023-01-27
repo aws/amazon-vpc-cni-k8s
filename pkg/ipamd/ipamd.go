@@ -390,12 +390,6 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
 
-	eventrecorder, err := eventrecorder.New(rawK8SClient, cachedK8SClient)
-	if err != nil {
-		return nil, errors.Wrap(err, "ipamd: unable to initialize event recorder")
-	}
-	c.eventRecorder = eventrecorder
-
 	c.disableENIProvisioning = disablingENIProvisioning()
 
 	client, err := awsutils.New(c.useCustomNetworking, c.disableENIProvisioning, c.enableIPv4, c.enableIPv6, c.eventRecorder)
@@ -403,6 +397,15 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
 	c.awsClient = client
+
+	// setup event recorder
+	eventrecorder, err := eventrecorder.New(rawK8SClient, cachedK8SClient)
+	if err != nil {
+		return nil, errors.Wrap(err, "ipamd: unable to initialize event recorder")
+	}
+	// setup Host instanceID in event recorder
+	eventrecorder.HostID = c.awsClient.GetInstanceID()
+	c.eventRecorder = eventrecorder
 
 	c.primaryIP = make(map[string]string)
 	c.reconcileCooldownCache.cache = make(map[string]time.Time)

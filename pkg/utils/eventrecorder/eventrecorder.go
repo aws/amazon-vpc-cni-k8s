@@ -44,6 +44,7 @@ type EventRecorder struct {
 	Recorder        events.EventRecorder
 	RawK8SClient    client.Client
 	CachedK8SClient client.Client
+	HostID          string
 }
 
 func New(rawK8SClient, cachedK8SClient client.Client) (*EventRecorder, error) {
@@ -117,7 +118,7 @@ func (e *EventRecorder) SendNodeEvent(eventType, reason, action, message string)
 	// that are listed in 'kubectl describe node' output. So setting the node UID to
 	// nodename before sending the event
 	nodeCopy := node.DeepCopy()
-	nodeCopy.SetUID(types.UID(MyNodeName))
+	nodeCopy.SetUID(types.UID(e.HostID))
 
 	e.Recorder.Eventf(nodeCopy, nil, eventType, reason, action, message)
 	log.Debugf("Sent node event: eventType: %s, reason: %s, message: %s, action %s", eventType, reason, message, action)
