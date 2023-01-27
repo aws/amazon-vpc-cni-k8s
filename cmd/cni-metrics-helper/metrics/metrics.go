@@ -23,7 +23,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-	"github.com/prometheus/common/log"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
@@ -377,7 +376,7 @@ func metricsListGrabAggregateConvert(ctx context.Context, t metricsTarget) (map[
 	resetMetrics(interestingMetrics)
 
 	targetList, _ := t.getTargetList(ctx)
-	log.Debugf("Total TargetList pod count:- %v", len(targetList))
+	t.getLogger().Debugf("Total TargetList pod count:- %v", len(targetList))
 	for _, target := range targetList {
 		rawOutput, err := t.grabMetricsFromTarget(ctx, target)
 		if err != nil {
