@@ -586,7 +586,6 @@ VPC CNI can operate in either IPv4 or IPv6 mode. Setting `ENABLE_IPv6` to `true`
 will configure it in IPv6 mode. IPv6 is only supported in Prefix Delegation mode, so `ENABLE_PREFIX_DELEGATION` needs to be set to `true` if VPC CNI is 
 configured to operate in IPv6 mode. Prefix delegation is only supported on nitro instances. 
 
-
 **Note:** Please make sure that the required IPv6 IAM policy is applied (Refer to [IAM Policy](https://github.com/aws/amazon-vpc-cni-k8s#iam-policy) section above). Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration. Please refer to the [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information.
 
 ---
@@ -601,6 +600,15 @@ VPC CNI uses `iptables-legacy` by default. Setting `ENABLE_NFTABLES` to `true` w
 
 **Note:** VPC CNI image contains `iptables-legacy` and `iptables-nft`. Switching between them is done via `update-alternatives`. It is *strongly* recommended that the iptables mode matches that which is used by the base OS and `kube-proxy`.
 Switching modes while pods are running or rules are installed will not trigger reconciliation. It is recommended that rules are manually updated or nodes are drained and cordoned before updating. If reloading node, ensure that previous rules are not set to be persisted.
+
+#### `AWS_EXTERNAL_SERVICE_CIDRS` (v1.13.0+)
+
+Type: String
+
+Default: empty
+
+Specify a comma-separated list of IPv4 CIDRs that *must* be routed via main routing table. This is required for secondary ENIs to reach endpoints outside of VPC that are backed by a service.
+For every item in the list, an `ip rule` will be created with a priority greater than the `ip rule` capturing egress traffic from the container. If an item is not a valid IPv4 CIDR, it will be skipped.
 
 ### VPC CNI Feature Matrix
 

@@ -53,7 +53,12 @@ const (
 	// 1024 is reserved for (ip rule not to <VPC's subnet> table main)
 	hostRulePriority = 1024
 
-	// 1025 - 1535 can be used priority lower than fromPodRulePriority but higher than default nonVPC CIDR rule
+	// 1025 - 1534 can be used as priority lower than externalServiceIpRulePriority but higher than default nonVPC CIDR rule
+
+	// Rule priority for traffic destined to explicit IP CIDR
+	externalServiceIpRulePriority = 1535
+
+	// Rule priority for traffic from pod
 	fromPodRulePriority = 1536
 
 	// Main route table
@@ -67,10 +72,14 @@ const (
 	// be installed and will be removed if they are already installed. Defaults to false.
 	envExternalSNAT = "AWS_VPC_K8S_CNI_EXTERNALSNAT"
 
-	// This environment is used to specify a comma separated list of ipv4 CIDRs to exclude from SNAT. An additional rule
+	// This environment is used to specify a comma-separated list of IPv4 CIDRs to exclude from SNAT. An additional rule
 	// will be written to the iptables for each item. If an item is not an ipv4 range it will be skipped.
 	// Defaults to empty.
 	envExcludeSNATCIDRs = "AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS"
+
+	// This environment is used to specify a comma-separated list of IPv4 CIDRs that require routing lookup in
+	// main routing table. An IP rule is created for each CIDR.
+	envExternalServiceCIDRs = "AWS_EXTERNAL_SERVICE_CIDRS"
 
 	// This environment is used to specify weather the SNAT rule added to iptables should randomize port allocation for
 	// outgoing connections. If set to "hashrandom" the SNAT iptables rule will have the "--random" flag added to it.
@@ -133,15 +142,18 @@ type NetworkAPIs interface {
 	UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v4Enabled bool, v6Enabled bool) error
 	UseExternalSNAT() bool
 	GetExcludeSNATCIDRs() []string
+	GetExternalServiceCIDRs() []string
 	GetRuleList() ([]netlink.Rule, error)
 	GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error)
 	UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) error
+	UpdateExternalServiceIpRules(ruleList []netlink.Rule, externalIPs []string) error
 	GetLinkByMac(mac string, retryInterval time.Duration) (netlink.Link, error)
 }
 
 type linuxNetwork struct {
 	useExternalSNAT        bool
 	excludeSNATCIDRs       []string
+	externalServiceCIDRs   []string
 	typeOfSNAT             snatType
 	nodePortSupportEnabled bool
 	mtu                    int
@@ -179,7 +191,8 @@ const (
 func New() NetworkAPIs {
 	return &linuxNetwork{
 		useExternalSNAT:        useExternalSNAT(),
-		excludeSNATCIDRs:       getExcludeSNATCIDRs(),
+		excludeSNATCIDRs:       parseCIDRString(envExcludeSNATCIDRs),
+		externalServiceCIDRs:   parseCIDRString(envExternalServiceCIDRs),
 		typeOfSNAT:             typeOfSNAT(),
 		nodePortSupportEnabled: nodePortSupportEnabled(),
 		mainENIMark:            getConnmark(),
@@ -348,10 +361,10 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 
 	ipProtocol := iptables.ProtocolIPv4
 	if v6Enabled {
-		//Essentially a stub function for now in V6 mode. We will need it when we support v6 in secondary IP and
-		//custom networking modes. We don't need to install any SNAT rules in v6 mode and currently there is no need
-		//to mark packets entering via Primary ENI as all the pods in v6 mode will be behind primary ENI. Will have to
-		//start doing that once we start supporting custom networking mode in v6.
+		// Essentially a stub function for now in V6 mode. We will need it when we support v6 in secondary IP and
+		// custom networking modes. We don't need to install any SNAT rules in v6 mode and currently there is no need
+		// to mark packets entering via Primary ENI as all the pods in v6 mode will be behind primary ENI. Will have to
+		// start doing that once we start supporting custom networking mode in v6.
 		ipProtocol = iptables.ProtocolIPv6
 	}
 
@@ -744,13 +757,14 @@ func isRuleExistsError(err error) bool {
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
 func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
-		envConnmark:         getConnmark(),
-		envExcludeSNATCIDRs: getExcludeSNATCIDRs(),
-		envExternalSNAT:     useExternalSNAT(),
-		envMTU:              GetEthernetMTU(""),
-		envVethPrefix:       getVethPrefixName(),
-		envNodePortSupport:  nodePortSupportEnabled(),
-		envRandomizeSNAT:    typeOfSNAT(),
+		envConnmark:             getConnmark(),
+		envExcludeSNATCIDRs:     parseCIDRString(envExcludeSNATCIDRs),
+		envExternalSNAT:         useExternalSNAT(),
+		envExternalServiceCIDRs: parseCIDRString(envExternalServiceCIDRs),
+		envMTU:                  GetEthernetMTU(""),
+		envVethPrefix:           getVethPrefixName(),
+		envNodePortSupport:      nodePortSupportEnabled(),
+		envRandomizeSNAT:        typeOfSNAT(),
 	}
 }
 
@@ -765,26 +779,33 @@ func useExternalSNAT() bool {
 	return getBoolEnvVar(envExternalSNAT, false)
 }
 
-// GetExcludeSNATCIDRs returns a list of cidrs that should be excluded from SNAT if UseExternalSNAT is false,
+// GetExcludeSNATCIDRs returns a list of CIDRs that should be excluded from SNAT if UseExternalSNAT is false,
 // otherwise it returns an empty list.
 func (n *linuxNetwork) GetExcludeSNATCIDRs() []string {
-	return getExcludeSNATCIDRs()
-}
-
-func getExcludeSNATCIDRs() []string {
 	if useExternalSNAT() {
 		return nil
 	}
+	return parseCIDRString(envExcludeSNATCIDRs)
+}
 
-	excludeCIDRs := os.Getenv(envExcludeSNATCIDRs)
-	if excludeCIDRs == "" {
+// GetExternalServiceCIDRs return a list of CIDRs that should always be routed to via main routing table.
+func (n *linuxNetwork) GetExternalServiceCIDRs() []string {
+	return parseCIDRString(envExternalServiceCIDRs)
+}
+
+func parseCIDRString(envVar string) []string {
+	cidrString := os.Getenv(envVar)
+	if cidrString == "" {
 		return nil
 	}
 	var cidrs []string
-	for _, excludeCIDR := range strings.Split(excludeCIDRs, ",") {
-		_, parseCIDR, err := net.ParseCIDR(excludeCIDR)
+	for _, cidr := range strings.Split(cidrString, ",") {
+		_, parseCIDR, err := net.ParseCIDR(strings.TrimSpace(cidr))
 		if err != nil {
-			log.Errorf("getExcludeSNATCIDRs : ignoring %v is not a valid IPv4 CIDR", excludeCIDR)
+			log.Errorf("%v from %s is not a valid CIDR", cidr, envVar)
+		} else if parseCIDR.IP.To4() == nil {
+			// Skip IPV6 CIDRs
+			log.Errorf("%v from %s is an IPV6 CIDR", cidr, envVar)
 		} else {
 			cidrs = append(cidrs, parseCIDR.String())
 		}
@@ -1080,6 +1101,42 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 		return errors.Wrapf(err, "UpdateRuleListBySrc: failed to add pod rule")
 	}
 	log.Infof("UpdateRuleListBySrc: Successfully added pod rule[%v]", podRule)
+
+	return nil
+}
+
+// UpdateExternalServiceIpRules reconciles existing set of IP rules for external IPs with new set
+func (n *linuxNetwork) UpdateExternalServiceIpRules(ruleList []netlink.Rule, externalServiceCidrs []string) error {
+	log.Debugf("Update Rule List with set %v", externalServiceCidrs)
+
+	// Delete all existing rules for external service CIDRs. Note that a bulk delete would be ideal here, but
+	// netlink does not support bulk delete by priority, so we must iterate over rule list.
+	for _, rule := range ruleList {
+		if rule.Priority == externalServiceIpRulePriority && rule.Table == mainRoutingTable {
+			if err := n.netLink.RuleDel(&rule); err != nil && !containsNoSuchRule(err) {
+				log.Errorf("Failed to cleanup old IP rule: %v", err)
+				return errors.Wrapf(err, "UpdateExternalServiceIpRules: failed to delete old rule")
+			}
+		}
+	}
+
+	// Program new rules
+	for _, cidr := range externalServiceCidrs {
+		extIpRule := n.netLink.NewRule()
+		extIpRule.Table = mainRoutingTable
+		_, netCidr, err := net.ParseCIDR(cidr)
+		if err != nil {
+			log.Errorf("Failed to create IPNet from %s", cidr)
+			return errors.Wrapf(err, "UpdateExternalServiceIpRules: failed to create IPNet")
+		}
+		extIpRule.Dst = netCidr
+		extIpRule.Priority = externalServiceIpRulePriority
+		if err := n.netLink.RuleAdd(extIpRule); err != nil {
+			log.Errorf("Failed to add external service CIDR rule: %v", err)
+			return errors.Wrapf(err, "UpdateExternalServiceIpRules: failed to add rule")
+		}
+		log.Infof("UpdateExternalServiceIpRules: successfully added rule[%v]", extIpRule)
+	}
 
 	return nil
 }
