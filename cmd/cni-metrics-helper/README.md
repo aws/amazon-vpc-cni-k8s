@@ -13,8 +13,7 @@ The following diagram shows how `cni-metrics-helper` works in a cluster:
 
 ![](../../docs/images/cni-metrics-helper.png)
 
-As you can see in the diagram, the `cni-metrics-helper` connects to the API Server
-over https (`tcp/443`), and another connection is created from the API Server to the worker node over http (tcp/61678). If you deploy Amazon EKS with recommended [Restricting cluster traffic](https://docs.aws.amazon.com/eks/latest/userguide/sec-group-reqs.html#security-group-restricting-cluster-traffic) then make sure that a security group is in place that allows the inbound connection from the API Server to the Worker Nodes over `tcp/61678`.
+As you can see in the diagram, the `cni-metrics-helper` connects to the API Server over https (`tcp/443`), and another connection is created from the API Server to the worker node over http (tcp/61678). If you deploy Amazon EKS with recommended [Restricting cluster traffic](https://docs.aws.amazon.com/eks/latest/userguide/sec-group-reqs.html#security-group-restricting-cluster-traffic), then make sure that a security group is in place that allows the inbound connection from the API Server to the worker nodes over `tcp/61678`.
 
 ### Using IRSA
 As per [AWS EKS Security Best Practice](https://docs.aws.amazon.com/eks/latest/userguide/best-practices-security.html), if you are using IRSA for pods then following requirements must be satisfied to succesfully publish metrics to CloudWatch
