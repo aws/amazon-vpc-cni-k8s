@@ -58,7 +58,6 @@ const (
 	defaultHostCNIConfDirPath    = "/host/etc/cni/net.d"
 	defaultAWSconflistFile       = "/app/10-aws.conflist"
 	tmpAWSconflistFile           = "/tmp/10-aws.conflist"
-	defaultAgentLogPath          = "aws-k8s-agent.log"
 	defaultVethPrefix            = "eni"
 	defaultMTU                   = "9001"
 	defaultEnablePodEni          = "false"
@@ -72,7 +71,6 @@ const (
 	awsConflistFile              = "/10-aws.conflist"
 	vpcCniInitDonePath           = "/vpc-cni-init/done"
 
-	envAgentLogPath          = "AGENT_LOG_PATH"
 	envHostCniBinPath        = "HOST_CNI_BIN_PATH"
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
 	envVethPrefix            = "AWS_VPC_K8S_CNI_VETHPREFIX"
@@ -367,10 +365,14 @@ func _main() int {
 	}
 
 	log.Infof("Starting IPAM daemon... ")
-	agentLogPath := getEnv(envAgentLogPath, defaultAgentLogPath)
 
 	cmd := "./aws-k8s-agent"
-	ipamdDaemon := exec.Command(cmd, "|", "tee", "-i", agentLogPath, "2>&1")
+	// Exec redirects stdout and stderr to /dev/null, redirecting to os.Stdout and os.Stderr is done explicitly.
+	// This enables the output of the aws-k8s-agent to be displayed in the kubectl logs for the aws-node container via stdout and stderr.
+	ipamdDaemon := exec.Command(cmd)
+	ipamdDaemon.Stdout = os.Stdout
+	ipamdDaemon.Stderr = os.Stderr
+
 	err = ipamdDaemon.Start()
 	if err != nil {
 		log.WithError(err).Errorf("Failed to execute command: %s", cmd)
@@ -380,12 +382,6 @@ func _main() int {
 	log.Infof("Checking for IPAM connectivity... ")
 	if !waitForIPAM() {
 		log.Errorf("Timed out waiting for IPAM daemon to start")
-
-		byteValue, err := ioutil.ReadFile(agentLogPath)
-		if err != nil {
-			log.WithError(err).Errorf("Failed to read %s", agentLogPath)
-		}
-		log.Infof("%s", string(byteValue))
 		return 1
 	}
 
