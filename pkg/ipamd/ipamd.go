@@ -632,6 +632,16 @@ func (c *IPAMContext) configureIPRulesForPods() error {
 			log.Warnf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", info.IP, err)
 		}
 	}
+
+	// Program IP rules for external service CIDRs and cleanup stale rules.
+	// Note that we can reuse rule list despite it being modified by UpdateRuleListBySrc, as the
+	// modifications touched rules that this function ignores.
+	extServiceCIDRs := c.networkClient.GetExternalServiceCIDRs()
+	err = c.networkClient.UpdateExternalServiceIpRules(rules, extServiceCIDRs)
+	if err != nil {
+		log.Warnf("UpdateExternalServiceIpRules in nodeInit() failed")
+	}
+
 	return nil
 }
 
