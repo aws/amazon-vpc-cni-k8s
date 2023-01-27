@@ -286,7 +286,7 @@ Default: `DEBUG`
 
 Valid Values: `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`. (Not case sensitive)
 
-Specifies the loglevel for `ipamd`.
+Specifies the loglevel for `ipamd` and `cni-metric-helper`.
 
 ---
 

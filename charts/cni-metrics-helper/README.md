@@ -43,20 +43,21 @@ $ helm uninstall cni-metrics-helper --namespace kube-system
 
 The following table lists the configurable parameters for this chart and their default values.
 
-| Parameter                  | Description                                                   | Default            |
-|----------------------------|---------------------------------------------------------------|--------------------|
-| fullnameOverride           | Override the fullname of the chart                            | cni-metrics-helper |
-| image.region               | ECR repository region to use. Should match your cluster       | us-west-2          |
-| image.tag                  | Image tag                                                     | v1.12.1            |
-| image.account              | ECR repository account number                                 | 602401143452       |
-| image.domain               | ECR repository domain                                         | amazonaws.com      |
-| env.USE_CLOUDWATCH         | Whether to export CNI metrics to CloudWatch                   | true               |
-| env.AWS_CLUSTER_ID         | ID of the cluster to use when exporting metrics to CloudWatch | default            |
-| env.METRIC_UPDATE_INTERVAL | Interval at which to update CloudWatch metrics, in seconds.   |                    |
-|                            | Metrics are published to CloudWatch at 2x the interval        | 30                 |
-| serviceAccount.name        | The name of the ServiceAccount to use                         | nil                |
-| serviceAccount.create      | Specifies whether a ServiceAccount should be created          | true               |
-| serviceAccount.annotations | Specifies the annotations for ServiceAccount                  | {}                 |
+| Parameter                    | Description                                                   | Default            |
+|------------------------------|---------------------------------------------------------------|--------------------|
+| fullnameOverride             | Override the fullname of the chart                            | cni-metrics-helper |
+| image.region                 | ECR repository region to use. Should match your cluster       | us-west-2          |
+| image.tag                    | Image tag                                                     | v1.12.1            |
+| image.account                | ECR repository account number                                 | 602401143452       |
+| image.domain                 | ECR repository domain                                         | amazonaws.com      |
+| env.USE_CLOUDWATCH           | Whether to export CNI metrics to CloudWatch                   | true               |
+| env.AWS_CLUSTER_ID           | ID of the cluster to use when exporting metrics to CloudWatch | default            |
+| env.AWS_VPC_K8S_CNI_LOGLEVEL | Log verbosity level (ie. FATAL, ERROR, WARN, INFO, DEBUG)     | INFO               |
+| env.METRIC_UPDATE_INTERVAL   | Interval at which to update CloudWatch metrics, in seconds.   |                    |
+|                              | Metrics are published to CloudWatch at 2x the interval        | 30                 |
+| serviceAccount.name          | The name of the ServiceAccount to use                         | nil                |
+| serviceAccount.create        | Specifies whether a ServiceAccount should be created          | true               |
+| serviceAccount.annotations   | Specifies the annotations for ServiceAccount                  | {}                 |
 
 Specify each parameter using the `--set key=value[,key=value]` argument to `helm install` or provide a YAML file containing the values for the above parameters:
 
