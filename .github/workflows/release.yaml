@@ -1,6 +1,8 @@
 name: VPC CNI Release
 
-on: [push, workflow_dispatch]
+on:
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -11,17 +13,18 @@ env:
 
 jobs:
   release:
-    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout latest commit in the PR
         uses: actions/checkout@v3
+        with:
+          ref: "refs/tags/{{ github.event.release.tag_name }}"
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
           go-version: "1.19"
-      - name: Attach release artifacts
-        run: make release
+      - name: Generate CNI YAML
+        run: make generate-cni-yaml
       - name: Create eks-charts PR
         run: make ekscharts-sync-release
       - name: Create sample manifests PR
