@@ -618,7 +618,7 @@ func TestAllocIPAddressesAlreadyFull(t *testing.T) {
 	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, retErr)
 	// If EC2 says that all IPs are already attached, then DS is out of sync so alloc will fail
-	_, err := cache.AllocIPAddresses(eniID, 14)
+	_, err := ins.AllocIPAddresses(eniID, 14)
 	assert.Error(t, err)
 }
 
@@ -655,7 +655,7 @@ func TestAllocPrefixesAlreadyFull(t *testing.T) {
 	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, retErr)
 	// If EC2 says that all IPs are already attached, then DS is out of sync so alloc will fail
-	_, err := cache.AllocIPAddresses(eniID, 1)
+	_, err := ins.AllocIPAddresses(eniID, 1)
 	assert.Error(t, err)
 }
 
