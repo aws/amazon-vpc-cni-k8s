@@ -2,7 +2,6 @@
 set -euo pipefail
 set +x
 
-
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 BUILD_DIR="${SCRIPTPATH}/../build"
 
@@ -13,11 +12,11 @@ PR_ID=$(uuidgen | cut -d '-' -f1)
 
 SYNC_DIR="${BUILD_DIR}/config-sync"
 
-BINARY_BASE=""
+BINARY_BASE="aws-vpc-cni"
 INCLUDE_NOTES=0
 MANUAL_VERIFY=1
 
-GH_CLI_VERSION="0.10.1"
+GH_CLI_VERSION="2.22.1"
 GH_CLI_CONFIG_PATH="${HOME}/.config/gh/config.yml"
 KERNEL=$(uname -s | tr '[:upper:]' '[:lower:]')
 OS="${KERNEL}"
@@ -25,11 +24,9 @@ if [[ "${KERNEL}" == "darwin" ]]; then
   OS="macOS"
 fi
 
-VERSION=$(make -s -f "${SCRIPTPATH}/../Makefile" version)
-
 USAGE=$(cat << EOM
   Usage: sync-to-config-folder  -r <repo>
-  Updates config folder in master and release branch
+  Updates config folder in master branch
   Example: sync-to-config-folder -r "${REPO}"
           Optional:
             -r          Github repo to sync to in the form of "org/name"  (i.e. -r "${REPO}")
@@ -63,6 +60,7 @@ fi
 
 echo $REPO
 
+# Install GitHub CLI
 if [[ -z $(command -v gh) ]] || [[ ! $(gh --version) =~ $GH_CLI_VERSION ]]; then
   mkdir -p "${BUILD_DIR}"/gh
   curl -Lo "${BUILD_DIR}"/gh/gh.tar.gz "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_${OS}_amd64.tar.gz"
@@ -78,6 +76,7 @@ function restore_gh_config() {
   mv -f "${GH_CLI_CONFIG_PATH}.bkup" "${GH_CLI_CONFIG_PATH}" || :
 }
 
+# Set auth tokens for GitHub CLI
 if [[ -n $(env | grep GITHUB_TOKEN) ]] && [[ -n "${GITHUB_TOKEN}" ]]; then
   trap restore_gh_config EXIT INT TERM ERR
   mkdir -p "${HOME}/.config/gh"
@@ -105,6 +104,7 @@ rm -rf "${SYNC_DIR}"
 mkdir -p "${SYNC_DIR}"
 cd "${SYNC_DIR}"
 
+# Clone upstream repo and setup git parameters
 gh repo clone aws/amazon-vpc-cni-k8s
 DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD | tr -d '\n')
 
@@ -116,6 +116,7 @@ git remote set-url origin https://"${GITHUB_USERNAME}":"${GITHUB_TOKEN}"@github.
 git config user.name "eks-networking-bot"
 git config user.email "eks-networking-bot@users.noreply.github.com"
 
+# Fork master branch and create sync PR
 FORK_RELEASE_BRANCH="${BINARY_BASE}-${VERSION}-${PR_ID}"
 git checkout -b "${FORK_RELEASE_BRANCH}" origin/master
 
@@ -136,48 +137,7 @@ EOM
 )
 
 git push -u origin "${FORK_RELEASE_BRANCH}"
-gh pr create --title "🥳 ${BINARY_BASE} ${VERSION} Automated manifest sync! 🥑" \
+gh pr create --title "${BINARY_BASE} ${VERSION} Automated manifest sync! 🥑" \
     --body "${PR_BODY}" --repo ${REPO}
 
-echo "✅ Manifest folder PR created for master"
-
-CLONE_DIR="${BUILD_DIR}/config-sync-release"
-SYNC_DIR="$CLONE_DIR"
-echo $SYNC_DIR
-rm -rf "${SYNC_DIR}"
-mkdir -p "${SYNC_DIR}"
-cd "${SYNC_DIR}"
-gh repo clone aws/amazon-vpc-cni-k8s
-echo "Release branch $RELEASE_BRANCH"
-CONFIG_DIR=amazon-vpc-cni-k8s/config/master
-cd $CONFIG_DIR
-REPO_NAME=$(echo ${REPO} | cut -d'/' -f2)
-git remote set-url origin https://"${GITHUB_USERNAME}":"${GITHUB_TOKEN}"@github.com/"${GITHUB_USERNAME}"/"${REPO_NAME}".git
-
-git config user.name "eks-networking-bot"
-git config user.email "eks-networking-bot@users.noreply.github.com"
-
-FORK_RELEASE_BRANCH="${BINARY_BASE}-${VERSION}-${PR_ID}"
-git checkout -b "${FORK_RELEASE_BRANCH}" origin/$RELEASE_BRANCH
-
-cp $SCRIPTPATH/../build/cni-rel-yamls/${VERSION}/aws-k8s-cni*.yaml .
-cp $SCRIPTPATH/../build/cni-rel-yamls/${VERSION}/cni-metrics-helper*.yaml .
-
-git add --all
-git commit -m "${BINARY_BASE}: ${VERSION}"
-
-PR_BODY=$(cat << EOM
-## ${BINARY_BASE} ${VERSION} Automated manifest folder Sync! 🤖🤖
-
-### Description 📝
-
-Updating all the generated release artifacts in master/config for $RELEASE_BRANCH branch.
-
-EOM
-)
-
-git push -u origin "${FORK_RELEASE_BRANCH}":$RELEASE_BRANCH
-gh pr create --title "🥳 ${BINARY_BASE} ${VERSION} Automated manifest sync! 🥑" \
-    --body "${PR_BODY}" --repo ${REPO} --base ${RELEASE_BRANCH}
-
-echo "✅ Manifest folder PR created for $RELEASE_BRANCH"
+echo "Manifest folder PR created for master"

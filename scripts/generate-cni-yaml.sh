@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 PLATFORM=$(uname | tr '[:upper:]' '[:lower:]')
-HELM_VERSION="3.6.3"
+HELM_VERSION="3.11.0"
 NAMESPACE="kube-system"
 
 MAKEFILEPATH=$SCRIPTPATH/../Makefile
@@ -12,14 +12,10 @@ VERSION=$(make -s -f $MAKEFILEPATH version)
 BUILD_DIR=$SCRIPTPATH/../build/cni-rel-yamls/$VERSION
 
 REGIONS_FILE=$SCRIPTPATH/../charts/regions.json
-INDV_RESOURCES_DIR=$BUILD_DIR/individual-resources
-CNI_TAR_RESOURCES_FILE=$BUILD_DIR/cni_individual-resources.tar
-METRICS_TAR_RESOURCES_FILE=$BUILD_DIR/cni_metrics_individual-resources.tar
 CNI_RESOURCES_YAML=$BUILD_DIR/aws-k8s-cni
 METRICS_RESOURCES_YAML=$BUILD_DIR/cni-metrics-helper
 
-mkdir -p $INDV_RESOURCES_DIR
-
+mkdir -p $BUILD_DIR
 
 USAGE=$(cat << 'EOM'
   Usage: generate-cni-yaml  [-n <K8s_NAMESPACE>]
@@ -80,8 +76,8 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
       --set image.domain=$ecrDomain \
       --namespace $NAMESPACE \
       $SCRIPTPATH/../charts/aws-vpc-cni > $NEW_CNI_RESOURCES_YAML
-    cat $NEW_CNI_RESOURCES_YAML | grep -v 'helm.sh\|app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
-    mv $BUILD_DIR/helm_annotations_removed.yaml $NEW_CNI_RESOURCES_YAML
+    # Remove 'managed-by: Helm' annotation
+    sed -i '/helm.sh\|app.kubernetes.io\/managed-by: Helm/d' $NEW_CNI_RESOURCES_YAML
 
     $BUILD_DIR/helm template cni-metrics-helper \
       --set image.region=$ecrRegion,\
@@ -90,37 +86,12 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
       --set image.tag=$VERSION,\
       --namespace $NAMESPACE \
       $SCRIPTPATH/../charts/cni-metrics-helper > $NEW_METRICS_RESOURCES_YAML
-    cat $NEW_METRICS_RESOURCES_YAML | grep -v 'helm.sh\|app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
-    mv $BUILD_DIR/helm_annotations_removed.yaml $NEW_METRICS_RESOURCES_YAML
-done    
-
-$BUILD_DIR/helm template --include-crds \
-    --namespace $NAMESPACE \
-    --output-dir $INDV_RESOURCES_DIR/ \
-    $SCRIPTPATH/../charts/aws-vpc-cni/
-
-for i in $INDV_RESOURCES_DIR/aws-vpc-cni/templates/*; do
-  cat $i | grep -v 'helm.sh\|app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
-  mv $BUILD_DIR/helm_annotations_removed.yaml $i
+    # Remove 'managed-by: Helm' annotation
+    sed -i '/helm.sh\|app.kubernetes.io\/managed-by: Helm/d' $NEW_METRICS_RESOURCES_YAML
 done
 
-$BUILD_DIR/helm template \
-    --namespace $NAMESPACE \
-    --output-dir $INDV_RESOURCES_DIR/ \
-    $SCRIPTPATH/../charts/cni-metrics-helper/
-
-for i in $INDV_RESOURCES_DIR/cni-metrics-helper/templates/*; do
-  cat $i | grep -v 'helm.sh\|app.kubernetes.io/managed-by: Helm' > $BUILD_DIR/helm_annotations_removed.yaml
-  mv $BUILD_DIR/helm_annotations_removed.yaml $i
-done
-
-
-cd $INDV_RESOURCES_DIR/aws-vpc-cni/ && tar cvf $CNI_TAR_RESOURCES_FILE templates/*
-cd $INDV_RESOURCES_DIR/cni-metrics-helper/ && tar cvf $METRICS_TAR_RESOURCES_FILE templates/*
 cd $SCRIPTPATH
 
 echo "Generated aws-vpc-cni and cni-metrics-helper manifest resources files in:"
 echo "    - $CNI_RESOURCES_YAML"
 echo "    - $METRICS_RESOURCES_YAML"
-echo "    - $CNI_TAR_RESOURCES_FILE"
-echo "    - $METRICS_TAR_RESOURCES_FILE"
