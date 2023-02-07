@@ -39,7 +39,7 @@ METRICS_IMAGE = amazon/cni-metrics-helper
 METRICS_IMAGE_NAME = $(METRICS_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
 METRICS_IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(METRICS_IMAGE_NAME)).tar.gz
 REPO_FULL_NAME=aws/amazon-vpc-cni-k8s
-HELM_CHART_NAME ?= "aws-vpc-cni"
+HELM_CHART_NAMES ?= "aws-vpc-cni" "cni-metrics-helper"
 # TEST_IMAGE is the testing environment container image.
 TEST_IMAGE = amazon-k8s-cni-test
 TEST_IMAGE_NAME = $(TEST_IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
@@ -341,18 +341,17 @@ generate-limits:    ## Generate limit file go code
 	go run $(VENDOR_OVERRIDE_FLAG) scripts/gen_vpc_ip_limits.go
 
 ekscharts-sync:
-	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME}
+	for HELM_CHART_NAME in $(HELM_CHART_NAMES) ; do \
+		${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b $$HELM_CHART_NAME -r ${REPO_FULL_NAME} ; \
+	done
 
 ekscharts-sync-release:
-	${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b ${HELM_CHART_NAME} -r ${REPO_FULL_NAME} -n -y
-
-upload-resources-to-github:
-	${MAKEFILE_PATH}/scripts/upload-resources-to-github.sh
+	for HELM_CHART_NAME in $(HELM_CHART_NAMES) ; do \
+		${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b $$HELM_CHART_NAME -r ${REPO_FULL_NAME} -n -y ; \
+	done
 
 generate-cni-yaml:
 	${MAKEFILE_PATH}/scripts/generate-cni-yaml.sh
-
-release: generate-cni-yaml upload-resources-to-github
 
 config-folder-sync:
 	${MAKEFILE_PATH}/scripts/sync-to-config-folder.sh

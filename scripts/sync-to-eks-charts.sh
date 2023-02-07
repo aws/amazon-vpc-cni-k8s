@@ -6,13 +6,12 @@ SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 BUILD_DIR="${SCRIPTPATH}/../build"
 
 REPO="aws/amazon-vpc-cni-k8s"
-HELM_CHART_NAME="aws-vpc-cni"
+HELM_CHART_NAME=${HELM_CHART_NAME:-'aws-vpc-cni'}
 HELM_CHART_BASE_BIR="${SCRIPTPATH}/../charts"
 
 CHARTS_REPO="aws/eks-charts"
 CHARTS_REPO_NAME=$(echo ${CHARTS_REPO} | cut -d'/' -f2)
 
-HELM_CHART_DIR="${HELM_CHART_BASE_BIR}/${HELM_CHART_NAME}"
 PR_ID=$(uuidgen | cut -d '-' -f1)
 
 SYNC_DIR="${BUILD_DIR}/eks-charts-sync"
@@ -22,7 +21,7 @@ BINARY_BASE=""
 INCLUDE_NOTES=0
 MANUAL_VERIFY=1
 
-GH_CLI_VERSION="0.10.1"
+GH_CLI_VERSION="2.22.1"
 GH_CLI_CONFIG_PATH="${HOME}/.config/gh/config.yml"
 KERNEL=$(uname -s | tr '[:upper:]' '[:lower:]')
 OS="${KERNEL}"
@@ -30,7 +29,7 @@ if [[ "${KERNEL}" == "darwin" ]]; then
   OS="macOS"
 fi
 
-VERSION=$(make -s -f "${SCRIPTPATH}/../Makefile" version)
+VERSION=$(echo $(make -s -f "${SCRIPTPATH}/../Makefile" version) | cut -d'-' -f1)
 
 USAGE=$(cat << EOM
   Usage: sync-to-eks-charts  -r <repo>
@@ -54,6 +53,7 @@ while getopts b:r:ny opt; do
         REPO="$OPTARG"
       ;;
     b ) # binary basename
+        HELM_CHART_NAME="$OPTARG"
         BINARY_BASE="$OPTARG"
       ;;
     n ) # Include release notes
@@ -72,6 +72,13 @@ done
 if [[ -n "${BINARY_BASE}" ]]; then
   HELM_CHART_DIR="${HELM_CHART_BASE_BIR}/${BINARY_BASE}"
   HELM_CHART_NAME=${BINARY_BASE}
+fi
+
+if [[ "$HELM_CHART_NAME" =~ ^(aws-vpc-cni|cni-metrics-helper)$ ]]; then
+  echo "starting to sync chart $HELM_CHART_NAME"
+else
+  echo "invalid chart name, quit the script"
+  exit 0
 fi
 
 if [[ -z "${REPO}" ]]; then 
@@ -122,7 +129,6 @@ gh repo fork $CHARTS_REPO --clone --remote
 cd "${FORK_DIR}"
 git remote set-url origin https://"${GITHUB_USERNAME}":"${GITHUB_TOKEN}"@github.com/"${GITHUB_USERNAME}"/"${CHARTS_REPO_NAME}".git
 DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD | tr -d '\n')
-
 
 if diff -x ".*" -r "$HELM_CHART_DIR/" "${FORK_DIR}/stable/${HELM_CHART_NAME}/" &> /dev/null ; then
   echo " ✅  Charts already in sync; no updates needed"
@@ -187,4 +193,4 @@ fi
   gh pr create --title "🥳 ${BINARY_BASE} ${VERSION} Automated Release! 🥑" \
     --body "${PR_BODY}" --repo ${CHARTS_REPO}
 
-echo "✅ EKS charts sync complete"
+echo "EKS charts sync complete!"
