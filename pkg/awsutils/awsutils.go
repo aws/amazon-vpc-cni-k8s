@@ -934,14 +934,6 @@ func (cache *EC2InstanceMetadataCache) TagENI(eniID string, currentTags map[stri
 	})
 }
 
-// containsPrivateIPAddressLimitExceededError returns whether exceeds ENI's IP address limit
-func containsPrivateIPAddressLimitExceededError(err error) bool {
-	if aerr, ok := err.(awserr.Error); ok {
-		return aerr.Code() == "PrivateIpAddressLimitExceeded"
-	}
-	return false
-}
-
 func awsAPIErrInc(api string, err error) {
 	if aerr, ok := err.(awserr.Error); ok {
 		awsAPIErr.With(prometheus.Labels{"api": api, "error": aerr.Code()}).Inc()
@@ -1523,11 +1515,6 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		CheckAPIErrorAndBroadcastEvent(err, "ec2:AssignPrivateIpAddresses")
-		if containsPrivateIPAddressLimitExceededError(err) {
-			log.Debug("AssignPrivateIpAddresses returned PrivateIpAddressLimitExceeded. This can happen if the data store is out of sync." +
-				"Returning without an error here since we will verify the actual state by calling EC2 to see what addresses have already assigned to this ENI.")
-			return nil, nil
-		}
 		log.Errorf("Failed to allocate a private IP/Prefix addresses on ENI %v: %v", eniID, err)
 		awsAPIErrInc("AssignPrivateIpAddresses", err)
 		ec2ApiErr.WithLabelValues("AssignPrivateIpAddresses").Inc()
