@@ -21,7 +21,7 @@ BINARY_BASE=""
 INCLUDE_NOTES=0
 MANUAL_VERIFY=1
 
-GH_CLI_VERSION="0.10.1"
+GH_CLI_VERSION="2.22.1"
 GH_CLI_CONFIG_PATH="${HOME}/.config/gh/config.yml"
 KERNEL=$(uname -s | tr '[:upper:]' '[:lower:]')
 OS="${KERNEL}"
@@ -130,7 +130,6 @@ cd "${FORK_DIR}"
 git remote set-url origin https://"${GITHUB_USERNAME}":"${GITHUB_TOKEN}"@github.com/"${GITHUB_USERNAME}"/"${CHARTS_REPO_NAME}".git
 DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD | tr -d '\n')
 
-
 if diff -x ".*" -r "$HELM_CHART_DIR/" "${FORK_DIR}/stable/${HELM_CHART_NAME}/" &> /dev/null ; then
   echo " ✅  Charts already in sync; no updates needed"
   exit
@@ -194,4 +193,4 @@ fi
   gh pr create --title "🥳 ${BINARY_BASE} ${VERSION} Automated Release! 🥑" \
     --body "${PR_BODY}" --repo ${CHARTS_REPO}
 
-echo "✅ EKS charts sync complete"
+echo "EKS charts sync complete!"

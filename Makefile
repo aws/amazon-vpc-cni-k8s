@@ -351,13 +351,8 @@ ekscharts-sync-release:
 		${MAKEFILE_PATH}/scripts/sync-to-eks-charts.sh -b $$HELM_CHART_NAME -r ${REPO_FULL_NAME} -n -y ; \
 	done
 
-upload-resources-to-github:
-	${MAKEFILE_PATH}/scripts/upload-resources-to-github.sh
-
 generate-cni-yaml:
 	${MAKEFILE_PATH}/scripts/generate-cni-yaml.sh
-
-release: generate-cni-yaml upload-resources-to-github
 
 config-folder-sync:
 	${MAKEFILE_PATH}/scripts/sync-to-config-folder.sh
