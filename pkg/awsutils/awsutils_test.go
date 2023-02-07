@@ -29,6 +29,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/request"
 
 	mock_ec2wrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
 )
@@ -888,7 +889,7 @@ func setupDescribeNetworkInterfacesPagesWithContextMock(
 	mockEC2.EXPECT().
 		DescribeNetworkInterfacesPagesWithContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(times).
 		DoAndReturn(func(_ context.Context, _ *ec2.DescribeNetworkInterfacesInput,
-			fn func(*ec2.DescribeNetworkInterfacesOutput, bool) bool) error {
+			fn func(*ec2.DescribeNetworkInterfacesOutput, bool) bool, _ ...request.Option) error {
 			assert.Equal(t, true, fn(&ec2.DescribeNetworkInterfacesOutput{
 				NetworkInterfaces: interfaces,
 			}, true))
@@ -1372,7 +1373,7 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 				mockEC2.EXPECT().
 					DescribeNetworkInterfacesPagesWithContext(gomock.Any(), call.input, gomock.Any(), gomock.Any()).
 					DoAndReturn(func(_ context.Context, _ *ec2.DescribeNetworkInterfacesInput,
-						fn func(*ec2.DescribeNetworkInterfacesOutput, bool) bool) error {
+						fn func(*ec2.DescribeNetworkInterfacesOutput, bool) bool, _ ...request.Option) error {
 						if call.err != nil {
 							return call.err
 						}
