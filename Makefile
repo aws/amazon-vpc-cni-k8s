@@ -318,6 +318,7 @@ format:       ## Format all Go source code files. (Note! integration_test.go has
 	  -not -name 'integration_test.go' \
 	  -not -name 'mock_publisher.go' \
 	  -not -name 'rpc.pb.go' \
+	  -not -name 'vpc_ip_resource_limit.go' \
 	  -name '*.go' \
 	  -print0 | sort -z | xargs -0 -- goimports $(or $(FORMAT_FLAGS),-w) | wc -l | bc)
 
