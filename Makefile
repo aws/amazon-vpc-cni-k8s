@@ -57,7 +57,7 @@ export DOCKER_BUILDKIT=1
 GOARCH = $(TARGETARCH)
 
 # GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE = public.ecr.aws/eks-distro-build-tooling/golang:1.19.2-1-gcc-al2
+GOLANG_IMAGE = public.ecr.aws/eks-distro-build-tooling/golang:1.19.5-1-gcc-al2
 # For the requested build, these are the set of Go specific build environment variables.
 export GOOS = linux
 export CGO_ENABLED = 0
@@ -318,6 +318,7 @@ format:       ## Format all Go source code files. (Note! integration_test.go has
 	  -not -name 'integration_test.go' \
 	  -not -name 'mock_publisher.go' \
 	  -not -name 'rpc.pb.go' \
+	  -not -name 'vpc_ip_resource_limit.go' \
 	  -name '*.go' \
 	  -print0 | sort -z | xargs -0 -- goimports $(or $(FORMAT_FLAGS),-w) | wc -l | bc)
 
