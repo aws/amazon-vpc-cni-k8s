@@ -101,11 +101,9 @@ func main() {
 		log.Fatalf("Failed to create file: %s\n", err)
 	}
 	err = eksMaxPodsTemplate.Execute(f, struct {
-		Timestamp string
 		ENIPods   []string
 		Regions   []string
 	}{
-		Timestamp: time.Now().Format(time.RFC3339),
 		ENIPods:   eniPods,
 		Regions:   regions,
 	})
