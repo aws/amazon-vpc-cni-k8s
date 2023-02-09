@@ -101,11 +101,11 @@ func main() {
 		log.Fatalf("Failed to create file: %s\n", err)
 	}
 	err = eksMaxPodsTemplate.Execute(f, struct {
-		ENIPods   []string
-		Regions   []string
+		ENIPods []string
+		Regions []string
 	}{
-		ENIPods:   eniPods,
-		Regions:   regions,
+		ENIPods: eniPods,
+		Regions: regions,
 	})
 	if err != nil {
 		log.Fatalf("Failed to generate template: %v\n", err)
