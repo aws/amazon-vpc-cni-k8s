@@ -739,8 +739,13 @@ func (c *IPAMContext) decreaseDatastorePool(interval time.Duration) {
 
 // tryFreeENI always tries to free one ENI
 func (c *IPAMContext) tryFreeENI() {
-	if c.isTerminating() || c.isNodeNonSchedulable() {
+	if c.isTerminating() {
 		log.Debug("AWS CNI is terminating, not detaching any ENIs")
+		return
+	}
+
+	if c.isNodeNonSchedulable() {
+		log.Debug("AWS CNI is on a non schedulable node, not detaching any ENIs")
 		return
 	}
 
@@ -829,10 +834,15 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) {
 		}
 	}
 
-	if c.isTerminating() || c.isNodeNonSchedulable() {
+	if c.isTerminating() {
 		log.Debug("AWS CNI is terminating, will not try to attach any new IPs or ENIs right now")
 		return
 	}
+	if c.isNodeNonSchedulable() {
+		log.Debug("AWS CNI is on a non schedulable node, will not try to attach any new IPs or ENIs right now")
+		return
+	}
+
 	// Try to add more Cidrs to existing ENIs first.
 	if c.inInsufficientCidrCoolingPeriod() {
 		log.Debugf("Recently we had InsufficientCidr error hence will wait for %v before retrying", insufficientCidrErrorCooldown)
