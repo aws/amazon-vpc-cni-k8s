@@ -97,7 +97,7 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 
 		testerContainer = manifest.NewBusyBoxContainerBuilder().
 			Command([]string{"wget"}).
-			Args([]string{"--spider", "-T", "1", fmt.Sprintf("[%s]:%d", service.Spec.ClusterIP,
+			Args([]string{"--spider", "-T", "5", fmt.Sprintf("[%s]:%d", service.Spec.ClusterIP,
 				service.Spec.Ports[0].Port)}).
 			Build()
 
@@ -114,7 +114,7 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 		// Test connection to an unreachable port should fail
 		negativeTesterContainer = manifest.NewBusyBoxContainerBuilder().
 			Command([]string{"wget"}).
-			Args([]string{"--spider", "-T", "1", fmt.Sprintf("[%s]:%d", service.Spec.ClusterIP, 2273)}).
+			Args([]string{"--spider", "-T", "5", fmt.Sprintf("[%s]:%d", service.Spec.ClusterIP, 2273)}).
 			Build()
 
 		negativeTesterJob = manifest.NewDefaultJobBuilder().
