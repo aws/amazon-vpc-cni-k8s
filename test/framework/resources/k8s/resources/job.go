@@ -67,6 +67,11 @@ func (d *defaultJobManager) DeleteAndWaitTillJobIsDeleted(job *v1.Job) error {
 	ctx := context.Background()
 	propagation := metav1.DeletePropagationForeground
 	err := d.k8sClient.Delete(ctx, job, &client.DeleteOptions{PropagationPolicy: &propagation})
+
+	if errors.IsNotFound(err) {
+		return nil
+	}
+
 	if err != nil {
 		return err
 	}
