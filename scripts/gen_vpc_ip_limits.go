@@ -22,7 +22,6 @@ import (
 	"sort"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
