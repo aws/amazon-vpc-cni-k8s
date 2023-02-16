@@ -22,7 +22,6 @@ import (
 	"sort"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -78,11 +77,9 @@ func main() {
 		log.Fatalf("Failed to create file: %v\n", err)
 	}
 	err = limitsTemplate.Execute(f, struct {
-		Timestamp string
 		ENILimits []string
 		Regions   []string
 	}{
-		Timestamp: time.Now().Format(time.RFC3339),
 		ENILimits: eniLimits,
 		Regions:   regions,
 	})
@@ -265,8 +262,6 @@ var eksMaxPodsTemplate = template.Must(template.New("").Parse(`# Copyright Amazo
 # on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
 # express or implied. See the License for the specific language governing
 # permissions and limitations under the License.
-#
-# This file was generated at {{ .Timestamp }}
 #
 # The regions queried were:
 {{- range $region := .Regions}}
