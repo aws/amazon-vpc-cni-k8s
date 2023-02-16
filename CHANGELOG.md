@@ -1,5 +1,57 @@
 # Changelog
 
+## v1.12.4
+
+* Bug - [Handle private IP exceeded error](https://github.com/aws/amazon-vpc-cni-k8s/pull/2210) (@jayanthvn )
+* Documentation - [doc: document AWS_VPC_K8S_CNI_LOGLEVEL for cni-metric-helper helm chart](https://github.com/aws/amazon-vpc-cni-k8s/pull/2226) (@csantanapr )
+* Documentation - [Added cni-metrics-helper docs](https://github.com/aws/amazon-vpc-cni-k8s/pull/2187) (@0xquark )
+* Improvement - [Update golang builder image](https://github.com/aws/amazon-vpc-cni-k8s/pull/2255) (@jdn5126 )
+* Improvement - [Update golang builder image](https://github.com/aws/amazon-vpc-cni-k8s/pull/2271) (@jdn5126 )
+* Improvement - [run make generate-limits](https://github.com/aws/amazon-vpc-cni-k8s/pull/2235) (@jdn5126 )
+* Improvement - [Add M7g, R7g instance](https://github.com/aws/amazon-vpc-cni-k8s/pull/2250) (@Issacwww )
+* Improvement - [Update client-go and k8s packages](https://github.com/aws/amazon-vpc-cni-k8s/pull/2204) (@jaydeokar )
+* Improvement - [Refactor cni-metrics-helper chart for eks charts release](https://github.com/aws/amazon-vpc-cni-k8s/pull/2201) (@jdn5126 )
+
+## v1.12.2
+
+* Bug - [Cherry-pick prometheus/client_golang module update to address CVE](https://github.com/aws/amazon-vpc-cni-k8s/pull/2239) (@jdn5126 )
+* Improvement - [Minimal base image for cni-metrics-helper minimal base image](https://github.com/aws/amazon-vpc-cni-k8s/pull/2189) (@jdn5126 )
+
+## v1.12.1
+
+* Bug - [Cleanup pod networking resources when IPAMD is unreachable to prevent rule leaking.](https://github.com/aws/amazon-vpc-cni-k8s/pull/2145) (@jdn5126 )
+* Bug - [Skip add-on installation when an add-on information is not available](https://github.com/aws/amazon-vpc-cni-k8s/pull/2131) (@sushrk )
+* Bug - [Add missing rules when NodePort support is disabled](https://github.com/aws/amazon-vpc-cni-k8s/pull/2026)(@antoninbas )
+* Bug - [Fix logging in publisher package](https://github.com/aws/amazon-vpc-cni-k8s/pull/2119) (@jdn5126 )
+* Bug - [Fix Crypto package vulnerability](https://github.com/aws/amazon-vpc-cni-k8s/pull/2183) (@jaydeokar )
+* Bug - [Fix Crypto package vulnerability](https://github.com/aws/amazon-vpc-cni-k8s/pull/2174) (@jaydeokar )
+* Cleanup - [Merging makefile and go.mod from test directory to root directory](https://github.com/aws/amazon-vpc-cni-k8s/pull/2129) (@jerryhe1999 )
+* Documentation - [Update troubleshooting docs for node operating system](https://github.com/aws/amazon-vpc-cni-k8s/pull/2132) (@jdn5126 )
+* Feature - [ Reporting EC2 API calls metrics through CNI metrics helper](https://github.com/aws/amazon-vpc-cni-k8s/pull/2142) (@jaydeokar )
+* Feature - [Added resources block to cni-metrics-helper helm chart](https://github.com/aws/amazon-vpc-cni-k8s/pull/2141) (@jcogilvie )
+* Feature - [CLUSTER_ENDPOINT can now be specified to allow the VPC CNI to initialize before kube-proxy has finished setting up cluster IP routes ](https://github.com/aws/amazon-vpc-cni-k8s/pull/2138) (@bwagner5 )
+* Improvement - [Move VPC CNI and VPC CNI init images to use EKS minimal base image.](https://github.com/aws/amazon-vpc-cni-k8s/pull/2146) (@jdn5126 )
+* Improvement - [Updating helm chart as per helm v3 standard](https://github.com/aws/amazon-vpc-cni-k8s/pull/2144) (@jaydeokar )
+* Improvement - [Update golang to 1.19.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/2147) (@jayanthvn )
+* Testing - [Fixes to automation runs](https://github.com/aws/amazon-vpc-cni-k8s/pull/2148) (@jdn5126 )
+* Testing - [Fix environment variable name in update-cni-image script](https://github.com/aws/amazon-vpc-cni-k8s/pull/2136) (@sushrk )
+
+## v1.12.0
+
+* Bug - [Remove extra decrement of totalIP count](https://github.com/aws/amazon-vpc-cni-k8s/pull/2042/files) (@jayanthvn )
+* Documentation - [Update readme with slack channel ](https://github.com/aws/amazon-vpc-cni-k8s/pull/2111) (@jayanthvn )
+* Documentation - [Fix ENIConfig keys in values.yaml](https://github.com/aws/amazon-vpc-cni-k8s/pull/1989) (@chotiwat )
+* Improvement - [switch to use state file for IP allocation pool management](https://github.com/aws/amazon-vpc-cni-k8s/pull/2110) (@M00nF1sh )
+* Improvement - [explicitly request NET_RAW capabilities in CNI manifests ](https://github.com/aws/amazon-vpc-cni-k8s/pull/2063) (@JingmingGuo )
+* Improvement - [Reduce startup latency by removing some unneeded sleeps](https://github.com/aws/amazon-vpc-cni-k8s/pull/2104) (@bwagner5 )
+* New Instance Support - [Add trn1 limits](https://github.com/aws/amazon-vpc-cni-k8s/pull/2092) (@cartermckinnon )
+* Testing - [fix metrics-helper test to detach role policy early](https://github.com/aws/amazon-vpc-cni-k8s/pull/2121) (@sushrk )
+* Testing - [Use GetNodes in metrics-helper; explicitly install latest addon](https://github.com/aws/amazon-vpc-cni-k8s/pull/2093/files) (@jdn5126 )
+* Testing - [refine all github workflows](https://github.com/aws/amazon-vpc-cni-k8s/pull/2090) (@M00nF1sh )
+* Testing - [Resolve flakiness in IPAMD warm target tests](https://github.com/aws/amazon-vpc-cni-k8s/pull/2112) (@jdn5126 )
+* Testing - [VPC CNI Integration Test Fixes](https://github.com/aws/amazon-vpc-cni-k8s/pull/2105)  (@jdn5126 )
+* Testing - [Update CNI canary integration test and cleanup for ginkgo v2](https://github.com/aws/amazon-vpc-cni-k8s/pull/2088) (@jdn5126 )
+
 ## v1.11.4
 
 * Improvement - [update aws-node clusterrole permissions](https://github.com/aws/amazon-vpc-cni-k8s/pull/2058) (@sushrk)
