@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.12.4
+## v1.12.5
 
 * Bug - [Handle private IP exceeded error](https://github.com/aws/amazon-vpc-cni-k8s/pull/2210) (@jayanthvn )
 * Documentation - [doc: document AWS_VPC_K8S_CNI_LOGLEVEL for cni-metric-helper helm chart](https://github.com/aws/amazon-vpc-cni-k8s/pull/2226) (@csantanapr )
@@ -11,6 +11,7 @@
 * Improvement - [Add M7g, R7g instance](https://github.com/aws/amazon-vpc-cni-k8s/pull/2250) (@Issacwww )
 * Improvement - [Update client-go and k8s packages](https://github.com/aws/amazon-vpc-cni-k8s/pull/2204) (@jaydeokar )
 * Improvement - [Refactor cni-metrics-helper chart for eks charts release](https://github.com/aws/amazon-vpc-cni-k8s/pull/2201) (@jdn5126 )
+* Improvement - [fix: Upgrade to golang.org/x/net@v0.7.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2273) (@ellistarn )
 
 ## v1.12.2
 
