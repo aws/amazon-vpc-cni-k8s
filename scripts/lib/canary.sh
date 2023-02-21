@@ -4,7 +4,7 @@
 
 SECONDS=0
 
-echo "Running Canary tests for amazon-vpc-cni-k8s with the following variables
+echo "Running tests for amazon-vpc-cni-k8s with the following variables
 KUBE_CONFIG_PATH:  $KUBE_CONFIG_PATH
 CLUSTER_NAME: $CLUSTER_NAME
 REGION: $REGION
