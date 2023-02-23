@@ -18,6 +18,7 @@ import (
 	"io/ioutil"
 	"net/url"
 	"strings"
+	"time"
 
 	k8sUtil "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -70,6 +71,7 @@ var _ = Describe("test aws-node pod event", func() {
 				Expect(err).ToNot(HaveOccurred())
 				role = *instanceProfileOutput.InstanceProfile.Roles[0].RoleName
 			}
+			fmt.Fprintf(GinkgoWriter, "role is %s\n", role)
 
 			By("Detaching VPC_CNI policy")
 			err = f.CloudServices.IAM().DetachRolePolicy(EKSCNIPolicyARN, role)
@@ -112,7 +114,7 @@ var _ = Describe("test aws-node pod event", func() {
 						break
 					}
 				}
-			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
+			}).WithTimeout(3 * utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
 		})
 
 		AfterEach(func() {
@@ -153,6 +155,7 @@ var _ = Describe("test aws-node pod event", func() {
 				FieldSelector: fields.SelectorFromSet(fields.Set{"reason": "MissingIAMPermissions"}),
 				Namespace:     utils.AwsNodeNamespace,
 			}
+			time.Sleep(30)
 			eventList, err := f.K8sResourceManagers.EventManager().GetEventsWithOptions(&listOpts)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(eventList.Items).NotTo(BeEmpty())

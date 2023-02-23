@@ -26,39 +26,39 @@ import (
 	gomock "github.com/golang/mock/gomock"
 )
 
-// MockAPIs is a mock of APIs interface
+// MockAPIs is a mock of APIs interface.
 type MockAPIs struct {
 	ctrl     *gomock.Controller
 	recorder *MockAPIsMockRecorder
 }
 
-// MockAPIsMockRecorder is the mock recorder for MockAPIs
+// MockAPIsMockRecorder is the mock recorder for MockAPIs.
 type MockAPIsMockRecorder struct {
 	mock *MockAPIs
 }
 
-// NewMockAPIs creates a new mock instance
+// NewMockAPIs creates a new mock instance.
 func NewMockAPIs(ctrl *gomock.Controller) *MockAPIs {
 	mock := &MockAPIs{ctrl: ctrl}
 	mock.recorder = &MockAPIsMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockAPIs) EXPECT() *MockAPIsMockRecorder {
 	return m.recorder
 }
 
-// GetRunningPodSandboxes mocks base method
-func (m *MockAPIs) GetRunningPodSandboxes(arg0 logger.Logger) ([]*cri.SandboxInfo, error) {
+// GetRunningPodSandboxes mocks base method.
+func (m *MockAPIs) GetRunningPodSandboxes(arg0 logger.Logger) ([]cri.SandboxInfo, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetRunningPodSandboxes", arg0)
-	ret0, _ := ret[0].([]*cri.SandboxInfo)
+	ret0, _ := ret[0].([]cri.SandboxInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetRunningPodSandboxes indicates an expected call of GetRunningPodSandboxes
+// GetRunningPodSandboxes indicates an expected call of GetRunningPodSandboxes.
 func (mr *MockAPIsMockRecorder) GetRunningPodSandboxes(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRunningPodSandboxes", reflect.TypeOf((*MockAPIs)(nil).GetRunningPodSandboxes), arg0)

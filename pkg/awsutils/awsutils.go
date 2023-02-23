@@ -1945,7 +1945,7 @@ func (cache *EC2InstanceMetadataCache) IsPrimaryENI(eniID string) bool {
 func CheckAPIErrorAndBroadcastEvent(err error, api string) {
 	if aerr, ok := err.(awserr.Error); ok {
 		if aerr.Code() == "UnauthorizedOperation" {
-			eventRecorder.BroadcastEvent(v1.EventTypeWarning, "MissingIAMPermissions",
+			eventRecorder.BroadcastPodEvent(v1.EventTypeWarning, "MissingIAMPermissions",
 				fmt.Sprintf("Unauthorized operation: failed to call %v due to missing permissions. Please refer https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/iam-policy.md to attach relevant policy to IAM role", api))
 		}
 	}

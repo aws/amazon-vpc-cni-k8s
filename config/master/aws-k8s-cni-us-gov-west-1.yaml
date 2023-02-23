@@ -57,7 +57,7 @@ rules:
   - apiGroups: [""]
     resources:
       - pods
-    verbs: ["list", "watch", "get"]
+    verbs: ["list", "watch", "get"]        
   - apiGroups: [""]
     resources:
       - nodes
@@ -126,8 +126,8 @@ spec:
         securityContext:
             privileged: true
         resources:
-          requests:
-            cpu: 25m
+            requests:
+              cpu: 25m
         volumeMounts:
           - mountPath: /host/opt/cni/bin
             name: cni-bin-dir
@@ -205,6 +205,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
           resources:
             requests:
               cpu: 25m
