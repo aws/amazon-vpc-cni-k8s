@@ -19,7 +19,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/version"
 )
@@ -58,8 +57,6 @@ func _main() int {
 		log.Errorf("Failed to create cached kube client: %s", err)
 		return 1
 	}
-
-	eventrecorder.New(rawK8SClient, cacheK8SClient)
 
 	ipamContext, err := ipamd.New(rawK8SClient, cacheK8SClient)
 	if err != nil {

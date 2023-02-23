@@ -21,10 +21,13 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,6 +35,7 @@ import (
 
 var log = logger.Get()
 var MyNodeName = os.Getenv("MY_NODE_NAME")
+var MyPodName = os.Getenv("MY_POD_NAME")
 
 const (
 	awsNode      = "aws-node"
@@ -45,6 +49,8 @@ type EventRecorder struct {
 	RawK8SClient    client.Client
 	CachedK8SClient client.Client
 	HostID          string
+	hostPod         corev1.Pod
+	hostNode        corev1.Node
 }
 
 func New(rawK8SClient, cachedK8SClient client.Client) (*EventRecorder, error) {
@@ -64,6 +70,14 @@ func New(rawK8SClient, cachedK8SClient client.Client) (*EventRecorder, error) {
 	eventRecorder.Recorder = eventBroadcaster.NewRecorder(clientgoscheme.Scheme, "aws-node")
 	eventRecorder.RawK8SClient = rawK8SClient
 	eventRecorder.CachedK8SClient = cachedK8SClient
+
+	if eventRecorder.hostNode, err = findMyNode(eventRecorder.CachedK8SClient); err != nil {
+		log.Errorf("Failed to find host node: %s", err)
+	}
+
+	if eventRecorder.hostPod, err = findMyPod(eventRecorder.CachedK8SClient); err != nil {
+		log.Errorf("Failed to find host aws-node pod: %s", err)
+	}
 
 	return eventRecorder, nil
 
@@ -92,10 +106,10 @@ func (e *EventRecorder) BroadcastEvent(eventType, reason, message string) {
 	}
 }
 
-func (e *EventRecorder) findMyNode(ctx context.Context) (corev1.Node, error) {
+func findMyNode(cachedK8SClient client.Client) (corev1.Node, error) {
 	var node corev1.Node
 	// Find my node
-	err := e.CachedK8SClient.Get(ctx, types.NamespacedName{Name: MyNodeName}, &node)
+	err := cachedK8SClient.Get(context.TODO(), types.NamespacedName{Name: MyNodeName}, &node)
 	if err != nil {
 		log.Errorf("Cached client failed GET node (%s)", MyNodeName)
 	} else {
@@ -104,24 +118,32 @@ func (e *EventRecorder) findMyNode(ctx context.Context) (corev1.Node, error) {
 	return node, err
 }
 
-// SendNodeEvent sends an event regarding node object
-func (e *EventRecorder) SendNodeEvent(eventType, reason, action, message string) error {
-	// Find my node
-	node, err := e.findMyNode(context.TODO())
+func findMyPod(cachedK8SClient client.Client) (corev1.Pod, error) {
+	var pod corev1.Pod
+	// Find my aws-node pod
+	err := cachedK8SClient.Get(context.TODO(), types.NamespacedName{Name: MyPodName, Namespace: utils.AwsNodeNamespace}, &pod)
 	if err != nil {
-		log.Errorf("Failed to get node: %v", err)
-		return err
+		log.Errorf("Cached client failed GET pod (%s)", MyPodName)
+	} else {
+		log.Debugf("Node found %s - labels - %d", pod.Name, len(pod.Labels))
+	}
+	return pod, err
+}
+
+// SendNodeEvent sends an event regarding pod object and related to node object
+func (e *EventRecorder) SendNodeEvent(eventType, reason, action, message string) error {
+	instance := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      e.hostNode.Name,
+			Namespace: e.hostNode.Namespace,
+			UID:       types.UID(e.HostID),
+		},
 	}
 
-	// make a copy before modifying the UID
-	// Note: kubectl uses the filter involvedObject.uid=NodeName to fetch the events
-	// that are listed in 'kubectl describe node' output. So setting the node UID to
-	// nodename before sending the event
-	nodeCopy := node.DeepCopy()
-	nodeCopy.SetUID(types.UID(e.HostID))
-
-	e.Recorder.Eventf(nodeCopy, nil, eventType, reason, action, message)
-	log.Debugf("Sent node event: eventType: %s, reason: %s, message: %s, action %s", eventType, reason, message, action)
+	// make the event unique avoid to be aggregated by event broadcaster
+	action = action + ": " + string(uuid.NewUUID())
+	e.Recorder.Eventf(&e.hostPod, instance, eventType, reason, action, message)
+	log.Debugf("Sent sgp event: eventType: %s, reason: %s, message: %s, action %s", eventType, reason, message, action)
 
 	return nil
 }
