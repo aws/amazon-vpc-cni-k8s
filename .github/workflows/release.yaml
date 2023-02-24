@@ -18,7 +18,7 @@ jobs:
       - name: Checkout latest commit in the PR
         uses: actions/checkout@v3
         with:
-          ref: "refs/tags/{{ github.event.release.tag_name }}"
+          ref: "refs/tags/${{ github.event.release.tag_name }}"
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
