@@ -62,9 +62,24 @@ For help, please consider the following venues (in order):
 * [File an issue](https://github.com/aws/amazon-vpc-cni-k8s/issues/new/choose)
 * Chat with us on the `#aws-vpc-cni` channel in the [Kubernetes Slack](https://kubernetes.slack.com/) community.
 
+## Recommended Version
+
+For all Kubernetes releases, we recommend installing the latest VPC CNI release. The following table denotes our minimum recommended
+VPC CNI version for each actively supported Kubernetes release.
+
+| Kubernetes Release |    1.25    |    1.24    |    1.23    |    1.22    |
+| ------------------ | ---------- | ---------- | ---------- | ---------- |
+|  VPC CNI Version   |  v1.11.4+  |  v1.9.3+   |  v1.8.0+   |  v1.8.0+   |
+
+## Version Upgrade
+
+Upgrading (or downgrading) the VPC CNI version should result in no downtime. Existing pods should not be affected and will not lose network connectivity.
+New pods will be in pending state until the VPC CNI is fully initialized and can assign pod IP addresses. In v1.12.0+, VPC CNI state is
+restored via an on-disk file: `/var/run/aws-node/ipam.json`. In lower versions, state is restored via calls to container runtime.
+
 ## ENI Allocation
 
-When a worker node first joins the cluster, there is only 1 ENI along with all of its addresses in the ENI. Without any
+When a worker node first joins the cluster, there is only 1 ENI along with all of the addresses on the ENI. Without any
 configuration, ipamd always tries to keep one extra ENI.
 
 When the number of pods running on the node exceeds the number of addresses on a single ENI, the CNI backend starts allocating
