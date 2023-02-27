@@ -32,7 +32,7 @@ var success, failure int
 
 const (
 	ClientRequestData = "message from the client!"
-	TcpTimeout        = time.Second * 2
+	TcpTimeout        = time.Second * 5
 )
 
 // Queries the list of server address provided and posts the success and failure rate in stdout
