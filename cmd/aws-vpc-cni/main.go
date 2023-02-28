@@ -217,16 +217,9 @@ func isValidJSON(inFile string) error {
 	return json.Unmarshal([]byte(inFile), &result)
 }
 
-func generateJSON(jsonFile string, outFile string) error {
+func generateJSON(jsonFile string, outFile string, nodeIP string) error {
 	byteValue, err := ioutil.ReadFile(jsonFile)
 	if err != nil {
-		return err
-	}
-
-	var nodeIP string
-	nodeIP, err = getNodePrimaryV4Address()
-	if err != nil {
-		log.Errorf("Failed to get Node IP")
 		return err
 	}
 
@@ -391,8 +384,16 @@ func _main() int {
 	//	return 1
 	//}
 
+	// Get node IP for conflist
+	var nodeIP string
+	nodeIP, err = getNodePrimaryV4Address()
+	if err != nil {
+		log.Errorf("Failed to get Node IP, error: %v", err)
+		return 1
+	}
+
 	log.Infof("Copying config file... ")
-	err = generateJSON(defaultAWSconflistFile, tmpAWSconflistFile)
+	err = generateJSON(defaultAWSconflistFile, tmpAWSconflistFile, nodeIP)
 	if err != nil {
 		log.WithError(err).Errorf("Failed to generate 10-awsconflist")
 		return 1
