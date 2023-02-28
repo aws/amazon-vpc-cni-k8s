@@ -227,11 +227,6 @@ grep -r -q $TEST_IMAGE_VERSION $TEST_CONFIG_PATH
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
 grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH
 
-if [[ $RUN_KOPS_TEST == true ]]; then
-    export KUBECONFIG=~/.kube/config
-    run_kops_conformance
-fi
-
 if [[ $RUN_INTEGRATION_DEFAULT_CNI == true ]]; then
     ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 
@@ -323,6 +318,10 @@ if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
     run_performance_test_730_pods
     run_performance_test_5000_pods
     PERFORMANCE_DURATION=$((SECONDS - START))
+fi
+
+if [[ $RUN_KOPS_TEST == true ]]; then
+    run_kops_conformance
 fi
 
 if [[ "$DEPROVISION" == true ]]; then
