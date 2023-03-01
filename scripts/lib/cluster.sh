@@ -104,7 +104,7 @@ function up-kops-cluster {
 
     # kOps cluster by default comes with ebs-csi-node and coredns-autoscaler as an add-on which cannot be excluded on cluster creation
     # Since CNI tests don't really need any of these components for running tests, we delete these to avoid any flakiness
-
+    export KUBECONFIG=~/.kube/config
     kubectl delete daemonset ebs-csi-node -n kube-system
     kubectl delete deployment coredns-autoscaler -n kube-system
 
