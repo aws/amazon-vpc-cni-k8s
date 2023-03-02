@@ -320,9 +320,10 @@ if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
     PERFORMANCE_DURATION=$((SECONDS - START))
 fi
 
-if [[ $RUN_KOPS_TEST == true ]]; then
-    run_kops_conformance
-fi
+# Disable kops conformance test till we fix timeout issue with ginkgo 
+# if [[ $RUN_KOPS_TEST == true ]]; then
+#     run_kops_conformance
+# fi
 
 if [[ "$DEPROVISION" == true ]]; then
     START=$SECONDS
