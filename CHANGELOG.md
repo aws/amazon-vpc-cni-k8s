@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.12.5
+
+* Bug - [Handle private IP exceeded error](https://github.com/aws/amazon-vpc-cni-k8s/pull/2210) (@jayanthvn )
+* Documentation - [doc: document AWS_VPC_K8S_CNI_LOGLEVEL for cni-metric-helper helm chart](https://github.com/aws/amazon-vpc-cni-k8s/pull/2226) (@csantanapr )
+* Documentation - [Added cni-metrics-helper docs](https://github.com/aws/amazon-vpc-cni-k8s/pull/2187) (@0xquark )
+* Improvement - [Update golang builder image](https://github.com/aws/amazon-vpc-cni-k8s/pull/2255) (@jdn5126 )
+* Improvement - [Update golang builder image](https://github.com/aws/amazon-vpc-cni-k8s/pull/2271) (@jdn5126 )
+* Improvement - [run make generate-limits](https://github.com/aws/amazon-vpc-cni-k8s/pull/2235) (@jdn5126 )
+* Improvement - [Add M7g, R7g instance](https://github.com/aws/amazon-vpc-cni-k8s/pull/2250) (@Issacwww )
+* Improvement - [Update client-go and k8s packages](https://github.com/aws/amazon-vpc-cni-k8s/pull/2204) (@jaydeokar )
+* Improvement - [Refactor cni-metrics-helper chart for eks charts release](https://github.com/aws/amazon-vpc-cni-k8s/pull/2201) (@jdn5126 )
+* Improvement - [fix: Upgrade to golang.org/x/net@v0.7.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2273) (@ellistarn )
+
+## v1.12.2
+
+* Bug - [Cherry-pick prometheus/client_golang module update to address CVE](https://github.com/aws/amazon-vpc-cni-k8s/pull/2239) (@jdn5126 )
+* Improvement - [Minimal base image for cni-metrics-helper minimal base image](https://github.com/aws/amazon-vpc-cni-k8s/pull/2189) (@jdn5126 )
+
 ## v1.12.1
 
 * Bug - [Cleanup pod networking resources when IPAMD is unreachable to prevent rule leaking.](https://github.com/aws/amazon-vpc-cni-k8s/pull/2145) (@jdn5126 )
