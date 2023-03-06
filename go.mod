@@ -1,6 +1,6 @@
 module github.com/aws/amazon-vpc-cni-k8s
 
-go 1.18
+go 1.19
 
 require (
 	github.com/apparentlymart/go-cidr v1.0.1
@@ -168,4 +168,4 @@ replace golang.org/x/crypto => golang.org/x/crypto v0.1.0
 
 // Containerd package 1.6.x has a dependency of containernetworking/cni > 1.0.0 and which also has a CNI change spec 1.0.0
 // To keep it backward compatible to the spec 0.4.0, we will pin it to v1.5.x
-replace github.com/containerd/containerd => github.com/containerd/containerd v1.5.16
+replace github.com/containerd/containerd => github.com/containerd/containerd v1.5.18
