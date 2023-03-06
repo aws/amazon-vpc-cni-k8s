@@ -19,6 +19,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"strconv"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
@@ -51,8 +52,8 @@ type NetConf struct {
 	// Interface inside container to create
 	IfName string `json:"ifName"`
 
-	//MTU for Egress v4 interface
-	MTU int `json:"mtu"`
+	// MTU for Egress v4 interface
+	MTU string `json:"mtu"`
 
 	Enabled string `json:"enabled"`
 
@@ -266,10 +267,10 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	log.Debugf("Received an ADD request for: conf=%v; Plugin enabled=%s", netConf, netConf.Enabled)
-	//We will not be vending out this as a separate plugin by itself and it is only intended to be used as a
-	//chained plugin to VPC CNI in IPv6 mode. We only need this plugin to kick in if v6 is enabled in VPC CNI. So, the
-	//value of an env variable in VPC CNI determines whether this plugin should be enabled and this is an attempt to
-	//pass through the variable configured in VPC CNI.
+	// We will not be vending out this as a separate plugin by itself and it is only intended to be used as a
+	// chained plugin to VPC CNI in IPv6 mode. We only need this plugin to kick in if v6 is enabled in VPC CNI. So, the
+	// value of an env variable in VPC CNI determines whether this plugin should be enabled and this is an attempt to
+	// pass through the variable configured in VPC CNI.
 	if netConf.Enabled == "false" {
 		return types.PrintResult(result, netConf.CNIVersion)
 	}
@@ -308,8 +309,15 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 	defer netns.Close()
 
+	// Convert MTU from string to int
+	mtu, err := strconv.Atoi(netConf.MTU)
+	if err != nil {
+		log.Debugf("failed to parse MTU: %s, err: %v", netConf.MTU, err)
+		return err
+	}
+
 	// NB: This uses netConf.IfName NOT args.IfName.
-	hostInterface, _, err := setupContainerVeth(netns, netConf.IfName, netConf.MTU, tmpResult)
+	hostInterface, _, err := setupContainerVeth(netns, netConf.IfName, mtu, tmpResult)
 	if err != nil {
 		log.Debugf("failed to setup container Veth: %v", err)
 		return err
@@ -322,7 +330,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 	log.Debugf("Node IP: %s", netConf.NodeIP)
 	if netConf.NodeIP != nil {
 		for _, ipc := range tmpResult.IPs {
-
 			if ipc.Address.IP.To4() != nil {
 				//log.Printf("Configuring SNAT %s -> %s", ipc.Address.IP, netConf.SnatIP)
 				if err := snat.Snat4(netConf.NodeIP, ipc.Address.IP, chain, comment, netConf.RandomizeSNAT); err != nil {
@@ -332,9 +339,9 @@ func cmdAdd(args *skel.CmdArgs) error {
 		}
 	}
 
-	//Copy interfaces over to result, but not IPs.
+	// Copy interfaces over to result, but not IPs.
 	result.Interfaces = append(result.Interfaces, tmpResult.Interfaces...)
-	//Note: Useful for debug, will do away with the below log prior to release
+	// Note: Useful for debug, will do away with the below log prior to release
 	for _, v := range result.IPs {
 		log.Debugf("Interface Name: %v; IP: %s", v.Interface, v.Address)
 	}
@@ -349,7 +356,7 @@ func cmdDel(args *skel.CmdArgs) error {
 		return fmt.Errorf("failed to parse config: %v", err)
 	}
 
-	//We only need this plugin to kick in if v6 is enabled
+	// We only need this plugin to kick in if v6 is enabled
 	if netConf.Enabled == "false" {
 		return nil
 	}
