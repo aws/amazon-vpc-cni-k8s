@@ -28,6 +28,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/vishvananda/netlink"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -459,31 +460,39 @@ func getDummyENIMetadataWithV6Prefix() awsutils.ENIMetadata {
 
 func TestIncreaseIPPoolDefault(t *testing.T) {
 	_ = os.Unsetenv(envCustomNetworkCfg)
-	testIncreaseIPPool(t, false)
+	testIncreaseIPPool(t, false, false)
 }
 
 func TestIncreaseIPPoolCustomENI(t *testing.T) {
 	_ = os.Setenv(envCustomNetworkCfg, "true")
 	_ = os.Setenv("MY_NODE_NAME", myNodeName)
-	testIncreaseIPPool(t, true)
+	testIncreaseIPPool(t, true, false)
 }
 
-func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
+func TestIncreaseIPPoolCustomENIOnNonSchedulableNode(t *testing.T) {
+	_ = os.Setenv(envCustomNetworkCfg, "true")
+	_ = os.Setenv(envManageENIsNonSchedulable, "true")
+	_ = os.Setenv("MY_NODE_NAME", myNodeName)
+	testIncreaseIPPool(t, true, true)
+}
+
+func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 	ctx := context.Background()
 
 	mockContext := &IPAMContext{
-		awsClient:           m.awsutils,
-		rawK8SClient:        m.rawK8SClient,
-		cachedK8SClient:     m.cachedK8SClient,
-		maxIPsPerENI:        14,
-		maxENI:              4,
-		warmENITarget:       1,
-		networkClient:       m.network,
-		useCustomNetworking: UseCustomNetworkCfg(),
-		primaryIP:           make(map[string]string),
-		terminating:         int32(0),
+		awsClient:                 m.awsutils,
+		rawK8SClient:              m.rawK8SClient,
+		cachedK8SClient:           m.cachedK8SClient,
+		maxIPsPerENI:              14,
+		maxENI:                    4,
+		warmENITarget:             1,
+		networkClient:             m.network,
+		useCustomNetworking:       UseCustomNetworkCfg(),
+		manageENIsNonScheduleable: ManageENIsOnNonSchedulableNode(),
+		primaryIP:                 make(map[string]string),
+		terminating:               int32(0),
 	}
 
 	mockContext.dataStore = testDatastore()
@@ -561,6 +570,13 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool) {
 			Spec:       v1.NodeSpec{},
 			Status:     v1.NodeStatus{},
 		}
+		if unschedulabeNode {
+			fakeNode.Spec.Taints = append(fakeNode.Spec.Taints, corev1.Taint{
+				Key:    "node.kubernetes.io/unschedulable",
+				Effect: corev1.TaintEffectNoSchedule,
+			})
+		}
+
 		_ = m.cachedK8SClient.Create(ctx, &fakeNode)
 
 		//Create a dummy ENIConfig
@@ -595,19 +611,20 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	ctx := context.Background()
 
 	mockContext := &IPAMContext{
-		awsClient:              m.awsutils,
-		rawK8SClient:           m.rawK8SClient,
-		cachedK8SClient:        m.cachedK8SClient,
-		maxIPsPerENI:           256,
-		maxPrefixesPerENI:      16,
-		maxENI:                 4,
-		warmENITarget:          1,
-		warmPrefixTarget:       1,
-		networkClient:          m.network,
-		useCustomNetworking:    UseCustomNetworkCfg(),
-		primaryIP:              make(map[string]string),
-		terminating:            int32(0),
-		enablePrefixDelegation: true,
+		awsClient:                 m.awsutils,
+		rawK8SClient:              m.rawK8SClient,
+		cachedK8SClient:           m.cachedK8SClient,
+		maxIPsPerENI:              256,
+		maxPrefixesPerENI:         16,
+		maxENI:                    4,
+		warmENITarget:             1,
+		warmPrefixTarget:          1,
+		networkClient:             m.network,
+		useCustomNetworking:       UseCustomNetworkCfg(),
+		manageENIsNonScheduleable: ManageENIsOnNonSchedulableNode(),
+		primaryIP:                 make(map[string]string),
+		terminating:               int32(0),
+		enablePrefixDelegation:    true,
 	}
 
 	mockContext.dataStore = testDatastorewithPrefix()
