@@ -241,26 +241,26 @@ var (
 
 // IPAMContext contains node level control information
 type IPAMContext struct {
-	awsClient                      awsutils.APIs
-	dataStore                      *datastore.DataStore
-	rawK8SClient                   client.Client
-	cachedK8SClient                client.Client
-	enableIPv4                     bool
-	enableIPv6                     bool
-	useCustomNetworking            bool
-	manageENIsNonScheduleable      bool
-	networkClient                  networkutils.NetworkAPIs
-	maxIPsPerENI                   int
-	maxENI                         int
-	maxPrefixesPerENI              int
-	unmanagedENI                   int
-	warmENITarget                  int
-	warmIPTarget                   int
-	minimumIPTarget                int
-	warmPrefixTarget               int
-	primaryIP                      map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
-	lastNodeIPPoolAction           time.Time
-	lastDecreaseIPPool             time.Time
+	awsClient                 awsutils.APIs
+	dataStore                 *datastore.DataStore
+	rawK8SClient              client.Client
+	cachedK8SClient           client.Client
+	enableIPv4                bool
+	enableIPv6                bool
+	useCustomNetworking       bool
+	manageENIsNonScheduleable bool
+	networkClient             networkutils.NetworkAPIs
+	maxIPsPerENI              int
+	maxENI                    int
+	maxPrefixesPerENI         int
+	unmanagedENI              int
+	warmENITarget             int
+	warmIPTarget              int
+	minimumIPTarget           int
+	warmPrefixTarget          int
+	primaryIP                 map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
+	lastNodeIPPoolAction      time.Time
+	lastDecreaseIPPool        time.Time
 	// reconcileCooldownCache keeps timestamps of the last time an IP address was unassigned from an ENI,
 	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
 	reconcileCooldownCache    ReconcileCooldownCache
@@ -2312,6 +2312,7 @@ func (c *IPAMContext) initENIAndIPLimits() (err error) {
 
 func (c *IPAMContext) isConfigValid() bool {
 	//Validate that only one among v4 and v6 is enabled.
+	if c.enableIPv4 && c.enableIPv6 {
 		log.Errorf("IPv4 and IPv6 are both enabled. VPC CNI currently doesn't support dual stack mode")
 		return false
 	} else if !c.enableIPv4 && !c.enableIPv6 {
