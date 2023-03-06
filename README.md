@@ -100,6 +100,19 @@ The following environment variables are available, and all of them are optional.
 
 ---
 
+#### `AWS_MANAGE_ENIS_NON_SCHEDULABLE` 
+
+Type: Boolean as a String
+
+Default: `false`
+
+Specifies whether IPAMD should allocate or deallocate ENIs on a non-schedulable node. 
+
+This could be useful in scenarios where user sets `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG` where the primary interface will not used 
+and there are system pods which needs to get IP from a secondary ENI to complete the bootrstap of a node.  
+
+---
+
 #### `AWS_VPC_CNI_NODE_PORT_SUPPORT`
 
 Type: Boolean as a String
