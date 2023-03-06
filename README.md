@@ -100,7 +100,7 @@ The following environment variables are available, and all of them are optional.
 
 ---
 
-#### `AWS_MANAGE_ENIS_NON_SCHEDULABLE` 
+#### `AWS_MANAGE_ENIS_NON_SCHEDULABLE` (v1.13.0+)
 
 Type: Boolean as a String
 
