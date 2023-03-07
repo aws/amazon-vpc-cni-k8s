@@ -93,6 +93,11 @@ For example, a m4.4xlarge node can have up to 8 ENIs, and each ENI can have up t
 
 For a detailed explanation, see [`WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/eni-and-ip-target.md).
 
+
+## Privileged mode
+
+VPC CNI makes use of privileged mode (`privileged: true`) in the manifest only for its init container. This elevated privilege is required to set the networking kernel parameters.
+
 ### CNI Configuration Variables<a name="cni-env-vars"></a>
 
 The Amazon VPC CNI plugin for Kubernetes supports a number of configuration options, which are set through environment variables.
