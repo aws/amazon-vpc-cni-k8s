@@ -133,7 +133,6 @@ func TestNodeInit(t *testing.T) {
 		enableIPv4:      true,
 		enableIPv6:      false,
 	}
-	mockContext.dataStore.CheckpointMigrationPhase = 2
 
 	eni1, eni2, _ := getDummyENIMetadata()
 
@@ -220,7 +219,6 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 		enableIPv4:             true,
 		enableIPv6:             false,
 	}
-	mockContext.dataStore.CheckpointMigrationPhase = 2
 
 	eni1, eni2 := getDummyENIMetadataWithPrefix()
 
@@ -303,7 +301,6 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 		enableIPv4:             false,
 		enableIPv6:             true,
 	}
-	mockContext.dataStore.CheckpointMigrationPhase = 2
 
 	eni1 := getDummyENIMetadataWithV6Prefix()
 
@@ -1246,15 +1243,11 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 }
 
 func testDatastore() *datastore.DataStore {
-	ds := datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false)
-	ds.CheckpointMigrationPhase = 2
-	return ds
+	return datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false)
 }
 
 func testDatastorewithPrefix() *datastore.DataStore {
-	ds := datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), true)
-	ds.CheckpointMigrationPhase = 2
-	return ds
+	return datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), true)
 }
 
 func datastoreWith3FreeIPs() *datastore.DataStore {

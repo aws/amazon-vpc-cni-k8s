@@ -7,8 +7,8 @@ require (
 	github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20211209222755-86ece934e91a
 	github.com/aws/amazon-vpc-resource-controller-k8s v1.1.4
 	github.com/aws/aws-sdk-go v1.43.29
-	github.com/containernetworking/cni v0.8.1
-	github.com/containernetworking/plugins v0.9.1
+	github.com/containernetworking/cni v1.1.1
+	github.com/containernetworking/plugins v1.1.1
 	github.com/coreos/go-iptables v0.6.0
 	github.com/go-logr/logr v1.2.3
 	github.com/golang/mock v1.6.0
@@ -37,7 +37,6 @@ require (
 	k8s.io/apimachinery v0.26.1
 	k8s.io/cli-runtime v0.26.0
 	k8s.io/client-go v0.26.1
-	k8s.io/cri-api v0.23.1
 	sigs.k8s.io/controller-runtime v0.14.4
 )
 
@@ -165,6 +164,7 @@ replace github.com/emicklei/go-restful => github.com/emicklei/go-restful/v3 v3.8
 
 replace golang.org/x/crypto => golang.org/x/crypto v0.1.0
 
-// Containerd package 1.6.x has a dependency of containernetworking/cni > 1.0.0 and which also has a CNI change spec 1.0.0
-// To keep it backward compatible to the spec 0.4.0, we will pin it to v1.5.x
-replace github.com/containerd/containerd => github.com/containerd/containerd v1.5.18
+// Containernetworking packages must remain pinned until VPC CNI moves to CNI spec 1.0.0
+replace github.com/containernetworking/cni => github.com/containernetworking/cni v0.8.1
+
+replace github.com/containernetworking/plugins => github.com/containernetworking/plugins v0.9.1
