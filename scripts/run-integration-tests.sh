@@ -300,7 +300,7 @@ if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test-linux-amd64.tar.gz | tar -zxvf - --strip-components=3 -C ${TEST_BASE_DIR}  kubernetes/test/bin/e2e.test
 
   echo "Running e2e tests: "
-  ${TEST_BASE_DIR}/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.noColor --ginkgo.flakeAttempts 2 \
+  ${TEST_BASE_DIR}/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.fail-fast --ginkgo.no-color --ginkgo.flake-attempts 2 \
     --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
 
   CONFORMANCE_DURATION=$((SECONDS - START))
@@ -319,10 +319,9 @@ if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
     PERFORMANCE_DURATION=$((SECONDS - START))
 fi
 
-# Disable kops conformance test till we fix timeout issue with ginkgo 
-# if [[ $RUN_KOPS_TEST == true ]]; then
-#     run_kops_conformance
-# fi
+if [[ $RUN_KOPS_TEST == true ]]; then
+    run_kops_conformance
+fi
 
 if [[ "$DEPROVISION" == true ]]; then
     START=$SECONDS
