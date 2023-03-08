@@ -56,12 +56,11 @@ func (d *defaultInstallationManager) UnInstallCNIMetricsHelper() error {
 }
 
 func (d *defaultInstallationManager) InstallTigeraOperator(version string) error {
-	// helm SDK doesn't allow empty namepace during creation, we have to use "default" as placeholder
-	_, err := d.releaseManager.InstallPackagedRelease(TigeraOperatorHelmCharts, TigeraOperatorReleaseName, version, "default", map[string]interface{}{})
+	_, err := d.releaseManager.InstallPackagedRelease(TigeraOperatorHelmCharts, TigeraOperatorReleaseName, version, TigeraOperatorNamespace, map[string]interface{}{})
 	return err
 }
 
 func (d *defaultInstallationManager) UninstallTigeraOperator() error {
-	_, err := d.releaseManager.UninstallRelease("default", TigeraOperatorReleaseName)
+	_, err := d.releaseManager.UninstallRelease(TigeraOperatorNamespace, TigeraOperatorReleaseName)
 	return err
 }
