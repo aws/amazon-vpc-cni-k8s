@@ -1,8 +1,0 @@
-fullnameOverride: calico
-
-tigeraOperator:
-  tag: "v1.20.1"
-  image: quay.io/tigera/operator
-
-installation:
-  kubernetesProvider: "EKS"
