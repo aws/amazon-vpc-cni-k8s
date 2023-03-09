@@ -24,8 +24,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -38,10 +36,7 @@ var MyNodeName = os.Getenv("MY_NODE_NAME")
 var MyPodName = os.Getenv("MY_POD_NAME")
 
 const (
-	awsNode      = "aws-node"
-	specNodeName = "spec.nodeName"
-	labelK8sapp  = "k8s-app"
-	EventReason  = sgpp.VpcCNIEventReason
+	EventReason = sgpp.VpcCNIEventReason
 )
 
 type EventRecorder struct {
@@ -54,7 +49,6 @@ type EventRecorder struct {
 }
 
 func New(rawK8SClient, cachedK8SClient client.Client) (*EventRecorder, error) {
-
 	clientSet, err := k8sapi.GetKubeClientSet()
 	if err != nil {
 		log.Fatalf("Error Fetching Kubernetes Client: %s", err)
@@ -83,27 +77,12 @@ func New(rawK8SClient, cachedK8SClient client.Client) (*EventRecorder, error) {
 
 }
 
-// BroadcastEvent will raise event on aws-node with given type, reason, & message
-func (e *EventRecorder) BroadcastEvent(eventType, reason, message string) {
+// SendPodEvent will raise event on aws-node with given type, reason, & message
+func (e *EventRecorder) SendPodEvent(eventType, reason, message string) {
+	log.Infof("SendPodEvent")
 
-	// Get aws-node pod objects with label & field selectors
-	labelSelector := labels.SelectorFromSet(labels.Set{labelK8sapp: awsNode})
-	fieldSelector := fields.SelectorFromSet(fields.Set{specNodeName: MyNodeName})
-	listOptions := client.ListOptions{
-		LabelSelector: labelSelector,
-		FieldSelector: fieldSelector,
-	}
-
-	var podList corev1.PodList
-	err := e.RawK8SClient.List(context.TODO(), &podList, &listOptions)
-	if err != nil {
-		log.Errorf("Failed to get pods, cannot broadcast events: %v", err)
-		return
-	}
-	for _, pod := range podList.Items {
-		log.Debugf("Broadcasting event on pod %s", pod.Name)
-		e.Recorder.Eventf(&pod, nil, eventType, reason, "", message)
-	}
+	e.Recorder.Eventf(&e.hostPod, nil, eventType, reason, "", message)
+	log.Debugf("Sent pod event: eventType: %s, reason: %s, message: %s", eventType, reason, message)
 }
 
 func findMyNode(cachedK8SClient client.Client) (corev1.Node, error) {
