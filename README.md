@@ -111,7 +111,7 @@ Type: Boolean as a String
 
 Default: `false`
 
-Specifies whether IPAMD should allocate or deallocate ENIs on a non-schedulable node.
+Specifies whether IPAMD should allocate or deallocate ENIs on a non-schedulable node. 
 
 ---
 
@@ -253,13 +253,13 @@ Specifies the number of free IP addresses that the `ipamd` daemon should attempt
 With `ENABLE_PREFIX_DELEGATION` set to `true` then `ipamd` daemon will check if the existing (/28) prefixes are enough to maintain the
 `WARM_IP_TARGET` if it is not sufficient then more prefixes will be attached.
 
-For example,
+For example, 
 
 1. if `WARM_IP_TARGET` is set to 5, then `ipamd` attempts to keep 5 free IP addresses available at all times. If the
 elastic network interfaces on the node are unable to provide these free addresses, `ipamd` attempts to allocate more interfaces
-until `WARM_IP_TARGET` free IP addresses are available.
-2. `ENABLE_PREFIX_DELEGATION` set to `true` and `WARM_IP_TARGET` is 16. Initially, 1 (/28) prefix is sufficient but once a single pod is assigned IP then
-remaining free IPs are 15 hence IPAMD will allocate 1 more prefix to achieve 16 `WARM_IP_TARGET`
+until `WARM_IP_TARGET` free IP addresses are available. 
+2. `ENABLE_PREFIX_DELEGATION` set to `true` and `WARM_IP_TARGET` is 16. Initially, 1 (/28) prefix is sufficient but once a single pod is assigned IP then 
+remaining free IPs are 15 hence IPAMD will allocate 1 more prefix to achieve 16 `WARM_IP_TARGET` 
 
 **NOTE!** Avoid this setting for large clusters, or if the cluster has high pod churn. Setting it will cause additional calls to the
 EC2 API and that might cause throttling of the requests. It is strongly suggested to set `MINIMUM_IP_TARGET` when using `WARM_IP_TARGET`.
@@ -448,7 +448,7 @@ Type: String
 
 Default: `""`
 
-Specifies the cluster endpoint to use for connecting to the api-server without relying on kube-proxy.
+Specifies the cluster endpoint to use for connecting to the api-server without relying on kube-proxy. 
 This is an optional configuration parameter that can improve the initialization time of the AWS VPC CNI.
 
 ---
@@ -463,7 +463,7 @@ To enable security groups for pods you need to have at least an EKS 1.17 eks.3 c
 
 Setting `ENABLE_POD_ENI` to `true` will allow IPAMD to add the `vpc.amazonaws.com/has-trunk-attached` label to the node if the instance has the capacity to attach an additional ENI.
 
-The label notifies vpc-resource-controller (https://github.com/aws/amazon-vpc-resource-controller-k8s) to attach a Trunk ENI to the instance. The label value is initially set to `false` and is marked to `true` by IPAMD when vpc-resource-controller attaches a Trunk ENI to the instance. However, there might be cases where the label value will remain `false` if the instance doesn't support ENI Trunking.
+The label notifies vpc-resource-controller (https://github.com/aws/amazon-vpc-resource-controller-k8s) to attach a Trunk ENI to the instance. The label value is initially set to `false` and is marked to `true` by IPAMD when vpc-resource-controller attaches a Trunk ENI to the instance. However, there might be cases where the label value will remain `false` if the instance doesn't support ENI Trunking. 
 
 Once enabled the VPC resource controller will then advertise branch network interfaces as extended resources on these nodes in your cluster. Branch interface capacity is additive to existing instance type limits for secondary IP addresses and prefixes. For example, a c5.4xlarge can continue to have up to 234 secondary IP addresses or 234 /28 prefixes assigned to standard network interfaces and up to 54 branch network interfaces. Each branch network interface only receives a single primary IP address and this IP address will be allocated to pods with a security group(branch ENI pods).
 
@@ -562,7 +562,7 @@ Type: Boolean as a String
 
 Default: `false`
 
-Setting `ENABLE_BANDWIDTH_PLUGIN` to `true` will update `10-aws.conflist` to include upstream [bandwidth plugin](https://www.cni.dev/plugins/current/meta/bandwidth/) as a chained plugin.
+Setting `ENABLE_BANDWIDTH_PLUGIN` to `true` will update `10-aws.conflist` to include upstream [bandwidth plugin](https://www.cni.dev/plugins/current/meta/bandwidth/) as a chained plugin. 
 
 ---
 
@@ -614,7 +614,7 @@ Default: `false`
 
 VPC CNI can operate in either IPv4 or IPv6 mode. Setting `ENABLE_IPv6` to `true` (both under `aws-node` and `aws-vpc-cni-init` containers in the manifest) 
 will configure it in IPv6 mode. IPv6 is only supported in Prefix Delegation mode, so `ENABLE_PREFIX_DELEGATION` needs to be set to `true` if VPC CNI is 
-configured to operate in IPv6 mode. Prefix delegation is only supported on nitro instances.
+configured to operate in IPv6 mode. Prefix delegation is only supported on nitro instances. 
 
 **Note:** Please make sure that the required IPv6 IAM policy is applied (Refer to [IAM Policy](https://github.com/aws/amazon-vpc-cni-k8s#iam-policy) section above). Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration. Please refer to the [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information.
 
@@ -683,7 +683,7 @@ and the kubelet respectively if you are making use of this tag.
 ### Container Runtime
 
 For VPC CNI >=v1.12.0, IPAMD have switched to use an on-disk file `/var/run/aws-node/ipam.json` to track IP allocations, thus became container runtime agnostic and no longer requires access to Container Runtime Interface(CRI) socket.
-   * **Note**:
+   * **Note**: 
      * Helm chart >=v1.2.0 is released with VPC CNI v1.12.0, thus no longer supports the `cri.hostPath.path`. If you need to install a VPC CNI <v1.12.0 with helm chart, a Helm chart version that <v1.2.0 should be used.
 
 For VPC CNI <v1.12.0, IPAMD still depends on CRI to track IP allocations using pod sandboxes information upon its starting.
