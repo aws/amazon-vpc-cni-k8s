@@ -2,31 +2,31 @@
 
 
 ## Manage Pod's IP address pool at cluster level
-As described in [Proposal: CNI plugin for Kubernetes networking over AWS VPC](./cni-proposal.md), ipamD allocates ENIs and 
+As described in [Proposal: CNI plugin for Kubernetes networking over AWS VPC](./cni-proposal.md), ipamD allocates ENIs and
 secondary IP addresses from the instance subnet.
 
-A node, based on the instance type [limit](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI), 
-can have up to `N` ENIs and `M` addresses. The maximum number of IP addresses available to pods on this node is 
+A node, based on the instance type [limit](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI),
+can have up to `N` ENIs and `M` addresses. The maximum number of IP addresses available to pods on this node is
 `min((N * (M - 1)), free IPs in the subnet)`. The `-1` is because each ENI uses one of the IPs when it is attached to the instance.
 
 ### Tip: Make sure subnet have enough available addresses
-If a subnet runs out of IP addresses, ipamD will not able to get secondary IP addresses. When this happens, pods assigned 
+If a subnet runs out of IP addresses, ipamD will not able to get secondary IP addresses. When this happens, pods assigned
 to this node may not able to get an IP and get stuck in **ContainerCreating**.
 
 You can check the available IP addresses in AWS console:
 ![](images/subnet.png)
 
-#### Possible issue: 
-[Leaking ENIs](https://github.com/aws/amazon-vpc-cni-k8s/issues/69) can cause a subnet available IP pool being depleted 
+#### Possible issue:
+[Leaking ENIs](https://github.com/aws/amazon-vpc-cni-k8s/issues/69) can cause a subnet available IP pool being depleted
 and requires user intervention.
 
 ### Tip: Make sure there are enough ENIs and IPs for Pods in the cluster
 
-We provide a tool [**cni-metrics-helper**](../config/master/cni-metrics-helper.yaml) which can show aggregated ENI and IP 
+We provide a tool [**cni-metrics-helper**](../config/master/cni-metrics-helper.yaml) which can show aggregated ENI and IP
 information at the cluster level.
 
-By default these metrics will be pushed to CloudWatch, but it can be disabled by setting `USE_CLOUDWATCH` to `"no"`. 
-This requires the `"cloudwatch:PutMetricData"` permission to publish the metrics. 
+By default these metrics will be pushed to CloudWatch, but it can be disabled by setting `USE_CLOUDWATCH` to `"no"`.
+This requires the `"cloudwatch:PutMetricData"` permission to publish the metrics.
 
 Example of CNI metrics in CloudWatch:
 
@@ -62,13 +62,13 @@ If ping between pods are not working, please make sure to check if FORWARD polic
 ### debugging logs are stored in
 ```
 /var/log/aws-routed-eni
-[ec2-user@ip-192-168-188-7 aws-routed-eni]$ ls 
+[ec2-user@ip-192-168-188-7 aws-routed-eni]$ ls
 ipamd.log.2018-05-15-21  ipamd.log.2018-05-16-02  ipamd.log.2018-05-16-07  ipamd.log.2018-05-16-12  ipamd.log.2018-05-16-17  plugin.log.2018-05-16-00  plugin.log.2018-05-16-19
 ipamd.log.2018-05-15-22  ipamd.log.2018-05-16-03  ipamd.log.2018-05-16-08  ipamd.log.2018-05-16-13  ipamd.log.2018-05-16-18  plugin.log.2018-05-16-02
 ipamd.log.2018-05-15-23  ipamd.log.2018-05-16-04  ipamd.log.2018-05-16-09  ipamd.log.2018-05-16-14  ipamd.log.2018-05-16-19  plugin.log.2018-05-16-03
 ipamd.log.2018-05-16-00  ipamd.log.2018-05-16-05  ipamd.log.2018-05-16-10  ipamd.log.2018-05-16-15  ipamd.log.2018-05-16-20  plugin.log.2018-05-16-04
 ipamd.log.2018-05-16-01  ipamd.log.2018-05-16-06  ipamd.log.2018-05-16-11  ipamd.log.2018-05-16-16  ipamd.log.2018-05-16-21  plugin.log.2018-05-16-14
-[ec2-user@ip-192-168-188-7 aws-routed-eni]$ 
+[ec2-user@ip-192-168-188-7 aws-routed-eni]$
 ```
 
 ### collecting node level tech-support bundle for offline troubleshooting
@@ -89,7 +89,7 @@ ipamd.log.2018-05-16-01  ipamd.log.2018-05-16-06  ipamd.log.2018-05-16-11  ipamd
                                  Dload  Upload   Total   Spent    Left  Speed
 100  2589    0  2589    0     0   2589      0 --:--:-- --:--:-- --:--:--  505k
 {
-    "AssignedIPs": 46,  
+    "AssignedIPs": 46,
     "ENIIPPools": {
         "eni-0248f7351c1dab6b4": {
             "AssignedIPv4Addresses": 14,
@@ -193,12 +193,12 @@ go_goroutines 20
 
 ## IMDS
 
-If you're using v1.10.0, `aws-node` daemonset pod requires IMDSv1 access to obtain Primary IPv4 address assigned to the Node. Please refer to `Block access to IMDSv1 and IMDSv2 for all containers that don't use host networking` section in this [doc](https://docs.aws.amazon.com/eks/latest/userguide/best-practices-security.html) 
+If you're using v1.10.0, `aws-node` daemonset pod requires IMDSv1 access to obtain Primary IPv4 address assigned to the Node. Please refer to `Block access to IMDSv1 and IMDSv2 for all containers that don't use host networking` section in this [doc](https://docs.aws.amazon.com/eks/latest/userguide/best-practices-security.html)
 
 ## Known Issues
 - **Liveness/Readiness Probe failures** - If frequent probe failures are observed for `aws-node` pods in v1.20+ clusters, please bump up the liveness/readiness probe timeout values and/or CPU requests/limts in the CNI Manifest. Refer to this github [issue](https://github.com/aws/amazon-vpc-cni-k8s/issues/1425)
 
-- **aws-node crashing with below error** 
+- **aws-node crashing with below error**
 
 ```
 {"level":"info","ts":"2022-02-04T22:24:55.014Z","caller":"entrypoint.sh","msg":"Checking for IPAM connectivity ... "}
@@ -233,7 +233,7 @@ The [CNI image](../scripts/dockerfiles/Dockerfile.release) built for the `aws-no
 
 - **iptables**
   Prior to v1.12.1, the VPC CNI image only contained `iptables-legacy`. Newer distributions of RHEL (RHEL 8.x+), Ubuntu (Ubuntu 21.x+), etc. have moved to using `nftables`. This leads to issues such as [this](https://github.com/aws/amazon-vpc-cni-k8s/issues/1847) when running IPAMD.
-  
+
   To resolve this issue in versions before v1.12.1, there are currently two options:
   1. Uninstall `nftables` and install `iptables-legacy` in base distribution
   2. Build a custom CNI image based on `nftables`, such as:

@@ -11,17 +11,17 @@ To run Kubernetes over AWS VPC, we would like to reach following additional goal
 
 * Networking for Pods must support high throughput and availability, low latency and minimal jitter comparable to the characteristics a user would get from EC2 networking.
 * Users must be able to express and enforce granular network policies and isolation comparable to those achievable with native EC2 networking and security groups.
-* Network operation must be simple and secure. Users must be able to apply existing AWS VPC networking and security best practices for building Kubernetes clusters over AWS VPC. For example, a user should be able to: 
+* Network operation must be simple and secure. Users must be able to apply existing AWS VPC networking and security best practices for building Kubernetes clusters over AWS VPC. For example, a user should be able to:
 	* use VPC flow logs for troubleshooting and compliance auditing,
 	* apply VPC routing polices for traffic engineering,
 	* apply security groups to enforce isolation and meet regulatory requirements.
 * Pod networking should be setup in a matter of seconds.
 * Administrators should be able to scale clusters up to 2000 nodes.
- 
+
 ## Proposal
 Here we propose:
 
-* For each Kubernetes node (ec2 instance), create multiple elastic network interfaces (ENIs) and allocate their secondary IP addresses. 
+* For each Kubernetes node (ec2 instance), create multiple elastic network interfaces (ENIs) and allocate their secondary IP addresses.
 * For each pod, pick a free secondary IP address, assign it to the pod, wire host and pod networking stack to allow:
 	* Pod to Pod on a single host communication
 	* Pod to Pod on different hosts communication
@@ -36,7 +36,7 @@ An elastic network interface is a virtual network interface that you can attach 
 ### How many addresses are available?
 When you create a VPC, you must specify a range of IPv4 addresses for the VPC in the form of a Classless Inter-Domain Routing (CIDR) block; for example, 10.0.0.0/16. This is the primary CIDR block for your VPC.
 
-A VPC spans all the Availability Zones in the region. After creating a VPC, you can add one or more subnets in each Availability Zone. When you create a subnet, you specify the CIDR block for the subnet, which is a subset of the VPC CIDR block. Each subnet must reside entirely within one Availability Zone and cannot span zones. Availability Zones are distinct locations that are engineered to be isolated from failures in other Availability Zones. By launching instances in separate Availability Zones, you can protect your applications from the failure of a single location. We assign a unique ID to each subnet. 
+A VPC spans all the Availability Zones in the region. After creating a VPC, you can add one or more subnets in each Availability Zone. When you create a subnet, you specify the CIDR block for the subnet, which is a subset of the VPC CIDR block. Each subnet must reside entirely within one Availability Zone and cannot span zones. Availability Zones are distinct locations that are engineered to be isolated from failures in other Availability Zones. By launching instances in separate Availability Zones, you can protect your applications from the failure of a single location. We assign a unique ID to each subnet.
 
 When you create an ENI, you must specify the subnet. Based on the instance type ([Limit](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI)), each instance can have up to N ENIs and M addresses. One address on each ENI is always marked as primary, while others are secondary addresses. The primary IP address is not used by any Pods as it is required for traffic routing between Pods and outside world.
 
@@ -53,38 +53,38 @@ Here is an overview on how we setup host side network stack and pod side network
 #### Inside a Pod
 
  IP address
- 
+
  ```
 # ip addr show
 1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN qlen 1
     link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
     inet 127.0.0.1/8 scope host lo
        valid_lft forever preferred_lft forever
-    inet6 ::1/128 scope host 
+    inet6 ::1/128 scope host
        valid_lft forever preferred_lft forever
-3: eth0@if231: <BROADCAST,MULTICAST,UP,LOWER_UP,M-DOWN> mtu 1500 qdisc noqueue state UP 
+3: eth0@if231: <BROADCAST,MULTICAST,UP,LOWER_UP,M-DOWN> mtu 1500 qdisc noqueue state UP
     link/ether 56:41:95:26:17:41 brd ff:ff:ff:ff:ff:ff
     inet 10.0.97.30/32 brd 10.0.97.226 scope global eth0 <<<<<<< ENI's secondary IP address
        valid_lft forever preferred_lft forever
-    inet6 fe80::5441:95ff:fe26:1741/64 scope link 
+    inet6 fe80::5441:95ff:fe26:1741/64 scope link
        valid_lft forever preferred_lft forever
  ```
- 
+
  routes
- 
+
  ```
  # ip route show
-default via 169.254.1.1 dev eth0 
-169.254.1.1 dev eth0 
+default via 169.254.1.1 dev eth0
+169.254.1.1 dev eth0
  ```
- 
+
  static arp
- 
+
  ```
  # arp -a
 ? (169.254.1.1) at 2a:09:74:cd:c4:62 [ether] PERM on eth0
  ```
- 
+
 #### On Host side
 
 There are multiple routing tables used to route incoming/outgoing Pod's traffic.
@@ -93,12 +93,12 @@ There are multiple routing tables used to route incoming/outgoing Pod's traffic.
 
 ```
 # ip route show
-default via 10.0.96.1 dev eth0 
-10.0.96.0/19 dev eth0  proto kernel  scope link  src 10.0.104.183 
+default via 10.0.96.1 dev eth0
+10.0.96.0/19 dev eth0  proto kernel  scope link  src 10.0.104.183
 10.0.97.30 dev aws8db0408c9a8  scope link  <------------------------Pod's IP
-10.0.97.159 dev awsbcd978401eb  scope link 
-10.0.97.226 dev awsc2f87dc4cdd  scope link 
-10.0.102.98 dev aws4914061689b  scope link 
+10.0.97.159 dev awsbcd978401eb  scope link
+10.0.97.226 dev awsc2f87dc4cdd  scope link
+10.0.102.98 dev aws4914061689b  scope link
 ...
 ```
 
@@ -106,17 +106,17 @@ default via 10.0.96.1 dev eth0
 
 ```
 # ip route show table eni-1
-default via 10.0.96.1 dev eth1 
-10.0.96.1 dev eth1  scope link 
+default via 10.0.96.1 dev eth1
+10.0.96.1 dev eth1  scope link
 ```
 
 * Here is the routing rules to enforce policy routing
 
 ```
 # ip rule list
-0:	from all lookup local 
+0:	from all lookup local
 512:	from all to 10.0.97.30 lookup main <---------- to Pod's traffic
-1025:	not from all to 10.0.0.0/16 lookup main 
+1025:	not from all to 10.0.0.0/16 lookup main
 1536:	from 10.0.97.30 lookup eni-1 <-------------- from Pod's traffic
 ```
 
@@ -143,7 +143,7 @@ Here are the wiring steps to enable pod to pod communication:
 	```
 	/* To assign IP address 20.0.49.215 to Pod's namespace ns1 */
 	ip netns exec ns1 ip addr add 20.0.49.215/32 dev veth-1c /* assign a IP address to veth-1c */
-	ip netns exec ns1 ip route add 169.254.1.1 dev veth-1c /* add default gateway */ 
+	ip netns exec ns1 ip route add 169.254.1.1 dev veth-1c /* add default gateway */
 	ip netns exec ns1 ip route add default via 169.254.1.1 dev veth-1c /* add default route */
 
 	ip netns exec ns1 arp -i veth-1c -s 169.254.1.1 <veth-1's mac> /* add static ARP entry for default gateway */
@@ -186,7 +186,7 @@ Here is the NAT rule:
 For fast Pod networking setup time, we will run a small, single binary(L-IPAM) on each host to maintain a warm-pool of available secondary IP addresses. Whenever Kubelet receives an ADD pod request, L-IPAM can immediately take one available secondary IP address from its warm pool and assign it to Pod.
 
 #### Building a warm-pool of available secondary IP addresses
-L-IPAM learns the available ENIs and their secondary IP addresses from [EC2 instance's Metadata Service](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html). 
+L-IPAM learns the available ENIs and their secondary IP addresses from [EC2 instance's Metadata Service](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html).
 
 ```
 // retrieve all attached ENIs
@@ -199,7 +199,7 @@ curl http://169.254.169.254/latest/meta-data/network/interfaces/macs/0a:da:9d:51
 Whenever L-IPAM daemon restarts (e.g. for upgrade reason), it also queries local Kubelet introspection service to get current running Pods information such as Pod Name, Pod Namespace and Pod IP address.
 
 ```
-kubectl get --raw=/api/v1/pods 
+kubectl get --raw=/api/v1/pods
 ```
 With the information from these 2 sources, L-IPAM can build a warm-pool that contains all available secondary IP addresses on the instance.
 
@@ -212,7 +212,7 @@ L-IPAM monitors the size of secondary IP address warm pool.
 	* allocate all available IP addresses on this new ENI
 	* once these IP addresses become available on the instance (confirmed through instance's metadata service), add these IP addresses to warm-pool.
 
-* whenever the number of available IP addresses exceeds a configured max threshold, L-IPAM will pick an ENI where all of its secondary IP address are in warm-pool, detach the ENI interface and free it to EC2-VPC ENI pool. 
+* whenever the number of available IP addresses exceeds a configured max threshold, L-IPAM will pick an ENI where all of its secondary IP address are in warm-pool, detach the ENI interface and free it to EC2-VPC ENI pool.
 
 ##### Note
 Fragmentation of addresses assignment to ENIs may prevent freeing ENIs even when there are many unused IP addresses.

@@ -1,4 +1,4 @@
-## `WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` 
+## `WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`
 
 The AWS VPC CNI has two components. The CNI binary, `/opt/cni/bin/aws-cni`, and [`ipamd`](https://en.wikipedia.org/wiki/IP_address_management)
 running as a Kubernetes daemonset called `aws-node`, adding a pod on every node that keeps track of all ENIs and IPs attached
