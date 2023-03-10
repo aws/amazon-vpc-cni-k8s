@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
@@ -53,6 +54,7 @@ func TestBroadcastEvents(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 	ctx := context.Background()
+	MyPodName = "aws-node-5test"
 
 	fakeRecorder = record.NewFakeRecorder(3)
 	mockEventRecorder := &EventRecorder{
@@ -62,36 +64,16 @@ func TestBroadcastEvents(t *testing.T) {
 
 	labels := map[string]string{"k8s-app": "aws-node"}
 
-	pods := []v1.Pod{
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:   "mockPodWithLabelAndSpec",
-				Labels: labels,
-			},
-			Spec: v1.PodSpec{
-				NodeName: myNodeName,
-			},
+	pod := v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      MyPodName,
+			Namespace: utils.AwsNodeNamespace,
+			Labels:    labels,
 		},
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "mockPodWithSpec",
-			},
-			Spec: v1.PodSpec{
-				NodeName: myNodeName,
-			},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "mockPod",
-			},
-		},
-		// No pod with only label selector in test- this will raise event as fake client does not filter on fields
 	}
 
-	//Create above fake pods
-	for _, mockPod := range pods {
-		_ = mockEventRecorder.k8sClient.Create(ctx, &mockPod)
-	}
+	// Create fake pod
+	mockEventRecorder.k8sClient.Create(ctx, &pod)
 
 	// Testing missing permissions event case: failed to call
 	reason := "MissingIAMPermission"

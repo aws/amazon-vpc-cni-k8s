@@ -21,9 +21,9 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
@@ -32,12 +32,11 @@ import (
 
 var log = logger.Get()
 var myNodeName = os.Getenv("MY_NODE_NAME")
+var MyPodName = os.Getenv("MY_POD_NAME")
 var eventRecorder *EventRecorder
 
 const (
-	awsNode      = "aws-node"
-	specNodeName = "spec.nodeName"
-	labelK8sapp  = "k8s-app"
+	awsNode = "aws-node"
 )
 
 type EventRecorder struct {
@@ -75,25 +74,27 @@ func Get() *EventRecorder {
 	return eventRecorder
 }
 
+func (e *EventRecorder) findMyPod(ctx context.Context) (corev1.Pod, error) {
+	log.Infof("findMyPod, namespace: %s, podName: %s", utils.AwsNodeNamespace, MyPodName)
+	var pod corev1.Pod
+	// Find my pod
+	err := e.k8sClient.Get(ctx, types.NamespacedName{Namespace: utils.AwsNodeNamespace, Name: MyPodName}, &pod)
+	if err != nil {
+		log.Errorf("Cached client failed GET pod (%s)", MyPodName)
+	}
+	return pod, err
+}
+
 // BroadcastEvent will raise event on aws-node with given type, reason, & message
 func (e *EventRecorder) BroadcastEvent(eventType, reason, message string) {
-
-	// Get aws-node pod objects with label & field selectors
-	labelSelector := labels.SelectorFromSet(labels.Set{labelK8sapp: awsNode})
-	fieldSelector := fields.SelectorFromSet(fields.Set{specNodeName: myNodeName})
-	listOptions := client.ListOptions{
-		LabelSelector: labelSelector,
-		FieldSelector: fieldSelector,
-	}
-
-	var podList corev1.PodList
-	err := e.k8sClient.List(context.TODO(), &podList, &listOptions)
+	log.Infof("BroadcastEvent")
+	// Find my pod
+	pod, err := e.findMyPod(context.TODO())
 	if err != nil {
-		log.Errorf("Failed to get pods, cannot broadcast events: %v", err)
+		log.Errorf("Failed to get pod: %v", err)
 		return
 	}
-	for _, pod := range podList.Items {
-		log.Debugf("Broadcasting event on pod %s", pod.Name)
-		e.recorder.Event(&pod, eventType, reason, message)
-	}
+
+	e.recorder.Eventf(&pod, eventType, reason, message)
+	log.Debugf("Sent pod event: eventType: %s, reason: %s, message: %s", eventType, reason, message)
 }

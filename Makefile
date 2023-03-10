@@ -256,7 +256,7 @@ docker-metrics-test:     ## Run metrics helper unit test suite in a container.
 		make metrics-unit-test
 
 # Fetch the CNI plugins
-plugins: FETCH_VERSION=1.1.1
+plugins: FETCH_VERSION=1.2.0
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
 plugins:   ## Fetch the CNI plugins
@@ -374,6 +374,7 @@ clean:    ## Clean temporary files and build artifacts from the project.
 	@rm -f -- $(BINS)
 	@rm -f -- $(PLUGIN_BINS)
 	@rm -f -- coverage.txt
+	@rm -rf -- ${MAKEFILE_PATH}test/build
 
 ##@ Helpers
 
