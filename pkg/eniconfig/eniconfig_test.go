@@ -183,8 +183,8 @@ func TestMyENIConfig(t *testing.T) {
 				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1, testENIConfigCustom},
 				Labels: map[string]string{
-					"vpc.amazonaws.com/externalEniConfig":    "custom",
-					"topology.kubernetes.io/zone": "az2",
+					"vpc.amazonaws.com/externalEniConfig": "custom",
+					"topology.kubernetes.io/zone":         "az2",
 				},
 				eniConfigLabelKey: "topology.kubernetes.io/zone",
 			},
