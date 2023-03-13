@@ -25,7 +25,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/vishvananda/netlink"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/cri"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -58,28 +57,20 @@ const (
 	UnknownENIError = "datastore: unknown ENI"
 )
 
-// We need to know which IPs are already allocated across
-// ipamd/datastore restarts.  In vpc-cni <=1.6, we "stored" the
-// allocated IPs by querying kubelet's CRI.  Since this requires scary
-// access to CRI socket, and may race with CRI's internal logic, we
-// are transitioning away from this to storing allocations
-// ourself in a file (similar to host-ipam CNI plugin).
+// On IPAMD/datastore restarts, we need to determine which pod IPs are already allocated. In VPC CNI <= 1.6,
+// this was done by querying kubelet's CRI. This required scary access to the CRI socket, which could result
+// in race conditions with the CRI's internal logic. Therefore, we transitioned to storing IP allocations
+// ourselves in a persistent file (similar to host-ipam CNI plugin).
 //
-// Because we don't want to require a node restart during CNI
-// upgrade/downgrade, we need an "expand/contract" style upgrade to
-// keep the two stores in sync:
+// The migration process took place over a series of phases:
+//   Phase 0 (<= CNI 1.6): Read/write from CRI only
+//   Phase 1 (CNI 1.7): Read from CRI. Write to CRI+file
+//   Phase 2 (CNI 1.8): Read from file. Write to CRI+file
+//   Phase 3 (CNI 1.12+): Read/write from file only
 //
-// Migration phase0 (CNI 1.6): Read/write from CRI only.
-// Migration phase1 (CNI 1.7): Read from CRI.  Write to CRI+file.
-// Migration phase2 (CNI 1.8?): Read from file. Write to CRI+file.
-// Migration phase3 (hypothetical): Read/write from file only.
-//
-// Note phase3 is not necessary since writes to CRI are implicit.
-// At/after phase2, we can remove any code protected by
-// checkpointMigrationPhase<2.
-const checkpointMigrationPhase = 2
+// Now that phase 3 has completed, IPAMD has no CRI dependency.
 
-// Placeholders used for unknown values when reading from CRI.
+// Placeholders used for unknown values
 const backfillNetworkName = "_migrated-from-cri"
 const backfillNetworkIface = "unknown"
 
@@ -312,17 +303,15 @@ type PodIPInfo struct {
 
 // DataStore contains node level ENI/IP
 type DataStore struct {
-	total                    int
-	assigned                 int
-	allocatedPrefix          int
-	eniPool                  ENIPool
-	lock                     sync.Mutex
-	log                      logger.Logger
-	CheckpointMigrationPhase int
-	backingStore             Checkpointer
-	cri                      cri.APIs
-	netLink                  netlinkwrapper.NetLink
-	isPDEnabled              bool
+	total           int
+	assigned        int
+	allocatedPrefix int
+	eniPool         ENIPool
+	lock            sync.Mutex
+	log             logger.Logger
+	backingStore    Checkpointer
+	netLink         netlinkwrapper.NetLink
+	isPDEnabled     bool
 }
 
 // ENIInfos contains ENI IP information
@@ -352,13 +341,11 @@ func prometheusRegister() {
 func NewDataStore(log logger.Logger, backingStore Checkpointer, isPDEnabled bool) *DataStore {
 	prometheusRegister()
 	return &DataStore{
-		eniPool:                  make(ENIPool),
-		log:                      log,
-		backingStore:             backingStore,
-		cri:                      cri.New(),
-		netLink:                  netlinkwrapper.NewNetLink(),
-		CheckpointMigrationPhase: checkpointMigrationPhase,
-		isPDEnabled:              isPDEnabled,
+		eniPool:      make(ENIPool),
+		log:          log,
+		backingStore: backingStore,
+		netLink:      netlinkwrapper.NewNetLink(),
+		isPDEnabled:  isPDEnabled,
 	}
 }
 
@@ -383,83 +370,30 @@ type CheckpointEntry struct {
 	Metadata            IPAMMetadata `json:"metadata"`
 }
 
-// ReadBackingStore initialises the IP allocation state from the
-// configured backing store.  Should be called before using data
-// store.
+// ReadBackingStore initializes the IP allocation state from the
+// configured backing store. Should be called before using data store.
 func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 	var data CheckpointData
 
-	switch ds.CheckpointMigrationPhase {
-	case 1:
-		// Phase1: Read from CRI
-		ds.log.Infof("Reading ipam state from CRI")
-		var ipv4Addr, ipv6Addr string
-		sandboxes, err := ds.cri.GetRunningPodSandboxes(ds.log)
-		if err != nil {
-			return err
-		}
+	// Read from checkpoint file
+	ds.log.Infof("Begin ipam state recovery from backing store")
 
-		entries := make([]CheckpointEntry, 0, len(sandboxes))
-		for _, s := range sandboxes {
-			ds.log.Debugf("Adding container ID: %v", s.ID)
-
-			metadata := IPAMMetadata{}
-			// both containerd and dockershim populates the metadata, just be cautious to have this null check.
-			if s.Metadata != nil {
-				metadata.K8SPodNamespace = s.Metadata.Namespace
-				metadata.K8SPodName = s.Metadata.Name
-			}
-
-			// note: ideally each sandbox should only contain one IP only,
-			// looping through them here is just to keep legacy code's behavior.
-			for _, ip := range s.IPs {
-				if isv6Enabled {
-					ipv6Addr = ip
-				} else {
-					ipv4Addr = ip
-				}
-				entries = append(entries, CheckpointEntry{
-					// NB: These Backfill values are also assumed in UnassignPodIPAddress
-					IPAMKey: IPAMKey{
-						NetworkName: backfillNetworkName,
-						ContainerID: s.ID,
-						IfName:      backfillNetworkIface,
-					},
-					IPv4:                ipv4Addr,
-					IPv6:                ipv6Addr,
-					AllocationTimestamp: s.CreationTimestamp,
-					Metadata:            metadata,
-				})
-			}
+	if err := ds.backingStore.Restore(&data); err != nil {
+		// Assume that no file == no containers are currently in use, e.g. a fresh reboot just cleared everything out.
+		// This is ok, and no-op.
+		if os.IsNotExist(err) {
+			ds.log.Debugf("backing store doesn't exists, assuming bootstrap on a new node")
+			return nil
 		}
-		data = CheckpointData{
-			Version:     CheckpointFormatVersion,
-			Allocations: entries,
-		}
-
-	case 2:
-		// Phase2: Read from checkpoint file
-		ds.log.Infof("Begin ipam state recovery from backing store")
-
-		if err := ds.backingStore.Restore(&data); err != nil {
-			// Assume that no file == no containers are currently in use, e.g. a fresh reboot just cleared everything out.
-			// This is ok, and no-op.
-			if os.IsNotExist(err) {
-				ds.log.Debugf("backing store doesn't exists, assuming bootstrap on a new node")
-				return nil
-			}
-			return errors.Wrap(err, "failed ipam state recovery from backing store")
-		}
-		if data.Version != CheckpointFormatVersion {
-			return errors.Errorf("failed ipam state recovery due to unexpected checkpointVersion: %v/%v", data.Version, CheckpointFormatVersion)
-		}
-		if normalizedData, err := ds.normalizeCheckpointDataByPodVethExistence(data); err != nil {
-			return errors.Wrap(err, "failed normalize checkpoint data with veth check")
-		} else {
-			data = normalizedData
-		}
-	default:
-		panic(fmt.Sprintf("Unexpected value of checkpointMigrationPhase: %v", ds.CheckpointMigrationPhase))
+		return errors.Wrap(err, "failed ipam state recovery from backing store")
+	}
+	if data.Version != CheckpointFormatVersion {
+		return errors.Errorf("failed ipam state recovery due to unexpected checkpointVersion: %v/%v", data.Version, CheckpointFormatVersion)
+	}
+	if normalizedData, err := ds.normalizeCheckpointDataByPodVethExistence(data); err != nil {
+		return errors.Wrap(err, "failed normalize checkpoint data with veth check")
+	} else {
+		data = normalizedData
 	}
 
 	ds.lock.Lock()
@@ -501,16 +435,6 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 		if !found {
 			ds.log.Infof("datastore: Sandbox %s uses unknown IP Address %s - presuming stale/dead",
 				allocation.IPAMKey, ipAddr.String())
-		}
-	}
-
-	if ds.CheckpointMigrationPhase == 1 {
-		// For phase1: write whatever we just read above from
-		// CRI to backingstore immediately - just in case we
-		// _never_ see an add/del request before we upgrade to
-		// phase2.
-		if err := ds.writeBackingStoreUnsafe(); err != nil {
-			return err
 		}
 	}
 
@@ -1198,25 +1122,18 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 
 	eni, availableCidr, addr := ds.eniPool.FindAddressForSandbox(ipamKey)
 	if addr == nil {
-		// This `if` block should be removed when the CRI
-		// migration code is finally removed.  Leaving a
-		// compile dependency here to make that obvious :P
-		var _ = checkpointMigrationPhase
-
-		// If the entry was discovered by querying CRI at
-		// restart rather than by observing an ADD operation
-		// directly, then we won't have captured the true
-		// networkname/ifname.
+		// If the entry is not present in state file, check if it is present under placeholder value.
+		// This scenario could happen if the pod was created by an older CNI version back when CRI read was done.
 		ds.log.Debugf("UnassignPodIPAddress: Failed to find IPAM entry under full key, trying CRI-migrated version")
 		ipamKey.NetworkName = backfillNetworkName
 		ipamKey.IfName = backfillNetworkIface
 		eni, availableCidr, addr = ds.eniPool.FindAddressForSandbox(ipamKey)
-	}
-	if addr == nil {
-		ds.log.Warnf("UnassignPodIPAddress: Failed to find sandbox %s",
-			ipamKey)
-		//Pod Not found. Nothing to do from IPAMD perspective.
-		return nil, "", 0, ErrUnknownPod
+
+		// If entry is still not found, IPAMD has no knowledge of this pod, so there is nothing to do.
+		if addr == nil {
+			ds.log.Warnf("UnassignPodIPAddress: Failed to find sandbox %s", ipamKey)
+			return nil, "", 0, ErrUnknownPod
+		}
 	}
 
 	originalIPAMMetadata := addr.IPAMMetadata
@@ -1547,9 +1464,9 @@ func (ds *DataStore) CheckFreeableENIexists() bool {
 	return false
 }
 
-// NormalizeCheckpointDataByPodVethExistence will normalize checkpoint data by removing allocations that don't have a corresponding pod veth.
-// This shouldn't happen unless container runtimes have bugs that failed to invoke the cmdDel for died pods.
-// we use this reconciliation as a safety mechanism during transition from CRI to state file.
+// NormalizeCheckpointDataByPodVethExistence will normalize checkpoint data by removing allocations that do not have a corresponding pod veth.
+// This should not happen unless container runtimes have bugs that failed to invoke the cmdDel for died pods.
+// We use this reconciliation as a safety mechanism during transition from CRI to state file.
 func (ds *DataStore) normalizeCheckpointDataByPodVethExistence(checkpoint CheckpointData) (CheckpointData, error) {
 	hostNSLinks, err := ds.netLink.LinkList()
 	if err != nil {
