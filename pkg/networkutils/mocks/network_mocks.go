@@ -27,44 +27,30 @@ import (
 	netlink "github.com/vishvananda/netlink"
 )
 
-// MockNetworkAPIs is a mock of NetworkAPIs interface
+// MockNetworkAPIs is a mock of NetworkAPIs interface.
 type MockNetworkAPIs struct {
 	ctrl     *gomock.Controller
 	recorder *MockNetworkAPIsMockRecorder
 }
 
-// MockNetworkAPIsMockRecorder is the mock recorder for MockNetworkAPIs
+// MockNetworkAPIsMockRecorder is the mock recorder for MockNetworkAPIs.
 type MockNetworkAPIsMockRecorder struct {
 	mock *MockNetworkAPIs
 }
 
-// NewMockNetworkAPIs creates a new mock instance
+// NewMockNetworkAPIs creates a new mock instance.
 func NewMockNetworkAPIs(ctrl *gomock.Controller) *MockNetworkAPIs {
 	mock := &MockNetworkAPIs{ctrl: ctrl}
 	mock.recorder = &MockNetworkAPIsMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockNetworkAPIs) EXPECT() *MockNetworkAPIsMockRecorder {
 	return m.recorder
 }
 
-// DeleteRuleListBySrc mocks base method
-func (m *MockNetworkAPIs) DeleteRuleListBySrc(arg0 net.IPNet) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteRuleListBySrc", arg0)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// DeleteRuleListBySrc indicates an expected call of DeleteRuleListBySrc
-func (mr *MockNetworkAPIsMockRecorder) DeleteRuleListBySrc(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteRuleListBySrc", reflect.TypeOf((*MockNetworkAPIs)(nil).DeleteRuleListBySrc), arg0)
-}
-
-// GetExcludeSNATCIDRs mocks base method
+// GetExcludeSNATCIDRs mocks base method.
 func (m *MockNetworkAPIs) GetExcludeSNATCIDRs() []string {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetExcludeSNATCIDRs")
@@ -72,13 +58,27 @@ func (m *MockNetworkAPIs) GetExcludeSNATCIDRs() []string {
 	return ret0
 }
 
-// GetExcludeSNATCIDRs indicates an expected call of GetExcludeSNATCIDRs
+// GetExcludeSNATCIDRs indicates an expected call of GetExcludeSNATCIDRs.
 func (mr *MockNetworkAPIsMockRecorder) GetExcludeSNATCIDRs() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetExcludeSNATCIDRs", reflect.TypeOf((*MockNetworkAPIs)(nil).GetExcludeSNATCIDRs))
 }
 
-// GetLinkByMac mocks base method
+// GetExternalServiceCIDRs mocks base method.
+func (m *MockNetworkAPIs) GetExternalServiceCIDRs() []string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetExternalServiceCIDRs")
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+// GetExternalServiceCIDRs indicates an expected call of GetExternalServiceCIDRs.
+func (mr *MockNetworkAPIsMockRecorder) GetExternalServiceCIDRs() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetExternalServiceCIDRs", reflect.TypeOf((*MockNetworkAPIs)(nil).GetExternalServiceCIDRs))
+}
+
+// GetLinkByMac mocks base method.
 func (m *MockNetworkAPIs) GetLinkByMac(arg0 string, arg1 time.Duration) (netlink.Link, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetLinkByMac", arg0, arg1)
@@ -87,13 +87,13 @@ func (m *MockNetworkAPIs) GetLinkByMac(arg0 string, arg1 time.Duration) (netlink
 	return ret0, ret1
 }
 
-// GetLinkByMac indicates an expected call of GetLinkByMac
+// GetLinkByMac indicates an expected call of GetLinkByMac.
 func (mr *MockNetworkAPIsMockRecorder) GetLinkByMac(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLinkByMac", reflect.TypeOf((*MockNetworkAPIs)(nil).GetLinkByMac), arg0, arg1)
 }
 
-// GetRuleList mocks base method
+// GetRuleList mocks base method.
 func (m *MockNetworkAPIs) GetRuleList() ([]netlink.Rule, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetRuleList")
@@ -102,13 +102,13 @@ func (m *MockNetworkAPIs) GetRuleList() ([]netlink.Rule, error) {
 	return ret0, ret1
 }
 
-// GetRuleList indicates an expected call of GetRuleList
+// GetRuleList indicates an expected call of GetRuleList.
 func (mr *MockNetworkAPIsMockRecorder) GetRuleList() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRuleList", reflect.TypeOf((*MockNetworkAPIs)(nil).GetRuleList))
 }
 
-// GetRuleListBySrc mocks base method
+// GetRuleListBySrc mocks base method.
 func (m *MockNetworkAPIs) GetRuleListBySrc(arg0 []netlink.Rule, arg1 net.IPNet) ([]netlink.Rule, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetRuleListBySrc", arg0, arg1)
@@ -117,13 +117,13 @@ func (m *MockNetworkAPIs) GetRuleListBySrc(arg0 []netlink.Rule, arg1 net.IPNet) 
 	return ret0, ret1
 }
 
-// GetRuleListBySrc indicates an expected call of GetRuleListBySrc
+// GetRuleListBySrc indicates an expected call of GetRuleListBySrc.
 func (mr *MockNetworkAPIsMockRecorder) GetRuleListBySrc(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRuleListBySrc", reflect.TypeOf((*MockNetworkAPIs)(nil).GetRuleListBySrc), arg0, arg1)
 }
 
-// SetupENINetwork mocks base method
+// SetupENINetwork mocks base method.
 func (m *MockNetworkAPIs) SetupENINetwork(arg0, arg1 string, arg2 int, arg3 string) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SetupENINetwork", arg0, arg1, arg2, arg3)
@@ -131,41 +131,55 @@ func (m *MockNetworkAPIs) SetupENINetwork(arg0, arg1 string, arg2 int, arg3 stri
 	return ret0
 }
 
-// SetupENINetwork indicates an expected call of SetupENINetwork
+// SetupENINetwork indicates an expected call of SetupENINetwork.
 func (mr *MockNetworkAPIsMockRecorder) SetupENINetwork(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupENINetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupENINetwork), arg0, arg1, arg2, arg3)
 }
 
-// SetupHostNetwork mocks base method
+// SetupHostNetwork mocks base method.
 func (m *MockNetworkAPIs) SetupHostNetwork(arg0 []string, arg1 string, arg2 *net.IP, arg3, arg4, arg5 bool) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetupHostNetwork", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "SetupHostNetwork", arg0, arg1, arg2, arg3, arg4, arg5)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// SetupHostNetwork indicates an expected call of SetupHostNetwork
+// SetupHostNetwork indicates an expected call of SetupHostNetwork.
 func (mr *MockNetworkAPIsMockRecorder) SetupHostNetwork(arg0, arg1, arg2, arg3, arg4, arg5 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupHostNetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupHostNetwork), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupHostNetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupHostNetwork), arg0, arg1, arg2, arg3, arg4, arg5)
 }
 
-// UpdateHostIptablesRules mocks base method
-func (m *MockNetworkAPIs) UpdateHostIptablesRules(arg0 []string, arg1 string, arg2 *net.IP, arg3, arg4 bool) error {
+// UpdateExternalServiceIpRules mocks base method.
+func (m *MockNetworkAPIs) UpdateExternalServiceIpRules(arg0 []netlink.Rule, arg1 []string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateHostIptablesRules", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "UpdateExternalServiceIpRules", arg0, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// UpdateHostIptablesRules indicates an expected call of UpdateHostIptablesRules
-func (mr *MockNetworkAPIsMockRecorder) UpdateHostIptablesRules(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
+// UpdateExternalServiceIpRules indicates an expected call of UpdateExternalServiceIpRules.
+func (mr *MockNetworkAPIsMockRecorder) UpdateExternalServiceIpRules(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateHostIptablesRules", reflect.TypeOf((*MockNetworkAPIs)(nil).UpdateHostIptablesRules), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateExternalServiceIpRules", reflect.TypeOf((*MockNetworkAPIs)(nil).UpdateExternalServiceIpRules), arg0, arg1)
 }
 
-// UpdateRuleListBySrc mocks base method
+// UpdateHostIptablesRules mocks base method.
+func (m *MockNetworkAPIs) UpdateHostIptablesRules(arg0 []string, arg1 string, arg2 *net.IP, arg3, arg4 bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateHostIptablesRules", arg0, arg1, arg2, arg3, arg4)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateHostIptablesRules indicates an expected call of UpdateHostIptablesRules.
+func (mr *MockNetworkAPIsMockRecorder) UpdateHostIptablesRules(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateHostIptablesRules", reflect.TypeOf((*MockNetworkAPIs)(nil).UpdateHostIptablesRules), arg0, arg1, arg2, arg3, arg4)
+}
+
+// UpdateRuleListBySrc mocks base method.
 func (m *MockNetworkAPIs) UpdateRuleListBySrc(arg0 []netlink.Rule, arg1 net.IPNet) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdateRuleListBySrc", arg0, arg1)
@@ -173,13 +187,13 @@ func (m *MockNetworkAPIs) UpdateRuleListBySrc(arg0 []netlink.Rule, arg1 net.IPNe
 	return ret0
 }
 
-// UpdateRuleListBySrc indicates an expected call of UpdateRuleListBySrc
+// UpdateRuleListBySrc indicates an expected call of UpdateRuleListBySrc.
 func (mr *MockNetworkAPIsMockRecorder) UpdateRuleListBySrc(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateRuleListBySrc", reflect.TypeOf((*MockNetworkAPIs)(nil).UpdateRuleListBySrc), arg0, arg1)
 }
 
-// UseExternalSNAT mocks base method
+// UseExternalSNAT mocks base method.
 func (m *MockNetworkAPIs) UseExternalSNAT() bool {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UseExternalSNAT")
@@ -187,7 +201,7 @@ func (m *MockNetworkAPIs) UseExternalSNAT() bool {
 	return ret0
 }
 
-// UseExternalSNAT indicates an expected call of UseExternalSNAT
+// UseExternalSNAT indicates an expected call of UseExternalSNAT.
 func (mr *MockNetworkAPIsMockRecorder) UseExternalSNAT() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UseExternalSNAT", reflect.TypeOf((*MockNetworkAPIs)(nil).UseExternalSNAT))

@@ -336,7 +336,7 @@ func TestLoadExcludeSNATCIDRsFromEnv(t *testing.T) {
 	_ = os.Setenv(envExcludeSNATCIDRs, "10.12.0.0/16,10.13.0.0/16")
 
 	expected := []string{"10.12.0.0/16", "10.13.0.0/16"}
-	assert.Equal(t, getExcludeSNATCIDRs(), expected)
+	assert.Equal(t, parseCIDRString(envExcludeSNATCIDRs), expected)
 }
 
 func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
@@ -891,6 +891,141 @@ func TestSetupHostNetworkDeleteOldConnmarkRuleForNonVpcOutboundTraffic(t *testin
 	// it should have been replaced by the "new" rule
 	exists, _ = mockIptables.Exists("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
 	assert.True(t, exists, "new rule is not present")
+}
+
+// Validate parsing in parseCIDRString
+func TestGetExternalServiceCIDRs(t *testing.T) {
+	ln := &linuxNetwork{}
+
+	testCases := []struct {
+		name          string
+		cidrString    string
+		expectedCidrs []string
+	}{
+		{
+			"empty CIDR string returns nil",
+			"",
+			nil,
+		},
+		{
+			"single IPV4 CIDR is accepted",
+			"10.0.0.0/32",
+			[]string{"10.0.0.0/32"},
+		},
+		{
+			"valid IPV6 CIDR is rejected",
+			"2000::1/128",
+			nil,
+		},
+		{
+			"IPV4 CIDR missing mask is rejected",
+			"10.0.0.0",
+			nil,
+		},
+		{
+			"multiple CIDRs, only IPV4 CIDRs are accepted",
+			"10.0.0.0/32, 10.0.0.1/32, 2000::1/128",
+			[]string{"10.0.0.0/32", "10.0.0.1/32"},
+		},
+		{
+			"multiple CIDRs, some malformed",
+			"10.0.0.0/32,abcd",
+			[]string{"10.0.0.0/32"},
+		},
+	}
+
+	for _, tc := range testCases {
+		_ = os.Setenv(envExternalServiceCIDRs, tc.cidrString)
+		cidrs := ln.GetExternalServiceCIDRs()
+		assert.Equal(t, cidrs, tc.expectedCidrs)
+	}
+}
+
+// Validate cleanup and programming in UpdateExternalIpRules
+func TestUpdateExternalIpRules(t *testing.T) {
+	ctrl, mockNetLink, _, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{netLink: mockNetLink}
+	_, cidrOne, _ := net.ParseCIDR("10.0.1.1/32")
+	ruleOne := netlink.Rule{
+		Dst:      cidrOne,
+		Priority: externalServiceIpRulePriority,
+		Table:    mainRoutingTable,
+	}
+	_, cidrTwo, _ := net.ParseCIDR("10.0.2.1/32")
+	ruleTwo := netlink.Rule{
+		Dst:      cidrTwo,
+		Priority: 0,
+		Table:    mainRoutingTable,
+	}
+	_, cidrThree, _ := net.ParseCIDR("10.0.3.1/32")
+	ruleThree := netlink.Rule{
+		Dst:      cidrThree,
+		Priority: externalServiceIpRulePriority,
+		Table:    mainRoutingTable,
+	}
+
+	testCases := []struct {
+		name          string
+		existingRules []netlink.Rule
+		newCidrs      []string
+	}{
+		{
+			"no existing, no new rules",
+			nil,
+			nil,
+		},
+		{
+			"add new rules",
+			nil,
+			[]string{"10.0.0.0/32", "10.0.0.1/32"},
+		},
+		{
+			"delete existing rules",
+			[]netlink.Rule{ruleOne, ruleThree},
+			nil,
+		},
+		{
+			"skip existing rules",
+			[]netlink.Rule{ruleTwo},
+			nil,
+		},
+		{
+			"add and delete existing rule",
+			[]netlink.Rule{ruleOne},
+			[]string{cidrOne.String()},
+		},
+		{
+			"add and delete rules",
+			[]netlink.Rule{ruleOne, ruleTwo, ruleThree},
+			[]string{"10.0.0.0/32", "10.0.0.1/32"},
+		},
+	}
+
+	for _, tc := range testCases {
+		// Check for delete calls on expected rules
+		for idx, rule := range tc.existingRules {
+			if rule.Priority == externalServiceIpRulePriority {
+				// Need to use index as array iteration creates a copy
+				mockNetLink.EXPECT().RuleDel(&tc.existingRules[idx])
+			}
+		}
+		// Check for add calls
+		for _, cidr := range tc.newCidrs {
+			_, netCidr, _ := net.ParseCIDR(cidr)
+			newRule := netlink.Rule{
+				Dst:      netCidr,
+				Priority: externalServiceIpRulePriority,
+				Table:    mainRoutingTable,
+			}
+			mockNetLink.EXPECT().NewRule().Return(&newRule)
+			mockNetLink.EXPECT().RuleAdd(&newRule)
+		}
+
+		err := ln.UpdateExternalServiceIpRules(tc.existingRules, tc.newCidrs)
+		assert.NoError(t, err)
+	}
 }
 
 func setupNetLinkMocks(ctrl *gomock.Controller, mockNetLink *mock_netlinkwrapper.MockNetLink) {
