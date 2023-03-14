@@ -14,21 +14,22 @@ import (
 )
 
 var (
-	f               *framework.Framework
-	err             error
-	uiNamespace     = "management-ui"
-	clientNamespace = "client"
-	starsNamespace  = "stars"
-	uiLabel         = map[string]string{"role": "management-ui"}
-	clientLabel     = map[string]string{"role": "client"}
-	feLabel         = map[string]string{"role": "frontend"}
-	beLabel         = map[string]string{"role": "backend"}
-	nodeArchKey     = "kubernetes.io/arch"
-	starImage       = "calico/star-probe:multiarch"
-	uiPod           v1.Pod
-	clientPod       v1.Pod
-	fePod           v1.Pod
-	bePod           v1.Pod
+	f                       *framework.Framework
+	err                     error
+	uiNamespace             = "management-ui"
+	clientNamespace         = "client"
+	starsNamespace          = "stars"
+	tigeraOperatorNamespace = "tigera-operator"
+	uiLabel                 = map[string]string{"role": "management-ui"}
+	clientLabel             = map[string]string{"role": "client"}
+	feLabel                 = map[string]string{"role": "frontend"}
+	beLabel                 = map[string]string{"role": "backend"}
+	nodeArchKey             = "kubernetes.io/arch"
+	starImage               = "calico/star-probe:multiarch"
+	uiPod                   v1.Pod
+	clientPod               v1.Pod
+	fePod                   v1.Pod
+	bePod                   v1.Pod
 )
 
 func TestCalicoPoliciesWithVPCCNI(t *testing.T) {
@@ -41,6 +42,10 @@ var _ = BeforeSuite(func() {
 
 	if f.Options.InstallCalico {
 		By("installing Calico operator")
+		// Create "tigera-operator" namespace
+		err = f.K8sResourceManagers.NamespaceManager().CreateNamespace(tigeraOperatorNamespace)
+		Expect(err).ToNot(HaveOccurred())
+
 		tigeraVersion := f.Options.CalicoVersion
 		err := f.InstallationManager.InstallTigeraOperator(tigeraVersion)
 		// wait for Calico resources being provisioned and setup.
@@ -216,10 +221,16 @@ var _ = AfterSuite(func() {
 	f.K8sResourceManagers.NetworkPolicyManager().DeleteNetworkPolicy(&networkPolicyAllowFE)
 	f.K8sResourceManagers.NetworkPolicyManager().DeleteNetworkPolicy(&networkPolicyAllowClient)
 
-	// TODO: disable Calico uninstallation for now. We can add this back after a number of successful test runs.
-	////we are using dynamic cluster to run the test. Not uninstalling Calico is fine.
-	//By("Helm Uninstall Calico Installation")
-	//f.InstallationManager.UninstallTigeraOperator()
+	// TODO: Calico cannot be cleanly uninstalled today, so cleanup is left as a future work item.
+	// Removing the helm chart, i.e. `helm uninstall -n tigera-operator calico`, does not remove all of the
+	// installed CRDs or resources in the `calico-system` namespace. There are upstream issues tracking this:
+	// https://github.com/projectcalico/calico/issues/6210 and https://github.com/tigera/operator/issues/2031
+	//
+	// Skipping cleanup is currently acceptable as test clusters are created dynamically and deleted after tests
+	// complete. This dependency does mean that Calico integration tests MUST run last.
+
+	// By("Helm Uninstall Calico Installation")
+	// f.InstallationManager.UninstallTigeraOperator()
 })
 
 func installNetcatToolInContainer(name string, namespace string) error {

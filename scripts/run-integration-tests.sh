@@ -33,7 +33,7 @@ ARCH=$(go env GOARCH)
 : "${RUNNING_PERFORMANCE:=false}"
 : "${RUN_CALICO_TEST:=false}"
 : "${RUN_LATEST_CALICO_VERSION:=false}"
-: "${CALICO_VERSION:=v3.23.0}"
+: "${CALICO_VERSION:=v3.25.0}"
 : "${RUN_CALICO_TEST_WITH_PD:=true}"
 
 __cluster_created=0

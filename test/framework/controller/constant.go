@@ -17,7 +17,8 @@ const (
 	CNIMetricsHelperChartDir    = "/test/helm/charts/cni-metrics-helper"
 	CNIMetricsHelperReleaseName = "cni-metrics-helper"
 	CNIMetricHelperNamespace    = "kube-system"
+	TigeraOperatorNamespace     = "tigera-operator"
 	TigeraOperatorReleaseName   = "calico"
-	TigeraOperatorHelmRepo      = "https://docs.projectcalico.org/charts"
+	TigeraOperatorHelmRepo      = "https://docs.tigera.io/calico/charts"
 	TigeraOperatorHelmCharts    = "projectcalico/tigera-operator"
 )

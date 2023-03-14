@@ -61,7 +61,7 @@ func (d *defaultReleaseManager) InstallPackagedRelease(chart string, releaseName
 	values map[string]interface{}) (*release.Release, error) {
 	entry := &repo.Entry{
 		Name:                  "projectcalico",
-		URL:                   "https://projectcalico.docs.tigera.io/charts",
+		URL:                   "https://docs.tigera.io/calico/charts",
 		InsecureSkipTLSverify: true,
 	}
 	setting := cli.New()
