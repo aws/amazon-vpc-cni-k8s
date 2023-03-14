@@ -111,9 +111,9 @@ func TestMyENIConfig(t *testing.T) {
 				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
 				Labels: map[string]string{
-					"failure-domain.beta.kubernetes.io/zone": "az1",
+					"topology.kubernetes.io/zone": "az1",
 				},
-				eniConfigLabelKey: "failure-domain.beta.kubernetes.io/zone",
+				eniConfigLabelKey: "topology.kubernetes.io/zone",
 			},
 			want:    &testENIConfigAZ1.Spec,
 			wantErr: nil,
@@ -124,9 +124,9 @@ func TestMyENIConfig(t *testing.T) {
 				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
 				Labels: map[string]string{
-					"failure-domain.beta.kubernetes.io/zone": "az2",
+					"topology.kubernetes.io/zone": "az2",
 				},
-				eniConfigLabelKey: "failure-domain.beta.kubernetes.io/zone",
+				eniConfigLabelKey: "topology.kubernetes.io/zone",
 			},
 			want:    nil,
 			wantErr: errors.New("eniconfig: eniconfig is not available"),
@@ -137,7 +137,7 @@ func TestMyENIConfig(t *testing.T) {
 				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
 				Labels: map[string]string{
-					"failure-domain.beta.kubernetes.io/zone": "az2",
+					"topology.kubernetes.io/zone": "az2",
 				},
 				Annotations: map[string]string{
 					"k8s.amazonaws.com/eniConfig": "az1",
@@ -152,7 +152,7 @@ func TestMyENIConfig(t *testing.T) {
 				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ2},
 				Labels: map[string]string{
-					"failure-domain.beta.kubernetes.io/zone": "az2",
+					"topology.kubernetes.io/zone": "az2",
 				},
 				Annotations: map[string]string{
 					"k8s.amazonaws.com/eniConfig": "az1",
@@ -167,7 +167,7 @@ func TestMyENIConfig(t *testing.T) {
 				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1},
 				Labels: map[string]string{
-					"failure-domain.beta.kubernetes.io/zone": "az2",
+					"topology.kubernetes.io/zone": "az2",
 				},
 				Annotations: map[string]string{
 					"k8s.amazonaws.com/myENIConfig": "az1",
@@ -183,10 +183,10 @@ func TestMyENIConfig(t *testing.T) {
 				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ1, testENIConfigCustom},
 				Labels: map[string]string{
-					"vpc.amazonaws.com/externalEniConfig":    "custom",
-					"failure-domain.beta.kubernetes.io/zone": "az2",
+					"vpc.amazonaws.com/externalEniConfig": "custom",
+					"topology.kubernetes.io/zone":         "az2",
 				},
-				eniConfigLabelKey: "failure-domain.beta.kubernetes.io/zone",
+				eniConfigLabelKey: "topology.kubernetes.io/zone",
 			},
 			want:    &testENIConfigCustom.Spec,
 			wantErr: nil,
@@ -197,7 +197,7 @@ func TestMyENIConfig(t *testing.T) {
 				nodes:      []*corev1.Node{testNode},
 				eniconfigs: []*v1alpha1.ENIConfig{testENIConfigAZ2},
 				Labels: map[string]string{
-					"failure-domain.beta.kubernetes.io/zone": "az2",
+					"topology.kubernetes.io/zone": "az2",
 				},
 				Annotations: map[string]string{
 					"k8s.amazonaws.com/myENIConfig": "az1",

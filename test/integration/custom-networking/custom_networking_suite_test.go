@@ -138,7 +138,7 @@ var _ = BeforeSuite(func() {
 	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
 		utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
 			"AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG": "true",
-			"ENI_CONFIG_LABEL_DEF":               "failure-domain.beta.kubernetes.io/zone",
+			"ENI_CONFIG_LABEL_DEF":               "topology.kubernetes.io/zone",
 			"WARM_ENI_TARGET":                    "0",
 		})
 

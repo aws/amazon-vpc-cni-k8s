@@ -164,8 +164,8 @@ Default: `k8s.amazonaws.com/eniConfig`
 Specifies node label key name\. This should be used when `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true`. Label value will be used
 to set `ENIConfig` name\. Note that annotations will take precedence over labels. To use labels, ensure there is no annotation with key
 `k8s.amazonaws.com/eniConfig` or defined key (in `ENI_CONFIG_ANNOTATION_DEF`) set on the node.
-To select an `ENIConfig` based upon availability zone set this to `failure-domain.beta.kubernetes.io/zone` and create an
-`ENIConfig` custom resource for each availability zone (e.g. `us-east-1a`).
+To select an `ENIConfig` based upon availability zone set this to `topology.kubernetes.io/zone` and create an
+`ENIConfig` custom resource for each availability zone (e.g. `us-east-1a`). Note that tag `failure-domain.beta.kubernetes.io/zone` is deprecated and replaced with the tag `topology.kubernetes.io/zone`.
 
 ---
 
