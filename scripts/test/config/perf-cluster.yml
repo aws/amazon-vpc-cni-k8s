@@ -10,6 +10,7 @@ metadata:
 managedNodeGroups:
   - name: cni-test-single-node-mng
     ami: AMI_ID_PLACEHOLDER
+    amiFamily: AmazonLinux2
     instanceType: m5.16xlarge
     desiredCapacity: 1
     minSize: 1
