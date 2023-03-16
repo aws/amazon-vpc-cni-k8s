@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.12.6
+
+* Bug - [Fix MTU parameter in egress-v4-cni plugin](https://github.com/aws/amazon-vpc-cni-k8s/pull/2295) (@jdn5126 )
+* Documentation - [Fixing the log message to be meaningful](https://github.com/aws/amazon-vpc-cni-k8s/pull/2260) (@rajeeshckr )
+* Improvement - [Add bmn-sf1.metal instance support](https://github.com/aws/amazon-vpc-cni-k8s/pull/2286) (@vpineda1996 )
+* Improvement - [Support routing to external IPs behind service](https://github.com/aws/amazon-vpc-cni-k8s/pull/2243) (@jdn5126 )
+* Improvement - [Use Go 1.19; fix egress-v4-cni MTU parsing, update containerd](https://github.com/aws/amazon-vpc-cni-k8s/pull/2303) (@jdn5126 )
+* Improvement - [Added enviroment variable to allow ipamd to manage the ENIs on a non schedulable node](https://github.com/aws/amazon-vpc-cni-k8s/pull/2296) (@rajeeshckr )
+* Improvement - [Use GET for IAM Permissions event; update controller-runtime from 0.13.1 to 0.14.4 and client-go from v0.25.5 to v0.26.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/2304) (@jdn5126 )
+* Improvement - [Remove old checkpoint migration logic; update containerd version](https://github.com/aws/amazon-vpc-cni-k8s/pull/2307) (@jdn5126 )
+
 ## v1.12.5
 
 * Bug - [Handle private IP exceeded error](https://github.com/aws/amazon-vpc-cni-k8s/pull/2210) (@jayanthvn )

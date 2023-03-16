@@ -1,7 +1,7 @@
 apiVersion: v2
 name: cni-metrics-helper
-version: 0.1.17
-appVersion: v1.12.5
+version: 0.1.18
+appVersion: v1.12.6
 description: A Helm chart for the AWS VPC CNI Metrics Helper
 icon: https://raw.githubusercontent.com/aws/eks-charts/master/docs/logo/aws.png
 home: https://github.com/aws/amazon-vpc-cni-k8s
