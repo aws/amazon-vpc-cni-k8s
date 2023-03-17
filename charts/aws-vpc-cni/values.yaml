@@ -20,9 +20,6 @@ init:
     ENABLE_IPv6: "false"
   securityContext:
     privileged: true
-  envFrom:
-  - configMapRef:
-    name: proxy-environment-variables
 
 image:
   region: us-west-2
