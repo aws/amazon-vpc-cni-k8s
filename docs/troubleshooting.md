@@ -41,8 +41,8 @@ Example of CNI metrics in CloudWatch:
 If you need to deploy more Pods than **maxIPAddresses**, you need to increase your cluster and add more nodes.
 
 ### Tip: Running Large cluster
-When running 500 nodes cluster, we noticed that when there is a burst of pod scale up event (e.g. scale pods from 0 to 23000)
-at onetime, it can trigger all node's ipamD start allocating ENIs. Due to EC2 resource limit nature, some node's ipamD can get
+When running a 500 node cluster, we noticed that when there is a burst of pod scale up events (e.g. scale pods from 0 to 23000)
+at one time, it can trigger all nodes' ipamD to start allocating ENIs. Due to EC2 resource limit nature, some node's ipamD can get
 throttled and go into exponentially backoff before retry. If a pod is assigned to this node and its ipamD is waiting to retry,
 the pod could stay in **ContainerCreating** until ENI retry succeed.
 
@@ -226,6 +226,8 @@ The workaround for this issue is to set `MACAddressPolicy=none`, as shown [here]
 
 - **NetworkManager-cloud-setup** - The `nm-cloud-setup` service is incompatible with AWS VPC CNI. This service overwrites and clears ip rules installed for pods, which breaks pod networking. This package may be present in RHEL8 AMIs. See [here](https://access.redhat.com/solutions/6319811) for a RedHat thread explaining the issue.
 The symptom for this issue is the presence of routing table 30200 or 30400.
+
+- **pod deletion fails after downgrade** - If you created pods with VPC CNI version >= 1.12.1, then downgraded to a version < 1.12.1 and pod deletion is failing, check if you are hitting [#2321](https://github.com/aws/amazon-vpc-cni-k8s/issues/2321).
 
 ## CNI Compatibility
 

@@ -18,7 +18,7 @@ helm repo add eks https://aws.github.io/eks-charts
 To install the chart with the release name `aws-vpc-cni` and default configuration:
 
 ```shell
-$ helm install --name aws-vpc-cni --namespace kube-system eks/aws-vpc-cni
+$ helm install aws-vpc-cni --namespace kube-system eks/aws-vpc-cni
 ```
 
 To install into an EKS cluster where the CNI is already installed, see [this section below](#adopting-the-existing-aws-node-resources-in-an-eks-cluster)
@@ -78,7 +78,7 @@ The following table lists the configurable parameters for this chart and their d
 Specify each parameter using the `--set key=value[,key=value]` argument to `helm install` or provide a YAML file containing the values for the above parameters:
 
 ```shell
-$ helm install --name aws-vpc-cni --namespace kube-system eks/aws-vpc-cni --values values.yaml
+$ helm install aws-vpc-cni --namespace kube-system eks/aws-vpc-cni --values values.yaml
 ```
 
 ## Adopting the existing aws-node resources in an EKS cluster
