@@ -13,8 +13,12 @@ init:
     # override: "repo/org/image:tag"
   env:
     DISABLE_TCP_EARLY_DEMUX: "false"
+  envFrom:
+  - configMapRef:
+    name: proxy-environment-variables
   securityContext:
     privileged: true
+
 
 image:
   region: us-west-2
@@ -43,6 +47,10 @@ env:
   ENABLE_PREFIX_DELEGATION: "false"
   WARM_ENI_TARGET: "1"
   WARM_PREFIX_TARGET: "1"
+
+envFrom:
+  - configMapRef:
+    name: proxy-environment-variables
 
 # this flag enables you to use the match label that was present in the original daemonset deployed by EKS
 # You can then annotate and label the original aws-node resources and 'adopt' them into a helm release
