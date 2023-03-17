@@ -431,8 +431,12 @@ func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArg
 		return false, nil
 	}
 	podVlanID, err := strconv.Atoi(dummyIface.Mac)
-	if err != nil || podVlanID == 0 {
+	if err != nil {
 		return true, errors.Errorf("malformed vlanID in prevResult: %s", dummyIface.Mac)
+	}
+	// If VLAN value is 0, return without handling so that normal delete logic can occur.
+	if podVlanID == 0 {
+		return false, nil
 	}
 	if isNetnsEmpty(netNS) {
 		log.Infof("Ignoring TeardownPodENI as Netns is empty for SG pod:%s namespace: %s containerID:%s", k8sArgs.K8S_POD_NAME, k8sArgs.K8S_POD_NAMESPACE, k8sArgs.K8S_POD_INFRA_CONTAINER_ID)
