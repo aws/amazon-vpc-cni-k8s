@@ -46,6 +46,10 @@ spec:
           - name: {{ $key }}
             value: {{ $value | quote }}
 {{- end }}
+        {{- with .Values.init.envFrom }}
+        envFrom:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         securityContext:
           {{- toYaml .Values.init.securityContext | nindent 12 }}
         resources:
@@ -88,6 +92,10 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.name
+          {{- with .Values.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
