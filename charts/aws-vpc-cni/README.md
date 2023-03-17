@@ -40,6 +40,7 @@ The following table lists the configurable parameters for this chart and their d
 | `eniConfig.subnets.id`  | The ID of the subnet within the AZ which will be used in the ENIConfig | `nil`                |
 | `eniConfig.subnets.securityGroups`  | The IDs of the security groups which will be used in the ENIConfig | `nil`        |
 | `env`                   | List of environment variables. See [here](https://github.com/aws/amazon-vpc-cni-k8s#cni-configuration-variables) for options | (see `values.yaml`) |
+| `envFrom`               | To use variables from eg. a ConfigMap or a secret       | `nil`                               |
 | `fullnameOverride`      | Override the fullname of the chart                      | `aws-node`                          |
 | `image.region`          | ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `image.tag`             | Image tag                                               | `v1.12.5`                           |
@@ -55,6 +56,7 @@ The following table lists the configurable parameters for this chart and their d
 | `init.image.pullPolicy` | Container pull policy                                   | `IfNotPresent`                      |
 | `init.image.override`   | A custom docker image to use                            | `nil`                               |
 | `init.env`              | List of init container environment variables. See [here](https://github.com/aws/amazon-vpc-cni-k8s#cni-configuration-variables) for options | (see `values.yaml`) |
+| `init.envFrom`          | To use variables from eg. a ConfigMap or a secret       | `nil`                               |
 | `init.securityContext`  | Init container Security context                         | `privileged: true`                  |
 | `originalMatchLabels`   | Use the original daemonset matchLabels                  | `false`                             |
 | `nameOverride`          | Override the name of the chart                          | `aws-node`                          |
