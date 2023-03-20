@@ -1,0 +1,26 @@
+#!/bin/bash
+#
+# This script can be used to run any ginkgo integration suite using SUITE_NAME environment variable.
+# Prerequisite: cluster with at least three Linux nodes must already exist.
+# It is up to the caller to ensure that tests are valid to run against cluster, i.e. IPv6 tests require IPv6 cluster.
+
+set -e
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
+SKIP_MAKE_TEST_BINARIES=1
+
+source "$SCRIPT_DIR"/lib/cluster.sh
+source "$SCRIPT_DIR"/lib/canary.sh
+
+function run_ginkgo_test() {
+  (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS -v --timeout 30m --no-color --fail-on-pending $GINKGO_TEST_BUILD/$SUITE_NAME.test -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+}
+
+load_cluster_details
+
+echo "Running $SUITE_NAME integration tests"
+
+run_ginkgo_test
+
+echo "all tests ran successfully in $(($SECONDS / 60)) minutes and $(($SECONDS % 60)) seconds"
