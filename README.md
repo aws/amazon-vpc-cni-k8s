@@ -105,7 +105,7 @@ The following environment variables are available, and all of them are optional.
 
 ---
 
-#### `AWS_MANAGE_ENIS_NON_SCHEDULABLE` (v1.13.0+)
+#### `AWS_MANAGE_ENIS_NON_SCHEDULABLE` (v1.12.6+)
 
 Type: Boolean as a String
 
@@ -631,7 +631,7 @@ VPC CNI uses `iptables-legacy` by default. Setting `ENABLE_NFTABLES` to `true` w
 **Note:** VPC CNI image contains `iptables-legacy` and `iptables-nft`. Switching between them is done via `update-alternatives`. It is *strongly* recommended that the iptables mode matches that which is used by the base OS and `kube-proxy`.
 Switching modes while pods are running or rules are installed will not trigger reconciliation. It is recommended that rules are manually updated or nodes are drained and cordoned before updating. If reloading node, ensure that previous rules are not set to be persisted.
 
-#### `AWS_EXTERNAL_SERVICE_CIDRS` (v1.13.0+)
+#### `AWS_EXTERNAL_SERVICE_CIDRS` (v1.12.6+)
 
 Type: String
 
