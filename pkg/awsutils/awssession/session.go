@@ -26,6 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
 // Http client timeout env for sessions
@@ -65,6 +66,21 @@ func New() *session.Session {
 		},
 		STSRegionalEndpoint: endpoints.RegionalSTSEndpoint,
 	}
+
+	endpoint := os.Getenv("AWS_EC2_ENDPOINT")
+	if endpoint != "" {
+		customResolver := func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+			if service == ec2.EndpointsID {
+				return endpoints.ResolvedEndpoint{
+					URL:           endpoint,
+					SigningRegion: region,
+				}, nil
+			}
+			return endpoints.DefaultResolver().EndpointFor(service, region, optFns...)
+		}
+		awsCfg.EndpointResolver = endpoints.ResolverFunc(customResolver)
+	}
+
 	sess := session.Must(session.NewSession(&awsCfg))
 	//injecting session handler info
 	injectUserAgent(&sess.Handlers)
