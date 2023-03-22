@@ -18,7 +18,7 @@ helm repo add eks https://aws.github.io/eks-charts
 To install the chart with the release name `aws-vpc-cni` and default configuration:
 
 ```shell
-$ helm install --name aws-vpc-cni --namespace kube-system eks/aws-vpc-cni
+$ helm install aws-vpc-cni --namespace kube-system eks/aws-vpc-cni
 ```
 
 To install into an EKS cluster where the CNI is already installed, see [this section below](#adopting-the-existing-aws-node-resources-in-an-eks-cluster)
@@ -42,14 +42,14 @@ The following table lists the configurable parameters for this chart and their d
 | `env`                   | List of environment variables. See [here](https://github.com/aws/amazon-vpc-cni-k8s#cni-configuration-variables) for options | (see `values.yaml`) |
 | `fullnameOverride`      | Override the fullname of the chart                      | `aws-node`                          |
 | `image.region`          | ECR repository region to use. Should match your cluster | `us-west-2`                         |
-| `image.tag`             | Image tag                                               | `v1.12.5`                           |
+| `image.tag`             | Image tag                                               | `v1.12.6`                           |
 | `image.account`         | ECR repository account number                           | `602401143452`                      |
 | `image.domain`          | ECR repository domain                                   | `amazonaws.com`                     |
 | `image.pullPolicy`      | Container pull policy                                   | `IfNotPresent`                      |
 | `image.override`        | A custom docker image to use                            | `nil`                               |
 | `imagePullSecrets`      | Docker registry pull secret                             | `[]`                                |
 | `init.image.region`     | ECR repository region to use. Should match your cluster | `us-west-2`                         |
-| `init.image.tag`        | Image tag                                               | `v1.12.5`                           |
+| `init.image.tag`        | Image tag                                               | `v1.12.6`                           |
 | `init.image.account`    | ECR repository account number                           | `602401143452`                      |
 | `init.image.domain`     | ECR repository domain                                   | `amazonaws.com`                     |
 | `init.image.pullPolicy` | Container pull policy                                   | `IfNotPresent`                      |
@@ -78,7 +78,7 @@ The following table lists the configurable parameters for this chart and their d
 Specify each parameter using the `--set key=value[,key=value]` argument to `helm install` or provide a YAML file containing the values for the above parameters:
 
 ```shell
-$ helm install --name aws-vpc-cni --namespace kube-system eks/aws-vpc-cni --values values.yaml
+$ helm install aws-vpc-cni --namespace kube-system eks/aws-vpc-cni --values values.yaml
 ```
 
 ## Adopting the existing aws-node resources in an EKS cluster
