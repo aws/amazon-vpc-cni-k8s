@@ -640,6 +640,14 @@ Default: empty
 Specify a comma-separated list of IPv4 CIDRs that *must* be routed via main routing table. This is required for secondary ENIs to reach endpoints outside of VPC that are backed by a service.
 For every item in the list, an `ip rule` will be created with a priority greater than the `ip rule` capturing egress traffic from the container. If an item is not a valid IPv4 CIDR, it will be skipped.
 
+#### `AWS_EC2_ENDPOINT` (v1.13.0+)
+
+Type: String
+
+Default: empty
+
+Specify the EC2 endpoint to use. This is useful if you are using a custom endpoint for EC2. For example, if you are using a proxy for EC2, you can set this to the proxy endpoint.
+
 ### VPC CNI Feature Matrix
 
 IP Mode | Secondary IP Mode | Prefix Delegation | Security Groups Per Pod | WARM & MIN IP/Prefix Targets | External SNAT
