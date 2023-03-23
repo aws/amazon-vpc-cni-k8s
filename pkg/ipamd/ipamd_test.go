@@ -2344,3 +2344,97 @@ func TestIsConfigValid(t *testing.T) {
 	}
 
 }
+
+
+func TestAnnotatePod(t *testing.T){
+	//Createa fake IPAMContext object for testing
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	// Test ADD opreation
+	pod := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-namespace",
+		},
+	}
+
+	mockContext := &IPAMContext{
+		awsClient:       m.awsutils,
+		rawK8SClient:    m.rawK8SClient,
+		cachedK8SClient: m.cachedK8SClient,
+		maxIPsPerENI:    14,
+		maxENI:          4,
+		warmENITarget:   1,
+		warmIPTarget:    3,
+		primaryIP:       make(map[string]string),
+		terminating:     int32(0),
+		networkClient:   m.network,
+		dataStore:       testDatastore(),
+		enableIPv4:      true,
+		enableIPv6:      false,
+	}
+
+	mockContext.rawK8SClient.Create(ctx, &pod)
+
+	testPod, err := mockContext.GetPod(pod.Name, pod.Namespace)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, testPod)
+
+	// add, should add, shouldn.t add, should delete , shouldn't delete
+
+	// Test ADD operation
+	// add always success
+	err = mockContext.AnnotatePod(pod.Name, pod.Namespace, "ip-address", "10.0.0.1", "")
+	assert.NoError(t, err)
+
+	updatedPod, err := mockContext.GetPod(pod.Name, pod.Namespace)
+	assert.NoError(t, err)
+	assert.NotNil(t, updatedPod.Annotations["ip-address"])
+	assert.Equal(t, "10.0.0.1", updatedPod.Annotations["ip-address"])
+
+	err = mockContext.AnnotatePod(pod.Name, pod.Namespace, "ip-address", "10.0.0.2", "")
+	assert.NoError(t, err)
+
+	updatedPod, err = mockContext.GetPod(pod.Name, pod.Namespace)
+	assert.NoError(t, err)
+	assert.NotNil(t, updatedPod.Annotations["ip-address"])
+	assert.Equal(t, "10.0.0.2", updatedPod.Annotations["ip-address"])
+
+	err = mockContext.AnnotatePod(pod.Name, pod.Namespace, "ip-address", "10.0.0.3", "10.0.0.2")
+	assert.NoError(t, err)
+
+	updatedPod, err = mockContext.GetPod(pod.Name, pod.Namespace)
+	assert.NoError(t, err)
+	assert.NotNil(t, updatedPod.Annotations["ip-address"])
+	assert.Equal(t, "10.0.0.3", updatedPod.Annotations["ip-address"])
+
+	err = mockContext.AnnotatePod(pod.Name, pod.Namespace, "ip-address", "10.0.0.4", "10.0.0.2")
+	assert.NoError(t, err)
+
+	updatedPod, err = mockContext.GetPod(pod.Name, pod.Namespace)
+	assert.NoError(t, err)
+	assert.NotNil(t, updatedPod.Annotations["ip-address"])
+	assert.Equal(t, "10.0.0.4", updatedPod.Annotations["ip-address"])
+
+	// Test DEL operation
+	// shouldn't delete
+	err = mockContext.AnnotatePod(pod.Name, pod.Namespace, "ip-address", "", "10.0.0.1")
+	assert.Error(t, err)
+
+	updatedPod, err = mockContext.GetPod(pod.Name, pod.Namespace)
+	assert.NoError(t, err)
+	assert.NotNil(t, updatedPod.Annotations["ip-address"])
+	assert.Equal(t, "10.0.0.4", updatedPod.Annotations["ip-address"])
+
+	// should delete
+	err = mockContext.AnnotatePod(pod.Name, pod.Namespace, "ip-address", "", "10.0.0.4")
+	assert.NoError(t, err)
+
+	updatedPod, err = mockContext.GetPod(pod.Name, pod.Namespace)
+	assert.NoError(t, err)
+	assert.NotNil(t, updatedPod.Annotations["ip-address"])
+	assert.Equal(t, "", updatedPod.Annotations["ip-address"])
+}
