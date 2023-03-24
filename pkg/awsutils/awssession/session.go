@@ -72,8 +72,7 @@ func New() *session.Session {
 		customResolver := func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
 			if service == ec2.EndpointsID {
 				return endpoints.ResolvedEndpoint{
-					URL:           endpoint,
-					SigningRegion: region,
+					URL: endpoint,
 				}, nil
 			}
 			return endpoints.DefaultResolver().EndpointFor(service, region, optFns...)
