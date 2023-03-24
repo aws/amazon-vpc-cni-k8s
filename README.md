@@ -646,7 +646,7 @@ Type: String
 
 Default: empty
 
-Specify the EC2 endpoint to use. This is useful if you are using a custom endpoint for EC2. For example, if you are using a proxy for EC2, you can set this to the proxy endpoint.
+Specify the EC2 endpoint to use. This is useful if you are using a custom endpoint for EC2. For example, if you are using a proxy for EC2, you can set this to the proxy endpoint. Any kind of URL or IP address is valid such as `https://localhost:8080` or `http://ec2.us-west-2.customaws.com`. If this is not set, the default EC2 endpoint will be used.
 
 ### VPC CNI Feature Matrix
 
