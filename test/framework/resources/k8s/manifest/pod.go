@@ -40,7 +40,7 @@ func NewDefaultPodBuilder() *PodBuilder {
 		name:                   "test-pod",
 		namespace:              utils.DefaultTestNamespace,
 		labels:                 map[string]string{},
-		terminationGracePeriod: 0,
+		terminationGracePeriod: 1,
 		restartPolicy:          v1.RestartPolicyNever,
 		nodeSelector:           map[string]string{"kubernetes.io/os": "linux"},
 	}

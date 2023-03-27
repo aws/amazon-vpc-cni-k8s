@@ -44,14 +44,14 @@ func NewBusyBoxDeploymentBuilder() *DeploymentBuilder {
 		container:              NewBusyBoxContainerBuilder().Build(),
 		labels:                 map[string]string{"role": "test"},
 		nodeSelector:           map[string]string{"kubernetes.io/os": "linux"},
-		terminationGracePeriod: 0,
+		terminationGracePeriod: 1,
 	}
 }
 
 func NewDefaultDeploymentBuilder() *DeploymentBuilder {
 	return &DeploymentBuilder{
 		namespace:              utils.DefaultTestNamespace,
-		terminationGracePeriod: 0,
+		terminationGracePeriod: 1,
 		labels:                 map[string]string{"role": "test"},
 		nodeSelector:           map[string]string{"kubernetes.io/os": "linux"},
 	}
