@@ -39,7 +39,7 @@ func NewDefaultJobBuilder() *JobBuilder {
 		namespace:              utils.DefaultTestNamespace,
 		name:                   "test-job",
 		parallelism:            1,
-		terminationGracePeriod: 0,
+		terminationGracePeriod: 1,
 		labels:                 map[string]string{},
 		nodeSelector:           map[string]string{"kubernetes.io/os": "linux"},
 	}
