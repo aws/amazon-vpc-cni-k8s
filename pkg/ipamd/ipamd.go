@@ -2069,10 +2069,12 @@ func (c *IPAMContext) AnnotatePod(podName string, podNamespace string, key strin
 		if newPod.Annotations == nil {
 			newPod.Annotations = make(map[string]string)
 		}
-		// On CNI ADD, always set new annotation
+
 		oldVal, ok := newPod.Annotations[key]
+
+		// On CNI ADD, always set new annotation
 		if newVal != "" {
-			//If the new pod annotation is as the same as the old one, return immediately without extra cost
+			// Skip patch operation if new value is the same as existing value
 			if ok && oldVal == newVal {
 				log.Infof("Patch updating not needed")
 				return nil

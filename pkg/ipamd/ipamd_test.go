@@ -2376,7 +2376,7 @@ func TestAnnotatePod(t *testing.T) {
 	ipTwo := "10.0.0.2"
 	ipThree := "10.0.0.3"
 
-	//Test basic add operation for new pod
+	// Test basic add operation for new pod
 	err := mockContext.AnnotatePod(pod.Name, pod.Namespace, "ip-address", ipOne, "")
 	assert.NoError(t, err)
 
@@ -2384,7 +2384,7 @@ func TestAnnotatePod(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, ipOne, updatedPod.Annotations["ip-address"])
 
-	//Test that add operation is idempotent
+	// Test that add operation is idempotent
 	err = mockContext.AnnotatePod(pod.Name, pod.Namespace, "ip-address", ipOne, "")
 	assert.NoError(t, err)
 
@@ -2399,20 +2399,20 @@ func TestAnnotatePod(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, ipTwo, updatedPod.Annotations["ip-address"])
 
-	//Test that add operation always overwrites value for existing pod
+	// Test that add operation always overwrites value for existing pod
 	err = mockContext.AnnotatePod(pod.Name, pod.Namespace, "ip-address", ipThree, ipTwo)
 	assert.NoError(t, err)
 
-	//Test that delete operation will not overwrite if IP being released does not match existing value
+	// Test that delete operation will not overwrite if IP being released does not match existing value
 	err = mockContext.AnnotatePod(pod.Name, pod.Namespace, "ip-address", "", ipOne)
 	assert.Error(t, err)
-	assert.Equal(t, fmt.Errorf("Released IP 10.0.0.1 does not match existing annotation. Not patching pod."), err)
+	assert.Equal(t, fmt.Errorf("Released IP %s does not match existing annotation. Not patching pod.", ipOne), err)
 
 	updatedPod, err = mockContext.GetPod(pod.Name, pod.Namespace)
 	assert.NoError(t, err)
 	assert.Equal(t, ipThree, updatedPod.Annotations["ip-address"])
 
-	//Test that delete operation succeeds when IP being released matches existing value
+	// Test that delete operation succeeds when IP being released matches existing value
 	err = mockContext.AnnotatePod(pod.Name, pod.Namespace, "ip-address", "", ipThree)
 	assert.NoError(t, err)
 
@@ -2420,7 +2420,7 @@ func TestAnnotatePod(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "", updatedPod.Annotations["ip-address"])
 
-	//Test that delete on a non-existant pod fails without crashing
+	// Test that delete on a non-existant pod fails without crashing
 	err = mockContext.AnnotatePod("no-exist-name", "no-exist-namespace", "ip-address", "", ipThree)
 	assert.Error(t, err)
 	assert.Equal(t, fmt.Errorf("error while trying to retrieve pod info: pods \"no-exist-name\" not found"), err)
