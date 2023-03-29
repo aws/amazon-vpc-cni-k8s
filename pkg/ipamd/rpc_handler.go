@@ -180,7 +180,10 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 
 	if s.ipamContext.enablePodIPAnnotation {
 		// On ADD, we pass empty string as there is no IP being released
-		s.ipamContext.AnnotatePod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, vpccniPodIPKey, ipv4Addr, "")
+		err = s.ipamContext.AnnotatePod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, vpccniPodIPKey, ipv4Addr, "")
+		if err != nil {
+			log.Errorf("Failed to add the pod annotation: %v", err)
+		}
 	}
 	resp := rpc.AddNetworkReply{
 		Success:         err == nil,
