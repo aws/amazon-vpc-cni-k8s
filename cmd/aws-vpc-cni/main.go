@@ -48,6 +48,7 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/cp"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/imds"
 	"github.com/containernetworking/cni/pkg/types"
@@ -60,16 +61,18 @@ const (
 	tmpAWSconflistFile           = "/tmp/10-aws.conflist"
 	defaultVethPrefix            = "eni"
 	defaultMTU                   = "9001"
-	defaultEnablePodEni          = "false"
+	defaultEnablePodEni          = false
 	defaultPodSGEnforcingMode    = "strict"
 	defaultPluginLogFile         = "/var/log/aws-routed-eni/plugin.log"
 	defaultEgressV4PluginLogFile = "/var/log/aws-routed-eni/egress-v4-plugin.log"
 	defaultPluginLogLevel        = "Debug"
 	defaultEnableIPv6            = "false"
 	defaultRandomizeSNAT         = "prng"
-	defaultEnableNftables        = "false"
+	defaultEnableNftables        = false
 	awsConflistFile              = "/10-aws.conflist"
 	vpcCniInitDonePath           = "/vpc-cni-init/done"
+	defaultEnBandwidthPlugin     = false
+	defaultEnPrefixDelegation    = false
 
 	envHostCniBinPath        = "HOST_CNI_BIN_PATH"
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
@@ -89,13 +92,6 @@ const (
 	envRandomizeSNAT         = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 	envEnableNftables        = "ENABLE_NFTABLES"
 )
-
-func getEnv(env, defaultVal string) string {
-	if val, ok := os.LookupEnv(env); ok {
-		return val
-	}
-	return defaultVal
-}
 
 // NetConfList describes an ordered list of networks.
 type NetConfList struct {
@@ -223,14 +219,14 @@ func generateJSON(jsonFile string, outFile string, nodeIP string) error {
 		return err
 	}
 
-	vethPrefix := getEnv(envVethPrefix, defaultVethPrefix)
-	mtu := getEnv(envEniMTU, defaultMTU)
-	podSGEnforcingMode := getEnv(envPodSGEnforcingMode, defaultPodSGEnforcingMode)
-	pluginLogFile := getEnv(envPluginLogFile, defaultPluginLogFile)
-	pluginLogLevel := getEnv(envPluginLogLevel, defaultPluginLogLevel)
-	egressV4pluginLogFile := getEnv(envEgressV4PluginLogFile, defaultEgressV4PluginLogFile)
-	enabledIPv6 := getEnv(envEnIPv6, defaultEnableIPv6)
-	randomizeSNAT := getEnv(envRandomizeSNAT, defaultRandomizeSNAT)
+	vethPrefix := utils.GetEnv(envVethPrefix, defaultVethPrefix)
+	mtu := utils.GetEnv(envEniMTU, defaultMTU)
+	podSGEnforcingMode := utils.GetEnv(envPodSGEnforcingMode, defaultPodSGEnforcingMode)
+	pluginLogFile := utils.GetEnv(envPluginLogFile, defaultPluginLogFile)
+	pluginLogLevel := utils.GetEnv(envPluginLogLevel, defaultPluginLogLevel)
+	egressV4pluginLogFile := utils.GetEnv(envEgressV4PluginLogFile, defaultEgressV4PluginLogFile)
+	enabledIPv6 := utils.GetEnv(envEnIPv6, defaultEnableIPv6)
+	randomizeSNAT := utils.GetEnv(envRandomizeSNAT, defaultRandomizeSNAT)
 
 	netconf := string(byteValue)
 	netconf = strings.Replace(netconf, "__VETHPREFIX__", vethPrefix, -1)
@@ -245,8 +241,8 @@ func generateJSON(jsonFile string, outFile string, nodeIP string) error {
 
 	byteValue = []byte(netconf)
 
-	enBandwidthPlugin := getEnv(envEnBandwidthPlugin, "false")
-	if enBandwidthPlugin == "true" {
+	enBandwidthPlugin := utils.GetBoolAsStringEnvVar(envEnBandwidthPlugin, defaultEnBandwidthPlugin)
+	if enBandwidthPlugin {
 		data := NetConfList{}
 		err = json.Unmarshal(byteValue, &data)
 		if err != nil {
@@ -274,14 +270,14 @@ func generateJSON(jsonFile string, outFile string, nodeIP string) error {
 }
 
 func validateEnvVars() bool {
-	pluginLogFile := getEnv(envPluginLogFile, defaultPluginLogFile)
+	pluginLogFile := utils.GetEnv(envPluginLogFile, defaultPluginLogFile)
 	if pluginLogFile == "stdout" {
 		log.Errorf("AWS_VPC_K8S_PLUGIN_LOG_FILE cannot be set to stdout")
 		return false
 	}
 
 	// Validate that veth prefix is less than or equal to four characters and not in reserved set: (eth, lo, vlan)
-	vethPrefix := getEnv(envVethPrefix, defaultVethPrefix)
+	vethPrefix := utils.GetEnv(envVethPrefix, defaultVethPrefix)
 	if len(vethPrefix) > 4 {
 		log.Errorf("AWS_VPC_K8S_CNI_VETHPREFIX cannot be longer than 4 characters")
 		return false
@@ -293,22 +289,22 @@ func validateEnvVars() bool {
 	}
 
 	// When ENABLE_POD_ENI is set, validate security group enforcing mode
-	enablePodEni := getEnv(envEnablePodEni, defaultEnablePodEni)
-	if enablePodEni == "true" {
-		podSGEnforcingMode := getEnv(envPodSGEnforcingMode, defaultPodSGEnforcingMode)
+	enablePodEni := utils.GetBoolAsStringEnvVar(envEnablePodEni, defaultEnablePodEni)
+	if enablePodEni {
+		podSGEnforcingMode := utils.GetEnv(envPodSGEnforcingMode, defaultPodSGEnforcingMode)
 		if podSGEnforcingMode != "strict" && podSGEnforcingMode != "standard" {
 			log.Errorf("%s must be set to either 'strict' or 'standard'", envPodSGEnforcingMode)
 			return false
 		}
 	}
 
-	prefixDelegationEn := getEnv(envEnPrefixDelegation, "false")
-	warmIPTarget := getEnv(envWarmIPTarget, "0")
-	warmPrefixTarget := getEnv(envWarmPrefixTarget, "0")
-	minimumIPTarget := getEnv(envMinIPTarget, "0")
+	prefixDelegationEn := utils.GetBoolAsStringEnvVar(envEnPrefixDelegation, defaultEnPrefixDelegation)
+	warmIPTarget := utils.GetEnv(envWarmIPTarget, "0")
+	warmPrefixTarget := utils.GetEnv(envWarmPrefixTarget, "0")
+	minimumIPTarget := utils.GetEnv(envMinIPTarget, "0")
 
 	// Note that these string values should probably be cast to integers, but the comparison for values greater than 0 works either way
-	if (prefixDelegationEn == "true") && (warmIPTarget <= "0" && warmPrefixTarget <= "0" && minimumIPTarget <= "0") {
+	if prefixDelegationEn && (warmIPTarget <= "0" && warmPrefixTarget <= "0" && minimumIPTarget <= "0") {
 		log.Errorf("Setting WARM_PREFIX_TARGET = 0 is not supported while WARM_IP_TARGET/MINIMUM_IP_TARGET is not set. Please configure either one of the WARM_{PREFIX/IP}_TARGET or MINIMUM_IP_TARGET env variables")
 		return false
 	}
@@ -317,8 +313,8 @@ func validateEnvVars() bool {
 
 func configureNftablesIfEnabled() error {
 	// By default, VPC CNI container uses iptables-legacy. Update to iptables-nft when env var is set
-	nftables := getEnv(envEnableNftables, defaultEnableNftables)
-	if nftables == "true" {
+	nftables := utils.GetBoolAsStringEnvVar(envEnableNftables, defaultEnableNftables)
+	if nftables {
 		log.Infof("Updating iptables mode to nft")
 		var cmd *exec.Cmd
 		// Command output is not suppressed so that log shows iptables mode being set
@@ -350,7 +346,7 @@ func _main() int {
 	}
 
 	pluginBins := []string{"aws-cni", "egress-v4-cni"}
-	hostCNIBinPath := getEnv(envHostCniBinPath, defaultHostCNIBinPath)
+	hostCNIBinPath := utils.GetEnv(envHostCniBinPath, defaultHostCNIBinPath)
 	err := cp.InstallBinaries(pluginBins, hostCNIBinPath)
 	if err != nil {
 		log.WithError(err).Error("Failed to install CNI binaries")
