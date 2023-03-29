@@ -179,7 +179,11 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	}
 
 	if s.ipamContext.enablePodIPAnnotation {
-		s.ipamContext.AnnotatePod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, vpccniPodIPKey, ipv4Addr)
+		// On ADD, we pass empty string as there is no IP being released
+		err = s.ipamContext.AnnotatePod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, vpccniPodIPKey, ipv4Addr, "")
+		if err != nil {
+			log.Errorf("Failed to add the pod annotation: %v", err)
+		}
 	}
 	resp := rpc.AddNetworkReply{
 		Success:         err == nil,
@@ -273,7 +277,11 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 	}
 
 	if s.ipamContext.enablePodIPAnnotation {
-		s.ipamContext.AnnotatePod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, vpccniPodIPKey, "")
+		// On DEL, we pass IP being released
+		err = s.ipamContext.AnnotatePod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, vpccniPodIPKey, "", ip)
+		if err != nil {
+			log.Errorf("Failed to delete the pod annotation: %v", err)
+		}
 	}
 
 	log.Infof("Send DelNetworkReply: IPv4Addr %s, DeviceNumber: %d, err: %v", ip, deviceNumber, err)
