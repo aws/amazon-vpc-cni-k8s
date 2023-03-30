@@ -1,4 +1,5 @@
 ARG golang_image
+ARG base_image
 
 FROM $golang_image as builder
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
@@ -17,8 +18,8 @@ RUN make plugins && make debug-script
 COPY . ./
 RUN make build-aws-vpc-cni-init
 
-# Build from EKS minimal base + glibc
-FROM public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-glibc:latest.2
+# Build from EKS minimal base + glibc by default
+FROM $base_image
 
 WORKDIR /init
 

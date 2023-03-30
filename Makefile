@@ -21,6 +21,12 @@
 
 # VERSION is the source revision that executables and images are built from.
 VERSION ?= $(shell git describe --tags --always --dirty || echo "unknown")
+# GOLANG_IMAGE is the building golang container image used.
+GOLANG_IMAGE ?= public.ecr.aws/eks-distro-build-tooling/golang:1.19.6-3-gcc-al2
+# BASE_IMAGE_PRIMARY is the base layer image for the primary AWS VPC CNI plugin container
+BASE_IMAGE_PRIMARY ?= public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-iptables:latest.2
+# BASE_IMAGE_SECONDARY is the base layer image for the AWS VPC CNI init container and metrics publisher sidecar container
+BASE_IMAGE_SECONDARY ?= public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-glibc:latest.2
 
 # DESTDIR is where distribution output (container images) is placed.
 DESTDIR = .
@@ -56,8 +62,6 @@ IMAGE_ARCH_SUFFIX = $(addprefix -,$(filter $(ARCH),arm64))
 export DOCKER_BUILDKIT=1
 GOARCH = $(TARGETARCH)
 
-# GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE = public.ecr.aws/eks-distro-build-tooling/golang:1.19.6-3-gcc-al2
 # For the requested build, these are the set of Go specific build environment variables.
 export GOOS = linux
 export CGO_ENABLED = 0
@@ -91,6 +95,7 @@ DOCKER_RUN_FLAGS = --rm -ti $(DOCKER_ARGS)
 # DOCKER_BUILD_FLAGS is the set of flags passed during container image builds
 # based on the requested build.
 DOCKER_BUILD_FLAGS = --build-arg golang_image="$(GOLANG_IMAGE)" \
+					  --build-arg base_image="$(call reconcile_base_image,$1)"	\
 					  --network=host \
 	  		          $(DOCKER_ARGS)
 
@@ -131,14 +136,14 @@ build-aws-vpc-cni:    ## Build the VPC CNI container using the host's Go toolcha
 
 # Build VPC CNI plugin & agent container image.
 docker:	setup-ec2-sdk-override	   ## Build VPC CNI plugin & agent container image.
-	docker build $(DOCKER_BUILD_FLAGS) \
+	docker build $(call DOCKER_BUILD_FLAGS,primary) \
 		-f scripts/dockerfiles/Dockerfile.release \
 		-t "$(IMAGE_NAME)" \
 		.
 	@echo "Built Docker image \"$(IMAGE_NAME)\""
 
 docker-init:     ## Build VPC CNI plugin Init container image.
-	docker build $(DOCKER_BUILD_FLAGS) \
+	docker build $(call DOCKER_BUILD_FLAGS,secondary) \
 		-f scripts/dockerfiles/Dockerfile.init \
 		-t "$(INIT_IMAGE_NAME)" \
 		.
@@ -151,7 +156,7 @@ docker-func-test: docker     ## Run the built CNI container image to use in func
 
 ## Build multi-arch VPC CNI plugin container image.
 multi-arch-cni-build:		
-	docker buildx build $(DOCKER_BUILD_FLAGS) \
+	docker buildx build $(call DOCKER_BUILD_FLAGS,primary) \
 		-f scripts/dockerfiles/Dockerfile.release \
 		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
 		--cache-from=type=gha \
@@ -160,7 +165,7 @@ multi-arch-cni-build:
 
 ## Build and push multi-arch VPC CNI plugin container image.
 multi-arch-cni-build-push:		
-	docker buildx build $(DOCKER_BUILD_FLAGS) \
+	docker buildx build $(call DOCKER_BUILD_FLAGS,primary) \
 		-f scripts/dockerfiles/Dockerfile.release \
 		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
 		-t "$(IMAGE_NAME)" \
@@ -169,7 +174,7 @@ multi-arch-cni-build-push:
 
 ## Build VPC CNI plugin Init container image. 
 multi-arch-cni-init-build:     
-	docker buildx build $(DOCKER_BUILD_FLAGS) \
+	docker buildx build $(call DOCKER_BUILD_FLAGS,secondary) \
 		-f scripts/dockerfiles/Dockerfile.init \
 		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
 		--cache-from=type=gha \
@@ -178,7 +183,7 @@ multi-arch-cni-init-build:
 
 ## Build and push VPC CNI plugin Init container image.
 multi-arch-cni-init-build-push:     
-	docker buildx build $(DOCKER_BUILD_FLAGS) \
+	docker buildx build $(call DOCKER_BUILD_FLAGS,secondary) \
 		-f scripts/dockerfiles/Dockerfile.init \
 		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
 		-t "$(INIT_IMAGE_NAME)" \
@@ -207,7 +212,7 @@ unit-test-race:     ## Run unit tests with race detection (can only be run nativ
 ##@ Build and Run Unit Tests 
 # Build the unit test driver container image.
 build-docker-test:     ## Build the unit test driver container image.
-	docker build $(DOCKER_BUILD_FLAGS) \
+	docker build $(call DOCKER_BUILD_FLAGS,secondary) \
 		-f scripts/dockerfiles/Dockerfile.test \
 		-t $(TEST_IMAGE_NAME) \
 		.
@@ -232,7 +237,7 @@ build-metrics:     ## Build metrics helper agent.
 
 # Build metrics helper agent Docker image.
 docker-metrics:    ## Build metrics helper agent Docker image.
-	docker build $(DOCKER_BUILD_FLAGS) \
+	docker build $(call DOCKER_BUILD_FLAGS,secondary) \
 		-f scripts/dockerfiles/Dockerfile.metrics \
 		-t "$(METRICS_IMAGE_NAME)" \
 		.
@@ -380,3 +385,5 @@ clean:    ## Clean temporary files and build artifacts from the project.
 
 help:   ## Display this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+reconcile_base_image = $(if $(filter $1,primary),$(BASE_IMAGE_PRIMARY),$(BASE_IMAGE_SECONDARY))

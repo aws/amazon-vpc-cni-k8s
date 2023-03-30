@@ -1,4 +1,5 @@
 ARG golang_image
+ARG base_image
 
 FROM $golang_image as builder
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
@@ -15,8 +16,8 @@ COPY Makefile ./
 COPY . ./
 RUN make build-aws-vpc-cni && make build-linux
 
-# Build from EKS minimal base + iptables
-FROM public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-iptables:latest.2
+# Build from EKS minimal base + iptables by default
+FROM $base_image
 
 WORKDIR /app
 
