@@ -47,9 +47,11 @@ import (
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 )
 
-const ipamdAddress = "127.0.0.1:50051"
-
-const dummyVlanInterfacePrefix = "dummy"
+const (
+	ipamdAddress             = "127.0.0.1:50051"
+	dummyVlanInterfacePrefix = "dummy"
+	reservedVlanID           = 0
+)
 
 var version string
 
@@ -214,7 +216,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	var dummyVlanInterface *current.Interface
 
 	// Non-zero value means pods are using branch ENI
-	if r.PodVlanId != 0 {
+	if r.PodVlanId != reservedVlanID {
 		hostVethNamePrefix := sgpp.BuildHostVethNamePrefix(conf.VethPrefix, conf.PodSGEnforcingMode)
 		hostVethName = generateHostVethName(hostVethNamePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		err = driverClient.SetupBranchENIPodNetwork(hostVethName, args.IfName, args.Netns, v4Addr, v6Addr, int(r.PodVlanId), r.PodENIMAC,
@@ -395,7 +397,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		}
 
 		// vlanID != 0 means pod using security group
-		if r.PodVlanId != 0 {
+		if r.PodVlanId != reservedVlanID {
 			if isNetnsEmpty(args.Netns) {
 				log.Infof("Ignoring TeardownPodENI as Netns is empty for SG pod:%s namespace: %s containerID:%s", k8sArgs.K8S_POD_NAME, k8sArgs.K8S_POD_NAMESPACE, k8sArgs.K8S_POD_INFRA_CONTAINER_ID)
 				return nil
@@ -431,8 +433,12 @@ func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArg
 		return false, nil
 	}
 	podVlanID, err := strconv.Atoi(dummyIface.Mac)
-	if err != nil || podVlanID == 0 {
+	if err != nil {
 		return true, errors.Errorf("malformed vlanID in prevResult: %s", dummyIface.Mac)
+	}
+	// If VLAN value is 0, return without handling so that normal delete logic can occur.
+	if podVlanID == reservedVlanID {
+		return false, nil
 	}
 	if isNetnsEmpty(netNS) {
 		log.Infof("Ignoring TeardownPodENI as Netns is empty for SG pod:%s namespace: %s containerID:%s", k8sArgs.K8S_POD_NAME, k8sArgs.K8S_POD_NAMESPACE, k8sArgs.K8S_POD_INFRA_CONTAINER_ID)

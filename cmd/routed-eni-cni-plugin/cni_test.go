@@ -604,7 +604,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 			wantErr: errors.New("malformed vlanID in prevResult: xxx"),
 		},
 		{
-			name:   "malformed vlanID in prevResult - 0",
+			name:   "vlanID in prevResult - 0",
 			fields: fields{},
 			args: args{
 				conf: &NetConf{
@@ -643,7 +643,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				},
 				contVethName: "eth0",
 			},
-			wantErr: errors.New("malformed vlanID in prevResult: 0"),
+			want: false,
 		},
 		{
 			name:   "confVeth don't exists",
