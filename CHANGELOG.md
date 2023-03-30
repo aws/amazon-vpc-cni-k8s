@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.11.5
+
+* Bug - [Handle pod deletion when PrevResult has VLAN 0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2323) (@jdn5126)
+
 ## v1.11.4
 
 * Improvement - [update aws-node clusterrole permissions](https://github.com/aws/amazon-vpc-cni-k8s/pull/2058) (@sushrk)
