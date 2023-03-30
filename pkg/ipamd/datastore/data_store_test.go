@@ -20,8 +20,10 @@ import (
 	"time"
 
 	mock_netlinkwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/golang/mock/gomock"
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -1076,12 +1078,28 @@ func TestWarmENIInteractions(t *testing.T) {
 }
 
 func TestDataStore_normalizeCheckpointDataByPodVethExistence(t *testing.T) {
+	containerAddr := &net.IPNet{
+		IP:   net.ParseIP("192.168.1.1"),
+		Mask: net.CIDRMask(32, 32),
+	}
+
+	toContainerRule := netlink.NewRule()
+	toContainerRule.Dst = containerAddr
+	toContainerRule.Priority = networkutils.ToContainerRulePriority
+	toContainerRule.Table = unix.RT_TABLE_MAIN
+
+	fromContainerRule := netlink.NewRule()
+	fromContainerRule.Src = containerAddr
+	fromContainerRule.Priority = networkutils.FromPodRulePriority
+	fromContainerRule.Table = unix.RT_TABLE_UNSPEC
 	type netLinkListCall struct {
 		links []netlink.Link
 		err   error
 	}
 	type fields struct {
-		netLinkListCalls []netLinkListCall
+		netLinkListCalls       []netLinkListCall
+		staleToContainerRule   *netlink.Rule
+		staleFromContainerRule *netlink.Rule
 	}
 	type args struct {
 		checkpoint CheckpointData
@@ -1203,6 +1221,8 @@ func TestDataStore_normalizeCheckpointDataByPodVethExistence(t *testing.T) {
 						},
 					},
 				},
+				staleToContainerRule:   toContainerRule,
+				staleFromContainerRule: fromContainerRule,
 			},
 			args: args{
 				checkpoint: CheckpointData{
@@ -1226,7 +1246,7 @@ func TestDataStore_normalizeCheckpointDataByPodVethExistence(t *testing.T) {
 								NetworkName: "aws-cni",
 								IfName:      "eth0",
 							},
-							IPv4: "192.168.30.161",
+							IPv4: "192.168.1.1",
 							Metadata: IPAMMetadata{
 								K8SPodNamespace: "kube-system",
 								K8SPodName:      "coredns-57ff979f67-8ns9b",
@@ -1320,6 +1340,13 @@ func TestDataStore_normalizeCheckpointDataByPodVethExistence(t *testing.T) {
 			netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
 			for _, call := range tt.fields.netLinkListCalls {
 				netLink.EXPECT().LinkList().Return(call.links, call.err)
+			}
+			netLink.EXPECT().NewRule().DoAndReturn(func() *netlink.Rule { return netlink.NewRule() }).AnyTimes()
+			// If there are any stale entries, expect toContainer del call to come before fromContainer del call
+			if tt.fields.staleToContainerRule != nil {
+				toContainerDelCall := netLink.EXPECT().RuleDel(tt.fields.staleToContainerRule).Return(nil)
+				fromContainerDelCall := netLink.EXPECT().RuleDel(tt.fields.staleFromContainerRule).Return(nil)
+				fromContainerDelCall.After(toContainerDelCall)
 			}
 			ds := &DataStore{netLink: netLink, log: logger.DefaultLogger()}
 			got, err := ds.normalizeCheckpointDataByPodVethExistence(tt.args.checkpoint)

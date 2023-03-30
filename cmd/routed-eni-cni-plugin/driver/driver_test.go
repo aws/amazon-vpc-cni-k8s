@@ -21,6 +21,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/cninswrapper/mock_ns"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mock_netlink"
 	mock_netlinkwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	mock_nswrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper/mocks"
 	mock_procsyswrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
@@ -53,12 +54,12 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 
 	toContainerRule := netlink.NewRule()
 	toContainerRule.Dst = containerAddr
-	toContainerRule.Priority = toContainerRulePriority
+	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
 
 	fromContainerRuleForRTTable4 := netlink.NewRule()
 	fromContainerRuleForRTTable4.Src = containerAddr
-	fromContainerRuleForRTTable4.Priority = fromContainerRulePriority
+	fromContainerRuleForRTTable4.Priority = networkutils.FromPodRulePriority
 	fromContainerRuleForRTTable4.Table = 4
 
 	type linkByNameCall struct {
@@ -384,12 +385,12 @@ func Test_linuxNetwork_TeardownPodNetwork(t *testing.T) {
 	}
 	toContainerRule := netlink.NewRule()
 	toContainerRule.Dst = containerAddr
-	toContainerRule.Priority = toContainerRulePriority
+	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
 
 	fromContainerRuleForRTTable4 := netlink.NewRule()
 	fromContainerRuleForRTTable4.Src = containerAddr
-	fromContainerRuleForRTTable4.Priority = fromContainerRulePriority
+	fromContainerRuleForRTTable4.Priority = networkutils.FromPodRulePriority
 	fromContainerRuleForRTTable4.Table = 4
 	type routeDelCall struct {
 		route *netlink.Route
@@ -524,26 +525,26 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 
 	oldFromHostVethRule := netlink.NewRule()
 	oldFromHostVethRule.IifName = "eni8ea2c11fe35"
-	oldFromHostVethRule.Priority = vlanRulePriority
+	oldFromHostVethRule.Priority = networkutils.VlanRulePriority
 
 	fromHostVlanRule := netlink.NewRule()
 	fromHostVlanRule.IifName = vlanLinkPostAddWithIndex11.Name
-	fromHostVlanRule.Priority = vlanRulePriority
+	fromHostVlanRule.Priority = networkutils.VlanRulePriority
 	fromHostVlanRule.Table = 107
 
 	fromHostVethRule := netlink.NewRule()
 	fromHostVethRule.IifName = hostVethWithIndex9.Name
-	fromHostVethRule.Priority = vlanRulePriority
+	fromHostVethRule.Priority = networkutils.VlanRulePriority
 	fromHostVethRule.Table = 107
 
 	toContainerRule := netlink.NewRule()
 	toContainerRule.Dst = containerAddr
-	toContainerRule.Priority = toContainerRulePriority
+	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
 
 	fromContainerRule := netlink.NewRule()
 	fromContainerRule.Src = containerAddr
-	fromContainerRule.Priority = fromContainerRulePriority
+	fromContainerRule.Priority = networkutils.FromPodRulePriority
 	fromContainerRule.Table = 107
 
 	type linkByNameCall struct {
@@ -1236,7 +1237,7 @@ func Test_linuxNetwork_TeardownBranchENIPodNetwork(t *testing.T) {
 	}
 
 	vlanRuleForRTTable107 := netlink.NewRule()
-	vlanRuleForRTTable107.Priority = vlanRulePriority
+	vlanRuleForRTTable107.Priority = networkutils.VlanRulePriority
 	vlanRuleForRTTable107.Table = 107
 
 	toContainerRoute := &netlink.Route{
@@ -1247,12 +1248,12 @@ func Test_linuxNetwork_TeardownBranchENIPodNetwork(t *testing.T) {
 
 	toContainerRule := netlink.NewRule()
 	toContainerRule.Dst = containerAddr
-	toContainerRule.Priority = toContainerRulePriority
+	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
 
 	fromContainerRule := netlink.NewRule()
 	fromContainerRule.Src = containerAddr
-	fromContainerRule.Priority = fromContainerRulePriority
+	fromContainerRule.Priority = networkutils.FromPodRulePriority
 	fromContainerRule.Table = 107
 
 	type linkByNameCall struct {
@@ -3556,12 +3557,12 @@ func Test_linuxNetwork_setupIPBasedContainerRouteRules(t *testing.T) {
 
 	toContainerRule := netlink.NewRule()
 	toContainerRule.Dst = containerAddr
-	toContainerRule.Priority = toContainerRulePriority
+	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
 
 	fromContainerRule := netlink.NewRule()
 	fromContainerRule.Src = containerAddr
-	fromContainerRule.Priority = fromContainerRulePriority
+	fromContainerRule.Priority = networkutils.FromPodRulePriority
 	fromContainerRule.Table = 101
 	type routeReplaceCall struct {
 		route *netlink.Route
@@ -3820,12 +3821,12 @@ func Test_linuxNetwork_teardownIPBasedContainerRouteRules(t *testing.T) {
 	}
 	toContainerRule := netlink.NewRule()
 	toContainerRule.Dst = containerAddr
-	toContainerRule.Priority = toContainerRulePriority
+	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
 
 	fromContainerRule := netlink.NewRule()
 	fromContainerRule.Src = containerAddr
-	fromContainerRule.Priority = fromContainerRulePriority
+	fromContainerRule.Priority = networkutils.FromPodRulePriority
 	fromContainerRule.Table = 101
 	type routeDelCall struct {
 		route *netlink.Route
@@ -4007,12 +4008,12 @@ func Test_linuxNetwork_setupIIFBasedContainerRouteRules(t *testing.T) {
 	rtTable := 101
 	fromHostVlanRule := netlink.NewRule()
 	fromHostVlanRule.IifName = hostVlanAttrs.Name
-	fromHostVlanRule.Priority = vlanRulePriority
+	fromHostVlanRule.Priority = networkutils.VlanRulePriority
 	fromHostVlanRule.Table = rtTable
 
 	fromHostVethRule := netlink.NewRule()
 	fromHostVethRule.IifName = hostVethAttrs.Name
-	fromHostVethRule.Priority = vlanRulePriority
+	fromHostVethRule.Priority = networkutils.VlanRulePriority
 	fromHostVethRule.Table = rtTable
 	type routeReplaceCall struct {
 		route *netlink.Route
@@ -4244,7 +4245,7 @@ func Test_linuxNetwork_setupIIFBasedContainerRouteRules(t *testing.T) {
 
 func Test_linuxNetwork_teardownIIFBasedContainerRouteRules(t *testing.T) {
 	vlanRuleForTableID101 := netlink.NewRule()
-	vlanRuleForTableID101.Priority = vlanRulePriority
+	vlanRuleForTableID101.Priority = networkutils.VlanRulePriority
 	vlanRuleForTableID101.Table = 101
 	type ruleDelCall struct {
 		rule *netlink.Rule

@@ -49,10 +49,16 @@ import (
 )
 
 const (
+	// Vlan rule priority
+	VlanRulePriority = 10
+
 	// Local rule, needs to come after the pod ENI rules
 	localRulePriority = 20
 
-	// 513 - 1023, can be used priority lower than toPodRulePriority but higher than default nonVPC CIDR rule
+	// Rule priority for traffic destined to pod IP
+	ToContainerRulePriority = 512
+
+	// 513 - 1023, can be used for priority lower than fromPodRule but higher than default nonVPC CIDR rule
 
 	// 1024 is reserved for (ip rule not to <VPC's subnet> table main)
 	hostRulePriority = 1024
@@ -63,7 +69,7 @@ const (
 	externalServiceIpRulePriority = 1535
 
 	// Rule priority for traffic from pod
-	fromPodRulePriority = 1536
+	FromPodRulePriority = 1536
 
 	// Main route table
 	mainRoutingTable = unix.RT_TABLE_MAIN
@@ -753,11 +759,32 @@ func (r iptablesRule) String() string {
 	return fmt.Sprintf("%s/%s rule %s shouldExist %v rule %v", r.table, r.chain, r.name, r.shouldExist, r.rule)
 }
 
+// NetLinkRuleDelAll deletes all matching route rules (instead of only first instance).
+func NetLinkRuleDelAll(netlink netlinkwrapper.NetLink, rule *netlink.Rule) error {
+	for {
+		if err := netlink.RuleDel(rule); err != nil {
+			if !containsNoSuchRule(err) {
+				return err
+			}
+			break
+		}
+	}
+	return nil
+}
+
+func ContainsNoSuchRule(err error) bool {
+	return containsNoSuchRule(err)
+}
+
 func containsNoSuchRule(err error) bool {
 	if errno, ok := err.(syscall.Errno); ok {
 		return errno == syscall.ENOENT
 	}
 	return false
+}
+
+func IsRuleExistsError(err error) bool {
+	return isRuleExistsError(err)
 }
 
 func isRuleExistsError(err error) bool {
@@ -1114,7 +1141,7 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 
 	podRule.Src = &src
 	podRule.Table = srcRuleTable
-	podRule.Priority = fromPodRulePriority
+	podRule.Priority = FromPodRulePriority
 
 	err = n.netLink.RuleAdd(podRule)
 	if err != nil {

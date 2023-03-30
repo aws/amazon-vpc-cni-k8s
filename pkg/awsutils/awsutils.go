@@ -1236,7 +1236,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 	efaENIs := make(map[string]bool, 0)
 	tagMap := make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
 	for _, ec2res := range ec2Response.NetworkInterfaces {
-		log.Infof("Got network cardindex %v for ENI %v", aws.Int64Value(ec2res.Attachment.NetworkCardIndex), aws.StringValue(ec2res.NetworkInterfaceId))
+		log.Infof("Got network card index %v for ENI %v", aws.Int64Value(ec2res.Attachment.NetworkCardIndex), aws.StringValue(ec2res.NetworkInterfaceId))
 		if ec2res.Attachment != nil && aws.Int64Value(ec2res.Attachment.DeviceIndex) == 0 && !aws.BoolValue(ec2res.Attachment.DeleteOnTermination) {
 			log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
 		}

@@ -30,6 +30,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
@@ -37,13 +38,6 @@ import (
 )
 
 const (
-	// vlan rule priority
-	vlanRulePriority = 10
-	// IP rules priority, leaving a 512 gap for the future
-	toContainerRulePriority = 512
-	// 1024 is reserved for (IP rule not to <VPC's subnet> table main)
-	fromContainerRulePriority = 1536
-
 	WAIT_INTERVAL = 50 * time.Millisecond
 
 	//Time duration CNI waits for an IPv6 address assigned to an interface
@@ -295,8 +289,8 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(hostVethName string, contVethNam
 	// this logic is kept here for safety purpose.
 	oldFromHostVethRule := n.netLink.NewRule()
 	oldFromHostVethRule.IifName = hostVethName
-	oldFromHostVethRule.Priority = vlanRulePriority
-	if err := netLinkRuleDelAll(n.netLink, oldFromHostVethRule); err != nil {
+	oldFromHostVethRule.Priority = networkutils.VlanRulePriority
+	if err := networkutils.NetLinkRuleDelAll(n.netLink, oldFromHostVethRule); err != nil {
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to delete hostVeth rule for %s", hostVethName)
 	}
 
@@ -451,9 +445,9 @@ func (n *linuxNetwork) setupIPBasedContainerRouteRules(hostVeth netlink.Link, co
 
 	toContainerRule := n.netLink.NewRule()
 	toContainerRule.Dst = containerAddr
-	toContainerRule.Priority = toContainerRulePriority
+	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
-	if err := n.netLink.RuleAdd(toContainerRule); err != nil && !isRuleExistsError(err) {
+	if err := n.netLink.RuleAdd(toContainerRule); err != nil && !networkutils.IsRuleExistsError(err) {
 		return errors.Wrapf(err, "failed to setup toContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), "main")
 	}
 
@@ -462,9 +456,9 @@ func (n *linuxNetwork) setupIPBasedContainerRouteRules(hostVeth netlink.Link, co
 	if rtTable != unix.RT_TABLE_MAIN {
 		fromContainerRule := n.netLink.NewRule()
 		fromContainerRule.Src = containerAddr
-		fromContainerRule.Priority = fromContainerRulePriority
+		fromContainerRule.Priority = networkutils.FromPodRulePriority
 		fromContainerRule.Table = rtTable
-		if err := n.netLink.RuleAdd(fromContainerRule); err != nil && !isRuleExistsError(err) {
+		if err := n.netLink.RuleAdd(fromContainerRule); err != nil && !networkutils.IsRuleExistsError(err) {
 			return errors.Wrapf(err, "failed to setup fromContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), rtTable)
 		}
 		log.Debugf("Successfully setup fromContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), rtTable)
@@ -476,9 +470,9 @@ func (n *linuxNetwork) setupIPBasedContainerRouteRules(hostVeth netlink.Link, co
 func (n *linuxNetwork) teardownIPBasedContainerRouteRules(containerAddr *net.IPNet, rtTable int, log logger.Logger) error {
 	toContainerRule := n.netLink.NewRule()
 	toContainerRule.Dst = containerAddr
-	toContainerRule.Priority = toContainerRulePriority
+	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
-	if err := n.netLink.RuleDel(toContainerRule); err != nil && !containsNoSuchRule(err) {
+	if err := n.netLink.RuleDel(toContainerRule); err != nil && !networkutils.ContainsNoSuchRule(err) {
 		return errors.Wrapf(err, "failed to delete toContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), "main")
 	}
 	log.Debugf("Successfully deleted toContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), "main")
@@ -486,11 +480,11 @@ func (n *linuxNetwork) teardownIPBasedContainerRouteRules(containerAddr *net.IPN
 	if rtTable != unix.RT_TABLE_MAIN {
 		fromContainerRule := netlink.NewRule()
 		fromContainerRule.Src = containerAddr
-		fromContainerRule.Priority = fromContainerRulePriority
+		fromContainerRule.Priority = networkutils.FromPodRulePriority
 		fromContainerRule.Table = rtTable
 
 		// note: older version CNI sets up multiple CIDR based from container rule, so we recursively delete them to be backwards-compatible.
-		if err := netLinkRuleDelAll(n.netLink, fromContainerRule); err != nil {
+		if err := networkutils.NetLinkRuleDelAll(n.netLink, fromContainerRule); err != nil {
 			return errors.Wrapf(err, "failed to delete fromContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), rtTable)
 		}
 		log.Debugf("Successfully deleted fromContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), rtTable)
@@ -532,18 +526,18 @@ func (n *linuxNetwork) setupIIFBasedContainerRouteRules(hostVeth netlink.Link, c
 
 	fromHostVlanRule := n.netLink.NewRule()
 	fromHostVlanRule.IifName = hostVlan.Attrs().Name
-	fromHostVlanRule.Priority = vlanRulePriority
+	fromHostVlanRule.Priority = networkutils.VlanRulePriority
 	fromHostVlanRule.Table = rtTable
-	if err := n.netLink.RuleAdd(fromHostVlanRule); err != nil && !isRuleExistsError(err) {
+	if err := n.netLink.RuleAdd(fromHostVlanRule); err != nil && !networkutils.IsRuleExistsError(err) {
 		return errors.Wrapf(err, "unable to setup fromHostVlan rule, hostVlan=%s, rtTable=%v", hostVlan.Attrs().Name, rtTable)
 	}
 	log.Debugf("Successfully setup fromHostVlan rule, hostVlan=%s, rtTable=%v", hostVlan.Attrs().Name, rtTable)
 
 	fromHostVethRule := n.netLink.NewRule()
 	fromHostVethRule.IifName = hostVeth.Attrs().Name
-	fromHostVethRule.Priority = vlanRulePriority
+	fromHostVethRule.Priority = networkutils.VlanRulePriority
 	fromHostVethRule.Table = rtTable
-	if err := n.netLink.RuleAdd(fromHostVethRule); err != nil && !isRuleExistsError(err) {
+	if err := n.netLink.RuleAdd(fromHostVethRule); err != nil && !networkutils.IsRuleExistsError(err) {
 		return errors.Wrapf(err, "unable to setup fromHostVeth rule, hostVeth=%s, rtTable=%v", hostVeth.Attrs().Name, rtTable)
 	}
 	log.Debugf("Successfully setup fromHostVeth rule, hostVeth=%s, rtTable=%v", hostVeth.Attrs().Name, rtTable)
@@ -553,10 +547,10 @@ func (n *linuxNetwork) setupIIFBasedContainerRouteRules(hostVeth netlink.Link, c
 
 func (n *linuxNetwork) teardownIIFBasedContainerRouteRules(rtTable int, log logger.Logger) error {
 	rule := n.netLink.NewRule()
-	rule.Priority = vlanRulePriority
+	rule.Priority = networkutils.VlanRulePriority
 	rule.Table = rtTable
 
-	if err := netLinkRuleDelAll(n.netLink, rule); err != nil {
+	if err := networkutils.NetLinkRuleDelAll(n.netLink, rule); err != nil {
 		return errors.Wrapf(err, "failed to delete IIF based rules, rtTable=%v", rtTable)
 	}
 	log.Debugf("Successfully deleted IIF based rules, rtTable=%v", rtTable)
