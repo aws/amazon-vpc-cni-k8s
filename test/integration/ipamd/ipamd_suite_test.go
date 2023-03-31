@@ -32,13 +32,10 @@ import (
 var primaryInstance *ec2.Instance
 var f *framework.Framework
 var err error
-var defaultEniCount int
-var defaultIpsPerEni int
 
 const (
 	CoreDNSDeploymentName = "coredns"
 	KubeSystemNamespace   = "kube-system"
-	DefaultPrefixPerEni   = 0
 )
 
 var coreDNSDeploymentCopy *v1.Deployment
@@ -104,12 +101,6 @@ var _ = BeforeSuite(func() {
 	instanceID = k8sUtils.GetInstanceIDFromNode(*primaryNode)
 	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(instanceID)
 	Expect(err).ToNot(HaveOccurred())
-
-	primaryInstanceDefaults, err := f.CloudServices.EC2().DescribeInstanceType(*primaryInstance.InstanceType)
-	Expect(err).ToNot(HaveOccurred())
-
-	defaultEniCount = len(primaryInstanceDefaults[0].NetworkInfo.NetworkCards)
-	defaultIpsPerEni = int(*primaryInstanceDefaults[0].NetworkInfo.Ipv4AddressesPerInterface)
 
 	// Set default values- WARM_ENI_TARGET to 1, and remove WARM_IP_TARGET, MINIMUM_IP_TARGET and WARM_PREFIX_TARGET
 	k8sUtils.UpdateEnvVarOnDaemonSetAndWaitUntilReady(f, "aws-node", "kube-system",

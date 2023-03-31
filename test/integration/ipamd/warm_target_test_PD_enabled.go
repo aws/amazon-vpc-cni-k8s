@@ -19,7 +19,6 @@ import (
 
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -35,9 +34,6 @@ var _ = Describe("test warm target variables", func() {
 
 		JustBeforeEach(func() {
 			var availPrefixes int
-
-			common.WaitToReconcileInitialState(f, primaryInstance,
-				defaultEniCount, defaultIpsPerEni, DefaultPrefixPerEni)
 
 			// Set the WARM IP TARGET
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,
@@ -127,9 +123,6 @@ var _ = Describe("test warm target variables", func() {
 		var warmPrefixTarget int
 
 		JustBeforeEach(func() {
-			common.WaitToReconcileInitialState(f, primaryInstance,
-				defaultEniCount, defaultIpsPerEni, DefaultPrefixPerEni)
-
 			// Set the WARM IP TARGET
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,
 				utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName,
@@ -178,9 +171,6 @@ var _ = Describe("test warm target variables", func() {
 
 		JustBeforeEach(func() {
 			var availPrefixes int
-
-			common.WaitToReconcileInitialState(f, primaryInstance,
-				defaultEniCount, defaultIpsPerEni, DefaultPrefixPerEni)
 
 			// Set the WARM IP TARGET
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f,

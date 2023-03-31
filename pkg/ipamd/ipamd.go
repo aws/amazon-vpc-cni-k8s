@@ -2051,7 +2051,7 @@ func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
 }
 
 // AnnotatePod annotates the pod with the provided key and value
-func (c *IPAMContext) AnnotatePod(podName, podNamespace, key, val string) error {
+func (c *IPAMContext) AnnotatePod(podName string, podNamespace string, key string, newVal string, releasedIP string) error {
 	ctx := context.TODO()
 	var err error
 
@@ -2069,12 +2069,33 @@ func (c *IPAMContext) AnnotatePod(podName, podNamespace, key, val string) error 
 		if newPod.Annotations == nil {
 			newPod.Annotations = make(map[string]string)
 		}
-		newPod.Annotations[key] = val
+
+		oldVal, ok := newPod.Annotations[key]
+
+		// On CNI ADD, always set new annotation
+		if newVal != "" {
+			// Skip patch operation if new value is the same as existing value
+			if ok && oldVal == newVal {
+				log.Infof("Patch updating not needed")
+				return nil
+			}
+			newPod.Annotations[key] = newVal
+		} else {
+			// On CNI DEL, set annotation to empty string if IP is the one we are releasing
+			if ok {
+				log.Debugf("Existing annotation value: %s", oldVal)
+				if oldVal != releasedIP {
+					return fmt.Errorf("Released IP %s does not match existing annotation. Not patching pod.", releasedIP)
+				}
+				newPod.Annotations[key] = ""
+			}
+		}
+
 		if err = c.rawK8SClient.Patch(ctx, newPod, client.MergeFrom(pod)); err != nil {
-			log.Errorf("Failed to annotate %s the pod with %s, error %v", key, val, err)
+			log.Errorf("Failed to annotate %s the pod with %s, error %v", key, newVal, err)
 			return err
 		}
-		log.Debugf("Annotates pod %s with %s: %s", podName, key, val)
+		log.Debugf("Annotates pod %s with %s: %s", podName, key, newVal)
 		return nil
 	})
 
