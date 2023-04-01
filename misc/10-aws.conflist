@@ -13,19 +13,19 @@
       "pluginLogLevel": "__PLUGINLOGLEVEL__"
     },
     {
-      "name": "egress-v4-cni",
-      "type": "egress-v4-cni",
+      "name": "egress-cni",
+      "type": "egress-cni",
       "mtu": "9001",
-      "enabled": "__EGRESSV4PLUGINENABLED__",
+      "enabled": "__EGRESSPLUGINENABLED__",
       "randomizeSNAT": "__RANDOMIZESNAT__",
       "nodeIP": "__NODEIP__",
       "ipam": {
          "type": "host-local",
-         "ranges": [[{"subnet": "169.254.172.0/22"}]],
-         "routes": [{"dst": "0.0.0.0/0"}],
-         "dataDir": "/run/cni/v6pd/egress-v4-ipam"
+         "ranges": [[{"subnet": "__EGRESSPLUGINIPAMSUBNET__"}]],
+         "routes": [{"dst": "__EGRESSPLUGINIPAMDST__"}],
+         "dataDir": "__EGRESSPLUGINIPAMDATADIR__"
       },
-      "pluginLogFile": "__EGRESSV4PLUGINLOGFILE__",
+      "pluginLogFile": "__EGRESSPLUGINLOGFILE__",
       "pluginLogLevel": "__PLUGINLOGLEVEL__"
     },
     {

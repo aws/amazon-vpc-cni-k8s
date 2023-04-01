@@ -27,18 +27,22 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/coreos/go-iptables/iptables"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
-	"github.com/coreos/go-iptables/iptables"
 	"github.com/vishvananda/netlink"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
@@ -162,21 +166,8 @@ type linuxNetwork struct {
 
 	netLink     netlinkwrapper.NetLink
 	ns          nswrapper.NS
-	newIptables func(IPProtocol iptables.Protocol) (iptablesIface, error)
+	newIptables func(IPProtocol iptables.Protocol) (iptableswrapper.IPTablesIface, error)
 	mainENIMark uint32
-}
-
-type iptablesIface interface {
-	Exists(table, chain string, rulespec ...string) (bool, error)
-	Insert(table, chain string, pos int, rulespec ...string) error
-	Append(table, chain string, rulespec ...string) error
-	Delete(table, chain string, rulespec ...string) error
-	List(table, chain string) ([]string, error)
-	NewChain(table, chain string) error
-	ClearChain(table, chain string) error
-	DeleteChain(table, chain string) error
-	ListChains(table string) ([]string, error)
-	HasRandomFully() bool
 }
 
 type snatType uint32
@@ -202,7 +193,7 @@ func New() NetworkAPIs {
 
 		netLink: netlinkwrapper.NewNetLink(),
 		ns:      nswrapper.NewNS(),
-		newIptables: func(IPProtocol iptables.Protocol) (iptablesIface, error) {
+		newIptables: func(IPProtocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
 			ipt, err := iptables.NewWithProtocol(IPProtocol)
 			return ipt, err
 		},
@@ -393,7 +384,7 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 	return nil
 }
 
-func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *net.IP, primaryIntf string, ipt iptablesIface) ([]iptablesRule, error) {
+func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *net.IP, primaryIntf string, ipt iptableswrapper.IPTablesIface) ([]iptablesRule, error) {
 	type snatCIDR struct {
 		cidr        string
 		isExclusion bool
@@ -526,7 +517,7 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 	return iptableRules, nil
 }
 
-func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptablesIface) ([]iptablesRule, error) {
+func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptableswrapper.IPTablesIface) ([]iptablesRule, error) {
 	var allCIDRs []string
 	allCIDRs = append(allCIDRs, vpcCIDRs...)
 	allCIDRs = append(allCIDRs, n.excludeSNATCIDRs...)
@@ -633,7 +624,7 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 	return iptableRules, nil
 }
 
-func (n *linuxNetwork) updateIptablesRules(iptableRules []iptablesRule, ipt iptablesIface) error {
+func (n *linuxNetwork) updateIptablesRules(iptableRules []iptablesRule, ipt iptableswrapper.IPTablesIface) error {
 	for _, rule := range iptableRules {
 		log.Debugf("execute iptable rule : %s", rule.name)
 
@@ -661,7 +652,7 @@ func (n *linuxNetwork) updateIptablesRules(iptableRules []iptablesRule, ipt ipta
 	return nil
 }
 
-func listCurrentIptablesRules(ipt iptablesIface, table, chainPrefix string) ([]iptablesRule, error) {
+func listCurrentIptablesRules(ipt iptableswrapper.IPTablesIface, table, chainPrefix string) ([]iptablesRule, error) {
 	var toClear []iptablesRule
 	log.Debugf("Setup Host Network: loading existing iptables %s rules with chain prefix %s", table, chainPrefix)
 	existingChains, err := ipt.ListChains(table)
@@ -696,7 +687,7 @@ func listCurrentIptablesRules(ipt iptablesIface, table, chainPrefix string) ([]i
 	return toClear, nil
 }
 
-func computeStaleIptablesRules(ipt iptablesIface, table, chainPrefix string, newRules []iptablesRule, chains []string) ([]iptablesRule, error) {
+func computeStaleIptablesRules(ipt iptableswrapper.IPTablesIface, table, chainPrefix string, newRules []iptablesRule, chains []string) ([]iptablesRule, error) {
 	var staleRules []iptablesRule
 	existingRules, err := listCurrentIptablesRules(ipt, table, chainPrefix)
 	if err != nil {

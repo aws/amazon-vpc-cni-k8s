@@ -17,4 +17,4 @@ coverage.txt
 core-plugins/
 build/
 vendor
-egress-v4-cni
+egress-cni

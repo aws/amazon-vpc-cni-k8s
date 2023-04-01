@@ -84,7 +84,7 @@ LDFLAGS = -X pkg/version/info.Version=$(VERSION) -X pkg/awsutils/awssession.vers
 # ALLPKGS is the set of packages provided in source.
 ALLPKGS = $(shell go list $(VENDOR_OVERRIDE_FLAG) ./... | grep -v cmd/packet-verifier)
 # BINS is the set of built command executables.
-BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper aws-vpc-cni aws-vpc-cni-init egress-v4-cni
+BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper aws-vpc-cni aws-vpc-cni-init egress-cni
 # CORE_PLUGIN_DIR is the directory containing upstream containernetworking plugins
 CORE_PLUGIN_DIR = $(MAKEFILE_PATH)/core-plugins/
 
@@ -134,7 +134,7 @@ build-linux:    ## Build the VPC CNI plugin agent using the host's Go toolchain.
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
-	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o egress-v4-cni     ./cmd/egress-v4-cni-plugin
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o egress-cni     ./cmd/egress-cni-plugin
 
 # Build VPC CNI init container entrypoint
 build-aws-vpc-cni-init: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
