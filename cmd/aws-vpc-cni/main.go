@@ -67,7 +67,7 @@ const (
 	defaultEgressV6PluginLogFile = "/var/log/aws-routed-eni/egress-v6-plugin.log"
 	defaultPluginLogLevel        = "Debug"
 	defaultEnableIPv6            = "false"
-	defaultEnableIpv6Engress     = "false"
+	defaultEnableIpv6Engress     = "true"
 	defaultRandomizeSNAT         = "prng"
 	defaultEnableNftables        = "false"
 	awsConflistFile              = "/10-aws.conflist"

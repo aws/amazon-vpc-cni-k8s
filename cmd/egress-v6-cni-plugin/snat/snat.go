@@ -46,7 +46,7 @@ func iptRules6(target, src net.IP, chain, comment string, useRandomFully, useHas
 	return rules
 }
 
-// Snat4 SNATs IPv4 connections from `src` to `target`
+// Snat6 SNATs IPv6 connections from `src` to `target`
 func Snat6(target, src net.IP, chain, comment, randomizeSNAT string) error {
 	ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv6)
 	if err != nil {
@@ -94,7 +94,7 @@ func Snat6(target, src net.IP, chain, comment, randomizeSNAT string) error {
 	return nil
 }
 
-// Snat4Del removes rules added by snat4
+// Snat6Del removes rules added by snat6
 func Snat6Del(src net.IP, chain, comment string) error {
 	ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv6)
 	if err != nil {
