@@ -118,6 +118,7 @@ build-linux:    ## Build the VPC CNI plugin agent using the host's Go toolchain.
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o egress-v4-cni     ./cmd/egress-v4-cni-plugin
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o egress-v6-cni     ./cmd/egress-v6-cni-plugin
 
 # Build VPC CNI init container entrypoint
 build-aws-vpc-cni-init: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'

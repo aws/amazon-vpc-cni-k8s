@@ -29,6 +29,22 @@
       "pluginLogLevel": "__PLUGINLOGLEVEL__"
     },
     {
+          "name": "egress-v6-cni",
+          "type": "egress-v6-cni",
+          "mtu": "9001",
+          "enabled": "__EGRESSV6PLUGINENABLED__",
+          "randomizeSNAT": "__RANDOMIZESNAT__",
+          "nodeIP": "__NODEIP__",
+          "ipam": {
+             "type": "host-local",
+             "ranges": [[{"subnet": "fd00::/8"}]],
+             "routes": [{"dst": "::/0"}],
+             "dataDir": "/run/cni/v4pd/egress-v6-ipam"
+          },
+          "pluginLogFile": "__EGRESSV6PLUGINLOGFILE__",
+          "pluginLogLevel": "__PLUGINLOGLEVEL__"
+    },
+    {
       "type": "portmap",
       "capabilities": {"portMappings": true},
       "snat": true

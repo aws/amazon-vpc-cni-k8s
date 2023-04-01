@@ -64,8 +64,10 @@ const (
 	defaultPodSGEnforcingMode    = "strict"
 	defaultPluginLogFile         = "/var/log/aws-routed-eni/plugin.log"
 	defaultEgressV4PluginLogFile = "/var/log/aws-routed-eni/egress-v4-plugin.log"
+	defaultEgressV6PluginLogFile = "/var/log/aws-routed-eni/egress-v6-plugin.log"
 	defaultPluginLogLevel        = "Debug"
 	defaultEnableIPv6            = "false"
+	defaultEnableIpv6Engress     = "false"
 	defaultRandomizeSNAT         = "prng"
 	defaultEnableNftables        = "false"
 	awsConflistFile              = "/10-aws.conflist"
@@ -80,12 +82,14 @@ const (
 	envPluginLogFile         = "AWS_VPC_K8S_PLUGIN_LOG_FILE"
 	envPluginLogLevel        = "AWS_VPC_K8S_PLUGIN_LOG_LEVEL"
 	envEgressV4PluginLogFile = "AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE"
+	envEgressV6PluginLogFile = "AWS_VPC_K8S_EGRESS_V6_PLUGIN_LOG_FILE"
 	envEnPrefixDelegation    = "ENABLE_PREFIX_DELEGATION"
 	envWarmIPTarget          = "WARM_IP_TARGET"
 	envMinIPTarget           = "MINIMUM_IP_TARGET"
 	envWarmPrefixTarget      = "WARM_PREFIX_TARGET"
 	envEnBandwidthPlugin     = "ENABLE_BANDWIDTH_PLUGIN"
 	envEnIPv6                = "ENABLE_IPv6"
+	envEnIpV6Engress         = "ENABLE_IPv6_ENGRESS"
 	envRandomizeSNAT         = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 	envEnableNftables        = "ENABLE_NFTABLES"
 )
@@ -229,7 +233,9 @@ func generateJSON(jsonFile string, outFile string, nodeIP string) error {
 	pluginLogFile := getEnv(envPluginLogFile, defaultPluginLogFile)
 	pluginLogLevel := getEnv(envPluginLogLevel, defaultPluginLogLevel)
 	egressV4pluginLogFile := getEnv(envEgressV4PluginLogFile, defaultEgressV4PluginLogFile)
+	egressV6pluginLogFile := getEnv(envEgressV6PluginLogFile, defaultEgressV6PluginLogFile)
 	enabledIPv6 := getEnv(envEnIPv6, defaultEnableIPv6)
+	enabledIpv6Engress := getEnv(envEnIpV6Engress, defaultEnableIpv6Engress)
 	randomizeSNAT := getEnv(envRandomizeSNAT, defaultRandomizeSNAT)
 
 	netconf := string(byteValue)
@@ -239,7 +245,9 @@ func generateJSON(jsonFile string, outFile string, nodeIP string) error {
 	netconf = strings.Replace(netconf, "__PLUGINLOGFILE__", pluginLogFile, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGLEVEL__", pluginLogLevel, -1)
 	netconf = strings.Replace(netconf, "__EGRESSV4PLUGINLOGFILE__", egressV4pluginLogFile, -1)
+	netconf = strings.Replace(netconf, "__EGRESSV6PLUGINLOGFILE__", egressV6pluginLogFile, -1)
 	netconf = strings.Replace(netconf, "__EGRESSV4PLUGINENABLED__", enabledIPv6, -1)
+	netconf = strings.Replace(netconf, "__EGRESSV6PLUGINENABLED__", enabledIpv6Engress, -1)
 	netconf = strings.Replace(netconf, "__RANDOMIZESNAT__", randomizeSNAT, -1)
 	netconf = strings.Replace(netconf, "__NODEIP__", nodeIP, -1)
 
@@ -349,7 +357,7 @@ func _main() int {
 		log.WithError(err).Error("Failed to enable nftables")
 	}
 
-	pluginBins := []string{"aws-cni", "egress-v4-cni"}
+	pluginBins := []string{"aws-cni", "egress-v4-cni", "egress-v6-cni"}
 	hostCNIBinPath := getEnv(envHostCniBinPath, defaultHostCNIBinPath)
 	err := cp.InstallBinaries(pluginBins, hostCNIBinPath)
 	if err != nil {

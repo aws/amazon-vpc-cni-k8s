@@ -20,3 +20,4 @@ coverage.txt
 build/
 vendor
 egress-v4-cni
+egress-v6-cni

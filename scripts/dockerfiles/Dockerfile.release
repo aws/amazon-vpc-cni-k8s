@@ -25,6 +25,7 @@ COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-k8s-agent \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/grpc-health-probe \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/egress-v4-cni \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/egress-v6-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-vpc-cni /app/
 
 ENTRYPOINT ["/app/aws-vpc-cni"]
