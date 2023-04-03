@@ -157,7 +157,19 @@ func getHostVethIPv6ByContainerVethIfName(netns ns.NetNS, containerVethIfName st
 	return netIPs, nil
 }
 
-func setupContainerIPv6Address(ipamType string, netns ns.NetNS, ifName string, argsStdinData []byte) (*net.IPNet, *current.Result, error) {
+func setupContainerIPv6Address(preResult *current.Result, ipamType string, netns ns.NetNS, ifName string, argsStdinData []byte) (*net.IPNet, *current.Result, error) {
+	// get interface index in current.Result
+	var interfaceIndex = -1
+	for index, interf := range preResult.Interfaces {
+		if interf.Name == ifName {
+			interfaceIndex = index
+		}
+	}
+
+	if interfaceIndex >= len(preResult.Interfaces) || interfaceIndex < 0 {
+		return nil, nil, fmt.Errorf("could not find interface named %s in PreResult interface list", ifName)
+	}
+
 	// a ULA IPv6 address needs to be assigned to container interface, usually eth0
 	// so that IPv4 container to communicate off-cluster IPv6 service
 
@@ -182,7 +194,6 @@ func setupContainerIPv6Address(ipamType string, netns ns.NetNS, ifName string, a
 
 
 	err = netns.Do(func(hostNS ns.NetNS) error {
-		containerVethIf, err := net.InterfaceByName(ifName)
 		if err != nil {
 			return err
 		}
@@ -191,7 +202,7 @@ func setupContainerIPv6Address(ipamType string, netns ns.NetNS, ifName string, a
 			// for IPv6 ULA (Unique Local Address), IsGlobalUnicast return true
 			if ipConfig.Address.IP.IsGlobalUnicast() && ipConfig.Version == "6" {
 				ipNet = &ipConfig.Address
-				ipConfig.Interface = &containerVethIf.Index
+				ipConfig.Interface = current.Int(interfaceIndex)
 				break
 			}
 		}
@@ -268,10 +279,54 @@ func setupContainerIPv6Route(netns ns.NetNS, containerVethIfIPv6 *net.IPNet, con
 					Mask: net.CIDRMask(0, 128),
 				},
 				Scope: netlink.SCOPE_UNIVERSE,
-				Via: &netlink.Via{
-					AddrFamily: netlink.FAMILY_V6,
-					Addr:       netIPs[0],
+				Gw: netIPs[0],
+			},
+			//{
+			//	LinkIndex: *containerVethIfIndex,
+			//	Dst: &net.IPNet{
+			//		IP:   containerVethIfIPv6.IP.Mask(containerVethIfIPv6.Mask),
+			//		Mask: containerVethIfIPv6.Mask,
+			//	},
+			//	Scope: netlink.SCOPE_UNIVERSE,
+			//},
+		} {
+			// set up from container off-cluster IPv6 route (egress)
+			// all from container IPv6 traffic via host veth interface's link-local IPv6 address
+			if err := netlink.RouteAdd(&r); os.IsExist(err) {
+				// ignore this error
+			} else if err != nil {
+				return fmt.Errorf("failed to add route %v: %v", r, err)
+			}
+		}
+		return nil
+	})
+}
+
+func tearDownContainerIPv6Route(netns ns.NetNS, containerVethIfIPv6 *net.IPNet, containerVethIfName string) error {
+	containerVethIfIndex, err := getContainerVethIfIndex(netns, containerVethIfName)
+	if err != nil {
+		return err
+	}
+
+	netIPs, err := getHostVethIPv6ByContainerVethIfName(netns, containerVethIfName)
+	if err != nil {
+		return err
+	}
+
+	if len(netIPs) != 1 {
+		return fmt.Errorf("0 or more than 1 link local IPv6 addresses found in host veth interface")
+	}
+
+	return netns.Do(func(hostNS ns.NetNS) error {
+		for _, r := range []netlink.Route{
+			{
+				LinkIndex: *containerVethIfIndex,
+				Dst: &net.IPNet{
+					IP:   net.IPv6zero,
+					Mask: net.CIDRMask(0, 128),
 				},
+				Scope: netlink.SCOPE_UNIVERSE,
+				Gw: netIPs[0],
 			},
 			{
 				LinkIndex: *containerVethIfIndex,
@@ -282,9 +337,11 @@ func setupContainerIPv6Route(netns ns.NetNS, containerVethIfIPv6 *net.IPNet, con
 				Scope: netlink.SCOPE_UNIVERSE,
 			},
 		} {
-			// set up from container off-cluster IPv6 route (egress)
+			// delete from container off-cluster IPv6 route (egress)
 			// all from container IPv6 traffic via host veth interface's link-local IPv6 address
-			if err := netlink.RouteAdd(&r); err != nil {
+			if err := netlink.RouteDel(&r); os.IsNotExist(err) {
+				// ignore this error
+			} else if err != nil {
 				return fmt.Errorf("failed to add route %v: %v", r, err)
 			}
 		}
@@ -332,7 +389,7 @@ func enableHostIPv6Forwarding() error {
 	}
 }
 
-func setupHostIPv6Route(netns ns.NetNS, containerVethIfName string, containerIPv6 *net.IPNet) error {
+func setupHostIPv6Route(netns ns.NetNS, containerVethIfName string, containerIPv6 net.IP) error {
 
 	hostVethIfIndex, err := getHostVethIfIndex(netns, containerVethIfName)
 	if err != nil {
@@ -342,7 +399,26 @@ func setupHostIPv6Route(netns ns.NetNS, containerVethIfName string, containerIPv
 	return netlink.RouteAdd(&netlink.Route{
 		LinkIndex: *hostVethIfIndex,
 		Scope:     netlink.SCOPE_HOST,
-		Dst:       containerIPv6,
+		Dst:       &net.IPNet {
+			IP: containerIPv6,
+			Mask: net.CIDRMask(128, 128),
+		},
+	})
+}
+
+func tearDownHostIPv6Route(netns ns.NetNS, containerVethIfName string, containerIPv6 net.IP) error {
+	hostVethIfIndex, err := getHostVethIfIndex(netns, containerVethIfName)
+	if err != nil {
+		return err
+	}
+	// set up to container traffic route
+	return netlink.RouteDel(&netlink.Route{
+		LinkIndex: *hostVethIfIndex,
+		Scope:     netlink.SCOPE_HOST,
+		Dst:       &net.IPNet {
+			IP: containerIPv6,
+			Mask: net.CIDRMask(128, 128),
+		},
 	})
 }
 
@@ -404,7 +480,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	defer netns.Close()
 
 	// assign a ULA (Unique Local Address) ipv6 address in POD
-	containerIPNetV6, ipamResult, err := setupContainerIPv6Address(netConf.IPAM.Type, netns, args.IfName, args.StdinData)
+	containerIPNetV6, ipamResult, err := setupContainerIPv6Address(result, netConf.IPAM.Type, netns, args.IfName, args.StdinData)
 	if err != nil {
 		log.Debugf("setupContainerIPv6Address failed: %v", err)
 		return err
@@ -426,7 +502,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 	log.Debugf("enable host IPv6 forwarding successfully")
 
-	err = setupHostIPv6Route(netns, args.IfName, containerIPNetV6)
+	err = setupHostIPv6Route(netns, args.IfName, containerIPNetV6.IP)
 	if err != nil {
 		log.Debugf("setupHostIPv6Route failed: %v", err)
 		return err
@@ -445,7 +521,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	result.IPs = append(result.IPs, ipamResult.IPs...)
 	// Note: Useful for debug, will do away with the below log prior to release
 	for _, v := range result.IPs {
-		log.Debugf("Interface Name: %v; IP: %s", v.Interface, v.Address)
+		log.Debugf("Interface index: %d; IP: %s", *v.Interface, v.Address)
 	}
 
 	// Pass through the previous result
@@ -453,79 +529,73 @@ func cmdAdd(args *skel.CmdArgs) error {
 }
 
 func cmdDel(args *skel.CmdArgs) error {
+
 	netConf, log, err := loadConf(args.StdinData)
 	if err != nil {
 		return fmt.Errorf("failed to parse config: %v", err)
 	}
+
+	log.Debugf("Received Del request for: conf=%v; Plugin enabled=%s", netConf, netConf.Enabled)
 
 	// We only need this plugin to kick in if v6 is enabled
 	if netConf.Enabled == "false" {
 		return nil
 	}
 
-	log.Debugf("Received Del Request: conf=%v", netConf)
+	if netConf.PrevResult == nil {
+		log.Debugf("must be called as a chained plugin")
+		return fmt.Errorf("must be called as a chained plugin")
+	}
+
+	result, err := current.GetResult(netConf.PrevResult)
+	if err != nil {
+		log.Debugf("get PrevResult failed: %v", err)
+		return err
+	}
+	log.Debugf("PrevResult: %v", result)
+
+	// figure out container IPv6 address
+	var containerVethIPv6 net.IPNet
+	for _, ipc := range result.IPs {
+		if ipc.Version == "6" && ipc.Address.IP.IsGlobalUnicast() {
+			containerVethIPv6 = ipc.Address
+		}
+	}
+	// delete host SNAT - both ip6table nat table's rule and chain for this container's IPv6 traffic
+	chain := utils.MustFormatChainNameWithPrefix(netConf.Name, args.ContainerID, "E6-")
+	comment := utils.FormatComment(netConf.Name, args.ContainerID)
+
+	err = snat.Snat6Del(containerVethIPv6.IP, chain, comment)
+	if err != nil {
+		log.Debugf("Delete host SNAT for container IPv6 %s failed: %v.", containerVethIPv6, err)
+		return nil
+	}
+
+	netns, err := ns.GetNS(args.Netns)
+	if err != nil {
+		log.Debugf("failed to open netns %q: %v", args.Netns, err)
+		return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
+	}
+	defer netns.Close()
+
+	// delete host route - return traffic route for container's IPv6 traffic
+	err = tearDownHostIPv6Route(netns, args.IfName, containerVethIPv6.IP)
+	if err != nil {
+		log.Debugf("tear down host IPv6 route for container IPv6: $s failed: %v", containerVethIPv6.String(), err)
+		return err
+	}
+
+	// delete container IPv6 route
+	err = tearDownContainerIPv6Route(netns, &containerVethIPv6, args.IfName)
+	if err != nil {
+		log.Debugf("tear down container IPv6 route failed: %v", err)
+		return err
+	}
+
+
 	if err := ipam.ExecDel(netConf.IPAM.Type, args.StdinData); err != nil {
 		log.Debugf("running IPAM plugin failed: %v", err)
 		return fmt.Errorf("running IPAM plugin failed: %v", err)
-	}
-
-	ipnets := []*net.IPNet{}
-	if args.Netns != "" {
-		err := ns.WithNetNSPath(args.Netns, func(hostNS ns.NetNS) error {
-			var err error
-
-			// DelLinkByNameAddr function deletes an interface and returns IPs assigned to it but it
-			// excludes IPs that are not global unicast addresses (or) private IPs. Will not work for
-			// our scenario as we use 169.254.0.0/16 range for v4 IPs.
-
-			//Get the interface we want to delete
-			iface, err := netlink.LinkByName(netConf.IfName)
-
-			if err != nil {
-				if _, ok := err.(netlink.LinkNotFoundError); ok {
-					return nil
-				}
-				return nil
-			}
-
-			//Retrieve IP addresses assigned to the interface
-			addrs, err := netlink.AddrList(iface, netlink.FAMILY_V4)
-			if err != nil {
-				return fmt.Errorf("failed to get IP addresses for %q: %v", netConf.IfName, err)
-			}
-
-			//Delete the interface/link.
-			if err = netlink.LinkDel(iface); err != nil {
-				return fmt.Errorf("failed to delete %q: %v", netConf.IfName, err)
-			}
-
-			for _, addr := range addrs {
-				ipnets = append(ipnets, addr.IPNet)
-			}
-
-			if err != nil && err == ip.ErrLinkNotFound {
-				log.Debugf("DEL: Link Not Found, returning", err)
-				return nil
-			}
-			return err
-		})
-
-		//DEL should be best effort. We should clean up as much as we can and avoid returning error
-		if err != nil {
-			log.Debugf("DEL: Executing in container ns errored out, returning", err)
-		}
-	}
-
-	chain := utils.MustFormatChainNameWithPrefix(netConf.Name, args.ContainerID, "E4-")
-	comment := utils.FormatComment(netConf.Name, args.ContainerID)
-
-	if netConf.NodeIP != nil {
-		log.Debugf("DEL: SNAT setup, let's clean them up. Size of ipnets: %d", len(ipnets))
-		for _, ipn := range ipnets {
-			if err := snat.Snat6Del(ipn.IP, chain, comment); err != nil {
-				return err
-			}
-		}
 	}
 
 	return nil
