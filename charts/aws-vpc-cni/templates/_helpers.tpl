@@ -55,3 +55,25 @@ Create the name of the service account to use
     {{ default "default" .Values.serviceAccount.name }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+The aws-vpc-cni-init image to use
+*/}}
+{{- define "aws-vpc-cni.initImage" -}}
+{{- if .Values.init.image.override }}
+{{- .Values.init.image.override }}
+{{- else }}
+{{- printf "%s.dkr.%s.%s.%s/amazon-k8s-cni-init:%s" .Values.init.image.account .Values.init.image.endpoint .Values.init.image.region .Values.init.image.domain .Values.init.image.tag }}
+{{- end }}
+{{- end }}
+
+{{/*
+The aws-vpc-cni image to use
+*/}}
+{{- define "aws-vpc-cni.image" -}}
+{{- if .Values.image.override }}
+{{- .Values.image.override }}
+{{- else }}
+{{- printf "%s.dkr.%s.%s.%s/amazon-k8s-cni:%s" .Values.image.account .Values.image.endpoint .Values.image.region .Values.image.domain .Values.image.tag }}
+{{- end }}
+{{- end }}
