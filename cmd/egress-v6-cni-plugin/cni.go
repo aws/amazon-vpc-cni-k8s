@@ -24,8 +24,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
@@ -371,6 +371,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	log.Debugf("Received an ADD request for: conf=%v; Plugin enabled=%s", netConf, netConf.Enabled)
+	log.Debugf("PrevResult: %v", result)
 	// We will not be vending out this as a separate plugin by itself, and it is only intended to be used as a
 	// chained plugin to VPC CNI in IPv4 mode.
 	// We only need this plugin to kick in if v6 is NOT enabled in VPC CNI. So, the
@@ -382,7 +383,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	hostPrimaryIfIPv6AddrStr, err := imds.GetMetaData("ipv6")
 	if err != nil {
-		log.Debugf("IPv6 address not found on host primary interface which is needed for IPv6 egress")
+		log.Debugf("IPv6 address not found on host primary interface which is needed for IPv6 egress: %v", err)
 		return err
 	}
 
@@ -390,12 +391,14 @@ func cmdAdd(args *skel.CmdArgs) error {
 	if hostPrimaryIfIPv6 == nil || !hostPrimaryIfIPv6.IsGlobalUnicast() {
 		return fmt.Errorf("gobal unicast IPv6 address is needed on host primary interface for IPv6 egress")
 	}
+	log.Debugf("IPv6 address retrieved: %s", hostPrimaryIfIPv6AddrStr)
 
 	chain := utils.MustFormatChainNameWithPrefix(netConf.Name, args.ContainerID, "E6-")
 	comment := utils.FormatComment(netConf.Name, args.ContainerID)
 
 	netns, err := ns.GetNS(args.Netns)
 	if err != nil {
+		log.Debugf("failed to open netns %q: %v", args.Netns, err)
 		return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
 	}
 	defer netns.Close()
@@ -403,25 +406,40 @@ func cmdAdd(args *skel.CmdArgs) error {
 	// assign a ULA (Unique Local Address) ipv6 address in POD
 	containerIPNetV6, ipamResult, err := setupContainerIPv6Address(netConf.IPAM.Type, netns, args.IfName, args.StdinData)
 	if err != nil {
+		log.Debugf("setupContainerIPv6Address failed: %v", err)
 		return err
 	}
+
+	log.Debugf("container IPv6 assigned: %s", containerIPNetV6.String())
 
 	err = setupContainerIPv6Route(netns, containerIPNetV6, args.IfName)
 	if err != nil {
+		log.Debugf("setupContainerIPv6Route failed: %v", err)
 		return err
 	}
+	log.Debugf("container route set up successfully")
 
 	err = enableHostIPv6Forwarding()
 	if err != nil {
+		log.Debugf("enableHostIPv6Forwarding failed: %v", err)
 		return err
 	}
+	log.Debugf("enable host IPv6 forwarding successfully")
 
 	err = setupHostIPv6Route(netns, args.IfName, containerIPNetV6)
+	if err != nil {
+		log.Debugf("setupHostIPv6Route failed: %v", err)
+		return err
+	}
+	log.Debugf("host IPv6 route set up successfully")
 
 	err = setupHostIPv6Snat(containerIPNetV6.IP, hostPrimaryIfIPv6, chain, comment, netConf.RandomizeSNAT)
 	if err != nil {
+		log.Debugf("setupHostIPv6Snat failed: %v", err)
 		return err
 	}
+
+	log.Debugf("host IPv6 SNAT set up successfully")
 
 	// Copy IPs over to result
 	result.IPs = append(result.IPs, ipamResult.IPs...)
