@@ -561,6 +561,8 @@ func cmdDel(args *skel.CmdArgs) error {
 			containerVethIPv6 = ipc.Address
 		}
 	}
+	log.Debugf("container IPv6 address found: %s", containerVethIPv6.String())
+
 	// delete host SNAT - both ip6table nat table's rule and chain for this container's IPv6 traffic
 	chain := utils.MustFormatChainNameWithPrefix(netConf.Name, args.ContainerID, "E6-")
 	comment := utils.FormatComment(netConf.Name, args.ContainerID)
@@ -570,6 +572,7 @@ func cmdDel(args *skel.CmdArgs) error {
 		log.Debugf("Delete host SNAT for container IPv6 %s failed: %v.", containerVethIPv6, err)
 		return nil
 	}
+	log.Debugf("Host ipv6tables snat rule/chain deleted for container")
 
 	netns, err := ns.GetNS(args.Netns)
 	if err != nil {
@@ -584,6 +587,7 @@ func cmdDel(args *skel.CmdArgs) error {
 		log.Debugf("tear down host IPv6 route for container IPv6: $s failed: %v", containerVethIPv6.String(), err)
 		return err
 	}
+	log.Debugf("host IPv6 route for container %s IPv6 %s deleted", args.Netns, containerVethIPv6.String())
 
 	// delete container IPv6 route
 	err = tearDownContainerIPv6Route(netns, &containerVethIPv6, args.IfName)
@@ -591,12 +595,14 @@ func cmdDel(args *skel.CmdArgs) error {
 		log.Debugf("tear down container IPv6 route failed: %v", err)
 		return err
 	}
-
+	log.Debugf("container %s IPv6 route deleted", args.Netns)
 
 	if err := ipam.ExecDel(netConf.IPAM.Type, args.StdinData); err != nil {
 		log.Debugf("running IPAM plugin failed: %v", err)
 		return fmt.Errorf("running IPAM plugin failed: %v", err)
 	}
+
+	log.Debugf("free IPv6 ?     ")
 
 	return nil
 }
