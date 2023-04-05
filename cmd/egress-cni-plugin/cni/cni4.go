@@ -11,81 +11,22 @@
 // express or implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
-package main
+package cni
 
 import (
-	"encoding/json"
 	"fmt"
-	"net"
-	"os"
-	"runtime"
-	"strconv"
-
+	"github.com/aws/amazon-vpc-cni-k8s/cmd/egress-cni-plugin/netconf"
+	"github.com/aws/amazon-vpc-cni-k8s/cmd/egress-cni-plugin/snat"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-
-	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/types/current"
-	cniversion "github.com/containernetworking/cni/pkg/version"
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ipam"
 	"github.com/containernetworking/plugins/pkg/ns"
-	"github.com/containernetworking/plugins/pkg/utils"
 	"github.com/vishvananda/netlink"
-
-	"github.com/aws/amazon-vpc-cni-k8s/cmd/egress-v4-cni-plugin/snat"
+	"net"
+	"os"
 )
-
-var version string
-
-func init() {
-	// this ensures that main runs only on main thread (thread group leader).
-	// since namespace ops (unshare, setns) are done for a single thread, we
-	// must ensure that the goroutine does not jump from OS thread to thread
-	runtime.LockOSThread()
-}
-
-// NetConf is our CNI config structure
-type NetConf struct {
-	types.NetConf
-
-	// Interface inside container to create
-	IfName string `json:"ifName"`
-
-	// MTU for Egress v4 interface
-	MTU string `json:"mtu"`
-
-	Enabled string `json:"enabled"`
-
-	RandomizeSNAT string `json:"randomizeSNAT"`
-
-	// IP to use as SNAT target
-	NodeIP net.IP `json:"nodeIP"`
-
-	PluginLogFile  string `json:"pluginLogFile"`
-	PluginLogLevel string `json:"pluginLogLevel"`
-}
-
-func loadConf(bytes []byte) (*NetConf, logger.Logger, error) {
-	conf := &NetConf{IfName: "v4if0"}
-
-	if err := json.Unmarshal(bytes, conf); err != nil {
-		return nil, nil, err
-	}
-
-	if conf.RawPrevResult != nil {
-		if err := cniversion.ParsePrevResult(&conf.NetConf); err != nil {
-			return nil, nil, fmt.Errorf("could not parse prevResult: %v", err)
-		}
-	}
-
-	logConfig := logger.Configuration{
-		LogLevel:    conf.PluginLogLevel,
-		LogLocation: conf.PluginLogFile,
-	}
-	log := logger.New(&logConfig)
-	return conf, log, nil
-}
 
 // The bulk of this file is mostly based on standard ptp CNI plugin.
 //
@@ -246,74 +187,10 @@ func setupHostVeth(vethName string, result *current.Result) error {
 	return nil
 }
 
-func main() {
-	skel.PluginMain(cmdAdd, nil, cmdDel, cniversion.All, fmt.Sprintf("egress-v4 CNI plugin %s", version))
-}
-
-func cmdAdd(args *skel.CmdArgs) error {
-	netConf, log, err := loadConf(args.StdinData)
-	if err != nil {
-		log.Debugf("Received Add request: Failed to parse config")
-		return fmt.Errorf("failed to parse config: %v", err)
-	}
-
-	if netConf.PrevResult == nil {
-		return fmt.Errorf("must be called as a chained plugin")
-	}
-
-	result, err := current.GetResult(netConf.PrevResult)
-	if err != nil {
-		return err
-	}
-
-	log.Debugf("Received an ADD request for: conf=%v; Plugin enabled=%s", netConf, netConf.Enabled)
-	// We will not be vending out this as a separate plugin by itself and it is only intended to be used as a
-	// chained plugin to VPC CNI in IPv6 mode. We only need this plugin to kick in if v6 is enabled in VPC CNI. So, the
-	// value of an env variable in VPC CNI determines whether this plugin should be enabled and this is an attempt to
-	// pass through the variable configured in VPC CNI.
-	if netConf.Enabled == "false" {
-		return types.PrintResult(result, netConf.CNIVersion)
-	}
-
-	chain := utils.MustFormatChainNameWithPrefix(netConf.Name, args.ContainerID, "E4-")
-	comment := utils.FormatComment(netConf.Name, args.ContainerID)
-
-	ipamResultI, err := ipam.ExecAdd(netConf.IPAM.Type, args.StdinData)
-	if err != nil {
-		return fmt.Errorf("running IPAM plugin failed: %v", err)
-	}
-
-	// Invoke ipam del if err to avoid ip leak
-	defer func() {
-		if err != nil {
-			ipam.ExecDel(netConf.IPAM.Type, args.StdinData)
-		}
-	}()
-
-	tmpResult, err := current.NewResultFromResult(ipamResultI)
-	if err != nil {
-		return err
-	}
-
-	if len(tmpResult.IPs) == 0 {
-		return fmt.Errorf("IPAM plugin returned zero IPs")
-	}
+func CmdAddEgressV4(netns ns.NetNS, netConf *netconf.NetConf, result, tmpResult *current.Result, mtu int, chain, comment string, log logger.Logger) error {
 
 	if err := ip.EnableForward(tmpResult.IPs); err != nil {
 		return fmt.Errorf("could not enable IP forwarding: %v", err)
-	}
-
-	netns, err := ns.GetNS(args.Netns)
-	if err != nil {
-		return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
-	}
-	defer netns.Close()
-
-	// Convert MTU from string to int
-	mtu, err := strconv.Atoi(netConf.MTU)
-	if err != nil {
-		log.Debugf("failed to parse MTU: %s, err: %v", netConf.MTU, err)
-		return err
 	}
 
 	// NB: This uses netConf.IfName NOT args.IfName.
@@ -350,26 +227,11 @@ func cmdAdd(args *skel.CmdArgs) error {
 	return types.PrintResult(result, netConf.CNIVersion)
 }
 
-func cmdDel(args *skel.CmdArgs) error {
-	netConf, log, err := loadConf(args.StdinData)
-	if err != nil {
-		return fmt.Errorf("failed to parse config: %v", err)
-	}
-
-	// We only need this plugin to kick in if v6 is enabled
-	if netConf.Enabled == "false" {
-		return nil
-	}
-
-	log.Debugf("Received Del Request: conf=%v", netConf)
-	if err := ipam.ExecDel(netConf.IPAM.Type, args.StdinData); err != nil {
-		log.Debugf("running IPAM plugin failed: %v", err)
-		return fmt.Errorf("running IPAM plugin failed: %v", err)
-	}
-
+func CmdDelEgressIPv4(netnsPath, ifName string, nodeIP net.IP, chain, comment string, log logger.Logger) error {
 	ipnets := []*net.IPNet{}
-	if args.Netns != "" {
-		err := ns.WithNetNSPath(args.Netns, func(hostNS ns.NetNS) error {
+
+	if netnsPath != "" {
+		err := ns.WithNetNSPath(netnsPath, func(hostNS ns.NetNS) error {
 			var err error
 
 			// DelLinkByNameAddr function deletes an interface and returns IPs assigned to it but it
@@ -377,7 +239,7 @@ func cmdDel(args *skel.CmdArgs) error {
 			// our scenario as we use 169.254.0.0/16 range for v4 IPs.
 
 			//Get the interface we want to delete
-			iface, err := netlink.LinkByName(netConf.IfName)
+			iface, err := netlink.LinkByName(ifName)
 
 			if err != nil {
 				if _, ok := err.(netlink.LinkNotFoundError); ok {
@@ -389,12 +251,12 @@ func cmdDel(args *skel.CmdArgs) error {
 			//Retrieve IP addresses assigned to the interface
 			addrs, err := netlink.AddrList(iface, netlink.FAMILY_V4)
 			if err != nil {
-				return fmt.Errorf("failed to get IP addresses for %q: %v", netConf.IfName, err)
+				return fmt.Errorf("failed to get IP addresses for %q: %v", ifName, err)
 			}
 
 			//Delete the interface/link.
 			if err = netlink.LinkDel(iface); err != nil {
-				return fmt.Errorf("failed to delete %q: %v", netConf.IfName, err)
+				return fmt.Errorf("failed to delete %q: %v", ifName, err)
 			}
 
 			for _, addr := range addrs {
@@ -414,10 +276,7 @@ func cmdDel(args *skel.CmdArgs) error {
 		}
 	}
 
-	chain := utils.MustFormatChainNameWithPrefix(netConf.Name, args.ContainerID, "E4-")
-	comment := utils.FormatComment(netConf.Name, args.ContainerID)
-
-	if netConf.NodeIP != nil {
+	if nodeIP != nil {
 		log.Debugf("DEL: SNAT setup, let's clean them up. Size of ipnets: %d", len(ipnets))
 		for _, ipn := range ipnets {
 			if err := snat.Snat4Del(ipn.IP, chain, comment); err != nil {

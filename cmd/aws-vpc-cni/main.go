@@ -38,6 +38,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
 	"io/ioutil"
 	"net"
 	"os"
@@ -49,7 +50,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/aws/amazon-vpc-cni-k8s/utils/cp"
-	"github.com/aws/amazon-vpc-cni-k8s/utils/imds"
 	"github.com/containernetworking/cni/pkg/types"
 )
 
@@ -64,10 +64,14 @@ const (
 	defaultPodSGEnforcingMode    = "strict"
 	defaultPluginLogFile         = "/var/log/aws-routed-eni/plugin.log"
 	defaultEgressV4PluginLogFile = "/var/log/aws-routed-eni/egress-v4-plugin.log"
-	defaultEgressV6PluginLogFile = "/var/log/aws-routed-eni/egress-v6-plugin.log"
+	defaultEgressPluginLogFile   = "/var/log/aws-routed-eni/egress-plugin.log"
 	defaultPluginLogLevel        = "Debug"
 	defaultEnableIPv6            = "false"
-	defaultEnableIpv6Engress     = "true"
+	defaultEnableEngress         = "true"
+	egressIPv4Subnet             = "169.254.172.0/22"
+	egressIPv6Subnet             = "fd00::/8"
+	egressIPv4Dst                = "0.0.0.0/0"
+	egressIPv6Dst                = "::/0"
 	defaultRandomizeSNAT         = "prng"
 	defaultEnableNftables        = "false"
 	awsConflistFile              = "/10-aws.conflist"
@@ -82,14 +86,14 @@ const (
 	envPluginLogFile         = "AWS_VPC_K8S_PLUGIN_LOG_FILE"
 	envPluginLogLevel        = "AWS_VPC_K8S_PLUGIN_LOG_LEVEL"
 	envEgressV4PluginLogFile = "AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE"
-	envEgressV6PluginLogFile = "AWS_VPC_K8S_EGRESS_V6_PLUGIN_LOG_FILE"
+	envEgressPluginLogFile   = "AWS_VPC_K8S_EGRESS_PLUGIN_LOG_FILE"
 	envEnPrefixDelegation    = "ENABLE_PREFIX_DELEGATION"
 	envWarmIPTarget          = "WARM_IP_TARGET"
 	envMinIPTarget           = "MINIMUM_IP_TARGET"
 	envWarmPrefixTarget      = "WARM_PREFIX_TARGET"
 	envEnBandwidthPlugin     = "ENABLE_BANDWIDTH_PLUGIN"
 	envEnIPv6                = "ENABLE_IPv6"
-	envEnIpV6Engress         = "ENABLE_IPv6_ENGRESS"
+	envEnEngress             = "ENABLE_ENGRESS"
 	envRandomizeSNAT         = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 	envEnableNftables        = "ENABLE_NFTABLES"
 )
@@ -204,16 +208,23 @@ func waitForInit() error {
 func getNodePrimaryV4Address() (string, error) {
 	var hostIP string
 	var err error
-	for {
-		hostIP, err = imds.GetMetaData("local-ipv4")
-		if err != nil {
-			log.WithError(err).Fatalf("aws-vpc-cni failed")
-			return "", err
-		}
-		if hostIP != "" {
-			return hostIP, nil
-		}
+	hostIP, err = cniutils.GetNodeMetadata("local-ipv4")
+	if err != nil {
+		log.WithError(err).Fatalf("aws-vpc-cni failed")
+		return "", err
 	}
+	return hostIP, nil
+}
+
+func getNodePrimaryV6Address() (string, error) {
+	var hostIP string
+	var err error
+	hostIP, err = cniutils.GetNodeMetadata("ipv6")
+	if err != nil {
+		log.WithError(err).Fatalf("aws-vpc-cni failed")
+		return "", err
+	}
+	return hostIP, nil
 }
 
 func isValidJSON(inFile string) error {
@@ -221,21 +232,59 @@ func isValidJSON(inFile string) error {
 	return json.Unmarshal([]byte(inFile), &result)
 }
 
-func generateJSON(jsonFile string, outFile string, nodeIP string) error {
+func generateJSON(jsonFile string, outFile string) error {
 	byteValue, err := ioutil.ReadFile(jsonFile)
 	if err != nil {
 		return err
 	}
+	// enabledIPv6 is to determine this EKS cluster is IPv4 or IPv6 cluster
+	// if this EKS cluster is IPv6 cluster, egress-cni-plugin will enable IPv4 egress by default
+	// if this EKS cluster is IPv4 cluster, egress-cni-plugin will enable IPv6 egress by default
+	enabledIPv6 := getEnv(envEnIPv6, defaultEnableIPv6)
+	var egressIPSubnet string
+	var egressIPDst string
+	var egressEnabled string
+	var egressPluginLogFile string
+	var nodeIP string
+	if enabledIPv6 == "true"{
+		// EKS IPv6 cluster
+		egressIPSubnet = egressIPv4Subnet
+		egressIPDst = egressIPv4Dst
+		egressEnabled = "true"
+		egressPluginLogFile = getEnv(envEgressV4PluginLogFile, defaultEgressV4PluginLogFile)
+		nodeIP, err = getNodePrimaryV4Address()
+		if err != nil {
+			log.Errorf("Failed to get Node IP, error: %v", err)
+			return err
+		}
+
+	} else {
+		// EKS IPv4 cluster
+		egressIPSubnet = egressIPv6Subnet
+		egressIPDst = egressIPv6Dst
+		egressEnabled = getEnv(envEnEngress, defaultEnableEngress)
+		egressPluginLogFile = getEnv(envEgressPluginLogFile, defaultEgressPluginLogFile)
+		if egressEnabled == "true" {
+			nodeIP, err = getNodePrimaryV6Address()
+			if err != nil {
+				log.Errorf("To support IPv6 egress, node primary ENI must have a global IPv6 address, error: %v", err)
+				// Global unicast IPv6 nodeIP is mandatory to support IPv6 egress traffic in EKS IPv4 cluster
+				// no return err here so that aws-node daemonset pod could start success
+				// chained egress-cni-plugin will emit error message about empty nodeIP
+				nodeIP = ""
+			}
+		} else {
+			nodeIP = ""
+		}
+
+	}
+
 
 	vethPrefix := getEnv(envVethPrefix, defaultVethPrefix)
 	mtu := getEnv(envEniMTU, defaultMTU)
 	podSGEnforcingMode := getEnv(envPodSGEnforcingMode, defaultPodSGEnforcingMode)
 	pluginLogFile := getEnv(envPluginLogFile, defaultPluginLogFile)
 	pluginLogLevel := getEnv(envPluginLogLevel, defaultPluginLogLevel)
-	egressV4pluginLogFile := getEnv(envEgressV4PluginLogFile, defaultEgressV4PluginLogFile)
-	egressV6pluginLogFile := getEnv(envEgressV6PluginLogFile, defaultEgressV6PluginLogFile)
-	enabledIPv6 := getEnv(envEnIPv6, defaultEnableIPv6)
-	enabledIpv6Engress := getEnv(envEnIpV6Engress, defaultEnableIpv6Engress)
 	randomizeSNAT := getEnv(envRandomizeSNAT, defaultRandomizeSNAT)
 
 	netconf := string(byteValue)
@@ -244,10 +293,10 @@ func generateJSON(jsonFile string, outFile string, nodeIP string) error {
 	netconf = strings.Replace(netconf, "__PODSGENFORCINGMODE__", podSGEnforcingMode, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGFILE__", pluginLogFile, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGLEVEL__", pluginLogLevel, -1)
-	netconf = strings.Replace(netconf, "__EGRESSV4PLUGINLOGFILE__", egressV4pluginLogFile, -1)
-	netconf = strings.Replace(netconf, "__EGRESSV6PLUGINLOGFILE__", egressV6pluginLogFile, -1)
-	netconf = strings.Replace(netconf, "__EGRESSV4PLUGINENABLED__", enabledIPv6, -1)
-	netconf = strings.Replace(netconf, "__EGRESSV6PLUGINENABLED__", enabledIpv6Engress, -1)
+	netconf = strings.Replace(netconf, "__EGRESSPLUGINLOGFILE__", egressPluginLogFile, -1)
+	netconf = strings.Replace(netconf, "__EGRESSPLUGINENABLED__", egressEnabled, -1)
+	netconf = strings.Replace(netconf, "__EGRESSPLUGINIPSUBNET__", egressIPSubnet, -1)
+	netconf = strings.Replace(netconf, "__EGRESSPLUGINIPDST__", egressIPDst, -1)
 	netconf = strings.Replace(netconf, "__RANDOMIZESNAT__", randomizeSNAT, -1)
 	netconf = strings.Replace(netconf, "__NODEIP__", nodeIP, -1)
 
@@ -357,7 +406,7 @@ func _main() int {
 		log.WithError(err).Error("Failed to enable nftables")
 	}
 
-	pluginBins := []string{"aws-cni", "egress-v4-cni", "egress-v6-cni"}
+	pluginBins := []string{"aws-cni", "egress-cni"}
 	hostCNIBinPath := getEnv(envHostCniBinPath, defaultHostCNIBinPath)
 	err := cp.InstallBinaries(pluginBins, hostCNIBinPath)
 	if err != nil {
@@ -392,16 +441,9 @@ func _main() int {
 	//	return 1
 	//}
 
-	// Get node IP for conflist
-	var nodeIP string
-	nodeIP, err = getNodePrimaryV4Address()
-	if err != nil {
-		log.Errorf("Failed to get Node IP, error: %v", err)
-		return 1
-	}
 
 	log.Infof("Copying config file... ")
-	err = generateJSON(defaultAWSconflistFile, tmpAWSconflistFile, nodeIP)
+	err = generateJSON(defaultAWSconflistFile, tmpAWSconflistFile)
 	if err != nil {
 		log.WithError(err).Errorf("Failed to generate 10-awsconflist")
 		return 1

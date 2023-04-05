@@ -47,7 +47,7 @@ func iptRules6(target, src net.IP, chain, comment string, useRandomFully, useHas
 }
 
 // Snat6 SNATs IPv6 connections from `src` to `target`
-func   Snat6(target, src net.IP, chain, comment, randomizeSNAT string) error {
+func Snat6(target, src net.IP, chain, comment, randomizeSNAT string) error {
 	ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv6)
 	if err != nil {
 		return fmt.Errorf("failed to locate iptables: %v", err)
@@ -117,14 +117,4 @@ func Snat6Del(src net.IP, chain, comment string) error {
 	}
 
 	return nil
-}
-
-// isNotExist returns true if the error is from iptables indicating
-// that the target does not exist.
-func isNotExist(err error) bool {
-	e, ok := err.(*iptables.Error)
-	if !ok {
-		return false
-	}
-	return e.IsNotExist()
 }

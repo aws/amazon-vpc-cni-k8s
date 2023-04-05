@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"syscall"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
@@ -34,6 +33,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
 )
 
 const (
@@ -220,7 +220,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	}
 
 	if createVethContext.v6Addr != nil && createVethContext.v6Addr.IP.To16() != nil {
-		if err := waitForAddressesToBeStable(createVethContext.netLink, createVethContext.contVethName, v6DADTimeout); err != nil {
+		if err := cniutils.WaitForAddressesToBeStable(createVethContext.netLink, createVethContext.contVethName, v6DADTimeout, WAIT_INTERVAL); err != nil {
 			return errors.Wrap(err, "setup NS network: failed while waiting for v6 addresses to be stable")
 		}
 	}
@@ -233,43 +233,6 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	return nil
 }
 
-// Implements `SettleAddresses` functionality of the `ip` package.
-// waitForAddressesToBeStable waits for all addresses on a link to leave tentative state.
-// Will be particularly useful for ipv6, where all addresses need to do DAD.
-// If any addresses are still tentative after timeout seconds, then error.
-func waitForAddressesToBeStable(netLink netlinkwrapper.NetLink, ifName string, timeout time.Duration) error {
-	link, err := netLink.LinkByName(ifName)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve link: %v", err)
-	}
-
-	deadline := time.Now().Add(timeout)
-	for {
-		addrs, err := netLink.AddrList(link, netlink.FAMILY_V6)
-		if err != nil {
-			return fmt.Errorf("could not list addresses: %v", err)
-		}
-
-		ok := true
-		for _, addr := range addrs {
-			if addr.Flags&(syscall.IFA_F_TENTATIVE|syscall.IFA_F_DADFAILED) > 0 {
-				ok = false
-				break
-			}
-		}
-
-		if ok {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("link %s still has tentative addresses after %d seconds",
-				ifName,
-				timeout)
-		}
-
-		time.Sleep(WAIT_INTERVAL)
-	}
-}
 
 // SetupPodNetwork wires up linux networking for a pod's network
 // we expect v4Addr and v6Addr to have correct IPAddress Family.
