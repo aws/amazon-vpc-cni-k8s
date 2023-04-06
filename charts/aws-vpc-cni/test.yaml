@@ -102,8 +102,7 @@ updateStrategy:
 
 nodeSelector: {}
 
-tolerations:
-  - operator: Exists
+tolerations: []
 
 affinity:
   nodeAffinity:

@@ -54,9 +54,14 @@ spec:
           - mountPath: /host/opt/cni/bin
             name: cni-bin-dir
       terminationGracePeriodSeconds: 10
-    {{- with .Values.tolerations }}
+    {{- if eq (len .Values.tolerations) 0 }}
+      tolerations:
+        - operator: Exists
+    {{- else }}
+      {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
     {{- end }}
     {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
