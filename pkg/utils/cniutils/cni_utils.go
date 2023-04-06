@@ -3,15 +3,16 @@ package cniutils
 import (
 	"bytes"
 	"fmt"
+	"net"
+	"os"
+	"syscall"
+	"time"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/imds"
 	"github.com/containernetworking/cni/pkg/types/current"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/vishvananda/netlink"
-	"net"
-	"os"
-	"syscall"
-	"time"
 )
 
 func FindInterfaceByName(ifaceList []*current.Interface, ifaceName string) (ifaceIndex int, iface *current.Interface, found bool) {
@@ -71,6 +72,8 @@ func WaitForAddressesToBeStable(netLink netlinkwrapper.NetLink, ifName string, t
 	}
 }
 
+// GetIPsByInterfaceName returns IPs in a provided interface within provided network namespace, and filtered by provided func
+// if provided ns is nil, return result in root ns or caller's current ns context
 func GetIPsByInterfaceName(netns ns.NetNS, ifName string, filter func(net.IP) bool) (containerIPv6 []net.IP, err error) {
 	var worker = func(ifName string, filter func(net.IP) bool) error {
 		containerIf, err := net.InterfaceByName(ifName)
@@ -82,7 +85,7 @@ func GetIPsByInterfaceName(netns ns.NetNS, ifName string, filter func(net.IP) bo
 			return err
 		}
 		for _, addr := range addrs {
-			ip :=  addr.(*net.IPNet).IP
+			ip := addr.(*net.IPNet).IP
 			if filter(ip) {
 				containerIPv6 = append(containerIPv6, ip)
 			}
@@ -99,6 +102,7 @@ func GetIPsByInterfaceName(netns ns.NetNS, ifName string, filter func(net.IP) bo
 	return containerIPv6, err
 }
 
+// GetHostPrimaryInterfaceName returns host primary interface name, for example, `eth0`
 func GetHostPrimaryInterfaceName() (string, error) {
 	var hostPrimaryIfName string
 
@@ -122,7 +126,14 @@ func GetHostPrimaryInterfaceName() (string, error) {
 	return hostPrimaryIfName, nil
 }
 
-func EnableIPv6Accept_ra(ifName string, value string) error {
+// SetIPv6AcceptRa will set {value} to /proc/sys/net/ipv6/conf/{ifName}/accept_ra
+// using provided ifName and value
+// Possible values are:
+// 	"0" Do not accept Router Advertisements.
+//	"1" Accept Router Advertisements if forwarding is disabled.
+//	"2" Overrule forwarding behaviour. Accept Router Advertisements even if forwarding is enabled.
+// NOTE: system default value is "1"
+func SetIPv6AcceptRa(ifName string, value string) error {
 	var entry = "/proc/sys/net/ipv6/conf/" + ifName + "/accept_ra"
 
 	if content, err := os.ReadFile(entry); err == nil {
@@ -133,6 +144,8 @@ func EnableIPv6Accept_ra(ifName string, value string) error {
 	return os.WriteFile(entry, []byte(value), 0644)
 }
 
+// GetNodeMetadata calling node local imds metadata service using provided key
+// return either a non-empty value or an error
 func GetNodeMetadata(key string) (string, error) {
 	var value string
 	var err error
@@ -146,4 +159,3 @@ func GetNodeMetadata(key string) (string, error) {
 		}
 	}
 }
-

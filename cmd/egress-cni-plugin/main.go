@@ -38,8 +38,6 @@ func init() {
 	runtime.LockOSThread()
 }
 
-
-
 func main() {
 	skel.PluginMain(cmdAdd, nil, cmdDel, cniversion.All, fmt.Sprintf("egress CNI plugin %s", version))
 }
@@ -71,11 +69,10 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return types.PrintResult(result, netConf.CNIVersion)
 	}
 
-
 	isIPv6Egress := netConf.NodeIP.To4() == nil
 	var chainPrefix string
 	if isIPv6Egress {
-		if netConf.NodeIP  == nil || !netConf.NodeIP.IsGlobalUnicast(){
+		if netConf.NodeIP == nil || !netConf.NodeIP.IsGlobalUnicast() {
 			return fmt.Errorf("global unicast IPv6 not found in host primary interface which is mandatory to support IPv6 egress")
 		}
 		chainPrefix = "E6-"
@@ -121,12 +118,11 @@ func cmdAdd(args *skel.CmdArgs) error {
 	defer netns.Close()
 
 	if isIPv6Egress {
-		netConf.IfName = netconf.EGRESS_IPV6_INTERFACE_NAME
-		return cni.CmdAddEgressIPv6(netns, netConf, result, tmpResult, mtu, args.IfName, chain, comment, log)
-	} else {
-		netConf.IfName = netconf.EGRESS_IPV4_INTERFACE_NAME
-		return cni.CmdAddEgressV4(netns, netConf, result, tmpResult, mtu, chain, comment, log)
+		netConf.IfName = netconf.EgressIPv6InterfaceName
+		return cni.CmdAddEgressV6(netns, netConf, result, tmpResult, mtu, args.IfName, chain, comment, log)
 	}
+	netConf.IfName = netconf.EgressIPv4InterfaceName
+	return cni.CmdAddEgressV4(netns, netConf, result, tmpResult, mtu, chain, comment, log)
 }
 
 func cmdDel(args *skel.CmdArgs) error {
@@ -160,10 +156,9 @@ func cmdDel(args *skel.CmdArgs) error {
 	comment := utils.FormatComment(netConf.Name, args.ContainerID)
 
 	if isIPv6Egress {
-		netConf.IfName = netconf.EGRESS_IPV6_INTERFACE_NAME
-		return cni.CmdDelEgressIPv6(args.Netns, netConf.IfName, chain, comment, log)
-	} else {
-		netConf.IfName = netconf.EGRESS_IPV4_INTERFACE_NAME
-		return cni.CmdDelEgressIPv4(args.Netns, netConf.IfName, nodeIP, chain, comment, log)
+		netConf.IfName = netconf.EgressIPv6InterfaceName
+		return cni.CmdDelEgressV6(args.Netns, netConf.IfName, chain, comment, log)
 	}
+	netConf.IfName = netconf.EgressIPv4InterfaceName
+	return cni.CmdDelEgressV4(args.Netns, netConf.IfName, nodeIP, chain, comment, log)
 }

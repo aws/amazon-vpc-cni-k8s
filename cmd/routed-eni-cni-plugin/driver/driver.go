@@ -32,8 +32,8 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
 const (
@@ -232,7 +232,6 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	}
 	return nil
 }
-
 
 // SetupPodNetwork wires up linux networking for a pod's network
 // we expect v4Addr and v6Addr to have correct IPAddress Family.

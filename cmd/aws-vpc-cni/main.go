@@ -38,13 +38,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
 	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -246,7 +247,7 @@ func generateJSON(jsonFile string, outFile string) error {
 	var egressEnabled string
 	var egressPluginLogFile string
 	var nodeIP string
-	if enabledIPv6 == "true"{
+	if enabledIPv6 == "true" {
 		// EKS IPv6 cluster
 		egressIPSubnet = egressIPv4Subnet
 		egressIPDst = egressIPv4Dst
@@ -278,7 +279,6 @@ func generateJSON(jsonFile string, outFile string) error {
 		}
 
 	}
-
 
 	vethPrefix := getEnv(envVethPrefix, defaultVethPrefix)
 	mtu := getEnv(envEniMTU, defaultMTU)
@@ -440,7 +440,6 @@ func _main() int {
 	//	log.WithError(err).Errorf("Init container failed to complete")
 	//	return 1
 	//}
-
 
 	log.Infof("Copying config file... ")
 	err = generateJSON(defaultAWSconflistFile, tmpAWSconflistFile)

@@ -15,6 +15,9 @@ package cni
 
 import (
 	"fmt"
+	"net"
+	"os"
+
 	"github.com/aws/amazon-vpc-cni-k8s/cmd/egress-cni-plugin/netconf"
 	"github.com/aws/amazon-vpc-cni-k8s/cmd/egress-cni-plugin/snat"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -25,8 +28,6 @@ import (
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/vishvananda/netlink"
-	"net"
-	"os"
 )
 
 // The bulk of this file is mostly based on standard ptp CNI plugin.
@@ -188,6 +189,7 @@ func setupHostVeth(vethName string, result *current.Result) error {
 	return nil
 }
 
+// CmdAddEgressV4 exec necessary settings to support IPv4 egress traffic in EKS IPv6 cluster
 func CmdAddEgressV4(netns ns.NetNS, netConf *netconf.NetConf, result, tmpResult *current.Result, mtu int, chain, comment string, log logger.Logger) error {
 
 	if err := ip.EnableForward(tmpResult.IPs); err != nil {
@@ -210,7 +212,7 @@ func CmdAddEgressV4(netns ns.NetNS, netConf *netconf.NetConf, result, tmpResult 
 		for _, ipc := range tmpResult.IPs {
 			if ipc.Address.IP.To4() != nil {
 				//log.Printf("Configuring SNAT %s -> %s", ipc.Address.IP, netConf.SnatIP)
-				if err := snat.Snat(iptables.ProtocolIPv4, netConf.NodeIP, ipc.Address.IP, chain, comment, netConf.RandomizeSNAT); err != nil {
+				if err := snat.Add(iptables.ProtocolIPv4, netConf.NodeIP, ipc.Address.IP, chain, comment, netConf.RandomizeSNAT); err != nil {
 					return err
 				}
 			}
@@ -228,7 +230,8 @@ func CmdAddEgressV4(netns ns.NetNS, netConf *netconf.NetConf, result, tmpResult 
 	return types.PrintResult(result, netConf.CNIVersion)
 }
 
-func CmdDelEgressIPv4(netnsPath, ifName string, nodeIP net.IP, chain, comment string, log logger.Logger) error {
+// CmdDelEgressV4 exec clear the setting to support IPv4 egress traffic in EKS IPv6 cluster
+func CmdDelEgressV4(netnsPath, ifName string, nodeIP net.IP, chain, comment string, log logger.Logger) error {
 	ipnets := []*net.IPNet{}
 
 	if netnsPath != "" {
@@ -280,7 +283,7 @@ func CmdDelEgressIPv4(netnsPath, ifName string, nodeIP net.IP, chain, comment st
 	if nodeIP != nil {
 		log.Debugf("DEL: SNAT setup, let's clean them up. Size of ipnets: %d", len(ipnets))
 		for _, ipn := range ipnets {
-			if err := snat.SnatDel(iptables.ProtocolIPv4, ipn.IP, chain, comment); err != nil {
+			if err := snat.Del(iptables.ProtocolIPv4, ipn.IP, chain, comment); err != nil {
 				return err
 			}
 		}

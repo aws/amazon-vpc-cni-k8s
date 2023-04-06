@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	IPV4_MULTICASTRANGE = "ff00::/8"
-	IPV6_MULTICASTRANGE = "224.0.0.0/4"
+	ipv4MulticastRange = "ff00::/8"
+	ipv6MulticastRange = "224.0.0.0/4"
 )
+
 func iptRules(target, src net.IP, multicastRange, chain, comment string, useRandomFully, useHashRandom bool) [][]string {
 	var rules [][]string
 
@@ -50,8 +51,8 @@ func iptRules(target, src net.IP, multicastRange, chain, comment string, useRand
 	return rules
 }
 
-// Snat SNATs IPv6/IPv4 connections from `src` to `target`
-func Snat(protocol iptables.Protocol, target, src net.IP, chain, comment, randomizeSNAT string) error {
+// Add SNATs IPv6/IPv4 connections from `src` to `target`
+func Add(protocol iptables.Protocol, target, src net.IP, chain, comment, randomizeSNAT string) error {
 	ipt, err := iptables.NewWithProtocol(protocol)
 	if err != nil {
 		return fmt.Errorf("failed to locate iptables: %v", err)
@@ -68,9 +69,9 @@ func Snat(protocol iptables.Protocol, target, src net.IP, chain, comment, random
 	}
 	var multicastRange string
 	if protocol == iptables.ProtocolIPv6 {
-		multicastRange = IPV6_MULTICASTRANGE
+		multicastRange = ipv6MulticastRange
 	} else {
-		multicastRange = IPV4_MULTICASTRANGE
+		multicastRange = ipv4MulticastRange
 	}
 	rules := iptRules(target, src, multicastRange, chain, comment, useRandomFully, useHashRandom)
 
@@ -103,8 +104,8 @@ func Snat(protocol iptables.Protocol, target, src net.IP, chain, comment, random
 	return nil
 }
 
-// SnatDel removes rules added by snat
-func SnatDel(protocol iptables.Protocol, src net.IP, chain, comment string) error {
+// Del removes rules added by snat
+func Del(protocol iptables.Protocol, src net.IP, chain, comment string) error {
 	ipt, err := iptables.NewWithProtocol(protocol)
 	if err != nil {
 		return fmt.Errorf("failed to locate iptables: %v", err)

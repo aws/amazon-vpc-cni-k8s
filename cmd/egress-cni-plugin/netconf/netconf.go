@@ -16,16 +16,21 @@ package netconf
 import (
 	"encoding/json"
 	"fmt"
+	"net"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/containernetworking/cni/pkg/types"
 	cniversion "github.com/containernetworking/cni/pkg/version"
-	"net"
 )
 
 const (
-	EGRESS_IPV4_INTERFACE_NAME = "v4if0"
-	EGRESS_IPV6_INTERFACE_NAME = "v6if0"
+	// EgressIPv4InterfaceName interface name used in container ns for IPv4 egress traffic
+	EgressIPv4InterfaceName = "v4if0"
+
+	// EgressIPv6InterfaceName interface name used in container ns for IPv6 egress traffic
+	EgressIPv6InterfaceName = "v6if0"
 )
+
 // NetConf is our CNI config structure
 type NetConf struct {
 	types.NetConf
@@ -47,6 +52,7 @@ type NetConf struct {
 	PluginLogLevel string `json:"pluginLogLevel"`
 }
 
+// LoadConf load stdin and parse to NetConf type, a new log instance is created based on conf settings
 func LoadConf(bytes []byte) (*NetConf, logger.Logger, error) {
 	conf := &NetConf{}
 
