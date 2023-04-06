@@ -127,3 +127,13 @@ func SnatDel(protocol iptables.Protocol, src net.IP, chain, comment string) erro
 
 	return nil
 }
+
+// isNotExist returns true if the error is from iptables indicating
+// that the target does not exist.
+func isNotExist(err error) bool {
+	e, ok := err.(*iptables.Error)
+	if !ok {
+		return false
+	}
+	return e.IsNotExist()
+}
