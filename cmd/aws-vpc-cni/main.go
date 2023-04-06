@@ -45,11 +45,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
-
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/cp"
 	"github.com/containernetworking/cni/pkg/types"
 )
