@@ -20,11 +20,15 @@ import (
 	"github.com/coreos/go-iptables/iptables"
 )
 
-func iptRules4(target, src net.IP, chain, comment string, useRandomFully, useHashRandom bool) [][]string {
+const (
+	IPV4_MULTICASTRANGE = "ff00::/8"
+	IPV6_MULTICASTRANGE = "224.0.0.0/4"
+)
+func iptRules(target, src net.IP, multicastRange, chain, comment string, useRandomFully, useHashRandom bool) [][]string {
 	var rules [][]string
 
 	// Accept/ignore multicast (just because we can)
-	rules = append(rules, []string{chain, "-d", "224.0.0.0/4", "-j", "ACCEPT", "-m", "comment", "--comment", comment})
+	rules = append(rules, []string{chain, "-d", multicastRange, "-j", "ACCEPT", "-m", "comment", "--comment", comment})
 
 	// SNAT
 	args := []string{
@@ -46,9 +50,9 @@ func iptRules4(target, src net.IP, chain, comment string, useRandomFully, useHas
 	return rules
 }
 
-// Snat4 SNATs IPv4 connections from `src` to `target`
-func Snat4(target, src net.IP, chain, comment, randomizeSNAT string) error {
-	ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4)
+// Snat SNATs IPv6/IPv4 connections from `src` to `target`
+func Snat(protocol iptables.Protocol, target, src net.IP, chain, comment, randomizeSNAT string) error {
+	ipt, err := iptables.NewWithProtocol(protocol)
 	if err != nil {
 		return fmt.Errorf("failed to locate iptables: %v", err)
 	}
@@ -62,8 +66,13 @@ func Snat4(target, src net.IP, chain, comment, randomizeSNAT string) error {
 	} else if randomizeSNAT == "hashrandom" || !ipt.HasRandomFully() {
 		useHashRandom, useRandomFully = true, false
 	}
-
-	rules := iptRules4(target, src, chain, comment, useRandomFully, useHashRandom)
+	var multicastRange string
+	if protocol == iptables.ProtocolIPv6 {
+		multicastRange = IPV6_MULTICASTRANGE
+	} else {
+		multicastRange = IPV4_MULTICASTRANGE
+	}
+	rules := iptRules(target, src, multicastRange, chain, comment, useRandomFully, useHashRandom)
 
 	chains, err := ipt.ListChains("nat")
 	if err != nil {
@@ -94,9 +103,9 @@ func Snat4(target, src net.IP, chain, comment, randomizeSNAT string) error {
 	return nil
 }
 
-// Snat4Del removes rules added by snat4
-func Snat4Del(src net.IP, chain, comment string) error {
-	ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4)
+// SnatDel removes rules added by snat
+func SnatDel(protocol iptables.Protocol, src net.IP, chain, comment string) error {
+	ipt, err := iptables.NewWithProtocol(protocol)
 	if err != nil {
 		return fmt.Errorf("failed to locate iptables: %v", err)
 	}
@@ -117,14 +126,4 @@ func Snat4Del(src net.IP, chain, comment string) error {
 	}
 
 	return nil
-}
-
-// isNotExist returns true if the error is from iptables indicating
-// that the target does not exist.
-func isNotExist(err error) bool {
-	e, ok := err.(*iptables.Error)
-	if !ok {
-		return false
-	}
-	return e.IsNotExist()
 }

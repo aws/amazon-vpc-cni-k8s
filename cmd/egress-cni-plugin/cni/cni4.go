@@ -23,6 +23,7 @@ import (
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ipam"
 	"github.com/containernetworking/plugins/pkg/ns"
+	"github.com/coreos/go-iptables/iptables"
 	"github.com/vishvananda/netlink"
 	"net"
 	"os"
@@ -209,7 +210,7 @@ func CmdAddEgressV4(netns ns.NetNS, netConf *netconf.NetConf, result, tmpResult 
 		for _, ipc := range tmpResult.IPs {
 			if ipc.Address.IP.To4() != nil {
 				//log.Printf("Configuring SNAT %s -> %s", ipc.Address.IP, netConf.SnatIP)
-				if err := snat.Snat4(netConf.NodeIP, ipc.Address.IP, chain, comment, netConf.RandomizeSNAT); err != nil {
+				if err := snat.Snat(iptables.ProtocolIPv4, netConf.NodeIP, ipc.Address.IP, chain, comment, netConf.RandomizeSNAT); err != nil {
 					return err
 				}
 			}
@@ -279,7 +280,7 @@ func CmdDelEgressIPv4(netnsPath, ifName string, nodeIP net.IP, chain, comment st
 	if nodeIP != nil {
 		log.Debugf("DEL: SNAT setup, let's clean them up. Size of ipnets: %d", len(ipnets))
 		for _, ipn := range ipnets {
-			if err := snat.Snat4Del(ipn.IP, chain, comment); err != nil {
+			if err := snat.SnatDel(iptables.ProtocolIPv4, ipn.IP, chain, comment); err != nil {
 				return err
 			}
 		}

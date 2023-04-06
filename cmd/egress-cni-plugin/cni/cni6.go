@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
+	"github.com/coreos/go-iptables/iptables"
 	"os"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -241,7 +242,7 @@ func CmdAddEgressIPv6(netns ns.NetNS, netConf *netconf.NetConf, result, tmpResul
 	log.Debugf("host IPv6 route set up successfully")
 
 	// set up SNAT in host for container IPv6 egress traffic
-	err = snat.Snat6(netConf.NodeIP, containerIPv6[0], chain, comment, netConf.RandomizeSNAT)
+	err = snat.Snat(iptables.ProtocolIPv6, netConf.NodeIP, containerIPv6[0], chain, comment, netConf.RandomizeSNAT)
 	if err != nil {
 		log.Errorf("setup host snat failed: %v", err)
 		return err
@@ -257,7 +258,6 @@ func CmdAddEgressIPv6(netns ns.NetNS, netConf *netconf.NetConf, result, tmpResul
 }
 
 func CmdDelEgressIPv6(netnsPath string, ifName string, chain, comment string,  log logger.Logger) (err error) {
-	//var hostVethIfIndex int
 	var contIPNets []*net.IPNet
 
 	if netnsPath != "" {
@@ -275,7 +275,7 @@ func CmdDelEgressIPv6(netnsPath string, ifName string, chain, comment string,  l
 	// range loop exec 0 times if confIPNets is nil
 	for _, contIPNet := range contIPNets {
 		// remove host SNAT chain/rule for container
-		err = snat.Snat6Del(contIPNet.IP, chain, comment)
+		err = snat.SnatDel(iptables.ProtocolIPv6, contIPNet.IP, chain, comment)
 		if err != nil {
 			log.Errorf("Delete host SNAT for container IPv6 %s failed: %v.", contIPNet.IP, err)
 		}
