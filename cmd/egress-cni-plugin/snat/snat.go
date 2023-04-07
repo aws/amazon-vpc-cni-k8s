@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	ipv4MulticastRange = "ff00::/8"
-	ipv6MulticastRange = "224.0.0.0/4"
+	ipv6MulticastRange = "ff00::/8"
+	ipv4MulticastRange = "224.0.0.0/4"
 )
 
 func iptRules(target, src net.IP, multicastRange, chain, comment string, useRandomFully, useHashRandom bool) [][]string {
