@@ -74,7 +74,7 @@ The following table lists the configurable parameters for this chart and their d
 | `serviceAccount.annotations` | Specifies the annotations for ServiceAccount       | `{}`                                |
 | `livenessProbe`         | Livenness probe settings for daemonset                  | (see `values.yaml`)                 |
 | `readinessProbe`        | Readiness probe settings for daemonset                  | (see `values.yaml`)                 |
-| `tolerations`           | Optional deployment tolerations                         | `[]`                                |
+| `tolerations`           | Optional deployment tolerations                         | `[{"operator": "Exists"}]`          |
 | `updateStrategy`        | Optional update strategy                                | `type: RollingUpdate`               |
 
 Specify each parameter using the `--set key=value[,key=value]` argument to `helm install` or provide a YAML file containing the values for the above parameters:
