@@ -126,7 +126,8 @@ updateStrategy:
 
 nodeSelector: {}
 
-tolerations: []
+tolerations:
+  operator: Exists
 
 affinity:
   nodeAffinity:
