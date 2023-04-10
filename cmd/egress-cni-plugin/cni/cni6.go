@@ -44,25 +44,7 @@ const (
 	DadTimeout   = 10 * time.Second
 )
 
-func setupHostIPv6(log logger.Logger) error {
-	err := ip.EnableIP6Forward()
-	if err != nil {
-		log.Errorf("failed to enable host IPv6 forwarding: %v", err)
-		return err
-	}
-	hostPrimaryInterfaceName, err := cniutils.GetHostPrimaryInterfaceName()
-	if err != nil {
-		log.Errorf("failed to get host primary interface name: %v", err)
-		return err
-	}
-	err = cniutils.SetIPv6AcceptRa(hostPrimaryInterfaceName, "2")
-	if err != nil {
-		log.Errorf("failed to set host interface %s IPv6 accept_ra value %s", hostPrimaryInterfaceName, "2")
-		return err
-	}
-	return err
-}
-
+// setupHostIPv6Route adds a IPv6 route for traffic destined to container/pod from external/off-cluster
 func setupHostIPv6Route(hostInterface *current.Interface, containerIPv6 net.IP) error {
 
 	hostIf, err := net.InterfaceByName(hostInterface.Name)
@@ -229,13 +211,6 @@ func CmdAddEgressV6(netns ns.NetNS, netConf *netconf.NetConf, result, tmpResult 
 	}
 	log.Debugf("container route set up successfully")
 
-	err = setupHostIPv6(log)
-	if err != nil {
-		log.Errorf("failed to setup host IPv6: %v", err)
-		return err
-	}
-	log.Debugf("setup host IPv6 forwarding/accept_ra successfully")
-
 	err = setupHostIPv6Route(hostInterface, containerIPv6[0])
 	if err != nil {
 		log.Errorf("setupHostIPv6Route failed: %v", err)
@@ -244,6 +219,7 @@ func CmdAddEgressV6(netns ns.NetNS, netConf *netconf.NetConf, result, tmpResult 
 	log.Debugf("host IPv6 route set up successfully")
 
 	// set up SNAT in host for container IPv6 egress traffic
+	// following line adds an ip6tables entries to NAT from pod IPv6 address to node IPv6 address assigned to primary ENI
 	err = snat.Add(iptables.ProtocolIPv6, netConf.NodeIP, containerIPv6[0], chain, comment, netConf.RandomizeSNAT)
 	if err != nil {
 		log.Errorf("setup host snat failed: %v", err)

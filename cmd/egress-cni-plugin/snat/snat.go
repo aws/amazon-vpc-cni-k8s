@@ -51,7 +51,7 @@ func iptRules(target, src net.IP, multicastRange, chain, comment string, useRand
 	return rules
 }
 
-// Add SNATs IPv6/IPv4 connections from `src` to `target`
+// Add NAT entries to iptables for POD egress IPv6/IPv4 traffic
 func Add(protocol iptables.Protocol, target, src net.IP, chain, comment, randomizeSNAT string) error {
 	ipt, err := iptables.NewWithProtocol(protocol)
 	if err != nil {

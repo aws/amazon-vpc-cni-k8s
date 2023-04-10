@@ -34,6 +34,7 @@ const (
 	envDisableIPv4TcpEarlyDemux = "DISABLE_TCP_EARLY_DEMUX"
 	envEnableIPv6               = "ENABLE_IPv6"
 	envHostCniBinPath           = "HOST_CNI_BIN_PATH"
+	envEnEgress                 = "ENABLE_ENGRESS"
 )
 
 func getEnv(env, defaultVal string) string {
@@ -114,13 +115,16 @@ func configureIPv6Settings(procSys procsyswrapper.ProcSys, primaryIF string) err
 		}
 		val, _ := procSys.Get(entry)
 		log.Infof("Updated %s to %s", entry, val)
-
-		entry = "net/ipv6/conf/all/forwarding"
+	}
+	// Check if IPv6 egress supporting is enabled in IPv4 cluster
+	ipv6EgressEnabled := getEnv(envEnEgress, "false")
+	if enableIPv6 == "true" || ipv6EgressEnabled == "true" {
+		entry := "net/ipv6/conf/all/forwarding"
 		err = procSys.Set(entry, "1")
 		if err != nil {
 			return errors.Wrap(err, "Failed to enable ipv6 forwarding")
 		}
-		val, _ = procSys.Get(entry)
+		val, _ := procSys.Get(entry)
 		log.Infof("Updated %s to %s", entry, val)
 
 		entry = "net/ipv6/conf/" + primaryIF + "/accept_ra"
