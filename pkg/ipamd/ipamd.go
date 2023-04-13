@@ -41,7 +41,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
@@ -137,8 +136,6 @@ const (
 
 	// trunkInterfaceLabel is used by CNI to check if correct label was added by the VPC resource controller
 	trunkInterfaceLabel = "vpc.amazonaws.com/has-trunk-attached"
-	// VPC resource controller label nodes as not-supported if the EC2 instance doesn't support ENI trunking/branching feature
-	unsupportedInstanceValue = "not-supported"
 
 	//envEnableIpv4PrefixDelegation is used to allocate /28 prefix instead of secondary IP for an ENI.
 	envEnableIpv4PrefixDelegation = "ENABLE_PREFIX_DELEGATION"
@@ -571,34 +568,37 @@ func (c *IPAMContext) nodeInit() error {
 		vpcV4CIDRs = c.updateCIDRsRulesOnChange(vpcV4CIDRs)
 	}, 30*time.Second)
 
-	if c.enablePodENI {
-		// call GET labels only once to avoid duplicate the call from labelling trunk and eniconfig
-		labels, err := c.getNodeLabels(ctx)
+	eniConfigName, err := eniconfig.GetNodeSpecificENIConfigName(ctx, c.cachedK8SClient)
+	if err == nil && c.useCustomNetworking && eniConfigName != "default" {
+		// Signal to VPC Resource Controller that the node is using custom networking
+		err := c.SetNodeLabel(ctx, vpcENIConfigLabel, eniConfigName)
 		if err != nil {
+			log.Errorf("Failed to set eniConfig node label", err)
+			podENIErrInc("nodeInit")
 			return err
 		}
-
-		unsupported := false
-
-		// if node labels is nil in rare cases, we will log the info instead of failing VPC CNI startup
-		if labels == nil {
-			// if labels is nil, ipamd logs the warning for debugging
-			log.Warn("node labels are nil during ipamd init, may need investigation before using the feature of security group for pods")
-		} else {
-			if value, ok := labels[trunkInterfaceLabel]; ok {
-				unsupported = value == unsupportedInstanceValue
-			}
+	} else {
+		// Remove the custom networking label
+		err := c.SetNodeLabel(ctx, vpcENIConfigLabel, "")
+		if err != nil {
+			log.Errorf("Failed to delete eniConfig node label", err)
+			podENIErrInc("nodeInit")
+			return err
 		}
+	}
 
-		// if the node instance is supported, we proceed. Otherwise we stop sending events.
-		if !unsupported {
-			if c.useCustomNetworking {
-				// not doing retry here, don't have to handle error since error has been logged in the called method
-				c.askForENIConfigIfNeeded(ctx, labels)
-			}
-			// we want to ask VPC RC once during node init to cover special cases
-			c.askForTrunkENIIfNeeded(ctx, labels)
+	if metadataResult.TrunkENI != "" {
+		// Signal to VPC Resource Controller that the node has a trunk already
+		err := c.SetNodeLabel(ctx, trunkInterfaceLabel, "true")
+		if err != nil {
+			log.Errorf("Failed to set node label", err)
+			podENIErrInc("nodeInit")
+			// If this fails, we probably can't talk to the API server. Let the pod restart
+			return err
 		}
+	} else {
+		// Check if we want to label node for trunk interface during node init
+		c.askForTrunkENIIfNeeded(ctx)
 	}
 
 	if !c.disableENIProvisioning {
@@ -695,30 +695,7 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 }
 
 func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
-	if c.enablePodENI {
-		if labels, err := c.getNodeLabels(ctx); err == nil {
-			unsupported := false
-			// if node labels is nil in rare cases, we will log the info instead of failing VPC CNI startup
-			if labels == nil {
-				// if labels is nil, ipamd logs the warning for debugging
-				log.Warn("labels are nil during ipamd reconciling resources, may need attention and investigation before using the feature of security group for pods")
-			} else {
-				if value, ok := labels[trunkInterfaceLabel]; ok {
-					unsupported = value == unsupportedInstanceValue
-				}
-			}
-
-			// if the node instance is supported, we proceed. Otherwise we stop sending events.
-			if !unsupported {
-				c.askForTrunkENIIfNeeded(ctx, labels)
-
-				// if custom networking is enabled and SGP is enabled, we should also check for eniConfig
-				if c.useCustomNetworking {
-					c.askForENIConfigIfNeeded(ctx, labels)
-				}
-			}
-		}
-	}
+	c.askForTrunkENIIfNeeded(ctx)
 
 	if c.isDatastorePoolTooLow() {
 		c.increaseDatastorePool(ctx)
@@ -1295,33 +1272,20 @@ func (c *IPAMContext) logPoolStats(dataStoreStats *datastore.DataStoreStats) {
 	log.Debugf("%s: %s, c.maxIPsPerENI = %d", prefix, dataStoreStats, c.maxIPsPerENI)
 }
 
-func (c *IPAMContext) askForTrunkENIIfNeeded(ctx context.Context, labels map[string]string) error {
-	var err error
-	hasTrunkLabel := false
-
-	// if node labels is nil map which is rare, ipamd still sends the event and lets resource controller to handle this case
-	if labels != nil {
-		_, hasTrunkLabel = labels[trunkInterfaceLabel]
-	}
-
-	// check if trunk interface is not present OR trunk label is not present that covers special use case
-	// some special settings can boot up nodes with trunk interface attached already
-	// we still need to signal VPC RC to manage the nodes
-	if c.dataStore.GetTrunkENI() == "" || !hasTrunkLabel {
+func (c *IPAMContext) askForTrunkENIIfNeeded(ctx context.Context) {
+	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
 		// Check that there is room for a trunk ENI to be attached:
 		if c.dataStore.GetENIs() >= (c.maxENI - c.unmanagedENI) {
-			log.Debug("No slot available for a trunk ENI to be attached. Will not create a node event for resource controller")
-			return nil
+			log.Debug("No slot available for a trunk ENI to be attached. Not labeling the node")
+			return
 		}
 		// We need to signal that VPC Resource Controller needs to attach a trunk ENI
-		log.Debug("VPC CNI is asking RC to initialize trunk interface")
-		err = c.eventRecorder.SendNodeEvent(corev1.EventTypeNormal, eventrecorder.EventReason, sgpp.VpcCNINodeEventActionForTrunk, sgpp.TrunkEventNote)
+		err := c.SetNodeLabel(ctx, trunkInterfaceLabel, "false")
 		if err != nil {
-			log.Error(fmt.Sprintf("Failed sending a node event to VPC RC for enabling trunk interface, Error is %v", err))
+			podENIErrInc("askForTrunkENIIfNeeded")
+			log.Errorf("Failed to set node label", err)
 		}
 	}
-
-	return err
 }
 
 func (c *IPAMContext) getNodeLabels(ctx context.Context) (map[string]string, error) {
@@ -1331,34 +1295,6 @@ func (c *IPAMContext) getNodeLabels(ctx context.Context) (map[string]string, err
 	} else {
 		return node.GetLabels(), err
 	}
-}
-
-func (c *IPAMContext) askForENIConfigIfNeeded(ctx context.Context, labels map[string]string) error {
-	var err error
-	hasLabelled := false
-
-	// if node labels is nil map which is rare, ipamd still sends the event and lets resource controller to handle this case
-	if labels != nil {
-		_, hasLabelled = labels[vpcENIConfigLabel]
-	}
-
-	if !hasLabelled {
-		var eniConfigName string
-		if eniConfigName, err = eniconfig.GetNodeSpecificENIConfigName(ctx, c.cachedK8SClient); err != nil {
-			return err
-		}
-
-		if eniConfigName != eniconfig.EniConfigDefault {
-			// Signal event to VPC RC that the custom networking is enabled
-			err = c.eventRecorder.SendNodeEvent(corev1.EventTypeNormal, eventrecorder.EventReason, sgpp.VpcCNINodeEventActionForEniConfig, vpcENIConfigLabel+"="+eniConfigName)
-			if err == nil {
-				log.Infof("Send an event to notify RC custom networking is enabled. Config name should be labelled on node as %s", eniConfigName)
-			} else {
-				log.Errorf("Failed sending an event to notify RC custom networking is enabled. Error is %s", err.Error())
-			}
-		}
-	}
-	return err
 }
 
 // shouldRemoveExtraENIs returns true if we should attempt to find an ENI to free. When WARM_IP_TARGET is set, we
@@ -1468,6 +1404,13 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 
 		if c.enablePodENI && metadataResult.TrunkENI != "" {
 			log.Debugf("Trunk interface (%s) has been added to the node already.", metadataResult.TrunkENI)
+			// Label the node that we have a trunk
+			err = c.SetNodeLabel(ctx, trunkInterfaceLabel, "true")
+			if err != nil {
+				podENIErrInc("askForTrunkENIIfNeeded")
+				log.Errorf("Failed to set node label for trunk. Aborting reconcile", err)
+				return
+			}
 		}
 		// Update trunk ENI
 		trunkENI = metadataResult.TrunkENI
@@ -2032,6 +1975,54 @@ func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
 		}
 	}
 	return -1, errors.New("no trunk found")
+}
+
+// SetNodeLabel sets or deletes a node label
+func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error {
+	request := types.NamespacedName{
+		Name: c.myNodeName,
+	}
+
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		node := &corev1.Node{}
+		// Find my node
+		err := c.cachedK8SClient.Get(ctx, request, node)
+		if err != nil {
+			log.Errorf("Failed to get node: %v", err)
+			return err
+		}
+		log.Debugf("Node found %q - no of labels - %d", node.Name, len(node.Labels))
+
+		if labelValue, ok := node.Labels[key]; ok && labelValue == value {
+			log.Debugf("Node label %q is already %q", key, labelValue)
+			return nil
+		}
+
+		// Make deep copy for modification
+		updateNode := node.DeepCopy()
+
+		// in case for some reason node object doesn't have label map
+		if updateNode.Labels == nil {
+			updateNode.Labels = make(map[string]string)
+		}
+
+		// Set node label
+		if value != "" {
+			updateNode.Labels[key] = value
+		} else {
+			// Empty value, delete the label
+			log.Debugf("Deleting label %q", key)
+			delete(updateNode.Labels, key)
+		}
+
+		if err = c.cachedK8SClient.Update(ctx, updateNode); err != nil {
+			log.Errorf("Failed to patch node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
+			return err
+		}
+		log.Debugf("Updated node %s with label %q: %q", c.myNodeName, key, value)
+		return nil
+	})
+	return err
 }
 
 // GetPod returns the pod matching the name and namespace
