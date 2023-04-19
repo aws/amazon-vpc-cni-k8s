@@ -89,8 +89,6 @@ func (d *defaultNodeManager) WaitTillNodesReady(nodeLabelKey string, nodeLabelVa
 				}
 			}
 		}
-
 		return true, nil
-
 	}, context.Background().Done())
 }

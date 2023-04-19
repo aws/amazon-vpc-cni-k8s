@@ -36,7 +36,7 @@ function load_test_parameters(){
 }
 
 function run_ginkgo_test() {
-  (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS -v --timeout 30m --no-color --fail-on-pending $GINKGO_TEST_BUILD/$SUITE_NAME.test -- \
+  (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS -v --timeout 60m --no-color --fail-on-pending $GINKGO_TEST_BUILD/$SUITE_NAME.test -- \
     --cluster-kubeconfig="$KUBE_CONFIG_PATH" \
     --cluster-name="$CLUSTER_NAME" \
     --aws-region="$REGION" \

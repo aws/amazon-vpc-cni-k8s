@@ -397,7 +397,7 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 
 // New creates an EC2InstanceMetadataCache
 func New(useCustomNetworking, disableLeakedENICleanup, v4Enabled, v6Enabled bool, eventRecorder *eventrecorder.EventRecorder) (*EC2InstanceMetadataCache, error) {
-	//ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
+	// ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
 	ctx := context.Background()
 
 	// Initializes prometheus metrics

@@ -164,15 +164,11 @@ var _ = Describe("Custom Networking Test", func() {
 			err = f.CloudServices.EC2().TerminateInstance(instanceIDs)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("waiting for the node to be removed")
+			By("waiting for nodes to be removed")
 			time.Sleep(time.Second * 120)
 
-			By("waiting for all nodes to become ready")
-			err = f.K8sResourceManagers.NodeManager().
-				WaitTillNodesReady(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal,
-					nodeGroupProperties.AsgSize)
-			Expect(err).ToNot(HaveOccurred())
-
+			// Nodes should be stuck in NotReady state since no ENIs could be attached and no pod
+			// IP addresses are available.
 			deployment := manifest.NewBusyBoxDeploymentBuilder().
 				Replicas(2).
 				NodeSelector(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal).
