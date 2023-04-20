@@ -858,7 +858,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
 
 	m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp.MultiCardENIIDs).AnyTimes()
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 
 	curENIs := mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
@@ -881,7 +881,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	m.awsutils.EXPECT().GetAttachedENIs().Return(oneIPUnassigned, nil)
 	m.awsutils.EXPECT().GetIPv4sFromEC2(primaryENIid).Return(oneIPUnassigned[0].IPv4Addresses, nil)
 
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 0, curENIs.TotalIPs)
@@ -906,7 +906,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, primarySubnet)
 	m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp2.MultiCardENIIDs).AnyTimes()
 
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 
 	// Verify that we now have 2 ENIs, primary ENI with 0 secondary IPs, and secondary ENI with 1 secondary IP
 	curENIs = mockContext.dataStore.GetENIInfos()
@@ -916,7 +916,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 	// Remove the secondary ENI in the IMDS metadata
 	m.awsutils.EXPECT().GetAttachedENIs().Return(oneIPUnassigned, nil)
 
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 0, curENIs.TotalIPs)
@@ -957,7 +957,7 @@ func TestNodePrefixPoolReconcile(t *testing.T) {
 	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
 
 	m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp.MultiCardENIIDs).AnyTimes()
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 
 	curENIs := mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
@@ -983,7 +983,7 @@ func TestNodePrefixPoolReconcile(t *testing.T) {
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(primaryENIid).Return(oneIPUnassigned[0].IPv4Prefixes, nil)
 	//m.awsutils.EXPECT().GetIPv4sFromEC2(primaryENIid).Return(oneIPUnassigned[0].IPv4Addresses, nil)
 
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 0, curENIs.TotalIPs)
@@ -1007,7 +1007,7 @@ func TestNodePrefixPoolReconcile(t *testing.T) {
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, primarySubnet)
 	m.awsutils.EXPECT().SetCNIUnmanagedENIs(resp2.MultiCardENIIDs).AnyTimes()
 
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 
 	// Verify that we now have 2 ENIs, primary ENI with 0 prefixes, and secondary ENI with 1 prefix
 	curENIs = mockContext.dataStore.GetENIInfos()
@@ -1017,7 +1017,7 @@ func TestNodePrefixPoolReconcile(t *testing.T) {
 	// Remove the secondary ENI in the IMDS metadata
 	m.awsutils.EXPECT().GetAttachedENIs().Return(oneIPUnassigned, nil)
 
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 0, curENIs.TotalIPs)
@@ -1554,7 +1554,7 @@ func TestNodeIPPoolReconcileBadIMDSData(t *testing.T) {
 	m.awsutils.EXPECT().IsCNIUnmanagedENI(eniID).Return(false).AnyTimes()
 
 	// First reconcile, IMDS returns correct IPs so no change needed
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 
 	// IMDS returns no secondary IPs, the EC2 call fails
 	primary := true
@@ -1574,7 +1574,7 @@ func TestNodeIPPoolReconcileBadIMDSData(t *testing.T) {
 
 	// eniIPPoolReconcile() calls EC2 to get the actual count, but that call fails
 	m.awsutils.EXPECT().GetIPv4sFromEC2(primaryENIid).Return(nil, errors.New("ec2 API call failed"))
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 2, curENIs.TotalIPs)
@@ -1596,14 +1596,14 @@ func TestNodeIPPoolReconcileBadIMDSData(t *testing.T) {
 
 	// eniIPPoolReconcile() calls EC2 to get the actual count that should still be 2
 	m.awsutils.EXPECT().GetIPv4sFromEC2(primaryENIid).Return(primaryENIMetadata.IPv4Addresses, nil)
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 2, curENIs.TotalIPs)
 
 	// If no ENI is found, we abort the reconcile
 	m.awsutils.EXPECT().GetAttachedENIs().Return(nil, nil)
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 2, curENIs.TotalIPs)
@@ -1640,7 +1640,7 @@ func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
 	m.awsutils.EXPECT().IsCNIUnmanagedENI(eniID).Return(false).AnyTimes()
 
 	// First reconcile, IMDS returns correct IPs so no change needed
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 
 	// IMDS returns no prefixes, the EC2 call fails
 	primary := true
@@ -1660,7 +1660,7 @@ func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
 
 	// eniIPPoolReconcile() calls EC2 to get the actual count, but that call fails
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(primaryENIid).Return(nil, errors.New("ec2 API call failed"))
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 16, curENIs.TotalIPs)
@@ -1682,14 +1682,14 @@ func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
 
 	// eniIPPoolReconcile() calls EC2 to get the actual count that should still be 16
 	m.awsutils.EXPECT().GetIPv4PrefixesFromEC2(primaryENIid).Return(primaryENIMetadata.IPv4Prefixes, nil)
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 16, curENIs.TotalIPs)
 
 	// If no ENI is found, we abort the reconcile
 	m.awsutils.EXPECT().GetAttachedENIs().Return(nil, nil)
-	mockContext.nodeIPPoolReconcile(ctx, 0)
+	mockContext.nodeIPPoolReconcile(ctx, 0, 0)
 	curENIs = mockContext.dataStore.GetENIInfos()
 	assert.Equal(t, 1, len(curENIs.ENIs))
 	assert.Equal(t, 16, curENIs.TotalIPs)

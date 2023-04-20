@@ -257,6 +257,7 @@ type IPAMContext struct {
 	warmPrefixTarget          int
 	primaryIP                 map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
 	lastNodeIPPoolAction      time.Time
+	lastNodeIPPoolReconcile   time.Time
 	lastDecreaseIPPool        time.Time
 	// reconcileCooldownCache keeps timestamps of the last time an IP address was unassigned from an ENI,
 	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
@@ -615,6 +616,7 @@ func (c *IPAMContext) nodeInit() error {
 			return err
 		}
 	}
+	c.lastNodeIPPoolReconcile = time.Now()
 
 	return nil
 }
@@ -690,7 +692,7 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 			c.updateIPPoolIfRequired(ctx)
 		}
 		time.Sleep(sleepDuration)
-		c.nodeIPPoolReconcile(ctx, nodeIPPoolReconcileInterval)
+		c.nodeIPPoolReconcile(ctx, nodeIPPoolReconcileInterval, 5*nodeIPPoolReconcileInterval)
 	}
 }
 
@@ -1356,16 +1358,18 @@ func podENIErrInc(fn string) {
 }
 
 // nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
-func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Duration) {
-	timeSinceLast := time.Since(c.lastNodeIPPoolAction)
-	if timeSinceLast <= interval {
+func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, actionInterval, reconcileInterval time.Duration) {
+	timeSinceLastAction := time.Since(c.lastNodeIPPoolAction)
+	timeSinceLastReconcile := time.Since(c.lastNodeIPPoolReconcile)
+	// To prevent possible deadlock, do not wait to reconcile indefinitely
+	if timeSinceLastAction <= actionInterval && timeSinceLastReconcile <= reconcileInterval {
 		return
 	}
 
 	ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
 	defer ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
 
-	log.Debugf("Reconciling ENI/IP pool info because time since last %v > %v", timeSinceLast, interval)
+	log.Debug("Reconciling ENI/IP pool info")
 	allENIs, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		log.Errorf("IP pool reconcile: Failed to get attached ENI info: %v", err.Error())
@@ -1476,6 +1480,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		reconcileCnt.With(prometheus.Labels{"fn": "eniReconcileDel"}).Inc()
 	}
 	c.lastNodeIPPoolAction = time.Now()
+	c.lastNodeIPPoolReconcile = time.Now()
 
 	log.Debug("Successfully Reconciled ENI/IP pool")
 	c.logPoolStats(c.dataStore.GetIPStats(ipV4AddrFamily))
