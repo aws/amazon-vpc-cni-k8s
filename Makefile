@@ -85,10 +85,8 @@ LDFLAGS = -X pkg/version/info.Version=$(VERSION) -X pkg/awsutils/awssession.vers
 ALLPKGS = $(shell go list $(VENDOR_OVERRIDE_FLAG) ./... | grep -v cmd/packet-verifier)
 # BINS is the set of built command executables.
 BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper aws-vpc-cni aws-vpc-cni-init egress-v4-cni
-# Plugin binaries
-# Not copied: bridge dhcp firewall flannel host-device host-local ipvlan macvlan ptp sbr static tuning vlan
-# For gnu tar, the full path in the tar file is required
-PLUGIN_BINS = ./loopback ./portmap ./bandwidth ./host-local
+# CORE_PLUGIN_DIR is the directory containing upstream containernetworking plugins
+CORE_PLUGIN_DIR = $(MAKEFILE_PATH)/core-plugins/
 
 # DOCKER_ARGS is extra arguments passed during container image build.
 DOCKER_ARGS =
@@ -284,7 +282,8 @@ plugins:   ## Fetch the CNI plugins
 	@echo "Visit upstream project for plugin details:"
 	@echo "$(VISIT_URL)"
 	@echo
-	curl -L $(FETCH_URL) | tar -zx $(PLUGIN_BINS)
+	mkdir -p $(CORE_PLUGIN_DIR)
+	curl -s -L $(FETCH_URL) | tar xzvf - -C $(CORE_PLUGIN_DIR)
 
 ##@ Debug script 
 
@@ -391,9 +390,9 @@ cleanup-ec2-sdk-override:
 # Clean temporary files and build artifacts from the project.
 clean:    ## Clean temporary files and build artifacts from the project.
 	@rm -f -- $(BINS)
-	@rm -f -- $(PLUGIN_BINS)
+	@rm -rf -- $(CORE_PLUGIN_DIR)
 	@rm -f -- coverage.txt
-	@rm -rf -- ${MAKEFILE_PATH}test/build
+	@rm -rf -- $(MAKEFILE_PATH)test/build
 
 ##@ Helpers
 

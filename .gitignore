@@ -3,9 +3,6 @@ aws-k8s-agent
 aws-cni
 aws-vpc-cni
 aws-vpc-cni-init
-bandwidth
-host-local
-loopback
 verify-aws
 verify-network
 *~
@@ -17,6 +14,7 @@ portmap
 grpc-health-probe
 cni-metrics-helper
 coverage.txt
+core-plugins/
 build/
 vendor
 egress-v4-cni
