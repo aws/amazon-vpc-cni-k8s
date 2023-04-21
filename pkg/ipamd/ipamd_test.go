@@ -32,6 +32,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -43,9 +44,6 @@ import (
 	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	mock_networkutils "github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
-	"k8s.io/client-go/tools/events"
 )
 
 const (
@@ -1890,26 +1888,6 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 	defer m.ctrl.Finish()
 	ctx := context.Background()
 
-	fakeRecorder := events.NewFakeRecorder(3)
-	k8sSchema := runtime.NewScheme()
-	clientgoscheme.AddToScheme(k8sSchema)
-
-	mockEventRecorder := &eventrecorder.EventRecorder{
-		Recorder:        fakeRecorder,
-		RawK8SClient:    testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
-		CachedK8SClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
-	}
-	eventrecorder.MyNodeName = myNodeName //constant set for node in tests
-
-	fakeNode := v1.Node{
-		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
-		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-		Spec:       v1.NodeSpec{},
-		Status:     v1.NodeStatus{},
-	}
-
-	_ = mockEventRecorder.CachedK8SClient.Create(ctx, &fakeNode)
-
 	mockContext := &IPAMContext{
 		rawK8SClient:    m.rawK8SClient,
 		cachedK8SClient: m.cachedK8SClient,
@@ -1920,13 +1898,12 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 		terminating:     int32(0),
 		maxENI:          1,
 		myNodeName:      myNodeName,
-		eventRecorder:   mockEventRecorder,
 	}
 
 	labels := map[string]string{
 		"testKey": "testValue",
 	}
-	fakeNode = v1.Node{
+	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName, Labels: labels},
 		Spec:       v1.NodeSpec{},
@@ -1936,164 +1913,32 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 
 	_ = mockContext.dataStore.AddENI("eni-1", 1, true, false, false)
 	// If ENABLE_POD_ENI is not set, nothing happens
-	mockContext.askForTrunkENIIfNeeded(ctx, labels)
-	assert.Len(t, fakeRecorder.Events, 0) // No events
+	mockContext.askForTrunkENIIfNeeded(ctx)
 
 	mockContext.enablePodENI = true
 	// Enabled, we should try to set the label if there is room
-	mockContext.askForTrunkENIIfNeeded(ctx, labels)
-
+	mockContext.askForTrunkENIIfNeeded(ctx)
+	var notUpdatedNode corev1.Node
+	var updatedNode corev1.Node
+	NodeKey := types.NamespacedName{
+		Namespace: "",
+		Name:      myNodeName,
+	}
+	err := m.cachedK8SClient.Get(ctx, NodeKey, &notUpdatedNode)
 	// Since there was no room, no label should be added
-	assert.Len(t, fakeRecorder.Events, 0) // No events
+	assert.NoError(t, err)
+	_, has := notUpdatedNode.Labels["vpc.amazonaws.com/has-trunk-attached"]
+	assert.False(t, has, "the node shouldn't be labelled for trunk when there is no room")
+	assert.Equal(t, 1, len(notUpdatedNode.Labels))
 
 	mockContext.maxENI = 4
 	// Now there is room!
-	mockContext.askForTrunkENIIfNeeded(ctx, labels)
+	mockContext.askForTrunkENIIfNeeded(ctx)
 
-	assert.Len(t, fakeRecorder.Events, 1)
-
-	expected := fmt.Sprintf("%s %s %s", v1.EventTypeNormal, sgpp.VpcCNIEventReason, sgpp.TrunkEventNote)
-	got := <-fakeRecorder.Events
-	assert.Equal(t, expected, got)
-
-	// has trunk but not label, send the event
-	_ = mockContext.dataStore.AddENI("eni-2", 2, true, true, false)
-	mockContext.askForTrunkENIIfNeeded(ctx, labels)
-	assert.Len(t, fakeRecorder.Events, 1)
-	expected = fmt.Sprintf("%s %s %s", v1.EventTypeNormal, sgpp.VpcCNIEventReason, sgpp.TrunkEventNote)
-	assert.Equal(t, expected, <-fakeRecorder.Events)
-}
-
-func TestIPAMContext_askForENIConfigIfNeeded(t *testing.T) {
-	os.Setenv("MY_NODE_NAME", myNodeName)
-	var m *testMocks
-
-	eniConfigName := "testConfig"
-
-	tests := []struct {
-		node     v1.Node
-		events   int
-		hasError bool
-		msg      string
-	}{
-		{
-			node: v1.Node{
-				TypeMeta: metav1.TypeMeta{Kind: "Node"},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   myNodeName,
-					Labels: map[string]string{externalEniConfigLabel: eniConfigName},
-				},
-				Spec:   v1.NodeSpec{},
-				Status: v1.NodeStatus{},
-			},
-			events:   1,
-			hasError: false,
-			msg:      "Having external EniCnnfig Label but not having EniConfig Label on node",
-		},
-		{
-			node: v1.Node{
-				TypeMeta: metav1.TypeMeta{Kind: "Node"},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   myNodeName,
-					Labels: map[string]string{vpcENIConfigLabel: eniConfigName},
-				},
-				Spec:   v1.NodeSpec{},
-				Status: v1.NodeStatus{},
-			},
-			events:   0,
-			hasError: false,
-			msg:      "Having EniConfig Label on node",
-		},
-		{
-			node: v1.Node{
-				TypeMeta: metav1.TypeMeta{Kind: "Node"},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   myNodeName,
-					Labels: map[string]string{"labelKey": "value"},
-				},
-				Spec:   v1.NodeSpec{},
-				Status: v1.NodeStatus{},
-			},
-			events:   0,
-			hasError: false,
-			msg:      "Labels map doesn't have any required labels",
-		},
-		{
-			node: v1.Node{
-				TypeMeta: metav1.TypeMeta{Kind: "Node"},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   myNodeName,
-					Labels: make(map[string]string),
-				},
-				Spec:   v1.NodeSpec{},
-				Status: v1.NodeStatus{},
-			},
-			events:   0,
-			hasError: false,
-			msg:      "Having empty map",
-		},
-		{
-			node: v1.Node{
-				TypeMeta: metav1.TypeMeta{Kind: "Node"},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   myNodeName,
-					Labels: nil,
-				},
-				Spec:   v1.NodeSpec{},
-				Status: v1.NodeStatus{},
-			},
-			events:   0,
-			hasError: false,
-			msg:      "Having nil map",
-		},
-	}
-
-	for _, test := range tests {
-		m = setup(t)
-		ctx := context.Background()
-		fakeRecorder := events.NewFakeRecorder(3)
-		k8sSchema := runtime.NewScheme()
-		clientgoscheme.AddToScheme(k8sSchema)
-		mockEventRecorder := &eventrecorder.EventRecorder{
-			Recorder:        fakeRecorder,
-			RawK8SClient:    testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
-			CachedK8SClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
-		}
-		fakeNode := v1.Node{
-			TypeMeta:   metav1.TypeMeta{Kind: "Node"},
-			ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
-			Spec:       v1.NodeSpec{},
-			Status:     v1.NodeStatus{},
-		}
-		_ = mockEventRecorder.CachedK8SClient.Create(ctx, &fakeNode)
-		eventrecorder.MyNodeName = myNodeName
-		mockContext := &IPAMContext{
-			rawK8SClient:    m.rawK8SClient,
-			cachedK8SClient: m.cachedK8SClient,
-			dataStore:       datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false),
-			awsClient:       m.awsutils,
-			networkClient:   m.network,
-			primaryIP:       make(map[string]string),
-			terminating:     int32(0),
-			maxENI:          1,
-			myNodeName:      myNodeName,
-			eventRecorder:   mockEventRecorder,
-		}
-
-		_ = m.cachedK8SClient.Create(ctx, &test.node)
-
-		err := mockContext.askForENIConfigIfNeeded(ctx, test.node.Labels)
-		assert.Equal(t, test.hasError, err != nil, test.msg)
-		assert.Len(t, fakeRecorder.Events, test.events, test.msg)
-
-		if test.events > 0 {
-			expected := fmt.Sprintf("%s %s %s", v1.EventTypeNormal, sgpp.VpcCNIEventReason, vpcENIConfigLabel+"="+eniConfigName)
-			got := <-fakeRecorder.Events
-			assert.Equal(t, expected, got)
-		}
-	}
-
-	m.ctrl.Finish()
+	// Fetch the updated node and verify that the label is set
+	err = m.cachedK8SClient.Get(ctx, NodeKey, &updatedNode)
+	assert.NoError(t, err)
+	assert.Equal(t, "false", updatedNode.Labels["vpc.amazonaws.com/has-trunk-attached"])
 }
 
 func TestGetNodeLabels(t *testing.T) {
