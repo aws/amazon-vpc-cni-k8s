@@ -9,6 +9,7 @@
 # KUBE_CONFIG_PATH: path to the kubeconfig file, default ~/.kube/config
 # NG_LABEL_KEY: nodegroup label key, default "kubernetes.io/os"
 # NG_LABEL_VAL: nodegroup label val, default "linux"
+# RUN_DEVEKS_TEST: Set this variable for tests to run on a deveks cluster
 # CNI_METRICS_HELPER: cni metrics helper image tag, default "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.12.6"
 
 set -e
@@ -55,7 +56,12 @@ fi
 
 echo "Running release tests on cluster: $CLUSTER_NAME in region: $REGION"
 
-load_cluster_details
+if [[ -z $RUN_DEVEKS_TEST ]]; then
+  load_cluster_details
+else
+  load_deveks_cluster_details
+fi
+
 START=$SECONDS
 run_integration_test
 
