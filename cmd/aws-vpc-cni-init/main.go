@@ -18,6 +18,7 @@ import (
 	"os"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/cp"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/imds"
 	"github.com/pkg/errors"
@@ -26,22 +27,17 @@ import (
 )
 
 const (
-	defaultHostCNIBinPath = "/host/opt/cni/bin"
-	vpcCniInitDonePath    = "/vpc-cni-init/done"
-	metadataLocalIP       = "local-ipv4"
-	metadataMAC           = "mac"
+	defaultHostCNIBinPath           = "/host/opt/cni/bin"
+	vpcCniInitDonePath              = "/vpc-cni-init/done"
+	metadataLocalIP                 = "local-ipv4"
+	metadataMAC                     = "mac"
+	defaultDisableIPv4TcpEarlyDemux = false
+	defaultEnableIPv6               = false
 
 	envDisableIPv4TcpEarlyDemux = "DISABLE_TCP_EARLY_DEMUX"
 	envEnableIPv6               = "ENABLE_IPv6"
 	envHostCniBinPath           = "HOST_CNI_BIN_PATH"
 )
-
-func getEnv(env, defaultVal string) string {
-	if val, ok := os.LookupEnv(env); ok {
-		return val
-	}
-	return defaultVal
-}
 
 func getNodePrimaryIF() (string, error) {
 	var primaryIF string
@@ -83,8 +79,8 @@ func configureSystemParams(procSys procsyswrapper.ProcSys, primaryIF string) err
 	// Note that older kernels may not support tcp_early_demux, so we must first check that it exists.
 	entry = "net/ipv4/tcp_early_demux"
 	if _, err := procSys.Get(entry); err == nil {
-		disableIPv4EarlyDemux := getEnv(envDisableIPv4TcpEarlyDemux, "false")
-		if disableIPv4EarlyDemux == "true" {
+		disableIPv4EarlyDemux := utils.GetBoolAsStringEnvVar(envDisableIPv4TcpEarlyDemux, defaultDisableIPv4TcpEarlyDemux)
+		if disableIPv4EarlyDemux {
 			err = procSys.Set(entry, "0")
 			if err != nil {
 				return errors.Wrap(err, "Failed to disable tcp_early_demux")
@@ -105,8 +101,8 @@ func configureIPv6Settings(procSys procsyswrapper.ProcSys, primaryIF string) err
 	var err error
 	// Enable IPv6 when environment variable is set
 	// Note that IPv6 is not disabled when environment variable is unset. This is omitted to preserve default host semantics.
-	enableIPv6 := getEnv(envEnableIPv6, "false")
-	if enableIPv6 == "true" {
+	enableIPv6 := utils.GetBoolAsStringEnvVar(envEnableIPv6, defaultEnableIPv6)
+	if enableIPv6 {
 		entry := "net/ipv6/conf/all/disable_ipv6"
 		err = procSys.Set(entry, "0")
 		if err != nil {
@@ -143,7 +139,7 @@ func _main() int {
 	var err error
 
 	log.Infof("Copying CNI plugin binaries ...")
-	hostCNIBinPath := getEnv(envHostCniBinPath, defaultHostCNIBinPath)
+	hostCNIBinPath := utils.GetEnv(envHostCniBinPath, defaultHostCNIBinPath)
 	excludeBins := map[string]bool{"aws-vpc-cni-init": true}
 	// Copy all binaries from workdir to host bin dir except container init binary
 	err = cp.InstallBinariesFromDir(".", hostCNIBinPath, excludeBins)
