@@ -74,3 +74,27 @@ func InstallBinaries(pluginBins []string, hostCNIBinPath string) error {
 	}
 	return nil
 }
+
+func InstallBinariesFromDir(readDir string, hostCNIBinPath string, excludeBins map[string]bool) error {
+	bins, err := os.ReadDir(readDir)
+	if err != nil {
+		return fmt.Errorf("failed to read directory %s, error: %s", readDir, err)
+	}
+
+	for _, file := range bins {
+		// Only copy files
+		if !file.Type().IsRegular() {
+			continue
+		}
+		// Exclude binaries in deny-list
+		if _, ok := excludeBins[file.Name()]; ok {
+			continue
+		}
+		target := fmt.Sprintf("%s/%s", hostCNIBinPath, file.Name())
+		source := fmt.Sprintf("%s", file.Name())
+		if err := CopyFile(source, target); err != nil {
+			return fmt.Errorf("Failed to install %s: %s", target, err)
+		}
+	}
+	return nil
+}

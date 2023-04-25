@@ -136,18 +136,13 @@ func main() {
 
 func _main() int {
 	log.Debug("Started Initialization")
-	pluginBins := []string{"loopback", "portmap", "bandwidth", "host-local", "aws-cni-support.sh"}
 	var err error
-	for _, plugin := range pluginBins {
-		if _, err = os.Stat(plugin); err != nil {
-			log.WithError(err).Fatalf("Required executable: %s not found", plugin)
-			return 1
-		}
-	}
 
 	log.Infof("Copying CNI plugin binaries ...")
 	hostCNIBinPath := utils.GetEnv(envHostCniBinPath, defaultHostCNIBinPath)
-	err = cp.InstallBinaries(pluginBins, hostCNIBinPath)
+	excludeBins := map[string]bool{"aws-vpc-cni-init": true}
+	// Copy all binaries from workdir to host bin dir except container init binary
+	err = cp.InstallBinariesFromDir(".", hostCNIBinPath, excludeBins)
 	if err != nil {
 		log.WithError(err).Errorf("Failed to install binaries")
 		return 1
