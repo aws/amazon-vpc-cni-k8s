@@ -18,14 +18,6 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/vethwrapper"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/hostipamwrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
-
 	"github.com/coreos/go-iptables/iptables"
 
 	"github.com/containernetworking/cni/pkg/skel"
@@ -49,25 +41,8 @@ func main() {
 }
 
 func cmdAdd(args *skel.CmdArgs) error {
-	iptCreator := func(protocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
-		return iptableswrapper.NewIPTables(protocol)
-	}
-	addOption := EgressContextAddOption{
-		Procsys:    procsyswrapper.NewProcSys(),
-		Ns:         nswrapper.NewNS(),
-		NsPath:     args.Netns,
-		ArgsIfName: args.IfName,
-		Ipam:       hostipamwrapper.NewIpam(),
-		Link:       netlinkwrapper.NewNetLink(),
-		Veth:       vethwrapper.NewSetupVeth(),
-		IptCreator: iptCreator,
-	}
-
-	ec, err := NewEgressAddContext(addOption)
-	if err != nil {
-		return err
-	}
-	return add(args, ec)
+	ec := NewEgressAddContext(args.Netns, args.IfName)
+	return add(args, &ec)
 }
 
 func add(args *skel.CmdArgs, ec *EgressContext) (err error) {
@@ -140,22 +115,8 @@ func add(args *skel.CmdArgs, ec *EgressContext) (err error) {
 }
 
 func cmdDel(args *skel.CmdArgs) error {
-	iptCreator := func(protocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
-		return iptableswrapper.NewIPTables(protocol)
-	}
-	delOption := EgressContextDelOption{
-		Ns:         nswrapper.NewNS(),
-		NsPath:     args.Netns,
-		Ipam:       hostipamwrapper.NewIpam(),
-		Link:       netlinkwrapper.NewNetLink(),
-		IptCreator: iptCreator,
-	}
-
-	ec, err := NewEgressDelContext(delOption)
-	if err != nil {
-		return err
-	}
-	return del(args, ec)
+	ec := NewEgressDelContext(args.Netns)
+	return del(args, &ec)
 }
 
 func del(args *skel.CmdArgs, ec *EgressContext) (err error) {

@@ -66,7 +66,7 @@ func TestCmdAddV4(t *testing.T) {
 		}`),
 	}
 
-	addOption := EgressContextAddOption{
+	ec := EgressContext{
 		Procsys:       mock_procsyswrapper.NewMockProcSys(ctrl),
 		Ns:            mock_nswrapper.NewMockNS(ctrl),
 		NsPath:        "/var/run/netns/cni-xxxx",
@@ -77,14 +77,11 @@ func TestCmdAddV4(t *testing.T) {
 		Veth:          mock_veth.NewMockVeth(ctrl),
 	}
 
-	c, err := NewEgressAddContext(addOption)
-	assert.Nil(t, err)
-
 	var actualIptablesRules, actualRouteAdd, actualRouteDel []string
-	err = SetupAddExpectV4(*c, snatChainV4, &actualIptablesRules, &actualRouteAdd, &actualRouteDel)
+	err := SetupAddExpectV4(ec, snatChainV4, &actualIptablesRules, &actualRouteAdd, &actualRouteDel)
 	assert.Nil(t, err)
 
-	err = add(args, c)
+	err = add(args, &ec)
 	assert.Nil(t, err)
 
 	expectIptablesRules := []string{
@@ -139,7 +136,8 @@ func TestCmdDelV4(t *testing.T) {
 				"vethPrefix":"eni"
 		}`),
 	}
-	delOption := EgressContextDelOption{
+
+	ec := EgressContext{
 		Ns:            mock_nswrapper.NewMockNS(ctrl),
 		NsPath:        "/var/run/netns/cni-xxxx",
 		IpTablesIface: mock_iptables.NewMockIPTablesIface(ctrl),
@@ -147,14 +145,11 @@ func TestCmdDelV4(t *testing.T) {
 		Link:          mock_netlinkwrapper.NewMockNetLink(ctrl),
 	}
 
-	c, err := NewEgressDelContext(delOption)
-	assert.Nil(t, err)
-
 	var actualLinkDel, actualIptablesDel []string
-	err = SetupDelExpectV4(*c, &actualLinkDel, &actualIptablesDel)
+	err := SetupDelExpectV4(ec, &actualLinkDel, &actualIptablesDel)
 	assert.Nil(t, err)
 
-	err = del(args, c)
+	err = del(args, &ec)
 	assert.Nil(t, err)
 
 	expectLinkDel := []string{"link del - name: v4if0"}

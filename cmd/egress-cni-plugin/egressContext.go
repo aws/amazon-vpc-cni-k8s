@@ -64,93 +64,33 @@ type EgressContext struct {
 	SnatComment string
 }
 
-// EgressContextAddOption has all necessary fields for container egress setup
-type EgressContextAddOption struct {
-	Procsys       procsyswrapper.ProcSys
-	Ipam          hostipamwrapper.HostIpam
-	Link          netlinkwrapper.NetLink
-	Ns            nswrapper.NS
-	NsPath        string
-	ArgsIfName    string
-	Veth          vethwrapper.Veth
-	IpTablesIface iptableswrapper.IPTablesIface
-	IptCreator    func(iptables.Protocol) (iptableswrapper.IPTablesIface, error)
-}
-
-// EgressContextDelOption has all necessary fields for container egress removal
-type EgressContextDelOption struct {
-	Ipam          hostipamwrapper.HostIpam
-	Link          netlinkwrapper.NetLink
-	Ns            nswrapper.NS
-	NsPath        string
-	IpTablesIface iptableswrapper.IPTablesIface
-	IptCreator    func(iptables.Protocol) (iptableswrapper.IPTablesIface, error)
-}
-
 // NewEgressAddContext create a context for container egress traffic
-func NewEgressAddContext(option EgressContextAddOption) (*EgressContext, error) {
-	if option.Procsys == nil {
-		return nil, fmt.Errorf("prosys is nil in EgressContextAddOption")
+func NewEgressAddContext(nsPath, ifName string) EgressContext {
+	return EgressContext{
+		Procsys:    procsyswrapper.NewProcSys(),
+		Ipam:       hostipamwrapper.NewIpam(),
+		Link:       netlinkwrapper.NewNetLink(),
+		Ns:         nswrapper.NewNS(),
+		NsPath:     nsPath,
+		ArgsIfName: ifName,
+		Veth:       vethwrapper.NewSetupVeth(),
+		IptCreator: func(protocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+			return iptableswrapper.NewIPTables(protocol)
+		},
 	}
-	if option.Ipam == nil {
-		return nil, fmt.Errorf("ipam is nil in EgressContextAddOption")
-	}
-	if option.Link == nil {
-		return nil, fmt.Errorf("link is nil in EgressContextAddOption")
-	}
-	if option.Ns == nil {
-		return nil, fmt.Errorf("ns is nil in EgressContextAddOption")
-	}
-	if option.NsPath == "" {
-		return nil, fmt.Errorf("nsPath is empty in EgressContextAddOption")
-	}
-	if option.ArgsIfName == "" {
-		return nil, fmt.Errorf("argsIfName is empty in EgressContextAddOption")
-	}
-	if option.Veth == nil {
-		return nil, fmt.Errorf("veth is nil in EgressContextAddOption")
-	}
-	if option.IpTablesIface == nil && option.IptCreator == nil {
-		return nil, fmt.Errorf("both ipTablesIface and iptCreator are nil in EgressContextAddOption")
-	}
-	return &EgressContext{
-		Procsys:       option.Procsys,
-		Ipam:          option.Ipam,
-		Link:          option.Link,
-		Ns:            option.Ns,
-		NsPath:        option.NsPath,
-		ArgsIfName:    option.ArgsIfName,
-		Veth:          option.Veth,
-		IpTablesIface: option.IpTablesIface,
-		IptCreator:    option.IptCreator,
-	}, nil
 }
 
 // NewEgressDelContext create a context for container egress traffic
-func NewEgressDelContext(option EgressContextDelOption) (*EgressContext, error) {
-	if option.Ipam == nil {
-		return nil, fmt.Errorf("ipam is nil in EgressContextAddOption")
+func NewEgressDelContext(nsPath string) EgressContext {
+	return EgressContext{
+		Ipam:   hostipamwrapper.NewIpam(),
+		Link:   netlinkwrapper.NewNetLink(),
+		Ns:     nswrapper.NewNS(),
+		NsPath: nsPath,
+		IptCreator: func(protocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+			return iptableswrapper.NewIPTables(protocol)
+		},
 	}
-	if option.Link == nil {
-		return nil, fmt.Errorf("link is nil in EgressContextAddOption")
-	}
-	if option.Ns == nil {
-		return nil, fmt.Errorf("ns is nil in EgressContextAddOption")
-	}
-	if option.NsPath == "" {
-		return nil, fmt.Errorf("nsPath is empty in EgressContextAddOption")
-	}
-	if option.IpTablesIface == nil && option.IptCreator == nil {
-		return nil, fmt.Errorf("both ipTablesIface and iptCreator are nil in EgressContextAddOption")
-	}
-	return &EgressContext{
-		Ipam:          option.Ipam,
-		Link:          option.Link,
-		Ns:            option.Ns,
-		NsPath:        option.NsPath,
-		IpTablesIface: option.IpTablesIface,
-		IptCreator:    option.IptCreator,
-	}, nil
 }
 
 func (c *EgressContext) SetupContainerVeth() (*current.Interface, *current.Interface, error) {
