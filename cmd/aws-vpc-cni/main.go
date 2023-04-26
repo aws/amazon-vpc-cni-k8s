@@ -38,7 +38,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
@@ -48,13 +47,17 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/containernetworking/cni/pkg/types"
+
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/cp"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/imds"
-	"github.com/containernetworking/cni/pkg/types"
 )
 
 const (
+	egressPluginIpamSubnetV4     = "169.254.172.0/22"
+	egressPluginIpamDstV4        = "0.0.0.0/0"
+	egressPluginIpamDataDirV4    = "/run/cni/v6pd/egress-v4-ipam"
 	defaultHostCNIBinPath        = "/host/opt/cni/bin"
 	defaultHostCNIConfDirPath    = "/host/etc/cni/net.d"
 	defaultAWSconflistFile       = "/app/10-aws.conflist"
@@ -214,7 +217,7 @@ func isValidJSON(inFile string) error {
 }
 
 func generateJSON(jsonFile string, outFile string, nodeIP string) error {
-	byteValue, err := ioutil.ReadFile(jsonFile)
+	byteValue, err := os.ReadFile(jsonFile)
 	if err != nil {
 		return err
 	}
@@ -234,8 +237,11 @@ func generateJSON(jsonFile string, outFile string, nodeIP string) error {
 	netconf = strings.Replace(netconf, "__PODSGENFORCINGMODE__", podSGEnforcingMode, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGFILE__", pluginLogFile, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGLEVEL__", pluginLogLevel, -1)
-	netconf = strings.Replace(netconf, "__EGRESSV4PLUGINLOGFILE__", egressV4pluginLogFile, -1)
-	netconf = strings.Replace(netconf, "__EGRESSV4PLUGINENABLED__", enabledIPv6, -1)
+	netconf = strings.Replace(netconf, "__EGRESSPLUGINLOGFILE__", egressV4pluginLogFile, -1)
+	netconf = strings.Replace(netconf, "__EGRESSPLUGINENABLED__", enabledIPv6, -1)
+	netconf = strings.Replace(netconf, "__EGRESSPLUGINIPAMSUBNET__", egressPluginIpamSubnetV4, -1)
+	netconf = strings.Replace(netconf, "__EGRESSPLUGINIPAMDST__", egressPluginIpamDstV4, -1)
+	netconf = strings.Replace(netconf, "__EGRESSPLUGINIPAMDATADIR__", egressPluginIpamDataDirV4, -1)
 	netconf = strings.Replace(netconf, "__RANDOMIZESNAT__", randomizeSNAT, -1)
 	netconf = strings.Replace(netconf, "__NODEIP__", nodeIP, -1)
 
@@ -265,7 +271,7 @@ func generateJSON(jsonFile string, outFile string, nodeIP string) error {
 		log.Fatalf("%s is not a valid json object, error: %s", netconf, err)
 	}
 
-	err = ioutil.WriteFile(outFile, byteValue, 0644)
+	err = os.WriteFile(outFile, byteValue, 0644)
 	return err
 }
 
@@ -345,7 +351,7 @@ func _main() int {
 		log.WithError(err).Error("Failed to enable nftables")
 	}
 
-	pluginBins := []string{"aws-cni", "egress-v4-cni"}
+	pluginBins := []string{"aws-cni", "egress-cni"}
 	hostCNIBinPath := utils.GetEnv(envHostCniBinPath, defaultHostCNIBinPath)
 	err := cp.InstallBinaries(pluginBins, hostCNIBinPath)
 	if err != nil {

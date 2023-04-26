@@ -15,7 +15,7 @@
 package procsyswrapper
 
 import (
-	"io/ioutil"
+	"os"
 )
 
 // ProcSys is the /proc/sys interface wrapper
@@ -38,10 +38,10 @@ func (p *procSys) path(key string) string {
 }
 
 func (p *procSys) Get(key string) (string, error) {
-	data, err := ioutil.ReadFile(p.path(key))
+	data, err := os.ReadFile(p.path(key))
 	return string(data), err
 }
 
 func (p *procSys) Set(key, value string) error {
-	return ioutil.WriteFile(p.path(key), []byte(value), 0644)
+	return os.WriteFile(p.path(key), []byte(value), 0644)
 }

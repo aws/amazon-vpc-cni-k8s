@@ -1,6 +1,21 @@
 package cniutils
 
-import "github.com/containernetworking/cni/pkg/types/current"
+import (
+	"fmt"
+	"syscall"
+	"time"
+
+	"github.com/containernetworking/cni/pkg/types/current"
+	"github.com/vishvananda/netlink"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
+)
+
+const (
+	ipv4ForwardKey = "net/ipv4/ip_forward"
+	ipv6ForwardKey = "net/ipv6/conf/all/forwarding"
+)
 
 func FindInterfaceByName(ifaceList []*current.Interface, ifaceName string) (ifaceIndex int, iface *current.Interface, found bool) {
 	for ifaceIndex, iface := range ifaceList {
@@ -19,4 +34,79 @@ func FindIPConfigsByIfaceIndex(ipConfigs []*current.IPConfig, ifaceIndex int) []
 		}
 	}
 	return matchedIPConfigs
+}
+
+// WaitForAddressesToBeStable Implements `SettleAddresses` functionality of the `ip` package.
+// waitForAddressesToBeStable waits for all addresses on a link to leave tentative state.
+// Will be particularly useful for ipv6, where all addresses need to do DAD.
+// If any addresses are still tentative after timeout seconds, then error.
+func WaitForAddressesToBeStable(netLink netlinkwrapper.NetLink, ifName string, timeout, waitInterval time.Duration) error {
+	link, err := netLink.LinkByName(ifName)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve link: %v", err)
+	}
+
+	deadline := time.Now().Add(timeout)
+	for {
+		addrs, err := netLink.AddrList(link, netlink.FAMILY_V6)
+		if err != nil {
+			return fmt.Errorf("could not list addresses: %v", err)
+		}
+
+		ok := true
+		for _, addr := range addrs {
+			if addr.Flags&(syscall.IFA_F_TENTATIVE|syscall.IFA_F_DADFAILED) > 0 {
+				ok = false
+				break
+			}
+		}
+
+		if ok {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("link %s still has tentative addresses after %d seconds",
+				ifName,
+				timeout)
+		}
+
+		time.Sleep(waitInterval)
+	}
+}
+
+// EnableIpForwarding sets forwarding to 1 for both IPv4 and IPv6 if applicable.
+// This func is to have a unit testable version of ip.EnableForward in ipforward_linux.go file
+// link: https://github.com/containernetworking/plugins/blob/main/pkg/ip/ipforward_linux.go#L34
+func EnableIpForwarding(procSys procsyswrapper.ProcSys, ips []*current.IPConfig) error {
+	v4 := false
+	v6 := false
+
+	for _, ip := range ips {
+		if ip.Version == "4" && !v4 {
+			valueV4, err := procSys.Get(ipv4ForwardKey)
+			if err != nil {
+				return err
+			}
+			if valueV4 != "1" {
+				err = procSys.Set(ipv4ForwardKey, "1")
+				if err != nil {
+					return err
+				}
+			}
+			v4 = true
+		} else if ip.Version == "6" && !v6 {
+			valueV6, err := procSys.Get(ipv6ForwardKey)
+			if err != nil {
+				return err
+			}
+			if valueV6 != "1" {
+				err = procSys.Set(ipv6ForwardKey, "1")
+				if err != nil {
+					return err
+				}
+			}
+			v6 = true
+		}
+	}
+	return nil
 }
