@@ -12,6 +12,7 @@ ENDPOINT: $ENDPOINT"
 
 if [[ -n "${ENDPOINT}" ]]; then
   ENDPOINT_FLAG="--endpoint $ENDPOINT"
+  ENDPOINT_OPTION=" --eks-endpoint $ENDPOINT"
 fi
 
 if [[ -z "${SKIP_MAKE_TEST_BINARIES}" ]]; then

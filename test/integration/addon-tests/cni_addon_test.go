@@ -23,7 +23,7 @@ var (
 
 const (
 	// Using v1.9.x as the default since v1.7.5 has following issue:https://github.com/aws/amazon-vpc-cni-k8s/pull/1341
-	DEFAULT_VERSION = "v1.9.1-eksbuild.1"
+	DEFAULT_VERSION = "v1.12.5-eksbuild.2"
 )
 
 var _ = Describe("cni addon upgrade/downgrade test", func() {

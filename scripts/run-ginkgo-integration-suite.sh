@@ -3,6 +3,7 @@
 # This script can be used to run any ginkgo integration suite using SUITE_NAME environment variable.
 # Prerequisite: cluster with at least three Linux nodes must already exist.
 # It is up to the caller to ensure that tests are valid to run against cluster, i.e. IPv6 tests require IPv6 cluster.
+# Set appropriate optional args for running test suite
 
 set -e
 
@@ -13,11 +14,33 @@ SKIP_MAKE_TEST_BINARIES=1
 source "$SCRIPT_DIR"/lib/cluster.sh
 source "$SCRIPT_DIR"/lib/canary.sh
 
+function load_test_parameters(){
+
+  EXTRA_OPTIONS=""
+  if [[ ! -z $INITIAL_ADDON_VERSION ]]; then
+    EXTRA_OPTIONS+=" --initial-addon-version $INITIAL_ADDON_VERSION"
+  fi
+
+  if [[ ! -z $TARGET_ADDON_VERSION ]]; then
+    EXTRA_OPTIONS+=" --target-addon-version $TARGET_ADDON_VERSION"
+  fi
+}
+
 function run_ginkgo_test() {
-  (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS -v --timeout 30m --no-color --fail-on-pending $GINKGO_TEST_BUILD/$SUITE_NAME.test -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+  (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS -v --timeout 30m --no-color --fail-on-pending $GINKGO_TEST_BUILD/$SUITE_NAME.test -- \
+    --cluster-kubeconfig="$KUBE_CONFIG_PATH" \
+    --cluster-name="$CLUSTER_NAME" \
+    --aws-region="$REGION" \
+    --aws-vpc-id="$VPC_ID" \
+    --ng-name-label-key="kubernetes.io/os" \
+    --ng-name-label-val="linux" \
+    $ENDPOINT_OPTION $EXTRA_OPTIONS
+  )
 }
 
 load_cluster_details
+
+load_test_parameters
 
 echo "Running $SUITE_NAME integration tests"
 
