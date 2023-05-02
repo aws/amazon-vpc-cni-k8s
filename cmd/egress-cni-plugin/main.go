@@ -18,8 +18,6 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/coreos/go-iptables/iptables"
-
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/types/current"
@@ -45,11 +43,19 @@ func cmdAdd(args *skel.CmdArgs) error {
 	return add(args, &ec)
 }
 
-func add(args *skel.CmdArgs, ec *EgressContext) (err error) {
+func add(args *skel.CmdArgs, ec *egressContext) (err error) {
 	ec.NetConf, ec.Log, err = LoadConf(args.StdinData)
 	if err != nil {
 		return fmt.Errorf("failed to parse config: %v", err)
 	}
+
+	ec.Log.Debugf("Received an Add request: nsPath: %s conf=%+v", ec.NsPath, *ec.NetConf)
+	// uncomment following lines to debug inputs
+	//stdin := args.StdinData
+	//args.StdinData = nil
+	//ec.Log.Debugf("args: %+v, stdinData: %+v", *args, string(stdin))
+	//args.StdinData = stdin
+
 	if ec.NetConf.PrevResult == nil {
 		ec.Log.Debugf("must be called as a chained plugin")
 		return fmt.Errorf("must be called as a chained plugin")
@@ -66,8 +72,6 @@ func add(args *skel.CmdArgs, ec *EgressContext) (err error) {
 		ec.Log.Errorf("failed to parse MTU: %s, err: %v", ec.NetConf.MTU, err)
 		return err
 	}
-
-	ec.Log.Debugf("Received an ADD request for: conf=%v; Plugin enabled=%s", ec.NetConf, ec.NetConf.Enabled)
 	// We will not be vending out this as a separate plugin by itself, and it is only intended to be used as a
 	// chained plugin to VPC CNI. We only need this plugin to kick in if egress is enabled in VPC CNI. So, the
 	// value of an env variable in VPC CNI determines whether this plugin should be enabled and this is an attempt to
@@ -76,41 +80,31 @@ func add(args *skel.CmdArgs, ec *EgressContext) (err error) {
 		return types.PrintResult(ec.Result, ec.NetConf.CNIVersion)
 	}
 
-	if ec.IpTablesIface == nil {
-		if ec.IpTablesIface, err = ec.IptCreator(iptables.ProtocolIPv4); err != nil {
-			ec.Log.Error("command iptables not found")
-			return err
-		}
-	}
-
-	ec.SnatChain = utils.MustFormatChainNameWithPrefix(ec.NetConf.Name, args.ContainerID, "E4-")
-	ec.SnatComment = utils.FormatComment(ec.NetConf.Name, args.ContainerID)
-
 	// Invoke ipam del if err to avoid ip leak
 	defer func() {
 		if err != nil {
 			ec.Ipam.ExecDel(ec.NetConf.IPAM.Type, args.StdinData)
 		}
 	}()
-
-	var ipamResultI types.Result
-	if ipamResultI, err = ec.Ipam.ExecAdd(ec.NetConf.IPAM.Type, args.StdinData); err != nil {
-		return fmt.Errorf("running IPAM plugin failed: %v", err)
-	}
-
-	if ec.TmpResult, err = current.NewResultFromResult(ipamResultI); err != nil {
+	err = ec.hostLocalIpamAdd(args.StdinData)
+	if err != nil {
+		ec.Log.Errorf("failed to get one ip address from host-local ipam: %v", err)
 		return err
 	}
 
-	if len(ec.TmpResult.IPs) == 0 {
-		err = fmt.Errorf("IPAM plugin returned zero IPs")
-		return err
+	ec.SnatComment = utils.FormatComment(ec.NetConf.Name, args.ContainerID)
+	if ec.NetConf.NodeIP.To4() == nil { // NodeIP is not IPv4 address, pod IPv6 egress for eks IPv4 cluster
+		if ec.NetConf.NodeIP == nil || !ec.NetConf.NodeIP.IsGlobalUnicast() {
+			return fmt.Errorf("global unicast IPv6 not found in host primary interface which is mandatory to support IPv6 egress")
+		}
+		ec.SnatChain = utils.MustFormatChainNameWithPrefix(ec.NetConf.Name, args.ContainerID, "E6-")
+		ec.NetConf.IfName = egressIPv6InterfaceName
+		err = ec.cmdAddEgressV6()
+	} else { // NodeIP is IPv4 address, pod IPv4 egress for eks IPv6 cluster
+		ec.SnatChain = utils.MustFormatChainNameWithPrefix(ec.NetConf.Name, args.ContainerID, "E4-")
+		ec.NetConf.IfName = egressIPv4InterfaceName
+		err = ec.cmdAddEgressV4()
 	}
-
-	// IPv4 egress
-	ec.NetConf.IfName = EgressIPv4InterfaceName
-	// explicitly set err var so that above defer function can call ipam.ExecDel
-	err = ec.CmdAddEgressV4()
 	return err
 }
 
@@ -119,23 +113,17 @@ func cmdDel(args *skel.CmdArgs) error {
 	return del(args, &ec)
 }
 
-func del(args *skel.CmdArgs, ec *EgressContext) (err error) {
+func del(args *skel.CmdArgs, ec *egressContext) (err error) {
 	ec.NetConf, ec.Log, err = LoadConf(args.StdinData)
 	if err != nil {
 		return fmt.Errorf("failed to parse config: %v", err)
 	}
+	ec.Log.Debugf("Received a Del request: nsPath: %s conf=%+v", ec.NsPath, *ec.NetConf)
 
 	// We only need this plugin to kick in if egress is enabled
 	if ec.NetConf.Enabled != "true" {
 		ec.Log.Debugf("egress-cni plugin is disabled")
 		return nil
-	}
-	ec.Log.Debugf("Received Del Request: nsPath: %s conf=%v", ec.NsPath, ec.NetConf)
-
-	if ec.IpTablesIface == nil {
-		if ec.IpTablesIface, err = ec.IptCreator(iptables.ProtocolIPv4); err != nil {
-			ec.Log.Error("command iptables not found")
-		}
 	}
 
 	if err = ec.Ipam.ExecDel(ec.NetConf.IPAM.Type, args.StdinData); err != nil {
@@ -143,10 +131,19 @@ func del(args *skel.CmdArgs, ec *EgressContext) (err error) {
 		return fmt.Errorf("running IPAM plugin failed: %v", err)
 	}
 
-	ec.SnatChain = utils.MustFormatChainNameWithPrefix(ec.NetConf.Name, args.ContainerID, "E4-")
 	ec.SnatComment = utils.FormatComment(ec.NetConf.Name, args.ContainerID)
+	var ipv4 bool
+	if ec.NetConf.NodeIP.To4() == nil { // NodeIP is not IPv4 address
+		ipv4 = false
+		ec.SnatChain = utils.MustFormatChainNameWithPrefix(ec.NetConf.Name, args.ContainerID, "E6-")
+		// IPv6 egress
+		ec.NetConf.IfName = egressIPv6InterfaceName
+	} else {
+		ipv4 = true
+		ec.SnatChain = utils.MustFormatChainNameWithPrefix(ec.NetConf.Name, args.ContainerID, "E4-")
+		// IPv4 egress
+		ec.NetConf.IfName = egressIPv4InterfaceName
+	}
 
-	// IPv4 egress
-	ec.NetConf.IfName = EgressIPv4InterfaceName
-	return ec.CmdDelEgressV4()
+	return ec.cmdDelEgress(ipv4)
 }

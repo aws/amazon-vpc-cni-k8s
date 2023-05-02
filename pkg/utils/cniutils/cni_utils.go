@@ -2,14 +2,17 @@ package cniutils
 
 import (
 	"fmt"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/containernetworking/cni/pkg/types/current"
+	"github.com/coreos/go-iptables/iptables"
 	"github.com/vishvananda/netlink"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/imds"
 )
 
 const (
@@ -74,6 +77,22 @@ func WaitForAddressesToBeStable(netLink netlinkwrapper.NetLink, ifName string, t
 	}
 }
 
+// GetNodeMetadata calling node local imds metadata service using provided key
+// return either a non-empty value or an error
+func GetNodeMetadata(key string) (string, error) {
+	var value string
+	var err error
+	for {
+		value, err = imds.GetMetaData(key)
+		if err != nil {
+			return "", err
+		}
+		if value != "" {
+			return value, nil
+		}
+	}
+}
+
 // EnableIpForwarding sets forwarding to 1 for both IPv4 and IPv6 if applicable.
 // This func is to have a unit testable version of ip.EnableForward in ipforward_linux.go file
 // link: https://github.com/containernetworking/plugins/blob/main/pkg/ip/ipforward_linux.go#L34
@@ -109,4 +128,19 @@ func EnableIpForwarding(procSys procsyswrapper.ProcSys, ips []*current.IPConfig)
 		}
 	}
 	return nil
+}
+
+// IsLinkNotFoundError return true if err contains "Link not found"
+func IsLinkNotFoundError(err error) bool {
+	return strings.Contains(err.Error(), "Link not found")
+}
+
+// IsIptableTargetNotExist returns true if the error is from iptables indicating
+// that the target does not exist.
+func IsIptableTargetNotExist(err error) bool {
+	e, ok := err.(*iptables.Error)
+	if !ok {
+		return false
+	}
+	return e.IsNotExist()
 }

@@ -16,9 +16,8 @@ package snat
 import (
 	"net"
 
-	"github.com/coreos/go-iptables/iptables"
-
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
 )
 
 func iptRules(target, src net.IP, multicastRange, chain, comment string, useRandomFully, useHashRandom bool) [][]string {
@@ -91,31 +90,21 @@ func Add(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRange, 
 }
 
 // Del removes rules added by snat
-func Del(ipt iptableswrapper.IPTablesIface, src net.IP, chain, comment string) error {
-	err := ipt.Delete("nat", "POSTROUTING", "-s", src.String(), "-j", chain, "-m", "comment", "--comment", comment)
-	if err != nil && !isNotExist(err) {
+func Del(ipt iptableswrapper.IPTablesIface, src net.IP, chain, comment string) (err error) {
+	err = ipt.Delete("nat", "POSTROUTING", "-s", src.String(), "-j", chain, "-m", "comment", "--comment", comment)
+	if err != nil && !cniutils.IsIptableTargetNotExist(err) {
 		return err
 	}
 
 	err = ipt.ClearChain("nat", chain)
-	if err != nil && !isNotExist(err) {
+	if err != nil && !cniutils.IsIptableTargetNotExist(err) {
 		return err
 	}
 
 	err = ipt.DeleteChain("nat", chain)
-	if err != nil && !isNotExist(err) {
+	if err != nil && !cniutils.IsIptableTargetNotExist(err) {
 		return err
 	}
 
 	return nil
-}
-
-// isNotExist returns true if the error is from iptables indicating
-// that the target does not exist.
-func isNotExist(err error) bool {
-	e, ok := err.(*iptables.Error)
-	if !ok {
-		return false
-	}
-	return e.IsNotExist()
 }

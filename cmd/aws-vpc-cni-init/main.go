@@ -21,6 +21,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/cp"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/imds"
+
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
@@ -33,10 +34,12 @@ const (
 	metadataMAC                     = "mac"
 	defaultDisableIPv4TcpEarlyDemux = false
 	defaultEnableIPv6               = false
+	defaultEnableIPv6Egress         = false
 
 	envDisableIPv4TcpEarlyDemux = "DISABLE_TCP_EARLY_DEMUX"
 	envEnableIPv6               = "ENABLE_IPv6"
 	envHostCniBinPath           = "HOST_CNI_BIN_PATH"
+	envEgressV6                 = "ENABLE_V6_EGRESS"
 )
 
 func getNodePrimaryIF() (string, error) {
@@ -110,19 +113,22 @@ func configureIPv6Settings(procSys procsyswrapper.ProcSys, primaryIF string) err
 		}
 		val, _ := procSys.Get(entry)
 		log.Infof("Updated %s to %s", entry, val)
-
-		entry = "net/ipv6/conf/all/forwarding"
+	}
+	// Check if IPv6 egress supporting is enabled in IPv4 cluster
+	ipv6EgressEnabled := utils.GetBoolAsStringEnvVar(envEgressV6, defaultEnableIPv6Egress)
+	if enableIPv6 || ipv6EgressEnabled {
+		entry := "net/ipv6/conf/all/forwarding"
 		err = procSys.Set(entry, "1")
 		if err != nil {
-			return errors.Wrap(err, "Failed to enable ipv6 forwarding")
+			return errors.Wrap(err, "Failed to enable IPv6 forwarding")
 		}
-		val, _ = procSys.Get(entry)
+		val, _ := procSys.Get(entry)
 		log.Infof("Updated %s to %s", entry, val)
 
 		entry = "net/ipv6/conf/" + primaryIF + "/accept_ra"
 		err = procSys.Set(entry, "2")
 		if err != nil {
-			return errors.Wrap(err, "Failed to enable ipv6 accept_ra")
+			return errors.Wrap(err, "Failed to enable IPv6 accept_ra")
 		}
 		val, _ = procSys.Get(entry)
 		log.Infof("Updated %s to %s", entry, val)

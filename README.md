@@ -105,13 +105,23 @@ The following environment variables are available, and all of them are optional.
 
 ---
 
+#### `ENABLE_V6_EGRESS` (v1.13.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Specifies whether PODs in v4 cluster support IPv6 egress. If env is set to `true`, range `fd00::ac:00/118` is reserved for IPv6 egress.
+
+---
+
 #### `AWS_MANAGE_ENIS_NON_SCHEDULABLE` (v1.12.6+)
 
 Type: Boolean as a String
 
 Default: `false`
 
-Specifies whether IPAMD should allocate or deallocate ENIs on a non-schedulable node. 
+Specifies whether IPAMD should allocate or deallocate ENIs on a non-schedulable node.
 
 ---
 
