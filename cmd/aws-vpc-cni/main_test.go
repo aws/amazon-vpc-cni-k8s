@@ -13,15 +13,22 @@ const (
 	nodeIP      = "10.0.0.0"
 )
 
+var getPrimaryIPMock = func(ipv4 bool) (string, error) {
+	if ipv4 {
+		return "10.0.0.0", nil
+	}
+	return "2600::", nil
+}
+
 // Validate that generateJSON runs against default conflist without error
 func TestGenerateJSON(t *testing.T) {
-	err := generateJSON(awsConflist, devNull, nodeIP)
+	err := generateJSON(awsConflist, devNull, getPrimaryIPMock)
 	assert.NoError(t, err)
 }
 
 // Validate that generateJSON runs without error when bandwidth plugin is added to default conflist
 func TestGenerateJSONPlusBandwidth(t *testing.T) {
 	_ = os.Setenv(envEnBandwidthPlugin, "true")
-	err := generateJSON(awsConflist, devNull, nodeIP)
+	err := generateJSON(awsConflist, devNull, getPrimaryIPMock)
 	assert.NoError(t, err)
 }

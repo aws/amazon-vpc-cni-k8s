@@ -25,11 +25,11 @@ import (
 )
 
 const (
-	// EgressIPv4InterfaceName interface name used in container ns for IPv4 egress traffic
-	EgressIPv4InterfaceName = "v4if0"
+	// egressIPv4InterfaceName interface name used in container ns for IPv4 egress traffic
+	egressIPv4InterfaceName = "v4if0"
 
-	// EgressIPv6InterfaceName interface name used in container ns for IPv6 egress traffic
-	EgressIPv6InterfaceName = "v6if0"
+	// egressIPv6InterfaceName interface name used in container ns for IPv6 egress traffic
+	egressIPv6InterfaceName = "v6if0"
 )
 
 // NetConf is our CNI config structure

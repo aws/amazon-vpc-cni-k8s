@@ -118,6 +118,9 @@ const (
 	// envVethPrefixDefault is the default value for the veth prefix
 	envVethPrefixDefault = "eni"
 
+	// envEnIpv6Egress is the environment variable to enable IPv6 egress support on EKS v4 cluster
+	envEnIpv6Egress = "ENABLE_V6_EGRESS"
+
 	// Range of MTU for each ENI and veth pair. Defaults to maximumMTU
 	minimumMTU = 576
 	maximumMTU = 9001
@@ -156,6 +159,7 @@ type NetworkAPIs interface {
 
 type linuxNetwork struct {
 	useExternalSNAT        bool
+	ipv6EgressEnabled      bool
 	excludeSNATCIDRs       []string
 	externalServiceCIDRs   []string
 	typeOfSNAT             snatType
@@ -182,6 +186,7 @@ const (
 func New() NetworkAPIs {
 	return &linuxNetwork{
 		useExternalSNAT:        useExternalSNAT(),
+		ipv6EgressEnabled:      ipV6EgressEnabled(),
 		excludeSNATCIDRs:       parseCIDRString(envExcludeSNATCIDRs),
 		externalServiceCIDRs:   parseCIDRString(envExternalServiceCIDRs),
 		typeOfSNAT:             typeOfSNAT(),
@@ -224,41 +229,54 @@ func findPrimaryInterfaceName(primaryMAC string) (string, error) {
 }
 
 func (n *linuxNetwork) enableIPv6() (err error) {
-	if err = n.setupRuleToBlockNodeLocalV4Access(); err != nil {
+	if err = n.setupRuleToBlockNodeLocalAccess(iptables.ProtocolIPv4); err != nil {
 		return errors.Wrapf(err, "setupVeth network: failed to setup route to block pod access via IPv4 address")
 	}
 	return nil
 }
 
 func (n *linuxNetwork) SetupRuleToBlockNodeLocalV4Access() error {
-	return n.setupRuleToBlockNodeLocalV4Access()
+	return n.setupRuleToBlockNodeLocalAccess(iptables.ProtocolIPv4)
 }
 
-// Setup a rule to block traffic directed to v4 interface of the Pod
-func (n *linuxNetwork) setupRuleToBlockNodeLocalV4Access() error {
-	ipt, err := n.newIptables(iptables.ProtocolIPv4)
-	if err != nil {
-		return errors.Wrap(err, "failed to create iptables")
+func (n *linuxNetwork) SetupRuleToBlockNodeLocalV6Access() error {
+	return n.setupRuleToBlockNodeLocalAccess(iptables.ProtocolIPv6)
+}
+
+// Set up a rule to block traffic directed to v4/v6 egress interface of the Pod
+func (n *linuxNetwork) setupRuleToBlockNodeLocalAccess(protocol iptables.Protocol) error {
+	ipVersion := "v4"
+	localIpCidr := "169.254.172.0/22"
+	iptableCmd := "iptables"
+	if protocol == iptables.ProtocolIPv6 {
+		ipVersion = "v6"
+		localIpCidr = "fd00::ac:00/118"
+		iptableCmd = "ip6tables"
 	}
 
-	v4DenyRule := iptablesRule{
-		name:  "Block Node Local Pod access via IPv4",
+	ipt, err := n.newIptables(protocol)
+	if err != nil {
+		return errors.Wrap(err, fmt.Sprintf("failed to create %s", iptableCmd))
+	}
+
+	denyRule := iptablesRule{
+		name:  fmt.Sprintf("Block Node Local Pod access via IP%s", ipVersion),
 		table: "filter",
 		chain: "FORWARD",
 		rule: []string{
-			"-d", "169.254.172.0/22", "-m", "conntrack",
-			"--ctstate", "NEW", "-m", "comment", "--comment", "Block Node Local Pod access via IPv4", "-j", "REJECT",
+			"-d", localIpCidr, "-m", "conntrack",
+			"--ctstate", "NEW", "-m", "comment", "--comment", fmt.Sprintf("Block Node Local Pod access via IP%s", ipVersion), "-j", "REJECT",
 		},
 	}
 
-	if exists, err := ipt.Exists(v4DenyRule.table, v4DenyRule.chain, v4DenyRule.rule...); exists && err == nil {
-		log.Info("Rule to block Node Local Pod access via IPv4 is already present. Moving on.. ")
+	if exists, err := ipt.Exists(denyRule.table, denyRule.chain, denyRule.rule...); exists && err == nil {
+		log.Info(fmt.Sprintf("Rule to block Node Local Pod access via IP%s is already present. Moving on.. ", ipVersion))
 		return nil
 	}
 
-	//Let's add the rule. Rule is either missing (or) we're not able to validate it's presence.
-	if err := ipt.Insert(v4DenyRule.table, v4DenyRule.chain, 1, v4DenyRule.rule...); err != nil {
-		return fmt.Errorf("failed adding v4 drop route: %v", err)
+	//Let's add the rule. Rule is either missing (or) we're not able to validate its presence.
+	if err := ipt.Insert(denyRule.table, denyRule.chain, 1, denyRule.rule...); err != nil {
+		return fmt.Errorf("failed adding %s drop route: %v", ipVersion, err)
 	}
 	return nil
 }
@@ -282,6 +300,10 @@ func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, 
 		ipFamily = unix.AF_INET6
 		if err := n.enableIPv6(); err != nil {
 			return errors.Wrapf(err, "failed to enable IPv6")
+		}
+	} else if n.ipv6EgressEnabled {
+		if err := n.setupRuleToBlockNodeLocalAccess(iptables.ProtocolIPv6); err != nil {
+			return errors.Wrapf(err, "failed to block node local v6 access")
 		}
 	}
 
@@ -768,6 +790,14 @@ func (n *linuxNetwork) UseExternalSNAT() bool {
 
 func useExternalSNAT() bool {
 	return getBoolEnvVar(envExternalSNAT, false)
+}
+
+func (n *linuxNetwork) Ipv6EgressEnabled() bool {
+	return ipV6EgressEnabled()
+}
+
+func ipV6EgressEnabled() bool {
+	return getBoolEnvVar(envEnIpv6Egress, false)
 }
 
 // GetExcludeSNATCIDRs returns a list of CIDRs that should be excluded from SNAT if UseExternalSNAT is false,

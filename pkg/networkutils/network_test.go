@@ -225,6 +225,7 @@ func TestSetupHostNetworkNodePortEnabledAndSNATDisabled(t *testing.T) {
 
 	ln := &linuxNetwork{
 		useExternalSNAT:        true,
+		ipv6EgressEnabled:      true,
 		nodePortSupportEnabled: true,
 		mainENIMark:            defaultConnmark,
 		mtu:                    testMTU,
@@ -246,6 +247,14 @@ func TestSetupHostNetworkNodePortEnabledAndSNATDisabled(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, map[string]map[string][][]string{
+		"filter": {
+			"FORWARD": [][]string{
+				{
+					"-d", "fd00::ac:00/118", "-m", "conntrack", "--ctstate", "NEW", "-m", "comment",
+					"--comment", "Block Node Local Pod access via IPv6", "-j", "REJECT",
+				},
+			},
+		},
 		"mangle": {
 			"PREROUTING": [][]string{
 				{
@@ -273,6 +282,7 @@ func TestSetupHostNetworkNodePortDisabledAndSNATEnabled(t *testing.T) {
 
 	ln := &linuxNetwork{
 		useExternalSNAT:        false,
+		ipv6EgressEnabled:      false,
 		nodePortSupportEnabled: false,
 		mainENIMark:            defaultConnmark,
 		mtu:                    testMTU,
@@ -344,6 +354,7 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 
 	ln := &linuxNetwork{
 		useExternalSNAT:        false,
+		ipv6EgressEnabled:      false,
 		excludeSNATCIDRs:       []string{"10.12.0.0/16", "10.13.0.0/16"},
 		nodePortSupportEnabled: true,
 		mainENIMark:            defaultConnmark,
@@ -396,6 +407,7 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 
 	ln := &linuxNetwork{
 		useExternalSNAT:        false,
+		ipv6EgressEnabled:      false,
 		excludeSNATCIDRs:       nil,
 		nodePortSupportEnabled: true,
 		mainENIMark:            defaultConnmark,
@@ -464,6 +476,7 @@ func TestSetupHostNetworkWithDifferentVethPrefix(t *testing.T) {
 
 	ln := &linuxNetwork{
 		useExternalSNAT:        false,
+		ipv6EgressEnabled:      false,
 		excludeSNATCIDRs:       []string{"10.12.0.0/16", "10.13.0.0/16"},
 		nodePortSupportEnabled: true,
 		mainENIMark:            defaultConnmark,
@@ -531,6 +544,7 @@ func TestSetupHostNetworkExternalNATCleanupConnmark(t *testing.T) {
 
 	ln := &linuxNetwork{
 		useExternalSNAT:        true,
+		ipv6EgressEnabled:      false,
 		excludeSNATCIDRs:       []string{"10.12.0.0/16", "10.13.0.0/16"},
 		nodePortSupportEnabled: true,
 		mainENIMark:            defaultConnmark,
@@ -595,6 +609,7 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 
 	ln := &linuxNetwork{
 		useExternalSNAT:        false,
+		ipv6EgressEnabled:      false,
 		excludeSNATCIDRs:       []string{"10.12.0.0/16", "10.13.0.0/16"},
 		nodePortSupportEnabled: true,
 		mainENIMark:            defaultConnmark,
@@ -663,6 +678,7 @@ func TestUpdateHostIptablesRules(t *testing.T) {
 
 	ln := &linuxNetwork{
 		useExternalSNAT:        false,
+		ipv6EgressEnabled:      true,
 		nodePortSupportEnabled: true,
 		mainENIMark:            defaultConnmark,
 		mtu:                    testMTU,
@@ -704,6 +720,14 @@ func TestUpdateHostIptablesRules(t *testing.T) {
 					{"-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0"},
 					{"-i", "veth+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0"},
 					{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+				},
+			},
+			"filter": {
+				"FORWARD": [][]string{
+					{
+						"-d", "fd00::ac:00/118", "-m", "conntrack", "--ctstate", "NEW", "-m", "comment",
+						"--comment", "Block Node Local Pod access via IPv6", "-j", "REJECT",
+					},
 				},
 			},
 			"mangle": {

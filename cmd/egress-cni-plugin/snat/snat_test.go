@@ -36,8 +36,8 @@ const (
 )
 
 var (
-	//containerIpv6 = net.ParseIP("fd00::10")
-	//nodeIPv6        = net.ParseIP("2600::")
+	containerIpv6 = net.ParseIP("fd00::10")
+	nodeIPv6      = net.ParseIP("2600::")
 	containerIPv4 = net.ParseIP("169.254.172.10")
 	nodeIPv4      = net.ParseIP("192.168.1.123")
 )
