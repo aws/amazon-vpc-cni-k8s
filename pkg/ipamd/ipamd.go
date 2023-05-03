@@ -118,8 +118,11 @@ const (
 	// should not manage it in any form.
 	eniNoManageTagKey = "node.k8s.amazonaws.com/no_manage"
 
-	// disableENIProvisioning is used to specify that ENI doesn't need to be synced during initializing a pod.
+	// disableENIProvisioning is used to specify that ENIs do not need to be synced during initializing a pod.
 	envDisableENIProvisioning = "DISABLE_NETWORK_RESOURCE_PROVISIONING"
+
+	// disableLeakedENICleanup is used to specify that the task checking and cleaning up leaked ENIs should not be run.
+	envDisableLeakedENICleanup = "DISABLE_LEAKED_ENI_CLEANUP"
 
 	// Specify where ipam should persist its current IP<->container allocations.
 	envBackingStorePath     = "AWS_VPC_K8S_CNI_BACKING_STORE"
@@ -382,7 +385,6 @@ func (c *IPAMContext) inInsufficientCidrCoolingPeriod() bool {
 func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContext, error) {
 	prometheusRegister()
 	c := &IPAMContext{}
-
 	c.rawK8SClient = rawK8SClient
 	c.cachedK8SClient = cachedK8SClient
 	c.networkClient = networkutils.New()
@@ -391,10 +393,9 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.enablePrefixDelegation = usePrefixDelegation()
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
+	c.disableENIProvisioning = disableENIProvisioning()
 
-	c.disableENIProvisioning = disablingENIProvisioning()
-
-	client, err := awsutils.New(c.useCustomNetworking, c.disableENIProvisioning, c.enableIPv4, c.enableIPv6, c.eventRecorder)
+	client, err := awsutils.New(c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6, c.eventRecorder)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
@@ -759,10 +760,8 @@ func (c *IPAMContext) tryFreeENI() {
 // tryUnassignIPsorPrefixesFromAll determines if there are IPs to free when we have extra IPs beyond the target and warmIPTargetDefined
 // is enabled, deallocate extra IP addresses
 func (c *IPAMContext) tryUnassignCidrsFromAll() {
-
 	_, over, warmTargetDefined := c.datastoreTargetState()
-
-	//WARM IP targets not defined then check if WARM_PREFIX_TARGET is defined.
+	// If WARM IP targets are not defined, check if WARM_PREFIX_TARGET is defined.
 	if !warmTargetDefined {
 		over = c.computeExtraPrefixesOverWarmTarget()
 	}
@@ -770,7 +769,7 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 	if over > 0 {
 		eniInfos := c.dataStore.GetENIInfos()
 		for eniID := range eniInfos.ENIs {
-			//Either returns prefixes or IPs [Cidrs]
+			// Either returns prefixes or IPs [Cidrs]
 			cidrs := c.dataStore.FindFreeableCidrs(eniID)
 			if cidrs == nil {
 				log.Errorf("Error finding unassigned IPs for ENI %s", eniID)
@@ -781,7 +780,6 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 			// this ENI. In that case we should only free the number of available Cidrs.
 			numFreeable := min(over, len(cidrs))
 			cidrs = cidrs[:numFreeable]
-
 			if len(cidrs) == 0 {
 				continue
 			}
@@ -789,7 +787,7 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 			// Delete IPs from datastore
 			var deletedCidrs []datastore.CidrInfo
 			for _, toDelete := range cidrs {
-				// Don't force the delete, since a freeable Cidrs might have been assigned to a pod
+				// Do not force the delete, since a freeable Cidr might have been assigned to a pod
 				// before we get around to deleting it.
 				err := c.dataStore.DelIPv4CidrFromStore(eniID, toDelete.Cidr, false /* force */)
 				if err != nil {
@@ -801,7 +799,7 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 				}
 			}
 
-			// Deallocate Cidrs from the instance if they aren't used by pods.
+			// Deallocate Cidrs from the instance if they are not used by pods.
 			c.DeallocCidrs(eniID, deletedCidrs)
 		}
 	}
@@ -887,7 +885,6 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 
 	if c.useCustomNetworking {
 		eniCfg, err := eniconfig.MyENIConfig(ctx, c.cachedK8SClient)
-
 		if err != nil {
 			log.Errorf("Failed to get pod ENI config")
 			return err
@@ -909,7 +906,6 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 	}
 
 	resourcesToAllocate := c.GetENIResourcesToAllocate()
-
 	_, err = c.awsClient.AllocIPAddresses(eni, resourcesToAllocate)
 	if err != nil {
 		log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", resourcesToAllocate, err)
@@ -1771,8 +1767,16 @@ func getMinimumIPTarget() int {
 	return noMinimumIPTarget
 }
 
-func disablingENIProvisioning() bool {
+func disableENIProvisioning() bool {
 	return getEnvBoolWithDefault(envDisableENIProvisioning, false)
+}
+
+func disableLeakedENICleanup() bool {
+	// Cases where leaked ENI cleanup is disabled:
+	// 1. IPv6 is enabled, so no ENIs are attached
+	// 2. ENI provisioning is disabled, so ENIs are not managed by IPAMD
+	// 3. Environment var explicitly disabling task is set
+	return isIPv6Enabled() || disableENIProvisioning() || getEnvBoolWithDefault(envDisableLeakedENICleanup, false)
 }
 
 func enablePodENI() bool {
@@ -1832,7 +1836,6 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 // accounting for the MINIMUM_IP_TARGET
 // With prefix delegation this function determines the number of Prefixes `short` or `over`
 func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool) {
-
 	if c.warmIPTarget == noWarmIPTarget && c.minimumIPTarget == noMinimumIPTarget {
 		// there is no WARM_IP_TARGET defined and no MINIMUM_IP_TARGET, fallback to use all IP addresses on ENI
 		return 0, 0, false
@@ -1854,10 +1857,8 @@ func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool)
 	over = max(min(over, stats.TotalIPs-c.minimumIPTarget), 0)
 
 	if c.enablePrefixDelegation {
-
-		//short : number of IPs short to reach warm targets
-		//over : number of IPs over the warm targets
-
+		// short : number of IPs short to reach warm targets
+		// over : number of IPs over the warm targets
 		_, numIPsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
 		// Number of prefixes IPAMD is short of to achieve warm targets
 		shortPrefix := datastore.DivCeil(short, numIPsPerPrefix)
