@@ -771,7 +771,7 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 			cidrs := c.dataStore.FindFreeableCidrs(eniID)
 			if cidrs == nil {
 				log.Errorf("Error finding unassigned IPs for ENI %s", eniID)
-				return
+				continue
 			}
 
 			// Free the number of Cidrs `over` the warm IP target, unless `over` is greater than the number of available Cidrs on
@@ -799,6 +799,11 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 
 			// Deallocate Cidrs from the instance if they are not used by pods.
 			c.DeallocCidrs(eniID, deletedCidrs)
+
+			// reduce the deallocation target, if the deallocation target is achieved, we can exit
+			if over = over - len(deletedCidrs); over <= 0 {
+				break
+			}
 		}
 	}
 }
