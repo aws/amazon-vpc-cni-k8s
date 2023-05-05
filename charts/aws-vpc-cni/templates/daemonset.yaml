@@ -84,6 +84,7 @@ spec:
             - name: MY_NODE_NAME
               valueFrom:
                 fieldRef:
+                  apiVersion: v1
                   fieldPath: spec.nodeName
             - name: MY_POD_NAME
               valueFrom:
