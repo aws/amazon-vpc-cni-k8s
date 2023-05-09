@@ -1,6 +1,6 @@
 module github.com/aws/amazon-vpc-cni-k8s/test/agent
 
-go 1.18
+go 1.20
 
 require (
 	github.com/coreos/go-iptables v0.6.0
