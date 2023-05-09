@@ -42,7 +42,6 @@ type InterfaceTypeToPodList struct {
 }
 
 func GetPodNetworkingValidationInput(interfaceTypeToPodList InterfaceTypeToPodList, vpcCIDRs []string) input.PodNetworkingValidationInput {
-
 	ip := input.PodNetworkingValidationInput{
 		VPCCidrRange: vpcCIDRs,
 		VethPrefix:   "eni",
@@ -67,7 +66,6 @@ func GetPodNetworkingValidationInput(interfaceTypeToPodList InterfaceTypeToPodLi
 			IsIPFromSecondaryENI: true,
 		})
 	}
-
 	return ip
 }
 
