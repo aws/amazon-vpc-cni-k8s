@@ -24,6 +24,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/pkg/errors"
@@ -425,8 +426,8 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 					cidr.IPAddresses[ipAddr.String()] = addr
 					ds.assignPodIPAddressUnsafe(addr, allocation.IPAMKey, allocation.Metadata, time.Unix(0, allocation.AllocationTimestamp))
 					ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
-					//Update prometheus for ips per cidr
-					//Secondary IP mode will have /32:1 and Prefix mode will have /28:<number of /32s>
+					// Update prometheus for ips per cidr
+					// Secondary IP mode will have /32:1 and Prefix mode will have /28:<number of /32s>
 					ipsPerCidr.With(prometheus.Labels{"cidr": cidr.Cidr.String()}).Inc()
 					break eniloop
 				}
@@ -438,6 +439,11 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 		}
 	}
 
+	// Some entries may have been purged during recovery, so write to backing store
+	if err := ds.writeBackingStoreUnsafe(); err != nil {
+		ds.log.Warnf("Unable to update backing store after restoration: %v", err)
+	}
+
 	ds.log.Debugf("Completed ipam state recovery")
 	return nil
 }
@@ -446,7 +452,7 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 	allocations := make([]CheckpointEntry, 0, ds.assigned)
 
 	for _, eni := range ds.eniPool {
-		//Loop through ENI's v4 prefixes
+		// Loop through ENI's v4 prefixes
 		for _, assignedAddr := range eni.AvailableIPv4Cidrs {
 			for _, addr := range assignedAddr.IPAddresses {
 				if addr.Assigned() {
@@ -460,7 +466,7 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 				}
 			}
 		}
-		//Loop through ENI's v6 prefixes
+		// Loop through ENI's v6 prefixes
 		for _, assignedAddr := range eni.IPv6Cidrs {
 			for _, addr := range assignedAddr.IPAddresses {
 				if addr.Assigned() {
@@ -665,7 +671,7 @@ func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 		return addr.Address, eni.DeviceNumber, nil
 	}
 
-	//In IPv6 Prefix Delegation mode, eniPool will only have Primary ENI.
+	// In IPv6 Prefix Delegation mode, eniPool will only have Primary ENI.
 	for _, eni := range ds.eniPool {
 		if len(eni.IPv6Cidrs) == 0 {
 			continue
@@ -723,19 +729,19 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 				strPrivateIPv4, err = ds.getFreeIPv4AddrfromCidr(availableCidr)
 				if err != nil {
 					ds.log.Debugf("Unable to get IP address from CIDR: %v", err)
-					//Check in next CIDR
+					// Check in next CIDR
 					continue
 				}
 				ds.log.Debugf("New IP from CIDR pool- %s", strPrivateIPv4)
 				if availableCidr.IPAddresses == nil {
 					availableCidr.IPAddresses = make(map[string]*AddressInfo)
 				}
-				//Update prometheus for ips per cidr
-				//Secondary IP mode will have /32:1 and Prefix mode will have /28:<number of /32s>
+				// Update prometheus for ips per cidr
+				// Secondary IP mode will have /32:1 and Prefix mode will have /28:<number of /32s>
 				ipsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Inc()
 			} else {
-				//This can happen during upgrade or PD enable/disable knob toggle
-				//ENI can have prefixes attached and no space for SIPs or vice versa
+				// This can happen during upgrade or PD enable/disable knob toggle
+				// ENI can have prefixes attached and no space for SIPs or vice versa
 				continue
 			}
 
@@ -753,9 +759,9 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 				ds.log.Warnf("Failed to update backing store: %v", err)
 				// Important! Unwind assignment
 				ds.unassignPodIPAddressUnsafe(addr)
-				//Remove the IP from eni DB
+				// Remove the IP from eni DB
 				delete(availableCidr.IPAddresses, addr.Address)
-				//Update prometheus for ips per cidr
+				// Update prometheus for ips per cidr
 				ipsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
 				return "", -1, err
 			}
@@ -1465,22 +1471,27 @@ func (ds *DataStore) CheckFreeableENIexists() bool {
 }
 
 // NormalizeCheckpointDataByPodVethExistence will normalize checkpoint data by removing allocations that do not have a corresponding pod veth.
-// This should not happen unless container runtimes have bugs that failed to invoke the cmdDel for died pods.
-// We use this reconciliation as a safety mechanism during transition from CRI to state file.
+// This can happen if pods are deleted while IPAMD is inactive.
 func (ds *DataStore) normalizeCheckpointDataByPodVethExistence(checkpoint CheckpointData) (CheckpointData, error) {
 	hostNSLinks, err := ds.netLink.LinkList()
 	if err != nil {
 		return CheckpointData{}, err
 	}
 	var validatedAllocations []CheckpointEntry
+	var staleAllocations []CheckpointEntry
 	for _, allocation := range checkpoint.Allocations {
 		if err := ds.validateAllocationByPodVethExistence(allocation, hostNSLinks); err != nil {
-			ds.log.Warnf("ignore IP allocation for %v:%v,%v due to %v", allocation.ContainerID, allocation.IPv4, allocation.IPv6, err)
+			ds.log.Warnf("stale IP allocation for ID(%v): IPv4(%v), IPv6(%v) due to %v", allocation.ContainerID, allocation.IPv4, allocation.IPv6, err)
+			staleAllocations = append(staleAllocations, allocation)
 		} else {
 			validatedAllocations = append(validatedAllocations, allocation)
 		}
 	}
 	checkpoint.Allocations = validatedAllocations
+	// Stale allocations may have dangling IP rules that need cleanup
+	if len(staleAllocations) > 0 {
+		ds.PruneStaleAllocations(staleAllocations)
+	}
 	return checkpoint, nil
 }
 
@@ -1498,4 +1509,66 @@ func (ds *DataStore) validateAllocationByPodVethExistence(allocation CheckpointE
 		}
 	}
 	return errors.Errorf("host-side veth not found for pod %v/%v", allocation.Metadata.K8SPodNamespace, allocation.Metadata.K8SPodName)
+}
+
+// For each stale allocation, cleanup leaked IP rules if they exist
+func (ds *DataStore) PruneStaleAllocations(staleAllocations []CheckpointEntry) {
+	ds.log.Info("Pruning potentially stale IP rules")
+	for _, allocation := range staleAllocations {
+		ds.DeleteToContainerRule(&allocation)
+		ds.DeleteFromContainerRule(&allocation)
+	}
+}
+
+func (ds *DataStore) DeleteToContainerRule(entry *CheckpointEntry) {
+	ds.log.Infof("Delete toContainer rule for v4: %s, v6: %s", entry.IPv4, entry.IPv6)
+	// Remove toContainer rule, if it exists. Note that toContainer rule will always be in main routing table.
+	toContainerRule := ds.netLink.NewRule()
+	toContainerRule.Priority = networkutils.ToContainerRulePriority
+	toContainerRule.Table = unix.RT_TABLE_MAIN
+	var addr *net.IPNet
+
+	if entry.IPv4 != "" {
+		addr = &net.IPNet{
+			IP:   net.ParseIP(entry.IPv4),
+			Mask: net.CIDRMask(32, 32),
+		}
+	} else {
+		addr = &net.IPNet{
+			IP:   net.ParseIP(entry.IPv6),
+			Mask: net.CIDRMask(128, 128),
+		}
+	}
+	toContainerRule.Dst = addr
+	if err := ds.netLink.RuleDel(toContainerRule); err != nil && !networkutils.ContainsNoSuchRule(err) {
+		// Continue to prune, even on deletion error
+		ds.log.Errorf("failed to delete toContainer rule, addr=%s", addr.String())
+	}
+}
+
+func (ds *DataStore) DeleteFromContainerRule(entry *CheckpointEntry) {
+	ds.log.Infof("Delete fromContainer rule for v4: %s, v6: %s", entry.IPv4, entry.IPv6)
+	// Remove fromContainer rule, if it exists. Note that fromContainer rule can be in any routing table,
+	// so no table is set.
+	fromContainerRule := ds.netLink.NewRule()
+	fromContainerRule.Priority = networkutils.FromPodRulePriority
+	fromContainerRule.Table = unix.RT_TABLE_UNSPEC
+	var addr *net.IPNet
+
+	if entry.IPv4 != "" {
+		addr = &net.IPNet{
+			IP:   net.ParseIP(entry.IPv4),
+			Mask: net.CIDRMask(32, 32),
+		}
+	} else {
+		addr = &net.IPNet{
+			IP:   net.ParseIP(entry.IPv6),
+			Mask: net.CIDRMask(128, 128),
+		}
+	}
+	fromContainerRule.Src = addr
+	if err := ds.netLink.RuleDel(fromContainerRule); err != nil && !networkutils.ContainsNoSuchRule(err) {
+		// Continue to prune, even on deletion error
+		ds.log.Errorf("failed to delete fromPod rule, addr=%s", addr.String())
+	}
 }

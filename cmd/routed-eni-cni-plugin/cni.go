@@ -172,9 +172,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		})
 
 	if err != nil {
-		log.Errorf("Error received from AddNetwork grpc call for containerID %s: %v",
-			args.ContainerID,
-			err)
+		log.Errorf("Error received from AddNetwork grpc call for containerID %s: %v", args.ContainerID, err)
 		return errors.Wrap(err, "add cmd: Error received from AddNetwork gRPC call")
 	}
 
@@ -249,8 +247,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		})
 
 		if delErr != nil {
-			log.Errorf("Error received from DelNetwork grpc call for container %s: %v",
-				args.ContainerID, delErr)
+			log.Errorf("Error received from DelNetwork grpc call for container %s: %v", args.ContainerID, delErr)
 		} else if !r.Success {
 			log.Errorf("Failed to release IP of container %s", args.ContainerID)
 		}
@@ -325,13 +322,16 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			args.ContainerID, err)
 
 		// When IPAMD is unreachable, try to teardown pod network using previous result. This action prevents rules from leaking while IPAMD is unreachable.
-		// Note that connection error is still returned to kubelet so that delete retries until IPAMD can be notified.
+		// Note that no error is returned to kubelet as there is no guarantee that kubelet will retry delete, and returning an error would prevent container runtime
+		// from cleaning up resources. When IPAMD again becomes responsive, it is responsible for reclaiming IP.
 		if teardownPodNetworkWithPrevResult(driverClient, conf, k8sArgs, args.IfName, log) {
 			log.Infof("Handled pod teardown using prevResult: ContainerID(%s) Netns(%s) IfName(%s) PodNamespace(%s) PodName(%s)",
 				args.ContainerID, args.Netns, args.IfName, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+		} else {
+			log.Infof("Could not teardown pod using prevResult: ContainerID(%s) Netns(%s) IfName(%s) PodNamespace(%s) PodName(%s)",
+				args.ContainerID, args.Netns, args.IfName, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		}
-
-		return errors.Wrap(err, "del cmd: failed to connect to backend server")
+		return nil
 	}
 	defer conn.Close()
 
@@ -356,15 +356,18 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			log.Infof("Container %s not found", args.ContainerID)
 			return nil
 		}
-		log.Errorf("Error received from DelNetwork gRPC call for container %s: %v",
-			args.ContainerID, err)
+		log.Errorf("Error received from DelNetwork gRPC call for container %s: %v", args.ContainerID, err)
 
-		//  DelNetworkRequest may return a connection error, so try to delete using PrevResult whenever an error is returned.
+		// DelNetworkRequest may return a connection error, so try to delete using PrevResult whenever an error is returned. As with the case above, do
+		// not return error to kubelet, as there is no guarantee that delete is retried.
 		if teardownPodNetworkWithPrevResult(driverClient, conf, k8sArgs, args.IfName, log) {
 			log.Infof("Handled pod teardown using prevResult: ContainerID(%s) Netns(%s) IfName(%s) PodNamespace(%s) PodName(%s)",
 				args.ContainerID, args.Netns, args.IfName, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+		} else {
+			log.Infof("Could not teardown pod using prevResult: ContainerID(%s) Netns(%s) IfName(%s) PodNamespace(%s) PodName(%s)",
+				args.ContainerID, args.Netns, args.IfName, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 		}
-		return errors.Wrap(err, "del cmd: error received from DelNetwork gRPC call")
+		return nil
 	}
 
 	if !r.Success {
@@ -470,6 +473,7 @@ func teardownPodNetworkWithPrevResult(driverClient driver.NetworkAPIs, conf *Net
 	// For non-branch ENI, prevResult is only available in v1.12.1+
 	prevResult, ok := conf.PrevResult.(*current.Result)
 	if !ok {
+		log.Infof("PrevResult not available for pod. Pod may have already been deleted.")
 		return false
 	}
 	dummyIfaceName := networkutils.GeneratePodHostVethName(dummyInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
