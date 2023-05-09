@@ -24,6 +24,15 @@ function load_test_parameters(){
   if [[ ! -z $TARGET_ADDON_VERSION ]]; then
     EXTRA_OPTIONS+=" --target-addon-version $TARGET_ADDON_VERSION"
   fi
+
+  if [[ ! -z $INITIAL_MANIFEST_FILE ]]; then
+    EXTRA_OPTIONS+=" --initial-manifest-file $INITIAL_MANIFEST_FILE"
+  fi
+
+  if [[ ! -z $TARGET_MANIFEST_FILE ]]; then
+    EXTRA_OPTIONS+=" --target-manifest-file $TARGET_MANIFEST_FILE"
+  fi
+
 }
 
 function run_ginkgo_test() {
