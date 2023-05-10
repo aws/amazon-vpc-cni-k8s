@@ -57,6 +57,9 @@ var _ = Describe("test host networking", func() {
 				"AWS_VPC_ENI_MTU":            DEFAULT_MTU_VAL,
 				"AWS_VPC_K8S_CNI_VETHPREFIX": DEFAULT_VETH_PREFIX,
 			})
+			// After updating daemonset pod, we must wait until conflist is updated so that container-runtime calls CNI ADD with the latest VETH prefix and MTU.
+			// Otherwise, the stale value can cause failures in future test cases.
+			time.Sleep(utils.PollIntervalMedium)
 		})
 		It("should have correct host networking setup when running and cleaned up once terminated", func() {
 			// Launch enough pods so some pods end up using primary ENI IP and some using secondary
@@ -113,6 +116,8 @@ var _ = Describe("test host networking", func() {
 				"AWS_VPC_ENI_MTU":            strconv.Itoa(NEW_MTU_VAL),
 				"AWS_VPC_K8S_CNI_VETHPREFIX": NEW_VETH_PREFIX,
 			})
+			// After updating daemonset pod, we must wait until conflist is updated so that container-runtime calls CNI ADD with the new VETH prefix and MTU.
+			time.Sleep(utils.PollIntervalMedium)
 
 			By("creating a deployment to launch pods")
 			deployment, err = f.K8sResourceManagers.DeploymentManager().
@@ -149,7 +154,6 @@ var _ = Describe("test host networking", func() {
 
 	Context("when host networking is tested on invalid input", func() {
 		It("tester pod should error out", func() {
-
 			By("creating a single pod on the test node")
 			parkingPod := manifest.NewDefaultPodBuilder().
 				Container(manifest.NewBusyBoxContainerBuilder().Build()).
@@ -157,8 +161,7 @@ var _ = Describe("test host networking", func() {
 				NodeName(primaryNode.Name).
 				Build()
 
-			parkingPod, err = f.K8sResourceManagers.PodManager().
-				CreatAndWaitTillRunning(parkingPod)
+			parkingPod, err = f.K8sResourceManagers.PodManager().CreatAndWaitTillRunning(parkingPod)
 			Expect(err).ToNot(HaveOccurred())
 
 			validInput, err := common.GetPodNetworkingValidationInput(common.InterfaceTypeToPodList{

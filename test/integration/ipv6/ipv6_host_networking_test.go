@@ -58,6 +58,9 @@ var _ = Describe("[CANARY] test ipv6 host netns setup", func() {
 				AWS_VPC_ENI_MTU:            DEFAULT_MTU_VAL,
 				AWS_VPC_K8S_CNI_VETHPREFIX: DEFAULT_VETH_PREFIX,
 			})
+			// After updating daemonset pod, we must wait until conflist is updated so that container-runtime calls CNI ADD with the latest VETH prefix and MTU.
+			// Otherwise, the stale value can cause failures in future test cases.
+			time.Sleep(utils.PollIntervalMedium)
 		})
 		It("should have correct host netns setup when running and cleaned up once terminated", func() {
 			deployment := manifest.NewBusyBoxDeploymentBuilder().
@@ -74,8 +77,7 @@ var _ = Describe("[CANARY] test ipv6 host netns setup", func() {
 			By("getting the list of IPv6 pods using IPs from primary ENI")
 			podList := GetIPv6Pods(podLabelKey, podLabelVal)
 
-			Expect(len(podList.Items)).
-				Should(BeNumerically(">", 0))
+			Expect(len(podList.Items)).Should(BeNumerically(">", 0))
 
 			By("generating the pod networking validation input to be passed to tester")
 			input, err := GetIPv6PodNetworkingValidationInput(podList).Serialize()
@@ -108,6 +110,8 @@ var _ = Describe("[CANARY] test ipv6 host netns setup", func() {
 				AWS_VPC_ENI_MTU:            strconv.Itoa(NEW_MTU_VAL),
 				AWS_VPC_K8S_CNI_VETHPREFIX: NEW_VETH_PREFIX,
 			})
+			// After updating daemonset pod, we must wait until conflist is updated so that container-runtime calls CNI ADD with the new VETH prefix and MTU.
+			time.Sleep(utils.PollIntervalMedium)
 
 			By("creating a deployment to launch pods")
 			deployment, err = f.K8sResourceManagers.DeploymentManager().
@@ -144,7 +148,6 @@ var _ = Describe("[CANARY] test ipv6 host netns setup", func() {
 
 	Context("when host netns setup is tested on invalid input", func() {
 		It("tester pod should error out", func() {
-
 			By("creating a single pod on the test node")
 			parkingPod := manifest.NewDefaultPodBuilder().
 				Container(manifest.NewBusyBoxContainerBuilder().Build()).
@@ -228,19 +231,16 @@ func ValidateHostNetworking(testType TestType, podValidationInputString string) 
 		Build()
 
 	By("creating pod to test host networking setup")
-	testPod, err := f.K8sResourceManagers.PodManager().
-		CreateAndWaitTillPodCompleted(testPod)
-	logs, errLogs := f.K8sResourceManagers.PodManager().
-		PodLogs(testPod.Namespace, testPod.Name)
-	Expect(errLogs).ToNot(HaveOccurred())
-
-	fmt.Fprintln(GinkgoWriter, logs)
-
+	testPod, err := f.K8sResourceManagers.PodManager().CreateAndWaitTillPodCompleted(testPod)
 	if shouldTestPodError {
 		Expect(err).To(HaveOccurred())
 	} else {
 		Expect(err).ToNot(HaveOccurred())
 	}
+	logs, errLogs := f.K8sResourceManagers.PodManager().
+		PodLogs(testPod.Namespace, testPod.Name)
+	Expect(errLogs).ToNot(HaveOccurred())
+	fmt.Fprintln(GinkgoWriter, logs)
 
 	By("deleting the host networking setup pod")
 	err = f.K8sResourceManagers.PodManager().
