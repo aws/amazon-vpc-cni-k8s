@@ -107,6 +107,8 @@ The following environment variables are available, and all of them are optional.
 
 #### `ENABLE_V6_EGRESS` (v1.13.0+)
 
+🚨 This feature is under active development. This feature is not released. 
+
 Type: Boolean as a String
 
 Default: `false`
