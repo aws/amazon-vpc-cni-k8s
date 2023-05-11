@@ -26,6 +26,21 @@ var testInstanceIdentityDocument = ec2metadata.EC2InstanceIdentityDocument{
 	Architecture:     "x86_64",
 }
 
+func TestNewMetricsClientWithValidInstanceIdentityDocument(t *testing.T) {
+	ec2wrap, err := NewMetricsClient()
+	assert.NoError(t, err)
+	assert.NotNil(t, ec2wrap)
+}
+
+func TestNewMetricsClientWithInvalidInstanceIdentityDocument(t *testing.T) {
+	// Override the global instance identity document with invalid values
+	testInstanceIdentityDocument = ec2metadata.EC2InstanceIdentityDocument{}
+
+	ec2wrap, err := NewMetricsClient()
+	assert.Error(t, err)
+	assert.Nil(t, ec2wrap)
+}
+
 func TestGetClusterID(t *testing.T) {
 	mockEC2ServiceClient := mockEC2ServiceClient{
 		tags: &ec2.DescribeTagsOutput{
