@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -743,6 +744,61 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	}
 
 	mockContext.increaseDatastorePool(ctx)
+}
+
+// TestDecreaseIPPool checks that the deallocation honors the warm IP targets when deallocations happens across multiple enis
+// Here we setup two enis and allocate two ip addresses each. We set the warm IP target to 1. We expect that the deallocation
+// to happen only once in the loop when multiple enis have one freeable ip address each.
+func TestDecreaseIPPool(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:          m.awsutils,
+		warmIPTarget:       1,
+		lastDecreaseIPPool: time.Now().Add(-60 * time.Second),
+	}
+	mockContext.reconcileCooldownCache.cache = make(map[string]time.Time)
+
+	testAddr1 := net.IPNet{IP: net.ParseIP(ipaddr01), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	testAddr2 := net.IPNet{IP: net.ParseIP(ipaddr02), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	testAddr11 := net.IPNet{IP: net.ParseIP(ipaddr11), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	testAddr12 := net.IPNet{IP: net.ParseIP(ipaddr12), Mask: net.IPv4Mask(255, 255, 255, 255)}
+
+	mockContext.dataStore = testDatastore()
+
+	mockContext.dataStore.AddENI(primaryENIid, primaryDevice, true, false, false)
+	mockContext.dataStore.AddIPv4CidrToStore(primaryENIid, testAddr1, false)
+	mockContext.dataStore.AddIPv4CidrToStore(primaryENIid, testAddr2, false)
+	mockContext.dataStore.AssignPodIPv4Address(datastore.IPAMKey{ContainerID: "container1"}, datastore.IPAMMetadata{K8SPodName: "pod1"})
+
+	mockContext.dataStore.AddENI(secENIid, secDevice, true, false, false)
+	mockContext.dataStore.AddIPv4CidrToStore(secENIid, testAddr11, false)
+	mockContext.dataStore.AddIPv4CidrToStore(secENIid, testAddr12, false)
+	mockContext.dataStore.AssignPodIPv4Address(datastore.IPAMKey{ContainerID: "container2"}, datastore.IPAMMetadata{K8SPodName: "pod2"})
+
+	m.awsutils.EXPECT().DeallocPrefixAddresses(gomock.Any(), gomock.Any()).Times(1)
+	m.awsutils.EXPECT().DeallocIPAddresses(gomock.Any(), gomock.Any()).Times(1)
+
+	short, over, enabled := mockContext.datastoreTargetState()
+	assert.Equal(t, 0, short)      // there would not be any shortage
+	assert.Equal(t, 1, over)       // out of 4 IPs we have 2 IPs assigned, warm IP target is 1, so over is 1
+	assert.Equal(t, true, enabled) // there is warm ip target enabled with the value of 1
+
+	mockContext.decreaseDatastorePool(10 * time.Second)
+
+	short, over, enabled = mockContext.datastoreTargetState()
+	assert.Equal(t, 0, short)      // there would not be any shortage
+	assert.Equal(t, 0, over)       // after the above deallocation this should be zero
+	assert.Equal(t, true, enabled) // there is warm ip target enabled with the value of 1
+
+	//make another call just to ensure that more deallocations do not happen
+	mockContext.decreaseDatastorePool(10 * time.Second)
+
+	short, over, enabled = mockContext.datastoreTargetState()
+	assert.Equal(t, 0, short)      // there would not be any shortage
+	assert.Equal(t, 0, over)       // after the above deallocation this should be zero
+	assert.Equal(t, true, enabled) // there is warm ip target enabled with the value of 1
 }
 
 func TestTryAddIPToENI(t *testing.T) {
