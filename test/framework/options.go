@@ -46,6 +46,7 @@ type Options struct {
 	PrivateSubnets     string
 	AvailabilityZones  string
 	PublicRouteTableID string
+	NgK8SVersion       string
 }
 
 func (options *Options) BindFlags() {
@@ -68,6 +69,7 @@ func (options *Options) BindFlags() {
 	flag.StringVar(&options.PrivateSubnets, "private-subnets", "", "Comma separated list of private subnets (optional, if specified you must specify all of public/private-subnets, public-route-table-id,  and availability-zones)")
 	flag.StringVar(&options.AvailabilityZones, "availability-zones", "", "Comma separated list of private subnets (optional, if specified you must specify all of public/private-subnets, public-route-table-id, and availability-zones)")
 	flag.StringVar(&options.PublicRouteTableID, "public-route-table-id", "", "Public route table ID (optional, if specified you must specify all of public/private-subnets, public-route-table-id, and availability-zones)")
+	flag.StringVar(&options.NgK8SVersion, "ng-kubernetes-version", "1.25", `Kubernetes version for self-managed node groups (optional, default is "1.25")`)
 }
 
 func (options *Options) Validate() error {

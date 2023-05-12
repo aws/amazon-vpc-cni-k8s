@@ -36,7 +36,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"net"
 	"os"
@@ -171,13 +170,11 @@ type Range struct {
 	Gateway    net.IP      `json:"gateway,omitempty"`
 }
 
+// Wait for IPAMD health check to pass. Note that if IPAMD fails to start, wait happens indefinitely until liveness probe kills pod
 func waitForIPAM() bool {
 	for {
 		cmd := exec.Command("./grpc-health-probe", "-addr", "127.0.0.1:50051", ">", "/dev/null", "2>&1")
-		var outb bytes.Buffer
-		cmd.Stdout = &outb
-		cmd.Run()
-		if outb.String() == "" {
+		if err := cmd.Run(); err == nil {
 			return true
 		}
 	}
@@ -443,7 +440,7 @@ func _main() int {
 
 	err = cp.CopyFile(tmpAWSconflistFile, defaultHostCNIConfDirPath+awsConflistFile)
 	if err != nil {
-		log.WithError(err).Errorf("Failed to copy 10-awsconflist")
+		log.WithError(err).Errorf("Failed to copy %s", awsConflistFile)
 		return 1
 	}
 	log.Infof("Successfully copied CNI plugin binary and config file.")

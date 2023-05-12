@@ -29,11 +29,11 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 )
 
-const CreateNodeGroupCFNTemplate = "/testdata/amazon-eks-nodegroup.yaml"
-
-// Docker will be default, if not specified
 const (
-	CONTAINERD = "containerd"
+	// Docker will be default, if not specified
+	CONTAINERD                 = "containerd"
+	CreateNodeGroupCFNTemplate = "/testdata/amazon-eks-nodegroup.yaml"
+	NodeImageIdSSMParam        = "/aws/service/eks/optimized-ami/%s/amazon-linux-2/recommended/image_id"
 )
 
 type NodeGroupProperties struct {
@@ -123,6 +123,10 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 		{
 			ParameterKey:   aws.String("NodeGroupName"),
 			ParameterValue: aws.String(properties.NodeGroupName),
+		},
+		{
+			ParameterKey:   aws.String("NodeImageIdSSMParam"),
+			ParameterValue: aws.String(fmt.Sprintf(NodeImageIdSSMParam, f.Options.NgK8SVersion)),
 		},
 		{
 			ParameterKey:   aws.String("NodeAutoScalingGroupMinSize"),

@@ -184,13 +184,13 @@ type AddressInfo struct {
 
 // CidrInfo
 type CidrInfo struct {
-	//Either v4/v6 Host or LPM Prefix
+	// Either v4/v6 Host or LPM Prefix
 	Cidr net.IPNet
-	//Key is individual IP addresses from the Prefix - /32 (v4) or /128 (v6)
+	// Key is individual IP addresses from the Prefix - /32 (v4) or /128 (v6)
 	IPAddresses map[string]*AddressInfo
-	//true if Cidr here is an LPM prefix
+	// true if Cidr here is an LPM prefix
 	IsPrefix bool
-	//IP Address Family of the Cidr
+	// IP Address Family of the Cidr
 	AddressFamily string
 }
 
@@ -200,8 +200,8 @@ func (cidr *CidrInfo) Size() int {
 }
 
 func (e *ENI) findAddressForSandbox(ipamKey IPAMKey) (*CidrInfo, *AddressInfo) {
-	//Either v4 or v6 for now.
-	//Check in V4 prefixes
+	// Either v4 or v6 for now.
+	// Check in V4 prefixes
 	for _, availableCidr := range e.AvailableIPv4Cidrs {
 		for _, addr := range availableCidr.IPAddresses {
 			if addr.IPAMKey == ipamKey {
@@ -210,7 +210,7 @@ func (e *ENI) findAddressForSandbox(ipamKey IPAMKey) (*CidrInfo, *AddressInfo) {
 		}
 	}
 
-	//Check in V6 prefixes
+	// Check in V6 prefixes
 	for _, availableCidr := range e.IPv6Cidrs {
 		for _, addr := range availableCidr.IPAddresses {
 			if addr.IPAMKey == ipamKey {
@@ -495,7 +495,7 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, 
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	ds.log.Debugf("DataStore Add an ENI %s", eniID)
+	ds.log.Debugf("DataStore add an ENI %s", eniID)
 
 	_, ok := ds.eniPool[eniID]
 	if ok {
@@ -712,7 +712,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	ds.log.Debugf("AssignIPv4Address: IP address pool stats: total: %d, assigned %d", ds.total, ds.assigned)
+	ds.log.Debugf("AssignIPv4Address: IP address pool stats: total %d, assigned %d", ds.total, ds.assigned)
 
 	if eni, _, addr := ds.eniPool.FindAddressForSandbox(ipamKey); addr != nil {
 		ds.log.Infof("AssignPodIPv4Address: duplicate pod assign for sandbox %s", ipamKey)
@@ -1123,8 +1123,7 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, deviceNumber int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
-	ds.log.Debugf("UnassignPodIPAddress: IP address pool stats: total:%d, assigned %d, sandbox %s",
-		ds.total, ds.assigned, ipamKey)
+	ds.log.Debugf("UnassignPodIPAddress: IP address pool stats: total %d, assigned %d, sandbox %s", ds.total, ds.assigned, ipamKey)
 
 	eni, availableCidr, addr := ds.eniPool.FindAddressForSandbox(ipamKey)
 	if addr == nil {
@@ -1241,7 +1240,7 @@ func (ds *DataStore) GetENIInfos() *ENIInfos {
 		tmpENIInfo := *eniInfo
 		tmpENIInfo.AvailableIPv4Cidrs = make(map[string]*CidrInfo, len(eniInfo.AvailableIPv4Cidrs))
 		tmpENIInfo.IPv6Cidrs = make(map[string]*CidrInfo, len(eniInfo.IPv6Cidrs))
-		for cidr, _ := range eniInfo.AvailableIPv4Cidrs {
+		for cidr := range eniInfo.AvailableIPv4Cidrs {
 			tmpENIInfo.AvailableIPv4Cidrs[cidr] = &CidrInfo{
 				Cidr:        eniInfo.AvailableIPv4Cidrs[cidr].Cidr,
 				IPAddresses: make(map[string]*AddressInfo, len(eniInfo.AvailableIPv4Cidrs[cidr].IPAddresses)),
@@ -1253,7 +1252,7 @@ func (ds *DataStore) GetENIInfos() *ENIInfos {
 				tmpENIInfo.AvailableIPv4Cidrs[cidr].IPAddresses[ip] = &ipAddrInfo
 			}
 		}
-		for cidr, _ := range eniInfo.IPv6Cidrs {
+		for cidr := range eniInfo.IPv6Cidrs {
 			tmpENIInfo.IPv6Cidrs[cidr] = &CidrInfo{
 				Cidr:        eniInfo.IPv6Cidrs[cidr].Cidr,
 				IPAddresses: make(map[string]*AddressInfo, len(eniInfo.IPv6Cidrs[cidr].IPAddresses)),
