@@ -7,10 +7,6 @@ WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
 ENV GO111MODULE=on
 ENV GOPROXY=direct
 
-# Copy modules in before the rest of the source to only expire cache on module changes:
-COPY go.mod go.sum ./
-RUN go mod download
-
 COPY . ./
 RUN make build-metrics
 
