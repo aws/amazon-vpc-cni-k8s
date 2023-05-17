@@ -183,7 +183,7 @@ func TestNodeInit(t *testing.T) {
 
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
-
+	os.Setenv("MY_NODE_NAME", myNodeName)
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
 }

@@ -40,6 +40,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -566,7 +567,14 @@ func (c *IPAMContext) nodeInit() error {
 		vpcV4CIDRs = c.updateCIDRsRulesOnChange(vpcV4CIDRs)
 	}, 30*time.Second)
 
-	eniConfigName, err := eniconfig.GetNodeSpecificENIConfigName(ctx, c.cachedK8SClient)
+	node, err := k8sapi.GetNode(ctx, c.cachedK8SClient)
+	if err != nil {
+		log.Errorf("Failed to host node", err)
+		podENIErrInc("nodeInit")
+		return err
+	}
+
+	eniConfigName, err := eniconfig.GetNodeSpecificENIConfigName(node)
 	if err == nil && c.useCustomNetworking && eniConfigName != "default" {
 		// Signal to VPC Resource Controller that the node is using custom networking
 		err := c.SetNodeLabel(ctx, vpcENIConfigLabel, eniConfigName)

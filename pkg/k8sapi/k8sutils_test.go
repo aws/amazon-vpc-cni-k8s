@@ -1,0 +1,37 @@
+package k8sapi
+
+import (
+	"context"
+	"os"
+	"testing"
+
+	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+)
+
+func TestGetNode(t *testing.T) {
+	ctx := context.Background()
+	k8sSchema := runtime.NewScheme()
+	clientgoscheme.AddToScheme(k8sSchema)
+	eniconfigscheme.AddToScheme(k8sSchema)
+
+	fakeNode := &corev1.Node{
+		ObjectMeta: v1.ObjectMeta{
+			Name: "testNode",
+		},
+	}
+	k8sClient := fake.NewFakeClientWithScheme(k8sSchema, fakeNode)
+	os.Setenv("MY_NODE_NAME", "testNode")
+	node, err := GetNode(ctx, k8sClient)
+	assert.NoError(t, err)
+	assert.Equal(t, node.Name, "testNode")
+
+	os.Setenv("MY_NODE_NAME", "dummyNode")
+	_, err = GetNode(ctx, k8sClient)
+	assert.Error(t, err)
+}
