@@ -147,7 +147,7 @@ build-aws-vpc-cni:    ## Build the VPC CNI container using the host's Go toolcha
 	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-vpc-cni     ./cmd/aws-vpc-cni
 
 # Build VPC CNI plugin & agent container image.
-docker:	setup-ec2-sdk-override	   ## Build VPC CNI plugin & agent container image.
+docker:	setup-ec2-sdk-override     ## Build VPC CNI plugin & agent container image.
 	docker build $(DOCKER_BUILD_FLAGS_CNI) \
 		-f scripts/dockerfiles/Dockerfile.release \
 		-t "$(IMAGE_NAME)" \

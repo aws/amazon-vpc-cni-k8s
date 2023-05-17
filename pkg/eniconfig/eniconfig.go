@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
@@ -69,9 +70,14 @@ type ENIConfigInfo struct {
 
 // MyENIConfig returns the ENIConfig applicable to the particular node
 func MyENIConfig(ctx context.Context, k8sClient client.Client) (*v1alpha1.ENIConfigSpec, error) {
-	eniConfigName, err := GetNodeSpecificENIConfigName(ctx, k8sClient)
+	node, err := k8sapi.GetNode(ctx, k8sClient)
 	if err != nil {
-		log.Debugf("Error while retrieving Node name")
+		log.Debugf("Error while retrieving Node")
+	}
+
+	eniConfigName, err := GetNodeSpecificENIConfigName(node)
+	if err != nil {
+		log.Debugf("Error while retrieving Node ENIConfig name")
 	}
 
 	log.Infof("Found ENI Config Name: %s", eniConfigName)
@@ -116,16 +122,8 @@ func getEniConfigLabelDef() string {
 	return defaultEniConfigLabelDef
 }
 
-func GetNodeSpecificENIConfigName(ctx context.Context, k8sClient client.Client) (string, error) {
+func GetNodeSpecificENIConfigName(node corev1.Node) (string, error) {
 	var eniConfigName string
-
-	log.Infof("Get Node Info for: %s", os.Getenv("MY_NODE_NAME"))
-	var node corev1.Node
-	err := k8sClient.Get(ctx, types.NamespacedName{Name: os.Getenv("MY_NODE_NAME")}, &node)
-	if err != nil {
-		log.Errorf("error retrieving node: %s", err)
-		return eniConfigName, err
-	}
 
 	//Derive ENIConfig Name from either externally managed label, Node Annotations or Labels
 	labels := node.GetLabels()

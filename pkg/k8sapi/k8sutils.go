@@ -1,11 +1,14 @@
 package k8sapi
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
@@ -140,4 +143,15 @@ func getRestConfig() (*rest.Config, error) {
 		restCfg.Host = endpoint
 	}
 	return restCfg, nil
+}
+
+func GetNode(ctx context.Context, k8sClient client.Client) (corev1.Node, error) {
+	log.Infof("Get Node Info for: %s", os.Getenv("MY_NODE_NAME"))
+	var node corev1.Node
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: os.Getenv("MY_NODE_NAME")}, &node)
+	if err != nil {
+		log.Errorf("error retrieving node: %s", err)
+		return node, err
+	}
+	return node, nil
 }
