@@ -396,7 +396,7 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 }
 
 // New creates an EC2InstanceMetadataCache
-func New(useCustomNetworking, disableENIProvisioning, v4Enabled, v6Enabled bool, eventRecorder *eventrecorder.EventRecorder) (*EC2InstanceMetadataCache, error) {
+func New(useCustomNetworking, disableLeakedENICleanup, v4Enabled, v6Enabled bool, eventRecorder *eventrecorder.EventRecorder) (*EC2InstanceMetadataCache, error) {
 	//ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
 	ctx := context.Background()
 
@@ -437,7 +437,7 @@ func New(useCustomNetworking, disableENIProvisioning, v4Enabled, v6Enabled bool,
 	}
 
 	// Clean up leaked ENIs in the background
-	if !disableENIProvisioning {
+	if !disableLeakedENICleanup {
 		go wait.Forever(cache.cleanUpLeakedENIs, time.Hour)
 	}
 
@@ -1807,7 +1807,6 @@ func (cache *EC2InstanceMetadataCache) getLeakedENIs() ([]*ec2.NetworkInterface,
 	}
 
 	err := cache.getENIsFromPaginatedDescribeNetworkInterfaces(input, filterFn)
-
 	if err != nil {
 		return nil, errors.Wrap(err, "awsutils: unable to obtain filtered list of network interfaces")
 	}
