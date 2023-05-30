@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.13.0
+
+* Bug - [Increase datastore pool at startup](https://github.com/aws/amazon-vpc-cni-k8s/pull/2354) (@jdn5126 )
+* Bug - [Deallocate IP address according to warm IP target when multiple enis are present](https://github.com/aws/amazon-vpc-cni-k8s/pull/2368) (@bikashmishra100 )
+* Bug - [Return success from CNI DEL when IPAMD is unreachable](https://github.com/aws/amazon-vpc-cni-k8s/pull/2350) (@jdn5126 )
+* Bug - [Fix for aws-vpc-cni chart with tolerations to produce syntax valid yaml](https://github.com/aws/amazon-vpc-cni-k8s/pull/2345) (@Bourne-ID )
+* Bug - [adding ip check for annotatePod in ipamd](https://github.com/aws/amazon-vpc-cni-k8s/pull/2328) (@jerryhe1999 )
+* Feature - [Introduce DISABLE_LEAKED_ENI_CLEANUP to disable leaked ENI cleanup task](https://github.com/aws/amazon-vpc-cni-k8s/pull/2370) (@jdn5126 )
+* Feature - [Add IPv6 egress support to eks IPv4 cluster](https://github.com/aws/amazon-vpc-cni-k8s/pull/2361) (@wanyufe )
+* Feature - [feat(chart): Refactored image template logic for endpoint flexibility](https://github.com/aws/amazon-vpc-cni-k8s/pull/2335) (@stevehipwell )
+* Feature - [add AWS_EC2_ENDPOINT variable for custom endpoint](https://github.com/aws/amazon-vpc-cni-k8s/pull/2326) (@jihunseol )
+* Improvement - [Refactor egress-v4-cni plugin to support unit testing](https://github.com/aws/amazon-vpc-cni-k8s/pull/2353) (@wanyufe )
+* Improvement - [Update instance limits and core plugins version in preparation for upcoming VPC CNI release](https://github.com/aws/amazon-vpc-cni-k8s/pull/2390) (@jdn5126 )
+* Improvement - [refactoring eniconfig func to only take node as parameter](https://github.com/aws/amazon-vpc-cni-k8s/pull/2387) (@haouc )
+* Improvement - [Remove go mod download from Dockerfiles](https://github.com/aws/amazon-vpc-cni-k8s/pull/2383) (@jdn5126 )
+* Improvement - [Add apiVersion to MY_NODE_NAME](https://github.com/aws/amazon-vpc-cni-k8s/pull/2372) (@jdn5126 )
+* Improvement - [install all core CNI plugins via init container](https://github.com/aws/amazon-vpc-cni-k8s/pull/2355) (@jdn5126 )
+* Improvement - [Make all the aws vpc cni environmental variables case insensitive](https://github.com/aws/amazon-vpc-cni-k8s/pull/2334) (@jerryhe1999 )
+* Improvement - [resource limit on init container in eks addon](https://github.com/aws/amazon-vpc-cni-k8s/issues/2191 ) (@pdeva )
+* Testing - [Add integration test for POD v4/v6 egress traffic](https://github.com/aws/amazon-vpc-cni-k8s/pull/2371) (@wanyufe )
+
 ## v1.12.6
 
 * Bug - [Fix MTU parameter in egress-v4-cni plugin](https://github.com/aws/amazon-vpc-cni-k8s/pull/2295) (@jdn5126 )
@@ -63,6 +84,10 @@
 * Testing - [Resolve flakiness in IPAMD warm target tests](https://github.com/aws/amazon-vpc-cni-k8s/pull/2112) (@jdn5126 )
 * Testing - [VPC CNI Integration Test Fixes](https://github.com/aws/amazon-vpc-cni-k8s/pull/2105)  (@jdn5126 )
 * Testing - [Update CNI canary integration test and cleanup for ginkgo v2](https://github.com/aws/amazon-vpc-cni-k8s/pull/2088) (@jdn5126 )
+
+## v1.11.5
+
+* Bug - [Handle pod deletion when PrevResult has VLAN 0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2323) (@jdn5126 )
 
 ## v1.11.4
 
