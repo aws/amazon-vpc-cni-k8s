@@ -57,6 +57,7 @@ env:
   DISABLE_NETWORK_RESOURCE_PROVISIONING: "false"
   ENABLE_IPv4: "true"
   ENABLE_IPv6: "false"
+  ADDRESS_COOLING_PERIOD: "30"
 
 # this flag enables you to use the match label that was present in the original daemonset deployed by EKS
 # You can then annotate and label the original aws-node resources and 'adopt' them into a helm release
@@ -81,8 +82,8 @@ podLabels: {}
 securityContext:
   capabilities:
     add:
-    - "NET_ADMIN"
-    - "NET_RAW"
+      - "NET_ADMIN"
+      - "NET_RAW"
 
 serviceAccount:
   # Specifies whether a service account should be created
@@ -90,16 +91,17 @@ serviceAccount:
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
   name:
-  annotations: {}
+  annotations:
+    {}
     # To set annotations - serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=arn:aws:iam::<AWS_ACCOUNT_ID>:<IAM_ROLE_NAME>
 
 livenessProbe:
   exec:
     command:
       - /app/grpc-health-probe
-      - '-addr=:50051'
-      - '-connect-timeout=5s'
-      - '-rpc-timeout=5s'
+      - "-addr=:50051"
+      - "-connect-timeout=5s"
+      - "-rpc-timeout=5s"
   initialDelaySeconds: 60
 
 livenessProbeTimeoutSeconds: 10
@@ -108,9 +110,9 @@ readinessProbe:
   exec:
     command:
       - /app/grpc-health-probe
-      - '-addr=:50051'
-      - '-connect-timeout=5s'
-      - '-rpc-timeout=5s'
+      - "-addr=:50051"
+      - "-connect-timeout=5s"
+      - "-rpc-timeout=5s"
   initialDelaySeconds: 1
 
 readinessProbeTimeoutSeconds: 10
