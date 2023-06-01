@@ -36,12 +36,12 @@ type DeploymentBuilder struct {
 	volumeMount            []corev1.VolumeMount
 }
 
-func NewBusyBoxDeploymentBuilder() *DeploymentBuilder {
+func NewBusyBoxDeploymentBuilder(testImageRegistry string) *DeploymentBuilder {
 	return &DeploymentBuilder{
 		namespace:              utils.DefaultTestNamespace,
 		name:                   "deployment-test",
 		replicas:               10,
-		container:              NewBusyBoxContainerBuilder().Build(),
+		container:              NewBusyBoxContainerBuilder(testImageRegistry).Build(),
 		labels:                 map[string]string{"role": "test"},
 		nodeSelector:           map[string]string{"kubernetes.io/os": "linux"},
 		terminationGracePeriod: 1,

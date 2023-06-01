@@ -92,7 +92,7 @@ var _ = Describe("launch Pod on single node", Serial, func() {
 				pod := manifest.NewDefaultPodBuilder().
 					Namespace(sandBoxNS.Name).
 					Name("inspector").
-					Container(manifest.NewBusyBoxContainerBuilder().Build()).
+					Container(manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).Build()).
 					NodeName(nominatedNode.Name).
 					MountVolume([]corev1.Volume{volume}, []corev1.VolumeMount{volumeMount}).
 					Build()
@@ -139,7 +139,7 @@ var _ = Describe("launch Pod on single node", Serial, func() {
 
 			var busyBoxDP *appsV1.Deployment
 			By("create deployment with 0 replicas", func() {
-				busyBoxDP = manifest.NewBusyBoxDeploymentBuilder().
+				busyBoxDP = manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 					Namespace(sandBoxNS.Name).
 					Name("busybox").
 					NodeName(nominatedNode.Name).

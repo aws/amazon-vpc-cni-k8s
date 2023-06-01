@@ -64,7 +64,7 @@ var _ = Describe("test host networking", func() {
 		It("should have correct host networking setup when running and cleaned up once terminated", func() {
 			// Launch enough pods so some pods end up using primary ENI IP and some using secondary
 			// ENI IP
-			deployment := manifest.NewBusyBoxDeploymentBuilder().
+			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Replicas(maxIPPerInterface*2).
 				PodLabel(podLabelKey, podLabelVal).
 				NodeName(primaryNode.Name).
@@ -105,7 +105,7 @@ var _ = Describe("test host networking", func() {
 		})
 
 		It("Validate Host Networking setup after changing MTU and Veth Prefix", func() {
-			deployment := manifest.NewBusyBoxDeploymentBuilder().
+			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Replicas(maxIPPerInterface*2).
 				PodLabel(podLabelKey, podLabelVal).
 				NodeName(primaryNode.Name).
@@ -156,7 +156,7 @@ var _ = Describe("test host networking", func() {
 		It("tester pod should error out", func() {
 			By("creating a single pod on the test node")
 			parkingPod := manifest.NewDefaultPodBuilder().
-				Container(manifest.NewBusyBoxContainerBuilder().Build()).
+				Container(manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).Build()).
 				Name("parking-pod").
 				NodeName(primaryNode.Name).
 				Build()
