@@ -30,10 +30,10 @@ type Container struct {
 	securityContext *v1.SecurityContext
 }
 
-func NewBusyBoxContainerBuilder() *Container {
+func NewBusyBoxContainerBuilder(testImageRegistry string) *Container {
 	return &Container{
 		name:            "busybox",
-		image:           "busybox",
+		image:           utils.GetTestImage(testImageRegistry, utils.BusyBoxImage),
 		imagePullPolicy: v1.PullIfNotPresent,
 		command:         []string{"sleep", "3600"},
 		args:            []string{},
@@ -49,20 +49,20 @@ func NewCurlContainer() *Container {
 }
 
 // See test/agent/README.md in this repository for more details
-func NewTestHelperContainer() *Container {
+func NewTestHelperContainer(testImageRegistry string) *Container {
 	return &Container{
 		name:            "test-helper",
-		image:           utils.TestAgentImage,
+		image:           utils.GetTestImage(testImageRegistry, utils.TestAgentImage),
 		imagePullPolicy: v1.PullIfNotPresent,
 	}
 }
 
-func NewNetCatAlpineContainer() *Container {
+func NewNetCatAlpineContainer(testImageRegistry string) *Container {
 	return &Container{
 		name: "net-cat",
 		// simple netcat OpenBSD version with alpine as the base image
 		// compatible with arm64 and amd64
-		image:           "public.ecr.aws/e6v3k1j4/netcat-openbsd:v1.0",
+		image:           utils.GetTestImage(testImageRegistry, utils.NetCatImage),
 		imagePullPolicy: v1.PullIfNotPresent,
 	}
 }

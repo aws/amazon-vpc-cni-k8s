@@ -81,7 +81,7 @@ var _ = Describe("test pod networking", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		serverContainer := manifest.
-			NewNetCatAlpineContainer().
+			NewNetCatAlpineContainer(f.Options.TestImageRegistry).
 			Command(serverListenCmd).
 			Args(serverListenCmdArgs).
 			Build()

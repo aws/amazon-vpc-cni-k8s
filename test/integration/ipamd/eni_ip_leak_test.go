@@ -29,7 +29,7 @@ var _ = Describe("[CANARY][SMOKE] ENI/IP Leak Test", func() {
 			oldIP, oldENI := getCountOfIPandENIOnPrimaryInstance()
 
 			maxPods := getMaxApplicationPodsOnPrimaryInstance()
-			deploymentSpec := manifest.NewBusyBoxDeploymentBuilder().
+			deploymentSpec := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Namespace("default").
 				Name("busybox").
 				NodeName(primaryNode.Name).

@@ -87,7 +87,7 @@ func ValidateHostNetworking(testType TestType, podValidationInputString string, 
 		shouldTestPodError = true
 	}
 
-	testContainer := manifest.NewTestHelperContainer().
+	testContainer := manifest.NewTestHelperContainer(f.Options.TestImageRegistry).
 		Command([]string{"./networking"}).
 		Args(testerArgs).
 		Build()
