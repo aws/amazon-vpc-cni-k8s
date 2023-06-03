@@ -36,10 +36,9 @@ const (
 	// minENILifeTime is the shortest time before we consider deleting a newly created ENI
 	minENILifeTime = 1 * time.Minute
 
-	// addressCoolingPeriod is used to ensure an IP not get assigned to a Pod if this IP is used by a different Pod
-	// in addressCoolingPeriod
-	envAddressCoolingPeriod     = "ADDRESS_COOLING_PERIOD"
-	defaultAddressCoolingPeriod = 30 * time.Second
+	// envIPCoolingPeriod is used to ensure an IP not get assigned to a Pod if this IP is used by a different Pod
+	// in envIPCoolingPeriod
+	envIPCoolingPeriod = "IP_COOLDOWN_PERIOD"
 
 	// DuplicatedENIError is an error when caller tries to add an duplicate ENI to data store
 	DuplicatedENIError = "data store: duplicate ENI"
@@ -79,6 +78,8 @@ const backfillNetworkIface = "unknown"
 
 // ErrUnknownPod is an error when there is no pod in data store matching pod name, namespace, sandbox id
 var ErrUnknownPod = errors.New("datastore: unknown pod")
+
+var ipCoolingPeriod time.Duration
 
 var (
 	enis = prometheus.NewGauge(
@@ -268,27 +269,25 @@ func (addr AddressInfo) Assigned() bool {
 	return !addr.IPAMKey.IsZero()
 }
 
-var log = logger.Get()
-
-// getCoolingPeriod returns the time duration in seconds configured by ADDRESS_COOLING_PERIOD env variable
-func getCoolingPeriod() time.Duration {
-	inputStr, found := os.LookupEnv(envAddressCoolingPeriod)
+// getCoolingPeriod returns the time duration in seconds configured by the IP_COOLING_PERIOD env variable
+func (ds *DataStore) getCoolingPeriod() time.Duration {
+	inputStr, found := os.LookupEnv(envIPCoolingPeriod)
 	if !found {
-		return defaultAddressCoolingPeriod
+		return 30 * time.Second
 	}
 	if input, err := strconv.Atoi(inputStr); err == nil {
-		if input < 0 {
-			return defaultAddressCoolingPeriod
+		if input < 1 {
+			return 30 * time.Second
 		}
-		log.Debugf("Using ADDRESS_COOLING_PERIOD %v", input)
+		ds.log.Debugf("Using IP_COOLING_PERIOD %v", input)
 		return time.Duration(input) * time.Second
 	}
-	return defaultAddressCoolingPeriod
+	return 30 * time.Second
 }
 
-// InCoolingPeriod checks whether an addr is in addressCoolingPeriod
+// InCoolingPeriod checks whether an addr is in ipCoolingPeriod
 func (addr AddressInfo) inCoolingPeriod() bool {
-	return time.Since(addr.UnassignedTime) <= getCoolingPeriod()
+	return time.Since(addr.UnassignedTime) <= ipCoolingPeriod
 }
 
 // ENIPool is a collection of ENI, keyed by ENI ID
@@ -361,13 +360,15 @@ func prometheusRegister() {
 // NewDataStore returns DataStore structure
 func NewDataStore(log logger.Logger, backingStore Checkpointer, isPDEnabled bool) *DataStore {
 	prometheusRegister()
-	return &DataStore{
+	ds := &DataStore{
 		eniPool:      make(ENIPool),
 		log:          log,
 		backingStore: backingStore,
 		netLink:      netlinkwrapper.NewNetLink(),
 		isPDEnabled:  isPDEnabled,
 	}
+	ipCoolingPeriod = ds.getCoolingPeriod()
+	return ds
 }
 
 // CheckpointFormatVersion is the version stamp used on stored checkpoints.

@@ -101,6 +101,7 @@ const (
 	envEnIPv6Egress          = "ENABLE_V6_EGRESS"
 	envRandomizeSNAT         = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 	envEnableNftables        = "ENABLE_NFTABLES"
+	envIPCoolingPeriod       = "IP_COOLING_PERIOD"
 )
 
 // NetConfList describes an ordered list of networks.
@@ -353,6 +354,17 @@ func validateEnvVars() bool {
 	warmIPTarget := utils.GetEnv(envWarmIPTarget, "0")
 	warmPrefixTarget := utils.GetEnv(envWarmPrefixTarget, "0")
 	minimumIPTarget := utils.GetEnv(envMinIPTarget, "0")
+
+	// Validate that IP_COOLING_PERIOD is a valid integer
+	ipCoolingPeriod, err := utils.GetIntAsStringEnvVar(envIPCoolingPeriod, 30)
+	if ipCoolingPeriod < 1 {
+		log.Errorf("IP_COOLING_PERIOD cannot be smaller than 1")
+		return false
+	}
+	if err != nil {
+		log.Errorf("IP_COOLING_PERIOD has to be a valid integer")
+		return false
+	}
 
 	// Note that these string values should probably be cast to integers, but the comparison for values greater than 0 works either way
 	if prefixDelegationEn && (warmIPTarget <= "0" && warmPrefixTarget <= "0" && minimumIPTarget <= "0") {

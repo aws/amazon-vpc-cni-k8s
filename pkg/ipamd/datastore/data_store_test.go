@@ -925,8 +925,8 @@ func TestGetIPStatsV4(t *testing.T) {
 		*ds.GetIPStats("4"),
 	)
 
-	// wait number of seconds configured in ADDRESS_COOLING_PERIOD (cooldown period)
-	time.Sleep(getCoolingPeriod())
+	// wait number of seconds configured in IP_COOLING_PERIOD (cooldown period)
+	time.Sleep(ipCoolingPeriod)
 
 	assert.Equal(t,
 		DataStoreStats{
@@ -976,8 +976,8 @@ func TestGetIPStatsV4WithPD(t *testing.T) {
 		*ds.GetIPStats("4"),
 	)
 
-	// wait number of seconds configured in ADDRESS_COOLING_PERIOD (cooldown period)
-	time.Sleep(getCoolingPeriod())
+	// wait number of seconds configured in IP_COOLING_PERIOD (cooldown period)
+	time.Sleep(ipCoolingPeriod)
 
 	assert.Equal(t,
 		DataStoreStats{

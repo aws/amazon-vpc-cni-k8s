@@ -669,6 +669,16 @@ Default: `false`
 On IPv4 clusters, IPAMD schedules an hourly background task per node that cleans up leaked ENIs. Setting this environment variable to `true` disables that job. The primary motivation to disable this task is to decrease the amount of EC2 API calls made from each node.
 Note that disabling this task should be considered carefully, as it requires users to manually cleanup ENIs leaked in their account. See [#1223](https://github.com/aws/amazon-vpc-cni-k8s/issues/1223) for a related discussion.
 
+#### `IP_COOLDOWN_PERIOD` (v1.13.0+)
+
+Type: Integer as a String
+
+Default: `30`
+
+Valid Values: Positive Integer
+
+Specify the number of seconds an IP address is in cooldown after a pod is deleted. The cooldown is used to give kube-proxy time to update node's IP table rules it is running on. Lower values should be used if the pod is not connected to any service.
+
 ### VPC CNI Feature Matrix
 
 IP Mode | Secondary IP Mode | Prefix Delegation | Security Groups Per Pod | WARM & MIN IP/Prefix Targets | External SNAT
