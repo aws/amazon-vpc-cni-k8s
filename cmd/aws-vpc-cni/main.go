@@ -81,6 +81,7 @@ const (
 	vpcCniInitDonePath           = "/vpc-cni-init/done"
 	defaultEnBandwidthPlugin     = false
 	defaultEnPrefixDelegation    = false
+	defaultIPCoolingPeriod       = 30
 
 	envHostCniBinPath        = "HOST_CNI_BIN_PATH"
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
@@ -356,13 +357,13 @@ func validateEnvVars() bool {
 	minimumIPTarget := utils.GetEnv(envMinIPTarget, "0")
 
 	// Validate that IP_COOLING_PERIOD is a valid integer
-	ipCoolingPeriod, err := utils.GetIntAsStringEnvVar(envIPCoolingPeriod, 30)
-	if ipCoolingPeriod < 1 {
-		log.Errorf("IP_COOLING_PERIOD cannot be smaller than 1")
-		return false
-	}
+	ipCoolingPeriod, err := utils.GetIntAsStringEnvVar(envIPCoolingPeriod, defaultIPCoolingPeriod)
 	if err != nil {
 		log.Errorf("IP_COOLING_PERIOD has to be a valid integer")
+		return false
+	}
+	if ipCoolingPeriod < 1 {
+		log.Errorf("IP_COOLING_PERIOD cannot be smaller than 1")
 		return false
 	}
 

@@ -79,6 +79,7 @@ const backfillNetworkIface = "unknown"
 // ErrUnknownPod is an error when there is no pod in data store matching pod name, namespace, sandbox id
 var ErrUnknownPod = errors.New("datastore: unknown pod")
 
+// ipCoolingPeriod is the duration in seconds until an IP address is released, after pod deletion
 var ipCoolingPeriod time.Duration
 
 var (
