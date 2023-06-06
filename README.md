@@ -105,18 +105,6 @@ The following environment variables are available, and all of them are optional.
 
 ---
 
-#### `ENABLE_V6_EGRESS` (v1.13.0+)
-
-🚨 This feature is under active development. This feature is not released. 
-
-Type: Boolean as a String
-
-Default: `false`
-
-Specifies whether PODs in v4 cluster support IPv6 egress. If env is set to `true`, range `fd00::ac:00/118` is reserved for IPv6 egress.
-
----
-
 #### `AWS_MANAGE_ENIS_NON_SCHEDULABLE` (v1.12.6+)
 
 Type: Boolean as a String
@@ -668,6 +656,20 @@ Default: `false`
 
 On IPv4 clusters, IPAMD schedules an hourly background task per node that cleans up leaked ENIs. Setting this environment variable to `true` disables that job. The primary motivation to disable this task is to decrease the amount of EC2 API calls made from each node.
 Note that disabling this task should be considered carefully, as it requires users to manually cleanup ENIs leaked in their account. See [#1223](https://github.com/aws/amazon-vpc-cni-k8s/issues/1223) for a related discussion.
+
+----
+
+#### `ENABLE_V6_EGRESS` (v1.13.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Specifies whether PODs in an IPv4 cluster support IPv6 egress. If env is set to `true`, range `fd00::ac:00/118` is reserved for IPv6 egress.
+
+This environment variable must be set for both the `aws-vpc-cni-init` and `aws-node` containers in order for this feature to work properly. This feature also requires that the node has an IPv6 address assigned to its primary ENI, as this address is used for SNAT to IPv6 endpoints outside of the cluster. If the configuration prerequisites are not met, the `egress-cni` plugin is not enabled and an error log is printed in the `aws-node` container.
+
+Note that enabling/disabling this feature only affects whether newly created pods have an IPv6 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature. Also note that if you are using this feature in conjunction with `ENABLE_POD_ENI` (Security Groups for Pods), the security group rules will NOT be applied to egressing IPv6 traffic.
 
 ### VPC CNI Feature Matrix
 
