@@ -8,7 +8,7 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.12.6
+    tag: v1.13.0
     domain: amazonaws.com
     region: us-west-2
     endpoint: ecr
@@ -24,7 +24,7 @@ init:
     privileged: true
 
 image:
-  tag: v1.12.6
+  tag: v1.13.0
   domain: amazonaws.com
   region: us-west-2
   endpoint: ecr
@@ -90,17 +90,16 @@ serviceAccount:
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
   name:
-  annotations:
-    {}
+  annotations: {}
     # To set annotations - serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=arn:aws:iam::<AWS_ACCOUNT_ID>:<IAM_ROLE_NAME>
 
 livenessProbe:
   exec:
     command:
       - /app/grpc-health-probe
-      - "-addr=:50051"
-      - "-connect-timeout=5s"
-      - "-rpc-timeout=5s"
+      - '-addr=:50051'
+      - '-connect-timeout=5s'
+      - '-rpc-timeout=5s'
   initialDelaySeconds: 60
 
 livenessProbeTimeoutSeconds: 10
@@ -109,9 +108,9 @@ readinessProbe:
   exec:
     command:
       - /app/grpc-health-probe
-      - "-addr=:50051"
-      - "-connect-timeout=5s"
-      - "-rpc-timeout=5s"
+      - '-addr=:50051'
+      - '-connect-timeout=5s'
+      - '-rpc-timeout=5s'
   initialDelaySeconds: 1
 
 readinessProbeTimeoutSeconds: 10
