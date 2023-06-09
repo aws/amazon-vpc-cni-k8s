@@ -23,4 +23,7 @@ COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/egress-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-vpc-cni /app/
 
+# Set iptables mode automatically based on kubelet hint
+RUN ["update-alternatives", "--set", "iptables", "/usr/sbin/iptables-wrapper"]
+
 ENTRYPOINT ["/app/aws-vpc-cni"]
