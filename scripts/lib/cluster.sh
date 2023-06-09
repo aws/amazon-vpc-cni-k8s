@@ -16,11 +16,10 @@ function load_deveks_cluster_details() {
 }
 
 function down-test-cluster() {
-  echo "skipping the cluster deletion in down-test-cluster for debug"
-#    echo -n "Deleting cluster  (this may take ~10 mins) ... "
-#    eksctl delete cluster $CLUSTER_NAME >>$CLUSTER_MANAGE_LOG_PATH 2>&1 ||
-#        (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
-#    echo "ok."
+    echo -n "Deleting cluster  (this may take ~10 mins) ... "
+    eksctl delete cluster $CLUSTER_NAME >>$CLUSTER_MANAGE_LOG_PATH 2>&1 ||
+        (echo "failed. Check $CLUSTER_MANAGE_LOG_PATH." && exit 1)
+    echo "ok."
 }
 
 function up-test-cluster() {
