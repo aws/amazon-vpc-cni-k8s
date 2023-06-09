@@ -48,12 +48,12 @@ var _ = Describe("Custom Networking Test", func() {
 		})
 
 		JustBeforeEach(func() {
-			container := manifest.NewNetCatAlpineContainer().
+			container := manifest.NewNetCatAlpineContainer(f.Options.TestImageRegistry).
 				Command([]string{"nc"}).
 				Args([]string{"-k", "-l", strconv.Itoa(port)}).
 				Build()
 
-			deployment = manifest.NewBusyBoxDeploymentBuilder().
+			deployment = manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Container(container).
 				Replicas(replicaCount).
 				NodeSelector(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal).
@@ -76,7 +76,7 @@ var _ = Describe("Custom Networking Test", func() {
 				ip := net.ParseIP(pod.Status.PodIP)
 				Expect(cidrRange.Contains(ip)).To(BeTrue())
 
-				testContainer := manifest.NewNetCatAlpineContainer().
+				testContainer := manifest.NewNetCatAlpineContainer(f.Options.TestImageRegistry).
 					Command([]string{"nc"}).
 					Args([]string{"-v", "-w2", pod.Status.PodIP, strconv.Itoa(port)}).
 					Build()
@@ -169,7 +169,7 @@ var _ = Describe("Custom Networking Test", func() {
 
 			// Nodes should be stuck in NotReady state since no ENIs could be attached and no pod
 			// IP addresses are available.
-			deployment := manifest.NewBusyBoxDeploymentBuilder().
+			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Replicas(2).
 				NodeSelector(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal).
 				Build()

@@ -25,7 +25,7 @@ var _ = Describe("test host networking", func() {
 
 			// Launch enough pods so some pods end up using primary ENI IP and some using secondary
 			// ENI IP
-			deployment = manifest.NewBusyBoxDeploymentBuilder().
+			deployment = manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Replicas(maxIPPerInterface*2).
 				PodLabel(podLabelKey, podLabelVal).
 				NodeName(primaryNode.Name).

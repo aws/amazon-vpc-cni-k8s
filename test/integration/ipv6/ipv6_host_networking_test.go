@@ -63,7 +63,7 @@ var _ = Describe("[CANARY] test ipv6 host netns setup", func() {
 			time.Sleep(utils.PollIntervalMedium)
 		})
 		It("should have correct host netns setup when running and cleaned up once terminated", func() {
-			deployment := manifest.NewBusyBoxDeploymentBuilder().
+			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Replicas(2).
 				PodLabel(podLabelKey, podLabelVal).
 				NodeName(primaryNode.Name).
@@ -99,7 +99,7 @@ var _ = Describe("[CANARY] test ipv6 host netns setup", func() {
 		})
 
 		It("Validate host netns setup after changing MTU and Veth Prefix", func() {
-			deployment := manifest.NewBusyBoxDeploymentBuilder().
+			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Replicas(2).
 				PodLabel(podLabelKey, podLabelVal).
 				NodeName(primaryNode.Name).
@@ -150,7 +150,7 @@ var _ = Describe("[CANARY] test ipv6 host netns setup", func() {
 		It("tester pod should error out", func() {
 			By("creating a single pod on the test node")
 			parkingPod := manifest.NewDefaultPodBuilder().
-				Container(manifest.NewBusyBoxContainerBuilder().Build()).
+				Container(manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).Build()).
 				Name("parking-pod").
 				NodeName(primaryNode.Name).
 				Build()
@@ -219,7 +219,7 @@ func ValidateHostNetworking(testType TestType, podValidationInputString string) 
 		shouldTestPodError = true
 	}
 
-	testContainer := manifest.NewTestHelperContainer().
+	testContainer := manifest.NewTestHelperContainer(f.Options.TestImageRegistry).
 		Command([]string{"./networking"}).
 		Args(testerArgs).
 		Build()

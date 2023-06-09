@@ -76,7 +76,6 @@ const (
 	defaultEnableIPv6            = false
 	defaultEnableIPv6Egress      = false
 	defaultRandomizeSNAT         = "prng"
-	defaultEnableNftables        = false
 	awsConflistFile              = "/10-aws.conflist"
 	vpcCniInitDonePath           = "/vpc-cni-init/done"
 	defaultEnBandwidthPlugin     = false
@@ -375,26 +374,6 @@ func validateEnvVars() bool {
 	return true
 }
 
-func configureNftablesIfEnabled() error {
-	// By default, VPC CNI container uses iptables-legacy. Update to iptables-nft when env var is set
-	nftables := utils.GetBoolAsStringEnvVar(envEnableNftables, defaultEnableNftables)
-	if nftables {
-		log.Infof("Updating iptables mode to nft")
-		var cmd *exec.Cmd
-		// Command output is not suppressed so that log shows iptables mode being set
-		cmd = exec.Command("update-alternatives", "--set", "iptables", "/usr/sbin/iptables-nft")
-		if err := cmd.Run(); err != nil {
-			return errors.Wrap(err, "Failed to use iptables-nft")
-		}
-		cmd = exec.Command("update-alternatives", "--set", "ip6tables", "/usr/sbin/ip6tables-nft")
-		if err := cmd.Run(); err != nil {
-			log.WithError(err).Errorf("Failed to use ip6tables-nft")
-			return errors.Wrap(err, "Failed to use iptables6-nft")
-		}
-	}
-	return nil
-}
-
 func main() {
 	os.Exit(_main())
 }
@@ -403,10 +382,6 @@ func _main() int {
 	log.Debug("Started aws-node container")
 	if !validateEnvVars() {
 		return 1
-	}
-
-	if err := configureNftablesIfEnabled(); err != nil {
-		log.WithError(err).Error("Failed to enable nftables")
 	}
 
 	pluginBins := []string{"aws-cni", "egress-cni"}

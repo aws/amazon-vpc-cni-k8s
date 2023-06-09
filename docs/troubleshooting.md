@@ -247,6 +247,8 @@ The [CNI image](../scripts/dockerfiles/Dockerfile.release) built for the `aws-no
 
   In v1.12.1+, `iptables-legacy` and `iptables-nft` are present in the VPC CNI container image. Setting `ENABLE_NFTABLES` environment variable to `true` instructs VPC CNI to use `iptables-nft`. By default, `iptables-legacy` is used.
 
+  In v1.13.1+, `ENABLE_NFTABLES` is deprecated and the iptables mode is set automatically based on the mode kubelet is using.
+
 ## cni-metrics-helper
 
 See the [cni-metrics-helper README](../cmd/cni-metrics-helper/README.md).

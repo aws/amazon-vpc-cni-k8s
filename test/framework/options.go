@@ -47,6 +47,7 @@ type Options struct {
 	AvailabilityZones  string
 	PublicRouteTableID string
 	NgK8SVersion       string
+	TestImageRegistry  string
 }
 
 func (options *Options) BindFlags() {
@@ -70,6 +71,7 @@ func (options *Options) BindFlags() {
 	flag.StringVar(&options.AvailabilityZones, "availability-zones", "", "Comma separated list of private subnets (optional, if specified you must specify all of public/private-subnets, public-route-table-id, and availability-zones)")
 	flag.StringVar(&options.PublicRouteTableID, "public-route-table-id", "", "Public route table ID (optional, if specified you must specify all of public/private-subnets, public-route-table-id, and availability-zones)")
 	flag.StringVar(&options.NgK8SVersion, "ng-kubernetes-version", "1.25", `Kubernetes version for self-managed node groups (optional, default is "1.25")`)
+	flag.StringVar(&options.TestImageRegistry, "test-image-registry", "617930562442.dkr.ecr.us-west-2.amazonaws.com", `AWS registry where the e2e test images are stored`)
 }
 
 func (options *Options) Validate() error {
@@ -84,6 +86,9 @@ func (options *Options) Validate() error {
 	}
 	if len(options.AWSVPCID) == 0 {
 		return errors.Errorf("%s must be set!", "aws-vpc-id")
+	}
+	if len(options.TestImageRegistry) == 0 {
+		return errors.Errorf("%s must be set!", "test-image-registry")
 	}
 	return nil
 }

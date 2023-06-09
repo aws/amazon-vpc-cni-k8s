@@ -34,7 +34,7 @@ var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 		It("the updated metric is published to CW", func() {
 			// Create a new deployment to verify addReqCount is updated
 			var deployment *v1.Deployment
-			deployment = manifest.NewBusyBoxDeploymentBuilder().
+			deployment = manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Replicas(10).
 				NodeName(nodeName).
 				Build()
