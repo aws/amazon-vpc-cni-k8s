@@ -170,7 +170,7 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 }
 
 func (t *TrafficTest) startTrafficServer() (*appsV1.Deployment, error) {
-	serverContainer := manifest.NewTestHelperContainer().
+	serverContainer := manifest.NewTestHelperContainer(t.Framework.Options.TestImageRegistry).
 		Name("server").
 		Command([]string{"./traffic-server"}).
 		Args([]string{
@@ -190,7 +190,7 @@ func (t *TrafficTest) startTrafficServer() (*appsV1.Deployment, error) {
 }
 
 func (t *TrafficTest) startTrafficClient(serverAddList string, metricServerIP string) (*batchV1.Job, error) {
-	trafficClientContainer := manifest.NewTestHelperContainer().
+	trafficClientContainer := manifest.NewTestHelperContainer(t.Framework.Options.TestImageRegistry).
 		Name("client-regular-pods").
 		Command([]string{"./traffic-client"}).
 		Args([]string{
@@ -213,7 +213,7 @@ func (t *TrafficTest) startTrafficClient(serverAddList string, metricServerIP st
 }
 
 func (t *TrafficTest) startMetricServerPod() (*v1.Pod, error) {
-	metricContainer := manifest.NewTestHelperContainer().
+	metricContainer := manifest.NewTestHelperContainer(t.Framework.Options.TestImageRegistry).
 		Name("metric-container").
 		Command([]string{"./metric-server"}).
 		Build()

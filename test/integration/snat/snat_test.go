@@ -102,7 +102,7 @@ func ValidateExternalDomainConnectivity(url string) {
 		fmt.Sprintf("-url=%s", url),
 	}
 
-	testContainer := manifest.NewTestHelperContainer().
+	testContainer := manifest.NewTestHelperContainer(f.Options.TestImageRegistry).
 		Command([]string{"./snat-utils"}).
 		Args(testerArgs).
 		Build()
@@ -137,7 +137,7 @@ func ValidateIPTableRules(randomizedSNATValue string, numOfCidrs int) {
 		fmt.Sprintf("-numOfCidrs=%d", numOfCidrs),
 	}
 
-	hostNetworkContainer := manifest.NewTestHelperContainer().
+	hostNetworkContainer := manifest.NewTestHelperContainer(f.Options.TestImageRegistry).
 		Command([]string{"./snat-utils"}).
 		CapabilitiesForSecurityContext([]corev1.Capability{
 			"NET_ADMIN",

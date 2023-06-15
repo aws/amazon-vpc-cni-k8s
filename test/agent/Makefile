@@ -37,7 +37,7 @@ check-env:
 	@:$(call check_var, AWS_REGION, AWS region for publishing docker images)
 
 check-env-public:
-	@:$(call check_var, REGISTRY_ID, Registery ID for publishing docker images to public ECR Repo)
+	@:$(call check_var, REGISTRY_ID, Registry ID for publishing docker images to public ECR Repo)
 
 check_var = \
     $(strip $(foreach 1,$1, \

@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/golang:1.17-stretch as builder
+FROM public.ecr.aws/eks-distro-build-tooling/golang:1.20.4-5-gcc-al2 as builder
 
 WORKDIR /workspace
 ENV GOPROXY direct
@@ -29,10 +29,7 @@ RUN CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build \
 RUN CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build \
     -a -o snat-utils cmd/snat-utils/main.go
 
-FROM public.ecr.aws/amazonlinux/amazonlinux:2
-RUN yum update -y && \
-    yum install -y iptables && \
-    yum clean all
+FROM public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-iptables:latest.2
 
 WORKDIR /
 COPY --from=builder /workspace/ .
