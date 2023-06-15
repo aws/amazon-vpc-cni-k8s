@@ -25,7 +25,7 @@ var _ = Describe("aws-node env test", func() {
 
 	var _ = JustBeforeEach(func() {
 		By("Deploying a host network deployment with Volume mount")
-		container := manifest.NewBusyBoxContainerBuilder().Build()
+		container := manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).Build()
 
 		volume := []v1.Volume{
 			{

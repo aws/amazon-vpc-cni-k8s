@@ -105,7 +105,7 @@ func deleteTestDeployment() {
 }
 
 func getTestPodList() common.InterfaceTypeToPodList {
-	deployment = manifest.NewBusyBoxDeploymentBuilder().
+	deployment = manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 		Replicas(maxIPPerInterface*2).
 		PodLabel(podLabelKey, podLabelVal).
 		NodeName(primaryNode.Name).

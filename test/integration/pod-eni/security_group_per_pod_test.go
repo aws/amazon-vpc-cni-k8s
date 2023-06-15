@@ -280,7 +280,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 			branchPodLabelVal = []string{busyboxPodLabelVal}
 		})
 		It("Deploy BusyBox Pods with branch ENI and verify HostNetworking", func() {
-			deployment := manifest.NewBusyBoxDeploymentBuilder().
+			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Replicas(totalBranchInterface/asgSize).
 				PodLabel(labelKey, busyboxPodLabelVal).
 				NodeName(node.Name).
@@ -346,7 +346,7 @@ func ValidateHostNetworking(testType TestType, podValidationInputString string) 
 		testerArgs = append(testerArgs, "-test-cleanup=true", "-test-ppsg=true")
 	}
 
-	testContainer := manifest.NewTestHelperContainer().
+	testContainer := manifest.NewTestHelperContainer(f.Options.TestImageRegistry).
 		Command([]string{"./networking"}).
 		Args(testerArgs).
 		Build()

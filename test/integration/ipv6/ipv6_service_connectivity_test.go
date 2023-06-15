@@ -57,7 +57,7 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 	var negativeTesterContainer v1.Container
 
 	JustBeforeEach(func() {
-		serverContainer = manifest.NewTestHelperContainer().
+		serverContainer = manifest.NewTestHelperContainer(f.Options.TestImageRegistry).
 			Name("server").
 			Command([]string{"./traffic-server"}).
 			Args([]string{
@@ -95,7 +95,7 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 		By("sleeping for some time to allow service to become ready")
 		time.Sleep(utils.PollIntervalLong)
 
-		testerContainer = manifest.NewBusyBoxContainerBuilder().
+		testerContainer = manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).
 			Command([]string{"wget"}).
 			Args([]string{"--spider", "-T", "5", fmt.Sprintf("[%s]:%d", service.Spec.ClusterIP,
 				service.Spec.Ports[0].Port)}).
@@ -112,7 +112,7 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Test connection to an unreachable port should fail
-		negativeTesterContainer = manifest.NewBusyBoxContainerBuilder().
+		negativeTesterContainer = manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).
 			Command([]string{"wget"}).
 			Args([]string{"--spider", "-T", "5", fmt.Sprintf("[%s]:%d", service.Spec.ClusterIP, 2273)}).
 			Build()
