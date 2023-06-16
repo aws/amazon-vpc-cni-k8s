@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.13.2
+
+* Bug - [Sync node security groups to cache before node initialization](https://github.com/aws/amazon-vpc-cni-k8s/pull/2427) (@jdn5126 )
+* Improvement - [Fix hard-coded nitro instance types: p4de.24xlarge and c7g.metal](https://github.com/aws/amazon-vpc-cni-k8s/pull/2428) (@jdn5126 )
+* Improvement - [Upgrade to Go 1.20 and apply dependabot updates](https://github.com/aws/amazon-vpc-cni-k8s/pull/2412)
+* Improvement - [Set iptables mode automatically and deprecate ENABLE_NFTABLES](https://github.com/aws/amazon-vpc-cni-k8s/pull/2402) (@jdn5126 )
+* Improvement - [Upgrade client-go and controller-runtime modules](https://github.com/aws/amazon-vpc-cni-k8s/pull/2396) (@jdn5126 )
+
 ## v1.13.0
 
 * Bug - [Increase datastore pool at startup](https://github.com/aws/amazon-vpc-cni-k8s/pull/2354) (@jdn5126 )
