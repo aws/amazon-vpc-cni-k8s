@@ -11,10 +11,6 @@ GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
 TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"617930562442.dkr.ecr.us-west-2.amazonaws.com"}
 ADC_REGIONS="us-iso-east-1 us-isob-east-1 us-iso-west-1"
 
-# authenticate into test registry
-echo "authenticate to test image registry in $REGION"
-aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${TEST_IMAGE_REGISTRY}
-
 source "$SCRIPT_DIR"/lib/add-on.sh
 source "$SCRIPT_DIR"/lib/cluster.sh
 source "$SCRIPT_DIR"/lib/canary.sh
