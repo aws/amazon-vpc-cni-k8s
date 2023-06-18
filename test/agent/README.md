@@ -64,9 +64,10 @@ Apart from running the tests on your local environment. For some test cases wher
 
 #### Running the docker Image
 
-Run the following command to build the agent image and push to ECR. This needs an existing repository with name "aws-vpc-cni-test-helper"
+Run the following command to build the agent image and push to ECR public. This needs an existing repository with name "aws-vpc-cni-test-helper"
 ```
-AWS_ACCOUNT=<account> AWS_REGION=<region> make docker-build docker-push
+export REGISTRY_ID=eks
+make publish-public-image
 ``` 
 Change the agent image in the Go code and run the test case as usual.
 

@@ -439,14 +439,8 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer, c.enablePrefixDelegation)
 
-	err = c.nodeInit()
-	if err != nil {
-		return nil, err
-	}
-
-	mac := c.awsClient.GetPrimaryENImac()
-
 	// Retrieve security groups
+	mac := c.awsClient.GetPrimaryENImac()
 	if c.enableIPv4 && !c.disableENIProvisioning {
 		err = c.awsClient.RefreshSGIDs(mac)
 		if err != nil {
@@ -456,6 +450,11 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 		// Refresh security groups and VPC CIDR blocks in the background
 		// Ignoring errors since we will retry in 30s
 		go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
+	}
+
+	err = c.nodeInit()
+	if err != nil {
+		return nil, err
 	}
 
 	return c, nil
