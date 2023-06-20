@@ -89,7 +89,7 @@ BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper aws-vpc-cni aw
 CORE_PLUGIN_DIR = $(MAKEFILE_PATH)/core-plugins/
 
 # DOCKER_ARGS is extra arguments passed during container image build.
-DOCKER_ARGS =
+DOCKER_ARGS ?=
 # DOCKER_RUN_FLAGS is set the flags passed during runs of containers.
 DOCKER_RUN_FLAGS = --rm -ti $(DOCKER_ARGS)
 # DOCKER_BUILD_FLAGS_CNI is the set of flags passed during CNI container image 
