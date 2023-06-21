@@ -67,9 +67,8 @@ function up-kops-cluster {
     if ! aws s3api head-bucket --bucket $KOPS_S3_BUCKET 2>/dev/null; then
         aws s3api create-bucket --bucket $KOPS_S3_BUCKET --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
     fi
-    kops_version="v1.25.3"
-    echo "Using kops version $kops_version"
-    curl -LO https://github.com/kubernetes/kops/releases/download/$kops_version/kops-linux-amd64
+    echo "Using kops version $KOPS_VERSION"
+    curl -LO https://github.com/kubernetes/kops/releases/download/$KOPS_VERSION/kops-linux-amd64
     chmod +x kops-linux-amd64
     mkdir -p ~/kops_bin
     KOPS_BIN=~/kops_bin/kops
