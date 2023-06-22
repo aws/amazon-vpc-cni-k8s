@@ -673,7 +673,7 @@ Note that enabling/disabling this feature only affects whether newly created pod
 
 ----
 
-#### `IP_COOLDOWN_PERIOD` (v1.13.1+)
+#### `IP_COOLDOWN_PERIOD` (v1.13.3+)
 
 Type: Integer as a String
 
