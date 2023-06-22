@@ -35,6 +35,7 @@ ARCH=$(go env GOARCH)
 : "${RUN_LATEST_CALICO_VERSION:=false}"
 : "${CALICO_VERSION:=v3.25.0}"
 : "${RUN_CALICO_TEST_WITH_PD:=true}"
+: "${KOPS_VERSION=v1.26.4}"
 
 __cluster_created=0
 __cluster_deprovisioned=0
