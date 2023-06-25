@@ -33,3 +33,8 @@ rules:
     resources:
       - events
     verbs: ["create", "patch", "list"]
+  - apiGroups:
+      - vpcresources.k8s.aws
+    resources:
+      - cninodes
+    verbs: ["get", "list", "patch"]
