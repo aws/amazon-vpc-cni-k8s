@@ -218,12 +218,10 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 }
 
 func DeleteAndWaitTillSelfManagedNGStackDeleted(f *framework.Framework, properties NodeGroupProperties) error {
-	err := f.CloudServices.CloudFormation().
-		WaitTillStackDeleted(properties.NodeGroupName)
+	err := f.CloudServices.CloudFormation().WaitTillStackDeleted(properties.NodeGroupName)
 	if err != nil {
 		return fmt.Errorf("failed to delete node group cfn stack: %v", err)
 	}
-
 	return nil
 }
 

@@ -52,13 +52,24 @@ func (e *ENIConfigBuilder) Build() (*v1alpha1.ENIConfig, error) {
 		return nil, fmt.Errorf("subnet id is a required field")
 	}
 
-	return &v1alpha1.ENIConfig{
-		ObjectMeta: v1.ObjectMeta{
-			Name: e.name,
-		},
-		Spec: v1alpha1.ENIConfigSpec{
-			SecurityGroups: e.securityGroup,
-			Subnet:         e.subnetID,
-		},
-	}, nil
+	if e.securityGroup == nil {
+		return &v1alpha1.ENIConfig{
+			ObjectMeta: v1.ObjectMeta{
+				Name: e.name,
+			},
+			Spec: v1alpha1.ENIConfigSpec{
+				Subnet: e.subnetID,
+			},
+		}, nil
+	} else {
+		return &v1alpha1.ENIConfig{
+			ObjectMeta: v1.ObjectMeta{
+				Name: e.name,
+			},
+			Spec: v1alpha1.ENIConfigSpec{
+				SecurityGroups: e.securityGroup,
+				Subnet:         e.subnetID,
+			},
+		}, nil
+	}
 }
