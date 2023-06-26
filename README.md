@@ -620,7 +620,7 @@ configured to operate in IPv6 mode. Prefix delegation is only supported on nitro
 
 ---
 
-#### `ENABLE_NFTABLES` (introduced in v1.12.1, deprecated in v1.13.1+)
+#### `ENABLE_NFTABLES` (introduced in v1.12.1, deprecated in v1.13.2+)
 
 Type: Boolean as a String
 
