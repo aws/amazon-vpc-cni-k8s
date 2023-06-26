@@ -130,14 +130,14 @@ func (logConfig *Configuration) newZapLogger() *structuredLogger {
 func getPluginLogFilePath(logFilePath string) zapcore.WriteSyncer {
 	var writer zapcore.WriteSyncer
 
-	if logFilePath == "" {
+	// When path is explicitly empty, write to stderr
+	if logFilePath == "" || strings.ToLower(logFilePath) == "stderr" {
 		writer = zapcore.Lock(os.Stderr)
-	} else if strings.ToLower(logFilePath) != "stdout" {
-		writer = getLogWriter(logFilePath)
-	} else {
+	} else if strings.ToLower(logFilePath) == "stdout" {
 		writer = zapcore.Lock(os.Stdout)
+	} else {
+		writer = getLogWriter(logFilePath)
 	}
-
 	return writer
 }
 

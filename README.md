@@ -316,7 +316,7 @@ Default: `DEBUG`
 
 Valid Values: `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`. (Not case sensitive)
 
-Specifies the loglevel for `ipamd` and `cni-metric-helper`.
+Specifies the log level for `ipamd` and `cni-metric-helper`.
 
 ---
 
@@ -326,9 +326,13 @@ Type: String
 
 Default: `/host/var/log/aws-routed-eni/ipamd.log`
 
-Valid Values: `stdout` or a file path
+Valid Values: `stdout`, `stderr`, or a file path
 
-Specifies where to write the logging output of `ipamd`. Either to stdout or to override the default file (i.e., `/var/log/aws-routed-eni/ipamd.log`).
+Specifies where to write the logging output of `ipamd`: `stdout`, `stderr`, or a file path other than the default (`/var/log/aws-routed-eni/ipamd.log`).
+
+Note: `/host/var/log/...` is the container file-system path, which maps to `/var/log/...` on the node.
+
+Note: The IPAMD process runs within the `aws-node` pod, so writing to `stdout` or `stderr` will write to `aws-node` pod logs.
 
 ---
 
@@ -338,12 +342,15 @@ Type: String
 
 Default: `/var/log/aws-routed-eni/plugin.log`
 
-Valid Values: `stderr` or a file path
+Valid Values: `stderr` or a file path. Note that setting to the empty string is an alias for `stderr`, and this comes from upstream kubernetes best practices.
 
-Specifies where to write the logging output for `aws-cni` plugin. Either to `stderr` or to override the default file (i.e., `/var/log/aws-routed-eni/plugin.log`).
-`Stdout` cannot be supported for plugin log, please refer to [#1248](https://github.com/aws/amazon-vpc-cni-k8s/issues/1248) for more details.
+Specifies where to write the logging output for `aws-cni` plugin: `stderr` or a file path other than the default (`/var/log/aws-routed-eni/plugin.log`).
 
-Note: If chaining an external plugin (i.e Cilium) that does not provide a `pluginLogFile` in its config file, the CNI plugin will by default write to `os.Stderr`. The output of `cmdAdd` are available in the Kubelet logs.
+Note: `stdout` cannot be supported for plugin log. Please refer to [#1248](https://github.com/aws/amazon-vpc-cni-k8s/issues/1248) for more details.
+
+Note: In EKS 1.24+, the CNI plugin is exec'ed by the container runtime, so `stderr` is for the container-runtime process, NOT the `aws-node` pod. In older versions, the CNI plugin was exec'ed by kubelet, so `stderr` is for the kubelet process.
+
+Note: If chaining an external plugin (i.e. Cilium) that does not provide a `pluginLogFile` in its config file, the CNI plugin will by default write to `os.Stderr`.
 
 ---
 
