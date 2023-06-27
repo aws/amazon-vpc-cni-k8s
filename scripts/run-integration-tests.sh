@@ -27,7 +27,6 @@ ARCH=$(go env GOARCH)
 : "${RUN_CONFORMANCE:=false}"
 : "${RUN_TESTER_LB_ADDONS:=false}"
 : "${RUN_KOPS_TEST:=false}"
-: "${RUN_INTEGRATION_DEFAULT_CNI:=true}"
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
@@ -89,7 +88,6 @@ TEST_CLUSTER_DIR=${TEST_BASE_DIR}/cluster-$CLUSTER_NAME
 CLUSTER_MANAGE_LOG_PATH=$TEST_CLUSTER_DIR/cluster-manage.log
 : "${CLUSTER_CONFIG:=${TEST_CLUSTER_DIR}/${CLUSTER_NAME}.yaml}"
 : "${KUBECONFIG_PATH:=${TEST_CLUSTER_DIR}/kubeconfig}"
-: "${ADDONS_CNI_IMAGE:=""}"
 
 # shared binaries
 : "${TESTER_DIR:=${DIR}/aws-k8s-tester}"
@@ -227,23 +225,6 @@ grep -r -q $TEST_IMAGE_VERSION $TEST_CONFIG_PATH
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
 grep -r -q $INIT_IMAGE_NAME $TEST_CONFIG_PATH
 
-if [[ $RUN_INTEGRATION_DEFAULT_CNI == true ]]; then
-    ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
-
-    echo "*******************************************************************************"
-    echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
-    echo ""
-    START=$SECONDS
-
-    focus="CANARY"
-    echo "Running ginkgo tests with focus: $focus"
-    (cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-    (cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-    TEST_PASS=$?
-    DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
-    echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
-fi
-
 echo "*******************************************************************************"
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 echo "Updating CNI-INIT to image $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
@@ -255,7 +236,7 @@ CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
 echo "*******************************************************************************"
-echo "Running integration tests on current image:"
+echo "Running integration tests against current image"
 echo ""
 START=$SECONDS
 
