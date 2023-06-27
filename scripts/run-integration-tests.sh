@@ -128,6 +128,7 @@ check_aws_credentials
 : "${ROLE_ARN:=""}"
 : "${MNG_ROLE_ARN:=""}"
 : "${BUILDX_BUILDER:="multi-arch-image-builder"}"
+: "${TEST_IMAGE_REGISTRY:="617930562442.dkr.ecr.us-west-2.amazonaws.com"}"
 
 # S3 bucket initialization
 : "${S3_BUCKET_CREATE:=true}"
@@ -137,6 +138,9 @@ echo "Logging in to docker repo"
 aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${AWS_ECR_REGISTRY}
 ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
 ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_INIT_ECR_REPO_NAME"
+
+echo "Logging into the test image registry"
+aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${TEST_IMAGE_REGISTRY}
 
 # Check to see if the image already exists in the ECR repository, and if
 # not, check out the CNI source code for that image tag, build the CNI
