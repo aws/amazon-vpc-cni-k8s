@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/apparentlymart/go-cidr v1.0.1
 	github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20230614172555-5788cde362fa
-	github.com/aws/amazon-vpc-resource-controller-k8s v1.1.5
+	github.com/aws/amazon-vpc-resource-controller-k8s v1.2.2
 	github.com/aws/aws-sdk-go v1.43.29
 	github.com/containernetworking/cni v1.1.1
 	github.com/containernetworking/plugins v1.1.1
