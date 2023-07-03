@@ -21,10 +21,9 @@ function display_timelines() {
     echo ""
     echo "Displaying all step durations."
     echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
-    if [[ $RUN_INTEGRATION_DEFAULT_CNI == true ]]; then
-        echo "TIMELINE: Default CNI integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
+    if [[ "$RUN_CNI_INTEGRATION_TESTS" == true ]]; then
+        echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
     fi
-    echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
     if [[ "$RUN_CONFORMANCE" == true ]]; then
         echo "TIMELINE: Conformance tests took $CONFORMANCE_DURATION seconds."
     fi

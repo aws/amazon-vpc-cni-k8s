@@ -22,7 +22,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: "1.19"
+          go-version: "1.20"
       - name: Set up tools
         run: |
           # Install ginkgo version from go.mod
@@ -38,8 +38,6 @@ jobs:
       - name: Run e2e tests
         env:
           DISABLE_PROMPT: true
-          S3_BUCKET_CREATE: false
-          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
           ROLE_CREATE: false
           ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
           RUN_CONFORMANCE: true

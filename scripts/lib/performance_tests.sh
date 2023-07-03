@@ -13,10 +13,10 @@ function check_for_timeout() {
 
 function upload_results_to_s3_bucket() {
     echo "$filename"
-    echo "Date", "\"slot1\"", "\"slot2\"" >> "$filename"
-    echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])) >> "$filename"
-    echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])) >> "$filename"
-    echo $(date +"%Y-%m-%d-%T"), $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])) >> "$filename"
+    echo "Iteration", "scaleUpTime (s)", "scaleDownTime (s)", "scaleUpMem (Mi)", "scaleDownMem (Mi)" >> "$filename"
+    echo 1, $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])), $((SCALE_UP_MEM_ARRAY[1])), $((SCALE_DOWN_MEM_ARRAY[1])) >> "$filename"
+    echo 2, $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])), $((SCALE_UP_MEM_ARRAY[2])), $((SCALE_DOWN_MEM_ARRAY[2])) >> "$filename"
+    echo 3, $((SCALE_UP_DURATION_ARRAY[3])), $((SCALE_DOWN_DURATION_ARRAY[3])), $((SCALE_UP_MEM_ARRAY[3])), $((SCALE_DOWN_MEM_ARRAY[3])) >> "$filename"
 
     cat "$filename"
     if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
@@ -26,6 +26,9 @@ function upload_results_to_s3_bucket() {
     fi
 }
 
+# This function loads the last 3 scale-up averages and averages them. If the current
+# scale-up time is 25% higher than the calculated value, the test is considered a failure.
+# For memory checks, if the memory usage exceeds 250Mi, the test is considered a failure.
 function check_for_slow_performance() {
     BUCKET="s3://${PERFORMANCE_TEST_S3_BUCKET_NAME}/${1}/"
     FILE1=$(aws s3 ls "${BUCKET}" | sort | tail -n 2 | sed -n '1 p' | awk '{print $4}')
@@ -39,15 +42,20 @@ function check_for_slow_performance() {
     PAST_PERFORMANCE_UP_AVERAGE=$((PAST_PERFORMANCE_UP_AVERAGE_SUM / 3))
 
     # Divided by 3 to get current average, multiply past averages by 5/4 to get 25% window
-    if [[ $((CURRENT_PERFORMANCE_UP_SUM / 3)) -gt $((PAST_PERFORMANCE_UP_AVERAGE * 5 / 4)) ]]; then
+    if [[ $((CURRENT_DURATION_UP_SUM / 3)) -gt $((PAST_PERFORMANCE_UP_AVERAGE * 5 / 4)) ]]; then
         echo "FAILURE! Performance test pod UPPING took >25% longer than the past three tests"
-        echo "This tests time: $((CURRENT_PERFORMANCE_UP_SUM / 3))"
+        echo "This tests time: $((CURRENT_DURATION_UP_SUM / 3))"
         echo "Previous tests' time: ${PAST_PERFORMANCE_UP_AVERAGE}"
         echo "********************************"
         echo "Look into how current changes could cause cni inefficiency."
         echo "********************************"
         on_error 1 $LINENO
     fi
+}
+
+function get_aws_node_mem_max() {
+    AWS_NODE_MEM_RESULT=$(kubectl top pods -n kube-system -l k8s-app=aws-node | awk '{if (NR!=1) {print $NF}}' | sort -n | tail -n1)
+    AWS_NODE_MEM_RESULT=${AWS_NODE_MEM_RESULT:0:-2}
 }
 
 function find_performance_duration_average() {
@@ -62,24 +70,36 @@ function find_performance_duration_average() {
     PAST_PERFORMANCE_UP_AVERAGE_SUM=$(($PAST_PERFORMANCE_UP_AVERAGE_SUM + $((SCALE_UP_TEMP_DURATION_SUM / 3))))
 }
 
-function run_performance_test_130_pods() {
-    echo "Running performance tests against cluster"
+# This test case captures the following metrics:
+# 1. time (in seconds) to scale from 0 to REPLICAS pods - collected 3 times and set in SCALE_UP_DURATION_DELAY
+# 2. time (in seconds) to scale from REPLICAS to 0 pods - collected 3 times and set in SCALE_DOWN_DURATION_DELAY
+# 3. average time (in seconds) to scale from 0 to REPLICAS pods - collected in (CURRENT_DURATION_UP_SUM / 3)
+# 4. average time (in seconds) to scale from REPLICAS to 0 pods - collected in (CURRENT_DURATION_DOWN_SUM / 3)
+# 5. memory (in Mebibytes) after scaling up to REPLICAS pods - collected 3 times and set in SCALE_UP_MEM_ARRAY
+# 6. memory (in Mebibytes) after scaling down to 0 pods - collected 3 times and set in SCALE_DOWN_MEM_ARRAY
+function run_performance_test() {
     RUNNING_PERFORMANCE=true
-    $KUBECTL_PATH apply -f ./testdata/deploy-130-pods.yaml
+    REPLICAS=$1
+    echo "Running performance tests against cluster with $REPLICAS replicas"
+    $KUBECTL_PATH apply -f ./testdata/deploy-${REPLICAS}-pods.yaml
 
     DEPLOY_START=$SECONDS
     FAILURE_COUNT=0
 
     SCALE_UP_DURATION_ARRAY=()
+    SCALE_UP_MEM_ARRAY=()
     SCALE_DOWN_DURATION_ARRAY=()
-    CURRENT_PERFORMANCE_UP_SUM=0
-    CURRENT_PERFORMANCE_DOWN_SUM=0
+    SCALE_DOWN_MEM_ARRAY=()
+    CURRENT_DURATION_UP_SUM=0
+    CURRENT_DURATION_DOWN_SUM=0
+    AWS_NODE_MEM_RESULT=0
+    CURRENT_MEM_MAX=0
     while [ ${#SCALE_DOWN_DURATION_ARRAY[@]} -lt 3 ]
     do
         ITERATION_START=$SECONDS
         HAS_FAILED=false
-        $KUBECTL_PATH scale -f ./testdata/deploy-130-pods.yaml --replicas=130
-        while [[ ! $($KUBECTL_PATH get deploy | grep 130/130) && "$HAS_FAILED" == false ]]
+        $KUBECTL_PATH scale -f ./testdata/deploy-${REPLICAS}-pods.yaml --replicas=${REPLICAS}
+        while [[ ! $($KUBECTL_PATH get deploy deploy-${REPLICAS}-pods | grep ${REPLICAS}/${REPLICAS}) && "$HAS_FAILED" == false ]]
         do
             sleep 1
             echo "Scaling UP"
@@ -88,11 +108,16 @@ function run_performance_test_130_pods() {
         done
 
         if [[ "$HAS_FAILED" == false ]]; then
+            get_aws_node_mem_max
             DURATION=$((SECONDS - ITERATION_START))
             SCALE_UP_DURATION_ARRAY+=( $DURATION )
-            CURRENT_PERFORMANCE_UP_SUM=$((CURRENT_PERFORMANCE_UP_SUM + DURATION))
+            SCALE_UP_MEM_ARRAY+=( $AWS_NODE_MEM_RESULT )
+            CURRENT_DURATION_UP_SUM=$((CURRENT_DURATION_UP_SUM + DURATION))
+            if [[ $AWS_NODE_MEM_RESULT -gt $CURRENT_MEM_MAX ]]; then
+                CURRENT_MEM_MAX=$AWS_NODE_MEM_RESULT
+            fi
         fi
-        $KUBECTL_PATH scale -f ./testdata/deploy-130-pods.yaml --replicas=0
+        $KUBECTL_PATH scale -f ./testdata/deploy-${REPLICAS}-pods.yaml --replicas=0
         while [[ $($KUBECTL_PATH get pods) ]]
         do
             sleep 1
@@ -100,183 +125,30 @@ function run_performance_test_130_pods() {
             echo $($KUBECTL_PATH get deploy)
         done
         if [[ "$HAS_FAILED" == false ]]; then
+            get_aws_node_mem_max
             DURATION=$((SECONDS - ITERATION_START))
             SCALE_DOWN_DURATION_ARRAY+=( $DURATION )
-            CURRENT_PERFORMANCE_DOWN_SUM=$((CURRENT_PERFORMANCE_DOWN_SUM + DURATION))
+            SCALE_DOWN_MEM_ARRAY+=( $AWS_NODE_MEM_RESULT )
+            CURRENT_DURATION_DOWN_SUM=$((CURRENT_DURATION_DOWN_SUM + DURATION))
+            if [[ $AWS_NODE_MEM_RESULT -gt $CURRENT_MEM_MAX ]]; then
+                CURRENT_MEM_MAX=$AWS_NODE_MEM_RESULT
+            fi
         fi
     done
 
-    echo "Times to scale up:"
-    INDEX=0
-    while [ $INDEX -lt ${#SCALE_UP_DURATION_ARRAY[@]} ]
-    do
-        echo ${SCALE_UP_DURATION_ARRAY[$INDEX]}
-        INDEX=$((INDEX + 1))
-    done
-    echo ""
-    echo "Times to scale down:"
-    INDEX=0
-    while [ $INDEX -lt ${#SCALE_DOWN_DURATION_ARRAY[@]} ]
-    do
-        echo "${SCALE_DOWN_DURATION_ARRAY[$INDEX]} seconds"
-        INDEX=$((INDEX + 1))
-    done
-    echo ""
     DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
+    filename="pod-${REPLICAS}-Test-${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
+    upload_results_to_s3_bucket "${REPLICAS}-pods"
 
-    filename="pod-130-Test-${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
-    upload_results_to_s3_bucket "130-pods"
-    
-    echo "TIMELINE: 130 Pod performance test took $DEPLOY_DURATION seconds."
+    echo "TIMELINE: ${REPLICAS} Pod performance test took $DEPLOY_DURATION seconds."
     RUNNING_PERFORMANCE=false
     if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
-        check_for_slow_performance "130-pods"
+        check_for_slow_performance "${REPLICAS}-pods"
     fi
-    $KUBECTL_PATH delete -f ./testdata/deploy-130-pods.yaml
-}
-
-function run_performance_test_730_pods() {
-    echo "Running performance tests against cluster"
-    RUNNING_PERFORMANCE=true
-    $KUBECTL_PATH apply -f ./testdata/deploy-730-pods.yaml
-
-    DEPLOY_START=$SECONDS
-    FAILURE_COUNT=0
-
-    SCALE_UP_DURATION_ARRAY=()
-    SCALE_DOWN_DURATION_ARRAY=()
-    CURRENT_PERFORMANCE_UP_SUM=0
-    CURRENT_PERFORMANCE_DOWN_SUM=0
-    while [ ${#SCALE_DOWN_DURATION_ARRAY[@]} -lt 3 ]
-    do
-        ITERATION_START=$SECONDS
-        HAS_FAILED=false
-        $KUBECTL_PATH scale -f ./testdata/deploy-730-pods.yaml --replicas=730
-        while [[ ! $($KUBECTL_PATH get deploy | grep 730/730) && "$HAS_FAILED" == false ]]
-        do
-            sleep 2
-            echo "Scaling UP"
-            echo $($KUBECTL_PATH get deploy)
-            check_for_timeout $ITERATION_START
-        done
-
-        if [[ "$HAS_FAILED" == false ]]; then
-            DURATION=$((SECONDS - ITERATION_START))
-            SCALE_UP_DURATION_ARRAY+=( $DURATION )
-            CURRENT_PERFORMANCE_UP_SUM=$((CURRENT_PERFORMANCE_UP_SUM + DURATION))
-        fi
-        $KUBECTL_PATH scale -f ./testdata/deploy-730-pods.yaml --replicas=0
-        while [[ $($KUBECTL_PATH get pods) ]]
-        do
-            sleep 2
-            echo "Scaling DOWN"
-            echo $($KUBECTL_PATH get deploy)
-        done
-        if [[ "$HAS_FAILED" == false ]]; then
-            DURATION=$((SECONDS - ITERATION_START))
-            SCALE_DOWN_DURATION_ARRAY+=( $DURATION )
-            CURRENT_PERFORMANCE_DOWN_SUM=$((CURRENT_PERFORMANCE_DOWN_SUM + DURATION))
-        fi
-    done
-
-    echo "Times to scale up:"
-    INDEX=0
-    while [ $INDEX -lt ${#SCALE_UP_DURATION_ARRAY[@]} ]
-    do
-        echo ${SCALE_UP_DURATION_ARRAY[$INDEX]}
-        INDEX=$((INDEX + 1))
-    done
-    echo ""
-    echo "Times to scale down:"
-    INDEX=0
-    while [ $INDEX -lt ${#SCALE_DOWN_DURATION_ARRAY[@]} ]
-    do
-        echo "${SCALE_DOWN_DURATION_ARRAY[$INDEX]} seconds"
-        INDEX=$((INDEX + 1))
-    done
-    echo ""
-    DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
-
-    filename="pod-730-Test-${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
-    upload_results_to_s3_bucket "730-pods"
-    
-    echo "TIMELINE: 730 Pod performance test took $DEPLOY_DURATION seconds."
-    RUNNING_PERFORMANCE=false
-    if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
-        check_for_slow_performance "730-pods"
+    # Check for memory breach
+    if [[ $CURRENT_MEM_MAX -gt 200 ]]; then
+        echo "Max aws-node pod memory usage exceeded 200Mi. Failing test."
+        on_error 1 $LINENO
     fi
-    $KUBECTL_PATH delete -f ./testdata/deploy-730-pods.yaml
-}
-
-function run_performance_test_5000_pods() {
-    echo "Running performance tests against cluster"
-    RUNNING_PERFORMANCE=true
-    $KUBECTL_PATH apply -f ./testdata/deploy-5000-pods.yaml
-    
-    DEPLOY_START=$SECONDS
-    FAILURE_COUNT=0
-
-    SCALE_UP_DURATION_ARRAY=()
-    SCALE_DOWN_DURATION_ARRAY=()
-    CURRENT_PERFORMANCE_UP_SUM=0
-    CURRENT_PERFORMANCE_DOWN_SUM=0
-    while [ ${#SCALE_DOWN_DURATION_ARRAY[@]} -lt 3 ]
-    do
-        ITERATION_START=$SECONDS
-        HAS_FAILED=false
-        $KUBECTL_PATH scale -f ./testdata/deploy-5000-pods.yaml --replicas=5000
-        while [[ ! $($KUBECTL_PATH get deploy | grep 5000/5000) && "$HAS_FAILED" == false ]]
-        do
-            sleep 2
-            echo "Scaling UP"
-            echo $($KUBECTL_PATH get deploy)
-            check_for_timeout $ITERATION_START
-        done
-
-        if [[ "$HAS_FAILED" == false ]]; then
-            DURATION=$((SECONDS - ITERATION_START))
-            SCALE_UP_DURATION_ARRAY+=( $DURATION )
-            CURRENT_PERFORMANCE_UP_SUM=$((CURRENT_PERFORMANCE_UP_SUM + DURATION))
-        fi
-        $KUBECTL_PATH scale -f ./testdata/deploy-5000-pods.yaml --replicas=0
-        while [[ $($KUBECTL_PATH get pods) ]]
-        do
-            sleep 2
-            echo "Scaling DOWN"
-            echo $($KUBECTL_PATH get deploy)
-        done
-        if [[ "$HAS_FAILED" == false ]]; then
-            DURATION=$((SECONDS - ITERATION_START))
-            SCALE_DOWN_DURATION_ARRAY+=( $DURATION )
-            CURRENT_PERFORMANCE_DOWN_SUM=$((CURRENT_PERFORMANCE_DOWN_SUM + DURATION))
-        fi
-    done
-
-    echo "Times to scale up:"
-    INDEX=0
-    while [ $INDEX -lt ${#SCALE_UP_DURATION_ARRAY[@]} ]
-    do
-        echo ${SCALE_UP_DURATION_ARRAY[$INDEX]}
-        INDEX=$((INDEX + 1))
-    done
-    echo ""
-    echo "Times to scale down:"
-    INDEX=0
-    while [ $INDEX -lt ${#SCALE_DOWN_DURATION_ARRAY[@]} ]
-    do
-        echo "${SCALE_DOWN_DURATION_ARRAY[$INDEX]} seconds"
-        INDEX=$((INDEX + 1))
-    done
-    echo ""
-    DEPLOY_DURATION=$((SECONDS - DEPLOY_START))
-
-    filename="pod-5000-Test-${TEST_ID}-$(date +"%m-%d-%Y-%T")-${TEST_IMAGE_VERSION}.csv"
-    upload_results_to_s3_bucket "5000-pods"
-    
-    echo "TIMELINE: 5000 Pod performance test took $DEPLOY_DURATION seconds."
-    RUNNING_PERFORMANCE=false
-    if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
-        check_for_slow_performance "5000-pods"
-    fi
-    $KUBECTL_PATH delete -f ./testdata/deploy-5000-pods.yaml
+    $KUBECTL_PATH delete -f ./testdata/deploy-${REPLICAS}-pods.yaml
 }
