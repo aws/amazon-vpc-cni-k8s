@@ -8,19 +8,21 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
+	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
 var log = logger.Get()
@@ -45,11 +47,16 @@ func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
 		return nil, err
 	}
 	vpcCniScheme := runtime.NewScheme()
-	clientgoscheme.AddToScheme(vpcCniScheme)
-	eniconfigscheme.AddToScheme(vpcCniScheme)
+	err = clientgoscheme.AddToScheme(vpcCniScheme)
+	if err != nil {
+		return nil, err
+	}
+	err = eniconfigscheme.AddToScheme(vpcCniScheme)
+	if err != nil {
+		return nil, err
+	}
 
 	rawK8SClient, err := client.New(restCfg, client.Options{Scheme: vpcCniScheme, Mapper: mapper})
-
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +64,7 @@ func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
 	return rawK8SClient, nil
 }
 
-// CreateKubeClient creates a k8s client
+// CreateCachedKubeClient creates a k8s client with a local cache. For pod objects, only pods deployed on this node are cached.
 func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper) (client.Client, error) {
 	restCfg, err := getRestConfig()
 	if err != nil {
@@ -66,11 +73,25 @@ func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper) 
 	restCfg.Burst = 100
 
 	vpcCniScheme := runtime.NewScheme()
-	clientgoscheme.AddToScheme(vpcCniScheme)
-	eniconfigscheme.AddToScheme(vpcCniScheme)
+	err = clientgoscheme.AddToScheme(vpcCniScheme)
+	if err != nil {
+		return nil, err
+	}
+	err = eniconfigscheme.AddToScheme(vpcCniScheme)
+	if err != nil {
+		return nil, err
+	}
+
+	// IPAMD only needs to cache pods on this node, so the following selector is used to reduce memory consumption
+	cacheOptions := crcache.Options{Scheme: vpcCniScheme, Mapper: mapper}
+	if nodeName := os.Getenv("MY_NODE_NAME"); nodeName != "" {
+		cacheOptions.SelectorsByObject = map[client.Object]crcache.ObjectSelector{&corev1.Pod{}: {
+			Field: fields.Set{"spec.nodeName": nodeName}.AsSelector(),
+		}}
+	}
 
 	stopChan := ctrl.SetupSignalHandler()
-	cache, err := cache.New(restCfg, cache.Options{Scheme: vpcCniScheme, Mapper: mapper})
+	cache, err := crcache.New(restCfg, cacheOptions)
 	if err != nil {
 		return nil, err
 	}
