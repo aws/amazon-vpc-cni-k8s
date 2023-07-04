@@ -4,8 +4,6 @@ import org.jenkinsci.plugins.pipeline.github.trigger.IssueCommentCause
 
 def MAIN_BRANCH                    = 'build'
 def DOCKER_REPOSITORY_NAME         = 'amazon-k8s-cni'
-def DOCKER_REGISTRY_URL            = 'https://662491802882.dkr.ecr.us-east-1.amazonaws.com'
-def DOCKER_REGISTRY_CREDENTIALS_ID = 'ecr:us-east-1:ecr-docker-push'
 def PROJECT_PATH                   = 'src/github.com/aws/amazon-vpc-cni-k8s'
 
 properties([
@@ -14,9 +12,9 @@ properties([
 def isForcePublish = !!currentBuild.rawBuild.getCause(IssueCommentCause)
 
 withResultReporting(slackChannel: '#tm-is', mainBranch: MAIN_BRANCH) {
-  inDockerAgent(containers: [interactiveContainer(name: 'go', image: 'golang:1.10')]) {
+  withImageBuilder(containers: [interactiveContainer(name: 'go', image: 'golang:1.10')]) {
     def version
-    def dockerImage
+    def image
 
     stage('Build docker image') {
       def gopath = pwd()
@@ -34,14 +32,14 @@ withResultReporting(slackChannel: '#tm-is', mainBranch: MAIN_BRANCH) {
             sh('make build-linux && make download-portmap')
           }
         }
-        dockerImage = docker.build(DOCKER_REPOSITORY_NAME, '-f scripts/dockerfiles/Dockerfile.release .')
+        image = imageBuilder.build(DOCKER_REPOSITORY_NAME, '-f scripts/dockerfiles/Dockerfile.release .')
       }
     }
     if (BRANCH_NAME == MAIN_BRANCH || isForcePublish) {
       stage('Publish docker image') {
-        docker.withRegistry(DOCKER_REGISTRY_URL, DOCKER_REGISTRY_CREDENTIALS_ID) {
-          echo("Publishing docker image ${dockerImage.imageName()} with tag ${version}")
-          dockerImage.push("${version}")
+        imageBuilder.withECR() {
+          echo("Publishing docker image ${image.imageName()} with tag ${version}")
+          image.push("${version}")
         }
         if (isForcePublish) {
           pullRequest.comment("Built and published ${version}")
