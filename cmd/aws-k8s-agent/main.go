@@ -52,7 +52,7 @@ func _main() int {
 		return 1
 	}
 
-	cacheK8SClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient, mapper)
+	cacheK8SClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient, mapper, true)
 	if err != nil {
 		log.Errorf("Failed to create cached kube client: %s", err)
 		return 1
