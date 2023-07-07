@@ -1,6 +1,6 @@
 ## CNI Integration Test Suites
 
-The package contains automated integration tests suites for `amazon-vpc-cni-k8s`.
+This package contains automated integration tests suites for `amazon-vpc-cni-k8s`.
 
 ### Prerequisites
 The integration tests require:

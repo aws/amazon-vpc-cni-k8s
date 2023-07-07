@@ -43,9 +43,6 @@ do
      
 done
 
-DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
-echo "TIMELINE: Integration tests took $DEFAULT_INTEGRATION_DURATION seconds."
-
 popd
 
 # If any of the test failed, exit with non zero exit code

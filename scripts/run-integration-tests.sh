@@ -24,6 +24,7 @@ ARCH=$(go env GOARCH)
 : "${PROVISION:=true}"
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
+: "${RUN_CNI_INTEGRATION_TESTS:=true}"
 : "${RUN_CONFORMANCE:=false}"
 : "${RUN_TESTER_LB_ADDONS:=false}"
 : "${RUN_KOPS_TEST:=false}"
@@ -128,10 +129,6 @@ check_aws_credentials
 : "${MNG_ROLE_ARN:=""}"
 : "${BUILDX_BUILDER:="multi-arch-image-builder"}"
 
-# S3 bucket initialization
-: "${S3_BUCKET_CREATE:=true}"
-: "${S3_BUCKET_NAME:=""}"
-
 echo "Logging in to docker repo"
 aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${AWS_ECR_REGISTRY}
 ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
@@ -235,20 +232,22 @@ check_ds_rollout "aws-node" "kube-system" "10m"
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 
-echo "*******************************************************************************"
-echo "Running integration tests against current image"
-echo ""
-START=$SECONDS
-
-focus="CANARY"
-echo "Running ginkgo tests with focus: $focus"
-(cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-(cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
-TEST_PASS=$?
-CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
-echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
-if [[ $TEST_PASS -eq 0 ]]; then
-  emit_cloudwatch_metric "integration_test_status" "1"
+TEST_PASS=0
+if [[ $RUN_CNI_INTEGRATION_TESTS == true ]]; then
+    echo "*******************************************************************************"
+    echo "Running integration tests against current image"
+    echo ""
+    START=$SECONDS
+    focus="CANARY"
+    echo "Running ginkgo tests with focus: $focus"
+    (cd "$INTEGRATION_TEST_DIR/cni" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+    (cd "$INTEGRATION_TEST_DIR/ipamd" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$AWS_DEFAULT_REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+    TEST_PASS=$?
+    CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
+    echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
+    if [[ $TEST_PASS -eq 0 ]]; then
+      emit_cloudwatch_metric "integration_test_status" "1"
+    fi
 fi
 
 if [[ $RUN_CALICO_TEST == true ]]; then
@@ -292,12 +291,12 @@ fi
 
 if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
     echo "*******************************************************************************"
-    echo "Running performance tests on current image:"
+    echo "Running performance tests on current image"
     echo ""
     START=$SECONDS
-    run_performance_test_130_pods
-    run_performance_test_730_pods
-    run_performance_test_5000_pods
+    run_performance_test 130
+    run_performance_test 730
+    run_performance_test 5000
     PERFORMANCE_DURATION=$((SECONDS - START))
 fi
 
