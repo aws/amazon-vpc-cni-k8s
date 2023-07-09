@@ -1,6 +1,8 @@
 package sgpp
 
-import "os"
+import (
+	"os"
+)
 
 const vlanInterfacePrefix = "vlan"
 
