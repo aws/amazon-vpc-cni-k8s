@@ -14,6 +14,7 @@ import (
 
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	rcscheme "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -47,6 +48,7 @@ func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
 	vpcCniScheme := runtime.NewScheme()
 	corev1.AddToScheme(vpcCniScheme)
 	eniconfigscheme.AddToScheme(vpcCniScheme)
+	rcscheme.AddToScheme(vpcCniScheme)
 
 	rawK8SClient, err := client.New(restCfg, client.Options{Scheme: vpcCniScheme, Mapper: mapper})
 

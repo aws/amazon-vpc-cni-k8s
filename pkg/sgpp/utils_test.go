@@ -4,8 +4,35 @@ import (
 	"os"
 	"testing"
 
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	rcscheme "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 )
+
+type testMocks struct {
+	ctrl            *gomock.Controller
+	cachedK8SClient client.Client
+}
+
+func setup(t *testing.T) *testMocks {
+	ctrl := gomock.NewController(t)
+	k8sSchema := runtime.NewScheme()
+	clientgoscheme.AddToScheme(k8sSchema)
+	eniconfigscheme.AddToScheme(k8sSchema)
+	rcscheme.AddToScheme(k8sSchema)
+
+	return &testMocks{
+		ctrl:            ctrl,
+		cachedK8SClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
+	}
+}
 
 func TestBuildHostVethNamePrefix(t *testing.T) {
 	type args struct {

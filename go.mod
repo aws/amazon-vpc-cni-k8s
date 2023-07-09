@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/apparentlymart/go-cidr v1.0.1
 	github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20230614172555-5788cde362fa
-	github.com/aws/amazon-vpc-resource-controller-k8s v1.1.5
+	github.com/aws/amazon-vpc-resource-controller-k8s v1.1.8
 	github.com/aws/aws-sdk-go v1.43.29
 	github.com/containernetworking/cni v1.1.1
 	github.com/containernetworking/plugins v1.1.1
@@ -123,6 +123,7 @@ require (
 	github.com/rubenv/sql-migrate v1.2.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/safchain/ethtool v0.0.0-20210803160452-9aa261dae9b1 // indirect
+	github.com/samber/lo v1.38.1
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/spf13/cast v1.4.1 // indirect
 	github.com/spf13/cobra v1.6.1 // indirect
@@ -135,13 +136,14 @@ require (
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/crypto v0.5.0 // indirect
+	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1 // indirect
 	golang.org/x/oauth2 v0.4.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/term v0.6.0 // indirect
 	golang.org/x/text v0.8.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.6.0 // indirect
-	gomodules.xyz/jsonpatch/v2 v2.2.0 // indirect
+	gomodules.xyz/jsonpatch/v2 v2.3.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20220502173005-c8bf987b8c21 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
