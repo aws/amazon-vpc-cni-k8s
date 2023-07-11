@@ -568,7 +568,7 @@ func (c *IPAMContext) nodeInit() error {
 
 	node, err := k8sapi.GetNode(ctx, c.cachedK8SClient)
 	if err != nil {
-		log.Errorf("Failed to host node", err)
+		log.Errorf("Failed to get node", err)
 		podENIErrInc("nodeInit")
 		return err
 	}
