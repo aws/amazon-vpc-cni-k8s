@@ -28,7 +28,6 @@ function up-test-cluster() {
     if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
         echo "Copying bottlerocket config to $CLUSTER_CONFIG"
         cp $CLUSTER_TEMPLATE_PATH/bottlerocket.yaml $CLUSTER_CONFIG
-
     elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
         echo "Copying perf test cluster config to $CLUSTER_CONFIG"
         cp $CLUSTER_TEMPLATE_PATH/perf-cluster.yml $CLUSTER_CONFIG
@@ -38,7 +37,6 @@ function up-test-cluster() {
         grep -r -q $AMI_ID $CLUSTER_CONFIG
         export RUN_CONFORMANCE="false"
         : "${PERFORMANCE_TEST_S3_BUCKET_NAME:=""}"
-    
     else
         echo "Copying test cluster config to $CLUSTER_CONFIG"
         cp $CLUSTER_TEMPLATE_PATH/test-cluster.yaml $CLUSTER_CONFIG
@@ -57,7 +55,10 @@ function up-test-cluster() {
     export KUBECONFIG=$KUBECONFIG_PATH
     
     if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
+        echo "Deploying cluster autoscaler"
         kubectl create -f $DIR/test/config/cluster-autoscaler-autodiscover.yml
+        echo "Deploying metrics server"
+        kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
     fi
 }
 
@@ -67,9 +68,8 @@ function up-kops-cluster {
     if ! aws s3api head-bucket --bucket $KOPS_S3_BUCKET 2>/dev/null; then
         aws s3api create-bucket --bucket $KOPS_S3_BUCKET --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
     fi
-    kops_version="v1.25.3"
-    echo "Using kops version $kops_version"
-    curl -LO https://github.com/kubernetes/kops/releases/download/$kops_version/kops-linux-amd64
+    echo "Using kops version $KOPS_VERSION"
+    curl -LO https://github.com/kubernetes/kops/releases/download/$KOPS_VERSION/kops-linux-amd64
     chmod +x kops-linux-amd64
     mkdir -p ~/kops_bin
     KOPS_BIN=~/kops_bin/kops

@@ -56,6 +56,6 @@ func (d *defaultPodWatcher) GetCNIPods(ctx context.Context) ([]string, error) {
 		CNIPods = append(CNIPods, pod.Name)
 	}
 
-	d.log.Infof("Total aws-node pod count:- ", len(CNIPods))
+	d.log.Infof("Total aws-node pod count: %d", len(CNIPods))
 	return CNIPods, nil
 }

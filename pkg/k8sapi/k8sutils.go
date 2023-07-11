@@ -8,8 +8,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
@@ -19,7 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
+	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -45,7 +45,7 @@ func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
 		return nil, err
 	}
 	vpcCniScheme := runtime.NewScheme()
-	clientgoscheme.AddToScheme(vpcCniScheme)
+	corev1.AddToScheme(vpcCniScheme)
 	eniconfigscheme.AddToScheme(vpcCniScheme)
 
 	rawK8SClient, err := client.New(restCfg, client.Options{Scheme: vpcCniScheme, Mapper: mapper})
@@ -58,7 +58,7 @@ func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
 }
 
 // CreateKubeClient creates a k8s client
-func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper) (client.Client, error) {
+func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper, limitPods bool) (client.Client, error) {
 	restCfg, err := getRestConfig()
 	if err != nil {
 		return nil, err
@@ -66,11 +66,20 @@ func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper) 
 	restCfg.Burst = 100
 
 	vpcCniScheme := runtime.NewScheme()
-	clientgoscheme.AddToScheme(vpcCniScheme)
+	// For the cached client, IPAMD only needs nodes and ENIConfigs to be cached. Nodes come from corev1.
+	corev1.AddToScheme(vpcCniScheme)
 	eniconfigscheme.AddToScheme(vpcCniScheme)
 
 	stopChan := ctrl.SetupSignalHandler()
-	cache, err := cache.New(restCfg, cache.Options{Scheme: vpcCniScheme, Mapper: mapper})
+	// IPAMD only needs to cache pods on this node, so the following selector is used to reduce memory consumption
+	cacheOptions := crcache.Options{Scheme: vpcCniScheme, Mapper: mapper}
+	if nodeName := os.Getenv("MY_NODE_NAME"); limitPods && nodeName != "" {
+		cacheOptions.SelectorsByObject = map[client.Object]crcache.ObjectSelector{&corev1.Pod{}: {
+			Field: fields.Set{"spec.nodeName": nodeName}.AsSelector(),
+		}}
+
+	}
+	cache, err := crcache.New(restCfg, cacheOptions)
 	if err != nil {
 		return nil, err
 	}

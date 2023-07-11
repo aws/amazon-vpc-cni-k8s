@@ -118,7 +118,7 @@ func main() {
 		log.Fatalf("Error creating Kubernetes Client: %s", err)
 		os.Exit(1)
 	}
-	k8sClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient, mapper)
+	k8sClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient, mapper, false)
 	if err != nil {
 		log.Fatalf("Error creating Cached Kubernetes Client: %s", err)
 		os.Exit(1)

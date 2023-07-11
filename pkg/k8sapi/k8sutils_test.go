@@ -10,14 +10,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestGetNode(t *testing.T) {
 	ctx := context.Background()
 	k8sSchema := runtime.NewScheme()
-	clientgoscheme.AddToScheme(k8sSchema)
+	corev1.AddToScheme(k8sSchema)
 	eniconfigscheme.AddToScheme(k8sSchema)
 
 	fakeNode := &corev1.Node{
@@ -25,7 +24,7 @@ func TestGetNode(t *testing.T) {
 			Name: "testNode",
 		},
 	}
-	k8sClient := fake.NewFakeClientWithScheme(k8sSchema, fakeNode)
+	k8sClient := fake.NewClientBuilder().WithScheme(k8sSchema).WithObjects(fakeNode).Build()
 	os.Setenv("MY_NODE_NAME", "testNode")
 	node, err := GetNode(ctx, k8sClient)
 	assert.NoError(t, err)
