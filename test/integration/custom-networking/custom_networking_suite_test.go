@@ -55,7 +55,8 @@ var (
 	customNetworkingSGOpenPort   = 8080
 	customNetworkingSubnetIDList []string
 	// List of ENIConfig per Availability Zone
-	eniConfigList []*v1alpha1.ENIConfig
+	eniConfigList        []*v1alpha1.ENIConfig
+	eniConfigBuilderList []*manifest.ENIConfigBuilder
 	// Properties of the self managed node group created using CFN template
 	nodeGroupProperties awsUtils.NodeGroupProperties
 	err                 error
@@ -73,8 +74,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	By("creating test namespace")
-	f.K8sResourceManagers.NamespaceManager().
-		CreateNamespace(utils.DefaultTestNamespace)
+	f.K8sResourceManagers.NamespaceManager().CreateNamespace(utils.DefaultTestNamespace)
 
 	By("getting the cluster VPC Config")
 	clusterVPCConfig, err = awsUtils.GetClusterVPCConfig(f)
@@ -91,10 +91,10 @@ var _ = BeforeSuite(func() {
 	customNetworkingSGID = *createSecurityGroupOutput.GroupId
 
 	By("authorizing egress and ingress on security group for single port")
-	f.CloudServices.EC2().
-		AuthorizeSecurityGroupEgress(customNetworkingSGID, "TCP", customNetworkingSGOpenPort, customNetworkingSGOpenPort, "0.0.0.0/0")
-	f.CloudServices.EC2().
-		AuthorizeSecurityGroupIngress(customNetworkingSGID, "TCP", customNetworkingSGOpenPort, customNetworkingSGOpenPort, "0.0.0.0/0")
+	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(customNetworkingSGID, "TCP",
+		customNetworkingSGOpenPort, customNetworkingSGOpenPort, "0.0.0.0/0")
+	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(customNetworkingSGID, "TCP",
+		customNetworkingSGOpenPort, customNetworkingSGOpenPort, "0.0.0.0/0")
 
 	By("associating cidr range to the VPC")
 	association, err := f.CloudServices.EC2().AssociateVPCCIDRBlock(f.Options.AWSVPCID, cidrRange.String())
@@ -114,19 +114,19 @@ var _ = BeforeSuite(func() {
 		subnetID := *createSubnetOutput.Subnet.SubnetId
 
 		By("associating the route table with the newly created subnet")
-		err = f.CloudServices.EC2().
-			AssociateRouteTableToSubnet(clusterVPCConfig.PublicRouteTableID, subnetID)
+		err = f.CloudServices.EC2().AssociateRouteTableToSubnet(clusterVPCConfig.PublicRouteTableID, subnetID)
 		Expect(err).ToNot(HaveOccurred())
 
-		eniConfig, err := manifest.NewENIConfigBuilder().
+		eniConfigBuilder := manifest.NewENIConfigBuilder().
 			Name(az).
 			SubnetID(subnetID).
-			SecurityGroup([]string{customNetworkingSGID}).
-			Build()
+			SecurityGroup([]string{customNetworkingSGID})
+		eniConfig, err := eniConfigBuilder.Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		// For deleting later
+		// For updating/deleting later
 		customNetworkingSubnetIDList = append(customNetworkingSubnetIDList, subnetID)
+		eniConfigBuilderList = append(eniConfigBuilderList, eniConfigBuilder)
 		eniConfigList = append(eniConfigList, eniConfig.DeepCopy())
 
 		By("creating the ENIConfig with az name")
@@ -205,3 +205,22 @@ var _ = AfterSuite(func() {
 	}
 	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred())
 })
+
+func TerminateInstances(f *framework.Framework) {
+	By("getting the list of nodes created")
+	nodeList, err := f.K8sResourceManagers.NodeManager().
+		GetNodes(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal)
+	Expect(err).ToNot(HaveOccurred())
+
+	var instanceIDs []string
+	for _, node := range nodeList.Items {
+		instanceIDs = append(instanceIDs, k8sUtils.GetInstanceIDFromNode(node))
+	}
+
+	By("terminating all the nodes")
+	err = f.CloudServices.EC2().TerminateInstance(instanceIDs)
+	Expect(err).ToNot(HaveOccurred())
+
+	By("waiting for nodes to be recycled")
+	time.Sleep(time.Second * 300)
+}

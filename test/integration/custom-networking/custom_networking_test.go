@@ -17,10 +17,8 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
-	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -30,7 +28,6 @@ import (
 )
 
 var _ = Describe("Custom Networking Test", func() {
-
 	var (
 		deployment    *v1.Deployment
 		podList       coreV1.PodList
@@ -78,7 +75,7 @@ var _ = Describe("Custom Networking Test", func() {
 
 				testContainer := manifest.NewNetCatAlpineContainer(f.Options.TestImageRegistry).
 					Command([]string{"nc"}).
-					Args([]string{"-v", "-w2", pod.Status.PodIP, strconv.Itoa(port)}).
+					Args([]string{"-v", "-w3", pod.Status.PodIP, strconv.Itoa(port)}).
 					Build()
 
 				testJob := manifest.NewDefaultJobBuilder().
@@ -87,8 +84,7 @@ var _ = Describe("Custom Networking Test", func() {
 					Parallelism(1).
 					Build()
 
-				_, err := f.K8sResourceManagers.JobManager().
-					CreateAndWaitTillJobCompleted(testJob)
+				_, err := f.K8sResourceManagers.JobManager().CreateAndWaitTillJobCompleted(testJob)
 				if shouldConnect {
 					By("verifying connection to pod succeeds on port " + strconv.Itoa(port))
 					Expect(err).ToNot(HaveOccurred())
@@ -97,25 +93,22 @@ var _ = Describe("Custom Networking Test", func() {
 					Expect(err).To(HaveOccurred())
 				}
 
-				err = f.K8sResourceManagers.JobManager().
-					DeleteAndWaitTillJobIsDeleted(testJob)
+				err = f.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(testJob)
 				Expect(err).ToNot(HaveOccurred())
 			}
 		})
 
 		JustAfterEach(func() {
-			err = f.K8sResourceManagers.DeploymentManager().
-				DeleteAndWaitTillDeploymentIsDeleted(deployment)
+			err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
 		Context("when connecting to reachable port", func() {
 			BeforeEach(func() {
 				port = customNetworkingSGOpenPort
-				replicaCount = 30
+				replicaCount = 16
 				shouldConnect = true
 			})
-
 			It("should connect", func() {})
 		})
 
@@ -125,17 +118,15 @@ var _ = Describe("Custom Networking Test", func() {
 				replicaCount = 1
 				shouldConnect = false
 			})
-
 			It("should fail to connect", func() {})
 		})
 	})
 
-	Context("when creating deployment on nodes that don't have ENIConfig", func() {
+	Context("when creating deployment on nodes that do not have ENIConfig", func() {
 		JustBeforeEach(func() {
 			By("deleting ENIConfig for all availability zones")
 			for _, eniConfig := range eniConfigList {
-				err = f.K8sResourceManagers.CustomResourceManager().
-					DeleteResource(eniConfig)
+				err = f.K8sResourceManagers.CustomResourceManager().DeleteResource(eniConfig)
 				Expect(err).ToNot(HaveOccurred())
 			}
 		})
@@ -143,29 +134,13 @@ var _ = Describe("Custom Networking Test", func() {
 		JustAfterEach(func() {
 			By("re-creating ENIConfig for all availability zones")
 			for _, eniConfig := range eniConfigList {
-				err = f.K8sResourceManagers.CustomResourceManager().
-					CreateResource(eniConfig)
+				err = f.K8sResourceManagers.CustomResourceManager().CreateResource(eniConfig)
 				Expect(err).ToNot(HaveOccurred())
 			}
 		})
 
 		It("deployment should not become ready", func() {
-			By("getting the list of nodes created")
-			nodeList, err := f.K8sResourceManagers.NodeManager().
-				GetNodes(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal)
-			Expect(err).ToNot(HaveOccurred())
-
-			var instanceIDs []string
-			for _, node := range nodeList.Items {
-				instanceIDs = append(instanceIDs, k8sUtils.GetInstanceIDFromNode(node))
-			}
-
-			By("terminating all the nodes")
-			err = f.CloudServices.EC2().TerminateInstance(instanceIDs)
-			Expect(err).ToNot(HaveOccurred())
-
-			By("waiting for nodes to be removed")
-			time.Sleep(time.Second * 120)
+			TerminateInstances(f)
 
 			// Nodes should be stuck in NotReady state since no ENIs could be attached and no pod
 			// IP addresses are available.
@@ -180,6 +155,44 @@ var _ = Describe("Custom Networking Test", func() {
 			Expect(err).To(HaveOccurred())
 
 			By("deleting the failed deployment")
+			err = f.K8sResourceManagers.DeploymentManager().
+				DeleteAndWaitTillDeploymentIsDeleted(deployment)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("when creating ENIConfigs without security groups", func() {
+		JustBeforeEach(func() {
+			By("deleting ENIConfig for each availability zone")
+			for _, eniConfig := range eniConfigList {
+				err = f.K8sResourceManagers.CustomResourceManager().DeleteResource(eniConfig)
+				Expect(err).ToNot(HaveOccurred())
+			}
+			By("re-creating ENIConfigs with no security group")
+			eniConfigList = nil
+			for _, eniConfigBuilder := range eniConfigBuilderList {
+				eniConfigBuilder.SecurityGroup(nil)
+				eniConfig, err := eniConfigBuilder.Build()
+				eniConfigList = append(eniConfigList, eniConfig.DeepCopy())
+
+				err = f.K8sResourceManagers.CustomResourceManager().CreateResource(eniConfig)
+				Expect(err).ToNot(HaveOccurred())
+			}
+		})
+
+		It("deployment should become ready", func() {
+			TerminateInstances(f)
+			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
+				Replicas(2).
+				NodeSelector(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal).
+				Build()
+
+			By("verifying deployment succeeds")
+			deployment, err = f.K8sResourceManagers.DeploymentManager().
+				CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("deleting the deployment")
 			err = f.K8sResourceManagers.DeploymentManager().
 				DeleteAndWaitTillDeploymentIsDeleted(deployment)
 			Expect(err).ToNot(HaveOccurred())

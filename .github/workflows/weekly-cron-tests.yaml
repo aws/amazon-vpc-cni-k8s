@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   weekly-cron:
+    if: github.repository == 'aws/amazon-vpc-cni-k8s'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout latest commit in the PR
@@ -22,7 +23,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: "1.19"
+          go-version: "1.20"
       - name: Set up tools
         run: |
           # Install ginkgo version from go.mod
@@ -38,54 +39,47 @@ jobs:
       - name: Run perf tests
         env:
           DISABLE_PROMPT: true
-          S3_BUCKET_CREATE: false
-          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
           ROLE_CREATE: false
           ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
+          RUN_CNI_INTEGRATION_TESTS: false
           PERFORMANCE_TEST_S3_BUCKET_NAME: cni-performance-tests
           RUN_PERFORMANCE_TESTS: true
           RUN_TESTER_LB_ADDONS: true
-          RUN_INTEGRATION_DEFAULT_CNI: false
         run: |
           ./scripts/run-integration-tests.sh
       - name: Run kops tests
         env:
           DISABLE_PROMPT: true
-          S3_BUCKET_CREATE: false
-          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
           ROLE_CREATE: false
           ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
+          RUN_CNI_INTEGRATION_TESTS: false
           RUN_KOPS_TEST: true
           RUN_TESTER_LB_ADDONS: true
-          K8S_VERSION: 1.26.0
-          RUN_INTEGRATION_DEFAULT_CNI: false
+          K8S_VERSION: 1.26.5
+          KOPS_VERSION: v1.26.4
         run: |
           ./scripts/run-integration-tests.sh
         if: always()
       - name: Run bottlerocket tests
         env:
           DISABLE_PROMPT: true
-          S3_BUCKET_CREATE: false
-          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
           ROLE_CREATE: false
           ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
+          RUN_CNI_INTEGRATION_TESTS: false
           RUN_BOTTLEROCKET_TEST: true
           RUN_TESTER_LB_ADDONS: true
-          RUN_INTEGRATION_DEFAULT_CNI: false
         run: |
           ./scripts/run-integration-tests.sh
         if: always()
       - name: Run calico tests
         env:
           DISABLE_PROMPT: true
-          S3_BUCKET_CREATE: false
-          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
           ROLE_CREATE: false
           ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
+          RUN_CNI_INTEGRATION_TESTS: false
           RUN_CALICO_TEST: true
           RUN_LATEST_CALICO_VERSION: true
           RUN_TESTER_LB_ADDONS: true
-          RUN_INTEGRATION_DEFAULT_CNI: false
         run: |
           ./scripts/run-integration-tests.sh
         if: always()
