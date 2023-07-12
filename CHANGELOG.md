@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.13.3
+
+* Bug - [Decrease memory usage by K8S Clients](https://github.com/aws/amazon-vpc-cni-k8s/pull/2463) (@jdn5126 )
+* Documentation - [update docs and CNI logging](https://github.com/aws/amazon-vpc-cni-k8s/pull/2433) (@jdn5126 )
+* Improvement - [Updates instance limits including c7gn](https://github.com/aws/amazon-vpc-cni-k8s/pull/2438) (@mmerkes )
+
 ## v1.13.2
 
 * Bug - [Sync node security groups to cache before node initialization](https://github.com/aws/amazon-vpc-cni-k8s/pull/2427) (@jdn5126 )
