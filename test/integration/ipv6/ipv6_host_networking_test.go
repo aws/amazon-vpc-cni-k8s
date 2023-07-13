@@ -155,8 +155,7 @@ var _ = Describe("[CANARY] test ipv6 host netns setup", func() {
 				NodeName(primaryNode.Name).
 				Build()
 
-			parkingPod, err = f.K8sResourceManagers.PodManager().
-				CreatAndWaitTillRunning(parkingPod)
+			parkingPod, err = f.K8sResourceManagers.PodManager().CreateAndWaitTillRunning(parkingPod)
 			Expect(err).ToNot(HaveOccurred())
 
 			validInput, err := GetIPv6PodNetworkingValidationInput(v1.PodList{

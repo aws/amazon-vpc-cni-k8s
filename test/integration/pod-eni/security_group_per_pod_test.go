@@ -231,8 +231,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 				Build()
 
 			By("creating branch ENI pod with liveliness probe")
-			pod, err := f.K8sResourceManagers.PodManager().
-				CreatAndWaitTillRunning(pod)
+			pod, err := f.K8sResourceManagers.PodManager().CreateAndWaitTillRunning(pod)
 			Expect(err).ToNot(HaveOccurred())
 
 			ValidatePodsHaveBranchENI(v1.PodList{Items: []v1.Pod{*pod}})

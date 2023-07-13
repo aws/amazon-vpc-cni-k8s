@@ -18,6 +18,7 @@ import (
 	"io/ioutil"
 	"net/url"
 	"strings"
+	"time"
 
 	k8sUtil "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -149,8 +150,10 @@ var _ = Describe("test aws-node pod event", func() {
 		})
 
 		It("unauthorized event must be raised on aws-node pod", func() {
+			By("waiting for event to be generated")
+			time.Sleep(5 * utils.PollIntervalLong)
 			listOpts := client.ListOptions{
-				FieldSelector: fields.SelectorFromSet(fields.Set{"reason": "MissingIAMPermissions"}),
+				FieldSelector: fields.Set{"reason": "MissingIAMPermissions"}.AsSelector(),
 				Namespace:     utils.AwsNodeNamespace,
 			}
 			eventList, err := f.K8sResourceManagers.EventManager().GetEventsWithOptions(&listOpts)
@@ -162,7 +165,7 @@ var _ = Describe("test aws-node pod event", func() {
 
 func RestartAwsNodePods() {
 	By("Restarting aws-node pods")
-	podList, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector("k8s-app", utils.AwsNodeName)
+	podList, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(AwsNodeLabelKey, utils.AwsNodeName)
 	Expect(err).ToNot(HaveOccurred())
 	for _, pod := range podList.Items {
 		f.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(&pod)

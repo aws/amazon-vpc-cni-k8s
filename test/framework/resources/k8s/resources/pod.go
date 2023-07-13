@@ -26,12 +26,11 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
 type PodManager interface {
@@ -40,7 +39,7 @@ type PodManager interface {
 	GetPodsWithLabelSelector(labelKey string, labelVal string) (v1.PodList, error)
 	GetPodsWithLabelSelectorMap(labels map[string]string) (v1.PodList, error)
 	GetPod(podNamespace string, podName string) (*v1.Pod, error)
-	CreatAndWaitTillRunning(pod *v1.Pod) (*v1.Pod, error)
+	CreateAndWaitTillRunning(pod *v1.Pod) (*v1.Pod, error)
 	CreateAndWaitTillPodCompleted(pod *v1.Pod) (*v1.Pod, error)
 	DeleteAndWaitTillPodDeleted(pod *v1.Pod) error
 
@@ -50,21 +49,22 @@ type PodManager interface {
 
 type defaultPodManager struct {
 	k8sClient client.Client
-	k8sSchema *runtime.Scheme
-	config    *rest.Config
+	// client-go Clientset is used instead of controller-runtime Client to access subresources, such as logs and exec
+	k8sClientset *kubernetes.Clientset
+	k8sSchema    *runtime.Scheme
+	config       *rest.Config
 }
 
-func NewDefaultPodManager(k8sClient client.Client, k8sSchema *runtime.Scheme,
-	config *rest.Config) PodManager {
-
+func NewDefaultPodManager(k8sClient client.Client, k8sClientset *kubernetes.Clientset, k8sSchema *runtime.Scheme, config *rest.Config) PodManager {
 	return &defaultPodManager{
-		k8sClient: k8sClient,
-		k8sSchema: k8sSchema,
-		config:    config,
+		k8sClient:    k8sClient,
+		k8sClientset: k8sClientset,
+		k8sSchema:    k8sSchema,
+		config:       config,
 	}
 }
 
-func (d *defaultPodManager) CreatAndWaitTillRunning(pod *v1.Pod) (*v1.Pod, error) {
+func (d *defaultPodManager) CreateAndWaitTillRunning(pod *v1.Pod) (*v1.Pod, error) {
 	err := d.k8sClient.Create(context.Background(), pod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pod: %v", err)
@@ -162,43 +162,27 @@ func (d *defaultPodManager) WaitUntilPodDeleted(ctx context.Context, pod *v1.Pod
 	}, ctx.Done())
 }
 
+// Use K8SClientset to return pod logs as a string
 func (d *defaultPodManager) PodLogs(namespace string, name string) (string, error) {
-	restClient, err := d.getRestClientForPod(namespace, name)
-	if err != nil {
-		return "", err
-	}
+	podLogOpts := v1.PodLogOptions{}
+	req := d.k8sClientset.CoreV1().Pods(namespace).GetLogs(name, &podLogOpts)
 
-	req := restClient.Get().
-		Resource("pods").
-		Namespace(namespace).
-		Name(name).
-		SubResource("log")
+	podLogs, err := req.Stream(context.Background())
+	defer podLogs.Close()
 
-	readCloser, err := req.Stream(context.Background())
-	if err != nil {
-		return "", err
-	}
-	defer readCloser.Close()
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(readCloser)
-
+	buf.ReadFrom(podLogs)
 	return string(buf.Bytes()), err
 }
 
 func (d *defaultPodManager) PodExec(namespace string, name string, command []string) (string, string, error) {
-	restClient, err := d.getRestClientForPod(namespace, name)
-	if err != nil {
-		return "", "", err
-	}
-
 	execOptions := &v1.PodExecOptions{
 		Stdout:  true,
 		Stderr:  true,
 		Command: command,
 	}
 
-	restClient.Get()
-	req := restClient.Post().
+	req := d.k8sClientset.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Name(name).
 		Namespace(namespace).
@@ -215,7 +199,6 @@ func (d *defaultPodManager) PodExec(namespace string, name string, command []str
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
-
 	return stdout.String(), stderr.String(), err
 }
 
@@ -233,21 +216,4 @@ func (d *defaultPodManager) GetPodsWithLabelSelectorMap(labels map[string]string
 	podList := v1.PodList{}
 	err := d.k8sClient.List(ctx, &podList, client.MatchingLabels(labels))
 	return podList, err
-}
-
-func (d *defaultPodManager) getRestClientForPod(namespace string, name string) (rest.Interface, error) {
-	pod := &v1.Pod{}
-	err := d.k8sClient.Get(context.Background(), types.NamespacedName{
-		Namespace: namespace,
-		Name:      name,
-	}, pod)
-	if err != nil {
-		return nil, err
-	}
-
-	gkv, err := apiutil.GVKForObject(pod, d.k8sSchema)
-	if err != nil {
-		return nil, err
-	}
-	return apiutil.RESTClientForGVK(gkv, false, d.config, serializer.NewCodecFactory(d.k8sSchema))
 }

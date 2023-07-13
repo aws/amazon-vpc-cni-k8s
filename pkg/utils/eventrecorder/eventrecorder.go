@@ -40,16 +40,17 @@ var eventRecorder *EventRecorder
 
 const (
 	EventReason = sgpp.VpcCNIEventReason
+	appName     = "aws-node"
 )
 
 type EventRecorder struct {
-	Recorder        events.EventRecorder
-	CachedK8SClient client.Client
-	hostPod         corev1.Pod
+	Recorder  events.EventRecorder
+	K8sClient client.Client
+	hostPod   corev1.Pod
 }
 
-func Init(cachedK8SClient client.Client) error {
-	clientSet, err := k8sapi.GetKubeClientSet()
+func Init(k8sClient client.Client) error {
+	clientSet, err := k8sapi.GetKubeClientSet(appName)
 	if err != nil {
 		log.Fatalf("Error Fetching Kubernetes Client: %s", err)
 		return err
@@ -60,11 +61,11 @@ func Init(cachedK8SClient client.Client) error {
 	stopCh := make(chan struct{})
 	eventBroadcaster.StartRecordingToSink(stopCh)
 
-	eventRecorder := &EventRecorder{}
+	eventRecorder = &EventRecorder{}
 	eventRecorder.Recorder = eventBroadcaster.NewRecorder(clientgoscheme.Scheme, "aws-node")
-	eventRecorder.CachedK8SClient = cachedK8SClient
+	eventRecorder.K8sClient = k8sClient
 
-	if eventRecorder.hostPod, err = findMyPod(eventRecorder.CachedK8SClient); err != nil {
+	if eventRecorder.hostPod, err = findMyPod(eventRecorder.K8sClient); err != nil {
 		log.Errorf("Failed to find host aws-node pod: %s", err)
 		// EventRecorder is not considered critical, so no error is returned if host pod cannot be queried
 	}
@@ -76,19 +77,19 @@ func Get() *EventRecorder {
 }
 
 // SendPodEvent will raise event on aws-node with given type, reason, & message
-func (e *EventRecorder) SendPodEvent(eventType, reason, message string) {
+func (e *EventRecorder) SendPodEvent(eventType, reason, action, message string) {
 	log.Infof("SendPodEvent")
 
-	e.Recorder.Eventf(&e.hostPod, nil, eventType, reason, "", message)
+	e.Recorder.Eventf(&e.hostPod, nil, eventType, reason, action, message)
 	log.Debugf("Sent pod event: eventType: %s, reason: %s, message: %s", eventType, reason, message)
 }
 
-func findMyPod(cachedK8SClient client.Client) (corev1.Pod, error) {
+func findMyPod(k8sClient client.Client) (corev1.Pod, error) {
 	var pod corev1.Pod
 	// Find my aws-node pod
-	err := cachedK8SClient.Get(context.TODO(), types.NamespacedName{Name: MyPodName, Namespace: utils.AwsNodeNamespace}, &pod)
+	err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: MyPodName, Namespace: utils.AwsNodeNamespace}, &pod)
 	if err != nil {
-		log.Errorf("Cached client failed GET pod (%s)", MyPodName)
+		log.Errorf("Client failed to GET pod (%s)", MyPodName)
 	} else {
 		log.Debugf("Node found %s - labels - %d", pod.Name, len(pod.Labels))
 	}
@@ -102,8 +103,8 @@ func InitMockEventRecorder() *events.FakeRecorder {
 	clientgoscheme.AddToScheme(k8sSchema)
 
 	eventRecorder = &EventRecorder{
-		Recorder:        fakeRecorder,
-		CachedK8SClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
+		Recorder:  fakeRecorder,
+		K8sClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
 	}
 	return fakeRecorder
 }

@@ -80,12 +80,11 @@ const (
 )
 
 type testMocks struct {
-	ctrl            *gomock.Controller
-	awsutils        *mock_awsutils.MockAPIs
-	rawK8SClient    client.Client
-	cachedK8SClient client.Client
-	network         *mock_networkutils.MockNetworkAPIs
-	eniconfig       *mock_eniconfig.MockENIConfig
+	ctrl      *gomock.Controller
+	awsutils  *mock_awsutils.MockAPIs
+	k8sClient client.Client
+	network   *mock_networkutils.MockNetworkAPIs
+	eniconfig *mock_eniconfig.MockENIConfig
 }
 
 func setup(t *testing.T) *testMocks {
@@ -95,12 +94,11 @@ func setup(t *testing.T) *testMocks {
 	eniconfigscheme.AddToScheme(k8sSchema)
 
 	return &testMocks{
-		ctrl:            ctrl,
-		awsutils:        mock_awsutils.NewMockAPIs(ctrl),
-		rawK8SClient:    testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
-		cachedK8SClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
-		network:         mock_networkutils.NewMockNetworkAPIs(ctrl),
-		eniconfig:       mock_eniconfig.NewMockENIConfig(ctrl),
+		ctrl:      ctrl,
+		awsutils:  mock_awsutils.NewMockAPIs(ctrl),
+		k8sClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
+		network:   mock_networkutils.NewMockNetworkAPIs(ctrl),
+		eniconfig: mock_eniconfig.NewMockENIConfig(ctrl),
 	}
 }
 
@@ -117,20 +115,19 @@ func TestNodeInit(t *testing.T) {
 	}
 
 	mockContext := &IPAMContext{
-		awsClient:       m.awsutils,
-		rawK8SClient:    m.rawK8SClient,
-		cachedK8SClient: m.cachedK8SClient,
-		maxIPsPerENI:    14,
-		maxENI:          4,
-		warmENITarget:   1,
-		warmIPTarget:    3,
-		primaryIP:       make(map[string]string),
-		terminating:     int32(0),
-		networkClient:   m.network,
-		dataStore:       datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), false),
-		myNodeName:      myNodeName,
-		enableIPv4:      true,
-		enableIPv6:      false,
+		awsClient:     m.awsutils,
+		k8sClient:     m.k8sClient,
+		maxIPsPerENI:  14,
+		maxENI:        4,
+		warmENITarget: 1,
+		warmIPTarget:  3,
+		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
+		networkClient: m.network,
+		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), false),
+		myNodeName:    myNodeName,
+		enableIPv4:    true,
+		enableIPv6:    false,
 	}
 
 	eni1, eni2, _ := getDummyENIMetadata()
@@ -179,7 +176,7 @@ func TestNodeInit(t *testing.T) {
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
-	m.cachedK8SClient.Create(ctx, &fakeNode)
+	m.k8sClient.Create(ctx, &fakeNode)
 
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
@@ -202,8 +199,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 
 	mockContext := &IPAMContext{
 		awsClient:              m.awsutils,
-		rawK8SClient:           m.rawK8SClient,
-		cachedK8SClient:        m.cachedK8SClient,
+		k8sClient:              m.k8sClient,
 		maxIPsPerENI:           224,
 		maxPrefixesPerENI:      14,
 		maxENI:                 4,
@@ -220,7 +216,6 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	}
 
 	eni1, eni2 := getDummyENIMetadataWithPrefix()
-
 	var cidrs []string
 	m.awsutils.EXPECT().GetENILimit().Return(4)
 	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14)
@@ -264,7 +259,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
-	m.cachedK8SClient.Create(ctx, &fakeNode)
+	m.k8sClient.Create(ctx, &fakeNode)
 
 	os.Setenv("MY_NODE_NAME", myNodeName)
 	err := mockContext.nodeInit()
@@ -285,8 +280,7 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 
 	mockContext := &IPAMContext{
 		awsClient:              m.awsutils,
-		rawK8SClient:           m.rawK8SClient,
-		cachedK8SClient:        m.cachedK8SClient,
+		k8sClient:              m.k8sClient,
 		maxIPsPerENI:           224,
 		maxPrefixesPerENI:      1,
 		maxENI:                 1,
@@ -333,7 +327,7 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
-	_ = m.cachedK8SClient.Create(ctx, &fakeNode)
+	m.k8sClient.Create(ctx, &fakeNode)
 
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
@@ -489,8 +483,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 
 	mockContext := &IPAMContext{
 		awsClient:                 m.awsutils,
-		rawK8SClient:              m.rawK8SClient,
-		cachedK8SClient:           m.cachedK8SClient,
+		k8sClient:                 m.k8sClient,
 		maxIPsPerENI:              14,
 		maxENI:                    4,
 		warmENITarget:             1,
@@ -583,10 +576,9 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 				Effect: corev1.TaintEffectNoSchedule,
 			})
 		}
+		m.k8sClient.Create(ctx, &fakeNode)
 
-		_ = m.cachedK8SClient.Create(ctx, &fakeNode)
-
-		//Create a dummy ENIConfig
+		// Create a dummy ENIConfig
 		fakeENIConfig := v1alpha1.ENIConfig{
 			TypeMeta:   metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{Name: "az1"},
@@ -596,9 +588,8 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 			},
 			Status: eniconfigscheme.ENIConfigStatus{},
 		}
-		_ = m.cachedK8SClient.Create(ctx, &fakeENIConfig)
+		m.k8sClient.Create(ctx, &fakeENIConfig)
 	}
-
 	mockContext.increaseDatastorePool(ctx)
 }
 
@@ -636,8 +627,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 
 	mockContext := &IPAMContext{
 		awsClient:                 m.awsutils,
-		rawK8SClient:              m.rawK8SClient,
-		cachedK8SClient:           m.cachedK8SClient,
+		k8sClient:                 m.k8sClient,
 		maxIPsPerENI:              256,
 		maxPrefixesPerENI:         16,
 		maxENI:                    4,
@@ -729,7 +719,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 			Spec:       v1.NodeSpec{},
 			Status:     v1.NodeStatus{},
 		}
-		_ = m.cachedK8SClient.Create(ctx, &fakeNode)
+		m.k8sClient.Create(ctx, &fakeNode)
 
 		//Create a dummy ENIConfig
 		fakeENIConfig := v1alpha1.ENIConfig{
@@ -741,7 +731,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 			},
 			Status: eniconfigscheme.ENIConfigStatus{},
 		}
-		_ = m.cachedK8SClient.Create(ctx, &fakeENIConfig)
+		m.k8sClient.Create(ctx, &fakeENIConfig)
 	}
 
 	mockContext.increaseDatastorePool(ctx)
@@ -817,16 +807,15 @@ func TestTryAddIPToENI(t *testing.T) {
 
 	warmIPTarget := 3
 	mockContext := &IPAMContext{
-		rawK8SClient:    m.rawK8SClient,
-		cachedK8SClient: m.cachedK8SClient,
-		awsClient:       m.awsutils,
-		maxIPsPerENI:    14,
-		maxENI:          4,
-		warmENITarget:   1,
-		warmIPTarget:    warmIPTarget,
-		networkClient:   m.network,
-		primaryIP:       make(map[string]string),
-		terminating:     int32(0),
+		k8sClient:     m.k8sClient,
+		awsClient:     m.awsutils,
+		maxIPsPerENI:  14,
+		maxENI:        4,
+		warmENITarget: 1,
+		warmIPTarget:  warmIPTarget,
+		networkClient: m.network,
+		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
 	}
 
 	mockContext.dataStore = testDatastore()
@@ -876,8 +865,7 @@ func TestTryAddIPToENI(t *testing.T) {
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
-	_ = m.cachedK8SClient.Create(ctx, &fakeNode)
-
+	m.k8sClient.Create(ctx, &fakeNode)
 	mockContext.increaseDatastorePool(ctx)
 }
 
@@ -1214,6 +1202,7 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 
 	type fields struct {
 		maxIPsPerENI  int
+		maxEni        int
 		warmENITarget int
 		warmIPTarget  int
 		datastore     *datastore.DataStore
@@ -1224,14 +1213,14 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 		fields fields
 		want   bool
 	}{
-		{"Test new ds, all defaults", fields{14, 1, 0, testDatastore()}, true},
-		{"Test new ds, 0 ENIs", fields{14, 0, 0, testDatastore()}, true},
-		{"Test new ds, 3 warm IPs", fields{14, 0, 3, testDatastore()}, true},
-		{"Test 3 unused IPs, 1 warm", fields{3, 1, 1, datastoreWith3FreeIPs()}, false},
-		{"Test 1 used, 1 warm ENI", fields{3, 1, 0, datastoreWith1Pod1()}, true},
-		{"Test 1 used, 0 warm ENI", fields{3, 0, 0, datastoreWith1Pod1()}, false},
-		{"Test 3 used, 1 warm ENI", fields{3, 1, 0, datastoreWith3Pods()}, true},
-		{"Test 3 used, 0 warm ENI", fields{3, 0, 0, datastoreWith3Pods()}, true},
+		{"Test new ds, all defaults", fields{14, 4, 1, 0, testDatastore()}, true},
+		{"Test new ds, 0 ENIs", fields{14, 4, 0, 0, testDatastore()}, true},
+		{"Test new ds, 3 warm IPs", fields{14, 4, 0, 3, testDatastore()}, true},
+		{"Test 3 unused IPs, 1 warm", fields{3, 4, 1, 1, datastoreWith3FreeIPs()}, false},
+		{"Test 1 used, 1 warm ENI", fields{3, 4, 1, 0, datastoreWith1Pod1()}, true},
+		{"Test 1 used, 0 warm ENI", fields{3, 4, 0, 0, datastoreWith1Pod1()}, false},
+		{"Test 3 used, 1 warm ENI", fields{3, 4, 1, 0, datastoreWith3Pods()}, true},
+		{"Test 3 used, 0 warm ENI", fields{3, 4, 0, 0, datastoreWith3Pods()}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1241,7 +1230,7 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 				useCustomNetworking:    false,
 				networkClient:          m.network,
 				maxIPsPerENI:           tt.fields.maxIPsPerENI,
-				maxENI:                 -1,
+				maxENI:                 tt.fields.maxEni,
 				warmENITarget:          tt.fields.warmENITarget,
 				warmIPTarget:           tt.fields.warmIPTarget,
 				enablePrefixDelegation: false,
@@ -1259,6 +1248,7 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 
 	type fields struct {
 		maxIPsPerENI      int
+		maxEni            int
 		maxPrefixesPerENI int
 		warmPrefixTarget  int
 		datastore         *datastore.DataStore
@@ -1269,13 +1259,13 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 		fields fields
 		want   bool
 	}{
-		{"Test new ds, all defaults", fields{256, 16, 1, testDatastore()}, true},
-		{"Test new ds, 0 ENIs", fields{256, 16, 0, testDatastore()}, true},
-		{"Test 3 unused IPs, 1 warm", fields{256, 16, 1, datastoreWithFreeIPsFromPrefix()}, false},
-		{"Test 1 used, 1 warm Prefix", fields{256, 16, 1, datastoreWith1Pod1FromPrefix()}, true},
-		{"Test 1 used, 0 warm Prefix", fields{256, 16, 0, datastoreWith1Pod1FromPrefix()}, false},
-		{"Test 3 used, 1 warm Prefix", fields{256, 16, 1, datastoreWith3PodsFromPrefix()}, true},
-		{"Test 3 used, 0 warm Prefix", fields{256, 16, 0, datastoreWith3PodsFromPrefix()}, false},
+		{"Test new ds, all defaults", fields{256, 4, 16, 1, testDatastore()}, true},
+		{"Test new ds, 0 ENIs", fields{256, 4, 16, 0, testDatastore()}, true},
+		{"Test 3 unused IPs, 1 warm", fields{256, 4, 16, 1, datastoreWithFreeIPsFromPrefix()}, false},
+		{"Test 1 used, 1 warm Prefix", fields{256, 4, 16, 1, datastoreWith1Pod1FromPrefix()}, true},
+		{"Test 1 used, 0 warm Prefix", fields{256, 4, 16, 0, datastoreWith1Pod1FromPrefix()}, false},
+		{"Test 3 used, 1 warm Prefix", fields{256, 4, 16, 1, datastoreWith3PodsFromPrefix()}, true},
+		{"Test 3 used, 0 warm Prefix", fields{256, 4, 16, 0, datastoreWith3PodsFromPrefix()}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1286,7 +1276,7 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 				networkClient:          m.network,
 				maxPrefixesPerENI:      tt.fields.maxPrefixesPerENI,
 				maxIPsPerENI:           tt.fields.maxIPsPerENI,
-				maxENI:                 -1,
+				maxENI:                 tt.fields.maxEni,
 				warmPrefixTarget:       tt.fields.warmPrefixTarget,
 				enablePrefixDelegation: true,
 			}
@@ -1946,15 +1936,14 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 	ctx := context.Background()
 
 	mockContext := &IPAMContext{
-		rawK8SClient:    m.rawK8SClient,
-		cachedK8SClient: m.cachedK8SClient,
-		dataStore:       datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false),
-		awsClient:       m.awsutils,
-		networkClient:   m.network,
-		primaryIP:       make(map[string]string),
-		terminating:     int32(0),
-		maxENI:          1,
-		myNodeName:      myNodeName,
+		k8sClient:     m.k8sClient,
+		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false),
+		awsClient:     m.awsutils,
+		networkClient: m.network,
+		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
+		maxENI:        1,
+		myNodeName:    myNodeName,
 	}
 
 	labels := map[string]string{
@@ -1966,7 +1955,7 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
-	_ = m.cachedK8SClient.Create(ctx, &fakeNode)
+	m.k8sClient.Create(ctx, &fakeNode)
 
 	_ = mockContext.dataStore.AddENI("eni-1", 1, true, false, false)
 	// If ENABLE_POD_ENI is not set, nothing happens
@@ -1981,7 +1970,7 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 		Namespace: "",
 		Name:      myNodeName,
 	}
-	err := m.cachedK8SClient.Get(ctx, NodeKey, &notUpdatedNode)
+	err := m.k8sClient.Get(ctx, NodeKey, &notUpdatedNode)
 	// Since there was no room, no label should be added
 	assert.NoError(t, err)
 	_, has := notUpdatedNode.Labels["vpc.amazonaws.com/has-trunk-attached"]
@@ -1993,7 +1982,7 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 	mockContext.askForTrunkENIIfNeeded(ctx)
 
 	// Fetch the updated node and verify that the label is set
-	err = m.cachedK8SClient.Get(ctx, NodeKey, &updatedNode)
+	err = m.k8sClient.Get(ctx, NodeKey, &updatedNode)
 	assert.NoError(t, err)
 	assert.Equal(t, "false", updatedNode.Labels["vpc.amazonaws.com/has-trunk-attached"])
 }
@@ -2093,17 +2082,16 @@ func TestGetNodeLabels(t *testing.T) {
 		clientgoscheme.AddToScheme(k8sSchema)
 
 		mockContext := &IPAMContext{
-			rawK8SClient:    m.rawK8SClient,
-			cachedK8SClient: m.cachedK8SClient,
-			dataStore:       datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false),
-			awsClient:       m.awsutils,
-			networkClient:   m.network,
-			primaryIP:       make(map[string]string),
-			terminating:     int32(0),
-			myNodeName:      myNodeName,
+			k8sClient:     m.k8sClient,
+			dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false),
+			awsClient:     m.awsutils,
+			networkClient: m.network,
+			primaryIP:     make(map[string]string),
+			terminating:   int32(0),
+			myNodeName:    myNodeName,
 		}
 
-		_ = m.cachedK8SClient.Create(ctx, &test.node)
+		_ = m.k8sClient.Create(ctx, &test.node)
 		labels, err := mockContext.getNodeLabels(ctx)
 		assert.Equal(t, test.hasError, err != nil, test.msg)
 		assert.Equal(t, test.hasLabel, labels != nil, test.msg)
@@ -2261,19 +2249,17 @@ func TestAnnotatePod(t *testing.T) {
 	}
 
 	mockContext := &IPAMContext{
-		awsClient:       m.awsutils,
-		rawK8SClient:    m.rawK8SClient,
-		cachedK8SClient: m.cachedK8SClient,
-		primaryIP:       make(map[string]string),
-		terminating:     int32(0),
-		networkClient:   m.network,
-		dataStore:       testDatastore(),
-		enableIPv4:      true,
-		enableIPv6:      false,
+		awsClient:     m.awsutils,
+		k8sClient:     m.k8sClient,
+		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
+		networkClient: m.network,
+		dataStore:     testDatastore(),
+		enableIPv4:    true,
+		enableIPv6:    false,
 	}
 
-	mockContext.rawK8SClient.Create(ctx, &pod)
-
+	mockContext.k8sClient.Create(ctx, &pod)
 	ipOne := "10.0.0.1"
 	ipTwo := "10.0.0.2"
 

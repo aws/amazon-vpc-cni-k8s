@@ -31,6 +31,10 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 )
 
+const (
+	appName = "cni-metrics-helper"
+)
+
 type options struct {
 	submitCW bool
 	help     bool
@@ -101,26 +105,15 @@ func main() {
 
 	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, LogLevel %s, metricUpdateInterval %d", options.submitCW, logConfig.LogLevel, metricUpdateInterval)
 
-	clientSet, err := k8sapi.GetKubeClientSet()
+	clientSet, err := k8sapi.GetKubeClientSet(appName)
 	if err != nil {
 		log.Fatalf("Error Fetching Kubernetes Client: %s", err)
 		os.Exit(1)
 	}
 
-	mapper, err := k8sapi.InitializeRestMapper()
-	if err != nil {
-		log.Errorf("Failed to initialize kube client mapper: %s", err)
-		os.Exit(1)
-	}
-
-	rawK8SClient, err := k8sapi.CreateKubeClient(mapper)
+	k8sClient, err := k8sapi.CreateKubeClient(appName)
 	if err != nil {
 		log.Fatalf("Error creating Kubernetes Client: %s", err)
-		os.Exit(1)
-	}
-	k8sClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient, mapper, false)
-	if err != nil {
-		log.Fatalf("Error creating Cached Kubernetes Client: %s", err)
 		os.Exit(1)
 	}
 

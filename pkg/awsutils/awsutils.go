@@ -1938,7 +1938,7 @@ func checkAPIErrorAndBroadcastEvent(err error, api string) {
 	if aerr, ok := err.(awserr.Error); ok {
 		if aerr.Code() == "UnauthorizedOperation" {
 			if eventRecorder := eventrecorder.Get(); eventRecorder != nil {
-				eventRecorder.SendPodEvent(v1.EventTypeWarning, "MissingIAMPermissions",
+				eventRecorder.SendPodEvent(v1.EventTypeWarning, "MissingIAMPermissions", api,
 					fmt.Sprintf("Unauthorized operation: failed to call %v due to missing permissions. Please refer https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/iam-policy.md to attach relevant policy to IAM role", api))
 			}
 		}

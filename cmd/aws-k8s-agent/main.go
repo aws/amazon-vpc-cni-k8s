@@ -24,6 +24,10 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/version"
 )
 
+const (
+	appName = "aws-node"
+)
+
 func main() {
 	os.Exit(_main())
 }
@@ -36,36 +40,25 @@ func _main() int {
 	version.RegisterMetric()
 
 	// Check API Server Connectivity
-	if err := k8sapi.CheckAPIServerConnectivity(); err != nil {
+	if err := k8sapi.CheckAPIServerConnectivity(appName); err != nil {
 		log.Errorf("Failed to check API server connectivity: %s", err)
 		return 1
 	}
 
-	mapper, err := k8sapi.InitializeRestMapper()
-	if err != nil {
-		log.Errorf("Failed to initialize kube client mapper: %s", err)
-		return 1
-	}
-
-	rawK8SClient, err := k8sapi.CreateKubeClient(mapper)
+	// Create Kubernetes client for API server requests
+	k8sClient, err := k8sapi.CreateKubeClient(appName)
 	if err != nil {
 		log.Errorf("Failed to create kube client: %s", err)
 		return 1
 	}
 
-	cachedK8SClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient, mapper, true)
-	if err != nil {
-		log.Errorf("Failed to create cached kube client: %s", err)
-		return 1
-	}
-
 	// Create EventRecorder for use by IPAMD
-	if err := eventrecorder.Init(cachedK8SClient); err != nil {
+	if err := eventrecorder.Init(k8sClient); err != nil {
 		log.Errorf("Failed to create event recorder: %s", err)
 		return 1
 	}
 
-	ipamContext, err := ipamd.New(rawK8SClient, cachedK8SClient)
+	ipamContext, err := ipamd.New(k8sClient)
 	if err != nil {
 		log.Errorf("Initialization failure: %v", err)
 		return 1
