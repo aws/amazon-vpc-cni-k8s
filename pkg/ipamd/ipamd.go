@@ -42,7 +42,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
@@ -273,7 +272,6 @@ type IPAMContext struct {
 	lastInsufficientCidrError time.Time
 	enableManageUntaggedMode  bool
 	enablePodIPAnnotation     bool
-	eventRecorder             *eventrecorder.EventRecorder
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -395,21 +393,11 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
 	c.disableENIProvisioning = disableENIProvisioning()
-
-	client, err := awsutils.New(c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6, c.eventRecorder)
+	client, err := awsutils.New(c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
 	c.awsClient = client
-
-	// setup event recorder
-	eventrecorder, err := eventrecorder.New(rawK8SClient, cachedK8SClient)
-	if err != nil {
-		return nil, errors.Wrap(err, "ipamd: unable to initialize event recorder")
-	}
-	// setup Host instanceID in event recorder
-	eventrecorder.HostID = c.awsClient.GetInstanceID()
-	c.eventRecorder = eventrecorder
 
 	c.primaryIP = make(map[string]string)
 	c.reconcileCooldownCache.cache = make(map[string]time.Time)
@@ -418,7 +406,6 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.warmIPTarget = getWarmIPTarget()
 	c.minimumIPTarget = getMinimumIPTarget()
 	c.warmPrefixTarget = getWarmPrefixTarget()
-
 	c.enablePodENI = enablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = enablePodIPAnnotation()
@@ -456,7 +443,6 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	if err != nil {
 		return nil, err
 	}
-
 	return c, nil
 }
 

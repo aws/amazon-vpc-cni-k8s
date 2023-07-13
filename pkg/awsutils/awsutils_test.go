@@ -35,10 +35,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/events"
-	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const (
@@ -136,21 +132,14 @@ func testMetadataWithPrefixes(overrides map[string]interface{}) FakeIMDS {
 func setup(t *testing.T) (*gomock.Controller,
 	*mock_ec2wrapper.MockEC2) {
 	ctrl := gomock.NewController(t)
+	setupEventRecorder(t)
 	return ctrl,
 		mock_ec2wrapper.NewMockEC2(ctrl)
 }
 
-func setupEventRecorder(t *testing.T) *eventrecorder.EventRecorder {
-	ctx := context.Background()
-	fakeRecorder := events.NewFakeRecorder(3)
-	k8sSchema := runtime.NewScheme()
-	clientgoscheme.AddToScheme(k8sSchema)
-
-	mockEventRecorder := &eventrecorder.EventRecorder{
-		Recorder:        fakeRecorder,
-		RawK8SClient:    testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
-		CachedK8SClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
-	}
+func setupEventRecorder(t *testing.T) {
+	eventrecorder.InitMockEventRecorder()
+	mockEventRecorder := eventrecorder.Get()
 
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
@@ -158,8 +147,8 @@ func setupEventRecorder(t *testing.T) *eventrecorder.EventRecorder {
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
-	_ = mockEventRecorder.CachedK8SClient.Create(ctx, &fakeNode)
-	return mockEventRecorder
+	ctx := context.Background()
+	mockEventRecorder.CachedK8SClient.Create(ctx, &fakeNode)
 }
 
 func TestInitWithEC2metadata(t *testing.T) {
@@ -412,9 +401,8 @@ func TestAllocENI(t *testing.T) {
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC:        mockEC2,
-		imds:          TypedIMDS{mockMetadata},
-		eventRecorder: setupEventRecorder(t),
+		ec2SVC: mockEC2,
+		imds:   TypedIMDS{mockMetadata},
 	}
 
 	_, err := cache.AllocENI(false, nil, "")
@@ -447,9 +435,8 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC:        mockEC2,
-		imds:          TypedIMDS{mockMetadata},
-		eventRecorder: setupEventRecorder(t),
+		ec2SVC: mockEC2,
+		imds:   TypedIMDS{mockMetadata},
 	}
 
 	_, err := cache.AllocENI(false, nil, "")
@@ -484,9 +471,8 @@ func TestAllocENIMaxReached(t *testing.T) {
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC:        mockEC2,
-		imds:          TypedIMDS{mockMetadata},
-		eventRecorder: setupEventRecorder(t),
+		ec2SVC: mockEC2,
+		imds:   TypedIMDS{mockMetadata},
 	}
 
 	_, err := cache.AllocENI(false, nil, "")
@@ -506,8 +492,7 @@ func TestFreeENI(t *testing.T) {
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC:        mockEC2,
-		eventRecorder: setupEventRecorder(t),
+		ec2SVC: mockEC2,
 	}
 
 	err := cache.freeENI("test-eni", time.Millisecond, time.Millisecond)
@@ -530,8 +515,7 @@ func TestFreeENIRetry(t *testing.T) {
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC:        mockEC2,
-		eventRecorder: setupEventRecorder(t),
+		ec2SVC: mockEC2,
 	}
 
 	err := cache.freeENI("test-eni", time.Millisecond, time.Millisecond)
@@ -554,8 +538,7 @@ func TestFreeENIRetryMax(t *testing.T) {
 	}
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC:        mockEC2,
-		eventRecorder: setupEventRecorder(t),
+		ec2SVC: mockEC2,
 	}
 
 	err := cache.freeENI("test-eni", time.Millisecond, time.Millisecond)
@@ -569,8 +552,7 @@ func TestFreeENIDescribeErr(t *testing.T) {
 	mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("Error on DescribeNetworkInterfacesWithContext"))
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC:        mockEC2,
-		eventRecorder: setupEventRecorder(t),
+		ec2SVC: mockEC2,
 	}
 
 	err := cache.FreeENI("test-eni")
