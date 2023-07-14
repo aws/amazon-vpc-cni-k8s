@@ -19,6 +19,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/version"
 )
@@ -52,13 +53,19 @@ func _main() int {
 		return 1
 	}
 
-	cacheK8SClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient, mapper, true)
+	cachedK8SClient, err := k8sapi.CreateCachedKubeClient(rawK8SClient, mapper, true)
 	if err != nil {
 		log.Errorf("Failed to create cached kube client: %s", err)
 		return 1
 	}
 
-	ipamContext, err := ipamd.New(rawK8SClient, cacheK8SClient)
+	// Create EventRecorder for use by IPAMD
+	if err := eventrecorder.Init(cachedK8SClient); err != nil {
+		log.Errorf("Failed to create event recorder: %s", err)
+		return 1
+	}
+
+	ipamContext, err := ipamd.New(rawK8SClient, cachedK8SClient)
 	if err != nil {
 		log.Errorf("Initialization failure: %v", err)
 		return 1
