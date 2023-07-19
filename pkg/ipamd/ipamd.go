@@ -426,21 +426,7 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer, c.enablePrefixDelegation)
 
-	// Retrieve security groups
-	mac := c.awsClient.GetPrimaryENImac()
-	if c.enableIPv4 && !c.disableENIProvisioning {
-		err = c.awsClient.RefreshSGIDs(mac)
-		if err != nil {
-			return nil, err
-		}
-
-		// Refresh security groups and VPC CIDR blocks in the background
-		// Ignoring errors since we will retry in 30s
-		go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
-	}
-
-	err = c.nodeInit()
-	if err != nil {
+	if err := c.nodeInit(); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -454,7 +440,6 @@ func (c *IPAMContext) nodeInit() error {
 	ctx := context.TODO()
 
 	log.Debugf("Start node init")
-
 	primaryV4IP := c.awsClient.GetLocalIPv4()
 	if err = c.initENIAndIPLimits(); err != nil {
 		return err
@@ -469,7 +454,8 @@ func (c *IPAMContext) nodeInit() error {
 		}
 	}
 
-	err = c.networkClient.SetupHostNetwork(vpcV4CIDRs, c.awsClient.GetPrimaryENImac(), &primaryV4IP, c.enablePodENI, c.enableIPv4, c.enableIPv6)
+	primaryENIMac := c.awsClient.GetPrimaryENImac()
+	err = c.networkClient.SetupHostNetwork(vpcV4CIDRs, primaryENIMac, &primaryV4IP, c.enablePodENI, c.enableIPv4, c.enableIPv6)
 	if err != nil {
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
@@ -551,6 +537,19 @@ func (c *IPAMContext) nodeInit() error {
 	go wait.Forever(func() {
 		vpcV4CIDRs = c.updateCIDRsRulesOnChange(vpcV4CIDRs)
 	}, 30*time.Second)
+
+	// Retrieve security groups
+	if c.enableIPv4 && !c.disableENIProvisioning {
+		if err := c.awsClient.RefreshSGIDs(primaryENIMac); err != nil {
+			return err
+		}
+
+		// Refresh security groups and VPC CIDR blocks in the background
+		// Ignoring errors since we will retry in 30s
+		go wait.Forever(func() {
+			c.awsClient.RefreshSGIDs(primaryENIMac)
+		}, 30*time.Second)
+	}
 
 	node, err := k8sapi.GetNode(ctx, c.cachedK8SClient)
 	if err != nil {
