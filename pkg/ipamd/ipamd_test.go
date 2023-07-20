@@ -150,8 +150,8 @@ func TestNodeInit(t *testing.T) {
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
 	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
 	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false, true, false).Return(nil)
-
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any()).AnyTimes().Return(nil)
 
 	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
 	resp := awsutils.DescribeAllENIsResult{
@@ -179,7 +179,7 @@ func TestNodeInit(t *testing.T) {
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
-	_ = m.cachedK8SClient.Create(ctx, &fakeNode)
+	m.cachedK8SClient.Create(ctx, &fakeNode)
 
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
@@ -236,8 +236,8 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
 	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
 	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false, true, false).Return(nil)
-
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any()).AnyTimes().Return(nil)
 
 	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
 	resp := awsutils.DescribeAllENIsResult{
@@ -264,8 +264,9 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
-	_ = m.cachedK8SClient.Create(ctx, &fakeNode)
+	m.cachedK8SClient.Create(ctx, &fakeNode)
 
+	os.Setenv("MY_NODE_NAME", myNodeName)
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
 }
