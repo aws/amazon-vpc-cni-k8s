@@ -538,7 +538,9 @@ func (c *IPAMContext) nodeInit() error {
 		vpcV4CIDRs = c.updateCIDRsRulesOnChange(vpcV4CIDRs)
 	}, 30*time.Second)
 
-	// Retrieve security groups
+	// RefreshSGIDs populates the ENI cache with ENI -> security group ID mappings, and so it must be called:
+	// 1. after managed/unmanaged ENIs have been determined
+	// 2. before any new ENIs are attached
 	if c.enableIPv4 && !c.disableENIProvisioning {
 		if err := c.awsClient.RefreshSGIDs(primaryENIMac); err != nil {
 			return err
