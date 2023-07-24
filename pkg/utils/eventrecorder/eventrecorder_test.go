@@ -23,48 +23,22 @@ import (
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-var ctrl *gomock.Controller
 var fakeRecorder *events.FakeRecorder
 
-type testMocks struct {
-	ctrl                *gomock.Controller
-	mockK8SClient       client.Client
-	mockCachedK8SClient client.Client
-}
-
-func setup(t *testing.T) *testMocks {
-	ctrl = gomock.NewController(t)
-	k8sSchema := runtime.NewScheme()
-	k8sClient := fake.NewFakeClientWithScheme(k8sSchema)
-	cachedK8SClient := fake.NewFakeClientWithScheme(k8sSchema)
-	clientgoscheme.AddToScheme(k8sSchema)
-
-	return &testMocks{
-		ctrl:                ctrl,
-		mockK8SClient:       k8sClient,
-		mockCachedK8SClient: cachedK8SClient,
-	}
+func setup(t *testing.T) *gomock.Controller {
+	fakeRecorder = InitMockEventRecorder()
+	return gomock.NewController(t)
 }
 
 func TestSendPodEvent(t *testing.T) {
-	m := setup(t)
-	defer m.ctrl.Finish()
+	ctrl := setup(t)
+	defer ctrl.Finish()
 	ctx := context.Background()
 	MyPodName = "aws-node-5test"
-
-	fakeRecorder = events.NewFakeRecorder(3)
-	mockEventRecorder := &EventRecorder{
-		Recorder:        fakeRecorder,
-		RawK8SClient:    m.mockK8SClient,
-		CachedK8SClient: m.mockCachedK8SClient,
-	}
+	mockEventRecorder := Get()
 
 	labels := map[string]string{"k8s-app": "aws-node"}
 	pod := v1.Pod{
@@ -74,10 +48,8 @@ func TestSendPodEvent(t *testing.T) {
 			Labels:    labels,
 		},
 	}
-
 	// Create pod
 	mockEventRecorder.CachedK8SClient.Create(ctx, &pod)
-	mockEventRecorder.RawK8SClient.Create(ctx, &pod)
 
 	// Validate event call for missing permissions case
 	reason := "MissingIAMPermission"
