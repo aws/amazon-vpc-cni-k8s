@@ -80,9 +80,6 @@ var (
 
 var log = logger.Get()
 
-// event recorder to raise aws-node pod events eg. if EC2 API calls fail due to UnauthorizedOperation error
-var eventRecorder *eventrecorder.EventRecorder
-
 var (
 	awsAPILatency = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -248,8 +245,6 @@ type EC2InstanceMetadataCache struct {
 
 	imds   TypedIMDS
 	ec2SVC ec2wrapper.EC2
-
-	eventRecorder *eventrecorder.EventRecorder
 }
 
 // ENIMetadata contains information about an ENI
@@ -391,12 +386,11 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 	if err != nil {
 		return "", newIMDSRequestError(p, err)
 	}
-
 	return result, nil
 }
 
 // New creates an EC2InstanceMetadataCache
-func New(useCustomNetworking, disableLeakedENICleanup, v4Enabled, v6Enabled bool, eventRecorder *eventrecorder.EventRecorder) (*EC2InstanceMetadataCache, error) {
+func New(useCustomNetworking, disableLeakedENICleanup, v4Enabled, v6Enabled bool) (*EC2InstanceMetadataCache, error) {
 	// ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
 	ctx := context.Background()
 
@@ -405,12 +399,10 @@ func New(useCustomNetworking, disableLeakedENICleanup, v4Enabled, v6Enabled bool
 
 	sess := awssession.New()
 	ec2Metadata := ec2metadata.New(sess)
-
 	cache := &EC2InstanceMetadataCache{}
 	cache.imds = TypedIMDS{instrumentedIMDS{ec2Metadata}}
 	cache.clusterName = os.Getenv(clusterNameEnvVar)
 	cache.additionalENITags = loadAdditionalENITags()
-	cache.eventRecorder = eventRecorder
 
 	region, err := ec2Metadata.Region()
 	if err != nil {
@@ -419,16 +411,13 @@ func New(useCustomNetworking, disableLeakedENICleanup, v4Enabled, v6Enabled bool
 	}
 	cache.region = region
 	log.Debugf("Discovered region: %s", cache.region)
-
 	cache.useCustomNetworking = useCustomNetworking
 	log.Infof("Custom networking enabled %v", cache.useCustomNetworking)
-
 	cache.v4Enabled = v4Enabled
 	cache.v6Enabled = v6Enabled
 
 	awsCfg := aws.NewConfig().WithRegion(region)
 	sess = sess.Copy(awsCfg)
-
 	ec2SVC := ec2wrapper.New(sess)
 	cache.ec2SVC = ec2SVC
 	err = cache.initWithEC2Metadata(ctx)
@@ -440,7 +429,6 @@ func New(useCustomNetworking, disableLeakedENICleanup, v4Enabled, v6Enabled bool
 	if !disableLeakedENICleanup {
 		go wait.Forever(cache.cleanUpLeakedENIs, time.Hour)
 	}
-
 	return cache, nil
 }
 
@@ -580,7 +568,7 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 						awsAPIErrInc("IMDSMetaDataOutOfSync", err)
 					}
 				}
-				CheckAPIErrorAndBroadcastEvent(err, "ec2:ModifyNetworkInterfaceAttribute")
+				checkAPIErrorAndBroadcastEvent(err, "ec2:ModifyNetworkInterfaceAttribute")
 				awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
 				ec2ApiErr.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
 				//No need to return error here since retry will happen in 30seconds and also
@@ -723,7 +711,7 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int, error) {
 	ec2ApiReq.WithLabelValues("DescribeInstances").Inc()
 	awsAPILatency.WithLabelValues("DescribeInstances", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:DescribeInstances")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeInstances")
 		awsAPIErrInc("DescribeInstances", err)
 		ec2ApiErr.WithLabelValues("DescribeInstances").Inc()
 		log.Errorf("awsGetFreeDeviceNumber: Unable to retrieve instance data from EC2 control plane %v", err)
@@ -789,7 +777,7 @@ func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string,
 	ec2ApiReq.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
 	awsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:ModifyNetworkInterfaceAttribute")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:ModifyNetworkInterfaceAttribute")
 		awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
 		ec2ApiErr.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
 		err := cache.FreeENI(eniID)
@@ -821,7 +809,7 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 	ec2ApiReq.WithLabelValues("AttachNetworkInterface").Inc()
 	awsAPILatency.WithLabelValues("AttachNetworkInterface", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:AttachNetworkInterface")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:AttachNetworkInterface")
 		awsAPIErrInc("AttachNetworkInterface", err)
 		ec2ApiErr.WithLabelValues("AttachNetworkInterface").Inc()
 		log.Errorf("Failed to attach ENI %s: %v", eniID, err)
@@ -872,7 +860,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 	ec2ApiReq.WithLabelValues("CreateNetworkInterface").Inc()
 	awsAPILatency.WithLabelValues("CreateNetworkInterface", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:CreateNetworkInterface")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:CreateNetworkInterface")
 		awsAPIErrInc("CreateNetworkInterface", err)
 		ec2ApiErr.WithLabelValues("CreateNetworkInterface").Inc()
 		log.Errorf("Failed to CreateNetworkInterface %v", err)
@@ -924,7 +912,7 @@ func (cache *EC2InstanceMetadataCache) TagENI(eniID string, currentTags map[stri
 		ec2ApiReq.WithLabelValues("CreateTags").Inc()
 		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 		if err != nil {
-			CheckAPIErrorAndBroadcastEvent(err, "ec2:CreateTags")
+			checkAPIErrorAndBroadcastEvent(err, "ec2:CreateTags")
 			awsAPIErrInc("CreateTags", err)
 			ec2ApiErr.WithLabelValues("CreateTags").Inc()
 			log.Warnf("Failed to tag the newly created ENI %s:", eniID)
@@ -977,7 +965,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 		ec2ApiReq.WithLabelValues("DetachNetworkInterface").Inc()
 		awsAPILatency.WithLabelValues("DetachNetworkInterface", fmt.Sprint(ec2Err != nil), awsReqStatus(ec2Err)).Observe(msSince(start))
 		if ec2Err != nil {
-			CheckAPIErrorAndBroadcastEvent(err, "ec2:DetachNetworkInterface")
+			checkAPIErrorAndBroadcastEvent(err, "ec2:DetachNetworkInterface")
 			awsAPIErrInc("DetachNetworkInterface", ec2Err)
 			ec2ApiErr.WithLabelValues("DetachNetworkInterface").Inc()
 			log.Errorf("Failed to detach ENI %s %v", eniName, ec2Err)
@@ -1020,7 +1008,7 @@ func (cache *EC2InstanceMetadataCache) getENIAttachmentID(eniID string) (*string
 				return nil, ErrENINotFound
 			}
 		}
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
 		awsAPIErrInc("DescribeNetworkInterfaces", err)
 		ec2ApiErr.WithLabelValues("DescribeNetworkInterfaces").Inc()
 		log.Errorf("Failed to get ENI %s information from EC2 control plane %v", eniID, err)
@@ -1060,7 +1048,7 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string, maxBackoffDelay
 					return nil
 				}
 			}
-			CheckAPIErrorAndBroadcastEvent(ec2Err, "ec2:DeleteNetworkInterface")
+			checkAPIErrorAndBroadcastEvent(ec2Err, "ec2:DeleteNetworkInterface")
 			awsAPIErrInc("DeleteNetworkInterface", ec2Err)
 			ec2ApiErr.WithLabelValues("DeleteNetworkInterface").Inc()
 			log.Debugf("Not able to delete ENI: %v ", ec2Err)
@@ -1088,7 +1076,7 @@ func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList [
 				return nil, ErrENINotFound
 			}
 		}
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
 		awsAPIErrInc("DescribeNetworkInterfaces", err)
 		ec2ApiErr.WithLabelValues("DescribeNetworkInterfaces").Inc()
 		log.Errorf("Failed to get ENI %s information from EC2 control plane %v", eniID, err)
@@ -1120,7 +1108,7 @@ func (cache *EC2InstanceMetadataCache) GetIPv4PrefixesFromEC2(eniID string) (add
 			}
 
 		}
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
 		awsAPIErrInc("DescribeNetworkInterfaces", err)
 		ec2ApiErr.WithLabelValues("DescribeNetworkInterfaces").Inc()
 		log.Errorf("Failed to get ENI %s information from EC2 control plane %v", eniID, err)
@@ -1152,7 +1140,7 @@ func (cache *EC2InstanceMetadataCache) GetIPv6PrefixesFromEC2(eniID string) (add
 			}
 
 		}
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
 		awsAPIErrInc("DescribeNetworkInterfaces", err)
 		ec2ApiErr.WithLabelValues("DescribeNetworkInterfaces").Inc()
 		log.Errorf("Failed to get ENI %s information from EC2 control plane %v", eniID, err)
@@ -1196,7 +1184,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		}
 		awsAPIErrInc("DescribeNetworkInterfaces", err)
 		ec2ApiErr.WithLabelValues("DescribeNetworkInterfaces").Inc()
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
 		log.Errorf("Failed to call ec2:DescribeNetworkInterfaces for %v: %v", aws.StringValueSlice(input.NetworkInterfaceIds), err)
 		if aerr, ok := err.(awserr.Error); ok {
 			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
@@ -1236,18 +1224,23 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 	efaENIs := make(map[string]bool, 0)
 	tagMap := make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
 	for _, ec2res := range ec2Response.NetworkInterfaces {
-		log.Infof("Got network card index %v for ENI %v", aws.Int64Value(ec2res.Attachment.NetworkCardIndex), aws.StringValue(ec2res.NetworkInterfaceId))
-		if ec2res.Attachment != nil && aws.Int64Value(ec2res.Attachment.DeviceIndex) == 0 && !aws.BoolValue(ec2res.Attachment.DeleteOnTermination) {
-			log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
-		}
 		eniID := aws.StringValue(ec2res.NetworkInterfaceId)
-		if aws.Int64Value(ec2res.Attachment.NetworkCardIndex) > 0 {
-			multiCardENIIDs = append(multiCardENIIDs, eniID)
+		attachment := ec2res.Attachment
+		// Validate that Attachment is populated by EC2 response before logging
+		if attachment != nil {
+			log.Infof("Got network card index %v for ENI %v", aws.Int64Value(attachment.NetworkCardIndex), eniID)
+			if aws.Int64Value(attachment.DeviceIndex) == 0 && !aws.BoolValue(attachment.DeleteOnTermination) {
+				log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
+			}
+			if aws.Int64Value(attachment.NetworkCardIndex) > 0 {
+				multiCardENIIDs = append(multiCardENIIDs, eniID)
+			}
+		} else {
+			log.Infof("Got empty attachment for ENI %v", eniID)
 		}
 
 		eniMetadata := eniMap[eniID]
 		interfaceType := aws.StringValue(ec2res.InterfaceType)
-
 		log.Infof("%s is of type: %s", eniID, interfaceType)
 
 		// This assumes we only have one trunk attached to the node..
@@ -1385,7 +1378,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddress(eniID string) error {
 	ec2ApiReq.WithLabelValues("AssignPrivateIpAddresses").Inc()
 	awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:AssignPrivateIpAddresses")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:AssignPrivateIpAddresses")
 		awsAPIErrInc("AssignPrivateIpAddresses", err)
 		ec2ApiErr.WithLabelValues("AssignPrivateIpAddresses").Inc()
 		log.Errorf("Failed to allocate a private IP address  %v", err)
@@ -1409,7 +1402,7 @@ func (cache *EC2InstanceMetadataCache) FetchInstanceTypeLimits() error {
 	ec2ApiReq.WithLabelValues("DescribeInstanceTypes").Inc()
 	if err != nil || len(output.InstanceTypes) != 1 {
 		ec2ApiErr.WithLabelValues("DescribeInstanceTypes").Inc()
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:DescribeInstanceTypes")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeInstanceTypes")
 		return errors.New(fmt.Sprintf("Failed calling DescribeInstanceTypes for `%s`: %v", cache.instanceType, err))
 	}
 	info := output.InstanceTypes[0]
@@ -1515,7 +1508,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	ec2ApiReq.WithLabelValues("AssignPrivateIpAddresses").Inc()
 	awsAPILatency.WithLabelValues("AssignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:AssignPrivateIpAddresses")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:AssignPrivateIpAddresses")
 		log.Errorf("Failed to allocate a private IP/Prefix addresses on ENI %v: %v", eniID, err)
 		awsAPIErrInc("AssignPrivateIpAddresses", err)
 		ec2ApiErr.WithLabelValues("AssignPrivateIpAddresses").Inc()
@@ -1542,7 +1535,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPv6Prefixes(eniID string) ([]*strin
 	ec2ApiReq.WithLabelValues("AssignIpv6Addresses").Inc()
 	awsAPILatency.WithLabelValues("AssignIpv6AddressesWithContext", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:AssignPrivateIpv6Addresses")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:AssignPrivateIpv6Addresses")
 		log.Errorf("Failed to allocate IPv6 Prefixes on ENI %v: %v", eniID, err)
 		awsAPIErrInc("AssignPrivateIpv6Addresses", err)
 		ec2ApiErr.WithLabelValues("AssignIpv6Addresses").Inc()
@@ -1643,7 +1636,7 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(eniID string, ips []st
 	ec2ApiReq.WithLabelValues("UnassignPrivateIpAddresses").Inc()
 	awsAPILatency.WithLabelValues("UnassignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:UnassignPrivateIpAddresses")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:UnassignPrivateIpAddresses")
 		awsAPIErrInc("UnassignPrivateIpAddresses", err)
 		ec2ApiErr.WithLabelValues("UnassignPrivateIpAddresses").Inc()
 		log.Errorf("Failed to deallocate a private IP address %v", err)
@@ -1671,7 +1664,7 @@ func (cache *EC2InstanceMetadataCache) DeallocPrefixAddresses(eniID string, pref
 	ec2ApiReq.WithLabelValues("UnassignPrivateIpAddresses").Inc()
 	awsAPILatency.WithLabelValues("UnassignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:UnassignPrivateIpAddresses")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:UnassignPrivateIpAddresses")
 		awsAPIErrInc("UnassignPrivateIpAddresses", err)
 		ec2ApiErr.WithLabelValues("UnassignPrivateIpAddresses").Inc()
 		log.Errorf("Failed to deallocate a Prefixes address %v", err)
@@ -1733,7 +1726,7 @@ func (cache *EC2InstanceMetadataCache) tagENIcreateTS(eniID string, maxBackoffDe
 		ec2ApiReq.WithLabelValues("CreateTags").Inc()
 		awsAPILatency.WithLabelValues("CreateTags", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 		if err != nil {
-			CheckAPIErrorAndBroadcastEvent(err, "ec2:CreateTags")
+			checkAPIErrorAndBroadcastEvent(err, "ec2:CreateTags")
 			awsAPIErrInc("CreateTags", err)
 			ec2ApiErr.WithLabelValues("CreateTags").Inc()
 			log.Warnf("Failed to add tag to ENI %s: %v", eniID, err)
@@ -1908,7 +1901,7 @@ func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterf
 	}
 
 	if err := cache.ec2SVC.DescribeNetworkInterfacesPagesWithContext(context.TODO(), input, pageFn); err != nil {
-		CheckAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
 		awsAPIErrInc("DescribeNetworkInterfaces", err)
 		ec2ApiErr.WithLabelValues("DescribeNetworkInterfaces").Inc()
 		return err
@@ -1941,11 +1934,13 @@ func (cache *EC2InstanceMetadataCache) IsPrimaryENI(eniID string) bool {
 	return false
 }
 
-func CheckAPIErrorAndBroadcastEvent(err error, api string) {
+func checkAPIErrorAndBroadcastEvent(err error, api string) {
 	if aerr, ok := err.(awserr.Error); ok {
 		if aerr.Code() == "UnauthorizedOperation" {
-			eventRecorder.SendPodEvent(v1.EventTypeWarning, "MissingIAMPermissions",
-				fmt.Sprintf("Unauthorized operation: failed to call %v due to missing permissions. Please refer https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/iam-policy.md to attach relevant policy to IAM role", api))
+			if eventRecorder := eventrecorder.Get(); eventRecorder != nil {
+				eventRecorder.SendPodEvent(v1.EventTypeWarning, "MissingIAMPermissions",
+					fmt.Sprintf("Unauthorized operation: failed to call %v due to missing permissions. Please refer https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/iam-policy.md to attach relevant policy to IAM role", api))
+			}
 		}
 	}
 }
