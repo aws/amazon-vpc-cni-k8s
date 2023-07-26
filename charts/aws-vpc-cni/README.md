@@ -41,7 +41,7 @@ The following table lists the configurable parameters for this chart and their d
 | `eniConfig.subnets.securityGroups`  | The IDs of the security groups which will be used in the ENIConfig | `nil`        |
 | `env`                   | List of environment variables. See [here](https://github.com/aws/amazon-vpc-cni-k8s#cni-configuration-variables) for options | (see `values.yaml`) |
 | `fullnameOverride`      | Override the fullname of the chart                      | `aws-node`                          |
-| `image.tag`             | Image tag                                               | `v1.13.3`                           |
+| `image.tag`             | Image tag                                               | `v1.13.4`                           |
 | `image.domain`          | ECR repository domain                                   | `amazonaws.com`                     |
 | `image.region`          | ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `image.endpoint`        | ECR repository endpoint to use.                         | `ecr`                               |
@@ -49,7 +49,7 @@ The following table lists the configurable parameters for this chart and their d
 | `image.pullPolicy`      | Container pull policy                                   | `IfNotPresent`                      |
 | `image.override`        | A custom docker image to use                            | `nil`                               |
 | `imagePullSecrets`      | Docker registry pull secret                             | `[]`                                |
-| `init.image.tag`        | Image tag                                               | `v1.13.3`                           |
+| `init.image.tag`        | Image tag                                               | `v1.13.4`                           |
 | `init.image.domain`     | ECR repository domain                                   | `amazonaws.com`                     |
 | `init.image.region`     | ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `init.image.endpoint`   | ECR repository endpoint to use.                         | `ecr`                               |
