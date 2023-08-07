@@ -458,6 +458,8 @@ Default: `""`
 Specifies the cluster endpoint to use for connecting to the api-server without relying on kube-proxy. 
 This is an optional configuration parameter that can improve the initialization time of the AWS VPC CNI.
 
+**NOTE!** When setting CLUSTER_ENDPOINT, it is *STRONGLY RECOMMENDED* that you enable private endpoint access for your API server, otherwise VPC CNI requests can traverse the public NAT gateway and may result in additional charges.
+
 ---
 
 #### `ENABLE_POD_ENI` (v1.7.0+)
