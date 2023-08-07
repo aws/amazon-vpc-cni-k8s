@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.13.4
+
+* Bug - [RefreshSecurityGroups must be called after unmanaged ENIs are set](https://github.com/aws/amazon-vpc-cni-k8s/pull/2475) (@jdn5126 )
+* Bug - [Fix event recorder initialization and add check to log](https://github.com/aws/amazon-vpc-cni-k8s/pull/2467) (@jdn5126 )
+
 ## v1.13.3
 
 * Bug - [Decrease memory usage by K8S Clients](https://github.com/aws/amazon-vpc-cni-k8s/pull/2463) (@jdn5126 )
