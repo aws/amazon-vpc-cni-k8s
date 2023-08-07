@@ -152,3 +152,42 @@ function run_performance_test() {
     fi
     $KUBECTL_PATH delete -f ./testdata/deploy-${REPLICAS}-pods.yaml
 }
+
+# This installs the CW agent to push all metrics to Cloudwatch logs. It collects Memory, CPU, Network metrics
+# https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Container-Insights-metrics-EKS.html
+function install_cw_agent(){
+
+    CW_NAMESPACE="amazon-cloudwatch"
+    CW_POLICY_ARN="arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+
+    echo "Create IAM Service Account for CW agent"
+    $KUBECTL_PATH create ns $CW_NAMESPACE
+    eksctl create iamserviceaccount \
+        --cluster $CLUSTER_NAME \
+        --name cloudwatch-agent \
+        --namespace $CW_NAMESPACE \
+        --attach-policy-arn $CW_POLICY_ARN \
+        --approve
+
+    echo "Install Cloudwatch Agent DS"
+    $KUBECTL_PATH apply -f https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/cwagent/cwagent-serviceaccount.yaml
+
+    echo '{ "logs": { "metrics_collected": { "kubernetes": { "metrics_collection_interval": 30, "cluster_name": "eks-net-perf" }},"force_flush_interval": 5 }}' | jq > cwagentconfig.json
+    $KUBECTL_PATH create cm -n $CW_NAMESPACE cwagentconfig --from-file cwagentconfig.json
+    $KUBECTL_PATH apply -f https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/cwagent/cwagent-daemonset.yaml
+    
+    # Allow CW agent to startup and push initial logs
+    sleep 60s
+}
+
+function uninstall_cw_agent(){
+
+    CW_NAMESPACE="amazon-cloudwatch"
+
+    eksctl delete iamserviceaccount \
+        --cluster $CLUSTER_NAME \
+        --name cloudwatch-agent \
+        --namespace $CW_NAMESPACE
+
+    $KUBECTL_PATH delete namespace $CW_NAMESPACE
+}

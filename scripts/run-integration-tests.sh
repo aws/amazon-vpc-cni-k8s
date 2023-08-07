@@ -293,11 +293,13 @@ if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
     echo "*******************************************************************************"
     echo "Running performance tests on current image"
     echo ""
+    install_cw_agent
     START=$SECONDS
     run_performance_test 130
     run_performance_test 730
     run_performance_test 5000
     PERFORMANCE_DURATION=$((SECONDS - START))
+    uninstall_cw_agent
 fi
 
 if [[ $RUN_KOPS_TEST == true ]]; then
