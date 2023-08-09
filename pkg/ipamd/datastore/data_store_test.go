@@ -16,6 +16,7 @@ package datastore
 import (
 	"errors"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -888,6 +889,8 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 }
 
 func TestGetIPStatsV4(t *testing.T) {
+	os.Setenv(envIPCooldownPeriod, "1")
+	defer os.Unsetenv(envIPCooldownPeriod)
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false)
@@ -925,8 +928,9 @@ func TestGetIPStatsV4(t *testing.T) {
 		*ds.GetIPStats("4"),
 	)
 
-	// wait 30s (cooldown period)
-	time.Sleep(30 * time.Second)
+	assert.Equal(t, ds.ipCooldownPeriod, 1*time.Second)
+	// wait 1s (cooldown period)
+	time.Sleep(ds.ipCooldownPeriod)
 
 	assert.Equal(t,
 		DataStoreStats{
@@ -939,6 +943,8 @@ func TestGetIPStatsV4(t *testing.T) {
 }
 
 func TestGetIPStatsV4WithPD(t *testing.T) {
+	os.Setenv(envIPCooldownPeriod, "1")
+	defer os.Unsetenv(envIPCooldownPeriod)
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false)
@@ -976,8 +982,9 @@ func TestGetIPStatsV4WithPD(t *testing.T) {
 		*ds.GetIPStats("4"),
 	)
 
-	// wait 30s (cooldown period)
-	time.Sleep(30 * time.Second)
+	assert.Equal(t, ds.ipCooldownPeriod, 1*time.Second)
+	// wait 1s (cooldown period)
+	time.Sleep(ds.ipCooldownPeriod)
 
 	assert.Equal(t,
 		DataStoreStats{

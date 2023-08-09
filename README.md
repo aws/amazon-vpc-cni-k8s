@@ -680,6 +680,19 @@ This environment variable must be set for both the `aws-vpc-cni-init` and `aws-n
 
 Note that enabling/disabling this feature only affects whether newly created pods have an IPv6 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature. Also note that if you are using this feature in conjunction with `ENABLE_POD_ENI` (Security Groups for Pods), the security group rules will NOT be applied to egressing IPv6 traffic.
 
+----
+
+#### `IP_COOLDOWN_PERIOD` (v1.14.1+)
+
+Type: Integer as a String
+
+Default: `30`
+
+Specifies the number of seconds an IP address is in cooldown after pod deletion. The cooldown period gives network proxies, such as kube-proxy, time to update node iptables rules when the IP was registered as a valid endpoint, such as for a service. Modify this value with caution, as kube-proxy update time scales with the number of nodes and services.
+
+**Note:** 0 is a supported value, however it is highly discouraged.
+**Note:** Higher cooldown periods may lead to a higher number of EC2 API calls as IPs are in cooldown cache.
+
 ### VPC CNI Feature Matrix
 
 IP Mode | Secondary IP Mode | Prefix Delegation | Security Groups Per Pod | WARM & MIN IP/Prefix Targets | External SNAT
