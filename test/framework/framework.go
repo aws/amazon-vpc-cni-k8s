@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"log"
 
-	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha2"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	rcscheme "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 	sgpscheme "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"

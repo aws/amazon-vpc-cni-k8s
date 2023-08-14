@@ -13,7 +13,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher/mock_publisher"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
@@ -36,7 +35,6 @@ func setup(t *testing.T) *testMocks {
 	fakeClientset := k8sfake.NewSimpleClientset()
 	k8sSchema := runtime.NewScheme()
 	clientgoscheme.AddToScheme(k8sSchema)
-	eniconfigscheme.AddToScheme(k8sSchema)
 	podWatcher := NewDefaultPodWatcher(testclient.NewClientBuilder().WithScheme(k8sSchema).WithRuntimeObjects().Build(), testLog)
 	return &testMocks{
 		clientset:     fakeClientset,

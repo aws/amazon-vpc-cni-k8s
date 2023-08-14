@@ -39,8 +39,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
-	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha2"
+	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha2"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
 	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
@@ -507,7 +507,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 	testAddr12 := ipaddr12
 	eni2 := secENIid
 
-	podENIConfig := &v1alpha1.ENIConfigSpec{
+	podENIConfig := &v1alpha2.ENIConfigSpec{
 		SecurityGroups: []string{"sg1-id", "sg2-id"},
 		Subnet:         "subnet1",
 	}
@@ -582,7 +582,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 		m.k8sClient.Create(ctx, &fakeNode)
 
 		// Create a dummy ENIConfig
-		fakeENIConfig := v1alpha1.ENIConfig{
+		fakeENIConfig := v1alpha2.ENIConfig{
 			TypeMeta:   metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{Name: "az1"},
 			Spec: eniconfigscheme.ENIConfigSpec{
@@ -653,7 +653,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	testPrefix2 := prefix02
 	eni2 := secENIid
 
-	podENIConfig := &v1alpha1.ENIConfigSpec{
+	podENIConfig := &v1alpha2.ENIConfigSpec{
 		SecurityGroups: []string{"sg1-id", "sg2-id"},
 		Subnet:         "subnet1",
 	}
@@ -725,7 +725,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 		m.k8sClient.Create(ctx, &fakeNode)
 
 		//Create a dummy ENIConfig
-		fakeENIConfig := v1alpha1.ENIConfig{
+		fakeENIConfig := v1alpha2.ENIConfig{
 			TypeMeta:   metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{Name: "az1"},
 			Spec: eniconfigscheme.ENIConfigSpec{

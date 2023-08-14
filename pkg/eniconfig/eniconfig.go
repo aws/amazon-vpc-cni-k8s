@@ -24,7 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha2"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
@@ -51,7 +51,7 @@ const (
 
 // ENIConfig interface
 type ENIConfig interface {
-	MyENIConfig(client.Client) (*v1alpha1.ENIConfigSpec, error)
+	MyENIConfig(client.Client) (*v1alpha2.ENIConfigSpec, error)
 	GetENIConfigName(context.Context, client.Client) (string, error)
 }
 
@@ -62,14 +62,14 @@ var log = logger.Get()
 
 // ENIConfigInfo returns locally cached ENIConfigs
 type ENIConfigInfo struct {
-	ENI                    map[string]v1alpha1.ENIConfigSpec
+	ENI                    map[string]v1alpha2.ENIConfigSpec
 	MyENI                  string
 	EniConfigAnnotationDef string
 	EniConfigLabelDef      string
 }
 
 // MyENIConfig returns the ENIConfig applicable to the particular node
-func MyENIConfig(ctx context.Context, k8sClient client.Client) (*v1alpha1.ENIConfigSpec, error) {
+func MyENIConfig(ctx context.Context, k8sClient client.Client) (*v1alpha2.ENIConfigSpec, error) {
 	node, err := k8sapi.GetNode(ctx, k8sClient)
 	if err != nil {
 		log.Debugf("Error while retrieving Node")
@@ -81,14 +81,14 @@ func MyENIConfig(ctx context.Context, k8sClient client.Client) (*v1alpha1.ENICon
 	}
 
 	log.Infof("Found ENI Config Name: %s", eniConfigName)
-	var eniConfig v1alpha1.ENIConfig
+	var eniConfig v1alpha2.ENIConfig
 	err = k8sClient.Get(ctx, types.NamespacedName{Name: eniConfigName}, &eniConfig)
 	if err != nil {
 		log.Errorf("error while retrieving eniconfig: %s", err)
 		return nil, ErrNoENIConfig
 	}
 
-	return &v1alpha1.ENIConfigSpec{
+	return &v1alpha2.ENIConfigSpec{
 		SecurityGroups: eniConfig.Spec.SecurityGroups,
 		Subnet:         eniConfig.Spec.Subnet,
 	}, nil

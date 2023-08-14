@@ -1,6 +1,6 @@
 {{- if .Values.eniConfig.create }}
 {{- range $key, $value := (required ".Values.eniConfig.subnets must be specified" .Values.eniConfig.subnets) }}
-apiVersion: crd.k8s.amazonaws.com/v1alpha1
+apiVersion: crd.k8s.amazonaws.com/v1alpha2
 kind: ENIConfig
 metadata:
   name: {{ $key }}

@@ -22,7 +22,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	v1alpha1 "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	v1alpha2 "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha2"
 	gomock "github.com/golang/mock/gomock"
 	client "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -66,10 +66,10 @@ func (mr *MockENIConfigMockRecorder) GetENIConfigName(arg0, arg1 interface{}) *g
 }
 
 // MyENIConfig mocks base method
-func (m *MockENIConfig) MyENIConfig(arg0 client.Client) (*v1alpha1.ENIConfigSpec, error) {
+func (m *MockENIConfig) MyENIConfig(arg0 client.Client) (*v1alpha2.ENIConfigSpec, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "MyENIConfig", arg0)
-	ret0, _ := ret[0].(*v1alpha1.ENIConfigSpec)
+	ret0, _ := ret[0].(*v1alpha2.ENIConfigSpec)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

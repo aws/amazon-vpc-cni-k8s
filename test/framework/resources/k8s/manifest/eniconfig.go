@@ -16,7 +16,7 @@ package manifest
 import (
 	"fmt"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha2"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -47,26 +47,26 @@ func (e *ENIConfigBuilder) SecurityGroup(securityGroup []string) *ENIConfigBuild
 	return e
 }
 
-func (e *ENIConfigBuilder) Build() (*v1alpha1.ENIConfig, error) {
+func (e *ENIConfigBuilder) Build() (*v1alpha2.ENIConfig, error) {
 	if e.subnetID == "" {
 		return nil, fmt.Errorf("subnet id is a required field")
 	}
 
 	if e.securityGroup == nil {
-		return &v1alpha1.ENIConfig{
+		return &v1alpha2.ENIConfig{
 			ObjectMeta: v1.ObjectMeta{
 				Name: e.name,
 			},
-			Spec: v1alpha1.ENIConfigSpec{
+			Spec: v1alpha2.ENIConfigSpec{
 				Subnet: e.subnetID,
 			},
 		}, nil
 	} else {
-		return &v1alpha1.ENIConfig{
+		return &v1alpha2.ENIConfig{
 			ObjectMeta: v1.ObjectMeta{
 				Name: e.name,
 			},
-			Spec: v1alpha1.ENIConfigSpec{
+			Spec: v1alpha2.ENIConfigSpec{
 				SecurityGroups: e.securityGroup,
 				Subnet:         e.subnetID,
 			},

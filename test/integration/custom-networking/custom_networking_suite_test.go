@@ -19,7 +19,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha2"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	awsUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
@@ -52,7 +52,7 @@ var (
 	customNetworkingSGOpenPort   = 8080
 	customNetworkingSubnetIDList []string
 	// List of ENIConfig per Availability Zone
-	eniConfigList        []*v1alpha1.ENIConfig
+	eniConfigList        []*v1alpha2.ENIConfig
 	eniConfigBuilderList []*manifest.ENIConfigBuilder
 )
 
