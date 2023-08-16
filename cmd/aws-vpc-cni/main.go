@@ -80,6 +80,7 @@ const (
 	vpcCniInitDonePath           = "/vpc-cni-init/done"
 	defaultEnBandwidthPlugin     = false
 	defaultEnPrefixDelegation    = false
+	defaultIPCooldownPeriod      = 30
 
 	envHostCniBinPath        = "HOST_CNI_BIN_PATH"
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
@@ -99,6 +100,7 @@ const (
 	envEnIPv6                = "ENABLE_IPv6"
 	envEnIPv6Egress          = "ENABLE_V6_EGRESS"
 	envRandomizeSNAT         = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
+	envIPCooldownPeriod      = "IP_COOLDOWN_PERIOD"
 )
 
 // NetConfList describes an ordered list of networks.
@@ -345,6 +347,13 @@ func validateEnvVars() bool {
 			log.Errorf("%s must be set to either 'strict' or 'standard'", envPodSGEnforcingMode)
 			return false
 		}
+	}
+
+	// Validate that IP_COOLDOWN_PERIOD is a valid integer
+	ipCooldownPeriod, err, input := utils.GetIntFromStringEnvVar(envIPCooldownPeriod, defaultIPCooldownPeriod)
+	if err != nil || ipCooldownPeriod < 0 {
+		log.Errorf("IP_COOLDOWN_PERIOD MUST be a valid positive integer. %s is invalid", input)
+		return false
 	}
 
 	prefixDelegationEn := utils.GetBoolAsStringEnvVar(envEnPrefixDelegation, defaultEnPrefixDelegation)

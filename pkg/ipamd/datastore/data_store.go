@@ -27,6 +27,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -35,9 +36,8 @@ const (
 	// minENILifeTime is the shortest time before we consider deleting a newly created ENI
 	minENILifeTime = 1 * time.Minute
 
-	// addressCoolingPeriod is used to ensure an IP not get assigned to a Pod if this IP is used by a different Pod
-	// in addressCoolingPeriod
-	addressCoolingPeriod = 30 * time.Second
+	// envIPCooldownPeriod (default 30 seconds) specifies the time after pod deletion before an IP can be assigned to a new pod
+	envIPCooldownPeriod = "IP_COOLDOWN_PERIOD"
 
 	// DuplicatedENIError is an error when caller tries to add an duplicate ENI to data store
 	DuplicatedENIError = "data store: duplicate ENI"
@@ -249,12 +249,12 @@ type CidrStats struct {
 }
 
 // Gets number of assigned IPs and the IPs in cooldown from a given CIDR
-func (cidr *CidrInfo) GetIPStatsFromCidr() CidrStats {
+func (cidr *CidrInfo) GetIPStatsFromCidr(ipCooldownPeriod time.Duration) CidrStats {
 	stats := CidrStats{}
 	for _, addr := range cidr.IPAddresses {
 		if addr.Assigned() {
 			stats.AssignedIPs++
-		} else if addr.inCoolingPeriod() {
+		} else if addr.inCoolingPeriod(ipCooldownPeriod) {
 			stats.CooldownIPs++
 		}
 	}
@@ -266,9 +266,18 @@ func (addr AddressInfo) Assigned() bool {
 	return !addr.IPAMKey.IsZero()
 }
 
-// InCoolingPeriod checks whether an addr is in addressCoolingPeriod
-func (addr AddressInfo) inCoolingPeriod() bool {
-	return time.Since(addr.UnassignedTime) <= addressCoolingPeriod
+// getCooldownPeriod returns the time duration in seconds configured by the IP_COOLDOWN_PERIOD env variable
+func getCooldownPeriod() time.Duration {
+	cooldownVal, err, _ := utils.GetIntFromStringEnvVar(envIPCooldownPeriod, 30)
+	if err != nil {
+		return 30 * time.Second
+	}
+	return time.Duration(cooldownVal) * time.Second
+}
+
+// InCoolingPeriod checks whether an addr is in ipCooldownPeriod
+func (addr AddressInfo) inCoolingPeriod(ipCooldownPeriod time.Duration) bool {
+	return time.Since(addr.UnassignedTime) <= ipCooldownPeriod
 }
 
 // ENIPool is a collection of ENI, keyed by ENI ID
@@ -304,15 +313,16 @@ type PodIPInfo struct {
 
 // DataStore contains node level ENI/IP
 type DataStore struct {
-	total           int
-	assigned        int
-	allocatedPrefix int
-	eniPool         ENIPool
-	lock            sync.Mutex
-	log             logger.Logger
-	backingStore    Checkpointer
-	netLink         netlinkwrapper.NetLink
-	isPDEnabled     bool
+	total            int
+	assigned         int
+	allocatedPrefix  int
+	eniPool          ENIPool
+	lock             sync.Mutex
+	log              logger.Logger
+	backingStore     Checkpointer
+	netLink          netlinkwrapper.NetLink
+	isPDEnabled      bool
+	ipCooldownPeriod time.Duration
 }
 
 // ENIInfos contains ENI IP information
@@ -342,11 +352,12 @@ func prometheusRegister() {
 func NewDataStore(log logger.Logger, backingStore Checkpointer, isPDEnabled bool) *DataStore {
 	prometheusRegister()
 	return &DataStore{
-		eniPool:      make(ENIPool),
-		log:          log,
-		backingStore: backingStore,
-		netLink:      netlinkwrapper.NewNetLink(),
-		isPDEnabled:  isPDEnabled,
+		eniPool:          make(ENIPool),
+		log:              log,
+		backingStore:     backingStore,
+		netLink:          netlinkwrapper.NewNetLink(),
+		isPDEnabled:      isPDEnabled,
+		ipCooldownPeriod: getCooldownPeriod(),
 	}
 }
 
@@ -842,7 +853,7 @@ func (ds *DataStore) GetIPStats(addressFamily string) *DataStoreStats {
 		}
 		for _, cidr := range AssignedCIDRs {
 			if addressFamily == "4" && ((ds.isPDEnabled && cidr.IsPrefix) || (!ds.isPDEnabled && !cidr.IsPrefix)) {
-				cidrStats := cidr.GetIPStatsFromCidr()
+				cidrStats := cidr.GetIPStatsFromCidr(ds.ipCooldownPeriod)
 				stats.AssignedIPs += cidrStats.AssignedIPs
 				stats.CooldownIPs += cidrStats.CooldownIPs
 				stats.TotalIPs += cidr.Size()
@@ -952,7 +963,7 @@ func (ds *DataStore) getDeletableENI(warmIPTarget, minimumIPTarget, warmPrefixTa
 			continue
 		}
 
-		if eni.hasIPInCooling() {
+		if eni.hasIPInCooling(ds.ipCooldownPeriod) {
 			ds.log.Debugf("ENI %s cannot be deleted because has IPs in cooling", eni.ID)
 			continue
 		}
@@ -999,10 +1010,10 @@ func (e *ENI) isTooYoung() bool {
 }
 
 // HasIPInCooling returns true if an IP address was unassigned recently.
-func (e *ENI) hasIPInCooling() bool {
+func (e *ENI) hasIPInCooling(ipCooldownPeriod time.Duration) bool {
 	for _, assignedaddr := range e.AvailableIPv4Cidrs {
 		for _, addr := range assignedaddr.IPAddresses {
-			if addr.inCoolingPeriod() {
+			if addr.inCoolingPeriod(ipCooldownPeriod) {
 				return true
 			}
 		}
@@ -1355,7 +1366,7 @@ func (ds *DataStore) getUnusedIP(availableCidr *CidrInfo) (string, error) {
 	//Check if there is any IP out of cooldown
 	var cachedIP string
 	for _, addr := range availableCidr.IPAddresses {
-		if !addr.Assigned() && !addr.inCoolingPeriod() {
+		if !addr.Assigned() && !addr.inCoolingPeriod(ds.ipCooldownPeriod) {
 			//if the IP is out of cooldown and not assigned then cache the first available IP
 			//continue cleaning up the DB, this is to avoid stale entries and a new thread :)
 			if cachedIP == "" {
