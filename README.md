@@ -110,13 +110,10 @@ The AWS VPC CNI implementation of network policies may be enabled in self-manage
 
 Review the [Network Policy FAQ](./docs/network-policy-faq.md) for more information.
 
-> 📝 Security Note - New Pods
-> 
-> Network policy controller configures policies for pods in parallel to pod provisioning, until then new pods will come up with default allow policy. All ingress and egress traffic is allowed to and from the new pods until they are resolved against the existing policies.
-
 ### Network Policies Related Components
 
 * [Network Policy Controller](https://github.com/aws/amazon-network-policy-controller-k8s) watches for NetworkPolicy objects and instructs the node agent.
+  * Network policy controller configures policies for pods in parallel to pod provisioning, until then new pods will come up with default allow policy. All ingress and egress traffic is allowed to and from the new pods until they are resolved against the existing policies.
   * This controller is automatically installed on the EKS Control Plane.
 * [Network Policy Node Agent](https://github.com/aws/aws-network-policy-agent) implements Network Policies on nodes by creating eBPF programs.
 * [AWS eBPF SDK for Go](https://github.com/aws/aws-ebpf-sdk-go) provides an interface to interact with eBPF programs on the node. This SDK allows for runtime introspection, tracing, and analysis of eBPF execution, aiding in identifying and resolving connectivity issues.
