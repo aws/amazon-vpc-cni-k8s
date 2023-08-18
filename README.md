@@ -682,7 +682,7 @@ Note that enabling/disabling this feature only affects whether newly created pod
 
 ----
 
-#### `IP_COOLDOWN_PERIOD` (v1.14.1+)
+#### `IP_COOLDOWN_PERIOD` (v1.15.0+)
 
 Type: Integer as a String
 
@@ -692,6 +692,19 @@ Specifies the number of seconds an IP address is in cooldown after pod deletion.
 
 **Note:** 0 is a supported value, however it is highly discouraged.
 **Note:** Higher cooldown periods may lead to a higher number of EC2 API calls as IPs are in cooldown cache.
+
+----
+
+#### `DISABLE_POD_V6` (v1.15.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+When `DISABLE_POD_V6` is set, the [tuning plugin](https://www.cni.dev/plugins/current/meta/tuning/) is chained and configured to disable IPv6 networking in each newly created pod network namespace. Set this variable when you have an IPv4 cluster and containerized applications that cannot tolerate IPv6 being enabled.
+Container runtimes such as `containerd` will enable IPv6 in newly created container network namespaces regardless of host settings.
+
+Note that if you set this while using Multus, you must ensure that any chained plugins do not depend on IPv6 networking. You must also ensure that chained plugins do not also modify these sysctls.
 
 ### VPC CNI Feature Matrix
 
