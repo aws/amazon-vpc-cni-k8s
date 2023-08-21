@@ -119,7 +119,8 @@ var _ = AfterSuite(func() {
 			"AWS_VPC_K8S_CNI_VETHPREFIX": DEFAULT_VETH_PREFIX,
 		},
 		map[string]struct{}{
-			"WARM_IP_TARGET":  {},
-			"WARM_ENI_TARGET": {},
+			"WARM_IP_TARGET":     {},
+			"WARM_ENI_TARGET":    {},
+			"IP_COOLDOWN_PERIOD": {},
 		})
 })
