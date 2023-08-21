@@ -151,7 +151,8 @@ var _ = Describe("test aws-node pod event", func() {
 
 		It("unauthorized event must be raised on aws-node pod", func() {
 			By("waiting for event to be generated")
-			time.Sleep(5 * utils.PollIntervalLong)
+			// The event can take a long time to show up in client queries (I have seen up to 5 minutes)...
+			time.Sleep(5 * time.Minute)
 			listOpts := client.ListOptions{
 				FieldSelector: fields.Set{"reason": "MissingIAMPermissions"}.AsSelector(),
 				Namespace:     utils.AwsNodeNamespace,
