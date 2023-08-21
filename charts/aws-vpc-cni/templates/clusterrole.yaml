@@ -28,8 +28,13 @@ rules:
   - apiGroups: [""]
     resources:
       - nodes
-    verbs: ["list", "watch", "get", "update"]
+    verbs: ["list", "watch", "get"]
   - apiGroups: ["", "events.k8s.io"]
     resources:
       - events
     verbs: ["create", "patch", "list"]
+  - apiGroups:
+      - vpcresources.k8s.aws
+    resources:
+      - cninodes
+    verbs: ["get", "list", "patch"]
