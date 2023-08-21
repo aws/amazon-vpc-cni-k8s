@@ -7,10 +7,9 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -19,89 +18,111 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
-	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
+	cache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+)
+
+const (
+	awsNode = "aws-node"
 )
 
 var log = logger.Get()
 
-func InitializeRestMapper() (meta.RESTMapper, error) {
-	restCfg, err := getRestConfig()
-	if err != nil {
-		return nil, err
+// Get cache filters for IPAMD
+func getIPAMDCacheFilters() map[client.Object]cache.ByObject {
+	if nodeName := os.Getenv("MY_NODE_NAME"); nodeName != "" {
+		return map[client.Object]cache.ByObject{
+			&corev1.Pod{}: {
+				Field: fields.Set{"spec.nodeName": nodeName}.AsSelector(),
+			}}
 	}
-	restCfg.Burst = 200
-	mapper, err := apiutil.NewDynamicRESTMapper(restCfg)
-	if err != nil {
-		return nil, err
-	}
-	return mapper, nil
+	return nil
 }
 
-// CreateKubeClient creates a k8s client
-func CreateKubeClient(mapper meta.RESTMapper) (client.Client, error) {
-	restCfg, err := getRestConfig()
-	if err != nil {
-		return nil, err
-	}
-	vpcCniScheme := runtime.NewScheme()
-	corev1.AddToScheme(vpcCniScheme)
-	eniconfigscheme.AddToScheme(vpcCniScheme)
-
-	rawK8SClient, err := client.New(restCfg, client.Options{Scheme: vpcCniScheme, Mapper: mapper})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return rawK8SClient, nil
-}
-
-// CreateKubeClient creates a k8s client
-func CreateCachedKubeClient(rawK8SClient client.Client, mapper meta.RESTMapper, limitPods bool) (client.Client, error) {
-	restCfg, err := getRestConfig()
-	if err != nil {
-		return nil, err
-	}
-	restCfg.Burst = 100
-
-	vpcCniScheme := runtime.NewScheme()
-	// For the cached client, IPAMD only needs nodes and ENIConfigs to be cached. Nodes come from corev1.
-	corev1.AddToScheme(vpcCniScheme)
-	eniconfigscheme.AddToScheme(vpcCniScheme)
-
-	stopChan := ctrl.SetupSignalHandler()
-	// IPAMD only needs to cache pods on this node, so the following selector is used to reduce memory consumption
-	cacheOptions := crcache.Options{Scheme: vpcCniScheme, Mapper: mapper}
-	if nodeName := os.Getenv("MY_NODE_NAME"); limitPods && nodeName != "" {
-		cacheOptions.SelectorsByObject = map[client.Object]crcache.ObjectSelector{&corev1.Pod{}: {
-			Field: fields.Set{"spec.nodeName": nodeName}.AsSelector(),
+// Get cache filters for CNI Metrics Helper
+func getMetricsHelperCacheFilters() map[client.Object]cache.ByObject {
+	return map[client.Object]cache.ByObject{
+		&corev1.Pod{}: {
+			Label: labels.Set(map[string]string{
+				"k8s-app": awsNode}).AsSelector(),
 		}}
+}
 
-	}
-	cache, err := crcache.New(restCfg, cacheOptions)
+// Create cache reader for Kubernetes client
+func CreateKubeClientCache(restCfg *rest.Config, scheme *runtime.Scheme, filterMap map[client.Object]cache.ByObject) (cache.Cache, error) {
+	// Get HTTP client and REST mapper for cache
+	httpClient, err := rest.HTTPClientFor(restCfg)
 	if err != nil {
 		return nil, err
 	}
+	mapper, err := apiutil.NewDynamicRESTMapper(restCfg, httpClient)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a cache for the client to read from in order to decrease the number of API server calls.
+	cacheOptions := cache.Options{
+		ByObject: filterMap,
+		Mapper:   mapper,
+		Scheme:   scheme,
+	}
+
+	cache, err := cache.New(restCfg, cacheOptions)
+	if err != nil {
+		return nil, err
+	}
+	return cache, nil
+}
+
+func StartKubeClientCache(cache cache.Cache) {
+	stopChan := ctrl.SetupSignalHandler()
 	go func() {
 		cache.Start(stopChan)
 	}()
 	cache.WaitForCacheSync(stopChan)
+}
 
-	cachedK8SClient := client.NewDelegatingClientInput{
-		CacheReader: cache,
-		Client:      rawK8SClient,
-	}
-
-	returnedCachedK8SClient, err := client.NewDelegatingClient(cachedK8SClient)
+// CreateKubeClient creates a k8s client
+func CreateKubeClient(appName string) (client.Client, error) {
+	restCfg, err := getRestConfig(appName)
 	if err != nil {
 		return nil, err
 	}
-	return returnedCachedK8SClient, nil
+
+	// The scheme should only contain GVKs that the client will access.
+	vpcCniScheme := runtime.NewScheme()
+	corev1.AddToScheme(vpcCniScheme)
+	eniconfigscheme.AddToScheme(vpcCniScheme)
+
+	var filterMap map[client.Object]cache.ByObject
+	if appName == awsNode {
+		filterMap = getIPAMDCacheFilters()
+	} else {
+		filterMap = getMetricsHelperCacheFilters()
+	}
+	cacheReader, err := CreateKubeClientCache(restCfg, vpcCniScheme, filterMap)
+	if err != nil {
+		return nil, err
+	}
+	// Start cache and wait for initial sync
+	StartKubeClientCache(cacheReader)
+
+	k8sClient, err := client.New(restCfg, client.Options{
+		Cache: &client.CacheOptions{
+			Reader: cacheReader,
+		},
+		Scheme: vpcCniScheme,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return k8sClient, nil
 }
-func GetKubeClientSet() (kubernetes.Interface, error) {
+
+func GetKubeClientSet(appName string) (kubernetes.Interface, error) {
 	// creates the in-cluster config
-	config, err := getRestConfig()
+	config, err := getRestConfig(appName)
 	if err != nil {
 		return nil, err
 	}
@@ -114,8 +135,8 @@ func GetKubeClientSet() (kubernetes.Interface, error) {
 	return clientSet, nil
 }
 
-func CheckAPIServerConnectivity() error {
-	restCfg, err := getRestConfig()
+func CheckAPIServerConnectivity(appName string) error {
+	restCfg, err := getRestConfig(appName)
 	if err != nil {
 		return err
 	}
@@ -143,11 +164,12 @@ func CheckAPIServerConnectivity() error {
 	})
 }
 
-func getRestConfig() (*rest.Config, error) {
+func getRestConfig(appName string) (*rest.Config, error) {
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
 		return nil, err
 	}
+	restCfg.UserAgent = appName
 	if endpoint, ok := os.LookupEnv("CLUSTER_ENDPOINT"); ok {
 		restCfg.Host = endpoint
 	}

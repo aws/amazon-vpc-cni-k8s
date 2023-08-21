@@ -17,6 +17,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/resources"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -49,8 +50,7 @@ type defaultManager struct {
 	eventManager          resources.EventManager
 }
 
-func NewResourceManager(k8sClient client.Client,
-	scheme *runtime.Scheme, config *rest.Config) ResourceManagers {
+func NewResourceManager(k8sClient client.Client, k8sClientset *kubernetes.Clientset, scheme *runtime.Scheme, config *rest.Config) ResourceManagers {
 	return &defaultManager{
 		jobManager:            resources.NewDefaultJobManager(k8sClient),
 		deploymentManager:     resources.NewDefaultDeploymentManager(k8sClient),
@@ -58,7 +58,7 @@ func NewResourceManager(k8sClient client.Client,
 		namespaceManager:      resources.NewDefaultNamespaceManager(k8sClient),
 		serviceManager:        resources.NewDefaultServiceManager(k8sClient),
 		nodeManager:           resources.NewDefaultNodeManager(k8sClient),
-		podManager:            resources.NewDefaultPodManager(k8sClient, scheme, config),
+		podManager:            resources.NewDefaultPodManager(k8sClient, k8sClientset, scheme, config),
 		daemonSetManager:      resources.NewDefaultDaemonSetManager(k8sClient),
 		configMapManager:      resources.NewConfigMapManager(k8sClient),
 		networkPolicyManager:  resources.NewNetworkPolicyManager(k8sClient),

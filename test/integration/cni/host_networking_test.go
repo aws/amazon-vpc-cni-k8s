@@ -161,7 +161,7 @@ var _ = Describe("test host networking", func() {
 				NodeName(primaryNode.Name).
 				Build()
 
-			parkingPod, err = f.K8sResourceManagers.PodManager().CreatAndWaitTillRunning(parkingPod)
+			parkingPod, err = f.K8sResourceManagers.PodManager().CreateAndWaitTillRunning(parkingPod)
 			Expect(err).ToNot(HaveOccurred())
 
 			validInput, err := common.GetPodNetworkingValidationInput(common.InterfaceTypeToPodList{
