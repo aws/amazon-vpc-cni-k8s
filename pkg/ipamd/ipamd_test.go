@@ -27,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/golang/mock/gomock"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/vishvananda/netlink"
 	corev1 "k8s.io/api/core/v1"
@@ -45,6 +46,7 @@ import (
 	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	mock_networkutils "github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
+	rcscheme "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 )
 
 const (
@@ -92,6 +94,7 @@ func setup(t *testing.T) *testMocks {
 	k8sSchema := runtime.NewScheme()
 	clientgoscheme.AddToScheme(k8sSchema)
 	eniconfigscheme.AddToScheme(k8sSchema)
+	rcscheme.AddToScheme(k8sSchema)
 
 	return &testMocks{
 		ctrl:      ctrl,
@@ -1946,159 +1949,61 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 		myNodeName:    myNodeName,
 	}
 
-	labels := map[string]string{
-		"testKey": "testValue",
-	}
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
-		ObjectMeta: metav1.ObjectMeta{Name: myNodeName, Labels: labels},
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
 		Spec:       v1.NodeSpec{},
 		Status:     v1.NodeStatus{},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
+
+	fakeCNINode := rcscheme.CNINode{
+		ObjectMeta: metav1.ObjectMeta{Name: fakeNode.Name},
+	}
+
+	err := m.k8sClient.Create(ctx, &fakeCNINode)
+	assert.NoError(t, err)
 
 	_ = mockContext.dataStore.AddENI("eni-1", 1, true, false, false)
 	// If ENABLE_POD_ENI is not set, nothing happens
 	mockContext.askForTrunkENIIfNeeded(ctx)
 
 	mockContext.enablePodENI = true
-	// Enabled, we should try to set the label if there is room
 	mockContext.askForTrunkENIIfNeeded(ctx)
 	var notUpdatedNode corev1.Node
-	var updatedNode corev1.Node
 	NodeKey := types.NamespacedName{
 		Namespace: "",
 		Name:      myNodeName,
 	}
-	err := m.k8sClient.Get(ctx, NodeKey, &notUpdatedNode)
-	// Since there was no room, no label should be added
+	err = m.k8sClient.Get(ctx, NodeKey, &notUpdatedNode)
 	assert.NoError(t, err)
-	_, has := notUpdatedNode.Labels["vpc.amazonaws.com/has-trunk-attached"]
-	assert.False(t, has, "the node shouldn't be labelled for trunk when there is no room")
-	assert.Equal(t, 1, len(notUpdatedNode.Labels))
+	var cniNode rcscheme.CNINode
+
+	err = mockContext.k8sClient.Get(ctx, types.NamespacedName{
+		Name: fakeNode.Name,
+	}, &cniNode)
+	assert.NoError(t, err)
+
+	contained := lo.ContainsBy(cniNode.Spec.Features, func(addedFeature rcscheme.Feature) bool {
+		return rcscheme.SecurityGroupsForPods == addedFeature.Name && addedFeature.Value == ""
+	})
+	assert.False(t, contained, "the node's CNINode shouldn't be updated for trunk when there is no room")
+	assert.Equal(t, 0, len(cniNode.Spec.Features))
 
 	mockContext.maxENI = 4
 	// Now there is room!
 	mockContext.askForTrunkENIIfNeeded(ctx)
 
-	// Fetch the updated node and verify that the label is set
-	err = m.k8sClient.Get(ctx, NodeKey, &updatedNode)
+	err = mockContext.k8sClient.Get(ctx, types.NamespacedName{
+		Name: fakeNode.Name,
+	}, &cniNode)
 	assert.NoError(t, err)
-	assert.Equal(t, "false", updatedNode.Labels["vpc.amazonaws.com/has-trunk-attached"])
-}
 
-func TestGetNodeLabels(t *testing.T) {
-	os.Setenv("MY_NODE_NAME", myNodeName)
-	var m *testMocks
-
-	eniConfigName := "testConfig"
-
-	tests := []struct {
-		node      v1.Node
-		hasError  bool
-		labelsLen int
-		hasLabel  bool
-		msg       string
-	}{
-		{
-			node: v1.Node{
-				TypeMeta: metav1.TypeMeta{Kind: "Node"},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   myNodeName,
-					Labels: map[string]string{vpcENIConfigLabel: eniConfigName},
-				},
-				Spec:   v1.NodeSpec{},
-				Status: v1.NodeStatus{},
-			},
-			hasError:  false,
-			hasLabel:  true,
-			labelsLen: 1,
-			msg:       "Having EniConfig Label on node",
-		},
-		{
-			node: v1.Node{
-				TypeMeta: metav1.TypeMeta{Kind: "Node"},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   myNodeName,
-					Labels: map[string]string{"key_1": "value_1", "key_2": "value_2"},
-				},
-				Spec:   v1.NodeSpec{},
-				Status: v1.NodeStatus{},
-			},
-			hasError:  false,
-			hasLabel:  true,
-			labelsLen: 2,
-			msg:       "Having irrelevant labels map",
-		},
-		{
-			node: v1.Node{
-				TypeMeta: metav1.TypeMeta{Kind: "Node"},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   myNodeName,
-					Labels: make(map[string]string),
-				},
-				Spec:   v1.NodeSpec{},
-				Status: v1.NodeStatus{},
-			},
-			hasError: false,
-			hasLabel: false,
-			msg:      "Having empty map",
-		},
-		{
-			node: v1.Node{
-				TypeMeta: metav1.TypeMeta{Kind: "Node"},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   myNodeName,
-					Labels: nil,
-				},
-				Spec:   v1.NodeSpec{},
-				Status: v1.NodeStatus{},
-			},
-			hasError: false,
-			hasLabel: false,
-			msg:      "Having nil map",
-		},
-		{
-			node: v1.Node{
-				TypeMeta: metav1.TypeMeta{Kind: "Node"},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "foo",
-					Labels: map[string]string{vpcENIConfigLabel: eniConfigName},
-				},
-				Spec:   v1.NodeSpec{},
-				Status: v1.NodeStatus{},
-			},
-			hasError:  true,
-			hasLabel:  false,
-			labelsLen: 0,
-			msg:       "Wrong node name",
-		},
-	}
-
-	for _, test := range tests {
-		m = setup(t)
-		ctx := context.Background()
-		k8sSchema := runtime.NewScheme()
-		clientgoscheme.AddToScheme(k8sSchema)
-
-		mockContext := &IPAMContext{
-			k8sClient:     m.k8sClient,
-			dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false),
-			awsClient:     m.awsutils,
-			networkClient: m.network,
-			primaryIP:     make(map[string]string),
-			terminating:   int32(0),
-			myNodeName:    myNodeName,
-		}
-
-		_ = m.k8sClient.Create(ctx, &test.node)
-		labels, err := mockContext.getNodeLabels(ctx)
-		assert.Equal(t, test.hasError, err != nil, test.msg)
-		assert.Equal(t, test.hasLabel, labels != nil, test.msg)
-		assert.Equal(t, test.labelsLen, len(labels), test.msg)
-	}
-
-	m.ctrl.Finish()
+	contained = lo.ContainsBy(cniNode.Spec.Features, func(addedFeature rcscheme.Feature) bool {
+		return rcscheme.SecurityGroupsForPods == addedFeature.Name && addedFeature.Value == ""
+	})
+	assert.True(t, contained, "the node's CNINode should be updated for trunk when there is some room")
+	assert.Equal(t, 1, len(cniNode.Spec.Features))
 }
 
 func TestIsConfigValid(t *testing.T) {
@@ -2307,4 +2212,125 @@ func TestAnnotatePod(t *testing.T) {
 	err = mockContext.AnnotatePod("no-exist-name", "no-exist-namespace", "ip-address", "", ipTwo)
 	assert.Error(t, err)
 	assert.Equal(t, fmt.Errorf("error while trying to retrieve pod info: pods \"no-exist-name\" not found"), err)
+}
+
+func TestAddFeatureToCNINode(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	nodeName := "fake-node-name"
+	key := types.NamespacedName{
+		Name: nodeName,
+	}
+
+	tests := []struct {
+		testFeatures      []rcscheme.Feature
+		testFeatureLength int
+		sgp               bool
+		customNet         bool
+		msg               string
+	}{
+		{
+			testFeatures: []rcscheme.Feature{
+				{
+					Name:  rcscheme.SecurityGroupsForPods,
+					Value: "",
+				},
+			},
+			testFeatureLength: 1,
+			sgp:               true,
+			customNet:         false,
+			msg:               "test adding one new feature to CNINode",
+		},
+		{
+			testFeatures: []rcscheme.Feature{
+				{
+					Name:  rcscheme.SecurityGroupsForPods,
+					Value: "",
+				},
+				{
+					Name:  rcscheme.CustomNetworking,
+					Value: "default",
+				},
+			},
+			testFeatureLength: 2,
+			sgp:               true,
+			customNet:         true,
+			msg:               "test adding two new feature to CNINode",
+		},
+		{
+			testFeatures: []rcscheme.Feature{
+				{
+					Name:  rcscheme.SecurityGroupsForPods,
+					Value: "",
+				},
+				{
+					Name:  rcscheme.CustomNetworking,
+					Value: "default",
+				},
+			},
+			testFeatureLength: 2,
+			sgp:               true,
+			customNet:         true,
+			msg:               "test adding duplicated features to CNINode",
+		},
+		{
+			testFeatures: []rcscheme.Feature{
+				{
+					Name:  rcscheme.SecurityGroupsForPods,
+					Value: "",
+				},
+				{
+					Name:  rcscheme.CustomNetworking,
+					Value: "update",
+				},
+			},
+			testFeatureLength: 2,
+			sgp:               true,
+			customNet:         true,
+			msg:               "test updating existing feature to CNINode",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.msg, func(t *testing.T) {
+			mockContext := &IPAMContext{
+				awsClient: m.awsutils,
+				k8sClient: m.k8sClient,
+			}
+
+			nodeName := "fake-node-name"
+			mockContext.myNodeName = nodeName
+			fakeCNINode := &rcscheme.CNINode{
+				ObjectMeta: metav1.ObjectMeta{Name: nodeName, Namespace: ""},
+			}
+			// don't check error and let it fail open since we need to create CNINode in test Runner
+			mockContext.k8sClient.Create(ctx, fakeCNINode)
+
+			var sgpValue, cnValue string
+			var err error
+			for _, feature := range tt.testFeatures {
+				err = mockContext.AddFeatureToCNINode(ctx, feature.Name, feature.Value)
+				assert.NoError(t, err)
+				if feature.Name == rcscheme.SecurityGroupsForPods {
+					sgpValue = feature.Value
+				} else if feature.Name == rcscheme.CustomNetworking {
+					cnValue = feature.Value
+				}
+			}
+			var wantedCNINode rcscheme.CNINode
+			err = mockContext.k8sClient.Get(ctx, key, &wantedCNINode)
+			assert.NoError(t, err)
+			assert.True(t, len(wantedCNINode.Spec.Features) == tt.testFeatureLength)
+			containedSGP := lo.ContainsBy(wantedCNINode.Spec.Features, func(addedFeature rcscheme.Feature) bool {
+				return rcscheme.SecurityGroupsForPods == addedFeature.Name && addedFeature.Value == sgpValue
+			})
+			containedCN := lo.ContainsBy(wantedCNINode.Spec.Features, func(addedFeature rcscheme.Feature) bool {
+				return rcscheme.CustomNetworking == addedFeature.Name && addedFeature.Value == cnValue
+			})
+			assert.True(t, containedSGP == tt.sgp)
+			assert.True(t, containedCN == tt.customNet)
+		})
+	}
 }

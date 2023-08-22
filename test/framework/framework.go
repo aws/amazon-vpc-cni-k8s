@@ -20,6 +20,8 @@ import (
 
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	rcscheme "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
+	sgpscheme "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/gomega"
 	eventsv1 "k8s.io/api/events/v1"
@@ -59,6 +61,8 @@ func New(options Options) *Framework {
 	k8sSchema := runtime.NewScheme()
 	clientgoscheme.AddToScheme(k8sSchema)
 	eniconfigscheme.AddToScheme(k8sSchema)
+	sgpscheme.AddToScheme(k8sSchema)
+	rcscheme.AddToScheme(k8sSchema)
 
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {

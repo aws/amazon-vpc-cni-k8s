@@ -4,8 +4,33 @@ import (
 	"os"
 	"testing"
 
+	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	rcscheme "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+type testMocks struct {
+	ctrl      *gomock.Controller
+	k8sClient client.Client
+}
+
+func setup(t *testing.T) *testMocks {
+	ctrl := gomock.NewController(t)
+	k8sSchema := runtime.NewScheme()
+	clientgoscheme.AddToScheme(k8sSchema)
+	eniconfigscheme.AddToScheme(k8sSchema)
+	rcscheme.AddToScheme(k8sSchema)
+
+	return &testMocks{
+		ctrl:      ctrl,
+		k8sClient: testclient.NewFakeClientWithScheme(k8sSchema),
+	}
+}
 
 func TestBuildHostVethNamePrefix(t *testing.T) {
 	type args struct {
@@ -87,7 +112,7 @@ func TestLoadEnforcingModeFromEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			originalEnvVars := make(map[string]string)
-			for k, _ := range tt.fields.envVars {
+			for k := range tt.fields.envVars {
 				originalV, _ := os.LookupEnv(k)
 				originalEnvVars[k] = originalV
 			}
