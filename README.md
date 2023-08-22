@@ -676,6 +676,17 @@ This environment variable must be set for both the `aws-vpc-cni-init` and `aws-n
 
 Note that enabling/disabling this feature only affects whether newly created pods have an IPv6 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature. Also note that if you are using this feature in conjunction with `ENABLE_POD_ENI` (Security Groups for Pods), the security group rules will NOT be applied to egressing IPv6 traffic.
 
+#### `DISABLE_POD_V6` (v1.15.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+When `DISABLE_POD_V6` is set, the [tuning plugin](https://www.cni.dev/plugins/current/meta/tuning/) is chained and configured to disable IPv6 networking in each newly created pod network namespace. Set this variable when you have an IPv4 cluster and containerized applications that cannot tolerate IPv6 being enabled.
+Container runtimes such as `containerd` will enable IPv6 in newly created container network namespaces regardless of host settings.
+
+Note that if you set this while using Multus, you must ensure that any chained plugins do not depend on IPv6 networking. You must also ensure that chained plugins do not also modify these sysctls.
+
 ### VPC CNI Feature Matrix
 
 IP Mode | Secondary IP Mode | Prefix Delegation | Security Groups Per Pod | WARM & MIN IP/Prefix Targets | External SNAT
