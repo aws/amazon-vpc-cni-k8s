@@ -151,15 +151,15 @@ var _ = Describe("test aws-node pod event", func() {
 
 		It("unauthorized event must be raised on aws-node pod", func() {
 			By("waiting for event to be generated")
-			// The event can take a long time to show up in client queries (I have seen up to 5 minutes)...
-			time.Sleep(5 * time.Minute)
 			listOpts := client.ListOptions{
 				FieldSelector: fields.Set{"reason": "MissingIAMPermissions"}.AsSelector(),
 				Namespace:     utils.AwsNodeNamespace,
 			}
-			eventList, err := f.K8sResourceManagers.EventManager().GetEventsWithOptions(&listOpts)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(eventList.Items).NotTo(BeEmpty())
+			Eventually(func(g Gomega) {
+				eventList, err := f.K8sResourceManagers.EventManager().GetEventsWithOptions(&listOpts)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(eventList.Items).NotTo(BeEmpty())
+			}).WithTimeout(15 * time.Minute).WithPolling(1 * time.Minute).Should(Succeed())
 		})
 	})
 })
