@@ -101,6 +101,9 @@ var _ = Describe("test aws-node pod event", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
+			// Sleep to allow time for CNI policy deattachment
+			time.Sleep(10 * time.Second)
+
 			RestartAwsNodePods()
 
 			By("checking aws-node pods not running")
@@ -113,7 +116,7 @@ var _ = Describe("test aws-node pod event", func() {
 						break
 					}
 				}
-			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
+			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10).Should(Succeed())
 		})
 
 		AfterEach(func() {
@@ -133,6 +136,9 @@ var _ = Describe("test aws-node pod event", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
+			// Sleep to allow time for CNI policy reattachment
+			time.Sleep(10 * time.Second)
+
 			RestartAwsNodePods()
 
 			By("checking aws-node pods are running")
@@ -146,7 +152,7 @@ var _ = Describe("test aws-node pod event", func() {
 					g.Expect(cond.Status).To(BeEquivalentTo(v1.ConditionTrue))
 					break
 				}
-			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
+			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10).Should(Succeed())
 		})
 
 		It("unauthorized event must be raised on aws-node pod", func() {

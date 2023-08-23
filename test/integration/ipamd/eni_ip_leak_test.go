@@ -54,7 +54,7 @@ var _ = Describe("[CANARY][SMOKE] ENI/IP Leak Test", func() {
 				ip, eni := getCountOfIPandENIOnPrimaryInstance()
 				g.Expect(ip).To(Equal(oldIP))
 				g.Expect(eni).To(Equal(oldENI))
-			}).WithTimeout(6 * time.Minute).WithPolling(10 * time.Second)
+			}).WithTimeout(6 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 		})
 
 		AfterEach(func() {
