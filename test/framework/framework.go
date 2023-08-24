@@ -29,7 +29,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/controller"
@@ -64,12 +63,7 @@ func New(options Options) *Framework {
 	sgpscheme.AddToScheme(k8sSchema)
 	rcscheme.AddToScheme(k8sSchema)
 
-	restCfg, err := ctrl.GetConfig()
-	if err != nil {
-		log.Fatalf("failed to get REST config for k8s client: %v", err)
-	}
-
-	cache, err := k8sapi.CreateKubeClientCache(restCfg, k8sSchema, nil)
+	cache, err := k8sapi.CreateKubeClientCache(config, k8sSchema, nil)
 	if err != nil {
 		log.Fatalf("failed to create cache: %v", err)
 	}
@@ -90,7 +84,7 @@ func New(options Options) *Framework {
 	// Start cache and wait for initial sync
 	k8sapi.StartKubeClientCache(cache)
 
-	k8sClient, err := client.New(restCfg, client.Options{
+	k8sClient, err := client.New(config, client.Options{
 		Cache: &client.CacheOptions{
 			Reader: cache,
 		},
