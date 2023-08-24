@@ -169,6 +169,24 @@ To select an `ENIConfig` based upon availability zone set this to `topology.kube
 
 ---
 
+#### `HOST_CNI_BIN_PATH`
+
+Type: String
+
+Default: `/host/opt/cni/bin`
+
+Specifies the location to install CNI binaries. Note that the `aws-node` daemonset mounts `/opt/cni/bin` to `/host/opt/cni/bin`. The value you choose must be a location that the `aws-node` pod can write to.
+
+---
+
+#### `HOST_CNI_CONFDIR_PATH`
+
+Type: String
+
+Default: `/host/etc/cni/net.d`
+
+Specifies the location to install the VPC CNI conflist. Note that the `aws-node` daemonset mounts `/etc/cni/net.d` to `/host/etc/cni/net.d`. The value you choose must be a location that the `aws-node` pod can write to.
+
 #### `AWS_VPC_ENI_MTU` (v1.6.0+)
 
 Type: Integer as a String

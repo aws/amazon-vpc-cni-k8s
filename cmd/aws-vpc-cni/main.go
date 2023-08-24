@@ -61,8 +61,8 @@ const (
 	egressPluginIpamDstV6        = "::/0"
 	egressPluginIpamDataDirV4    = "/run/cni/v6pd/egress-v4-ipam"
 	egressPluginIpamDataDirV6    = "/run/cni/v4pd/egress-v6-ipam"
-	defaultHostCNIBinPath        = "/host/opt/cni/bin"
-	defaultHostCNIConfDirPath    = "/host/etc/cni/net.d"
+	defaultHostCniBinPath        = "/host/opt/cni/bin"
+	defaultHostCniConfDirPath    = "/host/etc/cni/net.d"
 	defaultAWSconflistFile       = "/app/10-aws.conflist"
 	tmpAWSconflistFile           = "/tmp/10-aws.conflist"
 	defaultVethPrefix            = "eni"
@@ -404,7 +404,7 @@ func _main() int {
 	}
 
 	pluginBins := []string{"aws-cni", "egress-cni"}
-	hostCNIBinPath := utils.GetEnv(envHostCniBinPath, defaultHostCNIBinPath)
+	hostCNIBinPath := utils.GetEnv(envHostCniBinPath, defaultHostCniBinPath)
 	err := cp.InstallBinaries(pluginBins, hostCNIBinPath)
 	if err != nil {
 		log.WithError(err).Error("Failed to install CNI binaries")
@@ -445,7 +445,8 @@ func _main() int {
 		return 1
 	}
 
-	err = cp.CopyFile(tmpAWSconflistFile, defaultHostCNIConfDirPath+awsConflistFile)
+	hostCniConfDirPath := utils.GetEnv(envHostCniConfDirPath, defaultHostCniConfDirPath)
+	err = cp.CopyFile(tmpAWSconflistFile, hostCniConfDirPath+awsConflistFile)
 	if err != nil {
 		log.WithError(err).Errorf("Failed to copy %s", awsConflistFile)
 		return 1
