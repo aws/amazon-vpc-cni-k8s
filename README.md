@@ -110,7 +110,7 @@ The AWS VPC CNI implementation of network policies may be enabled in self-manage
 
 Review the [Network Policy FAQ](./docs/network-policy-faq.md) for more information.
 
-### Network Policies Related Components
+### Network Policy Related Components
 
 * [Network Policy Controller](https://github.com/aws/amazon-network-policy-controller-k8s) watches for NetworkPolicy objects and instructs the node agent.
   * Network policy controller configures policies for pods in parallel to pod provisioning, until then new pods will come up with default allow policy. All ingress and egress traffic is allowed to and from the new pods until they are resolved against the existing policies.
@@ -123,7 +123,7 @@ Review the [Network Policy FAQ](./docs/network-policy-faq.md) for more informati
 
 If the VPC CNI is installed as an Amazon EKS add-ons (also known as a managed add-on), configure it using [AWS APIs as described in the EKS User Guide](https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html).
 
-If the VPC CNI is installed with a Helm Chart, they include this ConfigMap as appropriate. Review the [Helm Chart information.](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
+If the VPC CNI is installed with a Helm Chart, the ConfigMap is installed in your cluster. Review the [Helm Chart information.](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
 
 Otherwise, the VPC CNI may be configured with a ConfigMap, as shown below:
 

@@ -1,6 +1,6 @@
 # Revised Network Policy FAQs
 
-**Q) Are network policies enabled by default?**
+**Q) Is Network Policy support enabled by default?**
 
 No, network policies are not enabled by default. You must opt-in to VPC CNI NetworkPolicy. [[GDC: Please add a link to the steps here]].
 
@@ -26,7 +26,6 @@ The table below summarizes the supported operating systems (Amazon Linux2, Bottl
 |---	|---	|
 |Amazon Linux 2 (AL2)	|Supported at GA	|
 |Bottlerocket	|Supported at GA	|
-|Ubuntu	|Currently under testing	|
 |Kernel	|v5.10 or later	|
 
 For more details, please [review the EKS AMI changelog](https://github.com/awslabs/amazon-eks-ami/blob/master/CHANGELOG.md).
@@ -34,6 +33,10 @@ For more details, please [review the EKS AMI changelog](https://github.com/awsla
 **Q) Are there any instance types that do not support Network Policies? Is Fargate supported?**
 
 Network policies are currently not supported on GPU instances or Fargate Pods. The AMI for GPU instances lacks the required kernel version of v5.10 or later, and Fargate does not support eBPF.
+
+**Q) Are Windows nodes compatible with Network Policies?**
+
+No, Network Policies cannot be used with Windows nodes.
 
 **Q) Can Network Policies be applied in host networking mode?**
 
@@ -62,10 +65,6 @@ If an unsupported policy is created, an error will be recorded in the node agent
 **Q) Can I roll back the VPC CNI version from v1.14 to v1.13?**
 
 Yes, but you must first clean up the rules. Set the `enable-network-policy-controller` flag in the `amazon-vpc-cni` config map to `false` to trigger the network policy controller to clean up. Then, restart the nodes to clean up eBPF maps and programs.
-
-**Q) What happens if the network policy controller fails?**
-
-If the EKS CPI stops and pods are rotated, the Node Agent will not attach any more probes, so the traffic will not be affected. If the network policy controller malfunctions or is disabled, the existing policy endpoint resources, potentially stale, will remain unless the underlying network policies are deleted. To ensure safe configuration, revert the changes to the Node agent daemonset so that the eBPF probes don't get configured on new pods.
 
 **Q) What IAM configuration is required for Network Policies?**
 
