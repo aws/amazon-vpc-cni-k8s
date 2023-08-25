@@ -14,9 +14,9 @@ function check_for_timeout() {
 function upload_results_to_s3_bucket() {
     echo "$filename"
     echo "Iteration", "scaleUpTime (s)", "scaleDownTime (s)", "scaleUpMem (Mi)", "scaleDownMem (Mi)" >> "$filename"
-    echo 1, $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])), $((SCALE_UP_MEM_ARRAY[1])), $((SCALE_DOWN_MEM_ARRAY[1])) >> "$filename"
-    echo 2, $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])), $((SCALE_UP_MEM_ARRAY[2])), $((SCALE_DOWN_MEM_ARRAY[2])) >> "$filename"
-    echo 3, $((SCALE_UP_DURATION_ARRAY[3])), $((SCALE_DOWN_DURATION_ARRAY[3])), $((SCALE_UP_MEM_ARRAY[3])), $((SCALE_DOWN_MEM_ARRAY[3])) >> "$filename"
+    echo 1, $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])), $((SCALE_UP_MEM_ARRAY[0])), $((SCALE_DOWN_MEM_ARRAY[0])) >> "$filename"
+    echo 2, $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])), $((SCALE_UP_MEM_ARRAY[1])), $((SCALE_DOWN_MEM_ARRAY[1])) >> "$filename"
+    echo 3, $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])), $((SCALE_UP_MEM_ARRAY[2])), $((SCALE_DOWN_MEM_ARRAY[2])) >> "$filename"
 
     cat "$filename"
     if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
