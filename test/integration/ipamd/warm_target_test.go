@@ -15,6 +15,7 @@ package ipamd
 
 import (
 	"strconv"
+	"time"
 
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -48,7 +49,7 @@ var _ = Describe("test warm target variables", func() {
 				// Validate number of allocated ENIs
 				g.Expect(len(primaryInstance.NetworkInterfaces)).
 					Should(Equal(MinIgnoreZero(warmENITarget, maxENI)))
-			}).WithTimeout(5 * utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
+			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 		})
 
 		JustAfterEach(func() {
@@ -113,7 +114,7 @@ var _ = Describe("test warm target variables", func() {
 
 				// Validated avail IP equals the warm IP Size
 				g.Expect(availIPs).Should(Equal(Max(warmIPTarget, minIPTarget)))
-			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
+			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 		})
 
 		JustAfterEach(func() {

@@ -60,7 +60,7 @@ var _ = Describe("test warm target variables", func() {
 				prefixNeededForWarmIPTarget := ceil(warmIPTarget, 16)
 				prefixNeededForMinIPTarget := ceil(minIPTarget, 16)
 				Expect(availPrefixes).Should(Equal(Max(prefixNeededForWarmIPTarget, prefixNeededForMinIPTarget)))
-			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
+			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 		})
 
 		JustAfterEach(func() {
@@ -145,7 +145,7 @@ var _ = Describe("test warm target variables", func() {
 
 				// Validated avail IP equals the warm IP Size
 				g.Expect(availPrefixes).Should(Equal(warmPrefixTarget))
-			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
+			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 		})
 
 		JustAfterEach(func() {
