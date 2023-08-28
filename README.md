@@ -104,7 +104,7 @@ In Kubernetes, by default, all pod-to-pod communication is allowed. Communicatio
 
 VPC CNI versions v1.14, and greater support [Kubernetes Network Policies.](https://kubernetes.io/docs/concepts/services-networking/network-policies/). Network Policies specify how pods can communicate over the network, at the IP address or port level. The VPC CNI implements the Kubernetes [NetworkPolicy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.27/#networkpolicy-v1-networking-k8s-io) API. Network policies generally include a pod selector, and Ingress/Egress rules.
 
-For EKS clusters, review [Configure your cluster for Kubernetes network policies](<<NP_AWS_DOCS_LINK>>) in the Amazon EKS User Guide.
+For EKS clusters, review [Configure your cluster for Kubernetes network policies](https://docs.aws.amazon.com/eks/latest/userguide/cni-network-policy.html) in the Amazon EKS User Guide.
 
 The AWS VPC CNI implementation of network policies may be enabled in self-managed clusters. This requires the VPC CNI agent, the [Network Policy Controller](https://github.com/aws/amazon-network-policy-controller-k8s), and [Network Policy Node Agent](https://github.com/aws/aws-network-policy-agent).
 
