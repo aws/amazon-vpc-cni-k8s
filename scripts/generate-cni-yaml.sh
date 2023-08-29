@@ -73,7 +73,11 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
       --set image.tag=$VERSION,\
       --set image.region=$ecrRegion,\
       --set image.account=$ecrAccount,\
-      --set image.domain=$ecrDomain \
+      --set image.domain=$ecrDomain, \
+      --set nodeAgent.image.account=$ecrAccount, \
+      --set nodeAgent.image.region=$ecrRegion, \
+      --set nodeAgent.image.domain=$ecrDomain, \
+      --set nodeAgent.image.tag=$VERSION \
       --namespace $NAMESPACE \
       $SCRIPTPATH/../charts/aws-vpc-cni > $NEW_CNI_RESOURCES_YAML
     # Remove 'managed-by: Helm' annotation

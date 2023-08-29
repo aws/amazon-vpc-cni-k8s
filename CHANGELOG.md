@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.14.0
+
+* Feature - Starting Amazon VPC CNI v1.14, there will be 2 containers in the aws-node pods for supporting Kubernetes Network Policy.
+
 ## v1.13.4
 
 * Bug - [RefreshSecurityGroups must be called after unmanaged ENIs are set](https://github.com/aws/amazon-vpc-cni-k8s/pull/2475) (@jdn5126 )
