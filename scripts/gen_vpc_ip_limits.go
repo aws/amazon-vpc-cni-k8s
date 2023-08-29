@@ -23,8 +23,8 @@ import (
 	"strconv"
 	"text/template"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 
 	"github.com/aws/aws-sdk-go/aws"
 
@@ -32,13 +32,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
-const ipLimitFileName = "pkg/awsutils/vpc_ip_resource_limit.go"
+const ipLimitFileName = "pkg/vpc/vpc_ip_resource_limit.go"
 const eniMaxPodsFileName = "misc/eni-max-pods.txt"
 
 var log = logger.DefaultLogger()
 
 // Helper to calculate the --max-pods to match the ENIs and IPs on the instance
-func printPodLimit(instanceType string, l awsutils.InstanceTypeLimits) string {
+func printPodLimit(instanceType string, l vpc.InstanceTypeLimits) string {
 	maxPods := l.ENILimit*(l.IPv4Limit-1) + 2
 	return fmt.Sprintf("%s %d", instanceType, maxPods)
 }
@@ -46,7 +46,7 @@ func printPodLimit(instanceType string, l awsutils.InstanceTypeLimits) string {
 func main() {
 	// Get instance types limits across all regions
 	regions := describeRegions()
-	eniLimitMap := make(map[string]awsutils.InstanceTypeLimits)
+	eniLimitMap := make(map[string]vpc.InstanceTypeLimits)
 	for _, region := range regions {
 		describeInstanceTypes(region, eniLimitMap)
 	}
@@ -67,7 +67,7 @@ func main() {
 		log.Fatalf("Failed to create file: %v\n", err)
 	}
 	err = limitsTemplate.Execute(f, struct {
-		ENILimits map[string]awsutils.InstanceTypeLimits
+		ENILimits map[string]vpc.InstanceTypeLimits
 		Regions   []string
 	}{
 		ENILimits: eniLimitMap,
@@ -125,7 +125,7 @@ func describeRegions() []string {
 }
 
 // Helper function to call the EC2 DescribeInstanceTypes API for a region and merge the respective instance-type limits into eniLimitMap
-func describeInstanceTypes(region string, eniLimitMap map[string]awsutils.InstanceTypeLimits) {
+func describeInstanceTypes(region string, eniLimitMap map[string]vpc.InstanceTypeLimits) {
 	log.Infof("Describing instance types in region=%s", region)
 
 	// Get session
@@ -162,16 +162,16 @@ func describeInstanceTypes(region string, eniLimitMap map[string]awsutils.Instan
 			if hypervisorType == "" {
 				hypervisorType = "unknown"
 			}
-			networkCards := make([]awsutils.NetworkCard, aws.Int64Value(info.NetworkInfo.MaximumNetworkCards))
+			networkCards := make([]vpc.NetworkCard, aws.Int64Value(info.NetworkInfo.MaximumNetworkCards))
 			defaultNetworkCardIndex := int(aws.Int64Value(info.NetworkInfo.DefaultNetworkCardIndex))
 			for idx := 0; idx < len(networkCards); idx += 1 {
-				networkCards[idx] = awsutils.NetworkCard{
+				networkCards[idx] = vpc.NetworkCard{
 					MaximumNetworkInterfaces: *info.NetworkInfo.NetworkCards[idx].MaximumNetworkInterfaces,
 					NetworkCardIndex:         *info.NetworkInfo.NetworkCards[idx].NetworkCardIndex,
 				}
 			}
 			if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
-				limits := awsutils.InstanceTypeLimits{ENILimit: eniLimit, IPv4Limit: ipv4Limit, NetworkCards: networkCards, HypervisorType: strconv.Quote(hypervisorType),
+				limits := vpc.InstanceTypeLimits{ENILimit: eniLimit, IPv4Limit: ipv4Limit, NetworkCards: networkCards, HypervisorType: strconv.Quote(hypervisorType),
 					IsBareMetal: isBareMetalInstance, DefaultNetworkCardIndex: defaultNetworkCardIndex}
 				if existingLimits, contains := eniLimitMap[instanceType]; contains && !reflect.DeepEqual(existingLimits, limits) {
 					// this should never happen
@@ -193,8 +193,8 @@ func describeInstanceTypes(region string, eniLimitMap map[string]awsutils.Instan
 // addManualLimits has the list of faulty or missing instance types
 // Instance types added here are missing the NetworkCard info due to not being publicly available. Only supporting
 // NetworkCard for instances currently accessible from the EC2 API to match customer accessibility.
-func addManualLimits(limitMap map[string]awsutils.InstanceTypeLimits) map[string]awsutils.InstanceTypeLimits {
-	manuallyAddedLimits := map[string]awsutils.InstanceTypeLimits{
+func addManualLimits(limitMap map[string]vpc.InstanceTypeLimits) map[string]vpc.InstanceTypeLimits {
+	manuallyAddedLimits := map[string]vpc.InstanceTypeLimits{
 		"cr1.8xlarge": {
 			ENILimit:       8,
 			IPv4Limit:      30,
@@ -303,11 +303,11 @@ var limitsTemplate = template.Must(template.New("").Parse(`// Copyright Amazon.c
 {{- range $region := .Regions}}
 {{ printf "// - %s" $region }}
 {{- end }}
-package awsutils
+package vpc
 
 // InstanceNetworkingLimits contains a mapping from instance type to networking limits for the type. Documentation found at
 // https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI
-var InstanceNetworkingLimits = map[string]InstanceTypeLimits{
+var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 {{- range $key, $value := .ENILimits}}
 	"{{$key}}":	   {
 		ENILimit: {{.ENILimit}}, 
