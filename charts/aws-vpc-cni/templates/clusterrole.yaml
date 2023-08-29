@@ -24,7 +24,7 @@ rules:
     resources:
       - pods
     verbs: ["list", "watch", "get"]
-{{- end }}        
+{{- end }}
   - apiGroups: [""]
     resources:
       - nodes
@@ -33,6 +33,14 @@ rules:
     resources:
       - events
     verbs: ["create", "patch", "list"]
+  - apiGroups: ["networking.k8s.aws"]
+    resources:
+      - policyendpoints
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.aws"]
+    resources:
+      - policyendpoints/status
+    verbs: ["get"]
   - apiGroups:
       - vpcresources.k8s.aws
     resources:
