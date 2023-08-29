@@ -25,4 +25,4 @@ spec:
 {{- end }}
         name: cni-metrics-helper
         image: "{{- if .Values.image.override }}{{- .Values.image.override }}{{- else }}{{- .Values.image.account }}.dkr.ecr.{{- .Values.image.region }}.{{- .Values.image.domain }}/cni-metrics-helper:{{- .Values.image.tag }}{{- end}}"
-      serviceAccountName: {{ template "cni-metrics-helper.serviceAccountName" . }} 
+      serviceAccountName: {{ template "cni-metrics-helper.serviceAccountName" . }}
