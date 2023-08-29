@@ -20,7 +20,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
-	"strings"
+	"strconv"
 	"text/template"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
@@ -36,12 +36,6 @@ const ipLimitFileName = "pkg/awsutils/vpc_ip_resource_limit.go"
 const eniMaxPodsFileName = "misc/eni-max-pods.txt"
 
 var log = logger.DefaultLogger()
-
-// Helper to quote the type in order to print the map correctly
-func printMapLine(instanceType string, l awsutils.InstanceTypeLimits) string {
-	indentedInstanceType := fmt.Sprintf("\"%s\":", instanceType)
-	return strings.Replace(fmt.Sprintf("%-17s%# v", indentedInstanceType, l), "awsutils.InstanceTypeLimits", "", 1)
-}
 
 // Helper to calculate the --max-pods to match the ENIs and IPs on the instance
 func printPodLimit(instanceType string, l awsutils.InstanceTypeLimits) string {
@@ -68,19 +62,15 @@ func main() {
 	sort.Strings(instanceTypes)
 
 	// Generate instance ENI limits
-	eniLimits := make([]string, 0)
-	for _, it := range instanceTypes {
-		eniLimits = append(eniLimits, printMapLine(it, eniLimitMap[it]))
-	}
 	f, err := os.Create(ipLimitFileName)
 	if err != nil {
 		log.Fatalf("Failed to create file: %v\n", err)
 	}
 	err = limitsTemplate.Execute(f, struct {
-		ENILimits []string
+		ENILimits map[string]awsutils.InstanceTypeLimits
 		Regions   []string
 	}{
-		ENILimits: eniLimits,
+		ENILimits: eniLimitMap,
 		Regions:   regions,
 	})
 	if err != nil {
@@ -167,12 +157,23 @@ func describeInstanceTypes(region string, eniLimitMap map[string]awsutils.Instan
 				eniLimit = int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
 			}
 			ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
-			hypervisorType := aws.StringValue(info.Hypervisor)
 			isBareMetalInstance := aws.BoolValue(info.BareMetal)
+			hypervisorType := aws.StringValue(info.Hypervisor)
+			if hypervisorType == "" {
+				hypervisorType = "unknown"
+			}
+			networkCards := make([]awsutils.NetworkCard, aws.Int64Value(info.NetworkInfo.MaximumNetworkCards))
+			defaultNetworkCardIndex := int(aws.Int64Value(info.NetworkInfo.DefaultNetworkCardIndex))
+			for idx := 0; idx < len(networkCards); idx += 1 {
+				networkCards[idx] = awsutils.NetworkCard{
+					MaximumNetworkInterfaces: *info.NetworkInfo.NetworkCards[idx].MaximumNetworkInterfaces,
+					NetworkCardIndex:         *info.NetworkInfo.NetworkCards[idx].NetworkCardIndex,
+				}
+			}
 			if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
-				limits := awsutils.InstanceTypeLimits{ENILimit: eniLimit, IPv4Limit: ipv4Limit, HypervisorType: hypervisorType,
-					IsBareMetal: isBareMetalInstance}
-				if existingLimits, contains := eniLimitMap[instanceType]; contains && existingLimits != limits {
+				limits := awsutils.InstanceTypeLimits{ENILimit: eniLimit, IPv4Limit: ipv4Limit, NetworkCards: networkCards, HypervisorType: strconv.Quote(hypervisorType),
+					IsBareMetal: isBareMetalInstance, DefaultNetworkCardIndex: defaultNetworkCardIndex}
+				if existingLimits, contains := eniLimitMap[instanceType]; contains && !reflect.DeepEqual(existingLimits, limits) {
 					// this should never happen
 					log.Fatalf("A previous region has different limits for instanceType=%s than region=%s", instanceType, region)
 				}
@@ -190,20 +191,82 @@ func describeInstanceTypes(region string, eniLimitMap map[string]awsutils.Instan
 }
 
 // addManualLimits has the list of faulty or missing instance types
+// Instance types added here are missing the NetworkCard info due to not being publicly available. Only supporting
+// NetworkCard for instances currently accessible from the EC2 API to match customer accessibility.
 func addManualLimits(limitMap map[string]awsutils.InstanceTypeLimits) map[string]awsutils.InstanceTypeLimits {
 	manuallyAddedLimits := map[string]awsutils.InstanceTypeLimits{
-		"cr1.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "unknown", IsBareMetal: false},
-		"hs1.8xlarge":   {ENILimit: 8, IPv4Limit: 30, HypervisorType: "unknown", IsBareMetal: false},
-		"u-12tb1.metal": {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unknown", IsBareMetal: true},
-		"u-18tb1.metal": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: true},
-		"u-24tb1.metal": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: true},
-		"u-6tb1.metal":  {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unknown", IsBareMetal: true},
-		"u-9tb1.metal":  {ENILimit: 5, IPv4Limit: 30, HypervisorType: "unknown", IsBareMetal: true},
-		"c5a.metal":     {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: true},
-		"c5ad.metal":    {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: true},
-		"p4de.24xlarge": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "nitro", IsBareMetal: false},
-		"c7g.metal":     {ENILimit: 15, IPv4Limit: 50, HypervisorType: "nitro", IsBareMetal: true},
-		"bmn-sf1.metal": {ENILimit: 15, IPv4Limit: 50, HypervisorType: "unknown", IsBareMetal: true},
+		"cr1.8xlarge": {
+			ENILimit:       8,
+			IPv4Limit:      30,
+			HypervisorType: strconv.Quote("unknown"),
+			IsBareMetal:    false,
+		},
+		"hs1.8xlarge": {
+			ENILimit:       8,
+			IPv4Limit:      30,
+			HypervisorType: strconv.Quote("unknown"),
+			IsBareMetal:    false,
+		},
+		"u-12tb1.metal": {
+			ENILimit:       5,
+			IPv4Limit:      30,
+			HypervisorType: strconv.Quote("unknown"),
+			IsBareMetal:    true,
+		},
+		"u-18tb1.metal": {
+			ENILimit:       15,
+			IPv4Limit:      50,
+			HypervisorType: strconv.Quote("unknown"),
+			IsBareMetal:    true,
+		},
+		"u-24tb1.metal": {
+			ENILimit:       15,
+			IPv4Limit:      50,
+			HypervisorType: strconv.Quote("unknown"),
+			IsBareMetal:    true,
+		},
+		"u-6tb1.metal": {
+			ENILimit:       5,
+			IPv4Limit:      30,
+			HypervisorType: strconv.Quote("unknown"),
+			IsBareMetal:    true,
+		},
+		"u-9tb1.metal": {
+			ENILimit:       5,
+			IPv4Limit:      30,
+			HypervisorType: strconv.Quote("unknown"),
+			IsBareMetal:    true,
+		},
+		"c5a.metal": {
+			ENILimit:       15,
+			IPv4Limit:      50,
+			HypervisorType: strconv.Quote("unknown"),
+			IsBareMetal:    true,
+		},
+		"c5ad.metal": {
+			ENILimit:       15,
+			IPv4Limit:      50,
+			HypervisorType: strconv.Quote("unknown"),
+			IsBareMetal:    true,
+		},
+		"p4de.24xlarge": {
+			ENILimit:       15,
+			IPv4Limit:      50,
+			HypervisorType: strconv.Quote("nitro"),
+			IsBareMetal:    false,
+		},
+		"c7g.metal": {
+			ENILimit:       15,
+			IPv4Limit:      50,
+			HypervisorType: strconv.Quote("nitro"),
+			IsBareMetal:    true,
+		},
+		"bmn-sf1.metal": {
+			ENILimit:       15,
+			IPv4Limit:      50,
+			HypervisorType: strconv.Quote("unknown"),
+			IsBareMetal:    true,
+		},
 	}
 	for instanceType, instanceLimits := range manuallyAddedLimits {
 		val, ok := limitMap[instanceType]
@@ -245,8 +308,22 @@ package awsutils
 // InstanceNetworkingLimits contains a mapping from instance type to networking limits for the type. Documentation found at
 // https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI
 var InstanceNetworkingLimits = map[string]InstanceTypeLimits{
-{{- range $mapLine := .ENILimits}}
-	{{ printf "%s" $mapLine }},
+{{- range $key, $value := .ENILimits}}
+	"{{$key}}":	   {
+		ENILimit: {{.ENILimit}}, 
+		IPv4Limit: {{.IPv4Limit}}, 
+		DefaultNetworkCardIndex: {{.DefaultNetworkCardIndex}},
+		NetworkCards: []NetworkCard{
+			{{- range .NetworkCards}}
+				{
+					MaximumNetworkInterfaces: {{.MaximumNetworkInterfaces}},
+					NetworkCardIndex: {{.NetworkCardIndex}},
+				},
+			{{end}}
+		},
+		HypervisorType: {{.HypervisorType}},
+		IsBareMetal: {{.IsBareMetal}},
+	},
 {{- end }}
 }
 `))
