@@ -204,6 +204,22 @@ to set `ENIConfig` name\. Note that annotations will take precedence over labels
 To select an `ENIConfig` based upon availability zone set this to `topology.kubernetes.io/zone` and create an
 `ENIConfig` custom resource for each availability zone (e.g. `us-east-1a`). Note that tag `failure-domain.beta.kubernetes.io/zone` is deprecated and replaced with the tag `topology.kubernetes.io/zone`.
 
+#### `HOST_CNI_BIN_PATH`
+
+Type: String
+
+Default: `/host/opt/cni/bin`
+
+Specifies the location to install CNI binaries. Note that the `aws-node` daemonset mounts `/opt/cni/bin` to `/host/opt/cni/bin`. The value you choose must be a location that the `aws-node` pod can write to.
+
+#### `HOST_CNI_CONFDIR_PATH`
+
+Type: String
+
+Default: `/host/etc/cni/net.d`
+
+Specifies the location to install the VPC CNI conflist. Note that the `aws-node` daemonset mounts `/etc/cni/net.d` to `/host/etc/cni/net.d`. The value you choose must be a location that the `aws-node` pod can write to.
+
 #### `AWS_VPC_ENI_MTU` (v1.6.0+)
 
 Type: Integer as a String
@@ -654,7 +670,7 @@ This environment variable must be set for both the `aws-vpc-cni-init` and `aws-n
 
 Note that enabling/disabling this feature only affects whether newly created pods have an IPv6 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature. Also note that if you are using this feature in conjunction with `ENABLE_POD_ENI` (Security Groups for Pods), the security group rules will NOT be applied to egressing IPv6 traffic.
 
-#### `IP_COOLDOWN_PERIOD` (v1.14.1+)
+#### `IP_COOLDOWN_PERIOD` (v1.15.0+)
 
 Type: Integer as a String
 
@@ -665,7 +681,19 @@ Specifies the number of seconds an IP address is in cooldown after pod deletion.
 **Note:** 0 is a supported value, however it is highly discouraged.
 **Note:** Higher cooldown periods may lead to a higher number of EC2 API calls as IPs are in cooldown cache.
 
-## VPC CNI Feature Matrix
+#### `DISABLE_POD_V6` (v1.15.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+When `DISABLE_POD_V6` is set, the [tuning plugin](https://www.cni.dev/plugins/current/meta/tuning/) is chained and configured to disable IPv6 networking in each newly created pod network namespace. Set this variable when you have an IPv4 cluster and containerized applications that cannot tolerate IPv6 being enabled.
+Container runtimes such as `containerd` will enable IPv6 in newly created container network namespaces regardless of host settings.
+
+Note that if you set this while using Multus, you must ensure that any chained plugins do not depend on IPv6 networking. You must also ensure that chained plugins do not also modify these sysctls.
+
+### VPC CNI Feature Matrix
+
 
 | IP Mode | Secondary IP Mode | Prefix Delegation | Security Groups Per Pod | WARM & MIN IP/Prefix Targets | External SNAT | Network Policies |
 |---------|-------------------|-------------------|-------------------------|------------------------------|---------------|------------------|

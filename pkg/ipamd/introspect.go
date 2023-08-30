@@ -145,7 +145,7 @@ func eniV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 func eniConfigRequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		node, err := k8sapi.GetNode(ctx, ipam.cachedK8SClient)
+		node, err := k8sapi.GetNode(ctx, ipam.k8sClient)
 		if err != nil {
 			log.Errorf("Failed to get host node: %v", err)
 			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)

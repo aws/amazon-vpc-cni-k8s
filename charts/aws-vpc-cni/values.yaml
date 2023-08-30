@@ -8,7 +8,7 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.13.4
+    tag: v1.14.0
     domain: amazonaws.com
     region: us-west-2
     endpoint: ecr
@@ -23,8 +23,27 @@ init:
   securityContext:
     privileged: true
 
+nodeAgent:
+  image:
+    tag: v1.0.1
+    domain: amazonaws.com
+    region: us-west-2
+    endpoint: ecr
+    account: "602401143452"
+    pullPolicy: Always
+    # Set to use custom image
+    override:
+    # override: "repo/org/image:tag"
+  securityContext:
+    capabilities:
+      add:
+      - "NET_ADMIN"
+    privileged: true
+  enableCloudWatchLogs: "false"
+  enableIpv6: "false"
+
 image:
-  tag: v1.13.4
+  tag: v1.14.0
   domain: amazonaws.com
   region: us-west-2
   endpoint: ecr
@@ -61,6 +80,9 @@ env:
 # this flag enables you to use the match label that was present in the original daemonset deployed by EKS
 # You can then annotate and label the original aws-node resources and 'adopt' them into a helm release
 originalMatchLabels: false
+
+enableWindowsIpam: "false"
+enableNetworkPolicy: "false"
 
 cniConfig:
   enabled: false

@@ -116,7 +116,35 @@ spec:
           {{- with .Values.extraVolumeMounts  }}
           {{- toYaml .| nindent 10 }}
           {{- end }}
+        - name: aws-eks-nodeagent
+          image: {{ include "aws-vpc-cni.nodeAgentImage" . }}
+          env:
+            - name: MY_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          args:
+            - --enable-ipv6={{ .Values.nodeAgent.enableIpv6 }}
+            - --enable-network-policy={{ .Values.enableNetworkPolicy }}
+            - --enable-cloudwatch-logs={{ .Values.nodeAgent.enableCloudWatchLogs }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.nodeAgent.securityContext | nindent 12 }}
+          volumeMounts:
+          - mountPath: /host/opt/cni/bin
+            name: cni-bin-dir
+          - mountPath: /sys/fs/bpf
+            name: bpf-pin-path
+          - mountPath: /var/log/aws-routed-eni
+            name: log-dir
+          - mountPath: /var/run/aws-node
+            name: run-dir
       volumes:
+      - name: bpf-pin-path 
+        hostPath:
+          path: /sys/fs/bpf
       - name: cni-bin-dir
         hostPath:
           path: /opt/cni/bin

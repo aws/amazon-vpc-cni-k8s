@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
+	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -57,6 +58,12 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 	var negativeTesterContainer v1.Container
 
 	JustBeforeEach(func() {
+		// Setting the IP cooldown to 5 seconds for each test case
+		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
+			utils.AwsNodeName, map[string]string{
+				"IP_COOLDOWN_PERIOD": "5",
+			})
+
 		deploymentContainer = manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).
 			Image(utils.GetTestImage(f.Options.TestImageRegistry, utils.NginxImage)).
 			Command(nil).
@@ -126,6 +133,15 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 		_, err = f.K8sResourceManagers.JobManager().
 			CreateAndWaitTillJobCompleted(negativeTesterJob)
 		Expect(err).To(HaveOccurred())
+
+		// After each test case, validate that no more than maxENIs have been allocated to verify
+		// that IPs have not leaked or gotten stuck in cooldown. We chose 3 as the value of maxENIs
+		// since pod placement is not guaranteed to be equally distributed
+		By("checking number of ENIs is less than or equal to maxENIs")
+		instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
+		primaryInstance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(len(primaryInstance.NetworkInterfaces) <= 3).To(BeTrue())
 	})
 
 	JustAfterEach(func() {
@@ -140,6 +156,9 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 
 		err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
 		Expect(err).ToNot(HaveOccurred())
+
+		// Sleep for IP cooldown period to ensure IPs are added back to datastore for future test runs
+		time.Sleep(5 * time.Second)
 	})
 
 	Context("when a deployment behind clb service is created", func() {

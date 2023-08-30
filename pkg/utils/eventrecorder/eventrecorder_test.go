@@ -49,12 +49,13 @@ func TestSendPodEvent(t *testing.T) {
 		},
 	}
 	// Create pod
-	mockEventRecorder.CachedK8SClient.Create(ctx, &pod)
+	mockEventRecorder.K8sClient.Create(ctx, &pod)
 
 	// Validate event call for missing permissions case
+	action := "ec2:DescribeNetworkInterfaces"
 	reason := "MissingIAMPermission"
 	msg := "Failed to call ec2:DescribeNetworkInterfaces due to missing permissions. Please refer to https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/iam-policy.md"
-	mockEventRecorder.SendPodEvent(v1.EventTypeWarning, reason, msg)
+	mockEventRecorder.SendPodEvent(v1.EventTypeWarning, reason, action, msg)
 	assert.Len(t, fakeRecorder.Events, 1)
 
 	expected := fmt.Sprintf("%s %s %s", v1.EventTypeWarning, reason, msg)

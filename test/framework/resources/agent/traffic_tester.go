@@ -223,7 +223,7 @@ func (t *TrafficTest) startMetricServerPod() (*v1.Pod, error) {
 		Container(metricContainer).
 		Build()
 
-	return t.Framework.K8sResourceManagers.PodManager().CreatAndWaitTillRunning(metricServerPod)
+	return t.Framework.K8sResourceManagers.PodManager().CreateAndWaitTillRunning(metricServerPod)
 }
 
 func (t *TrafficTest) getTestStatusFromMetricServer(metricPodIP string) ([]input.TestStatus, error) {

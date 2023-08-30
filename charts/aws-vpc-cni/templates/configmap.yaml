@@ -8,3 +8,14 @@ metadata:
 data:
   10-aws.conflist: {{ .Values.cniConfig.fileContents | b64enc }}
 {{- end -}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amazon-vpc-cni
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "aws-vpc-cni.labels" . | indent 4 }}
+data:
+  enable-windows-ipam: {{ .Values.enableWindowsIpam | quote }}
+  enable-network-policy-controller: {{ .Values.enableNetworkPolicy | quote }}

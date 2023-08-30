@@ -15,20 +15,22 @@ package framework
 
 import (
 	"context"
+	"fmt"
 	"log"
 
-	sgp "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"
+	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
+	rcscheme "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
+	sgpscheme "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/gomega"
-	v1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	eniConfig "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/controller"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/helm"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws"
@@ -49,39 +51,47 @@ func New(options Options) *Framework {
 	err := options.Validate()
 	Expect(err).ToNot(HaveOccurred())
 
+	// Create config for clients that need to access subresources
 	config, err := clientcmd.BuildConfigFromFlags("", options.KubeConfig)
+	clientset, err := kubernetes.NewForConfig(config)
 	Expect(err).ToNot(HaveOccurred())
 
-	config.QPS = 20
-	config.Burst = 30
-
+	// For integration tests, the schema contains all Kubernetes resources for simplicity.
 	k8sSchema := runtime.NewScheme()
 	clientgoscheme.AddToScheme(k8sSchema)
-	eniConfig.AddToScheme(k8sSchema)
-	sgp.AddToScheme(k8sSchema)
+	eniconfigscheme.AddToScheme(k8sSchema)
+	sgpscheme.AddToScheme(k8sSchema)
+	rcscheme.AddToScheme(k8sSchema)
 
-	cache, err := cache.New(config, cache.Options{Scheme: k8sSchema})
-	Expect(err).NotTo(HaveOccurred())
-	err = cache.IndexField(context.TODO(), &v1.Event{}, "reason", func(o client.Object) []string {
-		return []string{o.(*v1.Event).Reason}
-	}) // default indexing only on ns, need this for ipamd_event_test
-	Expect(err).NotTo(HaveOccurred())
-
-	// set up a context for the signals in tests
-	stopChan := ctrl.SetupSignalHandler()
-	go func() {
-		cache.Start(stopChan)
-	}()
-	cache.WaitForCacheSync(stopChan)
-	realClient, err := client.New(config, client.Options{Scheme: k8sSchema})
+	cache, err := k8sapi.CreateKubeClientCache(config, k8sSchema, nil)
+	if err != nil {
+		log.Fatalf("failed to create cache: %v", err)
+	}
 	Expect(err).NotTo(HaveOccurred())
 
-	k8sClient, err := client.NewDelegatingClient(client.NewDelegatingClientInput{
-		CacheReader: cache,
-		Client:      realClient,
+	// For the IPAMD events test, the cache must be able to index on Event reasons.
+	err = cache.IndexField(context.TODO(), &eventsv1.Event{}, "reason", func(o client.Object) []string {
+		event, ok := o.(*eventsv1.Event)
+		if !ok {
+			panic(fmt.Sprintf("Expected Event but got a %T", o))
+		}
+		if event.Reason != "" {
+			return []string{event.Reason}
+		}
+		return nil
+	})
+	Expect(err).NotTo(HaveOccurred())
+	// Start cache and wait for initial sync
+	k8sapi.StartKubeClientCache(cache)
+
+	k8sClient, err := client.New(config, client.Options{
+		Cache: &client.CacheOptions{
+			Reader: cache,
+		},
+		Scheme: k8sSchema,
 	})
 	if err != nil {
-		log.Fatalf("failed to create delegation client: %v", err)
+		log.Fatalf("failed to create client: %v", err)
 	}
 
 	cloudConfig := aws.CloudConfig{Region: options.AWSRegion, VpcID: options.AWSVPCID,
@@ -91,7 +101,7 @@ func New(options Options) *Framework {
 		Options:             options,
 		K8sClient:           k8sClient,
 		CloudServices:       aws.NewCloud(cloudConfig),
-		K8sResourceManagers: k8s.NewResourceManager(k8sClient, k8sSchema, config),
+		K8sResourceManagers: k8s.NewResourceManager(k8sClient, clientset, k8sSchema, config),
 		InstallationManager: controller.NewDefaultInstallationManager(
 			helm.NewDefaultReleaseManager(options.KubeConfig)),
 		Logger: utils.NewGinkgoLogger(),

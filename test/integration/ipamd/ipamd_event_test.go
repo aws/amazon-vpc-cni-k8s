@@ -18,6 +18,7 @@ import (
 	"io/ioutil"
 	"net/url"
 	"strings"
+	"time"
 
 	k8sUtil "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -100,6 +101,9 @@ var _ = Describe("test aws-node pod event", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
+			// Sleep to allow time for CNI policy deattachment
+			time.Sleep(10 * time.Second)
+
 			RestartAwsNodePods()
 
 			By("checking aws-node pods not running")
@@ -112,7 +116,7 @@ var _ = Describe("test aws-node pod event", func() {
 						break
 					}
 				}
-			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
+			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10).Should(Succeed())
 		})
 
 		AfterEach(func() {
@@ -132,6 +136,9 @@ var _ = Describe("test aws-node pod event", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
+			// Sleep to allow time for CNI policy reattachment
+			time.Sleep(10 * time.Second)
+
 			RestartAwsNodePods()
 
 			By("checking aws-node pods are running")
@@ -145,24 +152,27 @@ var _ = Describe("test aws-node pod event", func() {
 					g.Expect(cond.Status).To(BeEquivalentTo(v1.ConditionTrue))
 					break
 				}
-			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10)
+			}).WithTimeout(utils.PollIntervalLong).WithPolling(utils.PollIntervalLong / 10).Should(Succeed())
 		})
 
 		It("unauthorized event must be raised on aws-node pod", func() {
+			By("waiting for event to be generated")
 			listOpts := client.ListOptions{
-				FieldSelector: fields.SelectorFromSet(fields.Set{"reason": "MissingIAMPermissions"}),
+				FieldSelector: fields.Set{"reason": "MissingIAMPermissions"}.AsSelector(),
 				Namespace:     utils.AwsNodeNamespace,
 			}
-			eventList, err := f.K8sResourceManagers.EventManager().GetEventsWithOptions(&listOpts)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(eventList.Items).NotTo(BeEmpty())
+			Eventually(func(g Gomega) {
+				eventList, err := f.K8sResourceManagers.EventManager().GetEventsWithOptions(&listOpts)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(eventList.Items).NotTo(BeEmpty())
+			}).WithTimeout(15 * time.Minute).WithPolling(1 * time.Minute).Should(Succeed())
 		})
 	})
 })
 
 func RestartAwsNodePods() {
 	By("Restarting aws-node pods")
-	podList, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector("k8s-app", utils.AwsNodeName)
+	podList, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(AwsNodeLabelKey, utils.AwsNodeName)
 	Expect(err).ToNot(HaveOccurred())
 	for _, pod := range podList.Items {
 		f.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(&pod)

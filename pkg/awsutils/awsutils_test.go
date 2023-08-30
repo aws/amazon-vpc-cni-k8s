@@ -148,7 +148,7 @@ func setupEventRecorder(t *testing.T) {
 		Status:     v1.NodeStatus{},
 	}
 	ctx := context.Background()
-	mockEventRecorder.CachedK8SClient.Create(ctx, &fakeNode)
+	mockEventRecorder.K8sClient.Create(ctx, &fakeNode)
 }
 
 func TestInitWithEC2metadata(t *testing.T) {

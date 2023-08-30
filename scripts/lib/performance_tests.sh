@@ -14,9 +14,9 @@ function check_for_timeout() {
 function upload_results_to_s3_bucket() {
     echo "$filename"
     echo "Iteration", "scaleUpTime (s)", "scaleDownTime (s)", "scaleUpMem (Mi)", "scaleDownMem (Mi)" >> "$filename"
-    echo 1, $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])), $((SCALE_UP_MEM_ARRAY[1])), $((SCALE_DOWN_MEM_ARRAY[1])) >> "$filename"
-    echo 2, $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])), $((SCALE_UP_MEM_ARRAY[2])), $((SCALE_DOWN_MEM_ARRAY[2])) >> "$filename"
-    echo 3, $((SCALE_UP_DURATION_ARRAY[3])), $((SCALE_DOWN_DURATION_ARRAY[3])), $((SCALE_UP_MEM_ARRAY[3])), $((SCALE_DOWN_MEM_ARRAY[3])) >> "$filename"
+    echo 1, $((SCALE_UP_DURATION_ARRAY[0])), $((SCALE_DOWN_DURATION_ARRAY[0])), $((SCALE_UP_MEM_ARRAY[0])), $((SCALE_DOWN_MEM_ARRAY[0])) >> "$filename"
+    echo 2, $((SCALE_UP_DURATION_ARRAY[1])), $((SCALE_DOWN_DURATION_ARRAY[1])), $((SCALE_UP_MEM_ARRAY[1])), $((SCALE_DOWN_MEM_ARRAY[1])) >> "$filename"
+    echo 3, $((SCALE_UP_DURATION_ARRAY[2])), $((SCALE_DOWN_DURATION_ARRAY[2])), $((SCALE_UP_MEM_ARRAY[2])), $((SCALE_DOWN_MEM_ARRAY[2])) >> "$filename"
 
     cat "$filename"
     if [[ ${#PERFORMANCE_TEST_S3_BUCKET_NAME} -gt 0 ]]; then
@@ -42,7 +42,8 @@ function check_for_slow_performance() {
     PAST_PERFORMANCE_UP_AVERAGE=$((PAST_PERFORMANCE_UP_AVERAGE_SUM / 3))
 
     # Divided by 3 to get current average, multiply past averages by 5/4 to get 25% window
-    if [[ $((CURRENT_DURATION_UP_SUM / 3)) -gt $((PAST_PERFORMANCE_UP_AVERAGE * 5 / 4)) ]]; then
+    # Checks if current average is greater than or equal to 15 seconds to avoid failing due to fast previous runs
+    if [[$((CURRENT_DURATION_UP_SUM / 3)) -ge 15] && [ $((CURRENT_DURATION_UP_SUM / 3)) -gt $((PAST_PERFORMANCE_UP_AVERAGE * 5 / 4)) ]]; then
         echo "FAILURE! Performance test pod UPPING took >25% longer than the past three tests"
         echo "This tests time: $((CURRENT_DURATION_UP_SUM / 3))"
         echo "Previous tests' time: ${PAST_PERFORMANCE_UP_AVERAGE}"

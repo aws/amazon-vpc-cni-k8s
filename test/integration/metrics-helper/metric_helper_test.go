@@ -35,7 +35,7 @@ var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 			// Create a new deployment to verify addReqCount is updated
 			var deployment *v1.Deployment
 			deployment = manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
-				Replicas(10).
+				Replicas(30).
 				NodeName(nodeName).
 				Build()
 
@@ -56,7 +56,7 @@ var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 				},
 				MetricName: aws.String("addReqCount"),
 				Namespace:  aws.String("Kubernetes"),
-				Period:     aws.Int64(int64(60)),
+				Period:     aws.Int64(int64(30)),
 				// Start time should sync with when when this test started
 				StartTime:  aws.Time(time.Now().Add(time.Duration(-10) * time.Minute)),
 				EndTime:    aws.Time(time.Now()),

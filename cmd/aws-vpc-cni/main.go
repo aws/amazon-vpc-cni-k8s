@@ -61,8 +61,8 @@ const (
 	egressPluginIpamDstV6        = "::/0"
 	egressPluginIpamDataDirV4    = "/run/cni/v6pd/egress-v4-ipam"
 	egressPluginIpamDataDirV6    = "/run/cni/v4pd/egress-v6-ipam"
-	defaultHostCNIBinPath        = "/host/opt/cni/bin"
-	defaultHostCNIConfDirPath    = "/host/etc/cni/net.d"
+	defaultHostCniBinPath        = "/host/opt/cni/bin"
+	defaultHostCniConfDirPath    = "/host/etc/cni/net.d"
 	defaultAWSconflistFile       = "/app/10-aws.conflist"
 	tmpAWSconflistFile           = "/tmp/10-aws.conflist"
 	defaultVethPrefix            = "eni"
@@ -81,6 +81,7 @@ const (
 	defaultEnBandwidthPlugin     = false
 	defaultEnPrefixDelegation    = false
 	defaultIPCooldownPeriod      = 30
+	defaultDisablePodV6          = false
 
 	envHostCniBinPath        = "HOST_CNI_BIN_PATH"
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
@@ -101,6 +102,7 @@ const (
 	envEnIPv6Egress          = "ENABLE_V6_EGRESS"
 	envRandomizeSNAT         = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 	envIPCooldownPeriod      = "IP_COOLDOWN_PERIOD"
+	envDisablePodV6          = "DISABLE_POD_V6"
 )
 
 // NetConfList describes an ordered list of networks.
@@ -116,11 +118,12 @@ type NetConfList struct {
 type NetConf struct {
 	CNIVersion string `json:"cniVersion,omitempty"`
 
-	Name         string          `json:"name,omitempty"`
-	Type         string          `json:"type,omitempty"`
-	Capabilities map[string]bool `json:"capabilities,omitempty"`
-	IPAM         *IPAMConfig     `json:"ipam,omitempty"`
-	DNS          *types.DNS      `json:"dns,omitempty"`
+	Name         string            `json:"name,omitempty"`
+	Type         string            `json:"type,omitempty"`
+	Capabilities map[string]bool   `json:"capabilities,omitempty"`
+	IPAM         *IPAMConfig       `json:"ipam,omitempty"`
+	DNS          *types.DNS        `json:"dns,omitempty"`
+	Sysctl       map[string]string `json:"sysctl,omitempty"`
 
 	RawPrevResult map[string]interface{} `json:"prevResult,omitempty"`
 	PrevResult    types.Result           `json:"-"`
@@ -292,19 +295,40 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 
 	byteValue = []byte(netconf)
 
+	// Chain any requested CNI plugins
 	enBandwidthPlugin := utils.GetBoolAsStringEnvVar(envEnBandwidthPlugin, defaultEnBandwidthPlugin)
-	if enBandwidthPlugin {
+	disablePodV6 := utils.GetBoolAsStringEnvVar(envDisablePodV6, defaultDisablePodV6)
+	if enBandwidthPlugin || disablePodV6 {
+		// Unmarshall current conflist into data
 		data := NetConfList{}
 		err = json.Unmarshal(byteValue, &data)
 		if err != nil {
 			return err
 		}
 
-		bwPlugin := NetConf{
-			Type:         "bandwidth",
-			Capabilities: map[string]bool{"bandwidth": true},
+		// Chain the bandwidth plugin when enabled
+		if enBandwidthPlugin {
+			bwPlugin := NetConf{
+				Type:         "bandwidth",
+				Capabilities: map[string]bool{"bandwidth": true},
+			}
+			data.Plugins = append(data.Plugins, &bwPlugin)
 		}
-		data.Plugins = append(data.Plugins, &bwPlugin)
+
+		// Chain the tuning plugin (configured to disable IPv6 in pod network namespace) when requested
+		if disablePodV6 {
+			tuningPlugin := NetConf{
+				Type: "tuning",
+				Sysctl: map[string]string{
+					"net.ipv6.conf.all.disable_ipv6":     "1",
+					"net.ipv6.conf.default.disable_ipv6": "1",
+					"net.ipv6.conf.lo.disable_ipv6":      "1",
+				},
+			}
+			data.Plugins = append(data.Plugins, &tuningPlugin)
+		}
+
+		// Marshall data back into byteValue
 		byteValue, err = json.MarshalIndent(data, "", "  ")
 		if err != nil {
 			return err
@@ -380,7 +404,7 @@ func _main() int {
 	}
 
 	pluginBins := []string{"aws-cni", "egress-cni"}
-	hostCNIBinPath := utils.GetEnv(envHostCniBinPath, defaultHostCNIBinPath)
+	hostCNIBinPath := utils.GetEnv(envHostCniBinPath, defaultHostCniBinPath)
 	err := cp.InstallBinaries(pluginBins, hostCNIBinPath)
 	if err != nil {
 		log.WithError(err).Error("Failed to install CNI binaries")
@@ -421,7 +445,8 @@ func _main() int {
 		return 1
 	}
 
-	err = cp.CopyFile(tmpAWSconflistFile, defaultHostCNIConfDirPath+awsConflistFile)
+	hostCniConfDirPath := utils.GetEnv(envHostCniConfDirPath, defaultHostCniConfDirPath)
+	err = cp.CopyFile(tmpAWSconflistFile, hostCniConfDirPath+awsConflistFile)
 	if err != nil {
 		log.WithError(err).Errorf("Failed to copy %s", awsConflistFile)
 		return 1

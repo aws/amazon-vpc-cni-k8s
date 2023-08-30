@@ -31,6 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -43,6 +44,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	rcv1alpha1 "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 )
 
 // The package ipamd is a long running daemon which manages a warm pool of available IP addresses.
@@ -133,12 +135,6 @@ const (
 
 	// envNodeName will be used to store Node name
 	envNodeName = "MY_NODE_NAME"
-
-	// vpcENIConfigLabel is used by the VPC resource controller to pick the right ENI config.
-	vpcENIConfigLabel = "vpc.amazonaws.com/eniConfig"
-
-	// trunkInterfaceLabel is used by CNI to check if correct label was added by the VPC resource controller
-	trunkInterfaceLabel = "vpc.amazonaws.com/has-trunk-attached"
 
 	//envEnableIpv4PrefixDelegation is used to allocate /28 prefix instead of secondary IP for an ENI.
 	envEnableIpv4PrefixDelegation = "ENABLE_PREFIX_DELEGATION"
@@ -243,8 +239,7 @@ var (
 type IPAMContext struct {
 	awsClient                 awsutils.APIs
 	dataStore                 *datastore.DataStore
-	rawK8SClient              client.Client
-	cachedK8SClient           client.Client
+	k8sClient                 client.Client
 	enableIPv4                bool
 	enableIPv6                bool
 	useCustomNetworking       bool
@@ -381,11 +376,10 @@ func (c *IPAMContext) inInsufficientCidrCoolingPeriod() bool {
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
-func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContext, error) {
+func New(k8sClient client.Client) (*IPAMContext, error) {
 	prometheusRegister()
 	c := &IPAMContext{}
-	c.rawK8SClient = rawK8SClient
-	c.cachedK8SClient = cachedK8SClient
+	c.k8sClient = k8sClient
 	c.networkClient = networkutils.New()
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.manageENIsNonScheduleable = ManageENIsOnNonSchedulableNode()
@@ -553,7 +547,7 @@ func (c *IPAMContext) nodeInit() error {
 		}, 30*time.Second)
 	}
 
-	node, err := k8sapi.GetNode(ctx, c.cachedK8SClient)
+	node, err := k8sapi.GetNode(ctx, c.k8sClient)
 	if err != nil {
 		log.Errorf("Failed to get node", err)
 		podENIErrInc("nodeInit")
@@ -562,34 +556,19 @@ func (c *IPAMContext) nodeInit() error {
 
 	eniConfigName, err := eniconfig.GetNodeSpecificENIConfigName(node)
 	if err == nil && c.useCustomNetworking && eniConfigName != "default" {
-		// Signal to VPC Resource Controller that the node is using custom networking
-		err := c.SetNodeLabel(ctx, vpcENIConfigLabel, eniConfigName)
+		// Add the feature name to CNINode of this node
+		err := c.AddFeatureToCNINode(ctx, rcv1alpha1.CustomNetworking, eniConfigName)
 		if err != nil {
-			log.Errorf("Failed to set eniConfig node label", err)
+			log.Errorf("Failed to add feature custom networking into CNINode", err)
 			podENIErrInc("nodeInit")
 			return err
 		}
-	} else {
-		// Remove the custom networking label
-		err := c.SetNodeLabel(ctx, vpcENIConfigLabel, "")
-		if err != nil {
-			log.Errorf("Failed to delete eniConfig node label", err)
-			podENIErrInc("nodeInit")
-			return err
-		}
+		log.Infof("Enabled feature %s in CNINode for node %s if not existing", rcv1alpha1.CustomNetworking, c.myNodeName)
 	}
 
-	if metadataResult.TrunkENI != "" {
-		// Signal to VPC Resource Controller that the node has a trunk already
-		err := c.SetNodeLabel(ctx, trunkInterfaceLabel, "true")
-		if err != nil {
-			log.Errorf("Failed to set node label", err)
-			podENIErrInc("nodeInit")
-			// If this fails, we probably can't talk to the API server. Let the pod restart
-			return err
-		}
-	} else {
-		// Check if we want to label node for trunk interface during node init
+	if c.enablePodENI {
+		// Check if we want to add feature into CNINode for trunk interface during node init
+		// we don't check if the node already has trunk added during initialization
 		c.askForTrunkENIIfNeeded(ctx)
 	}
 
@@ -688,7 +667,9 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 }
 
 func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
-	c.askForTrunkENIIfNeeded(ctx)
+	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
+		c.askForTrunkENIIfNeeded(ctx)
+	}
 
 	if c.isDatastorePoolTooLow() {
 		c.increaseDatastorePool(ctx)
@@ -849,13 +830,8 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) error {
 	if increasedPool {
 		c.updateLastNodeIPPoolAction()
 	} else {
-		// Check if we need to make room for the VPC Resource Controller to attach a trunk ENI
-		reserveSlotForTrunkENI := 0
-		if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
-			reserveSlotForTrunkENI = 1
-		}
 		// If we did not add any IPs, try to allocate an ENI.
-		if c.dataStore.GetENIs() < (c.maxENI - c.unmanagedENI - reserveSlotForTrunkENI) {
+		if c.hasRoomForEni() {
 			if err = c.tryAllocateENI(ctx); err == nil {
 				c.updateLastNodeIPPoolAction()
 			} else {
@@ -863,8 +839,7 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) error {
 				log.Debugf("Error trying to allocate ENI: %v", err)
 			}
 		} else {
-			log.Debugf("Skipping ENI allocation as the max ENI limit of %d is already reached (accounting for %d unmanaged ENIs and %d trunk ENIs)",
-				c.maxENI, c.unmanagedENI, reserveSlotForTrunkENI)
+			log.Debugf("Skipping ENI allocation as the max ENI limit is already reached")
 		}
 	}
 	return nil
@@ -886,7 +861,7 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 	var subnet string
 
 	if c.useCustomNetworking {
-		eniCfg, err := eniconfig.MyENIConfig(ctx, c.cachedK8SClient)
+		eniCfg, err := eniconfig.MyENIConfig(ctx, c.k8sClient)
 		if err != nil {
 			log.Errorf("Failed to get pod ENI config")
 			return err
@@ -1270,27 +1245,19 @@ func (c *IPAMContext) logPoolStats(dataStoreStats *datastore.DataStoreStats) {
 }
 
 func (c *IPAMContext) askForTrunkENIIfNeeded(ctx context.Context) {
-	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
-		// Check that there is room for a trunk ENI to be attached:
-		if c.dataStore.GetENIs() >= (c.maxENI - c.unmanagedENI) {
-			log.Debug("No slot available for a trunk ENI to be attached. Not labeling the node")
-			return
-		}
-		// We need to signal that VPC Resource Controller needs to attach a trunk ENI
-		err := c.SetNodeLabel(ctx, trunkInterfaceLabel, "false")
-		if err != nil {
-			podENIErrInc("askForTrunkENIIfNeeded")
-			log.Errorf("Failed to set node label", err)
-		}
+	// Check that there is room for a trunk ENI to be attached.
+	if c.dataStore.GetENIs() >= (c.maxENI - c.unmanagedENI) {
+		log.Error("No slot available for a trunk ENI to be attached.")
+		return
 	}
-}
 
-func (c *IPAMContext) getNodeLabels(ctx context.Context) (map[string]string, error) {
-	var node corev1.Node
-	if err := c.cachedK8SClient.Get(ctx, types.NamespacedName{Name: c.myNodeName}, &node); err != nil {
-		return nil, err
+	// We need to signal that VPC Resource Controller needs to attach a trunk ENI.
+	err := c.AddFeatureToCNINode(ctx, rcv1alpha1.SecurityGroupsForPods, "")
+	if err != nil {
+		podENIErrInc("askForTrunkENIIfNeeded")
+		log.Errorf("Failed to add SGP feature to CNINode resource", err)
 	} else {
-		return node.GetLabels(), err
+		log.Infof("Successfully added feature %s to CNINode if not existing", rcv1alpha1.SecurityGroupsForPods)
 	}
 }
 
@@ -1404,13 +1371,6 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 
 		if c.enablePodENI && metadataResult.TrunkENI != "" {
 			log.Debugf("Trunk interface (%s) has been added to the node already.", metadataResult.TrunkENI)
-			// Label the node that we have a trunk
-			err = c.SetNodeLabel(ctx, trunkInterfaceLabel, "true")
-			if err != nil {
-				podENIErrInc("askForTrunkENIIfNeeded")
-				log.Errorf("Failed to set node label for trunk. Aborting reconcile", err)
-				return
-			}
 		}
 		// Update trunk ENI
 		trunkENI = metadataResult.TrunkENI
@@ -1918,7 +1878,7 @@ func (c *IPAMContext) isNodeNonSchedulable() bool {
 
 	node := &corev1.Node{}
 	// Find my node
-	err := c.cachedK8SClient.Get(ctx, request, node)
+	err := c.k8sClient.Get(ctx, request, node)
 	if err != nil {
 		log.Errorf("Failed to get node while determining schedulability: %v", err)
 		return false
@@ -1981,54 +1941,6 @@ func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
 	return -1, errors.New("no trunk found")
 }
 
-// SetNodeLabel sets or deletes a node label
-func (c *IPAMContext) SetNodeLabel(ctx context.Context, key, value string) error {
-	request := types.NamespacedName{
-		Name: c.myNodeName,
-	}
-
-	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		node := &corev1.Node{}
-		// Find my node
-		err := c.cachedK8SClient.Get(ctx, request, node)
-		if err != nil {
-			log.Errorf("Failed to get node: %v", err)
-			return err
-		}
-		log.Debugf("Node found %q - no of labels - %d", node.Name, len(node.Labels))
-
-		if labelValue, ok := node.Labels[key]; ok && labelValue == value {
-			log.Debugf("Node label %q is already %q", key, labelValue)
-			return nil
-		}
-
-		// Make deep copy for modification
-		updateNode := node.DeepCopy()
-
-		// in case for some reason node object doesn't have label map
-		if updateNode.Labels == nil {
-			updateNode.Labels = make(map[string]string)
-		}
-
-		// Set node label
-		if value != "" {
-			updateNode.Labels[key] = value
-		} else {
-			// Empty value, delete the label
-			log.Debugf("Deleting label %q", key)
-			delete(updateNode.Labels, key)
-		}
-
-		if err = c.cachedK8SClient.Update(ctx, updateNode); err != nil {
-			log.Errorf("Failed to patch node %s with label %q: %q, error: %v", c.myNodeName, key, value, err)
-			return err
-		}
-		log.Debugf("Updated node %s with label %q: %q", c.myNodeName, key, value)
-		return nil
-	})
-	return err
-}
-
 // GetPod returns the pod matching the name and namespace
 func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
 	ctx := context.TODO()
@@ -2038,7 +1950,7 @@ func (c *IPAMContext) GetPod(podName, namespace string) (*corev1.Pod, error) {
 		Namespace: namespace,
 		Name:      podName,
 	}
-	err := c.rawK8SClient.Get(ctx, podKey, &pod)
+	err := c.k8sClient.Get(ctx, podKey, &pod)
 	if err != nil {
 		return nil, fmt.Errorf("error while trying to retrieve pod info: %s", err.Error())
 	}
@@ -2086,7 +1998,7 @@ func (c *IPAMContext) AnnotatePod(podName string, podNamespace string, key strin
 			}
 		}
 
-		if err = c.rawK8SClient.Patch(ctx, newPod, client.MergeFrom(pod)); err != nil {
+		if err = c.k8sClient.Patch(ctx, newPod, client.MergeFrom(pod)); err != nil {
 			log.Errorf("Failed to annotate %s the pod with %s, error %v", key, newVal, err)
 			return err
 		}
@@ -2204,6 +2116,15 @@ func (c *IPAMContext) GetIPv4Limit() (int, int, error) {
 func (c *IPAMContext) isDatastorePoolEmpty() bool {
 	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
 	return stats.TotalIPs == 0
+}
+
+// Return whether the maximum number of ENIs that can be attached to the node has already been reached
+func (c *IPAMContext) hasRoomForEni() bool {
+	trunkEni := 0
+	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
+		trunkEni = 1
+	}
+	return c.dataStore.GetENIs() < (c.maxENI - c.unmanagedENI - trunkEni)
 }
 
 func (c *IPAMContext) isDatastorePoolTooLow() bool {
@@ -2357,4 +2278,42 @@ func (c *IPAMContext) isConfigValid() bool {
 	}
 
 	return true
+}
+
+func (c *IPAMContext) AddFeatureToCNINode(ctx context.Context, featureName rcv1alpha1.FeatureName, featureValue string) error {
+	cniNode := &rcv1alpha1.CNINode{}
+	if err := c.k8sClient.Get(ctx, types.NamespacedName{Name: c.myNodeName}, cniNode); err != nil {
+		return err
+	}
+
+	if lo.ContainsBy(cniNode.Spec.Features, func(addedFeature rcv1alpha1.Feature) bool {
+		return featureName == addedFeature.Name && featureValue == addedFeature.Value
+	}) {
+		return nil
+	}
+
+	newCNINode := cniNode.DeepCopy()
+	newFeature := rcv1alpha1.Feature{
+		Name:  featureName,
+		Value: featureValue,
+	}
+
+	if lo.ContainsBy(cniNode.Spec.Features, func(addedFeature rcv1alpha1.Feature) bool {
+		return featureName == addedFeature.Name
+	}) {
+		// this should happen when user updated eniConfig name
+		// aws-node restarted and CNINode need to be updated if node wasn't terminated
+		// we need groom old features here
+		newCNINode.Spec.Features = []rcv1alpha1.Feature{}
+		for _, oldFeature := range cniNode.Spec.Features {
+			if oldFeature.Name == featureName {
+				continue
+			} else {
+				newCNINode.Spec.Features = append(newCNINode.Spec.Features, oldFeature)
+			}
+		}
+	}
+
+	newCNINode.Spec.Features = append(newCNINode.Spec.Features, newFeature)
+	return c.k8sClient.Patch(ctx, newCNINode, client.MergeFromWithOptions(cniNode, client.MergeFromWithOptimisticLock{}))
 }
