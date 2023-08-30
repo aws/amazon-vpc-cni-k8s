@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.15.0
+
+* Feature - [Add support for VPC Resource Controller's CNINode (reintroduce #2442)](https://github.com/aws/amazon-vpc-cni-k8s/pull/2503) (@haouc )
+* Feature - [Add DISABLE_CONTAINER_V6 to disable IPv6 networking in container network namespaces](https://github.com/aws/amazon-vpc-cni-k8s/pull/2499) (@jdn5126 )
+* Feature - [IP_COOLDOWN_PERIOD environment variable for ip cooldown period configuration](https://github.com/aws/amazon-vpc-cni-k8s/pull/2492) (@jchen6585 )
+* Improvement - [Fix test kubeconfig, upgrade helm](https://github.com/aws/amazon-vpc-cni-k8s/pull/2509) (@jdn5126 )
+* Improvement - [Update instance limits for upcoming vpc-cni release](https://github.com/aws/amazon-vpc-cni-k8s/pull/2506) (@jchen6585 )
+* Improvement - [Upgrade controller-runtime to v0.15.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2481) (@jdn5126 )
+
+## v1.14.0
+
+* Feature - `v1.14.0` introduces Kubernetes Network Policy support. This is accomplished via the `aws-eks-nodeagent` container, which is now present in the `aws-node` pod.
+
 ## v1.13.4
 
 * Bug - [RefreshSecurityGroups must be called after unmanaged ENIs are set](https://github.com/aws/amazon-vpc-cni-k8s/pull/2475) (@jdn5126 )

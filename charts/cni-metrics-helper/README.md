@@ -47,7 +47,7 @@ The following table lists the configurable parameters for this chart and their d
 |------------------------------|---------------------------------------------------------------|--------------------|
 | fullnameOverride             | Override the fullname of the chart                            | cni-metrics-helper |
 | image.region                 | ECR repository region to use. Should match your cluster       | us-west-2          |
-| image.tag                    | Image tag                                                     | v1.13.4            |
+| image.tag                    | Image tag                                                     | v1.15.0            |
 | image.account                | ECR repository account number                                 | 602401143452       |
 | image.domain                 | ECR repository domain                                         | amazonaws.com      |
 | env.USE_CLOUDWATCH           | Whether to export CNI metrics to CloudWatch                   | true               |

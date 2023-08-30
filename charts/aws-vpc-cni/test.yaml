@@ -6,7 +6,7 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.12.1
+    tag: v1.15.0
     region: us-west-2
     pullPolicy: Always
     # Set to use custom image
@@ -16,9 +16,24 @@ init:
   securityContext:
     privileged: true
 
+nodeAgent:
+  image:
+    tag: v1.0.1
+    region: us-west-2
+    pullPolicy: Always
+    # Set to use custom image
+    # override:
+  securityContext:
+    capabilities:
+      add:
+      - "NET_ADMIN"
+    privileged: true
+  enableCloudWatchLogs: "false"
+  enableIpv6: "false"
+
 image:
   region: us-west-2
-  tag: v1.12.1
+  tag: v1.15.0
   pullPolicy: Always
   # Set to use custom image
   # override: "repo/org/image:tag"
