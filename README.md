@@ -46,16 +46,17 @@ See [here](./docs/iam-policy.md) for required IAM policies.
 
   There are 2 components:
 
-  * [CNI Plugin](https://kubernetes.io/docs/concepts/cluster-administration/network-plugins/#cni), which will wire up the host's and pod's network stack when called.
-  * `ipamd`, a long-running node-Local IP Address Management (IPAM) daemon, is responsible for:
-    * maintaining a warm-pool of available IP addresses, and
-    * assigning an IP address to a Pod.
+* [CNI Plugin](https://kubernetes.io/docs/concepts/cluster-administration/network-plugins/#cni), which will wire up the host's and pod's network stack when called.
+* `ipamd`, a long-running node-Local IP Address Management (IPAM) daemon, is responsible for:
+  * maintaining a warm-pool of available IP addresses, and
+  * assigning an IP address to a Pod.
 
 The details can be found in [Proposal: CNI plugin for Kubernetes networking over AWS VPC](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/cni-proposal.md).
 
 ## Help & Feedback
 
 For help, please consider the following venues (in order):
+
 * [Amazon EKS Best Practices Guide for Networking](https://aws.github.io/aws-eks-best-practices/networking/index/)
 * [Troubleshooting Guide](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/troubleshooting.md) provides tips on how to debug and troubleshoot this CNI.
 * [Search open issues](https://github.com/aws/amazon-vpc-cni-k8s/issues)
@@ -93,17 +94,61 @@ For example, a m4.4xlarge node can have up to 8 ENIs, and each ENI can have up t
 
 For a detailed explanation, see [`WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/eni-and-ip-target.md).
 
-
 ## Privileged mode
 
 VPC CNI makes use of privileged mode (`privileged: true`) in the manifest only for its init container. This elevated privilege is required to set the networking kernel parameters.
 
-### CNI Configuration Variables<a name="cni-env-vars"></a>
+## Network Policies
+
+In Kubernetes, by default, all pod-to-pod communication is allowed. Communication can be restricted with Kubernetes NetworkPolicy objects.
+
+VPC CNI versions v1.14, and greater support [Kubernetes Network Policies.](https://kubernetes.io/docs/concepts/services-networking/network-policies/). Network Policies specify how pods can communicate over the network, at the IP address or port level. The VPC CNI implements the Kubernetes [NetworkPolicy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.27/#networkpolicy-v1-networking-k8s-io) API. Network policies generally include a pod selector, and Ingress/Egress rules.
+
+For EKS clusters, review [Configure your cluster for Kubernetes network policies](https://docs.aws.amazon.com/eks/latest/userguide/cni-network-policy.html) in the Amazon EKS User Guide.
+
+The AWS VPC CNI implementation of network policies may be enabled in self-managed clusters. This requires the VPC CNI agent, the [Network Policy Controller](https://github.com/aws/amazon-network-policy-controller-k8s), and [Network Policy Node Agent](https://github.com/aws/aws-network-policy-agent).
+
+Review the [Network Policy FAQ](./docs/network-policy-faq.md) for more information.
+
+### Network Policy Related Components
+
+* [Network Policy Controller](https://github.com/aws/amazon-network-policy-controller-k8s) watches for NetworkPolicy objects and instructs the node agent.
+  * Network policy controller configures policies for pods in parallel to pod provisioning, until then new pods will come up with default allow policy. All ingress and egress traffic is allowed to and from the new pods until they are resolved against the existing policies.
+  * This controller is automatically installed on the EKS Control Plane.
+* [Network Policy Node Agent](https://github.com/aws/aws-network-policy-agent) implements Network Policies on nodes by creating eBPF programs.
+* [AWS eBPF SDK for Go](https://github.com/aws/aws-ebpf-sdk-go) provides an interface to interact with eBPF programs on the node. This SDK allows for runtime introspection, tracing, and analysis of eBPF execution, aiding in identifying and resolving connectivity issues.
+* [VPC Resource Controller](https://github.com/aws/amazon-vpc-resource-controller-k8s) manages Branch & Trunk Network Interfaces for Kubernetes Pods. 
+
+## ConfigMap
+
+If the VPC CNI is installed as an Amazon EKS add-ons (also known as a managed add-on), configure it using [AWS APIs as described in the EKS User Guide](https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html).
+
+If the VPC CNI is installed with a Helm Chart, the ConfigMap is installed in your cluster. Review the [Helm Chart information.](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
+
+Otherwise, the VPC CNI may be configured with a ConfigMap, as shown below:
+
+```
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amazon-vpc-cni
+  namespace: kube-system
+data:
+  enable-network-policy-controller: "true"
+```
+
+* `enable-network-policy-controller`
+  * Default: False
+  * If enabled, the VPC CNI will enforce NetworkPolicies. Pods that are selected by at least one NetworkPolicy will have their traffic restricted.
+
+## Helm Charts
+
+AWS publishes a Helm chart to install the VPC CNI. [Review how to install the helm chart, and the configuration parameters for the chart.](https://github.com/aws/eks-charts/tree/master/stable/aws-vpc-cni)
+
+## CNI Configuration Variables<a name="cni-env-vars"></a>
 
 The Amazon VPC CNI plugin for Kubernetes supports a number of configuration options, which are set through environment variables.
 The following environment variables are available, and all of them are optional.
-
----
 
 #### `AWS_MANAGE_ENIS_NON_SCHEDULABLE` (v1.12.6+)
 
@@ -113,8 +158,6 @@ Default: `false`
 
 Specifies whether IPAMD should allocate or deallocate ENIs on a non-schedulable node.
 
----
-
 #### `AWS_VPC_CNI_NODE_PORT_SUPPORT`
 
 Type: Boolean as a String
@@ -123,8 +166,6 @@ Default: `true`
 
 Specifies whether `NodePort` services are enabled on a worker node's primary network interface\. This requires additional
 `iptables` rules, and the kernel's reverse path filter on the primary interface is set to `loose`.
-
----
 
 #### `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG`
 
@@ -142,8 +183,6 @@ same Availability Zone that the worker node resides in.
 For more information, see [*CNI Custom Networking*](https://docs.aws.amazon.com/eks/latest/userguide/cni-custom-network.html)
 in the Amazon EKS User Guide.
 
----
-
 #### `ENI_CONFIG_ANNOTATION_DEF`
 
 Type: String
@@ -152,8 +191,6 @@ Default: `k8s.amazonaws.com/eniConfig`
 
 Specifies node annotation key name. This should be used when `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true`. Annotation value
 will be used to set `ENIConfig` name. Note that annotations take precedence over labels.
-
----
 
 #### `ENI_CONFIG_LABEL_DEF`
 
@@ -167,8 +204,6 @@ to set `ENIConfig` name\. Note that annotations will take precedence over labels
 To select an `ENIConfig` based upon availability zone set this to `topology.kubernetes.io/zone` and create an
 `ENIConfig` custom resource for each availability zone (e.g. `us-east-1a`). Note that tag `failure-domain.beta.kubernetes.io/zone` is deprecated and replaced with the tag `topology.kubernetes.io/zone`.
 
----
-
 #### `HOST_CNI_BIN_PATH`
 
 Type: String
@@ -176,8 +211,6 @@ Type: String
 Default: `/host/opt/cni/bin`
 
 Specifies the location to install CNI binaries. Note that the `aws-node` daemonset mounts `/opt/cni/bin` to `/host/opt/cni/bin`. The value you choose must be a location that the `aws-node` pod can write to.
-
----
 
 #### `HOST_CNI_CONFDIR_PATH`
 
@@ -195,8 +228,6 @@ Default: 9001
 
 Used to configure the MTU size for attached ENIs. The valid range is from `576` to `9001`.
 
----
-
 #### `AWS_VPC_K8S_CNI_EXTERNALSNAT`
 
 Type: Boolean as a String
@@ -208,8 +239,6 @@ SNAT `iptables` rule and off\-VPC IP rule are not applied, and these rules are r
 Disable SNAT if you need to allow inbound communication to your pods from external VPNs, direct connections, and external VPCs,
 and your pods do not need to access the Internet directly via an Internet Gateway. However, your nodes must be running in a
 private subnet and connected to the internet through an AWS NAT Gateway or another external NAT device.
-
----
 
 #### `AWS_VPC_K8S_CNI_RANDOMIZESNAT`
 
@@ -229,8 +258,6 @@ rely on sequential port allocation for outgoing connections set it to `none`.
 part of the ephemeral port range set at the OS level (`/proc/sys/net/ipv4/ip_local_port_range`). This is relevant for any
 customers that might have NACLs restricting traffic based on the port range found in `ip_local_port_range`.
 
----
-
 #### `AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS` (v1.6.0+)
 
 Type: String
@@ -239,8 +266,6 @@ Default: empty
 
 Specify a comma-separated list of IPv4 CIDRs to exclude from SNAT. For every item in the list an `iptables` rule and off\-VPC
 IP rule will be applied. If an item is not a valid ipv4 range it will be skipped. This should be used when `AWS_VPC_K8S_CNI_EXTERNALSNAT=false`.
-
----
 
 #### `WARM_ENI_TARGET`
 
@@ -259,8 +284,6 @@ addresses are removed from the IP address warm pool, then `ipamd` attempts to al
 interfaces are available on the node.
 If `WARM_IP_TARGET` is set, then this environment variable is ignored and the `WARM_IP_TARGET` behavior is used instead.
 
----
-
 #### `WARM_IP_TARGET`
 
 Type: Integer
@@ -271,13 +294,13 @@ Specifies the number of free IP addresses that the `ipamd` daemon should attempt
 With `ENABLE_PREFIX_DELEGATION` set to `true` then `ipamd` daemon will check if the existing (/28) prefixes are enough to maintain the
 `WARM_IP_TARGET` if it is not sufficient then more prefixes will be attached.
 
-For example, 
+For example,
 
 1. if `WARM_IP_TARGET` is set to 5, then `ipamd` attempts to keep 5 free IP addresses available at all times. If the
 elastic network interfaces on the node are unable to provide these free addresses, `ipamd` attempts to allocate more interfaces
-until `WARM_IP_TARGET` free IP addresses are available. 
-2. `ENABLE_PREFIX_DELEGATION` set to `true` and `WARM_IP_TARGET` is 16. Initially, 1 (/28) prefix is sufficient but once a single pod is assigned IP then 
-remaining free IPs are 15 hence IPAMD will allocate 1 more prefix to achieve 16 `WARM_IP_TARGET` 
+until `WARM_IP_TARGET` free IP addresses are available.
+2. `ENABLE_PREFIX_DELEGATION` set to `true` and `WARM_IP_TARGET` is 16. Initially, 1 (/28) prefix is sufficient but once a single pod is assigned IP then
+remaining free IPs are 15 hence IPAMD will allocate 1 more prefix to achieve 16 `WARM_IP_TARGET`
 
 **NOTE!** Avoid this setting for large clusters, or if the cluster has high pod churn. Setting it will cause additional calls to the
 EC2 API and that might cause throttling of the requests. It is strongly suggested to set `MINIMUM_IP_TARGET` when using `WARM_IP_TARGET`.
@@ -289,8 +312,6 @@ This environment variable overrides `WARM_ENI_TARGET` behavior. For a detailed e
 If `ENABLE_PREFIX_DELEGATION` set to `true` and `WARM_IP_TARGET` overrides `WARM_PREFIX_TARGET` behavior. For a detailed explanation, see
 [`WARM_PREFIX_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/prefix-and-ip-target.md).
 
----
-
 #### `MINIMUM_IP_TARGET` (v1.6.0+)
 
 Type: Integer
@@ -299,7 +320,7 @@ Default: None
 
 Specifies the number of total IP addresses that the `ipamd` daemon should attempt to allocate for pod assignment on the node.
 `MINIMUM_IP_TARGET` behaves identically to `WARM_IP_TARGET` except that instead of setting a target number of free IP
-addresses to keep available at all times, it sets a target number for a floor on how many total IP addresses are allocated. Setting to a 
+addresses to keep available at all times, it sets a target number for a floor on how many total IP addresses are allocated. Setting to a
 non-positive value is same as setting this to 0 or not setting the variable.
 
 `MINIMUM_IP_TARGET` is for pre-scaling, `WARM_IP_TARGET` is for dynamic scaling. For example, suppose a cluster has an
@@ -312,8 +333,6 @@ elasticity, but uses roughly half as many IPs as using WARM_IP_TARGET alone (32 
 This also improves the reliability of the EKS cluster by reducing the number of calls necessary to allocate or deallocate
 private IPs, which may be throttled, especially at scaling-related times.
 
----
-
 #### `MAX_ENI`
 
 Type: Integer
@@ -324,8 +343,6 @@ Specifies the maximum number of ENIs that will be attached to the node. When `MA
 is not used, and the maximum number of ENIs is always equal to the maximum number for the instance type in question. Even when
 `MAX_ENI` is a positive number, it is limited by the maximum number for the instance type.
 
----
-
 #### `AWS_VPC_K8S_CNI_LOGLEVEL`
 
 Type: String
@@ -335,8 +352,6 @@ Default: `DEBUG`
 Valid Values: `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`. (Not case sensitive)
 
 Specifies the log level for `ipamd` and `cni-metric-helper`.
-
----
 
 #### `AWS_VPC_K8S_CNI_LOG_FILE`
 
@@ -351,8 +366,6 @@ Specifies where to write the logging output of `ipamd`: `stdout`, `stderr`, or a
 Note: `/host/var/log/...` is the container file-system path, which maps to `/var/log/...` on the node.
 
 Note: The IPAMD process runs within the `aws-node` pod, so writing to `stdout` or `stderr` will write to `aws-node` pod logs.
-
----
 
 #### `AWS_VPC_K8S_PLUGIN_LOG_FILE`
 
@@ -370,8 +383,6 @@ Note: In EKS 1.24+, the CNI plugin is exec'ed by the container runtime, so `stde
 
 Note: If chaining an external plugin (i.e. Cilium) that does not provide a `pluginLogFile` in its config file, the CNI plugin will by default write to `os.Stderr`.
 
----
-
 #### `AWS_VPC_K8S_PLUGIN_LOG_LEVEL`
 
 Type: String
@@ -381,8 +392,6 @@ Default: `DEBUG`
 Valid Values: `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`. (Not case sensitive)
 
 Specifies the loglevel for `aws-cni` plugin.
-
----
 
 #### `INTROSPECTION_BIND_ADDRESS`
 
@@ -394,8 +403,6 @@ Specifies the bind address for the introspection endpoint.
 
 A Unix Domain Socket can be specified with the `unix:` prefix before the socket path.
 
----
-
 #### `DISABLE_INTROSPECTION`
 
 Type: Boolean as a String
@@ -404,8 +411,6 @@ Default: `false`
 
 Specifies whether introspection endpoints are disabled on a worker node. Setting this to `true` will reduce the debugging
 information we can get from the node when running the `aws-cni-support.sh` script.
-
----
 
 #### `DISABLE_METRICS`
 
@@ -416,8 +421,6 @@ Default: `false`
 Specifies whether the prometheus metrics endpoint is disabled or not for ipamd. By default metrics are published
 on `:61678/metrics`.
 
----
-
 #### `AWS_VPC_K8S_CNI_VETHPREFIX`
 
 Type: String
@@ -425,8 +428,6 @@ Type: String
 Default: `eni`
 
 Specifies the veth prefix used to generate the host-side veth device name for the CNI. The prefix can be at most 4 characters long. The prefixes `eth`, `vlan`, and `lo` are reserved by the CNI plugin and cannot be specified. We recommend using prefix name not shared by any other network interfaces on the worker node instance.
-
----
 
 #### `ADDITIONAL_ENI_TAGS` (v1.6.0+)
 
@@ -443,8 +444,6 @@ a maximum length of 256 characters. These tags will be added to all ENIs on the 
 Important: Custom tags should not contain `k8s.amazonaws.com` prefix as it is reserved. If the tag has `k8s.amazonaws.com`
 string, tag addition will be ignored.
 
----
-
 #### `AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER` (deprecated v1.12.1+)
 
 Type: Boolean as a String
@@ -455,8 +454,6 @@ Specifies whether ipamd should configure rp filter for primary interface. Settin
 
 **NOTE!** `AWS_VPC_K8S_CNI_CONFIGURE_RPFILTER` has been deprecated, so setting this environment variable results in a no-op. The init container unconditionally configures the rp filter for the primary interface.
 
----
-
 #### `CLUSTER_NAME`
 
 Type: String
@@ -465,20 +462,16 @@ Default: `""`
 
 Specifies the cluster name to tag allocated ENIs with. See the "Cluster Name tag" section below.
 
----
-
 #### `CLUSTER_ENDPOINT` (v1.12.1+)
 
 Type: String
 
 Default: `""`
 
-Specifies the cluster endpoint to use for connecting to the api-server without relying on kube-proxy. 
+Specifies the cluster endpoint to use for connecting to the api-server without relying on kube-proxy.
 This is an optional configuration parameter that can improve the initialization time of the AWS VPC CNI.
 
 **NOTE!** When setting CLUSTER_ENDPOINT, it is *STRONGLY RECOMMENDED* that you enable private endpoint access for your API server, otherwise VPC CNI requests can traverse the public NAT gateway and may result in additional charges.
-
----
 
 #### `ENABLE_POD_ENI` (v1.7.0+)
 
@@ -490,15 +483,13 @@ To enable security groups for pods you need to have at least an EKS 1.17 eks.3 c
 
 Setting `ENABLE_POD_ENI` to `true` will allow IPAMD to add the `vpc.amazonaws.com/has-trunk-attached` label to the node if the instance has the capacity to attach an additional ENI.
 
-The label notifies vpc-resource-controller (https://github.com/aws/amazon-vpc-resource-controller-k8s) to attach a Trunk ENI to the instance. The label value is initially set to `false` and is marked to `true` by IPAMD when vpc-resource-controller attaches a Trunk ENI to the instance. However, there might be cases where the label value will remain `false` if the instance doesn't support ENI Trunking. 
+The label notifies [vpc-resource-controller](https://github.com/aws/amazon-vpc-resource-controller-k8s) to attach a Trunk ENI to the instance. The label value is initially set to `false` and is marked to `true` by IPAMD when vpc-resource-controller attaches a Trunk ENI to the instance. However, there might be cases where the label value will remain `false` if the instance doesn't support ENI Trunking.
 
 Once enabled the VPC resource controller will then advertise branch network interfaces as extended resources on these nodes in your cluster. Branch interface capacity is additive to existing instance type limits for secondary IP addresses and prefixes. For example, a c5.4xlarge can continue to have up to 234 secondary IP addresses or 234 /28 prefixes assigned to standard network interfaces and up to 54 branch network interfaces. Each branch network interface only receives a single primary IP address and this IP address will be allocated to pods with a security group(branch ENI pods).
 
 Any of the WARM targets do not impact the scale of the branch ENI pods so you will have to set the WARM_{ENI/IP/PREFIX}_TARGET based on the number of non-branch ENI pods. If you are having the cluster mostly using pods with a security group consider setting WARM_IP_TARGET to a very low value instead of default WARM_ENI_TARGET or WARM_PREFIX_TARGET to reduce wastage of IPs/ENIs.
 
 **NOTE!** Toggling `ENABLE_POD_ENI` from `true` to `false` will not detach the Trunk ENI from an instance. To delete/detach the Trunk ENI from an instance, you need to recycle the instance.
-
----
 
 #### `POD_SECURITY_GROUP_ENFORCING_MODE` (v1.11.0+)
 
@@ -510,19 +501,17 @@ Valid Values: `strict`, `standard`
 
 Once `ENABLE_POD_ENI` is set to `true`, this value controls how the traffic of pods with the security group behaves.
 
-  * `strict` mode: all inbound/outbound traffic from pod with security group will be enforced by security group rules. This is the **default** mode if POD_SECURITY_GROUP_ENFORCING_MODE is not set.
+* `strict` mode: all inbound/outbound traffic from pod with security group will be enforced by security group rules. This is the **default** mode if POD_SECURITY_GROUP_ENFORCING_MODE is not set.
 
-  * `standard` mode: the traffic of pod with security group behaves same as pods without a security group, except that each pod occupies a dedicated branch ENI.
-    * inbound traffic to pod with security group from another host will be enforced by security group rules.
-    * outbound traffic from pod with security group to another host in the same VPC will be enforced by security group rules.
-    * inbound/outbound traffic from another pod on the same host or another service on the same host(such as kubelet/nodeLocalDNS) won't be enforced by security group rules.
-    *  outbound traffic from pod with security group to IP address outside VPC
-        * if externalSNAT enabled, traffic won't be SNATed, thus will be enforced by security group rules.
-        * if externalSNAT disabled, traffic will be SNATed via eth0, thus will only be enforced by the security group associated with eth0.
+* `standard` mode: the traffic of pod with security group behaves same as pods without a security group, except that each pod occupies a dedicated branch ENI.
+  * inbound traffic to pod with security group from another host will be enforced by security group rules.
+  * outbound traffic from pod with security group to another host in the same VPC will be enforced by security group rules.
+  * inbound/outbound traffic from another pod on the same host or another service on the same host(such as kubelet/nodeLocalDNS) won't be enforced by security group rules.
+  * outbound traffic from pod with security group to IP address outside VPC
+    * if externalSNAT enabled, traffic won't be SNATed, thus will be enforced by security group rules.
+    * if externalSNAT disabled, traffic will be SNATed via eth0, thus will only be enforced by the security group associated with eth0.
 
 **NOTE!**: To make new behavior be in effect after switching the mode, existing pods with security group must be recycled. Alternatively, you can restart the nodes as well.
-
----
 
 #### `DISABLE_TCP_EARLY_DEMUX` (v1.7.3+)
 
@@ -542,25 +531,21 @@ You can use the below command to enable `DISABLE_TCP_EARLY_DEMUX` to `true` -
 kubectl patch daemonset aws-node -n kube-system -p '{"spec": {"template": {"spec": {"initContainers": [{"env":[{"name":"DISABLE_TCP_EARLY_DEMUX","value":"true"}],"name":"aws-vpc-cni-init"}]}}}}'
 ```
 
----
-
 #### `ENABLE_PREFIX_DELEGATION` (v1.9.0+)
 
 Type: Boolean as a String
 
 Default: `false`
 
-To enable prefix delegation on nitro instances. Setting `ENABLE_PREFIX_DELEGATION` to `true` will start allocating a prefix (/28 for IPv4 
+To enable prefix delegation on nitro instances. Setting `ENABLE_PREFIX_DELEGATION` to `true` will start allocating a prefix (/28 for IPv4
 and /80 for IPv6) instead of a secondary IP in the ENIs subnet. The total number of prefixes and private IP addresses will be less than the
 limit on private IPs allowed by your instance. Setting or resetting of `ENABLE_PREFIX_DELEGATION` while pods are running or if ENIs are attached is supported and the new pods allocated will get IPs based on the mode of IPAMD but the max pods of kubelet should be updated which would need either kubelet restart or node recycle.
 
-Setting ENABLE_PREFIX_DELEGATION to true will not increase the density of branch ENI pods. The limit on the number of branch network interfaces per instance type will remain the same - https://docs.aws.amazon.com/eks/latest/userguide/security-groups-for-pods.html#supported-instance-types. Each branch network will be allocated a primary IP and this IP will be allocated for the branch ENI pods.
+Setting ENABLE_PREFIX_DELEGATION to true will not increase the density of branch ENI pods. The limit on the number of [branch network interfaces per instance type will remain the same.](https://docs.aws.amazon.com/eks/latest/userguide/security-groups-for-pods.html#supported-instance-types) Each branch network will be allocated a primary IP and this IP will be allocated for the branch ENI pods.
 
 Please refer to [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information around using Prefix delegation with Custom Networking and Security Groups Per Pod features.
 
 **Note:** `ENABLE_PREFIX_DELEGATION` needs to be set to `true` when VPC CNI is configured to operate in IPv6 mode (supported in v1.10.0+). Prefix Delegation in IPv4 and IPv6 modes is supported on Nitro based Bare Metal instances as well from v1.11+. If you're using Prefix Delegation feature on Bare Metal instances, downgrading to an earlier version of VPC CNI from v1.11+ will be disruptive and not supported.
-
----
 
 #### `WARM_PREFIX_TARGET` (v1.9.0+)
 
@@ -571,8 +556,6 @@ Default: None
 Specifies the number of free IPv4(/28) prefixes that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting to a non-positive value is same as setting this to 0 or not setting the variable.
 This environment variable works when `ENABLE_PREFIX_DELEGATION` is set to `true` and is overridden when `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are configured.
 
----
-
 #### `DISABLE_NETWORK_RESOURCE_PROVISIONING` (v1.9.1+)
 
 Type: Boolean as a String
@@ -581,17 +564,13 @@ Default: `false`
 
 Setting `DISABLE_NETWORK_RESOURCE_PROVISIONING` to `true` will make IPAMD depend only on IMDS to get attached ENIs and IPs/prefixes.
 
----
-
 #### `ENABLE_BANDWIDTH_PLUGIN` (v1.10.0+)
 
 Type: Boolean as a String
 
 Default: `false`
 
-Setting `ENABLE_BANDWIDTH_PLUGIN` to `true` will update `10-aws.conflist` to include upstream [bandwidth plugin](https://www.cni.dev/plugins/current/meta/bandwidth/) as a chained plugin. 
-
----
+Setting `ENABLE_BANDWIDTH_PLUGIN` to `true` will update `10-aws.conflist` to include upstream [bandwidth plugin](https://www.cni.dev/plugins/current/meta/bandwidth/) as a chained plugin.
 
 #### `ANNOTATE_POD_IP` (v1.9.3+)
 
@@ -619,7 +598,6 @@ EOF
 ```
 kubectl apply -f <(cat <(kubectl get clusterrole aws-node -o yaml) append.yaml)
 ```
----
 
 #### `ENABLE_IPv4` (v1.10.0+)
 
@@ -631,21 +609,17 @@ VPC CNI can operate in either IPv4 or IPv6 mode. Setting `ENABLE_IPv4` to `true`
 
 **Note:** Dual-stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as an invalid configuration.
 
----
-
 #### `ENABLE_IPv6` (v1.10.0+)
 
 Type: Boolean as a String
 
 Default: `false`
 
-VPC CNI can operate in either IPv4 or IPv6 mode. Setting `ENABLE_IPv6` to `true` (both under `aws-node` and `aws-vpc-cni-init` containers in the manifest) 
-will configure it in IPv6 mode. IPv6 is only supported in Prefix Delegation mode, so `ENABLE_PREFIX_DELEGATION` needs to be set to `true` if VPC CNI is 
-configured to operate in IPv6 mode. Prefix delegation is only supported on nitro instances. 
+VPC CNI can operate in either IPv4 or IPv6 mode. Setting `ENABLE_IPv6` to `true` (both under `aws-node` and `aws-vpc-cni-init` containers in the manifest)
+will configure it in IPv6 mode. IPv6 is only supported in Prefix Delegation mode, so `ENABLE_PREFIX_DELEGATION` needs to be set to `true` if VPC CNI is
+configured to operate in IPv6 mode. Prefix delegation is only supported on nitro instances.
 
 **Note:** Please make sure that the required IPv6 IAM policy is applied (Refer to [IAM Policy](https://github.com/aws/amazon-vpc-cni-k8s#iam-policy) section above). Dual stack mode isn't yet supported. So, enabling both IPv4 and IPv6 will be treated as invalid configuration. Please refer to the [VPC CNI Feature Matrix](https://github.com/aws/amazon-vpc-cni-k8s#vpc-cni-feature-matrix) section below for additional information.
-
----
 
 #### `ENABLE_NFTABLES` (introduced in v1.12.1, deprecated in v1.13.2+)
 
@@ -684,8 +658,6 @@ Default: `false`
 On IPv4 clusters, IPAMD schedules an hourly background task per node that cleans up leaked ENIs. Setting this environment variable to `true` disables that job. The primary motivation to disable this task is to decrease the amount of EC2 API calls made from each node.
 Note that disabling this task should be considered carefully, as it requires users to manually cleanup ENIs leaked in their account. See [#1223](https://github.com/aws/amazon-vpc-cni-k8s/issues/1223) for a related discussion.
 
-----
-
 #### `ENABLE_V6_EGRESS` (v1.13.0+)
 
 Type: Boolean as a String
@@ -698,8 +670,6 @@ This environment variable must be set for both the `aws-vpc-cni-init` and `aws-n
 
 Note that enabling/disabling this feature only affects whether newly created pods have an IPv6 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature. Also note that if you are using this feature in conjunction with `ENABLE_POD_ENI` (Security Groups for Pods), the security group rules will NOT be applied to egressing IPv6 traffic.
 
-----
-
 #### `IP_COOLDOWN_PERIOD` (v1.15.0+)
 
 Type: Integer as a String
@@ -710,8 +680,6 @@ Specifies the number of seconds an IP address is in cooldown after pod deletion.
 
 **Note:** 0 is a supported value, however it is highly discouraged.
 **Note:** Higher cooldown periods may lead to a higher number of EC2 API calls as IPs are in cooldown cache.
-
-----
 
 #### `DISABLE_POD_V6` (v1.15.0+)
 
@@ -726,12 +694,13 @@ Note that if you set this while using Multus, you must ensure that any chained p
 
 ### VPC CNI Feature Matrix
 
-IP Mode | Secondary IP Mode | Prefix Delegation | Security Groups Per Pod | WARM & MIN IP/Prefix Targets | External SNAT
------- | ------ | ------ | ------ | ------ | ------
-`IPv4` |   Yes|   Yes |   Yes |  Yes |   Yes |   Yes
-`IPv6` |   No |   Yes |   No |   No  |   No  | No
 
-### ENI tags related to Allocation
+| IP Mode | Secondary IP Mode | Prefix Delegation | Security Groups Per Pod | WARM & MIN IP/Prefix Targets | External SNAT | Network Policies |
+|---------|-------------------|-------------------|-------------------------|------------------------------|---------------|------------------|
+| `IPv4`  | Yes               | Yes               | Yes                     | Yes                          | Yes           | Yes              |
+| `IPv6`  | No                | Yes               | No                      | No                           | No            | Yes              |
+
+## ENI tags related to Allocation
 
 This plugin interacts with the following tags on ENIs:
 
@@ -764,20 +733,23 @@ value for the Kubelet's `--max-pods` configuration option. Consider also
 updating the `MAX_ENI` and `--max-pods` configuration options on this plugin
 and the kubelet respectively if you are making use of this tag.
 
-### Container Runtime
+## Container Runtime
 
 For VPC CNI >=v1.12.0, IPAMD have switched to use an on-disk file `/var/run/aws-node/ipam.json` to track IP allocations, thus became container runtime agnostic and no longer requires access to Container Runtime Interface(CRI) socket.
-   * **Note**: 
-     * Helm chart >=v1.2.0 is released with VPC CNI v1.12.0, thus no longer supports the `cri.hostPath.path`. If you need to install a VPC CNI <v1.12.0 with helm chart, a Helm chart version that <v1.2.0 should be used.
+
+* **Note**:
+  * Helm chart >=v1.2.0 is released with VPC CNI v1.12.0, thus no longer supports the `cri.hostPath.path`. If you need to install a VPC CNI <v1.12.0 with helm chart, a Helm chart version that <v1.2.0 should be used.
 
 For VPC CNI <v1.12.0, IPAMD still depends on CRI to track IP allocations using pod sandboxes information upon its starting.
+
 * By default the dockershim CRI socket was mounted but can be customized to use other CRI:
-    * The mountPath should be changed to `/var/run/cri.sock` and hostPath should be pointed to CRI used by kubelet, such as `/var/run/containerd/containerd.sock` for containerd.
-    * With Helm chart <v1.2.0, the flag `--set cri.hostPath.path=/var/run/containerd/containerd.sock` can set above for you.
+  * The mountPath should be changed to `/var/run/cri.sock` and hostPath should be pointed to CRI used by kubelet, such as `/var/run/containerd/containerd.sock` for containerd.
+  * With Helm chart <v1.2.0, the flag `--set cri.hostPath.path=/var/run/containerd/containerd.sock` can set above for you.
 * **Note**:
-    * When using a different container runtime instead of the default dockershim in VPC CNI, make sure kubelet is also configured to use the same CRI.
-    * If you want to enable containerd runtime with the support provided by Amazon AMI, please follow the instructions in our documentation, [Enable the containerd runtime bootstrap flag](https://docs.aws.amazon.com/eks/latest/userguide/eks-optimized-ami.html#containerd-bootstrap)
-### Notes
+  * When using a different container runtime instead of the default dockershim in VPC CNI, make sure kubelet is also configured to use the same CRI.
+  * If you want to enable containerd runtime with the support provided by Amazon AMI, please follow the instructions in our documentation, [Enable the containerd runtime bootstrap flag](https://docs.aws.amazon.com/eks/latest/userguide/eks-optimized-ami.html#containerd-bootstrap)
+
+## Notes
 
 `L-IPAMD`(aws-node daemonSet) running on every worker node requires access to the Kubernetes API server. If it can **not** reach
 the Kubernetes API server, ipamd will exit and CNI will not be able to get any IP address for Pods. Here is a way to confirm if
