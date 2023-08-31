@@ -277,12 +277,21 @@ type ENIMetadata struct {
 	IPv6Prefixes []*ec2.Ipv6PrefixSpecification
 }
 
+type NetworkCard struct {
+	// max number of interfaces supported per card
+	MaximumNetworkInterfaces int64
+	// the index of current card
+	NetworkCardIndex int64
+}
+
 // InstanceTypeLimits keeps track of limits for an instance type
 type InstanceTypeLimits struct {
-	ENILimit       int
-	IPv4Limit      int
-	HypervisorType string
-	IsBareMetal    bool
+	ENILimit                int
+	IPv4Limit               int
+	NetworkCards            []NetworkCard
+	HypervisorType          string
+	IsBareMetal             bool
+	DefaultNetworkCardIndex int
 }
 
 // PrimaryIPv4Address returns the primary IPv4 address of this node
@@ -1410,15 +1419,28 @@ func (cache *EC2InstanceMetadataCache) FetchInstanceTypeLimits() error {
 	instanceType := aws.StringValue(info.InstanceType)
 	eniLimit := int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
 	ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
-	hypervisorType := aws.StringValue(info.Hypervisor)
 	isBareMetalInstance := aws.BoolValue(info.BareMetal)
+	hypervisorType := aws.StringValue(info.Hypervisor)
+	if hypervisorType == "" {
+		hypervisorType = "unknown"
+	}
+	networkCards := make([]NetworkCard, aws.Int64Value(info.NetworkInfo.MaximumNetworkCards))
+	defaultNetworkCardIndex := int(aws.Int64Value(info.NetworkInfo.DefaultNetworkCardIndex))
+	for idx := 0; idx < len(networkCards); idx += 1 {
+		networkCards[idx] = NetworkCard{
+			MaximumNetworkInterfaces: *info.NetworkInfo.NetworkCards[idx].MaximumNetworkInterfaces,
+			NetworkCardIndex:         *info.NetworkInfo.NetworkCards[idx].NetworkCardIndex,
+		}
+	}
 	//Not checking for empty hypervisorType since have seen certain instances not getting this filled.
 	if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
 		eniLimits = InstanceTypeLimits{
-			ENILimit:       eniLimit,
-			IPv4Limit:      ipv4Limit,
-			HypervisorType: hypervisorType,
-			IsBareMetal:    isBareMetalInstance,
+			ENILimit:                eniLimit,
+			IPv4Limit:               ipv4Limit,
+			NetworkCards:            networkCards,
+			DefaultNetworkCardIndex: defaultNetworkCardIndex,
+			HypervisorType:          hypervisorType,
+			IsBareMetal:             isBareMetalInstance,
 		}
 
 		InstanceNetworkingLimits[instanceType] = eniLimits
