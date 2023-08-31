@@ -522,7 +522,7 @@ spec:
           - mountPath: /var/run/aws-node
             name: run-dir
       volumes:
-      - name: bpf-pin-path 
+      - name: bpf-pin-path
         hostPath:
           path: /sys/fs/bpf
       - name: cni-bin-dir
