@@ -268,6 +268,21 @@ metadata:
     k8s-app: aws-node
     app.kubernetes.io/version: "v1.15.0"
 ---
+# Source: aws-vpc-cni/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amazon-vpc-cni
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: aws-node
+    app.kubernetes.io/instance: aws-vpc-cni
+    k8s-app: aws-node
+    app.kubernetes.io/version: "v1.15.0"
+data:
+  enable-windows-ipam: "false"
+  enable-network-policy-controller: "false"
+---
 # Source: aws-vpc-cni/templates/clusterrole.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -507,7 +522,7 @@ spec:
           - mountPath: /var/run/aws-node
             name: run-dir
       volumes:
-      - name: bpf-pin-path 
+      - name: bpf-pin-path
         hostPath:
           path: /sys/fs/bpf
       - name: cni-bin-dir
