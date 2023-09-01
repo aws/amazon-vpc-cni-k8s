@@ -55,8 +55,8 @@ jobs:
           RUN_CNI_INTEGRATION_TESTS: false
           RUN_KOPS_TEST: true
           RUN_TESTER_LB_ADDONS: true
-          K8S_VERSION: 1.26.5
-          KOPS_VERSION: v1.26.4
+          K8S_VERSION: 1.28.0
+          KOPS_VERSION: v1.28.0-alpha.2
         run: |
           ./scripts/run-integration-tests.sh
         if: always()
