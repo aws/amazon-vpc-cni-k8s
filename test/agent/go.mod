@@ -3,7 +3,7 @@ module github.com/aws/amazon-vpc-cni-k8s/test/agent
 go 1.20
 
 require (
-	github.com/coreos/go-iptables v0.6.0
+	github.com/coreos/go-iptables v0.7.0
 	github.com/vishvananda/netlink v1.1.0
 	golang.org/x/sys v0.9.0
 )
