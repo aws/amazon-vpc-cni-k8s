@@ -24,7 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 )
@@ -89,7 +89,7 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 	var kubeletExtraArgs = fmt.Sprintf("--node-labels=%s=%s", properties.NgLabelKey, properties.NgLabelVal)
 
 	if properties.IsCustomNetworkingEnabled {
-		limit := awsutils.InstanceNetworkingLimits[properties.InstanceType]
+		limit, _ := vpc.GetInstance(properties.InstanceType)
 		maxPods := (limit.ENILimit-1)*(limit.IPv4Limit-1) + 2
 
 		bootstrapArgs += " --use-max-pods false"

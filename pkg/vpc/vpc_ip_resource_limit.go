@@ -31,11 +31,11 @@
 // - us-east-2
 // - us-west-1
 // - us-west-2
-package awsutils
+package vpc
 
 // InstanceNetworkingLimits contains a mapping from instance type to networking limits for the type. Documentation found at
 // https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI
-var InstanceNetworkingLimits = map[string]InstanceTypeLimits{
+var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 	"a1.2xlarge":	   {
 		ENILimit: 4, 
 		IPv4Limit: 15, 
