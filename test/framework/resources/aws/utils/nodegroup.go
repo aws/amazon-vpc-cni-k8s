@@ -15,7 +15,7 @@ package utils
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 
@@ -73,7 +73,7 @@ type AWSAuthMapRole struct {
 // Create self managed node group stack
 func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties NodeGroupProperties) error {
 	templatePath := utils.GetProjectRoot() + CreateNodeGroupCFNTemplate
-	templateBytes, err := ioutil.ReadFile(templatePath)
+	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		return fmt.Errorf("failed to read from %s, %v", templatePath, err)
 	}

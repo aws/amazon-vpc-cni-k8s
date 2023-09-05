@@ -15,8 +15,8 @@ package ipamd
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -79,7 +79,7 @@ var _ = Describe("test aws-node pod event", func() {
 			masterPolicyName = "masters." + *aws.String(f.Options.ClusterName)
 			nodePolicyName = "nodes." + *aws.String(f.Options.ClusterName)
 			dummyPolicyDocumentPath := utils.GetProjectRoot() + DummyPolicyDocument
-			dummyRolePolicyBytes, err := ioutil.ReadFile(dummyPolicyDocumentPath)
+			dummyRolePolicyBytes, err := os.ReadFile(dummyPolicyDocumentPath)
 			Expect(err).ToNot(HaveOccurred())
 
 			dummyRolePolicyData := string(dummyRolePolicyBytes)
