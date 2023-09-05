@@ -128,6 +128,8 @@ spec:
             - --enable-ipv6={{ .Values.nodeAgent.enableIpv6 }}
             - --enable-network-policy={{ .Values.enableNetworkPolicy }}
             - --enable-cloudwatch-logs={{ .Values.nodeAgent.enableCloudWatchLogs }}
+            - --metrics-bind-addr={{ include "aws-vpc-cni.nodeAgentMetricsBindAddr" . }}
+            - --health-probe-bind-addr={{ include "aws-vpc-cni.nodeAgentHealthProbeBindAddr" . }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:

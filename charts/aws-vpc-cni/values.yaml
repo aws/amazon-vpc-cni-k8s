@@ -41,6 +41,8 @@ nodeAgent:
     privileged: true
   enableCloudWatchLogs: "false"
   enableIpv6: "false"
+  metricsBindAddr: "8162"
+  healthProbeBindAddr: "8163"
 
 image:
   tag: v1.15.0

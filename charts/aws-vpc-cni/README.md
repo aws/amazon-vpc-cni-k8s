@@ -70,6 +70,8 @@ The following table lists the configurable parameters for this chart and their d
 | `nodeAgent.image.pullPolicy` | Container pull policy                              | `IfNotPresent`                      |
 | `nodeAgent.securityContext`  | Node Agent container Security context              | `capabilities: add: - "NET_ADMIN" privileged: true`  |
 | `nodeAgent.enableCloudWatchLogs`  | Enable CW logging for Node Agent              | `false`                             |
+| `nodeAgent.metricsBindAddr` | Node Agent port for metrics                         | `8162`                              |
+| `nodeAgent.healthProbeBindAddr` | Node Agent port for health probes               | `8163`                              |
 | `nodeAgent.enableIpv6`  | Enable IPv6 support for Node Agent                      | `false`                             |
 | `extraVolumes`          | Array to add extra volumes                              | `[]`                                |
 | `extraVolumeMounts`     | Array to add extra mount                                | `[]`                                |
