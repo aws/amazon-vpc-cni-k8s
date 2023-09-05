@@ -41,7 +41,7 @@ The following table lists the configurable parameters for this chart and their d
 | `eniConfig.subnets.securityGroups`  | The IDs of the security groups which will be used in the ENIConfig | `nil`        |
 | `env`                   | List of environment variables. See [here](https://github.com/aws/amazon-vpc-cni-k8s#cni-configuration-variables) for options | (see `values.yaml`) |
 | `enableWindowsIpam`     | Enable windows support for your cluster                  | `false`                            |
-| `enableNetworkPolicy`   | Enable Network Policy Controller and Agent for your cluster | `false`                          |
+| `enableNetworkPolicy`   | Enable Network Policy Controller and Agent for your cluster | `false`                         |
 | `fullnameOverride`      | Override the fullname of the chart                      | `aws-node`                          |
 | `image.tag`             | Image tag                                               | `v1.14.0`                           |
 | `image.domain`          | ECR repository domain                                   | `amazonaws.com`                     |
@@ -65,12 +65,14 @@ The following table lists the configurable parameters for this chart and their d
 | `nodeAgent.image.tag`   | Image tag for Node Agent                                | `v1.0.1`                            |
 | `nodeAgent.image.domain`| ECR repository domain                                   | `amazonaws.com`                     |
 | `nodeAgent.image.region`| ECR repository region to use. Should match your cluster | `us-west-2`                         |
-| `nodeAgent.image.endpoint`   | ECR repository endpoint to use.                         | `ecr`                               |
-| `nodeAgent.image.account`    | ECR repository account number                           | `602401143452`                      |
+| `nodeAgent.image.endpoint`   | ECR repository endpoint to use.                    | `ecr`                               |
+| `nodeAgent.image.account`    | ECR repository account number                      | `602401143452`                      |
 | `nodeAgent.image.pullPolicy` | Container pull policy                              | `IfNotPresent`                      |
 | `nodeAgent.securityContext`  | Node Agent container Security context              | `capabilities: add: - "NET_ADMIN" privileged: true`  |
 | `nodeAgent.enableCloudWatchLogs`  | Enable CW logging for Node Agent              | `false`                             |
-| `nodeAgent.enableIpv6`
+| `nodeAgent.metricsBindAddr` | Node Agent port for metrics                         | `8162`                              |
+| `nodeAgent.healthProbeBindAddr` | Node Agent port for health probes               | `8163`                              |
+| `nodeAgent.enableIpv6`  | Enable IPv6 support for Node Agent                      | `false`                             |
 | `extraVolumes`          | Array to add extra volumes                              | `[]`                                |
 | `extraVolumeMounts`     | Array to add extra mount                                | `[]`                                |
 | `nodeSelector`          | Node labels for pod assignment                          | `{}`                                |

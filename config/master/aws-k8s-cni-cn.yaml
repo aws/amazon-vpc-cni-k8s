@@ -504,6 +504,8 @@ spec:
             - --enable-ipv6=false
             - --enable-network-policy=false
             - --enable-cloudwatch-logs=false
+            - --metrics-bind-addr=:8162
+            - --health-probe-bind-addr=:8163
           resources:
             requests:
               cpu: 25m
