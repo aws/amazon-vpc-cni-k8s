@@ -205,22 +205,3 @@ var _ = AfterSuite(func() {
 	}
 	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred())
 })
-
-func TerminateInstances(f *framework.Framework) {
-	By("getting the list of nodes created")
-	nodeList, err := f.K8sResourceManagers.NodeManager().
-		GetNodes(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal)
-	Expect(err).ToNot(HaveOccurred())
-
-	var instanceIDs []string
-	for _, node := range nodeList.Items {
-		instanceIDs = append(instanceIDs, k8sUtils.GetInstanceIDFromNode(node))
-	}
-
-	By("terminating all the nodes")
-	err = f.CloudServices.EC2().TerminateInstance(instanceIDs)
-	Expect(err).ToNot(HaveOccurred())
-
-	By("waiting for nodes to be recycled")
-	time.Sleep(time.Second * 300)
-}
