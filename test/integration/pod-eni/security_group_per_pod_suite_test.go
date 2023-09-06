@@ -14,8 +14,7 @@
 package pod_eni
 
 import (
-	"net/url"
-	"path"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -24,7 +23,7 @@ import (
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/vpc"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -35,26 +34,22 @@ const AmazonEKSVPCResourceControllerARN = "arn:aws:iam::aws:policy/AmazonEKSVPCR
 var (
 	f   *framework.Framework
 	err error
-	// Key pair used for creating new self managed node group
-	keyPairName = "pod-eni-test"
 	// Security Group that will be used to to create Security Group Policy
 	securityGroupId string
 	// Ports that will be opened on the Security Group used for testing
 	openPort = 80
-	// Size of the Auto Scaling Group used for testing Security Group For Pods
-	asgSize = 3
-	// Nitro Based instance type only
-	instanceType = "c5.xlarge"
+	// Port than metrics server listens on
+	metricsPort = 8080
 	// Maximum number of Branch Interface created across all the self managed nodes
 	totalBranchInterface int
-	// Self managed node group
-	nodeGroupProperties awsUtils.NodeGroupProperties
 	// Cluster Role name derived from cluster Role ARN, used to attach VPC Controller Policy
 	clusterRoleName string
-	// NodeSecurityGroupId for Node-Node communication
-	nodeSecurityGroupID string
+	// Cluster security group ID for node to node communication
+	clusterSGID string
 
-	node v1.Node
+	targetNode corev1.Node
+	// Number of nodes in cluster
+	numNodes int
 )
 
 func TestSecurityGroupForPods(t *testing.T) {
@@ -65,10 +60,6 @@ func TestSecurityGroupForPods(t *testing.T) {
 var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
 
-	By("creating ec2 key-pair for the new node group")
-	_, err := f.CloudServices.EC2().CreateKey(keyPairName)
-	Expect(err).ToNot(HaveOccurred())
-
 	By("creating a new security group used in Security Group Policy")
 	securityGroupOutput, err := f.CloudServices.EC2().CreateSecurityGroup("pod-eni-automation",
 		"test created by vpc cni automation test suite", f.Options.AWSVPCID)
@@ -76,14 +67,8 @@ var _ = BeforeSuite(func() {
 	securityGroupId = *securityGroupOutput.GroupId
 
 	By("authorizing egress and ingress on security group for client-server communication")
-	f.CloudServices.EC2().
-		AuthorizeSecurityGroupEgress(securityGroupId, "TCP", openPort, openPort, "0.0.0.0/0")
-	f.CloudServices.EC2().
-		AuthorizeSecurityGroupIngress(securityGroupId, "TCP", openPort, openPort, "0.0.0.0/0")
-
-	By("getting the cluster VPC Config")
-	clusterVPCConfig, err := awsUtils.GetClusterVPCConfig(f)
-	Expect(err).ToNot(HaveOccurred())
+	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(securityGroupId, "TCP", openPort, openPort, "0.0.0.0/0")
+	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "TCP", openPort, openPort, "0.0.0.0/0")
 
 	By("getting the cluster role name")
 	describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
@@ -95,69 +80,38 @@ var _ = BeforeSuite(func() {
 		AttachRolePolicy(AmazonEKSVPCResourceControllerARN, clusterRoleName)
 	Expect(err).ToNot(HaveOccurred())
 
-	nodeGroupProperties = awsUtils.NodeGroupProperties{
-		NgLabelKey:       "node-type",
-		NgLabelVal:       "pod-eni-node",
-		AsgSize:          asgSize,
-		NodeGroupName:    "pod-eni-node",
-		Subnet:           clusterVPCConfig.PublicSubnetList,
-		InstanceType:     instanceType,
-		KeyPairName:      keyPairName,
-		ContainerRuntime: f.Options.ContainerRuntime,
-	}
-
-	if f.Options.InstanceType == "arm64" {
-		// override instanceType for arm64
-		instanceType = "m6g.large"
-		nodeGroupProperties.InstanceType = instanceType
-		nodeGroupProperties.NodeImageId = "ami-087fca294139386b6"
-	}
-
-	totalBranchInterface = vpc.Limits[instanceType].BranchInterface * asgSize
-
-	By("creating a new self managed node group")
-	err = awsUtils.CreateAndWaitTillSelfManagedNGReady(f, nodeGroupProperties)
+	By("getting branch ENI limits")
+	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	Expect(err).ToNot(HaveOccurred())
+	numNodes = len(nodeList.Items)
+	Expect(numNodes).Should(BeNumerically(">", 1))
 
-	By("Get Reference to any node from the self managed node group")
-	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(nodeGroupProperties.NgLabelKey,
-		nodeGroupProperties.NgLabelVal)
-	Expect(err).ToNot(HaveOccurred())
-	Expect(len(nodeList.Items)).Should(BeNumerically(">", 0))
+	node := nodeList.Items[0]
+	instanceID := k8sUtils.GetInstanceIDFromNode(node)
+	nodeInstance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
+	instanceType := *nodeInstance.InstanceType
+	totalBranchInterface = vpc.Limits[instanceType].BranchInterface * numNodes
 
-	// Get ref to any node from newly created nodegroup
-	By("Getting providerID of the node")
-	node = nodeList.Items[0]
-	providerID := node.Spec.ProviderID
-	Expect(len(providerID)).To(BeNumerically(">", 0))
-
-	By("Get InstanceID from the node")
-	awsUrl, err := url.Parse(providerID)
+	By("Getting Cluster Security Group ID")
+	clusterRes, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
 	Expect(err).NotTo(HaveOccurred())
-
-	instanceID := path.Base(awsUrl.Path)
-	Expect(len(instanceID)).To(BeNumerically(">", 0))
-
-	By("Fetching Node Security GroupId")
-	instance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
-	Expect(err).NotTo(HaveOccurred())
-
-	networkInterface := instance.NetworkInterfaces[0]
-	securityGroups := networkInterface.Groups
-	nodeSecurityGroupPrefix := nodeGroupProperties.NgLabelVal + "-NodeSecurityGroup"
-	for _, group := range securityGroups {
-		if strings.HasPrefix(*group.GroupName, nodeSecurityGroupPrefix) {
-			nodeSecurityGroupID = *group.GroupId
-			break
-		}
-	}
-	Expect(len(nodeSecurityGroupID)).To(BeNumerically(">", 0))
+	clusterSGID = *(clusterRes.Cluster.ResourcesVpcConfig.ClusterSecurityGroupId)
+	fmt.Fprintf(GinkgoWriter, "cluster security group is %s\n", clusterSGID)
 
 	By("enabling pod eni on aws-node DaemonSet")
 	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
 		utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
 			"ENABLE_POD_ENI": "true",
 		})
+
+	By("terminating instances")
+	err = awsUtils.TerminateInstances(f, f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
+	Expect(err).ToNot(HaveOccurred())
+
+	By("getting target node")
+	nodeList, err = f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
+	Expect(err).ToNot(HaveOccurred())
+	targetNode = nodeList.Items[0]
 })
 
 var _ = AfterSuite(func() {
@@ -167,12 +121,8 @@ var _ = AfterSuite(func() {
 			"ENABLE_POD_ENI": {},
 		})
 
-	By("deleting the key-pair used to create nodegroup")
-	err = f.CloudServices.EC2().DeleteKey(keyPairName)
-	Expect(err).ToNot(HaveOccurred())
-
-	By("deleting the self managed node group")
-	err = awsUtils.DeleteAndWaitTillSelfManagedNGStackDeleted(f, nodeGroupProperties)
+	By("terminating instances")
+	err := awsUtils.TerminateInstances(f, f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("deleting the security group")
@@ -180,7 +130,6 @@ var _ = AfterSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	By("detaching the AmazonEKSVPCResourceController policy from the cluster role")
-	err = f.CloudServices.IAM().
-		DetachRolePolicy(AmazonEKSVPCResourceControllerARN, clusterRoleName)
+	err = f.CloudServices.IAM().DetachRolePolicy(AmazonEKSVPCResourceControllerARN, clusterRoleName)
 	Expect(err).ToNot(HaveOccurred())
 })
