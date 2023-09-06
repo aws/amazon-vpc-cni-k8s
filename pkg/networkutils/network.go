@@ -87,6 +87,12 @@ const (
 	// Defaults to empty.
 	envExcludeSNATCIDRs = "AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS"
 
+	// This environment is used to specify a comma-separated list of IPv4 CIDRs to include in SNAT. No iptables rules will
+	// be written for each item. If an item is not an ipv4 range it will be skipped.
+	// Defaults to empty
+
+	envIncludeSNATCIDRs = "AWS_VPC_K8S_CNI_INCLUDE_SNAT_CIDRS"
+
 	// This environment is used to specify a comma-separated list of IPv4 CIDRs that require routing lookup in
 	// main routing table. An IP rule is created for each CIDR.
 	envExternalServiceCIDRs = "AWS_EXTERNAL_SERVICE_CIDRS"
@@ -155,6 +161,7 @@ type NetworkAPIs interface {
 	UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v4Enabled bool, v6Enabled bool) error
 	UseExternalSNAT() bool
 	GetExcludeSNATCIDRs() []string
+	GetIncludeSNATCIDRs() []string
 	GetExternalServiceCIDRs() []string
 	GetRuleList() ([]netlink.Rule, error)
 	GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error)
@@ -167,6 +174,7 @@ type linuxNetwork struct {
 	useExternalSNAT        bool
 	ipv6EgressEnabled      bool
 	excludeSNATCIDRs       []string
+	includeSNATCIDRs       []string
 	externalServiceCIDRs   []string
 	typeOfSNAT             snatType
 	nodePortSupportEnabled bool
@@ -194,6 +202,7 @@ func New() NetworkAPIs {
 		useExternalSNAT:        useExternalSNAT(),
 		ipv6EgressEnabled:      ipV6EgressEnabled(),
 		excludeSNATCIDRs:       parseCIDRString(envExcludeSNATCIDRs),
+		includeSNATCIDRs:       parseCIDRString(envIncludeSNATCIDRs),
 		externalServiceCIDRs:   parseCIDRString(envExternalServiceCIDRs),
 		typeOfSNAT:             typeOfSNAT(),
 		nodePortSupportEnabled: nodePortSupportEnabled(),
@@ -418,9 +427,13 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 		isExclusion bool
 	}
 	var allCIDRs []snatCIDR
+	includeCIDRs := sets.NewString(n.includeSNATCIDRs...)
+
 	for _, cidr := range vpcCIDRs {
-		log.Debugf("Adding %s CIDR to NAT chain", cidr)
-		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
+		if !includeCIDRs.Has(cidr) {
+			log.Debugf("Adding %s CIDR to NAT chain", cidr)
+			allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
+		}
 	}
 	for _, cidr := range n.excludeSNATCIDRs {
 		log.Debugf("Adding %s Excluded CIDR to NAT chain", cidr)
@@ -550,6 +563,7 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 	allCIDRs = append(allCIDRs, vpcCIDRs...)
 	allCIDRs = append(allCIDRs, n.excludeSNATCIDRs...)
 	excludeCIDRs := sets.NewString(n.excludeSNATCIDRs...)
+	includeCIDRs := sets.NewString(n.includeSNATCIDRs...)
 
 	log.Debugf("Total CIDRs to exempt from connmark rules - %d", len(allCIDRs))
 	var chains []string
@@ -587,6 +601,9 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 		}})
 
 	for i, cidr := range allCIDRs {
+		if includeCIDRs.Has(cidr) {
+			continue
+		}
 		curChain := chains[i]
 		curName := fmt.Sprintf("[%d] AWS-SNAT-CHAIN", i)
 		nextChain := chains[i+1]
@@ -799,6 +816,7 @@ func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
 		envConnmark:             getConnmark(),
 		envExcludeSNATCIDRs:     parseCIDRString(envExcludeSNATCIDRs),
+		envIncludeSNATCIDRs:     parseCIDRString(envIncludeSNATCIDRs),
 		envExternalSNAT:         useExternalSNAT(),
 		envExternalServiceCIDRs: parseCIDRString(envExternalServiceCIDRs),
 		envMTU:                  GetEthernetMTU(""),
@@ -834,6 +852,15 @@ func (n *linuxNetwork) GetExcludeSNATCIDRs() []string {
 		return nil
 	}
 	return parseCIDRString(envExcludeSNATCIDRs)
+}
+
+// GetIncludeSNATCIDRs returns a list of CIDRs that should be included in SNAT if UseExternalSNAT is false,
+// otherwise it returns an empty list.
+func (n *linuxNetwork) GetIncludeSNATCIDRs() []string {
+	if useExternalSNAT() {
+		return nil
+	}
+	return parseCIDRString(envIncludeSNATCIDRs)
 }
 
 // GetExternalServiceCIDRs return a list of CIDRs that should always be routed to via main routing table.
@@ -1223,4 +1250,13 @@ func getVethPrefixName() string {
 		return envVal
 	}
 	return envVethPrefixDefault
+}
+
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }

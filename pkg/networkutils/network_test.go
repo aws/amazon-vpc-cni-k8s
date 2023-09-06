@@ -403,6 +403,55 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 		}, mockIptables.(*mock_iptables.MockIptables).DataplaneState)
 }
 
+func TestSetupHostNetworkWithIncludeSNATCIDRs(t *testing.T) {
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{
+		useExternalSNAT:        false,
+		ipv6EgressEnabled:      false,
+		includeSNATCIDRs:       []string{"10.12.0.0/16", "10.13.0.0/16"},
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
+
+		netLink: mockNetLink,
+		ns:      mockNS,
+		newIptables: func(iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+			return mockIptables, nil
+		},
+	}
+	setupNetLinkMocks(ctrl, mockNetLink)
+
+	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16", "10.12.0.0/16", "10.13.0.0/16"}
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	assert.NoError(t, err)
+	assert.Equal(t,
+		map[string]map[string][][]string{
+			"nat": {
+				"AWS-SNAT-CHAIN-0":     [][]string{{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-1"}},
+				"AWS-SNAT-CHAIN-1":     [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2"}},
+				"AWS-SNAT-CHAIN-2":     [][]string{{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
+				"POSTROUTING":          [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}},
+				"AWS-CONNMARK-CHAIN-0": [][]string{{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-1"}},
+				"AWS-CONNMARK-CHAIN-1": [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-2"}},
+				"AWS-CONNMARK-CHAIN-4": [][]string{{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"}},
+				"PREROUTING": [][]string{
+					{"-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0"},
+					{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+				},
+			},
+			"mangle": {
+				"PREROUTING": [][]string{
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "lo", "-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in", "-j", "CONNMARK", "--set-mark", "0x80/0x80"},
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+				},
+			},
+		}, mockIptables.(*mock_iptables.MockIptables).DataplaneState)
+}
+
 func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
