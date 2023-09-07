@@ -297,8 +297,8 @@ func GetClusterVPCConfig(f *framework.Framework) (*ClusterVPCConfig, error) {
 	return clusterConfig, nil
 }
 
-func TerminateInstances(f *framework.Framework, ngLabelKey string, ngLabelVal string) error {
-	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(ngLabelKey, ngLabelVal)
+func TerminateInstances(f *framework.Framework) error {
+	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	if err != nil {
 		return fmt.Errorf("failed to get list of nodes created: %v", err)
 	}
@@ -314,6 +314,6 @@ func TerminateInstances(f *framework.Framework, ngLabelKey string, ngLabelVal st
 	}
 
 	// Wait for instances to be replaced
-	time.Sleep(time.Second * 450)
+	time.Sleep(time.Minute * 8)
 	return nil
 }
