@@ -5,7 +5,7 @@ metadata:
   name: {{ include "aws-vpc-cni.fullname" . }}
   labels:
 {{ include "aws-vpc-cni.labels" . | indent 4 }}
-data:
+binaryData:
   10-aws.conflist: {{ .Values.cniConfig.fileContents | b64enc }}
 {{- end -}}
 ---
