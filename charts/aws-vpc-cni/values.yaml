@@ -25,7 +25,7 @@ init:
 
 nodeAgent:
   image:
-    tag: v1.0.1
+    tag: v1.0.2
     domain: amazonaws.com
     region: us-west-2
     endpoint: ecr

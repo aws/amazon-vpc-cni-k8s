@@ -9,6 +9,10 @@
 * Improvement - [Update instance limits for upcoming vpc-cni release](https://github.com/aws/amazon-vpc-cni-k8s/pull/2506) (@jchen6585 )
 * Improvement - [Upgrade controller-runtime to v0.15.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2481) (@jdn5126 )
 
+## v1.14.1
+
+* Improvement - [Update aws-eks-nodeagent image version to v1.0.2](https://github.com/aws/aws-network-policy-agent/pull/51) (@jayanthvn)
+
 ## v1.14.0
 
 * Feature - `v1.14.0` introduces Kubernetes Network Policy support. This is accomplished via the `aws-eks-nodeagent` container, which is now present in the `aws-node` pod.
