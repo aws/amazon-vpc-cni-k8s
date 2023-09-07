@@ -493,7 +493,7 @@ spec:
           - mountPath: /run/xtables.lock
             name: xtables-lock
         - name: aws-eks-nodeagent
-          image: "961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/amazon/aws-network-policy-agent:v1.0.1"
+          image: "961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/amazon/aws-network-policy-agent:v1.0.2"
           env:
             - name: MY_NODE_NAME
               valueFrom:
