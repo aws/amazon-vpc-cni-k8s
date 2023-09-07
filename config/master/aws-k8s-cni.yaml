@@ -266,7 +266,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.14.0"
+    app.kubernetes.io/version: "v1.14.1"
 ---
 # Source: aws-vpc-cni/templates/configmap.yaml
 apiVersion: v1
@@ -278,7 +278,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.14.0"
+    app.kubernetes.io/version: "v1.14.1"
 data:
   enable-windows-ipam: "false"
   enable-network-policy-controller: "false"
@@ -292,7 +292,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.14.0"
+    app.kubernetes.io/version: "v1.14.1"
 rules:
   - apiGroups:
       - crd.k8s.amazonaws.com
@@ -333,7 +333,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.14.0"
+    app.kubernetes.io/version: "v1.14.1"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -353,7 +353,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.14.0"
+    app.kubernetes.io/version: "v1.14.1"
 spec:
   updateStrategy:
     rollingUpdate:
@@ -374,7 +374,7 @@ spec:
       hostNetwork: true
       initContainers:
       - name: aws-vpc-cni-init
-        image: "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init:v1.14.0"
+        image: "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init:v1.14.1"
         env:
           - name: DISABLE_TCP_EARLY_DEMUX
             value: "false"
@@ -395,7 +395,7 @@ spec:
         {}
       containers:
         - name: aws-node
-          image: "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:v1.14.0"
+          image: "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni:v1.14.1"
           ports:
             - containerPort: 61678
               name: metrics
@@ -488,7 +488,7 @@ spec:
           - mountPath: /run/xtables.lock
             name: xtables-lock
         - name: aws-eks-nodeagent
-          image: "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon/aws-network-policy-agent:v1.0.1"
+          image: "602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon/aws-network-policy-agent:v1.0.2"
           env:
             - name: MY_NODE_NAME
               valueFrom:
