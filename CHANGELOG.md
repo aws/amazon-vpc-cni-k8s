@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.14.1
+
+* Improvement - [Update aws-eks-nodeagent image version to v1.0.2](https://github.com/aws/aws-network-policy-agent/pull/51) (@jayanthvn)
+
 ## v1.14.0
 
 * Feature - Starting Amazon VPC CNI v1.14, there will be 2 containers in the aws-node pods for supporting Kubernetes Network Policy.
