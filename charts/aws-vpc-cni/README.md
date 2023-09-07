@@ -43,7 +43,7 @@ The following table lists the configurable parameters for this chart and their d
 | `enableWindowsIpam`     | Enable windows support for your cluster                  | `false`                            |
 | `enableNetworkPolicy`   | Enable Network Policy Controller and Agent for your cluster | `false`                         |
 | `fullnameOverride`      | Override the fullname of the chart                      | `aws-node`                          |
-| `image.tag`             | Image tag                                               | `v1.14.0`                           |
+| `image.tag`             | Image tag                                               | `v1.14.1`                           |
 | `image.domain`          | ECR repository domain                                   | `amazonaws.com`                     |
 | `image.region`          | ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `image.endpoint`        | ECR repository endpoint to use.                         | `ecr`                               |
@@ -51,7 +51,7 @@ The following table lists the configurable parameters for this chart and their d
 | `image.pullPolicy`      | Container pull policy                                   | `IfNotPresent`                      |
 | `image.override`        | A custom docker image to use                            | `nil`                               |
 | `imagePullSecrets`      | Docker registry pull secret                             | `[]`                                |
-| `init.image.tag`        | Image tag                                               | `v1.14.0`                           |
+| `init.image.tag`        | Image tag                                               | `v1.14.1`                           |
 | `init.image.domain`     | ECR repository domain                                   | `amazonaws.com`                     |
 | `init.image.region`     | ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `init.image.endpoint`   | ECR repository endpoint to use.                         | `ecr`                               |
@@ -62,7 +62,7 @@ The following table lists the configurable parameters for this chart and their d
 | `init.securityContext`  | Init container Security context                         | `privileged: true`                  |
 | `originalMatchLabels`   | Use the original daemonset matchLabels                  | `false`                             |
 | `nameOverride`          | Override the name of the chart                          | `aws-node`                          |
-| `nodeAgent.image.tag`   | Image tag for Node Agent                                | `v1.0.1`                            |
+| `nodeAgent.image.tag`   | Image tag for Node Agent                                | `v1.0.2`                            |
 | `nodeAgent.image.domain`| ECR repository domain                                   | `amazonaws.com`                     |
 | `nodeAgent.image.region`| ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `nodeAgent.image.endpoint`   | ECR repository endpoint to use.                    | `ecr`                               |
