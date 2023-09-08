@@ -96,7 +96,7 @@ For a detailed explanation, see [`WARM_ENI_TARGET`, `WARM_IP_TARGET` and `MINIMU
 
 ## Privileged mode
 
-VPC CNI makes use of privileged mode (`privileged: true`) in the manifest only for its init container. This elevated privilege is required to set the networking kernel parameters.
+VPC CNI makes use of privileged mode (`privileged: true`) in the manifest for its `aws-vpc-cni-init` and `aws-eks-nodeagent` containers. `aws-vpc-cni-init` container requires elevated privilege to set the networking kernel parameters while `aws-eks-nodeagent` container requires these privileges for attaching BPF probes to enforce network policy
 
 ## Network Policies
 
