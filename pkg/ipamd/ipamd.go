@@ -679,8 +679,6 @@ func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
 	if c.shouldRemoveExtraENIs() {
 		c.tryFreeENI()
 	}
-	// Prometheus Metric
-	c.dataStore.GetENIUtilization()
 }
 
 // decreaseDatastorePool runs every `interval` and attempts to return unused ENIs and IPs

@@ -124,13 +124,13 @@ var (
 	)
 	noAvailableIPAddrs = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "awscni_err_no_avail_addrs",
+			Name: "awscni_no_available_ip_addresses",
 			Help: "The number of pod IP assignments that fail due to no available IP addresses",
 		},
 	)
 	eniIPsInUse = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "awscni_eni_util",
+			Name: "awscni_assigned_ip_per_eni",
 			Help: "The number of allocated ips partitioned by eni",
 		},
 		[]string{"eni"},
@@ -538,7 +538,6 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, 
 		DeviceNumber:       deviceNumber,
 		AvailableIPv4Cidrs: make(map[string]*CidrInfo)}
 
-	ds.GetENIUtilization()
 	enis.Set(float64(len(ds.eniPool)))
 	// Initialize ENI IPs In Use to 0 when an ENI is created
 	eniIPsInUse.WithLabelValues(eniID).Set(0)
@@ -823,7 +822,6 @@ func (ds *DataStore) assignPodIPAddressUnsafe(addr *AddressInfo, ipamKey IPAMKey
 	addr.IPAMMetadata = ipamMetadata
 	addr.AssignedTime = assignedTime
 
-	ds.log.Debugf("IP allocation request")
 	ds.assigned++
 	// Prometheus gauge
 	assignedIPs.Set(float64(ds.assigned))
@@ -840,7 +838,6 @@ func (ds *DataStore) unassignPodIPAddressUnsafe(addr *AddressInfo) {
 	addr.IPAMKey = IPAMKey{} // unassign the addr
 	addr.IPAMMetadata = IPAMMetadata{}
 	ds.assigned--
-	ds.log.Debugf("IP deallocation request")
 	// Prometheus gauge
 	assignedIPs.Set(float64(ds.assigned))
 }
@@ -892,24 +889,6 @@ func (ds *DataStore) GetIPStats(addressFamily string) *DataStoreStats {
 		}
 	}
 	return stats
-}
-
-// GetENIUtilization updates a Prometheus gauge vector with each ENIs id and how many ip addresses are assigned on it
-func (ds *DataStore) GetENIUtilization() {
-	//eniUtilization.Reset()
-	for _, eni := range ds.eniPool {
-		count := 0
-		for _, assignedAddr := range eni.AvailableIPv4Cidrs {
-			for _, addr := range assignedAddr.IPAddresses {
-				if addr.Assigned() {
-					count += 1
-				}
-			}
-		}
-		utilization := count
-		eniID := eni.ID
-		eniUtilization.WithLabelValues(eniID).Set(float64(utilization))
-	}
 }
 
 // GetTrunkENI returns the trunk ENI ID or an empty string
