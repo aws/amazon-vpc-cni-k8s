@@ -13,6 +13,7 @@ import (
 
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	rcscheme "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -86,7 +87,7 @@ func StartKubeClientCache(cache cache.Cache) {
 
 // CreateKubeClient creates a k8s client
 func CreateKubeClient(appName string) (client.Client, error) {
-	restCfg, err := getRestConfig(appName)
+	restCfg, err := getRestConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -122,9 +123,9 @@ func CreateKubeClient(appName string) (client.Client, error) {
 	return k8sClient, nil
 }
 
-func GetKubeClientSet(appName string) (kubernetes.Interface, error) {
+func GetKubeClientSet() (kubernetes.Interface, error) {
 	// creates the in-cluster config
-	config, err := getRestConfig(appName)
+	config, err := getRestConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -137,8 +138,8 @@ func GetKubeClientSet(appName string) (kubernetes.Interface, error) {
 	return clientSet, nil
 }
 
-func CheckAPIServerConnectivity(appName string) error {
-	restCfg, err := getRestConfig(appName)
+func CheckAPIServerConnectivity() error {
+	restCfg, err := getRestConfig()
 	if err != nil {
 		return err
 	}
@@ -166,12 +167,12 @@ func CheckAPIServerConnectivity(appName string) error {
 	})
 }
 
-func getRestConfig(appName string) (*rest.Config, error) {
+func getRestConfig() (*rest.Config, error) {
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
 		return nil, err
 	}
-	restCfg.UserAgent = appName
+	restCfg.UserAgent = os.Args[0] + "-" + utils.GetEnv("VPC_CNI_VERSION", "")
 	if endpoint, ok := os.LookupEnv("CLUSTER_ENDPOINT"); ok {
 		restCfg.Host = endpoint
 	}

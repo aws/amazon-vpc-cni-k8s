@@ -105,7 +105,7 @@ func main() {
 
 	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, LogLevel %s, metricUpdateInterval %d", options.submitCW, logConfig.LogLevel, metricUpdateInterval)
 
-	clientSet, err := k8sapi.GetKubeClientSet(appName)
+	clientSet, err := k8sapi.GetKubeClientSet()
 	if err != nil {
 		log.Fatalf("Error Fetching Kubernetes Client: %s", err)
 		os.Exit(1)

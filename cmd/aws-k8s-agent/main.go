@@ -40,7 +40,7 @@ func _main() int {
 	version.RegisterMetric()
 
 	// Check API Server Connectivity
-	if err := k8sapi.CheckAPIServerConnectivity(appName); err != nil {
+	if err := k8sapi.CheckAPIServerConnectivity(); err != nil {
 		log.Errorf("Failed to check API server connectivity: %s", err)
 		return 1
 	}

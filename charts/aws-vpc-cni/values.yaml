@@ -78,6 +78,7 @@ env:
   DISABLE_NETWORK_RESOURCE_PROVISIONING: "false"
   ENABLE_IPv4: "true"
   ENABLE_IPv6: "false"
+  VPC_CNI_VERSION: "v1.15.0"
 
 # this flag enables you to use the match label that was present in the original daemonset deployed by EKS
 # You can then annotate and label the original aws-node resources and 'adopt' them into a helm release
