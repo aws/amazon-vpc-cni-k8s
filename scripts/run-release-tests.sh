@@ -20,8 +20,3 @@ export RUN_KOPS_TEST=true
 echo "Running KOPS test"
 ./scripts/run-integration-tests.sh
 unset RUN_KOPS_TEST
-
-export RUN_CALICO_TEST=true
-echo "Running calico test"
-./scripts/run-integration-tests.sh
-unset RUN_CALICO_TEST

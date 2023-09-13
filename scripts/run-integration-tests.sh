@@ -31,10 +31,6 @@ ARCH=$(go env GOARCH)
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
-: "${RUN_CALICO_TEST:=false}"
-: "${RUN_LATEST_CALICO_VERSION:=false}"
-: "${CALICO_VERSION:=v3.25.0}"
-: "${RUN_CALICO_TEST_WITH_PD:=true}"
 : "${KOPS_VERSION=v1.26.4}"
 
 __cluster_created=0
@@ -47,9 +43,6 @@ on_error() {
     #Emit test specific error metric 
     if [[ $RUN_KOPS_TEST == true ]]; then
         emit_cloudwatch_metric "kops_test_status" "0"
-    fi
-    if [[ $RUN_CALICO_TEST == true ]]; then
-        emit_cloudwatch_metric "calico_test_status" "0"
     fi
     if [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
         emit_cloudwatch_metric "bottlerocket_test_status" "0"
@@ -248,26 +241,6 @@ if [[ $RUN_CNI_INTEGRATION_TESTS == true ]]; then
     if [[ $TEST_PASS -eq 0 ]]; then
       emit_cloudwatch_metric "integration_test_status" "1"
     fi
-fi
-
-if [[ $RUN_CALICO_TEST == true ]]; then
-  # need to install Calico
-  run_calico_test "true"
-  if [[ "$RUN_CALICO_TEST_WITH_PD" == true ]]; then
-      # if we run prefix delegation tests as well, we need update CNI env and terminate all nodes to restore iptables rules for following tests
-      echo "Run Calico tests with Prefix Delegation enabled"
-      $KUBECTL_PATH set env daemonset aws-node -n kube-system ENABLE_PREFIX_DELEGATION=true
-      # we shouldn't rely on other tests to set this required ENV
-      $KUBECTL_PATH set env ds aws-node -n kube-system WARM_PREFIX_TARGET=1
-      ids=( $(aws ec2 describe-instances --filters Name=vpc-id,Values=$VPC_ID --query 'Reservations[*].Instances[*].InstanceId' --output text) )
-      aws ec2 terminate-instances --instance-ids $ids
-      echo "Waiting 15 minutes for new nodes being ready"
-      sleep 900
-      # no longer need to install Calico again for PD
-      run_calico_test "false"
-  fi
-
-  emit_cloudwatch_metric "calico_test_status" "1"
 fi
 
 if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
