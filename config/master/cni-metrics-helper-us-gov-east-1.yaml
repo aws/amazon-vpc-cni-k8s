@@ -66,5 +66,5 @@ spec:
         - name: USE_CLOUDWATCH
           value: "true"
         name: cni-metrics-helper
-        image: "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/cni-metrics-helper:v1.14.0"
+        image: "151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/cni-metrics-helper:v1.15.0"
       serviceAccountName: cni-metrics-helper
