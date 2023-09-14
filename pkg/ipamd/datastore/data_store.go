@@ -124,13 +124,13 @@ var (
 	)
 	noAvailableIPAddrs = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "awscni_err_no_avail_addrs",
+			Name: "awscni_no_available_ip_addresses",
 			Help: "The number of pod IP assignments that fail due to no available IP addresses",
 		},
 	)
 	eniIPsInUse = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "awscni_eni_util",
+			Name: "awscni_assigned_ip_per_eni",
 			Help: "The number of allocated ips partitioned by eni",
 		},
 		[]string{"eni"},
