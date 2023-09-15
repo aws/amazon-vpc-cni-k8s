@@ -61,7 +61,6 @@ func New(options Options) *Framework {
 	clientgoscheme.AddToScheme(k8sSchema)
 	eniconfigscheme.AddToScheme(k8sSchema)
 	sgpscheme.AddToScheme(k8sSchema)
-	rcscheme.AddToScheme(k8sSchema)
 
 	cache, err := k8sapi.CreateKubeClientCache(config, k8sSchema, nil)
 	if err != nil {
@@ -84,6 +83,9 @@ func New(options Options) *Framework {
 	// Start cache and wait for initial sync
 	k8sapi.StartKubeClientCache(cache)
 
+	// The cache will start a WATCH for all GVKs in the scheme. CNINode objects should not
+	// be cached, so their GVK is added only for the client.
+	rcscheme.AddToScheme(k8sSchema)
 	k8sClient, err := client.New(config, client.Options{
 		Cache: &client.CacheOptions{
 			Reader: cache,
