@@ -459,6 +459,8 @@ spec:
               value: "false"
             - name: ENABLE_PREFIX_DELEGATION
               value: "false"
+            - name: VPC_CNI_VERSION
+              value: "v1.15.0"
             - name: WARM_ENI_TARGET
               value: "1"
             - name: WARM_PREFIX_TARGET

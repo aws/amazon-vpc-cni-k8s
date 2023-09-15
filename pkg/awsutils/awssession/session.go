@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/aws/request"
@@ -31,13 +32,13 @@ import (
 
 // Http client timeout env for sessions
 const (
-	httpTimeoutEnv = "HTTP_TIMEOUT"
-	maxRetries     = 10
+	httpTimeoutEnv   = "HTTP_TIMEOUT"
+	maxRetries       = 10
+	envVpcCniVersion = "VPC_CNI_VERSION"
 )
 
 var (
-	version string
-	log     = logger.Get()
+	log = logger.Get()
 	// HTTP timeout default value in seconds (10 seconds)
 	httpTimeoutValue = 10 * time.Second
 )
@@ -89,6 +90,7 @@ func New() *session.Session {
 
 // injectUserAgent will inject app specific user-agent into awsSDK
 func injectUserAgent(handlers *request.Handlers) {
+	version := utils.GetEnv(envVpcCniVersion, "")
 	handlers.Build.PushFrontNamed(request.NamedHandler{
 		Name: fmt.Sprintf("%s/user-agent", "amazon-vpc-cni-k8s"),
 		Fn: request.MakeAddToUserAgentHandler(
