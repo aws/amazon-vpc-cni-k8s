@@ -572,6 +572,8 @@ Default: `false`
 
 Setting `ENABLE_BANDWIDTH_PLUGIN` to `true` will update `10-aws.conflist` to include upstream [bandwidth plugin](https://www.cni.dev/plugins/current/meta/bandwidth/) as a chained plugin.
 
+NOTE: Network Policy is supported from CNI version v1.14.0 onwards. We use TC(traffic classifier) system to enforce network policy for the pods ingress and egress traffic. If the bandwidth plugin and network policy is enabled and the network policy enforced pods have "ingress-bandwidth" and "egress-bandwidth" configured then network policy enforcement will fail since bandwidth plugin uses TC which will collide with aws-eks-nodeagent TC configuration. We will provide updates [here](https://github.com/aws/aws-network-policy-agent/issues/68)
+
 #### `ANNOTATE_POD_IP` (v1.9.3+)
 
 Type: Boolean as a String
