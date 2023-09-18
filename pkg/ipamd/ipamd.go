@@ -547,23 +547,30 @@ func (c *IPAMContext) nodeInit() error {
 		}, 30*time.Second)
 	}
 
-	node, err := k8sapi.GetNode(ctx, c.k8sClient)
-	if err != nil {
-		log.Errorf("Failed to get node", err)
-		podENIErrInc("nodeInit")
-		return err
-	}
-
-	eniConfigName, err := eniconfig.GetNodeSpecificENIConfigName(node)
-	if err == nil && c.useCustomNetworking && eniConfigName != "default" {
-		// Add the feature name to CNINode of this node
-		err := c.AddFeatureToCNINode(ctx, rcv1alpha1.CustomNetworking, eniConfigName)
+	if c.useCustomNetworking {
+		// When custom networking is enabled and a valid ENIConfig is found, IPAMD patches the CNINode
+		// resource for this instance. The operation is safe as enabling/disabling custom networking
+		// requires terminating the previous instance.
+		node, err := k8sapi.GetNode(ctx, c.k8sClient)
 		if err != nil {
-			log.Errorf("Failed to add feature custom networking into CNINode", err)
+			log.Errorf("Failed to get node", err)
 			podENIErrInc("nodeInit")
 			return err
 		}
-		log.Infof("Enabled feature %s in CNINode for node %s if not existing", rcv1alpha1.CustomNetworking, c.myNodeName)
+
+		eniConfigName, err := eniconfig.GetNodeSpecificENIConfigName(node)
+		if err == nil && eniConfigName != "default" {
+			// Add the feature name to CNINode of this node
+			err := c.AddFeatureToCNINode(ctx, rcv1alpha1.CustomNetworking, eniConfigName)
+			if err != nil {
+				log.Errorf("Failed to add feature custom networking into CNINode", err)
+				podENIErrInc("nodeInit")
+				return err
+			}
+			log.Infof("Enabled feature %s in CNINode for node %s if not existing", rcv1alpha1.CustomNetworking, c.myNodeName)
+		} else {
+			log.Errorf("No ENIConfig could be found for this node", err)
+		}
 	}
 
 	if c.enablePodENI {
