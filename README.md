@@ -670,7 +670,17 @@ Specifies whether PODs in an IPv4 cluster support IPv6 egress. If env is set to 
 
 This environment variable must be set for both the `aws-vpc-cni-init` and `aws-node` containers in order for this feature to work properly. This feature also requires that the node has an IPv6 address assigned to its primary ENI, as this address is used for SNAT to IPv6 endpoints outside of the cluster. If the configuration prerequisites are not met, the `egress-cni` plugin is not enabled and an error log is printed in the `aws-node` container.
 
-Note that enabling/disabling this feature only affects whether newly created pods have an IPv6 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature. Also note that if you are using this feature in conjunction with `ENABLE_POD_ENI` (Security Groups for Pods), the security group rules will NOT be applied to egressing IPv6 traffic.
+Note that enabling/disabling this feature only affects whether newly created pods have an IPv6 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature.
+
+#### `ENABLE_V4_EGRESS` (v1.15.1+)
+
+Type: Boolean as a String
+
+Default: `true`
+
+Specifies whether PODs in an IPv6 cluster support IPv4 egress. If env is set to `true`, range `169.254.172.0/22` is reserved for IPv4 egress. When enabled, traffic egressing an IPv6 pod destined to an IPv4 endpoint will be SNAT'ed via the node IPv4 address.
+
+Note that enabling/disabling this feature only affects whether newly created pods have an IPv4 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature.
 
 #### `IP_COOLDOWN_PERIOD` (v1.15.0+)
 
