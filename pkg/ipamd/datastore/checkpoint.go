@@ -2,7 +2,6 @@ package datastore
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 )
@@ -78,7 +77,7 @@ func NewJSONFile(path string) *JSONFile {
 
 // Checkpoint implements the Checkpointer interface
 func (c *JSONFile) Checkpoint(data interface{}) error {
-	f, err := ioutil.TempFile(filepath.Dir(c.path), filepath.Base(c.path)+".tmp*")
+	f, err := os.CreateTemp(filepath.Dir(c.path), filepath.Base(c.path)+".tmp*")
 	if err != nil {
 		return err
 	}

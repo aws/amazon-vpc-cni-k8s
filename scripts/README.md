@@ -17,11 +17,10 @@ This README covers the prerequisites and instructions for running the scripts.
 #### Tests
 The following tests are valid to run, and setting the respective environment variable to true will run them:
 1. CNI Integration Tests - `RUN_CNI_INTEGRATION_TESTS`
-2. Calico Tests - `RUN_CALICO_TEST`
-3. Conformance Tests - `RUN_CONFORMANCE`
-4. Performance Tests - `RUN_PERFORMANCE_TESTS`
-5. KOPS Tests - `RUN_KOPS_TEST`
-6. Bottlerocket Tests - `RUN_BOTTLEROCKET_TEST`
+2. Conformance Tests - `RUN_CONFORMANCE`
+3. Performance Tests - `RUN_PERFORMANCE_TESTS`
+4. KOPS Tests - `RUN_KOPS_TEST`
+5. Bottlerocket Tests - `RUN_BOTTLEROCKET_TEST`
 
 Example for running performance tests:
 ```

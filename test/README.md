@@ -26,9 +26,6 @@ Ginkgo Focus: [SMOKE]
 # Bottlerocket
     * set RUN_BOTTLEROCKET_TEST=true
 
-# Calico
-    * set RUN_CALICO_TEST=true
-
 ## How to Manually delete k8s tester Resources (order of deletion)
 Cloudformation - (all except cluster, vpc)
 EC2 - load balancers, key pair

@@ -50,7 +50,7 @@ type EventRecorder struct {
 }
 
 func Init(k8sClient client.Client) error {
-	clientSet, err := k8sapi.GetKubeClientSet(appName)
+	clientSet, err := k8sapi.GetKubeClientSet()
 	if err != nil {
 		log.Fatalf("Error Fetching Kubernetes Client: %s", err)
 		return err

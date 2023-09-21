@@ -18,7 +18,7 @@ init:
 
 nodeAgent:
   image:
-    tag: v1.0.1
+    tag: v1.0.2
     region: us-west-2
     pullPolicy: Always
     # Set to use custom image

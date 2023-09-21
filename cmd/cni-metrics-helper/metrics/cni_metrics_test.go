@@ -37,7 +37,7 @@ func setup(t *testing.T) *testMocks {
 	k8sSchema := runtime.NewScheme()
 	clientgoscheme.AddToScheme(k8sSchema)
 	eniconfigscheme.AddToScheme(k8sSchema)
-	podWatcher := NewDefaultPodWatcher(testclient.NewFakeClientWithScheme(k8sSchema), testLog)
+	podWatcher := NewDefaultPodWatcher(testclient.NewClientBuilder().WithScheme(k8sSchema).WithRuntimeObjects().Build(), testLog)
 	return &testMocks{
 		clientset:     fakeClientset,
 		podWatcher:    podWatcher,

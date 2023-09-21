@@ -55,8 +55,8 @@ jobs:
           RUN_CNI_INTEGRATION_TESTS: false
           RUN_KOPS_TEST: true
           RUN_TESTER_LB_ADDONS: true
-          K8S_VERSION: 1.26.5
-          KOPS_VERSION: v1.26.4
+          K8S_VERSION: 1.28.0
+          KOPS_VERSION: v1.28.0-alpha.2
         run: |
           ./scripts/run-integration-tests.sh
         if: always()
@@ -67,18 +67,6 @@ jobs:
           ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
           RUN_CNI_INTEGRATION_TESTS: false
           RUN_BOTTLEROCKET_TEST: true
-          RUN_TESTER_LB_ADDONS: true
-        run: |
-          ./scripts/run-integration-tests.sh
-        if: always()
-      - name: Run calico tests
-        env:
-          DISABLE_PROMPT: true
-          ROLE_CREATE: false
-          ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
-          RUN_CNI_INTEGRATION_TESTS: false
-          RUN_CALICO_TEST: true
-          RUN_LATEST_CALICO_VERSION: true
           RUN_TESTER_LB_ADDONS: true
         run: |
           ./scripts/run-integration-tests.sh

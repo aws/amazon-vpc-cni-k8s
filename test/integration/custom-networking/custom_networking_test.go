@@ -18,6 +18,7 @@ import (
 	"net"
 	"strconv"
 
+	awsUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
@@ -140,7 +141,9 @@ var _ = Describe("Custom Networking Test", func() {
 		})
 
 		It("deployment should not become ready", func() {
-			TerminateInstances(f)
+			By("terminating instances")
+			err := awsUtils.TerminateInstances(f, nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Nodes should be stuck in NotReady state since no ENIs could be attached and no pod
 			// IP addresses are available.
@@ -181,7 +184,10 @@ var _ = Describe("Custom Networking Test", func() {
 		})
 
 		It("deployment should become ready", func() {
-			TerminateInstances(f)
+			By("terminating instances")
+			err := awsUtils.TerminateInstances(f, nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal)
+			Expect(err).ToNot(HaveOccurred())
+
 			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Replicas(2).
 				NodeSelector(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal).

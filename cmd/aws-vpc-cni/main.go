@@ -75,6 +75,7 @@ const (
 	defaultPluginLogLevel        = "Debug"
 	defaultEnableIPv6            = false
 	defaultEnableIPv6Egress      = false
+	defaultEnableIPv4Egress      = true
 	defaultRandomizeSNAT         = "prng"
 	awsConflistFile              = "/10-aws.conflist"
 	vpcCniInitDonePath           = "/vpc-cni-init/done"
@@ -100,6 +101,7 @@ const (
 	envEnBandwidthPlugin     = "ENABLE_BANDWIDTH_PLUGIN"
 	envEnIPv6                = "ENABLE_IPv6"
 	envEnIPv6Egress          = "ENABLE_V6_EGRESS"
+	envEnIPv4Egress          = "ENABLE_V4_EGRESS"
 	envRandomizeSNAT         = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 	envIPCooldownPeriod      = "IP_COOLDOWN_PERIOD"
 	envDisablePodV6          = "DISABLE_POD_V6"
@@ -249,7 +251,8 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 		egressIPAMSubnet = egressPluginIpamSubnetV4
 		egressIPAMDst = egressPluginIpamDstV4
 		egressIPAMDataDir = egressPluginIpamDataDirV4
-		egressEnabled = true // enable IPv4 egress by default of IPv6 cluster
+		// Enable IPv4 egress when "ENABLE_V4_EGRESS" is "true" (default)
+		egressEnabled = utils.GetBoolAsStringEnvVar(envEnIPv4Egress, defaultEnableIPv4Egress)
 		egressPluginLogFile = utils.GetEnv(envEgressV4PluginLogFile, defaultEgressV4PluginLogFile)
 		nodeIP, err = getPrimaryIP(true)
 		// Node should have a IPv4 address even in IPv6 cluster

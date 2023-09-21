@@ -4,12 +4,13 @@ set -euo pipefail
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 PLATFORM=$(uname | tr '[:upper:]' '[:lower:]')
-HELM_VERSION="3.11.0"
+HELM_VERSION="3.12.3"
 NAMESPACE="kube-system"
 
 MAKEFILEPATH=$SCRIPTPATH/../Makefile
-VERSION=$(make -s -f $MAKEFILEPATH version)
-BUILD_DIR=$SCRIPTPATH/../build/cni-rel-yamls/$VERSION
+VPC_CNI_VERSION="v1.15.0"
+NODE_AGENT_VERSION="v1.0.2"
+BUILD_DIR=$SCRIPTPATH/../build/cni-rel-yamls/$VPC_CNI_VERSION
 
 REGIONS_FILE=$SCRIPTPATH/../charts/regions.json
 CNI_RESOURCES_YAML=$BUILD_DIR/aws-k8s-cni
@@ -65,29 +66,30 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
 
     $BUILD_DIR/helm template aws-vpc-cni \
       --include-crds \
-      --set originalMatchLabels=true,\
-      --set init.image.region=$ecrRegion,\
-      --set init.image.account=$ecrAccount,\
-      --set init.image.domain=$ecrDomain,\
-      --set init.image.tag=$VERSION,\
-      --set image.tag=$VERSION,\
-      --set image.region=$ecrRegion,\
-      --set image.account=$ecrAccount,\
-      --set image.domain=$ecrDomain, \
-      --set nodeAgent.image.account=$ecrAccount, \
-      --set nodeAgent.image.region=$ecrRegion, \
-      --set nodeAgent.image.domain=$ecrDomain, \
-      --set nodeAgent.image.tag=$VERSION \
+      --set originalMatchLabels=true \
+      --set init.image.region=$ecrRegion \
+      --set-string init.image.account=$ecrAccount \
+      --set init.image.domain=$ecrDomain \
+      --set init.image.tag=$VPC_CNI_VERSION \
+      --set image.tag=$VPC_CNI_VERSION \
+      --set image.region=$ecrRegion \
+      --set-string image.account=$ecrAccount \
+      --set image.domain=$ecrDomain  \
+      --set-string nodeAgent.image.account=$ecrAccount \
+      --set nodeAgent.image.region=$ecrRegion \
+      --set nodeAgent.image.domain=$ecrDomain \
+      --set nodeAgent.image.tag=$NODE_AGENT_VERSION \
+      --set env.VPC_CNI_VERSION=$VPC_CNI_VERSION \
       --namespace $NAMESPACE \
       $SCRIPTPATH/../charts/aws-vpc-cni > $NEW_CNI_RESOURCES_YAML
     # Remove 'managed-by: Helm' annotation
     sed -i '/helm.sh\|app.kubernetes.io\/managed-by: Helm/d' $NEW_CNI_RESOURCES_YAML
 
     $BUILD_DIR/helm template cni-metrics-helper \
-      --set image.region=$ecrRegion,\
-      --set image.account=$ecrAccount,\
+      --set image.region=$ecrRegion \
+      --set-string image.account=$ecrAccount \
       --set image.domain=$ecrDomain \
-      --set image.tag=$VERSION,\
+      --set image.tag=$VPC_CNI_VERSION \
       --namespace $NAMESPACE \
       $SCRIPTPATH/../charts/cni-metrics-helper > $NEW_METRICS_RESOURCES_YAML
     # Remove 'managed-by: Helm' annotation
