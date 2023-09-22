@@ -504,11 +504,16 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
+	if c.enablePodENI {
+		// Patch CNINode with Security Groups for Pods feature regardless of CRD content.
+		c.enableSecurityGroupsForPods(ctx)
+	}
+
 	if c.enableIPv6 {
 		// We will not support upgrading/converting an existing IPv4 cluster to operate in IPv6 mode. So, we will always
-		// start with a clean slate in IPv6 mode. We also don't have to deal with dynamic update of Prefix Delegation
-		// feature in IPv6 mode as we don't support (yet) a non-PD v6 option. In addition, we don't support custom
-		// networking & SGPP in IPv6 mode yet. So, we will skip the corresponding setup. Will save us from checking
+		// start with a clean slate in IPv6 mode. We also do not have to deal with dynamic update of Prefix Delegation
+		// feature in IPv6 mode as we do not support (yet) a non-PD v6 option. In addition, we don't support custom
+		// networking in IPv6 mode yet. So, we will skip the corresponding setup. Will save us from checking
 		// if IPv6 is enabled at multiple places. Once we start supporting these features in IPv6 mode, we can do away
 		// with this check and not change anything else in the below setup.
 		return nil
@@ -571,12 +576,6 @@ func (c *IPAMContext) nodeInit() error {
 		} else {
 			log.Errorf("No ENIConfig could be found for this node", err)
 		}
-	}
-
-	if c.enablePodENI {
-		// Check if we want to add feature into CNINode for trunk interface during node init
-		// we don't check if the node already has trunk added during initialization
-		c.askForTrunkENIIfNeeded(ctx)
 	}
 
 	// On node init, check if datastore pool needs to be increased. If so, attach CIDRs from existing ENIs and attach new ENIs.
@@ -657,6 +656,7 @@ func (c *IPAMContext) updateIPStats(unmanaged int) {
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
 func (c *IPAMContext) StartNodeIPPoolManager() {
 	if c.enableIPv6 {
+		// TODO: new loop for IPv6
 		//Nothing to do in IPv6 Mode. IPv6 is only supported in Prefix delegation mode
 		//and VPC CNI will only attach one V6 Prefix.
 		return
@@ -674,10 +674,6 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 }
 
 func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
-	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
-		c.askForTrunkENIIfNeeded(ctx)
-	}
-
 	if c.isDatastorePoolTooLow() {
 		c.increaseDatastorePool(ctx)
 	} else if c.isDatastorePoolTooHigh() {
@@ -1251,17 +1247,11 @@ func (c *IPAMContext) logPoolStats(dataStoreStats *datastore.DataStoreStats) {
 	log.Debugf("%s: %s, c.maxIPsPerENI = %d", prefix, dataStoreStats, c.maxIPsPerENI)
 }
 
-func (c *IPAMContext) askForTrunkENIIfNeeded(ctx context.Context) {
-	// Check that there is room for a trunk ENI to be attached.
-	if c.dataStore.GetENIs() >= (c.maxENI - c.unmanagedENI) {
-		log.Error("No slot available for a trunk ENI to be attached.")
-		return
-	}
-
-	// We need to signal that VPC Resource Controller needs to attach a trunk ENI.
+func (c *IPAMContext) enableSecurityGroupsForPods(ctx context.Context) {
+	// Signal to the VPC Resource Controller that Security Groups for Pods is enabled
 	err := c.AddFeatureToCNINode(ctx, rcv1alpha1.SecurityGroupsForPods, "")
 	if err != nil {
-		podENIErrInc("askForTrunkENIIfNeeded")
+		podENIErrInc("enableSecurityGroupsForPods")
 		log.Errorf("Failed to add SGP feature to CNINode resource", err)
 	} else {
 		log.Infof("Successfully added feature %s to CNINode if not existing", rcv1alpha1.SecurityGroupsForPods)
@@ -2215,17 +2205,15 @@ func (c *IPAMContext) DeallocCidrs(eniID string, deletableCidrs []datastore.Cidr
 
 // getPrefixesNeeded returns the number of prefixes need to be allocated to the ENI
 func (c *IPAMContext) getPrefixesNeeded() int {
-
-	//By default allocate 1 prefix at a time
+	// By default allocate 1 prefix at a time
 	toAllocate := 1
 
-	//TODO - post GA we can evaluate to see if these two calls can be merged.
-	//datastoreTargetState already has complex math so adding Prefix target will make it
-	//even more complex.
+	// TODO - post GA we can evaluate to see if these two calls can be merged.
+	// datastoreTargetState already has complex math so adding Prefix target will make it even more complex.
 	short, _, warmIPTargetDefined := c.datastoreTargetState()
 	shortPrefixes, warmPrefixTargetDefined := c.datastorePrefixTargetState()
 
-	//WARM_IP_TARGET takes precendence over WARM_PREFIX_TARGET
+	// WARM_IP_TARGET takes precendence over WARM_PREFIX_TARGET
 	if warmIPTargetDefined {
 		toAllocate = max(toAllocate, short)
 	} else if warmPrefixTargetDefined {
@@ -2258,23 +2246,22 @@ func (c *IPAMContext) initENIAndIPLimits() (err error) {
 }
 
 func (c *IPAMContext) isConfigValid() bool {
-	//Validate that only one among v4 and v6 is enabled.
+	// Validate that only one among v4 and v6 is enabled.
 	if c.enableIPv4 && c.enableIPv6 {
-		log.Errorf("IPv4 and IPv6 are both enabled. VPC CNI currently doesn't support dual stack mode")
+		log.Errorf("IPv4 and IPv6 are both enabled. VPC CNI currently does not support dual stack mode")
 		return false
 	} else if !c.enableIPv4 && !c.enableIPv6 {
 		log.Errorf("IPv4 and IPv6 are both disabled. One of them have to be enabled")
 		return false
 	}
 
-	//Validate PD mode is enabled if VPC CNI is operating in IPv6 mode. SGPP and Custom networking are not supported in IPv6 mode.
-	if c.enableIPv6 && (c.enablePodENI || c.useCustomNetworking || !c.enablePrefixDelegation) {
-		log.Errorf("IPv6 is supported only in Prefix Delegation mode. Security Group Per Pod and " +
-			"Custom Networking are not supported in IPv6 mode. Please set the env variables accordingly.")
+	// Validate PD mode is enabled if VPC CNI is operating in IPv6 mode. Custom networking is not supported in IPv6 mode.
+	if c.enableIPv6 && (c.useCustomNetworking || !c.enablePrefixDelegation) {
+		log.Errorf("IPv6 is supported only in Prefix Delegation mode. Custom Networking is not supported in IPv6 mode. Please set the env variables accordingly.")
 		return false
 	}
 
-	//Validate Prefix Delegation against v4 and v6 modes.
+	// Validate Prefix Delegation against v4 and v6 modes.
 	if c.enablePrefixDelegation && !c.awsClient.IsPrefixDelegationSupported() {
 		if c.enableIPv6 {
 			log.Errorf("Prefix Delegation is not supported on non-nitro instance %s. IPv6 is only supported in Prefix delegation Mode. ", c.awsClient.GetInstanceType())

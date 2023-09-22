@@ -1933,7 +1933,7 @@ func TestIPAMContext_setupENIwithPDenabled(t *testing.T) {
 	assert.Equal(t, 1, len(mockContext.primaryIP))
 }
 
-func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
+func TestIPAMContext_enableSecurityGroupsForPods(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 	ctx := context.Background()
@@ -1966,10 +1966,10 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 
 	_ = mockContext.dataStore.AddENI("eni-1", 1, true, false, false)
 	// If ENABLE_POD_ENI is not set, nothing happens
-	mockContext.askForTrunkENIIfNeeded(ctx)
+	mockContext.enableSecurityGroupsForPods(ctx)
 
 	mockContext.enablePodENI = true
-	mockContext.askForTrunkENIIfNeeded(ctx)
+	mockContext.enableSecurityGroupsForPods(ctx)
 	var notUpdatedNode corev1.Node
 	NodeKey := types.NamespacedName{
 		Namespace: "",
@@ -1987,12 +1987,12 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 	contained := lo.ContainsBy(cniNode.Spec.Features, func(addedFeature rcscheme.Feature) bool {
 		return rcscheme.SecurityGroupsForPods == addedFeature.Name && addedFeature.Value == ""
 	})
-	assert.False(t, contained, "the node's CNINode shouldn't be updated for trunk when there is no room")
-	assert.Equal(t, 0, len(cniNode.Spec.Features))
+	assert.True(t, contained, "CNINode should be updated regardless of whether there is room for trunk ENI")
+	assert.Equal(t, 1, len(cniNode.Spec.Features))
 
+	// Make room for trunk ENI
 	mockContext.maxENI = 4
-	// Now there is room!
-	mockContext.askForTrunkENIIfNeeded(ctx)
+	mockContext.enableSecurityGroupsForPods(ctx)
 
 	err = mockContext.k8sClient.Get(ctx, types.NamespacedName{
 		Name: fakeNode.Name,
@@ -2002,7 +2002,7 @@ func TestIPAMContext_askForTrunkENIIfNeeded(t *testing.T) {
 	contained = lo.ContainsBy(cniNode.Spec.Features, func(addedFeature rcscheme.Feature) bool {
 		return rcscheme.SecurityGroupsForPods == addedFeature.Name && addedFeature.Value == ""
 	})
-	assert.True(t, contained, "the node's CNINode should be updated for trunk when there is some room")
+	assert.True(t, contained, "CNINode should be updated regardless of whether there is room for trunk ENI")
 	assert.Equal(t, 1, len(cniNode.Spec.Features))
 }
 
@@ -2092,7 +2092,7 @@ func TestIsConfigValid(t *testing.T) {
 				podENIEnabled:           true,
 				isNitroInstance:         true,
 			},
-			want: false,
+			want: true,
 		},
 		{
 			name: "ppsg enabled in v4 mode",
@@ -2112,7 +2112,7 @@ func TestIsConfigValid(t *testing.T) {
 			m := setup(t)
 			defer m.ctrl.Finish()
 
-			if tt.fields.prefixDelegationEnabled && !(tt.fields.podENIEnabled && tt.fields.ipV6Enabled) {
+			if tt.fields.prefixDelegationEnabled {
 				if tt.fields.isNitroInstance {
 					m.awsutils.EXPECT().IsPrefixDelegationSupported().Return(true)
 				} else {
