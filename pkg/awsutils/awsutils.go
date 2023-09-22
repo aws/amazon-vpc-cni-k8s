@@ -250,6 +250,16 @@ func (eni ENIMetadata) PrimaryIPv4Address() string {
 	return ""
 }
 
+// PrimaryIPv6Address returns the primary IPv6 address of this node
+func (eni ENIMetadata) PrimaryIPv6Address() string {
+	for _, addr := range eni.IPv6Addresses {
+		if addr.Ipv6Address != nil {
+			return aws.StringValue(addr.Ipv6Address)
+		}
+	}
+	return ""
+}
+
 // TagMap keeps track of the EC2 tags on each ENI
 type TagMap map[string]string
 
@@ -577,6 +587,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 
 	log.Debugf("Found ENI: %s, MAC %s, device %d", eniID, eniMAC, deviceNum)
 
+	// Get IPv4 and IPv6 addresses assigned to interface
 	cidr, err := cache.imds.GetSubnetIPv4CIDRBlock(ctx, eniMAC)
 	if err != nil {
 		awsAPIErrInc("GetSubnetIPv4CIDRBlock", err)
@@ -589,12 +600,35 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		return ENIMetadata{}, err
 	}
 
-	// TODO: return a simpler data structure.
 	ec2ip4s := make([]*ec2.NetworkInterfacePrivateIpAddress, len(imdsIPv4s))
 	for i, ip4 := range imdsIPv4s {
 		ec2ip4s[i] = &ec2.NetworkInterfacePrivateIpAddress{
 			Primary:          aws.Bool(i == 0),
 			PrivateIpAddress: aws.String(ip4.String()),
+		}
+	}
+
+	var ec2ip6s []*ec2.NetworkInterfaceIpv6Address
+	var subnetV6Cidr string
+	if cache.v6Enabled {
+		// For IPv6 ENIs, do not error on missing IPv6 information
+		v6cidr, err := cache.imds.GetSubnetIPv6CIDRBlocks(ctx, eniMAC)
+		if err != nil {
+			awsAPIErrInc("GetSubnetIPv6CIDRBlocks", err)
+		} else {
+			subnetV6Cidr = v6cidr.String()
+		}
+
+		imdsIPv6s, err := cache.imds.GetIPv6s(ctx, eniMAC)
+		if err != nil {
+			awsAPIErrInc("GetIPv6s", err)
+		} else {
+			ec2ip6s = make([]*ec2.NetworkInterfaceIpv6Address, len(imdsIPv6s))
+			for i, ip6 := range imdsIPv6s {
+				ec2ip6s[i] = &ec2.NetworkInterfaceIpv6Address{
+					Ipv6Address: aws.String(ip6.String()),
+				}
+			}
 		}
 	}
 
@@ -637,6 +671,8 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		SubnetIPv4CIDR: cidr.String(),
 		IPv4Addresses:  ec2ip4s,
 		IPv4Prefixes:   ec2ipv4Prefixes,
+		SubnetIPv6CIDR: subnetV6Cidr,
+		IPv6Addresses:  ec2ip6s,
 		IPv6Prefixes:   ec2ipv6Prefixes,
 	}, nil
 }

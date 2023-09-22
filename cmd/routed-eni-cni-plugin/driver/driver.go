@@ -290,6 +290,9 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(hostVethName string, contVethNam
 	oldFromHostVethRule := n.netLink.NewRule()
 	oldFromHostVethRule.IifName = hostVethName
 	oldFromHostVethRule.Priority = networkutils.VlanRulePriority
+	if v6Addr != nil {
+		oldFromHostVethRule.Family = unix.AF_INET6
+	}
 	if err := networkutils.NetLinkRuleDelAll(n.netLink, oldFromHostVethRule); err != nil {
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to delete hostVeth rule for %s", hostVethName)
 	}
@@ -328,9 +331,13 @@ func (n *linuxNetwork) TeardownBranchENIPodNetwork(containerAddr *net.IPNet, vla
 		return errors.Wrapf(err, "TeardownBranchENIPodNetwork: failed to teardown vlan")
 	}
 
+	ipFamily := unix.AF_INET
+	if containerAddr.IP.To4() == nil {
+		ipFamily = unix.AF_INET6
+	}
 	// to handle the migration between different enforcingMode, we try to clean up rules under both mode since the pod might be setup with a different mode.
 	rtTable := vlanID + 100
-	if err := n.teardownIIFBasedContainerRouteRules(rtTable, log); err != nil {
+	if err := n.teardownIIFBasedContainerRouteRules(rtTable, ipFamily, log); err != nil {
 		return errors.Wrapf(err, "TeardownBranchENIPodNetwork: unable to teardown IIF based container routes and rules")
 	}
 	if err := n.teardownIPBasedContainerRouteRules(containerAddr, rtTable, log); err != nil {
@@ -360,20 +367,29 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 		return nil, errors.Wrapf(err, "failed to find hostVeth %s", hostVethName)
 	}
 
+	// For IPv6, host veth sysctls must be set to:
+	// 1. accept_ra=0
+	// 2. accept_redirects=1
+	// 3. forwarding=0
 	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", hostVethName), "0"); err != nil {
 		if !os.IsNotExist(err) {
 			return nil, errors.Wrapf(err, "failed to disable IPv6 router advertisements")
 		}
 		log.Debugf("Ignoring '%v' writing to accept_ra: Assuming kernel lacks IPv6 support", err)
 	}
-
-	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", hostVethName), "0"); err != nil {
+	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", hostVethName), "1"); err != nil {
 		if !os.IsNotExist(err) {
 			return nil, errors.Wrapf(err, "failed to disable IPv6 ICMP redirects")
 		}
 		log.Debugf("Ignoring '%v' writing to accept_redirects: Assuming kernel lacks IPv6 support", err)
 	}
-	log.Debugf("Successfully disabled IPv6 RA and ICMP redirects on hostVeth %s", hostVethName)
+	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/forwarding", hostVethName), "0"); err != nil {
+		if !os.IsNotExist(err) {
+			return nil, errors.Wrapf(err, "failed to disable IPv6 forwarding")
+		}
+		log.Debugf("Ignoring '%v' writing to forwarding: Assuming kernel lacks IPv6 support", err)
+	}
+	log.Debugf("Successfully set IPv6 sysctls on hostVeth %s", hostVethName)
 
 	// Explicitly set the veth to UP state, because netlink doesn't always do that on all the platforms with net.FlagUp.
 	// veth won't get a link local address unless it's set to UP state.
@@ -400,12 +416,37 @@ func (n *linuxNetwork) setupVlan(vlanID int, eniMAC string, subnetGW string, par
 		return nil, errors.Wrapf(err, "failed to add vlan link %s", vlanLinkName)
 	}
 
-	// 3. bring up the vlan
+	// 3. Set IPv6 sysctls
+	//    accept_ra=0
+	//    accept_redirects=1
+	//    forwarding=0
+	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_ra", vlanLinkName), "0"); err != nil {
+		if !os.IsNotExist(err) {
+			return nil, errors.Wrapf(err, "failed to disable IPv6 router advertisements")
+		}
+		log.Debugf("Ignoring '%v' writing to accept_ra: Assuming kernel lacks IPv6 support", err)
+	}
+
+	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_redirects", vlanLinkName), "1"); err != nil {
+		if !os.IsNotExist(err) {
+			return nil, errors.Wrapf(err, "failed to enable IPv6 ICMP redirects")
+		}
+		log.Debugf("Ignoring '%v' writing to accept_redirects: Assuming kernel lacks IPv6 support", err)
+	}
+
+	if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/forwarding", vlanLinkName), "0"); err != nil {
+		if !os.IsNotExist(err) {
+			return nil, errors.Wrapf(err, "failed to disable IPv6 forwarding")
+		}
+		log.Debugf("Ignoring '%v' writing to forwarding: Assuming kernel lacks IPv6 support", err)
+	}
+
+	// 4. bring up the vlan
 	if err := n.netLink.LinkSetUp(vlanLink); err != nil {
 		return nil, errors.Wrapf(err, "failed to setUp vlan link %s", vlanLinkName)
 	}
 
-	// 4. create default routes for vlan
+	// 5. create default routes for vlan
 	routes := buildRoutesForVlan(rtTable, vlanLink.Index, net.ParseIP(subnetGW))
 	for _, r := range routes {
 		if err := n.netLink.RouteReplace(&r); err != nil {
@@ -511,6 +552,7 @@ func (n *linuxNetwork) teardownIPBasedContainerRouteRules(containerAddr *net.IPN
 // traffic to container(iif hostVlan) will be routed via the specified rtTable.
 // traffic from container(iif hostVeth) will be routed via the specified rtTable.
 func (n *linuxNetwork) setupIIFBasedContainerRouteRules(hostVeth netlink.Link, containerAddr *net.IPNet, hostVlan netlink.Link, rtTable int, log logger.Logger) error {
+	isV6 := containerAddr.IP.To4() == nil
 	route := netlink.Route{
 		LinkIndex: hostVeth.Attrs().Index,
 		Scope:     netlink.SCOPE_LINK,
@@ -528,6 +570,9 @@ func (n *linuxNetwork) setupIIFBasedContainerRouteRules(hostVeth netlink.Link, c
 	fromHostVlanRule.IifName = hostVlan.Attrs().Name
 	fromHostVlanRule.Priority = networkutils.VlanRulePriority
 	fromHostVlanRule.Table = rtTable
+	if isV6 {
+		fromHostVlanRule.Family = unix.AF_INET6
+	}
 	if err := n.netLink.RuleAdd(fromHostVlanRule); err != nil && !networkutils.IsRuleExistsError(err) {
 		return errors.Wrapf(err, "unable to setup fromHostVlan rule, hostVlan=%s, rtTable=%v", hostVlan.Attrs().Name, rtTable)
 	}
@@ -537,6 +582,9 @@ func (n *linuxNetwork) setupIIFBasedContainerRouteRules(hostVeth netlink.Link, c
 	fromHostVethRule.IifName = hostVeth.Attrs().Name
 	fromHostVethRule.Priority = networkutils.VlanRulePriority
 	fromHostVethRule.Table = rtTable
+	if isV6 {
+		fromHostVethRule.Family = unix.AF_INET6
+	}
 	if err := n.netLink.RuleAdd(fromHostVethRule); err != nil && !networkutils.IsRuleExistsError(err) {
 		return errors.Wrapf(err, "unable to setup fromHostVeth rule, hostVeth=%s, rtTable=%v", hostVeth.Attrs().Name, rtTable)
 	}
@@ -545,10 +593,11 @@ func (n *linuxNetwork) setupIIFBasedContainerRouteRules(hostVeth netlink.Link, c
 	return nil
 }
 
-func (n *linuxNetwork) teardownIIFBasedContainerRouteRules(rtTable int, log logger.Logger) error {
+func (n *linuxNetwork) teardownIIFBasedContainerRouteRules(rtTable int, family int, log logger.Logger) error {
 	rule := n.netLink.NewRule()
 	rule.Priority = networkutils.VlanRulePriority
 	rule.Table = rtTable
+	rule.Family = family
 
 	if err := networkutils.NetLinkRuleDelAll(n.netLink, rule); err != nil {
 		return errors.Wrapf(err, "failed to delete IIF based rules, rtTable=%v", rtTable)
@@ -560,17 +609,23 @@ func (n *linuxNetwork) teardownIIFBasedContainerRouteRules(rtTable int, log logg
 
 // buildRoutesForVlan builds routes required for the vlan link.
 func buildRoutesForVlan(vlanTableID int, vlanIndex int, gw net.IP) []netlink.Route {
+	maskLen := 32
+	zeroAddr := net.IPv4zero
+	if gw.To4() == nil {
+		maskLen = 128
+		zeroAddr = net.IPv6zero
+	}
 	return []netlink.Route{
 		// Add a direct link route for the pod vlan link only.
 		{
 			LinkIndex: vlanIndex,
-			Dst:       &net.IPNet{IP: gw, Mask: net.CIDRMask(32, 32)},
+			Dst:       &net.IPNet{IP: gw, Mask: net.CIDRMask(maskLen, maskLen)},
 			Scope:     netlink.SCOPE_LINK,
 			Table:     vlanTableID,
 		},
 		{
 			LinkIndex: vlanIndex,
-			Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
+			Dst:       &net.IPNet{IP: zeroAddr, Mask: net.CIDRMask(0, maskLen)},
 			Scope:     netlink.SCOPE_UNIVERSE,
 			Gw:        gw,
 			Table:     vlanTableID,

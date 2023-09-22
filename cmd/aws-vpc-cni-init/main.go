@@ -117,6 +117,10 @@ func configureIPv6Settings(procSys procsyswrapper.ProcSys, primaryIF string) err
 	// Check if IPv6 egress support is enabled in IPv4 cluster.
 	ipv6EgressEnabled := utils.GetBoolAsStringEnvVar(envEgressV6, defaultEnableIPv6Egress)
 	if enableIPv6 || ipv6EgressEnabled {
+		// For IPv6, the following sysctls are set:
+		// 1. forwarding defaults to 1
+		// 2. accept_ra defaults to 2
+		// 3. accept_redirects defaults to 1
 		entry := "net/ipv6/conf/all/forwarding"
 		err = procSys.Set(entry, "1")
 		if err != nil {
@@ -125,10 +129,33 @@ func configureIPv6Settings(procSys procsyswrapper.ProcSys, primaryIF string) err
 		val, _ := procSys.Get(entry)
 		log.Infof("Updated %s to %s", entry, val)
 
+		// accept_ra must be set to 2 so that RA routes are installed by the kernel on secondary ENIs
+		// For IPv6, this setting must be inherited by the trunk ENI. It must be set here as IPAMD does
+		// not have permission to set sysctl values.
+		entry = "net/ipv6/conf/default/accept_ra"
+		err = procSys.Set(entry, "2")
+		if err != nil {
+			return errors.Wrap(err, "Failed to set IPv6 accept Router Advertisements to 2")
+		}
+		val, _ = procSys.Get(entry)
+		log.Infof("Updated %s to %s", entry, val)
+
+		entry = "net/ipv6/conf/default/accept_redirects"
+		err = procSys.Set(entry, "1")
+		if err != nil {
+			return errors.Wrap(err, "Failed to enable IPv6 accept redirects")
+		}
+		val, _ = procSys.Get(entry)
+		log.Infof("Updated %s to %s", entry, val)
+
+		// For the primary ENI in IPv6, sysctls are set to:
+		// 1. forwarding=1
+		// 2. accept_ra=2
+		// 3. accept_redirects=1
 		entry = "net/ipv6/conf/" + primaryIF + "/accept_ra"
 		err = procSys.Set(entry, "2")
 		if err != nil {
-			return errors.Wrap(err, "Failed to enable IPv6 accept_ra")
+			return errors.Wrap(err, "Failed to enable IPv6 accept_ra on primary ENI")
 		}
 		val, _ = procSys.Get(entry)
 		log.Infof("Updated %s to %s", entry, val)

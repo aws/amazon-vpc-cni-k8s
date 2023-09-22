@@ -162,6 +162,10 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
 						value: "0",
 					},
 				},
@@ -224,6 +228,10 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
 						value: "0",
 					},
 				},
@@ -306,6 +314,10 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
 						value: "0",
 					},
 				},
@@ -508,6 +520,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 	vlanID := 7
 	eniMac := "00:00:5e:00:53:af"
 	subnetGW := "192.168.120.1"
+	subnetV6GW := "2600::"
 	parentIfIndex := 3
 
 	hostVethWithIndex9 := &netlink.Veth{
@@ -522,30 +535,61 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 		IP:   net.ParseIP("192.168.100.42"),
 		Mask: net.CIDRMask(32, 32),
 	}
+	containerV6Addr := &net.IPNet{
+		IP:   net.ParseIP("2600::2"),
+		Mask: net.CIDRMask(128, 128),
+	}
 
 	oldFromHostVethRule := netlink.NewRule()
 	oldFromHostVethRule.IifName = "eni8ea2c11fe35"
 	oldFromHostVethRule.Priority = networkutils.VlanRulePriority
+
+	oldFromHostVethV6Rule := netlink.NewRule()
+	oldFromHostVethV6Rule.IifName = "eni8ea2c11fe35"
+	oldFromHostVethV6Rule.Priority = networkutils.VlanRulePriority
+	oldFromHostVethV6Rule.Family = netlink.FAMILY_V6
 
 	fromHostVlanRule := netlink.NewRule()
 	fromHostVlanRule.IifName = vlanLinkPostAddWithIndex11.Name
 	fromHostVlanRule.Priority = networkutils.VlanRulePriority
 	fromHostVlanRule.Table = 107
 
+	fromHostVlanV6Rule := netlink.NewRule()
+	fromHostVlanV6Rule.IifName = vlanLinkPostAddWithIndex11.Name
+	fromHostVlanV6Rule.Priority = networkutils.VlanRulePriority
+	fromHostVlanV6Rule.Table = 107
+	fromHostVlanV6Rule.Family = netlink.FAMILY_V6
+
 	fromHostVethRule := netlink.NewRule()
 	fromHostVethRule.IifName = hostVethWithIndex9.Name
 	fromHostVethRule.Priority = networkutils.VlanRulePriority
 	fromHostVethRule.Table = 107
+
+	fromHostVethV6Rule := netlink.NewRule()
+	fromHostVethV6Rule.IifName = hostVethWithIndex9.Name
+	fromHostVethV6Rule.Priority = networkutils.VlanRulePriority
+	fromHostVethV6Rule.Table = 107
+	fromHostVethV6Rule.Family = netlink.FAMILY_V6
 
 	toContainerRule := netlink.NewRule()
 	toContainerRule.Dst = containerAddr
 	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
 
+	toContainerV6Rule := netlink.NewRule()
+	toContainerV6Rule.Dst = containerV6Addr
+	toContainerV6Rule.Priority = networkutils.ToContainerRulePriority
+	toContainerV6Rule.Table = unix.RT_TABLE_MAIN
+
 	fromContainerRule := netlink.NewRule()
 	fromContainerRule.Src = containerAddr
 	fromContainerRule.Priority = networkutils.FromPodRulePriority
 	fromContainerRule.Table = 107
+
+	fromContainerV6Rule := netlink.NewRule()
+	fromContainerV6Rule.Src = containerV6Addr
+	fromContainerV6Rule.Priority = networkutils.FromPodRulePriority
+	fromContainerV6Rule.Table = 107
 
 	type linkByNameCall struct {
 		linkName string
@@ -702,6 +746,22 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
 						value: "0",
 					},
 				},
@@ -715,6 +775,124 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				vlanID:             vlanID,
 				eniMAC:             eniMac,
 				subnetGW:           subnetGW,
+				parentIfIndex:      parentIfIndex,
+				mtu:                9001,
+				podSGEnforcingMode: sgpp.EnforcingModeStrict,
+			},
+		},
+		{
+			name: "successfully setup IPv6 pod network - traffic enforced with strict mode",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "eni8ea2c11fe35",
+						err:      errors.New("not exists"),
+					},
+					{
+						linkName: "eni8ea2c11fe35",
+						link:     hostVethWithIndex9,
+					},
+					{
+						linkName: "vlan.eth.7",
+						err:      errors.New("not exists"),
+					},
+				},
+				linkAddCalls: []linkAddCall{
+					{
+						link:      buildVlanLink("vlan.eth.7", vlanID, parentIfIndex, eniMac),
+						linkIndex: 11,
+					},
+				},
+				linkSetupCalls: []linkSetupCall{
+					{
+						link: hostVethWithIndex9,
+					},
+					{
+						link: vlanLinkPostAddWithIndex11,
+					},
+				},
+				routeReplaceCalls: []routeReplaceCall{
+					{
+						route: &netlink.Route{
+							LinkIndex: vlanLinkPostAddWithIndex11.Index,
+							Dst:       &net.IPNet{IP: net.ParseIP(subnetV6GW), Mask: net.CIDRMask(128, 128)},
+							Scope:     netlink.SCOPE_LINK,
+							Table:     107,
+						},
+					},
+					{
+						route: &netlink.Route{
+							LinkIndex: vlanLinkPostAddWithIndex11.Index,
+							Dst:       &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 128)},
+							Scope:     netlink.SCOPE_UNIVERSE,
+							Gw:        net.ParseIP(subnetV6GW),
+							Table:     107,
+						},
+					},
+					{
+						route: &netlink.Route{
+							LinkIndex: hostVethWithIndex9.Index,
+							Scope:     netlink.SCOPE_LINK,
+							Dst:       containerV6Addr,
+							Table:     107,
+						},
+					},
+				},
+				ruleAddCalls: []ruleAddCall{
+					{
+						rule: fromHostVlanV6Rule,
+					},
+					{
+						rule: fromHostVethV6Rule,
+					},
+				},
+				ruleDelCalls: []ruleDelCall{
+					{
+						rule: oldFromHostVethV6Rule,
+						err:  syscall.ENOENT,
+					},
+				},
+				withNetNSPathCalls: []withNetNSPathCall{
+					{
+						netNSPath: "/proc/42/ns/net",
+					},
+				},
+				procSysSetCalls: []procSysSetCall{
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
+						value: "0",
+					},
+				},
+			},
+			args: args{
+				hostVethName:       "eni8ea2c11fe35",
+				contVethName:       "eth0",
+				netnsPath:          "/proc/42/ns/net",
+				v4Addr:             nil,
+				v6Addr:             containerV6Addr,
+				vlanID:             vlanID,
+				eniMAC:             eniMac,
+				subnetGW:           subnetV6GW,
 				parentIfIndex:      parentIfIndex,
 				mtu:                9001,
 				podSGEnforcingMode: sgpp.EnforcingModeStrict,
@@ -804,6 +982,22 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
 						value: "0",
 					},
 				},
@@ -817,6 +1011,124 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				vlanID:             vlanID,
 				eniMAC:             eniMac,
 				subnetGW:           subnetGW,
+				parentIfIndex:      parentIfIndex,
+				mtu:                9001,
+				podSGEnforcingMode: sgpp.EnforcingModeStandard,
+			},
+		},
+		{
+			name: "successfully setup v6 pod network - traffic enforced with standard mode",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "eni8ea2c11fe35",
+						err:      errors.New("not exists"),
+					},
+					{
+						linkName: "eni8ea2c11fe35",
+						link:     hostVethWithIndex9,
+					},
+					{
+						linkName: "vlan.eth.7",
+						err:      errors.New("not exists"),
+					},
+				},
+				linkAddCalls: []linkAddCall{
+					{
+						link:      buildVlanLink("vlan.eth.7", vlanID, parentIfIndex, eniMac),
+						linkIndex: 11,
+					},
+				},
+				linkSetupCalls: []linkSetupCall{
+					{
+						link: hostVethWithIndex9,
+					},
+					{
+						link: vlanLinkPostAddWithIndex11,
+					},
+				},
+				routeReplaceCalls: []routeReplaceCall{
+					{
+						route: &netlink.Route{
+							LinkIndex: vlanLinkPostAddWithIndex11.Index,
+							Dst:       &net.IPNet{IP: net.ParseIP(subnetV6GW), Mask: net.CIDRMask(128, 128)},
+							Scope:     netlink.SCOPE_LINK,
+							Table:     107,
+						},
+					},
+					{
+						route: &netlink.Route{
+							LinkIndex: vlanLinkPostAddWithIndex11.Index,
+							Dst:       &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 128)},
+							Scope:     netlink.SCOPE_UNIVERSE,
+							Gw:        net.ParseIP(subnetV6GW),
+							Table:     107,
+						},
+					},
+					{
+						route: &netlink.Route{
+							LinkIndex: hostVethWithIndex9.Index,
+							Scope:     netlink.SCOPE_LINK,
+							Dst:       containerV6Addr,
+							Table:     unix.RT_TABLE_MAIN,
+						},
+					},
+				},
+				ruleAddCalls: []ruleAddCall{
+					{
+						rule: toContainerV6Rule,
+					},
+					{
+						rule: fromContainerV6Rule,
+					},
+				},
+				ruleDelCalls: []ruleDelCall{
+					{
+						rule: oldFromHostVethV6Rule,
+						err:  syscall.ENOENT,
+					},
+				},
+				withNetNSPathCalls: []withNetNSPathCall{
+					{
+						netNSPath: "/proc/42/ns/net",
+					},
+				},
+				procSysSetCalls: []procSysSetCall{
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
+						value: "0",
+					},
+				},
+			},
+			args: args{
+				hostVethName:       "eni8ea2c11fe35",
+				contVethName:       "eth0",
+				netnsPath:          "/proc/42/ns/net",
+				v4Addr:             nil,
+				v6Addr:             containerV6Addr,
+				vlanID:             vlanID,
+				eniMAC:             eniMac,
+				subnetGW:           subnetV6GW,
 				parentIfIndex:      parentIfIndex,
 				mtu:                9001,
 				podSGEnforcingMode: sgpp.EnforcingModeStandard,
@@ -889,6 +1201,10 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
 						value: "0",
 					},
 				},
@@ -954,6 +1270,10 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
 						value: "0",
 					},
 				},
@@ -1050,6 +1370,22 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
 						value: "0",
 					},
 				},
@@ -1146,6 +1482,22 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
 						value: "0",
 					},
 				},
@@ -1235,14 +1587,29 @@ func Test_linuxNetwork_TeardownBranchENIPodNetwork(t *testing.T) {
 		IP:   net.ParseIP("192.168.100.42"),
 		Mask: net.CIDRMask(32, 32),
 	}
+	containerV6Addr := &net.IPNet{
+		IP:   net.ParseIP("2600::2"),
+		Mask: net.CIDRMask(128, 128),
+	}
 
 	vlanRuleForRTTable107 := netlink.NewRule()
 	vlanRuleForRTTable107.Priority = networkutils.VlanRulePriority
 	vlanRuleForRTTable107.Table = 107
+	vlanRuleForRTTable107.Family = netlink.FAMILY_V4
+
+	vlanV6RuleForRTTable107 := netlink.NewRule()
+	vlanV6RuleForRTTable107.Priority = networkutils.VlanRulePriority
+	vlanV6RuleForRTTable107.Table = 107
+	vlanV6RuleForRTTable107.Family = netlink.FAMILY_V6
 
 	toContainerRoute := &netlink.Route{
 		Scope: netlink.SCOPE_LINK,
 		Dst:   containerAddr,
+		Table: unix.RT_TABLE_MAIN,
+	}
+	toContainerV6Route := &netlink.Route{
+		Scope: netlink.SCOPE_LINK,
+		Dst:   containerV6Addr,
 		Table: unix.RT_TABLE_MAIN,
 	}
 
@@ -1251,10 +1618,20 @@ func Test_linuxNetwork_TeardownBranchENIPodNetwork(t *testing.T) {
 	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
 
+	toContainerV6Rule := netlink.NewRule()
+	toContainerV6Rule.Dst = containerV6Addr
+	toContainerV6Rule.Priority = networkutils.ToContainerRulePriority
+	toContainerV6Rule.Table = unix.RT_TABLE_MAIN
+
 	fromContainerRule := netlink.NewRule()
 	fromContainerRule.Src = containerAddr
 	fromContainerRule.Priority = networkutils.FromPodRulePriority
 	fromContainerRule.Table = 107
+
+	fromContainerV6Rule := netlink.NewRule()
+	fromContainerV6Rule.Src = containerV6Addr
+	fromContainerV6Rule.Priority = networkutils.FromPodRulePriority
+	fromContainerV6Rule.Table = 107
 
 	type linkByNameCall struct {
 		linkName string
@@ -1339,6 +1716,53 @@ func Test_linuxNetwork_TeardownBranchENIPodNetwork(t *testing.T) {
 			},
 		},
 		{
+			name: "successfully teardown v6 pod network - pod was setup under strict mode",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "vlan.eth.7",
+						link:     &netlink.Vlan{VlanId: vlanID},
+					},
+				},
+				linkDelCalls: []linkDelCall{
+					{
+						link: &netlink.Vlan{VlanId: vlanID},
+					},
+				},
+				routeDelCalls: []routeDelCall{
+					{
+						route: toContainerV6Route,
+						err:   syscall.ESRCH,
+					},
+				},
+				ruleDelCalls: []ruleDelCall{
+					{
+						rule: vlanV6RuleForRTTable107,
+					},
+					{
+						rule: vlanV6RuleForRTTable107,
+					},
+					{
+						rule: vlanV6RuleForRTTable107,
+						err:  syscall.ENOENT,
+					},
+					{
+						rule: toContainerV6Rule,
+						err:  syscall.ENOENT,
+					},
+					{
+						rule: fromContainerV6Rule,
+						err:  syscall.ENOENT,
+					},
+				},
+			},
+			args: args{
+				containerAddr:      containerV6Addr,
+				vlanID:             vlanID,
+				podSGEnforcingMode: sgpp.EnforcingModeStrict,
+			},
+		},
+		{
 			name: "successfully teardown pod network - pod was setup under standard mode",
 			fields: fields{
 				linkByNameCalls: []linkByNameCall{
@@ -1376,6 +1800,48 @@ func Test_linuxNetwork_TeardownBranchENIPodNetwork(t *testing.T) {
 			},
 			args: args{
 				containerAddr:      containerAddr,
+				vlanID:             vlanID,
+				podSGEnforcingMode: sgpp.EnforcingModeStandard,
+			},
+		},
+		{
+			name: "successfully teardown v6 pod network - pod was setup under standard mode",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "vlan.eth.7",
+						link:     &netlink.Vlan{VlanId: vlanID},
+					},
+				},
+				linkDelCalls: []linkDelCall{
+					{
+						link: &netlink.Vlan{VlanId: vlanID},
+					},
+				},
+				routeDelCalls: []routeDelCall{
+					{
+						route: toContainerV6Route,
+					},
+				},
+				ruleDelCalls: []ruleDelCall{
+					{
+						rule: vlanV6RuleForRTTable107,
+						err:  syscall.ENOENT,
+					},
+					{
+						rule: toContainerV6Rule,
+					},
+					{
+						rule: fromContainerV6Rule,
+					},
+					{
+						rule: fromContainerV6Rule,
+						err:  syscall.ENOENT,
+					},
+				},
+			},
+			args: args{
+				containerAddr:      containerV6Addr,
 				vlanID:             vlanID,
 				podSGEnforcingMode: sgpp.EnforcingModeStandard,
 			},
@@ -2792,6 +3258,10 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
 						value: "0",
 					},
 				},
@@ -2838,6 +3308,10 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
 						value: "0",
 					},
 				},
@@ -2979,7 +3453,7 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
-						value: "0",
+						value: "1",
 						err:   errors.New("some error"),
 					},
 				},
@@ -3022,6 +3496,11 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+						err:   syscall.ENOENT,
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
 						value: "0",
 						err:   syscall.ENOENT,
 					},
@@ -3065,6 +3544,10 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 					},
 					{
 						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
 						value: "0",
 					},
 				},
@@ -3149,12 +3632,19 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 		route *netlink.Route
 		err   error
 	}
+	type procSysSetCall struct {
+		key   string
+		value string
+		err   error
+	}
+
 	type fields struct {
 		linkByNameCalls   []linkByNameCall
 		linkAddCalls      []linkAddCall
 		linkDelCalls      []linkDelCall
 		linkSetupCalls    []linkSetupCall
 		routeReplaceCalls []routeReplaceCall
+		procSysSetCalls   []procSysSetCall
 	}
 
 	type args struct {
@@ -3210,6 +3700,20 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 						},
 					},
 				},
+				procSysSetCalls: []procSysSetCall{
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
+						value: "0",
+					},
+				},
 			},
 			args: args{
 				vlanID:        vlanID,
@@ -3262,6 +3766,20 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 							Gw:        net.ParseIP("192.168.120.1"),
 							Table:     107,
 						},
+					},
+				},
+				procSysSetCalls: []procSysSetCall{
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
+						value: "0",
 					},
 				},
 			},
@@ -3345,6 +3863,20 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 						err:  errors.New("some error"),
 					},
 				},
+				procSysSetCalls: []procSysSetCall{
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
+						value: "0",
+					},
+				},
 			},
 			args: args{
 				vlanID:        vlanID,
@@ -3386,6 +3918,20 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 						err: errors.New("some error"),
 					},
 				},
+				procSysSetCalls: []procSysSetCall{
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
+						value: "0",
+					},
+				},
 			},
 			args: args{
 				vlanID:        vlanID,
@@ -3425,9 +3971,14 @@ func Test_linuxNetwork_setupVlan(t *testing.T) {
 			for _, call := range tt.fields.routeReplaceCalls {
 				netLink.EXPECT().RouteReplace(call.route).Return(call.err)
 			}
+			procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
+			for _, call := range tt.fields.procSysSetCalls {
+				procSys.EXPECT().Set(call.key, call.value).Return(call.err)
+			}
 
 			n := &linuxNetwork{
 				netLink: netLink,
+				procSys: procSys,
 			}
 			got, err := n.setupVlan(tt.args.vlanID, tt.args.eniMAC, tt.args.subnetGW, tt.args.parentIfIndex, tt.args.rtTable, testLogger)
 			if tt.wantErr != nil {
@@ -3554,16 +4105,31 @@ func Test_linuxNetwork_setupIPBasedContainerRouteRules(t *testing.T) {
 		IP:   net.ParseIP("192.168.100.42"),
 		Mask: net.CIDRMask(32, 32),
 	}
+	containerV6Addr := &net.IPNet{
+		IP:   net.ParseIP("2600::2"),
+		Mask: net.CIDRMask(128, 128),
+	}
 
 	toContainerRule := netlink.NewRule()
 	toContainerRule.Dst = containerAddr
 	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
 
+	toContainerV6Rule := netlink.NewRule()
+	toContainerV6Rule.Dst = containerV6Addr
+	toContainerV6Rule.Priority = networkutils.ToContainerRulePriority
+	toContainerV6Rule.Table = unix.RT_TABLE_MAIN
+
 	fromContainerRule := netlink.NewRule()
 	fromContainerRule.Src = containerAddr
 	fromContainerRule.Priority = networkutils.FromPodRulePriority
 	fromContainerRule.Table = 101
+
+	fromContainerV6Rule := netlink.NewRule()
+	fromContainerV6Rule.Src = containerV6Addr
+	fromContainerV6Rule.Priority = networkutils.FromPodRulePriority
+	fromContainerV6Rule.Table = 101
+
 	type routeReplaceCall struct {
 		route *netlink.Route
 		err   error
@@ -3588,7 +4154,7 @@ func Test_linuxNetwork_setupIPBasedContainerRouteRules(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "successfully setup routes and rules - without dedicated route table",
+			name: "successfully setup routes and rules - without dedicated route table - IPv4",
 			fields: fields{
 				routeReplaceCalls: []routeReplaceCall{
 					{
@@ -3613,7 +4179,32 @@ func Test_linuxNetwork_setupIPBasedContainerRouteRules(t *testing.T) {
 			},
 		},
 		{
-			name: "successfully setup routes and rules - with dedicated route table",
+			name: "successfully setup routes and rules - without dedicated route table - IPv6",
+			fields: fields{
+				routeReplaceCalls: []routeReplaceCall{
+					{
+						route: &netlink.Route{
+							LinkIndex: hostVethAttrs.Index,
+							Scope:     netlink.SCOPE_LINK,
+							Dst:       containerV6Addr,
+							Table:     unix.RT_TABLE_MAIN,
+						},
+					},
+				},
+				ruleAddCalls: []ruleAddCall{
+					{
+						rule: toContainerV6Rule,
+					},
+				},
+			},
+			args: args{
+				hostVethAttrs: hostVethAttrs,
+				containerAddr: containerV6Addr,
+				rtTable:       unix.RT_TABLE_MAIN,
+			},
+		},
+		{
+			name: "successfully setup routes and rules - with dedicated route table - IPv4",
 			fields: fields{
 				routeReplaceCalls: []routeReplaceCall{
 					{
@@ -3637,6 +4228,34 @@ func Test_linuxNetwork_setupIPBasedContainerRouteRules(t *testing.T) {
 			args: args{
 				hostVethAttrs: hostVethAttrs,
 				containerAddr: containerAddr,
+				rtTable:       101,
+			},
+		},
+		{
+			name: "successfully setup routes and rules - with dedicated route table - IPv6",
+			fields: fields{
+				routeReplaceCalls: []routeReplaceCall{
+					{
+						route: &netlink.Route{
+							LinkIndex: hostVethAttrs.Index,
+							Scope:     netlink.SCOPE_LINK,
+							Dst:       containerV6Addr,
+							Table:     unix.RT_TABLE_MAIN,
+						},
+					},
+				},
+				ruleAddCalls: []ruleAddCall{
+					{
+						rule: toContainerV6Rule,
+					},
+					{
+						rule: fromContainerV6Rule,
+					},
+				},
+			},
+			args: args{
+				hostVethAttrs: hostVethAttrs,
+				containerAddr: containerV6Addr,
 				rtTable:       101,
 			},
 		},
@@ -3813,21 +4432,42 @@ func Test_linuxNetwork_teardownIPBasedContainerRouteRules(t *testing.T) {
 		IP:   net.ParseIP("192.168.100.42"),
 		Mask: net.CIDRMask(32, 32),
 	}
+	containerV6Addr := &net.IPNet{
+		IP:   net.ParseIP("2600::2"),
+		Mask: net.CIDRMask(128, 128),
+	}
 
 	toContainerRoute := &netlink.Route{
 		Scope: netlink.SCOPE_LINK,
 		Dst:   containerAddr,
 		Table: unix.RT_TABLE_MAIN,
 	}
+	toContainerV6Route := &netlink.Route{
+		Scope: netlink.SCOPE_LINK,
+		Dst:   containerV6Addr,
+		Table: unix.RT_TABLE_MAIN,
+	}
+
 	toContainerRule := netlink.NewRule()
 	toContainerRule.Dst = containerAddr
 	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
 
+	toContainerV6Rule := netlink.NewRule()
+	toContainerV6Rule.Dst = containerV6Addr
+	toContainerV6Rule.Priority = networkutils.ToContainerRulePriority
+	toContainerV6Rule.Table = unix.RT_TABLE_MAIN
+
 	fromContainerRule := netlink.NewRule()
 	fromContainerRule.Src = containerAddr
 	fromContainerRule.Priority = networkutils.FromPodRulePriority
 	fromContainerRule.Table = 101
+
+	fromContainerV6Rule := netlink.NewRule()
+	fromContainerV6Rule.Src = containerV6Addr
+	fromContainerV6Rule.Priority = networkutils.FromPodRulePriority
+	fromContainerV6Rule.Table = 101
+
 	type routeDelCall struct {
 		route *netlink.Route
 		err   error
@@ -3852,7 +4492,7 @@ func Test_linuxNetwork_teardownIPBasedContainerRouteRules(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "successfully teardown routes and rules - without dedicated route table",
+			name: "successfully teardown routes and rules - without dedicated route table - IPv4",
 			fields: fields{
 				routeDelCalls: []routeDelCall{
 					{
@@ -3871,7 +4511,26 @@ func Test_linuxNetwork_teardownIPBasedContainerRouteRules(t *testing.T) {
 			},
 		},
 		{
-			name: "successfully teardown routes and rules - with dedicated route table",
+			name: "successfully teardown routes and rules - without dedicated route table - IPv6",
+			fields: fields{
+				routeDelCalls: []routeDelCall{
+					{
+						route: toContainerV6Route,
+					},
+				},
+				ruleDelCalls: []ruleDelCall{
+					{
+						rule: toContainerV6Rule,
+					},
+				},
+			},
+			args: args{
+				containerAddr: containerV6Addr,
+				rtTable:       unix.RT_TABLE_MAIN,
+			},
+		},
+		{
+			name: "successfully teardown routes and rules - with dedicated route table - IPv4",
 			fields: fields{
 				routeDelCalls: []routeDelCall{
 					{
@@ -3893,6 +4552,32 @@ func Test_linuxNetwork_teardownIPBasedContainerRouteRules(t *testing.T) {
 			},
 			args: args{
 				containerAddr: containerAddr,
+				rtTable:       101,
+			},
+		},
+		{
+			name: "successfully teardown routes and rules - with dedicated route table - IPv6",
+			fields: fields{
+				routeDelCalls: []routeDelCall{
+					{
+						route: toContainerV6Route,
+					},
+				},
+				ruleDelCalls: []ruleDelCall{
+					{
+						rule: toContainerV6Rule,
+					},
+					{
+						rule: fromContainerV6Rule,
+					},
+					{
+						rule: fromContainerV6Rule,
+						err:  syscall.ENOENT,
+					},
+				},
+			},
+			args: args{
+				containerAddr: containerV6Addr,
 				rtTable:       101,
 			},
 		},
@@ -4004,6 +4689,10 @@ func Test_linuxNetwork_setupIIFBasedContainerRouteRules(t *testing.T) {
 		IP:   net.ParseIP("192.168.100.42"),
 		Mask: net.CIDRMask(32, 32),
 	}
+	containerV6Addr := &net.IPNet{
+		IP:   net.ParseIP("2600::2"),
+		Mask: net.CIDRMask(128, 128),
+	}
 
 	rtTable := 101
 	fromHostVlanRule := netlink.NewRule()
@@ -4011,10 +4700,23 @@ func Test_linuxNetwork_setupIIFBasedContainerRouteRules(t *testing.T) {
 	fromHostVlanRule.Priority = networkutils.VlanRulePriority
 	fromHostVlanRule.Table = rtTable
 
+	fromHostV6VlanRule := netlink.NewRule()
+	fromHostV6VlanRule.IifName = hostVlanAttrs.Name
+	fromHostV6VlanRule.Priority = networkutils.VlanRulePriority
+	fromHostV6VlanRule.Table = rtTable
+	fromHostV6VlanRule.Family = unix.AF_INET6
+
 	fromHostVethRule := netlink.NewRule()
 	fromHostVethRule.IifName = hostVethAttrs.Name
 	fromHostVethRule.Priority = networkutils.VlanRulePriority
 	fromHostVethRule.Table = rtTable
+
+	fromHostV6VethRule := netlink.NewRule()
+	fromHostV6VethRule.IifName = hostVethAttrs.Name
+	fromHostV6VethRule.Priority = networkutils.VlanRulePriority
+	fromHostV6VethRule.Table = rtTable
+	fromHostV6VethRule.Family = unix.AF_INET6
+
 	type routeReplaceCall struct {
 		route *netlink.Route
 		err   error
@@ -4040,7 +4742,7 @@ func Test_linuxNetwork_setupIIFBasedContainerRouteRules(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "successfully setup routes and rules",
+			name: "successfully setup routes and rules - IPv4",
 			fields: fields{
 				routeReplaceCalls: []routeReplaceCall{
 					{
@@ -4064,6 +4766,35 @@ func Test_linuxNetwork_setupIIFBasedContainerRouteRules(t *testing.T) {
 			args: args{
 				hostVethAttrs: hostVethAttrs,
 				containerAddr: containerAddr,
+				hostVlanAttrs: hostVlanAttrs,
+				rtTable:       rtTable,
+			},
+		},
+		{
+			name: "successfully setup routes and rules - IPv6",
+			fields: fields{
+				routeReplaceCalls: []routeReplaceCall{
+					{
+						route: &netlink.Route{
+							LinkIndex: hostVethAttrs.Index,
+							Scope:     netlink.SCOPE_LINK,
+							Dst:       containerV6Addr,
+							Table:     rtTable,
+						},
+					},
+				},
+				ruleAddCalls: []ruleAddCall{
+					{
+						rule: fromHostV6VlanRule,
+					},
+					{
+						rule: fromHostV6VethRule,
+					},
+				},
+			},
+			args: args{
+				hostVethAttrs: hostVethAttrs,
+				containerAddr: containerV6Addr,
 				hostVlanAttrs: hostVlanAttrs,
 				rtTable:       rtTable,
 			},
@@ -4247,6 +4978,13 @@ func Test_linuxNetwork_teardownIIFBasedContainerRouteRules(t *testing.T) {
 	vlanRuleForTableID101 := netlink.NewRule()
 	vlanRuleForTableID101.Priority = networkutils.VlanRulePriority
 	vlanRuleForTableID101.Table = 101
+	vlanRuleForTableID101.Family = netlink.FAMILY_V4
+
+	vlanIPv6RuleForTableID101 := netlink.NewRule()
+	vlanIPv6RuleForTableID101.Priority = networkutils.VlanRulePriority
+	vlanIPv6RuleForTableID101.Table = 101
+	vlanIPv6RuleForTableID101.Family = netlink.FAMILY_V6
+
 	type ruleDelCall struct {
 		rule *netlink.Rule
 		err  error
@@ -4257,6 +4995,7 @@ func Test_linuxNetwork_teardownIIFBasedContainerRouteRules(t *testing.T) {
 
 	type args struct {
 		rtTable int
+		family  int
 	}
 	tests := []struct {
 		name    string
@@ -4265,7 +5004,7 @@ func Test_linuxNetwork_teardownIIFBasedContainerRouteRules(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "teardown both rules successfully",
+			name: "teardown both rules successfully - IPv4",
 			fields: fields{
 				ruleDelCalls: []ruleDelCall{
 					{
@@ -4282,6 +5021,28 @@ func Test_linuxNetwork_teardownIIFBasedContainerRouteRules(t *testing.T) {
 			},
 			args: args{
 				rtTable: 101,
+				family:  netlink.FAMILY_V4,
+			},
+		},
+		{
+			name: "teardown both rules successfully - IPv6",
+			fields: fields{
+				ruleDelCalls: []ruleDelCall{
+					{
+						rule: vlanIPv6RuleForTableID101,
+					},
+					{
+						rule: vlanIPv6RuleForTableID101,
+					},
+					{
+						rule: vlanIPv6RuleForTableID101,
+						err:  syscall.ENOENT,
+					},
+				},
+			},
+			args: args{
+				rtTable: 101,
+				family:  netlink.FAMILY_V6,
 			},
 		},
 		{
@@ -4296,6 +5057,7 @@ func Test_linuxNetwork_teardownIIFBasedContainerRouteRules(t *testing.T) {
 			},
 			args: args{
 				rtTable: 101,
+				family:  netlink.FAMILY_V4,
 			},
 			wantErr: errors.New("failed to delete IIF based rules, rtTable=101: some error"),
 		},
@@ -4313,7 +5075,7 @@ func Test_linuxNetwork_teardownIIFBasedContainerRouteRules(t *testing.T) {
 			n := &linuxNetwork{
 				netLink: netLink,
 			}
-			err := n.teardownIIFBasedContainerRouteRules(tt.args.rtTable, testLogger)
+			err := n.teardownIIFBasedContainerRouteRules(tt.args.rtTable, tt.args.family, testLogger)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -4324,6 +5086,11 @@ func Test_linuxNetwork_teardownIIFBasedContainerRouteRules(t *testing.T) {
 }
 
 func Test_buildRoutesForVlan(t *testing.T) {
+	v4Gateway := net.ParseIP("192.168.128.1")
+	v6Gateway := net.ParseIP("fe80::beef")
+	vlanTableID := 101
+	vlanIndex := 7
+
 	type args struct {
 		vlanTableID int
 		vlanIndex   int
@@ -4337,23 +5104,46 @@ func Test_buildRoutesForVlan(t *testing.T) {
 		{
 			name: "IPv4",
 			args: args{
-				vlanTableID: 101,
-				vlanIndex:   7,
-				gw:          net.ParseIP("192.168.128.1"),
+				vlanTableID: vlanTableID,
+				vlanIndex:   vlanIndex,
+				gw:          v4Gateway,
 			},
 			want: []netlink.Route{
 				{
-					LinkIndex: 7,
-					Dst:       &net.IPNet{IP: net.ParseIP("192.168.128.1"), Mask: net.CIDRMask(32, 32)},
+					LinkIndex: vlanIndex,
+					Dst:       &net.IPNet{IP: v4Gateway, Mask: net.CIDRMask(32, 32)},
 					Scope:     netlink.SCOPE_LINK,
-					Table:     101,
+					Table:     vlanTableID,
 				},
 				{
-					LinkIndex: 7,
+					LinkIndex: vlanIndex,
 					Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
 					Scope:     netlink.SCOPE_UNIVERSE,
-					Gw:        net.ParseIP("192.168.128.1"),
-					Table:     101,
+					Gw:        v4Gateway,
+					Table:     vlanTableID,
+				},
+			},
+		},
+		{
+			name: "IPv6",
+			args: args{
+				vlanTableID: vlanTableID,
+				vlanIndex:   vlanIndex,
+				gw:          v6Gateway,
+			},
+			want: []netlink.Route{
+				{
+					LinkIndex: vlanIndex,
+					Dst:       &net.IPNet{IP: v6Gateway, Mask: net.CIDRMask(128, 128)},
+					Scope:     netlink.SCOPE_LINK,
+					Table:     vlanTableID,
+				},
+				{
+					LinkIndex: vlanIndex,
+					Dst:       &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 128)},
+					Scope:     netlink.SCOPE_UNIVERSE,
+					Gw:        v6Gateway,
+					Table:     vlanTableID,
 				},
 			},
 		},

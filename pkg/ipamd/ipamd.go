@@ -216,6 +216,8 @@ type IPAMContext struct {
 	lastInsufficientCidrError time.Time
 	enableManageUntaggedMode  bool
 	enablePodIPAnnotation     bool
+	// For IPv6 Security Groups for Pods, the gateway address is cached in order to speedup CNI ADD
+	v6Gateway net.IP
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -446,11 +448,16 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
+	if c.enablePodENI {
+		// Try to patch CNINode with Security Groups for Pods feature.
+		c.tryEnableSecurityGroupsForPods(ctx)
+	}
+
 	if c.enableIPv6 {
 		// We will not support upgrading/converting an existing IPv4 cluster to operate in IPv6 mode. So, we will always
-		// start with a clean slate in IPv6 mode. We also don't have to deal with dynamic update of Prefix Delegation
-		// feature in IPv6 mode as we don't support (yet) a non-PD v6 option. In addition, we don't support custom
-		// networking & SGPP in IPv6 mode yet. So, we will skip the corresponding setup. Will save us from checking
+		// start with a clean slate in IPv6 mode. We also do not have to deal with dynamic update of Prefix Delegation
+		// feature in IPv6 mode as we do not support (yet) a non-PD v6 option. In addition, we do not support custom
+		// networking in IPv6 mode yet, so we will skip the corresponding setup. This will save us from checking
 		// if IPv6 is enabled at multiple places. Once we start supporting these features in IPv6 mode, we can do away
 		// with this check and not change anything else in the below setup.
 		return nil
@@ -515,12 +522,6 @@ func (c *IPAMContext) nodeInit() error {
 		} else {
 			log.Errorf("No ENIConfig could be found for this node", err)
 		}
-	}
-
-	if c.enablePodENI {
-		// Check if we want to add feature into CNINode for trunk interface during node init
-		// we don't check if the node already has trunk added during initialization
-		c.askForTrunkENIIfNeeded(ctx)
 	}
 
 	// On node init, check if datastore pool needs to be increased. If so, attach CIDRs from existing ENIs and attach new ENIs.
@@ -600,11 +601,18 @@ func (c *IPAMContext) updateIPStats(unmanaged int) {
 
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
 func (c *IPAMContext) StartNodeIPPoolManager() {
+	// For IPv6, if Security Groups for Pods is enabled, wait until trunk ENI is attached and add it to the datastore.
 	if c.enableIPv6 {
-		//Nothing to do in IPv6 Mode. IPv6 is only supported in Prefix delegation mode
-		//and VPC CNI will only attach one V6 Prefix.
+		if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
+			for !c.checkForTrunkENI() {
+				time.Sleep(ipPoolMonitorInterval)
+			}
+		}
+		// Outside of Security Groups for Pods, no additional ENIs are attached in IPv6 mode.
+		// The prefix used for the primary ENI is more than enough for all pods.
 		return
 	}
+
 	sleepDuration := ipPoolMonitorInterval / 2
 	ctx := context.Background()
 	for {
@@ -618,8 +626,9 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 }
 
 func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
-	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
-		c.askForTrunkENIIfNeeded(ctx)
+	// When IPv4 Security Groups for Pods is configured, do not write to CNINode until there is room for a trunk ENI
+	if c.enablePodENI && c.enableIPv4 && c.dataStore.GetTrunkENI() == "" {
+		c.tryEnableSecurityGroupsForPods(ctx)
 	}
 
 	if c.isDatastorePoolTooLow() {
@@ -1035,21 +1044,29 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 	if err != nil && err.Error() != datastore.DuplicatedENIError {
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
-	// Store the primary IP of the ENI
-	c.primaryIP[eni] = eniMetadata.PrimaryIPv4Address()
+	// Store the addressable IP for the ENI
+	if c.enableIPv6 {
+		c.primaryIP[eni] = eniMetadata.PrimaryIPv6Address()
+	} else {
+		c.primaryIP[eni] = eniMetadata.PrimaryIPv4Address()
+	}
 
 	if c.enableIPv6 && eni == primaryENI {
-		// In v6 PD Mode, VPC CNI will only manage primary ENI. Once we start supporting secondary IP and custom
-		// networking modes for v6, we will relax this restriction. We filter out all the ENIs except Primary ENI
-		// in v6 mode (prior to landing here), but included the primary ENI check as a safety net.
+		// In v6 PD mode, VPC CNI will only manage the primary ENI and trunk ENI. Once we start supporting secondary
+		// IP and custom networking modes for IPv6, this restriction can be relaxed.
 		err := c.assignIPv6Prefix(eni)
 		if err != nil {
 			return errors.Wrapf(err, "Failed to allocate IPv6 Prefixes to Primary ENI")
 		}
 	} else {
-		// For secondary ENIs, set up the network
+		var gw net.IP
+		// For other ENIs, set up the network
 		if eni != primaryENI {
-			err = c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.DeviceNumber, eniMetadata.SubnetIPv4CIDR)
+			subnetCidr := eniMetadata.SubnetIPv4CIDR
+			if c.enableIPv6 {
+				subnetCidr = eniMetadata.SubnetIPv6CIDR
+			}
+			gw, err = c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.DeviceNumber, subnetCidr)
 			if err != nil {
 				// Failed to set up the ENI
 				errRemove := c.dataStore.RemoveENIFromDataStore(eni, true)
@@ -1060,12 +1077,24 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 				return errors.Wrapf(err, "failed to set up ENI %s network", eni)
 			}
 		}
-		log.Infof("Found ENIs having %d secondary IPs and %d Prefixes", len(eniMetadata.IPv4Addresses), len(eniMetadata.IPv4Prefixes))
-		// Either case add the IPs and prefixes to datastore.
-		c.addENIsecondaryIPsToDataStore(eniMetadata.IPv4Addresses, eni)
-		c.addENIv4prefixesToDataStore(eniMetadata.IPv4Prefixes, eni)
+		if !c.enableIPv6 {
+			log.Infof("Found ENIs having %d secondary IPs and %d Prefixes", len(eniMetadata.IPv4Addresses), len(eniMetadata.IPv4Prefixes))
+			// Either case add the IPs and prefixes to datastore.
+			c.addENIsecondaryIPsToDataStore(eniMetadata.IPv4Addresses, eni)
+			c.addENIv4prefixesToDataStore(eniMetadata.IPv4Prefixes, eni)
+		} else {
+			// Cache the IPv6 gateway address to speed up CNI ADD. In IPv4, the gateway address is the .1 address for the subnet. In IPv6, the gateway
+			// address is a link-local address that is fixed for the lifetime of the instance and is consistent across instances in the same subnet.
+			c.v6Gateway = gw
+			// In strict mode, install gateway rule for ICMPv6 traffic. Note that this is a global rule, but installing/removing here is acceptable as
+			// IPv6 only supports attaching a trunk ENI, and trunk ENI is only attached once.
+			if err := c.networkClient.UpdateIPv6GatewayRule(&gw); err != nil {
+				return errors.Wrapf(err, "failed to install IPv6 gateway rule")
+			}
+			// This is a trunk ENI in IPv6 PD mode, so do not add IPs or prefixes to datastore
+			log.Infof("Found IPv6 trunk ENI having %d secondary IPs and %d Prefixes", len(eniMetadata.IPv6Addresses), len(eniMetadata.IPv6Prefixes))
+		}
 	}
-
 	return nil
 }
 
@@ -1193,17 +1222,17 @@ func (c *IPAMContext) logPoolStats(dataStoreStats *datastore.DataStoreStats) {
 	log.Debugf("%s: %s, c.maxIPsPerENI = %d", prefix, dataStoreStats, c.maxIPsPerENI)
 }
 
-func (c *IPAMContext) askForTrunkENIIfNeeded(ctx context.Context) {
-	// Check that there is room for a trunk ENI to be attached.
-	if c.dataStore.GetENIs() >= (c.maxENI - c.unmanagedENI) {
+func (c *IPAMContext) tryEnableSecurityGroupsForPods(ctx context.Context) {
+	// For IPv4, check that there is room for a trunk ENI before patching CNINode CRD
+	if c.enableIPv4 && (c.dataStore.GetENIs() >= (c.maxENI - c.unmanagedENI)) {
 		log.Error("No slot available for a trunk ENI to be attached.")
 		return
 	}
 
-	// We need to signal that VPC Resource Controller needs to attach a trunk ENI.
+	// Signal to the VPC Resource Controller that Security Groups for Pods is enabled
 	err := c.AddFeatureToCNINode(ctx, rcv1alpha1.SecurityGroupsForPods, "")
 	if err != nil {
-		podENIErrInc("askForTrunkENIIfNeeded")
+		podENIErrInc("tryEnableSecurityGroupsForPods")
 		log.Errorf("Failed to add SGP feature to CNINode resource", err)
 	} else {
 		log.Infof("Successfully added feature %s to CNINode if not existing", rcv1alpha1.SecurityGroupsForPods)
@@ -1266,6 +1295,29 @@ func ipamdErrInc(fn string) {
 
 func podENIErrInc(fn string) {
 	prometheusmetrics.PodENIErr.With(prometheus.Labels{"fn": fn}).Inc()
+}
+
+// Used in IPv6 mode to check if trunk ENI has been successfully attached
+func (c *IPAMContext) checkForTrunkENI() bool {
+	metadataResult, err := c.awsClient.DescribeAllENIs()
+	if err != nil {
+		log.Debug("failed to describe attached ENIs")
+		return false
+	}
+	if metadataResult.TrunkENI != "" {
+		for _, eni := range metadataResult.ENIMetadata {
+			if eni.ENIID == metadataResult.TrunkENI {
+				if err := c.setupENI(eni.ENIID, eni, true, false); err == nil {
+					log.Infof("ENI %s set up", eni.ENIID)
+					return true
+				} else {
+					log.Debugf("failed to setup ENI %s: %v", eni.ENIID, err)
+					return false
+				}
+			}
+		}
+	}
+	return false
 }
 
 // nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
@@ -2157,17 +2209,15 @@ func (c *IPAMContext) DeallocCidrs(eniID string, deletableCidrs []datastore.Cidr
 
 // getPrefixesNeeded returns the number of prefixes need to be allocated to the ENI
 func (c *IPAMContext) getPrefixesNeeded() int {
-
-	//By default allocate 1 prefix at a time
+	// By default allocate 1 prefix at a time
 	toAllocate := 1
 
-	//TODO - post GA we can evaluate to see if these two calls can be merged.
-	//datastoreTargetState already has complex math so adding Prefix target will make it
-	//even more complex.
+	// TODO - post GA we can evaluate to see if these two calls can be merged.
+	// datastoreTargetState already has complex math so adding Prefix target will make it even more complex.
 	short, _, warmIPTargetDefined := c.datastoreTargetState()
 	shortPrefixes, warmPrefixTargetDefined := c.datastorePrefixTargetState()
 
-	//WARM_IP_TARGET takes precendence over WARM_PREFIX_TARGET
+	// WARM_IP_TARGET takes precendence over WARM_PREFIX_TARGET
 	if warmIPTargetDefined {
 		toAllocate = max(toAllocate, short)
 	} else if warmPrefixTargetDefined {
@@ -2200,23 +2250,22 @@ func (c *IPAMContext) initENIAndIPLimits() (err error) {
 }
 
 func (c *IPAMContext) isConfigValid() bool {
-	//Validate that only one among v4 and v6 is enabled.
+	// Validate that only one among v4 and v6 is enabled.
 	if c.enableIPv4 && c.enableIPv6 {
-		log.Errorf("IPv4 and IPv6 are both enabled. VPC CNI currently doesn't support dual stack mode")
+		log.Errorf("IPv4 and IPv6 are both enabled. VPC CNI currently does not support dual stack mode")
 		return false
 	} else if !c.enableIPv4 && !c.enableIPv6 {
 		log.Errorf("IPv4 and IPv6 are both disabled. One of them have to be enabled")
 		return false
 	}
 
-	//Validate PD mode is enabled if VPC CNI is operating in IPv6 mode. SGPP and Custom networking are not supported in IPv6 mode.
-	if c.enableIPv6 && (c.enablePodENI || c.useCustomNetworking || !c.enablePrefixDelegation) {
-		log.Errorf("IPv6 is supported only in Prefix Delegation mode. Security Group Per Pod and " +
-			"Custom Networking are not supported in IPv6 mode. Please set the env variables accordingly.")
+	// Validate PD mode is enabled if VPC CNI is operating in IPv6 mode. Custom networking is not supported in IPv6 mode.
+	if c.enableIPv6 && (c.useCustomNetworking || !c.enablePrefixDelegation) {
+		log.Errorf("IPv6 is supported only in Prefix Delegation mode. Custom Networking is not supported in IPv6 mode. Please set the env variables accordingly.")
 		return false
 	}
 
-	//Validate Prefix Delegation against v4 and v6 modes.
+	// Validate Prefix Delegation against v4 and v6 modes.
 	if c.enablePrefixDelegation && !c.awsClient.IsPrefixDelegationSupported() {
 		if c.enableIPv6 {
 			log.Errorf("Prefix Delegation is not supported on non-nitro instance %s. IPv6 is only supported in Prefix delegation Mode. ", c.awsClient.GetInstanceType())

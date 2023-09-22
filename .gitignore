@@ -3,18 +3,23 @@ aws-k8s-agent
 aws-cni
 aws-vpc-cni
 aws-vpc-cni-init
+cni-metrics-helper
+egress-cni
+grpc-health-probe
+portmap
 verify-aws
 verify-network
+# Ignore generated files
 *~
 *.swp
 .idea/
 *.iml
 .DS_Store
-portmap
-grpc-health-probe
-cni-metrics-helper
 coverage.txt
+cmd/egress-cni-plugin/egress-plugin.log
+# Ignore build files
 core-plugins/
 build/
-vendor
-egress-cni
+vendor/
+# Unignore charts directory as its confilcts with `aws-vpc-cni` binary ignore rule
+!charts/**
