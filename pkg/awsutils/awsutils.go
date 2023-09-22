@@ -31,6 +31,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
@@ -275,14 +276,6 @@ type ENIMetadata struct {
 
 	// IPv6 Prefixes allocated for the network interface
 	IPv6Prefixes []*ec2.Ipv6PrefixSpecification
-}
-
-// InstanceTypeLimits keeps track of limits for an instance type
-type InstanceTypeLimits struct {
-	ENILimit       int
-	IPv4Limit      int
-	HypervisorType string
-	IsBareMetal    bool
 }
 
 // PrimaryIPv4Address returns the primary IPv4 address of this node
@@ -1390,13 +1383,12 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddress(eniID string) error {
 }
 
 func (cache *EC2InstanceMetadataCache) FetchInstanceTypeLimits() error {
-	_, ok := InstanceNetworkingLimits[cache.instanceType]
+	_, ok := vpc.GetInstance(cache.instanceType)
 	if ok {
 		return nil
 	}
 
 	log.Debugf("Instance type limits are missing from vpc_ip_limits.go hence making an EC2 call to fetch the limits")
-	var eniLimits InstanceTypeLimits
 	describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{InstanceTypes: []*string{aws.String(cache.instanceType)}}
 	output, err := cache.ec2SVC.DescribeInstanceTypesWithContext(context.Background(), describeInstanceTypesInput)
 	ec2ApiReq.WithLabelValues("DescribeInstanceTypes").Inc()
@@ -1410,18 +1402,22 @@ func (cache *EC2InstanceMetadataCache) FetchInstanceTypeLimits() error {
 	instanceType := aws.StringValue(info.InstanceType)
 	eniLimit := int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
 	ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
-	hypervisorType := aws.StringValue(info.Hypervisor)
 	isBareMetalInstance := aws.BoolValue(info.BareMetal)
+	hypervisorType := aws.StringValue(info.Hypervisor)
+	if hypervisorType == "" {
+		hypervisorType = "unknown"
+	}
+	networkCards := make([]vpc.NetworkCard, aws.Int64Value(info.NetworkInfo.MaximumNetworkCards))
+	defaultNetworkCardIndex := int(aws.Int64Value(info.NetworkInfo.DefaultNetworkCardIndex))
+	for idx := 0; idx < len(networkCards); idx += 1 {
+		networkCards[idx] = vpc.NetworkCard{
+			MaximumNetworkInterfaces: *info.NetworkInfo.NetworkCards[idx].MaximumNetworkInterfaces,
+			NetworkCardIndex:         *info.NetworkInfo.NetworkCards[idx].NetworkCardIndex,
+		}
+	}
 	//Not checking for empty hypervisorType since have seen certain instances not getting this filled.
 	if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
-		eniLimits = InstanceTypeLimits{
-			ENILimit:       eniLimit,
-			IPv4Limit:      ipv4Limit,
-			HypervisorType: hypervisorType,
-			IsBareMetal:    isBareMetalInstance,
-		}
-
-		InstanceNetworkingLimits[instanceType] = eniLimits
+		vpc.SetInstance(instanceType, eniLimit, ipv4Limit, defaultNetworkCardIndex, networkCards, hypervisorType, isBareMetalInstance)
 	} else {
 		return errors.New(fmt.Sprintf("%s: %s", UnknownInstanceType, cache.instanceType))
 	}
@@ -1430,29 +1426,41 @@ func (cache *EC2InstanceMetadataCache) FetchInstanceTypeLimits() error {
 
 // GetENIIPv4Limit return IP address limit per ENI based on EC2 instance type
 func (cache *EC2InstanceMetadataCache) GetENIIPv4Limit() int {
-	eniLimits, _ := InstanceNetworkingLimits[cache.instanceType]
+	ipv4Limit, err := vpc.GetIPv4Limit(cache.instanceType)
+	if err != nil {
+		return -1
+	}
 	// Subtract one from the IPv4Limit since we don't use the primary IP on each ENI for pods.
-	return eniLimits.IPv4Limit - 1
+	return ipv4Limit - 1
 }
 
 // GetENILimit returns the number of ENIs can be attached to an instance
 func (cache *EC2InstanceMetadataCache) GetENILimit() int {
-	eniLimits, _ := InstanceNetworkingLimits[cache.instanceType]
-	return eniLimits.ENILimit
+	eniLimit, err := vpc.GetENILimit(cache.instanceType)
+	if err != nil {
+		return -1
+	}
+	return eniLimit
 }
 
 // GetInstanceHypervisorFamily returns hypervisor of EC2 instance type
 func (cache *EC2InstanceMetadataCache) GetInstanceHypervisorFamily() string {
-	eniLimits, _ := InstanceNetworkingLimits[cache.instanceType]
-	log.Debugf("Instance hypervisor family %s", eniLimits.HypervisorType)
-	return eniLimits.HypervisorType
+	hypervisor, err := vpc.GetHypervisorType(cache.instanceType)
+	if err != nil {
+		return ""
+	}
+	log.Debugf("Instance hypervisor family %s", hypervisor)
+	return hypervisor
 }
 
 // IsInstanceBareMetal derives bare metal value of the instance
 func (cache *EC2InstanceMetadataCache) IsInstanceBareMetal() bool {
-	instanceProperties, _ := InstanceNetworkingLimits[cache.instanceType]
-	log.Debugf("Bare Metal Instance %s", instanceProperties.IsBareMetal)
-	return instanceProperties.IsBareMetal
+	isBaremetal, err := vpc.GetIsBareMetal(cache.instanceType)
+	if err != nil {
+		return false
+	}
+	log.Debugf("Bare Metal Instance %s", isBaremetal)
+	return isBaremetal
 }
 
 // GetInstanceType return EC2 instance type

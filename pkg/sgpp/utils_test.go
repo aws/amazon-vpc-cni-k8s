@@ -28,7 +28,7 @@ func setup(t *testing.T) *testMocks {
 
 	return &testMocks{
 		ctrl:      ctrl,
-		k8sClient: testclient.NewFakeClientWithScheme(k8sSchema),
+		k8sClient: testclient.NewClientBuilder().WithScheme(k8sSchema).WithRuntimeObjects().Build(),
 	}
 }
 

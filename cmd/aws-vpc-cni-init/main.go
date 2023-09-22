@@ -114,7 +114,7 @@ func configureIPv6Settings(procSys procsyswrapper.ProcSys, primaryIF string) err
 		val, _ := procSys.Get(entry)
 		log.Infof("Updated %s to %s", entry, val)
 	}
-	// Check if IPv6 egress supporting is enabled in IPv4 cluster
+	// Check if IPv6 egress support is enabled in IPv4 cluster.
 	ipv6EgressEnabled := utils.GetBoolAsStringEnvVar(envEgressV6, defaultEnableIPv6Egress)
 	if enableIPv6 || ipv6EgressEnabled {
 		entry := "net/ipv6/conf/all/forwarding"

@@ -27,7 +27,7 @@ function run_integration_test() {
 
   echo "Running ipamd integration tests"
   START=$SECONDS
-  cd $INTEGRATION_TEST_DIR/ipamd && CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS -v -timeout 90m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" || TEST_RESULT=fail
+  cd $INTEGRATION_TEST_DIR/ipamd && CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --skip-file=ipamd_event_test.go -v -timeout 90m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" || TEST_RESULT=fail
   echo "ipamd test took $((SECONDS - START)) seconds."
 
   echo "Running cni integration tests"

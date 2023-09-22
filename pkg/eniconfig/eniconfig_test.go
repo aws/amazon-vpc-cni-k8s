@@ -215,7 +215,7 @@ func TestMyENIConfig(t *testing.T) {
 			k8sSchema := runtime.NewScheme()
 			clientgoscheme.AddToScheme(k8sSchema)
 			eniconfigscheme.AddToScheme(k8sSchema)
-			k8sClient := testclient.NewFakeClientWithScheme(k8sSchema)
+			k8sClient := testclient.NewClientBuilder().WithScheme(k8sSchema).WithRuntimeObjects().Build()
 
 			for _, node := range tt.env.nodes {
 				_ = os.Setenv("MY_NODE_NAME", node.Name)

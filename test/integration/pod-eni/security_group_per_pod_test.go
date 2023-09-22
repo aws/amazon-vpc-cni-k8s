@@ -61,8 +61,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 			CreateNamespace(utils.DefaultTestNamespace)
 
 		serverDeploymentBuilder = manifest.NewDefaultDeploymentBuilder().
-			Name("traffic-server").
-			NodeSelector(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal)
+			Name("traffic-server")
 
 		securityGroupPolicy, err = vpcControllerFW.NewSGPBuilder().
 			Namespace(utils.DefaultTestNamespace).
@@ -73,8 +72,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		By("creating the Security Group Policy")
-		err = f.K8sResourceManagers.
-			CustomResourceManager().CreateResource(securityGroupPolicy)
+		err = f.K8sResourceManagers.CustomResourceManager().CreateResource(securityGroupPolicy)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -122,10 +120,11 @@ var _ = Describe("Security Group for Pods Test", func() {
 			// Both the Server and Client Pods will get Branch ENI
 			branchPodLabelVal = []string{serverPodLabelVal, clientPodLabelVal}
 
-			// Allow Ingress on NodeSecurityGroup so that client-pods can communicate with metric pod
+			// Allow Ingress on cluster security group so client pods can communicate with metric pod
 			// 8080: metric-pod listener port
 			By("Adding an additional Ingress Rule on NodeSecurityGroupID to allow client-to-metric traffic")
-			f.CloudServices.EC2().AuthorizeSecurityGroupIngress(nodeSecurityGroupID, "tcp", openPort, 8080, "0.0.0.0/0")
+			err := f.CloudServices.EC2().AuthorizeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, "0.0.0.0/0")
+			Expect(err).ToNot(HaveOccurred())
 		})
 
 		It("should have 99%+ success rate", func() {
@@ -152,11 +151,12 @@ var _ = Describe("Security Group for Pods Test", func() {
 		AfterEach(func() {
 			// Revoke the Ingress rule for traffic from client pods added to Node Security Group
 			By("Revoking the additional Ingress rule added to allow client-to-metric traffic")
-			f.CloudServices.EC2().RevokeSecurityGroupIngress(nodeSecurityGroupID, "tcp", openPort, 8080, "0.0.0.0/0")
+			err := f.CloudServices.EC2().RevokeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, "0.0.0.0/0")
+			Expect(err).ToNot(HaveOccurred())
 		})
 	})
 
-	Context("when testing traffic to a port on Branch ENI that's not open", func() {
+	Context("when testing traffic to a port on Branch ENI that is not open", func() {
 		BeforeEach(func() {
 			// Only the Server Pods will get Branch ENI
 			branchPodLabelVal = []string{serverPodLabelVal}
@@ -226,11 +226,10 @@ var _ = Describe("Security Group for Pods Test", func() {
 				Name("liveliness-pod").
 				Container(container).
 				PodLabel(labelKey, serverPodLabelVal).
-				NodeSelector(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal).
 				RestartPolicy(v1.RestartPolicyAlways).
 				Build()
 
-			By("creating branch ENI pod with liveliness probe")
+			By("creating branch ENI pod with liveness probe")
 			pod, err := f.K8sResourceManagers.PodManager().CreateAndWaitTillRunning(pod)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -238,7 +237,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 
 			timeAfterLivelinessProbeFails := initialDelay + (periodSecond * failureCount) + 10
 
-			By("waiting for the liveliness probe to succeed/fail")
+			By("waiting for the liveness probe to succeed/fail")
 			time.Sleep(time.Second * time.Duration(timeAfterLivelinessProbeFails))
 
 			By("getting the updated branch ENI pod")
@@ -279,10 +278,11 @@ var _ = Describe("Security Group for Pods Test", func() {
 			branchPodLabelVal = []string{busyboxPodLabelVal}
 		})
 		It("Deploy BusyBox Pods with branch ENI and verify HostNetworking", func() {
+			// Pin deployment to primary node
 			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
-				Replicas(totalBranchInterface/asgSize).
+				Replicas(totalBranchInterface/numNodes).
 				PodLabel(labelKey, busyboxPodLabelVal).
-				NodeName(node.Name).
+				NodeName(targetNode.Name).
 				Build()
 
 			By("creating a deployment to launch pod using Branch ENI")
@@ -350,9 +350,10 @@ func ValidateHostNetworking(testType TestType, podValidationInputString string) 
 		Args(testerArgs).
 		Build()
 
+	// Pin pod to primary node
 	testPod := manifest.NewDefaultPodBuilder().
 		Container(testContainer).
-		NodeName(node.Name).
+		NodeName(targetNode.Name).
 		HostNetwork(true).
 		Build()
 

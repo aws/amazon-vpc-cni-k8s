@@ -76,6 +76,7 @@ function up-kops-cluster {
     mv kops-linux-amd64 $KOPS_BIN
     CLUSTER_NAME=kops-cni-test-cluster-${TEST_ID}.k8s.local
     export KOPS_STATE_STORE=s3://${KOPS_S3_BUCKET}
+    HOST_IMAGE_SSM_PARAMETER="ssm:/aws/service/canonical/ubuntu/server/20.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
 
     SSH_KEYS=~/.ssh/devopsinuse
     if [ ! -f "$SSH_KEYS" ]
@@ -86,6 +87,7 @@ function up-kops-cluster {
         echo -e "\nSSH keys are already in place!"
     fi
 
+    # Using Ubuntu 20.04 because of https://github.com/aws/amazon-vpc-cni-k8s/issues/2103
     $KOPS_BIN create cluster \
     --cloud aws \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
@@ -95,6 +97,7 @@ function up-kops-cluster {
     --node-size c5.xlarge \
     --ssh-public-key=~/.ssh/devopsinuse.pub \
     --kubernetes-version ${K8S_VERSION} \
+    --image ${HOST_IMAGE_SSM_PARAMETER} \
     ${CLUSTER_NAME}
 
     $KOPS_BIN update cluster --name ${CLUSTER_NAME} --yes
@@ -111,10 +114,11 @@ function up-kops-cluster {
     done
 
     # kOps cluster by default comes with ebs-csi-node and coredns-autoscaler as an add-on which cannot be excluded on cluster creation
-    # Since CNI tests don't really need any of these components for running tests, we delete these to avoid any flakiness
+    # Since CNI tests don't need any of these components for running tests, we delete these to avoid any flakiness
     export KUBECONFIG=~/.kube/config
     kubectl delete daemonset ebs-csi-node -n kube-system
     kubectl delete deployment coredns-autoscaler -n kube-system
+    kubectl delete deployment aws-node-termination-handler -n kube-system --wait=true
 
     kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/${MANIFEST_CNI_VERSION}/config/master/cni-metrics-helper.yaml
 }

@@ -15,17 +15,19 @@ package utils
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v2"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
+	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 )
 
@@ -73,7 +75,7 @@ type AWSAuthMapRole struct {
 // Create self managed node group stack
 func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties NodeGroupProperties) error {
 	templatePath := utils.GetProjectRoot() + CreateNodeGroupCFNTemplate
-	templateBytes, err := ioutil.ReadFile(templatePath)
+	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		return fmt.Errorf("failed to read from %s, %v", templatePath, err)
 	}
@@ -89,7 +91,7 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 	var kubeletExtraArgs = fmt.Sprintf("--node-labels=%s=%s", properties.NgLabelKey, properties.NgLabelVal)
 
 	if properties.IsCustomNetworkingEnabled {
-		limit := awsutils.InstanceNetworkingLimits[properties.InstanceType]
+		limit, _ := vpc.GetInstance(properties.InstanceType)
 		maxPods := (limit.ENILimit-1)*(limit.IPv4Limit-1) + 2
 
 		bootstrapArgs += " --use-max-pods false"
@@ -283,7 +285,7 @@ func GetClusterVPCConfig(f *framework.Framework) (*ClusterVPCConfig, error) {
 	for _, subnet := range clusterConfig.PublicSubnetList {
 		describeSubnet, err := f.CloudServices.EC2().DescribeSubnet(subnet)
 		if err != nil {
-			return nil, fmt.Errorf("failed to descrieb the subnet %s: %v", subnet, err)
+			return nil, fmt.Errorf("failed to describe the subnet %s: %v", subnet, err)
 		}
 		if ok := uniqueAZ[*describeSubnet.Subnets[0].AvailabilityZone]; !ok {
 			uniqueAZ[*describeSubnet.Subnets[0].AvailabilityZone] = true
@@ -293,4 +295,25 @@ func GetClusterVPCConfig(f *framework.Framework) (*ClusterVPCConfig, error) {
 	}
 
 	return clusterConfig, nil
+}
+
+func TerminateInstances(f *framework.Framework, ngLabelKey string, ngLabelVal string) error {
+	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(ngLabelKey, ngLabelVal)
+	if err != nil {
+		return fmt.Errorf("failed to get list of nodes created: %v", err)
+	}
+
+	var instanceIDs []string
+	for _, node := range nodeList.Items {
+		instanceIDs = append(instanceIDs, k8sUtils.GetInstanceIDFromNode(node))
+	}
+
+	err = f.CloudServices.EC2().TerminateInstance(instanceIDs)
+	if err != nil {
+		return fmt.Errorf("failed to terminate instances: %v", err)
+	}
+
+	// Wait for instances to be replaced
+	time.Sleep(time.Second * 450)
+	return nil
 }

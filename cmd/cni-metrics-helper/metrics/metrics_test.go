@@ -15,7 +15,7 @@ package metrics
 
 import (
 	"context"
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -40,7 +40,7 @@ func newTestMetricsTarget(metricFile string, interestingMetrics map[string]metri
 }
 
 func (target *testMetricsTarget) grabMetricsFromTarget(ctx context.Context, targetName string) ([]byte, error) {
-	testMetrics, _ := ioutil.ReadFile(target.metricFile)
+	testMetrics, _ := os.ReadFile(target.metricFile)
 
 	return testMetrics, nil
 }
