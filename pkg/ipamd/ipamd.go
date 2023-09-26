@@ -2044,6 +2044,7 @@ func (c *IPAMContext) tryUnassignIPFromENI(eniID string) {
 			continue
 		} else {
 			deletedIPs = append(deletedIPs, toDelete.IP.String())
+			c.reconcileCooldownCache.Add(toDelete.IP.String())
 		}
 	}
 
