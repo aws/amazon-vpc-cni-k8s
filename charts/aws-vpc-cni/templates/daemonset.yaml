@@ -40,7 +40,7 @@ spec:
       hostNetwork: true
       initContainers:
       - name: aws-vpc-cni-init
-        image: {{ include "aws-vpc-cni.initImage" . }}
+        image: "{{ include "aws-vpc-cni.initImage" . }}"
         env:
 {{- range $key, $value := .Values.init.env }}
           - name: {{ $key }}
@@ -66,7 +66,7 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: aws-node
-          image: {{ include "aws-vpc-cni.image" . }}
+          image: "{{ include "aws-vpc-cni.image" . }}"
           ports:
             - containerPort: 61678
               name: metrics
@@ -117,7 +117,7 @@ spec:
           {{- toYaml .| nindent 10 }}
           {{- end }}
         - name: aws-eks-nodeagent
-          image: {{ include "aws-vpc-cni.nodeAgentImage" . }}
+          image: "{{ include "aws-vpc-cni.nodeAgentImage" . }}"
           env:
             - name: MY_NODE_NAME
               valueFrom:
