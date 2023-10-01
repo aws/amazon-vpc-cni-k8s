@@ -651,8 +651,8 @@ github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20230907153600-f7672495a1d3 
 github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20230907153600-f7672495a1d3/go.mod h1:Aj5pwjhg2lig2GF5rdrsyJSzLGhe7TNMVyuw9hT/1WQ=
 github.com/aws/amazon-vpc-resource-controller-k8s v1.3.0 h1:FF/8//v39MWQoMT0yIRd/MAnfBN5GJ7j8hYH39pyq1M=
 github.com/aws/amazon-vpc-resource-controller-k8s v1.3.0/go.mod h1:HwoojB30a88mOfShN5qkciEIdyevfs5Y/I28ru9m1s8=
-github.com/aws/aws-sdk-go v1.44.294 h1:3x7GaEth+pDU9HwFcAU0awZlEix5CEdyIZvV08SlHa8=
-github.com/aws/aws-sdk-go v1.44.294/go.mod h1:aVsgQcEevwlmQ7qHE9I3h+dtQgpqhFB+i8Phjh7fkwI=
+github.com/aws/aws-sdk-go v1.45.19 h1:+4yXWhldhCVXWFOQRF99ZTJ92t4DtoHROZIbN7Ujk/U=
+github.com/aws/aws-sdk-go v1.45.19/go.mod h1:aVsgQcEevwlmQ7qHE9I3h+dtQgpqhFB+i8Phjh7fkwI=
 github.com/benbjohnson/clock v1.1.0/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
 github.com/benbjohnson/clock v1.3.0 h1:ip6w0uFQkncKQ979AypyG0ER7mqUSBdKLOgAle/AT8A=
 github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973/go.mod h1:Dwedo/Wpr24TaqPxmxbtue+5NUziq4I4S80YR8gNf3Q=

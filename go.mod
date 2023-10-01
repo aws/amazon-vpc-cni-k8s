@@ -6,7 +6,7 @@ require (
 	github.com/apparentlymart/go-cidr v1.0.1
 	github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20230907153600-f7672495a1d3
 	github.com/aws/amazon-vpc-resource-controller-k8s v1.3.0
-	github.com/aws/aws-sdk-go v1.44.294
+	github.com/aws/aws-sdk-go v1.45.19
 	github.com/containernetworking/cni v1.1.2
 	github.com/containernetworking/plugins v1.2.0
 	github.com/coreos/go-iptables v0.7.0
