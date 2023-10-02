@@ -65,7 +65,7 @@ var _ = Describe("Custom Networking Test", func() {
 
 			// Wait for deployment to settle, as if any pods restart, their pod IP will change between
 			// the GET and the validation.
-			time.Sleep(5)
+			time.Sleep(5 * time.Second)
 
 			podList, err = f.K8sResourceManagers.PodManager().
 				GetPodsWithLabelSelector(podLabelKey, podLabelVal)
