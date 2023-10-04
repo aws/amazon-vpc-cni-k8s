@@ -61,6 +61,10 @@ func (target *testMetricsTarget) submitCloudWatch() bool {
 	return false
 }
 
+func (target *testMetricsTarget) submitPrometheus() bool {
+	return false
+}
+
 func TestAPIServerMetric(t *testing.T) {
 	testTarget := newTestMetricsTarget("cni_test1.data", InterestingCNIMetrics)
 	ctx := context.Background()

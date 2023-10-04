@@ -44,6 +44,8 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	rcv1alpha1 "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 )
 
@@ -179,59 +181,6 @@ const (
 var log = logger.Get()
 
 var (
-	ipamdErr = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "awscni_ipamd_error_count",
-			Help: "The number of errors encountered in ipamd",
-		},
-		[]string{"fn"},
-	)
-	ipamdActionsInprogress = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "awscni_ipamd_action_inprogress",
-			Help: "The number of ipamd actions in progress",
-		},
-		[]string{"fn"},
-	)
-	enisMax = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "awscni_eni_max",
-			Help: "The maximum number of ENIs that can be attached to the instance, accounting for unmanaged ENIs",
-		},
-	)
-	ipMax = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "awscni_ip_max",
-			Help: "The maximum number of IP addresses that can be allocated to the instance",
-		},
-	)
-	reconcileCnt = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "awscni_reconcile_count",
-			Help: "The number of times ipamd reconciles on ENIs and IP/Prefix addresses",
-		},
-		[]string{"fn"},
-	)
-	addIPCnt = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "awscni_add_ip_req_count",
-			Help: "The number of add IP address requests",
-		},
-	)
-	delIPCnt = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "awscni_del_ip_req_count",
-			Help: "The number of delete IP address requests",
-		},
-		[]string{"reason"},
-	)
-	podENIErr = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "awscni_pod_eni_error_count",
-			Help: "The number of errors encountered for pod ENIs",
-		},
-		[]string{"fn"},
-	)
 	prometheusRegistered = false
 )
 
@@ -337,14 +286,7 @@ func (r *ReconcileCooldownCache) RecentlyFreed(cidr string) (found, recentlyFree
 
 func prometheusRegister() {
 	if !prometheusRegistered {
-		prometheus.MustRegister(ipamdErr)
-		prometheus.MustRegister(ipamdActionsInprogress)
-		prometheus.MustRegister(enisMax)
-		prometheus.MustRegister(ipMax)
-		prometheus.MustRegister(reconcileCnt)
-		prometheus.MustRegister(addIPCnt)
-		prometheus.MustRegister(delIPCnt)
-		prometheus.MustRegister(podENIErr)
+		prometheusmetrics.PrometheusRegister()
 		prometheusRegistered = true
 	}
 }
@@ -427,8 +369,8 @@ func New(k8sClient client.Client) (*IPAMContext, error) {
 }
 
 func (c *IPAMContext) nodeInit() error {
-	ipamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
-	defer ipamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
+	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
+	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
 	var err error
 	var vpcV4CIDRs []string
 	ctx := context.TODO()
@@ -652,8 +594,8 @@ func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 }
 
 func (c *IPAMContext) updateIPStats(unmanaged int) {
-	ipMax.Set(float64(c.maxIPsPerENI * (c.maxENI - unmanaged)))
-	enisMax.Set(float64(c.maxENI - unmanaged))
+	prometheusmetrics.IpMax.Set(float64(c.maxIPsPerENI * (c.maxENI - unmanaged)))
+	prometheusmetrics.EnisMax.Set(float64(c.maxENI - unmanaged))
 }
 
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
@@ -692,8 +634,8 @@ func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
 
 // decreaseDatastorePool runs every `interval` and attempts to return unused ENIs and IPs
 func (c *IPAMContext) decreaseDatastorePool(interval time.Duration) {
-	ipamdActionsInprogress.WithLabelValues("decreaseDatastorePool").Add(float64(1))
-	defer ipamdActionsInprogress.WithLabelValues("decreaseDatastorePool").Sub(float64(1))
+	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("decreaseDatastorePool").Add(float64(1))
+	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("decreaseDatastorePool").Sub(float64(1))
 
 	now := time.Now()
 	timeSinceLast := now.Sub(c.lastDecreaseIPPool)
@@ -794,8 +736,8 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 
 func (c *IPAMContext) increaseDatastorePool(ctx context.Context) error {
 	log.Debug("Starting to increase pool size")
-	ipamdActionsInprogress.WithLabelValues("increaseDatastorePool").Add(float64(1))
-	defer ipamdActionsInprogress.WithLabelValues("increaseDatastorePool").Sub(float64(1))
+	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("increaseDatastorePool").Add(float64(1))
+	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("increaseDatastorePool").Sub(float64(1))
 
 	short, _, warmIPTargetDefined := c.datastoreTargetState()
 	if warmIPTargetDefined && short == 0 {
@@ -1319,11 +1261,11 @@ func (c *IPAMContext) computeExtraPrefixesOverWarmTarget() int {
 }
 
 func ipamdErrInc(fn string) {
-	ipamdErr.With(prometheus.Labels{"fn": fn}).Inc()
+	prometheusmetrics.IpamdErr.With(prometheus.Labels{"fn": fn}).Inc()
 }
 
 func podENIErrInc(fn string) {
-	podENIErr.With(prometheus.Labels{"fn": fn}).Inc()
+	prometheusmetrics.PodENIErr.With(prometheus.Labels{"fn": fn}).Inc()
 }
 
 // nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
@@ -1336,8 +1278,8 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		return
 	}
 
-	ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
-	defer ipamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
+	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
+	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
 
 	log.Debugf("Reconciling ENI/IP pool info because time since last %v > %v", timeSinceLast, interval)
 	allENIs, err := c.awsClient.GetAttachedENIs()
@@ -1425,7 +1367,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 			// Continue if having trouble with ONLY 1 ENI, instead of bailout here?
 			continue
 		}
-		reconcileCnt.With(prometheus.Labels{"fn": "eniReconcileAdd"}).Inc()
+		prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "eniReconcileAdd"}).Inc()
 	}
 
 	// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
@@ -1440,7 +1382,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 			continue
 		}
 		delete(c.primaryIP, eni)
-		reconcileCnt.With(prometheus.Labels{"fn": "eniReconcileDel"}).Inc()
+		prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "eniReconcileDel"}).Inc()
 	}
 	c.lastNodeIPPoolAction = time.Now()
 
@@ -1485,7 +1427,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool []string, attachedENI awsutils.E
 			// continue instead of bailout due to one ip
 			continue
 		}
-		reconcileCnt.With(prometheus.Labels{"fn": "eniIPPoolReconcileDel"}).Inc()
+		prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "eniIPPoolReconcileDel"}).Inc()
 	}
 }
 
@@ -1531,7 +1473,7 @@ func (c *IPAMContext) eniPrefixPoolReconcile(ipPool []string, attachedENI awsuti
 			// continue instead of bailout due to one ip
 			continue
 		}
-		reconcileCnt.With(prometheus.Labels{"fn": "eniIPPoolReconcileDel"}).Inc()
+		prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "eniIPPoolReconcileDel"}).Inc()
 	}
 }
 
@@ -1601,7 +1543,7 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []*e
 		}
 		// Mark action
 		seenIPs[strPrivateIPv4] = true
-		reconcileCnt.With(prometheus.Labels{"fn": "eniDataStorePoolReconcileAdd"}).Inc()
+		prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "eniDataStorePoolReconcileAdd"}).Inc()
 	}
 	return seenIPs
 }
@@ -1673,7 +1615,7 @@ func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIPre
 		}
 		// Mark action
 		seenIPs[strPrivateIPv4Cidr] = true
-		reconcileCnt.With(prometheus.Labels{"fn": "eniDataStorePoolReconcileAdd"}).Inc()
+		prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "eniDataStorePoolReconcileAdd"}).Inc()
 	}
 	return seenIPs
 }
@@ -1739,7 +1681,7 @@ func getMinimumIPTarget() int {
 }
 
 func disableENIProvisioning() bool {
-	return getEnvBoolWithDefault(envDisableENIProvisioning, false)
+	return utils.GetBoolAsStringEnvVar(envDisableENIProvisioning, false)
 }
 
 func disableLeakedENICleanup() bool {
@@ -1747,31 +1689,31 @@ func disableLeakedENICleanup() bool {
 	// 1. IPv6 is enabled, so no ENIs are attached
 	// 2. ENI provisioning is disabled, so ENIs are not managed by IPAMD
 	// 3. Environment var explicitly disabling task is set
-	return isIPv6Enabled() || disableENIProvisioning() || getEnvBoolWithDefault(envDisableLeakedENICleanup, false)
+	return isIPv6Enabled() || disableENIProvisioning() || utils.GetBoolAsStringEnvVar(envDisableLeakedENICleanup, false)
 }
 
 func enablePodENI() bool {
-	return getEnvBoolWithDefault(envEnablePodENI, false)
+	return utils.GetBoolAsStringEnvVar(envEnablePodENI, false)
 }
 
 func usePrefixDelegation() bool {
-	return getEnvBoolWithDefault(envEnableIpv4PrefixDelegation, false)
+	return utils.GetBoolAsStringEnvVar(envEnableIpv4PrefixDelegation, false)
 }
 
 func isIPv4Enabled() bool {
-	return getEnvBoolWithDefault(envEnableIPv4, false)
+	return utils.GetBoolAsStringEnvVar(envEnableIPv4, false)
 }
 
 func isIPv6Enabled() bool {
-	return getEnvBoolWithDefault(envEnableIPv6, false)
+	return utils.GetBoolAsStringEnvVar(envEnableIPv6, false)
 }
 
 func enableManageUntaggedMode() bool {
-	return getEnvBoolWithDefault(envManageUntaggedENI, true)
+	return utils.GetBoolAsStringEnvVar(envManageUntaggedENI, true)
 }
 
 func enablePodIPAnnotation() bool {
-	return getEnvBoolWithDefault(envAnnotatePodIP, false)
+	return utils.GetBoolAsStringEnvVar(envAnnotatePodIP, false)
 }
 
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag

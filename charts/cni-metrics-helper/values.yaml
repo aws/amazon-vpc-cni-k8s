@@ -12,6 +12,7 @@ image:
 
 env:
   USE_CLOUDWATCH: "true"
+  USE_PROMETHEUS: "false"
   AWS_CLUSTER_ID: ""
   AWS_VPC_K8S_CNI_LOGLEVEL: "INFO"
 

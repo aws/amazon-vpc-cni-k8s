@@ -51,6 +51,7 @@ The following table lists the configurable parameters for this chart and their d
 | image.account                | ECR repository account number                                 | 602401143452       |
 | image.domain                 | ECR repository domain                                         | amazonaws.com      |
 | env.USE_CLOUDWATCH           | Whether to export CNI metrics to CloudWatch                   | true               |
+| env.USE_PROMETHEUS           | Whether to export CNI metrics to Prometheus                   | false              |
 | env.AWS_CLUSTER_ID           | ID of the cluster to use when exporting metrics to CloudWatch | default            |
 | env.AWS_VPC_K8S_CNI_LOGLEVEL | Log verbosity level (ie. FATAL, ERROR, WARN, INFO, DEBUG)     | INFO               |
 | env.METRIC_UPDATE_INTERVAL   | Interval at which to update CloudWatch metrics, in seconds.   |                    |

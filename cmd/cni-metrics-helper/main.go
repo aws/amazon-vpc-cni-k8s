@@ -29,15 +29,34 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/cmd/cni-metrics-helper/metrics"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 )
 
 const (
 	appName = "cni-metrics-helper"
+
+	// metricsPort is the port for prometheus metrics
+	metricsPort = 61681
+
+	// Environment variable to enable the metrics endpoint on 61681
+	envEnablePrometheusMetrics = "USE_PROMETHEUS"
+)
+
+var (
+	prometheusRegistered = false
 )
 
 type options struct {
-	submitCW bool
-	help     bool
+	submitCW         bool
+	help             bool
+	submitPrometheus bool
+}
+
+func prometheusRegister() {
+	if !prometheusRegistered {
+		prometheusmetrics.PrometheusRegister()
+		prometheusRegistered = true
+	}
 }
 
 func main() {
@@ -52,6 +71,7 @@ func main() {
 	flags := pflag.NewFlagSet("", pflag.ExitOnError)
 	flags.AddGoFlagSet(flag.CommandLine)
 	flags.BoolVar(&options.submitCW, "cloudwatch", true, "a bool")
+	flags.BoolVar(&options.submitPrometheus, "prometheus metrics", false, "a bool")
 
 	flags.Usage = func() {
 		_, _ = fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
@@ -85,6 +105,17 @@ func main() {
 		}
 	}
 
+	prometheusENV, found := os.LookupEnv(envEnablePrometheusMetrics)
+	if found {
+		if strings.Compare(prometheusENV, "yes") == 0 || strings.Compare(prometheusENV, "true") == 0 {
+			options.submitPrometheus = true
+			prometheusRegister()
+		}
+		if strings.Compare(prometheusENV, "no") == 0 || strings.Compare(prometheusENV, "false") == 0 {
+			options.submitPrometheus = false
+		}
+	}
+
 	metricUpdateIntervalEnv, found := os.LookupEnv("METRIC_UPDATE_INTERVAL")
 	if !found {
 		metricUpdateIntervalEnv = "30"
@@ -103,7 +134,7 @@ func main() {
 	// should be name/identifier for the cluster if specified
 	clusterID, _ := os.LookupEnv("AWS_CLUSTER_ID")
 
-	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, LogLevel %s, metricUpdateInterval %d", options.submitCW, logConfig.LogLevel, metricUpdateInterval)
+	log.Infof("Starting CNIMetricsHelper. Sending metrics to CloudWatch: %v, Prometheus: %v, LogLevel %s, metricUpdateInterval %d", options.submitCW, options.submitPrometheus, logConfig.LogLevel, metricUpdateInterval)
 
 	clientSet, err := k8sapi.GetKubeClientSet()
 	if err != nil {
@@ -129,8 +160,13 @@ func main() {
 		defer cw.Stop()
 	}
 
+	if options.submitPrometheus {
+		// Start prometheus server
+		go prometheusmetrics.ServeMetrics(metricsPort)
+	}
+
 	podWatcher := metrics.NewDefaultPodWatcher(k8sClient, log)
-	var cniMetric = metrics.CNIMetricsNew(clientSet, cw, options.submitCW, log, podWatcher)
+	var cniMetric = metrics.CNIMetricsNew(clientSet, cw, options.submitCW, options.submitPrometheus, log, podWatcher)
 
 	// metric loop
 	for range time.Tick(time.Duration(metricUpdateInterval) * time.Second) {

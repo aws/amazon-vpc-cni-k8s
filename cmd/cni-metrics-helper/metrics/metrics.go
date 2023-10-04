@@ -27,6 +27,8 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type metricMatcher func(metric *dto.Metric) bool
@@ -38,6 +40,7 @@ type metricsTarget interface {
 	getCWMetricsPublisher() publisher.Publisher
 	getTargetList(ctx context.Context) ([]string, error)
 	submitCloudWatch() bool
+	submitPrometheus() bool
 	getLogger() logger.Logger
 }
 
@@ -354,6 +357,30 @@ func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFa
 	}
 }
 
+// Prometheus export supports only gauge metrics for now.
+
+func producePrometheusMetrics(t metricsTarget, families map[string]*dto.MetricFamily, convertDef map[string]metricsConvert) {
+	prometheusCNIMetrics := prometheusmetrics.GetSupportedPrometheusCNIMetricsMapping()
+	if len(prometheusCNIMetrics) == 0 {
+		t.getLogger().Infof("Skipping since prometheus mapping is missing")
+		return
+	}
+	for key, family := range families {
+		convertMetrics := convertDef[key]
+		metricType := family.GetType()
+		for _, action := range convertMetrics.actions {
+			switch metricType {
+			case dto.MetricType_GAUGE:
+				metrics, ok := prometheusCNIMetrics[family.GetName()]
+				if ok {
+					metrics.(prometheus.Gauge).Set(action.data.curSingleDataPoint)
+				}
+			}
+		}
+	}
+
+}
+
 func resetMetrics(interestingMetrics map[string]metricsConvert) {
 	for _, convert := range interestingMetrics {
 		for _, act := range convert.actions {
@@ -426,4 +453,7 @@ func Handler(ctx context.Context, t metricsTarget) {
 
 	cw := t.getCWMetricsPublisher()
 	produceCloudWatchMetrics(t, families, interestingMetrics, cw)
+	if t.submitPrometheus() {
+		producePrometheusMetrics(t, families, interestingMetrics)
+	}
 }
