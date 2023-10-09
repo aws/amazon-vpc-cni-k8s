@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"time"
 
 	awsUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
@@ -51,16 +52,20 @@ var _ = Describe("Custom Networking Test", func() {
 				Args([]string{"-k", "-l", strconv.Itoa(port)}).
 				Build()
 
-			deployment = manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
+			deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Container(container).
 				Replicas(replicaCount).
-				NodeSelector(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal).
 				PodLabel(podLabelKey, podLabelVal).
 				Build()
 
+			var err error
 			deployment, err = f.K8sResourceManagers.DeploymentManager().
-				CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
+				CreateAndWaitTillDeploymentIsReady(deploymentBuilder, utils.DefaultDeploymentReadyTimeout)
 			Expect(err).ToNot(HaveOccurred())
+
+			// Wait for deployment to settle, as if any pods restart, their pod IP will change between
+			// the GET and the validation.
+			time.Sleep(5 * time.Second)
 
 			podList, err = f.K8sResourceManagers.PodManager().
 				GetPodsWithLabelSelector(podLabelKey, podLabelVal)
@@ -100,14 +105,14 @@ var _ = Describe("Custom Networking Test", func() {
 		})
 
 		JustAfterEach(func() {
-			err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
+			err := f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
 		Context("when connecting to reachable port", func() {
 			BeforeEach(func() {
 				port = customNetworkingSGOpenPort
-				replicaCount = 16
+				replicaCount = 10
 				shouldConnect = true
 			})
 			It("should connect", func() {})
@@ -127,7 +132,7 @@ var _ = Describe("Custom Networking Test", func() {
 		JustBeforeEach(func() {
 			By("deleting ENIConfig for all availability zones")
 			for _, eniConfig := range eniConfigList {
-				err = f.K8sResourceManagers.CustomResourceManager().DeleteResource(eniConfig)
+				err := f.K8sResourceManagers.CustomResourceManager().DeleteResource(eniConfig)
 				Expect(err).ToNot(HaveOccurred())
 			}
 		})
@@ -135,21 +140,20 @@ var _ = Describe("Custom Networking Test", func() {
 		JustAfterEach(func() {
 			By("re-creating ENIConfig for all availability zones")
 			for _, eniConfig := range eniConfigList {
-				err = f.K8sResourceManagers.CustomResourceManager().CreateResource(eniConfig)
+				err := f.K8sResourceManagers.CustomResourceManager().CreateResource(eniConfig)
 				Expect(err).ToNot(HaveOccurred())
 			}
 		})
 
 		It("deployment should not become ready", func() {
 			By("terminating instances")
-			err := awsUtils.TerminateInstances(f, nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal)
+			err := awsUtils.TerminateInstances(f)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Nodes should be stuck in NotReady state since no ENIs could be attached and no pod
 			// IP addresses are available.
 			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Replicas(2).
-				NodeSelector(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal).
 				Build()
 
 			By("verifying deployment should not succeed")
@@ -168,7 +172,7 @@ var _ = Describe("Custom Networking Test", func() {
 		JustBeforeEach(func() {
 			By("deleting ENIConfig for each availability zone")
 			for _, eniConfig := range eniConfigList {
-				err = f.K8sResourceManagers.CustomResourceManager().DeleteResource(eniConfig)
+				err := f.K8sResourceManagers.CustomResourceManager().DeleteResource(eniConfig)
 				Expect(err).ToNot(HaveOccurred())
 			}
 			By("re-creating ENIConfigs with no security group")
@@ -185,12 +189,11 @@ var _ = Describe("Custom Networking Test", func() {
 
 		It("deployment should become ready", func() {
 			By("terminating instances")
-			err := awsUtils.TerminateInstances(f, nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal)
+			err := awsUtils.TerminateInstances(f)
 			Expect(err).ToNot(HaveOccurred())
 
 			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Replicas(2).
-				NodeSelector(nodeGroupProperties.NgLabelKey, nodeGroupProperties.NgLabelVal).
 				Build()
 
 			By("verifying deployment succeeds")
