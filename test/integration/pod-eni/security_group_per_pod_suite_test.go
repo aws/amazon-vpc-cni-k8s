@@ -105,7 +105,7 @@ var _ = BeforeSuite(func() {
 		})
 
 	By("terminating instances")
-	err = awsUtils.TerminateInstances(f, f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
+	err = awsUtils.TerminateInstances(f)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("getting target node")
@@ -122,7 +122,7 @@ var _ = AfterSuite(func() {
 		})
 
 	By("terminating instances")
-	err := awsUtils.TerminateInstances(f, f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
+	err := awsUtils.TerminateInstances(f)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("deleting the security group")

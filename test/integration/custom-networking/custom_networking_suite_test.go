@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"net"
 	"testing"
-	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
@@ -48,8 +47,6 @@ var (
 	cidrRangeString        string
 	cidrRange              *net.IPNet
 	cidrBlockAssociationID string
-	// Key Pair is required for creating a self managed node group
-	keyPairName = "custom-networking-key"
 	// Security Group that will be used in ENIConfig
 	customNetworkingSGID         string
 	customNetworkingSGOpenPort   = 8080
@@ -57,9 +54,6 @@ var (
 	// List of ENIConfig per Availability Zone
 	eniConfigList        []*v1alpha1.ENIConfig
 	eniConfigBuilderList []*manifest.ENIConfigBuilder
-	// Properties of the self managed node group created using CFN template
-	nodeGroupProperties awsUtils.NodeGroupProperties
-	err                 error
 )
 
 // Parse test specific variable from flag
@@ -70,6 +64,7 @@ func init() {
 var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
 
+	var err error
 	_, cidrRange, err = net.ParseCIDR(cidrRangeString)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -78,10 +73,6 @@ var _ = BeforeSuite(func() {
 
 	By("getting the cluster VPC Config")
 	clusterVPCConfig, err = awsUtils.GetClusterVPCConfig(f)
-	Expect(err).ToNot(HaveOccurred())
-
-	By("creating ec2 key-pair for the new node group")
-	_, err := f.CloudServices.EC2().CreateKey(keyPairName)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("creating security group to be used by custom networking")
@@ -142,25 +133,8 @@ var _ = BeforeSuite(func() {
 			"WARM_ENI_TARGET":                    "0",
 		})
 
-	nodeGroupProperties = awsUtils.NodeGroupProperties{
-		NgLabelKey:                "node-type",
-		NgLabelVal:                "custom-networking-node",
-		AsgSize:                   2,
-		NodeGroupName:             "custom-networking-node",
-		IsCustomNetworkingEnabled: true,
-		Subnet:                    clusterVPCConfig.PublicSubnetList,
-		InstanceType:              "c5.xlarge",
-		KeyPairName:               keyPairName,
-		ContainerRuntime:          f.Options.ContainerRuntime,
-	}
-
-	if f.Options.InstanceType == "arm64" {
-		nodeGroupProperties.InstanceType = "m6g.large"
-		nodeGroupProperties.NodeImageId = "ami-087fca294139386b6"
-	}
-
-	By("creating a new self managed node group")
-	err = awsUtils.CreateAndWaitTillSelfManagedNGReady(f, nodeGroupProperties)
+	By("terminating instances")
+	err = awsUtils.TerminateInstances(f)
 	Expect(err).ToNot(HaveOccurred())
 })
 
@@ -169,16 +143,22 @@ var _ = AfterSuite(func() {
 	f.K8sResourceManagers.NamespaceManager().
 		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
-	By("waiting for some time to allow CNI to delete ENI for IP being cooled down")
-	time.Sleep(time.Second * 60)
-
 	var errs prometheus.MultiError
-	By("deleting the self managed node group")
-	// we just accumulate errors instead of immediately failing so we can attempt to clean up everything
-	errs.Append(awsUtils.DeleteAndWaitTillSelfManagedNGStackDeleted(f, nodeGroupProperties))
+	for _, eniConfig := range eniConfigList {
+		By("deleting ENIConfig")
+		errs.Append(f.K8sResourceManagers.CustomResourceManager().DeleteResource(eniConfig))
+	}
 
-	By("deleting the key pair")
-	errs.Append(f.CloudServices.EC2().DeleteKey(keyPairName))
+	By("disabling custom networking on aws-node DaemonSet")
+	k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
+		utils.AwsNodeNamespace, utils.AwsNodeName, map[string]struct{}{
+			"AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG": {},
+			"ENI_CONFIG_LABEL_DEF":               {},
+			"WARM_ENI_TARGET":                    {},
+		})
+
+	By("terminating instances")
+	errs.Append(awsUtils.TerminateInstances(f))
 
 	By("deleting security group")
 	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(customNetworkingSGID))
@@ -191,17 +171,5 @@ var _ = AfterSuite(func() {
 	By("disassociating the CIDR range to the VPC")
 	errs.Append(f.CloudServices.EC2().DisAssociateVPCCIDRBlock(cidrBlockAssociationID))
 
-	By("disabling custom networking on aws-node DaemonSet")
-	k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
-		utils.AwsNodeNamespace, utils.AwsNodeName, map[string]struct{}{
-			"AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG": {},
-			"ENI_CONFIG_LABEL_DEF":               {},
-			"WARM_ENI_TARGET":                    {},
-		})
-
-	for _, eniConfig := range eniConfigList {
-		By("deleting ENIConfig")
-		errs.Append(f.K8sResourceManagers.CustomResourceManager().DeleteResource(eniConfig))
-	}
 	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred())
 })
