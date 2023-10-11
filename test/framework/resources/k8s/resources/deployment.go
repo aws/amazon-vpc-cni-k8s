@@ -60,6 +60,11 @@ func (d *defaultDeploymentManager) CreateAndWaitTillDeploymentIsReady(deployment
 func (d *defaultDeploymentManager) DeleteAndWaitTillDeploymentIsDeleted(deployment *v1.Deployment) error {
 	ctx := context.Background()
 	err := d.k8sClient.Delete(ctx, deployment)
+
+	if errors.IsNotFound(err) {
+		return nil
+	}
+
 	if err != nil {
 		return err
 	}
