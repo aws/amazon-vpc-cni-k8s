@@ -1,4 +1,4 @@
-FROM public.ecr.aws/eks-distro-build-tooling/golang:1.20.4-5-gcc-al2 as builder
+FROM public.ecr.aws/eks-distro-build-tooling/golang:1.21.3-4-gcc-al2 as builder
 
 WORKDIR /workspace
 ENV GOPROXY direct
