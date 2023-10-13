@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.15.1
+
+* Bug - [Do not patch CNINode for custom networking unless SGPP is enabled](https://github.com/aws/amazon-vpc-cni-k8s/pull/2591) (@jdn5126 )
+* Bug - [Pass CNINode scheme to k8s client only](https://github.com/aws/amazon-vpc-cni-k8s/pull/2570) (@jdn5126 )
+* Bug - [fix(chart): Switch base64 encoded cniConfig.fileContents to the binaryData](https://github.com/aws/amazon-vpc-cni-k8s/pull/2552) (@VLZZZ )
+* Cleanup - [chore: remove refs to deprecated io/ioutil](https://github.com/aws/amazon-vpc-cni-k8s/pull/2541) (@testwill )
+* Documentation - [Update example table 'Pod per Prefixes' value](https://github.com/aws/amazon-vpc-cni-k8s/pull/2573) (@rlaisqls )
+* Documentation - [Bandwidth plugin with NP is currently unsupported](https://github.com/aws/amazon-vpc-cni-k8s/pull/2572) (@jayanthvn )
+* Documentation - [Update the use of privileged flag in aws-vpc-cni manifest](https://github.com/aws/amazon-vpc-cni-k8s/pull/2555) (@jaydeokar )
+* Improvement - [Dependabot Updates](https://github.com/aws/amazon-vpc-cni-k8s/pull/2605) (@jdn5126 )
+* Improvement - [Update Golang Builder image](https://github.com/aws/amazon-vpc-cni-k8s/pull/2586) (@jdn5126 )
+* Improvement - [Add ENABLE_V4_EGRESS env var to control IPv4 egress in IPv6 clusters](https://github.com/aws/amazon-vpc-cni-k8s/pull/2577) (@jdn5126 )
+* Improvement - [Reduce API calls](https://github.com/aws/amazon-vpc-cni-k8s/pull/2575) (@jchen6585 )
+* Improvement - [Add cni version to userAgent](https://github.com/aws/amazon-vpc-cni-k8s/pull/2566) (@jchen6585 )
+* Improvement - [bump controller runtime to 0.16.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/2548) (@jchen6585 )
+* Improvement - [Instance limits api pkg](https://github.com/aws/amazon-vpc-cni-k8s/pull/2528) (@jchen6585 )
+* Improvement - [Mimic VPC-RC limit struture](https://github.com/aws/amazon-vpc-cni-k8s/pull/2516) (@jchen6585 )
+* Metrics - [rename warm pool metrics](https://github.com/aws/amazon-vpc-cni-k8s/pull/2569) (@lnhanks )
+* Metrics - [Only metrics](https://github.com/aws/amazon-vpc-cni-k8s/pull/2557) (@lnhanks )
+* Testing - [Remove self-managed node group from custom-networking suite](https://github.com/aws/amazon-vpc-cni-k8s/pull/2590) (@jdn5126 )
+* Testing - [Integration test cleanup: Security Groups for Pods](https://github.com/aws/amazon-vpc-cni-k8s/pull/2547) (@jdn5126 )
+
 ## v1.15.0
 
 * Feature - [Add support for VPC Resource Controller's CNINode (reintroduce #2442)](https://github.com/aws/amazon-vpc-cni-k8s/pull/2503) (@haouc )
