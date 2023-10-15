@@ -18,7 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/apps/v1"
@@ -28,10 +27,6 @@ import (
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 )
-
-var primaryInstance *ec2.Instance
-var f *framework.Framework
-var err error
 
 const (
 	CoreDNSDeploymentName = "coredns"
@@ -126,28 +121,3 @@ var _ = AfterSuite(func() {
 	f.K8sResourceManagers.NamespaceManager().
 		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 })
-
-func ceil(x, y int) int {
-	return (x + y - 1) / y
-}
-
-func Max(x, y int) int {
-	if x < y {
-		return y
-	}
-	return x
-}
-
-// MinIgnoreZero returns smaller of two number, if any number is zero returns the other number
-func MinIgnoreZero(x, y int) int {
-	if x == 0 {
-		return y
-	}
-	if y == 0 {
-		return x
-	}
-	if x < y {
-		return x
-	}
-	return y
-}
