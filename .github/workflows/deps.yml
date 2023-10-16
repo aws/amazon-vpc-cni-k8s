@@ -1,5 +1,9 @@
 name: "Dependency Review"
-on: [push, pull_request, workflow_dispatch]
+on:
+  pull_request:
+    branches:
+      - "master"
+      - "release*"
 permissions:
   contents: read
 jobs:
@@ -24,8 +28,12 @@ jobs:
         with:
           go-version-input: 1.21.3
           go-version-file: go.mod
+          cache: false
+          repo-checkout: false
       - id: govulncheck-tests-agent
         uses: ./.github/actions/govulncheck
         with:
           go-version-input: 1.21.3
           go-version-file: test/agent/go.mod
+          cache: false
+          repo-checkout: false
