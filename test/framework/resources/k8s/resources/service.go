@@ -72,6 +72,11 @@ func (s *defaultServiceManager) CreateService(ctx context.Context, service *v1.S
 
 func (s *defaultServiceManager) DeleteAndWaitTillServiceDeleted(ctx context.Context, service *v1.Service) error {
 	err := s.k8sClient.Delete(ctx, service)
+
+	if errors.IsNotFound(err) {
+		return nil
+	}
+
 	if err != nil {
 		return err
 	}

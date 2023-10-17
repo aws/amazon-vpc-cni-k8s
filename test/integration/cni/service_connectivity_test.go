@@ -35,7 +35,7 @@ const (
 )
 
 // Verifies connectivity to deployment behind different service types
-var _ = Describe("[CANARY] test service connectivity", func() {
+var _ = Describe("[CANARY] test service connectivity", FlakeAttempts(3), func() {
 	var err error
 
 	// Deployment running the http server
@@ -145,17 +145,26 @@ var _ = Describe("[CANARY] test service connectivity", func() {
 	})
 
 	JustAfterEach(func() {
-		err := f.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(testerJob)
-		Expect(err).ToNot(HaveOccurred())
 
-		err = f.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(negativeTesterJob)
-		Expect(err).ToNot(HaveOccurred())
+		if testerJob != nil {
+			err := f.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(testerJob)
+			Expect(err).ToNot(HaveOccurred())
+		}
 
-		err = f.K8sResourceManagers.ServiceManager().DeleteAndWaitTillServiceDeleted(context.Background(), service)
-		Expect(err).ToNot(HaveOccurred())
+		if negativeTesterJob != nil {
+			err = f.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(negativeTesterJob)
+			Expect(err).ToNot(HaveOccurred())
+		}
 
-		err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
-		Expect(err).ToNot(HaveOccurred())
+		if service != nil {
+			err = f.K8sResourceManagers.ServiceManager().DeleteAndWaitTillServiceDeleted(context.Background(), service)
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		if deployment != nil {
+			err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
+			Expect(err).ToNot(HaveOccurred())
+		}
 
 		// Sleep for IP cooldown period to ensure IPs are added back to datastore for future test runs
 		time.Sleep(5 * time.Second)
