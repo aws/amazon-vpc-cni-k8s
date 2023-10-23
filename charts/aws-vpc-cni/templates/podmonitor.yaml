@@ -1,0 +1,29 @@
+{{- if and (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") (.Values.podMonitor.create) -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "aws-vpc-cni.fullname" . }}
+  namespace: {{ default .Release.Namespace .Values.podMonitor.namespace }}
+  labels:
+    {{ include "aws-vpc-cni.labels" . | indent 4 }}
+  {{- with .Values.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  podMetricsEndpoints:
+    - port: http-metrics
+      path: /metrics
+      {{- with .Values.podMonitor.interval }}
+      interval: {{ . }}
+      {{- end }}
+  {{- with .Values.podMonitor.sampleLimit }}
+  sampleLimit: {{ . }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "aws-vpc-cni.selectorLabels" . | nindent 6 }}
+{{- end -}}

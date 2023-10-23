@@ -104,6 +104,19 @@ podAnnotations: {}
 
 podLabels: {}
 
+podMonitor:
+  # Specifies whether Prometheus PodMonitor should be created
+  create: false
+  # Specifies whether the Prometheus PodMonitor should be created in a different namespace than
+  # the Helm release
+  namespace:
+  # Additional labels to add to the metadata
+  labels: {}
+  # The Prometheus scrape interval
+  interval: 30s
+  # The number of scraped samples that will be accepted
+  sampleLimit:
+
 securityContext:
   capabilities:
     add:

@@ -80,6 +80,11 @@ The following table lists the configurable parameters for this chart and their d
 | `podSecurityContext`    | Pod Security Context                                    | `{}`                                |
 | `podAnnotations`        | annotations to add to each pod                          | `{}`                                |
 | `podLabels`             | Labels to add to each pod                               | `{}`                                |
+| `podMonitor.create`     | If `true`, create a Prometehus PodMonitor               | `false`                             |
+| `podMonitor.namespace`  | Override Prometehus PodMonitor Helm release namespace.  | `nil`                               |
+| `podMonitor.labels`     | Additional Prometehus PodMonitor metadata labels        | `{}`                                |
+| `podMonitor.interval`   | Prometheus PodMonitor scrape interval.                  | `30s`                               |
+| `podMonitor.sampleLimit`| Number of scraped samples accepted.                     | `nil`                              |
 | `priorityClassName`     | Name of the priorityClass                               | `system-node-critical`              |
 | `resources`             | Resources for containers in pod                         | `requests.cpu: 25m`                 |
 | `securityContext`       | Container Security context                              | `capabilities: add: - "NET_ADMIN" - "NET_RAW"` |

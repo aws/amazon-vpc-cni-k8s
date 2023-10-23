@@ -18,3 +18,5 @@ core-plugins/
 build/
 vendor
 egress-cni
+# Unignore charts directory as it's confilcts with `aws-vpc-cni` binary ignore rule
+!charts/**
