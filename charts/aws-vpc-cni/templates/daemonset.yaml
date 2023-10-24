@@ -48,8 +48,10 @@ spec:
 {{- end }}
         securityContext:
           {{- toYaml .Values.init.securityContext | nindent 12 }}
+        {{- with default .Values.resources .Values.init.resources }}
         resources:
-          {{- toYaml .Values.resources | nindent 12 }}
+          {{- toYaml . | nindent 12 }}
+        {{- end }}
         volumeMounts:
           - mountPath: /host/opt/cni/bin
             name: cni-bin-dir
@@ -91,8 +93,10 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.name
+          {{- with .Values.resources }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:
@@ -116,6 +120,7 @@ spec:
           {{- with .Values.extraVolumeMounts  }}
           {{- toYaml .| nindent 10 }}
           {{- end }}
+        {{- if .Values.nodeAgent.enabled }}
         - name: aws-eks-nodeagent
           image: {{ include "aws-vpc-cni.nodeAgentImage" . }}
           env:
@@ -131,8 +136,10 @@ spec:
             - --enable-policy-event-logs={{ .Values.nodeAgent.enablePolicyEventLogs }}
             - --metrics-bind-addr={{ include "aws-vpc-cni.nodeAgentMetricsBindAddr" . }}
             - --health-probe-bind-addr={{ include "aws-vpc-cni.nodeAgentHealthProbeBindAddr" . }}
+          {{- with default .Values.resources .Values.nodeAgent.resources }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           securityContext:
             {{- toYaml .Values.nodeAgent.securityContext | nindent 12 }}
           volumeMounts:
@@ -144,10 +151,13 @@ spec:
             name: log-dir
           - mountPath: /var/run/aws-node
             name: run-dir
+      {{- end }}
       volumes:
+      {{- if .Values.nodeAgent.enabled }}
       - name: bpf-pin-path
         hostPath:
           path: /sys/fs/bpf
+      {{- end }}
       - name: cni-bin-dir
         hostPath:
           path: /opt/cni/bin

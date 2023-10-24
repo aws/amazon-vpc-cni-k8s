@@ -60,8 +60,10 @@ The following table lists the configurable parameters for this chart and their d
 | `init.image.override`   | A custom docker image to use                            | `nil`                               |
 | `init.env`              | List of init container environment variables. See [here](https://github.com/aws/amazon-vpc-cni-k8s#cni-configuration-variables) for options | (see `values.yaml`) |
 | `init.securityContext`  | Init container Security context                         | `privileged: true`                  |
+| `init.resources`        | Init container resources, will defualt to .Values.resources if not set | `{}`                 |
 | `originalMatchLabels`   | Use the original daemonset matchLabels                  | `false`                             |
 | `nameOverride`          | Override the name of the chart                          | `aws-node`                          |
+| `nodeAgent.enabled`     | If the Node Agent container should be created           | `true`                              |
 | `nodeAgent.image.tag`   | Image tag for Node Agent                                | `v1.0.4`                            |
 | `nodeAgent.image.domain`| ECR repository domain                                   | `amazonaws.com`                     |
 | `nodeAgent.image.region`| ECR repository region to use. Should match your cluster | `us-west-2`                         |
@@ -74,6 +76,7 @@ The following table lists the configurable parameters for this chart and their d
 | `nodeAgent.metricsBindAddr` | Node Agent port for metrics                         | `8162`                              |
 | `nodeAgent.healthProbeBindAddr` | Node Agent port for health probes               | `8163`                              |
 | `nodeAgent.enableIpv6`  | Enable IPv6 support for Node Agent                      | `false`                             |
+| `nodeAgent.resources`   | Node Agent resources, will defualt to .Values.resources if not set | `{}`                     |
 | `extraVolumes`          | Array to add extra volumes                              | `[]`                                |
 | `extraVolumeMounts`     | Array to add extra mount                                | `[]`                                |
 | `nodeSelector`          | Node labels for pod assignment                          | `{}`                                |
