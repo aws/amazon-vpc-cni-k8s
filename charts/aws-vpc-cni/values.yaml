@@ -22,8 +22,10 @@ init:
     ENABLE_IPv6: "false"
   securityContext:
     privileged: true
+  resources: {}
 
 nodeAgent:
+  enabled: true
   image:
     tag: v1.0.4
     domain: amazonaws.com
@@ -44,6 +46,7 @@ nodeAgent:
   enableIpv6: "false"
   metricsBindAddr: "8162"
   healthProbeBindAddr: "8163"
+  resources: {}
 
 image:
   tag: v1.15.1
