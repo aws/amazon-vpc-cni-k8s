@@ -29,7 +29,7 @@ import (
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
-	"github.com/containernetworking/cni/pkg/types/current"
+	current "github.com/containernetworking/cni/pkg/types/100"
 	cniSpecVersion "github.com/containernetworking/cni/pkg/version"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
@@ -187,7 +187,6 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	// We will let the values in result struct guide us in terms of IP Address Family configured.
 	var v4Addr, v6Addr, addr *net.IPNet
-	var addrFamily string
 
 	// We don't support dual stack mode currently so it has to be either v4 or v6 mode.
 	if r.IPv4Addr != "" {
@@ -195,16 +194,16 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			IP:   net.ParseIP(r.IPv4Addr),
 			Mask: net.CIDRMask(32, 32),
 		}
-		addrFamily = "4"
 		addr = v4Addr
 	} else if r.IPv6Addr != "" {
 		v6Addr = &net.IPNet{
 			IP:   net.ParseIP(r.IPv6Addr),
 			Mask: net.CIDRMask(128, 128),
 		}
-		addrFamily = "6"
 		addr = v6Addr
 	}
+	// AddNetwork guarantees that Gateway string is a valid IPNet
+	gw := net.ParseIP(r.PodENISubnetGW)
 
 	var hostVethName string
 	var dummyInterface *current.Interface
@@ -257,9 +256,9 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	containerInterfaceIndex := 1
 	ips := []*current.IPConfig{
 		{
-			Version:   addrFamily,
-			Address:   *addr,
 			Interface: &containerInterfaceIndex,
+			Address:   *addr,
+			Gateway:   gw,
 		},
 	}
 

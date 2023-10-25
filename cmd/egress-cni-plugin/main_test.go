@@ -44,7 +44,7 @@ func TestCmdAddV4(t *testing.T) {
 		ContainerID: containerIDV4,
 		IfName:      "eth0",
 		StdinData: []byte(`{
-				"cniVersion":"0.4.0",
+				"cniVersion":"1.0.0",
 				"mtu":"9001",
 				"name":"aws-cni",
 				"enabled":"true",
@@ -55,7 +55,7 @@ func TestCmdAddV4(t *testing.T) {
 				"podSGEnforcingMode":"strict",
 				"prevResult":
 					{
-					"cniVersion":"0.4.0",
+					"cniVersion":"1.0.0",
 					"interfaces":
 						[
 							{"name":"eni36e5b0ee702"},
@@ -94,13 +94,13 @@ func TestCmdAddV4(t *testing.T) {
 		fmt.Sprintf("nat POSTROUTING -s 169.254.172.10 -j %s -m comment --comment name: \"aws-cni\" id: \"%s\"", snatChainV4, containerIDV4)}
 	assert.EqualValues(t, expectIptablesRules, actualIptablesRules)
 
-	expectRouteDel := []string{"route del: {Ifindex: 2 Dst: 169.254.172.0/22 Src: <nil> Gw: <nil> Flags: [] Table: 0}"}
+	expectRouteDel := []string{"route del: {Ifindex: 2 Dst: 169.254.172.0/22 Src: <nil> Gw: <nil> Flags: [] Table: 0 Realm: 0}"}
 	assert.EqualValues(t, expectRouteDel, actualRouteDel)
 
 	expectRouteAdd := []string{
-		"route add: {Ifindex: 2 Dst: 169.254.172.1/32 Src: 169.254.172.10 Gw: <nil> Flags: [] Table: 0}",
-		"route add: {Ifindex: 2 Dst: 169.254.172.0/22 Src: 169.254.172.10 Gw: 169.254.172.1 Flags: [] Table: 0}",
-		"route add: {Ifindex: 100 Dst: 169.254.172.10/32 Src: <nil> Gw: <nil> Flags: [] Table: 0}"}
+		"route add: {Ifindex: 2 Dst: 169.254.172.1/32 Src: 169.254.172.10 Gw: <nil> Flags: [] Table: 0 Realm: 0}",
+		"route add: {Ifindex: 2 Dst: 169.254.172.0/22 Src: 169.254.172.10 Gw: 169.254.172.1 Flags: [] Table: 0 Realm: 0}",
+		"route add: {Ifindex: 100 Dst: 169.254.172.10/32 Src: <nil> Gw: <nil> Flags: [] Table: 0 Realm: 0}"}
 	assert.EqualValues(t, expectRouteAdd, actualRouteAdd)
 
 	// the unit test write some output string not ends with '\n' and this cause go runner unable to interpret that a test was run.
@@ -115,7 +115,7 @@ func TestCmdDelV4(t *testing.T) {
 		ContainerID: containerIDV4,
 		IfName:      "eth0",
 		StdinData: []byte(`{
-				"cniVersion":"0.4.0",
+				"cniVersion":"1.0.0",
 				"mtu":"9001",
 				"name":"aws-cni",
 				"enabled":"true",
@@ -126,7 +126,7 @@ func TestCmdDelV4(t *testing.T) {
 				"podSGEnforcingMode":"strict",
 				"prevResult":
 					{
-					"cniVersion":"0.4.0",
+					"cniVersion":"1.0.0",
 					"interfaces":
 						[
 							{"name":"eni36e5b0ee702"},
@@ -170,7 +170,7 @@ func TestCmdAddV6(t *testing.T) {
 		ContainerID: containerIDV6,
 		IfName:      "eth0",
 		StdinData: []byte(`{
-				"cniVersion":"0.4.0",
+				"cniVersion":"1.0.0",
 				"mtu":"9001",
 				"name":"aws-cni",
 				"enabled":"true",
@@ -181,7 +181,7 @@ func TestCmdAddV6(t *testing.T) {
 				"podSGEnforcingMode":"strict",
 				"prevResult":
 					{
-					"cniVersion":"0.4.0",
+					"cniVersion":"1.0.0",
 					"interfaces":
 						[
 							{"name":"eni36e5b0ee702"},
@@ -220,10 +220,10 @@ func TestCmdAddV6(t *testing.T) {
 		fmt.Sprintf("nat POSTROUTING -s fd00::10 -j %s -m comment --comment name: \"aws-cni\" id: \"%s\"", snatChainV6, containerIDV6)}
 	assert.EqualValues(t, expectIptablesRules, actualIptablesRules)
 
-	expectRouteAdd := []string{"{Ifindex: 100 Dst: fd00::10/128 Src: <nil> Gw: <nil> Flags: [] Table: 0}"}
+	expectRouteAdd := []string{"{Ifindex: 100 Dst: fd00::10/128 Src: <nil> Gw: <nil> Flags: [] Table: 0 Realm: 0}"}
 	assert.EqualValues(t, expectRouteAdd, actualRouteAdd)
 
-	expectRouteReplace := []string{"{Ifindex: 2 Dst: ::/0 Src: <nil> Gw: fe80::10 Flags: [] Table: 0}"}
+	expectRouteReplace := []string{"{Ifindex: 2 Dst: ::/0 Src: <nil> Gw: fe80::10 Flags: [] Table: 0 Realm: 0}"}
 	assert.EqualValues(t, expectRouteReplace, actualRouteReplace)
 
 	// the unit test write some output string not ends with '\n' and this cause go runner unable to interpret that a test was run.
@@ -238,7 +238,7 @@ func TestCmdDelV6(t *testing.T) {
 		ContainerID: containerIDV6,
 		IfName:      "eth0",
 		StdinData: []byte(`{
-				"cniVersion":"0.4.0",
+				"cniVersion":"1.0.0",
 				"mtu":"9001",
 				"name":"aws-cni",
 				"enabled":"true",
@@ -249,7 +249,7 @@ func TestCmdDelV6(t *testing.T) {
 				"podSGEnforcingMode":"strict",
 				"prevResult":
 					{
-					"cniVersion":"0.4.0",
+					"cniVersion":"1.0.0",
 					"interfaces":
 						[
 							{"name":"eni36e5b0ee702"},

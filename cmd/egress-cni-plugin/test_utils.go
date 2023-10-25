@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/containernetworking/cni/pkg/types/current"
+	current "github.com/containernetworking/cni/pkg/types/100"
 	_ns "github.com/containernetworking/plugins/pkg/ns"
 	"github.com/golang/mock/gomock"
 	"github.com/vishvananda/netlink"
@@ -44,10 +44,9 @@ func SetupAddExpectV4(ec egressContext, chain string, actualIptablesRules, actua
 
 	ec.Ipam.(*mock_ipam.MockHostIpam).EXPECT().ExecAdd("host-local", gomock.Any()).Return(
 		&current.Result{
-			CNIVersion: "0.4.0",
+			CNIVersion: "1.0.0",
 			IPs: []*current.IPConfig{
-				&current.IPConfig{
-					Version: "4",
+				{
 					Address: net.IPNet{
 						IP:   net.ParseIP("169.254.172.10"),
 						Mask: net.CIDRMask(22, 32),
@@ -66,7 +65,7 @@ func SetupAddExpectV4(ec egressContext, chain string, actualIptablesRules, actua
 		f(nsParent)
 	}).Return(nil)
 
-	ec.Veth.(*mock_veth.MockVeth).EXPECT().Setup(egressIPv4InterfaceName, 9001, gomock.Any()).Return(
+	ec.Veth.(*mock_veth.MockVeth).EXPECT().Setup(egressIPv4InterfaceName, 9001, "", gomock.Any()).Return(
 		net.Interface{
 			Name:         HostIfName,
 			HardwareAddr: macHost[:],
@@ -188,10 +187,9 @@ func SetupAddExpectV6(c egressContext, chain string, actualIptablesRules, actual
 
 	c.Ipam.(*mock_ipam.MockHostIpam).EXPECT().ExecAdd("host-local", gomock.Any()).Return(
 		&current.Result{
-			CNIVersion: "0.4.0",
+			CNIVersion: "1.0.0",
 			IPs: []*current.IPConfig{
-				&current.IPConfig{
-					Version: "6",
+				{
 					Address: net.IPNet{
 						IP:   net.ParseIP("fd00::10"),
 						Mask: net.CIDRMask(8, 128),
@@ -209,7 +207,7 @@ func SetupAddExpectV6(c egressContext, chain string, actualIptablesRules, actual
 		f(nsParent)
 	}).Return(nil).AnyTimes()
 
-	c.Veth.(*mock_veth.MockVeth).EXPECT().Setup(egressIPv6InterfaceName, 9001, gomock.Any()).Return(
+	c.Veth.(*mock_veth.MockVeth).EXPECT().Setup(egressIPv6InterfaceName, 9001, "", gomock.Any()).Return(
 		net.Interface{
 			Name:         HostIfName,
 			HardwareAddr: macHost[:],
