@@ -22,6 +22,31 @@ init:
     ENABLE_IPv6: "false"
   securityContext:
     privileged: true
+  resources: {}
+
+nodeAgent:
+  enabled: true
+  image:
+    tag: v1.0.4
+    domain: amazonaws.com
+    region: us-west-2
+    endpoint: ecr
+    account: "602401143452"
+    pullPolicy: Always
+    # Set to use custom image
+    override:
+    # override: "repo/org/image:tag"
+  securityContext:
+    capabilities:
+      add:
+      - "NET_ADMIN"
+    privileged: true
+  enableCloudWatchLogs: "false"
+  enablePolicyEventLogs: "false"
+  enableIpv6: "false"
+  metricsBindAddr: "8162"
+  healthProbeBindAddr: "8163"
+  resources: {}
 
 nodeAgent:
   image:
