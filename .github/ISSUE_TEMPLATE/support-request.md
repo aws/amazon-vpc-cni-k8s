@@ -11,14 +11,16 @@ assignees: ''
 For urgent operational issues, please contact AWS Support directly at https://aws.amazon.com/premiumsupport/
 
 If you think you have found a potential security issue, please do not post it as an issue. Instead, follow the instructions at https://aws.amazon.com/security/vulnerability-reporting/ or email AWS Security directly at aws-security@amazon.com
+
+For Network Policy requests, please file at https://github.com/aws/aws-network-policy-agent/issues
 -->
 
 **What happened**:
 
 <!--
-If you're looking for help, check the [troubleshooting guide](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/troubleshooting.md)
+If you are looking for help, check the [troubleshooting guide](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/troubleshooting.md)
 
-If you're unable to find the answers and would like to create an issue, upload the logs by running [CNI Log Collection tool](https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html#troubleshoot-cni) and email the log archive to k8s-awscni-triage@amazon.com
+If you are unable to find the answers and would like to create an issue, upload the logs by running [CNI Log Collection tool](https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html#troubleshoot-cni) and email the log archive to k8s-awscni-triage@amazon.com
 -->
 
 **Environment**:

@@ -3,12 +3,11 @@
 2. Ensure you have included output of manual testing done in the Testing section.
 3. Ensure number of lines of code for new or existing methods are within the reasonable limit.
 4. Ensure your change works on existing clusters after upgrade.
-5. If your mounting any new file or directory, make sure its not opening up any security attack vector for aws-vpc-cni-k8s modules.
-6. If AWS apis are invoked, document the call rate in the description section.
+5. If you are mounting any new file or directory, make sure it is not opening up any security attack vector for aws-vpc-cni-k8s modules.
+6. If AWS APIs are invoked, document the call rate in the description section.
 7. If EC2 Metadata apis are invoked, ensure to handle stale information returned from metadata.
 -->
 **What type of PR is this?**
-
 <!--
 Add one of the following:
 bug
@@ -32,18 +31,12 @@ output of manual testing/integration tests results and also attach logs
 showing the fix being resolved
 -->
 
-**Automation added to e2e**:
-<!-- 
-Test case added to lib/integration.sh 
-If no, create an issue with enhancement/testing label
--->
-
 **Will this PR introduce any new dependencies?**:
 <!-- 
 e.g. new EC2/K8s API, IMDS API, dependency on specific kernel module/version or binary in container OS.
 -->
 
-**Will this break upgrades or downgrades. Has updating a running cluster been tested?**:
+**Will this break upgrades or downgrades? Has updating a running cluster been tested?**:
 
 
 **Does this change require updates to the CNI daemonset config files to work?**:
