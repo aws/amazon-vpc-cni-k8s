@@ -1837,6 +1837,174 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "nitro",
 		IsBareMetal: false,
 	},
+	"c7a.12xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7a.16xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7a.24xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7a.2xlarge":	   {
+		ENILimit: 4, 
+		IPv4Limit: 15, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7a.32xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7a.48xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7a.4xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7a.8xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7a.large":	   {
+		ENILimit: 3, 
+		IPv4Limit: 10, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 3,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7a.medium":	   {
+		ENILimit: 2, 
+		IPv4Limit: 4, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 2,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7a.metal-48xl":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
+	},
+	"c7a.xlarge":	   {
+		ENILimit: 4, 
+		IPv4Limit: 15, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
 	"c7g.12xlarge":	   {
 		ENILimit: 8, 
 		IPv4Limit: 30, 
@@ -2182,6 +2350,160 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "nitro",
 		IsBareMetal: false,
 	},
+	"c7i.12xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7i.16xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7i.24xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7i.2xlarge":	   {
+		ENILimit: 4, 
+		IPv4Limit: 15, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7i.48xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7i.4xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7i.8xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7i.large":	   {
+		ENILimit: 3, 
+		IPv4Limit: 10, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 3,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7i.metal-24xl":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
+	},
+	"c7i.metal-48xl":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
+	},
+	"c7i.xlarge":	   {
+		ENILimit: 4, 
+		IPv4Limit: 15, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
 	"cr1.8xlarge":	   {
 		ENILimit: 8, 
 		IPv4Limit: 30, 
@@ -2445,34 +2767,6 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		IsBareMetal: false,
 	},
 	"f1.4xlarge":	   {
-		ENILimit: 8, 
-		IPv4Limit: 30, 
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-				{
-					MaximumNetworkInterfaces: 8,
-					NetworkCardIndex: 0,
-				},
-			
-		},
-		HypervisorType: "xen",
-		IsBareMetal: false,
-	},
-	"g2.2xlarge":	   {
-		ENILimit: 4, 
-		IPv4Limit: 15, 
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-				{
-					MaximumNetworkInterfaces: 4,
-					NetworkCardIndex: 0,
-				},
-			
-		},
-		HypervisorType: "xen",
-		IsBareMetal: false,
-	},
-	"g2.8xlarge":	   {
 		ENILimit: 8, 
 		IPv4Limit: 30, 
 		DefaultNetworkCardIndex: 0,
@@ -3472,9 +3766,37 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "nitro",
 		IsBareMetal: false,
 	},
+	"i4i.12xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
 	"i4i.16xlarge":	   {
 		ENILimit: 15, 
 		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"i4i.24xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 30, 
 		DefaultNetworkCardIndex: 0,
 		NetworkCards: []NetworkCard{
 				{
@@ -6502,6 +6824,34 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "nitro",
 		IsBareMetal: false,
 	},
+	"m7i.metal-24xl":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
+	},
+	"m7i.metal-48xl":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
+	},
 	"m7i.xlarge":	   {
 		ENILimit: 4, 
 		IPv4Limit: 15, 
@@ -6517,6 +6867,34 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		IsBareMetal: false,
 	},
 	"mac1.metal":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
+	},
+	"mac2-m2.metal":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
+	},
+	"mac2-m2pro.metal":	   {
 		ENILimit: 8, 
 		IPv4Limit: 30, 
 		DefaultNetworkCardIndex: 0,
@@ -8843,6 +9221,174 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "nitro",
 		IsBareMetal: false,
 	},
+	"r7a.12xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7a.16xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7a.24xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7a.2xlarge":	   {
+		ENILimit: 4, 
+		IPv4Limit: 15, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7a.32xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7a.48xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7a.4xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7a.8xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7a.large":	   {
+		ENILimit: 3, 
+		IPv4Limit: 10, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 3,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7a.medium":	   {
+		ENILimit: 2, 
+		IPv4Limit: 4, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 2,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7a.metal-48xl":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
+	},
+	"r7a.xlarge":	   {
+		ENILimit: 4, 
+		IPv4Limit: 15, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
 	"r7g.12xlarge":	   {
 		ENILimit: 8, 
 		IPv4Limit: 30, 
@@ -9068,6 +9614,272 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		IsBareMetal: false,
 	},
 	"r7gd.xlarge":	   {
+		ENILimit: 4, 
+		IPv4Limit: 15, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7i.12xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7i.16xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7i.24xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7i.2xlarge":	   {
+		ENILimit: 4, 
+		IPv4Limit: 15, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7i.48xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7i.4xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7i.8xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7i.large":	   {
+		ENILimit: 3, 
+		IPv4Limit: 10, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 3,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7i.metal-24xl":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
+	},
+	"r7i.metal-48xl":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
+	},
+	"r7i.xlarge":	   {
+		ENILimit: 4, 
+		IPv4Limit: 15, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7iz.12xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7iz.16xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7iz.2xlarge":	   {
+		ENILimit: 4, 
+		IPv4Limit: 15, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7iz.32xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7iz.4xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7iz.8xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7iz.large":	   {
+		ENILimit: 3, 
+		IPv4Limit: 10, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 3,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"r7iz.xlarge":	   {
 		ENILimit: 4, 
 		IPv4Limit: 15, 
 		DefaultNetworkCardIndex: 0,
