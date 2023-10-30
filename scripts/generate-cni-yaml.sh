@@ -4,12 +4,12 @@ set -euo pipefail
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 PLATFORM=$(uname | tr '[:upper:]' '[:lower:]')
-HELM_VERSION="3.12.3"
+HELM_VERSION="3.13.1"
 NAMESPACE="kube-system"
 
 MAKEFILEPATH=$SCRIPTPATH/../Makefile
-VPC_CNI_VERSION="v1.15.1"
-NODE_AGENT_VERSION="v1.0.4"
+VPC_CNI_VERSION="v1.15.3"
+NODE_AGENT_VERSION="v1.0.5"
 BUILD_DIR=$SCRIPTPATH/../build/cni-rel-yamls/$VPC_CNI_VERSION
 
 REGIONS_FILE=$SCRIPTPATH/../charts/regions.json
@@ -74,7 +74,7 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
       --set image.tag=$VPC_CNI_VERSION \
       --set image.region=$ecrRegion \
       --set-string image.account=$ecrAccount \
-      --set image.domain=$ecrDomain  \
+      --set image.domain=$ecrDomain \
       --set-string nodeAgent.image.account=$ecrAccount \
       --set nodeAgent.image.region=$ecrRegion \
       --set nodeAgent.image.domain=$ecrDomain \

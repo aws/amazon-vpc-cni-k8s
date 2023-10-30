@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.15.3
+
+* Bug - [Fully address CVE-2023-44487](https://github.com/aws/amazon-vpc-cni-k8s/pull/2626) (@jdn5126 )
+* Improvement - [feat(chart): Made node agent optional](https://github.com/aws/amazon-vpc-cni-k8s/pull/2623) (@stevehipwell )
+* Improvement - [Update Golang to 1.21.3](https://github.com/aws/amazon-vpc-cni-k8s/pull/2616) (@jdn5126 )
+* Improvement - [Go module updates and Golang builder image update](https://github.com/aws/amazon-vpc-cni-k8s/pull/2615) (@jdn5126 )
+
 ## v1.15.1
 
 * Bug - [Do not patch CNINode for custom networking unless SGPP is enabled](https://github.com/aws/amazon-vpc-cni-k8s/pull/2591) (@jdn5126 )
