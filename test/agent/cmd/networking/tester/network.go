@@ -120,7 +120,8 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 				Dst: mainTableRules[0].Dst,
 			}, netlink.RT_FILTER_DST)
 		if err != nil {
-			fmt.Errorf("failed to find ip rule with destination %s: %v", podIP.String(), err)
+			validationErrors = append(validationErrors,
+				fmt.Errorf("failed to find ip rule with destination %s: %v", podIP.String(), err))
 		}
 
 		if len(toContainerRoutes) != 1 {
@@ -156,7 +157,7 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 	}
 
 	// Finally validate that the route table for secondary ENI has the right routes
-	for index, _ := range secondaryRouteTableIndex {
+	for index := range secondaryRouteTableIndex {
 		routes, err := netlink.RouteListFiltered(ipFamily,
 			&netlink.Route{
 				Table: index,
