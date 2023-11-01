@@ -127,7 +127,7 @@ require (
 	github.com/prometheus/procfs v0.10.1 // indirect
 	github.com/rubenv/sql-migrate v1.5.2 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
-	github.com/safchain/ethtool v0.0.0-20210803160452-9aa261dae9b1 // indirect
+	github.com/safchain/ethtool v0.3.0 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/spf13/cobra v1.7.0 // indirect
@@ -175,8 +175,3 @@ replace golang.org/x/crypto => golang.org/x/crypto v0.14.0
 
 // Cannot be removed until all dependencies use net library v0.17.0 or higher
 replace golang.org/x/net => golang.org/x/net v0.17.0
-
-// containernetworking packages must remain pinned until VPC CNI moves to CNI spec 1.0.0
-replace github.com/containernetworking/cni => github.com/containernetworking/cni v0.8.1
-
-replace github.com/containernetworking/plugins => github.com/containernetworking/plugins v0.9.1

@@ -6,7 +6,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/containernetworking/cni/pkg/types/current"
+	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/vishvananda/netlink"
 
@@ -101,7 +101,8 @@ func EnableIpForwarding(procSys procsyswrapper.ProcSys, ips []*current.IPConfig)
 	v6 := false
 
 	for _, ip := range ips {
-		if ip.Version == "4" && !v4 {
+		isV4 := ip.Address.IP.To4() != nil
+		if isV4 && !v4 {
 			valueV4, err := procSys.Get(ipv4ForwardKey)
 			if err != nil {
 				return err
@@ -113,7 +114,7 @@ func EnableIpForwarding(procSys procsyswrapper.ProcSys, ips []*current.IPConfig)
 				}
 			}
 			v4 = true
-		} else if ip.Version == "6" && !v6 {
+		} else if !isV4 && !v6 {
 			valueV6, err := procSys.Get(ipv6ForwardKey)
 			if err != nil {
 				return err

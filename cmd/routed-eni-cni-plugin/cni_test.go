@@ -22,7 +22,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/containernetworking/cni/pkg/types/current"
+	current "github.com/containernetworking/cni/pkg/types/100"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
@@ -42,7 +42,7 @@ const (
 	containerID    = "test-container"
 	netNS          = "/proc/ns/1234"
 	ifName         = "eth0"
-	cniVersion     = "1.0"
+	cniVersion     = "1.1"
 	cniName        = "aws-cni"
 	pluginLogLevel = "Debug"
 	pluginLogFile  = "/var/log/aws-routed-eni/plugin.log"
@@ -233,8 +233,9 @@ func TestCmdDelErrDelNetwork(t *testing.T) {
 
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, errors.New("error on DelNetwork"))
 
+	// On DelNetwork fail, the CNI must not return an error to kubelet as deletes are best-effort.
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
-	assert.Error(t, err)
+	assert.Nil(t, err)
 }
 
 func TestCmdDelErrTeardown(t *testing.T) {
@@ -396,7 +397,6 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 							},
 							IPs: []*current.IPConfig{
 								{
-									Version: "4",
 									Address: net.IPNet{
 										IP:   net.ParseIP("192.168.1.1"),
 										Mask: net.CIDRMask(32, 32),
@@ -449,7 +449,6 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 							},
 							IPs: []*current.IPConfig{
 								{
-									Version: "4",
 									Address: net.IPNet{
 										IP:   net.ParseIP("192.168.1.1"),
 										Mask: net.CIDRMask(32, 32),
@@ -503,7 +502,6 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 							},
 							IPs: []*current.IPConfig{
 								{
-									Version: "4",
 									Address: net.IPNet{
 										IP:   net.ParseIP("192.168.1.1"),
 										Mask: net.CIDRMask(32, 32),
@@ -541,7 +539,6 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 							},
 							IPs: []*current.IPConfig{
 								{
-									Version: "4",
 									Address: net.IPNet{
 										IP:   net.ParseIP("192.168.1.1"),
 										Mask: net.CIDRMask(32, 32),
@@ -583,7 +580,6 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 							},
 							IPs: []*current.IPConfig{
 								{
-									Version: "4",
 									Address: net.IPNet{
 										IP:   net.ParseIP("192.168.1.1"),
 										Mask: net.CIDRMask(32, 32),
@@ -625,7 +621,6 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 							},
 							IPs: []*current.IPConfig{
 								{
-									Version: "4",
 									Address: net.IPNet{
 										IP:   net.ParseIP("192.168.1.1"),
 										Mask: net.CIDRMask(32, 32),
@@ -662,7 +657,6 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 							},
 							IPs: []*current.IPConfig{
 								{
-									Version: "4",
 									Address: net.IPNet{
 										IP:   net.ParseIP("192.168.1.1"),
 										Mask: net.CIDRMask(32, 32),
@@ -796,7 +790,6 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 							},
 							IPs: []*current.IPConfig{
 								{
-									Version: "4",
 									Address: net.IPNet{
 										IP:   net.ParseIP("192.168.1.1"),
 										Mask: net.CIDRMask(32, 32),
@@ -849,7 +842,6 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 							},
 							IPs: []*current.IPConfig{
 								{
-									Version: "4",
 									Address: net.IPNet{
 										IP:   net.ParseIP("192.168.1.1"),
 										Mask: net.CIDRMask(32, 32),
@@ -886,7 +878,6 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 							},
 							IPs: []*current.IPConfig{
 								{
-									Version: "4",
 									Address: net.IPNet{
 										IP:   net.ParseIP("192.168.1.1"),
 										Mask: net.CIDRMask(32, 32),
@@ -928,7 +919,6 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 							},
 							IPs: []*current.IPConfig{
 								{
-									Version: "4",
 									Address: net.IPNet{
 										IP:   net.ParseIP("192.168.1.1"),
 										Mask: net.CIDRMask(32, 32),
@@ -969,7 +959,6 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 							},
 							IPs: []*current.IPConfig{
 								{
-									Version: "4",
 									Address: net.IPNet{
 										IP:   net.ParseIP("192.168.1.1"),
 										Mask: net.CIDRMask(32, 32),
@@ -1010,7 +999,6 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 							},
 							IPs: []*current.IPConfig{
 								{
-									Version: "4",
 									Address: net.IPNet{
 										IP:   net.ParseIP("192.168.1.1"),
 										Mask: net.CIDRMask(32, 32),

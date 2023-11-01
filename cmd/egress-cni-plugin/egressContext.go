@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/containernetworking/cni/pkg/types"
-	"github.com/containernetworking/cni/pkg/types/current"
+	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/vishvananda/netlink"
@@ -116,7 +116,8 @@ func (ec *egressContext) setupContainerVethV4() (*current.Interface, *current.In
 	containerInterface := &current.Interface{}
 
 	err := ec.Ns.WithNetNSPath(ec.NsPath, func(hostNS ns.NetNS) error {
-		hostVeth, contVeth0, err := ec.Veth.Setup(ec.NetConf.IfName, ec.Mtu, hostNS)
+		// Empty veth MAC is passed
+		hostVeth, contVeth0, err := ec.Veth.Setup(ec.NetConf.IfName, ec.Mtu, "", hostNS)
 		if err != nil {
 			return err
 		}
@@ -481,7 +482,8 @@ func (ec *egressContext) setupContainerVethV6() (hostInterface, containerInterfa
 		var hostVeth net.Interface
 		var contVeth net.Interface
 
-		hostVeth, contVeth, err = ec.Veth.Setup(ec.NetConf.IfName, ec.Mtu, hostNS)
+		// Empty veth MAC is passed
+		hostVeth, contVeth, err = ec.Veth.Setup(ec.NetConf.IfName, ec.Mtu, "", hostNS)
 		if err != nil {
 			return err
 		}
