@@ -38,8 +38,8 @@ github.com/asaskevich/govalidator v0.0.0-20200428143746-21a406dcc535 h1:4daAzAu0
 github.com/asaskevich/govalidator v0.0.0-20200428143746-21a406dcc535/go.mod h1:oGkLhpf+kjZl6xBf758TQhh5XrAeiJv/7FRz/2spLIg=
 github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20230907153600-f7672495a1d3 h1:rYfksj9VFiuNQVcDuU7es1or+m6QGorHGTiVhhM4RNk=
 github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20230907153600-f7672495a1d3/go.mod h1:Aj5pwjhg2lig2GF5rdrsyJSzLGhe7TNMVyuw9hT/1WQ=
-github.com/aws/amazon-vpc-resource-controller-k8s v1.3.1 h1:Hp9xChziyzddGLa07a0dpiZjygQDw/rr86Tl7yEyYCg=
-github.com/aws/amazon-vpc-resource-controller-k8s v1.3.1/go.mod h1:MKJNhTCTfGM32njvrKeCfA5vLwantku/ut5g7Reo49Q=
+github.com/aws/amazon-vpc-resource-controller-k8s v1.4.1 h1:43uJXFNTjk5Gzi2Qpqk30ycaaE7DOVvBDKi35wzsrsQ=
+github.com/aws/amazon-vpc-resource-controller-k8s v1.4.1/go.mod h1:tXPJP0SFdkVa7ALghDjThtavyYnP0MKO8V0ZHlDNCU8=
 github.com/aws/aws-sdk-go v1.45.19 h1:+4yXWhldhCVXWFOQRF99ZTJ92t4DtoHROZIbN7Ujk/U=
 github.com/aws/aws-sdk-go v1.45.19/go.mod h1:aVsgQcEevwlmQ7qHE9I3h+dtQgpqhFB+i8Phjh7fkwI=
 github.com/benbjohnson/clock v1.1.0/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
