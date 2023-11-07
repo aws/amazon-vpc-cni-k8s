@@ -884,41 +884,39 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 		subnet = eniCfg.Subnet
 	}
 
-	eni, err := c.awsClient.AllocENI(c.useCustomNetworking, securityGroups, subnet)
-	if err != nil {
-		log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
-		ipamdErrInc("increaseIPPoolAllocENI")
-		return err
-	}
-
 	resourcesToAllocate := c.GetENIResourcesToAllocate()
-	_, err = c.awsClient.AllocIPAddresses(eni, resourcesToAllocate)
-	if err != nil {
-		log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", resourcesToAllocate, err)
-		// Continue to process the allocated IP addresses
-		ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-		if containsInsufficientCIDRsOrSubnetIPs(err) {
-			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
-			c.lastInsufficientCidrError = time.Now()
+	if resourcesToAllocate > 0 {
+		eni, err := c.awsClient.AllocENI(c.useCustomNetworking, securityGroups, subnet, resourcesToAllocate)
+		if err != nil {
+			log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
+			ipamdErrInc("increaseIPPoolAllocENI")
+			log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", resourcesToAllocate, err)
+			if containsInsufficientCIDRsOrSubnetIPs(err) {
+				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
+				log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
+				c.lastInsufficientCidrError = time.Now()
+			}
 			return err
 		}
-	}
 
-	eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni, resourcesToAllocate)
-	if err != nil {
-		ipamdErrInc("increaseIPPoolwaitENIAttachedFailed")
-		log.Errorf("Failed to increase pool size: Unable to discover attached ENI from metadata service %v", err)
-		return err
-	}
+		eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni, resourcesToAllocate)
+		if err != nil {
+			ipamdErrInc("increaseIPPoolwaitENIAttachedFailed")
+			log.Errorf("Failed to increase pool size: Unable to discover attached ENI from metadata service %v", err)
+			return err
+		}
 
-	// The CNI does not create trunk or EFA ENIs, so they will always be false here
-	err = c.setupENI(eni, eniMetadata, false, false)
-	if err != nil {
-		ipamdErrInc("increaseIPPoolsetupENIFailed")
-		log.Errorf("Failed to increase pool size: %v", err)
-		return err
+		// The CNI does not create trunk or EFA ENIs, so they will always be false here
+		err = c.setupENI(eni, eniMetadata, false, false)
+		if err != nil {
+			ipamdErrInc("increaseIPPoolsetupENIFailed")
+			log.Errorf("Failed to increase pool size: %v", err)
+			return err
+		}
+	} else {
+		log.Debugf("Did not allocate ENI since IPs/Prefixes needed were not greater than 0. IPs/Prefixes needed: %d", resourcesToAllocate)
 	}
-	return err
+	return nil
 }
 
 // For an ENI, try to fill in missing IPs on an existing ENI with PD disabled

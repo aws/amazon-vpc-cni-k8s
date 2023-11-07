@@ -401,11 +401,12 @@ func TestAllocENI(t *testing.T) {
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC: mockEC2,
-		imds:   TypedIMDS{mockMetadata},
+		ec2SVC:       mockEC2,
+		imds:         TypedIMDS{mockMetadata},
+		instanceType: "c5n.18xlarge",
 	}
 
-	_, err := cache.AllocENI(false, nil, "")
+	_, err := cache.AllocENI(false, nil, "", 5)
 	assert.NoError(t, err)
 }
 
@@ -435,11 +436,12 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC: mockEC2,
-		imds:   TypedIMDS{mockMetadata},
+		ec2SVC:       mockEC2,
+		imds:         TypedIMDS{mockMetadata},
+		instanceType: "c5n.18xlarge",
 	}
 
-	_, err := cache.AllocENI(false, nil, "")
+	_, err := cache.AllocENI(false, nil, "", 5)
 	assert.Error(t, err)
 }
 
@@ -471,11 +473,128 @@ func TestAllocENIMaxReached(t *testing.T) {
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC: mockEC2,
-		imds:   TypedIMDS{mockMetadata},
+		ec2SVC:       mockEC2,
+		imds:         TypedIMDS{mockMetadata},
+		instanceType: "c5n.18xlarge",
 	}
 
-	_, err := cache.AllocENI(false, nil, "")
+	_, err := cache.AllocENI(false, nil, "", 5)
+	assert.Error(t, err)
+}
+
+func TestAllocENIWithIPAddresses(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// when required IP numbers(5) is below ENI's limit(30)
+	currentEniID := eniID
+	eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2.NetworkInterface{NetworkInterfaceId: &currentEniID}}
+	mockEC2.EXPECT().CreateNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(&eni, nil)
+
+	ec2ENIs := make([]*ec2.InstanceNetworkInterface, 0)
+	deviceNum1 := int64(0)
+	ec2ENI := &ec2.InstanceNetworkInterface{Attachment: &ec2.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum1}}
+	ec2ENIs = append(ec2ENIs, ec2ENI)
+
+	deviceNum2 := int64(3)
+	ec2ENI = &ec2.InstanceNetworkInterface{Attachment: &ec2.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum2}}
+	ec2ENIs = append(ec2ENIs, ec2ENI)
+
+	result := &ec2.DescribeInstancesOutput{
+		Reservations: []*ec2.Reservation{{Instances: []*ec2.Instance{{NetworkInterfaces: ec2ENIs}}}}}
+	mockEC2.EXPECT().DescribeInstancesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+	attachmentID := "eni-attach-58ddda9d"
+	attachResult := &ec2.AttachNetworkInterfaceOutput{
+		AttachmentId: &attachmentID}
+	mockEC2.EXPECT().AttachNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
+	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
+	_, err := cache.AllocENI(false, nil, subnetID, 5)
+	assert.NoError(t, err)
+
+	// when required IP numbers(50) is higher than ENI's limit(49)
+	mockEC2.EXPECT().CreateNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(&eni, nil)
+	mockEC2.EXPECT().DescribeInstancesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+	mockEC2.EXPECT().AttachNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
+	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	cache = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
+	_, err = cache.AllocENI(false, nil, subnetID, 49)
+	assert.NoError(t, err)
+}
+
+func TestAllocENIWithIPAddressesAlreadyFull(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
+	mockEC2.EXPECT().CreateNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, retErr)
+
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:       mockEC2,
+		imds:         TypedIMDS{mockMetadata},
+		instanceType: "t3.xlarge",
+	}
+	_, err := cache.AllocENI(true, nil, "", 14)
+	assert.Error(t, err)
+}
+
+func TestAllocENIWithPrefixAddresses(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	currentEniID := eniID
+	eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2.NetworkInterface{NetworkInterfaceId: &currentEniID}}
+	mockEC2.EXPECT().CreateNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(&eni, nil)
+
+	ec2ENIs := make([]*ec2.InstanceNetworkInterface, 0)
+	deviceNum1 := int64(0)
+	ec2ENI := &ec2.InstanceNetworkInterface{Attachment: &ec2.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum1}}
+	ec2ENIs = append(ec2ENIs, ec2ENI)
+
+	deviceNum2 := int64(3)
+	ec2ENI = &ec2.InstanceNetworkInterface{Attachment: &ec2.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum2}}
+	ec2ENIs = append(ec2ENIs, ec2ENI)
+
+	result := &ec2.DescribeInstancesOutput{
+		Reservations: []*ec2.Reservation{{Instances: []*ec2.Instance{{NetworkInterfaces: ec2ENIs}}}}}
+	mockEC2.EXPECT().DescribeInstancesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+	attachmentID := "eni-attach-58ddda9d"
+	attachResult := &ec2.AttachNetworkInterfaceOutput{
+		AttachmentId: &attachmentID}
+	mockEC2.EXPECT().AttachNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
+	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:                 mockEC2,
+		imds:                   TypedIMDS{mockMetadata},
+		instanceType:           "c5n.18xlarge",
+		enablePrefixDelegation: true,
+	}
+	_, err := cache.AllocENI(false, nil, subnetID, 1)
+	assert.NoError(t, err)
+}
+
+func TestAllocENIWithPrefixesAlreadyFull(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
+	mockEC2.EXPECT().CreateNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, retErr)
+
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:                 mockEC2,
+		imds:                   TypedIMDS{mockMetadata},
+		instanceType:           "c5n.18xlarge",
+		enablePrefixDelegation: true,
+	}
+	_, err := cache.AllocENI(true, nil, "", 1)
 	assert.Error(t, err)
 }
 

@@ -603,14 +603,13 @@ func assertAllocationExternalCalls(shouldCall bool, useENIConfig bool, m *testMo
 	}
 
 	if useENIConfig {
-		m.awsutils.EXPECT().AllocENI(true, sg, podENIConfig.Subnet).Times(callCount).Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(true, sg, podENIConfig.Subnet, 14).Times(callCount).Return(eni2, nil)
 	} else {
-		m.awsutils.EXPECT().AllocENI(false, nil, "").Times(callCount).Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(false, nil, "", 14).Times(callCount).Return(eni2, nil)
 	}
 	m.awsutils.EXPECT().GetPrimaryENI().Times(callCount).Return(primaryENIid)
 	m.awsutils.EXPECT().WaitForENIAndIPsAttached(secENIid, 14).Times(callCount).Return(eniMetadata[1], nil)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet).Times(callCount)
-	m.awsutils.EXPECT().AllocIPAddresses(eni2, 14).Times(callCount)
 }
 
 func TestIncreasePrefixPoolDefault(t *testing.T) {
@@ -664,9 +663,9 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	}
 
 	if useENIConfig {
-		m.awsutils.EXPECT().AllocENI(true, sg, podENIConfig.Subnet).Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(true, sg, podENIConfig.Subnet, 1).Return(eni2, nil)
 	} else {
-		m.awsutils.EXPECT().AllocENI(false, nil, "").Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(false, nil, "", 1).Return(eni2, nil)
 	}
 
 	eniMetadata := []awsutils.ENIMetadata{
@@ -707,7 +706,6 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
 	m.awsutils.EXPECT().WaitForENIAndIPsAttached(secENIid, 1).Return(eniMetadata[1], nil)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
-	m.awsutils.EXPECT().AllocIPAddresses(eni2, 1)
 
 	if mockContext.useCustomNetworking {
 		mockContext.myNodeName = myNodeName
@@ -823,8 +821,7 @@ func TestTryAddIPToENI(t *testing.T) {
 
 	mockContext.dataStore = testDatastore()
 
-	m.awsutils.EXPECT().AllocENI(false, nil, "").Return(secENIid, nil)
-	m.awsutils.EXPECT().AllocIPAddresses(secENIid, warmIPTarget)
+	m.awsutils.EXPECT().AllocENI(false, nil, "", warmIPTarget).Return(secENIid, nil)
 	eniMetadata := []awsutils.ENIMetadata{
 		{
 			ENIID:          primaryENIid,
