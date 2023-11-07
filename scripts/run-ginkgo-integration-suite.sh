@@ -9,7 +9,7 @@ set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
-SKIP_MAKE_TEST_BINARIES=1
+: "${SKIP_MAKE_TEST_BINARIES:=}"
 
 source "$SCRIPT_DIR"/lib/cluster.sh
 source "$SCRIPT_DIR"/lib/canary.sh
