@@ -123,7 +123,7 @@ var (
 // APIs defines interfaces calls for adding/getting/deleting ENIs/secondary IPs. The APIs are not thread-safe.
 type APIs interface {
 	// AllocENI creates an ENI and attaches it to the instance
-	AllocENI(useCustomCfg bool, sg []*string, subnet string) (eni string, err error)
+	AllocENI(useCustomCfg bool, sg []*string, subnet string, numIPs int) (eni string, err error)
 
 	// FreeENI detaches ENI interface and deletes it
 	FreeENI(eniName string) error
@@ -740,8 +740,8 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int, error) {
 
 // AllocENI creates an ENI and attaches it to the instance
 // returns: newly created ENI ID
-func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string, subnet string) (string, error) {
-	eniID, err := cache.createENI(useCustomCfg, sg, subnet)
+func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string, subnet string, numIPs int) (string, error) {
+	eniID, err := cache.createENI(useCustomCfg, sg, subnet, numIPs)
 	if err != nil {
 		return "", errors.Wrap(err, "AllocENI: failed to create ENI")
 	}
@@ -812,7 +812,7 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 }
 
 // return ENI id, error
-func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string, subnet string) (string, error) {
+func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string, subnet string, numIPs int) (string, error) {
 	eniDescription := eniDescriptionPrefix + cache.instanceID
 	tags := map[string]string{
 		eniCreatedAtTagKey: time.Now().Format(time.RFC3339),
@@ -826,14 +826,34 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 			Tags:         convertTagsToSDKTags(tags),
 		},
 	}
+	var needIPs = numIPs
 
-	input := &ec2.CreateNetworkInterfaceInput{
-		Description:       aws.String(eniDescription),
-		Groups:            aws.StringSlice(cache.securityGroups.SortedList()),
-		SubnetId:          aws.String(cache.subnetID),
-		TagSpecifications: tagSpec,
+	ipLimit := cache.GetENIIPv4Limit()
+	if ipLimit < needIPs {
+		needIPs = ipLimit
 	}
 
+	log.Infof("Trying to allocate %d IP addresses on new ENI", needIPs)
+	log.Debugf("PD enabled - %t", cache.enablePrefixDelegation)
+	input := &ec2.CreateNetworkInterfaceInput{}
+
+	if cache.enablePrefixDelegation {
+		input = &ec2.CreateNetworkInterfaceInput{
+			Description:       aws.String(eniDescription),
+			Groups:            aws.StringSlice(cache.securityGroups.SortedList()),
+			SubnetId:          aws.String(cache.subnetID),
+			TagSpecifications: tagSpec,
+			Ipv4PrefixCount:   aws.Int64(int64(needIPs)),
+		}
+	} else {
+		input = &ec2.CreateNetworkInterfaceInput{
+			Description:                    aws.String(eniDescription),
+			Groups:                         aws.StringSlice(cache.securityGroups.SortedList()),
+			SubnetId:                       aws.String(cache.subnetID),
+			TagSpecifications:              tagSpec,
+			SecondaryPrivateIpAddressCount: aws.Int64(int64(needIPs)),
+		}
+	}
 	if useCustomCfg {
 		log.Info("Using a custom network config for the new ENI")
 		if len(sg) != 0 {
