@@ -16,6 +16,7 @@ package resources
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	v1 "k8s.io/api/apps/v1"
@@ -26,8 +27,12 @@ import (
 
 type DaemonSetManager interface {
 	GetDaemonSet(namespace string, name string) (*v1.DaemonSet, error)
+
+	CreateAndWaitTillDaemonSetIsReady(daemonSet *v1.DaemonSet, timeout time.Duration) (*v1.DaemonSet, error)
+
 	UpdateAndWaitTillDaemonSetReady(old *v1.DaemonSet, new *v1.DaemonSet) (*v1.DaemonSet, error)
 	CheckIfDaemonSetIsReady(namespace string, name string) error
+	DeleteAndWaitTillDaemonSetDeleted(daemonSet *v1.DaemonSet, timeout time.Duration) error
 }
 
 type defaultDaemonSetManager struct {
@@ -36,6 +41,24 @@ type defaultDaemonSetManager struct {
 
 func NewDefaultDaemonSetManager(k8sClient client.Client) DaemonSetManager {
 	return &defaultDaemonSetManager{k8sClient: k8sClient}
+}
+
+func (d *defaultDaemonSetManager) CreateAndWaitTillDaemonSetIsReady(daemonSet *v1.DaemonSet, timeout time.Duration) (*v1.DaemonSet, error) {
+	ctx := context.Background()
+	err := d.k8sClient.Create(ctx, daemonSet)
+	if err != nil {
+		return nil, err
+	}
+
+	// Allow for the cache to sync
+	time.Sleep(utils.PollIntervalShort)
+
+	err = d.CheckIfDaemonSetIsReady(daemonSet.Namespace, daemonSet.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	return daemonSet, nil
 }
 
 func (d *defaultDaemonSetManager) GetDaemonSet(namespace string, name string) (*v1.DaemonSet, error) {
@@ -93,4 +116,16 @@ func (d *defaultDaemonSetManager) CheckIfDaemonSetIsReady(namespace string, name
 		return false, nil
 	}, ctx.Done())
 
+}
+
+func (d *defaultDaemonSetManager) DeleteAndWaitTillDaemonSetDeleted(daemonSet *v1.DaemonSet, timeout time.Duration) error {
+	ctx := context.Background()
+
+	err := d.k8sClient.Delete(ctx, daemonSet)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
