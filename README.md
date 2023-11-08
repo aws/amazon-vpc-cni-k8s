@@ -288,9 +288,9 @@ If `WARM_IP_TARGET` is set, then this environment variable is ignored and the `W
 
 Type: Integer
 
-Default: None
+Default: `1`
 
-Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting this to a non-positive value is the same as setting this to 0 or not setting the variable.
+Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting this to a non-positive value is the same as setting this to 0.
 With `ENABLE_PREFIX_DELEGATION` set to `true` then `ipamd` daemon will check if the existing (/28) prefixes are enough to maintain the
 `WARM_IP_TARGET` if it is not sufficient then more prefixes will be attached.
 
@@ -323,8 +323,8 @@ Specifies the number of total IP addresses that the `ipamd` daemon should attemp
 addresses to keep available at all times, it sets a target number for a floor on how many total IP addresses are allocated. Setting to a
 non-positive value is same as setting this to 0 or not setting the variable.
 
-`MINIMUM_IP_TARGET` is for pre-scaling, `WARM_IP_TARGET` is for dynamic scaling. For example, suppose a cluster has an
-expected pod density of approximately 30 pods per node. If `WARM_IP_TARGET` is set to 30 to ensure there are enough IPs
+`MINIMUM_IP_TARGET` is for pre-scaling, `WARM_IP_TARGET` is for dynamic scaling, and when `MINIMUM_IP_TARGET` is set, it is required that `WARM_IP_TARGET` is also set to positive value. 
+For example, suppose a cluster has an expected pod density of approximately 30 pods per node. If `WARM_IP_TARGET` is set to 30 to ensure there are enough IPs
 allocated up front by the CNI, then 30 pods are deployed to the node, the CNI will allocate an additional 30 IPs, for
 a total of 60, accelerating IP exhaustion in the relevant subnets. If instead `MINIMUM_IP_TARGET` is set to 30 and
 `WARM_IP_TARGET` to 2, after the 30 pods are deployed the CNI would allocate an additional 2 IPs. This still provides
@@ -332,6 +332,9 @@ elasticity, but uses roughly half as many IPs as using WARM_IP_TARGET alone (32 
 
 This also improves the reliability of the EKS cluster by reducing the number of calls necessary to allocate or deallocate
 private IPs, which may be throttled, especially at scaling-related times.
+
+Setting both `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` will override `WARM_PREFIX_TARGET`. For a detailed explanation, see
+[`WARM_PREFIX_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/prefix-and-ip-target.md).
 
 #### `MAX_ENI`
 

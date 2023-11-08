@@ -83,6 +83,9 @@ const (
 	defaultEnPrefixDelegation    = false
 	defaultIPCooldownPeriod      = 30
 	defaultDisablePodV6          = false
+	defaultWarmIPTarget          = "1"
+	defaultMinIPTarget           = "0"
+	defaultWarmPrefixTarget      = "0"
 
 	envHostCniBinPath        = "HOST_CNI_BIN_PATH"
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
@@ -384,13 +387,16 @@ func validateEnvVars() bool {
 	}
 
 	prefixDelegationEn := utils.GetBoolAsStringEnvVar(envEnPrefixDelegation, defaultEnPrefixDelegation)
-	warmIPTarget := utils.GetEnv(envWarmIPTarget, "0")
-	warmPrefixTarget := utils.GetEnv(envWarmPrefixTarget, "0")
-	minimumIPTarget := utils.GetEnv(envMinIPTarget, "0")
+	warmIPTarget := utils.GetEnv(envWarmIPTarget, defaultWarmIPTarget)
+	warmPrefixTarget := utils.GetEnv(envWarmPrefixTarget, defaultWarmPrefixTarget)
+	minimumIPTarget := utils.GetEnv(envMinIPTarget, defaultMinIPTarget)
 
 	// Note that these string values should probably be cast to integers, but the comparison for values greater than 0 works either way
 	if prefixDelegationEn && (warmIPTarget <= "0" && warmPrefixTarget <= "0" && minimumIPTarget <= "0") {
 		log.Errorf("Setting WARM_PREFIX_TARGET = 0 is not supported while WARM_IP_TARGET/MINIMUM_IP_TARGET is not set. Please configure either one of the WARM_{PREFIX/IP}_TARGET or MINIMUM_IP_TARGET env variables")
+		return false
+	} else if warmIPTarget <= "0" && minimumIPTarget > "0" {
+		log.Errorf("Setting WARM_IP_TARGET = 0 is not supported while MINIMUM_IP_TARGET is set. Please configure properly")
 		return false
 	}
 	return true
