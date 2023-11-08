@@ -83,9 +83,9 @@ const (
 	defaultEnPrefixDelegation    = false
 	defaultIPCooldownPeriod      = 30
 	defaultDisablePodV6          = false
-	defaultWarmIPTarget          = "1"
-	defaultMinIPTarget           = "0"
-	defaultWarmPrefixTarget      = "0"
+	defaultWarmIPTarget          = 1
+	defaultMinIPTarget           = 0
+	defaultWarmPrefixTarget      = 0
 
 	envHostCniBinPath        = "HOST_CNI_BIN_PATH"
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
@@ -387,16 +387,25 @@ func validateEnvVars() bool {
 	}
 
 	prefixDelegationEn := utils.GetBoolAsStringEnvVar(envEnPrefixDelegation, defaultEnPrefixDelegation)
-	warmIPTarget := utils.GetEnv(envWarmIPTarget, defaultWarmIPTarget)
-	warmPrefixTarget := utils.GetEnv(envWarmPrefixTarget, defaultWarmPrefixTarget)
-	minimumIPTarget := utils.GetEnv(envMinIPTarget, defaultMinIPTarget)
+	warmIPTarget, err, input := utils.GetIntFromStringEnvVar(envWarmIPTarget, defaultWarmIPTarget)
+	if err != nil {
+		log.Errorf("error when trying to get envWarmIPTarget: %s; input is %v", err, input)
+		return false
+	}
+	warmPrefixTarget, err, input := utils.GetIntFromStringEnvVar(envWarmPrefixTarget, defaultWarmPrefixTarget)
+	if err != nil {
+		log.Errorf("error when trying to get envWarmPrefixTarget: %s; input is %v", err, input)
+		return false
+	}
+	minimumIPTarget, err, input := utils.GetIntFromStringEnvVar(envMinIPTarget, defaultMinIPTarget)
+	if err != nil {
+		log.Errorf("error when trying to get envMinIPTarget: %s; input is %v", err, input)
+		return false
+	}
 
 	// Note that these string values should probably be cast to integers, but the comparison for values greater than 0 works either way
-	if prefixDelegationEn && (warmIPTarget <= "0" && warmPrefixTarget <= "0" && minimumIPTarget <= "0") {
+	if prefixDelegationEn && (warmIPTarget <= 0 && warmPrefixTarget <= 0 && minimumIPTarget <= 0) {
 		log.Errorf("Setting WARM_PREFIX_TARGET = 0 is not supported while WARM_IP_TARGET/MINIMUM_IP_TARGET is not set. Please configure either one of the WARM_{PREFIX/IP}_TARGET or MINIMUM_IP_TARGET env variables")
-		return false
-	} else if warmIPTarget <= "0" && minimumIPTarget > "0" {
-		log.Errorf("Setting WARM_IP_TARGET = 0 is not supported while MINIMUM_IP_TARGET is set. Please configure properly")
 		return false
 	}
 	return true
