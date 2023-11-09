@@ -509,12 +509,17 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 
 	podENIConfig := &v1alpha1.ENIConfigSpec{
 		SecurityGroups: []string{"sg1-id", "sg2-id"},
-		Subnet:         "subnet1",
+		Subnets:        []string{"subnet1"},
 	}
 	var sg []*string
+	var subnets []*string
 
 	for _, sgID := range podENIConfig.SecurityGroups {
 		sg = append(sg, aws.String(sgID))
+	}
+
+	for _, subnet := range podENIConfig.Subnets {
+		subnets = append(subnets, aws.String(subnet))
 	}
 
 	eniMetadata := []awsutils.ENIMetadata{
@@ -551,13 +556,13 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 	if unschedulabeNode {
 		val, exist := os.LookupEnv(envManageENIsNonSchedulable)
 		if exist && val == "true" {
-			assertAllocationExternalCalls(true, useENIConfig, m, sg, podENIConfig, eni2, eniMetadata)
+			assertAllocationExternalCalls(true, useENIConfig, m, sg, subnets, eni2, eniMetadata)
 		} else {
-			assertAllocationExternalCalls(false, useENIConfig, m, sg, podENIConfig, eni2, eniMetadata)
+			assertAllocationExternalCalls(false, useENIConfig, m, sg, subnets, eni2, eniMetadata)
 		}
 
 	} else {
-		assertAllocationExternalCalls(true, useENIConfig, m, sg, podENIConfig, eni2, eniMetadata)
+		assertAllocationExternalCalls(true, useENIConfig, m, sg, subnets, eni2, eniMetadata)
 	}
 
 	if mockContext.useCustomNetworking {
@@ -586,7 +591,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 			TypeMeta:   metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{Name: "az1"},
 			Spec: eniconfigscheme.ENIConfigSpec{
-				Subnet:         "subnet1",
+				Subnets:        []string{"subnet1"},
 				SecurityGroups: []string{"sg1-id", "sg2-id"},
 			},
 			Status: eniconfigscheme.ENIConfigStatus{},
@@ -596,16 +601,16 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 	mockContext.increaseDatastorePool(ctx)
 }
 
-func assertAllocationExternalCalls(shouldCall bool, useENIConfig bool, m *testMocks, sg []*string, podENIConfig *eniconfigscheme.ENIConfigSpec, eni2 string, eniMetadata []awsutils.ENIMetadata) {
+func assertAllocationExternalCalls(shouldCall bool, useENIConfig bool, m *testMocks, sg []*string, subnets []*string, eni2 string, eniMetadata []awsutils.ENIMetadata) {
 	callCount := 0
 	if shouldCall {
 		callCount = 1
 	}
 
 	if useENIConfig {
-		m.awsutils.EXPECT().AllocENI(true, sg, podENIConfig.Subnet, 14).Times(callCount).Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(true, sg, subnets, 14).Times(callCount).Return(eni2, nil)
 	} else {
-		m.awsutils.EXPECT().AllocENI(false, nil, "", 14).Times(callCount).Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(false, nil, nil, 14).Times(callCount).Return(eni2, nil)
 	}
 	m.awsutils.EXPECT().GetPrimaryENI().Times(callCount).Return(primaryENIid)
 	m.awsutils.EXPECT().WaitForENIAndIPsAttached(secENIid, 14).Times(callCount).Return(eniMetadata[1], nil)
@@ -654,18 +659,23 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 
 	podENIConfig := &v1alpha1.ENIConfigSpec{
 		SecurityGroups: []string{"sg1-id", "sg2-id"},
-		Subnet:         "subnet1",
+		Subnets:        []string{"subnet1"},
 	}
 	var sg []*string
+	var subnets []*string
 
 	for _, sgID := range podENIConfig.SecurityGroups {
 		sg = append(sg, aws.String(sgID))
 	}
 
+	for _, subnet := range podENIConfig.Subnets {
+		subnets = append(subnets, aws.String(subnet))
+	}
+
 	if useENIConfig {
-		m.awsutils.EXPECT().AllocENI(true, sg, podENIConfig.Subnet, 1).Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(true, sg, subnets, 1).Return(eni2, nil)
 	} else {
-		m.awsutils.EXPECT().AllocENI(false, nil, "", 1).Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(false, nil, nil, 1).Return(eni2, nil)
 	}
 
 	eniMetadata := []awsutils.ENIMetadata{
@@ -727,7 +737,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 			TypeMeta:   metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{Name: "az1"},
 			Spec: eniconfigscheme.ENIConfigSpec{
-				Subnet:         "subnet1",
+				Subnets:        []string{"subnet1"},
 				SecurityGroups: []string{"sg1-id", "sg2-id"},
 			},
 			Status: eniconfigscheme.ENIConfigStatus{},
@@ -821,7 +831,7 @@ func TestTryAddIPToENI(t *testing.T) {
 
 	mockContext.dataStore = testDatastore()
 
-	m.awsutils.EXPECT().AllocENI(false, nil, "", warmIPTarget).Return(secENIid, nil)
+	m.awsutils.EXPECT().AllocENI(false, nil, nil, warmIPTarget).Return(secENIid, nil)
 	eniMetadata := []awsutils.ENIMetadata{
 		{
 			ENIID:          primaryENIid,

@@ -22,6 +22,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -123,7 +124,7 @@ var (
 // APIs defines interfaces calls for adding/getting/deleting ENIs/secondary IPs. The APIs are not thread-safe.
 type APIs interface {
 	// AllocENI creates an ENI and attaches it to the instance
-	AllocENI(useCustomCfg bool, sg []*string, subnet string, numIPs int) (eni string, err error)
+	AllocENI(useCustomCfg bool, sg []*string, subnets []*string, numIPs int) (eni string, err error)
 
 	// FreeENI detaches ENI interface and deletes it
 	FreeENI(eniName string) error
@@ -740,8 +741,40 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int, error) {
 
 // AllocENI creates an ENI and attaches it to the instance
 // returns: newly created ENI ID
-func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string, subnet string, numIPs int) (string, error) {
-	eniID, err := cache.createENI(useCustomCfg, sg, subnet, numIPs)
+func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string, subnets []*string, numIPs int) (string, error) {
+	describeSubnetInput := &ec2.DescribeSubnetsInput{
+		SubnetIds: subnets,
+	}
+
+	start := time.Now()
+	result, err := cache.ec2SVC.DescribeSubnetsWithContext(context.Background(), describeSubnetInput)
+	ec2ApiReq.WithLabelValues("DescribeSubnets").Inc()
+	awsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+	if err != nil {
+		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeSubnets")
+		awsAPIErrInc("DescribeSubnets", err)
+		ec2ApiErr.WithLabelValues("DescribeSubnets").Inc()
+		return "", errors.Wrap(err, "AllocENI: unable to describe subnets")
+	}
+
+	sort.SliceStable(result.Subnets, func(i, j int) bool {
+		return *result.Subnets[j].AvailableIpAddressCount < *result.Subnets[i].AvailableIpAddressCount
+	})
+
+	var eniID string
+	for _, element := range result.Subnets {
+		log.Infof("THIS IS THE SUBNET ID: %s", *element.SubnetId)
+		log.Infof("THIS IS THE NUMBER OF IPS FREE: %d", *element.AvailableIpAddressCount)
+		eniID, err = cache.createENI(useCustomCfg, sg, *element.SubnetId, numIPs)
+
+		// Found a successful subnet, can exit loop
+		if err == nil {
+			log.Infof("Created ENI using subnet %s", *element.SubnetId)
+			break
+		}
+	}
+
+	// Return an error if all subnets fail
 	if err != nil {
 		return "", errors.Wrap(err, "AllocENI: failed to create ENI")
 	}
@@ -765,7 +798,7 @@ func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string,
 		NetworkInterfaceId: aws.String(eniID),
 	}
 
-	start := time.Now()
+	start = time.Now()
 	_, err = cache.ec2SVC.ModifyNetworkInterfaceAttributeWithContext(context.Background(), attributeInput)
 	ec2ApiReq.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
 	awsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))

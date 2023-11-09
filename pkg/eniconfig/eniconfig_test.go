@@ -42,7 +42,7 @@ func TestMyENIConfig(t *testing.T) {
 		},
 		Spec: v1alpha1.ENIConfigSpec{
 			SecurityGroups: []string{"SG1"},
-			Subnet:         "SB1",
+			Subnets:        []string{"SB1"},
 		},
 	}
 
@@ -52,7 +52,7 @@ func TestMyENIConfig(t *testing.T) {
 		},
 		Spec: v1alpha1.ENIConfigSpec{
 			SecurityGroups: []string{"SG2"},
-			Subnet:         "SB2",
+			Subnets:        []string{"SB2"},
 		},
 	}
 
@@ -62,7 +62,7 @@ func TestMyENIConfig(t *testing.T) {
 		},
 		Spec: v1alpha1.ENIConfigSpec{
 			SecurityGroups: []string{"SG1"},
-			Subnet:         "SB1",
+			Subnets:        []string{"SB1"},
 		},
 	}
 
