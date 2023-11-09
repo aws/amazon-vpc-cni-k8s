@@ -290,7 +290,7 @@ Type: Integer
 
 Default: None
 
-Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting this to a non-positive value is the same as setting this to 0.
+Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting this to a non-positive value is the same as setting this to 0 or not setting the variable.
 With `ENABLE_PREFIX_DELEGATION` set to `true` then `ipamd` daemon will check if the existing (/28) prefixes are enough to maintain the
 `WARM_IP_TARGET` if it is not sufficient then more prefixes will be attached.
 
