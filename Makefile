@@ -22,7 +22,7 @@
 # VERSION is the source revision that executables and images are built from.
 VERSION ?= $(shell git describe --tags --always --dirty || echo "unknown")
 # GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE ?= public.ecr.aws/eks-distro-build-tooling/golang:1.21.3-4-gcc-al2
+GOLANG_IMAGE ?= public.ecr.aws/eks-distro-build-tooling/golang:1.21.4-5-gcc-al2
 # BASE_IMAGE_CNI is the base layer image for the primary AWS VPC CNI plugin container
 BASE_IMAGE_CNI ?= public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-iptables:latest.2
 # BASE_IMAGE_CNI_INIT is the base layer image for the AWS VPC CNI init container
