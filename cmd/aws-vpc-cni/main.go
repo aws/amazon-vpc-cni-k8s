@@ -387,19 +387,19 @@ func validateEnvVars() bool {
 	}
 
 	prefixDelegationEn := utils.GetBoolAsStringEnvVar(envEnPrefixDelegation, defaultEnPrefixDelegation)
-	warmIPTarget, err, input := utils.GetIntFromStringEnvVar(envWarmIPTarget, defaultWarmIPTarget)
+	warmIPTarget, err, inputWarmIP := utils.GetIntFromStringEnvVar(envWarmIPTarget, defaultWarmIPTarget)
 	if err != nil {
-		log.Errorf("error when trying to get env WARM_IP_TARGET: %s; input is %v", err, input)
+		log.Errorf("error when trying to get env WARM_IP_TARGET: %s; input is %v", err, inputWarmIP)
 		return false
 	}
-	warmPrefixTarget, err, input := utils.GetIntFromStringEnvVar(envWarmPrefixTarget, defaultWarmPrefixTarget)
+	warmPrefixTarget, err, inputWarmPrefix := utils.GetIntFromStringEnvVar(envWarmPrefixTarget, defaultWarmPrefixTarget)
 	if err != nil {
-		log.Errorf("error when trying to get env WARM_PREFIX_TARGET: %s; input is %v", err, input)
+		log.Errorf("error when trying to get env WARM_PREFIX_TARGET: %s; input is %v", err, inputWarmPrefix)
 		return false
 	}
-	minimumIPTarget, err, input := utils.GetIntFromStringEnvVar(envMinIPTarget, defaultMinIPTarget)
+	minimumIPTarget, err, inputMinIP := utils.GetIntFromStringEnvVar(envMinIPTarget, defaultMinIPTarget)
 	if err != nil {
-		log.Errorf("error when trying to get env MINIMUM_IP_TARGET: %s; input is %v", err, input)
+		log.Errorf("error when trying to get env MINIMUM_IP_TARGET: %s; input is %v", err, inputMinIP)
 		return false
 	}
 
@@ -407,8 +407,8 @@ func validateEnvVars() bool {
 	if prefixDelegationEn && (warmIPTarget <= 0 && warmPrefixTarget <= 0 && minimumIPTarget <= 0) {
 		log.Errorf("Setting WARM_PREFIX_TARGET = 0 is not supported while WARM_IP_TARGET/MINIMUM_IP_TARGET is not set. Please configure either one of the WARM_{PREFIX/IP}_TARGET or MINIMUM_IP_TARGET env variables")
 		return false
-	} else if warmIPTarget <= 0 && minimumIPTarget > 0 {
-		log.Errorf("Setting WARM_IP_TARGET = 0 is not supported while MINIMUM_IP_TARGET is set, as it leads to no new ENIs being allocated after minimum threshold is meet, please configure properly")
+	} else if inputWarmIP == "" && inputMinIP != "" {
+		log.Errorf("WARM_IP_TARGET should be set while MINIMUM_IP_TARGET is set, in order to avoid no new ENIs being allocated after minimum threshold is meet, please configure properly")
 		return false
 	}
 	return true
