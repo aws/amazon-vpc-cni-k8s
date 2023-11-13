@@ -416,7 +416,7 @@ func TestAllocENI(t *testing.T) {
 		instanceType: "c5n.18xlarge",
 	}
 
-	_, err := cache.AllocENI(false, nil, nil, 5)
+	_, err := cache.AllocENI(true, nil, nil, 5)
 	assert.NoError(t, err)
 }
 
@@ -461,7 +461,7 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 		instanceType: "c5n.18xlarge",
 	}
 
-	_, err := cache.AllocENI(false, nil, nil, 5)
+	_, err := cache.AllocENI(true, nil, nil, 5)
 	assert.Error(t, err)
 }
 
@@ -508,7 +508,7 @@ func TestAllocENIMaxReached(t *testing.T) {
 		instanceType: "c5n.18xlarge",
 	}
 
-	_, err := cache.AllocENI(false, nil, nil, 5)
+	_, err := cache.AllocENI(true, nil, nil, 5)
 	assert.Error(t, err)
 }
 
@@ -550,7 +550,7 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
-	_, err := cache.AllocENI(false, nil, []*string{aws.String(subnetID)}, 5)
+	_, err := cache.AllocENI(true, nil, []*string{aws.String(subnetID)}, 5)
 	assert.NoError(t, err)
 
 	// when required IP numbers(50) is higher than ENI's limit(49)
@@ -560,7 +560,7 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().AttachNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	cache = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
-	_, err = cache.AllocENI(false, nil, []*string{aws.String(subnetID)}, 49)
+	_, err = cache.AllocENI(true, nil, []*string{aws.String(subnetID)}, 49)
 	assert.NoError(t, err)
 }
 
@@ -636,7 +636,7 @@ func TestAllocENIWithPrefixAddresses(t *testing.T) {
 		instanceType:           "c5n.18xlarge",
 		enablePrefixDelegation: true,
 	}
-	_, err := cache.AllocENI(false, nil, []*string{aws.String(subnetID)}, 1)
+	_, err := cache.AllocENI(true, nil, []*string{aws.String(subnetID)}, 1)
 	assert.NoError(t, err)
 }
 

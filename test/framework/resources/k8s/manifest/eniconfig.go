@@ -23,6 +23,7 @@ import (
 type ENIConfigBuilder struct {
 	name          string
 	subnetID      string
+	subnetIDs     []string
 	securityGroup []string
 }
 
@@ -42,14 +43,19 @@ func (e *ENIConfigBuilder) SubnetID(subnetID string) *ENIConfigBuilder {
 	return e
 }
 
+func (e *ENIConfigBuilder) SubnetIDs(subnetIds []string) *ENIConfigBuilder {
+	e.subnetIDs = subnetIds
+	return e
+}
+
 func (e *ENIConfigBuilder) SecurityGroup(securityGroup []string) *ENIConfigBuilder {
 	e.securityGroup = securityGroup
 	return e
 }
 
 func (e *ENIConfigBuilder) Build() (*v1alpha1.ENIConfig, error) {
-	if e.subnetID == "" {
-		return nil, fmt.Errorf("subnet id is a required field")
+	if e.subnetID == "" && len(e.subnetIDs) == 0 {
+		return nil, fmt.Errorf("subnet id or subnet ids is a required field")
 	}
 
 	if e.securityGroup == nil {
@@ -58,7 +64,8 @@ func (e *ENIConfigBuilder) Build() (*v1alpha1.ENIConfig, error) {
 				Name: e.name,
 			},
 			Spec: v1alpha1.ENIConfigSpec{
-				Subnet: e.subnetID,
+				Subnets: e.subnetIDs,
+				Subnet:  e.subnetID,
 			},
 		}, nil
 	} else {
@@ -68,6 +75,7 @@ func (e *ENIConfigBuilder) Build() (*v1alpha1.ENIConfig, error) {
 			},
 			Spec: v1alpha1.ENIConfigSpec{
 				SecurityGroups: e.securityGroup,
+				Subnets:        e.subnetIDs,
 				Subnet:         e.subnetID,
 			},
 		}, nil

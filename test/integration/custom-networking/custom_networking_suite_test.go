@@ -108,10 +108,34 @@ var _ = BeforeSuite(func() {
 		err = f.CloudServices.EC2().AssociateRouteTableToSubnet(clusterVPCConfig.PublicRouteTableID, subnetID)
 		Expect(err).ToNot(HaveOccurred())
 
-		eniConfigBuilder := manifest.NewENIConfigBuilder().
-			Name(az).
-			SubnetID(subnetID).
-			SecurityGroup([]string{customNetworkingSGID})
+		var eniConfigBuilder *manifest.ENIConfigBuilder
+
+		if f.Options.SubnetList {
+			By("using list of subnets")
+			subnetCidr2, err := cidr.Subnet(cidrRange, 8, 8*(i+1))
+			Expect(err).ToNot(HaveOccurred())
+
+			createSubnetOutput2, err := f.CloudServices.EC2().
+				CreateSubnet(subnetCidr2.String(), f.Options.AWSVPCID, az)
+			Expect(err).ToNot(HaveOccurred())
+			subnetID2 := *createSubnetOutput2.Subnet.SubnetId
+
+			err = f.CloudServices.EC2().AssociateRouteTableToSubnet(clusterVPCConfig.PublicRouteTableID, subnetID2)
+			Expect(err).ToNot(HaveOccurred())
+
+			eniConfigBuilder = manifest.NewENIConfigBuilder().
+				Name(az).
+				SubnetIDs([]string{subnetID, subnetID2}).
+				SecurityGroup([]string{customNetworkingSGID})
+
+			customNetworkingSubnetIDList = append(customNetworkingSubnetIDList, subnetID2)
+		} else {
+			eniConfigBuilder = manifest.NewENIConfigBuilder().
+				Name(az).
+				SubnetID(subnetID).
+				SecurityGroup([]string{customNetworkingSGID})
+		}
+
 		eniConfig, err := eniConfigBuilder.Build()
 		Expect(err).ToNot(HaveOccurred())
 

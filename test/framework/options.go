@@ -48,6 +48,7 @@ type Options struct {
 	PublicRouteTableID string
 	NgK8SVersion       string
 	TestImageRegistry  string
+	SubnetList         bool
 }
 
 func (options *Options) BindFlags() {
@@ -72,6 +73,7 @@ func (options *Options) BindFlags() {
 	flag.StringVar(&options.PublicRouteTableID, "public-route-table-id", "", "Public route table ID (optional, if specified you must specify all of public/private-subnets, public-route-table-id, and availability-zones)")
 	flag.StringVar(&options.NgK8SVersion, "ng-kubernetes-version", "1.25", `Kubernetes version for self-managed node groups (optional, default is "1.25")`)
 	flag.StringVar(&options.TestImageRegistry, "test-image-registry", "617930562442.dkr.ecr.us-west-2.amazonaws.com", `AWS registry where the e2e test images are stored`)
+	flag.BoolVar(&options.SubnetList, "subnet-list", true, "Use a list of subnets per eniconfig (false to use a single subnet)")
 }
 
 func (options *Options) Validate() error {
