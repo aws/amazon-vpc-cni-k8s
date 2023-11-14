@@ -403,12 +403,11 @@ func validateEnvVars() bool {
 		return false
 	}
 
-	// Note that these string values should probably be cast to integers, but the comparison for values greater than 0 works either way
-	if prefixDelegationEn && (warmIPTarget <= 0 && warmPrefixTarget <= 0 && minimumIPTarget <= 0) {
+	if prefixDelegationEn && (warmIPTarget == 0 && warmPrefixTarget == 0 && minimumIPTarget == 0) {
 		log.Errorf("Setting WARM_PREFIX_TARGET = 0 is not supported while WARM_IP_TARGET/MINIMUM_IP_TARGET is not set. Please configure either one of the WARM_{PREFIX/IP}_TARGET or MINIMUM_IP_TARGET env variables")
 		return false
 	} else if inputWarmIP == "" && inputMinIP != "" {
-		log.Errorf("WARM_IP_TARGET should be set while MINIMUM_IP_TARGET is set, in order to avoid no new ENIs being allocated after minimum threshold is meet, please configure properly")
+		log.Errorf("WARM_IP_TARGET MUST be set when MINIMUM_IP_TARGET is set. Please configure both environment variables.")
 		return false
 	}
 	return true
