@@ -50,9 +50,9 @@ func (m *MockVeth) EXPECT() *MockVethMockRecorder {
 }
 
 // Setup mocks base method.
-func (m *MockVeth) Setup(arg0 string, arg1 int, arg2 ns.NetNS) (net.Interface, net.Interface, error) {
+func (m *MockVeth) Setup(arg0 string, arg1 int, arg2 string, arg3 ns.NetNS) (net.Interface, net.Interface, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Setup", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "Setup", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(net.Interface)
 	ret1, _ := ret[1].(net.Interface)
 	ret2, _ := ret[2].(error)
@@ -60,7 +60,7 @@ func (m *MockVeth) Setup(arg0 string, arg1 int, arg2 ns.NetNS) (net.Interface, n
 }
 
 // Setup indicates an expected call of Setup.
-func (mr *MockVethMockRecorder) Setup(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockVethMockRecorder) Setup(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockVeth)(nil).Setup), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockVeth)(nil).Setup), arg0, arg1, arg2, arg3)
 }

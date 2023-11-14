@@ -22,7 +22,7 @@ import (
 	reflect "reflect"
 
 	types "github.com/containernetworking/cni/pkg/types"
-	current "github.com/containernetworking/cni/pkg/types/current"
+	types100 "github.com/containernetworking/cni/pkg/types/100"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -50,7 +50,7 @@ func (m *MockHostIpam) EXPECT() *MockHostIpamMockRecorder {
 }
 
 // ConfigureIface mocks base method.
-func (m *MockHostIpam) ConfigureIface(arg0 string, arg1 *current.Result) error {
+func (m *MockHostIpam) ConfigureIface(arg0 string, arg1 *types100.Result) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ConfigureIface", arg0, arg1)
 	ret0, _ := ret[0].(error)

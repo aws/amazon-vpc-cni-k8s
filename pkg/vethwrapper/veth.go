@@ -24,7 +24,7 @@ import (
 // Veth is an interface created to make code unit testable.
 // Both the veth version and mocked version implement the same interface
 type Veth interface {
-	Setup(contVethName string, mtu int, hostNS ns.NetNS) (net.Interface, net.Interface, error)
+	Setup(contVethName string, mtu int, contVethMac string, hostNS ns.NetNS) (net.Interface, net.Interface, error)
 }
 
 type veth struct{}
@@ -33,6 +33,6 @@ type veth struct{}
 func NewSetupVeth() Veth {
 	return &veth{}
 }
-func (v *veth) Setup(contVethName string, mtu int, hostNS ns.NetNS) (net.Interface, net.Interface, error) {
-	return ip.SetupVeth(contVethName, mtu, hostNS)
+func (v *veth) Setup(contVethName string, mtu int, contVethMac string, hostNS ns.NetNS) (net.Interface, net.Interface, error) {
+	return ip.SetupVeth(contVethName, mtu, contVethMac, hostNS)
 }
