@@ -97,6 +97,7 @@ func main() {
 
 	cwENV, found := os.LookupEnv("USE_CLOUDWATCH")
 	if found {
+		cwENV = strings.ToLower(cwENV)
 		if strings.Compare(cwENV, "yes") == 0 || strings.Compare(cwENV, "true") == 0 {
 			options.submitCW = true
 		}
@@ -107,6 +108,7 @@ func main() {
 
 	prometheusENV, found := os.LookupEnv(envEnablePrometheusMetrics)
 	if found {
+		prometheusENV = strings.ToLower(prometheusENV)
 		if strings.Compare(prometheusENV, "yes") == 0 || strings.Compare(prometheusENV, "true") == 0 {
 			options.submitPrometheus = true
 			prometheusRegister()

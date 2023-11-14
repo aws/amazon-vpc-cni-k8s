@@ -26,6 +26,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
 )
 
 const (
@@ -199,7 +200,7 @@ func logErr(_ int, err error) {
 
 // disableIntrospection returns true if we should disable the introspection
 func disableIntrospection() bool {
-	return getEnvBoolWithDefault(envDisableIntrospection, false)
+	return utils.GetBoolAsStringEnvVar(envDisableENIProvisioning, false)
 }
 
 func getEnvBoolWithDefault(envName string, def bool) bool {

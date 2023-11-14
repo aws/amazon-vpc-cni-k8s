@@ -322,36 +322,28 @@ func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFa
 		for _, action := range convertMetrics.actions {
 			switch metricType {
 			case dto.MetricType_COUNTER:
-				if t.submitCloudWatch() {
-					dataPoint := &cloudwatch.MetricDatum{
-						MetricName: aws.String(action.cwMetricName),
-						Unit:       aws.String(cloudwatch.StandardUnitCount),
-						Value:      aws.Float64(action.data.curSingleDataPoint),
-					}
-					cw.Publish(dataPoint)
+				dataPoint := &cloudwatch.MetricDatum{
+					MetricName: aws.String(action.cwMetricName),
+					Unit:       aws.String(cloudwatch.StandardUnitCount),
+					Value:      aws.Float64(action.data.curSingleDataPoint),
 				}
+				cw.Publish(dataPoint)
 			case dto.MetricType_GAUGE:
-				if t.submitCloudWatch() {
-					dataPoint := &cloudwatch.MetricDatum{
-						MetricName: aws.String(action.cwMetricName),
-						Unit:       aws.String(cloudwatch.StandardUnitCount),
-						Value:      aws.Float64(action.data.curSingleDataPoint),
-					}
-					cw.Publish(dataPoint)
+				dataPoint := &cloudwatch.MetricDatum{
+					MetricName: aws.String(action.cwMetricName),
+					Unit:       aws.String(cloudwatch.StandardUnitCount),
+					Value:      aws.Float64(action.data.curSingleDataPoint),
 				}
+				cw.Publish(dataPoint)
 			case dto.MetricType_SUMMARY:
-				if t.submitCloudWatch() {
-					dataPoint := &cloudwatch.MetricDatum{
-						MetricName: aws.String(action.cwMetricName),
-						Unit:       aws.String(cloudwatch.StandardUnitCount),
-						Value:      aws.Float64(action.data.curSingleDataPoint),
-					}
-					cw.Publish(dataPoint)
+				dataPoint := &cloudwatch.MetricDatum{
+					MetricName: aws.String(action.cwMetricName),
+					Unit:       aws.String(cloudwatch.StandardUnitCount),
+					Value:      aws.Float64(action.data.curSingleDataPoint),
 				}
+				cw.Publish(dataPoint)
 			case dto.MetricType_HISTOGRAM:
-				if t.submitCloudWatch() {
-					produceHistogram(action, cw)
-				}
+				produceHistogram(action, cw)
 			}
 		}
 	}
@@ -378,7 +370,6 @@ func producePrometheusMetrics(t metricsTarget, families map[string]*dto.MetricFa
 			}
 		}
 	}
-
 }
 
 func resetMetrics(interestingMetrics map[string]metricsConvert) {
@@ -451,8 +442,11 @@ func Handler(ctx context.Context, t metricsTarget) {
 		t.getLogger().Infof("Skipping 1st poll after reset, error: %v", err)
 	}
 
-	cw := t.getCWMetricsPublisher()
-	produceCloudWatchMetrics(t, families, interestingMetrics, cw)
+	if t.submitCloudWatch() {
+		cw := t.getCWMetricsPublisher()
+		produceCloudWatchMetrics(t, families, interestingMetrics, cw)
+	}
+
 	if t.submitPrometheus() {
 		producePrometheusMetrics(t, families, interestingMetrics)
 	}
