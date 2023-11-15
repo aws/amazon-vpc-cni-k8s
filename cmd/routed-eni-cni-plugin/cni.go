@@ -23,10 +23,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
-
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/100"
@@ -34,13 +30,16 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/aws/amazon-vpc-cni-k8s/cmd/routed-eni-cni-plugin/driver"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/grpcwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/rpcwrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/typeswrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 )
@@ -149,7 +148,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	log.Debugf("MTU value set is %d:", mtu)
 
 	// Set up a connection to the ipamD server.
-	conn, err := grpcClient.Dial(ipamdAddress, grpc.WithInsecure())
+	conn, err := grpcClient.Dial(ipamdAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Errorf("Failed to connect to backend server for container %s: %v",
 			args.ContainerID, err)
