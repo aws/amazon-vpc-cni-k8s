@@ -51,17 +51,17 @@ func TestGetEnv(t *testing.T) {
 // Validate that GetIntFromStringEnvVar runs against acceptable format input without error
 func TestGetIntFromStringEnvVar(t *testing.T) {
 	// Test environment flag variable not set
-	tmp, _, _ := GetIntFromStringEnvVar(envInt, defaultIntEnv)
+	tmp, _, _ := GetEnvVar(envInt, defaultIntEnv)
 	assert.Equal(t, tmp, defaultIntEnv)
 
 	// Test basic Integer as string set with acceptable format
 	os.Setenv(envInt, "20")
-	tmp, _, _ = GetIntFromStringEnvVar(envInt, defaultIntEnv)
+	tmp, _, _ = GetEnvVar(envInt, defaultIntEnv)
 	assert.Equal(t, tmp, 20)
 
 	// Test basic Integer as string set with unacceptable format
 	os.Setenv(envInt, "2O")
 	defer os.Unsetenv(envInt)
-	tmp, _, _ = GetIntFromStringEnvVar(envInt, defaultIntEnv)
+	tmp, _, _ = GetEnvVar(envInt, defaultIntEnv)
 	assert.Equal(t, tmp, -1)
 }

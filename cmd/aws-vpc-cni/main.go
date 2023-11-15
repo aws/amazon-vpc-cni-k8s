@@ -380,33 +380,33 @@ func validateEnvVars() bool {
 	}
 
 	// Validate that IP_COOLDOWN_PERIOD is a valid integer
-	ipCooldownPeriod, err, input := utils.GetIntFromStringEnvVar(envIPCooldownPeriod, defaultIPCooldownPeriod)
+	ipCooldownPeriod, err, ipCooldownPeriodStr := utils.GetEnvVar(envIPCooldownPeriod, defaultIPCooldownPeriod)
 	if err != nil || ipCooldownPeriod < 0 {
-		log.Errorf("IP_COOLDOWN_PERIOD MUST be a valid positive integer. %s is invalid", input)
+		log.Errorf("IP_COOLDOWN_PERIOD MUST be a valid positive integer. %s is invalid", ipCooldownPeriodStr)
 		return false
 	}
 
 	prefixDelegationEn := utils.GetBoolAsStringEnvVar(envEnPrefixDelegation, defaultEnPrefixDelegation)
-	warmIPTarget, err, inputWarmIP := utils.GetIntFromStringEnvVar(envWarmIPTarget, defaultWarmIPTarget)
+	warmIPTarget, err, warmIPTargetStr := utils.GetEnvVar(envWarmIPTarget, defaultWarmIPTarget)
 	if err != nil {
-		log.Errorf("error when trying to get env WARM_IP_TARGET: %s; input is %v", err, inputWarmIP)
+		log.Errorf("error when trying to get env WARM_IP_TARGET: %s; input is %v", err, warmIPTargetStr)
 		return false
 	}
-	warmPrefixTarget, err, inputWarmPrefix := utils.GetIntFromStringEnvVar(envWarmPrefixTarget, defaultWarmPrefixTarget)
+	warmPrefixTarget, err, warmPrefixTargetStr := utils.GetEnvVar(envWarmPrefixTarget, defaultWarmPrefixTarget)
 	if err != nil {
-		log.Errorf("error when trying to get env WARM_PREFIX_TARGET: %s; input is %v", err, inputWarmPrefix)
+		log.Errorf("error when trying to get env WARM_PREFIX_TARGET: %s; input is %v", err, warmPrefixTargetStr)
 		return false
 	}
-	minimumIPTarget, err, inputMinIP := utils.GetIntFromStringEnvVar(envMinIPTarget, defaultMinIPTarget)
+	minimumIPTarget, err, minimumIPTargetStr := utils.GetEnvVar(envMinIPTarget, defaultMinIPTarget)
 	if err != nil {
-		log.Errorf("error when trying to get env MINIMUM_IP_TARGET: %s; input is %v", err, inputMinIP)
+		log.Errorf("error when trying to get env MINIMUM_IP_TARGET: %s; input is %v", err, minimumIPTargetStr)
 		return false
 	}
 
 	if prefixDelegationEn && (warmIPTarget == 0 && warmPrefixTarget == 0 && minimumIPTarget == 0) {
 		log.Errorf("Setting WARM_PREFIX_TARGET = 0 is not supported while WARM_IP_TARGET/MINIMUM_IP_TARGET is not set. Please configure either one of the WARM_{PREFIX/IP}_TARGET or MINIMUM_IP_TARGET env variables")
 		return false
-	} else if inputWarmIP == "" && inputMinIP != "" {
+	} else if warmIPTargetStr == "" && minimumIPTargetStr != "" {
 		log.Errorf("WARM_IP_TARGET MUST be set when MINIMUM_IP_TARGET is set. Please configure both environment variables.")
 		return false
 	}
