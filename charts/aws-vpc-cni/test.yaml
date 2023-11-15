@@ -6,7 +6,7 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.15.3
+    tag: v1.15.4
     region: us-west-2
     pullPolicy: Always
     # Set to use custom image
@@ -19,7 +19,7 @@ init:
 nodeAgent:
   enabled: true
   image:
-    tag: v1.0.5
+    tag: v1.0.6
     region: us-west-2
     pullPolicy: Always
     # Set to use custom image
@@ -35,7 +35,7 @@ nodeAgent:
 
 image:
   region: us-west-2
-  tag: v1.15.3
+  tag: v1.15.4
   pullPolicy: Always
   # Set to use custom image
   # override: "repo/org/image:tag"

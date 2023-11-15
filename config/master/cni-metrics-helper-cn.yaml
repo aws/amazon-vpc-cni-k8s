@@ -8,7 +8,7 @@ metadata:
   labels:
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
-    app.kubernetes.io/version: "v1.15.3"
+    app.kubernetes.io/version: "v1.15.4"
 ---
 # Source: cni-metrics-helper/templates/clusterrole.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -30,7 +30,7 @@ metadata:
   labels:
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
-    app.kubernetes.io/version: "v1.15.3"
+    app.kubernetes.io/version: "v1.15.4"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -66,5 +66,5 @@ spec:
         - name: USE_CLOUDWATCH
           value: "true"
         name: cni-metrics-helper
-        image: "961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/cni-metrics-helper:v1.15.3"
+        image: "961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/cni-metrics-helper:v1.15.4"
       serviceAccountName: cni-metrics-helper
