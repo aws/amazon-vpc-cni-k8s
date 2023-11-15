@@ -153,7 +153,7 @@ func CheckAPIServerConnectivity() error {
 	log.Infof("Testing communication with server")
 	// Reconcile the API server query after waiting for a second, as the request
 	// times out in one second if it fails to connect to the server
-	return wait.PollImmediateInfinite(2*time.Second, func() (bool, error) {
+	return wait.PollUntilContextCancel(context.Background(), 2*time.Second, true, func(ctx context.Context) (bool, error) {
 		version, err := clientSet.Discovery().ServerVersion()
 		if err != nil {
 			// When times out return no error, so the PollInfinite will retry with the given interval
