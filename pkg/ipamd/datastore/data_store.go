@@ -28,6 +28,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -77,66 +78,6 @@ const backfillNetworkIface = "unknown"
 
 // ErrUnknownPod is an error when there is no pod in data store matching pod name, namespace, sandbox id
 var ErrUnknownPod = errors.New("datastore: unknown pod")
-
-var (
-	enis = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "awscni_eni_allocated",
-			Help: "The number of ENIs allocated",
-		},
-	)
-	totalIPs = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "awscni_total_ip_addresses",
-			Help: "The total number of IP addresses",
-		},
-	)
-	assignedIPs = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "awscni_assigned_ip_addresses",
-			Help: "The number of IP addresses assigned to pods",
-		},
-	)
-	forceRemovedENIs = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "awscni_force_removed_enis",
-			Help: "The number of ENIs force removed while they had assigned pods",
-		},
-	)
-	forceRemovedIPs = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "awscni_force_removed_ips",
-			Help: "The number of IPs force removed while they had assigned pods",
-		},
-	)
-	totalPrefixes = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "awscni_total_ipv4_prefixes",
-			Help: "The total number of IPv4 prefixes",
-		},
-	)
-	ipsPerCidr = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "awscni_assigned_ip_per_cidr",
-			Help: "The total number of IP addresses assigned per cidr",
-		},
-		[]string{"cidr"},
-	)
-	noAvailableIPAddrs = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "awscni_no_available_ip_addresses",
-			Help: "The number of pod IP assignments that fail due to no available IP addresses",
-		},
-	)
-	eniIPsInUse = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "awscni_assigned_ip_per_eni",
-			Help: "The number of allocated ips partitioned by eni",
-		},
-		[]string{"eni"},
-	)
-	prometheusRegistered = false
-)
 
 // IPAMKey is the IPAM primary key.  Quoting CNI spec:
 //
@@ -348,24 +289,8 @@ type ENIInfos struct {
 	ENIs map[string]ENI
 }
 
-func prometheusRegister() {
-	if !prometheusRegistered {
-		prometheus.MustRegister(enis)
-		prometheus.MustRegister(totalIPs)
-		prometheus.MustRegister(assignedIPs)
-		prometheus.MustRegister(forceRemovedENIs)
-		prometheus.MustRegister(forceRemovedIPs)
-		prometheus.MustRegister(totalPrefixes)
-		prometheus.MustRegister(ipsPerCidr)
-		prometheus.MustRegister(noAvailableIPAddrs)
-		prometheus.MustRegister(eniIPsInUse)
-		prometheusRegistered = true
-	}
-}
-
 // NewDataStore returns DataStore structure
 func NewDataStore(log logger.Logger, backingStore Checkpointer, isPDEnabled bool) *DataStore {
-	prometheusRegister()
 	return &DataStore{
 		eniPool:          make(ENIPool),
 		log:              log,
@@ -453,10 +378,10 @@ func (ds *DataStore) ReadBackingStore(isv6Enabled bool) error {
 					ds.assignPodIPAddressUnsafe(addr, allocation.IPAMKey, allocation.Metadata, time.Unix(0, allocation.AllocationTimestamp))
 					ds.log.Debugf("Recovered %s => %s/%s", allocation.IPAMKey, eni.ID, addr.Address)
 					// Increment ENI IP usage upon finding assigned ips
-					eniIPsInUse.WithLabelValues(eni.ID).Inc()
+					prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Inc()
 					// Update prometheus for ips per cidr
 					// Secondary IP mode will have /32:1 and Prefix mode will have /28:<number of /32s>
-					ipsPerCidr.With(prometheus.Labels{"cidr": cidr.Cidr.String()}).Inc()
+					prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": cidr.Cidr.String()}).Inc()
 					break eniloop
 				}
 			}
@@ -538,9 +463,9 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, 
 		DeviceNumber:       deviceNumber,
 		AvailableIPv4Cidrs: make(map[string]*CidrInfo)}
 
-	enis.Set(float64(len(ds.eniPool)))
+	prometheusmetrics.Enis.Set(float64(len(ds.eniPool)))
 	// Initialize ENI IPs In Use to 0 when an ENI is created
-	eniIPsInUse.WithLabelValues(eniID).Set(0)
+	prometheusmetrics.EniIPsInUse.WithLabelValues(eniID).Set(0)
 	return nil
 }
 
@@ -575,9 +500,9 @@ func (ds *DataStore) AddIPv4CidrToStore(eniID string, ipv4Cidr net.IPNet, isPref
 	ds.total += newCidrInfo.Size()
 	if isPrefix {
 		ds.allocatedPrefix++
-		totalPrefixes.Set(float64(ds.allocatedPrefix))
+		prometheusmetrics.TotalPrefixes.Set(float64(ds.allocatedPrefix))
 	}
-	totalIPs.Set(float64(ds.total))
+	prometheusmetrics.TotalIPs.Set(float64(ds.total))
 
 	ds.log.Infof("Added ENI(%s)'s IP/Prefix %s to datastore", eniID, strIPv4Cidr)
 	return nil
@@ -610,7 +535,7 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 			if !force {
 				return errors.New(IPInUseError)
 			}
-			forceRemovedIPs.Inc()
+			prometheusmetrics.ForceRemovedIPs.Inc()
 			ds.unassignPodIPAddressUnsafe(addr)
 			updateBackingStore = true
 		}
@@ -624,9 +549,9 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 	ds.total -= deletableCidr.Size()
 	if deletableCidr.IsPrefix {
 		ds.allocatedPrefix--
-		totalPrefixes.Set(float64(ds.allocatedPrefix))
+		prometheusmetrics.TotalPrefixes.Set(float64(ds.allocatedPrefix))
 	}
-	totalIPs.Set(float64(ds.total))
+	prometheusmetrics.TotalIPs.Set(float64(ds.total))
 	delete(curENI.AvailableIPv4Cidrs, strIPv4Cidr)
 	ds.log.Infof("Deleted ENI(%s)'s IP/Prefix %s from datastore", eniID, strIPv4Cidr)
 
@@ -669,7 +594,7 @@ func (ds *DataStore) AddIPv6CidrToStore(eniID string, ipv6Cidr net.IPNet, isPref
 	if isPrefix {
 		ds.allocatedPrefix++
 	}
-	totalIPs.Set(float64(ds.total))
+	prometheusmetrics.TotalIPs.Set(float64(ds.total))
 
 	ds.log.Debugf("Added ENI(%s)'s IP/Prefix %s to datastore", eniID, strIPv6Cidr)
 	return nil
@@ -731,11 +656,11 @@ func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 				return "", -1, err
 			}
 			// Increment ENI IP usage on pod IPv6 allocation
-			eniIPsInUse.WithLabelValues(eni.ID).Inc()
+			prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Inc()
 			return addr.Address, eni.DeviceNumber, nil
 		}
 	}
-	noAvailableIPAddrs.Inc()
+	prometheusmetrics.NoAvailableIPAddrs.Inc()
 	return "", -1, errors.New("assignPodIPv6AddressUnsafe: no available IP addresses")
 }
 
@@ -771,7 +696,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 				}
 				// Update prometheus for ips per cidr
 				// Secondary IP mode will have /32:1 and Prefix mode will have /28:<number of /32s>
-				ipsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Inc()
+				prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Inc()
 			} else {
 				// This can happen during upgrade or PD enable/disable knob toggle
 				// ENI can have prefixes attached and no space for SIPs or vice versa
@@ -795,17 +720,17 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 				// Remove the IP from eni DB
 				delete(availableCidr.IPAddresses, addr.Address)
 				// Update prometheus for ips per cidr
-				ipsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
+				prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
 				return "", -1, err
 			}
 			// Increment ENI IP usage on pod IPv4 allocation
-			eniIPsInUse.WithLabelValues(eni.ID).Inc()
+			prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Inc()
 			return addr.Address, eni.DeviceNumber, nil
 		}
 		ds.log.Debugf("AssignPodIPv4Address: ENI %s does not have available addresses", eni.ID)
 	}
 
-	noAvailableIPAddrs.Inc()
+	prometheusmetrics.NoAvailableIPAddrs.Inc()
 	ds.log.Errorf("DataStore has no available IP/Prefix addresses")
 	return "", -1, errors.New("assignPodIPv4AddressUnsafe: no available IP/Prefix addresses")
 }
@@ -824,7 +749,7 @@ func (ds *DataStore) assignPodIPAddressUnsafe(addr *AddressInfo, ipamKey IPAMKey
 
 	ds.assigned++
 	// Prometheus gauge
-	assignedIPs.Set(float64(ds.assigned))
+	prometheusmetrics.AssignedIPs.Set(float64(ds.assigned))
 }
 
 // unassignPodIPAddressUnsafe mark Address as unassigned.
@@ -839,7 +764,7 @@ func (ds *DataStore) unassignPodIPAddressUnsafe(addr *AddressInfo) {
 	addr.IPAMMetadata = IPAMMetadata{}
 	ds.assigned--
 	// Prometheus gauge
-	assignedIPs.Set(float64(ds.assigned))
+	prometheusmetrics.AssignedIPs.Set(float64(ds.assigned))
 }
 
 type DataStoreStats struct {
@@ -1087,7 +1012,7 @@ func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget, minimumIPTarget, war
 		ds.total -= availableCidr.Size()
 		if availableCidr.IsPrefix {
 			ds.allocatedPrefix--
-			totalPrefixes.Set(float64(ds.allocatedPrefix))
+			prometheusmetrics.TotalPrefixes.Set(float64(ds.allocatedPrefix))
 		}
 	}
 	ds.log.Infof("RemoveUnusedENIFromStore %s: IP/Prefix address pool stats: free %d addresses, total: %d, assigned: %d, total prefixes: %d",
@@ -1096,10 +1021,10 @@ func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget, minimumIPTarget, war
 	delete(ds.eniPool, removableENI)
 
 	// Prometheus update
-	enis.Set(float64(len(ds.eniPool)))
+	prometheusmetrics.Enis.Set(float64(len(ds.eniPool)))
 	// Delete ENI IPs In Use when ENI is removed
-	eniIPsInUse.DeleteLabelValues(removableENI)
-	totalIPs.Set(float64(ds.total))
+	prometheusmetrics.EniIPsInUse.DeleteLabelValues(removableENI)
+	prometheusmetrics.TotalIPs.Set(float64(ds.total))
 	return removableENI
 }
 
@@ -1121,8 +1046,8 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 		// from the EC2 instance outside of the control of ipamd. If this happens, there's nothing
 		// we can do other than force all pods to be unassigned from the IPs on this ENI.
 		ds.log.Warnf("Force removing eni %s with %d assigned pods", eniID, eni.AssignedIPv4Addresses())
-		forceRemovedENIs.Inc()
-		forceRemovedIPs.Add(float64(eni.AssignedIPv4Addresses()))
+		prometheusmetrics.ForceRemovedENIs.Inc()
+		prometheusmetrics.ForceRemovedIPs.Add(float64(eni.AssignedIPv4Addresses()))
 		for _, assignedaddr := range eni.AvailableIPv4Cidrs {
 			for _, addr := range assignedaddr.IPAddresses {
 				if addr.Assigned() {
@@ -1152,9 +1077,9 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 	delete(ds.eniPool, eniID)
 
 	// Prometheus gauge
-	enis.Set(float64(len(ds.eniPool)))
+	prometheusmetrics.Enis.Set(float64(len(ds.eniPool)))
 	// Delete ENI IPs In Use when ENI is removed
-	eniIPsInUse.DeleteLabelValues(eniID)
+	prometheusmetrics.EniIPsInUse.DeleteLabelValues(eniID)
 	return nil
 }
 
@@ -1192,11 +1117,11 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 	addr.UnassignedTime = time.Now()
 
 	//Update prometheus for ips per cidr
-	ipsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
+	prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
 	ds.log.Infof("UnassignPodIPAddress: sandbox %s's ipAddr %s, DeviceNumber %d",
 		ipamKey, addr.Address, eni.DeviceNumber)
 	// Decrement ENI IP usage when a pod is deallocated
-	eniIPsInUse.WithLabelValues(eni.ID).Dec()
+	prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Dec()
 	return eni, addr.Address, eni.DeviceNumber, nil
 }
 

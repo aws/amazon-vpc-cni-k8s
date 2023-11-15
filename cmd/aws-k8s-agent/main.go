@@ -22,10 +22,17 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/version"
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
+	metrics "github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 )
 
 const (
 	appName = "aws-node"
+	// metricsPort is the port for prometheus metrics
+	metricsPort = 61678
+
+	// Environment variable to disable the metrics endpoint on 61678
+	envDisableMetrics = "DISABLE_METRICS"
 )
 
 func main() {
@@ -67,8 +74,10 @@ func _main() int {
 	// Pool manager
 	go ipamContext.StartNodeIPPoolManager()
 
-	// Prometheus metrics
-	go ipamContext.ServeMetrics()
+	if utils.GetBoolAsStringEnvVar(envDisableMetrics, false) {
+		// Prometheus metrics
+		go metrics.ServeMetrics(metricsPort)
+	}
 
 	// CNI introspection endpoints
 	go ipamContext.ServeIntrospection()

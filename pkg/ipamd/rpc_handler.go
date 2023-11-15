@@ -34,6 +34,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/rpc"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -64,7 +65,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	log.Infof("Received AddNetwork for NS %s, Sandbox %s, ifname %s",
 		in.Netns, in.ContainerID, in.IfName)
 	log.Debugf("AddNetworkRequest: %s", in)
-	addIPCnt.Inc()
+	prometheusmetrics.AddIPCnt.Inc()
 
 	// Do this early, but after logging trace
 	if err := s.validateVersion(in.ClientVersion); err != nil {
@@ -213,7 +214,7 @@ func (s *server) validateVersion(clientVersion string) error {
 func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rpc.DelNetworkReply, error) {
 	log.Infof("Received DelNetwork for Sandbox %s", in.ContainerID)
 	log.Debugf("DelNetworkRequest: %s", in)
-	delIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
+	prometheusmetrics.DelIPCnt.With(prometheus.Labels{"reason": in.Reason}).Inc()
 	var ipv4Addr, ipv6Addr, cidrStr string
 
 	// Do this early, but after logging trace

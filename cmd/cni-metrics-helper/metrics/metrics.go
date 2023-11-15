@@ -27,6 +27,8 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type metricMatcher func(metric *dto.Metric) bool
@@ -38,6 +40,7 @@ type metricsTarget interface {
 	getCWMetricsPublisher() publisher.Publisher
 	getTargetList(ctx context.Context) ([]string, error)
 	submitCloudWatch() bool
+	submitPrometheus() bool
 	getLogger() logger.Logger
 }
 
@@ -319,35 +322,50 @@ func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFa
 		for _, action := range convertMetrics.actions {
 			switch metricType {
 			case dto.MetricType_COUNTER:
-				if t.submitCloudWatch() {
-					dataPoint := &cloudwatch.MetricDatum{
-						MetricName: aws.String(action.cwMetricName),
-						Unit:       aws.String(cloudwatch.StandardUnitCount),
-						Value:      aws.Float64(action.data.curSingleDataPoint),
-					}
-					cw.Publish(dataPoint)
+				dataPoint := &cloudwatch.MetricDatum{
+					MetricName: aws.String(action.cwMetricName),
+					Unit:       aws.String(cloudwatch.StandardUnitCount),
+					Value:      aws.Float64(action.data.curSingleDataPoint),
 				}
+				cw.Publish(dataPoint)
 			case dto.MetricType_GAUGE:
-				if t.submitCloudWatch() {
-					dataPoint := &cloudwatch.MetricDatum{
-						MetricName: aws.String(action.cwMetricName),
-						Unit:       aws.String(cloudwatch.StandardUnitCount),
-						Value:      aws.Float64(action.data.curSingleDataPoint),
-					}
-					cw.Publish(dataPoint)
+				dataPoint := &cloudwatch.MetricDatum{
+					MetricName: aws.String(action.cwMetricName),
+					Unit:       aws.String(cloudwatch.StandardUnitCount),
+					Value:      aws.Float64(action.data.curSingleDataPoint),
 				}
+				cw.Publish(dataPoint)
 			case dto.MetricType_SUMMARY:
-				if t.submitCloudWatch() {
-					dataPoint := &cloudwatch.MetricDatum{
-						MetricName: aws.String(action.cwMetricName),
-						Unit:       aws.String(cloudwatch.StandardUnitCount),
-						Value:      aws.Float64(action.data.curSingleDataPoint),
-					}
-					cw.Publish(dataPoint)
+				dataPoint := &cloudwatch.MetricDatum{
+					MetricName: aws.String(action.cwMetricName),
+					Unit:       aws.String(cloudwatch.StandardUnitCount),
+					Value:      aws.Float64(action.data.curSingleDataPoint),
 				}
+				cw.Publish(dataPoint)
 			case dto.MetricType_HISTOGRAM:
-				if t.submitCloudWatch() {
-					produceHistogram(action, cw)
+				produceHistogram(action, cw)
+			}
+		}
+	}
+}
+
+// Prometheus export supports only gauge metrics for now.
+
+func producePrometheusMetrics(t metricsTarget, families map[string]*dto.MetricFamily, convertDef map[string]metricsConvert) {
+	prometheusCNIMetrics := prometheusmetrics.GetSupportedPrometheusCNIMetricsMapping()
+	if len(prometheusCNIMetrics) == 0 {
+		t.getLogger().Infof("Skipping since prometheus mapping is missing")
+		return
+	}
+	for key, family := range families {
+		convertMetrics := convertDef[key]
+		metricType := family.GetType()
+		for _, action := range convertMetrics.actions {
+			switch metricType {
+			case dto.MetricType_GAUGE:
+				metrics, ok := prometheusCNIMetrics[family.GetName()]
+				if ok {
+					metrics.(prometheus.Gauge).Set(action.data.curSingleDataPoint)
 				}
 			}
 		}
@@ -424,6 +442,12 @@ func Handler(ctx context.Context, t metricsTarget) {
 		t.getLogger().Infof("Skipping 1st poll after reset, error: %v", err)
 	}
 
-	cw := t.getCWMetricsPublisher()
-	produceCloudWatchMetrics(t, families, interestingMetrics, cw)
+	if t.submitCloudWatch() {
+		cw := t.getCWMetricsPublisher()
+		produceCloudWatchMetrics(t, families, interestingMetrics, cw)
+	}
+
+	if t.submitPrometheus() {
+		producePrometheusMetrics(t, families, interestingMetrics)
+	}
 }

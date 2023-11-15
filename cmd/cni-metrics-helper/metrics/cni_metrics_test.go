@@ -50,7 +50,7 @@ func TestCNIMetricsNew(t *testing.T) {
 	ctx := context.Background()
 	_, _ = m.clientset.CoreV1().Pods("kube-system").Create(ctx, &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "aws-node-1"}}, metav1.CreateOptions{})
 	//cniMetric := CNIMetricsNew(m.clientset, m.mockPublisher, m.discoverController, false, log)
-	cniMetric := CNIMetricsNew(m.clientset, m.mockPublisher, false, testLog, m.podWatcher)
+	cniMetric := CNIMetricsNew(m.clientset, m.mockPublisher, false, false, testLog, m.podWatcher)
 	assert.NotNil(t, cniMetric)
 	assert.NotNil(t, cniMetric.getCWMetricsPublisher())
 	assert.NotEmpty(t, cniMetric.getInterestingMetrics())
