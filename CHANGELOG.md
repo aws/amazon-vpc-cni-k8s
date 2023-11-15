@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.15.4
+
+* Documentation - [Update prefix-and-ip-target.md](https://github.com/aws/amazon-vpc-cni-k8s/pull/2658) (@nicolajknudsen )
+* Feature - [Upgrade CNI spec from 0.4.0 to 1.0.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2632) (@jdn5126 )
+* Improvement - [Upgrade go from 1.21.3 to 1.21.4](https://github.com/aws/amazon-vpc-cni-k8s/pull/2661) (@jdn5126 )
+* Improvement - [Refactor AllocENI (#2640)](https://github.com/aws/amazon-vpc-cni-k8s/pull/2656) (@jchen6585 )
+* Improvement - [Update Golang Dependencies](https://github.com/aws/amazon-vpc-cni-k8s/pull/2648) (@jdn5126 )
+* Improvement - [generate-limits](https://github.com/aws/amazon-vpc-cni-k8s/pull/2634) (@dougbyrne )
+
 ## v1.15.3
 
 * Bug - [Fully address CVE-2023-44487](https://github.com/aws/amazon-vpc-cni-k8s/pull/2626) (@jdn5126 )
