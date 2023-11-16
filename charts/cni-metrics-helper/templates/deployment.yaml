@@ -6,6 +6,7 @@ metadata:
   labels:
     k8s-app: cni-metrics-helper
 spec:
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
   selector:
     matchLabels:
       k8s-app: cni-metrics-helper
@@ -23,6 +24,12 @@ spec:
 {{- if .Values.resources }}
         resources: {{ toYaml .Values.resources | nindent 10 }}
 {{- end }}
+{{- if .Values.containerSecurityContext }}
+        securityContext: {{ toYaml .Values.containerSecurityContext | nindent 10 }}
+{{- end }}
         name: cni-metrics-helper
         image: "{{- if .Values.image.override }}{{- .Values.image.override }}{{- else }}{{- .Values.image.account }}.dkr.ecr.{{- .Values.image.region }}.{{- .Values.image.domain }}/cni-metrics-helper:{{- .Values.image.tag }}{{- end}}"
       serviceAccountName: {{ template "cni-metrics-helper.serviceAccountName" . }}
+{{- if .Values.podSecurityContext }}
+      securityContext: {{ toYaml .Values.podSecurityContext | nindent 8 }}
+{{- end }}

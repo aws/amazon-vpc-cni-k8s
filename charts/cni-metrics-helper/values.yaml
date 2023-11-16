@@ -28,3 +28,9 @@ serviceAccount:
     # eks.amazonaws.com/role-arn: arn:aws:iam::AWS_ACCOUNT_ID:role/IAM_ROLE_NAME  
 
 resources: {}
+
+revisionHistoryLimit: 10
+
+podSecurityContext: {}
+
+containerSecurityContext: {}

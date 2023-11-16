@@ -59,6 +59,9 @@ The following table lists the configurable parameters for this chart and their d
 | serviceAccount.name          | The name of the ServiceAccount to use                         | nil                |
 | serviceAccount.create        | Specifies whether a ServiceAccount should be created          | true               |
 | serviceAccount.annotations   | Specifies the annotations for ServiceAccount                  | {}                 |
+| revisionHistoryLimit         | The number of revisions to keep                               | 10                 |
+| podSecurityContext           | SecurityContext to set on the pod                             | {}                 |
+| containerSecurityContext     | SecurityContext to set on the container                       | {}                 |
 
 Specify each parameter using the `--set key=value[,key=value]` argument to `helm install` or provide a YAML file containing the values for the above parameters:
 
