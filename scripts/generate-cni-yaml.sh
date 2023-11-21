@@ -4,12 +4,12 @@ set -euo pipefail
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 PLATFORM=$(uname | tr '[:upper:]' '[:lower:]')
-HELM_VERSION="3.13.1"
+HELM_VERSION="3.13.2"
 NAMESPACE="kube-system"
 
 MAKEFILEPATH=$SCRIPTPATH/../Makefile
-VPC_CNI_VERSION="v1.15.3"
-NODE_AGENT_VERSION="v1.0.5"
+VPC_CNI_VERSION="v1.15.4"
+NODE_AGENT_VERSION="v1.0.6"
 BUILD_DIR=$SCRIPTPATH/../build/cni-rel-yamls/$VPC_CNI_VERSION
 
 REGIONS_FILE=$SCRIPTPATH/../charts/regions.json
