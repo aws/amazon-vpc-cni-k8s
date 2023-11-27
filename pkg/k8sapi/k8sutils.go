@@ -96,6 +96,7 @@ func CreateKubeClient(appName string) (client.Client, error) {
 	vpcCniScheme := runtime.NewScheme()
 	corev1.AddToScheme(vpcCniScheme)
 	eniconfigscheme.AddToScheme(vpcCniScheme)
+	rcscheme.AddToScheme(vpcCniScheme)
 
 	var filterMap map[client.Object]cache.ByObject
 	if appName == awsNode {
@@ -110,9 +111,7 @@ func CreateKubeClient(appName string) (client.Client, error) {
 	// Start cache and wait for initial sync
 	StartKubeClientCache(cacheReader)
 
-	// The cache will start a WATCH for all GVKs in the scheme. CNINode objects should not
-	// be cached, so their GVK is added only for the client.
-	rcscheme.AddToScheme(vpcCniScheme)
+	// The cache will start a WATCH for all GVKs in the scheme.
 	k8sClient, err := client.New(restCfg, client.Options{
 		Cache: &client.CacheOptions{
 			Reader: cacheReader,
