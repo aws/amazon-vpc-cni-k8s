@@ -35,11 +35,13 @@ const (
 	defaultDisableIPv4TcpEarlyDemux = false
 	defaultEnableIPv6               = false
 	defaultEnableIPv6Egress         = false
+	defaultPrimaryIF                = ""
 
 	envDisableIPv4TcpEarlyDemux = "DISABLE_TCP_EARLY_DEMUX"
 	envEnableIPv6               = "ENABLE_IPv6"
 	envHostCniBinPath           = "HOST_CNI_BIN_PATH"
 	envEgressV6                 = "ENABLE_V6_EGRESS"
+	envPrimaryIF                = "PRIMARY_IF"
 )
 
 func getNodePrimaryIF() (string, error) {
@@ -156,12 +158,17 @@ func _main() int {
 	log.Infof("Copied all CNI plugin binaries to %s", hostCNIBinPath)
 
 	var primaryIF string
-	primaryIF, err = getNodePrimaryIF()
-	if err != nil {
-		log.WithError(err).Errorf("Failed to get primary IF")
-		return 1
+	primaryIF = utils.GetEnv(envPrimaryIF, defaultPrimaryIF)
+	if primaryIF == "" {
+		primaryIF, err = getNodePrimaryIF()
+		if err != nil {
+			log.WithError(err).Errorf("Failed to get primary IF")
+			return 1
+		}
+		log.Infof("Found primaryIF %s", primaryIF)
+	} else {
+		log.Infof("Using primaryIF %s from environment", primaryIF)
 	}
-	log.Infof("Found primaryIF %s", primaryIF)
 
 	procSys := procsyswrapper.NewProcSys()
 	err = configureSystemParams(procSys, primaryIF)
