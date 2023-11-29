@@ -76,25 +76,43 @@ func validateIPTableRules(randomizedSNATValue string, numOfCidrs int) error {
 
 	currChain := "AWS-SNAT-CHAIN-0"
 	lastChain := fmt.Sprintf("AWS-SNAT-CHAIN-%d", numOfCidrs)
-	i := 0
-	for i < numOfCidrs {
+
+	exists, err := iptables.ChainExists("nat", "AWS-SNAT-CHAIN-1")
+	if err != nil {
+		return err
+	}
+	// If AWS-SNAT-CHAIN-1 exists, we run the old logic
+	if exists {
+		i := 0
+		for i < numOfCidrs {
+			rules, err := iptables.List("nat", currChain)
+			if err != nil {
+				return err
+			}
+			i = i + 1
+			nextChain := fmt.Sprintf("AWS-SNAT-CHAIN-%d", i)
+			foundNextChain := false
+			for _, rule := range rules {
+				target := fmt.Sprintf("-j %s", nextChain)
+				if strings.Contains(rule, target) {
+					currChain = nextChain
+					foundNextChain = true
+					break
+				}
+			}
+			if !foundNextChain {
+				return fmt.Errorf("failed: AWS-SNAT chain broken for %s", currChain)
+			}
+		}
+	} else {
+		lastChain = "AWS-SNAT-CHAIN-0"
 		rules, err := iptables.List("nat", currChain)
 		if err != nil {
 			return err
 		}
-		i = i + 1
-		nextChain := fmt.Sprintf("AWS-SNAT-CHAIN-%d", i)
-		foundNextChain := false
-		for _, rule := range rules {
-			target := fmt.Sprintf("-j %s", nextChain)
-			if strings.Contains(rule, target) {
-				currChain = nextChain
-				foundNextChain = true
-				break
-			}
-		}
-		if foundNextChain == false {
-			return fmt.Errorf("failed: AWS-SNAT chain broken for %s", currChain)
+		// One rule per cidr + SNAT rule + chain creation rule
+		if len(rules) != numOfCidrs+2 {
+			return fmt.Errorf("failed: AWS-SNAT chain does not contain the correct amount of rules")
 		}
 	}
 
@@ -107,7 +125,6 @@ func validateIPTableRules(randomizedSNATValue string, numOfCidrs int) error {
 	// Check for rule with following pattern
 	match := fmt.Sprintf(".*-j SNAT.*%s", expectedString)
 	r, _ := regexp.Compile(match)
-
 	for _, rule := range rules {
 		if r.Match([]byte(rule)) {
 			containsExpectedString = true
