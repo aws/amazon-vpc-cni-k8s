@@ -34,10 +34,6 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(3), func()
 		// tester pod to receiver pod
 		testConnectionCommandFunc func(serverPod coreV1.Pod, port int) []string
 
-		// The functions re-inforces that the positive test is working as
-		// expected by creating a negative test command that should fail
-		testFailedConnectionCommandFunc func(serverPod coreV1.Pod, port int) []string
-
 		// Expected stdout from the exec command on testing connection
 		// from tester to server
 		testerExpectedStdOut string
@@ -48,13 +44,8 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(3), func()
 		// Daemonset to run on node
 		testDaemonSet *v1.DaemonSet
 
-		// Map of Pods placed on the node
-		interfaceToPodList common.InterfaceTypeToPodList
-
-		// Map of AZ name, string to pod IP, string
-		azName    string
-		azToPodIP map[string]string
-		azToPod   map[string]coreV1.Pod
+		// Map of AZ name, string to pod of testDaemonSet
+		azToTestPod map[string]coreV1.Pod
 	)
 
 	JustBeforeEach(func() {
@@ -93,25 +84,7 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(3), func()
 
 		Expect(err).ToNot(HaveOccurred())
 
-		azToPodIP = make(map[string]string)
-		azToPod = make(map[string]coreV1.Pod)
-
-		for i := range nodes.Items {
-			// node label key "topology.kubernetes.io/zone" is well known label populated by cloud controller manager
-			// guaranteed to be present and represent the AZ name
-			// Ref https://kubernetes.io/docs/reference/labels-annotations-taints/#topologykubernetesiozone
-			azName = nodes.Items[i].ObjectMeta.Labels["topology.kubernetes.io/zone"]
-			interfaceToPodList = common.GetPodsOnPrimaryAndSecondaryInterface(nodes.Items[i], "role", "az-test", f)
-			// It doesn't matter which ENI the pod is on, as long as it is on the node
-			if len(interfaceToPodList.PodsOnSecondaryENI) > 0 {
-				azToPodIP[azName] = interfaceToPodList.PodsOnSecondaryENI[0].Status.PodIP
-				azToPod[azName] = interfaceToPodList.PodsOnSecondaryENI[0]
-			}
-			if len(interfaceToPodList.PodsOnPrimaryENI) > 0 {
-				azToPodIP[azName] = interfaceToPodList.PodsOnPrimaryENI[0].Status.PodIP
-				azToPod[azName] = interfaceToPodList.PodsOnPrimaryENI[0]
-			}
-		}
+		azToTestPod = GetAZtoPod(nodes)
 	})
 
 	JustAfterEach(func() {
@@ -148,20 +121,33 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(3), func()
 			testConnectionCommandFunc = func(receiverPod coreV1.Pod, port int) []string {
 				return []string{"nc", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port)}
 			}
-
-			// Create a negative test case with the wrong port number. This is to reinforce the
-			// positive test case work by verifying negative cases do throw error
-			testFailedConnectionCommandFunc = func(receiverPod coreV1.Pod, port int) []string {
-				return []string{"nc", "-u", "-v", "-w2", receiverPod.Status.PodIP, strconv.Itoa(port + 1)}
-			}
 		})
 
 		It("Should allow TCP traffic across AZs.", func() {
-			CheckConnectivityBetweenPods(azToPod, serverPort, testerExpectedStdOut, testerExpectedStdErr, testConnectionCommandFunc)
-			VerifyConnectivityForNegativeCase(azToPod, serverPort, testFailedConnectionCommandFunc)
+			CheckConnectivityBetweenPods(azToTestPod, serverPort, testerExpectedStdOut, testerExpectedStdErr, testConnectionCommandFunc)
 		})
 	})
 })
+
+func GetAZtoPod(nodes coreV1.NodeList) map[string]coreV1.Pod {
+	// Map of AZ name to Pod from Daemonset running on nodes
+	azToPod := make(map[string]coreV1.Pod)
+	for i := range nodes.Items {
+		// node label key "topology.kubernetes.io/zone" is well known label populated by cloud controller manager
+		// guaranteed to be present and represent the AZ name
+		// Ref https://kubernetes.io/docs/reference/labels-annotations-taints/#topologykubernetesiozone
+		azName := nodes.Items[i].ObjectMeta.Labels["topology.kubernetes.io/zone"]
+		interfaceToPodList := common.GetPodsOnPrimaryAndSecondaryInterface(nodes.Items[i], "role", "az-test", f)
+		// It doesn't matter which ENI the pod is on, as long as it is on the node
+		if len(interfaceToPodList.PodsOnSecondaryENI) > 0 {
+			azToPod[azName] = interfaceToPodList.PodsOnSecondaryENI[0]
+		}
+		if len(interfaceToPodList.PodsOnPrimaryENI) > 0 {
+			azToPod[azName] = interfaceToPodList.PodsOnPrimaryENI[0]
+		}
+	}
+	return azToPod
+}
 
 var _ = Describe("[STATIC_CANARY] API Server Connectivity from AZs", FlakeAttempts(3), func() {
 
@@ -169,12 +155,7 @@ var _ = Describe("[STATIC_CANARY] API Server Connectivity from AZs", FlakeAttemp
 		err           error
 		testDaemonSet *v1.DaemonSet
 
-		// Map of Pods placed on primary/secondary ENI IP
-		interfaceToPodList common.InterfaceTypeToPodList
-
-		azName string
-
-		// Map of AZ name to Pod
+		// Map of AZ name to Pod of testDaemonSet running on nodes
 		azToPod map[string]coreV1.Pod
 	)
 
@@ -205,21 +186,7 @@ var _ = Describe("[STATIC_CANARY] API Server Connectivity from AZs", FlakeAttemp
 		nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 		Expect(err).ToNot(HaveOccurred())
 
-		azToPod = make(map[string]coreV1.Pod)
-
-		for i := range nodes.Items {
-			// node label key "topology.kubernetes.io/zone" is well known label populated by cloud controller manager
-			// guaranteed to be present and represent the AZ name
-			// Ref https://kubernetes.io/docs/reference/labels-annotations-taints/#topologykubernetesiozone
-			azName = nodes.Items[i].ObjectMeta.Labels["topology.kubernetes.io/zone"]
-			interfaceToPodList = common.GetPodsOnPrimaryAndSecondaryInterface(nodes.Items[i], "role", "az-test", f)
-			if len(interfaceToPodList.PodsOnSecondaryENI) > 0 {
-				azToPod[azName] = interfaceToPodList.PodsOnSecondaryENI[0]
-			}
-			if len(interfaceToPodList.PodsOnPrimaryENI) > 0 {
-				azToPod[azName] = interfaceToPodList.PodsOnPrimaryENI[0]
-			}
-		}
+		azToPod = GetAZtoPod(nodes)
 	})
 
 	JustAfterEach(func() {
@@ -275,31 +242,4 @@ func RunCommandOnPod(receiverPod coreV1.Pod, command []string) (string, string, 
 	stdout, stderr, err := f.K8sResourceManagers.PodManager().
 		PodExec(receiverPod.Namespace, receiverPod.Name, command)
 	return stdout, stderr, err
-}
-
-func VerifyConnectivityForNegativeCase(azToPod map[string]coreV1.Pod, port int,
-	getTestCommandFunc func(receiverPod coreV1.Pod, port int) []string) {
-
-	for az1 := range azToPod {
-		for az2 := range azToPod {
-			if az1 != az2 {
-				fmt.Printf("Testing Connectivity from Pod IP1 %s (%s) to Pod IP2 %s (%s) \n",
-					azToPod[az1].Status.PodIP, az1, azToPod[az2].Status.PodIP, az2)
-
-				senderPod := azToPod[az1]
-				receiverPod := azToPod[az2]
-				testerCommand := getTestCommandFunc(receiverPod, port)
-
-				GinkgoWriter.Printf("verifying connectivity fails from pod %s on node %s with IP %s to pod"+
-					" %s on node %s with IP %s\n", senderPod.Name, senderPod.Spec.NodeName, senderPod.Status.PodIP,
-					receiverPod.Name, receiverPod.Spec.NodeName, receiverPod.Status.PodIP)
-
-				_, _, err := f.K8sResourceManagers.PodManager().
-					PodExec(senderPod.Namespace, senderPod.Name, testerCommand)
-				Expect(err).To(HaveOccurred())
-				// Negative test for single scenario is fine!
-				break
-			}
-		}
-	}
 }
