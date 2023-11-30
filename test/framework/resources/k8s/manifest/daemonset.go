@@ -24,27 +24,13 @@ import (
 type DaemonsetBuilder struct {
 	namespace              string
 	name                   string
-	replicas               int
 	container              corev1.Container
 	labels                 map[string]string
 	nodeSelector           map[string]string
 	terminationGracePeriod int
-	nodeName               string
 	hostNetwork            bool
 	volume                 []corev1.Volume
 	volumeMount            []corev1.VolumeMount
-}
-
-func NewBusyBoxDaemonsetBuilder(testImageRegistry string) *DaemonsetBuilder {
-	return &DaemonsetBuilder{
-		namespace:              utils.DefaultTestNamespace,
-		name:                   "deployment-test",
-		replicas:               10,
-		container:              NewBusyBoxContainerBuilder(testImageRegistry).Build(),
-		labels:                 map[string]string{"role": "test"},
-		nodeSelector:           map[string]string{"kubernetes.io/os": "linux"},
-		terminationGracePeriod: 1,
-	}
 }
 
 func NewDefaultDaemonsetBuilder() *DaemonsetBuilder {
@@ -53,13 +39,6 @@ func NewDefaultDaemonsetBuilder() *DaemonsetBuilder {
 		terminationGracePeriod: 1,
 		labels:                 map[string]string{"role": "test"},
 		nodeSelector:           map[string]string{"kubernetes.io/os": "linux"},
-	}
-}
-
-func NewCalicoStarDaemonsetBuilder() *DaemonsetBuilder {
-	return &DaemonsetBuilder{
-		labels:       map[string]string{},
-		nodeSelector: map[string]string{},
 	}
 }
 
@@ -87,16 +66,6 @@ func (d *DaemonsetBuilder) TerminationGracePeriod(tg int) *DaemonsetBuilder {
 
 func (d *DaemonsetBuilder) Name(name string) *DaemonsetBuilder {
 	d.name = name
-	return d
-}
-
-func (d *DaemonsetBuilder) NodeName(nodeName string) *DaemonsetBuilder {
-	d.nodeName = nodeName
-	return d
-}
-
-func (d *DaemonsetBuilder) Replicas(replicas int) *DaemonsetBuilder {
-	d.replicas = replicas
 	return d
 }
 
@@ -141,7 +110,6 @@ func (d *DaemonsetBuilder) Build() *v1.DaemonSet {
 					NodeSelector:                  d.nodeSelector,
 					Containers:                    []corev1.Container{d.container},
 					TerminationGracePeriodSeconds: aws.Int64(int64(d.terminationGracePeriod)),
-					NodeName:                      d.nodeName,
 				},
 			},
 		},

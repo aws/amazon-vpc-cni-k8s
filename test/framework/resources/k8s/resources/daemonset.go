@@ -121,9 +121,7 @@ func (d *defaultDaemonSetManager) CheckIfDaemonSetIsReady(namespace string, name
 func (d *defaultDaemonSetManager) DeleteAndWaitTillDaemonSetDeleted(daemonSet *v1.DaemonSet, timeout time.Duration) error {
 	ctx := context.Background()
 
-	err := d.k8sClient.Delete(ctx, daemonSet)
-
-	if err != nil {
+	if err := d.k8sClient.Delete(ctx, daemonSet); err != nil {
 		return err
 	}
 
