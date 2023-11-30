@@ -239,7 +239,6 @@ func CheckConnectivityBetweenPods(azToPod map[string]coreV1.Pod, port int, teste
 }
 
 func RunCommandOnPod(receiverPod coreV1.Pod, command []string) (string, string, error) {
-	stdout, stderr, err := f.K8sResourceManagers.PodManager().
+	return f.K8sResourceManagers.PodManager().
 		PodExec(receiverPod.Namespace, receiverPod.Name, command)
-	return stdout, stderr, err
 }
