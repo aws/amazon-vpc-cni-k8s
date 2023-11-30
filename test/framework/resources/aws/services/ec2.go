@@ -15,6 +15,7 @@ package services
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -88,17 +89,29 @@ func (d *defaultEC2) DescribeInstance(instanceID string) (*ec2.Instance, error) 
 	return describeInstanceOutput.Reservations[0].Instances[0], nil
 }
 
-func (d *defaultEC2) AuthorizeSecurityGroupIngress(groupID string, protocol string,
-	fromPort int, toPort int, cidrIP string) error {
+func (d *defaultEC2) AuthorizeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error {
+	var ipv4Ranges []*ec2.IpRange
+	var ipv6Ranges []*ec2.Ipv6Range
+	if strings.Contains(cidrIP, ":") {
+		ipv6Ranges = []*ec2.Ipv6Range{
+			{
+				CidrIpv6: aws.String(cidrIP),
+			},
+		}
+	} else {
+		ipv4Ranges = []*ec2.IpRange{
+			{
+				CidrIp: aws.String(cidrIP),
+			},
+		}
+	}
+
 	ipPermissions := &ec2.IpPermission{
 		FromPort:   aws.Int64(int64(fromPort)),
 		ToPort:     aws.Int64(int64(toPort)),
 		IpProtocol: aws.String(protocol),
-		IpRanges: []*ec2.IpRange{
-			{
-				CidrIp: aws.String(cidrIP),
-			},
-		},
+		IpRanges:   ipv4Ranges,
+		Ipv6Ranges: ipv6Ranges,
 	}
 	authorizeSecurityGroupIngressInput := &ec2.AuthorizeSecurityGroupIngressInput{
 		GroupId:       aws.String(groupID),
@@ -109,15 +122,28 @@ func (d *defaultEC2) AuthorizeSecurityGroupIngress(groupID string, protocol stri
 }
 
 func (d *defaultEC2) RevokeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error {
+	var ipv4Ranges []*ec2.IpRange
+	var ipv6Ranges []*ec2.Ipv6Range
+	if strings.Contains(cidrIP, ":") {
+		ipv6Ranges = []*ec2.Ipv6Range{
+			{
+				CidrIpv6: aws.String(cidrIP),
+			},
+		}
+	} else {
+		ipv4Ranges = []*ec2.IpRange{
+			{
+				CidrIp: aws.String(cidrIP),
+			},
+		}
+	}
+
 	ipPermissions := &ec2.IpPermission{
 		FromPort:   aws.Int64(int64(fromPort)),
 		ToPort:     aws.Int64(int64(toPort)),
 		IpProtocol: aws.String(protocol),
-		IpRanges: []*ec2.IpRange{
-			{
-				CidrIp: aws.String(cidrIP),
-			},
-		},
+		IpRanges:   ipv4Ranges,
+		Ipv6Ranges: ipv6Ranges,
 	}
 	revokeSecurityGroupIngressInput := &ec2.RevokeSecurityGroupIngressInput{
 		GroupId:       aws.String(groupID),
@@ -128,15 +154,28 @@ func (d *defaultEC2) RevokeSecurityGroupIngress(groupID string, protocol string,
 }
 
 func (d *defaultEC2) AuthorizeSecurityGroupEgress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error {
+	var ipv4Ranges []*ec2.IpRange
+	var ipv6Ranges []*ec2.Ipv6Range
+	if strings.Contains(cidrIP, ":") {
+		ipv6Ranges = []*ec2.Ipv6Range{
+			{
+				CidrIpv6: aws.String(cidrIP),
+			},
+		}
+	} else {
+		ipv4Ranges = []*ec2.IpRange{
+			{
+				CidrIp: aws.String(cidrIP),
+			},
+		}
+	}
+
 	ipPermissions := &ec2.IpPermission{
 		FromPort:   aws.Int64(int64(fromPort)),
 		ToPort:     aws.Int64(int64(toPort)),
 		IpProtocol: aws.String(protocol),
-		IpRanges: []*ec2.IpRange{
-			{
-				CidrIp: aws.String(cidrIP),
-			},
-		},
+		IpRanges:   ipv4Ranges,
+		Ipv6Ranges: ipv6Ranges,
 	}
 	authorizeSecurityGroupEgressInput := &ec2.AuthorizeSecurityGroupEgressInput{
 		GroupId:       aws.String(groupID),
@@ -147,15 +186,28 @@ func (d *defaultEC2) AuthorizeSecurityGroupEgress(groupID string, protocol strin
 }
 
 func (d *defaultEC2) RevokeSecurityGroupEgress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error {
+	var ipv4Ranges []*ec2.IpRange
+	var ipv6Ranges []*ec2.Ipv6Range
+	if strings.Contains(cidrIP, ":") {
+		ipv6Ranges = []*ec2.Ipv6Range{
+			{
+				CidrIpv6: aws.String(cidrIP),
+			},
+		}
+	} else {
+		ipv4Ranges = []*ec2.IpRange{
+			{
+				CidrIp: aws.String(cidrIP),
+			},
+		}
+	}
+
 	ipPermissions := &ec2.IpPermission{
 		FromPort:   aws.Int64(int64(fromPort)),
 		ToPort:     aws.Int64(int64(toPort)),
 		IpProtocol: aws.String(protocol),
-		IpRanges: []*ec2.IpRange{
-			{
-				CidrIp: aws.String(cidrIP),
-			},
-		},
+		IpRanges:   ipv4Ranges,
+		Ipv6Ranges: ipv6Ranges,
 	}
 	revokeSecurityGroupEgressInput := &ec2.RevokeSecurityGroupEgressInput{
 		GroupId:       aws.String(groupID),

@@ -169,7 +169,7 @@ func sendAndReceiveResponse(conn net.Conn, serverAddr string) *input.Failure {
 		return failure
 	}
 
-	log.Printf("successfully recieved response from server %s: %s", serverAddr, string(buffer))
+	log.Printf("successfully received response from server %s: %s", serverAddr, string(buffer))
 
 	return nil
 }

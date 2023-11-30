@@ -53,11 +53,13 @@ type server struct {
 
 // PodENIData is used to parse the list of ENIs in the branch ENI pod annotation
 type PodENIData struct {
-	ENIID      string `json:"eniId"`
-	IfAddress  string `json:"ifAddress"`
-	PrivateIP  string `json:"privateIp"`
-	VlanID     int    `json:"vlanID"`
-	SubnetCIDR string `json:"subnetCidr"`
+	ENIID        string `json:"eniId"`
+	IfAddress    string `json:"ifAddress"`
+	PrivateIP    string `json:"privateIp"`
+	IPV6Addr     string `json:"ipv6Addr"`
+	VlanID       int    `json:"vlanID"`
+	SubnetCIDR   string `json:"subnetCidr"`
+	SubnetV6CIDR string `json:"subnetV6Cidr"`
 }
 
 // AddNetwork processes CNI add network request and return an IP address for container
@@ -77,7 +79,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	var deviceNumber, vlanID, trunkENILinkIndex int
 	var ipv4Addr, ipv6Addr, branchENIMAC, podENISubnetGW string
 	var err error
-	if !s.ipamContext.enableIPv6 && s.ipamContext.enablePodENI {
+	if s.ipamContext.enablePodENI {
 		// Check pod spec for Branch ENI
 		pod, err := s.ipamContext.GetPod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
 		if err != nil {
@@ -108,23 +110,43 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 						return &failureResponse, nil
 					}
 					firstENI := podENIData[0]
-					ipv4Addr = firstENI.PrivateIP
+					// Get pod IPv4 or IPv6 address based on mode
+					if s.ipamContext.enableIPv6 {
+						ipv6Addr = firstENI.IPV6Addr
+					} else {
+						ipv4Addr = firstENI.PrivateIP
+					}
 					branchENIMAC = firstENI.IfAddress
 					vlanID = firstENI.VlanID
 					log.Debugf("Pod vlandId: %d", vlanID)
 
-					if ipv4Addr == "" || branchENIMAC == "" || vlanID == 0 {
+					if (ipv4Addr == "" && ipv6Addr == "") || branchENIMAC == "" || vlanID == 0 {
 						log.Errorf("Failed to parse pod-ENI annotation: %s", val)
 						return &failureResponse, nil
 					}
-					currentGW := strings.Split(firstENI.SubnetCIDR, "/")[0]
-					// Increment value CIDR value
-					nextGWIP, err := networkutils.IncrementIPv4Addr(net.ParseIP(currentGW))
-					if err != nil {
-						log.Errorf("Unable to get next Gateway IP for branch ENI from %s: %v", currentGW, err)
-						return &failureResponse, nil
+					var subnetCIDR *net.IPNet
+					if s.ipamContext.enableIPv6 {
+						_, subnetCIDR, err = net.ParseCIDR(firstENI.SubnetV6CIDR)
+						if err != nil {
+							log.Errorf("Failed to parse V6 subnet CIDR: %s", firstENI.SubnetV6CIDR)
+							return &failureResponse, nil
+						}
+					} else {
+						_, subnetCIDR, err = net.ParseCIDR(firstENI.SubnetCIDR)
+						if err != nil {
+							log.Errorf("Failed to parse V4 subnet CIDR: %s", firstENI.SubnetCIDR)
+							return &failureResponse, nil
+						}
 					}
-					podENISubnetGW = nextGWIP.String()
+					var gw net.IP
+					// For IPv6, the gateway is derived from the RA route on the primary ENI. The primary ENI is always in the same subnet as the trunk and branch ENI.
+					// For IPv4, the gateway is always the .1 address for the subnet CIDR.
+					if s.ipamContext.enableIPv6 {
+						gw = s.ipamContext.v6Gateway
+					} else {
+						gw = networkutils.GetIPv4Gateway(subnetCIDR)
+					}
+					podENISubnetGW = gw.String()
 					deviceNumber = -1 // Not needed for branch ENI, they depend on trunkENIDeviceIndex
 				} else {
 					log.Infof("Send AddNetworkReply: failed to get Branch ENI resource")

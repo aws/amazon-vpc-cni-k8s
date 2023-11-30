@@ -124,11 +124,12 @@ func (mr *MockNetworkAPIsMockRecorder) GetRuleListBySrc(arg0, arg1 interface{}) 
 }
 
 // SetupENINetwork mocks base method.
-func (m *MockNetworkAPIs) SetupENINetwork(arg0, arg1 string, arg2 int, arg3 string) error {
+func (m *MockNetworkAPIs) SetupENINetwork(arg0, arg1 string, arg2 int, arg3 string) (net.IP, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SetupENINetwork", arg0, arg1, arg2, arg3)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(net.IP)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // SetupENINetwork indicates an expected call of SetupENINetwork.
@@ -177,6 +178,20 @@ func (m *MockNetworkAPIs) UpdateHostIptablesRules(arg0 []string, arg1 string, ar
 func (mr *MockNetworkAPIsMockRecorder) UpdateHostIptablesRules(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateHostIptablesRules", reflect.TypeOf((*MockNetworkAPIs)(nil).UpdateHostIptablesRules), arg0, arg1, arg2, arg3, arg4)
+}
+
+// UpdateIPv6GatewayRule mocks base method.
+func (m *MockNetworkAPIs) UpdateIPv6GatewayRule(arg0 *net.IP) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateIPv6GatewayRule", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateIPv6GatewayRule indicates an expected call of UpdateIPv6GatewayRule.
+func (mr *MockNetworkAPIsMockRecorder) UpdateIPv6GatewayRule(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateIPv6GatewayRule", reflect.TypeOf((*MockNetworkAPIs)(nil).UpdateIPv6GatewayRule), arg0)
 }
 
 // UpdateRuleListBySrc mocks base method.

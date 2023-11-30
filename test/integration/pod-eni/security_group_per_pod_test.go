@@ -107,8 +107,10 @@ var _ = Describe("Security Group for Pods Test", func() {
 				ClientPodLabelKey:              labelKey,
 				ClientPodLabelVal:              clientPodLabelVal,
 				ValidateServerPods:             ValidatePodsHaveBranchENI,
+				IsV6Enabled:                    !isIPv4Cluster,
 			}
 
+			By("performing traffic test")
 			successRate, err := trafficTester.TestTraffic()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(successRate).Should(BeNumerically(">=", float64(99)))
@@ -123,8 +125,13 @@ var _ = Describe("Security Group for Pods Test", func() {
 			// Allow Ingress on cluster security group so client pods can communicate with metric pod
 			// 8080: metric-pod listener port
 			By("Adding an additional Ingress Rule on NodeSecurityGroupID to allow client-to-metric traffic")
-			err := f.CloudServices.EC2().AuthorizeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, "0.0.0.0/0")
-			Expect(err).ToNot(HaveOccurred())
+			if isIPv4Cluster {
+				err := f.CloudServices.EC2().AuthorizeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v4Zero)
+				Expect(err).ToNot(HaveOccurred())
+			} else {
+				err := f.CloudServices.EC2().AuthorizeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v6Zero)
+				Expect(err).ToNot(HaveOccurred())
+			}
 		})
 
 		It("should have 99%+ success rate", func() {
@@ -141,6 +148,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 				ClientPodLabelVal:              clientPodLabelVal,
 				ValidateServerPods:             ValidatePodsHaveBranchENI,
 				ValidateClientPods:             ValidatePodsHaveBranchENI,
+				IsV6Enabled:                    !isIPv4Cluster,
 			}
 
 			successRate, err := t.TestTraffic()
@@ -151,8 +159,13 @@ var _ = Describe("Security Group for Pods Test", func() {
 		AfterEach(func() {
 			// Revoke the Ingress rule for traffic from client pods added to Node Security Group
 			By("Revoking the additional Ingress rule added to allow client-to-metric traffic")
-			err := f.CloudServices.EC2().RevokeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, "0.0.0.0/0")
-			Expect(err).ToNot(HaveOccurred())
+			if isIPv4Cluster {
+				err := f.CloudServices.EC2().RevokeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v4Zero)
+				Expect(err).ToNot(HaveOccurred())
+			} else {
+				err := f.CloudServices.EC2().RevokeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v6Zero)
+				Expect(err).ToNot(HaveOccurred())
+			}
 		})
 	})
 
@@ -175,6 +188,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 				ClientPodLabelKey:              labelKey,
 				ClientPodLabelVal:              clientPodLabelVal,
 				ValidateServerPods:             ValidatePodsHaveBranchENI,
+				IsV6Enabled:                    !isIPv4Cluster,
 			}
 
 			successRate, err := t.TestTraffic()
@@ -318,7 +332,14 @@ var _ = Describe("Security Group for Pods Test", func() {
 })
 
 func GetPodNetworkingValidationInput(podList v1.PodList) input.PodNetworkingValidationInput {
+	var ipFamily string
+	if isIPv4Cluster {
+		ipFamily = "IPv4"
+	} else {
+		ipFamily = "IPv6"
+	}
 	ip := input.PodNetworkingValidationInput{
+		IPFamily:    ipFamily,
 		VethPrefix:  "vlan",
 		PodList:     []input.Pod{},
 		ValidateMTU: true,
@@ -326,11 +347,20 @@ func GetPodNetworkingValidationInput(podList v1.PodList) input.PodNetworkingVali
 	}
 
 	for _, pod := range podList.Items {
-		ip.PodList = append(ip.PodList, input.Pod{
-			PodName:        pod.Name,
-			PodNamespace:   pod.Namespace,
-			PodIPv4Address: pod.Status.PodIP,
-		})
+		if isIPv4Cluster {
+			ip.PodList = append(ip.PodList, input.Pod{
+				PodName:        pod.Name,
+				PodNamespace:   pod.Namespace,
+				PodIPv4Address: pod.Status.PodIP,
+			})
+		} else {
+			ip.PodList = append(ip.PodList, input.Pod{
+				PodName:        pod.Name,
+				PodNamespace:   pod.Namespace,
+				PodIPv6Address: pod.Status.PodIP,
+			})
+
+		}
 	}
 	return ip
 }
@@ -379,6 +409,7 @@ func ValidatePodsHaveBranchENI(podList v1.PodList) error {
 		if val, ok := pod.Annotations["vpc.amazonaws.com/pod-eni"]; ok {
 			type ENIDetails struct {
 				IPV4Addr string `json:"privateIp"`
+				IPV6Addr string `json:"ipv6addr"`
 				ID       string `json:"eniId"`
 			}
 			var eniList []ENIDetails
@@ -387,11 +418,18 @@ func ValidatePodsHaveBranchENI(podList v1.PodList) error {
 				return fmt.Errorf("failed to unmarshall the branch ENI annotation %v", err)
 			}
 
-			if eniList[0].IPV4Addr != pod.Status.PodIP {
-				return fmt.Errorf("expected the pod to have IP %s but recieved %s",
-					eniList[0].IPV4Addr, pod.Status.PodIP)
-			}
+			if isIPv4Cluster {
+				if eniList[0].IPV4Addr != pod.Status.PodIP {
+					return fmt.Errorf("expected the pod to have IP %s but recieved %s",
+						eniList[0].IPV4Addr, pod.Status.PodIP)
+				}
+			} else {
+				if eniList[0].IPV6Addr != pod.Status.PodIP {
+					return fmt.Errorf("expected the pod to have IP %s but recieved %s",
+						eniList[0].IPV6Addr, pod.Status.PodIP)
+				}
 
+			}
 			By(fmt.Sprintf("validating pod %s has branch ENI %s", pod.Name, eniList[0].ID))
 
 		} else {

@@ -957,6 +957,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 				Ipv6Prefix: &v6PrefixIP,
 			},
 		},
+		IPv6Addresses: []*ec2.NetworkInterfaceIpv6Address{},
 	}
 	tests := []struct {
 		name            string

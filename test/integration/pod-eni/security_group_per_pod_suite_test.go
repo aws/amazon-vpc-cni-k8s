@@ -15,7 +15,6 @@ package pod_eni
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
@@ -34,6 +33,8 @@ const AmazonEKSVPCResourceControllerARN = "arn:aws:iam::aws:policy/AmazonEKSVPCR
 var (
 	f   *framework.Framework
 	err error
+	// Cluster IP Address Family
+	isIPv4Cluster = false
 	// Security Group that will be used to to create Security Group Policy
 	securityGroupId string
 	// Ports that will be opened on the Security Group used for testing
@@ -42,10 +43,10 @@ var (
 	metricsPort = 8080
 	// Maximum number of Branch Interface created across all the self managed nodes
 	totalBranchInterface int
-	// Cluster Role name derived from cluster Role ARN, used to attach VPC Controller Policy
-	clusterRoleName string
 	// Cluster security group ID for node to node communication
 	clusterSGID string
+	v4Zero      = "0.0.0.0/0"
+	v6Zero      = "::/0"
 
 	targetNode corev1.Node
 	// Number of nodes in cluster
@@ -60,31 +61,43 @@ func TestSecurityGroupForPods(t *testing.T) {
 var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
 
+	By("checking if cluster address family is IPv4 or IPv6")
+	clusterOutput, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
+	Expect(err).NotTo(HaveOccurred())
+	if *clusterOutput.Cluster.KubernetesNetworkConfig.IpFamily == "ipv4" {
+		isIPv4Cluster = true
+		fmt.Fprint(GinkgoWriter, "cluster is IPv4\n")
+	} else {
+		fmt.Fprint(GinkgoWriter, "cluster is IPv6\n")
+	}
+
 	By("creating a new security group used in Security Group Policy")
-	securityGroupOutput, err := f.CloudServices.EC2().CreateSecurityGroup("pod-eni-automation",
+	var sgName string
+	if isIPv4Cluster {
+		sgName = "pod-eni-automation-v4"
+	} else {
+		sgName = "pod-eni-automation-v6"
+	}
+	securityGroupOutput, err := f.CloudServices.EC2().CreateSecurityGroup(sgName,
 		"test created by vpc cni automation test suite", f.Options.AWSVPCID)
 	Expect(err).ToNot(HaveOccurred())
 	securityGroupId = *securityGroupOutput.GroupId
 
 	By("authorizing egress and ingress on security group for client-server communication")
-	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(securityGroupId, "TCP", openPort, openPort, "0.0.0.0/0")
-	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "TCP", openPort, openPort, "0.0.0.0/0")
-
-	By("getting the cluster role name")
-	describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
-	Expect(err).ToNot(HaveOccurred())
-	clusterRoleName = strings.Split(*describeClusterOutput.Cluster.RoleArn, "/")[1]
-
-	By("attaching the AmazonEKSVPCResourceController policy from the cluster role")
-	err = f.CloudServices.IAM().
-		AttachRolePolicy(AmazonEKSVPCResourceControllerARN, clusterRoleName)
-	Expect(err).ToNot(HaveOccurred())
+	if isIPv4Cluster {
+		f.CloudServices.EC2().AuthorizeSecurityGroupEgress(securityGroupId, "tcp", openPort, openPort, v4Zero)
+		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "tcp", openPort, openPort, v4Zero)
+	} else {
+		f.CloudServices.EC2().AuthorizeSecurityGroupEgress(securityGroupId, "tcp", openPort, openPort, v6Zero)
+		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "tcp", openPort, openPort, v6Zero)
+		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "icmpv6", -1, -1, v6Zero)
+	}
 
 	By("getting branch ENI limits")
 	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 	Expect(err).ToNot(HaveOccurred())
 	numNodes = len(nodeList.Items)
-	Expect(numNodes).Should(BeNumerically(">", 1))
+	Expect(numNodes).Should(BeNumerically(">=", 1))
 
 	node := nodeList.Items[0]
 	instanceID := k8sUtils.GetInstanceIDFromNode(node)
@@ -127,9 +140,5 @@ var _ = AfterSuite(func() {
 
 	By("deleting the security group")
 	err = f.CloudServices.EC2().DeleteSecurityGroup(securityGroupId)
-	Expect(err).ToNot(HaveOccurred())
-
-	By("detaching the AmazonEKSVPCResourceController policy from the cluster role")
-	err = f.CloudServices.IAM().DetachRolePolicy(AmazonEKSVPCResourceControllerARN, clusterRoleName)
 	Expect(err).ToNot(HaveOccurred())
 })

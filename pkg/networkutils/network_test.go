@@ -40,12 +40,15 @@ import (
 )
 
 const (
-	loopback      = ""
-	testMAC1      = "01:23:45:67:89:a0"
-	testMAC2      = "01:23:45:67:89:a1"
-	testTable     = 10
-	testeniIP     = "10.10.10.20"
-	testeniSubnet = "10.10.0.0/16"
+	loopback         = ""
+	testMAC1         = "01:23:45:67:89:a0"
+	testMAC2         = "01:23:45:67:89:a1"
+	testTable        = 10
+	testEniIP        = "10.10.10.20"
+	testEniIP6       = "2600::2"
+	testEniSubnet    = "10.10.0.0/16"
+	testEniV6Subnet  = "2600::/64"
+	testEniV6Gateway = "fe80::c9d:5dff:fec4:f389"
 	// Default MTU of ENI and veth
 	// defined in plugins/routed-eni/driver/driver.go, pkg/networkutils/network.go
 	testMTU   = 9001
@@ -53,8 +56,11 @@ const (
 )
 
 var (
-	_, testENINetIPNet, _ = net.ParseCIDR(testeniSubnet)
-	testENINetIP          = net.ParseIP(testeniIP)
+	_, testEniSubnetIPNet, _   = net.ParseCIDR(testEniSubnet)
+	_, testEniV6SubnetIPNet, _ = net.ParseCIDR(testEniV6Subnet)
+	testEniIPNet               = net.ParseIP(testEniIP)
+	testEniIP6Net              = net.ParseIP(testEniIP6)
+	testEniV6GatewayNet        = net.ParseIP(testEniV6Gateway)
 )
 
 func setup(t *testing.T) (*gomock.Controller,
@@ -101,12 +107,12 @@ func TestSetupENINetwork(t *testing.T) {
 	eth1.EXPECT().Attrs().Return(mockLinkAttrs2)
 	eth1.EXPECT().Attrs().Return(mockLinkAttrs2)
 	// eth1's IP address
-	testeniAddr := &net.IPNet{
-		IP:   net.ParseIP(testeniIP),
-		Mask: testENINetIPNet.Mask,
+	testEniAddr := &net.IPNet{
+		IP:   net.ParseIP(testEniIP),
+		Mask: testEniSubnetIPNet.Mask,
 	}
 	mockNetLink.EXPECT().AddrList(gomock.Any(), unix.AF_INET).Return([]netlink.Addr{}, nil)
-	mockNetLink.EXPECT().AddrAdd(gomock.Any(), &netlink.Addr{IPNet: testeniAddr}).Return(nil)
+	mockNetLink.EXPECT().AddrAdd(gomock.Any(), &netlink.Addr{IPNet: testEniAddr}).Return(nil)
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any())
 	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
@@ -116,7 +122,56 @@ func TestSetupENINetwork(t *testing.T) {
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil)
 
-	err = setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
+	_, err = setupENINetwork(testEniIP, testMAC2, testTable, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
+	assert.NoError(t, err)
+}
+
+func TestSetupENIV6Network(t *testing.T) {
+	ctrl, mockNetLink, _, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	hwAddr, err := net.ParseMAC(testMAC1)
+	assert.NoError(t, err)
+	mockLinkAttrs1 := &netlink.LinkAttrs{
+		HardwareAddr: hwAddr,
+	}
+	hwAddr, err = net.ParseMAC(testMAC2)
+	assert.NoError(t, err)
+	mockLinkAttrs2 := &netlink.LinkAttrs{
+		HardwareAddr: hwAddr,
+	}
+	lo := mock_netlink.NewMockLink(ctrl)
+	eth1 := mock_netlink.NewMockLink(ctrl)
+	// Emulate a delay attaching the ENI so a retry is necessary
+	// First attempt gets one links
+	firstlistSet := mockNetLink.EXPECT().LinkList().Return([]netlink.Link{lo}, nil)
+	lo.EXPECT().Attrs().Return(mockLinkAttrs1)
+	// Second attempt gets both links
+	secondlistSet := mockNetLink.EXPECT().LinkList().Return([]netlink.Link{lo, eth1}, nil)
+	lo.EXPECT().Attrs().Return(mockLinkAttrs1)
+	eth1.EXPECT().Attrs().Return(mockLinkAttrs2)
+	gomock.InOrder(firstlistSet, secondlistSet)
+	mockNetLink.EXPECT().LinkSetMTU(gomock.Any(), testMTU).Return(nil)
+	mockNetLink.EXPECT().LinkSetUp(gomock.Any()).Return(nil)
+	// eth1's device
+	eth1.EXPECT().Attrs().Return(mockLinkAttrs2)
+	eth1.EXPECT().Attrs().Return(mockLinkAttrs2)
+	// eth1's IP address
+	testEniAddr := &net.IPNet{
+		IP:   net.ParseIP(testEniIP6),
+		Mask: testEniV6SubnetIPNet.Mask,
+	}
+	mockNetLink.EXPECT().AddrList(gomock.Any(), unix.AF_INET6).Return([]netlink.Addr{}, nil)
+	mockNetLink.EXPECT().AddrAdd(gomock.Any(), &netlink.Addr{IPNet: testEniAddr}).Return(nil)
+
+	mockNetLink.EXPECT().RouteDel(gomock.Any())
+	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
+
+	mockNetLink.EXPECT().RouteDel(gomock.Any())
+	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
+	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil)
+
+	_, err = setupENINetwork(testEniIP6, testMAC2, testTable, testEniV6Subnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
 	assert.NoError(t, err)
 }
 
@@ -130,7 +185,7 @@ func TestSetupENINetworkMACFail(t *testing.T) {
 		mockNetLink.EXPECT().LinkList().Return(nil, fmt.Errorf("simulated failure"))
 	}
 
-	err := setupENINetwork(testeniIP, testMAC2, testTable, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
+	_, err := setupENINetwork(testEniIP, testMAC2, testTable, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
 	assert.Errorf(t, err, "simulated failure")
 }
 
@@ -138,8 +193,41 @@ func TestSetupENINetworkErrorOnPrimaryENI(t *testing.T) {
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
 	deviceNumber := 0
-	err := setupENINetwork(testeniIP, testMAC2, deviceNumber, testeniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
+	_, err := setupENINetwork(testEniIP, testMAC2, deviceNumber, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
 	assert.Error(t, err)
+}
+
+func TestUpdateIPv6GatewayRule(t *testing.T) {
+	ctrl, mockNetLink, _, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{
+		netLink:            mockNetLink,
+		podSGEnforcingMode: sgpp.EnforcingModeStrict,
+	}
+
+	icmpRule := netlink.Rule{
+		Src:      &net.IPNet{IP: testEniV6GatewayNet, Mask: net.CIDRMask(128, 128)},
+		IPProto:  unix.IPPROTO_ICMPV6,
+		Table:    localRouteTable,
+		Priority: 0,
+		Family:   unix.AF_INET6,
+	}
+
+	// Validate rule add in strict mode
+	mockNetLink.EXPECT().NewRule().Return(&icmpRule)
+	mockNetLink.EXPECT().RuleAdd(&icmpRule)
+
+	err := ln.UpdateIPv6GatewayRule(&testEniV6GatewayNet)
+	assert.NoError(t, err)
+
+	// Validate rule del in non-strict mode
+	ln.podSGEnforcingMode = sgpp.EnforcingModeStandard
+	mockNetLink.EXPECT().NewRule().Return(&icmpRule)
+	mockNetLink.EXPECT().RuleDel(&icmpRule)
+
+	err = ln.UpdateIPv6GatewayRule(&testEniV6GatewayNet)
+	assert.NoError(t, err)
 }
 
 func TestSetupHostNetworkNodePortDisabledAndSNATDisabled(t *testing.T) {
@@ -165,7 +253,7 @@ func TestSetupHostNetworkNodePortDisabledAndSNATDisabled(t *testing.T) {
 	mockNetLink.EXPECT().RuleDel(&mainENIRule)
 
 	var vpcCIDRs []string
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 }
 
@@ -185,7 +273,7 @@ func TestUpdateRuleListBySrc(t *testing.T) {
 	ln := &linuxNetwork{netLink: mockNetLink}
 
 	origRule := netlink.Rule{
-		Src:   testENINetIPNet,
+		Src:   testEniSubnetIPNet,
 		Table: testTable,
 	}
 	testCases := []struct {
@@ -216,7 +304,7 @@ func TestUpdateRuleListBySrc(t *testing.T) {
 		mockNetLink.EXPECT().NewRule().Return(&tc.newRule)
 		mockNetLink.EXPECT().RuleAdd(&tc.newRule)
 
-		err := ln.UpdateRuleListBySrc(tc.ruleList, *testENINetIPNet)
+		err := ln.UpdateRuleListBySrc(tc.ruleList, *testEniSubnetIPNet)
 		assert.NoError(t, err)
 	}
 }
@@ -245,7 +333,7 @@ func TestSetupHostNetworkNodePortEnabledAndSNATDisabled(t *testing.T) {
 	log.Debugf("After: mockIPtables.Dp state: ", mockIptables.(*mock_iptables.MockIptables).DataplaneState)
 
 	var vpcCIDRs []string
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 
 	assert.Equal(t, map[string]map[string][][]string{
@@ -303,7 +391,7 @@ func TestSetupHostNetworkNodePortDisabledAndSNATEnabled(t *testing.T) {
 
 	var vpcCIDRs []string
 
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 
 	assert.Equal(t, map[string]map[string][][]string{
@@ -372,7 +460,7 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 	setupNetLinkMocks(ctrl, mockNetLink)
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 	assert.Equal(t,
 		map[string]map[string][][]string{
@@ -440,7 +528,7 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 	_ = mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -509,7 +597,7 @@ func TestSetupHostNetworkWithDifferentVethPrefix(t *testing.T) {
 	_ = mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 	assert.Equal(t,
 		map[string]map[string][][]string{
@@ -577,7 +665,7 @@ func TestSetupHostNetworkExternalNATCleanupConnmark(t *testing.T) {
 
 	// remove exclusions
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -642,7 +730,7 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 
 	// remove exclusions
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -706,7 +794,7 @@ func TestUpdateHostIptablesRules(t *testing.T) {
 	_ = mockIptables.Append("mangle", "PREROUTING", "-m", "comment", "--comment", "AWS, primary ENI", "-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 	assert.Equal(t,
 		map[string]map[string][][]string{
@@ -762,7 +850,7 @@ func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
 	setupNetLinkMocks(ctrl, mockNetLink)
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 }
 
@@ -787,7 +875,7 @@ func TestSetupHostNetworkWithIPv6Enabled(t *testing.T) {
 	setupNetLinkMocks(ctrl, mockNetLink)
 
 	var vpcCIDRs []string
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, false, true)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, false, true)
 	assert.NoError(t, err)
 
 	assert.Equal(t, map[string]map[string][][]string{
@@ -804,28 +892,24 @@ func TestSetupHostNetworkWithIPv6Enabled(t *testing.T) {
 	}, mockIptables.(*mock_iptables.MockIptables).DataplaneState)
 }
 
-func TestIncrementIPv4Addr(t *testing.T) {
+func TestIncrementIPAddr(t *testing.T) {
 	testCases := []struct {
 		name     string
-		ip       net.IP
-		expected net.IP
-		err      bool
+		ip       string
+		expected string
 	}{
-		{"increment", net.IPv4(10, 0, 0, 1), net.IPv4(10, 0, 0, 2).To4(), false},
-		{"carry up 1", net.IPv4(10, 0, 0, 255), net.IPv4(10, 0, 1, 0).To4(), false},
-		{"carry up 2", net.IPv4(10, 0, 255, 255), net.IPv4(10, 1, 0, 0).To4(), false},
-		{"overflow", net.IPv4(255, 255, 255, 255), nil, true},
+		{"increment v4", "10.0.0.1", "10.0.0.2"},
+		{"increment v6", "2600::", "2600::1"},
+		{"carry up 1 v4", "10.0.0.255", "10.0.1.0"},
+		{"carry up 2 v4", "10.0.255.255", "10.1.0.0"},
+		{"v6 case 2", "2600::5", "2600::6"},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := IncrementIPv4Addr(tc.ip)
-			if tc.err {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-			assert.Equal(t, tc.expected, result, tc.name)
+			origIP := net.ParseIP(tc.ip)
+			incrementIPAddr(origIP)
+			assert.Equal(t, tc.expected, origIP.String())
 		})
 	}
 }
@@ -850,7 +934,7 @@ func TestSetupHostNetworkIgnoringRpFilterUpdate(t *testing.T) {
 	setupNetLinkMocks(ctrl, mockNetLink)
 
 	var vpcCIDRs []string
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 }
 
@@ -878,7 +962,7 @@ func TestSetupHostNetworkUpdateLocalRule(t *testing.T) {
 	mockNetLink.EXPECT()
 
 	var vpcCIDRs []string
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, true, true, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, true, true, false)
 	assert.NoError(t, err)
 }
 
@@ -906,7 +990,7 @@ func TestSetupHostNetworkDeleteOldConnmarkRuleForNonVpcOutboundTraffic(t *testin
 	_ = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-m", "state", "--state", "NEW", "-j", "AWS-CONNMARK-CHAIN-0")
 
 	var vpcCIDRs []string
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testENINetIP, false, true, false)
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 
 	var exists bool
