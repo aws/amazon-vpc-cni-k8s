@@ -33,8 +33,8 @@ github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 h1:0CwZNZbxp69SHPd
 github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5/go.mod h1:wHh0iHkYZB8zMSxRWpUBQtwG5a7fFgvEO+odwuTv2gs=
 github.com/asaskevich/govalidator v0.0.0-20200428143746-21a406dcc535 h1:4daAzAu0S6Vi7/lbWECcX0j45yZReDZ56BQsrVBOEEY=
 github.com/asaskevich/govalidator v0.0.0-20200428143746-21a406dcc535/go.mod h1:oGkLhpf+kjZl6xBf758TQhh5XrAeiJv/7FRz/2spLIg=
-github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20230907153600-f7672495a1d3 h1:rYfksj9VFiuNQVcDuU7es1or+m6QGorHGTiVhhM4RNk=
-github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20230907153600-f7672495a1d3/go.mod h1:Aj5pwjhg2lig2GF5rdrsyJSzLGhe7TNMVyuw9hT/1WQ=
+github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20231130173622-9adefc7547aa h1:e0U8lLoexDDAjfnWrUg5Q80V0HOLeLu4EBE2NIO2ZdA=
+github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20231130173622-9adefc7547aa/go.mod h1:OhYB63nRVilSY65U+c+Z99I5axPXpGtTZmhj6Vel/+U=
 github.com/aws/amazon-vpc-resource-controller-k8s v1.4.1 h1:43uJXFNTjk5Gzi2Qpqk30ycaaE7DOVvBDKi35wzsrsQ=
 github.com/aws/amazon-vpc-resource-controller-k8s v1.4.1/go.mod h1:tXPJP0SFdkVa7ALghDjThtavyYnP0MKO8V0ZHlDNCU8=
 github.com/aws/aws-sdk-go v1.48.2 h1:Lf7+Y4WmHB0AQLRQZA46diSwDa+LWbwY6IGaYoCVtTc=
