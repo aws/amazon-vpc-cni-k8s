@@ -120,8 +120,7 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 				Dst: mainTableRules[0].Dst,
 			}, netlink.RT_FILTER_DST)
 		if err != nil {
-			validationErrors = append(validationErrors,
-				fmt.Errorf("failed to find ip rule with destination %s: %v", podIP.String(), err))
+			fmt.Errorf("failed to find ip rule with destination %s: %v", podIP.String(), err)
 		}
 
 		if len(toContainerRoutes) != 1 {
