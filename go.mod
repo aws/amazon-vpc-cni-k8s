@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
-	github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20231130173622-9adefc7547aa
+	github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20231201202736-d8c395ad1491
 	github.com/aws/amazon-vpc-resource-controller-k8s v1.4.1
 	github.com/aws/aws-sdk-go v1.48.10
 	github.com/containernetworking/cni v1.1.2
@@ -27,7 +27,7 @@ require (
 	github.com/vishvananda/netlink v1.2.1-beta.2
 	go.uber.org/zap v1.26.0
 	golang.org/x/net v0.17.0
-	golang.org/x/sys v0.14.0
+	golang.org/x/sys v0.15.0
 	google.golang.org/grpc v1.59.0
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
