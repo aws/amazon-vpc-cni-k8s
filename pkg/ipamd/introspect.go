@@ -18,7 +18,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,7 +25,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
-	"github.com/aws/amazon-vpc-cni-k8s/utils"
 )
 
 const (
@@ -35,9 +33,6 @@ const (
 
 	// Environment variable to define the bind address for the introspection endpoint
 	introspectionBindAddress = "INTROSPECTION_BIND_ADDRESS"
-
-	// Environment variable to disable the introspection endpoints
-	envDisableIntrospection = "DISABLE_INTROSPECTION"
 )
 
 type rootResponse struct {
@@ -56,11 +51,6 @@ func (lh LoggingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // ServeIntrospection sets up ipamd introspection endpoints
 func (c *IPAMContext) ServeIntrospection() {
-	if disableIntrospection() {
-		log.Info("Introspection endpoints disabled")
-		return
-	}
-
 	server := c.setupIntrospectionServer()
 	for {
 		_ = retry.WithBackoff(retry.NewSimpleBackoff(time.Second, time.Minute, 0.2, 2), func() error {
@@ -196,20 +186,4 @@ func logErr(_ int, err error) {
 	if err != nil {
 		log.Errorf("Write failed: %v", err)
 	}
-}
-
-// disableIntrospection returns true if we should disable the introspection
-func disableIntrospection() bool {
-	return utils.GetBoolAsStringEnvVar(envDisableENIProvisioning, false)
-}
-
-func getEnvBoolWithDefault(envName string, def bool) bool {
-	if strValue := os.Getenv(envName); strValue != "" {
-		parsedValue, err := strconv.ParseBool(strValue)
-		if err == nil {
-			return parsedValue
-		}
-		log.Errorf("Failed to parse %s, using default `%t`: %v", envName, def, err.Error())
-	}
-	return def
 }
