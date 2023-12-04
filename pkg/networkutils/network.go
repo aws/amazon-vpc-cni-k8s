@@ -954,23 +954,10 @@ func linkByMac(mac string, netLink netlinkwrapper.NetLink, retryInterval time.Du
 	}
 }
 
-// For IPv6, derive gateway address from primary ENI's RA route. Note that in IPv6, all ENIs must be in the same subnet.
-func GetIPv6Gateway() (net.IP, error) {
-	primaryEni, err := netlink.LinkByName("eth0")
-	if err != nil {
-		return nil, errors.Wrapf(err, "GetIPv6Gateway failed to get primary ENI")
-	}
-	primaryEniRoutes, err := netlink.RouteList(primaryEni, unix.AF_INET6)
-	if err != nil {
-		return nil, errors.Wrapf(err, "GetIPv6Gateway failed to list primary ENI routes")
-	}
-	for _, route := range primaryEniRoutes {
-		if route.Table == mainRoutingTable && len(route.Gw) != 0 && route.Protocol.String() == "ra" {
-			log.Infof("Found IPv6 gateway: %s", route.Gw.String())
-			return route.Gw, nil
-		}
-	}
-	return nil, errors.Wrapf(err, "GetIPv6Gateway failed to find eth0 ra route")
+func GetIPv6Gateway() net.IP {
+	// On AWS/VPC, the subnet gateway can always be reached at FE80:EC2::1
+	// https://aws.amazon.com/about-aws/whats-new/2022/11/ipv6-subnet-default-gateway-router-multiple-addresses/
+	return IP{0xfe, 0x80, 0x0e, 0xc2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
 }
 
 func GetIPv4Gateway(eniSubnetCIDR *net.IPNet) net.IP {
@@ -1013,9 +1000,7 @@ func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCID
 	// Get gateway IP address for ENI
 	var gw net.IP
 	if isV6 {
-		if gw, err = GetIPv6Gateway(); err != nil {
-			return nil, errors.Wrapf(err, "setupENINetwork: unable to get IPv6 gateway")
-		}
+		gw = GetIPv6Gateway()
 	} else {
 		gw = GetIPv4Gateway(eniSubnetIPNet)
 	}
