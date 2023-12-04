@@ -33,6 +33,9 @@ const (
 
 	// Environment variable to disable the metrics endpoint on 61678
 	envDisableMetrics = "DISABLE_METRICS"
+
+	// Environment variable to disable the IPAMD introspection endpoint on 61679
+	envDisableIntrospection = "DISABLE_INTROSPECTION"
 )
 
 func main() {
@@ -74,13 +77,15 @@ func _main() int {
 	// Pool manager
 	go ipamContext.StartNodeIPPoolManager()
 
-	if utils.GetBoolAsStringEnvVar(envDisableMetrics, false) {
+	if !utils.GetBoolAsStringEnvVar(envDisableMetrics, false) {
 		// Prometheus metrics
 		go metrics.ServeMetrics(metricsPort)
 	}
 
 	// CNI introspection endpoints
-	go ipamContext.ServeIntrospection()
+	if !utils.GetBoolAsStringEnvVar(envDisableIntrospection, false) {
+		go ipamContext.ServeIntrospection()
+	}
 
 	// Start the RPC listener
 	err = ipamContext.RunRPCHandler(version.Version)
