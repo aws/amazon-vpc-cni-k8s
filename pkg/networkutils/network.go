@@ -149,7 +149,7 @@ type NetworkAPIs interface {
 	SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool,
 		v4Enabled bool, v6Enabled bool) error
 	// SetupENINetwork performs ENI level network configuration. Not needed on the primary ENI
-	SetupENINetwork(eniIP string, mac string, deviceNumber int, subnetCIDR string) (net.IP, error)
+	SetupENINetwork(eniIP string, mac string, deviceNumber int, subnetCIDR string) error
 	// UpdateHostIptablesRules updates the nat table iptables rules on the host
 	UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v4Enabled bool, v6Enabled bool) error
 	UseExternalSNAT() bool
@@ -160,7 +160,6 @@ type NetworkAPIs interface {
 	UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) error
 	UpdateExternalServiceIpRules(ruleList []netlink.Rule, externalIPs []string) error
 	GetLinkByMac(mac string, retryInterval time.Duration) (netlink.Link, error)
-	UpdateIPv6GatewayRule(gw *net.IP) error
 }
 
 type linuxNetwork struct {
@@ -358,6 +357,13 @@ func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, 
 		err = n.netLink.RuleDel(localRule)
 		if err != nil && !containsNoSuchRule(err) {
 			return errors.Wrap(err, "ChangeLocalRulePriority: failed to delete priority 0 local rule")
+		}
+
+		// In IPv6 strict mode, ICMPv6 packets from the gateway must lookup in the local routing table so that branch interfaces can resolve their gateway.
+		if v6Enabled {
+			if err := n.createIPv6GatewayRule(); err != nil {
+				return errors.Wrapf(err, "failed to install IPv6 gateway rule")
+			}
 		}
 	}
 
@@ -954,23 +960,10 @@ func linkByMac(mac string, netLink netlinkwrapper.NetLink, retryInterval time.Du
 	}
 }
 
-// For IPv6, derive gateway address from primary ENI's RA route. Note that in IPv6, all ENIs must be in the same subnet.
-func GetIPv6Gateway() (net.IP, error) {
-	primaryEni, err := netlink.LinkByName("eth0")
-	if err != nil {
-		return nil, errors.Wrapf(err, "GetIPv6Gateway failed to get primary ENI")
-	}
-	primaryEniRoutes, err := netlink.RouteList(primaryEni, unix.AF_INET6)
-	if err != nil {
-		return nil, errors.Wrapf(err, "GetIPv6Gateway failed to list primary ENI routes")
-	}
-	for _, route := range primaryEniRoutes {
-		if route.Table == mainRoutingTable && len(route.Gw) != 0 && route.Protocol.String() == "ra" {
-			log.Infof("Found IPv6 gateway: %s", route.Gw.String())
-			return route.Gw, nil
-		}
-	}
-	return nil, errors.Wrapf(err, "GetIPv6Gateway failed to find eth0 ra route")
+// On AWS/VPC, the subnet gateway can always be reached at FE80:EC2::1
+// https://aws.amazon.com/about-aws/whats-new/2022/11/ipv6-subnet-default-gateway-router-multiple-addresses/
+func GetIPv6Gateway() net.IP {
+	return net.IP{0xfe, 0x80, 0x0e, 0xc2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
 }
 
 func GetIPv4Gateway(eniSubnetCIDR *net.IPNet) net.IP {
@@ -980,42 +973,40 @@ func GetIPv4Gateway(eniSubnetCIDR *net.IPNet) net.IP {
 }
 
 // SetupENINetwork adds default route to route table (eni-<eni_table>), so it does not need to be called on the primary ENI
-func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCIDR string) (net.IP, error) {
+func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCIDR string) error {
 	return setupENINetwork(eniIP, eniMAC, deviceNumber, eniSubnetCIDR, n.netLink, retryLinkByMacInterval, retryRouteAddInterval, n.mtu)
 }
 
 func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink,
-	retryLinkByMacInterval time.Duration, retryRouteAddInterval time.Duration, mtu int) (net.IP, error) {
+	retryLinkByMacInterval time.Duration, retryRouteAddInterval time.Duration, mtu int) error {
 	if deviceNumber == 0 {
-		return nil, errors.New("setupENINetwork should never be called on the primary ENI")
+		return errors.New("setupENINetwork should never be called on the primary ENI")
 	}
 	tableNumber := deviceNumber + 1
 	log.Infof("Setting up network for an ENI with IP address %s, MAC address %s, CIDR %s and route table %d",
 		eniIP, eniMAC, eniSubnetCIDR, tableNumber)
 	link, err := linkByMac(eniMAC, netLink, retryLinkByMacInterval)
 	if err != nil {
-		return nil, errors.Wrapf(err, "setupENINetwork: failed to find the link which uses MAC address %s", eniMAC)
+		return errors.Wrapf(err, "setupENINetwork: failed to find the link which uses MAC address %s", eniMAC)
 	}
 
 	if err = netLink.LinkSetMTU(link, mtu); err != nil {
-		return nil, errors.Wrapf(err, "setupENINetwork: failed to set MTU to %d for %s", mtu, eniIP)
+		return errors.Wrapf(err, "setupENINetwork: failed to set MTU to %d for %s", mtu, eniIP)
 	}
 
 	if err = netLink.LinkSetUp(link); err != nil {
-		return nil, errors.Wrapf(err, "setupENINetwork: failed to bring up ENI %s", eniIP)
+		return errors.Wrapf(err, "setupENINetwork: failed to bring up ENI %s", eniIP)
 	}
 
 	isV6 := strings.Contains(eniSubnetCIDR, ":")
 	_, eniSubnetIPNet, err := net.ParseCIDR(eniSubnetCIDR)
 	if err != nil {
-		return nil, errors.Wrapf(err, "setupENINetwork: invalid IP CIDR block %s", eniSubnetCIDR)
+		return errors.Wrapf(err, "setupENINetwork: invalid IP CIDR block %s", eniSubnetCIDR)
 	}
 	// Get gateway IP address for ENI
 	var gw net.IP
 	if isV6 {
-		if gw, err = GetIPv6Gateway(); err != nil {
-			return nil, errors.Wrapf(err, "setupENINetwork: unable to get IPv6 gateway")
-		}
+		gw = GetIPv6Gateway()
 	} else {
 		gw = GetIPv4Gateway(eniSubnetIPNet)
 	}
@@ -1032,14 +1023,14 @@ func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCID
 	var addrs []netlink.Addr
 	addrs, err = netLink.AddrList(link, family)
 	if err != nil {
-		return nil, errors.Wrap(err, "setupENINetwork: failed to list IP address for ENI")
+		return errors.Wrap(err, "setupENINetwork: failed to list IP address for ENI")
 	}
 
 	for _, addr := range addrs {
 		if addr.IP.IsGlobalUnicast() {
 			log.Debugf("Deleting existing IP address %s", addr.String())
 			if err = netLink.AddrDel(link, &addr); err != nil {
-				return nil, errors.Wrap(err, "setupENINetwork: failed to delete IP addr from ENI")
+				return errors.Wrap(err, "setupENINetwork: failed to delete IP addr from ENI")
 			}
 		}
 	}
@@ -1051,7 +1042,7 @@ func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCID
 	}
 	log.Debugf("Adding IP address %s", eniAddr.String())
 	if err = netLink.AddrAdd(link, &netlink.Addr{IPNet: eniAddr}); err != nil {
-		return nil, errors.Wrap(err, "setupENINetwork: failed to add IP addr to ENI")
+		return errors.Wrap(err, "setupENINetwork: failed to add IP addr to ENI")
 	}
 
 	linkIndex := link.Attrs().Index
@@ -1082,7 +1073,7 @@ func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCID
 	for _, r := range routes {
 		err := netLink.RouteDel(&r)
 		if err != nil && !netlinkwrapper.IsNotExistsError(err) {
-			return nil, errors.Wrap(err, "setupENINetwork: failed to clean up old routes")
+			return errors.Wrap(err, "setupENINetwork: failed to clean up old routes")
 		}
 
 		err = retry.NWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, retryRouteAddInterval, 0.15, 2.0), maxRetryRouteAdd, func() error {
@@ -1094,7 +1085,7 @@ func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCID
 			return nil
 		})
 		if err != nil {
-			return gw, err
+			return err
 		}
 	}
 
@@ -1110,7 +1101,7 @@ func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCID
 		// eniSubnetIPNet was modified by GetIPv4Gateway, so the string must be parsed again
 		_, eniSubnetCIDRNet, err := net.ParseCIDR(eniSubnetCIDR)
 		if err != nil {
-			return gw, errors.Wrapf(err, "setupENINetwork: invalid IPv4 CIDR block: %s", eniSubnetCIDR)
+			return errors.Wrapf(err, "setupENINetwork: invalid IPv4 CIDR block: %s", eniSubnetCIDR)
 		}
 		defaultRoute = netlink.Route{
 			Dst:   eniSubnetCIDRNet,
@@ -1121,16 +1112,16 @@ func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCID
 	}
 	if err := netLink.RouteDel(&defaultRoute); err != nil {
 		if !netlinkwrapper.IsNotExistsError(err) {
-			return gw, errors.Wrapf(err, "setupENINetwork: unable to delete default route %s for source IP %s", eniSubnetIPNet.String(), eniIP)
+			return errors.Wrapf(err, "setupENINetwork: unable to delete default route %s for source IP %s", eniSubnetIPNet.String(), eniIP)
 		}
 	}
-	return gw, nil
+	return nil
 }
 
 // For IPv6 strict mode, ICMPv6 packets from the gateway must lookup in the local routing table so that branch interfaces can resolve their gateway.
-func (n *linuxNetwork) UpdateIPv6GatewayRule(gw *net.IP) error {
+func (n *linuxNetwork) createIPv6GatewayRule() error {
 	gatewayRule := n.netLink.NewRule()
-	gatewayRule.Src = &net.IPNet{IP: *gw, Mask: net.CIDRMask(128, 128)}
+	gatewayRule.Src = &net.IPNet{IP: GetIPv6Gateway(), Mask: net.CIDRMask(128, 128)}
 	gatewayRule.IPProto = unix.IPPROTO_ICMPV6
 	gatewayRule.Table = localRouteTable
 	gatewayRule.Priority = 0
@@ -1138,13 +1129,13 @@ func (n *linuxNetwork) UpdateIPv6GatewayRule(gw *net.IP) error {
 	if n.podSGEnforcingMode == sgpp.EnforcingModeStrict {
 		err := n.netLink.RuleAdd(gatewayRule)
 		if err != nil && !isRuleExistsError(err) {
-			return errors.Wrap(err, "UpdateIPv6GatewayRule: unable to create rule for IPv6 gateway")
+			return errors.Wrap(err, "createIPv6GatewayRule: unable to create rule for IPv6 gateway")
 		}
 	} else {
 		// Rule must be deleted when not in strict mode to support transitions.
 		err := n.netLink.RuleDel(gatewayRule)
 		if !netlinkwrapper.IsNotExistsError(err) {
-			return errors.Wrap(err, "UpdateIPv6GatewayRule: unable to delete rule for IPv6 gateway")
+			return errors.Wrap(err, "createIPv6GatewayRule: unable to delete rule for IPv6 gateway")
 		}
 	}
 	return nil
