@@ -619,7 +619,7 @@ func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 	if !ds.isPDEnabled {
 		return "", -1, fmt.Errorf("PD is not enabled. V6 is only supported in PD mode")
 	}
-	ds.log.Debugf("AssignIPv6Address: IPv6 address pool stats: assigned %d", ds.assigned)
+	ds.log.Debugf("AssignPodIPv6Address: IPv6 address pool stats: assigned %d", ds.assigned)
 
 	if eni, _, addr := ds.eniPool.FindAddressForSandbox(ipamKey); addr != nil {
 		ds.log.Infof("AssignPodIPv6Address: duplicate pod assign for sandbox %s", ipamKey)
@@ -661,7 +661,7 @@ func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 		}
 	}
 	prometheusmetrics.NoAvailableIPAddrs.Inc()
-	return "", -1, errors.New("assignPodIPv6AddressUnsafe: no available IP addresses")
+	return "", -1, errors.New("AssignPodIPv6Address: no available IP addresses")
 }
 
 // AssignPodIPv4Address assigns an IPv4 address to pod
@@ -670,7 +670,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	ds.log.Debugf("AssignIPv4Address: IP address pool stats: total %d, assigned %d", ds.total, ds.assigned)
+	ds.log.Debugf("AssignPodIPv4Address: IP address pool stats: total %d, assigned %d", ds.total, ds.assigned)
 
 	if eni, _, addr := ds.eniPool.FindAddressForSandbox(ipamKey); addr != nil {
 		ds.log.Infof("AssignPodIPv4Address: duplicate pod assign for sandbox %s", ipamKey)
@@ -732,12 +732,12 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 
 	prometheusmetrics.NoAvailableIPAddrs.Inc()
 	ds.log.Errorf("DataStore has no available IP/Prefix addresses")
-	return "", -1, errors.New("assignPodIPv4AddressUnsafe: no available IP/Prefix addresses")
+	return "", -1, errors.New("AssignPodIPv4Address: no available IP/Prefix addresses")
 }
 
 // assignPodIPAddressUnsafe mark Address as assigned.
 func (ds *DataStore) assignPodIPAddressUnsafe(addr *AddressInfo, ipamKey IPAMKey, ipamMetadata IPAMMetadata, assignedTime time.Time) {
-	ds.log.Infof("AssignPodIPv4Address: Assign IP %v to sandbox %s",
+	ds.log.Infof("assignPodIPAddressUnsafe: Assign IP %v to sandbox %s",
 		addr.Address, ipamKey)
 
 	if addr.Assigned() {
@@ -758,7 +758,7 @@ func (ds *DataStore) unassignPodIPAddressUnsafe(addr *AddressInfo) {
 		// Already unassigned
 		return
 	}
-	ds.log.Infof("UnAssignPodIPAddress: Unassign IP %v from sandbox %s",
+	ds.log.Infof("unassignPodIPAddressUnsafe: Unassign IP %v from sandbox %s",
 		addr.Address, addr.IPAMKey)
 	addr.IPAMKey = IPAMKey{} // unassign the addr
 	addr.IPAMMetadata = IPAMMetadata{}
