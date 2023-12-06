@@ -291,13 +291,12 @@ func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, 
 	v4Enabled bool, v6Enabled bool) error {
 	log.Info("Setting up host network... ")
 
-	primaryIntf := "eth0"
 	link, err := linkByMac(primaryMAC, n.netLink, retryLinkByMacInterval)
 	if err != nil {
 		return errors.Wrapf(err, "setupHostNetwork: failed to find the link primary ENI with MAC address %s", primaryMAC)
 	}
 	if err = n.netLink.LinkSetMTU(link, n.mtu); err != nil {
-		return errors.Wrapf(err, "setupHostNetwork: failed to set MTU to %d for %s", n.mtu, primaryIntf)
+		return errors.Wrapf(err, "setupHostNetwork: failed to set primary interface MTU to %d", n.mtu)
 	}
 
 	ipFamily := unix.AF_INET
