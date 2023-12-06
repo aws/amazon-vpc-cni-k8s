@@ -15,9 +15,13 @@ import (
 	v1 "k8s.io/api/apps/v1"
 )
 
+var (
+	retries = 3
+)
+
 // Tests pod networking across AZs. It similar to pod connectivity test, but launches a daemonset, so that
 // there is a pod on each node across AZs. It then tests connectivity between pods on different nodes across AZs.
-var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(3), func() {
+var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(retries), func() {
 
 	var (
 		err        error
@@ -149,7 +153,7 @@ func GetAZtoPod(nodes coreV1.NodeList) map[string]coreV1.Pod {
 	return azToPod
 }
 
-var _ = Describe("[STATIC_CANARY] API Server Connectivity from AZs", FlakeAttempts(3), func() {
+var _ = Describe("[STATIC_CANARY2] API Server Connectivity from AZs", FlakeAttempts(retries), func() {
 
 	var (
 		err           error
@@ -197,31 +201,46 @@ var _ = Describe("[STATIC_CANARY] API Server Connectivity from AZs", FlakeAttemp
 	})
 
 	Context("While testing API Server Connectivity", func() {
+
 		It("Should connect to the API Server", func() {
-			// Standard paths for SA token, CA cert and API Server URL
-			token_path := "/var/run/secrets/kubernetes.io/serviceaccount/token"
-			cacert := "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-			api_server_url := "https://kubernetes.default.svc/api"
+			describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
+			Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error while Describing the cluster to find APIServer NLB endpoint. %s", f.Options.ClusterName))
+			APIServerNLBEndpoint := fmt.Sprintf("%s/api", *describeClusterOutput.Cluster.Endpoint)
+			APIServerInternalEndpoint := "https://kubernetes.default.svc/api"
 
-			for az := range azToPod {
-				fmt.Printf("Testing API Server Connectivity from AZ %s \n", az)
-				sa_token := []string{"cat", token_path}
-				token_value, _, err := RunCommandOnPod(azToPod[az], sa_token)
-				Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("failed to get SA token for pod in %s", az))
-				bearer := fmt.Sprintf("Authorization: Bearer %s", token_value)
-				test_api_server_connectivity := []string{"curl", "--cacert", cacert, "--header", bearer, "-X", "GET",
-					api_server_url,
-				}
+			CheckAPIServerConnectivityFromPods(azToPod, APIServerInternalEndpoint)
 
-				api_server_stdout, _, err := RunCommandOnPod(azToPod[az], test_api_server_connectivity)
-				// Descriptive error message on failure to connect to API Server from particular AZ.
-				Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error while connecting to API Server from %s", az))
-				Expect(api_server_stdout).ToNot(BeEmpty())
-				Expect(api_server_stdout).To(ContainSubstring("APIVersions"))
-			}
+			CheckAPIServerConnectivityFromPods(azToPod, APIServerNLBEndpoint)
 		})
+
 	})
 })
+
+func CheckAPIServerConnectivityFromPods(azToPod map[string]coreV1.Pod, api_server_url string) {
+	// Standard paths for SA token, CA cert and API Server URL
+	token_path := "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	cacert := "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+	for az := range azToPod {
+		fmt.Printf("Testing API Server %s Connectivity from AZ %s \n", api_server_url, az)
+		sa_token := []string{"cat", token_path}
+		token_value, _, err := RunCommandOnPod(azToPod[az], sa_token)
+
+		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("failed to get SA token for pod in %s", az))
+
+		bearer := fmt.Sprintf("Authorization: Bearer %s", token_value)
+
+		test_api_server_connectivity := []string{"curl", "--cacert", cacert, "--header", bearer, "-X", "GET",
+			api_server_url,
+		}
+
+		api_server_stdout, _, err := RunCommandOnPod(azToPod[az], test_api_server_connectivity)
+		// Descriptive error message on failure to connect to API Server from particular AZ.
+		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error while connecting to API Server from %s", az))
+		Expect(api_server_stdout).ToNot(BeEmpty())
+		Expect(api_server_stdout).To(ContainSubstring("APIVersions"))
+	}
+}
 
 func CheckConnectivityBetweenPods(azToPod map[string]coreV1.Pod, port int, testerExpectedStdOut string, testerExpectedStdErr string, getTestCommandFunc func(serverPod coreV1.Pod, port int) []string) {
 
@@ -239,6 +258,13 @@ func CheckConnectivityBetweenPods(azToPod map[string]coreV1.Pod, port int, teste
 }
 
 func RunCommandOnPod(receiverPod coreV1.Pod, command []string) (string, string, error) {
-	return f.K8sResourceManagers.PodManager().
-		PodExec(receiverPod.Namespace, receiverPod.Name, command)
+	count := retries
+	for {
+		stdout, stdrr, err := f.K8sResourceManagers.PodManager().
+			PodExec(receiverPod.Namespace, receiverPod.Name, command)
+		count -= 1
+		if count == 0 || err == nil {
+			return stdout, stdrr, err
+		}
+	}
 }
