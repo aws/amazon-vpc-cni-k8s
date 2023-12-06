@@ -142,7 +142,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 					// For IPv6, the gateway is derived from the RA route on the primary ENI. The primary ENI is always in the same subnet as the trunk and branch ENI.
 					// For IPv4, the gateway is always the .1 address for the subnet CIDR.
 					if s.ipamContext.enableIPv6 {
-						gw = s.ipamContext.v6Gateway
+						gw = networkutils.GetIPv6Gateway()
 					} else {
 						gw = networkutils.GetIPv4Gateway(subnetCIDR)
 					}

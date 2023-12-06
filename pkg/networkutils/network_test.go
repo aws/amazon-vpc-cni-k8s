@@ -122,7 +122,7 @@ func TestSetupENINetwork(t *testing.T) {
 
 	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil)
 
-	_, err = setupENINetwork(testEniIP, testMAC2, testTable, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
+	err = setupENINetwork(testEniIP, testMAC2, testTable, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
 	assert.NoError(t, err)
 }
 
@@ -171,7 +171,7 @@ func TestSetupENIV6Network(t *testing.T) {
 	mockNetLink.EXPECT().RouteReplace(gomock.Any()).Return(nil)
 	mockNetLink.EXPECT().RouteDel(gomock.Any()).Return(nil)
 
-	_, err = setupENINetwork(testEniIP6, testMAC2, testTable, testEniV6Subnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
+	err = setupENINetwork(testEniIP6, testMAC2, testTable, testEniV6Subnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
 	assert.NoError(t, err)
 }
 
@@ -185,7 +185,7 @@ func TestSetupENINetworkMACFail(t *testing.T) {
 		mockNetLink.EXPECT().LinkList().Return(nil, fmt.Errorf("simulated failure"))
 	}
 
-	_, err := setupENINetwork(testEniIP, testMAC2, testTable, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
+	err := setupENINetwork(testEniIP, testMAC2, testTable, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
 	assert.Errorf(t, err, "simulated failure")
 }
 
@@ -193,7 +193,7 @@ func TestSetupENINetworkErrorOnPrimaryENI(t *testing.T) {
 	ctrl, mockNetLink, _, _, _ := setup(t)
 	defer ctrl.Finish()
 	deviceNumber := 0
-	_, err := setupENINetwork(testEniIP, testMAC2, deviceNumber, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
+	err := setupENINetwork(testEniIP, testMAC2, deviceNumber, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU)
 	assert.Error(t, err)
 }
 
@@ -218,7 +218,7 @@ func TestUpdateIPv6GatewayRule(t *testing.T) {
 	mockNetLink.EXPECT().NewRule().Return(&icmpRule)
 	mockNetLink.EXPECT().RuleAdd(&icmpRule)
 
-	err := ln.UpdateIPv6GatewayRule(&testEniV6GatewayNet)
+	err := ln.createIPv6GatewayRule()
 	assert.NoError(t, err)
 
 	// Validate rule del in non-strict mode
@@ -226,7 +226,7 @@ func TestUpdateIPv6GatewayRule(t *testing.T) {
 	mockNetLink.EXPECT().NewRule().Return(&icmpRule)
 	mockNetLink.EXPECT().RuleDel(&icmpRule)
 
-	err = ln.UpdateIPv6GatewayRule(&testEniV6GatewayNet)
+	err = ln.createIPv6GatewayRule()
 	assert.NoError(t, err)
 }
 

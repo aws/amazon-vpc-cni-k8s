@@ -216,8 +216,6 @@ type IPAMContext struct {
 	lastInsufficientCidrError time.Time
 	enableManageUntaggedMode  bool
 	enablePodIPAnnotation     bool
-	// For IPv6 Security Groups for Pods, the gateway address is cached in order to speedup CNI ADD
-	v6Gateway net.IP
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -1059,14 +1057,13 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 			return errors.Wrapf(err, "Failed to allocate IPv6 Prefixes to Primary ENI")
 		}
 	} else {
-		var gw net.IP
 		// For other ENIs, set up the network
 		if eni != primaryENI {
 			subnetCidr := eniMetadata.SubnetIPv4CIDR
 			if c.enableIPv6 {
 				subnetCidr = eniMetadata.SubnetIPv6CIDR
 			}
-			gw, err = c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.DeviceNumber, subnetCidr)
+			err = c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.DeviceNumber, subnetCidr)
 			if err != nil {
 				// Failed to set up the ENI
 				errRemove := c.dataStore.RemoveENIFromDataStore(eni, true)
@@ -1083,14 +1080,6 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 			c.addENIsecondaryIPsToDataStore(eniMetadata.IPv4Addresses, eni)
 			c.addENIv4prefixesToDataStore(eniMetadata.IPv4Prefixes, eni)
 		} else {
-			// Cache the IPv6 gateway address to speed up CNI ADD. In IPv4, the gateway address is the .1 address for the subnet. In IPv6, the gateway
-			// address is a link-local address that is fixed for the lifetime of the instance and is consistent across instances in the same subnet.
-			c.v6Gateway = gw
-			// In strict mode, install gateway rule for ICMPv6 traffic. Note that this is a global rule, but installing/removing here is acceptable as
-			// IPv6 only supports attaching a trunk ENI, and trunk ENI is only attached once.
-			if err := c.networkClient.UpdateIPv6GatewayRule(&gw); err != nil {
-				return errors.Wrapf(err, "failed to install IPv6 gateway rule")
-			}
 			// This is a trunk ENI in IPv6 PD mode, so do not add IPs or prefixes to datastore
 			log.Infof("Found IPv6 trunk ENI having %d secondary IPs and %d Prefixes", len(eniMetadata.IPv6Addresses), len(eniMetadata.IPv6Prefixes))
 		}
