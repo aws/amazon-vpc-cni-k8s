@@ -249,6 +249,26 @@ func (mr *MockEC2MockRecorder) DescribeNetworkInterfacesWithContext(arg0, arg1 i
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeNetworkInterfacesWithContext", reflect.TypeOf((*MockEC2)(nil).DescribeNetworkInterfacesWithContext), varargs...)
 }
 
+// DescribeSubnetsWithContext mocks base method.
+func (m *MockEC2) DescribeSubnetsWithContext(arg0 context.Context, arg1 *ec2.DescribeSubnetsInput, arg2 ...request.Option) (*ec2.DescribeSubnetsOutput, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "DescribeSubnetsWithContext", varargs...)
+	ret0, _ := ret[0].(*ec2.DescribeSubnetsOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DescribeSubnetsWithContext indicates an expected call of DescribeSubnetsWithContext.
+func (mr *MockEC2MockRecorder) DescribeSubnetsWithContext(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeSubnetsWithContext", reflect.TypeOf((*MockEC2)(nil).DescribeSubnetsWithContext), varargs...)
+}
+
 // DetachNetworkInterfaceWithContext mocks base method.
 func (m *MockEC2) DetachNetworkInterfaceWithContext(arg0 context.Context, arg1 *ec2.DetachNetworkInterfaceInput, arg2 ...request.Option) (*ec2.DetachNetworkInterfaceOutput, error) {
 	m.ctrl.T.Helper()

@@ -118,6 +118,9 @@ const (
 	// This environment variable specifies whether IPAMD should allocate or deallocate ENIs on a non-schedulable node (default false).
 	envManageENIsNonSchedulable = "AWS_MANAGE_ENIS_NON_SCHEDULABLE"
 
+	// This environment is used to specify whether we should use enhanced subnet selection or not when creating ENIs (default true).
+	envSubnetDiscovery = "ENABLE_SUBNET_DISCOVERY"
+
 	// eniNoManageTagKey is the tag that may be set on an ENI to indicate ipamd
 	// should not manage it in any form.
 	eniNoManageTagKey = "node.k8s.amazonaws.com/no_manage"
@@ -197,6 +200,7 @@ type IPAMContext struct {
 	enableIPv6                bool
 	useCustomNetworking       bool
 	manageENIsNonScheduleable bool
+	useSubnetDiscovery        bool
 	networkClient             networkutils.NetworkAPIs
 	maxIPsPerENI              int
 	maxENI                    int
@@ -333,11 +337,12 @@ func New(k8sClient client.Client) (*IPAMContext, error) {
 	c.networkClient = networkutils.New()
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.manageENIsNonScheduleable = ManageENIsOnNonSchedulableNode()
+	c.useSubnetDiscovery = UseSubnetDiscovery()
 	c.enablePrefixDelegation = usePrefixDelegation()
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
 	c.disableENIProvisioning = disableENIProvisioning()
-	client, err := awsutils.New(c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6)
+	client, err := awsutils.New(c.useSubnetDiscovery, c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
@@ -837,7 +842,7 @@ func (c *IPAMContext) updateLastNodeIPPoolAction() {
 
 func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 	var securityGroups []*string
-	var subnet string
+	var eniCfgSubnet string
 
 	if c.useCustomNetworking {
 		eniCfg, err := eniconfig.MyENIConfig(ctx, c.k8sClient)
@@ -851,12 +856,12 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 			log.Debugf("Found security-group id: %s", sgID)
 			securityGroups = append(securityGroups, aws.String(sgID))
 		}
-		subnet = eniCfg.Subnet
+		eniCfgSubnet = eniCfg.Subnet
 	}
 
 	resourcesToAllocate := c.GetENIResourcesToAllocate()
 	if resourcesToAllocate > 0 {
-		eni, err := c.awsClient.AllocENI(c.useCustomNetworking, securityGroups, subnet, resourcesToAllocate)
+		eni, err := c.awsClient.AllocENI(c.useCustomNetworking, securityGroups, eniCfgSubnet, resourcesToAllocate)
 		if err != nil {
 			log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
 			ipamdErrInc("increaseIPPoolAllocENI")
@@ -1681,6 +1686,11 @@ func ManageENIsOnNonSchedulableNode() bool {
 	return parseBoolEnvVar(envManageENIsNonSchedulable, false)
 }
 
+// UseSubnetDiscovery returns whether we should use enhanced subnet selection or not when creating ENIs.
+func UseSubnetDiscovery() bool {
+	return parseBoolEnvVar(envSubnetDiscovery, true)
+}
+
 func parseBoolEnvVar(envVariableName string, defaultVal bool) bool {
 	if strValue := os.Getenv(envVariableName); strValue != "" {
 		parsedValue, err := strconv.ParseBool(strValue)
@@ -1910,6 +1920,7 @@ func GetConfigForDebug() map[string]interface{} {
 		envWarmENITarget:            getWarmENITarget(),
 		envCustomNetworkCfg:         UseCustomNetworkCfg(),
 		envManageENIsNonSchedulable: ManageENIsOnNonSchedulableNode(),
+		envSubnetDiscovery:          UseSubnetDiscovery(),
 	}
 }
 
