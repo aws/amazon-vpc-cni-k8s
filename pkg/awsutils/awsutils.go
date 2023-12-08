@@ -399,7 +399,7 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 	}
 	log.Debugf("Found availability zone: %s ", cache.availabilityZone)
 
-	// retrieve eth0 local-ipv4
+	// retrieve primary interface local-ipv4
 	cache.localIPv4, err = cache.imds.GetLocalIPv4(ctx)
 	if err != nil {
 		awsAPIErrInc("GetLocalIPv4", err)
