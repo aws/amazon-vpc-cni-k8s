@@ -103,7 +103,7 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(retries), 
 		Expect(err).ToNot(HaveOccurred())
 
 		By("deleting the Daemonset.")
-		err = f.K8sResourceManagers.DaemonSetManager().DeleteAndWaitTillDaemonSetDeleted(testDaemonSet, utils.DefaultDeploymentReadyTimeout)
+		err = f.K8sResourceManagers.DaemonSetManager().DeleteAndWaitTillDaemonSetIsDeleted(testDaemonSet, utils.DefaultDeploymentReadyTimeout)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -195,7 +195,7 @@ var _ = Describe("[STATIC_CANARY2] API Server Connectivity from AZs", FlakeAttem
 
 	JustAfterEach(func() {
 		By("Deleting the Daemonset.")
-		err = f.K8sResourceManagers.DaemonSetManager().DeleteAndWaitTillDaemonSetDeleted(testDaemonSet, utils.DefaultDeploymentReadyTimeout)
+		err = f.K8sResourceManagers.DaemonSetManager().DeleteAndWaitTillDaemonSetIsDeleted(testDaemonSet, utils.DefaultDeploymentReadyTimeout)
 		Expect(err).ToNot(HaveOccurred())
 
 	})
@@ -239,6 +239,7 @@ func CheckAPIServerConnectivityFromPods(azToPod map[string]coreV1.Pod, api_serve
 		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error while connecting to API Server from %s", az))
 		Expect(api_server_stdout).ToNot(BeEmpty())
 		Expect(api_server_stdout).To(ContainSubstring("APIVersions"))
+		fmt.Printf("API Server %s Connectivity from AZ %s was successful.\n", api_server_url, az)
 	}
 }
 

@@ -20,6 +20,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	v1 "k8s.io/api/apps/v1"
+	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,7 +33,7 @@ type DaemonSetManager interface {
 
 	UpdateAndWaitTillDaemonSetReady(old *v1.DaemonSet, new *v1.DaemonSet) (*v1.DaemonSet, error)
 	CheckIfDaemonSetIsReady(namespace string, name string) error
-	DeleteAndWaitTillDaemonSetDeleted(daemonSet *v1.DaemonSet, timeout time.Duration) error
+	DeleteAndWaitTillDaemonSetIsDeleted(daemonSet *v1.DaemonSet, timeout time.Duration) error
 }
 
 type defaultDaemonSetManager struct {
@@ -118,12 +119,27 @@ func (d *defaultDaemonSetManager) CheckIfDaemonSetIsReady(namespace string, name
 
 }
 
-func (d *defaultDaemonSetManager) DeleteAndWaitTillDaemonSetDeleted(daemonSet *v1.DaemonSet, timeout time.Duration) error {
+func (d *defaultDaemonSetManager) DeleteAndWaitTillDaemonSetIsDeleted(daemonSet *v1.DaemonSet, timeout time.Duration) error {
 	ctx := context.Background()
 
-	if err := d.k8sClient.Delete(ctx, daemonSet); err != nil {
-		return err
+	err := d.k8sClient.Delete(ctx, daemonSet)
+
+	if k8sErrors.IsNotFound(err) {
+		return nil
 	}
 
-	return nil
+	if err != nil {
+		return err
+	}
+	observed := &v1.DaemonSet{}
+
+	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+		if err := d.k8sClient.Get(ctx, utils.NamespacedName(daemonSet), observed); err != nil {
+			if k8sErrors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return false, nil
+	}, ctx.Done())
 }
