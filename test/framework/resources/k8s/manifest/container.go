@@ -28,6 +28,7 @@ type Container struct {
 	probe           *v1.Probe
 	ports           []v1.ContainerPort
 	securityContext *v1.SecurityContext
+	Env             []v1.EnvVar
 }
 
 func NewBusyBoxContainerBuilder(testImageRegistry string) *Container {
@@ -101,6 +102,11 @@ func (w *Container) Command(cmd []string) *Container {
 	return w
 }
 
+func (w *Container) EnvVar(env []v1.EnvVar) *Container {
+	w.Env = env
+	return w
+}
+
 func (w *Container) Args(arg []string) *Container {
 	w.args = arg
 	return w
@@ -126,5 +132,6 @@ func (w *Container) Build() v1.Container {
 		LivenessProbe:   w.probe,
 		Ports:           w.ports,
 		SecurityContext: w.securityContext,
+		Env:             w.Env,
 	}
 }

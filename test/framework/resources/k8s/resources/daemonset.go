@@ -16,9 +16,11 @@ package resources
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	v1 "k8s.io/api/apps/v1"
+	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -26,8 +28,12 @@ import (
 
 type DaemonSetManager interface {
 	GetDaemonSet(namespace string, name string) (*v1.DaemonSet, error)
+
+	CreateAndWaitTillDaemonSetIsReady(daemonSet *v1.DaemonSet, timeout time.Duration) (*v1.DaemonSet, error)
+
 	UpdateAndWaitTillDaemonSetReady(old *v1.DaemonSet, new *v1.DaemonSet) (*v1.DaemonSet, error)
 	CheckIfDaemonSetIsReady(namespace string, name string) error
+	DeleteAndWaitTillDaemonSetIsDeleted(daemonSet *v1.DaemonSet, timeout time.Duration) error
 }
 
 type defaultDaemonSetManager struct {
@@ -36,6 +42,24 @@ type defaultDaemonSetManager struct {
 
 func NewDefaultDaemonSetManager(k8sClient client.Client) DaemonSetManager {
 	return &defaultDaemonSetManager{k8sClient: k8sClient}
+}
+
+func (d *defaultDaemonSetManager) CreateAndWaitTillDaemonSetIsReady(daemonSet *v1.DaemonSet, timeout time.Duration) (*v1.DaemonSet, error) {
+	ctx := context.Background()
+	err := d.k8sClient.Create(ctx, daemonSet)
+	if err != nil {
+		return nil, err
+	}
+
+	// Allow for the cache to sync
+	time.Sleep(utils.PollIntervalShort)
+
+	err = d.CheckIfDaemonSetIsReady(daemonSet.Namespace, daemonSet.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	return daemonSet, nil
 }
 
 func (d *defaultDaemonSetManager) GetDaemonSet(namespace string, name string) (*v1.DaemonSet, error) {
@@ -93,4 +117,29 @@ func (d *defaultDaemonSetManager) CheckIfDaemonSetIsReady(namespace string, name
 		return false, nil
 	}, ctx.Done())
 
+}
+
+func (d *defaultDaemonSetManager) DeleteAndWaitTillDaemonSetIsDeleted(daemonSet *v1.DaemonSet, timeout time.Duration) error {
+	ctx := context.Background()
+
+	err := d.k8sClient.Delete(ctx, daemonSet)
+
+	if k8sErrors.IsNotFound(err) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+	observed := &v1.DaemonSet{}
+
+	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
+		if err := d.k8sClient.Get(ctx, utils.NamespacedName(daemonSet), observed); err != nil {
+			if k8sErrors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return false, nil
+	}, ctx.Done())
 }
