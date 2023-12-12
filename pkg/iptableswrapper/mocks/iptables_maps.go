@@ -124,6 +124,14 @@ func (ipt *MockIptables) ListChains(table string) ([]string, error) {
 	return chains, nil
 }
 
+func (ipt *MockIptables) ChainExists(table, chain string) (bool, error) {
+	_, ok := ipt.DataplaneState[table][chain]
+	if ok {
+		return true, nil
+	}
+	return false, nil
+}
+
 func (ipt *MockIptables) HasRandomFully() bool {
 	// TODO: Work out how to write a test case for this
 	return true

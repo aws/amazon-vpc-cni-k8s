@@ -395,6 +395,11 @@ func (c *IPAMContext) nodeInit() error {
 	if err != nil {
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
+	err = c.networkClient.CleanUpStaleAWSChains(c.enableIPv4, c.enableIPv6)
+	if err != nil {
+		// We should not error if clean up fails since these chains don't affect the rules
+		log.Debugf("Failed to clean up stale AWS chains: %v", err)
+	}
 
 	metadataResult, err := c.awsClient.DescribeAllENIs()
 	if err != nil {

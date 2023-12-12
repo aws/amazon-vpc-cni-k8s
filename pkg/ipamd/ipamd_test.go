@@ -150,6 +150,7 @@ func TestNodeInit(t *testing.T) {
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
 	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
 	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false, true, false).Return(nil)
+	m.network.EXPECT().CleanUpStaleAWSChains(true, false).Return(nil)
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any()).AnyTimes().Return(nil)
 
@@ -234,6 +235,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
 	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
 	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false, true, false).Return(nil)
+	m.network.EXPECT().CleanUpStaleAWSChains(true, false).Return(nil)
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any()).AnyTimes().Return(nil)
 
@@ -308,6 +310,7 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 
 	primaryIP := net.ParseIP(ipaddr01)
 	m.network.EXPECT().SetupHostNetwork(cidrs, eni1.MAC, &primaryIP, false, false, true).Return(nil)
+	m.network.EXPECT().CleanUpStaleAWSChains(false, true).Return(nil)
 	m.awsutils.EXPECT().GetIPv6PrefixesFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv6Prefixes, nil)
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.awsutils.EXPECT().GetPrimaryENImac().Return(eni1.MAC)
