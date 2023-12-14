@@ -45,4 +45,4 @@ rules:
       - vpcresources.k8s.aws
     resources:
       - cninodes
-    verbs: ["get", "list", "patch"]
+    verbs: ["get", "list", "watch", "patch"]
