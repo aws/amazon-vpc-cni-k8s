@@ -128,7 +128,7 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 		if err != nil {
 			return 0, fmt.Errorf("pod list %v validation failed %v", podList, err)
 		}
-		fmt.Fprintln(GinkgoWriter, "successfully validated the server pod list")
+		fmt.Fprintln(GinkgoWriter, "successfully validated the client pod list")
 	}
 
 	metricServerIP := metricServerPod.Status.PodIP
