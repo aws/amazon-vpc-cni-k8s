@@ -46,12 +46,12 @@ echo "==========================================================================
 echo "                   Generate Template w/ Helm v3"
 echo "=============================================================================="
 
-helm template aws-vpc-cni "${HELM_DIR}/aws-vpc-cni" --debug --namespace=kube-system -f "${HELM_DIR}/aws-vpc-cni/test.yaml" > /dev/null
+helm template aws-vpc-cni "${HELM_DIR}/aws-vpc-cni" --debug --namespace=kube-system -f "${HELM_DIR}/aws-vpc-cni/values.yaml" > /dev/null
 
 echo "=============================================================================="
 echo "                   Generate Template w/ Helm v2"
 echo "=============================================================================="
 
-helm2 template --name aws-vpc-cni "${HELM_DIR}/aws-vpc-cni" --debug --namespace=kube-system -f "${HELM_DIR}/aws-vpc-cni/test.yaml" > /dev/null
+helm2 template --name aws-vpc-cni "${HELM_DIR}/aws-vpc-cni" --debug --namespace=kube-system -f "${HELM_DIR}/aws-vpc-cni/values.yaml" > /dev/null
 
 echo "✅ Helm template generation for v2 and v3 have successfully completed!"
