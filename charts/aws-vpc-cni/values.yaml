@@ -89,13 +89,18 @@ env:
 # You can then annotate and label the original aws-node resources and 'adopt' them into a helm release
 originalMatchLabels: false
 
-enableWindowsIpam: "false"
+# Settings for aws-vpc-cni ConfigMap
+# - Network Policy settings
 enableNetworkPolicy: "false"
+# - Windows settings
+enableWindowsIpam: "false"
+# - Windows Prefix Delegation settings
 enableWindowsPrefixDelegation: "false"
-warmWindowsPrefixTarget: "0"
-warmWindowsIPTarget: "0"
-minimumWindowsIPTarget: "0"
-branchENICooldown: "60"
+warmWindowsPrefixTarget: 0
+warmWindowsIPTarget: 1
+minimumWindowsIPTarget: 3
+# - Security Groups for Pods settings
+branchENICooldown: 60
 
 cniConfig:
   enabled: false

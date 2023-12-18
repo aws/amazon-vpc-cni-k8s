@@ -282,6 +282,11 @@ metadata:
 data:
   enable-windows-ipam: "false"
   enable-network-policy-controller: "false"
+  enable-windows-prefix-delegation: "false"
+  warm-prefix-target: "0"
+  warm-ip-target: "1"
+  minimum-ip-target: "3"
+  branch-eni-cooldown: "60"
 ---
 # Source: aws-vpc-cni/templates/clusterrole.yaml
 apiVersion: rbac.authorization.k8s.io/v1
