@@ -333,7 +333,7 @@ elasticity, but uses roughly half as many IPs as using WARM_IP_TARGET alone (32 
 This also improves the reliability of the EKS cluster by reducing the number of calls necessary to allocate or deallocate
 private IPs, which may be throttled, especially at scaling-related times.
 
-Setting both `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` will override `WARM_PREFIX_TARGET`. For a detailed explanation, see
+Setting both `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` will override `WARM_PREFIX_TARGET` and `WARM_ENI_TARGET`. For a detailed explanation, see
 [`WARM_PREFIX_TARGET`, `WARM_IP_TARGET` and `MINIMUM_IP_TARGET`](https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/prefix-and-ip-target.md).
 
 #### `MAX_ENI`

@@ -22,7 +22,7 @@ func GetBoolAsStringEnvVar(env string, defaultVal bool) bool {
 }
 
 // Parse environment variable and return integer representation of string, or default value if environment variable is unset
-func GetEnvVar(env string, defaultVal int) (int, error, string) {
+func GetIntEnvVar(env string, defaultVal int) (int, error, string) {
 	if val, ok := os.LookupEnv(env); ok {
 		parsedVal, err := strconv.Atoi(val)
 		if err == nil {

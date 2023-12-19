@@ -222,7 +222,7 @@ func (addr AddressInfo) Assigned() bool {
 
 // getCooldownPeriod returns the time duration in seconds configured by the IP_COOLDOWN_PERIOD env variable
 func getCooldownPeriod() time.Duration {
-	cooldownVal, err, _ := utils.GetEnvVar(envIPCooldownPeriod, 30)
+	cooldownVal, err, _ := utils.GetIntEnvVar(envIPCooldownPeriod, 30)
 	if err != nil {
 		return 30 * time.Second
 	}

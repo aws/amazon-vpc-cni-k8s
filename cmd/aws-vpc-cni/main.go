@@ -380,24 +380,24 @@ func validateEnvVars() bool {
 	}
 
 	// Validate that IP_COOLDOWN_PERIOD is a valid integer
-	ipCooldownPeriod, err, ipCooldownPeriodStr := utils.GetEnvVar(envIPCooldownPeriod, defaultIPCooldownPeriod)
+	ipCooldownPeriod, err, ipCooldownPeriodStr := utils.GetIntEnvVar(envIPCooldownPeriod, defaultIPCooldownPeriod)
 	if err != nil || ipCooldownPeriod < 0 {
 		log.Errorf("IP_COOLDOWN_PERIOD MUST be a valid positive integer. %s is invalid", ipCooldownPeriodStr)
 		return false
 	}
 
 	prefixDelegationEn := utils.GetBoolAsStringEnvVar(envEnPrefixDelegation, defaultEnPrefixDelegation)
-	warmIPTarget, err, warmIPTargetStr := utils.GetEnvVar(envWarmIPTarget, defaultWarmIPTarget)
+	warmIPTarget, err, warmIPTargetStr := utils.GetIntEnvVar(envWarmIPTarget, defaultWarmIPTarget)
 	if err != nil {
 		log.Errorf("error when trying to get env WARM_IP_TARGET: %s; input is %v", err, warmIPTargetStr)
 		return false
 	}
-	warmPrefixTarget, err, warmPrefixTargetStr := utils.GetEnvVar(envWarmPrefixTarget, defaultWarmPrefixTarget)
+	warmPrefixTarget, err, warmPrefixTargetStr := utils.GetIntEnvVar(envWarmPrefixTarget, defaultWarmPrefixTarget)
 	if err != nil {
 		log.Errorf("error when trying to get env WARM_PREFIX_TARGET: %s; input is %v", err, warmPrefixTargetStr)
 		return false
 	}
-	minimumIPTarget, err, minimumIPTargetStr := utils.GetEnvVar(envMinIPTarget, defaultMinIPTarget)
+	minimumIPTarget, err, minimumIPTargetStr := utils.GetIntEnvVar(envMinIPTarget, defaultMinIPTarget)
 	if err != nil {
 		log.Errorf("error when trying to get env MINIMUM_IP_TARGET: %s; input is %v", err, minimumIPTargetStr)
 		return false
