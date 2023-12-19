@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.15.5
+
+* Bug - [Add watch permission for CNINode resource](https://github.com/aws/amazon-vpc-cni-k8s/pull/2681) (@jdn5126 )
+* Improvement - [Upgrade go from 1.21.4 to 1.21.5](https://github.com/aws/amazon-vpc-cni-k8s/pull/2707) (@jchen6585 )
+* Improvement - [Dependabot Golang updates, test agent fix](https://github.com/aws/amazon-vpc-cni-k8s/pull/2698) (@jdn5126 )
+* Improvement - [Bump aws-sdk-go to v1.48.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/2674) (@jchen6585 )
+
 ## v1.15.4
 
 * Documentation - [Update prefix-and-ip-target.md](https://github.com/aws/amazon-vpc-cni-k8s/pull/2658) (@nicolajknudsen )
