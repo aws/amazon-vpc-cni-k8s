@@ -90,6 +90,11 @@ originalMatchLabels: false
 
 enableWindowsIpam: "false"
 enableNetworkPolicy: "false"
+enableWindowsPrefixDelegation: "false"
+warmWindowsPrefixTarget: "0"
+warmWindowsIPTarget: "0"
+minimumWindowsIPTarget: "0"
+branchENICooldown: "60"
 
 cniConfig:
   enabled: false
