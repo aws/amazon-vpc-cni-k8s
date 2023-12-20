@@ -144,8 +144,8 @@ require (
 	golang.org/x/exp v0.0.0-20230315142452-642cacee5cc0 // indirect
 	golang.org/x/oauth2 v0.11.0 // indirect
 	golang.org/x/sync v0.4.0 // indirect
-	golang.org/x/term v0.13.0 // indirect
-	golang.org/x/text v0.13.0 // indirect
+	golang.org/x/term v0.15.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.14.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
@@ -170,8 +170,8 @@ require (
 
 replace gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 => gopkg.in/yaml.v3 v3.0.1
 
-// Cannot be removed until all dependencies use crypto library v0.14.0 or higher
-replace golang.org/x/crypto => golang.org/x/crypto v0.14.0
+// Cannot be removed until all dependencies use crypto library v0.17.0 or higher
+replace golang.org/x/crypto => golang.org/x/crypto v0.17.0
 
 // Cannot be removed until all dependencies use net library v0.17.0 or higher
 replace golang.org/x/net => golang.org/x/net v0.17.0
