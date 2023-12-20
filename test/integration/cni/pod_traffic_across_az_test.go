@@ -2,6 +2,8 @@ package cni
 
 import (
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"strconv"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
@@ -18,6 +20,8 @@ import (
 var (
 	retries = 3
 )
+
+const MetricNamespace = "NetworkingAZConnectivity"
 
 // Tests pod networking across AZs. It similar to pod connectivity test, but launches a daemonset, so that
 // there is a pod on each node across AZs. It then tests connectivity between pods on different nodes across AZs.
@@ -50,6 +54,9 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(retries), 
 
 		// Map of AZ name, string to pod of testDaemonSet
 		azToTestPod map[string]coreV1.Pod
+
+		// Map of AZ name, string to AZ ID for the account.
+		azToazID map[string]string
 	)
 
 	JustBeforeEach(func() {
@@ -88,7 +95,7 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(retries), 
 
 		Expect(err).ToNot(HaveOccurred())
 
-		azToTestPod = GetAZtoPod(nodes)
+		azToTestPod, azToazID = GetAZMappings(nodes)
 	})
 
 	JustAfterEach(func() {
@@ -128,14 +135,26 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(retries), 
 		})
 
 		It("Should allow TCP traffic across AZs.", func() {
-			CheckConnectivityBetweenPods(azToTestPod, serverPort, testerExpectedStdOut, testerExpectedStdErr, testConnectionCommandFunc)
+			CheckConnectivityBetweenPods(azToTestPod, azToazID, serverPort, testerExpectedStdOut, testerExpectedStdErr, testConnectionCommandFunc)
 		})
 	})
 })
 
-func GetAZtoPod(nodes coreV1.NodeList) map[string]coreV1.Pod {
+// Functio to Az to Pod mapping and Az to AZ ID mapping
+func GetAZMappings(nodes coreV1.NodeList) (map[string]coreV1.Pod, map[string]string) {
 	// Map of AZ name to Pod from Daemonset running on nodes
 	azToPod := make(map[string]coreV1.Pod)
+	// Map of AZ name to AZ ID
+	azToazID := make(map[string]string)
+
+	describeAZOutput, err := f.CloudServices.EC2().DescribeAvailabilityZones()
+
+	if err != nil {
+		// Don't fail the test if we can't describe AZs. The failure will be caught by the test
+		// We use describe AZs to get the AZ ID for metrics.
+		fmt.Println("Error while describing AZs", err)
+	}
+
 	for i := range nodes.Items {
 		// node label key "topology.kubernetes.io/zone" is well known label populated by cloud controller manager
 		// guaranteed to be present and represent the AZ name
@@ -149,18 +168,21 @@ func GetAZtoPod(nodes coreV1.NodeList) map[string]coreV1.Pod {
 		if len(interfaceToPodList.PodsOnPrimaryENI) > 0 {
 			azToPod[azName] = interfaceToPodList.PodsOnPrimaryENI[0]
 		}
+
+		azToazID[azName] = *describeAZOutput.AvailabilityZones[i].ZoneId
 	}
-	return azToPod
+	return azToPod, azToazID
 }
 
-var _ = Describe("[STATIC_CANARY2] API Server Connectivity from AZs", FlakeAttempts(retries), func() {
+var _ = Describe("[STATIC_CANARY] API Server Connectivity from AZs", FlakeAttempts(retries), func() {
 
 	var (
 		err           error
 		testDaemonSet *v1.DaemonSet
 
 		// Map of AZ name to Pod of testDaemonSet running on nodes
-		azToPod map[string]coreV1.Pod
+		azToPod  map[string]coreV1.Pod
+		azToazID map[string]string
 	)
 
 	JustBeforeEach(func() {
@@ -190,7 +212,8 @@ var _ = Describe("[STATIC_CANARY2] API Server Connectivity from AZs", FlakeAttem
 		nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 		Expect(err).ToNot(HaveOccurred())
 
-		azToPod = GetAZtoPod(nodes)
+		azToPod, azToazID = GetAZMappings(nodes)
+
 	})
 
 	JustAfterEach(func() {
@@ -208,21 +231,22 @@ var _ = Describe("[STATIC_CANARY2] API Server Connectivity from AZs", FlakeAttem
 			APIServerNLBEndpoint := fmt.Sprintf("%s/api", *describeClusterOutput.Cluster.Endpoint)
 			APIServerInternalEndpoint := "https://kubernetes.default.svc/api"
 
-			CheckAPIServerConnectivityFromPods(azToPod, APIServerInternalEndpoint)
+			CheckAPIServerConnectivityFromPods(azToPod, azToazID, APIServerInternalEndpoint)
 
-			CheckAPIServerConnectivityFromPods(azToPod, APIServerNLBEndpoint)
+			CheckAPIServerConnectivityFromPods(azToPod, azToazID, APIServerNLBEndpoint)
 		})
 
 	})
 })
 
-func CheckAPIServerConnectivityFromPods(azToPod map[string]coreV1.Pod, api_server_url string) {
+func CheckAPIServerConnectivityFromPods(azToPod map[string]coreV1.Pod, azToazId map[string]string, api_server_url string) {
 	// Standard paths for SA token, CA cert and API Server URL
 	token_path := "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	cacert := "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	const MetricName = "APIServerConnectivity"
 
 	for az := range azToPod {
-		fmt.Printf("Testing API Server %s Connectivity from AZ %s \n", api_server_url, az)
+		fmt.Printf("Testing API Server %s Connectivity from AZ %s  AZID %s \n", api_server_url, az, azToazId[az])
 		sa_token := []string{"cat", token_path}
 		token_value, _, err := RunCommandOnPod(azToPod[az], sa_token)
 
@@ -240,19 +264,59 @@ func CheckAPIServerConnectivityFromPods(azToPod map[string]coreV1.Pod, api_serve
 		Expect(api_server_stdout).ToNot(BeEmpty())
 		Expect(api_server_stdout).To(ContainSubstring("APIVersions"))
 		fmt.Printf("API Server %s Connectivity from AZ %s was successful.\n", api_server_url, az)
+
+		putmetricData := cloudwatch.PutMetricDataInput{
+			Namespace: aws.String(MetricNamespace),
+			MetricData: []*cloudwatch.MetricDatum{
+				{
+					MetricName: aws.String(MetricName),
+					Unit:       aws.String("Count"),
+					Value:      aws.Float64(1),
+					Dimensions: []*cloudwatch.Dimension{
+						{
+							Name:  aws.String("AZID"),
+							Value: aws.String(azToazId[az]),
+						},
+					},
+				},
+			},
+		}
+
+		_, err = f.CloudServices.CloudWatch().PutMetricData(&putmetricData)
+		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error while putting metric data for API Server Connectivity from %s", az))
 	}
 }
 
-func CheckConnectivityBetweenPods(azToPod map[string]coreV1.Pod, port int, testerExpectedStdOut string, testerExpectedStdErr string, getTestCommandFunc func(serverPod coreV1.Pod, port int) []string) {
+func CheckConnectivityBetweenPods(azToPod map[string]coreV1.Pod, azToazId map[string]string, port int, testerExpectedStdOut string, testerExpectedStdErr string, getTestCommandFunc func(serverPod coreV1.Pod, port int) []string) {
+	const MetricName = "InterAZConnectivity"
 
 	By("checking connection on same node, primary to primary")
 
 	for az1 := range azToPod {
 		for az2 := range azToPod {
 			if az1 != az2 {
-				fmt.Printf("Testing Connectivity from Pod IP1 %s (%s) to Pod IP2 %s (%s) \n",
-					azToPod[az1].Status.PodIP, az1, azToPod[az2].Status.PodIP, az2)
+				fmt.Printf("Testing Connectivity from Pod IP1 %s (%s, %s) to Pod IP2 %s (%s, %s) \n",
+					azToPod[az1].Status.PodIP, az1, azToazId[az1], azToPod[az2].Status.PodIP, az2, azToazId[az2])
 				testConnectivity(azToPod[az1], azToPod[az2], testerExpectedStdOut, testerExpectedStdErr, port, getTestCommandFunc)
+
+				putmetricData := cloudwatch.PutMetricDataInput{
+					Namespace: aws.String(MetricNamespace),
+					MetricData: []*cloudwatch.MetricDatum{
+						{
+							MetricName: aws.String(MetricName),
+							Unit:       aws.String("Count"),
+							Value:      aws.Float64(1),
+							Dimensions: []*cloudwatch.Dimension{
+								{
+									Name:  aws.String("AZID"),
+									Value: aws.String(azToazId[az1]),
+								},
+							},
+						},
+					},
+				}
+				_, err := f.CloudServices.CloudWatch().PutMetricData(&putmetricData)
+				Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error while putting metric data for API Server Connectivity from %s", azToazId[az1]))
 			}
 		}
 	}
