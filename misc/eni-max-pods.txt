@@ -231,6 +231,7 @@ d3en.6xlarge 58
 d3en.8xlarge 78
 d3en.xlarge 10
 dl1.24xlarge 737
+dl2q.24xlarge 737
 f1.16xlarge 394
 f1.2xlarge 58
 f1.4xlarge 234
@@ -725,6 +726,8 @@ r7iz.32xlarge 737
 r7iz.4xlarge 234
 r7iz.8xlarge 234
 r7iz.large 29
+r7iz.metal-16xl 737
+r7iz.metal-32xl 737
 r7iz.xlarge 58
 t1.micro 4
 t2.2xlarge 44
