@@ -2738,6 +2738,20 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "nitro",
 		IsBareMetal: false,
 	},
+	"dl2q.24xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
 	"f1.16xlarge":	   {
 		ENILimit: 8, 
 		IPv4Limit: 50, 
@@ -9878,6 +9892,34 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		},
 		HypervisorType: "nitro",
 		IsBareMetal: false,
+	},
+	"r7iz.metal-16xl":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
+	},
+	"r7iz.metal-32xl":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
 	},
 	"r7iz.xlarge":	   {
 		ENILimit: 4, 
