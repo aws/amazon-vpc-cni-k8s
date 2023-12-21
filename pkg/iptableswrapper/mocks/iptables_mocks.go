@@ -85,21 +85,6 @@ func (mr *MockIPTablesIfaceMockRecorder) AppendUnique(arg0, arg1 interface{}, ar
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AppendUnique", reflect.TypeOf((*MockIPTablesIface)(nil).AppendUnique), varargs...)
 }
 
-// ChainExists mocks base method.
-func (m *MockIPTablesIface) ChainExists(arg0, arg1 string) (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ChainExists", arg0, arg1)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ChainExists indicates an expected call of ChainExists.
-func (mr *MockIPTablesIfaceMockRecorder) ChainExists(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChainExists", reflect.TypeOf((*MockIPTablesIface)(nil).ChainExists), arg0, arg1)
-}
-
 // ClearChain mocks base method.
 func (m *MockIPTablesIface) ClearChain(arg0, arg1 string) error {
 	m.ctrl.T.Helper()

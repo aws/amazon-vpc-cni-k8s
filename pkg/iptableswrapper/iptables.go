@@ -29,7 +29,6 @@ type IPTablesIface interface {
 	ClearChain(table, chain string) error
 	DeleteChain(table, chain string) error
 	ListChains(table string) ([]string, error)
-	ChainExists(table, chain string) (bool, error)
 	HasRandomFully() bool
 }
 
@@ -97,11 +96,6 @@ func (i ipTables) DeleteChain(table, chain string) error {
 // ListChains implements IPTablesIface interface by calling iptables package
 func (i ipTables) ListChains(table string) ([]string, error) {
 	return i.ipt.ListChains(table)
-}
-
-// ChainExists implements IPTablesIface interface by calling iptables package
-func (i ipTables) ChainExists(table, chain string) (bool, error) {
-	return i.ipt.ChainExists(table, chain)
 }
 
 // HasRandomFully implements IPTablesIface interface by calling iptables package
