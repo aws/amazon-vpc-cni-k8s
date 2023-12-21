@@ -173,7 +173,7 @@ function install_cw_agent(){
     echo "Install Cloudwatch Agent DS"
     $KUBECTL_PATH apply -f https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/cwagent/cwagent-serviceaccount.yaml
 
-    echo '{ "logs": { "metrics_collected": { "kubernetes": { "metrics_collection_interval": 30, "cluster_name": "eks-net-perf" }},"force_flush_interval": 5 }}' | jq '.' > cwagentconfig.json
+    echo '{ "logs": { "metrics_collected": { "kubernetes": { "metrics_collection_interval": 30, "cluster_name": "eks-net-perf" }},"force_flush_interval": 5 }}' | jq > cwagentconfig.json
     $KUBECTL_PATH create cm -n $CW_NAMESPACE cwagentconfig --from-file cwagentconfig.json
     $KUBECTL_PATH apply -f https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/cwagent/cwagent-daemonset.yaml
     

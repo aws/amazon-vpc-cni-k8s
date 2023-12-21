@@ -51,12 +51,7 @@ var _ = Describe("SNAT tests", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(vpcOutput.Vpcs)).To(BeNumerically(">", 0))
 
-			numOfCidrs := 0
-			for _, vpc := range vpcOutput.Vpcs[0].CidrBlockAssociationSet {
-				if *vpc.CidrBlockState.State == "associated" {
-					numOfCidrs = numOfCidrs + 1
-				}
-			}
+			numOfCidrs := len(vpcOutput.Vpcs[0].CidrBlockAssociationSet)
 
 			By("Check whether SNAT IP table has random-fully with AWS_VPC_K8S_CNI_RANDOMIZESNAT set to default value of prng")
 			ValidateIPTableRules("prng", numOfCidrs)
