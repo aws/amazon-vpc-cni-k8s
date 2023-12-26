@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.16.0
+
+* Bug - [check if ipv4Addr or ipv6Addr is empty before calling AnnotatePod()](https://github.com/aws/amazon-vpc-cni-k8s/pull/2702) (@zachdorame )
+* Bug - [Fix enabling of Metrics and Introspection Endpoint](https://github.com/aws/amazon-vpc-cni-k8s/pull/2701) (@jdn5126 )
+* Cleanup - [swicth grpc deprecated method to new method](https://github.com/aws/amazon-vpc-cni-k8s/pull/2665) (@Icarus9913 )
+* Cleanup - [swicth k8s deprecated method to new method](https://github.com/aws/amazon-vpc-cni-k8s/pull/2664) (@Icarus9913 )
+* Dependency - [Update golang.org/x/crypto to v0.17.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2719) (@jdn5126 )
+* Dependency - [Bump github.com/containerd/containerd from 1.7.6 to 1.7.11](https://github.com/aws/amazon-vpc-cni-k8s/pull/2718) (@dependabot )
+* Dependency - [Update upstream CNI plugins to v1.4.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2713) (@jdn5126 )
+* Documentation - [Remove hard-coded comment for primary intf](https://github.com/aws/amazon-vpc-cni-k8s/pull/2706) (@jdn5126 )
+* Documentation - [Fix Infof/Debugf/Errors to use correct function names](https://github.com/aws/amazon-vpc-cni-k8s/pull/2704) (@dims )
+* Feature - [Add parameters for tuning revisionHistory and securityContext](https://github.com/aws/amazon-vpc-cni-k8s/pull/2670) (@bodgit )
+* Feature - [Manifest for Multus 4.0.2 thick plugin support](https://github.com/aws/amazon-vpc-cni-k8s/pull/2667) (@jdn5126 )
+* Feature - [IPv6 Security Groups for Pods Support](https://github.com/aws/amazon-vpc-cni-k8s/pull/2639) (@jdn5126 )
+* Feature - [Prometheus metrics scraping from CNI metrics helper](https://github.com/aws/amazon-vpc-cni-k8s/pull/2603) (@jayanthvn )
+* Improvement - [add instance types](https://github.com/aws/amazon-vpc-cni-k8s/pull/2720) (@jchen6585 )
+* Improvement - [Update CHANGELOG, charts, and manifests for v1.15.5 release; update aws-vpc-cni ConfigMap default settings](https://github.com/aws/amazon-vpc-cni-k8s/pull/2716) (@jdn5126 )
+* Improvement - [adding feature flags to configmap charts](https://github.com/aws/amazon-vpc-cni-k8s/pull/2715) (@haouc )
+* Improvement - [No need to set accept_ra or accept_redirects for non-primary interfaces](https://github.com/aws/amazon-vpc-cni-k8s/pull/2708) (@jdn5126 )
+* Improvement - [Simplify IPv6 Gateway Calculation](https://github.com/aws/amazon-vpc-cni-k8s/pull/2703) (@jdn5126 )
+
 ## v1.15.5
 
 * Bug - [Add watch permission for CNINode resource](https://github.com/aws/amazon-vpc-cni-k8s/pull/2681) (@jdn5126 )
