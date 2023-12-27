@@ -13,7 +13,7 @@ TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"617930562442.dkr.ecr.us-west-2.amazo
 # If $ENDPOINT is set, as in it is for beta clusters, then add the --endpoint flag to the ginkgo test command
 ENDPOINT_FLAG=""
 if [ -n "$ENDPOINT" ]; then
-  ENDPOINT_FLAG="--endpoint=$ENDPOINT"
+  ENDPOINT_FLAG="--eks-endpoint=$ENDPOINT"
 fi
 
 
