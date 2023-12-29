@@ -10,12 +10,9 @@ GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
 # TEST_IMAGE_REGISTRY is the registry in test-infra-* accounts where e2e test images are stored
 TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"617930562442.dkr.ecr.us-west-2.amazonaws.com"}
 
-# If $ENDPOINT is set, as in it is for beta clusters, then add the --endpoint flag to the ginkgo test command
-ENDPOINT_FLAG=""
-if [ -n "$ENDPOINT" ]; then
-  ENDPOINT_FLAG="--eks-endpoint=$ENDPOINT"
-fi
-
+# If $ENDPOINT is set, as in it is for beta clusters then $ENDPOINT_OPTION,
+# defined in lib/cluster.sh will add --eks-endpoint=$ENDPOINT to the ginkgo
+# test command
 
 source "$SCRIPT_DIR"/lib/cluster.sh
 source "$SCRIPT_DIR"/lib/canary.sh
@@ -32,7 +29,7 @@ function run_ginkgo_test() {
       --ng-name-label-key="kubernetes.io/os" \
       --ng-name-label-val="linux" \
       --test-image-registry=$TEST_IMAGE_REGISTRY \
-      "$ENDPOINT_FLAG")
+      $ENDPOINT_OPTION)
 }
 
 load_cluster_details
