@@ -282,7 +282,8 @@ in the *Amazon EC2 User Guide for Linux Instances*.
 For example, an `m4.4xlarge` launches with 1 network interface and 30 IP addresses\. If 5 pods are placed on the node and 5 free IP
 addresses are removed from the IP address warm pool, then `ipamd` attempts to allocate more interfaces until `WARM_ENI_TARGET` free
 interfaces are available on the node.
-If `WARM_IP_TARGET` is set, then this environment variable is ignored and the `WARM_IP_TARGET` behavior is used instead.
+
+**NOTE!** If `WARM_IP_TARGET` is set, then this environment variable is ignored and the `WARM_IP_TARGET` behavior is used instead.
 
 #### `WARM_IP_TARGET`
 
@@ -332,6 +333,10 @@ elasticity, but uses roughly half as many IPs as using WARM_IP_TARGET alone (32 
 
 This also improves the reliability of the EKS cluster by reducing the number of calls necessary to allocate or deallocate
 private IPs, which may be throttled, especially at scaling-related times.
+
+**NOTE!** 
+1. If `MINIMUM_IP_TARGET` is set, `WARM_ENI_TARGET` will be ignored. Please utilize `WARM_IP_TARGET` instead.
+2. If `MINIMUM_IP_TARGET` is set and `WARM_IP_TARGET` is not set, `WARM_IP_TARGET` is assumed to be 0, which leads to the number of IPs attached to the node will be the value of `MINIMUM_IP_TARGET`. This configuration will prevent future ENIs/IPs from being allocated. It is strongly recommended that `WARM_IP_TARGET` should be set greater than 0 when `MINIMUM_IP_TARGET` is set.
 
 #### `MAX_ENI`
 
