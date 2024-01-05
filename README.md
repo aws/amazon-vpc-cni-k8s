@@ -65,12 +65,12 @@ For help, please consider the following venues (in order):
 
 ## Recommended Version
 
-For all Kubernetes releases, we recommend installing the latest VPC CNI release. The following table denotes our minimum recommended
+For all Kubernetes releases, *we recommend installing the latest VPC CNI release*. The following table denotes our *oldest* recommended
 VPC CNI version for each actively supported Kubernetes release.
 
-| Kubernetes Release | 1.27     | 1.26     | 1.25     | 1.24    | 1.23    |
-| ------------------ | -------- | -------- | -------- | ------- | ------- |
-| VPC CNI Version    | v1.12.5+ | v1.12.0+ | v1.11.4+ | v1.9.3+ | v1.8.0+ |
+| Kubernetes Release | 1.29     | 1.28     | 1.27     | 1.26     | 1.25     | 1.24    |
+| ------------------ | -------- | -------- | -------- | -------- | -------- | ------- |
+| VPC CNI Version    | v1.14.1+ | v1.13.4+ | v1.12.5+ | v1.12.0+ | v1.11.4+ | v1.9.3+ |
 
 ## Version Upgrade
 
@@ -282,7 +282,8 @@ in the *Amazon EC2 User Guide for Linux Instances*.
 For example, an `m4.4xlarge` launches with 1 network interface and 30 IP addresses\. If 5 pods are placed on the node and 5 free IP
 addresses are removed from the IP address warm pool, then `ipamd` attempts to allocate more interfaces until `WARM_ENI_TARGET` free
 interfaces are available on the node.
-If `WARM_IP_TARGET` is set, then this environment variable is ignored and the `WARM_IP_TARGET` behavior is used instead.
+
+**NOTE!** If `WARM_IP_TARGET` is set, then this environment variable is ignored and the `WARM_IP_TARGET` behavior is used instead.
 
 #### `WARM_IP_TARGET`
 
@@ -332,6 +333,10 @@ elasticity, but uses roughly half as many IPs as using WARM_IP_TARGET alone (32 
 
 This also improves the reliability of the EKS cluster by reducing the number of calls necessary to allocate or deallocate
 private IPs, which may be throttled, especially at scaling-related times.
+
+**NOTE!** 
+1. If `MINIMUM_IP_TARGET` is set, `WARM_ENI_TARGET` will be ignored. Please utilize `WARM_IP_TARGET` instead.
+2. If `MINIMUM_IP_TARGET` is set and `WARM_IP_TARGET` is not set, `WARM_IP_TARGET` is assumed to be 0, which leads to the number of IPs attached to the node will be the value of `MINIMUM_IP_TARGET`. This configuration will prevent future ENIs/IPs from being allocated. It is strongly recommended that `WARM_IP_TARGET` should be set greater than 0 when `MINIMUM_IP_TARGET` is set.
 
 #### `MAX_ENI`
 

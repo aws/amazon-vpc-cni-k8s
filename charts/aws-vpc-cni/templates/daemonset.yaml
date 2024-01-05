@@ -146,8 +146,10 @@ spec:
           volumeMounts:
           - mountPath: /host/opt/cni/bin
             name: cni-bin-dir
+          {{- if .Values.nodeAgent.enabled }}
           - mountPath: /sys/fs/bpf
             name: bpf-pin-path
+          {{- end }}
           - mountPath: /var/log/aws-routed-eni
             name: log-dir
           - mountPath: /var/run/aws-node
