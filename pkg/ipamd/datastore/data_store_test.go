@@ -1024,18 +1024,21 @@ func TestWarmENIInteractions(t *testing.T) {
 	_ = ds.AddENI("eni-2", 2, false, false, false)
 	_ = ds.AddENI("eni-3", 3, false, false, false)
 
+	// Add an IP address to ENI 1 and assign it to a pod
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
 	_, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 	assert.NoError(t, err)
 
+	// Add another IP address to ENI 1 and assign a pod
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
 	_, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.NoError(t, err)
 
+	// Add two IP addresses to ENI 2 and one IP address to ENI 3
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.2.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = ds.AddIPv4CidrToStore("eni-2", ipv4Addr, false)
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.2.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -1043,44 +1046,76 @@ func TestWarmENIInteractions(t *testing.T) {
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.3.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = ds.AddIPv4CidrToStore("eni-3", ipv4Addr, false)
 
-	noWarmIPTarget := 0
-
 	ds.eniPool["eni-2"].createTime = time.Time{}
 	ds.eniPool["eni-3"].createTime = time.Time{}
 
-	// We have three ENIs, 5 IPs and two pods on ENI 1. Each ENI can handle two pods.
+	// We have 3 ENIs, 5 IPs and 2 pods on ENI 1.
+	// ENI 1: 2 IPs allocated, 2 IPs in use
+	// ENI 2: 2 IPs allocated, 0 IPs in use
+	// ENI 3: 1 IP allocated, 0 IPs in use
+	// => 3 free IPs
 	// We should not be able to remove any ENIs if either warmIPTarget >= 3 or minimumWarmIPTarget >= 5
+
+	// WARM IP TARGET=3, MINIMUM_IP_TARGET=1 => no ENI should be removed
 	eni := ds.RemoveUnusedENIFromStore(3, 1, 0)
 	assert.Equal(t, "", eni)
-	// Should not be able to free this ENI because we want at least 5 IPs, which requires at least three ENIs
+
+	// WARM IP TARGET=1, MINIMUM_IP_TARGET=5 => no ENI should be removed
 	eni = ds.RemoveUnusedENIFromStore(1, 5, 0)
 	assert.Equal(t, "", eni)
-	// Should be able to free an ENI because both warmIPTarget and minimumWarmIPTarget are both effectively 4
+
+	// WARM IP TARGET=2, MINIMUM_IP_TARGET=4 => ENI 3 should be removed as we only need 2 free IPs, which ENI 2 has
 	removedEni := ds.RemoveUnusedENIFromStore(2, 4, 0)
-	assert.Contains(t, []string{"eni-2", "eni-3"}, removedEni)
+	assert.Equal(t, "eni-3", removedEni)
 
-	// Should not be able to free an ENI because minimumWarmIPTarget requires at least two ENIs and no warm IP target
-	eni = ds.RemoveUnusedENIFromStore(noWarmIPTarget, 3, 0)
+	// We have 2 ENIs, 4 IPs and 2 pods on ENI 1.
+	// ENI 1: 2 IPs allocated, 2 IPs in use
+	// ENI 2: 2 IPs allocated, 0 IPs in use
+	// => 2 free IPs
+
+	// WARM IP TARGET=0, MINIMUM_IP_TARGET=3 => no ENI should be removed
+	eni = ds.RemoveUnusedENIFromStore(0, 3, 0)
 	assert.Equal(t, "", eni)
-	// Should be able to free an ENI because one ENI can provide a minimum count of 2 IPs
-	secondRemovedEni := ds.RemoveUnusedENIFromStore(noWarmIPTarget, 2, 0)
-	assert.Contains(t, []string{"eni-2", "eni-3"}, secondRemovedEni)
 
-	assert.NotEqual(t, removedEni, secondRemovedEni, "The two removed ENIs should not be the same ENI.")
+	// WARM IP TARGET=0, MINIMUM_IP_TARGET=2 => ENI 2 should be removed as ENI 1 covers the requirements
+	removedEni = ds.RemoveUnusedENIFromStore(0, 2, 0)
+	assert.Contains(t, "eni-2", removedEni)
 
-	_ = ds.AddENI("eni-4", 3, false, true, false)
-	_ = ds.AddENI("eni-5", 3, false, false, true)
-
+	// Add 2 more ENIs to the datastore and add 1 IP address to each of them
+	ds.AddENI("eni-4", 4, false, true, false) // trunk ENI
+	ds.AddENI("eni-5", 5, false, false, true) // EFA ENI
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.4.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
-	_ = ds.AddIPv4CidrToStore("eni-4", ipv4Addr, false)
+	ds.AddIPv4CidrToStore("eni-4", ipv4Addr, false)
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.5.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
-	_ = ds.AddIPv4CidrToStore("eni-5", ipv4Addr, false)
-
+	ds.AddIPv4CidrToStore("eni-5", ipv4Addr, false)
 	ds.eniPool["eni-4"].createTime = time.Time{}
 	ds.eniPool["eni-5"].createTime = time.Time{}
-	thirdRemovedEni := ds.RemoveUnusedENIFromStore(noWarmIPTarget, 2, 0)
-	// None of the others can be removed...
-	assert.Equal(t, "", thirdRemovedEni)
+
+	// We have 3 ENIs, 4 IPs and 2 pods on ENI 1.
+	// ENI 1: 2 IPs allocated, 2 IPs in use
+	// ENI 4: 1 IPs allocated, 0 IPs in use
+	// ENI 5: 1 IPs allocated, 0 IPs in use
+	// => 2 free IPs
+
+	// WARM IP TARGET=0, MINIMUM_IP_TARGET=2 => no ENI can be removed because ENI 4 is a trunk ENI and ENI 5 is an EFA ENI
+	removedEni = ds.RemoveUnusedENIFromStore(0, 2, 0)
+	assert.Equal(t, "", removedEni)
+	assert.Equal(t, 3, ds.GetENIs())
+
+	// Add 1 more normal ENI to the datastore
+	ds.AddENI("eni-6", 6, false, false, false) // trunk ENI
+	ds.eniPool["eni-6"].createTime = time.Time{}
+
+	// We have 4 ENIs, 4 IPs and 2 pods on ENI 1.
+	// ENI 1: 2 IPs allocated, 2 IPs in use
+	// ENI 4: 1 IPs allocated, 0 IPs in use
+	// ENI 5: 1 IPs allocated, 0 IPs in use
+	// ENI 6: 0 IPs allocated, 0 IPs in use
+	// => 2 free IPs
+
+	// WARM IP TARGET=0, MINIMUM_IP_TARGET=2 => ENI 6 can be removed
+	removedEni = ds.RemoveUnusedENIFromStore(0, 2, 0)
+	assert.Equal(t, "eni-6", removedEni)
 	assert.Equal(t, 3, ds.GetENIs())
 }
 

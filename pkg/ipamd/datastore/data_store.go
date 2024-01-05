@@ -841,8 +841,7 @@ func (ds *DataStore) GetEFAENIs() map[string]bool {
 	return ret
 }
 
-// IsRequiredForWarmIPTarget determines if this ENI has warm IPs that are required to fulfill whatever WARM_IP_TARGET is
-// set to.
+// IsRequiredForWarmIPTarget determines if this ENI has warm IPs that are required to fulfill whatever WARM_IP_TARGET is set to.
 func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENI) bool {
 	otherWarmIPs := 0
 	for _, other := range ds.eniPool {
@@ -863,8 +862,7 @@ func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENI) bool 
 	return otherWarmIPs < warmIPTarget
 }
 
-// IsRequiredForMinimumIPTarget determines if this ENI is necessary to fulfill whatever MINIMUM_IP_TARGET is
-// set to.
+// IsRequiredForMinimumIPTarget determines if this ENI is necessary to fulfill whatever MINIMUM_IP_TARGET is set to.
 func (ds *DataStore) isRequiredForMinimumIPTarget(minimumIPTarget int, eni *ENI) bool {
 	otherIPs := 0
 	for _, other := range ds.eniPool {
@@ -885,8 +883,7 @@ func (ds *DataStore) isRequiredForMinimumIPTarget(minimumIPTarget int, eni *ENI)
 	return otherIPs < minimumIPTarget
 }
 
-// IsRequiredForWarmPrefixTarget determines if this ENI is necessary to fulfill whatever WARM_PREFIX_TARGET is
-// set to.
+// IsRequiredForWarmPrefixTarget determines if this ENI is necessary to fulfill whatever WARM_PREFIX_TARGET is set to.
 func (ds *DataStore) isRequiredForWarmPrefixTarget(warmPrefixTarget int, eni *ENI) bool {
 	freePrefixes := 0
 	for _, other := range ds.eniPool {
@@ -1007,7 +1004,6 @@ func (ds *DataStore) RemoveUnusedENIFromStore(warmIPTarget, minimumIPTarget, war
 	}
 
 	removableENI := deletableENI.ID
-
 	for _, availableCidr := range ds.eniPool[removableENI].AvailableIPv4Cidrs {
 		ds.total -= availableCidr.Size()
 		if availableCidr.IsPrefix {
@@ -1277,7 +1273,6 @@ func (ds *DataStore) GetFreePrefixes() int {
 				freePrefixes++
 			}
 		}
-
 	}
 	return freePrefixes
 }
