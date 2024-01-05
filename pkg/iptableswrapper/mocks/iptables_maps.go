@@ -16,6 +16,7 @@ package mock_iptableswrapper
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -44,7 +45,12 @@ func (ipt *MockIptables) Insert(table, chain string, pos int, rulespec ...string
 	if ipt.DataplaneState[table] == nil {
 		ipt.DataplaneState[table] = map[string][][]string{}
 	}
-	ipt.DataplaneState[table][chain] = append(ipt.DataplaneState[table][chain], rulespec)
+	if len(ipt.DataplaneState[table][chain]) == pos-1 {
+		ipt.DataplaneState[table][chain] = append(ipt.DataplaneState[table][chain], rulespec)
+	} else {
+		ipt.DataplaneState[table][chain] = append(ipt.DataplaneState[table][chain][:pos], ipt.DataplaneState[table][chain][pos-1:]...)
+		ipt.DataplaneState[table][chain][pos] = rulespec
+	}
 	return nil
 }
 
@@ -91,6 +97,10 @@ func (ipt *MockIptables) List(table, chain string) ([]string, error) {
 	var chains []string
 	chainContents := ipt.DataplaneState[table][chain]
 	for _, ruleSpec := range chainContents {
+		if slices.Contains(ruleSpec, "-N") {
+			chains = append(chains, strings.Join(ruleSpec, " "))
+			continue
+		}
 		sanitizedRuleSpec := []string{"-A", chain}
 		for _, item := range ruleSpec {
 			if strings.Contains(item, " ") {
@@ -101,10 +111,15 @@ func (ipt *MockIptables) List(table, chain string) ([]string, error) {
 		chains = append(chains, strings.Join(sanitizedRuleSpec, " "))
 	}
 	return chains, nil
-
 }
 
 func (ipt *MockIptables) NewChain(table, chain string) error {
+	exists, _ := ipt.ChainExists(table, chain)
+	if exists {
+		return errors.New("Chain already exists")
+	}
+	// Creating a new chain adds a -N chain rule to iptables
+	ipt.Append(table, chain, "-N", chain)
 	return nil
 }
 
@@ -113,6 +128,12 @@ func (ipt *MockIptables) ClearChain(table, chain string) error {
 }
 
 func (ipt *MockIptables) DeleteChain(table, chain string) error {
+	// More than just the create chain rule
+	if len(ipt.DataplaneState[table][chain]) > 1 {
+		err := fmt.Sprintf("Chain %s is not empty", chain)
+		return errors.New(err)
+	}
+	delete(ipt.DataplaneState[table], chain)
 	return nil
 }
 
@@ -122,6 +143,14 @@ func (ipt *MockIptables) ListChains(table string) ([]string, error) {
 		chains = append(chains, chain)
 	}
 	return chains, nil
+}
+
+func (ipt *MockIptables) ChainExists(table, chain string) (bool, error) {
+	_, ok := ipt.DataplaneState[table][chain]
+	if ok {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (ipt *MockIptables) HasRandomFully() bool {

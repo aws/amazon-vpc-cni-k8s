@@ -50,6 +50,20 @@ func (m *MockNetworkAPIs) EXPECT() *MockNetworkAPIsMockRecorder {
 	return m.recorder
 }
 
+// CleanUpStaleAWSChains mocks base method.
+func (m *MockNetworkAPIs) CleanUpStaleAWSChains(arg0, arg1 bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CleanUpStaleAWSChains", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CleanUpStaleAWSChains indicates an expected call of CleanUpStaleAWSChains.
+func (mr *MockNetworkAPIsMockRecorder) CleanUpStaleAWSChains(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanUpStaleAWSChains", reflect.TypeOf((*MockNetworkAPIs)(nil).CleanUpStaleAWSChains), arg0, arg1)
+}
+
 // GetExcludeSNATCIDRs mocks base method.
 func (m *MockNetworkAPIs) GetExcludeSNATCIDRs() []string {
 	m.ctrl.T.Helper()

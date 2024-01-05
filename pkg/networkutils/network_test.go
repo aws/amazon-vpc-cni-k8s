@@ -363,6 +363,10 @@ func TestSetupHostNetworkNodePortEnabledAndSNATDisabled(t *testing.T) {
 				},
 			},
 		},
+		"nat": {
+			"AWS-SNAT-CHAIN-0":     [][]string{{"-N", "AWS-SNAT-CHAIN-0"}},
+			"AWS-CONNMARK-CHAIN-0": [][]string{{"-N", "AWS-CONNMARK-CHAIN-0"}},
+		},
 	}, mockIptables.(*mock_iptables.MockIptables).DataplaneState)
 }
 
@@ -396,9 +400,9 @@ func TestSetupHostNetworkNodePortDisabledAndSNATEnabled(t *testing.T) {
 
 	assert.Equal(t, map[string]map[string][][]string{
 		"nat": {
-			"AWS-SNAT-CHAIN-0":     [][]string{{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
+			"AWS-SNAT-CHAIN-0":     [][]string{{"-N", "AWS-SNAT-CHAIN-0"}, {"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
 			"POSTROUTING":          [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}},
-			"AWS-CONNMARK-CHAIN-0": [][]string{{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"}},
+			"AWS-CONNMARK-CHAIN-0": [][]string{{"-N", "AWS-CONNMARK-CHAIN-0"}, {"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"}},
 			"PREROUTING": [][]string{
 				{"-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0"},
 				{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
@@ -416,23 +420,23 @@ func TestSetupHostNetworkNodePortDisabledAndSNATEnabled(t *testing.T) {
 }
 
 func TestLoadMTUFromEnvTooLow(t *testing.T) {
-	_ = os.Setenv(envMTU, "1")
+	os.Setenv(envMTU, "1")
 	assert.Equal(t, GetEthernetMTU(""), minimumMTU)
 }
 
 func TestLoadMTUFromEnv1500(t *testing.T) {
-	_ = os.Setenv(envMTU, "1500")
+	os.Setenv(envMTU, "1500")
 	assert.Equal(t, GetEthernetMTU(""), 1500)
 }
 
 func TestLoadMTUFromEnvTooHigh(t *testing.T) {
-	_ = os.Setenv(envMTU, "65536")
+	os.Setenv(envMTU, "65536")
 	assert.Equal(t, GetEthernetMTU(""), maximumMTU)
 }
 
 func TestLoadExcludeSNATCIDRsFromEnv(t *testing.T) {
-	_ = os.Setenv(envExternalSNAT, "false")
-	_ = os.Setenv(envExcludeSNATCIDRs, "10.12.0.0/16,10.13.0.0/16")
+	os.Setenv(envExternalSNAT, "false")
+	os.Setenv(envExcludeSNATCIDRs, "10.12.0.0/16,10.13.0.0/16")
 
 	expected := []string{"10.12.0.0/16", "10.13.0.0/16"}
 	assert.Equal(t, parseCIDRString(envExcludeSNATCIDRs), expected)
@@ -465,17 +469,23 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 	assert.Equal(t,
 		map[string]map[string][][]string{
 			"nat": {
-				"AWS-SNAT-CHAIN-0":     [][]string{{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-1"}},
-				"AWS-SNAT-CHAIN-1":     [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2"}},
-				"AWS-SNAT-CHAIN-2":     [][]string{{"!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-3"}},
-				"AWS-SNAT-CHAIN-3":     [][]string{{"!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-4"}},
-				"AWS-SNAT-CHAIN-4":     [][]string{{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
-				"POSTROUTING":          [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}},
-				"AWS-CONNMARK-CHAIN-0": [][]string{{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-1"}},
-				"AWS-CONNMARK-CHAIN-1": [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-2"}},
-				"AWS-CONNMARK-CHAIN-2": [][]string{{"!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-3"}},
-				"AWS-CONNMARK-CHAIN-3": [][]string{{"!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-4"}},
-				"AWS-CONNMARK-CHAIN-4": [][]string{{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"}},
+				"AWS-SNAT-CHAIN-0": [][]string{
+					{"-N", "AWS-SNAT-CHAIN-0"},
+					{"-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN"},
+					{"-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN"},
+					{"-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN"},
+					{"-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN"},
+					{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"},
+				},
+				"POSTROUTING": [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}},
+				"AWS-CONNMARK-CHAIN-0": [][]string{
+					{"-N", "AWS-CONNMARK-CHAIN-0"},
+					{"-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN"},
+					{"-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN"},
+					{"-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN"},
+					{"-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN"},
+					{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"},
+				},
 				"PREROUTING": [][]string{
 					{"-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0"},
 					{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
@@ -512,20 +522,22 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-1") //AWS SNAT CHAN proves backwards compatibility
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-2", "!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-3")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-3", "!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-4")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-4", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
-	_ = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-5")
-	_ = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-1")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-2")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-2", "!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-3")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-3", "!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-4")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-4", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
-	_ = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
-	_ = mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
+	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "RETURN") //AWS SNAT CHAN proves backwards compatibility
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
+	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-1")
+	mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
+	mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
+	mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
 	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
@@ -534,17 +546,22 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 	assert.Equal(t,
 		map[string]map[string][][]string{
 			"nat": {
-				"AWS-SNAT-CHAIN-0":     [][]string{{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-1"}},
-				"AWS-SNAT-CHAIN-1":     [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2"}},
-				"AWS-SNAT-CHAIN-2":     [][]string{{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
-				"AWS-SNAT-CHAIN-3":     [][]string{},
-				"AWS-SNAT-CHAIN-4":     [][]string{},
-				"POSTROUTING":          [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}},
-				"AWS-CONNMARK-CHAIN-0": [][]string{{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-1"}},
-				"AWS-CONNMARK-CHAIN-1": [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-2"}},
-				"AWS-CONNMARK-CHAIN-2": [][]string{{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"}},
-				"AWS-CONNMARK-CHAIN-3": [][]string{},
-				"AWS-CONNMARK-CHAIN-4": [][]string{},
+				"AWS-SNAT-CHAIN-0": [][]string{
+					{"-N", "AWS-SNAT-CHAIN-0"},
+					{"-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN"},
+					{"-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN"},
+					{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"},
+				},
+				"AWS-SNAT-CHAIN-1": [][]string{
+					{"-N", "AWS-SNAT-CHAIN-1"},
+				},
+				"POSTROUTING": [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}},
+				"AWS-CONNMARK-CHAIN-0": [][]string{
+					{"-N", "AWS-CONNMARK-CHAIN-0"},
+					{"-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN"},
+					{"-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN"},
+					{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"},
+				},
 				"PREROUTING": [][]string{
 					{"-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0"},
 					{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
@@ -581,20 +598,22 @@ func TestSetupHostNetworkWithDifferentVethPrefix(t *testing.T) {
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-1") //AWS SNAT CHAN proves backwards compatibility
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-2", "!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-3")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-3", "!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-4")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-4", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
-	_ = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-5")
-	_ = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-1")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-2")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-2", "!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-3")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-3", "!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-4")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-4", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
-	_ = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
-	_ = mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
+	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "RETURN") //AWS SNAT CHAN proves backwards compatibility
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
+	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-1")
+	mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
+	mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
+	mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
 	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
@@ -602,17 +621,26 @@ func TestSetupHostNetworkWithDifferentVethPrefix(t *testing.T) {
 	assert.Equal(t,
 		map[string]map[string][][]string{
 			"nat": {
-				"AWS-SNAT-CHAIN-0":     [][]string{{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-1"}},
-				"AWS-SNAT-CHAIN-1":     [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2"}},
-				"AWS-SNAT-CHAIN-2":     [][]string{{"!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-3"}},
-				"AWS-SNAT-CHAIN-3":     [][]string{{"!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-4"}},
-				"AWS-SNAT-CHAIN-4":     [][]string{{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
-				"POSTROUTING":          [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}},
-				"AWS-CONNMARK-CHAIN-0": [][]string{{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-1"}},
-				"AWS-CONNMARK-CHAIN-1": [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-2"}},
-				"AWS-CONNMARK-CHAIN-2": [][]string{{"!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-3"}},
-				"AWS-CONNMARK-CHAIN-3": [][]string{{"!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-4"}},
-				"AWS-CONNMARK-CHAIN-4": [][]string{{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"}},
+				"AWS-SNAT-CHAIN-0": [][]string{
+					{"-N", "AWS-SNAT-CHAIN-0"},
+					{"-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN"},
+					{"-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN"},
+					{"-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN"},
+					{"-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN"},
+					{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"},
+				},
+				"AWS-SNAT-CHAIN-1": [][]string{
+					{"-N", "AWS-SNAT-CHAIN-1"},
+				},
+				"POSTROUTING": [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}},
+				"AWS-CONNMARK-CHAIN-0": [][]string{
+					{"-N", "AWS-CONNMARK-CHAIN-0"},
+					{"-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN"},
+					{"-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN"},
+					{"-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN"},
+					{"-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN"},
+					{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"},
+				},
 				"PREROUTING": [][]string{
 					{"-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0"},
 					{"-i", "veth+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0"},
@@ -649,19 +677,21 @@ func TestSetupHostNetworkExternalNATCleanupConnmark(t *testing.T) {
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-1")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-2", "!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-3")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-3", "!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-4")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-4", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
-	_ = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-1")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-2")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-2", "!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-3")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-3", "!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-4")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-4", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
-	_ = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
-	_ = mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
+	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
+	mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
+	mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
+	mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
 
 	// remove exclusions
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
@@ -671,17 +701,9 @@ func TestSetupHostNetworkExternalNATCleanupConnmark(t *testing.T) {
 	assert.Equal(t,
 		map[string]map[string][][]string{
 			"nat": {
-				"AWS-SNAT-CHAIN-0":     [][]string{},
-				"AWS-SNAT-CHAIN-1":     [][]string{},
-				"AWS-SNAT-CHAIN-2":     [][]string{},
-				"AWS-SNAT-CHAIN-3":     [][]string{},
-				"AWS-SNAT-CHAIN-4":     [][]string{},
+				"AWS-SNAT-CHAIN-0":     [][]string{{"-N", "AWS-SNAT-CHAIN-0"}},
 				"POSTROUTING":          [][]string{},
-				"AWS-CONNMARK-CHAIN-0": [][]string{},
-				"AWS-CONNMARK-CHAIN-1": [][]string{},
-				"AWS-CONNMARK-CHAIN-2": [][]string{},
-				"AWS-CONNMARK-CHAIN-3": [][]string{},
-				"AWS-CONNMARK-CHAIN-4": [][]string{},
+				"AWS-CONNMARK-CHAIN-0": [][]string{{"-N", "AWS-CONNMARK-CHAIN-0"}},
 				"PREROUTING":           [][]string{},
 			},
 			"mangle": {
@@ -714,19 +736,21 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-1")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-2", "!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-3")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-3", "!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-4")
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-4", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
-	_ = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-1")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-2")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-2", "!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-3")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-3", "!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-4")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-4", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
-	_ = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
-	_ = mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
+	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
+	mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
+	mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
+	mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
 
 	// remove exclusions
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
@@ -736,17 +760,23 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 	assert.Equal(t,
 		map[string]map[string][][]string{
 			"nat": {
-				"AWS-SNAT-CHAIN-0":     [][]string{{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-1"}},
-				"AWS-SNAT-CHAIN-1":     [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2"}},
-				"AWS-SNAT-CHAIN-2":     [][]string{{"!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-3"}},
-				"AWS-SNAT-CHAIN-3":     [][]string{{"!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-4"}},
-				"AWS-SNAT-CHAIN-4":     [][]string{{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
-				"POSTROUTING":          [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}},
-				"AWS-CONNMARK-CHAIN-0": [][]string{{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-1"}},
-				"AWS-CONNMARK-CHAIN-1": [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-2"}},
-				"AWS-CONNMARK-CHAIN-2": [][]string{{"!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-3"}},
-				"AWS-CONNMARK-CHAIN-3": [][]string{{"!", "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "AWS-CONNMARK-CHAIN-4"}},
-				"AWS-CONNMARK-CHAIN-4": [][]string{{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"}},
+				"AWS-SNAT-CHAIN-0": [][]string{
+					{"-N", "AWS-SNAT-CHAIN-0"},
+					{"-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN"},
+					{"-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN"},
+					{"-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN"},
+					{"-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN"},
+					{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"},
+				},
+				"POSTROUTING": [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}},
+				"AWS-CONNMARK-CHAIN-0": [][]string{
+					{"-N", "AWS-CONNMARK-CHAIN-0"},
+					{"-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN"},
+					{"-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN"},
+					{"-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN"},
+					{"-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN"},
+					{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"},
+				},
 				"PREROUTING": [][]string{
 					{"-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0"},
 					{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
@@ -782,16 +812,18 @@ func TestUpdateHostIptablesRules(t *testing.T) {
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-1") //AWS SNAT CHAN proves backwards compatibility
-	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
-	_ = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-1")
-	_ = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-1", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
-	_ = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
-	_ = mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
-	_ = mockIptables.Append("mangle", "PREROUTING", "-m", "comment", "--comment", "AWS, primary ENI", "-i", "lo", "-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in", "-j", "CONNMARK", "--set-mark", "0x80/0x80")
-	_ = mockIptables.Append("mangle", "PREROUTING", "-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
-	_ = mockIptables.Append("mangle", "PREROUTING", "-m", "comment", "--comment", "AWS, primary ENI", "-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
+	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
+	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "RETURN") //AWS SNAT CHAN proves backwards compatibility
+	mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
+	mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
+	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
+	mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
+	mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	mockIptables.Append("mangle", "PREROUTING", "-m", "comment", "--comment", "AWS, primary ENI", "-i", "lo", "-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in", "-j", "CONNMARK", "--set-mark", "0x80/0x80")
+	mockIptables.Append("mangle", "PREROUTING", "-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	mockIptables.Append("mangle", "PREROUTING", "-m", "comment", "--comment", "AWS, primary ENI", "-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
 	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
@@ -799,13 +831,19 @@ func TestUpdateHostIptablesRules(t *testing.T) {
 	assert.Equal(t,
 		map[string]map[string][][]string{
 			"nat": {
-				"AWS-SNAT-CHAIN-0":     [][]string{{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-1"}},
-				"AWS-SNAT-CHAIN-1":     [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2"}},
-				"AWS-SNAT-CHAIN-2":     [][]string{{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"}},
-				"POSTROUTING":          [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}},
-				"AWS-CONNMARK-CHAIN-0": [][]string{{"!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-1"}},
-				"AWS-CONNMARK-CHAIN-1": [][]string{{"!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "AWS-CONNMARK-CHAIN-2"}},
-				"AWS-CONNMARK-CHAIN-2": [][]string{{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"}},
+				"AWS-SNAT-CHAIN-0": [][]string{
+					{"-N", "AWS-SNAT-CHAIN-0"},
+					{"-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN"},
+					{"-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN"},
+					{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"},
+				},
+				"POSTROUTING": [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}},
+				"AWS-CONNMARK-CHAIN-0": [][]string{
+					{"-N", "AWS-CONNMARK-CHAIN-0"},
+					{"-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN"},
+					{"-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN"},
+					{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"},
+				},
 				"PREROUTING": [][]string{
 					{"-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0"},
 					{"-i", "veth+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0"},
@@ -830,6 +868,82 @@ func TestUpdateHostIptablesRules(t *testing.T) {
 			},
 		}, mockIptables.(*mock_iptables.MockIptables).DataplaneState)
 }
+
+func TestCleanUpStaleAWSChains(t *testing.T) {
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{
+		useExternalSNAT:        false,
+		ipv6EgressEnabled:      true,
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
+
+		netLink: mockNetLink,
+		ns:      mockNS,
+		newIptables: func(iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+			return mockIptables, nil
+		},
+	}
+	setupNetLinkMocks(ctrl, mockNetLink)
+
+	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-1")
+	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-2")
+	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-3")
+	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-4")
+	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-1")
+	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-2")
+	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-3")
+	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-4")
+
+	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
+	assert.NoError(t, err)
+
+	err = ln.CleanUpStaleAWSChains(true, false)
+	assert.NoError(t, err)
+
+	assert.Equal(t,
+		map[string]map[string][][]string{
+			"nat": {
+				"AWS-SNAT-CHAIN-0": [][]string{
+					{"-N", "AWS-SNAT-CHAIN-0"},
+					{"-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN"},
+					{"-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN"},
+					{"!", "-o", "vlan+", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20"},
+				},
+				"POSTROUTING": [][]string{{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"}},
+				"AWS-CONNMARK-CHAIN-0": [][]string{
+					{"-N", "AWS-CONNMARK-CHAIN-0"},
+					{"-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN"},
+					{"-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN"},
+					{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80"},
+				},
+				"PREROUTING": [][]string{
+					{"-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0"},
+					{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+				},
+			},
+			"filter": {
+				"FORWARD": [][]string{
+					{
+						"-d", "fd00::ac:00/118", "-m", "conntrack", "--ctstate", "NEW", "-m", "comment",
+						"--comment", "Block Node Local Pod access via IPv6", "-j", "REJECT",
+					},
+				},
+			},
+			"mangle": {
+				"PREROUTING": [][]string{
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "lo", "-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in", "-j", "CONNMARK", "--set-mark", "0x80/0x80"},
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+					{"-m", "comment", "--comment", "AWS, primary ENI", "-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+				},
+			},
+		}, mockIptables.(*mock_iptables.MockIptables).DataplaneState)
+}
+
 func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
@@ -987,7 +1101,7 @@ func TestSetupHostNetworkDeleteOldConnmarkRuleForNonVpcOutboundTraffic(t *testin
 	setupNetLinkMocks(ctrl, mockNetLink)
 
 	// add the "old" rule used in an ealier version of the CNI
-	_ = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-m", "state", "--state", "NEW", "-j", "AWS-CONNMARK-CHAIN-0")
+	mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-m", "state", "--state", "NEW", "-j", "AWS-CONNMARK-CHAIN-0")
 
 	var vpcCIDRs []string
 	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
@@ -1044,7 +1158,7 @@ func TestGetExternalServiceCIDRs(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		_ = os.Setenv(envExternalServiceCIDRs, tc.cidrString)
+		os.Setenv(envExternalServiceCIDRs, tc.cidrString)
 		cidrs := ln.GetExternalServiceCIDRs()
 		assert.Equal(t, cidrs, tc.expectedCidrs)
 	}
