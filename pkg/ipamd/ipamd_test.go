@@ -32,6 +32,7 @@ import (
 	"github.com/vishvananda/netlink"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -174,11 +175,16 @@ func TestNodeInit(t *testing.T) {
 	m.network.EXPECT().GetExternalServiceCIDRs().Return(nil)
 	m.network.EXPECT().UpdateExternalServiceIpRules(gomock.Any(), gomock.Any())
 
+	maxPods, _ := resource.ParseQuantity("500")
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
 		Spec:       v1.NodeSpec{},
-		Status:     v1.NodeStatus{},
+		Status: v1.NodeStatus{
+			Capacity: v1.ResourceList{
+				v1.ResourcePods: maxPods,
+			},
+		},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
 
@@ -258,11 +264,16 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	m.network.EXPECT().GetExternalServiceCIDRs().Return(nil)
 	m.network.EXPECT().UpdateExternalServiceIpRules(gomock.Any(), gomock.Any())
 
+	maxPods, _ := resource.ParseQuantity("500")
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
 		Spec:       v1.NodeSpec{},
-		Status:     v1.NodeStatus{},
+		Status: v1.NodeStatus{
+			Capacity: v1.ResourceList{
+				v1.ResourcePods: maxPods,
+			},
+		},
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
 
@@ -499,7 +510,6 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 		primaryIP:                 make(map[string]string),
 		terminating:               int32(0),
 	}
-
 	mockContext.dataStore = testDatastore()
 
 	primary := true
@@ -775,14 +785,14 @@ func TestDecreaseIPPool(t *testing.T) {
 	m.awsutils.EXPECT().DeallocPrefixAddresses(gomock.Any(), gomock.Any()).Times(1)
 	m.awsutils.EXPECT().DeallocIPAddresses(gomock.Any(), gomock.Any()).Times(1)
 
-	short, over, enabled := mockContext.datastoreTargetState()
+	short, over, enabled := mockContext.datastoreTargetState(nil)
 	assert.Equal(t, 0, short)      // there would not be any shortage
 	assert.Equal(t, 1, over)       // out of 4 IPs we have 2 IPs assigned, warm IP target is 1, so over is 1
 	assert.Equal(t, true, enabled) // there is warm ip target enabled with the value of 1
 
 	mockContext.decreaseDatastorePool(10 * time.Second)
 
-	short, over, enabled = mockContext.datastoreTargetState()
+	short, over, enabled = mockContext.datastoreTargetState(nil)
 	assert.Equal(t, 0, short)      // there would not be any shortage
 	assert.Equal(t, 0, over)       // after the above deallocation this should be zero
 	assert.Equal(t, true, enabled) // there is warm ip target enabled with the value of 1
@@ -790,7 +800,7 @@ func TestDecreaseIPPool(t *testing.T) {
 	//make another call just to ensure that more deallocations do not happen
 	mockContext.decreaseDatastorePool(10 * time.Second)
 
-	short, over, enabled = mockContext.datastoreTargetState()
+	short, over, enabled = mockContext.datastoreTargetState(nil)
 	assert.Equal(t, 0, short)      // there would not be any shortage
 	assert.Equal(t, 0, over)       // after the above deallocation this should be zero
 	assert.Equal(t, true, enabled) // there is warm ip target enabled with the value of 1
@@ -1115,14 +1125,13 @@ func TestGetWarmIPTargetState(t *testing.T) {
 		primaryIP:     make(map[string]string),
 		terminating:   int32(0),
 	}
-
 	mockContext.dataStore = testDatastore()
 
-	_, _, warmIPTargetDefined := mockContext.datastoreTargetState()
+	_, _, warmIPTargetDefined := mockContext.datastoreTargetState(nil)
 	assert.False(t, warmIPTargetDefined)
 
 	mockContext.warmIPTarget = 5
-	short, over, warmIPTargetDefined := mockContext.datastoreTargetState()
+	short, over, warmIPTargetDefined := mockContext.datastoreTargetState(nil)
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, 5, short)
 	assert.Equal(t, 0, over)
@@ -1134,7 +1143,7 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = mockContext.dataStore.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 
-	short, over, warmIPTargetDefined = mockContext.datastoreTargetState()
+	short, over, warmIPTargetDefined = mockContext.datastoreTargetState(nil)
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, 3, short)
 	assert.Equal(t, 0, over)
@@ -1147,13 +1156,13 @@ func TestGetWarmIPTargetState(t *testing.T) {
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.5"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = mockContext.dataStore.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 
-	short, over, warmIPTargetDefined = mockContext.datastoreTargetState()
+	short, over, warmIPTargetDefined = mockContext.datastoreTargetState(nil)
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, 0, short)
 	assert.Equal(t, 0, over)
 }
 
-func TestGetWarmIPTargetStatewithPDenabled(t *testing.T) {
+func TestGetWarmIPTargetStateWithPDenabled(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 
@@ -1167,11 +1176,11 @@ func TestGetWarmIPTargetStatewithPDenabled(t *testing.T) {
 
 	mockContext.dataStore = testDatastorewithPrefix()
 
-	_, _, warmIPTargetDefined := mockContext.datastoreTargetState()
+	_, _, warmIPTargetDefined := mockContext.datastoreTargetState(nil)
 	assert.False(t, warmIPTargetDefined)
 
 	mockContext.warmIPTarget = 5
-	short, over, warmIPTargetDefined := mockContext.datastoreTargetState()
+	short, over, warmIPTargetDefined := mockContext.datastoreTargetState(nil)
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, 1, short)
 	assert.Equal(t, 0, over)
@@ -1184,7 +1193,7 @@ func TestGetWarmIPTargetStatewithPDenabled(t *testing.T) {
 	_, ipnet, _ = net.ParseCIDR("20.1.1.0/28")
 	_ = mockContext.dataStore.AddIPv4CidrToStore("eni-1", *ipnet, true)
 
-	short, over, warmIPTargetDefined = mockContext.datastoreTargetState()
+	short, over, warmIPTargetDefined = mockContext.datastoreTargetState(nil)
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, 0, short)
 	assert.Equal(t, 1, over)
@@ -1193,7 +1202,7 @@ func TestGetWarmIPTargetStatewithPDenabled(t *testing.T) {
 	_, ipnet, _ = net.ParseCIDR("20.1.1.0/28")
 	_ = mockContext.dataStore.DelIPv4CidrFromStore("eni-1", *ipnet, true)
 
-	short, over, warmIPTargetDefined = mockContext.datastoreTargetState()
+	short, over, warmIPTargetDefined = mockContext.datastoreTargetState(nil)
 	assert.True(t, warmIPTargetDefined)
 	assert.Equal(t, 0, short)
 	assert.Equal(t, 0, over)
@@ -1209,6 +1218,7 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 		warmENITarget int
 		warmIPTarget  int
 		datastore     *datastore.DataStore
+		maxPods       int
 	}
 
 	tests := []struct {
@@ -1216,14 +1226,15 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 		fields fields
 		want   bool
 	}{
-		{"Test new ds, all defaults", fields{14, 4, 1, 0, testDatastore()}, true},
-		{"Test new ds, 0 ENIs", fields{14, 4, 0, 0, testDatastore()}, true},
-		{"Test new ds, 3 warm IPs", fields{14, 4, 0, 3, testDatastore()}, true},
-		{"Test 3 unused IPs, 1 warm", fields{3, 4, 1, 1, datastoreWith3FreeIPs()}, false},
-		{"Test 1 used, 1 warm ENI", fields{3, 4, 1, 0, datastoreWith1Pod1()}, true},
-		{"Test 1 used, 0 warm ENI", fields{3, 4, 0, 0, datastoreWith1Pod1()}, false},
-		{"Test 3 used, 1 warm ENI", fields{3, 4, 1, 0, datastoreWith3Pods()}, true},
-		{"Test 3 used, 0 warm ENI", fields{3, 4, 0, 0, datastoreWith3Pods()}, true},
+		{"Test new ds, all defaults", fields{14, 4, 1, 0, testDatastore(), 500}, true},
+		{"Test new ds, 0 ENIs", fields{14, 4, 0, 0, testDatastore(), 500}, true},
+		{"Test new ds, 3 warm IPs", fields{14, 4, 0, 3, testDatastore(), 500}, true},
+		{"Test 3 unused IPs, 1 warm", fields{3, 4, 1, 1, datastoreWith3FreeIPs(), 500}, false},
+		{"Test 1 used, 1 warm ENI", fields{3, 4, 1, 0, datastoreWith1Pod1(), 500}, true},
+		{"Test 1 used, 0 warm ENI", fields{3, 4, 0, 0, datastoreWith1Pod1(), 500}, false},
+		{"Test 3 used, 1 warm ENI", fields{3, 4, 1, 0, datastoreWith3Pods(), 500}, true},
+		{"Test 3 used, 0 warm ENI", fields{3, 4, 0, 0, datastoreWith3Pods(), 500}, true},
+		{"Test max pods exceeded", fields{3, 4, 0, 5, datastoreWith3Pods(), 3}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1237,8 +1248,9 @@ func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 				warmENITarget:          tt.fields.warmENITarget,
 				warmIPTarget:           tt.fields.warmIPTarget,
 				enablePrefixDelegation: false,
+				maxPods:                tt.fields.maxPods,
 			}
-			if got := c.isDatastorePoolTooLow(); got != tt.want {
+			if got, _ := c.isDatastorePoolTooLow(); got != tt.want {
 				t.Errorf("nodeIPPoolTooLow() = %v, want %v", got, tt.want)
 			}
 		})
@@ -1255,6 +1267,7 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 		maxPrefixesPerENI int
 		warmPrefixTarget  int
 		datastore         *datastore.DataStore
+		maxPods           int
 	}
 
 	tests := []struct {
@@ -1262,13 +1275,14 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 		fields fields
 		want   bool
 	}{
-		{"Test new ds, all defaults", fields{256, 4, 16, 1, testDatastore()}, true},
-		{"Test new ds, 0 ENIs", fields{256, 4, 16, 0, testDatastore()}, true},
-		{"Test 3 unused IPs, 1 warm", fields{256, 4, 16, 1, datastoreWithFreeIPsFromPrefix()}, false},
-		{"Test 1 used, 1 warm Prefix", fields{256, 4, 16, 1, datastoreWith1Pod1FromPrefix()}, true},
-		{"Test 1 used, 0 warm Prefix", fields{256, 4, 16, 0, datastoreWith1Pod1FromPrefix()}, false},
-		{"Test 3 used, 1 warm Prefix", fields{256, 4, 16, 1, datastoreWith3PodsFromPrefix()}, true},
-		{"Test 3 used, 0 warm Prefix", fields{256, 4, 16, 0, datastoreWith3PodsFromPrefix()}, false},
+		{"Test new ds, all defaults", fields{256, 4, 16, 1, testDatastore(), 500}, true},
+		{"Test new ds, 0 ENIs", fields{256, 4, 16, 0, testDatastore(), 500}, true},
+		{"Test 3 unused IPs, 1 warm", fields{256, 4, 16, 1, datastoreWithFreeIPsFromPrefix(), 500}, false},
+		{"Test 1 used, 1 warm Prefix", fields{256, 4, 16, 1, datastoreWith1Pod1FromPrefix(), 500}, true},
+		{"Test 1 used, 0 warm Prefix", fields{256, 4, 16, 0, datastoreWith1Pod1FromPrefix(), 500}, false},
+		{"Test 3 used, 1 warm Prefix", fields{256, 4, 16, 1, datastoreWith3PodsFromPrefix(), 500}, true},
+		{"Test 3 used, 0 warm Prefix", fields{256, 4, 16, 0, datastoreWith3PodsFromPrefix(), 500}, false},
+		{"Test max pods exceeded", fields{256, 4, 16, 1, datastoreWith3PodsFromPrefix(), 4}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1282,8 +1296,9 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 				maxENI:                 tt.fields.maxEni,
 				warmPrefixTarget:       tt.fields.warmPrefixTarget,
 				enablePrefixDelegation: true,
+				maxPods:                tt.fields.maxPods,
 			}
-			if got := c.isDatastorePoolTooLow(); got != tt.want {
+			if got, _ := c.isDatastorePoolTooLow(); got != tt.want {
 				t.Errorf("nodeIPPoolTooLow() = %v, want %v", got, tt.want)
 			}
 		})

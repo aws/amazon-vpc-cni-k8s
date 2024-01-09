@@ -154,10 +154,10 @@ const (
 	ipV4AddrFamily = "4"
 	ipV6AddrFamily = "6"
 
-	//insufficientCidrErrorCooldown is the amount of time reconciler will wait before trying to fetch
-	//more IPs/prefixes for an ENI. With InsufficientCidr we know the subnet doesn't have enough IPs so
-	//instead of retrying every 5s which would lead to increase in EC2 AllocIPAddress calls, we wait for
-	//120 seconds for a retry.
+	// insufficientCidrErrorCooldown is the amount of time reconciler will wait before trying to fetch
+	// more IPs/prefixes for an ENI. With InsufficientCidr we know the subnet doesn't have enough IPs so
+	// instead of retrying every 5s which would lead to increase in EC2 AllocIPAddress calls, we wait for
+	// 120 seconds for a retry.
 	insufficientCidrErrorCooldown = 120 * time.Second
 
 	// envManageUntaggedENI is used to determine if untagged ENIs should be managed or unmanaged
@@ -216,6 +216,7 @@ type IPAMContext struct {
 	lastInsufficientCidrError time.Time
 	enableManageUntaggedMode  bool
 	enablePodIPAnnotation     bool
+	maxPods                   int // maximum number of pods that can be scheduled on the node
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -499,17 +500,26 @@ func (c *IPAMContext) nodeInit() error {
 		}, 30*time.Second)
 	}
 
+	// Make a k8s client request for the current node so that max pods can be derived
+	node, err := k8sapi.GetNode(ctx, c.k8sClient)
+	if err != nil {
+		log.Errorf("Failed to get node", err)
+		podENIErrInc("nodeInit")
+		return err
+	}
+
+	maxPods, isInt64 := node.Status.Capacity.Pods().AsInt64()
+	if !isInt64 {
+		log.Errorf("Failed to parse max pods: %s", node.Status.Capacity.Pods().String)
+		podENIErrInc("nodeInit")
+		return errors.New("error while trying to determine max pods")
+	}
+	c.maxPods = int(maxPods)
+
 	if c.useCustomNetworking {
 		// When custom networking is enabled and a valid ENIConfig is found, IPAMD patches the CNINode
 		// resource for this instance. The operation is safe as enabling/disabling custom networking
 		// requires terminating the previous instance.
-		node, err := k8sapi.GetNode(ctx, c.k8sClient)
-		if err != nil {
-			log.Errorf("Failed to get node", err)
-			podENIErrInc("nodeInit")
-			return err
-		}
-
 		eniConfigName, err := eniconfig.GetNodeSpecificENIConfigName(node)
 		if err == nil && eniConfigName != "default" {
 			// If Security Groups for Pods is enabled, the VPC Resource Controller must also know that Custom Networking is enabled
@@ -528,7 +538,8 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	// On node init, check if datastore pool needs to be increased. If so, attach CIDRs from existing ENIs and attach new ENIs.
-	if !c.disableENIProvisioning && c.isDatastorePoolTooLow() {
+	datastorePoolTooLow, _ := c.isDatastorePoolTooLow()
+	if !c.disableENIProvisioning && datastorePoolTooLow {
 		if err := c.increaseDatastorePool(ctx); err != nil {
 			// Note that the only error currently returned by increaseDatastorePool is an error attaching CIDRs (other than insufficient IPs)
 			podENIErrInc("nodeInit")
@@ -616,6 +627,8 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 		return
 	}
 
+	log.Infof("IP pool manager - max pods: %d, warm IP target: %d, warm prefix target: %d, warm ENI target: %d, minimum IP target: %d",
+		c.maxPods, c.warmIPTarget, c.warmPrefixTarget, c.warmENITarget, c.minimumIPTarget)
 	sleepDuration := ipPoolMonitorInterval / 2
 	ctx := context.Background()
 	for {
@@ -634,9 +647,13 @@ func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
 		c.tryEnableSecurityGroupsForPods(ctx)
 	}
 
-	if c.isDatastorePoolTooLow() {
+	datastorePoolTooLow, stats := c.isDatastorePoolTooLow()
+	// Each iteration, log the current datastore IP stats
+	log.Debugf("IP stats - total IPs: %d, assigned IPs: %d, cooldown IPs: %d", stats.TotalIPs, stats.AssignedIPs, stats.CooldownIPs)
+
+	if datastorePoolTooLow {
 		c.increaseDatastorePool(ctx)
-	} else if c.isDatastorePoolTooHigh() {
+	} else if c.isDatastorePoolTooHigh(stats) {
 		c.decreaseDatastorePool(decreaseIPPoolInterval)
 	}
 	if c.shouldRemoveExtraENIs() {
@@ -646,6 +663,7 @@ func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
 
 // decreaseDatastorePool runs every `interval` and attempts to return unused ENIs and IPs
 func (c *IPAMContext) decreaseDatastorePool(interval time.Duration) {
+	log.Debug("Starting to decrease pool size")
 	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("decreaseDatastorePool").Add(float64(1))
 	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("decreaseDatastorePool").Sub(float64(1))
 
@@ -658,7 +676,6 @@ func (c *IPAMContext) decreaseDatastorePool(interval time.Duration) {
 
 	log.Debugf("Starting to decrease Datastore pool")
 	c.tryUnassignCidrsFromAll()
-
 	c.lastDecreaseIPPool = now
 	c.lastNodeIPPoolAction = now
 
@@ -693,12 +710,11 @@ func (c *IPAMContext) tryFreeENI() {
 
 }
 
-// tryUnassignIPsorPrefixesFromAll determines if there are IPs to free when we have extra IPs beyond the target and warmIPTargetDefined
-// is enabled, deallocate extra IP addresses
+// When warm IP/prefix targets are defined, free extra IPs
 func (c *IPAMContext) tryUnassignCidrsFromAll() {
-	_, over, warmTargetDefined := c.datastoreTargetState()
+	_, over, warmIPTargetsDefined := c.datastoreTargetState(nil)
 	// If WARM IP targets are not defined, check if WARM_PREFIX_TARGET is defined.
-	if !warmTargetDefined {
+	if !warmIPTargetsDefined {
 		over = c.computeExtraPrefixesOverWarmTarget()
 	}
 
@@ -746,24 +762,11 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 	}
 }
 
+// PRECONDITION: isDatastorePoolTooLow returned true
 func (c *IPAMContext) increaseDatastorePool(ctx context.Context) error {
 	log.Debug("Starting to increase pool size")
 	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("increaseDatastorePool").Add(float64(1))
 	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("increaseDatastorePool").Sub(float64(1))
-
-	short, _, warmIPTargetDefined := c.datastoreTargetState()
-	if warmIPTargetDefined && short == 0 {
-		log.Debugf("Skipping increase Datastore pool, warm target reached")
-		return nil
-	}
-
-	if !warmIPTargetDefined {
-		shortPrefix, warmTargetDefined := c.datastorePrefixTargetState()
-		if warmTargetDefined && shortPrefix == 0 {
-			log.Debugf("Skipping increase Datastore pool, warm prefix target reached")
-			return nil
-		}
-	}
 
 	if c.isTerminating() {
 		log.Debug("AWS CNI is terminating, will not try to attach any new IPs or ENIs right now")
@@ -811,11 +814,6 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) error {
 func (c *IPAMContext) updateLastNodeIPPoolAction() {
 	c.lastNodeIPPoolAction = time.Now()
 	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
-	if !c.enablePrefixDelegation {
-		log.Debugf("Successfully increased IP pool: %s", stats)
-	} else {
-		log.Debugf("Successfully increased Prefix pool: %s", stats)
-	}
 	c.logPoolStats(stats)
 }
 
@@ -873,42 +871,28 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 	return nil
 }
 
-// For an ENI, try to fill in missing IPs on an existing ENI with PD disabled
-// try to fill in missing Prefixes on an existing ENI with PD enabled
+// For an ENI, fill in missing IPs or prefixes.
+// PRECONDITION: isDatastorePoolTooLow returned true
 func (c *IPAMContext) tryAssignCidrs() (increasedPool bool, err error) {
-	short, _, warmIPTargetDefined := c.datastoreTargetState()
-	if warmIPTargetDefined && short == 0 {
-		log.Infof("Warm IP target set and short is 0 so not assigning Cidrs (IPs or Prefixes)")
-		return false, nil
-	}
-
-	if !warmIPTargetDefined {
-		shortPrefix, warmTargetDefined := c.datastorePrefixTargetState()
-		if warmTargetDefined && shortPrefix == 0 {
-			log.Infof("Warm prefix target set and short is 0 so not assigning Cidrs (Prefixes)")
-			return false, nil
-		}
-	}
-
-	if !c.enablePrefixDelegation {
-		return c.tryAssignIPs()
-	} else {
+	if c.enablePrefixDelegation {
 		return c.tryAssignPrefixes()
+	} else {
+		return c.tryAssignIPs()
 	}
 }
 
-// For an ENI, try to fill in missing IPs on an existing ENI
+// For an ENI, try to fill in missing IPs on an existing ENI.
+// PRECONDITION: isDatastorePoolTooLow returned true
 func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 	// If WARM_IP_TARGET is set, only proceed if we are short of target
-	short, _, warmIPTargetDefined := c.datastoreTargetState()
-	if warmIPTargetDefined && short == 0 {
+	short, _, warmIPTargetsDefined := c.datastoreTargetState(nil)
+	if warmIPTargetsDefined && short == 0 {
 		return false, nil
 	}
 
-	// If WARM_IP_TARGET is set we only want to allocate up to that target
-	// to avoid overallocating and releasing
+	// If WARM_IP_TARGET is set we only want to allocate up to that target to avoid overallocating and releasing
 	toAllocate := c.maxIPsPerENI
-	if warmIPTargetDefined {
+	if warmIPTargetsDefined {
 		toAllocate = short
 	}
 
@@ -995,6 +979,7 @@ func (c *IPAMContext) assignIPv6Prefix(eniID string) (err error) {
 	return nil
 }
 
+// PRECONDITION: isDatastorePoolTooLow returned true
 func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 	toAllocate := c.getPrefixesNeeded()
 	// Returns an ENI which has space for more prefixes to be attached, but this
@@ -1233,14 +1218,13 @@ func (c *IPAMContext) tryEnableSecurityGroupsForPods(ctx context.Context) {
 	}
 }
 
-// shouldRemoveExtraENIs returns true if we should attempt to find an ENI to free. When WARM_IP_TARGET is set, we
-// always check and do verification in getDeletableENI()
-// PD enabled : If the WARM_PREFIX_TARGET is spread across ENIs and we have more than needed then this function will return true.
-// but if the number of prefixes are on just one ENI and is more than available even then it returns true so getDeletableENI will
+// shouldRemoveExtraENIs returns true if we should attempt to find an ENI to free
+// PD enabled: If the WARM_PREFIX_TARGET is spread across ENIs and we have more than needed, this function will return true.
+// If the number of prefixes are on just one ENI, and there are more than available, it returns true so getDeletableENI will
 // recheck if we need the ENI for prefix target.
 func (c *IPAMContext) shouldRemoveExtraENIs() bool {
-	_, _, warmTargetDefined := c.datastoreTargetState()
-	if warmTargetDefined {
+	// When WARM_IP_TARGET is set, return true as verification is always done in getDeletableENI()
+	if c.warmIPTargetsDefined() {
 		return true
 	}
 
@@ -1256,29 +1240,27 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 	}
 
 	shouldRemoveExtra = available >= (warmTarget)*c.maxIPsPerENI
-
 	if shouldRemoveExtra {
 		c.logPoolStats(stats)
 		log.Debugf("It might be possible to remove extra ENIs because available (%d) >= (ENI/Prefix target + 1 (%d) + 1) * addrsPerENI (%d)", available, warmTarget, c.maxIPsPerENI)
 	} else if c.enablePrefixDelegation {
-		// When prefix target count is reduced, datastorehigh would have deleted extra prefixes over the warm prefix target.
-		// Hence available will be less than (warmTarget)*c.maxIPsPerENI but there can be some extra ENIs which are not used hence see if we can clean it up.
+		// When prefix target count is reduced, datastore would have deleted extra prefixes over the warm prefix target.
+		// Hence available will be less than (warmTarget)*c.maxIPsPerENI, but there can be some extra ENIs which are not used hence see if we can clean it up.
 		shouldRemoveExtra = c.dataStore.CheckFreeableENIexists()
 	}
 	return shouldRemoveExtra
 }
 
 func (c *IPAMContext) computeExtraPrefixesOverWarmTarget() int {
-	over := 0
 	if !c.warmPrefixTargetDefined() {
-		return over
+		return 0
 	}
 
 	freePrefixes := c.dataStore.GetFreePrefixes()
-	over = max(freePrefixes-c.warmPrefixTarget, 0)
+	over := max(freePrefixes-c.warmPrefixTarget, 0)
 
 	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
-	log.Debugf("computeExtraPrefixesOverWarmTarget available %d over %d warm_prefix_target %d", stats.AvailableAddresses(), over, c.warmPrefixTarget)
+	log.Debugf("computeExtraPrefixesOverWarmTarget - available: %d, over: %d, warm_prefix_target: %d", stats.AvailableAddresses(), over, c.warmPrefixTarget)
 	c.logPoolStats(stats)
 	return over
 }
@@ -1666,6 +1648,11 @@ func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIPre
 	return seenIPs
 }
 
+// return true when WARM_IP_TARGET or MINIMUM_IP_TARGET is defined
+func (c *IPAMContext) warmIPTargetsDefined() bool {
+	return c.warmIPTarget != noWarmIPTarget || c.minimumIPTarget != noMinimumIPTarget
+}
+
 // UseCustomNetworkCfg returns whether Pods needs to use pod specific configuration or not.
 func UseCustomNetworkCfg() bool {
 	return parseBoolEnvVar(envCustomNetworkCfg, false)
@@ -1696,7 +1683,6 @@ func dsBackingStorePath() string {
 
 func getWarmIPTarget() int {
 	inputStr, found := os.LookupEnv(envWarmIPTarget)
-
 	if !found {
 		return noWarmIPTarget
 	}
@@ -1712,7 +1698,6 @@ func getWarmIPTarget() int {
 
 func getMinimumIPTarget() int {
 	inputStr, found := os.LookupEnv(envMinimumIPTarget)
-
 	if !found {
 		return noMinimumIPTarget
 	}
@@ -1791,16 +1776,18 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 	return ret
 }
 
-// datastoreTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET,
-// accounting for the MINIMUM_IP_TARGET
-// With prefix delegation this function determines the number of Prefixes `short` or `over`
-func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool) {
-	if c.warmIPTarget == noWarmIPTarget && c.minimumIPTarget == noMinimumIPTarget {
+// datastoreTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET, accounting for the MINIMUM_IP_TARGET.
+// With prefix delegation, this function determines the number of Prefixes `short` or `over`
+func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats) (short int, over int, enabled bool) {
+	if !c.warmIPTargetsDefined() {
 		// there is no WARM_IP_TARGET defined and no MINIMUM_IP_TARGET, fallback to use all IP addresses on ENI
 		return 0, 0, false
 	}
 
-	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
+	// Calculating DataStore stats can be expensive, so allow the caller to optionally pass stats it already calculated
+	if stats == nil {
+		stats = c.dataStore.GetIPStats(ipV4AddrFamily)
+	}
 	available := stats.AvailableAddresses()
 
 	// short is greater than 0 when we have fewer available IPs than the warm IP target
@@ -1834,11 +1821,8 @@ func (c *IPAMContext) datastoreTargetState() (short int, over int, enabled bool)
 		freePrefixes := c.dataStore.GetFreePrefixes()
 		overPrefix := max(min(freePrefixes, stats.TotalPrefixes-prefixNeededForWarmIP), 0)
 		overPrefix = max(min(overPrefix, stats.TotalPrefixes-prefixNeededForMinIP), 0)
-		log.Debugf("Current warm IP stats : target: %d, short(prefixes): %d, over(prefixes): %d, stats: %s", c.warmIPTarget, shortPrefix, overPrefix, stats)
 		return shortPrefix, overPrefix, true
 	}
-	log.Debugf("Current warm IP stats : target: %d, short: %d, over: %d, stats: %s", c.warmIPTarget, short, over, stats)
-
 	return short, over, true
 }
 
@@ -2005,7 +1989,7 @@ func (c *IPAMContext) AnnotatePod(podName string, podNamespace string, key strin
 }
 
 func (c *IPAMContext) tryUnassignIPsFromENIs() {
-	log.Debugf("In tryUnassignIPsFromENIs")
+	log.Debugf("tryUnassignIPsFromENIs")
 	eniInfos := c.dataStore.GetENIInfos()
 	for eniID := range eniInfos.ENIs {
 		c.tryUnassignIPFromENI(eniID)
@@ -2014,7 +1998,6 @@ func (c *IPAMContext) tryUnassignIPsFromENIs() {
 
 func (c *IPAMContext) tryUnassignIPFromENI(eniID string) {
 	freeableIPs := c.dataStore.FreeableIPs(eniID)
-
 	if len(freeableIPs) == 0 {
 		log.Debugf("No freeable IPs")
 		return
@@ -2044,6 +2027,7 @@ func (c *IPAMContext) tryUnassignIPFromENI(eniID string) {
 }
 
 func (c *IPAMContext) tryUnassignPrefixesFromENIs() {
+	log.Debugf("tryUnassignPrefixesFromENIs")
 	eniInfos := c.dataStore.GetENIInfos()
 	for eniID := range eniInfos.ENIs {
 		c.tryUnassignPrefixFromENI(eniID)
@@ -2080,14 +2064,14 @@ func (c *IPAMContext) tryUnassignPrefixFromENI(eniID string) {
 
 func (c *IPAMContext) GetENIResourcesToAllocate() int {
 	var resourcesToAllocate int
-	if !c.enablePrefixDelegation {
+	if c.enablePrefixDelegation {
+		resourcesToAllocate = min(c.getPrefixesNeeded(), c.maxPrefixesPerENI)
+	} else {
 		resourcesToAllocate = c.maxIPsPerENI
-		short, _, warmTargetDefined := c.datastoreTargetState()
+		short, _, warmTargetDefined := c.datastoreTargetState(nil)
 		if warmTargetDefined {
 			resourcesToAllocate = min(short, c.maxIPsPerENI)
 		}
-	} else {
-		resourcesToAllocate = min(c.getPrefixesNeeded(), c.maxPrefixesPerENI)
 	}
 	return resourcesToAllocate
 }
@@ -2122,44 +2106,48 @@ func (c *IPAMContext) hasRoomForEni() bool {
 	return c.dataStore.GetENIs() < (c.maxENI - c.unmanagedENI - trunkEni)
 }
 
-func (c *IPAMContext) isDatastorePoolTooLow() bool {
-	short, _, warmTargetDefined := c.datastoreTargetState()
-	if warmTargetDefined {
-		return short > 0
+func (c *IPAMContext) isDatastorePoolTooLow() (bool, *datastore.DataStoreStats) {
+	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
+	// If max pods has been reached, pool is not too low
+	if stats.TotalIPs >= c.maxPods {
+		return false, stats
 	}
 
-	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
-	available := stats.AvailableAddresses()
+	short, _, warmTargetDefined := c.datastoreTargetState(stats)
+	if warmTargetDefined {
+		return short > 0, stats
+	}
 
 	warmTarget := c.warmENITarget
 	totalIPs := c.maxIPsPerENI
-
 	if c.enablePrefixDelegation {
 		warmTarget = c.warmPrefixTarget
 		_, maxIpsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
 		totalIPs = maxIpsPerPrefix
 	}
 
+	available := stats.AvailableAddresses()
 	poolTooLow := available < totalIPs*warmTarget || (warmTarget == 0 && available == 0)
 	if poolTooLow {
 		log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, warmTarget, totalIPs)
 		c.logPoolStats(stats)
 	}
-	return poolTooLow
+	return poolTooLow, stats
 }
 
-func (c *IPAMContext) isDatastorePoolTooHigh() bool {
-	_, over, warmTargetDefined := c.datastoreTargetState()
+func (c *IPAMContext) isDatastorePoolTooHigh(stats *datastore.DataStoreStats) bool {
+	// NOTE: IPs may be allocated in chunks (full ENIs of prefixes), so the "too-high" condition does not check max pods. The limit is enforced on the allocation side.
+	_, over, warmTargetDefined := c.datastoreTargetState(stats)
 	if warmTargetDefined {
 		return over > 0
 	}
 
-	//For the existing ENIs check if we can cleanup prefixes
+	// For the existing ENIs check if we can cleanup prefixes
 	if c.warmPrefixTargetDefined() {
 		freePrefixes := c.dataStore.GetFreePrefixes()
 		poolTooHigh := freePrefixes > c.warmPrefixTarget
 		if poolTooHigh {
-			log.Debugf("Prefix pool is high so might be able to deallocate : free prefixes %d and warm prefix target %d", freePrefixes, c.warmPrefixTarget)
+			log.Debugf("Prefix pool is high so might be able to deallocate - free prefixes: %d, warm prefix target: %d", freePrefixes, c.warmPrefixTarget)
 		}
 		return poolTooHigh
 	}
@@ -2208,11 +2196,11 @@ func (c *IPAMContext) getPrefixesNeeded() int {
 
 	// TODO - post GA we can evaluate to see if these two calls can be merged.
 	// datastoreTargetState already has complex math so adding Prefix target will make it even more complex.
-	short, _, warmIPTargetDefined := c.datastoreTargetState()
+	short, _, warmIPTargetsDefined := c.datastoreTargetState(nil)
 	shortPrefixes, warmPrefixTargetDefined := c.datastorePrefixTargetState()
 
 	// WARM_IP_TARGET takes precendence over WARM_PREFIX_TARGET
-	if warmIPTargetDefined {
+	if warmIPTargetsDefined {
 		toAllocate = max(toAllocate, short)
 	} else if warmPrefixTargetDefined {
 		toAllocate = max(toAllocate, shortPrefixes)
