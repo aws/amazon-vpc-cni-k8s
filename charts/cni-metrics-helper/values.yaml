@@ -34,3 +34,5 @@ revisionHistoryLimit: 10
 podSecurityContext: {}
 
 containerSecurityContext: {}
+
+podAnnotations: {}

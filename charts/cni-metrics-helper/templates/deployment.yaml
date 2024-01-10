@@ -12,6 +12,12 @@ spec:
       k8s-app: cni-metrics-helper
   template:
     metadata:
+      {{- if .Values.podAnnotations }}
+      annotations:
+      {{- range $key, $value := .Values.podAnnotations }}
+        {{ $key }}: {{ $value | quote }}
+      {{- end }}
+      {{- end }}
       labels:
         k8s-app: cni-metrics-helper
     spec:
