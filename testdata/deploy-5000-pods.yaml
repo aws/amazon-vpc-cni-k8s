@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: hello
-          image: registry.k8s.io/pause:latest
+          image: public.ecr.aws/eks-distro/kubernetes/pause:3.9
           ports:
             - name: http
               containerPort: 80
