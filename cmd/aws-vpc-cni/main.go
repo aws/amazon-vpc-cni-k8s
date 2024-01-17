@@ -270,8 +270,8 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 		if egressEnabled {
 			nodeIP, err = getPrimaryIP(false)
 			if err != nil {
-				log.Errorf("To support IPv6 egress, node primary ENI must have a global IPv6 address, error: %v", err)
-				return err
+				log.Warnf("To support IPv6 egress, node primary ENI must have a global IPv6 address, error: %v", err)
+				egressEnabled = false
 			}
 		}
 	}
