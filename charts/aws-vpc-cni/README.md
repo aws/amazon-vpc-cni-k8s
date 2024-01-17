@@ -122,6 +122,11 @@ for kind in daemonSet clusterRole clusterRoleBinding serviceAccount; do
   kubectl -n kube-system annotate --overwrite $kind aws-node meta.helm.sh/release-namespace=kube-system
   kubectl -n kube-system label --overwrite $kind aws-node app.kubernetes.io/managed-by=Helm
 done
+
+kubectl -n kube-system annotate --overwrite configmap amazon-vpc-cni meta.helm.sh/release-name=YOUR_HELM_RELEASE_NAME_HERE
+kubectl -n kube-system annotate --overwrite configmap amazon-vpc-cni meta.helm.sh/release-namespace=kube-system
+kubectl -n kube-system label --overwrite configmap amazon-vpc-cni app.kubernetes.io/managed-by=Helm
+
 ```
 
 ## Migrate from Helm v2 to Helm v3
