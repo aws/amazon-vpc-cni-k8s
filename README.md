@@ -38,9 +38,9 @@ See [here](./docs/iam-policy.md) for required IAM policies.
 
 * `make` defaults to `make build-linux` that builds the Linux binaries.
 * `unit-test`, `format`,`lint` and `vet` provide ways to run the respective tests/tools and should be run before submitting a PR.
-* `make docker` will create a docker container using the docker-build with the finished binaries, with a tag of `amazon/amazon-k8s-cni:latest`
-* `make docker-build` uses a docker container (golang:1.21.5-6-gcc-al2) to build the binaries.
-* `make docker-unit-tests` uses a docker container (golang:1.21.5-6-gcc-al2) to run all unit tests.
+* `make docker` will create a docker container using `docker buildx` that contains the finished binaries, with a tag of `amazon/amazon-k8s-cni:latest`
+* `make docker-unit-tests` uses a docker container to run all unit tests.
+* builds for all build and test actions run in docker containers based on `golang:1.21.5-6-gcc-al2` unless a different `GOLANG_IMAGE` tag is passed in.
 
 ## Components
 
