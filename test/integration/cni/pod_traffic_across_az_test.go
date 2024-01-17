@@ -266,25 +266,27 @@ func CheckAPIServerConnectivityFromPods(azToPod map[string]coreV1.Pod, azToazId 
 		Expect(api_server_stdout).To(ContainSubstring("APIVersions"))
 		fmt.Printf("API Server %s Connectivity from AZ %s was successful.\n", api_server_url, az)
 
-		putmetricData := cloudwatch.PutMetricDataInput{
-			Namespace: aws.String(MetricNamespace),
-			MetricData: []*cloudwatch.MetricDatum{
-				{
-					MetricName: aws.String(MetricName),
-					Unit:       aws.String("Count"),
-					Value:      aws.Float64(1),
-					Dimensions: []*cloudwatch.Dimension{
-						{
-							Name:  aws.String("AZID"),
-							Value: aws.String(azToazId[az]),
+		if f.Options.PublicCWMetrics {
+			putmetricData := cloudwatch.PutMetricDataInput{
+				Namespace: aws.String(MetricNamespace),
+				MetricData: []*cloudwatch.MetricDatum{
+					{
+						MetricName: aws.String(MetricName),
+						Unit:       aws.String("Count"),
+						Value:      aws.Float64(1),
+						Dimensions: []*cloudwatch.Dimension{
+							{
+								Name:  aws.String("AZID"),
+								Value: aws.String(azToazId[az]),
+							},
 						},
 					},
 				},
-			},
-		}
+			}
 
-		_, err = f.CloudServices.CloudWatch().PutMetricData(&putmetricData)
-		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error while putting metric data for API Server Connectivity from %s", az))
+			_, err = f.CloudServices.CloudWatch().PutMetricData(&putmetricData)
+			Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error while putting metric data for API Server Connectivity from %s", az))
+		}
 	}
 }
 
@@ -300,24 +302,26 @@ func CheckConnectivityBetweenPods(azToPod map[string]coreV1.Pod, azToazId map[st
 					azToPod[az1].Status.PodIP, az1, azToazId[az1], azToPod[az2].Status.PodIP, az2, azToazId[az2])
 				testConnectivity(azToPod[az1], azToPod[az2], testerExpectedStdOut, testerExpectedStdErr, port, getTestCommandFunc)
 
-				putmetricData := cloudwatch.PutMetricDataInput{
-					Namespace: aws.String(MetricNamespace),
-					MetricData: []*cloudwatch.MetricDatum{
-						{
-							MetricName: aws.String(MetricName),
-							Unit:       aws.String("Count"),
-							Value:      aws.Float64(1),
-							Dimensions: []*cloudwatch.Dimension{
-								{
-									Name:  aws.String("AZID"),
-									Value: aws.String(azToazId[az1]),
+				if f.Options.PublicCWMetrics {
+					putmetricData := cloudwatch.PutMetricDataInput{
+						Namespace: aws.String(MetricNamespace),
+						MetricData: []*cloudwatch.MetricDatum{
+							{
+								MetricName: aws.String(MetricName),
+								Unit:       aws.String("Count"),
+								Value:      aws.Float64(1),
+								Dimensions: []*cloudwatch.Dimension{
+									{
+										Name:  aws.String("AZID"),
+										Value: aws.String(azToazId[az1]),
+									},
 								},
 							},
 						},
-					},
+					}
+					_, err := f.CloudServices.CloudWatch().PutMetricData(&putmetricData)
+					Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error while putting metric data for API Server Connectivity from %s", azToazId[az1]))
 				}
-				_, err := f.CloudServices.CloudWatch().PutMetricData(&putmetricData)
-				Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error while putting metric data for API Server Connectivity from %s", azToazId[az1]))
 			}
 		}
 	}
