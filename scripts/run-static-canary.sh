@@ -29,6 +29,7 @@ function run_ginkgo_test() {
       --ng-name-label-key="kubernetes.io/os" \
       --ng-name-label-val="linux" \
       --test-image-registry=$TEST_IMAGE_REGISTRY \
+      --publish-cw-metrics=true \
       $ENDPOINT_OPTION)
 }
 

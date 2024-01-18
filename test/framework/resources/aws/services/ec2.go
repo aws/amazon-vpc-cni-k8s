@@ -47,6 +47,8 @@ type EC2 interface {
 	DeleteKey(keyName string) error
 	DescribeKey(keyName string) (*ec2.DescribeKeyPairsOutput, error)
 	ModifyNetworkInterfaceSecurityGroups(securityGroupIds []*string, networkInterfaceId *string) (*ec2.ModifyNetworkInterfaceAttributeOutput, error)
+
+	DescribeAvailabilityZones() (*ec2.DescribeAvailabilityZonesOutput, error)
 }
 
 type defaultEC2 struct {
@@ -65,6 +67,11 @@ func (d *defaultEC2) DescribeInstanceType(instanceType string) ([]*ec2.InstanceT
 		return nil, fmt.Errorf("no instance type found in the output %s", instanceType)
 	}
 	return describeInstanceOp.InstanceTypes, nil
+}
+
+func (d *defaultEC2) DescribeAvailabilityZones() (*ec2.DescribeAvailabilityZonesOutput, error) {
+	describeAvailabilityZonesInput := &ec2.DescribeAvailabilityZonesInput{}
+	return d.EC2API.DescribeAvailabilityZones(describeAvailabilityZonesInput)
 }
 
 func (d *defaultEC2) ModifyNetworkInterfaceSecurityGroups(securityGroupIds []*string, networkInterfaceId *string) (*ec2.ModifyNetworkInterfaceAttributeOutput, error) {
