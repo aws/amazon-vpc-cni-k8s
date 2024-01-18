@@ -266,7 +266,7 @@ func CheckAPIServerConnectivityFromPods(azToPod map[string]coreV1.Pod, azToazId 
 		Expect(api_server_stdout).To(ContainSubstring("APIVersions"))
 		fmt.Printf("API Server %s Connectivity from AZ %s was successful.\n", api_server_url, az)
 
-		if f.Options.PublicCWMetrics {
+		if f.Options.PublishCWMetrics {
 			putmetricData := cloudwatch.PutMetricDataInput{
 				Namespace: aws.String(MetricNamespace),
 				MetricData: []*cloudwatch.MetricDatum{
@@ -302,7 +302,7 @@ func CheckConnectivityBetweenPods(azToPod map[string]coreV1.Pod, azToazId map[st
 					azToPod[az1].Status.PodIP, az1, azToazId[az1], azToPod[az2].Status.PodIP, az2, azToazId[az2])
 				testConnectivity(azToPod[az1], azToPod[az2], testerExpectedStdOut, testerExpectedStdErr, port, getTestCommandFunc)
 
-				if f.Options.PublicCWMetrics {
+				if f.Options.PublishCWMetrics {
 					putmetricData := cloudwatch.PutMetricDataInput{
 						Namespace: aws.String(MetricNamespace),
 						MetricData: []*cloudwatch.MetricDatum{
