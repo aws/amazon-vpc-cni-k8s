@@ -395,6 +395,7 @@ spec:
         resources:
             requests:
               cpu: 25m
+              memory: 50Mi
         volumeMounts:
           - mountPath: /host/opt/cni/bin
             name: cni-bin-dir
@@ -483,6 +484,7 @@ spec:
           resources:
             requests:
               cpu: 25m
+              memory: 50Mi
           securityContext:
             capabilities:
               add:
@@ -518,6 +520,7 @@ spec:
           resources:
             requests:
               cpu: 25m
+              memory: 50Mi
           securityContext:
             capabilities:
               add:
