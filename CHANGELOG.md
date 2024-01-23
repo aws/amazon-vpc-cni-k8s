@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.16.2
+
+* Bug - [Refactor IPTable Rules](https://github.com/aws/amazon-vpc-cni-k8s/pull/2697) (@jchen6585 )
+* Bug - [log for DelNetworkReply now differentiates between IPv4 and IPv6 addr…](https://github.com/aws/amazon-vpc-cni-k8s/pull/2742) (@zachdorame )
+* Dependency - [revert CNI spec to 0.4.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2757) (@jdn5126 )
+* Dependency - [update crypto to patch CVE-2023-48795](https://github.com/aws/amazon-vpc-cni-k8s/pull/2740) (@haouc )
+* Dependency - [Dependabot updates: aws-sdk-go, containernetworking/plugins, go-logr, grpc, k8s.io/cli-runtime](https://github.com/aws/amazon-vpc-cni-k8s/pull/2738) (@jdn5126 )
+* Enhancement - [Iptables mock](https://github.com/aws/amazon-vpc-cni-k8s/pull/2721) (@jchen6585 )
+
 ## v1.16.0
 
 * Bug - [check if ipv4Addr or ipv6Addr is empty before calling AnnotatePod()](https://github.com/aws/amazon-vpc-cni-k8s/pull/2702) (@zachdorame )
