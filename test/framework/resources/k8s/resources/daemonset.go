@@ -52,7 +52,7 @@ func (d *defaultDaemonSetManager) CreateAndWaitTillDaemonSetIsReady(daemonSet *v
 	}
 
 	// Allow for the cache to sync
-	time.Sleep(utils.PollIntervalShort)
+	time.Sleep(utils.PollIntervalLong)
 
 	err = d.CheckIfDaemonSetIsReady(daemonSet.Namespace, daemonSet.Name)
 	if err != nil {
