@@ -141,7 +141,7 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(retries), 
 	})
 })
 
-// Functio to Az to Pod mapping and Az to AZ ID mapping
+// Function for AZ to Pod mapping and AZ to AZ ID mapping
 func GetAZMappings(nodes coreV1.NodeList) (map[string]coreV1.Pod, map[string]string) {
 	// Map of AZ name to Pod from Daemonset running on nodes
 	azToPod := make(map[string]coreV1.Pod)
@@ -149,6 +149,11 @@ func GetAZMappings(nodes coreV1.NodeList) (map[string]coreV1.Pod, map[string]str
 	azToazID := make(map[string]string)
 
 	describeAZOutput, err := f.CloudServices.EC2().DescribeAvailabilityZones()
+
+	// iterate describe AZ output and populate AZ name to AZ ID mapping
+	for _, az := range describeAZOutput.AvailabilityZones {
+		azToazID[*az.ZoneName] = *az.ZoneId
+	}
 
 	if err != nil {
 		// Don't fail the test if we can't describe AZs. The failure will be caught by the test
@@ -170,7 +175,6 @@ func GetAZMappings(nodes coreV1.NodeList) (map[string]coreV1.Pod, map[string]str
 			azToPod[azName] = interfaceToPodList.PodsOnPrimaryENI[0]
 		}
 
-		azToazID[azName] = *describeAZOutput.AvailabilityZones[i].ZoneId
 	}
 	return azToPod, azToazID
 }
