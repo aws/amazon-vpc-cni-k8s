@@ -24,6 +24,44 @@ var (
 
 const MetricNamespace = "NetworkingAZConnectivity"
 
+var _ = Describe("[STATIC_CANARY] AZ Node Presence", FlakeAttempts(retries), func() {
+
+	Context("While testing AZ availability", func() {
+		It("Ensure nodes are present across AZs and returned by the k8s client.", func() {
+			nodePresenceInAZ := make(map[string]bool)
+
+			nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
+			Expect(err).ToNot(HaveOccurred())
+
+			describeAZOutput, err := f.CloudServices.EC2().DescribeAvailabilityZones()
+			Expect(err).ToNot(HaveOccurred())
+
+			for _, az := range describeAZOutput.AvailabilityZones {
+				nodePresenceInAZ[*az.ZoneName] = false
+			}
+			for i := range nodes.Items {
+				// node label key "topology.kubernetes.io/zone" is well known label populated by cloud controller manager
+				// guaranteed to be present and represent the AZ name
+				// Ref https://kubernetes.io/docs/reference/labels-annotations-taints/#topologykubernetesiozone
+				azName := nodes.Items[i].ObjectMeta.Labels["topology.kubernetes.io/zone"]
+				nodePresenceInAZ[azName] = true
+			}
+
+			// If a node is not present or reported in an AZ, fail this test for coverage.
+			var nodeNotInAZ []string
+			for az, present := range nodePresenceInAZ {
+				if !present {
+					nodeNotInAZ = append(nodeNotInAZ, az)
+				}
+			}
+			if len(nodeNotInAZ) > 0 {
+				Fail(fmt.Sprintf("nodes not detected in AZs: %v", nodeNotInAZ))
+			}
+
+		})
+	})
+})
+
 // Tests pod networking across AZs. It similar to pod connectivity test, but launches a daemonset, so that
 // there is a pod on each node across AZs. It then tests connectivity between pods on different nodes across AZs.
 var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(retries), func() {
