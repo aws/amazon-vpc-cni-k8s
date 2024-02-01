@@ -96,7 +96,10 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(retries), 
 
 		Expect(err).ToNot(HaveOccurred())
 
-		azToTestPod, azToazID = GetAZMappings(nodes)
+		azToTestPod, azToazID, err = GetAZMappings(nodes)
+
+		Expect(err).ToNot(HaveOccurred())
+
 	})
 
 	JustAfterEach(func() {
@@ -142,23 +145,24 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(retries), 
 })
 
 // Function for AZ to Pod mapping and AZ to AZ ID mapping
-func GetAZMappings(nodes coreV1.NodeList) (map[string]coreV1.Pod, map[string]string) {
+func GetAZMappings(nodes coreV1.NodeList) (map[string]coreV1.Pod, map[string]string, error) {
 	// Map of AZ name to Pod from Daemonset running on nodes
 	azToPod := make(map[string]coreV1.Pod)
 	// Map of AZ name to AZ ID
 	azToazID := make(map[string]string)
+	nodePresenceInAZ := make(map[string]bool)
 
 	describeAZOutput, err := f.CloudServices.EC2().DescribeAvailabilityZones()
+
+	if err != nil {
+		// DescribeAvailabilityZones API call failed
+		return nil, nil, err
+	}
 
 	// iterate describe AZ output and populate AZ name to AZ ID mapping
 	for _, az := range describeAZOutput.AvailabilityZones {
 		azToazID[*az.ZoneName] = *az.ZoneId
-	}
-
-	if err != nil {
-		// Don't fail the test if we can't describe AZs. The failure will be caught by the test
-		// We use describe AZs to get the AZ ID for metrics.
-		fmt.Println("Error while describing AZs", err)
+		nodePresenceInAZ[*az.ZoneName] = false
 	}
 
 	for i := range nodes.Items {
@@ -170,13 +174,26 @@ func GetAZMappings(nodes coreV1.NodeList) (map[string]coreV1.Pod, map[string]str
 		// It doesn't matter which ENI the pod is on, as long as it is on the node
 		if len(interfaceToPodList.PodsOnSecondaryENI) > 0 {
 			azToPod[azName] = interfaceToPodList.PodsOnSecondaryENI[0]
+			nodePresenceInAZ[azName] = true
 		}
 		if len(interfaceToPodList.PodsOnPrimaryENI) > 0 {
 			azToPod[azName] = interfaceToPodList.PodsOnPrimaryENI[0]
+			nodePresenceInAZ[azName] = true
 		}
-
 	}
-	return azToPod, azToazID
+
+	// If a node is not present in an AZ, then raise an error
+	var nodeNotInAZ []string
+	for az, present := range nodePresenceInAZ {
+		if !present {
+			nodeNotInAZ = append(nodeNotInAZ, az)
+		}
+	}
+	if len(nodeNotInAZ) > 0 {
+		return azToPod, azToazID, fmt.Errorf("nodes not detected in AZs: %v", nodeNotInAZ)
+	}
+
+	return azToPod, azToazID, nil
 }
 
 var _ = Describe("[STATIC_CANARY] API Server Connectivity from AZs", FlakeAttempts(retries), func() {
@@ -217,7 +234,8 @@ var _ = Describe("[STATIC_CANARY] API Server Connectivity from AZs", FlakeAttemp
 		nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 		Expect(err).ToNot(HaveOccurred())
 
-		azToPod, azToazID = GetAZMappings(nodes)
+		azToPod, azToazID, err = GetAZMappings(nodes)
+		Expect(err).ToNot(HaveOccurred())
 
 	})
 
