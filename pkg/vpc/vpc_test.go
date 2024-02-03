@@ -30,6 +30,10 @@ func TestGetENILimit(t *testing.T) {
 	eniLimit, err = GetENILimit("a1.4xlarge")
 	assert.Equal(t, eniLimit, 8)
 	assert.NoError(t, err)
+
+	eniLimit, err = GetENILimit("p5.48xlarge")
+	assert.Equal(t, eniLimit, 64)
+	assert.NoError(t, err)
 }
 
 func TestGetIPv4Limit(t *testing.T) {

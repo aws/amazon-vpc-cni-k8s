@@ -59,6 +59,13 @@ func GetENILimit(instanceType string) (int, error) {
 		log.Errorf("%s: %s", instanceType, ErrInstanceTypeNotExist)
 		return -1, ErrInstanceTypeNotExist
 	}
+	if len(instance.NetworkCards) > 1 {
+		eniLimit := 0
+		for _, networkCards := range instance.NetworkCards {
+			eniLimit = eniLimit + int(networkCards.MaximumNetworkInterfaces)
+		}
+		return eniLimit, nil
+	}
 	return instance.ENILimit, nil
 }
 
