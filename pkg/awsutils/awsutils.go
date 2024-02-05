@@ -141,6 +141,9 @@ type APIs interface {
 	// GetENILimit returns the number of ENIs that can be attached to an instance
 	GetENILimit() int
 
+	// GetNetworkCards returns the network cards the instance has
+	GetNetworkCards() []vpc.NetworkCard
+
 	// GetPrimaryENImac returns the mac address of the primary ENI
 	GetPrimaryENImac() string
 
@@ -153,11 +156,11 @@ type APIs interface {
 	// WaitForENIAndIPsAttached waits until the ENI has been attached and the secondary IPs have been added
 	WaitForENIAndIPsAttached(eni string, wantedSecondaryIPs int) (ENIMetadata, error)
 
-	//SetCNIunmanaged ENI
-	SetCNIUnmanagedENIs(eniID []string) error
+	//SetMultiCardENIs ENI
+	SetMultiCardENIs(eniID []string) error
 
-	//IsCNIUnmanagedENI
-	IsCNIUnmanagedENI(eniID string) bool
+	//IsMultiCardENI
+	IsMultiCardENI(eniID string) bool
 
 	//IsPrimaryENI
 	IsPrimaryENI(eniID string) bool
@@ -200,7 +203,7 @@ type EC2InstanceMetadataCache struct {
 
 	unmanagedENIs          StringSet
 	useCustomNetworking    bool
-	cniunmanagedENIs       StringSet
+	multiCardENIs          StringSet
 	enablePrefixDelegation bool
 
 	clusterName       string
@@ -497,7 +500,7 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 		newENIs := StringSet{}
 		newENIs.Set(eniIDs)
 
-		tempfilteredENIs := newENIs.Difference(&cache.cniunmanagedENIs)
+		tempfilteredENIs := newENIs.Difference(&cache.multiCardENIs)
 		filteredENIs := tempfilteredENIs.Difference(&cache.unmanagedENIs)
 
 		sgIDsPtrs := aws.StringSlice(sgIDs)
@@ -703,13 +706,16 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int, error) {
 	inst := result.Reservations[0].Instances[0]
 	var device [maxENIs]bool
 	for _, eni := range inst.NetworkInterfaces {
-		if aws.Int64Value(eni.Attachment.DeviceIndex) > maxENIs {
-			log.Warnf("The Device Index %d of the attached ENI %s > instance max slot %d",
-				aws.Int64Value(eni.Attachment.DeviceIndex), aws.StringValue(eni.NetworkInterfaceId),
-				maxENIs)
-		} else {
-			log.Debugf("Discovered device number is used: %d", aws.Int64Value(eni.Attachment.DeviceIndex))
-			device[aws.Int64Value(eni.Attachment.DeviceIndex)] = true
+		// We don't support multi-card yet, so only account for network card zero
+		if aws.Int64Value(eni.Attachment.NetworkCardIndex) == 0 {
+			if aws.Int64Value(eni.Attachment.DeviceIndex) > maxENIs {
+				log.Warnf("The Device Index %d of the attached ENI %s > instance max slot %d",
+					aws.Int64Value(eni.Attachment.DeviceIndex), aws.StringValue(eni.NetworkInterfaceId),
+					maxENIs)
+			} else {
+				log.Debugf("Discovered device number is used: %d", aws.Int64Value(eni.Attachment.DeviceIndex))
+				device[aws.Int64Value(eni.Attachment.DeviceIndex)] = true
+			}
 		}
 	}
 
@@ -780,6 +786,7 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 		DeviceIndex:        aws.Int64(int64(freeDevice)),
 		InstanceId:         aws.String(cache.instanceID),
 		NetworkInterfaceId: aws.String(eniID),
+		NetworkCardIndex:   aws.Int64(0),
 	}
 	start := time.Now()
 	attachOutput, err := cache.ec2SVC.AttachNetworkInterfaceWithContext(context.Background(), attachInput)
@@ -1447,6 +1454,15 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() int {
 	return eniLimit
 }
 
+// GetNetworkCards returns the network cards the instance has
+func (cache *EC2InstanceMetadataCache) GetNetworkCards() []vpc.NetworkCard {
+	networkCards, err := vpc.GetNetworkCards(cache.instanceType)
+	if err != nil {
+		return nil
+	}
+	return networkCards
+}
+
 // GetInstanceHypervisorFamily returns hypervisor of EC2 instance type
 func (cache *EC2InstanceMetadataCache) GetInstanceHypervisorFamily() string {
 	hypervisor, err := vpc.GetHypervisorType(cache.instanceType)
@@ -1922,18 +1938,18 @@ func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterf
 	return innerErr
 }
 
-// SetCNIUnmanagedENIs Set unmanaged ENI set
-func (cache *EC2InstanceMetadataCache) SetCNIUnmanagedENIs(eniID []string) error {
+// SetMultiCardENIs creates a StringSet tracking ENIs not behind the default network card index
+func (cache *EC2InstanceMetadataCache) SetMultiCardENIs(eniID []string) error {
 	if len(eniID) != 0 {
-		cache.cniunmanagedENIs.Set(eniID)
+		cache.multiCardENIs.Set(eniID)
 	}
 	return nil
 }
 
-// IsCNIUnmanagedENI returns if the eni is unmanaged
-func (cache *EC2InstanceMetadataCache) IsCNIUnmanagedENI(eniID string) bool {
+// IsMultiCardENI returns if the ENI is not behind the default network card index (multi-card ENI)
+func (cache *EC2InstanceMetadataCache) IsMultiCardENI(eniID string) bool {
 	if len(eniID) != 0 {
-		return cache.cniunmanagedENIs.Has(eniID)
+		return cache.multiCardENIs.Has(eniID)
 	}
 	return false
 }
