@@ -69,15 +69,15 @@ message DelNetworkReply {
 
 // The service definition.
 service NPBackend {
-  rpc PodAdd (PodAddRequest) returns (PodAddReply) {}
+  rpc PodAdd (EnforceNpRequest) returns (EnforceNpReply) {}
 }
 
-message PodAddRequest {
+message EnforceNpRequest {
   string ClientVersion = 3;
   string K8S_POD_NAME = 1;
   string K8S_POD_NAMESPACE = 2;
 }
 
-message PodAddReply {
+message EnforceNpReply {
   bool Success = 1;
 }
