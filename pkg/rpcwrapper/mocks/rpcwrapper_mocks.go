@@ -26,30 +26,30 @@ import (
 	grpc "google.golang.org/grpc"
 )
 
-// MockRPC is a mock of RPC interface
+// MockRPC is a mock of RPC interface.
 type MockRPC struct {
 	ctrl     *gomock.Controller
 	recorder *MockRPCMockRecorder
 }
 
-// MockRPCMockRecorder is the mock recorder for MockRPC
+// MockRPCMockRecorder is the mock recorder for MockRPC.
 type MockRPCMockRecorder struct {
 	mock *MockRPC
 }
 
-// NewMockRPC creates a new mock instance
+// NewMockRPC creates a new mock instance.
 func NewMockRPC(ctrl *gomock.Controller) *MockRPC {
 	mock := &MockRPC{ctrl: ctrl}
 	mock.recorder = &MockRPCMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockRPC) EXPECT() *MockRPCMockRecorder {
 	return m.recorder
 }
 
-// NewCNIBackendClient mocks base method
+// NewCNIBackendClient mocks base method.
 func (m *MockRPC) NewCNIBackendClient(arg0 *grpc.ClientConn) rpc.CNIBackendClient {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "NewCNIBackendClient", arg0)
@@ -57,8 +57,22 @@ func (m *MockRPC) NewCNIBackendClient(arg0 *grpc.ClientConn) rpc.CNIBackendClien
 	return ret0
 }
 
-// NewCNIBackendClient indicates an expected call of NewCNIBackendClient
+// NewCNIBackendClient indicates an expected call of NewCNIBackendClient.
 func (mr *MockRPCMockRecorder) NewCNIBackendClient(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewCNIBackendClient", reflect.TypeOf((*MockRPC)(nil).NewCNIBackendClient), arg0)
+}
+
+// NewNPBackendClient mocks base method.
+func (m *MockRPC) NewNPBackendClient(arg0 *grpc.ClientConn) rpc.NPBackendClient {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NewNPBackendClient", arg0)
+	ret0, _ := ret[0].(rpc.NPBackendClient)
+	return ret0
+}
+
+// NewNPBackendClient indicates an expected call of NewNPBackendClient.
+func (mr *MockRPCMockRecorder) NewNPBackendClient(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewNPBackendClient", reflect.TypeOf((*MockRPC)(nil).NewNPBackendClient), arg0)
 }
