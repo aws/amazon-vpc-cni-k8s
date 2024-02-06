@@ -19,7 +19,7 @@ import (
 	grpc "google.golang.org/grpc"
 )
 
-// RPC is the wrapper interface for the CNI and network policy agen gRPC backend client
+// RPC is the wrapper interface for the CNI and network policy agent gRPC backend client
 type RPC interface {
 	NewCNIBackendClient(cc *grpc.ClientConn) rpc.CNIBackendClient
 	NewNPBackendClient(cc *grpc.ClientConn) rpc.NPBackendClient
