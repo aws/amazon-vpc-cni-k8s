@@ -59,6 +59,7 @@ The following table lists the configurable parameters for this chart and their d
 | serviceAccount.name          | The name of the ServiceAccount to use                         | nil                |
 | serviceAccount.create        | Specifies whether a ServiceAccount should be created          | true               |
 | serviceAccount.annotations   | Specifies the annotations for ServiceAccount                  | {}                 |
+| podAnnotations               | Specifies the annotations for pods                            | {}                 |
 | revisionHistoryLimit         | The number of revisions to keep                               | 10                 |
 | podSecurityContext           | SecurityContext to set on the pod                             | {}                 |
 | containerSecurityContext     | SecurityContext to set on the container                       | {}                 |

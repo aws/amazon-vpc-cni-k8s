@@ -21,6 +21,7 @@ import (
 
 type CloudWatch interface {
 	GetMetricStatistics(getMetricStatisticsInput *cloudwatch.GetMetricStatisticsInput) (*cloudwatch.GetMetricStatisticsOutput, error)
+	PutMetricData(input *cloudwatch.PutMetricDataInput) (*cloudwatch.PutMetricDataOutput, error)
 }
 
 type defaultCloudWatch struct {
@@ -35,4 +36,8 @@ func NewCloudWatch(session *session.Session) CloudWatch {
 
 func (d *defaultCloudWatch) GetMetricStatistics(getMetricStatisticsInput *cloudwatch.GetMetricStatisticsInput) (*cloudwatch.GetMetricStatisticsOutput, error) {
 	return d.CloudWatchAPI.GetMetricStatistics(getMetricStatisticsInput)
+}
+
+func (d *defaultCloudWatch) PutMetricData(input *cloudwatch.PutMetricDataInput) (*cloudwatch.PutMetricDataOutput, error) {
+	return d.CloudWatchAPI.PutMetricData(input)
 }
