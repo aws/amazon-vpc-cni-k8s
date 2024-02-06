@@ -62,17 +62,3 @@ func (mr *MockRPCMockRecorder) NewCNIBackendClient(arg0 interface{}) *gomock.Cal
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewCNIBackendClient", reflect.TypeOf((*MockRPC)(nil).NewCNIBackendClient), arg0)
 }
-
-// NewNPBackendClient mocks base method.
-func (m *MockRPC) NewNPBackendClient(arg0 *grpc.ClientConn) rpc.NPBackendClient {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewNPBackendClient", arg0)
-	ret0, _ := ret[0].(rpc.NPBackendClient)
-	return ret0
-}
-
-// NewNPBackendClient indicates an expected call of NewNPBackendClient.
-func (mr *MockRPCMockRecorder) NewNPBackendClient(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewNPBackendClient", reflect.TypeOf((*MockRPC)(nil).NewNPBackendClient), arg0)
-}

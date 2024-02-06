@@ -38,8 +38,7 @@ message AddNetworkReply {
   int32 ParentIfIndex = 10;
   // end of pod-eni parameters
 
-  bool EnableNetworkPolicy = 13;
-  // next field: 14
+  // next field: 13
 }
 
 message DelNetworkRequest {
@@ -65,19 +64,4 @@ message DelNetworkReply {
   // end of pod-eni parameters
 
   // next field: 6
-}
-
-// The service definition.
-service NPBackend {
-  rpc EnforceNpToPod (EnforceNpRequest) returns (EnforceNpReply) {}
-}
-
-message EnforceNpRequest {
-  string ClientVersion = 3;
-  string K8S_POD_NAME = 1;
-  string K8S_POD_NAMESPACE = 2;
-}
-
-message EnforceNpReply {
-  bool Success = 1;
 }
