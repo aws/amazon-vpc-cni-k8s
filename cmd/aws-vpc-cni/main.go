@@ -270,8 +270,10 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 		if egressEnabled {
 			nodeIP, err = getPrimaryIP(false)
 			if err != nil {
-				log.Errorf("To support IPv6 egress, node primary ENI must have a global IPv6 address, error: %v", err)
-				return err
+				// When ENABLE_V6_EGRESS is set, but the node is lacking an IPv6 address, log a warning and disable the egress-v6-cni plugin.
+				// This allows IPv4-only nodes to function while still alerting the customer to the possibility of a misconfiguration.
+				log.Warnf("To support IPv6 egress, node primary ENI must have a global IPv6 address, error: %v", err)
+				egressEnabled = false
 			}
 		}
 	}

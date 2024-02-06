@@ -26,14 +26,14 @@ jobs:
       - id: govulncheck
         uses: ./.github/actions/govulncheck
         with:
-          go-version-input: 1.21.5
+          go-version-input: 1.21.6
           go-version-file: go.mod
           cache: false
           repo-checkout: false
       - id: govulncheck-tests-agent
         uses: ./.github/actions/govulncheck
         with:
-          go-version-input: 1.21.5
+          go-version-input: 1.21.6
           go-version-file: test/agent/go.mod
           cache: false
           repo-checkout: false
