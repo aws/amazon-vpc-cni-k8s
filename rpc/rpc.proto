@@ -69,7 +69,7 @@ message DelNetworkReply {
 
 // The service definition.
 service NPBackend {
-  rpc PodAdd (EnforceNpRequest) returns (EnforceNpReply) {}
+  rpc EnforceNpToPod (EnforceNpRequest) returns (EnforceNpReply) {}
 }
 
 message EnforceNpRequest {
