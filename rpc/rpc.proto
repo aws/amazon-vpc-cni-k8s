@@ -38,7 +38,7 @@ message AddNetworkReply {
   int32 ParentIfIndex = 10;
   // end of pod-eni parameters
 
-  bool EnableNetworkPolicy = 13;
+  string NetworkPolicyMode = 13;
   // next field: 14
 }
 
@@ -73,7 +73,6 @@ service NPBackend {
 }
 
 message EnforceNpRequest {
-  string ClientVersion = 3;
   string K8S_POD_NAME = 1;
   string K8S_POD_NAMESPACE = 2;
 }

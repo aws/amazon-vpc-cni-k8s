@@ -42,9 +42,12 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
 )
 
 const ipamdAddress = "127.0.0.1:50051"
+
+const npAgentAddress = "127.0.0.1:50052"
 
 const dummyInterfacePrefix = "dummy"
 
@@ -275,6 +278,34 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	// dummy interface is appended to PrevResult for use during cleanup
 	result.Interfaces = append(result.Interfaces, dummyInterface)
+
+	if utils.IsStrictMode(r.NetworkPolicyMode) {
+		// Set up a connection to the ipamD server.
+		npConn, err := grpcClient.Dial(npAgentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			log.Errorf("Failed to connect to network policy agent: %v", err)
+			return errors.Wrap(err, "add cmd: failed to connect to network policy agent backend server")
+		}
+		defer npConn.Close()
+
+		//Make a GRPC call for network policy agent
+		npc := rpcClient.NewNPBackendClient(npConn)
+
+		npr, err := npc.EnforceNpToPod(context.Background(),
+			&pb.EnforceNpRequest{
+				K8S_POD_NAME:      string(k8sArgs.K8S_POD_NAME),
+				K8S_POD_NAMESPACE: string(k8sArgs.K8S_POD_NAMESPACE),
+			})
+
+		// No need to cleanup IP and network, kubelet will send delete.
+		if err != nil || !npr.Success {
+			log.Errorf("Failed to setup default network policy Pod Name %s and NameSpace %s: GRPC returned - %v Network policy agent returned - %v",
+				string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), err, npr)
+			return errors.New("add cmd: failed to setup network policy in strict mode")
+		}
+
+		log.Debugf("Network Policy agent returned Success : %v", npr.Success)
+	}
 
 	return cniTypes.PrintResult(result, conf.CNIVersion)
 }

@@ -216,17 +216,18 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 		}
 	}
 	resp := rpc.AddNetworkReply{
-		Success:         err == nil,
-		IPv4Addr:        ipv4Addr,
-		IPv6Addr:        ipv6Addr,
-		DeviceNumber:    int32(deviceNumber),
-		UseExternalSNAT: useExternalSNAT,
-		VPCv4CIDRs:      pbVPCV4cidrs,
-		VPCv6CIDRs:      pbVPCV6cidrs,
-		PodVlanId:       int32(vlanID),
-		PodENIMAC:       branchENIMAC,
-		PodENISubnetGW:  podENISubnetGW,
-		ParentIfIndex:   int32(trunkENILinkIndex),
+		Success:           err == nil,
+		IPv4Addr:          ipv4Addr,
+		IPv6Addr:          ipv6Addr,
+		DeviceNumber:      int32(deviceNumber),
+		UseExternalSNAT:   useExternalSNAT,
+		VPCv4CIDRs:        pbVPCV4cidrs,
+		VPCv6CIDRs:        pbVPCV6cidrs,
+		PodVlanId:         int32(vlanID),
+		PodENIMAC:         branchENIMAC,
+		PodENISubnetGW:    podENISubnetGW,
+		ParentIfIndex:     int32(trunkENILinkIndex),
+		NetworkPolicyMode: s.ipamContext.networkPolicyMode,
 	}
 
 	log.Infof("Send AddNetworkReply: IPv4Addr: %s, IPv6Addr: %s, DeviceNumber: %d, err: %v", ipv4Addr, ipv6Addr, deviceNumber, err)
