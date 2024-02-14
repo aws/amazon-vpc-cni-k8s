@@ -280,7 +280,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	result.Interfaces = append(result.Interfaces, dummyInterface)
 
 	if utils.IsStrictMode(r.NetworkPolicyMode) {
-		// Set up a connection to the ipamD server.
+		// Set up a connection to the network policy agent
 		npConn, err := grpcClient.Dial(npAgentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			log.Errorf("Failed to connect to network policy agent: %v", err)
@@ -299,7 +299,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 		// No need to cleanup IP and network, kubelet will send delete.
 		if err != nil || !npr.Success {
-			log.Errorf("Failed to setup default network policy Pod Name %s and NameSpace %s: GRPC returned - %v Network policy agent returned - %v",
+			log.Errorf("Failed to setup default network policy for Pod Name %s and NameSpace %s: GRPC returned - %v Network policy agent returned - %v",
 				string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), err, npr)
 			return errors.New("add cmd: failed to setup network policy in strict mode")
 		}

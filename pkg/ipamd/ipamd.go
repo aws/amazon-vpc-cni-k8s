@@ -177,9 +177,9 @@ const (
 	INSUFFICIENT_CIDR_BLOCKS    = "InsufficientCidrBlocks"
 	INSUFFICIENT_FREE_IP_SUBNET = "InsufficientFreeAddressesInSubnet"
 
-	// envEnableNetworkPolicy is used to enable IPAMD/CNI to send pod create updates to network policy agent.
+	// envEnableNetworkPolicy is used to enable IPAMD/CNI to send pod create events to network policy agent.
 	envNetworkPolicyMode     = "NETWORK_POLICY_ENFORCING_MODE"
-	defaultNetworkPolicyMode = "none"
+	defaultNetworkPolicyMode = "standard"
 )
 
 var log = logger.Get()
