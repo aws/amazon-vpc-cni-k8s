@@ -23,6 +23,7 @@ import (
 	reflect "reflect"
 
 	awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
+	vpc "github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 	ec2 "github.com/aws/aws-sdk-go/service/ec2"
 	gomock "github.com/golang/mock/gomock"
 )
@@ -324,6 +325,20 @@ func (mr *MockAPIsMockRecorder) GetLocalIPv4() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLocalIPv4", reflect.TypeOf((*MockAPIs)(nil).GetLocalIPv4))
 }
 
+// GetNetworkCards mocks base method.
+func (m *MockAPIs) GetNetworkCards() []vpc.NetworkCard {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNetworkCards")
+	ret0, _ := ret[0].([]vpc.NetworkCard)
+	return ret0
+}
+
+// GetNetworkCards indicates an expected call of GetNetworkCards.
+func (mr *MockAPIsMockRecorder) GetNetworkCards() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNetworkCards", reflect.TypeOf((*MockAPIs)(nil).GetNetworkCards))
+}
+
 // GetPrimaryENI mocks base method.
 func (m *MockAPIs) GetPrimaryENI() string {
 	m.ctrl.T.Helper()
@@ -394,18 +409,18 @@ func (mr *MockAPIsMockRecorder) InitCachedPrefixDelegation(arg0 interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitCachedPrefixDelegation", reflect.TypeOf((*MockAPIs)(nil).InitCachedPrefixDelegation), arg0)
 }
 
-// IsCNIUnmanagedENI mocks base method.
-func (m *MockAPIs) IsCNIUnmanagedENI(arg0 string) bool {
+// IsMultiCardENI mocks base method.
+func (m *MockAPIs) IsMultiCardENI(arg0 string) bool {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsCNIUnmanagedENI", arg0)
+	ret := m.ctrl.Call(m, "IsMultiCardENI", arg0)
 	ret0, _ := ret[0].(bool)
 	return ret0
 }
 
-// IsCNIUnmanagedENI indicates an expected call of IsCNIUnmanagedENI.
-func (mr *MockAPIsMockRecorder) IsCNIUnmanagedENI(arg0 interface{}) *gomock.Call {
+// IsMultiCardENI indicates an expected call of IsMultiCardENI.
+func (mr *MockAPIsMockRecorder) IsMultiCardENI(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsCNIUnmanagedENI", reflect.TypeOf((*MockAPIs)(nil).IsCNIUnmanagedENI), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsMultiCardENI", reflect.TypeOf((*MockAPIs)(nil).IsMultiCardENI), arg0)
 }
 
 // IsPrefixDelegationSupported mocks base method.
@@ -464,18 +479,18 @@ func (mr *MockAPIsMockRecorder) RefreshSGIDs(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshSGIDs", reflect.TypeOf((*MockAPIs)(nil).RefreshSGIDs), arg0)
 }
 
-// SetCNIUnmanagedENIs mocks base method.
-func (m *MockAPIs) SetCNIUnmanagedENIs(arg0 []string) error {
+// SetMultiCardENIs mocks base method.
+func (m *MockAPIs) SetMultiCardENIs(arg0 []string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetCNIUnmanagedENIs", arg0)
+	ret := m.ctrl.Call(m, "SetMultiCardENIs", arg0)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// SetCNIUnmanagedENIs indicates an expected call of SetCNIUnmanagedENIs.
-func (mr *MockAPIsMockRecorder) SetCNIUnmanagedENIs(arg0 interface{}) *gomock.Call {
+// SetMultiCardENIs indicates an expected call of SetMultiCardENIs.
+func (mr *MockAPIsMockRecorder) SetMultiCardENIs(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetCNIUnmanagedENIs", reflect.TypeOf((*MockAPIs)(nil).SetCNIUnmanagedENIs), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetMultiCardENIs", reflect.TypeOf((*MockAPIs)(nil).SetMultiCardENIs), arg0)
 }
 
 // SetUnmanagedENIs mocks base method.

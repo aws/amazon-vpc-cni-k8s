@@ -198,13 +198,15 @@ type IPAMContext struct {
 	maxENI                    int
 	maxPrefixesPerENI         int
 	unmanagedENI              int
-	warmENITarget             int
-	warmIPTarget              int
-	minimumIPTarget           int
-	warmPrefixTarget          int
-	primaryIP                 map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
-	lastNodeIPPoolAction      time.Time
-	lastDecreaseIPPool        time.Time
+	numNetworkCards           int
+
+	warmENITarget        int
+	warmIPTarget         int
+	minimumIPTarget      int
+	warmPrefixTarget     int
+	primaryIP            map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
+	lastNodeIPPoolAction time.Time
+	lastDecreaseIPPool   time.Time
 	// reconcileCooldownCache keeps timestamps of the last time an IP address was unassigned from an ENI,
 	// so that we don't reconcile and add it back too quickly if IMDS lags behind reality.
 	reconcileCooldownCache    ReconcileCooldownCache
@@ -346,6 +348,7 @@ func New(k8sClient client.Client) (*IPAMContext, error) {
 	c.enablePodENI = enablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = enablePodIPAnnotation()
+	c.numNetworkCards = len(c.awsClient.GetNetworkCards())
 
 	err = c.awsClient.FetchInstanceTypeLimits()
 	if err != nil {
@@ -408,7 +411,7 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
-	c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
+	c.awsClient.SetMultiCardENIs(metadataResult.MultiCardENIIDs)
 	c.setUnmanagedENIs(metadataResult.TagMap)
 	enis := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 
@@ -1359,7 +1362,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		efaENIs = metadataResult.EFAENIs
 		eniTagMap = metadataResult.TagMap
 		c.setUnmanagedENIs(metadataResult.TagMap)
-		c.awsClient.SetCNIUnmanagedENIs(metadataResult.MultiCardENIIDs)
+		c.awsClient.SetMultiCardENIs(metadataResult.MultiCardENIIDs)
 		attachedENIs = c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 	}
 
@@ -1768,9 +1771,8 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 			log.Debugf("Skipping ENI %s: since it is unmanaged", eni.ENIID)
 			numFiltered++
 			continue
-		} else if c.awsClient.IsCNIUnmanagedENI(eni.ENIID) {
+		} else if c.awsClient.IsMultiCardENI(eni.ENIID) {
 			log.Debugf("Skipping ENI %s: since on non-zero network card", eni.ENIID)
-			numFiltered++
 			continue
 		}
 		ret = append(ret, eni)
