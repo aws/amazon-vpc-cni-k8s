@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.16.3
+
+* Dependency - [Dependabot updates](https://github.com/aws/amazon-vpc-cni-k8s/pull/2775) (@jdn5126 )
+* Dependency - [Upgrade Golang version to 1.21.6](https://github.com/aws/amazon-vpc-cni-k8s/pull/2755) (@jdn5126 )
+* Improvement - [Enable ENABLE_V6_EGRESS on Clusters with Mixed IPv6/IPv4 Subnets](https://github.com/aws/amazon-vpc-cni-k8s/pull/2754) (@sergeylanzman )
+* Improvement - [cni-metrics-helper add podAnnotation value](https://github.com/aws/amazon-vpc-cni-k8s/pull/2748) (@prysmakou )
+* Improvement - [Track max pods, simplify warm IP pool management](https://github.com/aws/amazon-vpc-cni-k8s/pull/2745) (@jdn5126 )
+* Improvement - [Faster eni scaleup](https://github.com/aws/amazon-vpc-cni-k8s/pull/2744) (@jchen6585 )
+
 ## v1.16.2
 
 * Bug - [Refactor IPTable Rules](https://github.com/aws/amazon-vpc-cni-k8s/pull/2697) (@jchen6585 )
@@ -7,7 +16,7 @@
 * Dependency - [revert CNI spec to 0.4.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2757) (@jdn5126 )
 * Dependency - [update crypto to patch CVE-2023-48795](https://github.com/aws/amazon-vpc-cni-k8s/pull/2740) (@haouc )
 * Dependency - [Dependabot updates: aws-sdk-go, containernetworking/plugins, go-logr, grpc, k8s.io/cli-runtime](https://github.com/aws/amazon-vpc-cni-k8s/pull/2738) (@jdn5126 )
-* Enhancement - [Iptables mock](https://github.com/aws/amazon-vpc-cni-k8s/pull/2721) (@jchen6585 )
+* Improvement - [Iptables mock](https://github.com/aws/amazon-vpc-cni-k8s/pull/2721) (@jchen6585 )
 
 ## v1.16.0
 
