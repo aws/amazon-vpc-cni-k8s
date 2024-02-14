@@ -88,6 +88,7 @@ const (
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
 	envVethPrefix            = "AWS_VPC_K8S_CNI_VETHPREFIX"
 	envEniMTU                = "AWS_VPC_ENI_MTU"
+	envPodMTU                = "POD_MTU"
 	envEnablePodEni          = "ENABLE_POD_ENI"
 	envPodSGEnforcingMode    = "POD_SECURITY_GROUP_ENFORCING_MODE"
 	envPluginLogFile         = "AWS_VPC_K8S_PLUGIN_LOG_FILE"
@@ -278,7 +279,10 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 		}
 	}
 	vethPrefix := utils.GetEnv(envVethPrefix, defaultVethPrefix)
-	mtu := utils.GetEnv(envEniMTU, defaultMTU)
+	// Derive pod MTU from ENI MTU by default
+	eniMTU := utils.GetEnv(envEniMTU, defaultMTU)
+	// If pod MTU environment variable is set, overwrite ENI MTU.
+	podMTU := utils.GetEnv(envPodMTU, eniMTU)
 	podSGEnforcingMode := utils.GetEnv(envPodSGEnforcingMode, defaultPodSGEnforcingMode)
 	pluginLogFile := utils.GetEnv(envPluginLogFile, defaultPluginLogFile)
 	pluginLogLevel := utils.GetEnv(envPluginLogLevel, defaultPluginLogLevel)
@@ -286,7 +290,7 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 
 	netconf := string(byteValue)
 	netconf = strings.Replace(netconf, "__VETHPREFIX__", vethPrefix, -1)
-	netconf = strings.Replace(netconf, "__MTU__", mtu, -1)
+	netconf = strings.Replace(netconf, "__MTU__", podMTU, -1)
 	netconf = strings.Replace(netconf, "__PODSGENFORCINGMODE__", podSGEnforcingMode, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGFILE__", pluginLogFile, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGLEVEL__", pluginLogLevel, -1)
