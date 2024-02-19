@@ -47,3 +47,40 @@ func TestGenerateJSONPlusBandwidthAndTuning(t *testing.T) {
 	err := generateJSON(awsConflist, devNull, getPrimaryIPMock)
 	assert.NoError(t, err)
 }
+
+func TestMTUValidation(t *testing.T) {
+	// By default, ENI MTU and pod MTU should be valid
+	assert.True(t, validateMTU(envEniMTU))
+	assert.True(t, validateMTU(envPodMTU))
+
+	// Non-integer values should fail
+	_ = os.Setenv(envEniMTU, "true")
+	_ = os.Setenv(envPodMTU, "abc")
+	assert.False(t, validateMTU(envEniMTU))
+	assert.False(t, validateMTU(envPodMTU))
+
+	// Integer values within IPv4 range should succeed
+	_ = os.Setenv(envEniMTU, "5000")
+	_ = os.Setenv(envPodMTU, "3000")
+	assert.True(t, validateMTU(envEniMTU))
+	assert.True(t, validateMTU(envPodMTU))
+
+	// Integer values outside IPv4 range should fail
+	_ = os.Setenv(envEniMTU, "10000")
+	_ = os.Setenv(envPodMTU, "500")
+	assert.False(t, validateMTU(envEniMTU))
+	assert.False(t, validateMTU(envPodMTU))
+
+	// Integer values within IPv6 range should succeed
+	_ = os.Setenv(envEnIPv6, "true")
+	_ = os.Setenv(envEniMTU, "5000")
+	_ = os.Setenv(envPodMTU, "3000")
+	assert.True(t, validateMTU(envEniMTU))
+	assert.True(t, validateMTU(envPodMTU))
+
+	// Integer values outside IPv6 range should fail
+	_ = os.Setenv(envEniMTU, "10000")
+	_ = os.Setenv(envPodMTU, "1200")
+	assert.False(t, validateMTU(envEniMTU))
+	assert.False(t, validateMTU(envPodMTU))
+}
