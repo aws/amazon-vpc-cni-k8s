@@ -252,7 +252,7 @@ func TestAWSGetFreeDeviceNumberNoDevice(t *testing.T) {
 	for i := 0; i < maxENIs; i++ {
 		var deviceNums [maxENIs]int64
 		deviceNums[i] = int64(i)
-		ec2ENI := &ec2.InstanceNetworkInterface{Attachment: &ec2.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNums[i]}}
+		ec2ENI := &ec2.InstanceNetworkInterface{Attachment: &ec2.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNums[i], NetworkCardIndex: aws.Int64(0)}}
 		ec2ENIs = append(ec2ENIs, ec2ENI)
 	}
 	result := &ec2.DescribeInstancesOutput{
@@ -426,7 +426,7 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 	for i := 0; i < maxENIs; i++ {
 		var deviceNums [maxENIs]int64
 		deviceNums[i] = int64(i)
-		ec2ENI := &ec2.InstanceNetworkInterface{Attachment: &ec2.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNums[i]}}
+		ec2ENI := &ec2.InstanceNetworkInterface{Attachment: &ec2.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNums[i], NetworkCardIndex: aws.Int64(0)}}
 		ec2ENIs = append(ec2ENIs, ec2ENI)
 	}
 	result := &ec2.DescribeInstancesOutput{
