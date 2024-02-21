@@ -114,6 +114,7 @@ var _ = Describe("test host networking", func() {
 				mtuValidationTest(false, NEW_MTU_VAL)
 			})
 			It("POD MTU", func() {
+				Skip("Skip this test until v1.16.4 is released")
 				mtuValidationTest(true, NEW_POD_MTU)
 			})
 		})
