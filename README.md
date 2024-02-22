@@ -226,7 +226,7 @@ Type: Integer as a String
 
 Default: 9001
 
-Used to configure the MTU size for attached ENIs. The valid range is from `576` to `9001`.
+Used to configure the MTU size for attached ENIs. The valid range for IPv4 is from `576` to `9001`, while the valid range for IPv6 is from `1280` to `9001`.
 
 #### `AWS_VPC_K8S_CNI_EXTERNALSNAT`
 
@@ -267,14 +267,14 @@ Default: empty
 Specify a comma-separated list of IPv4 CIDRs to exclude from SNAT. For every item in the list an `iptables` rule and off\-VPC
 IP rule will be applied. If an item is not a valid ipv4 range it will be skipped. This should be used when `AWS_VPC_K8S_CNI_EXTERNALSNAT=false`.
 
-#### `POD_MTU` (v1.x.x+)
+#### `POD_MTU` (v1.16.4+)
 
 Type: Integer as a String
 
-*Note*: The default value is set to AWS_VPC_ENI_MTU, which defaults to 9001 if unset.
+*Note*: If unset, the default value is derived from `AWS_VPC_ENI_MTU`, which defaults to `9001`.
 Default: 9001
 
-Used to configure the MTU size for pod virtual interfaces. The valid range is from `576` to `9001`.
+Used to configure the MTU size for pod virtual interfaces. The valid range for IPv4 is from `576` to `9001`, while the valid range for IPv6 is from `1280` to `9001`.
 
 #### `WARM_ENI_TARGET`
 
@@ -598,7 +598,7 @@ Setting `ANNOTATE_POD_IP` to `true` will allow IPAMD to add an annotation `vpc.a
 
 There is a known [issue](https://github.com/kubernetes/kubernetes/issues/39113) with kubelet taking time to update `Pod.Status.PodIP` leading to calico being blocked on programming the policy. Setting `ANNOTATE_POD_IP` to `true` will enable AWS VPC CNI plugin to add Pod IP as an annotation to the pod spec to address this race condition.
 
-To annotate the pod with pod IP, you will have to add "patch" permission for pods resource in aws-node clusterrole. You can use the below command -
+To annotate the pod with pod IP, you will have to add `patch` permission for pods resource in aws-node clusterrole. You can use the below command -
 
 ```
 cat << EOF > append.yaml
@@ -614,6 +614,8 @@ EOF
 ```
 kubectl apply -f <(cat <(kubectl get clusterrole aws-node -o yaml) append.yaml)
 ```
+
+NOTE: Adding `patch` permissions to the `aws-node` Daemonset increases the security scope for the plugin, so add this permission only after performing a proper security assessment of the tradeoffs.
 
 #### `ENABLE_IPv4` (v1.10.0+)
 

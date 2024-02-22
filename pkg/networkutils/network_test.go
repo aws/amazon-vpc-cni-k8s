@@ -419,19 +419,21 @@ func TestSetupHostNetworkNodePortDisabledAndSNATEnabled(t *testing.T) {
 	}, mockIptables.(*mock_iptables.MockIptables).DataplaneState)
 }
 
-func TestLoadMTUFromEnvTooLow(t *testing.T) {
-	os.Setenv(envMTU, "1")
-	assert.Equal(t, GetEthernetMTU(""), minimumMTU)
+func TestGetEthernetMTU(t *testing.T) {
+	assert.Equal(t, GetEthernetMTU(), defaultMTU)
+
+	os.Setenv(envMTU, "5000")
+	assert.Equal(t, GetEthernetMTU(), 5000)
 }
 
-func TestLoadMTUFromEnv1500(t *testing.T) {
-	os.Setenv(envMTU, "1500")
-	assert.Equal(t, GetEthernetMTU(""), 1500)
-}
+func TestGetPodMTU(t *testing.T) {
+	// For any invalid value, return the default MTU
+	assert.Equal(t, GetPodMTU("abc"), defaultMTU)
+	assert.Equal(t, GetPodMTU("500"), defaultMTU)
+	assert.Equal(t, GetPodMTU("10000"), defaultMTU)
 
-func TestLoadMTUFromEnvTooHigh(t *testing.T) {
-	os.Setenv(envMTU, "65536")
-	assert.Equal(t, GetEthernetMTU(""), maximumMTU)
+	// For any valid value, return the value
+	assert.Equal(t, GetPodMTU("8000"), 8000)
 }
 
 func TestLoadExcludeSNATCIDRsFromEnv(t *testing.T) {
