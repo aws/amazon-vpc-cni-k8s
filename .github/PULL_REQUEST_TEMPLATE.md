@@ -12,23 +12,27 @@
 Add one of the following:
 bug
 cleanup
+dependency update
 documentation
 feature
+improvement
+release workflow
+testing
 -->
 
-**Which issue does this PR fix**:
+**Which issue does this PR fix?**:
+<!-- If an issue # is not available please add repro steps and logs from IPAMD/CNI showing the issue -->
 
 
-**What does this PR do / Why do we need it**:
-
-
-**If an issue # is not available please add repro steps and logs from IPAMD/CNI showing the issue**:
-
+**What does this PR do / Why do we need it?**:
 
 **Testing done on this change**:
 <!--
-output of manual testing/integration tests results and also attach logs
-showing the fix being resolved
+Please paste the output from manual and/or integration test results. Please also attach any relevant logs.
+-->
+
+<!-- 
+If adding a new integration test to any of the CNI release test suites, determine if the test can run against the latest VPC CNI image or if it is dependent on a future version release. If dependent, please call `Skip()` in the test to prevent it from running before the future version is available.
 -->
 
 **Will this PR introduce any new dependencies?**:
