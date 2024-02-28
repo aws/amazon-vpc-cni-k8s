@@ -26,7 +26,6 @@ ARCH=$(go env GOARCH)
 : "${BUILD:=true}"
 : "${RUN_CNI_INTEGRATION_TESTS:=true}"
 : "${RUN_CONFORMANCE:=false}"
-: "${RUN_TESTER_LB_ADDONS:=false}"
 : "${RUN_KOPS_TEST:=false}"
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
@@ -193,7 +192,7 @@ echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
 # Fetch VPC_ID from created cluster
 if [[ "$RUN_KOPS_TEST" == true ]]; then
     INSTANCE_ID=$(kubectl get nodes -l node-role.kubernetes.io/node -o jsonpath='{range .items[*]}{@.metadata.name}{"\n"}' | head -1)
-    VPC_ID=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --no-cli-pager | jq -r '.Reservations[].Instances[].VpcId' )
+    VPC_ID=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" | jq -r '.Reservations[].Instances[].VpcId' )
 else
     DESCRIBE_CLUSTER_OP=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_DEFAULT_REGION")
     VPC_ID=$(echo "$DESCRIBE_CLUSTER_OP" | jq -r '.cluster.resourcesVpcConfig.vpcId')
@@ -285,7 +284,7 @@ if [[ "$DEPROVISION" == true ]]; then
     if [[ "$RUN_KOPS_TEST" == true ]]; then
         down-kops-cluster
     elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
-        eksctl delete cluster $CLUSTER_NAME
+        eksctl delete cluster $CLUSTER_NAME --disable-nodegroup-eviction
         emit_cloudwatch_metric "bottlerocket_test_status" "1"
     elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
         eksctl delete cluster $CLUSTER_NAME

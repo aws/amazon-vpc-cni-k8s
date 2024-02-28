@@ -12,7 +12,7 @@ function load_deveks_cluster_details() {
   echo "loading cluster details $CLUSTER_NAME"
   PROVIDER_ID=$(kubectl get nodes --kubeconfig $KUBE_CONFIG_PATH -ojson | jq -r '.items[0].spec.providerID')
   INSTANCE_ID=${PROVIDER_ID##*/}
-  VPC_ID=$(aws ec2 describe-instances --instance-ids ${INSTANCE_ID} --no-cli-pager | jq -r '.Reservations[].Instances[].VpcId')
+  VPC_ID=$(aws ec2 describe-instances --instance-ids ${INSTANCE_ID} | jq -r '.Reservations[].Instances[].VpcId')
 }
 
 function down-test-cluster() {
@@ -92,7 +92,6 @@ function up-kops-cluster {
     --cloud aws \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
     --networking amazonvpc \
-    --container-runtime containerd \
     --node-count 2 \
     --node-size c5.xlarge \
     --ssh-public-key=~/.ssh/devopsinuse.pub \

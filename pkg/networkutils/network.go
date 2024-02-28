@@ -29,6 +29,7 @@ import (
 	"github.com/coreos/go-iptables/iptables"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -115,7 +116,9 @@ const (
 	defaultConnmark = 0x80
 
 	// envMTU gives a way to configure the MTU size for new ENIs attached. Range is from 576 to 9001.
-	envMTU = "AWS_VPC_ENI_MTU"
+	envMTU     = "AWS_VPC_ENI_MTU"
+	defaultMTU = 9001
+	minMTUv4   = 576
 
 	// envVethPrefix is the environment variable to configure the prefix of the host side veth device names
 	envVethPrefix = "AWS_VPC_K8S_CNI_VETHPREFIX"
@@ -125,10 +128,6 @@ const (
 
 	// envEnIpv6Egress is the environment variable to enable IPv6 egress support on EKS v4 cluster
 	envEnIpv6Egress = "ENABLE_V6_EGRESS"
-
-	// Range of MTU for each ENI and veth pair. Defaults to maximumMTU
-	minimumMTU = 576
-	maximumMTU = 9001
 
 	// number of retries to add a route
 	maxRetryRouteAdd = 5
@@ -198,7 +197,7 @@ func New() NetworkAPIs {
 		typeOfSNAT:             typeOfSNAT(),
 		nodePortSupportEnabled: nodePortSupportEnabled(),
 		mainENIMark:            getConnmark(),
-		mtu:                    GetEthernetMTU(""),
+		mtu:                    GetEthernetMTU(),
 		vethPrefix:             getVethPrefixName(),
 		podSGEnforcingMode:     sgpp.LoadEnforcingModeFromEnv(),
 
@@ -849,7 +848,7 @@ func GetConfigForDebug() map[string]interface{} {
 		envExcludeSNATCIDRs:     parseCIDRString(envExcludeSNATCIDRs),
 		envExternalSNAT:         useExternalSNAT(),
 		envExternalServiceCIDRs: parseCIDRString(envExternalServiceCIDRs),
-		envMTU:                  GetEthernetMTU(""),
+		envMTU:                  GetEthernetMTU(),
 		envVethPrefix:           getVethPrefixName(),
 		envNodePortSupport:      nodePortSupportEnabled(),
 		envRandomizeSNAT:        typeOfSNAT(),
@@ -1293,32 +1292,25 @@ func (n *linuxNetwork) UpdateExternalServiceIpRules(ruleList []netlink.Rule, ext
 	return nil
 }
 
-// GetEthernetMTU gets the MTU setting from AWS_VPC_ENI_MTU if set, or takes the passed in string. Defaults to 9001 if not set.
-func GetEthernetMTU(envMTUValue string) int {
-	inputStr, found := os.LookupEnv(envMTU)
-	if found {
-		envMTUValue = inputStr
+// GetEthernetMTU returns the MTU value to program for ENIs. Note that the value was already validated during container initialization.
+func GetEthernetMTU() int {
+	mtu, _, _ := utils.GetIntFromStringEnvVar(envMTU, defaultMTU)
+	return mtu
+}
+
+// GetPodMTU validates the pod MTU value. If an invalid value is passed, the default is used.
+func GetPodMTU(podMTU string) int {
+	mtu, err := strconv.Atoi(podMTU)
+	if err != nil {
+		log.Errorf("Failed to parse pod MTU %s: %v", mtu, err)
+		return defaultMTU
 	}
-	if envMTUValue != "" {
-		mtu, err := strconv.Atoi(envMTUValue)
-		if err != nil {
-			log.Errorf("Failed to parse %s will use %d: %v", envMTU, maximumMTU, err.Error())
-			return maximumMTU
-		}
-		// Restrict range between jumbo frame and the maximum required size to assemble.
-		// Details in https://tools.ietf.org/html/rfc879 and
-		// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/network_mtu.html
-		if mtu < minimumMTU {
-			log.Errorf("%s is too low: %d. Will use %d", envMTU, mtu, minimumMTU)
-			return minimumMTU
-		}
-		if mtu > maximumMTU {
-			log.Errorf("%s is too high: %d. Will use %d", envMTU, mtu, maximumMTU)
-			return maximumMTU
-		}
-		return mtu
+
+	// Only IPv4 bounds can be enforced, but note that the conflist value is already validated during container initialization.
+	if mtu < minMTUv4 || mtu > defaultMTU {
+		return defaultMTU
 	}
-	return maximumMTU
+	return mtu
 }
 
 // getVethPrefixName gets the name prefix of the veth devices based on the AWS_VPC_K8S_CNI_VETHPREFIX environment variable

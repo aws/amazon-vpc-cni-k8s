@@ -66,7 +66,9 @@ const (
 	defaultAWSconflistFile       = "/app/10-aws.conflist"
 	tmpAWSconflistFile           = "/tmp/10-aws.conflist"
 	defaultVethPrefix            = "eni"
-	defaultMTU                   = "9001"
+	defaultMTU                   = 9001
+	minMTUv4                     = 576
+	minMTUv6                     = 1280
 	defaultEnablePodEni          = false
 	defaultPodSGEnforcingMode    = "strict"
 	defaultPluginLogFile         = "/var/log/aws-routed-eni/plugin.log"
@@ -88,6 +90,7 @@ const (
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
 	envVethPrefix            = "AWS_VPC_K8S_CNI_VETHPREFIX"
 	envEniMTU                = "AWS_VPC_ENI_MTU"
+	envPodMTU                = "POD_MTU"
 	envEnablePodEni          = "ENABLE_POD_ENI"
 	envPodSGEnforcingMode    = "POD_SECURITY_GROUP_ENFORCING_MODE"
 	envPluginLogFile         = "AWS_VPC_K8S_PLUGIN_LOG_FILE"
@@ -278,7 +281,10 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 		}
 	}
 	vethPrefix := utils.GetEnv(envVethPrefix, defaultVethPrefix)
-	mtu := utils.GetEnv(envEniMTU, defaultMTU)
+	// Derive pod MTU from ENI MTU by default (note that values have already been validated)
+	eniMTU := utils.GetEnv(envEniMTU, strconv.Itoa(defaultMTU))
+	// If pod MTU environment variable is set, overwrite ENI MTU.
+	podMTU := utils.GetEnv(envPodMTU, eniMTU)
 	podSGEnforcingMode := utils.GetEnv(envPodSGEnforcingMode, defaultPodSGEnforcingMode)
 	pluginLogFile := utils.GetEnv(envPluginLogFile, defaultPluginLogFile)
 	pluginLogLevel := utils.GetEnv(envPluginLogLevel, defaultPluginLogLevel)
@@ -286,7 +292,7 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 
 	netconf := string(byteValue)
 	netconf = strings.Replace(netconf, "__VETHPREFIX__", vethPrefix, -1)
-	netconf = strings.Replace(netconf, "__MTU__", mtu, -1)
+	netconf = strings.Replace(netconf, "__MTU__", podMTU, -1)
 	netconf = strings.Replace(netconf, "__PODSGENFORCINGMODE__", podSGEnforcingMode, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGFILE__", pluginLogFile, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGLEVEL__", pluginLogLevel, -1)
@@ -385,6 +391,11 @@ func validateEnvVars() bool {
 		return false
 	}
 
+	// Validate MTU value for ENIs and pods
+	if !validateMTU(envEniMTU) || !validateMTU(envPodMTU) {
+		return false
+	}
+
 	prefixDelegationEn := utils.GetBoolAsStringEnvVar(envEnPrefixDelegation, defaultEnPrefixDelegation)
 	warmIPTarget := utils.GetEnv(envWarmIPTarget, "0")
 	warmPrefixTarget := utils.GetEnv(envWarmPrefixTarget, "0")
@@ -394,6 +405,29 @@ func validateEnvVars() bool {
 	if prefixDelegationEn && (warmIPTarget <= "0" && warmPrefixTarget <= "0" && minimumIPTarget <= "0") {
 		log.Errorf("Setting WARM_PREFIX_TARGET = 0 is not supported while WARM_IP_TARGET/MINIMUM_IP_TARGET is not set. Please configure either one of the WARM_{PREFIX/IP}_TARGET or MINIMUM_IP_TARGET env variables")
 		return false
+	}
+	return true
+}
+
+func validateMTU(envVar string) bool {
+	// Validate MTU range based on IP address family
+	enabledIPv6 := utils.GetBoolAsStringEnvVar(envEnIPv6, defaultEnableIPv6)
+
+	mtu, err, input := utils.GetIntFromStringEnvVar(envVar, defaultMTU)
+	if err != nil {
+		log.Errorf("%s MUST be a valid integer. %s is invalid", envVar, input)
+		return false
+	}
+	if enabledIPv6 {
+		if mtu < minMTUv6 || mtu > defaultMTU {
+			log.Errorf("%s cannot be less than 1280 or greater than 9001 in IPv6. %s is invalid", envVar, input)
+			return false
+		}
+	} else {
+		if mtu < minMTUv4 || mtu > defaultMTU {
+			log.Errorf("%s cannot be less than 576 or greater than 9001 in IPv4. %s is invalid", envVar, input)
+			return false
+		}
 	}
 	return true
 }

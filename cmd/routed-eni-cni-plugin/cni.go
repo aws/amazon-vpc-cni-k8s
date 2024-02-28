@@ -144,7 +144,8 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.Wrap(err, "add cmd: failed to load k8s config from arg")
 	}
 
-	mtu := networkutils.GetEthernetMTU(conf.MTU)
+	// Derive pod MTU. Note that the value has already been validated.
+	mtu := networkutils.GetPodMTU(conf.MTU)
 	log.Debugf("MTU value set is %d:", mtu)
 
 	// Set up a connection to the ipamD server.

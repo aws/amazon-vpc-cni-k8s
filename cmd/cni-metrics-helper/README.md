@@ -15,24 +15,33 @@ The following diagram shows how `cni-metrics-helper` works in a cluster:
 As you can see in the diagram, the `cni-metrics-helper` connects to the API Server over https (`tcp/443`), and another connection is created from the API Server to the worker node over http (`tcp/61678`). If you deploy Amazon EKS with the recommended security groups from [Restricting cluster traffic](https://docs.aws.amazon.com/eks/latest/userguide/sec-group-reqs.html#security-group-restricting-cluster-traffic), then make sure that a security group is in place that allows the inbound connection from the API Server to the worker nodes over `tcp/61678`.
 
 Adding the CNI metrics helper will publish the following metrics to CloudWatch:
-```
-"addReqCount",
-"assignIPAddresses",
-"awsAPIErr",
-"awsAPILatency",
-"awsUtilErr",
-"delReqCount",
-"eniAllocated",
-"eniMaxAvailable",
-"ipamdActionInProgress",
-"ipamdErr",
-"maxIPAddresses",
-"podENIErr",
-"reconcileCount",
-"totalIPAddresses",
-"totalIPv4Prefixes",
-"totalAssignedIPv4sPerCidr"
-```
+
+| Metric | Description | Statistic[^1] |
+| ------ | ----------- | ------------- |
+| addReqCount | The number of CNI ADD requests that require an IP address | Sum |
+| assignIPAddresses |  The number of IP addresses assigned to pods | Sum |
+| awsAPIErr | The number of times AWS API returns an error | Sum |
+| awsAPILatency | AWS API call latency in ms | Max |
+| awsUtilErr | The number of errors not handled in awsutils library | Sum |
+| delReqCount | The number of CNI DEL requests | Sum |
+| eniAllocated | The number of ENIs allocated | Sum |
+| eniMaxAvailable | The maximum number of ENIs that can be attached to this instance, accounting for unmanaged ENIs | Sum |
+| ipamdActionInProgress | The number of ipamd actions in progress | Sum |
+| ipamdErr | The number of errors encountered in ipamd | Sum |
+| maxIPAddresses | The maximum number of IP addresses that can be allocated to the instance | Sum | 
+| podENIErr | The number of errors encountered while managing ENIs for pods | Sum |
+| reconcileCount | The number of times ipamd reconciles on ENIs and IP/Prefix addresses | Sum |
+| totalIPAddresses | The number of IPs allocated for pods | Sum |
+| totalIPv4Prefixes | The total number of IPv4 prefixes | Sum |
+| totalAssignedIPv4sPerCidr | The total number of IP addresses assigned per cidr | Sum |
+| forceRemoveENI | The number of ENIs force removed while they had assigned pods | Sum |
+| forceRemoveIPs | The number of IPs force removed while they had assigned pods | Sum |
+| ec2ApiReqCount | The number of requests made to EC2 APIs by CNI | Sum |
+| ec2ApiErrCount | The number of failed EC2 API requests | Sum |
+
+[^1]: This column indicates how the metric has been aggregated across all nodes
+  Sum: For datapoints from all nodes, this is the summation of those datapoints
+  Max: For datapoints from all nodes, this is the maximum value of those datapoints
 
 ## Using IRSA
 As per [AWS EKS Security Best Practice](https://docs.aws.amazon.com/eks/latest/userguide/best-practices-security.html), if you are using IRSA for pods then following requirements must be satisfied to succesfully publish metrics to CloudWatch

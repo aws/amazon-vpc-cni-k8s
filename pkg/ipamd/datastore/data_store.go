@@ -978,8 +978,8 @@ func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENI {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	for _, eni := range ds.eniPool {
-		if skipPrimary && eni.IsPrimary {
-			ds.log.Debugf("Skip the primary ENI for need IP check")
+		if (skipPrimary && eni.IsPrimary) || eni.IsTrunk {
+			ds.log.Debugf("Skip needs IP check for trunk ENI of primary ENI when Custom Networking is enabled")
 			continue
 		}
 		if len(eni.AvailableIPv4Cidrs) < maxIPperENI {
