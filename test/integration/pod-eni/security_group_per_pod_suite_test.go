@@ -28,8 +28,6 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-const AmazonEKSVPCResourceControllerARN = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
-
 var (
 	f   *framework.Framework
 	err error
