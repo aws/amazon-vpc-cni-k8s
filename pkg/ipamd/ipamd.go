@@ -660,11 +660,7 @@ func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
 	log.Debugf("IP stats - total IPs: %d, assigned IPs: %d, cooldown IPs: %d", stats.TotalIPs, stats.AssignedIPs, stats.CooldownIPs)
 
 	if datastorePoolTooLow {
-		// Allow for rapid scale up to decrease time it takes for pod to retrieve an ip
-		// but conservative scale down to account for pod churn
-		for datastorePoolStillTooLow := datastorePoolTooLow; datastorePoolStillTooLow; datastorePoolStillTooLow, _ = c.isDatastorePoolTooLow() {
-			c.increaseDatastorePool(ctx)
-		}
+		c.increaseDatastorePool(ctx)
 	} else if c.isDatastorePoolTooHigh(stats) {
 		c.decreaseDatastorePool(decreaseIPPoolInterval)
 	}
