@@ -44,7 +44,6 @@ jobs:
           RUN_CNI_INTEGRATION_TESTS: false
           PERFORMANCE_TEST_S3_BUCKET_NAME: cni-performance-tests
           RUN_PERFORMANCE_TESTS: true
-          RUN_TESTER_LB_ADDONS: true
         run: |
           ./scripts/run-integration-tests.sh
       - name: Run kops tests
@@ -54,9 +53,8 @@ jobs:
           ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
           RUN_CNI_INTEGRATION_TESTS: false
           RUN_KOPS_TEST: true
-          RUN_TESTER_LB_ADDONS: true
-          K8S_VERSION: 1.29.0-alpha.2
-          KOPS_VERSION: v1.29.0-alpha.2
+          K8S_VERSION: 1.29.0-alpha.3
+          KOPS_VERSION: v1.29.0-alpha.3
         run: |
           ./scripts/run-integration-tests.sh
         if: always()
@@ -67,7 +65,6 @@ jobs:
           ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
           RUN_CNI_INTEGRATION_TESTS: false
           RUN_BOTTLEROCKET_TEST: true
-          RUN_TESTER_LB_ADDONS: true
         run: |
           ./scripts/run-integration-tests.sh
         if: always()

@@ -41,16 +41,19 @@ const (
 const (
 	AWS_VPC_ENI_MTU            = "AWS_VPC_ENI_MTU"
 	AWS_VPC_K8S_CNI_VETHPREFIX = "AWS_VPC_K8S_CNI_VETHPREFIX"
+	POD_MTU                    = "POD_MTU"
 	NEW_MTU_VAL                = 1300
+	NEW_POD_MTU                = 1280
 	NEW_VETH_PREFIX            = "veth"
 	DEFAULT_MTU_VAL            = "9001"
 	DEFAULT_VETH_PREFIX        = "eni"
+	podLabelKey                = "app"
+	podLabelVal                = "host-networking-test"
 )
 
+var err error
+
 var _ = Describe("[CANARY] test ipv6 host netns setup", func() {
-	var err error
-	var podLabelKey = "app"
-	var podLabelVal = "host-networking-test"
 
 	Context("when pods using IP from primary ENI are created", func() {
 		AfterEach(func() {
@@ -58,6 +61,10 @@ var _ = Describe("[CANARY] test ipv6 host netns setup", func() {
 				AWS_VPC_ENI_MTU:            DEFAULT_MTU_VAL,
 				AWS_VPC_K8S_CNI_VETHPREFIX: DEFAULT_VETH_PREFIX,
 			})
+			k8sUtils.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
+				utils.AwsNodeNamespace, utils.AwsNodeName, map[string]struct{}{
+					"POD_MTU": {},
+				})
 			// After updating daemonset pod, we must wait until conflist is updated so that container-runtime calls CNI ADD with the latest VETH prefix and MTU.
 			// Otherwise, the stale value can cause failures in future test cases.
 			time.Sleep(utils.PollIntervalMedium)
@@ -98,51 +105,14 @@ var _ = Describe("[CANARY] test ipv6 host netns setup", func() {
 			ValidateHostNetworking(NetworkingTearDownSucceeds, input)
 		})
 
-		It("Validate host netns setup after changing MTU and Veth Prefix", func() {
-			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
-				Replicas(2).
-				PodLabel(podLabelKey, podLabelVal).
-				NodeName(primaryNode.Name).
-				Build()
-
-			By("Configuring Veth Prefix and MTU value on aws-node daemonset")
-			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
-				AWS_VPC_ENI_MTU:            strconv.Itoa(NEW_MTU_VAL),
-				AWS_VPC_K8S_CNI_VETHPREFIX: NEW_VETH_PREFIX,
+		Context("Validate Host Networking setup after changing Veth Prefix and", func() {
+			It("ENI MTU", func() {
+				mtuValidationTest(false, NEW_MTU_VAL)
 			})
-			// After updating daemonset pod, we must wait until conflist is updated so that container-runtime calls CNI ADD with the new VETH prefix and MTU.
-			time.Sleep(utils.PollIntervalMedium)
-
-			By("creating a deployment to launch pods")
-			deployment, err = f.K8sResourceManagers.DeploymentManager().
-				CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
-			Expect(err).ToNot(HaveOccurred())
-
-			By("getting the list of pods using IP from primary and secondary ENI")
-			interfaceTypeToPodList :=
-				GetIPv6Pods(podLabelKey, podLabelVal)
-
-			By("generating the pod networking validation input to be passed to tester")
-			podNetworkingValidationInput := GetIPv6PodNetworkingValidationInput(interfaceTypeToPodList)
-			podNetworkingValidationInput.VethPrefix = NEW_VETH_PREFIX
-			podNetworkingValidationInput.ValidateMTU = true
-			podNetworkingValidationInput.MTU = NEW_MTU_VAL
-			input, err := podNetworkingValidationInput.Serialize()
-			Expect(err).NotTo(HaveOccurred())
-
-			By("validating host networking setup is setup correctly with MTU check as well")
-			ValidateHostNetworking(NetworkingSetupSucceeds, input)
-
-			By("deleting the deployment to test teardown")
-			err = f.K8sResourceManagers.DeploymentManager().
-				DeleteAndWaitTillDeploymentIsDeleted(deployment)
-			Expect(err).ToNot(HaveOccurred())
-
-			By("waiting to allow CNI to tear down networking for terminated pods")
-			time.Sleep(time.Second * 60)
-
-			By("validating host networking is teared down correctly")
-			ValidateHostNetworking(NetworkingTearDownSucceeds, input)
+			It("POD MTU", func() {
+				Skip("Skip this test until v1.16.4 is released")
+				mtuValidationTest(true, NEW_POD_MTU)
+			})
 		})
 	})
 
@@ -276,4 +246,60 @@ func GetIPv6PodNetworkingValidationInput(podList v1.PodList) input.PodNetworking
 		})
 	}
 	return ip
+}
+
+func mtuValidationTest(usePodMTU bool, mtuVal int) {
+	deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
+		Replicas(2).
+		PodLabel(podLabelKey, podLabelVal).
+		NodeName(primaryNode.Name).
+		Build()
+
+	if usePodMTU {
+		By("Configuring Veth Prefix and Pod MTU value on aws-node daemonset")
+		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
+			AWS_VPC_ENI_MTU:            strconv.Itoa(NEW_MTU_VAL),
+			POD_MTU:                    strconv.Itoa(NEW_POD_MTU),
+			AWS_VPC_K8S_CNI_VETHPREFIX: NEW_VETH_PREFIX,
+		})
+	} else {
+		By("Configuring Veth Prefix and ENI MTU value on aws-node daemonset")
+		k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
+			AWS_VPC_ENI_MTU:            strconv.Itoa(NEW_MTU_VAL),
+			AWS_VPC_K8S_CNI_VETHPREFIX: NEW_VETH_PREFIX,
+		})
+	}
+	// After updating daemonset pod, we must wait until conflist is updated so that container-runtime calls CNI ADD with the new VETH prefix and MTU.
+	time.Sleep(utils.PollIntervalMedium)
+
+	By("creating a deployment to launch pods")
+	deployment, err = f.K8sResourceManagers.DeploymentManager().
+		CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
+	Expect(err).ToNot(HaveOccurred())
+
+	By("getting the list of pods using IP from primary and secondary ENI")
+	interfaceTypeToPodList :=
+		GetIPv6Pods(podLabelKey, podLabelVal)
+
+	By("generating the pod networking validation input to be passed to tester")
+	podNetworkingValidationInput := GetIPv6PodNetworkingValidationInput(interfaceTypeToPodList)
+	podNetworkingValidationInput.VethPrefix = NEW_VETH_PREFIX
+	podNetworkingValidationInput.ValidateMTU = true
+	podNetworkingValidationInput.MTU = mtuVal
+	input, err := podNetworkingValidationInput.Serialize()
+	Expect(err).NotTo(HaveOccurred())
+
+	By("validating host networking setup is setup correctly with MTU check as well")
+	ValidateHostNetworking(NetworkingSetupSucceeds, input)
+
+	By("deleting the deployment to test teardown")
+	err = f.K8sResourceManagers.DeploymentManager().
+		DeleteAndWaitTillDeploymentIsDeleted(deployment)
+	Expect(err).ToNot(HaveOccurred())
+
+	By("waiting to allow CNI to tear down networking for terminated pods")
+	time.Sleep(time.Second * 60)
+
+	By("validating host networking is teared down correctly")
+	ValidateHostNetworking(NetworkingTearDownSucceeds, input)
 }

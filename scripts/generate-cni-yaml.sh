@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 PLATFORM=$(uname | tr '[:upper:]' '[:lower:]')
-HELM_VERSION="3.14.0"
+HELM_VERSION="3.14.2"
 NAMESPACE="kube-system"
 
 MAKEFILEPATH=$SCRIPTPATH/../Makefile

@@ -455,12 +455,12 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
-	if c.enablePodENI {
-		// Try to patch CNINode with Security Groups for Pods feature.
-		c.tryEnableSecurityGroupsForPods(ctx)
-	}
-
 	if c.enableIPv6 {
+		// Security Groups for Pods cannot be enabled for IPv4 at this point, as Custom Networking must be enabled first.
+		if c.enablePodENI {
+			// Try to patch CNINode with Security Groups for Pods feature.
+			c.tryEnableSecurityGroupsForPods(ctx)
+		}
 		// We will not support upgrading/converting an existing IPv4 cluster to operate in IPv6 mode. So, we will always
 		// start with a clean slate in IPv6 mode. We also do not have to deal with dynamic update of Prefix Delegation
 		// feature in IPv6 mode as we do not support (yet) a non-PD v6 option. In addition, we do not support custom
@@ -538,6 +538,11 @@ func (c *IPAMContext) nodeInit() error {
 		} else {
 			log.Errorf("No ENIConfig could be found for this node", err)
 		}
+	}
+
+	// Now that Custom Networking is (potentially) enabled, Security Groups for Pods can be enabled for IPv4 nodes.
+	if c.enablePodENI {
+		c.tryEnableSecurityGroupsForPods(ctx)
 	}
 
 	// On node init, check if datastore pool needs to be increased. If so, attach CIDRs from existing ENIs and attach new ENIs.
@@ -655,11 +660,7 @@ func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
 	log.Debugf("IP stats - total IPs: %d, assigned IPs: %d, cooldown IPs: %d", stats.TotalIPs, stats.AssignedIPs, stats.CooldownIPs)
 
 	if datastorePoolTooLow {
-		// Allow for rapid scale up to decrease time it takes for pod to retrieve an ip
-		// but conservative scale down to account for pod churn
-		for datastorePoolStillTooLow := datastorePoolTooLow; datastorePoolStillTooLow; datastorePoolStillTooLow, _ = c.isDatastorePoolTooLow() {
-			c.increaseDatastorePool(ctx)
-		}
+		c.increaseDatastorePool(ctx)
 	} else if c.isDatastorePoolTooHigh(stats) {
 		c.decreaseDatastorePool(decreaseIPPoolInterval)
 	}
