@@ -176,6 +176,10 @@ const (
 	// aws error codes for insufficient IP address scenario
 	INSUFFICIENT_CIDR_BLOCKS    = "InsufficientCidrBlocks"
 	INSUFFICIENT_FREE_IP_SUBNET = "InsufficientFreeAddressesInSubnet"
+
+	// envEnableNetworkPolicy is used to enable IPAMD/CNI to send pod create events to network policy agent.
+	envNetworkPolicyMode     = "NETWORK_POLICY_ENFORCING_MODE"
+	defaultNetworkPolicyMode = "standard"
 )
 
 var log = logger.Get()
@@ -219,6 +223,7 @@ type IPAMContext struct {
 	enableManageUntaggedMode  bool
 	enablePodIPAnnotation     bool
 	maxPods                   int // maximum number of pods that can be scheduled on the node
+	networkPolicyMode         string
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -349,6 +354,11 @@ func New(k8sClient client.Client) (*IPAMContext, error) {
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = enablePodIPAnnotation()
 	c.numNetworkCards = len(c.awsClient.GetNetworkCards())
+
+	c.networkPolicyMode, err = getNetworkPolicyMode()
+	if err != nil {
+		return nil, err
+	}
 
 	err = c.awsClient.FetchInstanceTypeLimits()
 	if err != nil {
@@ -1733,6 +1743,16 @@ func disableLeakedENICleanup() bool {
 
 func enablePodENI() bool {
 	return utils.GetBoolAsStringEnvVar(envEnablePodENI, false)
+}
+
+func getNetworkPolicyMode() (string, error) {
+	if value := os.Getenv(envNetworkPolicyMode); value != "" {
+		if utils.IsValidNetworkPolicyEnforcingMode(value) {
+			return value, nil
+		}
+		return "", errors.New("invalid Network policy mode, supported modes: none, strict, standard")
+	}
+	return defaultNetworkPolicyMode, nil
 }
 
 func usePrefixDelegation() bool {
