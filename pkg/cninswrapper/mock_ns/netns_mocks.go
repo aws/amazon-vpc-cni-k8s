@@ -25,30 +25,30 @@ import (
 	gomock "github.com/golang/mock/gomock"
 )
 
-// MockNetNS is a mock of NetNS interface
+// MockNetNS is a mock of NetNS interface.
 type MockNetNS struct {
 	ctrl     *gomock.Controller
 	recorder *MockNetNSMockRecorder
 }
 
-// MockNetNSMockRecorder is the mock recorder for MockNetNS
+// MockNetNSMockRecorder is the mock recorder for MockNetNS.
 type MockNetNSMockRecorder struct {
 	mock *MockNetNS
 }
 
-// NewMockNetNS creates a new mock instance
+// NewMockNetNS creates a new mock instance.
 func NewMockNetNS(ctrl *gomock.Controller) *MockNetNS {
 	mock := &MockNetNS{ctrl: ctrl}
 	mock.recorder = &MockNetNSMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockNetNS) EXPECT() *MockNetNSMockRecorder {
 	return m.recorder
 }
 
-// Close mocks base method
+// Close mocks base method.
 func (m *MockNetNS) Close() error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Close")
@@ -56,13 +56,13 @@ func (m *MockNetNS) Close() error {
 	return ret0
 }
 
-// Close indicates an expected call of Close
+// Close indicates an expected call of Close.
 func (mr *MockNetNSMockRecorder) Close() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockNetNS)(nil).Close))
 }
 
-// Do mocks base method
+// Do mocks base method.
 func (m *MockNetNS) Do(arg0 func(ns.NetNS) error) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Do", arg0)
@@ -70,13 +70,13 @@ func (m *MockNetNS) Do(arg0 func(ns.NetNS) error) error {
 	return ret0
 }
 
-// Do indicates an expected call of Do
+// Do indicates an expected call of Do.
 func (mr *MockNetNSMockRecorder) Do(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Do", reflect.TypeOf((*MockNetNS)(nil).Do), arg0)
 }
 
-// Fd mocks base method
+// Fd mocks base method.
 func (m *MockNetNS) Fd() uintptr {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Fd")
@@ -84,13 +84,13 @@ func (m *MockNetNS) Fd() uintptr {
 	return ret0
 }
 
-// Fd indicates an expected call of Fd
+// Fd indicates an expected call of Fd.
 func (mr *MockNetNSMockRecorder) Fd() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Fd", reflect.TypeOf((*MockNetNS)(nil).Fd))
 }
 
-// Path mocks base method
+// Path mocks base method.
 func (m *MockNetNS) Path() string {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Path")
@@ -98,13 +98,13 @@ func (m *MockNetNS) Path() string {
 	return ret0
 }
 
-// Path indicates an expected call of Path
+// Path indicates an expected call of Path.
 func (mr *MockNetNSMockRecorder) Path() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Path", reflect.TypeOf((*MockNetNS)(nil).Path))
 }
 
-// Set mocks base method
+// Set mocks base method.
 func (m *MockNetNS) Set() error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Set")
@@ -112,7 +112,7 @@ func (m *MockNetNS) Set() error {
 	return ret0
 }
 
-// Set indicates an expected call of Set
+// Set indicates an expected call of Set.
 func (mr *MockNetNSMockRecorder) Set() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Set", reflect.TypeOf((*MockNetNS)(nil).Set))

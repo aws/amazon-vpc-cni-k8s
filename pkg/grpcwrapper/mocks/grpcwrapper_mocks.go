@@ -25,30 +25,30 @@ import (
 	grpc "google.golang.org/grpc"
 )
 
-// MockGRPC is a mock of GRPC interface
+// MockGRPC is a mock of GRPC interface.
 type MockGRPC struct {
 	ctrl     *gomock.Controller
 	recorder *MockGRPCMockRecorder
 }
 
-// MockGRPCMockRecorder is the mock recorder for MockGRPC
+// MockGRPCMockRecorder is the mock recorder for MockGRPC.
 type MockGRPCMockRecorder struct {
 	mock *MockGRPC
 }
 
-// NewMockGRPC creates a new mock instance
+// NewMockGRPC creates a new mock instance.
 func NewMockGRPC(ctrl *gomock.Controller) *MockGRPC {
 	mock := &MockGRPC{ctrl: ctrl}
 	mock.recorder = &MockGRPCMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockGRPC) EXPECT() *MockGRPCMockRecorder {
 	return m.recorder
 }
 
-// Dial mocks base method
+// Dial mocks base method.
 func (m *MockGRPC) Dial(arg0 string, arg1 ...grpc.DialOption) (*grpc.ClientConn, error) {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{arg0}
@@ -61,7 +61,7 @@ func (m *MockGRPC) Dial(arg0 string, arg1 ...grpc.DialOption) (*grpc.ClientConn,
 	return ret0, ret1
 }
 
-// Dial indicates an expected call of Dial
+// Dial indicates an expected call of Dial.
 func (mr *MockGRPCMockRecorder) Dial(arg0 interface{}, arg1 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0}, arg1...)

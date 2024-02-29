@@ -24,30 +24,30 @@ import (
 	gomock "github.com/golang/mock/gomock"
 )
 
-// MockProcSys is a mock of ProcSys interface
+// MockProcSys is a mock of ProcSys interface.
 type MockProcSys struct {
 	ctrl     *gomock.Controller
 	recorder *MockProcSysMockRecorder
 }
 
-// MockProcSysMockRecorder is the mock recorder for MockProcSys
+// MockProcSysMockRecorder is the mock recorder for MockProcSys.
 type MockProcSysMockRecorder struct {
 	mock *MockProcSys
 }
 
-// NewMockProcSys creates a new mock instance
+// NewMockProcSys creates a new mock instance.
 func NewMockProcSys(ctrl *gomock.Controller) *MockProcSys {
 	mock := &MockProcSys{ctrl: ctrl}
 	mock.recorder = &MockProcSysMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockProcSys) EXPECT() *MockProcSysMockRecorder {
 	return m.recorder
 }
 
-// Get mocks base method
+// Get mocks base method.
 func (m *MockProcSys) Get(arg0 string) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Get", arg0)
@@ -56,13 +56,13 @@ func (m *MockProcSys) Get(arg0 string) (string, error) {
 	return ret0, ret1
 }
 
-// Get indicates an expected call of Get
+// Get indicates an expected call of Get.
 func (mr *MockProcSysMockRecorder) Get(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockProcSys)(nil).Get), arg0)
 }
 
-// Set mocks base method
+// Set mocks base method.
 func (m *MockProcSys) Set(arg0, arg1 string) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Set", arg0, arg1)
@@ -70,7 +70,7 @@ func (m *MockProcSys) Set(arg0, arg1 string) error {
 	return ret0
 }
 
-// Set indicates an expected call of Set
+// Set indicates an expected call of Set.
 func (mr *MockProcSysMockRecorder) Set(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Set", reflect.TypeOf((*MockProcSys)(nil).Set), arg0, arg1)

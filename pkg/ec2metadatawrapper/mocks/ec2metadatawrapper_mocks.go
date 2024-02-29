@@ -25,30 +25,30 @@ import (
 	gomock "github.com/golang/mock/gomock"
 )
 
-// MockHTTPClient is a mock of HTTPClient interface
+// MockHTTPClient is a mock of HTTPClient interface.
 type MockHTTPClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockHTTPClientMockRecorder
 }
 
-// MockHTTPClientMockRecorder is the mock recorder for MockHTTPClient
+// MockHTTPClientMockRecorder is the mock recorder for MockHTTPClient.
 type MockHTTPClientMockRecorder struct {
 	mock *MockHTTPClient
 }
 
-// NewMockHTTPClient creates a new mock instance
+// NewMockHTTPClient creates a new mock instance.
 func NewMockHTTPClient(ctrl *gomock.Controller) *MockHTTPClient {
 	mock := &MockHTTPClient{ctrl: ctrl}
 	mock.recorder = &MockHTTPClientMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockHTTPClient) EXPECT() *MockHTTPClientMockRecorder {
 	return m.recorder
 }
 
-// GetInstanceIdentityDocument mocks base method
+// GetInstanceIdentityDocument mocks base method.
 func (m *MockHTTPClient) GetInstanceIdentityDocument() (ec2metadata.EC2InstanceIdentityDocument, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetInstanceIdentityDocument")
@@ -57,13 +57,13 @@ func (m *MockHTTPClient) GetInstanceIdentityDocument() (ec2metadata.EC2InstanceI
 	return ret0, ret1
 }
 
-// GetInstanceIdentityDocument indicates an expected call of GetInstanceIdentityDocument
+// GetInstanceIdentityDocument indicates an expected call of GetInstanceIdentityDocument.
 func (mr *MockHTTPClientMockRecorder) GetInstanceIdentityDocument() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceIdentityDocument", reflect.TypeOf((*MockHTTPClient)(nil).GetInstanceIdentityDocument))
 }
 
-// Region mocks base method
+// Region mocks base method.
 func (m *MockHTTPClient) Region() (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Region")
@@ -72,36 +72,36 @@ func (m *MockHTTPClient) Region() (string, error) {
 	return ret0, ret1
 }
 
-// Region indicates an expected call of Region
+// Region indicates an expected call of Region.
 func (mr *MockHTTPClientMockRecorder) Region() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Region", reflect.TypeOf((*MockHTTPClient)(nil).Region))
 }
 
-// MockEC2MetadataClient is a mock of EC2MetadataClient interface
+// MockEC2MetadataClient is a mock of EC2MetadataClient interface.
 type MockEC2MetadataClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockEC2MetadataClientMockRecorder
 }
 
-// MockEC2MetadataClientMockRecorder is the mock recorder for MockEC2MetadataClient
+// MockEC2MetadataClientMockRecorder is the mock recorder for MockEC2MetadataClient.
 type MockEC2MetadataClientMockRecorder struct {
 	mock *MockEC2MetadataClient
 }
 
-// NewMockEC2MetadataClient creates a new mock instance
+// NewMockEC2MetadataClient creates a new mock instance.
 func NewMockEC2MetadataClient(ctrl *gomock.Controller) *MockEC2MetadataClient {
 	mock := &MockEC2MetadataClient{ctrl: ctrl}
 	mock.recorder = &MockEC2MetadataClientMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockEC2MetadataClient) EXPECT() *MockEC2MetadataClientMockRecorder {
 	return m.recorder
 }
 
-// GetInstanceIdentityDocument mocks base method
+// GetInstanceIdentityDocument mocks base method.
 func (m *MockEC2MetadataClient) GetInstanceIdentityDocument() (ec2metadata.EC2InstanceIdentityDocument, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetInstanceIdentityDocument")
@@ -110,13 +110,13 @@ func (m *MockEC2MetadataClient) GetInstanceIdentityDocument() (ec2metadata.EC2In
 	return ret0, ret1
 }
 
-// GetInstanceIdentityDocument indicates an expected call of GetInstanceIdentityDocument
+// GetInstanceIdentityDocument indicates an expected call of GetInstanceIdentityDocument.
 func (mr *MockEC2MetadataClientMockRecorder) GetInstanceIdentityDocument() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceIdentityDocument", reflect.TypeOf((*MockEC2MetadataClient)(nil).GetInstanceIdentityDocument))
 }
 
-// Region mocks base method
+// Region mocks base method.
 func (m *MockEC2MetadataClient) Region() (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Region")
@@ -125,7 +125,7 @@ func (m *MockEC2MetadataClient) Region() (string, error) {
 	return ret0, ret1
 }
 
-// Region indicates an expected call of Region
+// Region indicates an expected call of Region.
 func (mr *MockEC2MetadataClientMockRecorder) Region() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Region", reflect.TypeOf((*MockEC2MetadataClient)(nil).Region))

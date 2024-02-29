@@ -26,30 +26,30 @@ import (
 	gomock "github.com/golang/mock/gomock"
 )
 
-// MockTime is a mock of Time interface
+// MockTime is a mock of Time interface.
 type MockTime struct {
 	ctrl     *gomock.Controller
 	recorder *MockTimeMockRecorder
 }
 
-// MockTimeMockRecorder is the mock recorder for MockTime
+// MockTimeMockRecorder is the mock recorder for MockTime.
 type MockTimeMockRecorder struct {
 	mock *MockTime
 }
 
-// NewMockTime creates a new mock instance
+// NewMockTime creates a new mock instance.
 func NewMockTime(ctrl *gomock.Controller) *MockTime {
 	mock := &MockTime{ctrl: ctrl}
 	mock.recorder = &MockTimeMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockTime) EXPECT() *MockTimeMockRecorder {
 	return m.recorder
 }
 
-// After mocks base method
+// After mocks base method.
 func (m *MockTime) After(arg0 time.Duration) <-chan time.Time {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "After", arg0)
@@ -57,13 +57,13 @@ func (m *MockTime) After(arg0 time.Duration) <-chan time.Time {
 	return ret0
 }
 
-// After indicates an expected call of After
+// After indicates an expected call of After.
 func (mr *MockTimeMockRecorder) After(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "After", reflect.TypeOf((*MockTime)(nil).After), arg0)
 }
 
-// AfterFunc mocks base method
+// AfterFunc mocks base method.
 func (m *MockTime) AfterFunc(arg0 time.Duration, arg1 func()) ttime.Timer {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AfterFunc", arg0, arg1)
@@ -71,13 +71,13 @@ func (m *MockTime) AfterFunc(arg0 time.Duration, arg1 func()) ttime.Timer {
 	return ret0
 }
 
-// AfterFunc indicates an expected call of AfterFunc
+// AfterFunc indicates an expected call of AfterFunc.
 func (mr *MockTimeMockRecorder) AfterFunc(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AfterFunc", reflect.TypeOf((*MockTime)(nil).AfterFunc), arg0, arg1)
 }
 
-// Now mocks base method
+// Now mocks base method.
 func (m *MockTime) Now() time.Time {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Now")
@@ -85,48 +85,48 @@ func (m *MockTime) Now() time.Time {
 	return ret0
 }
 
-// Now indicates an expected call of Now
+// Now indicates an expected call of Now.
 func (mr *MockTimeMockRecorder) Now() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Now", reflect.TypeOf((*MockTime)(nil).Now))
 }
 
-// Sleep mocks base method
+// Sleep mocks base method.
 func (m *MockTime) Sleep(arg0 time.Duration) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Sleep", arg0)
 }
 
-// Sleep indicates an expected call of Sleep
+// Sleep indicates an expected call of Sleep.
 func (mr *MockTimeMockRecorder) Sleep(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Sleep", reflect.TypeOf((*MockTime)(nil).Sleep), arg0)
 }
 
-// MockTimer is a mock of Timer interface
+// MockTimer is a mock of Timer interface.
 type MockTimer struct {
 	ctrl     *gomock.Controller
 	recorder *MockTimerMockRecorder
 }
 
-// MockTimerMockRecorder is the mock recorder for MockTimer
+// MockTimerMockRecorder is the mock recorder for MockTimer.
 type MockTimerMockRecorder struct {
 	mock *MockTimer
 }
 
-// NewMockTimer creates a new mock instance
+// NewMockTimer creates a new mock instance.
 func NewMockTimer(ctrl *gomock.Controller) *MockTimer {
 	mock := &MockTimer{ctrl: ctrl}
 	mock.recorder = &MockTimerMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockTimer) EXPECT() *MockTimerMockRecorder {
 	return m.recorder
 }
 
-// Reset mocks base method
+// Reset mocks base method.
 func (m *MockTimer) Reset(arg0 time.Duration) bool {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Reset", arg0)
@@ -134,13 +134,13 @@ func (m *MockTimer) Reset(arg0 time.Duration) bool {
 	return ret0
 }
 
-// Reset indicates an expected call of Reset
+// Reset indicates an expected call of Reset.
 func (mr *MockTimerMockRecorder) Reset(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Reset", reflect.TypeOf((*MockTimer)(nil).Reset), arg0)
 }
 
-// Stop mocks base method
+// Stop mocks base method.
 func (m *MockTimer) Stop() bool {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Stop")
@@ -148,7 +148,7 @@ func (m *MockTimer) Stop() bool {
 	return ret0
 }
 
-// Stop indicates an expected call of Stop
+// Stop indicates an expected call of Stop.
 func (mr *MockTimerMockRecorder) Stop() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stop", reflect.TypeOf((*MockTimer)(nil).Stop))
