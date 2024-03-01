@@ -102,10 +102,6 @@ Test info:
   - EKS Cluster should be v1.16+. This tests creates an additional Trunk ENI on all Nitro-based instances present in the cluster. This could interfere with running integration tests that expect specific values of `WARM_ENI_TARGET`.
   - For this reason, the test should either be run without any node groups present in the cluster or at the very end.
 
-### Soak
-
-`soak` suite validates IPAMD state file against API server.
-
 ### Multus tests
 These tests require multus to be deployed to your cluster using the [manifest](https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/master/config/multus/v3.9.2-eksbuild.1/aws-k8s-multus.yaml) file. Instead test can be triggered by running `run-multus-tests.sh` located under scripts directory. This script installs the multus manifest first and then runs the the ginkgo test suite.
 You can optionally provide multus tag to install the manifest. If not provided then it will use the default tag
@@ -179,7 +175,6 @@ The test folders are located at `amazon-vpc-cni-k8s/tree/master/test/integration
  - metrics-helper
  - pod-eni
  - snat
- - soak
 
 The ginkgo test for any component has generally two main components:
 - `ginkgo suite file`: Every ginkgo suite file will have `RegisterFailHandler` and `RunSpecs`. A Ginkgo test signals failure by calling Ginkgo’s Fail function passed to RegisterFailHandler. RunSpec tells Ginkgo to start the test suite. Running ginkgo inside the sub-folder containing the test suite should trigger the ```RunSpecs``` function in the suite.
