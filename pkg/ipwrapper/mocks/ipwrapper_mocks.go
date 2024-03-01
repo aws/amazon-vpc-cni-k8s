@@ -26,30 +26,30 @@ import (
 	netlink "github.com/vishvananda/netlink"
 )
 
-// MockIP is a mock of IP interface
+// MockIP is a mock of IP interface.
 type MockIP struct {
 	ctrl     *gomock.Controller
 	recorder *MockIPMockRecorder
 }
 
-// MockIPMockRecorder is the mock recorder for MockIP
+// MockIPMockRecorder is the mock recorder for MockIP.
 type MockIPMockRecorder struct {
 	mock *MockIP
 }
 
-// NewMockIP creates a new mock instance
+// NewMockIP creates a new mock instance.
 func NewMockIP(ctrl *gomock.Controller) *MockIP {
 	mock := &MockIP{ctrl: ctrl}
 	mock.recorder = &MockIPMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockIP) EXPECT() *MockIPMockRecorder {
 	return m.recorder
 }
 
-// AddDefaultRoute mocks base method
+// AddDefaultRoute mocks base method.
 func (m *MockIP) AddDefaultRoute(arg0 net.IP, arg1 netlink.Link) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AddDefaultRoute", arg0, arg1)
@@ -57,7 +57,7 @@ func (m *MockIP) AddDefaultRoute(arg0 net.IP, arg1 netlink.Link) error {
 	return ret0
 }
 
-// AddDefaultRoute indicates an expected call of AddDefaultRoute
+// AddDefaultRoute indicates an expected call of AddDefaultRoute.
 func (mr *MockIPMockRecorder) AddDefaultRoute(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddDefaultRoute", reflect.TypeOf((*MockIP)(nil).AddDefaultRoute), arg0, arg1)
