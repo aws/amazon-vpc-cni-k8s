@@ -25,30 +25,30 @@ import (
 	gomock "github.com/golang/mock/gomock"
 )
 
-// MockCNITYPES is a mock of CNITYPES interface
+// MockCNITYPES is a mock of CNITYPES interface.
 type MockCNITYPES struct {
 	ctrl     *gomock.Controller
 	recorder *MockCNITYPESMockRecorder
 }
 
-// MockCNITYPESMockRecorder is the mock recorder for MockCNITYPES
+// MockCNITYPESMockRecorder is the mock recorder for MockCNITYPES.
 type MockCNITYPESMockRecorder struct {
 	mock *MockCNITYPES
 }
 
-// NewMockCNITYPES creates a new mock instance
+// NewMockCNITYPES creates a new mock instance.
 func NewMockCNITYPES(ctrl *gomock.Controller) *MockCNITYPES {
 	mock := &MockCNITYPES{ctrl: ctrl}
 	mock.recorder = &MockCNITYPESMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockCNITYPES) EXPECT() *MockCNITYPESMockRecorder {
 	return m.recorder
 }
 
-// LoadArgs mocks base method
+// LoadArgs mocks base method.
 func (m *MockCNITYPES) LoadArgs(arg0 string, arg1 interface{}) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LoadArgs", arg0, arg1)
@@ -56,13 +56,13 @@ func (m *MockCNITYPES) LoadArgs(arg0 string, arg1 interface{}) error {
 	return ret0
 }
 
-// LoadArgs indicates an expected call of LoadArgs
+// LoadArgs indicates an expected call of LoadArgs.
 func (mr *MockCNITYPESMockRecorder) LoadArgs(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadArgs", reflect.TypeOf((*MockCNITYPES)(nil).LoadArgs), arg0, arg1)
 }
 
-// PrintResult mocks base method
+// PrintResult mocks base method.
 func (m *MockCNITYPES) PrintResult(arg0 types.Result, arg1 string) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "PrintResult", arg0, arg1)
@@ -70,7 +70,7 @@ func (m *MockCNITYPES) PrintResult(arg0 types.Result, arg1 string) error {
 	return ret0
 }
 
-// PrintResult indicates an expected call of PrintResult
+// PrintResult indicates an expected call of PrintResult.
 func (mr *MockCNITYPESMockRecorder) PrintResult(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PrintResult", reflect.TypeOf((*MockCNITYPES)(nil).PrintResult), arg0, arg1)
