@@ -3215,12 +3215,12 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		IsBareMetal: false,
 	},
 	"h1.16xlarge":	   {
-		ENILimit: 15, 
+		ENILimit: 8, 
 		IPv4Limit: 50, 
 		DefaultNetworkCardIndex: 0,
 		NetworkCards: []NetworkCard{
 				{
-					MaximumNetworkInterfaces: 15,
+					MaximumNetworkInterfaces: 8,
 					NetworkCardIndex: 0,
 				},
 			
@@ -6641,6 +6641,20 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		},
 		HypervisorType: "nitro",
 		IsBareMetal: false,
+	},
+	"m7gd.metal":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
 	},
 	"m7gd.xlarge":	   {
 		ENILimit: 4, 
