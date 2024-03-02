@@ -104,12 +104,14 @@ data:
     {
         "chrootDir": "/hostroot",
         "confDir": "/host/etc/cni/net.d",
+        "logFile": "/var/log/multus.log",
         "logLevel": "verbose",
         "socketDir": "/host/run/multus/",
         "cniVersion": "0.3.1",
         "cniConfigDir": "/host/etc/cni/net.d",
         "multusConfigFile": "auto",
-        "multusAutoconfigDir": "/host/etc/cni/net.d"
+        "multusAutoconfigDir": "/host/etc/cni/net.d",
+        "multusMasterCNI": "10-aws.conflist"
     }
 ---
 apiVersion: apps/v1
