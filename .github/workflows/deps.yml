@@ -23,17 +23,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           show-progress: false
+      - name: Setup Go Version
+        run: echo "GO_VERSION=$(cat .go-version)" >> $GITHUB_ENV
       - id: govulncheck
         uses: ./.github/actions/govulncheck
         with:
-          go-version-input: 1.21.7
+          go-version-input: ${{ env.GO_VERSION }}
           go-version-file: go.mod
           cache: false
           repo-checkout: false
       - id: govulncheck-tests-agent
         uses: ./.github/actions/govulncheck
         with:
-          go-version-input: 1.21.7
+          go-version-input: ${{ env.GO_VERSION }}
           go-version-file: test/agent/go.mod
           cache: false
           repo-checkout: false

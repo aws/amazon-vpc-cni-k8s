@@ -17,6 +17,9 @@ IMAGE_NAME =aws-vpc-cni-test-helper
 PUBLIC_REPO_IMAGE=public.ecr.aws/$(REGISTRY_ID)/${IMAGE_NAME}:$(VERSION)
 PRIVATE_REPO_IMAGE=$(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(IMAGE_NAME):$(VERSION)
 
+GOLANG_VERSION ?= $(shell cat ../../.go-version)
+GOLANG_IMAGE ?= public.ecr.aws/eks-distro-build-tooling/golang:$(GOLANG_VERSION)-gcc-al2
+
 fmt:
 	go fmt ./...
 
@@ -26,11 +29,11 @@ vet:
 
 publish-private-image: check-env
 	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com
-	docker buildx build --platform "$(MULTI_PLATFORM_BUILD_TARGETS)" -t ${PRIVATE_REPO_IMAGE} --push .
+	docker buildx build --platform "$(MULTI_PLATFORM_BUILD_TARGETS)" -t ${PRIVATE_REPO_IMAGE} --build-arg golang_image="$(GOLANG_IMAGE)" --push .
 
 #Ensure to authenticate to public ECR repo.
 publish-public-image: check-env-public
-	docker buildx build --platform "$(MULTI_PLATFORM_BUILD_TARGETS)" -t ${PUBLIC_REPO_IMAGE} --push .
+	docker buildx build --platform "$(MULTI_PLATFORM_BUILD_TARGETS)" -t ${PUBLIC_REPO_IMAGE} --build-arg golang_image="$(GOLANG_IMAGE)" --push .
 
 check-env:
 	@:$(call check_var, AWS_ACCOUNT, AWS account ID for publishing docker images)

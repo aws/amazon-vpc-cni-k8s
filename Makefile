@@ -21,8 +21,9 @@
 
 # VERSION is the source revision that executables and images are built from.
 VERSION ?= $(shell git describe --tags --always --dirty || echo "unknown")
+GOLANG_VERSION ?= $(shell cat .go-version)
 # GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE ?= public.ecr.aws/eks-distro-build-tooling/golang:1.21.7-8-gcc-al2
+GOLANG_IMAGE ?= public.ecr.aws/eks-distro-build-tooling/golang:$(GOLANG_VERSION)-gcc-al2
 # BASE_IMAGE_CNI is the base layer image for the primary AWS VPC CNI plugin container
 BASE_IMAGE_CNI ?= public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-iptables:latest.2
 # BASE_IMAGE_CNI_INIT is the base layer image for the AWS VPC CNI init container
@@ -71,6 +72,9 @@ export CGO_ENABLED = 0
 export GO111MODULE = on
 export GOPROXY = direct
 
+export GOSUMDB = sum.golang.org
+export GOTOOLCHAIN = go$(GOLANG_VERSION)
+
 VENDOR_OVERRIDE_FLAG =
 # aws-sdk-go override in case we need to build against a custom version
 EC2_SDK_OVERRIDE ?= "n"
@@ -92,19 +96,19 @@ CORE_PLUGIN_DIR = $(MAKEFILE_PATH)/core-plugins/
 DOCKER_ARGS ?=
 # DOCKER_RUN_FLAGS is set the flags passed during runs of containers.
 DOCKER_RUN_FLAGS = --rm -ti $(DOCKER_ARGS)
-# DOCKER_BUILD_FLAGS_CNI is the set of flags passed during CNI container image 
+# DOCKER_BUILD_FLAGS_CNI is the set of flags passed during CNI container image
 # builds based on the requested build.
 DOCKER_BUILD_FLAGS_CNI = --build-arg golang_image="$(GOLANG_IMAGE)" \
 					  --build-arg base_image="$(BASE_IMAGE_CNI)"	\
 					  --network=host \
 	  		          $(DOCKER_ARGS)
-# DOCKER_BUILD_FLAGS_CNI_INIT is the set of flags passed during CNI init 
+# DOCKER_BUILD_FLAGS_CNI_INIT is the set of flags passed during CNI init
 # container image builds based on the requested build.
 DOCKER_BUILD_FLAGS_CNI_INIT = --build-arg golang_image="$(GOLANG_IMAGE)" \
 					  --build-arg base_image="$(BASE_IMAGE_CNI_INIT)"	\
 					  --network=host \
 	  		          $(DOCKER_ARGS)
-# DOCKER_BUILD_FLAGS_CNI_METRICS is the set of flags passed during metrics 
+# DOCKER_BUILD_FLAGS_CNI_METRICS is the set of flags passed during metrics
 # container image builds based on the requested build.
 DOCKER_BUILD_FLAGS_CNI_METRICS = --build-arg golang_image="$(GOLANG_IMAGE)" \
 					  --build-arg base_image="$(BASE_IMAGE_CNI_METRICS)"	\
@@ -167,7 +171,7 @@ docker-func-test: docker     ## Run the built CNI container image to use in func
 		"$(IMAGE_NAME)"
 
 ## Build multi-arch VPC CNI plugin container image.
-multi-arch-cni-build:		
+multi-arch-cni-build:
 	docker buildx build $(DOCKER_BUILD_FLAGS_CNI) \
 		-f scripts/dockerfiles/Dockerfile.release \
 		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
@@ -176,7 +180,7 @@ multi-arch-cni-build:
 		.
 
 ## Build and push multi-arch VPC CNI plugin container image.
-multi-arch-cni-build-push:		
+multi-arch-cni-build-push:
 	docker buildx build $(DOCKER_BUILD_FLAGS_CNI) \
 		-f scripts/dockerfiles/Dockerfile.release \
 		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
@@ -184,8 +188,8 @@ multi-arch-cni-build-push:
 		--push \
 		.
 
-## Build VPC CNI plugin Init container image. 
-multi-arch-cni-init-build:     
+## Build VPC CNI plugin Init container image.
+multi-arch-cni-init-build:
 	docker buildx build $(DOCKER_BUILD_FLAGS_CNI_INIT) \
 		-f scripts/dockerfiles/Dockerfile.init \
 		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
@@ -194,7 +198,7 @@ multi-arch-cni-init-build:
 		.
 
 ## Build and push VPC CNI plugin Init container image.
-multi-arch-cni-init-build-push:     
+multi-arch-cni-init-build-push:
 	docker buildx build $(DOCKER_BUILD_FLAGS_CNI_INIT) \
 		-f scripts/dockerfiles/Dockerfile.init \
 		--platform "$(MULTI_PLATFORM_BUILD_TARGETS)"\
@@ -202,7 +206,7 @@ multi-arch-cni-init-build-push:
 		--push \
 		.
 
-##@ Run Unit Tests 
+##@ Run Unit Tests
 # Run unit tests
 unit-test: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
 unit-test:    ## Run unit tests
@@ -222,7 +226,7 @@ unit-test-race:     ## Run unit tests with race detection (can only be run nativ
 	go test -v -cover -race -timeout 10s  ./pkg/eniconfig/...
 	go test -v -cover -race -timeout 10s  ./pkg/ipamd/...
 
-##@ Build and Run Unit Tests 
+##@ Build and Run Unit Tests
 # Build the unit test driver container image.
 build-docker-test:     ## Build the unit test driver container image.
 	docker build $(DOCKER_BUILD_FLAGS_CNI) \
@@ -235,16 +239,17 @@ docker-unit-tests: build-docker-test     ## Run unit tests inside of the testing
 	docker run $(DOCKER_RUN_ARGS) \
 		$(TEST_IMAGE_NAME) \
 		make unit-test
- 
+
 ##@ Build the Test Binaries files in /test
 build-test-binaries:
 	mkdir -p ${MAKEFILE_PATH}test/build
 	find ${MAKEFILE_PATH}test/ -name '*suite_test.go' -type f  | xargs dirname  | xargs ginkgo build
 	find ${MAKEFILE_PATH}test/ -name "*.test" -print0 | xargs -0 -I {} mv {} ${MAKEFILE_PATH}test/build
 
-##@ Build metrics helper agent 
+##@ Build metrics helper agent
 
 # Build metrics helper agent.
+
 build-metrics:     ## Build metrics helper agent.
 	go build $(VENDOR_OVERRIDE_FLAG) -ldflags="-s -w" -o cni-metrics-helper ./cmd/cni-metrics-helper
 
@@ -256,7 +261,7 @@ docker-metrics:    ## Build metrics helper agent Docker image.
 		.
 	@echo "Built Docker image \"$(METRICS_IMAGE_NAME)\""
 
-##@ Run metrics helper Unit Tests 
+##@ Run metrics helper Unit Tests
 
 # Run metrics helper unit test suite (must be run natively).
 metrics-unit-test: CGO_ENABLED=1
@@ -286,7 +291,7 @@ plugins:   ## Fetch the CNI plugins
 	mkdir -p $(CORE_PLUGIN_DIR)
 	curl -s -L $(FETCH_URL) | tar xzvf - -C $(CORE_PLUGIN_DIR)
 
-##@ Debug script 
+##@ Debug script
 
 debug-script: FETCH_URL=https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/log-collector-script/linux/eks-log-collector.sh
 debug-script: VISIT_URL=https://github.com/awslabs/amazon-eks-ami/tree/master/log-collector-script/linux
@@ -299,7 +304,7 @@ debug-script:    ## Fetching debug script from awslabs/amazon-eks-ami
 	curl -L $(FETCH_URL) -o ./aws-cni-support.sh
 	chmod +x ./aws-cni-support.sh
 
-##@ Formatting 
+##@ Formatting
 
 # Run all source code checks.
 check: check-format lint vet   ## Run all source code checks.
@@ -322,7 +327,7 @@ helm-lint:
 	@${MAKEFILE_PATH}test/helm/helm-lint.sh
 
 # Run go vet on source code.
-vet:    setup-ec2-sdk-override ## Run go vet on source code.
+vet: setup-ec2-sdk-override ## Run go vet on source code.
 	go vet $(VENDOR_OVERRIDE_FLAG) $(ALLPKGS)
 
 
@@ -348,7 +353,7 @@ check-format: format
 version:
 	@echo ${VERSION}
 
-##@ Generate ENI/IP limits 
+##@ Generate ENI/IP limits
 
 generate:
 	PATH=$(CURDIR)/scripts:$(PATH) go generate -x ./...
@@ -385,7 +390,7 @@ cleanup-ec2-sdk-override:
 	@if [ "$(EC2_SDK_OVERRIDE)" = "y" ] ; then \
 	    ./scripts/ec2_model_override/cleanup.sh ; \
 	fi
-	
+
 ##@ Cleanup
 
 # Clean temporary files and build artifacts from the project.
