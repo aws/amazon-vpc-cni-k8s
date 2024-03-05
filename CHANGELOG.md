@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.16.4
+
+* Bug - [Revert #2744 to prevent livelock when attempting to increase datastore pool](https://github.com/aws/amazon-vpc-cni-k8s/pull/2810) (@jdn5126 )
+* Bug - [Do not allocate IPs or prefixes to trunk ENIs; enable Custom Networking before Security Groups for Pods](https://github.com/aws/amazon-vpc-cni-k8s/pull/2801) (@jdn5126 )
+* Bug - [Ignore non-zero cards](https://github.com/aws/amazon-vpc-cni-k8s/pull/2784) (@jchen6585 )
+* Documentation - [Added description to list of metrics reported by cni-metrics-helper](https://github.com/aws/amazon-vpc-cni-k8s/pull/2786) (@zachdorame )
+* Enhancement - [Bump helm.sh/helm/v3 from 3.14.1 to 3.14.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/2806) (@dependabot )
+* Enhancement - [Add validation for MTU, update ANNOTATE_POD_IP README](https://github.com/aws/amazon-vpc-cni-k8s/pull/2798) (@jdn5126 )
+* Enhancement - [Update Golang version to 1.21.7; update aws-vpc-cni chart README](https://github.com/aws/amazon-vpc-cni-k8s/pull/2795) (@jdn5126 )
+* Enhancement - [Bump helm.sh/helm/v3 from 3.14.0 to 3.14.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/2794) (@jdn5126 )
+* Feature - [Pod MTU](https://github.com/aws/amazon-vpc-cni-k8s/pull/2791) (@jchen6585 )
+
 ## v1.16.3
 
 * Dependency - [Dependabot updates](https://github.com/aws/amazon-vpc-cni-k8s/pull/2775) (@jdn5126 )
