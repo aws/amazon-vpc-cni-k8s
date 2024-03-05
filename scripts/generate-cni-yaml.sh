@@ -4,11 +4,11 @@ set -euo pipefail
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 PLATFORM=$(uname | tr '[:upper:]' '[:lower:]')
-HELM_VERSION="3.14.1"
+HELM_VERSION="3.14.2"
 NAMESPACE="kube-system"
 
 MAKEFILEPATH=$SCRIPTPATH/../Makefile
-VPC_CNI_VERSION="v1.16.3"
+VPC_CNI_VERSION="v1.16.4"
 NODE_AGENT_VERSION="v1.0.8"
 BUILD_DIR=$SCRIPTPATH/../build/cni-rel-yamls/$VPC_CNI_VERSION
 
