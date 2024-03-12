@@ -126,10 +126,10 @@ var _ = Describe("Security Group for Pods Test", func() {
 			// 8080: metric-pod listener port
 			By("Adding an additional Ingress Rule on NodeSecurityGroupID to allow client-to-metric traffic")
 			if isIPv4Cluster {
-				err := f.CloudServices.EC2().AuthorizeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v4Zero)
+				err := f.CloudServices.EC2().AuthorizeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v4Zero, false)
 				Expect(err).ToNot(HaveOccurred())
 			} else {
-				err := f.CloudServices.EC2().AuthorizeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v6Zero)
+				err := f.CloudServices.EC2().AuthorizeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v6Zero, false)
 				Expect(err).ToNot(HaveOccurred())
 			}
 		})
@@ -160,10 +160,10 @@ var _ = Describe("Security Group for Pods Test", func() {
 			// Revoke the Ingress rule for traffic from client pods added to Node Security Group
 			By("Revoking the additional Ingress rule added to allow client-to-metric traffic")
 			if isIPv4Cluster {
-				err := f.CloudServices.EC2().RevokeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v4Zero)
+				err := f.CloudServices.EC2().RevokeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v4Zero, false)
 				Expect(err).ToNot(HaveOccurred())
 			} else {
-				err := f.CloudServices.EC2().RevokeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v6Zero)
+				err := f.CloudServices.EC2().RevokeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v6Zero, false)
 				Expect(err).ToNot(HaveOccurred())
 			}
 		})
