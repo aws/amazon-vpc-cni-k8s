@@ -19,15 +19,17 @@ import (
 	"net"
 	"testing"
 
+	"github.com/apparentlymart/go-cidr/cidr"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	awsUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 	"github.com/prometheus/client_golang/prometheus"
+	corev1 "k8s.io/api/core/v1"
 
-	"github.com/apparentlymart/go-cidr/cidr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -51,6 +53,9 @@ var (
 	customNetworkingSGID         string
 	customNetworkingSGOpenPort   = 8080
 	customNetworkingSubnetIDList []string
+	corednsSGOpenPort            = 53
+	primaryENISGID               string
+	primaryENISGList             []string
 	// List of ENIConfig per Availability Zone
 	eniConfigList        []*v1alpha1.ENIConfig
 	eniConfigBuilderList []*manifest.ENIConfigBuilder
@@ -85,7 +90,53 @@ var _ = BeforeSuite(func() {
 	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(customNetworkingSGID, "TCP",
 		customNetworkingSGOpenPort, customNetworkingSGOpenPort, "0.0.0.0/0")
 	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(customNetworkingSGID, "TCP",
-		customNetworkingSGOpenPort, customNetworkingSGOpenPort, "0.0.0.0/0")
+		customNetworkingSGOpenPort, customNetworkingSGOpenPort, "0.0.0.0/0", false)
+	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(customNetworkingSGID, "UDP",
+		corednsSGOpenPort, corednsSGOpenPort, "0.0.0.0/0")
+	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(customNetworkingSGID, "UDP",
+		corednsSGOpenPort, corednsSGOpenPort, "0.0.0.0/0", false)
+	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(customNetworkingSGID, "TCP",
+		corednsSGOpenPort, corednsSGOpenPort, "0.0.0.0/0")
+	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(customNetworkingSGID, "TCP",
+		corednsSGOpenPort, corednsSGOpenPort, "0.0.0.0/0", false)
+
+	By("Adding custom networking security group ingress rule from primary eni")
+	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey,
+		f.Options.NgNameLabelVal)
+	Expect(err).ToNot(HaveOccurred())
+
+	var primaryNode *corev1.Node
+	for _, n := range nodeList.Items {
+		if len(n.Spec.Taints) == 0 {
+			primaryNode = &n
+			break
+		}
+	}
+	Expect(primaryNode).To(Not(BeNil()), "expected to find a non-tainted node")
+
+	instanceID := k8sUtils.GetInstanceIDFromNode(*primaryNode)
+	primaryInstance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
+	Expect(err).ToNot(HaveOccurred())
+
+	instance, err := f.CloudServices.EC2().DescribeInstance(*primaryInstance.InstanceId)
+	Expect(err).ToNot(HaveOccurred())
+
+	var primaryENIID string
+	for _, nwInterface := range instance.NetworkInterfaces {
+		primaryENI := common.IsPrimaryENI(nwInterface, instance.PrivateIpAddress)
+		if primaryENI {
+			primaryENIID = *nwInterface.NetworkInterfaceId
+			break
+		}
+	}
+
+	eniOutput, err := f.CloudServices.EC2().DescribeNetworkInterface([]string{primaryENIID})
+	Expect(err).ToNot(HaveOccurred())
+	for _, sg := range eniOutput.NetworkInterfaces[0].Groups {
+		primaryENISGList = append(primaryENISGList, *sg.GroupId)
+		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(*sg.GroupId, "-1",
+			-1, -1, customNetworkingSGID, true)
+	}
 
 	By("associating cidr range to the VPC")
 	association, err := f.CloudServices.EC2().AssociateVPCCIDRBlock(f.Options.AWSVPCID, cidrRange.String())
@@ -159,6 +210,12 @@ var _ = AfterSuite(func() {
 
 	By("terminating instances")
 	errs.Append(awsUtils.TerminateInstances(f))
+
+	By("Removing custom networking security group ingress rule from primary eni")
+	for _, sg := range primaryENISGList {
+		f.CloudServices.EC2().RevokeSecurityGroupIngress(sg, "-1",
+			-1, -1, customNetworkingSGID, true)
+	}
 
 	By("deleting security group")
 	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(customNetworkingSGID))

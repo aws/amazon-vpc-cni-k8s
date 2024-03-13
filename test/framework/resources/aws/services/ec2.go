@@ -28,8 +28,8 @@ type EC2 interface {
 	DescribeInstance(instanceID string) (*ec2.Instance, error)
 	DescribeVPC(vpcID string) (*ec2.DescribeVpcsOutput, error)
 	DescribeNetworkInterface(interfaceIDs []string) (*ec2.DescribeNetworkInterfacesOutput, error)
-	AuthorizeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
-	RevokeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
+	AuthorizeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error
+	RevokeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error
 	AuthorizeSecurityGroupEgress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
 	RevokeSecurityGroupEgress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
 	AssociateVPCCIDRBlock(vpcId string, cidrBlock string) (*ec2.AssociateVpcCidrBlockOutput, error)
@@ -96,29 +96,43 @@ func (d *defaultEC2) DescribeInstance(instanceID string) (*ec2.Instance, error) 
 	return describeInstanceOutput.Reservations[0].Instances[0], nil
 }
 
-func (d *defaultEC2) AuthorizeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error {
+func (d *defaultEC2) AuthorizeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error {
 	var ipv4Ranges []*ec2.IpRange
 	var ipv6Ranges []*ec2.Ipv6Range
-	if strings.Contains(cidrIP, ":") {
-		ipv6Ranges = []*ec2.Ipv6Range{
-			{
-				CidrIpv6: aws.String(cidrIP),
-			},
+	var ipPermissions *ec2.IpPermission
+	if !sourceSG {
+		if strings.Contains(cidrIP, ":") {
+			ipv6Ranges = []*ec2.Ipv6Range{
+				{
+					CidrIpv6: aws.String(cidrIP),
+				},
+			}
+		} else {
+			ipv4Ranges = []*ec2.IpRange{
+				{
+					CidrIp: aws.String(cidrIP),
+				},
+			}
+		}
+
+		ipPermissions = &ec2.IpPermission{
+			FromPort:   aws.Int64(int64(fromPort)),
+			ToPort:     aws.Int64(int64(toPort)),
+			IpProtocol: aws.String(protocol),
+			IpRanges:   ipv4Ranges,
+			Ipv6Ranges: ipv6Ranges,
 		}
 	} else {
-		ipv4Ranges = []*ec2.IpRange{
-			{
-				CidrIp: aws.String(cidrIP),
+		ipPermissions = &ec2.IpPermission{
+			FromPort:   aws.Int64(int64(fromPort)),
+			ToPort:     aws.Int64(int64(toPort)),
+			IpProtocol: aws.String(protocol),
+			UserIdGroupPairs: []*ec2.UserIdGroupPair{
+				{
+					GroupId: aws.String(cidrIP),
+				},
 			},
 		}
-	}
-
-	ipPermissions := &ec2.IpPermission{
-		FromPort:   aws.Int64(int64(fromPort)),
-		ToPort:     aws.Int64(int64(toPort)),
-		IpProtocol: aws.String(protocol),
-		IpRanges:   ipv4Ranges,
-		Ipv6Ranges: ipv6Ranges,
 	}
 	authorizeSecurityGroupIngressInput := &ec2.AuthorizeSecurityGroupIngressInput{
 		GroupId:       aws.String(groupID),
@@ -128,29 +142,43 @@ func (d *defaultEC2) AuthorizeSecurityGroupIngress(groupID string, protocol stri
 	return err
 }
 
-func (d *defaultEC2) RevokeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error {
+func (d *defaultEC2) RevokeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error {
 	var ipv4Ranges []*ec2.IpRange
 	var ipv6Ranges []*ec2.Ipv6Range
-	if strings.Contains(cidrIP, ":") {
-		ipv6Ranges = []*ec2.Ipv6Range{
-			{
-				CidrIpv6: aws.String(cidrIP),
-			},
+	var ipPermissions *ec2.IpPermission
+	if !sourceSG {
+		if strings.Contains(cidrIP, ":") {
+			ipv6Ranges = []*ec2.Ipv6Range{
+				{
+					CidrIpv6: aws.String(cidrIP),
+				},
+			}
+		} else {
+			ipv4Ranges = []*ec2.IpRange{
+				{
+					CidrIp: aws.String(cidrIP),
+				},
+			}
+		}
+
+		ipPermissions = &ec2.IpPermission{
+			FromPort:   aws.Int64(int64(fromPort)),
+			ToPort:     aws.Int64(int64(toPort)),
+			IpProtocol: aws.String(protocol),
+			IpRanges:   ipv4Ranges,
+			Ipv6Ranges: ipv6Ranges,
 		}
 	} else {
-		ipv4Ranges = []*ec2.IpRange{
-			{
-				CidrIp: aws.String(cidrIP),
+		ipPermissions = &ec2.IpPermission{
+			FromPort:   aws.Int64(int64(fromPort)),
+			ToPort:     aws.Int64(int64(toPort)),
+			IpProtocol: aws.String(protocol),
+			UserIdGroupPairs: []*ec2.UserIdGroupPair{
+				{
+					GroupId: aws.String(cidrIP),
+				},
 			},
 		}
-	}
-
-	ipPermissions := &ec2.IpPermission{
-		FromPort:   aws.Int64(int64(fromPort)),
-		ToPort:     aws.Int64(int64(toPort)),
-		IpProtocol: aws.String(protocol),
-		IpRanges:   ipv4Ranges,
-		Ipv6Ranges: ipv6Ranges,
 	}
 	revokeSecurityGroupIngressInput := &ec2.RevokeSecurityGroupIngressInput{
 		GroupId:       aws.String(groupID),
