@@ -39,7 +39,6 @@ var _ = Describe("test tags are created on Secondary ENI", func() {
 	// sets the desired environment variables and gets the list of new ENIs created after setting
 	// the environment variables
 	JustBeforeEach(func() {
-
 		// To re-initialize for each test case
 		newENIs = []string{}
 

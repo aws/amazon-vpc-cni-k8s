@@ -28,8 +28,6 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-const AmazonEKSVPCResourceControllerARN = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
-
 var (
 	f   *framework.Framework
 	err error
@@ -86,11 +84,11 @@ var _ = BeforeSuite(func() {
 	By("authorizing egress and ingress on security group for client-server communication")
 	if isIPv4Cluster {
 		f.CloudServices.EC2().AuthorizeSecurityGroupEgress(securityGroupId, "tcp", openPort, openPort, v4Zero)
-		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "tcp", openPort, openPort, v4Zero)
+		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "tcp", openPort, openPort, v4Zero, false)
 	} else {
 		f.CloudServices.EC2().AuthorizeSecurityGroupEgress(securityGroupId, "tcp", openPort, openPort, v6Zero)
-		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "tcp", openPort, openPort, v6Zero)
-		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "icmpv6", -1, -1, v6Zero)
+		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "tcp", openPort, openPort, v6Zero, false)
+		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "icmpv6", -1, -1, v6Zero, false)
 	}
 
 	By("getting branch ENI limits")

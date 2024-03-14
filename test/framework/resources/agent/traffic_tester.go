@@ -93,7 +93,7 @@ func (t *TrafficTest) TestTraffic() (float64, error) {
 	if t.ValidateServerPods != nil {
 		err = t.ValidateServerPods(podList)
 		if err != nil {
-			return 0, fmt.Errorf("pod list %v validation failed %v", podList, err)
+			return 0, fmt.Errorf("pod list validation failed %v", err)
 		}
 		fmt.Fprintln(GinkgoWriter, "successfully validated the server pod list")
 	}
