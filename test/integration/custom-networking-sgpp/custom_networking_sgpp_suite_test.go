@@ -100,7 +100,7 @@ var _ = BeforeSuite(func() {
 
 	By("authorizing egress and ingress for security group in ENIConfig")
 	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(customNetworkingSGID, "-1", -1, -1, v4Zero)
-	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(customNetworkingSGID, "-1", -1, -1, v4Zero)
+	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(customNetworkingSGID, "-1", -1, -1, v4Zero, false)
 
 	By("associating cidr range to the VPC")
 	association, err := f.CloudServices.EC2().AssociateVPCCIDRBlock(f.Options.AWSVPCID, cidrRange.String())
@@ -151,7 +151,7 @@ var _ = BeforeSuite(func() {
 
 	By("authorizing egress and ingress on security group for client-server communication")
 	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(podEniSGID, "tcp", podEniOpenPort, podEniOpenPort, v4Zero)
-	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(podEniSGID, "tcp", podEniOpenPort, podEniOpenPort, v4Zero)
+	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(podEniSGID, "tcp", podEniOpenPort, podEniOpenPort, v4Zero, false)
 
 	By("getting branch ENI limits")
 	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
