@@ -74,22 +74,21 @@ In order to test a custom image you need pass the following tags along with the 
 
 *IMPORTANT*: Should use an IPv6 cluster with Prefix Delegation enabled. VPC CNI only supports IPv6 mode with Prefix Delegation.
 
-### Custom Networking
+### Custom Networking tests (custom_networking)
 
 Custom networking tests validate use of the `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG` environment variable.
 
 Test info:
-  - No existing node group should be present. The test creates a self managed node group with the reduced MAX_POD value.
   - Pass `custom-networking-cidr-range` flag with *allowed* VPC CIDR that does not conflict with an existing one. So if existing VPC CIDR is `192.168.0.0/16`, you can use `custom-networking-cidr-range=100.64.0.0/16`. You can go to your cluster VPC to check existing/allowed CIDRs.
 
-### SNAT tests
+### SNAT tests (snat)
 
 SNAT tests cover pod source NAT behavior with various deployment scenarios.
 
 Test info:
   - EKS Cluster should have at least one private subnet and at least one public subnet. These tests modify the SNAT related variables in `aws-node` pod, validate the IP table SNAT rules, and check for Internet Connectivity.
 
-### Calico tests
+### Calico tests (calico)
 
 `calico` helps validate compatibility with calico network policies. It does so by running the Calico Stars policy demo.
 
@@ -99,10 +98,18 @@ Test info:
 
 Test info:
   - Requires at least one Nitro-based instance.
-  - EKS Cluster should be v1.16+. This tests creates an additional Trunk ENI on all Nitro-based instances present in the cluster. This could interfere with running integration tests that expect specific values of `WARM_ENI_TARGET`.
-  - For this reason, the test should either be run without any node groups present in the cluster or at the very end.
+  - EKS Cluster should be v1.16+. This tests creates an additional Trunk ENI on all Nitro-based instances present in the cluster.
 
-### Multus tests
+### Custom Networking and Security Groups for Pods tests (custom_networking_sgpp)
+
+`custom_networking_sgpp` test suite validates the combination of Custom Networking and Security Groups for Pods.
+
+Test info:
+  - Pass `custom-networking-cidr-range` flag with *allowed* VPC CIDR that does not conflict with an existing one. So if existing VPC CIDR is `192.168.0.0/16`, you can use `custom-networking-cidr-range=100.64.0.0/16`. You can go to your cluster VPC to check existing/allowed CIDRs.
+  - Requires at least one Nitro-based instance.
+  - EKS Cluster should be v1.16+. This tests creates an additional Trunk ENI on all Nitro-based instances present in the cluster.
+
+### Multus tests (multus)
 These tests require multus to be deployed to your cluster using the [manifest](https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/master/config/multus/v3.9.2-eksbuild.1/aws-k8s-multus.yaml) file. Instead test can be triggered by running `run-multus-tests.sh` located under scripts directory. This script installs the multus manifest first and then runs the the ginkgo test suite.
 You can optionally provide multus tag to install the manifest. If not provided then it will use the default tag
 
