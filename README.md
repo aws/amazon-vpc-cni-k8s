@@ -545,6 +545,15 @@ You can use the below command to enable `DISABLE_TCP_EARLY_DEMUX` to `true` -
 kubectl patch daemonset aws-node -n kube-system -p '{"spec": {"template": {"spec": {"initContainers": [{"env":[{"name":"DISABLE_TCP_EARLY_DEMUX","value":"true"}],"name":"aws-vpc-cni-init"}]}}}}'
 ```
 
+#### `ENABLE_SUBNET_DISCOVERY` (v1.18.0+)
+
+Type: Boolean as a String
+
+Default: `true`
+
+Subnet discovery is enabled by default. VPC-CNI will pick the subnet with the most number of free IPs from the nodes' VPC/AZ to create the secondary ENIs. The subnets considered are the subnet the node is created in and subnets tagged with `kubernetes.io/role/cni`.
+If `ENABLE_SUBNET_DISCOVERY` is set to `false` or if DescribeSubnets fails due to IAM permissions, all secondary ENIs will be created in the subnet the node is created in.
+
 #### `ENABLE_PREFIX_DELEGATION` (v1.9.0+)
 
 Type: Boolean as a String
@@ -733,6 +742,7 @@ Note that if you set this while using Multus, you must ensure that any chained p
 This plugin interacts with the following tags on ENIs:
 
 * `cluster.k8s.amazonaws.com/name`
+* `kubernetes.io/role/cni`
 * `node.k8s.amazonaws.com/instance_id`
 * `node.k8s.amazonaws.com/no_manage`
 
@@ -740,6 +750,17 @@ This plugin interacts with the following tags on ENIs:
 
 The tag `cluster.k8s.amazonaws.com/name` will be set to the cluster name of the
 aws-node daemonset which created the ENI.
+
+#### CNI role tag
+
+The tag `kubernetes.io/role/cni` is read by the aws-node daemonset to determine
+if a secondary subnet can be used for creating secondary ENIs.
+
+This tag is not set by the cni plugin itself, but rather must be set by a user
+to indicate that a subnet can be used for secondary ENIs. Secondary subnets
+to be used must have this tag. The primary subnet (node's subnet) is not
+required to be tagged.
+
 
 #### Instance ID tag
 

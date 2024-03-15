@@ -466,6 +466,8 @@ spec:
               value: "false"
             - name: VPC_CNI_VERSION
               value: "v1.16.4"
+            - name: ENABLE_SUBNET_DISCOVERY
+              value: "true"
             - name: WARM_ENI_TARGET
               value: "1"
             - name: WARM_PREFIX_TARGET

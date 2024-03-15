@@ -186,6 +186,19 @@ func (imds TypedIMDS) GetSubnetID(ctx context.Context, mac string) (string, erro
 	return subnetID, err
 }
 
+func (imds TypedIMDS) GetVpcID(ctx context.Context, mac string) (string, error) {
+	key := fmt.Sprintf("network/interfaces/macs/%s/vpc-id", mac)
+	vpcID, err := imds.GetMetadataWithContext(ctx, key)
+	if err != nil {
+		if imdsErr, ok := err.(*imdsRequestError); ok {
+			log.Warnf("%v", err)
+			return vpcID, imdsErr.err
+		}
+		return "", err
+	}
+	return vpcID, err
+}
+
 // GetSecurityGroupIDs returns the IDs of the security groups to which the network interface belongs.
 func (imds TypedIMDS) GetSecurityGroupIDs(ctx context.Context, mac string) ([]string, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/security-group-ids", mac)
