@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.17.1
+
+* Feature - [Send pod name/ns to nodeagent for strict mode](https://github.com/aws/amazon-vpc-cni-k8s/pull/2790) (@jayanthvn)
+* Feature - [gRPC call for networkpolicy agent](https://github.com/aws/amazon-vpc-cni-k8s/pull/2785)(@jayanthvn)
+* Improvement - [Bump golang.org/x/sys from 0.16.0 to 0.17.0 in /test/agent](https://github.com/aws/amazon-vpc-cni-k8s/pull/2822) (@dependabot)
+* Improvement - [Bump google.golang.org/grpc from 1.61.0 to 1.62.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2827) (@dependabot)
+* Improvement - [Bump google.golang.org/grpc from 1.61.0 to 1.62.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2827) (@dependabot)
+* Improvement - [Bump github.com/aws/aws-sdk-go from 1.49.13 to 1.50.29](https://github.com/aws/amazon-vpc-cni-k8s/pull/2826) (@dependabot)
+* Improvement - [Bump k8s.io/apimachinery from 0.29.0 to 0.29.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/2825) (@dependabot)
+* Improvement - [make generate; make generate-limits; remove soak tests](https://github.com/aws/amazon-vpc-cni-k8s/pull/2819) (@dependabot)
+* Improvement - [Bump github.com/prometheus/client_golang from 1.18.0 to 1.19.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2824) (@dependabot)
+* Improvement - [Make vpc cni as master CNI in multus-daemonset-thick.yml](https://github.com/aws/amazon-vpc-cni-k8s/pull/2828) (@raghs-aws)
+* Improvement - [Bump github.com/prometheus/client_model from 0.5.0 to 0.6.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2829) (@dependabot)
+* Improvement - [Repo controlled build go version](https://github.com/aws/amazon-vpc-cni-k8s/pull/2831) (@xdu31)
+
 ## v1.16.4
 
 * Bug - [Revert #2744 to prevent livelock when attempting to increase datastore pool](https://github.com/aws/amazon-vpc-cni-k8s/pull/2810) (@jdn5126 )
