@@ -3,8 +3,6 @@ package ipamd
 import (
 	"time"
 
-	v1 "k8s.io/api/core/v1"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -13,7 +11,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 )
 
-var primaryNode v1.Node
 var numOfNodes int
 
 var _ = Describe("[CANARY][SMOKE] ENI/IP Leak Test", func() {
