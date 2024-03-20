@@ -1886,6 +1886,12 @@ func (cache *EC2InstanceMetadataCache) getLeakedENIs() ([]*ec2.NetworkInterface,
 				aws.String(ec2.NetworkInterfaceStatusAvailable),
 			},
 		},
+		{
+			Name: aws.String("vpc-id"),
+			Values: []*string{
+				aws.String(cache.vpcID),
+			},
+		},
 	}
 	if cache.clusterName != "" {
 		leakedENIFilters = append(leakedENIFilters, &ec2.Filter{
