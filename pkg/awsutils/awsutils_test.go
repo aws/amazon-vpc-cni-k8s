@@ -1261,6 +1261,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
 								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
+								},
 							},
 							MaxResults: aws.Int64(1000),
 						},
@@ -1289,6 +1293,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 								{
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
+								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
 								},
 							},
 							MaxResults: aws.Int64(1000),
@@ -1351,6 +1359,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
 								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
+								},
 							},
 							MaxResults: aws.Int64(1000),
 						},
@@ -1395,6 +1407,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 								{
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
+								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
 								},
 							},
 							MaxResults: aws.Int64(1000),
@@ -1441,6 +1457,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
 								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
+								},
 							},
 							MaxResults: aws.Int64(1000),
 						},
@@ -1469,6 +1489,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 								{
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
+								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
 								},
 								{
 									Name:   aws.String("tag:cluster.k8s.amazonaws.com/name"),
@@ -1544,6 +1568,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 									Values: []*string{aws.String("available")},
 								},
 								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
+								},
+								{
 									Name:   aws.String("tag:cluster.k8s.amazonaws.com/name"),
 									Values: []*string{aws.String("awesome-cluster")},
 								},
@@ -1595,6 +1623,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 								{
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
+								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
 								},
 								{
 									Name:   aws.String("tag:cluster.k8s.amazonaws.com/name"),
@@ -1653,7 +1685,7 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 						return nil
 					})
 			}
-			cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, clusterName: tt.fields.clusterName}
+			cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, clusterName: tt.fields.clusterName, vpcID: vpcID}
 			got, err := cache.getLeakedENIs()
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
