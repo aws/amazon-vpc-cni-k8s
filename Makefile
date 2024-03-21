@@ -23,13 +23,13 @@
 VERSION ?= $(shell git describe --tags --always --dirty || echo "unknown")
 GOLANG_VERSION ?= $(shell cat .go-version)
 # GOLANG_IMAGE is the building golang container image used.
-GOLANG_IMAGE ?= public.ecr.aws/eks-distro-build-tooling/golang:$(GOLANG_VERSION)-gcc-al2
+GOLANG_IMAGE ?= public.ecr.aws/eks-distro-build-tooling/golang:$(GOLANG_VERSION)-gcc-al23
 # BASE_IMAGE_CNI is the base layer image for the primary AWS VPC CNI plugin container
-BASE_IMAGE_CNI ?= public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-iptables:latest.2
+BASE_IMAGE_CNI ?= public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-iptables:latest-al23
 # BASE_IMAGE_CNI_INIT is the base layer image for the AWS VPC CNI init container
-BASE_IMAGE_CNI_INIT ?= public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-glibc:latest.2
+BASE_IMAGE_CNI_INIT ?= public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-glibc:latest-al23
 # BASE_IMAGE_CNI_METRICS is the base layer image for the AWS VPC CNI metrics publisher sidecar container
-BASE_IMAGE_CNI_METRICS ?= public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-glibc:latest.2
+BASE_IMAGE_CNI_METRICS ?= public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-glibc:latest-al23
 
 # DESTDIR is where distribution output (container images) is placed.
 DESTDIR = .
