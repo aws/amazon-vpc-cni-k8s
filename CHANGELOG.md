@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.18.0
+
+* Cleanup - [run make generate-limits](https://github.com/aws/amazon-vpc-cni-k8s/pull/2835) (@jaydeokar)
+* Dependency - [Bump github.com/docker/docker from 24.0.7+incompatible to 24.0.9+incompatible](https://github.com/aws/amazon-vpc-cni-k8s/pull/2855) (@dependabot)
+* Dependency - [upgrade golang to 1.21.8](https://github.com/aws/amazon-vpc-cni-k8s/pull/2847) (@jchen6585)
+* Dependency - [Bump google.golang.org/protobuf from 1.32.0 to 1.33.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2848) (@dependabot)
+* Feature - [Enhance subnet selection](https://github.com/aws/amazon-vpc-cni-k8s/pull/2714) (@jchen6585)
+* Improvement - [Add vpc-id to leaked eni filters](https://github.com/aws/amazon-vpc-cni-k8s/pull/2856) (@jchen6585)
+* Testing - [Add missing params to authorize ingress](https://github.com/aws/amazon-vpc-cni-k8s/pull/2849) (@jchen6585)
+* Testing - [Integration test suite for Custom Networking + Security Groups for Pods](https://github.com/aws/amazon-vpc-cni-k8s/pull/2818) (@jdn5126)
+* Testing - [Fix coredns failing during custom networking tests](https://github.com/aws/amazon-vpc-cni-k8s/pull/2844) (@jchen6585)
+
 ## v1.17.1
 
 * Feature - [Send pod name/ns to nodeagent for strict mode](https://github.com/aws/amazon-vpc-cni-k8s/pull/2790) (@jayanthvn)
