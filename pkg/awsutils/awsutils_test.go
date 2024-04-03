@@ -46,6 +46,7 @@ const (
 	metadataInstanceType = "instance-type"
 	metadataSGs          = "/security-group-ids"
 	metadataSubnetID     = "/subnet-id"
+	metadataVpcID        = "/vpc-id"
 	metadataVPCcidrs     = "/vpc-ipv4-cidr-blocks"
 	metadataDeviceNum    = "/device-number"
 	metadataInterface    = "/interface-id"
@@ -65,6 +66,7 @@ const (
 	sgs                  = sg1 + " " + sg2
 	subnetID             = "subnet-6b245523"
 	subnetCIDR           = "10.0.1.0/24"
+	vpcID                = "vpc-3c133421"
 	primaryeniID         = "eni-00000000"
 	eniID                = primaryeniID
 	eniAttachID          = "eni-attach-beb21856"
@@ -93,6 +95,7 @@ func testMetadata(overrides map[string]interface{}) FakeIMDS {
 		metadataMACPath + primaryMAC + metadataSGs:        sgs,
 		metadataMACPath + primaryMAC + metadataIPv4s:      eni1PrivateIP,
 		metadataMACPath + primaryMAC + metadataSubnetID:   subnetID,
+		metadataMACPath + primaryMAC + metadataVpcID:      vpcID,
 		metadataMACPath + primaryMAC + metadataSubnetCIDR: subnetCIDR,
 		metadataMACPath + primaryMAC + metadataVPCcidrs:   metadataVPCIPv4CIDRs,
 	}
@@ -118,6 +121,7 @@ func testMetadataWithPrefixes(overrides map[string]interface{}) FakeIMDS {
 		metadataMACPath + primaryMAC + metadataIPv4s:        eni1PrivateIP,
 		metadataMACPath + primaryMAC + metadataIPv4Prefixes: eni1Prefix,
 		metadataMACPath + primaryMAC + metadataSubnetID:     subnetID,
+		metadataMACPath + primaryMAC + metadataVpcID:        vpcID,
 		metadataMACPath + primaryMAC + metadataSubnetCIDR:   subnetCIDR,
 		metadataMACPath + primaryMAC + metadataVPCcidrs:     metadataVPCIPv4CIDRs,
 	}
@@ -167,7 +171,7 @@ func TestInitWithEC2metadata(t *testing.T) {
 		assert.Equal(t, cache.instanceID, instanceID)
 		assert.Equal(t, cache.primaryENImac, primaryMAC)
 		assert.Equal(t, cache.primaryENI, primaryeniID)
-		assert.Equal(t, subnetID, cache.subnetID)
+		assert.Equal(t, cache.vpcID, vpcID)
 	}
 }
 
@@ -376,6 +380,21 @@ func TestAllocENI(t *testing.T) {
 
 	mockMetadata := testMetadata(nil)
 
+	ipAddressCount := int64(100)
+	subnetResult := &ec2.DescribeSubnetsOutput{
+		Subnets: []*ec2.Subnet{{
+			AvailableIpAddressCount: aws.Int64(ipAddressCount),
+			SubnetId:                aws.String(subnetID),
+			Tags: []*ec2.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+			},
+		}},
+	}
+	mockEC2.EXPECT().DescribeSubnetsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
+
 	cureniID := eniID
 	eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2.NetworkInterface{NetworkInterfaceId: &cureniID}}
 	mockEC2.EXPECT().CreateNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(&eni, nil)
@@ -401,9 +420,10 @@ func TestAllocENI(t *testing.T) {
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC:       mockEC2,
-		imds:         TypedIMDS{mockMetadata},
-		instanceType: "c5n.18xlarge",
+		ec2SVC:             mockEC2,
+		imds:               TypedIMDS{mockMetadata},
+		instanceType:       "c5n.18xlarge",
+		useSubnetDiscovery: true,
 	}
 
 	_, err := cache.AllocENI(false, nil, "", 5)
@@ -415,6 +435,21 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockMetadata := testMetadata(nil)
+
+	ipAddressCount := int64(100)
+	subnetResult := &ec2.DescribeSubnetsOutput{
+		Subnets: []*ec2.Subnet{{
+			AvailableIpAddressCount: &ipAddressCount,
+			SubnetId:                aws.String(subnetID),
+			Tags: []*ec2.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+			},
+		}},
+	}
+	mockEC2.EXPECT().DescribeSubnetsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
 
 	cureniID := eniID
 	eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2.NetworkInterface{NetworkInterfaceId: &cureniID}}
@@ -436,9 +471,10 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC:       mockEC2,
-		imds:         TypedIMDS{mockMetadata},
-		instanceType: "c5n.18xlarge",
+		ec2SVC:             mockEC2,
+		imds:               TypedIMDS{mockMetadata},
+		instanceType:       "c5n.18xlarge",
+		useSubnetDiscovery: true,
 	}
 
 	_, err := cache.AllocENI(false, nil, "", 5)
@@ -450,6 +486,21 @@ func TestAllocENIMaxReached(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockMetadata := testMetadata(nil)
+
+	ipAddressCount := int64(100)
+	subnetResult := &ec2.DescribeSubnetsOutput{
+		Subnets: []*ec2.Subnet{{
+			AvailableIpAddressCount: &ipAddressCount,
+			SubnetId:                aws.String(subnetID),
+			Tags: []*ec2.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+			},
+		}},
+	}
+	mockEC2.EXPECT().DescribeSubnetsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
 
 	cureniID := eniID
 	eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2.NetworkInterface{NetworkInterfaceId: &cureniID}}
@@ -473,9 +524,10 @@ func TestAllocENIMaxReached(t *testing.T) {
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC:       mockEC2,
-		imds:         TypedIMDS{mockMetadata},
-		instanceType: "c5n.18xlarge",
+		ec2SVC:             mockEC2,
+		imds:               TypedIMDS{mockMetadata},
+		instanceType:       "c5n.18xlarge",
+		useSubnetDiscovery: true,
 	}
 
 	_, err := cache.AllocENI(false, nil, "", 5)
@@ -485,6 +537,21 @@ func TestAllocENIMaxReached(t *testing.T) {
 func TestAllocENIWithIPAddresses(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
+
+	ipAddressCount := int64(100)
+	subnetResult := &ec2.DescribeSubnetsOutput{
+		Subnets: []*ec2.Subnet{{
+			AvailableIpAddressCount: &ipAddressCount,
+			SubnetId:                aws.String(subnetID),
+			Tags: []*ec2.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+			},
+		}},
+	}
+	mockEC2.EXPECT().DescribeSubnetsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
 
 	// when required IP numbers(5) is below ENI's limit(30)
 	currentEniID := eniID
@@ -509,16 +576,17 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().AttachNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
-	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", useSubnetDiscovery: true}
 	_, err := cache.AllocENI(false, nil, subnetID, 5)
 	assert.NoError(t, err)
 
 	// when required IP numbers(50) is higher than ENI's limit(49)
+	mockEC2.EXPECT().DescribeSubnetsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
 	mockEC2.EXPECT().CreateNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(&eni, nil)
 	mockEC2.EXPECT().DescribeInstancesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().AttachNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	cache = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
+	cache = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", useSubnetDiscovery: true}
 	_, err = cache.AllocENI(false, nil, subnetID, 49)
 	assert.NoError(t, err)
 }
@@ -529,13 +597,29 @@ func TestAllocENIWithIPAddressesAlreadyFull(t *testing.T) {
 
 	mockMetadata := testMetadata(nil)
 
+	ipAddressCount := int64(100)
+	subnetResult := &ec2.DescribeSubnetsOutput{
+		Subnets: []*ec2.Subnet{{
+			AvailableIpAddressCount: &ipAddressCount,
+			SubnetId:                aws.String(subnetID),
+			Tags: []*ec2.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+			},
+		}},
+	}
+	mockEC2.EXPECT().DescribeSubnetsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
+
 	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
 	mockEC2.EXPECT().CreateNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, retErr)
 
 	cache := &EC2InstanceMetadataCache{
-		ec2SVC:       mockEC2,
-		imds:         TypedIMDS{mockMetadata},
-		instanceType: "t3.xlarge",
+		ec2SVC:             mockEC2,
+		imds:               TypedIMDS{mockMetadata},
+		instanceType:       "t3.xlarge",
+		useSubnetDiscovery: true,
 	}
 	_, err := cache.AllocENI(true, nil, "", 14)
 	assert.Error(t, err)
@@ -546,6 +630,21 @@ func TestAllocENIWithPrefixAddresses(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockMetadata := testMetadata(nil)
+
+	ipAddressCount := int64(100)
+	subnetResult := &ec2.DescribeSubnetsOutput{
+		Subnets: []*ec2.Subnet{{
+			AvailableIpAddressCount: &ipAddressCount,
+			SubnetId:                aws.String(subnetID),
+			Tags: []*ec2.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+			},
+		}},
+	}
+	mockEC2.EXPECT().DescribeSubnetsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
 
 	currentEniID := eniID
 	eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2.NetworkInterface{NetworkInterfaceId: &currentEniID}}
@@ -574,6 +673,7 @@ func TestAllocENIWithPrefixAddresses(t *testing.T) {
 		imds:                   TypedIMDS{mockMetadata},
 		instanceType:           "c5n.18xlarge",
 		enablePrefixDelegation: true,
+		useSubnetDiscovery:     true,
 	}
 	_, err := cache.AllocENI(false, nil, subnetID, 1)
 	assert.NoError(t, err)
@@ -585,6 +685,21 @@ func TestAllocENIWithPrefixesAlreadyFull(t *testing.T) {
 
 	mockMetadata := testMetadata(nil)
 
+	ipAddressCount := int64(100)
+	subnetResult := &ec2.DescribeSubnetsOutput{
+		Subnets: []*ec2.Subnet{{
+			AvailableIpAddressCount: &ipAddressCount,
+			SubnetId:                aws.String(subnetID),
+			Tags: []*ec2.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+			},
+		}},
+	}
+	mockEC2.EXPECT().DescribeSubnetsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
+
 	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
 	mockEC2.EXPECT().CreateNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, retErr)
 
@@ -593,6 +708,7 @@ func TestAllocENIWithPrefixesAlreadyFull(t *testing.T) {
 		imds:                   TypedIMDS{mockMetadata},
 		instanceType:           "c5n.18xlarge",
 		enablePrefixDelegation: true,
+		useSubnetDiscovery:     true,
 	}
 	_, err := cache.AllocENI(true, nil, "", 1)
 	assert.Error(t, err)
@@ -1145,6 +1261,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
 								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
+								},
 							},
 							MaxResults: aws.Int64(1000),
 						},
@@ -1173,6 +1293,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 								{
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
+								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
 								},
 							},
 							MaxResults: aws.Int64(1000),
@@ -1235,6 +1359,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
 								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
+								},
 							},
 							MaxResults: aws.Int64(1000),
 						},
@@ -1279,6 +1407,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 								{
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
+								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
 								},
 							},
 							MaxResults: aws.Int64(1000),
@@ -1325,6 +1457,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
 								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
+								},
 							},
 							MaxResults: aws.Int64(1000),
 						},
@@ -1353,6 +1489,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 								{
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
+								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
 								},
 								{
 									Name:   aws.String("tag:cluster.k8s.amazonaws.com/name"),
@@ -1428,6 +1568,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 									Values: []*string{aws.String("available")},
 								},
 								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
+								},
+								{
 									Name:   aws.String("tag:cluster.k8s.amazonaws.com/name"),
 									Values: []*string{aws.String("awesome-cluster")},
 								},
@@ -1479,6 +1623,10 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 								{
 									Name:   aws.String("status"),
 									Values: []*string{aws.String("available")},
+								},
+								{
+									Name:   aws.String("vpc-id"),
+									Values: []*string{aws.String(vpcID)},
 								},
 								{
 									Name:   aws.String("tag:cluster.k8s.amazonaws.com/name"),
@@ -1537,7 +1685,7 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 						return nil
 					})
 			}
-			cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, clusterName: tt.fields.clusterName}
+			cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, clusterName: tt.fields.clusterName, vpcID: vpcID}
 			got, err := cache.getLeakedENIs()
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())

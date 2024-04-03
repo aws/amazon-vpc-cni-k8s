@@ -126,6 +126,17 @@ func TestGetSubnetID(t *testing.T) {
 	}
 }
 
+func TestGetVpcID(t *testing.T) {
+	f := TypedIMDS{FakeIMDS(map[string]interface{}{
+		"network/interfaces/macs/02:c5:f8:3e:6b:27/vpc-id": "vpc-0afaed81bf542db37",
+	})}
+
+	id, err := f.GetVpcID(context.TODO(), "02:c5:f8:3e:6b:27")
+	if assert.NoError(t, err) {
+		assert.Equal(t, id, "vpc-0afaed81bf542db37")
+	}
+}
+
 func TestGetSecurityGroupIDs(t *testing.T) {
 	f := TypedIMDS{FakeIMDS(map[string]interface{}{
 		"network/interfaces/macs/02:c5:f8:3e:6b:27/security-group-ids": "sg-00581e028df71bda8",

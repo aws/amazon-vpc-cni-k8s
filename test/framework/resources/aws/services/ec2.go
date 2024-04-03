@@ -47,8 +47,9 @@ type EC2 interface {
 	DeleteKey(keyName string) error
 	DescribeKey(keyName string) (*ec2.DescribeKeyPairsOutput, error)
 	ModifyNetworkInterfaceSecurityGroups(securityGroupIds []*string, networkInterfaceId *string) (*ec2.ModifyNetworkInterfaceAttributeOutput, error)
-
 	DescribeAvailabilityZones() (*ec2.DescribeAvailabilityZonesOutput, error)
+	CreateTags(resourceIds []string, tags []*ec2.Tag) (*ec2.CreateTagsOutput, error)
+	DeleteTags(resourceIds []string, tags []*ec2.Tag) (*ec2.DeleteTagsOutput, error)
 }
 
 type defaultEC2 struct {
@@ -392,6 +393,22 @@ func (d *defaultEC2) DescribeVPC(vpcID string) (*ec2.DescribeVpcsOutput, error) 
 		VpcIds: aws.StringSlice([]string{vpcID}),
 	}
 	return d.EC2API.DescribeVpcs(describeVPCInput)
+}
+
+func (d *defaultEC2) CreateTags(resourceIds []string, tags []*ec2.Tag) (*ec2.CreateTagsOutput, error) {
+	input := &ec2.CreateTagsInput{
+		Resources: aws.StringSlice(resourceIds),
+		Tags:      tags,
+	}
+	return d.EC2API.CreateTags(input)
+}
+
+func (d *defaultEC2) DeleteTags(resourceIds []string, tags []*ec2.Tag) (*ec2.DeleteTagsOutput, error) {
+	input := &ec2.DeleteTagsInput{
+		Resources: aws.StringSlice(resourceIds),
+		Tags:      tags,
+	}
+	return d.EC2API.DeleteTags(input)
 }
 
 func NewEC2(session *session.Session) EC2 {
