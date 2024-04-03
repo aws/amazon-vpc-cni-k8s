@@ -183,6 +183,7 @@ spec:
       - name: xtables-lock
         hostPath:
           path: /run/xtables.lock
+          type: FileOrCreate
       {{- with .Values.extraVolumes  }}
       {{- toYaml .| nindent 6 }}
       {{- end }}
