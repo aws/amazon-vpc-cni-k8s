@@ -53,8 +53,9 @@ jobs:
           ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
           RUN_CNI_INTEGRATION_TESTS: false
           RUN_KOPS_TEST: true
-          K8S_VERSION: 1.29.0-alpha.3
-          KOPS_VERSION: v1.29.0-alpha.3
+          K8S_VERSION: 1.30.0-beta.0
+          KOPS_VERSION: v1.28.4
+          KOPS_RUN_TOO_NEW_VERSION: 1
         run: |
           ./scripts/run-integration-tests.sh
         if: always()
