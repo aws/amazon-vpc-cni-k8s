@@ -25,7 +25,7 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/vishvananda/netlink v1.2.1-beta.2
 	go.uber.org/zap v1.26.0
-	golang.org/x/net v0.22.0
+	golang.org/x/net v0.23.0
 	golang.org/x/sys v0.18.0
 	google.golang.org/grpc v1.62.0
 	google.golang.org/protobuf v1.33.0
@@ -145,11 +145,11 @@ require (
 	go.opentelemetry.io/otel/trace v1.19.0 // indirect
 	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.18.0 // indirect
+	golang.org/x/crypto v0.21.0 // indirect
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
 	golang.org/x/oauth2 v0.18.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
-	golang.org/x/term v0.15.0 // indirect
+	golang.org/x/term v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.17.0 // indirect
@@ -178,5 +178,5 @@ replace gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 => gopkg.in/yaml.v3 
 // Cannot be removed until all dependencies use crypto library v0.17.0 or higher
 replace golang.org/x/crypto => golang.org/x/crypto v0.17.0
 
-// Cannot be removed until all dependencies use net library v0.17.0 or higher
-replace golang.org/x/net => golang.org/x/net v0.17.0
+// Cannot be removed until all dependencies use net library v0.23.0 or higher
+replace golang.org/x/net => golang.org/x/net v0.23.0

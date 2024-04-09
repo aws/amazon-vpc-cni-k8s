@@ -13,10 +13,10 @@ function run_kops_conformance() {
 
     wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test-linux-amd64.tar.gz | tar -zxvf - --strip-components=3 -C /tmp  kubernetes/test/bin/e2e.test
 
-    /tmp/e2e.test --ginkgo.focus="Conformance" --ginkgo.timeout 120m --kubeconfig=$KUBECONFIG --ginkgo.fail-fast  --ginkgo.flake-attempts 2 \
+    /tmp/e2e.test --ginkgo.focus="Conformance" --ginkgo.timeout 120m --kubeconfig=$KUBECONFIG --ginkgo.v --ginkgo.fail-fast  --ginkgo.flake-attempts 2 \
 	    --ginkgo.skip="(works for CRD with validation schema)|(ServiceAccountIssuerDiscovery should support OIDC discovery of service account issuer)|(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|(Basic StatefulSet functionality [StatefulSetBasic])|\[Slow\]|\[Serial\]"
 
-    /tmp/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.fail-fast --ginkgo.flake-attempts 2 \
+    /tmp/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.v --ginkgo.fail-fast --ginkgo.flake-attempts 2 \
 	    --ginkgo.skip="(ServiceAccountIssuerDiscovery should support OIDC discovery of service account issuer)|(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
     echo "Kops conformance tests ran successfully!"
 
