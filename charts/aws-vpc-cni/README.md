@@ -48,7 +48,7 @@ The following table lists the configurable parameters for this chart and their d
 | `minimumWindowsIPTarget`| Minimum IP target value for Windows prefix delegation   | `3`                                 |
 | `branchENICooldown`     | Number of seconds that branch ENIs remain in cooldown   | `60`                                |
 | `fullnameOverride`      | Override the fullname of the chart                      | `aws-node`                          |
-| `image.tag`             | Image tag                                               | `v1.17.1`                           |
+| `image.tag`             | Image tag                                               | `v1.18.0`                           |
 | `image.domain`          | ECR repository domain                                   | `amazonaws.com`                     |
 | `image.region`          | ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `image.endpoint`        | ECR repository endpoint to use.                         | `ecr`                               |
@@ -56,7 +56,7 @@ The following table lists the configurable parameters for this chart and their d
 | `image.pullPolicy`      | Container pull policy                                   | `IfNotPresent`                      |
 | `image.override`        | A custom docker image to use                            | `nil`                               |
 | `imagePullSecrets`      | Docker registry pull secret                             | `[]`                                |
-| `init.image.tag`        | Image tag                                               | `v1.17.1`                           |
+| `init.image.tag`        | Image tag                                               | `v1.18.0`                           |
 | `init.image.domain`     | ECR repository domain                                   | `amazonaws.com`                     |
 | `init.image.region`     | ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `init.image.endpoint`   | ECR repository endpoint to use.                         | `ecr`                               |
