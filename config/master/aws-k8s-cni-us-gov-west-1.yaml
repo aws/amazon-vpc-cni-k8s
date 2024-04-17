@@ -464,12 +464,12 @@ spec:
               value: "false"
             - name: ENABLE_PREFIX_DELEGATION
               value: "false"
+            - name: ENABLE_SUBNET_DISCOVERY
+              value: "true"
             - name: NETWORK_POLICY_ENFORCING_MODE
               value: "standard"
             - name: VPC_CNI_VERSION
               value: "v1.18.0"
-            - name: ENABLE_SUBNET_DISCOVERY
-              value: "true"
             - name: WARM_ENI_TARGET
               value: "1"
             - name: WARM_PREFIX_TARGET
