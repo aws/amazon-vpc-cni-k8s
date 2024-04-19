@@ -55,6 +55,7 @@ $ helm uninstall cni-metrics-helper --namespace kube-system
 
 The following table lists the configurable parameters for this chart and their default values.
 
+
 | Parameter                      | Description                                                   | Default                             |
 | -------------------------------|---------------------------------------------------------------|-------------------------------------|
 | `affinity`                     | Map of node/pod affinities                                    | `{}`                                |
@@ -81,6 +82,7 @@ The following table lists the configurable parameters for this chart and their d
 | `imagePullSecrets`             | Docker registry pull secret                                   | `[]`                                |
 | `nodeSelector`                 | Node labels for pod assignment                                | `{}`                                |
 | `tolerations`                  | Optional deployment tolerations                               | `[]`                                |
+
 
 Specify each parameter using the `--set key=value[,key=value]` argument to `helm install` or provide a YAML file containing the values for the above parameters:
 
