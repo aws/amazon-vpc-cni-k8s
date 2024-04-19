@@ -23,6 +23,8 @@ spec:
       {{- end }}
       {{- end }}
       labels:
+        app.kubernetes.io/name: {{ include "cni-metrics-helper.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
         k8s-app: cni-metrics-helper
     spec:
       containers:
