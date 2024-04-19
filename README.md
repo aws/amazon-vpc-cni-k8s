@@ -40,7 +40,7 @@ See [here](./docs/iam-policy.md) for required IAM policies.
 * `unit-test`, `format`,`lint` and `vet` provide ways to run the respective tests/tools and should be run before submitting a PR.
 * `make docker` will create a docker container using `docker buildx` that contains the finished binaries, with a tag of `amazon/amazon-k8s-cni:latest`
 * `make docker-unit-tests` uses a docker container to run all unit tests.
-* builds for all build and test actions run in docker containers based on `golang:1.21.5-6-gcc-al2` unless a different `GOLANG_IMAGE` tag is passed in.
+* Builds for all build and test actions run in docker containers based on `.go-version` unless a different `GOLANG_IMAGE` tag is passed in.
 
 ## Components
 
