@@ -29,7 +29,6 @@ import (
 
 const (
 	defaultHostCNIBinPath           = "/host/opt/cni/bin"
-	vpcCniInitDonePath              = "/vpc-cni-init/done"
 	metadataLocalIP                 = "local-ipv4"
 	metadataMAC                     = "mac"
 	defaultDisableIPv4TcpEarlyDemux = false
@@ -181,17 +180,7 @@ func _main() int {
 		return 1
 	}
 
-	// TODO: In order to speed up pod launch time, VPC CNI init container is not a Kubernetes init container.
-	// The VPC CNI container blocks on the existence of vpcCniInitDonePath
-	//err = cp.TouchFile(vpcCniInitDonePath)
-	//if err != nil {
-	//	log.WithError(err).Errorf("Failed to set VPC CNI init done")
-	//	return 1
-	//}
-
 	log.Infof("CNI init container done")
 
-	// TODO: Since VPC CNI init container is a real container, it never exits
-	// time.Sleep(time.Duration(1<<63 - 1))
 	return 0
 }
