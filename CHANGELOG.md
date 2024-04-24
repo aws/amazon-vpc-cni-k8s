@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.18.1
+
+* Bug - [Mount /run/xtables.lock as FileOrCreate in Helm chart](https://github.com/aws/amazon-vpc-cni-k8s/pull/2841) (@kwohlfahrt)
+* Enhancement - [Update .go-version to 1.22.2 to fix CVE reports.](https://github.com/aws/amazon-vpc-cni-k8s/pull/2870) (@orsenthil)
+* Cleanup - [remove unused Dockerfile](https://github.com/aws/amazon-vpc-cni-k8s/pull/2869) (@sushrk)
+* Dependency - [Bump github.com/containernetworking/plugins from 1.4.0 to 1.4.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/2860) (@dependabot)
+* Dependency - [Bump golang.org/x/sys from 0.17.0 to 0.18.0 in /test/agent](https://github.com/aws/amazon-vpc-cni-k8s/pull/2859) (@dependabot)
+* Dependency - [Bump helm.sh/helm/v3 from 3.14.2 to 3.14.3](https://github.com/aws/amazon-vpc-cni-k8s/pull/2862) (@dependabot)
+* Dependency - [Bump github.com/prometheus/common from 0.48.0 to 0.52.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/2866) (@dependabot)
+* Dependency - [Bump github.com/stretchr/testify from 1.8.4 to 1.9.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2863) (@dependabot)
+* Dependency - [Bump github.com/onsi/ginkgo/v2 from 2.14.0 to 2.17.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/2864) (@dependabot)
+
 ## v1.18.0
 
 * Cleanup - [run make generate-limits](https://github.com/aws/amazon-vpc-cni-k8s/pull/2835) (@jaydeokar)
