@@ -5,8 +5,8 @@ go 1.21
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20231212223725-21c4bd73015b
-	github.com/aws/amazon-vpc-resource-controller-k8s v1.4.1
-	github.com/aws/aws-sdk-go v1.50.29
+	github.com/aws/amazon-vpc-resource-controller-k8s v1.4.7
+	github.com/aws/aws-sdk-go v1.51.12
 	github.com/containernetworking/cni v1.1.2
 	github.com/containernetworking/plugins v1.4.1
 	github.com/coreos/go-iptables v0.7.0
@@ -32,10 +32,10 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v2 v2.4.0
 	helm.sh/helm/v3 v3.14.3
-	k8s.io/api v0.29.0
-	k8s.io/apimachinery v0.29.2
+	k8s.io/api v0.29.3
+	k8s.io/apimachinery v0.29.3
 	k8s.io/cli-runtime v0.29.0
-	k8s.io/client-go v0.29.0
+	k8s.io/client-go v0.29.3
 	sigs.k8s.io/controller-runtime v0.17.0
 )
 
@@ -82,7 +82,7 @@ require (
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
@@ -151,7 +151,7 @@ require (
 	golang.org/x/sync v0.6.0 // indirect
 	golang.org/x/term v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	golang.org/x/time v0.3.0 // indirect
+	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.17.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
