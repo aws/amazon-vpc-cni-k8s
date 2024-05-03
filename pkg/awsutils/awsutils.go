@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"math/rand"
 	"net"
 	"os"
@@ -168,7 +169,7 @@ type APIs interface {
 	IsPrimaryENI(eniID string) bool
 
 	//RefreshSGIDs
-	RefreshSGIDs(mac string) error
+	RefreshSGIDs(mac string, store *datastore.DataStore) error
 
 	//GetInstanceHypervisorFamily returns the hypervisor family for the instance
 	GetInstanceHypervisorFamily() string
@@ -474,7 +475,7 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 }
 
 // RefreshSGIDs retrieves security groups
-func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
+func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string, store *datastore.DataStore) error {
 	ctx := context.TODO()
 
 	sgIDs, err := cache.imds.GetSecurityGroupIDs(ctx, mac)
@@ -501,7 +502,13 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 	cache.securityGroups.Set(sgIDs)
 
 	if !cache.useCustomNetworking && (addedSGsCount != 0 || deletedSGsCount != 0) {
+		eniInfos := store.GetENIInfos()
+
 		var eniIDs []string
+
+		for eniID := range eniInfos.ENIs {
+			eniIDs = append(eniIDs, eniID)
+		}
 
 		newENIs := StringSet{}
 		newENIs.Set(eniIDs)

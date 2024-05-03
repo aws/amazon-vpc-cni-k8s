@@ -19,6 +19,7 @@
 package mock_awsutils
 
 import (
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	net "net"
 	reflect "reflect"
 
@@ -466,7 +467,7 @@ func (mr *MockAPIsMockRecorder) IsUnmanagedENI(arg0 interface{}) *gomock.Call {
 }
 
 // RefreshSGIDs mocks base method.
-func (m *MockAPIs) RefreshSGIDs(arg0 string) error {
+func (m *MockAPIs) RefreshSGIDs(mac string, store *datastore.DataStore) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RefreshSGIDs", arg0)
 	ret0, _ := ret[0].(error)
