@@ -180,3 +180,6 @@ replace golang.org/x/crypto => golang.org/x/crypto v0.17.0
 
 // Cannot be removed until all dependencies use net library v0.23.0 or higher
 replace golang.org/x/net => golang.org/x/net v0.23.0
+
+// Version of go-cose v1.2.0 and v1.2.1 have been deprecated in favor v1.1.0
+replace github.com/veraison/go-cose => github.com/veraison/go-cose v1.1.0
