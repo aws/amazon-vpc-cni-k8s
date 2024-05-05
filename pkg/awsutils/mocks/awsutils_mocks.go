@@ -19,9 +19,10 @@
 package mock_awsutils
 
 import (
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	net "net"
 	reflect "reflect"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 
 	awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	vpc "github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
