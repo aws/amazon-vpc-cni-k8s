@@ -469,7 +469,7 @@ func (mr *MockAPIsMockRecorder) IsUnmanagedENI(arg0 interface{}) *gomock.Call {
 // RefreshSGIDs mocks base method.
 func (m *MockAPIs) RefreshSGIDs(mac string, store *datastore.DataStore) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RefreshSGIDs", arg0)
+	ret := m.ctrl.Call(m, "RefreshSGIDs", mac, store)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
