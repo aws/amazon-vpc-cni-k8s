@@ -476,9 +476,9 @@ func (m *MockAPIs) RefreshSGIDs(mac string, store *datastore.DataStore) error {
 }
 
 // RefreshSGIDs indicates an expected call of RefreshSGIDs.
-func (mr *MockAPIsMockRecorder) RefreshSGIDs(arg0 interface{}) *gomock.Call {
+func (mr *MockAPIsMockRecorder) RefreshSGIDs(mac, store interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshSGIDs", reflect.TypeOf((*MockAPIs)(nil).RefreshSGIDs), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshSGIDs", reflect.TypeOf((*MockAPIs)(nil).RefreshSGIDs), mac, store)
 }
 
 // SetMultiCardENIs mocks base method.
