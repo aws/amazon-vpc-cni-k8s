@@ -27,6 +27,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
@@ -168,7 +170,7 @@ type APIs interface {
 	IsPrimaryENI(eniID string) bool
 
 	//RefreshSGIDs
-	RefreshSGIDs(mac string) error
+	RefreshSGIDs(mac string, store *datastore.DataStore) error
 
 	//GetInstanceHypervisorFamily returns the hypervisor family for the instance
 	GetInstanceHypervisorFamily() string
@@ -474,7 +476,7 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 }
 
 // RefreshSGIDs retrieves security groups
-func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
+func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string, store *datastore.DataStore) error {
 	ctx := context.TODO()
 
 	sgIDs, err := cache.imds.GetSecurityGroupIDs(ctx, mac)
@@ -501,14 +503,12 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string) error {
 	cache.securityGroups.Set(sgIDs)
 
 	if !cache.useCustomNetworking && (addedSGsCount != 0 || deletedSGsCount != 0) {
-		allENIs, err := cache.GetAttachedENIs()
-		if err != nil {
-			return errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
-		}
+		eniInfos := store.GetENIInfos()
 
 		var eniIDs []string
-		for _, eni := range allENIs {
-			eniIDs = append(eniIDs, eni.ENIID)
+
+		for eniID := range eniInfos.ENIs {
+			eniIDs = append(eniIDs, eniID)
 		}
 
 		newENIs := StringSet{}
