@@ -22,6 +22,8 @@ import (
 	net "net"
 	reflect "reflect"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+
 	awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	vpc "github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 	ec2 "github.com/aws/aws-sdk-go/service/ec2"
@@ -466,17 +468,17 @@ func (mr *MockAPIsMockRecorder) IsUnmanagedENI(arg0 interface{}) *gomock.Call {
 }
 
 // RefreshSGIDs mocks base method.
-func (m *MockAPIs) RefreshSGIDs(arg0 string) error {
+func (m *MockAPIs) RefreshSGIDs(mac string, store *datastore.DataStore) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RefreshSGIDs", arg0)
+	ret := m.ctrl.Call(m, "RefreshSGIDs", mac, store)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RefreshSGIDs indicates an expected call of RefreshSGIDs.
-func (mr *MockAPIsMockRecorder) RefreshSGIDs(arg0 interface{}) *gomock.Call {
+func (mr *MockAPIsMockRecorder) RefreshSGIDs(mac, store interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshSGIDs", reflect.TypeOf((*MockAPIs)(nil).RefreshSGIDs), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshSGIDs", reflect.TypeOf((*MockAPIs)(nil).RefreshSGIDs), mac, store)
 }
 
 // SetMultiCardENIs mocks base method.
