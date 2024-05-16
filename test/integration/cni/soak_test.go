@@ -15,11 +15,12 @@ package cni
 
 import (
 	"fmt"
+	"strconv"
+	"time"
+
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"strconv"
-	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 
