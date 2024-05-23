@@ -1397,8 +1397,6 @@ func datastoreWith3PodsFromPrefix() *datastore.DataStore {
 }
 
 func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
 	eni1, eni2, eni3 := getDummyENIMetadata()
 	allENIs := []awsutils.ENIMetadata{eni1, eni2, eni3}
 	primaryENIonly := []awsutils.ENIMetadata{eni1}
@@ -1417,26 +1415,29 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 		eni2.ENIID: {"hi": "tag", eniNodeTagKey: "i-abcdabcdabcd"},
 		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
 
-	mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
-	mockAWSUtils.EXPECT().GetPrimaryENI().Times(5).Return(eni1.ENIID)
-	mockAWSUtils.EXPECT().GetInstanceID().Times(3).Return(instanceID)
-
 	tests := []struct {
-		name          string
-		tagMap        map[string]awsutils.TagMap
-		enis          []awsutils.ENIMetadata
-		want          []awsutils.ENIMetadata
-		unmanagedenis []string
+		name                       string
+		tagMap                     map[string]awsutils.TagMap
+		enis                       []awsutils.ENIMetadata
+		want                       []awsutils.ENIMetadata
+		unmanagedenis              []string
+		expectedGetPrimaryENICalls int
+		expectedGetInstanceIDCalls int
 	}{
-		{"No tags at all", nil, allENIs, allENIs, nil},
-		{"Primary ENI unmanaged", Test1TagMap, allENIs, allENIs, nil},
-		{"Secondary/Tertiary ENI unmanaged", Test2TagMap, allENIs, primaryENIonly, []string{eni2.ENIID, eni3.ENIID}},
-		{"Secondary ENI unmanaged", Test3TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
-		{"Secondary ENI unmanaged and Tertiary ENI CNI created", Test4TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
-		{"Secondary ENI not CNI created and Tertiary ENI CNI created", Test5TagMap, allENIs, filteredENIonly, nil},
+		{"No tags at all", nil, allENIs, allENIs, nil, 0, 0},
+		{"Primary ENI unmanaged", Test1TagMap, allENIs, allENIs, nil, 1, 0},
+		{"Secondary/Tertiary ENI unmanaged", Test2TagMap, allENIs, primaryENIonly, []string{eni2.ENIID, eni3.ENIID}, 2, 0},
+		{"Secondary ENI unmanaged", Test3TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}, 1, 0},
+		{"Secondary ENI unmanaged and Tertiary ENI CNI created", Test4TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}, 1, 1},
+		{"Secondary ENI not CNI created and Tertiary ENI CNI created", Test5TagMap, allENIs, filteredENIonly, nil, 0, 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
+
 			c := &IPAMContext{
 				awsClient:                mockAWSUtils,
 				enableManageUntaggedMode: true}
@@ -1447,6 +1448,10 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 					sort.Strings(args)
 					assert.Equal(t, tt.unmanagedenis, args)
 				}).AnyTimes()
+
+			mockAWSUtils.EXPECT().GetPrimaryENI().Times(tt.expectedGetPrimaryENICalls).Return(eni1.ENIID)
+			mockAWSUtils.EXPECT().GetInstanceID().Times(tt.expectedGetInstanceIDCalls).Return(instanceID)
+
 			c.setUnmanagedENIs(tt.tagMap)
 
 			mockAWSUtils.EXPECT().IsUnmanagedENI(gomock.Any()).DoAndReturn(
@@ -1479,7 +1484,6 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 }
 
 func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T) {
-	ctrl := gomock.NewController(t)
 
 	eni1, eni2, eni3 := getDummyENIMetadata()
 	allENIs := []awsutils.ENIMetadata{eni1, eni2, eni3}
@@ -1499,29 +1503,36 @@ func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T)
 		eni2.ENIID: {"hi": "tag", eniNodeTagKey: "i-abcdabcdabcd"},
 		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
 
-	mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
-	mockAWSUtils.EXPECT().GetPrimaryENI().Times(6).Return(eni1.ENIID)
-	mockAWSUtils.EXPECT().GetInstanceID().Times(3).Return(instanceID)
-
 	tests := []struct {
-		name          string
-		tagMap        map[string]awsutils.TagMap
-		enis          []awsutils.ENIMetadata
-		want          []awsutils.ENIMetadata
-		unmanagedenis []string
+		name                       string
+		tagMap                     map[string]awsutils.TagMap
+		enis                       []awsutils.ENIMetadata
+		want                       []awsutils.ENIMetadata
+		unmanagedenis              []string
+		expectedGetPrimaryENICalls int
+		expectedGetInstanceIDCalls int
 	}{
-		{"No tags at all", nil, allENIs, allENIs, []string{eni2.ENIID, eni3.ENIID}},
-		{"Primary ENI unmanaged", Test1TagMap, allENIs, allENIs, nil},
-		{"Secondary/Tertiary ENI unmanaged", Test2TagMap, allENIs, primaryENIonly, []string{eni2.ENIID, eni3.ENIID}},
-		{"Secondary ENI unmanaged", Test3TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
-		{"Secondary ENI unmanaged and Tertiary ENI CNI created", Test4TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
-		{"Secondary ENI not CNI created and Tertiary ENI CNI created", Test5TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}},
+		{"No tags at all", nil, allENIs, allENIs, []string{eni2.ENIID, eni3.ENIID}, 0, 0},
+		{"Primary ENI unmanaged", Test1TagMap, allENIs, allENIs, nil, 1, 0},
+		{"Secondary/Tertiary ENI unmanaged", Test2TagMap, allENIs, primaryENIonly, []string{eni2.ENIID, eni3.ENIID}, 2, 0},
+		{"Secondary ENI unmanaged", Test3TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}, 1, 0},
+		{"Secondary ENI unmanaged and Tertiary ENI CNI created", Test4TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}, 1, 1},
+		{"Secondary ENI not CNI created and Tertiary ENI CNI created", Test5TagMap, allENIs, filteredENIonly, []string{eni2.ENIID}, 1, 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			defer ctrl.Finish()
+
+			mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
+
 			c := &IPAMContext{
 				awsClient:                mockAWSUtils,
 				enableManageUntaggedMode: false}
+
+			mockAWSUtils.EXPECT().GetPrimaryENI().Times(tt.expectedGetPrimaryENICalls).Return(eni1.ENIID)
+			mockAWSUtils.EXPECT().GetInstanceID().Times(tt.expectedGetInstanceIDCalls).Return(instanceID)
 
 			mockAWSUtils.
 				EXPECT().
