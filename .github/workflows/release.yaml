@@ -22,7 +22,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: "1.22"
+          go-version: "1.21"
       - name: Generate CNI YAML
         run: make generate-cni-yaml
       - name: Create eks-charts PR
