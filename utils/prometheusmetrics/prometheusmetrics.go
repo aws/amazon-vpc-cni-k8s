@@ -159,8 +159,8 @@ var (
 		},
 		[]string{"cidr"},
 	)
-	NoAvailableIPAddrs = prometheus.NewGauge(
-		prometheus.GaugeOpts{
+	NoAvailableIPAddrs = prometheus.NewCounter(
+		prometheus.CounterOpts{
 			Name: "awscni_no_available_ip_addresses",
 			Help: "The number of pod IP assignments that fail due to no available IP addresses",
 		},
