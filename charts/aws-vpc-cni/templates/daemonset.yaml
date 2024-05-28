@@ -134,6 +134,7 @@ spec:
             - --enable-network-policy={{ .Values.enableNetworkPolicy }}
             - --enable-cloudwatch-logs={{ .Values.nodeAgent.enableCloudWatchLogs }}
             - --enable-policy-event-logs={{ .Values.nodeAgent.enablePolicyEventLogs }}
+            - --log-file={{ .Values.nodeAgent.networkPolicyAgentLogFileLocation }}
             - --metrics-bind-addr={{ include "aws-vpc-cni.nodeAgentMetricsBindAddr" . }}
             - --health-probe-bind-addr={{ include "aws-vpc-cni.nodeAgentHealthProbeBindAddr" . }}
             - --conntrack-cache-cleanup-period={{ .Values.nodeAgent.conntrackCacheCleanupPeriod }}
