@@ -507,14 +507,14 @@ func (c *IPAMContext) nodeInit() error {
 	// 1. after managed/unmanaged ENIs have been determined
 	// 2. before any new ENIs are attached
 	if c.enableIPv4 && !c.disableENIProvisioning {
-		if err := c.awsClient.RefreshSGIDs(primaryENIMac); err != nil {
+		if err := c.awsClient.RefreshSGIDs(primaryENIMac, c.dataStore); err != nil {
 			return err
 		}
 
 		// Refresh security groups and VPC CIDR blocks in the background
 		// Ignoring errors since we will retry in 30s
 		go wait.Forever(func() {
-			c.awsClient.RefreshSGIDs(primaryENIMac)
+			c.awsClient.RefreshSGIDs(primaryENIMac, c.dataStore)
 		}, 30*time.Second)
 	}
 

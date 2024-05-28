@@ -36,3 +36,34 @@ podSecurityContext: {}
 containerSecurityContext: {}
 
 podAnnotations: {}
+
+imagePullSecrets: []
+
+updateStrategy: {}
+#  type: RollingUpdate
+#  rollingUpdate:
+#    maxUnavailable: "10%"
+
+nodeSelector: {}
+
+tolerations: []
+# - operator: Exists
+
+affinity: {}
+#  nodeAffinity:
+#    requiredDuringSchedulingIgnoredDuringExecution:
+#      nodeSelectorTerms:
+#        - matchExpressions:
+#            - key: "kubernetes.io/os"
+#              operator: In
+#              values:
+#                - linux
+#            - key: "kubernetes.io/arch"
+#              operator: In
+#              values:
+#                - amd64
+#                - arm64
+#            - key: "eks.amazonaws.com/compute-type"
+#              operator: NotIn
+#              values:
+#                - fargate
