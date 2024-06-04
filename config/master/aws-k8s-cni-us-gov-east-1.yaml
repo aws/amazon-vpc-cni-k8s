@@ -516,6 +516,7 @@ spec:
             - --enable-network-policy=false
             - --enable-cloudwatch-logs=false
             - --enable-policy-event-logs=false
+            - --log-file=/var/log/aws-routed-eni/network-policy-agent.log
             - --metrics-bind-addr=:8162
             - --health-probe-bind-addr=:8163
             - --conntrack-cache-cleanup-period=300
@@ -557,6 +558,7 @@ spec:
       - name: xtables-lock
         hostPath:
           path: /run/xtables.lock
+          type: FileOrCreate
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

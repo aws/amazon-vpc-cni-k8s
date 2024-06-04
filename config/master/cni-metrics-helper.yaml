@@ -15,6 +15,10 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: cni-metrics-helper
+  labels:
+    app.kubernetes.io/name: cni-metrics-helper
+    app.kubernetes.io/instance: cni-metrics-helper
+    app.kubernetes.io/version: "v1.18.2"
 rules:
   - apiGroups: [""]
     resources:
@@ -48,6 +52,9 @@ metadata:
   namespace: kube-system
   labels:
     k8s-app: cni-metrics-helper
+    app.kubernetes.io/name: cni-metrics-helper
+    app.kubernetes.io/instance: cni-metrics-helper
+    app.kubernetes.io/version: "v1.18.2"
 spec:
   revisionHistoryLimit: 10
   selector:
@@ -56,6 +63,8 @@ spec:
   template:
     metadata:
       labels:
+        app.kubernetes.io/name: cni-metrics-helper
+        app.kubernetes.io/instance: cni-metrics-helper
         k8s-app: cni-metrics-helper
     spec:
       containers:
