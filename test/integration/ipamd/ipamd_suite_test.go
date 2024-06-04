@@ -34,6 +34,7 @@ const (
 )
 
 var coreDNSDeploymentCopy *v1.Deployment
+var primaryNode *corev1.Node
 
 func TestIPAMD(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -56,7 +57,6 @@ var _ = BeforeSuite(func() {
 
 	// Nominate the first untainted node as the one to run coredns deployment against
 	By("adding nodeSelector in coredns deployment to be scheduled on single node")
-	var primaryNode *corev1.Node
 	for _, n := range nodeList.Items {
 		if len(n.Spec.Taints) == 0 {
 			primaryNode = &n
