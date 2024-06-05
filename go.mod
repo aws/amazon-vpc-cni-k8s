@@ -31,7 +31,7 @@ require (
 	google.golang.org/protobuf v1.33.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v2 v2.4.0
-	helm.sh/helm/v3 v3.14.2
+	helm.sh/helm/v3 v3.14.3
 	k8s.io/api v0.29.3
 	k8s.io/apimachinery v0.29.3
 	k8s.io/cli-runtime v0.29.0
