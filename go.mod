@@ -7,7 +7,7 @@ require (
 	github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20231212223725-21c4bd73015b
 	github.com/aws/amazon-vpc-resource-controller-k8s v1.5.0
 	github.com/aws/aws-sdk-go v1.51.32
-	github.com/containernetworking/cni v1.1.2
+	github.com/containernetworking/cni v1.2.0
 	github.com/containernetworking/plugins v1.4.1
 	github.com/coreos/go-iptables v0.7.0
 	github.com/go-logr/logr v1.4.1
