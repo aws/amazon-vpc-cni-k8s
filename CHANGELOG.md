@@ -1,5 +1,45 @@
 # Changelog
 
+## v1.18.2
+
+* Enhancement - [Improve "cni-metrics-helper" setup experience](https://github.com/aws/amazon-vpc-cni-k8s/pull/2874) (@guessi)
+* Enhancement - [Filter Managed ENI.](https://github.com/aws/amazon-vpc-cni-k8s/pull/2895) (@orsenthil)
+* Enhancement - [Soak Test for CNI.](https://github.com/aws/amazon-vpc-cni-k8s/pull/2915) (@orsenthil)
+* Enhancement - [Switch to counter type metic for awscni_no_available_ip_addresses](https://github.com/aws/amazon-vpc-cni-k8s/pull/2919) (@liptanbiswas)
+* Enhancement - [Expose network policy log file location to be configured using helm](https://github.com/aws/amazon-vpc-cni-k8s/pull/2925) (@orsenthil)
+
+* Bugfix      - [Add correct labels to CNI metrics chart.](https://github.com/aws/amazon-vpc-cni-k8s/pull/2889) (@orsenthil)
+* Bugfix      - [Skip Soak Test while running other tests.](https://github.com/aws/amazon-vpc-cni-k8s/pull/2922) (@orsenthil)
+
+* Cleanup    - [remove unused Dockerfile](https://github.com/aws/amazon-vpc-cni-k8s/pull/2869) (@sushrk)
+* Cleanup    - [CHANGELOG, chart, and manifest changes following VPC CNI v1.18.0 release](https://github.com/aws/amazon-vpc-cni-k8s/pull/2876) (@jchen6585)
+* Cleanup    - [Fix merge conflicts from release-1.18 to master](https://github.com/aws/amazon-vpc-cni-k8s/pull/2881) (@jchen6585)
+* Cleanup     - [Added information on the build troubleshooting.](https://github.com/aws/amazon-vpc-cni-k8s/pull/2890) (@orsenthil)
+* Cleanup     - [Remove unused code in vpc cni init and vpc cni binary](https://github.com/aws/amazon-vpc-cni-k8s/pull/2891) (@orsenthil)
+* Cleanup     - [Merge release-1.18 to master after v1.18.1 release](https://github.com/aws/amazon-vpc-cni-k8s/pull/2914) (@jchen6585)
+
+* Dependency - [Bump github.com/onsi/ginkgo/v2 from 2.14.0 to 2.17.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/2864) (@dependabot)
+* Dependency - [Bump github.com/stretchr/testify from 1.8.4 to 1.9.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2863) (@dependabot)
+* Dependency-  [Bump github.com/prometheus/common from 0.48.0 to 0.52.2](https://github.com/aws/amazon-vpc-cni-k8s/pull/2866) (@dependabot)i
+* Dependency - [Bump helm.sh/helm/v3 from 3.14.2 to 3.14.3](https://github.com/aws/amazon-vpc-cni-k8s/pull/2862) (@dependabot)
+* Dependency - [Bump golang.org/x/sys from 0.17.0 to 0.18.0 in /test/agent](https://github.com/aws/amazon-vpc-cni-k8s/pull/2859) (@dependabot)
+* Dependency - [Bump github.com/containernetworking/plugins from 1.4.0 to 1.4.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/2860)  (@dependabot)
+* Dependency - [Update Kops test for 1.30](https://github.com/aws/amazon-vpc-cni-k8s/pull/2868) (@jchen6585)
+* Dependency - [Update .go-version to 1.22.2 to fix CVE reports](https://github.com/aws/amazon-vpc-cni-k8s/pull/2870) (@orsenthil)
+* Dependency  - [Bump golang.org/x/sys from 0.18.0 to 0.19.0 in /test/agent](https://github.com/aws/amazon-vpc-cni-k8s/pull/2898) (@dependabot)
+* Dependency  - [Update .go-version to fix GO-2024-2824](https://github.com/aws/amazon-vpc-cni-k8s/pull/2911) (@orsenthil)
+* Dependency  - [Bump github.com/aws/amazon-vpc-resource-controller-k8s from 1.4.1 to 1.5.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/2910) (@dependabot)
+* Dependency  - [Update ENI Limits.](https://github.com/aws/amazon-vpc-cni-k8s/pull/2920) (@orsenthil)
+* Dependency  - [Update golang to go1.22.3](https://github.com/aws/amazon-vpc-cni-k8s/pull/2924) (@orsenthil)
+* Dependency  - [Bump k8s.io/api from 0.29.3 to 0.30.1](https://github.com/aws/amazon-vpc-cni-k8s/pull/2918) (@dependabot)
+
+
+**New Contributors**
+
+* @kwohlfahrt made their first contribution in https://github.com/aws/amazon-vpc-cni-k8s/pull/2841
+* @guessi made their first contribution in https://github.com/aws/amazon-vpc-cni-k8s/pull/2874
+* @liptanbiswas made their first contribution in https://github.com/aws/amazon-vpc-cni-k8s/pull/2919
+
 ## v1.18.1
 
 * Bug - [Mount /run/xtables.lock as FileOrCreate in Helm chart](https://github.com/aws/amazon-vpc-cni-k8s/pull/2841) (@kwohlfahrt)
