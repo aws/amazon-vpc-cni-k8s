@@ -30,7 +30,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/vishvananda/netlink"
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,10 +39,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	eniconfigscheme "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/config"
 	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	mock_networkutils "github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
@@ -80,6 +79,7 @@ const (
 	v6prefix01             = "2001:db8::/64"
 	instanceID             = "i-0e1f3b9eb950e4980"
 	externalEniConfigLabel = "vpc.amazonaws.com/externalEniConfig"
+	clusterName            = "fake-cluster"
 )
 
 type testMocks struct {
@@ -520,7 +520,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 	testAddr12 := ipaddr12
 	eni2 := secENIid
 
-	podENIConfig := &v1alpha1.ENIConfigSpec{
+	podENIConfig := &eniconfigscheme.ENIConfigSpec{
 		SecurityGroups: []string{"sg1-id", "sg2-id"},
 		Subnet:         "subnet1",
 	}
@@ -587,15 +587,15 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 			Status:     v1.NodeStatus{},
 		}
 		if unschedulabeNode {
-			fakeNode.Spec.Taints = append(fakeNode.Spec.Taints, corev1.Taint{
+			fakeNode.Spec.Taints = append(fakeNode.Spec.Taints, v1.Taint{
 				Key:    "node.kubernetes.io/unschedulable",
-				Effect: corev1.TaintEffectNoSchedule,
+				Effect: v1.TaintEffectNoSchedule,
 			})
 		}
 		m.k8sClient.Create(ctx, &fakeNode)
 
 		// Create a dummy ENIConfig
-		fakeENIConfig := v1alpha1.ENIConfig{
+		fakeENIConfig := eniconfigscheme.ENIConfig{
 			TypeMeta:   metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{Name: "az1"},
 			Spec: eniconfigscheme.ENIConfigSpec{
@@ -665,7 +665,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	testPrefix2 := prefix02
 	eni2 := secENIid
 
-	podENIConfig := &v1alpha1.ENIConfigSpec{
+	podENIConfig := &eniconfigscheme.ENIConfigSpec{
 		SecurityGroups: []string{"sg1-id", "sg2-id"},
 		Subnet:         "subnet1",
 	}
@@ -736,7 +736,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 		m.k8sClient.Create(ctx, &fakeNode)
 
 		//Create a dummy ENIConfig
-		fakeENIConfig := v1alpha1.ENIConfig{
+		fakeENIConfig := eniconfigscheme.ENIConfig{
 			TypeMeta:   metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{Name: "az1"},
 			Spec: eniconfigscheme.ENIConfigSpec{
@@ -1410,10 +1410,10 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 		eni3.ENIID: {"hi": "tag", eniNoManageTagKey: "false"}}
 	Test4TagMap := map[string]awsutils.TagMap{
 		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
-		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
+		eni3.ENIID: {"hi": "tag", config.ENIInstanceIDTag: instanceID}}
 	Test5TagMap := map[string]awsutils.TagMap{
-		eni2.ENIID: {"hi": "tag", eniNodeTagKey: "i-abcdabcdabcd"},
-		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
+		eni2.ENIID: {"hi": "tag", config.ENIInstanceIDTag: "i-abcdabcdabcd"},
+		eni3.ENIID: {"hi": "tag", config.ENIInstanceIDTag: instanceID}}
 
 	tests := []struct {
 		name                       string
@@ -1462,7 +1462,7 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 							if tags[eniNoManageTagKey] == "true" {
 								return true
 							}
-						} else if _, ok := tags[eniNodeTagKey]; ok && tags[eniNodeTagKey] != instanceID {
+						} else if _, ok := tags[config.ENIInstanceIDTag]; ok && tags[config.ENIInstanceIDTag] != instanceID {
 							return true
 						}
 					}
@@ -1498,10 +1498,10 @@ func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T)
 		eni3.ENIID: {"hi": "tag", eniNoManageTagKey: "false"}}
 	Test4TagMap := map[string]awsutils.TagMap{
 		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
-		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
+		eni3.ENIID: {"hi": "tag", config.ENIInstanceIDTag: instanceID}}
 	Test5TagMap := map[string]awsutils.TagMap{
-		eni2.ENIID: {"hi": "tag", eniNodeTagKey: "i-abcdabcdabcd"},
-		eni3.ENIID: {"hi": "tag", eniNodeTagKey: instanceID}}
+		eni2.ENIID: {"hi": "tag", config.ENIInstanceIDTag: "i-abcdabcdabcd"},
+		eni3.ENIID: {"hi": "tag", config.ENIInstanceIDTag: instanceID}}
 
 	tests := []struct {
 		name                       string
@@ -1553,7 +1553,7 @@ func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T)
 							if tags[eniNoManageTagKey] == "true" {
 								return true
 							}
-						} else if _, ok := tags[eniNodeTagKey]; ok && tags[eniNodeTagKey] != instanceID {
+						} else if _, ok := tags[config.ENIInstanceIDTag]; ok && tags[config.ENIInstanceIDTag] != instanceID {
 							return true
 						}
 					}
@@ -1998,7 +1998,7 @@ func TestIPAMContext_enableSecurityGroupsForPods(t *testing.T) {
 
 	mockContext.enablePodENI = true
 	mockContext.tryEnableSecurityGroupsForPods(ctx)
-	var notUpdatedNode corev1.Node
+	var notUpdatedNode v1.Node
 	NodeKey := types.NamespacedName{
 		Namespace: "",
 		Name:      myNodeName,
@@ -2174,7 +2174,7 @@ func TestAnnotatePod(t *testing.T) {
 	ctx := context.Background()
 
 	// Define the Pod objects to test
-	pod := corev1.Pod{
+	pod := v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod",
 			Namespace: "test-namespace",
@@ -2359,6 +2359,78 @@ func TestAddFeatureToCNINode(t *testing.T) {
 			})
 			assert.True(t, containedSGP == tt.sgp)
 			assert.True(t, containedCN == tt.customNet)
+		})
+	}
+}
+
+func TestGetClusterName(t *testing.T) {
+	type args struct {
+		nodeName string
+		cniNode  *rcscheme.CNINode
+	}
+	tests := []struct {
+		name                string
+		expectedClusterName string
+		args                args
+		wantErr             bool
+	}{
+		{
+			name:                "CNINode contains cluster name tag",
+			expectedClusterName: clusterName,
+			args: args{
+				nodeName: myNodeName,
+				cniNode: &rcscheme.CNINode{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      myNodeName,
+						Namespace: "",
+					},
+					Spec: rcscheme.CNINodeSpec{
+						Tags: map[string]string{
+							config.ClusterNameTagKey: clusterName,
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:                "CNINode does not contain cluster name",
+			expectedClusterName: "",
+			args: args{
+				nodeName: myNodeName,
+				cniNode: &rcscheme.CNINode{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      myNodeName,
+						Namespace: "",
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:                "CNINode does not exist",
+			expectedClusterName: "",
+			args: args{
+				nodeName: myNodeName,
+				cniNode: &rcscheme.CNINode{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "dummy-node",
+						Namespace: "",
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := setup(t)
+			defer m.ctrl.Finish()
+
+			m.k8sClient.Create(context.Background(), tt.args.cniNode)
+			clusterName, err := getClusterName(m.k8sClient, tt.args.nodeName)
+			assert.Equal(t, tt.expectedClusterName, clusterName)
+			assert.Equal(t, err != nil, tt.wantErr)
 		})
 	}
 }
