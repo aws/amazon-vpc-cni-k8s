@@ -132,6 +132,24 @@ var _ = Describe("test tags are created on Secondary ENI", func() {
 			VerifyTagIsPresentOnENIs(newENIs, expectedTags)
 		})
 	})
+	Context("when additional secondary ENI are created without setting CLUSTER_NAME", func() {
+		BeforeEach(func() {
+			expectedTags = map[string]string{
+				"kubernetes.io/cluster/" + f.Options.ClusterName: "owned",
+				"node.k8s.amazonaws.com/nodename":                primaryNode.Name,
+				"eks:eni:owner":                                  "amazon-vpc-cni",
+			}
+
+			environmentVariables = map[string]string{
+				"WARM_ENI_TARGET": "2",
+			}
+		})
+
+		It("new secondary ENI should have cluster name tags read from CNINode", func() {
+			Skip("skip till vpc-resource-controller release")
+			VerifyTagIsPresentOnENIs(newENIs, expectedTags)
+		})
+	})
 })
 
 // VerifyTagIsPresentOnENIs verifies that the list of ENIs have expected tag key-val pair

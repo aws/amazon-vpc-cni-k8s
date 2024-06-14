@@ -7,7 +7,7 @@ require (
 	github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20231212223725-21c4bd73015b
 	github.com/aws/amazon-vpc-resource-controller-k8s v1.5.0
 	github.com/aws/aws-sdk-go v1.51.32
-	github.com/containernetworking/cni v1.1.2
+	github.com/containernetworking/cni v1.2.0
 	github.com/containernetworking/plugins v1.4.1
 	github.com/coreos/go-iptables v0.7.0
 	github.com/go-logr/logr v1.4.1
@@ -24,7 +24,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.9.0
 	github.com/vishvananda/netlink v1.2.1-beta.2
-	go.uber.org/zap v1.27.0
+	go.uber.org/zap v1.26.0
 	golang.org/x/net v0.24.0
 	golang.org/x/sys v0.19.0
 	google.golang.org/grpc v1.62.0
@@ -36,6 +36,7 @@ require (
 	k8s.io/apimachinery v0.30.1
 	k8s.io/cli-runtime v0.30.1
 	k8s.io/client-go v0.30.1
+
 	sigs.k8s.io/controller-runtime v0.17.0
 )
 
