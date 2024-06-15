@@ -36,7 +36,7 @@ var _ = Describe("test Environment Variables for IPAMD Introspection ", func() {
 	JustBeforeEach(func() {
 
 		// Initially the host networking job pod should succeed
-		curlContainer = manifest.NewCurlContainer().
+		curlContainer = manifest.NewCurlContainer(f.Options.TestImageRegistry).
 			Command([]string{"curl"}).
 			Args([]string{"--fail", defaultIntrospectionAddr}).
 			Build()

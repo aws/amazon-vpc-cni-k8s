@@ -227,7 +227,7 @@ func (t *TrafficTest) startMetricServerPod() (*v1.Pod, error) {
 }
 
 func (t *TrafficTest) getTestStatusFromMetricServer(metricPodIP string) ([]input.TestStatus, error) {
-	getMetricContainer := manifest.NewCurlContainer().
+	getMetricContainer := manifest.NewCurlContainer(t.Framework.Options.TestImageRegistry).
 		Name("get-metric-container").
 		Command([]string{"curl"}).
 		Args([]string{fmt.Sprintf("http://%s:8080/get/metric/connectivity", metricPodIP), "--silent"}).
