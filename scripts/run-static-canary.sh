@@ -21,7 +21,7 @@ function run_ginkgo_test() {
   local focus=$1
   echo "Running ginkgo tests with focus: $focus"
 
-  (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --no-color --focus="$focus" -v --timeout 10m --fail-on-pending $GINKGO_TEST_BUILD/cni.test -- \
+  (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --no-color --focus="$focus" -v --timeout 10m --fail-on-pending $GINKGO_TEST_BUILD/az-traffic.test -- \
       --cluster-kubeconfig="$KUBE_CONFIG_PATH" \
       --cluster-name="$CLUSTER_NAME" \
       --aws-region="$REGION" \
