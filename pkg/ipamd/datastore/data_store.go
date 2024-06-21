@@ -973,8 +973,9 @@ func (e *ENI) hasPods() bool {
 	return e.AssignedIPv4Addresses() != 0
 }
 
-// GetENINeedsIP finds an ENI in the datastore that needs more IP addresses allocated
-func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENI {
+// GetAllocatableENIs finds ENIs in the datastore that needs more IP addresses allocated
+func (ds *DataStore) GetAllocatableENIs(maxIPperENI int, skipPrimary bool) []*ENI {
+	var enis []*ENI
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	for _, eni := range ds.eniPool {
@@ -985,10 +986,10 @@ func (ds *DataStore) GetENINeedsIP(maxIPperENI int, skipPrimary bool) *ENI {
 		if len(eni.AvailableIPv4Cidrs) < maxIPperENI {
 			ds.log.Debugf("Found ENI %s that has less than the maximum number of IP/Prefixes addresses allocated: cur=%d, max=%d",
 				eni.ID, len(eni.AvailableIPv4Cidrs), maxIPperENI)
-			return eni
+			enis = append(enis, eni)
 		}
 	}
-	return nil
+	return enis
 }
 
 // RemoveUnusedENIFromStore removes a deletable ENI from the data store.
