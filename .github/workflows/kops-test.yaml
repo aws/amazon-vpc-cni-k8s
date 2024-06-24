@@ -15,13 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout latest commit in the PR
-        uses: actions/checkout@v3
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # refs/tags/v4.1.7
       - name: Set up Docker QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # refs/tags/v3.0.0
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # refs/tags/v3.3.0
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # refs/tags/v5.0.1
         with:
           go-version: "1.22"
       - name: Set up tools
@@ -31,7 +31,7 @@ jobs:
           curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin/
       - name: Set up AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@5579c002bb4778aa43395ef1df492868a9a1c83f # refs/tags/v4.0.2
         with:
           role-to-assume: ${{ secrets.OSS_TEST_ROLE_ARN }}
           role-duration-seconds: 28800 # 8 hours
