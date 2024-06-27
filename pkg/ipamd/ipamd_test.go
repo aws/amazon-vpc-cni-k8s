@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/golang/mock/gomock"
 	"github.com/samber/lo"
@@ -468,13 +469,18 @@ func getDummyENIMetadataWithV6Prefix() awsutils.ENIMetadata {
 
 func TestIncreaseIPPoolDefault(t *testing.T) {
 	_ = os.Unsetenv(envCustomNetworkCfg)
-	testIncreaseIPPool(t, false, false)
+	testIncreaseIPPool(t, false, false, false)
+}
+
+func TestIncreaseIPPoolSubnetDiscoveryUnfilledENI(t *testing.T) {
+	_ = os.Unsetenv(envCustomNetworkCfg)
+	testIncreaseIPPool(t, false, false, true)
 }
 
 func TestIncreaseIPPoolCustomENI(t *testing.T) {
 	_ = os.Setenv(envCustomNetworkCfg, "true")
 	_ = os.Setenv("MY_NODE_NAME", myNodeName)
-	testIncreaseIPPool(t, true, false)
+	testIncreaseIPPool(t, true, false, false)
 }
 
 // Testing that the ENI will be allocated on non schedulable node when the AWS_MANAGE_ENIS_NON_SCHEDULABLE is set to `true`
@@ -482,7 +488,7 @@ func TestIncreaseIPPoolCustomENIOnNonSchedulableNode(t *testing.T) {
 	_ = os.Setenv(envCustomNetworkCfg, "true")
 	_ = os.Setenv(envManageENIsNonSchedulable, "true")
 	_ = os.Setenv("MY_NODE_NAME", myNodeName)
-	testIncreaseIPPool(t, true, true)
+	testIncreaseIPPool(t, true, true, false)
 }
 
 // Testing that the ENI will NOT be allocated on non schedulable node when the AWS_MANAGE_ENIS_NON_SCHEDULABLE is not set
@@ -490,10 +496,10 @@ func TestIncreaseIPPoolCustomENIOnNonSchedulableNodeDefault(t *testing.T) {
 	_ = os.Unsetenv(envManageENIsNonSchedulable)
 	_ = os.Setenv(envCustomNetworkCfg, "true")
 	_ = os.Setenv("MY_NODE_NAME", myNodeName)
-	testIncreaseIPPool(t, true, true)
+	testIncreaseIPPool(t, true, true, false)
 }
 
-func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) {
+func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool, subnetDiscovery bool) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 	ctx := context.Background()
@@ -506,11 +512,15 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 		warmENITarget:             1,
 		networkClient:             m.network,
 		useCustomNetworking:       UseCustomNetworkCfg(),
+		useSubnetDiscovery:        UseSubnetDiscovery(),
 		manageENIsNonScheduleable: ManageENIsOnNonSchedulableNode(),
 		primaryIP:                 make(map[string]string),
 		terminating:               int32(0),
 	}
 	mockContext.dataStore = testDatastore()
+	if subnetDiscovery {
+		mockContext.dataStore.AddENI(primaryENIid, primaryDevice, true, false, false)
+	}
 
 	primary := true
 	notPrimary := false
@@ -564,13 +574,14 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 	if unschedulabeNode {
 		val, exist := os.LookupEnv(envManageENIsNonSchedulable)
 		if exist && val == "true" {
-			assertAllocationExternalCalls(true, useENIConfig, m, sg, podENIConfig, eni2, eniMetadata)
+			assertAllocationExternalCalls(true, useENIConfig, m, sg, podENIConfig, eni2, eniMetadata, false)
 		} else {
-			assertAllocationExternalCalls(false, useENIConfig, m, sg, podENIConfig, eni2, eniMetadata)
+			assertAllocationExternalCalls(false, useENIConfig, m, sg, podENIConfig, eni2, eniMetadata, false)
 		}
-
+	} else if subnetDiscovery {
+		assertAllocationExternalCalls(true, useENIConfig, m, sg, podENIConfig, eni2, eniMetadata, true)
 	} else {
-		assertAllocationExternalCalls(true, useENIConfig, m, sg, podENIConfig, eni2, eniMetadata)
+		assertAllocationExternalCalls(true, useENIConfig, m, sg, podENIConfig, eni2, eniMetadata, false)
 	}
 
 	if mockContext.useCustomNetworking {
@@ -609,7 +620,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool) 
 	mockContext.increaseDatastorePool(ctx)
 }
 
-func assertAllocationExternalCalls(shouldCall bool, useENIConfig bool, m *testMocks, sg []*string, podENIConfig *eniconfigscheme.ENIConfigSpec, eni2 string, eniMetadata []awsutils.ENIMetadata) {
+func assertAllocationExternalCalls(shouldCall bool, useENIConfig bool, m *testMocks, sg []*string, podENIConfig *eniconfigscheme.ENIConfigSpec, eni2 string, eniMetadata []awsutils.ENIMetadata, subnetDiscovery bool) {
 	callCount := 0
 	if shouldCall {
 		callCount = 1
@@ -617,6 +628,10 @@ func assertAllocationExternalCalls(shouldCall bool, useENIConfig bool, m *testMo
 
 	if useENIConfig {
 		m.awsutils.EXPECT().AllocENI(true, sg, podENIConfig.Subnet, 14).Times(callCount).Return(eni2, nil)
+	} else if subnetDiscovery {
+		m.awsutils.EXPECT().AllocIPAddresses(primaryENIid, 14).Times(callCount).Return(nil, awserr.New("InsufficientFreeAddressesInSubnet", "", errors.New("err")))
+		m.awsutils.EXPECT().AllocIPAddresses(primaryENIid, 1).Times(callCount).Return(nil, awserr.New("InsufficientFreeAddressesInSubnet", "", errors.New("err")))
+		m.awsutils.EXPECT().AllocENI(false, nil, "", 14).Times(callCount).Return(eni2, nil)
 	} else {
 		m.awsutils.EXPECT().AllocENI(false, nil, "", 14).Times(callCount).Return(eni2, nil)
 	}
@@ -627,15 +642,20 @@ func assertAllocationExternalCalls(shouldCall bool, useENIConfig bool, m *testMo
 
 func TestIncreasePrefixPoolDefault(t *testing.T) {
 	_ = os.Unsetenv(envCustomNetworkCfg)
-	testIncreasePrefixPool(t, false)
+	testIncreasePrefixPool(t, false, false)
+}
+
+func TestIncreasePrefixPoolSubnetDiscoveryUnfilledENI(t *testing.T) {
+	_ = os.Unsetenv(envCustomNetworkCfg)
+	testIncreasePrefixPool(t, false, true)
 }
 
 func TestIncreasePrefixPoolCustomENI(t *testing.T) {
 	_ = os.Setenv(envCustomNetworkCfg, "true")
-	testIncreasePrefixPool(t, true)
+	testIncreasePrefixPool(t, true, false)
 }
 
-func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
+func testIncreasePrefixPool(t *testing.T, useENIConfig, subnetDiscovery bool) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 	ctx := context.Background()
@@ -650,6 +670,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 		warmPrefixTarget:          1,
 		networkClient:             m.network,
 		useCustomNetworking:       UseCustomNetworkCfg(),
+		useSubnetDiscovery:        UseSubnetDiscovery(),
 		manageENIsNonScheduleable: ManageENIsOnNonSchedulableNode(),
 		primaryIP:                 make(map[string]string),
 		terminating:               int32(0),
@@ -657,6 +678,9 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 	}
 
 	mockContext.dataStore = testDatastorewithPrefix()
+	if subnetDiscovery {
+		mockContext.dataStore.AddENI(primaryENIid, primaryDevice, true, false, false)
+	}
 
 	primary := true
 	testAddr1 := ipaddr01
@@ -677,6 +701,10 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig bool) {
 
 	if useENIConfig {
 		m.awsutils.EXPECT().AllocENI(true, sg, podENIConfig.Subnet, 1).Return(eni2, nil)
+	} else if subnetDiscovery {
+		m.awsutils.EXPECT().AllocIPAddresses(primaryENIid, 1).Return(nil, awserr.New("InsufficientFreeAddressesInSubnet", "", errors.New("err")))
+		m.awsutils.EXPECT().AllocIPAddresses(primaryENIid, 1).Return(nil, awserr.New("InsufficientFreeAddressesInSubnet", "", errors.New("err")))
+		m.awsutils.EXPECT().AllocENI(false, nil, "", 1).Return(eni2, nil)
 	} else {
 		m.awsutils.EXPECT().AllocENI(false, nil, "", 1).Return(eni2, nil)
 	}

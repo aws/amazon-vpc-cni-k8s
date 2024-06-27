@@ -915,6 +915,7 @@ func (c *IPAMContext) tryAssignCidrs() (increasedPool bool, err error) {
 // For an ENI, try to fill in missing IPs on an existing ENI.
 // PRECONDITION: isDatastorePoolTooLow returned true
 func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
+
 	// If WARM_IP_TARGET is set, only proceed if we are short of target
 	short, _, warmIPTargetsDefined := c.datastoreTargetState(nil)
 	if warmIPTargetsDefined && short == 0 {
@@ -928,45 +929,50 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 	}
 
 	// Find an ENI where we can add more IPs
-	eni := c.dataStore.GetENINeedsIP(c.maxIPsPerENI, c.useCustomNetworking)
-	if eni != nil && len(eni.AvailableIPv4Cidrs) < c.maxIPsPerENI {
-		currentNumberOfAllocatedIPs := len(eni.AvailableIPv4Cidrs)
-		// Try to allocate all available IPs for this ENI
-		resourcesToAllocate := min((c.maxIPsPerENI - currentNumberOfAllocatedIPs), toAllocate)
-		output, err := c.awsClient.AllocIPAddresses(eni.ID, resourcesToAllocate)
-		if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
-			log.Warnf("failed to allocate all available IP addresses on ENI %s, err: %v", eni.ID, err)
-			// Try to just get one more IP
-			output, err = c.awsClient.AllocIPAddresses(eni.ID, 1)
+	enis := c.dataStore.GetAllocatableENIs(c.maxIPsPerENI, c.useCustomNetworking)
+	for _, eni := range enis {
+		if len(eni.AvailableIPv4Cidrs) < c.maxIPsPerENI {
+			currentNumberOfAllocatedIPs := len(eni.AvailableIPv4Cidrs)
+			// Try to allocate all available IPs for this ENI
+			resourcesToAllocate := min((c.maxIPsPerENI - currentNumberOfAllocatedIPs), toAllocate)
+			output, err := c.awsClient.AllocIPAddresses(eni.ID, resourcesToAllocate)
 			if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
-				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
-			}
-		}
-
-		var ec2ip4s []*ec2.NetworkInterfacePrivateIpAddress
-		if containsPrivateIPAddressLimitExceededError(err) {
-			log.Debug("AssignPrivateIpAddresses returned PrivateIpAddressLimitExceeded. This can happen if the data store is out of sync." +
-				"Returning without an error here since we will verify the actual state by calling EC2 to see what addresses have already assigned to this ENI.")
-			// This call to EC2 is needed to verify which IPs got attached to this ENI.
-			ec2ip4s, err = c.awsClient.GetIPv4sFromEC2(eni.ID)
-			if err != nil {
-				ipamdErrInc("increaseIPPoolGetENIaddressesFailed")
-				return true, errors.Wrap(err, "failed to get ENI IP addresses during IP allocation")
-			}
-		} else {
-			if output == nil {
-				ipamdErrInc("increaseIPPoolGetENIaddressesFailed")
-				return true, errors.Wrap(err, "failed to get ENI IP addresses during IP allocation")
+				log.Warnf("failed to allocate all available IP addresses on ENI %s, err: %v", eni.ID, err)
+				// Try to just get one more IP
+				output, err = c.awsClient.AllocIPAddresses(eni.ID, 1)
+				if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
+					ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
+					if c.useSubnetDiscovery && containsInsufficientCIDRsOrSubnetIPs(err) {
+						continue
+					}
+					return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
+				}
 			}
 
-			ec2Addrs := output.AssignedPrivateIpAddresses
-			for _, ec2Addr := range ec2Addrs {
-				ec2ip4s = append(ec2ip4s, &ec2.NetworkInterfacePrivateIpAddress{PrivateIpAddress: aws.String(aws.StringValue(ec2Addr.PrivateIpAddress))})
+			var ec2ip4s []*ec2.NetworkInterfacePrivateIpAddress
+			if containsPrivateIPAddressLimitExceededError(err) {
+				log.Debug("AssignPrivateIpAddresses returned PrivateIpAddressLimitExceeded. This can happen if the data store is out of sync." +
+					"Returning without an error here since we will verify the actual state by calling EC2 to see what addresses have already assigned to this ENI.")
+				// This call to EC2 is needed to verify which IPs got attached to this ENI.
+				ec2ip4s, err = c.awsClient.GetIPv4sFromEC2(eni.ID)
+				if err != nil {
+					ipamdErrInc("increaseIPPoolGetENIaddressesFailed")
+					return true, errors.Wrap(err, "failed to get ENI IP addresses during IP allocation")
+				}
+			} else {
+				if output == nil {
+					ipamdErrInc("increaseIPPoolGetENIaddressesFailed")
+					return true, errors.Wrap(err, "failed to get ENI IP addresses during IP allocation")
+				}
+
+				ec2Addrs := output.AssignedPrivateIpAddresses
+				for _, ec2Addr := range ec2Addrs {
+					ec2ip4s = append(ec2ip4s, &ec2.NetworkInterfacePrivateIpAddress{PrivateIpAddress: aws.String(aws.StringValue(ec2Addr.PrivateIpAddress))})
+				}
 			}
+			c.addENIsecondaryIPsToDataStore(ec2ip4s, eni.ID)
+			return true, nil
 		}
-		c.addENIsecondaryIPsToDataStore(ec2ip4s, eni.ID)
-		return true, nil
 	}
 	return false, nil
 }
@@ -1015,8 +1021,8 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 	toAllocate := c.getPrefixesNeeded()
 	// Returns an ENI which has space for more prefixes to be attached, but this
 	// ENI might not suffice the WARM_IP_TARGET/WARM_PREFIX_TARGET
-	eni := c.dataStore.GetENINeedsIP(c.maxPrefixesPerENI, c.useCustomNetworking)
-	if eni != nil {
+	enis := c.dataStore.GetAllocatableENIs(c.maxPrefixesPerENI, c.useCustomNetworking)
+	for _, eni := range enis {
 		currentNumberOfAllocatedPrefixes := len(eni.AvailableIPv4Cidrs)
 		resourcesToAllocate := min((c.maxPrefixesPerENI - currentNumberOfAllocatedPrefixes), toAllocate)
 		output, err := c.awsClient.AllocIPAddresses(eni.ID, resourcesToAllocate)
@@ -1026,9 +1032,13 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 			output, err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 			if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
+				if c.useSubnetDiscovery && containsInsufficientCIDRsOrSubnetIPs(err) {
+					continue
+				}
 				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err))
 			}
 		}
+
 		var ec2Prefixes []*ec2.Ipv4PrefixSpecification
 		if containsPrivateIPAddressLimitExceededError(err) {
 			log.Debug("AssignPrivateIpAddresses returned PrivateIpAddressLimitExceeded. This can happen if the data store is out of sync." +
