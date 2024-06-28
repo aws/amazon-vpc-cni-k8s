@@ -210,7 +210,7 @@ var _ = Describe("[STATIC_CANARY] API Server Connectivity from AZs", FlakeAttemp
 
 	JustBeforeEach(func() {
 		serverContainer := manifest.
-			NewCurlContainer().
+			NewCurlContainer(f.Options.TestImageRegistry).
 			Command([]string{
 				"sleep",
 				"3600",
