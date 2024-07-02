@@ -83,6 +83,9 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
 {{- end }}
+{{- with .Values.extraEnv }}
+      {{- toYaml .| nindent 12 }}
+{{- end }}
             - name: MY_NODE_NAME
               valueFrom:
                 fieldRef:
