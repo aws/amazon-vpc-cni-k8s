@@ -117,7 +117,7 @@ Review the [Network Policy FAQ](./docs/network-policy-faq.md) for more informati
   * This controller is automatically installed on the EKS Control Plane.
 * [Network Policy Node Agent](https://github.com/aws/aws-network-policy-agent) implements Network Policies on nodes by creating eBPF programs.
 * [AWS eBPF SDK for Go](https://github.com/aws/aws-ebpf-sdk-go) provides an interface to interact with eBPF programs on the node. This SDK allows for runtime introspection, tracing, and analysis of eBPF execution, aiding in identifying and resolving connectivity issues.
-* [VPC Resource Controller](https://github.com/aws/amazon-vpc-resource-controller-k8s) manages Branch & Trunk Network Interfaces for Kubernetes Pods. 
+* [VPC Resource Controller](https://github.com/aws/amazon-vpc-resource-controller-k8s) manages Branch & Trunk Network Interfaces for Kubernetes Pods.
 
 ## ConfigMap
 
@@ -343,7 +343,7 @@ elasticity, but uses roughly half as many IPs as using WARM_IP_TARGET alone (32 
 This also improves the reliability of the EKS cluster by reducing the number of calls necessary to allocate or deallocate
 private IPs, which may be throttled, especially at scaling-related times.
 
-**NOTE!** 
+**NOTE!**
 1. If `MINIMUM_IP_TARGET` is set, `WARM_ENI_TARGET` will be ignored. Please utilize `WARM_IP_TARGET` instead.
 2. If `MINIMUM_IP_TARGET` is set and `WARM_IP_TARGET` is not set, `WARM_IP_TARGET` is assumed to be 0, which leads to the number of IPs attached to the node will be the value of `MINIMUM_IP_TARGET`. This configuration will prevent future ENIs/IPs from being allocated. It is strongly recommended that `WARM_IP_TARGET` should be set greater than 0 when `MINIMUM_IP_TARGET` is set.
 
@@ -697,6 +697,8 @@ This environment variable must be set for both the `aws-vpc-cni-init` and `aws-n
 
 Note that enabling/disabling this feature only affects whether newly created pods have an IPv6 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature.
 
+The value set in `POD_MTU` / `AWS_VPC_ENI_MTU` is used to configure the MTU size of egress interface.
+
 #### `ENABLE_V4_EGRESS` (v1.15.1+)
 
 Type: Boolean as a String
@@ -706,6 +708,8 @@ Default: `true`
 Specifies whether PODs in an IPv6 cluster support IPv4 egress. If env is set to `true`, range `169.254.172.0/22` is reserved for IPv4 egress. When enabled, traffic egressing an IPv6 pod destined to an IPv4 endpoint will be SNAT'ed via the node IPv4 address.
 
 Note that enabling/disabling this feature only affects whether newly created pods have an IPv4 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature.
+
+The value set in `POD_MTU` / `AWS_VPC_ENI_MTU` is used to configure the MTU size of egress interface.
 
 #### `IP_COOLDOWN_PERIOD` (v1.15.0+)
 
