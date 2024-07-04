@@ -697,7 +697,7 @@ This environment variable must be set for both the `aws-vpc-cni-init` and `aws-n
 
 Note that enabling/disabling this feature only affects whether newly created pods have an IPv6 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature.
 
-The value set in `AWS_VPC_ENI_MTU` is used to configure the MTU size of the attached interface.
+The value set in `POD_MTU` / `AWS_VPC_ENI_MTU` is used to configure the MTU size of egress interface.
 
 #### `ENABLE_V4_EGRESS` (v1.15.1+)
 
@@ -709,7 +709,7 @@ Specifies whether PODs in an IPv6 cluster support IPv4 egress. If env is set to 
 
 Note that enabling/disabling this feature only affects whether newly created pods have an IPv4 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature.
 
-The value set in `AWS_VPC_ENI_MTU` is used to configure the MTU size of the attached interface.
+The value set in `POD_MTU` / `AWS_VPC_ENI_MTU` is used to configure the MTU size of egress interface.
 
 #### `IP_COOLDOWN_PERIOD` (v1.15.0+)
 

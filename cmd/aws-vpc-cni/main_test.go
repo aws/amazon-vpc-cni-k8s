@@ -49,11 +49,10 @@ func TestGenerateJSONPlusBandwidthAndTuning(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// Validate setting environment AWS_VPC_ENI_MTU, takes effect for egress-cni plugin
-func TestEgressCNIPluginIPv4Egress(t *testing.T) {
+// Validate setting environment POD_MTU/AWS_VPC_ENI_MTU, takes effect for egress-cni plugin
+func TestEgressCNIPluginIPv4EgressTakesMTUEnvVar(t *testing.T) {
 	_ = os.Setenv(envEnIPv4Egress, "true")
 	_ = os.Setenv(envPodMTU, "5000")
-	assert.True(t, validateMTU(envEniMTU))
 
 	// Use a temporary file for the parsed output.
 	tmpfile, err := os.CreateTemp("", "temp-aws-vpc-cni.conflist")
@@ -76,10 +75,9 @@ func TestEgressCNIPluginIPv4Egress(t *testing.T) {
 	assert.Equal(t, "5000", plugins[1].(map[string]interface{})["mtu"])
 }
 
-func TestEgressCNIPluginIPv6Egress(t *testing.T) {
+func TestEgressCNIPluginIPv6EgressTakesMTUEnvVar(t *testing.T) {
 	_ = os.Setenv(envEnIPv6Egress, "true")
 	_ = os.Setenv(envPodMTU, "8000")
-	assert.True(t, validateMTU(envEniMTU))
 
 	// Use a temporary file for the parsed output.
 	tmpfile, err := os.CreateTemp("", "temp-aws-vpc-cni.conflist")
