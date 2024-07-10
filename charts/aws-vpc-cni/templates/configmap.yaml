@@ -7,7 +7,7 @@ metadata:
 {{ include "aws-vpc-cni.labels" . | indent 4 }}
 binaryData:
   10-aws.conflist: {{ .Values.cniConfig.fileContents | b64enc }}
-{{- end -}}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
