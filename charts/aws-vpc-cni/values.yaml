@@ -88,6 +88,25 @@ env:
   VPC_CNI_VERSION: "v1.18.2"
   NETWORK_POLICY_ENFORCING_MODE: "standard"
 
+# Add env from configMap or from secrets
+# - name: ENV_VAR1
+#   valueFrom:
+#     configMapKeyRef:
+#       name: example-config
+#       key: ENV_VAR1
+# - name: ENV_VAR2
+#   valueFrom:
+#     configMapKeyRef:
+#       name: example-config
+#       key: ENV_VAR2
+# - name: SECRET_VAR1
+#   valueFrom:
+#     secretKeyRef:
+#       name: example-secret
+#       key: SECRET_VAR1
+extraEnv: []
+
+
 # this flag enables you to use the match label that was present in the original daemonset deployed by EKS
 # You can then annotate and label the original aws-node resources and 'adopt' them into a helm release
 originalMatchLabels: false
