@@ -24,7 +24,7 @@ It is also recommended that you set `--max-pods` equal to _(the number of ENIs f
 (the number of IPs per ENI - 1)) + 2_; for details, see [vpc_ip_resource_limit.go][]. Setting `--max-pods` will prevent
 scheduling that exceeds the IP address resources available to the kubelet.
 
-[vpc_ip_resource_limit.go]: ./pkg/awsutils/vpc_ip_resource_limit.go
+[vpc_ip_resource_limit.go]: ./pkg/vpc/vpc_ip_resource_limit.go
 
 The default manifest expects `--cni-conf-dir=/etc/cni/net.d` and `--cni-bin-dir=/opt/cni/bin`.
 
