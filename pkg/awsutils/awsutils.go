@@ -30,7 +30,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/config"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -55,11 +54,11 @@ const (
 
 	// AllocENI need to choose a first free device number between 0 and maxENI
 	// 100 is a hard limit because we use vlanID + 100 for pod networking table names
-	maxENIs = 100
-
-	// ENI tags
-	eniCreatedAtTagKey = "node.k8s.amazonaws.com/createdAt"
-
+	maxENIs                 = 100
+	clusterNameEnvVar       = "CLUSTER_NAME"
+	eniNodeTagKey           = "node.k8s.amazonaws.com/instance_id"
+	eniCreatedAtTagKey      = "node.k8s.amazonaws.com/createdAt"
+	eniClusterTagKey        = "cluster.k8s.amazonaws.com/name"
 	additionalEniTagsEnvVar = "ADDITIONAL_ENI_TAGS"
 	reservedTagKeyPrefix    = "k8s.amazonaws.com"
 	subnetDiscoveryTagKey   = "kubernetes.io/role/cni"
@@ -214,8 +213,6 @@ type EC2InstanceMetadataCache struct {
 	enablePrefixDelegation bool
 
 	clusterName       string
-	clusterNameEnvVal string
-	nodeName          string
 	additionalENITags map[string]string
 
 	imds   TypedIMDS
@@ -356,7 +353,7 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 }
 
 // New creates an EC2InstanceMetadataCache
-func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Enabled, v6Enabled bool, clusterName, nodeName string) (*EC2InstanceMetadataCache, error) {
+func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Enabled, v6Enabled bool) (*EC2InstanceMetadataCache, error) {
 	// ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
 	ctx := context.Background()
 
@@ -364,9 +361,7 @@ func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Ena
 	ec2Metadata := ec2metadata.New(sess)
 	cache := &EC2InstanceMetadataCache{}
 	cache.imds = TypedIMDS{instrumentedIMDS{ec2Metadata}}
-	cache.clusterName = clusterName
-	cache.clusterNameEnvVal = os.Getenv(config.ClusterNameEnv)
-	cache.nodeName = nodeName
+	cache.clusterName = os.Getenv(clusterNameEnvVar)
 	cache.additionalENITags = loadAdditionalENITags()
 
 	region, err := ec2Metadata.Region()
@@ -987,24 +982,14 @@ func (cache *EC2InstanceMetadataCache) tryCreateNetworkInterface(input *ec2.Crea
 // buildENITags computes the desired AWS Tags for eni
 func (cache *EC2InstanceMetadataCache) buildENITags() map[string]string {
 	tags := map[string]string{
-		// TODO: deprecate instance ID tag to replace with nodename to align with tag used in vpc-resource-controller
-		config.ENIInstanceIDTag: cache.instanceID,
+		eniNodeTagKey: cache.instanceID,
 	}
 
-	// clusterName is set from CNINode created by vpc-resource-controller, add the new tags only when it is set so controller can deleted leaked ENIs
-	// If it is not set then likely the controller is not running, so skip
+	// If clusterName is provided,
+	// tag the ENI with "cluster.k8s.amazonaws.com/name=<cluster_name>"
 	if cache.clusterName != "" {
-		tags[fmt.Sprintf(config.ClusterNameTagKeyFormat, cache.clusterName)] = config.ClusterNameTagValue
-		tags[config.ENINodeNameTagKey] = cache.nodeName
-		tags[config.ENIOwnerTagKey] = config.ENIOwnerTagValue
+		tags[eniClusterTagKey] = cache.clusterName
 	}
-
-	if cache.clusterNameEnvVal != "" {
-		// 	TODO: deprecate this tag to replace with "kubernetes.io/cluster/<cluster-name>:owned" to align with tag used in vpc-resource-controller
-		// for backward compatibily, add tag if CLUSTER_NAME ENV is set
-		tags[config.ClusterNameTagKey] = cache.clusterNameEnvVal
-	}
-
 	for key, value := range cache.additionalENITags {
 		tags[key] = value
 	}
@@ -1892,7 +1877,7 @@ func (cache *EC2InstanceMetadataCache) getLeakedENIs() ([]*ec2.NetworkInterface,
 		{
 			Name: aws.String("tag-key"),
 			Values: []*string{
-				aws.String(config.ENIInstanceIDTag),
+				aws.String(eniNodeTagKey),
 			},
 		},
 		{
@@ -1908,11 +1893,11 @@ func (cache *EC2InstanceMetadataCache) getLeakedENIs() ([]*ec2.NetworkInterface,
 			},
 		},
 	}
-	if cache.clusterNameEnvVal != "" {
+	if cache.clusterName != "" {
 		leakedENIFilters = append(leakedENIFilters, &ec2.Filter{
-			Name: aws.String(fmt.Sprintf("tag:%s", config.ClusterNameTagKey)),
+			Name: aws.String(fmt.Sprintf("tag:%s", eniClusterTagKey)),
 			Values: []*string{
-				aws.String(cache.clusterNameEnvVal),
+				aws.String(cache.clusterName),
 			},
 		})
 	}

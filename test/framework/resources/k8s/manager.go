@@ -34,7 +34,6 @@ type ResourceManagers interface {
 	ConfigMapManager() resources.ConfigMapManager
 	NetworkPolicyManager() resources.NetworkPolicyManager
 	EventManager() resources.EventManager
-	CNINodeManager() resources.CNINodeManager
 }
 
 type defaultManager struct {
@@ -49,7 +48,6 @@ type defaultManager struct {
 	configMapManager      resources.ConfigMapManager
 	networkPolicyManager  resources.NetworkPolicyManager
 	eventManager          resources.EventManager
-	cniNodeManager        resources.CNINodeManager
 }
 
 func NewResourceManager(k8sClient client.Client, k8sClientset *kubernetes.Clientset, scheme *runtime.Scheme, config *rest.Config) ResourceManagers {
@@ -65,7 +63,6 @@ func NewResourceManager(k8sClient client.Client, k8sClientset *kubernetes.Client
 		configMapManager:      resources.NewConfigMapManager(k8sClient),
 		networkPolicyManager:  resources.NewNetworkPolicyManager(k8sClient),
 		eventManager:          resources.NewEventManager(k8sClient),
-		cniNodeManager:        resources.NewCNINodeManager(k8sClient),
 	}
 }
 
@@ -111,8 +108,4 @@ func (m *defaultManager) NetworkPolicyManager() resources.NetworkPolicyManager {
 
 func (m defaultManager) EventManager() resources.EventManager {
 	return m.eventManager
-}
-
-func (m *defaultManager) CNINodeManager() resources.CNINodeManager {
-	return m.cniNodeManager
 }
