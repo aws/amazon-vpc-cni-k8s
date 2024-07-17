@@ -39,7 +39,6 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/config"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
@@ -167,6 +166,8 @@ const (
 	// envManageUntaggedENI is used to determine if untagged ENIs should be managed or unmanaged
 	envManageUntaggedENI = "MANAGE_UNTAGGED_ENI"
 
+	eniNodeTagKey = "node.k8s.amazonaws.com/instance_id"
+
 	// envAnnotatePodIP is used to annotate[vpc.amazonaws.com/pod-ips] pod's with IPs
 	// Ref : https://github.com/projectcalico/calico/issues/3530
 	// not present; in which case we fall back to the k8s podIP
@@ -245,7 +246,7 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 			if tags[eniNoManageTagKey] != "true" {
 				continue
 			}
-		} else if _, found := tags[config.ENIInstanceIDTag]; found && tags[config.ENIInstanceIDTag] == c.awsClient.GetInstanceID() {
+		} else if _, found := tags[eniNodeTagKey]; found && tags[eniNodeTagKey] == c.awsClient.GetInstanceID() {
 			continue
 		} else if c.enableManageUntaggedMode {
 			continue
@@ -341,16 +342,7 @@ func New(k8sClient client.Client) (*IPAMContext, error) {
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
 	c.disableENIProvisioning = disableENIProvisioning()
-	c.myNodeName = os.Getenv(envNodeName)
-
-	var clusterName string
-	clusterName, err := getClusterName(c.k8sClient, c.myNodeName)
-	if err != nil {
-		// only log the error, fallback to running cleanup routine on the aws-node
-		log.Error("failed to get cluster name from CNINode")
-	}
-
-	client, err := awsutils.New(c.useSubnetDiscovery, c.useCustomNetworking, disableLeakedENICleanup(clusterName), c.enableIPv4, c.enableIPv6, clusterName, c.myNodeName)
+	client, err := awsutils.New(c.useSubnetDiscovery, c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
@@ -385,7 +377,7 @@ func New(k8sClient client.Client) (*IPAMContext, error) {
 	}
 
 	c.awsClient.InitCachedPrefixDelegation(c.enablePrefixDelegation)
-
+	c.myNodeName = os.Getenv(envNodeName)
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer, c.enablePrefixDelegation)
 
@@ -1761,13 +1753,7 @@ func disableENIProvisioning() bool {
 	return utils.GetBoolAsStringEnvVar(envDisableENIProvisioning, false)
 }
 
-func disableLeakedENICleanup(clusterName string) bool {
-
-	// cluster name is read from the CNINode CRD created by vpc-resource-controller and if found controller will run the cleanup routine to delete leaked ENIs
-	// so set disable leaked ENI cleanup to true on aws-node
-	if clusterName != "" {
-		return true
-	}
+func disableLeakedENICleanup() bool {
 	// Cases where leaked ENI cleanup is disabled:
 	// 1. IPv6 is enabled, so no ENIs are attached
 	// 2. ENI provisioning is disabled, so ENIs are not managed by IPAMD
@@ -2358,22 +2344,4 @@ func (c *IPAMContext) AddFeatureToCNINode(ctx context.Context, featureName rcv1a
 
 	newCNINode.Spec.Features = append(newCNINode.Spec.Features, newFeature)
 	return c.k8sClient.Patch(ctx, newCNINode, client.MergeFromWithOptions(cniNode, client.MergeFromWithOptimisticLock{}))
-}
-
-// getClusterName returns the cluster name by reading CNINode Tags field
-func getClusterName(k8sClient client.Client, nodeName string) (string, error) {
-	cniNode := &rcv1alpha1.CNINode{}
-	err := retry.OnError(retry.DefaultBackoff, func(error) bool { return true },
-		func() error {
-			return k8sClient.Get(context.TODO(), types.NamespacedName{Name: nodeName}, cniNode)
-		})
-	if err != nil {
-		return "", errors.Wrap(err, "failed to get CNINode")
-	}
-
-	if val, ok := cniNode.Spec.Tags[config.ClusterNameTagKey]; ok {
-		return val, nil
-	}
-
-	return "", fmt.Errorf("cluster name tag not found in CNINode")
 }
