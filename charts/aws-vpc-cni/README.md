@@ -77,6 +77,7 @@ The following table lists the configurable parameters for this chart and their d
 | `nodeAgent.image.pullPolicy` | Container pull policy                              | `IfNotPresent`                      |
 | `nodeAgent.securityContext`  | Node Agent container Security context              | `capabilities: add: - "NET_ADMIN" privileged: true` |
 | `nodeAgent.enableCloudWatchLogs`  | Enable CW logging for Node Agent              | `false`                             |
+ `nodeAgent.networkPolicyAgentLogFileLocation`  | Log File location of Network Policy Agent | `/var/log/aws-routed-eni/network-policy-agent.log` |
 | `nodeAgent.enablePolicyEventLogs` | Enable policy decision logs for Node Agent    | `false`                             |
 | `nodeAgent.metricsBindAddr` | Node Agent port for metrics                         | `8162`                              |
 | `nodeAgent.healthProbeBindAddr` | Node Agent port for health probes               | `8163`                              |

@@ -15,7 +15,7 @@
     {
       "name": "egress-cni",
       "type": "egress-cni",
-      "mtu": "9001",
+      "mtu": "__MTU__",
       "enabled": "__EGRESSPLUGINENABLED__",
       "randomizeSNAT": "__RANDOMIZESNAT__",
       "nodeIP": "__NODEIP__",

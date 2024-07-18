@@ -53,8 +53,8 @@ var _ = Describe("[CANARY] test cluster egress connectivity", func() {
 		// initialize vars
 		err = nil
 
-		// initialize busybox container for testing later
-		testerContainer = manifest.NewCurlContainer().
+		// initialize curl container for testing later
+		testerContainer = manifest.NewCurlContainer(f.Options.TestImageRegistry).
 			Command([]string{"sleep", "3600"}).Build()
 
 		testerContainer.SecurityContext = &coreV1.SecurityContext{

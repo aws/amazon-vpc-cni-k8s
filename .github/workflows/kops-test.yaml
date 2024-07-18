@@ -1,27 +1,21 @@
-# Repo owner must review the PR properly before trigger this workflow manually.
-name: Manual Pull Request test
+name: Kops tests
 
 on:
-  workflow_dispatch:
-    inputs:
-      pull_request_number:
-        description: "PR number we want to run tests on"
-        required: true
-        type: string
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 15 * * *" # every day
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  integration-test:
-    if: github.event.inputs.pull_request_number != ''
+  daily-kops:
+    if: github.repository == 'aws/amazon-vpc-cni-k8s'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout latest commit in the PR
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # refs/tags/v4.1.7
-        with:
-          ref: "refs/pull/${{ github.event.inputs.pull_request_number }}/merge"
       - name: Set up Docker QEMU
         uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # refs/tags/v3.0.0
       - name: Set up Docker Buildx
@@ -40,13 +34,18 @@ jobs:
         uses: aws-actions/configure-aws-credentials@5579c002bb4778aa43395ef1df492868a9a1c83f # refs/tags/v4.0.2
         with:
           role-to-assume: ${{ secrets.OSS_TEST_ROLE_ARN }}
-          role-duration-seconds: 14400 # 4 hours
+          role-duration-seconds: 28800 # 8 hours
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
-      - name: Run e2e tests
+      - name: Run kops tests
         env:
           DISABLE_PROMPT: true
           ROLE_CREATE: false
           ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
-          RUN_CONFORMANCE: true
+          RUN_CNI_INTEGRATION_TESTS: false
+          RUN_KOPS_TEST: true
+          K8S_VERSION: 1.30.0-beta.0
+          KOPS_VERSION: v1.29.0
+          KOPS_RUN_TOO_NEW_VERSION: 1
         run: |
           ./scripts/run-integration-tests.sh
+        if: always()
