@@ -103,6 +103,7 @@ Note:
                 "ec2:DescribeInstances",
                 "ec2:DescribeTags",
                 "ec2:DescribeNetworkInterfaces",
+                "ec2:DescribeSubnets",
                 "ec2:DescribeInstanceTypes"
             ],
             "Resource": "*"
