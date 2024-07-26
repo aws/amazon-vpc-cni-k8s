@@ -4,39 +4,39 @@
 
 ## What's Changed
 
-* Update golang to go1.22.3 by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2924
-* Helpful Make target to login to public ECR. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2934
-* Skip Static Canary in run-integration-test in Github. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2935
-* Run Kops Test Separately to triage failures. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2936
-* Bump go.uber.org/zap from 1.26.0 to 1.27.0 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2938
-* Bump golang.org/x/sys from 0.19.0 to 0.20.0 in /test/agent by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2937
-* Merge Changes from release-1.18 to master by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2944
-* Update .go-version to 1.22.4 by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2950
-* disable leaked eni cleanup routine when vpc-resource-controller is deployed by @sushrk in https://github.com/aws/amazon-vpc-cni-k8s/pull/2854
-* Bump github.com/containernetworking/cni from 1.1.2 to 1.2.0 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2901
-* Update test options default value and help. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2955
-* Bump sigs.k8s.io/controller-runtime from 0.17.0 to 0.18.4 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2962
-* Bump k8s.io/cli-runtime from 0.29.0 to 0.30.2 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2965
-* Bump helm.sh/helm/v3 from 3.14.3 to 3.15.2 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2964
-* [cni-metrics-helper] Expose container port when enabling prometheus metrics by @toVersus in https://github.com/aws/amazon-vpc-cni-k8s/pull/2957
-* Subnet Discovery - Unfilled ENI fix by @jchen6585 in https://github.com/aws/amazon-vpc-cni-k8s/pull/2954
-* Refactor static canary tests. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2966
-* Upgrade to latest versions of GitHub actions by @electrocucaracha in https://github.com/aws/amazon-vpc-cni-k8s/pull/2952
-* Update the APISpec Schema definition for ENIConfig. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2969
-* Use ECR Mirror for Curl Test Image. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2956
-* use __MTU__ variable for IPv4 egress-cni too by @benben in https://github.com/aws/amazon-vpc-cni-k8s/pull/2951
-* Bump github.com/aws/aws-sdk-go from 1.51.32 to 1.54.11 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2976
-* Bump github.com/go-logr/logr from 1.4.1 to 1.4.2 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2975
-* Bump github.com/prometheus/client_golang from 1.19.0 to 1.19.1 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2972
-* Bump golang.org/x/sys from 0.20.0 to 0.21.0 in /test/agent by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2977
-* Bump github.com/containernetworking/plugins from 1.4.1 to 1.5.1 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2974
-* Add unit test and readme update for POD_MTU/ AWS_VPC_ENI_MTU for Egress plugin behavior. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2979
-* chore: Update .go-version by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2981
-* Add extraEnv for add additional env from configmap or secrets to daem… by @gawsoftpl in https://github.com/aws/amazon-vpc-cni-k8s/pull/2946
-* bugfix: templating broken on helm when cniconfig is enabled by @FatPudgeB93 in https://github.com/aws/amazon-vpc-cni-k8s/pull/2983
-* Update vpc_ip_resource_limit.go link in README.md by @kimsehwan96 in https://github.com/aws/amazon-vpc-cni-k8s/pull/2986
-* Revert "disable leaked eni cleanup routine when vpc-resource-controller is deployed (#2854)" by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2987
-* updating iam doc with subnet policy by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/2992
+* Feature - [cni-metrics-helper] Expose container port when enabling prometheus metrics by @toVersus in https://github.com/aws/amazon-vpc-cni-k8s/pull/2957
+* Feature - Add extraEnv for add additional env from configmap or secrets to daem… by @gawsoftpl in https://github.com/aws/amazon-vpc-cni-k8s/pull/2946
+* Feature - Upgrade to latest versions of GitHub actions by @electrocucaracha in https://github.com/aws/amazon-vpc-cni-k8s/pull/2952
+* Feature - use __MTU__ variable for IPv4 egress-cni too by @benben in https://github.com/aws/amazon-vpc-cni-k8s/pull/2951
+
+* Bugfix - Subnet Discovery - Unfilled ENI fix by @jchen6585 in https://github.com/aws/amazon-vpc-cni-k8s/pull/2954
+* Bugfix - Update the APISpec Schema definition for ENIConfig. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2969
+* Bugfix - Use ECR Mirror for Curl Test Image. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2956
+* Bugfix - Add unit test and readme update for POD_MTU/ AWS_VPC_ENI_MTU for Egress plugin behavior. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2979
+* Bugfix - bugfix: templating broken on helm when cniconfig is enabled by @FatPudgeB93 in https://github.com/aws/amazon-vpc-cni-k8s/pull/2983
+* Bugfix - Update vpc_ip_resource_limit.go link in README.md by @kimsehwan96 in https://github.com/aws/amazon-vpc-cni-k8s/pull/2986
+* Bugfix - updating iam doc with subnet policy by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/2992
+
+* Cleanup - Skip Static Canary in run-integration-test in Github. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2935
+* Cleanup - Helpful Make target to login to public ECR. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2934
+* Cleanup - Run Kops Test Separately to triage failures. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2936
+* Cleanup - Update test options default value and help. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2955
+* Cleanup - Refactor static canary tests. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2966
+
+* Dependency - Update golang to go1.22.3 by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2924
+* Dependency - Bump go.uber.org/zap from 1.26.0 to 1.27.0 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2938
+* Dependency - Bump golang.org/x/sys from 0.19.0 to 0.20.0 in /test/agent by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2937
+* Dependency - Update .go-version to 1.22.4 by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2950
+* Dependency - Bump github.com/containernetworking/cni from 1.1.2 to 1.2.0 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2901
+* Dependency - Bump sigs.k8s.io/controller-runtime from 0.17.0 to 0.18.4 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2962
+* Dependency - Bump k8s.io/cli-runtime from 0.29.0 to 0.30.2 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2965
+* Dependency - Bump helm.sh/helm/v3 from 3.14.3 to 3.15.2 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2964
+* Dependency - Bump github.com/aws/aws-sdk-go from 1.51.32 to 1.54.11 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2976
+* Dependency - Bump github.com/go-logr/logr from 1.4.1 to 1.4.2 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2975
+* Dependency - Bump github.com/prometheus/client_golang from 1.19.0 to 1.19.1 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2972
+* Dependency - Bump golang.org/x/sys from 0.20.0 to 0.21.0 in /test/agent by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2977
+* Dependency - Bump github.com/containernetworking/plugins from 1.4.1 to 1.5.1 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2974
+* Dependency - chore: Update .go-version by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2981
 
 ## New Contributors
 * @toVersus made their first contribution in https://github.com/aws/amazon-vpc-cni-k8s/pull/2957
