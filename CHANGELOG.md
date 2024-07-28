@@ -5,7 +5,7 @@
 ## What's Changed
 
 * Feature - [cni-metrics-helper] Expose container port when enabling prometheus metrics by @toVersus in https://github.com/aws/amazon-vpc-cni-k8s/pull/2957
-* Feature - Add extraEnv for add additional env from configmap or secrets to daem… by @gawsoftpl in https://github.com/aws/amazon-vpc-cni-k8s/pull/2946
+* Feature - Add extraEnv for add additional env from configmap or secrets to aws-node daemonset by @gawsoftpl in https://github.com/aws/amazon-vpc-cni-k8s/pull/2946
 * Feature - Upgrade to latest versions of GitHub actions by @electrocucaracha in https://github.com/aws/amazon-vpc-cni-k8s/pull/2952
 * Feature - use __MTU__ variable for IPv4 egress-cni too by @benben in https://github.com/aws/amazon-vpc-cni-k8s/pull/2951
 
