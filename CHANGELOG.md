@@ -1,5 +1,55 @@
 # Changelog
 
+## v1.18.3
+
+## What's Changed
+
+* Feature - [cni-metrics-helper] Expose container port when enabling prometheus metrics by @toVersus in https://github.com/aws/amazon-vpc-cni-k8s/pull/2957
+* Feature - Add extraEnv for add additional env from configmap or secrets to aws-node daemonset by @gawsoftpl in https://github.com/aws/amazon-vpc-cni-k8s/pull/2946
+* Feature - Upgrade to latest versions of GitHub actions by @electrocucaracha in https://github.com/aws/amazon-vpc-cni-k8s/pull/2952
+* Feature - use __MTU__ variable for IPv4 egress-cni too by @benben in https://github.com/aws/amazon-vpc-cni-k8s/pull/2951
+
+* Bugfix - Subnet Discovery - Unfilled ENI fix by @jchen6585 in https://github.com/aws/amazon-vpc-cni-k8s/pull/2954
+* Bugfix - Update the APISpec Schema definition for ENIConfig. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2969
+* Bugfix - Use ECR Mirror for Curl Test Image. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2956
+* Bugfix - Add unit test and readme update for POD_MTU/ AWS_VPC_ENI_MTU for Egress plugin behavior. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2979
+* Bugfix - bugfix: templating broken on helm when cniconfig is enabled by @FatPudgeB93 in https://github.com/aws/amazon-vpc-cni-k8s/pull/2983
+* Bugfix - Update vpc_ip_resource_limit.go link in README.md by @kimsehwan96 in https://github.com/aws/amazon-vpc-cni-k8s/pull/2986
+* Bugfix - updating iam doc with subnet policy by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/2992
+
+* Cleanup - Skip Static Canary in run-integration-test in Github. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2935
+* Cleanup - Helpful Make target to login to public ECR. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2934
+* Cleanup - Run Kops Test Separately to triage failures. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2936
+* Cleanup - Update test options default value and help. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2955
+* Cleanup - Refactor static canary tests. by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2966
+
+* Dependency - Update golang to go1.22.3 by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2924
+* Dependency - Bump go.uber.org/zap from 1.26.0 to 1.27.0 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2938
+* Dependency - Bump golang.org/x/sys from 0.19.0 to 0.20.0 in /test/agent by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2937
+* Dependency - Update .go-version to 1.22.4 by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2950
+* Dependency - Bump github.com/containernetworking/cni from 1.1.2 to 1.2.0 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2901
+* Dependency - Bump sigs.k8s.io/controller-runtime from 0.17.0 to 0.18.4 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2962
+* Dependency - Bump k8s.io/cli-runtime from 0.29.0 to 0.30.2 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2965
+* Dependency - Bump helm.sh/helm/v3 from 3.14.3 to 3.15.2 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2964
+* Dependency - Bump github.com/aws/aws-sdk-go from 1.51.32 to 1.54.11 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2976
+* Dependency - Bump github.com/go-logr/logr from 1.4.1 to 1.4.2 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2975
+* Dependency - Bump github.com/prometheus/client_golang from 1.19.0 to 1.19.1 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2972
+* Dependency - Bump golang.org/x/sys from 0.20.0 to 0.21.0 in /test/agent by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2977
+* Dependency - Bump github.com/containernetworking/plugins from 1.4.1 to 1.5.1 by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/2974
+* Dependency - chore: Update .go-version by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/2981
+
+## New Contributors
+* @toVersus made their first contribution in https://github.com/aws/amazon-vpc-cni-k8s/pull/2957
+* @electrocucaracha made their first contribution in https://github.com/aws/amazon-vpc-cni-k8s/pull/2952
+* @benben made their first contribution in https://github.com/aws/amazon-vpc-cni-k8s/pull/2951
+* @gawsoftpl made their first contribution in https://github.com/aws/amazon-vpc-cni-k8s/pull/2946
+* @FatPudgeB93 made their first contribution in https://github.com/aws/amazon-vpc-cni-k8s/pull/2983
+* @kimsehwan96 made their first contribution in https://github.com/aws/amazon-vpc-cni-k8s/pull/2986
+* @yash97 made their first contribution in https://github.com/aws/amazon-vpc-cni-k8s/pull/2992
+
+**Full Changelog**: https://github.com/aws/amazon-vpc-cni-k8s/compare/v1.18.2...v1.18.3
+
+
 ## v1.18.2
 
 * Enhancement - [Improve "cni-metrics-helper" setup experience](https://github.com/aws/amazon-vpc-cni-k8s/pull/2874) (@guessi)
@@ -360,7 +410,7 @@ Was Skipped
 * Bug - [Fix condition for disable provisioning](https://github.com/aws/amazon-vpc-cni-k8s/pull/1823) (@jayanthvn )
 
 ## v1.10.1
-* Bug - [Use IMDSv2 token when fetching node ip in entrypoint](https://github.com/aws/amazon-vpc-cni-k8s/pull/1727) (#1727, [@chlunde](https://github.com/chlunde)) 
+* Bug - [Use IMDSv2 token when fetching node ip in entrypoint](https://github.com/aws/amazon-vpc-cni-k8s/pull/1727) (#1727, [@chlunde](https://github.com/chlunde))
 
 ## v1.10.0
 * Feature - [IPv6 Support](https://github.com/aws/amazon-vpc-cni-k8s/pull/1587) (#1587, [@achevuru](https://github.com/achevuru))
@@ -375,7 +425,7 @@ Was Skipped
 * Bug - [Make error count granular](https://github.com/aws/amazon-vpc-cni-k8s/pull/1651) (#1651, [@jayanthvn](https://github.com/jayanthvn))
 * Bug - [ServiceAccount should precede DaemonSet in yaml aws](https://github.com/aws/amazon-vpc-cni-k8s/pull/1637) (#1637, [@sramabad1](https://github.com/sramabad1))
 * Testing - [Enable unit tests upon PR to release branch](https://github.com/aws/amazon-vpc-cni-k8s/pull/1684) (#1684, [@vikasmb](https://github.com/vikasmb))
-* Testing - [Upgrade EKS cluster version](https://github.com/aws/amazon-vpc-cni-k8s/pull/1680) (#1680, [@vikasmb](https://github.com/vikasmb)) 
+* Testing - [Upgrade EKS cluster version](https://github.com/aws/amazon-vpc-cni-k8s/pull/1680) (#1680, [@vikasmb](https://github.com/vikasmb))
 
 ## v1.9.1
 * Enhancement - [Support DISABLE_NETWORK_RESOURCE_PROVISIONING](https://github.com/aws/amazon-vpc-cni-k8s/pull/1586) (#1586, [@jayanthvn](https://github.com/jayanthvn))
@@ -507,7 +557,7 @@ Was Skipped
 ## v1.7.1
 
 * Bug - [Calico deletes routes when using CNI v1.7.0](https://github.com/aws/amazon-vpc-cni-k8s/pull/1166) (#1166, [@jayanthvn](https://github.com/jayanthvn))
-* Improvement - [enable manual override for VERSION in images](https://github.com/aws/amazon-vpc-cni-k8s/pull/1156) (#1156, [@nprab428](https://github.com/nprab428)) 
+* Improvement - [enable manual override for VERSION in images](https://github.com/aws/amazon-vpc-cni-k8s/pull/1156) (#1156, [@nprab428](https://github.com/nprab428))
 
 ## v1.7.0
 
@@ -729,9 +779,9 @@ Was Skipped
 * Improvement - [Explicitly set the IP on secondary ENIs](https://github.com/aws/amazon-vpc-cni-k8s/pull/271) (#271, [@ewbankkit](https://github.com/ewbankkit))
     - Fixes IP bug on older kernels.
 * Improvement - [Update instance ENI and IP mapping table](https://github.com/aws/amazon-vpc-cni-k8s/pull/275) (#275, [@hmizuma](https://github.com/hmizuma))
-    - Adds a1 and c5n instances. (Already included in v1.3.2) 
+    - Adds a1 and c5n instances. (Already included in v1.3.2)
 * Improvement - [Add ENI entries for p3dn.24xlarge instance](https://github.com/aws/amazon-vpc-cni-k8s/pull/274) (#274, [@hmizuma](https://github.com/hmizuma))
-    - p3dn.24xlarge was already included in v1.3.2 
+    - p3dn.24xlarge was already included in v1.3.2
 * Improvement - [Use InClusterConfig when CreateKubeClient() was called without args](https://github.com/aws/amazon-vpc-cni-k8s/pull/293) (#293, [@nak3](https://github.com/nak3))
 * Improvement - [Expose configuration variables via ipamD to make it debug friendly](https://github.com/aws/amazon-vpc-cni-k8s/pull/287) (#287, [@nak3](https://github.com/nak3))
 * Improvement - [Allow cross compile on different platform ](https://github.com/aws/amazon-vpc-cni-k8s/pull/292) (#292, [@nak3](https://github.com/nak3))
