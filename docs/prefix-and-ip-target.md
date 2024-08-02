@@ -10,10 +10,10 @@ When a new ENI is allocated, IPAMD will determine the number of prefixes needed 
 
 This table demonstrates how prefixes and ENIs will be allocated and use as pods will be created and scheduled to an instance. When reading this table, please keep in mind the following:
 
-* Every instance type has different limits of ENI pre instance type, and secondary IPv4 addresses per ENI. This information is available on our [EC2 Docs](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI).  
+* Every instance type has different limits of ENI pre instance type, and secondary IPv4 addresses per ENI. This information is available on our [EC2 Docs](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI).
 In the example below, `t3.small` was chosen to demonstrate how additional ENIs will be created, since `t3.small` have a maximum of 3 ENIs and 4 IPv4 addresses per ENI. This result in a maximum of 9 available prefixes (3 ENIs * (4 IPv4s minus the primary IPv4 address used by the ENI))
 
-* When using prefixes or IPv4 assignment, if the value of `MINIMUM_IP_TARGET` is bigger than N*16, it's equivalent to setting it to (N+1)*16.  
+* When using prefixes or IPv4 assignment, if the value of `MINIMUM_IP_TARGET` is bigger than N*16, it's equivalent to setting it to (N+1)*16.
 The reason for this is because prefixes are allocated as /28 CIDR block or 16 consecutive IP addresses, so asking for minimum of 20 IPv4 addresses is equally as asking 32 IPv4 addresses
 
 | Instance type | `WARM_PREFIX_TARGET` | `WARM_IP_TARGET` | `MINIMUM_IP_TARGET` | Pods | ENIs | Pod per ENIs | Attached Prefixes | Pod per Prefixes | Unused Prefixes | Prefixes per ENI | Unused IPs |
