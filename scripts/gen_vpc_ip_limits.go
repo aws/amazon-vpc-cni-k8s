@@ -354,6 +354,8 @@ var eksMaxPodsTemplate = template.Must(template.New("").Parse(`# Copyright Amazo
 #
 # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html#AvailableIpPerENI
 #
+# NOTE: For multi-card instance types (p5.48xlarge) the max limits is calculated only against the default network card at index (0).
+#
 {{- range $instanceLimit := .ENIPods}}
 {{ printf "%s" $instanceLimit }}
 {{- end }}
