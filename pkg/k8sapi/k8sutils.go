@@ -92,6 +92,9 @@ func CreateKubeClient(appName string) (client.Client, error) {
 		return nil, err
 	}
 
+	restCfg.AcceptContentTypes = "application/vnd.kubernetes.protobuf,application/json"
+	restCfg.ContentType = "application/vnd.kubernetes.protobuf"
+
 	// The scheme should only contain GVKs that the client will access.
 	vpcCniScheme := runtime.NewScheme()
 	corev1.AddToScheme(vpcCniScheme)
