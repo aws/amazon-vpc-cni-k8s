@@ -41,6 +41,7 @@ spec:
       initContainers:
       - name: aws-vpc-cni-init
         image: {{ include "aws-vpc-cni.initImage" . }}
+        imagePullPolicy: {{ .Values.init.image.pullPolicy }}
         env:
 {{- range $key, $value := .Values.init.env }}
           - name: {{ $key }}
@@ -126,6 +127,7 @@ spec:
         {{- if .Values.nodeAgent.enabled }}
         - name: aws-eks-nodeagent
           image: {{ include "aws-vpc-cni.nodeAgentImage" . }}
+          imagePullPolicy: {{ .Values.nodeAgent.image.pullPolicy }}
           env:
             - name: MY_NODE_NAME
               valueFrom:
