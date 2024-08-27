@@ -5,7 +5,7 @@
 SECONDS=0
 
 echo "Running tests for amazon-vpc-cni-k8s with the following variables
-KUBE_CONFIG_PATH:  $KUBE_CONFIG_PATH
+KUBECONFIG:  $KUBECONFIG
 CLUSTER_NAME: $CLUSTER_NAME
 REGION: $REGION
 ENDPOINT: $ENDPOINT"

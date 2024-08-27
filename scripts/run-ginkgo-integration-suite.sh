@@ -37,7 +37,7 @@ function load_test_parameters(){
 
 function run_ginkgo_test() {
   (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS -v --timeout 60m --no-color --fail-on-pending $GINKGO_TEST_BUILD/$SUITE_NAME.test -- \
-    --cluster-kubeconfig="$KUBE_CONFIG_PATH" \
+    --cluster-kubeconfig="$KUBECONFIG" \
     --cluster-name="$CLUSTER_NAME" \
     --aws-region="$REGION" \
     --aws-vpc-id="$VPC_ID" \

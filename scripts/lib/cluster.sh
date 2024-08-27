@@ -10,7 +10,7 @@ function load_cluster_details() {
 function load_deveks_cluster_details() {
 
   echo "loading cluster details $CLUSTER_NAME"
-  PROVIDER_ID=$(kubectl get nodes --kubeconfig $KUBE_CONFIG_PATH -ojson | jq -r '.items[0].spec.providerID')
+  PROVIDER_ID=$(kubectl get nodes --kubeconfig $KUBECONFIG -ojson | jq -r '.items[0].spec.providerID')
   INSTANCE_ID=${PROVIDER_ID##*/}
   VPC_ID=$(aws ec2 describe-instances --instance-ids ${INSTANCE_ID} | jq -r '.Reservations[].Instances[].VpcId')
 }

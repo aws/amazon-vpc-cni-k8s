@@ -6,7 +6,7 @@
 # CLUSTER_NAME: name of the cluster to run the test
 # VPC_ID: cluster VPC ID
 # REGION: default us-west-2
-# KUBE_CONFIG_PATH: path to the kubeconfig file, default ~/.kube/config
+# KUBECONFIG: path to the kubeconfig file, default ~/.kube/config
 # NG_LABEL_KEY: nodegroup label key, default "kubernetes.io/os"
 # NG_LABEL_VAL: nodegroup label val, default "linux"
 # RUN_DEVEKS_TEST: Set this variable for tests to run on a deveks cluster
@@ -28,12 +28,12 @@ function run_integration_test() {
 
   echo "Running ipamd integration tests"
   START=$SECONDS
-  cd $INTEGRATION_TEST_DIR/ipamd && CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --skip-file=ipamd_event_test.go -v -timeout 90m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL"  --test-image-registry=$TEST_IMAGE_REGISTRY || TEST_RESULT=fail
+  cd $INTEGRATION_TEST_DIR/ipamd && CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --skip-file=ipamd_event_test.go -v -timeout 90m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL"  --test-image-registry=$TEST_IMAGE_REGISTRY || TEST_RESULT=fail
   echo "ipamd test took $((SECONDS - START)) seconds."
 
   echo "Running cni integration tests"
   START=$SECONDS
-  cd $INTEGRATION_TEST_DIR/cni && CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --skip-file=soak_test.go -v -timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" --test-image-registry=$TEST_IMAGE_REGISTRY || TEST_RESULT=fail
+  cd $INTEGRATION_TEST_DIR/cni && CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --skip-file=soak_test.go -v -timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" --test-image-registry=$TEST_IMAGE_REGISTRY || TEST_RESULT=fail
   echo "cni test took $((SECONDS - START)) seconds."
 
   if [[ ! -z $PROD_IMAGE_REGISTRY ]]; then
@@ -46,7 +46,7 @@ function run_integration_test() {
   TAG=$(echo $CNI_METRICS_HELPER | cut -d ":" -f 2)
   echo "Running cni-metrics-helper image($CNI_METRICS_HELPER) tests"
   START=$SECONDS
-  cd $INTEGRATION_TEST_DIR/metrics-helper && CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS -v -timeout 15m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" --cni-metrics-helper-image-repo=$REPO_NAME --cni-metrics-helper-image-tag=$TAG --test-image-registry=$TEST_IMAGE_REGISTRY || TEST_RESULT=fail
+  cd $INTEGRATION_TEST_DIR/metrics-helper && CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS -v -timeout 15m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" --cni-metrics-helper-image-repo=$REPO_NAME --cni-metrics-helper-image-tag=$TAG --test-image-registry=$TEST_IMAGE_REGISTRY || TEST_RESULT=fail
   echo "cni-metrics-helper test took $((SECONDS - START)) seconds."
   if [[ "$TEST_RESULT" == fail ]]; then
       echo "Integration test failed."
