@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# Fallback to KUBE_CONFIG_PATH if KUBECONFIG is not set
+if [ -n "$KUBE_CONFIG_PATH" ]; then
+  export KUBECONFIG=$KUBE_CONFIG_PATH
+fi
+
+
 function load_cluster_details() {
   echo "loading cluster details $CLUSTER_NAME"
   DESCRIBE_CLUSTER_OP=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" $ENDPOINT_FLAG)
