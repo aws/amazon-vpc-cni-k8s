@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Fallback to KUBE_CONFIG_PATH if KUBECONFIG is not set
-source ./set_kubeconfig.sh
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+source "$SCRIPT_DIR"/set_kubeconfig.sh
 
 
 function load_cluster_details() {

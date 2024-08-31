@@ -4,9 +4,8 @@
 
 SECONDS=0
 
-# Fallback to KUBE_CONFIG_PATH if KUBECONFIG is not set
-
-source ./set_kubeconfig.sh
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+source "$SCRIPT_DIR"/set_kubeconfig.sh
 
 
 echo "Running tests for amazon-vpc-cni-k8s with the following variables
