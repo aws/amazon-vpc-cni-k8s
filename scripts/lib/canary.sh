@@ -6,9 +6,7 @@ SECONDS=0
 
 # Fallback to KUBE_CONFIG_PATH if KUBECONFIG is not set
 
-if [ -n "$KUBE_CONFIG_PATH" ]; then
-  export KUBECONFIG=$KUBE_CONFIG_PATH
-fi
+source ./set_kubeconfig.sh
 
 
 echo "Running tests for amazon-vpc-cni-k8s with the following variables

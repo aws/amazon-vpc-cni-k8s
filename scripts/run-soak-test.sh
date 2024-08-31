@@ -5,11 +5,6 @@
 
 set -e
 
-# Fallback to KUBE_CONFIG_PATH if KUBECONFIG is not set
-if [ -n "$KUBE_CONFIG_PATH" ]; then
-  export KUBECONFIG=$KUBE_CONFIG_PATH
-fi
-
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
 # TEST_IMAGE_REGISTRY is the registry in test-infra-* accounts where e2e test images are stored
@@ -19,6 +14,7 @@ TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"617930562442.dkr.ecr.us-west-2.amazo
 # defined in lib/cluster.sh will add --eks-endpoint=$ENDPOINT to the ginkgo
 # test command
 
+source "$SCRIPT_DIR"/lib/set_kubeconfig.sh
 source "$SCRIPT_DIR"/lib/cluster.sh
 source "$SCRIPT_DIR"/lib/canary.sh
 

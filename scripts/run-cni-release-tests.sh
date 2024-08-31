@@ -14,16 +14,11 @@
 # TEST_IMAGE_REGISTRY: the registry in test-infra-* accounts where e2e test images are stored
 set -e
 
-
-# Fallback to KUBE_CONFIG_PATH if KUBECONFIG is not set
-if [ -n "$KUBE_CONFIG_PATH" ]; then
-  export KUBECONFIG=$KUBE_CONFIG_PATH
-fi
-
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration"
 TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"617930562442.dkr.ecr.us-west-2.amazonaws.com"}
 
+source "$SCRIPT_DIR"/lib/set_kubeconfig.sh
 source "$SCRIPT_DIR"/lib/cluster.sh
 source "$SCRIPT_DIR"/lib/integration.sh
 
