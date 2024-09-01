@@ -26,7 +26,7 @@ require (
 	github.com/vishvananda/netlink v1.2.1-beta.2
 	go.uber.org/zap v1.26.0
 	golang.org/x/net v0.27.0
-	golang.org/x/sys v0.22.0
+	golang.org/x/sys v0.24.0
 	google.golang.org/grpc v1.62.0
 	google.golang.org/protobuf v1.34.1
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
