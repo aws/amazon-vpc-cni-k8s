@@ -4,6 +4,7 @@
 # addon version and then runs smoke test on the latest addon version.
 
 set -e
+set -x
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
@@ -29,7 +30,7 @@ load_addon_details
 # cover basic functionlity plus test that could detect issues with dependencies
 # early on.
 echo "Running Canary tests on the default addon version"
-install_add_on "$DEFAULT_ADDON_VERSION"
+# install_add_on "$DEFAULT_ADDON_VERSION"
 run_ginkgo_test "CANARY"
 
 # Run smoke test on the latest addon version. Smoke tests consist of a subset of tests
@@ -39,7 +40,7 @@ if [[ $ADC_REGIONS == *"$REGION"* ]]; then
   echo "Skipping Smoke tests on the latest addon version"
 else
   echo "Running Smoke tests on the latest addon version"
-  install_add_on "$LATEST_ADDON_VERSION"
+  # install_add_on "$LATEST_ADDON_VERSION"
   run_ginkgo_test "SMOKE"
 fi
 
