@@ -43,6 +43,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
@@ -1455,8 +1456,8 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool []string, attachedENI awsutils.E
 	attachedENIIPs := attachedENI.IPv4Addresses
 	needEC2Reconcile := true
 	// Here we can't trust attachedENI since the IMDS metadata can be stale. We need to check with EC2 API.
-	// +1 is for the primary IP of the ENI that is not added to the ipPool and not available for pods to use.
-	if 1+len(ipPool) != len(attachedENIIPs) {
+	// IPsSimilar will exclude primary IP of the ENI that is not added to the ipPool and not available for pods to use.
+	if !cniutils.IPsSimilar(ipPool,attachedENIIPs) {
 		log.Warnf("Instance metadata does not match data store! ipPool: %v, metadata: %v", ipPool, attachedENIIPs)
 		log.Debugf("We need to check the ENI status by calling the EC2 control plane.")
 		// Call EC2 to verify IPs on this ENI
@@ -1492,14 +1493,14 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool []string, attachedENI awsutils.E
 	}
 }
 
-func (c *IPAMContext) eniPrefixPoolReconcile(ipPool []string, attachedENI awsutils.ENIMetadata, eni string) {
+func (c *IPAMContext) eniPrefixPoolReconcile(prefixPool []string, attachedENI awsutils.ENIMetadata, eni string) {
 	attachedENIIPs := attachedENI.IPv4Prefixes
 	needEC2Reconcile := true
 	// Here we can't trust attachedENI since the IMDS metadata can be stale. We need to check with EC2 API.
-	log.Debugf("Found prefix pool count %d for eni %s\n", len(ipPool), eni)
+	log.Debugf("Found prefix pool count %d for eni %s\n", len(prefixPool), eni)
 
-	if len(ipPool) != len(attachedENIIPs) {
-		log.Warnf("Instance metadata does not match data store! ipPool: %v, metadata: %v", ipPool, attachedENIIPs)
+	if !cniutils.PrefixSimilar(prefixPool, attachedENIIPs) {
+		log.Warnf("Instance metadata does not match data store! ipPool: %v, metadata: %v", prefixPool, attachedENIIPs)
 		log.Debugf("We need to check the ENI status by calling the EC2 control plane.")
 		// Call EC2 to verify IPs on this ENI
 		ec2Addresses, err := c.awsClient.GetIPv4PrefixesFromEC2(eni)
@@ -1515,7 +1516,7 @@ func (c *IPAMContext) eniPrefixPoolReconcile(ipPool []string, attachedENI awsuti
 	seenIPs := c.verifyAndAddPrefixesToDatastore(eni, attachedENIIPs, needEC2Reconcile)
 
 	// Sweep phase, delete remaining Prefixes since they should not remain in the datastore
-	for _, existingIP := range ipPool {
+	for _, existingIP := range prefixPool {
 		if seenIPs[existingIP] {
 			continue
 		}
