@@ -172,7 +172,7 @@ func PrefixSimilar(prefixPool []string, eniPrefixes []*ec2.Ipv4PrefixSpecificati
 // IPsSimilar checks if ipPool and eniIPs are equivalent.
 func IPsSimilar(ipPool []string, eniIPs []*ec2.NetworkInterfacePrivateIpAddress) bool {
 	// Here we do +1 in ipPool because eniIPs will also have primary IP which is not used by pods.
-	if len(ipPool) +1 != len(eniIPs) {
+	if len(ipPool)+1 != len(eniIPs) {
 		return false
 	}
 

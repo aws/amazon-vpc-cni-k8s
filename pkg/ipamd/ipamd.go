@@ -1457,7 +1457,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool []string, attachedENI awsutils.E
 	needEC2Reconcile := true
 	// Here we can't trust attachedENI since the IMDS metadata can be stale. We need to check with EC2 API.
 	// IPsSimilar will exclude primary IP of the ENI that is not added to the ipPool and not available for pods to use.
-	if !cniutils.IPsSimilar(ipPool,attachedENIIPs) {
+	if !cniutils.IPsSimilar(ipPool, attachedENIIPs) {
 		log.Warnf("Instance metadata does not match data store! ipPool: %v, metadata: %v", ipPool, attachedENIIPs)
 		log.Debugf("We need to check the ENI status by calling the EC2 control plane.")
 		// Call EC2 to verify IPs on this ENI
