@@ -97,15 +97,15 @@ func testMetadata(overrides map[string]interface{}) FakeIMDS {
 		metadataInstanceType: instanceType,
 		metadataMAC:          primaryMAC,
 		metadataMACPath:      primaryMAC,
-		metadataMACPath + primaryMAC + metadataDeviceNum:  eni1Device,
-		metadataMACPath + primaryMAC + metadataInterface:  primaryeniID,
-		metadataMACPath + primaryMAC + metadataNetworkCard:  eni1NetworkCard,
-		metadataMACPath + primaryMAC + metadataSGs:        sgs,
-		metadataMACPath + primaryMAC + metadataIPv4s:      eni1PrivateIP,
-		metadataMACPath + primaryMAC + metadataSubnetID:   subnetID,
-		metadataMACPath + primaryMAC + metadataVpcID:      vpcID,
-		metadataMACPath + primaryMAC + metadataSubnetCIDR: subnetCIDR,
-		metadataMACPath + primaryMAC + metadataVPCcidrs:   metadataVPCIPv4CIDRs,
+		metadataMACPath + primaryMAC + metadataDeviceNum:   eni1Device,
+		metadataMACPath + primaryMAC + metadataInterface:   primaryeniID,
+		metadataMACPath + primaryMAC + metadataNetworkCard: eni1NetworkCard,
+		metadataMACPath + primaryMAC + metadataSGs:         sgs,
+		metadataMACPath + primaryMAC + metadataIPv4s:       eni1PrivateIP,
+		metadataMACPath + primaryMAC + metadataSubnetID:    subnetID,
+		metadataMACPath + primaryMAC + metadataVpcID:       vpcID,
+		metadataMACPath + primaryMAC + metadataSubnetCIDR:  subnetCIDR,
+		metadataMACPath + primaryMAC + metadataVPCcidrs:    metadataVPCIPv4CIDRs,
 	}
 
 	for k, v := range overrides {
@@ -212,11 +212,11 @@ func TestInitWithEC2metadataErr(t *testing.T) {
 func TestGetAttachedENIs(t *testing.T) {
 	mockMetadata := testMetadata(map[string]interface{}{
 		metadataMACPath: primaryMAC + " " + eni2MAC,
-		metadataMACPath + eni2MAC + metadataNetworkCard:  eni2NetworkCard,
-		metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
-		metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
-		metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
-		metadataMACPath + eni2MAC + metadataIPv4s:      eni2PrivateIP,
+		metadataMACPath + eni2MAC + metadataNetworkCard: eni2NetworkCard,
+		metadataMACPath + eni2MAC + metadataDeviceNum:   eni2Device,
+		metadataMACPath + eni2MAC + metadataInterface:   eni2ID,
+		metadataMACPath + eni2MAC + metadataSubnetCIDR:  subnetCIDR,
+		metadataMACPath + eni2MAC + metadataIPv4s:       eni2PrivateIP,
 	})
 
 	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}}
@@ -229,14 +229,14 @@ func TestGetAttachedENIs(t *testing.T) {
 func TestGetAttachedENIsWithEfa(t *testing.T) {
 	mockMetadata := testMetadata(map[string]interface{}{
 		metadataMACPath: primaryMAC + " " + eni2MAC,
-		metadataMACPath + eni2MAC + metadataNetworkCard:  eni2NetworkCard,
-		metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
-		metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
-		metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
-		metadataMACPath + eni2MAC + metadataIPv4s:      eni2PrivateIP,
-		metadataMACPath + eni3MAC + metadataNetworkCard:  eni3NetworkCard,
-		metadataMACPath + eni3MAC + metadataDeviceNum:  eni3Device,
-		metadataMACPath + eni3MAC + metadataInterface:  eni3ID,
+		metadataMACPath + eni2MAC + metadataNetworkCard: eni2NetworkCard,
+		metadataMACPath + eni2MAC + metadataDeviceNum:   eni2Device,
+		metadataMACPath + eni2MAC + metadataInterface:   eni2ID,
+		metadataMACPath + eni2MAC + metadataSubnetCIDR:  subnetCIDR,
+		metadataMACPath + eni2MAC + metadataIPv4s:       eni2PrivateIP,
+		metadataMACPath + eni3MAC + metadataNetworkCard: eni3NetworkCard,
+		metadataMACPath + eni3MAC + metadataDeviceNum:   eni3Device,
+		metadataMACPath + eni3MAC + metadataInterface:   eni3ID,
 	})
 
 	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}}
@@ -1037,11 +1037,11 @@ func TestEC2InstanceMetadataCache_waitForENIAndIPsAttached(t *testing.T) {
 			fmt.Println("eniips", eniIPs)
 			mockMetadata := testMetadata(map[string]interface{}{
 				metadataMACPath: primaryMAC + " " + eni2MAC,
-				metadataMACPath + eni2MAC + metadataNetworkCard:  eni2NetworkCard,
-				metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
-				metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
-				metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
-				metadataMACPath + eni2MAC + metadataIPv4s:      eniIPs,
+				metadataMACPath + eni2MAC + metadataNetworkCard: eni2NetworkCard,
+				metadataMACPath + eni2MAC + metadataDeviceNum:   eni2Device,
+				metadataMACPath + eni2MAC + metadataInterface:   eni2ID,
+				metadataMACPath + eni2MAC + metadataSubnetCIDR:  subnetCIDR,
+				metadataMACPath + eni2MAC + metadataIPv4s:       eniIPs,
 			})
 			cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
 			gotEniMetadata, err := cache.waitForENIAndIPsAttached(tt.args.eni, tt.args.wantedSecondaryIPs, tt.args.maxBackoffDelay)
@@ -1133,12 +1133,12 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 			}
 			mockMetadata := testMetadata(map[string]interface{}{
 				metadataMACPath: primaryMAC + " " + eni2MAC,
-				metadataMACPath + eni2MAC + metadataNetworkCard:  eni2NetworkCard,
-				metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
-				metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
-				metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
-				metadataMACPath + eni2MAC + metadataIPv4s:      eniIPs,
-				metadataMACPath + eni2MAC + metaDataPrefixPath: eniPrefixes,
+				metadataMACPath + eni2MAC + metadataNetworkCard: eni2NetworkCard,
+				metadataMACPath + eni2MAC + metadataDeviceNum:   eni2Device,
+				metadataMACPath + eni2MAC + metadataInterface:   eni2ID,
+				metadataMACPath + eni2MAC + metadataSubnetCIDR:  subnetCIDR,
+				metadataMACPath + eni2MAC + metadataIPv4s:       eniIPs,
+				metadataMACPath + eni2MAC + metaDataPrefixPath:  eniPrefixes,
 			})
 			cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2,
 				enablePrefixDelegation: true, v4Enabled: tt.args.v4Enabled, v6Enabled: tt.args.v6Enabled}
