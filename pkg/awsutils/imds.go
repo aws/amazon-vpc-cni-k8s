@@ -166,6 +166,12 @@ func (imds TypedIMDS) getInt(ctx context.Context, key string) (int, error) {
 	return dataInt, err
 }
 
+// GetNetworkCard returns the unique network card number associated with an interface.
+func (imds TypedIMDS) GetNetworkCard(ctx context.Context, mac string) (int, error) {
+	key := fmt.Sprintf("network/interfaces/macs/%s/network-card", mac)
+	return imds.getInt(ctx, key)
+}
+
 // GetDeviceNumber returns the unique device number associated with an interface.  The primary interface is 0.
 func (imds TypedIMDS) GetDeviceNumber(ctx context.Context, mac string) (int, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/device-number", mac)
