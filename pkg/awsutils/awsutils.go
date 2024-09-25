@@ -617,6 +617,9 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	var ec2ipv4Prefixes []*ec2.Ipv4PrefixSpecification
 	var ec2ipv6Prefixes []*ec2.Ipv6PrefixSpecification
 
+	// CNI only manages ENI's on network card 0. We need to get complete metadata info only for ENI's on network card 0.
+	// For ENI's on other network cards, there might not be IP related info present at all like 'efa-only' interfaces
+	// So we are skipping fetching IP related info for all ENI's other than card 0
 	if networkCard == 0 {
 		// Get IPv4 and IPv6 addresses assigned to interface
 		cidr, err := cache.imds.GetSubnetIPv4CIDRBlock(ctx, eniMAC)
