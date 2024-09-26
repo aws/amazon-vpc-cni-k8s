@@ -641,7 +641,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	var ec2ipv4Prefixes []*ec2.Ipv4PrefixSpecification
 	var ec2ipv6Prefixes []*ec2.Ipv6PrefixSpecification
 
-	// Efa-only interfaces do not have any ipv4s or ipv6s associated with it
+	// Do no fetch ip related info for Efa-only interfaces
 	if !isEFAOnlyInterface {
 		// Get IPv4 and IPv6 addresses assigned to interface
 		cidr, err := cache.imds.GetSubnetIPv4CIDRBlock(ctx, eniMAC)
