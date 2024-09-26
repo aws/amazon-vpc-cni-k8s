@@ -610,14 +610,27 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		return ENIMetadata{}, err
 	}
 	isEFAOnlyInterface := true
+	// Efa-only interfaces do not have any ipv4s or ipv6s associated with it
 	for _, field := range macImdsFields {
 		if field == "local-ipv4s" {
-			isEFAOnlyInterface = false
-			break
+			imdsIPv4s, err := cache.imds.GetLocalIPv4s(ctx, eniMAC)
+			if err != nil {
+				awsAPIErrInc("GetLocalIPv4s", err)
+				return ENIMetadata{}, err
+			}
+			if len(imdsIPv4s) > 0 {
+				isEFAOnlyInterface = false
+				break
+			}
 		}
-		if field == "local-ipv6s" {
-			isEFAOnlyInterface = false
-			break
+		if field == "ipv6s" {
+			imdsIPv6s, err := cache.imds.GetIPv6s(ctx, eniMAC)
+			if err != nil {
+				awsAPIErrInc("GetIPv6s", err)
+			} else if len(imdsIPv6s) > 0 {
+				isEFAOnlyInterface = false
+				break
+			}
 		}
 	}
 
