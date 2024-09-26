@@ -22,6 +22,7 @@ In general, you can grant below IAM policies to Amazon VPC CNI plugin depending 
                 "ec2:DescribeTags",
                 "ec2:DescribeNetworkInterfaces",
                 "ec2:DescribeInstanceTypes",
+                "ec2:DescribeSubnets",
                 "ec2:DetachNetworkInterface",
                 "ec2:ModifyNetworkInterfaceAttribute",
                 "ec2:UnassignPrivateIpAddresses"
@@ -102,6 +103,7 @@ Note:
                 "ec2:DescribeInstances",
                 "ec2:DescribeTags",
                 "ec2:DescribeNetworkInterfaces",
+                "ec2:DescribeSubnets",
                 "ec2:DescribeInstanceTypes"
             ],
             "Resource": "*"
