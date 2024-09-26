@@ -610,7 +610,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		return ENIMetadata{}, err
 	}
 	isEFAOnlyInterface := true
-	// Efa-only interfaces do not have any ipv4s or ipv6s associated with it
+	// Efa-only interfaces do not have any ipv4s or ipv6s associated with it. If we don't find any local-ipv4 or ipv6 info in imds we assume it to be efa-only interface and validate this later via ec2 call n
 	for _, field := range macImdsFields {
 		if field == "local-ipv4s" {
 			imdsIPv4s, err := cache.imds.GetLocalIPv4s(ctx, eniMAC)
@@ -620,6 +620,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			}
 			if len(imdsIPv4s) > 0 {
 				isEFAOnlyInterface = false
+				log.Debugf("Found IPv4 addresses associated with interface. This is not efa-only interface")
 				break
 			}
 		}
@@ -629,6 +630,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 				awsAPIErrInc("GetIPv6s", err)
 			} else if len(imdsIPv6s) > 0 {
 				isEFAOnlyInterface = false
+				log.Debugf("Found IPv6 addresses associated with interface. This is not efa-only interface")
 				break
 			}
 		}
@@ -717,7 +719,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			}
 		}
 	} else {
-		log.Debugf("This is efa-only interface. Skipping fetching IP related info")
+		log.Debugf("No ipv4 or ipv6 info associated with this interface. This might be efa-only interface")
 	}
 
 	return ENIMetadata{
@@ -1397,6 +1399,15 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		}
 		if interfaceType == "efa" || interfaceType == "efa-only" {
 			efaENIs[eniID] = true
+		}
+		if interfaceType != "efa-only" {
+			if len(eniMetadata.IPv4Addresses) == 0 && len(eniMetadata.IPv6Addresses) == 0 {
+				log.Errorf("Missing IP addresses from IMDS. Non efa-only interface should have IP address associated with it %s", eniID)
+				outOfSyncErr := errors.New("DescribeAllENIs: No IP addresses found")
+				return DescribeAllENIsResult{}, outOfSyncErr
+			} else {
+				log.Infof("Found IP addresses associated with interface %s : %s", eniID, interfaceType)
+			}
 		}
 		// Check IPv4 addresses
 		logOutOfSyncState(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)

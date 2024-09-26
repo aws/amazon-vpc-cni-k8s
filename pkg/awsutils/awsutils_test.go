@@ -366,6 +366,7 @@ func TestDescribeAllENIs(t *testing.T) {
 			Attachment: &ec2.NetworkInterfaceAttachment{
 				NetworkCardIndex: aws.Int64(0),
 			},
+			NetworkInterfaceId: aws.String(primaryeniID),
 		}},
 	}
 
@@ -380,7 +381,7 @@ func TestDescribeAllENIs(t *testing.T) {
 		awsErr  error
 		expErr  error
 	}{
-		{"Success DescribeENI", map[string]TagMap{"": {"foo": "foo-value"}}, 1, nil, nil},
+		{"Success DescribeENI", map[string]TagMap{"eni-00000000": {"foo": "foo-value"}}, 1, nil, nil},
 		{"Not found error", nil, maxENIEC2APIRetries, awserr.New("InvalidNetworkInterfaceID.NotFound", "no 'eni-xxx'", nil), expectedError},
 		{"Not found, no message", nil, maxENIEC2APIRetries, awserr.New("InvalidNetworkInterfaceID.NotFound", "no message", nil), noMessageError},
 		{"Other error", nil, maxENIEC2APIRetries, err, err},
