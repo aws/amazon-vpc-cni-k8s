@@ -585,12 +585,6 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		return ENIMetadata{}, err
 	}
 
-	networkCard, err := cache.imds.GetNetworkCard(ctx, eniMAC)
-	if err != nil {
-		awsAPIErrInc("GetNetworkCard", err)
-		return ENIMetadata{}, err
-	}
-
 	deviceNum, err = cache.imds.GetDeviceNumber(ctx, eniMAC)
 	if err != nil {
 		awsAPIErrInc("GetDeviceNumber", err)
@@ -608,7 +602,24 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		deviceNum = 0
 	}
 
-	log.Debugf("Found ENI: %s, MAC %s, device %d, network card %d", eniID, eniMAC, deviceNum, networkCard)
+	log.Debugf("Found ENI: %s, MAC %s, device %d", eniID, eniMAC, deviceNum)
+	// Get IMDS fields for the interface
+	macImdsFields, err := cache.imds.GetMACImdsFields(ctx, eniMAC)
+	if err != nil {
+		awsAPIErrInc("GetMACImdsFields", err)
+		return ENIMetadata{}, err
+	}
+	isEFAOnlyInterface := true
+	for _, field := range macImdsFields {
+		if field == "local-ipv4s" {
+			isEFAOnlyInterface = false
+			break
+		}
+		if field == "local-ipv6s" {
+			isEFAOnlyInterface = false
+			break
+		}
+	}
 
 	var subnetV4Cidr string
 	var ec2ip4s []*ec2.NetworkInterfacePrivateIpAddress
@@ -617,10 +628,8 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	var ec2ipv4Prefixes []*ec2.Ipv4PrefixSpecification
 	var ec2ipv6Prefixes []*ec2.Ipv6PrefixSpecification
 
-	// CNI only manages ENI's on network card 0. We need to get complete metadata info only for ENI's on network card 0.
-	// For ENI's on other network cards, there might not be IP related info present at all like 'efa-only' interfaces
-	// So we are skipping fetching IP related info for all ENI's other than card 0
-	if networkCard == 0 {
+	// Efa-only interfaces do not have any ipv4s or ipv6s associated with it
+	if !isEFAOnlyInterface {
 		// Get IPv4 and IPv6 addresses assigned to interface
 		cidr, err := cache.imds.GetSubnetIPv4CIDRBlock(ctx, eniMAC)
 		if err != nil {
@@ -694,6 +703,8 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 				})
 			}
 		}
+	} else {
+		log.Debugf("This is efa-only interface. Skipping fetching IP related info")
 	}
 
 	return ENIMetadata{

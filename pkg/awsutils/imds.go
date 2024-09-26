@@ -136,6 +136,24 @@ func (imds TypedIMDS) GetMACs(ctx context.Context) ([]string, error) {
 	return list, err
 }
 
+// GetMACImdsFields returns the imds fields present for a MAC
+func (imds TypedIMDS) GetMACImdsFields(ctx context.Context, mac string) ([]string, error) {
+	key := fmt.Sprintf("network/interfaces/macs/%s", mac)
+	list, err := imds.getList(ctx, key)
+	if err != nil {
+		if imdsErr, ok := err.(*imdsRequestError); ok {
+			log.Warnf("%v", err)
+			return nil, imdsErr.err
+		}
+		return nil, err
+	}
+	// Remove trailing /
+	for i, item := range list {
+		list[i] = strings.TrimSuffix(item, "/")
+	}
+	return list, err
+}
+
 // GetInterfaceID returns the ID of the network interface.
 func (imds TypedIMDS) GetInterfaceID(ctx context.Context, mac string) (string, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/interface-id", mac)
@@ -164,12 +182,6 @@ func (imds TypedIMDS) getInt(ctx context.Context, key string) (int, error) {
 		return 0, err
 	}
 	return dataInt, err
-}
-
-// GetNetworkCard returns the unique network card number associated with an interface.
-func (imds TypedIMDS) GetNetworkCard(ctx context.Context, mac string) (int, error) {
-	key := fmt.Sprintf("network/interfaces/macs/%s/network-card", mac)
-	return imds.getInt(ctx, key)
 }
 
 // GetDeviceNumber returns the unique device number associated with an interface.  The primary interface is 0.
