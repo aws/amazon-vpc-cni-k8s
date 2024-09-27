@@ -603,14 +603,15 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	}
 
 	log.Debugf("Found ENI: %s, MAC %s, device %d", eniID, eniMAC, deviceNum)
+
 	// Get IMDS fields for the interface
 	macImdsFields, err := cache.imds.GetMACImdsFields(ctx, eniMAC)
 	if err != nil {
 		awsAPIErrInc("GetMACImdsFields", err)
 		return ENIMetadata{}, err
 	}
-	isEFAOnlyInterface := true
-	// Efa-only interfaces do not have any ipv4s or ipv6s associated with it. If we don't find any local-ipv4 or ipv6 info in imds we assume it to be efa-only interface and validate this later via ec2 call n
+	ipInfoAvailable := false
+	// Efa-only interfaces do not have any ipv4s or ipv6s associated with it. If we don't find any local-ipv4 or ipv6 info in imds we assume it to be efa-only interface and validate this later via ec2 call
 	for _, field := range macImdsFields {
 		if field == "local-ipv4s" {
 			imdsIPv4s, err := cache.imds.GetLocalIPv4s(ctx, eniMAC)
@@ -619,7 +620,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 				return ENIMetadata{}, err
 			}
 			if len(imdsIPv4s) > 0 {
-				isEFAOnlyInterface = false
+				ipInfoAvailable = true
 				log.Debugf("Found IPv4 addresses associated with interface. This is not efa-only interface")
 				break
 			}
@@ -629,104 +630,109 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			if err != nil {
 				awsAPIErrInc("GetIPv6s", err)
 			} else if len(imdsIPv6s) > 0 {
-				isEFAOnlyInterface = false
+				ipInfoAvailable = true
 				log.Debugf("Found IPv6 addresses associated with interface. This is not efa-only interface")
 				break
 			}
 		}
 	}
 
-	var subnetV4Cidr string
-	var ec2ip4s []*ec2.NetworkInterfacePrivateIpAddress
+	if !ipInfoAvailable {
+		return ENIMetadata{
+			ENIID:          eniID,
+			MAC:            eniMAC,
+			DeviceNumber:   deviceNum,
+			SubnetIPv4CIDR: "",
+			IPv4Addresses:  make([]*ec2.NetworkInterfacePrivateIpAddress, 0),
+			IPv4Prefixes:   make([]*ec2.Ipv4PrefixSpecification, 0),
+			SubnetIPv6CIDR: "",
+			IPv6Addresses:  make([]*ec2.NetworkInterfaceIpv6Address, 0),
+			IPv6Prefixes:   make([]*ec2.Ipv6PrefixSpecification, 0),
+		}, nil
+	}
+
+	// Get IPv4 and IPv6 addresses assigned to interface
+	cidr, err := cache.imds.GetSubnetIPv4CIDRBlock(ctx, eniMAC)
+	if err != nil {
+		awsAPIErrInc("GetSubnetIPv4CIDRBlock", err)
+		return ENIMetadata{}, err
+	}
+
+	imdsIPv4s, err := cache.imds.GetLocalIPv4s(ctx, eniMAC)
+	if err != nil {
+		awsAPIErrInc("GetLocalIPv4s", err)
+		return ENIMetadata{}, err
+	}
+
+	ec2ip4s := make([]*ec2.NetworkInterfacePrivateIpAddress, len(imdsIPv4s))
+	for i, ip4 := range imdsIPv4s {
+		ec2ip4s[i] = &ec2.NetworkInterfacePrivateIpAddress{
+			Primary:          aws.Bool(i == 0),
+			PrivateIpAddress: aws.String(ip4.String()),
+		}
+	}
+
 	var ec2ip6s []*ec2.NetworkInterfaceIpv6Address
 	var subnetV6Cidr string
-	var ec2ipv4Prefixes []*ec2.Ipv4PrefixSpecification
-	var ec2ipv6Prefixes []*ec2.Ipv6PrefixSpecification
-
-	// Do no fetch ip related info for Efa-only interfaces
-	if !isEFAOnlyInterface {
-		// Get IPv4 and IPv6 addresses assigned to interface
-		cidr, err := cache.imds.GetSubnetIPv4CIDRBlock(ctx, eniMAC)
+	if cache.v6Enabled {
+		// For IPv6 ENIs, do not error on missing IPv6 information
+		v6cidr, err := cache.imds.GetSubnetIPv6CIDRBlocks(ctx, eniMAC)
 		if err != nil {
-			awsAPIErrInc("GetSubnetIPv4CIDRBlock", err)
-			return ENIMetadata{}, err
+			awsAPIErrInc("GetSubnetIPv6CIDRBlocks", err)
 		} else {
-			subnetV4Cidr = cidr.String()
+			subnetV6Cidr = v6cidr.String()
 		}
 
-		imdsIPv4s, err := cache.imds.GetLocalIPv4s(ctx, eniMAC)
+		imdsIPv6s, err := cache.imds.GetIPv6s(ctx, eniMAC)
 		if err != nil {
-			awsAPIErrInc("GetLocalIPv4s", err)
-			return ENIMetadata{}, err
-		}
-
-		ec2ip4s = make([]*ec2.NetworkInterfacePrivateIpAddress, len(imdsIPv4s))
-		for i, ip4 := range imdsIPv4s {
-			ec2ip4s[i] = &ec2.NetworkInterfacePrivateIpAddress{
-				Primary:          aws.Bool(i == 0),
-				PrivateIpAddress: aws.String(ip4.String()),
-			}
-		}
-
-		if cache.v6Enabled {
-			// For IPv6 ENIs, do not error on missing IPv6 information
-			v6cidr, err := cache.imds.GetSubnetIPv6CIDRBlocks(ctx, eniMAC)
-			if err != nil {
-				awsAPIErrInc("GetSubnetIPv6CIDRBlocks", err)
-			} else {
-				subnetV6Cidr = v6cidr.String()
-			}
-
-			imdsIPv6s, err := cache.imds.GetIPv6s(ctx, eniMAC)
-			if err != nil {
-				awsAPIErrInc("GetIPv6s", err)
-			} else {
-				ec2ip6s = make([]*ec2.NetworkInterfaceIpv6Address, len(imdsIPv6s))
-				for i, ip6 := range imdsIPv6s {
-					ec2ip6s[i] = &ec2.NetworkInterfaceIpv6Address{
-						Ipv6Address: aws.String(ip6.String()),
-					}
+			awsAPIErrInc("GetIPv6s", err)
+		} else {
+			ec2ip6s = make([]*ec2.NetworkInterfaceIpv6Address, len(imdsIPv6s))
+			for i, ip6 := range imdsIPv6s {
+				ec2ip6s[i] = &ec2.NetworkInterfaceIpv6Address{
+					Ipv6Address: aws.String(ip6.String()),
 				}
 			}
 		}
+	}
 
-		// If IPv6 is enabled, get attached v6 prefixes.
-		if cache.v6Enabled {
-			imdsIPv6Prefixes, err := cache.imds.GetIPv6Prefixes(ctx, eniMAC)
-			if err != nil {
-				awsAPIErrInc("GetIPv6Prefixes", err)
-				return ENIMetadata{}, err
-			}
-			for _, ipv6prefix := range imdsIPv6Prefixes {
-				ec2ipv6Prefixes = append(ec2ipv6Prefixes, &ec2.Ipv6PrefixSpecification{
-					Ipv6Prefix: aws.String(ipv6prefix.String()),
-				})
-			}
-		} else if cache.v4Enabled && ((eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC)) {
-			// Get prefix on primary ENI when custom networking is enabled is not needed.
-			// If primary ENI has prefixes attached and then we move to custom networking, we don't need to fetch
-			// the prefix since recommendation is to terminate the nodes and that would have deleted the prefix on the
-			// primary ENI.
-			imdsIPv4Prefixes, err := cache.imds.GetIPv4Prefixes(ctx, eniMAC)
-			if err != nil {
-				awsAPIErrInc("GetIPv4Prefixes", err)
-				return ENIMetadata{}, err
-			}
-			for _, ipv4prefix := range imdsIPv4Prefixes {
-				ec2ipv4Prefixes = append(ec2ipv4Prefixes, &ec2.Ipv4PrefixSpecification{
-					Ipv4Prefix: aws.String(ipv4prefix.String()),
-				})
-			}
+	var ec2ipv4Prefixes []*ec2.Ipv4PrefixSpecification
+	var ec2ipv6Prefixes []*ec2.Ipv6PrefixSpecification
+
+	// If IPv6 is enabled, get attached v6 prefixes.
+	if cache.v6Enabled {
+		imdsIPv6Prefixes, err := cache.imds.GetIPv6Prefixes(ctx, eniMAC)
+		if err != nil {
+			awsAPIErrInc("GetIPv6Prefixes", err)
+			return ENIMetadata{}, err
 		}
-	} else {
-		log.Debugf("No ipv4 or ipv6 info associated with this interface. This might be efa-only interface")
+		for _, ipv6prefix := range imdsIPv6Prefixes {
+			ec2ipv6Prefixes = append(ec2ipv6Prefixes, &ec2.Ipv6PrefixSpecification{
+				Ipv6Prefix: aws.String(ipv6prefix.String()),
+			})
+		}
+	} else if cache.v4Enabled && ((eniMAC == primaryMAC && !cache.useCustomNetworking) || (eniMAC != primaryMAC)) {
+		// Get prefix on primary ENI when custom networking is enabled is not needed.
+		// If primary ENI has prefixes attached and then we move to custom networking, we don't need to fetch
+		// the prefix since recommendation is to terminate the nodes and that would have deleted the prefix on the
+		// primary ENI.
+		imdsIPv4Prefixes, err := cache.imds.GetIPv4Prefixes(ctx, eniMAC)
+		if err != nil {
+			awsAPIErrInc("GetIPv4Prefixes", err)
+			return ENIMetadata{}, err
+		}
+		for _, ipv4prefix := range imdsIPv4Prefixes {
+			ec2ipv4Prefixes = append(ec2ipv4Prefixes, &ec2.Ipv4PrefixSpecification{
+				Ipv4Prefix: aws.String(ipv4prefix.String()),
+			})
+		}
 	}
 
 	return ENIMetadata{
 		ENIID:          eniID,
 		MAC:            eniMAC,
 		DeviceNumber:   deviceNum,
-		SubnetIPv4CIDR: subnetV4Cidr,
+		SubnetIPv4CIDR: cidr.String(),
 		IPv4Addresses:  ec2ip4s,
 		IPv4Prefixes:   ec2ipv4Prefixes,
 		SubnetIPv6CIDR: subnetV6Cidr,
