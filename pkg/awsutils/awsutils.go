@@ -604,6 +604,53 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 
 	log.Debugf("Found ENI: %s, MAC %s, device %d", eniID, eniMAC, deviceNum)
 
+	// Get IMDS fields for the interface
+	macImdsFields, err := cache.imds.GetMACImdsFields(ctx, eniMAC)
+	if err != nil {
+		awsAPIErrInc("GetMACImdsFields", err)
+		return ENIMetadata{}, err
+	}
+	ipInfoAvailable := false
+	// Efa-only interfaces do not have any ipv4s or ipv6s associated with it. If we don't find any local-ipv4 or ipv6 info in imds we assume it to be efa-only interface and validate this later via ec2 call
+	for _, field := range macImdsFields {
+		if field == "local-ipv4s" {
+			imdsIPv4s, err := cache.imds.GetLocalIPv4s(ctx, eniMAC)
+			if err != nil {
+				awsAPIErrInc("GetLocalIPv4s", err)
+				return ENIMetadata{}, err
+			}
+			if len(imdsIPv4s) > 0 {
+				ipInfoAvailable = true
+				log.Debugf("Found IPv4 addresses associated with interface. This is not efa-only interface")
+				break
+			}
+		}
+		if field == "ipv6s" {
+			imdsIPv6s, err := cache.imds.GetIPv6s(ctx, eniMAC)
+			if err != nil {
+				awsAPIErrInc("GetIPv6s", err)
+			} else if len(imdsIPv6s) > 0 {
+				ipInfoAvailable = true
+				log.Debugf("Found IPv6 addresses associated with interface. This is not efa-only interface")
+				break
+			}
+		}
+	}
+
+	if !ipInfoAvailable {
+		return ENIMetadata{
+			ENIID:          eniID,
+			MAC:            eniMAC,
+			DeviceNumber:   deviceNum,
+			SubnetIPv4CIDR: "",
+			IPv4Addresses:  make([]*ec2.NetworkInterfacePrivateIpAddress, 0),
+			IPv4Prefixes:   make([]*ec2.Ipv4PrefixSpecification, 0),
+			SubnetIPv6CIDR: "",
+			IPv6Addresses:  make([]*ec2.NetworkInterfaceIpv6Address, 0),
+			IPv6Prefixes:   make([]*ec2.Ipv6PrefixSpecification, 0),
+		}, nil
+	}
+
 	// Get IPv4 and IPv6 addresses assigned to interface
 	cidr, err := cache.imds.GetSubnetIPv4CIDRBlock(ctx, eniMAC)
 	if err != nil {
@@ -1356,8 +1403,15 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		if interfaceType == "trunk" {
 			trunkENI = eniID
 		}
-		if interfaceType == "efa" {
+		if interfaceType == "efa" || interfaceType == "efa-only" {
 			efaENIs[eniID] = true
+		}
+		if interfaceType != "efa-only" {
+			if len(eniMetadata.IPv4Addresses) == 0 {
+				log.Errorf("Missing IP addresses from IMDS. Non efa-only interface should have IP address associated with it %s", eniID)
+				outOfSyncErr := errors.New("DescribeAllENIs: No IPv4 address found")
+				return DescribeAllENIsResult{}, outOfSyncErr
+			}
 		}
 		// Check IPv4 addresses
 		logOutOfSyncState(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
