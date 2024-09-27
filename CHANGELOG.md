@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.18.4
+
+## What's Changed
+
+* Dependency - Bump golang.org/x/sys from 0.21.0 to 0.22.0 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3005
+* Dependency - Bump github.com/onsi/gomega from 1.33.1 to 1.34.1 https://github.com/aws/amazon-vpc-cni-k8s/pull/3002
+* Dependency - Bump github.com/aws/aws-sdk-go from 1.54.11 to 1.55.5 https://github.com/aws/amazon-vpc-cni-k8s/pull/3000
+* Dependency - Bump github.com/onsi/ginkgo/v2 from 2.19.0 to 2.19.1 https://github.com/aws/amazon-vpc-cni-k8s/pull/3001
+* Dependency - Bump k8s.io/client-go from 0.30.2 to 0.30.3 https://github.com/aws/amazon-vpc-cni-k8s/pull/3003
+* Dependency - Bump github.com/containernetworking/cni from 1.2.0 to 1.2.3 https://github.com/aws/amazon-vpc-cni-k8s/pull/3004
+* Bugfix     - fix: init.image.pullPolicy and nodeAgent.image.pullPolicy not being respect https://github.com/aws/amazon-vpc-cni-k8s/pull/3010
+* Dependency - Bump github.com/docker/docker https://github.com/aws/amazon-vpc-cni-k8s/pull/3011
+* Bugfix     - Bug fix: Ensure exact IP match between IMDS and local datastore. https://github.com/aws/amazon-vpc-cni-k8s/pull/3033
+* Dependency - Bump github.com/prometheus/client_model from 0.6.0 to 0.6.1 https://github.com/aws/amazon-vpc-cni-k8s/pull/3024
+* Dependency - Bump github.com/coreos/go-iptables from 0.7.0 to 0.8.0 https://github.com/aws/amazon-vpc-cni-k8s/pull/3020
+* Dependency - Bump golang.org/x/sys from 0.22.0 to 0.25.0 https://github.com/aws/amazon-vpc-cni-k8s/pull/3037
+* Dependency - Bump google.golang.org/protobuf from 1.34.1 to 1.34.2 https://github.com/aws/amazon-vpc-cni-k8s/pull/3023
+
 ## v1.18.3
 
 ## What's Changed
