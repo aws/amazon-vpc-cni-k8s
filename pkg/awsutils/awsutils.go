@@ -1407,9 +1407,9 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 			efaENIs[eniID] = true
 		}
 		if interfaceType != "efa-only" {
-			if len(eniMetadata.IPv4Addresses) == 0 && len(eniMetadata.IPv6Addresses) == 0 {
+			if len(eniMetadata.IPv4Addresses) == 0 {
 				log.Errorf("Missing IP addresses from IMDS. Non efa-only interface should have IP address associated with it %s", eniID)
-				outOfSyncErr := errors.New("DescribeAllENIs: No IP addresses found")
+				outOfSyncErr := errors.New("DescribeAllENIs: No IPv4 address found")
 				return DescribeAllENIsResult{}, outOfSyncErr
 			}
 		}
