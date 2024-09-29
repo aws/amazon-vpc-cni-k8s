@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.18.5
+
+## What's Changed
+
+* Improvement - Filter out interfaces with no ip info by @Pavani-Panakanti in https://github.com/aws/amazon-vpc-cni-k8s/pull/3047 
+
+## New Contributors
+* @Pavani-Panakanti made their first contribution in https://github.com/aws/amazon-vpc-cni-k8s/pull/3047
+
 ## v1.18.4
 
 ## What's Changed
