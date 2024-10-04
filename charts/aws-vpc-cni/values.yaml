@@ -45,7 +45,8 @@ nodeAgent:
   enablePolicyEventLogs: "false"
   networkPolicyAgentLogFileLocation: "/var/log/aws-routed-eni/network-policy-agent.log"
   enableIpv6: "false"
-  metricsBindAddr: "8162"
+  metricsBindAddr: "58162"
+  metricsBindPort: "58162"
   healthProbeBindAddr: "8163"
   conntrackCacheCleanupPeriod: 300
   resources: {}
