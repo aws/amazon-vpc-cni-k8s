@@ -1,0 +1,31 @@
+{{- if .Values.podMonitor.create }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ template "aws-vpc-cni.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- with .Values.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.podMonitor.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  jobLabel: {{ template "aws-vpc-cni.name" . }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  podMetricsEndpoints:
+  - interval: {{ .Values.podMonitor.interval }}
+    path: /metrics
+    port: metrics
+    {{- with .Values.podMonitor.relabelings }}
+    relabelings:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  selector:
+    matchLabels:
+      k8s-app: aws-node
+{{- end }}
