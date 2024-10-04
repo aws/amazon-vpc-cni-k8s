@@ -25,6 +25,15 @@ spec:
     relabelings:
       {{- toYaml . | nindent 6 }}
     {{- end }}
+  {{- if .Values.nodeAgent.enabled }}
+  - interval: {{ .Values.podMonitor.interval }}
+    path: /metrics
+    port: agentmetrics
+    {{- with .Values.podMonitor.relabelings }}
+    relabelings:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- end }}
   selector:
     matchLabels:
       k8s-app: aws-node
