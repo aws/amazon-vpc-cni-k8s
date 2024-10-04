@@ -2,7 +2,7 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: {{ template "aws-vpc-cni.name" . }}
+  name: {{ include "aws-vpc-cni.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- with .Values.podMonitor.labels }}
@@ -13,7 +13,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  jobLabel: {{ template "aws-vpc-cni.name" . }}
+  jobLabel: {{ include "aws-vpc-cni.fullname" . }}
   namespaceSelector:
     matchNames:
       - {{ .Release.Namespace }}
