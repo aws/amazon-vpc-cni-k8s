@@ -11,6 +11,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
 : "${SKIP_MAKE_TEST_BINARIES:=}"
 
+source "$SCRIPT_DIR"/lib/set_kubeconfig.sh
 source "$SCRIPT_DIR"/lib/cluster.sh
 source "$SCRIPT_DIR"/lib/canary.sh
 
@@ -37,7 +38,7 @@ function load_test_parameters(){
 
 function run_ginkgo_test() {
   (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS -v --timeout 60m --no-color --fail-on-pending $GINKGO_TEST_BUILD/$SUITE_NAME.test -- \
-    --cluster-kubeconfig="$KUBE_CONFIG_PATH" \
+    --cluster-kubeconfig="$KUBECONFIG" \
     --cluster-name="$CLUSTER_NAME" \
     --aws-region="$REGION" \
     --aws-vpc-id="$VPC_ID" \

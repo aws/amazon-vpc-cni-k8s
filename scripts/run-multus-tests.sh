@@ -7,13 +7,14 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration"
 
+source "$SCRIPT_DIR"/lib/set_kubeconfig.sh
 source "$SCRIPT_DIR"/lib/common.sh
 source "$SCRIPT_DIR"/lib/cluster.sh
 source "$SCRIPT_DIR"/lib/canary.sh
 
 function run_ginkgo_test() {
   local focus=$1
-  (cd "$INTEGRATION_TEST_DIR/multus" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 20m --fail-on-pending -- --cluster-kubeconfig="$KUBE_CONFIG_PATH" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
+  (cd "$INTEGRATION_TEST_DIR/multus" && CGO_ENABLED=0 ginkgo --focus="$focus" -v --timeout 20m --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="kubernetes.io/os" --ng-name-label-val="linux")
 }
 
 check_is_installed kubectl
