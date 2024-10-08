@@ -516,6 +516,7 @@ Valid Values: `strict`, `standard`
 Once `ENABLE_POD_ENI` is set to `true`, this value controls how the traffic of pods with the security group behaves.
 
 * `strict` mode: all inbound/outbound traffic from pod with security group will be enforced by security group rules. This is the **default** mode if POD_SECURITY_GROUP_ENFORCING_MODE is not set.
+  * `strict` mode is supported when kube-proxy configured in `iptables` mode (default with EKS). If kube-proxy is configured in `ipvs` mode, please set `POD_SECURITY_GROUP_ENFORCING_MODE` to `standard`.
 
 * `standard` mode: the traffic of pod with security group behaves same as pods without a security group, except that each pod occupies a dedicated branch ENI.
   * inbound traffic to pod with security group from another host will be enforced by security group rules.
