@@ -23,16 +23,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/smithy-go"
+
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-
 	mock_ec2wrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
+	"github.com/aws/aws-sdk-go/aws"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -337,7 +337,14 @@ func TestGetENIAttachmentID(t *testing.T) {
 		{
 			"not found error",
 			nil,
-			awserr.New("InvalidNetworkInterfaceID.NotFound", "", nil),
+			&smithy.GenericAPIError{Code: "InvalidNetworkInterfaceID.NotFound", Message: "not found", Fault: 0},
+			nil,
+			ErrENINotFound,
+		},
+		{
+			"not found error",
+			nil,
+			&smithy.GenericAPIError{Code: "InvalidNetworkInterfaceID.NotFound", Message: "", Fault: 0},
 			nil,
 			ErrENINotFound,
 		},
@@ -369,8 +376,16 @@ func TestDescribeAllENIs(t *testing.T) {
 		}},
 	}
 
-	expectedError := awserr.New("InvalidNetworkInterfaceID.NotFound", "no 'eni-xxx'", nil)
-	noMessageError := awserr.New("InvalidNetworkInterfaceID.NotFound", "no message", nil)
+	expectedError := &smithy.GenericAPIError{
+		Code:    "InvalidNetworkInterfaceID.NotFound",
+		Message: "no 'eni-xxx'",
+	}
+
+	noMessageError := &smithy.GenericAPIError{
+		Code:    "InvalidNetworkInterfaceID.NotFound",
+		Message: "no message",
+	}
+
 	err := errors.New("other Error")
 
 	testCases := []struct {
@@ -381,8 +396,8 @@ func TestDescribeAllENIs(t *testing.T) {
 		expErr  error
 	}{
 		{"Success DescribeENI", map[string]TagMap{"eni-00000000": {"foo": "foo-value"}}, 1, nil, nil},
-		{"Not found error", nil, maxENIEC2APIRetries, awserr.New("InvalidNetworkInterfaceID.NotFound", "no 'eni-xxx'", nil), expectedError},
-		{"Not found, no message", nil, maxENIEC2APIRetries, awserr.New("InvalidNetworkInterfaceID.NotFound", "no message", nil), noMessageError},
+		{"Not found error", nil, maxENIEC2APIRetries, &smithy.GenericAPIError{Code: "InvalidNetworkInterfaceID.NotFound", Message: "no 'eni-xxx'"}, expectedError},
+		{"Not found, no message", nil, maxENIEC2APIRetries, &smithy.GenericAPIError{Code: "InvalidNetworkInterfaceID.NotFound", Message: "no message"}, noMessageError},
 		{"Other error", nil, maxENIEC2APIRetries, err, err},
 	}
 
@@ -635,7 +650,7 @@ func TestAllocENIWithIPAddressesAlreadyFull(t *testing.T) {
 	}
 	mockEC2.EXPECT().DescribeSubnetsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
 
-	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
+	retErr := &smithy.GenericAPIError{Code: "PrivateIpAddressLimitExceeded", Message: "Too many IPs already allocated"}
 	mockEC2.EXPECT().CreateNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, retErr)
 
 	cache := &EC2InstanceMetadataCache{
@@ -723,7 +738,7 @@ func TestAllocENIWithPrefixesAlreadyFull(t *testing.T) {
 	}
 	mockEC2.EXPECT().DescribeSubnetsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
 
-	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
+	retErr := &smithy.GenericAPIError{Code: "PrivateIpAddressLimitExceeded", Message: "Too many IPs already allocated"}
 	mockEC2.EXPECT().CreateNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, retErr)
 
 	cache := &EC2InstanceMetadataCache{
@@ -908,7 +923,7 @@ func TestAllocIPAddressesAlreadyFull(t *testing.T) {
 	}
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "t3.xlarge"}
 
-	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
+	retErr := &smithy.GenericAPIError{Code: "PrivateIpAddressLimitExceeded", Message: "Too many IPs already allocated"}
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, retErr)
 	// If EC2 says that all IPs are already attached, then DS is out of sync so alloc will fail
 	_, err := cache.AllocIPAddresses(eniID, 14)
@@ -945,7 +960,7 @@ func TestAllocPrefixesAlreadyFull(t *testing.T) {
 	}
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "t3.xlarge", enablePrefixDelegation: true}
 
-	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
+	retErr := &smithy.GenericAPIError{Code: "PrivateIpAddressLimitExceeded", Message: "Too many IPs already allocated"}
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, retErr)
 	// If EC2 says that all IPs are already attached, then DS is out of sync so alloc will fail
 	_, err := cache.AllocIPAddresses(eniID, 1)
