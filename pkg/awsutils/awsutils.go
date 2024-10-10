@@ -38,7 +38,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
@@ -75,6 +74,9 @@ const (
 )
 
 var (
+	awsAPIError        smithy.APIError
+	awsGenericAPIError *smithy.GenericAPIError
+
 	// ErrENINotFound is an error when ENI is not found.
 	ErrENINotFound = errors.New("ENI is not found")
 	// ErrAllSecondaryIPsNotFound is returned when not all secondary IPs on an ENI have been assigned
@@ -333,13 +335,13 @@ func awsReqStatus(err error) string {
 	if err == nil {
 		return "200"
 	}
-	var aerr *smithy.GenericAPIError
-	if errors.As(err, &aerr) {
-		return fmt.Sprint(aerr.ErrorCode())
+	if errors.As(err, &awsGenericAPIError) {
+		return fmt.Sprint(awsGenericAPIError.ErrorCode())
 	}
 	return "" // Unknown HTTP status code
 }
 
+/**
 func awsReqStatusV1(err error) string {
 	if err == nil {
 		return "200"
@@ -350,6 +352,7 @@ func awsReqStatusV1(err error) string {
 	}
 	return "" // Unknown HTTP status code
 }
+**/
 
 func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) (string, error) {
 	start := time.Now()
@@ -542,18 +545,19 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string, store *datastore
 			_, err = cache.ec2SVC.ModifyNetworkInterfaceAttributeWithContext(context.Background(), attributeInput)
 			prometheusmetrics.Ec2ApiReq.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
 			prometheusmetrics.AwsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+
 			if err != nil {
-				if aerr, ok := err.(awserr.Error); ok {
-					if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+				if errors.As(err, &awsAPIError) {
+					if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
 						awsAPIErrInc("IMDSMetaDataOutOfSync", err)
 					}
 				}
 				checkAPIErrorAndBroadcastEvent(err, "ec2:ModifyNetworkInterfaceAttribute")
 				awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
 				prometheusmetrics.Ec2ApiErr.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
-				//No need to return error here since retry will happen in 30seconds and also
-				//If update failed due to stale ENI then returning error will prevent updating SG
-				//for following ENIs since the list is sorted
+				// No need to return error here since retry will happen in 30 seconds and also
+				// If update failed due to stale ENI then returning error will prevent updating SG
+				// for following ENIs since the list is sorted
 				log.Debugf("refreshSGIDs: unable to update the ENI %s SG - %v", eniID, err)
 			}
 		}
@@ -1092,13 +1096,15 @@ func (cache *EC2InstanceMetadataCache) TagENI(eniID string, currentTags map[stri
 }
 
 func awsAPIErrInc(api string, err error) {
-	if aerr, ok := err.(awserr.Error); ok {
-		prometheusmetrics.AwsAPIErr.With(prometheus.Labels{"api": api, "error": aerr.Code()}).Inc()
+	if errors.As(err, &awsAPIError) {
+		prometheusmetrics.AwsAPIErr.With(prometheus.Labels{"api": api, "error": awsAPIError.ErrorCode()}).Inc()
 	}
 }
 
 func awsUtilsErrInc(fn string, err error) {
-	prometheusmetrics.AwsUtilsErr.With(prometheus.Labels{"fn": fn, "error": err.Error()}).Inc()
+	if errors.As(err, &awsAPIError) {
+		prometheusmetrics.AwsUtilsErr.With(prometheus.Labels{"fn": fn, "error": err.Error()}).Inc()
+	}
 }
 
 // FreeENI detaches and deletes the ENI interface
@@ -1171,8 +1177,8 @@ func (cache *EC2InstanceMetadataCache) getENIAttachmentID(eniID string) (*string
 	prometheusmetrics.Ec2ApiReq.WithLabelValues("DescribeNetworkInterfaces").Inc()
 	prometheusmetrics.AwsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+		if errors.As(err, &awsAPIError) {
+			if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
 				return nil, ErrENINotFound
 			}
 		}
@@ -1209,9 +1215,9 @@ func (cache *EC2InstanceMetadataCache) deleteENI(eniName string, maxBackoffDelay
 		prometheusmetrics.Ec2ApiReq.WithLabelValues("DeleteNetworkInterface").Inc()
 		prometheusmetrics.AwsAPILatency.WithLabelValues("DeleteNetworkInterface", fmt.Sprint(ec2Err != nil), awsReqStatus(ec2Err)).Observe(msSince(start))
 		if ec2Err != nil {
-			if aerr, ok := ec2Err.(awserr.Error); ok {
+			if errors.As(ec2Err, &awsAPIError) {
 				// If already deleted, we are good
-				if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+				if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
 					log.Infof("ENI %s has already been deleted", eniName)
 					return nil
 				}
@@ -1239,8 +1245,8 @@ func (cache *EC2InstanceMetadataCache) GetIPv4sFromEC2(eniID string) (addrList [
 	prometheusmetrics.Ec2ApiReq.WithLabelValues("DescribeNetworkInterfaces").Inc()
 	prometheusmetrics.AwsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+		if errors.As(err, &awsAPIError) {
+			if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
 				return nil, ErrENINotFound
 			}
 		}
@@ -1270,8 +1276,8 @@ func (cache *EC2InstanceMetadataCache) GetIPv4PrefixesFromEC2(eniID string) (add
 	prometheusmetrics.Ec2ApiReq.WithLabelValues("DescribeNetworkInterfaces").Inc()
 	prometheusmetrics.AwsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+		if errors.As(err, &awsAPIError) {
+			if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
 				return nil, ErrENINotFound
 			}
 
@@ -1302,8 +1308,8 @@ func (cache *EC2InstanceMetadataCache) GetIPv6PrefixesFromEC2(eniID string) (add
 	prometheusmetrics.Ec2ApiReq.WithLabelValues("DescribeNetworkInterfaces").Inc()
 	prometheusmetrics.AwsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
+		if errors.As(err, &awsAPIError) {
+			if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
 				return nil, ErrENINotFound
 			}
 
@@ -1354,10 +1360,10 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		prometheusmetrics.Ec2ApiErr.WithLabelValues("DescribeNetworkInterfaces").Inc()
 		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
 		log.Errorf("Failed to call ec2:DescribeNetworkInterfaces for %v: %v", aws.StringValueSlice(input.NetworkInterfaceIds), err)
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == "InvalidNetworkInterfaceID.NotFound" {
-				badENIID := badENIID(aerr.Message())
-				log.Debugf("Could not find interface: %s, ID: %s", aerr.Message(), badENIID)
+		if errors.As(err, &awsAPIError) {
+			if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
+				badENIID := badENIID(awsAPIError.ErrorMessage())
+				log.Debugf("Could not find interface: %s, ID: %s", awsAPIError.ErrorMessage(), badENIID)
 				awsAPIErrInc("IMDSMetaDataOutOfSync", err)
 				// Remove this ENI from the map
 				delete(eniMap, badENIID)
@@ -2140,8 +2146,8 @@ func (cache *EC2InstanceMetadataCache) IsPrimaryENI(eniID string) bool {
 }
 
 func checkAPIErrorAndBroadcastEvent(err error, api string) {
-	if aerr, ok := err.(awserr.Error); ok {
-		if aerr.Code() == "UnauthorizedOperation" {
+	if errors.As(err, &awsAPIError) {
+		if awsAPIError.ErrorCode() == "UnauthorizedOperation" {
 			if eventRecorder := eventrecorder.Get(); eventRecorder != nil {
 				eventRecorder.SendPodEvent(v1.EventTypeWarning, "MissingIAMPermissions", api,
 					fmt.Sprintf("Unauthorized operation: failed to call %v due to missing permissions. Please refer https://github.com/aws/amazon-vpc-cni-k8s/blob/master/docs/iam-policy.md to attach relevant policy to IAM role", api))
