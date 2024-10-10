@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/aws/smithy-go"
 	"math/rand"
 	"net"
 	"os"
@@ -329,6 +330,17 @@ type instrumentedIMDS struct {
 }
 
 func awsReqStatus(err error) string {
+	if err == nil {
+		return "200"
+	}
+	var aerr *smithy.GenericAPIError
+	if errors.As(err, &aerr) {
+		return fmt.Sprint(aerr.ErrorCode())
+	}
+	return "" // Unknown HTTP status code
+}
+
+func awsReqStatusV1(err error) string {
 	if err == nil {
 		return "200"
 	}
