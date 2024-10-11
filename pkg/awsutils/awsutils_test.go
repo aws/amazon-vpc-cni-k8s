@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aws/smithy-go"
 	"os"
 	"reflect"
 	"strconv"
@@ -337,7 +338,14 @@ func TestGetENIAttachmentID(t *testing.T) {
 		{
 			"not found error",
 			nil,
-			awserr.New("InvalidNetworkInterfaceID.NotFound", "", nil),
+			&smithy.GenericAPIError{"InvalidNetworkInterfaceID.NotFound", "not found", 0},
+			nil,
+			ErrENINotFound,
+		},
+		{
+			"not found error",
+			nil,
+			&smithy.GenericAPIError{"InvalidNetworkInterfaceID.NotFound", "", 0}
 			nil,
 			ErrENINotFound,
 		},
