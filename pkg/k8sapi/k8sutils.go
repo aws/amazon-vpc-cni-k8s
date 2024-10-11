@@ -38,7 +38,7 @@ func getIPAMDCacheFilters() map[client.Object]cache.ByObject {
 			&corev1.Pod{}: {
 				Field: fields.Set{"spec.nodeName": nodeName}.AsSelector(),
 			},
-		        &corev1.Node{}: {
+			&corev1.Node{}: {
 				Field: fields.Set{"metadata.name": nodeName}.AsSelector(),
 			},
 		}
