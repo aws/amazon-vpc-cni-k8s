@@ -279,7 +279,7 @@ docker-metrics-test:     ## Run metrics helper unit test suite in a container.
 		make metrics-unit-test
 
 # Fetch the CNI plugins
-plugins: FETCH_VERSION=1.4.0
+plugins: FETCH_VERSION=1.5.1
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
 plugins:   ## Fetch the CNI plugins
@@ -390,6 +390,9 @@ cleanup-ec2-sdk-override:
 	@if [ "$(EC2_SDK_OVERRIDE)" = "y" ] ; then \
 	    ./scripts/ec2_model_override/cleanup.sh ; \
 	fi
+
+ecr-public-login:
+	aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
 
 ##@ Cleanup
 

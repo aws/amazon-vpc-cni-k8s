@@ -24,7 +24,7 @@ It is also recommended that you set `--max-pods` equal to _(the number of ENIs f
 (the number of IPs per ENI - 1)) + 2_; for details, see [vpc_ip_resource_limit.go][]. Setting `--max-pods` will prevent
 scheduling that exceeds the IP address resources available to the kubelet.
 
-[vpc_ip_resource_limit.go]: ./pkg/awsutils/vpc_ip_resource_limit.go
+[vpc_ip_resource_limit.go]: ./pkg/vpc/vpc_ip_resource_limit.go
 
 The default manifest expects `--cni-conf-dir=/etc/cni/net.d` and `--cni-bin-dir=/opt/cni/bin`.
 
@@ -40,7 +40,7 @@ See [here](./docs/iam-policy.md) for required IAM policies.
 * `unit-test`, `format`,`lint` and `vet` provide ways to run the respective tests/tools and should be run before submitting a PR.
 * `make docker` will create a docker container using `docker buildx` that contains the finished binaries, with a tag of `amazon/amazon-k8s-cni:latest`
 * `make docker-unit-tests` uses a docker container to run all unit tests.
-* builds for all build and test actions run in docker containers based on `golang:1.21.5-6-gcc-al2` unless a different `GOLANG_IMAGE` tag is passed in.
+* Builds for all build and test actions run in docker containers based on `.go-version` unless a different `GOLANG_IMAGE` tag is passed in.
 
 ## Components
 
@@ -68,9 +68,9 @@ For help, please consider the following venues (in order):
 For all Kubernetes releases, *we recommend installing the latest VPC CNI release*. The following table denotes our *oldest* recommended
 VPC CNI version for each actively supported Kubernetes release.
 
-| Kubernetes Release | 1.29     | 1.28     | 1.27     | 1.26     | 1.25     | 1.24    |
-| ------------------ | -------- | -------- | -------- | -------- | -------- | ------- |
-| VPC CNI Version    | v1.14.1+ | v1.13.4+ | v1.12.5+ | v1.12.0+ | v1.11.4+ | v1.9.3+ |
+| Kubernetes Release | 1.31     | 1.30     | 1.29     | 1.28     | 1.27     | 1.26     | 1.25     | 1.24    |
+| ------------------ | -------- | -------- | -------- | -------- | -------- | -------- | -------- | ------- |
+| VPC CNI Version    | v1.16.4+ | v1.16.0+ | v1.14.1+ | v1.13.4+ | v1.12.5+ | v1.12.0+ | v1.11.4+ | v1.9.3+ |
 
 ## Version Upgrade
 
@@ -117,7 +117,7 @@ Review the [Network Policy FAQ](./docs/network-policy-faq.md) for more informati
   * This controller is automatically installed on the EKS Control Plane.
 * [Network Policy Node Agent](https://github.com/aws/aws-network-policy-agent) implements Network Policies on nodes by creating eBPF programs.
 * [AWS eBPF SDK for Go](https://github.com/aws/aws-ebpf-sdk-go) provides an interface to interact with eBPF programs on the node. This SDK allows for runtime introspection, tracing, and analysis of eBPF execution, aiding in identifying and resolving connectivity issues.
-* [VPC Resource Controller](https://github.com/aws/amazon-vpc-resource-controller-k8s) manages Branch & Trunk Network Interfaces for Kubernetes Pods. 
+* [VPC Resource Controller](https://github.com/aws/amazon-vpc-resource-controller-k8s) manages Branch & Trunk Network Interfaces for Kubernetes Pods.
 
 ## ConfigMap
 
@@ -343,7 +343,7 @@ elasticity, but uses roughly half as many IPs as using WARM_IP_TARGET alone (32 
 This also improves the reliability of the EKS cluster by reducing the number of calls necessary to allocate or deallocate
 private IPs, which may be throttled, especially at scaling-related times.
 
-**NOTE!** 
+**NOTE!**
 1. If `MINIMUM_IP_TARGET` is set, `WARM_ENI_TARGET` will be ignored. Please utilize `WARM_IP_TARGET` instead.
 2. If `MINIMUM_IP_TARGET` is set and `WARM_IP_TARGET` is not set, `WARM_IP_TARGET` is assumed to be 0, which leads to the number of IPs attached to the node will be the value of `MINIMUM_IP_TARGET`. This configuration will prevent future ENIs/IPs from being allocated. It is strongly recommended that `WARM_IP_TARGET` should be set greater than 0 when `MINIMUM_IP_TARGET` is set.
 
@@ -516,6 +516,7 @@ Valid Values: `strict`, `standard`
 Once `ENABLE_POD_ENI` is set to `true`, this value controls how the traffic of pods with the security group behaves.
 
 * `strict` mode: all inbound/outbound traffic from pod with security group will be enforced by security group rules. This is the **default** mode if POD_SECURITY_GROUP_ENFORCING_MODE is not set.
+  * `strict` mode is supported when kube-proxy configured in `iptables` mode (default with EKS). If kube-proxy is configured in `ipvs` mode, please set `POD_SECURITY_GROUP_ENFORCING_MODE` to `standard`.
 
 * `standard` mode: the traffic of pod with security group behaves same as pods without a security group, except that each pod occupies a dedicated branch ENI.
   * inbound traffic to pod with security group from another host will be enforced by security group rules.
@@ -697,6 +698,8 @@ This environment variable must be set for both the `aws-vpc-cni-init` and `aws-n
 
 Note that enabling/disabling this feature only affects whether newly created pods have an IPv6 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature.
 
+The value set in `POD_MTU` / `AWS_VPC_ENI_MTU` is used to configure the MTU size of egress interface.
+
 #### `ENABLE_V4_EGRESS` (v1.15.1+)
 
 Type: Boolean as a String
@@ -706,6 +709,8 @@ Default: `true`
 Specifies whether PODs in an IPv6 cluster support IPv4 egress. If env is set to `true`, range `169.254.172.0/22` is reserved for IPv4 egress. When enabled, traffic egressing an IPv6 pod destined to an IPv4 endpoint will be SNAT'ed via the node IPv4 address.
 
 Note that enabling/disabling this feature only affects whether newly created pods have an IPv4 interface created. Therefore, it is recommended that you reboot existing nodes after enabling/disabling this feature.
+
+The value set in `POD_MTU` / `AWS_VPC_ENI_MTU` is used to configure the MTU size of egress interface.
 
 #### `IP_COOLDOWN_PERIOD` (v1.15.0+)
 

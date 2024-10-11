@@ -1,4 +1,4 @@
-package cni
+package az_traffic
 
 import (
 	"fmt"
@@ -7,10 +7,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	coreV1 "k8s.io/api/core/v1"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -23,6 +23,8 @@ var (
 )
 
 const MetricNamespace = "NetworkingAZConnectivity"
+
+var f *framework.Framework
 
 var _ = Describe("[STATIC_CANARY] AZ Node Presence", FlakeAttempts(retries), func() {
 
@@ -69,7 +71,6 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(retries), 
 	var (
 		err        error
 		serverPort int
-		protocol   string
 
 		// The command to run on server pods, to allow incoming
 		// connections for different traffic type
@@ -99,16 +100,6 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(retries), 
 	)
 
 	JustBeforeEach(func() {
-		By("authorizing security group ingress on instance security group")
-		err = f.CloudServices.EC2().
-			AuthorizeSecurityGroupIngress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
-		Expect(err).ToNot(HaveOccurred())
-
-		By("authorizing security group egress on instance security group")
-		err = f.CloudServices.EC2().
-			AuthorizeSecurityGroupEgress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
-		Expect(err).ToNot(HaveOccurred())
-
 		netcatContainer := manifest.
 			NewNetCatAlpineContainer(f.Options.TestImageRegistry).
 			Command(serverListenCmd).
@@ -138,16 +129,6 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(retries), 
 	})
 
 	JustAfterEach(func() {
-		By("revoking security group ingress on instance security group")
-		err = f.CloudServices.EC2().
-			RevokeSecurityGroupIngress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
-		Expect(err).ToNot(HaveOccurred())
-
-		By("revoking security group egress on instance security group")
-		err = f.CloudServices.EC2().
-			RevokeSecurityGroupEgress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
-		Expect(err).ToNot(HaveOccurred())
-
 		By("deleting the Daemonset.")
 		err = f.K8sResourceManagers.DaemonSetManager().DeleteAndWaitTillDaemonSetIsDeleted(testDaemonSet, utils.DefaultDeploymentReadyTimeout)
 		Expect(err).ToNot(HaveOccurred())
@@ -157,7 +138,6 @@ var _ = Describe("[STATIC_CANARY] test pod networking", FlakeAttempts(retries), 
 
 		BeforeEach(func() {
 			serverPort = 2273
-			protocol = ec2.ProtocolTcp
 			// Test tcp connection using netcat
 			serverListenCmd = []string{"nc"}
 			// The nc flag "-l" for listen mode, "-k" to keep server up and not close
@@ -230,7 +210,7 @@ var _ = Describe("[STATIC_CANARY] API Server Connectivity from AZs", FlakeAttemp
 
 	JustBeforeEach(func() {
 		serverContainer := manifest.
-			NewCurlContainer().
+			NewCurlContainer(f.Options.TestImageRegistry).
 			Command([]string{
 				"sleep",
 				"3600",
@@ -379,4 +359,24 @@ func RunCommandOnPod(receiverPod coreV1.Pod, command []string) (string, string, 
 			return stdout, stdrr, err
 		}
 	}
+}
+
+// testConnectivity verifies connectivity between tester and server
+func testConnectivity(senderPod coreV1.Pod, receiverPod coreV1.Pod, expectedStdout string,
+	expectedStderr string, port int, getTestCommandFunc func(receiverPod coreV1.Pod, port int) []string) {
+
+	testerCommand := getTestCommandFunc(receiverPod, port)
+
+	fmt.Fprintf(GinkgoWriter, "verifying connectivity from pod %s on node %s with IP %s to pod"+
+		" %s on node %s with IP %s\n", senderPod.Name, senderPod.Spec.NodeName, senderPod.Status.PodIP,
+		receiverPod.Name, receiverPod.Spec.NodeName, receiverPod.Status.PodIP)
+
+	stdOut, stdErr, err := f.K8sResourceManagers.PodManager().
+		PodExec(senderPod.Namespace, senderPod.Name, testerCommand)
+	Expect(err).ToNot(HaveOccurred())
+
+	fmt.Fprintf(GinkgoWriter, "stdout: %s and stderr: %s\n", stdOut, stdErr)
+
+	Expect(stdErr).To(ContainSubstring(expectedStderr))
+	Expect(stdOut).To(ContainSubstring(expectedStdout))
 }

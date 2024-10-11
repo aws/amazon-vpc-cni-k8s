@@ -35,7 +35,7 @@ var _ = Describe("test IPAMD metric environment variable", func() {
 	Context("when metrics is disabled", func() {
 		metricAddr := "127.0.0.1:61678/metrics"
 		It("should not be accessible anymore", func() {
-			curlContainer = manifest.NewCurlContainer().
+			curlContainer = manifest.NewCurlContainer(f.Options.TestImageRegistry).
 				Command([]string{"curl"}).
 				Args([]string{"--fail", metricAddr}).
 				Build()

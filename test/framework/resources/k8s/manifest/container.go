@@ -41,10 +41,10 @@ func NewBusyBoxContainerBuilder(testImageRegistry string) *Container {
 	}
 }
 
-func NewCurlContainer() *Container {
+func NewCurlContainer(testImageRegistry string) *Container {
 	return &Container{
 		name:            "curl",
-		image:           "curlimages/curl:latest",
+		image:           utils.GetTestImage(testImageRegistry, utils.CurlImage),
 		imagePullPolicy: v1.PullIfNotPresent,
 	}
 }

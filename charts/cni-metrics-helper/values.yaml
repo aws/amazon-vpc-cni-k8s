@@ -4,7 +4,7 @@ nameOverride: cni-metrics-helper
 
 image:
   region: us-west-2
-  tag: v1.18.0
+  tag: v1.18.5
   account: "602401143452"
   domain: "amazonaws.com"
   # Set to use custom image
@@ -25,7 +25,7 @@ serviceAccount:
   # If not set and create is true, a name is generated using the fullname template
   name:
   annotations: {}
-    # eks.amazonaws.com/role-arn: arn:aws:iam::AWS_ACCOUNT_ID:role/IAM_ROLE_NAME  
+    # eks.amazonaws.com/role-arn: arn:aws:iam::AWS_ACCOUNT_ID:role/IAM_ROLE_NAME
 
 resources: {}
 
@@ -36,3 +36,34 @@ podSecurityContext: {}
 containerSecurityContext: {}
 
 podAnnotations: {}
+
+imagePullSecrets: []
+
+updateStrategy: {}
+#  type: RollingUpdate
+#  rollingUpdate:
+#    maxUnavailable: "10%"
+
+nodeSelector: {}
+
+tolerations: []
+# - operator: Exists
+
+affinity: {}
+#  nodeAffinity:
+#    requiredDuringSchedulingIgnoredDuringExecution:
+#      nodeSelectorTerms:
+#        - matchExpressions:
+#            - key: "kubernetes.io/os"
+#              operator: In
+#              values:
+#                - linux
+#            - key: "kubernetes.io/arch"
+#              operator: In
+#              values:
+#                - amd64
+#                - arm64
+#            - key: "eks.amazonaws.com/compute-type"
+#              operator: NotIn
+#              values:
+#                - fargate

@@ -230,7 +230,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 				ContainerPort: 80,
 			}
 
-			container := manifest.NewCurlContainer().
+			container := manifest.NewCurlContainer(f.Options.TestImageRegistry).
 				LivenessProbe(tcpProbe).
 				Image("nginx").
 				Port(port).

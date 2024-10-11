@@ -42,9 +42,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/containernetworking/cni/pkg/types"
@@ -185,27 +183,6 @@ func waitForIPAM() bool {
 		if err := cmd.Run(); err == nil {
 			return true
 		}
-	}
-}
-
-// Wait for vpcCniInitDonePath to exist (maximum wait time is 60 seconds)
-func waitForInit() error {
-	start := time.Now()
-	maxEnd := start.Add(time.Minute)
-	for {
-		// Check for existence of vpcCniInitDonePath
-		if _, err := os.Stat(vpcCniInitDonePath); err == nil {
-			// Delete the done file in case of a reboot of the node or restart of the container (force init container to run again)
-			if err := os.Remove(vpcCniInitDonePath); err == nil {
-				return nil
-			}
-			// If file deletion fails, log and allow retry
-			log.Errorf("Failed to delete file: %s", vpcCniInitDonePath)
-		}
-		if time.Now().After(maxEnd) {
-			return errors.Errorf("time exceeded")
-		}
-		time.Sleep(1 * time.Second)
 	}
 }
 
@@ -470,12 +447,6 @@ func _main() int {
 		log.Errorf("Timed out waiting for IPAM daemon to start")
 		return 1
 	}
-
-	// Wait for init container to complete
-	//if err := waitForInit(); err != nil {
-	//	log.WithError(err).Errorf("Init container failed to complete")
-	//	return 1
-	//}
 
 	log.Infof("Copying config file... ")
 	err = generateJSON(defaultAWSconflistFile, tmpAWSconflistFile, getPrimaryIP)
