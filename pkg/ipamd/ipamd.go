@@ -24,10 +24,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aws/smithy-go"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -306,20 +307,21 @@ func prometheusRegister() {
 
 // containsInsufficientCIDRsOrSubnetIPs returns whether a CIDR cannot be carved in the subnet or subnet is running out of IP addresses
 func containsInsufficientCIDRsOrSubnetIPs(err error) bool {
-	var awsErr awserr.Error
+	var apiErr smithy.APIError
 	// IP exhaustion can be due to Insufficient Cidr blocks or Insufficient Free Address in a Subnet
 	// In these 2 cases we will back off for 2 minutes before retrying
-	if errors.As(err, &awsErr) {
-		log.Debugf("Insufficient IP Addresses due to: %v\n", awsErr.Code())
-		return awsErr.Code() == INSUFFICIENT_CIDR_BLOCKS || awsErr.Code() == INSUFFICIENT_FREE_IP_SUBNET
+	if errors.As(err, &apiErr) {
+		log.Debugf("Insufficient IP Addresses due to: %v\n", apiErr.ErrorCode())
+		return apiErr.ErrorCode() == INSUFFICIENT_CIDR_BLOCKS || apiErr.ErrorCode() == INSUFFICIENT_FREE_IP_SUBNET
 	}
 	return false
 }
 
 // containsPrivateIPAddressLimitExceededError returns whether exceeds ENI's IP address limit
 func containsPrivateIPAddressLimitExceededError(err error) bool {
-	if aerr, ok := err.(awserr.Error); ok {
-		return aerr.Code() == "PrivateIpAddressLimitExceeded"
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorCode() == "PrivateIpAddressLimitExceeded"
 	}
 	return false
 }

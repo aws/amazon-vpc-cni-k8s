@@ -21,7 +21,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/smithy-go"
+
 	"github.com/pkg/errors"
 )
 
@@ -415,18 +416,61 @@ func (imds TypedIMDS) GetSubnetIPv6CIDRBlocks(ctx context.Context, mac string) (
 }
 
 // IsNotFound returns true if the error was caused by an AWS API 404 response.
+// We implement a Custom IMDS Error, so need to use APIError instead of HTTP Response Error
 func IsNotFound(err error) bool {
-	if err != nil {
-		var aerr awserr.RequestFailure
-		if errors.As(err, &aerr) {
-			return aerr.StatusCode() == http.StatusNotFound
+	if err == nil {
+		return false
+	}
+
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		// Check if the APIError also implements HTTPStatusCode() int
+		type httpStatusCoder interface {
+			HTTPStatusCode() int
+		}
+		if sc, ok := apiErr.(httpStatusCoder); ok {
+			return sc.HTTPStatusCode() == http.StatusNotFound
 		}
 	}
+
 	return false
 }
 
 // FakeIMDS is a trivial implementation of EC2MetadataIface using an in-memory map - for testing.
 type FakeIMDS map[string]interface{}
+
+// Custom error type
+type CustomRequestFailure struct {
+	code       string
+	message    string
+	fault      smithy.ErrorFault
+	statusCode int
+	requestID  string
+}
+
+func (e *CustomRequestFailure) Error() string {
+	return fmt.Sprintf("%s: %s", e.code, e.message)
+}
+
+func (e *CustomRequestFailure) ErrorCode() string {
+	return e.code
+}
+
+func (e *CustomRequestFailure) ErrorMessage() string {
+	return e.message
+}
+
+func (e *CustomRequestFailure) ErrorFault() smithy.ErrorFault {
+	return e.fault
+}
+
+func (e *CustomRequestFailure) HTTPStatusCode() int {
+	return e.statusCode
+}
+
+func (e *CustomRequestFailure) RequestID() string {
+	return e.requestID
+}
 
 // GetMetadataWithContext implements the EC2MetadataIface interface.
 func (f FakeIMDS) GetMetadataWithContext(ctx context.Context, p string) (string, error) {
@@ -435,7 +479,13 @@ func (f FakeIMDS) GetMetadataWithContext(ctx context.Context, p string) (string,
 		result, ok = f[p+"/"] // Metadata API treats foo/ as foo
 	}
 	if !ok {
-		notFoundErr := awserr.NewRequestFailure(awserr.New("NotFound", "not found", nil), http.StatusNotFound, "dummy-reqid")
+		notFoundErr := &CustomRequestFailure{
+			code:       "NotFound",
+			message:    "not found",
+			fault:      smithy.FaultUnknown,
+			statusCode: http.StatusNotFound,
+			requestID:  "dummy-reqid",
+		}
 		return "", newIMDSRequestError(p, notFoundErr)
 	}
 	switch v := result.(type) {
