@@ -324,6 +324,7 @@ func (imds TypedIMDS) GetLocalIPv4s(ctx context.Context, mac string) ([]net.IP, 
 func (imds TypedIMDS) GetIPv4Prefixes(ctx context.Context, mac string) ([]net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/ipv4-prefix", mac)
 	prefixes, err := imds.getCIDRs(ctx, key)
+
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
 			if IsNotFound(imdsErr.err) {
@@ -419,13 +420,23 @@ func (imds TypedIMDS) GetSubnetIPv6CIDRBlocks(ctx context.Context, mac string) (
 // IsNotFound returns true if the error was caused by an AWS API 404 response.
 // We implement a Custom IMDS Error, so need to use APIError instead of HTTP Response Error
 func IsNotFound(err error) bool {
+	log.Warnf("IsNotFound 1: %v", err)
 	if err == nil {
 		return false
 	}
 
 	var re *awshttp.ResponseError
+	var oe *smithy.OperationError
+	var ae smithy.APIError
+	if errors.As(err, &oe) {
+		log.Warnf("IsNotFound 2: failed to call service: %s, operation: %s, error: %v", oe.Service(), oe.Operation(), oe.Unwrap())
+	}
+	if errors.As(err, &ae) {
+		log.Warnf("IsNotFound 3: code: %s, message: %s, fault: %s", ae.ErrorCode(), ae.ErrorMessage(), ae.ErrorFault().String())
+	}
 
 	if errors.As(err, &re) {
+		log.Warnf("IsNotFound: %v %d", re, re.Response.StatusCode)
 		return re.Response.StatusCode == http.StatusNotFound
 	}
 
