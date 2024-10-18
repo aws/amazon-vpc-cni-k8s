@@ -299,7 +299,7 @@ func TestGetENIAttachmentID(t *testing.T) {
 	testCases := []struct {
 		name   string
 		output *ec2.DescribeNetworkInterfacesOutput
-		awsErr error
+		err    error
 		expID  *string
 		expErr error
 	}{
@@ -351,7 +351,7 @@ func TestGetENIAttachmentID(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(tc.output, tc.awsErr)
+		mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(tc.output, tc.err)
 
 		cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
 		id, err := cache.getENIAttachmentID("test-eni")
@@ -392,7 +392,7 @@ func TestDescribeAllENIs(t *testing.T) {
 		name    string
 		exptags map[string]TagMap
 		n       int
-		awsErr  error
+		err     error
 		expErr  error
 	}{
 		{"Success DescribeENI", map[string]TagMap{"eni-00000000": {"foo": "foo-value"}}, 1, nil, nil},
@@ -404,7 +404,7 @@ func TestDescribeAllENIs(t *testing.T) {
 	mockMetadata := testMetadata(nil)
 
 	for _, tc := range testCases {
-		mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Times(tc.n).Return(result, tc.awsErr)
+		mockEC2.EXPECT().DescribeNetworkInterfacesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Times(tc.n).Return(result, tc.err)
 		cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
 		metaData, err := cache.DescribeAllENIs()
 		assert.Equal(t, tc.expErr, err, tc.name)
