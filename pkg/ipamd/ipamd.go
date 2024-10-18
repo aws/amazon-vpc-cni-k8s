@@ -29,7 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -320,8 +319,9 @@ func containsInsufficientCIDRsOrSubnetIPs(err error) bool {
 
 // containsPrivateIPAddressLimitExceededError returns whether exceeds ENI's IP address limit
 func containsPrivateIPAddressLimitExceededError(err error) bool {
-	if aerr, ok := err.(awserr.Error); ok {
-		return aerr.Code() == "PrivateIpAddressLimitExceeded"
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorCode() == "PrivateIpAddressLimitExceeded"
 	}
 	return false
 }
