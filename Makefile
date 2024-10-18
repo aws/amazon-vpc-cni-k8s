@@ -21,6 +21,12 @@
 
 # VERSION is the source revision that executables and images are built from.
 VERSION ?= $(shell git describe --tags --always --dirty || echo "unknown")
+
+# if the branch is master, use the version as master-<commit-hash>
+ifeq ($(shell git rev-parse --abbrev-ref HEAD),master)
+	VERSION = master-$(shell git rev-parse --short HEAD)
+endif
+
 GOLANG_VERSION ?= $(shell cat .go-version)
 # GOLANG_IMAGE is the building golang container image used.
 GOLANG_IMAGE ?= public.ecr.aws/eks-distro-build-tooling/golang:$(GOLANG_VERSION)-gcc-al2
