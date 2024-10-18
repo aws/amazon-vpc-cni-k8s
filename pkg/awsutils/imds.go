@@ -23,6 +23,7 @@ import (
 
 	"github.com/aws/smithy-go"
 
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/pkg/errors"
 )
 
@@ -422,15 +423,10 @@ func IsNotFound(err error) bool {
 		return false
 	}
 
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		// Check if the APIError also implements HTTPStatusCode() int
-		type httpStatusCoder interface {
-			HTTPStatusCode() int
-		}
-		if sc, ok := apiErr.(httpStatusCoder); ok {
-			return sc.HTTPStatusCode() == http.StatusNotFound
-		}
+	var re *awshttp.ResponseError
+
+	if errors.As(err, &re) {
+		return re.Response.StatusCode == http.StatusNotFound
 	}
 
 	return false
