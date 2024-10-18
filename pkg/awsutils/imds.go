@@ -16,6 +16,7 @@ package awsutils
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -23,12 +24,14 @@ import (
 
 	"github.com/aws/smithy-go"
 
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/pkg/errors"
 )
 
 // EC2MetadataIface is a subset of the EC2Metadata API.
 type EC2MetadataIface interface {
-	GetMetadataWithContext(ctx context.Context, p string) (string, error)
+	GetMetadata(ctx context.Context, params *imds.GetMetadataInput, optFns ...func(*imds.Options)) (*imds.GetMetadataOutput, error)
 }
 
 // TypedIMDS is a typed wrapper around raw untyped IMDS SDK API.
@@ -55,74 +58,111 @@ func (e *imdsRequestError) Error() string {
 	return fmt.Sprintf("failed to retrieve %s from instance metadata %v", e.requestKey, e.err)
 }
 
-func (imds TypedIMDS) getList(ctx context.Context, key string) ([]string, error) {
-	data, err := imds.GetMetadataWithContext(ctx, key)
+func (typedimds TypedIMDS) getList(ctx context.Context, key string) ([]string, error) {
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return strings.Fields(data), err
+	if output == nil || output.Content == nil {
+		return nil, newIMDSRequestError(key, fmt.Errorf("empty response"))
+	}
+
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return nil, newIMDSRequestError(key, fmt.Errorf("failed to read content: %w", err))
+	}
+
+	return strings.Fields(string(bytes)), nil
 }
 
 // GetAZ returns the Availability Zone in which the instance launched.
-func (imds TypedIMDS) GetAZ(ctx context.Context) (string, error) {
-	az, err := imds.GetMetadataWithContext(ctx, "placement/availability-zone")
+func (typedimds TypedIMDS) GetAZ(ctx context.Context) (string, error) {
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: "placement/availability-zone"})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return az, imdsErr.err
-		}
 		return "", err
 	}
-	return az, err
+	if output == nil || output.Content == nil {
+		return "", newIMDSRequestError("placement/availability-zone", fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return "", newIMDSRequestError("placement/availability-zone", fmt.Errorf("failed to read content: %w", err))
+	}
+	return strings.TrimSpace(string(bytes)), nil
 }
 
 // GetInstanceType returns the type of this instance.
-func (imds TypedIMDS) GetInstanceType(ctx context.Context) (string, error) {
-	instanceType, err := imds.GetMetadataWithContext(ctx, "instance-type")
+func (typedimds TypedIMDS) GetInstanceType(ctx context.Context) (string, error) {
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: "instance-type"})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return instanceType, imdsErr.err
-		}
 		return "", err
 	}
-	return instanceType, err
+	if output == nil || output.Content == nil {
+		return "", newIMDSRequestError("instance-type", fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return "", newIMDSRequestError("instance-type", fmt.Errorf("failed to read content: %w", err))
+	}
+	return strings.TrimSpace(string(bytes)), nil
 }
 
 // GetLocalIPv4 returns the private (primary) IPv4 address of the instance.
-func (imds TypedIMDS) GetLocalIPv4(ctx context.Context) (net.IP, error) {
-	return imds.getIP(ctx, "local-ipv4")
+func (typedimds TypedIMDS) GetLocalIPv4(ctx context.Context) (net.IP, error) {
+	return typedimds.getIP(ctx, "local-ipv4")
 }
 
 // GetInstanceID returns the ID of this instance.
-func (imds TypedIMDS) GetInstanceID(ctx context.Context) (string, error) {
-	instanceID, err := imds.GetMetadataWithContext(ctx, "instance-id")
+func (typedimds TypedIMDS) GetInstanceID(ctx context.Context) (string, error) {
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: "instance-id"})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return instanceID, imdsErr.err
-		}
 		return "", err
 	}
-	return instanceID, err
+	if output == nil || output.Content == nil {
+		return "", newIMDSRequestError("instance-id", fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return "", newIMDSRequestError("instance-id", fmt.Errorf("failed to read content: %w", err))
+	}
+	return strings.TrimSpace(string(bytes)), nil
 }
 
 // GetMAC returns the first/primary network interface mac address.
-func (imds TypedIMDS) GetMAC(ctx context.Context) (string, error) {
-	mac, err := imds.GetMetadataWithContext(ctx, "mac")
+func (typedimds TypedIMDS) GetMAC(ctx context.Context) (string, error) {
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: "mac"})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return mac, imdsErr.err
-		}
 		return "", err
 	}
-	return mac, err
+	if output == nil || output.Content == nil {
+		return "", newIMDSRequestError("mac", fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return "", newIMDSRequestError("mac", fmt.Errorf("failed to read content: %w", err))
+	}
+	return string(bytes), nil
 }
 
 // GetMACs returns the interface addresses attached to the instance.
-func (imds TypedIMDS) GetMACs(ctx context.Context) ([]string, error) {
-	list, err := imds.getList(ctx, "network/interfaces/macs")
+func (typedimds TypedIMDS) GetMACs(ctx context.Context) ([]string, error) {
+	list, err := typedimds.getList(ctx, "network/interfaces/macs")
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
 			log.Warnf("%v", err)
@@ -138,9 +178,9 @@ func (imds TypedIMDS) GetMACs(ctx context.Context) ([]string, error) {
 }
 
 // GetMACImdsFields returns the imds fields present for a MAC
-func (imds TypedIMDS) GetMACImdsFields(ctx context.Context, mac string) ([]string, error) {
+func (typedimds TypedIMDS) GetMACImdsFields(ctx context.Context, mac string) ([]string, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s", mac)
-	list, err := imds.getList(ctx, key)
+	list, err := typedimds.getList(ctx, key)
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
 			log.Warnf("%v", err)
@@ -156,29 +196,41 @@ func (imds TypedIMDS) GetMACImdsFields(ctx context.Context, mac string) ([]strin
 }
 
 // GetInterfaceID returns the ID of the network interface.
-func (imds TypedIMDS) GetInterfaceID(ctx context.Context, mac string) (string, error) {
+func (typedimds TypedIMDS) GetInterfaceID(ctx context.Context, mac string) (string, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/interface-id", mac)
-	interfaceID, err := imds.GetMetadataWithContext(ctx, key)
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return interfaceID, imdsErr.err
-		}
 		return "", err
 	}
-	return interfaceID, err
+	if output == nil || output.Content == nil {
+		return "", newIMDSRequestError(key, fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return "", newIMDSRequestError(key, fmt.Errorf("failed to read content: %w", err))
+	}
+	return string(bytes), nil
 }
 
-func (imds TypedIMDS) getInt(ctx context.Context, key string) (int, error) {
-	data, err := imds.GetMetadataWithContext(ctx, key)
+func (typedimds TypedIMDS) getInt(ctx context.Context, key string) (int, error) {
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return 0, imdsErr.err
-		}
 		return 0, err
 	}
-	dataInt, err := strconv.Atoi(data)
+	if output == nil || output.Content == nil {
+		return 0, newIMDSRequestError(key, fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return 0, newIMDSRequestError(key, fmt.Errorf("failed to read content: %w", err))
+	}
+	dataInt, err := strconv.Atoi(strings.TrimSpace(string(bytes)))
 	if err != nil {
 		return 0, err
 	}
@@ -186,42 +238,72 @@ func (imds TypedIMDS) getInt(ctx context.Context, key string) (int, error) {
 }
 
 // GetDeviceNumber returns the unique device number associated with an interface.  The primary interface is 0.
-func (imds TypedIMDS) GetDeviceNumber(ctx context.Context, mac string) (int, error) {
+func (typedimds TypedIMDS) GetDeviceNumber(ctx context.Context, mac string) (int, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/device-number", mac)
-	return imds.getInt(ctx, key)
+	return typedimds.getInt(ctx, key)
 }
 
 // GetSubnetID returns the ID of the subnet in which the interface resides.
-func (imds TypedIMDS) GetSubnetID(ctx context.Context, mac string) (string, error) {
+func (typedimds TypedIMDS) GetSubnetID(ctx context.Context, mac string) (string, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/subnet-id", mac)
-	subnetID, err := imds.GetMetadataWithContext(ctx, key)
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key,
+	})
+
+	// Read the content first, even if there's an error
+	var subnetID string
+	if output != nil && output.Content != nil {
+		defer output.Content.Close()
+		bytes, readErr := io.ReadAll(output.Content)
+		if readErr == nil {
+			subnetID = string(bytes)
+		}
+	}
+
+	// Now handle any errors, but return subnetID if it was read
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
+			log.Warnf("Warning: %v", err)
 			return subnetID, imdsErr.err
 		}
 		return "", err
 	}
-	return subnetID, err
+
+	return subnetID, nil
 }
 
-func (imds TypedIMDS) GetVpcID(ctx context.Context, mac string) (string, error) {
+func (typedimds TypedIMDS) GetVpcID(ctx context.Context, mac string) (string, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/vpc-id", mac)
-	vpcID, err := imds.GetMetadataWithContext(ctx, key)
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key,
+	})
+
+	// Read the content first, even if there's an error
+	var vpcID string
+	if output != nil && output.Content != nil {
+		defer output.Content.Close()
+		bytes, readErr := io.ReadAll(output.Content)
+		if readErr == nil {
+			vpcID = string(bytes)
+		}
+	}
+
+	// Handle errors but preserve any partial vpcID data
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
+			log.Warnf("Warning: %v", err)
 			return vpcID, imdsErr.err
 		}
 		return "", err
 	}
-	return vpcID, err
+
+	return vpcID, nil
 }
 
 // GetSecurityGroupIDs returns the IDs of the security groups to which the network interface belongs.
-func (imds TypedIMDS) GetSecurityGroupIDs(ctx context.Context, mac string) ([]string, error) {
+func (typedimds TypedIMDS) GetSecurityGroupIDs(ctx context.Context, mac string) ([]string, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/security-group-ids", mac)
-	sgs, err := imds.getList(ctx, key)
+	sgs, err := typedimds.getList(ctx, key)
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
 			log.Warnf("%v", err)
@@ -232,26 +314,30 @@ func (imds TypedIMDS) GetSecurityGroupIDs(ctx context.Context, mac string) ([]st
 	return sgs, err
 }
 
-func (imds TypedIMDS) getIP(ctx context.Context, key string) (net.IP, error) {
-	data, err := imds.GetMetadataWithContext(ctx, key)
+func (typedimds TypedIMDS) getIP(ctx context.Context, key string) (net.IP, error) {
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return nil, imdsErr.err
-		}
 		return nil, err
 	}
-
-	ip := net.ParseIP(data)
+	if output == nil || output.Content == nil {
+		return nil, newIMDSRequestError(key, fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return nil, newIMDSRequestError(key, fmt.Errorf("failed to read content: %w", err))
+	}
+	ip := net.ParseIP(strings.TrimSpace(string(bytes)))
 	if ip == nil {
-		err = &net.ParseError{Type: "IP address", Text: data}
-		return nil, err
+		err = &net.ParseError{Type: "IP address", Text: string(bytes)}
 	}
 	return ip, err
 }
 
-func (imds TypedIMDS) getIPs(ctx context.Context, key string) ([]net.IP, error) {
-	list, err := imds.getList(ctx, key)
+func (typedimds TypedIMDS) getIPs(ctx context.Context, key string) ([]net.IP, error) {
+	list, err := typedimds.getList(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -268,16 +354,23 @@ func (imds TypedIMDS) getIPs(ctx context.Context, key string) ([]net.IP, error) 
 	return ips, err
 }
 
-func (imds TypedIMDS) getCIDR(ctx context.Context, key string) (net.IPNet, error) {
-	data, err := imds.GetMetadataWithContext(ctx, key)
+func (typedimds TypedIMDS) getCIDR(ctx context.Context, key string) (net.IPNet, error) {
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return net.IPNet{}, imdsErr.err
-		}
 		return net.IPNet{}, err
 	}
+	if output == nil || output.Content == nil {
+		return net.IPNet{}, newIMDSRequestError(key, fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return net.IPNet{}, newIMDSRequestError(key, fmt.Errorf("failed to read content: %w", err))
+	}
 
+	data := strings.TrimSpace(string(bytes))
 	ip, network, err := net.ParseCIDR(data)
 	if err != nil {
 		return net.IPNet{}, err
@@ -287,8 +380,8 @@ func (imds TypedIMDS) getCIDR(ctx context.Context, key string) (net.IPNet, error
 	return cidr, err
 }
 
-func (imds TypedIMDS) getCIDRs(ctx context.Context, key string) ([]net.IPNet, error) {
-	list, err := imds.getList(ctx, key)
+func (typedimds TypedIMDS) getCIDRs(ctx context.Context, key string) ([]net.IPNet, error) {
+	list, err := typedimds.getList(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -306,9 +399,9 @@ func (imds TypedIMDS) getCIDRs(ctx context.Context, key string) ([]net.IPNet, er
 }
 
 // GetLocalIPv4s returns the private IPv4 addresses associated with the interface.  First returned address is the primary address.
-func (imds TypedIMDS) GetLocalIPv4s(ctx context.Context, mac string) ([]net.IP, error) {
+func (typedimds TypedIMDS) GetLocalIPv4s(ctx context.Context, mac string) ([]net.IP, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/local-ipv4s", mac)
-	ips, err := imds.getIPs(ctx, key)
+	ips, err := typedimds.getIPs(ctx, key)
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
 			log.Warnf("%v", err)
@@ -320,9 +413,10 @@ func (imds TypedIMDS) GetLocalIPv4s(ctx context.Context, mac string) ([]net.IP, 
 }
 
 // GetIPv4Prefixes returns the IPv4 prefixes delegated to this interface
-func (imds TypedIMDS) GetIPv4Prefixes(ctx context.Context, mac string) ([]net.IPNet, error) {
+func (typedimds TypedIMDS) GetIPv4Prefixes(ctx context.Context, mac string) ([]net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/ipv4-prefix", mac)
-	prefixes, err := imds.getCIDRs(ctx, key)
+	prefixes, err := typedimds.getCIDRs(ctx, key)
+
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
 			if IsNotFound(imdsErr.err) {
@@ -337,9 +431,9 @@ func (imds TypedIMDS) GetIPv4Prefixes(ctx context.Context, mac string) ([]net.IP
 }
 
 // GetIPv6Prefixes returns the IPv6 prefixes delegated to this interface
-func (imds TypedIMDS) GetIPv6Prefixes(ctx context.Context, mac string) ([]net.IPNet, error) {
+func (typedimds TypedIMDS) GetIPv6Prefixes(ctx context.Context, mac string) ([]net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/ipv6-prefix", mac)
-	prefixes, err := imds.getCIDRs(ctx, key)
+	prefixes, err := typedimds.getCIDRs(ctx, key)
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
 			if IsNotFound(imdsErr.err) {
@@ -354,9 +448,9 @@ func (imds TypedIMDS) GetIPv6Prefixes(ctx context.Context, mac string) ([]net.IP
 }
 
 // GetIPv6s returns the IPv6 addresses associated with the interface.
-func (imds TypedIMDS) GetIPv6s(ctx context.Context, mac string) ([]net.IP, error) {
+func (typedimds TypedIMDS) GetIPv6s(ctx context.Context, mac string) ([]net.IP, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/ipv6s", mac)
-	ips, err := imds.getIPs(ctx, key)
+	ips, err := typedimds.getIPs(ctx, key)
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
 			if IsNotFound(imdsErr.err) {
@@ -372,15 +466,15 @@ func (imds TypedIMDS) GetIPv6s(ctx context.Context, mac string) ([]net.IP, error
 }
 
 // GetSubnetIPv4CIDRBlock returns the IPv4 CIDR block for the subnet in which the interface resides.
-func (imds TypedIMDS) GetSubnetIPv4CIDRBlock(ctx context.Context, mac string) (net.IPNet, error) {
+func (typedimds TypedIMDS) GetSubnetIPv4CIDRBlock(ctx context.Context, mac string) (net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/subnet-ipv4-cidr-block", mac)
-	return imds.getCIDR(ctx, key)
+	return typedimds.getCIDR(ctx, key)
 }
 
 // GetVPCIPv4CIDRBlocks returns the IPv4 CIDR blocks for the VPC.
-func (imds TypedIMDS) GetVPCIPv4CIDRBlocks(ctx context.Context, mac string) ([]net.IPNet, error) {
+func (typedimds TypedIMDS) GetVPCIPv4CIDRBlocks(ctx context.Context, mac string) ([]net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/vpc-ipv4-cidr-blocks", mac)
-	cidrs, err := imds.getCIDRs(ctx, key)
+	cidrs, err := typedimds.getCIDRs(ctx, key)
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
 			log.Warnf("%v", err)
@@ -392,9 +486,9 @@ func (imds TypedIMDS) GetVPCIPv4CIDRBlocks(ctx context.Context, mac string) ([]n
 }
 
 // GetVPCIPv6CIDRBlocks returns the IPv6 CIDR blocks for the VPC.
-func (imds TypedIMDS) GetVPCIPv6CIDRBlocks(ctx context.Context, mac string) ([]net.IPNet, error) {
+func (typedimds TypedIMDS) GetVPCIPv6CIDRBlocks(ctx context.Context, mac string) ([]net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/vpc-ipv6-cidr-blocks", mac)
-	ipnets, err := imds.getCIDRs(ctx, key)
+	ipnets, err := typedimds.getCIDRs(ctx, key)
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
 			if IsNotFound(imdsErr.err) {
@@ -410,27 +504,32 @@ func (imds TypedIMDS) GetVPCIPv6CIDRBlocks(ctx context.Context, mac string) ([]n
 }
 
 // GetSubnetIPv6CIDRBlocks returns the IPv6 CIDR block for the subnet in which the interface resides.
-func (imds TypedIMDS) GetSubnetIPv6CIDRBlocks(ctx context.Context, mac string) (net.IPNet, error) {
+func (typedimds TypedIMDS) GetSubnetIPv6CIDRBlocks(ctx context.Context, mac string) (net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/subnet-ipv6-cidr-blocks", mac)
-	return imds.getCIDR(ctx, key)
+	return typedimds.getCIDR(ctx, key)
 }
 
 // IsNotFound returns true if the error was caused by an AWS API 404 response.
 // We implement a Custom IMDS Error, so need to use APIError instead of HTTP Response Error
 func IsNotFound(err error) bool {
+	log.Warnf("IsNotFound 1: %v", err)
 	if err == nil {
 		return false
 	}
 
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		// Check if the APIError also implements HTTPStatusCode() int
-		type httpStatusCoder interface {
-			HTTPStatusCode() int
-		}
-		if sc, ok := apiErr.(httpStatusCoder); ok {
-			return sc.HTTPStatusCode() == http.StatusNotFound
-		}
+	var re *awshttp.ResponseError
+	var oe *smithy.OperationError
+	var ae smithy.APIError
+	if errors.As(err, &oe) {
+		log.Warnf("IsNotFound 2: failed to call service: %s, operation: %s, error: %v", oe.Service(), oe.Operation(), oe.Unwrap())
+	}
+	if errors.As(err, &ae) {
+		log.Warnf("IsNotFound 3: code: %s, message: %s, fault: %s", ae.ErrorCode(), ae.ErrorMessage(), ae.ErrorFault().String())
+	}
+
+	if errors.As(err, &re) {
+		log.Warnf("IsNotFound: %v %d", re, re.Response.StatusCode)
+		return re.Response.StatusCode == http.StatusNotFound
 	}
 
 	return false
