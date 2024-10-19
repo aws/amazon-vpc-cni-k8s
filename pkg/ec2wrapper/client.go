@@ -14,32 +14,31 @@
 package ec2wrapper
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/aws/session"
-	ec2svc "github.com/aws/aws-sdk-go/service/ec2"
+	"context"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
 // EC2 is the EC2 wrapper interface
 type EC2 interface {
-	CreateNetworkInterfaceWithContext(ctx aws.Context, input *ec2svc.CreateNetworkInterfaceInput, opts ...request.Option) (*ec2svc.CreateNetworkInterfaceOutput, error)
-	DescribeInstancesWithContext(ctx aws.Context, input *ec2svc.DescribeInstancesInput, opts ...request.Option) (*ec2svc.DescribeInstancesOutput, error)
-	DescribeInstanceTypesWithContext(ctx aws.Context, input *ec2svc.DescribeInstanceTypesInput, opts ...request.Option) (*ec2svc.DescribeInstanceTypesOutput, error)
-	AttachNetworkInterfaceWithContext(ctx aws.Context, input *ec2svc.AttachNetworkInterfaceInput, opts ...request.Option) (*ec2svc.AttachNetworkInterfaceOutput, error)
-	DeleteNetworkInterfaceWithContext(ctx aws.Context, input *ec2svc.DeleteNetworkInterfaceInput, opts ...request.Option) (*ec2svc.DeleteNetworkInterfaceOutput, error)
-	DetachNetworkInterfaceWithContext(ctx aws.Context, input *ec2svc.DetachNetworkInterfaceInput, opts ...request.Option) (*ec2svc.DetachNetworkInterfaceOutput, error)
-	AssignPrivateIpAddressesWithContext(ctx aws.Context, input *ec2svc.AssignPrivateIpAddressesInput, opts ...request.Option) (*ec2svc.AssignPrivateIpAddressesOutput, error)
-	UnassignPrivateIpAddressesWithContext(ctx aws.Context, input *ec2svc.UnassignPrivateIpAddressesInput, opts ...request.Option) (*ec2svc.UnassignPrivateIpAddressesOutput, error)
-	AssignIpv6AddressesWithContext(ctx aws.Context, input *ec2svc.AssignIpv6AddressesInput, opts ...request.Option) (*ec2svc.AssignIpv6AddressesOutput, error)
-	UnassignIpv6AddressesWithContext(ctx aws.Context, input *ec2svc.UnassignIpv6AddressesInput, opts ...request.Option) (*ec2svc.UnassignIpv6AddressesOutput, error)
-	DescribeNetworkInterfacesWithContext(ctx aws.Context, input *ec2svc.DescribeNetworkInterfacesInput, opts ...request.Option) (*ec2svc.DescribeNetworkInterfacesOutput, error)
-	ModifyNetworkInterfaceAttributeWithContext(ctx aws.Context, input *ec2svc.ModifyNetworkInterfaceAttributeInput, opts ...request.Option) (*ec2svc.ModifyNetworkInterfaceAttributeOutput, error)
-	CreateTagsWithContext(ctx aws.Context, input *ec2svc.CreateTagsInput, opts ...request.Option) (*ec2svc.CreateTagsOutput, error)
-	DescribeNetworkInterfacesPagesWithContext(ctx aws.Context, input *ec2svc.DescribeNetworkInterfacesInput, fn func(*ec2svc.DescribeNetworkInterfacesOutput, bool) bool, opts ...request.Option) error
-	DescribeSubnetsWithContext(ctx aws.Context, input *ec2svc.DescribeSubnetsInput, opts ...request.Option) (*ec2svc.DescribeSubnetsOutput, error)
+	CreateNetworkInterface(ctx context.Context, input *ec2.CreateNetworkInterfaceInput, opts ...func(*ec2.Options)) (*ec2.CreateNetworkInterfaceOutput, error)
+	DescribeInstances(ctx context.Context, input *ec2.DescribeInstancesInput, opts ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	DescribeInstanceTypes(ctx context.Context, input *ec2.DescribeInstanceTypesInput, opts ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error)
+	AttachNetworkInterface(ctx context.Context, input *ec2.AttachNetworkInterfaceInput, opts ...func(*ec2.Options)) (*ec2.AttachNetworkInterfaceOutput, error)
+	DeleteNetworkInterface(ctx context.Context, input *ec2.DeleteNetworkInterfaceInput, opts ...func(*ec2.Options)) (*ec2.DeleteNetworkInterfaceOutput, error)
+	DetachNetworkInterface(ctx context.Context, input *ec2.DetachNetworkInterfaceInput, opts ...func(*ec2.Options)) (*ec2.DetachNetworkInterfaceOutput, error)
+	AssignPrivateIpAddresses(ctx context.Context, input *ec2.AssignPrivateIpAddressesInput, opts ...func(*ec2.Options)) (*ec2.AssignPrivateIpAddressesOutput, error)
+	UnassignPrivateIpAddresses(ctx context.Context, input *ec2.UnassignPrivateIpAddressesInput, opts ...func(*ec2.Options)) (*ec2.UnassignPrivateIpAddressesOutput, error)
+	AssignIpv6Addresses(ctx context.Context, input *ec2.AssignIpv6AddressesInput, opts ...func(*ec2.Options)) (*ec2.AssignIpv6AddressesOutput, error)
+	UnassignIpv6Addresses(ctx context.Context, input *ec2.UnassignIpv6AddressesInput, opts ...func(*ec2.Options)) (*ec2.UnassignIpv6AddressesOutput, error)
+	DescribeNetworkInterfaces(ctx context.Context, input *ec2.DescribeNetworkInterfacesInput, opts ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error)
+	ModifyNetworkInterfaceAttribute(ctx context.Context, input *ec2.ModifyNetworkInterfaceAttributeInput, opts ...func(*ec2.Options)) (*ec2.ModifyNetworkInterfaceAttributeOutput, error)
+	CreateTags(ctx context.Context, input *ec2.CreateTagsInput, opts ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error)
+	DescribeNetworkInterfacesPages(ctx context.Context, input *ec2.DescribeNetworkInterfacesInput, fn func(*ec2.DescribeNetworkInterfacesOutput, bool) bool, opts ...func(*ec2.Options)) error
+	DescribeSubnets(ctx context.Context, input *ec2.DescribeSubnetsInput, opts ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error)
 }
 
 // New creates a new EC2 wrapper
-func New(sess *session.Session) EC2 {
-	return ec2svc.New(sess)
+func New(cfg aws.Config) *ec2.Client {
+	return ec2.NewFromConfig(cfg)
 }
