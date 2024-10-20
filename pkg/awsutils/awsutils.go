@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"math/rand"
 	"net"
 	"os"
@@ -40,9 +39,9 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2metadata "github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
@@ -362,8 +361,11 @@ func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Ena
 	// ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
 	ctx := context.Background()
 
-	sess := awssession.New()
-	ec2Metadata := ec2metadata.New(sess)
+	config, err := awssession.New(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create aws session")
+	}
+	ec2Metadata := ec2metadata.NewFromConfig(config)
 	cache := &EC2InstanceMetadataCache{}
 	cache.imds = TypedIMDS{instrumentedIMDS{ec2Metadata}}
 	cache.clusterName = os.Getenv(clusterNameEnvVar)
