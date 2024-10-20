@@ -2081,21 +2081,6 @@ func (cache *EC2InstanceMetadataCache) IsUnmanagedENI(eniID string) bool {
 }
 
 func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterfaces(input *ec2.DescribeNetworkInterfacesInput, filterFn func(networkInterface ec2types.NetworkInterface) error) error {
-	pageNum := 0
-	var innerErr error
-	pageFn := func(output *ec2.DescribeNetworkInterfacesOutput, lastPage bool) (nextPage bool) {
-		pageNum++
-		log.Debugf("EC2 DescribeNetworkInterfaces succeeded with %d results on page %d",
-			len(output.NetworkInterfaces), pageNum)
-		for _, eni := range output.NetworkInterfaces {
-			if err := filterFn(eni); err != nil {
-				innerErr = err
-				return false
-			}
-		}
-		return true
-	}
-
 	paginator := ec2.NewDescribeNetworkInterfacesPaginator(cache.ec2SVC, input)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(context.TODO())
@@ -2112,7 +2097,7 @@ func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterf
 		}
 	}
 	prometheusmetrics.Ec2ApiReq.WithLabelValues("DescribeNetworkInterfaces").Inc()
-	return innerErr
+	return nil
 }
 
 // SetMultiCardENIs creates a StringSet tracking ENIs not behind the default network card index
