@@ -18,6 +18,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"io"
 	"math/rand"
 	"net"
 	"os"
@@ -345,7 +347,7 @@ func awsReqStatus(err error) string {
 
 func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) (string, error) {
 	start := time.Now()
-	result, err := i.EC2MetadataIface.GetMetadataWithContext(ctx, p)
+	output, err := i.EC2MetadataIface.GetMetadata(ctx, &ec2metadata.GetMetadataInput{Path: p})
 	duration := msSince(start)
 
 	prometheusmetrics.AwsAPILatency.WithLabelValues("GetMetadata", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(duration)
@@ -353,7 +355,15 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 	if err != nil {
 		return "", newIMDSRequestError(p, err)
 	}
-	return result, nil
+
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return "", newIMDSRequestError(p, fmt.Errorf("failed to read content: %w", err))
+	}
+
+	return string(bytes), nil
 }
 
 // New creates an EC2InstanceMetadataCache
@@ -361,22 +371,22 @@ func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Ena
 	// ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
 	ctx := context.Background()
 
-	config, err := awssession.New(ctx)
+	awsconfig, err := awssession.New(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create aws session")
 	}
-	ec2Metadata := ec2metadata.NewFromConfig(config)
+	ec2Metadata := ec2metadata.NewFromConfig(awsconfig)
 	cache := &EC2InstanceMetadataCache{}
 	cache.imds = TypedIMDS{instrumentedIMDS{ec2Metadata}}
 	cache.clusterName = os.Getenv(clusterNameEnvVar)
 	cache.additionalENITags = loadAdditionalENITags()
 
-	region, err := ec2Metadata.Region()
+	region, err := ec2Metadata.GetRegion(ctx, nil)
 	if err != nil {
 		log.Errorf("Failed to retrieve region data from instance metadata %v", err)
 		return nil, errors.Wrap(err, "instance metadata: failed to retrieve region data")
 	}
-	cache.region = region
+	cache.region = region.Region
 	log.Debugf("Discovered region: %s", cache.region)
 	cache.useCustomNetworking = useCustomNetworking
 	log.Infof("Custom networking enabled %v", cache.useCustomNetworking)
@@ -385,7 +395,7 @@ func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Ena
 	cache.v4Enabled = v4Enabled
 	cache.v6Enabled = v6Enabled
 
-	awsCfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
+	awsCfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region.Region))
 	if err != nil {
 		return nil, fmt.Errorf("unable to load SDK config, %v", err)
 	}
