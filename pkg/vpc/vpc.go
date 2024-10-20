@@ -14,6 +14,7 @@ package vpc
 
 import (
 	"errors"
+
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"

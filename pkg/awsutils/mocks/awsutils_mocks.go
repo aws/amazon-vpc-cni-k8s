@@ -22,11 +22,11 @@ import (
 	net "net"
 	reflect "reflect"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
-
 	awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
+	datastore "github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	vpc "github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
-	ec2 "github.com/aws/aws-sdk-go/service/ec2"
+	ec2 "github.com/aws/aws-sdk-go-v2/service/ec2"
+	types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -227,10 +227,10 @@ func (mr *MockAPIsMockRecorder) GetENILimit() *gomock.Call {
 }
 
 // GetIPv4PrefixesFromEC2 mocks base method.
-func (m *MockAPIs) GetIPv4PrefixesFromEC2(arg0 string) ([]*ec2.Ipv4PrefixSpecification, error) {
+func (m *MockAPIs) GetIPv4PrefixesFromEC2(arg0 string) ([]types.Ipv4PrefixSpecification, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetIPv4PrefixesFromEC2", arg0)
-	ret0, _ := ret[0].([]*ec2.Ipv4PrefixSpecification)
+	ret0, _ := ret[0].([]types.Ipv4PrefixSpecification)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -242,10 +242,10 @@ func (mr *MockAPIsMockRecorder) GetIPv4PrefixesFromEC2(arg0 interface{}) *gomock
 }
 
 // GetIPv4sFromEC2 mocks base method.
-func (m *MockAPIs) GetIPv4sFromEC2(arg0 string) ([]*ec2.NetworkInterfacePrivateIpAddress, error) {
+func (m *MockAPIs) GetIPv4sFromEC2(arg0 string) ([]types.NetworkInterfacePrivateIpAddress, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetIPv4sFromEC2", arg0)
-	ret0, _ := ret[0].([]*ec2.NetworkInterfacePrivateIpAddress)
+	ret0, _ := ret[0].([]types.NetworkInterfacePrivateIpAddress)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -257,10 +257,10 @@ func (mr *MockAPIsMockRecorder) GetIPv4sFromEC2(arg0 interface{}) *gomock.Call {
 }
 
 // GetIPv6PrefixesFromEC2 mocks base method.
-func (m *MockAPIs) GetIPv6PrefixesFromEC2(arg0 string) ([]*ec2.Ipv6PrefixSpecification, error) {
+func (m *MockAPIs) GetIPv6PrefixesFromEC2(arg0 string) ([]types.Ipv6PrefixSpecification, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetIPv6PrefixesFromEC2", arg0)
-	ret0, _ := ret[0].([]*ec2.Ipv6PrefixSpecification)
+	ret0, _ := ret[0].([]types.Ipv6PrefixSpecification)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -468,17 +468,17 @@ func (mr *MockAPIsMockRecorder) IsUnmanagedENI(arg0 interface{}) *gomock.Call {
 }
 
 // RefreshSGIDs mocks base method.
-func (m *MockAPIs) RefreshSGIDs(mac string, store *datastore.DataStore) error {
+func (m *MockAPIs) RefreshSGIDs(arg0 string, arg1 *datastore.DataStore) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RefreshSGIDs", mac, store)
+	ret := m.ctrl.Call(m, "RefreshSGIDs", arg0, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RefreshSGIDs indicates an expected call of RefreshSGIDs.
-func (mr *MockAPIsMockRecorder) RefreshSGIDs(mac, store interface{}) *gomock.Call {
+func (mr *MockAPIsMockRecorder) RefreshSGIDs(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshSGIDs", reflect.TypeOf((*MockAPIs)(nil).RefreshSGIDs), mac, store)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshSGIDs", reflect.TypeOf((*MockAPIs)(nil).RefreshSGIDs), arg0, arg1)
 }
 
 // SetMultiCardENIs mocks base method.
