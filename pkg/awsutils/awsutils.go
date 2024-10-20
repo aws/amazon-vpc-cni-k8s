@@ -1719,7 +1719,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 	return output, nil
 }
 
-func (cache *EC2InstanceMetadataCache) AllocIPv6Prefixes(eniID string) ([]string, error) {
+func (cache *EC2InstanceMetadataCache) AllocIPv6Prefixes(eniID string) ([]*string, error) {
 	//We only need to allocate one IPv6 prefix per ENI.
 	input := &ec2.AssignIpv6AddressesInput{
 		NetworkInterfaceId: aws.String(eniID),
@@ -1739,7 +1739,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPv6Prefixes(eniID string) ([]string
 	if output != nil {
 		log.Debugf("Allocated %d private IPv6 prefix(es)", len(output.AssignedIpv6Prefixes))
 	}
-	return output.AssignedIpv6Prefixes, nil
+	return aws.StringSlice(output.AssignedIpv6Prefixes), nil
 }
 
 // WaitForENIAndIPsAttached waits until the ENI has been attached and the secondary IPs have been added

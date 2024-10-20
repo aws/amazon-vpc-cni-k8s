@@ -28,8 +28,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/lo"
@@ -944,7 +944,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 				}
 			}
 
-			var ec2ip4s []*ec2.NetworkInterfacePrivateIpAddress
+			var ec2ip4s []ec2types.NetworkInterfacePrivateIpAddress
 			if containsPrivateIPAddressLimitExceededError(err) {
 				log.Debug("AssignPrivateIpAddresses returned PrivateIpAddressLimitExceeded. This can happen if the data store is out of sync." +
 					"Returning without an error here since we will verify the actual state by calling EC2 to see what addresses have already assigned to this ENI.")
@@ -962,7 +962,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 
 				ec2Addrs := output.AssignedPrivateIpAddresses
 				for _, ec2Addr := range ec2Addrs {
-					ec2ip4s = append(ec2ip4s, &ec2.NetworkInterfacePrivateIpAddress{PrivateIpAddress: aws.String(aws.StringValue(ec2Addr.PrivateIpAddress))})
+					ec2ip4s = append(ec2ip4s, ec2types.NetworkInterfacePrivateIpAddress{PrivateIpAddress: ec2Addr.PrivateIpAddress})
 				}
 			}
 			c.addENIsecondaryIPsToDataStore(ec2ip4s, eni.ID)
@@ -998,14 +998,14 @@ func (c *IPAMContext) assignIPv6Prefix(eniID string) (err error) {
 			return err
 		}
 		for _, v6Prefix := range strPrefixes {
-			ec2v6Prefixes = append(ec2v6Prefixes, &ec2.Ipv6PrefixSpecification{Ipv6Prefix: v6Prefix})
+			ec2v6Prefixes = append(ec2v6Prefixes, ec2types.Ipv6PrefixSpecification{Ipv6Prefix: v6Prefix})
 		}
 		log.Debugf("Successfully allocated an IPv6Prefix for ENI: %s", eniID)
 	} else if len(ec2v6Prefixes) > 1 {
 		//Found more than one v6 prefix attached to the ENI. VPC CNI will only attach a single v6 prefix
 		//and it will not attempt to free any additional Prefixes that are already attached.
 		//Will use the first IPv6 Prefix attached for IP address allocation.
-		ec2v6Prefixes = []*ec2.Ipv6PrefixSpecification{ec2v6Prefixes[0]}
+		ec2v6Prefixes = []ec2types.Ipv6PrefixSpecification{ec2v6Prefixes[0]}
 	}
 	c.addENIv6prefixesToDataStore(ec2v6Prefixes, eniID)
 	return nil
@@ -1034,7 +1034,7 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 			}
 		}
 
-		var ec2Prefixes []*ec2.Ipv4PrefixSpecification
+		var ec2Prefixes []ec2types.Ipv4PrefixSpecification
 		if containsPrivateIPAddressLimitExceededError(err) {
 			log.Debug("AssignPrivateIpAddresses returned PrivateIpAddressLimitExceeded. This can happen if the data store is out of sync." +
 				"Returning without an error here since we will verify the actual state by calling EC2 to see what addresses have already assigned to this ENI.")
@@ -1113,13 +1113,13 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 	return nil
 }
 
-func (c *IPAMContext) addENIsecondaryIPsToDataStore(ec2PrivateIpAddrs []*ec2.NetworkInterfacePrivateIpAddress, eni string) {
+func (c *IPAMContext) addENIsecondaryIPsToDataStore(ec2PrivateIpAddrs []ec2types.NetworkInterfacePrivateIpAddress, eni string) {
 	// Add all the secondary IPs
 	for _, ec2PrivateIpAddr := range ec2PrivateIpAddrs {
-		if aws.BoolValue(ec2PrivateIpAddr.Primary) {
+		if aws.ToBool(ec2PrivateIpAddr.Primary) {
 			continue
 		}
-		cidr := net.IPNet{IP: net.ParseIP(aws.StringValue(ec2PrivateIpAddr.PrivateIpAddress)), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		cidr := net.IPNet{IP: net.ParseIP(aws.ToString(ec2PrivateIpAddr.PrivateIpAddress)), Mask: net.IPv4Mask(255, 255, 255, 255)}
 		err := c.dataStore.AddIPv4CidrToStore(eni, cidr, false)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
 			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store", ec2PrivateIpAddr.PrivateIpAddress)
@@ -1130,10 +1130,10 @@ func (c *IPAMContext) addENIsecondaryIPsToDataStore(ec2PrivateIpAddrs []*ec2.Net
 	c.logPoolStats(c.dataStore.GetIPStats(ipV4AddrFamily))
 }
 
-func (c *IPAMContext) addENIv4prefixesToDataStore(ec2PrefixAddrs []*ec2.Ipv4PrefixSpecification, eni string) {
+func (c *IPAMContext) addENIv4prefixesToDataStore(ec2PrefixAddrs []ec2types.Ipv4PrefixSpecification, eni string) {
 	// Walk thru all prefixes
 	for _, ec2PrefixAddr := range ec2PrefixAddrs {
-		strIpv4Prefix := aws.StringValue(ec2PrefixAddr.Ipv4Prefix)
+		strIpv4Prefix := aws.ToString(ec2PrefixAddr.Ipv4Prefix)
 		_, ipnet, err := net.ParseCIDR(strIpv4Prefix)
 		if err != nil {
 			//Parsing failed, get next prefix
@@ -1151,11 +1151,11 @@ func (c *IPAMContext) addENIv4prefixesToDataStore(ec2PrefixAddrs []*ec2.Ipv4Pref
 	c.logPoolStats(c.dataStore.GetIPStats(ipV4AddrFamily))
 }
 
-func (c *IPAMContext) addENIv6prefixesToDataStore(ec2PrefixAddrs []*ec2.Ipv6PrefixSpecification, eni string) {
+func (c *IPAMContext) addENIv6prefixesToDataStore(ec2PrefixAddrs []ec2types.Ipv6PrefixSpecification, eni string) {
 	log.Debugf("Updating datastore with IPv6Prefix(es) for ENI: %v, count: %v", eni, len(ec2PrefixAddrs))
 	// Walk through all prefixes
 	for _, ec2PrefixAddr := range ec2PrefixAddrs {
-		strIpv6Prefix := aws.StringValue(ec2PrefixAddr.Ipv6Prefix)
+		strIpv6Prefix := aws.ToString(ec2PrefixAddr.Ipv6Prefix)
 		_, ipnet, err := net.ParseCIDR(strIpv6Prefix)
 		if err != nil {
 			// Parsing failed, get next prefix
@@ -1543,11 +1543,11 @@ func (c *IPAMContext) eniPrefixPoolReconcile(prefixPool []string, attachedENI aw
 
 // verifyAndAddIPsToDatastore updates the datastore with the known secondary IPs. IPs who are out of cooldown gets added
 // back to the datastore after being verified against EC2.
-func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []*ec2.NetworkInterfacePrivateIpAddress, needEC2Reconcile bool) map[string]bool {
-	var ec2VerifiedAddresses []*ec2.NetworkInterfacePrivateIpAddress
+func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []ec2types.NetworkInterfacePrivateIpAddress, needEC2Reconcile bool) map[string]bool {
+	var ec2VerifiedAddresses []ec2types.NetworkInterfacePrivateIpAddress
 	seenIPs := make(map[string]bool)
 	for _, privateIPv4 := range attachedENIIPs {
-		strPrivateIPv4 := aws.StringValue(privateIPv4.PrivateIpAddress)
+		strPrivateIPv4 := aws.ToString(privateIPv4.PrivateIpAddress)
 		if strPrivateIPv4 == c.primaryIP[eni] {
 			log.Infof("Reconcile and skip primary IP %s on ENI %s", strPrivateIPv4, eni)
 			continue
@@ -1579,7 +1579,7 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []*e
 					// Verify that the IP really belongs to this ENI
 					isReallyAttachedToENI := false
 					for _, ec2Addr := range ec2VerifiedAddresses {
-						if strPrivateIPv4 == aws.StringValue(ec2Addr.PrivateIpAddress) {
+						if strPrivateIPv4 == aws.ToString(ec2Addr.PrivateIpAddress) {
 							isReallyAttachedToENI = true
 							log.Debugf("Verified that IP %s is attached to ENI %s", strPrivateIPv4, eni)
 							break
@@ -1614,11 +1614,11 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []*e
 
 // verifyAndAddPrefixesToDatastore updates the datastore with the known Prefixes. Prefixes who are out of cooldown gets added
 // back to the datastore after being verified against EC2.
-func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIPrefixes []*ec2.Ipv4PrefixSpecification, needEC2Reconcile bool) map[string]bool {
-	var ec2VerifiedAddresses []*ec2.Ipv4PrefixSpecification
+func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIPrefixes []ec2types.Ipv4PrefixSpecification, needEC2Reconcile bool) map[string]bool {
+	var ec2VerifiedAddresses []ec2types.Ipv4PrefixSpecification
 	seenIPs := make(map[string]bool)
 	for _, privateIPv4Cidr := range attachedENIPrefixes {
-		strPrivateIPv4Cidr := aws.StringValue(privateIPv4Cidr.Ipv4Prefix)
+		strPrivateIPv4Cidr := aws.ToString(privateIPv4Cidr.Ipv4Prefix)
 		log.Debugf("Check in coolddown Found prefix %s", strPrivateIPv4Cidr)
 
 		// Check if this Prefix was recently freed
@@ -1652,7 +1652,7 @@ func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIPre
 					// Verify that the Prefix really belongs to this ENI
 					isReallyAttachedToENI := false
 					for _, ec2Addr := range ec2VerifiedAddresses {
-						if strPrivateIPv4Cidr == aws.StringValue(ec2Addr.Ipv4Prefix) {
+						if strPrivateIPv4Cidr == aws.ToString(ec2Addr.Ipv4Prefix) {
 							isReallyAttachedToENI = true
 							log.Debugf("Verified that IP %s is attached to ENI %s", strPrivateIPv4Cidr, eni)
 							break
