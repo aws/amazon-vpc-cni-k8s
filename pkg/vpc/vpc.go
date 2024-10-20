@@ -87,7 +87,7 @@ func GetHypervisorType(instanceType string) (string, error) {
 		log.Errorf("%s: %s", instanceType, ErrInstanceTypeNotExist)
 		return "", ErrInstanceTypeNotExist
 	}
-	return instance.HypervisorType, nil
+	return string(instance.HypervisorType), nil
 }
 
 func GetIsBareMetal(instanceType string) (bool, error) {
@@ -120,7 +120,8 @@ func GetInstance(instanceType string) (InstanceTypeLimits, bool) {
 	return instance, ok
 }
 
+// TODO (senthilx) - Revisit the types assigned.
 func SetInstance(instanceType ec2types.InstanceType, eniLimit int, ipv4Limit int, defaultNetworkCardIndex int, networkCards []NetworkCard, hypervisorType ec2types.InstanceTypeHypervisor, isBareMetalInstance bool) {
-	instanceNetworkingLimits[instanceType] = New(eniLimit, ipv4Limit, defaultNetworkCardIndex, networkCards,
-		hypervisorType, isBareMetalInstance)
+	instanceNetworkingLimits[string(instanceType)] = New(eniLimit, ipv4Limit, defaultNetworkCardIndex, networkCards,
+		string(hypervisorType), isBareMetalInstance)
 }
