@@ -14,6 +14,7 @@ package vpc
 
 import (
 	"errors"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
@@ -119,7 +120,7 @@ func GetInstance(instanceType string) (InstanceTypeLimits, bool) {
 	return instance, ok
 }
 
-func SetInstance(instanceType string, eniLimit int, ipv4Limit int, defaultNetworkCardIndex int, networkCards []NetworkCard, hypervisorType string, isBareMetalInstance bool) {
+func SetInstance(instanceType ec2types.InstanceType, eniLimit int, ipv4Limit int, defaultNetworkCardIndex int, networkCards []NetworkCard, hypervisorType ec2types.InstanceTypeHypervisor, isBareMetalInstance bool) {
 	instanceNetworkingLimits[instanceType] = New(eniLimit, ipv4Limit, defaultNetworkCardIndex, networkCards,
 		hypervisorType, isBareMetalInstance)
 }
