@@ -16,6 +16,7 @@ package awsutils
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -24,12 +25,13 @@ import (
 	"github.com/aws/smithy-go"
 
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/pkg/errors"
 )
 
 // EC2MetadataIface is a subset of the EC2Metadata API.
 type EC2MetadataIface interface {
-	GetMetadataWithContext(ctx context.Context, p string) (string, error)
+	GetMetadata(ctx context.Context, params *imds.GetMetadataInput, optFns ...func(*imds.Options)) (*imds.GetMetadataOutput, error)
 }
 
 // TypedIMDS is a typed wrapper around raw untyped IMDS SDK API.
@@ -57,37 +59,62 @@ func (e *imdsRequestError) Error() string {
 }
 
 func (typedimds TypedIMDS) getList(ctx context.Context, key string) ([]string, error) {
-	data, err := typedimds.GetMetadataWithContext(ctx, key)
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return strings.Fields(data), err
+	if output == nil || output.Content == nil {
+		return nil, newIMDSRequestError(key, fmt.Errorf("empty response"))
+	}
+
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return nil, newIMDSRequestError(key, fmt.Errorf("failed to read content: %w", err))
+	}
+
+	return strings.Fields(string(bytes)), nil
 }
 
 // GetAZ returns the Availability Zone in which the instance launched.
 func (typedimds TypedIMDS) GetAZ(ctx context.Context) (string, error) {
-	az, err := typedimds.GetMetadataWithContext(ctx, "placement/availability-zone")
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: "placement/availability-zone"})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return az, imdsErr.err
-		}
 		return "", err
 	}
-	return az, err
+	if output == nil || output.Content == nil {
+		return "", newIMDSRequestError("placement/availability-zone", fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return "", newIMDSRequestError("placement/availability-zone", fmt.Errorf("failed to read content: %w", err))
+	}
+	return strings.TrimSpace(string(bytes)), nil
 }
 
 // GetInstanceType returns the type of this instance.
 func (typedimds TypedIMDS) GetInstanceType(ctx context.Context) (string, error) {
-	instanceType, err := typedimds.GetMetadataWithContext(ctx, "instance-type")
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: "instance-type"})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return instanceType, imdsErr.err
-		}
 		return "", err
 	}
-	return instanceType, err
+	if output == nil || output.Content == nil {
+		return "", newIMDSRequestError("instance-type", fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return "", newIMDSRequestError("instance-type", fmt.Errorf("failed to read content: %w", err))
+	}
+	return strings.TrimSpace(string(bytes)), nil
 }
 
 // GetLocalIPv4 returns the private (primary) IPv4 address of the instance.
@@ -97,28 +124,40 @@ func (typedimds TypedIMDS) GetLocalIPv4(ctx context.Context) (net.IP, error) {
 
 // GetInstanceID returns the ID of this instance.
 func (typedimds TypedIMDS) GetInstanceID(ctx context.Context) (string, error) {
-	instanceID, err := typedimds.GetMetadataWithContext(ctx, "instance-id")
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: "instance-id"})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return instanceID, imdsErr.err
-		}
 		return "", err
 	}
-	return instanceID, err
+	if output == nil || output.Content == nil {
+		return "", newIMDSRequestError("instance-id", fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return "", newIMDSRequestError("instance-id", fmt.Errorf("failed to read content: %w", err))
+	}
+	return strings.TrimSpace(string(bytes)), nil
 }
 
 // GetMAC returns the first/primary network interface mac address.
 func (typedimds TypedIMDS) GetMAC(ctx context.Context) (string, error) {
-	mac, err := typedimds.GetMetadataWithContext(ctx, "mac")
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: "mac"})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return mac, imdsErr.err
-		}
 		return "", err
 	}
-	return mac, err
+	if output == nil || output.Content == nil {
+		return "", newIMDSRequestError("mac", fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return "", newIMDSRequestError("mac", fmt.Errorf("failed to read content: %w", err))
+	}
+	return string(bytes), nil
 }
 
 // GetMACs returns the interface addresses attached to the instance.
@@ -159,27 +198,39 @@ func (typedimds TypedIMDS) GetMACImdsFields(ctx context.Context, mac string) ([]
 // GetInterfaceID returns the ID of the network interface.
 func (typedimds TypedIMDS) GetInterfaceID(ctx context.Context, mac string) (string, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/interface-id", mac)
-	interfaceID, err := typedimds.GetMetadataWithContext(ctx, key)
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return interfaceID, imdsErr.err
-		}
 		return "", err
 	}
-	return interfaceID, err
+	if output == nil || output.Content == nil {
+		return "", newIMDSRequestError(key, fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return "", newIMDSRequestError(key, fmt.Errorf("failed to read content: %w", err))
+	}
+	return string(bytes), nil
 }
 
 func (typedimds TypedIMDS) getInt(ctx context.Context, key string) (int, error) {
-	data, err := typedimds.GetMetadataWithContext(ctx, key)
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return 0, imdsErr.err
-		}
 		return 0, err
 	}
-	dataInt, err := strconv.Atoi(data)
+	if output == nil || output.Content == nil {
+		return 0, newIMDSRequestError(key, fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return 0, newIMDSRequestError(key, fmt.Errorf("failed to read content: %w", err))
+	}
+	dataInt, err := strconv.Atoi(strings.TrimSpace(string(bytes)))
 	if err != nil {
 		return 0, err
 	}
@@ -195,28 +246,58 @@ func (typedimds TypedIMDS) GetDeviceNumber(ctx context.Context, mac string) (int
 // GetSubnetID returns the ID of the subnet in which the interface resides.
 func (typedimds TypedIMDS) GetSubnetID(ctx context.Context, mac string) (string, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/subnet-id", mac)
-	subnetID, err := typedimds.GetMetadataWithContext(ctx, key)
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key,
+	})
+
+	// Read the content first, even if there's an error
+	var subnetID string
+	if output != nil && output.Content != nil {
+		defer output.Content.Close()
+		bytes, readErr := io.ReadAll(output.Content)
+		if readErr == nil {
+			subnetID = string(bytes)
+		}
+	}
+
+	// Now handle any errors, but return subnetID if it was read
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
+			log.Warnf("Warning: %v", err)
 			return subnetID, imdsErr.err
 		}
 		return "", err
 	}
-	return subnetID, err
+
+	return subnetID, nil
 }
 
 func (typedimds TypedIMDS) GetVpcID(ctx context.Context, mac string) (string, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/vpc-id", mac)
-	vpcID, err := typedimds.GetMetadataWithContext(ctx, key)
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key,
+	})
+
+	// Read the content first, even if there's an error
+	var vpcID string
+	if output != nil && output.Content != nil {
+		defer output.Content.Close()
+		bytes, readErr := io.ReadAll(output.Content)
+		if readErr == nil {
+			vpcID = string(bytes)
+		}
+	}
+
+	// Handle errors but preserve any partial vpcID data
 	if err != nil {
 		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
+			log.Warnf("Warning: %v", err)
 			return vpcID, imdsErr.err
 		}
 		return "", err
 	}
-	return vpcID, err
+
+	return vpcID, nil
 }
 
 // GetSecurityGroupIDs returns the IDs of the security groups to which the network interface belongs.
@@ -234,19 +315,23 @@ func (typedimds TypedIMDS) GetSecurityGroupIDs(ctx context.Context, mac string) 
 }
 
 func (typedimds TypedIMDS) getIP(ctx context.Context, key string) (net.IP, error) {
-	data, err := typedimds.GetMetadataWithContext(ctx, key)
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return nil, imdsErr.err
-		}
 		return nil, err
 	}
-
-	ip := net.ParseIP(data)
+	if output == nil || output.Content == nil {
+		return nil, newIMDSRequestError(key, fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return nil, newIMDSRequestError(key, fmt.Errorf("failed to read content: %w", err))
+	}
+	ip := net.ParseIP(strings.TrimSpace(string(bytes)))
 	if ip == nil {
-		err = &net.ParseError{Type: "IP address", Text: data}
-		return nil, err
+		err = &net.ParseError{Type: "IP address", Text: string(bytes)}
 	}
 	return ip, err
 }
@@ -270,15 +355,22 @@ func (typedimds TypedIMDS) getIPs(ctx context.Context, key string) ([]net.IP, er
 }
 
 func (typedimds TypedIMDS) getCIDR(ctx context.Context, key string) (net.IPNet, error) {
-	data, err := typedimds.GetMetadataWithContext(ctx, key)
+	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
+		Path: key})
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			log.Warnf("%v", err)
-			return net.IPNet{}, imdsErr.err
-		}
 		return net.IPNet{}, err
 	}
+	if output == nil || output.Content == nil {
+		return net.IPNet{}, newIMDSRequestError(key, fmt.Errorf("empty response"))
+	}
+	// Read the content
+	defer output.Content.Close()
+	bytes, err := io.ReadAll(output.Content)
+	if err != nil {
+		return net.IPNet{}, newIMDSRequestError(key, fmt.Errorf("failed to read content: %w", err))
+	}
 
+	data := strings.TrimSpace(string(bytes))
 	ip, network, err := net.ParseCIDR(data)
 	if err != nil {
 		return net.IPNet{}, err
