@@ -319,8 +319,8 @@ func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, 
 	// Note: With v6 PD mode support, all the pods will be behind Primary ENI of the node and so we might not even need
 	// to mark the packets entering via Primary ENI for NodePort support.
 	mainENIRule := n.netLink.NewRule()
-	mainENIRule.Mark = int(n.mainENIMark)
-	mainENIRule.Mask = int(n.mainENIMark)
+	mainENIRule.Mark = n.mainENIMark
+	mainENIRule.Mask = &n.mainENIMark
 	mainENIRule.Table = mainRoutingTable
 	mainENIRule.Priority = hostRulePriority
 	mainENIRule.Family = ipFamily

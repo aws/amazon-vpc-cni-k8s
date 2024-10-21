@@ -121,10 +121,10 @@ These tests require multus to be deployed to your cluster using the [manifest](h
 You can optionally provide multus tag to install the manifest. If not provided then it will use the default tag
 
 ```
-KUBE_CONFIG_PATH=/Users/cgadgil/.kube/config CLUSTER_NAME=eks-MultusInfra REGION=us-west-2 SKIP_MAKE_TEST_BINARIES=true ./scripts/run-multus-tests.sh v3.7.2-eksbuild.2
+KUBECONFIG=/Users/cgadgil/.kube/config CLUSTER_NAME=eks-MultusInfra REGION=us-west-2 SKIP_MAKE_TEST_BINARIES=true ./scripts/run-multus-tests.sh v3.7.2-eksbuild.2
 
 Running tests with the following variables
-KUBE_CONFIG_PATH:  /Users/cgadgil/.kube/config
+KUBECONFIG:  /Users/cgadgil/.kube/config
 CLUSTER_NAME: eks-MultusInfra
 REGION: us-west-2
 ENDPOINT:

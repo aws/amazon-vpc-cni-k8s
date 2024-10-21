@@ -21,6 +21,12 @@
 
 # VERSION is the source revision that executables and images are built from.
 VERSION ?= $(shell git describe --tags --always --dirty || echo "unknown")
+
+# if the branch is master, use the version as master-<commit-hash>
+ifeq ($(shell git rev-parse --abbrev-ref HEAD),master)
+	VERSION = master-$(shell git rev-parse --short HEAD)
+endif
+
 GOLANG_VERSION ?= $(shell cat .go-version)
 # GOLANG_IMAGE is the building golang container image used.
 GOLANG_IMAGE ?= public.ecr.aws/eks-distro-build-tooling/golang:$(GOLANG_VERSION)-gcc-al2
@@ -279,7 +285,7 @@ docker-metrics-test:     ## Run metrics helper unit test suite in a container.
 		make metrics-unit-test
 
 # Fetch the CNI plugins
-plugins: FETCH_VERSION=1.4.0
+plugins: FETCH_VERSION=1.5.1
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
 plugins:   ## Fetch the CNI plugins

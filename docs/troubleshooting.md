@@ -259,5 +259,6 @@ See the [cni-metrics-helper README](../cmd/cni-metrics-helper/README.md).
 If you encouter build issues while building vpc cni, ensure you are logged into a docker registry.
 For e.g.
 
+```
 aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
-~
+```
