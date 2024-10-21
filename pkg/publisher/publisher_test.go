@@ -15,15 +15,15 @@ package publisher
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
-	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
-
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	types "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
@@ -50,9 +50,9 @@ func TestCloudWatchPublisherWithNoIMDS(t *testing.T) {
 func TestCloudWatchPublisherWithSingleDatum(t *testing.T) {
 	cloudwatchPublisher := getCloudWatchPublisher(t)
 
-	testCloudwatchMetricDatum := &cloudwatch.MetricDatum{
+	testCloudwatchMetricDatum := types.MetricDatum{
 		MetricName: aws.String(testMetricOne),
-		Unit:       aws.String(cloudwatch.StandardUnitNone),
+		Unit:       types.StandardUnitNone,
 		Value:      aws.Float64(1.0),
 	}
 
@@ -67,13 +67,13 @@ func TestCloudWatchPublisherWithSingleDatum(t *testing.T) {
 func TestCloudWatchPublisherWithMultipleDatum(t *testing.T) {
 	cloudwatchPublisher := getCloudWatchPublisher(t)
 
-	var metricDataPoints []*cloudwatch.MetricDatum
+	var metricDataPoints []types.MetricDatum
 
 	for i := 0; i < 10; i++ {
 		metricName := "TEST_METRIC_" + strconv.Itoa(i)
-		testCloudwatchMetricDatum := &cloudwatch.MetricDatum{
+		testCloudwatchMetricDatum := types.MetricDatum{
 			MetricName: aws.String(metricName),
-			Unit:       aws.String(cloudwatch.StandardUnitNone),
+			Unit:       types.StandardUnitNone,
 			Value:      aws.Float64(1.0),
 		}
 		metricDataPoints = append(metricDataPoints, testCloudwatchMetricDatum)
@@ -89,13 +89,13 @@ func TestCloudWatchPublisherWithMultipleDatum(t *testing.T) {
 func TestCloudWatchPublisherWithGreaterThanMaxDatapoints(t *testing.T) {
 	cloudwatchPublisher := getCloudWatchPublisher(t)
 
-	var metricDataPoints []*cloudwatch.MetricDatum
+	var metricDataPoints []types.MetricDatum
 
 	for i := 0; i < 30; i++ {
 		metricName := "TEST_METRIC_" + strconv.Itoa(i)
-		testCloudwatchMetricDatum := &cloudwatch.MetricDatum{
+		testCloudwatchMetricDatum := types.MetricDatum{
 			MetricName: aws.String(metricName),
-			Unit:       aws.String(cloudwatch.StandardUnitNone),
+			Unit:       types.StandardUnitNone,
 			Value:      aws.Float64(1.0),
 		}
 		metricDataPoints = append(metricDataPoints, testCloudwatchMetricDatum)
@@ -111,12 +111,12 @@ func TestCloudWatchPublisherWithGreaterThanMaxDatapoints(t *testing.T) {
 func TestCloudWatchPublisherWithGreaterThanMaxDatapointsAndStop(t *testing.T) {
 	cloudwatchPublisher := getCloudWatchPublisher(t)
 
-	var metricDataPoints []*cloudwatch.MetricDatum
+	var metricDataPoints []types.MetricDatum
 	for i := 0; i < 30; i++ {
 		metricName := "TEST_METRIC_" + strconv.Itoa(i)
-		testCloudwatchMetricDatum := &cloudwatch.MetricDatum{
+		testCloudwatchMetricDatum := types.MetricDatum{
 			MetricName: aws.String(metricName),
-			Unit:       aws.String(cloudwatch.StandardUnitNone),
+			Unit:       types.StandardUnitNone,
 			Value:      aws.Float64(1.0),
 		}
 		metricDataPoints = append(metricDataPoints, testCloudwatchMetricDatum)
@@ -145,13 +145,13 @@ func TestCloudWatchPublisherWithSingleDatumWithError(t *testing.T) {
 		cancel:           cancel,
 		cloudwatchClient: mockCloudWatch,
 		clusterID:        testClusterID,
-		localMetricData:  make([]*cloudwatch.MetricDatum, 0, localMetricDataSize),
+		localMetricData:  make([]types.MetricDatum, 0, localMetricDataSize),
 		log:              getCloudWatchLog(),
 	}
 
-	testCloudwatchMetricDatum := &cloudwatch.MetricDatum{
+	testCloudwatchMetricDatum := types.MetricDatum{
 		MetricName: aws.String(testMetricOne),
-		Unit:       aws.String(cloudwatch.StandardUnitNone),
+		Unit:       types.StandardUnitNone,
 		Value:      aws.Float64(1.0),
 	}
 
@@ -167,13 +167,13 @@ func TestGetCloudWatchMetricNamespace(t *testing.T) {
 	cloudwatchPublisher := getCloudWatchPublisher(t)
 
 	testNamespace := cloudwatchPublisher.getCloudWatchMetricNamespace()
-	assert.Equal(t, aws.StringValue(testNamespace), cloudwatchMetricNamespace)
+	assert.Equal(t, aws.ToString(testNamespace), cloudwatchMetricNamespace)
 }
 
 func TestGetCloudWatchMetricDatumDimensions(t *testing.T) {
 	cloudwatchPublisher := getCloudWatchPublisher(t)
 
-	expectedCloudwatchDimensions := []*cloudwatch.Dimension{
+	expectedCloudwatchDimensions := []types.Dimension{
 		{
 			Name:  aws.String(clusterIDDimension),
 			Value: aws.String(testClusterID),
@@ -187,7 +187,7 @@ func TestGetCloudWatchMetricDatumDimensions(t *testing.T) {
 func TestGetCloudWatchMetricDatumDimensionsWithMissingClusterID(t *testing.T) {
 	cloudwatchPublisher := &cloudWatchPublisher{log: getCloudWatchLog()}
 
-	expectedCloudwatchDimensions := []*cloudwatch.Dimension{
+	expectedCloudwatchDimensions := []types.Dimension{
 		{
 			Name:  aws.String(clusterIDDimension),
 			Value: aws.String(""),
@@ -201,7 +201,7 @@ func TestGetCloudWatchMetricDatumDimensionsWithMissingClusterID(t *testing.T) {
 func TestPublishWithNoData(t *testing.T) {
 	cloudwatchPublisher := &cloudWatchPublisher{log: getCloudWatchLog()}
 
-	testMetricDataPoints := []*cloudwatch.MetricDatum{}
+	testMetricDataPoints := []types.MetricDatum{}
 
 	cloudwatchPublisher.Publish(testMetricDataPoints...)
 	assert.Empty(t, cloudwatchPublisher.localMetricData)
@@ -209,7 +209,7 @@ func TestPublishWithNoData(t *testing.T) {
 
 func TestPushWithMissingData(t *testing.T) {
 	cloudwatchPublisher := &cloudWatchPublisher{log: getCloudWatchLog()}
-	testMetricDataPoints := []*cloudwatch.MetricDatum{}
+	testMetricDataPoints := []types.MetricDatum{}
 
 	cloudwatchPublisher.push(testMetricDataPoints)
 	assert.Empty(t, cloudwatchPublisher.localMetricData)
@@ -252,7 +252,7 @@ func getCloudWatchPublisher(t *testing.T) *cloudWatchPublisher {
 		cancel:           cancel,
 		cloudwatchClient: mockCloudWatchClient{},
 		clusterID:        testClusterID,
-		localMetricData:  make([]*cloudwatch.MetricDatum, 0, localMetricDataSize),
+		localMetricData:  make([]types.MetricDatum, 0, localMetricDataSize),
 		log:              getCloudWatchLog(),
 	}
 }
