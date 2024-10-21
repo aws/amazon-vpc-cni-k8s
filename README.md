@@ -68,9 +68,9 @@ For help, please consider the following venues (in order):
 For all Kubernetes releases, *we recommend installing the latest VPC CNI release*. The following table denotes our *oldest* recommended
 VPC CNI version for each actively supported Kubernetes release.
 
-| Kubernetes Release | 1.29     | 1.28     | 1.27     | 1.26     | 1.25     | 1.24    |
-| ------------------ | -------- | -------- | -------- | -------- | -------- | ------- |
-| VPC CNI Version    | v1.14.1+ | v1.13.4+ | v1.12.5+ | v1.12.0+ | v1.11.4+ | v1.9.3+ |
+| Kubernetes Release | 1.31     | 1.30     | 1.29     | 1.28     | 1.27     | 1.26     | 1.25     | 1.24    |
+| ------------------ | -------- | -------- | -------- | -------- | -------- | -------- | -------- | ------- |
+| VPC CNI Version    | v1.16.4+ | v1.16.0+ | v1.14.1+ | v1.13.4+ | v1.12.5+ | v1.12.0+ | v1.11.4+ | v1.9.3+ |
 
 ## Version Upgrade
 
@@ -516,6 +516,7 @@ Valid Values: `strict`, `standard`
 Once `ENABLE_POD_ENI` is set to `true`, this value controls how the traffic of pods with the security group behaves.
 
 * `strict` mode: all inbound/outbound traffic from pod with security group will be enforced by security group rules. This is the **default** mode if POD_SECURITY_GROUP_ENFORCING_MODE is not set.
+  * `strict` mode is supported when kube-proxy configured in `iptables` mode (default with EKS). If kube-proxy is configured in `ipvs` mode, please set `POD_SECURITY_GROUP_ENFORCING_MODE` to `standard`.
 
 * `standard` mode: the traffic of pod with security group behaves same as pods without a security group, except that each pod occupies a dedicated branch ENI.
   * inbound traffic to pod with security group from another host will be enforced by security group rules.
