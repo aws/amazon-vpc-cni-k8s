@@ -300,7 +300,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.18.3"
+    app.kubernetes.io/version: "v1.18.5"
 ---
 # Source: aws-vpc-cni/templates/configmap.yaml
 apiVersion: v1
@@ -312,7 +312,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.18.3"
+    app.kubernetes.io/version: "v1.18.5"
 data:
   enable-windows-ipam: "false"
   enable-network-policy-controller: "false"
@@ -331,7 +331,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.18.3"
+    app.kubernetes.io/version: "v1.18.5"
 rules:
   - apiGroups:
       - crd.k8s.amazonaws.com
@@ -377,7 +377,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.18.3"
+    app.kubernetes.io/version: "v1.18.5"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -397,7 +397,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.18.3"
+    app.kubernetes.io/version: "v1.18.5"
 spec:
   updateStrategy:
     rollingUpdate:
