@@ -43,7 +43,7 @@ function check_for_slow_performance() {
 
     # Divided by 3 to get current average, multiply past averages by 5/4 to get 25% window
     # Checks if current average is greater than or equal to 15 seconds to avoid failing due to fast previous runs
-    if [[$((CURRENT_DURATION_UP_SUM / 3)) -ge 15] && [ $((CURRENT_DURATION_UP_SUM / 3)) -gt $((PAST_PERFORMANCE_UP_AVERAGE * 5 / 4)) ]]; then
+    if [[ $((CURRENT_DURATION_UP_SUM / 3)) -ge 15 ]] && [[ $((CURRENT_DURATION_UP_SUM / 3)) -gt $((PAST_PERFORMANCE_UP_AVERAGE * 5 / 4)) ]]; then
         echo "FAILURE! Performance test pod UPPING took >25% longer than the past three tests"
         echo "This tests time: $((CURRENT_DURATION_UP_SUM / 3))"
         echo "Previous tests' time: ${PAST_PERFORMANCE_UP_AVERAGE}"
