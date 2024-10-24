@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-source "$SCRIPT_DIR"/set_kubeconfig.sh
-
+source "$SCRIPT_DIR"/lib/set_kubeconfig.sh
 
 function load_cluster_details() {
   echo "loading cluster details $CLUSTER_NAME"

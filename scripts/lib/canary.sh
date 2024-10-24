@@ -4,9 +4,7 @@
 
 SECONDS=0
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-source "$SCRIPT_DIR"/set_kubeconfig.sh
-
+source "$SCRIPT_DIR"/lib/set_kubeconfig.sh
 
 echo "Running tests for amazon-vpc-cni-k8s with the following variables
 KUBECONFIG:  $KUBECONFIG
