@@ -4,15 +4,15 @@ set -Euo pipefail
 
 trap 'on_error $? $LINENO' ERR
 
-DIR=$(cd "$(dirname "$0")"; pwd)
-INTEGRATION_TEST_DIR="$DIR"/../test/integration
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+INTEGRATION_TEST_DIR="$SCRIPT_DIR"/../test/integration
 
-source "$DIR"/lib/common.sh
-source "$DIR"/lib/aws.sh
-source "$DIR"/lib/cluster.sh
-source "$DIR"/lib/integration.sh
-source "$DIR"/lib/k8s.sh
-source "$DIR"/lib/performance_tests.sh
+source "$SCRIPT_DIR"/lib/common.sh
+source "$SCRIPT_DIR"/lib/aws.sh
+source "$SCRIPT_DIR"/lib/cluster.sh
+source "$SCRIPT_DIR"/lib/integration.sh
+source "$SCRIPT_DIR"/lib/k8s.sh
+source "$SCRIPT_DIR"/lib/performance_tests.sh
 
 # Variables used in /lib/aws.sh
 OS=$(go env GOOS)
@@ -68,7 +68,7 @@ on_error() {
 
 # test specific config, results location
 : "${TEST_ID:=$RANDOM}"
-: "${TEST_BASE_DIR:=${DIR}/cni-test}"
+: "${TEST_BASE_DIR:=${SCRIPT_DIR}/cni-test}"
 TEST_DIR=${TEST_BASE_DIR}/$(date "+%Y%M%d%H%M%S")-$TEST_ID
 REPORT_DIR=${TEST_DIR}/report
 TEST_CONFIG_DIR="$TEST_DIR/config"
@@ -83,7 +83,7 @@ CLUSTER_MANAGE_LOG_PATH=$TEST_CLUSTER_DIR/cluster-manage.log
 : "${KUBECONFIG_PATH:=${TEST_CLUSTER_DIR}/kubeconfig}"
 
 # shared binaries
-: "${TESTER_DIR:=${DIR}/aws-k8s-tester}"
+: "${TESTER_DIR:=${SCRIPT_DIR}/aws-k8s-tester}"
 : "${TESTER_PATH:=$TESTER_DIR/aws-k8s-tester}"
 : "${KUBECTL_PATH:=kubectl}"
 export PATH=${PATH}:$TESTER_DIR
@@ -93,7 +93,7 @@ echo "Testing git repository at commit $LOCAL_GIT_VERSION"
 TEST_IMAGE_VERSION=${IMAGE_VERSION:-$LOCAL_GIT_VERSION}
 # We perform an upgrade to this manifest, with image replaced
 : "${MANIFEST_CNI_VERSION:=master}"
-BASE_CONFIG_PATH="$DIR/../config/$MANIFEST_CNI_VERSION/aws-k8s-cni.yaml"
+BASE_CONFIG_PATH="$SCRIPT_DIR/../config/$MANIFEST_CNI_VERSION/aws-k8s-cni.yaml"
 TEST_CONFIG_PATH="$TEST_CONFIG_DIR/aws-k8s-cni.yaml"
 # The manifest image version is the image tag we need to replace in the
 # aws-k8s-cni.yaml manifest
