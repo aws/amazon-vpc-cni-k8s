@@ -15,10 +15,11 @@ package publisher
 
 import (
 	"context"
-	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go-v2/aws"
