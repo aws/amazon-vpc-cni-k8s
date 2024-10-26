@@ -204,7 +204,7 @@ func New() NetworkAPIs {
 		netLink: netlinkwrapper.NewNetLink(),
 		ns:      nswrapper.NewNS(),
 		newIptables: func(IPProtocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
-			ipt, err := iptables.NewWithProtocol(IPProtocol)
+			ipt, err := iptableswrapper.NewIPTables(IPProtocol)
 			return ipt, err
 		},
 	}
