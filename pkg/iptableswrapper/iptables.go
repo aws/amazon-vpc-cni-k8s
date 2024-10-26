@@ -53,10 +53,8 @@ func NewIPTables(protocol iptables.Protocol) (IPTablesIface, error) {
 		return nil, err
 	}
 	return &ipTables{
-		ipt: ipt,
-		backoff: &backoff.ExponentialBackOff{
-			MaxElapsedTime: 0, // Never stop retrying
-		},
+		ipt:     ipt,
+		backoff: backoff.NewExponentialBackOff(backoff.WithMaxElapsedTime(0)), // Never stop retrying as backward compatibility
 	}, nil
 }
 
