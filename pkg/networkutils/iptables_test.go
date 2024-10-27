@@ -22,6 +22,7 @@ import (
 	mock_iptables "github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper/mocks"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/golang/mock/gomock"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -29,6 +30,11 @@ const (
 	address1 = "203.0.113.1/32"
 	address2 = "203.0.113.2/32"
 	subnet1  = "192.0.2.0/24"
+)
+
+var (
+	timeoutError          = errors.New("timeout")
+	permissionDeniedError = errors.New("permission denied")
 )
 
 func randChain(t *testing.T) string {
@@ -54,7 +60,10 @@ func TestExists(t *testing.T) {
 	ctrl, table, chain, expBackoff := setupIPTTest(t)
 	mockIptable := mock_iptables.NewMockIPTablesIface(ctrl)
 
-	mockIptable.EXPECT().Exists(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(false, nil)
+	gomock.InOrder(
+		mockIptable.EXPECT().Exists(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(false, timeoutError),
+		mockIptable.EXPECT().Exists(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(false, nil),
+	)
 
 	ipt := &ipTables{
 		ipt:     mockIptable,
@@ -69,7 +78,12 @@ func TestInsert(t *testing.T) {
 	ctrl, table, chain, expBackoff := setupIPTTest(t)
 	mockIptable := mock_iptables.NewMockIPTablesIface(ctrl)
 
-	mockIptable.EXPECT().Insert(table, chain, 2, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(nil)
+	gomock.InOrder(
+		mockIptable.EXPECT().Insert(table, chain, 2, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(timeoutError),
+		mockIptable.EXPECT().Insert(table, chain, 2, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(permissionDeniedError),
+		mockIptable.EXPECT().Insert(table, chain, 2, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(timeoutError),
+		mockIptable.EXPECT().Insert(table, chain, 2, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(nil),
+	)
 
 	ipt := &ipTables{
 		ipt:     mockIptable,
@@ -84,7 +98,12 @@ func TestAppend(t *testing.T) {
 	ctrl, table, chain, expBackoff := setupIPTTest(t)
 	mockIptable := mock_iptables.NewMockIPTablesIface(ctrl)
 
-	mockIptable.EXPECT().Append(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(nil)
+	gomock.InOrder(
+		mockIptable.EXPECT().Append(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(timeoutError),
+		mockIptable.EXPECT().Append(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(permissionDeniedError),
+		mockIptable.EXPECT().Append(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(timeoutError),
+		mockIptable.EXPECT().Append(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(nil),
+	)
 
 	ipt := &ipTables{
 		ipt:     mockIptable,
@@ -99,7 +118,10 @@ func TestAppendUnique(t *testing.T) {
 	ctrl, table, chain, expBackoff := setupIPTTest(t)
 	mockIptable := mock_iptables.NewMockIPTablesIface(ctrl)
 
-	mockIptable.EXPECT().AppendUnique(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(nil)
+	gomock.InOrder(
+		mockIptable.EXPECT().AppendUnique(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(timeoutError),
+		mockIptable.EXPECT().AppendUnique(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(nil),
+	)
 
 	ipt := &ipTables{
 		ipt:     mockIptable,
@@ -114,7 +136,10 @@ func TestDelete(t *testing.T) {
 	ctrl, table, chain, expBackoff := setupIPTTest(t)
 	mockIptable := mock_iptables.NewMockIPTablesIface(ctrl)
 
-	mockIptable.EXPECT().Delete(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(nil)
+	gomock.InOrder(
+		mockIptable.EXPECT().Delete(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(permissionDeniedError),
+		mockIptable.EXPECT().Delete(table, chain, "-s", subnet1, "-d", address2, "-j", "ACCEPT").Return(nil),
+	)
 
 	ipt := &ipTables{
 		ipt:     mockIptable,
@@ -135,7 +160,11 @@ func TestList(t *testing.T) {
 		"-A " + chain + " -s " + address2 + " -d " + subnet1 + " -j ACCEPT",
 	}
 
-	mockIptable.EXPECT().List(table, chain).Return(expected, nil)
+	gomock.InOrder(
+		mockIptable.EXPECT().List(table, chain).Return(nil, timeoutError),
+		mockIptable.EXPECT().List(table, chain).Return(nil, timeoutError),
+		mockIptable.EXPECT().List(table, chain).Return(expected, nil),
+	)
 
 	ipt := &ipTables{
 		ipt:     mockIptable,
@@ -150,7 +179,11 @@ func TestNewChain(t *testing.T) {
 	ctrl, table, chain, expBackoff := setupIPTTest(t)
 	mockIptable := mock_iptables.NewMockIPTablesIface(ctrl)
 
-	mockIptable.EXPECT().NewChain(table, chain).Return(nil)
+	gomock.InOrder(
+		mockIptable.EXPECT().NewChain(table, chain).Return(permissionDeniedError),
+		mockIptable.EXPECT().NewChain(table, chain).Return(timeoutError),
+		mockIptable.EXPECT().NewChain(table, chain).Return(nil),
+	)
 
 	ipt := &ipTables{
 		ipt:     mockIptable,
@@ -165,7 +198,11 @@ func TestClearChain(t *testing.T) {
 	ctrl, table, chain, expBackoff := setupIPTTest(t)
 	mockIptable := mock_iptables.NewMockIPTablesIface(ctrl)
 
-	mockIptable.EXPECT().ClearChain(table, chain).Return(nil)
+	gomock.InOrder(
+		mockIptable.EXPECT().ClearChain(table, chain).Return(permissionDeniedError),
+		mockIptable.EXPECT().ClearChain(table, chain).Return(timeoutError),
+		mockIptable.EXPECT().ClearChain(table, chain).Return(nil),
+	)
 
 	ipt := &ipTables{
 		ipt:     mockIptable,
@@ -180,7 +217,12 @@ func TestDeleteChain(t *testing.T) {
 	ctrl, table, chain, expBackoff := setupIPTTest(t)
 	mockIptable := mock_iptables.NewMockIPTablesIface(ctrl)
 
-	mockIptable.EXPECT().DeleteChain(table, chain).Return(nil)
+	gomock.InOrder(
+		mockIptable.EXPECT().DeleteChain(table, chain).Return(permissionDeniedError),
+		mockIptable.EXPECT().DeleteChain(table, chain).Return(timeoutError),
+		mockIptable.EXPECT().DeleteChain(table, chain).Return(permissionDeniedError),
+		mockIptable.EXPECT().DeleteChain(table, chain).Return(nil),
+	)
 
 	ipt := &ipTables{
 		ipt:     mockIptable,
@@ -200,7 +242,10 @@ func TestListChains(t *testing.T) {
 		"input",
 	}
 
-	mockIptable.EXPECT().ListChains(table).Return(expected, nil)
+	gomock.InOrder(
+		mockIptable.EXPECT().ListChains(table).Return(nil, timeoutError),
+		mockIptable.EXPECT().ListChains(table).Return(expected, nil),
+	)
 
 	ipt := &ipTables{
 		ipt:     mockIptable,
@@ -216,7 +261,11 @@ func TestChainExists(t *testing.T) {
 
 	mockIptable := mock_iptables.NewMockIPTablesIface(ctrl)
 
-	mockIptable.EXPECT().ChainExists(table, chain).Return(true, nil)
+	gomock.InOrder(
+		mockIptable.EXPECT().ChainExists(table, chain).Return(false, timeoutError),
+		mockIptable.EXPECT().ChainExists(table, chain).Return(false, timeoutError),
+		mockIptable.EXPECT().ChainExists(table, chain).Return(true, nil),
+	)
 
 	ipt := &ipTables{
 		ipt:     mockIptable,
