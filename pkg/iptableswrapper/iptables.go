@@ -14,14 +14,7 @@
 // Package iptableswrapper is a wrapper interface for the iptables package
 package iptableswrapper
 
-import (
-	"time"
-
-	log "github.com/sirupsen/logrus"
-
-	"github.com/cenkalti/backoff/v4"
-	"github.com/coreos/go-iptables/iptables"
-)
+import "github.com/coreos/go-iptables/iptables"
 
 // IPTablesIface is an interface created to make code unit testable.
 // Both the iptables package version and mocked version implement the same interface
@@ -42,131 +35,76 @@ type IPTablesIface interface {
 
 // ipTables is a struct that implements IPTablesIface using iptables package.
 type ipTables struct {
-	ipt     *iptables.IPTables
-	backoff *backoff.ExponentialBackOff
+	ipt *iptables.IPTables
 }
 
 // NewIPTables return a ipTables struct that implements IPTablesIface
 func NewIPTables(protocol iptables.Protocol) (IPTablesIface, error) {
-	ipt, err := iptables.New(iptables.IPFamily(protocol), iptables.Timeout(1))
+	ipt, err := iptables.NewWithProtocol(protocol)
 	if err != nil {
 		return nil, err
 	}
 	return &ipTables{
-		ipt:     ipt,
-		backoff: backoff.NewExponentialBackOff(backoff.WithMaxElapsedTime(0)), // Never stop retrying as backward compatibility
+		ipt: ipt,
 	}, nil
 }
 
 // Exists implements IPTablesIface interface by calling iptables package
 func (i ipTables) Exists(table, chain string, rulespec ...string) (bool, error) {
-	operation := func() (bool, error) {
-		return i.ipt.Exists(table, chain, rulespec...)
-	}
-	result, err := backoff.RetryNotifyWithData(operation, i.backoff, logRetryError)
-	if err != nil {
-		return true, err
-	}
-	return result, nil
+	return i.ipt.Exists(table, chain, rulespec...)
 }
 
 // Insert implements IPTablesIface interface by calling iptables package
 func (i ipTables) Insert(table, chain string, pos int, rulespec ...string) error {
-	operation := func() error {
-		return i.ipt.Insert(table, chain, pos, rulespec...)
-	}
-	return backoff.RetryNotify(operation, i.backoff, logRetryError)
+	return i.ipt.Insert(table, chain, pos, rulespec...)
 }
 
 // Append implements IPTablesIface interface by calling iptables package
 func (i ipTables) Append(table, chain string, rulespec ...string) error {
-	operation := func() error {
-		return i.ipt.Append(table, chain, rulespec...)
-	}
-	return backoff.RetryNotify(operation, i.backoff, logRetryError)
+	return i.ipt.Append(table, chain, rulespec...)
 }
 
 // AppendUnique implements IPTablesIface interface by calling iptables package
 func (i ipTables) AppendUnique(table, chain string, rulespec ...string) error {
-	operation := func() error {
-		return i.ipt.AppendUnique(table, chain, rulespec...)
-	}
-	return backoff.RetryNotify(operation, i.backoff, logRetryError)
+	return i.ipt.AppendUnique(table, chain, rulespec...)
 }
 
 // Delete implements IPTablesIface interface by calling iptables package
 func (i ipTables) Delete(table, chain string, rulespec ...string) error {
-	operation := func() error {
-		return i.ipt.Delete(table, chain, rulespec...)
-	}
-	return backoff.RetryNotify(operation, i.backoff, logRetryError)
+	return i.ipt.Delete(table, chain, rulespec...)
 }
 
 // List implements IPTablesIface interface by calling iptables package
 func (i ipTables) List(table, chain string) ([]string, error) {
-	operation := func() ([]string, error) {
-		return i.ipt.List(table, chain)
-	}
-	result, err := backoff.RetryNotifyWithData(operation, i.backoff, logRetryError)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	return i.ipt.List(table, chain)
 }
 
 // NewChain implements IPTablesIface interface by calling iptables package
 func (i ipTables) NewChain(table, chain string) error {
-	operation := func() error {
-		return i.ipt.NewChain(table, chain)
-	}
-	return backoff.RetryNotify(operation, i.backoff, logRetryError)
+	return i.ipt.NewChain(table, chain)
 }
 
 // ClearChain implements IPTablesIface interface by calling iptables package
 func (i ipTables) ClearChain(table, chain string) error {
-	operation := func() error {
-		return i.ipt.ClearChain(table, chain)
-	}
-	return backoff.RetryNotify(operation, i.backoff, logRetryError)
+	return i.ipt.ClearChain(table, chain)
 }
 
 // DeleteChain implements IPTablesIface interface by calling iptables package
 func (i ipTables) DeleteChain(table, chain string) error {
-	operation := func() error {
-		return i.ipt.DeleteChain(table, chain)
-	}
-	return backoff.RetryNotify(operation, i.backoff, logRetryError)
+	return i.ipt.DeleteChain(table, chain)
 }
 
 // ListChains implements IPTablesIface interface by calling iptables package
 func (i ipTables) ListChains(table string) ([]string, error) {
-	operation := func() ([]string, error) {
-		return i.ipt.ListChains(table)
-	}
-	result, err := backoff.RetryNotifyWithData(operation, i.backoff, logRetryError)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	return i.ipt.ListChains(table)
 }
 
 // ChainExists implements IPTablesIface interface by calling iptables package
 func (i ipTables) ChainExists(table, chain string) (bool, error) {
-	operation := func() (bool, error) {
-		return i.ipt.ChainExists(table, chain)
-	}
-	result, err := backoff.RetryNotifyWithData(operation, i.backoff, logRetryError)
-	if err != nil {
-		return true, err
-	}
-	return result, nil
+	return i.ipt.ChainExists(table, chain)
 }
 
 // HasRandomFully implements IPTablesIface interface by calling iptables package
 func (i ipTables) HasRandomFully() bool {
 	return i.ipt.HasRandomFully()
-}
-
-func logRetryError(err error, t time.Duration) {
-	log.WithError(err).Errorf("Another app is currently holding the xtables lock. Retrying in %f seconds", t.Seconds())
 }
