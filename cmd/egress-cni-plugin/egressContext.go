@@ -29,6 +29,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/hostipamwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
@@ -82,7 +83,7 @@ func NewEgressAddContext(nsPath, ifName string) egressContext {
 		ArgsIfName: ifName,
 		Veth:       vethwrapper.NewSetupVeth(),
 		IptCreator: func(protocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
-			return iptableswrapper.NewIPTables(protocol)
+			return networkutils.NewIPTables(protocol)
 		},
 	}
 }
@@ -95,7 +96,7 @@ func NewEgressDelContext(nsPath string) egressContext {
 		Ns:     nswrapper.NewNS(),
 		NsPath: nsPath,
 		IptCreator: func(protocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
-			return iptableswrapper.NewIPTables(protocol)
+			return networkutils.NewIPTables(protocol)
 		},
 	}
 }
