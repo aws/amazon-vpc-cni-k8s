@@ -8,7 +8,7 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.18.5
+    tag: v1.18.6
     domain: amazonaws.com
     region: us-west-2
     endpoint: ecr
@@ -27,7 +27,7 @@ init:
 nodeAgent:
   enabled: true
   image:
-    tag: v1.1.3
+    tag: v1.1.4
     domain: amazonaws.com
     region: us-west-2
     endpoint: ecr
@@ -51,7 +51,7 @@ nodeAgent:
   resources: {}
 
 image:
-  tag: v1.18.5
+  tag: v1.18.6
   domain: amazonaws.com
   region: us-west-2
   endpoint: ecr
@@ -86,7 +86,7 @@ env:
   ENABLE_IPv4: "true"
   ENABLE_IPv6: "false"
   ENABLE_SUBNET_DISCOVERY: "true"
-  VPC_CNI_VERSION: "v1.18.5"
+  VPC_CNI_VERSION: "v1.18.6"
   NETWORK_POLICY_ENFORCING_MODE: "standard"
 
 # Add env from configMap or from secrets
