@@ -122,6 +122,9 @@ const (
 	// This environment is used to specify whether we should use enhanced subnet selection or not when creating ENIs (default true).
 	envSubnetDiscovery = "ENABLE_SUBNET_DISCOVERY"
 
+	// This environment is used to specify whether we should skip the primary subnet when tag is applied in the enhanced subnet selection (default true)
+	envSubnetDiscoverySkipPrimary = "SUBNET_DISCOVERY_SKIP_PRIMARY"
+
 	// eniNoManageTagKey is the tag that may be set on an ENI to indicate ipamd
 	// should not manage it in any form.
 	eniNoManageTagKey = "node.k8s.amazonaws.com/no_manage"
@@ -194,20 +197,21 @@ var (
 
 // IPAMContext contains node level control information
 type IPAMContext struct {
-	awsClient                 awsutils.APIs
-	dataStore                 *datastore.DataStore
-	k8sClient                 client.Client
-	enableIPv4                bool
-	enableIPv6                bool
-	useCustomNetworking       bool
-	manageENIsNonScheduleable bool
-	useSubnetDiscovery        bool
-	networkClient             networkutils.NetworkAPIs
-	maxIPsPerENI              int
-	maxENI                    int
-	maxPrefixesPerENI         int
-	unmanagedENI              int
-	numNetworkCards           int
+	awsClient                  awsutils.APIs
+	dataStore                  *datastore.DataStore
+	k8sClient                  client.Client
+	enableIPv4                 bool
+	enableIPv6                 bool
+	useCustomNetworking        bool
+	manageENIsNonScheduleable  bool
+	useSubnetDiscovery         bool
+	subnetDiscoverySkipPrimary bool
+	networkClient              networkutils.NetworkAPIs
+	maxIPsPerENI               int
+	maxENI                     int
+	maxPrefixesPerENI          int
+	unmanagedENI               int
+	numNetworkCards            int
 
 	warmENITarget        int
 	warmIPTarget         int
@@ -339,6 +343,7 @@ func New(k8sClient client.Client) (*IPAMContext, error) {
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.manageENIsNonScheduleable = ManageENIsOnNonSchedulableNode()
 	c.useSubnetDiscovery = UseSubnetDiscovery()
+	c.subnetDiscoverySkipPrimary = SubnetDiscoverySkipPrimaryEnable()
 	c.enablePrefixDelegation = usePrefixDelegation()
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
@@ -922,7 +927,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 	}
 
 	// Find an ENI where we can add more IPs
-	enis := c.dataStore.GetAllocatableENIs(c.maxIPsPerENI, c.useCustomNetworking)
+	enis := c.dataStore.GetAllocatableENIs(c.maxIPsPerENI, c.skipPrimary())
 	for _, eni := range enis {
 		if len(eni.AvailableIPv4Cidrs) < c.maxIPsPerENI {
 			currentNumberOfAllocatedIPs := len(eni.AvailableIPv4Cidrs)
@@ -1014,7 +1019,7 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 	toAllocate := c.getPrefixesNeeded()
 	// Returns an ENI which has space for more prefixes to be attached, but this
 	// ENI might not suffice the WARM_IP_TARGET/WARM_PREFIX_TARGET
-	enis := c.dataStore.GetAllocatableENIs(c.maxPrefixesPerENI, c.useCustomNetworking)
+	enis := c.dataStore.GetAllocatableENIs(c.maxPrefixesPerENI, c.skipPrimary())
 	for _, eni := range enis {
 		currentNumberOfAllocatedPrefixes := len(eni.AvailableIPv4Cidrs)
 		resourcesToAllocate := min((c.maxPrefixesPerENI - currentNumberOfAllocatedPrefixes), toAllocate)
@@ -1702,6 +1707,14 @@ func UseSubnetDiscovery() bool {
 	return parseBoolEnvVar(envSubnetDiscovery, true)
 }
 
+func SubnetDiscoverySkipPrimaryEnable() bool {
+	return parseBoolEnvVar(envSubnetDiscoverySkipPrimary, true)
+}
+
+func (c *IPAMContext) skipPrimary() bool {
+	return UseCustomNetworkCfg() || c.subnetDiscoverySkipPrimary
+}
+
 func parseBoolEnvVar(envVariableName string, defaultVal bool) bool {
 	if strValue := os.Getenv(envVariableName); strValue != "" {
 		parsedValue, err := strconv.ParseBool(strValue)
@@ -1927,11 +1940,12 @@ func (c *IPAMContext) isNodeNonSchedulable() bool {
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
 func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
-		envWarmIPTarget:             getWarmIPTarget(),
-		envWarmENITarget:            getWarmENITarget(),
-		envCustomNetworkCfg:         UseCustomNetworkCfg(),
-		envManageENIsNonSchedulable: ManageENIsOnNonSchedulableNode(),
-		envSubnetDiscovery:          UseSubnetDiscovery(),
+		envWarmIPTarget:               getWarmIPTarget(),
+		envWarmENITarget:              getWarmENITarget(),
+		envCustomNetworkCfg:           UseCustomNetworkCfg(),
+		envManageENIsNonSchedulable:   ManageENIsOnNonSchedulableNode(),
+		envSubnetDiscovery:            UseSubnetDiscovery(),
+		envSubnetDiscoverySkipPrimary: SubnetDiscoverySkipPrimaryEnable(),
 	}
 }
 
