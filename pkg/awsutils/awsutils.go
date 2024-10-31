@@ -463,13 +463,6 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 	}
 	log.Debugf("Found subnet-id: %s ", cache.subnetID)
 
-	// Checking if subnet disable usage of IPs
-	cache.subnetDiscoverySkipPrimary, err = cache.isSubnetDiscoveryDisableOnSubnet(cache.subnetID)
-	if err != nil {
-		awsAPIErrInc("isSubnetDiscoveryDisableOnSubnet", err)
-		return err
-	}
-
 	// retrieve vpc-id
 	cache.vpcID, err = cache.imds.GetVpcID(ctx, mac)
 	if err != nil {
@@ -477,6 +470,13 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 		return err
 	}
 	log.Debugf("Found vpc-id: %s ", cache.vpcID)
+
+	// Now that we have VPC, we can checking if subnet discovery disable usage of IPs
+	cache.subnetDiscoverySkipPrimary, err = cache.isSubnetDiscoveryDisableOnSubnet(cache.subnetID)
+	if err != nil {
+		awsAPIErrInc("isSubnetDiscoveryDisableOnSubnet", err)
+		return err
+	}
 
 	// We use the ctx here for testing, since we spawn go-routines above which will run forever.
 	select {
@@ -2141,34 +2141,37 @@ func (cache *EC2InstanceMetadataCache) IsPrimaryENI(eniID string) bool {
 
 // Check tags on Subnet and return if it's tagged with subnetDiscoveryTagKey = subnetDiscoveryTagValueInactive
 func (cache *EC2InstanceMetadataCache) isSubnetDiscoveryDisableOnSubnet(subnetId string) (bool, error) {
-
+	log.Debugf("Checking Subnet Discovery on %s", subnetId)
 	subnetResult, vpcErr := cache.getVpcSubnets()
 	if vpcErr != nil {
 		log.Warnf("Failed to call ec2:DescribeSubnets: %v", vpcErr)
 		log.Info("Defaulting to use the primary subnet")
-		return false, _
+		return false, nil
 	} else {
-
+		log.Debugf("Got %d subnets", len(subnetResult))
 		for _, subnet := range subnetResult {
 			if *subnet.SubnetId != subnetId {
+				log.Debugf("Not the subnet we are in: %v", *subnet.SubnetId)
 				continue
 			}
+			log.Debugf("Checking tags on subnet %v", *subnet.SubnetId)
 			for _, tag := range subnet.Tags {
+				log.Debugf("Checking on tags %s: %s", *tag.Key, *tag.Value)
 				if *tag.Key == subnetDiscoveryTagKey {
 					if *tag.Value == subnetDiscoveryTagValueInactive {
-						log.InfoF("Subnet: %s is tagged with %s, %s so skipPrimary will be able for SubnetDiscovery", subnetId, subnetDiscoveryTagKey, subnetDiscoveryTagValueInactive)
-						return true, _
+						log.Infof("Subnet: %s is tagged with %s, %s so skipPrimary will be enable for SubnetDiscovery", subnetId, subnetDiscoveryTagKey, subnetDiscoveryTagValueInactive)
+						return true, nil
 
 					} else {
-						log.InfoF("Subnet: %s is tagged with %s, but not with %s so skipPrimary will be disabled for SubnetDiscovery", subnetId, subnetDiscoveryTagKey, subnetDiscoveryTagValueInactive)
-						return false, _
+						log.Infof("Subnet: %s is tagged with %s, but not with %s so skipPrimary will be disabled for SubnetDiscovery", subnetId, subnetDiscoveryTagKey, subnetDiscoveryTagValueInactive)
+						return false, nil
 					}
 				}
 
 			}
 		}
 	}
-	return false, _
+	return false, nil
 }
 
 func checkAPIErrorAndBroadcastEvent(err error, api string) {
