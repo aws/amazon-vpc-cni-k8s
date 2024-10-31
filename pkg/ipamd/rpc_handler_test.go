@@ -22,6 +22,9 @@ import (
 
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 
+	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -238,6 +241,12 @@ func TestServer_AddNetwork(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Reset the counter for each test case
+			prometheusmetrics.AddIPCnt = prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "awscni_add_ip_req_count",
+				Help: "Number of add IP address requests",
+			})
+
 			m := setup(t)
 			defer m.ctrl.Finish()
 
@@ -302,6 +311,10 @@ func TestServer_AddNetwork(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.want, resp)
 			}
+
+			// Add more detailed assertion messages
+			assert.Equal(t, float64(1), testutil.ToFloat64(prometheusmetrics.AddIPCnt),
+				"AddIPCnt should be incremented exactly once for test case: %s", tt.name)
 		})
 	}
 }
