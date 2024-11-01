@@ -61,8 +61,8 @@ var (
 		},
 		[]string{"fn"},
 	)
-	AddIPCnt = prometheus.NewGauge(
-		prometheus.GaugeOpts{
+	AddIPCnt = prometheus.NewCounter(
+		prometheus.CounterOpts{
 			Name: "awscni_add_ip_req_count",
 			Help: "The number of add IP address requests",
 		},
@@ -74,8 +74,8 @@ var (
 		},
 		[]string{"reason"},
 	)
-	PodENIErr = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
+	PodENIErr = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
 			Name: "awscni_pod_eni_error_count",
 			Help: "The number of errors encountered for pod ENIs",
 		},
@@ -88,8 +88,8 @@ var (
 		},
 		[]string{"api", "error", "status"},
 	)
-	AwsAPIErr = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
+	AwsAPIErr = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
 			Name: "awscni_aws_api_error_count",
 			Help: "The number of times AWS API returns an error",
 		},
@@ -134,14 +134,14 @@ var (
 			Help: "The number of IP addresses assigned to pods",
 		},
 	)
-	ForceRemovedENIs = prometheus.NewGauge(
-		prometheus.GaugeOpts{
+	ForceRemovedENIs = prometheus.NewCounter(
+		prometheus.CounterOpts{
 			Name: "awscni_force_removed_enis",
 			Help: "The number of ENIs force removed while they had assigned pods",
 		},
 	)
-	ForceRemovedIPs = prometheus.NewGauge(
-		prometheus.GaugeOpts{
+	ForceRemovedIPs = prometheus.NewCounter(
+		prometheus.CounterOpts{
 			Name: "awscni_force_removed_ips",
 			Help: "The number of IPs force removed while they had assigned pods",
 		},
