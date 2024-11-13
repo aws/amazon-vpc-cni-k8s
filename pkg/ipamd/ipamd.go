@@ -61,6 +61,10 @@ const (
 	nodeIPPoolReconcileInterval = 60 * time.Second
 	decreaseIPPoolInterval      = 30 * time.Second
 
+	// podIPAllocationReconcileInterval is the interval at which the IPAM
+	// controller reconciles the IP address allocation for pods.
+	podIPAllocationReconcileInterval = 5 * time.Second
+
 	// ipReconcileCooldown is the amount of time that an IP address must wait until it can be added to the data store
 	// during reconciliation after being discovered on the EC2 instance metadata.
 	ipReconcileCooldown = 60 * time.Second
@@ -635,6 +639,16 @@ func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 func (c *IPAMContext) updateIPStats(unmanaged int) {
 	prometheusmetrics.IpMax.Set(float64(c.maxIPsPerENI * (c.maxENI - unmanaged)))
 	prometheusmetrics.EnisMax.Set(float64(c.maxENI - unmanaged))
+}
+
+// reconcilePodIPAllocations reconciles IPAM's datastore's view of allocated
+// IPs with the actual IPs assigned to pods.
+func (c *IPAMContext) PodIPAllocationReconcileLoop() {
+	const sleepDuration = podIPAllocationReconcileInterval
+	for {
+		time.Sleep(sleepDuration)
+		c.dataStore.ValidateAssignedIPsByPodVethExistence()
+	}
 }
 
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.

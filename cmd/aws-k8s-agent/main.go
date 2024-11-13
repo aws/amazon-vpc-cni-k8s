@@ -77,6 +77,9 @@ func _main() int {
 	// Pool manager
 	go ipamContext.StartNodeIPPoolManager()
 
+	// Pod IP allocation reconcile loop to clear up dangling pod IPs.
+	go ipamContext.PodIPAllocationReconcileLoop()
+
 	if !utils.GetBoolAsStringEnvVar(envDisableMetrics, false) {
 		// Prometheus metrics
 		go metrics.ServeMetrics(metricsPort)
