@@ -2,6 +2,9 @@ name: Kops tests
 
 on:
   workflow_dispatch: {}
+  push:
+    branches:
+      - "*shehbaj*"
   schedule:
     - cron: "0 15 * * *" # every day
 
