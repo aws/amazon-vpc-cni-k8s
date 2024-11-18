@@ -14,6 +14,7 @@
 package pod_eni
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -60,13 +61,13 @@ var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
 
 	By("checking if cluster address family is IPv4 or IPv6")
-	clusterOutput, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
+	clusterOutput, err := f.CloudServices.EKS().DescribeCluster(context.TODO(), f.Options.ClusterName)
 	Expect(err).NotTo(HaveOccurred())
-	if *clusterOutput.Cluster.KubernetesNetworkConfig.IpFamily == "ipv4" {
+	if clusterOutput.Cluster.KubernetesNetworkConfig.IpFamily == "ipv4" {
 		isIPv4Cluster = true
-		fmt.Fprint(GinkgoWriter, "cluster is IPv4\n")
+		_, _ = fmt.Fprint(GinkgoWriter, "cluster is IPv4\n")
 	} else {
-		fmt.Fprint(GinkgoWriter, "cluster is IPv6\n")
+		_, _ = fmt.Fprint(GinkgoWriter, "cluster is IPv6\n")
 	}
 
 	By("creating a new security group used in Security Group Policy")
@@ -76,19 +77,19 @@ var _ = BeforeSuite(func() {
 	} else {
 		sgName = "pod-eni-automation-v6"
 	}
-	securityGroupOutput, err := f.CloudServices.EC2().CreateSecurityGroup(sgName,
+	securityGroupOutput, err := f.CloudServices.EC2().CreateSecurityGroup(context.TODO(), sgName,
 		"test created by vpc cni automation test suite", f.Options.AWSVPCID)
 	Expect(err).ToNot(HaveOccurred())
 	securityGroupId = *securityGroupOutput.GroupId
 
 	By("authorizing egress and ingress on security group for client-server communication")
 	if isIPv4Cluster {
-		f.CloudServices.EC2().AuthorizeSecurityGroupEgress(securityGroupId, "tcp", openPort, openPort, v4Zero)
-		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "tcp", openPort, openPort, v4Zero, false)
+		_ = f.CloudServices.EC2().AuthorizeSecurityGroupEgress(context.TODO(), securityGroupId, "tcp", openPort, openPort, v4Zero)
+		_ = f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), securityGroupId, "tcp", openPort, openPort, v4Zero, false)
 	} else {
-		f.CloudServices.EC2().AuthorizeSecurityGroupEgress(securityGroupId, "tcp", openPort, openPort, v6Zero)
-		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "tcp", openPort, openPort, v6Zero, false)
-		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(securityGroupId, "icmpv6", -1, -1, v6Zero, false)
+		_ = f.CloudServices.EC2().AuthorizeSecurityGroupEgress(context.TODO(), securityGroupId, "tcp", openPort, openPort, v6Zero)
+		_ = f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), securityGroupId, "tcp", openPort, openPort, v6Zero, false)
+		_ = f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), securityGroupId, "icmpv6", -1, -1, v6Zero, false)
 	}
 
 	By("getting branch ENI limits")
@@ -99,12 +100,12 @@ var _ = BeforeSuite(func() {
 
 	node := nodeList.Items[0]
 	instanceID := k8sUtils.GetInstanceIDFromNode(node)
-	nodeInstance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
-	instanceType := *nodeInstance.InstanceType
-	totalBranchInterface = vpc.Limits[instanceType].BranchInterface * numNodes
+	nodeInstance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
+	instanceType := nodeInstance.InstanceType
+	totalBranchInterface = vpc.Limits[string(instanceType)].BranchInterface * numNodes
 
 	By("Getting Cluster Security Group ID")
-	clusterRes, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
+	clusterRes, err := f.CloudServices.EKS().DescribeCluster(context.TODO(), f.Options.ClusterName)
 	Expect(err).NotTo(HaveOccurred())
 	clusterSGID = *(clusterRes.Cluster.ResourcesVpcConfig.ClusterSecurityGroupId)
 	fmt.Fprintf(GinkgoWriter, "cluster security group is %s\n", clusterSGID)
@@ -137,6 +138,6 @@ var _ = AfterSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	By("deleting the security group")
-	err = f.CloudServices.EC2().DeleteSecurityGroup(securityGroupId)
+	err = f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), securityGroupId)
 	Expect(err).ToNot(HaveOccurred())
 })

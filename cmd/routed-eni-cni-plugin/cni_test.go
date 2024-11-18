@@ -21,7 +21,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	current "github.com/containernetworking/cni/pkg/types/100"
 
 	"github.com/containernetworking/cni/pkg/skel"

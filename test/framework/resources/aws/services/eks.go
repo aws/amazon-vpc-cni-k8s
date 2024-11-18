@@ -14,23 +14,25 @@
 package services
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/eks"
-	"github.com/aws/aws-sdk-go/service/eks/eksiface"
+	"context"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/eks"
+	"github.com/aws/aws-sdk-go-v2/service/eks/types"
 )
 
 type EKS interface {
-	DescribeCluster(clusterName string) (*eks.DescribeClusterOutput, error)
-	CreateAddon(addonInput *AddonInput) (*eks.CreateAddonOutput, error)
-	DescribeAddonVersions(AddonInput *AddonInput) (*eks.DescribeAddonVersionsOutput, error)
-	DescribeAddon(addonInput *AddonInput) (*eks.DescribeAddonOutput, error)
-	DeleteAddon(AddOnInput *AddonInput) (*eks.DeleteAddonOutput, error)
-	GetLatestVersion(addonInput *AddonInput) (string, error)
+	DescribeCluster(ctx context.Context, clusterName string) (*eks.DescribeClusterOutput, error)
+	CreateAddon(ctx context.Context, addonInput AddonInput) (*eks.CreateAddonOutput, error)
+	DescribeAddonVersions(ctx context.Context, addonInput AddonInput) (*eks.DescribeAddonVersionsOutput, error)
+	DescribeAddon(ctx context.Context, addonInput AddonInput) (*eks.DescribeAddonOutput, error)
+	DeleteAddon(ctx context.Context, addOnInput AddonInput) (*eks.DeleteAddonOutput, error)
+	GetLatestVersion(ctx context.Context, addonInput AddonInput) (string, error)
 }
 
 type defaultEKS struct {
-	eksiface.EKSAPI
+	client *eks.Client
 }
 
 // Internal Addon Input struct
@@ -43,63 +45,73 @@ type AddonInput struct {
 	K8sVersion   string
 }
 
-func NewEKS(session *session.Session, endpoint string) EKS {
-	return &defaultEKS{
-		EKSAPI: eks.New(session, &aws.Config{
-			Endpoint: aws.String(endpoint),
-			Region:   session.Config.Region,
-		}),
+func NewEKS(cfg aws.Config, endpoint string) (EKS, error) {
+	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+		return aws.Endpoint{
+			URL: endpoint,
+		}, nil
+	})
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithEndpointResolverWithOptions(customResolver),
+		config.WithRegion(cfg.Region),
+	)
+
+	if err != nil {
+		return &defaultEKS{}, err
 	}
+
+	return &defaultEKS{
+		client: eks.NewFromConfig(cfg),
+	}, nil
 }
 
-func (d defaultEKS) CreateAddon(addonInput *AddonInput) (*eks.CreateAddonOutput, error) {
+func (d *defaultEKS) CreateAddon(ctx context.Context, addonInput AddonInput) (*eks.CreateAddonOutput, error) {
 	createAddonInput := &eks.CreateAddonInput{
 		AddonName:   aws.String(addonInput.AddonName),
 		ClusterName: aws.String(addonInput.ClusterName),
 	}
 	if addonInput.AddonVersion != "" {
-		createAddonInput.SetAddonVersion(addonInput.AddonVersion)
-		createAddonInput.SetResolveConflicts("OVERWRITE")
+		createAddonInput.AddonVersion = aws.String(addonInput.AddonVersion)
+		createAddonInput.ResolveConflicts = types.ResolveConflictsOverwrite
 	}
-	return d.EKSAPI.CreateAddon(createAddonInput)
+	return d.client.CreateAddon(ctx, createAddonInput)
 }
 
-func (d defaultEKS) DeleteAddon(addonInput *AddonInput) (*eks.DeleteAddonOutput, error) {
+func (d *defaultEKS) DeleteAddon(ctx context.Context, addonInput AddonInput) (*eks.DeleteAddonOutput, error) {
 	deleteAddonInput := &eks.DeleteAddonInput{
 		AddonName:   aws.String(addonInput.AddonName),
 		ClusterName: aws.String(addonInput.ClusterName),
 	}
-	return d.EKSAPI.DeleteAddon(deleteAddonInput)
+	return d.client.DeleteAddon(ctx, deleteAddonInput)
 }
 
-func (d defaultEKS) DescribeAddonVersions(addonInput *AddonInput) (*eks.DescribeAddonVersionsOutput, error) {
+func (d *defaultEKS) DescribeAddonVersions(ctx context.Context, addonInput AddonInput) (*eks.DescribeAddonVersionsOutput, error) {
 	describeAddonVersionsInput := &eks.DescribeAddonVersionsInput{
 		AddonName:         aws.String(addonInput.AddonName),
 		KubernetesVersion: aws.String(addonInput.K8sVersion),
 	}
-	return d.EKSAPI.DescribeAddonVersions(describeAddonVersionsInput)
+	return d.client.DescribeAddonVersions(ctx, describeAddonVersionsInput)
 }
 
-func (d defaultEKS) DescribeAddon(addonInput *AddonInput) (*eks.DescribeAddonOutput, error) {
+func (d *defaultEKS) DescribeAddon(ctx context.Context, addonInput AddonInput) (*eks.DescribeAddonOutput, error) {
 	describeAddonInput := &eks.DescribeAddonInput{
 		AddonName:   aws.String(addonInput.AddonName),
 		ClusterName: aws.String(addonInput.ClusterName),
 	}
-	return d.EKSAPI.DescribeAddon(describeAddonInput)
+	return d.client.DescribeAddon(ctx, describeAddonInput)
 }
 
-func (d defaultEKS) DescribeCluster(clusterName string) (*eks.DescribeClusterOutput, error) {
+func (d *defaultEKS) DescribeCluster(ctx context.Context, clusterName string) (*eks.DescribeClusterOutput, error) {
 	describeClusterInput := &eks.DescribeClusterInput{
 		Name: aws.String(clusterName),
 	}
-
-	return d.EKSAPI.DescribeCluster(describeClusterInput)
+	return d.client.DescribeCluster(ctx, describeClusterInput)
 }
 
-func (d defaultEKS) GetLatestVersion(addonInput *AddonInput) (string, error) {
-	addonOutput, err := d.DescribeAddonVersions(addonInput)
+func (d *defaultEKS) GetLatestVersion(ctx context.Context, addonInput AddonInput) (string, error) {
+	addonOutput, err := d.DescribeAddonVersions(ctx, addonInput)
 	if err != nil {
 		return "", err
 	}
-	return *addonOutput.Addons[0].AddonVersions[0].AddonVersion, nil
+	return aws.ToString(addonOutput.Addons[0].AddonVersions[0].AddonVersion), nil
 }

@@ -14,6 +14,7 @@
 package cni_egress
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -60,14 +61,14 @@ var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
 
 	By("checking cluster v4 or v6")
-	clusterOutput, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
+	clusterOutput, err := f.CloudServices.EKS().DescribeCluster(context.TODO(), f.Options.ClusterName)
 	Expect(err).NotTo(HaveOccurred())
 	isIPv4Cluster = false
-	if *clusterOutput.Cluster.KubernetesNetworkConfig.IpFamily == "ipv4" {
+	if clusterOutput.Cluster.KubernetesNetworkConfig.IpFamily == "ipv4" {
 		isIPv4Cluster = true
 	}
 	By("creating test namespace")
-	f.K8sResourceManagers.NamespaceManager().
+	_ = f.K8sResourceManagers.NamespaceManager().
 		CreateNamespace(utils.DefaultTestNamespace)
 
 	By(fmt.Sprintf("getting the node with the node label key %s and value %s",
@@ -90,7 +91,7 @@ var _ = BeforeSuite(func() {
 	Expect(primaryNode.Name).To(Not(HaveLen(0)), "expected to find a non-tainted node")
 
 	instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
-	primaryInstance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
+	primaryInstance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
 	Expect(err).ToNot(HaveOccurred())
 
 	if isIPv4Cluster {
@@ -104,7 +105,7 @@ var _ = BeforeSuite(func() {
 	instanceType := primaryNode.Labels[InstanceTypeNodeLabelKey]
 
 	By("getting the network interface details from ec2")
-	instanceOutput, err := f.CloudServices.EC2().DescribeInstanceType(instanceType)
+	instanceOutput, err := f.CloudServices.EC2().DescribeInstanceType(context.TODO(), instanceType)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Subtract 2 for coredns pods if any, both could be on same Interface
