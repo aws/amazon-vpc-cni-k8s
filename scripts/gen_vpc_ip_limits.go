@@ -18,6 +18,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"os"
 	"reflect"
 	"sort"
@@ -44,11 +45,20 @@ func printPodLimit(instanceType string, l vpc.InstanceTypeLimits) string {
 }
 
 func main() {
+	ctx := context.Background()
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
 	// Get instance types limits across all regions
-	regions := describeRegions()
+	regions := describeRegions(ctx, cfg)
+
 	eniLimitMap := make(map[string]vpc.InstanceTypeLimits)
 	for _, region := range regions {
-		describeInstanceTypes(region, eniLimitMap)
+		describeInstanceTypes(ctx, cfg, region, eniLimitMap)
 	}
 
 	// Override faulty values and add missing instance types
@@ -102,26 +112,14 @@ func main() {
 
 // Helper function to call the EC2 DescribeRegions API, returning sorted region names
 // Note that the credentials being used may not be opted-in to all regions
-func describeRegions() []string {
-	// Create context
-	ctx := context.Background()
-
-	// Load AWS configuration
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
-	}
-
-	// Create EC2 client
+func describeRegions(ctx context.Context, cfg aws.Config) []string {
 	client := ec2.NewFromConfig(cfg)
 
-	// Call DescribeRegions
 	output, err := client.DescribeRegions(ctx, &ec2.DescribeRegionsInput{})
 	if err != nil {
 		log.Fatalf("Failed to call EC2 DescribeRegions: %v", err)
 	}
 
-	// Extract and sort region names
 	var regionNames []string
 	for _, region := range output.Regions {
 		regionNames = append(regionNames, *region.RegionName)
@@ -131,21 +129,10 @@ func describeRegions() []string {
 }
 
 // Helper function to call the EC2 DescribeInstanceTypes API for a region and merge the respective instance-type limits into eniLimitMap
-func describeInstanceTypes(region string, eniLimitMap map[string]vpc.InstanceTypeLimits) {
+func describeInstanceTypes(ctx context.Context, cfg aws.Config, region string, eniLimitMap map[string]vpc.InstanceTypeLimits) {
 	log.Infof("Describing instance types in region=%s", region)
 
-	// Create context
-	ctx := context.Background()
-
-	// Load AWS configuration with specific region
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(region),
-	)
-	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
-	}
-
-	// Create EC2 client
+	cfg.Region = region
 	client := ec2.NewFromConfig(cfg)
 
 	paginator := ec2.NewDescribeInstanceTypesPaginator(client, &ec2.DescribeInstanceTypesInput{})
