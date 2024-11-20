@@ -24,9 +24,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/smithy-go"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/golang/mock/gomock"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
@@ -368,7 +369,7 @@ func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata, awsutils
 		MAC:            primaryMAC,
 		DeviceNumber:   primaryDevice,
 		SubnetIPv4CIDR: primarySubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 			{
 				PrivateIpAddress: &testAddr1, Primary: &primary,
 			},
@@ -383,7 +384,7 @@ func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata, awsutils
 		MAC:            secMAC,
 		DeviceNumber:   secDevice,
 		SubnetIPv4CIDR: secSubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 			{
 				PrivateIpAddress: &testAddr11, Primary: &notPrimary,
 			},
@@ -398,7 +399,7 @@ func getDummyENIMetadata() (awsutils.ENIMetadata, awsutils.ENIMetadata, awsutils
 		MAC:            terMAC,
 		DeviceNumber:   terDevice,
 		SubnetIPv4CIDR: terSubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 			{
 				PrivateIpAddress: &testAddr21, Primary: &notPrimary,
 			},
@@ -420,12 +421,12 @@ func getDummyENIMetadataWithPrefix() (awsutils.ENIMetadata, awsutils.ENIMetadata
 		MAC:            primaryMAC,
 		DeviceNumber:   primaryDevice,
 		SubnetIPv4CIDR: primarySubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 			{
 				PrivateIpAddress: &testAddr1, Primary: &primary,
 			},
 		},
-		IPv4Prefixes: []*ec2.Ipv4PrefixSpecification{
+		IPv4Prefixes: []ec2types.Ipv4PrefixSpecification{
 			{
 				Ipv4Prefix: &testPrefix1,
 			},
@@ -437,7 +438,7 @@ func getDummyENIMetadataWithPrefix() (awsutils.ENIMetadata, awsutils.ENIMetadata
 		MAC:            secMAC,
 		DeviceNumber:   secDevice,
 		SubnetIPv4CIDR: secSubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 			{
 				PrivateIpAddress: &testAddr2, Primary: &primary,
 			},
@@ -455,12 +456,12 @@ func getDummyENIMetadataWithV6Prefix() awsutils.ENIMetadata {
 		MAC:            primaryMAC,
 		DeviceNumber:   primaryDevice,
 		SubnetIPv4CIDR: primarySubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 			{
 				PrivateIpAddress: &testAddr1, Primary: &primary,
 			},
 		},
-		IPv6Prefixes: []*ec2.Ipv6PrefixSpecification{
+		IPv6Prefixes: []ec2types.Ipv6PrefixSpecification{
 			{
 				Ipv6Prefix: &testv6Prefix,
 			},
@@ -549,7 +550,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool, 
 			MAC:            primaryMAC,
 			DeviceNumber:   primaryDevice,
 			SubnetIPv4CIDR: primarySubnet,
-			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 				{
 					PrivateIpAddress: &testAddr1, Primary: &primary,
 				},
@@ -563,7 +564,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool, 
 			MAC:            secMAC,
 			DeviceNumber:   secDevice,
 			SubnetIPv4CIDR: secSubnet,
-			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 				{
 					PrivateIpAddress: &testAddr11, Primary: &notPrimary,
 				},
@@ -629,11 +630,21 @@ func assertAllocationExternalCalls(shouldCall bool, useENIConfig bool, m *testMo
 		callCount = 1
 	}
 
+	originalErr := errors.New("err")
+
 	if useENIConfig {
 		m.awsutils.EXPECT().AllocENI(true, sg, podENIConfig.Subnet, 14).Times(callCount).Return(eni2, nil)
 	} else if subnetDiscovery {
-		m.awsutils.EXPECT().AllocIPAddresses(primaryENIid, 14).Times(callCount).Return(nil, awserr.New("InsufficientFreeAddressesInSubnet", "", errors.New("err")))
-		m.awsutils.EXPECT().AllocIPAddresses(primaryENIid, 1).Times(callCount).Return(nil, awserr.New("InsufficientFreeAddressesInSubnet", "", errors.New("err")))
+		m.awsutils.EXPECT().AllocIPAddresses(primaryENIid, 14).Times(callCount).Return(nil, &smithy.GenericAPIError{
+			Code:    "InsufficientFreeAddressesInSubnet",
+			Message: originalErr.Error(),
+			Fault:   smithy.FaultUnknown,
+		})
+		m.awsutils.EXPECT().AllocIPAddresses(primaryENIid, 1).Times(callCount).Return(nil, &smithy.GenericAPIError{
+			Code:    "InsufficientFreeAddressesInSubnet",
+			Message: originalErr.Error(),
+			Fault:   smithy.FaultUnknown,
+		})
 		m.awsutils.EXPECT().AllocENI(false, nil, "", 14).Times(callCount).Return(eni2, nil)
 	} else {
 		m.awsutils.EXPECT().AllocENI(false, nil, "", 14).Times(callCount).Return(eni2, nil)
@@ -702,11 +713,21 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig, subnetDiscovery bool) {
 		sg = append(sg, aws.String(sgID))
 	}
 
+	originalErr := errors.New("err")
+
 	if useENIConfig {
 		m.awsutils.EXPECT().AllocENI(true, sg, podENIConfig.Subnet, 1).Return(eni2, nil)
 	} else if subnetDiscovery {
-		m.awsutils.EXPECT().AllocIPAddresses(primaryENIid, 1).Return(nil, awserr.New("InsufficientFreeAddressesInSubnet", "", errors.New("err")))
-		m.awsutils.EXPECT().AllocIPAddresses(primaryENIid, 1).Return(nil, awserr.New("InsufficientFreeAddressesInSubnet", "", errors.New("err")))
+		m.awsutils.EXPECT().AllocIPAddresses(primaryENIid, 1).Return(nil, &smithy.GenericAPIError{
+			Code:    "InsufficientFreeAddressesInSubnet",
+			Message: originalErr.Error(),
+			Fault:   smithy.FaultUnknown,
+		})
+		m.awsutils.EXPECT().AllocIPAddresses(primaryENIid, 1).Return(nil, &smithy.GenericAPIError{
+			Code:    "InsufficientFreeAddressesInSubnet",
+			Message: originalErr.Error(),
+			Fault:   smithy.FaultUnknown,
+		})
 		m.awsutils.EXPECT().AllocENI(false, nil, "", 1).Return(eni2, nil)
 	} else {
 		m.awsutils.EXPECT().AllocENI(false, nil, "", 1).Return(eni2, nil)
@@ -718,12 +739,12 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig, subnetDiscovery bool) {
 			MAC:            primaryMAC,
 			DeviceNumber:   primaryDevice,
 			SubnetIPv4CIDR: primarySubnet,
-			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 				{
 					PrivateIpAddress: &testAddr1, Primary: &primary,
 				},
 			},
-			IPv4Prefixes: []*ec2.Ipv4PrefixSpecification{
+			IPv4Prefixes: []ec2types.Ipv4PrefixSpecification{
 				{
 					Ipv4Prefix: &testPrefix1,
 				},
@@ -734,12 +755,12 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig, subnetDiscovery bool) {
 			MAC:            secMAC,
 			DeviceNumber:   secDevice,
 			SubnetIPv4CIDR: secSubnet,
-			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 				{
 					PrivateIpAddress: &testAddr11, Primary: &primary,
 				},
 			},
-			IPv4Prefixes: []*ec2.Ipv4PrefixSpecification{
+			IPv4Prefixes: []ec2types.Ipv4PrefixSpecification{
 				{
 					Ipv4Prefix: &testPrefix2,
 				},
@@ -872,7 +893,7 @@ func TestTryAddIPToENI(t *testing.T) {
 			MAC:            primaryMAC,
 			DeviceNumber:   primaryDevice,
 			SubnetIPv4CIDR: primarySubnet,
-			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 				{
 					PrivateIpAddress: &testAddr1, Primary: &primary,
 				},
@@ -886,7 +907,7 @@ func TestTryAddIPToENI(t *testing.T) {
 			MAC:            secMAC,
 			DeviceNumber:   secDevice,
 			SubnetIPv4CIDR: secSubnet,
-			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 				{
 					PrivateIpAddress: &testAddr11, Primary: &notPrimary,
 				},
@@ -960,7 +981,7 @@ func TestNodeIPPoolReconcile(t *testing.T) {
 			MAC:            primaryMAC,
 			DeviceNumber:   primaryDevice,
 			SubnetIPv4CIDR: primarySubnet,
-			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 				{
 					PrivateIpAddress: &testAddr1, Primary: &primary,
 				},
@@ -1059,7 +1080,7 @@ func TestNodePrefixPoolReconcile(t *testing.T) {
 			MAC:            primaryMAC,
 			DeviceNumber:   primaryDevice,
 			SubnetIPv4CIDR: primarySubnet,
-			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 				{
 					PrivateIpAddress: &testAddr1, Primary: &primary,
 				},
@@ -1676,7 +1697,7 @@ func TestNodeIPPoolReconcileBadIMDSData(t *testing.T) {
 			MAC:            primaryMAC,
 			DeviceNumber:   primaryDevice,
 			SubnetIPv4CIDR: primarySubnet,
-			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 				{
 					PrivateIpAddress: &testAddr1, Primary: &primary,
 				},
@@ -1698,7 +1719,7 @@ func TestNodeIPPoolReconcileBadIMDSData(t *testing.T) {
 			MAC:            primaryMAC,
 			DeviceNumber:   primaryDevice,
 			SubnetIPv4CIDR: primarySubnet,
-			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 				{
 					PrivateIpAddress: &testAddr1, Primary: &primary,
 				},
@@ -1762,7 +1783,7 @@ func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
 			MAC:            primaryMAC,
 			DeviceNumber:   primaryDevice,
 			SubnetIPv4CIDR: primarySubnet,
-			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 				{
 					PrivateIpAddress: &testAddr1, Primary: &primary,
 				},
@@ -1784,7 +1805,7 @@ func TestNodePrefixPoolReconcileBadIMDSData(t *testing.T) {
 			MAC:            primaryMAC,
 			DeviceNumber:   primaryDevice,
 			SubnetIPv4CIDR: primarySubnet,
-			IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 				{
 					PrivateIpAddress: &testAddr1, Primary: &primary,
 				},
@@ -1819,7 +1840,7 @@ func getPrimaryENIMetadata() awsutils.ENIMetadata {
 		MAC:            primaryMAC,
 		DeviceNumber:   primaryDevice,
 		SubnetIPv4CIDR: primarySubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 			{
 				PrivateIpAddress: &testAddr1, Primary: &primary,
 			},
@@ -1844,7 +1865,7 @@ func getSecondaryENIMetadata() awsutils.ENIMetadata {
 		MAC:            secMAC,
 		DeviceNumber:   secDevice,
 		SubnetIPv4CIDR: primarySubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 			{
 				PrivateIpAddress: &testAddr3, Primary: &primary,
 			},
@@ -1866,12 +1887,12 @@ func getPrimaryENIMetadataPDenabled() awsutils.ENIMetadata {
 		MAC:            primaryMAC,
 		DeviceNumber:   primaryDevice,
 		SubnetIPv4CIDR: primarySubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 			{
 				PrivateIpAddress: &testAddr1, Primary: &primary,
 			},
 		},
-		IPv4Prefixes: []*ec2.Ipv4PrefixSpecification{
+		IPv4Prefixes: []ec2types.Ipv4PrefixSpecification{
 			{
 				Ipv4Prefix: &testPrefix1,
 			},
@@ -1890,12 +1911,12 @@ func getSecondaryENIMetadataPDenabled() awsutils.ENIMetadata {
 		MAC:            secMAC,
 		DeviceNumber:   secDevice,
 		SubnetIPv4CIDR: primarySubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 			{
 				PrivateIpAddress: &testAddr3, Primary: &primary,
 			},
 		},
-		IPv4Prefixes: []*ec2.Ipv4PrefixSpecification{
+		IPv4Prefixes: []ec2types.Ipv4PrefixSpecification{
 			{
 				Ipv4Prefix: &testPrefix2,
 			},
@@ -1926,7 +1947,7 @@ func TestIPAMContext_setupENI(t *testing.T) {
 		MAC:            primaryMAC,
 		DeviceNumber:   primaryDevice,
 		SubnetIPv4CIDR: primarySubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 			{
 				PrivateIpAddress: &testAddr1, Primary: &primary,
 			},
@@ -1972,7 +1993,7 @@ func TestIPAMContext_setupENIwithPDenabled(t *testing.T) {
 		MAC:            primaryMAC,
 		DeviceNumber:   primaryDevice,
 		SubnetIPv4CIDR: primarySubnet,
-		IPv4Addresses: []*ec2.NetworkInterfacePrivateIpAddress{
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 			{
 				PrivateIpAddress: &testAddr1, Primary: &primary,
 			},

@@ -14,20 +14,24 @@
 package awssession
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/smithy-go"
+	smithymiddleware "github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 
 	"strconv"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/endpoints"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
 // Http client timeout env for sessions
@@ -59,42 +63,85 @@ func getHTTPTimeout() time.Duration {
 }
 
 // New will return an session for service clients
-func New() *session.Session {
-	awsCfg := aws.Config{
-		MaxRetries: aws.Int(maxRetries),
-		HTTPClient: &http.Client{
-			Timeout: getHTTPTimeout(),
-		},
-		STSRegionalEndpoint: endpoints.RegionalSTSEndpoint,
+func New(ctx context.Context) (aws.Config, error) {
+	customHTTPClient := &http.Client{
+		Timeout: getHTTPTimeout()}
+	optFns := []func(*config.LoadOptions) error{
+		config.WithHTTPClient(customHTTPClient),
+		config.WithRetryMaxAttempts(maxRetries),
+		config.WithRetryer(func() aws.Retryer {
+			return retry.NewStandard()
+		}),
+		injectUserAgent,
 	}
 
 	endpoint := os.Getenv("AWS_EC2_ENDPOINT")
+
+	//TODO (senthilx)  - The endpoint resolver is using deprecated method, this should be moved to the services.
 	if endpoint != "" {
-		customResolver := func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
-			if service == ec2.EndpointsID {
-				return endpoints.ResolvedEndpoint{
-					URL: endpoint,
-				}, nil
-			}
-			return endpoints.DefaultResolver().EndpointFor(service, region, optFns...)
-		}
-		awsCfg.EndpointResolver = endpoints.ResolverFunc(customResolver)
+		optFns = append(optFns, config.WithEndpointResolver(aws.EndpointResolverFunc(
+			func(service, region string) (aws.Endpoint, error) {
+				if service == ec2.ServiceID {
+					return aws.Endpoint{
+						URL: endpoint,
+					}, nil
+				}
+				// Fall back to default resolution
+				return aws.Endpoint{}, &aws.EndpointNotFoundError{}
+			})))
+
 	}
 
-	sess := session.Must(session.NewSession(&awsCfg))
-	//injecting session handler info
-	injectUserAgent(&sess.Handlers)
+	cfg, err := config.LoadDefaultConfig(ctx, optFns...)
 
-	return sess
+	if err != nil {
+		return aws.Config{}, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	return cfg, nil
 }
 
 // injectUserAgent will inject app specific user-agent into awsSDK
-func injectUserAgent(handlers *request.Handlers) {
+func injectUserAgent(loadOptions *config.LoadOptions) error {
 	version := utils.GetEnv(envVpcCniVersion, "")
-	handlers.Build.PushFrontNamed(request.NamedHandler{
-		Name: fmt.Sprintf("%s/user-agent", "amazon-vpc-cni-k8s"),
-		Fn: request.MakeAddToUserAgentHandler(
-			"amazon-vpc-cni-k8s",
-			"version/"+version),
+	userAgent := fmt.Sprintf("amazon-vpc-cni-k8s/version/%s", version)
+
+	loadOptions.APIOptions = append(loadOptions.APIOptions, func(stack *smithymiddleware.Stack) error {
+		return stack.Build.Add(&addUserAgentMiddleware{
+			userAgent: userAgent,
+		}, smithymiddleware.After)
 	})
+
+	return nil
+}
+
+type addUserAgentMiddleware struct {
+	userAgent string
+}
+
+func (m *addUserAgentMiddleware) HandleBuild(ctx context.Context, in smithymiddleware.BuildInput, next smithymiddleware.BuildHandler) (out smithymiddleware.BuildOutput, metadata smithymiddleware.Metadata, err error) {
+	// Simply pass through to the next handler in the middleware chain
+	return next.HandleBuild(ctx, in)
+}
+
+func (m *addUserAgentMiddleware) ID() string {
+	return "AddUserAgent"
+}
+
+func (m *addUserAgentMiddleware) HandleFinalize(ctx context.Context, in smithymiddleware.FinalizeInput, next smithymiddleware.FinalizeHandler) (
+	out smithymiddleware.FinalizeOutput, metadata smithymiddleware.Metadata, err error) {
+	req, ok := in.Request.(*smithyhttp.Request)
+	if !ok {
+		return out, metadata, &smithy.SerializationError{Err: fmt.Errorf("unknown request type %T", in.Request)}
+	}
+
+	userAgent := req.Header.Get("User-Agent")
+	if userAgent == "" {
+		userAgent = m.userAgent
+	} else {
+		userAgent += " " + m.userAgent
+	}
+	req.Header.Set("User-Agent", userAgent)
+
+	return next.HandleFinalize(ctx, in)
 }
