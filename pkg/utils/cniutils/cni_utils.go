@@ -13,7 +13,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/imds"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
 const (
@@ -148,7 +148,7 @@ func IsIptableTargetNotExist(err error) bool {
 }
 
 // PrefixSimilar checks if prefix pool and eni prefix are equivalent.
-func PrefixSimilar(prefixPool []string, eniPrefixes []*ec2.Ipv4PrefixSpecification) bool {
+func PrefixSimilar(prefixPool []string, eniPrefixes []ec2types.Ipv4PrefixSpecification) bool {
 	if len(prefixPool) != len(eniPrefixes) {
 		return false
 	}
@@ -159,7 +159,7 @@ func PrefixSimilar(prefixPool []string, eniPrefixes []*ec2.Ipv4PrefixSpecificati
 	}
 
 	for _, prefix := range eniPrefixes {
-		if prefix == nil || prefix.Ipv4Prefix == nil {
+		if prefix.Ipv4Prefix == nil {
 			return false
 		}
 		if _, exists := prefixPoolSet[*prefix.Ipv4Prefix]; !exists {
@@ -170,7 +170,7 @@ func PrefixSimilar(prefixPool []string, eniPrefixes []*ec2.Ipv4PrefixSpecificati
 }
 
 // IPsSimilar checks if ipPool and eniIPs are equivalent.
-func IPsSimilar(ipPool []string, eniIPs []*ec2.NetworkInterfacePrivateIpAddress) bool {
+func IPsSimilar(ipPool []string, eniIPs []ec2types.NetworkInterfacePrivateIpAddress) bool {
 	// Here we do +1 in ipPool because eniIPs will also have primary IP which is not used by pods.
 	if len(ipPool)+1 != len(eniIPs) {
 		return false
@@ -182,7 +182,7 @@ func IPsSimilar(ipPool []string, eniIPs []*ec2.NetworkInterfacePrivateIpAddress)
 	}
 
 	for _, ip := range eniIPs {
-		if ip == nil || ip.PrivateIpAddress == nil || ip.Primary == nil {
+		if ip.PrivateIpAddress == nil || ip.Primary == nil {
 			return false
 		}
 		if *ip.Primary {
