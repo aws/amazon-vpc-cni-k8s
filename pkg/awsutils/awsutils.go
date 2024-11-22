@@ -472,9 +472,9 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 	log.Debugf("Found vpc-id: %s ", cache.vpcID)
 
 	// Now that we have VPC, we can checking if subnet discovery disable usage of IPs
-	cache.subnetDiscoverySkipPrimary, err = cache.isSubnetDiscoveryDisableOnSubnet(cache.subnetID)
+	cache.subnetDiscoverySkipPrimary, err = cache.isSubnetDiscoveryDisabledOnSubnet(cache.subnetID)
 	if err != nil {
-		awsAPIErrInc("isSubnetDiscoveryDisableOnSubnet", err)
+		awsAPIErrInc("isSubnetDiscoveryDisabledOnSubnet", err)
 		return err
 	}
 
@@ -2140,7 +2140,7 @@ func (cache *EC2InstanceMetadataCache) IsPrimaryENI(eniID string) bool {
 }
 
 // Check tags on Subnet and return if it's tagged with subnetDiscoveryTagKey = subnetDiscoveryTagValueInactive
-func (cache *EC2InstanceMetadataCache) isSubnetDiscoveryDisableOnSubnet(subnetId string) (bool, error) {
+func (cache *EC2InstanceMetadataCache) isSubnetDiscoveryDisabledOnSubnet(subnetId string) (bool, error) {
 	log.Debugf("Checking Subnet Discovery on %s", subnetId)
 	subnetResult, vpcErr := cache.getVpcSubnets()
 	if vpcErr != nil {

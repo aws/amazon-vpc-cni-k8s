@@ -2075,3 +2075,90 @@ func Test_loadAdditionalENITags(t *testing.T) {
 		})
 	}
 }
+
+func Test_isSubnetDiscoveryDisableOnSubnet(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	secondSubnetId := "subnet-7b245523"
+	mockMetadata := testMetadata(nil)
+
+	ipAddressCount := int64(100)
+
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:             mockEC2,
+		imds:               TypedIMDS{mockMetadata},
+		instanceType:       "c5n.18xlarge",
+		useSubnetDiscovery: true,
+	}
+
+	tests := []struct {
+		name         string
+		subnetResult *ec2.DescribeSubnetsOutput
+		param        string
+		want         bool
+	}{
+		{
+			name: "We check a disabled subnet",
+			subnetResult: &ec2.DescribeSubnetsOutput{
+				Subnets: []*ec2.Subnet{{
+					AvailableIpAddressCount: aws.Int64(ipAddressCount),
+					SubnetId:                aws.String(subnetID),
+					Tags: []*ec2.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+					{
+						AvailableIpAddressCount: aws.Int64(ipAddressCount),
+						SubnetId:                aws.String(secondSubnetId),
+						Tags: []*ec2.Tag{
+							{
+								Key:   aws.String("kubernetes.io/role/cni"),
+								Value: aws.String("1"),
+							},
+						},
+					}},
+			},
+			param: subnetID,
+			want:  true,
+		},
+		{
+			name: "We check an enabled subnet",
+			subnetResult: &ec2.DescribeSubnetsOutput{
+				Subnets: []*ec2.Subnet{{
+					AvailableIpAddressCount: aws.Int64(ipAddressCount),
+					SubnetId:                aws.String(subnetID),
+					Tags: []*ec2.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+					{
+						AvailableIpAddressCount: aws.Int64(ipAddressCount),
+						SubnetId:                aws.String(secondSubnetId),
+						Tags: []*ec2.Tag{
+							{
+								Key:   aws.String("kubernetes.io/role/cni"),
+								Value: aws.String("1"),
+							},
+						},
+					}},
+			},
+			param: secondSubnetId,
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockEC2.EXPECT().DescribeSubnetsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(tt.subnetResult, nil)
+			got, _ := cache.isSubnetDiscoveryDisabledOnSubnet(tt.param)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
