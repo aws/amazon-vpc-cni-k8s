@@ -5,7 +5,7 @@ on:
     branches:
       - "master"
       - "release*"
-      - "sdkv2*"
+      - "sdk*"
 
 permissions:
   id-token: write
