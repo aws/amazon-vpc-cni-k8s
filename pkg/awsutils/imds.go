@@ -602,6 +602,12 @@ func IsNotFound(err error) bool {
 		return re.Response.StatusCode == http.StatusNotFound
 	}
 
+	var oe *smithy.OperationError
+	if errors.As(err, &oe) {
+		// Check if the error message contains status code 404
+		return strings.Contains(oe.Error(), "StatusCode: 404")
+	}
+
 	// Check for any APIError (including imdsRequestError)
 	var ae smithy.APIError
 	if errors.As(err, &ae) {
