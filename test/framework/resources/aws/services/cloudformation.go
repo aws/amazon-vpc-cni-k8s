@@ -58,7 +58,7 @@ func (d *defaultCloudFormation) WaitTillStackCreated(ctx context.Context, stackN
 	}
 
 	var describeStackOutput *cloudformation.DescribeStacksOutput
-	// Using the provided ctx, ctx.Done() allows wait.PollImmediateUtil to cancel if required.
+	// Using the provided ctx, ctx.Done() allows wait.PollImmediateUtil to cancel
 	err = wait.PollImmediateUntil(utils.PollIntervalLong, func() (done bool, err error) {
 		describeStackOutput, err = d.client.DescribeStacks(ctx, describeStackInput)
 		if err != nil {

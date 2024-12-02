@@ -260,8 +260,8 @@ type ENIMetadata struct {
 // PrimaryIPv4Address returns the primary IPv4 address of this node
 func (eni ENIMetadata) PrimaryIPv4Address() string {
 	for _, addr := range eni.IPv4Addresses {
-		if addr.Primary != nil && *addr.Primary {
-			return *addr.PrivateIpAddress
+		if addr.Primary != nil && aws.ToBool(addr.Primary) {
+			return aws.ToString(addr.PrivateIpAddress)
 		}
 	}
 	return ""
@@ -357,7 +357,6 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 		return "", newIMDSRequestError(p, err)
 	}
 
-	// Read the content
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -400,7 +399,6 @@ func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Ena
 	if err != nil {
 		return nil, fmt.Errorf("unable to load SDK config, %v", err)
 	}
-	// TODO (senthilx) - Revisit this.
 	ec2SVC := ec2wrapper.New(awsCfg)
 	cache.ec2SVC = ec2SVC
 	err = cache.initWithEC2Metadata(ctx)
@@ -2138,6 +2136,7 @@ func (cache *EC2InstanceMetadataCache) IsPrimaryENI(eniID string) bool {
 }
 
 func checkAPIErrorAndBroadcastEvent(err error, api string) {
+	log.Debugf("checkAPIErrorAndBroadcastEvent resulted in %v", err)
 	if errors.As(err, &awsAPIError) {
 		if awsAPIError.ErrorCode() == "UnauthorizedOperation" {
 			if eventRecorder := eventrecorder.Get(); eventRecorder != nil {

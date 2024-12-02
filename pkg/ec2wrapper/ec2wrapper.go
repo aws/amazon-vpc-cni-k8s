@@ -4,7 +4,6 @@ package ec2wrapper
 import (
 	"context"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -33,12 +32,6 @@ type EC2Wrapper struct {
 // NewMetricsClient returns an instance of the EC2 wrapper
 func NewMetricsClient() (*EC2Wrapper, error) {
 	ctx := context.TODO()
-	// TODO (senthilx) - how do I use this awsconfig at line 50
-	awsconfig, err := awssession.New(ctx)
-	log.Infof("loading default config %v", awsconfig)
-	if err != nil {
-		return &EC2Wrapper{}, err
-	}
 	ec2MetadataClient, err := ec2metadatawrapper.New(ctx)
 	if err != nil {
 		return &EC2Wrapper{}, err

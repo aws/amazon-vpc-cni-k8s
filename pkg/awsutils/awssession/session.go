@@ -62,7 +62,7 @@ func getHTTPTimeout() time.Duration {
 	return httpTimeoutValue
 }
 
-// New will return an session for service clients
+// New will return aws.Config to be used by Service Clients.
 func New(ctx context.Context) (aws.Config, error) {
 	customHTTPClient := &http.Client{
 		Timeout: getHTTPTimeout()}
@@ -76,8 +76,6 @@ func New(ctx context.Context) (aws.Config, error) {
 	}
 
 	endpoint := os.Getenv("AWS_EC2_ENDPOINT")
-
-	//TODO (senthilx)  - The endpoint resolver is using deprecated method, this should be moved to the services.
 	if endpoint != "" {
 		optFns = append(optFns, config.WithEndpointResolver(aws.EndpointResolverFunc(
 			func(service, region string) (aws.Endpoint, error) {

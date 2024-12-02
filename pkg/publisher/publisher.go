@@ -58,7 +58,7 @@ var (
 	}
 )
 
-// cloudWatchAPI is a custom interface that includes only the methods we need from the CloudWatch API
+// cloudWatchAPI defines the interface with methods required from CloudWatch Service
 type cloudWatchAPI interface {
 	PutMetricData(ctx context.Context, params *cloudwatch.PutMetricDataInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.PutMetricDataOutput, error)
 }
