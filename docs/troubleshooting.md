@@ -79,6 +79,7 @@ ipamd.log.2018-05-16-01  ipamd.log.2018-05-16-06  ipamd.log.2018-05-16-11  ipamd
 // download
 /var/log/eks_i-01111ad54b6cfaa19_2020-03-11_0103-UTC_0.6.0.tar.gz
 ```
+You can share log bundle with cni team on this email k8s-awscni-triage@amazon.com.
 
 ### ipamD debugging commands
 
