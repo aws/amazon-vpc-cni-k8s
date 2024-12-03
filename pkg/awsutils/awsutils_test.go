@@ -57,6 +57,7 @@ const (
 	metadataSubnetCIDR   = "/subnet-ipv4-cidr-block"
 	metadataIPv4s        = "/local-ipv4s"
 	metadataIPv4Prefixes = "/ipv4-prefix"
+	metadataIPv6s        = "/ipv6s"
 	metadataIPv6Prefixes = "/ipv6-prefix"
 
 	az                   = "us-east-1a"
@@ -80,12 +81,14 @@ const (
 	eni2Device           = "1"
 	eni2PrivateIP        = "10.0.0.2"
 	eni2Prefix           = "10.0.2.0/28"
+	eni2v6IP             = "2001:db8:8:4::2"
 	eni2v6Prefix         = "2001:db8::/64"
 	eni2ID               = "eni-12341234"
 	metadataVPCIPv4CIDRs = "192.168.0.0/16	100.66.0.0/1"
 	myNodeName           = "testNodeName"
 	imdsMACFields        = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks device-number interface-id subnet-ipv4-cidr-block local-ipv4s ipv4-prefix ipv6-prefix"
 	imdsMACFieldsEfaOnly = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks device-number interface-id subnet-ipv4-cidr-block ipv4-prefix ipv6-prefix"
+	imdsMACFieldsV6Only  = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks device-number interface-id subnet-ipv6-cidr-blocks ipv6s ipv6-prefix"
 )
 
 func testMetadata(overrides map[string]interface{}) FakeIMDS {
@@ -232,6 +235,23 @@ func TestGetAttachedENIsWithEfaOnly(t *testing.T) {
 		metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
 		metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
 		metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
+	})
+
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}}
+	ens, err := cache.GetAttachedENIs()
+	if assert.NoError(t, err) {
+		assert.Equal(t, len(ens), 2)
+	}
+}
+
+func TestGetAttachedENIsWithIPv6Only(t *testing.T) {
+	mockMetadata := testMetadata(map[string]interface{}{
+		metadataMACPath:                                  primaryMAC + " " + eni2MAC,
+		metadataMACPath + eni2MAC:                        imdsMACFieldsV6Only,
+		metadataMACPath + eni2MAC + metadataDeviceNum:    eni2Device,
+		metadataMACPath + eni2MAC + metadataInterface:    eni2ID,
+		metadataMACPath + eni2MAC + metadataIPv6s:        eni2v6IP,
+		metadataMACPath + eni2MAC + metadataIPv6Prefixes: eni2v6Prefix,
 	})
 
 	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}}
