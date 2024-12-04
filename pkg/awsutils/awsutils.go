@@ -260,8 +260,8 @@ type ENIMetadata struct {
 // PrimaryIPv4Address returns the primary IPv4 address of this node
 func (eni ENIMetadata) PrimaryIPv4Address() string {
 	for _, addr := range eni.IPv4Addresses {
-		if addr.Primary != nil && *addr.Primary {
-			return *addr.PrivateIpAddress
+		if addr.Primary != nil && aws.ToBool(addr.Primary) {
+			return aws.ToString(addr.PrivateIpAddress)
 		}
 	}
 	return ""
@@ -357,7 +357,6 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 		return "", newIMDSRequestError(p, err)
 	}
 
-	// Read the content
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -400,7 +399,6 @@ func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Ena
 	if err != nil {
 		return nil, fmt.Errorf("unable to load SDK config, %v", err)
 	}
-	// TODO (senthilx) - Revisit this.
 	ec2SVC := ec2wrapper.New(awsCfg)
 	cache.ec2SVC = ec2SVC
 	err = cache.initWithEC2Metadata(ctx)
@@ -631,7 +629,8 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		awsAPIErrInc("GetMACImdsFields", err)
 		return ENIMetadata{}, err
 	}
-	ipInfoAvailable := false
+	ipv4Available := false
+	ipv6Available := false
 	// Efa-only interfaces do not have any ipv4s or ipv6s associated with it. If we don't find any local-ipv4 or ipv6 info in imds we assume it to be efa-only interface and validate this later via ec2 call
 	for _, field := range macImdsFields {
 		if field == "local-ipv4s" {
@@ -641,7 +640,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 				return ENIMetadata{}, err
 			}
 			if len(imdsIPv4s) > 0 {
-				ipInfoAvailable = true
+				ipv4Available = true
 				log.Debugf("Found IPv4 addresses associated with interface. This is not efa-only interface")
 				break
 			}
@@ -651,14 +650,14 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			if err != nil {
 				awsAPIErrInc("GetIPv6s", err)
 			} else if len(imdsIPv6s) > 0 {
-				ipInfoAvailable = true
+				ipv6Available = true
 				log.Debugf("Found IPv6 addresses associated with interface. This is not efa-only interface")
 				break
 			}
 		}
 	}
 
-	if !ipInfoAvailable {
+	if !ipv4Available && !ipv6Available {
 		return ENIMetadata{
 			ENIID:          eniID,
 			MAC:            eniMAC,
@@ -673,23 +672,29 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	}
 
 	// Get IPv4 and IPv6 addresses assigned to interface
-	cidr, err := cache.imds.GetSubnetIPv4CIDRBlock(ctx, eniMAC)
-	if err != nil {
-		awsAPIErrInc("GetSubnetIPv4CIDRBlock", err)
-		return ENIMetadata{}, err
-	}
+	var ec2ip4s []ec2types.NetworkInterfacePrivateIpAddress
+	var subnetV4Cidr string
+	if ipv4Available {
+		cidr, err := cache.imds.GetSubnetIPv4CIDRBlock(ctx, eniMAC)
+		if err != nil {
+			awsAPIErrInc("GetSubnetIPv4CIDRBlock", err)
+			return ENIMetadata{}, err
+		}
 
-	imdsIPv4s, err := cache.imds.GetLocalIPv4s(ctx, eniMAC)
-	if err != nil {
-		awsAPIErrInc("GetLocalIPv4s", err)
-		return ENIMetadata{}, err
-	}
+		subnetV4Cidr = cidr.String()
 
-	ec2ip4s := make([]ec2types.NetworkInterfacePrivateIpAddress, len(imdsIPv4s))
-	for i, ip4 := range imdsIPv4s {
-		ec2ip4s[i] = ec2types.NetworkInterfacePrivateIpAddress{
-			Primary:          aws.Bool(i == 0),
-			PrivateIpAddress: aws.String(ip4.String()),
+		imdsIPv4s, err := cache.imds.GetLocalIPv4s(ctx, eniMAC)
+		if err != nil {
+			awsAPIErrInc("GetLocalIPv4s", err)
+			return ENIMetadata{}, err
+		}
+
+		ec2ip4s = make([]ec2types.NetworkInterfacePrivateIpAddress, len(imdsIPv4s))
+		for i, ip4 := range imdsIPv4s {
+			ec2ip4s[i] = ec2types.NetworkInterfacePrivateIpAddress{
+				Primary:          aws.Bool(i == 0),
+				PrivateIpAddress: aws.String(ip4.String()),
+			}
 		}
 	}
 
@@ -753,7 +758,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		ENIID:          eniID,
 		MAC:            eniMAC,
 		DeviceNumber:   deviceNum,
-		SubnetIPv4CIDR: cidr.String(),
+		SubnetIPv4CIDR: subnetV4Cidr,
 		IPv4Addresses:  ec2ip4s,
 		IPv4Prefixes:   ec2ipv4Prefixes,
 		SubnetIPv6CIDR: subnetV6Cidr,
@@ -2138,6 +2143,7 @@ func (cache *EC2InstanceMetadataCache) IsPrimaryENI(eniID string) bool {
 }
 
 func checkAPIErrorAndBroadcastEvent(err error, api string) {
+	log.Debugf("checkAPIErrorAndBroadcastEvent resulted in %v", err)
 	if errors.As(err, &awsAPIError) {
 		if awsAPIError.ErrorCode() == "UnauthorizedOperation" {
 			if eventRecorder := eventrecorder.Get(); eventRecorder != nil {

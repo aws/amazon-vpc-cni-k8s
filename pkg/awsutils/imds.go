@@ -58,16 +58,6 @@ func newIMDSRequestError(requestKey string, err error) *imdsRequestError {
 	}
 }
 
-// Constructor with explicit code and fault
-func newIMDSRequestErrorWithDetails(requestKey string, err error, code string, fault smithy.ErrorFault) *imdsRequestError {
-	return &imdsRequestError{
-		requestKey: requestKey,
-		err:        err,
-		code:       code,
-		fault:      fault,
-	}
-}
-
 func (e *imdsRequestError) Error() string {
 	return fmt.Sprintf("failed to retrieve %s from instance metadata %v", e.requestKey, e.err)
 }
@@ -125,7 +115,6 @@ func (typedimds TypedIMDS) getList(ctx context.Context, key string) ([]string, e
 		return nil, newIMDSRequestError(key, fmt.Errorf("empty response"))
 	}
 
-	// Read the content
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -145,7 +134,6 @@ func (typedimds TypedIMDS) GetAZ(ctx context.Context) (string, error) {
 	if output == nil || output.Content == nil {
 		return "", newIMDSRequestError("placement/availability-zone", fmt.Errorf("empty response"))
 	}
-	// Read the content
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -164,7 +152,6 @@ func (typedimds TypedIMDS) GetInstanceType(ctx context.Context) (string, error) 
 	if output == nil || output.Content == nil {
 		return "", newIMDSRequestError("instance-type", fmt.Errorf("empty response"))
 	}
-	// Read the content
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -188,7 +175,6 @@ func (typedimds TypedIMDS) GetInstanceID(ctx context.Context) (string, error) {
 	if output == nil || output.Content == nil {
 		return "", newIMDSRequestError("instance-id", fmt.Errorf("empty response"))
 	}
-	// Read the content
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -207,7 +193,6 @@ func (typedimds TypedIMDS) GetMAC(ctx context.Context) (string, error) {
 	if output == nil || output.Content == nil {
 		return "", newIMDSRequestError("mac", fmt.Errorf("empty response"))
 	}
-	// Read the content
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -220,9 +205,11 @@ func (typedimds TypedIMDS) GetMAC(ctx context.Context) (string, error) {
 func (typedimds TypedIMDS) GetMACs(ctx context.Context) ([]string, error) {
 	list, err := typedimds.getList(ctx, "network/interfaces/macs")
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
 			log.Warnf("%v", err)
-			return nil, imdsErr.err
+			return nil, newIMDSRequestError(err.Error(), err)
 		}
 		return nil, err
 	}
@@ -238,7 +225,9 @@ func (typedimds TypedIMDS) GetMACImdsFields(ctx context.Context, mac string) ([]
 	key := fmt.Sprintf("network/interfaces/macs/%s", mac)
 	list, err := typedimds.getList(ctx, key)
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
 			log.Warnf("%v", err)
 			return nil, imdsErr.err
 		}
@@ -262,7 +251,6 @@ func (typedimds TypedIMDS) GetInterfaceID(ctx context.Context, mac string) (stri
 	if output == nil || output.Content == nil {
 		return "", newIMDSRequestError(key, fmt.Errorf("empty response"))
 	}
-	// Read the content
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -280,7 +268,6 @@ func (typedimds TypedIMDS) getInt(ctx context.Context, key string) (int, error) 
 	if output == nil || output.Content == nil {
 		return 0, newIMDSRequestError(key, fmt.Errorf("empty response"))
 	}
-	// Read the content
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -318,9 +305,11 @@ func (typedimds TypedIMDS) GetSubnetID(ctx context.Context, mac string) (string,
 
 	// Now handle any errors, but return subnetID if it was read
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
 			log.Warnf("Warning: %v", err)
-			return subnetID, imdsErr.err
+			return subnetID, newIMDSRequestError(err.Error(), err)
 		}
 		return "", err
 	}
@@ -346,9 +335,11 @@ func (typedimds TypedIMDS) GetVpcID(ctx context.Context, mac string) (string, er
 
 	// Handle errors but preserve any partial vpcID data
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
 			log.Warnf("Warning: %v", err)
-			return vpcID, imdsErr.err
+			return vpcID, newIMDSRequestError(err.Error(), err)
 		}
 		return "", err
 	}
@@ -361,9 +352,11 @@ func (typedimds TypedIMDS) GetSecurityGroupIDs(ctx context.Context, mac string) 
 	key := fmt.Sprintf("network/interfaces/macs/%s/security-group-ids", mac)
 	sgs, err := typedimds.getList(ctx, key)
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
 			log.Warnf("%v", err)
-			return sgs, imdsErr.err
+			return sgs, newIMDSRequestError(err.Error(), err)
 		}
 		return nil, err
 	}
@@ -379,7 +372,6 @@ func (typedimds TypedIMDS) getIP(ctx context.Context, key string) (net.IP, error
 	if output == nil || output.Content == nil {
 		return nil, newIMDSRequestError(key, fmt.Errorf("empty response"))
 	}
-	// Read the content
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -419,7 +411,6 @@ func (typedimds TypedIMDS) getCIDR(ctx context.Context, key string) (net.IPNet, 
 	if output == nil || output.Content == nil {
 		return net.IPNet{}, newIMDSRequestError(key, fmt.Errorf("empty response"))
 	}
-	// Read the content
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -459,9 +450,11 @@ func (typedimds TypedIMDS) GetLocalIPv4s(ctx context.Context, mac string) ([]net
 	key := fmt.Sprintf("network/interfaces/macs/%s/local-ipv4s", mac)
 	ips, err := typedimds.getIPs(ctx, key)
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
 			log.Warnf("%v", err)
-			return nil, imdsErr.err
+			return nil, newIMDSRequestError(err.Error(), err)
 		}
 		return nil, err
 	}
@@ -474,12 +467,14 @@ func (typedimds TypedIMDS) GetIPv4Prefixes(ctx context.Context, mac string) ([]n
 	prefixes, err := typedimds.getCIDRs(ctx, key)
 
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			if IsNotFound(imdsErr.err) {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
+			if IsNotFound(err) {
 				return nil, nil
 			}
 			log.Warnf("%v", err)
-			return nil, imdsErr.err
+			return nil, newIMDSRequestError(err.Error(), err)
 		}
 		return nil, err
 	}
@@ -491,12 +486,14 @@ func (typedimds TypedIMDS) GetIPv6Prefixes(ctx context.Context, mac string) ([]n
 	key := fmt.Sprintf("network/interfaces/macs/%s/ipv6-prefix", mac)
 	prefixes, err := typedimds.getCIDRs(ctx, key)
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			if IsNotFound(imdsErr.err) {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
+			if IsNotFound(err) {
 				return nil, nil
 			}
 			log.Warnf("%v", err)
-			return nil, imdsErr.err
+			return nil, newIMDSRequestError(err.Error(), err)
 		}
 		return nil, err
 	}
@@ -508,13 +505,15 @@ func (typedimds TypedIMDS) GetIPv6s(ctx context.Context, mac string) ([]net.IP, 
 	key := fmt.Sprintf("network/interfaces/macs/%s/ipv6s", mac)
 	ips, err := typedimds.getIPs(ctx, key)
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			if IsNotFound(imdsErr.err) {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
+			if IsNotFound(err) {
 				// No IPv6.  Not an error, just a disappointment :(
 				return nil, nil
 			}
 			log.Warnf("%v", err)
-			return nil, imdsErr.err
+			return nil, newIMDSRequestError(err.Error(), err)
 		}
 		return nil, err
 	}
@@ -532,9 +531,11 @@ func (typedimds TypedIMDS) GetVPCIPv4CIDRBlocks(ctx context.Context, mac string)
 	key := fmt.Sprintf("network/interfaces/macs/%s/vpc-ipv4-cidr-blocks", mac)
 	cidrs, err := typedimds.getCIDRs(ctx, key)
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
 			log.Warnf("%v", err)
-			return cidrs, imdsErr.err
+			return cidrs, newIMDSRequestError(err.Error(), err)
 		}
 		return nil, err
 	}
@@ -546,13 +547,15 @@ func (typedimds TypedIMDS) GetVPCIPv6CIDRBlocks(ctx context.Context, mac string)
 	key := fmt.Sprintf("network/interfaces/macs/%s/vpc-ipv6-cidr-blocks", mac)
 	ipnets, err := typedimds.getCIDRs(ctx, key)
 	if err != nil {
-		if imdsErr, ok := err.(*imdsRequestError); ok {
-			if IsNotFound(imdsErr.err) {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
+			if IsNotFound(err) {
 				// No IPv6.  Not an error, just a disappointment :(
 				return nil, nil
 			}
 			log.Warnf("%v", err)
-			return nil, imdsErr.err
+			return nil, newIMDSRequestError(err.Error(), err)
 		}
 		return nil, nil
 	}
@@ -563,30 +566,6 @@ func (typedimds TypedIMDS) GetVPCIPv6CIDRBlocks(ctx context.Context, mac string)
 func (typedimds TypedIMDS) GetSubnetIPv6CIDRBlocks(ctx context.Context, mac string) (net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/subnet-ipv6-cidr-blocks", mac)
 	return typedimds.getCIDR(ctx, key)
-}
-
-func IsNotFoundResponse(err error) bool {
-	log.Warnf("IsNotFound 1: %v", err)
-	if err == nil {
-		return false
-	}
-
-	var re *awshttp.ResponseError
-	var oe *smithy.OperationError
-	var ae smithy.APIError
-	if errors.As(err, &oe) {
-		log.Warnf("IsNotFound 2: failed to call service: %s, operation: %s, error: %v", oe.Service(), oe.Operation(), oe.Unwrap())
-	}
-	if errors.As(err, &ae) {
-		log.Warnf("IsNotFound 3: code: %s, message: %s, fault: %s", ae.ErrorCode(), ae.ErrorMessage(), ae.ErrorFault().String())
-	}
-
-	if errors.As(err, &re) {
-		log.Warnf("IsNotFound: %v %d", re, re.Response.StatusCode)
-		return re.Response.StatusCode == http.StatusNotFound
-	}
-
-	return false
 }
 
 // IsNotFound returns true if the error was caused by an AWS API 404 response.
@@ -602,6 +581,11 @@ func IsNotFound(err error) bool {
 		return re.Response.StatusCode == http.StatusNotFound
 	}
 
+	var oe *smithy.OperationError
+	if errors.As(err, &oe) {
+		// Check if the error message contains status code 404
+		return strings.Contains(oe.Error(), "StatusCode: 404")
+	}
 	// Check for any APIError (including imdsRequestError)
 	var ae smithy.APIError
 	if errors.As(err, &ae) {
