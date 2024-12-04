@@ -6,7 +6,6 @@ require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20231212223725-21c4bd73015b
 	github.com/aws/amazon-vpc-resource-controller-k8s v1.5.0
-	github.com/aws/aws-sdk-go v1.55.5
 	github.com/aws/aws-sdk-go-v2 v1.32.5
 	github.com/aws/aws-sdk-go-v2/config v1.28.4
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.19
@@ -60,6 +59,7 @@ require (
 	github.com/Masterminds/squirrel v1.5.4 // indirect
 	github.com/Microsoft/hcsshim v0.12.3 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20200428143746-21a406dcc535 // indirect
+	github.com/aws/aws-sdk-go v1.51.32 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.45 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.24 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.24 // indirect
