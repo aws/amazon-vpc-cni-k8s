@@ -76,7 +76,6 @@ func New(ctx context.Context) (aws.Config, error) {
 	}
 
 	endpoint := os.Getenv("AWS_EC2_ENDPOINT")
-
 	if endpoint != "" {
 		optFns = append(optFns, config.WithEndpointResolver(aws.EndpointResolverFunc(
 			func(service, region string) (aws.Endpoint, error) {

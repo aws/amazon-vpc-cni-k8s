@@ -134,6 +134,7 @@ func (typedimds TypedIMDS) GetAZ(ctx context.Context) (string, error) {
 	if output == nil || output.Content == nil {
 		return "", newIMDSRequestError("placement/availability-zone", fmt.Errorf("empty response"))
 	}
+
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -149,9 +150,11 @@ func (typedimds TypedIMDS) GetInstanceType(ctx context.Context) (string, error) 
 	if err != nil {
 		return "", err
 	}
+
 	if output == nil || output.Content == nil {
 		return "", newIMDSRequestError("instance-type", fmt.Errorf("empty response"))
 	}
+
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -172,9 +175,11 @@ func (typedimds TypedIMDS) GetInstanceID(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	if output == nil || output.Content == nil {
 		return "", newIMDSRequestError("instance-id", fmt.Errorf("empty response"))
 	}
+
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -193,6 +198,7 @@ func (typedimds TypedIMDS) GetMAC(ctx context.Context) (string, error) {
 	if output == nil || output.Content == nil {
 		return "", newIMDSRequestError("mac", fmt.Errorf("empty response"))
 	}
+
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -251,6 +257,7 @@ func (typedimds TypedIMDS) GetInterfaceID(ctx context.Context, mac string) (stri
 	if output == nil || output.Content == nil {
 		return "", newIMDSRequestError(key, fmt.Errorf("empty response"))
 	}
+
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -268,6 +275,7 @@ func (typedimds TypedIMDS) getInt(ctx context.Context, key string) (int, error) 
 	if output == nil || output.Content == nil {
 		return 0, newIMDSRequestError(key, fmt.Errorf("empty response"))
 	}
+
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -372,6 +380,7 @@ func (typedimds TypedIMDS) getIP(ctx context.Context, key string) (net.IP, error
 	if output == nil || output.Content == nil {
 		return nil, newIMDSRequestError(key, fmt.Errorf("empty response"))
 	}
+
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -411,6 +420,7 @@ func (typedimds TypedIMDS) getCIDR(ctx context.Context, key string) (net.IPNet, 
 	if output == nil || output.Content == nil {
 		return net.IPNet{}, newIMDSRequestError(key, fmt.Errorf("empty response"))
 	}
+
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
@@ -586,6 +596,7 @@ func IsNotFound(err error) bool {
 		// Check if the error message contains status code 404
 		return strings.Contains(oe.Error(), "StatusCode: 404")
 	}
+
 	// Check for any APIError (including imdsRequestError)
 	var ae smithy.APIError
 	if errors.As(err, &ae) {
