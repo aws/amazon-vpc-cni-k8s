@@ -14,6 +14,7 @@
 package metrics_helper
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"time"
@@ -21,8 +22,10 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	cloudwatchtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/apps/v1"
@@ -48,7 +51,7 @@ var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 			time.Sleep(time.Minute * 3)
 
 			getMetricStatisticsInput := &cloudwatch.GetMetricStatisticsInput{
-				Dimensions: []*cloudwatch.Dimension{
+				Dimensions: []cloudwatchtypes.Dimension{
 					{
 						Name:  aws.String("CLUSTER_ID"),
 						Value: aws.String(ngName),
@@ -56,17 +59,17 @@ var _ = Describe("test cni-metrics-helper publishes metrics", func() {
 				},
 				MetricName: aws.String("addReqCount"),
 				Namespace:  aws.String("Kubernetes"),
-				Period:     aws.Int64(int64(30)),
-				// Start time should sync with when when this test started
+				Period:     aws.Int32(int32(30)),
+				// Start time should sync with when this test started
 				StartTime:  aws.Time(time.Now().Add(time.Duration(-10) * time.Minute)),
 				EndTime:    aws.Time(time.Now()),
-				Statistics: aws.StringSlice([]string{"Maximum"}),
+				Statistics: []cloudwatchtypes.Statistic{cloudwatchtypes.StatisticMaximum},
 			}
-			getMetricOutput, err := f.CloudServices.CloudWatch().GetMetricStatistics(getMetricStatisticsInput)
+			getMetricOutput, err := f.CloudServices.CloudWatch().GetMetricStatistics(context.TODO(), getMetricStatisticsInput)
 			Expect(err).ToNot(HaveOccurred())
 
 			dataPoints := getMetricOutput.Datapoints
-			fmt.Fprintf(GinkgoWriter, "data points: %+v", dataPoints)
+			_, _ = fmt.Fprintf(GinkgoWriter, "data points: %+v", dataPoints)
 
 			By("validating at least 2 metrics are published to CloudWatch")
 			Expect(len(dataPoints)).Should(BeNumerically(">=", 2))

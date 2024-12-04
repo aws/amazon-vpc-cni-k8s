@@ -14,9 +14,11 @@
 package aws
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/services"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 )
 
 type CloudConfig struct {
@@ -44,19 +46,29 @@ type defaultCloud struct {
 	cloudWatch     services.CloudWatch
 }
 
-func NewCloud(config CloudConfig) Cloud {
-	session := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(config.Region)}))
+func NewCloud(config CloudConfig) (Cloud, error) {
+
+	cfg, err := awsconfig.LoadDefaultConfig(context.TODO(), awsconfig.WithRegion(config.Region))
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to load SDK config, %v", err)
+	}
+
+	eksService, err := services.NewEKS(cfg, config.EKSEndpoint)
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to create EKS service client, %v", err)
+	}
 
 	return &defaultCloud{
 		cfg:            config,
-		ec2:            services.NewEC2(session),
-		iam:            services.NewIAM(session),
-		eks:            services.NewEKS(session, config.EKSEndpoint),
-		autoScaling:    services.NewAutoScaling(session),
-		cloudFormation: services.NewCloudFormation(session),
-		cloudWatch:     services.NewCloudWatch(session),
-	}
+		ec2:            services.NewEC2(cfg),
+		iam:            services.NewIAM(cfg),
+		eks:            eksService,
+		autoScaling:    services.NewAutoScaling(cfg),
+		cloudFormation: services.NewCloudFormation(cfg),
+		cloudWatch:     services.NewCloudWatch(cfg),
+	}, nil
 }
 
 func (c *defaultCloud) EC2() services.EC2 {

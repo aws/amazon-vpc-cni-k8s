@@ -14,33 +14,34 @@
 package services
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/autoscaling"
-	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 )
 
 type AutoScaling interface {
-	DescribeAutoScalingGroup(autoScalingGroupName string) ([]*autoscaling.Group, error)
+	DescribeAutoScalingGroup(ctx context.Context, autoScalingGroupName string) ([]types.AutoScalingGroup, error)
 }
 
+// Directly using the client to interact with the service instead of an interface.
 type defaultAutoScaling struct {
-	autoscalingiface.AutoScalingAPI
+	client *autoscaling.Client
 }
 
-func NewAutoScaling(session *session.Session) AutoScaling {
+func NewAutoScaling(cfg aws.Config) AutoScaling {
 	return &defaultAutoScaling{
-		AutoScalingAPI: autoscaling.New(session),
+		client: autoscaling.NewFromConfig(cfg),
 	}
 }
 
-func (d defaultAutoScaling) DescribeAutoScalingGroup(autoScalingGroupName string) ([]*autoscaling.Group, error) {
+func (d defaultAutoScaling) DescribeAutoScalingGroup(ctx context.Context, autoScalingGroupName string) ([]types.AutoScalingGroup, error) {
 	describeAutoScalingGroupIp := &autoscaling.DescribeAutoScalingGroupsInput{
-		AutoScalingGroupNames: aws.StringSlice([]string{autoScalingGroupName}),
+		AutoScalingGroupNames: []string{autoScalingGroupName},
 	}
-	asg, err := d.AutoScalingAPI.DescribeAutoScalingGroups(describeAutoScalingGroupIp)
+	asg, err := d.client.DescribeAutoScalingGroups(ctx, describeAutoScalingGroupIp)
 	if err != nil {
 		return nil, err
 	}

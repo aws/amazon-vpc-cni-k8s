@@ -1,18 +1,19 @@
 package ec2wrapper
 
 import (
+	"context"
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2metadata "github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
 
-var testInstanceIdentityDocument = ec2metadata.EC2InstanceIdentityDocument{
+var testInstanceIdentityDocument = ec2metadata.InstanceIdentityDocument{
 	PrivateIP:        "172.1.1.1",
 	AvailabilityZone: "us-east-1a",
 	Version:          "2010-08-31",
@@ -29,7 +30,7 @@ var testInstanceIdentityDocument = ec2metadata.EC2InstanceIdentityDocument{
 func TestGetClusterID(t *testing.T) {
 	mockEC2ServiceClient := mockEC2ServiceClient{
 		tags: &ec2.DescribeTagsOutput{
-			Tags: []*ec2.TagDescription{
+			Tags: []ec2types.TagDescription{
 				{
 					Value: aws.String("TEST_CLUSTER_ID"),
 				},
@@ -65,7 +66,7 @@ func TestGetClusterIDWithError(t *testing.T) {
 func TestGetClusterIDWithInsufficientTags(t *testing.T) {
 	mockEC2ServiceClient := mockEC2ServiceClient{
 		tags: &ec2.DescribeTagsOutput{
-			Tags: []*ec2.TagDescription{},
+			Tags: []ec2types.TagDescription{},
 		},
 	}
 
@@ -80,12 +81,11 @@ func TestGetClusterIDWithInsufficientTags(t *testing.T) {
 }
 
 type mockEC2ServiceClient struct {
-	ec2iface.EC2API
+	ec2.DescribeInstancesAPIClient
 	tags    *ec2.DescribeTagsOutput
 	tagsErr error
 }
 
-func (f mockEC2ServiceClient) DescribeTags(input *ec2.DescribeTagsInput) (*ec2.DescribeTagsOutput, error) {
-	return f.tags, f.tagsErr
-
+func (m mockEC2ServiceClient) DescribeTags(ctx context.Context, input *ec2.DescribeTagsInput, f ...func(*ec2.Options)) (*ec2.DescribeTagsOutput, error) {
+	return m.tags, m.tagsErr
 }

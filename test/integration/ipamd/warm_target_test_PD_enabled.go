@@ -14,8 +14,11 @@
 package ipamd
 
 import (
+	"context"
 	"strconv"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
 
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -48,7 +51,7 @@ var _ = Describe("test warm target variables", func() {
 			Eventually(func(g Gomega) {
 				// Query the EC2 Instance to get the list of available Prefixes on the instance
 				primaryInstance, err = f.CloudServices.
-					EC2().DescribeInstance(*primaryInstance.InstanceId)
+					EC2().DescribeInstance(context.TODO(), aws.ToString(primaryInstance.InstanceId))
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
@@ -135,7 +138,7 @@ var _ = Describe("test warm target variables", func() {
 				var availPrefixes int
 				// Query the EC2 Instance to get the list of available Prefixes on the instance
 				primaryInstance, err = f.CloudServices.
-					EC2().DescribeInstance(*primaryInstance.InstanceId)
+					EC2().DescribeInstance(context.TODO(), aws.ToString(primaryInstance.InstanceId))
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI
@@ -187,7 +190,7 @@ var _ = Describe("test warm target variables", func() {
 
 			// Query the EC2 Instance to get the list of available Prefixes on the instance
 			primaryInstance, err = f.CloudServices.
-				EC2().DescribeInstance(*primaryInstance.InstanceId)
+				EC2().DescribeInstance(context.TODO(), aws.ToString(primaryInstance.InstanceId))
 			Expect(err).ToNot(HaveOccurred())
 
 			// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI

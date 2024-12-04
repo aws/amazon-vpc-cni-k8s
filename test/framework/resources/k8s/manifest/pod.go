@@ -16,7 +16,7 @@ package manifest
 import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	v1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

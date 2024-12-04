@@ -14,10 +14,11 @@
 package services
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/aws/aws-sdk-go/service/iam/iamiface"
+	"context"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/iam/types"
 )
 
 type PolicyDocument struct {
@@ -32,88 +33,88 @@ type StatementEntry struct {
 }
 
 type IAM interface {
-	AttachRolePolicy(policyArn string, roleName string) error
-	DetachRolePolicy(policyARN string, roleName string) error
-	CreatePolicy(policyName string, policyDocument string) (*iam.CreatePolicyOutput, error)
-	DeletePolicy(policyARN string) error
-	GetInstanceProfile(instanceProfileName string) (*iam.GetInstanceProfileOutput, error)
-	GetRolePolicy(policyName string, role string) (*iam.GetRolePolicyOutput, error)
-	PutRolePolicy(policyDocument string, policyName string, roleName string) error
-	ListPolicies(scope string) (*iam.ListPoliciesOutput, error)
+	AttachRolePolicy(ctx context.Context, policyArn string, roleName string) error
+	DetachRolePolicy(ctx context.Context, policyARN string, roleName string) error
+	CreatePolicy(ctx context.Context, policyName string, policyDocument string) (*iam.CreatePolicyOutput, error)
+	DeletePolicy(ctx context.Context, policyARN string) error
+	GetInstanceProfile(ctx context.Context, instanceProfileName string) (*iam.GetInstanceProfileOutput, error)
+	GetRolePolicy(ctx context.Context, policyName string, role string) (*iam.GetRolePolicyOutput, error)
+	PutRolePolicy(ctx context.Context, policyDocument string, policyName string, roleName string) error
+	ListPolicies(ctx context.Context, scope string) (*iam.ListPoliciesOutput, error)
 }
 
 type defaultIAM struct {
-	iamiface.IAMAPI
+	client *iam.Client
 }
 
-func (d *defaultIAM) AttachRolePolicy(policyARN string, roleName string) error {
+func (d *defaultIAM) AttachRolePolicy(ctx context.Context, policyARN string, roleName string) error {
 	attachRolePolicyInput := &iam.AttachRolePolicyInput{
 		PolicyArn: aws.String(policyARN),
 		RoleName:  aws.String(roleName),
 	}
-	_, err := d.IAMAPI.AttachRolePolicy(attachRolePolicyInput)
+	_, err := d.client.AttachRolePolicy(ctx, attachRolePolicyInput)
 	return err
 }
 
-func (d *defaultIAM) DetachRolePolicy(policyARN string, roleName string) error {
+func (d *defaultIAM) DetachRolePolicy(ctx context.Context, policyARN string, roleName string) error {
 	detachRolePolicyInput := &iam.DetachRolePolicyInput{
 		PolicyArn: aws.String(policyARN),
 		RoleName:  aws.String(roleName),
 	}
-	_, err := d.IAMAPI.DetachRolePolicy(detachRolePolicyInput)
+	_, err := d.client.DetachRolePolicy(ctx, detachRolePolicyInput)
 	return err
 }
 
-func (d *defaultIAM) CreatePolicy(policyName string, policyDocument string) (*iam.CreatePolicyOutput, error) {
+func (d *defaultIAM) CreatePolicy(ctx context.Context, policyName string, policyDocument string) (*iam.CreatePolicyOutput, error) {
 	createPolicyInput := &iam.CreatePolicyInput{
 		PolicyDocument: aws.String(policyDocument),
 		PolicyName:     aws.String(policyName),
 	}
-	return d.IAMAPI.CreatePolicy(createPolicyInput)
+	return d.client.CreatePolicy(ctx, createPolicyInput)
 }
 
-func (d *defaultIAM) DeletePolicy(policyARN string) error {
+func (d *defaultIAM) DeletePolicy(ctx context.Context, policyARN string) error {
 	deletePolicyInput := &iam.DeletePolicyInput{
 		PolicyArn: aws.String(policyARN),
 	}
-	_, err := d.IAMAPI.DeletePolicy(deletePolicyInput)
+	_, err := d.client.DeletePolicy(ctx, deletePolicyInput)
 	return err
 }
 
-func (d *defaultIAM) GetRolePolicy(role string, policyName string) (*iam.GetRolePolicyOutput, error) {
+func (d *defaultIAM) GetRolePolicy(ctx context.Context, role string, policyName string) (*iam.GetRolePolicyOutput, error) {
 	rolePolicyInput := &iam.GetRolePolicyInput{
 		RoleName:   aws.String(role),
 		PolicyName: aws.String(policyName),
 	}
-	return d.IAMAPI.GetRolePolicy(rolePolicyInput)
+	return d.client.GetRolePolicy(ctx, rolePolicyInput)
 }
 
-func (d *defaultIAM) PutRolePolicy(policyDocument string, policyName string, roleName string) error {
+func (d *defaultIAM) PutRolePolicy(ctx context.Context, policyDocument string, policyName string, roleName string) error {
 	policyInput := &iam.PutRolePolicyInput{
 		PolicyDocument: aws.String(policyDocument),
 		PolicyName:     aws.String(policyName),
 		RoleName:       aws.String(roleName),
 	}
-	_, err := d.IAMAPI.PutRolePolicy(policyInput)
+	_, err := d.client.PutRolePolicy(ctx, policyInput)
 	return err
 }
 
-func (d *defaultIAM) GetInstanceProfile(instanceProfileName string) (*iam.GetInstanceProfileOutput, error) {
+func (d *defaultIAM) GetInstanceProfile(ctx context.Context, instanceProfileName string) (*iam.GetInstanceProfileOutput, error) {
 	getInstanceProfileInput := &iam.GetInstanceProfileInput{
 		InstanceProfileName: aws.String(instanceProfileName),
 	}
-	return d.IAMAPI.GetInstanceProfile(getInstanceProfileInput)
+	return d.client.GetInstanceProfile(ctx, getInstanceProfileInput)
 }
 
-func (d *defaultIAM) ListPolicies(scope string) (*iam.ListPoliciesOutput, error) {
+func (d *defaultIAM) ListPolicies(ctx context.Context, scope string) (*iam.ListPoliciesOutput, error) {
 	listPolicyInput := &iam.ListPoliciesInput{
-		Scope: aws.String(scope),
+		Scope: types.PolicyScopeType(scope),
 	}
-	return d.IAMAPI.ListPolicies(listPolicyInput)
+	return d.client.ListPolicies(ctx, listPolicyInput)
 }
 
-func NewIAM(session *session.Session) IAM {
+func NewIAM(cfg aws.Config) IAM {
 	return &defaultIAM{
-		IAMAPI: iam.New(session),
+		client: iam.NewFromConfig(cfg),
 	}
 }

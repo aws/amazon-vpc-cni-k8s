@@ -2,13 +2,15 @@ package common
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	coreV1 "k8s.io/api/core/v1"
@@ -105,7 +107,7 @@ func ValidateHostNetworking(testType TestType, podValidationInputString string, 
 		PodLogs(testPod.Namespace, testPod.Name)
 	Expect(errLogs).ToNot(HaveOccurred())
 
-	fmt.Fprintln(GinkgoWriter, logs)
+	_, _ = fmt.Fprintln(GinkgoWriter, logs)
 
 	if shouldTestPodError {
 		Expect(err).To(HaveOccurred())
@@ -128,7 +130,7 @@ func GetPodsOnPrimaryAndSecondaryInterface(node coreV1.Node,
 	Expect(err).ToNot(HaveOccurred())
 
 	instance, err := f.CloudServices.EC2().
-		DescribeInstance(k8sUtils.GetInstanceIDFromNode(node))
+		DescribeInstance(context.TODO(), k8sUtils.GetInstanceIDFromNode(node))
 	Expect(err).ToNot(HaveOccurred())
 
 	interfaceToPodList := InterfaceTypeToPodList{
@@ -173,7 +175,7 @@ func GetTrafficTestConfig(f *framework.Framework, protocol string, serverDeploym
 	}
 }
 
-func IsPrimaryENI(nwInterface *ec2.InstanceNetworkInterface, instanceIPAddr *string) bool {
+func IsPrimaryENI(nwInterface ec2types.InstanceNetworkInterface, instanceIPAddr *string) bool {
 	for _, privateIPAddress := range nwInterface.PrivateIpAddresses {
 		if *privateIPAddress.PrivateIpAddress == *instanceIPAddr {
 			return true

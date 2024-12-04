@@ -1,11 +1,13 @@
 package az_traffic
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	cloudwatchtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
@@ -35,7 +37,7 @@ var _ = Describe("[STATIC_CANARY] AZ Node Presence", FlakeAttempts(retries), fun
 			nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 			Expect(err).ToNot(HaveOccurred())
 
-			describeAZOutput, err := f.CloudServices.EC2().DescribeAvailabilityZones()
+			describeAZOutput, err := f.CloudServices.EC2().DescribeAvailabilityZones(context.TODO())
 			Expect(err).ToNot(HaveOccurred())
 
 			for _, az := range describeAZOutput.AvailabilityZones {
@@ -166,7 +168,7 @@ func GetAZMappings(nodes coreV1.NodeList) (map[string]coreV1.Pod, map[string]str
 	// Map of AZ name to AZ ID
 	azToazID := make(map[string]string)
 
-	describeAZOutput, err := f.CloudServices.EC2().DescribeAvailabilityZones()
+	describeAZOutput, err := f.CloudServices.EC2().DescribeAvailabilityZones(context.TODO())
 
 	// iterate describe AZ output and populate AZ name to AZ ID mapping
 	for _, az := range describeAZOutput.AvailabilityZones {
@@ -249,7 +251,7 @@ var _ = Describe("[STATIC_CANARY] API Server Connectivity from AZs", FlakeAttemp
 	Context("While testing API Server Connectivity", func() {
 
 		It("Should connect to the API Server", func() {
-			describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
+			describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(context.TODO(), f.Options.ClusterName)
 			Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error while Describing the cluster to find APIServer NLB endpoint. %s", f.Options.ClusterName))
 			APIServerNLBEndpoint := fmt.Sprintf("%s/api", *describeClusterOutput.Cluster.Endpoint)
 			APIServerInternalEndpoint := "https://kubernetes.default.svc/api"
@@ -291,12 +293,12 @@ func CheckAPIServerConnectivityFromPods(azToPod map[string]coreV1.Pod, azToazId 
 		if f.Options.PublishCWMetrics {
 			putmetricData := cloudwatch.PutMetricDataInput{
 				Namespace: aws.String(MetricNamespace),
-				MetricData: []*cloudwatch.MetricDatum{
+				MetricData: []cloudwatchtypes.MetricDatum{
 					{
 						MetricName: aws.String(MetricName),
-						Unit:       aws.String("Count"),
+						Unit:       cloudwatchtypes.StandardUnitCount,
 						Value:      aws.Float64(1),
-						Dimensions: []*cloudwatch.Dimension{
+						Dimensions: []cloudwatchtypes.Dimension{
 							{
 								Name:  aws.String("AZID"),
 								Value: aws.String(azToazId[az]),
@@ -306,7 +308,7 @@ func CheckAPIServerConnectivityFromPods(azToPod map[string]coreV1.Pod, azToazId 
 				},
 			}
 
-			_, err = f.CloudServices.CloudWatch().PutMetricData(&putmetricData)
+			_, err = f.CloudServices.CloudWatch().PutMetricData(context.TODO(), &putmetricData)
 			Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error while putting metric data for API Server Connectivity from %s", az))
 		}
 	}
@@ -327,12 +329,12 @@ func CheckConnectivityBetweenPods(azToPod map[string]coreV1.Pod, azToazId map[st
 				if f.Options.PublishCWMetrics {
 					putmetricData := cloudwatch.PutMetricDataInput{
 						Namespace: aws.String(MetricNamespace),
-						MetricData: []*cloudwatch.MetricDatum{
+						MetricData: []cloudwatchtypes.MetricDatum{
 							{
 								MetricName: aws.String(MetricName),
-								Unit:       aws.String("Count"),
+								Unit:       cloudwatchtypes.StandardUnitCount,
 								Value:      aws.Float64(1),
-								Dimensions: []*cloudwatch.Dimension{
+								Dimensions: []cloudwatchtypes.Dimension{
 									{
 										Name:  aws.String("AZID"),
 										Value: aws.String(azToazId[az1]),
@@ -341,7 +343,7 @@ func CheckConnectivityBetweenPods(azToPod map[string]coreV1.Pod, azToazId map[st
 							},
 						},
 					}
-					_, err := f.CloudServices.CloudWatch().PutMetricData(&putmetricData)
+					_, err := f.CloudServices.CloudWatch().PutMetricData(context.TODO(), &putmetricData)
 					Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error while putting metric data for API Server Connectivity from %s", azToazId[az1]))
 				}
 			}
@@ -367,7 +369,7 @@ func testConnectivity(senderPod coreV1.Pod, receiverPod coreV1.Pod, expectedStdo
 
 	testerCommand := getTestCommandFunc(receiverPod, port)
 
-	fmt.Fprintf(GinkgoWriter, "verifying connectivity from pod %s on node %s with IP %s to pod"+
+	_, _ = fmt.Fprintf(GinkgoWriter, "verifying connectivity from pod %s on node %s with IP %s to pod"+
 		" %s on node %s with IP %s\n", senderPod.Name, senderPod.Spec.NodeName, senderPod.Status.PodIP,
 		receiverPod.Name, receiverPod.Spec.NodeName, receiverPod.Status.PodIP)
 
@@ -375,7 +377,7 @@ func testConnectivity(senderPod coreV1.Pod, receiverPod coreV1.Pod, expectedStdo
 		PodExec(senderPod.Namespace, senderPod.Name, testerCommand)
 	Expect(err).ToNot(HaveOccurred())
 
-	fmt.Fprintf(GinkgoWriter, "stdout: %s and stderr: %s\n", stdOut, stdErr)
+	_, _ = fmt.Fprintf(GinkgoWriter, "stdout: %s and stderr: %s\n", stdOut, stdErr)
 
 	Expect(stdErr).To(ContainSubstring(expectedStderr))
 	Expect(stdOut).To(ContainSubstring(expectedStdout))

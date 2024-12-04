@@ -2,10 +2,10 @@ package ipamd
 
 import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
-var primaryInstance *ec2.Instance
+var primaryInstance types.Instance
 var f *framework.Framework
 var err error
 
