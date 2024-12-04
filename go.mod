@@ -14,17 +14,17 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/google/go-cmp v0.6.0
 	github.com/onsi/ginkgo/v2 v2.20.1
-	github.com/onsi/gomega v1.35.1
+	github.com/onsi/gomega v1.36.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.20.4
 	github.com/prometheus/client_model v0.6.1
-	github.com/prometheus/common v0.60.0
+	github.com/prometheus/common v0.60.1
 	github.com/samber/lo v1.39.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	github.com/vishvananda/netlink v1.3.0
-	go.uber.org/zap v1.26.0
+	go.uber.org/zap v1.27.0
 	golang.org/x/net v0.30.0
 	golang.org/x/sys v0.26.0
 	google.golang.org/grpc v1.67.1
