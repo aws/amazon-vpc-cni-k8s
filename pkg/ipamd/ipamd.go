@@ -307,6 +307,7 @@ func prometheusRegister() {
 
 // containsInsufficientCIDRsOrSubnetIPs returns whether a CIDR cannot be carved in the subnet or subnet is running out of IP addresses
 func containsInsufficientCIDRsOrSubnetIPs(err error) bool {
+	log.Debugf("containsInsufficientCIDRsOrSubnetIPs encountered %v", err)
 	var apiErr smithy.APIError
 	// IP exhaustion can be due to Insufficient Cidr blocks or Insufficient Free Address in a Subnet
 	// In these 2 cases we will back off for 2 minutes before retrying
@@ -319,6 +320,7 @@ func containsInsufficientCIDRsOrSubnetIPs(err error) bool {
 
 // containsPrivateIPAddressLimitExceededError returns whether exceeds ENI's IP address limit
 func containsPrivateIPAddressLimitExceededError(err error) bool {
+	log.Debugf("containsPrivateIPAddressLimitExceededError encountered %v", err)
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
 		return apiErr.ErrorCode() == "PrivateIpAddressLimitExceeded"
