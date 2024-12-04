@@ -1,6 +1,10 @@
 # Changelog
 
-## v1.18.5
+## v1.19.0
+
+* Manifest update for unsupported compute type
+
+## v1.18.6
 
 ### What's Changed
 
