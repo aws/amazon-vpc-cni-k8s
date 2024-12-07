@@ -1369,6 +1369,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
 		log.Errorf("Failed to call ec2:DescribeNetworkInterfaces for %v: %v", input.NetworkInterfaceIds, err)
 		if errors.As(err, &awsAPIError) {
+			log.Debugf("Failed ec2:DescribeNetworkInterfaces awsAPIError ErrorCode :%v ErrorMessage: %v", awsAPIError.ErrorCode(), awsAPIError.ErrorMessage())
 			if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
 				badENIID := badENIID(awsAPIError.ErrorMessage())
 				log.Debugf("Could not find interface: %s, ID: %s", awsAPIError.ErrorMessage(), badENIID)
@@ -1433,14 +1434,17 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 			efaENIs[eniID] = true
 		}
 		if interfaceType != "efa-only" {
-			if len(eniMetadata.IPv4Addresses) == 0 {
+			if len(eniMetadata.IPv4Addresses) == 0 && len(eniMetadata.IPv6Addresses) == 0 {
 				log.Errorf("Missing IP addresses from IMDS. Non efa-only interface should have IP address associated with it %s", eniID)
-				outOfSyncErr := errors.New("DescribeAllENIs: No IPv4 address found")
+				outOfSyncErr := errors.New("DescribeAllENIs: No IPv4 and IPv6 addresses found")
 				return DescribeAllENIsResult{}, outOfSyncErr
 			}
 		}
+
 		// Check IPv4 addresses
-		logOutOfSyncState(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
+		if len(eniMetadata.IPv4Addresses) > 0 {
+			logOutOfSyncState(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
+		}
 		tagMap[eniMetadata.ENIID] = convertSDKTagsToTags(ec2res.TagSet)
 	}
 	return DescribeAllENIsResult{

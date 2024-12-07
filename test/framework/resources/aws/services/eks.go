@@ -46,15 +46,23 @@ type AddonInput struct {
 }
 
 func NewEKS(cfg aws.Config, endpoint string) (EKS, error) {
-	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-		return aws.Endpoint{
-			URL: endpoint,
-		}, nil
-	})
-	cfg, err := config.LoadDefaultConfig(context.Background(),
-		config.WithEndpointResolverWithOptions(customResolver),
-		config.WithRegion(cfg.Region),
-	)
+	var err error
+
+	if endpoint != "" {
+		customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+			return aws.Endpoint{
+				URL: endpoint,
+			}, nil
+		})
+		cfg, err = config.LoadDefaultConfig(context.Background(),
+			config.WithEndpointResolverWithOptions(customResolver),
+			config.WithRegion(cfg.Region),
+		)
+	} else {
+		cfg, err = config.LoadDefaultConfig(context.Background(),
+			config.WithRegion(cfg.Region),
+		)
+	}
 
 	if err != nil {
 		return &defaultEKS{}, err
