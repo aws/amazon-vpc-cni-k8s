@@ -1,11 +1,12 @@
 package ec2metadatawrapper
 
 import (
+	"context"
 	"testing"
 
 	mockec2metadatawrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper/mocks"
 
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
+	ec2metadata "github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -16,7 +17,7 @@ const (
 	iidRegion = "us-east-1"
 )
 
-var testInstanceIdentityDoc = ec2metadata.EC2InstanceIdentityDocument{
+var testInstanceIdentityDoc = ec2metadata.InstanceIdentityDocument{
 	Version:    "2010-08-31",
 	Region:     "us-east-1",
 	InstanceID: "i-01234567",
@@ -30,9 +31,13 @@ func TestGetInstanceIdentityDocHappyPath(t *testing.T) {
 	mockGetter := mockec2metadatawrapper.NewMockHTTPClient(ctrl)
 	testClient := NewMetadataService(mockGetter)
 
-	mockGetter.EXPECT().GetInstanceIdentityDocument().Return(testInstanceIdentityDoc, nil)
+	mockGetter.EXPECT().GetInstanceIdentityDocument(gomock.Any(), gomock.Any()).Return(&ec2metadata.GetInstanceIdentityDocumentOutput{
+		InstanceIdentityDocument: testInstanceIdentityDoc,
+	}, nil)
 
-	doc, err := testClient.GetInstanceIdentityDocument()
+	ctx := context.Background()
+
+	doc, err := testClient.GetInstanceIdentityDocument(ctx, &ec2metadata.GetInstanceIdentityDocumentInput{})
 	assert.NoError(t, err)
 	assert.Equal(t, iidRegion, doc.Region)
 }
@@ -44,9 +49,9 @@ func TestGetInstanceIdentityDocError(t *testing.T) {
 	mockGetter := mockec2metadatawrapper.NewMockHTTPClient(ctrl)
 	testClient := NewMetadataService(mockGetter)
 
-	mockGetter.EXPECT().GetInstanceIdentityDocument().Return(ec2metadata.EC2InstanceIdentityDocument{}, errors.New("test error"))
-
-	doc, err := testClient.GetInstanceIdentityDocument()
+	mockGetter.EXPECT().GetInstanceIdentityDocument(gomock.Any(), gomock.Any()).Return(&ec2metadata.GetInstanceIdentityDocumentOutput{}, errors.New("test error"))
+	ctx := context.Background()
+	doc, err := testClient.GetInstanceIdentityDocument(ctx, &ec2metadata.GetInstanceIdentityDocumentInput{})
 	assert.Error(t, err)
 	assert.Empty(t, doc.Region)
 }
@@ -55,26 +60,27 @@ func TestGetRegionHappyPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockGetter := mockec2metadatawrapper.NewMockHTTPClient(ctrl)
+	mockGetter := mockec2metadatawrapper.NewMockEC2MetadataClient(ctrl)
 	testClient := NewMetadataService(mockGetter)
 
-	mockGetter.EXPECT().Region().Return(iidRegion, nil)
+	expectedRegion := "us-west-2"
+	mockGetter.EXPECT().GetRegion(gomock.Any(), gomock.Any()).Return(&ec2metadata.GetRegionOutput{Region: expectedRegion}, nil)
 
-	region, err := testClient.Region()
+	region, err := testClient.GetRegion(context.Background(), &ec2metadata.GetRegionInput{})
 	assert.NoError(t, err)
-	assert.Equal(t, iidRegion, region)
+	assert.Equal(t, expectedRegion, region.Region)
 }
 
 func TestGetRegionErr(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockGetter := mockec2metadatawrapper.NewMockHTTPClient(ctrl)
+	mockGetter := mockec2metadatawrapper.NewMockEC2MetadataClient(ctrl)
 	testClient := NewMetadataService(mockGetter)
 
-	mockGetter.EXPECT().Region().Return("", errors.New("test error"))
+	mockGetter.EXPECT().GetRegion(gomock.Any(), gomock.Any()).Return(nil, errors.New("test error"))
 
-	region, err := testClient.Region()
+	region, err := testClient.GetRegion(context.Background(), &ec2metadata.GetRegionInput{})
 	assert.Error(t, err)
 	assert.Empty(t, region)
 }

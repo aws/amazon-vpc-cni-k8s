@@ -14,6 +14,7 @@
 package cni
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -75,7 +76,7 @@ var _ = BeforeSuite(func() {
 
 	// Get the node security group
 	instanceID := k8sUtils.GetInstanceIDFromNode(primaryNode)
-	primaryInstance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
+	primaryInstance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
 	Expect(err).ToNot(HaveOccurred())
 
 	// This won't work if the first SG is only associated with the primary instance.
@@ -86,14 +87,14 @@ var _ = BeforeSuite(func() {
 	instanceType := primaryNode.Labels[InstanceTypeNodeLabelKey]
 
 	By("getting the network interface details from ec2")
-	instanceOutput, err := f.CloudServices.EC2().DescribeInstanceType(instanceType)
+	instanceOutput, err := f.CloudServices.EC2().DescribeInstanceType(context.TODO(), instanceType)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Subtract 2 for coredns pods if any, both could be on same Interface
 	maxIPPerInterface = int(*instanceOutput[0].NetworkInfo.Ipv4AddressesPerInterface) - 2
 
 	By("describing the VPC to get the VPC CIDRs")
-	describeVPCOutput, err := f.CloudServices.EC2().DescribeVPC(f.Options.AWSVPCID)
+	describeVPCOutput, err := f.CloudServices.EC2().DescribeVPC(context.TODO(), f.Options.AWSVPCID)
 	Expect(err).ToNot(HaveOccurred())
 
 	for _, cidrBlockAssociationSet := range describeVPCOutput.Vpcs[0].CidrBlockAssociationSet {

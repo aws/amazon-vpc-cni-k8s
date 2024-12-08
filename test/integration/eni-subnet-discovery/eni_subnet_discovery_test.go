@@ -14,6 +14,7 @@
 package eni_subnet_discovery
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -21,12 +22,13 @@ import (
 	"strings"
 	"time"
 
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/apps/v1"
@@ -97,8 +99,9 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 					By("Tagging kubernetes.io/role/cni to subnet")
 					_, err = f.CloudServices.EC2().
 						CreateTags(
+							context.TODO(),
 							[]string{createdSubnet},
-							[]*ec2.Tag{
+							[]ec2types.Tag{
 								{
 									Key:   aws.String("kubernetes.io/role/cni"),
 									Value: aws.String("1"),
@@ -111,8 +114,9 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 					By("Untagging kubernetes.io/role/cni from subnet")
 					_, err = f.CloudServices.EC2().
 						DeleteTags(
+							context.TODO(),
 							[]string{createdSubnet},
-							[]*ec2.Tag{
+							[]ec2types.Tag{
 								{
 									Key:   aws.String("kubernetes.io/role/cni"),
 									Value: aws.String("1"),
@@ -140,11 +144,11 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 						if role == "" { // get the node instance role
 							By("getting the node instance role")
 							instanceProfileRoleName := strings.Split(*primaryInstance.IamInstanceProfile.Arn, "instance-profile/")[1]
-							instanceProfileOutput, err := f.CloudServices.IAM().GetInstanceProfile(instanceProfileRoleName)
+							instanceProfileOutput, err := f.CloudServices.IAM().GetInstanceProfile(context.TODO(), instanceProfileRoleName)
 							Expect(err).ToNot(HaveOccurred())
 							role = *instanceProfileOutput.InstanceProfile.Roles[0].RoleName
 						}
-						err = f.CloudServices.IAM().DetachRolePolicy(EKSCNIPolicyARN, role)
+						err = f.CloudServices.IAM().DetachRolePolicy(context.TODO(), EKSCNIPolicyARN, role)
 						Expect(err).ToNot(HaveOccurred())
 
 						eksCNIPolicyV4Path := utils.GetProjectRoot() + EKSCNIPolicyV4
@@ -154,10 +158,10 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 						eksCNIPolicyV4Data := string(eksCNIPolicyV4Bytes)
 
 						By("Creating and attaching policy AmazonEKS_CNI_Policy_V4")
-						output, err := f.CloudServices.IAM().CreatePolicy("AmazonEKS_CNI_Policy_V4", eksCNIPolicyV4Data)
+						output, err := f.CloudServices.IAM().CreatePolicy(context.TODO(), "AmazonEKS_CNI_Policy_V4", eksCNIPolicyV4Data)
 						Expect(err).ToNot(HaveOccurred())
 						EKSCNIPolicyV4ARN = *output.Policy.Arn
-						err = f.CloudServices.IAM().AttachRolePolicy(EKSCNIPolicyV4ARN, role)
+						err = f.CloudServices.IAM().AttachRolePolicy(context.TODO(), EKSCNIPolicyV4ARN, role)
 						Expect(err).ToNot(HaveOccurred())
 
 						// Sleep to allow time for CNI policy reattachment
@@ -168,14 +172,14 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 
 					AfterEach(func() {
 						By("attaching VPC_CNI policy")
-						err = f.CloudServices.IAM().AttachRolePolicy(EKSCNIPolicyARN, role)
+						err = f.CloudServices.IAM().AttachRolePolicy(context.TODO(), EKSCNIPolicyARN, role)
 						Expect(err).ToNot(HaveOccurred())
 
 						By("Detaching and deleting policy AmazonEKS_CNI_Policy_V4")
-						err = f.CloudServices.IAM().DetachRolePolicy(EKSCNIPolicyV4ARN, role)
+						err = f.CloudServices.IAM().DetachRolePolicy(context.TODO(), EKSCNIPolicyV4ARN, role)
 						Expect(err).ToNot(HaveOccurred())
 
-						err = f.CloudServices.IAM().DeletePolicy(EKSCNIPolicyV4ARN)
+						err = f.CloudServices.IAM().DeletePolicy(context.TODO(), EKSCNIPolicyV4ARN)
 						Expect(err).ToNot(HaveOccurred())
 
 						// Sleep to allow time for CNI policy detachment
@@ -193,8 +197,9 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 					By("Tagging kubernetes.io/role/cn to subnet")
 					_, err = f.CloudServices.EC2().
 						CreateTags(
+							context.TODO(),
 							[]string{createdSubnet},
-							[]*ec2.Tag{
+							[]ec2types.Tag{
 								{
 									Key:   aws.String("kubernetes.io/role/cn"),
 									Value: aws.String("1"),
@@ -207,8 +212,9 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 					By("Untagging kubernetes.io/role/cn from subnet")
 					_, err = f.CloudServices.EC2().
 						DeleteTags(
+							context.TODO(),
 							[]string{createdSubnet},
-							[]*ec2.Tag{
+							[]ec2types.Tag{
 								{
 									Key:   aws.String("kubernetes.io/role/cn"),
 									Value: aws.String("1"),
@@ -247,8 +253,9 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 					By("Tagging kubernetes.io/role/cni to subnet")
 					_, err = f.CloudServices.EC2().
 						CreateTags(
+							context.TODO(),
 							[]string{createdSubnet},
-							[]*ec2.Tag{
+							[]ec2types.Tag{
 								{
 									Key:   aws.String("kubernetes.io/role/cni"),
 									Value: aws.String("1"),
@@ -261,8 +268,9 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 					By("Untagging kubernetes.io/role/cni from subnet")
 					_, err = f.CloudServices.EC2().
 						DeleteTags(
+							context.TODO(),
 							[]string{createdSubnet},
-							[]*ec2.Tag{
+							[]ec2types.Tag{
 								{
 									Key:   aws.String("kubernetes.io/role/cni"),
 									Value: aws.String("1"),
@@ -280,7 +288,7 @@ var _ = Describe("ENI Subnet Selection Test", func() {
 })
 
 func checkSecondaryENISubnets(expectNewCidr bool) {
-	instance, err := f.CloudServices.EC2().DescribeInstance(*primaryInstance.InstanceId)
+	instance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("retrieving secondary ENIs")
@@ -294,7 +302,7 @@ func checkSecondaryENISubnets(expectNewCidr bool) {
 	By("verifying at least one new Secondary ENI is created")
 	Expect(len(newEniSubnetIds)).Should(BeNumerically(">", 0))
 
-	vpcOutput, err := f.CloudServices.EC2().DescribeVPC(*primaryInstance.VpcId)
+	vpcOutput, err := f.CloudServices.EC2().DescribeVPC(context.TODO(), *primaryInstance.VpcId)
 	Expect(err).ToNot(HaveOccurred())
 
 	expectedCidrRangeString := *vpcOutput.Vpcs[0].CidrBlock
@@ -311,7 +319,7 @@ func checkSecondaryENISubnets(expectNewCidr bool) {
 
 	By(fmt.Sprintf("checking the secondary ENI subnets are in the CIDR %s", expectedCidrRangeString))
 	for _, subnetID := range newEniSubnetIds {
-		subnetOutput, err := f.CloudServices.EC2().DescribeSubnet(subnetID)
+		subnetOutput, err := f.CloudServices.EC2().DescribeSubnet(context.TODO(), subnetID)
 		Expect(err).ToNot(HaveOccurred())
 		cidrSplit := strings.Split(*subnetOutput.Subnets[0].CidrBlock, "/")
 		actualSubnetIp, _, _ := net.ParseCIDR(*subnetOutput.Subnets[0].CidrBlock)
@@ -326,6 +334,6 @@ func RestartAwsNodePods() {
 	podList, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(AwsNodeLabelKey, utils.AwsNodeName)
 	Expect(err).ToNot(HaveOccurred())
 	for _, pod := range podList.Items {
-		f.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(&pod)
+		_ = f.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(&pod)
 	}
 }

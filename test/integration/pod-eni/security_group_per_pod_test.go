@@ -14,6 +14,7 @@
 package pod_eni
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -57,7 +58,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 
 	JustBeforeEach(func() {
 		By("creating test namespace")
-		f.K8sResourceManagers.NamespaceManager().
+		_ = f.K8sResourceManagers.NamespaceManager().
 			CreateNamespace(utils.DefaultTestNamespace)
 
 		serverDeploymentBuilder = manifest.NewDefaultDeploymentBuilder().
@@ -78,11 +79,11 @@ var _ = Describe("Security Group for Pods Test", func() {
 
 	JustAfterEach(func() {
 		By("deleting test namespace")
-		f.K8sResourceManagers.NamespaceManager().
+		_ = f.K8sResourceManagers.NamespaceManager().
 			DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
 		By("Deleting Security Group Policy")
-		f.K8sResourceManagers.CustomResourceManager().DeleteResource(securityGroupPolicy)
+		_ = f.K8sResourceManagers.CustomResourceManager().DeleteResource(securityGroupPolicy)
 
 		By("waiting for the branch ENI to be cooled down")
 		time.Sleep(time.Second * 60)
@@ -126,10 +127,10 @@ var _ = Describe("Security Group for Pods Test", func() {
 			// 8080: metric-pod listener port
 			By("Adding an additional Ingress Rule on NodeSecurityGroupID to allow client-to-metric traffic")
 			if isIPv4Cluster {
-				err := f.CloudServices.EC2().AuthorizeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v4Zero, false)
+				err := f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), clusterSGID, "TCP", metricsPort, metricsPort, v4Zero, false)
 				Expect(err).ToNot(HaveOccurred())
 			} else {
-				err := f.CloudServices.EC2().AuthorizeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v6Zero, false)
+				err := f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), clusterSGID, "TCP", metricsPort, metricsPort, v6Zero, false)
 				Expect(err).ToNot(HaveOccurred())
 			}
 		})
@@ -160,10 +161,10 @@ var _ = Describe("Security Group for Pods Test", func() {
 			// Revoke the Ingress rule for traffic from client pods added to Node Security Group
 			By("Revoking the additional Ingress rule added to allow client-to-metric traffic")
 			if isIPv4Cluster {
-				err := f.CloudServices.EC2().RevokeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v4Zero, false)
+				err := f.CloudServices.EC2().RevokeSecurityGroupIngress(context.TODO(), clusterSGID, "TCP", metricsPort, metricsPort, v4Zero, false)
 				Expect(err).ToNot(HaveOccurred())
 			} else {
-				err := f.CloudServices.EC2().RevokeSecurityGroupIngress(clusterSGID, "TCP", metricsPort, metricsPort, v6Zero, false)
+				err := f.CloudServices.EC2().RevokeSecurityGroupIngress(context.TODO(), clusterSGID, "TCP", metricsPort, metricsPort, v6Zero, false)
 				Expect(err).ToNot(HaveOccurred())
 			}
 		})
@@ -247,7 +248,7 @@ var _ = Describe("Security Group for Pods Test", func() {
 			pod, err := f.K8sResourceManagers.PodManager().CreateAndWaitTillRunning(pod)
 			Expect(err).ToNot(HaveOccurred())
 
-			ValidatePodsHaveBranchENI(v1.PodList{Items: []v1.Pod{*pod}})
+			_ = ValidatePodsHaveBranchENI(v1.PodList{Items: []v1.Pod{*pod}})
 
 			timeAfterLivelinessProbeFails := initialDelay + (periodSecond * failureCount) + 10
 
@@ -396,7 +397,7 @@ func ValidateHostNetworking(testType TestType, podValidationInputString string) 
 		PodLogs(testPod.Namespace, testPod.Name)
 	Expect(errLogs).ToNot(HaveOccurred())
 
-	fmt.Fprintln(GinkgoWriter, logs)
+	_, _ = fmt.Fprintln(GinkgoWriter, logs)
 
 	By("deleting the host networking setup pod")
 	err = f.K8sResourceManagers.PodManager().

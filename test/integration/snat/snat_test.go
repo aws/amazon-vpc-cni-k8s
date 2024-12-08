@@ -1,21 +1,20 @@
 package snat
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 )
 
 const (
-	TEST_POD_LABEL_KEY   = "test-pod-label-key"
-	TEST_POD_LABEL_VALUE = "test-pod-label-val"
-	EXTERNAL_DOMAIN      = "https://aws.amazon.com/"
+	EXTERNAL_DOMAIN = "https://aws.amazon.com/"
 )
 
 var _ = Describe("SNAT tests", func() {
@@ -47,13 +46,13 @@ var _ = Describe("SNAT tests", func() {
 
 	Context("Validate AWS_VPC_K8S_CNI_RANDOMIZESNAT", func() {
 		It("Verify SNAT IP table rule by changing AWS_VPC_K8S_CNI_RANDOMIZESNAT", func() {
-			vpcOutput, err := f.CloudServices.EC2().DescribeVPC(f.Options.AWSVPCID)
+			vpcOutput, err := f.CloudServices.EC2().DescribeVPC(context.TODO(), f.Options.AWSVPCID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(vpcOutput.Vpcs)).To(BeNumerically(">", 0))
 
 			numOfCidrs := 0
 			for _, vpc := range vpcOutput.Vpcs[0].CidrBlockAssociationSet {
-				if *vpc.CidrBlockState.State == "associated" {
+				if vpc.CidrBlockState.State == "associated" {
 					numOfCidrs = numOfCidrs + 1
 				}
 			}
@@ -74,14 +73,14 @@ var _ = Describe("SNAT tests", func() {
 	Context("Validate AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS", func() {
 		It("Verify External Domain Connectivity by modifying AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS", func() {
 			By("Getting CIDR for primary node's private subnet")
-			out, err := f.CloudServices.EC2().DescribeSubnet(privateSubnetId)
+			out, err := f.CloudServices.EC2().DescribeSubnet(context.TODO(), privateSubnetId)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(out.Subnets)).To(BeNumerically(">", 0))
 
 			cidrBlock := out.Subnets[0].CidrBlock
 			By("Updating AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS with private subnet CIDR")
 			k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace, utils.AwsNodeName, map[string]string{
-				"AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS": aws.StringValue(cidrBlock),
+				"AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS": aws.ToString(cidrBlock),
 			})
 
 			By("Check External domain connectivity from this private subnet CIDR block")
@@ -127,7 +126,7 @@ func ValidateExternalDomainConnectivity(url string) {
 		PodLogs(testPod.Namespace, testPod.Name)
 	Expect(errLogs).ToNot(HaveOccurred())
 
-	fmt.Fprintln(GinkgoWriter, logs)
+	_, _ = fmt.Fprintln(GinkgoWriter, logs)
 
 	By("deleting the test pod")
 	err = f.K8sResourceManagers.PodManager().
@@ -167,7 +166,7 @@ func ValidateIPTableRules(randomizedSNATValue string, numOfCidrs int) {
 		PodLogs(hostNetworkPod.Namespace, hostNetworkPod.Name)
 	Expect(errLogs).ToNot(HaveOccurred())
 
-	fmt.Fprintln(GinkgoWriter, logs)
+	_, _ = fmt.Fprintln(GinkgoWriter, logs)
 
 	By("deleting the host networking setup pod")
 	err = f.K8sResourceManagers.PodManager().

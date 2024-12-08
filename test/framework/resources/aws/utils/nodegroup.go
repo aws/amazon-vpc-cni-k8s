@@ -14,6 +14,7 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -22,18 +23,15 @@ import (
 
 	"gopkg.in/yaml.v2"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudformation"
-
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	cloudformationtypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 )
 
 const (
-	// Docker will be default, if not specified
-	CONTAINERD                 = "containerd"
 	CreateNodeGroupCFNTemplate = "/testdata/amazon-eks-nodegroup.yaml"
 	NodeImageIdSSMParam        = "/aws/service/eks/optimized-ami/%s/amazon-linux-2/recommended/image_id"
 )
@@ -81,7 +79,7 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 	}
 	template := string(templateBytes)
 
-	describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
+	describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(context.TODO(), f.Options.ClusterName)
 	if err != nil {
 		return fmt.Errorf("failed to describe cluster %s: %v", f.Options.ClusterName, err)
 	}
@@ -105,7 +103,7 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 
 	asgSizeString := strconv.Itoa(properties.AsgSize)
 
-	createNgStackParams := []*cloudformation.Parameter{
+	createNgStackParams := []cloudformationtypes.Parameter{
 		{
 			ParameterKey:   aws.String("ClusterName"),
 			ParameterValue: aws.String(f.Options.ClusterName),
@@ -120,7 +118,7 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 		},
 		{
 			ParameterKey:   aws.String("ClusterControlPlaneSecurityGroup"),
-			ParameterValue: describeClusterOutput.Cluster.ResourcesVpcConfig.SecurityGroupIds[0],
+			ParameterValue: aws.String(describeClusterOutput.Cluster.ResourcesVpcConfig.SecurityGroupIds[0]),
 		},
 		{
 			ParameterKey:   aws.String("NodeGroupName"),
@@ -161,14 +159,14 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 	}
 
 	if properties.NodeImageId != "" {
-		createNgStackParams = append(createNgStackParams, &cloudformation.Parameter{
+		createNgStackParams = append(createNgStackParams, cloudformationtypes.Parameter{
 			ParameterKey:   aws.String("NodeImageId"),
 			ParameterValue: aws.String(properties.NodeImageId),
 		})
 	}
 
 	describeStackOutput, err := f.CloudServices.CloudFormation().
-		WaitTillStackCreated(properties.NodeGroupName, createNgStackParams, template)
+		WaitTillStackCreated(context.TODO(), properties.NodeGroupName, createNgStackParams, template)
 	if err != nil {
 		return fmt.Errorf("failed to create node group cfn stack: %v", err)
 	}
@@ -220,7 +218,7 @@ func CreateAndWaitTillSelfManagedNGReady(f *framework.Framework, properties Node
 }
 
 func DeleteAndWaitTillSelfManagedNGStackDeleted(f *framework.Framework, properties NodeGroupProperties) error {
-	err := f.CloudServices.CloudFormation().WaitTillStackDeleted(properties.NodeGroupName)
+	err := f.CloudServices.CloudFormation().WaitTillStackDeleted(context.TODO(), properties.NodeGroupName)
 	if err != nil {
 		return fmt.Errorf("failed to delete node group cfn stack: %v", err)
 	}
@@ -257,33 +255,33 @@ func GetClusterVPCConfig(f *framework.Framework) (*ClusterVPCConfig, error) {
 		return nil, fmt.Errorf("partial configuration, if supplying config via flags you need to provide at least public route table ID, public subnet list and availibility zone list")
 	}
 
-	describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
+	describeClusterOutput, err := f.CloudServices.EKS().DescribeCluster(context.TODO(), f.Options.ClusterName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe cluster %s: %v", f.Options.ClusterName, err)
 	}
 
 	for _, subnet := range describeClusterOutput.Cluster.ResourcesVpcConfig.SubnetIds {
-		describeRouteOutput, err := f.CloudServices.EC2().DescribeRouteTables(*subnet)
+		describeRouteOutput, err := f.CloudServices.EC2().DescribeRouteTables(context.TODO(), subnet)
 		if err != nil {
-			return nil, fmt.Errorf("failed to describe subnet %s: %v", *subnet, err)
+			return nil, fmt.Errorf("failed to describe subnet %s: %v", subnet, err)
 		}
 
 		isPublic := false
 		for _, route := range describeRouteOutput.RouteTables[0].Routes {
 			if route.GatewayId != nil && strings.Contains(*route.GatewayId, "igw-") {
 				isPublic = true
-				clusterConfig.PublicSubnetList = append(clusterConfig.PublicSubnetList, *subnet)
+				clusterConfig.PublicSubnetList = append(clusterConfig.PublicSubnetList, subnet)
 				clusterConfig.PublicRouteTableID = *describeRouteOutput.RouteTables[0].RouteTableId
 			}
 		}
 		if !isPublic {
-			clusterConfig.PrivateSubnetList = append(clusterConfig.PrivateSubnetList, *subnet)
+			clusterConfig.PrivateSubnetList = append(clusterConfig.PrivateSubnetList, subnet)
 		}
 	}
 
 	uniqueAZ := map[string]bool{}
 	for _, subnet := range clusterConfig.PublicSubnetList {
-		describeSubnet, err := f.CloudServices.EC2().DescribeSubnet(subnet)
+		describeSubnet, err := f.CloudServices.EC2().DescribeSubnet(context.TODO(), subnet)
 		if err != nil {
 			return nil, fmt.Errorf("failed to describe the subnet %s: %v", subnet, err)
 		}
@@ -308,7 +306,7 @@ func TerminateInstances(f *framework.Framework) error {
 		instanceIDs = append(instanceIDs, k8sUtils.GetInstanceIDFromNode(node))
 	}
 
-	err = f.CloudServices.EC2().TerminateInstance(instanceIDs)
+	err = f.CloudServices.EC2().TerminateInstance(context.TODO(), instanceIDs)
 	if err != nil {
 		return fmt.Errorf("failed to terminate instances: %v", err)
 	}

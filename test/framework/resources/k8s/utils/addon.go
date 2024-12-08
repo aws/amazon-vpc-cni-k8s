@@ -12,7 +12,7 @@ import (
 func WaitTillAddonIsDeleted(eks services.EKS, addonName string, clusterName string) error {
 	ctx := context.Background()
 	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
-		_, err := eks.DescribeAddon(&services.AddonInput{
+		_, err := eks.DescribeAddon(context.TODO(), services.AddonInput{
 			AddonName:   addonName,
 			ClusterName: clusterName,
 		})
@@ -26,7 +26,7 @@ func WaitTillAddonIsDeleted(eks services.EKS, addonName string, clusterName stri
 func WaitTillAddonIsActive(eks services.EKS, addonName string, clusterName string) error {
 	ctx := context.Background()
 	return wait.PollImmediateUntil(utils.PollIntervalShort, func() (bool, error) {
-		describeAddonOutput, err := eks.DescribeAddon(&services.AddonInput{
+		describeAddonOutput, err := eks.DescribeAddon(context.TODO(), services.AddonInput{
 			AddonName:   addonName,
 			ClusterName: clusterName,
 		})
@@ -34,7 +34,7 @@ func WaitTillAddonIsActive(eks services.EKS, addonName string, clusterName strin
 			return false, err
 		}
 
-		status := *describeAddonOutput.Addon.Status
+		status := describeAddonOutput.Addon.Status
 		if status == "CREATE_FAILED" || status == "DEGRADED" {
 			return false, errors.Errorf("Create Addon Failed, addon status: %s", status)
 		}

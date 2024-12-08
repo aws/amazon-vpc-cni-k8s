@@ -14,6 +14,7 @@
 package custom_networking
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net"
@@ -82,22 +83,22 @@ var _ = BeforeSuite(func() {
 
 	By("creating security group to be used by custom networking")
 	createSecurityGroupOutput, err := f.CloudServices.EC2().
-		CreateSecurityGroup("custom-networking-test", "custom networking", f.Options.AWSVPCID)
+		CreateSecurityGroup(context.TODO(), "custom-networking-test", "custom networking", f.Options.AWSVPCID)
 	Expect(err).ToNot(HaveOccurred())
 	customNetworkingSGID = *createSecurityGroupOutput.GroupId
 
 	By("authorizing egress and ingress on security group for single port")
-	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(customNetworkingSGID, "TCP",
+	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(context.TODO(), customNetworkingSGID, "TCP",
 		customNetworkingSGOpenPort, customNetworkingSGOpenPort, "0.0.0.0/0")
-	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(customNetworkingSGID, "TCP",
+	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), customNetworkingSGID, "TCP",
 		customNetworkingSGOpenPort, customNetworkingSGOpenPort, "0.0.0.0/0", false)
-	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(customNetworkingSGID, "UDP",
+	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(context.TODO(), customNetworkingSGID, "UDP",
 		corednsSGOpenPort, corednsSGOpenPort, "0.0.0.0/0")
-	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(customNetworkingSGID, "UDP",
+	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), customNetworkingSGID, "UDP",
 		corednsSGOpenPort, corednsSGOpenPort, "0.0.0.0/0", false)
-	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(customNetworkingSGID, "TCP",
+	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(context.TODO(), customNetworkingSGID, "TCP",
 		corednsSGOpenPort, corednsSGOpenPort, "0.0.0.0/0")
-	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(customNetworkingSGID, "TCP",
+	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), customNetworkingSGID, "TCP",
 		corednsSGOpenPort, corednsSGOpenPort, "0.0.0.0/0", false)
 
 	By("Adding custom networking security group ingress rule from primary eni")
@@ -115,10 +116,10 @@ var _ = BeforeSuite(func() {
 	Expect(primaryNode).To(Not(BeNil()), "expected to find a non-tainted node")
 
 	instanceID := k8sUtils.GetInstanceIDFromNode(*primaryNode)
-	primaryInstance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
+	primaryInstance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
 	Expect(err).ToNot(HaveOccurred())
 
-	instance, err := f.CloudServices.EC2().DescribeInstance(*primaryInstance.InstanceId)
+	instance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
 	Expect(err).ToNot(HaveOccurred())
 
 	var primaryENIID string
@@ -130,16 +131,16 @@ var _ = BeforeSuite(func() {
 		}
 	}
 
-	eniOutput, err := f.CloudServices.EC2().DescribeNetworkInterface([]string{primaryENIID})
+	eniOutput, err := f.CloudServices.EC2().DescribeNetworkInterface(context.TODO(), []string{primaryENIID})
 	Expect(err).ToNot(HaveOccurred())
 	for _, sg := range eniOutput.NetworkInterfaces[0].Groups {
 		primaryENISGList = append(primaryENISGList, *sg.GroupId)
-		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(*sg.GroupId, "-1",
+		f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), *sg.GroupId, "-1",
 			-1, -1, customNetworkingSGID, true)
 	}
 
 	By("associating cidr range to the VPC")
-	association, err := f.CloudServices.EC2().AssociateVPCCIDRBlock(f.Options.AWSVPCID, cidrRange.String())
+	association, err := f.CloudServices.EC2().AssociateVPCCIDRBlock(context.TODO(), f.Options.AWSVPCID, cidrRange.String())
 	Expect(err).ToNot(HaveOccurred())
 	cidrBlockAssociationID = *association.CidrBlockAssociation.AssociationId
 
@@ -150,13 +151,13 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		createSubnetOutput, err := f.CloudServices.EC2().
-			CreateSubnet(subnetCidr.String(), f.Options.AWSVPCID, az)
+			CreateSubnet(context.TODO(), subnetCidr.String(), f.Options.AWSVPCID, az)
 		Expect(err).ToNot(HaveOccurred())
 
 		subnetID := *createSubnetOutput.Subnet.SubnetId
 
 		By("associating the route table with the newly created subnet")
-		err = f.CloudServices.EC2().AssociateRouteTableToSubnet(clusterVPCConfig.PublicRouteTableID, subnetID)
+		err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
 		Expect(err).ToNot(HaveOccurred())
 
 		eniConfigBuilder := manifest.NewENIConfigBuilder().
@@ -213,20 +214,20 @@ var _ = AfterSuite(func() {
 
 	By("Removing custom networking security group ingress rule from primary eni")
 	for _, sg := range primaryENISGList {
-		f.CloudServices.EC2().RevokeSecurityGroupIngress(sg, "-1",
+		_ = f.CloudServices.EC2().RevokeSecurityGroupIngress(context.TODO(), sg, "-1",
 			-1, -1, customNetworkingSGID, true)
 	}
 
 	By("deleting security group")
-	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(customNetworkingSGID))
+	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), customNetworkingSGID))
 
 	for _, subnet := range customNetworkingSubnetIDList {
 		By(fmt.Sprintf("deleting the subnet %s", subnet))
-		errs.Append(f.CloudServices.EC2().DeleteSubnet(subnet))
+		errs.Append(f.CloudServices.EC2().DeleteSubnet(context.TODO(), subnet))
 	}
 
 	By("disassociating the CIDR range to the VPC")
-	errs.Append(f.CloudServices.EC2().DisAssociateVPCCIDRBlock(cidrBlockAssociationID))
+	errs.Append(f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID))
 
 	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred())
 })

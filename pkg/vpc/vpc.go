@@ -15,6 +15,8 @@ package vpc
 import (
 	"errors"
 
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
@@ -86,7 +88,7 @@ func GetHypervisorType(instanceType string) (string, error) {
 		log.Errorf("%s: %s", instanceType, ErrInstanceTypeNotExist)
 		return "", ErrInstanceTypeNotExist
 	}
-	return instance.HypervisorType, nil
+	return string(instance.HypervisorType), nil
 }
 
 func GetIsBareMetal(instanceType string) (bool, error) {
@@ -119,7 +121,7 @@ func GetInstance(instanceType string) (InstanceTypeLimits, bool) {
 	return instance, ok
 }
 
-func SetInstance(instanceType string, eniLimit int, ipv4Limit int, defaultNetworkCardIndex int, networkCards []NetworkCard, hypervisorType string, isBareMetalInstance bool) {
-	instanceNetworkingLimits[instanceType] = New(eniLimit, ipv4Limit, defaultNetworkCardIndex, networkCards,
-		hypervisorType, isBareMetalInstance)
+func SetInstance(instanceType ec2types.InstanceType, eniLimit int, ipv4Limit int, defaultNetworkCardIndex int, networkCards []NetworkCard, hypervisorType ec2types.InstanceTypeHypervisor, isBareMetalInstance bool) {
+	instanceNetworkingLimits[string(instanceType)] = New(eniLimit, ipv4Limit, defaultNetworkCardIndex, networkCards,
+		string(hypervisorType), isBareMetalInstance)
 }
