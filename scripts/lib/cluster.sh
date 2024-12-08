@@ -96,6 +96,9 @@ function up-kops-cluster {
     --networking amazonvpc \
     --node-count 2 \
     --node-size c5.xlarge \
+    --control-plane-count 3 \
+    --control-plane-size c5.xlarge \
+    --control-plane-zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
     --ssh-public-key=~/.ssh/devopsinuse.pub \
     --kubernetes-version ${K8S_VERSION} \
     --image ${HOST_IMAGE_SSM_PARAMETER} \
