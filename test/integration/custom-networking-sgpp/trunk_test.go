@@ -14,6 +14,8 @@
 package custom_networking_sgpp
 
 import (
+	"context"
+
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -23,7 +25,7 @@ var _ = Describe("Trunk ENI Security Group Test", func() {
 	Context("when validating security group on trunk ENI", func() {
 		It("should match security group in ENIConfig", func() {
 			instanceID := k8sUtils.GetInstanceIDFromNode(targetNode)
-			instance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
+			instance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
 			Expect(err).ToNot(HaveOccurred())
 
 			trunkSGMatch := false

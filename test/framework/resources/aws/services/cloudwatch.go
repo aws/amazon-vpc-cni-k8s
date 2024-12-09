@@ -14,30 +14,31 @@
 package services
 
 import (
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
-	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
+	"context"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 )
 
 type CloudWatch interface {
-	GetMetricStatistics(getMetricStatisticsInput *cloudwatch.GetMetricStatisticsInput) (*cloudwatch.GetMetricStatisticsOutput, error)
-	PutMetricData(input *cloudwatch.PutMetricDataInput) (*cloudwatch.PutMetricDataOutput, error)
+	GetMetricStatistics(ctx context.Context, params *cloudwatch.GetMetricStatisticsInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.GetMetricStatisticsOutput, error)
+	PutMetricData(ctx context.Context, params *cloudwatch.PutMetricDataInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.PutMetricDataOutput, error)
 }
 
 type defaultCloudWatch struct {
-	cloudwatchiface.CloudWatchAPI
+	client *cloudwatch.Client
 }
 
-func NewCloudWatch(session *session.Session) CloudWatch {
+func NewCloudWatch(cfg aws.Config) CloudWatch {
 	return &defaultCloudWatch{
-		CloudWatchAPI: cloudwatch.New(session),
+		client: cloudwatch.NewFromConfig(cfg),
 	}
 }
 
-func (d *defaultCloudWatch) GetMetricStatistics(getMetricStatisticsInput *cloudwatch.GetMetricStatisticsInput) (*cloudwatch.GetMetricStatisticsOutput, error) {
-	return d.CloudWatchAPI.GetMetricStatistics(getMetricStatisticsInput)
+func (d *defaultCloudWatch) GetMetricStatistics(ctx context.Context, params *cloudwatch.GetMetricStatisticsInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.GetMetricStatisticsOutput, error) {
+	return d.client.GetMetricStatistics(ctx, params, optFns...)
 }
 
-func (d *defaultCloudWatch) PutMetricData(input *cloudwatch.PutMetricDataInput) (*cloudwatch.PutMetricDataOutput, error) {
-	return d.CloudWatchAPI.PutMetricData(input)
+func (d *defaultCloudWatch) PutMetricData(ctx context.Context, params *cloudwatch.PutMetricDataInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.PutMetricDataOutput, error) {
+	return d.client.PutMetricData(ctx, params, optFns...)
 }

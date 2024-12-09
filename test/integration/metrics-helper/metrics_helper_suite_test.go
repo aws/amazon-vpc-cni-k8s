@@ -14,6 +14,7 @@
 package metrics_helper
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"strings"
@@ -73,8 +74,7 @@ var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
 
 	By("creating test namespace")
-	f.K8sResourceManagers.NamespaceManager().
-		CreateNamespace(utils.DefaultTestNamespace)
+	_ = f.K8sResourceManagers.NamespaceManager().CreateNamespace(utils.DefaultTestNamespace)
 
 	By("getting the node list")
 	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
@@ -94,7 +94,7 @@ var _ = BeforeSuite(func() {
 	Expect(instanceID).ToNot(Equal(""), "expected to find a non-tainted node")
 
 	By("getting the nodegroup name and instance profile")
-	instance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
+	instance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
 	Expect(err).ToNot(HaveOccurred())
 
 	instanceTagKeyValuePair := map[string]string{
@@ -119,11 +119,11 @@ var _ = BeforeSuite(func() {
 	if ngName == "" {
 		ngName = DEFAULT_CLUSTER_ID
 	}
-	fmt.Fprintf(GinkgoWriter, "cluster name: %s\n", ngName)
+	_, _ = fmt.Fprintf(GinkgoWriter, "cluster name: %s\n", ngName)
 
 	By("getting the node instance role")
 	instanceProfileRoleName := strings.Split(*instance.IamInstanceProfile.Arn, "instance-profile/")[1]
-	instanceProfileOutput, err := f.CloudServices.IAM().GetInstanceProfile(instanceProfileRoleName)
+	instanceProfileOutput, err := f.CloudServices.IAM().GetInstanceProfile(context.TODO(), instanceProfileRoleName)
 	Expect(err).ToNot(HaveOccurred())
 
 	ngRoleName = *instanceProfileOutput.InstanceProfile.Roles[0].RoleName
@@ -131,7 +131,7 @@ var _ = BeforeSuite(func() {
 
 	// We should ideally use the PathPrefix argument to list the policy, but this is returning an empty list. So workaround by listing local policies & filter
 	// SO issue: https://stackoverflow.com/questions/66287626/aws-cli-list-policies-to-find-a-policy-with-a-specific-name
-	policyList, err := f.CloudServices.IAM().ListPolicies("Local")
+	policyList, err := f.CloudServices.IAM().ListPolicies(context.TODO(), "Local")
 	Expect(err).ToNot(HaveOccurred())
 
 	for _, item := range policyList.Policies {
@@ -141,7 +141,7 @@ var _ = BeforeSuite(func() {
 		}
 	}
 
-	err = f.CloudServices.IAM().AttachRolePolicy(policyARN, ngRoleName)
+	err = f.CloudServices.IAM().AttachRolePolicy(context.TODO(), policyARN, ngRoleName)
 	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("unable to attach arn: %s role: %s", policyARN, ngRoleName))
 
 	By("updating the aws-nodes to restart the metric count")
@@ -162,13 +162,12 @@ var _ = AfterSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	By("detaching role policy from the node IAM Role")
-	err = f.CloudServices.IAM().DetachRolePolicy(policyARN, ngRoleName)
+	err = f.CloudServices.IAM().DetachRolePolicy(context.TODO(), policyARN, ngRoleName)
 	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("unable to detach %s %s", policyARN, ngRoleName))
 
 	k8sUtil.RemoveVarFromDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
 		utils.AwsNodeName, map[string]struct{}{"SOME_NON_EXISTENT_VAR": {}})
 
 	By("deleting test namespace")
-	f.K8sResourceManagers.NamespaceManager().
-		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
+	_ = f.K8sResourceManagers.NamespaceManager().DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 })

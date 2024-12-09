@@ -19,8 +19,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	cloudwatchtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"k8s.io/client-go/kubernetes"
@@ -288,9 +288,9 @@ func produceHistogram(act metricsAction, cw publisher.Publisher) {
 
 		prevUpperBound = *bucket.UpperBound
 		if *bucket.CumulativeCount != 0 {
-			dataPoint := &cloudwatch.MetricDatum{
+			dataPoint := cloudwatchtypes.MetricDatum{
 				MetricName: aws.String(act.cwMetricName),
-				StatisticValues: &cloudwatch.StatisticSet{
+				StatisticValues: &cloudwatchtypes.StatisticSet{
 					Maximum:     aws.Float64(mid),
 					Minimum:     aws.Float64(mid),
 					SampleCount: aws.Float64(*bucket.CumulativeCount),
@@ -322,23 +322,23 @@ func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFa
 		for _, action := range convertMetrics.actions {
 			switch metricType {
 			case dto.MetricType_COUNTER:
-				dataPoint := &cloudwatch.MetricDatum{
+				dataPoint := cloudwatchtypes.MetricDatum{
 					MetricName: aws.String(action.cwMetricName),
-					Unit:       aws.String(cloudwatch.StandardUnitCount),
+					Unit:       cloudwatchtypes.StandardUnitCount,
 					Value:      aws.Float64(action.data.curSingleDataPoint),
 				}
 				cw.Publish(dataPoint)
 			case dto.MetricType_GAUGE:
-				dataPoint := &cloudwatch.MetricDatum{
+				dataPoint := cloudwatchtypes.MetricDatum{
 					MetricName: aws.String(action.cwMetricName),
-					Unit:       aws.String(cloudwatch.StandardUnitCount),
+					Unit:       cloudwatchtypes.StandardUnitCount,
 					Value:      aws.Float64(action.data.curSingleDataPoint),
 				}
 				cw.Publish(dataPoint)
 			case dto.MetricType_SUMMARY:
-				dataPoint := &cloudwatch.MetricDatum{
+				dataPoint := cloudwatchtypes.MetricDatum{
 					MetricName: aws.String(action.cwMetricName),
-					Unit:       aws.String(cloudwatch.StandardUnitCount),
+					Unit:       cloudwatchtypes.StandardUnitCount,
 					Value:      aws.Float64(action.data.curSingleDataPoint),
 				}
 				cw.Publish(dataPoint)

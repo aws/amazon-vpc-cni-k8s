@@ -26,8 +26,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-const InstanceTypeNodeLabelKey = "beta.kubernetes.io/instance-type"
-
 var primaryNode v1.Node
 
 func TestCNIv6PodNetworking(t *testing.T) {
@@ -39,8 +37,7 @@ var _ = BeforeSuite(func() {
 	f = framework.New(framework.GlobalOptions)
 
 	By("creating test namespace")
-	f.K8sResourceManagers.NamespaceManager().
-		CreateNamespace(utils.DefaultTestNamespace)
+	_ = f.K8sResourceManagers.NamespaceManager().CreateNamespace(utils.DefaultTestNamespace)
 
 	By(fmt.Sprintf("getting the node with the node label key %s and value %s",
 		f.Options.NgNameLabelKey, f.Options.NgNameLabelVal))
@@ -56,8 +53,7 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	By("deleting test namespace")
-	f.K8sResourceManagers.NamespaceManager().
-		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
+	_ = f.K8sResourceManagers.NamespaceManager().DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
 	k8sUtils.UpdateEnvVarOnDaemonSetAndWaitUntilReady(f, "aws-node", "kube-system",
 		"aws-node", map[string]string{
