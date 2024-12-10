@@ -24,13 +24,13 @@ import (
 	"time"
 
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/aws/smithy-go"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/golang/mock/gomock"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 
 	mock_ec2wrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
@@ -307,7 +307,8 @@ func TestAWSGetFreeDeviceNumberNoDevice(t *testing.T) {
 	result := &ec2.DescribeInstancesOutput{Reservations: []ec2types.Reservation{{
 		Instances: []ec2types.Instance{{
 			NetworkInterfaces: ec2ENIs,
-		}}}}}
+		}},
+	}}}
 
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 
@@ -473,12 +474,14 @@ func TestAllocENI(t *testing.T) {
 	ec2ENIs = append(ec2ENIs, ec2ENI)
 
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+	}
 
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	attachmentID := "eni-attach-58ddda9d"
 	attachResult := &ec2.AttachNetworkInterfaceOutput{
-		AttachmentId: &attachmentID}
+		AttachmentId: &attachmentID,
+	}
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
@@ -527,7 +530,8 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 		ec2ENIs = append(ec2ENIs, ec2ENI)
 	}
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+	}
 
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().DeleteNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
@@ -579,7 +583,8 @@ func TestAllocENIMaxReached(t *testing.T) {
 	ec2ENIs = append(ec2ENIs, ec2ENI)
 
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+	}
 
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("AttachmentLimitExceeded"))
@@ -630,11 +635,13 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	ec2ENIs = append(ec2ENIs, ec2ENI)
 
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+	}
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	attachmentID := "eni-attach-58ddda9d"
 	attachResult := &ec2.AttachNetworkInterfaceOutput{
-		AttachmentId: &attachmentID}
+		AttachmentId: &attachmentID,
+	}
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
@@ -722,11 +729,13 @@ func TestAllocENIWithPrefixAddresses(t *testing.T) {
 	ec2ENIs = append(ec2ENIs, ec2ENI)
 
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+	}
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	attachmentID := "eni-attach-58ddda9d"
 	attachResult := &ec2.AttachNetworkInterfaceOutput{
-		AttachmentId: &attachmentID}
+		AttachmentId: &attachmentID,
+	}
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
@@ -783,7 +792,8 @@ func TestFreeENI(t *testing.T) {
 	attachmentID := eniAttachID
 	attachment := &ec2types.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
 	result := &ec2.DescribeNetworkInterfacesOutput{
-		NetworkInterfaces: []ec2types.NetworkInterface{{Attachment: attachment}}}
+		NetworkInterfaces: []ec2types.NetworkInterface{{Attachment: attachment}},
+	}
 	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().DetachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	mockEC2.EXPECT().DeleteNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
@@ -803,7 +813,8 @@ func TestFreeENIRetry(t *testing.T) {
 	attachmentID := eniAttachID
 	attachment := &ec2types.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
 	result := &ec2.DescribeNetworkInterfacesOutput{
-		NetworkInterfaces: []ec2types.NetworkInterface{{Attachment: attachment}}}
+		NetworkInterfaces: []ec2types.NetworkInterface{{Attachment: attachment}},
+	}
 	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 
 	// retry 2 times
@@ -857,7 +868,8 @@ func TestFreeENIRetryMax(t *testing.T) {
 	attachmentID := eniAttachID
 	attachment := &ec2types.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
 	result := &ec2.DescribeNetworkInterfacesOutput{
-		NetworkInterfaces: []ec2types.NetworkInterface{{Attachment: attachment}}}
+		NetworkInterfaces: []ec2types.NetworkInterface{{Attachment: attachment}},
+	}
 	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().DetachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
@@ -892,9 +904,11 @@ func TestDescribeInstanceTypes(t *testing.T) {
 	defer ctrl.Finish()
 	mockEC2.EXPECT().DescribeInstanceTypes(gomock.Any(), gomock.Any(), gomock.Any()).Return(&ec2.DescribeInstanceTypesOutput{
 		InstanceTypes: []ec2types.InstanceTypeInfo{
-			{InstanceType: "not-there", NetworkInfo: &ec2types.NetworkInfo{
-				MaximumNetworkInterfaces:  aws.Int32(9),
-				Ipv4AddressesPerInterface: aws.Int32(99)},
+			{
+				InstanceType: "not-there", NetworkInfo: &ec2types.NetworkInfo{
+					MaximumNetworkInterfaces:  aws.Int32(9),
+					Ipv4AddressesPerInterface: aws.Int32(99),
+				},
 			},
 		},
 		NextToken: nil,
@@ -989,7 +1003,7 @@ func TestAllocPrefixAddresses(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
-	//Allocate 1 prefix for the ENI
+	// Allocate 1 prefix for the ENI
 	input := &ec2.AssignPrivateIpAddressesInput{
 		NetworkInterfaceId: aws.String(eniID),
 		Ipv4PrefixCount:    aws.Int32(1),
@@ -1203,8 +1217,10 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 				metadataMACPath + eni2MAC + metadataIPv4s:      eniIPs,
 				metadataMACPath + eni2MAC + metaDataPrefixPath: eniPrefixes,
 			})
-			cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2,
-				enablePrefixDelegation: true, v4Enabled: tt.args.v4Enabled, v6Enabled: tt.args.v6Enabled}
+			cache := &EC2InstanceMetadataCache{
+				imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2,
+				enablePrefixDelegation: true, v4Enabled: tt.args.v4Enabled, v6Enabled: tt.args.v6Enabled,
+			}
 			gotEniMetadata, err := cache.waitForENIAndIPsAttached(tt.args.eni, tt.args.wantedSecondaryIPs, tt.args.maxBackoffDelay)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("waitForENIAndIPsAttached() error = %v, wantErr %v", err, tt.wantErr)
@@ -1250,7 +1266,8 @@ func TestEC2InstanceMetadataCache_cleanUpLeakedENIsInternal(t *testing.T) {
 }
 
 func setupDescribeNetworkInterfacesPagesWithContextMock(
-	t *testing.T, mockEC2 *mock_ec2wrapper.MockEC2, interfaces []ec2types.NetworkInterface, err error, times int) {
+	t *testing.T, mockEC2 *mock_ec2wrapper.MockEC2, interfaces []ec2types.NetworkInterface, err error, times int,
+) {
 	mockEC2.EXPECT().
 		DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).
 		Times(times).
