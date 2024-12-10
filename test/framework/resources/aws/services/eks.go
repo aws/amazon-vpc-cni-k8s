@@ -47,12 +47,20 @@ type AddonInput struct {
 
 func NewEKS(cfg aws.Config, endpoint string) (EKS, error) {
 	var err error
-
+	var customResolver aws.EndpointResolverWithOptions
 	if endpoint != "" {
-		customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-			return aws.Endpoint{
-				URL: endpoint,
-			}, nil
+		// EKS Custom endpoint resolver needs PartitionID, SingingRegion and URL for handling STS requests.
+		// TODO: default to "aws" partition for now as it handled only tests. Provide option to pass partitionID.
+		customResolver = aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+			if service == eks.ServiceID {
+				return aws.Endpoint{
+					PartitionID:   "aws",
+					URL:           endpoint,
+					SigningRegion: region,
+				}, nil
+			}
+			// Fallback to default endpoint resolution for non EKS Services.
+			return aws.Endpoint{}, &aws.EndpointNotFoundError{}
 		})
 		cfg, err = config.LoadDefaultConfig(context.Background(),
 			config.WithEndpointResolverWithOptions(customResolver),
