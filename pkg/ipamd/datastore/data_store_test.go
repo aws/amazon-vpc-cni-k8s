@@ -1615,3 +1615,77 @@ func TestForceRemovalMetrics(t *testing.T) {
 	eniCount = testutil.ToFloat64(prometheusmetrics.ForceRemovedENIs)
 	assert.Equal(t, float64(1), eniCount)
 }
+
+func TestValidateAssignedIPsByPodVethExistence(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockNetLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	ds := &DataStore{
+		eniPool:      make(ENIPool),
+		log:          Testlog,
+		netLink:      mockNetLink,
+		backingStore: NullCheckpoint{},
+		ipCooldownPeriod: getCooldownPeriod(),
+	}
+
+	deviceName := "eni-" + networkutils.GeneratePodHostVethNameSuffix("default","sample-pod-1")
+	// Mock the netlink LinkList call
+	mockNetLink.EXPECT().LinkList().Return([]netlink.Link{
+		&netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: deviceName}},
+		&netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: "veth1"}},
+	}, nil)
+
+	// Add ENIs and IPs to the datastore
+	err := ds.AddENI("eni-1", 1, true, false, false)
+	assert.NoError(t, err)
+
+	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+	assert.NoError(t, err)
+
+	key := IPAMKey{"net0", "sandbox-1", deviceName}
+	ipamMetadata := IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"}
+	_, _, err = ds.AssignPodIPv4Address(key, ipamMetadata)
+	assert.NoError(t, err)
+
+	// Validate assigned IPs by pod veth existence
+	err = ds.ValidateAssignedIPsByPodVethExistence()
+	assert.NoError(t, err)
+
+	// Check if the IP is still assigned
+	eni, _, addr := ds.eniPool.FindAddressForSandbox(key)
+	assert.NotNil(t, addr)
+	assert.Equal(t, "1.1.1.1", addr.Address)
+	assert.Equal(t, eni.DeviceNumber, 1)
+
+	mockNetLink.EXPECT().NewRule().DoAndReturn(func() *netlink.Rule { return netlink.NewRule() }).Times(2)
+
+	// Mock the netlink RuleList call to simulate stale rules
+	toContainerRule := netlink.NewRule()
+	toContainerRule.Dst = &net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.CIDRMask(32, 32)}
+	toContainerRule.Priority = networkutils.ToContainerRulePriority
+	toContainerRule.Table = unix.RT_TABLE_MAIN
+
+	fromContainerRule := netlink.NewRule()
+	fromContainerRule.Src = &net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.CIDRMask(32, 32)}
+	fromContainerRule.Priority = networkutils.FromPodRulePriority
+	fromContainerRule.Table = unix.RT_TABLE_UNSPEC
+
+	// Mock the netlink RuleDel call to remove stale rules
+	mockNetLink.EXPECT().RuleDel(toContainerRule).Return(nil)
+	mockNetLink.EXPECT().RuleDel(fromContainerRule).Return(nil)
+	// Mock the netlink LinkList call, omit the device that is associated with
+	// the IP to simulate stale veth.
+	mockNetLink.EXPECT().LinkList().Return([]netlink.Link{
+		&netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: "veth1"}},
+	}, nil)
+
+	// Validate assigned IPs by pod veth existence again
+	err = ds.ValidateAssignedIPsByPodVethExistence()
+	assert.NoError(t, err)
+
+	// Check if the IP is unassigned
+	_, _, addr = ds.eniPool.FindAddressForSandbox(key)
+	assert.Nil(t, addr)
+}
