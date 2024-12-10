@@ -24,24 +24,6 @@
 
 ## v1.18.5
 
-### What's Changed
-
-* Improvement -  Add byobject filter on nodes #2888
-* Improvement -  Move KUBE_CONFIG_PATH variable to KUBECONFIG variable #3015
-* Improvement -  Update Limits and Add New Instance Types. #3077
-
-* Dependency -  Bump google.golang.org/grpc from 1.62.0 to 1.67.1 #3056
-* Dependency -  Bump github.com/prometheus/common from 0.53.0 to 0.60.0 #3057
-* Dependency -  Bump golang.org/x/sys from 0.24.0 to 0.25.0 in /test/agent #3052
-* Dependency -  update upstream cni to 1.5.1 #3065
-* Dependency -  Bump k8s.io/client-go from 0.30.3 to 0.31.1 #3036
-* Dependency -  Bump github.com/vishvananda/netlink from 1.2.1-beta.2 to 1.3.0 #3054
-* Docs  -  Document the limitation of SGP with kube-proxy IPVS mode. #3064
-* Bugfix - https://github.com/aws/amazon-vpc-cni-k8s/pull/3088
-* Bugfix -  Fix the SCRIPT_DIR reference in integration tests. #3090
-
-## v1.18.5
-
 ## What's Changed
 
 * Improvement - Filter out interfaces with no ip info by @Pavani-Panakanti in https://github.com/aws/amazon-vpc-cni-k8s/pull/3047 
