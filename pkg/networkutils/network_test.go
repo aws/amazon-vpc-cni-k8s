@@ -230,6 +230,72 @@ func TestUpdateIPv6GatewayRule(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestCreateLinkLocalIPv4Rule(t *testing.T) {
+	ctrl, mockNetLink, _, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{
+		netLink:            mockNetLink,
+		podSGEnforcingMode: sgpp.EnforcingModeStrict,
+	}
+
+	linkLocalV4Rule := netlink.Rule{
+		Src:      &net.IPNet{IP: net.IPv4(169, 254, 0, 0), Mask: net.CIDRMask(16, 32)},
+		Dst:      &net.IPNet{IP: net.IPv4(169, 254, 0, 0), Mask: net.CIDRMask(16, 32)},
+		Table:    localRouteTable,
+		Priority: 0,
+		Family:   unix.AF_INET,
+	}
+
+	// Validate rule add in strict mode
+	mockNetLink.EXPECT().NewRule().Return(&linkLocalV4Rule)
+	mockNetLink.EXPECT().RuleAdd(&linkLocalV4Rule)
+
+	err := ln.createLinkLocalIPv4Rule()
+	assert.NoError(t, err)
+
+	// Validate rule del in non-strict mode
+	ln.podSGEnforcingMode = sgpp.EnforcingModeStandard
+	mockNetLink.EXPECT().NewRule().Return(&linkLocalV4Rule)
+	mockNetLink.EXPECT().RuleDel(&linkLocalV4Rule)
+
+	err = ln.createLinkLocalIPv6Rule()
+	assert.NoError(t, err)
+}
+
+func TestCreateLinkLocalIPv6Rule(t *testing.T) {
+	ctrl, mockNetLink, _, _, _ := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{
+		netLink:            mockNetLink,
+		podSGEnforcingMode: sgpp.EnforcingModeStrict,
+	}
+
+	linkLocalV6Rule := netlink.Rule{
+		Src:      &net.IPNet{IP: net.ParseIP("fd00::10"), Mask: net.CIDRMask(8, 128)},
+		Dst:      &net.IPNet{IP: net.ParseIP("fd00::10"), Mask: net.CIDRMask(8, 128)},
+		Table:    localRouteTable,
+		Priority: 0,
+		Family:   unix.AF_INET6,
+	}
+
+	// Validate rule add in strict mode
+	mockNetLink.EXPECT().NewRule().Return(&linkLocalV6Rule)
+	mockNetLink.EXPECT().RuleAdd(&linkLocalV6Rule)
+
+	err := ln.createLinkLocalIPv6Rule()
+	assert.NoError(t, err)
+
+	// Validate rule del in non-strict mode
+	ln.podSGEnforcingMode = sgpp.EnforcingModeStandard
+	mockNetLink.EXPECT().NewRule().Return(&linkLocalV6Rule)
+	mockNetLink.EXPECT().RuleDel(&linkLocalV6Rule)
+
+	err = ln.createLinkLocalIPv6Rule()
+	assert.NoError(t, err)
+}
+
 func TestSetupHostNetworkNodePortDisabledAndSNATDisabled(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
@@ -1074,12 +1140,181 @@ func TestSetupHostNetworkUpdateLocalRule(t *testing.T) {
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 	setupVethNetLinkMocks(mockNetLink)
+	setupLinkLocalMocks(ctrl, mockNetLink)
 
 	mockNetLink.EXPECT()
 
 	var vpcCIDRs []string
 	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, true, true, false)
 	assert.NoError(t, err)
+}
+
+func TestSetupHostNetworkUpdateLinkLocalRulesIPv4(t *testing.T) {
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{
+		useExternalSNAT:        true,
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		podSGEnforcingMode:     sgpp.EnforcingModeStrict,
+		vethPrefix:             eniPrefix,
+
+		netLink: mockNetLink,
+		ns:      mockNS,
+		newIptables: func(iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+			return mockIptables, nil
+		},
+	}
+
+	// Expected IPV4 Link-Local Rule
+	expectedRule := &netlink.Rule{
+		Src: &net.IPNet{
+			IP:   net.IPv4(169, 254, 0, 0),
+			Mask: net.CIDRMask(16, 32),
+		},
+		Dst: &net.IPNet{
+			IP:   net.IPv4(169, 254, 0, 0),
+			Mask: net.CIDRMask(16, 32),
+		},
+		Table:    localRouteTable,
+		Priority: 0,
+		Family:   unix.AF_INET,
+	}
+
+	// Matcher to capture the rule being added
+	var capturedRule *netlink.Rule
+
+	setupNetLinkMocks(ctrl, mockNetLink)
+	setupVethNetLinkMocks(mockNetLink)
+
+	mockNetLink.EXPECT().NewRule().Return(expectedRule)
+	mockNetLink.EXPECT().RuleAdd(expectedRule).DoAndReturn(func(rule *netlink.Rule) error {
+		capturedRule = rule
+		return nil
+	})
+
+	var vpcCIDRs []string
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, true, true, false)
+	assert.NoError(t, err)
+	assert.NotNil(t, capturedRule)
+	assert.Equal(t, net.IPv4(169, 254, 0, 0).String(), capturedRule.Src.IP.String())
+	assert.Equal(t, net.IPv4(169, 254, 0, 0).String(), capturedRule.Dst.IP.String())
+	assert.Equal(t, localRouteTable, capturedRule.Table)
+	assert.Equal(t, 0, capturedRule.Priority)
+	assert.Equal(t, unix.AF_INET, capturedRule.Family)
+}
+
+func TestSetupHostNetworkUpdateLinkLocalRulesIPv6(t *testing.T) {
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{
+		useExternalSNAT:        true,
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		podSGEnforcingMode:     sgpp.EnforcingModeStrict,
+		vethPrefix:             eniPrefix,
+
+		netLink: mockNetLink,
+		ns:      mockNS,
+		newIptables: func(iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+			return mockIptables, nil
+		},
+	}
+
+	// Expected IPV4 rule
+	expectedRule := &netlink.Rule{
+		Src: &net.IPNet{
+			IP:   net.IPv4(169, 254, 0, 0),
+			Mask: net.CIDRMask(16, 32),
+		},
+		Dst: &net.IPNet{
+			IP:   net.IPv4(169, 254, 0, 0),
+			Mask: net.CIDRMask(16, 32),
+		},
+		Table:    localRouteTable,
+		Priority: 0,
+		Family:   unix.AF_INET,
+	}
+
+	var capturedRule *netlink.Rule
+
+	setupNetLinkMocks(ctrl, mockNetLink)
+	setupVethNetLinkMocks(mockNetLink)
+
+	mockNetLink.EXPECT().NewRule().Return(expectedRule)
+	mockNetLink.EXPECT().RuleAdd(expectedRule).DoAndReturn(func(rule *netlink.Rule) error {
+		capturedRule = rule
+		return nil
+	})
+
+	var capturedRuleV6 *netlink.Rule
+	// Expected IPV6 rule
+	expectedRuleV6 := &netlink.Rule{
+		Src:      &net.IPNet{IP: net.ParseIP("fd00::10"), Mask: net.CIDRMask(8, 128)},
+		Dst:      &net.IPNet{IP: net.ParseIP("fd00::10"), Mask: net.CIDRMask(8, 128)},
+		Table:    localRouteTable,
+		Priority: 0,
+		Family:   unix.AF_INET6,
+	}
+
+	mockNetLink.EXPECT().NewRule().Return(&netlink.Rule{})
+	mockNetLink.EXPECT().RuleAdd(expectedRuleV6).DoAndReturn(func(rule *netlink.Rule) error {
+		capturedRuleV6 = rule
+		return nil
+	})
+
+	// Expected IPV6 Gateway Rule
+	expectedGatewayRule := &netlink.Rule{
+		Src: &net.IPNet{
+			IP:   GetIPv6Gateway(),
+			Mask: net.CIDRMask(128, 128),
+		},
+		IPProto:  unix.IPPROTO_ICMPV6,
+		Table:    localRouteTable,
+		Priority: 0,
+		Family:   unix.AF_INET6,
+	}
+
+	var captureRuleIPV6GateWay *netlink.Rule
+
+	mockNetLink.EXPECT().NewRule().Return(&netlink.Rule{})
+	mockNetLink.EXPECT().RuleAdd(expectedGatewayRule).DoAndReturn(func(rule *netlink.Rule) error {
+		captureRuleIPV6GateWay = rule
+		return nil
+	})
+
+	var vpcCIDRs []string
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, true, false, true)
+	assert.NoError(t, err)
+	assert.NotNil(t, capturedRule)
+	assert.Equal(t, net.IPv4(169, 254, 0, 0).String(), capturedRule.Src.IP.String())
+	assert.Equal(t, net.IPv4(169, 254, 0, 0).String(), capturedRule.Dst.IP.String())
+	assert.Equal(t, localRouteTable, capturedRule.Table)
+	assert.Equal(t, 0, capturedRule.Priority)
+	assert.Equal(t, unix.AF_INET, capturedRule.Family)
+
+	// Expected Rules for IPV6 Link Local
+	expectedIP := net.ParseIP("fd00::10")
+	assert.Equal(t, expectedIP.String(), capturedRuleV6.Src.IP.String())
+	assert.Equal(t, expectedIP.String(), capturedRuleV6.Dst.IP.String())
+	assert.Equal(t, net.CIDRMask(8, 128).String(), capturedRuleV6.Src.Mask.String())
+	assert.Equal(t, net.CIDRMask(8, 128).String(), capturedRuleV6.Dst.Mask.String())
+	assert.Equal(t, localRouteTable, capturedRuleV6.Table)
+	assert.Equal(t, 0, capturedRuleV6.Priority)
+	assert.Equal(t, unix.AF_INET6, capturedRuleV6.Family)
+
+	// Expected Rules for IPV6 Gateway
+	expectedIP = GetIPv6Gateway()
+	assert.Equal(t, expectedIP.String(), captureRuleIPV6GateWay.Src.IP.String())
+	assert.Equal(t, net.CIDRMask(128, 128).String(), captureRuleIPV6GateWay.Src.Mask.String())
+	assert.Equal(t, unix.IPPROTO_ICMPV6, captureRuleIPV6GateWay.IPProto)
+	assert.Equal(t, localRouteTable, captureRuleIPV6GateWay.Table)
+	assert.Equal(t, 0, captureRuleIPV6GateWay.Priority)
+	assert.Equal(t, unix.AF_INET6, captureRuleIPV6GateWay.Family)
 }
 
 func TestSetupHostNetworkDeleteOldConnmarkRuleForNonVpcOutboundTraffic(t *testing.T) {
@@ -1260,6 +1495,12 @@ func setupNetLinkMocks(ctrl *gomock.Controller, mockNetLink *mock_netlinkwrapper
 	var mainENIRule netlink.Rule
 	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
 	mockNetLink.EXPECT().RuleDel(&mainENIRule)
+	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
+}
+
+func setupLinkLocalMocks(ctrl *gomock.Controller, mockNetLink *mock_netlinkwrapper.MockNetLink) {
+	var mainENIRule netlink.Rule
+	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
 	mockNetLink.EXPECT().RuleAdd(&mainENIRule)
 }
 
