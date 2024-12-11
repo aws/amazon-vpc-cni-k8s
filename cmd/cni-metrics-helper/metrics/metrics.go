@@ -320,6 +320,11 @@ func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFa
 		convertMetrics := convertDef[key]
 		metricType := family.GetType()
 		for _, action := range convertMetrics.actions {
+
+			logger := t.getLogger()
+			logString := fmt.Sprintf("Publishing CW Metric: %s belonging to family %s", action.cwMetricName, metricType.String())
+			logger.Info(logString)
+
 			switch metricType {
 			case dto.MetricType_COUNTER:
 				dataPoint := cloudwatchtypes.MetricDatum{
@@ -361,6 +366,9 @@ func producePrometheusMetrics(t metricsTarget, families map[string]*dto.MetricFa
 		convertMetrics := convertDef[key]
 		metricType := family.GetType()
 		for _, action := range convertMetrics.actions {
+			logger := t.getLogger()
+			logString := fmt.Sprintf("Publishing Prometheus Metric: %s belonging to family %s", action.cwMetricName, metricType.String())
+			logger.Info(logString)
 			switch metricType {
 			case dto.MetricType_GAUGE:
 				metrics, ok := prometheusCNIMetrics[family.GetName()]
