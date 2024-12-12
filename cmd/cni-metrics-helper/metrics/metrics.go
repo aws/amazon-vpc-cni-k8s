@@ -395,11 +395,12 @@ func producePrometheusMetrics(t metricsTarget, families map[string]*dto.MetricFa
 						t.getLogger().Warnf("Metric %s is not a Gauge type, skipping", family.GetName())
 					}
 				}
-			log.Info("\n\n")
+				log.Info("\n\n")
+			}
 		}
-	}
 
-	log.Info("\n\n")
+		log.Info("\n\n")
+	}
 }
 
 func resetMetrics(interestingMetrics map[string]metricsConvert) {
