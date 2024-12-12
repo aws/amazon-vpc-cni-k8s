@@ -357,19 +357,47 @@ func producePrometheusMetrics(t metricsTarget, families map[string]*dto.MetricFa
 		t.getLogger().Infof("Skipping since prometheus mapping is missing")
 		return
 	}
+
+	log := t.getLogger()
+	log.Info("Printing out all the Prometheus Mappings")
+	for metricName, collector := range prometheusCNIMetrics {
+		var metricType string
+		switch c := collector.(type) {
+		default:
+			metricType = fmt.Sprintf("%T", c)
+		}
+		printStr := fmt.Sprintf("Metric Name: %s, Metric Type: %s", metricName, metricType)
+		log.Info(printStr)
+	}
+	log.Info("\n\n")
+
+	log.Info("Printing out all the families recieved")
+	printStr := fmt.Sprintf("families: %v", families)
+	log.Info(printStr)
+	log.Info("\n\n")
+
 	for key, family := range families {
 		convertMetrics := convertDef[key]
 		metricType := family.GetType()
 		for _, action := range convertMetrics.actions {
+
+			printStr := fmt.Sprintf("Metric Name: %s, Metric Type: %s", key, metricType.String())
+			log.Info(printStr)
+
 			switch metricType {
 			case dto.MetricType_GAUGE:
 				metrics, ok := prometheusCNIMetrics[family.GetName()]
+				printStr := fmt.Sprintf("Metric is a Gauge. In mapping: %v", ok)
+				log.Info(printStr)
 				if ok {
 					metrics.(prometheus.Gauge).Set(action.data.curSingleDataPoint)
 				}
 			}
+			log.Info("\n\n")
 		}
 	}
+
+	log.Info("\n\n")
 }
 
 func resetMetrics(interestingMetrics map[string]metricsConvert) {
