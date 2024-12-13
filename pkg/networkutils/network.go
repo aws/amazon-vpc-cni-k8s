@@ -341,6 +341,8 @@ func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, 
 
 	// In strict mode, packets egressing pod veth interfaces must route via the trunk ENI in order for security group
 	// rules to be applied. Therefore, the rule to lookup the local routing table is moved to a lower priority than VLAN rules.
+	// A high priority rule is added to handle to/from link-local traffic by the local routing table
+	// A high priority rule is added for ICMPv6 packets from the gateway to lookup in the local routing table
 	if enablePodENI && n.podSGEnforcingMode == sgpp.EnforcingModeStrict {
 		localRule := n.netLink.NewRule()
 		localRule.Table = localRouteTable
@@ -358,8 +360,18 @@ func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, 
 			return errors.Wrap(err, "ChangeLocalRulePriority: failed to delete priority 0 local rule")
 		}
 
-		// In IPv6 strict mode, ICMPv6 packets from the gateway must lookup in the local routing table so that branch interfaces can resolve their gateway.
+		// Add a high priority rule, to handle all link-local traffic by local table.
+		if err := n.createLinkLocalIPv4Rule(); err != nil {
+			return errors.Wrap(err, "failed to install rule to ignore link-local packets in V4 for SGPP Strict Mode.")
+		}
+
 		if v6Enabled {
+			// Add a high priority rule, to handle all link-local traffic by local table for V6 packets.
+			if err := n.createLinkLocalIPv6Rule(); err != nil {
+				return errors.Wrap(err, "failed to install rule to ignore link-local packets in V6 for SGPP Strict Mode.")
+			}
+
+			// In IPv6 strict mode, ICMPv6 packets from the gateway must lookup in the local routing table so that branch interfaces can resolve their gateway.
 			if err := n.createIPv6GatewayRule(); err != nil {
 				return errors.Wrapf(err, "failed to install IPv6 gateway rule")
 			}
@@ -1178,6 +1190,52 @@ func (n *linuxNetwork) createIPv6GatewayRule() error {
 		err := n.netLink.RuleDel(gatewayRule)
 		if !netlinkwrapper.IsNotExistsError(err) {
 			return errors.Wrap(err, "createIPv6GatewayRule: unable to delete rule for IPv6 gateway")
+		}
+	}
+	return nil
+}
+
+// With SGPP Strict Mode, all IPv4 link-local traffic (169.254.0.0/16) is handled by the local routing table with the highest priority
+func (n *linuxNetwork) createLinkLocalIPv4Rule() error {
+	linkLocalV4Rule := n.netLink.NewRule()
+	linkLocalV4Rule.Src = &net.IPNet{IP: net.IPv4(169, 254, 0, 0), Mask: net.CIDRMask(16, 32)}
+	linkLocalV4Rule.Dst = &net.IPNet{IP: net.IPv4(169, 254, 0, 0), Mask: net.CIDRMask(16, 32)}
+	linkLocalV4Rule.Table = localRouteTable
+	linkLocalV4Rule.Priority = 0
+	linkLocalV4Rule.Family = unix.AF_INET
+	if n.podSGEnforcingMode == sgpp.EnforcingModeStrict {
+		err := n.netLink.RuleAdd(linkLocalV4Rule)
+		if err != nil && !isRuleExistsError(err) {
+			return errors.Wrap(err, "createLinkLocalIPv4Rule: unable to create rule to ignore link-local packets")
+		}
+	} else {
+		// Rule must be deleted when not in strict mode to support transitions.
+		err := n.netLink.RuleDel(linkLocalV4Rule)
+		if !netlinkwrapper.IsNotExistsError(err) {
+			return errors.Wrap(err, "createLinkLocalIPv4Rule: unable to delete rule to ignore link-local packets")
+		}
+	}
+	return nil
+}
+
+// With SGPP Strict Mode, all IPv6 link-local traffic (fd00::10/8) is handled by the local routing table with the highest priority
+func (n *linuxNetwork) createLinkLocalIPv6Rule() error {
+	linkLocalV6Rule := n.netLink.NewRule()
+	linkLocalV6Rule.Src = &net.IPNet{IP: net.ParseIP("fd00::10"), Mask: net.CIDRMask(8, 128)}
+	linkLocalV6Rule.Dst = &net.IPNet{IP: net.ParseIP("fd00::10"), Mask: net.CIDRMask(8, 128)}
+	linkLocalV6Rule.Table = localRouteTable
+	linkLocalV6Rule.Priority = 0
+	linkLocalV6Rule.Family = unix.AF_INET6
+	if n.podSGEnforcingMode == sgpp.EnforcingModeStrict {
+		err := n.netLink.RuleAdd(linkLocalV6Rule)
+		if err != nil && !isRuleExistsError(err) {
+			return errors.Wrap(err, "createLinkLocalIPv6Rule: unable to create rule to ignore link-local packets")
+		}
+	} else {
+		// Rule must be deleted when not in strict mode to support transitions.
+		err := n.netLink.RuleDel(linkLocalV6Rule)
+		if !netlinkwrapper.IsNotExistsError(err) {
+			return errors.Wrap(err, "createLinkLocalIPv6Rule: unable to delete rule to ignore link-local packets")
 		}
 	}
 	return nil
