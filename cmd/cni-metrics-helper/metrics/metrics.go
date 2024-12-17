@@ -365,7 +365,11 @@ func producePrometheusMetrics(t metricsTarget, families map[string]*dto.MetricFa
 			case dto.MetricType_GAUGE:
 				metrics, ok := prometheusCNIMetrics[family.GetName()]
 				if ok {
-					metrics.(prometheus.Gauge).Set(action.data.curSingleDataPoint)
+					if gauge, isGauge := metrics.(prometheus.Gauge); isGauge {
+						gauge.Set(action.data.curSingleDataPoint)
+					} else {
+						t.getLogger().Warnf("Metric %s is not a Gauge type, skipping", family.GetName())
+					}
 				}
 			}
 		}
