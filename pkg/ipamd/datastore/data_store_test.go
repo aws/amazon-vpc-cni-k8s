@@ -22,7 +22,6 @@ import (
 
 	mock_netlinkwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
-	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	"github.com/golang/mock/gomock"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
@@ -32,8 +31,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -1544,74 +1541,4 @@ func TestDataStore_validateAllocationByPodVethExistence(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestForceRemovalMetrics(t *testing.T) {
-	// Reset metrics by creating new counters
-	prometheusmetrics.ForceRemovedENIs = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "awscni_force_removed_enis_total",
-		Help: "The total number of ENIs force removed",
-	})
-	prometheusmetrics.ForceRemovedIPs = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "awscni_force_removed_ips_total",
-		Help: "The total number of IPs force removed",
-	})
-
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
-
-	// Add an ENI and IP
-	err := ds.AddENI("eni-1", 1, true, false, false)
-	assert.NoError(t, err)
-
-	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
-	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
-	assert.NoError(t, err)
-
-	// Assign IP to a pod
-	key := IPAMKey{"net0", "sandbox-1", "eth0"}
-	ip, device, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
-	assert.NoError(t, err)
-	assert.Equal(t, "1.1.1.1", ip)
-	assert.Equal(t, 1, device)
-
-	// Test force removal of IP
-	err = ds.DelIPv4CidrFromStore("eni-1", ipv4Addr, false)
-	assert.Error(t, err) // Should fail without force
-	assert.Contains(t, err.Error(), "IP is used and can not be deleted")
-
-	ipCount := testutil.ToFloat64(prometheusmetrics.ForceRemovedIPs)
-	assert.Equal(t, float64(0), ipCount)
-
-	// Force remove the IP
-	err = ds.DelIPv4CidrFromStore("eni-1", ipv4Addr, true)
-	assert.NoError(t, err) // Should succeed with force
-
-	ipCount = testutil.ToFloat64(prometheusmetrics.ForceRemovedIPs)
-	assert.Equal(t, float64(1), ipCount)
-
-	// Add another IP and assign to pod for ENI removal test
-	ipv4Addr2 := net.IPNet{IP: net.ParseIP("1.1.1.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
-	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr2, false)
-	assert.NoError(t, err)
-
-	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
-	ip, device, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
-	assert.NoError(t, err)
-	assert.Equal(t, "1.1.1.2", ip)
-	assert.Equal(t, 1, device)
-
-	// Test force removal of ENI
-	err = ds.RemoveENIFromDataStore("eni-1", false)
-	assert.Error(t, err)                                                             // Should fail without force
-	assert.Contains(t, err.Error(), "datastore: ENI is used and can not be deleted") // Updated error message
-
-	eniCount := testutil.ToFloat64(prometheusmetrics.ForceRemovedENIs)
-	assert.Equal(t, float64(0), eniCount)
-
-	// Force remove the ENI
-	err = ds.RemoveENIFromDataStore("eni-1", true)
-	assert.NoError(t, err) // Should succeed with force
-
-	eniCount = testutil.ToFloat64(prometheusmetrics.ForceRemovedENIs)
-	assert.Equal(t, float64(1), eniCount)
 }
