@@ -642,7 +642,6 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			if len(imdsIPv4s) > 0 {
 				ipv4Available = true
 				log.Debugf("Found IPv4 addresses associated with interface. This is not efa-only interface")
-				break
 			}
 		}
 		if field == "ipv6s" {
@@ -652,7 +651,6 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			} else if len(imdsIPv6s) > 0 {
 				ipv6Available = true
 				log.Debugf("Found IPv6 addresses associated with interface. This is not efa-only interface")
-				break
 			}
 		}
 	}
