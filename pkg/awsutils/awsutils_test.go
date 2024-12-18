@@ -79,6 +79,7 @@ const (
 	eni1PrivateIP        = "10.0.0.1"
 	eni1Prefix           = "10.0.1.0/28"
 	eni2Device           = "1"
+	eni1v6IP             = "2001:db8:8:1::2"
 	eni2PrivateIP        = "10.0.0.2"
 	eni2Prefix           = "10.0.2.0/28"
 	eni2v6IP             = "2001:db8:8:4::2"
@@ -89,6 +90,7 @@ const (
 	imdsMACFields        = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks device-number interface-id subnet-ipv4-cidr-block local-ipv4s ipv4-prefix ipv6-prefix"
 	imdsMACFieldsEfaOnly = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks device-number interface-id subnet-ipv4-cidr-block ipv4-prefix ipv6-prefix"
 	imdsMACFieldsV6Only  = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks device-number interface-id subnet-ipv6-cidr-blocks ipv6s ipv6-prefix"
+	imdsMACFieldsV4AndV6 = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks device-number interface-id subnet-ipv4-cidr-block ipv6s local-ipv4s"
 )
 
 func testMetadata(overrides map[string]interface{}) FakeIMDS {
@@ -258,6 +260,30 @@ func TestGetAttachedENIsWithIPv6Only(t *testing.T) {
 	ens, err := cache.GetAttachedENIs()
 	if assert.NoError(t, err) {
 		assert.Equal(t, len(ens), 2)
+	}
+}
+
+func TestGetAttachedENIsIPv4AndIPv6AttachedToPrimaryENI(t *testing.T) {
+	mockMetadata := testMetadata(map[string]interface{}{
+		metadataMACPath:                              primaryMAC,
+		metadataMACPath + primaryMAC:                 imdsMACFieldsV4AndV6,
+		metadataMACPath + primaryMAC + metadataIPv6s: eni1v6IP,
+	})
+
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, v4Enabled: true, v6Enabled: true}
+	ens, err := cache.GetAttachedENIs()
+	if assert.NoError(t, err) {
+		assert.Equal(t, len(ens), 1)
+	}
+
+	primaryENI := ens[0]
+
+	if assert.Len(t, primaryENI.IPv4Addresses, 1, "Primary ENI has IPv4 address") {
+		assert.Equal(t, eni1PrivateIP, aws.ToString(primaryENI.IPv4Addresses[0].PrivateIpAddress))
+	}
+
+	if assert.Len(t, primaryENI.IPv6Addresses, 1, "Primary ENI has IPv6 address in this test.") {
+		assert.Equal(t, eni1v6IP, aws.ToString(primaryENI.IPv6Addresses[0].Ipv6Address))
 	}
 }
 
