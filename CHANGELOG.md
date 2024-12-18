@@ -4,7 +4,6 @@
 
 * Feature: run make generate-limits to update the max pods file by @tzneal in https://github.com/aws/amazon-vpc-cni-k8s/pull/3141
 * Tests: Fix KOps Integration Test by @dshehbaj in https://github.com/aws/amazon-vpc-cni-k8s/pull/3140
-* Bug-fix:  Fix issues with handling unmanaged ENIs with IPv6 only by @gavinbunney in https://github.com/aws/amazon-vpc-cni-k8s/pull/3122
 * Bug-Fix:  Revert "utils prometheusmetrics: convert gauges to counters (#3093)" by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/3147
 * Docs: Update NP strict mode doc by @Pavani-Panakanti in https://github.com/aws/amazon-vpc-cni-k8s/pull/3125
 * Docs: adding email to share node bundle by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3134
