@@ -610,9 +610,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		awsAPIErrInc("GetMACImdsFields", err)
 		return ENIMetadata{}, err
 	}
-
-	ipv4Available := false
-	ipv6Available := false
+	ipInfoAvailable := false
 	// Efa-only interfaces do not have any ipv4s or ipv6s associated with it. If we don't find any local-ipv4 or ipv6 info in imds we assume it to be efa-only interface and validate this later via ec2 call
 	for _, field := range macImdsFields {
 		if field == "local-ipv4s" {
@@ -622,7 +620,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 				return ENIMetadata{}, err
 			}
 			if len(imdsIPv4s) > 0 {
-				ipv4Available = true
+				ipInfoAvailable = true
 				log.Debugf("Found IPv4 addresses associated with interface. This is not efa-only interface")
 				break
 			}
@@ -632,14 +630,14 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			if err != nil {
 				awsAPIErrInc("GetIPv6s", err)
 			} else if len(imdsIPv6s) > 0 {
-				ipv6Available = true
+				ipInfoAvailable = true
 				log.Debugf("Found IPv6 addresses associated with interface. This is not efa-only interface")
 				break
 			}
 		}
 	}
 
-	if !ipv4Available && !ipv6Available {
+	if !ipInfoAvailable {
 		return ENIMetadata{
 			ENIID:          eniID,
 			MAC:            eniMAC,
@@ -654,29 +652,23 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	}
 
 	// Get IPv4 and IPv6 addresses assigned to interface
-	var ec2ip4s []*ec2.NetworkInterfacePrivateIpAddress
-	var subnetV4Cidr string
-	if ipv4Available {
-		cidr, err := cache.imds.GetSubnetIPv4CIDRBlock(ctx, eniMAC)
-		if err != nil {
-			awsAPIErrInc("GetSubnetIPv4CIDRBlock", err)
-			return ENIMetadata{}, err
-		}
+	cidr, err := cache.imds.GetSubnetIPv4CIDRBlock(ctx, eniMAC)
+	if err != nil {
+		awsAPIErrInc("GetSubnetIPv4CIDRBlock", err)
+		return ENIMetadata{}, err
+	}
 
-		subnetV4Cidr = cidr.String()
+	imdsIPv4s, err := cache.imds.GetLocalIPv4s(ctx, eniMAC)
+	if err != nil {
+		awsAPIErrInc("GetLocalIPv4s", err)
+		return ENIMetadata{}, err
+	}
 
-		imdsIPv4s, err := cache.imds.GetLocalIPv4s(ctx, eniMAC)
-		if err != nil {
-			awsAPIErrInc("GetLocalIPv4s", err)
-			return ENIMetadata{}, err
-		}
-
-		ec2ip4s = make([]*ec2.NetworkInterfacePrivateIpAddress, len(imdsIPv4s))
-		for i, ip4 := range imdsIPv4s {
-			ec2ip4s[i] = &ec2.NetworkInterfacePrivateIpAddress{
-				Primary:          aws.Bool(i == 0),
-				PrivateIpAddress: aws.String(ip4.String()),
-			}
+	ec2ip4s := make([]*ec2.NetworkInterfacePrivateIpAddress, len(imdsIPv4s))
+	for i, ip4 := range imdsIPv4s {
+		ec2ip4s[i] = &ec2.NetworkInterfacePrivateIpAddress{
+			Primary:          aws.Bool(i == 0),
+			PrivateIpAddress: aws.String(ip4.String()),
 		}
 	}
 
@@ -740,7 +732,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		ENIID:          eniID,
 		MAC:            eniMAC,
 		DeviceNumber:   deviceNum,
-		SubnetIPv4CIDR: subnetV4Cidr,
+		SubnetIPv4CIDR: cidr.String(),
 		IPv4Addresses:  ec2ip4s,
 		IPv4Prefixes:   ec2ipv4Prefixes,
 		SubnetIPv6CIDR: subnetV6Cidr,
@@ -1415,17 +1407,14 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 			efaENIs[eniID] = true
 		}
 		if interfaceType != "efa-only" {
-			if len(eniMetadata.IPv4Addresses) == 0 && len(eniMetadata.IPv6Addresses) == 0 {
+			if len(eniMetadata.IPv4Addresses) == 0 {
 				log.Errorf("Missing IP addresses from IMDS. Non efa-only interface should have IP address associated with it %s", eniID)
-				outOfSyncErr := errors.New("DescribeAllENIs: No IPv4 and IPv6 addresses found")
+				outOfSyncErr := errors.New("DescribeAllENIs: No IPv4 address found")
 				return DescribeAllENIsResult{}, outOfSyncErr
 			}
 		}
-
 		// Check IPv4 addresses
-		if len(eniMetadata.IPv4Addresses) > 0 {
-			logOutOfSyncState(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
-		}
+		logOutOfSyncState(eniID, eniMetadata.IPv4Addresses, ec2res.PrivateIpAddresses)
 		tagMap[eniMetadata.ENIID] = convertSDKTagsToTags(ec2res.TagSet)
 	}
 	return DescribeAllENIsResult{
