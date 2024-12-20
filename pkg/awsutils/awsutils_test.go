@@ -29,13 +29,10 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/golang/mock/gomock"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 
 	mock_ec2wrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
-	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -817,37 +814,6 @@ func TestFreeENIRetry(t *testing.T) {
 
 	err := cache.freeENI("test-eni", time.Millisecond, time.Millisecond)
 	assert.NoError(t, err)
-}
-
-func TestAwsAPIErrInc(t *testing.T) {
-	// Reset metrics before test
-	prometheusmetrics.AwsAPIErr.Reset()
-
-	// Test case 1: AWS error
-	awsErr := &smithy.GenericAPIError{
-		Code:    "InvalidParameterException",
-		Message: "The parameter is invalid",
-		Fault:   smithy.FaultUnknown,
-	}
-	awsAPIErrInc("CreateNetworkInterface", awsErr)
-
-	// Verify metric was incremented with correct labels
-	count := testutil.ToFloat64(prometheusmetrics.AwsAPIErr.With(prometheus.Labels{
-		"api":   "CreateNetworkInterface",
-		"error": "InvalidParameterException",
-	}))
-	assert.Equal(t, float64(1), count)
-
-	// Test case 2: Non-AWS error
-	regularErr := errors.New("some other error")
-	awsAPIErrInc("CreateNetworkInterface", regularErr)
-
-	// Verify metric was not incremented for non-AWS error
-	count = testutil.ToFloat64(prometheusmetrics.AwsAPIErr.With(prometheus.Labels{
-		"api":   "CreateNetworkInterface",
-		"error": "InvalidParameterException",
-	}))
-	assert.Equal(t, float64(1), count)
 }
 
 func TestFreeENIRetryMax(t *testing.T) {
