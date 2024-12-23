@@ -173,8 +173,12 @@ docker-init:     ## Build VPC CNI plugin Init container image.
 
 # Run the built CNI container image to use in functional testing
 docker-func-test: docker     ## Run the built CNI container image to use in functional testing
+	rm -rf /tmp/cni/bin
+	mkdir -p /tmp/cni/bin
 	docker run $(DOCKER_RUN_FLAGS) \
+		-v /tmp/cni/bin:/host/opt/cni/bin \
 		"$(IMAGE_NAME)"
+	rm -rf /tmp/cni/bin
 
 ## Build multi-arch VPC CNI plugin container image.
 multi-arch-cni-build:
