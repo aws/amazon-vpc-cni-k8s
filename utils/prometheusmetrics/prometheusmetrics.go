@@ -225,24 +225,18 @@ func PrometheusRegister() {
 	prometheus.MustRegister(IpsPerCidr)
 	prometheus.MustRegister(NoAvailableIPAddrs)
 	prometheus.MustRegister(EniIPsInUse)
-
 }
 
 // This can be enhanced to get it programatically.
 // Initial CNI metrics helper enhancement includes only Gauge. Doesn't support GaugeVec, Counter, CounterVec and Summary
 func GetSupportedPrometheusCNIMetricsMapping() map[string]prometheus.Collector {
-	var prometheusCNIMetrics = map[string]prometheus.Collector{
-		"awscni_eni_max":                   EnisMax,
-		"awscni_ip_max":                    IpMax,
-		"awscni_add_ip_req_count":          AddIPCnt,
-		"awscni_del_ip_req_count":          DelIPCnt,
-		"awscni_eni_allocated":             Enis,
-		"awscni_total_ip_addresses":        TotalIPs,
-		"awscni_assigned_ip_addresses":     AssignedIPs,
-		"awscni_force_removed_enis":        ForceRemovedENIs,
-		"awscni_force_removed_ips":         ForceRemovedIPs,
-		"awscni_total_ipv4_prefixes":       TotalPrefixes,
-		"awscni_no_available_ip_addresses": NoAvailableIPAddrs,
+	prometheusCNIMetrics := map[string]prometheus.Collector{
+		"awscni_eni_max":               EnisMax,
+		"awscni_ip_max":                IpMax,
+		"awscni_eni_allocated":         Enis,
+		"awscni_total_ip_addresses":    TotalIPs,
+		"awscni_assigned_ip_addresses": AssignedIPs,
+		"awscni_total_ipv4_prefixes":   TotalPrefixes,
 	}
 	return prometheusCNIMetrics
 }
