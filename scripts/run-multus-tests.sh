@@ -22,7 +22,7 @@ check_is_installed ginkgo
 
 load_cluster_details
 
-LATEST_TAG=${1:-v3.8.0-eksbuild.1}
+LATEST_TAG=${1:-v4.1.4-eksbuild.1_thick}
 echo "Installing latest multus manifest with tag: ${LATEST_TAG}"
 
 kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/master/config/multus/${LATEST_TAG}/aws-k8s-multus.yaml
