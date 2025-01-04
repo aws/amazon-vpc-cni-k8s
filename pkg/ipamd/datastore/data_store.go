@@ -1457,6 +1457,45 @@ func (ds *DataStore) normalizeCheckpointDataByPodVethExistence(checkpoint Checkp
 	return checkpoint, nil
 }
 
+// ValidateAssignedIPsByPodVethExistence validates all assigned IPs by checking the existence of the corresponding pod veth.
+func (ds *DataStore) ValidateAssignedIPsByPodVethExistence() error {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	hostNSLinks, err := ds.netLink.LinkList()
+	if err != nil {
+		return err
+	}
+
+	var staleAllocations []CheckpointEntry
+	for _, eni := range ds.eniPool {
+		for _, assignedAddr := range eni.AvailableIPv4Cidrs {
+			for _, addr := range assignedAddr.IPAddresses {
+				if addr.Assigned() {
+					allocation := CheckpointEntry{
+						IPAMKey:             addr.IPAMKey,
+						IPv4:                addr.Address,
+						AllocationTimestamp: addr.AssignedTime.UnixNano(),
+						Metadata:            addr.IPAMMetadata,
+					}
+					if err := ds.validateAllocationByPodVethExistence(allocation, hostNSLinks); err != nil {
+						ds.log.Warnf("stale IP allocation for ID(%v): IPv4(%v) due to %v", allocation.ContainerID, allocation.IPv4, err)
+						staleAllocations = append(staleAllocations, allocation)
+						ds.unassignPodIPAddressUnsafe(addr)
+					}
+				}
+			}
+		}
+	}
+
+	// Stale allocations may have dangling IP rules that need cleanup
+	if len(staleAllocations) > 0 {
+		ds.PruneStaleAllocations(staleAllocations)
+	}
+
+	return nil
+}
+
 func (ds *DataStore) validateAllocationByPodVethExistence(allocation CheckpointEntry, hostNSLinks []netlink.Link) error {
 	// for backwards compatibility, we skip the validation when metadata contains empty namespace/name.
 	if allocation.Metadata.K8SPodNamespace == "" || allocation.Metadata.K8SPodName == "" {
@@ -1466,6 +1505,7 @@ func (ds *DataStore) validateAllocationByPodVethExistence(allocation CheckpointE
 	linkNameSuffix := networkutils.GeneratePodHostVethNameSuffix(allocation.Metadata.K8SPodNamespace, allocation.Metadata.K8SPodName)
 	for _, link := range hostNSLinks {
 		linkName := link.Attrs().Name
+		fmt.Printf("linkName: %v, linkNameSuffix: %v\n", linkName, linkNameSuffix)
 		if strings.HasSuffix(linkName, linkNameSuffix) {
 			return nil
 		}
