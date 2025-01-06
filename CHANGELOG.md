@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.19.2
+
+* Feature: run make generate-limits to update the max pods file by @tzneal in https://github.com/aws/amazon-vpc-cni-k8s/pull/3141
+* Tests: Fix KOps Integration Test by @dshehbaj in https://github.com/aws/amazon-vpc-cni-k8s/pull/3140
+* Bug-Fix:  Revert "utils prometheusmetrics: convert gauges to counters (#3093)" by @orsenthil in https://github.com/aws/amazon-vpc-cni-k8s/pull/3147
+* Docs: Update NP strict mode doc by @Pavani-Panakanti in https://github.com/aws/amazon-vpc-cni-k8s/pull/3125
+* Docs: adding email to share node bundle by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3134
+* Dependency: crypto module dependency https://github.com/aws/amazon-vpc-cni-k8s/pull/3151
+* Dependency: Dependabot PRs.  https://github.com/aws/amazon-vpc-cni-k8s/pull/3135
+* Dependency: Dependabot PRs.  https://github.com/aws/amazon-vpc-cni-k8s/pull/3137
+* Dependency:  Bump golang.org/x/sys from 0.27.0 to 0.28.0 in /test/agent by @dependabot in https://github.com/aws/amazon-vpc-cni-k8s/pull/3138
+ 
+## v1.19.1
+
+* Skipped
+ 
 ## v1.19.0
 
 * Manifest update for unsupported compute type

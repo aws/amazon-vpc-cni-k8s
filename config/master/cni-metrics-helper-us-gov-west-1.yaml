@@ -8,7 +8,7 @@ metadata:
   labels:
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
-    app.kubernetes.io/version: "v1.19.0"
+    app.kubernetes.io/version: "v1.19.2"
 ---
 # Source: cni-metrics-helper/templates/clusterrole.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -18,7 +18,7 @@ metadata:
   labels:
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
-    app.kubernetes.io/version: "v1.19.0"
+    app.kubernetes.io/version: "v1.19.2"
 rules:
   - apiGroups: [""]
     resources:
@@ -34,7 +34,7 @@ metadata:
   labels:
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
-    app.kubernetes.io/version: "v1.19.0"
+    app.kubernetes.io/version: "v1.19.2"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -54,7 +54,7 @@ metadata:
     k8s-app: cni-metrics-helper
     app.kubernetes.io/name: cni-metrics-helper
     app.kubernetes.io/instance: cni-metrics-helper
-    app.kubernetes.io/version: "v1.19.0"
+    app.kubernetes.io/version: "v1.19.2"
 spec:
   revisionHistoryLimit: 10
   selector:
@@ -78,5 +78,5 @@ spec:
         - name: USE_PROMETHEUS
           value: "false"
         name: cni-metrics-helper
-        image: "013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/cni-metrics-helper:v1.19.0"
+        image: "013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/cni-metrics-helper:v1.19.2"
       serviceAccountName: cni-metrics-helper
