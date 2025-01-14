@@ -873,7 +873,7 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 			log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", resourcesToAllocate, err)
 			if containsInsufficientCIDRsOrSubnetIPs(err) {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
-				log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
+				log.Errorf("ENI allocation failed for worker node %s - all IPs are allocated and the subnet has insufficient available IPs. Consider using a new subnet or create a reserved range using create-subnet-cidr-reservation", c.awsClient.GetInstanceID())
 				c.lastInsufficientCidrError = time.Now()
 			}
 			return err
@@ -1043,8 +1043,8 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 			// This call to EC2 is needed to verify which IPs got attached to this ENI.
 			ec2Prefixes, err = c.awsClient.GetIPv4PrefixesFromEC2(eni.ID)
 			if err != nil {
-				ipamdErrInc("increaseIPPoolGetENIaddressesFailed")
-				return true, errors.Wrap(err, "failed to get ENI IP addresses during IP allocation")
+				ipamdErrInc("increaseIPPoolGetENIprefixedFailed")
+				return true, errors.Wrap(err, "failed to get ENI Prefix addresses during IPv4 Prefix allocation")
 			}
 		} else {
 			if output == nil {

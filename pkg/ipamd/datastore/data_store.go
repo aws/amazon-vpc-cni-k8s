@@ -731,8 +731,8 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 	}
 
 	prometheusmetrics.NoAvailableIPAddrs.Inc()
-	ds.log.Errorf("DataStore has no available IP/Prefix addresses")
-	return "", -1, errors.New("AssignPodIPv4Address: no available IP/Prefix addresses")
+	ds.log.Errorf("Failed to assign IP to pod - all ENIs have reached their IP limits and no new ENIs can be allocated. This may be due to insufficient IPs in the subnet")
+	return "", -1, errors.New("AssignPodIPv4Address: no available IP/Prefix addresses - subnet may be out of IPs")
 }
 
 // assignPodIPAddressUnsafe mark Address as assigned.
@@ -1160,7 +1160,7 @@ func (ds *DataStore) FreeableIPs(eniID string) []net.IPNet {
 
 	freeable := make([]net.IPNet, 0, len(eni.AvailableIPv4Cidrs))
 	for _, assignedaddr := range eni.AvailableIPv4Cidrs {
-		if !assignedaddr.IsPrefix && assignedaddr.AssignedIPAddressesInCidr() == 0 {
+		if assignedaddr.AssignedIPAddressesInCidr() == 0 {
 			freeable = append(freeable, assignedaddr.Cidr)
 		}
 	}
