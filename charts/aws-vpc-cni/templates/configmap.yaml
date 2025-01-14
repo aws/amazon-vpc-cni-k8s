@@ -20,7 +20,15 @@ data:
   enable-windows-ipam: {{ .Values.enableWindowsIpam | quote }}
   enable-network-policy-controller: {{ .Values.enableNetworkPolicy | quote }}
   enable-windows-prefix-delegation: {{ .Values.enableWindowsPrefixDelegation | quote }}
-  warm-prefix-target: {{ .Values.warmWindowsPrefixTarget | quote }}
-  warm-ip-target: {{ .Values.warmWindowsIPTarget | quote }}
-  minimum-ip-target: {{ .Values.minimumWindowsIPTarget | quote }}
+
+  # Linux node IP management settings
+  warm-prefix-target: {{ .Values.warmPrefixTarget | quote }}
+  warm-ip-target: {{ .Values.warmIPTarget | quote }}
+  minimum-ip-target: {{ .Values.minimumIPTarget | quote }}
+
+  # Windows node IP management settings
+  windows-warm-prefix-target: {{ .Values.warmWindowsPrefixTarget | quote }}
+  windows-warm-ip-target: {{ .Values.warmWindowsIPTarget | quote }}
+  windows-minimum-ip-target: {{ .Values.minimumWindowsIPTarget | quote }}
+
   branch-eni-cooldown: {{ .Values.branchENICooldown | quote }}

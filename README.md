@@ -1,4 +1,3 @@
-
 # amazon-vpc-cni-k8s
 
 Networking plugin for pod networking in [Kubernetes](https://kubernetes.io/) using [Elastic Network Interfaces](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-eni.html) on AWS.
@@ -301,6 +300,11 @@ Type: Integer
 Default: None
 
 Specifies the number of free IP addresses that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting this to a non-positive value is the same as setting this to 0 or not setting the variable.
+
+For Windows nodes, use `--windows-warm-ip-target` flag or set the `WARM_WINDOWS_IP_TARGET` environment variable instead.
+The behavior is identical to `WARM_IP_TARGET` but applies specifically to Windows nodes. When using the Helm chart, these are
+configured via `warmIPTarget` and `warmWindowsIPTarget` values respectively.
+
 With `ENABLE_PREFIX_DELEGATION` set to `true` then `ipamd` daemon will check if the existing (/28) prefixes are enough to maintain the
 `WARM_IP_TARGET` if it is not sufficient then more prefixes will be attached.
 
@@ -332,6 +336,10 @@ Specifies the number of total IP addresses that the `ipamd` daemon should attemp
 `MINIMUM_IP_TARGET` behaves identically to `WARM_IP_TARGET` except that instead of setting a target number of free IP
 addresses to keep available at all times, it sets a target number for a floor on how many total IP addresses are allocated. Setting to a
 non-positive value is same as setting this to 0 or not setting the variable.
+
+For Windows nodes, use `--windows-minimum-ip-target` flag or set the `MINIMUM_WINDOWS_IP_TARGET` environment variable instead.
+The behavior is identical to `MINIMUM_IP_TARGET` but applies specifically to Windows nodes. When using the Helm chart, these are
+configured via `minimumIPTarget` and `minimumWindowsIPTarget` values respectively.
 
 `MINIMUM_IP_TARGET` is for pre-scaling, `WARM_IP_TARGET` is for dynamic scaling. For example, suppose a cluster has an
 expected pod density of approximately 30 pods per node. If `WARM_IP_TARGET` is set to 30 to ensure there are enough IPs
@@ -578,6 +586,11 @@ Type: Integer
 Default: None
 
 Specifies the number of free IPv4(/28) prefixes that the `ipamd` daemon should attempt to keep available for pod assignment on the node. Setting to a non-positive value is same as setting this to 0 or not setting the variable.
+
+For Windows nodes, use `--windows-warm-prefix-target` flag or set the `WARM_WINDOWS_PREFIX_TARGET` environment variable instead.
+The behavior is identical to `WARM_PREFIX_TARGET` but applies specifically to Windows nodes. When using the Helm chart, these are
+configured via `warmPrefixTarget` and `warmWindowsPrefixTarget` values respectively.
+
 This environment variable works when `ENABLE_PREFIX_DELEGATION` is set to `true` and is overridden when `WARM_IP_TARGET` and `MINIMUM_IP_TARGET` are configured.
 
 #### `DISABLE_NETWORK_RESOURCE_PROVISIONING` (v1.9.1+)
