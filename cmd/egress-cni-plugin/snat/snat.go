@@ -14,19 +14,36 @@
 package snat
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
 )
 
-func iptRules(target, src net.IP, multicastRange, chain, comment string, useRandomFully, useHashRandom bool) [][]string {
+func iptRules(target, src net.IP, multicastRange, chain, comment string, useRandomFully, useHashRandom bool, fixedPorts string) [][]string {
 	var rules [][]string
 
 	// Accept/ignore multicast (just because we can)
 	rules = append(rules, []string{chain, "-d", multicastRange, "-j", "ACCEPT", "-m", "comment", "--comment", comment})
 
-	// SNAT
+	if fixedPorts != "" && (useRandomFully || useHashRandom) {
+		// Add protocol-specific SNAT rules for fixed ports
+		for _, proto := range []string{"tcp", "udp", "sctp", "dccp"} {
+			args := []string{
+				chain,
+				"-p", proto,
+				"-m", "multiport",
+				"--sports", fixedPorts,
+				"-j", "SNAT",
+				"--to-source", target.String(),
+				"-m", "comment", "--comment", fmt.Sprintf("%s (fixed ports %s)", comment, proto),
+			}
+			rules = append(rules, args)
+		}
+	}
+
+	// SNAT rule for remaining traffic (protocol-agnostic)
 	args := []string{
 		chain,
 		"-j", "SNAT",
@@ -47,7 +64,7 @@ func iptRules(target, src net.IP, multicastRange, chain, comment string, useRand
 }
 
 // Add NAT entries to iptables for POD egress IPv6/IPv4 traffic
-func Add(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRange, chain, comment, rndSNAT string) error {
+func Add(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRange, chain, comment, rndSNAT, fixedPorts string) error {
 	//Defaults to `random-fully` unless a different option is explicitly set via
 	//`AWS_VPC_K8S_CNI_RANDOMIZESNAT`. If the underlying iptables version doesn't support
 	//'random-fully`, we will fall back to `random`.
@@ -58,7 +75,7 @@ func Add(ipt iptableswrapper.IPTablesIface, nodeIP, src net.IP, multicastRange, 
 		useHashRandom, useRandomFully = true, false
 	}
 
-	rules := iptRules(nodeIP, src, multicastRange, chain, comment, useRandomFully, useHashRandom)
+	rules := iptRules(nodeIP, src, multicastRange, chain, comment, useRandomFully, useHashRandom, fixedPorts)
 
 	chains, err := ipt.ListChains("nat")
 	if err != nil {

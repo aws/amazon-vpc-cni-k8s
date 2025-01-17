@@ -104,6 +104,7 @@ const (
 	envEnIPv6Egress          = "ENABLE_V6_EGRESS"
 	envEnIPv4Egress          = "ENABLE_V4_EGRESS"
 	envRandomizeSNAT         = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
+	envSNATFixedPorts        = "AWS_VPC_K8S_CNI_SNAT_FIXED_PORTS"
 	envIPCooldownPeriod      = "IP_COOLDOWN_PERIOD"
 	envDisablePodV6          = "DISABLE_POD_V6"
 )
@@ -144,6 +145,8 @@ type NetConf struct {
 	PodSGEnforcingMode string `json:"podSGEnforcingMode,omitempty"`
 
 	RandomizeSNAT string `json:"randomizeSNAT,omitempty"`
+
+	SNATFixedPorts string `json:"snatFixedPorts,omitempty"`
 
 	// MTU for eth0
 	MTU string `json:"mtu,omitempty"`
@@ -266,6 +269,7 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 	pluginLogFile := utils.GetEnv(envPluginLogFile, defaultPluginLogFile)
 	pluginLogLevel := utils.GetEnv(envPluginLogLevel, defaultPluginLogLevel)
 	randomizeSNAT := utils.GetEnv(envRandomizeSNAT, defaultRandomizeSNAT)
+	snatFixedPorts := utils.GetEnv(envSNATFixedPorts, "")
 
 	netconf := string(byteValue)
 	netconf = strings.Replace(netconf, "__VETHPREFIX__", vethPrefix, -1)
@@ -279,6 +283,7 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 	netconf = strings.Replace(netconf, "__EGRESSPLUGINIPAMDST__", egressIPAMDst, -1)
 	netconf = strings.Replace(netconf, "__EGRESSPLUGINIPAMDATADIR__", egressIPAMDataDir, -1)
 	netconf = strings.Replace(netconf, "__RANDOMIZESNAT__", randomizeSNAT, -1)
+	netconf = strings.Replace(netconf, "__SNATFIXEDPORTS__", snatFixedPorts, -1)
 	netconf = strings.Replace(netconf, "__NODEIP__", nodeIP, -1)
 
 	byteValue = []byte(netconf)

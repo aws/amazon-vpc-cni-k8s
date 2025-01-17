@@ -46,6 +46,8 @@ type NetConf struct {
 
 	RandomizeSNAT string `json:"randomizeSNAT"`
 
+	SNATFixedPorts string `json:"snatFixedPorts"`
+
 	// IP to use as SNAT target
 	NodeIP net.IP `json:"nodeIP"`
 

@@ -57,11 +57,49 @@ func TestAddV4(t *testing.T) {
 
 	setupAddExpect(ipt, &actualChain, &actualRule)
 
-	err := Add(ipt, nodeIPv4, containerIPv4, ipv4MulticastRange, chainV4, comment, rndSNAT)
+	err := Add(ipt, nodeIPv4, containerIPv4, ipv4MulticastRange, chainV4, comment, rndSNAT, "")
 	assert.Nil(t, err)
 
 	assert.EqualValuesf(t, expectChain, actualChain, "iptables chain is expected to be created")
 
+	assert.EqualValuesf(t, expectRule, actualRule, "iptables rules are expected to be created")
+}
+
+func TestAddV4WithExcludedPorts(t *testing.T) {
+	ipt := mock_iptables.NewMockIPTablesIface(gomock.NewController(t))
+
+	expectChain := []string{chainV4}
+	actualChain := []string{}
+
+	excludedPorts := "1024:2048,8080:8090"
+
+	expectRule := []string{
+		fmt.Sprintf("nat %s -d %s -j ACCEPT -m comment --comment %s",
+			chainV4, ipv4MulticastRange, comment),
+	}
+
+	for _, proto := range []string{"tcp", "udp", "sctp", "dccp"} {
+		expectRule = append(expectRule,
+			fmt.Sprintf("nat %s -p %s -m multiport --sports %s -j SNAT --to-source %s -m comment --comment %s (fixed ports %s)",
+				chainV4, proto, excludedPorts, nodeIPv4.String(), comment, proto))
+	}
+
+	expectRule = append(expectRule,
+		fmt.Sprintf("nat %s -j SNAT --to-source %s -m comment --comment %s --random",
+			chainV4, nodeIPv4.String(), comment))
+
+	expectRule = append(expectRule,
+		fmt.Sprintf("nat POSTROUTING -s %s -j %s -m comment --comment %s",
+			containerIPv4.String(), chainV4, comment))
+
+	actualRule := []string{}
+
+	setupAddExpect(ipt, &actualChain, &actualRule)
+
+	err := Add(ipt, nodeIPv4, containerIPv4, ipv4MulticastRange, chainV4, comment, rndSNAT, excludedPorts)
+	assert.Nil(t, err)
+
+	assert.EqualValuesf(t, expectChain, actualChain, "iptables chain is expected to be created")
 	assert.EqualValuesf(t, expectRule, actualRule, "iptables rules are expected to be created")
 }
 

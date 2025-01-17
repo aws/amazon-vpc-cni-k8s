@@ -444,6 +444,13 @@ func TestLoadExcludeSNATCIDRsFromEnv(t *testing.T) {
 	assert.Equal(t, parseCIDRString(envExcludeSNATCIDRs), expected)
 }
 
+func TestParsePortRangeString(t *testing.T) {
+	t.Setenv(envSNATFixedPorts, "80,8070-8080")
+
+	expected := []string{"80", "8070:8080"}
+	assert.Equal(t, parsePortRangeString(envSNATFixedPorts), expected)
+}
+
 func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
@@ -501,6 +508,98 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 				},
 			},
 		}, mockIptables.(*mock_iptables.MockIptables).DataplaneState)
+}
+
+func TestSetupHostNetworkWithSNATFixedPortExclusions(t *testing.T) {
+	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
+	defer ctrl.Finish()
+
+	ln := &linuxNetwork{
+		useExternalSNAT:        false,
+		ipv6EgressEnabled:      false,
+		nodePortSupportEnabled: false,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
+		typeOfSNAT:             randomHashSNAT,
+		snatFixedPorts:         []string{"80", "8070:8080"}, // Add fixed ports to test
+
+		netLink: mockNetLink,
+		ns:      mockNS,
+		newIptables: func(iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+			return mockIptables, nil
+		},
+	}
+
+	setupNetLinkMocks(ctrl, mockNetLink)
+
+	var vpcCIDRs []string
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
+	assert.NoError(t, err)
+
+	expectedDataplaneState := map[string]map[string][][]string{
+		"nat": {
+			"AWS-SNAT-CHAIN-0": [][]string{
+				{"-N", "AWS-SNAT-CHAIN-0"},
+				{"!", "-o", "vlan+",
+					"-p", "tcp",
+					"-m", "multiport",
+					"-m", "comment", "--comment", "AWS, SNAT (fixed ports tcp)",
+					"-m", "addrtype", "!", "--dst-type", "LOCAL",
+					"--sports", "80,8070:8080",
+					"-j", "SNAT", "--to-source", "10.10.10.20"},
+				{"!", "-o", "vlan+",
+					"-p", "udp",
+					"-m", "multiport",
+					"-m", "comment", "--comment", "AWS, SNAT (fixed ports udp)",
+					"-m", "addrtype", "!", "--dst-type", "LOCAL",
+					"--sports", "80,8070:8080",
+					"-j", "SNAT", "--to-source", "10.10.10.20"},
+				{"!", "-o", "vlan+",
+					"-p", "sctp",
+					"-m", "multiport",
+					"-m", "comment", "--comment", "AWS, SNAT (fixed ports sctp)",
+					"-m", "addrtype", "!", "--dst-type", "LOCAL",
+					"--sports", "80,8070:8080",
+					"-j", "SNAT", "--to-source", "10.10.10.20"},
+				{"!", "-o", "vlan+",
+					"-p", "dccp",
+					"-m", "multiport",
+					"-m", "comment", "--comment", "AWS, SNAT (fixed ports dccp)",
+					"-m", "addrtype", "!", "--dst-type", "LOCAL",
+					"--sports", "80,8070:8080",
+					"-j", "SNAT", "--to-source", "10.10.10.20"},
+				{"!", "-o", "vlan+",
+					"-m", "comment", "--comment", "AWS, SNAT",
+					"-m", "addrtype", "!", "--dst-type", "LOCAL",
+					"-j", "SNAT", "--to-source", "10.10.10.20", "--random"},
+			},
+			"POSTROUTING": [][]string{
+				{"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0"},
+			},
+			"AWS-CONNMARK-CHAIN-0": [][]string{
+				{"-N", "AWS-CONNMARK-CHAIN-0"},
+				{"-m", "comment", "--comment", "AWS, CONNMARK",
+					"-j", "CONNMARK", "--set-xmark", "0x80/0x80"},
+			},
+			"PREROUTING": [][]string{
+				{"-i", "eni+",
+					"-m", "comment", "--comment", "AWS, outbound connections",
+					"-j", "AWS-CONNMARK-CHAIN-0"},
+				{"-m", "comment", "--comment", "AWS, CONNMARK",
+					"-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+			},
+		},
+		"mangle": {
+			"PREROUTING": [][]string{
+				{"-m", "comment", "--comment", "AWS, primary ENI",
+					"-i", "eni+",
+					"-j", "CONNMARK", "--restore-mark", "--mask", "0x80"},
+			},
+		},
+	}
+
+	assert.Equal(t, expectedDataplaneState, mockIptables.(*mock_iptables.MockIptables).DataplaneState)
 }
 
 func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {

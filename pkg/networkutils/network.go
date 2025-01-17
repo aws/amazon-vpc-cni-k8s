@@ -97,6 +97,12 @@ const (
 	// Default is "prng".
 	envRandomizeSNAT = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 
+	// This environment is used to specify port ranges which will be excluded from SNAT randomization.
+	// This is useful if you still want the benefit of randomization but need to exclude certain ports
+	// for compatibility with protocols such as STUN and TURN.
+	// Defaults to empty.
+	envSNATFixedPorts = "AWS_VPC_K8S_CNI_SNAT_FIXED_PORTS"
+
 	// envNodePortSupport is the name of environment variable that configures whether we implement support for
 	// NodePorts on the primary ENI. This requires that we add additional iptables rules and loosen the kernel's
 	// RPF check as described below. Defaults to true.
@@ -166,6 +172,7 @@ type linuxNetwork struct {
 	useExternalSNAT        bool
 	ipv6EgressEnabled      bool
 	excludeSNATCIDRs       []string
+	snatFixedPorts         []string
 	externalServiceCIDRs   []string
 	typeOfSNAT             snatType
 	nodePortSupportEnabled bool
@@ -193,6 +200,7 @@ func New() NetworkAPIs {
 		useExternalSNAT:        useExternalSNAT(),
 		ipv6EgressEnabled:      ipV6EgressEnabled(),
 		excludeSNATCIDRs:       parseCIDRString(envExcludeSNATCIDRs),
+		snatFixedPorts:         parsePortRangeString(envSNATFixedPorts),
 		externalServiceCIDRs:   parseCIDRString(envExternalServiceCIDRs),
 		typeOfSNAT:             typeOfSNAT(),
 		nodePortSupportEnabled: nodePortSupportEnabled(),
@@ -516,11 +524,36 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 			}})
 	}
 
+	if len(n.snatFixedPorts) > 0 {
+		for _, proto := range []string{"tcp", "udp", "sctp", "dccp"} {
+			fixedPortRule := []string{
+				"!", "-o", "vlan+",
+				"-p", proto,
+				"-m", "multiport",
+				"-m", "comment", "--comment", fmt.Sprintf("AWS, SNAT (fixed ports %s)", proto),
+				"-m", "addrtype", "!", "--dst-type", "LOCAL",
+				"--sports", strings.Join(n.snatFixedPorts, ","),
+				"-j", "SNAT", "--to-source", primaryAddr.String(),
+			}
+
+			iptableRules = append(iptableRules, iptablesRule{
+				name:        "SNAT rule for fixed ports",
+				shouldExist: !n.useExternalSNAT,
+				table:       "nat",
+				chain:       chain,
+				rule:        fixedPortRule,
+			})
+		}
+	}
+
 	// Prepare the Desired Rule for SNAT Rule for non-pod ENIs
-	snatRule := []string{"!", "-o", "vlan+",
+	snatRule := []string{
+		"!", "-o", "vlan+",
 		"-m", "comment", "--comment", "AWS, SNAT",
 		"-m", "addrtype", "!", "--dst-type", "LOCAL",
-		"-j", "SNAT", "--to-source", primaryAddr.String()}
+		"-j", "SNAT", "--to-source", primaryAddr.String(),
+	}
+
 	if n.typeOfSNAT == randomHashSNAT {
 		snatRule = append(snatRule, "--random")
 	}
@@ -852,6 +885,7 @@ func GetConfigForDebug() map[string]interface{} {
 		envVethPrefix:           getVethPrefixName(),
 		envNodePortSupport:      nodePortSupportEnabled(),
 		envRandomizeSNAT:        typeOfSNAT(),
+		envSNATFixedPorts:       parsePortRangeString(envSNATFixedPorts),
 	}
 }
 
@@ -886,6 +920,57 @@ func (n *linuxNetwork) GetExcludeSNATCIDRs() []string {
 // GetExternalServiceCIDRs return a list of CIDRs that should always be routed to via main routing table.
 func (n *linuxNetwork) GetExternalServiceCIDRs() []string {
 	return parseCIDRString(envExternalServiceCIDRs)
+}
+
+// parsePortRangeString parses port ranges from the env Port ranges can be
+// comma separated singles ports "80,8080" or ranges "8070-8080". Returns iptables
+// compatible format with : for ranges.
+func parsePortRangeString(envVar string) []string {
+	portRangeString := os.Getenv(envVar)
+	if portRangeString == "" {
+		return nil
+	}
+
+	var ports []string
+	for _, p := range strings.Split(portRangeString, ",") {
+		p = strings.TrimSpace(p)
+		if strings.Contains(p, "-") {
+			rangeParts := strings.Split(p, "-")
+			if len(rangeParts) != 2 {
+				log.Errorf("%v is not a valid port range", p)
+				continue
+			}
+
+			start := validatePort(rangeParts[0], p)
+			if start == -1 {
+				continue
+			}
+
+			end := validatePort(rangeParts[1], p)
+			if end == -1 || end < start {
+				log.Errorf("Invalid end port in range %v", p)
+				continue
+			}
+
+			ports = append(ports, fmt.Sprintf("%d:%d", start, end))
+		} else {
+			port := validatePort(p, p)
+			if port == -1 {
+				continue
+			}
+			ports = append(ports, strconv.Itoa(port))
+		}
+	}
+	return ports
+}
+
+func validatePort(portStr string, originalInput string) int {
+	port, err := strconv.Atoi(strings.TrimSpace(portStr))
+	if err != nil || port < 1 || port > 65535 {
+		log.Errorf("Invalid port in %v", originalInput)
+		return -1
+	}
+	return port
 }
 
 func parseCIDRString(envVar string) []string {
