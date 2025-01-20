@@ -114,14 +114,28 @@ originalMatchLabels: false
 # Settings for aws-vpc-cni ConfigMap
 # - Network Policy settings
 enableNetworkPolicy: "false"
-# - Windows settings
+
+# Linux node IP management settings
+# https://github.com/aws/amazon-vpc-cni-k8s/tree/master?tab=readme-ov-file#warm_ip_target
+warmIPTarget: 1
+# https://github.com/aws/amazon-vpc-cni-k8s/tree/master?tab=readme-ov-file#minimum_ip_target-v160
+minimumIPTarget: 3
+# https://github.com/aws/amazon-vpc-cni-k8s/tree/master?tab=readme-ov-file#warm_prefix_target-v190
+warmPrefixTarget: 1
+
+# Windows node settings
 enableWindowsIpam: "false"
-# - Windows Prefix Delegation settings
-enableWindowsPrefixDelegation: "false"
-warmWindowsPrefixTarget: 0
+
+# Windows node IP management settings
+# https://github.com/aws/amazon-vpc-cni-k8s/tree/master?tab=readme-ov-file#warm_ip_target
 warmWindowsIPTarget: 1
+# https://github.com/aws/amazon-vpc-cni-k8s/tree/master?tab=readme-ov-file#minimum_ip_target-v160
 minimumWindowsIPTarget: 3
-# - Security Groups for Pods settings
+# https://github.com/aws/amazon-vpc-cni-k8s/tree/master?tab=readme-ov-file#warm_prefix_target-v190
+warmWindowsPrefixTarget: 0
+enableWindowsPrefixDelegation: "false"
+
+# Security Groups for Pods settings
 branchENICooldown: 60
 
 cniConfig:
