@@ -106,6 +106,22 @@ env:
 #       key: SECRET_VAR1
 extraEnv: []
 
+# Use envFrom to reference ConfigMaps and Secrets
+envFrom: []
+# - secretRef:
+#      name: proxy-settings
+
+# extraObjects -- Extra K8s manifests to deploy
+extraObjects: []
+#  - apiVersion: v1
+#    kind: Secret
+#    metadata:
+#      name: proxy-settings
+#    data:
+#      http_proxy: "base64 encoded string with proxy uri, credentials, port, ..."
+#      https_proxy: "base64 encoded string with proxy uri, credentials, port, ..."
+#      no_proxy: "base64 encoded string with no_proxy settings"
+
 
 # this flag enables you to use the match label that was present in the original daemonset deployed by EKS
 # You can then annotate and label the original aws-node resources and 'adopt' them into a helm release
