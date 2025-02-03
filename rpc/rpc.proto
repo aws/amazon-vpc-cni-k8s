@@ -70,13 +70,24 @@ message DelNetworkReply {
 // The service definition.
 service NPBackend {
   rpc EnforceNpToPod (EnforceNpRequest) returns (EnforceNpReply) {}
+  rpc DeletePodNp (DeleteNpRequest) returns (DeleteNpReply) {}
 }
 
 message EnforceNpRequest {
   string K8S_POD_NAME = 1;
   string K8S_POD_NAMESPACE = 2;
+  string NETWORK_POLICY_MODE = 3;
 }
 
 message EnforceNpReply {
+  bool Success = 1;
+}
+
+message DeleteNpRequest {
+  string K8S_POD_NAME = 1;
+  string K8S_POD_NAMESPACE = 2;
+}
+
+message DeleteNpReply {
   bool Success = 1;
 }
