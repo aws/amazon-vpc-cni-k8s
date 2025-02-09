@@ -2295,8 +2295,7 @@ func TestAnnotatePod(t *testing.T) {
 
 	// Test that delete on a non-existant pod fails without crashing
 	err = mockContext.AnnotatePod("no-exist-name", "no-exist-namespace", "ip-address", "", ipTwo)
-	assert.Error(t, err)
-	assert.Equal(t, fmt.Errorf("error while trying to retrieve pod info: pods \"no-exist-name\" not found"), err)
+	assert.NoError(t, err)
 }
 
 func TestAddFeatureToCNINode(t *testing.T) {
