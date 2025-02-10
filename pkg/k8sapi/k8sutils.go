@@ -41,9 +41,6 @@ func getIPAMDCacheFilters() map[client.Object]cache.ByObject {
 			&corev1.Node{}: {
 				Field: fields.Set{"metadata.name": nodeName}.AsSelector(),
 			},
-			&rcscheme.CNINode{}: {
-				Field: fields.Set{"metadata.name": nodeName}.AsSelector(),
-			},
 		}
 	}
 	return nil
