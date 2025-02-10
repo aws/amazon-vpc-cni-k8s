@@ -1750,9 +1750,9 @@ func (cache *EC2InstanceMetadataCache) AllocIPv6Prefixes(eniID string) ([]*strin
 	prometheusmetrics.Ec2ApiReq.WithLabelValues("AssignIpv6Addresses").Inc()
 	prometheusmetrics.AwsAPILatency.WithLabelValues("AssignIpv6AddressesWithContext", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
-		checkAPIErrorAndBroadcastEvent(err, "ec2:AssignPrivateIpv6Addresses")
+		checkAPIErrorAndBroadcastEvent(err, "ec2:AssignIpv6Addresses")
 		log.Errorf("Failed to allocate IPv6 Prefixes on ENI %v: %v", eniID, err)
-		awsAPIErrInc("AssignPrivateIpv6Addresses", err)
+		awsAPIErrInc("AssignIpv6Addresses", err)
 		prometheusmetrics.Ec2ApiErr.WithLabelValues("AssignIpv6Addresses").Inc()
 		return nil, errors.Wrap(err, "allocate IPv6 prefix: failed to allocate an IPv6 prefix address")
 	}
