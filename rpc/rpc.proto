@@ -3,6 +3,7 @@ syntax = "proto3";
 package rpc;
 
 option go_package = "github.com/aws/amazon-vpc-cni-k8s/rpc;rpc";
+import "google/protobuf/empty.proto";
 
 // The service definition.
 service CNIBackend {
@@ -79,4 +80,13 @@ message EnforceNpRequest {
 
 message EnforceNpReply {
   bool Success = 1;
+}
+
+// The service definition.
+service ConfigServerBackend {
+    rpc GetNetworkPolicyConfigs (google.protobuf.Empty) returns (NetworkPolicyAgentConfigReply) {}
+}
+
+message NetworkPolicyAgentConfigReply {
+  string NetworkPolicyMode = 1;
 }
