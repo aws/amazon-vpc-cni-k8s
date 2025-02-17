@@ -16,7 +16,6 @@ package awssession
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -24,6 +23,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/smithy-go"
+
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	smithymiddleware "github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
@@ -64,10 +65,9 @@ func getHTTPTimeout() time.Duration {
 
 // New will return aws.Config to be used by Service Clients.
 func New(ctx context.Context) (aws.Config, error) {
-	customHTTPClient := &http.Client{
-		Timeout: getHTTPTimeout()}
+	httpClient := awshttp.NewBuildableClient().WithTimeout(getHTTPTimeout())
 	optFns := []func(*config.LoadOptions) error{
-		config.WithHTTPClient(customHTTPClient),
+		config.WithHTTPClient(httpClient),
 		config.WithRetryMaxAttempts(maxRetries),
 		config.WithRetryer(func() aws.Retryer {
 			return retry.NewStandard()
