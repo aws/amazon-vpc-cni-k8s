@@ -279,10 +279,13 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	result.Interfaces = append(result.Interfaces, dummyInterface)
 
 	// Set up a connection to the network policy agent
+	// Cx might have removed np container if they are not using network policies
+	// If we are not able to connect to np agent we do not return return error here. If NP agent grpc is not up
+	// and listening, NP agent will be in crash loop and we will catch the issue there
 	npConn, err := grpcClient.Dial(npAgentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Errorf("Failed to connect to network policy agent: %v", err)
-		return errors.Wrap(err, "add cmd: failed to connect to network policy agent backend server")
+		return cniTypes.PrintResult(result, conf.CNIVersion)
 	}
 	defer npConn.Close()
 
