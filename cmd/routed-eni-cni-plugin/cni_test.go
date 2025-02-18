@@ -95,13 +95,13 @@ func TestCmdAdd(t *testing.T) {
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
 	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
+	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
 
-	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(npConn, nil)
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
-	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
+	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP).Times(1)
 
 	enforceNpReply := &rpc.EnforceNpReply{Success: true}
-	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, nil)
+	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, nil).Times(1)
 
 	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
@@ -113,7 +113,7 @@ func TestCmdAdd(t *testing.T) {
 	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
 		v4Addr, nil, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any()).Return(nil)
 
-	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
+	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 
 	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Nil(t, err)
@@ -140,7 +140,7 @@ func TestCmdAddWithNPenabled(t *testing.T) {
 
 	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
 
-	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(npConn, nil)
+	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
@@ -184,7 +184,7 @@ func TestCmdAddWithNPenabledWithErr(t *testing.T) {
 
 	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
 
-	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(npConn, nil)
+	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
@@ -292,7 +292,7 @@ func TestCmdDel(t *testing.T) {
 
 	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
 
-	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(npConn, nil)
+	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
@@ -396,7 +396,7 @@ func TestCmdAddForPodENINetwork(t *testing.T) {
 
 	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
 
-	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(npConn, nil)
+	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
@@ -442,7 +442,7 @@ func TestCmdDelForPodENINetwork(t *testing.T) {
 
 	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
 
-	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(npConn, nil)
+	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
