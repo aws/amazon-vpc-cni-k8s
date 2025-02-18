@@ -22,6 +22,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
@@ -31,7 +32,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-
+	
 	"github.com/aws/amazon-vpc-cni-k8s/cmd/routed-eni-cni-plugin/driver"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/grpcwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
@@ -49,6 +50,8 @@ const ipamdAddress = "127.0.0.1:50051"
 const npAgentAddress = "127.0.0.1:50052"
 
 const dummyInterfacePrefix = "dummy"
+
+const npAgentConnTimeout = 2
 
 var version string
 
@@ -282,9 +285,11 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	// Cx might have removed np container if they are not using network policies
 	// If we are not able to connect to np agent we do not return return error here. If NP agent grpc is not up
 	// and listening, NP agent will be in crash loop and we will catch the issue there
-	npConn, err := grpcClient.Dial(npAgentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	ctx, cancel := context.WithTimeout(context.Background(), npAgentConnTimeout*time.Second) // Set timeout
+	defer cancel()
+	npConn, err := grpcClient.DialContext(ctx, npAgentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
-		log.Errorf("Failed to connect to network policy agent: %v", err)
+		log.Infof("Failed to connect to network policy agent: %v. Network Policy agent might not be running", err)
 		return cniTypes.PrintResult(result, conf.CNIVersion)
 	}
 	defer npConn.Close()
@@ -447,30 +452,30 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	// Set up a connection to the network policy agent
-	npConn, err := grpcClient.Dial(npAgentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	ctx, cancel := context.WithTimeout(context.Background(), npAgentConnTimeout*time.Second) // Set timeout
+	defer cancel()
+	npConn, err := grpcClient.DialContext(ctx, npAgentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
-		log.Errorf("Failed to connect to network policy agent: %v", err)
-	} else {
-		defer npConn.Close()
+		log.Infof("Failed to connect to network policy agent: %v. Network Policy agent might not be running", err)
+		return nil
+	}
+	defer npConn.Close()
+	//Make a GRPC call for network policy agent
+	npc := rpcClient.NewNPBackendClient(npConn)
 
-		//Make a GRPC call for network policy agent
-		npc := rpcClient.NewNPBackendClient(npConn)
+	npr, err := npc.DeletePodNp(context.Background(),
+		&pb.DeleteNpRequest{
+			K8S_POD_NAME:      string(k8sArgs.K8S_POD_NAME),
+			K8S_POD_NAMESPACE: string(k8sArgs.K8S_POD_NAMESPACE),
+		})
 
-		npr, err := npc.DeletePodNp(context.Background(),
-			&pb.DeleteNpRequest{
-				K8S_POD_NAME:      string(k8sArgs.K8S_POD_NAME),
-				K8S_POD_NAMESPACE: string(k8sArgs.K8S_POD_NAMESPACE),
-			})
-
-		// NP agent will never return an error if its not able to delete ebpf probes
-		if err != nil || !npr.Success {
-			log.Errorf("Failed to delete pod network policy for Pod Name %s and NameSpace %s: GRPC returned - %v Network policy agent returned - %v",
-				string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), err, npr)
-		}
-
-		log.Debugf("Network Policy agent for DeletePodNp returned Success : %v", npr.Success)
+	// NP agent will never return an error if its not able to delete ebpf probes
+	if err != nil || !npr.Success {
+		log.Errorf("Failed to delete pod network policy for Pod Name %s and NameSpace %s: GRPC returned - %v Network policy agent returned - %v",
+			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), err, npr)
 	}
 
+	log.Debugf("Network Policy agent for DeletePodNp returned Success : %v", npr.Success)
 	return nil
 }
 
