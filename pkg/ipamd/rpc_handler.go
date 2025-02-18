@@ -30,6 +30,7 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
@@ -320,6 +321,18 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 	return &rpc.DelNetworkReply{Success: err == nil, IPv4Addr: ipv4Addr, IPv6Addr: ipv6Addr, DeviceNumber: int32(deviceNumber)}, err
 }
 
+func (s *server) GetNetworkPolicyConfigs(ctx context.Context, e *emptypb.Empty) (*rpc.NetworkPolicyAgentConfigReply, error) {
+
+	log.Infof("Received request for Network Policy Agent configs")
+
+	resp := &rpc.NetworkPolicyAgentConfigReply{
+		NetworkPolicyMode: s.ipamContext.networkPolicyMode,
+	}
+
+	log.Infof("Send NetworkPolicyAgentConfigReply: NetworkPolicyMode: %v", resp.NetworkPolicyMode)
+	return resp, nil
+}
+
 // RunRPCHandler handles request from gRPC
 func (c *IPAMContext) RunRPCHandler(version string) error {
 	log.Infof("Serving RPC Handler version %s on %s", version, ipamdgRPCaddress)
@@ -330,6 +343,7 @@ func (c *IPAMContext) RunRPCHandler(version string) error {
 	}
 	grpcServer := grpc.NewServer()
 	rpc.RegisterCNIBackendServer(grpcServer, &server{version: version, ipamContext: c})
+	rpc.RegisterConfigServerBackendServer(grpcServer, &server{version: version, ipamContext: c})
 	healthServer := health.NewServer()
 	// If ipamd can talk to the API server and to the EC2 API, the pod is healthy.
 	// No need to ever change this to HealthCheckResponse_NOT_SERVING since it's a local service only
