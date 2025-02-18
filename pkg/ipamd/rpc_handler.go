@@ -329,7 +329,7 @@ func (s *server) GetNetworkPolicyConfigs(ctx context.Context, e *emptypb.Empty) 
 		NetworkPolicyMode: s.ipamContext.networkPolicyMode,
 	}
 
-	log.Infof("Send NetworkPolicyAgentConfigReply: NetworkPolicyMode: %t", resp.NetworkPolicyMode)
+	log.Infof("Send NetworkPolicyAgentConfigReply: NetworkPolicyMode: %v", resp.NetworkPolicyMode)
 	return resp, nil
 }
 
