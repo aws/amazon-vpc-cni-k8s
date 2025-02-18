@@ -15,12 +15,14 @@
 package grpcwrapper
 
 import (
+	"context"
 	google_grpc "google.golang.org/grpc"
 )
 
 // GRPC is the ipamd client Dial interface
 type GRPC interface {
 	Dial(target string, opts ...google_grpc.DialOption) (*google_grpc.ClientConn, error)
+	DialContext(ctx context.Context, target string, opts ...google_grpc.DialOption) (*google_grpc.ClientConn, error)
 }
 
 type cniGRPC struct{}
@@ -32,4 +34,8 @@ func New() GRPC {
 
 func (*cniGRPC) Dial(target string, opts ...google_grpc.DialOption) (*google_grpc.ClientConn, error) {
 	return google_grpc.Dial(target, opts...)
+}
+
+func (*cniGRPC) DialContext(ctx context.Context, target string, opts ...google_grpc.DialOption) (*google_grpc.ClientConn, error) {
+	return google_grpc.DialContext(ctx, target, opts...)
 }
