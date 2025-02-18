@@ -19,9 +19,10 @@
 package mock_ec2metadatawrapper
 
 import (
+	context "context"
 	reflect "reflect"
 
-	ec2metadata "github.com/aws/aws-sdk-go/aws/ec2metadata"
+	imds "github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -49,33 +50,43 @@ func (m *MockHTTPClient) EXPECT() *MockHTTPClientMockRecorder {
 }
 
 // GetInstanceIdentityDocument mocks base method.
-func (m *MockHTTPClient) GetInstanceIdentityDocument() (ec2metadata.EC2InstanceIdentityDocument, error) {
+func (m *MockHTTPClient) GetInstanceIdentityDocument(arg0 context.Context, arg1 *imds.GetInstanceIdentityDocumentInput, arg2 ...func(*imds.Options)) (*imds.GetInstanceIdentityDocumentOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetInstanceIdentityDocument")
-	ret0, _ := ret[0].(ec2metadata.EC2InstanceIdentityDocument)
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetInstanceIdentityDocument", varargs...)
+	ret0, _ := ret[0].(*imds.GetInstanceIdentityDocumentOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetInstanceIdentityDocument indicates an expected call of GetInstanceIdentityDocument.
-func (mr *MockHTTPClientMockRecorder) GetInstanceIdentityDocument() *gomock.Call {
+func (mr *MockHTTPClientMockRecorder) GetInstanceIdentityDocument(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceIdentityDocument", reflect.TypeOf((*MockHTTPClient)(nil).GetInstanceIdentityDocument))
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceIdentityDocument", reflect.TypeOf((*MockHTTPClient)(nil).GetInstanceIdentityDocument), varargs...)
 }
 
-// Region mocks base method.
-func (m *MockHTTPClient) Region() (string, error) {
+// GetRegion mocks base method.
+func (m *MockHTTPClient) GetRegion(arg0 context.Context, arg1 *imds.GetRegionInput, arg2 ...func(*imds.Options)) (*imds.GetRegionOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Region")
-	ret0, _ := ret[0].(string)
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetRegion", varargs...)
+	ret0, _ := ret[0].(*imds.GetRegionOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// Region indicates an expected call of Region.
-func (mr *MockHTTPClientMockRecorder) Region() *gomock.Call {
+// GetRegion indicates an expected call of GetRegion.
+func (mr *MockHTTPClientMockRecorder) GetRegion(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Region", reflect.TypeOf((*MockHTTPClient)(nil).Region))
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRegion", reflect.TypeOf((*MockHTTPClient)(nil).GetRegion), varargs...)
 }
 
 // MockEC2MetadataClient is a mock of EC2MetadataClient interface.
@@ -102,31 +113,41 @@ func (m *MockEC2MetadataClient) EXPECT() *MockEC2MetadataClientMockRecorder {
 }
 
 // GetInstanceIdentityDocument mocks base method.
-func (m *MockEC2MetadataClient) GetInstanceIdentityDocument() (ec2metadata.EC2InstanceIdentityDocument, error) {
+func (m *MockEC2MetadataClient) GetInstanceIdentityDocument(arg0 context.Context, arg1 *imds.GetInstanceIdentityDocumentInput, arg2 ...func(*imds.Options)) (*imds.GetInstanceIdentityDocumentOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetInstanceIdentityDocument")
-	ret0, _ := ret[0].(ec2metadata.EC2InstanceIdentityDocument)
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetInstanceIdentityDocument", varargs...)
+	ret0, _ := ret[0].(*imds.GetInstanceIdentityDocumentOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetInstanceIdentityDocument indicates an expected call of GetInstanceIdentityDocument.
-func (mr *MockEC2MetadataClientMockRecorder) GetInstanceIdentityDocument() *gomock.Call {
+func (mr *MockEC2MetadataClientMockRecorder) GetInstanceIdentityDocument(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceIdentityDocument", reflect.TypeOf((*MockEC2MetadataClient)(nil).GetInstanceIdentityDocument))
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInstanceIdentityDocument", reflect.TypeOf((*MockEC2MetadataClient)(nil).GetInstanceIdentityDocument), varargs...)
 }
 
-// Region mocks base method.
-func (m *MockEC2MetadataClient) Region() (string, error) {
+// GetRegion mocks base method.
+func (m *MockEC2MetadataClient) GetRegion(arg0 context.Context, arg1 *imds.GetRegionInput, arg2 ...func(*imds.Options)) (*imds.GetRegionOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Region")
-	ret0, _ := ret[0].(string)
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetRegion", varargs...)
+	ret0, _ := ret[0].(*imds.GetRegionOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// Region indicates an expected call of Region.
-func (mr *MockEC2MetadataClientMockRecorder) Region() *gomock.Call {
+// GetRegion indicates an expected call of GetRegion.
+func (mr *MockEC2MetadataClientMockRecorder) GetRegion(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Region", reflect.TypeOf((*MockEC2MetadataClient)(nil).Region))
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRegion", reflect.TypeOf((*MockEC2MetadataClient)(nil).GetRegion), varargs...)
 }

@@ -35,21 +35,27 @@ function run_kops_conformance() {
 
   # Run the focused set of tests with detailed logging
   TEST_START=$SECONDS
-  set -o pipefail # Ensure we catch test failures
+  TEST_RESULT=success
 
   /tmp/e2e.test --ginkgo.focus="Conformance" --ginkgo.timeout=120m --kubeconfig=$KUBECONFIG --ginkgo.v --ginkgo.trace --ginkgo.flake-attempts 8 \
-    --ginkgo.skip="(works for CRD with validation schema)|(ServiceAccountIssuerDiscovery should support OIDC discovery of service account issuer)|(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|(Basic StatefulSet functionality [StatefulSetBasic])|\[Slow\]|\[Serial\]"
+    --ginkgo.skip="(works for CRD with validation schema)|(ServiceAccountIssuerDiscovery should support OIDC discovery of service account issuer)|(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|(Basic StatefulSet functionality [StatefulSetBasic])|\[Slow\]|\[Serial\]" || TEST_RESULT=fail
 
   /tmp/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --ginkgo.timeout=120m --kubeconfig=$KUBECONFIG --ginkgo.v --ginkgo.trace --ginkgo.flake-attempts 8 \
-    --ginkgo.skip="(ServiceAccountIssuerDiscovery should support OIDC discovery of service account issuer)|(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
-  echo "Kops conformance tests ran successfully!"
+    --ginkgo.skip="(ServiceAccountIssuerDiscovery should support OIDC discovery of service account issuer)|(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]" || TEST_RESULT=fail
 
-  TEST_EXIT_CODE=$?
   TEST_DURATION=$((SECONDS - TEST_START))
 
   echo "=== Test Results ==="
   echo "Test duration: $TEST_DURATION seconds"
-  echo "Exit code: $TEST_EXIT_CODE"
+  echo "Test result: $TEST_RESULT"
+
+  # If any test failed, return failure
+  if [[ "$TEST_RESULT" == "fail" ]]; then
+    echo "One or more test suites failed!"
+    exit 1
+  fi
+
+  echo "All test suites passed successfully!"
 
   # Show cluster state after tests
   echo "=== Cluster State After Tests ==="
@@ -70,7 +76,7 @@ function run_kops_conformance() {
   sleep 240
 
   # Exit with the test exit code
-  return $TEST_EXIT_CODE
+  return 0
 }
 
 function build_and_push_image() {

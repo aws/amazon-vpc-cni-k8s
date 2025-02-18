@@ -1,6 +1,7 @@
 package ipamd
 
 import (
+	"context"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -74,9 +75,9 @@ func getCountOfIPandENIOnPrimaryInstance() (int, int) {
 	return ip, eni
 }
 
-func getMaxApplicationPodsOnPrimaryInstance() int64 {
+func getMaxApplicationPodsOnPrimaryInstance() int32 {
 	instanceType := primaryInstance.InstanceType
-	instanceInfo, err := f.CloudServices.EC2().DescribeInstanceType(*instanceType)
+	instanceInfo, err := f.CloudServices.EC2().DescribeInstanceType(context.TODO(), string(instanceType))
 	Expect(err).NotTo(HaveOccurred())
 
 	currInstance := instanceInfo[0]
@@ -84,6 +85,6 @@ func getMaxApplicationPodsOnPrimaryInstance() int64 {
 	maxIPPerENI := currInstance.NetworkInfo.Ipv4AddressesPerInterface
 
 	// Deploy 50% of max pod capacity
-	maxPods := *maxENI*(*maxIPPerENI-1) - int64(numOfNodes+1)
+	maxPods := *maxENI*(*maxIPPerENI-1) - int32(numOfNodes+1)
 	return maxPods / 2
 }

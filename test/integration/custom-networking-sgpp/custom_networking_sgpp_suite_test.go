@@ -14,6 +14,7 @@
 package custom_networking_sgpp
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net"
@@ -85,25 +86,25 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	By("Getting Cluster Security Group ID")
-	clusterRes, err := f.CloudServices.EKS().DescribeCluster(f.Options.ClusterName)
+	clusterRes, err := f.CloudServices.EKS().DescribeCluster(context.TODO(), f.Options.ClusterName)
 	Expect(err).NotTo(HaveOccurred())
 	clusterSGID = *(clusterRes.Cluster.ResourcesVpcConfig.ClusterSecurityGroupId)
-	fmt.Fprintf(GinkgoWriter, "cluster security group is %s\n", clusterSGID)
+	_, _ = fmt.Fprintf(GinkgoWriter, "cluster security group is %s\n", clusterSGID)
 
 	// Custom Networking setup
 	// TODO: Ideally, we would clone the Custom Networking SG from the cluster SG. Unfortunately, the EC2 API does not support this.
 	By("creating security group to be used by custom networking")
 	createSecurityGroupOutput, err := f.CloudServices.EC2().
-		CreateSecurityGroup("custom-networking-test", "custom networking", f.Options.AWSVPCID)
+		CreateSecurityGroup(context.TODO(), "custom-networking-test", "custom networking", f.Options.AWSVPCID)
 	Expect(err).ToNot(HaveOccurred())
 	customNetworkingSGID = *createSecurityGroupOutput.GroupId
 
 	By("authorizing egress and ingress for security group in ENIConfig")
-	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(customNetworkingSGID, "-1", -1, -1, v4Zero)
-	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(customNetworkingSGID, "-1", -1, -1, v4Zero, false)
+	_ = f.CloudServices.EC2().AuthorizeSecurityGroupEgress(context.TODO(), customNetworkingSGID, "-1", -1, -1, v4Zero)
+	_ = f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), customNetworkingSGID, "-1", -1, -1, v4Zero, false)
 
 	By("associating cidr range to the VPC")
-	association, err := f.CloudServices.EC2().AssociateVPCCIDRBlock(f.Options.AWSVPCID, cidrRange.String())
+	association, err := f.CloudServices.EC2().AssociateVPCCIDRBlock(context.TODO(), f.Options.AWSVPCID, cidrRange.String())
 	Expect(err).ToNot(HaveOccurred())
 	cidrBlockAssociationID = *association.CidrBlockAssociation.AssociationId
 
@@ -114,13 +115,13 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		createSubnetOutput, err := f.CloudServices.EC2().
-			CreateSubnet(subnetCidr.String(), f.Options.AWSVPCID, az)
+			CreateSubnet(context.TODO(), subnetCidr.String(), f.Options.AWSVPCID, az)
 		Expect(err).ToNot(HaveOccurred())
 
 		subnetID := *createSubnetOutput.Subnet.SubnetId
 
 		By("associating the route table with the newly created subnet")
-		err = f.CloudServices.EC2().AssociateRouteTableToSubnet(clusterVPCConfig.PublicRouteTableID, subnetID)
+		err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
 		Expect(err).ToNot(HaveOccurred())
 
 		eniConfigBuilder := manifest.NewENIConfigBuilder().
@@ -144,14 +145,14 @@ var _ = BeforeSuite(func() {
 	// Note that Custom Networking only supports IPv4 clusters, so IPv4 setup can be assumed.
 	By("creating a new security group for use in Security Group Policy")
 	podEniSGName := "pod-eni-automation-v4"
-	securityGroupOutput, err := f.CloudServices.EC2().CreateSecurityGroup(podEniSGName,
+	securityGroupOutput, err := f.CloudServices.EC2().CreateSecurityGroup(context.TODO(), podEniSGName,
 		"test created by vpc cni automation test suite", f.Options.AWSVPCID)
 	Expect(err).ToNot(HaveOccurred())
 	podEniSGID = *securityGroupOutput.GroupId
 
 	By("authorizing egress and ingress on security group for client-server communication")
-	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(podEniSGID, "tcp", podEniOpenPort, podEniOpenPort, v4Zero)
-	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(podEniSGID, "tcp", podEniOpenPort, podEniOpenPort, v4Zero, false)
+	_ = f.CloudServices.EC2().AuthorizeSecurityGroupEgress(context.TODO(), podEniSGID, "tcp", podEniOpenPort, podEniOpenPort, v4Zero)
+	_ = f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), podEniSGID, "tcp", podEniOpenPort, podEniOpenPort, v4Zero, false)
 
 	By("getting branch ENI limits")
 	nodeList, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
@@ -161,9 +162,9 @@ var _ = BeforeSuite(func() {
 
 	node := nodeList.Items[0]
 	instanceID := k8sUtils.GetInstanceIDFromNode(node)
-	nodeInstance, err := f.CloudServices.EC2().DescribeInstance(instanceID)
-	instanceType := *nodeInstance.InstanceType
-	totalBranchInterface = vpc.Limits[instanceType].BranchInterface * numNodes
+	nodeInstance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
+	instanceType := nodeInstance.InstanceType
+	totalBranchInterface = vpc.Limits[string(instanceType)].BranchInterface * numNodes
 
 	By("enabling custom networking and sgpp on aws-node DaemonSet")
 	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName,
@@ -202,18 +203,18 @@ var _ = AfterSuite(func() {
 	errs.Append(awsUtils.TerminateInstances(f))
 
 	By("deleting Custom Networking security group")
-	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(customNetworkingSGID))
+	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), customNetworkingSGID))
 
 	By("deleting pod ENI security group")
-	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(podEniSGID))
+	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), podEniSGID))
 
 	for _, subnet := range customNetworkingSubnetIDList {
 		By(fmt.Sprintf("deleting the subnet %s", subnet))
-		errs.Append(f.CloudServices.EC2().DeleteSubnet(subnet))
+		errs.Append(f.CloudServices.EC2().DeleteSubnet(context.TODO(), subnet))
 	}
 
 	By("disassociating the CIDR range to the VPC")
-	errs.Append(f.CloudServices.EC2().DisAssociateVPCCIDRBlock(cidrBlockAssociationID))
+	errs.Append(f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID))
 
 	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred())
 })
