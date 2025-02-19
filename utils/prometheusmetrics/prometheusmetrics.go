@@ -61,8 +61,8 @@ var (
 		},
 		[]string{"fn"},
 	)
-	AddIPCnt = prometheus.NewGauge(
-		prometheus.GaugeOpts{
+	AddIPCnt = prometheus.NewCounter(
+		prometheus.CounterOpts{
 			Name: "awscni_add_ip_req_count",
 			Help: "The number of add IP address requests",
 		},
@@ -74,8 +74,8 @@ var (
 		},
 		[]string{"reason"},
 	)
-	PodENIErr = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
+	PodENIErr = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
 			Name: "awscni_pod_eni_error_count",
 			Help: "The number of errors encountered for pod ENIs",
 		},
@@ -88,8 +88,8 @@ var (
 		},
 		[]string{"api", "error", "status"},
 	)
-	AwsAPIErr = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
+	AwsAPIErr = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
 			Name: "awscni_aws_api_error_count",
 			Help: "The number of times AWS API returns an error",
 		},
@@ -134,14 +134,14 @@ var (
 			Help: "The number of IP addresses assigned to pods",
 		},
 	)
-	ForceRemovedENIs = prometheus.NewGauge(
-		prometheus.GaugeOpts{
+	ForceRemovedENIs = prometheus.NewCounter(
+		prometheus.CounterOpts{
 			Name: "awscni_force_removed_enis",
 			Help: "The number of ENIs force removed while they had assigned pods",
 		},
 	)
-	ForceRemovedIPs = prometheus.NewGauge(
-		prometheus.GaugeOpts{
+	ForceRemovedIPs = prometheus.NewCounter(
+		prometheus.CounterOpts{
 			Name: "awscni_force_removed_ips",
 			Help: "The number of IPs force removed while they had assigned pods",
 		},
@@ -225,24 +225,18 @@ func PrometheusRegister() {
 	prometheus.MustRegister(IpsPerCidr)
 	prometheus.MustRegister(NoAvailableIPAddrs)
 	prometheus.MustRegister(EniIPsInUse)
-
 }
 
 // This can be enhanced to get it programatically.
 // Initial CNI metrics helper enhancement includes only Gauge. Doesn't support GaugeVec, Counter, CounterVec and Summary
 func GetSupportedPrometheusCNIMetricsMapping() map[string]prometheus.Collector {
-	var prometheusCNIMetrics = map[string]prometheus.Collector{
-		"awscni_eni_max":                   EnisMax,
-		"awscni_ip_max":                    IpMax,
-		"awscni_add_ip_req_count":          AddIPCnt,
-		"awscni_del_ip_req_count":          DelIPCnt,
-		"awscni_eni_allocated":             Enis,
-		"awscni_total_ip_addresses":        TotalIPs,
-		"awscni_assigned_ip_addresses":     AssignedIPs,
-		"awscni_force_removed_enis":        ForceRemovedENIs,
-		"awscni_force_removed_ips":         ForceRemovedIPs,
-		"awscni_total_ipv4_prefixes":       TotalPrefixes,
-		"awscni_no_available_ip_addresses": NoAvailableIPAddrs,
+	prometheusCNIMetrics := map[string]prometheus.Collector{
+		"awscni_eni_max":               EnisMax,
+		"awscni_ip_max":                IpMax,
+		"awscni_eni_allocated":         Enis,
+		"awscni_total_ip_addresses":    TotalIPs,
+		"awscni_assigned_ip_addresses": AssignedIPs,
+		"awscni_total_ipv4_prefixes":   TotalPrefixes,
 	}
 	return prometheusCNIMetrics
 }

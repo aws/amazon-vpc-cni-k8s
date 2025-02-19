@@ -16,6 +16,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"reflect"
@@ -23,13 +24,14 @@ import (
 	"strconv"
 	"text/template"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+
+	"github.com/aws/aws-sdk-go-v2/config"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 
-	"github.com/aws/aws-sdk-go/aws"
-
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
 const ipLimitFileName = "pkg/vpc/vpc_ip_resource_limit.go"
@@ -44,11 +46,20 @@ func printPodLimit(instanceType string, l vpc.InstanceTypeLimits) string {
 }
 
 func main() {
+	ctx := context.Background()
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
 	// Get instance types limits across all regions
-	regions := describeRegions()
+	regions := describeRegions(ctx, cfg)
+
 	eniLimitMap := make(map[string]vpc.InstanceTypeLimits)
 	for _, region := range regions {
-		describeInstanceTypes(region, eniLimitMap)
+		describeInstanceTypes(ctx, cfg, region, eniLimitMap)
 	}
 
 	// Override faulty values and add missing instance types
@@ -102,20 +113,14 @@ func main() {
 
 // Helper function to call the EC2 DescribeRegions API, returning sorted region names
 // Note that the credentials being used may not be opted-in to all regions
-func describeRegions() []string {
-	// Get session
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-	}))
-	_, err := sess.Config.Credentials.Get()
-	if err != nil {
-		log.Fatalf("Failed to get session credentials: %v", err)
-	}
-	svc := ec2.New(sess)
-	output, err := svc.DescribeRegions(&ec2.DescribeRegionsInput{})
+func describeRegions(ctx context.Context, cfg aws.Config) []string {
+	client := ec2.NewFromConfig(cfg)
+
+	output, err := client.DescribeRegions(ctx, &ec2.DescribeRegionsInput{})
 	if err != nil {
 		log.Fatalf("Failed to call EC2 DescribeRegions: %v", err)
 	}
+
 	var regionNames []string
 	for _, region := range output.Regions {
 		regionNames = append(regionNames, *region.RegionName)
@@ -125,67 +130,67 @@ func describeRegions() []string {
 }
 
 // Helper function to call the EC2 DescribeInstanceTypes API for a region and merge the respective instance-type limits into eniLimitMap
-func describeInstanceTypes(region string, eniLimitMap map[string]vpc.InstanceTypeLimits) {
+func describeInstanceTypes(ctx context.Context, cfg aws.Config, region string, eniLimitMap map[string]vpc.InstanceTypeLimits) {
 	log.Infof("Describing instance types in region=%s", region)
 
-	// Get session
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-		Config:            *aws.NewConfig().WithRegion(region),
-	}))
-	_, err := sess.Config.Credentials.Get()
-	if err != nil {
-		log.Fatalf("Failed to get session credentials: %v", err)
-	}
-	svc := ec2.New(sess)
-	describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{}
+	cfg.Region = region
+	client := ec2.NewFromConfig(cfg)
 
-	for {
-		output, err := svc.DescribeInstanceTypes(describeInstanceTypesInput)
+	paginator := ec2.NewDescribeInstanceTypesPaginator(client, &ec2.DescribeInstanceTypesInput{})
+
+	// Iterate through all pages
+	for paginator.HasMorePages() {
+		output, err := paginator.NextPage(ctx)
 		if err != nil {
 			log.Fatalf("Failed to call EC2 DescribeInstanceTypes: %v", err)
 		}
+
 		// We just want the type name, ENI and IP limits
 		for _, info := range output.InstanceTypes {
 			// Ignore any missing values
-			instanceType := aws.StringValue(info.InstanceType)
+			instanceType := string(info.InstanceType)
+
 			// only one network card is supported, so use the MaximumNetworkInterfaces from the default card if more than one are present
 			var eniLimit int
 			if len(info.NetworkInfo.NetworkCards) > 1 {
-				eniLimit = int(aws.Int64Value(info.NetworkInfo.NetworkCards[*info.NetworkInfo.DefaultNetworkCardIndex].MaximumNetworkInterfaces))
+				eniLimit = int(*info.NetworkInfo.NetworkCards[*info.NetworkInfo.DefaultNetworkCardIndex].MaximumNetworkInterfaces)
 			} else {
-				eniLimit = int(aws.Int64Value(info.NetworkInfo.MaximumNetworkInterfaces))
+				eniLimit = int(*info.NetworkInfo.MaximumNetworkInterfaces)
 			}
-			ipv4Limit := int(aws.Int64Value(info.NetworkInfo.Ipv4AddressesPerInterface))
-			isBareMetalInstance := aws.BoolValue(info.BareMetal)
-			hypervisorType := aws.StringValue(info.Hypervisor)
+
+			ipv4Limit := int(*info.NetworkInfo.Ipv4AddressesPerInterface)
+			isBareMetalInstance := *info.BareMetal
+			hypervisorType := string(info.Hypervisor)
 			if hypervisorType == "" {
 				hypervisorType = "unknown"
 			}
-			networkCards := make([]vpc.NetworkCard, aws.Int64Value(info.NetworkInfo.MaximumNetworkCards))
-			defaultNetworkCardIndex := int(aws.Int64Value(info.NetworkInfo.DefaultNetworkCardIndex))
-			for idx := 0; idx < len(networkCards); idx += 1 {
+
+			networkCards := make([]vpc.NetworkCard, *info.NetworkInfo.MaximumNetworkCards)
+			defaultNetworkCardIndex := int(*info.NetworkInfo.DefaultNetworkCardIndex)
+
+			for idx := 0; idx < len(networkCards); idx++ {
 				networkCards[idx] = vpc.NetworkCard{
-					MaximumNetworkInterfaces: *info.NetworkInfo.NetworkCards[idx].MaximumNetworkInterfaces,
-					NetworkCardIndex:         *info.NetworkInfo.NetworkCards[idx].NetworkCardIndex,
+					MaximumNetworkInterfaces: int64(*info.NetworkInfo.NetworkCards[idx].MaximumNetworkInterfaces),
+					NetworkCardIndex:         int64(*info.NetworkInfo.NetworkCards[idx].NetworkCardIndex),
 				}
 			}
+
 			if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
-				limits := vpc.InstanceTypeLimits{ENILimit: eniLimit, IPv4Limit: ipv4Limit, NetworkCards: networkCards, HypervisorType: strconv.Quote(hypervisorType),
-					IsBareMetal: isBareMetalInstance, DefaultNetworkCardIndex: defaultNetworkCardIndex}
+				limits := vpc.InstanceTypeLimits{
+					ENILimit:                eniLimit,
+					IPv4Limit:               ipv4Limit,
+					NetworkCards:            networkCards,
+					HypervisorType:          strconv.Quote(hypervisorType),
+					IsBareMetal:             isBareMetalInstance,
+					DefaultNetworkCardIndex: defaultNetworkCardIndex,
+				}
+
 				if existingLimits, contains := eniLimitMap[instanceType]; contains && !reflect.DeepEqual(existingLimits, limits) {
 					// this should never happen
 					log.Fatalf("A previous region has different limits for instanceType=%s than region=%s", instanceType, region)
 				}
 				eniLimitMap[instanceType] = limits
 			}
-		}
-		// Paginate to the next request
-		if output.NextToken == nil {
-			break
-		}
-		describeInstanceTypesInput = &ec2.DescribeInstanceTypesInput{
-			NextToken: output.NextToken,
 		}
 	}
 }

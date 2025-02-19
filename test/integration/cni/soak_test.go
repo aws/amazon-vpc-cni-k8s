@@ -14,15 +14,14 @@
 package cni
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
-	"github.com/aws/aws-sdk-go/service/ec2"
-
-	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -59,17 +58,17 @@ var _ = Describe("SOAK Test pod networking", Ordered, func() {
 	BeforeAll(func() {
 		fmt.Println("Starting SOAK test")
 
-		protocol = ec2.ProtocolTcp
+		protocol = "tcp"
 		serverPort = 2273
 
 		By("Authorize Security Group Ingress on EC2 instance.")
 		err = f.CloudServices.EC2().
-			AuthorizeSecurityGroupIngress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
+			AuthorizeSecurityGroupIngress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Authorize Security Group Egress on EC2 instance.")
 		err = f.CloudServices.EC2().
-			AuthorizeSecurityGroupEgress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
+			AuthorizeSecurityGroupEgress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -78,12 +77,12 @@ var _ = Describe("SOAK Test pod networking", Ordered, func() {
 
 		By("Revoke Security Group Ingress.")
 		err = f.CloudServices.EC2().
-			RevokeSecurityGroupIngress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
+			RevokeSecurityGroupIngress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Revoke Security Group Egress.")
 		err = f.CloudServices.EC2().
-			RevokeSecurityGroupEgress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
+			RevokeSecurityGroupEgress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
 		Expect(err).ToNot(HaveOccurred())
 
 		By("SOAK test completed")

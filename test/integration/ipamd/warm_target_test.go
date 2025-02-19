@@ -14,6 +14,7 @@
 package ipamd
 
 import (
+	"context"
 	"strconv"
 	"time"
 
@@ -43,7 +44,7 @@ var _ = Describe("test warm target variables", func() {
 
 			Eventually(func(g Gomega) {
 				primaryInstance, err = f.CloudServices.
-					EC2().DescribeInstance(*primaryInstance.InstanceId)
+					EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Validate number of allocated ENIs
@@ -104,7 +105,7 @@ var _ = Describe("test warm target variables", func() {
 				var availIPs int
 				// Query the EC2 Instance to get the list of available IPs on the instance
 				primaryInstance, err = f.CloudServices.
-					EC2().DescribeInstance(*primaryInstance.InstanceId)
+					EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Sum all the IPs on all network interfaces minus the primary IPv4 address per ENI

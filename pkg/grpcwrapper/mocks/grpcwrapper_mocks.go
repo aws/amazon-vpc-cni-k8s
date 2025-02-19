@@ -19,6 +19,7 @@
 package mock_grpcwrapper
 
 import (
+	context "context"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -66,4 +67,24 @@ func (mr *MockGRPCMockRecorder) Dial(arg0 interface{}, arg1 ...interface{}) *gom
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0}, arg1...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Dial", reflect.TypeOf((*MockGRPC)(nil).Dial), varargs...)
+}
+
+// DialContext mocks base method.
+func (m *MockGRPC) DialContext(arg0 context.Context, arg1 string, arg2 ...grpc.DialOption) (*grpc.ClientConn, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "DialContext", varargs...)
+	ret0, _ := ret[0].(*grpc.ClientConn)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DialContext indicates an expected call of DialContext.
+func (mr *MockGRPCMockRecorder) DialContext(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DialContext", reflect.TypeOf((*MockGRPC)(nil).DialContext), varargs...)
 }

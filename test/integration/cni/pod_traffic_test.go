@@ -14,6 +14,7 @@
 package cni
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
@@ -22,7 +23,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/apps/v1"
@@ -72,12 +72,12 @@ var _ = Describe("test pod networking", func() {
 	JustBeforeEach(func() {
 		By("authorizing security group ingress on instance security group")
 		err = f.CloudServices.EC2().
-			AuthorizeSecurityGroupIngress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
+			AuthorizeSecurityGroupIngress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
 		Expect(err).ToNot(HaveOccurred())
 
 		By("authorizing security group egress on instance security group")
 		err = f.CloudServices.EC2().
-			AuthorizeSecurityGroupEgress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
+			AuthorizeSecurityGroupEgress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
 		Expect(err).ToNot(HaveOccurred())
 
 		serverContainer := manifest.
@@ -139,12 +139,12 @@ var _ = Describe("test pod networking", func() {
 	JustAfterEach(func() {
 		By("revoking security group ingress on instance security group")
 		err = f.CloudServices.EC2().
-			RevokeSecurityGroupIngress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
+			RevokeSecurityGroupIngress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0", false)
 		Expect(err).ToNot(HaveOccurred())
 
 		By("revoking security group egress on instance security group")
 		err = f.CloudServices.EC2().
-			RevokeSecurityGroupEgress(instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
+			RevokeSecurityGroupEgress(context.TODO(), instanceSecurityGroupID, protocol, serverPort, serverPort, "0.0.0.0/0")
 		Expect(err).ToNot(HaveOccurred())
 
 		By("deleting the primary node server deployment")
@@ -190,7 +190,7 @@ var _ = Describe("test pod networking", func() {
 	Context("[CANARY][SMOKE] when establishing UDP connection from tester to server", func() {
 		BeforeEach(func() {
 			serverPort = 2273
-			protocol = ec2.ProtocolUdp
+			protocol = "udp"
 			serverListenCmd = []string{"nc"}
 			// The nc flag "-l" for listen mode, "-k" to keep server up and not close
 			// connection after each connection, "-u" for udp
@@ -229,7 +229,7 @@ var _ = Describe("test pod networking", func() {
 
 		BeforeEach(func() {
 			serverPort = 2273
-			protocol = ec2.ProtocolTcp
+			protocol = "tcp"
 			// Test tcp connection using netcat
 			serverListenCmd = []string{"nc"}
 			// The nc flag "-l" for listen mode, "-k" to keep server up and not close
@@ -270,7 +270,7 @@ func VerifyConnectivityFailsForNegativeCase(senderPod coreV1.Pod, receiverPod co
 
 	testerCommand := getTestCommandFunc(receiverPod, port)
 
-	fmt.Fprintf(GinkgoWriter, "verifying connectivity fails from pod %s on node %s with IP %s to pod"+
+	_, _ = fmt.Fprintf(GinkgoWriter, "verifying connectivity fails from pod %s on node %s with IP %s to pod"+
 		" %s on node %s with IP %s\n", senderPod.Name, senderPod.Spec.NodeName, senderPod.Status.PodIP,
 		receiverPod.Name, receiverPod.Spec.NodeName, receiverPod.Status.PodIP)
 
@@ -330,7 +330,7 @@ func testConnectivity(senderPod coreV1.Pod, receiverPod coreV1.Pod, expectedStdo
 
 	testerCommand := getTestCommandFunc(receiverPod, port)
 
-	fmt.Fprintf(GinkgoWriter, "verifying connectivity from pod %s on node %s with IP %s to pod"+
+	_, _ = fmt.Fprintf(GinkgoWriter, "verifying connectivity from pod %s on node %s with IP %s to pod"+
 		" %s on node %s with IP %s\n", senderPod.Name, senderPod.Spec.NodeName, senderPod.Status.PodIP,
 		receiverPod.Name, receiverPod.Spec.NodeName, receiverPod.Status.PodIP)
 
@@ -338,7 +338,7 @@ func testConnectivity(senderPod coreV1.Pod, receiverPod coreV1.Pod, expectedStdo
 		PodExec(senderPod.Namespace, senderPod.Name, testerCommand)
 	Expect(err).ToNot(HaveOccurred())
 
-	fmt.Fprintf(GinkgoWriter, "stdout: %s and stderr: %s\n", stdOut, stdErr)
+	_, _ = fmt.Fprintf(GinkgoWriter, "stdout: %s and stderr: %s\n", stdOut, stdErr)
 
 	Expect(stdErr).To(ContainSubstring(expectedStderr))
 	Expect(stdOut).To(ContainSubstring(expectedStdout))

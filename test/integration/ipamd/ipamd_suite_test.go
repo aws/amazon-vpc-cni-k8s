@@ -14,6 +14,7 @@
 package ipamd
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -66,7 +67,7 @@ var _ = BeforeSuite(func() {
 	Expect(primaryNode).To(Not(BeNil()), "expected to find a non-tainted node")
 	fmt.Fprintf(GinkgoWriter, "coredns node is %s\n", primaryNode.Name)
 	instanceID := k8sUtils.GetInstanceIDFromNode(*primaryNode)
-	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(instanceID)
+	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("getting node with no pods scheduled to run tests")
@@ -94,7 +95,7 @@ var _ = BeforeSuite(func() {
 	}
 	fmt.Fprintf(GinkgoWriter, "primary node is %s\n", primaryNode.Name)
 	instanceID = k8sUtils.GetInstanceIDFromNode(*primaryNode)
-	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(instanceID)
+	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Set default values- WARM_ENI_TARGET to 1, and remove WARM_IP_TARGET, MINIMUM_IP_TARGET and WARM_PREFIX_TARGET

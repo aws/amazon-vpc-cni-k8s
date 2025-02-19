@@ -19,8 +19,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	cloudwatchtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"k8s.io/client-go/kubernetes"
@@ -288,9 +288,9 @@ func produceHistogram(act metricsAction, cw publisher.Publisher) {
 
 		prevUpperBound = *bucket.UpperBound
 		if *bucket.CumulativeCount != 0 {
-			dataPoint := &cloudwatch.MetricDatum{
+			dataPoint := cloudwatchtypes.MetricDatum{
 				MetricName: aws.String(act.cwMetricName),
-				StatisticValues: &cloudwatch.StatisticSet{
+				StatisticValues: &cloudwatchtypes.StatisticSet{
 					Maximum:     aws.Float64(mid),
 					Minimum:     aws.Float64(mid),
 					SampleCount: aws.Float64(*bucket.CumulativeCount),
@@ -303,42 +303,42 @@ func produceHistogram(act metricsAction, cw publisher.Publisher) {
 }
 
 func filterMetrics(originalMetrics map[string]*dto.MetricFamily,
-	interestingMetrics map[string]metricsConvert) (map[string]*dto.MetricFamily, error) {
+	interestingMetrics map[string]metricsConvert,
+) (map[string]*dto.MetricFamily, error) {
 	result := map[string]*dto.MetricFamily{}
 
 	for metric := range interestingMetrics {
 		if family, found := originalMetrics[metric]; found {
 			result[metric] = family
-
 		}
 	}
 	return result, nil
 }
 
-func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFamily, convertDef map[string]metricsConvert, cw publisher.Publisher) {
+func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFamily, convertDef map[string]metricsConvert, cw publisher.Publisher) error {
 	for key, family := range families {
 		convertMetrics := convertDef[key]
 		metricType := family.GetType()
 		for _, action := range convertMetrics.actions {
 			switch metricType {
 			case dto.MetricType_COUNTER:
-				dataPoint := &cloudwatch.MetricDatum{
+				dataPoint := cloudwatchtypes.MetricDatum{
 					MetricName: aws.String(action.cwMetricName),
-					Unit:       aws.String(cloudwatch.StandardUnitCount),
+					Unit:       cloudwatchtypes.StandardUnitCount,
 					Value:      aws.Float64(action.data.curSingleDataPoint),
 				}
 				cw.Publish(dataPoint)
 			case dto.MetricType_GAUGE:
-				dataPoint := &cloudwatch.MetricDatum{
+				dataPoint := cloudwatchtypes.MetricDatum{
 					MetricName: aws.String(action.cwMetricName),
-					Unit:       aws.String(cloudwatch.StandardUnitCount),
+					Unit:       cloudwatchtypes.StandardUnitCount,
 					Value:      aws.Float64(action.data.curSingleDataPoint),
 				}
 				cw.Publish(dataPoint)
 			case dto.MetricType_SUMMARY:
-				dataPoint := &cloudwatch.MetricDatum{
+				dataPoint := cloudwatchtypes.MetricDatum{
 					MetricName: aws.String(action.cwMetricName),
-					Unit:       aws.String(cloudwatch.StandardUnitCount),
+					Unit:       cloudwatchtypes.StandardUnitCount,
 					Value:      aws.Float64(action.data.curSingleDataPoint),
 				}
 				cw.Publish(dataPoint)
@@ -347,15 +347,18 @@ func produceCloudWatchMetrics(t metricsTarget, families map[string]*dto.MetricFa
 			}
 		}
 	}
+
+	return nil
 }
 
 // Prometheus export supports only gauge metrics for now.
 
-func producePrometheusMetrics(t metricsTarget, families map[string]*dto.MetricFamily, convertDef map[string]metricsConvert) {
+func producePrometheusMetrics(t metricsTarget, families map[string]*dto.MetricFamily, convertDef map[string]metricsConvert) error {
 	prometheusCNIMetrics := prometheusmetrics.GetSupportedPrometheusCNIMetricsMapping()
 	if len(prometheusCNIMetrics) == 0 {
-		t.getLogger().Infof("Skipping since prometheus mapping is missing")
-		return
+		errorMsg := "Skipping since prometheus mapping is missing"
+		t.getLogger().Infof(errorMsg)
+		return fmt.Errorf(errorMsg)
 	}
 	for key, family := range families {
 		convertMetrics := convertDef[key]
@@ -365,11 +368,17 @@ func producePrometheusMetrics(t metricsTarget, families map[string]*dto.MetricFa
 			case dto.MetricType_GAUGE:
 				metrics, ok := prometheusCNIMetrics[family.GetName()]
 				if ok {
-					metrics.(prometheus.Gauge).Set(action.data.curSingleDataPoint)
+					if gauge, isGauge := metrics.(prometheus.Gauge); isGauge {
+						gauge.Set(action.data.curSingleDataPoint)
+					} else {
+						t.getLogger().Warnf("Metric %s is not a Gauge type, skipping", family.GetName())
+					}
 				}
 			}
 		}
 	}
+
+	return nil
 }
 
 func resetMetrics(interestingMetrics map[string]metricsConvert) {

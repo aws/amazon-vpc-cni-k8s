@@ -99,10 +99,16 @@ func New(options Options) *Framework {
 	cloudConfig := aws.CloudConfig{Region: options.AWSRegion, VpcID: options.AWSVPCID,
 		EKSEndpoint: options.EKSEndpoint}
 
+	awsCloud, err := aws.NewCloud(cloudConfig)
+
+	if err != nil {
+		log.Fatalf("failed to create AWS cloud client: %v", err)
+	}
+
 	return &Framework{
 		Options:             options,
 		K8sClient:           k8sClient,
-		CloudServices:       aws.NewCloud(cloudConfig),
+		CloudServices:       awsCloud,
 		K8sResourceManagers: k8s.NewResourceManager(k8sClient, clientset, k8sSchema, config),
 		InstallationManager: controller.NewDefaultInstallationManager(
 			helm.NewDefaultReleaseManager(options.KubeConfig)),

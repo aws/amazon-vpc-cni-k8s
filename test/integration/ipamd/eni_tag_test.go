@@ -14,6 +14,7 @@
 package ipamd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -50,7 +51,7 @@ var _ = Describe("test tags are created on Secondary ENI", func() {
 		time.Sleep(time.Second * 90)
 
 		By("getting the list of ENIs before setting ADDITIONAL_ENI_TAGS")
-		instance, err := f.CloudServices.EC2().DescribeInstance(*primaryInstance.InstanceId)
+		instance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
 		Expect(err).ToNot(HaveOccurred())
 
 		existingENIs := make(map[string]bool)
@@ -66,7 +67,7 @@ var _ = Describe("test tags are created on Secondary ENI", func() {
 		time.Sleep(time.Second * 90)
 
 		By("getting the list of current ENIs by describing the instance")
-		instance, err = f.CloudServices.EC2().DescribeInstance(*primaryInstance.InstanceId)
+		instance, err = f.CloudServices.EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
 		Expect(err).ToNot(HaveOccurred())
 
 		for _, nwInterface := range instance.NetworkInterfaces {
@@ -82,7 +83,7 @@ var _ = Describe("test tags are created on Secondary ENI", func() {
 	JustAfterEach(func() {
 
 		envVarToRemove := map[string]struct{}{}
-		for key, _ := range environmentVariables {
+		for key := range environmentVariables {
 			envVarToRemove[key] = struct{}{}
 		}
 
@@ -137,7 +138,7 @@ var _ = Describe("test tags are created on Secondary ENI", func() {
 // VerifyTagIsPresentOnENIs verifies that the list of ENIs have expected tag key-val pair
 func VerifyTagIsPresentOnENIs(newENIIds []string, expectedTags map[string]string) {
 	By(fmt.Sprintf("Describing the list of new ENI created after seeting env variable %v", newENIIds))
-	describeNetworkInterfaceOutput, err := f.CloudServices.EC2().DescribeNetworkInterface(newENIIds)
+	describeNetworkInterfaceOutput, err := f.CloudServices.EC2().DescribeNetworkInterface(context.TODO(), newENIIds)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("verifying the new tags are present on new ENIs")
