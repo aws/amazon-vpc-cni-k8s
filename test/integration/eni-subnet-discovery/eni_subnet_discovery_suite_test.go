@@ -14,18 +14,20 @@
 package eni_subnet_discovery
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net"
 	"testing"
 	"time"
 
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+
 	"github.com/apparentlymart/go-cidr/cidr"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework"
 	awsUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
 	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
@@ -44,7 +46,7 @@ var (
 	cidrRange              *net.IPNet
 	cidrBlockAssociationID string
 	createdSubnet          string
-	primaryInstance        *ec2.Instance
+	primaryInstance        ec2types.Instance
 )
 
 // Parse test specific variable from flag
@@ -74,21 +76,21 @@ var _ = BeforeSuite(func() {
 	Expect(primaryNode).To(Not(BeNil()), "expected to find a non-tainted node")
 
 	instanceID := k8sUtils.GetInstanceIDFromNode(*primaryNode)
-	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(instanceID)
+	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
 	Expect(err).ToNot(HaveOccurred())
 
 	_, cidrRange, err = net.ParseCIDR(cidrRangeString)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("creating test namespace")
-	f.K8sResourceManagers.NamespaceManager().CreateNamespace(utils.DefaultTestNamespace)
+	_ = f.K8sResourceManagers.NamespaceManager().CreateNamespace(utils.DefaultTestNamespace)
 
 	By("getting the cluster VPC Config")
 	clusterVPCConfig, err = awsUtils.GetClusterVPCConfig(f)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("associating cidr range to the VPC")
-	association, err := f.CloudServices.EC2().AssociateVPCCIDRBlock(f.Options.AWSVPCID, cidrRange.String())
+	association, err := f.CloudServices.EC2().AssociateVPCCIDRBlock(context.TODO(), f.Options.AWSVPCID, cidrRange.String())
 	Expect(err).ToNot(HaveOccurred())
 	cidrBlockAssociationID = *association.CidrBlockAssociation.AssociationId
 
@@ -99,13 +101,13 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	createSubnetOutput, err := f.CloudServices.EC2().
-		CreateSubnet(subnetCidr.String(), f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
+		CreateSubnet(context.TODO(), subnetCidr.String(), f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
 	Expect(err).ToNot(HaveOccurred())
 
 	subnetID := *createSubnetOutput.Subnet.SubnetId
 
 	By("associating the route table with the newly created subnet")
-	err = f.CloudServices.EC2().AssociateRouteTableToSubnet(clusterVPCConfig.PublicRouteTableID, subnetID)
+	err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
 	Expect(err).ToNot(HaveOccurred())
 
 	By("try detaching all ENIs by setting WARM_ENI_TARGET to 0")
@@ -120,7 +122,7 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	By("deleting test namespace")
-	f.K8sResourceManagers.NamespaceManager().
+	_ = f.K8sResourceManagers.NamespaceManager().
 		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
 	var errs prometheus.MultiError
@@ -129,10 +131,10 @@ var _ = AfterSuite(func() {
 	time.Sleep(time.Second * 90)
 
 	By(fmt.Sprintf("deleting the subnet %s", createdSubnet))
-	errs.Append(f.CloudServices.EC2().DeleteSubnet(createdSubnet))
+	errs.Append(f.CloudServices.EC2().DeleteSubnet(context.TODO(), createdSubnet))
 
 	By("disassociating the CIDR range to the VPC")
-	errs.Append(f.CloudServices.EC2().DisAssociateVPCCIDRBlock(cidrBlockAssociationID))
+	errs.Append(f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID))
 
 	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred())
 

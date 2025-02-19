@@ -4,8 +4,9 @@ import (
 	"net"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
 	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/stretchr/testify/assert"
 )
@@ -214,25 +215,25 @@ func TestPrefixSimilar(t *testing.T) {
 	tests := []struct {
 		name        string
 		prefixPool  []string
-		eniPrefixes []*ec2.Ipv4PrefixSpecification
+		eniPrefixes []ec2types.Ipv4PrefixSpecification
 		want        bool
 	}{
 		{
 			name:        "Empty slices",
 			prefixPool:  []string{},
-			eniPrefixes: []*ec2.Ipv4PrefixSpecification{},
+			eniPrefixes: []ec2types.Ipv4PrefixSpecification{},
 			want:        true,
 		},
 		{
 			name:        "Different lengths",
 			prefixPool:  []string{"192.168.1.0/24"},
-			eniPrefixes: []*ec2.Ipv4PrefixSpecification{},
+			eniPrefixes: []ec2types.Ipv4PrefixSpecification{},
 			want:        false,
 		},
 		{
 			name:       "Equivalent prefixes",
 			prefixPool: []string{"192.168.1.0/24", "10.0.0.0/16"},
-			eniPrefixes: []*ec2.Ipv4PrefixSpecification{
+			eniPrefixes: []ec2types.Ipv4PrefixSpecification{
 				{Ipv4Prefix: stringPtr("192.168.1.0/24")},
 				{Ipv4Prefix: stringPtr("10.0.0.0/16")},
 			},
@@ -241,7 +242,7 @@ func TestPrefixSimilar(t *testing.T) {
 		{
 			name:       "Different prefixes",
 			prefixPool: []string{"192.168.1.0/24", "10.0.0.0/16"},
-			eniPrefixes: []*ec2.Ipv4PrefixSpecification{
+			eniPrefixes: []ec2types.Ipv4PrefixSpecification{
 				{Ipv4Prefix: stringPtr("192.168.1.0/24")},
 				{Ipv4Prefix: stringPtr("172.16.0.0/16")},
 			},
@@ -250,8 +251,8 @@ func TestPrefixSimilar(t *testing.T) {
 		{
 			name:       "Nil prefix",
 			prefixPool: []string{"192.168.1.0/24"},
-			eniPrefixes: []*ec2.Ipv4PrefixSpecification{
-				nil,
+			eniPrefixes: []ec2types.Ipv4PrefixSpecification{
+				{},
 			},
 			want: false,
 		},
@@ -270,13 +271,13 @@ func TestIPsSimilar(t *testing.T) {
 	tests := []struct {
 		name   string
 		ipPool []string
-		eniIPs []*ec2.NetworkInterfacePrivateIpAddress
+		eniIPs []ec2types.NetworkInterfacePrivateIpAddress
 		want   bool
 	}{
 		{
 			name:   "Empty IP pool",
 			ipPool: []string{},
-			eniIPs: []*ec2.NetworkInterfacePrivateIpAddress{
+			eniIPs: []ec2types.NetworkInterfacePrivateIpAddress{
 				{PrivateIpAddress: stringPtr("10.0.0.1"), Primary: boolPtr(true)},
 			},
 			want: true,
@@ -284,7 +285,7 @@ func TestIPsSimilar(t *testing.T) {
 		{
 			name:   "Different lengths",
 			ipPool: []string{"192.168.1.1"},
-			eniIPs: []*ec2.NetworkInterfacePrivateIpAddress{
+			eniIPs: []ec2types.NetworkInterfacePrivateIpAddress{
 				{PrivateIpAddress: stringPtr("10.0.0.1"), Primary: boolPtr(true)},
 				{PrivateIpAddress: stringPtr("192.168.1.1"), Primary: boolPtr(false)},
 				{PrivateIpAddress: stringPtr("192.168.1.2"), Primary: boolPtr(false)},
@@ -294,7 +295,7 @@ func TestIPsSimilar(t *testing.T) {
 		{
 			name:   "Equivalent IPs",
 			ipPool: []string{"192.168.1.1", "10.0.0.2"},
-			eniIPs: []*ec2.NetworkInterfacePrivateIpAddress{
+			eniIPs: []ec2types.NetworkInterfacePrivateIpAddress{
 				{PrivateIpAddress: stringPtr("10.0.0.1"), Primary: boolPtr(true)},
 				{PrivateIpAddress: stringPtr("192.168.1.1"), Primary: boolPtr(false)},
 				{PrivateIpAddress: stringPtr("10.0.0.2"), Primary: boolPtr(false)},
@@ -304,7 +305,7 @@ func TestIPsSimilar(t *testing.T) {
 		{
 			name:   "Different IPs",
 			ipPool: []string{"192.168.1.1", "10.0.0.2"},
-			eniIPs: []*ec2.NetworkInterfacePrivateIpAddress{
+			eniIPs: []ec2types.NetworkInterfacePrivateIpAddress{
 				{PrivateIpAddress: stringPtr("10.0.0.1"), Primary: boolPtr(true)},
 				{PrivateIpAddress: stringPtr("192.168.1.1"), Primary: boolPtr(false)},
 				{PrivateIpAddress: stringPtr("172.16.0.1"), Primary: boolPtr(false)},
@@ -314,9 +315,9 @@ func TestIPsSimilar(t *testing.T) {
 		{
 			name:   "Nil IP",
 			ipPool: []string{"192.168.1.1"},
-			eniIPs: []*ec2.NetworkInterfacePrivateIpAddress{
+			eniIPs: []ec2types.NetworkInterfacePrivateIpAddress{
 				{PrivateIpAddress: stringPtr("10.0.0.1"), Primary: boolPtr(true)},
-				nil,
+				{},
 			},
 			want: false,
 		},

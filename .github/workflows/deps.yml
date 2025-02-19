@@ -4,6 +4,7 @@ on:
     branches:
       - "master"
       - "release*"
+      - "sdkv2"
 permissions:
   contents: read
 jobs:

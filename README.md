@@ -741,7 +741,7 @@ Type: String
 
 Default: `standard`
 
-Network Policy agent now supports two modes for Network Policy enforcement - Strict and Standard. By default, the Amazon VPC CNI plugin for Kubernetes configures network policies for pods in parallel with the pod provisioning. In the `standard` mode, until all of the policies are configured for the new pod, containers in the new pod will start with a default allow policy. A default allow policy means that all ingress and egress traffic is allowed to and from the new pods. However, in the `strict` mode, a new pod will be blocked from Egress and Ingress connections till a qualifying Network Policy is applied. In Strict Mode, you must have a network policy defined for every pod in your cluster. Host Networking pods are exempted from this requirement.
+Network Policy agent now supports two modes for Network Policy enforcement - Strict and Standard. By default, the Amazon VPC CNI plugin for Kubernetes configures network policies for pods in parallel with the pod provisioning. In the `standard` mode, until all of the policies are configured for the new pod, containers in the new pod will start with a default allow policy. A default allow policy means that all ingress and egress traffic is allowed to and from the new pods. However, in the `strict` mode, a new pod will start with a default deny policy and all Egress and Ingress connections will be blocked till Network Policies are configured. In Strict Mode, you must have a network policy defined for every pod in your cluster. Host Networking pods are exempted from this requirement.
 
 ### VPC CNI Feature Matrix
 

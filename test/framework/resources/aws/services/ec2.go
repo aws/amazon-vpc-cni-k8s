@@ -14,53 +14,54 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
 type EC2 interface {
-	DescribeInstanceType(instanceType string) ([]*ec2.InstanceTypeInfo, error)
-	DescribeInstance(instanceID string) (*ec2.Instance, error)
-	DescribeVPC(vpcID string) (*ec2.DescribeVpcsOutput, error)
-	DescribeNetworkInterface(interfaceIDs []string) (*ec2.DescribeNetworkInterfacesOutput, error)
-	AuthorizeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error
-	RevokeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error
-	AuthorizeSecurityGroupEgress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
-	RevokeSecurityGroupEgress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
-	AssociateVPCCIDRBlock(vpcId string, cidrBlock string) (*ec2.AssociateVpcCidrBlockOutput, error)
-	TerminateInstance(instanceIDs []string) error
-	DisAssociateVPCCIDRBlock(associationID string) error
-	DescribeSubnet(subnetID string) (*ec2.DescribeSubnetsOutput, error)
-	CreateSubnet(cidrBlock string, vpcID string, az string) (*ec2.CreateSubnetOutput, error)
-	DeleteSubnet(subnetID string) error
-	DescribeRouteTables(subnetID string) (*ec2.DescribeRouteTablesOutput, error)
-	DescribeRouteTablesWithVPCID(vpcID string) (*ec2.DescribeRouteTablesOutput, error)
-	CreateSecurityGroup(groupName string, description string, vpcID string) (*ec2.CreateSecurityGroupOutput, error)
-	DeleteSecurityGroup(groupID string) error
-	AssociateRouteTableToSubnet(routeTableId string, subnetID string) error
-	CreateKey(keyName string) (*ec2.CreateKeyPairOutput, error)
-	DeleteKey(keyName string) error
-	DescribeKey(keyName string) (*ec2.DescribeKeyPairsOutput, error)
-	ModifyNetworkInterfaceSecurityGroups(securityGroupIds []*string, networkInterfaceId *string) (*ec2.ModifyNetworkInterfaceAttributeOutput, error)
-	DescribeAvailabilityZones() (*ec2.DescribeAvailabilityZonesOutput, error)
-	CreateTags(resourceIds []string, tags []*ec2.Tag) (*ec2.CreateTagsOutput, error)
-	DeleteTags(resourceIds []string, tags []*ec2.Tag) (*ec2.DeleteTagsOutput, error)
+	DescribeInstanceType(ctx context.Context, instanceType string) ([]types.InstanceTypeInfo, error)
+	DescribeInstance(ctx context.Context, instanceID string) (types.Instance, error)
+	DescribeVPC(ctx context.Context, vpcID string) (*ec2.DescribeVpcsOutput, error)
+	DescribeNetworkInterface(ctx context.Context, interfaceIDs []string) (*ec2.DescribeNetworkInterfacesOutput, error)
+	AuthorizeSecurityGroupIngress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error
+	RevokeSecurityGroupIngress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error
+	AuthorizeSecurityGroupEgress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
+	RevokeSecurityGroupEgress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string) error
+	AssociateVPCCIDRBlock(ctx context.Context, vpcId string, cidrBlock string) (*ec2.AssociateVpcCidrBlockOutput, error)
+	TerminateInstance(ctx context.Context, instanceIDs []string) error
+	DisAssociateVPCCIDRBlock(ctx context.Context, associationID string) error
+	DescribeSubnet(ctx context.Context, subnetID string) (*ec2.DescribeSubnetsOutput, error)
+	CreateSubnet(ctx context.Context, cidrBlock string, vpcID string, az string) (*ec2.CreateSubnetOutput, error)
+	DeleteSubnet(ctx context.Context, subnetID string) error
+	DescribeRouteTables(ctx context.Context, subnetID string) (*ec2.DescribeRouteTablesOutput, error)
+	DescribeRouteTablesWithVPCID(ctx context.Context, vpcID string) (*ec2.DescribeRouteTablesOutput, error)
+	CreateSecurityGroup(ctx context.Context, groupName string, description string, vpcID string) (*ec2.CreateSecurityGroupOutput, error)
+	DeleteSecurityGroup(ctx context.Context, groupID string) error
+	AssociateRouteTableToSubnet(ctx context.Context, routeTableId string, subnetID string) error
+	CreateKey(ctx context.Context, keyName string) (*ec2.CreateKeyPairOutput, error)
+	DeleteKey(ctx context.Context, keyName string) error
+	DescribeKey(ctx context.Context, keyName string) (*ec2.DescribeKeyPairsOutput, error)
+	ModifyNetworkInterfaceSecurityGroups(ctx context.Context, securityGroupIds []string, networkInterfaceId *string) (*ec2.ModifyNetworkInterfaceAttributeOutput, error)
+	DescribeAvailabilityZones(ctx context.Context) (*ec2.DescribeAvailabilityZonesOutput, error)
+	CreateTags(ctx context.Context, resourceIds []string, tags []types.Tag) (*ec2.CreateTagsOutput, error)
+	DeleteTags(ctx context.Context, resourceIds []string, tags []types.Tag) (*ec2.DeleteTagsOutput, error)
 }
 
 type defaultEC2 struct {
-	ec2iface.EC2API
+	client *ec2.Client
 }
 
-func (d *defaultEC2) DescribeInstanceType(instanceType string) ([]*ec2.InstanceTypeInfo, error) {
+func (d *defaultEC2) DescribeInstanceType(ctx context.Context, instanceType string) ([]types.InstanceTypeInfo, error) {
 	describeInstanceTypeIp := &ec2.DescribeInstanceTypesInput{
-		InstanceTypes: aws.StringSlice([]string{instanceType}),
+		InstanceTypes: []types.InstanceType{types.InstanceType(instanceType)},
 	}
-	describeInstanceOp, err := d.EC2API.DescribeInstanceTypes(describeInstanceTypeIp)
+	describeInstanceOp, err := d.client.DescribeInstanceTypes(ctx, describeInstanceTypeIp)
 	if err != nil {
 		return nil, err
 	}
@@ -70,65 +71,66 @@ func (d *defaultEC2) DescribeInstanceType(instanceType string) ([]*ec2.InstanceT
 	return describeInstanceOp.InstanceTypes, nil
 }
 
-func (d *defaultEC2) DescribeAvailabilityZones() (*ec2.DescribeAvailabilityZonesOutput, error) {
+func (d *defaultEC2) DescribeAvailabilityZones(ctx context.Context) (*ec2.DescribeAvailabilityZonesOutput, error) {
 	describeAvailabilityZonesInput := &ec2.DescribeAvailabilityZonesInput{}
-	return d.EC2API.DescribeAvailabilityZones(describeAvailabilityZonesInput)
+	return d.client.DescribeAvailabilityZones(ctx, describeAvailabilityZonesInput)
 }
 
-func (d *defaultEC2) ModifyNetworkInterfaceSecurityGroups(securityGroupIds []*string, networkInterfaceId *string) (*ec2.ModifyNetworkInterfaceAttributeOutput, error) {
-	return d.EC2API.ModifyNetworkInterfaceAttribute(&ec2.ModifyNetworkInterfaceAttributeInput{
+func (d *defaultEC2) ModifyNetworkInterfaceSecurityGroups(ctx context.Context, securityGroupIds []string, networkInterfaceId *string) (*ec2.ModifyNetworkInterfaceAttributeOutput, error) {
+	return d.client.ModifyNetworkInterfaceAttribute(ctx, &ec2.ModifyNetworkInterfaceAttributeInput{
 		NetworkInterfaceId: networkInterfaceId,
 		Groups:             securityGroupIds,
 	})
 }
 
-func (d *defaultEC2) DescribeInstance(instanceID string) (*ec2.Instance, error) {
+func (d *defaultEC2) DescribeInstance(ctx context.Context, instanceID string) (types.Instance, error) {
 	describeInstanceInput := &ec2.DescribeInstancesInput{
-		InstanceIds: aws.StringSlice([]string{instanceID}),
+		InstanceIds: []string{instanceID},
 	}
-	describeInstanceOutput, err := d.EC2API.DescribeInstances(describeInstanceInput)
+	describeInstanceOutput, err := d.client.DescribeInstances(ctx, describeInstanceInput)
+
 	if err != nil {
-		return nil, err
+		return types.Instance{}, err
 	}
 	if describeInstanceOutput == nil || len(describeInstanceOutput.Reservations) == 0 ||
 		len(describeInstanceOutput.Reservations[0].Instances) == 0 {
-		return nil, fmt.Errorf("failed to find instance %s", instanceID)
+		return types.Instance{}, fmt.Errorf("failed to find instance %s", instanceID)
 	}
 	return describeInstanceOutput.Reservations[0].Instances[0], nil
 }
 
-func (d *defaultEC2) AuthorizeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error {
-	var ipv4Ranges []*ec2.IpRange
-	var ipv6Ranges []*ec2.Ipv6Range
-	var ipPermissions *ec2.IpPermission
+func (d *defaultEC2) AuthorizeSecurityGroupIngress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error {
+	var ipv4Ranges []types.IpRange
+	var ipv6Ranges []types.Ipv6Range
+	var ipPermissions types.IpPermission
 	if !sourceSG {
 		if strings.Contains(cidrIP, ":") {
-			ipv6Ranges = []*ec2.Ipv6Range{
+			ipv6Ranges = []types.Ipv6Range{
 				{
 					CidrIpv6: aws.String(cidrIP),
 				},
 			}
 		} else {
-			ipv4Ranges = []*ec2.IpRange{
+			ipv4Ranges = []types.IpRange{
 				{
 					CidrIp: aws.String(cidrIP),
 				},
 			}
 		}
 
-		ipPermissions = &ec2.IpPermission{
-			FromPort:   aws.Int64(int64(fromPort)),
-			ToPort:     aws.Int64(int64(toPort)),
+		ipPermissions = types.IpPermission{
+			FromPort:   aws.Int32(int32(fromPort)),
+			ToPort:     aws.Int32(int32(toPort)),
 			IpProtocol: aws.String(protocol),
 			IpRanges:   ipv4Ranges,
 			Ipv6Ranges: ipv6Ranges,
 		}
 	} else {
-		ipPermissions = &ec2.IpPermission{
-			FromPort:   aws.Int64(int64(fromPort)),
-			ToPort:     aws.Int64(int64(toPort)),
+		ipPermissions = types.IpPermission{
+			FromPort:   aws.Int32(int32(fromPort)),
+			ToPort:     aws.Int32(int32(toPort)),
 			IpProtocol: aws.String(protocol),
-			UserIdGroupPairs: []*ec2.UserIdGroupPair{
+			UserIdGroupPairs: []types.UserIdGroupPair{
 				{
 					GroupId: aws.String(cidrIP),
 				},
@@ -137,44 +139,44 @@ func (d *defaultEC2) AuthorizeSecurityGroupIngress(groupID string, protocol stri
 	}
 	authorizeSecurityGroupIngressInput := &ec2.AuthorizeSecurityGroupIngressInput{
 		GroupId:       aws.String(groupID),
-		IpPermissions: []*ec2.IpPermission{ipPermissions},
+		IpPermissions: []types.IpPermission{ipPermissions},
 	}
-	_, err := d.EC2API.AuthorizeSecurityGroupIngress(authorizeSecurityGroupIngressInput)
+	_, err := d.client.AuthorizeSecurityGroupIngress(ctx, authorizeSecurityGroupIngressInput)
 	return err
 }
 
-func (d *defaultEC2) RevokeSecurityGroupIngress(groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error {
-	var ipv4Ranges []*ec2.IpRange
-	var ipv6Ranges []*ec2.Ipv6Range
-	var ipPermissions *ec2.IpPermission
+func (d *defaultEC2) RevokeSecurityGroupIngress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string, sourceSG bool) error {
+	var ipv4Ranges []types.IpRange
+	var ipv6Ranges []types.Ipv6Range
+	var ipPermissions types.IpPermission
 	if !sourceSG {
 		if strings.Contains(cidrIP, ":") {
-			ipv6Ranges = []*ec2.Ipv6Range{
+			ipv6Ranges = []types.Ipv6Range{
 				{
 					CidrIpv6: aws.String(cidrIP),
 				},
 			}
 		} else {
-			ipv4Ranges = []*ec2.IpRange{
+			ipv4Ranges = []types.IpRange{
 				{
 					CidrIp: aws.String(cidrIP),
 				},
 			}
 		}
 
-		ipPermissions = &ec2.IpPermission{
-			FromPort:   aws.Int64(int64(fromPort)),
-			ToPort:     aws.Int64(int64(toPort)),
+		ipPermissions = types.IpPermission{
+			FromPort:   aws.Int32(int32(fromPort)),
+			ToPort:     aws.Int32(int32(toPort)),
 			IpProtocol: aws.String(protocol),
 			IpRanges:   ipv4Ranges,
 			Ipv6Ranges: ipv6Ranges,
 		}
 	} else {
-		ipPermissions = &ec2.IpPermission{
-			FromPort:   aws.Int64(int64(fromPort)),
-			ToPort:     aws.Int64(int64(toPort)),
+		ipPermissions = types.IpPermission{
+			FromPort:   aws.Int32(int32(fromPort)),
+			ToPort:     aws.Int32(int32(toPort)),
 			IpProtocol: aws.String(protocol),
-			UserIdGroupPairs: []*ec2.UserIdGroupPair{
+			UserIdGroupPairs: []types.UserIdGroupPair{
 				{
 					GroupId: aws.String(cidrIP),
 				},
@@ -183,236 +185,236 @@ func (d *defaultEC2) RevokeSecurityGroupIngress(groupID string, protocol string,
 	}
 	revokeSecurityGroupIngressInput := &ec2.RevokeSecurityGroupIngressInput{
 		GroupId:       aws.String(groupID),
-		IpPermissions: []*ec2.IpPermission{ipPermissions},
+		IpPermissions: []types.IpPermission{ipPermissions},
 	}
-	_, err := d.EC2API.RevokeSecurityGroupIngress(revokeSecurityGroupIngressInput)
+	_, err := d.client.RevokeSecurityGroupIngress(ctx, revokeSecurityGroupIngressInput)
 	return err
 }
 
-func (d *defaultEC2) AuthorizeSecurityGroupEgress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error {
-	var ipv4Ranges []*ec2.IpRange
-	var ipv6Ranges []*ec2.Ipv6Range
+func (d *defaultEC2) AuthorizeSecurityGroupEgress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string) error {
+	var ipv4Ranges []types.IpRange
+	var ipv6Ranges []types.Ipv6Range
 	if strings.Contains(cidrIP, ":") {
-		ipv6Ranges = []*ec2.Ipv6Range{
+		ipv6Ranges = []types.Ipv6Range{
 			{
 				CidrIpv6: aws.String(cidrIP),
 			},
 		}
 	} else {
-		ipv4Ranges = []*ec2.IpRange{
+		ipv4Ranges = []types.IpRange{
 			{
 				CidrIp: aws.String(cidrIP),
 			},
 		}
 	}
 
-	ipPermissions := &ec2.IpPermission{
-		FromPort:   aws.Int64(int64(fromPort)),
-		ToPort:     aws.Int64(int64(toPort)),
+	ipPermissions := types.IpPermission{
+		FromPort:   aws.Int32(int32(fromPort)),
+		ToPort:     aws.Int32(int32(toPort)),
 		IpProtocol: aws.String(protocol),
 		IpRanges:   ipv4Ranges,
 		Ipv6Ranges: ipv6Ranges,
 	}
 	authorizeSecurityGroupEgressInput := &ec2.AuthorizeSecurityGroupEgressInput{
 		GroupId:       aws.String(groupID),
-		IpPermissions: []*ec2.IpPermission{ipPermissions},
+		IpPermissions: []types.IpPermission{ipPermissions},
 	}
-	_, err := d.EC2API.AuthorizeSecurityGroupEgress(authorizeSecurityGroupEgressInput)
+	_, err := d.client.AuthorizeSecurityGroupEgress(ctx, authorizeSecurityGroupEgressInput)
 	return err
 }
 
-func (d *defaultEC2) RevokeSecurityGroupEgress(groupID string, protocol string, fromPort int, toPort int, cidrIP string) error {
-	var ipv4Ranges []*ec2.IpRange
-	var ipv6Ranges []*ec2.Ipv6Range
+func (d *defaultEC2) RevokeSecurityGroupEgress(ctx context.Context, groupID string, protocol string, fromPort int, toPort int, cidrIP string) error {
+	var ipv4Ranges []types.IpRange
+	var ipv6Ranges []types.Ipv6Range
 	if strings.Contains(cidrIP, ":") {
-		ipv6Ranges = []*ec2.Ipv6Range{
+		ipv6Ranges = []types.Ipv6Range{
 			{
 				CidrIpv6: aws.String(cidrIP),
 			},
 		}
 	} else {
-		ipv4Ranges = []*ec2.IpRange{
+		ipv4Ranges = []types.IpRange{
 			{
 				CidrIp: aws.String(cidrIP),
 			},
 		}
 	}
 
-	ipPermissions := &ec2.IpPermission{
-		FromPort:   aws.Int64(int64(fromPort)),
-		ToPort:     aws.Int64(int64(toPort)),
+	ipPermissions := types.IpPermission{
+		FromPort:   aws.Int32(int32(fromPort)),
+		ToPort:     aws.Int32(int32(toPort)),
 		IpProtocol: aws.String(protocol),
 		IpRanges:   ipv4Ranges,
 		Ipv6Ranges: ipv6Ranges,
 	}
 	revokeSecurityGroupEgressInput := &ec2.RevokeSecurityGroupEgressInput{
 		GroupId:       aws.String(groupID),
-		IpPermissions: []*ec2.IpPermission{ipPermissions},
+		IpPermissions: []types.IpPermission{ipPermissions},
 	}
-	_, err := d.EC2API.RevokeSecurityGroupEgress(revokeSecurityGroupEgressInput)
+	_, err := d.client.RevokeSecurityGroupEgress(ctx, revokeSecurityGroupEgressInput)
 	return err
 }
 
-func (d *defaultEC2) DescribeNetworkInterface(interfaceIDs []string) (*ec2.DescribeNetworkInterfacesOutput, error) {
+func (d *defaultEC2) DescribeNetworkInterface(ctx context.Context, interfaceIDs []string) (*ec2.DescribeNetworkInterfacesOutput, error) {
 	describeNetworkInterfaceInput := &ec2.DescribeNetworkInterfacesInput{
-		NetworkInterfaceIds: aws.StringSlice(interfaceIDs),
+		NetworkInterfaceIds: interfaceIDs,
 	}
 
-	return d.EC2API.DescribeNetworkInterfaces(describeNetworkInterfaceInput)
+	return d.client.DescribeNetworkInterfaces(ctx, describeNetworkInterfaceInput)
 }
 
-func (d *defaultEC2) AssociateVPCCIDRBlock(vpcId string, cidrBlock string) (*ec2.AssociateVpcCidrBlockOutput, error) {
+func (d *defaultEC2) AssociateVPCCIDRBlock(ctx context.Context, vpcId string, cidrBlock string) (*ec2.AssociateVpcCidrBlockOutput, error) {
 	associateVPCCidrBlockInput := &ec2.AssociateVpcCidrBlockInput{
 		CidrBlock: aws.String(cidrBlock),
 		VpcId:     aws.String(vpcId),
 	}
 
-	return d.EC2API.AssociateVpcCidrBlock(associateVPCCidrBlockInput)
+	return d.client.AssociateVpcCidrBlock(ctx, associateVPCCidrBlockInput)
 }
 
-func (d *defaultEC2) DisAssociateVPCCIDRBlock(associationID string) error {
+func (d *defaultEC2) DisAssociateVPCCIDRBlock(ctx context.Context, associationID string) error {
 	disassociateVPCCidrBlockInput := &ec2.DisassociateVpcCidrBlockInput{
 		AssociationId: aws.String(associationID),
 	}
 
-	_, err := d.EC2API.DisassociateVpcCidrBlock(disassociateVPCCidrBlockInput)
+	_, err := d.client.DisassociateVpcCidrBlock(ctx, disassociateVPCCidrBlockInput)
 	return err
 }
 
-func (d *defaultEC2) CreateSubnet(cidrBlock string, vpcID string, az string) (*ec2.CreateSubnetOutput, error) {
+func (d *defaultEC2) CreateSubnet(ctx context.Context, cidrBlock string, vpcID string, az string) (*ec2.CreateSubnetOutput, error) {
 	createSubnetInput := &ec2.CreateSubnetInput{
 		AvailabilityZone: aws.String(az),
 		CidrBlock:        aws.String(cidrBlock),
 		VpcId:            aws.String(vpcID),
 	}
-	return d.EC2API.CreateSubnet(createSubnetInput)
+	return d.client.CreateSubnet(ctx, createSubnetInput)
 }
 
-func (d *defaultEC2) DescribeSubnet(subnetID string) (*ec2.DescribeSubnetsOutput, error) {
+func (d *defaultEC2) DescribeSubnet(ctx context.Context, subnetID string) (*ec2.DescribeSubnetsOutput, error) {
 	describeSubnetInput := &ec2.DescribeSubnetsInput{
-		SubnetIds: aws.StringSlice([]string{subnetID}),
+		SubnetIds: []string{subnetID},
 	}
-	return d.EC2API.DescribeSubnets(describeSubnetInput)
+	return d.client.DescribeSubnets(ctx, describeSubnetInput)
 }
 
-func (d *defaultEC2) DescribeRouteTablesWithVPCID(vpcID string) (*ec2.DescribeRouteTablesOutput, error) {
+func (d *defaultEC2) DescribeRouteTablesWithVPCID(ctx context.Context, vpcID string) (*ec2.DescribeRouteTablesOutput, error) {
 	describeRouteTableInput := &ec2.DescribeRouteTablesInput{
-		Filters: []*ec2.Filter{
+		Filters: []types.Filter{
 			{
 				Name:   aws.String("vpc-id"),
-				Values: aws.StringSlice([]string{vpcID}),
+				Values: []string{vpcID},
 			},
 		},
 	}
-	return d.EC2API.DescribeRouteTables(describeRouteTableInput)
+	return d.client.DescribeRouteTables(ctx, describeRouteTableInput)
 }
 
-func (d *defaultEC2) DeleteSubnet(subnetID string) error {
+func (d *defaultEC2) DeleteSubnet(ctx context.Context, subnetID string) error {
 	deleteSubnetInput := &ec2.DeleteSubnetInput{
 		SubnetId: aws.String(subnetID),
 	}
-	_, err := d.EC2API.DeleteSubnet(deleteSubnetInput)
+	_, err := d.client.DeleteSubnet(ctx, deleteSubnetInput)
 	return err
 }
 
-func (d *defaultEC2) DescribeRouteTables(subnetID string) (*ec2.DescribeRouteTablesOutput, error) {
+func (d *defaultEC2) DescribeRouteTables(ctx context.Context, subnetID string) (*ec2.DescribeRouteTablesOutput, error) {
 	describeRouteTableInput := &ec2.DescribeRouteTablesInput{
-		Filters: []*ec2.Filter{
+		Filters: []types.Filter{
 			{
 				Name:   aws.String("association.subnet-id"),
-				Values: aws.StringSlice([]string{subnetID}),
+				Values: []string{subnetID},
 			},
 		},
 	}
-	return d.EC2API.DescribeRouteTables(describeRouteTableInput)
+	return d.client.DescribeRouteTables(ctx, describeRouteTableInput)
 }
 
-func (d *defaultEC2) AssociateRouteTableToSubnet(routeTableId string, subnetID string) error {
+func (d *defaultEC2) AssociateRouteTableToSubnet(ctx context.Context, routeTableId string, subnetID string) error {
 	associateRouteTableInput := &ec2.AssociateRouteTableInput{
 		RouteTableId: aws.String(routeTableId),
 		SubnetId:     aws.String(subnetID),
 	}
-	_, err := d.EC2API.AssociateRouteTable(associateRouteTableInput)
+	_, err := d.client.AssociateRouteTable(ctx, associateRouteTableInput)
 	return err
 }
 
-func (d *defaultEC2) DeleteSecurityGroup(groupID string) error {
+func (d *defaultEC2) DeleteSecurityGroup(ctx context.Context, groupID string) error {
 	deleteSecurityGroupInput := &ec2.DeleteSecurityGroupInput{
 		GroupId: aws.String(groupID),
 	}
 
-	_, err := d.EC2API.DeleteSecurityGroup(deleteSecurityGroupInput)
+	_, err := d.client.DeleteSecurityGroup(ctx, deleteSecurityGroupInput)
 	return err
 }
 
-func (d *defaultEC2) CreateSecurityGroup(groupName string, description string, vpcID string) (*ec2.CreateSecurityGroupOutput, error) {
+func (d *defaultEC2) CreateSecurityGroup(ctx context.Context, groupName string, description string, vpcID string) (*ec2.CreateSecurityGroupOutput, error) {
 	createSecurityGroupInput := &ec2.CreateSecurityGroupInput{
 		Description: aws.String(description),
 		GroupName:   aws.String(groupName),
 		VpcId:       aws.String(vpcID),
 	}
 
-	return d.EC2API.CreateSecurityGroup(createSecurityGroupInput)
+	return d.client.CreateSecurityGroup(ctx, createSecurityGroupInput)
 }
 
-func (d *defaultEC2) CreateKey(keyName string) (*ec2.CreateKeyPairOutput, error) {
+func (d *defaultEC2) CreateKey(ctx context.Context, keyName string) (*ec2.CreateKeyPairOutput, error) {
 	createKeyInput := &ec2.CreateKeyPairInput{
 		KeyName: aws.String(keyName),
 	}
-	return d.EC2API.CreateKeyPair(createKeyInput)
+	return d.client.CreateKeyPair(ctx, createKeyInput)
 }
 
-func (d *defaultEC2) DeleteKey(keyName string) error {
+func (d *defaultEC2) DeleteKey(ctx context.Context, keyName string) error {
 	deleteKeyPairInput := &ec2.DeleteKeyPairInput{
 		KeyName: aws.String(keyName),
 	}
-	_, err := d.EC2API.DeleteKeyPair(deleteKeyPairInput)
+	_, err := d.client.DeleteKeyPair(ctx, deleteKeyPairInput)
 	return err
 }
 
-func (d *defaultEC2) DescribeKey(keyName string) (*ec2.DescribeKeyPairsOutput, error) {
+func (d *defaultEC2) DescribeKey(ctx context.Context, keyName string) (*ec2.DescribeKeyPairsOutput, error) {
 	keyPairInput := &ec2.DescribeKeyPairsInput{
-		KeyNames: []*string{
-			&keyName,
+		KeyNames: []string{
+			keyName,
 		},
 	}
-	return d.EC2API.DescribeKeyPairs(keyPairInput)
+	return d.client.DescribeKeyPairs(ctx, keyPairInput)
 }
 
-func (d *defaultEC2) TerminateInstance(instanceIDs []string) error {
+func (d *defaultEC2) TerminateInstance(ctx context.Context, instanceIDs []string) error {
 	terminateInstanceInput := &ec2.TerminateInstancesInput{
 		DryRun:      nil,
-		InstanceIds: aws.StringSlice(instanceIDs),
+		InstanceIds: instanceIDs,
 	}
-	_, err := d.EC2API.TerminateInstances(terminateInstanceInput)
+	_, err := d.client.TerminateInstances(ctx, terminateInstanceInput)
 	return err
 }
 
-func (d *defaultEC2) DescribeVPC(vpcID string) (*ec2.DescribeVpcsOutput, error) {
+func (d *defaultEC2) DescribeVPC(ctx context.Context, vpcID string) (*ec2.DescribeVpcsOutput, error) {
 	describeVPCInput := &ec2.DescribeVpcsInput{
-		VpcIds: aws.StringSlice([]string{vpcID}),
+		VpcIds: []string{vpcID},
 	}
-	return d.EC2API.DescribeVpcs(describeVPCInput)
+	return d.client.DescribeVpcs(ctx, describeVPCInput)
 }
 
-func (d *defaultEC2) CreateTags(resourceIds []string, tags []*ec2.Tag) (*ec2.CreateTagsOutput, error) {
+func (d *defaultEC2) CreateTags(ctx context.Context, resourceIds []string, tags []types.Tag) (*ec2.CreateTagsOutput, error) {
 	input := &ec2.CreateTagsInput{
-		Resources: aws.StringSlice(resourceIds),
+		Resources: resourceIds,
 		Tags:      tags,
 	}
-	return d.EC2API.CreateTags(input)
+	return d.client.CreateTags(ctx, input)
 }
 
-func (d *defaultEC2) DeleteTags(resourceIds []string, tags []*ec2.Tag) (*ec2.DeleteTagsOutput, error) {
+func (d *defaultEC2) DeleteTags(ctx context.Context, resourceIds []string, tags []types.Tag) (*ec2.DeleteTagsOutput, error) {
 	input := &ec2.DeleteTagsInput{
-		Resources: aws.StringSlice(resourceIds),
+		Resources: resourceIds,
 		Tags:      tags,
 	}
-	return d.EC2API.DeleteTags(input)
+	return d.client.DeleteTags(ctx, input)
 }
 
-func NewEC2(session *session.Session) EC2 {
+func NewEC2(cfg aws.Config) EC2 {
 	return &defaultEC2{
-		EC2API: ec2.New(session),
+		client: ec2.NewFromConfig(cfg),
 	}
 }
