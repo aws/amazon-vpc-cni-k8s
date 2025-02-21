@@ -81,7 +81,7 @@ func main() {
 				}
 				fmt.Fprint(&errs, e.Error())
 			}
-			log.Fatalf("found 1 or more pod teardown validation failure: %v", errs)
+			log.Fatalf("found 1 or more pod teardown validation failure: %s", errs.String())
 		}
 	}
 }
