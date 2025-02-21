@@ -59,7 +59,6 @@ var (
 	_, testEniSubnetIPNet, _   = net.ParseCIDR(testEniSubnet)
 	_, testEniV6SubnetIPNet, _ = net.ParseCIDR(testEniV6Subnet)
 	testEniIPNet               = net.ParseIP(testEniIP)
-	testEniIP6Net              = net.ParseIP(testEniIP6)
 	testEniV6GatewayNet        = net.ParseIP(testEniV6Gateway)
 )
 
@@ -524,25 +523,74 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
-	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
-	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "RETURN") //AWS SNAT CHAN proves backwards compatibility
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
-	mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
-	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-1")
-	mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
-	mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
-	mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
-	mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	var err error
+	err = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "RETURN") //AWS SNAT CHAN proves backwards compatibility
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-1")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
+	err = ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -600,25 +648,74 @@ func TestSetupHostNetworkWithDifferentVethPrefix(t *testing.T) {
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
-	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
-	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "RETURN") //AWS SNAT CHAN proves backwards compatibility
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
-	mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
-	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-1")
-	mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
-	mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
-	mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
-	mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	var err error
+	err = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "RETURN") //AWS SNAT CHAN proves backwards compatibility
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-1")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
+	err = ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 	assert.Equal(t,
 		map[string]map[string][][]string{
@@ -679,25 +776,71 @@ func TestSetupHostNetworkExternalNATCleanupConnmark(t *testing.T) {
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
-	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
-	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
-	mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
-	mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
-	mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
-	mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
-	mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	var err error
+	err = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
 
 	// remove exclusions
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
+	err = ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -738,25 +881,71 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
-	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
-	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
-	mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
-	mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
-	mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
-	mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
-	mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	var err error
+	err = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.13.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, EXCLUDED CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
 
 	// remove exclusions
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
+	err = ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -814,21 +1003,58 @@ func TestUpdateHostIptablesRules(t *testing.T) {
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
-	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
-	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
-	mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "RETURN") //AWS SNAT CHAN proves backwards compatibility
-	mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
-	mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
-	mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
-	mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
-	mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
-	mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
-	mockIptables.Append("mangle", "PREROUTING", "-m", "comment", "--comment", "AWS, primary ENI", "-i", "lo", "-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in", "-j", "CONNMARK", "--set-mark", "0x80/0x80")
-	mockIptables.Append("mangle", "PREROUTING", "-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
-	mockIptables.Append("mangle", "PREROUTING", "-m", "comment", "--comment", "AWS, primary ENI", "-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	var err error
+	err = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-SNAT-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "RETURN") //AWS SNAT CHAN proves backwards compatibility
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "-m", "comment", "--comment", "AWS, SNAT", "-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "SNAT", "--to-source", "10.10.10.20")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Insert("nat", "AWS-CONNMARK-CHAIN-0", 1, "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS CONNMARK CHAIN, VPC CIDR", "-j", "RETURN")
+	if err != nil {
+		t.Fatalf("Failed to insert rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "AWS-CONNMARK-CHAIN-0", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", "0x80/0x80")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("mangle", "PREROUTING", "-m", "comment", "--comment", "AWS, primary ENI", "-i", "lo", "-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in", "-j", "CONNMARK", "--set-mark", "0x80/0x80")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("mangle", "PREROUTING", "-m", "comment", "--comment", "AWS, primary ENI", "-i", "eni+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
+	err = mockIptables.Append("mangle", "PREROUTING", "-m", "comment", "--comment", "AWS, primary ENI", "-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", "0x80")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
+	err = ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 	assert.Equal(t,
 		map[string]map[string][][]string{
@@ -891,17 +1117,42 @@ func TestCleanUpStaleAWSChains(t *testing.T) {
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
-	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-1")
-	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-2")
-	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-3")
-	mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-4")
-	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-1")
-	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-2")
-	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-3")
-	mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-4")
+	var err error
+	err = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-1")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-2")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-3")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-4")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-1")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-2")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-3")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
+	err = mockIptables.NewChain("nat", "AWS-CONNMARK-CHAIN-4")
+	if err != nil {
+		t.Fatalf("Failed to create new chain: %v", err)
+	}
 
 	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
+	err = ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 
 	err = ln.CleanUpStaleAWSChains(true, false)
@@ -1102,11 +1353,15 @@ func TestSetupHostNetworkDeleteOldConnmarkRuleForNonVpcOutboundTraffic(t *testin
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
+	var err error
 	// add the "old" rule used in an ealier version of the CNI
-	mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-m", "state", "--state", "NEW", "-j", "AWS-CONNMARK-CHAIN-0")
+	err = mockIptables.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-m", "state", "--state", "NEW", "-j", "AWS-CONNMARK-CHAIN-0")
+	if err != nil {
+		t.Fatalf("Failed to append rule: %v", err)
+	}
 
 	var vpcCIDRs []string
-	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
+	err = ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, true, false)
 	assert.NoError(t, err)
 
 	var exists bool
