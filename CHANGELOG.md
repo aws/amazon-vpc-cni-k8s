@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.19.3
+
+* Improvement - Changes to attach probes at pod start by @pavanipt and @haouc in https://github.com/aws/amazon-vpc-cni-k8s/pull/3206
+* Improvement - Add grpc call to fetch networkpolicymode from NP by @pavanipt in https://github.com/aws/amazon-vpc-cni-k8s/pull/3202
+* Update NP agent to v1.2.0 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3209
+
 ## v1.19.2
 
 * Feature: run make generate-limits to update the max pods file by @tzneal in https://github.com/aws/amazon-vpc-cni-k8s/pull/3141
