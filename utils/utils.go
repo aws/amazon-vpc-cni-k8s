@@ -65,8 +65,3 @@ func IsValidNetworkPolicyEnforcingMode(input string) bool {
 		return false
 	}
 }
-
-// IsStrictMode checks if strict mode is enabled
-func IsStrictMode(input string) bool {
-	return strings.ToLower(input) == string(Strict)
-}
