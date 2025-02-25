@@ -2,6 +2,9 @@
   "cniVersion": "0.4.0",
   "name": "aws-cni",
   "disableCheck": true,
+  "capabilities": {
+    "io.kubernetes.cri.pod-annotations": true
+  },
   "plugins": [
     {
       "name": "aws-cni",
