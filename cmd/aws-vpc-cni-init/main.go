@@ -15,12 +15,15 @@
 package main
 
 import (
+	"context"
 	"os"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/cp"
-	"github.com/aws/amazon-vpc-cni-k8s/utils/imds"
+	ec2metadata "github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -41,45 +44,89 @@ const (
 	envEgressV6                 = "ENABLE_V6_EGRESS"
 )
 
-func getNodePrimaryIF() (string, error) {
-	var primaryIF string
-	primaryMAC, err := imds.GetMetaData("mac")
+func getNodePrimaryIFs() ([]string, error) {
+
+	var primaryIF []string
+
+	ctx := context.Background()
+
+	awsconfig, err := awssession.New(ctx)
 	if err != nil {
-		return primaryIF, errors.Wrap(err, "Failed to get primary MAC from IMDS")
+		return nil, errors.Wrap(err, "failed to create aws session")
 	}
-	log.Infof("Found primaryMAC %s", primaryMAC)
+	ec2Metadata := ec2metadata.NewFromConfig(awsconfig)
+	imds := awsutils.TypedIMDS{ec2Metadata}
+
+	macAddresses, err := imds.GetMACs(ctx)
+	if err != nil {
+		return primaryIF, errors.Wrap(err, "failed to get list of attached MAC addresses from IMDS")
+	}
 
 	links, err := netlink.LinkList()
 	if err != nil {
-		return primaryIF, errors.Wrap(err, "Failed to list links")
+		return primaryIF, errors.Wrap(err, "failed to list links on the host")
 	}
-	for _, link := range links {
-		if link.Attrs().HardwareAddr.String() == primaryMAC {
-			primaryIF = link.Attrs().Name
-			break
+
+	for _, mac := range macAddresses {
+
+		v4IPs, err := imds.GetLocalIPv4s(ctx, mac)
+		if err != nil {
+			return primaryIF, errors.Wrap(err, "failed to get ipv4 associated with mac addresses from IMDS")
+		}
+
+		v6IPs, err := imds.GetLocalIPv6s(ctx, mac)
+		if err != nil {
+			return primaryIF, errors.Wrap(err, "failed to get ipv6 associated with mac addresses from IMDS")
+		}
+
+		if (v4IPs == nil || len(v4IPs) == 0) && (v6IPs == nil || len(v6IPs) == 0) {
+			log.Infof("skipping interface as it is a efa-only device %v", mac)
+			continue
+		}
+
+		device, err := imds.GetDeviceNumber(ctx, mac)
+		if err != nil {
+			return primaryIF, errors.Wrap(err, "failed to get device-number associated with mac addresses from IMDS")
+		}
+
+		// EFA device cannot be attached to index 0 so it will always be an ENI
+		if device != 0 {
+			continue
+		}
+
+		for _, link := range links {
+			if link.Attrs().HardwareAddr.String() == mac {
+				primaryIF = append(primaryIF, link.Attrs().Name)
+				break
+			}
 		}
 	}
 
-	if primaryIF == "" {
-		return primaryIF, errors.Wrap(err, "Failed to retrieve primary IF")
+	log.Infof("found primary interfaces for the host %v", primaryIF)
+
+	if len(primaryIF) == 0 {
+		return primaryIF, errors.Wrap(err, "failed to retrieve primary interfaces for the host")
 	}
+
 	return primaryIF, nil
 }
 
-func configureSystemParams(procSys procsyswrapper.ProcSys, primaryIF string) error {
+func configureSystemParams(procSys procsyswrapper.ProcSys, primaryInterfaces []string) error {
 	var err error
-	// Configure rp_filter in loose mode
-	entry := "net/ipv4/conf/" + primaryIF + "/rp_filter"
-	err = procSys.Set(entry, "2")
-	if err != nil {
-		return errors.Wrapf(err, "Failed to set rp_filter for %s", primaryIF)
-	}
-	val, _ := procSys.Get(entry)
-	log.Infof("Updated %s to %s", entry, val)
 
+	for _, primaryIF := range primaryInterfaces {
+		// Configure rp_filter in loose mode
+		entry := "net/ipv4/conf/" + primaryIF + "/rp_filter"
+		err = procSys.Set(entry, "2")
+		if err != nil {
+			return errors.Wrapf(err, "Failed to set rp_filter for %s", primaryIF)
+		}
+		val, _ := procSys.Get(entry)
+		log.Infof("Updated %s to %s", entry, val)
+	}
 	// Enable or disable TCP early demux based on environment variable
 	// Note that older kernels may not support tcp_early_demux, so we must first check that it exists.
-	entry = "net/ipv4/tcp_early_demux"
+	entry := "net/ipv4/tcp_early_demux"
 	if _, err := procSys.Get(entry); err == nil {
 		disableIPv4EarlyDemux := utils.GetBoolAsStringEnvVar(envDisableIPv4TcpEarlyDemux, defaultDisableIPv4TcpEarlyDemux)
 		if disableIPv4EarlyDemux {
@@ -93,16 +140,17 @@ func configureSystemParams(procSys procsyswrapper.ProcSys, primaryIF string) err
 				return errors.Wrap(err, "Failed to enable tcp_early_demux")
 			}
 		}
-		val, _ = procSys.Get(entry)
+		val, _ := procSys.Get(entry)
 		log.Infof("Updated %s to %s", entry, val)
 	}
 	return nil
 }
 
-func configureIPv6Settings(procSys procsyswrapper.ProcSys, primaryIF string) error {
+func configureIPv6Settings(procSys procsyswrapper.ProcSys, primaryInterfaces []string) error {
 	var err error
 	// Enable IPv6 when environment variable is set
 	// Note that IPv6 is not disabled when environment variable is unset. This is omitted to preserve default host semantics.
+
 	enableIPv6 := utils.GetBoolAsStringEnvVar(envEnableIPv6, defaultEnableIPv6)
 	if enableIPv6 {
 		entry := "net/ipv6/conf/all/disable_ipv6"
@@ -129,13 +177,15 @@ func configureIPv6Settings(procSys procsyswrapper.ProcSys, primaryIF string) err
 		// 1. forwarding=1
 		// 2. accept_ra=2
 		// 3. accept_redirects=1
-		entry = "net/ipv6/conf/" + primaryIF + "/accept_ra"
-		err = procSys.Set(entry, "2")
-		if err != nil {
-			return errors.Wrap(err, "Failed to enable IPv6 accept_ra on primary ENI")
+		for _, primaryIF := range primaryInterfaces {
+			entry = "net/ipv6/conf/" + primaryIF + "/accept_ra"
+			err = procSys.Set(entry, "2")
+			if err != nil {
+				return errors.Wrap(err, "Failed to enable IPv6 accept_ra on primary ENI")
+			}
+			val, _ = procSys.Get(entry)
+			log.Infof("Updated %s to %s", entry, val)
 		}
-		val, _ = procSys.Get(entry)
-		log.Infof("Updated %s to %s", entry, val)
 	}
 	return nil
 }
@@ -159,13 +209,12 @@ func _main() int {
 	}
 	log.Infof("Copied all CNI plugin binaries to %s", hostCNIBinPath)
 
-	var primaryIF string
-	primaryIF, err = getNodePrimaryIF()
+	var primaryIF []string
+	primaryIF, err = getNodePrimaryIFs()
 	if err != nil {
-		log.WithError(err).Errorf("Failed to get primary IF")
+		log.WithError(err).Errorf("failed to get node primary interfaces")
 		return 1
 	}
-	log.Infof("Found primaryIF %s", primaryIF)
 
 	procSys := procsyswrapper.NewProcSys()
 	err = configureSystemParams(procSys, primaryIF)
