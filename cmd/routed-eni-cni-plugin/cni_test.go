@@ -103,15 +103,19 @@ func TestCmdAdd(t *testing.T) {
 	enforceNpReply := &rpc.EnforceNpReply{Success: true}
 	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, nil).Times(1)
 
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum, NetworkPolicyMode: "none"}
+	addrs := []*rpc.IPAddress{&rpc.IPAddress{
+		IPv4Addr:     ipAddr,
+		DeviceNumber: devNum,
+	}}
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
 	v4Addr := &net.IPNet{
-		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
+		IP:   net.ParseIP(addNetworkReply.IPAddress[0].IPv4Addr),
 		Mask: net.IPv4Mask(255, 255, 255, 255),
 	}
 	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		v4Addr, nil, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any()).Return(nil)
+		v4Addr, nil, int(addNetworkReply.IPAddress[0].DeviceNumber), gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 

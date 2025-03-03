@@ -20,14 +20,21 @@ message AddNetworkRequest {
   string IfName = 5;
   string NetworkName = 6;
   string Netns = 4;
-  // next field: 9
+  bool RequiresMultiNICAccess = 9;
+  // next field: 10
+}
+
+message IPAddress {
+  string IPv4Addr = 1;
+  string IPv6Addr = 2;
+  int32 DeviceNumber = 3;
+  int32 RouteTableId = 4;
+  int32 NetworkCard = 5;
 }
 
 message AddNetworkReply {
   bool Success = 1;
-  string IPv4Addr = 2;
-  string IPv6Addr = 11;
-  int32 DeviceNumber = 4;
+  repeated IPAddress IPAddress = 2;
   bool UseExternalSNAT = 5;
   repeated string VPCv4CIDRs = 6;
   repeated string VPCv6CIDRs = 12;
@@ -57,15 +64,23 @@ message DelNetworkRequest {
 
 message DelNetworkReply {
   bool Success = 1;
-  string IPv4Addr = 2;
-  string IPv6Addr = 5;
-  int32 DeviceNumber = 3;
+  repeated IPAddress IPAddress = 2;
 
   // start of pod-eni parameters
   int32 PodVlanId = 4;
   // end of pod-eni parameters
 
   // next field: 6
+}
+
+message DeleteNpRequest {
+  bool Success = 1;
+	string K8S_POD_NAME = 2;
+	string K8S_POD_NAMESPACE = 3;
+}
+
+message DeleteNpReply {
+  bool Success = 1;
 }
 
 // The service definition.
