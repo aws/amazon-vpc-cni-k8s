@@ -216,11 +216,23 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			}
 		}
 	}
+	// This will be a list of IPs. For now it's just one
+	ipAddrs := []*rpc.IPAddress{}
+
+	// All fields here need to be found from IPAM datastore
+	ipAddr := &rpc.IPAddress{
+		IPv4Addr:     ipv4Addr,
+		IPv6Addr:     ipv6Addr,
+		DeviceNumber: int32(deviceNumber),
+		RouteTableId: int32(deviceNumber),
+		NetworkCard:  0,
+	}
+
+	ipAddrs = append(ipAddrs, ipAddr)
+
 	resp := rpc.AddNetworkReply{
 		Success:           err == nil,
-		IPv4Addr:          ipv4Addr,
-		IPv6Addr:          ipv6Addr,
-		DeviceNumber:      int32(deviceNumber),
+		IPAddress:         ipAddrs,
 		UseExternalSNAT:   useExternalSNAT,
 		VPCv4CIDRs:        pbVPCV4cidrs,
 		VPCv6CIDRs:        pbVPCV6cidrs,
@@ -304,7 +316,8 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 			return &rpc.DelNetworkReply{
 				Success:   true,
 				PodVlanId: int32(podENIData[0].VlanID),
-				IPv4Addr:  podENIData[0].PrivateIP}, err
+				IPAddress: []*rpc.IPAddress{&rpc.IPAddress{IPv4Addr: podENIData[0].PrivateIP}},
+			}, err
 		}
 	}
 
@@ -318,7 +331,16 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 
 	log.Infof("Send DelNetworkReply: IPv4Addr: %s, IPv6Addr: %s, DeviceNumber: %d, err: %v", ipv4Addr, ipv6Addr, deviceNumber, err)
 
-	return &rpc.DelNetworkReply{Success: err == nil, IPv4Addr: ipv4Addr, IPv6Addr: ipv6Addr, DeviceNumber: int32(deviceNumber)}, err
+	ipAddr := &rpc.IPAddress{
+		IPv4Addr:     ipv4Addr,
+		IPv6Addr:     ipv6Addr,
+		DeviceNumber: int32(deviceNumber),
+	}
+
+	return &rpc.DelNetworkReply{
+		Success:   err == nil,
+		IPAddress: []*rpc.IPAddress{ipAddr},
+	}, err
 }
 
 func (s *server) GetNetworkPolicyConfigs(ctx context.Context, e *emptypb.Empty) (*rpc.NetworkPolicyAgentConfigReply, error) {

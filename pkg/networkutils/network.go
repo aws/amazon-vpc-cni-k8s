@@ -58,6 +58,9 @@ const (
 	// Rule priority for traffic destined to pod IP
 	ToContainerRulePriority = 512
 
+	// From Interface priority for multi-homed pods
+	FromInterfaceRulePriority = 1
+
 	// 513 - 1023, can be used for priority lower than fromPodRule but higher than default nonVPC CIDR rule
 
 	// 1024 is reserved for (ip rule not to <VPC's subnet> table main)
