@@ -64,6 +64,8 @@ const (
 	eniNodeTagKey           = "node.k8s.amazonaws.com/instance_id"
 	eniCreatedAtTagKey      = "node.k8s.amazonaws.com/createdAt"
 	eniClusterTagKey        = "cluster.k8s.amazonaws.com/name"
+	eniOwnerTagKey          = "eks:eni:owner"
+	eniOwnerTagValue        = "amazon-vpc-cni"
 	additionalEniTagsEnvVar = "ADDITIONAL_ENI_TAGS"
 	reservedTagKeyPrefix    = "k8s.amazonaws.com"
 	subnetDiscoveryTagKey   = "kubernetes.io/role/cni"
@@ -1060,6 +1062,7 @@ func (cache *EC2InstanceMetadataCache) buildENITags() map[string]string {
 	// tag the ENI with "cluster.k8s.amazonaws.com/name=<cluster_name>"
 	if cache.clusterName != "" {
 		tags[eniClusterTagKey] = cache.clusterName
+		tags[eniOwnerTagKey] = eniOwnerTagValue
 	}
 	for key, value := range cache.additionalENITags {
 		tags[key] = value
