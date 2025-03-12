@@ -151,7 +151,7 @@ type NetworkAPIs interface {
 	SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool,
 		v4Enabled bool, v6Enabled bool) error
 	// SetupENINetwork performs ENI level network configuration. Not needed on the primary ENI
-	SetupENINetwork(eniIP string, mac string, deviceNumber int, subnetCIDR string) error
+	SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, networkCard int, eniSubnetCIDR string, maxENIPerNIC int) error
 	// UpdateHostIptablesRules updates the nat table iptables rules on the host
 	UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v4Enabled bool, v6Enabled bool) error
 	CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error
@@ -1018,21 +1018,27 @@ func GetIPv4Gateway(eniSubnetCIDR *net.IPNet) net.IP {
 }
 
 // SetupENINetwork adds default route to route table (eni-<eni_table>), so it does not need to be called on the primary ENI
-func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCIDR string) error {
-	return setupENINetwork(eniIP, eniMAC, deviceNumber, eniSubnetCIDR, n.netLink, retryLinkByMacInterval, retryRouteAddInterval, n.mtu)
+func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, networkCard int, eniSubnetCIDR string, maxENIPerNIC int) error {
+	return setupENINetwork(eniIP, eniMAC, deviceNumber, networkCard, eniSubnetCIDR, n.netLink, retryLinkByMacInterval, retryRouteAddInterval, n.mtu, maxENIPerNIC)
 }
 
-func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink,
-	retryLinkByMacInterval time.Duration, retryRouteAddInterval time.Duration, mtu int) error {
-	if deviceNumber == 0 {
+// Even if this is called for primary IF on multicard instance
+func setupENINetwork(eniIP string, eniMac string, deviceNumber int, networkCard int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink,
+	retryLinkByMacInterval time.Duration, retryRouteAddInterval time.Duration, mtu int, maxENIPerNIC int) error {
+
+	if deviceNumber == 0 && networkCard == 0 {
 		return errors.New("setupENINetwork should never be called on the primary ENI")
 	}
-	tableNumber := deviceNumber + 1
-	log.Infof("Setting up network for an ENI with IP address %s, MAC address %s, CIDR %s and route table %d",
-		eniIP, eniMAC, eniSubnetCIDR, tableNumber)
-	link, err := linkByMac(eniMAC, netLink, retryLinkByMacInterval)
+
+	// CNI will never have route table 1 as we don't setup device number 0 on network card 0
+	// So, table number 1 for CNI is same as main table
+	tableNumber := (networkCard * maxENIPerNIC) + deviceNumber + 1
+	log.Infof("Setting up network for an ENI with IP address %s, MAC address %s, CIDR %s, route table %d and Network Card %d",
+		eniIP, eniMac, eniSubnetCIDR, tableNumber, networkCard)
+
+	link, err := linkByMac(eniMac, netLink, retryLinkByMacInterval)
 	if err != nil {
-		return errors.Wrapf(err, "setupENINetwork: failed to find the link which uses MAC address %s", eniMAC)
+		return errors.Wrapf(err, "setupENINetwork: failed to find the link which uses MAC address %s", eniMac)
 	}
 
 	if err = netLink.LinkSetMTU(link, mtu); err != nil {
@@ -1048,6 +1054,7 @@ func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCID
 	if err != nil {
 		return errors.Wrapf(err, "setupENINetwork: invalid IP CIDR block %s", eniSubnetCIDR)
 	}
+
 	// Get gateway IP address for ENI
 	var gw net.IP
 	if isV6 {

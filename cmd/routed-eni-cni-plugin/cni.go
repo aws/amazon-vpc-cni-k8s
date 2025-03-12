@@ -242,7 +242,8 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			ContainerVethName: containerVethName,
 		})
 
-		// Check if we can use PCIID to store RT-ID ? Or use the dummy interface again ?
+		// Check if we can use PCIID to store RT-ID ?
+		// The RT here is the host route table Id not the container
 		podInterfaces = append(podInterfaces,
 			&current.Interface{Name: hostVethName},
 			&current.Interface{Name: containerVethName, Sandbox: args.Netns, PciID: fmt.Sprint(ip.RouteTableId)},
@@ -271,7 +272,6 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	} else {
 		err = driverClient.SetupPodNetwork(vethMetadata, args.Netns, mtu, log)
 		// For non-branch ENI, the pod VLAN ID value of 0 is packed in Interface.Mac, while the interface device number is packed in Interface.Sandbox
-		// TODO fix the Sandbox : fmt.Sprint(r.DeviceName).. How do I get the device number of index > 0
 		dummyInterface = &current.Interface{Name: dummyInterfaceName, Mac: fmt.Sprint(0), Sandbox: fmt.Sprint(vethMetadata[0].DeviceNumber), SocketPath: fmt.Sprint(len(r.IPAddress))}
 	}
 
@@ -565,10 +565,8 @@ func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArg
 	return true, nil
 }
 
-// TODO: Jay:: Yet to be fixed
 // teardownPodNetworkWithPrevResult will try to process CNI delete for non-branch ENIs without IPAMD.
 // Returns true if pod network is torn down
-
 func teardownPodNetworkWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArgs K8sArgs, contVethName string, log logger.Logger) bool {
 	// For non-branch ENI, prevResult is only available in v1.12.1+
 	prevResult, ok := conf.PrevResult.(*current.Result)
@@ -593,6 +591,11 @@ func teardownPodNetworkWithPrevResult(driverClient driver.NetworkAPIs, conf *Net
 		return false
 	}
 
+	// Since we are always using dummy interface to store the device number of network card 0 IP
+	// RT ID for NC-0 is also stored in the container interface entry. So we have a path for migration where
+	// getting the device number from dummy interface can be deprecated entirely. This is currently done to keep it backwards compatible
+	routeTableId := deviceNumber + 1
+
 	var interfacesAttached = 1
 	if dummyIface.SocketPath != "" {
 		interfacesAttached, err = strconv.Atoi(dummyIface.SocketPath)
@@ -611,19 +614,20 @@ func teardownPodNetworkWithPrevResult(driverClient driver.NetworkAPIs, conf *Net
 			return false
 		}
 
-		// This is a temporary check which can be removed later to get the device number from the interface istead of the dummy interface
-		// This ensures we are backward compatible for any pods launched before this new change
-		if v > 0 {
-			deviceNumber, err = strconv.Atoi(containerInterface.PciID)
+		// If this property is set, that means the container metadata has the route table ID which we can use
+		// If this is not set, it is a pod launched before this change was introduced.
+		// So it is only managing network card 0 at that time and device number + 1 is the route table ID which we have above
+		if dummyIface.SocketPath != "" {
+			routeTableId, err = strconv.Atoi(containerInterface.PciID)
 			if err != nil {
-				log.Errorf("error getting device number of the interface %s", containerInterface.PciID)
+				log.Errorf("error getting route table number of the interface %s", containerInterface.PciID)
 				return false
 			}
 		}
 
 		vethMetadata = append(vethMetadata, driver.VirtualInterfaceMetadata{
-			IPAddress:    &containerIP,
-			DeviceNumber: deviceNumber,
+			IPAddress:  &containerIP,
+			RouteTable: routeTableId,
 		})
 	}
 

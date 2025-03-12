@@ -596,6 +596,25 @@ func (typedimds TypedIMDS) GetVPCIPv6CIDRBlocks(ctx context.Context, mac string)
 	return ipnets, err
 }
 
+// GetNetworkCard returns the Network card the interface is attached on
+func (typedimds TypedIMDS) GetNetworkCard(ctx context.Context, mac string) (int, error) {
+	key := fmt.Sprintf("network/interfaces/macs/%s/network-card", mac)
+	networkCard, err := typedimds.getInt(ctx, key)
+	if err != nil {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
+			if IsNotFound(err) {
+				// If no network card field, it is connected to Network card 0
+				return networkCard, nil
+			}
+			log.Warnf("%v", err)
+			return -1, newIMDSRequestError(err.Error(), err)
+		}
+	}
+	return networkCard, err
+}
+
 // GetSubnetIPv6CIDRBlocks returns the IPv6 CIDR block for the subnet in which the interface resides.
 func (typedimds TypedIMDS) GetSubnetIPv6CIDRBlocks(ctx context.Context, mac string) (net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/subnet-ipv6-cidr-blocks", mac)

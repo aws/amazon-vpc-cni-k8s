@@ -153,7 +153,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		}
 
 		// Enable v6 support on Container's lo interface inside the Pod networking namespace.
-		if err = createVethContext.procSys.Set(fmt.Sprintf("net/ipv6/conf/lo/disable_ipv6"), "0"); err != nil {
+		if err = createVethContext.procSys.Set("net/ipv6/conf/lo/disable_ipv6", "0"); err != nil {
 			if !os.IsNotExist(err) {
 				return errors.Wrapf(err, "setupVeth network: failed to enable IPv6 on container's lo interface")
 			}
@@ -184,20 +184,26 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 
 	gwNet := &net.IPNet{IP: gw, Mask: net.CIDRMask(maskLen, maskLen)}
 
-	if err = createVethContext.netLink.RouteReplace(&netlink.Route{
-		LinkIndex: contVeth.Attrs().Index,
-		Scope:     netlink.SCOPE_LINK,
-		Dst:       gwNet}); err != nil {
-		return errors.Wrap(err, "setup NS network: failed to add default gateway")
-	}
 	// If Index  > 0 that means it has multiple IPs. Add IP rule + add default route to
 	rtTable := unix.RT_TABLE_MAIN
 	if createVethContext.index > 0 {
 		rtTable = createVethContext.index
+	}
+
+	if err = createVethContext.netLink.RouteReplace(&netlink.Route{
+		LinkIndex: contVeth.Attrs().Index,
+		Scope:     netlink.SCOPE_LINK,
+		Dst:       gwNet,
+		Table:     rtTable}); err != nil {
+		return errors.Wrap(err, "setup NS network: failed to add default gateway")
+	}
+
+	if createVethContext.index > 0 {
+		// Add a from interface rule
 		fromInterfaceRule := createVethContext.netLink.NewRule()
 		fromInterfaceRule.Src = createVethContext.ipAddr
 		fromInterfaceRule.Priority = networkutils.FromInterfaceRulePriority
-		fromInterfaceRule.Table = createVethContext.index
+		fromInterfaceRule.Table = rtTable
 		if err := createVethContext.netLink.RuleAdd(fromInterfaceRule); err != nil && !networkutils.IsRuleExistsError(err) {
 			return errors.Wrapf(err, "failed to setup fromInterface rule, containerAddr=%s, rtTable=%v", createVethContext.ipAddr.String(), createVethContext.index)
 		}
@@ -252,20 +258,19 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 func (n *linuxNetwork) SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, netnsPath string, mtu int, log logger.Logger) error {
 	for index, vethData := range vethMetadata {
 
-		log.Debugf("SetupPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, deviceNumber=%d, mtu=%d",
-			vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, vethData.DeviceNumber, mtu)
+		log.Debugf("SetupPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, routeTableNumber=%d, mtu=%d",
+			vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, vethData.RouteTable, mtu)
 
 		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, log, index)
 		if err != nil {
 			return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
 		}
-		// TODO: I need to get the RT from IPAMD itself such that IPAMD stores the data in it's datastore.
-		// Then ideally I can remove this device number logic. So technically I don't need the device number at all
 
 		rtTable := unix.RT_TABLE_MAIN
-		if vethData.DeviceNumber > 0 {
-			rtTable = vethData.DeviceNumber + 1
+		if vethData.RouteTable > 1 {
+			rtTable = vethData.RouteTable
 		}
+
 		if err := n.setupIPBasedContainerRouteRules(hostVeth, vethData.IPAddress, rtTable, log); err != nil {
 			return errors.Wrapf(err, "SetupPodNetwork: unable to setup IP based container routes and rules")
 		}
@@ -278,13 +283,13 @@ func (n *linuxNetwork) TeardownPodNetwork(vethMetadata []VirtualInterfaceMetadat
 
 	for _, vethData := range vethMetadata {
 
-		log.Debugf("TeardownPodNetwork: containerAddr=%s, deviceNumber=%d", vethData.IPAddress.String(), vethData.DeviceNumber)
+		log.Debugf("TeardownPodNetwork: containerAddr=%s, routeTable=%d", vethData.IPAddress.String(), vethData.RouteTable)
 
-		// TODO: I need to get the RT from IPAMD itself such that IPAMD stores the data in it's datastore.
-		// Then ideally I can remove this device number logic. So technically I don't need the device number at all
+		// Route table ID for primary ENI (Network 0, Device 0) => (0* MaxENI + 0 + 1)
+		// which is why we only update if the RT > 1
 		rtTable := unix.RT_TABLE_MAIN
-		if vethData.DeviceNumber > 0 {
-			rtTable = vethData.DeviceNumber + 1
+		if vethData.RouteTable > 1 {
+			rtTable = vethData.RouteTable
 		}
 
 		if err := n.teardownIPBasedContainerRouteRules(vethData.IPAddress, rtTable, log); err != nil {
