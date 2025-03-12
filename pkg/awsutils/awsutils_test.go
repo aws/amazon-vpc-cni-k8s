@@ -313,7 +313,7 @@ func TestAWSGetFreeDeviceNumberOnErr(t *testing.T) {
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any()).Return(nil, errors.New("error on DescribeInstances"))
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	_, err := cache.awsGetFreeDeviceNumber()
+	_, err := cache.awsGetFreeDeviceNumber(0)
 	assert.Error(t, err)
 }
 
