@@ -1649,11 +1649,11 @@ func TestPodENIConfigFlag(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	_ = os.Setenv(envEnablePodENI, "true")
-	disabled := enablePodENI()
+	disabled := EnablePodENI()
 	assert.True(t, disabled)
 
 	_ = os.Unsetenv(envEnablePodENI)
-	disabled = enablePodENI()
+	disabled = EnablePodENI()
 	assert.False(t, disabled)
 }
 

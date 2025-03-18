@@ -16,6 +16,7 @@ package ipamd
 import (
 	"context"
 	"fmt"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"net"
 	"os"
 	"strconv"
@@ -42,7 +43,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
@@ -185,6 +185,13 @@ const (
 	// envEnableNetworkPolicy is used to enable IPAMD/CNI to send pod create events to network policy agent.
 	envNetworkPolicyMode     = "NETWORK_POLICY_ENFORCING_MODE"
 	defaultNetworkPolicyMode = "standard"
+
+	defaultMaxPodsFromKubelet = 110
+	kubeletConfigPath         = "/host/etc/kubernetes/kubelet/kubelet-config.json"
+	eniMaxPodsFilePath        = "/app/eni-max-pods.txt"
+
+	// Application name for k8s client
+	appName = "aws-node"
 )
 
 var log = logger.Get()
@@ -230,6 +237,11 @@ type IPAMContext struct {
 	enablePodIPAnnotation     bool
 	maxPods                   int // maximum number of pods that can be scheduled on the node
 	networkPolicyMode         string
+	withApiServer             bool
+}
+
+type kubeletConfig struct {
+	MaxPods *int64 `json:"maxPods"`
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
@@ -335,7 +347,7 @@ func (c *IPAMContext) inInsufficientCidrCoolingPeriod() bool {
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
-func New(k8sClient client.Client) (*IPAMContext, error) {
+func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 	prometheusRegister()
 	c := &IPAMContext{}
 	c.k8sClient = k8sClient
@@ -360,7 +372,7 @@ func New(k8sClient client.Client) (*IPAMContext, error) {
 	c.warmIPTarget = getWarmIPTarget()
 	c.minimumIPTarget = getMinimumIPTarget()
 	c.warmPrefixTarget = getWarmPrefixTarget()
-	c.enablePodENI = enablePodENI()
+	c.enablePodENI = EnablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = enablePodIPAnnotation()
 	c.numNetworkCards = len(c.awsClient.GetNetworkCards())
@@ -385,7 +397,7 @@ func New(k8sClient client.Client) (*IPAMContext, error) {
 	c.myNodeName = os.Getenv(envNodeName)
 	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
 	c.dataStore = datastore.NewDataStore(log, checkpointer, c.enablePrefixDelegation)
-
+	c.withApiServer = withApiServer
 	if err := c.nodeInit(); err != nil {
 		return nil, err
 	}
@@ -523,21 +535,33 @@ func (c *IPAMContext) nodeInit() error {
 		}, 30*time.Second)
 	}
 
-	// Make a k8s client request for the current node so that max pods can be derived
-	node, err := k8sapi.GetNode(ctx, c.k8sClient)
-	if err != nil {
-		log.Errorf("Failed to get node", err)
-		podENIErrInc("nodeInit")
-		return err
+	// if apiserver is connected, get the maxPods from node
+	var node corev1.Node
+	if c.withApiServer {
+		node, err := k8sapi.GetNode(ctx, c.k8sClient)
+		if err != nil {
+			log.Errorf("Failed to get node, %s", err)
+			podENIErrInc("nodeInit")
+			return err
+		} else {
+			maxPods, isInt64 := node.Status.Capacity.Pods().AsInt64()
+			if !isInt64 {
+				log.Errorf("Failed to parse max pods: %s", node.Status.Capacity.Pods().String)
+				podENIErrInc("nodeInit")
+				return errors.New("error while trying to determine max pods")
+			}
+			c.maxPods = int(maxPods)
+		}
+	} else {
+		maxPods, err := c.getMaxPodsFromFile()
+		if err != nil {
+			log.Errorf("Failed to read max pods from file: %s", err)
+			log.Warnf("Set maxPods as 110 instead")
+			c.maxPods = defaultMaxPodsFromKubelet
+		} else {
+			c.maxPods = int(maxPods)
+		}
 	}
-
-	maxPods, isInt64 := node.Status.Capacity.Pods().AsInt64()
-	if !isInt64 {
-		log.Errorf("Failed to parse max pods: %s", node.Status.Capacity.Pods().String)
-		podENIErrInc("nodeInit")
-		return errors.New("error while trying to determine max pods")
-	}
-	c.maxPods = int(maxPods)
 
 	if c.useCustomNetworking {
 		// When custom networking is enabled and a valid ENIConfig is found, IPAMD patches the CNINode
@@ -1691,6 +1715,80 @@ func (c *IPAMContext) warmIPTargetsDefined() bool {
 	return c.warmIPTarget != noWarmIPTarget || c.minimumIPTarget != noMinimumIPTarget
 }
 
+// max pods from instance type mapping file
+type instanceTypeMaxPodsMapping map[string]int64
+
+// getMaxPodsFromFile reads the max pods value from the eni-max-pods.txt file
+// based on the instance type
+func (c *IPAMContext) getMaxPodsFromFile() (int64, error) {
+	instanceType := c.awsClient.GetInstanceType()
+	if instanceType == "" {
+		return 0, fmt.Errorf("failed to get instance type")
+	}
+
+	data, err := os.ReadFile(eniMaxPodsFilePath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read ENI max pods file: %w", err)
+	}
+
+	mapping := parseMaxPodsFile(string(data))
+	if maxPods, exists := mapping[instanceType]; exists {
+		log.Infof("Read maxPods as %d, for instanceType %s", maxPods, instanceType)
+		return maxPods, nil
+	}
+
+	return defaultMaxPodsFromKubelet, fmt.Errorf("instance type %s not found in ENI max pods file", instanceType)
+}
+
+// parseMaxPodsFile parses the eni-max-pods.txt file content and returns a mapping
+// of instance type to max pods
+func parseMaxPodsFile(content string) instanceTypeMaxPodsMapping {
+	mapping := make(instanceTypeMaxPodsMapping)
+	lines := strings.Split(content, "\n")
+
+	for _, line := range lines {
+		// Skip comments and empty lines
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Split the line into instance type and max pods
+		parts := strings.Fields(line)
+		if len(parts) != 2 {
+			continue
+		}
+
+		instanceType := parts[0]
+		maxPods, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			continue
+		}
+
+		mapping[instanceType] = maxPods
+	}
+
+	return mapping
+}
+
+//func getMaxPodsFromKubelet() (int64, error) {
+//	data, err := os.ReadFile(kubeletConfigPath)
+//	if err != nil {
+//		return defaultMaxPodsFromKubelet, fmt.Errorf("failed to read kubelet config: %w", err)
+//	}
+//
+//	var config kubeletConfig
+//	if err := json.Unmarshal(data, &config); err != nil {
+//		return defaultMaxPodsFromKubelet, fmt.Errorf("failed to parse kubelet config JSON: %w", err)
+//	}
+//
+//	if config.MaxPods != nil {
+//		return *config.MaxPods, nil
+//	}
+//
+//	return defaultMaxPodsFromKubelet, nil
+//}
+
 // UseCustomNetworkCfg returns whether Pods needs to use pod specific configuration or not.
 func UseCustomNetworkCfg() bool {
 	return parseBoolEnvVar(envCustomNetworkCfg, false)
@@ -1766,7 +1864,7 @@ func disableLeakedENICleanup() bool {
 	return isIPv6Enabled() || disableENIProvisioning() || utils.GetBoolAsStringEnvVar(envDisableLeakedENICleanup, false)
 }
 
-func enablePodENI() bool {
+func EnablePodENI() bool {
 	return utils.GetBoolAsStringEnvVar(envEnablePodENI, false)
 }
 
@@ -2354,4 +2452,50 @@ func (c *IPAMContext) AddFeatureToCNINode(ctx context.Context, featureName rcv1a
 
 	newCNINode.Spec.Features = append(newCNINode.Spec.Features, newFeature)
 	return c.k8sClient.Patch(ctx, newCNINode, client.MergeFromWithOptions(cniNode, client.MergeFromWithOptimisticLock{}))
+}
+
+// SetAPIServerConnectivity updates the API server connectivity status and reconfigures
+// components that depend on API server access
+func (c *IPAMContext) SetAPIServerConnectivity(connected bool) {
+	if c.withApiServer == connected {
+		// Status didn't change
+		return
+	}
+
+	log.Infof("Updating API server connectivity status from %v to %v", c.withApiServer, connected)
+	c.withApiServer = connected
+
+	if connected {
+		// API server is now available - update maxPods from node object
+		// First, try to recreate the client with caching enabled
+		newClient, err := k8sapi.CreateKubeClient(appName)
+		if err != nil {
+			log.Errorf("Failed to recreate k8s client with cache when API server became available: %v", err)
+		} else {
+			log.Info("Successfully recreated k8s client with cache after API server became available")
+			c.k8sClient = newClient
+		}
+
+		// Now get the node to update maxPods
+		ctx := context.TODO()
+		node, err := k8sapi.GetNode(ctx, c.k8sClient)
+		if err != nil {
+			log.Errorf("Failed to get node after API server connection established: %s", err)
+		} else {
+			maxPods, isInt64 := node.Status.Capacity.Pods().AsInt64()
+			if !isInt64 {
+				log.Errorf("Failed to parse max pods from node: %s", node.Status.Capacity.Pods().String())
+			} else {
+				// Update maxPods with the value from the node
+				oldMaxPods := c.maxPods
+				c.maxPods = int(maxPods)
+				log.Infof("Updated maxPods from %d to %d based on node capacity", oldMaxPods, c.maxPods)
+			}
+		}
+	} else {
+		// API server connection was lost
+		// No action needed here as we already have maxPods from file or kubelet
+		// and we want to keep working with that value
+		log.Info("API server connection lost, continuing with current maxPods value")
+	}
 }
