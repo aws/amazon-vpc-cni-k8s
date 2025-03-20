@@ -1304,7 +1304,7 @@ func TestEC2InstanceMetadataCache_buildENITags(t *testing.T) {
 				instanceID: "i-xxxxx",
 			},
 			want: map[string]string{
-				"node.k8s.amazonaws.com/instance_id": "i-xxxxx",
+				eniNodeTagKey: "i-xxxxx",
 			},
 		},
 		{
@@ -1314,9 +1314,9 @@ func TestEC2InstanceMetadataCache_buildENITags(t *testing.T) {
 				clusterName: "awesome-cluster",
 			},
 			want: map[string]string{
-				"node.k8s.amazonaws.com/instance_id": "i-xxxxx",
-				"cluster.k8s.amazonaws.com/name":     "awesome-cluster",
-				"eks:eni:owner":                      "amazon-vpc-cni",
+				eniNodeTagKey:    "i-xxxxx",
+				eniClusterTagKey: "awesome-cluster",
+				eniOwnerTagKey:   eniOwnerTagValue,
 			},
 		},
 		{
@@ -1329,9 +1329,9 @@ func TestEC2InstanceMetadataCache_buildENITags(t *testing.T) {
 				},
 			},
 			want: map[string]string{
-				"node.k8s.amazonaws.com/instance_id": "i-xxxxx",
-				"tagKey-1":                           "tagVal-1",
-				"tagKey-2":                           "tagVal-2",
+				eniNodeTagKey: "i-xxxxx",
+				"tagKey-1":    "tagVal-1",
+				"tagKey-2":    "tagVal-2",
 			},
 		},
 	}
