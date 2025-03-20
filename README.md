@@ -138,7 +138,7 @@ data:
 ```
 
 * `enable-network-policy-controller`
-  * Default: False
+  * Default: True
   * If enabled, the VPC CNI will enforce NetworkPolicies. Pods that are selected by at least one NetworkPolicy will have their traffic restricted.
 
 ## Helm Charts
@@ -154,7 +154,7 @@ The following environment variables are available, and all of them are optional.
 
 Type: Boolean as a String
 
-Default: `false`
+Default: `True`
 
 Specifies whether IPAMD should allocate or deallocate ENIs on a non-schedulable node.
 
