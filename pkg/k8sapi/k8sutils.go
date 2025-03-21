@@ -26,7 +26,8 @@ import (
 )
 
 const (
-	awsNode = "aws-node"
+	awsNode         = "aws-node"
+	envEnablePodENI = "ENABLE_POD_ENI"
 )
 
 var log = logger.Get()
@@ -34,17 +35,23 @@ var log = logger.Get()
 // Get cache filters for IPAMD
 func getIPAMDCacheFilters() map[client.Object]cache.ByObject {
 	if nodeName := os.Getenv("MY_NODE_NAME"); nodeName != "" {
-		return map[client.Object]cache.ByObject{
+		filter := map[client.Object]cache.ByObject{
 			&corev1.Pod{}: {
 				Field: fields.Set{"spec.nodeName": nodeName}.AsSelector(),
 			},
 			&corev1.Node{}: {
 				Field: fields.Set{"metadata.name": nodeName}.AsSelector(),
 			},
-			&rcscheme.CNINode{}: {
-				Field: fields.Set{"metadata.name": nodeName}.AsSelector(),
-			},
 		}
+		// only cache CNINode when SGP is in use
+		enabledPodENI := utils.GetBoolAsStringEnvVar(envEnablePodENI, false)
+		if enabledPodENI {
+			log.Infof("SGP is in use, adding CNINode to cache.")
+			filter[&rcscheme.CNINode{}] = cache.ByObject{
+				Field: fields.Set{"metadata.name": nodeName}.AsSelector(),
+			}
+		}
+		return filter
 	}
 	return nil
 }
