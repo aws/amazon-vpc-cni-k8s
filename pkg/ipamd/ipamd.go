@@ -556,8 +556,7 @@ func (c *IPAMContext) nodeInit() error {
 	} else {
 		maxPods, err := c.getMaxPodsFromFile()
 		if err != nil {
-			log.Errorf("Failed to read max pods from file: %s", err)
-			log.Warnf("Set maxPods as 110 instead")
+			log.Warnf("Using default maxPods as %d because reading from file failed: %v", defaultMaxPodsFromKubelet, err)
 			c.maxPods = defaultMaxPodsFromKubelet
 		} else {
 			c.maxPods = int(maxPods)
@@ -1732,19 +1731,13 @@ func (c *IPAMContext) getMaxPodsFromFile() (int64, error) {
 		return 0, fmt.Errorf("failed to read ENI max pods file: %w", err)
 	}
 
-	mapping := parseMaxPodsFile(string(data))
-	if maxPods, exists := mapping[instanceType]; exists {
-		log.Infof("Read maxPods as %d, for instanceType %s", maxPods, instanceType)
-		return maxPods, nil
-	}
-
-	return defaultMaxPodsFromKubelet, fmt.Errorf("instance type %s not found in ENI max pods file", instanceType)
+	maxPods, err := parseMaxPodsForInstanceFromFile(string(data), instanceType)
+	return maxPods, err
 }
 
 // parseMaxPodsFile parses the eni-max-pods.txt file content and returns a mapping
 // of instance type to max pods
-func parseMaxPodsFile(content string) instanceTypeMaxPodsMapping {
-	mapping := make(instanceTypeMaxPodsMapping)
+func parseMaxPodsForInstanceFromFile(content string, instanceType string) (int64, error) {
 	lines := strings.Split(content, "\n")
 
 	for _, line := range lines {
@@ -1760,16 +1753,17 @@ func parseMaxPodsFile(content string) instanceTypeMaxPodsMapping {
 			continue
 		}
 
-		instanceType := parts[0]
-		maxPods, err := strconv.ParseInt(parts[1], 10, 64)
-		if err != nil {
-			continue
+		currInstanceType := parts[0]
+		if currInstanceType == instanceType {
+			maxPods, err := strconv.ParseInt(parts[1], 10, 64)
+			if err != nil {
+				return 0, fmt.Errorf("failed to parse maxPods for instance type %q: %v", instanceType, err)
+			}
+			return maxPods, nil
 		}
-
-		mapping[instanceType] = maxPods
 	}
 
-	return mapping
+	return 0, fmt.Errorf("instance type %q not found in ENI max pods file", instanceType)
 }
 
 // UseCustomNetworkCfg returns whether Pods needs to use pod specific configuration or not.
