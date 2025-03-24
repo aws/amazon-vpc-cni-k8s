@@ -16,7 +16,6 @@ package ipamd
 import (
 	"context"
 	"fmt"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"net"
 	"os"
 	"strconv"
@@ -24,6 +23,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 
 	"github.com/aws/smithy-go"
 
@@ -1770,24 +1771,6 @@ func parseMaxPodsFile(content string) instanceTypeMaxPodsMapping {
 
 	return mapping
 }
-
-//func getMaxPodsFromKubelet() (int64, error) {
-//	data, err := os.ReadFile(kubeletConfigPath)
-//	if err != nil {
-//		return defaultMaxPodsFromKubelet, fmt.Errorf("failed to read kubelet config: %w", err)
-//	}
-//
-//	var config kubeletConfig
-//	if err := json.Unmarshal(data, &config); err != nil {
-//		return defaultMaxPodsFromKubelet, fmt.Errorf("failed to parse kubelet config JSON: %w", err)
-//	}
-//
-//	if config.MaxPods != nil {
-//		return *config.MaxPods, nil
-//	}
-//
-//	return defaultMaxPodsFromKubelet, nil
-//}
 
 // UseCustomNetworkCfg returns whether Pods needs to use pod specific configuration or not.
 func UseCustomNetworkCfg() bool {

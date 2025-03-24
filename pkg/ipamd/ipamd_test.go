@@ -137,6 +137,7 @@ func TestNodeInit(t *testing.T) {
 		myNodeName:    myNodeName,
 		enableIPv4:    true,
 		enableIPv6:    false,
+		withApiServer: true,
 	}
 
 	eni1, eni2, _ := getDummyENIMetadata()
@@ -228,6 +229,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 		enablePrefixDelegation: true,
 		enableIPv4:             true,
 		enableIPv6:             false,
+		withApiServer:          true,
 	}
 
 	eni1, eni2 := getDummyENIMetadataWithPrefix()
@@ -315,6 +317,7 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 		enablePrefixDelegation: true,
 		enableIPv4:             false,
 		enableIPv6:             true,
+		withApiServer:          true,
 	}
 
 	eni1 := getDummyENIMetadataWithV6Prefix()
