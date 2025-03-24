@@ -375,7 +375,7 @@ func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 	c.warmPrefixTarget = getWarmPrefixTarget()
 	c.enablePodENI = EnablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
-	c.enablePodIPAnnotation = enablePodIPAnnotation()
+	c.enablePodIPAnnotation = EnablePodIPAnnotation()
 	c.numNetworkCards = len(c.awsClient.GetNetworkCards())
 
 	c.networkPolicyMode, err = getNetworkPolicyMode()
@@ -1877,7 +1877,7 @@ func enableManageUntaggedMode() bool {
 	return utils.GetBoolAsStringEnvVar(envManageUntaggedENI, true)
 }
 
-func enablePodIPAnnotation() bool {
+func EnablePodIPAnnotation() bool {
 	return utils.GetBoolAsStringEnvVar(envAnnotatePodIP, false)
 }
 

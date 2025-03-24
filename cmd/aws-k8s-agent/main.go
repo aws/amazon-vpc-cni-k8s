@@ -96,10 +96,11 @@ func _main() int {
 
 	enabledPodEni := ipamd.EnablePodENI()
 	enabledCustomNetwork := ipamd.UseCustomNetworkCfg()
+	enabledPodAnnotation := ipamd.EnablePodIPAnnotation()
 	withApiServer := false
 	// Check API Server Connectivity
-	if enabledPodEni || enabledCustomNetwork {
-		log.Info("SGP or custom networking feature in use, waiting for API server connectivity to start IPAMD")
+	if enabledPodEni || enabledCustomNetwork || enabledPodAnnotation {
+		log.Info("SGP, custom networking or pod annotation feature is in use, waiting for API server connectivity to start IPAMD")
 		if err := k8sapi.CheckAPIServerConnectivity(); err != nil {
 			log.Errorf("Failed to check API server connectivity: %s", err)
 			return 1
