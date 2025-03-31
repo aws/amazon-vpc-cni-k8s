@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+	"github.com/aws/amazon-vpc-cni-k8s/rpc"
 
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 
@@ -33,14 +34,15 @@ func TestServer_VersionCheck(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:     m.awsutils,
-		maxIPsPerENI:  14,
-		maxENI:        4,
-		warmENITarget: 1,
-		warmIPTarget:  3,
-		networkClient: m.network,
-		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}, false),
+		awsClient:       m.awsutils,
+		maxIPsPerENI:    14,
+		maxENI:          4,
+		warmENITarget:   1,
+		warmIPTarget:    3,
+		networkClient:   m.network,
+		dataStoreAccess: datastore.InitializeDataStores(1, "test", false, log),
 	}
+
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil).AnyTimes()
 	m.awsutils.EXPECT().GetVPCIPv6CIDRs().Return([]string{}, nil).AnyTimes()
 	m.network.EXPECT().UseExternalSNAT().Return(true).AnyTimes()
@@ -136,9 +138,15 @@ func TestServer_AddNetwork(t *testing.T) {
 				ipV6Enabled: false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:         true,
-				IPv4Addr:        "192.168.1.100",
-				DeviceNumber:    int32(0),
+				Success: true,
+				IPAddress: []*rpc.IPAddress{
+					{
+						IPv4Addr:     "192.168.1.100",
+						IPv6Addr:     "",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1),
+					},
+				},
 				UseExternalSNAT: true,
 				VPCv4CIDRs:      []string{"10.10.0.0/16"},
 			},
@@ -168,9 +176,15 @@ func TestServer_AddNetwork(t *testing.T) {
 				ipV6Enabled: false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:         true,
-				IPv4Addr:        "192.168.1.100",
-				DeviceNumber:    int32(0),
+				Success: true,
+				IPAddress: []*rpc.IPAddress{
+					{
+						IPv4Addr:     "192.168.1.100",
+						IPv6Addr:     "",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1),
+					},
+				},
 				UseExternalSNAT: false,
 				VPCv4CIDRs:      []string{"10.10.0.0/16", "10.12.0.0/16", "10.13.0.0/16"},
 			},
@@ -183,8 +197,15 @@ func TestServer_AddNetwork(t *testing.T) {
 				ipV6Enabled:        false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:      false,
-				DeviceNumber: int32(-1),
+				Success: false,
+				IPAddress: []*rpc.IPAddress{
+					{
+						IPv4Addr:     "",
+						IPv6Addr:     "",
+						DeviceNumber: int32(-1),
+						RouteTableId: int32(0),
+					},
+				},
 			},
 		},
 		{
@@ -203,10 +224,16 @@ func TestServer_AddNetwork(t *testing.T) {
 				prefixDelegationEnabled: true,
 			},
 			want: &pb.AddNetworkReply{
-				Success:      true,
-				IPv6Addr:     "2001:db8::",
-				DeviceNumber: int32(0),
-				VPCv6CIDRs:   []string{"2001:db8::/56"},
+				Success: true,
+				IPAddress: []*rpc.IPAddress{
+					{
+						IPv4Addr:     "",
+						IPv6Addr:     "2001:db8::",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1),
+					},
+				},
+				VPCv6CIDRs: []string{"2001:db8::/56"},
 			},
 		},
 		{
@@ -218,8 +245,15 @@ func TestServer_AddNetwork(t *testing.T) {
 				prefixDelegationEnabled: true,
 			},
 			want: &pb.AddNetworkReply{
-				Success:      false,
-				DeviceNumber: int32(-1),
+				Success: false,
+				IPAddress: []*rpc.IPAddress{
+					{
+						IPv4Addr:     "",
+						IPv6Addr:     "",
+						DeviceNumber: int32(-1),
+						RouteTableId: int32(0),
+					},
+				},
 			},
 		},
 		{
@@ -233,9 +267,15 @@ func TestServer_AddNetwork(t *testing.T) {
 				prefixDelegationEnabled: false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:      false,
-				IPv6Addr:     "",
-				DeviceNumber: int32(-1),
+				Success: false,
+				IPAddress: []*rpc.IPAddress{
+					{
+						IPv4Addr:     "",
+						IPv6Addr:     "",
+						DeviceNumber: int32(-1),
+						RouteTableId: int32(0),
+					},
+				},
 			},
 		},
 	}
@@ -262,19 +302,20 @@ func TestServer_AddNetwork(t *testing.T) {
 			for _, call := range tt.fields.getExcludeSNATCIDRsCalls {
 				m.network.EXPECT().GetExcludeSNATCIDRs().Return(call.snatExclusionCIDRs)
 			}
-			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled)
+			// ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled)
+			dsAccess := datastore.InitializeDataStores(1, defaultBackingStorePath, tt.fields.prefixDelegationEnabled, log)
 			for eniID, ipv4Addresses := range tt.fields.ipV4AddressByENIID {
-				ds.AddENI(eniID, 0, false, false, false)
+				dsAccess.GetDataStore(0).AddENI(eniID, 0, false, false, false)
 				for _, ipv4Address := range ipv4Addresses {
 					ipv4Addr := net.IPNet{IP: net.ParseIP(ipv4Address), Mask: net.IPv4Mask(255, 255, 255, 255)}
-					ds.AddIPv4CidrToStore(eniID, ipv4Addr, false)
+					dsAccess.GetDataStore(0).AddIPv4CidrToStore(eniID, ipv4Addr, false)
 				}
 			}
 			for eniID, ipv6Prefixes := range tt.fields.ipV6PrefixByENIID {
-				ds.AddENI(eniID, 0, false, false, false)
+				dsAccess.GetDataStore(0).AddENI(eniID, 0, false, false, false)
 				for _, ipv6Prefix := range ipv6Prefixes {
 					_, ipnet, _ := net.ParseCIDR(ipv6Prefix)
-					ds.AddIPv6CidrToStore(eniID, *ipnet, true)
+					dsAccess.GetDataStore(0).AddIPv6CidrToStore(eniID, *ipnet, true)
 				}
 			}
 
@@ -288,7 +329,7 @@ func TestServer_AddNetwork(t *testing.T) {
 				enableIPv4:             tt.fields.ipV4Enabled,
 				enableIPv6:             tt.fields.ipV6Enabled,
 				enablePrefixDelegation: tt.fields.prefixDelegationEnabled,
-				dataStore:              ds,
+				dataStoreAccess:        dsAccess,
 			}
 
 			s := &server{

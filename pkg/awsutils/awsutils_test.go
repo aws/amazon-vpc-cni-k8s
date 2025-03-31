@@ -61,6 +61,7 @@ const (
 	metadataIPv4Prefixes = "/ipv4-prefix"
 	metadataIPv6s        = "/ipv6s"
 	metadataIPv6Prefixes = "/ipv6-prefix"
+	metadataSubnetV6CIDR = "/subnet-ipv6-cidr-blocks"
 
 	az                   = "us-east-1a"
 	localIP              = "10.0.0.10"
@@ -73,6 +74,7 @@ const (
 	sgs                  = sg1 + " " + sg2
 	subnetID             = "subnet-6b245523"
 	subnetCIDR           = "10.0.1.0/24"
+	subnetCIDRv6         = "2001:db8::/56"
 	vpcID                = "vpc-3c133421"
 	primaryeniID         = "eni-00000000"
 	eniID                = primaryeniID
@@ -85,13 +87,13 @@ const (
 	eni2PrivateIP        = "10.0.0.2"
 	eni2Prefix           = "10.0.2.0/28"
 	eni2v6IP             = "2001:db8:8:4::2"
-	eni2v6Prefix         = "2001:db8::/64"
+	eni2v6Prefix         = "2001:db8::/80"
 	eni2ID               = "eni-12341234"
 	metadataVPCIPv4CIDRs = "192.168.0.0/16	100.66.0.0/1"
 	myNodeName           = "testNodeName"
 	imdsMACFields        = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks device-number interface-id subnet-ipv4-cidr-block local-ipv4s ipv4-prefix ipv6-prefix"
 	imdsMACFieldsEfaOnly = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks device-number interface-id subnet-ipv4-cidr-block ipv4-prefix ipv6-prefix"
-	imdsMACFieldsV6Only  = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks device-number interface-id subnet-ipv6-cidr-blocks ipv6s ipv6-prefix"
+	imdsMACFieldsV6Only  = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks vpc-ipv6-cidr-blocks device-number interface-id subnet-ipv6-cidr-blocks ipv6s ipv6-prefix"
 	imdsMACFieldsV4AndV6 = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks device-number interface-id subnet-ipv4-cidr-block ipv6s local-ipv4s"
 )
 
@@ -104,14 +106,15 @@ func testMetadata(overrides map[string]interface{}) FakeIMDS {
 		metadataMAC:                  primaryMAC,
 		metadataMACPath:              primaryMAC,
 		metadataMACPath + primaryMAC: imdsMACFields,
-		metadataMACPath + primaryMAC + metadataDeviceNum:  eni1Device,
-		metadataMACPath + primaryMAC + metadataInterface:  primaryeniID,
-		metadataMACPath + primaryMAC + metadataSGs:        sgs,
-		metadataMACPath + primaryMAC + metadataIPv4s:      eni1PrivateIP,
-		metadataMACPath + primaryMAC + metadataSubnetID:   subnetID,
-		metadataMACPath + primaryMAC + metadataVpcID:      vpcID,
-		metadataMACPath + primaryMAC + metadataSubnetCIDR: subnetCIDR,
-		metadataMACPath + primaryMAC + metadataVPCcidrs:   metadataVPCIPv4CIDRs,
+		metadataMACPath + primaryMAC + metadataDeviceNum:    eni1Device,
+		metadataMACPath + primaryMAC + metadataInterface:    primaryeniID,
+		metadataMACPath + primaryMAC + metadataSGs:          sgs,
+		metadataMACPath + primaryMAC + metadataIPv4s:        eni1PrivateIP,
+		metadataMACPath + primaryMAC + metadataSubnetID:     subnetID,
+		metadataMACPath + primaryMAC + metadataVpcID:        vpcID,
+		metadataMACPath + primaryMAC + metadataSubnetCIDR:   subnetCIDR,
+		metadataMACPath + primaryMAC + metadataSubnetV6CIDR: subnetCIDRv6,
+		metadataMACPath + primaryMAC + metadataVPCcidrs:     metadataVPCIPv4CIDRs,
 	}
 
 	for k, v := range overrides {
@@ -255,6 +258,7 @@ func TestGetAttachedENIsWithIPv6Only(t *testing.T) {
 		metadataMACPath + eni2MAC + metadataDeviceNum:    eni2Device,
 		metadataMACPath + eni2MAC + metadataInterface:    eni2ID,
 		metadataMACPath + eni2MAC + metadataIPv6s:        eni2v6IP,
+		metadataMACPath + eni2MAC + metadataSubnetV6CIDR: subnetCIDRv6,
 		metadataMACPath + eni2MAC + metadataIPv6Prefixes: eni2v6Prefix,
 	})
 
@@ -315,7 +319,7 @@ func TestAWSGetFreeDeviceNumberOnErr(t *testing.T) {
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any()).Return(nil, errors.New("error on DescribeInstances"))
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	_, err := cache.awsGetFreeDeviceNumber()
+	_, err := cache.awsGetFreeDeviceNumber(0)
 	assert.Error(t, err)
 }
 
@@ -340,7 +344,7 @@ func TestAWSGetFreeDeviceNumberNoDevice(t *testing.T) {
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	_, err := cache.awsGetFreeDeviceNumber()
+	_, err := cache.awsGetFreeDeviceNumber(0)
 	assert.Error(t, err)
 }
 
@@ -528,7 +532,7 @@ func TestAllocENI(t *testing.T) {
 		useSubnetDiscovery: true,
 	}
 
-	_, err := cache.AllocENI(false, nil, "", 5)
+	_, err := cache.AllocENI(nil, "", 5, 0)
 	assert.NoError(t, err)
 }
 
@@ -578,7 +582,7 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 		useSubnetDiscovery: true,
 	}
 
-	_, err := cache.AllocENI(false, nil, "", 5)
+	_, err := cache.AllocENI(nil, "", 5, 0)
 	assert.Error(t, err)
 }
 
@@ -631,7 +635,7 @@ func TestAllocENIMaxReached(t *testing.T) {
 		useSubnetDiscovery: true,
 	}
 
-	_, err := cache.AllocENI(false, nil, "", 5)
+	_, err := cache.AllocENI(nil, "", 5, 0)
 	assert.Error(t, err)
 }
 
@@ -678,7 +682,7 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", useSubnetDiscovery: true}
-	_, err := cache.AllocENI(false, nil, subnetID, 5)
+	_, err := cache.AllocENI(nil, subnetID, 5, 0)
 	assert.NoError(t, err)
 
 	// when required IP numbers(50) is higher than ENI's limit(49)
@@ -688,7 +692,7 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	cache = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", useSubnetDiscovery: true}
-	_, err = cache.AllocENI(false, nil, subnetID, 49)
+	_, err = cache.AllocENI(nil, subnetID, 49, 0)
 	assert.NoError(t, err)
 }
 
@@ -722,7 +726,7 @@ func TestAllocENIWithIPAddressesAlreadyFull(t *testing.T) {
 		instanceType:       "t3.xlarge",
 		useSubnetDiscovery: true,
 	}
-	_, err := cache.AllocENI(true, nil, "", 14)
+	_, err := cache.AllocENI(nil, "", 14, 0)
 	assert.Error(t, err)
 }
 
@@ -776,7 +780,7 @@ func TestAllocENIWithPrefixAddresses(t *testing.T) {
 		enablePrefixDelegation: true,
 		useSubnetDiscovery:     true,
 	}
-	_, err := cache.AllocENI(false, nil, subnetID, 1)
+	_, err := cache.AllocENI(nil, subnetID, 1, 0)
 	assert.NoError(t, err)
 }
 
@@ -811,7 +815,7 @@ func TestAllocENIWithPrefixesAlreadyFull(t *testing.T) {
 		enablePrefixDelegation: true,
 		useSubnetDiscovery:     true,
 	}
-	_, err := cache.AllocENI(true, nil, "", 1)
+	_, err := cache.AllocENI(nil, "", 1, 0)
 	assert.Error(t, err)
 }
 
@@ -1172,6 +1176,8 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 	isPrimary := true
 	primaryIP := eni2PrivateIP
 	prefixIP := eni2Prefix
+	primaryIPv6 := eni1v6IP
+
 	eni1Metadata := ENIMetadata{
 		ENIID:          eni2ID,
 		MAC:            eni2MAC,
@@ -1189,24 +1195,23 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 			},
 		},
 	}
-	v6PrefixIP := eni2v6Prefix
+	// v6PrefixIP := eni2v6Prefix
 	eni2Metadata := ENIMetadata{
 		ENIID:          eni2ID,
 		MAC:            eni2MAC,
 		DeviceNumber:   1,
 		SubnetIPv4CIDR: subnetCIDR,
+		SubnetIPv6CIDR: subnetCIDRv6,
 		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
 			{
 				Primary:          &isPrimary,
 				PrivateIpAddress: &primaryIP,
 			},
 		},
-		IPv6Prefixes: []ec2types.Ipv6PrefixSpecification{
-			{
-				Ipv6Prefix: &v6PrefixIP,
-			},
+		IPv6Prefixes: []ec2types.Ipv6PrefixSpecification{},
+		IPv6Addresses: []ec2types.NetworkInterfaceIpv6Address{
+			{Ipv6Address: &primaryIPv6},
 		},
-		IPv6Addresses: []ec2types.NetworkInterfaceIpv6Address{},
 	}
 	tests := []struct {
 		name            string
@@ -1223,30 +1228,40 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl, mockEC2 := setup(t)
 			defer ctrl.Finish()
+
 			eniIPs := eni2PrivateIP
 			eniPrefixes := eni2Prefix
 			metaDataPrefixPath := metadataIPv4Prefixes
+			metaDataSubnetCIDRPath := metadataSubnetCIDR
+			subnetCIDRValue := subnetCIDR
+			macFields := imdsMACFields
+
+			// We create ENI with single v6 IP and then attach the IPv6 Prefixes later
 			if tt.args.v6Enabled {
-				eniPrefixes = eni2v6Prefix
-				metaDataPrefixPath = metadataIPv6Prefixes
+				eniPrefixes = eni1v6IP
+				metaDataPrefixPath = metadataIPv6s
+				metaDataSubnetCIDRPath = metadataSubnetV6CIDR
+				subnetCIDRValue = subnetCIDRv6
+				macFields = imdsMACFieldsV6Only
 			}
 			if tt.args.foundPrefixes == 0 {
 				eniPrefixes = ""
 			}
 			mockMetadata := testMetadata(map[string]interface{}{
-				metadataMACPath:                                primaryMAC + " " + eni2MAC,
-				metadataMACPath + eni2MAC:                      imdsMACFields,
-				metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
-				metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
-				metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
-				metadataMACPath + eni2MAC + metadataIPv4s:      eniIPs,
-				metadataMACPath + eni2MAC + metaDataPrefixPath: eniPrefixes,
+				metadataMACPath:                                    primaryMAC + " " + eni2MAC,
+				metadataMACPath + eni2MAC:                          macFields,
+				metadataMACPath + eni2MAC + metadataDeviceNum:      eni2Device,
+				metadataMACPath + eni2MAC + metadataInterface:      eni2ID,
+				metadataMACPath + eni2MAC + metaDataSubnetCIDRPath: subnetCIDRValue,
+				metadataMACPath + eni2MAC + metadataIPv4s:          eniIPs,
+				metadataMACPath + eni2MAC + metaDataPrefixPath:     eniPrefixes,
 			})
+
 			cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2,
 				enablePrefixDelegation: true, v4Enabled: tt.args.v4Enabled, v6Enabled: tt.args.v6Enabled}
 			gotEniMetadata, err := cache.waitForENIAndIPsAttached(tt.args.eni, tt.args.wantedSecondaryIPs, tt.args.maxBackoffDelay)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("waitForENIAndIPsAttached() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("waitForENIAndIPsAttached() error = %+v, wantErr %+v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(gotEniMetadata, tt.wantEniMetadata) {

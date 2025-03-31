@@ -79,6 +79,9 @@ const backfillNetworkIface = "unknown"
 // ErrUnknownPod is an error when there is no pod in data store matching pod name, namespace, sandbox id
 var ErrUnknownPod = errors.New("datastore: unknown pod")
 
+// ErrNoAvailableIPInDataStore is an error when IPAM cannot assign an IP address from the datastore
+var ErrNoAvailableIPInDataStore = errors.New("AssignPodIPAddress: no available IP/Prefix addresses")
+
 // IPAMKey is the IPAM primary key.  Quoting CNI spec:
 //
 //	Plugins that store state should do so using a primary key of
@@ -103,6 +106,7 @@ func (k IPAMKey) String() string {
 type IPAMMetadata struct {
 	K8SPodNamespace string `json:"k8sPodNamespace,omitempty"`
 	K8SPodName      string `json:"k8sPodName,omitempty"`
+	InterfacesCount int    `json:"interfacesCount,omitempty"`
 }
 
 // ENI represents a single ENI. Exported fields will be marshaled for introspection.
@@ -461,7 +465,9 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, 
 		IsEFA:              isEFA,
 		ID:                 eniID,
 		DeviceNumber:       deviceNumber,
-		AvailableIPv4Cidrs: make(map[string]*CidrInfo)}
+		AvailableIPv4Cidrs: make(map[string]*CidrInfo),
+		IPv6Cidrs:          make(map[string]*CidrInfo),
+	}
 
 	prometheusmetrics.Enis.Set(float64(len(ds.eniPool)))
 	// Initialize ENI IPs In Use to 0 when an ENI is created
@@ -574,7 +580,7 @@ func (ds *DataStore) AddIPv6CidrToStore(eniID string, ipv6Cidr net.IPNet, isPref
 	}
 	// Check if already present in datastore.
 	_, ok = curENI.IPv6Cidrs[strIPv6Cidr]
-	ds.log.Debugf("IP not in  DS")
+	ds.log.Debugf("IP not in DS")
 	if ok {
 		ds.log.Debugf("IPv6 prefix %s already in DS", strIPv6Cidr)
 		return errors.New(IPAlreadyInStoreError)
@@ -661,7 +667,7 @@ func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 		}
 	}
 	prometheusmetrics.NoAvailableIPAddrs.Inc()
-	return "", -1, errors.New("AssignPodIPv6Address: no available IP addresses")
+	return "", -1, ErrNoAvailableIPInDataStore
 }
 
 // AssignPodIPv4Address assigns an IPv4 address to pod
@@ -732,13 +738,13 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 
 	prometheusmetrics.NoAvailableIPAddrs.Inc()
 	ds.log.Errorf("DataStore has no available IP/Prefix addresses")
-	return "", -1, errors.New("AssignPodIPv4Address: no available IP/Prefix addresses")
+	return "", -1, ErrNoAvailableIPInDataStore
 }
 
 // assignPodIPAddressUnsafe mark Address as assigned.
 func (ds *DataStore) assignPodIPAddressUnsafe(addr *AddressInfo, ipamKey IPAMKey, ipamMetadata IPAMMetadata, assignedTime time.Time) {
-	ds.log.Infof("assignPodIPAddressUnsafe: Assign IP %v to sandbox %s",
-		addr.Address, ipamKey)
+	ds.log.Infof("assignPodIPAddressUnsafe: Assign IP %v to sandbox %s with metadata %",
+		addr.Address, ipamKey, ipamMetadata)
 
 	if addr.Assigned() {
 		panic("addr already assigned")
@@ -1082,7 +1088,7 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 
 // UnassignPodIPAddress a) find out the IP address based on PodName and PodNameSpace
 // b)  mark IP address as unassigned c) returns IP address, ENI's device number, error
-func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, deviceNumber int, err error) {
+func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, deviceNumber int, interfaces int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	ds.log.Debugf("UnassignPodIPAddress: IP address pool stats: total %d, assigned %d, sandbox %s", ds.total, ds.assigned, ipamKey)
@@ -1099,7 +1105,7 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 		// If entry is still not found, IPAMD has no knowledge of this pod, so there is nothing to do.
 		if addr == nil {
 			ds.log.Warnf("UnassignPodIPAddress: Failed to find sandbox %s", ipamKey)
-			return nil, "", 0, ErrUnknownPod
+			return nil, "", 0, -1, ErrUnknownPod
 		}
 	}
 
@@ -1109,9 +1115,14 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 	if err := ds.writeBackingStoreUnsafe(); err != nil {
 		// Unwind un-assignment
 		ds.assignPodIPAddressUnsafe(addr, ipamKey, originalIPAMMetadata, originalAssignedTime)
-		return nil, "", 0, err
+		return nil, "", 0, -1, err
 	}
 	addr.UnassignedTime = time.Now()
+
+	// Interfaces Count 0 means this property did not exist in the datastore when we restored. A Pod entry always have atleast one interface
+	if originalIPAMMetadata.InterfacesCount == 0 {
+		originalIPAMMetadata.InterfacesCount += 1
+	}
 
 	//Update prometheus for ips per cidr
 	prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
@@ -1119,7 +1130,7 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 		ipamKey, addr.Address, eni.DeviceNumber)
 	// Decrement ENI IP usage when a pod is deallocated
 	prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Dec()
-	return eni, addr.Address, eni.DeviceNumber, nil
+	return eni, addr.Address, eni.DeviceNumber, originalIPAMMetadata.InterfacesCount, nil
 }
 
 // AllocatedIPs returns a recent snapshot of allocated sandbox<->IPs.
@@ -1533,4 +1544,40 @@ func (ds *DataStore) DeleteFromContainerRule(entry *CheckpointEntry) {
 		// Continue to prune, even on deletion error
 		ds.log.Errorf("failed to delete fromPod rule, addr=%s", addr.String())
 	}
+}
+
+type DataStoreAccess struct {
+	DataStores []*DataStore
+}
+
+func InitializeDataStores(networkCards int, defaultDataStorePath string, enablePD bool, log logger.Logger) *DataStoreAccess {
+	var dslist []*DataStore
+	log.Infof("Initializing %d datastores for managed network cards", networkCards)
+	for i := range networkCards {
+		dsBackingStorePath := defaultDataStorePath
+		if i > 0 {
+			baseName := strings.TrimSuffix(defaultDataStorePath, ".json")
+			dsBackingStorePath = fmt.Sprintf("%s-nic-%d.json", baseName, i)
+		}
+		checkpointer := NewJSONFile(dsBackingStorePath)
+		dslist = append(dslist, NewDataStore(log, checkpointer, enablePD))
+	}
+
+	return &DataStoreAccess{
+		DataStores: dslist,
+	}
+}
+
+func (ds *DataStoreAccess) GetDataStore(index int) *DataStore {
+	return ds.DataStores[index]
+}
+
+func (ds *DataStoreAccess) ReadAllDataStores(enableIPv6 bool) error {
+
+	for i := range ds.DataStores {
+		if err := ds.GetDataStore(i).ReadBackingStore(enableIPv6); err != nil {
+			return errors.Wrap(err, "Error while reading datastore")
+		}
+	}
+	return nil
 }

@@ -670,14 +670,15 @@ func TestPodIPv4Address(t *testing.T) {
 	_, _, err = ds.AssignPodIPv4Address(key4, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-4"})
 	assert.Error(t, err)
 	// Unassign unknown Pod
-	_, _, _, err = ds.UnassignPodIPAddress(key4)
+	_, _, _, _, err = ds.UnassignPodIPAddress(key4)
 	assert.Error(t, err)
 
-	_, _, deviceNum, err := ds.UnassignPodIPAddress(key2)
+	_, _, deviceNum, interfaces, err := ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, ds.assigned, 2)
 	assert.Equal(t, deviceNum, pod1Ns2Device)
+	assert.Equal(t, interfaces, 1)
 	assert.Equal(t, len(ds.eniPool["eni-2"].AvailableIPv4Cidrs), 1)
 	assert.Equal(t, ds.eniPool["eni-2"].AssignedIPv4Addresses(), 0)
 	expectedCheckpointData = &CheckpointData{
@@ -860,10 +861,11 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 		cmp.Diff(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
 	)
 
-	_, _, deviceNum, err := ds.UnassignPodIPAddress(key2)
+	_, _, deviceNum, interfaces, err := ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 16)
 	assert.Equal(t, ds.assigned, 2)
+	assert.Equal(t, interfaces, 1)
 	assert.Equal(t, deviceNum, pod1Ns2Device)
 	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 2)
@@ -919,7 +921,7 @@ func TestGetIPStatsV4(t *testing.T) {
 		*ds.GetIPStats("4"),
 	)
 
-	_, _, _, err = ds.UnassignPodIPAddress(key2)
+	_, _, _, _, err = ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -972,7 +974,7 @@ func TestGetIPStatsV4WithPD(t *testing.T) {
 		*ds.GetIPStats("4"),
 	)
 
-	_, _, _, err = ds.UnassignPodIPAddress(key2)
+	_, _, _, _, err = ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
