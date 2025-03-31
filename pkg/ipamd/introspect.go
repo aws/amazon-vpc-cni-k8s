@@ -123,7 +123,7 @@ func (c *IPAMContext) setupIntrospectionServer() *http.Server {
 
 func eniV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		responseJSON, err := json.Marshal(ipam.dataStore.GetENIInfos())
+		responseJSON, err := json.Marshal(ipam.dataStore[0].GetENIInfos())
 		if err != nil {
 			log.Errorf("Failed to marshal ENI data: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
