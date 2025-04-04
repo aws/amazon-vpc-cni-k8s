@@ -43,6 +43,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
+	v1 "github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/api/v1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
@@ -789,7 +790,7 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 			}
 
 			// Delete IPs from datastore
-			var deletedCidrs []datastore.CidrInfo
+			var deletedCidrs []v1.CidrInfo
 			for _, toDelete := range cidrs {
 				// Do not force the delete, since a freeable Cidr might have been assigned to a pod
 				// before we get around to deleting it.
@@ -1255,7 +1256,7 @@ func getWarmPrefixTarget() int {
 }
 
 // logPoolStats logs usage information for allocated addresses/prefixes.
-func (c *IPAMContext) logPoolStats(dataStoreStats *datastore.DataStoreStats) {
+func (c *IPAMContext) logPoolStats(dataStoreStats *v1.DataStoreStats) {
 	prefix := "IP pool stats"
 	if c.enablePrefixDelegation {
 		prefix = "Prefix pool stats"
@@ -1905,7 +1906,7 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 
 // datastoreTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET, accounting for the MINIMUM_IP_TARGET.
 // With prefix delegation, this function determines the number of Prefixes `short` or `over`
-func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats) (short int, over int, enabled bool) {
+func (c *IPAMContext) datastoreTargetState(stats *v1.DataStoreStats) (short int, over int, enabled bool) {
 	if !c.warmIPTargetsDefined() {
 		// there is no WARM_IP_TARGET defined and no MINIMUM_IP_TARGET, fallback to use all IP addresses on ENI
 		return 0, 0, false
@@ -2239,7 +2240,7 @@ func (c *IPAMContext) hasRoomForEni() bool {
 	return c.dataStore.GetENIs() < (c.maxENI - c.unmanagedENI - trunkEni)
 }
 
-func (c *IPAMContext) isDatastorePoolTooLow() (bool, *datastore.DataStoreStats) {
+func (c *IPAMContext) isDatastorePoolTooLow() (bool, *v1.DataStoreStats) {
 	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
 	// If max pods has been reached, pool is not too low
 	if stats.TotalIPs >= c.maxPods {
@@ -2268,7 +2269,7 @@ func (c *IPAMContext) isDatastorePoolTooLow() (bool, *datastore.DataStoreStats) 
 	return poolTooLow, stats
 }
 
-func (c *IPAMContext) isDatastorePoolTooHigh(stats *datastore.DataStoreStats) bool {
+func (c *IPAMContext) isDatastorePoolTooHigh(stats *v1.DataStoreStats) bool {
 	// NOTE: IPs may be allocated in chunks (full ENIs of prefixes), so the "too-high" condition does not check max pods. The limit is enforced on the allocation side.
 	_, over, warmTargetDefined := c.datastoreTargetState(stats)
 	if warmTargetDefined {
@@ -2293,7 +2294,7 @@ func (c *IPAMContext) warmPrefixTargetDefined() bool {
 }
 
 // DeallocCidrs frees IPs and Prefixes from EC2
-func (c *IPAMContext) DeallocCidrs(eniID string, deletableCidrs []datastore.CidrInfo) {
+func (c *IPAMContext) DeallocCidrs(eniID string, deletableCidrs []v1.CidrInfo) {
 	var deletableIPs []string
 	var deletablePrefixes []string
 
