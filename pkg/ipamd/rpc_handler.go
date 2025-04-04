@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	v1 "github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/api/v1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/rpc"
@@ -163,12 +164,12 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			log.Errorf("Unable to generate IPAMKey from %+v", in)
 			return &failureResponse, nil
 		}
-		ipamKey := datastore.IPAMKey{
+		ipamKey := v1.IPAMKey{
 			ContainerID: in.ContainerID,
 			IfName:      in.IfName,
 			NetworkName: in.NetworkName,
 		}
-		ipamMetadata := datastore.IPAMMetadata{
+		ipamMetadata := v1.IPAMMetadata{
 			K8SPodNamespace: in.K8S_POD_NAMESPACE,
 			K8SPodName:      in.K8S_POD_NAME,
 		}
@@ -254,7 +255,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		return nil, err
 	}
 
-	ipamKey := datastore.IPAMKey{
+	ipamKey := v1.IPAMKey{
 		ContainerID: in.ContainerID,
 		IfName:      in.IfName,
 		NetworkName: in.NetworkName,
