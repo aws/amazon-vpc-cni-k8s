@@ -97,6 +97,10 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.name
+          {{- if .Values.envFrom }}
+          envFrom:
+          {{- toYaml .Values.envFrom | nindent 12 }}
+          {{- end }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
