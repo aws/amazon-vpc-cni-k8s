@@ -660,7 +660,18 @@ func (c *IPAMContext) configureIPRulesForPods() error {
 }
 
 func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
-	newVPCCIDRs, err := c.awsClient.GetVPCIPv4CIDRs()
+	var newVPCCIDRs []string
+	var err error
+	var primaryIP net.IP
+
+	if c.enableIPv6 {
+		newVPCCIDRs, err = c.awsClient.GetVPCIPv6CIDRs()
+		primaryIP = c.awsClient.GetLocalIPv6()
+	} else {
+		newVPCCIDRs, err = c.awsClient.GetVPCIPv4CIDRs()
+		primaryIP = c.awsClient.GetLocalIPv4()
+	}
+
 	if err != nil {
 		log.Warnf("skipping periodic update to VPC CIDRs due to error: %v", err)
 		return oldVPCCIDRs
@@ -669,7 +680,6 @@ func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 	old := sets.NewString(oldVPCCIDRs...)
 	new := sets.NewString(newVPCCIDRs...)
 	if !old.Equal(new) {
-		primaryIP := c.awsClient.GetLocalIPv4()
 		err = c.networkClient.UpdateHostIptablesRules(newVPCCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP, c.enableIPv4,
 			c.enableIPv6)
 		if err != nil {
