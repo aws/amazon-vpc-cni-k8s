@@ -293,12 +293,12 @@ type TagMap map[string]string
 
 // DescribeAllENIsResult contains the fully
 type DescribeAllENIsResult struct {
-	ENIMetadata       []ENIMetadata
-	TagMap            map[string]TagMap
-	TrunkENI          string
-	EFAENIs           map[string]bool
-	MultiCardENIIDs   []string
-	NetworkCardENIMap map[int][]string
+	ENIMetadata     []ENIMetadata
+	TagMap          map[string]TagMap
+	TrunkENI        string
+	EFAENIs         map[string]bool
+	EFAOnlyENIs     map[string]bool
+	MultiCardENIIDs []string
 }
 
 // msSince returns milliseconds since start.
@@ -1390,9 +1390,6 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		return DescribeAllENIsResult{}, errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
 	}
 
-	// Get number of Network Cards supported by the instance
-	networkCards := len(cache.GetNetworkCards())
-
 	eniMap := make(map[string]ENIMetadata, len(allENIs))
 	var eniIDs []string
 	for _, eni := range allENIs {
@@ -1475,8 +1472,8 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 	// Collect ENI response into ENI metadata and tags.
 	var trunkENI string
 	var multiCardENIIDs []string
-	networkCardENIMap := make(map[int][]string, networkCards)
 	efaENIs := make(map[string]bool, 0)
+	efaOnlyENIs := make(map[string]bool, 0)
 	tagMap := make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
 
 	for _, ec2res := range ec2Response.NetworkInterfaces {
@@ -1488,11 +1485,10 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 			if aws.ToInt32(attachment.DeviceIndex) == 0 && aws.ToInt32(attachment.NetworkCardIndex) == 0 && !aws.ToBool(attachment.DeleteOnTermination) {
 				log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
 			}
-			// Maintain a mapping of NIC to ENIs
-			if attachment != nil {
-				networkCardENIMap[int(aws.ToInt32(attachment.NetworkCardIndex))] = append(networkCardENIMap[int(aws.ToInt32(attachment.NetworkCardIndex))], eniID)
-			}
 
+			if aws.ToInt32(attachment.NetworkCardIndex) > 0 {
+				multiCardENIIDs = append(multiCardENIIDs, eniID)
+			}
 		} else {
 			log.Infof("Got empty attachment for ENI %v", eniID)
 		}
@@ -1505,8 +1501,11 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		if interfaceType == "trunk" {
 			trunkENI = eniID
 		}
-		if interfaceType == "efa" || interfaceType == "efa-only" {
+		if interfaceType == "efa" {
 			efaENIs[eniID] = true
+		} else if interfaceType == "efa-only" {
+			efaENIs[eniID] = true
+			efaOnlyENIs[eniID] = true
 		}
 
 		if interfaceType != "efa-only" {
@@ -1524,12 +1523,13 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		tagMap[eniMetadata.ENIID] = convertSDKTagsToTags(ec2res.TagSet)
 	}
 	return DescribeAllENIsResult{
-		ENIMetadata:       verifiedENIs,
-		TagMap:            tagMap,
-		TrunkENI:          trunkENI,
-		EFAENIs:           efaENIs,
-		MultiCardENIIDs:   multiCardENIIDs,
-		NetworkCardENIMap: networkCardENIMap,
+		ENIMetadata:     verifiedENIs,
+		TagMap:          tagMap,
+		TrunkENI:        trunkENI,
+		EFAENIs:         efaENIs,
+		EFAOnlyENIs:     efaOnlyENIs,
+		MultiCardENIIDs: multiCardENIIDs,
+		// NetworkCardENIMap: networkCardENIMap,
 	}, nil
 }
 

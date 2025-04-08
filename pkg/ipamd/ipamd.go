@@ -195,7 +195,12 @@ const (
 
 	defaultNetworkPolicyMode = "standard"
 
-	DefaultNetworkCard = 0
+	// Network Card number of Primary ENI
+	DefaultNetworkCardIndex = 0
+
+	// Enable Multi NIC support in CNI
+	// This configures the ENIs on Network Card > 0 which is be used by pods that require multi-nic attachments
+	envEnableMultiNICSupport = "ENABLE_MULTI_NIC"
 )
 
 var log = logger.Get()
@@ -242,6 +247,7 @@ type IPAMContext struct {
 	enablePodIPAnnotation     bool
 	maxPods                   int // maximum number of pods that can be scheduled on the node
 	networkPolicyMode         string
+	enableMultiNICSupport     bool
 	withApiServer             bool
 }
 
@@ -250,7 +256,7 @@ type kubeletConfig struct {
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
-func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
+func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap, efaOnlyENIs map[string]bool) {
 	if len(tagMap) == 0 {
 		return
 	}
@@ -259,7 +265,8 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 	// if "no_manage" tag is present and is "not true" - ENI is managed
 	// if "instance_id" tag is present and is set to instanceID - ENI is managed since this was created by IPAMD
 	// if "no_manage" tag is not present or not IPAMD created ENI, check if we are in Manage Untagged Mode, default is true.
-	// if enableManageUntaggedMode is false, then consider all untagged ENIs as unmanaged.
+	// if enableManageUntaggedMode is false (defaults to true), then consider all untagged ENIs as unmanaged.
+	// With multicard support we need to mark all the EFA-only ENIs as unmanaged. EFA-only ENIs can only be attached to NIC > 0
 	for eniID, tags := range tagMap {
 		if _, found := tags[eniNoManageTagKey]; found {
 			if tags[eniNoManageTagKey] != "true" {
@@ -267,7 +274,7 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 			}
 		} else if _, found := tags[eniNodeTagKey]; found && tags[eniNodeTagKey] == c.awsClient.GetInstanceID() {
 			continue
-		} else if c.enableManageUntaggedMode {
+		} else if !efaOnlyENIs[eniID] && c.enableManageUntaggedMode {
 			continue
 		}
 
@@ -382,6 +389,7 @@ func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 	c.enablePodIPAnnotation = EnablePodIPAnnotation()
 	c.numNetworkCards = len(c.awsClient.GetNetworkCards())
 	c.unmanagedENI = make([]int, c.numNetworkCards)
+	c.enableMultiNICSupport = enableMultiNICSupport()
 
 	c.networkPolicyMode, err = getNetworkPolicyMode()
 	if err != nil {
@@ -451,6 +459,14 @@ func (c *IPAMContext) nodeInit() error {
 		log.Debugf("Failed to clean up stale AWS chains: %v", err)
 	}
 
+	if c.dataStoreAccess == nil {
+		dataStoreCount := 1
+		if c.enableMultiNICSupport {
+			dataStoreCount = c.numNetworkCards
+		}
+		c.dataStoreAccess = datastore.InitializeDataStores(dataStoreCount, dsBackingStorePath(), c.enablePrefixDelegation, log)
+	}
+
 	// Queries IMDS for all attached ENIs and then compares it against EC2.
 	// Groups the ENIs into different types
 	metadataResult, err := c.awsClient.DescribeAllENIs()
@@ -459,13 +475,13 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
-	c.setUnmanagedENIs(metadataResult.TagMap)
-	enis := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
-	fmt.Printf("datastore %+v", c.dataStoreAccess)
+	c.setUnmanagedENIs(metadataResult.TagMap, metadataResult.EFAOnlyENIs)
 
-	if c.dataStoreAccess == nil {
-		c.dataStoreAccess = datastore.InitializeDataStores(c.numNetworkCards, dsBackingStorePath(), c.enablePrefixDelegation, log)
+	if !c.enableMultiNICSupport {
+		c.awsClient.SetMultiCardENIs(metadataResult.MultiCardENIIDs)
 	}
+
+	enis := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
@@ -696,7 +712,7 @@ func (c *IPAMContext) updateIPStats(unmanaged int) {
 func (c *IPAMContext) StartNodeIPPoolManager() {
 	// For IPv6, if Security Groups for Pods is enabled, wait until trunk ENI is attached and add it to the datastore.
 	if c.enableIPv6 {
-		if c.enablePodENI && c.dataStoreAccess.GetDataStore(DefaultNetworkCard).GetTrunkENI() == "" {
+		if c.enablePodENI && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
 			for !c.checkForTrunkENI() {
 				time.Sleep(ipPoolMonitorInterval)
 			}
@@ -722,7 +738,7 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 
 func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
 	// When IPv4 Security Groups for Pods is configured, do not write to CNINode until there is room for a trunk ENI
-	if c.enablePodENI && c.enableIPv4 && c.dataStoreAccess.GetDataStore(DefaultNetworkCard).GetTrunkENI() == "" {
+	if c.enablePodENI && c.enableIPv4 && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
 		c.tryEnableSecurityGroupsForPods(ctx)
 	}
 
@@ -918,7 +934,7 @@ func (c *IPAMContext) createSecondaryIPv6ENIs(ctx context.Context) error {
 	log.Info("Attaching ENIs allowed")
 
 	for networkCard, ds := range c.dataStoreAccess.DataStores {
-		if networkCard == 0 {
+		if networkCard == DefaultNetworkCardIndex {
 			continue
 		}
 
@@ -1350,7 +1366,7 @@ func (c *IPAMContext) logPoolStats(dataStoreStats *datastore.DataStoreStats, net
 func (c *IPAMContext) tryEnableSecurityGroupsForPods(ctx context.Context) {
 
 	// For IPv4, check that there is room for a trunk ENI before patching CNINode CRD. We only check on the Default Network Card
-	if c.enableIPv4 && (c.dataStoreAccess.GetDataStore(DefaultNetworkCard).GetENIs() >= (c.maxENI - c.unmanagedENI[DefaultNetworkCard])) {
+	if c.enableIPv4 && (c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetENIs() >= (c.maxENI - c.unmanagedENI[DefaultNetworkCardIndex])) {
 		log.Error("No slot available for a trunk ENI to be attached.")
 		return
 	}
@@ -1371,7 +1387,7 @@ func (c *IPAMContext) tryEnableSecurityGroupsForPods(ctx context.Context) {
 // recheck if we need the ENI for prefix target.
 func (c *IPAMContext) shouldRemoveExtraENIs(stats *datastore.DataStoreStats, networkCard int) bool {
 	// When WARM_IP_TARGET is set, return true as verification is always done in getDeletableENI()
-	if c.warmIPTargetsDefined() {
+	if c.warmIPTargetsDefined() || networkCard > DefaultNetworkCardIndex {
 		return true
 	}
 
@@ -1455,7 +1471,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 	// To reduce the number of EC2 API calls, skip reconciliation if IPs were recently added to the datastore.
 	timeSinceLast := time.Since(c.lastNodeIPPoolAction)
 	// Make an exception if node needs a trunk ENI and one is not currently attached.
-	needsTrunkEni := c.enablePodENI && c.dataStoreAccess.GetDataStore(0).GetTrunkENI() == ""
+	needsTrunkEni := c.enablePodENI && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == ""
 	if timeSinceLast <= interval && !needsTrunkEni {
 		return
 	}
@@ -1477,18 +1493,19 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		return
 	}
 
-	attachedENIs := c.filterUnmanagedENIs(allENIs)
-	attachedENIsByNetworkCard := c.getENIsByNetworkCard(allENIs)
+	allManagedAndAttachedENIs := c.filterUnmanagedENIs(allENIs)
+	attachedENIsByNetworkCard := c.getENIsByNetworkCard(allManagedAndAttachedENIs)
 
 	for networkCard, ds := range c.dataStoreAccess.DataStores {
 		currentENIs := ds.GetENIInfos().ENIs
+		attachedENIs := attachedENIsByNetworkCard[networkCard]
 		trunkENI := ds.GetTrunkENI()
 		// Initialize the set with the known EFA interfaces
 		efaENIs := ds.GetEFAENIs()
 
 		// Check if a new ENI was added, if so we need to update the tags.
 		needToUpdateTags := false
-		for _, attachedENI := range attachedENIsByNetworkCard[networkCard] {
+		for _, attachedENI := range attachedENIs {
 			if _, ok := currentENIs[attachedENI.ENIID]; !ok {
 				needToUpdateTags = true
 				break
@@ -1512,9 +1529,15 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 			// Just copy values of the EFA set
 			efaENIs = metadataResult.EFAENIs
 			eniTagMap = metadataResult.TagMap
-			c.setUnmanagedENIs(metadataResult.TagMap)
-			// c.awsClient.SetMultiCardENIs(metadataResult.MultiCardENIIDs)
-			attachedENIs = c.filterUnmanagedENIs(metadataResult.ENIMetadata)
+
+			c.setUnmanagedENIs(metadataResult.TagMap, metadataResult.EFAOnlyENIs)
+
+			if !c.enableMultiNICSupport {
+				c.awsClient.SetMultiCardENIs(metadataResult.MultiCardENIIDs)
+			}
+
+			allManagedENIs := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
+			attachedENIs = c.getENIsByNetworkCard(allManagedENIs)[networkCard]
 		}
 
 		// Mark phase
@@ -1948,6 +1971,10 @@ func EnablePodENI() bool {
 	return utils.GetBoolAsStringEnvVar(envEnablePodENI, false)
 }
 
+func enableMultiNICSupport() bool {
+	return utils.GetBoolAsStringEnvVar(envEnableMultiNICSupport, false)
+}
+
 func getNetworkPolicyMode() (string, error) {
 	value, exists := os.LookupEnv(envNetworkPolicyMode)
 	if !exists {
@@ -1980,7 +2007,6 @@ func EnablePodIPAnnotation() bool {
 }
 
 // filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag
-// TODO: We have to mark some ENIs as primary on multlicard instance for IPv6 and the numfiltered count
 func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
 	numFiltered := 0
 	ret := make([]awsutils.ENIMetadata, 0, len(enis))
@@ -1989,19 +2015,31 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 		//Filter out any Unmanaged ENIs. VPC CNI will only work with Primary ENI in IPv6 Prefix Delegation mode until
 		//we open up IPv6 support in Secondary IP and Custom networking modes. Filtering out the ENIs here will
 		//help us avoid myriad of if/else loops elsewhere in the code.
-		// We shouldn't need the IsPrimaryENI check as ENIs not created by vpc-cni will be marked unmanaged (including trunk ENI)
+		//We shouldn't need the IsPrimaryENI check as ENIs not created by vpc-cni will be marked unmanaged (including trunk ENI)
+		//MultiCardENIs are only added when ENABLE_MULTI_CARD option is disabled on CNI. It will be an empty list when CNI manages multi card interfaces
+		isMultiCardENI := c.awsClient.IsMultiCardENI(eni.ENIID)
+		isUnmanagedENI := c.awsClient.IsUnmanagedENI(eni.ENIID)
+
 		if c.enableIPv6 {
-			if !c.awsClient.IsPrimaryENI(eni.ENIID) && c.awsClient.IsUnmanagedENI(eni.ENIID) {
-				log.Debugf("Skipping ENI %s: IPv6 Mode is enabled and VPC CNI will only ENIs created by it in v6 PD mode",
-					eni.ENIID)
-				numFiltered++
-				c.unmanagedENI[eni.NetworkCard] += 1
-				continue
+			if !c.awsClient.IsPrimaryENI(eni.ENIID) {
+				if isUnmanagedENI {
+					log.Debugf("Skipping ENI %s: IPv6 Mode is enabled and VPC CNI will only ENIs created by it in v6 PD mode",
+						eni.ENIID)
+					numFiltered++
+					c.unmanagedENI[eni.NetworkCard] += 1
+					continue
+				} else if isMultiCardENI {
+					log.Debugf("Skipping ENI %s: since on non-zero network card", eni.ENIID)
+					continue
+				}
 			}
-		} else if c.awsClient.IsUnmanagedENI(eni.ENIID) {
+		} else if isUnmanagedENI {
 			log.Debugf("Skipping ENI %s: since it is unmanaged", eni.ENIID)
 			numFiltered++
 			c.unmanagedENI[eni.NetworkCard] += 1
+			continue
+		} else if isMultiCardENI {
+			log.Debugf("Skipping ENI %s: since on non-zero network card", eni.ENIID)
 			continue
 		}
 		ret = append(ret, eni)
@@ -2013,7 +2051,15 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 // datastoreTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET, accounting for the MINIMUM_IP_TARGET.
 // With prefix delegation, this function determines the number of Prefixes `short` or `over`
 func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, networkCard int) (short int, over int, enabled bool) {
-	if !c.warmIPTargetsDefined() {
+
+	warmIPTarget := c.warmIPTarget
+	minimumIPTarget := c.minimumIPTarget
+
+	if networkCard > DefaultNetworkCardIndex {
+		// multi card ENIs will use WARM_IP_TARGET=1 and MINIMUM_IP_TARGET=1 by default
+		warmIPTarget = 1
+		minimumIPTarget = 1
+	} else if !c.warmIPTargetsDefined() {
 		// there is no WARM_IP_TARGET defined and no MINIMUM_IP_TARGET, fallback to use all IP addresses on ENI
 		return 0, 0, false
 	}
@@ -2022,21 +2068,22 @@ func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, netw
 	if stats == nil {
 		stats = c.dataStoreAccess.GetDataStore(networkCard).GetIPStats(ipV4AddrFamily)
 	}
+
 	available := stats.AvailableAddresses()
 
 	// short is greater than 0 when we have fewer available IPs than the warm IP target
-	short = max(c.warmIPTarget-available, 0)
+	short = max(warmIPTarget-available, 0)
 
 	// short is greater than the warm IP target alone when we have fewer total IPs than the minimum target
-	short = max(short, c.minimumIPTarget-stats.TotalIPs)
+	short = max(short, minimumIPTarget-stats.TotalIPs)
 
 	// over is the number of available IPs we have beyond the warm IP target
-	over = max(available-c.warmIPTarget, 0)
+	over = max(available-warmIPTarget, 0)
 
 	// over is less than the warm IP target alone if it would imply reducing total IPs below the minimum target
-	over = max(min(over, stats.TotalIPs-c.minimumIPTarget), 0)
+	over = max(min(over, stats.TotalIPs-minimumIPTarget), 0)
 
-	if c.enablePrefixDelegation {
+	if networkCard == DefaultNetworkCardIndex && c.enablePrefixDelegation {
 		// short : number of IPs short to reach warm targets
 		// over : number of IPs over the warm targets
 		_, numIPsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
@@ -2356,7 +2403,7 @@ func (c *IPAMContext) isDatastorePoolEmpty(networkCard int) bool {
 // Return whether the maximum number of ENIs that can be attached to the node has already been reached
 func (c *IPAMContext) hasRoomForEni(networkCard int) bool {
 	trunkEni := 0
-	if c.enablePodENI && networkCard == DefaultNetworkCard && c.dataStoreAccess.GetDataStore(DefaultNetworkCard).GetTrunkENI() == "" {
+	if c.enablePodENI && networkCard == DefaultNetworkCardIndex && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
 		trunkEni = 1
 	}
 	return c.dataStoreAccess.GetDataStore(networkCard).GetENIs() < (c.maxENI - c.unmanagedENI[networkCard] - trunkEni)

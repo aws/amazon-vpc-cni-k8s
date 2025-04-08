@@ -107,7 +107,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 					log.Info("SGP pod doesn't support multiple NIC attachments for pod, falling back to default one interface per pod")
 				}
 				// Check that we have a trunk
-				trunkENI := s.ipamContext.dataStoreAccess.GetDataStore(DefaultNetworkCard).GetTrunkENI()
+				trunkENI := s.ipamContext.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI()
 				if trunkENI == "" {
 					log.Warn("Send AddNetworkReply: No trunk ENI found, cannot add a pod ENI")
 					return &failureResponse, nil
@@ -187,6 +187,10 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 		ipsAllocated := 0
 
 		if in.RequiresMultiNICAttachment {
+			if !s.ipamContext.enableMultiNICSupport {
+				log.Errorf("enable multi-nic feature on CNI for creating multi-nic-attachment pods %+v", in)
+				return &failureResponse, nil
+			}
 			ipsRequired = len(s.ipamContext.dataStoreAccess.DataStores)
 		}
 
@@ -425,17 +429,17 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 
 		if err != nil {
 			errors = multiErr.Append(errors, err)
+		} else {
+			ipAddr = append(ipAddr, &rpc.IPAddress{
+				IPv4Addr:     ipv4Addr,
+				IPv6Addr:     ipv6Addr,
+				DeviceNumber: int32(deviceNumber),
+				RouteTableId: int32(networkCard*s.ipamContext.maxENI + deviceNumber + 1),
+			})
+			ipsFound += 1
+
+			log.Debugf("IPs allocated for the pod: %d, IPs found: %d", ipsAllocated, ipsFound)
 		}
-
-		ipAddr = append(ipAddr, &rpc.IPAddress{
-			IPv4Addr:     ipv4Addr,
-			IPv6Addr:     ipv6Addr,
-			DeviceNumber: int32(deviceNumber),
-			RouteTableId: int32(networkCard*s.ipamContext.maxENI + deviceNumber + 1),
-		})
-		ipsFound += 1
-
-		log.Debugf("IPs allocated for the pod: %d, IPs found: %d", ipsAllocated, ipsFound)
 	}
 
 	log.Infof("Send DelNetworkReply: IPAddress: %+v, err: %v", ipAddr, errors)
