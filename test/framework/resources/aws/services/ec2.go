@@ -36,7 +36,7 @@ type EC2 interface {
 	AssociateVPCCIDRBlock(ctx context.Context, vpcId string, cidrBlock string) (*ec2.AssociateVpcCidrBlockOutput, error)
 	TerminateInstance(ctx context.Context, instanceIDs []string) error
 	DisAssociateVPCCIDRBlock(ctx context.Context, associationID string) error
-	DescribeSubnet(ctx context.Context, subnetID string) (*ec2.DescribeSubnetsOutput, error)
+	DescribeSubnets(ctx context.Context, subnetIDs []string) (*ec2.DescribeSubnetsOutput, error)
 	CreateSubnet(ctx context.Context, cidrBlock string, vpcID string, az string) (*ec2.CreateSubnetOutput, error)
 	DeleteSubnet(ctx context.Context, subnetID string) error
 	DescribeRouteTables(ctx context.Context, subnetID string) (*ec2.DescribeRouteTablesOutput, error)
@@ -290,9 +290,9 @@ func (d *defaultEC2) CreateSubnet(ctx context.Context, cidrBlock string, vpcID s
 	return d.client.CreateSubnet(ctx, createSubnetInput)
 }
 
-func (d *defaultEC2) DescribeSubnet(ctx context.Context, subnetID string) (*ec2.DescribeSubnetsOutput, error) {
+func (d *defaultEC2) DescribeSubnets(ctx context.Context, subnetIDs []string) (*ec2.DescribeSubnetsOutput, error) {
 	describeSubnetInput := &ec2.DescribeSubnetsInput{
-		SubnetIds: []string{subnetID},
+		SubnetIds: subnetIDs,
 	}
 	return d.client.DescribeSubnets(ctx, describeSubnetInput)
 }
