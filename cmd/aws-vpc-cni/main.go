@@ -83,6 +83,7 @@ const (
 	defaultEnPrefixDelegation    = false
 	defaultIPCooldownPeriod      = 30
 	defaultDisablePodV6          = false
+	defaultNodeAgentEnabled      = "true"
 
 	envHostCniBinPath        = "HOST_CNI_BIN_PATH"
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
@@ -106,6 +107,7 @@ const (
 	envRandomizeSNAT         = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 	envIPCooldownPeriod      = "IP_COOLDOWN_PERIOD"
 	envDisablePodV6          = "DISABLE_POD_V6"
+	envNodeAgentEnabled      = "NODE_AGENT_ENABLED"
 )
 
 // NetConfList describes an ordered list of networks.
@@ -266,6 +268,8 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 	pluginLogFile := utils.GetEnv(envPluginLogFile, defaultPluginLogFile)
 	pluginLogLevel := utils.GetEnv(envPluginLogLevel, defaultPluginLogLevel)
 	randomizeSNAT := utils.GetEnv(envRandomizeSNAT, defaultRandomizeSNAT)
+	// check if np agent container is enabled
+	nodeAgentEnabled := utils.GetEnv(envNodeAgentEnabled, defaultNodeAgentEnabled)
 
 	netconf := string(byteValue)
 	netconf = strings.Replace(netconf, "__VETHPREFIX__", vethPrefix, -1)
@@ -280,6 +284,7 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 	netconf = strings.Replace(netconf, "__EGRESSPLUGINIPAMDATADIR__", egressIPAMDataDir, -1)
 	netconf = strings.Replace(netconf, "__RANDOMIZESNAT__", randomizeSNAT, -1)
 	netconf = strings.Replace(netconf, "__NODEIP__", nodeIP, -1)
+	netconf = strings.Replace(netconf, "__NODEAGENTENABLED__", nodeAgentEnabled, -1)
 
 	byteValue = []byte(netconf)
 

@@ -73,6 +73,8 @@ type NetConf struct {
 	PluginLogFile string `json:"pluginLogFile"`
 
 	PluginLogLevel string `json:"pluginLogLevel"`
+
+	NodeAgentEnabled string `json:"NodeAgentEnabled"`
 }
 
 // K8sArgs is the valid CNI_ARGS used for Kubernetes
@@ -283,15 +285,25 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	// Set up a connection to the network policy agent
 	// Cx might have removed np container if they are not using network policies
-	// If we are not able to connect to np agent we do not return return error here. If NP agent grpc is not up
-	// and listening, NP agent will be in crash loop and we will catch the issue there
+	// If np container not enabled, skip network policy configuration for pod
+	nodeAgentEnabled, err := strconv.ParseBool(conf.NodeAgentEnabled)
+	if err != nil {
+		log.Errorf("Failed to parse nodeAgentEnabled: %v", err)
+		return errors.New("add cmd: failed to setup network policy")
+	}
+	if !nodeAgentEnabled {
+		log.Infof("NodeAgentEnabled set to false")
+		return cniTypes.PrintResult(result, conf.CNIVersion)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), npAgentConnTimeout*time.Second) // Set timeout
 	defer cancel()
 	npConn, err := grpcClient.DialContext(ctx, npAgentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
-	if err != nil {
-		log.Infof("Failed to connect to network policy agent: %v. Network Policy agent might not be running", err)
-		return cniTypes.PrintResult(result, conf.CNIVersion)
-	}
+	// No need to cleanup IP and network, kubelet will send delete.
+	if err != nil  {
+		log.Errorf("Failed to connect to network policy agent: %v", err)
+		return errors.New("add cmd: failed to setup network policy")
+	} 
 	defer npConn.Close()
 
 	//Make a GRPC call for network policy agent
