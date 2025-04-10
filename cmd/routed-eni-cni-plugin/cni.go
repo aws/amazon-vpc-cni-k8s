@@ -300,10 +300,10 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	defer cancel()
 	npConn, err := grpcClient.DialContext(ctx, npAgentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	// No need to cleanup IP and network, kubelet will send delete.
-	if err != nil  {
+	if err != nil {
 		log.Errorf("Failed to connect to network policy agent: %v", err)
 		return errors.New("add cmd: failed to setup network policy")
-	} 
+	}
 	defer npConn.Close()
 
 	//Make a GRPC call for network policy agent
@@ -461,6 +461,16 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		}
 	} else {
 		log.Warnf("Container %s did not have a valid IP %s", args.ContainerID, r.IPv4Addr)
+	}
+
+	nodeAgentEnabled, err := strconv.ParseBool(conf.NodeAgentEnabled)
+	if err != nil {
+		log.Errorf("Failed to parse nodeAgentEnabled: %v", err)
+		return nil
+	}
+	if !nodeAgentEnabled {
+		log.Infof("NodeAgentEnabled set to false")
+		return nil
 	}
 
 	// Set up a connection to the network policy agent

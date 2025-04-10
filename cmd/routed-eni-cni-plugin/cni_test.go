@@ -39,16 +39,17 @@ import (
 )
 
 const (
-	containerID    = "test-container"
-	netNS          = "/proc/ns/1234"
-	ifName         = "eth0"
-	cniVersion     = "1.1"
-	cniName        = "aws-cni"
-	pluginLogLevel = "Debug"
-	pluginLogFile  = "/var/log/aws-routed-eni/plugin.log"
-	cniType        = "aws-cni"
-	ipAddr         = "10.0.1.15"
-	devNum         = 4
+	containerID      = "test-container"
+	netNS            = "/proc/ns/1234"
+	ifName           = "eth0"
+	cniVersion       = "1.1"
+	cniName          = "aws-cni"
+	pluginLogLevel   = "Debug"
+	pluginLogFile    = "/var/log/aws-routed-eni/plugin.log"
+	cniType          = "aws-cni"
+	ipAddr           = "10.0.1.15"
+	devNum           = 4
+	nodeAgentEnabled = "true"
 )
 
 var netConf = &NetConf{
@@ -60,6 +61,7 @@ var netConf = &NetConf{
 	PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
 	PluginLogLevel:     pluginLogLevel,
 	PluginLogFile:      pluginLogFile,
+	NodeAgentEnabled:   nodeAgentEnabled,
 }
 
 func setup(t *testing.T) (*gomock.Controller,
@@ -203,6 +205,53 @@ func TestCmdAddWithNPenabledWithErr(t *testing.T) {
 
 	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Error(t, err)
+}
+
+func TestCmdAddWithNodeAgentDisabled(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+
+	var netConfCustom = &NetConf{
+		NetConf: types.NetConf{
+			CNIVersion: cniVersion,
+			Name:       cniName,
+			Type:       cniType,
+		},
+		PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+		PluginLogLevel:     pluginLogLevel,
+		PluginLogFile:      pluginLogFile,
+		NodeAgentEnabled:   "false",
+	}
+
+	stdinData, _ := json.Marshal(netConfCustom)
+
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
+		Netns:     netNS,
+		IfName:    ifName,
+		StdinData: stdinData}
+
+	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
+
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+
+	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
+	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
+	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
+
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum, NetworkPolicyMode: "none"}
+	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
+
+	v4Addr := &net.IPNet{
+		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
+		Mask: net.IPv4Mask(255, 255, 255, 255),
+	}
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
+		v4Addr, nil, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any()).Return(nil)
+
+	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil).Times(1)
+
+	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
 }
 
 func TestCmdAddNetworkErr(t *testing.T) {
@@ -373,6 +422,51 @@ func TestCmdDelErrTeardown(t *testing.T) {
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Error(t, err)
+}
+
+func TestCmdDelWithNodeAgentDisabled(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+
+	var netConfCustom = &NetConf{
+		NetConf: types.NetConf{
+			CNIVersion: cniVersion,
+			Name:       cniName,
+			Type:       cniType,
+		},
+		PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+		PluginLogLevel:     pluginLogLevel,
+		PluginLogFile:      pluginLogFile,
+		NodeAgentEnabled:   "false",
+	}
+
+	stdinData, _ := json.Marshal(netConfCustom)
+
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
+		Netns:     netNS,
+		IfName:    ifName,
+		StdinData: stdinData}
+
+	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
+
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+
+	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
+	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
+	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
+
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
+	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
+
+	addr := &net.IPNet{
+		IP:   net.ParseIP(delNetworkReply.IPv4Addr),
+		Mask: net.IPv4Mask(255, 255, 255, 255),
+	}
+
+	mocksNetwork.EXPECT().TeardownPodNetwork(addr, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(nil)
+
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
 }
 
 func TestCmdAddForPodENINetwork(t *testing.T) {
