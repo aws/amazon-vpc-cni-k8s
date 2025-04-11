@@ -185,7 +185,6 @@ const (
 
 	// envEnableNetworkPolicy is used to enable IPAMD/CNI to send pod create events to network policy agent.
 	envNetworkPolicyMode     = "NETWORK_POLICY_ENFORCING_MODE"
-	defaultNetworkPolicyMode = "standard"
 
 	defaultMaxPodsFromKubelet = 110
 	kubeletConfigPath         = "/host/etc/kubernetes/kubelet/kubelet-config.json"
@@ -1846,13 +1845,14 @@ func EnablePodENI() bool {
 }
 
 func getNetworkPolicyMode() (string, error) {
-	if value := os.Getenv(envNetworkPolicyMode); value != "" {
-		if utils.IsValidNetworkPolicyEnforcingMode(value) {
-			return value, nil
-		}
-		return "", errors.New("invalid Network policy mode, supported modes: none, strict, standard")
+	value, exists := os.LookupEnv(envNetworkPolicyMode)
+	if !exists {
+		return "", nil
 	}
-	return defaultNetworkPolicyMode, nil
+	if utils.IsValidNetworkPolicyEnforcingMode(value) {
+		return value, nil
+	}
+	return "", errors.New("invalid Network policy mode, supported modes: none, strict, standard")
 }
 
 func usePrefixDelegation() bool {

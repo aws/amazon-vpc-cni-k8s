@@ -283,14 +283,17 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 	// Set up a connection to the network policy agent
 	// Cx might have removed np container if they are not using network policies
-	// If we are not able to connect to np agent we do not return return error here. If NP agent grpc is not up
-	// and listening, NP agent will be in crash loop and we will catch the issue there
+	// If NETWORK_POLICY_ENFORCING_MODE is not set, we will not configure anything related to NP
+	if r.NetworkPolicyMode == "" {
+		log.Infof("NETWORK_POLICY_ENFORCING_MODE is not set")
+		return cniTypes.PrintResult(result, conf.CNIVersion)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), npAgentConnTimeout*time.Second) // Set timeout
 	defer cancel()
 	npConn, err := grpcClient.DialContext(ctx, npAgentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
-		log.Infof("Failed to connect to network policy agent: %v. Network Policy agent might not be running", err)
-		return cniTypes.PrintResult(result, conf.CNIVersion)
+		log.Errorf("Failed to connect to network policy agent: %v", err)
+		return errors.New("add cmd: failed to setup network policy")
 	}
 	defer npConn.Close()
 
@@ -451,6 +454,10 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		log.Warnf("Container %s did not have a valid IP %s", args.ContainerID, r.IPv4Addr)
 	}
 
+	if r.NetworkPolicyMode == "" {
+		log.Infof("NETWORK_POLICY_ENFORCING_MODE is not set")
+		return nil
+	}
 	// Set up a connection to the network policy agent
 	ctx, cancel := context.WithTimeout(context.Background(), npAgentConnTimeout*time.Second) // Set timeout
 	defer cancel()

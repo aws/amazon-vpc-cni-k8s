@@ -304,7 +304,8 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 			return &rpc.DelNetworkReply{
 				Success:   true,
 				PodVlanId: int32(podENIData[0].VlanID),
-				IPv4Addr:  podENIData[0].PrivateIP}, err
+				IPv4Addr:  podENIData[0].PrivateIP, 
+				NetworkPolicyMode: s.ipamContext.networkPolicyMode}, err
 		}
 	}
 
@@ -316,9 +317,9 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		}
 	}
 
-	log.Infof("Send DelNetworkReply: IPv4Addr: %s, IPv6Addr: %s, DeviceNumber: %d, err: %v", ipv4Addr, ipv6Addr, deviceNumber, err)
+	log.Infof("Send DelNetworkReply: IPv4Addr: %s, IPv6Addr: %s, DeviceNumber: %d, NetworkPolicyMode: %s, err: %v", ipv4Addr, ipv6Addr, deviceNumber, s.ipamContext.networkPolicyMode, err)
 
-	return &rpc.DelNetworkReply{Success: err == nil, IPv4Addr: ipv4Addr, IPv6Addr: ipv6Addr, DeviceNumber: int32(deviceNumber)}, err
+	return &rpc.DelNetworkReply{Success: err == nil, IPv4Addr: ipv4Addr, IPv6Addr: ipv6Addr, DeviceNumber: int32(deviceNumber), NetworkPolicyMode: s.ipamContext.networkPolicyMode}, err
 }
 
 func (s *server) GetNetworkPolicyConfigs(ctx context.Context, e *emptypb.Empty) (*rpc.NetworkPolicyAgentConfigReply, error) {
