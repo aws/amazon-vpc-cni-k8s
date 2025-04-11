@@ -170,7 +170,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 						IPv4Addr:     ipv4Addr,
 						IPv6Addr:     ipv6Addr,
 						DeviceNumber: int32(deviceNumber),
-						RouteTableId: int32(deviceNumber), // Need to update to route table number
+						RouteTableId: int32(deviceNumber) + 1, // This will always be device number + 1 as SGP won't run on multi-NIC
 					})
 				} else {
 					log.Infof("Send AddNetworkReply: failed to get Branch ENI resource")
@@ -313,7 +313,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 
 	resp.Success = errors == nil
 
-	log.Infof("Send AddNetworkReply: Success: %t IPAddr: %+v, err: %v", resp.Success, resp.IPAddress, err)
+	log.Infof("Send AddNetworkReply: Success: %t IPAddr: %+v, resp: %+v, err: %v", resp.Success, resp.IPAddress, resp, err)
 	return &resp, nil
 }
 

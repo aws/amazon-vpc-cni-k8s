@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
@@ -123,7 +124,11 @@ func (c *IPAMContext) setupIntrospectionServer() *http.Server {
 
 func eniV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		responseJSON, err := json.Marshal(ipam.dataStore[0].GetENIInfos())
+		eniInfos := make(map[int]*datastore.ENIInfos, len(ipam.dataStoreAccess.DataStores))
+		for networkCard, ds := range ipam.dataStoreAccess.DataStores {
+			eniInfos[networkCard] = ds.GetENIInfos()
+		}
+		responseJSON, err := json.Marshal(eniInfos)
 		if err != nil {
 			log.Errorf("Failed to marshal ENI data: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
