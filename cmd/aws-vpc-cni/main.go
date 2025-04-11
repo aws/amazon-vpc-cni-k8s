@@ -83,6 +83,7 @@ const (
 	defaultEnPrefixDelegation    = false
 	defaultIPCooldownPeriod      = 30
 	defaultDisablePodV6          = false
+	defaultEnableMultiNICSupport = false
 
 	envHostCniBinPath        = "HOST_CNI_BIN_PATH"
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
@@ -106,6 +107,7 @@ const (
 	envRandomizeSNAT         = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 	envIPCooldownPeriod      = "IP_COOLDOWN_PERIOD"
 	envDisablePodV6          = "DISABLE_POD_V6"
+	envEnableMultiNICSupport = "ENABLE_MULTI_NIC"
 )
 
 // NetConfList describes an ordered list of networks.

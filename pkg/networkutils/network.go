@@ -58,6 +58,9 @@ const (
 	// Rule priority for traffic destined to pod IP
 	ToContainerRulePriority = 512
 
+	// From Interface priority for multi-homed pods
+	FromInterfaceRulePriority = 1
+
 	// 513 - 1023, can be used for priority lower than fromPodRule but higher than default nonVPC CIDR rule
 
 	// 1024 is reserved for (ip rule not to <VPC's subnet> table main)
@@ -148,7 +151,7 @@ type NetworkAPIs interface {
 	SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool,
 		v4Enabled bool, v6Enabled bool) error
 	// SetupENINetwork performs ENI level network configuration. Not needed on the primary ENI
-	SetupENINetwork(eniIP string, mac string, deviceNumber int, subnetCIDR string) error
+	SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, networkCard int, eniSubnetCIDR string, maxENIPerNIC int) error
 	// UpdateHostIptablesRules updates the nat table iptables rules on the host
 	UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v4Enabled bool, v6Enabled bool) error
 	CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error
@@ -287,7 +290,7 @@ func (n *linuxNetwork) setupRuleToBlockNodeLocalAccess(protocol iptables.Protoco
 }
 
 // SetupHostNetwork performs node level network configuration
-func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool,
+func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool,
 	v4Enabled bool, v6Enabled bool) error {
 	log.Info("Setting up host network... ")
 
@@ -366,7 +369,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcv4CIDRs []string, primaryMAC string, 
 		}
 	}
 
-	return n.updateHostIptablesRules(vpcv4CIDRs, primaryMAC, primaryAddr, v4Enabled, v6Enabled)
+	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr, v4Enabled, v6Enabled)
 }
 
 // UpdateHostIptablesRules updates the NAT table rules based on the VPC CIDRs configuration
@@ -429,10 +432,6 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 
 	ipProtocol := iptables.ProtocolIPv4
 	if v6Enabled {
-		// Essentially a stub function for now in V6 mode. We will need it when we support v6 in secondary IP and
-		// custom networking modes. We don't need to install any SNAT rules in v6 mode and currently there is no need
-		// to mark packets entering via Primary ENI as all the pods in v6 mode will be behind primary ENI. Will have to
-		// start doing that once we start supporting custom networking mode in v6.
 		ipProtocol = iptables.ProtocolIPv6
 	}
 
@@ -441,27 +440,25 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 		return errors.Wrap(err, "host network setup: failed to create iptables")
 	}
 
-	if v4Enabled {
-		iptablesSNATRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt)
-		if err != nil {
-			return err
-		}
-		if err := n.updateIptablesRules(iptablesSNATRules, ipt); err != nil {
-			return err
-		}
+	iptablesSNATRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt, v6Enabled)
+	if err != nil {
+		return err
+	}
+	if err := n.updateIptablesRules(iptablesSNATRules, ipt); err != nil {
+		return err
+	}
 
-		iptablesConnmarkRules, err := n.buildIptablesConnmarkRules(vpcCIDRs, ipt)
-		if err != nil {
-			return err
-		}
-		if err := n.updateIptablesRules(iptablesConnmarkRules, ipt); err != nil {
-			return err
-		}
+	iptablesConnmarkRules, err := n.buildIptablesConnmarkRules(vpcCIDRs, ipt)
+	if err != nil {
+		return err
+	}
+	if err := n.updateIptablesRules(iptablesConnmarkRules, ipt); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *net.IP, primaryIntf string, ipt iptableswrapper.IPTablesIface) ([]iptablesRule, error) {
+func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *net.IP, primaryIntf string, ipt iptableswrapper.IPTablesIface, v6Enabled bool) ([]iptablesRule, error) {
 	type snatCIDR struct {
 		cidr        string
 		isExclusion bool
@@ -499,6 +496,7 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 			"-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0",
 		}})
 
+	// Exclude VPC traffic from SNAT rule
 	for _, cidr := range allCIDRs {
 		comment := "AWS SNAT CHAIN"
 		if cidr.isExclusion {
@@ -513,6 +511,18 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 			chain:       chain,
 			rule: []string{
 				"-d", cidr.cidr, "-m", "comment", "--comment", comment, "-j", "RETURN",
+			}})
+	}
+
+	// Exclude Multicast link local traffic from SNAT rule. This is required for DHCPv6
+	if v6Enabled {
+		iptableRules = append(iptableRules, iptablesRule{
+			name:        chain,
+			shouldExist: !n.useExternalSNAT,
+			table:       "nat",
+			chain:       chain,
+			rule: []string{
+				"-d", "ff00::/8", "-m", "comment", "--comment", "SKIP LINKLOCAL", "-j", "RETURN",
 			}})
 	}
 
@@ -1015,21 +1025,27 @@ func GetIPv4Gateway(eniSubnetCIDR *net.IPNet) net.IP {
 }
 
 // SetupENINetwork adds default route to route table (eni-<eni_table>), so it does not need to be called on the primary ENI
-func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCIDR string) error {
-	return setupENINetwork(eniIP, eniMAC, deviceNumber, eniSubnetCIDR, n.netLink, retryLinkByMacInterval, retryRouteAddInterval, n.mtu)
+func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, networkCard int, eniSubnetCIDR string, maxENIPerNIC int) error {
+	return setupENINetwork(eniIP, eniMAC, deviceNumber, networkCard, eniSubnetCIDR, n.netLink, retryLinkByMacInterval, retryRouteAddInterval, n.mtu, maxENIPerNIC)
 }
 
-func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink,
-	retryLinkByMacInterval time.Duration, retryRouteAddInterval time.Duration, mtu int) error {
-	if deviceNumber == 0 {
+// Even if this is called for primary IF on multicard instance
+func setupENINetwork(eniIP string, eniMac string, deviceNumber int, networkCard int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink,
+	retryLinkByMacInterval time.Duration, retryRouteAddInterval time.Duration, mtu int, maxENIPerNIC int) error {
+
+	if deviceNumber == 0 && networkCard == 0 {
 		return errors.New("setupENINetwork should never be called on the primary ENI")
 	}
-	tableNumber := deviceNumber + 1
-	log.Infof("Setting up network for an ENI with IP address %s, MAC address %s, CIDR %s and route table %d",
-		eniIP, eniMAC, eniSubnetCIDR, tableNumber)
-	link, err := linkByMac(eniMAC, netLink, retryLinkByMacInterval)
+
+	// CNI will never have route table 1 as we don't setup device number 0 on network card 0
+	// So, table number 1 for CNI is same as main table
+	tableNumber := (networkCard * maxENIPerNIC) + deviceNumber + 1
+	log.Infof("Setting up network for an ENI with IP address %s, MAC address %s, CIDR %s, route table %d and Network Card %d",
+		eniIP, eniMac, eniSubnetCIDR, tableNumber, networkCard)
+
+	link, err := linkByMac(eniMac, netLink, retryLinkByMacInterval)
 	if err != nil {
-		return errors.Wrapf(err, "setupENINetwork: failed to find the link which uses MAC address %s", eniMAC)
+		return errors.Wrapf(err, "setupENINetwork: failed to find the link which uses MAC address %s", eniMac)
 	}
 
 	if err = netLink.LinkSetMTU(link, mtu); err != nil {
@@ -1045,6 +1061,7 @@ func setupENINetwork(eniIP string, eniMAC string, deviceNumber int, eniSubnetCID
 	if err != nil {
 		return errors.Wrapf(err, "setupENINetwork: invalid IP CIDR block %s", eniSubnetCIDR)
 	}
+
 	// Get gateway IP address for ENI
 	var gw net.IP
 	if isV6 {
