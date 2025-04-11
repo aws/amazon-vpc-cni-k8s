@@ -745,6 +745,9 @@ Network Policy agent now supports two modes for Network Policy enforcement - Str
 
 In standard mode, return traffic is always allowed for any packets that were initially sent under the default allow policy. However, once network policies are applied, the next outgoing packet will be evaluated against the active policies, and it will be allowed or denied accordingly.
 
+If you remove the Network Policy Agent container from the aws-node DaemonSet, you must also ensure that NETWORK_POLICY_ENFORCING_MODE environment variable is not set.
+Setting this value while the NP agent is absent can lead to failures during pod creation.
+
 ### VPC CNI Feature Matrix
 
 
