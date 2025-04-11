@@ -282,7 +282,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	result.Interfaces = append(result.Interfaces, dummyInterface)
 
 	// Set up a connection to the network policy agent
-	// Cx might have removed np container if they are not using network policies
+	// NP container might have been removed if network policies are not being used
 	// If NETWORK_POLICY_ENFORCING_MODE is not set, we will not configure anything related to NP
 	if r.NetworkPolicyMode == "" {
 		log.Infof("NETWORK_POLICY_ENFORCING_MODE is not set")
@@ -463,8 +463,8 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	defer cancel()
 	npConn, err := grpcClient.DialContext(ctx, npAgentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
-		log.Infof("Failed to connect to network policy agent: %v. Network Policy agent might not be running", err)
-		return nil
+		log.Errorf("Failed to connect to network policy agent: %v. Network Policy agent might not be running", err)
+		return errors.Wrap(err, "del cmd: failed to connect to network policy agent")
 	}
 	defer npConn.Close()
 	//Make a GRPC call for network policy agent
