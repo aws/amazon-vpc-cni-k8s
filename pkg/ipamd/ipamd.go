@@ -184,7 +184,7 @@ const (
 	INSUFFICIENT_FREE_IP_SUBNET = "InsufficientFreeAddressesInSubnet"
 
 	// envEnableNetworkPolicy is used to enable IPAMD/CNI to send pod create events to network policy agent.
-	envNetworkPolicyMode     = "NETWORK_POLICY_ENFORCING_MODE"
+	envNetworkPolicyMode = "NETWORK_POLICY_ENFORCING_MODE"
 
 	defaultMaxPodsFromKubelet = 110
 	kubeletConfigPath         = "/host/etc/kubernetes/kubelet/kubelet-config.json"

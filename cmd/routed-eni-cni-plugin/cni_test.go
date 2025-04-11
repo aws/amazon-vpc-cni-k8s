@@ -331,7 +331,7 @@ func TestCmdDel(t *testing.T) {
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum, NetworkPolicyMode: "none"} 
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum, NetworkPolicyMode: "none"}
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
 	deleteNpReply := &rpc.DeleteNpReply{Success: true}

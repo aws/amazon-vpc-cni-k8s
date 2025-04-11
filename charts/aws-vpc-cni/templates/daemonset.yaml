@@ -81,8 +81,12 @@ spec:
             timeoutSeconds: {{ .Values.readinessProbeTimeoutSeconds }}
           env:
 {{- range $key, $value := .Values.env }}
+{{- if and (eq $key "NETWORK_POLICY_ENFORCING_MODE") (not .Values.nodeAgent.enabled) }}
+            # Skipping NETWORK_POLICY_ENFORCING_MODE because nodeAgent is disabled
+{{- else }}
             - name: {{ $key }}
               value: {{ $value | quote }}
+{{- end }}
 {{- end }}
 {{- with .Values.extraEnv }}
       {{- toYaml .| nindent 12 }}
