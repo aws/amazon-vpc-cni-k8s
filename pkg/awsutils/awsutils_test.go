@@ -1304,7 +1304,7 @@ func TestEC2InstanceMetadataCache_buildENITags(t *testing.T) {
 				instanceID: "i-xxxxx",
 			},
 			want: map[string]string{
-				"node.k8s.amazonaws.com/instance_id": "i-xxxxx",
+				eniNodeTagKey: "i-xxxxx",
 			},
 		},
 		{
@@ -1314,8 +1314,9 @@ func TestEC2InstanceMetadataCache_buildENITags(t *testing.T) {
 				clusterName: "awesome-cluster",
 			},
 			want: map[string]string{
-				"node.k8s.amazonaws.com/instance_id": "i-xxxxx",
-				"cluster.k8s.amazonaws.com/name":     "awesome-cluster",
+				eniNodeTagKey:    "i-xxxxx",
+				eniClusterTagKey: "awesome-cluster",
+				eniOwnerTagKey:   eniOwnerTagValue,
 			},
 		},
 		{
@@ -1328,9 +1329,9 @@ func TestEC2InstanceMetadataCache_buildENITags(t *testing.T) {
 				},
 			},
 			want: map[string]string{
-				"node.k8s.amazonaws.com/instance_id": "i-xxxxx",
-				"tagKey-1":                           "tagVal-1",
-				"tagKey-2":                           "tagVal-2",
+				eniNodeTagKey: "i-xxxxx",
+				"tagKey-1":    "tagVal-1",
+				"tagKey-2":    "tagVal-2",
 			},
 		},
 	}
@@ -1375,7 +1376,7 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 							Filters: []ec2types.Filter{
 								{
 									Name:   aws.String("tag-key"),
-									Values: []string{"node.k8s.amazonaws.com/instance_id"},
+									Values: []string{eniNodeTagKey},
 								},
 								{
 									Name:   aws.String("status"),
@@ -1408,7 +1409,7 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 							Filters: []ec2types.Filter{
 								{
 									Name:   aws.String("tag-key"),
-									Values: []string{"node.k8s.amazonaws.com/instance_id"},
+									Values: []string{eniNodeTagKey},
 								},
 								{
 									Name:   aws.String("status"),
@@ -1430,11 +1431,11 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 										Status:             "available",
 										TagSet: []ec2types.Tag{
 											{
-												Key:   aws.String("node.k8s.amazonaws.com/instance_id"),
+												Key:   aws.String(eniNodeTagKey),
 												Value: aws.String("i-xxxxx"),
 											},
 											{
-												Key:   aws.String("node.k8s.amazonaws.com/createdAt"),
+												Key:   aws.String(eniCreatedAtTagKey),
 												Value: aws.String(tenMinuteAgo.Format(time.RFC3339)),
 											},
 										},
@@ -1452,11 +1453,11 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 					Status:             "available",
 					TagSet: []ec2types.Tag{
 						{
-							Key:   aws.String("node.k8s.amazonaws.com/instance_id"),
+							Key:   aws.String(eniNodeTagKey),
 							Value: aws.String("i-xxxxx"),
 						},
 						{
-							Key:   aws.String("node.k8s.amazonaws.com/createdAt"),
+							Key:   aws.String(eniCreatedAtTagKey),
 							Value: aws.String(tenMinuteAgo.Format(time.RFC3339)),
 						},
 					},
@@ -1473,7 +1474,7 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 							Filters: []ec2types.Filter{
 								{
 									Name:   aws.String("tag-key"),
-									Values: []string{"node.k8s.amazonaws.com/instance_id"},
+									Values: []string{eniNodeTagKey},
 								},
 								{
 									Name:   aws.String("status"),
@@ -1495,11 +1496,11 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 										Status:             "available",
 										TagSet: []ec2types.Tag{
 											{
-												Key:   aws.String("node.k8s.amazonaws.com/instance_id"),
+												Key:   aws.String(eniNodeTagKey),
 												Value: aws.String("i-xxxxx"),
 											},
 											{
-												Key:   aws.String("node.k8s.amazonaws.com/createdAt"),
+												Key:   aws.String(eniCreatedAtTagKey),
 												Value: aws.String(tenMinuteAgo.Format(time.RFC3339)),
 											},
 										},
@@ -1522,7 +1523,7 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 							Filters: []ec2types.Filter{
 								{
 									Name:   aws.String("tag-key"),
-									Values: []string{"node.k8s.amazonaws.com/instance_id"},
+									Values: []string{eniNodeTagKey},
 								},
 								{
 									Name:   aws.String("status"),
@@ -1544,11 +1545,11 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 										Status:             "available",
 										TagSet: []ec2types.Tag{
 											{
-												Key:   aws.String("node.k8s.amazonaws.com/instance_id"),
+												Key:   aws.String(eniNodeTagKey),
 												Value: aws.String("i-xxxxx"),
 											},
 											{
-												Key:   aws.String("node.k8s.amazonaws.com/createdAt"),
+												Key:   aws.String(eniCreatedAtTagKey),
 												Value: aws.String(now.Format(time.RFC3339)),
 											},
 										},
@@ -1571,7 +1572,7 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 							Filters: []ec2types.Filter{
 								{
 									Name:   aws.String("tag-key"),
-									Values: []string{"node.k8s.amazonaws.com/instance_id"},
+									Values: []string{eniNodeTagKey},
 								},
 								{
 									Name:   aws.String("status"),
@@ -1604,7 +1605,7 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 							Filters: []ec2types.Filter{
 								{
 									Name:   aws.String("tag-key"),
-									Values: []string{"node.k8s.amazonaws.com/instance_id"},
+									Values: []string{eniNodeTagKey},
 								},
 								{
 									Name:   aws.String("status"),
@@ -1630,15 +1631,15 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 										Status:             "available",
 										TagSet: []ec2types.Tag{
 											{
-												Key:   aws.String("node.k8s.amazonaws.com/instance_id"),
+												Key:   aws.String(eniNodeTagKey),
 												Value: aws.String("i-xxxxx"),
 											},
 											{
-												Key:   aws.String("node.k8s.amazonaws.com/createdAt"),
+												Key:   aws.String(eniCreatedAtTagKey),
 												Value: aws.String(tenMinuteAgo.Format(time.RFC3339)),
 											},
 											{
-												Key:   aws.String("cluster.k8s.amazonaws.com/name"),
+												Key:   aws.String(eniClusterTagKey),
 												Value: aws.String("awesome-cluster"),
 											},
 										},
@@ -1656,15 +1657,15 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 					Status:             "available",
 					TagSet: []ec2types.Tag{
 						{
-							Key:   aws.String("node.k8s.amazonaws.com/instance_id"),
+							Key:   aws.String(eniNodeTagKey),
 							Value: aws.String("i-xxxxx"),
 						},
 						{
-							Key:   aws.String("node.k8s.amazonaws.com/createdAt"),
+							Key:   aws.String(eniCreatedAtTagKey),
 							Value: aws.String(tenMinuteAgo.Format(time.RFC3339)),
 						},
 						{
-							Key:   aws.String("cluster.k8s.amazonaws.com/name"),
+							Key:   aws.String(eniClusterTagKey),
 							Value: aws.String("awesome-cluster"),
 						},
 					},
@@ -1681,7 +1682,7 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 							Filters: []ec2types.Filter{
 								{
 									Name:   aws.String("tag-key"),
-									Values: []string{"node.k8s.amazonaws.com/instance_id"},
+									Values: []string{eniNodeTagKey},
 								},
 								{
 									Name:   aws.String("status"),
@@ -1707,15 +1708,15 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 										Status:             "available",
 										TagSet: []ec2types.Tag{
 											{
-												Key:   aws.String("node.k8s.amazonaws.com/instance_id"),
+												Key:   aws.String(eniNodeTagKey),
 												Value: aws.String("i-xxxxx"),
 											},
 											{
-												Key:   aws.String("node.k8s.amazonaws.com/createdAt"),
+												Key:   aws.String(eniCreatedAtTagKey),
 												Value: aws.String(tenMinuteAgo.Format(time.RFC3339)),
 											},
 											{
-												Key:   aws.String("cluster.k8s.amazonaws.com/name"),
+												Key:   aws.String(eniClusterTagKey),
 												Value: aws.String("awesome-cluster"),
 											},
 										},
@@ -1738,7 +1739,7 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 							Filters: []ec2types.Filter{
 								{
 									Name:   aws.String("tag-key"),
-									Values: []string{"node.k8s.amazonaws.com/instance_id"},
+									Values: []string{eniNodeTagKey},
 								},
 								{
 									Name:   aws.String("status"),
@@ -1764,15 +1765,15 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 										Status:             "available",
 										TagSet: []ec2types.Tag{
 											{
-												Key:   aws.String("node.k8s.amazonaws.com/instance_id"),
+												Key:   aws.String(eniNodeTagKey),
 												Value: aws.String("i-xxxxx"),
 											},
 											{
-												Key:   aws.String("node.k8s.amazonaws.com/createdAt"),
+												Key:   aws.String(eniCreatedAtTagKey),
 												Value: aws.String(now.Format(time.RFC3339)),
 											},
 											{
-												Key:   aws.String("cluster.k8s.amazonaws.com/name"),
+												Key:   aws.String(eniClusterTagKey),
 												Value: aws.String("awesome-cluster"),
 											},
 										},
@@ -1852,11 +1853,15 @@ func TestEC2InstanceMetadataCache_TagENI(t *testing.T) {
 							Resources: []string{"eni-xxxx"},
 							Tags: []ec2types.Tag{
 								{
-									Key:   aws.String("cluster.k8s.amazonaws.com/name"),
+									Key:   aws.String(eniClusterTagKey),
 									Value: aws.String("awesome-cluster"),
 								},
 								{
-									Key:   aws.String("node.k8s.amazonaws.com/instance_id"),
+									Key:   aws.String(eniOwnerTagKey),
+									Value: aws.String(eniOwnerTagValue),
+								},
+								{
+									Key:   aws.String(eniNodeTagKey),
 									Value: aws.String("i-xxxx"),
 								},
 							},
@@ -1880,8 +1885,9 @@ func TestEC2InstanceMetadataCache_TagENI(t *testing.T) {
 			args: args{
 				eniID: "eni-xxxx",
 				currentTags: map[string]string{
-					"node.k8s.amazonaws.com/instance_id": "i-xxxx",
-					"cluster.k8s.amazonaws.com/name":     "awesome-cluster",
+					eniNodeTagKey:    "i-xxxx",
+					eniClusterTagKey: "awesome-cluster",
+					eniOwnerTagKey:   eniOwnerTagValue,
 				},
 			},
 			wantErr: nil,
@@ -1897,8 +1903,12 @@ func TestEC2InstanceMetadataCache_TagENI(t *testing.T) {
 							Resources: []string{"eni-xxxx"},
 							Tags: []ec2types.Tag{
 								{
-									Key:   aws.String("cluster.k8s.amazonaws.com/name"),
+									Key:   aws.String(eniClusterTagKey),
 									Value: aws.String("awesome-cluster"),
+								},
+								{
+									Key:   aws.String(eniOwnerTagKey),
+									Value: aws.String(eniOwnerTagValue),
 								},
 							},
 						},
@@ -1908,8 +1918,8 @@ func TestEC2InstanceMetadataCache_TagENI(t *testing.T) {
 			args: args{
 				eniID: "eni-xxxx",
 				currentTags: map[string]string{
-					"node.k8s.amazonaws.com/instance_id": "i-xxxx",
-					"anotherKey":                         "anotherDay",
+					eniNodeTagKey: "i-xxxx",
+					"anotherKey":  "anotherDay",
 				},
 			},
 			wantErr: nil,
@@ -1925,11 +1935,15 @@ func TestEC2InstanceMetadataCache_TagENI(t *testing.T) {
 							Resources: []string{"eni-xxxx"},
 							Tags: []ec2types.Tag{
 								{
-									Key:   aws.String("cluster.k8s.amazonaws.com/name"),
+									Key:   aws.String(eniClusterTagKey),
 									Value: aws.String("awesome-cluster"),
 								},
 								{
-									Key:   aws.String("node.k8s.amazonaws.com/instance_id"),
+									Key:   aws.String(eniOwnerTagKey),
+									Value: aws.String(eniOwnerTagValue),
+								},
+								{
+									Key:   aws.String(eniNodeTagKey),
 									Value: aws.String("i-xxxx"),
 								},
 							},
