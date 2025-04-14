@@ -81,8 +81,13 @@ spec:
             timeoutSeconds: {{ .Values.readinessProbeTimeoutSeconds }}
           env:
 {{- range $key, $value := .Values.env }}
+  {{- $skipKey := and (eq $key "NETWORK_POLICY_ENFORCING_MODE") (not $.Values.nodeAgent.enabled) }}
+  {{- if not $skipKey }}
             - name: {{ $key }}
               value: {{ $value | quote }}
+  {{- else }}
+            # Skipping NETWORK_POLICY_ENFORCING_MODE because nodeAgent is disabled
+  {{- end }}
 {{- end }}
 {{- with .Values.extraEnv }}
       {{- toYaml .| nindent 12 }}
@@ -128,6 +133,9 @@ spec:
         - name: aws-eks-nodeagent
           image: {{ include "aws-vpc-cni.nodeAgentImage" . }}
           imagePullPolicy: {{ .Values.nodeAgent.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.nodeAgent.metricsBindAddr}}
+              name: agentmetrics
           env:
             - name: MY_NODE_NAME
               valueFrom:

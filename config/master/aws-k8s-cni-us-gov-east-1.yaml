@@ -539,7 +539,7 @@ spec:
           - mountPath: /run/xtables.lock
             name: xtables-lock
         - name: aws-eks-nodeagent
-          image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon/aws-network-policy-agent:v1.1.6
+          image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon/aws-network-policy-agent:v1.1.5
           imagePullPolicy: Always
           env:
             - name: MY_NODE_NAME

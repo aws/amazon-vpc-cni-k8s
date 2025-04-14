@@ -27,7 +27,7 @@ init:
 nodeAgent:
   enabled: true
   image:
-    tag: v1.1.6
+    tag: v1.1.5
     domain: amazonaws.com
     region: us-west-2
     endpoint: ecr
@@ -46,6 +46,7 @@ nodeAgent:
   networkPolicyAgentLogFileLocation: "/var/log/aws-routed-eni/network-policy-agent.log"
   enableIpv6: "false"
   metricsBindAddr: "8162"
+  metricsBindPort: "8162"
   healthProbeBindAddr: "8163"
   conntrackCacheCleanupPeriod: 300
   resources: {}
@@ -231,3 +232,17 @@ eniConfig:
     #   id: subnet-789
     #   securityGroups:
     #   - sg-789
+
+podMonitor:
+  # Create Prometheus podMonitor 
+  create: false
+  # Annotations to add to the Prometheus podMonitor
+  annotations: {}
+  # Labels to add to the Prometheus podMonitor
+  labels: {}
+  # The interval to scrape metrics.
+  interval: 30s
+  # The timeout before a metrics scrape fails.
+  scrapeTimeout: 30s
+  # relabelings to apply to the podMonitor
+  relabelings: []

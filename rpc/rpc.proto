@@ -65,7 +65,8 @@ message DelNetworkReply {
   int32 PodVlanId = 4;
   // end of pod-eni parameters
 
-  // next field: 6
+  string NetworkPolicyMode = 6;
+  // next field: 7
 }
 
 // The service definition.
@@ -81,6 +82,15 @@ message EnforceNpRequest {
 }
 
 message EnforceNpReply {
+  bool Success = 1;
+}
+
+message DeleteNpRequest {
+  string K8S_POD_NAME = 1;
+  string K8S_POD_NAMESPACE = 2;
+}
+
+message DeleteNpReply {
   bool Success = 1;
 }
 

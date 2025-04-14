@@ -18,6 +18,7 @@ WORKDIR /app
 
 COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/misc/10-aws.conflist \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/misc/eni-max-pods.txt \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-k8s-agent \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/grpc-health-probe \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/egress-cni \
