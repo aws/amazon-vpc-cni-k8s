@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.19.4
+* Improvement - Update AWS VPC CNI to SDK V2 Update - master branch by @orsenthil in #3070 
+* Fix - Handle EKS Service for the Beta Endpoint by @orsenthil in #3143
+* Manifest - Adding multus v4.1.4 manifest by @jaydeokar in #3154 
+* Tests - KOps Integration Test Follow Up by @dshehbaj in #3149
+* Fix - fix(test): add volume mount for docker-func-test target by @omerap12 in #3160
+* Fix - cni-metrics-helper metrics: do type assertion before type casting by @dshehbaj in #3152
+* Improvement - Add CNINode to cache filter by @dims in #3164
+* Fix - remove null creationTimestamp from CRD metadata by @omerap12 in #3163
+* Fix - issue with primary ENI ip lookup when an ENI has both IPv4 and IPv6 Address Assigned by @orsenthil in #3156
+* Improvement - Use awshttp client instead of smithy httpclient by @orsenthil in #3193
+* Fix - retryOnConflict shouldnt' retry on NotFound by @haouc in #3192
+* Improvement - Update awsutils.go by @git4example in #3191
+* Improvement - Add grpc call to fetch networkpolicymode from NP by @Pavani-Panakanti in #3202
+* Improvement - Changes to attach probes at pod start by @haouc in #3206
+* Improvement - adding eni owner tag if cluster name is present by @yash97 #3228
+* Improvement - only cache CNINode when SGP is in use by @oliviassss #3242
+* Improvement - Remove dependency on apiserver for IPAMD startup by @oliviassss #3243
+* Fix - Skip configuring NP related if network_policy_enforcing_mode is not set by @Pavani-Panakanti #3254
+* Doc and charts update
+
+## v1.19.3
+
+* Improvement - Changes to attach probes at pod start by @pavanipt and @haouc in https://github.com/aws/amazon-vpc-cni-k8s/pull/3206
+* Improvement - Add grpc call to fetch networkpolicymode from NP by @pavanipt in https://github.com/aws/amazon-vpc-cni-k8s/pull/3202
+* Update NP agent to v1.2.0 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3209
+
+
 ## v1.19.2
 
 * Feature: run make generate-limits to update the max pods file by @tzneal in https://github.com/aws/amazon-vpc-cni-k8s/pull/3141

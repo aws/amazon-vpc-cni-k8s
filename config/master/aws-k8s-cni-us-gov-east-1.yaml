@@ -60,7 +60,6 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.11.3
-  creationTimestamp: null
   labels:
     app.kubernetes.io/name: amazon-network-policy-controller-k8s
   name: policyendpoints.networking.k8s.aws
@@ -289,6 +288,7 @@ spec:
     storage: true
     subresources:
       status: {}
+
 ---
 # Source: aws-vpc-cni/templates/serviceaccount.yaml
 apiVersion: v1
@@ -418,7 +418,7 @@ spec:
       hostNetwork: true
       initContainers:
       - name: aws-vpc-cni-init
-        image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni-init:v1.19.2
+        image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni-init:v1.19.4
         imagePullPolicy: Always
         env:
           - name: DISABLE_TCP_EARLY_DEMUX
@@ -440,7 +440,7 @@ spec:
         {}
       containers:
         - name: aws-node
-          image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni:v1.19.2
+          image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni:v1.19.4
           ports:
             - containerPort: 61678
               name: metrics
@@ -504,7 +504,7 @@ spec:
             - name: NETWORK_POLICY_ENFORCING_MODE
               value: "standard"
             - name: VPC_CNI_VERSION
-              value: "v1.19.2"
+              value: "v1.19.4"
             - name: WARM_ENI_TARGET
               value: "1"
             - name: WARM_PREFIX_TARGET
@@ -539,8 +539,11 @@ spec:
           - mountPath: /run/xtables.lock
             name: xtables-lock
         - name: aws-eks-nodeagent
-          image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon/aws-network-policy-agent:v1.1.5
+          image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon/aws-network-policy-agent:v1.2.1
           imagePullPolicy: Always
+          ports:
+            - containerPort: 8162
+              name: agentmetrics
           env:
             - name: MY_NODE_NAME
               valueFrom:

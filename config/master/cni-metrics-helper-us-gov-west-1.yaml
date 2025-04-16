@@ -78,5 +78,5 @@ spec:
         - name: USE_PROMETHEUS
           value: "false"
         name: cni-metrics-helper
-        image: "013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/cni-metrics-helper:v1.19.2"
+        image: "013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/cni-metrics-helper:v1.19.4"
       serviceAccountName: cni-metrics-helper
