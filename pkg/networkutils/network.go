@@ -504,7 +504,7 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 		if cidr.isExclusion {
 			comment += " EXCLUSION"
 		}
-		log.Debugf("Setup Host Network: iptables -A %s -d %s -t nat -j %s", chain, cidr, "RETURN")
+		log.Debugf("Setup Host Network: iptables -A %s -d %s -m comment --comment %s -t nat -j %s", chain, cidr.cidr, comment, "RETURN")
 
 		iptableRules = append(iptableRules, iptablesRule{
 			name:        chain,
