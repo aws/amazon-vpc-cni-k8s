@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+	"github.com/aws/amazon-vpc-cni-k8s/rpc"
+	multiErr "github.com/hashicorp/go-multierror"
 
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 
@@ -33,14 +35,15 @@ func TestServer_VersionCheck(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:     m.awsutils,
-		maxIPsPerENI:  14,
-		maxENI:        4,
-		warmENITarget: 1,
-		warmIPTarget:  3,
-		networkClient: m.network,
-		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}, false),
+		awsClient:       m.awsutils,
+		maxIPsPerENI:    14,
+		maxENI:          4,
+		warmENITarget:   1,
+		warmIPTarget:    3,
+		networkClient:   m.network,
+		dataStoreAccess: datastore.InitializeDataStores(1, "test", false, log),
 	}
+
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil).AnyTimes()
 	m.awsutils.EXPECT().GetVPCIPv6CIDRs().Return([]string{}, nil).AnyTimes()
 	m.network.EXPECT().UseExternalSNAT().Return(true).AnyTimes()
@@ -70,7 +73,9 @@ func TestServer_VersionCheck(t *testing.T) {
 		IfName:        "eni",
 	}
 	_, err = rpcServer.DelNetwork(context.TODO(), delReq)
-	assert.EqualError(t, err, datastore.ErrUnknownPod.Error())
+	var expectedErr error
+	expectedErr = multiErr.Append(expectedErr, datastore.ErrUnknownPod)
+	assert.EqualError(t, err, expectedErr.Error())
 
 	// Sad path
 
@@ -136,9 +141,15 @@ func TestServer_AddNetwork(t *testing.T) {
 				ipV6Enabled: false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:         true,
-				IPv4Addr:        "192.168.1.100",
-				DeviceNumber:    int32(0),
+				Success: true,
+				IPAddress: []*rpc.IPAddress{
+					{
+						IPv4Addr:     "192.168.1.100",
+						IPv6Addr:     "",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1),
+					},
+				},
 				UseExternalSNAT: true,
 				VPCv4CIDRs:      []string{"10.10.0.0/16"},
 			},
@@ -168,23 +179,29 @@ func TestServer_AddNetwork(t *testing.T) {
 				ipV6Enabled: false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:         true,
-				IPv4Addr:        "192.168.1.100",
-				DeviceNumber:    int32(0),
+				Success: true,
+				IPAddress: []*rpc.IPAddress{
+					{
+						IPv4Addr:     "192.168.1.100",
+						IPv6Addr:     "",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1),
+					},
+				},
 				UseExternalSNAT: false,
 				VPCv4CIDRs:      []string{"10.10.0.0/16", "10.12.0.0/16", "10.13.0.0/16"},
 			},
 		},
 		{
-			name: "failed allocating IPv4Address ",
+			name: "failed allocating IPv4Address",
 			fields: fields{
 				ipV4AddressByENIID: map[string][]string{},
 				ipV4Enabled:        true,
 				ipV6Enabled:        false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:      false,
-				DeviceNumber: int32(-1),
+				Success:   false,
+				IPAddress: []*rpc.IPAddress{},
 			},
 		},
 		{
@@ -203,10 +220,16 @@ func TestServer_AddNetwork(t *testing.T) {
 				prefixDelegationEnabled: true,
 			},
 			want: &pb.AddNetworkReply{
-				Success:      true,
-				IPv6Addr:     "2001:db8::",
-				DeviceNumber: int32(0),
-				VPCv6CIDRs:   []string{"2001:db8::/56"},
+				Success: true,
+				IPAddress: []*rpc.IPAddress{
+					{
+						IPv4Addr:     "",
+						IPv6Addr:     "2001:db8::",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1),
+					},
+				},
+				VPCv6CIDRs: []string{"2001:db8::/56"},
 			},
 		},
 		{
@@ -218,8 +241,8 @@ func TestServer_AddNetwork(t *testing.T) {
 				prefixDelegationEnabled: true,
 			},
 			want: &pb.AddNetworkReply{
-				Success:      false,
-				DeviceNumber: int32(-1),
+				Success:   false,
+				IPAddress: []*rpc.IPAddress{},
 			},
 		},
 		{
@@ -233,9 +256,8 @@ func TestServer_AddNetwork(t *testing.T) {
 				prefixDelegationEnabled: false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:      false,
-				IPv6Addr:     "",
-				DeviceNumber: int32(-1),
+				Success:   false,
+				IPAddress: []*rpc.IPAddress{},
 			},
 		},
 	}
@@ -263,18 +285,21 @@ func TestServer_AddNetwork(t *testing.T) {
 				m.network.EXPECT().GetExcludeSNATCIDRs().Return(call.snatExclusionCIDRs)
 			}
 			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled)
+			dsAccess := &datastore.DataStoreAccess{DataStores: []*datastore.DataStore{ds}}
+
+			// dsAccess := datastore.InitializeDataStores(1, defaultBackingStorePath, tt.fields.prefixDelegationEnabled, log)
 			for eniID, ipv4Addresses := range tt.fields.ipV4AddressByENIID {
-				ds.AddENI(eniID, 0, false, false, false)
+				dsAccess.GetDataStore(defaultNetworkCard).AddENI(eniID, 0, false, false, false)
 				for _, ipv4Address := range ipv4Addresses {
 					ipv4Addr := net.IPNet{IP: net.ParseIP(ipv4Address), Mask: net.IPv4Mask(255, 255, 255, 255)}
-					ds.AddIPv4CidrToStore(eniID, ipv4Addr, false)
+					dsAccess.GetDataStore(defaultNetworkCard).AddIPv4CidrToStore(eniID, ipv4Addr, false)
 				}
 			}
 			for eniID, ipv6Prefixes := range tt.fields.ipV6PrefixByENIID {
-				ds.AddENI(eniID, 0, false, false, false)
+				dsAccess.GetDataStore(defaultNetworkCard).AddENI(eniID, 0, false, false, false)
 				for _, ipv6Prefix := range ipv6Prefixes {
 					_, ipnet, _ := net.ParseCIDR(ipv6Prefix)
-					ds.AddIPv6CidrToStore(eniID, *ipnet, true)
+					dsAccess.GetDataStore(defaultNetworkCard).AddIPv6CidrToStore(eniID, *ipnet, true)
 				}
 			}
 
@@ -288,7 +313,8 @@ func TestServer_AddNetwork(t *testing.T) {
 				enableIPv4:             tt.fields.ipV4Enabled,
 				enableIPv6:             tt.fields.ipV6Enabled,
 				enablePrefixDelegation: tt.fields.prefixDelegationEnabled,
-				dataStore:              ds,
+				dataStoreAccess:        dsAccess,
+				enableMultiNICSupport:  false,
 			}
 
 			s := &server{
@@ -309,7 +335,17 @@ func TestServer_AddNetwork(t *testing.T) {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.want, resp)
+				for index, _ := range tt.want.IPAddress {
+					assert.Equal(t, tt.want.IPAddress[index].IPv4Addr, resp.IPAddress[index].IPv4Addr)
+					assert.Equal(t, tt.want.IPAddress[index].IPv6Addr, resp.IPAddress[index].IPv6Addr)
+					assert.Equal(t, tt.want.IPAddress[index].DeviceNumber, resp.IPAddress[index].DeviceNumber)
+					assert.Equal(t, tt.want.IPAddress[index].RouteTableId, resp.IPAddress[index].RouteTableId)
+				}
+
+				assert.Equal(t, tt.want.UseExternalSNAT, resp.UseExternalSNAT)
+				assert.Equal(t, tt.want.VPCv4CIDRs, resp.VPCv4CIDRs)
+				assert.Equal(t, tt.want.VPCv6CIDRs, resp.VPCv6CIDRs)
+				assert.Equal(t, tt.want.Success, resp.Success)
 			}
 
 			// Add more detailed assertion messages
