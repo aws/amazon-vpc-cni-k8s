@@ -194,6 +194,10 @@ const (
 	// Enable Multi NIC support in CNI
 	// This configures the ENIs on Network Card > 0 which is be used by pods that require multi-nic attachments
 	envEnableMultiNICSupport = "ENABLE_MULTI_NIC"
+
+	// Scale config for network cards > 0
+	DefaultWarmIPTarget = 1
+	DefaultMinimumIPTarget = 1
 )
 
 var log = logger.Get()
@@ -788,8 +792,15 @@ func (c *IPAMContext) tryFreeENI(networkCard int) {
 		log.Debug("AWS CNI is on a non schedulable node, not detaching any ENIs")
 		return
 	}
+	warmIPTarget = c.warmIPTarget
+	minimumIPTarget = c.minimumIPTarget
 
-	eni := c.dataStoreAccess.GetDataStore(networkCard).RemoveUnusedENIFromStore(c.warmIPTarget, c.minimumIPTarget, c.warmPrefixTarget)
+	if networkCard > DefaultNetworkCardIndex {
+		warmIPTarget = DefaultWarmIPTarget
+		minimumIPTarget = DefaultMinimumIPTarget
+	}
+
+	eni := c.dataStoreAccess.GetDataStore(networkCard).RemoveUnusedENIFromStore(warmIPTarget, minimumIPTarget, c.warmPrefixTarget)
 	if eni == "" {
 		return
 	}
@@ -1988,8 +1999,8 @@ func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, netw
 
 	if networkCard > DefaultNetworkCardIndex {
 		// multi card ENIs will use WARM_IP_TARGET=1 and MINIMUM_IP_TARGET=1 by default
-		warmIPTarget = 1
-		minimumIPTarget = 1
+		warmIPTarget = DefaultWarmIPTarget
+		minimumIPTarget = DefaultMinimumIPTarget
 	} else if !c.warmIPTargetsDefined() {
 		// there is no WARM_IP_TARGET defined and no MINIMUM_IP_TARGET, fallback to use all IP addresses on ENI
 		return 0, 0, false
