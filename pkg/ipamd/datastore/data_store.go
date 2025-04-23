@@ -1547,24 +1547,29 @@ func (ds *DataStore) DeleteFromContainerRule(entry *CheckpointEntry) {
 }
 
 type DataStoreAccess struct {
-	DataStores []*DataStore
+	DataStores map[int]*DataStore
 }
 
-func InitializeDataStores(networkCards int, defaultDataStorePath string, enablePD bool, log logger.Logger) *DataStoreAccess {
-	var dslist []*DataStore
-	log.Infof("Initializing %d datastores for managed network cards", networkCards)
-	for i := range networkCards {
-		dsBackingStorePath := defaultDataStorePath
-		if i > 0 {
-			baseName := strings.TrimSuffix(defaultDataStorePath, ".json")
-			dsBackingStorePath = fmt.Sprintf("%s-nic-%d.json", baseName, i)
+func InitializeDataStores(skipNetworkCards []bool, defaultDataStorePath string, enablePD bool, log logger.Logger) *DataStoreAccess {
+
+	var dsMap = make(map[int]*DataStore, len(skipNetworkCards))
+	for i, shouldSkip := range skipNetworkCards {
+		if shouldSkip {
+			continue
+		} else {
+			dsBackingStorePath := defaultDataStorePath
+			if i > 0 {
+				baseName := strings.TrimSuffix(defaultDataStorePath, ".json")
+				dsBackingStorePath = fmt.Sprintf("%s-nic-%d.json", baseName, i)
+			}
+			checkpointer := NewJSONFile(dsBackingStorePath)
+			dsMap[i] = NewDataStore(log, checkpointer, enablePD)
+			log.Infof("initialized datastore for network cards index %d", i)
 		}
-		checkpointer := NewJSONFile(dsBackingStorePath)
-		dslist = append(dslist, NewDataStore(log, checkpointer, enablePD))
 	}
 
 	return &DataStoreAccess{
-		DataStores: dslist,
+		DataStores: dsMap,
 	}
 }
 
@@ -1574,8 +1579,8 @@ func (ds *DataStoreAccess) GetDataStore(index int) *DataStore {
 
 func (ds *DataStoreAccess) ReadAllDataStores(enableIPv6 bool) error {
 
-	for i := range ds.DataStores {
-		if err := ds.GetDataStore(i).ReadBackingStore(enableIPv6); err != nil {
+	for _, datastore := range ds.DataStores {
+		if err := datastore.ReadBackingStore(enableIPv6); err != nil {
 			return errors.Wrap(err, "Error while reading datastore")
 		}
 	}
