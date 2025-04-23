@@ -169,8 +169,14 @@ type APIs interface {
 	// SetUnmanagedENIs sets the list of unmanaged ENI IDs
 	SetUnmanagedENIs(eniIDs []string)
 
+	// SetUnmanagedNICs sets the list of unmanaged Network Cards
+	SetUnmanagedNICs(skipNetworkCards []bool)
+
 	// IsUnmanagedENI checks if an ENI is unmanaged
 	IsUnmanagedENI(eniID string) bool
+
+	// IsUnmanagedNIC checks if an Network Card is unmanaged
+	IsUnmanagedNIC(networkCard int) bool
 
 	// WaitForENIAndIPsAttached waits until the ENI has been attached and the secondary IPs have been added
 	WaitForENIAndIPsAttached(eni string, wantedSecondaryIPs int) (ENIMetadata, error)
@@ -225,6 +231,7 @@ type EC2InstanceMetadataCache struct {
 	unmanagedENIs          StringSet
 	useCustomNetworking    bool
 	multiCardENIs          StringSet
+	unmanagedNICs          []bool
 	useSubnetDiscovery     bool
 	enablePrefixDelegation bool
 
@@ -293,12 +300,12 @@ type TagMap map[string]string
 
 // DescribeAllENIsResult contains the fully
 type DescribeAllENIsResult struct {
-	ENIMetadata     []ENIMetadata
-	TagMap          map[string]TagMap
-	TrunkENI        string
-	EFAENIs         map[string]bool
-	EFAOnlyENIs     map[string]bool
-	MultiCardENIIDs []string
+	ENIMetadata      []ENIMetadata
+	TagMap           map[string]TagMap
+	TrunkENI         string
+	EFAENIs          map[string]bool
+	SkipNetworkCards []bool
+	MultiCardENIIDs  []string
 }
 
 // msSince returns milliseconds since start.
@@ -1473,7 +1480,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 	var trunkENI string
 	var multiCardENIIDs []string
 	efaENIs := make(map[string]bool, 0)
-	efaOnlyENIs := make(map[string]bool, 0)
+	skipNetworkCard := make([]bool, len(cache.GetNetworkCards()))
 	tagMap := make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
 
 	for _, ec2res := range ec2Response.NetworkInterfaces {
@@ -1485,9 +1492,12 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 			if aws.ToInt32(attachment.DeviceIndex) == 0 && aws.ToInt32(attachment.NetworkCardIndex) == 0 && !aws.ToBool(attachment.DeleteOnTermination) {
 				log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
 			}
-
+			// Skip the NIC if efa-only device is attached to NIC. efa-only devices are only allowed on NIC > 0
 			if aws.ToInt32(attachment.NetworkCardIndex) > 0 {
 				multiCardENIIDs = append(multiCardENIIDs, eniID)
+				if ec2res.InterfaceType == "efa-only" {
+					skipNetworkCard[int(aws.ToInt32(attachment.NetworkCardIndex))] = true
+				}
 			}
 		} else {
 			log.Infof("Got empty attachment for ENI %v", eniID)
@@ -1501,11 +1511,9 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		if interfaceType == "trunk" {
 			trunkENI = eniID
 		}
-		if interfaceType == "efa" {
+
+		if interfaceType == "efa" || interfaceType == "efa-only" {
 			efaENIs[eniID] = true
-		} else if interfaceType == "efa-only" {
-			efaENIs[eniID] = true
-			efaOnlyENIs[eniID] = true
 		}
 
 		if interfaceType != "efa-only" {
@@ -1523,13 +1531,12 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		tagMap[eniMetadata.ENIID] = convertSDKTagsToTags(ec2res.TagSet)
 	}
 	return DescribeAllENIsResult{
-		ENIMetadata:     verifiedENIs,
-		TagMap:          tagMap,
-		TrunkENI:        trunkENI,
-		EFAENIs:         efaENIs,
-		EFAOnlyENIs:     efaOnlyENIs,
-		MultiCardENIIDs: multiCardENIIDs,
-		// NetworkCardENIMap: networkCardENIMap,
+		ENIMetadata:      verifiedENIs,
+		TagMap:           tagMap,
+		TrunkENI:         trunkENI,
+		EFAENIs:          efaENIs,
+		SkipNetworkCards: skipNetworkCard,
+		MultiCardENIIDs:  multiCardENIIDs,
 	}, nil
 }
 
@@ -2180,6 +2187,11 @@ func (cache *EC2InstanceMetadataCache) SetUnmanagedENIs(eniIDs []string) {
 	cache.unmanagedENIs.Set(eniIDs)
 }
 
+// SetUnmanagedENIs Set unmanaged ENI set
+func (cache *EC2InstanceMetadataCache) SetUnmanagedNICs(skipNetworkCards []bool) {
+	cache.unmanagedNICs = skipNetworkCards
+}
+
 // GetInstanceID returns the instance ID
 func (cache *EC2InstanceMetadataCache) GetInstanceID() string {
 	return cache.instanceID
@@ -2191,6 +2203,11 @@ func (cache *EC2InstanceMetadataCache) IsUnmanagedENI(eniID string) bool {
 		return cache.unmanagedENIs.Has(eniID)
 	}
 	return false
+}
+
+// IsUnmanagedENI returns if the eni is unmanaged
+func (cache *EC2InstanceMetadataCache) IsUnmanagedNIC(networkCardIndex int) bool {
+	return cache.unmanagedNICs[networkCardIndex]
 }
 
 func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterfaces(input *ec2.DescribeNetworkInterfacesInput, filterFn func(networkInterface ec2types.NetworkInterface) error) error {

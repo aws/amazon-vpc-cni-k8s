@@ -195,14 +195,16 @@ const (
 
 	defaultNetworkPolicyMode = "standard"
 
-	// Network Card number of Primary ENI
+	// Network Card index of primary ENI
 	DefaultNetworkCardIndex = 0
-
-	DefaultDataStoreCount = 1
 
 	// Enable Multi NIC support in CNI
 	// This configures the ENIs on Network Card > 0 which is be used by pods that require multi-nic attachments
 	envEnableMultiNICSupport = "ENABLE_MULTI_NIC"
+
+	// Scale config for network cards > 0
+	DefaultWarmIPTarget    = 1
+	DefaultMinimumIPTarget = 1
 )
 
 var log = logger.Get()
@@ -258,7 +260,7 @@ type kubeletConfig struct {
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
-func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap, efaOnlyENIs map[string]bool) {
+func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 	if len(tagMap) == 0 {
 		return
 	}
@@ -268,7 +270,6 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap, efaOnl
 	// if "instance_id" tag is present and is set to instanceID - ENI is managed since this was created by IPAMD
 	// if "no_manage" tag is not present or not IPAMD created ENI, check if we are in Manage Untagged Mode, default is true.
 	// if enableManageUntaggedMode is false (defaults to true), then consider all untagged ENIs as unmanaged.
-	// With multicard support we need to mark all the EFA-only ENIs as unmanaged. EFA-only ENIs can only be attached to NIC > 0
 	for eniID, tags := range tagMap {
 		if _, found := tags[eniNoManageTagKey]; found {
 			if tags[eniNoManageTagKey] != "true" {
@@ -276,7 +277,7 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap, efaOnl
 			}
 		} else if _, found := tags[eniNodeTagKey]; found && tags[eniNodeTagKey] == c.awsClient.GetInstanceID() {
 			continue
-		} else if !efaOnlyENIs[eniID] && c.enableManageUntaggedMode {
+		} else if c.enableManageUntaggedMode {
 			continue
 		}
 
@@ -288,6 +289,22 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap, efaOnl
 		}
 	}
 	c.awsClient.SetUnmanagedENIs(unmanagedENIlist)
+}
+
+// setUnmanagedNICs will mark the NICs which are not managed by CNI
+// When ENABLE_MULTI_NIC is false, all NIC > 0 are marked as unmanaged
+// When ENABLE_MULTI_NIC is true, NICs where an efa-only device is attached is marked as unmanaged
+func (c *IPAMContext) setUnmanagedNICs(skipNetworkCards []bool) []bool {
+
+	if !c.enableMultiNICSupport {
+		skipNetworkCards = lo.Times(c.numNetworkCards, func(i int) bool {
+			return true
+		})
+		skipNetworkCards[DefaultNetworkCardIndex] = false
+	}
+
+	c.awsClient.SetUnmanagedNICs(skipNetworkCards)
+	return skipNetworkCards
 }
 
 // ReconcileCooldownCache keep track of recently freed CIDRs to avoid reading stale EC2 metadata
@@ -461,14 +478,6 @@ func (c *IPAMContext) nodeInit() error {
 		log.Debugf("Failed to clean up stale AWS chains: %v", err)
 	}
 
-	if c.dataStoreAccess == nil {
-		dataStoreCount := DefaultDataStoreCount
-		if c.enableMultiNICSupport {
-			dataStoreCount = c.numNetworkCards
-		}
-		c.dataStoreAccess = datastore.InitializeDataStores(dataStoreCount, dsBackingStorePath(), c.enablePrefixDelegation, log)
-	}
-
 	// Queries IMDS for all attached ENIs and then compares it against EC2.
 	// Groups the ENIs into different types
 	metadataResult, err := c.awsClient.DescribeAllENIs()
@@ -477,10 +486,13 @@ func (c *IPAMContext) nodeInit() error {
 	}
 
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
-	c.setUnmanagedENIs(metadataResult.TagMap, metadataResult.EFAOnlyENIs)
 
-	if !c.enableMultiNICSupport {
-		c.awsClient.SetMultiCardENIs(metadataResult.MultiCardENIIDs)
+	c.setUnmanagedENIs(metadataResult.TagMap)
+
+	skipNetworkCards := c.setUnmanagedNICs(metadataResult.SkipNetworkCards)
+
+	if c.dataStoreAccess == nil {
+		c.dataStoreAccess = datastore.InitializeDataStores(skipNetworkCards, dsBackingStorePath(), c.enablePrefixDelegation, log)
 	}
 
 	enis := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
@@ -812,8 +824,15 @@ func (c *IPAMContext) tryFreeENI(networkCard int) {
 		log.Debug("AWS CNI is on a non schedulable node, not detaching any ENIs")
 		return
 	}
+	warmIPTarget := c.warmIPTarget
+	minimumIPTarget := c.minimumIPTarget
 
-	eni := c.dataStoreAccess.GetDataStore(networkCard).RemoveUnusedENIFromStore(c.warmIPTarget, c.minimumIPTarget, c.warmPrefixTarget)
+	if networkCard > DefaultNetworkCardIndex {
+		warmIPTarget = DefaultWarmIPTarget
+		minimumIPTarget = DefaultMinimumIPTarget
+	}
+
+	eni := c.dataStoreAccess.GetDataStore(networkCard).RemoveUnusedENIFromStore(warmIPTarget, minimumIPTarget, c.warmPrefixTarget)
 	if eni == "" {
 		return
 	}
@@ -1542,11 +1561,8 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 			efaENIs = metadataResult.EFAENIs
 			eniTagMap = metadataResult.TagMap
 
-			c.setUnmanagedENIs(metadataResult.TagMap, metadataResult.EFAOnlyENIs)
-
-			if !c.enableMultiNICSupport {
-				c.awsClient.SetMultiCardENIs(metadataResult.MultiCardENIIDs)
-			}
+			c.setUnmanagedENIs(metadataResult.TagMap)
+			c.setUnmanagedNICs(metadataResult.SkipNetworkCards)
 
 			allManagedENIs := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 			attachedENIs = c.getENIsByNetworkCard(allManagedENIs)[networkCard]
@@ -1596,7 +1612,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 			log.Infof("Reconcile and delete detached ENI %s", eni)
 			// Force the delete, since aws local metadata has told us that this ENI is no longer
 			// attached, so any IPs assigned from this ENI will no longer work.
-			err = c.dataStoreAccess.GetDataStore(networkCard).RemoveENIFromDataStore(eni, true /* force */)
+			err = ds.RemoveENIFromDataStore(eni, true /* force */)
 			if err != nil {
 				log.Errorf("IP pool reconcile: Failed to delete ENI during reconcile: %v", err)
 				ipamdErrInc("eniReconcileDel")
@@ -1607,7 +1623,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		}
 
 		log.Debug("Successfully Reconciled ENI/IP pool")
-		c.logPoolStats(c.dataStoreAccess.GetDataStore(networkCard).GetIPStats(ipV4AddrFamily), networkCard)
+		c.logPoolStats(ds.GetIPStats(ipV4AddrFamily), networkCard)
 	}
 	c.lastNodeIPPoolAction = time.Now()
 
@@ -2028,9 +2044,8 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 		//we open up IPv6 support in Secondary IP and Custom networking modes. Filtering out the ENIs here will
 		//help us avoid myriad of if/else loops elsewhere in the code.
 		//We shouldn't need the IsPrimaryENI check as ENIs not created by vpc-cni will be marked unmanaged (including trunk ENI)
-		//MultiCardENIs are only added when ENABLE_MULTI_CARD option is disabled on CNI. It will be an empty list when CNI manages multi card interfaces
-		isMultiCardENI := c.awsClient.IsMultiCardENI(eni.ENIID)
 		isUnmanagedENI := c.awsClient.IsUnmanagedENI(eni.ENIID)
+		isUnmanagedNIC := c.awsClient.IsUnmanagedNIC(eni.NetworkCard)
 
 		if c.enableIPv6 {
 			if !c.awsClient.IsPrimaryENI(eni.ENIID) {
@@ -2040,8 +2055,8 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 					numFiltered++
 					c.unmanagedENI[eni.NetworkCard] += 1
 					continue
-				} else if isMultiCardENI {
-					log.Debugf("Skipping ENI %s: since on non-zero network card", eni.ENIID)
+				} else if isUnmanagedNIC {
+					log.Debugf("Skipping ENI %s: since it is on unmanaged network card index %d", eni.ENIID, eni.NetworkCard)
 					continue
 				}
 			}
@@ -2050,8 +2065,8 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 			numFiltered++
 			c.unmanagedENI[eni.NetworkCard] += 1
 			continue
-		} else if isMultiCardENI {
-			log.Debugf("Skipping ENI %s: since on non-zero network card", eni.ENIID)
+		} else if isUnmanagedNIC {
+			log.Debugf("Skipping ENI %s: since it is on unmanaged network card index %d", eni.ENIID, eni.NetworkCard)
 			continue
 		}
 		ret = append(ret, eni)
@@ -2069,8 +2084,8 @@ func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, netw
 
 	if networkCard > DefaultNetworkCardIndex {
 		// multi card ENIs will use WARM_IP_TARGET=1 and MINIMUM_IP_TARGET=1 by default
-		warmIPTarget = 1
-		minimumIPTarget = 1
+		warmIPTarget = DefaultWarmIPTarget
+		minimumIPTarget = DefaultMinimumIPTarget
 	} else if !c.warmIPTargetsDefined() {
 		// there is no WARM_IP_TARGET defined and no MINIMUM_IP_TARGET, fallback to use all IP addresses on ENI
 		return 0, 0, false
@@ -2421,9 +2436,9 @@ func (c *IPAMContext) hasRoomForEni(networkCard int) bool {
 	return c.dataStoreAccess.GetDataStore(networkCard).GetENIs() < (c.maxENI - c.unmanagedENI[networkCard] - trunkEni)
 }
 
-func (c *IPAMContext) isDatastorePoolTooLow() []Decisions {
+func (c *IPAMContext) isDatastorePoolTooLow() map[int]Decisions {
 
-	decisions := make([]Decisions, 0, len(c.dataStoreAccess.DataStores))
+	decisions := make(map[int]Decisions, len(c.dataStoreAccess.DataStores))
 	warmTarget := c.warmENITarget
 	totalIPs := c.maxIPsPerENI
 	if c.enablePrefixDelegation {
@@ -2437,13 +2452,13 @@ func (c *IPAMContext) isDatastorePoolTooLow() []Decisions {
 		stats := ds.GetIPStats(ipV4AddrFamily)
 		// If max pods has been reached, pool is not too low
 		if stats.TotalIPs >= c.maxPods {
-			decisions = append(decisions, Decisions{Stats: stats, IsLow: false})
+			decisions[networkCard] = Decisions{Stats: stats, IsLow: false}
 			continue
 		}
 
 		short, _, warmTargetDefined := c.datastoreTargetState(stats, networkCard)
 		if warmTargetDefined {
-			decisions = append(decisions, Decisions{Stats: stats, IsLow: short > 0})
+			decisions[networkCard] = Decisions{Stats: stats, IsLow: short > 0}
 			continue
 		}
 
@@ -2453,7 +2468,7 @@ func (c *IPAMContext) isDatastorePoolTooLow() []Decisions {
 			log.Debugf("IP pool is too low for Network Card %d: available (%d) < ENI target (%d) * addrsPerENI (%d)", networkCard, available, warmTarget, totalIPs)
 			c.logPoolStats(stats, networkCard)
 		}
-		decisions = append(decisions, Decisions{Stats: stats, IsLow: poolTooLow})
+		decisions[networkCard] = Decisions{Stats: stats, IsLow: poolTooLow}
 	}
 	return decisions
 }
