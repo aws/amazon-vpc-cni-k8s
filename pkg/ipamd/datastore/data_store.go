@@ -281,6 +281,7 @@ type DataStore struct {
 	netLink          netlinkwrapper.NetLink
 	isPDEnabled      bool
 	ipCooldownPeriod time.Duration
+	networkCard      int
 }
 
 // ENIInfos contains ENI IP information
@@ -294,7 +295,7 @@ type ENIInfos struct {
 }
 
 // NewDataStore returns DataStore structure
-func NewDataStore(log logger.Logger, backingStore Checkpointer, isPDEnabled bool) *DataStore {
+func NewDataStore(log logger.Logger, backingStore Checkpointer, isPDEnabled bool, networkCard int) *DataStore {
 	return &DataStore{
 		eniPool:          make(ENIPool),
 		log:              log,
@@ -302,6 +303,7 @@ func NewDataStore(log logger.Logger, backingStore Checkpointer, isPDEnabled bool
 		netLink:          netlinkwrapper.NewNetLink(),
 		isPDEnabled:      isPDEnabled,
 		ipCooldownPeriod: getCooldownPeriod(),
+		networkCard:      networkCard,
 	}
 }
 
@@ -743,7 +745,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 
 // assignPodIPAddressUnsafe mark Address as assigned.
 func (ds *DataStore) assignPodIPAddressUnsafe(addr *AddressInfo, ipamKey IPAMKey, ipamMetadata IPAMMetadata, assignedTime time.Time) {
-	ds.log.Infof("assignPodIPAddressUnsafe: Assign IP %v to sandbox %s with metadata %",
+	ds.log.Infof("assignPodIPAddressUnsafe: Assign IP %v to sandbox %s with metadata %+v",
 		addr.Address, ipamKey, ipamMetadata)
 
 	if addr.Assigned() {
@@ -1360,6 +1362,10 @@ func (ds *DataStore) getUnusedIP(availableCidr *CidrInfo) (string, error) {
 	return "", fmt.Errorf("no free IP available in the prefix - %s/%s", availableCidr.Cidr.IP, availableCidr.Cidr.Mask)
 }
 
+func (ds *DataStore) GetNetworkCard() int {
+	return ds.networkCard
+}
+
 func getNextIPAddr(ip net.IP) {
 	for j := len(ip) - 1; j >= 0; j-- {
 		ip[j]++
@@ -1547,34 +1553,39 @@ func (ds *DataStore) DeleteFromContainerRule(entry *CheckpointEntry) {
 }
 
 type DataStoreAccess struct {
-	DataStores map[int]*DataStore
+	DataStores []*DataStore
 }
 
 func InitializeDataStores(skipNetworkCards []bool, defaultDataStorePath string, enablePD bool, log logger.Logger) *DataStoreAccess {
 
-	var dsMap = make(map[int]*DataStore, len(skipNetworkCards))
-	for i, shouldSkip := range skipNetworkCards {
-		if shouldSkip {
-			continue
-		} else {
+	var dsList = make([]*DataStore, 0, len(skipNetworkCards))
+	for networkCard, shouldSkip := range skipNetworkCards {
+
+		if !shouldSkip {
 			dsBackingStorePath := defaultDataStorePath
-			if i > 0 {
+			if networkCard > 0 {
 				baseName := strings.TrimSuffix(defaultDataStorePath, ".json")
-				dsBackingStorePath = fmt.Sprintf("%s-nic-%d.json", baseName, i)
+				dsBackingStorePath = fmt.Sprintf("%s-nic-%d.json", baseName, networkCard)
 			}
 			checkpointer := NewJSONFile(dsBackingStorePath)
-			dsMap[i] = NewDataStore(log, checkpointer, enablePD)
-			log.Infof("initialized datastore for network cards index %d", i)
+			dsList = append(dsList, NewDataStore(log, checkpointer, enablePD, networkCard))
+			log.Infof("initialized datastore for network cards index %d", networkCard)
 		}
 	}
 
 	return &DataStoreAccess{
-		DataStores: dsMap,
+		DataStores: dsList,
 	}
 }
 
-func (ds *DataStoreAccess) GetDataStore(index int) *DataStore {
-	return ds.DataStores[index]
+func (ds *DataStoreAccess) GetDataStore(networkCard int) *DataStore {
+
+	for index, datastore := range ds.DataStores {
+		if datastore.GetNetworkCard() == networkCard {
+			return ds.DataStores[index]
+		}
+	}
+	return nil
 }
 
 func (ds *DataStoreAccess) ReadAllDataStores(enableIPv6 bool) error {
