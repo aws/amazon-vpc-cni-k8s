@@ -411,10 +411,10 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 						log.Errorf("Failed to unmarshal PodENIData JSON: %v", err)
 					}
 					return &rpc.DelNetworkReply{
-						Success:   true,
-						PodVlanId: int32(podENIData[0].VlanID),
-						IPAddress: []*rpc.IPAddress{&rpc.IPAddress{IPv4Addr: podENIData[0].PrivateIP}},
-						NetworkPolicyMode: s.ipamContext.networkPolicyMode
+						Success:           true,
+						PodVlanId:         int32(podENIData[0].VlanID),
+						IPAddress:         []*rpc.IPAddress{&rpc.IPAddress{IPv4Addr: podENIData[0].PrivateIP}},
+						NetworkPolicyMode: s.ipamContext.networkPolicyMode,
 					}, err
 				}
 			}
@@ -452,9 +452,9 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 
 	log.Infof("Send DelNetworkReply: IPAddress: %+v, err: %v", ipAddr, errors)
 	return &rpc.DelNetworkReply{
-		Success:   errors == nil,
-		IPAddress: ipAddr,
-		NetworkPolicyMode: s.ipamContext.networkPolicyMode
+		Success:           errors == nil,
+		IPAddress:         ipAddr,
+		NetworkPolicyMode: s.ipamContext.networkPolicyMode,
 	}, errors
 }
 

@@ -96,7 +96,7 @@ ALLPKGS = $(shell go list $(VENDOR_OVERRIDE_FLAG) ./... | grep -v cmd/packet-ver
 # BINS is the set of built command executables.
 BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper aws-vpc-cni aws-vpc-cni-init egress-cni
 # CORE_PLUGIN_DIR is the directory containing upstream containernetworking plugins
-CORE_PLUGIN_DIR = $(MAKEFILE_PATH)/core-plugins/
+CORE_PLUGIN_DIR = $(MAKEFILE_PATH)core-plugins/
 
 # DOCKER_ARGS is extra arguments passed during container image build.
 DOCKER_ARGS ?=

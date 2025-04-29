@@ -401,7 +401,7 @@ func TestCmdDel(t *testing.T) {
 		DeviceNumber: devNum,
 		RouteTableId: devNum + 1,
 	}}
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum, NetworkPolicyMode: "none"}
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "none"}
 
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 

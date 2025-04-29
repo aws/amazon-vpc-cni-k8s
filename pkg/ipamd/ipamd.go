@@ -2684,6 +2684,7 @@ func (c *IPAMContext) SetAPIServerConnectivity(connected bool) {
 		// and we want to keep working with that value
 		log.Info("API server connection lost, continuing with current maxPods value")
 	}
+}
 
 type Decisions struct {
 	Stats *datastore.DataStoreStats
