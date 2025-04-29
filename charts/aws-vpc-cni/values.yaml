@@ -231,3 +231,17 @@ eniConfig:
     #   id: subnet-789
     #   securityGroups:
     #   - sg-789
+
+podMonitor:
+  # Create Prometheus podMonitor 
+  create: false
+  # Annotations to add to the Prometheus podMonitor
+  annotations: {}
+  # Labels to add to the Prometheus podMonitor
+  labels: {}
+  # The interval to scrape metrics.
+  interval: 30s
+  # The timeout before a metrics scrape fails.
+  scrapeTimeout: 30s
+  # relabelings to apply to the podMonitor
+  relabelings: []
