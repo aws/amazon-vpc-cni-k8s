@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	apiregistrationclient "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -34,6 +35,7 @@ type ResourceManagers interface {
 	ConfigMapManager() resources.ConfigMapManager
 	NetworkPolicyManager() resources.NetworkPolicyManager
 	EventManager() resources.EventManager
+	APIServiceManager() resources.APIServiceManager
 }
 
 type defaultManager struct {
@@ -48,9 +50,10 @@ type defaultManager struct {
 	configMapManager      resources.ConfigMapManager
 	networkPolicyManager  resources.NetworkPolicyManager
 	eventManager          resources.EventManager
+	apiServiceManager     resources.APIServiceManager
 }
 
-func NewResourceManager(k8sClient client.Client, k8sClientset *kubernetes.Clientset, scheme *runtime.Scheme, config *rest.Config) ResourceManagers {
+func NewResourceManager(k8sClient client.Client, k8sClientset *kubernetes.Clientset, apiserverClient apiregistrationclient.Interface, scheme *runtime.Scheme, config *rest.Config) ResourceManagers {
 	return &defaultManager{
 		jobManager:            resources.NewDefaultJobManager(k8sClient),
 		deploymentManager:     resources.NewDefaultDeploymentManager(k8sClient),
@@ -63,6 +66,7 @@ func NewResourceManager(k8sClient client.Client, k8sClientset *kubernetes.Client
 		configMapManager:      resources.NewConfigMapManager(k8sClient),
 		networkPolicyManager:  resources.NewNetworkPolicyManager(k8sClient),
 		eventManager:          resources.NewEventManager(k8sClient),
+		apiServiceManager:     resources.NewAPIServiceManager(apiserverClient),
 	}
 }
 
@@ -108,4 +112,8 @@ func (m *defaultManager) NetworkPolicyManager() resources.NetworkPolicyManager {
 
 func (m defaultManager) EventManager() resources.EventManager {
 	return m.eventManager
+}
+
+func (m defaultManager) APIServiceManager() resources.APIServiceManager {
+	return m.apiServiceManager
 }
