@@ -920,12 +920,9 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string, networkCard int) 
 
 // createENITags creates all the tags required to be added to the ENI
 //
-// Parameters:
-// - eniDescription (string):
-//
 // Returns:
 // - []ec2types.TagSpecification: Returns the tags by converting it into AWS SDK class
-func (cache *EC2InstanceMetadataCache) createENITags(eniDescription string) []ec2types.TagSpecification {
+func (cache *EC2InstanceMetadataCache) createENITags() []ec2types.TagSpecification {
 
 	tags := map[string]string{
 		eniCreatedAtTagKey: time.Now().Format(time.RFC3339),
@@ -968,7 +965,7 @@ func (cache *EC2InstanceMetadataCache) createENIInput(eniDescription string, tag
 // return ENI id, error
 func (cache *EC2InstanceMetadataCache) createENI(sg []*string, eniCfgSubnet string, numIPs int) (string, error) {
 	eniDescription := eniDescriptionPrefix + cache.instanceID
-	tags := cache.createENITags(eniDescription)
+	tags := cache.createENITags()
 
 	var needIPs = numIPs
 

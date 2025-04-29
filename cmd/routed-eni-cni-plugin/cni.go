@@ -170,11 +170,11 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			requiresMultiNICAttachment = true
 		} else {
 			log.Debugf("Multi-NIC annotation mismatch: found=%q, required=%q. Falling back to default configuration.",
-				multiNICAttachment, conf.RuntimeConfig.PodAnnotations[multiNICPodAnnotation])
+				conf.RuntimeConfig.PodAnnotations[multiNICPodAnnotation], multiNICAttachment)
 		}
 	}
 
-	log.Debugf("pod requires Multi-NIC attachment: %t", requiresMultiNICAttachment)
+	log.Debugf("pod requires multi-nic attachment: %t", requiresMultiNICAttachment)
 
 	// Set up a connection to the ipamD server.
 	conn, err := grpcClient.Dial(ipamdAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -245,12 +245,11 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			HostVethName:      hostVethName,
 			ContainerVethName: containerVethName,
 		})
-
-		// Check if we can use PCIID to store RT-ID ?
-		// The RT here is the host route table Id not the container
+		// CNI stores the route table ID in the MAC field of the interface. The Route table ID is on the host side
+		// and is used during cleanup to remove the ip rules when IPAMD is not reachable.
 		podInterfaces = append(podInterfaces,
 			&current.Interface{Name: hostVethName},
-			&current.Interface{Name: containerVethName, Sandbox: args.Netns, PciID: fmt.Sprint(ip.RouteTableId)},
+			&current.Interface{Name: containerVethName, Sandbox: args.Netns, Mac: fmt.Sprint(ip.RouteTableId)},
 		)
 
 		// This index always points to the container interface so that we get the IP address corresponding to the interface
@@ -276,7 +275,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	} else {
 		err = driverClient.SetupPodNetwork(vethMetadata, args.Netns, mtu, log)
 		// For non-branch ENI, the pod VLAN ID value of 0 is packed in Interface.Mac, while the interface device number is packed in Interface.Sandbox
-		dummyInterface = &current.Interface{Name: dummyInterfaceName, Mac: fmt.Sprint(0), Sandbox: fmt.Sprint(vethMetadata[0].DeviceNumber), SocketPath: fmt.Sprint(len(r.IPAddress))}
+		dummyInterface = &current.Interface{Name: dummyInterfaceName, Mac: fmt.Sprint(0), Sandbox: fmt.Sprint(vethMetadata[0].DeviceNumber)}
 	}
 
 	log.Debugf("Using dummy interface: %v", dummyInterface)
@@ -311,6 +310,8 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	// dummy interface is appended to PrevResult for use during cleanup
+	// The interfaces field should only include host,container and dummy interfaces in the list.
+	// Revisit the prevResult cleanup logic if this changes
 	result.Interfaces = append(result.Interfaces, dummyInterface)
 
 	// Set up a connection to the network policy agent
@@ -348,7 +349,6 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	log.Debugf("Network Policy agent for EnforceNpToPod returned Success : %v", npr.Success)
-
 	return cniTypes.PrintResult(result, conf.CNIVersion)
 }
 
@@ -539,8 +539,13 @@ func getContainerNetworkMetadata(prevResult *current.Result, contVethName string
 // returns true if the del request is handled.
 func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArgs K8sArgs, contVethName string, netNS string, log logger.Logger) (bool, error) {
 	// prevResult might not be available, if we are still using older cni spec < 0.4.0.
-	prevResult, ok := conf.PrevResult.(*current.Result)
-	if !ok {
+	if conf.PrevResult == nil {
+		return false, nil
+	}
+
+	prevResult, err := current.NewResultFromResult(conf.PrevResult)
+	if err != nil {
+		log.Info("PrevResult not available for pod or parsing failed")
 		return false, nil
 	}
 
@@ -581,8 +586,13 @@ func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArg
 // Returns true if pod network is torn down
 func teardownPodNetworkWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArgs K8sArgs, contVethName string, log logger.Logger) bool {
 	// For non-branch ENI, prevResult is only available in v1.12.1+
-	prevResult, ok := conf.PrevResult.(*current.Result)
-	if !ok {
+	if conf.PrevResult == nil {
+		log.Infof("PrevResult not available for pod. Pod may have already been deleted.")
+		return false
+	}
+
+	prevResult, err := current.NewResultFromResult(conf.PrevResult)
+	if err != nil {
 		log.Infof("PrevResult not available for pod. Pod may have already been deleted.")
 		return false
 	}
@@ -607,32 +617,24 @@ func teardownPodNetworkWithPrevResult(driverClient driver.NetworkAPIs, conf *Net
 	// RT ID for NC-0 is also stored in the container interface entry. So we have a path for migration where
 	// getting the device number from dummy interface can be deprecated entirely. This is currently done to keep it backwards compatible
 	routeTableId := deviceNumber + 1
-
-	var interfacesAttached = 1
-	if dummyIface.SocketPath != "" {
-		interfacesAttached, err = strconv.Atoi(dummyIface.SocketPath)
-		if err != nil {
-			log.Errorf("error getting number of interfaces attached to the pod: %s", dummyIface.SocketPath)
-			return false
-		}
-	}
-
+	// The number of interfaces attached to the pod is taken as the length of the interfaces array - 1 (for dummy interface) divided by 2 (for host and container interface)
+	var interfacesAttached = (len(prevResult.Interfaces) - 1) / 2
 	var vethMetadata []driver.VirtualInterfaceMetadata
 	for v := range interfacesAttached {
 		containerInterfaceName := networkutils.GenerateContainerVethName(contVethName, containerVethNamePrefix, v)
 		containerIP, containerInterface, err := getContainerNetworkMetadata(prevResult, containerInterfaceName)
 		if err != nil {
-			log.Errorf("Failed to get container IP: %v", err)
-			return false
+			log.Errorf("container interface name %s does not exist %v", containerInterfaceName, err)
+			continue
 		}
 
 		// If this property is set, that means the container metadata has the route table ID which we can use
 		// If this is not set, it is a pod launched before this change was introduced.
-		// So it is only managing network card 0 at that time and device number + 1 is the route table ID which we have above
-		if dummyIface.SocketPath != "" {
-			routeTableId, err = strconv.Atoi(containerInterface.PciID)
+		// So it is only managing network card 0 at that time and device number + 1 is the route table ID which we calculate from device number
+		if containerInterface.Mac != "" {
+			routeTableId, err = strconv.Atoi(containerInterface.Mac)
 			if err != nil {
-				log.Errorf("error getting route table number of the interface %s", containerInterface.PciID)
+				log.Errorf("error getting route table number of the interface %s", containerInterface.Mac)
 				return false
 			}
 		}

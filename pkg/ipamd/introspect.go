@@ -125,8 +125,8 @@ func (c *IPAMContext) setupIntrospectionServer() *http.Server {
 func eniV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		eniInfos := make(map[int]*datastore.ENIInfos, len(ipam.dataStoreAccess.DataStores))
-		for networkCard, ds := range ipam.dataStoreAccess.DataStores {
-			eniInfos[networkCard] = ds.GetENIInfos()
+		for _, ds := range ipam.dataStoreAccess.DataStores {
+			eniInfos[ds.GetNetworkCard()] = ds.GetENIInfos()
 		}
 		responseJSON, err := json.Marshal(eniInfos)
 		if err != nil {

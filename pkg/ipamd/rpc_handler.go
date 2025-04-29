@@ -201,8 +201,8 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			return &failureResponse, nil
 		}
 
-		for networkCard, ds := range s.ipamContext.dataStoreAccess.DataStores {
-
+		for _, ds := range s.ipamContext.dataStoreAccess.DataStores {
+			networkCard := ds.GetNetworkCard()
 			if ipsAllocated == ipsRequired {
 				break
 			}
@@ -246,14 +246,20 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	}
 
 	if errors != nil {
-		for index := range ipAddrs {
-			log.Infof("Unassigning IPs from datastore for Network Card %d as there was failure", index)
-			// Try to unassign all the assigned IPs in case of errors.
-			// This is best effort even if it fails we have the reconciler which can clean up leaked IPs for non existing pods
-			s.ipamContext.dataStoreAccess.GetDataStore(index).UnassignPodIPAddress(ipamKey)
+		unAssignedIPs := 0
+		// Try to unassign all the assigned IPs in case of errors.
+		// This is best effort even if it fails we have the reconciler which can clean up leaked IPs for non existing pods
+		for _, ds := range s.ipamContext.dataStoreAccess.DataStores {
+			networkCard := ds.GetNetworkCard()
+			if unAssignedIPs == len(ipAddrs) {
+				break
+			}
+			log.Infof("Unassigning IPs from datastore for Network Card %d as there was failure", networkCard)
+			ds.UnassignPodIPAddress(ipamKey)
+			unAssignedIPs += 1
 		}
 	} else {
-		log.Infof("Address assigned from DS:  %d", len(ipAddrs))
+		log.Infof("Address assigned from datastores:  %d", len(ipAddrs))
 		var pbVPCV4cidrs, pbVPCV6cidrs []string
 		var useExternalSNAT bool
 
@@ -313,7 +319,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 
 	resp.Success = errors == nil
 
-	log.Infof("Send AddNetworkReply: Success: %t IPAddr: %+v, resp: %+v, err: %v", resp.Success, resp.IPAddress, resp, err)
+	log.Infof("Send AddNetworkReply: Success: %t IPAddr: %+v, resp: %+v, err: %v", resp.Success, resp.IPAddress, &resp, err)
 	return &resp, nil
 }
 
@@ -346,7 +352,9 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 
 	ipsToMatch := 1
 	ipsFound := 0
-	for networkCard, ds := range s.ipamContext.dataStoreAccess.DataStores {
+	for _, ds := range s.ipamContext.dataStoreAccess.DataStores {
+		networkCard := ds.GetNetworkCard()
+
 		// All datastores will store this count in its datastore
 		if ipsToMatch == ipsFound {
 			break
