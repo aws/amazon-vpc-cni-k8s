@@ -45,18 +45,25 @@ const (
 	v6DADTimeout = 10 * time.Second
 )
 
+type VirtualInterfaceMetadata struct {
+	IPAddress         *net.IPNet
+	DeviceNumber      int
+	RouteTable        int
+	HostVethName      string
+	ContainerVethName string
+}
+
 // NetworkAPIs defines network API calls
 type NetworkAPIs interface {
 	// SetupPodNetwork sets up pod network for normal ENI based pods
-	SetupPodNetwork(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet, deviceNumber int, mtu int, log logger.Logger) error
+	SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, netnsPath string, mtu int, log logger.Logger) error
 	// TeardownPodNetwork clean up pod network for normal ENI based pods
-	TeardownPodNetwork(containerAddr *net.IPNet, deviceNumber int, log logger.Logger) error
-
+	TeardownPodNetwork(vethMetadata []VirtualInterfaceMetadata, log logger.Logger) error
 	// SetupBranchENIPodNetwork sets up pod network for branch ENI based pods
-	SetupBranchENIPodNetwork(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet, vlanID int, eniMAC string,
+	SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMetadata, netnsPath string, vlanID int, eniMAC string,
 		subnetGW string, parentIfIndex int, mtu int, podSGEnforcingMode sgpp.EnforcingMode, log logger.Logger) error
 	// TeardownBranchENIPodNetwork cleans up pod network for branch ENI based pods
-	TeardownBranchENIPodNetwork(containerAddr *net.IPNet, vlanID int, podSGEnforcingMode sgpp.EnforcingMode, log logger.Logger) error
+	TeardownBranchENIPodNetwork(vethMetadata VirtualInterfaceMetadata, vlanID int, podSGEnforcingMode sgpp.EnforcingMode, log logger.Logger) error
 }
 
 type linuxNetwork struct {
@@ -79,24 +86,24 @@ func New() NetworkAPIs {
 type createVethPairContext struct {
 	contVethName string
 	hostVethName string
-	v4Addr       *net.IPNet
-	v6Addr       *net.IPNet
+	ipAddr       *net.IPNet
 	netLink      netlinkwrapper.NetLink
 	ip           ipwrapper.IP
 	mtu          int
 	procSys      procsyswrapper.ProcSys
+	index        int
 }
 
-func newCreateVethPairContext(contVethName string, hostVethName string, v4Addr *net.IPNet, v6Addr *net.IPNet, mtu int) *createVethPairContext {
+func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *net.IPNet, mtu int, index int) *createVethPairContext {
 	return &createVethPairContext{
 		contVethName: contVethName,
 		hostVethName: hostVethName,
-		v4Addr:       v4Addr,
-		v6Addr:       v6Addr,
+		ipAddr:       ipAddr,
 		netLink:      netlinkwrapper.NewNetLink(),
 		ip:           ipwrapper.NewIP(),
 		mtu:          mtu,
 		procSys:      procsyswrapper.NewProcSys(),
+		index:        index,
 	}
 }
 
@@ -137,7 +144,8 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		return errors.Wrapf(err, "setup NS network: failed to set link %q up", createVethContext.contVethName)
 	}
 
-	if createVethContext.v6Addr != nil && createVethContext.v6Addr.IP.To16() != nil {
+	// this means it's a V6 IP address
+	if createVethContext.ipAddr.IP.To4() == nil {
 		// Enable v6 support on Container's veth interface.
 		if err = createVethContext.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/disable_ipv6", createVethContext.contVethName), "0"); err != nil {
 			if !os.IsNotExist(err) {
@@ -146,7 +154,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		}
 
 		// Enable v6 support on Container's lo interface inside the Pod networking namespace.
-		if err = createVethContext.procSys.Set(fmt.Sprintf("net/ipv6/conf/lo/disable_ipv6"), "0"); err != nil {
+		if err = createVethContext.procSys.Set("net/ipv6/conf/lo/disable_ipv6", "0"); err != nil {
 			if !os.IsNotExist(err) {
 				return errors.Wrapf(err, "setupVeth network: failed to enable IPv6 on container's lo interface")
 			}
@@ -163,25 +171,43 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	var addr *netlink.Addr
 	var defNet *net.IPNet
 
-	if createVethContext.v4Addr != nil {
-		gw = net.IPv4(169, 254, 1, 1)
+	if createVethContext.ipAddr.IP.To4() != nil {
+		gw = net.IPv4(169, 254, 1, byte(createVethContext.index)+1)
 		maskLen = 32
-		addr = &netlink.Addr{IPNet: createVethContext.v4Addr}
+		addr = &netlink.Addr{IPNet: createVethContext.ipAddr}
 		defNet = &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, maskLen)}
-	} else if createVethContext.v6Addr != nil {
-		gw = net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
+	} else {
+		gw = net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, byte(createVethContext.index) + 1}
 		maskLen = 128
-		addr = &netlink.Addr{IPNet: createVethContext.v6Addr}
+		addr = &netlink.Addr{IPNet: createVethContext.ipAddr}
 		defNet = &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, maskLen)}
 	}
 
 	gwNet := &net.IPNet{IP: gw, Mask: net.CIDRMask(maskLen, maskLen)}
 
+	// If Index  > 0 that means it has multiple IPs. Add IP rule + add default route to
+	rtTable := unix.RT_TABLE_MAIN
+	if createVethContext.index > 0 {
+		rtTable = createVethContext.index
+	}
+
 	if err = createVethContext.netLink.RouteReplace(&netlink.Route{
 		LinkIndex: contVeth.Attrs().Index,
 		Scope:     netlink.SCOPE_LINK,
-		Dst:       gwNet}); err != nil {
+		Dst:       gwNet,
+		Table:     rtTable}); err != nil {
 		return errors.Wrap(err, "setup NS network: failed to add default gateway")
+	}
+
+	if createVethContext.index > 0 {
+		// Add a from interface rule
+		fromInterfaceRule := createVethContext.netLink.NewRule()
+		fromInterfaceRule.Src = createVethContext.ipAddr
+		fromInterfaceRule.Priority = networkutils.FromInterfaceRulePriority
+		fromInterfaceRule.Table = rtTable
+		if err := createVethContext.netLink.RuleAdd(fromInterfaceRule); err != nil && !networkutils.IsRuleExistsError(err) {
+			return errors.Wrapf(err, "failed to setup fromInterface rule, containerAddr=%s, rtTable=%v", createVethContext.ipAddr.String(), createVethContext.index)
+		}
 	}
 
 	// Add a default route via dummy next hop(169.254.1.1 or fe80::1). Then all outgoing traffic will be routed by this
@@ -191,6 +217,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		Scope:     netlink.SCOPE_UNIVERSE,
 		Dst:       defNet,
 		Gw:        gw,
+		Table:     rtTable,
 	}); err != nil {
 		return errors.Wrap(err, "setup NS network: failed to add default route")
 	}
@@ -212,8 +239,8 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	if err = createVethContext.netLink.NeighAdd(neigh); err != nil {
 		return errors.Wrap(err, "setup NS network: failed to add static ARP")
 	}
-
-	if createVethContext.v6Addr != nil && createVethContext.v6Addr.IP.To16() != nil {
+	// if IP is not IPv4 or a v4 in v6 address, it return nil
+	if createVethContext.ipAddr.IP.To4() == nil {
 		if err := cniutils.WaitForAddressesToBeStable(createVethContext.netLink, createVethContext.contVethName, v6DADTimeout, WAIT_INTERVAL); err != nil {
 			return errors.Wrap(err, "setup NS network: failed while waiting for v6 addresses to be stable")
 		}
@@ -229,55 +256,60 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 
 // SetupPodNetwork wires up linux networking for a pod's network
 // we expect v4Addr and v6Addr to have correct IPAddress Family.
-func (n *linuxNetwork) SetupPodNetwork(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet,
-	deviceNumber int, mtu int, log logger.Logger) error {
-	log.Debugf("SetupPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, v4Addr=%v, v6Addr=%v, deviceNumber=%d, mtu=%d",
-		hostVethName, contVethName, netnsPath, v4Addr, v6Addr, deviceNumber, mtu)
+func (n *linuxNetwork) SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, netnsPath string, mtu int, log logger.Logger) error {
+	for index, vethData := range vethMetadata {
 
-	hostVeth, err := n.setupVeth(hostVethName, contVethName, netnsPath, v4Addr, v6Addr, mtu, log)
-	if err != nil {
-		return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
-	}
+		log.Debugf("SetupPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, routeTableNumber=%d, mtu=%d",
+			vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, vethData.RouteTable, mtu)
 
-	var containerAddr *net.IPNet
-	if v4Addr != nil {
-		containerAddr = v4Addr
-	} else if v6Addr != nil {
-		containerAddr = v6Addr
-	}
+		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, log, index)
+		if err != nil {
+			return errors.Wrapf(err, "SetupPodNetwork: failed to setup veth pair")
+		}
 
-	rtTable := unix.RT_TABLE_MAIN
-	if deviceNumber > 0 {
-		rtTable = deviceNumber + 1
-	}
-	if err := n.setupIPBasedContainerRouteRules(hostVeth, containerAddr, rtTable, log); err != nil {
-		return errors.Wrapf(err, "SetupPodNetwork: unable to setup IP based container routes and rules")
+		rtTable := unix.RT_TABLE_MAIN
+		if vethData.RouteTable > 1 {
+			rtTable = vethData.RouteTable
+		}
+
+		if err := n.setupIPBasedContainerRouteRules(hostVeth, vethData.IPAddress, rtTable, log); err != nil {
+			return errors.Wrapf(err, "SetupPodNetwork: unable to setup IP based container routes and rules")
+		}
 	}
 	return nil
 }
 
 // TeardownPodNetwork cleanup ip rules
-func (n *linuxNetwork) TeardownPodNetwork(containerAddr *net.IPNet, deviceNumber int, log logger.Logger) error {
-	log.Debugf("TeardownPodNetwork: containerAddr=%s, deviceNumber=%d", containerAddr.String(), deviceNumber)
+func (n *linuxNetwork) TeardownPodNetwork(vethMetadata []VirtualInterfaceMetadata, log logger.Logger) error {
 
-	rtTable := unix.RT_TABLE_MAIN
-	if deviceNumber > 0 {
-		rtTable = deviceNumber + 1
+	for _, vethData := range vethMetadata {
+
+		log.Debugf("TeardownPodNetwork: containerAddr=%s, routeTable=%d", vethData.IPAddress.String(), vethData.RouteTable)
+
+		// Route table ID for primary ENI (Network 0, Device 0) => (0* MaxENI + 0 + 1)
+		// which is why we only update if the RT > 1
+		rtTable := unix.RT_TABLE_MAIN
+		if vethData.RouteTable > 1 {
+			rtTable = vethData.RouteTable
+		}
+
+		if err := n.teardownIPBasedContainerRouteRules(vethData.IPAddress, rtTable, log); err != nil {
+			return errors.Wrapf(err, "TeardownPodNetwork: unable to teardown IP based container routes and rules")
+		}
 	}
-	if err := n.teardownIPBasedContainerRouteRules(containerAddr, rtTable, log); err != nil {
-		return errors.Wrapf(err, "TeardownPodNetwork: unable to teardown IP based container routes and rules")
-	}
+
 	return nil
 }
 
 // SetupBranchENIPodNetwork sets up the network ns for pods requesting its own security group
 // we expect v4Addr and v6Addr to have correct IPAddress Family.
-func (n *linuxNetwork) SetupBranchENIPodNetwork(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet,
+func (n *linuxNetwork) SetupBranchENIPodNetwork(vethMetadata VirtualInterfaceMetadata, netnsPath string,
 	vlanID int, eniMAC string, subnetGW string, parentIfIndex int, mtu int, podSGEnforcingMode sgpp.EnforcingMode, log logger.Logger) error {
-	log.Debugf("SetupBranchENIPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, v4Addr=%v, v6Addr=%v, vlanID=%d, eniMAC=%s, subnetGW=%s, parentIfIndex=%d, mtu=%d, podSGEnforcingMode=%v",
-		hostVethName, contVethName, netnsPath, v4Addr, v6Addr, vlanID, eniMAC, subnetGW, parentIfIndex, mtu, podSGEnforcingMode)
 
-	hostVeth, err := n.setupVeth(hostVethName, contVethName, netnsPath, v4Addr, v6Addr, mtu, log)
+	log.Debugf("SetupBranchENIPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, vlanID=%d, eniMAC=%s, subnetGW=%s, parentIfIndex=%d, mtu=%d, podSGEnforcingMode=%v",
+		vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, vlanID, eniMAC, subnetGW, parentIfIndex, mtu, podSGEnforcingMode)
+
+	hostVeth, err := n.setupVeth(vethMetadata.HostVethName, vethMetadata.ContainerVethName, netnsPath, vethMetadata.IPAddress, mtu, log, 0)
 	if err != nil {
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup veth pair")
 	}
@@ -288,13 +320,15 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(hostVethName string, contVethNam
 	// now since we obtain vlanID from prevResult during pod deletion, we should be able to correctly purge hostVeth during pod deletion and thus don't need this logic.
 	// this logic is kept here for safety purpose.
 	oldFromHostVethRule := n.netLink.NewRule()
-	oldFromHostVethRule.IifName = hostVethName
+	oldFromHostVethRule.IifName = vethMetadata.HostVethName
 	oldFromHostVethRule.Priority = networkutils.VlanRulePriority
-	if v6Addr != nil {
+
+	// If IPv4 it returns the IP address back
+	if vethMetadata.IPAddress.IP.To4() == nil {
 		oldFromHostVethRule.Family = unix.AF_INET6
 	}
 	if err := networkutils.NetLinkRuleDelAll(n.netLink, oldFromHostVethRule); err != nil {
-		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to delete hostVeth rule for %s", hostVethName)
+		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to delete hostVeth rule for %s", vethMetadata.HostVethName)
 	}
 
 	rtTable := vlanID + 100
@@ -303,20 +337,13 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(hostVethName string, contVethNam
 		return errors.Wrapf(err, "SetupBranchENIPodNetwork: failed to setup vlan")
 	}
 
-	var containerAddr *net.IPNet
-	if v4Addr != nil {
-		containerAddr = v4Addr
-	} else if v6Addr != nil {
-		containerAddr = v6Addr
-	}
-
 	switch podSGEnforcingMode {
 	case sgpp.EnforcingModeStrict:
-		if err := n.setupIIFBasedContainerRouteRules(hostVeth, containerAddr, vlanLink, rtTable, log); err != nil {
+		if err := n.setupIIFBasedContainerRouteRules(hostVeth, vethMetadata.IPAddress, vlanLink, rtTable, log); err != nil {
 			return errors.Wrapf(err, "SetupBranchENIPodNetwork: unable to setup IIF based container routes and rules")
 		}
 	case sgpp.EnforcingModeStandard:
-		if err := n.setupIPBasedContainerRouteRules(hostVeth, containerAddr, rtTable, log); err != nil {
+		if err := n.setupIPBasedContainerRouteRules(hostVeth, vethMetadata.IPAddress, rtTable, log); err != nil {
 			return errors.Wrapf(err, "SetupBranchENIPodNetwork: unable to setup IP based container routes and rules")
 		}
 	}
@@ -324,15 +351,15 @@ func (n *linuxNetwork) SetupBranchENIPodNetwork(hostVethName string, contVethNam
 }
 
 // TeardownBranchENIPodNetwork tears down the vlan and corresponding ip rules.
-func (n *linuxNetwork) TeardownBranchENIPodNetwork(containerAddr *net.IPNet, vlanID int, _ sgpp.EnforcingMode, log logger.Logger) error {
-	log.Debugf("TeardownBranchENIPodNetwork: containerAddr=%s, vlanID=%d", containerAddr.String(), vlanID)
+func (n *linuxNetwork) TeardownBranchENIPodNetwork(vethMetadata VirtualInterfaceMetadata, vlanID int, _ sgpp.EnforcingMode, log logger.Logger) error {
+	log.Debugf("TeardownBranchENIPodNetwork: containerAddr=%s, vlanID=%d", vethMetadata.IPAddress.String(), vlanID)
 
 	if err := n.teardownVlan(vlanID, log); err != nil {
 		return errors.Wrapf(err, "TeardownBranchENIPodNetwork: failed to teardown vlan")
 	}
 
 	ipFamily := unix.AF_INET
-	if containerAddr.IP.To4() == nil {
+	if vethMetadata.IPAddress.IP.To4() == nil {
 		ipFamily = unix.AF_INET6
 	}
 	// to handle the migration between different enforcingMode, we try to clean up rules under both mode since the pod might be setup with a different mode.
@@ -340,7 +367,7 @@ func (n *linuxNetwork) TeardownBranchENIPodNetwork(containerAddr *net.IPNet, vla
 	if err := n.teardownIIFBasedContainerRouteRules(rtTable, ipFamily, log); err != nil {
 		return errors.Wrapf(err, "TeardownBranchENIPodNetwork: unable to teardown IIF based container routes and rules")
 	}
-	if err := n.teardownIPBasedContainerRouteRules(containerAddr, rtTable, log); err != nil {
+	if err := n.teardownIPBasedContainerRouteRules(vethMetadata.IPAddress, rtTable, log); err != nil {
 		return errors.Wrapf(err, "TeardownBranchENIPodNetwork: unable to teardown IP based container routes and rules")
 	}
 
@@ -348,7 +375,7 @@ func (n *linuxNetwork) TeardownBranchENIPodNetwork(containerAddr *net.IPNet, vla
 }
 
 // setupVeth sets up veth for the pod.
-func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, v4Addr *net.IPNet, v6Addr *net.IPNet, mtu int, log logger.Logger) (netlink.Link, error) {
+func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netnsPath string, ipAddr *net.IPNet, mtu int, log logger.Logger, index int) (netlink.Link, error) {
 	// Clean up if hostVeth exists.
 	if oldHostVeth, err := n.netLink.LinkByName(hostVethName); err == nil {
 		if err = n.netLink.LinkDel(oldHostVeth); err != nil {
@@ -357,7 +384,7 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 		log.Debugf("Successfully deleted old hostVeth %s", hostVethName)
 	}
 
-	createVethContext := newCreateVethPairContext(contVethName, hostVethName, v4Addr, v6Addr, mtu)
+	createVethContext := newCreateVethPairContext(contVethName, hostVethName, ipAddr, mtu, index)
 	if err := n.ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		return nil, errors.Wrap(err, "failed to setup veth network")
 	}

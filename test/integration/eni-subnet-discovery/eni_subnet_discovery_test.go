@@ -319,7 +319,7 @@ func checkSecondaryENISubnets(expectNewCidr bool) {
 
 	By(fmt.Sprintf("checking the secondary ENI subnets are in the CIDR %s", expectedCidrRangeString))
 	for _, subnetID := range newEniSubnetIds {
-		subnetOutput, err := f.CloudServices.EC2().DescribeSubnet(context.TODO(), subnetID)
+		subnetOutput, err := f.CloudServices.EC2().DescribeSubnets(context.TODO(), []string{subnetID})
 		Expect(err).ToNot(HaveOccurred())
 		cidrSplit := strings.Split(*subnetOutput.Subnets[0].CidrBlock, "/")
 		actualSubnetIp, _, _ := net.ParseCIDR(*subnetOutput.Subnets[0].CidrBlock)
