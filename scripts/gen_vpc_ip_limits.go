@@ -30,6 +30,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
+	rcvpc "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/vpc"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
@@ -42,7 +43,16 @@ var log = logger.DefaultLogger()
 // Helper to calculate the --max-pods to match the ENIs and IPs on the instance
 func printPodLimit(instanceType string, l vpc.InstanceTypeLimits) string {
 	maxPods := l.ENILimit*(l.IPv4Limit-1) + 2
-	return fmt.Sprintf("%s %d", instanceType, maxPods)
+	maxPodsWhenTruncENI := (l.ENILimit-1)*(l.IPv4Limit-1) + 2
+	branchInteface := 0
+	limit := rcvpc.Limits[string(instanceType)]
+	if limit == nil {
+		log.Warnf("Instance type %s not found in rcvpc.Limits", instanceType)
+	} else {
+		branchInteface = rcvpc.Limits[string(instanceType)].BranchInterface
+
+	}
+	return fmt.Sprintf("%s %d %d %d", instanceType, maxPods, maxPodsWhenTruncENI, branchInteface)
 }
 
 func main() {
@@ -55,7 +65,8 @@ func main() {
 	}
 
 	// Get instance types limits across all regions
-	regions := describeRegions(ctx, cfg)
+	// regions := describeRegions(ctx, cfg)
+	regions := []string{"ap-northeast-1"}
 
 	eniLimitMap := make(map[string]vpc.InstanceTypeLimits)
 	for _, region := range regions {
@@ -315,8 +326,8 @@ package vpc
 var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 {{- range $key, $value := .ENILimits}}
 	"{{$key}}":	   {
-		ENILimit: {{.ENILimit}}, 
-		IPv4Limit: {{.IPv4Limit}}, 
+		ENILimit: {{.ENILimit}},
+		IPv4Limit: {{.IPv4Limit}},
 		DefaultNetworkCardIndex: {{.DefaultNetworkCardIndex}},
 		NetworkCards: []NetworkCard{
 			{{- range .NetworkCards}}
@@ -361,6 +372,7 @@ var eksMaxPodsTemplate = template.Must(template.New("").Parse(`# Copyright Amazo
 #
 # NOTE: For multi-card instance types (p5.48xlarge) the max limits is calculated only against the default network card at index (0).
 #
+# instance type max-pods max-pods-when-trunc-eni branch-interface
 {{- range $instanceLimit := .ENIPods}}
 {{ printf "%s" $instanceLimit }}
 {{- end }}
