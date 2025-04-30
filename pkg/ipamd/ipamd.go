@@ -538,7 +538,7 @@ func (c *IPAMContext) nodeInit() error {
 	// if apiserver is connected, get the maxPods from node
 	var node corev1.Node
 	if c.withApiServer {
-		node, err := k8sapi.GetNode(ctx, c.k8sClient)
+		node, err = k8sapi.GetNode(ctx, c.k8sClient)
 		if err != nil {
 			log.Errorf("Failed to get node, %s", err)
 			podENIErrInc("nodeInit")
