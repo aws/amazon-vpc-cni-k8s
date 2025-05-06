@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.19.5
+* Fix - fixed node init failure when using custom networking and SGPP @oliviassss in #3277
+
 ## v1.19.4
 * Improvement - Update AWS VPC CNI to SDK V2 Update - master branch by @orsenthil in #3070 
 * Fix - Handle EKS Service for the Beta Endpoint by @orsenthil in #3143
