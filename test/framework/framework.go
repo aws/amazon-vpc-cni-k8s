@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
+	apiregistrationclient "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/controller"
@@ -55,7 +56,8 @@ func New(options Options) *Framework {
 	config, err := clientcmd.BuildConfigFromFlags("", options.KubeConfig)
 	clientset, err := kubernetes.NewForConfig(config)
 	Expect(err).ToNot(HaveOccurred())
-
+	apiserverClient, err := apiregistrationclient.NewForConfig(config)
+	Expect(err).ToNot(HaveOccurred())
 	// For integration tests, the schema contains all Kubernetes resources for simplicity.
 	k8sSchema := runtime.NewScheme()
 	clientgoscheme.AddToScheme(k8sSchema)
@@ -109,7 +111,7 @@ func New(options Options) *Framework {
 		Options:             options,
 		K8sClient:           k8sClient,
 		CloudServices:       awsCloud,
-		K8sResourceManagers: k8s.NewResourceManager(k8sClient, clientset, k8sSchema, config),
+		K8sResourceManagers: k8s.NewResourceManager(k8sClient, clientset, apiserverClient, k8sSchema, config),
 		InstallationManager: controller.NewDefaultInstallationManager(
 			helm.NewDefaultReleaseManager(options.KubeConfig)),
 		Logger: utils.NewGinkgoLogger(),

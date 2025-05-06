@@ -191,6 +191,11 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
+	By("cleaning up unavaliable API services")
+	err := f.K8sResourceManagers.APIServiceManager().CleanupUnavailable()
+	if err != nil {
+		fmt.Printf("Warning: API service cleanup failed: %v\n", err)
+	}
 	By("deleting test namespace")
 	f.K8sResourceManagers.NamespaceManager().
 		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
