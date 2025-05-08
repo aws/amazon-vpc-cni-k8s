@@ -2156,3 +2156,49 @@ func Test_loadAdditionalENITags(t *testing.T) {
 		})
 	}
 }
+
+func Test_isENITrunkingSupported(t *testing.T) {
+	tests := []struct {
+		name         string
+		instanceType string
+		want         bool
+	}{
+		{
+			name:         "Supported family and type",
+			instanceType: "supportedFamily.supportedType",
+			want:         true,
+		},
+		{
+			name:         "Supported family and unsupported type",
+			instanceType: "supportedFamily1.unsupportedType1",
+			want:         false,
+		},
+		{
+			name:         "Unsupported family",
+			instanceType: "unsupportedFamily1.anyType",
+			want:         false,
+		},
+		{
+			name:         "Any type else",
+			instanceType: "anyFamily.anyType",
+			want:         true,
+		},
+	}
+
+	noENITrunkingInstanceTypes = []string{
+		"supportedFamily.unsupportedType",
+		"supportedFamily1.unsupportedType1",
+	}
+	noENITrunkingInstanceFamilies = []string{
+		"unsupportedFamily",
+		"unsupportedFamily1",
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{instanceType: tt.instanceType}
+			got := cache.IsENITrunkingSupported()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

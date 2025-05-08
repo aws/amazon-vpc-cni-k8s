@@ -23,6 +23,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -198,6 +199,8 @@ type APIs interface {
 	FetchInstanceTypeLimits() error
 
 	IsPrefixDelegationSupported() bool
+
+	IsENITrunkingSupported() bool
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -1686,6 +1689,23 @@ func (cache *EC2InstanceMetadataCache) IsPrefixDelegationSupported() bool {
 		return true
 	}
 	return false
+}
+
+// IsENITrunkingSupported return true if the instance type is not in non-supported list
+func (cache *EC2InstanceMetadataCache) IsENITrunkingSupported() bool {
+	log.Debugf("Check if instance supports ENI Trunking")
+
+	instanceFamily := strings.Split(cache.instanceType, ".")[0]
+
+	if slices.Contains(noENITrunkingInstanceFamilies, instanceFamily) {
+		log.Debugf("Instance family %s does not support ENI Trunking", instanceFamily)
+		return false
+	}
+	if slices.Contains(noENITrunkingInstanceTypes, cache.instanceType) {
+		log.Debugf("Instance type %s does not support ENI Trunking", cache.instanceType)
+		return false
+	}
+	return true
 }
 
 // AllocIPAddresses allocates numIPs of IP address on an ENI
