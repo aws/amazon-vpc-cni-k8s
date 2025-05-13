@@ -8,7 +8,7 @@ require (
 	github.com/aws/amazon-vpc-resource-controller-k8s v1.5.0
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/config v1.28.4
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.22
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.30
 	github.com/aws/aws-sdk-go-v2/service/autoscaling v1.51.12
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.56.0
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.43.14
