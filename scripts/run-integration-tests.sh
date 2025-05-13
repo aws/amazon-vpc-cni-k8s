@@ -19,8 +19,8 @@ OS=$(go env GOOS)
 ARCH=$(go env GOARCH)
 
 : "${AWS_DEFAULT_REGION:=us-west-2}"
-: "${K8S_VERSION:=1.25.7}"
-: "${EKS_CLUSTER_VERSION:=1.25}"
+: "${K8S_VERSION:=""}"
+: "${EKS_CLUSTER_VERSION:=""}"
 : "${PROVISION:=true}"
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
@@ -30,7 +30,15 @@ ARCH=$(go env GOARCH)
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
-: "${KOPS_VERSION=v1.26.4}"
+: "${KOPS_VERSION=v1.30.3}"
+
+if [[ -z $EKS_CLUSTER_VERSION || -z $K8S_VERSION ]]; then
+    CLUSTER_INFO=$(eksctl utils describe-cluster-versions --region $AWS_DEFAULT_REGION)
+    [[ -z $EKS_CLUSTER_VERSION ]] && EKS_CLUSTER_VERSION=$(echo "$CLUSTER_INFO" | jq -r '.clusterVersions[0].ClusterVersion')
+    [[ -z $K8S_VERSION ]] && K8S_VERSION=$(echo "$CLUSTER_INFO" | jq -r '.clusterVersions[0].KubernetesPatchVersion')
+    echo "EKS_CLUSTER_VERSION: $EKS_CLUSTER_VERSION"
+    echo "K8S_VERSION: $K8S_VERSION"
+fi
 
 __cluster_created=0
 __cluster_deprovisioned=0
@@ -123,8 +131,8 @@ check_aws_credentials
 
 echo "Logging in to docker repo"
 aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${AWS_ECR_REGISTRY}
-ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME"
-ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_INIT_ECR_REPO_NAME"
+ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_ECR_REPO_NAME" "$AWS_DEFAULT_REGION"
+ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_INIT_ECR_REPO_NAME" "$AWS_DEFAULT_REGION"
 
 # Check to see if the image already exists in the ECR repository, and if
 # not, check out the CNI source code for that image tag, build the CNI
@@ -132,7 +140,7 @@ ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_INIT_ECR_REPO_NAME"
 
 CNI_IMAGES_BUILD=false
 if [[ $(aws ecr batch-get-image --repository-name=$AWS_ECR_REPO_NAME --image-ids imageTag=$TEST_IMAGE_VERSION \
---query 'images[].imageId.imageTag' --region us-west-2) != "[]" ]]; then
+--query 'images[].imageId.imageTag' --region "$AWS_DEFAULT_REGION") != "[]" ]]; then
     echo "Image $AWS_ECR_REPO_NAME:$TEST_IMAGE_VERSION already exists. Skipping image build."
 else
     echo "Image $AWS_ECR_REPO_NAME:$TEST_IMAGE_VERSION does not exist in repository."
@@ -142,7 +150,7 @@ else
 fi
 
 if [[ $(aws ecr batch-get-image --repository-name=$AWS_INIT_ECR_REPO_NAME --image-ids imageTag=$TEST_IMAGE_VERSION \
---query 'images[].imageId.imageTag' --region us-west-2) != "[]" ]]; then
+--query 'images[].imageId.imageTag' --region "$AWS_DEFAULT_REGION") != "[]" ]]; then
     echo "Image $AWS_INIT_ECR_REPO_NAME:$TEST_IMAGE_VERSION already exists. Skipping image build."
 else
     echo "Image $AWS_INIT_ECR_REPO_NAME:$TEST_IMAGE_VERSION does not exist in repository."

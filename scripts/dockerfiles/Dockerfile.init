@@ -1,7 +1,7 @@
 ARG golang_image
 ARG base_image
 
-FROM $golang_image as builder
+FROM $golang_image AS builder
 WORKDIR /go/src/github.com/aws/amazon-vpc-cni-k8s
 ARG TARGETARCH
 # Configure build with Go modules
