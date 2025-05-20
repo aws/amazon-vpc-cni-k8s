@@ -18,6 +18,7 @@
       "mtu": "__MTU__",
       "enabled": "__EGRESSPLUGINENABLED__",
       "randomizeSNAT": "__RANDOMIZESNAT__",
+      "snatFixedPorts": "__SNATFIXEDPORTS__",
       "nodeIP": "__NODEIP__",
       "ipam": {
          "type": "host-local",
