@@ -202,7 +202,7 @@ func CheckAPIServerConnectivityWithTimeout(pollInterval time.Duration, pollTimeo
 
 	log.Info("Testing communication with server ...")
 
-	return wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(context.Background(), pollInterval, pollTimeout, true, func(ctx context.Context) (bool, error) {
 		version, err := clientSet.Discovery().ServerVersion()
 		if err != nil {
 			log.Errorf("Unable to reach API Server: %v", err)

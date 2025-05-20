@@ -184,8 +184,7 @@ const (
 	INSUFFICIENT_FREE_IP_SUBNET = "InsufficientFreeAddressesInSubnet"
 
 	// envEnableNetworkPolicy is used to enable IPAMD/CNI to send pod create events to network policy agent.
-	envNetworkPolicyMode     = "NETWORK_POLICY_ENFORCING_MODE"
-	defaultNetworkPolicyMode = "standard"
+	envNetworkPolicyMode = "NETWORK_POLICY_ENFORCING_MODE"
 
 	defaultMaxPodsFromKubelet = 110
 	kubeletConfigPath         = "/host/etc/kubernetes/kubelet/kubelet-config.json"
@@ -539,7 +538,7 @@ func (c *IPAMContext) nodeInit() error {
 	// if apiserver is connected, get the maxPods from node
 	var node corev1.Node
 	if c.withApiServer {
-		node, err := k8sapi.GetNode(ctx, c.k8sClient)
+		node, err = k8sapi.GetNode(ctx, c.k8sClient)
 		if err != nil {
 			log.Errorf("Failed to get node, %s", err)
 			podENIErrInc("nodeInit")
@@ -1846,13 +1845,14 @@ func EnablePodENI() bool {
 }
 
 func getNetworkPolicyMode() (string, error) {
-	if value := os.Getenv(envNetworkPolicyMode); value != "" {
-		if utils.IsValidNetworkPolicyEnforcingMode(value) {
-			return value, nil
-		}
-		return "", errors.New("invalid Network policy mode, supported modes: none, strict, standard")
+	value, exists := os.LookupEnv(envNetworkPolicyMode)
+	if !exists {
+		return "", nil
 	}
-	return defaultNetworkPolicyMode, nil
+	if utils.IsValidNetworkPolicyEnforcingMode(value) {
+		return value, nil
+	}
+	return "", errors.New("invalid Network policy mode, supported modes: none, strict, standard")
 }
 
 func usePrefixDelegation() bool {

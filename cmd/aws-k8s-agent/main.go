@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/version"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	metrics "github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -68,7 +70,7 @@ func startBackgroundAPIServerCheck(ipamContext *ipamd.IPAMContext) {
 		}
 
 		// Keep checking until connection is established
-		for {
+		wait.PollUntilContextCancel(context.Background(), pollInterval, true, func(ctx context.Context) (bool, error) {
 			version, err := clientSet.Discovery().ServerVersion()
 			if err == nil {
 				log.Infof("API server connectivity established in background! Cluster Version is: %s", version.GitVersion)
@@ -78,12 +80,12 @@ func startBackgroundAPIServerCheck(ipamContext *ipamd.IPAMContext) {
 
 				// Exit the goroutine after successful connection
 				log.Info("Background API server check completed successfully")
-				return
+				return true, nil
 			}
 
 			log.Debugf("Still waiting for API server connectivity in background: %v", err)
-			time.Sleep(pollInterval)
-		}
+			return false, nil
+		})
 	}()
 }
 

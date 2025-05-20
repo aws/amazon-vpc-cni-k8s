@@ -2378,6 +2378,34 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "nitro",
 		IsBareMetal: false,
 	},
+	"c7i-flex.12xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"c7i-flex.16xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
 	"c7i-flex.2xlarge":	   {
 		ENILimit: 4, 
 		IPv4Limit: 15, 
@@ -3058,6 +3086,48 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 			
 		},
 		HypervisorType: "xen",
+		IsBareMetal: false,
+	},
+	"f2.12xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"f2.48xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"f2.6xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
 		IsBareMetal: false,
 	},
 	"g4ad.16xlarge":	   {
@@ -4514,6 +4584,34 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "nitro",
 		IsBareMetal: false,
 	},
+	"i7ie.metal-24xl":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
+	},
+	"i7ie.metal-48xl":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "unknown",
+		IsBareMetal: true,
+	},
 	"i7ie.xlarge":	   {
 		ENILimit: 4, 
 		IPv4Limit: 15, 
@@ -4577,6 +4675,20 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		NetworkCards: []NetworkCard{
 				{
 					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"i8g.48xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
 					NetworkCardIndex: 0,
 				},
 			
@@ -7397,6 +7509,34 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		NetworkCards: []NetworkCard{
 				{
 					MaximumNetworkInterfaces: 4,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"m7i-flex.12xlarge":	   {
+		ENILimit: 8, 
+		IPv4Limit: 30, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"m7i-flex.16xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
 					NetworkCardIndex: 0,
 				},
 			
@@ -12096,6 +12236,34 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		IsBareMetal: true,
 	},
 	"u7i-12tb.224xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"u7i-6tb.112xlarge":	   {
+		ENILimit: 15, 
+		IPv4Limit: 50, 
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex: 0,
+				},
+			
+		},
+		HypervisorType: "nitro",
+		IsBareMetal: false,
+	},
+	"u7i-8tb.112xlarge":	   {
 		ENILimit: 15, 
 		IPv4Limit: 50, 
 		DefaultNetworkCardIndex: 0,

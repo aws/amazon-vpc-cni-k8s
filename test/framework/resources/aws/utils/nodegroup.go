@@ -281,7 +281,7 @@ func GetClusterVPCConfig(f *framework.Framework) (*ClusterVPCConfig, error) {
 
 	uniqueAZ := map[string]bool{}
 	for _, subnet := range clusterConfig.PublicSubnetList {
-		describeSubnet, err := f.CloudServices.EC2().DescribeSubnet(context.TODO(), subnet)
+		describeSubnet, err := f.CloudServices.EC2().DescribeSubnets(context.TODO(), []string{subnet})
 		if err != nil {
 			return nil, fmt.Errorf("failed to describe the subnet %s: %v", subnet, err)
 		}
