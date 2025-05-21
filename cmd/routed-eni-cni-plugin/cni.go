@@ -545,7 +545,7 @@ func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArg
 
 	prevResult, err := current.NewResultFromResult(conf.PrevResult)
 	if err != nil {
-		log.Info("PrevResult not available for pod or parsing failed")
+		log.Infof("PrevResult not available for pod or parsing failed, err %v", err)
 		return false, nil
 	}
 

@@ -41,7 +41,7 @@ func TestServer_VersionCheck(t *testing.T) {
 		warmENITarget:   1,
 		warmIPTarget:    3,
 		networkClient:   m.network,
-		dataStoreAccess: datastore.InitializeDataStores(1, "test", false, log),
+		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, log),
 	}
 
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil).AnyTimes()
@@ -284,7 +284,7 @@ func TestServer_AddNetwork(t *testing.T) {
 			for _, call := range tt.fields.getExcludeSNATCIDRsCalls {
 				m.network.EXPECT().GetExcludeSNATCIDRs().Return(call.snatExclusionCIDRs)
 			}
-			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled)
+			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled, defaultNetworkCard)
 			dsAccess := &datastore.DataStoreAccess{DataStores: []*datastore.DataStore{ds}}
 
 			// dsAccess := datastore.InitializeDataStores(1, defaultBackingStorePath, tt.fields.prefixDelegationEnabled, log)

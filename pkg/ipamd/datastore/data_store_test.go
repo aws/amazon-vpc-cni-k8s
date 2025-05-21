@@ -44,8 +44,10 @@ var logConfig = logger.Configuration{
 
 var Testlog = logger.New(&logConfig)
 
+var defaultNetworkCard = 0
+
 func TestAddENI(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -63,7 +65,7 @@ func TestAddENI(t *testing.T) {
 }
 
 func TestDeleteENI(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -110,7 +112,7 @@ func TestDeleteENI(t *testing.T) {
 }
 
 func TestDeleteENIwithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -160,7 +162,7 @@ func TestDeleteENIwithPDEnabled(t *testing.T) {
 }
 
 func TestAddENIIPv4Address(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -203,7 +205,7 @@ func TestAddENIIPv4Address(t *testing.T) {
 }
 
 func TestAddENIIPv4AddressWithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -246,7 +248,7 @@ func TestAddENIIPv4AddressWithPDEnabled(t *testing.T) {
 }
 
 func TestGetENIIPs(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -282,7 +284,7 @@ func TestGetENIIPs(t *testing.T) {
 }
 
 func TestGetENIIPsWithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -318,7 +320,7 @@ func TestGetENIIPsWithPDEnabled(t *testing.T) {
 }
 
 func TestDelENIIPv4Address(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
 
@@ -376,7 +378,7 @@ func TestDelENIIPv4Address(t *testing.T) {
 }
 
 func TestDelENIIPv4AddressWithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
 
@@ -435,7 +437,7 @@ func TestDelENIIPv4AddressWithPDEnabled(t *testing.T) {
 
 func TestTogglePD(t *testing.T) {
 	//DS is in secondary IP mode
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
 
@@ -514,7 +516,7 @@ func TestTogglePD(t *testing.T) {
 
 func TestPodIPv4Address(t *testing.T) {
 	checkpoint := NewTestCheckpoint(struct{}{})
-	ds := NewDataStore(Testlog, checkpoint, false)
+	ds := NewDataStore(Testlog, checkpoint, false, defaultNetworkCard)
 
 	checkpointDataCmpOpts := cmp.Options{
 		cmpopts.IgnoreFields(CheckpointEntry{}, "AllocationTimestamp"),
@@ -720,7 +722,7 @@ func TestPodIPv4Address(t *testing.T) {
 
 func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 	checkpoint := NewTestCheckpoint(struct{}{})
-	ds := NewDataStore(Testlog, checkpoint, true)
+	ds := NewDataStore(Testlog, checkpoint, true, defaultNetworkCard)
 
 	checkpointDataCmpOpts := cmp.Options{
 		cmpopts.IgnoreFields(CheckpointEntry{}, "AllocationTimestamp"),
@@ -896,7 +898,7 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 func TestGetIPStatsV4(t *testing.T) {
 	os.Setenv(envIPCooldownPeriod, "1")
 	defer os.Unsetenv(envIPCooldownPeriod)
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false)
 
@@ -950,7 +952,7 @@ func TestGetIPStatsV4(t *testing.T) {
 func TestGetIPStatsV4WithPD(t *testing.T) {
 	os.Setenv(envIPCooldownPeriod, "1")
 	defer os.Unsetenv(envIPCooldownPeriod)
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false)
 
@@ -1003,7 +1005,7 @@ func TestGetIPStatsV4WithPD(t *testing.T) {
 }
 
 func TestGetIPStatsV6(t *testing.T) {
-	v6ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	v6ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 	_ = v6ds.AddENI("eni-1", 1, true, false, false)
 	ipv6Addr := net.IPNet{IP: net.IP{0x21, 0xdb, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: net.CIDRMask(80, 128)}
 	_ = v6ds.AddIPv6CidrToStore("eni-1", ipv6Addr, true)
@@ -1023,7 +1025,7 @@ func TestGetIPStatsV6(t *testing.T) {
 }
 
 func TestWarmENIInteractions(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false)
 	_ = ds.AddENI("eni-2", 2, false, false, false)
@@ -1559,7 +1561,7 @@ func TestForceRemovalMetrics(t *testing.T) {
 		Help: "The total number of IPs force removed",
 	})
 
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	// Add an ENI and IP
 	err := ds.AddENI("eni-1", 1, true, false, false)

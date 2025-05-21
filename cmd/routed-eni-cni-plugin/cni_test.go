@@ -320,7 +320,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 	request := &pb.EnforceNpRequest{
 		K8S_POD_NAME:        "",
 		K8S_POD_NAMESPACE:   "",
-		NETWORK_POLICY_MODE: "",
+		NETWORK_POLICY_MODE: "standard",
 		InterfaceCount:      2,
 	}
 
@@ -338,7 +338,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 			RouteTableId: (MAX_ENI * (NetworkCards - 1)) + devNum + 1,
 		},
 	}
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "none"}
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "standard"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
 	vethMetadata := []driver.VirtualInterfaceMetadata{
@@ -559,7 +559,7 @@ func TestCmdDelForPodENINetwork(t *testing.T) {
 		RouteTableId: devNum + 1,
 	}}
 
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, PodVlanId: 1, NetworkPolicyMode: "none"}
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAddress: addrs, PodVlanId: 1, NetworkPolicyMode: "none"}
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
 	deleteNpReply := &rpc.DeleteNpReply{Success: true}
@@ -590,15 +590,16 @@ func TestCmdDelWithNetworkPolicyModeUnset(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum, NetworkPolicyMode: ""}
+	addrs := []*rpc.IPAddress{{
+		IPv4Addr:     ipAddr,
+		DeviceNumber: devNum,
+		RouteTableId: devNum + 1,
+	}}
+
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: ""}
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
-	addr := &net.IPNet{
-		IP:   net.ParseIP(delNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
-
-	mocksNetwork.EXPECT().TeardownPodNetwork(addr, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(nil)
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Nil(t, err)
@@ -644,6 +645,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -696,6 +698,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -749,6 +752,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -790,6 +794,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -827,6 +832,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -868,6 +874,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -908,6 +915,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -945,6 +953,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1041,6 +1050,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1101,6 +1111,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1108,7 +1119,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 								{
 									Name:    "eth0",
 									Sandbox: "/proc/42/ns/net",
-									PciID:   "6",
+									Mac:     "6",
 								},
 								{
 									Name: "enicc21c2d45es",
@@ -1116,13 +1127,12 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 								{
 									Name:    "mNicIf1",
 									Sandbox: "/proc/42/ns/net",
-									PciID:   "14",
+									Mac:     "14",
 								},
 								{
-									Name:       "dummycc21c2d7785",
-									Mac:        "0",
-									Sandbox:    "5",
-									SocketPath: "2",
+									Name:    "dummycc21c2d7785",
+									Mac:     "0",
+									Sandbox: "5",
 								},
 							},
 							IPs: []*current.IPConfig{
@@ -1175,6 +1185,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1216,6 +1227,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1252,6 +1264,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1293,6 +1306,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1333,6 +1347,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",

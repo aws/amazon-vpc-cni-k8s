@@ -259,7 +259,7 @@ type kubeletConfig struct {
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
-func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
+func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap, efaOnlyENIsbyNetworkCard []string) {
 	if len(tagMap) == 0 {
 		return
 	}
@@ -287,22 +287,46 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 			unmanagedENIlist = append(unmanagedENIlist, eniID)
 		}
 	}
+
+	filtered := lo.Filter(efaOnlyENIsbyNetworkCard, func(s string, _ int) bool {
+		return s != ""
+	})
+	unmanagedENIlist = append(unmanagedENIlist, filtered...)
+
 	c.awsClient.SetUnmanagedENIs(unmanagedENIlist)
 }
 
-// setUnmanagedNICs will mark the NICs which are not managed by CNI
-// When ENABLE_MULTI_NIC is false, all NIC > 0 are marked as unmanaged
-// When ENABLE_MULTI_NIC is true, NICs where an efa-only device is attached is marked as unmanaged
-func (c *IPAMContext) setUnmanagedNICs(skipNetworkCards []bool) []bool {
+// setUnmanagedNetworkCards will mark the Network Cards which are not managed by CNI
+// When ENABLE_MULTI_NIC is false, all Network Cards > 0 are marked as unmanaged
+// When ENABLE_MULTI_NIC is true, Network Cards which only includes an EFA-only device are marked as unmanaged.
+// If there are ENA devices on a Network Card along with EFA-only ENI, CNI manages the Network Card but excludes the EFA-only devices
+func (c *IPAMContext) markUnmanagedNetworkCards(efaOnlyNetworkCards []string, enisByNetworkCard [][]string) []bool {
 
+	skipNetworkCards := make([]bool, c.numNetworkCards)
 	if !c.enableMultiNICSupport {
 		skipNetworkCards = lo.Times(c.numNetworkCards, func(i int) bool {
 			return true
 		})
 		skipNetworkCards[DefaultNetworkCardIndex] = false
+	} else {
+		for networkCard, efaOnlyENI := range efaOnlyNetworkCards {
+			// Network card doesn not have an EFA-only ENI, so can be managed
+			if efaOnlyENI == "" {
+				continue
+			}
+
+			// Skip by default, unless we find a ENA device on this network card which is managed
+			skipNetworkCards[networkCard] = true
+			for _, eni := range enisByNetworkCard[networkCard] {
+				if !c.awsClient.IsUnmanagedENI(eni) && efaOnlyENI != eni {
+					skipNetworkCards[networkCard] = false
+					break
+				}
+			}
+		}
 	}
 
-	c.awsClient.SetUnmanagedNICs(skipNetworkCards)
+	c.awsClient.SetUnmanagedNetworkCards(skipNetworkCards)
 	return skipNetworkCards
 }
 
@@ -486,9 +510,9 @@ func (c *IPAMContext) nodeInit() error {
 
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
 
-	c.setUnmanagedENIs(metadataResult.TagMap)
+	c.setUnmanagedENIs(metadataResult.TagMap, metadataResult.EFAOnlyENIByNetworkCard)
 
-	skipNetworkCards := c.setUnmanagedNICs(metadataResult.SkipNetworkCards)
+	skipNetworkCards := c.markUnmanagedNetworkCards(metadataResult.EFAOnlyENIByNetworkCard, metadataResult.ENIsByNetworkCard)
 
 	if c.dataStoreAccess == nil {
 		c.dataStoreAccess = datastore.InitializeDataStores(skipNetworkCards, dsBackingStorePath(), c.enablePrefixDelegation, log)
@@ -1563,7 +1587,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 			eniTagMap = metadataResult.TagMap
 
 			c.setUnmanagedENIs(metadataResult.TagMap)
-			c.setUnmanagedNICs(metadataResult.SkipNetworkCards)
+			c.setUnmanagedNetworkCards(metadataResult.SkipNetworkCards)
 
 			allManagedENIs := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 			attachedENIs = c.getENIsByNetworkCard(allManagedENIs)[networkCard]
@@ -2047,6 +2071,7 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 		//We shouldn't need the IsPrimaryENI check as ENIs not created by vpc-cni will be marked unmanaged (including trunk ENI)
 		isUnmanagedENI := c.awsClient.IsUnmanagedENI(eni.ENIID)
 		isUnmanagedNIC := c.awsClient.IsUnmanagedNIC(eni.NetworkCard)
+		// isEFAOnlyENI := c.awsClient.IsEfaOnlyENI(eni.ENIID)
 
 		if c.enableIPv6 {
 			if !c.awsClient.IsPrimaryENI(eni.ENIID) {
