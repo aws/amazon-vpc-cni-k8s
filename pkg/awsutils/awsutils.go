@@ -28,6 +28,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
+
 	"github.com/aws/aws-sdk-go-v2/config"
 
 	"github.com/aws/smithy-go"
@@ -257,6 +259,9 @@ type ENIMetadata struct {
 
 	// IPv6 Prefixes allocated for the network interface
 	IPv6Prefixes []ec2types.Ipv6PrefixSpecification
+
+	// Network card the ENI is attached on
+	NetworkCard int
 }
 
 // PrimaryIPv4Address returns the primary IPv4 address of this node
@@ -633,6 +638,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	}
 	ipv4Available := false
 	ipv6Available := false
+	networkCard := 0
 	// Efa-only interfaces do not have any ipv4s or ipv6s associated with it. If we don't find any local-ipv4 or ipv6 info in imds we assume it to be efa-only interface and validate this later via ec2 call
 	for _, field := range macImdsFields {
 		if field == "local-ipv4s" {
@@ -655,6 +661,14 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 				log.Debugf("Found IPv6 addresses associated with interface. This is not efa-only interface")
 			}
 		}
+		if field == "network-card" {
+			networkCard, err = cache.imds.GetNetworkCard(ctx, eniMAC)
+			if err != nil {
+				awsAPIErrInc("GetNetworkCard", err)
+				log.Errorf("Network Card data not found from %v", networkCard)
+				return ENIMetadata{}, err
+			}
+		}
 	}
 
 	if !ipv4Available && !ipv6Available {
@@ -668,6 +682,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			SubnetIPv6CIDR: "",
 			IPv6Addresses:  make([]ec2types.NetworkInterfaceIpv6Address, 0),
 			IPv6Prefixes:   make([]ec2types.Ipv6PrefixSpecification, 0),
+			NetworkCard:    networkCard,
 		}, nil
 	}
 
@@ -764,6 +779,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		SubnetIPv6CIDR: subnetV6Cidr,
 		IPv6Addresses:  ec2ip6s,
 		IPv6Prefixes:   ec2ipv6Prefixes,
+		NetworkCard:    networkCard,
 	}, nil
 }
 
@@ -1351,6 +1367,29 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 	for _, eni := range allENIs {
 		eniIDs = append(eniIDs, eni.ENIID)
 		eniMap[eni.ENIID] = eni
+	}
+
+	// If ENABLE_IMDS_ONLY_MODE is enabled, skip EC2 API call and return IMDS metadata only
+	if utils.GetBoolAsStringEnvVar(utils.EnvEnableImdsOnlyMode, false) {
+		log.Debug("ENABLE_IMDS_ONLY_MODE is enabled, skipping EC2 API call and using IMDS metadata only")
+		// Collect the verified ENIs, adding multicards information from IMDS cache as well
+		var imdsOnlyENImetadata []ENIMetadata
+		var imdsOnlyMultiCardENIIDs []string
+		for _, eniMetadata := range eniMap {
+			if eniMetadata.NetworkCard > 0 {
+				imdsOnlyMultiCardENIIDs = append(imdsOnlyMultiCardENIIDs, eniMetadata.ENIID)
+			}
+			imdsOnlyENImetadata = append(imdsOnlyENImetadata, eniMetadata)
+		}
+
+		// Return the result with empty tag map, trunk ENI and EFA ENIs as those cannot get from IMDS metadata
+		return DescribeAllENIsResult{
+			ENIMetadata:     imdsOnlyENImetadata,
+			TagMap:          make(map[string]TagMap),
+			TrunkENI:        "",
+			EFAENIs:         make(map[string]bool),
+			MultiCardENIIDs: imdsOnlyMultiCardENIIDs,
+		}, nil
 	}
 
 	var ec2Response *ec2.DescribeNetworkInterfacesOutput
