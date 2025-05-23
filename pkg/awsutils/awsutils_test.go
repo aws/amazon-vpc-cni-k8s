@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
+
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	"github.com/aws/smithy-go"
@@ -440,24 +442,35 @@ func TestDescribeAllENIs(t *testing.T) {
 	err := errors.New("other Error")
 
 	testCases := []struct {
-		name    string
-		exptags map[string]TagMap
-		n       int
-		err     error
-		expErr  error
+		name       string
+		exptags    map[string]TagMap
+		expEC2call bool
+		n          int
+		err        error
+		expErr     error
 	}{
-		{"Success DescribeENI", map[string]TagMap{"eni-00000000": {"foo": "foo-value"}}, 1, nil, nil},
-		{"Not found error", nil, maxENIEC2APIRetries, &smithy.GenericAPIError{Code: "InvalidNetworkInterfaceID.NotFound", Message: "no 'eni-xxx'"}, expectedError},
-		{"Not found, no message", nil, maxENIEC2APIRetries, &smithy.GenericAPIError{Code: "InvalidNetworkInterfaceID.NotFound", Message: "no message"}, noMessageError},
-		{"Other error", nil, maxENIEC2APIRetries, err, err},
+		{"Success DescribeENI", map[string]TagMap{"eni-00000000": {"foo": "foo-value"}}, true, 1, nil, nil},
+		{"Success DescribeENI, skip EC2 calls", map[string]TagMap{}, false, 1, nil, nil},
+		{"Not found error", nil, true, maxENIEC2APIRetries, &smithy.GenericAPIError{Code: "InvalidNetworkInterfaceID.NotFound", Message: "no 'eni-xxx'"}, expectedError},
+		{"Not found, no message", nil, true, maxENIEC2APIRetries, &smithy.GenericAPIError{Code: "InvalidNetworkInterfaceID.NotFound", Message: "no message"}, noMessageError},
+		{"Other error", nil, true, maxENIEC2APIRetries, err, err},
 	}
 
 	mockMetadata := testMetadata(nil)
 
 	for _, tc := range testCases {
-		mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Times(tc.n).Return(result, tc.err)
-		cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
+		var cache *EC2InstanceMetadataCache
+		if tc.expEC2call {
+			mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Times(tc.n).Return(result, tc.err)
+			cache = &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
+		} else {
+			cache = &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
+			_ = os.Setenv(utils.EnvEnableImdsOnlyMode, "true")
+		}
 		metaData, err := cache.DescribeAllENIs()
+		if !tc.expEC2call {
+			_ = os.Unsetenv(utils.EnvEnableImdsOnlyMode)
+		}
 		assert.Equal(t, tc.expErr, err, tc.name)
 		assert.Equal(t, tc.exptags, metaData.TagMap, tc.name)
 	}
