@@ -59,7 +59,6 @@ var (
 	_, testEniSubnetIPNet, _   = net.ParseCIDR(testEniSubnet)
 	_, testEniV6SubnetIPNet, _ = net.ParseCIDR(testEniV6Subnet)
 	testEniIPNet               = net.ParseIP(testEniIP)
-	testEniIP6Net              = net.ParseIP(testEniIP6)
 	testEniV6GatewayNet        = net.ParseIP(testEniV6Gateway)
 )
 
