@@ -15,8 +15,11 @@ package awsutils
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
+
+	"github.com/aws/smithy-go"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -278,4 +281,38 @@ func TestGetIPv4Prefixes(t *testing.T) {
 			assert.ElementsMatch(t, ips, []net.IPNet{})
 		}
 	}
+}
+
+func TestGetNetworkCard(t *testing.T) {
+	// Test case 1: Network card exists
+	f := TypedIMDS{FakeIMDS(map[string]interface{}{
+		"network/interfaces/macs/02:c5:f8:3e:6b:27/network-card": "1",
+	})}
+
+	n, err := f.GetNetworkCard(context.TODO(), "02:c5:f8:3e:6b:27")
+	if assert.NoError(t, err) {
+		assert.Equal(t, 1, n)
+	}
+
+	// Test case 2: Network card not found (should default to 0)
+	notFound := &smithy.OperationError{
+		Err: errors.New("StatusCode: 404"),
+	}
+
+	f2 := TypedIMDS{FakeIMDS(map[string]interface{}{
+		"network/interfaces/macs/02:c5:f8:3e:6b:27/network-card": notFound,
+	})}
+
+	n, err = f2.GetNetworkCard(context.TODO(), "02:c5:f8:3e:6b:27")
+	if assert.NoError(t, err) {
+		assert.Equal(t, 0, n)
+	}
+
+	// Test case 3: Other error
+	f3 := TypedIMDS{FakeIMDS(map[string]interface{}{
+		"network/interfaces/macs/02:c5:f8:3e:6b:27/network-card": errors.New("some other error"),
+	})}
+
+	_, err = f3.GetNetworkCard(context.TODO(), "02:c5:f8:3e:6b:27")
+	assert.Error(t, err)
 }

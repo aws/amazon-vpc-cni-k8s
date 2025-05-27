@@ -68,9 +68,9 @@ For help, please consider the following venues (in order):
 For all Kubernetes releases, *we recommend installing the latest VPC CNI release*. The following table denotes our *oldest* recommended
 VPC CNI version for each actively supported Kubernetes release.
 
-| Kubernetes Release | 1.31     | 1.30     | 1.29     | 1.28     | 1.27     | 1.26     | 1.25     | 1.24    |
-| ------------------ | -------- | -------- | -------- | -------- | -------- | -------- | -------- | ------- |
-| VPC CNI Version    | v1.16.4+ | v1.16.0+ | v1.14.1+ | v1.13.4+ | v1.12.5+ | v1.12.0+ | v1.11.4+ | v1.9.3+ |
+| Kubernetes Release | 1.31     | 1.30     | 1.29     | 1.28     | 1.27     | 1.26     |
+| ------------------ | -------- | -------- | -------- | -------- | -------- | -------- |
+| VPC CNI Version    | v1.16.4+ | v1.16.0+ | v1.14.1+ | v1.13.4+ | v1.12.5+ | v1.12.0+ |
 
 ## Version Upgrade
 
@@ -757,6 +757,15 @@ In standard mode, return traffic is always allowed for any packets that were ini
 
 If you remove the Network Policy Agent container from the aws-node DaemonSet, you must also ensure that NETWORK_POLICY_ENFORCING_MODE environment variable is not set.
 Setting this value while the NP agent is absent can lead to failures during pod creation.
+
+#### `ENABLE_IMDS_ONLY_MODE` (v1.19.6+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Setting `ENABLE_IMDS_ONLY_MODE` to `true` enables the CNI plugin to operate in environments with strict VPC or IAM restrictions where EC2 API access is limited or unavailable. In this mode, the CNI plugin relies solely on the Instance Metadata Service (IMDS) to retrieve information about ENIs (Elastic Network Interfaces) and determine IP addresses to assign. These ENIs are only discovered at startup, so ENIs and IPs must be pre-attached and pre-assigned before CNI plugin starts up.
+Enabling this mode automatically sets `DISABLE_NETWORK_RESOURCE_PROVISIONING` and `DISABLE_LEAKED_ENI_CLEANUP` to `true`, as the CNI plugin will not make any EC2 API calls during operation.
 
 ### VPC CNI Feature Matrix
 
