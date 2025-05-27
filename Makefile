@@ -374,6 +374,7 @@ generate:
 generate-limits: GOOS=
 generate-limits:    ## Generate limit file go code
 	go run $(VENDOR_OVERRIDE_FLAG) scripts/gen_vpc_ip_limits.go
+	gofmt -w pkg/vpc/vpc_ip_resource_limit.go
 
 ekscharts-sync:
 	for HELM_CHART_NAME in $(HELM_CHART_NAMES) ; do \
