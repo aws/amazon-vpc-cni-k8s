@@ -1829,15 +1829,20 @@ func getMinimumIPTarget() int {
 }
 
 func disableENIProvisioning() bool {
-	return utils.GetBoolAsStringEnvVar(envDisableENIProvisioning, false)
+	return enableImdsOnlyMode() || utils.GetBoolAsStringEnvVar(envDisableENIProvisioning, false)
 }
 
 func disableLeakedENICleanup() bool {
 	// Cases where leaked ENI cleanup is disabled:
 	// 1. IPv6 is enabled, so no ENIs are attached
 	// 2. ENI provisioning is disabled, so ENIs are not managed by IPAMD
-	// 3. Environment var explicitly disabling task is set
-	return isIPv6Enabled() || disableENIProvisioning() || utils.GetBoolAsStringEnvVar(envDisableLeakedENICleanup, false)
+	// 3. CNI is operating in IMDS only mode
+	// 4. Environment var explicitly disabling task is set
+	return isIPv6Enabled() || disableENIProvisioning() || enableImdsOnlyMode() || utils.GetBoolAsStringEnvVar(envDisableLeakedENICleanup, false)
+}
+
+func enableImdsOnlyMode() bool {
+	return utils.GetBoolAsStringEnvVar(utils.EnvEnableImdsOnlyMode, false)
 }
 
 func EnablePodENI() bool {

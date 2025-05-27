@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
+
 	"github.com/aws/smithy-go"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -1644,6 +1646,19 @@ func TestDisablingENIProvisioning(t *testing.T) {
 
 	_ = os.Unsetenv(envDisableENIProvisioning)
 	disabled = disableENIProvisioning()
+	assert.False(t, disabled)
+}
+
+func TestEnableImdsOnlyMode(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	_ = os.Setenv(utils.EnvEnableImdsOnlyMode, "true")
+	disabled := enableImdsOnlyMode()
+	assert.True(t, disabled)
+
+	_ = os.Unsetenv(utils.EnvEnableImdsOnlyMode)
+	disabled = enableImdsOnlyMode()
 	assert.False(t, disabled)
 }
 
