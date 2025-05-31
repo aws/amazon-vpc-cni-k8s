@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -677,7 +678,18 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 		return addr.Address, eni.DeviceNumber, nil
 	}
 
+	// Sort ENIs before searching them for an available IP address.
+	// We don't want to just iterate over ds.eniPool because random map iteration under
+	// WARM_ENI_TARGET makes it much harder to remove IP addresses once they're no longer needed.
+	var enis []*ENI
 	for _, eni := range ds.eniPool {
+		enis = append(enis, eni)
+	}
+	// sort in ascending order by device number -- i.e. prioritize allocation on ENIs with smaller
+	// device numbers.
+	slices.SortFunc(enis, func(x, y *ENI) int { return x.DeviceNumber - y.DeviceNumber })
+
+	for _, eni := range enis {
 		for _, availableCidr := range eni.AvailableIPv4Cidrs {
 			var addr *AddressInfo
 			var strPrivateIPv4 string
