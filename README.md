@@ -552,8 +552,16 @@ Type: Boolean as a String
 
 Default: `true`
 
-Subnet discovery is enabled by default. VPC-CNI will pick the subnet with the most number of free IPs from the nodes' VPC/AZ to create the secondary ENIs. The subnets considered are the subnet the node is created in and subnets tagged with `kubernetes.io/role/cni`.
+Subnet discovery is enabled by default. VPC-CNI will pick the subnet with the most number of free IPs from the nodes' VPC/AZ to create the secondary ENIs. The subnets considered are the subnet the node is created in and subnets tagged with the value specified in `SUBNET_DISCOVERY_TAG_KEY` (defaults to `kubernetes.io/role/cni`).
 If `ENABLE_SUBNET_DISCOVERY` is set to `false` or if DescribeSubnets fails due to IAM permissions, all secondary ENIs will be created in the subnet the node is created in.
+
+#### `SUBNET_DISCOVERY_TAG_KEY` (v1.19.5+)
+
+Type: String
+
+Default: `kubernetes.io/role/cni`
+
+Specifies the tag key to use for subnet discovery. This allows sharing a VPC across multiple EKS clusters, each with their own set of subnets. For example, setting this to `kubernetes.io/cluster/cluster-name` would limit subnet discovery to only subnets tagged specifically for that cluster.
 
 #### `ENABLE_PREFIX_DELEGATION` (v1.9.0+)
 

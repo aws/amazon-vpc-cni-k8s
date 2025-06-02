@@ -70,7 +70,8 @@ const (
 	eniOwnerTagValue        = "amazon-vpc-cni"
 	additionalEniTagsEnvVar = "ADDITIONAL_ENI_TAGS"
 	reservedTagKeyPrefix    = "k8s.amazonaws.com"
-	subnetDiscoveryTagKey   = "kubernetes.io/role/cni"
+	subnetDiscoveryTagKeyEnvVar = "SUBNET_DISCOVERY_TAG_KEY"
+	defaultSubnetDiscoveryTagKey = "kubernetes.io/role/cni"
 	// UnknownInstanceType indicates that the instance type is not yet supported
 	UnknownInstanceType = "vpc ip resource(eni ip limit): unknown instance type"
 
@@ -223,6 +224,7 @@ type EC2InstanceMetadataCache struct {
 	multiCardENIs          StringSet
 	useSubnetDiscovery     bool
 	enablePrefixDelegation bool
+	subnetDiscoveryTagKey  string
 
 	clusterName       string
 	additionalENITags map[string]string
@@ -387,6 +389,12 @@ func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Ena
 	cache.imds = TypedIMDS{instrumentedIMDS{ec2Metadata}}
 	cache.clusterName = os.Getenv(clusterNameEnvVar)
 	cache.additionalENITags = loadAdditionalENITags()
+	
+	cache.subnetDiscoveryTagKey = os.Getenv(subnetDiscoveryTagKeyEnvVar)
+	if cache.subnetDiscoveryTagKey == "" {
+		cache.subnetDiscoveryTagKey = defaultSubnetDiscoveryTagKey
+	}
+	log.Infof("Subnet discovery tag key set to %s", cache.subnetDiscoveryTagKey)
 
 	region, err := ec2Metadata.GetRegion(ctx, nil)
 	if err != nil {
@@ -973,7 +981,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 			} else {
 				for _, subnet := range subnetResult {
 					if *subnet.SubnetId != cache.subnetID {
-						if !validTag(subnet) {
+						if !cache.validTag(subnet) {
 							continue
 						}
 					}
@@ -1030,9 +1038,9 @@ func (cache *EC2InstanceMetadataCache) getVpcSubnets() ([]ec2types.Subnet, error
 	return subnetResult.Subnets, nil
 }
 
-func validTag(subnet ec2types.Subnet) bool {
+func (cache *EC2InstanceMetadataCache) validTag(subnet ec2types.Subnet) bool {
 	for _, tag := range subnet.Tags {
-		if *tag.Key == subnetDiscoveryTagKey {
+		if aws.ToString(tag.Key) == cache.subnetDiscoveryTagKey {
 			return true
 		}
 	}

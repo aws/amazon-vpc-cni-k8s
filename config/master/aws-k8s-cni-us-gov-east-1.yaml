@@ -501,6 +501,8 @@ spec:
               value: "false"
             - name: ENABLE_SUBNET_DISCOVERY
               value: "true"
+            - name: SUBNET_DISCOVERY_TAG_KEY
+              value: "kubernetes.io/role/cni"
             - name: NETWORK_POLICY_ENFORCING_MODE
               value: "standard"
             - name: VPC_CNI_VERSION

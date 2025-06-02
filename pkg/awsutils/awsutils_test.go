@@ -169,6 +169,34 @@ func setupEventRecorder(t *testing.T) {
 	mockEventRecorder.K8sClient.Create(ctx, &fakeNode)
 }
 
+func TestValidTag(t *testing.T) {
+	ec2Tags := []ec2types.Tag{
+		{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")},
+		{Key: aws.String("kubernetes.io/cluster/test-cluster"), Value: aws.String("shared")},
+	}
+	subnet := ec2types.Subnet{Tags: ec2Tags}
+
+	cases := []struct {
+		name       string
+		tagKey     string
+		expectPass bool
+	}{
+		{"default tag key", "kubernetes.io/role/cni", true},
+		{"custom tag key", "kubernetes.io/cluster/test-cluster", true},
+		{"non-existent tag key", "kubernetes.io/nonexistent", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{subnetDiscoveryTagKey: c.tagKey}
+			result := cache.validTag(subnet)
+			if result != c.expectPass {
+				t.Errorf("Expected validTag to return %v for tag key %s but got %v", c.expectPass, c.tagKey, result)
+			}
+		})
+	}
+}
+
 func TestInitWithEC2metadata(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
 	defer cancel()
@@ -1359,6 +1387,32 @@ func TestEC2InstanceMetadataCache_buildENITags(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestNewReadingSubnetDiscoveryTagKey(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	// Test with environment variable set
+	os.Setenv("SUBNET_DISCOVERY_TAG_KEY", "kubernetes.io/cluster/test-cluster")
+	defer os.Unsetenv("SUBNET_DISCOVERY_TAG_KEY")
+	
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, imds: TypedIMDS{mockMetadata}}
+	os.Setenv("ENABLE_SUBNET_DISCOVERY", "true")
+	defer os.Unsetenv("ENABLE_SUBNET_DISCOVERY")
+
+	// Call New to initialize
+	cache, err := New(true, false, true, true, false)
+	assert.NoError(t, err)
+	assert.Equal(t, "kubernetes.io/cluster/test-cluster", cache.subnetDiscoveryTagKey)
+
+	// Test with environment variable not set
+	os.Unsetenv("SUBNET_DISCOVERY_TAG_KEY")
+	cache, err = New(true, false, true, true, false)
+	assert.NoError(t, err)
+	assert.Equal(t, "kubernetes.io/role/cni", cache.subnetDiscoveryTagKey)
 }
 
 func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
