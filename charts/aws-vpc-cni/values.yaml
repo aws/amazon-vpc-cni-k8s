@@ -43,7 +43,9 @@ nodeAgent:
     privileged: true
   enableCloudWatchLogs: "false"
   enablePolicyEventLogs: "false"
+  # If you want to write the logs to standard output, set this to "stdout"
   networkPolicyAgentLogFileLocation: "/var/log/aws-routed-eni/network-policy-agent.log"
+  logLevel: "info"
   enableIpv6: "false"
   metricsBindAddr: "8162"
   healthProbeBindAddr: "8163"
