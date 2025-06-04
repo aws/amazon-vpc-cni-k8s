@@ -50,6 +50,20 @@ func (mr *MockNetworkAPIsMockRecorder) CleanUpStaleAWSChains(v4Enabled, v6Enable
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanUpStaleAWSChains", reflect.TypeOf((*MockNetworkAPIs)(nil).CleanUpStaleAWSChains), v4Enabled, v6Enabled)
 }
 
+// DeleteRulesBySrc mocks base method.
+func (m *MockNetworkAPIs) DeleteRulesBySrc(eniIP string, v6enabled bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteRulesBySrc", eniIP, v6enabled)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteRulesBySrc indicates an expected call of DeleteRulesBySrc.
+func (mr *MockNetworkAPIsMockRecorder) DeleteRulesBySrc(eniIP, v6enabled interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteRulesBySrc", reflect.TypeOf((*MockNetworkAPIs)(nil).DeleteRulesBySrc), eniIP, v6enabled)
+}
+
 // GetExcludeSNATCIDRs mocks base method.
 func (m *MockNetworkAPIs) GetExcludeSNATCIDRs() []string {
 	m.ctrl.T.Helper()
@@ -94,18 +108,18 @@ func (mr *MockNetworkAPIsMockRecorder) GetLinkByMac(mac, retryInterval interface
 }
 
 // GetRuleList mocks base method.
-func (m *MockNetworkAPIs) GetRuleList() ([]netlink.Rule, error) {
+func (m *MockNetworkAPIs) GetRuleList(v6enabled bool) ([]netlink.Rule, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRuleList")
+	ret := m.ctrl.Call(m, "GetRuleList", v6enabled)
 	ret0, _ := ret[0].([]netlink.Rule)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetRuleList indicates an expected call of GetRuleList.
-func (mr *MockNetworkAPIsMockRecorder) GetRuleList() *gomock.Call {
+func (mr *MockNetworkAPIsMockRecorder) GetRuleList(v6enabled interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRuleList", reflect.TypeOf((*MockNetworkAPIs)(nil).GetRuleList))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRuleList", reflect.TypeOf((*MockNetworkAPIs)(nil).GetRuleList), v6enabled)
 }
 
 // GetRuleListBySrc mocks base method.
@@ -124,31 +138,31 @@ func (mr *MockNetworkAPIsMockRecorder) GetRuleListBySrc(ruleList, src interface{
 }
 
 // SetupENINetwork mocks base method.
-func (m *MockNetworkAPIs) SetupENINetwork(eniIP, eniMAC string, deviceNumber, networkCard int, eniSubnetCIDR string, maxENIPerNIC int) error {
+func (m *MockNetworkAPIs) SetupENINetwork(eniIP, eniMAC string, deviceNumber, networkCard int, eniSubnetCIDR string, maxENIPerNIC int, isTrunkENI bool) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetupENINetwork", eniIP, eniMAC, deviceNumber, networkCard, eniSubnetCIDR, maxENIPerNIC)
+	ret := m.ctrl.Call(m, "SetupENINetwork", eniIP, eniMAC, deviceNumber, networkCard, eniSubnetCIDR, maxENIPerNIC, isTrunkENI)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetupENINetwork indicates an expected call of SetupENINetwork.
-func (mr *MockNetworkAPIsMockRecorder) SetupENINetwork(eniIP, eniMAC, deviceNumber, networkCard, eniSubnetCIDR, maxENIPerNIC interface{}) *gomock.Call {
+func (mr *MockNetworkAPIsMockRecorder) SetupENINetwork(eniIP, eniMAC, deviceNumber, networkCard, eniSubnetCIDR, maxENIPerNIC, isTrunkENI interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupENINetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupENINetwork), eniIP, eniMAC, deviceNumber, networkCard, eniSubnetCIDR, maxENIPerNIC)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupENINetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupENINetwork), eniIP, eniMAC, deviceNumber, networkCard, eniSubnetCIDR, maxENIPerNIC, isTrunkENI)
 }
 
 // SetupHostNetwork mocks base method.
-func (m *MockNetworkAPIs) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI, v4Enabled, v6Enabled bool) error {
+func (m *MockNetworkAPIs) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI, v6Enabled bool) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetupHostNetwork", vpcCIDRs, primaryMAC, primaryAddr, enablePodENI, v4Enabled, v6Enabled)
+	ret := m.ctrl.Call(m, "SetupHostNetwork", vpcCIDRs, primaryMAC, primaryAddr, enablePodENI, v6Enabled)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetupHostNetwork indicates an expected call of SetupHostNetwork.
-func (mr *MockNetworkAPIsMockRecorder) SetupHostNetwork(vpcCIDRs, primaryMAC, primaryAddr, enablePodENI, v4Enabled, v6Enabled interface{}) *gomock.Call {
+func (mr *MockNetworkAPIsMockRecorder) SetupHostNetwork(vpcCIDRs, primaryMAC, primaryAddr, enablePodENI, v6Enabled interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupHostNetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupHostNetwork), vpcCIDRs, primaryMAC, primaryAddr, enablePodENI, v4Enabled, v6Enabled)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupHostNetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupHostNetwork), vpcCIDRs, primaryMAC, primaryAddr, enablePodENI, v6Enabled)
 }
 
 // UpdateExternalServiceIpRules mocks base method.
@@ -166,17 +180,17 @@ func (mr *MockNetworkAPIsMockRecorder) UpdateExternalServiceIpRules(ruleList, ex
 }
 
 // UpdateHostIptablesRules mocks base method.
-func (m *MockNetworkAPIs) UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v4Enabled, v6Enabled bool) error {
+func (m *MockNetworkAPIs) UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v6Enabled bool) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateHostIptablesRules", vpcCIDRs, primaryMAC, primaryAddr, v4Enabled, v6Enabled)
+	ret := m.ctrl.Call(m, "UpdateHostIptablesRules", vpcCIDRs, primaryMAC, primaryAddr, v6Enabled)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateHostIptablesRules indicates an expected call of UpdateHostIptablesRules.
-func (mr *MockNetworkAPIsMockRecorder) UpdateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr, v4Enabled, v6Enabled interface{}) *gomock.Call {
+func (mr *MockNetworkAPIsMockRecorder) UpdateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr, v6Enabled interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateHostIptablesRules", reflect.TypeOf((*MockNetworkAPIs)(nil).UpdateHostIptablesRules), vpcCIDRs, primaryMAC, primaryAddr, v4Enabled, v6Enabled)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateHostIptablesRules", reflect.TypeOf((*MockNetworkAPIs)(nil).UpdateHostIptablesRules), vpcCIDRs, primaryMAC, primaryAddr, v6Enabled)
 }
 
 // UpdateRuleListBySrc mocks base method.

@@ -1359,7 +1359,7 @@ func (ds *DataStore) getUnusedIP(availableCidr *CidrInfo) (string, error) {
 		return strPrivateIPv4, nil
 	}
 
-	return "", fmt.Errorf("no free IP available in the prefix - %s/%s", availableCidr.Cidr.IP, availableCidr.Cidr.Mask)
+	return "", fmt.Errorf("no free IP available in the prefix - %s", availableCidr.Cidr.String())
 }
 
 func (ds *DataStore) GetNetworkCard() int {

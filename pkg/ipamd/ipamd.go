@@ -259,7 +259,7 @@ type kubeletConfig struct {
 }
 
 // setUnmanagedENIs will rebuild the set of ENI IDs for ENIs tagged as "no_manage"
-func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap, efaOnlyENIsbyNetworkCard []string) {
+func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 	if len(tagMap) == 0 {
 		return
 	}
@@ -288,19 +288,14 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap, efaOnl
 		}
 	}
 
-	filtered := lo.Filter(efaOnlyENIsbyNetworkCard, func(s string, _ int) bool {
-		return s != ""
-	})
-	unmanagedENIlist = append(unmanagedENIlist, filtered...)
-
 	c.awsClient.SetUnmanagedENIs(unmanagedENIlist)
 }
 
 // setUnmanagedNetworkCards will mark the Network Cards which are not managed by CNI
 // When ENABLE_MULTI_NIC is false, all Network Cards > 0 are marked as unmanaged
-// When ENABLE_MULTI_NIC is true, Network Cards which only includes an EFA-only device are marked as unmanaged.
-// If there are ENA devices on a Network Card along with EFA-only ENI, CNI manages the Network Card but excludes the EFA-only devices
-func (c *IPAMContext) markUnmanagedNetworkCards(efaOnlyNetworkCards []string, enisByNetworkCard [][]string) []bool {
+// When ENABLE_MULTI_NIC is true, Network Cards which ONLY includes an EFA-only device are marked as unmanaged.
+// If there is a ENA device on a Network Card along with EFA-only device, CNI manages the Network Card but excludes the EFA-only device
+func (c *IPAMContext) markUnmanagedNetworkCards(efaOnlyENINetworkCards []string, enisByNetworkCard [][]string) []bool {
 
 	skipNetworkCards := make([]bool, c.numNetworkCards)
 	if !c.enableMultiNICSupport {
@@ -309,13 +304,14 @@ func (c *IPAMContext) markUnmanagedNetworkCards(efaOnlyNetworkCards []string, en
 		})
 		skipNetworkCards[DefaultNetworkCardIndex] = false
 	} else {
-		for networkCard, efaOnlyENI := range efaOnlyNetworkCards {
-			// Network card doesn not have an EFA-only ENI, so can be managed
+		for networkCard, efaOnlyENI := range efaOnlyENINetworkCards {
+
 			if efaOnlyENI == "" {
+				// Network card does not have an EFA-only ENI, so can be managed
 				continue
 			}
 
-			// Skip by default, unless we find a ENA device on this network card which is managed
+			// Skip the network card by default, unless we find a ENA device on this network card which is managed
 			skipNetworkCards[networkCard] = true
 			for _, eni := range enisByNetworkCard[networkCard] {
 				if !c.awsClient.IsUnmanagedENI(eni) && efaOnlyENI != eni {
@@ -490,7 +486,7 @@ func (c *IPAMContext) nodeInit() error {
 	primaryENIMac := c.awsClient.GetPrimaryENImac()
 
 	// For multi-card instance, non-VPC traffic is still routed out of Primary ENI
-	err = c.networkClient.SetupHostNetwork(vpcCIDRs, primaryENIMac, &primaryIP, c.enablePodENI, c.enableIPv4, c.enableIPv6)
+	err = c.networkClient.SetupHostNetwork(vpcCIDRs, primaryENIMac, &primaryIP, c.enablePodENI, c.enableIPv6)
 	if err != nil {
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
@@ -510,7 +506,7 @@ func (c *IPAMContext) nodeInit() error {
 
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
 
-	c.setUnmanagedENIs(metadataResult.TagMap, metadataResult.EFAOnlyENIByNetworkCard)
+	c.setUnmanagedENIs(metadataResult.TagMap)
 
 	skipNetworkCards := c.markUnmanagedNetworkCards(metadataResult.EFAOnlyENIByNetworkCard, metadataResult.ENIsByNetworkCard)
 
@@ -576,6 +572,7 @@ func (c *IPAMContext) nodeInit() error {
 	if err = c.configureIPRulesForPods(); err != nil {
 		return err
 	}
+
 	// Spawning updateCIDRsRulesOnChange go-routine
 	go wait.Forever(func() {
 		vpcCIDRs = c.updateCIDRsRulesOnChange(vpcCIDRs)
@@ -688,7 +685,7 @@ func (c *IPAMContext) handlePreScaling(ctx context.Context) error {
 }
 
 func (c *IPAMContext) configureIPRulesForPods() error {
-	rules, err := c.networkClient.GetRuleList()
+	rules, err := c.networkClient.GetRuleList(c.enableIPv6)
 	if err != nil {
 		log.Errorf("During ipamd init: failed to retrieve IP rule list %v", err)
 		return nil
@@ -697,9 +694,14 @@ func (c *IPAMContext) configureIPRulesForPods() error {
 	for _, ds := range c.dataStoreAccess.DataStores {
 		for _, info := range ds.AllocatedIPs() {
 			// TODO(gus): This should really be done via CNI CHECK calls, rather than in ipam (requires upstream k8s changes).
-
+			var mask int
 			// Update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
-			srcIPNet := net.IPNet{IP: net.ParseIP(info.IP), Mask: net.IPv4Mask(255, 255, 255, 255)}
+			if c.enableIPv6 {
+				mask = 128
+			} else {
+				mask = 32
+			}
+			srcIPNet := net.IPNet{IP: net.ParseIP(info.IP), Mask: net.CIDRMask(mask, mask)}
 
 			err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet)
 			if err != nil {
@@ -741,7 +743,7 @@ func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 	old := sets.NewString(oldVPCCIDRs...)
 	new := sets.NewString(newVPCCIDRs...)
 	if !old.Equal(new) {
-		err = c.networkClient.UpdateHostIptablesRules(newVPCCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP, c.enableIPv4,
+		err = c.networkClient.UpdateHostIptablesRules(newVPCCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP,
 			c.enableIPv6)
 		if err != nil {
 			log.Warnf("unable to update host iptables rules for VPC CIDRs due to error: %v", err)
@@ -865,9 +867,17 @@ func (c *IPAMContext) tryFreeENI(networkCard int) {
 	if err != nil {
 		ipamdErrInc("decreaseIPPoolFreeENIFailed")
 		log.Errorf("Failed to free ENI %s, err: %v", eni, err)
-		return
+		// If the ENI attachment not found or cannot be detached we return without deleting the primary IP rules
+		if errors.Is(err, awsutils.ErrENIAttachmentIdNotFound) || errors.Is(err, awsutils.ErrUnableToDetachENI) {
+			return
+		}
 	}
 
+	err = c.networkClient.DeleteRulesBySrc(c.primaryIP[eni], c.enableIPv6)
+	if err != nil {
+		log.Errorf("Failed to delete rules for Primary IP of ENI err: %v", err)
+		return
+	}
 }
 
 // When warm IP/prefix targets are defined, free extra IPs
@@ -1269,7 +1279,7 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 		if c.enableIPv6 {
 			subnetCidr = eniMetadata.SubnetIPv6CIDR
 		}
-		err = c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.DeviceNumber, eniMetadata.NetworkCard, subnetCidr, c.maxENI)
+		err = c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.DeviceNumber, eniMetadata.NetworkCard, subnetCidr, c.maxENI, isTrunkENI)
 		if err != nil {
 			// Failed to set up the ENI
 			errRemove := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).RemoveENIFromDataStore(eni, true)
@@ -1530,6 +1540,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 	if timeSinceLast <= interval && !needsTrunkEni {
 		return
 	}
+	var metadataResult awsutils.DescribeAllENIsResult
 
 	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
 	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
@@ -1571,10 +1582,13 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		var eniTagMap map[string]awsutils.TagMap
 		if needToUpdateTags {
 			log.Debugf("A new ENI added but not by ipamd, updating tags by calling EC2")
-			metadataResult, err := c.awsClient.DescribeAllENIs()
-			if err != nil {
-				log.Warnf("Failed to call EC2 to describe ENIs, aborting reconcile: %v", err)
-				return
+			// Call describeENIs only once per nodeIPPoolReconcile by checking if metadataResult.ENIMetadata is nil
+			if len(metadataResult.ENIMetadata) == 0 {
+				metadataResult, err = c.awsClient.DescribeAllENIs()
+				if err != nil {
+					log.Warnf("Failed to call EC2 to describe ENIs, aborting reconcile: %v", err)
+					return
+				}
 			}
 
 			if c.enablePodENI && metadataResult.TrunkENI != "" {
@@ -1587,7 +1601,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 			eniTagMap = metadataResult.TagMap
 
 			c.setUnmanagedENIs(metadataResult.TagMap)
-			c.setUnmanagedNetworkCards(metadataResult.SkipNetworkCards)
+			c.markUnmanagedNetworkCards(metadataResult.EFAOnlyENIByNetworkCard, metadataResult.ENIsByNetworkCard)
 
 			allManagedENIs := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 			attachedENIs = c.getENIsByNetworkCard(allManagedENIs)[networkCard]
@@ -1643,6 +1657,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 				ipamdErrInc("eniReconcileDel")
 				continue
 			}
+
 			delete(c.primaryIP, eni)
 			prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "eniReconcileDel"}).Inc()
 		}
@@ -1651,6 +1666,10 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		c.logPoolStats(ds.GetIPStats(ipV4AddrFamily), networkCard)
 	}
 	c.lastNodeIPPoolAction = time.Now()
+
+	for eni, primaryIP := range c.primaryIP {
+		log.Debugf("Primary IP for ENI %s is %s", eni, primaryIP)
+	}
 
 }
 

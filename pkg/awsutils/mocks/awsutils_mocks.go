@@ -16,7 +16,7 @@
 // Source: github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils (interfaces: APIs)
 
 // Package mock_awsutils is a generated GoMock package.
-package mock_awsutils
+package mocks
 
 import (
 	net "net"

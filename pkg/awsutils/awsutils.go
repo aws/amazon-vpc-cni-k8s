@@ -94,6 +94,10 @@ var (
 	ErrNoSecondaryIPsFound = errors.New("No secondary IPs have been assigned to this ENI")
 	// ErrNoNetworkInterfaces occurs when DescribeNetworkInterfaces(eniID) returns no network interfaces
 	ErrNoNetworkInterfaces = errors.New("No network interfaces found for ENI")
+	// ErrUnableToDetachENI is returned when the ENI cannot be detached from the instance
+	ErrUnableToDetachENI = errors.New("unable to detach ENI from EC2 instance, giving up")
+	// ErrENIAttachmentIdNotFound is returned when the ENI attachment ID is not found
+	ErrENIAttachmentIdNotFound = errors.New("ENI attachment ID not found")
 )
 
 var log = logger.Get()
@@ -1175,7 +1179,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 		}
 		awsUtilsErrInc("getENIAttachmentIDFailed", err)
 		log.Errorf("Failed to retrieve ENI %s attachment id: %v", eniName, err)
-		return errors.Wrap(err, "FreeENI: failed to retrieve ENI's attachment id")
+		return ErrENIAttachmentIdNotFound
 	}
 	log.Debugf("Found ENI %s attachment id: %s ", eniName, aws.ToString(attachID))
 
@@ -1194,7 +1198,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 			awsAPIErrInc("DetachNetworkInterface", ec2Err)
 			prometheusmetrics.Ec2ApiErr.WithLabelValues("DetachNetworkInterface").Inc()
 			log.Errorf("Failed to detach ENI %s %v", eniName, ec2Err)
-			return errors.New("unable to detach ENI from EC2 instance, giving up")
+			return ErrUnableToDetachENI
 		}
 		log.Infof("Successfully detached ENI: %s", eniName)
 		return nil
@@ -1202,7 +1206,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 
 	if err != nil {
 		log.Errorf("Failed to detach ENI %s %v", eniName, err)
-		return err
+		return ErrUnableToDetachENI
 	}
 
 	// It does take awhile for EC2 to detach ENI from instance, so we wait 2s before trying the delete.
@@ -1522,12 +1526,12 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		tagMap[eniMetadata.ENIID] = convertSDKTagsToTags(ec2res.TagSet)
 	}
 	return DescribeAllENIsResult{
-		ENIMetadata:              verifiedENIs,
-		TagMap:                   tagMap,
-		TrunkENI:                 trunkENI,
-		EFAENIs:                  efaENIs,
-		EFAOnlyENIByNetworkCards: efaOnlyENIByNetworkCards,
-		ENIsByNetworkCard:        enisByNetworkCard,
+		ENIMetadata:             verifiedENIs,
+		TagMap:                  tagMap,
+		TrunkENI:                trunkENI,
+		EFAENIs:                 efaENIs,
+		EFAOnlyENIByNetworkCard: efaOnlyENIByNetworkCards,
+		ENIsByNetworkCard:       enisByNetworkCard,
 	}, nil
 }
 
@@ -2218,14 +2222,6 @@ func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterf
 		}
 	}
 	prometheusmetrics.Ec2ApiReq.WithLabelValues("DescribeNetworkInterfaces").Inc()
-	return nil
-}
-
-// SetMultiCardENIs creates a StringSet tracking ENIs not behind the default network card index
-func (cache *EC2InstanceMetadataCache) SetMultiCardENIs(eniID []string) error {
-	if len(eniID) != 0 {
-		cache.multiCardENIs.Set(eniID)
-	}
 	return nil
 }
 
