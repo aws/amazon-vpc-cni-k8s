@@ -29,77 +29,78 @@ To migrate helm release for aws-vpc-cni chart from v2 to v3, see [ Migrate from 
 
 The following table lists the configurable parameters for this chart and their default values.
 
-| Parameter               | Description                                             | Default                             |
-| ------------------------|---------------------------------------------------------|-------------------------------------|
-| `affinity`              | Map of node/pod affinities                              | `{}`                                |
-| `cniConfig.enabled`     | Enable overriding the default 10-aws.conflist file      | `false`                             |
-| `cniConfig.fileContents`| The contents of the custom cni config file              | `nil`                               |
-| `eniConfig.create`      | Specifies whether to create ENIConfig resource(s)       | `false`                             |
-| `eniConfig.region`      | Region to use when generating ENIConfig resource names  | `us-west-2`                         |
-| `eniConfig.subnets`     | A map of AZ identifiers to config per AZ                | `nil`                               |
-| `eniConfig.subnets.id`  | The ID of the subnet within the AZ which will be used in the ENIConfig | `nil`                |
-| `eniConfig.subnets.securityGroups`  | The IDs of the security groups which will be used in the ENIConfig | `nil`        |
-| `env`                   | List of environment variables. See [here](https://github.com/aws/amazon-vpc-cni-k8s#cni-configuration-variables) for options | (see `values.yaml`) |
-| `enableWindowsIpam`     | Enable windows support for your cluster                 | `false`                             |
-| `enableNetworkPolicy`   | Enable Network Policy Controller and Agent for your cluster | `false`                         |
-| `enableWindowsPrefixDelegation` | Enable windows prefix delegation support for your cluster | `false`                   |
-| `warmWindowsPrefixTarget` | Warm prefix target value for Windows prefix delegation | `0`                                |
-| `warmWindowsIPTarget`   | Warm IP target value for Windows prefix delegation      | `1`                                 |
-| `minimumWindowsIPTarget`| Minimum IP target value for Windows prefix delegation   | `3`                                 |
-| `branchENICooldown`     | Number of seconds that branch ENIs remain in cooldown   | `60`                                |
-| `fullnameOverride`      | Override the fullname of the chart                      | `aws-node`                          |
-| `image.tag`             | Image tag                                               | `v1.19.5`                           |
-| `image.domain`          | ECR repository domain                                   | `amazonaws.com`                     |
-| `image.region`          | ECR repository region to use. Should match your cluster | `us-west-2`                         |
-| `image.endpoint`        | ECR repository endpoint to use.                         | `ecr`                               |
-| `image.account`         | ECR repository account number                           | `602401143452`                      |
-| `image.pullPolicy`      | Container pull policy                                   | `IfNotPresent`                      |
-| `image.override`        | A custom docker image to use                            | `nil`                               |
-| `imagePullSecrets`      | Docker registry pull secret                             | `[]`                                |
-| `init.image.tag`        | Image tag                                               | `v1.19.5`                           |
-| `init.image.domain`     | ECR repository domain                                   | `amazonaws.com`                     |
-| `init.image.region`     | ECR repository region to use. Should match your cluster | `us-west-2`                         |
-| `init.image.endpoint`   | ECR repository endpoint to use.                         | `ecr`                               |
-| `init.image.account`    | ECR repository account number                           | `602401143452`                      |
-| `init.image.pullPolicy` | Container pull policy                                   | `IfNotPresent`                      |
-| `init.image.override`   | A custom docker image to use                            | `nil`                               |
-| `init.env`              | List of init container environment variables. See [here](https://github.com/aws/amazon-vpc-cni-k8s#cni-configuration-variables) for options | (see `values.yaml`) |
-| `init.securityContext`  | Init container Security context                         | `privileged: true`                  |
-| `init.resources`        | Init container resources, will defualt to .Values.resources if not set | `{}`                 |
-| `originalMatchLabels`   | Use the original daemonset matchLabels                  | `false`                             |
-| `nameOverride`          | Override the name of the chart                          | `aws-node`                          |
-| `nodeAgent.enabled`     | If the Node Agent container should be created           | `true`                              |
-| `nodeAgent.image.tag`   | Image tag for Node Agent                                | `v1.2.1`                            |
-| `nodeAgent.image.domain`| ECR repository domain                                   | `amazonaws.com`                     |
-| `nodeAgent.image.region`| ECR repository region to use. Should match your cluster | `us-west-2`                         |
-| `nodeAgent.image.endpoint`   | ECR repository endpoint to use.                    | `ecr`                               |
-| `nodeAgent.image.account`    | ECR repository account number                      | `602401143452`                      |
-| `nodeAgent.image.pullPolicy` | Container pull policy                              | `IfNotPresent`                      |
-| `nodeAgent.securityContext`  | Node Agent container Security context              | `capabilities: add: - "NET_ADMIN" privileged: true` |
-| `nodeAgent.enableCloudWatchLogs`  | Enable CW logging for Node Agent              | `false`                             |
- `nodeAgent.networkPolicyAgentLogFileLocation`  | Log File location of Network Policy Agent | `/var/log/aws-routed-eni/network-policy-agent.log` |
-| `nodeAgent.enablePolicyEventLogs` | Enable policy decision logs for Node Agent    | `false`                             |
-| `nodeAgent.metricsBindAddr` | Node Agent port for metrics                         | `8162`                              |
-| `nodeAgent.healthProbeBindAddr` | Node Agent port for health probes               | `8163`                              |
-| `nodeAgent.conntrackCacheCleanupPeriod` | Cleanup interval for network policy agent conntrack cache | 300               |
-| `nodeAgent.enableIpv6`  | Enable IPv6 support for Node Agent                      | `false`                             |
-| `nodeAgent.resources`   | Node Agent resources, will defualt to .Values.resources if not set | `{}`                     |
-| `extraVolumes`          | Array to add extra volumes                              | `[]`                                |
-| `extraVolumeMounts`     | Array to add extra mount                                | `[]`                                |
-| `nodeSelector`          | Node labels for pod assignment                          | `{}`                                |
-| `podSecurityContext`    | Pod Security Context                                    | `{}`                                |
-| `podAnnotations`        | annotations to add to each pod                          | `{}`                                |
-| `podLabels`             | Labels to add to each pod                               | `{}`                                |
-| `priorityClassName`     | Name of the priorityClass                               | `system-node-critical`              |
-| `resources`             | Resources for containers in pod                         | `requests.cpu: 25m`                 |
-| `securityContext`       | Container Security context                              | `capabilities: add: - "NET_ADMIN" - "NET_RAW"` |
-| `serviceAccount.name`   | The name of the ServiceAccount to use                   | `nil`                               |
-| `serviceAccount.create` | Specifies whether a ServiceAccount should be created    | `true`                              |
-| `serviceAccount.annotations` | Specifies the annotations for ServiceAccount       | `{}`                                |
-| `livenessProbe`         | Livenness probe settings for daemonset                  | (see `values.yaml`)                 |
-| `readinessProbe`        | Readiness probe settings for daemonset                  | (see `values.yaml`)                 |
-| `tolerations`           | Optional deployment tolerations                         | `[{"operator": "Exists"}]`          |
-| `updateStrategy`        | Optional update strategy                                | `type: RollingUpdate`               |
+| Parameter                                     | Description                                                                                                                                 | Default                                             |
+|-----------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|
+| `affinity`                                    | Map of node/pod affinities                                                                                                                  | `{}`                                                |
+| `cniConfig.enabled`                           | Enable overriding the default 10-aws.conflist file                                                                                          | `false`                                             |
+| `cniConfig.fileContents`                      | The contents of the custom cni config file                                                                                                  | `nil`                                               |
+| `eniConfig.create`                            | Specifies whether to create ENIConfig resource(s)                                                                                           | `false`                                             |
+| `eniConfig.region`                            | Region to use when generating ENIConfig resource names                                                                                      | `us-west-2`                                         |
+| `eniConfig.subnets`                           | A map of AZ identifiers to config per AZ                                                                                                    | `nil`                                               |
+| `eniConfig.subnets.id`                        | The ID of the subnet within the AZ which will be used in the ENIConfig                                                                      | `nil`                                               |
+| `eniConfig.subnets.securityGroups`            | The IDs of the security groups which will be used in the ENIConfig                                                                          | `nil`                                               |
+| `env`                                         | List of environment variables. See [here](https://github.com/aws/amazon-vpc-cni-k8s#cni-configuration-variables) for options                | (see `values.yaml`)                                 |
+| `enableWindowsIpam`                           | Enable windows support for your cluster                                                                                                     | `false`                                             |
+| `enableNetworkPolicy`                         | Enable Network Policy Controller and Agent for your cluster                                                                                 | `false`                                             |
+| `enableWindowsPrefixDelegation`               | Enable windows prefix delegation support for your cluster                                                                                   | `false`                                             |
+| `warmWindowsPrefixTarget`                     | Warm prefix target value for Windows prefix delegation                                                                                      | `0`                                                 |
+| `warmWindowsIPTarget`                         | Warm IP target value for Windows prefix delegation                                                                                          | `1`                                                 |
+| `minimumWindowsIPTarget`                      | Minimum IP target value for Windows prefix delegation                                                                                       | `3`                                                 |
+| `branchENICooldown`                           | Number of seconds that branch ENIs remain in cooldown                                                                                       | `60`                                                |
+| `fullnameOverride`                            | Override the fullname of the chart                                                                                                          | `aws-node`                                          |
+| `image.tag`                                   | Image tag                                                                                                                                   | `v1.19.5`                                           |
+| `image.domain`                                | ECR repository domain                                                                                                                       | `amazonaws.com`                                     |
+| `image.region`                                | ECR repository region to use. Should match your cluster                                                                                     | `us-west-2`                                         |
+| `image.endpoint`                              | ECR repository endpoint to use.                                                                                                             | `ecr`                                               |
+| `image.account`                               | ECR repository account number                                                                                                               | `602401143452`                                      |
+| `image.pullPolicy`                            | Container pull policy                                                                                                                       | `IfNotPresent`                                      |
+| `image.override`                              | A custom docker image to use                                                                                                                | `nil`                                               |
+| `imagePullSecrets`                            | Docker registry pull secret                                                                                                                 | `[]`                                                |
+| `init.image.tag`                              | Image tag                                                                                                                                   | `v1.19.5`                                           |
+| `init.image.domain`                           | ECR repository domain                                                                                                                       | `amazonaws.com`                                     |
+| `init.image.region`                           | ECR repository region to use. Should match your cluster                                                                                     | `us-west-2`                                         |
+| `init.image.endpoint`                         | ECR repository endpoint to use.                                                                                                             | `ecr`                                               |
+| `init.image.account`                          | ECR repository account number                                                                                                               | `602401143452`                                      |
+| `init.image.pullPolicy`                       | Container pull policy                                                                                                                       | `IfNotPresent`                                      |
+| `init.image.override`                         | A custom docker image to use                                                                                                                | `nil`                                               |
+| `init.env`                                    | List of init container environment variables. See [here](https://github.com/aws/amazon-vpc-cni-k8s#cni-configuration-variables) for options | (see `values.yaml`)                                 |
+| `init.securityContext`                        | Init container Security context                                                                                                             | `privileged: true`                                  |
+| `init.resources`                              | Init container resources, will defualt to .Values.resources if not set                                                                      | `{}`                                                |
+| `originalMatchLabels`                         | Use the original daemonset matchLabels                                                                                                      | `false`                                             |
+| `nameOverride`                                | Override the name of the chart                                                                                                              | `aws-node`                                          |
+| `nodeAgent.enabled`                           | If the Node Agent container should be created                                                                                               | `true`                                              |
+| `nodeAgent.image.tag`                         | Image tag for Node Agent                                                                                                                    | `v1.2.1`                                            |
+| `nodeAgent.image.domain`                      | ECR repository domain                                                                                                                       | `amazonaws.com`                                     |
+| `nodeAgent.image.region`                      | ECR repository region to use. Should match your cluster                                                                                     | `us-west-2`                                         |
+| `nodeAgent.image.endpoint`                    | ECR repository endpoint to use.                                                                                                             | `ecr`                                               |
+| `nodeAgent.image.account`                     | ECR repository account number                                                                                                               | `602401143452`                                      |
+| `nodeAgent.image.pullPolicy`                  | Container pull policy                                                                                                                       | `IfNotPresent`                                      |
+| `nodeAgent.securityContext`                   | Node Agent container Security context                                                                                                       | `capabilities: add: - "NET_ADMIN" privileged: true` |
+| `nodeAgent.enableCloudWatchLogs`              | Enable CW logging for Node Agent                                                                                                            | `false`                                             |
+| `nodeAgent.networkPolicyAgentLogFileLocation` | Log File location of Network Policy Agent                                                                                                   | `/var/log/aws-routed-eni/network-policy-agent.log`  |
+| `nodeAgent.logLevel`                          | Log level used for the Network Policy Agent                                                                                                 | `info`                                              |
+| `nodeAgent.enablePolicyEventLogs`             | Enable policy decision logs for Node Agent                                                                                                  | `false`                                             |
+| `nodeAgent.metricsBindAddr`                   | Node Agent port for metrics                                                                                                                 | `8162`                                              |
+| `nodeAgent.healthProbeBindAddr`               | Node Agent port for health probes                                                                                                           | `8163`                                              |
+| `nodeAgent.conntrackCacheCleanupPeriod`       | Cleanup interval for network policy agent conntrack cache                                                                                   | 300                                                 |
+| `nodeAgent.enableIpv6`                        | Enable IPv6 support for Node Agent                                                                                                          | `false`                                             |
+| `nodeAgent.resources`                         | Node Agent resources, will defualt to .Values.resources if not set                                                                          | `{}`                                                |
+| `extraVolumes`                                | Array to add extra volumes                                                                                                                  | `[]`                                                |
+| `extraVolumeMounts`                           | Array to add extra mount                                                                                                                    | `[]`                                                |
+| `nodeSelector`                                | Node labels for pod assignment                                                                                                              | `{}`                                                |
+| `podSecurityContext`                          | Pod Security Context                                                                                                                        | `{}`                                                |
+| `podAnnotations`                              | annotations to add to each pod                                                                                                              | `{}`                                                |
+| `podLabels`                                   | Labels to add to each pod                                                                                                                   | `{}`                                                |
+| `priorityClassName`                           | Name of the priorityClass                                                                                                                   | `system-node-critical`                              |
+| `resources`                                   | Resources for containers in pod                                                                                                             | `requests.cpu: 25m`                                 |
+| `securityContext`                             | Container Security context                                                                                                                  | `capabilities: add: - "NET_ADMIN" - "NET_RAW"`      |
+| `serviceAccount.name`                         | The name of the ServiceAccount to use                                                                                                       | `nil`                                               |
+| `serviceAccount.create`                       | Specifies whether a ServiceAccount should be created                                                                                        | `true`                                              |
+| `serviceAccount.annotations`                  | Specifies the annotations for ServiceAccount                                                                                                | `{}`                                                |
+| `livenessProbe`                               | Livenness probe settings for daemonset                                                                                                      | (see `values.yaml`)                                 |
+| `readinessProbe`                              | Readiness probe settings for daemonset                                                                                                      | (see `values.yaml`)                                 |
+| `tolerations`                                 | Optional deployment tolerations                                                                                                             | `[{"operator": "Exists"}]`                          |
+| `updateStrategy`                              | Optional update strategy                                                                                                                    | `type: RollingUpdate`                               |
 
 Specify each parameter using the `--set key=value[,key=value]` argument to `helm install` or provide a YAML file containing the values for the above parameters:
 
