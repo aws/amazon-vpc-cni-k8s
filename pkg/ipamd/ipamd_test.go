@@ -49,6 +49,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	mock_awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/mocks"
 	mock_eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig/mocks"
+	ipamdv1 "github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/api/v1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	mock_networkutils "github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
@@ -118,10 +119,10 @@ func TestNodeInit(t *testing.T) {
 	defer m.ctrl.Finish()
 	ctx := context.Background()
 
-	fakeCheckpoint := datastore.CheckpointData{
-		Version: datastore.CheckpointFormatVersion,
-		Allocations: []datastore.CheckpointEntry{
-			{IPAMKey: datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IPv4: ipaddr02},
+	fakeCheckpoint := ipamdv1.CheckpointData{
+		Version: ipamdv1.CheckpointFormatVersion,
+		Allocations: []ipamdv1.CheckpointEntry{
+			{IPAMKey: ipamdv1.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IPv4: ipaddr02},
 		},
 	}
 
@@ -208,10 +209,10 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	defer m.ctrl.Finish()
 	ctx := context.Background()
 
-	fakeCheckpoint := datastore.CheckpointData{
-		Version: datastore.CheckpointFormatVersion,
-		Allocations: []datastore.CheckpointEntry{
-			{IPAMKey: datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IPv4: ipaddrPD01},
+	fakeCheckpoint := ipamdv1.CheckpointData{
+		Version: ipamdv1.CheckpointFormatVersion,
+		Allocations: []ipamdv1.CheckpointEntry{
+			{IPAMKey: ipamdv1.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IPv4: ipaddrPD01},
 		},
 	}
 
@@ -296,10 +297,10 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 	defer m.ctrl.Finish()
 	ctx := context.Background()
 
-	fakeCheckpoint := datastore.CheckpointData{
-		Version: datastore.CheckpointFormatVersion,
-		Allocations: []datastore.CheckpointEntry{
-			{IPAMKey: datastore.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IPv6: ipaddrPD01},
+	fakeCheckpoint := ipamdv1.CheckpointData{
+		Version: ipamdv1.CheckpointFormatVersion,
+		Allocations: []ipamdv1.CheckpointEntry{
+			{IPAMKey: ipamdv1.IPAMKey{NetworkName: "net0", ContainerID: "sandbox-id", IfName: "eth0"}, IPv6: ipaddrPD01},
 		},
 	}
 
@@ -832,12 +833,12 @@ func TestDecreaseIPPool(t *testing.T) {
 	mockContext.dataStore.AddENI(primaryENIid, primaryDevice, true, false, false)
 	mockContext.dataStore.AddIPv4CidrToStore(primaryENIid, testAddr1, false)
 	mockContext.dataStore.AddIPv4CidrToStore(primaryENIid, testAddr2, false)
-	mockContext.dataStore.AssignPodIPv4Address(datastore.IPAMKey{ContainerID: "container1"}, datastore.IPAMMetadata{K8SPodName: "pod1"})
+	mockContext.dataStore.AssignPodIPv4Address(ipamdv1.IPAMKey{ContainerID: "container1"}, ipamdv1.IPAMMetadata{K8SPodName: "pod1"})
 
 	mockContext.dataStore.AddENI(secENIid, secDevice, true, false, false)
 	mockContext.dataStore.AddIPv4CidrToStore(secENIid, testAddr11, false)
 	mockContext.dataStore.AddIPv4CidrToStore(secENIid, testAddr12, false)
-	mockContext.dataStore.AssignPodIPv4Address(datastore.IPAMKey{ContainerID: "container2"}, datastore.IPAMMetadata{K8SPodName: "pod2"})
+	mockContext.dataStore.AssignPodIPv4Address(ipamdv1.IPAMKey{ContainerID: "container2"}, ipamdv1.IPAMMetadata{K8SPodName: "pod2"})
 
 	m.awsutils.EXPECT().DeallocPrefixAddresses(gomock.Any(), gomock.Any()).Times(1)
 	m.awsutils.EXPECT().DeallocIPAddresses(gomock.Any(), gomock.Any()).Times(1)
@@ -1363,11 +1364,11 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 }
 
 func testDatastore() *datastore.DataStore {
-	return datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false)
+	return datastore.NewDataStore(log, datastore.NewTestCheckpoint(ipamdv1.CheckpointData{Version: ipamdv1.CheckpointFormatVersion}), false)
 }
 
 func testDatastorewithPrefix() *datastore.DataStore {
-	return datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), true)
+	return datastore.NewDataStore(log, datastore.NewTestCheckpoint(ipamdv1.CheckpointData{Version: ipamdv1.CheckpointFormatVersion}), true)
 }
 
 func datastoreWith3FreeIPs() *datastore.DataStore {
@@ -1385,11 +1386,11 @@ func datastoreWith3FreeIPs() *datastore.DataStore {
 func datastoreWith1Pod1() *datastore.DataStore {
 	datastoreWith1Pod1 := datastoreWith3FreeIPs()
 
-	_, _, _ = datastoreWith1Pod1.AssignPodIPv4Address(datastore.IPAMKey{
+	_, _, _ = datastoreWith1Pod1.AssignPodIPv4Address(ipamdv1.IPAMKey{
 		NetworkName: "net0",
 		ContainerID: "sandbox-1",
 		IfName:      "eth0",
-	}, datastore.IPAMMetadata{
+	}, ipamdv1.IPAMMetadata{
 		K8SPodNamespace: "default",
 		K8SPodName:      "sample-pod",
 	})
@@ -1400,12 +1401,12 @@ func datastoreWith3Pods() *datastore.DataStore {
 	datastoreWith3Pods := datastoreWith3FreeIPs()
 
 	for i := 0; i < 3; i++ {
-		key := datastore.IPAMKey{
+		key := ipamdv1.IPAMKey{
 			NetworkName: "net0",
 			ContainerID: fmt.Sprintf("sandbox-%d", i),
 			IfName:      "eth0",
 		}
-		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key, datastore.IPAMMetadata{
+		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key, ipamdv1.IPAMMetadata{
 			K8SPodNamespace: "default",
 			K8SPodName:      fmt.Sprintf("sample-pod-%d", i),
 		})
@@ -1424,11 +1425,11 @@ func datastoreWithFreeIPsFromPrefix() *datastore.DataStore {
 func datastoreWith1Pod1FromPrefix() *datastore.DataStore {
 	datastoreWith1Pod1 := datastoreWithFreeIPsFromPrefix()
 
-	_, _, _ = datastoreWith1Pod1.AssignPodIPv4Address(datastore.IPAMKey{
+	_, _, _ = datastoreWith1Pod1.AssignPodIPv4Address(ipamdv1.IPAMKey{
 		NetworkName: "net0",
 		ContainerID: "sandbox-1",
 		IfName:      "eth0",
-	}, datastore.IPAMMetadata{
+	}, ipamdv1.IPAMMetadata{
 		K8SPodNamespace: "default",
 		K8SPodName:      "sample-pod",
 	})
@@ -1439,13 +1440,13 @@ func datastoreWith3PodsFromPrefix() *datastore.DataStore {
 	datastoreWith3Pods := datastoreWithFreeIPsFromPrefix()
 
 	for i := 0; i < 3; i++ {
-		key := datastore.IPAMKey{
+		key := ipamdv1.IPAMKey{
 			NetworkName: "net0",
 			ContainerID: fmt.Sprintf("sandbox-%d", i),
 			IfName:      "eth0",
 		}
 		_, _, _ = datastoreWith3Pods.AssignPodIPv4Address(key,
-			datastore.IPAMMetadata{
+			ipamdv1.IPAMMetadata{
 				K8SPodNamespace: "default",
 				K8SPodName:      fmt.Sprintf("sample-pod-%d", i),
 			})
@@ -2044,7 +2045,7 @@ func TestIPAMContext_enableSecurityGroupsForPods(t *testing.T) {
 		k8sClient:     m.k8sClient,
 		enableIPv4:    true,
 		enableIPv6:    false,
-		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false),
+		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(ipamdv1.CheckpointData{Version: ipamdv1.CheckpointFormatVersion}), false),
 		awsClient:     m.awsutils,
 		networkClient: m.network,
 		primaryIP:     make(map[string]string),
