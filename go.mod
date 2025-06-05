@@ -177,8 +177,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.6.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
-
-replace gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 => gopkg.in/yaml.v3 v3.0.1
-
-// Version of go-cose v1.2.0 and v1.2.1 have been deprecated in favor v1.1.0
-replace github.com/veraison/go-cose => github.com/veraison/go-cose v1.1.0

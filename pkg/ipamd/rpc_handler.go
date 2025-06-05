@@ -334,6 +334,18 @@ func (s *server) GetNetworkPolicyConfigs(ctx context.Context, e *emptypb.Empty) 
 	return resp, nil
 }
 
+func (s *server) GetMaxAllocatableIPs(ctx context.Context, e *emptypb.Empty) (*rpc.GetMaxAllocatableIPsReply, error) {
+	log.Infof("Received GetMaxAllocatableIPs request")
+
+	maxIPs, err := s.ipamContext.getMaxIPs()
+	resp := &rpc.GetMaxAllocatableIPsReply{
+		MaxAllocatableIPs: int32(maxIPs),
+	}
+
+	log.Infof("Send GetMaxAllocatableIPs: MaxAllocatableIPs: %d, err: %v", resp.MaxAllocatableIPs, err)
+	return resp, err
+}
+
 // RunRPCHandler handles request from gRPC
 func (c *IPAMContext) RunRPCHandler(version string) error {
 	log.Infof("Serving RPC Handler version %s on %s", version, ipamdgRPCaddress)
