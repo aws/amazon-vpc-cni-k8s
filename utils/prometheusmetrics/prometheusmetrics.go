@@ -179,10 +179,10 @@ var (
 		},
 		[]string{"success", "with_api_server", "failure_reason"},
 	)
-	IpamdStartupAwsDuration = prometheus.NewHistogramVec(
+	IpamdNodeInitDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name: "awscni_ipamd_startup_aws_duration_seconds",
-			Help: "The duration of AWS initialization during IPAMD startup",
+			Name: "awscni_ipamd_node_initialization_duration_seconds",
+			Help: "The duration of node initialization during IPAMD startup",
 		},
 		[]string{"success"},
 	)
@@ -240,7 +240,7 @@ func PrometheusRegister() {
 	prometheus.MustRegister(NoAvailableIPAddrs)
 	prometheus.MustRegister(EniIPsInUse)
 	prometheus.MustRegister(IpamdStartupDuration)
-	prometheus.MustRegister(IpamdStartupAwsDuration)
+	prometheus.MustRegister(IpamdNodeInitDuration)
 }
 
 // This can be enhanced to get it programatically.

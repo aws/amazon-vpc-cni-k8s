@@ -137,21 +137,21 @@ func _main() int {
 		log.Errorf("Failed to create event recorder: %s", err)
 		log.Warn("Skipping event recorder initialization")
 	}
-	// Measure AWS initialization duration
-	awsStartTime := time.Now()
+	// Measure node initialization duration
+	IPAMDNodeInitStartTime := time.Now()
 	ipamContext, err := ipamd.New(k8sClient, withApiServer)
-	awsDuration := time.Since(awsStartTime).Seconds()
+	IPAMDNodeInitDuration := time.Since(IPAMDNodeInitStartTime).Seconds()
 
 	if err != nil {
 		log.Errorf("Initialization failure: %v", err)
-		// Record failed AWS initialization and failed startup
-		metrics.IpamdStartupAwsDuration.WithLabelValues("false").Observe(awsDuration)
-		metrics.IpamdStartupDuration.WithLabelValues("false", strconv.FormatBool(withApiServer), "aws_initialization").Observe(time.Since(startupStartTime).Seconds())
+		// Record failed IPAMD initialization and failed startup
+		metrics.IpamdNodeInitDuration.WithLabelValues("false").Observe(IPAMDNodeInitDuration)
+		metrics.IpamdStartupDuration.WithLabelValues("false", strconv.FormatBool(withApiServer), "node_initialization").Observe(time.Since(startupStartTime).Seconds())
 		return 1
 	}
 
 	// Record successful AWS initialization
-	metrics.IpamdStartupAwsDuration.WithLabelValues("true").Observe(awsDuration)
+	metrics.IpamdNodeInitDuration.WithLabelValues("true").Observe(IPAMDNodeInitDuration)
 
 	// If not connected to API server yet, start background checks
 	if !withApiServer {
