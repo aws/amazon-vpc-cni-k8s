@@ -207,7 +207,6 @@ var (
 // IPAMContext contains node level control information
 type IPAMContext struct {
 	awsClient                 awsutils.APIs
-	dataStore                 []*datastore.DataStore
 	dataStoreAccess           *datastore.DataStoreAccess
 	k8sClient                 client.Client
 	enableIPv4                bool
@@ -940,7 +939,8 @@ func (c *IPAMContext) createSecondaryIPv6ENIs(ctx context.Context) error {
 
 	log.Info("Attaching ENIs allowed")
 
-	for networkCard, ds := range c.dataStoreAccess.DataStores {
+	for _, ds := range c.dataStoreAccess.DataStores {
+		networkCard := ds.GetNetworkCard()
 		if networkCard == DefaultNetworkCardIndex {
 			continue
 		}
@@ -1503,7 +1503,8 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 	allManagedAndAttachedENIs := c.filterUnmanagedENIs(allENIs)
 	attachedENIsByNetworkCard := c.getENIsByNetworkCard(allManagedAndAttachedENIs)
 
-	for networkCard, ds := range c.dataStoreAccess.DataStores {
+	for _, ds := range c.dataStoreAccess.DataStores {
+		networkCard := ds.GetNetworkCard()
 		currentENIs := ds.GetENIInfos().ENIs
 		attachedENIs := attachedENIsByNetworkCard[networkCard]
 		trunkENI := ds.GetTrunkENI()
@@ -2204,7 +2205,7 @@ func (c *IPAMContext) AnnotatePod(podName string, podNamespace string, key strin
 			if ok {
 				log.Debugf("Existing annotation value: %s", oldVal)
 				if oldVal != releasedIP {
-					return fmt.Errorf("Released IP %s does not match existing annotation. Not patching pod.", releasedIP)
+					return fmt.Errorf("released IP %s does not match existing annotation. Not patching pod", releasedIP)
 				}
 				newPod.Annotations[key] = ""
 			}
@@ -2224,7 +2225,8 @@ func (c *IPAMContext) AnnotatePod(podName string, podNamespace string, key strin
 func (c *IPAMContext) tryUnassignIPsFromENIs() {
 	log.Debugf("tryUnassignIPsFromENIs")
 	// From all datastores, get ENIInfos and unassign IPs
-	for networkCard, ds := range c.dataStoreAccess.DataStores {
+	for _, ds := range c.dataStoreAccess.DataStores {
+		networkCard := ds.GetNetworkCard()
 		eniInfos := ds.GetENIInfos()
 		for eniID := range eniInfos.ENIs {
 			c.tryUnassignIPFromENI(eniID, networkCard)
@@ -2269,7 +2271,8 @@ func (c *IPAMContext) tryUnassignPrefixesFromENIs() {
 	log.Debugf("tryUnassignPrefixesFromENIs")
 
 	// From all datastores get ENIs and remove prefixes
-	for networkCard, ds := range c.dataStoreAccess.DataStores {
+	for _, ds := range c.dataStoreAccess.DataStores {
+		networkCard := ds.GetNetworkCard()
 		eniInfos := ds.GetENIInfos()
 		for eniID := range eniInfos.ENIs {
 			c.tryUnassignPrefixFromENI(eniID, networkCard)
@@ -2366,8 +2369,8 @@ func (c *IPAMContext) isDatastorePoolTooLow() map[int]Decisions {
 		totalIPs = maxIpsPerPrefix
 	}
 
-	for networkCard, ds := range c.dataStoreAccess.DataStores {
-
+	for _, ds := range c.dataStoreAccess.DataStores {
+		networkCard := ds.GetNetworkCard()
 		stats := ds.GetIPStats(ipV4AddrFamily)
 		// If max pods has been reached, pool is not too low
 		if stats.TotalIPs >= c.maxPods {
