@@ -170,17 +170,20 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	var maskLen int
 	var addr *netlink.Addr
 	var defNet *net.IPNet
+	var family int
 
 	if createVethContext.ipAddr.IP.To4() != nil {
 		gw = net.IPv4(169, 254, 1, byte(createVethContext.index)+1)
 		maskLen = 32
 		addr = &netlink.Addr{IPNet: createVethContext.ipAddr}
 		defNet = &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, maskLen)}
+		family = netlink.FAMILY_V4
 	} else {
 		gw = net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, byte(createVethContext.index) + 1}
 		maskLen = 128
 		addr = &netlink.Addr{IPNet: createVethContext.ipAddr}
 		defNet = &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, maskLen)}
+		family = netlink.FAMILY_V6
 	}
 
 	gwNet := &net.IPNet{IP: gw, Mask: net.CIDRMask(maskLen, maskLen)}
@@ -205,6 +208,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		fromInterfaceRule.Src = createVethContext.ipAddr
 		fromInterfaceRule.Priority = networkutils.FromInterfaceRulePriority
 		fromInterfaceRule.Table = rtTable
+		fromInterfaceRule.Family = family
 		if err := createVethContext.netLink.RuleAdd(fromInterfaceRule); err != nil && !networkutils.IsRuleExistsError(err) {
 			return errors.Wrapf(err, "failed to setup fromInterface rule, containerAddr=%s, rtTable=%v", createVethContext.ipAddr.String(), createVethContext.index)
 		}

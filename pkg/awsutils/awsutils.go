@@ -1387,10 +1387,13 @@ func (cache *EC2InstanceMetadataCache) GetIPv6PrefixesFromEC2(eniID string) (add
 // DescribeAllENIs calls EC2 to refresh the ENIMetadata and tags for all attached ENIs
 func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult, error) {
 	// Fetch all local ENI info from metadata
+
 	allENIs, err := cache.GetAttachedENIs()
 	if err != nil {
 		return DescribeAllENIsResult{}, errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
 	}
+	efaOnlyENIByNetworkCards := make([]string, len(cache.GetNetworkCards()))
+	enisByNetworkCard := make([][]string, len(cache.GetNetworkCards()))
 
 	eniMap := make(map[string]ENIMetadata, len(allENIs))
 	var eniIDs []string
@@ -1403,22 +1406,19 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 	if utils.GetBoolAsStringEnvVar(utils.EnvEnableImdsOnlyMode, false) {
 		log.Debug("ENABLE_IMDS_ONLY_MODE is enabled, skipping EC2 API call and using IMDS metadata only")
 		// Collect the verified ENIs, adding multicards information from IMDS cache as well
-		var imdsOnlyENImetadata []ENIMetadata
-		var imdsOnlyMultiCardENIIDs []string
+
 		for _, eniMetadata := range eniMap {
-			if eniMetadata.NetworkCard > 0 {
-				imdsOnlyMultiCardENIIDs = append(imdsOnlyMultiCardENIIDs, eniMetadata.ENIID)
-			}
-			imdsOnlyENImetadata = append(imdsOnlyENImetadata, eniMetadata)
+			enisByNetworkCard[int(eniMetadata.NetworkCard)] = append(enisByNetworkCard[int(eniMetadata.NetworkCard)], eniMetadata.ENIID)
 		}
 
 		// Return the result with empty tag map, trunk ENI and EFA ENIs as those cannot get from IMDS metadata
 		return DescribeAllENIsResult{
-			ENIMetadata:     imdsOnlyENImetadata,
-			TagMap:          make(map[string]TagMap),
-			TrunkENI:        "",
-			EFAENIs:         make(map[string]bool),
-			MultiCardENIIDs: imdsOnlyMultiCardENIIDs,
+			ENIMetadata:             allENIs,
+			TagMap:                  make(map[string]TagMap),
+			TrunkENI:                "",
+			EFAENIs:                 make(map[string]bool),
+			ENIsByNetworkCard:       enisByNetworkCard,
+			EFAOnlyENIByNetworkCard: efaOnlyENIByNetworkCards,
 		}, nil
 	}
 
@@ -1474,8 +1474,6 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 	// Collect ENI response into ENI metadata and tags.
 	var trunkENI string
 	efaENIs := make(map[string]bool, 0)
-	efaOnlyENIByNetworkCards := make([]string, len(cache.GetNetworkCards()))
-	enisByNetworkCard := make([][]string, len(cache.GetNetworkCards()))
 	tagMap := make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
 
 	for _, ec2res := range ec2Response.NetworkInterfaces {

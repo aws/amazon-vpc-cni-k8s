@@ -2255,7 +2255,7 @@ func min(x, y int) int {
 }
 
 func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
-	trunkENI := c.dataStoreAccess.GetDataStore(0).GetTrunkENI()
+	trunkENI := c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI()
 	attachedENIs, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		return -1, err

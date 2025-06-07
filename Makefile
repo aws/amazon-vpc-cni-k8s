@@ -303,8 +303,8 @@ plugins:   ## Fetch the CNI plugins
 
 ##@ Debug script
 
-debug-script: FETCH_URL=https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/log-collector-script/linux/eks-log-collector.sh
-debug-script: VISIT_URL=https://github.com/awslabs/amazon-eks-ami/tree/master/log-collector-script/linux
+debug-script: FETCH_URL=https://raw.githubusercontent.com/awslabs/amazon-eks-ami/main/log-collector-script/linux/eks-log-collector.sh
+debug-script: VISIT_URL=https://github.com/awslabs/amazon-eks-ami/tree/main/log-collector-script/linux
 debug-script:    ## Fetching debug script from awslabs/amazon-eks-ami
 	@echo "Fetching debug script from awslabs/amazon-eks-ami"
 	@echo

@@ -641,25 +641,6 @@ func (typedimds TypedIMDS) GetSubnetIPv6CIDRBlocks(ctx context.Context, mac stri
 	return typedimds.getCIDR(ctx, key)
 }
 
-// GetNetworkCard returns the Network card the interface is attached on
-func (typedimds TypedIMDS) GetNetworkCard(ctx context.Context, mac string) (int, error) {
-	key := fmt.Sprintf("network/interfaces/macs/%s/network-card", mac)
-	networkCard, err := typedimds.getInt(ctx, key)
-	if err != nil {
-		imdsErr := new(imdsRequestError)
-		oe := new(smithy.OperationError)
-		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
-			if IsNotFound(err) {
-				// If no network card field, it is connected to Network card 0
-				return networkCard, nil
-			}
-			log.Warnf("%v", err)
-			return -1, newIMDSRequestError(err.Error(), err)
-		}
-	}
-	return networkCard, err
-}
-
 // IsNotFound returns true if the error was caused by an AWS API 404 response.
 // We implement a Custom IMDS Error, so need to use APIError instead of HTTP Response Error
 func IsNotFound(err error) bool {

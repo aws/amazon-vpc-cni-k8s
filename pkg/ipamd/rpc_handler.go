@@ -24,6 +24,7 @@ import (
 	multiErr "github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/samber/lo"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -45,6 +46,8 @@ const (
 	grpcHealthServiceName = "grpc.health.v1.aws-node"
 
 	vpccniPodIPKey = "vpc.amazonaws.com/pod-ips"
+
+	defaultIpPerPodRequired = 1
 )
 
 // server controls RPC service responses.
@@ -183,7 +186,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	if s.ipamContext.enableIPv4 && ipv4Addr == "" ||
 		s.ipamContext.enableIPv6 && ipv6Addr == "" {
 
-		ipsRequired := 1
+		ipsRequired := defaultIpPerPodRequired
 		ipsAllocated := 0
 
 		if in.RequiresMultiNICAttachment {
@@ -225,7 +228,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 				log.Warnf("Failed to assign IPs from network card %d: %v", networkCard, err)
 				// continue to look through other datastores till you are unable to find an IP address when ONLY 1 ip is required
 				// if the last datastore also return ErrNoAvailableIPInDataStore, return an error
-				if err == datastore.ErrNoAvailableIPInDataStore && ipsRequired == 1 && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
+				if err == datastore.ErrNoAvailableIPInDataStore && ipsRequired == defaultIpPerPodRequired && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
 					continue
 				}
 
@@ -246,18 +249,19 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	}
 
 	if errors != nil {
-		unAssignedIPs := 0
-		// Try to unassign all the assigned IPs in case of errors.
-		// This is best effort even if it fails we have the reconciler which can clean up leaked IPs for non existing pods
-		for _, ds := range s.ipamContext.dataStoreAccess.DataStores {
-			networkCard := ds.GetNetworkCard()
-			if unAssignedIPs == len(ipAddrs) {
-				break
-			}
-			log.Infof("Unassigning IPs from datastore for Network Card %d as there was failure", networkCard)
-			ds.UnassignPodIPAddress(ipamKey)
-			unAssignedIPs += 1
-		}
+		// unAssignedIPs := 0
+		log.Errorf("Returning failure response for AddNetwork: %v", errors)
+		// // Try to unassign all the assigned IPs in case of errors.
+		// // This is best effort even if it fails we have the reconciler which can clean up leaked IPs for non existing pods
+		// for _, ds := range s.ipamContext.dataStoreAccess.DataStores {
+		// 	networkCard := ds.GetNetworkCard()
+		// 	if unAssignedIPs == len(ipAddrs) {
+		// 		break
+		// 	}
+		// 	log.Infof("Unassigning IPs from datastore for Network Card %d as there was failure", networkCard)
+		// 	ds.UnassignPodIPAddress(ipamKey)
+		// 	unAssignedIPs += 1
+		// }
 	} else {
 		log.Infof("Address assigned from datastores:  %d", len(ipAddrs))
 		var pbVPCV4cidrs, pbVPCV6cidrs []string
@@ -266,7 +270,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 		if s.ipamContext.enableIPv4 {
 			pbVPCV4cidrs, err = s.ipamContext.awsClient.GetVPCIPv4CIDRs()
 			if err != nil {
-				return nil, err
+				return &failureResponse, err
 			}
 			for _, cidr := range pbVPCV4cidrs {
 				log.Debugf("VPC CIDR %s", cidr)
@@ -281,7 +285,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 		} else if s.ipamContext.enableIPv6 {
 			pbVPCV6cidrs, err = s.ipamContext.awsClient.GetVPCIPv6CIDRs()
 			if err != nil {
-				return nil, err
+				return &failureResponse, err
 			}
 			for _, cidr := range pbVPCV6cidrs {
 				log.Debugf("VPC V6 CIDR %s", cidr)
@@ -289,18 +293,13 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 		}
 
 		if s.ipamContext.enablePodIPAnnotation {
-			var ipAddr string
 
 			// We are only adding the pods primary IP to annotation
-			if ipAddrs[0].GetIPv4Addr() != "" {
-				ipAddr = ipAddrs[0].GetIPv4Addr()
-			} else {
-				ipAddr = ipAddrs[0].GetIPv6Addr()
-			}
-
+			ipAddr := lo.Ternary(s.ipamContext.enableIPv6, ipAddrs[0].GetIPv6Addr(), ipAddrs[0].GetIPv4Addr())
 			err = s.ipamContext.AnnotatePod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, vpccniPodIPKey, ipAddr, "")
 			if err != nil {
 				log.Errorf("Failed to add the pod annotation: %v", err)
+				errors = multiErr.Append(errors, err)
 			}
 		}
 
@@ -318,8 +317,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	}
 
 	resp.Success = errors == nil
-
-	log.Infof("Send AddNetworkReply: Success: %t IPAddr: %+v, resp: %+v, err: %v", resp.Success, resp.IPAddress, &resp, err)
+	log.Infof("Send AddNetworkReply: Success: %t IPAddr: %v, resp: %s, err: %v", resp.Success, resp.IPAddress, &resp, err)
 	return &resp, nil
 }
 
@@ -413,7 +411,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 					return &rpc.DelNetworkReply{
 						Success:           true,
 						PodVlanId:         int32(podENIData[0].VlanID),
-						IPAddress:         []*rpc.IPAddress{&rpc.IPAddress{IPv4Addr: podENIData[0].PrivateIP}},
+						IPAddress:         []*rpc.IPAddress{{IPv4Addr: podENIData[0].PrivateIP}},
 						NetworkPolicyMode: s.ipamContext.networkPolicyMode,
 					}, err
 				}
@@ -424,14 +422,6 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 			if ip == "" && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
 				log.Debugf("Pod doesn't belong to Network Card %d, looking into next datastore", networkCard)
 				continue
-			}
-		}
-
-		if s.ipamContext.enablePodIPAnnotation {
-			// On DEL, we pass IP being released
-			err = s.ipamContext.AnnotatePod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, vpccniPodIPKey, "", ip)
-			if err != nil {
-				log.Errorf("Failed to delete the pod annotation: %v", err)
 			}
 		}
 
@@ -447,6 +437,16 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 			ipsFound += 1
 
 			log.Debugf("IPs allocated for the pod: %d, IPs found: %d", ipsAllocated, ipsFound)
+		}
+	}
+
+	if ipsFound > 0 && s.ipamContext.enablePodIPAnnotation {
+		// On DEL, we pass IP being released
+		ip := lo.Ternary(s.ipamContext.enableIPv6, ipAddr[0].GetIPv6Addr(), ipAddr[0].GetIPv4Addr())
+		err := s.ipamContext.AnnotatePod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE, vpccniPodIPKey, "", ip)
+		if err != nil {
+			log.Errorf("Failed to delete the pod annotation: %v", err)
+			errors = multiErr.Append(errors, err)
 		}
 	}
 

@@ -50,15 +50,21 @@ const (
 	pluginLogFile  = "/var/log/aws-routed-eni/plugin.log"
 	cniType        = "aws-cni"
 	ipAddr         = "10.0.1.15"
+	gw             = "10.0.0.1"
 	ipAddr2        = "10.0.1.30"
 	devNum         = 4
 	MAX_ENI        = 4
 	NetworkCards   = 2
+	podName        = "web-2"
+	podNamespace   = "kube-system"
+	macAddr        = "02:42:ac:11:00:02"
+	podHash        = "3a52ce78095"
+	cniVersionStr  = "0.4.0" // This is what containerd passes to CNI plugin. This depends on what version is defined in the config file
 )
 
 var netConf = &NetConf{
 	NetConf: types.NetConf{
-		CNIVersion: cniVersion,
+		CNIVersion: cniVersionStr,
 		Name:       cniName,
 		Type:       cniType,
 	},
@@ -409,6 +415,182 @@ func TestCmdDel(t *testing.T) {
 	mockNP.EXPECT().DeletePodNp(gomock.Any(), gomock.Any()).Return(deleteNpReply, nil)
 
 	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(nil)
+
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
+}
+
+func TestCmdDelWithPrevResultForBranchENI(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+	var netConfForBranchENIPods = &NetConf{
+		NetConf: types.NetConf{
+			CNIVersion: cniVersionStr,
+			Name:       cniName,
+			Type:       cniType,
+			RawPrevResult: map[string]interface{}{
+				"cniVersion": cniVersionStr,
+				"ips": []map[string]interface{}{
+					{
+						"interface": 1,
+						"address":   ipAddr + "/32",
+						"gateway":   gw,
+						"version":   "4",
+					},
+				},
+				"interfaces": []map[string]interface{}{
+					{
+						"name": "eni" + podHash,
+					},
+					{
+						"name":    "eth0",
+						"sandbox": netNS,
+						"mac":     macAddr,
+					},
+					{
+						"name": "dummy" + podHash,
+						"mac":  "4",
+					},
+				},
+			},
+		},
+		PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+		PluginLogLevel:     pluginLogLevel,
+		PluginLogFile:      pluginLogFile,
+	}
+
+	stdinData, _ := json.Marshal(netConfForBranchENIPods)
+
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
+		Netns:     netNS,
+		IfName:    ifName,
+		StdinData: stdinData,
+		Args:      "K8S_POD_NAME=web-2;K8S_POD_INFRA_CONTAINER_ID=054c9853b64776d97f4782d2e281e98d8daa22b4ae7ac7339f623e505318424f;K8S_POD_UID=16ac576e-b474-4b11-bdd4-8ba6ef468b5e;IgnoreUnknown=1;K8S_POD_NAMESPACE=kube-system",
+	}
+
+	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
+
+	mocksNetwork.EXPECT().TeardownBranchENIPodNetwork(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
+}
+
+func TestCmdDelWhenIPAMIsDown(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+	var netConfForBranchENIPods = &NetConf{
+		NetConf: types.NetConf{
+			CNIVersion: cniVersionStr,
+			Name:       cniName,
+			Type:       cniType,
+			RawPrevResult: map[string]interface{}{
+				"cniVersion": cniVersionStr,
+				"ips": []map[string]interface{}{
+					{
+						"interface": 1,
+						"address":   ipAddr + "/32",
+						"gateway":   gw,
+						"version":   "4",
+					},
+				},
+				"interfaces": []map[string]interface{}{
+					{
+						"name": "eni" + podHash,
+					},
+					{
+						"name":    "eth0",
+						"sandbox": netNS,
+						"mac":     "2",
+					},
+					{
+						"name":    "dummy" + podHash,
+						"mac":     "0",
+						"sandbox": "1",
+					},
+				},
+			},
+		},
+		PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+		PluginLogLevel:     pluginLogLevel,
+		PluginLogFile:      pluginLogFile,
+	}
+
+	stdinData, _ := json.Marshal(netConfForBranchENIPods)
+
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
+		Netns:     netNS,
+		IfName:    ifName,
+		StdinData: stdinData,
+		Args:      "K8S_POD_NAME=web-2;K8S_POD_INFRA_CONTAINER_ID=054c9853b64776d97f4782d2e281e98d8daa22b4ae7ac7339f623e505318424f;K8S_POD_UID=16ac576e-b474-4b11-bdd4-8ba6ef468b5e;IgnoreUnknown=1;K8S_POD_NAMESPACE=kube-system",
+	}
+
+	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
+
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, errors.New("IPAM is down"))
+
+	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(nil)
+
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
+}
+
+func TestCmdDelWhenIPAMIsDownAndPrevResultDeletionFails(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+	var netConfForBranchENIPods = &NetConf{
+		NetConf: types.NetConf{
+			CNIVersion: cniVersionStr,
+			Name:       cniName,
+			Type:       cniType,
+			RawPrevResult: map[string]interface{}{
+				"cniVersion": cniVersionStr,
+				"ips": []map[string]interface{}{
+					{
+						"interface": 1,
+						"address":   ipAddr + "/32",
+						"gateway":   gw,
+						"version":   "4",
+					},
+				},
+				"interfaces": []map[string]interface{}{
+					{
+						"name": "eni" + podHash,
+					},
+					{
+						"name":    "eth0",
+						"sandbox": netNS,
+						"mac":     "2",
+					},
+					{
+						"name":    "dummy" + podHash,
+						"mac":     "0",
+						"sandbox": "1",
+					},
+				},
+			},
+		},
+		PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+		PluginLogLevel:     pluginLogLevel,
+		PluginLogFile:      pluginLogFile,
+	}
+
+	stdinData, _ := json.Marshal(netConfForBranchENIPods)
+
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
+		Netns:     netNS,
+		IfName:    ifName,
+		StdinData: stdinData,
+		Args:      "K8S_POD_NAME=web-2;K8S_POD_INFRA_CONTAINER_ID=054c9853b64776d97f4782d2e281e98d8daa22b4ae7ac7339f623e505318424f;K8S_POD_UID=16ac576e-b474-4b11-bdd4-8ba6ef468b5e;IgnoreUnknown=1;K8S_POD_NAMESPACE=kube-system",
+	}
+
+	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
+
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, errors.New("IPAM is down"))
+
+	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(errors.New("error on TeardownPodNetwork"))
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Nil(t, err)
@@ -1418,6 +1600,179 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 
 			handled := teardownPodNetworkWithPrevResult(driverClient, tt.args.conf, tt.args.k8sArgs, tt.args.contVethName, testLogger)
 			assert.Equal(t, tt.handled, handled)
+		})
+	}
+}
+func Test_parseIPAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    *pb.IPAddress
+		expected *net.IPNet
+	}{
+		{
+			name: "IPv4 address",
+			input: &pb.IPAddress{
+				IPv4Addr: "192.168.1.10",
+				IPv6Addr: "",
+			},
+			expected: &net.IPNet{
+				IP:   net.ParseIP("192.168.1.10"),
+				Mask: net.CIDRMask(32, 32),
+			},
+		},
+		{
+			name: "IPv6 address",
+			input: &pb.IPAddress{
+				IPv4Addr: "",
+				IPv6Addr: "2001:db8::1",
+			},
+			expected: &net.IPNet{
+				IP:   net.ParseIP("2001:db8::1"),
+				Mask: net.CIDRMask(128, 128),
+			},
+		},
+		{
+			name: "both IPv4 and IPv6 set, prefer IPv4",
+			input: &pb.IPAddress{
+				IPv4Addr: "10.0.0.1",
+				IPv6Addr: "2001:db8::2",
+			},
+			expected: &net.IPNet{
+				IP:   net.ParseIP("10.0.0.1"),
+				Mask: net.CIDRMask(32, 32),
+			},
+		},
+		{
+			name: "Nothing set",
+			input: &pb.IPAddress{
+				IPv4Addr: "",
+				IPv6Addr: "",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got *net.IPNet
+			if tt.input == nil {
+				got = parseIPAddress(nil)
+			} else {
+				got = parseIPAddress(tt.input)
+			}
+			if tt.expected == nil {
+				assert.Nil(t, got)
+			} else {
+				assert.NotNil(t, got)
+				assert.Equal(t, tt.expected.IP, got.IP)
+				assert.Equal(t, tt.expected.Mask.String(), got.Mask.String())
+			}
+		})
+	}
+}
+func TestLoadNetConf(t *testing.T) {
+	type args struct {
+		input       map[string]interface{}
+		expectError string
+		expectConf  *NetConf
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "valid config with defaults",
+			args: args{
+				input: map[string]interface{}{
+					"cniVersion": "0.4.0",
+					"name":       "test-cni",
+					"type":       "aws-cni",
+				},
+				expectConf: &NetConf{
+					NetConf: types.NetConf{
+						CNIVersion: "0.4.0",
+						Name:       "test-cni",
+						Type:       "aws-cni",
+					},
+					MTU:                "9001",
+					VethPrefix:         "eni",
+					PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+				},
+			},
+		},
+		{
+			name: "custom vethPrefix and MTU",
+			args: args{
+				input: map[string]interface{}{
+					"cniVersion": "0.4.0",
+					"name":       "test-cni",
+					"type":       "aws-cni",
+					"vethPrefix": "abcd",
+					"mtu":        "1500",
+				},
+				expectConf: &NetConf{
+					NetConf: types.NetConf{
+						CNIVersion: "0.4.0",
+						Name:       "test-cni",
+						Type:       "aws-cni",
+					},
+					MTU:                "1500",
+					VethPrefix:         "abcd",
+					PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+				},
+			},
+		},
+		{
+			name: "vethPrefix too long",
+			args: args{
+				input: map[string]interface{}{
+					"cniVersion": "0.4.0",
+					"name":       "test-cni",
+					"type":       "aws-cni",
+					"vethPrefix": "abcde",
+				},
+				expectError: "conf.VethPrefix can be at most 4 characters long",
+			},
+		},
+		{
+			name: "invalid JSON",
+			args: args{
+				input:       nil,
+				expectError: "add cmd: error loading config from args",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var data []byte
+			var err error
+			if tt.args.input != nil {
+				data, err = json.Marshal(tt.args.input)
+				assert.NoError(t, err)
+			} else {
+				// Invalid JSON
+				data = []byte("{invalid-json}")
+			}
+			conf, log, err := LoadNetConf(data)
+			if tt.args.expectError != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.args.expectError)
+				assert.Nil(t, conf)
+				assert.Nil(t, log)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, conf)
+				assert.NotNil(t, log)
+				// Only check fields we expect
+				if tt.args.expectConf != nil {
+					assert.Equal(t, tt.args.expectConf.MTU, conf.MTU)
+					assert.Equal(t, tt.args.expectConf.VethPrefix, conf.VethPrefix)
+					assert.Equal(t, tt.args.expectConf.PodSGEnforcingMode, conf.PodSGEnforcingMode)
+					assert.Equal(t, tt.args.expectConf.NetConf.CNIVersion, conf.NetConf.CNIVersion)
+					assert.Equal(t, tt.args.expectConf.NetConf.Name, conf.NetConf.Name)
+					assert.Equal(t, tt.args.expectConf.NetConf.Type, conf.NetConf.Type)
+				}
+			}
 		})
 	}
 }

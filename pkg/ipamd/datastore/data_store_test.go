@@ -1619,3 +1619,41 @@ func TestForceRemovalMetrics(t *testing.T) {
 	eniCount = testutil.ToFloat64(prometheusmetrics.ForceRemovedENIs)
 	assert.Equal(t, float64(1), eniCount)
 }
+func TestInitializeDataStores(t *testing.T) {
+	log := Testlog
+	defaultPath := "/tmp/test-datastore.json"
+
+	t.Run("single network card, not skipped", func(t *testing.T) {
+		skip := []bool{false}
+		dsAccess := InitializeDataStores(skip, defaultPath, false, log)
+		assert.NotNil(t, dsAccess)
+		assert.Equal(t, 1, len(dsAccess.DataStores))
+		assert.Equal(t, 0, dsAccess.DataStores[0].GetNetworkCard())
+	})
+
+	t.Run("multiple network cards, some skipped", func(t *testing.T) {
+		skip := []bool{false, true, false}
+		dsAccess := InitializeDataStores(skip, defaultPath, true, log)
+		assert.NotNil(t, dsAccess)
+		assert.Equal(t, 2, len(dsAccess.DataStores))
+		assert.Equal(t, 0, dsAccess.DataStores[0].GetNetworkCard())
+		assert.Equal(t, 2, dsAccess.DataStores[1].GetNetworkCard())
+	})
+}
+func TestDataStoreAccess_GetDataStore(t *testing.T) {
+	log := Testlog
+	defaultPath := "/tmp/test-datastore.json"
+	skip := []bool{false, false, false}
+	dsAccess := InitializeDataStores(skip, defaultPath, false, log)
+
+	// Should return the correct DataStore for each network card
+	for i := 0; i < 3; i++ {
+		ds := dsAccess.GetDataStore(i)
+		assert.NotNil(t, ds, "Expected DataStore for networkCard %d", i)
+		assert.Equal(t, i, ds.GetNetworkCard())
+	}
+
+	// Should return nil for a network card that does not exist
+	ds := dsAccess.GetDataStore(99)
+	assert.Nil(t, ds)
+}
