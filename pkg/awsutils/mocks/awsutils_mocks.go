@@ -16,7 +16,7 @@
 // Source: github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils (interfaces: APIs)
 
 // Package mock_awsutils is a generated GoMock package.
-package mock_awsutils
+package mocks
 
 import (
 	net "net"
@@ -54,7 +54,7 @@ func (m *MockAPIs) EXPECT() *MockAPIsMockRecorder {
 }
 
 // AllocENI mocks base method.
-func (m *MockAPIs) AllocENI(arg0 bool, arg1 []*string, arg2 string, arg3 int) (string, error) {
+func (m *MockAPIs) AllocENI(arg0 []*string, arg1 string, arg2, arg3 int) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AllocENI", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(string)
@@ -327,6 +327,20 @@ func (mr *MockAPIsMockRecorder) GetLocalIPv4() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLocalIPv4", reflect.TypeOf((*MockAPIs)(nil).GetLocalIPv4))
 }
 
+// GetLocalIPv6 mocks base method.
+func (m *MockAPIs) GetLocalIPv6() net.IP {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLocalIPv6")
+	ret0, _ := ret[0].(net.IP)
+	return ret0
+}
+
+// GetLocalIPv6 indicates an expected call of GetLocalIPv6.
+func (mr *MockAPIsMockRecorder) GetLocalIPv6() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLocalIPv6", reflect.TypeOf((*MockAPIs)(nil).GetLocalIPv6))
+}
+
 // GetNetworkCards mocks base method.
 func (m *MockAPIs) GetNetworkCards() []vpc.NetworkCard {
 	m.ctrl.T.Helper()
@@ -467,8 +481,22 @@ func (mr *MockAPIsMockRecorder) IsUnmanagedENI(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsUnmanagedENI", reflect.TypeOf((*MockAPIs)(nil).IsUnmanagedENI), arg0)
 }
 
+// IsUnmanagedNIC mocks base method.
+func (m *MockAPIs) IsUnmanagedNIC(arg0 int) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsUnmanagedNIC", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsUnmanagedNIC indicates an expected call of IsUnmanagedNIC.
+func (mr *MockAPIsMockRecorder) IsUnmanagedNIC(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsUnmanagedNIC", reflect.TypeOf((*MockAPIs)(nil).IsUnmanagedNIC), arg0)
+}
+
 // RefreshSGIDs mocks base method.
-func (m *MockAPIs) RefreshSGIDs(arg0 string, arg1 *datastore.DataStore) error {
+func (m *MockAPIs) RefreshSGIDs(arg0 string, arg1 *datastore.DataStoreAccess) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RefreshSGIDs", arg0, arg1)
 	ret0, _ := ret[0].(error)
@@ -505,6 +533,18 @@ func (m *MockAPIs) SetUnmanagedENIs(arg0 []string) {
 func (mr *MockAPIsMockRecorder) SetUnmanagedENIs(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetUnmanagedENIs", reflect.TypeOf((*MockAPIs)(nil).SetUnmanagedENIs), arg0)
+}
+
+// SetUnmanagedNetworkCards mocks base method.
+func (m *MockAPIs) SetUnmanagedNetworkCards(arg0 []bool) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetUnmanagedNetworkCards", arg0)
+}
+
+// SetUnmanagedNetworkCards indicates an expected call of SetUnmanagedNetworkCards.
+func (mr *MockAPIsMockRecorder) SetUnmanagedNetworkCards(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetUnmanagedNetworkCards", reflect.TypeOf((*MockAPIs)(nil).SetUnmanagedNetworkCards), arg0)
 }
 
 // TagENI mocks base method.

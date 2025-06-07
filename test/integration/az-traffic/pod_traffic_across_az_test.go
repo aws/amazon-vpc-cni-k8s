@@ -28,6 +28,45 @@ const MetricNamespace = "NetworkingAZConnectivity"
 
 var f *framework.Framework
 
+func getClusterAZs(ctx context.Context, clusterName string) ([]string, error) {
+	// Step 1: Get all AZs in the region
+	describeAZOutput, err := f.CloudServices.EC2().DescribeAvailabilityZones(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe availability zones: %w", err)
+	}
+
+	// Step 2: Get cluster info
+	clusterInfo, err := f.CloudServices.EKS().DescribeCluster(ctx, clusterName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe cluster: %w", err)
+	}
+
+	// Step 3: Get subnet info
+	subnetIDs := clusterInfo.Cluster.ResourcesVpcConfig.SubnetIds
+	describeSubnetsOutput, err := f.CloudServices.EC2().DescribeSubnets(ctx, subnetIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe subnets: %w", err)
+	}
+
+	// Step 4: Create a map of cluster AZs
+	clusterAZs := make(map[string]bool)
+	for _, subnet := range describeSubnetsOutput.Subnets {
+		clusterAZs[*subnet.AvailabilityZone] = true
+	}
+
+	// Step 5: Filter and deduplicate AZs
+	var filteredAZs []string
+	azSet := make(map[string]bool)
+	for _, az := range describeAZOutput.AvailabilityZones {
+		if clusterAZs[*az.ZoneName] && !azSet[*az.ZoneName] {
+			filteredAZs = append(filteredAZs, *az.ZoneName)
+			azSet[*az.ZoneName] = true
+		}
+	}
+
+	return filteredAZs, nil
+}
+
 var _ = Describe("[STATIC_CANARY] AZ Node Presence", FlakeAttempts(retries), func() {
 
 	Context("While testing AZ availability", func() {
@@ -37,11 +76,11 @@ var _ = Describe("[STATIC_CANARY] AZ Node Presence", FlakeAttempts(retries), fun
 			nodes, err := f.K8sResourceManagers.NodeManager().GetNodes(f.Options.NgNameLabelKey, f.Options.NgNameLabelVal)
 			Expect(err).ToNot(HaveOccurred())
 
-			describeAZOutput, err := f.CloudServices.EC2().DescribeAvailabilityZones(context.TODO())
+			clusterAZs, err := getClusterAZs(context.TODO(), f.Options.ClusterName)
 			Expect(err).ToNot(HaveOccurred())
 
-			for _, az := range describeAZOutput.AvailabilityZones {
-				nodePresenceInAZ[*az.ZoneName] = false
+			for _, az := range clusterAZs {
+				nodePresenceInAZ[az] = false
 			}
 			for i := range nodes.Items {
 				// node label key "topology.kubernetes.io/zone" is well known label populated by cloud controller manager

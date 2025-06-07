@@ -41,7 +41,7 @@ BASE_IMAGE_CNI_METRICS ?= public.ecr.aws/eks-distro-build-tooling/eks-distro-min
 DESTDIR = .
 
 # IMAGE is the primary AWS VPC CNI plugin container image.
-IMAGE = amazon/amazon-k8s-cni
+IMAGE ?= amazon/amazon-k8s-cni
 IMAGE_NAME = $(IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
 IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(IMAGE_NAME)).tar.gz
 # INIT_IMAGE is the init container for AWS VPC CNI.
@@ -96,7 +96,7 @@ ALLPKGS = $(shell go list $(VENDOR_OVERRIDE_FLAG) ./... | grep -v cmd/packet-ver
 # BINS is the set of built command executables.
 BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper aws-vpc-cni aws-vpc-cni-init egress-cni
 # CORE_PLUGIN_DIR is the directory containing upstream containernetworking plugins
-CORE_PLUGIN_DIR = $(MAKEFILE_PATH)/core-plugins/
+CORE_PLUGIN_DIR = $(MAKEFILE_PATH)core-plugins/
 
 # DOCKER_ARGS is extra arguments passed during container image build.
 DOCKER_ARGS ?=
@@ -303,8 +303,8 @@ plugins:   ## Fetch the CNI plugins
 
 ##@ Debug script
 
-debug-script: FETCH_URL=https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/log-collector-script/linux/eks-log-collector.sh
-debug-script: VISIT_URL=https://github.com/awslabs/amazon-eks-ami/tree/master/log-collector-script/linux
+debug-script: FETCH_URL=https://raw.githubusercontent.com/awslabs/amazon-eks-ami/main/log-collector-script/linux/eks-log-collector.sh
+debug-script: VISIT_URL=https://github.com/awslabs/amazon-eks-ami/tree/main/log-collector-script/linux
 debug-script:    ## Fetching debug script from awslabs/amazon-eks-ami
 	@echo "Fetching debug script from awslabs/amazon-eks-ami"
 	@echo
@@ -374,6 +374,7 @@ generate:
 generate-limits: GOOS=
 generate-limits:    ## Generate limit file go code
 	go run $(VENDOR_OVERRIDE_FLAG) scripts/gen_vpc_ip_limits.go
+	gofmt -w pkg/vpc/vpc_ip_resource_limit.go
 
 ekscharts-sync:
 	for HELM_CHART_NAME in $(HELM_CHART_NAMES) ; do \
