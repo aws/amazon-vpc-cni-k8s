@@ -95,7 +95,7 @@ func findMyPod(k8sClient client.Client) (corev1.Pod, error) {
 	if err != nil {
 		log.Errorf("Client failed to GET pod (%s)", MyPodName)
 	} else {
-		log.Debugf("Node found %s - labels - %d", pod.Name, len(pod.Labels))
+		log.Debugf("Pod found %s - labels - %d", pod.Name, len(pod.Labels))
 	}
 	return pod, err
 }
