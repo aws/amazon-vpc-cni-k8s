@@ -9,6 +9,7 @@ import "google/protobuf/empty.proto";
 service CNIBackend {
   rpc AddNetwork (AddNetworkRequest) returns (AddNetworkReply) {}
   rpc DelNetwork (DelNetworkRequest) returns (DelNetworkReply) {}
+  rpc GetMaxAllocatableIPs (google.protobuf.Empty) returns (GetMaxAllocatableIPsReply) {}
 }
 
 message AddNetworkRequest {
@@ -67,6 +68,11 @@ message DelNetworkReply {
 
   string NetworkPolicyMode = 6;
   // next field: 7
+}
+
+message GetMaxAllocatableIPsReply {
+  int32 MaxAllocatableIPs = 1;
+  // next field: 2
 }
 
 // The service definition.
