@@ -15,6 +15,7 @@ package ipamd
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"os/signal"
@@ -291,6 +292,11 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 				return &rpc.DelNetworkReply{Success: true}, nil
 			}
 			log.Warnf("Send DelNetworkReply: Failed to get pod spec: %v", err)
+			return &rpc.DelNetworkReply{Success: false}, err
+		}
+		if string(pod.ObjectMeta.UID) != in.K8S_POD_UID {
+			log.Errorf("Send DelNetworkReply: pod UID mismatch")
+			err = fmt.Errorf("pod UID mismatch: got %s, expected %s", in.K8S_POD_UID, pod.ObjectMeta.UID)
 			return &rpc.DelNetworkReply{Success: false}, err
 		}
 		val, branch := pod.Annotations["vpc.amazonaws.com/pod-eni"]

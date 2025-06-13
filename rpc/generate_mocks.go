@@ -14,4 +14,4 @@
 package rpc
 
 //go:generate protoc --go_out=plugins=grpc,paths=source_relative:. rpc.proto
-//go:generate go run github.com/golang/mock/mockgen -destination mocks/rpc_mocks.go -copyright_file ../scripts/copyright.txt . CNIBackendClient,NPBackendClient
+//go:generate go run github.com/golang/mock/mockgen -destination mocks/rpc_mocks.go -copyright_file ../scripts/copyright.txt . CNIBackendClient,NPBackendClient,ConfigServerBackendClient
