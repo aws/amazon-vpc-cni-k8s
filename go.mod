@@ -2,6 +2,10 @@ module github.com/aws/amazon-vpc-cni-k8s
 
 go 1.24.4
 
+// At the time of adding this configuration, the new Go feature introduced here https://github.com/golang/go/issues/67061,
+// was having a good amount of issues linked to, affecting AWS Firewall.
+godebug tlsmlkem=0
+
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/aws/amazon-vpc-cni-k8s/test/agent v0.0.0-20231212223725-21c4bd73015b
