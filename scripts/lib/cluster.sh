@@ -104,6 +104,8 @@ function up-kops-cluster {
     --image ${HOST_IMAGE_SSM_PARAMETER} \
     ${CLUSTER_NAME}
 
+    __cluster_created=1
+
     $KOPS_BIN update cluster --name ${CLUSTER_NAME} --yes
     sleep 100
     $KOPS_BIN export kubeconfig --admin
