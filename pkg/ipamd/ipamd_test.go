@@ -511,7 +511,7 @@ func TestIncreaseIPPoolCustomENIOnNonSchedulableNodeDefault(t *testing.T) {
 	testIncreaseIPPool(t, true, true, false, true)
 }
 
-func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool, subnetDiscovery bool, eniTrunking bool) {
+func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulableNode bool, subnetDiscovery bool, eniTrunking bool) {
 	m := setup(t)
 	defer m.ctrl.Finish()
 	ctx := context.Background()
@@ -583,7 +583,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool, 
 		},
 	}
 
-	if unschedulabeNode {
+	if unschedulableNode {
 		val, exist := os.LookupEnv(envManageENIsNonSchedulable)
 		if exist && val == "true" {
 			assertAllocationExternalCalls(true, useENIConfig, m, sg, podENIConfig, eni2, eniMetadata, false, eniTrunking)
@@ -609,7 +609,7 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool, 
 			Spec:       v1.NodeSpec{},
 			Status:     v1.NodeStatus{},
 		}
-		if unschedulabeNode {
+		if unschedulableNode {
 			fakeNode.Spec.Taints = append(fakeNode.Spec.Taints, corev1.Taint{
 				Key:    "node.kubernetes.io/unschedulable",
 				Effect: corev1.TaintEffectNoSchedule,
