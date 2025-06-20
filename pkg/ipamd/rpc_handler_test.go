@@ -39,7 +39,7 @@ func TestServer_VersionCheck(t *testing.T) {
 		warmENITarget: 1,
 		warmIPTarget:  3,
 		networkClient: m.network,
-		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}, false),
+		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}, false, false),
 	}
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil).AnyTimes()
 	m.awsutils.EXPECT().GetVPCIPv6CIDRs().Return([]string{}, nil).AnyTimes()
@@ -262,7 +262,7 @@ func TestServer_AddNetwork(t *testing.T) {
 			for _, call := range tt.fields.getExcludeSNATCIDRsCalls {
 				m.network.EXPECT().GetExcludeSNATCIDRs().Return(call.snatExclusionCIDRs)
 			}
-			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled)
+			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled, false)
 			for eniID, ipv4Addresses := range tt.fields.ipV4AddressByENIID {
 				ds.AddENI(eniID, 0, false, false, false)
 				for _, ipv4Address := range ipv4Addresses {

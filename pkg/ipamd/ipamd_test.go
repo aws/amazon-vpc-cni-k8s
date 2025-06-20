@@ -135,7 +135,7 @@ func TestNodeInit(t *testing.T) {
 		primaryIP:     make(map[string]string),
 		terminating:   int32(0),
 		networkClient: m.network,
-		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), false),
+		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), false, false),
 		myNodeName:    myNodeName,
 		enableIPv4:    true,
 		enableIPv6:    false,
@@ -154,6 +154,7 @@ func TestNodeInit(t *testing.T) {
 	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	m.awsutils.EXPECT().IsMultiCardENI(eni1.ENIID).Return(false).AnyTimes()
 	m.awsutils.EXPECT().IsMultiCardENI(eni2.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsPrimarySubnetExcluded().Return(false, nil).AnyTimes()
 
 	primaryIP := net.ParseIP(ipaddr01)
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
@@ -226,7 +227,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 		primaryIP:              make(map[string]string),
 		terminating:            int32(0),
 		networkClient:          m.network,
-		dataStore:              datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true),
+		dataStore:              datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true, false),
 		myNodeName:             myNodeName,
 		enablePrefixDelegation: true,
 		enableIPv4:             true,
@@ -314,7 +315,7 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 		primaryIP:              make(map[string]string),
 		terminating:            int32(0),
 		networkClient:          m.network,
-		dataStore:              datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true),
+		dataStore:              datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), true, false),
 		myNodeName:             myNodeName,
 		enablePrefixDelegation: true,
 		enableIPv4:             false,
@@ -1363,11 +1364,11 @@ func TestIPAMContext_nodePrefixPoolTooLow(t *testing.T) {
 }
 
 func testDatastore() *datastore.DataStore {
-	return datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false)
+	return datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, false)
 }
 
 func testDatastorewithPrefix() *datastore.DataStore {
-	return datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), true)
+	return datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), true, false)
 }
 
 func datastoreWith3FreeIPs() *datastore.DataStore {
@@ -2044,7 +2045,7 @@ func TestIPAMContext_enableSecurityGroupsForPods(t *testing.T) {
 		k8sClient:     m.k8sClient,
 		enableIPv4:    true,
 		enableIPv6:    false,
-		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false),
+		dataStore:     datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, false),
 		awsClient:     m.awsutils,
 		networkClient: m.network,
 		primaryIP:     make(map[string]string),
@@ -2224,7 +2225,7 @@ func TestIsConfigValid(t *testing.T) {
 					m.awsutils.EXPECT().IsPrefixDelegationSupported().Return(false)
 				}
 			}
-			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled)
+			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled, false)
 
 			mockContext := &IPAMContext{
 				awsClient:              m.awsutils,
@@ -2505,4 +2506,391 @@ func (c *IPAMContext) tryAssignPodENI(ctx context.Context, pod *corev1.Pod, fnNa
 		return err
 	}
 	return nil
+}
+
+func TestNodeInitWithPrimaryENIExcluded(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	fakeCheckpoint := datastore.CheckpointData{
+		Version:     datastore.CheckpointFormatVersion,
+		Allocations: []datastore.CheckpointEntry{},
+	}
+
+	mockContext := &IPAMContext{
+		awsClient:            m.awsutils,
+		k8sClient:            m.k8sClient,
+		maxIPsPerENI:         14,
+		maxENI:               4,
+		warmENITarget:        2,
+		warmIPTarget:         3,
+		primaryIP:            make(map[string]string),
+		terminating:          int32(0),
+		networkClient:        m.network,
+		dataStore:            datastore.NewDataStore(log, datastore.NewTestCheckpoint(fakeCheckpoint), false, false),
+		myNodeName:           myNodeName,
+		enableIPv4:           true,
+		enableIPv6:           false,
+		withApiServer:        true,
+		useSubnetDiscovery:   true,
+		isPrimaryENIExcluded: false, // Will be set during nodeInit
+	}
+
+	eni1, eni2, _ := getDummyENIMetadata()
+
+	var cidrs []string
+	m.awsutils.EXPECT().GetENILimit().Return(4)
+	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14)
+
+	// Mock primary subnet exclusion check - primary subnet is excluded
+	m.awsutils.EXPECT().IsPrimarySubnetExcluded().Return(true, nil)
+
+	m.awsutils.EXPECT().GetIPv4sFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil)
+	m.awsutils.EXPECT().GetIPv4sFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Addresses, nil)
+	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsUnmanagedENI(eni2.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	m.awsutils.EXPECT().IsMultiCardENI(eni1.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsMultiCardENI(eni2.ENIID).Return(false).AnyTimes()
+
+	primaryIP := net.ParseIP(ipaddr01)
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
+	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
+	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false, true, false).Return(nil)
+	m.network.EXPECT().CleanUpStaleAWSChains(true, false).Return(nil)
+	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+
+	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
+	resp := awsutils.DescribeAllENIsResult{
+		ENIMetadata:     eniMetadataSlice,
+		TagMap:          map[string]awsutils.TagMap{},
+		TrunkENI:        "",
+		EFAENIs:         make(map[string]bool),
+		MultiCardENIIDs: nil,
+	}
+	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
+
+	m.awsutils.EXPECT().SetMultiCardENIs(resp.MultiCardENIIDs).AnyTimes()
+	m.awsutils.EXPECT().GetLocalIPv4().Return(primaryIP)
+
+	var rules []netlink.Rule
+	m.network.EXPECT().GetRuleList().Return(rules, nil)
+	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any())
+	m.network.EXPECT().GetExternalServiceCIDRs().Return(nil)
+	m.network.EXPECT().UpdateExternalServiceIpRules(gomock.Any(), gomock.Any())
+
+	maxPods, _ := resource.ParseQuantity("500")
+	fakeNode := v1.Node{
+		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
+		Spec:       v1.NodeSpec{},
+		Status: v1.NodeStatus{
+			Capacity: v1.ResourceList{
+				v1.ResourcePods: maxPods,
+			},
+		},
+	}
+	m.k8sClient.Create(ctx, &fakeNode)
+
+	os.Setenv("MY_NODE_NAME", myNodeName)
+	err := mockContext.nodeInit()
+	assert.NoError(t, err)
+
+	// Verify that primary ENI is marked as excluded
+	assert.True(t, mockContext.isPrimaryENIExcluded)
+}
+
+func TestHasRoomForENIWithExcludedPrimary(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:            m.awsutils,
+		maxENI:               4,
+		unmanagedENI:         0,
+		enablePodENI:         false,
+		isPrimaryENIExcluded: true, // Primary ENI is excluded
+		dataStore:            datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, true),
+	}
+
+	// Add primary ENI (excluded) and one secondary ENI
+	err := mockContext.dataStore.AddENI(primaryENIid, 0, true, false, false)
+	assert.NoError(t, err)
+	err = mockContext.dataStore.AddENI(secENIid, 1, false, false, false)
+	assert.NoError(t, err)
+
+	// Should have room for more ENIs since primary doesn't count
+	// maxENI=4, unmanagedENI=0, trunkEni=0, excludedPrimaryENI=1
+	// Current ENIs from datastore: 1 (primary excluded, so only secondary counts)
+	// Available slots: 4 - 0 - 0 - 1 = 3, current = 1, so hasRoom = true
+	hasRoom := mockContext.hasRoomForEni()
+	assert.True(t, hasRoom)
+
+	// Add more secondary ENIs until we reach the limit
+	err = mockContext.dataStore.AddENI("eni-2", 2, false, false, false)
+	assert.NoError(t, err)
+	err = mockContext.dataStore.AddENI("eni-3", 3, false, false, false)
+	assert.NoError(t, err)
+
+	// Now we should be at the limit
+	hasRoom = mockContext.hasRoomForEni()
+	assert.False(t, hasRoom)
+}
+
+func TestSetupENIWithExcludedPrimary(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:            m.awsutils,
+		networkClient:        m.network,
+		primaryIP:            make(map[string]string),
+		terminating:          int32(0),
+		isPrimaryENIExcluded: true,
+		dataStore:            datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, true),
+	}
+
+	primary := true
+	notPrimary := false
+	testAddr1 := ipaddr01
+	testAddr2 := ipaddr02
+	primaryENIMetadata := awsutils.ENIMetadata{
+		ENIID:          primaryENIid,
+		MAC:            primaryMAC,
+		DeviceNumber:   primaryDevice,
+		SubnetIPv4CIDR: primarySubnet,
+		IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
+			{
+				PrivateIpAddress: &testAddr1, Primary: &primary,
+			},
+			{
+				PrivateIpAddress: &testAddr2, Primary: &notPrimary,
+			},
+		},
+	}
+
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+
+	// setupENI should skip IP allocation for excluded primary ENI
+	err := mockContext.setupENI(primaryENIMetadata.ENIID, primaryENIMetadata, false, false)
+	assert.NoError(t, err)
+
+	// Primary ENI should be added to datastore but no IPs should be allocated
+	eniInfos := mockContext.dataStore.GetENIInfos()
+	assert.Equal(t, 1, len(eniInfos.ENIs))
+	assert.Equal(t, 0, eniInfos.TotalIPs) // No IPs allocated to excluded primary ENI
+
+	// Verify primary IP mapping is still set
+	assert.Equal(t, 1, len(mockContext.primaryIP))
+}
+
+func TestWarmTargetCalculationWithExcludedPrimary(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:              m.awsutils,
+		maxIPsPerENI:           14,
+		maxENI:                 4,
+		warmENITarget:          2, // Want 2 ENIs worth of warm IPs
+		warmIPTarget:           0,
+		isPrimaryENIExcluded:   true,
+		enablePrefixDelegation: false,
+		dataStore:              datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, true),
+	}
+
+	// Add primary ENI (excluded) and secondary ENI
+	err := mockContext.dataStore.AddENI(primaryENIid, 0, true, false, false)
+	assert.NoError(t, err)
+	err = mockContext.dataStore.AddENI(secENIid, 1, false, false, false)
+	assert.NoError(t, err)
+
+	// Add IPs to secondary ENI
+	for i := 1; i <= 14; i++ {
+		ipv4Addr := net.IPNet{IP: net.ParseIP(fmt.Sprintf("10.0.1.%d", i)), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		err = mockContext.dataStore.AddIPv4CidrToStore(secENIid, ipv4Addr, false)
+		assert.NoError(t, err)
+	}
+
+	// Check if pool is too low - should be true because we want 2 ENIs worth (28 IPs) but only have 14
+	poolTooLow, _ := mockContext.isDatastorePoolTooLow()
+	assert.True(t, poolTooLow)
+
+	// Add another secondary ENI with IPs
+	err = mockContext.dataStore.AddENI("eni-third", 2, false, false, false)
+	assert.NoError(t, err)
+	for i := 1; i <= 14; i++ {
+		ipv4Addr := net.IPNet{IP: net.ParseIP(fmt.Sprintf("10.0.2.%d", i)), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		err = mockContext.dataStore.AddIPv4CidrToStore("eni-third", ipv4Addr, false)
+		assert.NoError(t, err)
+	}
+
+	// Now we should have enough (28 available IPs = 2 ENIs worth)
+	poolTooLow, _ = mockContext.isDatastorePoolTooLow()
+	assert.False(t, poolTooLow)
+}
+
+func TestIncreaseDatastorePoolWithExcludedPrimary(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	mockContext := &IPAMContext{
+		awsClient:                 m.awsutils,
+		k8sClient:                 m.k8sClient,
+		maxIPsPerENI:              14,
+		maxENI:                    4,
+		warmENITarget:             1,
+		networkClient:             m.network,
+		useCustomNetworking:       false,
+		useSubnetDiscovery:        true,
+		manageENIsNonScheduleable: false,
+		primaryIP:                 make(map[string]string),
+		terminating:               int32(0),
+		isPrimaryENIExcluded:      true,
+		dataStore:                 datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, true),
+	}
+
+	// Add excluded primary ENI
+	mockContext.dataStore.AddENI(primaryENIid, primaryDevice, true, false, false)
+
+	primary := true
+	notPrimary := false
+	testAddr1 := ipaddr01
+	testAddr2 := ipaddr02
+	testAddr11 := ipaddr11
+	testAddr12 := ipaddr12
+	eni2 := secENIid
+
+	eniMetadata := []awsutils.ENIMetadata{
+		{
+			ENIID:          primaryENIid,
+			MAC:            primaryMAC,
+			DeviceNumber:   primaryDevice,
+			SubnetIPv4CIDR: primarySubnet,
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
+				{
+					PrivateIpAddress: &testAddr1, Primary: &primary,
+				},
+				{
+					PrivateIpAddress: &testAddr2, Primary: &notPrimary,
+				},
+			},
+		},
+		{
+			ENIID:          secENIid,
+			MAC:            secMAC,
+			DeviceNumber:   secDevice,
+			SubnetIPv4CIDR: secSubnet,
+			IPv4Addresses: []ec2types.NetworkInterfacePrivateIpAddress{
+				{
+					PrivateIpAddress: &testAddr11, Primary: &notPrimary,
+				},
+				{
+					PrivateIpAddress: &testAddr12, Primary: &notPrimary,
+				},
+			},
+		},
+	}
+
+	// Should allocate new ENI since primary is excluded
+	m.awsutils.EXPECT().AllocENI(false, nil, "", 14).Return(eni2, nil)
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	m.awsutils.EXPECT().WaitForENIAndIPsAttached(secENIid, 14).Return(eniMetadata[1], nil)
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
+
+	mockContext.increaseDatastorePool(ctx)
+}
+
+func TestNodeInitWithSubnetDiscoveryDisabledAndPrimaryExcluded(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+	ctx := context.Background()
+
+	mockContext := &IPAMContext{
+		awsClient:          m.awsutils,
+		k8sClient:          m.k8sClient,
+		maxIPsPerENI:       14,
+		maxENI:             4,
+		warmENITarget:      1,
+		primaryIP:          make(map[string]string),
+		terminating:        int32(0),
+		networkClient:      m.network,
+		dataStore:          datastore.NewDataStore(log, datastore.NewTestCheckpoint(datastore.CheckpointData{Version: datastore.CheckpointFormatVersion}), false, false),
+		myNodeName:         myNodeName,
+		enableIPv4:         true,
+		enableIPv6:         false,
+		withApiServer:      true,
+		useSubnetDiscovery: false, // Subnet discovery disabled
+	}
+
+	var cidrs []string
+	m.awsutils.EXPECT().GetENILimit().Return(4)
+	m.awsutils.EXPECT().GetENIIPv4Limit().Return(14)
+
+	// When subnet discovery is disabled, primary ENI should not be excluded
+	// IsPrimarySubnetExcluded should not be called
+
+	eni1, eni2, _ := getDummyENIMetadata()
+	m.awsutils.EXPECT().GetIPv4sFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil)
+	m.awsutils.EXPECT().GetIPv4sFromEC2(eni2.ENIID).AnyTimes().Return(eni2.IPv4Addresses, nil)
+	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsUnmanagedENI(eni2.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	m.awsutils.EXPECT().IsMultiCardENI(eni1.ENIID).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsMultiCardENI(eni2.ENIID).Return(false).AnyTimes()
+
+	primaryIP := net.ParseIP(ipaddr01)
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
+	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
+	m.network.EXPECT().SetupHostNetwork(cidrs, "", &primaryIP, false, true, false).Return(nil)
+	m.network.EXPECT().CleanUpStaleAWSChains(true, false).Return(nil)
+	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
+	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+
+	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
+	resp := awsutils.DescribeAllENIsResult{
+		ENIMetadata:     eniMetadataSlice,
+		TagMap:          map[string]awsutils.TagMap{},
+		TrunkENI:        "",
+		EFAENIs:         make(map[string]bool),
+		MultiCardENIIDs: nil,
+	}
+	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, secSubnet)
+
+	m.awsutils.EXPECT().SetMultiCardENIs(resp.MultiCardENIIDs).AnyTimes()
+	m.awsutils.EXPECT().GetLocalIPv4().Return(primaryIP)
+
+	var rules []netlink.Rule
+	m.network.EXPECT().GetRuleList().Return(rules, nil)
+	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any())
+	m.network.EXPECT().GetExternalServiceCIDRs().Return(nil)
+	m.network.EXPECT().UpdateExternalServiceIpRules(gomock.Any(), gomock.Any())
+
+	maxPods, _ := resource.ParseQuantity("500")
+	fakeNode := v1.Node{
+		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
+		ObjectMeta: metav1.ObjectMeta{Name: myNodeName},
+		Spec:       v1.NodeSpec{},
+		Status: v1.NodeStatus{
+			Capacity: v1.ResourceList{
+				v1.ResourcePods: maxPods,
+			},
+		},
+	}
+	m.k8sClient.Create(ctx, &fakeNode)
+
+	// Add IPs to primary ENI since it's not excluded when subnet discovery is disabled
+	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any())
+
+	os.Setenv("MY_NODE_NAME", myNodeName)
+	err := mockContext.nodeInit()
+	assert.NoError(t, err)
+
+	// Verify that primary ENI is NOT excluded when subnet discovery is disabled
+	assert.False(t, mockContext.isPrimaryENIExcluded)
 }
