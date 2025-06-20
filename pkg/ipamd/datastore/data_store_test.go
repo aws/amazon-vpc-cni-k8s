@@ -45,7 +45,7 @@ var logConfig = logger.Configuration{
 var Testlog = logger.New(&logConfig)
 
 func TestAddENI(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -63,7 +63,7 @@ func TestAddENI(t *testing.T) {
 }
 
 func TestDeleteENI(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -110,7 +110,7 @@ func TestDeleteENI(t *testing.T) {
 }
 
 func TestDeleteENIwithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, false)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -160,7 +160,7 @@ func TestDeleteENIwithPDEnabled(t *testing.T) {
 }
 
 func TestAddENIIPv4Address(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -203,7 +203,7 @@ func TestAddENIIPv4Address(t *testing.T) {
 }
 
 func TestAddENIIPv4AddressWithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, false)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -246,7 +246,7 @@ func TestAddENIIPv4AddressWithPDEnabled(t *testing.T) {
 }
 
 func TestGetENIIPs(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -282,7 +282,7 @@ func TestGetENIIPs(t *testing.T) {
 }
 
 func TestGetENIIPsWithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, false)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -318,7 +318,7 @@ func TestGetENIIPsWithPDEnabled(t *testing.T) {
 }
 
 func TestDelENIIPv4Address(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false)
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
 
@@ -376,7 +376,7 @@ func TestDelENIIPv4Address(t *testing.T) {
 }
 
 func TestDelENIIPv4AddressWithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, false)
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
 
@@ -435,7 +435,7 @@ func TestDelENIIPv4AddressWithPDEnabled(t *testing.T) {
 
 func TestTogglePD(t *testing.T) {
 	//DS is in secondary IP mode
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false)
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
 
@@ -514,7 +514,7 @@ func TestTogglePD(t *testing.T) {
 
 func TestPodIPv4Address(t *testing.T) {
 	checkpoint := NewTestCheckpoint(struct{}{})
-	ds := NewDataStore(Testlog, checkpoint, false)
+	ds := NewDataStore(Testlog, checkpoint, false, false)
 
 	checkpointDataCmpOpts := cmp.Options{
 		cmpopts.IgnoreFields(CheckpointEntry{}, "AllocationTimestamp"),
@@ -719,7 +719,7 @@ func TestPodIPv4Address(t *testing.T) {
 
 func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 	checkpoint := NewTestCheckpoint(struct{}{})
-	ds := NewDataStore(Testlog, checkpoint, true)
+	ds := NewDataStore(Testlog, checkpoint, true, false)
 
 	checkpointDataCmpOpts := cmp.Options{
 		cmpopts.IgnoreFields(CheckpointEntry{}, "AllocationTimestamp"),
@@ -894,7 +894,7 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 func TestGetIPStatsV4(t *testing.T) {
 	os.Setenv(envIPCooldownPeriod, "1")
 	defer os.Unsetenv(envIPCooldownPeriod)
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false)
 
@@ -948,7 +948,7 @@ func TestGetIPStatsV4(t *testing.T) {
 func TestGetIPStatsV4WithPD(t *testing.T) {
 	os.Setenv(envIPCooldownPeriod, "1")
 	defer os.Unsetenv(envIPCooldownPeriod)
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, false)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false)
 
@@ -1001,7 +1001,7 @@ func TestGetIPStatsV4WithPD(t *testing.T) {
 }
 
 func TestGetIPStatsV6(t *testing.T) {
-	v6ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	v6ds := NewDataStore(Testlog, NullCheckpoint{}, true, false)
 	_ = v6ds.AddENI("eni-1", 1, true, false, false)
 	ipv6Addr := net.IPNet{IP: net.IP{0x21, 0xdb, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: net.CIDRMask(80, 128)}
 	_ = v6ds.AddIPv6CidrToStore("eni-1", ipv6Addr, true)
@@ -1021,7 +1021,7 @@ func TestGetIPStatsV6(t *testing.T) {
 }
 
 func TestWarmENIInteractions(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false)
 	_ = ds.AddENI("eni-2", 2, false, false, false)
@@ -1557,7 +1557,7 @@ func TestForceRemovalMetrics(t *testing.T) {
 		Help: "The total number of IPs force removed",
 	})
 
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false)
 
 	// Add an ENI and IP
 	err := ds.AddENI("eni-1", 1, true, false, false)
@@ -1614,4 +1614,148 @@ func TestForceRemovalMetrics(t *testing.T) {
 
 	eniCount = testutil.ToFloat64(prometheusmetrics.ForceRemovedENIs)
 	assert.Equal(t, float64(1), eniCount)
+}
+
+func TestPrimaryENIExclusion(t *testing.T) {
+	// Test with primary ENI excluded
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, true)
+
+	// Add primary ENI
+	err := ds.AddENI("eni-primary", 0, true, false, false)
+	assert.NoError(t, err)
+
+	// Add secondary ENI
+	err = ds.AddENI("eni-secondary", 1, false, false, false)
+	assert.NoError(t, err)
+
+	// Add IPs to both ENIs
+	ipv4Addr1 := net.IPNet{IP: net.ParseIP("10.0.0.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	err = ds.AddIPv4CidrToStore("eni-primary", ipv4Addr1, false)
+	assert.NoError(t, err)
+
+	ipv4Addr2 := net.IPNet{IP: net.ParseIP("10.0.0.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	err = ds.AddIPv4CidrToStore("eni-secondary", ipv4Addr2, false)
+	assert.NoError(t, err)
+
+	// Try to assign pod IP - should skip primary ENI
+	key := IPAMKey{"net0", "sandbox-1", "eth0"}
+	ip, device, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	assert.NoError(t, err)
+	assert.Equal(t, "10.0.0.2", ip) // Should get IP from secondary ENI
+	assert.Equal(t, 1, device)      // Device 1 is secondary ENI
+
+	// GetIPStats should exclude primary ENI
+	stats := ds.GetIPStats("4")
+	assert.Equal(t, 1, stats.TotalIPs)    // Only secondary ENI IP counted
+	assert.Equal(t, 1, stats.AssignedIPs) // One IP assigned
+
+	// GetENIs should not count primary ENI when excluded
+	eniCount := ds.GetENIs()
+	assert.Equal(t, 1, eniCount) // Only secondary ENI counted
+}
+
+func TestPrimaryENIExclusionWithPrefixDelegation(t *testing.T) {
+	// Test with primary ENI excluded and prefix delegation enabled
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, true)
+
+	// Add primary ENI
+	err := ds.AddENI("eni-primary", 0, true, false, false)
+	assert.NoError(t, err)
+
+	// Add secondary ENI
+	err = ds.AddENI("eni-secondary", 1, false, false, false)
+	assert.NoError(t, err)
+
+	// Add prefixes to both ENIs
+	prefix1 := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-primary", prefix1, true)
+	assert.NoError(t, err)
+
+	prefix2 := net.IPNet{IP: net.ParseIP("10.0.16.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
+	err = ds.AddIPv4CidrToStore("eni-secondary", prefix2, true)
+	assert.NoError(t, err)
+
+	// Try to assign pod IP - should skip primary ENI
+	key := IPAMKey{"net0", "sandbox-1", "eth0"}
+	ip, device, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	assert.NoError(t, err)
+	assert.Equal(t, "10.0.16.0", ip) // Should get IP from secondary ENI prefix
+	assert.Equal(t, 1, device)       // Device 1 is secondary ENI
+
+	// GetIPStats should exclude primary ENI
+	stats := ds.GetIPStats("4")
+	assert.Equal(t, 16, stats.TotalIPs)   // Only secondary ENI prefix counted (16 IPs)
+	assert.Equal(t, 1, stats.AssignedIPs) // One IP assigned
+	assert.Equal(t, 1, stats.TotalPrefixes)
+}
+
+func TestSetExcludedPrimaryENI(t *testing.T) {
+	// Test updating excluded primary ENI flag
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, false)
+
+	// Initially primary ENI is not excluded
+	assert.False(t, ds.isExcludedPrimaryENI)
+
+	// Add primary ENI and IP
+	err := ds.AddENI("eni-primary", 0, true, false, false)
+	assert.NoError(t, err)
+
+	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	err = ds.AddIPv4CidrToStore("eni-primary", ipv4Addr, false)
+	assert.NoError(t, err)
+
+	// Assign pod IP to primary ENI
+	key := IPAMKey{"net0", "sandbox-1", "eth0"}
+	ip, device, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	assert.NoError(t, err)
+	assert.Equal(t, "10.0.0.1", ip)
+	assert.Equal(t, 0, device) // Primary ENI
+
+	// Now set primary ENI as excluded
+	ds.SetExcludedPrimaryENI(true)
+	assert.True(t, ds.isExcludedPrimaryENI)
+
+	// Add secondary ENI
+	err = ds.AddENI("eni-secondary", 1, false, false, false)
+	assert.NoError(t, err)
+
+	ipv4Addr2 := net.IPNet{IP: net.ParseIP("10.0.0.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	err = ds.AddIPv4CidrToStore("eni-secondary", ipv4Addr2, false)
+	assert.NoError(t, err)
+
+	// New pod assignment should go to secondary ENI
+	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
+	ip, device, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	assert.NoError(t, err)
+	assert.Equal(t, "10.0.0.2", ip)
+	assert.Equal(t, 1, device) // Secondary ENI
+}
+
+func TestAssignPodIPv6AddressWithExcludedPrimaryENI(t *testing.T) {
+	// Test IPv6 assignment with primary ENI excluded
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, true)
+
+	// Add primary ENI
+	err := ds.AddENI("eni-primary", 0, true, false, false)
+	assert.NoError(t, err)
+
+	// Add secondary ENI
+	err = ds.AddENI("eni-secondary", 1, false, false, false)
+	assert.NoError(t, err)
+
+	// Add IPv6 prefixes
+	ipv6Prefix1 := net.IPNet{IP: net.IP{0x20, 0x01, 0xdb, 0x8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: net.CIDRMask(64, 128)}
+	err = ds.AddIPv6CidrToStore("eni-primary", ipv6Prefix1, true)
+	assert.NoError(t, err)
+
+	ipv6Prefix2 := net.IPNet{IP: net.IP{0x20, 0x01, 0xdb, 0x8, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: net.CIDRMask(64, 128)}
+	err = ds.AddIPv6CidrToStore("eni-secondary", ipv6Prefix2, true)
+	assert.NoError(t, err)
+
+	// Try to assign pod IPv6 - should skip primary ENI
+	key := IPAMKey{"net0", "sandbox-1", "eth0"}
+	ipv6, device, err := ds.AssignPodIPv6Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	assert.NoError(t, err)
+	assert.Equal(t, "2001:db8:0:1::", ipv6) // Should get IP from secondary ENI
+	assert.Equal(t, 1, device)              // Device 1 is secondary ENI
 }
