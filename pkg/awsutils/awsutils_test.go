@@ -2169,3 +2169,415 @@ func Test_loadAdditionalENITags(t *testing.T) {
 		})
 	}
 }
+
+func TestValidTag(t *testing.T) {
+	tests := []struct {
+		name            string
+		subnet          ec2types.Subnet
+		isPrimarySubnet bool
+		want            bool
+	}{
+		{
+			name: "primary subnet with tag value 0 - should exclude",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("0"),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            false,
+		},
+		{
+			name: "primary subnet with tag value 1 - should include",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+		},
+		{
+			name: "primary subnet with empty tag value - should include",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String(""),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+		},
+		{
+			name: "primary subnet with nil tag value - should include",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: nil,
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+		},
+		{
+			name: "primary subnet without the tag - should include (backwards compatible)",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("some-other-tag"),
+						Value: aws.String("value"),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+		},
+		{
+			name: "secondary subnet without the tag - should exclude",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("some-other-tag"),
+						Value: aws.String("value"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            false,
+		},
+		{
+			name: "secondary subnet with tag value 0 - should exclude",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("0"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            false,
+		},
+		{
+			name: "secondary subnet with tag value 1 - should include",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            true,
+		},
+		{
+			name: "secondary subnet with tag value non-zero - should include",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("true"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validTag(tt.subnet, tt.isPrimarySubnet)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestIsPrimarySubnetExcluded(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	tests := []struct {
+		name          string
+		subnetTags    []ec2types.Tag
+		describeError error
+		want          bool
+		wantErr       bool
+	}{
+		{
+			name: "primary subnet with tag value 0 - excluded",
+			subnetTags: []ec2types.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("0"),
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "primary subnet with tag value 1 - not excluded",
+			subnetTags: []ec2types.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name: "primary subnet without tag - not excluded",
+			subnetTags: []ec2types.Tag{
+				{
+					Key:   aws.String("other-tag"),
+					Value: aws.String("value"),
+				},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name:          "DescribeSubnets API error",
+			describeError: errors.New("API error"),
+			want:          false,
+			wantErr:       true,
+		},
+		{
+			name:       "no subnets returned",
+			subnetTags: []ec2types.Tag{},
+			want:       false,
+			wantErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.describeError != nil {
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(nil, tt.describeError)
+			} else {
+				result := &ec2.DescribeSubnetsOutput{
+					Subnets: []ec2types.Subnet{
+						{
+							SubnetId: aws.String(subnetID),
+							Tags:     tt.subnetTags,
+						},
+					},
+				}
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(result, nil)
+			}
+
+			cache := &EC2InstanceMetadataCache{
+				ec2SVC:   mockEC2,
+				subnetID: subnetID,
+			}
+
+			got, err := cache.isPrimarySubnetExcluded()
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestAllocENIWithSubnetExclusion(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	tests := []struct {
+		name               string
+		subnets            []ec2types.Subnet
+		useSubnetDiscovery bool
+		expectError        bool
+		errorContains      string
+	}{
+		{
+			name: "multiple subnets with primary excluded",
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId:                aws.String(subnetID),
+					AvailableIpAddressCount: aws.Int32(100),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+				{
+					SubnetId:                aws.String("subnet-secondary"),
+					AvailableIpAddressCount: aws.Int32(100),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("1"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: true,
+			expectError:        false,
+		},
+		{
+			name: "all subnets excluded",
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId:                aws.String(subnetID),
+					AvailableIpAddressCount: aws.Int32(100),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+				{
+					SubnetId:                aws.String("subnet-secondary"),
+					AvailableIpAddressCount: aws.Int32(100),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: true,
+			expectError:        true,
+			errorContains:      "no valid subnets available for ENI creation",
+		},
+		{
+			name: "subnet discovery disabled with primary excluded",
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId: aws.String(subnetID),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: false,
+			expectError:        true,
+			errorContains:      "primary subnet is tagged with kubernetes.io/role/cni=0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.useSubnetDiscovery {
+				subnetResult := &ec2.DescribeSubnetsOutput{Subnets: tt.subnets}
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
+			} else {
+				// When subnet discovery is disabled, it will check if primary subnet is excluded
+				primarySubnetResult := &ec2.DescribeSubnetsOutput{Subnets: tt.subnets}
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(primarySubnetResult, nil)
+			}
+
+			if !tt.expectError {
+				// Setup successful ENI creation
+				cureniID := eniID
+				eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2types.NetworkInterface{NetworkInterfaceId: &cureniID}}
+				mockEC2.EXPECT().CreateNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(&eni, nil)
+
+				// Mock DescribeInstances for free device number
+				ec2ENIs := make([]ec2types.InstanceNetworkInterface, 0)
+				deviceNum1 := int32(0)
+				ec2ENI := ec2types.InstanceNetworkInterface{Attachment: &ec2types.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum1}}
+				ec2ENIs = append(ec2ENIs, ec2ENI)
+				result := &ec2.DescribeInstancesOutput{
+					Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}}}
+				mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+
+				// Mock AttachNetworkInterface
+				attachmentID := "eni-attach-123"
+				attachResult := &ec2.AttachNetworkInterfaceOutput{AttachmentId: &attachmentID}
+				mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
+				mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+			}
+
+			cache := &EC2InstanceMetadataCache{
+				ec2SVC:             mockEC2,
+				imds:               TypedIMDS{mockMetadata},
+				instanceType:       "c5n.18xlarge",
+				useSubnetDiscovery: tt.useSubnetDiscovery,
+				subnetID:           subnetID,
+			}
+
+			_, err := cache.AllocENI(false, nil, "", 5)
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestAllocENIWithSubnetDiscoveryFailure(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	// Test when DescribeSubnets fails and fallback to primary subnet which is excluded
+	primarySubnetTags := []ec2types.Tag{
+		{
+			Key:   aws.String("kubernetes.io/role/cni"),
+			Value: aws.String("0"),
+		},
+	}
+
+	// First call to DescribeSubnets fails
+	mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("API error"))
+
+	// Then it checks if primary subnet is excluded
+	primarySubnetResult := &ec2.DescribeSubnetsOutput{
+		Subnets: []ec2types.Subnet{
+			{
+				SubnetId: aws.String(subnetID),
+				Tags:     primarySubnetTags,
+			},
+		},
+	}
+	mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(primarySubnetResult, nil)
+
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:             mockEC2,
+		imds:               TypedIMDS{mockMetadata},
+		instanceType:       "c5n.18xlarge",
+		useSubnetDiscovery: true,
+		subnetID:           subnetID,
+	}
+
+	_, err := cache.AllocENI(false, nil, "", 5)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "primary subnet is tagged with kubernetes.io/role/cni=0")
+}
