@@ -238,6 +238,7 @@ type IPAMContext struct {
 	maxPods                   int // maximum number of pods that can be scheduled on the node
 	networkPolicyMode         string
 	withApiServer             bool
+	isPrimarySubnetExcluded   bool // tracks if primary subnet is excluded for pod IPs
 }
 
 type kubeletConfig struct {
@@ -412,6 +413,22 @@ func (c *IPAMContext) nodeInit() error {
 	ctx := context.TODO()
 
 	log.Debugf("Start node init")
+
+	// Check if primary subnet is excluded
+	if c.useSubnetDiscovery {
+		excluded, err := c.awsClient.IsPrimarySubnetExcluded()
+		if err != nil {
+			log.Warnf("Failed to check if primary subnet is excluded: %v", err)
+			// Continue with default behavior (not excluded)
+			c.isPrimarySubnetExcluded = false
+		} else {
+			c.isPrimarySubnetExcluded = excluded
+			if excluded {
+				log.Infof("Primary subnet is excluded from pod IP allocation")
+			}
+		}
+	}
+
 	primaryV4IP := c.awsClient.GetLocalIPv4()
 	if err = c.initENIAndIPLimits(); err != nil {
 		return err
@@ -1093,6 +1110,16 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 	if err != nil && err.Error() != datastore.DuplicatedENIError {
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
+
+	// Mark primary ENI as excluded if primary subnet is excluded
+	if eni == primaryENI && c.isPrimarySubnetExcluded {
+		log.Infof("Marking primary ENI %s as excluded from pod IP allocation", eni)
+		err := c.dataStore.SetENIExcludedForPodIPs(eni, true)
+		if err != nil {
+			log.Warnf("Failed to mark primary ENI as excluded: %v", err)
+		}
+	}
+
 	// Store the addressable IP for the ENI
 	if c.enableIPv6 {
 		c.primaryIP[eni] = eniMetadata.PrimaryIPv6Address()
@@ -1300,7 +1327,29 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 		warmTarget = (c.warmPrefixTarget + 1)
 	}
 
-	shouldRemoveExtra = available >= (warmTarget)*c.maxIPsPerENI
+	// If primary subnet is excluded, adjust calculations to account for one less usable ENI
+	if c.isPrimarySubnetExcluded {
+		// Get the number of usable ENIs (excluding primary if it's excluded)
+		usableENIs := c.dataStore.GetENIs()
+		excludedENIs := 0
+		if c.isPrimarySubnetExcluded {
+			excludedENIs = 1
+		}
+		usableENIs = usableENIs - excludedENIs
+
+		// Check if we have more ENIs than the warm target requires
+		if usableENIs > c.warmENITarget {
+			log.Debugf("Potentially have extra ENIs: usable=%d, warmTarget=%d (primary excluded=%v)",
+				usableENIs, c.warmENITarget, c.isPrimarySubnetExcluded)
+			shouldRemoveExtra = true
+		} else {
+			shouldRemoveExtra = false
+		}
+	} else {
+		// Original logic when primary is not excluded
+		shouldRemoveExtra = available >= (warmTarget)*c.maxIPsPerENI
+	}
+
 	if shouldRemoveExtra {
 		c.logPoolStats(stats)
 		log.Debugf("It might be possible to remove extra ENIs because available (%d) >= (ENI/Prefix target + 1 (%d) + 1) * addrsPerENI (%d)", available, warmTarget, c.maxIPsPerENI)
@@ -2241,7 +2290,24 @@ func (c *IPAMContext) hasRoomForEni() bool {
 	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
 		trunkEni = 1
 	}
-	return c.dataStore.GetENIs() < (c.maxENI - c.unmanagedENI - trunkEni)
+
+	// If primary subnet is excluded, we need to account for one less usable ENI in our calculations
+	excludedENI := 0
+	if c.isPrimarySubnetExcluded {
+		excludedENI = 1
+		log.Debugf("Accounting for excluded primary ENI in hasRoomForEni calculation")
+	}
+
+	currentENIs := c.dataStore.GetENIs()
+	maxUsableENIs := c.maxENI - c.unmanagedENI - trunkEni - excludedENI
+
+	// Check if we have room considering the excluded ENI
+	hasRoom := currentENIs < maxUsableENIs
+
+	log.Debugf("hasRoomForEni: currentENIs=%d, maxENI=%d, unmanagedENI=%d, trunkEni=%d, excludedENI=%d, hasRoom=%v",
+		currentENIs, c.maxENI, c.unmanagedENI, trunkEni, excludedENI, hasRoom)
+
+	return hasRoom
 }
 
 func (c *IPAMContext) isDatastorePoolTooLow() (bool, *datastore.DataStoreStats) {
@@ -2265,6 +2331,31 @@ func (c *IPAMContext) isDatastorePoolTooLow() (bool, *datastore.DataStoreStats) 
 	}
 
 	available := stats.AvailableAddresses()
+
+	// When using warm ENI targets, check if we have enough ENIs
+	if warmTarget > 0 {
+		currentENIs := c.dataStore.GetENIs()
+		targetENIs := warmTarget
+
+		// If primary subnet is excluded, we need to ensure we have enough secondary ENIs
+		if c.isPrimarySubnetExcluded {
+			// The primary ENI doesn't count towards our warm target
+			if currentENIs > 0 {
+				currentENIs-- // Subtract the excluded primary ENI
+			}
+			log.Debugf("Primary subnet excluded: checking if %d usable ENIs < %d warm target", currentENIs, targetENIs)
+		}
+
+		// Check if we need more ENIs to meet the warm target
+		if currentENIs < targetENIs {
+			log.Debugf("ENI pool is too low: current ENIs (%d) < warm ENI target (%d)", currentENIs, targetENIs)
+			c.logPoolStats(stats)
+			return true, stats
+		}
+	}
+
+	// For IP-based warm targets or when we have enough ENIs, check available IPs
+	// Note: When primary is excluded, available IPs already excludes the primary ENI's IPs
 	poolTooLow := available < totalIPs*warmTarget || (warmTarget == 0 && available == 0)
 	if poolTooLow {
 		log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, warmTarget, totalIPs)

@@ -87,6 +87,9 @@ const (
 	v6prefix01             = "2001:db8::/64"
 	instanceID             = "i-0e1f3b9eb950e4980"
 	externalEniConfigLabel = "vpc.amazonaws.com/externalEniConfig"
+	primaryENI             = primaryENIid
+	secENI                 = secENIid
+	primaryIP              = ipaddr01
 )
 
 type testMocks struct {
@@ -2505,4 +2508,107 @@ func (c *IPAMContext) tryAssignPodENI(ctx context.Context, pod *corev1.Pod, fnNa
 		return err
 	}
 	return nil
+}
+
+func TestIPAMContext_PrimarySubnetExclusion(t *testing.T) {
+	// Test that primary ENI is marked as excluded when primary subnet is excluded
+	dataStore := datastore.NewDataStore(log, datastore.NullCheckpoint{}, false)
+
+	// Add primary ENI
+	err := dataStore.AddENI(primaryENIid, primaryDevice, true, false, false)
+	assert.NoError(t, err)
+
+	// Mark it as excluded
+	err = dataStore.SetENIExcludedForPodIPs(primaryENIid, true)
+	assert.NoError(t, err)
+
+	// Verify it's excluded
+	isExcluded := dataStore.IsENIExcludedForPodIPs(primaryENIid)
+	assert.True(t, isExcluded, "Primary ENI should be marked as excluded")
+
+	// Test IP allocation skips excluded ENI
+	_, _, err = dataStore.AssignPodIPv4Address(
+		datastore.IPAMKey{
+			NetworkName: "net0",
+			ContainerID: "test-container",
+			IfName:      "eth0",
+		},
+		datastore.IPAMMetadata{
+			K8SPodNamespace: "default",
+			K8SPodName:      "test-pod",
+		},
+	)
+	assert.Error(t, err, "Should not be able to assign IP from excluded ENI")
+	assert.Contains(t, err.Error(), "no available IP/Prefix addresses")
+}
+
+func TestIPAMContext_WarmTargetWithExcludedPrimary(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	// Set env vars
+	_ = os.Setenv("ENABLE_IPv4", "true")
+	_ = os.Setenv("ENABLE_IPv6", "false")
+	_ = os.Setenv(envWarmENITarget, "2")
+	defer func() {
+		_ = os.Unsetenv("ENABLE_IPv4")
+		_ = os.Unsetenv("ENABLE_IPv6")
+		_ = os.Unsetenv(envWarmENITarget)
+	}()
+
+	// Create context with excluded primary subnet
+	ctx := &IPAMContext{
+		awsClient:               m.awsutils,
+		dataStore:               testDatastore(),
+		enableIPv4:              true,
+		maxIPsPerENI:            10,
+		maxENI:                  4,
+		warmENITarget:           2,
+		isPrimarySubnetExcluded: true,
+		maxPods:                 100, // Set a realistic max pods limit
+	}
+
+	// Add primary ENI (excluded) - no IPs should be allocated to it
+	err := ctx.dataStore.AddENI(primaryENIid, primaryDevice, true, false, false)
+	assert.NoError(t, err)
+	err = ctx.dataStore.SetENIExcludedForPodIPs(primaryENIid, true)
+	assert.NoError(t, err)
+	// Note: We don't add IPs to the excluded primary ENI as the real implementation wouldn't allocate them
+
+	// Test that pool is too low when we have only primary ENI
+	poolTooLow, stats := ctx.isDatastorePoolTooLow()
+	t.Logf("With only primary ENI - poolTooLow: %v, TotalIPs: %d, AvailableIPs: %d", poolTooLow, stats.TotalIPs, stats.AvailableAddresses())
+	assert.True(t, poolTooLow, "Pool should be too low with only excluded primary ENI")
+
+	// Add secondary ENI with IPs
+	err = ctx.dataStore.AddENI(secENIid, secDevice, false, false, false)
+	assert.NoError(t, err)
+
+	// Add IPs to secondary ENI
+	for i := 1; i <= 10; i++ {
+		ipv4Addr := net.IPNet{IP: net.ParseIP(fmt.Sprintf("10.0.1.%d", i)), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		err = ctx.dataStore.AddIPv4CidrToStore(secENIid, ipv4Addr, false)
+		assert.NoError(t, err)
+	}
+
+	// Still too low with 1 secondary ENI when warm target is 2
+	poolTooLow, stats = ctx.isDatastorePoolTooLow()
+	t.Logf("With 1 secondary ENI - poolTooLow: %v, TotalIPs: %d, AvailableIPs: %d", poolTooLow, stats.TotalIPs, stats.AvailableAddresses())
+	assert.True(t, poolTooLow, "Pool should still be too low with 1 secondary ENI when warm target is 2")
+
+	// Add another secondary ENI with IPs
+	err = ctx.dataStore.AddENI("eni-3", 2, false, false, false)
+	assert.NoError(t, err)
+
+	// Add IPs to third ENI
+	for i := 1; i <= 10; i++ {
+		ipv4Addr := net.IPNet{IP: net.ParseIP(fmt.Sprintf("10.0.2.%d", i)), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		err = ctx.dataStore.AddIPv4CidrToStore("eni-3", ipv4Addr, false)
+		assert.NoError(t, err)
+	}
+
+	// Now we have 2 secondary ENIs, should meet warm target
+	poolTooLow, stats = ctx.isDatastorePoolTooLow()
+	t.Logf("With 2 secondary ENIs - poolTooLow: %v, TotalIPs: %d, AvailableIPs: %d", poolTooLow, stats.TotalIPs, stats.AvailableAddresses())
+	assert.False(t, poolTooLow, "Pool should not be too low with 2 secondary ENIs")
 }
