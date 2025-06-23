@@ -592,10 +592,22 @@ func (c *IPAMContext) nodeInit() error {
 			return err
 		}
 
+		// Also refresh custom security groups for secondary subnets
+		// Custom security groups are only relevant when subnet discovery is enabled
+		if c.useSubnetDiscovery {
+			if err := c.awsClient.RefreshCustomSGIDs(c.dataStore); err != nil {
+				return err
+			}
+		}
+
 		// Refresh security groups and VPC CIDR blocks in the background
 		// Ignoring errors since we will retry in 30s
 		go wait.Forever(func() {
 			c.awsClient.RefreshSGIDs(primaryENIMac, c.dataStore)
+			// Also refresh custom security groups for secondary subnets
+			if c.useSubnetDiscovery {
+				c.awsClient.RefreshCustomSGIDs(c.dataStore)
+			}
 		}, 30*time.Second)
 	}
 

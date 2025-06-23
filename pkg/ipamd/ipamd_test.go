@@ -165,6 +165,7 @@ func TestNodeInit(t *testing.T) {
 	m.network.EXPECT().CleanUpStaleAWSChains(true, false).Return(nil)
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	m.awsutils.EXPECT().RefreshCustomSGIDs(gomock.Any()).AnyTimes().Return(nil)
 
 	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
 	resp := awsutils.DescribeAllENIsResult{
@@ -256,6 +257,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	m.network.EXPECT().CleanUpStaleAWSChains(true, false).Return(nil)
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	m.awsutils.EXPECT().RefreshCustomSGIDs(gomock.Any()).AnyTimes().Return(nil)
 
 	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
 	resp := awsutils.DescribeAllENIsResult{
