@@ -238,6 +238,7 @@ type IPAMContext struct {
 	maxPods                   int // maximum number of pods that can be scheduled on the node
 	networkPolicyMode         string
 	withApiServer             bool
+	isPrimarySubnetExcluded   bool // tracks if primary subnet is excluded for pod IPs
 }
 
 type kubeletConfig struct {
@@ -404,6 +405,39 @@ func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 	return c, nil
 }
 
+// primaryENIWasPreviouslyUsed checks if the primary ENI has any assigned pod IPs
+// This is used to determine if we should re-include an excluded primary ENI for backward compatibility
+func (c *IPAMContext) primaryENIWasPreviouslyUsed() bool {
+	primaryENI := c.awsClient.GetPrimaryENI()
+	eniInfos := c.dataStore.GetENIInfos()
+
+	if primaryENIInfo, exists := eniInfos.ENIs[primaryENI]; exists {
+		// Check if CNI has any IPs currently assigned to pods
+		assignedIPs := primaryENIInfo.AssignedIPv4Addresses()
+
+		if assignedIPs > 0 {
+			log.Infof("Primary ENI %s has %d assigned IPv4 addresses, re-including for backward compatibility despite subnet exclusion",
+				primaryENI, assignedIPs)
+			return true
+		} else {
+			log.Infof("Primary ENI %s has no assigned IPv4 addresses, respecting primary subnet exclusion tag", primaryENI)
+
+			// Check if there are unassigned secondary IPs and log for customer awareness
+			totalSecondaryIPs := len(primaryENIInfo.AvailableIPv4Cidrs)
+			if totalSecondaryIPs > 0 {
+				log.Warnf("Primary ENI %s will be excluded from pod IP allocation but has %d unassigned secondary IPs. "+
+					"These IPs will remain allocated but unavailable for new pods. "+
+					"Consider deallocating them manually if not needed.", primaryENI, totalSecondaryIPs)
+			}
+
+			return false
+		}
+	}
+
+	log.Debugf("Primary ENI %s not found in datastore", primaryENI)
+	return false
+}
+
 func (c *IPAMContext) nodeInit() error {
 	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
 	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
@@ -412,6 +446,22 @@ func (c *IPAMContext) nodeInit() error {
 	ctx := context.TODO()
 
 	log.Debugf("Start node init")
+
+	// Check if primary subnet is excluded
+	if c.useSubnetDiscovery {
+		excluded, err := c.awsClient.IsPrimarySubnetExcluded()
+		if err != nil {
+			log.Warnf("Failed to check if primary subnet is excluded: %v", err)
+			// Continue with default behavior (not excluded)
+			c.isPrimarySubnetExcluded = false
+		} else {
+			c.isPrimarySubnetExcluded = excluded
+			if excluded {
+				log.Infof("Primary subnet is excluded from pod IP allocation")
+			}
+		}
+	}
+
 	primaryV4IP := c.awsClient.GetLocalIPv4()
 	if err = c.initENIAndIPLimits(); err != nil {
 		return err
@@ -485,6 +535,20 @@ func (c *IPAMContext) nodeInit() error {
 
 	if err := c.dataStore.ReadBackingStore(c.enableIPv6); err != nil {
 		return err
+	}
+
+	// Check if primary ENI was previously used and re-include if needed
+	if c.isPrimarySubnetExcluded {
+		if c.primaryENIWasPreviouslyUsed() {
+			primaryENI := c.awsClient.GetPrimaryENI()
+			log.Infof("Primary subnet is tagged for exclusion but primary ENI %s has existing pod IPs, re-including for backward compatibility", primaryENI)
+			err := c.dataStore.SetENIExcludedForPodIPs(primaryENI, false)
+			if err != nil {
+				log.Warnf("Failed to re-include primary ENI: %v", err)
+			} else {
+				c.isPrimarySubnetExcluded = false
+			}
+		}
 	}
 
 	if c.enableIPv6 {
@@ -1093,6 +1157,16 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 	if err != nil && err.Error() != datastore.DuplicatedENIError {
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
+
+	// Mark primary ENI as excluded if primary subnet is excluded
+	if eni == primaryENI && c.isPrimarySubnetExcluded {
+		log.Infof("Marking primary ENI %s as excluded from pod IP allocation", eni)
+		err := c.dataStore.SetENIExcludedForPodIPs(eni, true)
+		if err != nil {
+			log.Warnf("Failed to mark primary ENI as excluded: %v", err)
+		}
+	}
+
 	// Store the addressable IP for the ENI
 	if c.enableIPv6 {
 		c.primaryIP[eni] = eniMetadata.PrimaryIPv6Address()
@@ -2241,7 +2315,24 @@ func (c *IPAMContext) hasRoomForEni() bool {
 	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
 		trunkEni = 1
 	}
-	return c.dataStore.GetENIs() < (c.maxENI - c.unmanagedENI - trunkEni)
+
+	// If primary subnet is excluded, we need to account for one less usable ENI in our calculations
+	excludedENI := 0
+	if c.isPrimarySubnetExcluded {
+		excludedENI = 1
+		log.Debugf("Accounting for excluded primary ENI in hasRoomForEni calculation")
+	}
+
+	currentENIs := c.dataStore.GetENIs()
+	maxUsableENIs := c.maxENI - c.unmanagedENI - trunkEni - excludedENI
+
+	// Check if we have room considering the excluded ENI
+	hasRoom := currentENIs < maxUsableENIs
+
+	log.Debugf("hasRoomForEni: currentENIs=%d, maxENI=%d, unmanagedENI=%d, trunkEni=%d, excludedENI=%d, hasRoom=%v",
+		currentENIs, c.maxENI, c.unmanagedENI, trunkEni, excludedENI, hasRoom)
+
+	return hasRoom
 }
 
 func (c *IPAMContext) isDatastorePoolTooLow() (bool, *datastore.DataStoreStats) {
