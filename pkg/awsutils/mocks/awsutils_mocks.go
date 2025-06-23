@@ -482,6 +482,20 @@ func (mr *MockAPIsMockRecorder) IsUnmanagedENI(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsUnmanagedENI", reflect.TypeOf((*MockAPIs)(nil).IsUnmanagedENI), arg0)
 }
 
+// RefreshCustomSGIDs mocks base method.
+func (m *MockAPIs) RefreshCustomSGIDs(arg0 *datastore.DataStore) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RefreshCustomSGIDs", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RefreshCustomSGIDs indicates an expected call of RefreshCustomSGIDs.
+func (mr *MockAPIsMockRecorder) RefreshCustomSGIDs(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshCustomSGIDs", reflect.TypeOf((*MockAPIs)(nil).RefreshCustomSGIDs), arg0)
+}
+
 // RefreshSGIDs mocks base method.
 func (m *MockAPIs) RefreshSGIDs(arg0 string, arg1 *datastore.DataStore) error {
 	m.ctrl.T.Helper()
