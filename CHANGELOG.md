@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.19.6
+* Dependency - Bump k8s.io/apimachinery from 0.32.3 to 0.33.0 by @dependabot in #3279
+* Dependency - Bump golang.org/x/sys from 0.31.0 to 0.32.0 in /test/agent in #3280
+* Fix - fixed integration test script by @viveksb007 in #3282 
+* Fix - Adding CVE fixes and remove pinned dependencies by @jaydeokar  in #3283
+* Dependency - Updating netlink to v1.3.1 by @jaydeokar in #3286
+* Feature - adding ENABLE_IMDS_ONLY_MODE configuration so ipamd will not interact with EC2 for node init and reconcile by @bhaoz in #3287
+
 ## v1.19.5
 * Fix - fixed node init failure when using custom networking and SGPP @oliviassss in #3277
 
