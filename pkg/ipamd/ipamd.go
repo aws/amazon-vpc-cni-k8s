@@ -2347,6 +2347,23 @@ func (c *IPAMContext) getPrefixesNeeded() int {
 	return toAllocate
 }
 
+// getMaxIPs returns the maximum number of ipv4 addresses allocatable given the context
+func (c *IPAMContext) getMaxIPs() (int, error) {
+	enisForPods, err := c.getMaxENI()
+	if err != nil {
+		return 0, err
+	}
+	if c.useCustomNetworking {
+		enisForPods = enisForPods - 1
+	}
+
+	ipv4Limit, _, err := c.GetIPv4Limit()
+	if err != nil {
+		return 0, err
+	}
+	return enisForPods * ipv4Limit, nil
+}
+
 func (c *IPAMContext) initENIAndIPLimits() (err error) {
 	if c.enableIPv4 {
 		nodeMaxENI, err := c.getMaxENI()
