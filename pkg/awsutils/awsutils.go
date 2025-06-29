@@ -61,8 +61,10 @@ const (
 
 	// AllocENI need to choose a first free device number between 0 and maxENI
 	// 100 is a hard limit because we use vlanID + 100 for pod networking table names
-	maxENIs                 = 100
-	clusterNameEnvVar       = "CLUSTER_NAME"
+	maxENIs           = 100
+	clusterNameEnvVar = "CLUSTER_NAME"
+	// clusterTagKeyPrefix is the prefix for the cluster-specific subnet tags
+	clusterTagKeyPrefix     = "kubernetes.io/cluster/"
 	eniNodeTagKey           = "node.k8s.amazonaws.com/instance_id"
 	eniCreatedAtTagKey      = "node.k8s.amazonaws.com/createdAt"
 	eniClusterTagKey        = "cluster.k8s.amazonaws.com/name"
@@ -1073,31 +1075,72 @@ func (cache *EC2InstanceMetadataCache) getVpcSubnets() ([]ec2types.Subnet, error
 // validTag checks if subnet should be used for ENI/IP allocation
 // For primary subnet: include by default (no tag), exclude only if tag value is "0"
 // For secondary subnets: exclude by default (no tag), include only if tag exists with non-"0" value
+// If the subnet has cluster-specific tags, it will only be used by the matching cluster
 func validTag(subnet ec2types.Subnet, isPrimarySubnet bool) bool {
+	hasClusterSpecificTags := false
+	isValidForThisCluster := false
+	hasValidCniTag := false
+	localClusterName := os.Getenv(clusterNameEnvVar)
+	localClusterTagKey := clusterTagKeyPrefix + localClusterName
+
 	for _, tag := range subnet.Tags {
-		if *tag.Key == subnetDiscoveryTagKey {
+		// Check for any kubernetes.io/cluster/* tag
+		if tag.Key != nil && strings.HasPrefix(*tag.Key, clusterTagKeyPrefix) {
+			hasClusterSpecificTags = true
+			// Check if this tag matches our cluster
+			if *tag.Key == localClusterTagKey && tag.Value != nil && *tag.Value == "shared" {
+				isValidForThisCluster = true
+			}
+		}
+
+		// Check for the CNI tag
+		if tag.Key != nil && *tag.Key == subnetDiscoveryTagKey {
 			// Check if tag value is "0" (exclude)
 			if tag.Value != nil && *tag.Value == "0" {
-				log.Debugf("Subnet %s has tag %s=0, excluding it from ENI creation", *subnet.SubnetId, subnetDiscoveryTagKey)
+				log.Debugf("Subnet %s has %s=0 tag, excluding it from ENI creation", *subnet.SubnetId, subnetDiscoveryTagKey)
 				return false
 			}
-			// Any other value (including nil/empty) means include
-			if tag.Value != nil {
-				log.Debugf("Subnet %s has tag %s=%s, including it for ENI creation", *subnet.SubnetId, subnetDiscoveryTagKey, *tag.Value)
+			// For secondary subnet, any non-"0" value is fine
+			if !isPrimarySubnet {
+				hasValidCniTag = true
 			} else {
-				log.Debugf("Subnet %s has tag %s with no value, including it for ENI creation", *subnet.SubnetId, subnetDiscoveryTagKey)
+				// For primary subnet, tag exists and is not "0", so include it
+				hasValidCniTag = true
 			}
-			return true
 		}
 	}
-	// Tag not found
-	if isPrimarySubnet {
-		// For primary subnet, default to include for backwards compatibility
-		log.Debugf("Primary subnet %s has no %s tag, including it for ENI creation (backwards compatibility)", *subnet.SubnetId, subnetDiscoveryTagKey)
-		return true
+
+	// First check if subnet has valid CNI tag
+	if !hasValidCniTag {
+		// If no CNI tag found
+		if isPrimarySubnet {
+			// For primary subnet, default to include for backwards compatibility
+			log.Debugf("Primary subnet %s has no %s tag, including it for ENI creation (backwards compatibility)", *subnet.SubnetId, subnetDiscoveryTagKey)
+			hasValidCniTag = true
+		} else {
+			// For secondary subnets, default to exclude (opt-in required)
+			log.Debugf("Subnet %s has no %s tag, excluding it from ENI creation", *subnet.SubnetId, subnetDiscoveryTagKey)
+			return false
+		}
 	}
-	// For secondary subnets, default to exclude (opt-in required)
-	log.Debugf("Subnet %s has no %s tag, excluding it from ENI creation", *subnet.SubnetId, subnetDiscoveryTagKey)
+
+	// Now check for cluster-specific tag requirements
+	if hasValidCniTag {
+		if !hasClusterSpecificTags {
+			// No cluster-specific tags, so it's valid for all clusters
+			log.Debugf("Subnet %s has no cluster-specific tags, making it available for all clusters", *subnet.SubnetId)
+			return true
+		} else if isValidForThisCluster {
+			// Has our cluster's tag
+			log.Debugf("Subnet %s has matching cluster tag %s, including it for ENI creation", *subnet.SubnetId, localClusterTagKey)
+			return true
+		} else {
+			// Has cluster-specific tags but not for our cluster
+			log.Debugf("Subnet %s has cluster-specific tags but none matching %s, excluding it from ENI creation", *subnet.SubnetId, localClusterTagKey)
+			return false
+		}
+	}
+
 	return false
 }
 
