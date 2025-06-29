@@ -2170,6 +2170,123 @@ func Test_loadAdditionalENITags(t *testing.T) {
 	}
 }
 
+func TestValidTagWithClusterSpecificTags(t *testing.T) {
+	// Save original environment and restore it after the test
+	originalClusterName := os.Getenv(clusterNameEnvVar)
+	defer os.Setenv(clusterNameEnvVar, originalClusterName)
+
+	// Set a test cluster name
+	const testClusterName = "my-example-cluster"
+	os.Setenv(clusterNameEnvVar, testClusterName)
+
+	tests := []struct {
+		name            string
+		subnet          ec2types.Subnet
+		isPrimarySubnet bool
+		want            bool
+		description     string
+	}{
+		{
+			name: "subnet-123: subnet with CNI tag but no cluster tag",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            true,
+			description:     "Should be available to all clusters when no cluster tags present",
+		},
+		{
+			name: "subnet-456: subnet with CNI tag and different cluster's tag",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-456"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+					{
+						Key:   aws.String("kubernetes.io/cluster/some-other-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            false,
+			description:     "Should not be available to our cluster when tagged for a different cluster",
+		},
+		{
+			name: "subnet-789: subnet with CNI tag and multiple cluster tags",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-789"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+					{
+						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
+						Value: aws.String("shared"),
+					},
+					{
+						Key:   aws.String("kubernetes.io/cluster/some-other-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            true,
+			description:     "Should be available to our cluster when tagged for multiple clusters including ours",
+		},
+		{
+			name: "subnet-abc: subnet with cluster tag but no CNI tag",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-abc"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            false,
+			description:     "Should NOT be available to any cluster when CNI tag is missing",
+		},
+		{
+			name: "primary subnet with wrong cluster value",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-def"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+					{
+						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
+						Value: aws.String("not-shared"), // Wrong value
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            false,
+			description:     "Should NOT be available when cluster tag has wrong value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validTag(tt.subnet, tt.isPrimarySubnet)
+			assert.Equal(t, tt.want, got, tt.description)
+		})
+	}
+}
+
 func TestValidTag(t *testing.T) {
 	tests := []struct {
 		name            string
