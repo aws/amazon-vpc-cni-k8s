@@ -422,9 +422,21 @@ func (c *IPAMContext) nodeInit() error {
 			// Continue with default behavior (not excluded)
 			c.isPrimarySubnetExcluded = false
 		} else {
-			c.isPrimarySubnetExcluded = excluded
-			if excluded {
-				log.Infof("Primary subnet is excluded from pod IP allocation")
+			// If datastore is restored, we need to check if the primary ENI was managed before
+			// so we don't disrupt running pods when subnet tags change
+			primaryENI := c.awsClient.GetPrimaryENI()
+
+			// Only respect the exclusion tag for new nodes where ENI wasn't managed before
+			if excluded && !c.wasPrimaryENIPreviouslyManaged(primaryENI) {
+				log.Infof("Primary subnet is excluded and ENI wasn't previously managed - excluding primary ENI %s from management", primaryENI)
+				c.isPrimarySubnetExcluded = true
+
+				// We don't need to update unmanagedENIs here as the filterUnmanagedENIs will respect isPrimarySubnetExcluded
+			} else {
+				if excluded {
+					log.Infof("Primary subnet is excluded but ENI was previously managed - continuing to manage primary ENI %s", primaryENI)
+				}
+				c.isPrimarySubnetExcluded = false
 			}
 		}
 	}
@@ -630,6 +642,36 @@ func (c *IPAMContext) nodeInit() error {
 
 	log.Debug("node init completed successfully")
 	return nil
+}
+
+// wasPrimaryENIPreviouslyManaged checks if the given ENI has any assigned IP addresses in our datastore,
+// which indicates it was previously being managed by the CNI before a restart.
+// This helps determine whether to honor subnet exclusion tags for existing nodes.
+func (c *IPAMContext) wasPrimaryENIPreviouslyManaged(eniID string) bool {
+	// Check for the ENI in our datastore
+	eniInfos := c.dataStore.GetENIInfos()
+	if eniInfo, exists := eniInfos.ENIs[eniID]; exists {
+		// Check if this ENI has any assigned IP addresses
+		for _, cidr := range eniInfo.AvailableIPv4Cidrs {
+			for _, addr := range cidr.IPAddresses {
+				if addr.Assigned() {
+					log.Infof("Primary ENI %s was previously managed (has assigned IPs)", eniID)
+					return true
+				}
+			}
+		}
+	}
+
+	// If we have any pods using IPs from this ENI's IPv4 cidrs, it's managed
+	ipList, prefixList, err := c.dataStore.GetENICIDRs(eniID)
+	if err == nil && (len(ipList) > 0 || len(prefixList) > 0) {
+		log.Infof("Primary ENI %s was previously managed (has IPs in datastore)", eniID)
+		return true
+	}
+
+	// No evidence of previous management found
+	log.Infof("Primary ENI %s shows no signs of previous management", eniID)
+	return false
 }
 
 func (c *IPAMContext) configureIPRulesForPods() error {
@@ -1936,15 +1978,25 @@ func EnablePodIPAnnotation() bool {
 	return utils.GetBoolAsStringEnvVar(envAnnotatePodIP, false)
 }
 
-// filterUnmanagedENIs filters out ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag
+// filterUnmanagedENIs filters out ENIs that should not be managed by the CNI:
+// - ENIs marked with the "node.k8s.amazonaws.com/no_manage" tag
+// - Primary ENI when its subnet is excluded with kubernetes.io/role/cni=0
 func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
 	numFiltered := 0
 	ret := make([]awsutils.ENIMetadata, 0, len(enis))
 	for _, eni := range enis {
-		//Filter out any Unmanaged ENIs. VPC CNI will only work with Primary ENI in IPv6 Prefix Delegation mode until
-		//we open up IPv6 support in Secondary IP and Custom networking modes. Filtering out the ENIs here will
-		//help us avoid myriad of if/else loops elsewhere in the code.
-		if c.enableIPv6 && !c.awsClient.IsPrimaryENI(eni.ENIID) {
+		// Check if this is the primary ENI and its subnet is excluded
+		isPrimary := c.awsClient.IsPrimaryENI(eni.ENIID)
+		if isPrimary && c.isPrimarySubnetExcluded {
+			log.Infof("Skipping primary ENI %s: its subnet is excluded by tag kubernetes.io/role/cni=0", eni.ENIID)
+			numFiltered++
+			continue
+		}
+
+		// Filter out any Unmanaged ENIs. VPC CNI will only work with Primary ENI in IPv6 Prefix Delegation mode until
+		// we open up IPv6 support in Secondary IP and Custom networking modes. Filtering out the ENIs here will
+		// help us avoid myriad of if/else loops elsewhere in the code.
+		if c.enableIPv6 && !isPrimary {
 			log.Debugf("Skipping ENI %s: IPv6 Mode is enabled and VPC CNI will only manage Primary ENI in v6 PD mode",
 				eni.ENIID)
 			numFiltered++
