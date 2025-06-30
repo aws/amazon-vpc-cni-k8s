@@ -61,8 +61,10 @@ const (
 
 	// AllocENI need to choose a first free device number between 0 and maxENI
 	// 100 is a hard limit because we use vlanID + 100 for pod networking table names
-	maxENIs                 = 100
-	clusterNameEnvVar       = "CLUSTER_NAME"
+	maxENIs           = 100
+	clusterNameEnvVar = "CLUSTER_NAME"
+	// clusterTagKeyPrefix is the prefix for the cluster-specific subnet tags
+	clusterTagKeyPrefix     = "kubernetes.io/cluster/"
 	eniNodeTagKey           = "node.k8s.amazonaws.com/instance_id"
 	eniCreatedAtTagKey      = "node.k8s.amazonaws.com/createdAt"
 	eniClusterTagKey        = "cluster.k8s.amazonaws.com/name"
@@ -136,7 +138,7 @@ type APIs interface {
 	// DeallocPrefixAddresses deallocates the list of IP addresses from a ENI
 	DeallocPrefixAddresses(eniID string, ips []string) error
 
-	//AllocIPv6Prefixes allocates IPv6 prefixes to the ENI passed in
+	// AllocIPv6Prefixes allocates IPv6 prefixes to the ENI passed in
 	AllocIPv6Prefixes(eniID string) ([]*string, error)
 
 	// GetVPCIPv4CIDRs returns VPC's IPv4 CIDRs from instance metadata
@@ -172,25 +174,28 @@ type APIs interface {
 	// WaitForENIAndIPsAttached waits until the ENI has been attached and the secondary IPs have been added
 	WaitForENIAndIPsAttached(eni string, wantedSecondaryIPs int) (ENIMetadata, error)
 
-	//SetMultiCardENIs ENI
+	// SetMultiCardENIs ENI
 	SetMultiCardENIs(eniID []string) error
 
-	//IsMultiCardENI
+	// IsMultiCardENI
 	IsMultiCardENI(eniID string) bool
 
-	//IsPrimaryENI
+	// IsPrimaryENI
 	IsPrimaryENI(eniID string) bool
 
-	//RefreshSGIDs
+	// RefreshSGIDs
 	RefreshSGIDs(mac string, store *datastore.DataStore) error
 
-	//GetInstanceHypervisorFamily returns the hypervisor family for the instance
+	// RefreshCustomSGIDs discovers and refreshes security groups tagged with kubernetes.io/role/cni=1
+	RefreshCustomSGIDs(store *datastore.DataStore) error
+
+	// GetInstanceHypervisorFamily returns the hypervisor family for the instance
 	GetInstanceHypervisorFamily() string
 
-	//GetInstanceType returns the EC2 instance type
+	// GetInstanceType returns the EC2 instance type
 	GetInstanceType() string
 
-	//Update cached prefix delegation flag
+	// Update cached prefix delegation flag
 	InitCachedPrefixDelegation(bool)
 
 	// GetInstanceID returns the instance ID
@@ -200,23 +205,27 @@ type APIs interface {
 	FetchInstanceTypeLimits() error
 
 	IsPrefixDelegationSupported() bool
+
+	// IsPrimarySubnetExcluded returns if the primary subnet is excluded for pod IPs
+	IsPrimarySubnetExcluded() (bool, error)
 }
 
 // EC2InstanceMetadataCache caches instance metadata
 type EC2InstanceMetadataCache struct {
 	// metadata info
-	securityGroups   StringSet
-	subnetID         string
-	localIPv4        net.IP
-	v4Enabled        bool
-	v6Enabled        bool
-	instanceID       string
-	instanceType     string
-	primaryENI       string
-	primaryENImac    string
-	availabilityZone string
-	region           string
-	vpcID            string
+	securityGroups       StringSet
+	customSecurityGroups StringSet
+	subnetID             string
+	localIPv4            net.IP
+	v4Enabled            bool
+	v6Enabled            bool
+	instanceID           string
+	instanceType         string
+	primaryENI           string
+	primaryENImac        string
+	availabilityZone     string
+	region               string
+	vpcID                string
 
 	unmanagedENIs          StringSet
 	useCustomNetworking    bool
@@ -328,7 +337,7 @@ func (ss *StringSet) Difference(other *StringSet) *StringSet {
 	other.RLock()
 	defer ss.RUnlock()
 	defer other.RUnlock()
-	//example: s1 = {a1, a2, a3} s2 = {a1, a2, a4, a5} s1.Difference(s2) = {a3} s2.Difference(s1) = {a4, a5}
+	// example: s1 = {a1, a2, a3} s2 = {a1, a2, a4, a5} s1.Difference(s2) = {a3} s2.Difference(s1) = {a4, a5}
 	return &StringSet{data: ss.data.Difference(other.data)}
 }
 
@@ -501,6 +510,134 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 	return nil
 }
 
+// discoverCustomSecurityGroups discovers security groups with the cni-role tag
+func (cache *EC2InstanceMetadataCache) discoverCustomSecurityGroups() ([]string, error) {
+	describeSGInput := &ec2.DescribeSecurityGroupsInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("vpc-id"),
+				Values: []string{cache.vpcID},
+			},
+			{
+				Name:   aws.String("tag:" + subnetDiscoveryTagKey),
+				Values: []string{"1"},
+			},
+		},
+	}
+
+	result, err := cache.ec2SVC.DescribeSecurityGroups(context.Background(), describeSGInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "discoverCustomSecurityGroups: unable to describe security groups")
+	}
+
+	var sgIDs []string
+	for _, sg := range result.SecurityGroups {
+		sgIDs = append(sgIDs, *sg.GroupId)
+	}
+
+	return sgIDs, nil
+}
+
+// getENISubnetID gets the subnet ID for an ENI from AWS
+func (cache *EC2InstanceMetadataCache) getENISubnetID(eniID string) (string, error) {
+	describeInput := &ec2.DescribeNetworkInterfacesInput{
+		NetworkInterfaceIds: []string{eniID},
+	}
+
+	result, err := cache.ec2SVC.DescribeNetworkInterfaces(context.Background(), describeInput)
+	if err != nil {
+		return "", errors.Wrap(err, "getENISubnetID: unable to describe network interface")
+	}
+
+	if len(result.NetworkInterfaces) == 0 {
+		return "", errors.New("getENISubnetID: no interfaces found")
+	}
+
+	return *result.NetworkInterfaces[0].SubnetId, nil
+}
+
+// RefreshCustomSGIDs discovers and refreshes security groups tagged for use with the CNI
+func (cache *EC2InstanceMetadataCache) RefreshCustomSGIDs(store *datastore.DataStore) error {
+	sgIDs, err := cache.discoverCustomSecurityGroups()
+	if err != nil {
+		awsAPIErrInc("DiscoverCustomSecurityGroups", err)
+		return err
+	}
+
+	newSGs := StringSet{}
+	newSGs.Set(sgIDs)
+	addedSGs := newSGs.Difference(&cache.customSecurityGroups)
+	addedSGsCount := 0
+	deletedSGs := cache.customSecurityGroups.Difference(&newSGs)
+	deletedSGsCount := 0
+
+	for _, sg := range addedSGs.SortedList() {
+		log.Infof("Found custom SG %s, added to ipamd cache", sg)
+		addedSGsCount++
+	}
+	for _, sg := range deletedSGs.SortedList() {
+		log.Infof("Removed custom SG %s from ipamd cache", sg)
+		deletedSGsCount++
+	}
+	cache.customSecurityGroups.Set(sgIDs)
+
+	// If there are changes and we have custom security groups available, update ENIs in secondary subnets
+	if (addedSGsCount != 0 || deletedSGsCount != 0) && len(sgIDs) > 0 {
+		eniInfos := store.GetENIInfos()
+
+		var eniIDs []string
+
+		for eniID := range eniInfos.ENIs {
+			// Only apply custom security groups to ENIs in secondary subnets
+			if eniInfo, ok := eniInfos.ENIs[eniID]; ok {
+				// Skip the primary ENI - it should never get the custom security groups
+				if !eniInfo.IsPrimary {
+					// At this point, we have a secondary ENI, but we need to check if it's in a secondary subnet
+					// We'll query EC2 for this information
+					eniDetails, err := cache.getENISubnetID(eniID)
+					if err == nil && eniDetails != cache.subnetID {
+						// This ENI is in a secondary subnet (not the primary subnet)
+						eniIDs = append(eniIDs, eniID)
+					}
+				}
+			}
+		}
+
+		newENIs := StringSet{}
+		newENIs.Set(eniIDs)
+
+		tempfilteredENIs := newENIs.Difference(&cache.multiCardENIs)
+		filteredENIs := tempfilteredENIs.Difference(&cache.unmanagedENIs)
+
+		// This will update SG for managed ENIs in secondary subnets
+		for _, eniID := range filteredENIs.SortedList() {
+			log.Debugf("Update ENI %s with custom security groups", eniID)
+
+			attributeInput := &ec2.ModifyNetworkInterfaceAttributeInput{
+				Groups:             sgIDs,
+				NetworkInterfaceId: aws.String(eniID),
+			}
+			start := time.Now()
+			_, err = cache.ec2SVC.ModifyNetworkInterfaceAttribute(context.Background(), attributeInput)
+			prometheusmetrics.Ec2ApiReq.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
+			prometheusmetrics.AwsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+
+			if err != nil {
+				if errors.As(err, &awsAPIError) {
+					if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
+						awsAPIErrInc("IMDSMetaDataOutOfSync", err)
+					}
+				}
+				checkAPIErrorAndBroadcastEvent(err, "ec2:ModifyNetworkInterfaceAttribute")
+				awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
+				prometheusmetrics.Ec2ApiErr.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
+				log.Debugf("refreshCustomSGIDs: unable to update the ENI %s SG - %v", eniID, err)
+			}
+		}
+	}
+	return nil
+}
+
 // RefreshSGIDs retrieves security groups
 func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string, store *datastore.DataStore) error {
 	ctx := context.TODO()
@@ -545,7 +682,18 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string, store *datastore
 
 		// This will update SG for managed ENIs created by EKS.
 		for _, eniID := range filteredENIs.SortedList() {
-			log.Debugf("Update ENI %s", eniID)
+			// Skip ENIs in secondary subnets if we have custom security groups configured
+			if len(cache.customSecurityGroups.SortedList()) > 0 && cache.primaryENI != eniID {
+				// Only check subnet if we actually have custom SGs configured
+				subnetID, err := cache.getENISubnetID(eniID)
+				if err == nil && subnetID != cache.subnetID {
+					// This ENI is in a secondary subnet - we should use custom SGs instead
+					// Skip it here as it will be handled by RefreshCustomSGIDs
+					log.Debugf("Skipping SG update for ENI %s in secondary subnet %s - will use custom security groups", eniID, subnetID)
+					continue
+				}
+			}
+			log.Debugf("Update ENI %s with primary security groups", eniID)
 
 			attributeInput := &ec2.ModifyNetworkInterfaceAttributeInput{
 				Groups:             sgIDs,
@@ -920,7 +1068,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 			Tags:         convertTagsToSDKTags(tags),
 		},
 	}
-	var needIPs = numIPs
+	needIPs := numIPs
 
 	ipLimit := cache.GetENIIPv4Limit()
 	if ipLimit < needIPs {
@@ -966,18 +1114,42 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 			if vpcErr != nil {
 				log.Warnf("Failed to call ec2:DescribeSubnets: %v", vpcErr)
 				log.Info("Defaulting to same subnet as the primary interface for the new ENI")
+
+				// Even in fallback, check if primary subnet is excluded
+				excluded, checkErr := cache.isPrimarySubnetExcluded()
+				if checkErr != nil {
+					log.Warnf("Failed to check if primary subnet is excluded: %v. Proceeding with ENI creation attempt.", checkErr)
+				} else if excluded {
+					// Primary subnet is explicitly excluded
+					err = errors.New("primary subnet is tagged with kubernetes.io/role/cni=0 - no valid subnets available for ENI creation")
+					log.Error(err.Error())
+					return "", err
+				}
+
 				networkInterfaceID, err = cache.tryCreateNetworkInterface(input)
 				if err == nil {
 					return networkInterfaceID, nil
 				}
 			} else {
+				validSubnetsFound := false
 				for _, subnet := range subnetResult {
-					if *subnet.SubnetId != cache.subnetID {
-						if !validTag(subnet) {
-							continue
+					// Check tag for all subnets including primary
+					isPrimarySubnet := *subnet.SubnetId == cache.subnetID
+					if !validTag(subnet, isPrimarySubnet) {
+						// Log when primary subnet is excluded
+						if isPrimarySubnet {
+							log.Infof("Primary subnet %s is excluded from ENI creation", cache.subnetID)
 						}
+						continue
 					}
-					log.Infof("Creating ENI with security groups: %v in subnet: %s", input.Groups, aws.ToString(input.SubnetId))
+					validSubnetsFound = true
+					// If this is a secondary subnet and we have custom security groups, use those instead
+					// We already determined isPrimarySubnet above, just reuse the variable
+					if !isPrimarySubnet && len(cache.customSecurityGroups.SortedList()) > 0 {
+						log.Infof("Using custom security groups for ENI in secondary subnet %s", *subnet.SubnetId)
+						input.Groups = cache.customSecurityGroups.SortedList()
+					}
+					log.Infof("Creating ENI with security groups: %v in subnet: %s", input.Groups, aws.ToString(subnet.SubnetId))
 
 					input.SubnetId = subnet.SubnetId
 					networkInterfaceID, err = cache.tryCreateNetworkInterface(input)
@@ -985,9 +1157,28 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 						return networkInterfaceID, nil
 					}
 				}
+
+				// If no valid subnets found, return appropriate error
+				if !validSubnetsFound {
+					err = errors.New("no valid subnets available for ENI creation - all subnets are either not tagged or tagged with kubernetes.io/role/cni=0")
+					log.Error(err.Error())
+					return "", err
+				}
 			}
 		} else {
 			log.Info("Using same security group config as the primary interface for the new ENI")
+			// When subnet discovery is disabled, check if primary subnet is excluded
+			excluded, checkErr := cache.isPrimarySubnetExcluded()
+			if checkErr != nil {
+				// If we can't determine exclusion status, log warning and proceed
+				log.Warnf("Failed to check if primary subnet is excluded: %v. Proceeding with ENI creation attempt.", checkErr)
+			} else if excluded {
+				// Primary subnet is explicitly excluded
+				err = errors.New("primary subnet is tagged with kubernetes.io/role/cni=0 and subnet discovery is disabled - no valid subnets available for ENI creation")
+				log.Error(err.Error())
+				return "", err
+			}
+
 			networkInterfaceID, err = cache.tryCreateNetworkInterface(input)
 			if err == nil {
 				return networkInterfaceID, nil
@@ -1030,12 +1221,75 @@ func (cache *EC2InstanceMetadataCache) getVpcSubnets() ([]ec2types.Subnet, error
 	return subnetResult.Subnets, nil
 }
 
-func validTag(subnet ec2types.Subnet) bool {
+// validTag checks if subnet should be used for ENI/IP allocation
+// For primary subnet: include by default (no tag), exclude only if tag value is "0"
+// For secondary subnets: exclude by default (no tag), include only if tag exists with non-"0" value
+// If the subnet has cluster-specific tags, it will only be used by the matching cluster
+func validTag(subnet ec2types.Subnet, isPrimarySubnet bool) bool {
+	hasClusterSpecificTags := false
+	isValidForThisCluster := false
+	hasValidCniTag := false
+	localClusterName := os.Getenv(clusterNameEnvVar)
+	localClusterTagKey := clusterTagKeyPrefix + localClusterName
+
 	for _, tag := range subnet.Tags {
-		if *tag.Key == subnetDiscoveryTagKey {
-			return true
+		// Check for any kubernetes.io/cluster/* tag
+		if tag.Key != nil && strings.HasPrefix(*tag.Key, clusterTagKeyPrefix) {
+			hasClusterSpecificTags = true
+			// Check if this tag matches our cluster
+			if *tag.Key == localClusterTagKey && tag.Value != nil && *tag.Value == "shared" {
+				isValidForThisCluster = true
+			}
+		}
+
+		// Check for the CNI tag
+		if tag.Key != nil && *tag.Key == subnetDiscoveryTagKey {
+			// Check if tag value is "0" (exclude)
+			if tag.Value != nil && *tag.Value == "0" {
+				log.Debugf("Subnet %s has %s=0 tag, excluding it from ENI creation", *subnet.SubnetId, subnetDiscoveryTagKey)
+				return false
+			}
+			// For secondary subnet, any non-"0" value is fine
+			if !isPrimarySubnet {
+				hasValidCniTag = true
+			} else {
+				// For primary subnet, tag exists and is not "0", so include it
+				hasValidCniTag = true
+			}
 		}
 	}
+
+	// First check if subnet has valid CNI tag
+	if !hasValidCniTag {
+		// If no CNI tag found
+		if isPrimarySubnet {
+			// For primary subnet, default to include for backwards compatibility
+			log.Debugf("Primary subnet %s has no %s tag, including it for ENI creation (backwards compatibility)", *subnet.SubnetId, subnetDiscoveryTagKey)
+			hasValidCniTag = true
+		} else {
+			// For secondary subnets, default to exclude (opt-in required)
+			log.Debugf("Subnet %s has no %s tag, excluding it from ENI creation", *subnet.SubnetId, subnetDiscoveryTagKey)
+			return false
+		}
+	}
+
+	// Now check for cluster-specific tag requirements
+	if hasValidCniTag {
+		if !hasClusterSpecificTags {
+			// No cluster-specific tags, so it's valid for all clusters
+			log.Debugf("Subnet %s has no cluster-specific tags, making it available for all clusters", *subnet.SubnetId)
+			return true
+		} else if isValidForThisCluster {
+			// Has our cluster's tag
+			log.Debugf("Subnet %s has matching cluster tag %s, including it for ENI creation", *subnet.SubnetId, localClusterTagKey)
+			return true
+		} else {
+			// Has cluster-specific tags but not for our cluster
+			log.Debugf("Subnet %s has cluster-specific tags but none matching %s, excluding it from ENI creation", *subnet.SubnetId, localClusterTagKey)
+			return false
+		}
+	}
+
 	return false
 }
 
@@ -1173,7 +1427,6 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 		log.Infof("Successfully detached ENI: %s", eniName)
 		return nil
 	})
-
 	if err != nil {
 		log.Errorf("Failed to detach ENI %s %v", eniName, err)
 		return err
@@ -1305,7 +1558,6 @@ func (cache *EC2InstanceMetadataCache) GetIPv4PrefixesFromEC2(eniID string) (add
 			if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
 				return nil, ErrENINotFound
 			}
-
 		}
 		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
 		awsAPIErrInc("DescribeNetworkInterfaces", err)
@@ -1337,7 +1589,6 @@ func (cache *EC2InstanceMetadataCache) GetIPv6PrefixesFromEC2(eniID string) (add
 			if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
 				return nil, ErrENINotFound
 			}
-
 		}
 		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeNetworkInterfaces")
 		awsAPIErrInc("DescribeNetworkInterfaces", err)
@@ -1655,7 +1906,7 @@ func (cache *EC2InstanceMetadataCache) FetchInstanceTypeLimits() error {
 			NetworkCardIndex:         int64(*info.NetworkInfo.NetworkCards[idx].NetworkCardIndex),
 		}
 	}
-	//Not checking for empty hypervisorType since have seen certain instances not getting this filled.
+	// Not checking for empty hypervisorType since have seen certain instances not getting this filled.
 	if instanceType != "" && eniLimit > 0 && ipv4Limit > 0 {
 		vpc.SetInstance(instanceType, eniLimit, ipv4Limit, defaultNetworkCardIndex, networkCards, hypervisorType, isBareMetalInstance)
 	} else {
@@ -1729,7 +1980,7 @@ func (cache *EC2InstanceMetadataCache) IsPrefixDelegationSupported() bool {
 
 // AllocIPAddresses allocates numIPs of IP address on an ENI
 func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int) (*ec2.AssignPrivateIpAddressesOutput, error) {
-	var needIPs = numIPs
+	needIPs := numIPs
 
 	ipLimit := cache.GetENIIPv4Limit()
 
@@ -1782,7 +2033,7 @@ func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int
 }
 
 func (cache *EC2InstanceMetadataCache) AllocIPv6Prefixes(eniID string) ([]*string, error) {
-	//We only need to allocate one IPv6 prefix per ENI.
+	// We only need to allocate one IPv6 prefix per ENI.
 	input := &ec2.AssignIpv6AddressesInput{
 		NetworkInterfaceId: aws.String(eniID),
 		Ipv6PrefixCount:    aws.Int32(1),
@@ -1833,8 +2084,8 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 						eniIPCount = len(returnedENI.IPv6Prefixes)
 					}
 				} else {
-					//Ignore primary IP of the ENI
-					//wantedCidrs will be at most 1 less then the IP limit for the ENI because of the primary IP in secondary pod
+					// Ignore primary IP of the ENI
+					// wantedCidrs will be at most 1 less then the IP limit for the ENI because of the primary IP in secondary pod
 					eniIPCount = len(returnedENI.IPv4Addresses) - 1
 				}
 
@@ -2196,4 +2447,43 @@ func checkAPIErrorAndBroadcastEvent(err error, api string) {
 			}
 		}
 	}
+}
+
+// isPrimarySubnetExcluded checks if the primary subnet has the kubernetes.io/role/cni=0 tag
+func (cache *EC2InstanceMetadataCache) isPrimarySubnetExcluded() (bool, error) {
+	// Get the primary subnet information
+	describeSubnetInput := &ec2.DescribeSubnetsInput{
+		SubnetIds: []string{cache.subnetID},
+	}
+
+	start := time.Now()
+	subnetResult, err := cache.ec2SVC.DescribeSubnets(context.Background(), describeSubnetInput)
+	prometheusmetrics.Ec2ApiReq.WithLabelValues("DescribeSubnets").Inc()
+	prometheusmetrics.AwsAPILatency.WithLabelValues("DescribeSubnets", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+	if err != nil {
+		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeSubnets")
+		awsAPIErrInc("DescribeSubnets", err)
+		prometheusmetrics.Ec2ApiErr.WithLabelValues("DescribeSubnets").Inc()
+		log.Errorf("Failed to describe primary subnet %s: %v", cache.subnetID, err)
+		return false, errors.Wrap(err, "isPrimarySubnetExcluded: unable to describe primary subnet")
+	}
+
+	if len(subnetResult.Subnets) == 0 {
+		log.Errorf("Primary subnet %s not found in DescribeSubnets response", cache.subnetID)
+		return false, errors.New("isPrimarySubnetExcluded: primary subnet not found")
+	}
+
+	subnet := subnetResult.Subnets[0]
+	// Check if the subnet has the exclusion tag
+	return !validTag(subnet, true), nil
+}
+
+// IsPrimarySubnetExcluded implements the APIs interface to check if primary subnet is excluded
+func (cache *EC2InstanceMetadataCache) IsPrimarySubnetExcluded() (bool, error) {
+	if cache.useSubnetDiscovery {
+		return cache.isPrimarySubnetExcluded()
+	}
+
+	// If subnet discovery is not enabled, we assume the primary subnet is not excluded
+	return false, nil
 }
