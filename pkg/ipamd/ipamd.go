@@ -644,7 +644,7 @@ func (c *IPAMContext) nodeInit() error {
 	return nil
 }
 
-// wasPrimaryENIPreviouslyManaged checks if the given ENI has any assigned IP addresses in our datastore,
+// wasPrimaryENIPreviouslyManaged checks if the primary ENI has any existing assigned IPs,
 // which indicates it was previously being managed by the CNI before a restart.
 // This helps determine whether to honor subnet exclusion tags for existing nodes.
 func (c *IPAMContext) wasPrimaryENIPreviouslyManaged(eniID string) bool {
@@ -662,15 +662,33 @@ func (c *IPAMContext) wasPrimaryENIPreviouslyManaged(eniID string) bool {
 		}
 	}
 
-	// If we have any pods using IPs from this ENI's IPv4 cidrs, it's managed
-	ipList, prefixList, err := c.dataStore.GetENICIDRs(eniID)
-	if err == nil && (len(ipList) > 0 || len(prefixList) > 0) {
-		log.Infof("Primary ENI %s was previously managed (has IPs in datastore)", eniID)
-		return true
+	// Alternative method: Check AllocatedIPs to see if any pod has an IP from this ENI
+	allocatedIPs := c.dataStore.AllocatedIPs()
+	ipList, _, err := c.dataStore.GetENICIDRs(eniID)
+	if err == nil && len(ipList) > 0 {
+		for _, podInfo := range allocatedIPs {
+			ipAddr := net.ParseIP(podInfo.IP)
+			if ipAddr == nil {
+				continue
+			}
+
+			// Check if the pod's IP is from this ENI's CIDRs
+			for _, cidr := range ipList {
+				_, ipnet, err := net.ParseCIDR(cidr)
+				if err != nil {
+					continue
+				}
+
+				if ipnet.Contains(ipAddr) {
+					log.Infof("Primary ENI %s was previously managed (has IPs assigned to pods)", eniID)
+					return true
+				}
+			}
+		}
 	}
 
 	// No evidence of previous management found
-	log.Infof("Primary ENI %s shows no signs of previous management", eniID)
+	log.Debugf("Primary ENI %s shows no signs of previous management", eniID)
 	return false
 }
 

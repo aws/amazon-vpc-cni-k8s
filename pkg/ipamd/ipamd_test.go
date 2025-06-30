@@ -2544,6 +2544,175 @@ func TestIPAMContext_PrimarySubnetExclusion(t *testing.T) {
 	assert.Contains(t, err.Error(), "no available IP/Prefix addresses")
 }
 
+func TestIPAMContext_WasPrimaryENIPreviouslyManaged(t *testing.T) {
+	// Test our ability to detect whether a primary ENI was previously managed
+
+	// Set up test data store
+	dataStore := datastore.NewDataStore(log, datastore.NullCheckpoint{}, false)
+
+	// Create IPAM context with the test data store
+	ipamdContext := &IPAMContext{
+		dataStore: dataStore,
+	}
+
+	// Add primary ENI with no IPs - should report as not managed
+	err := dataStore.AddENI(primaryENI, 0, true, false, false)
+	assert.NoError(t, err)
+
+	// Test with empty ENI (no assigned IPs)
+	previouslyManaged := ipamdContext.wasPrimaryENIPreviouslyManaged(primaryENI)
+	assert.False(t, previouslyManaged, "ENI with no assigned IPs should not report as previously managed")
+
+	// Add an IP to the primary ENI
+	ipv4Addr := net.IPNet{IP: net.ParseIP(ipaddr01), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	err = dataStore.AddIPv4CidrToStore(primaryENI, ipv4Addr, false)
+	assert.NoError(t, err)
+
+	// Still not managed since no IPs are assigned to pods
+	previouslyManaged = ipamdContext.wasPrimaryENIPreviouslyManaged(primaryENI)
+	assert.False(t, previouslyManaged, "ENI with unassigned IPs should not report as previously managed")
+
+	// Assign an IP to a pod - this should make the ENI managed
+	_, _, err = dataStore.AssignPodIPv4Address(datastore.IPAMKey{
+		NetworkName: "net0",
+		ContainerID: "test-container",
+		IfName:      "eth0",
+	}, datastore.IPAMMetadata{
+		K8SPodNamespace: "test-namespace",
+		K8SPodName:      "test-pod",
+	})
+	assert.NoError(t, err)
+
+	// Now it should be detected as managed
+	previouslyManaged = ipamdContext.wasPrimaryENIPreviouslyManaged(primaryENI)
+	assert.True(t, previouslyManaged, "ENI with assigned IPs should report as previously managed")
+
+	// Test with non-existent ENI ID
+	previouslyManaged = ipamdContext.wasPrimaryENIPreviouslyManaged("eni-nonexistent")
+	assert.False(t, previouslyManaged, "Non-existent ENI should not report as previously managed")
+}
+
+func TestIPAMContext_NodeInitWithPrimarySubnetExclusion(t *testing.T) {
+	// Test the nodeInit function's behavior with primary subnet exclusion
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	// Create primary ENI metadata
+	primaryENIMetadata, _, _ := getDummyENIMetadata()
+
+	// Set up mock expectations
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENI).AnyTimes()
+	m.awsutils.EXPECT().IsPrimaryENI(gomock.Any()).Return(true).AnyTimes()
+	m.awsutils.EXPECT().IsPrimarySubnetExcluded().Return(true, nil).AnyTimes() // Primary subnet is excluded
+	m.awsutils.EXPECT().GetLocalIPv4().Return(net.ParseIP(primaryIP)).AnyTimes()
+	m.awsutils.EXPECT().GetPrimaryENImac().Return(primaryMAC).AnyTimes()
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{vpcCIDR}, nil).AnyTimes()
+	m.awsutils.EXPECT().GetENILimit().Return(4, nil).AnyTimes() // Add ENI limit expectation
+	m.awsutils.EXPECT().DescribeAllENIs().Return(awsutils.DescribeAllENIsResult{
+		ENIMetadata: []awsutils.ENIMetadata{primaryENIMetadata},
+		TagMap:      map[string]awsutils.TagMap{},
+		TrunkENI:    "",
+		EFAENIs:     map[string]bool{},
+	}, nil).AnyTimes()
+	m.awsutils.EXPECT().IsUnmanagedENI(gomock.Any()).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsMultiCardENI(gomock.Any()).Return(false).AnyTimes()
+
+	// Network related expectations
+	m.network.EXPECT().GetRuleList().Return([]string{}, nil).AnyTimes()
+	m.network.EXPECT().UpdateRuleListBySrc(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	m.network.EXPECT().GetExternalServiceCIDRs().Return([]*net.IPNet{}, nil).AnyTimes()
+	m.network.EXPECT().UpdateExternalServiceIpRules(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	m.network.EXPECT().SetupHostNetwork(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	m.network.EXPECT().SetupENINetwork(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	m.network.EXPECT().CleanUpStaleAWSChains(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	// Test scenario 1: New node (no previous management) - should respect subnet exclusion tag
+	{
+		// Set up a clean datastore without any assigned IPs
+		dataStore := datastore.NewDataStore(log, datastore.NullCheckpoint{}, false)
+
+		// Create IPAM context
+		ipamContext := &IPAMContext{
+			awsClient:          m.awsutils,
+			networkClient:      m.network,
+			k8sClient:          m.k8sClient,
+			myNodeName:         myNodeName,
+			useSubnetDiscovery: true,
+			dataStore:          dataStore,
+			enableIPv4:         true,
+			maxIPsPerENI:       5000,
+			maxENI:             1,
+		}
+
+		// Run nodeInit
+		err := ipamContext.nodeInit()
+		assert.NoError(t, err)
+
+		// Verify that primary subnet was marked as excluded
+		assert.True(t, ipamContext.isPrimarySubnetExcluded, "Primary subnet should be marked as excluded for new node")
+
+		// Now let's verify that filterUnmanagedENIs skips the primary ENI
+		enis := []awsutils.ENIMetadata{primaryENIMetadata}
+		filtered := ipamContext.filterUnmanagedENIs(enis)
+		assert.Empty(t, filtered, "Primary ENI should be filtered out when subnet is excluded")
+	}
+
+	// Test scenario 2: Existing node with previously managed primary ENI - should ignore exclusion tag
+	{
+		// Set up datastore with a previously managed primary ENI that has assigned IPs
+		dataStore := datastore.NewDataStore(log, datastore.NullCheckpoint{}, false)
+		err := dataStore.AddENI(primaryENI, primaryDevice, true, false, false)
+		assert.NoError(t, err)
+
+		// Add an IP to the ENI
+		ipv4Addr := net.IPNet{IP: net.ParseIP(ipaddr01), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		err = dataStore.AddIPv4CidrToStore(primaryENI, ipv4Addr, false)
+		assert.NoError(t, err)
+
+		// Assign IP to a pod to indicate it was previously managed
+		_, _, err = dataStore.AssignPodIPv4Address(datastore.IPAMKey{
+			NetworkName: "net0",
+			ContainerID: "test-container",
+			IfName:      "eth0",
+		}, datastore.IPAMMetadata{
+			K8SPodNamespace: "test-namespace",
+			K8SPodName:      "test-pod",
+		})
+		assert.NoError(t, err)
+
+		// Setup mock for setupENI call that happens for managed ENIs
+		m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+		m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+		m.awsutils.EXPECT().RefreshCustomSGIDs(gomock.Any()).Return(nil).AnyTimes()
+
+		// Create IPAM context with the datastore
+		ipamContext := &IPAMContext{
+			awsClient:          m.awsutils,
+			networkClient:      m.network,
+			k8sClient:          m.k8sClient,
+			myNodeName:         myNodeName,
+			useSubnetDiscovery: true,
+			dataStore:          dataStore,
+			enableIPv4:         true,
+			maxIPsPerENI:       5000,
+			maxENI:             1,
+		}
+
+		// Run nodeInit
+		err = ipamContext.nodeInit()
+		assert.NoError(t, err)
+
+		// We still need isPrimarySubnetExcluded to be true for the test
+		assert.True(t, ipamContext.isPrimarySubnetExcluded, "Primary subnet should still be marked as excluded")
+
+		// But now ENIs shouldn't be filtered because the primary was previously managed
+		enis := []awsutils.ENIMetadata{primaryENIMetadata}
+		filtered := ipamContext.filterUnmanagedENIs(enis)
+		assert.NotEmpty(t, filtered, "Primary ENI should not be filtered when previously managed")
+	}
+}
+
 func TestIPAMContext_WarmTargetWithExcludedPrimary(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
