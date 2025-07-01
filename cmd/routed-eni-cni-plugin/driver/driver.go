@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
@@ -33,7 +34,6 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/cniutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
@@ -100,6 +100,29 @@ func newCreateVethPairContext(contVethName string, hostVethName string, v4Addr *
 	}
 }
 
+type vethConfiguration struct {
+	dummyRouterAddress net.IP
+	maskLen            int
+	contVethAddress    *netlink.Addr
+	defaultDestination *net.IPNet
+}
+
+func (createVethContext *createVethPairContext) vethConfiguration() vethConfiguration {
+	var configuration vethConfiguration
+	if createVethContext.v4Addr != nil {
+		configuration.dummyRouterAddress = net.IPv4(169, 254, 1, 1)
+		configuration.maskLen = 8 * net.IPv4len
+		configuration.contVethAddress = &netlink.Addr{IPNet: createVethContext.v4Addr}
+		configuration.defaultDestination = &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 8*net.IPv4len)}
+	} else if createVethContext.v6Addr != nil {
+		configuration.dummyRouterAddress = net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
+		configuration.maskLen = 8 * net.IPv6len
+		configuration.contVethAddress = &netlink.Addr{IPNet: createVethContext.v6Addr}
+		configuration.defaultDestination = &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 8*net.IPv6len)}
+	}
+	return configuration
+}
+
 // run defines the closure to execute within the container's namespace to create the veth pair
 func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	veth := &netlink.Veth{
@@ -112,7 +135,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	}
 
 	if err := createVethContext.netLink.LinkAdd(veth); err != nil {
-		return err
+		return errors.Wrapf(err, "setup NS network: failed to add veth link")
 	}
 
 	hostVeth, err := createVethContext.netLink.LinkByName(createVethContext.hostVethName)
@@ -124,6 +147,11 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	// veth won't get a link local address unless it's set to UP state.
 	if err = createVethContext.netLink.LinkSetUp(hostVeth); err != nil {
 		return errors.Wrapf(err, "setup NS network: failed to set link %q up", createVethContext.hostVethName)
+	}
+
+	// Move the "host" end of the veth into the host namespace.
+	if err = createVethContext.netLink.LinkSetNsFd(hostVeth, int(hostNS.Fd())); err != nil {
+		return errors.Wrap(err, "setup NS network: failed to move veth to host netns")
 	}
 
 	contVeth, err := createVethContext.netLink.LinkByName(createVethContext.contVethName)
@@ -152,79 +180,71 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 			}
 		}
 	}
-
-	// Add a connected route to a dummy next hop (169.254.1.1 or fe80::1)
-	// # ip route show
-	// default via 169.254.1.1 dev eth0
-	// 169.254.1.1 dev eth0
-
-	var gw net.IP
-	var maskLen int
-	var addr *netlink.Addr
-	var defNet *net.IPNet
-
-	if createVethContext.v4Addr != nil {
-		gw = net.IPv4(169, 254, 1, 1)
-		maskLen = 32
-		addr = &netlink.Addr{IPNet: createVethContext.v4Addr}
-		defNet = &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, maskLen)}
-	} else if createVethContext.v6Addr != nil {
-		gw = net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
-		maskLen = 128
-		addr = &netlink.Addr{IPNet: createVethContext.v6Addr}
-		defNet = &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, maskLen)}
-	}
-
-	gwNet := &net.IPNet{IP: gw, Mask: net.CIDRMask(maskLen, maskLen)}
-
-	if err = createVethContext.netLink.RouteReplace(&netlink.Route{
-		LinkIndex: contVeth.Attrs().Index,
-		Scope:     netlink.SCOPE_LINK,
-		Dst:       gwNet}); err != nil {
-		return errors.Wrap(err, "setup NS network: failed to add default gateway")
-	}
-
-	// Add a default route via dummy next hop(169.254.1.1 or fe80::1). Then all outgoing traffic will be routed by this
-	// default route via dummy next hop (169.254.1.1 or fe80::1)
-	if err = createVethContext.netLink.RouteAdd(&netlink.Route{
-		LinkIndex: contVeth.Attrs().Index,
-		Scope:     netlink.SCOPE_UNIVERSE,
-		Dst:       defNet,
-		Gw:        gw,
-	}); err != nil {
-		return errors.Wrap(err, "setup NS network: failed to add default route")
-	}
-
-	if err = createVethContext.netLink.AddrAdd(contVeth, addr); err != nil {
+	vethConfig := createVethContext.vethConfiguration()
+	if err = createVethContext.netLink.AddrAdd(contVeth, vethConfig.contVethAddress); err != nil {
 		return errors.Wrapf(err, "setup NS network: failed to add IP addr to %q", createVethContext.contVethName)
 	}
 
-	// add static ARP entry for default gateway
-	// we are using routed mode on the host and container need this static ARP entry to resolve its default gateway.
-	// IP address family is derived from the IP address passed to the function (v4 or v6)
-	neigh := &netlink.Neigh{
-		LinkIndex:    contVeth.Attrs().Index,
-		State:        netlink.NUD_PERMANENT,
-		IP:           gwNet.IP,
-		HardwareAddr: hostVeth.Attrs().HardwareAddr,
+	// Add a default onlink route via dummy next hop(169.254.1.1 or fe80::1).
+	// Then all outgoing traffic will be routed by this default route via dummy next hop (169.254.1.1 or fe80::1)
+	// # ip route show
+	// default via 169.254.1.1 dev eth0 onlink
+	defaultRoute := &netlink.Route{
+		LinkIndex: contVeth.Attrs().Index,
+		Scope:     netlink.SCOPE_UNIVERSE,
+		Dst:       vethConfig.defaultDestination,
+		Gw:        vethConfig.dummyRouterAddress,
+		Flags:     int(netlink.FLAG_ONLINK),
 	}
-
-	if err = createVethContext.netLink.NeighAdd(neigh); err != nil {
-		return errors.Wrap(err, "setup NS network: failed to add static ARP")
+	if err = createVethContext.netLink.RouteAdd(defaultRoute); err != nil {
+		return errors.Wrapf(err, "setup NS network: failed to add default route: %+v", defaultRoute)
 	}
 
 	if createVethContext.v6Addr != nil && createVethContext.v6Addr.IP.To16() != nil {
-		if err := cniutils.WaitForAddressesToBeStable(createVethContext.netLink, createVethContext.contVethName, v6DADTimeout, WAIT_INTERVAL); err != nil {
+		if err := waitForAddressesToBeStable(createVethContext.netLink, createVethContext.contVethName, v6DADTimeout); err != nil {
 			return errors.Wrap(err, "setup NS network: failed while waiting for v6 addresses to be stable")
 		}
 	}
 
-	// Now that the everything has been successfully set up in the container, move the "host" end of the
-	// veth into the host namespace.
-	if err = createVethContext.netLink.LinkSetNsFd(hostVeth, int(hostNS.Fd())); err != nil {
-		return errors.Wrap(err, "setup NS network: failed to move veth to host netns")
-	}
 	return nil
+}
+
+// Implements `SettleAddresses` functionality of the `ip` package.
+// waitForAddressesToBeStable waits for all addresses on a link to leave tentative state.
+// Will be particularly useful for ipv6, where all addresses need to do DAD.
+// If any addresses are still tentative after timeout seconds, then error.
+func waitForAddressesToBeStable(netLink netlinkwrapper.NetLink, ifName string, timeout time.Duration) error {
+	link, err := netLink.LinkByName(ifName)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve link: %v", err)
+	}
+
+	deadline := time.Now().Add(timeout)
+	for {
+		addrs, err := netLink.AddrList(link, netlink.FAMILY_V6)
+		if err != nil {
+			return fmt.Errorf("could not list addresses: %v", err)
+		}
+
+		ok := true
+		for _, addr := range addrs {
+			if addr.Flags&(syscall.IFA_F_TENTATIVE|syscall.IFA_F_DADFAILED) > 0 {
+				ok = false
+				break
+			}
+		}
+
+		if ok {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("link %s still has tentative addresses after %d seconds",
+				ifName,
+				timeout)
+		}
+
+		time.Sleep(WAIT_INTERVAL)
+	}
 }
 
 // SetupPodNetwork wires up linux networking for a pod's network
@@ -365,6 +385,19 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 	hostVeth, err := n.netLink.LinkByName(hostVethName)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to find hostVeth %s", hostVethName)
+	}
+
+	// configure host end of veth with a link-local ip address so no static arp entry is required inside pod's net ns.
+	vethConfig := createVethContext.vethConfiguration()
+	hostLinkAddress := &netlink.Addr{
+		IPNet: &net.IPNet{
+			IP:   vethConfig.dummyRouterAddress,
+			Mask: net.CIDRMask(vethConfig.maskLen, vethConfig.maskLen),
+		},
+		Scope: int(netlink.SCOPE_LINK),
+	}
+	if err := createVethContext.netLink.AddrAdd(hostVeth, hostLinkAddress); err != nil {
+		return nil, errors.Wrapf(err, "setup host network: failed to add link-local addr to %q", createVethContext.hostVethName)
 	}
 
 	// For IPv6, host veth sysctls must be set to:
