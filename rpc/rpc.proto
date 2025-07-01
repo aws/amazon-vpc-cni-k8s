@@ -52,7 +52,8 @@ message DelNetworkRequest {
   string ContainerID = 8;
   string IfName = 6;
   string NetworkName = 7;
-  // next field: 10
+  string K8S_POD_UID = 10;
+  // next field: 11
 }
 
 message DelNetworkReply {

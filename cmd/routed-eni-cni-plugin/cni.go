@@ -87,6 +87,9 @@ type K8sArgs struct {
 
 	// K8S_POD_INFRA_CONTAINER_ID is pod's sandbox id
 	K8S_POD_INFRA_CONTAINER_ID types.UnmarshallableString
+
+	// K8S_POD_UID
+	K8S_POD_UID types.UnmarshallableString
 }
 
 func init() {
@@ -381,6 +384,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		K8S_POD_NAME:               string(k8sArgs.K8S_POD_NAME),
 		K8S_POD_NAMESPACE:          string(k8sArgs.K8S_POD_NAMESPACE),
 		K8S_POD_INFRA_CONTAINER_ID: string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID),
+		K8S_POD_UID:                string(k8sArgs.K8S_POD_UID),
 		NetworkName:                conf.Name,
 		ContainerID:                args.ContainerID,
 		IfName:                     args.IfName,
@@ -501,10 +505,12 @@ func getContainerIP(prevResult *current.Result, contVethName string) (net.IPNet,
 // tryDelWithPrevResult will try to process CNI delete request without IPAMD.
 // returns true if the del request is handled.
 func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArgs K8sArgs, contVethName string, netNS string, log logger.Logger) (bool, error) {
-	// prevResult might not be available, if we are still using older cni spec < 0.4.0.
-	prevResult, ok := conf.PrevResult.(*current.Result)
-	if !ok {
+	if conf.PrevResult == nil {
 		return false, nil
+	}
+	prevResult, err := current.NewResultFromResult(conf.PrevResult)
+	if err != nil {
+		return false, fmt.Errorf("Failed to convert PrevResult: %w", err)
 	}
 
 	dummyIfaceName := networkutils.GeneratePodHostVethName(dummyInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
@@ -533,6 +539,7 @@ func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArg
 	if err := driverClient.TeardownBranchENIPodNetwork(&containerIP, podVlanID, conf.PodSGEnforcingMode, log); err != nil {
 		return true, err
 	}
+
 	return true, nil
 }
 
@@ -540,11 +547,17 @@ func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArg
 // Returns true if pod network is torn down
 func teardownPodNetworkWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArgs K8sArgs, contVethName string, log logger.Logger) bool {
 	// For non-branch ENI, prevResult is only available in v1.12.1+
-	prevResult, ok := conf.PrevResult.(*current.Result)
-	if !ok {
-		log.Infof("PrevResult not available for pod. Pod may have already been deleted.")
+
+	if conf.PrevResult == nil {
 		return false
 	}
+
+	prevResult, err := current.NewResultFromResult(conf.PrevResult)
+	if err != nil {
+		log.Infof("Ignoring teardownPodNetworkWithPrevResult as PrevResult is not available for pod or parsing failed")
+		return false
+	}
+
 	dummyIfaceName := networkutils.GeneratePodHostVethName(dummyInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
 	_, dummyIface, found := cniutils.FindInterfaceByName(prevResult.Interfaces, dummyIfaceName)
 	if !found {

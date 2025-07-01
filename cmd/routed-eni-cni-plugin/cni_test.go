@@ -22,7 +22,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	current "github.com/containernetworking/cni/pkg/types/100"
+	current "github.com/containernetworking/cni/pkg/types/040"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
@@ -570,6 +570,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -599,6 +600,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
@@ -622,6 +624,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -651,6 +654,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
@@ -675,6 +679,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -704,6 +709,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
@@ -716,6 +722,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -741,6 +748,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
@@ -753,6 +761,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -782,6 +791,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
@@ -794,6 +804,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -822,6 +833,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
@@ -834,6 +846,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -859,6 +872,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
@@ -871,6 +885,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -892,10 +907,30 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
 			wantErr: errors.New("found 0 containerIPs for eth0 in prevResult"),
+		},
+		{
+			name:   "PrevResult is Nil",
+			fields: fields{},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: nil,
+					},
+					PodSGEnforcingMode: sgpp.EnforcingModeStandard,
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
+				},
+				contVethName: "eth0",
+			},
+			want: false,
 		},
 	}
 	for _, tt := range tests {
@@ -962,6 +997,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -991,6 +1027,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
@@ -1014,6 +1051,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1043,6 +1081,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
@@ -1055,6 +1094,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1079,6 +1119,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
@@ -1091,6 +1132,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1120,6 +1162,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
@@ -1132,6 +1175,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1160,6 +1204,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
@@ -1172,6 +1217,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "0.4.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1200,12 +1246,31 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				k8sArgs: K8sArgs{
 					K8S_POD_NAMESPACE: "default",
 					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
 				},
 				contVethName: "eth0",
 			},
 			handled: false,
 		},
-		// confVeth not existing and container IP not existing are covered by Test_tryDelWithPrevResult
+		{
+			name:   "PrevResult is Nil",
+			fields: fields{},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: nil,
+					},
+					PodSGEnforcingMode: sgpp.EnforcingModeStandard,
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+					K8S_POD_UID:       "test-uid",
+				},
+				contVethName: "eth0",
+			},
+			handled: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

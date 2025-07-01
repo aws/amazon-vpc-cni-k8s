@@ -151,6 +151,7 @@ spec:
             - --metrics-bind-addr={{ include "aws-vpc-cni.nodeAgentMetricsBindAddr" . }}
             - --health-probe-bind-addr={{ include "aws-vpc-cni.nodeAgentHealthProbeBindAddr" . }}
             - --conntrack-cache-cleanup-period={{ .Values.nodeAgent.conntrackCacheCleanupPeriod }}
+            - --log-level={{ .Values.nodeAgent.logLevel }}
           {{- with default .Values.resources .Values.nodeAgent.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
