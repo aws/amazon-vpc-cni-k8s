@@ -536,8 +536,7 @@ func (typedimds TypedIMDS) GetIPv6Prefixes(ctx context.Context, mac string) ([]n
 
 // GetLocalIPv6 returns the IPv6 addresses associated with the primary interface.
 func (typedimds TypedIMDS) GetLocalIPv6(ctx context.Context) (net.IP, error) {
-	key := fmt.Sprintf("ipv6")
-	ips, err := typedimds.getIP(ctx, key)
+	ips, err := typedimds.getIP(ctx, "ipv6")
 	if err != nil {
 		imdsErr := new(imdsRequestError)
 		oe := new(smithy.OperationError)

@@ -2090,7 +2090,7 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 		//We shouldn't need the IsPrimaryENI check as ENIs not created by vpc-cni will be marked unmanaged (including trunk ENI)
 		isUnmanagedENI := c.awsClient.IsUnmanagedENI(eni.ENIID)
 		isUnmanagedNIC := c.awsClient.IsUnmanagedNIC(eni.NetworkCard)
-		// isEFAOnlyENI := c.awsClient.IsEfaOnlyENI(eni.ENIID)
+		isEfaOnlyENI := c.awsClient.IsEfaOnlyENI(eni.NetworkCard, eni.ENIID)
 
 		if c.enableIPv6 {
 			if !c.awsClient.IsPrimaryENI(eni.ENIID) {
@@ -2103,6 +2103,11 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 				} else if isUnmanagedNIC {
 					log.Debugf("Skipping ENI %s: since it is on unmanaged network card index %d", eni.ENIID, eni.NetworkCard)
 					continue
+				} else if isEfaOnlyENI {
+					log.Debugf("Skipping ENI %s: since it is EFA only ENI on network card index %d", eni.ENIID, eni.NetworkCard)
+					numFiltered++
+					c.unmanagedENI[eni.NetworkCard] += 1
+					continue
 				}
 			}
 		} else if isUnmanagedENI {
@@ -2113,7 +2118,13 @@ func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutil
 		} else if isUnmanagedNIC {
 			log.Debugf("Skipping ENI %s: since it is on unmanaged network card index %d", eni.ENIID, eni.NetworkCard)
 			continue
+		} else if isEfaOnlyENI {
+			log.Debugf("Skipping ENI %s: since it is EFA only ENI on network card index %d", eni.ENIID, eni.NetworkCard)
+			numFiltered++
+			c.unmanagedENI[eni.NetworkCard] += 1
+			continue
 		}
+
 		ret = append(ret, eni)
 	}
 	c.updateIPStats(numFiltered)

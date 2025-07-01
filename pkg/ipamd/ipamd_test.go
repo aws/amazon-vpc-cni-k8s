@@ -1519,6 +1519,7 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 	eni1, eni2, eni3 := getDummyENIMetadata()
 	allENIs := []awsutils.ENIMetadata{eni1, eni2, eni3}
 	primaryENIonly := []awsutils.ENIMetadata{eni1}
+	efaOnlyENIs := []string{""}
 	filteredENIonly := []awsutils.ENIMetadata{eni1, eni3}
 	Test1TagMap := map[string]awsutils.TagMap{eni1.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
 	Test2TagMap := map[string]awsutils.TagMap{
@@ -1600,7 +1601,7 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 					return false
 				}).AnyTimes()
 
-			if got := c.filterUnmanagedENIs(tt.enis); !reflect.DeepEqual(got, tt.want) {
+			if got := c.filterUnmanagedENIs(tt.enis, efaOnlyENIs); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("filterUnmanagedENIs() = %v, want %v", got, tt.want)
 			}
 		})
@@ -1612,6 +1613,7 @@ func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T)
 	allENIs := []awsutils.ENIMetadata{eni1, eni2, eni3}
 	primaryENIonly := []awsutils.ENIMetadata{eni1}
 	filteredENIonly := []awsutils.ENIMetadata{eni1, eni3}
+	efaOnlyENIs := []string{""}
 	Test1TagMap := map[string]awsutils.TagMap{eni1.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
 	Test2TagMap := map[string]awsutils.TagMap{
 		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
@@ -1695,7 +1697,7 @@ func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T)
 					return false
 				}).AnyTimes()
 
-			if got := c.filterUnmanagedENIs(tt.enis); !reflect.DeepEqual(got, tt.want) {
+			if got := c.filterUnmanagedENIs(tt.enis, efaOnlyENIs); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("filterUnmanagedENIs() = %v, want %v", got, tt.want)
 			}
 		})
