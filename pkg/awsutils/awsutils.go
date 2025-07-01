@@ -556,136 +556,49 @@ func (cache *EC2InstanceMetadataCache) getENISubnetID(eniID string) (string, err
 	return *result.NetworkInterfaces[0].SubnetId, nil
 }
 
-// RefreshCustomSGIDs discovers and refreshes security groups tagged for use with the CNI
-func (cache *EC2InstanceMetadataCache) RefreshCustomSGIDs(store *datastore.DataStore) error {
-	sgIDs, err := cache.discoverCustomSecurityGroups()
-	if err != nil {
-		awsAPIErrInc("DiscoverCustomSecurityGroups", err)
-		log.Warnf("Failed to discover custom security groups: %v", err)
-		log.Info("Falling back to using primary security groups for ENIs in secondary subnets")
-
-		// Clear custom security groups cache to trigger fallback behavior
-		cache.customSecurityGroups.Set([]string{})
-
-		// Apply primary security groups to ENIs in secondary subnets as fallback
-		return cache.applyFallbackSecurityGroups(store)
-	}
-
-	newSGs := StringSet{}
-	newSGs.Set(sgIDs)
-	addedSGs := newSGs.Difference(&cache.customSecurityGroups)
-	addedSGsCount := 0
-	deletedSGs := cache.customSecurityGroups.Difference(&newSGs)
-	deletedSGsCount := 0
-
-	for _, sg := range addedSGs.SortedList() {
-		log.Infof("Found custom SG %s, added to ipamd cache", sg)
-		addedSGsCount++
-	}
-	for _, sg := range deletedSGs.SortedList() {
-		log.Infof("Removed custom SG %s from ipamd cache", sg)
-		deletedSGsCount++
-	}
-	cache.customSecurityGroups.Set(sgIDs)
-
-	// If there are changes and we have custom security groups available, update ENIs in secondary subnets
-	if (addedSGsCount != 0 || deletedSGsCount != 0) && len(sgIDs) > 0 {
-		eniInfos := store.GetENIInfos()
-
-		var eniIDs []string
-
-		for eniID := range eniInfos.ENIs {
-			// Only apply custom security groups to ENIs in secondary subnets
-			if eniInfo, ok := eniInfos.ENIs[eniID]; ok {
-				// Skip the primary ENI - it should never get the custom security groups
-				if !eniInfo.IsPrimary {
-					// At this point, we have a secondary ENI, but we need to check if it's in a secondary subnet
-					// We'll query EC2 for this information
-					eniDetails, err := cache.getENISubnetID(eniID)
-					if err == nil && eniDetails != cache.subnetID {
-						// This ENI is in a secondary subnet (not the primary subnet)
-						eniIDs = append(eniIDs, eniID)
-					}
-				}
-			}
-		}
-
-		newENIs := StringSet{}
-		newENIs.Set(eniIDs)
-
-		tempfilteredENIs := newENIs.Difference(&cache.multiCardENIs)
-		filteredENIs := tempfilteredENIs.Difference(&cache.unmanagedENIs)
-
-		// This will update SG for managed ENIs in secondary subnets
-		for _, eniID := range filteredENIs.SortedList() {
-			log.Debugf("Update ENI %s with custom security groups", eniID)
-
-			attributeInput := &ec2.ModifyNetworkInterfaceAttributeInput{
-				Groups:             sgIDs,
-				NetworkInterfaceId: aws.String(eniID),
-			}
-			start := time.Now()
-			_, err = cache.ec2SVC.ModifyNetworkInterfaceAttribute(context.Background(), attributeInput)
-			prometheusmetrics.Ec2ApiReq.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
-			prometheusmetrics.AwsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
-
-			if err != nil {
-				if errors.As(err, &awsAPIError) {
-					if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
-						awsAPIErrInc("IMDSMetaDataOutOfSync", err)
-					}
-				}
-				checkAPIErrorAndBroadcastEvent(err, "ec2:ModifyNetworkInterfaceAttribute")
-				awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
-				prometheusmetrics.Ec2ApiErr.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
-				log.Debugf("refreshCustomSGIDs: unable to update the ENI %s SG - %v", eniID, err)
-			}
-		}
-	}
-	return nil
+// Helper function to check if an ENI is in a secondary subnet
+func (cache *EC2InstanceMetadataCache) isENIInSecondarySubnet(eniID string) bool {
+	eniDetails, err := cache.getENISubnetID(eniID)
+	return err == nil && eniDetails != cache.subnetID
 }
 
-// applyFallbackSecurityGroups applies primary security groups to ENIs in secondary subnets when custom SGs are unavailable
-func (cache *EC2InstanceMetadataCache) applyFallbackSecurityGroups(store *datastore.DataStore) error {
-	log.Info("Applying primary security groups as fallback for ENIs in secondary subnets")
-
+// Helper function to get ENIs that match specific criteria
+func (cache *EC2InstanceMetadataCache) getFilteredENIs(store *datastore.DataStore, onlySecondarySubnets bool) []string {
 	eniInfos := store.GetENIInfos()
-	primarySGs := cache.securityGroups.SortedList()
-
-	if len(primarySGs) == 0 {
-		log.Warn("No primary security groups available for fallback")
-		return nil
-	}
-
 	var eniIDs []string
 
 	for eniID := range eniInfos.ENIs {
-		// Only apply to ENIs in secondary subnets
 		if eniInfo, ok := eniInfos.ENIs[eniID]; ok {
-			// Skip the primary ENI
-			if !eniInfo.IsPrimary {
-				// Check if it's in a secondary subnet
-				eniDetails, err := cache.getENISubnetID(eniID)
-				if err == nil && eniDetails != cache.subnetID {
-					// This ENI is in a secondary subnet
-					eniIDs = append(eniIDs, eniID)
-				}
+			// Skip primary ENI for secondary subnet operations
+			if onlySecondarySubnets && eniInfo.IsPrimary {
+				continue
 			}
+
+			// Check if we only want secondary subnet ENIs
+			if onlySecondarySubnets && !cache.isENIInSecondarySubnet(eniID) {
+				continue
+			}
+
+			eniIDs = append(eniIDs, eniID)
 		}
 	}
 
+	// Apply standard filters (unmanaged and multi-card ENIs)
 	newENIs := StringSet{}
 	newENIs.Set(eniIDs)
-
 	tempfilteredENIs := newENIs.Difference(&cache.multiCardENIs)
 	filteredENIs := tempfilteredENIs.Difference(&cache.unmanagedENIs)
 
-	// Apply primary security groups to ENIs in secondary subnets
-	for _, eniID := range filteredENIs.SortedList() {
-		log.Infof("Applying primary security groups %v to ENI %s in secondary subnet (fallback)", primarySGs, eniID)
+	return filteredENIs.SortedList()
+}
+
+// Helper function to apply security groups to a list of ENIs
+func (cache *EC2InstanceMetadataCache) applySecurityGroupsToENIs(eniIDs []string, sgIDs []string, logPrefix string) {
+	for _, eniID := range eniIDs {
+		log.Debugf("%s ENI %s with security groups %v", logPrefix, eniID, sgIDs)
 
 		attributeInput := &ec2.ModifyNetworkInterfaceAttributeInput{
-			Groups:             primarySGs,
+			Groups:             sgIDs,
 			NetworkInterfaceId: aws.String(eniID),
 		}
 		start := time.Now()
@@ -702,9 +615,71 @@ func (cache *EC2InstanceMetadataCache) applyFallbackSecurityGroups(store *datast
 			checkAPIErrorAndBroadcastEvent(err, "ec2:ModifyNetworkInterfaceAttribute")
 			awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
 			prometheusmetrics.Ec2ApiErr.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
-			log.Warnf("Failed to apply fallback security groups to ENI %s: %v", eniID, err)
+			log.Warnf("%s: unable to update ENI %s security groups: %v", logPrefix, eniID, err)
 		}
 	}
+}
+
+// Helper function to detect and log security group changes
+func (cache *EC2InstanceMetadataCache) detectSecurityGroupChanges(newSGs []string, currentSGs *StringSet, sgType string) (int, int) {
+	newSGSet := StringSet{}
+	newSGSet.Set(newSGs)
+	addedSGs := newSGSet.Difference(currentSGs)
+	deletedSGs := currentSGs.Difference(&newSGSet)
+
+	addedCount := 0
+	for _, sg := range addedSGs.SortedList() {
+		log.Infof("Found %s SG %s, added to ipamd cache", sgType, sg)
+		addedCount++
+	}
+
+	deletedCount := 0
+	for _, sg := range deletedSGs.SortedList() {
+		log.Infof("Removed %s SG %s from ipamd cache", sgType, sg)
+		deletedCount++
+	}
+
+	return addedCount, deletedCount
+}
+
+// RefreshCustomSGIDs discovers and refreshes security groups tagged for use with the CNI
+func (cache *EC2InstanceMetadataCache) RefreshCustomSGIDs(store *datastore.DataStore) error {
+	sgIDs, err := cache.discoverCustomSecurityGroups()
+	if err != nil {
+		awsAPIErrInc("DiscoverCustomSecurityGroups", err)
+		log.Warnf("Failed to discover custom security groups: %v", err)
+		log.Info("Falling back to using primary security groups for ENIs in secondary subnets")
+
+		// Clear custom security groups cache to trigger fallback behavior
+		cache.customSecurityGroups.Set([]string{})
+
+		// Apply primary security groups to ENIs in secondary subnets as fallback
+		return cache.applyFallbackSecurityGroups(store)
+	}
+
+	addedCount, deletedCount := cache.detectSecurityGroupChanges(sgIDs, &cache.customSecurityGroups, "custom")
+	cache.customSecurityGroups.Set(sgIDs)
+
+	// If there are changes and we have custom security groups available, update ENIs in secondary subnets
+	if (addedCount != 0 || deletedCount != 0) && len(sgIDs) > 0 {
+		eniIDs := cache.getFilteredENIs(store, true) // only secondary subnet ENIs
+		cache.applySecurityGroupsToENIs(eniIDs, sgIDs, "Update")
+	}
+	return nil
+}
+
+// applyFallbackSecurityGroups applies primary security groups to ENIs in secondary subnets when custom SGs are unavailable
+func (cache *EC2InstanceMetadataCache) applyFallbackSecurityGroups(store *datastore.DataStore) error {
+	log.Info("Applying primary security groups as fallback for ENIs in secondary subnets")
+
+	primarySGs := cache.securityGroups.SortedList()
+	if len(primarySGs) == 0 {
+		log.Warn("No primary security groups available for fallback")
+		return nil
+	}
+
+	eniIDs := cache.getFilteredENIs(store, true) // only secondary subnet ENIs
+	cache.applySecurityGroupsToENIs(eniIDs, primarySGs, "Applying primary security groups to")
 
 	return nil
 }
@@ -719,77 +694,26 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string, store *datastore
 		return err
 	}
 
-	newSGs := StringSet{}
-	newSGs.Set(sgIDs)
-	addedSGs := newSGs.Difference(&cache.securityGroups)
-	addedSGsCount := 0
-	deletedSGs := cache.securityGroups.Difference(&newSGs)
-	deletedSGsCount := 0
-
-	for _, sg := range addedSGs.SortedList() {
-		log.Infof("Found %s, added to ipamd cache", sg)
-		addedSGsCount++
-	}
-	for _, sg := range deletedSGs.SortedList() {
-		log.Infof("Removed %s from ipamd cache", sg)
-		deletedSGsCount++
-	}
+	addedCount, deletedCount := cache.detectSecurityGroupChanges(sgIDs, &cache.securityGroups, "primary")
 	cache.securityGroups.Set(sgIDs)
 
-	if !cache.useCustomNetworking && (addedSGsCount != 0 || deletedSGsCount != 0) {
-		eniInfos := store.GetENIInfos()
+	if !cache.useCustomNetworking && (addedCount != 0 || deletedCount != 0) {
+		// Get all ENIs, but filter out secondary subnet ENIs if custom SGs are configured
+		allENIs := cache.getFilteredENIs(store, false) // all ENIs
 
-		var eniIDs []string
-
-		for eniID := range eniInfos.ENIs {
-			eniIDs = append(eniIDs, eniID)
-		}
-
-		newENIs := StringSet{}
-		newENIs.Set(eniIDs)
-
-		tempfilteredENIs := newENIs.Difference(&cache.multiCardENIs)
-		filteredENIs := tempfilteredENIs.Difference(&cache.unmanagedENIs)
-
-		// This will update SG for managed ENIs created by EKS.
-		for _, eniID := range filteredENIs.SortedList() {
+		var targetENIs []string
+		for _, eniID := range allENIs {
 			// Skip ENIs in secondary subnets if we have custom security groups configured
 			if len(cache.customSecurityGroups.SortedList()) > 0 && cache.primaryENI != eniID {
-				// Only check subnet if we actually have custom SGs configured
-				subnetID, err := cache.getENISubnetID(eniID)
-				if err == nil && subnetID != cache.subnetID {
-					// This ENI is in a secondary subnet - we should use custom SGs instead
-					// Skip it here as it will be handled by RefreshCustomSGIDs
-					log.Debugf("Skipping SG update for ENI %s in secondary subnet %s - will use custom security groups", eniID, subnetID)
+				if cache.isENIInSecondarySubnet(eniID) {
+					log.Debugf("Skipping SG update for ENI %s in secondary subnet - will use custom security groups", eniID)
 					continue
 				}
 			}
-			log.Debugf("Update ENI %s with primary security groups", eniID)
-
-			attributeInput := &ec2.ModifyNetworkInterfaceAttributeInput{
-				Groups:             sgIDs,
-				NetworkInterfaceId: aws.String(eniID),
-			}
-			start := time.Now()
-			_, err = cache.ec2SVC.ModifyNetworkInterfaceAttribute(context.Background(), attributeInput)
-			prometheusmetrics.Ec2ApiReq.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
-			prometheusmetrics.AwsAPILatency.WithLabelValues("ModifyNetworkInterfaceAttribute", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
-
-			if err != nil {
-				if errors.As(err, &awsAPIError) {
-					if awsAPIError.ErrorCode() == "InvalidNetworkInterfaceID.NotFound" {
-						awsAPIErrInc("IMDSMetaDataOutOfSync", err)
-					}
-				}
-				checkAPIErrorAndBroadcastEvent(err, "ec2:ModifyNetworkInterfaceAttribute")
-				awsAPIErrInc("ModifyNetworkInterfaceAttribute", err)
-				prometheusmetrics.Ec2ApiErr.WithLabelValues("ModifyNetworkInterfaceAttribute").Inc()
-				// No need to return error here since retry will happen in 30 seconds and also
-				// If update failed due to stale ENI then returning error will prevent updating SG
-				// for following ENIs since the list is sorted
-				log.Debugf("refreshSGIDs: unable to update the ENI %s SG - %v", eniID, err)
-			}
+			targetENIs = append(targetENIs, eniID)
 		}
+
+		cache.applySecurityGroupsToENIs(targetENIs, sgIDs, "Update")
 	}
 	return nil
 }
