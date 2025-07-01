@@ -167,10 +167,10 @@ spec:
           resources:
             requests:
               cpu: "100m"
-              memory: "50Mi"
+              memory: "200Mi"
             limits:
               cpu: "100m"
-              memory: "50Mi"
+              memory: "200Mi"
           securityContext:
             privileged: true
           terminationMessagePolicy: FallbackToLogsOnError
@@ -213,6 +213,7 @@ spec:
           image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/multus-cni:v4.1.4-eksbuild.3_thick
           command:
             - "cp"
+            - "-f"
             - "/usr/src/multus-cni/bin/multus-shim"
             - "/host/opt/cni/bin/multus-shim"
           resources:
