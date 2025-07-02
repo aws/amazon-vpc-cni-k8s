@@ -218,34 +218,28 @@ type APIs interface {
 // EC2InstanceMetadataCache caches instance metadata
 type EC2InstanceMetadataCache struct {
 	// metadata info
-	securityGroups   StringSet
-	subnetID         string
-	localIPv4        net.IP
-	localIPv6        net.IP
-	v4Enabled        bool
-	v6Enabled        bool
-	instanceID       string
-	instanceType     string
-	primaryENI       string
-	primaryENImac    string
-	availabilityZone string
-	region           string
-	vpcID            string
-
-	unmanagedENIs          StringSet
-	useCustomNetworking    bool
-	multiCardENIs          StringSet
-	unmanagedNICs          []bool
-	useSubnetDiscovery     bool
-	enablePrefixDelegation bool
-
-	clusterName       string
-	additionalENITags map[string]string
-
+	securityGroups           StringSet
+	subnetID                 string
+	localIPv4                net.IP
+	v4Enabled                bool
+	v6Enabled                bool
+	instanceID               string
+	instanceType             string
+	primaryENI               string
+	primaryENImac            string
+	availabilityZone         string
+	region                   string
+	vpcID                    string
+	unmanagedENIs            StringSet
+	useCustomNetworking      bool
+	unmanagedNICs            []bool
 	efaOnlyENIsByNetworkCard []string
-
-	imds   TypedIMDS
-	ec2SVC ec2wrapper.EC2
+	useSubnetDiscovery       bool
+	enablePrefixDelegation   bool
+	clusterName              string
+	additionalENITags        map[string]string
+	imds                     TypedIMDS
+	ec2SVC                   ec2wrapper.EC2
 }
 
 // ENIMetadata contains information about an ENI

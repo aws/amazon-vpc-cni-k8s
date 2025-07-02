@@ -458,34 +458,21 @@ func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 func (c *IPAMContext) nodeInit() error {
 	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
 	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
-	var err error
-	var vpcCIDRs []string
-	var primaryIP net.IP
 	ctx := context.TODO()
-
 	log.Debugf("Start node init")
 
-	if err = c.initENIAndIPLimits(); err != nil {
+	if err := c.initENIAndIPLimits(); err != nil {
 		return err
 	}
 
-	if c.enableIPv4 {
-		primaryIP = c.awsClient.GetLocalIPv4()
-		vpcCIDRs, err = c.awsClient.GetVPCIPv4CIDRs()
-		if err != nil {
-			return err
-		}
-	} else {
-		primaryIP = c.awsClient.GetLocalIPv6()
-		vpcCIDRs, err = c.awsClient.GetVPCIPv6CIDRs()
-		if err != nil {
-			return err
-		}
+	vpcCIDRs, primaryIP, err := c.initNetworkConfig()
+	if err != nil {
+		return err
 	}
 
 	primaryENIMac := c.awsClient.GetPrimaryENImac()
 
-	// For multi-card instance, non-VPC traffic is still routed out of Primary ENI
+	// For multi-card IPv4, non-VPC traffic is still routed out of Primary ENI
 	err = c.networkClient.SetupHostNetwork(vpcCIDRs, primaryENIMac, &primaryIP, c.enablePodENI, c.enableIPv6)
 	if err != nil {
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
@@ -503,18 +490,16 @@ func (c *IPAMContext) nodeInit() error {
 	if err != nil {
 		return errors.Wrap(err, "ipamd init: failed to retrieve attached ENIs info")
 	}
-
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
 
 	c.setUnmanagedENIs(metadataResult.TagMap)
-
+	c.awsClient.SetEFAOnlyENIs(metadataResult.EFAOnlyENIByNetworkCard)
 	skipNetworkCards := c.markUnmanagedNetworkCards(metadataResult.EFAOnlyENIByNetworkCard, metadataResult.ENIsByNetworkCard)
+	enis := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 
 	if c.dataStoreAccess == nil {
 		c.dataStoreAccess = datastore.InitializeDataStores(skipNetworkCards, dsBackingStorePath(), c.enablePrefixDelegation, log)
 	}
-
-	enis := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
 
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
@@ -930,6 +915,18 @@ func (c *IPAMContext) tryUnassignCidrsFromAll(networkCard int) {
 			}
 		}
 	}
+}
+
+func (c *IPAMContext) initNetworkConfig() ([]string, net.IP, error) {
+	if c.enableIPv4 {
+		primaryIP := c.awsClient.GetLocalIPv4()
+		vpcCIDRs, err := c.awsClient.GetVPCIPv4CIDRs()
+		return vpcCIDRs, primaryIP, err
+	}
+
+	primaryIP := c.awsClient.GetLocalIPv6()
+	vpcCIDRs, err := c.awsClient.GetVPCIPv6CIDRs()
+	return vpcCIDRs, primaryIP, err
 }
 
 func (c *IPAMContext) isENIAttachmentAllowed() bool {

@@ -62,6 +62,7 @@ var (
 	_, testEniV6SubnetIPNet, _ = net.ParseCIDR(testEniV6Subnet)
 	testEniIPNet               = net.ParseIP(testEniIP)
 	testEniV6GatewayNet        = net.ParseIP(testEniV6Gateway)
+	testEniIP6Net              = net.ParseIP(testEniIP6)
 )
 
 func setup(t *testing.T) (*gomock.Controller,

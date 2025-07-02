@@ -438,30 +438,33 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 		ipProtocol = iptables.ProtocolIPv6
 	}
 
-	ipt, err := n.newIptables(ipProtocol)
-	if err != nil {
-		return errors.Wrap(err, "host network setup: failed to create iptables")
+	if !v6Enabled {
+		ipt, err := n.newIptables(ipProtocol)
+		if err != nil {
+			return errors.Wrap(err, "host network setup: failed to create iptables")
+		}
+
+		iptablesSNATRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt)
+		if err != nil {
+			return err
+		}
+		if err := n.updateIptablesRules(iptablesSNATRules, ipt); err != nil {
+			return err
+		}
+
+		iptablesConnmarkRules, err := n.buildIptablesConnmarkRules(vpcCIDRs, ipt)
+		if err != nil {
+			return err
+		}
+		if err := n.updateIptablesRules(iptablesConnmarkRules, ipt); err != nil {
+			return err
+		}
 	}
 
-	iptablesSNATRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt, v6Enabled)
-	if err != nil {
-		return err
-	}
-	if err := n.updateIptablesRules(iptablesSNATRules, ipt); err != nil {
-		return err
-	}
-
-	iptablesConnmarkRules, err := n.buildIptablesConnmarkRules(vpcCIDRs, ipt)
-	if err != nil {
-		return err
-	}
-	if err := n.updateIptablesRules(iptablesConnmarkRules, ipt); err != nil {
-		return err
-	}
 	return nil
 }
 
-func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *net.IP, primaryIntf string, ipt iptableswrapper.IPTablesIface, v6Enabled bool) ([]iptablesRule, error) {
+func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *net.IP, primaryIntf string, ipt iptableswrapper.IPTablesIface) ([]iptablesRule, error) {
 	type snatCIDR struct {
 		cidr        string
 		isExclusion bool
@@ -514,18 +517,6 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 			chain:       chain,
 			rule: []string{
 				"-d", cidr.cidr, "-m", "comment", "--comment", comment, "-j", "RETURN",
-			}})
-	}
-
-	// Exclude Multicast link local traffic from SNAT rule. This is required for DHCPv6
-	if v6Enabled {
-		iptableRules = append(iptableRules, iptablesRule{
-			name:        chain,
-			shouldExist: !n.useExternalSNAT,
-			table:       "nat",
-			chain:       chain,
-			rule: []string{
-				"-d", "ff00::/8", "-m", "comment", "--comment", "SKIP LINKLOCAL", "-j", "RETURN",
 			}})
 	}
 

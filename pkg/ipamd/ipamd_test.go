@@ -160,6 +160,7 @@ func TestNodeInit(t *testing.T) {
 	m.awsutils.EXPECT().IsUnmanagedENI(eni2.ENIID).Return(false).AnyTimes()
 	m.awsutils.EXPECT().IsUnmanagedNIC(eni1.NetworkCard).Return(false).AnyTimes()
 	m.awsutils.EXPECT().IsUnmanagedNIC(eni2.NetworkCard).Return(false).AnyTimes()
+	m.awsutils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).Return(false).AnyTimes()
 	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	primaryIP := net.ParseIP(ipaddr01)
@@ -181,6 +182,7 @@ func TestNodeInit(t *testing.T) {
 	}
 
 	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
+	m.awsutils.EXPECT().SetEFAOnlyENIs(resp.EFAOnlyENIByNetworkCard).Times(1)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, defaultNetworkCard, secSubnet, maxENIPerNIC, false)
 
 	m.awsutils.EXPECT().GetLocalIPv4().Return(primaryIP).AnyTimes()
@@ -256,6 +258,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	m.awsutils.EXPECT().IsUnmanagedNIC(eni1.NetworkCard).Return(false).AnyTimes()
 	m.awsutils.EXPECT().IsUnmanagedNIC(eni2.NetworkCard).Return(false).AnyTimes()
 	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	m.awsutils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).Return(false).AnyTimes()
 
 	primaryIP := net.ParseIP(ipaddr01)
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs, nil)
@@ -276,6 +279,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 		ENIsByNetworkCard:       [][]string{defaultNetworkCard: {eni1.ENIID, eni2.ENIID}},
 	}
 	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
+	m.awsutils.EXPECT().SetEFAOnlyENIs(resp.EFAOnlyENIByNetworkCard).Times(1)
 	m.awsutils.EXPECT().SetUnmanagedENIs(gomock.Any()).AnyTimes()
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, defaultNetworkCard, secSubnet, maxENIPerNIC, false)
 
@@ -345,6 +349,7 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 	m.awsutils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false).AnyTimes()
 	m.awsutils.EXPECT().IsUnmanagedNIC(eni1.NetworkCard).Return(false).AnyTimes()
 
+	m.awsutils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).Return(false).AnyTimes()
 	m.awsutils.EXPECT().TagENI(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	// primaryIP := net.ParseIP(ipaddr01)
@@ -376,6 +381,7 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 
 	m.awsutils.EXPECT().GetENILimit().Return(1)
 	m.awsutils.EXPECT().DescribeAllENIs().Return(resp, nil)
+	m.awsutils.EXPECT().SetEFAOnlyENIs(resp.EFAOnlyENIByNetworkCard).Times(1)
 	m.awsutils.EXPECT().GetLocalIPv6().Return(primaryIPv6).AnyTimes()
 
 	fakeNode := v1.Node{
@@ -1519,7 +1525,6 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 	eni1, eni2, eni3 := getDummyENIMetadata()
 	allENIs := []awsutils.ENIMetadata{eni1, eni2, eni3}
 	primaryENIonly := []awsutils.ENIMetadata{eni1}
-	efaOnlyENIs := []string{""}
 	filteredENIonly := []awsutils.ENIMetadata{eni1, eni3}
 	Test1TagMap := map[string]awsutils.TagMap{eni1.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
 	Test2TagMap := map[string]awsutils.TagMap{
@@ -1601,7 +1606,12 @@ func TestIPAMContext_filterUnmanagedENIs(t *testing.T) {
 					return false
 				}).AnyTimes()
 
-			if got := c.filterUnmanagedENIs(tt.enis, efaOnlyENIs); !reflect.DeepEqual(got, tt.want) {
+			mockAWSUtils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).DoAndReturn(
+				func(networkCard int, eni string) (efaOnly bool) {
+					return false
+				}).AnyTimes()
+
+			if got := c.filterUnmanagedENIs(tt.enis); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("filterUnmanagedENIs() = %v, want %v", got, tt.want)
 			}
 		})
@@ -1613,7 +1623,6 @@ func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T)
 	allENIs := []awsutils.ENIMetadata{eni1, eni2, eni3}
 	primaryENIonly := []awsutils.ENIMetadata{eni1}
 	filteredENIonly := []awsutils.ENIMetadata{eni1, eni3}
-	efaOnlyENIs := []string{""}
 	Test1TagMap := map[string]awsutils.TagMap{eni1.ENIID: {"hi": "tag", eniNoManageTagKey: "true"}}
 	Test2TagMap := map[string]awsutils.TagMap{
 		eni2.ENIID: {"hi": "tag", eniNoManageTagKey: "true"},
@@ -1697,7 +1706,12 @@ func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T)
 					return false
 				}).AnyTimes()
 
-			if got := c.filterUnmanagedENIs(tt.enis, efaOnlyENIs); !reflect.DeepEqual(got, tt.want) {
+			mockAWSUtils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).DoAndReturn(
+				func(networkCard int, eni string) (efaOnly bool) {
+					return false
+				}).AnyTimes()
+
+			if got := c.filterUnmanagedENIs(tt.enis); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("filterUnmanagedENIs() = %v, want %v", got, tt.want)
 			}
 		})
@@ -2589,4 +2603,73 @@ func (c *IPAMContext) tryAssignPodENI(ctx context.Context, pod *corev1.Pod, fnNa
 		return err
 	}
 	return nil
+}
+
+func TestFilterUnmanagedENIs_WithEFAOnlyENIs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
+
+	eni1, eni2, eni3 := getDummyENIMetadata()
+	allENIs := []awsutils.ENIMetadata{eni1, eni2, eni3}
+
+	tests := []struct {
+		name                   string
+		enis                   []awsutils.ENIMetadata
+		efaOnlyENIExpectations func()
+		want                   []awsutils.ENIMetadata
+	}{
+		{
+			name: "Filter out EFA-only ENI",
+			enis: allENIs,
+			efaOnlyENIExpectations: func() {
+				mockAWSUtils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false)
+				mockAWSUtils.EXPECT().IsUnmanagedNIC(eni1.NetworkCard).Return(false)
+				mockAWSUtils.EXPECT().IsEfaOnlyENI(eni1.NetworkCard, eni1.ENIID).Return(false)
+
+				mockAWSUtils.EXPECT().IsUnmanagedENI(eni2.ENIID).Return(false)
+				mockAWSUtils.EXPECT().IsUnmanagedNIC(eni2.NetworkCard).Return(false)
+				mockAWSUtils.EXPECT().IsEfaOnlyENI(eni2.NetworkCard, eni2.ENIID).Return(true)
+
+				mockAWSUtils.EXPECT().IsUnmanagedENI(eni3.ENIID).Return(false)
+				mockAWSUtils.EXPECT().IsUnmanagedNIC(eni3.NetworkCard).Return(false)
+				mockAWSUtils.EXPECT().IsEfaOnlyENI(eni3.NetworkCard, eni3.ENIID).Return(false)
+			},
+			want: []awsutils.ENIMetadata{eni1, eni3},
+		},
+		{
+			name: "No EFA-only ENIs to filter",
+			enis: allENIs,
+			efaOnlyENIExpectations: func() {
+				mockAWSUtils.EXPECT().IsUnmanagedENI(eni1.ENIID).Return(false)
+				mockAWSUtils.EXPECT().IsUnmanagedNIC(eni1.NetworkCard).Return(false)
+				mockAWSUtils.EXPECT().IsEfaOnlyENI(eni1.NetworkCard, eni1.ENIID).Return(false)
+
+				mockAWSUtils.EXPECT().IsUnmanagedENI(eni2.ENIID).Return(false)
+				mockAWSUtils.EXPECT().IsUnmanagedNIC(eni2.NetworkCard).Return(false)
+				mockAWSUtils.EXPECT().IsEfaOnlyENI(eni2.NetworkCard, eni2.ENIID).Return(false)
+
+				mockAWSUtils.EXPECT().IsUnmanagedENI(eni3.ENIID).Return(false)
+				mockAWSUtils.EXPECT().IsUnmanagedNIC(eni3.NetworkCard).Return(false)
+				mockAWSUtils.EXPECT().IsEfaOnlyENI(eni3.NetworkCard, eni3.ENIID).Return(false)
+			},
+			want: allENIs,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &IPAMContext{
+				awsClient:                mockAWSUtils,
+				enableManageUntaggedMode: true,
+				unmanagedENI:             make([]int, 1),
+				numNetworkCards:          1,
+			}
+
+			tt.efaOnlyENIExpectations()
+			got := c.filterUnmanagedENIs(tt.enis)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
