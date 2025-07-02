@@ -528,7 +528,7 @@ func TestAllocENI(t *testing.T) {
 		useSubnetDiscovery: true,
 	}
 
-	_, err := cache.AllocENI(false, nil, "", 5)
+	_, err := cache.AllocENI(false, nil, "", 5, false)
 	assert.NoError(t, err)
 }
 
@@ -578,7 +578,7 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 		useSubnetDiscovery: true,
 	}
 
-	_, err := cache.AllocENI(false, nil, "", 5)
+	_, err := cache.AllocENI(false, nil, "", 5, false)
 	assert.Error(t, err)
 }
 
@@ -631,7 +631,7 @@ func TestAllocENIMaxReached(t *testing.T) {
 		useSubnetDiscovery: true,
 	}
 
-	_, err := cache.AllocENI(false, nil, "", 5)
+	_, err := cache.AllocENI(false, nil, "", 5, false)
 	assert.Error(t, err)
 }
 
@@ -678,7 +678,7 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", useSubnetDiscovery: true}
-	_, err := cache.AllocENI(false, nil, subnetID, 5)
+	_, err := cache.AllocENI(false, nil, subnetID, 5, false)
 	assert.NoError(t, err)
 
 	// when required IP numbers(50) is higher than ENI's limit(49)
@@ -688,7 +688,7 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	cache = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", useSubnetDiscovery: true}
-	_, err = cache.AllocENI(false, nil, subnetID, 49)
+	_, err = cache.AllocENI(false, nil, subnetID, 49, false)
 	assert.NoError(t, err)
 }
 
@@ -722,7 +722,7 @@ func TestAllocENIWithIPAddressesAlreadyFull(t *testing.T) {
 		instanceType:       "t3.xlarge",
 		useSubnetDiscovery: true,
 	}
-	_, err := cache.AllocENI(true, nil, "", 14)
+	_, err := cache.AllocENI(true, nil, "", 14, false)
 	assert.Error(t, err)
 }
 
@@ -776,7 +776,7 @@ func TestAllocENIWithPrefixAddresses(t *testing.T) {
 		enablePrefixDelegation: true,
 		useSubnetDiscovery:     true,
 	}
-	_, err := cache.AllocENI(false, nil, subnetID, 1)
+	_, err := cache.AllocENI(false, nil, subnetID, 1, false)
 	assert.NoError(t, err)
 }
 
@@ -811,8 +811,76 @@ func TestAllocENIWithPrefixesAlreadyFull(t *testing.T) {
 		enablePrefixDelegation: true,
 		useSubnetDiscovery:     true,
 	}
-	_, err := cache.AllocENI(true, nil, "", 1)
+	_, err := cache.AllocENI(true, nil, "", 1, false)
 	assert.Error(t, err)
+}
+
+func TestAllocENIWithEnaExpress(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	ipAddressCount := int32(100)
+	subnetResult := &ec2.DescribeSubnetsOutput{
+		Subnets: []ec2types.Subnet{{
+			AvailableIpAddressCount: &ipAddressCount,
+			SubnetId:                aws.String(subnetID),
+			Tags: []ec2types.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+			},
+		}},
+	}
+	mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
+
+	cureniID := eniID
+	eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2types.NetworkInterface{NetworkInterfaceId: &cureniID}}
+	mockEC2.EXPECT().CreateNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(&eni, nil)
+
+	// 2 ENIs, uses device number 0 3, expect to find free at 1
+	ec2ENIs := make([]ec2types.InstanceNetworkInterface, 0)
+	deviceNum1 := int32(0)
+	ec2ENI := ec2types.InstanceNetworkInterface{Attachment: &ec2types.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum1}}
+	ec2ENIs = append(ec2ENIs, ec2ENI)
+
+	deviceNum2 := int32(3)
+	ec2ENI = ec2types.InstanceNetworkInterface{Attachment: &ec2types.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum2}}
+	ec2ENIs = append(ec2ENIs, ec2ENI)
+
+	mockEC2.EXPECT().DescribeInstanceTypes(gomock.Any(), gomock.Any()).Return(nil, &ec2.DescribeInstanceTypesOutput{
+		InstanceTypes: []ec2types.InstanceTypeInfo{
+			{
+				InstanceType: ec2types.InstanceTypeC6in16xlarge,
+				NetworkInfo: &ec2types.NetworkInfo{
+					EnaSrdSupported: aws.Bool(true),
+				},
+			},
+		},
+	}).Times(1)
+
+	result := &ec2.DescribeInstancesOutput{
+		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+	}
+
+	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+	attachmentID := "eni-attach-58ddda9d"
+	attachResult := &ec2.AttachNetworkInterfaceOutput{AttachmentId: &attachmentID}
+	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
+	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:             mockEC2,
+		imds:               TypedIMDS{mockMetadata},
+		instanceType:       "m6in.16xlarge",
+		useSubnetDiscovery: true,
+		enaSrdSupported:    aws.Bool(true),
+	}
+
+	_, err := cache.AllocENI(false, nil, "", 5, true)
+	assert.NoError(t, err)
 }
 
 func TestFreeENI(t *testing.T) {
@@ -2165,6 +2233,69 @@ func Test_loadAdditionalENITags(t *testing.T) {
 				}
 			}
 			got := loadAdditionalENITags()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_IsEnaSrdSupported(t *testing.T) {
+	tests := []struct {
+		name   string
+		output *ec2.DescribeInstanceTypesOutput
+		want   bool
+	}{
+		{
+			name: "ena srd supported",
+			output: &ec2.DescribeInstanceTypesOutput{
+				InstanceTypes: []ec2types.InstanceTypeInfo{
+					{
+						InstanceType: ec2types.InstanceTypeM6in16xlarge,
+						NetworkInfo: &ec2types.NetworkInfo{
+							EnaSrdSupported: aws.Bool(true),
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "ena srd not supported on older gen",
+			output: &ec2.DescribeInstanceTypesOutput{
+				InstanceTypes: []ec2types.InstanceTypeInfo{
+					{
+						InstanceType: ec2types.InstanceTypeC48xlarge,
+						NetworkInfo: &ec2types.NetworkInfo{
+							EnaSrdSupported: aws.Bool(false),
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "ena srd not supported on missing results",
+			output: &ec2.DescribeInstanceTypesOutput{
+				InstanceTypes: []ec2types.InstanceTypeInfo{
+					{
+						InstanceType: ec2types.InstanceTypeC48xlarge,
+					},
+				},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl, mockEC2 := setup(t)
+			defer ctrl.Finish()
+
+			mockEC2.EXPECT().DescribeInstanceTypes(gomock.Any(), gomock.Any()).Return(nil, tt.output)
+
+			cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+
+			got := cache.IsEnaSrdSupported(t.Context())
 			assert.Equal(t, tt.want, got)
 		})
 	}

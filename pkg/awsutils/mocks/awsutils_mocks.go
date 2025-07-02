@@ -54,7 +54,7 @@ func (m *MockAPIs) EXPECT() *MockAPIsMockRecorder {
 }
 
 // AllocENI mocks base method.
-func (m *MockAPIs) AllocENI(arg0 bool, arg1 []*string, arg2 string, arg3 int) (string, error) {
+func (m *MockAPIs) AllocENI(useCustomCfg bool, sg []*string, eniCfgSubnet string, numIPs int, express bool) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AllocENI", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(string)

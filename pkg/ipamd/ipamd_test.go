@@ -2499,7 +2499,7 @@ func TestPodENIErrInc(t *testing.T) {
 
 func (c *IPAMContext) tryAssignPodENI(ctx context.Context, pod *corev1.Pod, fnName string) error {
 	// Mock implementation for the test
-	_, err := c.awsClient.AllocENI(false, nil, "", 0)
+	_, err := c.awsClient.AllocENI(false, nil, "", 0, false)
 	if err != nil {
 		prometheusmetrics.PodENIErr.With(prometheus.Labels{"fn": fnName}).Inc()
 		return err
