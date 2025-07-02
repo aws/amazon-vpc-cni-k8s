@@ -17,6 +17,7 @@ package metrics
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -358,7 +359,7 @@ func producePrometheusMetrics(t metricsTarget, families map[string]*dto.MetricFa
 	if len(prometheusCNIMetrics) == 0 {
 		errorMsg := "Skipping since prometheus mapping is missing"
 		t.getLogger().Infof(errorMsg)
-		return fmt.Errorf(errorMsg)
+		return errors.New(errorMsg)
 	}
 	for key, family := range families {
 		convertMetrics := convertDef[key]

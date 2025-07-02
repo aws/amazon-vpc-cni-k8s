@@ -15,8 +15,11 @@ package awsutils
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
+
+	"github.com/aws/smithy-go"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -159,10 +162,13 @@ func TestGetLocalIPv4s(t *testing.T) {
 		assert.Equal(t, ips, []net.IP{net.IPv4(10, 0, 114, 236), net.IPv4(10, 0, 120, 181)})
 	}
 
-	_, err = f.GetLocalIPv4s(context.TODO(), "00:00:de:ad:be:ef")
-	if assert.Error(t, err) {
-		assert.True(t, IsNotFound(err))
-	}
+	// This can be remove as we check if "local-ipv4s" field is present in the mac fields. The field not found  is verified in the function itself
+	// The function itself will return nil
+
+	// _, err = f.GetLocalIPv4s(context.TODO(), "00:00:de:ad:be:ef")
+	// if assert.Error(t, err) {
+	// 	assert.True(t, IsNotFound(err))
+	// }
 }
 
 func TestGetIPv6s(t *testing.T) {
@@ -217,10 +223,11 @@ func TestGetVPCIPv4CIDRBlocks(t *testing.T) {
 		assert.Equal(t, ips, []net.IPNet{{IP: net.IPv4(10, 0, 0, 0), Mask: net.CIDRMask(16, 32)}})
 	}
 
-	_, err = f.GetLocalIPv4s(context.TODO(), "00:00:de:ad:be:ef")
-	if assert.Error(t, err) {
-		assert.True(t, IsNotFound(err))
-	}
+	// This check can be removed as we check if the field is present in mac supported fields before returning as error not found.
+	// _, err = f.GetLocalIPv4s(context.TODO(), "00:00:de:ad:be:ef")
+	// if assert.Error(t, err) {
+	// 	assert.True(t, IsNotFound(err))
+	// }
 }
 
 func TestGetSubnetIPv6CIDRBlocks(t *testing.T) {
@@ -278,4 +285,38 @@ func TestGetIPv4Prefixes(t *testing.T) {
 			assert.ElementsMatch(t, ips, []net.IPNet{})
 		}
 	}
+}
+
+func TestGetNetworkCard(t *testing.T) {
+	// Test case 1: Network card exists
+	f := TypedIMDS{FakeIMDS(map[string]interface{}{
+		"network/interfaces/macs/02:c5:f8:3e:6b:27/network-card": "1",
+	})}
+
+	n, err := f.GetNetworkCard(context.TODO(), "02:c5:f8:3e:6b:27")
+	if assert.NoError(t, err) {
+		assert.Equal(t, 1, n)
+	}
+
+	// Test case 2: Network card not found (should default to 0)
+	notFound := &smithy.OperationError{
+		Err: errors.New("StatusCode: 404"),
+	}
+
+	f2 := TypedIMDS{FakeIMDS(map[string]interface{}{
+		"network/interfaces/macs/02:c5:f8:3e:6b:27/network-card": notFound,
+	})}
+
+	n, err = f2.GetNetworkCard(context.TODO(), "02:c5:f8:3e:6b:27")
+	if assert.NoError(t, err) {
+		assert.Equal(t, 0, n)
+	}
+
+	// Test case 3: Other error
+	f3 := TypedIMDS{FakeIMDS(map[string]interface{}{
+		"network/interfaces/macs/02:c5:f8:3e:6b:27/network-card": errors.New("some other error"),
+	})}
+
+	_, err = f3.GetNetworkCard(context.TODO(), "02:c5:f8:3e:6b:27")
+	assert.Error(t, err)
 }

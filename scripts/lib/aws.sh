@@ -9,9 +9,10 @@ ensure_ecr_repo() {
     echo "Ensuring that $2 exists for account $1"
     local __registry_account_id="$1"
     local __repo_name="$2"
-    if ! `aws ecr describe-repositories --registry-id "$__registry_account_id" --repository-names "$__repo_name" >/dev/null 2>&1`; then
+    local __region="$3"
+    if ! `aws ecr describe-repositories --registry-id "$__registry_account_id" --repository-names "$__repo_name" --region "$__region" >/dev/null 2>&1`; then
         echo "creating ECR repo with name $__repo_name in registry account $__registry_account_id"
-        aws ecr create-repository --repository-name "$__repo_name"
+        aws ecr create-repository --repository-name "$__repo_name" --region "$__region"
     fi
 }
 

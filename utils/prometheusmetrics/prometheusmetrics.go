@@ -172,6 +172,20 @@ var (
 		},
 		[]string{"eni"},
 	)
+	IpamdStartupDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name: "awscni_ipamd_startup_duration_seconds",
+			Help: "The duration of IPAMD startup from process start to ready to serve CNI requests",
+		},
+		[]string{"success", "with_api_server", "failure_reason"},
+	)
+	IpamdNodeInitDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name: "awscni_ipamd_node_initialization_duration_seconds",
+			Help: "The duration of node initialization during IPAMD startup",
+		},
+		[]string{"success"},
+	)
 )
 
 // ServeMetrics sets up ipamd metrics and introspection endpoints
@@ -225,6 +239,8 @@ func PrometheusRegister() {
 	prometheus.MustRegister(IpsPerCidr)
 	prometheus.MustRegister(NoAvailableIPAddrs)
 	prometheus.MustRegister(EniIPsInUse)
+	prometheus.MustRegister(IpamdStartupDuration)
+	prometheus.MustRegister(IpamdNodeInitDuration)
 }
 
 // This can be enhanced to get it programatically.

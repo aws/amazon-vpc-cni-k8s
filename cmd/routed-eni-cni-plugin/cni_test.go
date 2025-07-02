@@ -21,6 +21,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	current "github.com/containernetworking/cni/pkg/types/100"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
+	"github.com/aws/amazon-vpc-cni-k8s/cmd/routed-eni-cni-plugin/driver"
 	mock_driver "github.com/aws/amazon-vpc-cni-k8s/cmd/routed-eni-cni-plugin/driver/mocks"
 	mock_grpcwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/grpcwrapper/mocks"
 	mock_rpcwrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/rpcwrapper/mocks"
@@ -48,12 +50,21 @@ const (
 	pluginLogFile  = "/var/log/aws-routed-eni/plugin.log"
 	cniType        = "aws-cni"
 	ipAddr         = "10.0.1.15"
+	gw             = "10.0.0.1"
+	ipAddr2        = "10.0.1.30"
 	devNum         = 4
+	MAX_ENI        = 4
+	NetworkCards   = 2
+	podName        = "web-2"
+	podNamespace   = "kube-system"
+	macAddr        = "02:42:ac:11:00:02"
+	podHash        = "3a52ce78095"
+	cniVersionStr  = "0.4.0" // This is what containerd passes to CNI plugin. This depends on what version is defined in the config file
 )
 
 var netConf = &NetConf{
 	NetConf: types.NetConf{
-		CNIVersion: cniVersion,
+		CNIVersion: cniVersionStr,
 		Name:       cniName,
 		Type:       cniType,
 	},
@@ -103,15 +114,16 @@ func TestCmdAdd(t *testing.T) {
 	enforceNpReply := &rpc.EnforceNpReply{Success: true}
 	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, nil).Times(1)
 
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum, NetworkPolicyMode: "none"}
+	addrs := []*rpc.IPAddress{{
+		IPv4Addr:     ipAddr,
+		DeviceNumber: devNum,
+		RouteTableId: devNum + 1,
+	}}
+
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
-	v4Addr := &net.IPNet{
-		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		v4Addr, nil, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 
@@ -144,18 +156,19 @@ func TestCmdAddWithNPenabled(t *testing.T) {
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum, NetworkPolicyMode: "strict"}
+	addrs := []*rpc.IPAddress{{
+		IPv4Addr:     ipAddr,
+		DeviceNumber: devNum,
+		RouteTableId: devNum + 1,
+	}}
+
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "strict"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
 	enforceNpReply := &rpc.EnforceNpReply{Success: true}
 	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, nil)
 
-	v4Addr := &net.IPNet{
-		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		v4Addr, nil, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -188,18 +201,19 @@ func TestCmdAddWithNPenabledWithErr(t *testing.T) {
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum, NetworkPolicyMode: "strict"}
+	addrs := []*rpc.IPAddress{{
+		IPv4Addr:     ipAddr,
+		DeviceNumber: devNum,
+		RouteTableId: devNum + 1,
+	}}
+
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "strict"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
 	enforceNpReply := &rpc.EnforceNpReply{Success: false}
 	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, errors.New("Error on EnforceNpReply"))
 
-	v4Addr := &net.IPNet{
-		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		v4Addr, nil, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
 
 	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Error(t, err)
@@ -224,7 +238,13 @@ func TestCmdAddNetworkErr(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	addNetworkReply := &rpc.AddNetworkReply{Success: false, IPv4Addr: ipAddr, DeviceNumber: devNum, NetworkPolicyMode: "none"}
+	addrs := []*rpc.IPAddress{{
+		IPv4Addr:     ipAddr,
+		DeviceNumber: devNum,
+		RouteTableId: devNum + 1,
+	}}
+
+	addNetworkReply := &rpc.AddNetworkReply{Success: false, IPAddress: addrs, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, errors.New("Error on AddNetworkReply"))
 
 	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
@@ -251,24 +271,110 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum, NetworkPolicyMode: "none"}
+	addrs := []*rpc.IPAddress{{
+		IPv4Addr:     ipAddr,
+		DeviceNumber: devNum,
+		RouteTableId: devNum + 1,
+	}}
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
-	addr := &net.IPNet{
-		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
-
-	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns,
-		addr, nil, int(addNetworkReply.DeviceNumber), gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
+	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
 
 	// when SetupPodNetwork fails, expect to return IP back to datastore
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAddress: addrs}
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
 	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 
 	assert.Error(t, err)
+}
+
+func TestCmdAddForMultiNICAttachment(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+	netConf.RuntimeConfig = RuntimeConfig{
+		PodAnnotations: map[string]string{
+			multiNICPodAnnotation: multiNICAttachment,
+		},
+	}
+
+	stdinData, _ := json.Marshal(netConf)
+
+	cmdArgs := &skel.CmdArgs{
+		ContainerID: containerID,
+		Netns:       netNS,
+		IfName:      ifName,
+		StdinData:   stdinData,
+	}
+
+	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
+
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+
+	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
+	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
+	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
+
+	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
+	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
+
+	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
+	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP).Times(1)
+
+	enforceNpReply := &rpc.EnforceNpReply{Success: true}
+	request := &pb.EnforceNpRequest{
+		K8S_POD_NAME:        "",
+		K8S_POD_NAMESPACE:   "",
+		NETWORK_POLICY_MODE: "standard",
+		InterfaceCount:      2,
+	}
+
+	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), request).Return(enforceNpReply, nil).Times(1)
+
+	addrs := []*rpc.IPAddress{
+		{
+			IPv4Addr:     ipAddr,
+			DeviceNumber: devNum,
+			RouteTableId: devNum + 1,
+		},
+		{
+			IPv4Addr:     ipAddr2,
+			DeviceNumber: devNum,
+			RouteTableId: (MAX_ENI * (NetworkCards - 1)) + devNum + 1,
+		},
+	}
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "standard"}
+	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
+
+	vethMetadata := []driver.VirtualInterfaceMetadata{
+		{
+			IPAddress: &net.IPNet{
+				IP:   net.ParseIP(ipAddr),
+				Mask: net.CIDRMask(32, 32),
+			},
+			DeviceNumber:      devNum,
+			RouteTable:        devNum + 1,
+			HostVethName:      "3a52ce78095",
+			ContainerVethName: ifName,
+		},
+		{
+			IPAddress: &net.IPNet{
+				IP:   net.ParseIP(ipAddr2),
+				Mask: net.CIDRMask(32, 32),
+			},
+			DeviceNumber:      devNum,
+			RouteTable:        (MAX_ENI * (NetworkCards - 1)) + devNum + 1,
+			HostVethName:      "ce799470a46",
+			ContainerVethName: "mNicIf1",
+		},
+	}
+	mocksNetwork.EXPECT().SetupPodNetwork(vethMetadata, cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
+
+	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil).Times(1)
+
+	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
 }
 
 func TestCmdDel(t *testing.T) {
@@ -296,18 +402,195 @@ func TestCmdDel(t *testing.T) {
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
+	addrs := []*rpc.IPAddress{{
+		IPv4Addr:     ipAddr,
+		DeviceNumber: devNum,
+		RouteTableId: devNum + 1,
+	}}
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "none"}
+
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
 	deleteNpReply := &rpc.DeleteNpReply{Success: true}
 	mockNP.EXPECT().DeletePodNp(gomock.Any(), gomock.Any()).Return(deleteNpReply, nil)
 
-	addr := &net.IPNet{
-		IP:   net.ParseIP(delNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
+	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(nil)
+
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
+}
+
+func TestCmdDelWithPrevResultForBranchENI(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+	var netConfForBranchENIPods = &NetConf{
+		NetConf: types.NetConf{
+			CNIVersion: cniVersionStr,
+			Name:       cniName,
+			Type:       cniType,
+			RawPrevResult: map[string]interface{}{
+				"cniVersion": cniVersionStr,
+				"ips": []map[string]interface{}{
+					{
+						"interface": 1,
+						"address":   ipAddr + "/32",
+						"gateway":   gw,
+						"version":   "4",
+					},
+				},
+				"interfaces": []map[string]interface{}{
+					{
+						"name": "eni" + podHash,
+					},
+					{
+						"name":    "eth0",
+						"sandbox": netNS,
+						"mac":     macAddr,
+					},
+					{
+						"name": "dummy" + podHash,
+						"mac":  "4",
+					},
+				},
+			},
+		},
+		PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+		PluginLogLevel:     pluginLogLevel,
+		PluginLogFile:      pluginLogFile,
 	}
 
-	mocksNetwork.EXPECT().TeardownPodNetwork(addr, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(nil)
+	stdinData, _ := json.Marshal(netConfForBranchENIPods)
+
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
+		Netns:     netNS,
+		IfName:    ifName,
+		StdinData: stdinData,
+		Args:      "K8S_POD_NAME=web-2;K8S_POD_INFRA_CONTAINER_ID=054c9853b64776d97f4782d2e281e98d8daa22b4ae7ac7339f623e505318424f;K8S_POD_UID=16ac576e-b474-4b11-bdd4-8ba6ef468b5e;IgnoreUnknown=1;K8S_POD_NAMESPACE=kube-system",
+	}
+
+	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
+
+	mocksNetwork.EXPECT().TeardownBranchENIPodNetwork(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
+}
+
+func TestCmdDelWhenIPAMIsDown(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+	var netConfForBranchENIPods = &NetConf{
+		NetConf: types.NetConf{
+			CNIVersion: cniVersionStr,
+			Name:       cniName,
+			Type:       cniType,
+			RawPrevResult: map[string]interface{}{
+				"cniVersion": cniVersionStr,
+				"ips": []map[string]interface{}{
+					{
+						"interface": 1,
+						"address":   ipAddr + "/32",
+						"gateway":   gw,
+						"version":   "4",
+					},
+				},
+				"interfaces": []map[string]interface{}{
+					{
+						"name": "eni" + podHash,
+					},
+					{
+						"name":    "eth0",
+						"sandbox": netNS,
+						"mac":     "2",
+					},
+					{
+						"name":    "dummy" + podHash,
+						"mac":     "0",
+						"sandbox": "1",
+					},
+				},
+			},
+		},
+		PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+		PluginLogLevel:     pluginLogLevel,
+		PluginLogFile:      pluginLogFile,
+	}
+
+	stdinData, _ := json.Marshal(netConfForBranchENIPods)
+
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
+		Netns:     netNS,
+		IfName:    ifName,
+		StdinData: stdinData,
+		Args:      "K8S_POD_NAME=web-2;K8S_POD_INFRA_CONTAINER_ID=054c9853b64776d97f4782d2e281e98d8daa22b4ae7ac7339f623e505318424f;K8S_POD_UID=16ac576e-b474-4b11-bdd4-8ba6ef468b5e;IgnoreUnknown=1;K8S_POD_NAMESPACE=kube-system",
+	}
+
+	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
+
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, errors.New("IPAM is down"))
+
+	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(nil)
+
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
+}
+
+func TestCmdDelWhenIPAMIsDownAndPrevResultDeletionFails(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+	var netConfForBranchENIPods = &NetConf{
+		NetConf: types.NetConf{
+			CNIVersion: cniVersionStr,
+			Name:       cniName,
+			Type:       cniType,
+			RawPrevResult: map[string]interface{}{
+				"cniVersion": cniVersionStr,
+				"ips": []map[string]interface{}{
+					{
+						"interface": 1,
+						"address":   ipAddr + "/32",
+						"gateway":   gw,
+						"version":   "4",
+					},
+				},
+				"interfaces": []map[string]interface{}{
+					{
+						"name": "eni" + podHash,
+					},
+					{
+						"name":    "eth0",
+						"sandbox": netNS,
+						"mac":     "2",
+					},
+					{
+						"name":    "dummy" + podHash,
+						"mac":     "0",
+						"sandbox": "1",
+					},
+				},
+			},
+		},
+		PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+		PluginLogLevel:     pluginLogLevel,
+		PluginLogFile:      pluginLogFile,
+	}
+
+	stdinData, _ := json.Marshal(netConfForBranchENIPods)
+
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
+		Netns:     netNS,
+		IfName:    ifName,
+		StdinData: stdinData,
+		Args:      "K8S_POD_NAME=web-2;K8S_POD_INFRA_CONTAINER_ID=054c9853b64776d97f4782d2e281e98d8daa22b4ae7ac7339f623e505318424f;K8S_POD_UID=16ac576e-b474-4b11-bdd4-8ba6ef468b5e;IgnoreUnknown=1;K8S_POD_NAMESPACE=kube-system",
+	}
+
+	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
+
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, errors.New("IPAM is down"))
+
+	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(errors.New("error on TeardownPodNetwork"))
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Nil(t, err)
@@ -332,7 +615,13 @@ func TestCmdDelErrDelNetwork(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	delNetworkReply := &rpc.DelNetworkReply{Success: false, IPv4Addr: ipAddr, DeviceNumber: devNum}
+	addrs := []*rpc.IPAddress{{
+		IPv4Addr:     ipAddr,
+		DeviceNumber: devNum,
+		RouteTableId: devNum + 1,
+	}}
+
+	delNetworkReply := &rpc.DelNetworkReply{Success: false, IPAddress: addrs}
 
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, errors.New("error on DelNetwork"))
 
@@ -359,17 +648,18 @@ func TestCmdDelErrTeardown(t *testing.T) {
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
-
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, DeviceNumber: devNum}
+	addrs := []*rpc.IPAddress{
+		{
+			IPv4Addr:     ipAddr,
+			DeviceNumber: devNum,
+			RouteTableId: devNum + 1,
+		},
+	}
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAddress: addrs}
 
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
-	addr := &net.IPNet{
-		IP:   net.ParseIP(delNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
-
-	mocksNetwork.EXPECT().TeardownPodNetwork(addr, int(delNetworkReply.DeviceNumber), gomock.Any()).Return(errors.New("error on teardown"))
+	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(errors.New("error on teardown"))
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Error(t, err)
@@ -400,18 +690,17 @@ func TestCmdAddForPodENINetwork(t *testing.T) {
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPv4Addr: ipAddr, PodENISubnetGW: "10.0.0.1", PodVlanId: 1,
+	addrs := []*rpc.IPAddress{{
+		IPv4Addr: ipAddr}}
+
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, PodENISubnetGW: "10.0.0.1", PodVlanId: 1,
 		PodENIMAC: "eniHardwareAddr", ParentIfIndex: 2, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
 	enforceNpReply := &rpc.EnforceNpReply{Success: true}
 	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, nil)
 
-	addr := &net.IPNet{
-		IP:   net.ParseIP(addNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
-	mocksNetwork.EXPECT().SetupBranchENIPodNetwork(gomock.Any(), cmdArgs.IfName, cmdArgs.Netns, addr, nil, 1, "eniHardwareAddr",
+	mocksNetwork.EXPECT().SetupBranchENIPodNetwork(gomock.Any(), cmdArgs.Netns, 1, "eniHardwareAddr",
 		"10.0.0.1", 2, gomock.Any(), sgpp.EnforcingModeStrict, gomock.Any()).Return(nil)
 
 	mocksTypes.EXPECT().PrintResult(gomock.Any(), gomock.Any()).Return(nil)
@@ -446,17 +735,53 @@ func TestCmdDelForPodENINetwork(t *testing.T) {
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPv4Addr: ipAddr, PodVlanId: 1}
+	addrs := []*rpc.IPAddress{{
+		IPv4Addr:     ipAddr,
+		DeviceNumber: devNum,
+		RouteTableId: devNum + 1,
+	}}
+
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAddress: addrs, PodVlanId: 1, NetworkPolicyMode: "none"}
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
 	deleteNpReply := &rpc.DeleteNpReply{Success: true}
 	mockNP.EXPECT().DeletePodNp(gomock.Any(), gomock.Any()).Return(deleteNpReply, nil)
 
-	addr := &net.IPNet{
-		IP:   net.ParseIP(delNetworkReply.IPv4Addr),
-		Mask: net.IPv4Mask(255, 255, 255, 255),
-	}
-	mocksNetwork.EXPECT().TeardownBranchENIPodNetwork(addr, 1, sgpp.EnforcingModeStrict, gomock.Any()).Return(nil)
+	mocksNetwork.EXPECT().TeardownBranchENIPodNetwork(gomock.Any(), 1, sgpp.EnforcingModeStrict, gomock.Any()).Return(nil)
+
+	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
+	assert.Nil(t, err)
+}
+
+func TestCmdDelWithNetworkPolicyModeUnset(t *testing.T) {
+	ctrl, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork := setup(t)
+	defer ctrl.Finish()
+
+	stdinData, _ := json.Marshal(netConf)
+
+	cmdArgs := &skel.CmdArgs{ContainerID: containerID,
+		Netns:     netNS,
+		IfName:    ifName,
+		StdinData: stdinData}
+
+	mocksTypes.EXPECT().LoadArgs(gomock.Any(), gomock.Any()).Return(nil)
+
+	conn, _ := grpc.Dial(ipamdAddress, grpc.WithInsecure())
+
+	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
+	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
+	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
+
+	addrs := []*rpc.IPAddress{{
+		IPv4Addr:     ipAddr,
+		DeviceNumber: devNum,
+		RouteTableId: devNum + 1,
+	}}
+
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: ""}
+	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
+
+	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(nil)
 
 	err := del(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
 	assert.Nil(t, err)
@@ -502,6 +827,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -554,6 +880,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -607,6 +934,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -648,6 +976,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -685,6 +1014,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -726,6 +1056,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -766,6 +1097,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -803,6 +1135,7 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -843,7 +1176,11 @@ func Test_tryDelWithPrevResult(t *testing.T) {
 
 			driverClient := mock_driver.NewMockNetworkAPIs(ctrl)
 			for _, call := range tt.fields.teardownBranchENIPodNetworkCalls {
-				driverClient.EXPECT().TeardownBranchENIPodNetwork(call.containerAddr, call.vlanID, call.podSGEnforcingMode, gomock.Any()).Return(call.err)
+				vethMetadata := driver.VirtualInterfaceMetadata{
+					IPAddress: call.containerAddr,
+				}
+
+				driverClient.EXPECT().TeardownBranchENIPodNetwork(vethMetadata, call.vlanID, call.podSGEnforcingMode, gomock.Any()).Return(call.err)
 			}
 
 			got, err := tryDelWithPrevResult(driverClient, tt.args.conf, tt.args.k8sArgs, tt.args.contVethName, "/proc/1/ns", testLogger)
@@ -861,10 +1198,11 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 	type teardownPodNetworkCall struct {
 		containerAddr *net.IPNet
 		deviceNumber  int
-		err           error
+		routeTableId  int
 	}
 	type fields struct {
 		teardownPodNetworkCalls []teardownPodNetworkCall
+		err                     error
 	}
 	type args struct {
 		conf         *NetConf
@@ -894,6 +1232,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -929,6 +1268,88 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 			handled: true,
 		},
 		{
+			name: "successfully deleted with information from prevResult for multi-nic attachments",
+			fields: fields{
+				teardownPodNetworkCalls: []teardownPodNetworkCall{
+					{
+						containerAddr: &net.IPNet{
+							IP:   net.ParseIP("192.168.1.1"),
+							Mask: net.CIDRMask(32, 32),
+						},
+						deviceNumber: 5,
+						routeTableId: 6,
+					},
+					{
+						containerAddr: &net.IPNet{
+							IP:   net.ParseIP("192.168.3.1"),
+							Mask: net.CIDRMask(32, 32),
+						},
+						deviceNumber: 5,
+						routeTableId: 14,
+					},
+				},
+			},
+			args: args{
+				conf: &NetConf{
+					NetConf: types.NetConf{
+						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
+							Interfaces: []*current.Interface{
+								{
+									Name: "enicc21c2d7785",
+								},
+								{
+									Name:    "eth0",
+									Sandbox: "/proc/42/ns/net",
+									Mac:     "6",
+								},
+								{
+									Name: "enicc21c2d45es",
+								},
+								{
+									Name:    "mNicIf1",
+									Sandbox: "/proc/42/ns/net",
+									Mac:     "14",
+								},
+								{
+									Name:    "dummycc21c2d7785",
+									Mac:     "0",
+									Sandbox: "5",
+								},
+							},
+							IPs: []*current.IPConfig{
+								{
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.1.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(1),
+								},
+								{
+									Address: net.IPNet{
+										IP:   net.ParseIP("192.168.3.1"),
+										Mask: net.CIDRMask(32, 32),
+									},
+									Interface: aws.Int(3),
+								},
+							},
+						},
+					},
+					RuntimeConfig: RuntimeConfig{
+						PodAnnotations: map[string]string{
+							multiNICPodAnnotation: multiNICAttachment,
+						},
+					},
+				},
+				k8sArgs: K8sArgs{
+					K8S_POD_NAMESPACE: "default",
+					K8S_POD_NAME:      "sample-pod",
+				},
+				contVethName: "eth0",
+			},
+			handled: true,
+		},
+		{
 			name: "failed to delete due to teardownPodNetworkCall failed",
 			fields: fields{
 				teardownPodNetworkCalls: []teardownPodNetworkCall{
@@ -938,14 +1359,15 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 							Mask: net.CIDRMask(32, 32),
 						},
 						deviceNumber: 5,
-						err:          errors.New("some error"),
 					},
 				},
+				err: errors.New("some error"),
 			},
 			args: args{
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -987,6 +1409,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1023,6 +1446,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1064,6 +1488,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1104,6 +1529,7 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 				conf: &NetConf{
 					NetConf: types.NetConf{
 						PrevResult: &current.Result{
+							CNIVersion: "1.0.0",
 							Interfaces: []*current.Interface{
 								{
 									Name: "enicc21c2d7785",
@@ -1151,12 +1577,202 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 			defer ctrl.Finish()
 
 			driverClient := mock_driver.NewMockNetworkAPIs(ctrl)
+			vethMetadata := make([]driver.VirtualInterfaceMetadata, 0)
 			for _, call := range tt.fields.teardownPodNetworkCalls {
-				driverClient.EXPECT().TeardownPodNetwork(call.containerAddr, call.deviceNumber, gomock.Any()).Return(call.err)
+				routetableId := 0
+				if len(tt.fields.teardownPodNetworkCalls) == 1 {
+					routetableId = call.deviceNumber + 1
+				} else {
+					routetableId = call.routeTableId
+				}
+				vethMetadata = append(vethMetadata, driver.VirtualInterfaceMetadata{
+					IPAddress:  call.containerAddr,
+					RouteTable: routetableId,
+				})
+			}
+			if len(tt.fields.teardownPodNetworkCalls) > 0 {
+				if tt.fields.err != nil {
+					driverClient.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(tt.fields.err)
+				} else {
+					driverClient.EXPECT().TeardownPodNetwork(vethMetadata, gomock.Any()).Return(tt.fields.err)
+				}
 			}
 
 			handled := teardownPodNetworkWithPrevResult(driverClient, tt.args.conf, tt.args.k8sArgs, tt.args.contVethName, testLogger)
 			assert.Equal(t, tt.handled, handled)
+		})
+	}
+}
+func Test_parseIPAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    *pb.IPAddress
+		expected *net.IPNet
+	}{
+		{
+			name: "IPv4 address",
+			input: &pb.IPAddress{
+				IPv4Addr: "192.168.1.10",
+				IPv6Addr: "",
+			},
+			expected: &net.IPNet{
+				IP:   net.ParseIP("192.168.1.10"),
+				Mask: net.CIDRMask(32, 32),
+			},
+		},
+		{
+			name: "IPv6 address",
+			input: &pb.IPAddress{
+				IPv4Addr: "",
+				IPv6Addr: "2001:db8::1",
+			},
+			expected: &net.IPNet{
+				IP:   net.ParseIP("2001:db8::1"),
+				Mask: net.CIDRMask(128, 128),
+			},
+		},
+		{
+			name: "both IPv4 and IPv6 set, prefer IPv4",
+			input: &pb.IPAddress{
+				IPv4Addr: "10.0.0.1",
+				IPv6Addr: "2001:db8::2",
+			},
+			expected: &net.IPNet{
+				IP:   net.ParseIP("10.0.0.1"),
+				Mask: net.CIDRMask(32, 32),
+			},
+		},
+		{
+			name: "Nothing set",
+			input: &pb.IPAddress{
+				IPv4Addr: "",
+				IPv6Addr: "",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got *net.IPNet
+			if tt.input == nil {
+				got = parseIPAddress(nil)
+			} else {
+				got = parseIPAddress(tt.input)
+			}
+			if tt.expected == nil {
+				assert.Nil(t, got)
+			} else {
+				assert.NotNil(t, got)
+				assert.Equal(t, tt.expected.IP, got.IP)
+				assert.Equal(t, tt.expected.Mask.String(), got.Mask.String())
+			}
+		})
+	}
+}
+func TestLoadNetConf(t *testing.T) {
+	type args struct {
+		input       map[string]interface{}
+		expectError string
+		expectConf  *NetConf
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "valid config with defaults",
+			args: args{
+				input: map[string]interface{}{
+					"cniVersion": "0.4.0",
+					"name":       "test-cni",
+					"type":       "aws-cni",
+				},
+				expectConf: &NetConf{
+					NetConf: types.NetConf{
+						CNIVersion: "0.4.0",
+						Name:       "test-cni",
+						Type:       "aws-cni",
+					},
+					MTU:                "9001",
+					VethPrefix:         "eni",
+					PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+				},
+			},
+		},
+		{
+			name: "custom vethPrefix and MTU",
+			args: args{
+				input: map[string]interface{}{
+					"cniVersion": "0.4.0",
+					"name":       "test-cni",
+					"type":       "aws-cni",
+					"vethPrefix": "abcd",
+					"mtu":        "1500",
+				},
+				expectConf: &NetConf{
+					NetConf: types.NetConf{
+						CNIVersion: "0.4.0",
+						Name:       "test-cni",
+						Type:       "aws-cni",
+					},
+					MTU:                "1500",
+					VethPrefix:         "abcd",
+					PodSGEnforcingMode: sgpp.DefaultEnforcingMode,
+				},
+			},
+		},
+		{
+			name: "vethPrefix too long",
+			args: args{
+				input: map[string]interface{}{
+					"cniVersion": "0.4.0",
+					"name":       "test-cni",
+					"type":       "aws-cni",
+					"vethPrefix": "abcde",
+				},
+				expectError: "conf.VethPrefix can be at most 4 characters long",
+			},
+		},
+		{
+			name: "invalid JSON",
+			args: args{
+				input:       nil,
+				expectError: "add cmd: error loading config from args",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var data []byte
+			var err error
+			if tt.args.input != nil {
+				data, err = json.Marshal(tt.args.input)
+				assert.NoError(t, err)
+			} else {
+				// Invalid JSON
+				data = []byte("{invalid-json}")
+			}
+			conf, log, err := LoadNetConf(data)
+			if tt.args.expectError != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.args.expectError)
+				assert.Nil(t, conf)
+				assert.Nil(t, log)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, conf)
+				assert.NotNil(t, log)
+				// Only check fields we expect
+				if tt.args.expectConf != nil {
+					assert.Equal(t, tt.args.expectConf.MTU, conf.MTU)
+					assert.Equal(t, tt.args.expectConf.VethPrefix, conf.VethPrefix)
+					assert.Equal(t, tt.args.expectConf.PodSGEnforcingMode, conf.PodSGEnforcingMode)
+					assert.Equal(t, tt.args.expectConf.NetConf.CNIVersion, conf.NetConf.CNIVersion)
+					assert.Equal(t, tt.args.expectConf.NetConf.Name, conf.NetConf.Name)
+					assert.Equal(t, tt.args.expectConf.NetConf.Type, conf.NetConf.Type)
+				}
+			}
 		})
 	}
 }

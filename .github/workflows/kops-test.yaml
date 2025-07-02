@@ -23,7 +23,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # refs/tags/v5.0.1
         with:
-          go-version: "1.22"
+          go-version: "1.24"
       - name: Set up tools
         run: |
           # Install ginkgo version from go.mod
@@ -43,8 +43,8 @@ jobs:
           ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
           RUN_CNI_INTEGRATION_TESTS: false
           RUN_KOPS_TEST: true
-          K8S_VERSION: 1.31.0-beta.0
-          KOPS_VERSION: v1.29.2
+          K8S_VERSION: v1.33.0-beta.0
+          KOPS_VERSION: v1.31.0
           KOPS_RUN_TOO_NEW_VERSION: 1
         run: |
           ./scripts/run-integration-tests.sh

@@ -73,7 +73,7 @@ var _ = Describe("SNAT tests", func() {
 	Context("Validate AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS", func() {
 		It("Verify External Domain Connectivity by modifying AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS", func() {
 			By("Getting CIDR for primary node's private subnet")
-			out, err := f.CloudServices.EC2().DescribeSubnet(context.TODO(), privateSubnetId)
+			out, err := f.CloudServices.EC2().DescribeSubnets(context.TODO(), []string{privateSubnetId})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(out.Subnets)).To(BeNumerically(">", 0))
 
