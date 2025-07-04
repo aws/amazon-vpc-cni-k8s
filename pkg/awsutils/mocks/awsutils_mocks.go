@@ -453,6 +453,21 @@ func (mr *MockAPIsMockRecorder) IsPrimaryENI(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsPrimaryENI", reflect.TypeOf((*MockAPIs)(nil).IsPrimaryENI), arg0)
 }
 
+// IsPrimarySubnetExcluded mocks base method.
+func (m *MockAPIs) IsPrimarySubnetExcluded() (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsPrimarySubnetExcluded")
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IsPrimarySubnetExcluded indicates an expected call of IsPrimarySubnetExcluded.
+func (mr *MockAPIsMockRecorder) IsPrimarySubnetExcluded() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsPrimarySubnetExcluded", reflect.TypeOf((*MockAPIs)(nil).IsPrimarySubnetExcluded))
+}
+
 // IsUnmanagedENI mocks base method.
 func (m *MockAPIs) IsUnmanagedENI(arg0 string) bool {
 	m.ctrl.T.Helper()
@@ -465,6 +480,20 @@ func (m *MockAPIs) IsUnmanagedENI(arg0 string) bool {
 func (mr *MockAPIsMockRecorder) IsUnmanagedENI(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsUnmanagedENI", reflect.TypeOf((*MockAPIs)(nil).IsUnmanagedENI), arg0)
+}
+
+// RefreshCustomSGIDs mocks base method.
+func (m *MockAPIs) RefreshCustomSGIDs(arg0 *datastore.DataStore) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RefreshCustomSGIDs", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RefreshCustomSGIDs indicates an expected call of RefreshCustomSGIDs.
+func (mr *MockAPIsMockRecorder) RefreshCustomSGIDs(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshCustomSGIDs", reflect.TypeOf((*MockAPIs)(nil).RefreshCustomSGIDs), arg0)
 }
 
 // RefreshSGIDs mocks base method.
