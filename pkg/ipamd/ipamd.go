@@ -141,6 +141,9 @@ const (
 	// envEnablePodENI is used to attach a Trunk ENI to every node. Required in order to give Branch ENIs to pods.
 	envEnablePodENI = "ENABLE_POD_ENI"
 
+	// envEnableENAExpress is used to enable ENA Express for the ENIs created by IPAMD.
+	envEnableENAExpress = "ENABLE_ENA_EXPRESS"
+
 	// envNodeName will be used to store Node name
 	envNodeName = "MY_NODE_NAME"
 
@@ -230,6 +233,7 @@ type IPAMContext struct {
 	terminating               int32 // Flag to warn that the pod is about to shut down.
 	disableENIProvisioning    bool
 	enablePodENI              bool
+	enableENAExpress          bool
 	myNodeName                string
 	enablePrefixDelegation    bool
 	lastInsufficientCidrError time.Time
@@ -373,6 +377,7 @@ func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 	c.minimumIPTarget = getMinimumIPTarget()
 	c.warmPrefixTarget = getWarmPrefixTarget()
 	c.enablePodENI = EnablePodENI()
+	c.enableENAExpress = EnableENAExpress()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = EnablePodIPAnnotation()
 	c.numNetworkCards = len(c.awsClient.GetNetworkCards())
@@ -889,7 +894,8 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 
 	resourcesToAllocate := c.GetENIResourcesToAllocate()
 	if resourcesToAllocate > 0 {
-		eni, err := c.awsClient.AllocENI(c.useCustomNetworking, securityGroups, eniCfgSubnet, resourcesToAllocate)
+		enableENAExpress := c.enableENAExpress && c.awsClient.IsEnaSrdSupported(ctx)
+		eni, err := c.awsClient.AllocENI(c.useCustomNetworking, securityGroups, eniCfgSubnet, resourcesToAllocate, enableENAExpress)
 		if err != nil {
 			log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
 			ipamdErrInc("increaseIPPoolAllocENI")
@@ -1847,6 +1853,10 @@ func enableImdsOnlyMode() bool {
 
 func EnablePodENI() bool {
 	return utils.GetBoolAsStringEnvVar(envEnablePodENI, false)
+}
+
+func EnableENAExpress() bool {
+	return utils.GetBoolAsStringEnvVar(envEnableENAExpress, false)
 }
 
 func getNetworkPolicyMode() (string, error) {
