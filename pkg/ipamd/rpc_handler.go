@@ -464,9 +464,10 @@ func (s *server) GetNetworkPolicyConfigs(ctx context.Context, e *emptypb.Empty) 
 
 	resp := &rpc.NetworkPolicyAgentConfigReply{
 		NetworkPolicyMode: s.ipamContext.networkPolicyMode,
+		MultiNICEnabled: s.ipamContext.enableMultiNICSupport,
 	}
 
-	log.Infof("Send NetworkPolicyAgentConfigReply: NetworkPolicyMode: %v", resp.NetworkPolicyMode)
+	log.Infof("Send NetworkPolicyAgentConfigReply: NetworkPolicyMode: %s, MultiNICEnabled: %v", resp.NetworkPolicyMode, resp.MultiNICEnabled)
 	return resp, nil
 }
 
