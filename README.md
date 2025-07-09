@@ -68,9 +68,9 @@ For help, please consider the following venues (in order):
 For all Kubernetes releases, *we recommend installing the latest VPC CNI release*. The following table denotes our *oldest* recommended
 VPC CNI version for each actively supported Kubernetes release.
 
-| Kubernetes Release | 1.31     | 1.30     | 1.29     | 1.28     | 1.27     | 1.26     |
-| ------------------ | -------- | -------- | -------- | -------- | -------- | -------- |
-| VPC CNI Version    | v1.16.4+ | v1.16.0+ | v1.14.1+ | v1.13.4+ | v1.12.5+ | v1.12.0+ |
+| Kubernetes Release | 1.33     | 1.32     | 1.31     | 1.30     | 1.29     | 1.28     | 1.27     | 1.26     |
+| ------------------ | -------- | -------- | -------- | -------- | -------- | -------- | -------- | -------- |
+| VPC CNI Version    | v1.17.1+ | v1.17.1+ | v1.16.4+ | v1.16.0+ | v1.14.1+ | v1.13.4+ | v1.12.5+ | v1.12.0+ |
 
 ## Version Upgrade
 

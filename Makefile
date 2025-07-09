@@ -97,6 +97,7 @@ ALLPKGS = $(shell go list $(VENDOR_OVERRIDE_FLAG) ./... | grep -v cmd/packet-ver
 BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper aws-vpc-cni aws-vpc-cni-init egress-cni
 # CORE_PLUGIN_DIR is the directory containing upstream containernetworking plugins
 CORE_PLUGIN_DIR = $(MAKEFILE_PATH)/core-plugins/
+CORE_PLUGIN_TMP = $(MAKEFILE_PATH)/core-plugins-tmp
 
 # DOCKER_ARGS is extra arguments passed during container image build.
 DOCKER_ARGS ?=
@@ -289,8 +290,8 @@ docker-metrics-test:     ## Run metrics helper unit test suite in a container.
 		make metrics-unit-test
 
 # Fetch the CNI plugins
-plugins: FETCH_VERSION=1.5.1
-plugins: FETCH_URL=https://github.com/containernetworking/plugins/releases/download/v$(FETCH_VERSION)/cni-plugins-$(GOOS)-$(GOARCH)-v$(FETCH_VERSION).tgz
+plugins: FETCH_VERSION=1.7.1
+plugins: FETCH_URL=https://github.com/containernetworking/plugins/archive/refs/tags/v$(FETCH_VERSION).tar.gz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
 plugins:   ## Fetch the CNI plugins
 	@echo "Fetching Container networking plugins v$(FETCH_VERSION) from upstream release"
@@ -298,13 +299,17 @@ plugins:   ## Fetch the CNI plugins
 	@echo "Visit upstream project for plugin details:"
 	@echo "$(VISIT_URL)"
 	@echo
-	mkdir -p $(CORE_PLUGIN_DIR)
-	curl -s -L $(FETCH_URL) | tar xzvf - -C $(CORE_PLUGIN_DIR)
+	mkdir -p ${CORE_PLUGIN_DIR} ${CORE_PLUGIN_TMP}
+	curl -s -L $(FETCH_URL) | tar xzf - -C ${CORE_PLUGIN_TMP}
+	cd ${CORE_PLUGIN_TMP}/plugins-${FETCH_VERSION} && ./build_linux.sh
+	cp -a ${CORE_PLUGIN_TMP}/plugins-${FETCH_VERSION}/LICENSE ${CORE_PLUGIN_DIR}
+	cp -a ${CORE_PLUGIN_TMP}/plugins-${FETCH_VERSION}/bin/* ${CORE_PLUGIN_DIR}
+	rm -rf ${CORE_PLUGIN_TMP}
 
 ##@ Debug script
 
-debug-script: FETCH_URL=https://raw.githubusercontent.com/awslabs/amazon-eks-ami/master/log-collector-script/linux/eks-log-collector.sh
-debug-script: VISIT_URL=https://github.com/awslabs/amazon-eks-ami/tree/master/log-collector-script/linux
+debug-script: FETCH_URL=https://raw.githubusercontent.com/awslabs/amazon-eks-ami/main/log-collector-script/linux/eks-log-collector.sh
+debug-script: VISIT_URL=https://github.com/awslabs/amazon-eks-ami/tree/main/log-collector-script/linux
 debug-script:    ## Fetching debug script from awslabs/amazon-eks-ami
 	@echo "Fetching debug script from awslabs/amazon-eks-ami"
 	@echo

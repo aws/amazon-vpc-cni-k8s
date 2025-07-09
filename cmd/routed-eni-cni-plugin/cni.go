@@ -484,9 +484,10 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	if err != nil || !npr.Success {
 		log.Errorf("Failed to delete pod network policy for Pod Name %s and NameSpace %s: GRPC returned - %v Network policy agent returned - %v",
 			string(k8sArgs.K8S_POD_NAME), string(k8sArgs.K8S_POD_NAMESPACE), err, npr)
+	} else {
+		log.Debugf("Network Policy agent for DeletePodNp returned Success : %v", npr.Success)
 	}
 
-	log.Debugf("Network Policy agent for DeletePodNp returned Success : %v", npr.Success)
 	return nil
 }
 
