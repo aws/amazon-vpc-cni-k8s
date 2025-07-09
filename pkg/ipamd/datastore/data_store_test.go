@@ -44,8 +44,10 @@ var logConfig = logger.Configuration{
 
 var Testlog = logger.New(&logConfig)
 
+var defaultNetworkCard = 0
+
 func TestAddENI(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -63,7 +65,7 @@ func TestAddENI(t *testing.T) {
 }
 
 func TestDeleteENI(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -110,7 +112,7 @@ func TestDeleteENI(t *testing.T) {
 }
 
 func TestDeleteENIwithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -160,7 +162,7 @@ func TestDeleteENIwithPDEnabled(t *testing.T) {
 }
 
 func TestAddENIIPv4Address(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -203,7 +205,7 @@ func TestAddENIIPv4Address(t *testing.T) {
 }
 
 func TestAddENIIPv4AddressWithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -246,7 +248,7 @@ func TestAddENIIPv4AddressWithPDEnabled(t *testing.T) {
 }
 
 func TestGetENIIPs(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -282,7 +284,7 @@ func TestGetENIIPs(t *testing.T) {
 }
 
 func TestGetENIIPsWithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
@@ -318,7 +320,7 @@ func TestGetENIIPsWithPDEnabled(t *testing.T) {
 }
 
 func TestDelENIIPv4Address(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
 
@@ -376,7 +378,7 @@ func TestDelENIIPv4Address(t *testing.T) {
 }
 
 func TestDelENIIPv4AddressWithPDEnabled(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
 
@@ -435,7 +437,7 @@ func TestDelENIIPv4AddressWithPDEnabled(t *testing.T) {
 
 func TestTogglePD(t *testing.T) {
 	//DS is in secondary IP mode
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 	err := ds.AddENI("eni-1", 1, true, false, false)
 	assert.NoError(t, err)
 
@@ -514,7 +516,7 @@ func TestTogglePD(t *testing.T) {
 
 func TestPodIPv4Address(t *testing.T) {
 	checkpoint := NewTestCheckpoint(struct{}{})
-	ds := NewDataStore(Testlog, checkpoint, false)
+	ds := NewDataStore(Testlog, checkpoint, false, defaultNetworkCard)
 
 	checkpointDataCmpOpts := cmp.Options{
 		cmpopts.IgnoreFields(CheckpointEntry{}, "AllocationTimestamp"),
@@ -670,14 +672,15 @@ func TestPodIPv4Address(t *testing.T) {
 	_, _, err = ds.AssignPodIPv4Address(key4, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-4"})
 	assert.Error(t, err)
 	// Unassign unknown Pod
-	_, _, _, err = ds.UnassignPodIPAddress(key4)
+	_, _, _, _, err = ds.UnassignPodIPAddress(key4)
 	assert.Error(t, err)
 
-	_, _, deviceNum, err := ds.UnassignPodIPAddress(key2)
+	_, _, deviceNum, interfaces, err := ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, ds.assigned, 2)
 	assert.Equal(t, deviceNum, pod1Ns2Device)
+	assert.Equal(t, interfaces, 1)
 	assert.Equal(t, len(ds.eniPool["eni-2"].AvailableIPv4Cidrs), 1)
 	assert.Equal(t, ds.eniPool["eni-2"].AssignedIPv4Addresses(), 0)
 	expectedCheckpointData = &CheckpointData{
@@ -719,7 +722,7 @@ func TestPodIPv4Address(t *testing.T) {
 
 func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 	checkpoint := NewTestCheckpoint(struct{}{})
-	ds := NewDataStore(Testlog, checkpoint, true)
+	ds := NewDataStore(Testlog, checkpoint, true, defaultNetworkCard)
 
 	checkpointDataCmpOpts := cmp.Options{
 		cmpopts.IgnoreFields(CheckpointEntry{}, "AllocationTimestamp"),
@@ -860,10 +863,11 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 		cmp.Diff(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
 	)
 
-	_, _, deviceNum, err := ds.UnassignPodIPAddress(key2)
+	_, _, deviceNum, interfaces, err := ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 16)
 	assert.Equal(t, ds.assigned, 2)
+	assert.Equal(t, interfaces, 1)
 	assert.Equal(t, deviceNum, pod1Ns2Device)
 	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 2)
@@ -894,7 +898,7 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 func TestGetIPStatsV4(t *testing.T) {
 	os.Setenv(envIPCooldownPeriod, "1")
 	defer os.Unsetenv(envIPCooldownPeriod)
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false)
 
@@ -919,7 +923,7 @@ func TestGetIPStatsV4(t *testing.T) {
 		*ds.GetIPStats("4"),
 	)
 
-	_, _, _, err = ds.UnassignPodIPAddress(key2)
+	_, _, _, _, err = ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -948,7 +952,7 @@ func TestGetIPStatsV4(t *testing.T) {
 func TestGetIPStatsV4WithPD(t *testing.T) {
 	os.Setenv(envIPCooldownPeriod, "1")
 	defer os.Unsetenv(envIPCooldownPeriod)
-	ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false)
 
@@ -972,7 +976,7 @@ func TestGetIPStatsV4WithPD(t *testing.T) {
 		*ds.GetIPStats("4"),
 	)
 
-	_, _, _, err = ds.UnassignPodIPAddress(key2)
+	_, _, _, _, err = ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -1001,7 +1005,7 @@ func TestGetIPStatsV4WithPD(t *testing.T) {
 }
 
 func TestGetIPStatsV6(t *testing.T) {
-	v6ds := NewDataStore(Testlog, NullCheckpoint{}, true)
+	v6ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 	_ = v6ds.AddENI("eni-1", 1, true, false, false)
 	ipv6Addr := net.IPNet{IP: net.IP{0x21, 0xdb, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: net.CIDRMask(80, 128)}
 	_ = v6ds.AddIPv6CidrToStore("eni-1", ipv6Addr, true)
@@ -1021,7 +1025,7 @@ func TestGetIPStatsV6(t *testing.T) {
 }
 
 func TestWarmENIInteractions(t *testing.T) {
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	_ = ds.AddENI("eni-1", 1, true, false, false)
 	_ = ds.AddENI("eni-2", 2, false, false, false)
@@ -1557,7 +1561,7 @@ func TestForceRemovalMetrics(t *testing.T) {
 		Help: "The total number of IPs force removed",
 	})
 
-	ds := NewDataStore(Testlog, NullCheckpoint{}, false)
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	// Add an ENI and IP
 	err := ds.AddENI("eni-1", 1, true, false, false)
@@ -1614,4 +1618,42 @@ func TestForceRemovalMetrics(t *testing.T) {
 
 	eniCount = testutil.ToFloat64(prometheusmetrics.ForceRemovedENIs)
 	assert.Equal(t, float64(1), eniCount)
+}
+func TestInitializeDataStores(t *testing.T) {
+	log := Testlog
+	defaultPath := "/tmp/test-datastore.json"
+
+	t.Run("single network card, not skipped", func(t *testing.T) {
+		skip := []bool{false}
+		dsAccess := InitializeDataStores(skip, defaultPath, false, log)
+		assert.NotNil(t, dsAccess)
+		assert.Equal(t, 1, len(dsAccess.DataStores))
+		assert.Equal(t, 0, dsAccess.DataStores[0].GetNetworkCard())
+	})
+
+	t.Run("multiple network cards, some skipped", func(t *testing.T) {
+		skip := []bool{false, true, false}
+		dsAccess := InitializeDataStores(skip, defaultPath, true, log)
+		assert.NotNil(t, dsAccess)
+		assert.Equal(t, 2, len(dsAccess.DataStores))
+		assert.Equal(t, 0, dsAccess.DataStores[0].GetNetworkCard())
+		assert.Equal(t, 2, dsAccess.DataStores[1].GetNetworkCard())
+	})
+}
+func TestDataStoreAccess_GetDataStore(t *testing.T) {
+	log := Testlog
+	defaultPath := "/tmp/test-datastore.json"
+	skip := []bool{false, false, false}
+	dsAccess := InitializeDataStores(skip, defaultPath, false, log)
+
+	// Should return the correct DataStore for each network card
+	for i := 0; i < 3; i++ {
+		ds := dsAccess.GetDataStore(i)
+		assert.NotNil(t, ds, "Expected DataStore for networkCard %d", i)
+		assert.Equal(t, i, ds.GetNetworkCard())
+	}
+
+	// Should return nil for a network card that does not exist
+	ds := dsAccess.GetDataStore(99)
+	assert.Nil(t, ds)
 }
