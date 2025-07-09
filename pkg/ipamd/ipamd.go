@@ -192,6 +192,19 @@ const (
 
 	// Application name for k8s client
 	appName = "aws-node"
+
+	defaultNetworkPolicyMode = "standard"
+
+	// Network Card index of primary ENI
+	DefaultNetworkCardIndex = 0
+
+	// Enable Multi NIC support in CNI
+	// This configures the ENIs on Network Card > 0 which is be used by pods that require multi-nic attachments
+	envEnableMultiNICSupport = "ENABLE_MULTI_NIC"
+
+	// Scale config for network cards > 0
+	DefaultWarmIPTarget    = 1
+	DefaultMinimumIPTarget = 1
 )
 
 var log = logger.Get()
@@ -203,7 +216,7 @@ var (
 // IPAMContext contains node level control information
 type IPAMContext struct {
 	awsClient                 awsutils.APIs
-	dataStore                 *datastore.DataStore
+	dataStoreAccess           *datastore.DataStoreAccess
 	k8sClient                 client.Client
 	enableIPv4                bool
 	enableIPv6                bool
@@ -214,7 +227,7 @@ type IPAMContext struct {
 	maxIPsPerENI              int
 	maxENI                    int
 	maxPrefixesPerENI         int
-	unmanagedENI              int
+	unmanagedENI              []int
 	numNetworkCards           int
 
 	warmENITarget        int
@@ -237,6 +250,7 @@ type IPAMContext struct {
 	enablePodIPAnnotation     bool
 	maxPods                   int // maximum number of pods that can be scheduled on the node
 	networkPolicyMode         string
+	enableMultiNICSupport     bool
 	withApiServer             bool
 }
 
@@ -254,7 +268,7 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 	// if "no_manage" tag is present and is "not true" - ENI is managed
 	// if "instance_id" tag is present and is set to instanceID - ENI is managed since this was created by IPAMD
 	// if "no_manage" tag is not present or not IPAMD created ENI, check if we are in Manage Untagged Mode, default is true.
-	// if enableManageUntaggedMode is false, then consider all untagged ENIs as unmanaged.
+	// if enableManageUntaggedMode is false (defaults to true), then consider all untagged ENIs as unmanaged.
 	for eniID, tags := range tagMap {
 		if _, found := tags[eniNoManageTagKey]; found {
 			if tags[eniNoManageTagKey] != "true" {
@@ -273,7 +287,43 @@ func (c *IPAMContext) setUnmanagedENIs(tagMap map[string]awsutils.TagMap) {
 			unmanagedENIlist = append(unmanagedENIlist, eniID)
 		}
 	}
+
 	c.awsClient.SetUnmanagedENIs(unmanagedENIlist)
+}
+
+// setUnmanagedNetworkCards will mark the Network Cards which are not managed by CNI
+// When ENABLE_MULTI_NIC is false, all Network Cards > 0 are marked as unmanaged
+// When ENABLE_MULTI_NIC is true, Network Cards which ONLY includes an EFA-only device are marked as unmanaged.
+// If there is a ENA device on a Network Card along with EFA-only device, CNI manages the Network Card but excludes the EFA-only device
+func (c *IPAMContext) markUnmanagedNetworkCards(efaOnlyENINetworkCards []string, enisByNetworkCard [][]string) []bool {
+
+	skipNetworkCards := make([]bool, c.numNetworkCards)
+	if !c.enableMultiNICSupport {
+		skipNetworkCards = lo.Times(c.numNetworkCards, func(i int) bool {
+			return true
+		})
+		skipNetworkCards[DefaultNetworkCardIndex] = false
+	} else {
+		for networkCard, efaOnlyENI := range efaOnlyENINetworkCards {
+
+			if efaOnlyENI == "" {
+				// Network card does not have an EFA-only ENI, so can be managed
+				continue
+			}
+
+			// Skip the network card by default, unless we find a ENA device on this network card which is managed
+			skipNetworkCards[networkCard] = true
+			for _, eni := range enisByNetworkCard[networkCard] {
+				if !c.awsClient.IsUnmanagedENI(eni) && efaOnlyENI != eni {
+					skipNetworkCards[networkCard] = false
+					break
+				}
+			}
+		}
+	}
+
+	c.awsClient.SetUnmanagedNetworkCards(skipNetworkCards)
+	return skipNetworkCards
 }
 
 // ReconcileCooldownCache keep track of recently freed CIDRs to avoid reading stale EC2 metadata
@@ -376,6 +426,8 @@ func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = EnablePodIPAnnotation()
 	c.numNetworkCards = len(c.awsClient.GetNetworkCards())
+	c.unmanagedENI = make([]int, c.numNetworkCards)
+	c.enableMultiNICSupport = enableMultiNICSupport()
 
 	c.networkPolicyMode, err = getNetworkPolicyMode()
 	if err != nil {
@@ -395,9 +447,8 @@ func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 
 	c.awsClient.InitCachedPrefixDelegation(c.enablePrefixDelegation)
 	c.myNodeName = os.Getenv(envNodeName)
-	checkpointer := datastore.NewJSONFile(dsBackingStorePath())
-	c.dataStore = datastore.NewDataStore(log, checkpointer, c.enablePrefixDelegation)
 	c.withApiServer = withApiServer
+
 	if err := c.nodeInit(); err != nil {
 		return nil, err
 	}
@@ -407,45 +458,48 @@ func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 func (c *IPAMContext) nodeInit() error {
 	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
 	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
-	var err error
-	var vpcV4CIDRs []string
 	ctx := context.TODO()
-
 	log.Debugf("Start node init")
-	primaryV4IP := c.awsClient.GetLocalIPv4()
-	if err = c.initENIAndIPLimits(); err != nil {
+
+	if err := c.initENIAndIPLimits(); err != nil {
 		return err
 	}
 
-	if c.enableIPv4 {
-		// Subnets currently will have both v4 and v6 CIDRs. Once EC2 launches v6 only Subnets, that will no longer
-		// be true and so it is safe (and only required) to get the v4 CIDR info only when IPv4 mode is enabled.
-		vpcV4CIDRs, err = c.awsClient.GetVPCIPv4CIDRs()
-		if err != nil {
-			return err
-		}
+	vpcCIDRs, primaryIP, err := c.initNetworkConfig()
+	if err != nil {
+		return err
 	}
 
 	primaryENIMac := c.awsClient.GetPrimaryENImac()
-	err = c.networkClient.SetupHostNetwork(vpcV4CIDRs, primaryENIMac, &primaryV4IP, c.enablePodENI, c.enableIPv4, c.enableIPv6)
+
+	// For multi-card IPv4, non-VPC traffic is still routed out of Primary ENI
+	err = c.networkClient.SetupHostNetwork(vpcCIDRs, primaryENIMac, &primaryIP, c.enablePodENI, c.enableIPv6)
 	if err != nil {
 		return errors.Wrap(err, "ipamd init: failed to set up host network")
 	}
+
 	err = c.networkClient.CleanUpStaleAWSChains(c.enableIPv4, c.enableIPv6)
 	if err != nil {
 		// We should not error if clean up fails since these chains don't affect the rules
 		log.Debugf("Failed to clean up stale AWS chains: %v", err)
 	}
 
+	// Queries IMDS for all attached ENIs and then compares it against EC2.
+	// Groups the ENIs into different types
 	metadataResult, err := c.awsClient.DescribeAllENIs()
 	if err != nil {
 		return errors.Wrap(err, "ipamd init: failed to retrieve attached ENIs info")
 	}
-
 	log.Debugf("DescribeAllENIs success: ENIs: %d, tagged: %d", len(metadataResult.ENIMetadata), len(metadataResult.TagMap))
-	c.awsClient.SetMultiCardENIs(metadataResult.MultiCardENIIDs)
+
 	c.setUnmanagedENIs(metadataResult.TagMap)
+	c.awsClient.SetEFAOnlyENIs(metadataResult.EFAOnlyENIByNetworkCard)
+	skipNetworkCards := c.markUnmanagedNetworkCards(metadataResult.EFAOnlyENIByNetworkCard, metadataResult.ENIsByNetworkCard)
 	enis := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
+
+	if c.dataStoreAccess == nil {
+		c.dataStoreAccess = datastore.InitializeDataStores(skipNetworkCards, dsBackingStorePath(), c.enablePrefixDelegation, log)
+	}
 
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
@@ -483,55 +537,44 @@ func (c *IPAMContext) nodeInit() error {
 		}
 	}
 
-	if err := c.dataStore.ReadBackingStore(c.enableIPv6); err != nil {
+	// Read from all backing datastores corresponding to the NICs
+	if err := c.dataStoreAccess.ReadAllDataStores(c.enableIPv6); err != nil {
 		return err
 	}
 
-	if c.enableIPv6 {
-		// Security Groups for Pods cannot be enabled for IPv4 at this point, as Custom Networking must be enabled first.
-		if c.enablePodENI {
-			// Try to patch CNINode with Security Groups for Pods feature.
-			c.tryEnableSecurityGroupsForPods(ctx)
+	if c.enableIPv4 {
+		if c.enablePrefixDelegation {
+			// During upgrade or if prefix delgation knob is disabled to enabled then we
+			// might have secondary IPs attached to ENIs so doing a cleanup if not used before moving on
+			c.tryUnassignIPsFromENIs()
+		} else {
+			// When prefix delegation knob is enabled to disabled then we might
+			// have unused prefixes attached to the ENIs so need to cleanup
+			c.tryUnassignPrefixesFromENIs()
 		}
-		// We will not support upgrading/converting an existing IPv4 cluster to operate in IPv6 mode. So, we will always
-		// start with a clean slate in IPv6 mode. We also do not have to deal with dynamic update of Prefix Delegation
-		// feature in IPv6 mode as we do not support (yet) a non-PD v6 option. In addition, we do not support custom
-		// networking in IPv6 mode yet, so we will skip the corresponding setup. This will save us from checking
-		// if IPv6 is enabled at multiple places. Once we start supporting these features in IPv6 mode, we can do away
-		// with this check and not change anything else in the below setup.
-		return nil
-	}
-
-	if c.enablePrefixDelegation {
-		// During upgrade or if prefix delgation knob is disabled to enabled then we
-		// might have secondary IPs attached to ENIs so doing a cleanup if not used before moving on
-		c.tryUnassignIPsFromENIs()
-	} else {
-		// When prefix delegation knob is enabled to disabled then we might
-		// have unused prefixes attached to the ENIs so need to cleanup
-		c.tryUnassignPrefixesFromENIs()
 	}
 
 	if err = c.configureIPRulesForPods(); err != nil {
 		return err
 	}
+
 	// Spawning updateCIDRsRulesOnChange go-routine
 	go wait.Forever(func() {
-		vpcV4CIDRs = c.updateCIDRsRulesOnChange(vpcV4CIDRs)
+		vpcCIDRs = c.updateCIDRsRulesOnChange(vpcCIDRs)
 	}, 30*time.Second)
 
 	// RefreshSGIDs populates the ENI cache with ENI -> security group ID mappings, and so it must be called:
 	// 1. after managed/unmanaged ENIs have been determined
 	// 2. before any new ENIs are attached
-	if c.enableIPv4 && !c.disableENIProvisioning {
-		if err := c.awsClient.RefreshSGIDs(primaryENIMac, c.dataStore); err != nil {
+	if !c.disableENIProvisioning {
+		if err := c.awsClient.RefreshSGIDs(primaryENIMac, c.dataStoreAccess); err != nil {
 			return err
 		}
 
 		// Refresh security groups and VPC CIDR blocks in the background
 		// Ignoring errors since we will retry in 30s
 		go wait.Forever(func() {
-			c.awsClient.RefreshSGIDs(primaryENIMac, c.dataStore)
+			c.awsClient.RefreshSGIDs(primaryENIMac, c.dataStoreAccess)
 		}, 30*time.Second)
 	}
 
@@ -588,19 +631,15 @@ func (c *IPAMContext) nodeInit() error {
 		c.tryEnableSecurityGroupsForPods(ctx)
 	}
 
-	// On node init, check if datastore pool needs to be increased. If so, attach CIDRs from existing ENIs and attach new ENIs.
-	datastorePoolTooLow, _ := c.isDatastorePoolTooLow()
-	if !c.disableENIProvisioning && datastorePoolTooLow {
-		if err := c.increaseDatastorePool(ctx); err != nil {
-			// Note that the only error currently returned by increaseDatastorePool is an error attaching CIDRs (other than insufficient IPs)
-			podENIErrInc("nodeInit")
-			return errors.New("error while trying to increase datastore pool")
-		}
-		// If custom networking is enabled and the pool is empty, return an error, as there is a misconfiguration and
-		// the node should not become ready.
-		if c.useCustomNetworking && c.isDatastorePoolEmpty() {
-			podENIErrInc("nodeInit")
-			return errors.New("Failed to attach any ENIs for custom networking")
+	if !c.disableENIProvisioning {
+		if c.enableIPv6 {
+			// We do not return an error here as create ENI failure shouldn not cause the node to go in not ready state.
+			// However that does restrict multi-nic pods to get failed
+			c.createSecondaryIPv6ENIs(ctx)
+		} else {
+			if err = c.handlePreScaling(ctx); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -608,22 +647,51 @@ func (c *IPAMContext) nodeInit() error {
 	return nil
 }
 
+func (c *IPAMContext) handlePreScaling(ctx context.Context) error {
+
+	// On node init, check if datastore pool needs to be increased. If so, attach CIDRs from existing ENIs and attach new ENIs.
+	for networkCard, decisions := range c.isDatastorePoolTooLow() {
+		log.Debugf("is datastore pool low for networkCard %d, decision %t", networkCard, decisions.IsLow)
+		if decisions.IsLow {
+			if err := c.increaseDatastorePool(ctx, networkCard); err != nil {
+				// Note that the only error currently returned by increaseDatastorePool is an error attaching CIDRs (other than insufficient IPs)
+				podENIErrInc("nodeInit")
+				return errors.New("error while trying to increase datastore pool")
+			}
+			// If custom networking is enabled and the pool is empty, return an error, as there is a misconfiguration and
+			// the node should not become ready.
+			if c.useCustomNetworking && c.isDatastorePoolEmpty(networkCard) {
+				podENIErrInc("nodeInit")
+				return errors.New("Failed to attach any ENIs for custom networking")
+			}
+		}
+	}
+	return nil
+}
+
 func (c *IPAMContext) configureIPRulesForPods() error {
-	rules, err := c.networkClient.GetRuleList()
+	rules, err := c.networkClient.GetRuleList(c.enableIPv6)
 	if err != nil {
 		log.Errorf("During ipamd init: failed to retrieve IP rule list %v", err)
 		return nil
 	}
 
-	for _, info := range c.dataStore.AllocatedIPs() {
-		// TODO(gus): This should really be done via CNI CHECK calls, rather than in ipam (requires upstream k8s changes).
+	for _, ds := range c.dataStoreAccess.DataStores {
+		for _, info := range ds.AllocatedIPs() {
+			// TODO(gus): This should really be done via CNI CHECK calls, rather than in ipam (requires upstream k8s changes).
+			var mask int
+			// Update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
+			if c.enableIPv6 {
+				mask = 128
+			} else {
+				mask = 32
+			}
+			srcIPNet := net.IPNet{IP: net.ParseIP(info.IP), Mask: net.CIDRMask(mask, mask)}
 
-		// Update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
-		srcIPNet := net.IPNet{IP: net.ParseIP(info.IP), Mask: net.IPv4Mask(255, 255, 255, 255)}
-
-		err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet)
-		if err != nil {
-			log.Warnf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", info.IP, err)
+			err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet)
+			if err != nil {
+				log.Warnf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", info.IP, err)
+			}
 		}
 	}
 
@@ -640,7 +708,18 @@ func (c *IPAMContext) configureIPRulesForPods() error {
 }
 
 func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
-	newVPCCIDRs, err := c.awsClient.GetVPCIPv4CIDRs()
+	var newVPCCIDRs []string
+	var err error
+	var primaryIP net.IP
+
+	if c.enableIPv6 {
+		newVPCCIDRs, err = c.awsClient.GetVPCIPv6CIDRs()
+		primaryIP = c.awsClient.GetLocalIPv6()
+	} else {
+		newVPCCIDRs, err = c.awsClient.GetVPCIPv4CIDRs()
+		primaryIP = c.awsClient.GetLocalIPv4()
+	}
+
 	if err != nil {
 		log.Warnf("skipping periodic update to VPC CIDRs due to error: %v", err)
 		return oldVPCCIDRs
@@ -649,8 +728,7 @@ func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 	old := sets.NewString(oldVPCCIDRs...)
 	new := sets.NewString(newVPCCIDRs...)
 	if !old.Equal(new) {
-		primaryIP := c.awsClient.GetLocalIPv4()
-		err = c.networkClient.UpdateHostIptablesRules(newVPCCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP, c.enableIPv4,
+		err = c.networkClient.UpdateHostIptablesRules(newVPCCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP,
 			c.enableIPv6)
 		if err != nil {
 			log.Warnf("unable to update host iptables rules for VPC CIDRs due to error: %v", err)
@@ -668,7 +746,7 @@ func (c *IPAMContext) updateIPStats(unmanaged int) {
 func (c *IPAMContext) StartNodeIPPoolManager() {
 	// For IPv6, if Security Groups for Pods is enabled, wait until trunk ENI is attached and add it to the datastore.
 	if c.enableIPv6 {
-		if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
+		if c.enablePodENI && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
 			for !c.checkForTrunkENI() {
 				time.Sleep(ipPoolMonitorInterval)
 			}
@@ -694,48 +772,59 @@ func (c *IPAMContext) StartNodeIPPoolManager() {
 
 func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
 	// When IPv4 Security Groups for Pods is configured, do not write to CNINode until there is room for a trunk ENI
-	if c.enablePodENI && c.enableIPv4 && c.dataStore.GetTrunkENI() == "" {
+	if c.enablePodENI && c.enableIPv4 && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
 		c.tryEnableSecurityGroupsForPods(ctx)
 	}
 
-	datastorePoolTooLow, stats := c.isDatastorePoolTooLow()
-	// Each iteration, log the current datastore IP stats
-	log.Debugf("IP stats - total IPs: %d, assigned IPs: %d, cooldown IPs: %d", stats.TotalIPs, stats.AssignedIPs, stats.CooldownIPs)
+	isScaleDownExecuted := false
+	for networkCard, decisions := range c.isDatastorePoolTooLow() {
+		// Each iteration, log the current datastore IP stats
+		log.Debugf("IP stats for Network Card %d - total IPs: %d, assigned IPs: %d, cooldown IPs: %d", networkCard, decisions.Stats.TotalIPs, decisions.Stats.AssignedIPs, decisions.Stats.CooldownIPs)
+		if decisions.IsLow {
+			c.increaseDatastorePool(ctx, networkCard)
+		} else if c.isDatastorePoolTooHigh(decisions.Stats, networkCard) && !c.shouldSkipDataStorePoolDecrease() {
+			isScaleDownExecuted = true
+			c.decreaseDatastorePool(networkCard)
+		}
+		if c.shouldRemoveExtraENIs(decisions.Stats, networkCard) {
+			c.tryFreeENI(networkCard)
+		}
+	}
 
-	if datastorePoolTooLow {
-		c.increaseDatastorePool(ctx)
-	} else if c.isDatastorePoolTooHigh(stats) {
-		c.decreaseDatastorePool(decreaseIPPoolInterval)
+	// Store the last update time so that we only scale down every
+	if isScaleDownExecuted {
+		now := time.Now()
+		c.lastDecreaseIPPool = now
+		c.lastNodeIPPoolAction = now
 	}
-	if c.shouldRemoveExtraENIs() {
-		c.tryFreeENI()
+}
+
+func (c *IPAMContext) shouldSkipDataStorePoolDecrease() bool {
+
+	timeSinceLastPoolDecrease := time.Since(c.lastDecreaseIPPool)
+
+	if timeSinceLastPoolDecrease <= decreaseIPPoolInterval {
+		log.Debugf("Skipping decrease Datastore pool because time since last %v <= %v", timeSinceLastPoolDecrease, decreaseIPPoolInterval)
+		return true
 	}
+
+	return false
 }
 
 // decreaseDatastorePool runs every `interval` and attempts to return unused ENIs and IPs
-func (c *IPAMContext) decreaseDatastorePool(interval time.Duration) {
-	log.Debug("Starting to decrease pool size")
+func (c *IPAMContext) decreaseDatastorePool(networkCard int) {
 	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("decreaseDatastorePool").Add(float64(1))
 	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("decreaseDatastorePool").Sub(float64(1))
 
-	now := time.Now()
-	timeSinceLast := now.Sub(c.lastDecreaseIPPool)
-	if timeSinceLast <= interval {
-		log.Debugf("Skipping decrease Datastore pool because time since last %v <= %v", timeSinceLast, interval)
-		return
-	}
-
-	log.Debugf("Starting to decrease Datastore pool")
-	c.tryUnassignCidrsFromAll()
-	c.lastDecreaseIPPool = now
-	c.lastNodeIPPoolAction = now
+	log.Debugf("Starting to decrease pool size for network card %d", networkCard)
+	c.tryUnassignCidrsFromAll(networkCard)
 
 	log.Debugf("Successfully decreased IP pool")
-	c.logPoolStats(c.dataStore.GetIPStats(ipV4AddrFamily))
+	c.logPoolStats(c.dataStoreAccess.GetDataStore(networkCard).GetIPStats(ipV4AddrFamily), networkCard)
 }
 
 // tryFreeENI always tries to free one ENI
-func (c *IPAMContext) tryFreeENI() {
+func (c *IPAMContext) tryFreeENI(networkCard int) {
 	if c.isTerminating() {
 		log.Debug("AWS CNI is terminating, not detaching any ENIs")
 		return
@@ -745,35 +834,50 @@ func (c *IPAMContext) tryFreeENI() {
 		log.Debug("AWS CNI is on a non schedulable node, not detaching any ENIs")
 		return
 	}
+	warmIPTarget := c.warmIPTarget
+	minimumIPTarget := c.minimumIPTarget
 
-	eni := c.dataStore.RemoveUnusedENIFromStore(c.warmIPTarget, c.minimumIPTarget, c.warmPrefixTarget)
+	if networkCard > DefaultNetworkCardIndex {
+		warmIPTarget = DefaultWarmIPTarget
+		minimumIPTarget = DefaultMinimumIPTarget
+	}
+
+	eni := c.dataStoreAccess.GetDataStore(networkCard).RemoveUnusedENIFromStore(warmIPTarget, minimumIPTarget, c.warmPrefixTarget)
 	if eni == "" {
 		return
 	}
 
-	log.Debugf("Start freeing ENI %s", eni)
+	log.Debugf("Start freeing ENI %s from network card %d", eni, networkCard)
 	err := c.awsClient.FreeENI(eni)
 	if err != nil {
 		ipamdErrInc("decreaseIPPoolFreeENIFailed")
 		log.Errorf("Failed to free ENI %s, err: %v", eni, err)
-		return
+		// If the ENI attachment not found or cannot be detached we return without deleting the primary IP rules
+		if errors.Is(err, awsutils.ErrENIAttachmentIdNotFound) || errors.Is(err, awsutils.ErrUnableToDetachENI) {
+			return
+		}
 	}
 
+	err = c.networkClient.DeleteRulesBySrc(c.primaryIP[eni], c.enableIPv6)
+	if err != nil {
+		log.Errorf("Failed to delete rules for Primary IP of ENI err: %v", err)
+		return
+	}
 }
 
 // When warm IP/prefix targets are defined, free extra IPs
-func (c *IPAMContext) tryUnassignCidrsFromAll() {
-	_, over, warmIPTargetsDefined := c.datastoreTargetState(nil)
+func (c *IPAMContext) tryUnassignCidrsFromAll(networkCard int) {
+	_, over, warmIPTargetsDefined := c.datastoreTargetState(nil, networkCard)
 	// If WARM IP targets are not defined, check if WARM_PREFIX_TARGET is defined.
 	if !warmIPTargetsDefined {
-		over = c.computeExtraPrefixesOverWarmTarget()
+		over = c.computeExtraPrefixesOverWarmTarget(networkCard)
 	}
 
 	if over > 0 {
-		eniInfos := c.dataStore.GetENIInfos()
+		eniInfos := c.dataStoreAccess.GetDataStore(networkCard).GetENIInfos()
 		for eniID := range eniInfos.ENIs {
 			// Either returns prefixes or IPs [Cidrs]
-			cidrs := c.dataStore.FindFreeableCidrs(eniID)
+			cidrs := c.dataStoreAccess.GetDataStore(networkCard).FindFreeableCidrs(eniID)
 			if cidrs == nil {
 				log.Errorf("Error finding unassigned IPs for ENI %s", eniID)
 				continue
@@ -792,9 +896,9 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 			for _, toDelete := range cidrs {
 				// Do not force the delete, since a freeable Cidr might have been assigned to a pod
 				// before we get around to deleting it.
-				err := c.dataStore.DelIPv4CidrFromStore(eniID, toDelete.Cidr, false /* force */)
+				err := c.dataStoreAccess.GetDataStore(networkCard).DelIPv4CidrFromStore(eniID, toDelete.Cidr, false /* force */)
 				if err != nil {
-					log.Warnf("Failed to delete Cidr %s on ENI %s from datastore: %s", toDelete, eniID, err)
+					log.Warnf("Failed to delete Cidr %s on ENI %s from datastore for network card %d: %s", toDelete, eniID, networkCard, err)
 					ipamdErrInc("decreaseIPPool")
 					continue
 				} else {
@@ -813,18 +917,37 @@ func (c *IPAMContext) tryUnassignCidrsFromAll() {
 	}
 }
 
-// PRECONDITION: isDatastorePoolTooLow returned true
-func (c *IPAMContext) increaseDatastorePool(ctx context.Context) error {
-	log.Debug("Starting to increase pool size")
-	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("increaseDatastorePool").Add(float64(1))
-	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("increaseDatastorePool").Sub(float64(1))
+func (c *IPAMContext) initNetworkConfig() ([]string, net.IP, error) {
+	if c.enableIPv4 {
+		primaryIP := c.awsClient.GetLocalIPv4()
+		vpcCIDRs, err := c.awsClient.GetVPCIPv4CIDRs()
+		return vpcCIDRs, primaryIP, err
+	}
 
+	primaryIP := c.awsClient.GetLocalIPv6()
+	vpcCIDRs, err := c.awsClient.GetVPCIPv6CIDRs()
+	return vpcCIDRs, primaryIP, err
+}
+
+func (c *IPAMContext) isENIAttachmentAllowed() bool {
 	if c.isTerminating() {
 		log.Debug("AWS CNI is terminating, will not try to attach any new IPs or ENIs right now")
-		return nil
+		return false
 	}
 	if !c.manageENIsNonScheduleable && c.isNodeNonSchedulable() {
 		log.Debug("AWS CNI is on a non schedulable node, will not try to attach any new IPs or ENIs right now")
+		return false
+	}
+	return true
+}
+
+// PRECONDITION: isDatastorePoolTooLow returned true
+func (c *IPAMContext) increaseDatastorePool(ctx context.Context, networkCard int) error {
+	log.Debugf("Starting to increase pool size for network card %d", networkCard)
+	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("increaseDatastorePool").Add(float64(1))
+	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("increaseDatastorePool").Sub(float64(1))
+
+	if !c.isENIAttachmentAllowed() {
 		return nil
 	}
 
@@ -834,7 +957,7 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) error {
 		return nil
 	}
 
-	increasedPool, err := c.tryAssignCidrs()
+	increasedPool, err := c.tryAssignCidrs(networkCard)
 	if err != nil {
 		if containsInsufficientCIDRsOrSubnetIPs(err) {
 			log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
@@ -845,12 +968,12 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) error {
 		return err
 	}
 	if increasedPool {
-		c.updateLastNodeIPPoolAction()
+		c.updateLastNodeIPPoolAction(networkCard)
 	} else {
 		// If we did not add any IPs, try to allocate an ENI.
-		if c.hasRoomForEni() {
-			if err = c.tryAllocateENI(ctx); err == nil {
-				c.updateLastNodeIPPoolAction()
+		if c.hasRoomForEni(networkCard) {
+			if err = c.tryAllocateENI(ctx, networkCard); err == nil {
+				c.updateLastNodeIPPoolAction(networkCard)
 			} else {
 				// Note that no error is returned if ENI allocation fails. This is because ENI allocation failure should not cause node to be "NotReady".
 				log.Debugf("Error trying to allocate ENI: %v", err)
@@ -862,13 +985,47 @@ func (c *IPAMContext) increaseDatastorePool(ctx context.Context) error {
 	return nil
 }
 
-func (c *IPAMContext) updateLastNodeIPPoolAction() {
-	c.lastNodeIPPoolAction = time.Now()
-	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
-	c.logPoolStats(stats)
+func (c *IPAMContext) createSecondaryIPv6ENIs(ctx context.Context) error {
+
+	log.Info("Trying to see if new ENIs need to be created")
+	if !c.isENIAttachmentAllowed() {
+		return nil
+	}
+
+	log.Info("Attaching ENIs allowed")
+
+	for _, ds := range c.dataStoreAccess.DataStores {
+		networkCard := ds.GetNetworkCard()
+		if networkCard == DefaultNetworkCardIndex {
+			continue
+		}
+
+		log.Infof("Checking for DS %d", networkCard)
+		if ds.GetENIs() == 0 {
+			// This means we have not added an ENI before as it would have been detected ENI detection
+			log.Infof("Attaching ENI to Network Card %d, MaxENI :%d", networkCard, c.maxENI)
+			if c.hasRoomForEni(networkCard) {
+				if err := c.tryAllocateENI(ctx, networkCard); err == nil {
+					log.Infof("Allocated ENI successfully to Network Card %d", networkCard)
+				} else {
+					// Note that no error is returned if ENI allocation fails. This is because ENI allocation failure should not cause node to be "NotReady".
+					log.Debugf("Error trying to allocate ENI: %v", err)
+				}
+			} else {
+				log.Debugf("Skipping ENI allocation as the max ENI limit is already reached for the instance")
+			}
+		}
+	}
+	return nil
 }
 
-func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
+func (c *IPAMContext) updateLastNodeIPPoolAction(networkCard int) {
+	c.lastNodeIPPoolAction = time.Now()
+	stats := c.dataStoreAccess.GetDataStore(networkCard).GetIPStats(ipV4AddrFamily)
+	c.logPoolStats(stats, networkCard)
+}
+
+func (c *IPAMContext) tryAllocateENI(ctx context.Context, networkCard int) error {
 	var securityGroups []*string
 	var eniCfgSubnet string
 
@@ -887,9 +1044,9 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 		eniCfgSubnet = eniCfg.Subnet
 	}
 
-	resourcesToAllocate := c.GetENIResourcesToAllocate()
+	resourcesToAllocate := c.GetENIResourcesToAllocate(networkCard)
 	if resourcesToAllocate > 0 {
-		eni, err := c.awsClient.AllocENI(c.useCustomNetworking, securityGroups, eniCfgSubnet, resourcesToAllocate)
+		eni, err := c.awsClient.AllocENI(securityGroups, eniCfgSubnet, resourcesToAllocate, networkCard)
 		if err != nil {
 			log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
 			ipamdErrInc("increaseIPPoolAllocENI")
@@ -905,15 +1062,14 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 		eniMetadata, err := c.awsClient.WaitForENIAndIPsAttached(eni, resourcesToAllocate)
 		if err != nil {
 			ipamdErrInc("increaseIPPoolwaitENIAttachedFailed")
-			log.Errorf("Failed to increase pool size: Unable to discover attached ENI from metadata service %v", err)
+			log.Errorf("Failed to increase pool size for Network card %d: Unable to discover attached ENI from metadata service %v", networkCard, err)
 			return err
 		}
-
 		// The CNI does not create trunk or EFA ENIs, so they will always be false here
 		err = c.setupENI(eni, eniMetadata, false, false)
 		if err != nil {
 			ipamdErrInc("increaseIPPoolsetupENIFailed")
-			log.Errorf("Failed to increase pool size: %v", err)
+			log.Errorf("Failed to increase pool size for network card %d: %v", networkCard, err)
 			return err
 		}
 	} else {
@@ -924,20 +1080,20 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context) error {
 
 // For an ENI, fill in missing IPs or prefixes.
 // PRECONDITION: isDatastorePoolTooLow returned true
-func (c *IPAMContext) tryAssignCidrs() (increasedPool bool, err error) {
+func (c *IPAMContext) tryAssignCidrs(networkCard int) (increasedPool bool, err error) {
 	if c.enablePrefixDelegation {
-		return c.tryAssignPrefixes()
+		return c.tryAssignPrefixes(networkCard)
 	} else {
-		return c.tryAssignIPs()
+		return c.tryAssignIPs(networkCard)
 	}
 }
 
 // For an ENI, try to fill in missing IPs on an existing ENI.
 // PRECONDITION: isDatastorePoolTooLow returned true
-func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
+func (c *IPAMContext) tryAssignIPs(networkCard int) (increasedPool bool, err error) {
 
 	// If WARM_IP_TARGET is set, only proceed if we are short of target
-	short, _, warmIPTargetsDefined := c.datastoreTargetState(nil)
+	short, _, warmIPTargetsDefined := c.datastoreTargetState(nil, networkCard)
 	if warmIPTargetsDefined && short == 0 {
 		return false, nil
 	}
@@ -949,7 +1105,7 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 	}
 
 	// Find an ENI where we can add more IPs
-	enis := c.dataStore.GetAllocatableENIs(c.maxIPsPerENI, c.useCustomNetworking)
+	enis := c.dataStoreAccess.GetDataStore(networkCard).GetAllocatableENIs(c.maxIPsPerENI, c.useCustomNetworking)
 	for _, eni := range enis {
 		if len(eni.AvailableIPv4Cidrs) < c.maxIPsPerENI {
 			currentNumberOfAllocatedIPs := len(eni.AvailableIPv4Cidrs)
@@ -990,14 +1146,14 @@ func (c *IPAMContext) tryAssignIPs() (increasedPool bool, err error) {
 					ec2ip4s = append(ec2ip4s, ec2types.NetworkInterfacePrivateIpAddress{PrivateIpAddress: ec2Addr.PrivateIpAddress})
 				}
 			}
-			c.addENIsecondaryIPsToDataStore(ec2ip4s, eni.ID)
+			c.addENIsecondaryIPsToDataStore(ec2ip4s, eni.ID, networkCard)
 			return true, nil
 		}
 	}
 	return false, nil
 }
 
-func (c *IPAMContext) assignIPv6Prefix(eniID string) (err error) {
+func (c *IPAMContext) assignIPv6Prefix(eniID string, networkCard int) (err error) {
 	log.Debugf("Assigning an IPv6Prefix for ENI: %s", eniID)
 	//Let's make an EC2 API call to get a list of IPv6 prefixes (if any) that are already attached to the
 	//current ENI. We will make this call only once during boot up/init and doing so will shield us from any
@@ -1032,16 +1188,16 @@ func (c *IPAMContext) assignIPv6Prefix(eniID string) (err error) {
 		//Will use the first IPv6 Prefix attached for IP address allocation.
 		ec2v6Prefixes = []ec2types.Ipv6PrefixSpecification{ec2v6Prefixes[0]}
 	}
-	c.addENIv6prefixesToDataStore(ec2v6Prefixes, eniID)
+	c.addENIv6prefixesToDataStore(ec2v6Prefixes, eniID, networkCard)
 	return nil
 }
 
 // PRECONDITION: isDatastorePoolTooLow returned true
-func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
-	toAllocate := c.getPrefixesNeeded()
+func (c *IPAMContext) tryAssignPrefixes(networkCard int) (increasedPool bool, err error) {
+	toAllocate := c.getPrefixesNeeded(networkCard)
 	// Returns an ENI which has space for more prefixes to be attached, but this
 	// ENI might not suffice the WARM_IP_TARGET/WARM_PREFIX_TARGET
-	enis := c.dataStore.GetAllocatableENIs(c.maxPrefixesPerENI, c.useCustomNetworking)
+	enis := c.dataStoreAccess.GetDataStore(networkCard).GetAllocatableENIs(c.maxPrefixesPerENI, c.useCustomNetworking)
 	for _, eni := range enis {
 		currentNumberOfAllocatedPrefixes := len(eni.AvailableIPv4Cidrs)
 		resourcesToAllocate := min((c.maxPrefixesPerENI - currentNumberOfAllocatedPrefixes), toAllocate)
@@ -1076,7 +1232,7 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 			}
 			ec2Prefixes = output.AssignedIpv4Prefixes
 		}
-		c.addENIv4prefixesToDataStore(ec2Prefixes, eni.ID)
+		c.addENIv4prefixesToDataStore(ec2Prefixes, eni.ID, networkCard)
 		return true, nil
 	}
 	return false, nil
@@ -1086,76 +1242,82 @@ func (c *IPAMContext) tryAssignPrefixes() (increasedPool bool, err error) {
 // 1) add ENI to datastore
 // 2) set up linux ENI related networking stack.
 // 3) add all ENI's secondary IP addresses to datastore
+
+// TODO: Will primary ENI so that we can skip Network Setup ?
 func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isTrunkENI, isEFAENI bool) error {
 	primaryENI := c.awsClient.GetPrimaryENI()
 	// Add the ENI to the datastore
-	err := c.dataStore.AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI)
+	err := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI)
 	if err != nil && err.Error() != datastore.DuplicatedENIError {
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
-	// Store the addressable IP for the ENI
+
+	// Store the addressable IP for the ENI.
 	if c.enableIPv6 {
 		c.primaryIP[eni] = eniMetadata.PrimaryIPv6Address()
 	} else {
 		c.primaryIP[eni] = eniMetadata.PrimaryIPv4Address()
 	}
 
-	if c.enableIPv6 && eni == primaryENI {
-		// In v6 PD mode, VPC CNI will only manage the primary ENI and trunk ENI. Once we start supporting secondary
-		// IP and custom networking modes for IPv6, this restriction can be relaxed.
-		err := c.assignIPv6Prefix(eni)
-		if err != nil {
-			return errors.Wrapf(err, "Failed to allocate IPv6 Prefixes to Primary ENI")
-		}
-	} else {
-		// For other ENIs, set up the network
-		if eni != primaryENI {
-			subnetCidr := eniMetadata.SubnetIPv4CIDR
-			if c.enableIPv6 {
-				subnetCidr = eniMetadata.SubnetIPv6CIDR
-			}
-			err = c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.DeviceNumber, subnetCidr)
+	if c.enableIPv6 {
+		if !isTrunkENI {
+			// In v6 PD mode, VPC CNI will manage the primary ENI, ENIs on NC > 0 and trunk ENI. Once we start supporting secondary
+			// IP and custom networking modes for IPv6, this restriction can be relaxed.
+			err := c.assignIPv6Prefix(eni, eniMetadata.NetworkCard)
 			if err != nil {
-				// Failed to set up the ENI
-				errRemove := c.dataStore.RemoveENIFromDataStore(eni, true)
-				if errRemove != nil {
-					log.Warnf("failed to remove ENI %s: %v", eni, errRemove)
-				}
-				delete(c.primaryIP, eni)
-				return errors.Wrapf(err, "failed to set up ENI %s network", eni)
+				return errors.Wrapf(err, "Failed to allocate IPv6 Prefixes to ENI")
 			}
-		}
-		if !c.enableIPv6 {
-			log.Infof("Found ENIs having %d secondary IPs and %d Prefixes", len(eniMetadata.IPv4Addresses), len(eniMetadata.IPv4Prefixes))
-			// Either case add the IPs and prefixes to datastore.
-			c.addENIsecondaryIPsToDataStore(eniMetadata.IPv4Addresses, eni)
-			c.addENIv4prefixesToDataStore(eniMetadata.IPv4Prefixes, eni)
-		} else {
-			// This is a trunk ENI in IPv6 PD mode, so do not add IPs or prefixes to datastore
-			log.Infof("Found IPv6 trunk ENI having %d secondary IPs and %d Prefixes", len(eniMetadata.IPv6Addresses), len(eniMetadata.IPv6Prefixes))
 		}
 	}
+
+	// For other ENIs, set up the network
+	if eni != primaryENI {
+		subnetCidr := eniMetadata.SubnetIPv4CIDR
+		if c.enableIPv6 {
+			subnetCidr = eniMetadata.SubnetIPv6CIDR
+		}
+		err = c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.DeviceNumber, eniMetadata.NetworkCard, subnetCidr, c.maxENI, isTrunkENI)
+		if err != nil {
+			// Failed to set up the ENI
+			errRemove := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).RemoveENIFromDataStore(eni, true)
+			if errRemove != nil {
+				log.Warnf("failed to remove ENI %s: %v", eni, errRemove)
+			}
+			delete(c.primaryIP, eni)
+			return errors.Wrapf(err, "failed to set up ENI %s network", eni)
+		}
+	}
+
+	if !c.enableIPv6 {
+		log.Infof("Found ENIs having %d secondary IPs and %d Prefixes", len(eniMetadata.IPv4Addresses), len(eniMetadata.IPv4Prefixes))
+		// Either case add the IPs and prefixes to datastore.
+		c.addENIsecondaryIPsToDataStore(eniMetadata.IPv4Addresses, eni, eniMetadata.NetworkCard)
+		c.addENIv4prefixesToDataStore(eniMetadata.IPv4Prefixes, eni, eniMetadata.NetworkCard)
+	} else {
+		log.Infof("Found IPv6 ENI %s having %d secondary IPs and %d Prefixes and isTrunk: %t", eni, len(eniMetadata.IPv6Addresses), len(eniMetadata.IPv6Prefixes), isTrunkENI)
+	}
+
 	return nil
 }
 
-func (c *IPAMContext) addENIsecondaryIPsToDataStore(ec2PrivateIpAddrs []ec2types.NetworkInterfacePrivateIpAddress, eni string) {
+func (c *IPAMContext) addENIsecondaryIPsToDataStore(ec2PrivateIpAddrs []ec2types.NetworkInterfacePrivateIpAddress, eni string, networkCard int) {
 	// Add all the secondary IPs
 	for _, ec2PrivateIpAddr := range ec2PrivateIpAddrs {
 		if aws.ToBool(ec2PrivateIpAddr.Primary) {
 			continue
 		}
 		cidr := net.IPNet{IP: net.ParseIP(aws.ToString(ec2PrivateIpAddr.PrivateIpAddress)), Mask: net.IPv4Mask(255, 255, 255, 255)}
-		err := c.dataStore.AddIPv4CidrToStore(eni, cidr, false)
+		err := c.dataStoreAccess.GetDataStore(networkCard).AddIPv4CidrToStore(eni, cidr, false)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
-			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store", ec2PrivateIpAddr.PrivateIpAddress)
+			log.Warnf("Failed to increase IP pool, failed to add IP %s to data store for network card %d", ec2PrivateIpAddr.PrivateIpAddress, networkCard)
 			// continue to add next address
 			ipamdErrInc("addENIsecondaryIPsToDataStoreFailed")
 		}
 	}
-	c.logPoolStats(c.dataStore.GetIPStats(ipV4AddrFamily))
+	c.logPoolStats(c.dataStoreAccess.GetDataStore(networkCard).GetIPStats(ipV4AddrFamily), networkCard)
 }
 
-func (c *IPAMContext) addENIv4prefixesToDataStore(ec2PrefixAddrs []ec2types.Ipv4PrefixSpecification, eni string) {
+func (c *IPAMContext) addENIv4prefixesToDataStore(ec2PrefixAddrs []ec2types.Ipv4PrefixSpecification, eni string, networkCard int) {
 	// Walk thru all prefixes
 	for _, ec2PrefixAddr := range ec2PrefixAddrs {
 		strIpv4Prefix := aws.ToString(ec2PrefixAddr.Ipv4Prefix)
@@ -1166,17 +1328,17 @@ func (c *IPAMContext) addENIv4prefixesToDataStore(ec2PrefixAddrs []ec2types.Ipv4
 			continue
 		}
 		cidr := *ipnet
-		err = c.dataStore.AddIPv4CidrToStore(eni, cidr, true)
+		err = c.dataStoreAccess.GetDataStore(networkCard).AddIPv4CidrToStore(eni, cidr, true)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
-			log.Warnf("Failed to increase Prefix pool, failed to add Prefix %s to data store", ec2PrefixAddr.Ipv4Prefix)
+			log.Warnf("Failed to increase Prefix pool, failed to add Prefix %s to data store for network card %d", ec2PrefixAddr.Ipv4Prefix, networkCard)
 			// continue to add next address
 			ipamdErrInc("addENIv4prefixesToDataStoreFailed")
 		}
 	}
-	c.logPoolStats(c.dataStore.GetIPStats(ipV4AddrFamily))
+	c.logPoolStats(c.dataStoreAccess.GetDataStore(networkCard).GetIPStats(ipV4AddrFamily), networkCard)
 }
 
-func (c *IPAMContext) addENIv6prefixesToDataStore(ec2PrefixAddrs []ec2types.Ipv6PrefixSpecification, eni string) {
+func (c *IPAMContext) addENIv6prefixesToDataStore(ec2PrefixAddrs []ec2types.Ipv6PrefixSpecification, eni string, networkCard int) {
 	log.Debugf("Updating datastore with IPv6Prefix(es) for ENI: %v, count: %v", eni, len(ec2PrefixAddrs))
 	// Walk through all prefixes
 	for _, ec2PrefixAddr := range ec2PrefixAddrs {
@@ -1188,14 +1350,15 @@ func (c *IPAMContext) addENIv6prefixesToDataStore(ec2PrefixAddrs []ec2types.Ipv6
 			continue
 		}
 		cidr := *ipnet
-		err = c.dataStore.AddIPv6CidrToStore(eni, cidr, true)
+		err = c.dataStoreAccess.GetDataStore(networkCard).AddIPv6CidrToStore(eni, cidr, true)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
-			log.Warnf("Failed to increase Prefix pool, failed to add Prefix %s to data store", ec2PrefixAddr.Ipv6Prefix)
+			log.Warnf("Failed to increase Prefix pool, failed to add Prefix %s to data store for network card %d", ec2PrefixAddr.Ipv6Prefix, networkCard)
 			// continue to add next address
 			ipamdErrInc("addENIv6prefixesToDataStoreFailed")
 		}
+		c.logPoolStats(c.dataStoreAccess.GetDataStore(networkCard).GetIPStats(ipV6AddrFamily), networkCard)
 	}
-	c.logPoolStats(c.dataStore.GetIPStats(ipV6AddrFamily))
+
 }
 
 // getMaxENI returns the maximum number of ENIs to attach to this instance. This is calculated as the lesser of
@@ -1254,17 +1417,18 @@ func getWarmPrefixTarget() int {
 }
 
 // logPoolStats logs usage information for allocated addresses/prefixes.
-func (c *IPAMContext) logPoolStats(dataStoreStats *datastore.DataStoreStats) {
-	prefix := "IP pool stats"
+func (c *IPAMContext) logPoolStats(dataStoreStats *datastore.DataStoreStats, networkCard int) {
+	prefix := "IP pool stats for network card"
 	if c.enablePrefixDelegation {
-		prefix = "Prefix pool stats"
+		prefix = "Prefix pool stats for network card"
 	}
-	log.Debugf("%s: %s, c.maxIPsPerENI = %d", prefix, dataStoreStats, c.maxIPsPerENI)
+	log.Debugf("%s %d: %s, c.maxIPsPerENI = %d", prefix, networkCard, dataStoreStats, c.maxIPsPerENI)
 }
 
 func (c *IPAMContext) tryEnableSecurityGroupsForPods(ctx context.Context) {
-	// For IPv4, check that there is room for a trunk ENI before patching CNINode CRD
-	if c.enableIPv4 && (c.dataStore.GetENIs() >= (c.maxENI - c.unmanagedENI)) {
+
+	// For IPv4, check that there is room for a trunk ENI before patching CNINode CRD. We only check on the Default Network Card
+	if c.enableIPv4 && (c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetENIs() >= (c.maxENI - c.unmanagedENI[DefaultNetworkCardIndex])) {
 		log.Error("No slot available for a trunk ENI to be attached.")
 		return
 	}
@@ -1283,13 +1447,12 @@ func (c *IPAMContext) tryEnableSecurityGroupsForPods(ctx context.Context) {
 // PD enabled: If the WARM_PREFIX_TARGET is spread across ENIs and we have more than needed, this function will return true.
 // If the number of prefixes are on just one ENI, and there are more than available, it returns true so getDeletableENI will
 // recheck if we need the ENI for prefix target.
-func (c *IPAMContext) shouldRemoveExtraENIs() bool {
+func (c *IPAMContext) shouldRemoveExtraENIs(stats *datastore.DataStoreStats, networkCard int) bool {
 	// When WARM_IP_TARGET is set, return true as verification is always done in getDeletableENI()
-	if c.warmIPTargetsDefined() {
+	if c.warmIPTargetsDefined() || networkCard > DefaultNetworkCardIndex {
 		return true
 	}
 
-	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
 	available := stats.AvailableAddresses()
 	var shouldRemoveExtra bool
 
@@ -1302,27 +1465,27 @@ func (c *IPAMContext) shouldRemoveExtraENIs() bool {
 
 	shouldRemoveExtra = available >= (warmTarget)*c.maxIPsPerENI
 	if shouldRemoveExtra {
-		c.logPoolStats(stats)
+		c.logPoolStats(stats, networkCard)
 		log.Debugf("It might be possible to remove extra ENIs because available (%d) >= (ENI/Prefix target + 1 (%d) + 1) * addrsPerENI (%d)", available, warmTarget, c.maxIPsPerENI)
 	} else if c.enablePrefixDelegation {
 		// When prefix target count is reduced, datastore would have deleted extra prefixes over the warm prefix target.
 		// Hence available will be less than (warmTarget)*c.maxIPsPerENI, but there can be some extra ENIs which are not used hence see if we can clean it up.
-		shouldRemoveExtra = c.dataStore.CheckFreeableENIexists()
+		shouldRemoveExtra = c.dataStoreAccess.GetDataStore(networkCard).CheckFreeableENIexists()
 	}
 	return shouldRemoveExtra
 }
 
-func (c *IPAMContext) computeExtraPrefixesOverWarmTarget() int {
+func (c *IPAMContext) computeExtraPrefixesOverWarmTarget(networkCard int) int {
 	if !c.warmPrefixTargetDefined() {
 		return 0
 	}
 
-	freePrefixes := c.dataStore.GetFreePrefixes()
+	freePrefixes := c.dataStoreAccess.GetDataStore(networkCard).GetFreePrefixes()
 	over := max(freePrefixes-c.warmPrefixTarget, 0)
 
-	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
+	stats := c.dataStoreAccess.GetDataStore(networkCard).GetIPStats(ipV4AddrFamily)
 	log.Debugf("computeExtraPrefixesOverWarmTarget - available: %d, over: %d, warm_prefix_target: %d", stats.AvailableAddresses(), over, c.warmPrefixTarget)
-	c.logPoolStats(stats)
+	c.logPoolStats(stats, networkCard)
 	return over
 }
 
@@ -1357,15 +1520,24 @@ func (c *IPAMContext) checkForTrunkENI() bool {
 	return false
 }
 
+func (c *IPAMContext) getENIsByNetworkCard(allENIs []awsutils.ENIMetadata) map[int][]awsutils.ENIMetadata {
+	var eniNetworkCardMap = make(map[int][]awsutils.ENIMetadata, c.numNetworkCards)
+	for _, eni := range allENIs {
+		eniNetworkCardMap[eni.NetworkCard] = append(eniNetworkCardMap[eni.NetworkCard], eni)
+	}
+	return eniNetworkCardMap
+}
+
 // nodeIPPoolReconcile reconcile ENI and IP info from metadata service and IP addresses in datastore
 func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Duration) {
 	// To reduce the number of EC2 API calls, skip reconciliation if IPs were recently added to the datastore.
 	timeSinceLast := time.Since(c.lastNodeIPPoolAction)
 	// Make an exception if node needs a trunk ENI and one is not currently attached.
-	needsTrunkEni := c.enablePodENI && c.dataStore.GetTrunkENI() == ""
+	needsTrunkEni := c.enablePodENI && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == ""
 	if timeSinceLast <= interval && !needsTrunkEni {
 		return
 	}
+	var metadataResult awsutils.DescribeAllENIsResult
 
 	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
 	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Sub(float64(1))
@@ -1383,103 +1555,122 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		ipamdErrInc("reconcileFailedGetENIs")
 		return
 	}
-	attachedENIs := c.filterUnmanagedENIs(allENIs)
-	currentENIs := c.dataStore.GetENIInfos().ENIs
-	trunkENI := c.dataStore.GetTrunkENI()
-	// Initialize the set with the known EFA interfaces
-	efaENIs := c.dataStore.GetEFAENIs()
 
-	// Check if a new ENI was added, if so we need to update the tags.
-	needToUpdateTags := false
-	for _, attachedENI := range attachedENIs {
-		if _, ok := currentENIs[attachedENI.ENIID]; !ok {
-			needToUpdateTags = true
-			break
-		}
-	}
+	allManagedAndAttachedENIs := c.filterUnmanagedENIs(allENIs)
+	attachedENIsByNetworkCard := c.getENIsByNetworkCard(allManagedAndAttachedENIs)
 
-	var eniTagMap map[string]awsutils.TagMap
-	if needToUpdateTags {
-		log.Debugf("A new ENI added but not by ipamd, updating tags by calling EC2")
-		metadataResult, err := c.awsClient.DescribeAllENIs()
-		if err != nil {
-			log.Warnf("Failed to call EC2 to describe ENIs, aborting reconcile: %v", err)
-			return
-		}
+	for _, ds := range c.dataStoreAccess.DataStores {
+		networkCard := ds.GetNetworkCard()
+		currentENIs := ds.GetENIInfos().ENIs
+		attachedENIs := attachedENIsByNetworkCard[networkCard]
+		trunkENI := ds.GetTrunkENI()
+		// Initialize the set with the known EFA interfaces
+		efaENIs := ds.GetEFAENIs()
 
-		if c.enablePodENI && metadataResult.TrunkENI != "" {
-			log.Debugf("Trunk interface (%s) has been added to the node already.", metadataResult.TrunkENI)
-		}
-		// Update trunk ENI
-		trunkENI = metadataResult.TrunkENI
-		// Just copy values of the EFA set
-		efaENIs = metadataResult.EFAENIs
-		eniTagMap = metadataResult.TagMap
-		c.setUnmanagedENIs(metadataResult.TagMap)
-		c.awsClient.SetMultiCardENIs(metadataResult.MultiCardENIIDs)
-		attachedENIs = c.filterUnmanagedENIs(metadataResult.ENIMetadata)
-	}
-
-	// Mark phase
-	for _, attachedENI := range attachedENIs {
-		eniIPPool, eniPrefixPool, err := c.dataStore.GetENICIDRs(attachedENI.ENIID)
-		if err == nil {
-			// If the attached ENI is in the data store
-			log.Debugf("Reconcile existing ENI %s IP pool", attachedENI.ENIID)
-			// Reconcile IP pool
-			c.eniIPPoolReconcile(eniIPPool, attachedENI, attachedENI.ENIID)
-			// If the attached ENI is in the data store
-			log.Debugf("Reconcile existing ENI %s IP prefixes", attachedENI.ENIID)
-			// Reconcile IP pool
-			c.eniPrefixPoolReconcile(eniPrefixPool, attachedENI, attachedENI.ENIID)
-			// Mark action, remove this ENI from currentENIs map
-			delete(currentENIs, attachedENI.ENIID)
-			continue
-		}
-
-		isTrunkENI := attachedENI.ENIID == trunkENI
-		isEFAENI := efaENIs[attachedENI.ENIID]
-		if !isTrunkENI && !c.disableENIProvisioning {
-			if err := c.awsClient.TagENI(attachedENI.ENIID, eniTagMap[attachedENI.ENIID]); err != nil {
-				log.Errorf("IP pool reconcile: failed to tag managed ENI %v: %v", attachedENI.ENIID, err)
-				ipamdErrInc("eniReconcileAdd")
-				continue
+		// Check if a new ENI was added, if so we need to update the tags.
+		needToUpdateTags := false
+		for _, attachedENI := range attachedENIs {
+			if _, ok := currentENIs[attachedENI.ENIID]; !ok {
+				needToUpdateTags = true
+				break
 			}
 		}
 
-		// Add new ENI
-		log.Debugf("Reconcile and add a new ENI %s", attachedENI)
-		err = c.setupENI(attachedENI.ENIID, attachedENI, isTrunkENI, isEFAENI)
-		if err != nil {
-			log.Errorf("IP pool reconcile: Failed to set up ENI %s network: %v", attachedENI.ENIID, err)
-			ipamdErrInc("eniReconcileAdd")
-			// Continue if having trouble with ONLY 1 ENI, instead of bailout here?
-			continue
-		}
-		prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "eniReconcileAdd"}).Inc()
-	}
+		var eniTagMap map[string]awsutils.TagMap
+		if needToUpdateTags {
+			log.Debugf("A new ENI added but not by ipamd, updating tags by calling EC2")
+			// Call describeENIs only once per nodeIPPoolReconcile by checking if metadataResult.ENIMetadata is nil
+			if len(metadataResult.ENIMetadata) == 0 {
+				metadataResult, err = c.awsClient.DescribeAllENIs()
+				if err != nil {
+					log.Warnf("Failed to call EC2 to describe ENIs, aborting reconcile: %v", err)
+					return
+				}
+			}
 
-	// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
-	for eni := range currentENIs {
-		log.Infof("Reconcile and delete detached ENI %s", eni)
-		// Force the delete, since aws local metadata has told us that this ENI is no longer
-		// attached, so any IPs assigned from this ENI will no longer work.
-		err = c.dataStore.RemoveENIFromDataStore(eni, true /* force */)
-		if err != nil {
-			log.Errorf("IP pool reconcile: Failed to delete ENI during reconcile: %v", err)
-			ipamdErrInc("eniReconcileDel")
-			continue
+			if c.enablePodENI && metadataResult.TrunkENI != "" {
+				log.Debugf("Trunk interface (%s) has been added to the node already.", metadataResult.TrunkENI)
+			}
+			// Update trunk ENI
+			trunkENI = metadataResult.TrunkENI
+			// Just copy values of the EFA set
+			efaENIs = metadataResult.EFAENIs
+			eniTagMap = metadataResult.TagMap
+
+			c.setUnmanagedENIs(metadataResult.TagMap)
+			c.markUnmanagedNetworkCards(metadataResult.EFAOnlyENIByNetworkCard, metadataResult.ENIsByNetworkCard)
+
+			allManagedENIs := c.filterUnmanagedENIs(metadataResult.ENIMetadata)
+			attachedENIs = c.getENIsByNetworkCard(allManagedENIs)[networkCard]
 		}
-		delete(c.primaryIP, eni)
-		prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "eniReconcileDel"}).Inc()
+
+		// Mark phase
+		for _, attachedENI := range attachedENIs {
+			eniIPPool, eniPrefixPool, err := ds.GetENICIDRs(attachedENI.ENIID)
+			if err == nil {
+				// If the attached ENI is in the data store
+				log.Debugf("Reconcile existing ENI %s IP pool", attachedENI.ENIID)
+				// Reconcile IP pool
+				c.eniIPPoolReconcile(eniIPPool, attachedENI, attachedENI.ENIID, networkCard)
+				// If the attached ENI is in the data store
+				log.Debugf("Reconcile existing ENI %s IP prefixes", attachedENI.ENIID)
+				// Reconcile IP pool
+				c.eniPrefixPoolReconcile(eniPrefixPool, attachedENI, attachedENI.ENIID, networkCard)
+				// Mark action, remove this ENI from currentENIs map
+				delete(currentENIs, attachedENI.ENIID)
+				continue
+			}
+
+			isTrunkENI := attachedENI.ENIID == trunkENI
+			isEFAENI := efaENIs[attachedENI.ENIID]
+			if !isTrunkENI && !c.disableENIProvisioning {
+				if err := c.awsClient.TagENI(attachedENI.ENIID, eniTagMap[attachedENI.ENIID]); err != nil {
+					log.Errorf("IP pool reconcile: failed to tag managed ENI %v: %v", attachedENI.ENIID, err)
+					ipamdErrInc("eniReconcileAdd")
+					continue
+				}
+			}
+
+			// Add new ENI
+			log.Debugf("Reconcile and add a new ENI %s", attachedENI.ENIID)
+			err = c.setupENI(attachedENI.ENIID, attachedENI, isTrunkENI, isEFAENI)
+			if err != nil {
+				log.Errorf("IP pool reconcile: Failed to set up ENI %s network: %v", attachedENI.ENIID, err)
+				ipamdErrInc("eniReconcileAdd")
+				// Continue if having trouble with ONLY 1 ENI, instead of bailout here?
+				continue
+			}
+			prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "eniReconcileAdd"}).Inc()
+		}
+
+		// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
+		for eni := range currentENIs {
+			log.Infof("Reconcile and delete detached ENI %s", eni)
+			// Force the delete, since aws local metadata has told us that this ENI is no longer
+			// attached, so any IPs assigned from this ENI will no longer work.
+			err = ds.RemoveENIFromDataStore(eni, true /* force */)
+			if err != nil {
+				log.Errorf("IP pool reconcile: Failed to delete ENI during reconcile: %v", err)
+				ipamdErrInc("eniReconcileDel")
+				continue
+			}
+
+			delete(c.primaryIP, eni)
+			prometheusmetrics.ReconcileCnt.With(prometheus.Labels{"fn": "eniReconcileDel"}).Inc()
+		}
+
+		log.Debug("Successfully Reconciled ENI/IP pool")
+		c.logPoolStats(ds.GetIPStats(ipV4AddrFamily), networkCard)
 	}
 	c.lastNodeIPPoolAction = time.Now()
 
-	log.Debug("Successfully Reconciled ENI/IP pool")
-	c.logPoolStats(c.dataStore.GetIPStats(ipV4AddrFamily))
+	for eni, primaryIP := range c.primaryIP {
+		log.Debugf("Primary IP for ENI %s is %s", eni, primaryIP)
+	}
+
 }
 
-func (c *IPAMContext) eniIPPoolReconcile(ipPool []string, attachedENI awsutils.ENIMetadata, eni string) {
+func (c *IPAMContext) eniIPPoolReconcile(ipPool []string, attachedENI awsutils.ENIMetadata, eni string, networkCard int) {
 	attachedENIIPs := attachedENI.IPv4Addresses
 	needEC2Reconcile := true
 	// Here we can't trust attachedENI since the IMDS metadata can be stale. We need to check with EC2 API.
@@ -1498,7 +1689,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool []string, attachedENI awsutils.E
 	}
 
 	// Add all known attached IPs to the datastore
-	seenIPs := c.verifyAndAddIPsToDatastore(eni, attachedENIIPs, needEC2Reconcile)
+	seenIPs := c.verifyAndAddIPsToDatastore(eni, attachedENIIPs, needEC2Reconcile, networkCard)
 
 	// Sweep phase, delete remaining IPs since they should not remain in the datastore
 	for _, existingIP := range ipPool {
@@ -1509,7 +1700,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool []string, attachedENI awsutils.E
 		log.Debugf("Reconcile and delete IP %s on ENI %s", existingIP, eni)
 		// Force the delete, since we have verified with EC2 that these secondary IPs are no longer assigned to this ENI
 		ipv4Addr := net.IPNet{IP: net.ParseIP(existingIP), Mask: net.IPv4Mask(255, 255, 255, 255)}
-		err := c.dataStore.DelIPv4CidrFromStore(eni, ipv4Addr, true /* force */)
+		err := c.dataStoreAccess.GetDataStore(networkCard).DelIPv4CidrFromStore(eni, ipv4Addr, true /* force */)
 		if err != nil {
 			log.Errorf("Failed to reconcile and delete IP %s on ENI %s, %v", existingIP, eni, err)
 			ipamdErrInc("ipReconcileDel")
@@ -1520,7 +1711,7 @@ func (c *IPAMContext) eniIPPoolReconcile(ipPool []string, attachedENI awsutils.E
 	}
 }
 
-func (c *IPAMContext) eniPrefixPoolReconcile(prefixPool []string, attachedENI awsutils.ENIMetadata, eni string) {
+func (c *IPAMContext) eniPrefixPoolReconcile(prefixPool []string, attachedENI awsutils.ENIMetadata, eni string, networkCard int) {
 	attachedENIIPs := attachedENI.IPv4Prefixes
 	needEC2Reconcile := true
 	// Here we can't trust attachedENI since the IMDS metadata can be stale. We need to check with EC2 API.
@@ -1540,7 +1731,7 @@ func (c *IPAMContext) eniPrefixPoolReconcile(prefixPool []string, attachedENI aw
 	}
 
 	// Add all known attached IPs to the datastore
-	seenIPs := c.verifyAndAddPrefixesToDatastore(eni, attachedENIIPs, needEC2Reconcile)
+	seenIPs := c.verifyAndAddPrefixesToDatastore(eni, attachedENIIPs, needEC2Reconcile, networkCard)
 
 	// Sweep phase, delete remaining Prefixes since they should not remain in the datastore
 	for _, existingIP := range prefixPool {
@@ -1555,7 +1746,7 @@ func (c *IPAMContext) eniPrefixPoolReconcile(prefixPool []string, attachedENI aw
 			log.Debugf("Failed to parse so continuing with next prefix")
 			continue
 		}
-		err = c.dataStore.DelIPv4CidrFromStore(eni, *ipv4Cidr, true /* force */)
+		err = c.dataStoreAccess.GetDataStore(networkCard).DelIPv4CidrFromStore(eni, *ipv4Cidr, true /* force */)
 		if err != nil {
 			log.Errorf("Failed to reconcile and delete IP %s on ENI %s, %v", existingIP, eni, err)
 			ipamdErrInc("ipReconcileDel")
@@ -1568,7 +1759,7 @@ func (c *IPAMContext) eniPrefixPoolReconcile(prefixPool []string, attachedENI aw
 
 // verifyAndAddIPsToDatastore updates the datastore with the known secondary IPs. IPs who are out of cooldown gets added
 // back to the datastore after being verified against EC2.
-func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []ec2types.NetworkInterfacePrivateIpAddress, needEC2Reconcile bool) map[string]bool {
+func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []ec2types.NetworkInterfacePrivateIpAddress, needEC2Reconcile bool, networkCard int) map[string]bool {
 	var ec2VerifiedAddresses []ec2types.NetworkInterfacePrivateIpAddress
 	seenIPs := make(map[string]bool)
 	for _, privateIPv4 := range attachedENIIPs {
@@ -1622,7 +1813,7 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []ec
 		}
 		log.Infof("Trying to add %s", strPrivateIPv4)
 		// Try to add the IP
-		err := c.dataStore.AddIPv4CidrToStore(eni, ipv4Addr, false)
+		err := c.dataStoreAccess.GetDataStore(networkCard).AddIPv4CidrToStore(eni, ipv4Addr, false)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
 			log.Errorf("Failed to reconcile IP %s on ENI %s", strPrivateIPv4, eni)
 			ipamdErrInc("ipReconcileAdd")
@@ -1639,7 +1830,7 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(eni string, attachedENIIPs []ec
 
 // verifyAndAddPrefixesToDatastore updates the datastore with the known Prefixes. Prefixes who are out of cooldown gets added
 // back to the datastore after being verified against EC2.
-func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIPrefixes []ec2types.Ipv4PrefixSpecification, needEC2Reconcile bool) map[string]bool {
+func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIPrefixes []ec2types.Ipv4PrefixSpecification, needEC2Reconcile bool, networkCard int) map[string]bool {
 	var ec2VerifiedAddresses []ec2types.Ipv4PrefixSpecification
 	seenIPs := make(map[string]bool)
 	for _, privateIPv4Cidr := range attachedENIPrefixes {
@@ -1694,7 +1885,7 @@ func (c *IPAMContext) verifyAndAddPrefixesToDatastore(eni string, attachedENIPre
 			}
 		}
 
-		err = c.dataStore.AddIPv4CidrToStore(eni, *ipv4CidrPtr, true)
+		err = c.dataStoreAccess.GetDataStore(networkCard).AddIPv4CidrToStore(eni, *ipv4CidrPtr, true)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
 			log.Errorf("Failed to reconcile Prefix %s on ENI %s", strPrivateIPv4Cidr, eni)
 			ipamdErrInc("prefixReconcileAdd")
@@ -1849,6 +2040,10 @@ func EnablePodENI() bool {
 	return utils.GetBoolAsStringEnvVar(envEnablePodENI, false)
 }
 
+func enableMultiNICSupport() bool {
+	return utils.GetBoolAsStringEnvVar(envEnableMultiNICSupport, false)
+}
+
 func getNetworkPolicyMode() (string, error) {
 	value, exists := os.LookupEnv(envNetworkPolicyMode)
 	if !exists {
@@ -1884,57 +2079,91 @@ func EnablePodIPAnnotation() bool {
 func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
 	numFiltered := 0
 	ret := make([]awsutils.ENIMetadata, 0, len(enis))
+
 	for _, eni := range enis {
 		//Filter out any Unmanaged ENIs. VPC CNI will only work with Primary ENI in IPv6 Prefix Delegation mode until
 		//we open up IPv6 support in Secondary IP and Custom networking modes. Filtering out the ENIs here will
 		//help us avoid myriad of if/else loops elsewhere in the code.
-		if c.enableIPv6 && !c.awsClient.IsPrimaryENI(eni.ENIID) {
-			log.Debugf("Skipping ENI %s: IPv6 Mode is enabled and VPC CNI will only manage Primary ENI in v6 PD mode",
-				eni.ENIID)
-			numFiltered++
-			continue
-		} else if c.awsClient.IsUnmanagedENI(eni.ENIID) {
+		//We shouldn't need the IsPrimaryENI check as ENIs not created by vpc-cni will be marked unmanaged (including trunk ENI)
+		isUnmanagedENI := c.awsClient.IsUnmanagedENI(eni.ENIID)
+		isUnmanagedNIC := c.awsClient.IsUnmanagedNIC(eni.NetworkCard)
+		isEfaOnlyENI := c.awsClient.IsEfaOnlyENI(eni.NetworkCard, eni.ENIID)
+
+		if c.enableIPv6 {
+			if !c.awsClient.IsPrimaryENI(eni.ENIID) {
+				if isUnmanagedENI {
+					log.Debugf("Skipping ENI %s: IPv6 Mode is enabled and VPC CNI will only ENIs created by it in v6 PD mode",
+						eni.ENIID)
+					numFiltered++
+					c.unmanagedENI[eni.NetworkCard] += 1
+					continue
+				} else if isUnmanagedNIC {
+					log.Debugf("Skipping ENI %s: since it is on unmanaged network card index %d", eni.ENIID, eni.NetworkCard)
+					continue
+				} else if isEfaOnlyENI {
+					log.Debugf("Skipping ENI %s: since it is EFA only ENI on network card index %d", eni.ENIID, eni.NetworkCard)
+					numFiltered++
+					c.unmanagedENI[eni.NetworkCard] += 1
+					continue
+				}
+			}
+		} else if isUnmanagedENI {
 			log.Debugf("Skipping ENI %s: since it is unmanaged", eni.ENIID)
 			numFiltered++
+			c.unmanagedENI[eni.NetworkCard] += 1
 			continue
-		} else if c.awsClient.IsMultiCardENI(eni.ENIID) {
-			log.Debugf("Skipping ENI %s: since on non-zero network card", eni.ENIID)
+		} else if isUnmanagedNIC {
+			log.Debugf("Skipping ENI %s: since it is on unmanaged network card index %d", eni.ENIID, eni.NetworkCard)
+			continue
+		} else if isEfaOnlyENI {
+			log.Debugf("Skipping ENI %s: since it is EFA only ENI on network card index %d", eni.ENIID, eni.NetworkCard)
+			numFiltered++
+			c.unmanagedENI[eni.NetworkCard] += 1
 			continue
 		}
+
 		ret = append(ret, eni)
 	}
-	c.unmanagedENI = numFiltered
 	c.updateIPStats(numFiltered)
 	return ret
 }
 
 // datastoreTargetState determines the number of IPs `short` or `over` our WARM_IP_TARGET, accounting for the MINIMUM_IP_TARGET.
 // With prefix delegation, this function determines the number of Prefixes `short` or `over`
-func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats) (short int, over int, enabled bool) {
-	if !c.warmIPTargetsDefined() {
+func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats, networkCard int) (short int, over int, enabled bool) {
+
+	warmIPTarget := c.warmIPTarget
+	minimumIPTarget := c.minimumIPTarget
+
+	if networkCard > DefaultNetworkCardIndex {
+		// multi card ENIs will use WARM_IP_TARGET=1 and MINIMUM_IP_TARGET=1 by default
+		warmIPTarget = DefaultWarmIPTarget
+		minimumIPTarget = DefaultMinimumIPTarget
+	} else if !c.warmIPTargetsDefined() {
 		// there is no WARM_IP_TARGET defined and no MINIMUM_IP_TARGET, fallback to use all IP addresses on ENI
 		return 0, 0, false
 	}
 
 	// Calculating DataStore stats can be expensive, so allow the caller to optionally pass stats it already calculated
 	if stats == nil {
-		stats = c.dataStore.GetIPStats(ipV4AddrFamily)
+		stats = c.dataStoreAccess.GetDataStore(networkCard).GetIPStats(ipV4AddrFamily)
 	}
+
 	available := stats.AvailableAddresses()
 
 	// short is greater than 0 when we have fewer available IPs than the warm IP target
-	short = max(c.warmIPTarget-available, 0)
+	short = max(warmIPTarget-available, 0)
 
 	// short is greater than the warm IP target alone when we have fewer total IPs than the minimum target
-	short = max(short, c.minimumIPTarget-stats.TotalIPs)
+	short = max(short, minimumIPTarget-stats.TotalIPs)
 
 	// over is the number of available IPs we have beyond the warm IP target
-	over = max(available-c.warmIPTarget, 0)
+	over = max(available-warmIPTarget, 0)
 
 	// over is less than the warm IP target alone if it would imply reducing total IPs below the minimum target
-	over = max(min(over, stats.TotalIPs-c.minimumIPTarget), 0)
+	over = max(min(over, stats.TotalIPs-minimumIPTarget), 0)
 
-	if c.enablePrefixDelegation {
+	if networkCard == DefaultNetworkCardIndex && c.enablePrefixDelegation {
 		// short : number of IPs short to reach warm targets
 		// over : number of IPs over the warm targets
 		_, numIPsPerPrefix, _ := datastore.GetPrefixDelegationDefaults()
@@ -1950,7 +2179,7 @@ func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats) (sho
 		// over will be number of prefixes over than needed but could be spread across used prefixes,
 		// say, after couple of pod churns, 3 prefixes are allocated with 1 IP each assigned and warm ip target is 15
 		// (J : is this needed? since we have to walk thru the loop of prefixes)
-		freePrefixes := c.dataStore.GetFreePrefixes()
+		freePrefixes := c.dataStoreAccess.GetDataStore(networkCard).GetFreePrefixes()
 		overPrefix := max(min(freePrefixes, stats.TotalPrefixes-prefixNeededForWarmIP), 0)
 		overPrefix = max(min(overPrefix, stats.TotalPrefixes-prefixNeededForMinIP), 0)
 		return shortPrefix, overPrefix, true
@@ -1959,12 +2188,12 @@ func (c *IPAMContext) datastoreTargetState(stats *datastore.DataStoreStats) (sho
 }
 
 // datastorePrefixTargetState determines the number of prefixes short to reach WARM_PREFIX_TARGET
-func (c *IPAMContext) datastorePrefixTargetState() (short int, enabled bool) {
+func (c *IPAMContext) datastorePrefixTargetState(networkCard int) (short int, enabled bool) {
 	if !c.warmPrefixTargetDefined() {
 		return 0, false
 	}
 	// /28 will consume 16 IPs so let's not allocate if not needed.
-	freePrefixesInStore := c.dataStore.GetFreePrefixes()
+	freePrefixesInStore := c.dataStoreAccess.GetDataStore(networkCard).GetFreePrefixes()
 	toAllocate := max(c.warmPrefixTarget-freePrefixesInStore, 0)
 	log.Debugf("Prefix target is %d, short of %d prefixes, free %d prefixes", c.warmPrefixTarget, toAllocate, freePrefixesInStore)
 
@@ -2034,7 +2263,7 @@ func min(x, y int) int {
 }
 
 func (c *IPAMContext) getTrunkLinkIndex() (int, error) {
-	trunkENI := c.dataStore.GetTrunkENI()
+	trunkENI := c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI()
 	attachedENIs, err := c.awsClient.GetAttachedENIs()
 	if err != nil {
 		return -1, err
@@ -2109,7 +2338,7 @@ func (c *IPAMContext) AnnotatePod(podName string, podNamespace string, key strin
 			if ok {
 				log.Debugf("Existing annotation value: %s", oldVal)
 				if oldVal != releasedIP {
-					return fmt.Errorf("Released IP %s does not match existing annotation. Not patching pod.", releasedIP)
+					return fmt.Errorf("released IP %s does not match existing annotation. Not patching pod", releasedIP)
 				}
 				newPod.Annotations[key] = ""
 			}
@@ -2128,14 +2357,21 @@ func (c *IPAMContext) AnnotatePod(podName string, podNamespace string, key strin
 
 func (c *IPAMContext) tryUnassignIPsFromENIs() {
 	log.Debugf("tryUnassignIPsFromENIs")
-	eniInfos := c.dataStore.GetENIInfos()
-	for eniID := range eniInfos.ENIs {
-		c.tryUnassignIPFromENI(eniID)
+	// From all datastores, get ENIInfos and unassign IPs
+	for _, ds := range c.dataStoreAccess.DataStores {
+		networkCard := ds.GetNetworkCard()
+		eniInfos := ds.GetENIInfos()
+		for eniID := range eniInfos.ENIs {
+			c.tryUnassignIPFromENI(eniID, networkCard)
+		}
 	}
+
 }
 
-func (c *IPAMContext) tryUnassignIPFromENI(eniID string) {
-	freeableIPs := c.dataStore.FreeableIPs(eniID)
+func (c *IPAMContext) tryUnassignIPFromENI(eniID string, networkCard int) {
+
+	ds := c.dataStoreAccess.GetDataStore(networkCard)
+	freeableIPs := ds.FreeableIPs(eniID)
 	if len(freeableIPs) == 0 {
 		log.Debugf("No freeable IPs")
 		return
@@ -2146,7 +2382,7 @@ func (c *IPAMContext) tryUnassignIPFromENI(eniID string) {
 	for _, toDelete := range freeableIPs {
 		// Don't force the delete, since a freeable IP might have been assigned to a pod
 		// before we get around to deleting it.
-		err := c.dataStore.DelIPv4CidrFromStore(eniID, toDelete, false /* force */)
+		err := ds.DelIPv4CidrFromStore(eniID, toDelete, false /* force */)
 		if err != nil {
 			log.Warnf("Failed to delete IP %s on ENI %s from datastore: %s", toDelete, eniID, err)
 			ipamdErrInc("decreaseIPPool")
@@ -2166,14 +2402,20 @@ func (c *IPAMContext) tryUnassignIPFromENI(eniID string) {
 
 func (c *IPAMContext) tryUnassignPrefixesFromENIs() {
 	log.Debugf("tryUnassignPrefixesFromENIs")
-	eniInfos := c.dataStore.GetENIInfos()
-	for eniID := range eniInfos.ENIs {
-		c.tryUnassignPrefixFromENI(eniID)
+
+	// From all datastores get ENIs and remove prefixes
+	for _, ds := range c.dataStoreAccess.DataStores {
+		networkCard := ds.GetNetworkCard()
+		eniInfos := ds.GetENIInfos()
+		for eniID := range eniInfos.ENIs {
+			c.tryUnassignPrefixFromENI(eniID, networkCard)
+		}
 	}
 }
 
-func (c *IPAMContext) tryUnassignPrefixFromENI(eniID string) {
-	freeablePrefixes := c.dataStore.FreeablePrefixes(eniID)
+func (c *IPAMContext) tryUnassignPrefixFromENI(eniID string, networkCard int) {
+	ds := c.dataStoreAccess.GetDataStore(networkCard)
+	freeablePrefixes := ds.FreeablePrefixes(eniID)
 	if len(freeablePrefixes) == 0 {
 		return
 	}
@@ -2182,7 +2424,7 @@ func (c *IPAMContext) tryUnassignPrefixFromENI(eniID string) {
 	for _, toDelete := range freeablePrefixes {
 		// Don't force the delete, since a freeable Prefix might have been assigned to a pod
 		// before we get around to deleting it.
-		err := c.dataStore.DelIPv4CidrFromStore(eniID, toDelete, false /* force */)
+		err := ds.DelIPv4CidrFromStore(eniID, toDelete, false /* force */)
 		if err != nil {
 			log.Warnf("Failed to delete Prefix %s on ENI %s from datastore: %s", toDelete, eniID, err)
 			ipamdErrInc("decreaseIPPool")
@@ -2200,13 +2442,18 @@ func (c *IPAMContext) tryUnassignPrefixFromENI(eniID string) {
 	}
 }
 
-func (c *IPAMContext) GetENIResourcesToAllocate() int {
+func (c *IPAMContext) GetENIResourcesToAllocate(networkCard int) int {
 	var resourcesToAllocate int
 	if c.enablePrefixDelegation {
-		resourcesToAllocate = min(c.getPrefixesNeeded(), c.maxPrefixesPerENI)
+		if c.enableIPv6 {
+			// IPv6 always uses PD, so it should always be 1
+			resourcesToAllocate = 1
+		} else {
+			resourcesToAllocate = min(c.getPrefixesNeeded(networkCard), c.maxPrefixesPerENI)
+		}
 	} else {
 		resourcesToAllocate = c.maxIPsPerENI
-		short, _, warmTargetDefined := c.datastoreTargetState(nil)
+		short, _, warmTargetDefined := c.datastoreTargetState(nil, networkCard)
 		if warmTargetDefined {
 			resourcesToAllocate = min(short, c.maxIPsPerENI)
 		}
@@ -2230,32 +2477,23 @@ func (c *IPAMContext) GetIPv4Limit() (int, int, error) {
 	return maxIPsPerENI, maxPrefixesPerENI, nil
 }
 
-func (c *IPAMContext) isDatastorePoolEmpty() bool {
-	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
+func (c *IPAMContext) isDatastorePoolEmpty(networkCard int) bool {
+	stats := c.dataStoreAccess.GetDataStore(networkCard).GetIPStats(ipV4AddrFamily)
 	return stats.TotalIPs == 0
 }
 
 // Return whether the maximum number of ENIs that can be attached to the node has already been reached
-func (c *IPAMContext) hasRoomForEni() bool {
+func (c *IPAMContext) hasRoomForEni(networkCard int) bool {
 	trunkEni := 0
-	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
+	if c.enablePodENI && networkCard == DefaultNetworkCardIndex && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
 		trunkEni = 1
 	}
-	return c.dataStore.GetENIs() < (c.maxENI - c.unmanagedENI - trunkEni)
+	return c.dataStoreAccess.GetDataStore(networkCard).GetENIs() < (c.maxENI - c.unmanagedENI[networkCard] - trunkEni)
 }
 
-func (c *IPAMContext) isDatastorePoolTooLow() (bool, *datastore.DataStoreStats) {
-	stats := c.dataStore.GetIPStats(ipV4AddrFamily)
-	// If max pods has been reached, pool is not too low
-	if stats.TotalIPs >= c.maxPods {
-		return false, stats
-	}
+func (c *IPAMContext) isDatastorePoolTooLow() map[int]Decisions {
 
-	short, _, warmTargetDefined := c.datastoreTargetState(stats)
-	if warmTargetDefined {
-		return short > 0, stats
-	}
-
+	decisions := make(map[int]Decisions, len(c.dataStoreAccess.DataStores))
 	warmTarget := c.warmENITarget
 	totalIPs := c.maxIPsPerENI
 	if c.enablePrefixDelegation {
@@ -2264,28 +2502,45 @@ func (c *IPAMContext) isDatastorePoolTooLow() (bool, *datastore.DataStoreStats) 
 		totalIPs = maxIpsPerPrefix
 	}
 
-	available := stats.AvailableAddresses()
-	poolTooLow := available < totalIPs*warmTarget || (warmTarget == 0 && available == 0)
-	if poolTooLow {
-		log.Debugf("IP pool is too low: available (%d) < ENI target (%d) * addrsPerENI (%d)", available, warmTarget, totalIPs)
-		c.logPoolStats(stats)
+	for _, ds := range c.dataStoreAccess.DataStores {
+		networkCard := ds.GetNetworkCard()
+		stats := ds.GetIPStats(ipV4AddrFamily)
+		// If max pods has been reached, pool is not too low
+		if stats.TotalIPs >= c.maxPods {
+			decisions[networkCard] = Decisions{Stats: stats, IsLow: false}
+			continue
+		}
+
+		short, _, warmTargetDefined := c.datastoreTargetState(stats, networkCard)
+		if warmTargetDefined {
+			decisions[networkCard] = Decisions{Stats: stats, IsLow: short > 0}
+			continue
+		}
+
+		available := stats.AvailableAddresses()
+		poolTooLow := available < totalIPs*warmTarget || (warmTarget == 0 && available == 0)
+		if poolTooLow {
+			log.Debugf("IP pool is too low for Network Card %d: available (%d) < ENI target (%d) * addrsPerENI (%d)", networkCard, available, warmTarget, totalIPs)
+			c.logPoolStats(stats, networkCard)
+		}
+		decisions[networkCard] = Decisions{Stats: stats, IsLow: poolTooLow}
 	}
-	return poolTooLow, stats
+	return decisions
 }
 
-func (c *IPAMContext) isDatastorePoolTooHigh(stats *datastore.DataStoreStats) bool {
+func (c *IPAMContext) isDatastorePoolTooHigh(stats *datastore.DataStoreStats, networkCard int) bool {
 	// NOTE: IPs may be allocated in chunks (full ENIs of prefixes), so the "too-high" condition does not check max pods. The limit is enforced on the allocation side.
-	_, over, warmTargetDefined := c.datastoreTargetState(stats)
+	_, over, warmTargetDefined := c.datastoreTargetState(stats, networkCard)
 	if warmTargetDefined {
 		return over > 0
 	}
 
 	// For the existing ENIs check if we can cleanup prefixes
 	if c.warmPrefixTargetDefined() {
-		freePrefixes := c.dataStore.GetFreePrefixes()
+		freePrefixes := c.dataStoreAccess.GetDataStore(networkCard).GetFreePrefixes()
 		poolTooHigh := freePrefixes > c.warmPrefixTarget
 		if poolTooHigh {
-			log.Debugf("Prefix pool is high so might be able to deallocate - free prefixes: %d, warm prefix target: %d", freePrefixes, c.warmPrefixTarget)
+			log.Debugf("Prefix pool is high so might be able to deallocate - free prefixes: %d, warm prefix target: %d from NetworkCard %d", freePrefixes, c.warmPrefixTarget, networkCard)
 		}
 		return poolTooHigh
 	}
@@ -2328,14 +2583,14 @@ func (c *IPAMContext) DeallocCidrs(eniID string, deletableCidrs []datastore.Cidr
 }
 
 // getPrefixesNeeded returns the number of prefixes need to be allocated to the ENI
-func (c *IPAMContext) getPrefixesNeeded() int {
+func (c *IPAMContext) getPrefixesNeeded(networkCard int) int {
 	// By default allocate 1 prefix at a time
 	toAllocate := 1
 
 	// TODO - post GA we can evaluate to see if these two calls can be merged.
 	// datastoreTargetState already has complex math so adding Prefix target will make it even more complex.
-	short, _, warmIPTargetsDefined := c.datastoreTargetState(nil)
-	shortPrefixes, warmPrefixTargetDefined := c.datastorePrefixTargetState()
+	short, _, warmIPTargetsDefined := c.datastoreTargetState(nil, networkCard)
+	shortPrefixes, warmPrefixTargetDefined := c.datastorePrefixTargetState(networkCard)
 
 	// WARM_IP_TARGET takes precendence over WARM_PREFIX_TARGET
 	if warmIPTargetsDefined {
@@ -2343,19 +2598,20 @@ func (c *IPAMContext) getPrefixesNeeded() int {
 	} else if warmPrefixTargetDefined {
 		toAllocate = max(toAllocate, shortPrefixes)
 	}
-	log.Debugf("ToAllocate: %d", toAllocate)
+	log.Debugf("ToAllocate: %d, Network Card %d", toAllocate, networkCard)
 	return toAllocate
 }
 
 func (c *IPAMContext) initENIAndIPLimits() (err error) {
-	if c.enableIPv4 {
-		nodeMaxENI, err := c.getMaxENI()
-		if err != nil {
-			log.Error("Failed to get ENI limit")
-			return err
-		}
-		c.maxENI = nodeMaxENI
 
+	nodeMaxENI, err := c.getMaxENI()
+	if err != nil {
+		log.Error("Failed to get ENI limit")
+		return err
+	}
+	c.maxENI = nodeMaxENI
+
+	if c.enableIPv4 {
 		c.maxIPsPerENI, c.maxPrefixesPerENI, err = c.GetIPv4Limit()
 		if err != nil {
 			return err
@@ -2480,4 +2736,9 @@ func (c *IPAMContext) SetAPIServerConnectivity(connected bool) {
 		// and we want to keep working with that value
 		log.Info("API server connection lost, continuing with current maxPods value")
 	}
+}
+
+type Decisions struct {
+	Stats *datastore.DataStoreStats
+	IsLow bool
 }

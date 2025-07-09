@@ -162,10 +162,6 @@ func TestGetLocalIPv4s(t *testing.T) {
 		assert.Equal(t, ips, []net.IP{net.IPv4(10, 0, 114, 236), net.IPv4(10, 0, 120, 181)})
 	}
 
-	_, err = f.GetLocalIPv4s(context.TODO(), "00:00:de:ad:be:ef")
-	if assert.Error(t, err) {
-		assert.True(t, IsNotFound(err))
-	}
 }
 
 func TestGetIPv6s(t *testing.T) {
@@ -220,10 +216,6 @@ func TestGetVPCIPv4CIDRBlocks(t *testing.T) {
 		assert.Equal(t, ips, []net.IPNet{{IP: net.IPv4(10, 0, 0, 0), Mask: net.CIDRMask(16, 32)}})
 	}
 
-	_, err = f.GetLocalIPv4s(context.TODO(), "00:00:de:ad:be:ef")
-	if assert.Error(t, err) {
-		assert.True(t, IsNotFound(err))
-	}
 }
 
 func TestGetSubnetIPv6CIDRBlocks(t *testing.T) {

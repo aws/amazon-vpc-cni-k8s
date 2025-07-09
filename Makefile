@@ -41,7 +41,7 @@ BASE_IMAGE_CNI_METRICS ?= public.ecr.aws/eks-distro-build-tooling/eks-distro-min
 DESTDIR = .
 
 # IMAGE is the primary AWS VPC CNI plugin container image.
-IMAGE = amazon/amazon-k8s-cni
+IMAGE ?= amazon/amazon-k8s-cni
 IMAGE_NAME = $(IMAGE)$(IMAGE_ARCH_SUFFIX):$(VERSION)
 IMAGE_DIST = $(DESTDIR)/$(subst /,_,$(IMAGE_NAME)).tar.gz
 # INIT_IMAGE is the init container for AWS VPC CNI.

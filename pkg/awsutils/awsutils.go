@@ -94,6 +94,10 @@ var (
 	ErrNoSecondaryIPsFound = errors.New("No secondary IPs have been assigned to this ENI")
 	// ErrNoNetworkInterfaces occurs when DescribeNetworkInterfaces(eniID) returns no network interfaces
 	ErrNoNetworkInterfaces = errors.New("No network interfaces found for ENI")
+	// ErrUnableToDetachENI is returned when the ENI cannot be detached from the instance
+	ErrUnableToDetachENI = errors.New("unable to detach ENI from EC2 instance, giving up")
+	// ErrENIAttachmentIdNotFound is returned when the ENI attachment ID is not found
+	ErrENIAttachmentIdNotFound = errors.New("ENI attachment ID not found")
 )
 
 var log = logger.Get()
@@ -101,7 +105,7 @@ var log = logger.Get()
 // APIs defines interfaces calls for adding/getting/deleting ENIs/secondary IPs. The APIs are not thread-safe.
 type APIs interface {
 	// AllocENI creates an ENI and attaches it to the instance
-	AllocENI(useCustomCfg bool, sg []*string, eniCfgSubnet string, numIPs int) (eni string, err error)
+	AllocENI(sg []*string, eniCfgSubnet string, numIPs int, networkCard int) (eni string, err error)
 
 	// FreeENI detaches ENI interface and deletes it
 	FreeENI(eniName string) error
@@ -145,6 +149,9 @@ type APIs interface {
 	// GetLocalIPv4 returns the primary IPv4 address on the primary ENI interface
 	GetLocalIPv4() net.IP
 
+	// GetLocalIPv6 returns the primary IPv6 address on the primary ENI interface
+	GetLocalIPv6() net.IP
+
 	// GetVPCIPv6CIDRs returns VPC's IPv6 CIDRs from instance metadata
 	GetVPCIPv6CIDRs() ([]string, error)
 
@@ -166,23 +173,29 @@ type APIs interface {
 	// SetUnmanagedENIs sets the list of unmanaged ENI IDs
 	SetUnmanagedENIs(eniIDs []string)
 
+	// SetUnmanagedNetworkCards sets the list of unmanaged Network Cards
+	SetUnmanagedNetworkCards(skipNetworkCards []bool)
+
+	// Set EFAOnlyENIs
+	SetEFAOnlyENIs(efaOnlyENIByNetworkCard []string)
+
 	// IsUnmanagedENI checks if an ENI is unmanaged
 	IsUnmanagedENI(eniID string) bool
 
+	// IsUnmanagedNIC checks if an Network Card is unmanaged
+	IsUnmanagedNIC(networkCard int) bool
+
+	// IsEfaOnlyENI checks if an ENI is efa-only
+	IsEfaOnlyENI(networkCard int, eni string) bool
+
 	// WaitForENIAndIPsAttached waits until the ENI has been attached and the secondary IPs have been added
 	WaitForENIAndIPsAttached(eni string, wantedSecondaryIPs int) (ENIMetadata, error)
-
-	//SetMultiCardENIs ENI
-	SetMultiCardENIs(eniID []string) error
-
-	//IsMultiCardENI
-	IsMultiCardENI(eniID string) bool
 
 	//IsPrimaryENI
 	IsPrimaryENI(eniID string) bool
 
 	//RefreshSGIDs
-	RefreshSGIDs(mac string, store *datastore.DataStore) error
+	RefreshSGIDs(mac string, ds *datastore.DataStoreAccess) error
 
 	//GetInstanceHypervisorFamily returns the hypervisor family for the instance
 	GetInstanceHypervisorFamily() string
@@ -205,30 +218,28 @@ type APIs interface {
 // EC2InstanceMetadataCache caches instance metadata
 type EC2InstanceMetadataCache struct {
 	// metadata info
-	securityGroups   StringSet
-	subnetID         string
-	localIPv4        net.IP
-	v4Enabled        bool
-	v6Enabled        bool
-	instanceID       string
-	instanceType     string
-	primaryENI       string
-	primaryENImac    string
-	availabilityZone string
-	region           string
-	vpcID            string
-
-	unmanagedENIs          StringSet
-	useCustomNetworking    bool
-	multiCardENIs          StringSet
-	useSubnetDiscovery     bool
-	enablePrefixDelegation bool
-
-	clusterName       string
-	additionalENITags map[string]string
-
-	imds   TypedIMDS
-	ec2SVC ec2wrapper.EC2
+	securityGroups           StringSet
+	subnetID                 string
+	localIPv4                net.IP
+	v4Enabled                bool
+	v6Enabled                bool
+	instanceID               string
+	instanceType             string
+	primaryENI               string
+	primaryENImac            string
+	availabilityZone         string
+	region                   string
+	vpcID                    string
+	unmanagedENIs            StringSet
+	useCustomNetworking      bool
+	unmanagedNICs            []bool
+	efaOnlyENIsByNetworkCard []string
+	useSubnetDiscovery       bool
+	enablePrefixDelegation   bool
+	clusterName              string
+	additionalENITags        map[string]string
+	imds                     TypedIMDS
+	ec2SVC                   ec2wrapper.EC2
 }
 
 // ENIMetadata contains information about an ENI
@@ -289,11 +300,12 @@ type TagMap map[string]string
 
 // DescribeAllENIsResult contains the fully
 type DescribeAllENIsResult struct {
-	ENIMetadata     []ENIMetadata
-	TagMap          map[string]TagMap
-	TrunkENI        string
-	EFAENIs         map[string]bool
-	MultiCardENIIDs []string
+	ENIMetadata             []ENIMetadata
+	TagMap                  map[string]TagMap
+	TrunkENI                string
+	EFAENIs                 map[string]bool
+	EFAOnlyENIByNetworkCard []string
+	ENIsByNetworkCard       [][]string
 }
 
 // msSince returns milliseconds since start.
@@ -502,7 +514,7 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 }
 
 // RefreshSGIDs retrieves security groups
-func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string, store *datastore.DataStore) error {
+func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string, dsAccess *datastore.DataStoreAccess) error {
 	ctx := context.TODO()
 
 	sgIDs, err := cache.imds.GetSecurityGroupIDs(ctx, mac)
@@ -529,19 +541,19 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string, store *datastore
 	cache.securityGroups.Set(sgIDs)
 
 	if !cache.useCustomNetworking && (addedSGsCount != 0 || deletedSGsCount != 0) {
-		eniInfos := store.GetENIInfos()
-
 		var eniIDs []string
 
-		for eniID := range eniInfos.ENIs {
-			eniIDs = append(eniIDs, eniID)
+		for _, ds := range dsAccess.DataStores {
+			eniInfos := ds.GetENIInfos()
+			for eniID := range eniInfos.ENIs {
+				eniIDs = append(eniIDs, eniID)
+			}
 		}
 
 		newENIs := StringSet{}
 		newENIs.Set(eniIDs)
-
-		tempfilteredENIs := newENIs.Difference(&cache.multiCardENIs)
-		filteredENIs := tempfilteredENIs.Difference(&cache.unmanagedENIs)
+		// JD: REVISIT HERE
+		filteredENIs := newENIs.Difference(&cache.unmanagedENIs)
 
 		// This will update SG for managed ENIs created by EKS.
 		for _, eniID := range filteredENIs.SortedList() {
@@ -716,10 +728,11 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 	var ec2ip6s []ec2types.NetworkInterfaceIpv6Address
 	var subnetV6Cidr string
 	if cache.v6Enabled {
-		// For IPv6 ENIs, do not error on missing IPv6 information
+		// For IPv6 ENIs, we have to return the error if Subnet is not discovered
 		v6cidr, err := cache.imds.GetSubnetIPv6CIDRBlocks(ctx, eniMAC)
 		if err != nil {
 			awsAPIErrInc("GetSubnetIPv6CIDRBlocks", err)
+			return ENIMetadata{}, err
 		} else {
 			subnetV6Cidr = v6cidr.String()
 		}
@@ -784,7 +797,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 }
 
 // awsGetFreeDeviceNumber calls EC2 API DescribeInstances to get the next free device index
-func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int, error) {
+func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber(networkCard int) (int, error) {
 	input := &ec2.DescribeInstancesInput{
 		InstanceIds: []string{cache.instanceID},
 	}
@@ -809,44 +822,44 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int, error) {
 	inst := result.Reservations[0].Instances[0]
 	var device [maxENIs]bool
 	for _, eni := range inst.NetworkInterfaces {
-		// We don't support multi-card yet, so only account for network card zero
-		if eni.Attachment != nil && aws.ToInt32(eni.Attachment.NetworkCardIndex) == 0 {
+		if eni.Attachment != nil && aws.ToInt32(eni.Attachment.NetworkCardIndex) == int32(networkCard) {
 			if aws.ToInt32(eni.Attachment.DeviceIndex) > maxENIs {
-				log.Warnf("The Device Index %d of the attached ENI %s > instance max slot %d",
+				log.Warnf("The Device Index %d of the attached ENI %s > instance max slot %d for network card",
 					aws.ToInt32(eni.Attachment.DeviceIndex), aws.ToString(eni.NetworkInterfaceId),
-					maxENIs)
+					maxENIs, networkCard)
 			} else {
-				log.Debugf("Discovered device number is used: %d", aws.ToInt32(eni.Attachment.DeviceIndex))
+				log.Debugf("Discovered device number is used for network card %d: %d", networkCard, aws.ToInt32(eni.Attachment.DeviceIndex))
 				device[aws.ToInt32(eni.Attachment.DeviceIndex)] = true
 			}
 		}
 	}
 
-	for freeDeviceIndex := 0; freeDeviceIndex < maxENIs; freeDeviceIndex++ {
+	for freeDeviceIndex := range maxENIs {
 		if !device[freeDeviceIndex] {
-			log.Debugf("Found a free device number: %d", freeDeviceIndex)
+			log.Debugf("Found a free device number for network card %d : %d", networkCard, freeDeviceIndex)
 			return freeDeviceIndex, nil
 		}
 	}
-	return 0, errors.New("awsGetFreeDeviceNumber: no available device number")
+	return 0, errors.New(fmt.Sprintf("awsGetFreeDeviceNumber: no available device number for network card %d", networkCard))
 }
 
 // AllocENI creates an ENI and attaches it to the instance
 // returns: newly created ENI ID
-func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string, eniCfgSubnet string, numIPs int) (string, error) {
-	eniID, err := cache.createENI(useCustomCfg, sg, eniCfgSubnet, numIPs)
+func (cache *EC2InstanceMetadataCache) AllocENI(sg []*string, eniCfgSubnet string, numIPs int, networkCard int) (string, error) {
+
+	eniID, err := cache.createENI(sg, eniCfgSubnet, numIPs)
 	if err != nil {
 		return "", errors.Wrap(err, "AllocENI: failed to create ENI")
 	}
 
-	attachmentID, err := cache.attachENI(eniID)
+	attachmentID, err := cache.attachENI(eniID, networkCard)
 	if err != nil {
 		derr := cache.deleteENI(eniID, maxENIBackoffDelay)
 		if derr != nil {
 			awsUtilsErrInc("AllocENIDeleteErr", err)
 			log.Errorf("Failed to delete newly created untagged ENI! %v", err)
 		}
-		return "", errors.Wrap(err, "AllocENI: error attaching ENI")
+		return "", errors.Wrap(err, fmt.Sprintf("AllocENI: error attaching ENI for network card %d", networkCard))
 	}
 
 	// Also change the ENI's attribute so that the ENI will be deleted when the instance is deleted.
@@ -873,14 +886,14 @@ func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string,
 		return "", errors.Wrap(err, "AllocENI: unable to change the ENI's attribute")
 	}
 
-	log.Infof("Successfully created and attached a new ENI %s to instance", eniID)
+	log.Infof("Successfully created and attached a new ENI %s to instance on network card %d", eniID, networkCard)
 	return eniID, nil
 }
 
 // attachENI calls EC2 API to attach the ENI and returns the attachment id
-func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
+func (cache *EC2InstanceMetadataCache) attachENI(eniID string, networkCard int) (string, error) {
 	// attach to instance
-	freeDevice, err := cache.awsGetFreeDeviceNumber()
+	freeDevice, err := cache.awsGetFreeDeviceNumber(networkCard)
 	if err != nil {
 		return "", errors.Wrap(err, "attachENI: failed to get a free device number")
 	}
@@ -889,7 +902,7 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 		DeviceIndex:        aws.Int32(int32(freeDevice)),
 		InstanceId:         aws.String(cache.instanceID),
 		NetworkInterfaceId: aws.String(eniID),
-		NetworkCardIndex:   aws.Int32(0),
+		NetworkCardIndex:   aws.Int32(int32(networkCard)),
 	}
 	start := time.Now()
 	attachOutput, err := cache.ec2SVC.AttachNetworkInterface(context.Background(), attachInput)
@@ -900,58 +913,77 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 		awsAPIErrInc("AttachNetworkInterface", err)
 		prometheusmetrics.Ec2ApiErr.WithLabelValues("AttachNetworkInterface").Inc()
 		log.Errorf("Failed to attach ENI %s: %v", eniID, err)
-		return "", errors.Wrap(err, "attachENI: failed to attach ENI")
+		return "", errors.Wrap(err, fmt.Sprintf("attachENI: failed to attach ENI for network card %d", networkCard))
 	}
 	return aws.ToString(attachOutput.AttachmentId), err
 }
 
-// return ENI id, error
-func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string, eniCfgSubnet string, numIPs int) (string, error) {
-	eniDescription := eniDescriptionPrefix + cache.instanceID
+// createENITags creates all the tags required to be added to the ENI
+//
+// Returns:
+// - []ec2types.TagSpecification: Returns the tags by converting it into AWS SDK class
+func (cache *EC2InstanceMetadataCache) createENITags() []ec2types.TagSpecification {
+
 	tags := map[string]string{
 		eniCreatedAtTagKey: time.Now().Format(time.RFC3339),
 	}
 	for key, value := range cache.buildENITags() {
 		tags[key] = value
 	}
-	tagSpec := []ec2types.TagSpecification{
+	return []ec2types.TagSpecification{
 		{
 			ResourceType: ec2types.ResourceTypeNetworkInterface,
 			Tags:         convertTagsToSDKTags(tags),
 		},
 	}
+}
+
+func (cache *EC2InstanceMetadataCache) createENIInput(eniDescription string, tags []ec2types.TagSpecification, needIPs int) *ec2.CreateNetworkInterfaceInput {
+	input := &ec2.CreateNetworkInterfaceInput{
+		Description:       aws.String(eniDescription),
+		Groups:            cache.securityGroups.SortedList(),
+		SubnetId:          aws.String(cache.subnetID),
+		TagSpecifications: tags,
+	}
+	// Even though IPv6 PD is enabled, we require a Primary IP for the ENI.
+	// This always creates an ENI which has 1 Primary IPv6 address
+	// We use assignIPv6Prefix to assign a prefix during setupENI
+	if cache.v6Enabled {
+		input.Ipv6AddressCount = aws.Int32(int32(needIPs))
+		return input
+	}
+
+	if cache.enablePrefixDelegation {
+		input.Ipv4PrefixCount = aws.Int32(int32(needIPs))
+	} else {
+		input.SecondaryPrivateIpAddressCount = aws.Int32(int32(needIPs))
+	}
+
+	return input
+}
+
+// return ENI id, error
+func (cache *EC2InstanceMetadataCache) createENI(sg []*string, eniCfgSubnet string, numIPs int) (string, error) {
+	eniDescription := eniDescriptionPrefix + cache.instanceID
+	tags := cache.createENITags()
+
 	var needIPs = numIPs
 
-	ipLimit := cache.GetENIIPv4Limit()
-	if ipLimit < needIPs {
-		needIPs = ipLimit
+	if !cache.v6Enabled {
+		ipLimit := cache.GetENIIPv4Limit()
+		if ipLimit < needIPs {
+			needIPs = ipLimit
+		}
 	}
 
 	log.Infof("Trying to allocate %d IP addresses on new ENI", needIPs)
 	log.Debugf("PD enabled - %t", cache.enablePrefixDelegation)
 
-	input := &ec2.CreateNetworkInterfaceInput{}
-
-	if cache.enablePrefixDelegation {
-		input = &ec2.CreateNetworkInterfaceInput{
-			Description:       aws.String(eniDescription),
-			Groups:            cache.securityGroups.SortedList(),
-			SubnetId:          aws.String(cache.subnetID),
-			TagSpecifications: tagSpec,
-			Ipv4PrefixCount:   aws.Int32(int32(needIPs)),
-		}
-	} else {
-		input = &ec2.CreateNetworkInterfaceInput{
-			Description:                    aws.String(eniDescription),
-			Groups:                         cache.securityGroups.SortedList(),
-			SubnetId:                       aws.String(cache.subnetID),
-			TagSpecifications:              tagSpec,
-			SecondaryPrivateIpAddressCount: aws.Int32(int32(needIPs)),
-		}
-	}
-
 	var err error
 	var networkInterfaceID string
+
+	input := cache.createENIInput(eniDescription, tags, needIPs)
+
 	if cache.useCustomNetworking {
 		input = createENIUsingCustomCfg(sg, eniCfgSubnet, input)
 		log.Infof("Creating ENI with security groups: %v in subnet: %s", input.Groups, aws.ToString(input.SubnetId))
@@ -961,7 +993,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 			return networkInterfaceID, nil
 		}
 	} else {
-		if cache.useSubnetDiscovery {
+		if cache.useSubnetDiscovery && !cache.v6Enabled {
 			subnetResult, vpcErr := cache.getVpcSubnets()
 			if vpcErr != nil {
 				log.Warnf("Failed to call ec2:DescribeSubnets: %v", vpcErr)
@@ -1149,7 +1181,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 		}
 		awsUtilsErrInc("getENIAttachmentIDFailed", err)
 		log.Errorf("Failed to retrieve ENI %s attachment id: %v", eniName, err)
-		return errors.Wrap(err, "FreeENI: failed to retrieve ENI's attachment id")
+		return ErrENIAttachmentIdNotFound
 	}
 	log.Debugf("Found ENI %s attachment id: %s ", eniName, aws.ToString(attachID))
 
@@ -1168,7 +1200,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 			awsAPIErrInc("DetachNetworkInterface", ec2Err)
 			prometheusmetrics.Ec2ApiErr.WithLabelValues("DetachNetworkInterface").Inc()
 			log.Errorf("Failed to detach ENI %s %v", eniName, ec2Err)
-			return errors.New("unable to detach ENI from EC2 instance, giving up")
+			return ErrUnableToDetachENI
 		}
 		log.Infof("Successfully detached ENI: %s", eniName)
 		return nil
@@ -1176,7 +1208,7 @@ func (cache *EC2InstanceMetadataCache) freeENI(eniName string, sleepDelayAfterDe
 
 	if err != nil {
 		log.Errorf("Failed to detach ENI %s %v", eniName, err)
-		return err
+		return ErrUnableToDetachENI
 	}
 
 	// It does take awhile for EC2 to detach ENI from instance, so we wait 2s before trying the delete.
@@ -1357,10 +1389,13 @@ func (cache *EC2InstanceMetadataCache) GetIPv6PrefixesFromEC2(eniID string) (add
 // DescribeAllENIs calls EC2 to refresh the ENIMetadata and tags for all attached ENIs
 func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult, error) {
 	// Fetch all local ENI info from metadata
+
 	allENIs, err := cache.GetAttachedENIs()
 	if err != nil {
 		return DescribeAllENIsResult{}, errors.Wrap(err, "DescribeAllENIs: failed to get local ENI metadata")
 	}
+	efaOnlyENIByNetworkCards := make([]string, len(cache.GetNetworkCards()))
+	enisByNetworkCard := make([][]string, len(cache.GetNetworkCards()))
 
 	eniMap := make(map[string]ENIMetadata, len(allENIs))
 	var eniIDs []string
@@ -1373,22 +1408,19 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 	if utils.GetBoolAsStringEnvVar(utils.EnvEnableImdsOnlyMode, false) {
 		log.Debug("ENABLE_IMDS_ONLY_MODE is enabled, skipping EC2 API call and using IMDS metadata only")
 		// Collect the verified ENIs, adding multicards information from IMDS cache as well
-		var imdsOnlyENImetadata []ENIMetadata
-		var imdsOnlyMultiCardENIIDs []string
+
 		for _, eniMetadata := range eniMap {
-			if eniMetadata.NetworkCard > 0 {
-				imdsOnlyMultiCardENIIDs = append(imdsOnlyMultiCardENIIDs, eniMetadata.ENIID)
-			}
-			imdsOnlyENImetadata = append(imdsOnlyENImetadata, eniMetadata)
+			enisByNetworkCard[int(eniMetadata.NetworkCard)] = append(enisByNetworkCard[int(eniMetadata.NetworkCard)], eniMetadata.ENIID)
 		}
 
 		// Return the result with empty tag map, trunk ENI and EFA ENIs as those cannot get from IMDS metadata
 		return DescribeAllENIsResult{
-			ENIMetadata:     imdsOnlyENImetadata,
-			TagMap:          make(map[string]TagMap),
-			TrunkENI:        "",
-			EFAENIs:         make(map[string]bool),
-			MultiCardENIIDs: imdsOnlyMultiCardENIIDs,
+			ENIMetadata:             allENIs,
+			TagMap:                  make(map[string]TagMap),
+			TrunkENI:                "",
+			EFAENIs:                 make(map[string]bool),
+			ENIsByNetworkCard:       enisByNetworkCard,
+			EFAOnlyENIByNetworkCard: efaOnlyENIByNetworkCards,
 		}, nil
 	}
 
@@ -1443,20 +1475,22 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 
 	// Collect ENI response into ENI metadata and tags.
 	var trunkENI string
-	var multiCardENIIDs []string
 	efaENIs := make(map[string]bool, 0)
 	tagMap := make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
+
 	for _, ec2res := range ec2Response.NetworkInterfaces {
 		eniID := aws.ToString(ec2res.NetworkInterfaceId)
 		attachment := ec2res.Attachment
 		// Validate that Attachment is populated by EC2 response before logging
 		if attachment != nil {
 			log.Infof("Got network card index %v for ENI %v", aws.ToInt32(attachment.NetworkCardIndex), eniID)
-			if aws.ToInt32(attachment.DeviceIndex) == 0 && !aws.ToBool(attachment.DeleteOnTermination) {
+			if aws.ToInt32(attachment.DeviceIndex) == 0 && aws.ToInt32(attachment.NetworkCardIndex) == 0 && !aws.ToBool(attachment.DeleteOnTermination) {
 				log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
 			}
-			if aws.ToInt32(attachment.NetworkCardIndex) > 0 {
-				multiCardENIIDs = append(multiCardENIIDs, eniID)
+			enisByNetworkCard[int(aws.ToInt32(attachment.NetworkCardIndex))] = append(enisByNetworkCard[int(aws.ToInt32(attachment.NetworkCardIndex))], eniID)
+			// Network Card where EFA-only ENI is attached
+			if ec2res.InterfaceType == "efa-only" {
+				efaOnlyENIByNetworkCards[int(aws.ToInt32(attachment.NetworkCardIndex))] = eniID
 			}
 		} else {
 			log.Infof("Got empty attachment for ENI %v", eniID)
@@ -1470,9 +1504,11 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		if interfaceType == "trunk" {
 			trunkENI = eniID
 		}
-		if interfaceType == "efa" || interfaceType == "efa-only" {
+
+		if interfaceType == "efa" {
 			efaENIs[eniID] = true
 		}
+
 		if interfaceType != "efa-only" {
 			if len(eniMetadata.IPv4Addresses) == 0 && len(eniMetadata.IPv6Addresses) == 0 {
 				log.Errorf("Missing IP addresses from IMDS. Non efa-only interface should have IP address associated with it %s", eniID)
@@ -1488,11 +1524,12 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() (DescribeAllENIsResult,
 		tagMap[eniMetadata.ENIID] = convertSDKTagsToTags(ec2res.TagSet)
 	}
 	return DescribeAllENIsResult{
-		ENIMetadata:     verifiedENIs,
-		TagMap:          tagMap,
-		TrunkENI:        trunkENI,
-		EFAENIs:         efaENIs,
-		MultiCardENIIDs: multiCardENIIDs,
+		ENIMetadata:             verifiedENIs,
+		TagMap:                  tagMap,
+		TrunkENI:                trunkENI,
+		EFAENIs:                 efaENIs,
+		EFAOnlyENIByNetworkCard: efaOnlyENIByNetworkCards,
+		ENIsByNetworkCard:       enisByNetworkCard,
 	}, nil
 }
 
@@ -1825,12 +1862,13 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 			if eni == returnedENI.ENIID {
 				// Check how many Secondary IPs or Prefixes have been attached
 				var eniIPCount int
-				log.Debugf("ENI ID: %v IP Addr: %s, IPv4Prefixes:- %v, IPv6Prefixes:- %v", returnedENI.ENIID,
-					returnedENI.IPv4Addresses, returnedENI.IPv4Prefixes, returnedENI.IPv6Prefixes)
+				log.Debugf("ENI ID: %v IP Addr: %d, IPv4Prefixes:- %d, IPv6Prefixes:- %d", returnedENI.ENIID,
+					len(returnedENI.IPv4Addresses), len(returnedENI.IPv4Prefixes), len(returnedENI.IPv6Prefixes))
 				if cache.enablePrefixDelegation {
 					eniIPCount = len(returnedENI.IPv4Prefixes)
+					// We look for IPv6Address instead if prefix here
 					if cache.v6Enabled {
-						eniIPCount = len(returnedENI.IPv6Prefixes)
+						eniIPCount = len(returnedENI.IPv6Addresses)
 					}
 				} else {
 					//Ignore primary IP of the ENI
@@ -1839,7 +1877,7 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 				}
 
 				if eniIPCount < 1 {
-					log.Debugf("No secondary IPv4 addresses/prefixes available yet on ENI %s", returnedENI.ENIID)
+					log.Debugf("No secondary IPv4/IPv6 addresses/prefixes available yet on ENI %s", returnedENI.ENIID)
 					return ErrNoSecondaryIPsFound
 				}
 
@@ -1855,6 +1893,7 @@ func (cache *EC2InstanceMetadataCache) waitForENIAndIPsAttached(eni string, want
 		log.Debugf("Not able to find the right ENI yet (attempt %d/%d)", attempt, maxENIEC2APIRetries)
 		return ErrENINotFound
 	})
+
 	prometheusmetrics.AwsAPILatency.WithLabelValues("waitForENIAndIPsAttached", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 	if err != nil {
 		// If we have at least 1 Secondary IP, by now return what we have without an error
@@ -2096,6 +2135,18 @@ func (cache *EC2InstanceMetadataCache) GetLocalIPv4() net.IP {
 	return cache.localIPv4
 }
 
+// GetLocalIPv4 returns the primary IP address on the primary interface
+func (cache *EC2InstanceMetadataCache) GetLocalIPv6() net.IP {
+	ctx := context.TODO()
+
+	localIPv6, err := cache.imds.GetLocalIPv6(ctx)
+	if err != nil {
+		awsAPIErrInc("GetIPv6", err)
+	}
+
+	return localIPv6
+}
+
 // GetVPCIPv6CIDRs returns VPC CIDRs
 func (cache *EC2InstanceMetadataCache) GetVPCIPv6CIDRs() ([]string, error) {
 	ctx := context.TODO()
@@ -2129,6 +2180,16 @@ func (cache *EC2InstanceMetadataCache) SetUnmanagedENIs(eniIDs []string) {
 	cache.unmanagedENIs.Set(eniIDs)
 }
 
+// SetUnmanagedENIs Set unmanaged ENI set
+func (cache *EC2InstanceMetadataCache) SetUnmanagedNetworkCards(skipNetworkCards []bool) {
+	cache.unmanagedNICs = skipNetworkCards
+}
+
+// SetEfaOnlyENIsByNetworkCards
+func (cache *EC2InstanceMetadataCache) SetEFAOnlyENIs(efaOnlyENIByNetworkCard []string) {
+	cache.efaOnlyENIsByNetworkCard = efaOnlyENIByNetworkCard
+}
+
 // GetInstanceID returns the instance ID
 func (cache *EC2InstanceMetadataCache) GetInstanceID() string {
 	return cache.instanceID
@@ -2140,6 +2201,16 @@ func (cache *EC2InstanceMetadataCache) IsUnmanagedENI(eniID string) bool {
 		return cache.unmanagedENIs.Has(eniID)
 	}
 	return false
+}
+
+// IsUnmanagedENI returns if the eni is unmanaged
+func (cache *EC2InstanceMetadataCache) IsUnmanagedNIC(networkCardIndex int) bool {
+	return cache.unmanagedNICs[networkCardIndex]
+}
+
+// IsEfaOnlyENI the efaOnlyENI
+func (cache *EC2InstanceMetadataCache) IsEfaOnlyENI(networkCardIndex int, eniID string) bool {
+	return cache.efaOnlyENIsByNetworkCard[networkCardIndex] == eniID
 }
 
 func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterfaces(input *ec2.DescribeNetworkInterfacesInput, filterFn func(networkInterface ec2types.NetworkInterface) error) error {
@@ -2160,22 +2231,6 @@ func (cache *EC2InstanceMetadataCache) getENIsFromPaginatedDescribeNetworkInterf
 	}
 	prometheusmetrics.Ec2ApiReq.WithLabelValues("DescribeNetworkInterfaces").Inc()
 	return nil
-}
-
-// SetMultiCardENIs creates a StringSet tracking ENIs not behind the default network card index
-func (cache *EC2InstanceMetadataCache) SetMultiCardENIs(eniID []string) error {
-	if len(eniID) != 0 {
-		cache.multiCardENIs.Set(eniID)
-	}
-	return nil
-}
-
-// IsMultiCardENI returns if the ENI is not behind the default network card index (multi-card ENI)
-func (cache *EC2InstanceMetadataCache) IsMultiCardENI(eniID string) bool {
-	if len(eniID) != 0 {
-		return cache.multiCardENIs.Has(eniID)
-	}
-	return false
 }
 
 // IsPrimaryENI returns if the eni is unmanaged

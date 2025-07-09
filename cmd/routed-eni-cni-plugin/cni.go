@@ -53,6 +53,10 @@ const dummyInterfacePrefix = "dummy"
 
 const npAgentConnTimeout = 2
 
+const multiNICPodAnnotation = "k8s.amazonaws.com/nicConfig"
+const multiNICAttachment = "multi-nic-attachment"
+const containerVethNamePrefix = "mNicIf"
+
 var version string
 
 // NetConf stores the common network config for the CNI plugin
@@ -72,7 +76,12 @@ type NetConf struct {
 
 	PluginLogFile string `json:"pluginLogFile"`
 
-	PluginLogLevel string `json:"pluginLogLevel"`
+	PluginLogLevel string        `json:"pluginLogLevel"`
+	RuntimeConfig  RuntimeConfig `json:"runtimeConfig"`
+}
+
+type RuntimeConfig struct {
+	PodAnnotations map[string]string `json:"io.kubernetes.cri.pod-annotations"`
 }
 
 // K8sArgs is the valid CNI_ARGS used for Kubernetes
@@ -156,6 +165,20 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	mtu := networkutils.GetPodMTU(conf.MTU)
 	log.Debugf("MTU value set is %d:", mtu)
 
+	// Derive if Pod requires multiple NIC connected
+	requiresMultiNICAttachment := false
+
+	if value, ok := conf.RuntimeConfig.PodAnnotations[multiNICPodAnnotation]; ok {
+		if value == multiNICAttachment {
+			requiresMultiNICAttachment = true
+		} else {
+			log.Debugf("Multi-NIC annotation mismatch: found=%q, required=%q. Falling back to default configuration.",
+				conf.RuntimeConfig.PodAnnotations[multiNICPodAnnotation], multiNICAttachment)
+		}
+	}
+
+	log.Debugf("pod requires multi-nic attachment: %t", requiresMultiNICAttachment)
+
 	// Set up a connection to the ipamD server.
 	conn, err := grpcClient.Dial(ipamdAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -177,6 +200,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			ContainerID:                args.ContainerID,
 			NetworkName:                conf.Name,
 			IfName:                     args.IfName,
+			RequiresMultiNICAttachment: requiresMultiNICAttachment,
 		})
 
 	if err != nil {
@@ -194,47 +218,69 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		args.ContainerID, args.IfName, r)
 
 	// We will let the values in result struct guide us in terms of IP Address Family configured.
-	var v4Addr, v6Addr, addr *net.IPNet
 
-	// We don't support dual stack mode currently so it has to be either v4 or v6 mode.
-	if r.IPv4Addr != "" {
-		v4Addr = &net.IPNet{
-			IP:   net.ParseIP(r.IPv4Addr),
-			Mask: net.CIDRMask(32, 32),
-		}
-		addr = v4Addr
-	} else if r.IPv6Addr != "" {
-		v6Addr = &net.IPNet{
-			IP:   net.ParseIP(r.IPv6Addr),
-			Mask: net.CIDRMask(128, 128),
-		}
-		addr = v6Addr
-	}
 	// AddNetwork guarantees that Gateway string is a valid IPNet
 	gw := net.ParseIP(r.PodENISubnetGW)
 
-	var hostVethName string
+	var vethMetadata []driver.VirtualInterfaceMetadata
+	var podIPs []*current.IPConfig
+	var podInterfaces []*current.Interface
 	var dummyInterface *current.Interface
 
+	for index, ip := range r.IPAddress {
+
+		var hostVethName string
+
+		addr := parseIPAddress(ip)
+		if r.PodVlanId != 0 {
+			hostVethNamePrefix := sgpp.BuildHostVethNamePrefix(conf.VethPrefix, conf.PodSGEnforcingMode)
+			hostVethName = networkutils.GeneratePodHostVethName(hostVethNamePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME), index)
+		} else {
+			hostVethName = networkutils.GeneratePodHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME), index)
+		}
+
+		containerVethName := networkutils.GenerateContainerVethName(args.IfName, containerVethNamePrefix, index)
+
+		vethMetadata = append(vethMetadata, driver.VirtualInterfaceMetadata{
+			IPAddress:         addr,
+			DeviceNumber:      int(ip.DeviceNumber),
+			RouteTable:        int(ip.RouteTableId),
+			HostVethName:      hostVethName,
+			ContainerVethName: containerVethName,
+		})
+		// CNI stores the route table ID in the MAC field of the interface. The Route table ID is on the host side
+		// and is used during cleanup to remove the ip rules when IPAMD is not reachable.
+		podInterfaces = append(podInterfaces,
+			&current.Interface{Name: hostVethName},
+			&current.Interface{Name: containerVethName, Sandbox: args.Netns, Mac: fmt.Sprint(ip.RouteTableId)},
+		)
+
+		// This index always points to the container interface so that we get the IP address corresponding to the interface
+		containerInterfaceIndex := len(podInterfaces) - 1
+
+		podIPs = append(podIPs, &current.IPConfig{
+			Interface: &containerInterfaceIndex,
+			Address:   *addr,
+			Gateway:   gw,
+		})
+	}
+
 	// The dummy interface is purely virtual and is stored in the prevResult struct to assist in cleanup during the DEL command.
-	dummyInterfaceName := networkutils.GeneratePodHostVethName(dummyInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+	dummyInterfaceName := networkutils.GeneratePodHostVethName(dummyInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME), 0)
 
 	// Non-zero value means pods are using branch ENI
 	if r.PodVlanId != 0 {
-		hostVethNamePrefix := sgpp.BuildHostVethNamePrefix(conf.VethPrefix, conf.PodSGEnforcingMode)
-		hostVethName = networkutils.GeneratePodHostVethName(hostVethNamePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
-		err = driverClient.SetupBranchENIPodNetwork(hostVethName, args.IfName, args.Netns, v4Addr, v6Addr, int(r.PodVlanId), r.PodENIMAC,
+		// Since we always return 1 IP, it should be okay to directly address index 0
+		err = driverClient.SetupBranchENIPodNetwork(vethMetadata[0], args.Netns, int(r.PodVlanId), r.PodENIMAC,
 			r.PodENISubnetGW, int(r.ParentIfIndex), mtu, conf.PodSGEnforcingMode, log)
 		// For branch ENI mode, the pod VLAN ID is packed in Interface.Mac
 		dummyInterface = &current.Interface{Name: dummyInterfaceName, Mac: fmt.Sprint(r.PodVlanId)}
 	} else {
-		// build hostVethName
-		// Note: the maximum length for linux interface name is 15
-		hostVethName = networkutils.GeneratePodHostVethName(conf.VethPrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
-		err = driverClient.SetupPodNetwork(hostVethName, args.IfName, args.Netns, v4Addr, v6Addr, int(r.DeviceNumber), mtu, log)
+		err = driverClient.SetupPodNetwork(vethMetadata, args.Netns, mtu, log)
 		// For non-branch ENI, the pod VLAN ID value of 0 is packed in Interface.Mac, while the interface device number is packed in Interface.Sandbox
-		dummyInterface = &current.Interface{Name: dummyInterfaceName, Mac: fmt.Sprint(0), Sandbox: fmt.Sprint(r.DeviceNumber)}
+		dummyInterface = &current.Interface{Name: dummyInterfaceName, Mac: fmt.Sprint(0), Sandbox: fmt.Sprint(vethMetadata[0].DeviceNumber)}
 	}
+
 	log.Debugf("Using dummy interface: %v", dummyInterface)
 
 	if err != nil {
@@ -261,27 +307,14 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		return errors.Wrap(err, "add command: failed to setup network")
 	}
 
-	containerInterfaceIndex := 1
-	ips := []*current.IPConfig{
-		{
-			Interface: &containerInterfaceIndex,
-			Address:   *addr,
-			Gateway:   gw,
-		},
-	}
-
-	hostInterface := &current.Interface{Name: hostVethName}
-	containerInterface := &current.Interface{Name: args.IfName, Sandbox: args.Netns}
-
 	result := &current.Result{
-		IPs: ips,
-		Interfaces: []*current.Interface{
-			hostInterface,
-			containerInterface,
-		},
+		IPs:        podIPs,
+		Interfaces: podInterfaces,
 	}
 
 	// dummy interface is appended to PrevResult for use during cleanup
+	// The interfaces field should only include host,container and dummy interfaces in the list.
+	// Revisit the prevResult cleanup logic if this changes
 	result.Interfaces = append(result.Interfaces, dummyInterface)
 
 	// Set up a connection to the network policy agent
@@ -308,6 +341,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			K8S_POD_NAME:        string(k8sArgs.K8S_POD_NAME),
 			K8S_POD_NAMESPACE:   string(k8sArgs.K8S_POD_NAMESPACE),
 			NETWORK_POLICY_MODE: r.NetworkPolicyMode,
+			InterfaceCount:      int32(len(r.IPAddress)),
 		})
 
 	// No need to cleanup IP and network, kubelet will send delete.
@@ -318,7 +352,6 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 
 	log.Debugf("Network Policy agent for EnforceNpToPod returned Success : %v", npr.Success)
-
 	return cniTypes.PrintResult(result, conf.CNIVersion)
 }
 
@@ -344,6 +377,10 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		log.Errorf("Failed to load k8s config from args: %v", err)
 		return errors.Wrap(err, "del cmd: failed to load k8s config from args")
 	}
+	// During del we cannot depend on the annotation as annotation change doesn't restart a POD
+	// We can add it to the dummy interface and use that during the deletion flow
+	// Or Pass the number of interfaces so that it is returned by prev result.
+	// OR store this information in ipamd datastore so that it always returns what is assigned.
 
 	// For pods using branch ENI, try to delete using previous result
 	handled, err := tryDelWithPrevResult(driverClient, conf, k8sArgs, args.IfName, args.Netns, log)
@@ -422,21 +459,21 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	log.Infof("Received del network response from ipamd for pod %s namespace %s sandbox %s: %+v", string(k8sArgs.K8S_POD_NAME),
 		string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_INFRA_CONTAINER_ID), r)
 
-	var deletedPodIP net.IP
-	var maskLen int
-	if r.IPv4Addr != "" {
-		deletedPodIP = net.ParseIP(r.IPv4Addr)
-		maskLen = 32
-	} else if r.IPv6Addr != "" {
-		deletedPodIP = net.ParseIP(r.IPv6Addr)
-		maskLen = 128
+	var vethMetadata []driver.VirtualInterfaceMetadata
+
+	for _, ip := range r.IPAddress {
+		addr := parseIPAddress(ip)
+
+		if addr != nil {
+			vethMetadata = append(vethMetadata, driver.VirtualInterfaceMetadata{
+				IPAddress:    addr,
+				DeviceNumber: int(ip.DeviceNumber),
+				RouteTable:   int(ip.RouteTableId),
+			})
+		}
 	}
 
-	if deletedPodIP != nil {
-		addr := &net.IPNet{
-			IP:   deletedPodIP,
-			Mask: net.CIDRMask(maskLen, maskLen),
-		}
+	if len(vethMetadata) > 0 {
 
 		// vlanID != 0 means pod using security group
 		if r.PodVlanId != 0 {
@@ -444,9 +481,9 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 				log.Infof("Ignoring TeardownPodENI as Netns is empty for SG pod:%s namespace: %s containerID:%s", k8sArgs.K8S_POD_NAME, k8sArgs.K8S_POD_NAMESPACE, k8sArgs.K8S_POD_INFRA_CONTAINER_ID)
 				return nil
 			}
-			err = driverClient.TeardownBranchENIPodNetwork(addr, int(r.PodVlanId), conf.PodSGEnforcingMode, log)
+			err = driverClient.TeardownBranchENIPodNetwork(vethMetadata[0], int(r.PodVlanId), conf.PodSGEnforcingMode, log)
 		} else {
-			err = driverClient.TeardownPodNetwork(addr, int(r.DeviceNumber), log)
+			err = driverClient.TeardownPodNetwork(vethMetadata, log)
 		}
 
 		if err != nil {
@@ -455,7 +492,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			return errors.Wrap(err, "del cmd: failed on tear down pod network")
 		}
 	} else {
-		log.Warnf("Container %s did not have a valid IP %s", args.ContainerID, r.IPv4Addr)
+		log.Warnf("Container %s did not have a valid IP %+v", args.ContainerID, r.IPAddress)
 	}
 
 	if r.NetworkPolicyMode == "" {
@@ -491,30 +528,33 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	return nil
 }
 
-func getContainerIP(prevResult *current.Result, contVethName string) (net.IPNet, error) {
-	containerIfaceIndex, _, found := cniutils.FindInterfaceByName(prevResult.Interfaces, contVethName)
+func getContainerNetworkMetadata(prevResult *current.Result, contVethName string) (net.IPNet, *current.Interface, error) {
+	containerIfaceIndex, containerInterface, found := cniutils.FindInterfaceByName(prevResult.Interfaces, contVethName)
 	if !found {
-		return net.IPNet{}, errors.Errorf("cannot find contVethName %s in prevResult", contVethName)
+		return net.IPNet{}, nil, errors.Errorf("cannot find contVethName %s in prevResult", contVethName)
 	}
 	containerIPs := cniutils.FindIPConfigsByIfaceIndex(prevResult.IPs, containerIfaceIndex)
 	if len(containerIPs) != 1 {
-		return net.IPNet{}, errors.Errorf("found %d containerIPs for %v in prevResult", len(containerIPs), contVethName)
+		return net.IPNet{}, nil, errors.Errorf("found %d containerIPs for %v in prevResult", len(containerIPs), contVethName)
 	}
-	return containerIPs[0].Address, nil
+	return containerIPs[0].Address, containerInterface, nil
 }
 
 // tryDelWithPrevResult will try to process CNI delete request without IPAMD.
 // returns true if the del request is handled.
 func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArgs K8sArgs, contVethName string, netNS string, log logger.Logger) (bool, error) {
+	// prevResult might not be available, if we are still using older cni spec < 0.4.0.
 	if conf.PrevResult == nil {
 		return false, nil
 	}
+
 	prevResult, err := current.NewResultFromResult(conf.PrevResult)
 	if err != nil {
-		return false, fmt.Errorf("Failed to convert PrevResult: %w", err)
+		log.Infof("PrevResult not available for pod or parsing failed, err %v", err)
+		return false, nil
 	}
 
-	dummyIfaceName := networkutils.GeneratePodHostVethName(dummyInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+	dummyIfaceName := networkutils.GeneratePodHostVethName(dummyInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME), 0)
 	_, dummyIface, found := cniutils.FindInterfaceByName(prevResult.Interfaces, dummyIfaceName)
 	if !found {
 		return false, nil
@@ -532,15 +572,18 @@ func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArg
 		return true, nil
 	}
 
-	containerIP, err := getContainerIP(prevResult, contVethName)
+	containerIP, _, err := getContainerNetworkMetadata(prevResult, contVethName)
 	if err != nil {
 		return false, err
 	}
 
-	if err := driverClient.TeardownBranchENIPodNetwork(&containerIP, podVlanID, conf.PodSGEnforcingMode, log); err != nil {
-		return true, err
+	vethMetadata := driver.VirtualInterfaceMetadata{
+		IPAddress: &containerIP,
 	}
 
+	if err := driverClient.TeardownBranchENIPodNetwork(vethMetadata, podVlanID, conf.PodSGEnforcingMode, log); err != nil {
+		return true, err
+	}
 	return true, nil
 }
 
@@ -548,18 +591,17 @@ func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArg
 // Returns true if pod network is torn down
 func teardownPodNetworkWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArgs K8sArgs, contVethName string, log logger.Logger) bool {
 	// For non-branch ENI, prevResult is only available in v1.12.1+
-
 	if conf.PrevResult == nil {
+		log.Infof("PrevResult not available for pod. Pod may have already been deleted.")
 		return false
 	}
 
 	prevResult, err := current.NewResultFromResult(conf.PrevResult)
 	if err != nil {
-		log.Infof("Ignoring teardownPodNetworkWithPrevResult as PrevResult is not available for pod or parsing failed")
+		log.Infof("PrevResult not available for pod. Pod may have already been deleted.")
 		return false
 	}
-
-	dummyIfaceName := networkutils.GeneratePodHostVethName(dummyInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME))
+	dummyIfaceName := networkutils.GeneratePodHostVethName(dummyInterfacePrefix, string(k8sArgs.K8S_POD_NAMESPACE), string(k8sArgs.K8S_POD_NAME), 0)
 	_, dummyIface, found := cniutils.FindInterfaceByName(prevResult.Interfaces, dummyIfaceName)
 	if !found {
 		return false
@@ -575,13 +617,40 @@ func teardownPodNetworkWithPrevResult(driverClient driver.NetworkAPIs, conf *Net
 		log.Errorf("Invalid device number for pod: %s", dummyIface.Sandbox)
 		return false
 	}
-	containerIP, err := getContainerIP(prevResult, contVethName)
-	if err != nil {
-		log.Errorf("Failed to get container IP: %v", err)
-		return false
+
+	// Since we are always using dummy interface to store the device number of network card 0 IP
+	// RT ID for NC-0 is also stored in the container interface entry. So we have a path for migration where
+	// getting the device number from dummy interface can be deprecated entirely. This is currently done to keep it backwards compatible
+	routeTableId := deviceNumber + 1
+	// The number of interfaces attached to the pod is taken as the length of the interfaces array - 1 (for dummy interface) divided by 2 (for host and container interface)
+	var interfacesAttached = (len(prevResult.Interfaces) - 1) / 2
+	var vethMetadata []driver.VirtualInterfaceMetadata
+	for v := range interfacesAttached {
+		containerInterfaceName := networkutils.GenerateContainerVethName(contVethName, containerVethNamePrefix, v)
+		containerIP, containerInterface, err := getContainerNetworkMetadata(prevResult, containerInterfaceName)
+		if err != nil {
+			log.Errorf("container interface name %s does not exist %v", containerInterfaceName, err)
+			continue
+		}
+
+		// If this property is set, that means the container metadata has the route table ID which we can use
+		// If this is not set, it is a pod launched before this change was introduced.
+		// So it is only managing network card 0 at that time and device number + 1 is the route table ID which we calculate from device number
+		if containerInterface.Mac != "" {
+			routeTableId, err = strconv.Atoi(containerInterface.Mac)
+			if err != nil {
+				log.Errorf("error getting route table number of the interface %s", containerInterface.Mac)
+				return false
+			}
+		}
+
+		vethMetadata = append(vethMetadata, driver.VirtualInterfaceMetadata{
+			IPAddress:  &containerIP,
+			RouteTable: routeTableId,
+		})
 	}
 
-	if err := driverClient.TeardownPodNetwork(&containerIP, deviceNumber, log); err != nil {
+	if err := driverClient.TeardownPodNetwork(vethMetadata, log); err != nil {
 		log.Errorf("Failed to teardown pod network: %v", err)
 		return false
 	}
@@ -607,4 +676,21 @@ func main() {
 		exitCode = 1
 	}
 	os.Exit(exitCode)
+}
+
+func parseIPAddress(v *pb.IPAddress) *net.IPNet {
+
+	if v.IPv4Addr != "" {
+		return &net.IPNet{
+			IP:   net.ParseIP(v.IPv4Addr),
+			Mask: net.CIDRMask(32, 32),
+		}
+	} else if v.IPv6Addr != "" {
+		return &net.IPNet{
+			IP:   net.ParseIP(v.IPv6Addr),
+			Mask: net.CIDRMask(128, 128),
+		}
+	}
+
+	return nil
 }

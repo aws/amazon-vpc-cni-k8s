@@ -463,6 +463,30 @@ func (typedimds TypedIMDS) GetLocalIPv4s(ctx context.Context, mac string) ([]net
 		imdsErr := new(imdsRequestError)
 		oe := new(smithy.OperationError)
 		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
+			if IsNotFound(err) {
+				// No IPv4 address on the interface, not an error
+				return nil, nil
+			}
+			log.Warnf("%v", err)
+			return nil, newIMDSRequestError(err.Error(), err)
+		}
+		return nil, err
+	}
+	return ips, err
+}
+
+// GetLocalIPv4s returns the private IPv6 addresses associated with the interface.  First returned address is the primary address.
+func (typedimds TypedIMDS) GetLocalIPv6s(ctx context.Context, mac string) ([]net.IP, error) {
+	key := fmt.Sprintf("network/interfaces/macs/%s/local-ipv6s", mac)
+	ips, err := typedimds.getIPs(ctx, key)
+	if err != nil {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
+			if IsNotFound(err) {
+				// No IPv6 address on the interface, not an error
+				return nil, nil
+			}
 			log.Warnf("%v", err)
 			return nil, newIMDSRequestError(err.Error(), err)
 		}
@@ -508,6 +532,25 @@ func (typedimds TypedIMDS) GetIPv6Prefixes(ctx context.Context, mac string) ([]n
 		return nil, err
 	}
 	return prefixes, err
+}
+
+// GetLocalIPv6 returns the IPv6 addresses associated with the primary interface.
+func (typedimds TypedIMDS) GetLocalIPv6(ctx context.Context) (net.IP, error) {
+	ips, err := typedimds.getIP(ctx, "ipv6")
+	if err != nil {
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
+			if IsNotFound(err) {
+				// No IPv6.  Not an error, just a disappointment :(
+				return nil, nil
+			}
+			log.Warnf("%v", err)
+			return nil, newIMDSRequestError(err.Error(), err)
+		}
+		return nil, err
+	}
+	return ips, err
 }
 
 // GetIPv6s returns the IPv6 addresses associated with the interface.
