@@ -91,6 +91,26 @@ func (mr *MockCNIBackendClientMockRecorder) DelNetwork(arg0, arg1 interface{}, a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DelNetwork", reflect.TypeOf((*MockCNIBackendClient)(nil).DelNetwork), varargs...)
 }
 
+// GetAllocatableValues mocks base method.
+func (m *MockCNIBackendClient) GetAllocatableValues(arg0 context.Context, arg1 *emptypb.Empty, arg2 ...grpc.CallOption) (*rpc.GetAllocatableValuesReply, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetAllocatableValues", varargs...)
+	ret0, _ := ret[0].(*rpc.GetAllocatableValuesReply)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAllocatableValues indicates an expected call of GetAllocatableValues.
+func (mr *MockCNIBackendClientMockRecorder) GetAllocatableValues(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAllocatableValues", reflect.TypeOf((*MockCNIBackendClient)(nil).GetAllocatableValues), varargs...)
+}
+
 // MockNPBackendClient is a mock of NPBackendClient interface.
 type MockNPBackendClient struct {
 	ctrl     *gomock.Controller
