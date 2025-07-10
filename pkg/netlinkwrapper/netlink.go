@@ -15,8 +15,10 @@
 package netlinkwrapper
 
 import (
+	"log"
 	"syscall"
 
+	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
 )
 
@@ -69,6 +71,27 @@ type NetLink interface {
 type netLink struct {
 }
 
+const maxAttempts = 5
+
+func retryOnErrDumpInterrupted(f func() error) error {
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		err := f()
+		if !errors.Is(err, netlink.ErrDumpInterrupted) {
+			return err
+		}
+	}
+	log.Printf("netlink call interrupted after %d attempts", maxAttempts)
+	return netlink.ErrDumpInterrupted
+}
+
+func discardErrDumpInterrupted(err error) error {
+	if errors.Is(err, netlink.ErrDumpInterrupted) {
+		log.Printf("discarding ErrDumpInterrupted: %+v", errors.WithStack(err))
+		return nil
+	}
+	return err
+}
+
 // NewNetLink creates a new NetLink object
 func NewNetLink() NetLink {
 	return &netLink{}
@@ -103,7 +126,13 @@ func (*netLink) LinkSetUp(link netlink.Link) error {
 }
 
 func (*netLink) LinkList() ([]netlink.Link, error) {
-	return netlink.LinkList()
+	var links []netlink.Link
+	var err error
+	err = retryOnErrDumpInterrupted(func() error {
+		links, err = netlink.LinkList()
+		return err
+	})
+	return links, discardErrDumpInterrupted(err)
 }
 
 func (*netLink) LinkSetDown(link netlink.Link) error {
@@ -111,7 +140,13 @@ func (*netLink) LinkSetDown(link netlink.Link) error {
 }
 
 func (*netLink) RouteList(link netlink.Link, family int) ([]netlink.Route, error) {
-	return netlink.RouteList(link, family)
+	var routes []netlink.Route
+	var err error
+	err = retryOnErrDumpInterrupted(func() error {
+		routes, err = netlink.RouteList(link, family)
+		return err
+	})
+	return routes, discardErrDumpInterrupted(err)
 }
 
 func (*netLink) RouteAdd(route *netlink.Route) error {
@@ -127,7 +162,13 @@ func (*netLink) RouteDel(route *netlink.Route) error {
 }
 
 func (*netLink) AddrList(link netlink.Link, family int) ([]netlink.Addr, error) {
-	return netlink.AddrList(link, family)
+	var addrs []netlink.Addr
+	var err error
+	err = retryOnErrDumpInterrupted(func() error {
+		addrs, err = netlink.AddrList(link, family)
+		return err
+	})
+	return addrs, discardErrDumpInterrupted(err)
 }
 
 func (*netLink) NeighAdd(neigh *netlink.Neigh) error {
@@ -151,7 +192,13 @@ func (*netLink) RuleDel(rule *netlink.Rule) error {
 }
 
 func (*netLink) RuleList(family int) ([]netlink.Rule, error) {
-	return netlink.RuleList(family)
+	var rules []netlink.Rule
+	var err error
+	err = retryOnErrDumpInterrupted(func() error {
+		rules, err = netlink.RuleList(family)
+		return err
+	})
+	return rules, discardErrDumpInterrupted(err)
 }
 
 func (*netLink) LinkSetMTU(link netlink.Link, mtu int) error {
