@@ -15,7 +15,9 @@
 package driver
 
 import (
+	"crypto/rand"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"time"
@@ -85,9 +87,10 @@ type createVethPairContext struct {
 	ip           ipwrapper.IP
 	mtu          int
 	procSys      procsyswrapper.ProcSys
+	log          logger.Logger
 }
 
-func newCreateVethPairContext(contVethName string, hostVethName string, v4Addr *net.IPNet, v6Addr *net.IPNet, mtu int) *createVethPairContext {
+func newCreateVethPairContext(contVethName string, hostVethName string, v4Addr *net.IPNet, v6Addr *net.IPNet, mtu int, log logger.Logger) *createVethPairContext {
 	return &createVethPairContext{
 		contVethName: contVethName,
 		hostVethName: hostVethName,
@@ -97,22 +100,37 @@ func newCreateVethPairContext(contVethName string, hostVethName string, v4Addr *
 		ip:           ipwrapper.NewIP(),
 		mtu:          mtu,
 		procSys:      procsyswrapper.NewProcSys(),
+		log:          log,
 	}
 }
 
 // run defines the closure to execute within the container's namespace to create the veth pair
 func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
+
+	contMac, err := net.ParseMAC(generateRandomMAC())
+	if err != nil {
+		createVethContext.log.Error(err.Error())
+	}
+	hostMac, err := net.ParseMAC(generateRandomMAC())
+	if err != nil {
+		createVethContext.log.Error(err.Error())
+	}
+	createVethContext.log.Infof("cont mac %s, host mac %s", net.HardwareAddr(contMac), net.HardwareAddr(hostMac))
 	veth := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{
-			Name:  createVethContext.contVethName,
-			Flags: net.FlagUp,
-			MTU:   createVethContext.mtu,
+			Name:         createVethContext.contVethName,
+			Flags:        net.FlagUp,
+			MTU:          createVethContext.mtu,
+			HardwareAddr: contMac,
 		},
-		PeerName: createVethContext.hostVethName,
+		PeerName:         createVethContext.hostVethName,
+		PeerHardwareAddr: hostMac,
 	}
-
+	createVethContext.log.Infof("veth %v", veth)
 	if err := createVethContext.netLink.LinkAdd(veth); err != nil {
-		return err
+		fmt.Println("ERROR CREATING LINK ADD")
+		fmt.Println(err)
+		return errors.Wrap(err, "ERROR CREATING LINK ADD")
 	}
 
 	hostVeth, err := createVethContext.netLink.LinkByName(createVethContext.hostVethName)
@@ -357,7 +375,7 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 		log.Debugf("Successfully deleted old hostVeth %s", hostVethName)
 	}
 
-	createVethContext := newCreateVethPairContext(contVethName, hostVethName, v4Addr, v6Addr, mtu)
+	createVethContext := newCreateVethPairContext(contVethName, hostVethName, v4Addr, v6Addr, mtu, log)
 	if err := n.ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		return nil, errors.Wrap(err, "failed to setup veth network")
 	}
@@ -645,4 +663,18 @@ func buildVlanLink(vlanName string, vlanID int, parentIfIndex int, eniMAC string
 	la.ParentIndex = parentIfIndex
 	la.HardwareAddr, _ = net.ParseMAC(eniMAC)
 	return &netlink.Vlan{LinkAttrs: la, VlanId: vlanID}
+}
+
+func generateRandomMAC() string {
+	mac := make([]byte, 6)
+	_, err := rand.Read(mac)
+	if err != nil {
+		log.Fatalf("Failed to generate MAC: %v", err)
+	}
+
+	// Set the local bit and unset the multicast bit
+	mac[0] = (mac[0] | 2) & 0xfe
+
+	return fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x",
+		mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
 }
