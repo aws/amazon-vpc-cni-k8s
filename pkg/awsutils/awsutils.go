@@ -101,7 +101,7 @@ var log = logger.Get()
 // APIs defines interfaces calls for adding/getting/deleting ENIs/secondary IPs. The APIs are not thread-safe.
 type APIs interface {
 	// AllocENI creates an ENI and attaches it to the instance
-	AllocENI(useCustomCfg bool, sg []*string, eniCfgSubnet string, numIPs int) (eni string, err error)
+	AllocENI(useCustomCfg bool, sg []*string, eniCfgSubnet string, numIPs int, enableEnaExpress bool) (eni string, err error)
 
 	// FreeENI detaches ENI interface and deletes it
 	FreeENI(eniName string) error
@@ -181,6 +181,9 @@ type APIs interface {
 	//IsPrimaryENI
 	IsPrimaryENI(eniID string) bool
 
+	// IsEnaSrdSupported checks if the instance network info supports EnaSrd
+	IsEnaSrdSupported(ctx context.Context) bool
+
 	//RefreshSGIDs
 	RefreshSGIDs(mac string, store *datastore.DataStore) error
 
@@ -217,6 +220,7 @@ type EC2InstanceMetadataCache struct {
 	availabilityZone string
 	region           string
 	vpcID            string
+	enaSrdSupported  *bool
 
 	unmanagedENIs          StringSet
 	useCustomNetworking    bool
@@ -833,13 +837,13 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber() (int, error) {
 
 // AllocENI creates an ENI and attaches it to the instance
 // returns: newly created ENI ID
-func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string, eniCfgSubnet string, numIPs int) (string, error) {
+func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string, eniCfgSubnet string, numIPs int, enableEnaExpress bool) (string, error) {
 	eniID, err := cache.createENI(useCustomCfg, sg, eniCfgSubnet, numIPs)
 	if err != nil {
 		return "", errors.Wrap(err, "AllocENI: failed to create ENI")
 	}
 
-	attachmentID, err := cache.attachENI(eniID)
+	attachmentID, err := cache.attachENI(eniID, enableEnaExpress)
 	if err != nil {
 		derr := cache.deleteENI(eniID, maxENIBackoffDelay)
 		if derr != nil {
@@ -878,7 +882,7 @@ func (cache *EC2InstanceMetadataCache) AllocENI(useCustomCfg bool, sg []*string,
 }
 
 // attachENI calls EC2 API to attach the ENI and returns the attachment id
-func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
+func (cache *EC2InstanceMetadataCache) attachENI(eniID string, enableEnaExpress bool) (string, error) {
 	// attach to instance
 	freeDevice, err := cache.awsGetFreeDeviceNumber()
 	if err != nil {
@@ -890,6 +894,9 @@ func (cache *EC2InstanceMetadataCache) attachENI(eniID string) (string, error) {
 		InstanceId:         aws.String(cache.instanceID),
 		NetworkInterfaceId: aws.String(eniID),
 		NetworkCardIndex:   aws.Int32(0),
+		EnaSrdSpecification: &ec2types.EnaSrdSpecification{
+			EnaSrdEnabled: aws.Bool(enableEnaExpress),
+		},
 	}
 	start := time.Now()
 	attachOutput, err := cache.ec2SVC.AttachNetworkInterface(context.Background(), attachInput)
@@ -1629,13 +1636,9 @@ func (cache *EC2InstanceMetadataCache) FetchInstanceTypeLimits() error {
 	}
 
 	log.Debugf("Instance type limits are missing from vpc_ip_limits.go hence making an EC2 call to fetch the limits")
-	describeInstanceTypesInput := &ec2.DescribeInstanceTypesInput{InstanceTypes: []ec2types.InstanceType{ec2types.InstanceType(cache.instanceType)}}
-	output, err := cache.ec2SVC.DescribeInstanceTypes(context.Background(), describeInstanceTypesInput)
-	prometheusmetrics.Ec2ApiReq.WithLabelValues("DescribeInstanceTypes").Inc()
-	if err != nil || len(output.InstanceTypes) != 1 {
-		prometheusmetrics.Ec2ApiErr.WithLabelValues("DescribeInstanceTypes").Inc()
-		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeInstanceTypes")
-		return errors.New(fmt.Sprintf("Failed calling DescribeInstanceTypes for `%s`: %v", cache.instanceType, err))
+	output, err := cache.describeInstanceTypes(context.Background())
+	if err != nil {
+		return err
 	}
 	info := output.InstanceTypes[0]
 	// Ignore any missing values
@@ -2184,6 +2187,48 @@ func (cache *EC2InstanceMetadataCache) IsPrimaryENI(eniID string) bool {
 		return true
 	}
 	return false
+}
+
+func (cache *EC2InstanceMetadataCache) IsEnaSrdSupported(ctx context.Context) bool {
+	if cache.enaSrdSupported != nil {
+		return *cache.enaSrdSupported
+	}
+
+	log.Debugf("Checking if instance type %s supports ENA SRD", cache.instanceType)
+	output, err := cache.describeInstanceTypes(ctx)
+	if err != nil {
+		log.Errorf("Failed to describe instance types: %v", err)
+		return false
+	}
+
+	if output.InstanceTypes[0].NetworkInfo == nil {
+		log.Debugf("No network info found for instance type %s", cache.instanceType)
+		return false
+	}
+
+	cache.enaSrdSupported = output.InstanceTypes[0].NetworkInfo.EnaSrdSupported
+
+	return aws.ToBool(cache.enaSrdSupported)
+}
+
+func (cache *EC2InstanceMetadataCache) describeInstanceTypes(ctx context.Context) (*ec2.DescribeInstanceTypesOutput, error) {
+	input := &ec2.DescribeInstanceTypesInput{
+		InstanceTypes: []ec2types.InstanceType{
+			ec2types.InstanceType(cache.instanceType),
+		},
+	}
+	start := time.Now()
+	output, err := cache.ec2SVC.DescribeInstanceTypes(ctx, input)
+	prometheusmetrics.Ec2ApiReq.WithLabelValues("DescribeInstanceTypes").Inc()
+	prometheusmetrics.AwsAPILatency.WithLabelValues("DescribeInstanceTypes", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+	if err != nil || len(output.InstanceTypes) == 0 {
+		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeInstanceTypes")
+		awsAPIErrInc("DescribeInstanceTypes", err)
+		prometheusmetrics.Ec2ApiErr.WithLabelValues("DescribeInstanceTypes").Inc()
+		return nil, errors.Wrap(err, "failed to describe instance types")
+	}
+
+	return output, nil
 }
 
 func checkAPIErrorAndBroadcastEvent(err error, api string) {

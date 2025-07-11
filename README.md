@@ -505,6 +505,18 @@ Any of the WARM targets do not impact the scale of the branch ENI pods so you wi
 
 **NOTE!** Toggling `ENABLE_POD_ENI` from `true` to `false` will not detach the Trunk ENI from an instance. To delete/detach the Trunk ENI from an instance, you need to recycle the instance.
 
+#### `ENABLE_ENA_EXPRESS` (v1.20.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+Setting `ENABLE_ENA_EXPRESS` to `true` will enable ENA Express when attaching a new Network Interface, as long as the instance type supports it.
+
+**NOTE!** Toggling `ENABLE_POD_ENI` from `true` to `false` will not change ENA Express value. To disable/enable existing ENIs, you need to recycle the instance.
+
+See [AWS Docs](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ena-express.html#ena-express-how-it-works)
+
 #### `POD_SECURITY_GROUP_ENFORCING_MODE` (v1.11.0+)
 
 Type: String
