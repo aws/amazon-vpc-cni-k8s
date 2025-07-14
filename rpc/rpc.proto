@@ -24,7 +24,7 @@ message AddNetworkRequest {
   // next field: 10
 }
 
-message IPAddress {
+message IPAllocationMetadata {
   string IPv4Addr = 1;
   string IPv6Addr = 2;
   int32 DeviceNumber = 3;
@@ -33,7 +33,7 @@ message IPAddress {
 
 message AddNetworkReply {
   bool Success = 1;
-  repeated IPAddress IPAddress = 2;
+  repeated IPAllocationMetadata IPAllocationMetadata = 2;
   bool UseExternalSNAT = 5;
   repeated string VPCv4CIDRs = 6;
   repeated string VPCv6CIDRs = 12;
@@ -64,7 +64,7 @@ message DelNetworkRequest {
 
 message DelNetworkReply {
   bool Success = 1;
-  repeated IPAddress IPAddress = 2;
+  repeated IPAllocationMetadata IPAllocationMetadata = 2;
 
   // start of pod-eni parameters
   int32 PodVlanId = 4;

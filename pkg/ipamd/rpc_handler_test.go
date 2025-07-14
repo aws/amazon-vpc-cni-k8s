@@ -145,7 +145,7 @@ func TestServer_AddNetwork(t *testing.T) {
 			},
 			want: &pb.AddNetworkReply{
 				Success: true,
-				IPAddress: []*rpc.IPAddress{
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{
 					{
 						IPv4Addr:     "192.168.1.100",
 						IPv6Addr:     "",
@@ -184,7 +184,7 @@ func TestServer_AddNetwork(t *testing.T) {
 			},
 			want: &pb.AddNetworkReply{
 				Success: true,
-				IPAddress: []*rpc.IPAddress{
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{
 					{
 						IPv4Addr:     "192.168.1.100",
 						IPv6Addr:     "",
@@ -231,7 +231,7 @@ func TestServer_AddNetwork(t *testing.T) {
 			},
 			want: &pb.AddNetworkReply{
 				Success: true,
-				IPAddress: []*rpc.IPAddress{
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{
 					{
 						IPv4Addr:     "192.168.1.100",
 						IPv6Addr:     "",
@@ -252,8 +252,8 @@ func TestServer_AddNetwork(t *testing.T) {
 				ipV6Enabled:         false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:   false,
-				IPAddress: []*rpc.IPAddress{},
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
 			},
 		},
 		{
@@ -266,8 +266,8 @@ func TestServer_AddNetwork(t *testing.T) {
 				enableMultiNICSupport: true,
 			},
 			want: &pb.AddNetworkReply{
-				Success:   false,
-				IPAddress: []*rpc.IPAddress{},
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
 			},
 		},
 		{
@@ -281,8 +281,8 @@ func TestServer_AddNetwork(t *testing.T) {
 				podsRequireMultiNICAttachment: true,
 			},
 			want: &pb.AddNetworkReply{
-				Success:   false,
-				IPAddress: []*rpc.IPAddress{},
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
 			},
 		},
 		{
@@ -310,7 +310,7 @@ func TestServer_AddNetwork(t *testing.T) {
 
 			want: &pb.AddNetworkReply{
 				Success: true,
-				IPAddress: []*rpc.IPAddress{
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{
 					{
 						IPv4Addr:     "192.168.1.100",
 						IPv6Addr:     "",
@@ -337,8 +337,8 @@ func TestServer_AddNetwork(t *testing.T) {
 			},
 
 			want: &pb.AddNetworkReply{
-				Success:   false,
-				IPAddress: []*rpc.IPAddress{},
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
 			},
 		},
 
@@ -360,7 +360,7 @@ func TestServer_AddNetwork(t *testing.T) {
 			},
 			want: &pb.AddNetworkReply{
 				Success: true,
-				IPAddress: []*rpc.IPAddress{
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{
 					{
 						IPv4Addr:     "",
 						IPv6Addr:     "2001:db8::",
@@ -392,7 +392,7 @@ func TestServer_AddNetwork(t *testing.T) {
 			},
 			want: &pb.AddNetworkReply{
 				Success: true,
-				IPAddress: []*rpc.IPAddress{
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{
 					{
 						IPv4Addr:     "",
 						IPv6Addr:     "2001:db8::",
@@ -419,8 +419,8 @@ func TestServer_AddNetwork(t *testing.T) {
 				prefixDelegationEnabled: true,
 			},
 			want: &pb.AddNetworkReply{
-				Success:   false,
-				IPAddress: []*rpc.IPAddress{},
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
 			},
 		},
 		{
@@ -435,8 +435,8 @@ func TestServer_AddNetwork(t *testing.T) {
 				prefixDelegationEnabled: false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:   false,
-				IPAddress: []*rpc.IPAddress{},
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
 			},
 		},
 	}
@@ -522,11 +522,11 @@ func TestServer_AddNetwork(t *testing.T) {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
 				assert.NoError(t, err)
-				for index, _ := range tt.want.IPAddress {
-					assert.Equal(t, tt.want.IPAddress[index].IPv4Addr, resp.IPAddress[index].IPv4Addr)
-					assert.Equal(t, tt.want.IPAddress[index].IPv6Addr, resp.IPAddress[index].IPv6Addr)
-					assert.Equal(t, tt.want.IPAddress[index].DeviceNumber, resp.IPAddress[index].DeviceNumber)
-					assert.Equal(t, tt.want.IPAddress[index].RouteTableId, resp.IPAddress[index].RouteTableId)
+				for index, _ := range tt.want.IPAllocationMetadata {
+					assert.Equal(t, tt.want.IPAllocationMetadata[index].IPv4Addr, resp.IPAllocationMetadata[index].IPv4Addr)
+					assert.Equal(t, tt.want.IPAllocationMetadata[index].IPv6Addr, resp.IPAllocationMetadata[index].IPv6Addr)
+					assert.Equal(t, tt.want.IPAllocationMetadata[index].DeviceNumber, resp.IPAllocationMetadata[index].DeviceNumber)
+					assert.Equal(t, tt.want.IPAllocationMetadata[index].RouteTableId, resp.IPAllocationMetadata[index].RouteTableId)
 				}
 
 				assert.Equal(t, tt.want.UseExternalSNAT, resp.UseExternalSNAT)

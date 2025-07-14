@@ -172,14 +172,14 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 	var defNet *net.IPNet
 	var family int
 
-	if createVethContext.ipAddr.IP.To4() != nil {
-		gw = net.IPv4(169, 254, 1, byte(createVethContext.index)+1)
+	if networkutils.IsIPv4(createVethContext.ipAddr.IP) {
+		gw = networkutils.CalculatePodIPv4GatewayIP(createVethContext.index)
 		maskLen = 32
 		addr = &netlink.Addr{IPNet: createVethContext.ipAddr}
 		defNet = &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, maskLen)}
 		family = netlink.FAMILY_V4
 	} else {
-		gw = net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, byte(createVethContext.index) + 1}
+		gw = networkutils.CalculatePodIPv6GatewayIP(createVethContext.index)
 		maskLen = 128
 		addr = &netlink.Addr{IPNet: createVethContext.ipAddr}
 		defNet = &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, maskLen)}
@@ -244,7 +244,7 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 		return errors.Wrap(err, "setup NS network: failed to add static ARP")
 	}
 	// if IP is not IPv4 or a v4 in v6 address, it return nil
-	if createVethContext.ipAddr.IP.To4() == nil {
+	if !networkutils.IsIPv4(createVethContext.ipAddr.IP) {
 		if err := cniutils.WaitForAddressesToBeStable(createVethContext.netLink, createVethContext.contVethName, v6DADTimeout, WAIT_INTERVAL); err != nil {
 			return errors.Wrap(err, "setup NS network: failed while waiting for v6 addresses to be stable")
 		}
@@ -363,7 +363,7 @@ func (n *linuxNetwork) TeardownBranchENIPodNetwork(vethMetadata VirtualInterface
 	}
 
 	ipFamily := unix.AF_INET
-	if vethMetadata.IPAddress.IP.To4() == nil {
+	if !networkutils.IsIPv4(vethMetadata.IPAddress.IP) {
 		ipFamily = unix.AF_INET6
 	}
 	// to handle the migration between different enforcingMode, we try to clean up rules under both mode since the pod might be setup with a different mode.
@@ -583,7 +583,7 @@ func (n *linuxNetwork) teardownIPBasedContainerRouteRules(containerAddr *net.IPN
 // traffic to container(iif hostVlan) will be routed via the specified rtTable.
 // traffic from container(iif hostVeth) will be routed via the specified rtTable.
 func (n *linuxNetwork) setupIIFBasedContainerRouteRules(hostVeth netlink.Link, containerAddr *net.IPNet, hostVlan netlink.Link, rtTable int, log logger.Logger) error {
-	isV6 := containerAddr.IP.To4() == nil
+	isV6 := !networkutils.IsIPv4(containerAddr.IP)
 	route := netlink.Route{
 		LinkIndex: hostVeth.Attrs().Index,
 		Scope:     netlink.SCOPE_LINK,

@@ -95,7 +95,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	var resp rpc.AddNetworkReply
 
 	// This will be a list of IPs. For now it's just one
-	ipAddrs := []*rpc.IPAddress{}
+	ipAddrs := []*rpc.IPAllocationMetadata{}
 
 	// var interfacesCount int
 	if s.ipamContext.enablePodENI {
@@ -173,7 +173,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 					podENISubnetGW = gw.String()
 					deviceNumber = -1 // Not needed for branch ENI, they depend on trunkENIDeviceIndex
 
-					ipAddrs = append(ipAddrs, &rpc.IPAddress{
+					ipAddrs = append(ipAddrs, &rpc.IPAllocationMetadata{
 						IPv4Addr:     ipv4Addr,
 						IPv6Addr:     ipv6Addr,
 						DeviceNumber: int32(deviceNumber),
@@ -241,7 +241,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			}
 
 			log.Infof("Assigned IP from network card: %d -> IPv4: %s, IPv6: %s, device number: %d, ", networkCard, ipv4Addr, ipv6Addr, deviceNumber)
-			ipAddrs = append(ipAddrs, &rpc.IPAddress{
+			ipAddrs = append(ipAddrs, &rpc.IPAllocationMetadata{
 				IPv4Addr:     ipv4Addr,
 				IPv6Addr:     ipv6Addr,
 				DeviceNumber: int32(deviceNumber),
@@ -253,19 +253,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	}
 
 	if errors != nil {
-		// unAssignedIPs := 0
 		log.Errorf("Returning failure response for AddNetwork: %v", errors)
-		// // Try to unassign all the assigned IPs in case of errors.
-		// // This is best effort even if it fails we have the reconciler which can clean up leaked IPs for non existing pods
-		// for _, ds := range s.ipamContext.dataStoreAccess.DataStores {
-		// 	networkCard := ds.GetNetworkCard()
-		// 	if unAssignedIPs == len(ipAddrs) {
-		// 		break
-		// 	}
-		// 	log.Infof("Unassigning IPs from datastore for Network Card %d as there was failure", networkCard)
-		// 	ds.UnassignPodIPAddress(ipamKey)
-		// 	unAssignedIPs += 1
-		// }
 	} else {
 		log.Infof("Address assigned from datastores:  %d", len(ipAddrs))
 		var pbVPCV4cidrs, pbVPCV6cidrs []string
@@ -308,20 +296,20 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 		}
 
 		resp = rpc.AddNetworkReply{
-			IPAddress:         ipAddrs,
-			UseExternalSNAT:   useExternalSNAT,
-			VPCv4CIDRs:        pbVPCV4cidrs,
-			VPCv6CIDRs:        pbVPCV6cidrs,
-			PodVlanId:         int32(vlanID),
-			PodENIMAC:         branchENIMAC,
-			PodENISubnetGW:    podENISubnetGW,
-			ParentIfIndex:     int32(trunkENILinkIndex),
-			NetworkPolicyMode: s.ipamContext.networkPolicyMode,
+			IPAllocationMetadata: ipAddrs,
+			UseExternalSNAT:      useExternalSNAT,
+			VPCv4CIDRs:           pbVPCV4cidrs,
+			VPCv6CIDRs:           pbVPCV6cidrs,
+			PodVlanId:            int32(vlanID),
+			PodENIMAC:            branchENIMAC,
+			PodENISubnetGW:       podENISubnetGW,
+			ParentIfIndex:        int32(trunkENILinkIndex),
+			NetworkPolicyMode:    s.ipamContext.networkPolicyMode,
 		}
 	}
 
 	resp.Success = errors == nil
-	log.Infof("Send AddNetworkReply: Success: %t IPAddr: %v, resp: %s, err: %v", resp.Success, resp.IPAddress, &resp, err)
+	log.Infof("Send AddNetworkReply: Success: %t IPAddr: %v, resp: %s, err: %v", resp.Success, resp.IPAllocationMetadata, &resp, err)
 	return &resp, nil
 }
 
@@ -350,7 +338,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		NetworkName: in.NetworkName,
 	}
 	var errors error
-	var ipAddr []*rpc.IPAddress
+	var ipAddr []*rpc.IPAllocationMetadata
 
 	ipsToMatch := 1
 	ipsFound := 0
@@ -418,10 +406,10 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 						log.Errorf("Failed to unmarshal PodENIData JSON: %v", err)
 					}
 					return &rpc.DelNetworkReply{
-						Success:           true,
-						PodVlanId:         int32(podENIData[0].VlanID),
-						IPAddress:         []*rpc.IPAddress{{IPv4Addr: podENIData[0].PrivateIP}},
-						NetworkPolicyMode: s.ipamContext.networkPolicyMode,
+						Success:              true,
+						PodVlanId:            int32(podENIData[0].VlanID),
+						IPAllocationMetadata: []*rpc.IPAllocationMetadata{{IPv4Addr: podENIData[0].PrivateIP}},
+						NetworkPolicyMode:    s.ipamContext.networkPolicyMode,
 					}, err
 				}
 			}
@@ -437,7 +425,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		if err != nil {
 			errors = multiErr.Append(errors, err)
 		} else {
-			ipAddr = append(ipAddr, &rpc.IPAddress{
+			ipAddr = append(ipAddr, &rpc.IPAllocationMetadata{
 				IPv4Addr:     ipv4Addr,
 				IPv6Addr:     ipv6Addr,
 				DeviceNumber: int32(deviceNumber),
@@ -461,9 +449,9 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 
 	log.Infof("Send DelNetworkReply: IPAddress: %+v, err: %v", ipAddr, errors)
 	return &rpc.DelNetworkReply{
-		Success:           errors == nil,
-		IPAddress:         ipAddr,
-		NetworkPolicyMode: s.ipamContext.networkPolicyMode,
+		Success:              errors == nil,
+		IPAllocationMetadata: ipAddr,
+		NetworkPolicyMode:    s.ipamContext.networkPolicyMode,
 	}, errors
 }
 
