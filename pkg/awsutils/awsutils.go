@@ -552,7 +552,6 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(mac string, dsAccess *datast
 
 		newENIs := StringSet{}
 		newENIs.Set(eniIDs)
-		// JD: REVISIT HERE
 		filteredENIs := newENIs.Difference(&cache.unmanagedENIs)
 
 		// This will update SG for managed ENIs created by EKS.

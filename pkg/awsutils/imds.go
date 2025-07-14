@@ -467,7 +467,7 @@ func (typedimds TypedIMDS) GetLocalIPv4s(ctx context.Context, mac string) ([]net
 				// No IPv4 address on the interface, not an error
 				return nil, nil
 			}
-			log.Warnf("%v", err)
+			log.Warnf("Could not get local IPv4 addresses from IMDS: %v", err)
 			return nil, newIMDSRequestError(err.Error(), err)
 		}
 		return nil, err
@@ -545,7 +545,7 @@ func (typedimds TypedIMDS) GetLocalIPv6(ctx context.Context) (net.IP, error) {
 				// No IPv6.  Not an error, just a disappointment :(
 				return nil, nil
 			}
-			log.Warnf("%v", err)
+			log.Warnf("Could not get primary ipv6 address from IMDS: %v", err)
 			return nil, newIMDSRequestError(err.Error(), err)
 		}
 		return nil, err
@@ -565,7 +565,7 @@ func (typedimds TypedIMDS) GetIPv6s(ctx context.Context, mac string) ([]net.IP, 
 				// No IPv6.  Not an error, just a disappointment :(
 				return nil, nil
 			}
-			log.Warnf("%v", err)
+			log.Warnf("Could not get ipv6 addresses from IMDS: %v", err)
 			return nil, newIMDSRequestError(err.Error(), err)
 		}
 		return nil, err

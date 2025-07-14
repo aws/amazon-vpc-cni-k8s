@@ -114,13 +114,13 @@ func TestCmdAdd(t *testing.T) {
 	enforceNpReply := &rpc.EnforceNpReply{Success: true}
 	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), gomock.Any()).Return(enforceNpReply, nil).Times(1)
 
-	addrs := []*rpc.IPAddress{{
+	addrs := []*rpc.IPAllocationMetadata{{
 		IPv4Addr:     ipAddr,
 		DeviceNumber: devNum,
 		RouteTableId: devNum + 1,
 	}}
 
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "none"}
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
 	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
@@ -156,13 +156,13 @@ func TestCmdAddWithNPenabled(t *testing.T) {
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
-	addrs := []*rpc.IPAddress{{
+	addrs := []*rpc.IPAllocationMetadata{{
 		IPv4Addr:     ipAddr,
 		DeviceNumber: devNum,
 		RouteTableId: devNum + 1,
 	}}
 
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "strict"}
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: "strict"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
 	enforceNpReply := &rpc.EnforceNpReply{Success: true}
@@ -201,13 +201,13 @@ func TestCmdAddWithNPenabledWithErr(t *testing.T) {
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
-	addrs := []*rpc.IPAddress{{
+	addrs := []*rpc.IPAllocationMetadata{{
 		IPv4Addr:     ipAddr,
 		DeviceNumber: devNum,
 		RouteTableId: devNum + 1,
 	}}
 
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "strict"}
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: "strict"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
 	enforceNpReply := &rpc.EnforceNpReply{Success: false}
@@ -238,13 +238,13 @@ func TestCmdAddNetworkErr(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	addrs := []*rpc.IPAddress{{
+	addrs := []*rpc.IPAllocationMetadata{{
 		IPv4Addr:     ipAddr,
 		DeviceNumber: devNum,
 		RouteTableId: devNum + 1,
 	}}
 
-	addNetworkReply := &rpc.AddNetworkReply{Success: false, IPAddress: addrs, NetworkPolicyMode: "none"}
+	addNetworkReply := &rpc.AddNetworkReply{Success: false, IPAllocationMetadata: addrs, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, errors.New("Error on AddNetworkReply"))
 
 	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
@@ -271,18 +271,18 @@ func TestCmdAddErrSetupPodNetwork(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	addrs := []*rpc.IPAddress{{
+	addrs := []*rpc.IPAllocationMetadata{{
 		IPv4Addr:     ipAddr,
 		DeviceNumber: devNum,
 		RouteTableId: devNum + 1,
 	}}
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "none"}
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
 	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(errors.New("error on SetupPodNetwork"))
 
 	// when SetupPodNetwork fails, expect to return IP back to datastore
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAddress: addrs}
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAllocationMetadata: addrs}
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
 	err := add(cmdArgs, mocksTypes, mocksGRPC, mocksRPC, mocksNetwork)
@@ -309,13 +309,13 @@ func TestCmdAddWithNetworkPolicyModeUnset(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	addrs := []*rpc.IPAddress{{
+	addrs := []*rpc.IPAllocationMetadata{{
 		IPv4Addr:     ipAddr,
 		DeviceNumber: devNum,
 		RouteTableId: devNum + 1,
 	}}
 
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: ""}
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: ""}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
 	mocksNetwork.EXPECT().SetupPodNetwork(gomock.Any(), cmdArgs.Netns, gomock.Any(), gomock.Any()).Return(nil)
@@ -368,7 +368,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 
 	mockNP.EXPECT().EnforceNpToPod(gomock.Any(), request).Return(enforceNpReply, nil).Times(1)
 
-	addrs := []*rpc.IPAddress{
+	addrs := []*rpc.IPAllocationMetadata{
 		{
 			IPv4Addr:     ipAddr,
 			DeviceNumber: devNum,
@@ -380,7 +380,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 			RouteTableId: (MAX_ENI * (NetworkCards - 1)) + devNum + 1,
 		},
 	}
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "standard"}
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: "standard"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
 	vethMetadata := []driver.VirtualInterfaceMetadata{
@@ -438,12 +438,12 @@ func TestCmdDel(t *testing.T) {
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
-	addrs := []*rpc.IPAddress{{
+	addrs := []*rpc.IPAllocationMetadata{{
 		IPv4Addr:     ipAddr,
 		DeviceNumber: devNum,
 		RouteTableId: devNum + 1,
 	}}
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: "none"}
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: "none"}
 
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
@@ -651,13 +651,13 @@ func TestCmdDelErrDelNetwork(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	addrs := []*rpc.IPAddress{{
+	addrs := []*rpc.IPAllocationMetadata{{
 		IPv4Addr:     ipAddr,
 		DeviceNumber: devNum,
 		RouteTableId: devNum + 1,
 	}}
 
-	delNetworkReply := &rpc.DelNetworkReply{Success: false, IPAddress: addrs}
+	delNetworkReply := &rpc.DelNetworkReply{Success: false, IPAllocationMetadata: addrs}
 
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, errors.New("error on DelNetwork"))
 
@@ -684,14 +684,14 @@ func TestCmdDelErrTeardown(t *testing.T) {
 	mocksGRPC.EXPECT().Dial(gomock.Any(), gomock.Any()).Return(conn, nil)
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
-	addrs := []*rpc.IPAddress{
+	addrs := []*rpc.IPAllocationMetadata{
 		{
 			IPv4Addr:     ipAddr,
 			DeviceNumber: devNum,
 			RouteTableId: devNum + 1,
 		},
 	}
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAddress: addrs}
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAllocationMetadata: addrs}
 
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
@@ -726,10 +726,10 @@ func TestCmdAddForPodENINetwork(t *testing.T) {
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
-	addrs := []*rpc.IPAddress{{
+	addrs := []*rpc.IPAllocationMetadata{{
 		IPv4Addr: ipAddr}}
 
-	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAddress: addrs, PodENISubnetGW: "10.0.0.1", PodVlanId: 1,
+	addNetworkReply := &rpc.AddNetworkReply{Success: true, IPAllocationMetadata: addrs, PodENISubnetGW: "10.0.0.1", PodVlanId: 1,
 		PodENIMAC: "eniHardwareAddr", ParentIfIndex: 2, NetworkPolicyMode: "none"}
 	mockC.EXPECT().AddNetwork(gomock.Any(), gomock.Any()).Return(addNetworkReply, nil)
 
@@ -771,13 +771,13 @@ func TestCmdDelForPodENINetwork(t *testing.T) {
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
 	mocksRPC.EXPECT().NewNPBackendClient(npConn).Return(mockNP)
 
-	addrs := []*rpc.IPAddress{{
+	addrs := []*rpc.IPAllocationMetadata{{
 		IPv4Addr:     ipAddr,
 		DeviceNumber: devNum,
 		RouteTableId: devNum + 1,
 	}}
 
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAddress: addrs, PodVlanId: 1, NetworkPolicyMode: "none"}
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAllocationMetadata: addrs, PodVlanId: 1, NetworkPolicyMode: "none"}
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
 	deleteNpReply := &rpc.DeleteNpReply{Success: true}
@@ -808,13 +808,13 @@ func TestCmdDelWithNetworkPolicyModeUnset(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	addrs := []*rpc.IPAddress{{
+	addrs := []*rpc.IPAllocationMetadata{{
 		IPv4Addr:     ipAddr,
 		DeviceNumber: devNum,
 		RouteTableId: devNum + 1,
 	}}
 
-	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAddress: addrs, NetworkPolicyMode: ""}
+	delNetworkReply := &rpc.DelNetworkReply{Success: true, IPAllocationMetadata: addrs, NetworkPolicyMode: ""}
 	mockC.EXPECT().DelNetwork(gomock.Any(), gomock.Any()).Return(delNetworkReply, nil)
 
 	mocksNetwork.EXPECT().TeardownPodNetwork(gomock.Any(), gomock.Any()).Return(nil)
@@ -1663,12 +1663,12 @@ func Test_teardownPodNetworkWithPrevResult(t *testing.T) {
 func Test_parseIPAddress(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    *pb.IPAddress
+		input    *pb.IPAllocationMetadata
 		expected *net.IPNet
 	}{
 		{
 			name: "IPv4 address",
-			input: &pb.IPAddress{
+			input: &pb.IPAllocationMetadata{
 				IPv4Addr: "192.168.1.10",
 				IPv6Addr: "",
 			},
@@ -1679,7 +1679,7 @@ func Test_parseIPAddress(t *testing.T) {
 		},
 		{
 			name: "IPv6 address",
-			input: &pb.IPAddress{
+			input: &pb.IPAllocationMetadata{
 				IPv4Addr: "",
 				IPv6Addr: "2001:db8::1",
 			},
@@ -1690,7 +1690,7 @@ func Test_parseIPAddress(t *testing.T) {
 		},
 		{
 			name: "both IPv4 and IPv6 set, prefer IPv4",
-			input: &pb.IPAddress{
+			input: &pb.IPAllocationMetadata{
 				IPv4Addr: "10.0.0.1",
 				IPv6Addr: "2001:db8::2",
 			},
@@ -1701,7 +1701,7 @@ func Test_parseIPAddress(t *testing.T) {
 		},
 		{
 			name: "Nothing set",
-			input: &pb.IPAddress{
+			input: &pb.IPAllocationMetadata{
 				IPv4Addr: "",
 				IPv6Addr: "",
 			},
@@ -1712,9 +1712,9 @@ func Test_parseIPAddress(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var got *net.IPNet
 			if tt.input == nil {
-				got = parseIPAddress(nil)
+				got = getIPAddressFromIpAllocationMetadata(nil)
 			} else {
-				got = parseIPAddress(tt.input)
+				got = getIPAddressFromIpAllocationMetadata(tt.input)
 			}
 			if tt.expected == nil {
 				assert.Nil(t, got)
