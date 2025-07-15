@@ -107,4 +107,5 @@ service ConfigServerBackend {
 
 message NetworkPolicyAgentConfigReply {
   string NetworkPolicyMode = 1;
+  bool MultiNICEnabled = 2;
 }

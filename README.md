@@ -757,6 +757,32 @@ Default: `false`
 Setting `ENABLE_IMDS_ONLY_MODE` to `true` enables the CNI plugin to operate in environments with strict VPC or IAM restrictions where EC2 API access is limited or unavailable. In this mode, the CNI plugin relies solely on the Instance Metadata Service (IMDS) to retrieve information about ENIs (Elastic Network Interfaces) and determine IP addresses to assign. These ENIs are only discovered at startup, so ENIs and IPs must be pre-attached and pre-assigned before CNI plugin starts up.
 Enabling this mode automatically sets `DISABLE_NETWORK_RESOURCE_PROVISIONING` and `DISABLE_LEAKED_ENI_CLEANUP` to `true`, as the CNI plugin will not make any EC2 API calls during operation.
 
+
+#### `ENABLE_MULTI_NIC` (v1.20.0+)
+
+Type: Boolean as a String
+
+Default: `false`
+
+The CNI plugin by default only manages network card 0 and assigns a single IP address to each Pod. Setting `ENABLE_MULTI_NIC` to `true` enables the Amazon VPC CNI plugin to manage all eligible network cards on supported multi-card instance types.
+
+A network card will be managed if at least one of the following conditions is met:
+
+a. The network card does not have any devices attached to it
+b. The network card has an `efa` OR an `ena` device attached to it
+c. The network card has an `efa-only` AND an `ena` device attached to it
+
+## Annotations
+
+#### Multi Homed Pods (v1.20.0+)
+
+The `k8s.amazonaws.com/nicConfig: multi-nic-attachment` annotation enables multi-homing for a pod, allowing it to receive an IP address from each managed network card on the node. While this provides multiple network paths, applications must explicitly utilize these interfaces to take advantage of the additional bandwidth. To enable this feature, set `ENABLE_MULTI_NIC` to `true` in the Amazon VPC CNI configuration and schedule the pod on an instance type that supports multiple network cards. If you are using the AWS VPC CNI implementation of network policies, these policies are applied symmetrically to all interfaces of the pod.
+
+Note -
+Downgrade considerations
+1. If the feature is enabled and you plan to downgrade the plugin from v1.20.0+, ensure that all multi-homed pods are removed first to prevent IP leaks and then set the `ENABLE_MULTI_NIC` to `false`.
+2. Drain and remove the nodes to clean up any additional ENIs created by the Amazon VPC CNI plugin on network cards with index > 0
+
 ### VPC CNI Feature Matrix
 
 

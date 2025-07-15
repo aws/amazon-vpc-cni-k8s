@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.20.0
+* Feature - Adding support in CNI for managing multiple network interface card on the instance in #3347,#3349
+* Dependency - Bump helm.sh/helm/v3 from 3.18.1 to 3.18.4 in #3346
+* Dependency - Bump aws-dependencies in #3337
+* Improvement - Build CNI plugins from source in #3343
+* Fix - Fix error when Network policy agent GRPC call fails in #3320
+* Fix - Fix race condition when force deleting pod using a security group for pod feature in #3304
+* Improvement - Add latency metrics for ipamd init in #3301
+
 ## v1.19.6
 * Dependency - Bump k8s.io/apimachinery from 0.32.3 to 0.33.0 by @dependabot in #3279
 * Dependency - Bump golang.org/x/sys from 0.31.0 to 0.32.0 in /test/agent in #3280
