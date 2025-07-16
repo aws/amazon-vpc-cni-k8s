@@ -14,9 +14,13 @@
 package cni
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"os/exec"
 	"strconv"
+	"strings"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
@@ -27,6 +31,11 @@ import (
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/apps/v1"
 	coreV1 "k8s.io/api/core/v1"
+)
+
+var (
+	None       string = "none"
+	Persistent string = "persistent"
 )
 
 // Verifies network connectivity across Pods placed on different combination of
@@ -264,6 +273,130 @@ var _ = Describe("test pod networking", func() {
 		})
 	})
 })
+
+var _ = PDescribe("pod egress traffic test", Ordered, func() {
+	var originalPolicy string
+	var pod *coreV1.Pod
+	BeforeAll(func() {
+		Expect(checkNodeShellPlugin()).To(BeNil())
+		originalPolicy, err = currentMacAddressPolicy(primaryNode.Name)
+		Expect(err).ToNot(HaveOccurred())
+	})
+	AfterEach(func() {
+		f.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(pod)
+	})
+	AfterAll(func() {
+		err := setMACAddressPolicy(primaryNode.Name, originalPolicy)
+		Expect(err).ToNot(HaveOccurred())
+	})
+	Describe("Traffic test under change of MAC address policy Change", func() {
+		Context("When MAC address Policy is None", func() {
+			// check if current policy is none, if not make it none
+			It("can ping to 8.8.8.8", func() {
+				Expect(setMACAddressPolicy(primaryNode.Name, None)).Error().ShouldNot(HaveOccurred())
+				// deploy pod on this node.
+				pod = manifest.NewDefaultPodBuilder().
+					NodeName(primaryNode.Name).
+					Container(manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).Build()).
+					Namespace("default").
+					Build()
+				pod, err = f.K8sResourceManagers.PodManager().CreateAndWaitTillRunning(pod)
+				Expect(err).ToNot(HaveOccurred())
+				command := []string{"ping", "-c", "1", "8.8.8.8"}
+				stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExec("default", pod.Name, command)
+				Expect(err).ToNot(HaveOccurred(), stderr, stdout)
+				Expect(stderr).To(BeEmpty(), stdout)
+				Expect(stdout).ToNot(BeEmpty())
+			})
+		})
+		Context("When MAC address policy is persistent", func() {
+			// check if current policy is none, if not make it none
+			It("can ping to 8.8.8.8", func() {
+				Expect(setMACAddressPolicy(primaryNode.Name, Persistent)).Error().ShouldNot(HaveOccurred())
+				// deploy pod on this node.
+				pod := manifest.NewDefaultPodBuilder().
+					NodeName(primaryNode.Name).
+					Container(manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).Build()).
+					Namespace("default").
+					Build()
+				pod, err = f.K8sResourceManagers.PodManager().CreateAndWaitTillRunning(pod)
+				Expect(err).ToNot(HaveOccurred())
+
+				command := []string{"ping", "-c", "1", "8.8.8.8"}
+				stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExec("default", pod.Name, command)
+				Expect(err).ToNot(HaveOccurred(), stderr, stdout)
+				Expect(stderr).To(BeEmpty(), stdout)
+				Expect(stdout).ToNot(BeEmpty())
+			})
+		})
+	})
+
+})
+
+func checkNodeShellPlugin() error {
+	cmd := exec.Command("kubectl", "plugin", "list")
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("kubectl node-shell plugin not present")
+	}
+	if !strings.Contains(string(out), "node_shell") {
+		return fmt.Errorf("node-shell not part of supported plugin %s", string(out))
+	}
+	return nil
+}
+
+func execNodeShell(nodeName string, command string) ([]byte, error) {
+
+	cmd := exec.Command("kubectl", "node-shell", nodeName, "--", "bash", "-c", command)
+	output, err := cmd.Output()
+	return output, err
+}
+
+// sets requested policy in drop file and restarts udev
+func setMACAddressPolicy(nodeName string, value string) error {
+
+	if val, err := currentMacAddressPolicy(nodeName); err == nil && val == value {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("error while reading mac addres policy: %s", err)
+	}
+
+	script := fmt.Sprintf(`set -euo pipefail
+dir=/etc/systemd/network/99-default.link.d
+mkdir -p "$dir"
+# Pick existing drop‑in if any; else fallback to 01-custom-policy.conf
+file=$(ls -1 "$dir" 2>/dev/null | head -n1)
+[ -z "$file" ] && file=01-custom-policy.conf
+file="$dir/$file"
+cat > "$file" <<'EOF'
+[Link]
+MACAddressPolicy=%s
+EOF
+udevadm control --reload
+`, value)
+
+	out, err := execNodeShell(nodeName, script)
+	fmt.Println(string(out))
+
+	return err
+}
+
+func currentMacAddressPolicy(nodeName string) (string, error) {
+	out, err := execNodeShell(nodeName, `systemd-analyze cat-config systemd/network/99-default.link`)
+	if err != nil {
+		return "", err
+	}
+	var policy string
+	sc := bufio.NewScanner(bytes.NewReader(out))
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if strings.HasPrefix(line, "MACAddressPolicy") {
+			policy = strings.SplitAfter(line, "=")[1]
+		}
+	}
+	fmt.Println("extracted current mac address policy", policy)
+	return policy, nil
+}
 
 func VerifyConnectivityFailsForNegativeCase(senderPod coreV1.Pod, receiverPod coreV1.Pod, port int,
 	getTestCommandFunc func(receiverPod coreV1.Pod, port int) []string) {
