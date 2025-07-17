@@ -25,3 +25,7 @@ updates:
         - "github.com/aws*"
     schedule:
       interval: "monthly"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
