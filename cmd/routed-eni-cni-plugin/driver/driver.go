@@ -15,6 +15,7 @@
 package driver
 
 import (
+	"crypto/rand"
 	"fmt"
 	"net"
 	"os"
@@ -92,9 +93,11 @@ type createVethPairContext struct {
 	mtu          int
 	procSys      procsyswrapper.ProcSys
 	index        int
+	log          logger.Logger
+	hostMACAddr  net.HardwareAddr
 }
 
-func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *net.IPNet, mtu int, index int) *createVethPairContext {
+func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *net.IPNet, mtu int, index int, hostMACAddr net.HardwareAddr, log logger.Logger) *createVethPairContext {
 	return &createVethPairContext{
 		contVethName: contVethName,
 		hostVethName: hostVethName,
@@ -104,6 +107,8 @@ func newCreateVethPairContext(contVethName string, hostVethName string, ipAddr *
 		mtu:          mtu,
 		procSys:      procsyswrapper.NewProcSys(),
 		index:        index,
+		hostMACAddr:  hostMACAddr,
+		log:          log,
 	}
 }
 
@@ -115,7 +120,8 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 			Flags: net.FlagUp,
 			MTU:   createVethContext.mtu,
 		},
-		PeerName: createVethContext.hostVethName,
+		PeerName:         createVethContext.hostVethName,
+		PeerHardwareAddr: createVethContext.hostMACAddr,
 	}
 
 	if err := createVethContext.netLink.LinkAdd(veth); err != nil {
@@ -387,8 +393,15 @@ func (n *linuxNetwork) setupVeth(hostVethName string, contVethName string, netns
 		}
 		log.Debugf("Successfully deleted old hostVeth %s", hostVethName)
 	}
-
-	createVethContext := newCreateVethPairContext(contVethName, hostVethName, ipAddr, mtu, index)
+	macAddrStr, err := NewMACGenerator().generateUniqueRandomMAC()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to generate Unique MAC addr for host side veth")
+	}
+	macAddr, err := net.ParseMAC(macAddrStr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse unique generated mac addr %s", macAddrStr)
+	}
+	createVethContext := newCreateVethPairContext(contVethName, hostVethName, ipAddr, mtu, index, macAddr, log)
 	if err := n.ns.WithNetNSPath(netnsPath, createVethContext.run); err != nil {
 		return nil, errors.Wrap(err, "failed to setup veth network")
 	}
@@ -676,4 +689,45 @@ func buildVlanLink(vlanName string, vlanID int, parentIfIndex int, eniMAC string
 	la.ParentIndex = parentIfIndex
 	la.HardwareAddr, _ = net.ParseMAC(eniMAC)
 	return &netlink.Vlan{LinkAttrs: la, VlanId: vlanID}
+}
+
+type MACGenerator struct {
+	netlink   netlinkwrapper.NetLink
+	randMACfn func() string
+}
+
+func NewMACGenerator() MACGenerator {
+	return MACGenerator{netlink: netlinkwrapper.NewNetLink(), randMACfn: generateRandomMAC}
+}
+
+func generateRandomMAC() string {
+	mac := make([]byte, 6)
+	rand.Read(mac)
+	// Set the local bit and unset the multicast bit
+	mac[0] = (mac[0] | 2) & 0xfe
+
+	return fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x",
+		mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
+}
+
+// generateUniqueRandomMAC will compare randomly generated Mac to mac addresses of veth already present in host.
+func (m MACGenerator) generateUniqueRandomMAC() (string, error) {
+	ll, err := m.netlink.LinkList()
+	if err != nil {
+		return "", err
+	}
+	macMap := make(map[string]struct{})
+	for _, link := range ll {
+		if link.Attrs() != nil {
+			macMap[link.Attrs().HardwareAddr.String()] = struct{}{}
+		}
+	}
+
+	for i := 0; i < 10; i++ {
+		macAttempt := m.randMACfn()
+		if _, ok := macMap[macAttempt]; !ok {
+			return macAttempt, nil
+		}
+	}
+	return "", errors.New("failed to generate unique mac after 10 attempts.")
 }
