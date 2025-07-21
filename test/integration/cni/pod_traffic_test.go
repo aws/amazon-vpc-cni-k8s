@@ -274,10 +274,11 @@ var _ = Describe("test pod networking", func() {
 	})
 })
 
-var _ = PDescribe("pod egress traffic test", Ordered, func() {
+var _ = Describe("pod egress traffic test", Ordered, func() {
 	var originalPolicy string
 	var pod *coreV1.Pod
 	BeforeAll(func() {
+		Skip("Skipping pod egress trafffic until addon release")
 		Expect(checkNodeShellPlugin()).To(BeNil())
 		originalPolicy, err = currentMacAddressPolicy(primaryNode.Name)
 		Expect(err).ToNot(HaveOccurred())
@@ -290,9 +291,11 @@ var _ = PDescribe("pod egress traffic test", Ordered, func() {
 		Expect(err).ToNot(HaveOccurred())
 	})
 	Describe("Traffic test under change of MAC address policy Change", func() {
+		
 		Context("When MAC address Policy is None", func() {
 			// check if current policy is none, if not make it none
 			It("can ping to 8.8.8.8", func() {
+				Skip("Skipping pod egress trafffic until addon release")
 				Expect(setMACAddressPolicy(primaryNode.Name, None)).Error().ShouldNot(HaveOccurred())
 				// deploy pod on this node.
 				pod = manifest.NewDefaultPodBuilder().
@@ -312,6 +315,7 @@ var _ = PDescribe("pod egress traffic test", Ordered, func() {
 		Context("When MAC address policy is persistent", func() {
 			// check if current policy is none, if not make it none
 			It("can ping to 8.8.8.8", func() {
+				Skip("Skipping pod egress trafffic until addon release")
 				Expect(setMACAddressPolicy(primaryNode.Name, Persistent)).Error().ShouldNot(HaveOccurred())
 				// deploy pod on this node.
 				pod := manifest.NewDefaultPodBuilder().
