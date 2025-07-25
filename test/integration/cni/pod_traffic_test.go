@@ -291,7 +291,7 @@ var _ = Describe("pod egress traffic test", Ordered, func() {
 		Expect(err).ToNot(HaveOccurred())
 	})
 	Describe("Traffic test under change of MAC address policy Change", func() {
-		
+
 		Context("When MAC address Policy is None", func() {
 			// check if current policy is none, if not make it none
 			It("can ping to 8.8.8.8", func() {
