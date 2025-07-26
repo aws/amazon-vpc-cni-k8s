@@ -43,7 +43,8 @@ const (
 
 	//Time duration CNI waits for an IPv6 address assigned to an interface
 	//to move to stable state before error'ing out.
-	v6DADTimeout = 10 * time.Second
+	v6DADTimeout                = 10 * time.Second
+	MAX_MAC_GENERATION_ATTEMPTS = 10
 )
 
 type VirtualInterfaceMetadata struct {
@@ -723,11 +724,11 @@ func (m MACGenerator) generateUniqueRandomMAC() (string, error) {
 		}
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < MAX_MAC_GENERATION_ATTEMPTS; i++ {
 		macAttempt := m.randMACfn()
 		if _, ok := macMap[macAttempt]; !ok {
 			return macAttempt, nil
 		}
 	}
-	return "", errors.New("failed to generate unique mac after 10 attempts.")
+	return "", errors.New(fmt.Sprintf("failed to generate unique mac after %d attempts.", MAX_MAC_GENERATION_ATTEMPTS))
 }
