@@ -24,7 +24,7 @@ import (
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"github.com/vishvananda/netlink"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 )
 
 const (
@@ -43,13 +43,14 @@ const (
 
 func getNodePrimaryIF() (string, error) {
 	var primaryIF string
+	netLink := netlinkwrapper.NewNetLink()
 	primaryMAC, err := imds.GetMetaData("mac")
 	if err != nil {
 		return primaryIF, errors.Wrap(err, "Failed to get primary MAC from IMDS")
 	}
 	log.Infof("Found primaryMAC %s", primaryMAC)
 
-	links, err := netlink.LinkList()
+	links, err := netLink.LinkList()
 	if err != nil {
 		return primaryIF, errors.Wrap(err, "Failed to list links")
 	}
