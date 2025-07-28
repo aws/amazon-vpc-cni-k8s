@@ -301,7 +301,6 @@ var _ = Describe("pod egress traffic test", Ordered, func() {
 				pod = manifest.NewDefaultPodBuilder().
 					NodeName(primaryNode.Name).
 					Container(manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).Build()).
-					Namespace("default").
 					Build()
 				pod, err = f.K8sResourceManagers.PodManager().CreateAndWaitTillRunning(pod)
 				Expect(err).ToNot(HaveOccurred())
@@ -321,7 +320,6 @@ var _ = Describe("pod egress traffic test", Ordered, func() {
 				pod := manifest.NewDefaultPodBuilder().
 					NodeName(primaryNode.Name).
 					Container(manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).Build()).
-					Namespace("default").
 					Build()
 				pod, err = f.K8sResourceManagers.PodManager().CreateAndWaitTillRunning(pod)
 				Expect(err).ToNot(HaveOccurred())
