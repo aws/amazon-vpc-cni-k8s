@@ -37,7 +37,7 @@ jobs:
       - name: Unit test
         run: make unit-test
       - name: Upload code coverage
-        uses: codecov/codecov-action@79066c46f8dcdf8d7355f820dbac958c5b4cb9d3 # refs/tags/v4.5.0
+        uses: codecov/codecov-action@e28ff129e5465c2c0dcc6f003fc735cb6ae0c673 # refs/tags/v4.5.0
   docker-build:
     name: Build Docker images
     runs-on: ubuntu-latest
