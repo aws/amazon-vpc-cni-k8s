@@ -14,6 +14,7 @@
 package driver
 
 import (
+	"fmt"
 	"net"
 	"syscall"
 	"testing"
@@ -39,6 +40,25 @@ var testLogCfg = logger.Configuration{
 }
 
 var testLogger = logger.New(&testLogCfg)
+
+type vethMatcher struct {
+	contVethName string
+	flags        net.Flags
+	mtu          int
+}
+
+func (m vethMatcher) Matches(x interface{}) bool {
+	veth, ok := x.(netlink.Link)
+	if !ok {
+		return false
+	}
+	attrs := veth.Attrs()
+	return attrs.Name == m.contVethName && attrs.Flags == m.flags && attrs.MTU == m.mtu
+}
+
+func (m vethMatcher) String() string {
+	return fmt.Sprintf("matches veth with contVethName=%s, flags=%s, mtu=%d", m.contVethName, m.flags, m.mtu)
+}
 
 func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 	hostVethWithIndex9 := &netlink.Veth{
@@ -3440,7 +3460,11 @@ func Test_createVethPairContext_run(t *testing.T) {
 				netLink.EXPECT().LinkByName(call.linkName).Return(call.link, call.err)
 			}
 			for _, call := range tt.fields.linkAddCalls {
-				netLink.EXPECT().LinkAdd(call.link).Return(call.err)
+				netLink.EXPECT().LinkAdd(vethMatcher{
+					contVethName: call.link.Attrs().Name,
+					flags:        call.link.Attrs().Flags,
+					mtu:          call.link.Attrs().MTU}).
+					Return(call.err)
 			}
 			for _, call := range tt.fields.linkSetupCalls {
 				netLink.EXPECT().LinkSetUp(call.link).Return(call.err)
@@ -3486,6 +3510,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 				netLink:      netLink,
 				procSys:      procSys,
 				index:        tt.index,
+				log:          testLogger,
 			}
 			err := createVethContext.run(hostNS)
 			if tt.wantErr != nil {
@@ -5548,4 +5573,48 @@ func Test_buildVlanLink(t *testing.T) {
 			assert.Equal(t, tt.wantVlanLinkENIMac, got.Attrs().HardwareAddr)
 		})
 	}
+}
+
+func Test_generateUniqueRandomMAC(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	existing, _ := net.ParseMAC("3a:af:0d:21:cd:fc")
+	hostLink := &netlink.Device{LinkAttrs: netlink.LinkAttrs{
+		Name: "eth0", HardwareAddr: existing}}
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkList().Return([]netlink.Link{hostLink}, nil).AnyTimes()
+
+	tests := []struct {
+		name     string
+		randFunc func() string
+		wantErr  bool
+	}{
+		{
+			name:     "generates unique MAC address",
+			randFunc: generateRandomMAC,
+			wantErr:  false,
+		},
+		{
+			name:     "collides with mac address on host",
+			randFunc: func() string { return "3a:af:0d:21:cd:fc" },
+			wantErr:  true,
+		},
+	}
+	for _, tt := range tests {
+		mgen := MACGenerator{netlink: netLink, randMACfn: tt.randFunc}
+		mac, err := mgen.generateUniqueRandomMAC()
+		if tt.wantErr {
+			assert.Error(t, err)
+		} else {
+			assert.NoError(t, err)
+			assert.True(t, isUnicastMAC(mac))
+		}
+	}
+}
+func isUnicastMAC(mac string) bool {
+	addr, err := net.ParseMAC(mac)
+	if err != nil || len(addr) != 6 {
+		return false
+	}
+	return addr[0]&0x1 == 0 && addr[0]&0x2 == 0x02
 }
