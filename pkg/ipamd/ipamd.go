@@ -224,6 +224,7 @@ type IPAMContext struct {
 	manageENIsNonScheduleable bool
 	useSubnetDiscovery        bool
 	networkClient             networkutils.NetworkAPIs
+	maxIPs                    int
 	maxIPsPerENI              int
 	maxENI                    int
 	maxPrefixesPerENI         int
@@ -2600,6 +2601,27 @@ func (c *IPAMContext) getPrefixesNeeded(networkCard int) int {
 	}
 	log.Debugf("ToAllocate: %d, Network Card %d", toAllocate, networkCard)
 	return toAllocate
+}
+
+// getMaxIPs returns the maximum number of ipv4 addresses allocatable given the context
+func (c *IPAMContext) getMaxIPs() (int, error) {
+	if c.maxIPs <= 0 {
+		enisForPods, err := c.getMaxENI()
+		if err != nil {
+			return 0, err
+		}
+		if c.useCustomNetworking {
+			enisForPods = enisForPods - 1
+		}
+
+		ipv4Limit, _, err := c.GetIPv4Limit()
+		if err != nil {
+			return 0, err
+		}
+		c.maxIPs = enisForPods * ipv4Limit
+	}
+
+	return c.maxIPs, nil
 }
 
 func (c *IPAMContext) initENIAndIPLimits() (err error) {

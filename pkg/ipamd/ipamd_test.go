@@ -1326,6 +1326,56 @@ func TestGetWarmIPTargetStateWithPDenabled(t *testing.T) {
 	assert.Equal(t, 0, over)
 }
 
+func TestGetMaxIPs(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	for _, testCase := range []struct {
+		enablePrefixDelegation bool
+		useCustomNetworking    bool
+		eniLimit               int
+		eniIpv4Limit           int
+		expectedMaxIps         int
+	}{
+		{
+			// modeled for a t3.medium
+			eniLimit:       3,
+			eniIpv4Limit:   5,
+			expectedMaxIps: 15,
+		},
+		{
+			// modeled for a t3.medium
+			eniLimit:               3,
+			eniIpv4Limit:           5,
+			enablePrefixDelegation: true,
+			expectedMaxIps:         240,
+		},
+		{
+			// modeled for a t3.medium
+			eniLimit:            3,
+			eniIpv4Limit:        5,
+			useCustomNetworking: true,
+			expectedMaxIps:      10,
+		},
+	} {
+		mockContext := &IPAMContext{
+			awsClient:              m.awsutils,
+			networkClient:          m.network,
+			primaryIP:              make(map[string]string),
+			terminating:            int32(0),
+			enablePrefixDelegation: testCase.enablePrefixDelegation,
+			useCustomNetworking:    testCase.useCustomNetworking,
+		}
+		m.awsutils.EXPECT().GetENILimit().Return(testCase.eniLimit)
+		m.awsutils.EXPECT().GetENIIPv4Limit().Return(testCase.eniIpv4Limit)
+
+		maxIps, err := mockContext.getMaxIPs()
+
+		assert.NoError(t, err)
+		assert.Equal(t, testCase.expectedMaxIps, maxIps)
+	}
+}
+
 func TestIPAMContext_nodeIPPoolTooLow(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
