@@ -38,6 +38,8 @@ jobs:
         run: make unit-test
       - name: Upload code coverage
         uses: codecov/codecov-action@79066c46f8dcdf8d7355f820dbac958c5b4cb9d3 # refs/tags/v4.5.0
+        with:
+            token: ${{ secrets.CODECOV_TOKEN }}
   docker-build:
     name: Build Docker images
     runs-on: ubuntu-latest
