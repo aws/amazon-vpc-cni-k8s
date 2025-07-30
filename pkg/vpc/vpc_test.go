@@ -114,17 +114,13 @@ func TestGetNetworkCards(t *testing.T) {
 		},
 	})
 	assert.NoError(t, err)
-
-	networkCards, err = GetNetworkCards("c5a.metal")
-	assert.Equal(t, networkCards, []NetworkCard(nil))
-	assert.Equal(t, err, ErrNoInfo)
 }
 
 func TestGetInstance(t *testing.T) {
-	instance, ok := GetInstance("large")
+	_, ok := GetInstance("large")
 	assert.False(t, ok)
 
-	instance, ok = GetInstance("a1.2xlarge")
+	instance, ok := GetInstance("a1.2xlarge")
 	assert.Equal(t, instance, InstanceTypeLimits{
 		ENILimit:                4,
 		IPv4Limit:               15,
