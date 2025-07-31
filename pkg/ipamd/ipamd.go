@@ -425,10 +425,7 @@ func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 	c.enablePodENI = EnablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = EnablePodIPAnnotation()
-	c.numNetworkCards = len(c.awsClient.GetNetworkCards())
-	c.unmanagedENI = make([]int, c.numNetworkCards)
 	c.enableMultiNICSupport = enableMultiNICSupport()
-
 	c.networkPolicyMode, err = getNetworkPolicyMode()
 	if err != nil {
 		return nil, err
@@ -445,6 +442,8 @@ func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 		return nil, fmt.Errorf("ipamd: failed to validate configuration")
 	}
 
+	c.numNetworkCards = len(c.awsClient.GetNetworkCards())
+	c.unmanagedENI = make([]int, c.numNetworkCards)
 	c.awsClient.InitCachedPrefixDelegation(c.enablePrefixDelegation)
 	c.myNodeName = os.Getenv(envNodeName)
 	c.withApiServer = withApiServer

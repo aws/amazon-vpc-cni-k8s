@@ -625,6 +625,8 @@ EOF
 kubectl apply -f <(cat <(kubectl get clusterrole aws-node -o yaml) append.yaml)
 ```
 
+> If using Amazon VPC CNI [EKS addon](https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html), `patch` permission is automatically updated in the `aws-node` cluster role
+
 NOTE: Adding `patch` permissions to the `aws-node` Daemonset increases the security scope for the plugin, so add this permission only after performing a proper security assessment of the tradeoffs.
 
 #### `ENABLE_IPv4` (v1.10.0+)
