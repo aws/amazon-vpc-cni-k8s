@@ -460,14 +460,22 @@ func (c *IPAMContext) primaryENIWasPreviouslyUsed() bool {
 
 	if primaryENIInfo, exists := eniInfos.ENIs[primaryENI]; exists {
 		// Check if CNI has any IPs currently assigned to pods
-		assignedIPs := primaryENIInfo.AssignedIPv4Addresses()
+		var assignedIPs int
+		var ipType string
+		if c.enableIPv6 {
+			assignedIPs = primaryENIInfo.AssignedIPv6Addresses()
+			ipType = "IPv6"
+		} else {
+			assignedIPs = primaryENIInfo.AssignedIPv4Addresses()
+			ipType = "IPv4"
+		}
 
 		if assignedIPs > 0 {
-			log.Infof("Primary ENI %s has %d assigned IPv4 addresses, re-including for backward compatibility despite subnet exclusion",
-				primaryENI, assignedIPs)
+			log.Infof("Primary ENI %s has %d assigned %s addresses, re-including for backward compatibility despite subnet exclusion",
+				primaryENI, assignedIPs, ipType)
 			return true
 		} else {
-			log.Infof("Primary ENI %s has no assigned IPv4 addresses, respecting primary subnet exclusion tag", primaryENI)
+			log.Infof("Primary ENI %s has no assigned %s addresses, respecting primary subnet exclusion tag", primaryENI, ipType)
 
 			// Check if there are unassigned secondary IPs and log for customer awareness
 			var totalSecondaryIPs int
