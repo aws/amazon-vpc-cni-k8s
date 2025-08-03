@@ -3111,3 +3111,50 @@ func TestPrimaryENIWasPreviouslyUsed(t *testing.T) {
 	wasUsed = mockContext.primaryENIWasPreviouslyUsed()
 	assert.True(t, wasUsed, "Primary ENI should be considered previously used when it has IPs assigned to pods")
 }
+
+func TestPrimaryENIWasPreviouslyUsedIPv6(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:       m.awsutils,
+		dataStoreAccess: testDatastorewithPrefix(),
+		enableIPv6:      true,
+	}
+
+	// Test when primary ENI has no allocated CIDRs
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	wasUsed := mockContext.primaryENIWasPreviouslyUsed()
+	assert.False(t, wasUsed, "Primary ENI should not be considered previously used when datastore is empty")
+
+	// Add primary ENI to datastore
+	err := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false)
+	assert.NoError(t, err)
+
+	// Test when primary ENI exists but has no allocated CIDRs
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	wasUsed = mockContext.primaryENIWasPreviouslyUsed()
+	assert.False(t, wasUsed, "Primary ENI should not be considered previously used when it has no allocated CIDRs")
+
+	// Add IPv6 CIDR to primary ENI (but don't assign to pod yet)
+	ipv6Addr := net.IPNet{IP: net.ParseIP("2001:db8::1"), Mask: net.CIDRMask(128, 128)}
+	err = mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddIPv6CidrToStore(primaryENIid, ipv6Addr, true)
+	assert.NoError(t, err)
+
+	// Test when primary ENI has unassigned CIDRs (should NOT be considered previously used)
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	wasUsed = mockContext.primaryENIWasPreviouslyUsed()
+	assert.False(t, wasUsed, "Primary ENI should NOT be considered previously used when it has only unassigned IPv6 CIDRs")
+
+	// Assign IPv6 to a pod to verify it works when pods are actually present
+	_, _, err = mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AssignPodIPv6Address(
+		datastore.IPAMKey{NetworkName: "net0", ContainerID: "test-pod-v6", IfName: "eth0"},
+		datastore.IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "test-pod-v6"},
+	)
+	assert.NoError(t, err)
+
+	// Test when primary ENI has IPv6 addresses assigned to pods
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	wasUsed = mockContext.primaryENIWasPreviouslyUsed()
+	assert.True(t, wasUsed, "Primary ENI should be considered previously used when it has IPv6 addresses assigned to pods")
+}

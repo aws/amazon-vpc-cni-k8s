@@ -1194,7 +1194,7 @@ func (cache *EC2InstanceMetadataCache) createENI(sg []*string, eniCfgSubnet stri
 			return networkInterfaceID, nil
 		}
 	} else {
-		if cache.useSubnetDiscovery && !cache.v6Enabled {
+		if cache.useSubnetDiscovery {
 			subnetResult, vpcErr := cache.getVpcSubnets()
 			if vpcErr != nil {
 				log.Warnf("Failed to call ec2:DescribeSubnets: %v", vpcErr)

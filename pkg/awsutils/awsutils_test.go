@@ -2834,6 +2834,199 @@ func TestAllocENIWithSubnetExclusion(t *testing.T) {
 	}
 }
 
+func TestAllocENIWithSubnetDiscoveryIPv6(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	// Define test variables
+	primaryENI := "eni-primary"
+	clusterName := "test-cluster"
+
+	tests := []struct {
+		name               string
+		subnets            []ec2types.Subnet
+		useSubnetDiscovery bool
+		v6Enabled          bool
+		expectError        bool
+		errorContains      string
+	}{
+		{
+			name: "IPv6 enabled with subnet discovery and primary excluded",
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId:                aws.String(subnetID),
+					AvailableIpAddressCount: aws.Int32(100),
+					Ipv6CidrBlockAssociationSet: []ec2types.SubnetIpv6CidrBlockAssociation{
+						{
+							Ipv6CidrBlock: aws.String("2001:db8::/64"),
+						},
+					},
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+				{
+					SubnetId:                aws.String("subnet-secondary-v6"),
+					AvailableIpAddressCount: aws.Int32(100),
+					Ipv6CidrBlockAssociationSet: []ec2types.SubnetIpv6CidrBlockAssociation{
+						{
+							Ipv6CidrBlock: aws.String("2001:db8:1::/64"),
+						},
+					},
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("1"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: true,
+			v6Enabled:          true,
+			expectError:        false,
+		},
+		{
+			name: "IPv6 enabled with subnet discovery and mixed IPv4/IPv6 subnets",
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId:                aws.String(subnetID),
+					AvailableIpAddressCount: aws.Int32(100),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("1"),
+						},
+					},
+				},
+				{
+					SubnetId:                aws.String("subnet-v6-only"),
+					AvailableIpAddressCount: aws.Int32(100),
+					Ipv6CidrBlockAssociationSet: []ec2types.SubnetIpv6CidrBlockAssociation{
+						{
+							Ipv6CidrBlock: aws.String("2001:db8:2::/64"),
+						},
+					},
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("1"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: true,
+			v6Enabled:          true,
+			expectError:        false,
+		},
+		{
+			name: "IPv6 enabled with all subnets excluded",
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId: aws.String(subnetID),
+					Ipv6CidrBlockAssociationSet: []ec2types.SubnetIpv6CidrBlockAssociation{
+						{
+							Ipv6CidrBlock: aws.String("2001:db8::/64"),
+						},
+					},
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: true,
+			v6Enabled:          true,
+			expectError:        true,
+			errorContains:      "no valid subnets available for ENI creation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ins := &EC2InstanceMetadataCache{
+				ec2SVC:                 mockEC2,
+				imds:                   TypedIMDS{mockMetadata},
+				primaryENImac:          primaryMAC,
+				useSubnetDiscovery:     tt.useSubnetDiscovery,
+				v6Enabled:              tt.v6Enabled,
+				instanceID:             instanceID,
+				vpcID:                  vpcID,
+				primaryENI:             primaryENI,
+				clusterName:            clusterName,
+				enablePrefixDelegation: false,
+				instanceType:           "c5n.18xlarge",
+				subnetID:               subnetID,
+			}
+
+			if tt.useSubnetDiscovery {
+				subnetResult := &ec2.DescribeSubnetsOutput{Subnets: tt.subnets}
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
+			}
+
+			if !tt.expectError {
+				// Setup successful ENI creation
+				mockEC2.EXPECT().CreateNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&ec2.CreateNetworkInterfaceOutput{
+						NetworkInterface: &ec2types.NetworkInterface{
+							NetworkInterfaceId: aws.String("eni-test-v6"),
+							TagSet: []ec2types.Tag{
+								{
+									Key:   aws.String(eniNodeTagKey),
+									Value: aws.String(ins.instanceID),
+								},
+							},
+						},
+					}, nil)
+
+				// Mock DescribeInstances to get available device indices
+				mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&ec2.DescribeInstancesOutput{
+						Reservations: []ec2types.Reservation{
+							{
+								Instances: []ec2types.Instance{
+									{
+										NetworkInterfaces: []ec2types.InstanceNetworkInterface{
+											{
+												Attachment: &ec2types.InstanceNetworkInterfaceAttachment{
+													DeviceIndex: aws.Int32(0),
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					}, nil)
+
+				// Mock AttachNetworkInterface
+				attachmentID := "eni-attach-123"
+				mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&ec2.AttachNetworkInterfaceOutput{AttachmentId: &attachmentID}, nil)
+
+				// Mock ModifyNetworkInterfaceAttribute
+				mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+			}
+
+			eniID, err := ins.AllocENI(nil, "", 5, 0)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, "eni-test-v6", eniID)
+			}
+		})
+	}
+}
+
 func TestAllocENIWithSubnetDiscoveryFailure(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
