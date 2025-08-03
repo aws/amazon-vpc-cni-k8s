@@ -190,6 +190,15 @@ func (e *ENI) AssignedIPv4Addresses() int {
 	return count
 }
 
+// AssignedIPv6Addresses is the number of IPv6 addresses already assigned
+func (e *ENI) AssignedIPv6Addresses() int {
+	count := 0
+	for _, availableCidr := range e.IPv6Cidrs {
+		count += availableCidr.AssignedIPAddressesInCidr()
+	}
+	return count
+}
+
 // AssignedIPAddressesInCidr is the number of IP addresses already assigned in the IPv4 CIDR
 func (cidr *CidrInfo) AssignedIPAddressesInCidr() int {
 	count := 0

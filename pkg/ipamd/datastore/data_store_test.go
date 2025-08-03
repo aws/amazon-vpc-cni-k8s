@@ -1025,6 +1025,65 @@ func TestGetIPStatsV6(t *testing.T) {
 	)
 }
 
+func TestAssignedIPv6Addresses(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+
+	// Test ENI with no IPv6 CIDRs
+	_ = ds.AddENI("eni-1", 1, true, false, false)
+	eniInfo, _ := ds.eniPool["eni-1"]
+	assert.Equal(t, 0, eniInfo.AssignedIPv6Addresses(), "ENI with no IPv6 CIDRs should have 0 assigned addresses")
+
+	// Add IPv6 CIDR but don't assign any addresses yet
+	ipv6Addr1 := net.IPNet{IP: net.ParseIP("2001:db8::"), Mask: net.CIDRMask(80, 128)}
+	_ = ds.AddIPv6CidrToStore("eni-1", ipv6Addr1, true)
+	assert.Equal(t, 0, eniInfo.AssignedIPv6Addresses(), "ENI with unassigned IPv6 CIDR should have 0 assigned addresses")
+
+	// Assign first IPv6 address to a pod
+	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
+	_, _, err := ds.AssignPodIPv6Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-1"})
+	assert.NoError(t, err)
+	assert.Equal(t, 1, eniInfo.AssignedIPv6Addresses(), "Should have 1 assigned IPv6 address after first pod assignment")
+
+	// Assign second IPv6 address to another pod
+	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
+	_, _, err = ds.AssignPodIPv6Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-2"})
+	assert.NoError(t, err)
+	assert.Equal(t, 2, eniInfo.AssignedIPv6Addresses(), "Should have 2 assigned IPv6 addresses after second pod assignment")
+
+	// Add another IPv6 CIDR to the same ENI
+	ipv6Addr2 := net.IPNet{IP: net.ParseIP("2001:db8:1::"), Mask: net.CIDRMask(80, 128)}
+	_ = ds.AddIPv6CidrToStore("eni-1", ipv6Addr2, true)
+	assert.Equal(t, 2, eniInfo.AssignedIPv6Addresses(), "Adding new CIDR should not change assigned count")
+
+	// Assign address from the second CIDR
+	key3 := IPAMKey{"net0", "sandbox-3", "eth0"}
+	_, _, err = ds.AssignPodIPv6Address(key3, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-3"})
+	assert.NoError(t, err)
+	assert.Equal(t, 3, eniInfo.AssignedIPv6Addresses(), "Should have 3 assigned IPv6 addresses across multiple CIDRs")
+
+	// Unassign one address
+	_, _, _, _, err = ds.UnassignPodIPAddress(key1)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, eniInfo.AssignedIPv6Addresses(), "Should have 2 assigned IPv6 addresses after unassignment")
+
+	// Test ENI with multiple CIDRs and various assignment states
+	// In IPv6 PD mode, only primary ENI can have IPv6 addresses assigned, so add CIDRs to eni-1 (primary)
+	// Add more IPv6 CIDRs to eni-1 for additional testing
+	for i := 0; i < 3; i++ {
+		cidr := net.IPNet{IP: net.ParseIP(fmt.Sprintf("2001:db8:%d::", i+10)), Mask: net.CIDRMask(80, 128)}
+		_ = ds.AddIPv6CidrToStore("eni-1", cidr, true)
+	}
+	assert.Equal(t, 2, eniInfo.AssignedIPv6Addresses(), "Should maintain existing assignments after adding new CIDRs")
+
+	// Assign additional addresses from different CIDRs - they will all go to eni-1 (primary) in IPv6 PD mode
+	for i := 0; i < 3; i++ {
+		key := IPAMKey{"net0", fmt.Sprintf("sandbox-eni1-%d", i), "eth0"}
+		_, _, err = ds.AssignPodIPv6Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: fmt.Sprintf("pod-eni1-%d", i)})
+		assert.NoError(t, err)
+	}
+	assert.Equal(t, 5, eniInfo.AssignedIPv6Addresses(), "Should correctly count assigned addresses across multiple CIDRs on primary ENI")
+}
+
 func TestWarmENIInteractions(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
