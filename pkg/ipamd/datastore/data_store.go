@@ -128,6 +128,8 @@ type ENI struct {
 	AvailableIPv4Cidrs map[string]*CidrInfo
 	//IPv6CIDRs contains information tied to IPv6 Prefixes attached to the ENI
 	IPv6Cidrs map[string]*CidrInfo
+	// IsExcludedForPodIPs indicates whether this ENI should be excluded from pod IP allocation
+	IsExcludedForPodIPs bool
 }
 
 // AddressInfo contains information about an IP, Exported fields will be marshaled for introspection.
@@ -477,6 +479,38 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, 
 	return nil
 }
 
+// SetENIExcludedForPodIPs marks an ENI as excluded from pod IP allocation
+func (ds *DataStore) SetENIExcludedForPodIPs(eniID string, excluded bool) error {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	eni, ok := ds.eniPool[eniID]
+	if !ok {
+		return errors.New(UnknownENIError)
+	}
+
+	eni.IsExcludedForPodIPs = excluded
+	if excluded {
+		ds.log.Infof("ENI %s marked as excluded from pod IP allocation", eniID)
+	} else {
+		ds.log.Infof("ENI %s marked as available for pod IP allocation", eniID)
+	}
+	return nil
+}
+
+// IsENIExcludedForPodIPs returns whether an ENI is excluded from pod IP allocation
+func (ds *DataStore) IsENIExcludedForPodIPs(eniID string) bool {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	eni, ok := ds.eniPool[eniID]
+	if !ok {
+		return false
+	}
+
+	return eni.IsExcludedForPodIPs
+}
+
 // AddIPv4AddressToStore adds IPv4 CIDR of an ENI to data store
 func (ds *DataStore) AddIPv4CidrToStore(eniID string, ipv4Cidr net.IPNet, isPrefix bool) error {
 	ds.lock.Lock()
@@ -636,6 +670,12 @@ func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 
 	// In IPv6 Prefix Delegation mode, eniPool will only have Primary ENI.
 	for _, eni := range ds.eniPool {
+		// Skip ENIs that are excluded from pod IP allocation
+		if eni.IsExcludedForPodIPs {
+			ds.log.Debugf("Skipping ENI %s as it is excluded from pod IP allocation", eni.ID)
+			continue
+		}
+
 		if len(eni.IPv6Cidrs) == 0 {
 			continue
 		}
@@ -686,6 +726,12 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 	}
 
 	for _, eni := range ds.eniPool {
+		// Skip ENIs that are excluded from pod IP allocation
+		if eni.IsExcludedForPodIPs {
+			ds.log.Debugf("Skipping ENI %s as it is excluded from pod IP allocation", eni.ID)
+			continue
+		}
+
 		for _, availableCidr := range eni.AvailableIPv4Cidrs {
 			var addr *AddressInfo
 			var strPrivateIPv4 string
@@ -805,6 +851,11 @@ func (ds *DataStore) GetIPStats(addressFamily string) *DataStoreStats {
 		TotalPrefixes: ds.allocatedPrefix,
 	}
 	for _, eni := range ds.eniPool {
+		// Skip excluded ENIs when calculating available IPs for pod allocation
+		if eni.IsExcludedForPodIPs {
+			continue
+		}
+
 		AssignedCIDRs := eni.AvailableIPv4Cidrs
 		if addressFamily == "6" {
 			AssignedCIDRs = eni.IPv6Cidrs
@@ -854,6 +905,10 @@ func (ds *DataStore) isRequiredForWarmIPTarget(warmIPTarget int, eni *ENI) bool 
 	otherWarmIPs := 0
 	for _, other := range ds.eniPool {
 		if other.ID != eni.ID {
+			// Skip excluded ENIs when calculating warm IPs for pod allocation
+			if other.IsExcludedForPodIPs {
+				continue
+			}
 			for _, otherPrefixes := range other.AvailableIPv4Cidrs {
 				if (ds.isPDEnabled && otherPrefixes.IsPrefix) || (!ds.isPDEnabled && !otherPrefixes.IsPrefix) {
 					otherWarmIPs += otherPrefixes.Size() - otherPrefixes.AssignedIPAddressesInCidr()
@@ -875,6 +930,10 @@ func (ds *DataStore) isRequiredForMinimumIPTarget(minimumIPTarget int, eni *ENI)
 	otherIPs := 0
 	for _, other := range ds.eniPool {
 		if other.ID != eni.ID {
+			// Skip excluded ENIs when calculating total IPs for pod allocation
+			if other.IsExcludedForPodIPs {
+				continue
+			}
 			for _, otherPrefixes := range other.AvailableIPv4Cidrs {
 				if (ds.isPDEnabled && otherPrefixes.IsPrefix) || (!ds.isPDEnabled && !otherPrefixes.IsPrefix) {
 					otherIPs += otherPrefixes.Size()
@@ -896,6 +955,10 @@ func (ds *DataStore) isRequiredForWarmPrefixTarget(warmPrefixTarget int, eni *EN
 	freePrefixes := 0
 	for _, other := range ds.eniPool {
 		if other.ID != eni.ID {
+			// Skip excluded ENIs when calculating free prefixes for pod allocation
+			if other.IsExcludedForPodIPs {
+				continue
+			}
 			for _, otherPrefixes := range other.AvailableIPv4Cidrs {
 				if otherPrefixes.AssignedIPAddressesInCidr() == 0 {
 					freePrefixes++
@@ -989,6 +1052,11 @@ func (ds *DataStore) GetAllocatableENIs(maxIPperENI int, skipPrimary bool) []*EN
 	for _, eni := range ds.eniPool {
 		if (skipPrimary && eni.IsPrimary) || eni.IsTrunk {
 			ds.log.Debugf("Skip needs IP check for trunk ENI of primary ENI when Custom Networking is enabled")
+			continue
+		}
+		// Skip ENIs that are excluded from pod IP allocation
+		if eni.IsExcludedForPodIPs {
+			ds.log.Debugf("Skip needs IP check for ENI %s as it is excluded from pod IP allocation", eni.ID)
 			continue
 		}
 		if len(eni.AvailableIPv4Cidrs) < maxIPperENI {
