@@ -15,6 +15,7 @@ package datastore
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"testing"
@@ -1640,6 +1641,7 @@ func TestInitializeDataStores(t *testing.T) {
 		assert.Equal(t, 2, dsAccess.DataStores[1].GetNetworkCard())
 	})
 }
+
 func TestDataStoreAccess_GetDataStore(t *testing.T) {
 	log := Testlog
 	defaultPath := "/tmp/test-datastore.json"
@@ -1656,4 +1658,111 @@ func TestDataStoreAccess_GetDataStore(t *testing.T) {
 	// Should return nil for a network card that does not exist
 	ds := dsAccess.GetDataStore(99)
 	assert.Nil(t, ds)
+}
+
+func TestAssignPodIPv4AddressWithExcludedENI(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+
+	// Add primary ENI and mark it as excluded
+	err := ds.AddENI("eni-1", 0, true, false, false)
+	assert.NoError(t, err)
+	err = ds.SetENIExcludedForPodIPs("eni-1", true)
+	assert.NoError(t, err)
+
+	// Add IPs to the excluded ENI
+	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+	assert.NoError(t, err)
+
+	// Try to assign an IP - should fail as ENI is excluded
+	_, _, err = ds.AssignPodIPv4Address(
+		IPAMKey{
+			NetworkName: "net0",
+			ContainerID: "container-1",
+			IfName:      "eth0",
+		},
+		IPAMMetadata{
+			K8SPodNamespace: "default",
+			K8SPodName:      "pod-1",
+		},
+	)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no available IP/Prefix addresses")
+
+	// Add a secondary ENI that is not excluded
+	err = ds.AddENI("eni-2", 1, false, false, false)
+	assert.NoError(t, err)
+
+	// Add IPs to the secondary ENI
+	ipv4Addr2 := net.IPNet{IP: net.ParseIP("10.0.0.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	err = ds.AddIPv4CidrToStore("eni-2", ipv4Addr2, false)
+	assert.NoError(t, err)
+
+	// Now assignment should succeed from the non-excluded ENI
+	ip, deviceNum, err := ds.AssignPodIPv4Address(
+		IPAMKey{
+			NetworkName: "net0",
+			ContainerID: "container-1",
+			IfName:      "eth0",
+		},
+		IPAMMetadata{
+			K8SPodNamespace: "default",
+			K8SPodName:      "pod-1",
+		},
+	)
+	assert.NoError(t, err)
+	assert.Equal(t, "10.0.0.2", ip)
+	assert.Equal(t, 1, deviceNum)
+}
+
+func TestGetAllocatableENIsWithExclusion(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+
+	// Add primary ENI and mark it as excluded
+	err := ds.AddENI("eni-1", 0, true, false, false)
+	assert.NoError(t, err)
+	err = ds.SetENIExcludedForPodIPs("eni-1", true)
+	assert.NoError(t, err)
+
+	// Add secondary ENI (not excluded)
+	err = ds.AddENI("eni-2", 1, false, false, false)
+	assert.NoError(t, err)
+
+	// Get allocatable ENIs - should only return the non-excluded one
+	allocatable := ds.GetAllocatableENIs(10, false)
+	assert.Equal(t, 1, len(allocatable))
+	assert.Equal(t, "eni-2", allocatable[0].ID)
+}
+
+func TestGetIPStatsWithExcludedENI(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+
+	// Add primary ENI with IPs and mark it as excluded
+	err := ds.AddENI("eni-1", 0, true, false, false)
+	assert.NoError(t, err)
+	err = ds.SetENIExcludedForPodIPs("eni-1", true)
+	assert.NoError(t, err)
+
+	// Add IPs to excluded ENI
+	for i := 1; i <= 3; i++ {
+		ipv4Addr := net.IPNet{IP: net.ParseIP(fmt.Sprintf("10.0.0.%d", i)), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+		assert.NoError(t, err)
+	}
+
+	// Add secondary ENI with IPs (not excluded)
+	err = ds.AddENI("eni-2", 1, false, false, false)
+	assert.NoError(t, err)
+
+	for i := 11; i <= 12; i++ {
+		ipv4Addr := net.IPNet{IP: net.ParseIP(fmt.Sprintf("10.0.0.%d", i)), Mask: net.IPv4Mask(255, 255, 255, 255)}
+		err = ds.AddIPv4CidrToStore("eni-2", ipv4Addr, false)
+		assert.NoError(t, err)
+	}
+
+	// Get IP stats - should only count IPs from non-excluded ENIs
+	stats := ds.GetIPStats("4")
+	assert.Equal(t, 2, stats.TotalIPs) // Only IPs from eni-2
+	assert.Equal(t, 0, stats.AssignedIPs)
+	assert.Equal(t, 2, stats.AvailableAddresses())
 }
