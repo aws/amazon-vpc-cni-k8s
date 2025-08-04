@@ -15,6 +15,8 @@ package eni_subnet_discovery
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"os"
 	"time"
 
@@ -320,8 +322,21 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 
 				// Create another subnet that has a different cluster tag
 				By("Creating a subnet for a different cluster")
-				subnetCidr, err := cidr.Subnet(cidrRange, 2, 1) // Use a different subnet
-				Expect(err).ToNot(HaveOccurred())
+				var subnetCidr *net.IPNet
+				if useIPv6 {
+					// For IPv6, calculate the appropriate number of bits to get a /64 subnet
+					prefixLen, _ := cidrRange.Mask.Size()
+					if prefixLen > 64 {
+						Fail(fmt.Sprintf("IPv6 parent CIDR prefix length must be <= 64, got /%d", prefixLen))
+					}
+					// Calculate how many bits we need to extend to reach /64
+					bitsToExtend := 64 - prefixLen
+					subnetCidr, err = cidr.Subnet(cidrRange, bitsToExtend, 1) // Use index 1 for different subnet
+					Expect(err).ToNot(HaveOccurred())
+				} else {
+					subnetCidr, err = cidr.Subnet(cidrRange, 2, 1) // Use a different subnet
+					Expect(err).ToNot(HaveOccurred())
+				}
 
 				otherSubnetOutput, err := f.CloudServices.EC2().
 					CreateSubnet(context.TODO(), subnetCidr.String(), f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
