@@ -305,16 +305,37 @@ func checkSecondaryENISubnets(expectNewCidr bool) {
 	vpcOutput, err := f.CloudServices.EC2().DescribeVPC(context.TODO(), *primaryInstance.VpcId)
 	Expect(err).ToNot(HaveOccurred())
 
-	expectedCidrRangeString := *vpcOutput.Vpcs[0].CidrBlock
-	expectedCidrSplit := strings.Split(*vpcOutput.Vpcs[0].CidrBlock, "/")
-	expectedSuffix, _ := strconv.Atoi(expectedCidrSplit[1])
-	_, expectedCIDR, _ := net.ParseCIDR(*vpcOutput.Vpcs[0].CidrBlock)
+	var expectedCidrRangeString string
+	var expectedCIDR *net.IPNet
+	var expectedSuffix int
 
-	if expectNewCidr {
-		expectedCidrRangeString = cidrRangeString
-		expectedCidrSplit = strings.Split(cidrRangeString, "/")
+	if useIPv6 {
+		// For IPv6, look for associated IPv6 CIDR blocks
+		if len(vpcOutput.Vpcs[0].Ipv6CidrBlockAssociationSet) > 0 {
+			for _, assoc := range vpcOutput.Vpcs[0].Ipv6CidrBlockAssociationSet {
+				if assoc.Ipv6CidrBlockState != nil && assoc.Ipv6CidrBlockState.State == "associated" {
+					expectedCidrRangeString = *assoc.Ipv6CidrBlock
+					break
+				}
+			}
+		}
+		Expect(expectedCidrRangeString).ToNot(BeEmpty(), "No associated IPv6 CIDR found in VPC")
+		_, expectedCIDR, _ = net.ParseCIDR(expectedCidrRangeString)
+		expectedCidrSplit := strings.Split(expectedCidrRangeString, "/")
 		expectedSuffix, _ = strconv.Atoi(expectedCidrSplit[1])
-		_, expectedCIDR, _ = net.ParseCIDR(cidrRangeString)
+	} else {
+		// IPv4 logic
+		expectedCidrRangeString = *vpcOutput.Vpcs[0].CidrBlock
+		expectedCidrSplit := strings.Split(*vpcOutput.Vpcs[0].CidrBlock, "/")
+		expectedSuffix, _ = strconv.Atoi(expectedCidrSplit[1])
+		_, expectedCIDR, _ = net.ParseCIDR(*vpcOutput.Vpcs[0].CidrBlock)
+
+		if expectNewCidr {
+			expectedCidrRangeString = cidrRangeString
+			expectedCidrSplit = strings.Split(cidrRangeString, "/")
+			expectedSuffix, _ = strconv.Atoi(expectedCidrSplit[1])
+			_, expectedCIDR, _ = net.ParseCIDR(cidrRangeString)
+		}
 	}
 
 	By(fmt.Sprintf("checking the secondary ENI subnets are in the CIDR %s", expectedCidrRangeString))
