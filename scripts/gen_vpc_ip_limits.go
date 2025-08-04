@@ -201,76 +201,175 @@ func describeInstanceTypes(ctx context.Context, cfg aws.Config, region string, e
 func addManualLimits(limitMap map[string]vpc.InstanceTypeLimits) map[string]vpc.InstanceTypeLimits {
 	manuallyAddedLimits := map[string]vpc.InstanceTypeLimits{
 		"cr1.8xlarge": {
-			ENILimit:       8,
-			IPv4Limit:      30,
-			HypervisorType: strconv.Quote("unknown"),
-			IsBareMetal:    false,
+			ENILimit:                8,
+			IPv4Limit:               30,
+			HypervisorType:          strconv.Quote("unknown"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: false,
 		},
 		"hs1.8xlarge": {
-			ENILimit:       8,
-			IPv4Limit:      30,
-			HypervisorType: strconv.Quote("unknown"),
-			IsBareMetal:    false,
+			ENILimit:                8,
+			IPv4Limit:               30,
+			HypervisorType:          strconv.Quote("unknown"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 8,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: false,
 		},
 		"u-12tb1.metal": {
-			ENILimit:       5,
-			IPv4Limit:      30,
-			HypervisorType: strconv.Quote("unknown"),
-			IsBareMetal:    true,
+			ENILimit:                5,
+			IPv4Limit:               30,
+			HypervisorType:          strconv.Quote("unknown"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 5,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: true,
 		},
 		"u-18tb1.metal": {
-			ENILimit:       15,
-			IPv4Limit:      50,
-			HypervisorType: strconv.Quote("unknown"),
-			IsBareMetal:    true,
+			ENILimit:                15,
+			IPv4Limit:               50,
+			HypervisorType:          strconv.Quote("unknown"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: true,
 		},
 		"u-24tb1.metal": {
-			ENILimit:       15,
-			IPv4Limit:      50,
-			HypervisorType: strconv.Quote("unknown"),
-			IsBareMetal:    true,
+			ENILimit:                15,
+			IPv4Limit:               50,
+			HypervisorType:          strconv.Quote("unknown"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: true,
 		},
 		"u-6tb1.metal": {
-			ENILimit:       5,
-			IPv4Limit:      30,
-			HypervisorType: strconv.Quote("unknown"),
-			IsBareMetal:    true,
+			ENILimit:                5,
+			IPv4Limit:               30,
+			HypervisorType:          strconv.Quote("unknown"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 5,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: true,
 		},
 		"u-9tb1.metal": {
-			ENILimit:       5,
-			IPv4Limit:      30,
-			HypervisorType: strconv.Quote("unknown"),
-			IsBareMetal:    true,
+			ENILimit:                5,
+			IPv4Limit:               30,
+			HypervisorType:          strconv.Quote("unknown"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 5,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: true,
 		},
 		"c5a.metal": {
-			ENILimit:       15,
-			IPv4Limit:      50,
-			HypervisorType: strconv.Quote("unknown"),
-			IsBareMetal:    true,
+			ENILimit:                15,
+			IPv4Limit:               50,
+			HypervisorType:          strconv.Quote("unknown"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: true,
 		},
 		"c5ad.metal": {
-			ENILimit:       15,
-			IPv4Limit:      50,
-			HypervisorType: strconv.Quote("unknown"),
-			IsBareMetal:    true,
+			ENILimit:                15,
+			IPv4Limit:               50,
+			HypervisorType:          strconv.Quote("unknown"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: true,
 		},
 		"p4de.24xlarge": {
-			ENILimit:       15,
-			IPv4Limit:      50,
-			HypervisorType: strconv.Quote("nitro"),
-			IsBareMetal:    false,
+			ENILimit:                15,
+			IPv4Limit:               50,
+			HypervisorType:          strconv.Quote("nitro"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         0,
+				},
+
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         1,
+				},
+
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         2,
+				},
+
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         3,
+				},
+			},
+			IsBareMetal: false,
 		},
 		"c7g.metal": {
-			ENILimit:       15,
-			IPv4Limit:      50,
-			HypervisorType: strconv.Quote("nitro"),
-			IsBareMetal:    true,
+			ENILimit:                15,
+			IPv4Limit:               50,
+			HypervisorType:          strconv.Quote("nitro"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: true,
 		},
 		"bmn-sf1.metal": {
-			ENILimit:       15,
-			IPv4Limit:      50,
-			HypervisorType: strconv.Quote("unknown"),
-			IsBareMetal:    true,
+			ENILimit:                15,
+			IPv4Limit:               50,
+			HypervisorType:          strconv.Quote("unknown"),
+			DefaultNetworkCardIndex: 0,
+			NetworkCards: []vpc.NetworkCard{
+				{
+					MaximumNetworkInterfaces: 15,
+					NetworkCardIndex:         0,
+				},
+			},
+			IsBareMetal: true,
 		},
 	}
 	for instanceType, instanceLimits := range manuallyAddedLimits {

@@ -1723,7 +1723,9 @@ func (cache *EC2InstanceMetadataCache) GetENILimit() int {
 func (cache *EC2InstanceMetadataCache) GetNetworkCards() []vpc.NetworkCard {
 	networkCards, err := vpc.GetNetworkCards(cache.instanceType)
 	if err != nil {
-		return nil
+		// fallback to default for network card index 0 as all instances have at least one network card
+		// this needs be changed when an instance can have multiple network cards each with different maxENI limits
+		return []vpc.NetworkCard{{NetworkCardIndex: 0}}
 	}
 	return networkCards
 }
