@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout latest commit in the PR
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # refs/tags/v4.1.7
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # refs/tags/v4.2.2
         with:
           ref: "refs/tags/${{ github.event.release.tag_name }}"
       - name: Set up Go
