@@ -330,6 +330,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 	mainENIRule.Table = mainRoutingTable
 	mainENIRule.Priority = hostRulePriority
 	mainENIRule.Family = ipFamily
+	mainENIRule.Protocol = 2
 	// If this is a restart, cleanup previous rule first
 	err = n.netLink.RuleDel(mainENIRule)
 	if err != nil && !containsNoSuchRule(err) {
@@ -352,6 +353,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 		localRule.Table = localRouteTable
 		localRule.Priority = localRulePriority
 		localRule.Family = ipFamily
+		localRule.Protocol = 2
 		// Add new rule with higher priority
 		err := n.netLink.RuleAdd(localRule)
 		if err != nil && !isRuleExistsError(err) {
@@ -1177,6 +1179,7 @@ func setupENINetwork(eniIP string, eniMac string, deviceNumber int, networkCard 
 		ruleForPrimaryIPofENI.Table = tableNumber
 		ruleForPrimaryIPofENI.Priority = FromPrimaryIPofENIRulePriority
 		ruleForPrimaryIPofENI.Family = family
+		ruleForPrimaryIPofENI.Protocol = 2
 		log.Infof("Adding rule for Primary IP [%v]", ruleForPrimaryIPofENI)
 		if err := netLink.RuleAdd(ruleForPrimaryIPofENI); err != nil {
 			if !isRuleExistsError(err) {
@@ -1284,7 +1287,7 @@ func (n *linuxNetwork) UpdateRuleListBySrc(ruleList []netlink.Rule, src net.IPNe
 	podRule.Table = srcRuleTable
 	podRule.Priority = FromPodRulePriority
 	podRule.Family = srcRuleFamily
-
+	podRule.Protocol = 2
 	err = n.netLink.RuleAdd(podRule)
 	if err != nil {
 		log.Errorf("Failed to add pod IP rule: %v", err)
@@ -1314,6 +1317,7 @@ func (n *linuxNetwork) UpdateExternalServiceIpRules(ruleList []netlink.Rule, ext
 	for _, cidr := range externalServiceCidrs {
 		extIpRule := n.netLink.NewRule()
 		extIpRule.Table = mainRoutingTable
+		extIpRule.Protocol = 2
 		_, netCidr, err := net.ParseCIDR(cidr)
 		if err != nil {
 			log.Errorf("Failed to create IPNet from %s", cidr)

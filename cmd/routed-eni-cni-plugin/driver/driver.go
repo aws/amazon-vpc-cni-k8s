@@ -45,6 +45,7 @@ const (
 	//to move to stable state before error'ing out.
 	v6DADTimeout                = 10 * time.Second
 	MAX_MAC_GENERATION_ATTEMPTS = 10
+	RT_PROTO                    = 2 //kernel proto
 )
 
 type VirtualInterfaceMetadata struct {
@@ -521,6 +522,7 @@ func (n *linuxNetwork) setupIPBasedContainerRouteRules(hostVeth netlink.Link, co
 		Scope:     netlink.SCOPE_LINK,
 		Dst:       containerAddr,
 		Table:     unix.RT_TABLE_MAIN,
+		Protocol:  RT_PROTO,
 	}
 	if err := n.netLink.RouteReplace(&route); err != nil {
 		return errors.Wrapf(err, "failed to setup container route, containerAddr=%s, hostVeth=%s, rtTable=%v",
@@ -533,6 +535,7 @@ func (n *linuxNetwork) setupIPBasedContainerRouteRules(hostVeth netlink.Link, co
 	toContainerRule.Dst = containerAddr
 	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
+	toContainerRule.Protocol = RT_PROTO
 	if err := n.netLink.RuleAdd(toContainerRule); err != nil && !networkutils.IsRuleExistsError(err) {
 		return errors.Wrapf(err, "failed to setup toContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), "main")
 	}
@@ -544,6 +547,7 @@ func (n *linuxNetwork) setupIPBasedContainerRouteRules(hostVeth netlink.Link, co
 		fromContainerRule.Src = containerAddr
 		fromContainerRule.Priority = networkutils.FromPodRulePriority
 		fromContainerRule.Table = rtTable
+		fromContainerRule.Protocol = RT_PROTO
 		if err := n.netLink.RuleAdd(fromContainerRule); err != nil && !networkutils.IsRuleExistsError(err) {
 			return errors.Wrapf(err, "failed to setup fromContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), rtTable)
 		}
@@ -558,6 +562,7 @@ func (n *linuxNetwork) teardownIPBasedContainerRouteRules(containerAddr *net.IPN
 	toContainerRule.Dst = containerAddr
 	toContainerRule.Priority = networkutils.ToContainerRulePriority
 	toContainerRule.Table = unix.RT_TABLE_MAIN
+	toContainerRule.Protocol = RT_PROTO
 	if err := n.netLink.RuleDel(toContainerRule); err != nil && !networkutils.ContainsNoSuchRule(err) {
 		return errors.Wrapf(err, "failed to delete toContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), "main")
 	}
@@ -568,7 +573,7 @@ func (n *linuxNetwork) teardownIPBasedContainerRouteRules(containerAddr *net.IPN
 		fromContainerRule.Src = containerAddr
 		fromContainerRule.Priority = networkutils.FromPodRulePriority
 		fromContainerRule.Table = rtTable
-
+		fromContainerRule.Protocol = RT_PROTO
 		// note: older version CNI sets up multiple CIDR based from container rule, so we recursively delete them to be backwards-compatible.
 		if err := networkutils.NetLinkRuleDelAll(n.netLink, fromContainerRule); err != nil {
 			return errors.Wrapf(err, "failed to delete fromContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), rtTable)
@@ -577,9 +582,10 @@ func (n *linuxNetwork) teardownIPBasedContainerRouteRules(containerAddr *net.IPN
 	}
 
 	route := netlink.Route{
-		Scope: netlink.SCOPE_LINK,
-		Dst:   containerAddr,
-		Table: unix.RT_TABLE_MAIN,
+		Scope:    netlink.SCOPE_LINK,
+		Dst:      containerAddr,
+		Table:    unix.RT_TABLE_MAIN,
+		Protocol: RT_PROTO,
 	}
 
 	// routes will be automatically deleted by kernel when the hostVeth is deleted.
@@ -615,6 +621,7 @@ func (n *linuxNetwork) setupIIFBasedContainerRouteRules(hostVeth netlink.Link, c
 	fromHostVlanRule.IifName = hostVlan.Attrs().Name
 	fromHostVlanRule.Priority = networkutils.VlanRulePriority
 	fromHostVlanRule.Table = rtTable
+	fromHostVlanRule.Protocol = RT_PROTO
 	if isV6 {
 		fromHostVlanRule.Family = unix.AF_INET6
 	}
@@ -627,6 +634,7 @@ func (n *linuxNetwork) setupIIFBasedContainerRouteRules(hostVeth netlink.Link, c
 	fromHostVethRule.IifName = hostVeth.Attrs().Name
 	fromHostVethRule.Priority = networkutils.VlanRulePriority
 	fromHostVethRule.Table = rtTable
+	fromHostVethRule.Protocol = RT_PROTO
 	if isV6 {
 		fromHostVethRule.Family = unix.AF_INET6
 	}
@@ -643,6 +651,7 @@ func (n *linuxNetwork) teardownIIFBasedContainerRouteRules(rtTable int, family i
 	rule.Priority = networkutils.VlanRulePriority
 	rule.Table = rtTable
 	rule.Family = family
+	rule.Protocol = RT_PROTO
 
 	if err := networkutils.NetLinkRuleDelAll(n.netLink, rule); err != nil {
 		return errors.Wrapf(err, "failed to delete IIF based rules, rtTable=%v", rtTable)
@@ -667,6 +676,7 @@ func buildRoutesForVlan(vlanTableID int, vlanIndex int, gw net.IP) []netlink.Rou
 			Dst:       &net.IPNet{IP: gw, Mask: net.CIDRMask(maskLen, maskLen)},
 			Scope:     netlink.SCOPE_LINK,
 			Table:     vlanTableID,
+			Protocol:  RT_PROTO,
 		},
 		{
 			LinkIndex: vlanIndex,
@@ -674,6 +684,7 @@ func buildRoutesForVlan(vlanTableID int, vlanIndex int, gw net.IP) []netlink.Rou
 			Scope:     netlink.SCOPE_UNIVERSE,
 			Gw:        gw,
 			Table:     vlanTableID,
+			Protocol:  RT_PROTO,
 		},
 	}
 }
