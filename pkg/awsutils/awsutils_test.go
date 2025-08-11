@@ -3459,8 +3459,8 @@ func TestRefreshCustomSGIDsWithFallback(t *testing.T) {
 			// Call RefreshCustomSGIDs
 			err := cache.RefreshCustomSGIDs(context.Background(), mockDataStoreAccess)
 
-			// Should not return error (graceful fallback)
-			assert.NoError(t, err)
+			// Should return (after doing a graceful fallback)
+			assert.Error(t, err)
 
 			// Custom SGs should be cleared for fallback
 			assert.Equal(t, tt.expectedCustomSGs, cache.customSecurityGroups.SortedList())
