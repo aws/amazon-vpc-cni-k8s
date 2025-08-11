@@ -2217,30 +2217,77 @@ func (cache *EC2InstanceMetadataCache) DeallocIPAddresses(ctx context.Context, e
 	return nil
 }
 
-// DeallocPrefixAddresses frees Prefixes on an ENI
+// DeallocPrefixAddresses frees Prefixes on an ENI (supports both IPv4 and IPv6)
 func (cache *EC2InstanceMetadataCache) DeallocPrefixAddresses(ctx context.Context, eniID string, prefixes []string) error {
 	if len(prefixes) == 0 {
 		return nil
 	}
 	log.Infof("Trying to unassign the following Prefixes %v from ENI %s", prefixes, eniID)
 
-	input := &ec2.UnassignPrivateIpAddressesInput{
-		NetworkInterfaceId: aws.String(eniID),
-		Ipv4Prefixes:       prefixes,
+	// Separate IPv4 and IPv6 prefixes
+	var ipv4Prefixes []string
+	var ipv6Prefixes []string
+
+	for _, prefix := range prefixes {
+		// Parse the CIDR to determine if it's IPv4 or IPv6
+		_, cidr, err := net.ParseCIDR(prefix)
+		if err != nil {
+			log.Warnf("Failed to parse CIDR %s: %v", prefix, err)
+			continue
+		}
+
+		if cidr.IP.To4() != nil {
+			ipv4Prefixes = append(ipv4Prefixes, prefix)
+		} else {
+			ipv6Prefixes = append(ipv6Prefixes, prefix)
+		}
 	}
 
-	start := time.Now()
-	_, err := cache.ec2SVC.UnassignPrivateIpAddresses(ctx, input)
-	prometheusmetrics.Ec2ApiReq.WithLabelValues("UnassignPrivateIpAddresses").Inc()
-	prometheusmetrics.AwsAPILatency.WithLabelValues("UnassignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
-	if err != nil {
-		checkAPIErrorAndBroadcastEvent(err, "ec2:UnassignPrivateIpAddresses")
-		awsAPIErrInc("UnassignPrivateIpAddresses", err)
-		prometheusmetrics.Ec2ApiErr.WithLabelValues("UnassignPrivateIpAddresses").Inc()
-		log.Errorf("Failed to deallocate a Prefixes address %v", err)
-		return errors.Wrap(err, fmt.Sprintf("deallocate prefix: failed to deallocate Prefix addresses: %v", prefixes))
+	// Handle IPv4 prefixes using UnassignPrivateIpAddresses API
+	if len(ipv4Prefixes) > 0 {
+		log.Debugf("Deallocating IPv4 prefixes: %v", ipv4Prefixes)
+		input := &ec2.UnassignPrivateIpAddressesInput{
+			NetworkInterfaceId: aws.String(eniID),
+			Ipv4Prefixes:       ipv4Prefixes,
+		}
+
+		start := time.Now()
+		_, err := cache.ec2SVC.UnassignPrivateIpAddresses(ctx, input)
+		prometheusmetrics.Ec2ApiReq.WithLabelValues("UnassignPrivateIpAddresses").Inc()
+		prometheusmetrics.AwsAPILatency.WithLabelValues("UnassignPrivateIpAddresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+		if err != nil {
+			checkAPIErrorAndBroadcastEvent(err, "ec2:UnassignPrivateIpAddresses")
+			awsAPIErrInc("UnassignPrivateIpAddresses", err)
+			prometheusmetrics.Ec2ApiErr.WithLabelValues("UnassignPrivateIpAddresses").Inc()
+			log.Errorf("Failed to deallocate IPv4 Prefixes %v: %v", ipv4Prefixes, err)
+			return errors.Wrap(err, fmt.Sprintf("deallocate IPv4 prefix: failed to deallocate IPv4 Prefix addresses: %v", ipv4Prefixes))
+		}
+		log.Debugf("Successfully freed IPv4 Prefixes %v from ENI %s", ipv4Prefixes, eniID)
 	}
-	log.Debugf("Successfully freed Prefixes %v from ENI %s", prefixes, eniID)
+
+	// Handle IPv6 prefixes using UnassignIpv6Addresses API
+	if len(ipv6Prefixes) > 0 {
+		log.Debugf("Deallocating IPv6 prefixes: %v", ipv6Prefixes)
+		input := &ec2.UnassignIpv6AddressesInput{
+			NetworkInterfaceId: aws.String(eniID),
+			Ipv6Prefixes:       ipv6Prefixes,
+		}
+
+		start := time.Now()
+		_, err := cache.ec2SVC.UnassignIpv6Addresses(ctx, input)
+		prometheusmetrics.Ec2ApiReq.WithLabelValues("UnassignIpv6Addresses").Inc()
+		prometheusmetrics.AwsAPILatency.WithLabelValues("UnassignIpv6Addresses", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+		if err != nil {
+			checkAPIErrorAndBroadcastEvent(err, "ec2:UnassignIpv6Addresses")
+			awsAPIErrInc("UnassignIpv6Addresses", err)
+			prometheusmetrics.Ec2ApiErr.WithLabelValues("UnassignIpv6Addresses").Inc()
+			log.Errorf("Failed to deallocate IPv6 Prefixes %v: %v", ipv6Prefixes, err)
+			return errors.Wrap(err, fmt.Sprintf("deallocate IPv6 prefix: failed to deallocate IPv6 Prefix addresses: %v", ipv6Prefixes))
+		}
+		log.Debugf("Successfully freed IPv6 Prefixes %v from ENI %s", ipv6Prefixes, eniID)
+	}
+
+	log.Debugf("Successfully freed all Prefixes %v from ENI %s", prefixes, eniID)
 	return nil
 }
 
