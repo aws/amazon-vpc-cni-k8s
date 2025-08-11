@@ -2919,16 +2919,21 @@ func TestNodeInitPrimarySubnetExclusionWithExistingPodIPs(t *testing.T) {
 	}
 	m.k8sClient.Create(ctx, &fakeNode)
 
+	// Expect cleanup calls for excluded primary ENI (with existing pod IPs)
+	// The cleanup function will try to unassign any unassigned IPs/prefixes
+	m.awsutils.EXPECT().DeallocIPAddresses(gomock.Any(), primaryENIid, gomock.Any()).Return(nil).AnyTimes()
+	m.awsutils.EXPECT().DeallocPrefixAddresses(gomock.Any(), primaryENIid, gomock.Any()).Return(nil).AnyTimes()
+
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any(), gomock.Any())
 	os.Setenv("MY_NODE_NAME", myNodeName)
 	err := mockContext.nodeInit()
 	assert.NoError(t, err)
 
-	// Verify that primary ENI was re-included due to existing pod IPs
-	assert.False(t, mockContext.isPrimarySubnetExcluded, "Primary subnet should be re-included due to existing pod IPs")
+	// Verify that primary ENI exclusion is now always respected
+	assert.True(t, mockContext.isPrimarySubnetExcluded, "Primary subnet should remain excluded even with existing pod IPs")
 	isExcluded := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).IsENIExcludedForPodIPs(primaryENIid)
-	assert.False(t, isExcluded, "Primary ENI should not be excluded from pod IP allocation due to existing pod IPs")
+	assert.True(t, isExcluded, "Primary ENI should remain excluded from pod IP allocation despite existing pod IPs")
 }
 
 func TestNodeInitPrimarySubnetExclusionWithoutExistingPodIPs(t *testing.T) {
