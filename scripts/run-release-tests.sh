@@ -4,6 +4,12 @@ echo "Running bottlerocket test"
 ./scripts/run-integration-tests.sh
 unset RUN_BOTTLEROCKET_TEST
 
+export RUN_UBUNTU_TEST=true
+chmod +x ./scripts/run-integration-tests.sh
+echo "Running ubuntu test"
+./scripts/run-integration-tests.sh
+unset RUN_UBUNTU_TEST
+
 export RUN_WARM_IP_TEST=true
 echo "Running warm ip test"
 ./scripts/run-integration-tests.sh
