@@ -4,7 +4,7 @@ nameOverride: cni-metrics-helper
 
 image:
   region: us-west-2
-  tag: v1.20.0
+  tag: v1.20.1
   account: "602401143452"
   domain: "amazonaws.com"
   # Set to use custom image
