@@ -3479,3 +3479,138 @@ func TestENICreationFallbackLogging(t *testing.T) {
 		})
 	}
 }
+
+func TestDeallocPrefixAddresses(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test deallocating IPv4 prefixes only
+	ipv4Prefixes := []string{"10.0.0.0/28", "10.0.1.0/28"}
+	inputIPv4 := &ec2.UnassignPrivateIpAddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv4Prefixes:       ipv4Prefixes,
+	}
+	mockEC2.EXPECT().UnassignPrivateIpAddresses(gomock.Any(), inputIPv4, gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, ipv4Prefixes)
+	assert.NoError(t, err)
+}
+
+func TestDeallocPrefixAddressesIPv6(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test deallocating IPv6 prefixes only
+	ipv6Prefixes := []string{"2001:db8:1234:5678::/80", "2001:db8:1234:5679::/80"}
+	inputIPv6 := &ec2.UnassignIpv6AddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv6Prefixes:       ipv6Prefixes,
+	}
+	mockEC2.EXPECT().UnassignIpv6Addresses(gomock.Any(), inputIPv6, gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, ipv6Prefixes)
+	assert.NoError(t, err)
+}
+
+func TestDeallocPrefixAddressesMixed(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test deallocating both IPv4 and IPv6 prefixes
+	mixedPrefixes := []string{"10.0.0.0/28", "2001:db8:1234:5678::/80", "10.0.1.0/28", "2001:db8:1234:5679::/80"}
+
+	// Expect IPv4 call
+	inputIPv4 := &ec2.UnassignPrivateIpAddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv4Prefixes:       []string{"10.0.0.0/28", "10.0.1.0/28"},
+	}
+	mockEC2.EXPECT().UnassignPrivateIpAddresses(gomock.Any(), inputIPv4, gomock.Any()).Return(nil, nil)
+
+	// Expect IPv6 call
+	inputIPv6 := &ec2.UnassignIpv6AddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv6Prefixes:       []string{"2001:db8:1234:5678::/80", "2001:db8:1234:5679::/80"},
+	}
+	mockEC2.EXPECT().UnassignIpv6Addresses(gomock.Any(), inputIPv6, gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, mixedPrefixes)
+	assert.NoError(t, err)
+}
+
+func TestDeallocPrefixAddressesEmpty(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test with empty prefix list - should do nothing and not call AWS
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, []string{})
+	assert.NoError(t, err)
+}
+
+func TestDeallocPrefixAddressesIPv4Error(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test IPv4 deallocation error
+	ipv4Prefixes := []string{"10.0.0.0/28"}
+	inputIPv4 := &ec2.UnassignPrivateIpAddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv4Prefixes:       ipv4Prefixes,
+	}
+
+	retErr := &smithy.GenericAPIError{Code: "InvalidNetworkInterfaceID.NotFound", Message: "Network interface not found"}
+	mockEC2.EXPECT().UnassignPrivateIpAddresses(gomock.Any(), inputIPv4, gomock.Any()).Return(nil, retErr)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, ipv4Prefixes)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "deallocate IPv4 prefix")
+}
+
+func TestDeallocPrefixAddressesIPv6Error(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test IPv6 deallocation error
+	ipv6Prefixes := []string{"2001:db8:1234:5678::/80"}
+	inputIPv6 := &ec2.UnassignIpv6AddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv6Prefixes:       ipv6Prefixes,
+	}
+
+	retErr := &smithy.GenericAPIError{Code: "InvalidNetworkInterfaceID.NotFound", Message: "Network interface not found"}
+	mockEC2.EXPECT().UnassignIpv6Addresses(gomock.Any(), inputIPv6, gomock.Any()).Return(nil, retErr)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, ipv6Prefixes)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "deallocate IPv6 prefix")
+}
+
+func TestDeallocPrefixAddressesInvalidCIDR(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test with invalid CIDR - should skip the invalid one and process valid ones
+	mixedPrefixes := []string{"10.0.0.0/28", "invalid-cidr", "2001:db8:1234:5678::/80"}
+
+	// Only expect valid prefixes to be processed
+	inputIPv4 := &ec2.UnassignPrivateIpAddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv4Prefixes:       []string{"10.0.0.0/28"},
+	}
+	mockEC2.EXPECT().UnassignPrivateIpAddresses(gomock.Any(), inputIPv4, gomock.Any()).Return(nil, nil)
+
+	inputIPv6 := &ec2.UnassignIpv6AddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv6Prefixes:       []string{"2001:db8:1234:5678::/80"},
+	}
+	mockEC2.EXPECT().UnassignIpv6Addresses(gomock.Any(), inputIPv6, gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, mixedPrefixes)
+	assert.NoError(t, err)
+}

@@ -612,6 +612,11 @@ func (c *IPAMContext) nodeInit() error {
 			} else {
 				c.isPrimarySubnetExcluded = false
 			}
+		} else {
+			// Primary ENI is excluded and has no assigned pods - cleanup unassigned resources
+			primaryENI := c.awsClient.GetPrimaryENI()
+			log.Infof("Primary ENI %s is excluded from pod IP allocation, cleaning up unassigned resources", primaryENI)
+			c.cleanupExcludedPrimaryENI(ctx, primaryENI)
 		}
 	}
 
@@ -2508,7 +2513,17 @@ func (c *IPAMContext) tryUnassignPrefixFromENI(ctx context.Context, eniID string
 	for _, toDelete := range freeablePrefixes {
 		// Don't force the delete, since a freeable Prefix might have been assigned to a pod
 		// before we get around to deleting it.
-		err := ds.DelIPv4CidrFromStore(eniID, toDelete, false /* force */)
+		var err error
+
+		// Determine if this is an IPv4 or IPv6 CIDR and call the appropriate deletion function
+		if toDelete.IP.To4() != nil {
+			// IPv4 CIDR
+			err = ds.DelIPv4CidrFromStore(eniID, toDelete, false /* force */)
+		} else {
+			// IPv6 CIDR
+			err = ds.DelIPv6CidrFromStore(eniID, toDelete, false /* force */)
+		}
+
 		if err != nil {
 			log.Warnf("Failed to delete Prefix %s on ENI %s from datastore: %s", toDelete, eniID, err)
 			ipamdErrInc("decreaseIPPool")
@@ -2518,12 +2533,39 @@ func (c *IPAMContext) tryUnassignPrefixFromENI(ctx context.Context, eniID string
 		}
 	}
 
-	// Deallocate IPs from the instance if they aren't used by pods.
+	// Deallocate prefixes from the instance if they aren't used by pods.
+	// DeallocPrefixAddresses handles both IPv4 and IPv6 prefixes
 	if err := c.awsClient.DeallocPrefixAddresses(ctx, eniID, deletedPrefixes); err != nil {
 		log.Warnf("Failed to delete prefix %v from ENI %s: %s", deletedPrefixes, eniID, err)
 	} else {
-		log.Debugf("Successfully prefix removing IPs %v from ENI %s", deletedPrefixes, eniID)
+		log.Debugf("Successfully removed prefixes %v from ENI %s", deletedPrefixes, eniID)
 	}
+}
+
+// cleanupExcludedPrimaryENI cleans up unassigned secondary IPs and prefixes from primary ENI when it's excluded
+func (c *IPAMContext) cleanupExcludedPrimaryENI(ctx context.Context, primaryENI string) {
+	log.Debugf("cleanupExcludedPrimaryENI: cleaning up resources from excluded primary ENI %s", primaryENI)
+
+	// Clean up based on the current IP mode
+	if c.enableIPv4 {
+		if c.enablePrefixDelegation {
+			// In prefix delegation mode, cleanup unassigned IPv4 prefixes
+			log.Debugf("Cleaning up unassigned IPv4 prefixes from excluded primary ENI %s", primaryENI)
+			c.tryUnassignPrefixFromENI(ctx, primaryENI, DefaultNetworkCardIndex)
+		} else {
+			// In secondary IP mode, cleanup unassigned IPv4 secondary IPs
+			log.Debugf("Cleaning up unassigned IPv4 secondary IPs from excluded primary ENI %s", primaryENI)
+			c.tryUnassignIPFromENI(ctx, primaryENI, DefaultNetworkCardIndex)
+		}
+	}
+
+	// Clean up IPv6 prefixes if IPv6 is enabled (IPv6 only uses prefix delegation)
+	if c.enableIPv6 {
+		log.Debugf("Cleaning up unassigned IPv6 prefixes from excluded primary ENI %s", primaryENI)
+		c.tryUnassignPrefixFromENI(ctx, primaryENI, DefaultNetworkCardIndex)
+	}
+
+	log.Infof("Completed cleanup of unassigned resources from excluded primary ENI %s", primaryENI)
 }
 
 func (c *IPAMContext) GetENIResourcesToAllocate(networkCard int) int {

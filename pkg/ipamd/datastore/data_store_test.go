@@ -1825,3 +1825,146 @@ func TestGetIPStatsWithExcludedENI(t *testing.T) {
 	assert.Equal(t, 0, stats.AssignedIPs)
 	assert.Equal(t, 2, stats.AvailableAddresses())
 }
+
+func TestDelIPv6CidrFromStore(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+	err := ds.AddENI("eni-1", 1, true, false, false)
+	assert.NoError(t, err)
+
+	// Test 1: Add and delete unassigned IPv6 CIDRs
+	ipv6Addr1 := net.IPNet{IP: net.ParseIP("2001:db8::"), Mask: net.CIDRMask(80, 128)}
+	err = ds.AddIPv6CidrToStore("eni-1", ipv6Addr1, true)
+	assert.NoError(t, err)
+	assert.Equal(t, 281474976710656, ds.total) // 2^48 addresses in /80
+	assert.Equal(t, 1, len(ds.eniPool["eni-1"].IPv6Cidrs))
+
+	ipv6Addr2 := net.IPNet{IP: net.ParseIP("2001:db8:1::"), Mask: net.CIDRMask(80, 128)}
+	err = ds.AddIPv6CidrToStore("eni-1", ipv6Addr2, true)
+	assert.NoError(t, err)
+	assert.Equal(t, 562949953421312, ds.total) // 2 * 2^48 addresses
+	assert.Equal(t, 2, len(ds.eniPool["eni-1"].IPv6Cidrs))
+
+	// Delete one IPv6 CIDR without assigned IPs - should succeed
+	err = ds.DelIPv6CidrFromStore("eni-1", ipv6Addr2, false)
+	assert.NoError(t, err)
+	assert.Equal(t, 281474976710656, ds.total) // Back to 1 CIDR worth
+	assert.Equal(t, 1, len(ds.eniPool["eni-1"].IPv6Cidrs))
+
+	// Test 2: Try to delete a non-existent IPv6 CIDR
+	unknownIPv6Addr := net.IPNet{IP: net.ParseIP("2001:db8:9999::"), Mask: net.CIDRMask(80, 128)}
+	err = ds.DelIPv6CidrFromStore("eni-1", unknownIPv6Addr, false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown IP")
+	assert.Equal(t, 281474976710656, ds.total) // Should remain unchanged
+	assert.Equal(t, 1, len(ds.eniPool["eni-1"].IPv6Cidrs))
+
+	// Test 3: Assign an IPv6 address to a pod from the remaining CIDR
+	key := IPAMKey{"net0", "sandbox-1", "eth0"}
+	ipv6Address, device, err := ds.AssignPodIPv6Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	assert.NoError(t, err)
+	assert.NotEmpty(t, ipv6Address)
+	assert.Equal(t, 1, device)
+
+	// Try to delete the CIDR with assigned IP - should fail without force
+	err = ds.DelIPv6CidrFromStore("eni-1", ipv6Addr1, false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "IP is used and can not be deleted")
+	assert.Equal(t, 281474976710656, ds.total) // Should remain unchanged
+	assert.Equal(t, 1, len(ds.eniPool["eni-1"].IPv6Cidrs))
+
+	// Test 4: Force delete the CIDR with assigned IP - should succeed
+	err = ds.DelIPv6CidrFromStore("eni-1", ipv6Addr1, true)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, ds.total) // Back to 0
+	assert.Equal(t, 0, len(ds.eniPool["eni-1"].IPv6Cidrs))
+
+	// Test 5: Try to delete from a non-existent ENI
+	err = ds.DelIPv6CidrFromStore("eni-nonexistent", ipv6Addr1, false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown ENI")
+}
+
+func TestFreeablePrefixesBothIPv4AndIPv6(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+	err := ds.AddENI("eni-1", 1, true, false, false)
+	assert.NoError(t, err)
+
+	// Add IPv4 prefixes
+	ipv4Prefix1 := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.CIDRMask(28, 32)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Prefix1, true)
+	assert.NoError(t, err)
+
+	ipv4Prefix2 := net.IPNet{IP: net.ParseIP("10.0.1.0"), Mask: net.CIDRMask(28, 32)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4Prefix2, true)
+	assert.NoError(t, err)
+
+	// Add IPv4 secondary IP (not a prefix)
+	ipv4SecondaryIP := net.IPNet{IP: net.ParseIP("10.0.2.1"), Mask: net.CIDRMask(32, 32)}
+	err = ds.AddIPv4CidrToStore("eni-1", ipv4SecondaryIP, false)
+	assert.NoError(t, err)
+
+	// Add IPv6 prefixes
+	ipv6Prefix1 := net.IPNet{IP: net.ParseIP("2001:db8::"), Mask: net.CIDRMask(80, 128)}
+	err = ds.AddIPv6CidrToStore("eni-1", ipv6Prefix1, true)
+	assert.NoError(t, err)
+
+	ipv6Prefix2 := net.IPNet{IP: net.ParseIP("2001:db8:1::"), Mask: net.CIDRMask(80, 128)}
+	err = ds.AddIPv6CidrToStore("eni-1", ipv6Prefix2, true)
+	assert.NoError(t, err)
+
+	// Get freeable prefixes - should return all unassigned prefixes (both IPv4 and IPv6)
+	freeablePrefixes := ds.FreeablePrefixes("eni-1")
+	assert.Equal(t, 4, len(freeablePrefixes)) // 2 IPv4 prefixes + 2 IPv6 prefixes
+
+	// Check that IPv4 secondary IP is not included (it's not a prefix)
+	ipv4PrefixCount := 0
+	ipv6PrefixCount := 0
+	for _, prefix := range freeablePrefixes {
+		if prefix.IP.To4() != nil {
+			ipv4PrefixCount++
+		} else {
+			ipv6PrefixCount++
+		}
+	}
+	assert.Equal(t, 2, ipv4PrefixCount, "Should have 2 IPv4 prefixes")
+	assert.Equal(t, 2, ipv6PrefixCount, "Should have 2 IPv6 prefixes")
+
+	// Assign an IP from IPv4 prefix1 to a pod
+	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
+	ipv4Address, device, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-1"})
+	assert.NoError(t, err)
+	assert.NotEmpty(t, ipv4Address)
+	assert.Equal(t, 1, device)
+
+	// Assign an IP from IPv6 prefix1 to a pod
+	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
+	ipv6Address, device, err := ds.AssignPodIPv6Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-2"})
+	assert.NoError(t, err)
+	assert.NotEmpty(t, ipv6Address)
+	assert.Equal(t, 1, device)
+
+	// Now get freeable prefixes - should exclude prefixes with assigned IPs
+	freeablePrefixes = ds.FreeablePrefixes("eni-1")
+	assert.Equal(t, 2, len(freeablePrefixes)) // Only unassigned prefixes
+
+	// Verify the returned prefixes are the ones without assigned IPs
+	ipv4PrefixCount = 0
+	ipv6PrefixCount = 0
+	for _, prefix := range freeablePrefixes {
+		if prefix.IP.To4() != nil {
+			ipv4PrefixCount++
+			// Should be the second IPv4 prefix (10.0.1.0/28), not the first one with assigned IP
+			assert.Equal(t, "10.0.1.0", prefix.IP.String())
+		} else {
+			ipv6PrefixCount++
+			// Should be the second IPv6 prefix (2001:db8:1::/80), not the first one with assigned IP
+			assert.Equal(t, "2001:db8:1::", prefix.IP.String())
+		}
+	}
+	assert.Equal(t, 1, ipv4PrefixCount, "Should have 1 unassigned IPv4 prefix")
+	assert.Equal(t, 1, ipv6PrefixCount, "Should have 1 unassigned IPv6 prefix")
+
+	// Test with non-existent ENI
+	freeablePrefixes = ds.FreeablePrefixes("eni-nonexistent")
+	assert.Nil(t, freeablePrefixes, "Should return nil for non-existent ENI")
+}
