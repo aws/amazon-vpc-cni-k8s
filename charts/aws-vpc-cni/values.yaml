@@ -8,7 +8,7 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.20.0
+    tag: v1.20.1
     domain: amazonaws.com
     region: us-west-2
     endpoint: ecr
@@ -27,7 +27,7 @@ init:
 nodeAgent:
   enabled: true
   image:
-    tag: v1.2.3
+    tag: v1.2.4
     domain: amazonaws.com
     region: us-west-2
     endpoint: ecr

@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.20.1
+* Adding release notes for mult-nic feature by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3350
+* bumping kops tag by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3355
+* updating kops tag in workflow by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3356
+* bumping kops tag to v1.33.0-beta.1 by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3357
+* adding github action monitoring in dependabot by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3360
+* Bump actions/setup-go from 5.0.1 to 5.5.0 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3365
+* Bump docker/setup-buildx-action from 3.3.0 to 3.11.1 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3362
+* adding manual run option to integration test workflow by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3369
+* Bump google.golang.org/protobuf from 1.36.5 to 1.36.6 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3367
+* Bump the aws-dependencies group with 3 updates by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3366
+* updated README.md by @viveksb007 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3371
+* Bump docker/setup-qemu-action from 3.0.0 to 3.6.0 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3373
+* bypassing udev interference by assigning mac address to host side veth by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3354
+* Updating static config for instances and better error handling by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3378
+* fixing codecoverage report issue by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3382
+* Merge from master to release-1.20 by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3376
+
+
 ## v1.20.0
 * Feature - Adding support in CNI for managing multiple network interface card on the instance in #3347,#3349
 * Dependency - Bump helm.sh/helm/v3 from 3.18.1 to 3.18.4 in #3346
