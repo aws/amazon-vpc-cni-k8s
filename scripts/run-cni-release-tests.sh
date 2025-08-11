@@ -38,9 +38,9 @@ function run_integration_test() {
   echo "cni test took $((SECONDS - START)) seconds."
 
   if [[ ! -z $PROD_IMAGE_REGISTRY ]]; then
-    CNI_METRICS_HELPER="$PROD_IMAGE_REGISTRY/cni-metrics-helper:v1.20.0"
+    CNI_METRICS_HELPER="$PROD_IMAGE_REGISTRY/cni-metrics-helper:v1.20.1"
   else
-    CNI_METRICS_HELPER="${CNI_METRICS_HELPER:=602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.20.0}"
+    CNI_METRICS_HELPER="${CNI_METRICS_HELPER:=602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.20.1}"
   fi
 
   REPO_NAME=$(echo $CNI_METRICS_HELPER | cut -d ":" -f 1)
