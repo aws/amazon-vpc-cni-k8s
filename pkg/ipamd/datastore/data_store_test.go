@@ -2030,3 +2030,160 @@ func TestFreeablePrefixesBothIPv4AndIPv6(t *testing.T) {
 	freeablePrefixes = ds.FreeablePrefixes("eni-nonexistent")
 	assert.Nil(t, freeablePrefixes, "Should return nil for non-existent ENI")
 }
+
+func TestDeallocateEmptyCIDR(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+
+	// Setup test ENI
+	eniID := "eni-test-dealloc"
+	err := ds.AddENI(eniID, 1, false, false, false)
+	assert.NoError(t, err)
+
+	// Mark ENI as excluded for pod IPs
+	err = ds.SetENIExcludedForPodIPs(eniID, true)
+	assert.NoError(t, err)
+
+	t.Run("IPv4 CIDR cleanup on excluded ENI", func(t *testing.T) {
+		// Add IPv4 CIDR to ENI
+		ipv4Cidr := net.IPNet{IP: net.ParseIP("192.168.1.0"), Mask: net.CIDRMask(24, 32)}
+		err = ds.AddIPv4CidrToStore(eniID, ipv4Cidr, false)
+		assert.NoError(t, err)
+
+		// Verify CIDR exists
+		eni := ds.eniPool[eniID]
+		cidrStr := ipv4Cidr.String()
+		cidrInfo, exists := eni.AvailableIPv4Cidrs[cidrStr]
+		assert.True(t, exists, "IPv4 CIDR should exist before cleanup")
+
+		// Call deallocateEmptyCIDR
+		ds.deallocateEmptyCIDR(eniID, cidrInfo)
+
+		// Verify CIDR is removed
+		_, exists = eni.AvailableIPv4Cidrs[cidrStr]
+		assert.False(t, exists, "IPv4 CIDR should be removed after cleanup")
+	})
+
+	t.Run("IPv6 CIDR cleanup on excluded ENI", func(t *testing.T) {
+		// Add IPv6 CIDR to ENI
+		ipv6Cidr := net.IPNet{IP: net.ParseIP("2001:db8:1::"), Mask: net.CIDRMask(64, 128)}
+		err = ds.AddIPv6CidrToStore(eniID, ipv6Cidr, false)
+		assert.NoError(t, err)
+
+		// Verify CIDR exists
+		eni := ds.eniPool[eniID]
+		cidrStr := ipv6Cidr.String()
+		cidrInfo, exists := eni.IPv6Cidrs[cidrStr]
+		assert.True(t, exists, "IPv6 CIDR should exist before cleanup")
+
+		// Call deallocateEmptyCIDR
+		ds.deallocateEmptyCIDR(eniID, cidrInfo)
+
+		// Verify CIDR is removed
+		_, exists = eni.IPv6Cidrs[cidrStr]
+		assert.False(t, exists, "IPv6 CIDR should be removed after cleanup")
+	})
+
+	t.Run("Skip cleanup when ENI is not excluded", func(t *testing.T) {
+		// Create new non-excluded ENI
+		nonExcludedENI := "eni-not-excluded"
+		err := ds.AddENI(nonExcludedENI, 1, false, false, false)
+		assert.NoError(t, err)
+
+		// Don't mark as excluded (default is false)
+
+		// Add IPv4 CIDR
+		ipv4Cidr := net.IPNet{IP: net.ParseIP("192.168.2.0"), Mask: net.CIDRMask(24, 32)}
+		err = ds.AddIPv4CidrToStore(nonExcludedENI, ipv4Cidr, false)
+		assert.NoError(t, err)
+
+		// Get CIDR info
+		eni := ds.eniPool[nonExcludedENI]
+		cidrStr := ipv4Cidr.String()
+		cidrInfo, exists := eni.AvailableIPv4Cidrs[cidrStr]
+		assert.True(t, exists, "IPv4 CIDR should exist")
+
+		// Call deallocateEmptyCIDR - should not remove CIDR since ENI is not excluded
+		ds.deallocateEmptyCIDR(nonExcludedENI, cidrInfo)
+
+		// Verify CIDR still exists
+		_, exists = eni.AvailableIPv4Cidrs[cidrStr]
+		assert.True(t, exists, "IPv4 CIDR should remain since ENI is not excluded")
+	})
+
+	t.Run("Skip cleanup when CIDR has assigned IPs", func(t *testing.T) {
+		// Create fresh datastore for isolated test
+		dsIsolated := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+
+		// Create new excluded ENI
+		excludedENI := "eni-excluded-with-ips"
+		err := dsIsolated.AddENI(excludedENI, 1, false, false, false)
+		assert.NoError(t, err)
+
+		err = dsIsolated.SetENIExcludedForPodIPs(excludedENI, true)
+		assert.NoError(t, err)
+
+		// Add IPv4 CIDR
+		ipv4Cidr := net.IPNet{IP: net.ParseIP("192.168.10.0"), Mask: net.CIDRMask(24, 32)}
+		err = dsIsolated.AddIPv4CidrToStore(excludedENI, ipv4Cidr, false)
+		assert.NoError(t, err)
+
+		// Manually assign an IP to the CIDR to simulate non-empty state
+		eni := dsIsolated.eniPool[excludedENI]
+		cidrStr := ipv4Cidr.String()
+		cidrInfo, exists := eni.AvailableIPv4Cidrs[cidrStr]
+		assert.True(t, exists, "IPv4 CIDR should exist")
+
+		// Manually mark an IP as assigned in the CIDR
+		testIP := net.ParseIP("192.168.10.1")
+		cidrInfo.IPAddresses[testIP.String()] = &AddressInfo{
+			Address:      testIP.String(),
+			IPAMKey:      IPAMKey{NetworkName: "test", ContainerID: "test-container", IfName: "eth0"},
+			IPAMMetadata: IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "test-pod"},
+			AssignedTime: time.Now(),
+		}
+
+		// Verify CIDR has assigned IPs
+		assert.Greater(t, cidrInfo.AssignedIPAddressesInCidr(), 0, "CIDR should have assigned IPs")
+
+		// Call deallocateEmptyCIDR - should not remove CIDR since it has assigned IPs
+		dsIsolated.deallocateEmptyCIDR(excludedENI, cidrInfo)
+
+		// Verify CIDR still exists
+		_, exists = eni.AvailableIPv4Cidrs[cidrStr]
+		assert.True(t, exists, "IPv4 CIDR should remain since it has assigned IPs")
+	})
+
+	t.Run("Handle non-existent ENI gracefully", func(t *testing.T) {
+		// Create dummy CIDR info
+		dummyCidr := &CidrInfo{
+			Cidr:          net.IPNet{IP: net.ParseIP("192.168.4.0"), Mask: net.CIDRMask(24, 32)},
+			AddressFamily: "4",
+		}
+
+		// Should not panic when ENI doesn't exist
+		ds.deallocateEmptyCIDR("eni-nonexistent", dummyCidr)
+	})
+
+	t.Run("Handle non-existent CIDR gracefully", func(t *testing.T) {
+		// Create ENI
+		testENI := "eni-cidr-test"
+		err := ds.AddENI(testENI, 1, false, false, false)
+		assert.NoError(t, err)
+
+		err = ds.SetENIExcludedForPodIPs(testENI, true)
+		assert.NoError(t, err)
+
+		// Create CIDR info that doesn't exist in the ENI
+		nonExistentCidr := &CidrInfo{
+			Cidr:          net.IPNet{IP: net.ParseIP("192.168.5.0"), Mask: net.CIDRMask(24, 32)},
+			AddressFamily: "4",
+		}
+
+		// Should handle gracefully when CIDR doesn't exist
+		ds.deallocateEmptyCIDR(testENI, nonExistentCidr)
+
+		// Verify ENI still exists and is unaffected
+		_, exists := ds.eniPool[testENI]
+		assert.True(t, exists, "ENI should still exist")
+	})
+}
