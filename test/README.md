@@ -28,6 +28,7 @@ Ginkgo Focus: [SMOKE]
 
 # Ubuntu
     * set RUN_UBUNTU_TEST=true
+    * Includes pod churn tests to validate CNI stability on Ubuntu nodes
 
 ## How to Manually delete k8s tester Resources (order of deletion)
 Cloudformation - (all except cluster, vpc)
