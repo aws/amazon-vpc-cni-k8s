@@ -26,6 +26,9 @@ Ginkgo Focus: [SMOKE]
 # Bottlerocket
     * set RUN_BOTTLEROCKET_TEST=true
 
+# Ubuntu
+    * set RUN_UBUNTU_TEST=true
+
 ## How to Manually delete k8s tester Resources (order of deletion)
 Cloudformation - (all except cluster, vpc)
 EC2 - load balancers, key pair

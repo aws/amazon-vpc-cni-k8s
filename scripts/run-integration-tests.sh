@@ -28,6 +28,7 @@ ARCH=$(go env GOARCH)
 : "${RUN_CONFORMANCE:=false}"
 : "${RUN_KOPS_TEST:=false}"
 : "${RUN_BOTTLEROCKET_TEST:=false}"
+: "${RUN_UBUNTU_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
 : "${KOPS_VERSION=v1.33.0-beta.1}"
@@ -53,6 +54,9 @@ on_error() {
     fi
     if [[ $RUN_BOTTLEROCKET_TEST == true ]]; then
         emit_cloudwatch_metric "bottlerocket_test_status" "0"
+    fi
+    if [[ $RUN_UBUNTU_TEST == true ]]; then
+        emit_cloudwatch_metric "ubuntu_test_status" "0"
     fi
     if [[ $RUN_PERFORMANCE_TESTS == true ]]; then
         emit_cloudwatch_metric "performance_test_status" "0"
@@ -296,6 +300,9 @@ if [[ "$DEPROVISION" == true ]]; then
     elif [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
         eksctl delete cluster $CLUSTER_NAME --disable-nodegroup-eviction
         emit_cloudwatch_metric "bottlerocket_test_status" "1"
+    elif [[ "$RUN_UBUNTU_TEST" == true ]]; then
+        eksctl delete cluster $CLUSTER_NAME --disable-nodegroup-eviction
+        emit_cloudwatch_metric "ubuntu_test_status" "1"
     elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
         eksctl delete cluster $CLUSTER_NAME
         emit_cloudwatch_metric "performance_test_status" "1"

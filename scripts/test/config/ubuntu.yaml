@@ -1,0 +1,22 @@
+---
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: CLUSTER_NAME_PLACEHOLDER
+  region: us-west-2
+
+nodeGroups:
+  - name: ng-ubuntu
+    instanceType: m5.large
+    desiredCapacity: 4
+    amiFamily: UbuntuPro2404
+    iam:
+       attachPolicyARNs:
+          - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+          - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+          - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+          - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+    ubuntu:
+      settings:
+        motd: "Hello from eksctl!"
