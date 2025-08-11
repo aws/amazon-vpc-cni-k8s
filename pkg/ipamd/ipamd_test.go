@@ -3158,3 +3158,184 @@ func TestPrimaryENIWasPreviouslyUsedIPv6(t *testing.T) {
 	wasUsed = mockContext.primaryENIWasPreviouslyUsed()
 	assert.True(t, wasUsed, "Primary ENI should be considered previously used when it has IPv6 addresses assigned to pods")
 }
+
+func TestPrimaryENICleanupIPv4SecondaryIP(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:       m.awsutils,
+		dataStoreAccess: testDatastore(),
+		enableIPv4:      true,
+		enableIPv6:      false,
+	}
+
+	// Add primary ENI to datastore
+	err := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false)
+	assert.NoError(t, err)
+
+	// Add unassigned IPv4 secondary IP to primary ENI
+	ipv4Addr := net.IPNet{IP: net.ParseIP(ipaddr02), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	err = mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddIPv4CidrToStore(primaryENIid, ipv4Addr, false)
+	assert.NoError(t, err)
+
+	// Verify the IP exists in datastore before cleanup
+	ips, prefixes, err := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).GetENICIDRs(primaryENIid)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(ips), "Should have 1 unassigned IP before cleanup")
+	assert.Equal(t, 0, len(prefixes), "Should have 0 prefixes before cleanup")
+
+	// Test that primary ENI is not considered previously used (has only unassigned IPs)
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	wasUsed := mockContext.primaryENIWasPreviouslyUsed()
+	assert.False(t, wasUsed, "Primary ENI should NOT be previously used with only unassigned IPs")
+
+	// Mock the DeallocIPAddresses call that cleanup will make
+	expectedIPs := []string{ipaddr02}
+	m.awsutils.EXPECT().DeallocIPAddresses(gomock.Any(), primaryENIid, expectedIPs).Return(nil)
+
+	// Call cleanup function
+	ctx := context.Background()
+	mockContext.cleanupExcludedPrimaryENI(ctx, primaryENIid)
+
+	// Verify the IP was removed from datastore after cleanup
+	ipsAfter, prefixesAfter, err := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).GetENICIDRs(primaryENIid)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(ipsAfter), "Should have 0 IPs after cleanup")
+	assert.Equal(t, 0, len(prefixesAfter), "Should have 0 prefixes after cleanup")
+}
+
+func TestPrimaryENICleanupIPv4Prefixes(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:              m.awsutils,
+		dataStoreAccess:        testDatastorewithPrefix(),
+		enableIPv4:             true,
+		enableIPv6:             false,
+		enablePrefixDelegation: true,
+	}
+
+	// Add primary ENI to datastore
+	err := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false)
+	assert.NoError(t, err)
+
+	// Add unassigned IPv4 prefix to primary ENI
+	ipv4Prefix := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.CIDRMask(28, 32)}
+	err = mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddIPv4CidrToStore(primaryENIid, ipv4Prefix, true)
+	assert.NoError(t, err)
+
+	// Verify the prefix exists in datastore before cleanup
+	freeablePrefixes := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).FreeablePrefixes(primaryENIid)
+	assert.Equal(t, 1, len(freeablePrefixes), "Should have 1 freeable IPv4 prefix before cleanup")
+
+	// Test that primary ENI is not considered previously used (has only unassigned prefixes)
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	wasUsed := mockContext.primaryENIWasPreviouslyUsed()
+	assert.False(t, wasUsed, "Primary ENI should NOT be previously used with only unassigned prefixes")
+
+	// Mock the DeallocPrefixAddresses call that cleanup will make
+	expectedPrefixes := []string{"10.0.0.0/28"}
+	m.awsutils.EXPECT().DeallocPrefixAddresses(gomock.Any(), primaryENIid, expectedPrefixes).Return(nil)
+
+	// Call cleanup function
+	ctx := context.Background()
+	mockContext.cleanupExcludedPrimaryENI(ctx, primaryENIid)
+
+	// Verify the prefix was removed from datastore after cleanup
+	freeablePrefixesAfter := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).FreeablePrefixes(primaryENIid)
+	assert.Equal(t, 0, len(freeablePrefixesAfter), "Should have 0 freeable IPv4 prefixes after cleanup")
+}
+
+func TestPrimaryENICleanupIPv6Prefixes(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:       m.awsutils,
+		dataStoreAccess: testDatastorewithPrefix(),
+		enableIPv4:      false,
+		enableIPv6:      true,
+	}
+
+	// Add primary ENI to datastore
+	err := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false)
+	assert.NoError(t, err)
+
+	// Add unassigned IPv6 prefix to primary ENI
+	ipv6Prefix := net.IPNet{IP: net.ParseIP("2001:db8:1234:5678::"), Mask: net.CIDRMask(80, 128)}
+	err = mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddIPv6CidrToStore(primaryENIid, ipv6Prefix, true)
+	assert.NoError(t, err)
+
+	// Verify the prefix exists in datastore before cleanup
+	freeablePrefixes := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).FreeablePrefixes(primaryENIid)
+	assert.Equal(t, 1, len(freeablePrefixes), "Should have 1 freeable IPv6 prefix before cleanup")
+
+	// Test that primary ENI is not considered previously used (has only unassigned IPv6 prefixes)
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	wasUsed := mockContext.primaryENIWasPreviouslyUsed()
+	assert.False(t, wasUsed, "Primary ENI should NOT be previously used with only unassigned IPv6 prefixes")
+
+	// Mock the DeallocPrefixAddresses call that cleanup will make (IPv6 prefixes use the same function)
+	expectedPrefixes := []string{"2001:db8:1234:5678::/80"}
+	m.awsutils.EXPECT().DeallocPrefixAddresses(gomock.Any(), primaryENIid, expectedPrefixes).Return(nil)
+
+	// Call cleanup function
+	ctx := context.Background()
+	mockContext.cleanupExcludedPrimaryENI(ctx, primaryENIid)
+
+	// Verify the prefix was removed from datastore after cleanup
+	freeablePrefixesAfter := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).FreeablePrefixes(primaryENIid)
+	assert.Equal(t, 0, len(freeablePrefixesAfter), "Should have 0 freeable IPv6 prefixes after cleanup")
+}
+
+func TestPrimaryENICleanupMixedMode(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:              m.awsutils,
+		dataStoreAccess:        testDatastorewithPrefix(),
+		enableIPv4:             true,
+		enableIPv6:             true,
+		enablePrefixDelegation: true,
+	}
+
+	// Add primary ENI to datastore
+	err := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false)
+	assert.NoError(t, err)
+
+	// Add unassigned IPv4 prefix to primary ENI
+	ipv4Prefix := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.CIDRMask(28, 32)}
+	err = mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddIPv4CidrToStore(primaryENIid, ipv4Prefix, true)
+	assert.NoError(t, err)
+
+	// Add unassigned IPv6 prefix to primary ENI
+	ipv6Prefix := net.IPNet{IP: net.ParseIP("2001:db8:1234:5678::"), Mask: net.CIDRMask(80, 128)}
+	err = mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddIPv6CidrToStore(primaryENIid, ipv6Prefix, true)
+	assert.NoError(t, err)
+
+	// Verify both prefixes exist in datastore before cleanup
+	freeablePrefixes := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).FreeablePrefixes(primaryENIid)
+	assert.Equal(t, 2, len(freeablePrefixes), "Should have 2 freeable prefixes (1 IPv4 + 1 IPv6) before cleanup")
+
+	// Test that primary ENI is not considered previously used
+	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
+	wasUsed := mockContext.primaryENIWasPreviouslyUsed()
+	assert.False(t, wasUsed, "Primary ENI should NOT be previously used with only unassigned prefixes")
+
+	// Mock the DeallocPrefixAddresses call that cleanup will make
+	// tryUnassignPrefixFromENI will be called twice (IPv4 and IPv6), but the first call
+	// will process both prefixes and delete them, so the second call will see no freeable prefixes
+	expectedPrefixes := []string{"10.0.0.0/28", "2001:db8:1234:5678::/80"}
+	m.awsutils.EXPECT().DeallocPrefixAddresses(gomock.Any(), primaryENIid, expectedPrefixes).Return(nil)
+
+	// Call cleanup function
+	ctx := context.Background()
+	mockContext.cleanupExcludedPrimaryENI(ctx, primaryENIid)
+
+	// Verify both prefixes were removed from datastore after cleanup
+	freeablePrefixesAfter := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).FreeablePrefixes(primaryENIid)
+	assert.Equal(t, 0, len(freeablePrefixesAfter), "Should have 0 freeable prefixes after cleanup")
+}

@@ -610,6 +610,55 @@ func (ds *DataStore) DelIPv4CidrFromStore(eniID string, cidr net.IPNet, force bo
 	return nil
 }
 
+// DelIPv6CidrFromStore deletes IPv6 CIDR from the datastore
+func (ds *DataStore) DelIPv6CidrFromStore(eniID string, cidr net.IPNet, force bool) error {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	curENI, ok := ds.eniPool[eniID]
+	if !ok {
+		ds.log.Debugf("Unknown ENI %s while deleting the IPv6 CIDR", eniID)
+		return errors.New(UnknownENIError)
+	}
+	strIPv6Cidr := cidr.String()
+
+	var deletableCidr *CidrInfo
+	deletableCidr, ok = curENI.IPv6Cidrs[strIPv6Cidr]
+	if !ok {
+		ds.log.Debugf("Unknown IPv6 CIDR %s", strIPv6Cidr)
+		return errors.New(UnknownIPError)
+	}
+
+	// IPv6 only uses prefix delegation, check for any assigned IPs
+	updateBackingStore := false
+	for _, addr := range deletableCidr.IPAddresses {
+		if addr.Assigned() {
+			if !force {
+				return errors.New(IPInUseError)
+			}
+			prometheusmetrics.ForceRemovedIPs.Inc()
+			ds.unassignPodIPAddressUnsafe(addr)
+			updateBackingStore = true
+		}
+	}
+	if updateBackingStore {
+		if err := ds.writeBackingStoreUnsafe(); err != nil {
+			ds.log.Warnf("Unable to update backing store: %v", err)
+			// Continuing because 'force'
+		}
+	}
+	ds.total -= deletableCidr.Size()
+	if deletableCidr.IsPrefix {
+		ds.allocatedPrefix--
+		prometheusmetrics.TotalPrefixes.Set(float64(ds.allocatedPrefix))
+	}
+	prometheusmetrics.TotalIPs.Set(float64(ds.total))
+	delete(curENI.IPv6Cidrs, strIPv6Cidr)
+	ds.log.Infof("Deleted ENI(%s)'s IPv6 Prefix %s from datastore", eniID, strIPv6Cidr)
+
+	return nil
+}
+
 // AddIPv6AddressToStore adds IPv6 CIDR of an ENI to data store
 func (ds *DataStore) AddIPv6CidrToStore(eniID string, ipv6Cidr net.IPNet, isPrefix bool) error {
 	ds.lock.Lock()
@@ -1278,7 +1327,7 @@ func (ds *DataStore) FreeableIPs(eniID string) []net.IPNet {
 	return freeable
 }
 
-// FreeablePrefixes returns a list of unused and potentially freeable IPs.
+// FreeablePrefixes returns a list of unused and potentially freeable prefixes (both IPv4 and IPv6).
 // Note result may already be stale by the time you look at it.
 func (ds *DataStore) FreeablePrefixes(eniID string) []net.IPNet {
 	ds.lock.Lock()
@@ -1290,12 +1339,22 @@ func (ds *DataStore) FreeablePrefixes(eniID string) []net.IPNet {
 		return nil
 	}
 
-	freeable := make([]net.IPNet, 0, len(eni.AvailableIPv4Cidrs))
+	freeable := make([]net.IPNet, 0, len(eni.AvailableIPv4Cidrs)+len(eni.IPv6Cidrs))
+
+	// Check IPv4 prefixes
 	for _, assignedaddr := range eni.AvailableIPv4Cidrs {
 		if assignedaddr.IsPrefix && assignedaddr.AssignedIPAddressesInCidr() == 0 {
 			freeable = append(freeable, assignedaddr.Cidr)
 		}
 	}
+
+	// Check IPv6 prefixes (IPv6 only uses prefix delegation mode)
+	for _, assignedaddr := range eni.IPv6Cidrs {
+		if assignedaddr.AssignedIPAddressesInCidr() == 0 {
+			freeable = append(freeable, assignedaddr.Cidr)
+		}
+	}
+
 	return freeable
 }
 
