@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
-	"github.com/samber/lo"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 
@@ -548,7 +547,7 @@ func (cache *EC2InstanceMetadataCache) discoverCustomSecurityGroups(ctx context.
 	}
 
 	var sgIDs []string
-	for _, sg := range lo.FromSlicePtr(result.SecurityGroups) {
+	for _, sg := range result.SecurityGroups {
 		sgIDs = append(sgIDs, *sg.GroupId)
 	}
 
@@ -575,8 +574,8 @@ func (cache *EC2InstanceMetadataCache) getENISubnetID(ctx context.Context, eniID
 
 // Helper function to check if an ENI is in a secondary subnet
 func (cache *EC2InstanceMetadataCache) isENIInSecondarySubnet(ctx context.Context, eniID string) bool {
-	eniDetails, err := cache.getENISubnetID(ctx, eniID)
-	return err == nil && eniDetails != cache.subnetID
+	eniSubnetID, err := cache.getENISubnetID(ctx, eniID)
+	return err == nil && eniSubnetID != cache.subnetID
 }
 
 // Helper function to get ENIs that match specific criteria
@@ -675,7 +674,8 @@ func (cache *EC2InstanceMetadataCache) RefreshCustomSGIDs(ctx context.Context, d
 		cache.customSecurityGroups.Set([]string{})
 
 		// Apply primary security groups to ENIs in secondary subnets as fallback
-		return cache.applyFallbackSecurityGroupsForAllDatastores(ctx, dsAccess)
+		cache.applyFallbackSecurityGroupsForAllDatastores(ctx, dsAccess)
+		return err
 	}
 
 	// Check if no custom security groups were found (empty list)
@@ -686,7 +686,9 @@ func (cache *EC2InstanceMetadataCache) RefreshCustomSGIDs(ctx context.Context, d
 		cache.customSecurityGroups.Set([]string{})
 
 		// Apply primary security groups to ENIs in secondary subnets as fallback
-		return cache.applyFallbackSecurityGroupsForAllDatastores(ctx, dsAccess)
+		cache.applyFallbackSecurityGroupsForAllDatastores(ctx, dsAccess)
+
+		return nil
 	}
 
 	addedCount, deletedCount := cache.detectSecurityGroupChanges(sgIDs, &cache.customSecurityGroups, "custom")
@@ -700,17 +702,17 @@ func (cache *EC2InstanceMetadataCache) RefreshCustomSGIDs(ctx context.Context, d
 		}
 		cache.applySecurityGroupsToENIs(ctx, eniIDs, sgIDs, "Update")
 	}
+
 	return nil
 }
 
 // applyFallbackSecurityGroupsForAllDatastores applies primary security groups to ENIs in secondary subnets across all datastores
-func (cache *EC2InstanceMetadataCache) applyFallbackSecurityGroupsForAllDatastores(ctx context.Context, dsAccess *datastore.DataStoreAccess) error {
+func (cache *EC2InstanceMetadataCache) applyFallbackSecurityGroupsForAllDatastores(ctx context.Context, dsAccess *datastore.DataStoreAccess) {
 	log.Info("Applying primary security groups as fallback for ENIs in secondary subnets across all datastores")
 
 	primarySGs := cache.securityGroups.SortedList()
 	if len(primarySGs) == 0 {
 		log.Warn("No primary security groups available for fallback")
-		return nil
 	}
 
 	var eniIDs []string
@@ -719,8 +721,6 @@ func (cache *EC2InstanceMetadataCache) applyFallbackSecurityGroupsForAllDatastor
 	}
 
 	cache.applySecurityGroupsToENIs(ctx, eniIDs, primarySGs, "Applying primary security groups to")
-
-	return nil
 }
 
 // RefreshSGIDs retrieves security groups
