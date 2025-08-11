@@ -1258,6 +1258,14 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 		ipamKey, addr.Address, eni.DeviceNumber)
 	// Decrement ENI IP usage when a pod is deallocated
 	prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Dec()
+
+	// Check if ENI is excluded and CIDR is now empty - cleanup if needed
+	if eni.IsExcludedForPodIPs && availableCidr.AssignedIPAddressesInCidr() == 0 {
+		ds.log.Infof("CIDR %s on excluded ENI %s is now empty, scheduling for cleanup", availableCidr.Cidr.String(), eni.ID)
+		// Schedule async cleanup of the empty CIDR
+		go ds.deallocateEmptyCIDR(eni.ID, availableCidr)
+	}
+
 	return eni, addr.Address, eni.DeviceNumber, originalIPAMMetadata.InterfacesCount, nil
 }
 
@@ -1732,4 +1740,67 @@ func (ds *DataStoreAccess) ReadAllDataStores(enableIPv6 bool) error {
 		}
 	}
 	return nil
+}
+
+// deallocateEmptyCIDR asynchronously deallocates an empty CIDR from an excluded ENI
+func (ds *DataStore) deallocateEmptyCIDR(eniID string, cidrToCleanup *CidrInfo) {
+	cidrStr := cidrToCleanup.Cidr.String()
+	ds.log.Infof("Starting async cleanup for empty CIDR %s on excluded ENI %s", cidrStr, eniID)
+
+	// Add delay to avoid race conditions with pod cleanup
+	time.Sleep(5 * time.Second)
+
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	// Double-check that the CIDR is still empty and ENI is still excluded
+	eni := ds.eniPool[eniID]
+	if eni == nil {
+		ds.log.Warnf("ENI %s not found during CIDR cleanup", eniID)
+		return
+	}
+
+	if !eni.IsExcludedForPodIPs {
+		ds.log.Infof("ENI %s is no longer excluded, skipping CIDR cleanup", eniID)
+		return
+	}
+
+	// Find the CIDR in the appropriate map using AddressFamily
+	var targetCidr *CidrInfo
+	var isIPv4 bool = cidrToCleanup.AddressFamily == "4"
+
+	if isIPv4 {
+		targetCidr = eni.AvailableIPv4Cidrs[cidrStr]
+	} else {
+		targetCidr = eni.IPv6Cidrs[cidrStr]
+	}
+
+	if targetCidr == nil {
+		ds.log.Warnf("CIDR %s not found on ENI %s during cleanup", cidrStr, eniID)
+		return
+	}
+
+	// Check if CIDR is still empty
+	if targetCidr.AssignedIPAddressesInCidr() > 0 {
+		ds.log.Infof("CIDR %s on ENI %s is no longer empty, skipping cleanup", cidrStr, eniID)
+		return
+	}
+
+	// Remove the empty CIDR from the ENI structure
+	ds.log.Infof("Removing empty CIDR %s from excluded ENI %s in datastore", cidrStr, eniID)
+
+	// Remove the CIDR from the appropriate ENI map
+	if isIPv4 {
+		delete(eni.AvailableIPv4Cidrs, cidrStr)
+	} else {
+		delete(eni.IPv6Cidrs, cidrStr)
+	}
+
+	// Update backing store
+	if err := ds.writeBackingStoreUnsafe(); err != nil {
+		ds.log.Warnf("Failed to write backing store after removing empty CIDR: %v", err)
+		// Note: We continue since the CIDR removal from local state was successful
+	}
+
+	ds.log.Infof("Successfully removed empty CIDR %s from excluded ENI %s", cidrStr, eniID)
 }

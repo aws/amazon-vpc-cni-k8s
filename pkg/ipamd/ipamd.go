@@ -601,23 +601,16 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
-	// Check if primary ENI was previously used and re-include if needed
+	// Handle primary ENI exclusion - always respect exclusion tags
 	if c.isPrimarySubnetExcluded {
+		primaryENI := c.awsClient.GetPrimaryENI()
 		if c.primaryENIWasPreviouslyUsed() {
-			primaryENI := c.awsClient.GetPrimaryENI()
-			log.Infof("Primary subnet is tagged for exclusion but primary ENI %s has existing pod IPs, re-including for backward compatibility", primaryENI)
-			err := c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).SetENIExcludedForPodIPs(primaryENI, false)
-			if err != nil {
-				log.Warnf("Failed to re-include primary ENI: %v", err)
-			} else {
-				c.isPrimarySubnetExcluded = false
-			}
+			log.Infof("Primary ENI %s is excluded from pod IP allocation but has existing pod IPs, will cleanup resources as pods terminate", primaryENI)
 		} else {
-			// Primary ENI is excluded and has no assigned pods - cleanup unassigned resources
-			primaryENI := c.awsClient.GetPrimaryENI()
 			log.Infof("Primary ENI %s is excluded from pod IP allocation, cleaning up unassigned resources", primaryENI)
-			c.cleanupExcludedPrimaryENI(ctx, primaryENI)
 		}
+		// Always cleanup free resources on excluded primary ENI
+		c.cleanupExcludedPrimaryENI(ctx, primaryENI)
 	}
 
 	if c.enableIPv4 {
