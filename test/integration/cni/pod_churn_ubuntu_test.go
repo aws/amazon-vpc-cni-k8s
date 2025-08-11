@@ -24,7 +24,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
-	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -41,17 +40,17 @@ import (
 var _ = Describe("Pod Churn Test for Ubuntu AMI", Ordered, func() {
 
 	var (
-		err                     error
-		serverListenCmd         []string
-		serverListenCmdArgs     []string
-		testConnectionFunc      func(serverPod coreV1.Pod, port int) []string
-		serverPort              int
-		protocol                string
-		churnDeployment         *v1.Deployment
-		churnIterations         = 10
-		podsPerIteration        = 20
-		waitBetweenIterations   = time.Duration(30) * time.Second
-		ubuntuNodeSelector      = map[string]string{"kubernetes.io/os": "linux"}
+		err                   error
+		serverListenCmd       []string
+		serverListenCmdArgs   []string
+		testConnectionFunc    func(serverPod coreV1.Pod, port int) []string
+		serverPort            int
+		protocol              string
+		churnDeployment       *v1.Deployment
+		churnIterations       = 10
+		podsPerIteration      = 20
+		waitBetweenIterations = time.Duration(30) * time.Second
+		ubuntuNodeSelector    = map[string]string{"kubernetes.io/os": "linux"}
 	)
 
 	BeforeAll(func() {
@@ -201,7 +200,7 @@ var _ = Describe("Pod Churn Test for Ubuntu AMI", Ordered, func() {
 
 			// Track IP addresses allocated during the test
 			allocatedIPs := make(map[string]bool)
-			
+
 			for cycle := 1; cycle <= 5; cycle++ {
 				By(fmt.Sprintf("Starting IP consistency test cycle %d/5", cycle))
 
@@ -236,9 +235,9 @@ var _ = Describe("Pod Churn Test for Ubuntu AMI", Ordered, func() {
 				for _, pod := range podList.Items {
 					Expect(pod.Status.PodIP).ToNot(BeEmpty())
 					cycleIPs = append(cycleIPs, pod.Status.PodIP)
-					
+
 					// Verify IP is not already in use (no IP conflicts)
-					Expect(allocatedIPs[pod.Status.PodIP]).To(BeFalse(), 
+					Expect(allocatedIPs[pod.Status.PodIP]).To(BeFalse(),
 						fmt.Sprintf("IP %s was already allocated in a previous cycle", pod.Status.PodIP))
 					allocatedIPs[pod.Status.PodIP] = true
 				}
