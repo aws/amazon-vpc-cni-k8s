@@ -55,6 +55,7 @@ var _ = Describe("Primary ENI Exclusion Tests", func() {
 	var (
 		initialDeployment *v1.Deployment
 		primaryENIID      string
+		primarySubnetID   string
 		primarySubnetCIDR *net.IPNet
 		secondarySubnetCIDR *net.IPNet
 	)
@@ -68,7 +69,7 @@ var _ = Describe("Primary ENI Exclusion Tests", func() {
 			time.Sleep(utils.PollIntervalMedium)
 
 			By("Getting primary ENI information")
-			primaryENIID, primarySubnetCIDR = getPrimaryENIInfo()
+			primaryENIID, primarySubnetID, primarySubnetCIDR = getPrimaryENIInfo()
 
 			By("Getting secondary subnet CIDR")
 			secondarySubnetCIDR = getSubnetCIDR(createdSubnet)
@@ -226,7 +227,7 @@ var _ = Describe("Primary ENI Exclusion Tests", func() {
 
 // Helper functions
 
-func getPrimaryENIInfo() (string, *net.IPNet) {
+func getPrimaryENIInfo() (string, string, *net.IPNet) {
 	instance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -242,6 +243,7 @@ func getPrimaryENIInfo() (string, *net.IPNet) {
 	}
 
 	Expect(primaryENIID).ToNot(BeEmpty(), "Should find primary ENI")
+	Expect(primarySubnetID).ToNot(BeEmpty(), "Should find primary subnet ID")
 
 	// Get subnet CIDR
 	subnetOutput, err := f.CloudServices.EC2().DescribeSubnets(context.TODO(), []string{primarySubnetID})
@@ -251,7 +253,7 @@ func getPrimaryENIInfo() (string, *net.IPNet) {
 	_, primarySubnetCIDR, err := net.ParseCIDR(*subnetOutput.Subnets[0].CidrBlock)
 	Expect(err).ToNot(HaveOccurred())
 
-	return primaryENIID, primarySubnetCIDR
+	return primaryENIID, primarySubnetID, primarySubnetCIDR
 }
 
 func getSubnetCIDR(subnetID string) *net.IPNet {
