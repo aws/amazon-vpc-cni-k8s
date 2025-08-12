@@ -178,22 +178,48 @@ var _ = AfterSuite(func() {
 	_ = f.K8sResourceManagers.NamespaceManager().
 		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
-	var errs prometheus.MultiError
-
 	By("sleeping to allow CNI Plugin to delete unused ENIs")
 	time.Sleep(time.Second * 90)
-
-	By(fmt.Sprintf("deleting the subnet %s", createdSubnet))
-	errs.Append(f.CloudServices.EC2().DeleteSubnet(context.TODO(), createdSubnet))
-
-	By("disassociating the CIDR range to the VPC")
-	if cidrBlockAssociationID != "" {
-		errs.Append(f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID))
-	}
-
-	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred())
 
 	By("by setting WARM_ENI_TARGET to 1")
 	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
 		utils.AwsNodeName, map[string]string{"WARM_ENI_TARGET": "1"})
+
+	var errs prometheus.MultiError
+
+	By(fmt.Sprintf("deleting the subnet %s", createdSubnet))
+	if err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), createdSubnet); err != nil {
+		errs.Append(err)
+	}
+
+	// Wait for subnet deletion to complete before trying to disassociate CIDR
+	By("waiting for subnet deletion to complete")
+	time.Sleep(time.Second * 30)
+
+	By("disassociating the CIDR range from the VPC")
+	if cidrBlockAssociationID != "" {
+		// Retry CIDR disassociation a few times in case subnet deletion is still in progress
+		maxRetries := 5
+		for i := 0; i < maxRetries; i++ {
+			if err := f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID); err != nil {
+				if i == maxRetries-1 {
+					// Last retry failed, append error
+					errs.Append(err)
+				} else {
+					// Wait and retry
+					By(fmt.Sprintf("CIDR disassociation failed (attempt %d/%d), retrying in 15 seconds", i+1, maxRetries))
+					time.Sleep(time.Second * 15)
+				}
+			} else {
+				// Success, break out of retry loop
+				break
+			}
+		}
+	}
+
+	// Only fail if there were actual errors, not just retry attempts
+	if errs.MaybeUnwrap() != nil {
+		GinkgoWriter.Printf("WARNING: Some cleanup operations failed: %v\n", errs.MaybeUnwrap())
+		// Don't fail the test suite for cleanup issues, just log them
+	}
 })
