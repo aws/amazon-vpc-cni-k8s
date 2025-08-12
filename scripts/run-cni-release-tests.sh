@@ -10,7 +10,7 @@
 # NG_LABEL_KEY: nodegroup label key, default "kubernetes.io/os"
 # NG_LABEL_VAL: nodegroup label val, default "linux"
 # RUN_DEVEKS_TEST: Set this variable for tests to run on a deveks cluster
-# CNI_METRICS_HELPER: cni metrics helper image tag, default "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.20.0"
+# CNI_METRICS_HELPER: cni metrics helper image tag, default "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.20.1"
 # TEST_IMAGE_REGISTRY: the registry in test-infra-* accounts where e2e test images are stored
 set -e
 
