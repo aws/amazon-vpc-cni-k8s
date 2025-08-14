@@ -2615,13 +2615,15 @@ func (c *IPAMContext) hasRoomForEni(networkCard int) bool {
 	}
 
 	currentENIs := c.dataStoreAccess.GetDataStore(networkCard).GetENIs()
+	// Subtract excluded ENIs from current count to match the exclusion from max count
+	currentUsableENIs := currentENIs - excludedENI
 	maxUsableENIs := c.maxENI - c.unmanagedENI[networkCard] - trunkEni - excludedENI
 
 	// Check if we have room considering the excluded ENI
-	hasRoom := currentENIs < maxUsableENIs
+	hasRoom := currentUsableENIs < maxUsableENIs
 
-	log.Debugf("hasRoomForEni: networkCard=%d, currentENIs=%d, maxENI=%d, unmanagedENI=%d, trunkEni=%d, excludedENI=%d, hasRoom=%v",
-		networkCard, currentENIs, c.maxENI, c.unmanagedENI[networkCard], trunkEni, excludedENI, hasRoom)
+	log.Debugf("hasRoomForEni: networkCard=%d, currentENIs=%d, currentUsableENIs=%d, maxENI=%d, unmanagedENI=%d, trunkEni=%d, excludedENI=%d, hasRoom=%v",
+		networkCard, currentENIs, currentUsableENIs, c.maxENI, c.unmanagedENI[networkCard], trunkEni, excludedENI, hasRoom)
 
 	return hasRoom
 }
