@@ -21,6 +21,7 @@ The following tests are valid to run, and setting the respective environment var
 3. Performance Tests - `RUN_PERFORMANCE_TESTS`
 4. KOPS Tests - `RUN_KOPS_TEST`
 5. Bottlerocket Tests - `RUN_BOTTLEROCKET_TEST`
+6. CNI Soap Tests with Ubuntu AMI - `RUN_UBUNTU_TEST`
 
 Example for running performance tests:
 ```

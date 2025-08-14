@@ -1,0 +1,34 @@
+---
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: CLUSTER_NAME_PLACEHOLDER
+  region: us-west-2
+
+managedNodeGroups:
+  - name: cni-test-arm64-ubuntu-mng
+    instanceType: c6g.xlarge
+    desiredCapacity: 3
+    amiFamily: UbuntuPro2404
+    minSize: 3
+    maxSize: 3
+    volumeSize: 40
+    releaseVersion: ""
+    tags:
+      group: amazon-vpc-cni-k8s-arm64-ubuntu
+  - name: cni-test-x86-ubuntu-mng
+    instanceType: c5.xlarge
+    desiredCapacity: 3
+    amiFamily: UbuntuPro2404
+    minSize: 3
+    maxSize: 3
+    volumeSize: 40
+    releaseVersion: ""
+    tags:
+      group: amazon-vpc-cni-k8s-x86-ubuntu
+availabilityZones:
+  - us-west-2a
+  - us-west-2b
+  - us-west-2c
+  - us-west-2d
