@@ -159,7 +159,7 @@ func _main() int {
 	}
 
 	// Pool manager
-	go ipamContext.StartNodeIPPoolManager()
+	go ipamContext.StartNodeIPPoolManager(context.Background())
 
 	if !utils.GetBoolAsStringEnvVar(envDisableMetrics, false) {
 		// Prometheus metrics
