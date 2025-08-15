@@ -298,6 +298,7 @@ if [[ "$RUN_SOAK_TEST" == true ]]; then
     GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
     TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"617930562442.dkr.ecr.us-west-2.amazonaws.com"}
     EXTRA_GINKGO_FLAGS=${EXTRA_GINKGO_FLAGS:-""}
+    ENDPOINT=${ENDPOINT:-""}
     
     if [[ -n "${ENDPOINT}" ]]; then
         ENDPOINT_OPTION=" --eks-endpoint $ENDPOINT"
