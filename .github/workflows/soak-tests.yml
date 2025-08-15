@@ -33,6 +33,6 @@ jobs:
           aws-region: us-west-2
       - name: Run soak tests
         run: |
-          RUN_CNI_INTEGRATION_TESTS=false RUN_UBUNTU_TEST=true ./scripts/run-integration-tests.sh
+          RUN_CNI_INTEGRATION_TESTS=false RUN_SOAK_TEST=true RUN_UBUNTU_TEST=true ./scripts/run-integration-tests.sh
         env:
           AWS_DEFAULT_REGION: us-west-2
