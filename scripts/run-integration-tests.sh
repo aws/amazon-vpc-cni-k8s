@@ -30,7 +30,7 @@ ARCH=$(go env GOARCH)
 : "${RUN_BOTTLEROCKET_TEST:=false}"
 : "${RUN_UBUNTU_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
-: "${RUN_SOAK_TEST:=false}"
+: "${RUN_SOAK_TEST:=true}"
 : "${RUNNING_PERFORMANCE:=false}"
 : "${KOPS_VERSION=v1.33.0-beta.1}"
 
