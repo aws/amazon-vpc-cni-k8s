@@ -299,10 +299,16 @@ if [[ "$RUN_SOAK_TEST" == true ]]; then
     TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"617930562442.dkr.ecr.us-west-2.amazonaws.com"}
     EXTRA_GINKGO_FLAGS=${EXTRA_GINKGO_FLAGS:-""}
     
+    if [[ -n "${ENDPOINT}" ]]; then
+        ENDPOINT_OPTION=" --eks-endpoint $ENDPOINT"
+    else
+        ENDPOINT_OPTION=""
+    fi
+    
     (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --no-color --focus="SOAK_TEST" -v --timeout 3h --fail-on-pending $GINKGO_TEST_BUILD/cni.test -- \
         --cluster-kubeconfig="$KUBECONFIG" \
         --cluster-name="$CLUSTER_NAME" \
-        --aws-region="$REGION" \
+        --aws-region="$AWS_DEFAULT_REGION" \
         --aws-vpc-id="$VPC_ID" \
         --ng-name-label-key="kubernetes.io/os" \
         --ng-name-label-val="linux" \
