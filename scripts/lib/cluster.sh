@@ -30,6 +30,9 @@ function up-test-cluster() {
     if [[ "$RUN_BOTTLEROCKET_TEST" == true ]]; then
         echo "Copying bottlerocket config to $CLUSTER_CONFIG"
         cp $CLUSTER_TEMPLATE_PATH/bottlerocket.yaml $CLUSTER_CONFIG
+    elif [[ "$RUN_UBUNTU_TEST" == true ]]; then
+        echo "Copying ubuntu config to $CLUSTER_CONFIG"
+        cp $CLUSTER_TEMPLATE_PATH/ubuntu.yaml $CLUSTER_CONFIG
     elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
         echo "Copying perf test cluster config to $CLUSTER_CONFIG"
         cp $CLUSTER_TEMPLATE_PATH/perf-cluster.yml $CLUSTER_CONFIG
