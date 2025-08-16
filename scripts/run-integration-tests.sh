@@ -293,9 +293,15 @@ if [[ "$RUN_SOAK_TEST" == true ]]; then
     echo "*******************************************************************************"
     echo "Running soak tests on current image"
     echo ""
-    START=$SECONDS
     
+    # Build test binaries if they don't exist
     GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
+    if [[ ! -f "$GINKGO_TEST_BUILD/cni.test" ]]; then
+        echo "Building test binaries..."
+        (cd "$SCRIPT_DIR/.." && make build-test-binaries)
+    fi
+    
+    START=$SECONDS
     TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"617930562442.dkr.ecr.us-west-2.amazonaws.com"}
     EXTRA_GINKGO_FLAGS=${EXTRA_GINKGO_FLAGS:-""}
     ENDPOINT=${ENDPOINT:-""}
