@@ -21,8 +21,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CNIBackend_AddNetwork_FullMethodName = "/rpc.CNIBackend/AddNetwork"
-	CNIBackend_DelNetwork_FullMethodName = "/rpc.CNIBackend/DelNetwork"
+	CNIBackend_AddNetwork_FullMethodName           = "/rpc.CNIBackend/AddNetwork"
+	CNIBackend_DelNetwork_FullMethodName           = "/rpc.CNIBackend/DelNetwork"
+	CNIBackend_GetAllocatableValues_FullMethodName = "/rpc.CNIBackend/GetAllocatableValues"
 )
 
 // CNIBackendClient is the client API for CNIBackend service.
@@ -33,6 +34,7 @@ const (
 type CNIBackendClient interface {
 	AddNetwork(ctx context.Context, in *AddNetworkRequest, opts ...grpc.CallOption) (*AddNetworkReply, error)
 	DelNetwork(ctx context.Context, in *DelNetworkRequest, opts ...grpc.CallOption) (*DelNetworkReply, error)
+	GetAllocatableValues(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetAllocatableValuesReply, error)
 }
 
 type cNIBackendClient struct {
@@ -63,6 +65,16 @@ func (c *cNIBackendClient) DelNetwork(ctx context.Context, in *DelNetworkRequest
 	return out, nil
 }
 
+func (c *cNIBackendClient) GetAllocatableValues(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetAllocatableValuesReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAllocatableValuesReply)
+	err := c.cc.Invoke(ctx, CNIBackend_GetAllocatableValues_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CNIBackendServer is the server API for CNIBackend service.
 // All implementations must embed UnimplementedCNIBackendServer
 // for forward compatibility.
@@ -71,6 +83,7 @@ func (c *cNIBackendClient) DelNetwork(ctx context.Context, in *DelNetworkRequest
 type CNIBackendServer interface {
 	AddNetwork(context.Context, *AddNetworkRequest) (*AddNetworkReply, error)
 	DelNetwork(context.Context, *DelNetworkRequest) (*DelNetworkReply, error)
+	GetAllocatableValues(context.Context, *emptypb.Empty) (*GetAllocatableValuesReply, error)
 	mustEmbedUnimplementedCNIBackendServer()
 }
 
@@ -86,6 +99,9 @@ func (UnimplementedCNIBackendServer) AddNetwork(context.Context, *AddNetworkRequ
 }
 func (UnimplementedCNIBackendServer) DelNetwork(context.Context, *DelNetworkRequest) (*DelNetworkReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DelNetwork not implemented")
+}
+func (UnimplementedCNIBackendServer) GetAllocatableValues(context.Context, *emptypb.Empty) (*GetAllocatableValuesReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAllocatableValues not implemented")
 }
 func (UnimplementedCNIBackendServer) mustEmbedUnimplementedCNIBackendServer() {}
 func (UnimplementedCNIBackendServer) testEmbeddedByValue()                    {}
@@ -144,6 +160,24 @@ func _CNIBackend_DelNetwork_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CNIBackend_GetAllocatableValues_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CNIBackendServer).GetAllocatableValues(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CNIBackend_GetAllocatableValues_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CNIBackendServer).GetAllocatableValues(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CNIBackend_ServiceDesc is the grpc.ServiceDesc for CNIBackend service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -158,6 +192,10 @@ var CNIBackend_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DelNetwork",
 			Handler:    _CNIBackend_DelNetwork_Handler,
+		},
+		{
+			MethodName: "GetAllocatableValues",
+			Handler:    _CNIBackend_GetAllocatableValues_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
