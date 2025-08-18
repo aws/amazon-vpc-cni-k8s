@@ -227,6 +227,21 @@ func (mr *MockAPIsMockRecorder) GetENILimit() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetENILimit", reflect.TypeOf((*MockAPIs)(nil).GetENILimit))
 }
 
+// GetENISubnetID mocks base method.
+func (m *MockAPIs) GetENISubnetID(arg0 context.Context, arg1 string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetENISubnetID", arg0, arg1)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetENISubnetID indicates an expected call of GetENISubnetID.
+func (mr *MockAPIsMockRecorder) GetENISubnetID(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetENISubnetID", reflect.TypeOf((*MockAPIs)(nil).GetENISubnetID), arg0, arg1)
+}
+
 // GetIPv4PrefixesFromEC2 mocks base method.
 func (m *MockAPIs) GetIPv4PrefixesFromEC2(arg0 context.Context, arg1 string) ([]types.Ipv4PrefixSpecification, error) {
 	m.ctrl.T.Helper()
@@ -414,6 +429,21 @@ func (mr *MockAPIsMockRecorder) GetVPCIPv6CIDRs() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVPCIPv6CIDRs", reflect.TypeOf((*MockAPIs)(nil).GetVPCIPv6CIDRs))
 }
 
+// GetVpcSubnets mocks base method.
+func (m *MockAPIs) GetVpcSubnets(arg0 context.Context) ([]types.Subnet, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVpcSubnets", arg0)
+	ret0, _ := ret[0].([]types.Subnet)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetVpcSubnets indicates an expected call of GetVpcSubnets.
+func (mr *MockAPIsMockRecorder) GetVpcSubnets(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVpcSubnets", reflect.TypeOf((*MockAPIs)(nil).GetVpcSubnets), arg0)
+}
+
 // InitCachedPrefixDelegation mocks base method.
 func (m *MockAPIs) InitCachedPrefixDelegation(arg0 bool) {
 	m.ctrl.T.Helper()
@@ -468,19 +498,19 @@ func (mr *MockAPIsMockRecorder) IsPrimaryENI(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsPrimaryENI", reflect.TypeOf((*MockAPIs)(nil).IsPrimaryENI), arg0)
 }
 
-// IsPrimarySubnetExcluded mocks base method.
-func (m *MockAPIs) IsPrimarySubnetExcluded(arg0 context.Context) (bool, error) {
+// IsSubnetExcluded mocks base method.
+func (m *MockAPIs) IsSubnetExcluded(arg0 context.Context, arg1 string) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsPrimarySubnetExcluded", arg0)
+	ret := m.ctrl.Call(m, "IsSubnetExcluded", arg0, arg1)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// IsPrimarySubnetExcluded indicates an expected call of IsPrimarySubnetExcluded.
-func (mr *MockAPIsMockRecorder) IsPrimarySubnetExcluded(arg0 interface{}) *gomock.Call {
+// IsSubnetExcluded indicates an expected call of IsSubnetExcluded.
+func (mr *MockAPIsMockRecorder) IsSubnetExcluded(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsPrimarySubnetExcluded", reflect.TypeOf((*MockAPIs)(nil).IsPrimarySubnetExcluded), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSubnetExcluded", reflect.TypeOf((*MockAPIs)(nil).IsSubnetExcluded), arg0, arg1)
 }
 
 // IsUnmanagedENI mocks base method.

@@ -590,6 +590,14 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulabeNode bool, 
 		mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false)
 	}
 
+	// Add mock expectations for unified ENI exclusion approach (needed when UseSubnetDiscovery() is true)
+	if UseSubnetDiscovery() {
+		m.awsutils.EXPECT().GetENISubnetID(gomock.Any(), primaryENIid).AnyTimes().Return("subnet-primary", nil)
+		m.awsutils.EXPECT().GetENISubnetID(gomock.Any(), secENIid).AnyTimes().Return("subnet-secondary", nil)
+		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-primary").AnyTimes().Return(false, nil)
+		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-secondary").AnyTimes().Return(false, nil)
+	}
+
 	primary := true
 	notPrimary := false
 	testAddr1 := ipaddr01
@@ -716,6 +724,17 @@ func assertAllocationExternalCalls(shouldCall bool, useENIConfig bool, m *testMo
 	m.awsutils.EXPECT().GetPrimaryENI().Times(callCount).Return(primaryENIid)
 	m.awsutils.EXPECT().WaitForENIAndIPsAttached(secENIid, 14).Times(callCount).Return(eniMetadata[1], nil)
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), secMAC, secDevice, defaultNetworkCard, secSubnet, maxENIPerNIC, false).AnyTimes().Times(callCount)
+
+	// Add expectations for unified ENI exclusion approach
+	if subnetDiscovery {
+		// Mock GetENISubnetID calls for setupENI (both primary and secondary ENIs)
+		m.awsutils.EXPECT().GetENISubnetID(gomock.Any(), primaryENIid).AnyTimes().Return("subnet-primary", nil)
+		m.awsutils.EXPECT().GetENISubnetID(gomock.Any(), secENIid).AnyTimes().Return("subnet-secondary", nil)
+
+		// Mock IsSubnetExcluded calls
+		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-primary").AnyTimes().Return(false, nil)
+		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-secondary").AnyTimes().Return(false, nil)
+	}
 }
 
 func TestIncreasePrefixPoolDefault(t *testing.T) {
@@ -759,6 +778,14 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig, subnetDiscovery bool) {
 	mockContext.dataStoreAccess = testDatastorewithPrefix()
 	if subnetDiscovery {
 		mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false)
+	}
+
+	// Add mock expectations for unified ENI exclusion approach (needed when UseSubnetDiscovery() is true)
+	if UseSubnetDiscovery() {
+		m.awsutils.EXPECT().GetENISubnetID(gomock.Any(), primaryENIid).AnyTimes().Return("subnet-primary", nil)
+		m.awsutils.EXPECT().GetENISubnetID(gomock.Any(), secENIid).AnyTimes().Return("subnet-secondary", nil)
+		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-primary").AnyTimes().Return(false, nil)
+		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-secondary").AnyTimes().Return(false, nil)
 	}
 
 	primary := true
@@ -2740,14 +2767,13 @@ func TestIPAMContext_WarmTargetWithExcludedPrimary(t *testing.T) {
 
 	// Create context with excluded primary subnet
 	ctx := &IPAMContext{
-		awsClient:               m.awsutils,
-		dataStoreAccess:         testDatastore(),
-		enableIPv4:              true,
-		maxIPsPerENI:            10,
-		maxENI:                  4,
-		warmENITarget:           2,
-		isPrimarySubnetExcluded: true,
-		maxPods:                 100, // Set a realistic max pods limit
+		awsClient:       m.awsutils,
+		dataStoreAccess: testDatastore(),
+		enableIPv4:      true,
+		maxIPsPerENI:    10,
+		maxENI:          4,
+		warmENITarget:   2,
+		maxPods:         100, // Set a realistic max pods limit
 	}
 
 	// Add primary ENI (excluded) - no IPs should be allocated to it
@@ -2852,8 +2878,11 @@ func TestNodeInitPrimarySubnetExclusionWithExistingPodIPs(t *testing.T) {
 	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 	m.awsutils.EXPECT().RefreshCustomSGIDs(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 
-	// Mock that primary subnet is excluded
-	m.awsutils.EXPECT().IsPrimarySubnetExcluded(gomock.Any()).Return(true, nil)
+	// Mock expectations for unified ENI exclusion approach in setupENI
+	m.awsutils.EXPECT().GetENISubnetID(gomock.Any(), eni1.ENIID).AnyTimes().Return("subnet-1", nil)
+	m.awsutils.EXPECT().GetENISubnetID(gomock.Any(), eni2.ENIID).AnyTimes().Return("subnet-2", nil)
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-1").AnyTimes().Return(true, nil)  // Primary subnet excluded
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-2").AnyTimes().Return(false, nil) // Secondary subnet not excluded
 
 	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
 	resp := awsutils.DescribeAllENIsResult{
@@ -2901,7 +2930,6 @@ func TestNodeInitPrimarySubnetExclusionWithExistingPodIPs(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify that primary ENI exclusion is now always respected
-	assert.True(t, mockContext.isPrimarySubnetExcluded, "Primary subnet should remain excluded even with existing pod IPs")
 	isExcluded := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).IsENIExcludedForPodIPs(primaryENIid)
 	assert.True(t, isExcluded, "Primary ENI should remain excluded from pod IP allocation despite existing pod IPs")
 }
@@ -2990,8 +3018,11 @@ func TestNodeInitPrimarySubnetExclusionWithoutExistingPodIPs(t *testing.T) {
 	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 	m.awsutils.EXPECT().RefreshCustomSGIDs(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 
-	// Mock that primary subnet is excluded
-	m.awsutils.EXPECT().IsPrimarySubnetExcluded(gomock.Any()).Return(true, nil)
+	// Mock expectations for unified ENI exclusion approach in setupENI
+	m.awsutils.EXPECT().GetENISubnetID(gomock.Any(), eni1.ENIID).AnyTimes().Return("subnet-1", nil)
+	m.awsutils.EXPECT().GetENISubnetID(gomock.Any(), eni2.ENIID).AnyTimes().Return("subnet-2", nil)
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-1").AnyTimes().Return(true, nil)  // Primary subnet excluded
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-2").AnyTimes().Return(false, nil) // Secondary subnet not excluded
 
 	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
 	resp := awsutils.DescribeAllENIsResult{
@@ -3034,7 +3065,6 @@ func TestNodeInitPrimarySubnetExclusionWithoutExistingPodIPs(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify that primary ENI remains excluded due to no existing pod IPs
-	assert.True(t, mockContext.isPrimarySubnetExcluded, "Primary subnet should remain excluded with no existing pod IPs")
 	isExcluded := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).IsENIExcludedForPodIPs(primaryENIid)
 	assert.True(t, isExcluded, "Primary ENI should remain excluded from pod IP allocation with no existing pod IPs")
 }
@@ -3049,18 +3079,14 @@ func TestPrimaryENIWasPreviouslyUsed(t *testing.T) {
 	}
 
 	// Test when primary ENI has no allocated CIDRs
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	wasUsed := mockContext.primaryENIWasPreviouslyUsed()
-	assert.False(t, wasUsed, "Primary ENI should not be considered previously used when datastore is empty")
+	// primaryENIWasPreviouslyUsed function was removed in unified approach
 
 	// Add primary ENI to datastore
 	err := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false)
 	assert.NoError(t, err)
 
 	// Test when primary ENI exists but has no allocated CIDRs
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	wasUsed = mockContext.primaryENIWasPreviouslyUsed()
-	assert.False(t, wasUsed, "Primary ENI should not be considered previously used when it has no allocated CIDRs")
+	// primaryENIWasPreviouslyUsed function was removed in unified approach
 
 	// Add IP CIDR to primary ENI (but don't assign to pod yet)
 	// This simulates launch template IPs or IPs that were freed from pods
@@ -3070,9 +3096,7 @@ func TestPrimaryENIWasPreviouslyUsed(t *testing.T) {
 
 	// Test when primary ENI has unassigned CIDRs (should NOT be considered previously used)
 	// This handles launch template IPs that were never assigned to pods
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	wasUsed = mockContext.primaryENIWasPreviouslyUsed()
-	assert.False(t, wasUsed, "Primary ENI should NOT be considered previously used when it has only unassigned CIDRs")
+	// primaryENIWasPreviouslyUsed function was removed in unified approach
 
 	// Assign IP to a pod to verify it works when pods are actually present
 	_, _, err = mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AssignPodIPv4Address(
@@ -3082,9 +3106,7 @@ func TestPrimaryENIWasPreviouslyUsed(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Test when primary ENI has IPs assigned to pods
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	wasUsed = mockContext.primaryENIWasPreviouslyUsed()
-	assert.True(t, wasUsed, "Primary ENI should be considered previously used when it has IPs assigned to pods")
+	// primaryENIWasPreviouslyUsed function was removed in unified approach
 }
 
 func TestPrimaryENIWasPreviouslyUsedIPv6(t *testing.T) {
@@ -3098,18 +3120,14 @@ func TestPrimaryENIWasPreviouslyUsedIPv6(t *testing.T) {
 	}
 
 	// Test when primary ENI has no allocated CIDRs
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	wasUsed := mockContext.primaryENIWasPreviouslyUsed()
-	assert.False(t, wasUsed, "Primary ENI should not be considered previously used when datastore is empty")
+	// primaryENIWasPreviouslyUsed function was removed in unified approach
 
 	// Add primary ENI to datastore
 	err := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false)
 	assert.NoError(t, err)
 
 	// Test when primary ENI exists but has no allocated CIDRs
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	wasUsed = mockContext.primaryENIWasPreviouslyUsed()
-	assert.False(t, wasUsed, "Primary ENI should not be considered previously used when it has no allocated CIDRs")
+	// primaryENIWasPreviouslyUsed function was removed in unified approach
 
 	// Add IPv6 CIDR to primary ENI (but don't assign to pod yet)
 	ipv6Addr := net.IPNet{IP: net.ParseIP("2001:db8::1"), Mask: net.CIDRMask(128, 128)}
@@ -3117,9 +3135,9 @@ func TestPrimaryENIWasPreviouslyUsedIPv6(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Test when primary ENI has unassigned CIDRs (should NOT be considered previously used)
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	wasUsed = mockContext.primaryENIWasPreviouslyUsed()
-	assert.False(t, wasUsed, "Primary ENI should NOT be considered previously used when it has only unassigned IPv6 CIDRs")
+	// m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid) // removed - not called anymore
+	// wasUsed = mockContext.primaryENIWasPreviouslyUsed() // removed
+	// assert.False(t, wasUsed, // removed - "Primary ENI should NOT be considered previously used when it has only unassigned IPv6 CIDRs")
 
 	// Assign IPv6 to a pod to verify it works when pods are actually present
 	_, _, err = mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AssignPodIPv6Address(
@@ -3129,9 +3147,9 @@ func TestPrimaryENIWasPreviouslyUsedIPv6(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Test when primary ENI has IPv6 addresses assigned to pods
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	wasUsed = mockContext.primaryENIWasPreviouslyUsed()
-	assert.True(t, wasUsed, "Primary ENI should be considered previously used when it has IPv6 addresses assigned to pods")
+	// m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid) // removed - not called anymore
+	// wasUsed = mockContext.primaryENIWasPreviouslyUsed() // removed
+	// assert.True(t, wasUsed, // removed - "Primary ENI should be considered previously used when it has IPv6 addresses assigned to pods")
 }
 
 func TestPrimaryENICleanupIPv4SecondaryIP(t *testing.T) {
@@ -3161,9 +3179,9 @@ func TestPrimaryENICleanupIPv4SecondaryIP(t *testing.T) {
 	assert.Equal(t, 0, len(prefixes), "Should have 0 prefixes before cleanup")
 
 	// Test that primary ENI is not considered previously used (has only unassigned IPs)
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	wasUsed := mockContext.primaryENIWasPreviouslyUsed()
-	assert.False(t, wasUsed, "Primary ENI should NOT be previously used with only unassigned IPs")
+	// m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid) // removed - not called anymore
+	// wasUsed := mockContext.primaryENIWasPreviouslyUsed() // removed
+	// assert.False(t, wasUsed, // removed - "Primary ENI should NOT be previously used with only unassigned IPs")
 
 	// Mock the DeallocIPAddresses call that cleanup will make
 	expectedIPs := []string{ipaddr02}
@@ -3171,7 +3189,7 @@ func TestPrimaryENICleanupIPv4SecondaryIP(t *testing.T) {
 
 	// Call cleanup function
 	ctx := context.Background()
-	mockContext.cleanupExcludedPrimaryENI(ctx, primaryENIid)
+	mockContext.cleanupExcludedENI(ctx, primaryENIid)
 
 	// Verify the IP was removed from datastore after cleanup
 	ipsAfter, prefixesAfter, err := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).GetENICIDRs(primaryENIid)
@@ -3206,9 +3224,9 @@ func TestPrimaryENICleanupIPv4Prefixes(t *testing.T) {
 	assert.Equal(t, 1, len(freeablePrefixes), "Should have 1 freeable IPv4 prefix before cleanup")
 
 	// Test that primary ENI is not considered previously used (has only unassigned prefixes)
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	wasUsed := mockContext.primaryENIWasPreviouslyUsed()
-	assert.False(t, wasUsed, "Primary ENI should NOT be previously used with only unassigned prefixes")
+	// m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid) // removed - not called anymore
+	// wasUsed := mockContext.primaryENIWasPreviouslyUsed() // removed
+	// assert.False(t, wasUsed, // removed - "Primary ENI should NOT be previously used with only unassigned prefixes")
 
 	// Mock the DeallocPrefixAddresses call that cleanup will make
 	expectedPrefixes := []string{"10.0.0.0/28"}
@@ -3216,7 +3234,7 @@ func TestPrimaryENICleanupIPv4Prefixes(t *testing.T) {
 
 	// Call cleanup function
 	ctx := context.Background()
-	mockContext.cleanupExcludedPrimaryENI(ctx, primaryENIid)
+	mockContext.cleanupExcludedENI(ctx, primaryENIid)
 
 	// Verify the prefix was removed from datastore after cleanup
 	freeablePrefixesAfter := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).FreeablePrefixes(primaryENIid)
@@ -3248,9 +3266,9 @@ func TestPrimaryENICleanupIPv6Prefixes(t *testing.T) {
 	assert.Equal(t, 1, len(freeablePrefixes), "Should have 1 freeable IPv6 prefix before cleanup")
 
 	// Test that primary ENI is not considered previously used (has only unassigned IPv6 prefixes)
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	wasUsed := mockContext.primaryENIWasPreviouslyUsed()
-	assert.False(t, wasUsed, "Primary ENI should NOT be previously used with only unassigned IPv6 prefixes")
+	// m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid) // removed - not called anymore
+	// wasUsed := mockContext.primaryENIWasPreviouslyUsed() // removed
+	// assert.False(t, wasUsed, // removed - "Primary ENI should NOT be previously used with only unassigned IPv6 prefixes")
 
 	// Mock the DeallocPrefixAddresses call that cleanup will make (IPv6 prefixes use the same function)
 	expectedPrefixes := []string{"2001:db8:1234:5678::/80"}
@@ -3258,7 +3276,7 @@ func TestPrimaryENICleanupIPv6Prefixes(t *testing.T) {
 
 	// Call cleanup function
 	ctx := context.Background()
-	mockContext.cleanupExcludedPrimaryENI(ctx, primaryENIid)
+	mockContext.cleanupExcludedENI(ctx, primaryENIid)
 
 	// Verify the prefix was removed from datastore after cleanup
 	freeablePrefixesAfter := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).FreeablePrefixes(primaryENIid)
@@ -3296,9 +3314,9 @@ func TestPrimaryENICleanupMixedMode(t *testing.T) {
 	assert.Equal(t, 2, len(freeablePrefixes), "Should have 2 freeable prefixes (1 IPv4 + 1 IPv6) before cleanup")
 
 	// Test that primary ENI is not considered previously used
-	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	wasUsed := mockContext.primaryENIWasPreviouslyUsed()
-	assert.False(t, wasUsed, "Primary ENI should NOT be previously used with only unassigned prefixes")
+	// m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid) // removed - not called anymore
+	// wasUsed := mockContext.primaryENIWasPreviouslyUsed() // removed
+	// assert.False(t, wasUsed, // removed - "Primary ENI should NOT be previously used with only unassigned prefixes")
 
 	// Mock the DeallocPrefixAddresses call that cleanup will make
 	// tryUnassignPrefixFromENI will be called twice (IPv4 and IPv6), but the first call
@@ -3308,7 +3326,7 @@ func TestPrimaryENICleanupMixedMode(t *testing.T) {
 
 	// Call cleanup function
 	ctx := context.Background()
-	mockContext.cleanupExcludedPrimaryENI(ctx, primaryENIid)
+	mockContext.cleanupExcludedENI(ctx, primaryENIid)
 
 	// Verify both prefixes were removed from datastore after cleanup
 	freeablePrefixesAfter := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).FreeablePrefixes(primaryENIid)

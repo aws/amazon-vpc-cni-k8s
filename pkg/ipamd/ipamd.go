@@ -250,7 +250,6 @@ type IPAMContext struct {
 	networkPolicyMode         string
 	enableMultiNICSupport     bool
 	withApiServer             bool
-	isPrimarySubnetExcluded   bool // tracks if primary subnet is excluded for pod IPs
 }
 
 type kubeletConfig struct {
@@ -453,72 +452,11 @@ func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 	return c, nil
 }
 
-// primaryENIWasPreviouslyUsed checks if the primary ENI has any assigned pod IPs
-// This is used to determine if we should re-include an excluded primary ENI for backward compatibility
-func (c *IPAMContext) primaryENIWasPreviouslyUsed() bool {
-	primaryENI := c.awsClient.GetPrimaryENI()
-	eniInfos := c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetENIInfos()
-
-	if primaryENIInfo, exists := eniInfos.ENIs[primaryENI]; exists {
-		// Check if CNI has any IPs currently assigned to pods
-		var assignedIPs int
-		var ipType string
-		if c.enableIPv6 {
-			assignedIPs = primaryENIInfo.AssignedIPv6Addresses()
-			ipType = "IPv6"
-		} else {
-			assignedIPs = primaryENIInfo.AssignedIPv4Addresses()
-			ipType = "IPv4"
-		}
-
-		if assignedIPs > 0 {
-			log.Infof("Primary ENI %s has %d assigned %s addresses, re-including for backward compatibility despite subnet exclusion",
-				primaryENI, assignedIPs, ipType)
-			return true
-		} else {
-			log.Infof("Primary ENI %s has no assigned %s addresses, respecting primary subnet exclusion tag", primaryENI, ipType)
-
-			// Check if there are unassigned secondary IPs and log for customer awareness
-			var totalSecondaryIPs int
-			if c.enableIPv6 {
-				totalSecondaryIPs = len(primaryENIInfo.IPv6Cidrs)
-			} else {
-				totalSecondaryIPs = len(primaryENIInfo.AvailableIPv4Cidrs)
-			}
-			if totalSecondaryIPs > 0 {
-				log.Warnf("Primary ENI %s will be excluded from pod IP allocation but has %d unassigned secondary %s IPs. "+
-					"These IPs will remain allocated but unavailable for new pods. "+
-					"Consider deallocating them manually if not needed.", primaryENI, totalSecondaryIPs, ipType)
-			}
-
-			return false
-		}
-	}
-
-	log.Debugf("Primary ENI %s not found in datastore", primaryENI)
-	return false
-}
-
 func (c *IPAMContext) nodeInit() error {
 	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
 	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
 	ctx := context.TODO()
 	log.Debugf("Start node init")
-
-	// Check if primary subnet is excluded
-	if c.useSubnetDiscovery {
-		excluded, err := c.awsClient.IsPrimarySubnetExcluded(ctx)
-		if err != nil {
-			log.Warnf("Failed to check if primary subnet is excluded: %v", err)
-			// Continue with default behavior (not excluded)
-			c.isPrimarySubnetExcluded = false
-		} else {
-			c.isPrimarySubnetExcluded = excluded
-			if excluded {
-				log.Infof("Primary subnet is excluded from pod IP allocation")
-			}
-		}
-	}
 
 	if err := c.initENIAndIPLimits(); err != nil {
 		return err
@@ -601,17 +539,8 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
-	// Handle primary ENI exclusion - always respect exclusion tags
-	if c.isPrimarySubnetExcluded {
-		primaryENI := c.awsClient.GetPrimaryENI()
-		if c.primaryENIWasPreviouslyUsed() {
-			log.Infof("Primary ENI %s is excluded from pod IP allocation but has existing pod IPs, will cleanup resources as pods terminate", primaryENI)
-		} else {
-			log.Infof("Primary ENI %s is excluded from pod IP allocation, cleaning up unassigned resources", primaryENI)
-		}
-		// Always cleanup free resources on excluded primary ENI
-		c.cleanupExcludedPrimaryENI(ctx, primaryENI)
-	}
+	// Check all ENIs (primary and secondary) for subnet exclusion
+	c.checkAndHandleAllENIExclusion(ctx)
 
 	if c.enableIPv4 {
 		if c.enablePrefixDelegation {
@@ -1331,12 +1260,27 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
 
-	// Mark primary ENI as excluded if primary subnet is excluded
-	if eni == primaryENI && c.isPrimarySubnetExcluded {
-		log.Infof("Marking primary ENI %s as excluded from pod IP allocation", eni)
-		err := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).SetENIExcludedForPodIPs(eni, true)
+	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion
+	if c.useSubnetDiscovery {
+		subnetID, err := c.awsClient.GetENISubnetID(ctx, eni)
 		if err != nil {
-			log.Warnf("Failed to mark primary ENI as excluded: %v", err)
+			log.Warnf("setupENI: failed to get subnet ID for ENI %s: %v", eni, err)
+		} else {
+			excluded, err := c.awsClient.IsSubnetExcluded(ctx, subnetID)
+			if err != nil {
+				log.Warnf("setupENI: failed to check subnet exclusion for ENI %s (subnet %s): %v", eni, subnetID, err)
+			} else if excluded {
+				primaryENI := c.awsClient.GetPrimaryENI()
+				eniType := "secondary"
+				if eni == primaryENI {
+					eniType = "primary"
+				}
+				log.Infof("Marking %s ENI %s as excluded from pod IP allocation (in excluded subnet %s)", eniType, eni, subnetID)
+				err := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).SetENIExcludedForPodIPs(eni, true)
+				if err != nil {
+					log.Warnf("Failed to mark %s ENI %s as excluded: %v", eniType, eni, err)
+				}
+			}
 		}
 	}
 
@@ -2535,30 +2479,60 @@ func (c *IPAMContext) tryUnassignPrefixFromENI(ctx context.Context, eniID string
 	}
 }
 
-// cleanupExcludedPrimaryENI cleans up unassigned secondary IPs and prefixes from primary ENI when it's excluded
-func (c *IPAMContext) cleanupExcludedPrimaryENI(ctx context.Context, primaryENI string) {
-	log.Debugf("cleanupExcludedPrimaryENI: cleaning up resources from excluded primary ENI %s", primaryENI)
+// cleanupExcludedENI cleans up unassigned secondary IPs and prefixes from excluded ENI
+func (c *IPAMContext) cleanupExcludedENI(ctx context.Context, eniID string) {
+	log.Debugf("cleanupExcludedENI: cleaning up resources from excluded ENI %s", eniID)
 
 	// Clean up based on the current IP mode
 	if c.enableIPv4 {
 		if c.enablePrefixDelegation {
 			// In prefix delegation mode, cleanup unassigned IPv4 prefixes
-			log.Debugf("Cleaning up unassigned IPv4 prefixes from excluded primary ENI %s", primaryENI)
-			c.tryUnassignPrefixFromENI(ctx, primaryENI, DefaultNetworkCardIndex)
+			log.Debugf("Cleaning up unassigned IPv4 prefixes from excluded ENI %s", eniID)
+			c.tryUnassignPrefixFromENI(ctx, eniID, DefaultNetworkCardIndex)
 		} else {
 			// In secondary IP mode, cleanup unassigned IPv4 secondary IPs
-			log.Debugf("Cleaning up unassigned IPv4 secondary IPs from excluded primary ENI %s", primaryENI)
-			c.tryUnassignIPFromENI(ctx, primaryENI, DefaultNetworkCardIndex)
+			log.Debugf("Cleaning up unassigned IPv4 secondary IPs from excluded ENI %s", eniID)
+			c.tryUnassignIPFromENI(ctx, eniID, DefaultNetworkCardIndex)
 		}
 	}
 
 	// Clean up IPv6 prefixes if IPv6 is enabled (IPv6 only uses prefix delegation)
 	if c.enableIPv6 {
-		log.Debugf("Cleaning up unassigned IPv6 prefixes from excluded primary ENI %s", primaryENI)
-		c.tryUnassignPrefixFromENI(ctx, primaryENI, DefaultNetworkCardIndex)
+		log.Debugf("Cleaning up unassigned IPv6 prefixes from excluded ENI %s", eniID)
+		c.tryUnassignPrefixFromENI(ctx, eniID, DefaultNetworkCardIndex)
 	}
 
-	log.Infof("Completed cleanup of unassigned resources from excluded primary ENI %s", primaryENI)
+	log.Infof("Completed cleanup of unassigned resources from excluded ENI %s", eniID)
+}
+
+// checkAndHandleAllENIExclusion checks all existing ENIs (primary and secondary) across all network cards for subnet exclusion
+func (c *IPAMContext) checkAndHandleAllENIExclusion(ctx context.Context) {
+	log.Debugf("checkAndHandleAllENIExclusion: checking all existing ENIs for subnet exclusion")
+
+	// Iterate over all datastores (one per network card)
+	for _, ds := range c.dataStoreAccess.DataStores {
+		// Get ENI information using the public method
+		eniInfos := ds.GetENIInfos()
+		for eniID, eni := range eniInfos.ENIs {
+
+			// Only process ENIs that are already marked as excluded
+			if !eni.IsExcludedForPodIPs {
+				continue
+			}
+
+			eniType := "secondary"
+			if eni.IsPrimary {
+				eniType = "primary"
+			}
+
+			log.Infof("checkAndHandleAllENIExclusion: cleaning up unassigned resources from excluded %s ENI %s", eniType, eniID)
+
+			// Clean up unassigned resources from this excluded ENI
+			c.cleanupExcludedENI(ctx, eniID)
+		}
+	}
+
+	log.Debugf("checkAndHandleAllENIExclusion: completed ENI exclusion check")
 }
 
 func (c *IPAMContext) GetENIResourcesToAllocate(networkCard int) int {
@@ -2607,11 +2581,16 @@ func (c *IPAMContext) hasRoomForEni(networkCard int) bool {
 	if c.enablePodENI && networkCard == DefaultNetworkCardIndex && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
 		trunkEni = 1
 	}
-	// If primary subnet is excluded, we need to account for one less usable ENI in our calculations
+	// Count excluded ENIs to account for them in our calculations
 	excludedENI := 0
-	if c.isPrimarySubnetExcluded && networkCard == DefaultNetworkCardIndex {
-		excludedENI = 1
-		log.Debugf("Accounting for excluded primary ENI in hasRoomForEni calculation for network card %d", networkCard)
+	eniInfos := c.dataStoreAccess.GetDataStore(networkCard).GetENIInfos()
+	for _, eni := range eniInfos.ENIs {
+		if eni.IsExcludedForPodIPs {
+			excludedENI++
+		}
+	}
+	if excludedENI > 0 {
+		log.Debugf("Accounting for %d excluded ENIs in hasRoomForEni calculation for network card %d", excludedENI, networkCard)
 	}
 
 	currentENIs := c.dataStoreAccess.GetDataStore(networkCard).GetENIs()
