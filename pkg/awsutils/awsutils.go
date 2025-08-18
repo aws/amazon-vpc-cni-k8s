@@ -230,8 +230,14 @@ type APIs interface {
 
 	IsTrunkingCompatible() bool
 
-	// IsPrimarySubnetExcluded returns if the primary subnet is excluded for pod IPs
-	IsPrimarySubnetExcluded(ctx context.Context) (bool, error)
+	// GetENISubnetID gets the subnet ID for an ENI from AWS
+	GetENISubnetID(ctx context.Context, eniID string) (string, error)
+
+	// GetVpcSubnets returns all subnets in the VPC
+	GetVpcSubnets(ctx context.Context) ([]ec2types.Subnet, error)
+
+	// IsSubnetExcluded returns if a subnet is excluded for pod IPs based on its tags
+	IsSubnetExcluded(ctx context.Context, subnetID string) (bool, error)
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -567,8 +573,8 @@ func (cache *EC2InstanceMetadataCache) discoverCustomSecurityGroups(ctx context.
 	return sgIDs, nil
 }
 
-// getENISubnetID gets the subnet ID for an ENI from AWS
-func (cache *EC2InstanceMetadataCache) getENISubnetID(ctx context.Context, eniID string) (string, error) {
+// GetENISubnetID gets the subnet ID for an ENI from AWS
+func (cache *EC2InstanceMetadataCache) GetENISubnetID(ctx context.Context, eniID string) (string, error) {
 	describeInput := &ec2.DescribeNetworkInterfacesInput{
 		NetworkInterfaceIds: []string{eniID},
 	}
@@ -587,7 +593,7 @@ func (cache *EC2InstanceMetadataCache) getENISubnetID(ctx context.Context, eniID
 
 // Helper function to check if an ENI is in a secondary subnet
 func (cache *EC2InstanceMetadataCache) isENIInSecondarySubnet(ctx context.Context, eniID string) bool {
-	eniSubnetID, err := cache.getENISubnetID(ctx, eniID)
+	eniSubnetID, err := cache.GetENISubnetID(ctx, eniID)
 	return err == nil && eniSubnetID != cache.subnetID
 }
 
@@ -1193,13 +1199,13 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 		}
 	} else {
 		if cache.useSubnetDiscovery {
-			subnetResult, vpcErr := cache.getVpcSubnets(ctx)
+			subnetResult, vpcErr := cache.GetVpcSubnets(ctx)
 			if vpcErr != nil {
 				log.Warnf("Failed to call ec2:DescribeSubnets: %v", vpcErr)
 				log.Info("Defaulting to same subnet as the primary interface for the new ENI")
 
 				// Even in fallback, check if primary subnet is excluded
-				excluded, checkErr := cache.IsPrimarySubnetExcluded(ctx)
+				excluded, checkErr := cache.IsSubnetExcluded(ctx, cache.subnetID)
 				if checkErr != nil {
 					log.Warnf("Failed to check if primary subnet is excluded: %v. Proceeding with ENI creation attempt.", checkErr)
 				} else if excluded {
@@ -1250,7 +1256,7 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 		} else {
 			log.Info("Using same security group config as the primary interface for the new ENI")
 			// When subnet discovery is disabled, check if primary subnet is excluded
-			excluded, checkErr := cache.IsPrimarySubnetExcluded(ctx)
+			excluded, checkErr := cache.IsSubnetExcluded(ctx, cache.subnetID)
 			if checkErr != nil {
 				// If we can't determine exclusion status, log warning and proceed
 				log.Warnf("Failed to check if primary subnet is excluded: %v. Proceeding with ENI creation attempt.", checkErr)
@@ -1268,7 +1274,7 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 	return "", errors.Wrap(err, "failed to create network interface")
 }
 
-func (cache *EC2InstanceMetadataCache) getVpcSubnets(ctx context.Context) ([]ec2types.Subnet, error) {
+func (cache *EC2InstanceMetadataCache) GetVpcSubnets(ctx context.Context) ([]ec2types.Subnet, error) {
 	describeSubnetInput := &ec2.DescribeSubnetsInput{
 		Filters: []ec2types.Filter{
 			{
@@ -2603,31 +2609,34 @@ func checkAPIErrorAndBroadcastEvent(err error, api string) {
 	}
 }
 
-// isPrimarySubnetExcluded checks if the primary subnet has the kubernetes.io/role/cni=0 tag
-func (cache *EC2InstanceMetadataCache) IsPrimarySubnetExcluded(ctx context.Context) (bool, error) {
-	// Get the primary subnet information
-	describeSubnetInput := &ec2.DescribeSubnetsInput{
-		SubnetIds: []string{cache.subnetID},
-	}
-
-	start := time.Now()
-	subnetResult, err := cache.ec2SVC.DescribeSubnets(ctx, describeSubnetInput)
-	prometheusmetrics.Ec2ApiReq.WithLabelValues("DescribeSubnets").Inc()
-	prometheusmetrics.AwsAPILatency.WithLabelValues("DescribeSubnets", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
+// IsSubnetExcluded checks if a subnet is excluded by examining its kubernetes.io/role/cni tag
+func (cache *EC2InstanceMetadataCache) IsSubnetExcluded(ctx context.Context, subnetID string) (bool, error) {
+	// Get all VPC subnets with their tags
+	subnets, err := cache.GetVpcSubnets(ctx)
 	if err != nil {
-		checkAPIErrorAndBroadcastEvent(err, "ec2:DescribeSubnets")
-		awsAPIErrInc("DescribeSubnets", err)
-		prometheusmetrics.Ec2ApiErr.WithLabelValues("DescribeSubnets").Inc()
-		log.Errorf("Failed to describe primary subnet %s: %v", cache.subnetID, err)
-		return false, fmt.Errorf("isPrimarySubnetExcluded: unable to describe primary subnet: %v", err)
+		return false, fmt.Errorf("failed to get VPC subnets: %v", err)
 	}
 
-	if len(subnetResult.Subnets) == 0 {
-		log.Errorf("Primary subnet %s not found in DescribeSubnets response", cache.subnetID)
-		return false, fmt.Errorf("isPrimarySubnetExcluded: primary subnet not found")
+	// Find the specific subnet and check its tags
+	for _, subnet := range subnets {
+		if *subnet.SubnetId == subnetID {
+			// Check if the subnet has the exclusion tag kubernetes.io/role/cni=0
+			for _, tag := range subnet.Tags {
+				if *tag.Key == "kubernetes.io/role/cni" {
+					tagValue := *tag.Value
+					excluded := tagValue == "0"
+					log.Debugf("IsSubnetExcluded: subnet %s has tag kubernetes.io/role/cni=%s, excluded=%t", subnetID, tagValue, excluded)
+					return excluded, nil
+				}
+			}
+
+			// If no kubernetes.io/role/cni tag found, subnet is not explicitly excluded
+			log.Debugf("IsSubnetExcluded: subnet %s has no kubernetes.io/role/cni tag, not excluded", subnetID)
+			return false, nil
+		}
 	}
 
-	subnet := subnetResult.Subnets[0]
-	// Check if the subnet has the exclusion tag
-	return !validTag(subnet, true), nil
+	// Subnet not found in VPC
+	log.Warnf("IsSubnetExcluded: subnet %s not found in VPC", subnetID)
+	return false, fmt.Errorf("subnet %s not found in VPC", subnetID)
 }

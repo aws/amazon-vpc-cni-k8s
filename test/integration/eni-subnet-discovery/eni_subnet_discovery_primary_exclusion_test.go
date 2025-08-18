@@ -36,12 +36,12 @@ import (
 const (
 	primaryExclusionPodLabelKey = "test-type"
 	primaryExclusionPodLabelVal = "primary-eni-exclusion"
-	awsNodeLabelKey            = "k8s-app"
+	awsNodeLabelKey             = "k8s-app"
 )
 
 // ENI introspection data structures
 type ENIInfo struct {
-	ID                   string `json:"id"`
+	ID                  string `json:"id"`
 	IsPrimary           bool   `json:"isPrimary"`
 	IsExcludedForPodIPs bool   `json:"isExcludedForPodIPs"`
 	DeviceNumber        int    `json:"deviceNumber"`
@@ -53,10 +53,10 @@ type IntrospectResponse struct {
 
 var _ = Describe("Primary ENI Exclusion Tests", func() {
 	var (
-		initialDeployment *v1.Deployment
-		primaryENIID      string
-		primarySubnetID   string
-		primarySubnetCIDR *net.IPNet
+		initialDeployment   *v1.Deployment
+		primaryENIID        string
+		primarySubnetID     string
+		primarySubnetCIDR   *net.IPNet
 		secondarySubnetCIDR *net.IPNet
 	)
 
