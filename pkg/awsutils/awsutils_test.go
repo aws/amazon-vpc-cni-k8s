@@ -2622,7 +2622,7 @@ func TestValidTag(t *testing.T) {
 	}
 }
 
-func TestIsPrimarySubnetExcluded(t *testing.T) {
+func TestIsSubnetExcluded(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
@@ -2634,7 +2634,7 @@ func TestIsPrimarySubnetExcluded(t *testing.T) {
 		wantErr       bool
 	}{
 		{
-			name: "primary subnet with tag value 0 - excluded",
+			name: "subnet with tag value 0 - excluded",
 			subnetTags: []ec2types.Tag{
 				{
 					Key:   aws.String("kubernetes.io/role/cni"),
@@ -2645,7 +2645,7 @@ func TestIsPrimarySubnetExcluded(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "primary subnet with tag value 1 - not excluded",
+			name: "subnet with tag value 1 - not excluded",
 			subnetTags: []ec2types.Tag{
 				{
 					Key:   aws.String("kubernetes.io/role/cni"),
@@ -2656,7 +2656,7 @@ func TestIsPrimarySubnetExcluded(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "primary subnet without tag - not excluded",
+			name: "subnet without tag - not excluded",
 			subnetTags: []ec2types.Tag{
 				{
 					Key:   aws.String("other-tag"),
@@ -2667,7 +2667,7 @@ func TestIsPrimarySubnetExcluded(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:          "DescribeSubnets API error",
+			name:          "GetVpcSubnets API error",
 			describeError: errors.New("API error"),
 			want:          false,
 			wantErr:       true,
@@ -2682,26 +2682,30 @@ func TestIsPrimarySubnetExcluded(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{
+				ec2SVC:           mockEC2,
+				vpcID:            "vpc-12345",
+				availabilityZone: "us-west-2a",
+			}
+
 			if tt.describeError != nil {
+				// Mock DescribeSubnets to return error
 				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(nil, tt.describeError)
 			} else {
-				result := &ec2.DescribeSubnetsOutput{
+				// Mock DescribeSubnets for GetVpcSubnets
+				subnetResult := &ec2.DescribeSubnetsOutput{
 					Subnets: []ec2types.Subnet{
 						{
 							SubnetId: aws.String(subnetID),
 							Tags:     tt.subnetTags,
+							VpcId:    aws.String("vpc-12345"),
 						},
 					},
 				}
-				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(result, nil)
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(subnetResult, nil)
 			}
 
-			cache := &EC2InstanceMetadataCache{
-				ec2SVC:   mockEC2,
-				subnetID: subnetID,
-			}
-
-			got, err := cache.IsPrimarySubnetExcluded(context.Background())
+			got, err := cache.IsSubnetExcluded(context.Background(), subnetID)
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -3179,7 +3183,7 @@ func TestDiscoverCustomSecurityGroups(t *testing.T) {
 	}
 }
 
-// TestGetENISubnetID tests the getENISubnetID helper method
+// TestGetENISubnetID tests the GetENISubnetID helper method
 func TestGetENISubnetID(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
@@ -3243,7 +3247,7 @@ func TestGetENISubnetID(t *testing.T) {
 				gomock.Any(),
 			).Return(tt.describeOutput, tt.describeError)
 
-			subnetID, err := cache.getENISubnetID(context.Background(), tt.eniID)
+			subnetID, err := cache.GetENISubnetID(context.Background(), tt.eniID)
 
 			if tt.expectError {
 				assert.Error(t, err)
