@@ -35,6 +35,7 @@ import (
 
 type PodManager interface {
 	PodExec(namespace string, name string, command []string) (string, string, error)
+	PodExecWithContainer(namespace string, name string, container string, command []string) (string, string, error)
 	PodLogs(namespace string, name string) (string, error)
 	GetPodsWithLabelSelector(labelKey string, labelVal string) (v1.PodList, error)
 	GetPodsWithLabelSelectorMap(labels map[string]string) (v1.PodList, error)
@@ -180,6 +181,34 @@ func (d *defaultPodManager) PodExec(namespace string, name string, command []str
 		Stdout:  true,
 		Stderr:  true,
 		Command: command,
+	}
+
+	req := d.k8sClientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(name).
+		Namespace(namespace).
+		SubResource("exec").
+		VersionedParams(execOptions, runtime.NewParameterCodec(d.k8sSchema))
+
+	exec, err := remotecommand.NewSPDYExecutor(d.config, http.MethodPost, req.URL())
+	if err != nil {
+		return "", "", err
+	}
+
+	var stdout, stderr bytes.Buffer
+	err = exec.Stream(remotecommand.StreamOptions{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+	return stdout.String(), stderr.String(), err
+}
+
+func (d *defaultPodManager) PodExecWithContainer(namespace string, name string, container string, command []string) (string, string, error) {
+	execOptions := &v1.PodExecOptions{
+		Container: container,
+		Stdout:    true,
+		Stderr:    true,
+		Command:   command,
 	}
 
 	req := d.k8sClientset.CoreV1().RESTClient().Post().
