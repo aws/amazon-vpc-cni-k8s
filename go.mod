@@ -1,6 +1,6 @@
 module github.com/aws/amazon-vpc-cni-k8s
 
-go 1.24.4
+go 1.24.6
 
 require (
 	github.com/apparentlymart/go-cidr v1.1.0

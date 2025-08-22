@@ -79,7 +79,6 @@ export GO111MODULE = on
 export GOPROXY = direct
 
 export GOSUMDB = sum.golang.org
-export GOTOOLCHAIN = go$(GOLANG_VERSION)
 
 VENDOR_OVERRIDE_FLAG =
 # aws-sdk-go override in case we need to build against a custom version
