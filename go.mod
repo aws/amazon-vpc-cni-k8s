@@ -16,7 +16,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/eks v1.67.1
 	github.com/aws/aws-sdk-go-v2/service/iam v1.44.1
 	github.com/aws/smithy-go v1.22.5
-	github.com/containernetworking/cni v1.2.3
+	github.com/containernetworking/cni v1.3.0
 	github.com/containernetworking/plugins v1.5.1
 	github.com/coreos/go-iptables v0.8.0
 	github.com/go-logr/logr v1.4.2
