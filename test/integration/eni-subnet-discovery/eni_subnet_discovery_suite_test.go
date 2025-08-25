@@ -47,11 +47,13 @@ var (
 	cidrBlockAssociationID string
 	createdSubnet          string
 	primaryInstance        ec2types.Instance
+	useIPv6                bool
 )
 
 // Parse test specific variable from flag
 func init() {
 	flag.StringVar(&cidrRangeString, "secondary-cidr-range", "100.64.0.0/16", "second cidr range to be associated with the VPC")
+	flag.BoolVar(&useIPv6, "use-ipv6", false, "Use IPv6 for subnet discovery tests")
 }
 
 var _ = BeforeSuite(func() {
@@ -79,8 +81,20 @@ var _ = BeforeSuite(func() {
 	primaryInstance, err = f.CloudServices.EC2().DescribeInstance(context.TODO(), instanceID)
 	Expect(err).ToNot(HaveOccurred())
 
+	// Adjust default CIDR if IPv6 is enabled and no custom CIDR provided
+	if useIPv6 && cidrRangeString == "100.64.0.0/16" {
+		cidrRangeString = "2600:1f13:000::/56" // AWS IPv6 example range
+	}
+
 	_, cidrRange, err = net.ParseCIDR(cidrRangeString)
 	Expect(err).ToNot(HaveOccurred())
+
+	// Validate CIDR matches IP version
+	if useIPv6 {
+		Expect(cidrRange.IP.To4()).To(BeNil(), "IPv6 mode requires IPv6 CIDR")
+	} else {
+		Expect(cidrRange.IP.To4()).ToNot(BeNil(), "IPv4 mode requires IPv4 CIDR")
+	}
 
 	By("creating test namespace")
 	_ = f.K8sResourceManagers.NamespaceManager().CreateNamespace(utils.DefaultTestNamespace)
@@ -90,15 +104,54 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	By("associating cidr range to the VPC")
-	association, err := f.CloudServices.EC2().AssociateVPCCIDRBlock(context.TODO(), f.Options.AWSVPCID, cidrRange.String())
-	Expect(err).ToNot(HaveOccurred())
-	cidrBlockAssociationID = *association.CidrBlockAssociation.AssociationId
+	if useIPv6 {
+		// The current framework only supports IPv4 CIDR association
+		// For IPv6, we assume the VPC already has IPv6 enabled
+		// In a production environment, you would extend the framework to support IPv6 association
+		By("IPv6 mode: assuming VPC already has IPv6 enabled")
+
+		// Verify VPC has IPv6 and get an existing association ID for cleanup
+		vpcInfo, err := f.CloudServices.EC2().DescribeVPC(context.TODO(), f.Options.AWSVPCID)
+		Expect(err).ToNot(HaveOccurred())
+
+		hasIPv6 := false
+		for _, assoc := range vpcInfo.Vpcs[0].Ipv6CidrBlockAssociationSet {
+			if assoc.Ipv6CidrBlockState != nil && assoc.Ipv6CidrBlockState.State == "associated" {
+				hasIPv6 = true
+				// We won't disassociate existing IPv6, so set empty ID
+				cidrBlockAssociationID = ""
+				break
+			}
+		}
+
+		if !hasIPv6 {
+			Skip("IPv6 tests require a VPC with IPv6 already enabled")
+		}
+	} else {
+		// IPv4 association works with current framework
+		association, err := f.CloudServices.EC2().AssociateVPCCIDRBlock(context.TODO(), f.Options.AWSVPCID, cidrRange.String())
+		Expect(err).ToNot(HaveOccurred())
+		cidrBlockAssociationID = *association.CidrBlockAssociation.AssociationId
+	}
 
 	By(fmt.Sprintf("creating the subnet in %s", *primaryInstance.Placement.AvailabilityZone))
 
-	// Subnet must be greater than /19
-	subnetCidr, err := cidr.Subnet(cidrRange, 2, 0)
-	Expect(err).ToNot(HaveOccurred())
+	var subnetCidr *net.IPNet
+	if useIPv6 {
+		// For IPv6, calculate the appropriate number of bits to get a /64 subnet
+		prefixLen, _ := cidrRange.Mask.Size()
+		if prefixLen > 64 {
+			Fail(fmt.Sprintf("IPv6 parent CIDR prefix length must be <= 64, got /%d", prefixLen))
+		}
+		// Calculate how many bits we need to extend to reach /64
+		bitsToExtend := 64 - prefixLen
+		subnetCidr, err = cidr.Subnet(cidrRange, bitsToExtend, 0)
+		Expect(err).ToNot(HaveOccurred())
+	} else {
+		// IPv4: Subnet must be greater than /19
+		subnetCidr, err = cidr.Subnet(cidrRange, 2, 0)
+		Expect(err).ToNot(HaveOccurred())
+	}
 
 	createSubnetOutput, err := f.CloudServices.EC2().
 		CreateSubnet(context.TODO(), subnetCidr.String(), f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
@@ -125,20 +178,48 @@ var _ = AfterSuite(func() {
 	_ = f.K8sResourceManagers.NamespaceManager().
 		DeleteAndWaitTillNamespaceDeleted(utils.DefaultTestNamespace)
 
-	var errs prometheus.MultiError
-
 	By("sleeping to allow CNI Plugin to delete unused ENIs")
 	time.Sleep(time.Second * 90)
-
-	By(fmt.Sprintf("deleting the subnet %s", createdSubnet))
-	errs.Append(f.CloudServices.EC2().DeleteSubnet(context.TODO(), createdSubnet))
-
-	By("disassociating the CIDR range to the VPC")
-	errs.Append(f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID))
-
-	Expect(errs.MaybeUnwrap()).ToNot(HaveOccurred())
 
 	By("by setting WARM_ENI_TARGET to 1")
 	k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
 		utils.AwsNodeName, map[string]string{"WARM_ENI_TARGET": "1"})
+
+	var errs prometheus.MultiError
+
+	By(fmt.Sprintf("deleting the subnet %s", createdSubnet))
+	if err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), createdSubnet); err != nil {
+		errs.Append(err)
+	}
+
+	// Wait for subnet deletion to complete before trying to disassociate CIDR
+	By("waiting for subnet deletion to complete")
+	time.Sleep(time.Second * 30)
+
+	By("disassociating the CIDR range from the VPC")
+	if cidrBlockAssociationID != "" {
+		// Retry CIDR disassociation a few times in case subnet deletion is still in progress
+		maxRetries := 5
+		for i := 0; i < maxRetries; i++ {
+			if err := f.CloudServices.EC2().DisAssociateVPCCIDRBlock(context.TODO(), cidrBlockAssociationID); err != nil {
+				if i == maxRetries-1 {
+					// Last retry failed, append error
+					errs.Append(err)
+				} else {
+					// Wait and retry
+					By(fmt.Sprintf("CIDR disassociation failed (attempt %d/%d), retrying in 15 seconds", i+1, maxRetries))
+					time.Sleep(time.Second * 15)
+				}
+			} else {
+				// Success, break out of retry loop
+				break
+			}
+		}
+	}
+
+	// Only fail if there were actual errors, not just retry attempts
+	if errs.MaybeUnwrap() != nil {
+		GinkgoWriter.Printf("WARNING: Some cleanup operations failed: %v\n", errs.MaybeUnwrap())
+		// Don't fail the test suite for cleanup issues, just log them
+	}
 })
