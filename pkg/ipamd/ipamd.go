@@ -1112,7 +1112,8 @@ func (c *IPAMContext) tryAssignIPs(networkCard int) (increasedPool bool, err err
 			resourcesToAllocate := min((c.maxIPsPerENI - currentNumberOfAllocatedIPs), toAllocate)
 			output, err := c.awsClient.AllocIPAddresses(eni.ID, resourcesToAllocate)
 			if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
-				log.Warnf("failed to allocate all available IP addresses on ENI %s, err: %v", eni.ID, err)
+				log.Warnf("failed to allocate IP addresses on ENI %s: %v. Current usage: %d/%d IPs allocated in subnet, ENI limit: %d, subnet available IPs: %d", 
+              eni.ID, err, currentIPCount, totalSubnetIPs, eniLimit, availableSubnetIPs)
 				// Try to just get one more IP
 				output, err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 				if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
