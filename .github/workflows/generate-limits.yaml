@@ -64,4 +64,5 @@ jobs:
             ## Testing
             Please verify that the generated limits are correct.
           branch: automated/update-vpc-limits
+          base: master
           delete-branch: true
