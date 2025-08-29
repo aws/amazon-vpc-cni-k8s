@@ -414,6 +414,17 @@ i8g.8xlarge 234
 i8g.large 29
 i8g.metal-24xl 737
 i8g.xlarge 58
+i8ge.12xlarge 350
+i8ge.18xlarge 786
+i8ge.24xlarge 786
+i8ge.2xlarge 58
+i8ge.3xlarge 176
+i8ge.48xlarge 1178
+i8ge.6xlarge 292
+i8ge.large 29
+i8ge.metal-24xl 786
+i8ge.metal-48xl 1178
+i8ge.xlarge 58
 im4gn.16xlarge 737
 im4gn.2xlarge 58
 im4gn.4xlarge 234
