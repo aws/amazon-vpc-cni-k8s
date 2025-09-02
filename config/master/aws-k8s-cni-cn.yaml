@@ -436,8 +436,7 @@ spec:
       terminationGracePeriodSeconds: 10
       tolerations:
         - operator: Exists
-      securityContext:
-        {}
+      securityContext: {}
       containers:
         - name: aws-node
           image: 961992271922.dkr.ecr.cn-northwest-1.amazonaws.com.cn/amazon-k8s-cni:v1.20.1
