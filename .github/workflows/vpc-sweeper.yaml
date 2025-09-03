@@ -1,0 +1,48 @@
+name: VPC Sweeper
+
+on:
+  schedule:
+    - cron: "0 17 * * 0" # Weekly on Sunday at 9 AM PST (17:00 UTC)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode'
+        required: false
+        default: 'false'
+        type: boolean
+      max_age_hours:
+        description: 'Maximum age in hours for resources to be cleaned up'
+        required: false
+        default: '168'
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  vpc-cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # refs/tags/v5.0.0
+      
+      - name: Set up AWS credentials
+        uses: aws-actions/configure-aws-credentials@5579c002bb4778aa43395ef1df492868a9a1c83f # refs/tags/v4.0.2
+        with:
+          role-to-assume: ${{ secrets.OSS_TEST_ROLE_ARN }}
+          role-duration-seconds: 3600
+          aws-region: us-west-2
+      
+      - name: Install eksctl
+        run: |
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin/
+      
+      - name: Run VPC sweeper
+        env:
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          MAX_AGE_HOURS: ${{ github.event.inputs.max_age_hours || '168' }}
+          AWS_DEFAULT_REGION: us-west-2
+        run: |
+          ./scripts/vpc-sweeper.sh
