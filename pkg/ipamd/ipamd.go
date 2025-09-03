@@ -1049,8 +1049,11 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context, networkCard int) error
 		if err != nil {
 			log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
 			ipamdErrInc("increaseIPPoolAllocENI")
-			log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", resourcesToAllocate, err)
-			if containsInsufficientCIDRsOrSubnetIPs(err) {
+			// Get current ENI diagnostics
+      eniCount := len(c.dataStoreAccess.GetDataStore(networkCard).GetAllocatableENIs(c.maxIPsPerENI, c.useCustomNetworking))
+    log.Warnf("Failed to allocate %d IP addresses on an ENI: %v. ENI count: %d/%d, Check ENI limits and subnet capacity", 
+       resourcesToAllocate, err, eniCount, c.maxENI)
+	  		if containsInsufficientCIDRsOrSubnetIPs(err) {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 				log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
 				c.lastInsufficientCidrError = time.Now()
@@ -1112,8 +1115,8 @@ func (c *IPAMContext) tryAssignIPs(networkCard int) (increasedPool bool, err err
 			resourcesToAllocate := min((c.maxIPsPerENI - currentNumberOfAllocatedIPs), toAllocate)
 			output, err := c.awsClient.AllocIPAddresses(eni.ID, resourcesToAllocate)
 			if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
-				log.Warnf("failed to allocate IP addresses on ENI %s: %v. Current usage: %d/%d IPs allocated in subnet, ENI limit: %d, subnet available IPs: %d", 
-              eni.ID, err, currentIPCount, totalSubnetIPs, eniLimit, availableSubnetIPs)
+     log.Warnf("failed to allocate IP address on ENI %s: %v. Current usage: %d/%d IPs allocated in subnet. ENI limit: %d, Available subnet IPs: %d. Fragmentation check: %d available IPs across ENIs", 
+        eni.ID, err, currentIPCount, totalSubnetIPs, eniLimit, availableSubnetIPs, len(eni.AvailableIPv4Cidrs))              eni.ID, err, currentIPCount, totalSubnetIPs, eniLimit, availableSubnetIPs)
 				// Try to just get one more IP
 				output, err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 				if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
@@ -1121,7 +1124,13 @@ func (c *IPAMContext) tryAssignIPs(networkCard int) (increasedPool bool, err err
 					if c.useSubnetDiscovery && containsInsufficientCIDRsOrSubnetIPs(err) {
 						continue
 					}
-					return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
+					 // Add prefix delegation diagnostics
+                    availablePrefixes := 0
+                    if eniMetadata != nil {
+                    availablePrefixes = len(eniMetadata.IPv6Prefixes)
+                }
+                 return errors.Wrapf(err, "Failed to allocate IPv6 Prefixes to ENI. Available prefixes: %d, Trunk ENI mode: %v", 
+              availablePrefixes, !isTrunkENI)
 				}
 			}
 
@@ -1211,8 +1220,10 @@ func (c *IPAMContext) tryAssignPrefixes(networkCard int) (increasedPool bool, er
 				if c.useSubnetDiscovery && containsInsufficientCIDRsOrSubnetIPs(err) {
 					continue
 				}
-				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err))
-			}
+     // Add IPv4 prefix diagnostics
+       currentPrefixes := len(eni.IPv4Prefixes)
+    return false, errors.Wrapf(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v. Current prefixes: %d, Max prefixes per ENI: %d", 
+    eni.ID, err, currentPrefixes, c.maxPrefixesPerENI))			}
 		}
 
 		var ec2Prefixes []ec2types.Ipv4PrefixSpecification
@@ -1265,7 +1276,13 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 			// IP and custom networking modes for IPv6, this restriction can be relaxed.
 			err := c.assignIPv6Prefix(eni, eniMetadata.NetworkCard)
 			if err != nil {
-				return errors.Wrapf(err, "Failed to allocate IPv6 Prefixes to ENI")
+				// Add prefix delegation diagnostics
+        availablePrefixes := 0
+     if eniMetadata != nil && eniMetadata.IPv6Prefixes != nil {
+    availablePrefixes = len(eniMetadata.IPv6Prefixes)
+     } 
+return errors.Wrapf(err, "Failed to allocate IPv6 Prefixes to ENI. Available prefixes: %d, Trunk ENI mode: %v, PD mode active", 
+    availablePrefixes, !isTrunkENI)
 			}
 		}
 	}
