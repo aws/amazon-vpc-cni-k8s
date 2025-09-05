@@ -43,6 +43,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/retry"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
+	vpcControllerVpc "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/vpc"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2metadata "github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -213,6 +214,8 @@ type APIs interface {
 	FetchInstanceTypeLimits() error
 
 	IsPrefixDelegationSupported() bool
+
+	IsTrunkingCompatible() bool
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -1763,6 +1766,15 @@ func (cache *EC2InstanceMetadataCache) IsPrefixDelegationSupported() bool {
 		return true
 	}
 	return false
+}
+
+// IsTrunkingCompatible return true if the instance type supports ENI trunking or not exist in the list
+func (cache *EC2InstanceMetadataCache) IsTrunkingCompatible() bool {
+	spec, ok := vpcControllerVpc.Limits[cache.instanceType]
+	if !ok {
+		return true
+	}
+	return spec.IsTrunkingCompatible
 }
 
 // AllocIPAddresses allocates numIPs of IP address on an ENI

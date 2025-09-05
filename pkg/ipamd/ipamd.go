@@ -2491,7 +2491,7 @@ func (c *IPAMContext) isDatastorePoolEmpty(networkCard int) bool {
 // Return whether the maximum number of ENIs that can be attached to the node has already been reached
 func (c *IPAMContext) hasRoomForEni(networkCard int) bool {
 	trunkEni := 0
-	if c.enablePodENI && networkCard == DefaultNetworkCardIndex && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
+	if c.awsClient.IsTrunkingCompatible() && c.enablePodENI && networkCard == DefaultNetworkCardIndex && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
 		trunkEni = 1
 	}
 	return c.dataStoreAccess.GetDataStore(networkCard).GetENIs() < (c.maxENI - c.unmanagedENI[networkCard] - trunkEni)
