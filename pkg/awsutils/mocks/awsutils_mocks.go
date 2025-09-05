@@ -411,6 +411,20 @@ func (mr *MockAPIsMockRecorder) InitCachedPrefixDelegation(arg0 interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitCachedPrefixDelegation", reflect.TypeOf((*MockAPIs)(nil).InitCachedPrefixDelegation), arg0)
 }
 
+// IsTrunkingCompatible mocks base method.
+func (m *MockAPIs) IsTrunkingCompatible() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsTrunkingCompatible")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsTrunkingCompatible indicates an expected call of IsTrunkingCompatible.
+func (mr *MockAPIsMockRecorder) IsTrunkingCompatible() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsTrunkingCompatible", reflect.TypeOf((*MockAPIs)(nil).IsTrunkingCompatible))
+}
+
 // IsEfaOnlyENI mocks base method.
 func (m *MockAPIs) IsEfaOnlyENI(networkCard int, eni string) bool {
 	m.ctrl.T.Helper()
