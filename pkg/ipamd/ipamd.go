@@ -13,6 +13,7 @@
 
 package ipamd
 
+
 import (
 	"context"
 	"fmt"
@@ -23,13 +24,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
-
 	"github.com/aws/smithy-go"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/pkg/errors"
@@ -40,7 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
-
+	"k8s.io/client-go/tools/record"    // ADD THIS LINE
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
@@ -51,6 +48,36 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	rcv1alpha1 "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 )
+
+// Add these type definitions right after the imports, before the package comment:
+
+// IPAllocationError represents detailed error information for IP allocation failures
+type IPAllocationError struct {
+	Reason           string
+	Message          string
+	SubnetID         string
+	AvailableIPs     int
+	FragmentationInfo *FragmentationInfo
+	ENILimits        *ENILimitInfo
+}
+
+// FragmentationInfo provides details about subnet fragmentation
+type FragmentationInfo struct {
+	TotalSubnets      int
+	FragmentedSubnets int
+	LargestBlock      int
+}
+
+// ENILimitInfo provides details about ENI limitations
+type ENILimitInfo struct {
+	CurrentENIs int
+	MaxENIs     int
+	IPsPerENI   int
+}
+
+// The package ipamd is a long running daemon which manages a warm pool of available IP addresses.
+// It also monitors the size of the pool, dynamically allocates more ENIs when the pool size goes below
+// the minimum threshold and frees them back when the pool size goes above max threshold.
 
 // The package ipamd is a long running daemon which manages a warm pool of available IP addresses.
 // It also monitors the size of the pool, dynamically allocates more ENIs when the pool size goes below
@@ -1115,8 +1142,58 @@ func (c *IPAMContext) tryAssignIPs(networkCard int) (increasedPool bool, err err
 			resourcesToAllocate := min((c.maxIPsPerENI - currentNumberOfAllocatedIPs), toAllocate)
 			output, err := c.awsClient.AllocIPAddresses(eni.ID, resourcesToAllocate)
 			if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
-     log.Warnf("failed to allocate IP address on ENI %s: %v. Current usage: %d/%d IPs allocated in subnet. ENI limit: %d, Available subnet IPs: %d. Fragmentation check: %d available IPs across ENIs", 
-        eni.ID, err, currentIPCount, totalSubnetIPs, eniLimit, availableSubnetIPs, len(eni.AvailableIPv4Cidrs))              eni.ID, err, currentIPCount, totalSubnetIPs, eniLimit, availableSubnetIPs)
+// Replace line 1118 with this enhanced diagnostic code:
+
+// Build detailed allocation error information
+allocError := &IPAllocationError{
+    Reason:       c.determineFailureReason(err, availableSubnetIPs, eniLimit),
+    Message:      err.Error(),
+    SubnetID:     c.getCurrentSubnetID(eni),
+    AvailableIPs: availableSubnetIPs,
+}
+
+// Add fragmentation info if subnet has available IPs but allocation failed
+if availableSubnetIPs > 0 && len(eni.AvailableIPv4Cidrs) < availableSubnetIPs/10 {
+    allocError.FragmentationInfo = &FragmentationInfo{
+        TotalSubnets:      1, // current subnet
+        FragmentedSubnets: 1,
+        LargestBlock:      len(eni.AvailableIPv4Cidrs),
+    }
+}
+
+// Add ENI limit info if we're hitting ENI constraints
+if currentIPCount >= c.maxIPsPerENI || eniLimit <= 0 {
+    allocError.ENILimits = &ENILimitInfo{
+        CurrentENIs: c.dataStore.GetENIInfos().ENIs,
+        MaxENIs:     c.maxENI,
+        IPsPerENI:   c.maxIPsPerENI,
+    }
+}
+
+// Emit structured event instead of just logging
+c.emitIPAllocationFailureEvent(allocError, eni.ID)
+
+// Keep minimal debug logging
+log.Debugw("IP allocation failed with diagnostics",
+    "eniID", eni.ID,
+    "reason", allocError.Reason,
+    "availableIPs", availableSubnetIPs,
+    "currentUsage", fmt.Sprintf("%d/%d", currentIPCount, totalSubnetIPs))        eni.ID, err, currentIPCount, totalSubnetIPs, eniLimit, availableSubnetIPs, len(eni.AvailableIPv4Cidrs))              eni.ID, err, currentIPCount, totalSubnetIPs, eniLimit, availableSubnetIPs)
+	func (c *IPAMContext) emitIPAllocationFailureEvent(allocError *IPAllocationError, eniID string) {
+    if c.eventRecorder == nil {
+        return
+    }
+    
+    eventType := corev1.EventTypeWarning
+    reason := "IPAllocationFailed"
+    message := fmt.Sprintf("Failed to allocate IP on ENI %s: %s | Available IPs: %d", 
+        eniID, allocError.Reason, allocError.AvailableIPs)
+    
+    c.eventRecorder.Eventf(c.myNodeObj, eventType, reason, message)
+}		
+				
+				
+				
 				// Try to just get one more IP
 				output, err = c.awsClient.AllocIPAddresses(eni.ID, 1)
 				if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
