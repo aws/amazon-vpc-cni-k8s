@@ -62,6 +62,8 @@ The aws-vpc-cni-init image to use
 {{- define "aws-vpc-cni.initImage" -}}
 {{- if .Values.init.image.override }}
 {{- .Values.init.image.override }}
+{{- else if .Values.init.image.overrideRepository }}
+{{- printf "%s:%s" .Values.init.image.overrideRepository .Values.init.image.tag }}
 {{- else }}
 {{- printf "%s.dkr.%s.%s.%s/amazon-k8s-cni-init:%s" .Values.init.image.account .Values.init.image.endpoint .Values.init.image.region .Values.init.image.domain .Values.init.image.tag }}
 {{- end }}
@@ -73,6 +75,8 @@ The aws-vpc-cni image to use
 {{- define "aws-vpc-cni.image" -}}
 {{- if .Values.image.override }}
 {{- .Values.image.override }}
+{{- else if .Values.image.overrideRepository }}
+{{- printf "%s:%s" .Values.image.overrideRepository .Values.image.tag }}
 {{- else }}
 {{- printf "%s.dkr.%s.%s.%s/amazon-k8s-cni:%s" .Values.image.account .Values.image.endpoint .Values.image.region .Values.image.domain .Values.image.tag }}
 {{- end }}
@@ -84,6 +88,8 @@ The aws-network-policy-agent image to use
 {{- define "aws-vpc-cni.nodeAgentImage" -}}
 {{- if .Values.nodeAgent.image.override }}
 {{- .Values.nodeAgent.image.override }}
+{{- else if .Values.nodeAgent.image.overrideRepository }}
+{{- printf "%s:%s" .Values.nodeAgent.image.overrideRepository .Values.nodeAgent.image.tag }}
 {{- else }}
 {{- printf "%s.dkr.%s.%s.%s/amazon/aws-network-policy-agent:%s" .Values.nodeAgent.image.account .Values.nodeAgent.image.endpoint .Values.nodeAgent.image.region .Values.nodeAgent.image.domain .Values.nodeAgent.image.tag }}
 {{- end -}}
