@@ -23,6 +23,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
+	"github.com/samber/lo"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 
@@ -128,6 +129,8 @@ type ENI struct {
 	AvailableIPv4Cidrs map[string]*CidrInfo
 	//IPv6CIDRs contains information tied to IPv6 Prefixes attached to the ENI
 	IPv6Cidrs map[string]*CidrInfo
+	// RouteTableID is the route table ID associated with the ENI on the host
+	RouteTableID int
 }
 
 // AddressInfo contains information about an IP, Exported fields will be marshaled for introspection.
@@ -469,11 +472,26 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, 
 		DeviceNumber:       deviceNumber,
 		AvailableIPv4Cidrs: make(map[string]*CidrInfo),
 		IPv6Cidrs:          make(map[string]*CidrInfo),
+		RouteTableID:       lo.Ternary(isPrimary, unix.RT_TABLE_MAIN, 0), // Primary ENI gets main route table ID
 	}
 
 	prometheusmetrics.Enis.Set(float64(len(ds.eniPool)))
 	// Initialize ENI IPs In Use to 0 when an ENI is created
 	prometheusmetrics.EniIPsInUse.WithLabelValues(eniID).Set(0)
+	return nil
+}
+
+func (ds *DataStore) AddRouteTableIDForENI(eniID string, routeTableId int) error {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	ds.log.Debugf("DataStore updating route table ID of the ENI %s", eniID)
+	if _, ok := ds.eniPool[eniID]; !ok {
+		ds.log.Warnf("unknown ENI %s while adding route table ID", eniID)
+		return errors.New(UnknownENIError)
+	}
+
+	ds.eniPool[eniID].RouteTableID = routeTableId
 	return nil
 }
 
@@ -609,29 +627,29 @@ func (ds *DataStore) AddIPv6CidrToStore(eniID string, ipv6Cidr net.IPNet, isPref
 }
 
 func (ds *DataStore) AssignPodIPAddress(ipamKey IPAMKey, ipamMetadata IPAMMetadata, isIPv4Enabled bool, isIPv6Enabled bool) (ipv4Address string,
-	ipv6Address string, deviceNumber int, err error) {
+	ipv6Address string, deviceNumber int, routeTableId int, err error) {
 	//Currently it's either v4 or v6. Dual Stack mode isn't supported.
 	if isIPv4Enabled {
-		ipv4Address, deviceNumber, err = ds.AssignPodIPv4Address(ipamKey, ipamMetadata)
+		ipv4Address, deviceNumber, routeTableId, err = ds.AssignPodIPv4Address(ipamKey, ipamMetadata)
 	} else if isIPv6Enabled {
-		ipv6Address, deviceNumber, err = ds.AssignPodIPv6Address(ipamKey, ipamMetadata)
+		ipv6Address, deviceNumber, routeTableId, err = ds.AssignPodIPv6Address(ipamKey, ipamMetadata)
 	}
-	return ipv4Address, ipv6Address, deviceNumber, err
+	return ipv4Address, ipv6Address, deviceNumber, routeTableId, err
 }
 
 // AssignPodIPv6Address assigns an IPv6 address to pod. Returns the assigned IPv6 address along with device number
-func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMetadata) (ipv6Address string, deviceNumber int, err error) {
+func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMetadata) (ipv6Address string, deviceNumber int, routeTableId int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
 	if !ds.isPDEnabled {
-		return "", -1, fmt.Errorf("PD is not enabled. V6 is only supported in PD mode")
+		return "", -1, 0, fmt.Errorf("PD is not enabled. V6 is only supported in PD mode")
 	}
 	ds.log.Debugf("AssignPodIPv6Address: IPv6 address pool stats: assigned %d", ds.assigned)
 
 	if eni, _, addr := ds.eniPool.FindAddressForSandbox(ipamKey); addr != nil {
 		ds.log.Infof("AssignPodIPv6Address: duplicate pod assign for sandbox %s", ipamKey)
-		return addr.Address, eni.DeviceNumber, nil
+		return addr.Address, eni.DeviceNumber, eni.RouteTableID, nil
 	}
 
 	// In IPv6 Prefix Delegation mode, eniPool will only have Primary ENI.
@@ -661,20 +679,20 @@ func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 				ds.unassignPodIPAddressUnsafe(addr)
 				//Remove the IP from eni DB
 				delete(V6Cidr.IPAddresses, addr.Address)
-				return "", -1, err
+				return "", -1, 0, err
 			}
 			// Increment ENI IP usage on pod IPv6 allocation
 			prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Inc()
-			return addr.Address, eni.DeviceNumber, nil
+			return addr.Address, eni.DeviceNumber, eni.RouteTableID, nil
 		}
 	}
 	prometheusmetrics.NoAvailableIPAddrs.Inc()
-	return "", -1, ErrNoAvailableIPInDataStore
+	return "", -1, 0, ErrNoAvailableIPInDataStore
 }
 
 // AssignPodIPv4Address assigns an IPv4 address to pod
 // It returns the assigned IPv4 address, device number, error
-func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMetadata) (ipv4address string, deviceNumber int, err error) {
+func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMetadata) (ipv4address string, deviceNumber int, routeTableId int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
@@ -682,7 +700,7 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 
 	if eni, _, addr := ds.eniPool.FindAddressForSandbox(ipamKey); addr != nil {
 		ds.log.Infof("AssignPodIPv4Address: duplicate pod assign for sandbox %s", ipamKey)
-		return addr.Address, eni.DeviceNumber, nil
+		return addr.Address, eni.DeviceNumber, eni.RouteTableID, nil
 	}
 
 	for _, eni := range ds.eniPool {
@@ -729,18 +747,18 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 				delete(availableCidr.IPAddresses, addr.Address)
 				// Update prometheus for ips per cidr
 				prometheusmetrics.IpsPerCidr.With(prometheus.Labels{"cidr": availableCidr.Cidr.String()}).Dec()
-				return "", -1, err
+				return "", -1, 0, err
 			}
 			// Increment ENI IP usage on pod IPv4 allocation
 			prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Inc()
-			return addr.Address, eni.DeviceNumber, nil
+			return addr.Address, eni.DeviceNumber, eni.RouteTableID, nil
 		}
 		ds.log.Debugf("AssignPodIPv4Address: ENI %s does not have available addresses", eni.ID)
 	}
 
 	prometheusmetrics.NoAvailableIPAddrs.Inc()
 	ds.log.Errorf("DataStore has no available IP/Prefix addresses")
-	return "", -1, ErrNoAvailableIPInDataStore
+	return "", -1, 0, ErrNoAvailableIPInDataStore
 }
 
 // assignPodIPAddressUnsafe mark Address as assigned.
@@ -1090,7 +1108,7 @@ func (ds *DataStore) RemoveENIFromDataStore(eniID string, force bool) error {
 
 // UnassignPodIPAddress a) find out the IP address based on PodName and PodNameSpace
 // b)  mark IP address as unassigned c) returns IP address, ENI's device number, error
-func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, deviceNumber int, interfaces int, err error) {
+func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, deviceNumber int, interfaces int, routeTableId int, err error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 	ds.log.Debugf("UnassignPodIPAddress: IP address pool stats: total %d, assigned %d, sandbox %s", ds.total, ds.assigned, ipamKey)
@@ -1107,7 +1125,7 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 		// If entry is still not found, IPAMD has no knowledge of this pod, so there is nothing to do.
 		if addr == nil {
 			ds.log.Warnf("UnassignPodIPAddress: Failed to find sandbox %s", ipamKey)
-			return nil, "", 0, -1, ErrUnknownPod
+			return nil, "", 0, -1, 0, ErrUnknownPod
 		}
 	}
 
@@ -1117,7 +1135,7 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 	if err := ds.writeBackingStoreUnsafe(); err != nil {
 		// Unwind un-assignment
 		ds.assignPodIPAddressUnsafe(addr, ipamKey, originalIPAMMetadata, originalAssignedTime)
-		return nil, "", 0, -1, err
+		return nil, "", 0, -1, 0, err
 	}
 	addr.UnassignedTime = time.Now()
 
@@ -1132,7 +1150,7 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 		ipamKey, addr.Address, eni.DeviceNumber)
 	// Decrement ENI IP usage when a pod is deallocated
 	prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Dec()
-	return eni, addr.Address, eni.DeviceNumber, originalIPAMMetadata.InterfacesCount, nil
+	return eni, addr.Address, eni.DeviceNumber, originalIPAMMetadata.InterfacesCount, eni.RouteTableID, nil
 }
 
 // AllocatedIPs returns a recent snapshot of allocated sandbox<->IPs.
