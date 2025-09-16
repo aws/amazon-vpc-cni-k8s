@@ -15,12 +15,12 @@
 package netlinkwrapper
 
 import (
+	"log"
 	"syscall"
 
 	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
 
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 )
 
@@ -83,7 +83,7 @@ const (
 func getMaxAttempts() int {
 	maxAttempts, _, _ := utils.GetIntFromStringEnvVar(envNetlinkMaxRetries, defaultMaxAttempts)
 	if maxAttempts < 1 {
-		logger.Get().Warnf("Invalid netlink max retries value %d, using default %d", maxAttempts, defaultMaxAttempts)
+		log.Printf("Invalid netlink max retries value %d, using default %d", maxAttempts, defaultMaxAttempts)
 		return defaultMaxAttempts
 	}
 	return maxAttempts
@@ -99,10 +99,9 @@ func retryOnErrDumpInterrupted(f func() error) error {
 		}
 		lastErr = err
 	}
-	logger.Get().Warnf("netlink call interrupted after %d attempts", maxAttempts)
+	log.Printf("netlink call interrupted after %d attempts", maxAttempts)
 	return errors.Wrap(lastErr, "persistent netlink dump interruption")
 }
-
 
 // NewNetLink creates a new NetLink object
 func NewNetLink() NetLink {
