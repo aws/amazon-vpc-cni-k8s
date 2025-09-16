@@ -21,8 +21,8 @@ import (
 	"net"
 	"strings"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
-
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
@@ -35,7 +35,8 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 		ipFamily = netlink.FAMILY_V6
 	}
 	// Get the list of IP rules
-	ruleList, err := netlink.RuleList(ipFamily)
+	nl := netlinkwrapper.NewNetLink()
+	ruleList, err := nl.RuleList(ipFamily)
 	if err != nil {
 		log.Fatalf("failed to list ip rules %v", err)
 	}
@@ -198,7 +199,8 @@ func TestNetworkingSetupForPodsUsingSecurityGroup(podNetworkingValidationInput i
 	}
 
 	// Get the list of IP rules
-	ruleList, err := netlink.RuleList(ipFamily)
+	nl := netlinkwrapper.NewNetLink()
+	ruleList, err := nl.RuleList(ipFamily)
 	if err != nil {
 		log.Fatalf("failed to list ip rules %v", err)
 	}
@@ -323,7 +325,8 @@ func TestNetworkTearedDownForRegularPods(podNetworkingValidationInput input.PodN
 		maskLen = "128"
 	}
 	// Get the list of IP rules
-	ruleList, err := netlink.RuleList(ipFamily)
+	nl := netlinkwrapper.NewNetLink()
+	ruleList, err := nl.RuleList(ipFamily)
 	if err != nil {
 		log.Fatalf("failed to list ip rules %v", err)
 	}
@@ -409,7 +412,8 @@ func TestNetworkTearedDownForPodsUsingSecurityGroup(podNetworkingValidationInput
 		ipFamily = netlink.FAMILY_V6
 	}
 	// Get the list of IP rules
-	ruleList, err := netlink.RuleList(ipFamily)
+	nl := netlinkwrapper.NewNetLink()
+	ruleList, err := nl.RuleList(ipFamily)
 	if err != nil {
 		log.Fatalf("failed to list ip rules %v", err)
 	}

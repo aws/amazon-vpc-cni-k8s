@@ -25,6 +25,7 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/vishvananda/netlink"
 )
 
@@ -147,7 +148,8 @@ func main() {
 			enis = append(enis, trunkDevToMonitor)
 		} else {
 			// find the eni to monitor associated with the pod
-			rules, err := netlink.RuleList(netlink.FAMILY_V4)
+			nl := netlinkwrapper.NewNetLink()
+			rules, err := nl.RuleList(netlink.FAMILY_V4)
 			if err != nil {
 				fmt.Printf("unable to get ip rules due to %+v", err)
 				os.Exit(1)
