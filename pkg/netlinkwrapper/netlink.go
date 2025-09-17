@@ -19,10 +19,9 @@ import (
 	"fmt"
 	"syscall"
 
-	"github.com/vishvananda/netlink"
-
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
+	"github.com/vishvananda/netlink"
 )
 
 var log = logger.Get()
