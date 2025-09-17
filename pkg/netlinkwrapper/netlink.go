@@ -15,10 +15,11 @@
 package netlinkwrapper
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"syscall"
 
-	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
 
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
@@ -100,7 +101,7 @@ func retryOnErrDumpInterrupted(f func() error) error {
 		lastErr = err
 	}
 	log.Printf("netlink call interrupted after %d attempts", maxAttempts)
-	return errors.Wrap(lastErr, "persistent netlink dump interruption")
+	return fmt.Errorf("persistent netlink dump interruption: %w", lastErr)
 }
 
 // NewNetLink creates a new NetLink object
