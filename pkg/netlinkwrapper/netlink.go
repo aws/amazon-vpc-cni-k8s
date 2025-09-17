@@ -86,7 +86,7 @@ const (
 func getMaxAttempts() int {
 	maxAttempts, _, _ := utils.GetIntFromStringEnvVar(envNetlinkMaxRetries, defaultMaxAttempts)
 	if maxAttempts < 1 {
-		log.Warnf("Invalid netlink max retries value %s, using default %d", val, defaultMaxAttempts)
+		log.Warnf("Invalid netlink max retries value %s, using default %d", maxAttempts, defaultMaxAttempts)
 		return defaultMaxAttempts
 	}
 	return maxAttempts
