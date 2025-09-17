@@ -85,7 +85,7 @@ const (
 func getMaxAttempts() int {
 	maxAttempts, _, _ := utils.GetIntFromStringEnvVar(envNetlinkMaxRetries, defaultMaxAttempts)
 	if maxAttempts < 1 {
-		log.Warnf("Invalid netlink max retries value %s, using default %d", maxAttempts, defaultMaxAttempts)
+		log.Warnf("Invalid netlink max retries value %d (must be >= 1), using default %d", maxAttempts, defaultMaxAttempts)
 		return defaultMaxAttempts
 	}
 	return maxAttempts
@@ -97,23 +97,18 @@ func retryOnErrDumpInterrupted(f func() error) error {
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		err := f()
 		if err == nil {
-			if attempt > 0 {
-				log.Infof("netlink dump succeeded on attempt %d of %d", attempt+1, maxAttempts)
-			}
+			log.Debugf("netlink dump succeeded on attempt %d of %d", attempt+1, maxAttempts)
 			return nil
 		}
 		if !errors.Is(err, netlink.ErrDumpInterrupted) {
-			return err
+			log.Errorf("netlink dump failed with unrecoverable error on attempt %d of %d: %v", attempt+1, maxAttempts, err)
+			return fmt.Errorf("netlink dump failed: %w", err)
 		}
 		log.Debugf("netlink dump interrupted on attempt %d of %d", attempt+1, maxAttempts)
 		lastErr = err
 	}
-	if maxAttempts == 1 {
-		log.Warnf("netlink dump failed: single attempt interrupted")
-		return fmt.Errorf("netlink dump interruption: %w", lastErr)
-	}
-	log.Warnf("netlink dump interruption persisted after %d attempts", maxAttempts)
-	return fmt.Errorf("netlink dump interruption persisted after %d attempts: %w", maxAttempts, lastErr)
+	log.Errorf("netlink dump interruption persisted after %d attempt(s): %v", maxAttempts, lastErr)
+	return fmt.Errorf("netlink dump interruption persisted after %d attempt(s): %w", maxAttempts, lastErr)
 }
 
 // NewNetLink creates a new NetLink object
