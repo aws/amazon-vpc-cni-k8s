@@ -17,13 +17,15 @@ package netlinkwrapper
 import (
 	"errors"
 	"fmt"
-	"log"
 	"syscall"
 
 	"github.com/vishvananda/netlink"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 )
+
+var log = logger.Get()
 
 // NetLink wraps methods used from the vishvananda/netlink package
 type NetLink interface {
@@ -84,7 +86,7 @@ const (
 func getMaxAttempts() int {
 	maxAttempts, _, _ := utils.GetIntFromStringEnvVar(envNetlinkMaxRetries, defaultMaxAttempts)
 	if maxAttempts < 1 {
-		log.Printf("Invalid netlink max retries value %d, using default %d", maxAttempts, defaultMaxAttempts)
+		log.Warnf("Invalid netlink max retries value %s, using default %d", val, defaultMaxAttempts)
 		return defaultMaxAttempts
 	}
 	return maxAttempts
@@ -100,7 +102,7 @@ func retryOnErrDumpInterrupted(f func() error) error {
 		}
 		lastErr = err
 	}
-	log.Printf("netlink call interrupted after %d attempts", maxAttempts)
+	log.Warnf("netlink call interrupted after %d attempts", maxAttempts)
 	if maxAttempts == 1 {
 		return fmt.Errorf("netlink dump interruption: %w", lastErr)
 	}
