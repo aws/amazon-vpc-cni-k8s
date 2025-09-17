@@ -102,10 +102,11 @@ func retryOnErrDumpInterrupted(f func() error) error {
 		}
 		lastErr = err
 	}
-	log.Warnf("netlink call interrupted after %d attempts", maxAttempts)
 	if maxAttempts == 1 {
+		log.Warnf("netlink call interrupted after 1 attempt")
 		return fmt.Errorf("netlink dump interruption: %w", lastErr)
 	}
+	log.Warnf("netlink call interrupted after %d attempts", maxAttempts)
 	return fmt.Errorf("persistent netlink dump interruption after %d attempts: %w", maxAttempts, lastErr)
 }
 
