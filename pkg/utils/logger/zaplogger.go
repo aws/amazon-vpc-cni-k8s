@@ -105,6 +105,7 @@ func getEncoder() zapcore.Encoder {
 	return zapcore.NewJSONEncoder(encoderConfig)
 }
 
+// createZapLogger creates a zap.Logger with the given configuration and caller skip
 func (logConfig *Configuration) createZapLogger(callerSkip int) *zap.Logger {
 	var cores []zapcore.Core
 
@@ -161,7 +162,7 @@ func getLogWriter(logFilePath string) zapcore.WriteSyncer {
 	return zapcore.AddSync(lumberJackLogger)
 }
 
-// DefaultLogger creates and returns a new default logger.
+// DefaultLogger creates and returns a new default logger
 func DefaultLogger() Logger {
 	productionConfig := zap.NewProductionConfig()
 	productionConfig.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
@@ -177,6 +178,7 @@ func DefaultLogger() Logger {
 	}
 }
 
+// NewControllerRuntimeLogger creates a logr.Logger compatible with controller-runtime
 func (logConfig *Configuration) NewControllerRuntimeLogger() logr.Logger {
 	logger := logConfig.createZapLogger(1)
 	return zapr.NewLogger(logger)
