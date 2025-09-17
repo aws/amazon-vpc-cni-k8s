@@ -18,6 +18,8 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -103,7 +105,7 @@ func getEncoder() zapcore.Encoder {
 	return zapcore.NewJSONEncoder(encoderConfig)
 }
 
-func (logConfig *Configuration) newZapLogger() *structuredLogger {
+func (logConfig *Configuration) createZapLogger(callerSkip int) *zap.Logger {
 	var cores []zapcore.Core
 
 	logLevel := getZapLevel(logConfig.LogLevel)
@@ -116,8 +118,14 @@ func (logConfig *Configuration) newZapLogger() *structuredLogger {
 
 	logger := zap.New(combinedCore,
 		zap.AddCaller(),
-		zap.AddCallerSkip(2),
+		zap.AddCallerSkip(callerSkip),
 	)
+
+	return logger
+}
+
+func (logConfig *Configuration) newZapLogger() *structuredLogger {
+	logger := logConfig.createZapLogger(2)
 	defer logger.Sync()
 	sugar := logger.Sugar()
 
@@ -167,4 +175,9 @@ func DefaultLogger() Logger {
 	return &structuredLogger{
 		zapLogger: sugar,
 	}
+}
+
+func (logConfig *Configuration) NewControllerRuntimeLogger() logr.Logger {
+	logger := logConfig.createZapLogger(1)
+	return zapr.NewLogger(logger)
 }

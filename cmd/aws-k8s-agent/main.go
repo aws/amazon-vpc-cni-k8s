@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 const (
@@ -100,7 +99,8 @@ func _main() int {
 	log := logger.Get()
 
 	// Initialize controller-runtime logger
-	ctrl.SetLogger(zap.New(zap.UseDevMode(false)))
+	logConfig := logger.LoadLogConfig()
+	ctrl.SetLogger(logConfig.NewControllerRuntimeLogger())
 
 	log.Infof("Starting L-IPAMD %s  ...", version.Version)
 	version.RegisterMetric()
