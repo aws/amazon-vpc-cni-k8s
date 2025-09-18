@@ -79,7 +79,6 @@ export GO111MODULE = on
 export GOPROXY = direct
 
 export GOSUMDB = sum.golang.org
-export GOTOOLCHAIN = go$(GOLANG_VERSION)
 
 VENDOR_OVERRIDE_FLAG =
 # aws-sdk-go override in case we need to build against a custom version
@@ -293,6 +292,7 @@ docker-metrics-test:     ## Run metrics helper unit test suite in a container.
 plugins: FETCH_VERSION=1.7.1
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/archive/refs/tags/v$(FETCH_VERSION).tar.gz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
+plugins: CORE_PLUGINS=bandwidth,host-local,loopback,portmap,sbr
 plugins:   ## Fetch the CNI plugins
 	@echo "Fetching Container networking plugins v$(FETCH_VERSION) from upstream release"
 	@echo
@@ -303,7 +303,7 @@ plugins:   ## Fetch the CNI plugins
 	curl -s -L $(FETCH_URL) | tar xzf - -C ${CORE_PLUGIN_TMP}
 	cd ${CORE_PLUGIN_TMP}/plugins-${FETCH_VERSION} && ./build_linux.sh
 	cp -a ${CORE_PLUGIN_TMP}/plugins-${FETCH_VERSION}/LICENSE ${CORE_PLUGIN_DIR}
-	cp -a ${CORE_PLUGIN_TMP}/plugins-${FETCH_VERSION}/bin/* ${CORE_PLUGIN_DIR}
+	cp -a ${CORE_PLUGIN_TMP}/plugins-${FETCH_VERSION}/bin/{$(CORE_PLUGINS)} ${CORE_PLUGIN_DIR}
 	rm -rf ${CORE_PLUGIN_TMP}
 
 ##@ Debug script
