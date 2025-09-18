@@ -105,7 +105,7 @@ func TestCmdAdd(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
+	npConn, _ := grpc.Dial("unix://"+npaSocketPath, grpc.WithInsecure())
 	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
 
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
@@ -150,7 +150,7 @@ func TestCmdAddWithNPenabled(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
+	npConn, _ := grpc.Dial("unix://"+npaSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
@@ -195,7 +195,7 @@ func TestCmdAddWithNPenabledWithErr(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
+	npConn, _ := grpc.Dial("unix://"+npaSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
@@ -352,7 +352,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
+	npConn, _ := grpc.Dial("unix://"+npaSocketPath, grpc.WithInsecure())
 	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
 
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
@@ -432,7 +432,7 @@ func TestCmdDel(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
+	npConn, _ := grpc.Dial("unix://"+npaSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
@@ -720,7 +720,7 @@ func TestCmdAddForPodENINetwork(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
+	npConn, _ := grpc.Dial("unix://"+npaSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
@@ -765,7 +765,7 @@ func TestCmdDelForPodENINetwork(t *testing.T) {
 	mockC := mock_rpc.NewMockCNIBackendClient(ctrl)
 	mocksRPC.EXPECT().NewCNIBackendClient(conn).Return(mockC)
 
-	npConn, _ := grpc.Dial(npAgentAddress, grpc.WithInsecure())
+	npConn, _ := grpc.Dial("unix://"+npaSocketPath, grpc.WithInsecure())
 
 	mocksGRPC.EXPECT().DialContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(npConn, nil).Times(1)
 	mockNP := mock_rpc.NewMockNPBackendClient(ctrl)
