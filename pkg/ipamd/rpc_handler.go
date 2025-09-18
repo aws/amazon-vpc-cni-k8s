@@ -85,7 +85,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	}
 
 	failureResponse := rpc.AddNetworkReply{Success: false}
-	var deviceNumber, vlanID, trunkENILinkIndex int
+	var deviceNumber, vlanID, trunkENILinkIndex, routeTableId int
 	var ipv4Addr, ipv6Addr, branchENIMAC, podENISubnetGW string
 	var err error
 
@@ -226,7 +226,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 				InterfacesCount: ipsRequired,
 			}
 
-			ipv4Addr, ipv6Addr, deviceNumber, err = ds.AssignPodIPAddress(ipamKey, ipamMetadata, s.ipamContext.enableIPv4, s.ipamContext.enableIPv6)
+			ipv4Addr, ipv6Addr, deviceNumber, routeTableId, err = ds.AssignPodIPAddress(ipamKey, ipamMetadata, s.ipamContext.enableIPv4, s.ipamContext.enableIPv6)
 
 			if err != nil {
 				log.Warnf("Failed to assign IPs from network card %d: %v", networkCard, err)
@@ -245,7 +245,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 				IPv4Addr:     ipv4Addr,
 				IPv6Addr:     ipv6Addr,
 				DeviceNumber: int32(deviceNumber),
-				RouteTableId: int32(networkCard*s.ipamContext.maxENI + deviceNumber + 1),
+				RouteTableId: int32(routeTableId),
 			})
 
 			ipsAllocated += 1
@@ -350,7 +350,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 			break
 		}
 
-		eni, ip, deviceNumber, ipsAllocated, err := ds.UnassignPodIPAddress(ipamKey)
+		eni, ip, deviceNumber, ipsAllocated, routeTableId, err := ds.UnassignPodIPAddress(ipamKey)
 
 		// ipsAllocated will always be same in all datastores for a Pod, so this will not change ever between datastores
 		if ipsAllocated > 0 {
@@ -429,7 +429,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 				IPv4Addr:     ipv4Addr,
 				IPv6Addr:     ipv6Addr,
 				DeviceNumber: int32(deviceNumber),
-				RouteTableId: int32(networkCard*s.ipamContext.maxENI + deviceNumber + 1),
+				RouteTableId: int32(routeTableId),
 			})
 			ipsFound += 1
 

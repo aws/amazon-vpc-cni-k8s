@@ -1275,7 +1275,7 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 		if c.enableIPv6 {
 			subnetCidr = eniMetadata.SubnetIPv6CIDR
 		}
-		err = c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.DeviceNumber, eniMetadata.NetworkCard, subnetCidr, c.maxENI, isTrunkENI)
+		routeTableID, err := c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.DeviceNumber, eniMetadata.NetworkCard, subnetCidr, c.maxENI, isTrunkENI)
 		if err != nil {
 			// Failed to set up the ENI
 			errRemove := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).RemoveENIFromDataStore(eni, true)
@@ -1284,6 +1284,12 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 			}
 			delete(c.primaryIP, eni)
 			return errors.Wrapf(err, "failed to set up ENI %s network", eni)
+		}
+
+		err = c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).AddRouteTableIDForENI(eni, routeTableID)
+		if err != nil {
+			log.Warnf("failed to add route table ID for ENI %s: %v", eni, err)
+			return errors.Wrapf(err, "failed to add route table ID for ENI %s", eni)
 		}
 	}
 

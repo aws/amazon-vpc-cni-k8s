@@ -624,7 +624,7 @@ func teardownPodNetworkWithPrevResult(driverClient driver.NetworkAPIs, conf *Net
 	// We have a path for migration where the dummy interface can be completely removed for regular network pods when we move completely to v1.20+
 	// This is currently done to support downgrade to v1.19 and below
 
-	routeTableId := networkutils.CalculateRouteTableId(deviceNumber, 0, 0)
+	routeTableId := networkutils.CalculateRouteTableId(deviceNumber, 0)
 	// The number of interfaces attached to the pod is taken as the length of the interfaces array - 1 (for dummy interface) divided by 2 (for host and container interface)
 	var interfacesAttached = (len(prevResult.Interfaces) - 1) / 2
 	var vethMetadata []driver.VirtualInterfaceMetadata

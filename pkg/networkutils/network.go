@@ -154,7 +154,7 @@ type NetworkAPIs interface {
 	SetupHostNetwork(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, enablePodENI bool,
 		v6Enabled bool) error
 	// SetupENINetwork performs ENI level network configuration. Not needed on the primary ENI
-	SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, networkCard int, eniSubnetCIDR string, maxENIPerNIC int, isTrunkENI bool) error
+	SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, networkCard int, eniSubnetCIDR string, maxENIPerNIC int, isTrunkENI bool) (int, error)
 	// UpdateHostIptablesRules updates the nat table iptables rules on the host
 	UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v6Enabled bool) error
 	CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error
@@ -1020,177 +1020,220 @@ func GetIPv4Gateway(eniSubnetCIDR *net.IPNet) net.IP {
 }
 
 // SetupENINetwork adds default route to route table (eni-<eni_table>), so it does not need to be called on the primary ENI
-func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, networkCard int, eniSubnetCIDR string, maxENIPerNIC int, isTrunkENI bool) error {
+func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, deviceNumber int, networkCard int, eniSubnetCIDR string, maxENIPerNIC int, isTrunkENI bool) (int, error) {
 	return setupENINetwork(eniIP, eniMAC, deviceNumber, networkCard, eniSubnetCIDR, n.netLink, retryLinkByMacInterval, retryRouteAddInterval, n.mtu, maxENIPerNIC, isTrunkENI)
 }
 
-// Even if this is called for primary IF on multicard instance
 func setupENINetwork(eniIP string, eniMac string, deviceNumber int, networkCard int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink,
-	retryLinkByMacInterval time.Duration, retryRouteAddInterval time.Duration, mtu int, maxENIPerNIC int, isTrunkENI bool) error {
+	retryLinkByMacInterval time.Duration, retryRouteAddInterval time.Duration, mtu int, maxENIPerNIC int, isTrunkENI bool) (int, error) {
 
 	if deviceNumber == 0 && networkCard == 0 {
-		return errors.New("setupENINetwork should never be called on the primary ENI")
+		return 0, errors.New("setupENINetwork should never be called on the primary ENI")
+	}
+
+	var ruleExists bool
+	var family, tableNumber, mask int
+	var zeroAddr, gw net.IP
+
+	isV6 := strings.Contains(eniSubnetCIDR, ":")
+	_, eniSubnetIPNet, err := net.ParseCIDR(eniSubnetCIDR)
+	if err != nil {
+		return 0, errors.Wrapf(err, "setupENINetwork: invalid IP CIDR block %s", eniSubnetCIDR)
+	}
+
+	if isV6 {
+		family = unix.AF_INET6
+		mask = 128
+		zeroAddr = net.IPv6zero
+		gw = GetIPv6Gateway()
+	} else {
+		family = unix.AF_INET
+		mask = 32
+		zeroAddr = net.IPv4zero
+		gw = GetIPv4Gateway(eniSubnetIPNet)
 	}
 
 	// CNI will never have route table 1 as we don't setup device number 0 on network card 0
 	// So, tableNumber = 1 is equivalent to main route table (id=254)
-	tableNumber := CalculateRouteTableId(deviceNumber, networkCard, maxENIPerNIC)
+	var srcRuleList []netlink.Rule
+	if networkCard > 0 {
+		ruleList, err := getRuleList(isV6, netLink)
+		if err != nil {
+			log.Errorf("setupENINetwork: failed to retrieve rule list %v", err)
+			return 0, err
+		}
+		// Src IP has to be the /32 or /128 address of the ENI not the subnet CIDR
+		srcRuleList, err = getRuleListBySrc(ruleList, *&net.IPNet{
+			IP:   net.ParseIP(eniIP),
+			Mask: net.CIDRMask(mask, mask),
+		})
+
+		if len(srcRuleList) == 0 {
+			// This happens when AMI is not setting up the ENI so rules are not present
+			tableNumber = CalculateRouteTableId(deviceNumber, networkCard)
+		} else if len(srcRuleList) == 1 {
+			// This happens when AMI is old, but CNI is being upgraded as CNI had set the old routes
+			// Or node is upgraded and CNI is using the new rules
+			tableNumber = srcRuleList[0].Table
+			ruleExists = true
+		} else {
+			log.Infof("Multiple rules found for ENI %s, using the first one", eniIP)
+		}
+		// } else {
+
+		// 	// Edge case, where either CNI has multiple rules for same ENI IP (leaks?)
+		// 	// TBD
+		// 	// for _, rule := range srcRuleList {
+		// 	// 	if rule.Table == routeTableNumber {
+		// 	// 		oldRuleExists = true
+		// 	// 		log.Debugf("Old rule found for ENI %s, oldRule %t", eniIP, oldRuleExists)
+		// 	// 	}
+		// 	// 	if rule.Table == newRule {
+		// 	// 		newRuleExists = true
+		// 	// 		log.Debugf("New rule found for ENI %s, no need to add it", eniIP)
+		// 	// 	}
+		// 	// }
+		// 	// if newRuleExists {
+		// 	// 	tableNumber = newRule
+		// 	// }
+		// }
+	} else {
+		tableNumber = CalculateRouteTableId(deviceNumber, networkCard)
+	}
+
 	log.Infof("Setting up network for an ENI with IP address %s, MAC address %s, CIDR %s, route table %d and Network Card %d",
 		eniIP, eniMac, eniSubnetCIDR, tableNumber, networkCard)
 
 	link, err := linkByMac(eniMac, netLink, retryLinkByMacInterval)
 	if err != nil {
-		return errors.Wrapf(err, "setupENINetwork: failed to find the link which uses MAC address %s", eniMac)
+		return 0, errors.Wrapf(err, "setupENINetwork: failed to find the link which uses MAC address %s", eniMac)
 	}
 
 	if err = netLink.LinkSetMTU(link, mtu); err != nil {
-		return errors.Wrapf(err, "setupENINetwork: failed to set MTU to %d for %s", mtu, eniIP)
+		return 0, errors.Wrapf(err, "setupENINetwork: failed to set MTU to %d for %s", mtu, eniIP)
 	}
 
-	if err = netLink.LinkSetUp(link); err != nil {
-		return errors.Wrapf(err, "setupENINetwork: failed to bring up ENI %s", eniIP)
-	}
-
-	isV6 := strings.Contains(eniSubnetCIDR, ":")
-	_, eniSubnetIPNet, err := net.ParseCIDR(eniSubnetCIDR)
-	if err != nil {
-		return errors.Wrapf(err, "setupENINetwork: invalid IP CIDR block %s", eniSubnetCIDR)
-	}
-
-	// Get gateway IP address for ENI
-	var gw net.IP
-	if isV6 {
-		gw = GetIPv6Gateway()
-	} else {
-		gw = GetIPv4Gateway(eniSubnetIPNet)
-	}
-
-	// Explicitly delete IP addresses assigned to the device before assign ENI IP.
-	// For IPv6, do not delete the link-local address.
-	log.Debugf("Setting up ENI's primary IP %s", eniIP)
-	var family int
-	if isV6 {
-		family = unix.AF_INET6
-	} else {
-		family = unix.AF_INET
-	}
-	var addrs []netlink.Addr
-	addrs, err = netLink.AddrList(link, family)
-	if err != nil {
-		return errors.Wrap(err, "setupENINetwork: failed to list IP address for ENI")
-	}
-
-	for _, addr := range addrs {
-		if addr.IP.IsGlobalUnicast() {
-			log.Debugf("Deleting existing IP address %s", addr.String())
-			if err = netLink.AddrDel(link, &addr); err != nil {
-				return errors.Wrap(err, "setupENINetwork: failed to delete IP addr from ENI")
-			}
-		}
-	}
-
-	eniIPNet := net.ParseIP(eniIP)
 	eniAddr := &net.IPNet{
-		IP:   eniIPNet,
+		IP:   net.ParseIP(eniIP),
 		Mask: eniSubnetIPNet.Mask,
 	}
-	log.Debugf("Adding IP address %s", eniAddr.String())
-	if err = netLink.AddrAdd(link, &netlink.Addr{IPNet: eniAddr}); err != nil {
-		return errors.Wrap(err, "setupENINetwork: failed to add IP addr to ENI")
-	}
 
-	linkIndex := link.Attrs().Index
-	log.Debugf("Setting up ENI's default gateway %v, table %d, linkIndex %d", gw, tableNumber, linkIndex)
-	mask := 32
-	zeroAddr := net.IPv4zero
-	if isV6 {
-		mask = 128
-		zeroAddr = net.IPv6zero
-	}
-	routes := []netlink.Route{
-		// Add a direct link route for the host's ENI IP only
-		{
-			LinkIndex: linkIndex,
-			Dst:       &net.IPNet{IP: gw, Mask: net.CIDRMask(mask, mask)},
-			Scope:     netlink.SCOPE_LINK,
-			Table:     tableNumber,
-		},
-		// Route all other traffic via the host's ENI IP
-		{
-			LinkIndex: linkIndex,
-			Dst:       &net.IPNet{IP: zeroAddr, Mask: net.CIDRMask(0, mask)},
-			Scope:     netlink.SCOPE_UNIVERSE,
-			Gw:        gw,
-			Table:     tableNumber,
-		},
-	}
-	for _, r := range routes {
-		err := netLink.RouteDel(&r)
-		if err != nil && !netlinkwrapper.IsNotExistsError(err) {
-			return errors.Wrap(err, "setupENINetwork: failed to clean up old routes")
+	if !ruleExists {
+		if err = netLink.LinkSetUp(link); err != nil {
+			return 0, errors.Wrapf(err, "setupENINetwork: failed to bring up ENI %s", eniIP)
 		}
 
-		err = retry.NWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, retryRouteAddInterval, 0.15, 2.0), maxRetryRouteAdd, func() error {
-			if err := netLink.RouteReplace(&r); err != nil {
-				log.Debugf("Not able to set route %s/0 via %s table %d", r.Dst.IP.String(), gw.String(), tableNumber)
-				return errors.Wrapf(err, "setupENINetwork: unable to replace route entry %s", r.Dst.IP.String())
-			}
-			log.Debugf("Successfully added/replaced route to be %s/0", r.Dst.IP.String())
-			return nil
-		})
+		// Explicitly delete IP addresses assigned to the device before assign ENI IP.
+		// For IPv6, do not delete the link-local address.
+		log.Debugf("Setting up ENI's primary IP %s", eniIP)
+		var addrs []netlink.Addr
+		addrs, err = netLink.AddrList(link, family)
 		if err != nil {
-			return err
+			return 0, errors.Wrap(err, "setupENINetwork: failed to list IP address for ENI")
 		}
-	}
 
-	// Remove the route that default out to ENI-x out of main route table
-	var defaultRoute netlink.Route
-	if isV6 {
-		defaultRoute = netlink.Route{
-			LinkIndex: linkIndex,
-			Dst:       eniSubnetIPNet,
-			Table:     mainRoutingTable,
-		}
-	} else {
-		// eniSubnetIPNet was modified by GetIPv4Gateway, so the string must be parsed again
-		_, eniSubnetCIDRNet, err := net.ParseCIDR(eniSubnetCIDR)
-		if err != nil {
-			return errors.Wrapf(err, "setupENINetwork: invalid IPv4 CIDR block: %s", eniSubnetCIDR)
-		}
-		defaultRoute = netlink.Route{
-			Dst:   eniSubnetCIDRNet,
-			Src:   eniIPNet,
-			Table: mainRoutingTable,
-			Scope: netlink.SCOPE_LINK,
-		}
-	}
-	if err := netLink.RouteDel(&defaultRoute); err != nil {
-		if !netlinkwrapper.IsNotExistsError(err) {
-			return errors.Wrapf(err, "setupENINetwork: unable to delete default route %s for source IP %s", eniSubnetIPNet.String(), eniIP)
-		}
-	}
-
-	// Add IP rule for Primary IP of the ENI
-	if !isTrunkENI {
-		ruleForPrimaryIPofENI := netlink.NewRule()
-		ruleForPrimaryIPofENI.Src = &net.IPNet{IP: eniIPNet, Mask: net.CIDRMask(mask, mask)}
-		ruleForPrimaryIPofENI.Table = tableNumber
-		ruleForPrimaryIPofENI.Priority = FromPrimaryIPofENIRulePriority
-		ruleForPrimaryIPofENI.Family = family
-		log.Infof("Adding rule for Primary IP [%v]", ruleForPrimaryIPofENI)
-		if err := netLink.RuleAdd(ruleForPrimaryIPofENI); err != nil {
-			if !isRuleExistsError(err) {
-				return errors.Wrapf(err, "setupENINetwork: unable to add rule for ENI IP %s", eniIP)
+		for _, addr := range addrs {
+			if addr.IP.IsGlobalUnicast() {
+				log.Debugf("Deleting existing IP address %s", addr.String())
+				if err = netLink.AddrDel(link, &addr); err != nil {
+					return 0, errors.Wrap(err, "setupENINetwork: failed to delete IP addr from ENI")
+				}
 			}
-			log.Debugf("setupENINetwork: rule for Primary IP %s already exists", eniIP)
+		}
+
+		log.Debugf("Adding IP address %s", eniAddr.String())
+		if err = netLink.AddrAdd(link, &netlink.Addr{IPNet: eniAddr}); err != nil {
+			return 0, errors.Wrap(err, "setupENINetwork: failed to add IP addr to ENI")
+		}
+
+		linkIndex := link.Attrs().Index
+		log.Debugf("Setting up ENI's default gateway %v, table %d, linkIndex %d", gw, tableNumber, linkIndex)
+
+		routes := []netlink.Route{
+			// Add a direct link route for the host's ENI IP only
+			{
+				LinkIndex: linkIndex,
+				Dst:       &net.IPNet{IP: gw, Mask: net.CIDRMask(mask, mask)},
+				Scope:     netlink.SCOPE_LINK,
+				Table:     tableNumber,
+			},
+			// Route all other traffic via the host's ENI IP
+			{
+				LinkIndex: linkIndex,
+				Dst:       &net.IPNet{IP: zeroAddr, Mask: net.CIDRMask(0, mask)},
+				Scope:     netlink.SCOPE_UNIVERSE,
+				Gw:        gw,
+				Table:     tableNumber,
+			},
+		}
+		for _, r := range routes {
+			err := netLink.RouteDel(&r)
+			if err != nil && !netlinkwrapper.IsNotExistsError(err) {
+				return 0, errors.Wrap(err, "setupENINetwork: failed to clean up old routes")
+			}
+
+			err = retry.NWithBackoff(retry.NewSimpleBackoff(500*time.Millisecond, retryRouteAddInterval, 0.15, 2.0), maxRetryRouteAdd, func() error {
+				if err := netLink.RouteReplace(&r); err != nil {
+					log.Debugf("Not able to set route %s/0 via %s table %d", r.Dst.IP.String(), gw.String(), tableNumber)
+					return errors.Wrapf(err, "setupENINetwork: unable to replace route entry %s", r.Dst.IP.String())
+				}
+				log.Debugf("Successfully added/replaced route to be %s/0", r.Dst.IP.String())
+				return nil
+			})
+			if err != nil {
+				return 0, err
+			}
+		}
+
+		// Remove the route that default out to ENI-x out of main route table
+		var defaultRoute netlink.Route
+		if isV6 {
+			defaultRoute = netlink.Route{
+				LinkIndex: linkIndex,
+				Dst:       eniSubnetIPNet,
+				Table:     mainRoutingTable,
+			}
 		} else {
-			log.Debugf("setupENINetwork: rule for Primary IP %s added", eniIP)
+			// eniSubnetIPNet was modified by GetIPv4Gateway, so the string must be parsed again
+			_, eniSubnetCIDRNet, err := net.ParseCIDR(eniSubnetCIDR)
+			if err != nil {
+				return 0, errors.Wrapf(err, "setupENINetwork: invalid IPv4 CIDR block: %s", eniSubnetCIDR)
+			}
+			defaultRoute = netlink.Route{
+				Dst:   eniSubnetCIDRNet,
+				Src:   net.ParseIP(eniIP),
+				Table: mainRoutingTable,
+				Scope: netlink.SCOPE_LINK,
+			}
 		}
-	} else {
-		log.Debugf("setupENINetwork: skipping rule for Primary IP of ENI %s as it is a trunk interface", eniIP)
+		if err := netLink.RouteDel(&defaultRoute); err != nil {
+			if !netlinkwrapper.IsNotExistsError(err) {
+				return 0, errors.Wrapf(err, "setupENINetwork: unable to delete default route %s for source IP %s", eniSubnetIPNet.String(), eniIP)
+			}
+		}
+
+		// Add IP rule for Primary IP of the ENI
+		if !isTrunkENI {
+			ruleForPrimaryIPofENI := netlink.NewRule()
+			ruleForPrimaryIPofENI.Src = &net.IPNet{IP: net.ParseIP(eniIP), Mask: net.CIDRMask(mask, mask)}
+			ruleForPrimaryIPofENI.Table = tableNumber
+			ruleForPrimaryIPofENI.Priority = FromPrimaryIPofENIRulePriority
+			ruleForPrimaryIPofENI.Family = family
+			log.Infof("Adding rule for Primary IP [%v]", ruleForPrimaryIPofENI)
+			if err := netLink.RuleAdd(ruleForPrimaryIPofENI); err != nil {
+				if !isRuleExistsError(err) {
+					return 0, errors.Wrapf(err, "setupENINetwork: unable to add rule for ENI IP %s", eniIP)
+				}
+				log.Debugf("setupENINetwork: rule for Primary IP %s already exists", eniIP)
+			} else {
+				log.Debugf("setupENINetwork: rule for Primary IP %s added", eniIP)
+			}
+		} else {
+			log.Debugf("setupENINetwork: skipping rule for Primary IP of ENI %s as it is a trunk interface", eniIP)
+		}
 	}
 
-	return nil
+	return tableNumber, nil
 }
 
 // For IPv6 strict mode, ICMPv6 packets from the gateway must lookup in the local routing table so that branch interfaces can resolve their gateway.
@@ -1227,16 +1270,20 @@ func incrementIPAddr(ip net.IP) {
 	}
 }
 
+func getRuleList(v6enabled bool, netLink netlinkwrapper.NetLink) ([]netlink.Rule, error) {
+	if v6enabled {
+		return netLink.RuleList(unix.AF_INET6)
+	}
+	return netLink.RuleList(unix.AF_INET)
+}
+
 // GetRuleList returns IP rules
 func (n *linuxNetwork) GetRuleList(v6enabled bool) ([]netlink.Rule, error) {
-	if v6enabled {
-		return n.netLink.RuleList(unix.AF_INET6)
-	}
-	return n.netLink.RuleList(unix.AF_INET)
+	return getRuleList(v6enabled, n.netLink)
 }
 
 // GetRuleListBySrc returns IP rules with matching source IP
-func (n *linuxNetwork) GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error) {
+func getRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error) {
 	var srcRuleList []netlink.Rule
 	for _, rule := range ruleList {
 		if rule.Src != nil && rule.Src.IP.Equal(src.IP) {
@@ -1244,6 +1291,11 @@ func (n *linuxNetwork) GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) 
 		}
 	}
 	return srcRuleList, nil
+}
+
+// GetRuleListBySrc returns IP rules with matching source IP
+func (n *linuxNetwork) GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error) {
+	return getRuleListBySrc(ruleList, src)
 }
 
 // UpdateRuleListBySrc modify IP rules that have a matching source IP
