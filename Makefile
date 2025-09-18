@@ -293,7 +293,15 @@ plugins: FETCH_VERSION=1.7.1
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/archive/refs/tags/v$(FETCH_VERSION).tar.gz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
 plugins: CORE_PLUGINS=bandwidth,host-local,loopback,portmap,sbr
+plugins: S3_BUCKET=cni-plugins-dev-artifacts-us-west-2
 plugins:   ## Fetch the CNI plugins
+ifeq ($(DEV_ENV),true)
+	@echo "Fetching CNI plugins from S3 bucket for internal development"
+	@echo "S3 Bucket: $(S3_BUCKET)"
+	@echo
+	mkdir -p ${CORE_PLUGIN_DIR}
+	aws s3 sync s3://$(S3_BUCKET)/cni-plugins-binaries/ ${CORE_PLUGIN_DIR}/
+else
 	@echo "Fetching Container networking plugins v$(FETCH_VERSION) from upstream release"
 	@echo
 	@echo "Visit upstream project for plugin details:"
@@ -305,6 +313,7 @@ plugins:   ## Fetch the CNI plugins
 	cp -a ${CORE_PLUGIN_TMP}/plugins-${FETCH_VERSION}/LICENSE ${CORE_PLUGIN_DIR}
 	cp -a ${CORE_PLUGIN_TMP}/plugins-${FETCH_VERSION}/bin/{$(CORE_PLUGINS)} ${CORE_PLUGIN_DIR}
 	rm -rf ${CORE_PLUGIN_TMP}
+endif
 
 ##@ Debug script
 
