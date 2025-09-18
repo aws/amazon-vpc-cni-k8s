@@ -76,7 +76,7 @@ type netLink struct {
 }
 
 const (
-	// Environment variable to configure netlink dump retry attempts
+	// Environment variable to configure netlink max retry attempts
 	envNetlinkMaxRetries = "AWS_VPC_K8S_CNI_NETLINK_MAX_RETRIES"
 	defaultMaxAttempts   = 5
 )
@@ -97,18 +97,18 @@ func retryOnErrDumpInterrupted(f func() error) error {
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		err := f()
 		if err == nil {
-			log.Debugf("netlink dump succeeded on attempt %d of %d", attempt+1, maxAttempts)
+			log.Debugf("netlink operation succeeded on attempt %d of %d", attempt+1, maxAttempts)
 			return nil
 		}
 		if !errors.Is(err, netlink.ErrDumpInterrupted) {
-			log.Errorf("netlink dump failed with unrecoverable error on attempt %d of %d: %v", attempt+1, maxAttempts, err)
-			return fmt.Errorf("netlink dump failed: %w", err)
+			log.Errorf("netlink operation failed with unrecoverable error on attempt %d of %d: %v", attempt+1, maxAttempts, err)
+			return fmt.Errorf("netlink operation failed: %w", err)
 		}
-		log.Debugf("netlink dump interrupted on attempt %d of %d", attempt+1, maxAttempts)
+		log.Debugf("netlink operation interrupted on attempt %d of %d", attempt+1, maxAttempts)
 		lastErr = err
 	}
-	log.Errorf("netlink dump interruption persisted after %d attempt(s): %v", maxAttempts, lastErr)
-	return fmt.Errorf("netlink dump interruption persisted after %d attempt(s): %w", maxAttempts, lastErr)
+	log.Errorf("netlink operation interruption persisted after %d attempt(s): %v", maxAttempts, lastErr)
+	return fmt.Errorf("netlink operation interruption persisted after %d attempt(s): %w", maxAttempts, lastErr)
 }
 
 // NewNetLink creates a new NetLink object
