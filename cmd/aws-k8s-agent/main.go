@@ -29,6 +29,7 @@ import (
 	metrics "github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const (
@@ -96,6 +97,10 @@ func _main() int {
 
 	// Do not add anything before initializing logger
 	log := logger.Get()
+
+	// Initialize controller-runtime logger
+	logConfig := logger.LoadLogConfig()
+	ctrl.SetLogger(logConfig.NewControllerRuntimeLogger())
 
 	log.Infof("Starting L-IPAMD %s  ...", version.Version)
 	version.RegisterMetric()

@@ -18,6 +18,8 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -103,7 +105,8 @@ func getEncoder() zapcore.Encoder {
 	return zapcore.NewJSONEncoder(encoderConfig)
 }
 
-func (logConfig *Configuration) newZapLogger() *structuredLogger {
+// createZapLogger creates a zap.Logger with the given configuration and caller skip
+func (logConfig *Configuration) createZapLogger(callerSkip int) *zap.Logger {
 	var cores []zapcore.Core
 
 	logLevel := getZapLevel(logConfig.LogLevel)
@@ -116,8 +119,14 @@ func (logConfig *Configuration) newZapLogger() *structuredLogger {
 
 	logger := zap.New(combinedCore,
 		zap.AddCaller(),
-		zap.AddCallerSkip(2),
+		zap.AddCallerSkip(callerSkip),
 	)
+
+	return logger
+}
+
+func (logConfig *Configuration) newZapLogger() *structuredLogger {
+	logger := logConfig.createZapLogger(2)
 	defer logger.Sync()
 	sugar := logger.Sugar()
 
@@ -153,7 +162,7 @@ func getLogWriter(logFilePath string) zapcore.WriteSyncer {
 	return zapcore.AddSync(lumberJackLogger)
 }
 
-// DefaultLogger creates and returns a new default logger.
+// DefaultLogger creates and returns a new default logger
 func DefaultLogger() Logger {
 	productionConfig := zap.NewProductionConfig()
 	productionConfig.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
@@ -167,4 +176,10 @@ func DefaultLogger() Logger {
 	return &structuredLogger{
 		zapLogger: sugar,
 	}
+}
+
+// NewControllerRuntimeLogger creates a logr.Logger compatible with controller-runtime
+func (logConfig *Configuration) NewControllerRuntimeLogger() logr.Logger {
+	logger := logConfig.createZapLogger(1)
+	return zapr.NewLogger(logger)
 }
