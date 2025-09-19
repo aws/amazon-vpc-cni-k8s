@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.20.2
+* Bump github.com/samber/lo from 1.49.1 to 1.51.0 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3386
+* Bump github.com/prometheus/client_model from 0.6.1 to 0.6.2 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3385
+* Bump the aws-dependencies group with 11 updates by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3384
+* Adding release notes and chart update by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3399
+* updating tags by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3400
+* Add and configure soak tests workflow by @Supreeth095 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3404
+* Add and configure soak tests workflow by @Supreeth095 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3407
+* Bump actions/checkout from 4.1.7 to 5.0.0 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3409
+* Bump helm.sh/helm/v3 from 3.18.4 to 3.18.5 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3401
+* Removing pinning of golang version by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3411
+* Bump the k8s-dependencies group across 1 directory with 5 updates by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3413
+* chore: update VPC IP resource limits by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3419
+* chore: update VPC IP resource limits by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3420
+* Fetch only necessary plugins by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3416
+* chore: update VPC IP resource limits by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3422
+* chore: update VPC IP resource limits by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3438
+* Move npagent server port to unix socket by @Pavani-Panakanti in https://github.com/aws/amazon-vpc-cni-k8s/pull/3442
+
 ## v1.20.1
 * Adding release notes for mult-nic feature by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3350
 * bumping kops tag by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3355
