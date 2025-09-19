@@ -16,8 +16,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/eks v1.67.1
 	github.com/aws/aws-sdk-go-v2/service/iam v1.44.1
 	github.com/aws/smithy-go v1.22.5
-	github.com/containernetworking/cni v1.2.3
-	github.com/containernetworking/plugins v1.5.1
+	github.com/containernetworking/cni v1.3.0
+	github.com/containernetworking/plugins v1.7.1
 	github.com/coreos/go-iptables v0.8.0
 	github.com/go-logr/logr v1.4.2
 	github.com/golang/mock v1.6.0
@@ -136,7 +136,7 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/rubenv/sql-migrate v1.8.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
-	github.com/safchain/ethtool v0.4.0 // indirect
+	github.com/safchain/ethtool v0.5.10 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
@@ -168,6 +168,7 @@ require (
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 	oras.land/oras-go/v2 v2.6.0 // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
+	sigs.k8s.io/knftables v0.0.18 // indirect
 	sigs.k8s.io/kustomize/api v0.19.0 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.19.0 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
