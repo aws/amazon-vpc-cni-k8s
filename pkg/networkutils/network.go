@@ -812,9 +812,9 @@ func (r iptablesRule) String() string {
 }
 
 // NetLinkRuleDelAll deletes all matching route rules (instead of only first instance).
-func NetLinkRuleDelAll(netlink netlinkwrapper.NetLink, rule *netlink.Rule) error {
+func NetLinkRuleDelAll(nl netlinkwrapper.NetLink, rule *netlink.Rule) error {
 	for {
-		if err := netlink.RuleDel(rule); err != nil {
+		if err := nl.RuleDel(rule); err != nil {
 			if !containsNoSuchRule(err) {
 				return err
 			}
@@ -1172,7 +1172,7 @@ func setupENINetwork(eniIP string, eniMac string, deviceNumber int, networkCard 
 
 	// Add IP rule for Primary IP of the ENI
 	if !isTrunkENI {
-		ruleForPrimaryIPofENI := netlink.NewRule()
+		ruleForPrimaryIPofENI := netLink.NewRule()
 		ruleForPrimaryIPofENI.Src = &net.IPNet{IP: eniIPNet, Mask: net.CIDRMask(mask, mask)}
 		ruleForPrimaryIPofENI.Table = tableNumber
 		ruleForPrimaryIPofENI.Priority = FromPrimaryIPofENIRulePriority
