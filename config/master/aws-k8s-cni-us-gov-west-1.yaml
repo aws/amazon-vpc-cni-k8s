@@ -418,7 +418,7 @@ spec:
       hostNetwork: true
       initContainers:
       - name: aws-vpc-cni-init
-        image: 013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/amazon-k8s-cni-init:v1.20.1
+        image: 013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/amazon-k8s-cni-init:v1.20.2
         imagePullPolicy: Always
         env:
           - name: DISABLE_TCP_EARLY_DEMUX
@@ -440,7 +440,7 @@ spec:
         {}
       containers:
         - name: aws-node
-          image: 013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/amazon-k8s-cni:v1.20.1
+          image: 013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/amazon-k8s-cni:v1.20.2
           ports:
             - containerPort: 61678
               name: metrics
@@ -508,7 +508,7 @@ spec:
             - name: NETWORK_POLICY_ENFORCING_MODE
               value: "standard"
             - name: VPC_CNI_VERSION
-              value: "v1.20.1"
+              value: "v1.20.2"
             - name: WARM_ENI_TARGET
               value: "1"
             - name: WARM_PREFIX_TARGET
@@ -543,7 +543,7 @@ spec:
           - mountPath: /run/xtables.lock
             name: xtables-lock
         - name: aws-eks-nodeagent
-          image: 013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/amazon/aws-network-policy-agent:v1.2.4
+          image: 013241004608.dkr.ecr.us-gov-west-1.amazonaws.com/amazon/aws-network-policy-agent:v1.2.6
           imagePullPolicy: Always
           ports:
             - containerPort: 8162
