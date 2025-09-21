@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+	"github.com/aws/amazon-vpc-cni-k8s/rpc"
+	multiErr "github.com/hashicorp/go-multierror"
 
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 
@@ -33,14 +35,15 @@ func TestServer_VersionCheck(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		awsClient:     m.awsutils,
-		maxIPsPerENI:  14,
-		maxENI:        4,
-		warmENITarget: 1,
-		warmIPTarget:  3,
-		networkClient: m.network,
-		dataStore:     datastore.NewDataStore(log, datastore.NullCheckpoint{}, false),
+		awsClient:       m.awsutils,
+		maxIPsPerENI:    14,
+		maxENI:          4,
+		warmENITarget:   1,
+		warmIPTarget:    3,
+		networkClient:   m.network,
+		dataStoreAccess: datastore.InitializeDataStores([]bool{false}, "test", false, log),
 	}
+
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil).AnyTimes()
 	m.awsutils.EXPECT().GetVPCIPv6CIDRs().Return([]string{}, nil).AnyTimes()
 	m.network.EXPECT().UseExternalSNAT().Return(true).AnyTimes()
@@ -70,7 +73,9 @@ func TestServer_VersionCheck(t *testing.T) {
 		IfName:        "eni",
 	}
 	_, err = rpcServer.DelNetwork(context.TODO(), delReq)
-	assert.EqualError(t, err, datastore.ErrUnknownPod.Error())
+	var expectedErr error
+	expectedErr = multiErr.Append(expectedErr, datastore.ErrUnknownPod)
+	assert.EqualError(t, err, expectedErr.Error())
 
 	// Sad path
 
@@ -84,6 +89,7 @@ func TestServer_VersionCheck(t *testing.T) {
 }
 
 func TestServer_AddNetwork(t *testing.T) {
+	maxENIsPerCard := 4
 	type getVPCIPv4CIDRsCall struct {
 		cidrs []string
 		err   error
@@ -100,15 +106,18 @@ func TestServer_AddNetwork(t *testing.T) {
 	}
 
 	type fields struct {
-		ipV4AddressByENIID       map[string][]string
-		ipV6PrefixByENIID        map[string][]string
-		getVPCIPv4CIDRsCalls     []getVPCIPv4CIDRsCall
-		getVPCIPv6CIDRsCalls     []getVPCIPv6CIDRsCall
-		useExternalSNATCalls     []useExternalSNATCall
-		getExcludeSNATCIDRsCalls []getExcludeSNATCIDRsCall
-		ipV4Enabled              bool
-		ipV6Enabled              bool
-		prefixDelegationEnabled  bool
+		managedNetworkCards           int
+		ipV4AddressByENIID            map[int]map[string][]string
+		ipV6PrefixByENIID             map[int]map[string][]string
+		getVPCIPv4CIDRsCalls          []getVPCIPv4CIDRsCall
+		getVPCIPv6CIDRsCalls          []getVPCIPv6CIDRsCall
+		useExternalSNATCalls          []useExternalSNATCall
+		getExcludeSNATCIDRsCalls      []getExcludeSNATCIDRsCall
+		ipV4Enabled                   bool
+		ipV6Enabled                   bool
+		prefixDelegationEnabled       bool
+		enableMultiNICSupport         bool
+		podsRequireMultiNICAttachment bool
 	}
 	tests := []struct {
 		name    string
@@ -119,9 +128,8 @@ func TestServer_AddNetwork(t *testing.T) {
 		{
 			name: "successfully allocated IPv4Address & use externalSNAT",
 			fields: fields{
-				ipV4AddressByENIID: map[string][]string{
-					"eni-1": {"192.168.1.100"},
-				},
+				managedNetworkCards: 1,
+				ipV4AddressByENIID:  map[int]map[string][]string{0: {"eni-1": {"192.168.1.100"}}},
 				getVPCIPv4CIDRsCalls: []getVPCIPv4CIDRsCall{
 					{
 						cidrs: []string{"10.10.0.0/16"},
@@ -136,18 +144,70 @@ func TestServer_AddNetwork(t *testing.T) {
 				ipV6Enabled: false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:         true,
-				IPv4Addr:        "192.168.1.100",
-				DeviceNumber:    int32(0),
+				Success: true,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{
+					{
+						IPv4Addr:     "192.168.1.100",
+						IPv6Addr:     "",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1),
+					},
+				},
 				UseExternalSNAT: true,
 				VPCv4CIDRs:      []string{"10.10.0.0/16"},
 			},
 		},
 		{
+			name: "successfully allocated IPv4Address for multiple NIC pods",
+			fields: fields{
+				managedNetworkCards: 2,
+				ipV4AddressByENIID:  map[int]map[string][]string{0: {"eni-1": {"192.168.1.100"}}, 1: {"eni-2": {"192.168.16.100"}}},
+				getVPCIPv4CIDRsCalls: []getVPCIPv4CIDRsCall{
+					{
+						cidrs: []string{"10.10.0.0/16"},
+					},
+				},
+				useExternalSNATCalls: []useExternalSNATCall{
+					{
+						useExternalSNAT: false,
+					},
+				},
+				getExcludeSNATCIDRsCalls: []getExcludeSNATCIDRsCall{
+					{
+						snatExclusionCIDRs: []string{"10.12.0.0/16", "10.13.0.0/16"},
+					},
+				},
+				ipV4Enabled:                   true,
+				ipV6Enabled:                   false,
+				enableMultiNICSupport:         true,
+				podsRequireMultiNICAttachment: true,
+			},
+			want: &pb.AddNetworkReply{
+				Success: true,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{
+					{
+						IPv4Addr:     "192.168.1.100",
+						IPv6Addr:     "",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1),
+					},
+					{
+						IPv4Addr:     "192.168.16.100",
+						IPv6Addr:     "",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1*0 + maxENIsPerCard + 1), // Network Card * DeviceNumber + Max ENIs per card + 1
+					},
+				},
+				UseExternalSNAT: false,
+				VPCv4CIDRs:      []string{"10.10.0.0/16", "10.12.0.0/16", "10.13.0.0/16"},
+			},
+		},
+		{
 			name: "successfully allocated IPv4Address & not use externalSNAT",
 			fields: fields{
-				ipV4AddressByENIID: map[string][]string{
-					"eni-1": {"192.168.1.100"},
+				managedNetworkCards: 1,
+				ipV4AddressByENIID: map[int]map[string][]string{
+					0: {"eni-1": {"192.168.1.100"}},
 				},
 				getVPCIPv4CIDRsCalls: []getVPCIPv4CIDRsCall{
 					{
@@ -164,34 +224,130 @@ func TestServer_AddNetwork(t *testing.T) {
 						snatExclusionCIDRs: []string{"10.12.0.0/16", "10.13.0.0/16"},
 					},
 				},
-				ipV4Enabled: true,
-				ipV6Enabled: false,
+				ipV4Enabled:                   true,
+				ipV6Enabled:                   false,
+				enableMultiNICSupport:         true,
+				podsRequireMultiNICAttachment: false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:         true,
-				IPv4Addr:        "192.168.1.100",
-				DeviceNumber:    int32(0),
+				Success: true,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{
+					{
+						IPv4Addr:     "192.168.1.100",
+						IPv6Addr:     "",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1),
+					},
+				},
 				UseExternalSNAT: false,
 				VPCv4CIDRs:      []string{"10.10.0.0/16", "10.12.0.0/16", "10.13.0.0/16"},
 			},
 		},
 		{
-			name: "failed allocating IPv4Address ",
+			name: "failed allocating IPv4Address",
 			fields: fields{
-				ipV4AddressByENIID: map[string][]string{},
-				ipV4Enabled:        true,
-				ipV6Enabled:        false,
+				managedNetworkCards: 1,
+				ipV4AddressByENIID:  map[int]map[string][]string{},
+				ipV4Enabled:         true,
+				ipV6Enabled:         false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:      false,
-				DeviceNumber: int32(-1),
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
 			},
 		},
 		{
+			name: "failed allocating IPv4Address from any datastore - no IPs available",
+			fields: fields{
+				managedNetworkCards:   2,
+				ipV4AddressByENIID:    map[int]map[string][]string{0: {}, 1: {}},
+				ipV4Enabled:           true,
+				ipV6Enabled:           false,
+				enableMultiNICSupport: true,
+			},
+			want: &pb.AddNetworkReply{
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
+			},
+		},
+		{
+			name: "Pods require multinic attachment but multinic is not enabled",
+			fields: fields{
+				managedNetworkCards:           1,
+				ipV4AddressByENIID:            map[int]map[string][]string{0: {}},
+				ipV4Enabled:                   true,
+				ipV6Enabled:                   false,
+				enableMultiNICSupport:         false,
+				podsRequireMultiNICAttachment: true,
+			},
+			want: &pb.AddNetworkReply{
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
+			},
+		},
+		{
+			name: "failed allocating IPv4Address from first datastore but second datastore has IPs",
+			fields: fields{
+				managedNetworkCards: 2,
+				ipV4AddressByENIID: map[int]map[string][]string{
+					0: {},
+					1: {"eni-1": {"192.168.1.100"}},
+				},
+				getVPCIPv4CIDRsCalls: []getVPCIPv4CIDRsCall{
+					{
+						cidrs: []string{"10.10.0.0/16"},
+					},
+				},
+				useExternalSNATCalls: []useExternalSNATCall{
+					{
+						useExternalSNAT: true,
+					},
+				},
+				ipV4Enabled:           true,
+				ipV6Enabled:           false,
+				enableMultiNICSupport: true,
+			},
+
+			want: &pb.AddNetworkReply{
+				Success: true,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{
+					{
+						IPv4Addr:     "192.168.1.100",
+						IPv6Addr:     "",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1*0 + maxENIsPerCard + 1), // Network Card * DeviceNumber + Max ENIs per card + 1
+					},
+				},
+				UseExternalSNAT: true,
+				VPCv4CIDRs:      []string{"10.10.0.0/16"},
+			},
+		},
+		{
+			name: "failed allocating IPv4Address from first datastore and pod requires multi-nic attachment",
+			fields: fields{
+				managedNetworkCards: 2,
+				ipV4AddressByENIID: map[int]map[string][]string{
+					0: {},
+					1: {"eni-1": {"192.168.1.100"}},
+				},
+				ipV4Enabled:                   true,
+				ipV6Enabled:                   false,
+				enableMultiNICSupport:         true,
+				podsRequireMultiNICAttachment: true,
+			},
+
+			want: &pb.AddNetworkReply{
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
+			},
+		},
+
+		{
 			name: "successfully allocated IPv6Address in PD mode",
 			fields: fields{
-				ipV6PrefixByENIID: map[string][]string{
-					"eni-1": {"2001:db8::/64"},
+				managedNetworkCards: 1,
+				ipV6PrefixByENIID: map[int]map[string][]string{0: {
+					"eni-1": {"2001:db8::/64"}},
 				},
 				getVPCIPv6CIDRsCalls: []getVPCIPv6CIDRsCall{
 					{
@@ -203,39 +359,84 @@ func TestServer_AddNetwork(t *testing.T) {
 				prefixDelegationEnabled: true,
 			},
 			want: &pb.AddNetworkReply{
-				Success:      true,
-				IPv6Addr:     "2001:db8::",
-				DeviceNumber: int32(0),
-				VPCv6CIDRs:   []string{"2001:db8::/56"},
+				Success: true,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{
+					{
+						IPv4Addr:     "",
+						IPv6Addr:     "2001:db8::",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1),
+					},
+				},
+				VPCv6CIDRs: []string{"2001:db8::/56"},
+			},
+		},
+		{
+			name: "successfully allocated IPv6Address multinic pods",
+			fields: fields{
+				managedNetworkCards: 2,
+				ipV6PrefixByENIID: map[int]map[string][]string{0: {
+					"eni-1": {"2001:db8::/64"}},
+					1: {"eni-2": {"2001:db8:0:01::/64"}},
+				},
+				getVPCIPv6CIDRsCalls: []getVPCIPv6CIDRsCall{
+					{
+						cidrs: []string{"2001:db8::/56"},
+					},
+				},
+				ipV4Enabled:                   false,
+				ipV6Enabled:                   true,
+				prefixDelegationEnabled:       true,
+				enableMultiNICSupport:         true,
+				podsRequireMultiNICAttachment: true,
+			},
+			want: &pb.AddNetworkReply{
+				Success: true,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{
+					{
+						IPv4Addr:     "",
+						IPv6Addr:     "2001:db8::",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1),
+					},
+					{
+						IPv4Addr:     "",
+						IPv6Addr:     "2001:db8:0:1::",
+						DeviceNumber: int32(0),
+						RouteTableId: int32(1*0 + maxENIsPerCard + 1),
+					},
+				},
+				VPCv6CIDRs: []string{"2001:db8::/56"},
 			},
 		},
 		{
 			name: "failed allocating IPv6Address - No IP addresses available",
 			fields: fields{
-				ipV6PrefixByENIID:       map[string][]string{},
+				managedNetworkCards:     1,
+				ipV6PrefixByENIID:       map[int]map[string][]string{},
 				ipV4Enabled:             true,
 				ipV6Enabled:             false,
 				prefixDelegationEnabled: true,
 			},
 			want: &pb.AddNetworkReply{
-				Success:      false,
-				DeviceNumber: int32(-1),
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
 			},
 		},
 		{
 			name: "failed allocating IPv6Address - PD disabled",
 			fields: fields{
-				ipV6PrefixByENIID: map[string][]string{
-					"eni-1": {"2001:db8::/64"},
+				managedNetworkCards: 1,
+				ipV6PrefixByENIID: map[int]map[string][]string{0: {
+					"eni-1": {"2001:db8::/64"}},
 				},
 				ipV4Enabled:             false,
 				ipV6Enabled:             true,
 				prefixDelegationEnabled: false,
 			},
 			want: &pb.AddNetworkReply{
-				Success:      false,
-				IPv6Addr:     "",
-				DeviceNumber: int32(-1),
+				Success:              false,
+				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
 			},
 		},
 	}
@@ -262,33 +463,44 @@ func TestServer_AddNetwork(t *testing.T) {
 			for _, call := range tt.fields.getExcludeSNATCIDRsCalls {
 				m.network.EXPECT().GetExcludeSNATCIDRs().Return(call.snatExclusionCIDRs)
 			}
-			ds := datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled)
-			for eniID, ipv4Addresses := range tt.fields.ipV4AddressByENIID {
-				ds.AddENI(eniID, 0, false, false, false)
-				for _, ipv4Address := range ipv4Addresses {
-					ipv4Addr := net.IPNet{IP: net.ParseIP(ipv4Address), Mask: net.IPv4Mask(255, 255, 255, 255)}
-					ds.AddIPv4CidrToStore(eniID, ipv4Addr, false)
+			var dsList []*datastore.DataStore
+			for i := 0; i < tt.fields.managedNetworkCards; i++ {
+				dsList = append(dsList, datastore.NewDataStore(log, datastore.NullCheckpoint{}, tt.fields.prefixDelegationEnabled, i))
+			}
+
+			dsAccess := &datastore.DataStoreAccess{DataStores: dsList}
+
+			for networkCard, eniMap := range tt.fields.ipV4AddressByENIID {
+				for eniID, ipv4Addresses := range eniMap {
+					dsAccess.GetDataStore(networkCard).AddENI(eniID, 0, false, false, false)
+					for _, ipv4Address := range ipv4Addresses {
+						ipv4Addr := net.IPNet{IP: net.ParseIP(ipv4Address), Mask: net.IPv4Mask(255, 255, 255, 255)}
+						dsAccess.GetDataStore(networkCard).AddIPv4CidrToStore(eniID, ipv4Addr, false)
+					}
 				}
 			}
-			for eniID, ipv6Prefixes := range tt.fields.ipV6PrefixByENIID {
-				ds.AddENI(eniID, 0, false, false, false)
-				for _, ipv6Prefix := range ipv6Prefixes {
-					_, ipnet, _ := net.ParseCIDR(ipv6Prefix)
-					ds.AddIPv6CidrToStore(eniID, *ipnet, true)
+			for networkCard, eniMap := range tt.fields.ipV6PrefixByENIID {
+				for eniID, ipv6Prefixes := range eniMap {
+					dsAccess.GetDataStore(networkCard).AddENI(eniID, 0, false, false, false)
+					for _, ipv6Prefix := range ipv6Prefixes {
+						_, ipnet, _ := net.ParseCIDR(ipv6Prefix)
+						dsAccess.GetDataStore(networkCard).AddIPv6CidrToStore(eniID, *ipnet, true)
+					}
 				}
 			}
 
 			mockContext := &IPAMContext{
 				awsClient:              m.awsutils,
 				maxIPsPerENI:           14,
-				maxENI:                 4,
+				maxENI:                 maxENIsPerCard,
 				warmENITarget:          1,
 				warmIPTarget:           3,
 				networkClient:          m.network,
 				enableIPv4:             tt.fields.ipV4Enabled,
 				enableIPv6:             tt.fields.ipV6Enabled,
 				enablePrefixDelegation: tt.fields.prefixDelegationEnabled,
-				dataStore:              ds,
+				dataStoreAccess:        dsAccess,
+				enableMultiNICSupport:  tt.fields.enableMultiNICSupport,
 			}
 
 			s := &server{
@@ -297,11 +509,12 @@ func TestServer_AddNetwork(t *testing.T) {
 			}
 
 			req := &pb.AddNetworkRequest{
-				ClientVersion: "1.2.3",
-				Netns:         "netns",
-				NetworkName:   "net0",
-				ContainerID:   "cid",
-				IfName:        "eni",
+				ClientVersion:              "1.2.3",
+				Netns:                      "netns",
+				NetworkName:                "net0",
+				ContainerID:                "cid",
+				IfName:                     "eni",
+				RequiresMultiNICAttachment: tt.fields.podsRequireMultiNICAttachment,
 			}
 
 			resp, err := s.AddNetwork(context.Background(), req)
@@ -309,7 +522,17 @@ func TestServer_AddNetwork(t *testing.T) {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.want, resp)
+				for index, _ := range tt.want.IPAllocationMetadata {
+					assert.Equal(t, tt.want.IPAllocationMetadata[index].IPv4Addr, resp.IPAllocationMetadata[index].IPv4Addr)
+					assert.Equal(t, tt.want.IPAllocationMetadata[index].IPv6Addr, resp.IPAllocationMetadata[index].IPv6Addr)
+					assert.Equal(t, tt.want.IPAllocationMetadata[index].DeviceNumber, resp.IPAllocationMetadata[index].DeviceNumber)
+					assert.Equal(t, tt.want.IPAllocationMetadata[index].RouteTableId, resp.IPAllocationMetadata[index].RouteTableId)
+				}
+
+				assert.Equal(t, tt.want.UseExternalSNAT, resp.UseExternalSNAT)
+				assert.Equal(t, tt.want.VPCv4CIDRs, resp.VPCv4CIDRs)
+				assert.Equal(t, tt.want.VPCv6CIDRs, resp.VPCv6CIDRs)
+				assert.Equal(t, tt.want.Success, resp.Success)
 			}
 
 			// Add more detailed assertion messages

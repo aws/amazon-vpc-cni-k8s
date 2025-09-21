@@ -39,3 +39,5 @@ ignore:
   - "scripts/**/*"
   - "test/**/*"
   - "testdata/**/*"
+  - "**/mocks/**"
+  - "**/*_mocks.go"

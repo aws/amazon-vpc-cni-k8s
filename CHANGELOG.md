@@ -1,5 +1,52 @@
 # Changelog
 
+## v1.20.2
+* Bump github.com/samber/lo from 1.49.1 to 1.51.0 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3386
+* Bump github.com/prometheus/client_model from 0.6.1 to 0.6.2 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3385
+* Bump the aws-dependencies group with 11 updates by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3384
+* Adding release notes and chart update by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3399
+* updating tags by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3400
+* Add and configure soak tests workflow by @Supreeth095 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3404
+* Add and configure soak tests workflow by @Supreeth095 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3407
+* Bump actions/checkout from 4.1.7 to 5.0.0 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3409
+* Bump helm.sh/helm/v3 from 3.18.4 to 3.18.5 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3401
+* Removing pinning of golang version by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3411
+* Bump the k8s-dependencies group across 1 directory with 5 updates by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3413
+* chore: update VPC IP resource limits by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3419
+* chore: update VPC IP resource limits by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3420
+* Fetch only necessary plugins by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3416
+* chore: update VPC IP resource limits by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3422
+* chore: update VPC IP resource limits by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3438
+* Move npagent server port to unix socket by @Pavani-Panakanti in https://github.com/aws/amazon-vpc-cni-k8s/pull/3442
+
+## v1.20.1
+* Adding release notes for mult-nic feature by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3350
+* bumping kops tag by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3355
+* updating kops tag in workflow by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3356
+* bumping kops tag to v1.33.0-beta.1 by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3357
+* adding github action monitoring in dependabot by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3360
+* Bump actions/setup-go from 5.0.1 to 5.5.0 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3365
+* Bump docker/setup-buildx-action from 3.3.0 to 3.11.1 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3362
+* adding manual run option to integration test workflow by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3369
+* Bump google.golang.org/protobuf from 1.36.5 to 1.36.6 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3367
+* Bump the aws-dependencies group with 3 updates by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3366
+* updated README.md by @viveksb007 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3371
+* Bump docker/setup-qemu-action from 3.0.0 to 3.6.0 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3373
+* bypassing udev interference by assigning mac address to host side veth by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3354
+* Updating static config for instances and better error handling by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3378
+* fixing codecoverage report issue by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3382
+* Merge from master to release-1.20 by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3376
+
+
+## v1.20.0
+* Feature - Adding support in CNI for managing multiple network interface card on the instance in #3347,#3349
+* Dependency - Bump helm.sh/helm/v3 from 3.18.1 to 3.18.4 in #3346
+* Dependency - Bump aws-dependencies in #3337
+* Improvement - Build CNI plugins from source in #3343
+* Fix - Fix error when Network policy agent GRPC call fails in #3320
+* Fix - Fix race condition when force deleting pod using a security group for pod feature in #3304
+* Improvement - Add latency metrics for ipamd init in #3301
+
 ## v1.19.6
 * Dependency - Bump k8s.io/apimachinery from 0.32.3 to 0.33.0 by @dependabot in #3279
 * Dependency - Bump golang.org/x/sys from 0.31.0 to 0.32.0 in /test/agent in #3280

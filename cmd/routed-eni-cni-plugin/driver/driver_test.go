@@ -14,6 +14,7 @@
 package driver
 
 import (
+	"fmt"
 	"net"
 	"syscall"
 	"testing"
@@ -39,6 +40,25 @@ var testLogCfg = logger.Configuration{
 }
 
 var testLogger = logger.New(&testLogCfg)
+
+type vethMatcher struct {
+	contVethName string
+	flags        net.Flags
+	mtu          int
+}
+
+func (m vethMatcher) Matches(x interface{}) bool {
+	veth, ok := x.(netlink.Link)
+	if !ok {
+		return false
+	}
+	attrs := veth.Attrs()
+	return attrs.Name == m.contVethName && attrs.Flags == m.flags && attrs.MTU == m.mtu
+}
+
+func (m vethMatcher) String() string {
+	return fmt.Sprintf("matches veth with contVethName=%s, flags=%s, mtu=%d", m.contVethName, m.flags, m.mtu)
+}
 
 func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 	hostVethWithIndex9 := &netlink.Veth{
@@ -106,10 +126,10 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 		hostVethName string
 		contVethName string
 		netnsPath    string
-		v4Addr       *net.IPNet
-		v6Addr       *net.IPNet
+		ipAddr       *net.IPNet
 		deviceNumber int
 		mtu          int
+		routeTableId int
 	}
 	tests := []struct {
 		name    string
@@ -174,9 +194,9 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 				hostVethName: "eni8ea2c11fe35",
 				contVethName: "eth0",
 				netnsPath:    "/proc/42/ns/net",
-				v4Addr:       containerAddr,
-				v6Addr:       nil,
+				ipAddr:       containerAddr, // v4 address
 				deviceNumber: 0,
+				routeTableId: 1,
 				mtu:          9001,
 			},
 		},
@@ -240,9 +260,9 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 				hostVethName: "eni8ea2c11fe35",
 				contVethName: "eth0",
 				netnsPath:    "/proc/42/ns/net",
-				v4Addr:       containerAddr,
-				v6Addr:       nil,
+				ipAddr:       containerAddr, // v4 address
 				deviceNumber: 3,
+				routeTableId: 4,
 				mtu:          9001,
 			},
 		},
@@ -266,9 +286,9 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 				hostVethName: "eni8ea2c11fe35",
 				contVethName: "eth0",
 				netnsPath:    "/proc/42/ns/net",
-				v4Addr:       containerAddr,
-				v6Addr:       nil,
+				ipAddr:       containerAddr, // v4 address
 				deviceNumber: 3,
+				routeTableId: 4,
 				mtu:          9001,
 			},
 			wantErr: errors.New("SetupPodNetwork: failed to setup veth pair: failed to setup veth network: some error"),
@@ -326,9 +346,9 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 				hostVethName: "eni8ea2c11fe35",
 				contVethName: "eth0",
 				netnsPath:    "/proc/42/ns/net",
-				v4Addr:       containerAddr,
-				v6Addr:       nil,
+				ipAddr:       containerAddr, // v4 Address
 				deviceNumber: 3,
+				routeTableId: 4,
 				mtu:          9001,
 			},
 			wantErr: errors.New("SetupPodNetwork: unable to setup IP based container routes and rules: failed to setup container route, containerAddr=192.168.100.42/32, hostVeth=eni8ea2c11fe35, rtTable=main: some error"),
@@ -374,7 +394,17 @@ func Test_linuxNetwork_SetupPodNetwork(t *testing.T) {
 				ns:      ns,
 				procSys: procSys,
 			}
-			err := n.SetupPodNetwork(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, tt.args.v4Addr, tt.args.v6Addr, tt.args.deviceNumber, tt.args.mtu, testLogger)
+			vIfMetadata := []VirtualInterfaceMetadata{
+				{
+					IPAddress:         tt.args.ipAddr,
+					DeviceNumber:      tt.args.deviceNumber,
+					RouteTable:        tt.args.routeTableId,
+					HostVethName:      tt.args.hostVethName,
+					ContainerVethName: tt.args.contVethName,
+				},
+			}
+
+			err := n.SetupPodNetwork(vIfMetadata, tt.args.netnsPath, tt.args.mtu, testLogger)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -420,6 +450,7 @@ func Test_linuxNetwork_TeardownPodNetwork(t *testing.T) {
 	type args struct {
 		containerAddr *net.IPNet
 		deviceNumber  int
+		routeTableId  int
 	}
 	tests := []struct {
 		name    string
@@ -444,6 +475,7 @@ func Test_linuxNetwork_TeardownPodNetwork(t *testing.T) {
 			args: args{
 				containerAddr: containerAddr,
 				deviceNumber:  0,
+				routeTableId:  1,
 			},
 		},
 		{
@@ -470,6 +502,7 @@ func Test_linuxNetwork_TeardownPodNetwork(t *testing.T) {
 			args: args{
 				containerAddr: containerAddr,
 				deviceNumber:  3,
+				routeTableId:  4,
 			},
 		},
 		{
@@ -485,6 +518,7 @@ func Test_linuxNetwork_TeardownPodNetwork(t *testing.T) {
 			args: args{
 				containerAddr: containerAddr,
 				deviceNumber:  3,
+				routeTableId:  4,
 			},
 			wantErr: errors.New("TeardownPodNetwork: unable to teardown IP based container routes and rules: failed to delete toContainer rule, containerAddr=192.168.100.42/32, rtTable=main: some error"),
 		},
@@ -506,7 +540,14 @@ func Test_linuxNetwork_TeardownPodNetwork(t *testing.T) {
 			n := &linuxNetwork{
 				netLink: netLink,
 			}
-			err := n.TeardownPodNetwork(tt.args.containerAddr, tt.args.deviceNumber, testLogger)
+			vIfMetadata := []VirtualInterfaceMetadata{
+				{
+					IPAddress:    tt.args.containerAddr,
+					DeviceNumber: tt.args.deviceNumber,
+					RouteTable:   tt.args.routeTableId,
+				},
+			}
+			err := n.TeardownPodNetwork(vIfMetadata, testLogger)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -647,8 +688,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 		hostVethName       string
 		contVethName       string
 		netnsPath          string
-		v4Addr             *net.IPNet
-		v6Addr             *net.IPNet
+		ipAddr             *net.IPNet
 		vlanID             int
 		eniMAC             string
 		subnetGW           string
@@ -770,8 +810,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				hostVethName:       "eni8ea2c11fe35",
 				contVethName:       "eth0",
 				netnsPath:          "/proc/42/ns/net",
-				v4Addr:             containerAddr,
-				v6Addr:             nil,
+				ipAddr:             containerAddr,
 				vlanID:             vlanID,
 				eniMAC:             eniMac,
 				subnetGW:           subnetGW,
@@ -888,8 +927,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				hostVethName:       "eni8ea2c11fe35",
 				contVethName:       "eth0",
 				netnsPath:          "/proc/42/ns/net",
-				v4Addr:             nil,
-				v6Addr:             containerV6Addr,
+				ipAddr:             containerV6Addr, // v6Address
 				vlanID:             vlanID,
 				eniMAC:             eniMac,
 				subnetGW:           subnetV6GW,
@@ -1006,8 +1044,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				hostVethName:       "eni8ea2c11fe35",
 				contVethName:       "eth0",
 				netnsPath:          "/proc/42/ns/net",
-				v4Addr:             containerAddr,
-				v6Addr:             nil,
+				ipAddr:             containerAddr, //v4 Address
 				vlanID:             vlanID,
 				eniMAC:             eniMac,
 				subnetGW:           subnetGW,
@@ -1124,8 +1161,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				hostVethName:       "eni8ea2c11fe35",
 				contVethName:       "eth0",
 				netnsPath:          "/proc/42/ns/net",
-				v4Addr:             nil,
-				v6Addr:             containerV6Addr,
+				ipAddr:             containerV6Addr, // v6
 				vlanID:             vlanID,
 				eniMAC:             eniMac,
 				subnetGW:           subnetV6GW,
@@ -1154,8 +1190,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				hostVethName:       "eni8ea2c11fe35",
 				contVethName:       "eth0",
 				netnsPath:          "/proc/42/ns/net",
-				v4Addr:             containerAddr,
-				v6Addr:             nil,
+				ipAddr:             containerAddr,
 				vlanID:             vlanID,
 				eniMAC:             eniMac,
 				subnetGW:           subnetGW,
@@ -1213,8 +1248,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				hostVethName:       "eni8ea2c11fe35",
 				contVethName:       "eth0",
 				netnsPath:          "/proc/42/ns/net",
-				v4Addr:             containerAddr,
-				v6Addr:             nil,
+				ipAddr:             containerAddr,
 				vlanID:             vlanID,
 				eniMAC:             eniMac,
 				subnetGW:           subnetGW,
@@ -1282,8 +1316,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				hostVethName:       "eni8ea2c11fe35",
 				contVethName:       "eth0",
 				netnsPath:          "/proc/42/ns/net",
-				v4Addr:             containerAddr,
-				v6Addr:             nil,
+				ipAddr:             containerAddr,
 				vlanID:             vlanID,
 				eniMAC:             eniMac,
 				subnetGW:           subnetGW,
@@ -1394,8 +1427,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				hostVethName:       "eni8ea2c11fe35",
 				contVethName:       "eth0",
 				netnsPath:          "/proc/42/ns/net",
-				v4Addr:             containerAddr,
-				v6Addr:             nil,
+				ipAddr:             containerAddr,
 				vlanID:             vlanID,
 				eniMAC:             eniMac,
 				subnetGW:           subnetGW,
@@ -1506,8 +1538,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				hostVethName:       "eni8ea2c11fe35",
 				contVethName:       "eth0",
 				netnsPath:          "/proc/42/ns/net",
-				v4Addr:             containerAddr,
-				v6Addr:             nil,
+				ipAddr:             containerAddr,
 				vlanID:             vlanID,
 				eniMAC:             eniMac,
 				subnetGW:           subnetGW,
@@ -1571,7 +1602,14 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				ns:      ns,
 				procSys: procSys,
 			}
-			err := n.SetupBranchENIPodNetwork(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, tt.args.v4Addr, tt.args.v6Addr, tt.args.vlanID, tt.args.eniMAC, tt.args.subnetGW, tt.args.parentIfIndex, tt.args.mtu, tt.args.podSGEnforcingMode, testLogger)
+
+			vIfMetadata := VirtualInterfaceMetadata{
+				IPAddress:         tt.args.ipAddr,
+				HostVethName:      tt.args.hostVethName,
+				ContainerVethName: tt.args.contVethName,
+			}
+
+			err := n.SetupBranchENIPodNetwork(vIfMetadata, tt.args.netnsPath, tt.args.vlanID, tt.args.eniMAC, tt.args.subnetGW, tt.args.parentIfIndex, tt.args.mtu, tt.args.podSGEnforcingMode, testLogger)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -1952,7 +1990,12 @@ func Test_linuxNetwork_TeardownBranchENIPodNetwork(t *testing.T) {
 			n := &linuxNetwork{
 				netLink: netLink,
 			}
-			err := n.TeardownBranchENIPodNetwork(tt.args.containerAddr, tt.args.vlanID, tt.args.podSGEnforcingMode, testLogger)
+
+			vIfMetadata := VirtualInterfaceMetadata{
+				IPAddress: tt.args.containerAddr,
+			}
+
+			err := n.TeardownBranchENIPodNetwork(vIfMetadata, tt.args.vlanID, tt.args.podSGEnforcingMode, testLogger)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -1969,6 +2012,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			Index: 1,
 		},
 	}
+
+	contVethWithIndex2 := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name:  "mNicIf1",
+			Index: 1,
+		},
+	}
+
 	hostVethWithIndex9 := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{
 			Name:         "eni8ea2c11fe35",
@@ -2026,6 +2077,10 @@ func Test_createVethPairContext_run(t *testing.T) {
 	type nsFDCall struct {
 		fd uintptr
 	}
+	type ruleAddCall struct {
+		rule *netlink.Rule
+		err  error
+	}
 
 	type fields struct {
 		linkByNameCalls   []linkByNameCall
@@ -2039,12 +2094,12 @@ func Test_createVethPairContext_run(t *testing.T) {
 		linkSetNsFdCalls  []linkSetNsFdCall
 		procSysSetCalls   []procSysSetCall
 		nsFDCalls         []nsFDCall
+		linkRuleAddCalls  []ruleAddCall
 	}
 	type args struct {
 		contVethName string
 		hostVethName string
-		v4Addr       *net.IPNet
-		v6Addr       *net.IPNet
+		ipAddr       *net.IPNet
 		mtu          int
 	}
 	tests := []struct {
@@ -2052,6 +2107,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 		fields  fields
 		args    args
 		wantErr error
+		index   int
 	}{
 		{
 			name: "successfully created vethPair for ipv4 pods",
@@ -2091,6 +2147,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_LINK,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IPv4(169, 254, 1, 1),
 								Mask: net.CIDRMask(32, 32),
@@ -2103,6 +2160,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_UNIVERSE,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IPv4zero,
 								Mask: net.CIDRMask(0, 32),
@@ -2148,13 +2206,131 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("192.168.120.1"),
 					Mask: net.CIDRMask(32, 32),
 				},
-				v6Addr: nil,
-				mtu:    9001,
+				mtu: 9001,
 			},
+			index: 0,
+		},
+		{
+			name: "successfully created vethPair for ipv4 pods with mNicIf1",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "eni8ea2c11fe35",
+						link:     hostVethWithIndex9,
+					},
+					{
+						linkName: "mNicIf1",
+						link:     contVethWithIndex2,
+					},
+				},
+				linkAddCalls: []linkAddCall{
+					{
+						link: &netlink.Veth{
+							LinkAttrs: netlink.LinkAttrs{
+								Name:  "mNicIf1",
+								Flags: net.FlagUp,
+								MTU:   9001,
+							},
+							PeerName: "eni8ea2c11fe35",
+						},
+					},
+				},
+				linkSetupCalls: []linkSetupCall{
+					{
+						link: hostVethWithIndex9,
+					},
+					{
+						link: contVethWithIndex2,
+					},
+				},
+				routeReplaceCalls: []routeReplaceCall{
+					{
+						route: &netlink.Route{
+							LinkIndex: contVethWithIndex2.Attrs().Index,
+							Scope:     netlink.SCOPE_LINK,
+							Table:     1,
+							Dst: &net.IPNet{
+								IP:   net.IPv4(169, 254, 1, 2),
+								Mask: net.CIDRMask(32, 32),
+							},
+						},
+					},
+				},
+				routeAddCalls: []routeAddCall{
+					{
+						route: &netlink.Route{
+							LinkIndex: contVethWithIndex2.Attrs().Index,
+							Scope:     netlink.SCOPE_UNIVERSE,
+							Table:     1,
+							Dst: &net.IPNet{
+								IP:   net.IPv4zero,
+								Mask: net.CIDRMask(0, 32),
+							},
+							Gw: net.IPv4(169, 254, 1, 2),
+						},
+					},
+				},
+				addrAddCalls: []addrAddCall{
+					{
+						link: contVethWithIndex2,
+						addr: &netlink.Addr{
+							IPNet: &net.IPNet{
+								IP:   net.ParseIP("192.168.120.1"),
+								Mask: net.CIDRMask(32, 32),
+							},
+						},
+					},
+				},
+				neighAddCalls: []neighAddCall{
+					{
+						neigh: &netlink.Neigh{
+							LinkIndex:    contVethWithIndex2.Attrs().Index,
+							State:        netlink.NUD_PERMANENT,
+							IP:           net.IPv4(169, 254, 1, 2),
+							HardwareAddr: hostVethWithIndex9.Attrs().HardwareAddr,
+						},
+					},
+				},
+				linkSetNsFdCalls: []linkSetNsFdCall{
+					{
+						link: hostVethWithIndex9,
+						fd:   3,
+					},
+				},
+				procSysSetCalls: []procSysSetCall{},
+				nsFDCalls: []nsFDCall{
+					{
+						fd: uintptr(3),
+					},
+				},
+				linkRuleAddCalls: []ruleAddCall{
+					{
+						rule: &netlink.Rule{
+							Src: &net.IPNet{
+								IP:   net.ParseIP("192.168.120.1"),
+								Mask: net.CIDRMask(32, 32),
+							},
+							Priority: networkutils.FromInterfaceRulePriority,
+							Table:    1,
+						},
+						err: nil,
+					},
+				},
+			},
+			args: args{
+				contVethName: "mNicIf1",
+				hostVethName: "eni8ea2c11fe35",
+				ipAddr: &net.IPNet{
+					IP:   net.ParseIP("192.168.120.1"),
+					Mask: net.CIDRMask(32, 32),
+				},
+				mtu: 9001,
+			},
+			index: 1,
 		},
 		{
 			name: "successfully created vethPair for ipv6 pods",
@@ -2198,6 +2374,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_LINK,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
 								Mask: net.CIDRMask(128, 128),
@@ -2210,6 +2387,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_UNIVERSE,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IPv6zero,
 								Mask: net.CIDRMask(0, 128),
@@ -2278,13 +2456,160 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr:       nil,
-				v6Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("2001:db8:3333:4444:5555:6666:7777:8888"),
 					Mask: net.CIDRMask(128, 128),
 				},
 				mtu: 9001,
 			},
+			index: 0,
+		},
+		{
+			name: "successfully created vethPair for ipv6 pods with mNicIf1",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "eni8ea2c11fe35",
+						link:     hostVethWithIndex9,
+					},
+					{
+						linkName: "mNicIf1",
+						link:     contVethWithIndex2,
+					},
+					{
+						linkName: "mNicIf1",
+						link:     contVethWithIndex2,
+					},
+				},
+				linkAddCalls: []linkAddCall{
+					{
+						link: &netlink.Veth{
+							LinkAttrs: netlink.LinkAttrs{
+								Name:  "mNicIf1",
+								Flags: net.FlagUp,
+								MTU:   9001,
+							},
+							PeerName: "eni8ea2c11fe35",
+						},
+					},
+				},
+				linkSetupCalls: []linkSetupCall{
+					{
+						link: hostVethWithIndex9,
+					},
+					{
+						link: contVethWithIndex2,
+					},
+				},
+				routeReplaceCalls: []routeReplaceCall{
+					{
+						route: &netlink.Route{
+							LinkIndex: contVethWithIndex2.Attrs().Index,
+							Scope:     netlink.SCOPE_LINK,
+							Table:     1,
+							Dst: &net.IPNet{
+								IP:   net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+								Mask: net.CIDRMask(128, 128),
+							},
+						},
+					},
+				},
+				routeAddCalls: []routeAddCall{
+					{
+						route: &netlink.Route{
+							LinkIndex: contVethWithIndex2.Attrs().Index,
+							Scope:     netlink.SCOPE_UNIVERSE,
+							Table:     1,
+							Dst: &net.IPNet{
+								IP:   net.IPv6zero,
+								Mask: net.CIDRMask(0, 128),
+							},
+							Gw: net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+						},
+					},
+				},
+				addrAddCalls: []addrAddCall{
+					{
+						link: contVethWithIndex2,
+						addr: &netlink.Addr{
+							IPNet: &net.IPNet{
+								IP:   net.ParseIP("2001:db8:3333:4444:5555:6666:7777:8888"),
+								Mask: net.CIDRMask(128, 128),
+							},
+						},
+					},
+				},
+				addrListCalls: []addrListCall{
+					{
+						link:   contVethWithIndex2,
+						family: netlink.FAMILY_V6,
+						addrs: []netlink.Addr{
+							{
+								IPNet: &net.IPNet{
+									IP:   net.ParseIP("2001:db8:3333:4444:5555:6666:7777:8888"),
+									Mask: net.CIDRMask(128, 128),
+								},
+							},
+						},
+					},
+				},
+				neighAddCalls: []neighAddCall{
+					{
+						neigh: &netlink.Neigh{
+							LinkIndex:    contVethWithIndex2.Attrs().Index,
+							State:        netlink.NUD_PERMANENT,
+							IP:           net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+							HardwareAddr: hostVethWithIndex9.Attrs().HardwareAddr,
+						},
+					},
+				},
+				linkSetNsFdCalls: []linkSetNsFdCall{
+					{
+						link: hostVethWithIndex9,
+						fd:   3,
+					},
+				},
+				procSysSetCalls: []procSysSetCall{
+					{
+						key:   "net/ipv6/conf/mNicIf1/disable_ipv6",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/lo/disable_ipv6",
+						value: "0",
+					},
+				},
+				nsFDCalls: []nsFDCall{
+					{
+						fd: uintptr(3),
+					},
+				},
+
+				linkRuleAddCalls: []ruleAddCall{
+					{
+						rule: &netlink.Rule{
+							Src: &net.IPNet{
+								IP:   net.ParseIP("2001:db8:3333:4444:5555:6666:7777:8888"),
+								Mask: net.CIDRMask(128, 128),
+							},
+							Priority: networkutils.FromInterfaceRulePriority,
+							Table:    1,
+							Family:   netlink.FAMILY_V6,
+						},
+						err: nil,
+					},
+				},
+			},
+			args: args{
+				contVethName: "mNicIf1",
+				hostVethName: "eni8ea2c11fe35",
+				ipAddr: &net.IPNet{
+					IP:   net.ParseIP("2001:db8:3333:4444:5555:6666:7777:8888"),
+					Mask: net.CIDRMask(128, 128),
+				},
+				mtu: 9001,
+			},
+			index: 1,
 		},
 		{
 			name: "failed to add vethPair",
@@ -2306,14 +2631,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("192.168.120.1"),
 					Mask: net.CIDRMask(32, 32),
 				},
-				v6Addr: nil,
-				mtu:    9001,
+				mtu: 9001,
 			},
 			wantErr: errors.New("some error"),
+			index:   0,
 		},
 		{
 			name: "failed to find hostVeth",
@@ -2340,14 +2665,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("192.168.120.1"),
 					Mask: net.CIDRMask(32, 32),
 				},
-				v6Addr: nil,
-				mtu:    9001,
+				mtu: 9001,
 			},
 			wantErr: errors.New("setup NS network: failed to find link \"eni8ea2c11fe35\": some error"),
+			index:   0,
 		},
 		{
 			name: "failed to setUp hostVeth",
@@ -2380,14 +2705,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("192.168.120.1"),
 					Mask: net.CIDRMask(32, 32),
 				},
-				v6Addr: nil,
-				mtu:    9001,
+				mtu: 9001,
 			},
 			wantErr: errors.New("setup NS network: failed to set link \"eni8ea2c11fe35\" up: some error"),
+			index:   0,
 		},
 		{
 			name: "failed to find contVeth",
@@ -2423,14 +2748,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("192.168.120.1"),
 					Mask: net.CIDRMask(32, 32),
 				},
-				v6Addr: nil,
-				mtu:    9001,
+				mtu: 9001,
 			},
 			wantErr: errors.New("setup NS network: failed to find link \"eth0\": some error"),
+			index:   0,
 		},
 		{
 			name: "failed to setUp contVeth",
@@ -2470,14 +2795,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("192.168.120.1"),
 					Mask: net.CIDRMask(32, 32),
 				},
-				v6Addr: nil,
-				mtu:    9001,
+				mtu: 9001,
 			},
 			wantErr: errors.New("setup NS network: failed to set link \"eth0\" up: some error"),
+			index:   0,
 		},
 		{
 			name: "failed to add default gateway",
@@ -2517,6 +2842,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_LINK,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IPv4(169, 254, 1, 1),
 								Mask: net.CIDRMask(32, 32),
@@ -2529,14 +2855,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("192.168.120.1"),
 					Mask: net.CIDRMask(32, 32),
 				},
-				v6Addr: nil,
-				mtu:    9001,
+				mtu: 9001,
 			},
 			wantErr: errors.New("setup NS network: failed to add default gateway: some error"),
+			index:   0,
 		},
 		{
 			name: "failed to add default route",
@@ -2576,6 +2902,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_LINK,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IPv4(169, 254, 1, 1),
 								Mask: net.CIDRMask(32, 32),
@@ -2588,6 +2915,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_UNIVERSE,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IPv4zero,
 								Mask: net.CIDRMask(0, 32),
@@ -2601,14 +2929,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("192.168.120.1"),
 					Mask: net.CIDRMask(32, 32),
 				},
-				v6Addr: nil,
-				mtu:    9001,
+				mtu: 9001,
 			},
 			wantErr: errors.New("setup NS network: failed to add default route: some error"),
+			index:   0,
 		},
 		{
 			name: "failed to add container IP",
@@ -2648,6 +2976,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_LINK,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IPv4(169, 254, 1, 1),
 								Mask: net.CIDRMask(32, 32),
@@ -2660,6 +2989,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_UNIVERSE,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IPv4zero,
 								Mask: net.CIDRMask(0, 32),
@@ -2684,14 +3014,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("192.168.120.1"),
 					Mask: net.CIDRMask(32, 32),
 				},
-				v6Addr: nil,
-				mtu:    9001,
+				mtu: 9001,
 			},
 			wantErr: errors.New("setup NS network: failed to add IP addr to \"eth0\": some error"),
+			index:   0,
 		},
 		{
 			name: "failed to add static ARP",
@@ -2731,6 +3061,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_LINK,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IPv4(169, 254, 1, 1),
 								Mask: net.CIDRMask(32, 32),
@@ -2743,6 +3074,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_UNIVERSE,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IPv4zero,
 								Mask: net.CIDRMask(0, 32),
@@ -2777,14 +3109,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("192.168.120.1"),
 					Mask: net.CIDRMask(32, 32),
 				},
-				v6Addr: nil,
-				mtu:    9001,
+				mtu: 9001,
 			},
 			wantErr: errors.New("setup NS network: failed to add static ARP: some error"),
+			index:   0,
 		},
 		{
 			name: "failed to move hostVeth to host netNS",
@@ -2824,6 +3156,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_LINK,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IPv4(169, 254, 1, 1),
 								Mask: net.CIDRMask(32, 32),
@@ -2836,6 +3169,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_UNIVERSE,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IPv4zero,
 								Mask: net.CIDRMask(0, 32),
@@ -2881,14 +3215,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("192.168.120.1"),
 					Mask: net.CIDRMask(32, 32),
 				},
-				v6Addr: nil,
-				mtu:    9001,
+				mtu: 9001,
 			},
 			wantErr: errors.New("setup NS network: failed to move veth to host netns: some error"),
+			index:   0,
 		},
 		{
 			name: "failed to enable IPv6 on eth0",
@@ -2934,14 +3268,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr:       nil,
-				v6Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("2001:db8:3333:4444:5555:6666:7777:8888"),
 					Mask: net.CIDRMask(128, 128),
 				},
 				mtu: 9001,
 			},
 			wantErr: errors.New("setupVeth network: failed to enable IPv6 on container veth interface: some error"),
+			index:   0,
 		},
 		{
 			name: "failed to enable IPv6 on lo",
@@ -2991,14 +3325,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr:       nil,
-				v6Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("2001:db8:3333:4444:5555:6666:7777:8888"),
 					Mask: net.CIDRMask(128, 128),
 				},
 				mtu: 9001,
 			},
 			wantErr: errors.New("setupVeth network: failed to enable IPv6 on container's lo interface: some error"),
+			index:   0,
 		},
 		{
 			name: "failed to wait IPv6 address become stable",
@@ -3042,6 +3376,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_LINK,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IP{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
 								Mask: net.CIDRMask(128, 128),
@@ -3054,6 +3389,7 @@ func Test_createVethPairContext_run(t *testing.T) {
 						route: &netlink.Route{
 							LinkIndex: contVethWithIndex1.Attrs().Index,
 							Scope:     netlink.SCOPE_UNIVERSE,
+							Table:     254,
 							Dst: &net.IPNet{
 								IP:   net.IPv6zero,
 								Mask: net.CIDRMask(0, 128),
@@ -3104,14 +3440,14 @@ func Test_createVethPairContext_run(t *testing.T) {
 			args: args{
 				contVethName: "eth0",
 				hostVethName: "eni8ea2c11fe35",
-				v4Addr:       nil,
-				v6Addr: &net.IPNet{
+				ipAddr: &net.IPNet{
 					IP:   net.ParseIP("2001:db8:3333:4444:5555:6666:7777:8888"),
 					Mask: net.CIDRMask(128, 128),
 				},
 				mtu: 9001,
 			},
 			wantErr: errors.New("setup NS network: failed while waiting for v6 addresses to be stable: could not list addresses: some error"),
+			index:   0,
 		},
 	}
 	for _, tt := range tests {
@@ -3124,7 +3460,11 @@ func Test_createVethPairContext_run(t *testing.T) {
 				netLink.EXPECT().LinkByName(call.linkName).Return(call.link, call.err)
 			}
 			for _, call := range tt.fields.linkAddCalls {
-				netLink.EXPECT().LinkAdd(call.link).Return(call.err)
+				netLink.EXPECT().LinkAdd(vethMatcher{
+					contVethName: call.link.Attrs().Name,
+					flags:        call.link.Attrs().Flags,
+					mtu:          call.link.Attrs().MTU}).
+					Return(call.err)
 			}
 			for _, call := range tt.fields.linkSetupCalls {
 				netLink.EXPECT().LinkSetUp(call.link).Return(call.err)
@@ -3147,6 +3487,10 @@ func Test_createVethPairContext_run(t *testing.T) {
 			for _, call := range tt.fields.linkSetNsFdCalls {
 				netLink.EXPECT().LinkSetNsFd(call.link, call.fd).Return(call.err)
 			}
+			for _, call := range tt.fields.linkRuleAddCalls {
+				netLink.EXPECT().NewRule().Return(call.rule)
+				netLink.EXPECT().RuleAdd(call.rule).Return(call.err)
+			}
 
 			procSys := mock_procsyswrapper.NewMockProcSys(ctrl)
 			for _, call := range tt.fields.procSysSetCalls {
@@ -3161,11 +3505,12 @@ func Test_createVethPairContext_run(t *testing.T) {
 			createVethContext := &createVethPairContext{
 				contVethName: tt.args.contVethName,
 				hostVethName: tt.args.hostVethName,
-				v4Addr:       tt.args.v4Addr,
-				v6Addr:       tt.args.v6Addr,
+				ipAddr:       tt.args.ipAddr,
 				mtu:          tt.args.mtu,
 				netLink:      netLink,
 				procSys:      procSys,
+				index:        tt.index,
+				log:          testLogger,
 			}
 			err := createVethContext.run(hostNS)
 			if tt.wantErr != nil {
@@ -3592,7 +3937,7 @@ func Test_linuxNetwork_setupVeth(t *testing.T) {
 				ns:      ns,
 				procSys: procSys,
 			}
-			got, err := n.setupVeth(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, nil, nil, tt.args.mtu, testLogger)
+			got, err := n.setupVeth(tt.args.hostVethName, tt.args.contVethName, tt.args.netnsPath, nil, tt.args.mtu, testLogger, 0)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -5228,4 +5573,48 @@ func Test_buildVlanLink(t *testing.T) {
 			assert.Equal(t, tt.wantVlanLinkENIMac, got.Attrs().HardwareAddr)
 		})
 	}
+}
+
+func Test_generateUniqueRandomMAC(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	existing, _ := net.ParseMAC("3a:af:0d:21:cd:fc")
+	hostLink := &netlink.Device{LinkAttrs: netlink.LinkAttrs{
+		Name: "eth0", HardwareAddr: existing}}
+	netLink := mock_netlinkwrapper.NewMockNetLink(ctrl)
+	netLink.EXPECT().LinkList().Return([]netlink.Link{hostLink}, nil).AnyTimes()
+
+	tests := []struct {
+		name     string
+		randFunc func() string
+		wantErr  bool
+	}{
+		{
+			name:     "generates unique MAC address",
+			randFunc: generateRandomMAC,
+			wantErr:  false,
+		},
+		{
+			name:     "collides with mac address on host",
+			randFunc: func() string { return "3a:af:0d:21:cd:fc" },
+			wantErr:  true,
+		},
+	}
+	for _, tt := range tests {
+		mgen := MACGenerator{netlink: netLink, randMACfn: tt.randFunc}
+		mac, err := mgen.generateUniqueRandomMAC()
+		if tt.wantErr {
+			assert.Error(t, err)
+		} else {
+			assert.NoError(t, err)
+			assert.True(t, isUnicastMAC(mac))
+		}
+	}
+}
+func isUnicastMAC(mac string) bool {
+	addr, err := net.ParseMAC(mac)
+	if err != nil || len(addr) != 6 {
+		return false
+	}
+	return addr[0]&0x1 == 0 && addr[0]&0x2 == 0x02
 }

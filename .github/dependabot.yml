@@ -3,9 +3,29 @@ version: 2
 updates:
   - package-ecosystem: "gomod"
     directory: "/"
+    groups:
+      k8s-dependencies:
+        patterns:
+        - "k8s.io*"
+        - "sigs.k8s.io/*"
+      aws-dependencies:
+        patterns:
+        - "github.com/aws*"
     schedule:
       interval: "monthly"
   - package-ecosystem: "gomod"
     directory: "/test/agent"
+    groups:
+      k8s-dependencies:
+        patterns:
+        - "k8s.io*"
+        - "sigs.k8s.io/*"
+      aws-dependencies:
+        patterns:
+        - "github.com/aws*"
     schedule:
       interval: "monthly"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

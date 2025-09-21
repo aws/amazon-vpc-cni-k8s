@@ -1,13 +1,9 @@
-# Repo owner must review the PR properly before trigger this workflow manually.
-name: Manual Pull Request test
+name: Soak Tests
 
 on:
-  workflow_dispatch:
-    inputs:
-      pull_request_number:
-        description: "PR number we want to run tests on"
-        required: true
-        type: string
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 3 * * *" # every night
 
 permissions:
   id-token: write
@@ -15,17 +11,10 @@ permissions:
 
 jobs:
   integration-test:
-    if: github.event.inputs.pull_request_number != ''
     runs-on: ubuntu-latest
     steps:
       - name: Checkout latest commit in the PR
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # refs/tags/v5.0.0
-        with:
-          ref: "refs/pull/${{ github.event.inputs.pull_request_number }}/merge"
-      - name: Set up Docker QEMU
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # refs/tags/v3.6.0
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # refs/tags/v3.11.1
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # refs/tags/v5.5.0
         with:
@@ -41,12 +30,9 @@ jobs:
         with:
           role-to-assume: ${{ secrets.OSS_TEST_ROLE_ARN }}
           role-duration-seconds: 14400 # 4 hours
-          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
-      - name: Run e2e tests
-        env:
-          DISABLE_PROMPT: true
-          ROLE_CREATE: false
-          ROLE_ARN: ${{ secrets.EKS_CLUSTER_ROLE_ARN }}
-          RUN_CONFORMANCE: true
+          aws-region: us-west-2
+      - name: Run soak tests
         run: |
-          ./scripts/run-integration-tests.sh
+          RUN_CNI_INTEGRATION_TESTS=false RUN_SOAK_TEST=true RUN_UBUNTU_TEST=true ./scripts/run-integration-tests.sh
+        env:
+          AWS_DEFAULT_REGION: us-west-2
