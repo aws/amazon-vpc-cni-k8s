@@ -227,7 +227,6 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			}
 
 			ipv4Addr, ipv6Addr, deviceNumber, err = ds.AssignPodIPAddress(ipamKey, ipamMetadata, s.ipamContext.enableIPv4, s.ipamContext.enableIPv6)
-
 			if err != nil {
 				log.Warnf("Failed to assign IPs from network card %d: %v", networkCard, err)
 				// continue to look through other datastores till you are unable to find an IP address when ONLY 1 ip is required
@@ -367,17 +366,17 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 		}
 
 		if s.ipamContext.enableIPv4 && eni != nil {
-			//cidrStr will be pod IP i.e, IP/32 for v4 (or) IP/128 for v6.
+			// cidrStr will be pod IP i.e, IP/32 for v4 (or) IP/128 for v6.
 			// Case 1: PD is enabled but IP/32 key in AvailableIPv4Cidrs[cidrStr] exists, this means it is a secondary IP. Added IsPrefix check just for sanity.
 			// So this IP should be released immediately.
 			// Case 2: PD is disabled then IP/32 key in AvailableIPv4Cidrs[cidrStr] will not exists since key to AvailableIPv4Cidrs will be either /28 prefix or /32
 			// secondary IP. Hence now see if we need free up a prefix is no other pods are using it.
 			if s.ipamContext.enablePrefixDelegation && eni.AvailableIPv4Cidrs[cidrStr] != nil && eni.AvailableIPv4Cidrs[cidrStr].IsPrefix {
 				log.Debugf("IP belongs to secondary pool with PD enabled so free IP from EC2")
-				s.ipamContext.tryUnassignIPFromENI(eni.ID, networkCard)
+				s.ipamContext.tryUnassignIPFromENI(ctx, eni.ID, networkCard)
 			} else if !s.ipamContext.enablePrefixDelegation && eni.AvailableIPv4Cidrs[cidrStr] == nil {
 				log.Debugf("IP belongs to prefix pool with PD disabled so try free prefix from EC2")
-				s.ipamContext.tryUnassignPrefixFromENI(eni.ID, networkCard)
+				s.ipamContext.tryUnassignPrefixFromENI(ctx, eni.ID, networkCard)
 			}
 		}
 
@@ -456,7 +455,6 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 }
 
 func (s *server) GetNetworkPolicyConfigs(ctx context.Context, e *emptypb.Empty) (*rpc.NetworkPolicyAgentConfigReply, error) {
-
 	log.Infof("Received request for Network Policy Agent configs")
 
 	resp := &rpc.NetworkPolicyAgentConfigReply{
