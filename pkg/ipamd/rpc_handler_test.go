@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/rpc"
 	multiErr "github.com/hashicorp/go-multierror"
 
@@ -105,10 +106,16 @@ func TestServer_AddNetwork(t *testing.T) {
 		snatExclusionCIDRs []string
 	}
 
+	type ENIConfig struct {
+		IPs          []string
+		DeviceNumber int
+		IsPrimary    bool
+	}
+
 	type fields struct {
 		managedNetworkCards           int
-		ipV4AddressByENIID            map[int]map[string][]string
-		ipV6PrefixByENIID             map[int]map[string][]string
+		ipV4AddressByENIID            map[int]map[string]ENIConfig
+		ipV6PrefixByENIID             map[int]map[string]ENIConfig
 		getVPCIPv4CIDRsCalls          []getVPCIPv4CIDRsCall
 		getVPCIPv6CIDRsCalls          []getVPCIPv6CIDRsCall
 		useExternalSNATCalls          []useExternalSNATCall
@@ -129,7 +136,8 @@ func TestServer_AddNetwork(t *testing.T) {
 			name: "successfully allocated IPv4Address & use externalSNAT",
 			fields: fields{
 				managedNetworkCards: 1,
-				ipV4AddressByENIID:  map[int]map[string][]string{0: {"eni-1": {"192.168.1.100"}}},
+				ipV4AddressByENIID: map[int]map[string]ENIConfig{
+					0: {"eni-1": {IPs: []string{"192.168.1.100"}, DeviceNumber: 0, IsPrimary: true}}},
 				getVPCIPv4CIDRsCalls: []getVPCIPv4CIDRsCall{
 					{
 						cidrs: []string{"10.10.0.0/16"},
@@ -150,7 +158,7 @@ func TestServer_AddNetwork(t *testing.T) {
 						IPv4Addr:     "192.168.1.100",
 						IPv6Addr:     "",
 						DeviceNumber: int32(0),
-						RouteTableId: int32(1),
+						RouteTableId: int32(254),
 					},
 				},
 				UseExternalSNAT: true,
@@ -161,8 +169,10 @@ func TestServer_AddNetwork(t *testing.T) {
 			name: "successfully allocated IPv4Address for multiple NIC pods",
 			fields: fields{
 				managedNetworkCards: 2,
-				ipV4AddressByENIID:  map[int]map[string][]string{0: {"eni-1": {"192.168.1.100"}}, 1: {"eni-2": {"192.168.16.100"}}},
-				getVPCIPv4CIDRsCalls: []getVPCIPv4CIDRsCall{
+				ipV4AddressByENIID: map[int]map[string]ENIConfig{
+					0: {"eni-1": {IPs: []string{"192.168.1.100"}, DeviceNumber: 0, IsPrimary: true}},
+					1: {"eni-2": {IPs: []string{"192.168.16.100"}, DeviceNumber: 1, IsPrimary: false}},
+				}, getVPCIPv4CIDRsCalls: []getVPCIPv4CIDRsCall{
 					{
 						cidrs: []string{"10.10.0.0/16"},
 					},
@@ -189,13 +199,13 @@ func TestServer_AddNetwork(t *testing.T) {
 						IPv4Addr:     "192.168.1.100",
 						IPv6Addr:     "",
 						DeviceNumber: int32(0),
-						RouteTableId: int32(1),
+						RouteTableId: int32(254),
 					},
 					{
 						IPv4Addr:     "192.168.16.100",
 						IPv6Addr:     "",
-						DeviceNumber: int32(0),
-						RouteTableId: int32(1*0 + maxENIsPerCard + 1), // Network Card * DeviceNumber + Max ENIs per card + 1
+						DeviceNumber: int32(1),
+						RouteTableId: int32(10101), // Network Card * DeviceNumber + Max ENIs per card + 1
 					},
 				},
 				UseExternalSNAT: false,
@@ -206,8 +216,8 @@ func TestServer_AddNetwork(t *testing.T) {
 			name: "successfully allocated IPv4Address & not use externalSNAT",
 			fields: fields{
 				managedNetworkCards: 1,
-				ipV4AddressByENIID: map[int]map[string][]string{
-					0: {"eni-1": {"192.168.1.100"}},
+				ipV4AddressByENIID: map[int]map[string]ENIConfig{
+					0: {"eni-1": {IPs: []string{"192.168.1.100"}, DeviceNumber: 0, IsPrimary: true}},
 				},
 				getVPCIPv4CIDRsCalls: []getVPCIPv4CIDRsCall{
 					{
@@ -236,7 +246,7 @@ func TestServer_AddNetwork(t *testing.T) {
 						IPv4Addr:     "192.168.1.100",
 						IPv6Addr:     "",
 						DeviceNumber: int32(0),
-						RouteTableId: int32(1),
+						RouteTableId: int32(254),
 					},
 				},
 				UseExternalSNAT: false,
@@ -247,7 +257,7 @@ func TestServer_AddNetwork(t *testing.T) {
 			name: "failed allocating IPv4Address",
 			fields: fields{
 				managedNetworkCards: 1,
-				ipV4AddressByENIID:  map[int]map[string][]string{},
+				ipV4AddressByENIID:  map[int]map[string]ENIConfig{},
 				ipV4Enabled:         true,
 				ipV6Enabled:         false,
 			},
@@ -260,7 +270,7 @@ func TestServer_AddNetwork(t *testing.T) {
 			name: "failed allocating IPv4Address from any datastore - no IPs available",
 			fields: fields{
 				managedNetworkCards:   2,
-				ipV4AddressByENIID:    map[int]map[string][]string{0: {}, 1: {}},
+				ipV4AddressByENIID:    map[int]map[string]ENIConfig{},
 				ipV4Enabled:           true,
 				ipV6Enabled:           false,
 				enableMultiNICSupport: true,
@@ -274,7 +284,7 @@ func TestServer_AddNetwork(t *testing.T) {
 			name: "Pods require multinic attachment but multinic is not enabled",
 			fields: fields{
 				managedNetworkCards:           1,
-				ipV4AddressByENIID:            map[int]map[string][]string{0: {}},
+				ipV4AddressByENIID:            map[int]map[string]ENIConfig{0: {}},
 				ipV4Enabled:                   true,
 				ipV6Enabled:                   false,
 				enableMultiNICSupport:         false,
@@ -289,9 +299,9 @@ func TestServer_AddNetwork(t *testing.T) {
 			name: "failed allocating IPv4Address from first datastore but second datastore has IPs",
 			fields: fields{
 				managedNetworkCards: 2,
-				ipV4AddressByENIID: map[int]map[string][]string{
+				ipV4AddressByENIID: map[int]map[string]ENIConfig{
 					0: {},
-					1: {"eni-1": {"192.168.1.100"}},
+					1: {"eni-1": {IPs: []string{"192.168.1.100"}, DeviceNumber: 0, IsPrimary: false}},
 				},
 				getVPCIPv4CIDRsCalls: []getVPCIPv4CIDRsCall{
 					{
@@ -307,7 +317,6 @@ func TestServer_AddNetwork(t *testing.T) {
 				ipV6Enabled:           false,
 				enableMultiNICSupport: true,
 			},
-
 			want: &pb.AddNetworkReply{
 				Success: true,
 				IPAllocationMetadata: []*rpc.IPAllocationMetadata{
@@ -315,7 +324,7 @@ func TestServer_AddNetwork(t *testing.T) {
 						IPv4Addr:     "192.168.1.100",
 						IPv6Addr:     "",
 						DeviceNumber: int32(0),
-						RouteTableId: int32(1*0 + maxENIsPerCard + 1), // Network Card * DeviceNumber + Max ENIs per card + 1
+						RouteTableId: int32(10100),
 					},
 				},
 				UseExternalSNAT: true,
@@ -326,28 +335,28 @@ func TestServer_AddNetwork(t *testing.T) {
 			name: "failed allocating IPv4Address from first datastore and pod requires multi-nic attachment",
 			fields: fields{
 				managedNetworkCards: 2,
-				ipV4AddressByENIID: map[int]map[string][]string{
+				ipV4AddressByENIID: map[int]map[string]ENIConfig{
 					0: {},
-					1: {"eni-1": {"192.168.1.100"}},
+					1: {"eni-1": {IPs: []string{"192.168.1.100"}, DeviceNumber: 0, IsPrimary: false}},
 				},
 				ipV4Enabled:                   true,
 				ipV6Enabled:                   false,
 				enableMultiNICSupport:         true,
 				podsRequireMultiNICAttachment: true,
 			},
-
 			want: &pb.AddNetworkReply{
 				Success:              false,
 				IPAllocationMetadata: []*rpc.IPAllocationMetadata{},
 			},
 		},
-
 		{
 			name: "successfully allocated IPv6Address in PD mode",
 			fields: fields{
 				managedNetworkCards: 1,
-				ipV6PrefixByENIID: map[int]map[string][]string{0: {
-					"eni-1": {"2001:db8::/64"}},
+				ipV6PrefixByENIID: map[int]map[string]ENIConfig{
+					0: {
+						"eni-1": {IPs: []string{"2001:db8::/64"}, DeviceNumber: 0, IsPrimary: true},
+					},
 				},
 				getVPCIPv6CIDRsCalls: []getVPCIPv6CIDRsCall{
 					{
@@ -365,7 +374,7 @@ func TestServer_AddNetwork(t *testing.T) {
 						IPv4Addr:     "",
 						IPv6Addr:     "2001:db8::",
 						DeviceNumber: int32(0),
-						RouteTableId: int32(1),
+						RouteTableId: int32(254),
 					},
 				},
 				VPCv6CIDRs: []string{"2001:db8::/56"},
@@ -375,9 +384,13 @@ func TestServer_AddNetwork(t *testing.T) {
 			name: "successfully allocated IPv6Address multinic pods",
 			fields: fields{
 				managedNetworkCards: 2,
-				ipV6PrefixByENIID: map[int]map[string][]string{0: {
-					"eni-1": {"2001:db8::/64"}},
-					1: {"eni-2": {"2001:db8:0:01::/64"}},
+				ipV6PrefixByENIID: map[int]map[string]ENIConfig{
+					0: {
+						"eni-1": {IPs: []string{"2001:db8::/64"}, DeviceNumber: 0, IsPrimary: true},
+					},
+					1: {
+						"eni-2": {IPs: []string{"2001:db8:0:01::/64"}, DeviceNumber: 1, IsPrimary: false},
+					},
 				},
 				getVPCIPv6CIDRsCalls: []getVPCIPv6CIDRsCall{
 					{
@@ -397,13 +410,13 @@ func TestServer_AddNetwork(t *testing.T) {
 						IPv4Addr:     "",
 						IPv6Addr:     "2001:db8::",
 						DeviceNumber: int32(0),
-						RouteTableId: int32(1),
+						RouteTableId: int32(254),
 					},
 					{
 						IPv4Addr:     "",
 						IPv6Addr:     "2001:db8:0:1::",
-						DeviceNumber: int32(0),
-						RouteTableId: int32(1*0 + maxENIsPerCard + 1),
+						DeviceNumber: int32(1),
+						RouteTableId: int32(10101),
 					},
 				},
 				VPCv6CIDRs: []string{"2001:db8::/56"},
@@ -413,7 +426,7 @@ func TestServer_AddNetwork(t *testing.T) {
 			name: "failed allocating IPv6Address - No IP addresses available",
 			fields: fields{
 				managedNetworkCards:     1,
-				ipV6PrefixByENIID:       map[int]map[string][]string{},
+				ipV6PrefixByENIID:       map[int]map[string]ENIConfig{},
 				ipV4Enabled:             true,
 				ipV6Enabled:             false,
 				prefixDelegationEnabled: true,
@@ -427,8 +440,10 @@ func TestServer_AddNetwork(t *testing.T) {
 			name: "failed allocating IPv6Address - PD disabled",
 			fields: fields{
 				managedNetworkCards: 1,
-				ipV6PrefixByENIID: map[int]map[string][]string{0: {
-					"eni-1": {"2001:db8::/64"}},
+				ipV6PrefixByENIID: map[int]map[string]ENIConfig{
+					0: {
+						"eni-1": {IPs: []string{"2001:db8::/64"}, DeviceNumber: 0, IsPrimary: true},
+					},
 				},
 				ipV4Enabled:             false,
 				ipV6Enabled:             true,
@@ -471,18 +486,19 @@ func TestServer_AddNetwork(t *testing.T) {
 			dsAccess := &datastore.DataStoreAccess{DataStores: dsList}
 
 			for networkCard, eniMap := range tt.fields.ipV4AddressByENIID {
-				for eniID, ipv4Addresses := range eniMap {
-					dsAccess.GetDataStore(networkCard).AddENI(eniID, 0, false, false, false)
-					for _, ipv4Address := range ipv4Addresses {
+				for eniID, eniConfig := range eniMap {
+					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard))
+					for _, ipv4Address := range eniConfig.IPs {
 						ipv4Addr := net.IPNet{IP: net.ParseIP(ipv4Address), Mask: net.IPv4Mask(255, 255, 255, 255)}
 						dsAccess.GetDataStore(networkCard).AddIPv4CidrToStore(eniID, ipv4Addr, false)
 					}
 				}
 			}
+
 			for networkCard, eniMap := range tt.fields.ipV6PrefixByENIID {
-				for eniID, ipv6Prefixes := range eniMap {
-					dsAccess.GetDataStore(networkCard).AddENI(eniID, 0, false, false, false)
-					for _, ipv6Prefix := range ipv6Prefixes {
+				for eniID, eniConfig := range eniMap {
+					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard))
+					for _, ipv6Prefix := range eniConfig.IPs {
 						_, ipnet, _ := net.ParseCIDR(ipv6Prefix)
 						dsAccess.GetDataStore(networkCard).AddIPv6CidrToStore(eniID, *ipnet, true)
 					}
