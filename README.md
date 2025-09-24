@@ -68,9 +68,9 @@ For help, please consider the following venues (in order):
 For all Kubernetes releases, *we recommend installing the latest VPC CNI release*. The following table denotes our *oldest* recommended
 VPC CNI version for each actively supported Kubernetes release.
 
-| Kubernetes Release | 1.33     | 1.32     | 1.31     | 1.30     | 1.29     | 1.28     | 1.27     | 1.26     |
-| ------------------ | -------- | -------- | -------- | -------- | -------- | -------- | -------- | -------- |
-| VPC CNI Version    | v1.17.1+ | v1.17.1+ | v1.16.4+ | v1.16.0+ | v1.14.1+ | v1.13.4+ | v1.12.5+ | v1.12.0+ |
+| Kubernetes Release | 1.33     | 1.32     | 1.31     | 1.30     | 1.29     | 1.28     |
+| ------------------ | -------- | -------- | -------- | -------- | -------- | -------- |
+| VPC CNI Version    | v1.17.1+ | v1.17.1+ | v1.16.4+ | v1.16.0+ | v1.14.1+ | v1.13.4+ |
 
 ## Version Upgrade
 
@@ -236,9 +236,7 @@ Default: `false`
 
 Specifies whether an external NAT gateway should be used to provide SNAT of secondary ENI IP addresses. If set to `true`, the
 SNAT `iptables` rule and off\-VPC IP rule are not applied, and these rules are removed if they have already been applied.
-Disable SNAT if you need to allow inbound communication to your pods from external VPNs, direct connections, and external VPCs,
-and your pods do not need to access the Internet directly via an Internet Gateway. However, your nodes must be running in a
-private subnet and connected to the internet through an AWS NAT Gateway or another external NAT device.
+SNAT can be disabled in scenarios where pods need direct access to external networks (such as VPN, Direct Connect, or other VPCs) without NAT translation, and where pods are not expected to require direct Internet access via an Internet Gateway. When SNAT is disabled, nodes are typically placed in private subnets, with outbound Internet connectivity provided through an AWS NAT Gateway or another external NAT device.
 
 #### `AWS_VPC_K8S_CNI_RANDOMIZESNAT`
 
