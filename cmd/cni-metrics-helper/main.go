@@ -30,6 +30,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/publisher"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const (
@@ -67,6 +68,10 @@ func main() {
 		LogLocation: "stdout",
 	}
 	log := logger.New(&logConfig)
+
+	// Initialize controller-runtime logger
+	ctrl.SetLogger(logConfig.NewControllerRuntimeLogger())
+
 	options := &options{}
 	flags := pflag.NewFlagSet("", pflag.ExitOnError)
 	flags.AddGoFlagSet(flag.CommandLine)
