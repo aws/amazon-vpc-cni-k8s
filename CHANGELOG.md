@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.20.3
+
+* chore: update VPC IP resource limits by @github-actions[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3441
+* chore: update VPC IP resource limits by @github-actions[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3453
+* Optionally setting up Route table for non zero Network Cards if AMI is already configuring at bootup by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3452
+* Add overrideRepository images option by @QuentinBtd in https://github.com/aws/amazon-vpc-cni-k8s/pull/3435
+* Initialize controller-runtime logger by @dcoppa in https://github.com/aws/amazon-vpc-cni-k8s/pull/3443
+
 ## v1.20.2
 * Bump github.com/samber/lo from 1.49.1 to 1.51.0 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3386
 * Bump github.com/prometheus/client_model from 0.6.1 to 0.6.2 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3385

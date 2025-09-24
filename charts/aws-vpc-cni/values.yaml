@@ -8,13 +8,15 @@ nameOverride: aws-node
 
 init:
   image:
-    tag: v1.20.2
+    tag: v1.20.3
     domain: amazonaws.com
     region: us-west-2
     endpoint: ecr
     account: "602401143452"
     pullPolicy: Always
     # Set to use custom image
+    overrideRepository:
+    # overrideRepository: "repo/org/image"
     override:
     # override: "repo/org/image:tag"
   env:
@@ -34,6 +36,8 @@ nodeAgent:
     account: "602401143452"
     pullPolicy: Always
     # Set to use custom image
+    overrideRepository:
+    # overrideRepository: "repo/org/image"
     override:
     # override: "repo/org/image:tag"
   securityContext:
@@ -52,13 +56,15 @@ nodeAgent:
   resources: {}
 
 image:
-  tag: v1.20.2
+  tag: v1.20.3
   domain: amazonaws.com
   region: us-west-2
   endpoint: ecr
   account: "602401143452"
   pullPolicy: Always
   # Set to use custom image
+  overrideRepository:
+  # overrideRepository: "repo/org/image"
   override:
   # override: "repo/org/image:tag"
 
@@ -86,7 +92,7 @@ env:
   ENABLE_IPv4: "true"
   ENABLE_IPv6: "false"
   ENABLE_SUBNET_DISCOVERY: "true"
-  VPC_CNI_VERSION: "v1.20.2"
+  VPC_CNI_VERSION: "v1.20.3"
   NETWORK_POLICY_ENFORCING_MODE: "standard"
   ENABLE_IMDS_ONLY_MODE: "false"
   ENABLE_MULTI_NIC: "false"
