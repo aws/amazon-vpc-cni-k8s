@@ -49,37 +49,48 @@ var defaultNetworkCard = 0
 func TestAddENI(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
+	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-1", 1, true, false, false)
+	err = ds.AddENI("eni-0", 0, true, false, false, networkutils.CalculateRouteTableId(0, 0))
+	assert.NoError(t, err)
+
+	err = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(0, 0))
 	assert.Error(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false)
+	err = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0))
 	assert.NoError(t, err)
 
-	assert.Equal(t, len(ds.eniPool), 2)
+	assert.Equal(t, len(ds.eniPool), 3)
 
 	eniInfos := ds.GetENIInfos()
-	assert.Equal(t, len(eniInfos.ENIs), 2)
+	assert.Equal(t, len(eniInfos.ENIs), 3)
 }
 
 func TestDeleteENI(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
-	assert.NoError(t, err)
+	enis := []struct {
+		id          string
+		device      int
+		isPrimary   bool
+		networkCard int
+	}{
+		{"eni-1", 0, true, 0},
+		{"eni-2", 2, false, 0},
+		{"eni-3", 3, false, 0},
+	}
 
-	err = ds.AddENI("eni-2", 2, false, false, false)
-	assert.NoError(t, err)
+	for _, eni := range enis {
 
-	err = ds.AddENI("eni-3", 3, false, false, false)
-	assert.NoError(t, err)
+		err := ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, eni.networkCard))
+		assert.NoError(t, err)
+	}
 
 	eniInfos := ds.GetENIInfos()
 	assert.Equal(t, len(eniInfos.ENIs), 3)
 
-	err = ds.RemoveENIFromDataStore("eni-2", false)
+	err := ds.RemoveENIFromDataStore("eni-2", false)
 	assert.NoError(t, err)
 
 	eniInfos = ds.GetENIInfos()
@@ -95,12 +106,13 @@ func TestDeleteENI(t *testing.T) {
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 	assert.NoError(t, err)
-	ip, device, err := ds.AssignPodIPv4Address(
+	ip, device, tableNumber, err := ds.AssignPodIPv4Address(
 		IPAMKey{"net1", "sandbox1", "eth0"},
 		IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod"})
 	assert.NoError(t, err)
 	assert.Equal(t, "1.1.1.1", ip)
-	assert.Equal(t, 1, device)
+	assert.Equal(t, 0, device)
+	assert.Equal(t, 254, tableNumber)
 
 	// Test force removal.  The first call fails because eni-1 has an IP with a pod assigned to it,
 	// but the second call force-removes it and succeeds.
@@ -113,18 +125,23 @@ func TestDeleteENI(t *testing.T) {
 
 func TestDeleteENIwithPDEnabled(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+	var err error
+	enis := []struct {
+		id          string
+		device      int
+		isPrimary   bool
+		networkCard int
+	}{
+		{"eni-1", 0, true, 0},
+		{"eni-2", 2, false, 0},
+		{"eni-3", 3, false, 0},
+		{"eni-4", 4, false, 0},
+	}
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
-	assert.NoError(t, err)
-
-	err = ds.AddENI("eni-2", 2, false, false, false)
-	assert.NoError(t, err)
-
-	err = ds.AddENI("eni-3", 3, false, false, false)
-	assert.NoError(t, err)
-
-	err = ds.AddENI("eni-4", 4, false, false, false)
-	assert.NoError(t, err)
+	for _, eni := range enis {
+		err = ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, eni.networkCard))
+		assert.NoError(t, err)
+	}
 
 	eniInfos := ds.GetENIInfos()
 	assert.Equal(t, len(eniInfos.ENIs), 4)
@@ -145,12 +162,13 @@ func TestDeleteENIwithPDEnabled(t *testing.T) {
 	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
 	err = ds.AddIPv4CidrToStore("eni-4", ipv4Addr, true)
 	assert.NoError(t, err)
-	ip, device, err := ds.AssignPodIPv4Address(
+	ip, device, tableNumber, err := ds.AssignPodIPv4Address(
 		IPAMKey{"net1", "sandbox1", "eth0"},
 		IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod"})
 	assert.NoError(t, err)
 	assert.Equal(t, "10.0.0.0", ip)
 	assert.Equal(t, 4, device)
+	assert.Equal(t, 5, tableNumber)
 
 	// Test force removal.  The first call fails because eni-1 has an IP with a pod assigned to it,
 	// but the second call force-removes it and succeeds.
@@ -164,10 +182,10 @@ func TestDeleteENIwithPDEnabled(t *testing.T) {
 func TestAddENIIPv4Address(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
+	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false)
+	err = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0))
 	assert.NoError(t, err)
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -207,10 +225,10 @@ func TestAddENIIPv4Address(t *testing.T) {
 func TestAddENIIPv4AddressWithPDEnabled(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
+	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false)
+	err = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0))
 	assert.NoError(t, err)
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
@@ -250,10 +268,10 @@ func TestAddENIIPv4AddressWithPDEnabled(t *testing.T) {
 func TestGetENIIPs(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
+	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false)
+	err = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0))
 	assert.NoError(t, err)
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -285,12 +303,21 @@ func TestGetENIIPs(t *testing.T) {
 
 func TestGetENIIPsWithPDEnabled(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+	var err error
+	enis := []struct {
+		id          string
+		device      int
+		isPrimary   bool
+		networkCard int
+	}{
+		{"eni-1", 0, true, 0},
+		{"eni-2", 2, false, 0},
+	}
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
-	assert.NoError(t, err)
-
-	err = ds.AddENI("eni-2", 2, false, false, false)
-	assert.NoError(t, err)
+	for _, eni := range enis {
+		err = ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, eni.networkCard))
+		assert.NoError(t, err)
+	}
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
 	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
@@ -321,7 +348,7 @@ func TestGetENIIPsWithPDEnabled(t *testing.T) {
 
 func TestDelENIIPv4Address(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
-	err := ds.AddENI("eni-1", 1, true, false, false)
+	err := ds.AddENI("eni-1", 0, true, false, false, unix.RT_TABLE_MAIN)
 	assert.NoError(t, err)
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -332,10 +359,11 @@ func TestDelENIIPv4Address(t *testing.T) {
 
 	// Assign a pod.
 	key := IPAMKey{"net0", "sandbox-1", "eth0"}
-	ip, device, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	ip, device, tableNumber, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 	assert.NoError(t, err)
 	assert.Equal(t, "1.1.1.1", ip)
-	assert.Equal(t, 1, device)
+	assert.Equal(t, 0, device)
+	assert.Equal(t, 254, tableNumber)
 
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
@@ -379,7 +407,7 @@ func TestDelENIIPv4Address(t *testing.T) {
 
 func TestDelENIIPv4AddressWithPDEnabled(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
-	err := ds.AddENI("eni-1", 1, true, false, false)
+	err := ds.AddENI("eni-1", 0, true, false, false, networkutils.CalculateRouteTableId(0, 0))
 	assert.NoError(t, err)
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
@@ -390,10 +418,11 @@ func TestDelENIIPv4AddressWithPDEnabled(t *testing.T) {
 
 	// Assign a pod.
 	key := IPAMKey{"net0", "sandbox-1", "eth0"}
-	ip, device, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	ip, device, tableNumber, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 	assert.NoError(t, err)
 	assert.Equal(t, "10.0.0.0", ip)
-	assert.Equal(t, 1, device)
+	assert.Equal(t, 0, device)
+	assert.Equal(t, 254, tableNumber)
 
 	ipv4Addr = net.IPNet{IP: net.ParseIP("20.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
 	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
@@ -438,22 +467,34 @@ func TestDelENIIPv4AddressWithPDEnabled(t *testing.T) {
 func TestTogglePD(t *testing.T) {
 	//DS is in secondary IP mode
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
-	err := ds.AddENI("eni-1", 1, true, false, false)
-	assert.NoError(t, err)
+
+	enis := []struct {
+		id        string
+		device    int
+		isPrimary bool
+	}{
+		{"eni-1", 0, true},
+	}
+
+	for _, eni := range enis {
+		err := ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, 0))
+		assert.NoError(t, err)
+	}
 
 	// Add /32 secondary IP
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
-	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
+	err := ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 1)
 	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
 
 	// Assign a pod.
 	key := IPAMKey{"net0", "sandbox-1", "eth0"}
-	ip, device, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	ip, device, tableNumber, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 	assert.NoError(t, err)
 	assert.Equal(t, "1.1.1.1", ip)
-	assert.Equal(t, 1, device)
+	assert.Equal(t, 0, device)
+	assert.Equal(t, 254, tableNumber)
 
 	//enable pd mode
 	ds.isPDEnabled = true
@@ -467,10 +508,11 @@ func TestTogglePD(t *testing.T) {
 
 	//Assign a pod
 	key = IPAMKey{"net0", "sandbox-2", "eth0"}
-	ip, device, err = ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	ip, device, tableNumber, err = ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.NoError(t, err)
 	assert.Equal(t, "10.0.0.0", ip)
-	assert.Equal(t, 1, device)
+	assert.Equal(t, 0, device)
+	assert.Equal(t, 254, tableNumber)
 
 	//Pod deletion simulated with force delete
 	//Test force removal.  The first call fails because the IP has a pod assigned to it, but the
@@ -524,19 +566,26 @@ func TestPodIPv4Address(t *testing.T) {
 			return lhs.ContainerID < rhs.ContainerID
 		}),
 	}
+	enis := []struct {
+		id        string
+		device    int
+		isPrimary bool
+	}{
+		{"eni-1", 0, true},
+		{"eni-2", 1, false},
+	}
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
-	assert.NoError(t, err)
-
-	err = ds.AddENI("eni-2", 2, false, false, false)
-	assert.NoError(t, err)
+	for _, eni := range enis {
+		err := ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, 0))
+		assert.NoError(t, err)
+	}
 
 	ipv4Addr1 := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
-	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr1, false)
+	err := ds.AddIPv4CidrToStore("eni-1", ipv4Addr1, false)
 	assert.NoError(t, err)
 
 	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
-	ip, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	ip, _, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 
 	assert.NoError(t, err)
 	assert.Equal(t, "1.1.1.1", ip)
@@ -567,7 +616,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.NoError(t, err)
 
 	// duplicate add
-	ip, _, err = ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"}) // same id
+	ip, _, _, err = ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"}) // same id
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "1.1.1.1")
 	assert.Equal(t, ds.total, 2)
@@ -580,7 +629,7 @@ func TestPodIPv4Address(t *testing.T) {
 	// Checkpoint error
 	checkpoint.Error = errors.New("fake checkpoint error")
 	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	_, _, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.Error(t, err)
 
 	expectedCheckpointData = &CheckpointData{
@@ -599,7 +648,7 @@ func TestPodIPv4Address(t *testing.T) {
 	)
 	checkpoint.Error = nil
 
-	ip, pod1Ns2Device, err := ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	ip, pod1Ns2Device, pod1Ns2TableNumber, err := ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "1.1.2.2")
 	assert.Equal(t, ds.total, 2)
@@ -635,7 +684,7 @@ func TestPodIPv4Address(t *testing.T) {
 	assert.NoError(t, err)
 
 	key3 := IPAMKey{"net0", "sandbox-3", "eth0"}
-	ip, _, err = ds.AssignPodIPv4Address(key3, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-3"})
+	ip, _, _, err = ds.AssignPodIPv4Address(key3, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-3"})
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "1.1.1.2")
 	assert.Equal(t, ds.total, 3)
@@ -669,17 +718,18 @@ func TestPodIPv4Address(t *testing.T) {
 
 	// no more IP addresses
 	key4 := IPAMKey{"net0", "sandbox-4", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key4, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-4"})
+	_, _, _, err = ds.AssignPodIPv4Address(key4, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-4"})
 	assert.Error(t, err)
 	// Unassign unknown Pod
-	_, _, _, _, err = ds.UnassignPodIPAddress(key4)
+	_, _, _, _, _, err = ds.UnassignPodIPAddress(key4)
 	assert.Error(t, err)
 
-	_, _, deviceNum, interfaces, err := ds.UnassignPodIPAddress(key2)
+	_, _, deviceNum, interfaces, tableNumber, err := ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 3)
 	assert.Equal(t, ds.assigned, 2)
 	assert.Equal(t, deviceNum, pod1Ns2Device)
+	assert.Equal(t, tableNumber, pod1Ns2TableNumber)
 	assert.Equal(t, interfaces, 1)
 	assert.Equal(t, len(ds.eniPool["eni-2"].AvailableIPv4Cidrs), 1)
 	assert.Equal(t, ds.eniPool["eni-2"].AssignedIPv4Addresses(), 0)
@@ -730,19 +780,28 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 			return lhs.ContainerID < rhs.ContainerID
 		}),
 	}
+	enis := []struct {
+		id        string
+		device    int
+		isPrimary bool
+	}{
+		{"eni-1", 0, true},
+		{"eni-2", 2, false},
+		{"eni-3", 3, false},
+	}
 
-	err := ds.AddENI("eni-1", 1, true, false, false)
-	assert.NoError(t, err)
+	for _, eni := range enis {
+		err := ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, 0))
+		assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false)
-	assert.NoError(t, err)
+	}
 
 	ipv4Addr1 := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
-	err = ds.AddIPv4CidrToStore("eni-1", ipv4Addr1, true)
+	err := ds.AddIPv4CidrToStore("eni-1", ipv4Addr1, true)
 	assert.NoError(t, err)
 
 	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
-	ip, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	ip, _, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 
 	assert.NoError(t, err)
 	assert.Equal(t, "10.0.0.0", ip)
@@ -769,7 +828,7 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 	assert.Equal(t, len(podsInfos), 1)
 
 	// duplicate add
-	ip, _, err = ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"}) // same id
+	ip, _, _, err = ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"}) // same id
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "10.0.0.0")
 	assert.Equal(t, ds.total, 16)
@@ -780,7 +839,7 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 	// Checkpoint error
 	checkpoint.Error = errors.New("fake checkpoint error")
 	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	_, _, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.Error(t, err)
 
 	expectedCheckpointData = &CheckpointData{
@@ -799,7 +858,7 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 	)
 	checkpoint.Error = nil
 
-	ip, pod1Ns2Device, err := ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	ip, pod1Ns2Device, pod1NS2RouteTableNumber, err := ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "10.0.0.1")
 	assert.Equal(t, ds.total, 16)
@@ -831,7 +890,7 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 	assert.Equal(t, len(podsInfos), 2)
 
 	key3 := IPAMKey{"net0", "sandbox-3", "eth0"}
-	ip, _, err = ds.AssignPodIPv4Address(key3, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-3"})
+	ip, _, _, err = ds.AssignPodIPv4Address(key3, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-3"})
 	assert.NoError(t, err)
 	assert.Equal(t, ip, "10.0.0.2")
 	assert.Equal(t, ds.total, 16)
@@ -863,12 +922,13 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 		cmp.Diff(checkpoint.Data, expectedCheckpointData, checkpointDataCmpOpts),
 	)
 
-	_, _, deviceNum, interfaces, err := ds.UnassignPodIPAddress(key2)
+	_, _, deviceNum, interfaces, tableNumber, err := ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 	assert.Equal(t, ds.total, 16)
 	assert.Equal(t, ds.assigned, 2)
 	assert.Equal(t, interfaces, 1)
 	assert.Equal(t, deviceNum, pod1Ns2Device)
+	assert.Equal(t, tableNumber, pod1NS2RouteTableNumber)
 	assert.Equal(t, len(ds.eniPool["eni-1"].AvailableIPv4Cidrs), 1)
 	assert.Equal(t, ds.eniPool["eni-1"].AssignedIPv4Addresses(), 2)
 	expectedCheckpointData = &CheckpointData{
@@ -900,18 +960,18 @@ func TestGetIPStatsV4(t *testing.T) {
 	defer os.Unsetenv(envIPCooldownPeriod)
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
-	_ = ds.AddENI("eni-1", 1, true, false, false)
+	_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
-	_, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	_, _, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 	assert.NoError(t, err)
 
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	_, _, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -923,7 +983,7 @@ func TestGetIPStatsV4(t *testing.T) {
 		*ds.GetIPStats("4"),
 	)
 
-	_, _, _, _, err = ds.UnassignPodIPAddress(key2)
+	_, _, _, _, _, err = ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -954,16 +1014,16 @@ func TestGetIPStatsV4WithPD(t *testing.T) {
 	defer os.Unsetenv(envIPCooldownPeriod)
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
-	_ = ds.AddENI("eni-1", 1, true, false, false)
+	_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
 	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
 	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
-	_, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	_, _, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 	assert.NoError(t, err)
 
 	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	_, _, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -976,7 +1036,7 @@ func TestGetIPStatsV4WithPD(t *testing.T) {
 		*ds.GetIPStats("4"),
 	)
 
-	_, _, _, _, err = ds.UnassignPodIPAddress(key2)
+	_, _, _, _, _, err = ds.UnassignPodIPAddress(key2)
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -1006,11 +1066,11 @@ func TestGetIPStatsV4WithPD(t *testing.T) {
 
 func TestGetIPStatsV6(t *testing.T) {
 	v6ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
-	_ = v6ds.AddENI("eni-1", 1, true, false, false)
+	_ = v6ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
 	ipv6Addr := net.IPNet{IP: net.IP{0x21, 0xdb, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: net.CIDRMask(80, 128)}
 	_ = v6ds.AddIPv6CidrToStore("eni-1", ipv6Addr, true)
 	key3 := IPAMKey{"netv6", "sandbox-3", "eth0"}
-	_, _, err := v6ds.AssignPodIPv6Address(key3, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-3"})
+	_, _, _, err := v6ds.AssignPodIPv6Address(key3, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-3"})
 	assert.NoError(t, err)
 
 	assert.Equal(t,
@@ -1027,22 +1087,22 @@ func TestGetIPStatsV6(t *testing.T) {
 func TestWarmENIInteractions(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
-	_ = ds.AddENI("eni-1", 1, true, false, false)
-	_ = ds.AddENI("eni-2", 2, false, false, false)
-	_ = ds.AddENI("eni-3", 3, false, false, false)
+	_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+	_ = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0))
+	_ = ds.AddENI("eni-3", 3, false, false, false, networkutils.CalculateRouteTableId(3, 0))
 
 	// Add an IP address to ENI 1 and assign it to a pod
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
-	_, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	_, _, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 	assert.NoError(t, err)
 
 	// Add another IP address to ENI 1 and assign a pod
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.1.2"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
 	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	_, _, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.NoError(t, err)
 
 	// Add two IP addresses to ENI 2 and one IP address to ENI 3
@@ -1089,8 +1149,8 @@ func TestWarmENIInteractions(t *testing.T) {
 	assert.Contains(t, "eni-2", removedEni)
 
 	// Add 2 more ENIs to the datastore and add 1 IP address to each of them
-	ds.AddENI("eni-4", 4, false, true, false) // trunk ENI
-	ds.AddENI("eni-5", 5, false, false, true) // EFA ENI
+	ds.AddENI("eni-4", 4, false, true, false, networkutils.CalculateRouteTableId(4, 0)) // trunk ENI
+	ds.AddENI("eni-5", 5, false, false, true, networkutils.CalculateRouteTableId(5, 0)) // EFA ENI
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.4.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	ds.AddIPv4CidrToStore("eni-4", ipv4Addr, false)
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.5.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -1110,7 +1170,7 @@ func TestWarmENIInteractions(t *testing.T) {
 	assert.Equal(t, 3, ds.GetENIs())
 
 	// Add 1 more normal ENI to the datastore
-	ds.AddENI("eni-6", 6, false, false, false) // trunk ENI
+	ds.AddENI("eni-6", 6, false, false, false, networkutils.CalculateRouteTableId(6, 0)) // trunk ENI
 	ds.eniPool["eni-6"].createTime = time.Time{}
 
 	// We have 4 ENIs, 4 IPs and 2 pods on ENI 1.
@@ -1564,7 +1624,7 @@ func TestForceRemovalMetrics(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	// Add an ENI and IP
-	err := ds.AddENI("eni-1", 1, true, false, false)
+	err := ds.AddENI("eni-1", 1, false, false, false, networkutils.CalculateRouteTableId(1, 0))
 	assert.NoError(t, err)
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -1573,10 +1633,11 @@ func TestForceRemovalMetrics(t *testing.T) {
 
 	// Assign IP to a pod
 	key := IPAMKey{"net0", "sandbox-1", "eth0"}
-	ip, device, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
+	ip, device, tableNumber, err := ds.AssignPodIPv4Address(key, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-1"})
 	assert.NoError(t, err)
 	assert.Equal(t, "1.1.1.1", ip)
 	assert.Equal(t, 1, device)
+	assert.Equal(t, 2, tableNumber)
 
 	// Test force removal of IP
 	err = ds.DelIPv4CidrFromStore("eni-1", ipv4Addr, false)
@@ -1599,10 +1660,11 @@ func TestForceRemovalMetrics(t *testing.T) {
 	assert.NoError(t, err)
 
 	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
-	ip, device, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
+	ip, device, tableNumber, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "sample-pod-2"})
 	assert.NoError(t, err)
 	assert.Equal(t, "1.1.1.2", ip)
 	assert.Equal(t, 1, device)
+	assert.Equal(t, 2, tableNumber)
 
 	// Test force removal of ENI
 	err = ds.RemoveENIFromDataStore("eni-1", false)
