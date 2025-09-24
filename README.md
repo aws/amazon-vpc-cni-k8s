@@ -267,6 +267,16 @@ Default: empty
 Specify a comma-separated list of IPv4 CIDRs to exclude from SNAT. For every item in the list an `iptables` rule and off\-VPC
 IP rule will be applied. If an item is not a valid ipv4 range it will be skipped. This should be used when `AWS_VPC_K8S_CNI_EXTERNALSNAT=false`.
 
+#### `AWS_VPC_K8S_CNI_SNAT_FIXED_PORTS`
+
+Type: String
+
+Default: empty
+
+Specify a comma-separated list of ports or port ranges that should be excluded from port randomization when SNAT is applied. Format should be individual ports or port ranges, for example: "80,443,8080-8090". This takes effect when `AWS_VPC_K8S_CNI_EXTERNALSNAT=false` and `AWS_VPC_K8S_CNI_RANDOMIZESNAT` is set to either `hashrandom` or `prng`. The specified ports will still be SNATed but will maintain their original source port values instead of being randomized.
+
+*Note*: This is useful when you have applications that require consistent source ports for outbound connections, or when you need to ensure specific source ports are used for outbound traffic. The ports specified here will be excluded from the random port allocation mechanism while still being subject to SNAT rules.
+
 #### `POD_MTU` (v1.16.4+)
 
 Type: Integer as a String
