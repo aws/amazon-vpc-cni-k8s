@@ -50,7 +50,7 @@ const (
 	testEniV6Subnet  = "2600::/64"
 	testEniV6Gateway = "fe80::c9d:5dff:fec4:f389"
 	testNetworkCard  = 0
-	testMaxENIPerNIC = 4
+	testMaxENIPerNIC = 12
 	// Default MTU of ENI and veth
 	// defined in plugins/routed-eni/driver/driver.go, pkg/networkutils/network.go
 	testMTU   = 9001
@@ -126,12 +126,12 @@ func TestSetupENINetwork(t *testing.T) {
 
 	ruleForPrimaryIPofENI := netlink.NewRule()
 	ruleForPrimaryIPofENI.Src = &net.IPNet{IP: net.ParseIP(testEniIP), Mask: net.CIDRMask(32, 32)}
-	ruleForPrimaryIPofENI.Table = (testNetworkCard * testMaxENIPerNIC) + testTable + 1
+	ruleForPrimaryIPofENI.Table = CalculateRouteTableId(testTable, 0)
 	ruleForPrimaryIPofENI.Priority = FromPrimaryIPofENIRulePriority
 	ruleForPrimaryIPofENI.Family = unix.AF_INET
 
 	mockNetLink.EXPECT().RuleAdd(ruleForPrimaryIPofENI)
-	err = setupENINetwork(testEniIP, testMAC2, testTable, testNetworkCard, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU, testMaxENIPerNIC, false)
+	err = setupENINetwork(testEniIP, testMAC2, testNetworkCard, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU, testMaxENIPerNIC, false, CalculateRouteTableId(testTable, 0), false)
 	assert.NoError(t, err)
 }
 
@@ -187,8 +187,7 @@ func TestSetupENIV6Network(t *testing.T) {
 	ruleForPrimaryIPofENI.Family = unix.AF_INET6
 	mockNetLink.EXPECT().RuleAdd(ruleForPrimaryIPofENI)
 
-	testMultiNICEnabled := false
-	err = setupENINetwork(testEniIP6, testMAC2, testTable, testNetworkCard, testEniV6Subnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU, testMaxENIPerNIC, testMultiNICEnabled)
+	err = setupENINetwork(testEniIP6, testMAC2, testNetworkCard, testEniV6Subnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU, testMaxENIPerNIC, false, CalculateRouteTableId(testTable, 0), false)
 	assert.NoError(t, err)
 }
 
@@ -202,7 +201,7 @@ func TestSetupENINetworkMACFail(t *testing.T) {
 		mockNetLink.EXPECT().LinkList().Return(nil, fmt.Errorf("simulated failure"))
 	}
 	testMultiNICEnabled := false
-	err := setupENINetwork(testEniIP, testMAC2, testTable, testNetworkCard, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU, testMaxENIPerNIC, testMultiNICEnabled)
+	err := setupENINetwork(testEniIP, testMAC2, testNetworkCard, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU, testMaxENIPerNIC, testMultiNICEnabled, 0, false)
 	assert.Errorf(t, err, "simulated failure")
 }
 
@@ -211,7 +210,7 @@ func TestSetupENINetworkErrorOnPrimaryENI(t *testing.T) {
 	defer ctrl.Finish()
 	deviceNumber := 0
 	testMultiNICEnabled := false
-	err := setupENINetwork(testEniIP, testMAC2, deviceNumber, testNetworkCard, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU, testMaxENIPerNIC, testMultiNICEnabled)
+	err := setupENINetwork(testEniIP, testMAC2, testNetworkCard, testEniSubnet, mockNetLink, 0*time.Second, 0*time.Second, testMTU, testMaxENIPerNIC, testMultiNICEnabled, CalculateRouteTableId(deviceNumber, 0), false)
 	assert.Error(t, err)
 }
 
@@ -1476,6 +1475,73 @@ func Test_isRuleExistsError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := isRuleExistsError(tt.args.err)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCalculateRouteTableId(t *testing.T) {
+	tests := []struct {
+		name                string
+		deviceNumber        int
+		networkCardIndex    int
+		expectedTableNumber int
+	}{
+		{
+			name:                "network card 0",
+			deviceNumber:        1,
+			networkCardIndex:    0,
+			expectedTableNumber: 2,
+		},
+		{
+			name:                "network card 1",
+			deviceNumber:        1,
+			networkCardIndex:    1,
+			expectedTableNumber: 10101,
+		},
+		{
+			name:                "network card 2",
+			deviceNumber:        3,
+			networkCardIndex:    2,
+			expectedTableNumber: 10203,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := CalculateRouteTableId(tt.deviceNumber, tt.networkCardIndex)
+			assert.Equal(t, tt.expectedTableNumber, result)
+		})
+	}
+}
+
+func TestCalculateOldRouteTableId(t *testing.T) {
+	tests := []struct {
+		name                  string
+		deviceNumber          int
+		networkCardIndex      int
+		maxENIsPerNetworkCard int
+		expectedTableNumber   int
+	}{
+		{
+			name:                  "old calculation formula",
+			deviceNumber:          1,
+			networkCardIndex:      1,
+			maxENIsPerNetworkCard: 8,
+			expectedTableNumber:   10,
+		},
+		{
+			name:                  "network card 0",
+			deviceNumber:          2,
+			networkCardIndex:      0,
+			maxENIsPerNetworkCard: 8,
+			expectedTableNumber:   3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := CalculateOldRouteTableId(tt.deviceNumber, tt.networkCardIndex, tt.maxENIsPerNetworkCard)
+			assert.Equal(t, tt.expectedTableNumber, result)
 		})
 	}
 }
