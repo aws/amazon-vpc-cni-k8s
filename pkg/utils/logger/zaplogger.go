@@ -29,7 +29,7 @@ type structuredLogger struct {
 	zapLogger *zap.SugaredLogger
 }
 
-// getZapLevel converts log level string to zapcore.Level
+// getZapLevel converts log level string to zapcore.Level.
 func getZapLevel(inputLogLevel string) zapcore.Level {
 	lvl := strings.ToLower(inputLogLevel)
 
@@ -105,7 +105,7 @@ func getEncoder() zapcore.Encoder {
 	return zapcore.NewJSONEncoder(encoderConfig)
 }
 
-// createZapLogger creates a zap.Logger with the given configuration and caller skip
+// createZapLogger creates a zap.Logger with the given configuration and caller skip.
 func (logConfig *Configuration) createZapLogger(callerSkip int) *zap.Logger {
 	var cores []zapcore.Core
 
@@ -135,7 +135,7 @@ func (logConfig *Configuration) newZapLogger() *structuredLogger {
 	}
 }
 
-// getPluginLogFilePath returns the writer
+// getPluginLogFilePath returns the writer.
 func getPluginLogFilePath(logFilePath string) zapcore.WriteSyncer {
 	var writer zapcore.WriteSyncer
 
@@ -150,7 +150,7 @@ func getPluginLogFilePath(logFilePath string) zapcore.WriteSyncer {
 	return writer
 }
 
-// getLogWriter is for lumberjack
+// getLogWriter is for lumberjack.
 func getLogWriter(logFilePath string) zapcore.WriteSyncer {
 	lumberJackLogger := &lumberjack.Logger{
 		Filename:   logFilePath,
@@ -162,7 +162,7 @@ func getLogWriter(logFilePath string) zapcore.WriteSyncer {
 	return zapcore.AddSync(lumberJackLogger)
 }
 
-// DefaultLogger creates and returns a new default logger
+// DefaultLogger creates and returns a new default logger.
 func DefaultLogger() Logger {
 	productionConfig := zap.NewProductionConfig()
 	productionConfig.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
@@ -178,7 +178,7 @@ func DefaultLogger() Logger {
 	}
 }
 
-// NewControllerRuntimeLogger creates a logr.Logger compatible with controller-runtime
+// NewControllerRuntimeLogger creates a logr.Logger compatible with controller-runtime.
 func (logConfig *Configuration) NewControllerRuntimeLogger() logr.Logger {
 	logger := logConfig.createZapLogger(1)
 	return zapr.NewLogger(logger)
