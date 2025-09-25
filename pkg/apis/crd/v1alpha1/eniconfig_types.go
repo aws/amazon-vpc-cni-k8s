@@ -20,22 +20,31 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // ENIConfigSpec defines the desired state of ENIConfig
 type ENIConfigSpec struct {
+	// SecurityGroups is a list of security group IDs to associate with the ENI
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
 	SecurityGroups []string `json:"securityGroups"`
-	Subnet         string   `json:"subnet"`
+	
+	// Subnet is the subnet ID where the ENI will be created
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^subnet-[0-9a-f]{8,17}$`
+	Subnet string `json:"subnet"`
 }
 
 // ENIConfigStatus defines the observed state of ENIConfig
 type ENIConfigStatus struct {
-	// Fill me
+	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+	// Important: Run "make" to regenerate code after modifying this file
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:printcolumn:name="Subnet",type=string,JSONPath=".spec.subnet"
+// +kubebuilder:printcolumn:name="Security Groups",type=string,JSONPath=".spec.securityGroups"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // ENIConfig is the Schema for the eniconfigs API
 type ENIConfig struct {
@@ -46,7 +55,7 @@ type ENIConfig struct {
 	Status ENIConfigStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // ENIConfigList contains a list of ENIConfig
 type ENIConfigList struct {
