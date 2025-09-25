@@ -32,8 +32,10 @@ import (
 )
 
 const (
-	CreateNodeGroupCFNTemplate = "/testdata/amazon-eks-nodegroup.yaml"
-	NodeImageIdSSMParam        = "/aws/service/eks/optimized-ami/%s/amazon-linux-2/recommended/image_id"
+	CreateNodeGroupCFNTemplate        = "/testdata/amazon-eks-nodegroup.yaml"
+	CreateManagedNodeGroupCFNTemplate = "/testdata/amazon-eks-managed-nodegroup.yaml"
+	NodeImageIdSSMParam               = "/aws/service/eks/optimized-ami/%s/amazon-linux-2/recommended/image_id"
+	ManagedNodeGroupNameLabelKey      = "eks.amazonaws.com/nodegroup"
 )
 
 type NodeGroupProperties struct {
@@ -222,6 +224,70 @@ func DeleteAndWaitTillSelfManagedNGStackDeleted(f *framework.Framework, properti
 	if err != nil {
 		return fmt.Errorf("failed to delete node group cfn stack: %v", err)
 	}
+	return nil
+}
+
+// Create managed node group stack
+func CreateAndWaitTillManagedNGReady(f *framework.Framework, properties NodeGroupProperties) error {
+	templatePath := utils.GetProjectRoot() + CreateManagedNodeGroupCFNTemplate
+	templateBytes, err := os.ReadFile(templatePath)
+	if err != nil {
+		return fmt.Errorf("failed to read from %s, %v", templatePath, err)
+	}
+	template := string(templateBytes)
+
+	_, err = f.CloudServices.EKS().DescribeCluster(context.TODO(), f.Options.ClusterName)
+	if err != nil {
+		return fmt.Errorf("failed to describe cluster %s: %v", f.Options.ClusterName, err)
+	}
+
+	asgSizeString := strconv.Itoa(properties.AsgSize)
+
+	createNgStackParams := []cloudformationtypes.Parameter{
+		{
+			ParameterKey:   aws.String("ClusterName"),
+			ParameterValue: aws.String(f.Options.ClusterName),
+		},
+		{
+			ParameterKey:   aws.String("Subnets"),
+			ParameterValue: aws.String(strings.Join(properties.Subnet, ",")),
+		},
+		{
+			ParameterKey:   aws.String("NodeGroupName"),
+			ParameterValue: aws.String(properties.NodeGroupName),
+		},
+		{
+			ParameterKey:   aws.String("NodeAutoScalingGroupMinSize"),
+			ParameterValue: aws.String(asgSizeString),
+		},
+		{
+			ParameterKey:   aws.String("NodeAutoScalingGroupDesiredCapacity"),
+			ParameterValue: aws.String(asgSizeString),
+		},
+		{
+			ParameterKey:   aws.String("NodeAutoScalingGroupMaxSize"),
+			ParameterValue: aws.String(asgSizeString),
+		},
+		{
+			ParameterKey:   aws.String("NodeInstanceType"),
+			ParameterValue: aws.String(properties.InstanceType),
+		},
+	}
+
+	_, err = f.CloudServices.CloudFormation().
+		WaitTillStackCreated(context.TODO(), properties.NodeGroupName, createNgStackParams, template)
+	if err != nil {
+		return fmt.Errorf("failed to create node group cfn stack: %v", err)
+	}
+
+	// Wait till the node group have joined the cluster and are ready
+	err = f.K8sResourceManagers.NodeManager().
+		WaitTillNodesReady(ManagedNodeGroupNameLabelKey, properties.NodeGroupName, properties.AsgSize)
+	if err != nil {
+		return fmt.Errorf("failed to list nodegroup with label key %s:%v: %v",
+			ManagedNodeGroupNameLabelKey, properties.NodeGroupName, err)
+	}
+
 	return nil
 }
 

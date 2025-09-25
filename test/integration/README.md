@@ -189,6 +189,7 @@ The test folders are located at `amazon-vpc-cni-k8s/tree/master/test/integration
  - metrics-helper
  - pod-eni
  - snat
+ - eni-trunking
 
 The ginkgo test for any component has generally two main components:
 - `ginkgo suite file`: Every ginkgo suite file will have `RegisterFailHandler` and `RunSpecs`. A Ginkgo test signals failure by calling Ginkgo’s Fail function passed to RegisterFailHandler. RunSpec tells Ginkgo to start the test suite. Running ginkgo inside the sub-folder containing the test suite should trigger the ```RunSpecs``` function in the suite.
