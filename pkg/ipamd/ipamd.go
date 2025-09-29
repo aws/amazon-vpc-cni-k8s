@@ -1251,7 +1251,7 @@ func (c *IPAMContext) tryAssignPrefixes(ctx context.Context, networkCard int) (i
 // 2) add ENI to datastore
 // 3) set up linux ENI related networking stack.
 // 4) add all ENI's secondary IP addresses to datastore
-func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isTrunkENI, isEFAENI bool) error {
+func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsutils.ENIMetadata, isTrunkENI, isEFAENI bool) error {
 	primaryENI := c.awsClient.GetPrimaryENI()
 	var primaryIP string
 	if c.enableIPv6 {

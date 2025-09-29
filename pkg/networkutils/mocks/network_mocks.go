@@ -152,17 +152,17 @@ func (mr *MockNetworkAPIsMockRecorder) GetRuleListBySrc(arg0, arg1 interface{}) 
 }
 
 // SetupENINetwork mocks base method.
-func (m *MockNetworkAPIs) SetupENINetwork(arg0, arg1 string, arg2, arg3 int, arg4 string, arg5 int, arg6 bool) error {
+func (m *MockNetworkAPIs) SetupENINetwork(arg0, arg1 string, arg2 int, arg3 string, arg4 int, arg5 bool, arg6 int, arg7 bool) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetupENINetwork", arg0, arg1, arg2, arg3, arg4, arg5, arg6)
+	ret := m.ctrl.Call(m, "SetupENINetwork", arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetupENINetwork indicates an expected call of SetupENINetwork.
-func (mr *MockNetworkAPIsMockRecorder) SetupENINetwork(arg0, arg1, arg2, arg3, arg4, arg5, arg6 interface{}) *gomock.Call {
+func (mr *MockNetworkAPIsMockRecorder) SetupENINetwork(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupENINetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupENINetwork), arg0, arg1, arg2, arg3, arg4, arg5, arg6)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupENINetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupENINetwork), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
 }
 
 // SetupHostNetwork mocks base method.
@@ -233,4 +233,20 @@ func (m *MockNetworkAPIs) UseExternalSNAT() bool {
 func (mr *MockNetworkAPIsMockRecorder) UseExternalSNAT() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UseExternalSNAT", reflect.TypeOf((*MockNetworkAPIs)(nil).UseExternalSNAT))
+}
+
+// GetRouteTableNumberForENI mocks base method.
+func (m *MockNetworkAPIs) GetRouteTableNumberForENI(arg0 int, arg1 string, arg2 int, arg3 int, arg4 bool) (int, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRouteTableNumberForENI", arg0, arg1, arg2, arg3, arg4)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetRouteTableNumberForENI indicates an expected call of GetRouteTableNumberForENI.
+func (mr *MockNetworkAPIsMockRecorder) GetRouteTableNumberForENI(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouteTableNumberForENI", reflect.TypeOf((*MockNetworkAPIs)(nil).GetRouteTableNumberForENI), arg0, arg1, arg2, arg3, arg4)
 }

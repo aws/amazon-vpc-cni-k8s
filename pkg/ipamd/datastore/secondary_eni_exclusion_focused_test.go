@@ -29,7 +29,7 @@ func TestSecondaryENIExclusionFocused(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	// Setup: Primary ENI with one IP
-	err := ds.AddENI("eni-primary", 0, true, false, false)
+	err := ds.AddENI("eni-primary", 0, true, false, false, 0)
 	assert.NoError(t, err)
 
 	primaryIP := net.IPNet{IP: net.ParseIP("10.0.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -37,7 +37,7 @@ func TestSecondaryENIExclusionFocused(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Setup: Secondary ENI with one IP
-	err = ds.AddENI("eni-secondary", 1, false, false, false)
+	err = ds.AddENI("eni-secondary", 1, false, false, false, 0)
 	assert.NoError(t, err)
 
 	secondaryIP := net.IPNet{IP: net.ParseIP("10.0.2.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -60,7 +60,7 @@ func TestSecondaryENIExclusionFocused(t *testing.T) {
 
 	// Test 4: Assign first pod - should work and go to primary ENI
 	key1 := IPAMKey{"net0", "pod-1", "eth0"}
-	ip1, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-1"})
+	ip1, _, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-1"})
 	assert.NoError(t, err)
 	assert.True(t, strings.HasPrefix(ip1, "10.0.1."), "First pod should go to primary ENI, got: %s", ip1)
 
@@ -70,7 +70,7 @@ func TestSecondaryENIExclusionFocused(t *testing.T) {
 
 	// Test 6: Try to assign second pod - should fail since primary is full and secondary is excluded
 	key2 := IPAMKey{"net0", "pod-2", "eth0"}
-	_, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-2"})
+	_, _, _, err = ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-2"})
 	assert.Error(t, err, "Should fail when only non-excluded ENI is full")
 	assert.Contains(t, err.Error(), "no available IP/Prefix addresses")
 
@@ -107,10 +107,10 @@ func TestSecondaryENIExclusionWithPods(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	// Setup ENIs
-	err := ds.AddENI("eni-primary", 0, true, false, false)
+	err := ds.AddENI("eni-primary", 0, true, false, false, 0)
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-secondary", 1, false, false, false)
+	err = ds.AddENI("eni-secondary", 1, false, false, false, 0)
 	assert.NoError(t, err)
 
 	// Add IPs
@@ -124,11 +124,11 @@ func TestSecondaryENIExclusionWithPods(t *testing.T) {
 
 	// Assign pods to both ENIs naturally through regular allocation
 	key1 := IPAMKey{"net0", "pod-1", "eth0"}
-	ip1, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-1"})
+	ip1, _, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-1"})
 	assert.NoError(t, err)
 
 	key2 := IPAMKey{"net0", "pod-2", "eth0"}
-	ip2, _, err := ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-2"})
+	ip2, _, _, err := ds.AssignPodIPv4Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-2"})
 	assert.NoError(t, err)
 
 	// Find which key corresponds to secondary ENI assignment
@@ -162,12 +162,12 @@ func TestSecondaryENIExclusionWithPods(t *testing.T) {
 	assert.NoError(t, err)
 
 	key3 := IPAMKey{"net0", "new-pod", "eth0"}
-	ip3, _, err := ds.AssignPodIPv4Address(key3, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "new-pod"})
+	ip3, _, _, err := ds.AssignPodIPv4Address(key3, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "new-pod"})
 	assert.NoError(t, err)
 	assert.True(t, strings.HasPrefix(ip3, "10.0.1."), "New pod should avoid excluded secondary ENI, got: %s", ip3)
 
 	// Test: After removing pod from excluded ENI, it should become deletable
-	_, _, _, _, err = ds.UnassignPodIPAddress(keyOnSecondary)
+	_, _, _, _, _, err = ds.UnassignPodIPAddress(keyOnSecondary)
 	assert.NoError(t, err)
 
 	// Clear cooldown
