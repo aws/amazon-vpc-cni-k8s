@@ -130,6 +130,8 @@ type ENI struct {
 	IPv6Cidrs map[string]*CidrInfo
 	// IsExcludedForPodIPs indicates whether this ENI should be excluded from pod IP allocation
 	IsExcludedForPodIPs bool
+	// RouteTableID is the route table ID associated with the ENI on the host
+	RouteTableID int
 }
 
 // AddressInfo contains information about an IP, Exported fields will be marshaled for introspection.
