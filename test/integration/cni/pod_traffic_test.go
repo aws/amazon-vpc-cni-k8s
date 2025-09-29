@@ -278,7 +278,9 @@ var _ = Describe("pod egress traffic test", Ordered, func() {
 	var originalPolicy string
 	var pod *coreV1.Pod
 	BeforeAll(func() {
-		Skip("Skipping pod egress traffic until addon release")
+		if primaryNode.Status.NodeInfo.OSImage == "Amazon Linux 2" {
+			Skip("Skipping pod egress Mac address Policy test on Amazon linux 2 node")
+		}
 		Expect(checkNodeShellPlugin()).To(BeNil())
 		originalPolicy, err = currentMacAddressPolicy(primaryNode.Name)
 		Expect(err).ToNot(HaveOccurred())
@@ -287,6 +289,9 @@ var _ = Describe("pod egress traffic test", Ordered, func() {
 		f.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(pod)
 	})
 	AfterAll(func() {
+		if primaryNode.Status.NodeInfo.OSImage == "Amazon Linux 2" {
+			Skip("Skipping pod egress Mac address Policy test on Amazon linux 2 node")
+		}
 		err := setMACAddressPolicy(primaryNode.Name, originalPolicy)
 		Expect(err).ToNot(HaveOccurred())
 	})
@@ -295,7 +300,6 @@ var _ = Describe("pod egress traffic test", Ordered, func() {
 		Context("When MAC address Policy is None", func() {
 			// check if current policy is none, if not make it none
 			It("can ping to 8.8.8.8", func() {
-				Skip("Skipping pod egress traffic until addon release")
 				Expect(setMACAddressPolicy(primaryNode.Name, None)).Error().ShouldNot(HaveOccurred())
 				// deploy pod on this node.
 				pod = manifest.NewDefaultPodBuilder().
@@ -305,7 +309,7 @@ var _ = Describe("pod egress traffic test", Ordered, func() {
 				pod, err = f.K8sResourceManagers.PodManager().CreateAndWaitTillRunning(pod)
 				Expect(err).ToNot(HaveOccurred())
 				command := []string{"ping", "-c", "1", "8.8.8.8"}
-				stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExec("default", pod.Name, command)
+				stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExec(utils.DefaultTestNamespace, pod.Name, command)
 				Expect(err).ToNot(HaveOccurred(), stderr, stdout)
 				Expect(stderr).To(BeEmpty(), stdout)
 				Expect(stdout).ToNot(BeEmpty())
@@ -314,7 +318,6 @@ var _ = Describe("pod egress traffic test", Ordered, func() {
 		Context("When MAC address policy is persistent", func() {
 			// check if current policy is none, if not make it none
 			It("can ping to 8.8.8.8", func() {
-				Skip("Skipping pod egress traffic until addon release")
 				Expect(setMACAddressPolicy(primaryNode.Name, Persistent)).Error().ShouldNot(HaveOccurred())
 				// deploy pod on this node.
 				pod := manifest.NewDefaultPodBuilder().
@@ -323,9 +326,8 @@ var _ = Describe("pod egress traffic test", Ordered, func() {
 					Build()
 				pod, err = f.K8sResourceManagers.PodManager().CreateAndWaitTillRunning(pod)
 				Expect(err).ToNot(HaveOccurred())
-
 				command := []string{"ping", "-c", "1", "8.8.8.8"}
-				stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExec("default", pod.Name, command)
+				stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExec(utils.DefaultTestNamespace, pod.Name, command)
 				Expect(err).ToNot(HaveOccurred(), stderr, stdout)
 				Expect(stderr).To(BeEmpty(), stdout)
 				Expect(stdout).ToNot(BeEmpty())
