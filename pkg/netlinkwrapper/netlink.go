@@ -20,7 +20,6 @@ import (
 	"syscall"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/vishvananda/netlink"
 )
 
@@ -75,25 +74,9 @@ type NetLink interface {
 type netLink struct {
 }
 
-const (
-	// Environment variable to configure netlink max retry attempts
-	envNetlinkMaxRetries = "AWS_VPC_K8S_CNI_NETLINK_MAX_RETRIES"
-	defaultMaxAttempts   = 5
-)
-
-// getMaxAttempts returns the configured maximum retry attempts for netlink operations
-func getMaxAttempts() int {
-	maxAttempts, _, _ := utils.GetIntFromStringEnvVar(envNetlinkMaxRetries, defaultMaxAttempts)
-	if maxAttempts < 1 {
-		log.Warnf("Invalid netlink max retries value %d (must be >= 1), using default %d", maxAttempts, defaultMaxAttempts)
-		return defaultMaxAttempts
-	}
-	return maxAttempts
-}
-
 func retryOnErrDumpInterrupted(f func() error) error {
 	var lastErr error
-	maxAttempts := getMaxAttempts()
+	const maxAttempts = 5
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		err := f()
 		if err == nil {
@@ -107,8 +90,8 @@ func retryOnErrDumpInterrupted(f func() error) error {
 		log.Debugf("netlink operation interrupted on attempt %d of %d", attempt+1, maxAttempts)
 		lastErr = err
 	}
-	log.Errorf("netlink operation interruption persisted after %d attempt(s): %v", maxAttempts, lastErr)
-	return fmt.Errorf("netlink operation interruption persisted after %d attempt(s): %w", maxAttempts, lastErr)
+	log.Errorf("netlink operation interruption persisted after %d attempts: %v", maxAttempts, lastErr)
+	return fmt.Errorf("netlink operation interruption persisted after %d attempts: %w", maxAttempts, lastErr)
 }
 
 // NewNetLink creates a new NetLink object
