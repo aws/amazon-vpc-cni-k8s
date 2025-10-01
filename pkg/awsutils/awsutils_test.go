@@ -2236,3 +2236,35 @@ func Test_loadAdditionalENITags(t *testing.T) {
 		})
 	}
 }
+
+func Test_IsTrunkingCompatible(t *testing.T) {
+	tests := []struct {
+		name         string
+		instanceType string
+		want         bool
+	}{
+		{
+			name:         "Supported instance type",
+			instanceType: "m8g.12xlarge",
+			want:         true,
+		},
+		{
+			name:         "Unsupported instance type",
+			instanceType: "i3.2xlarge",
+			want:         false,
+		},
+		{
+			name:         "Any type else",
+			instanceType: "anyFamily.anyType",
+			want:         true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{instanceType: tt.instanceType}
+			got := cache.IsTrunkingCompatible()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
