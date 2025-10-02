@@ -296,7 +296,7 @@ if [[ "$RUN_SOAK_TEST" == true ]]; then
     START=$SECONDS
     
     GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
-    TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"617930562442.dkr.ecr.us-west-2.amazonaws.com"}
+    TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"public.ecr.aws/eks"}
     
     (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --no-color --focus="SOAK_TEST" -v --timeout 3h --fail-on-pending $GINKGO_TEST_BUILD/cni.test -- \
         --cluster-kubeconfig="$KUBECONFIG" \
