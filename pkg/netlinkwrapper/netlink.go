@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"syscall"
+	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/vishvananda/netlink"
@@ -89,6 +90,10 @@ func retryOnErrDumpInterrupted(f func() error) error {
 		}
 		log.Debugf("netlink operation interrupted on attempt %d of %d", attempt+1, maxAttempts)
 		lastErr = err
+		// Add small delay after first failed attempt to avoid overwhelming the kernel
+		if attempt > 0 {
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
 	log.Errorf("netlink operation interruption persisted after %d attempts: %v", maxAttempts, lastErr)
 	return fmt.Errorf("netlink operation interruption persisted after %d attempts: %w", maxAttempts, lastErr)
