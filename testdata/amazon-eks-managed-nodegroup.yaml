@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Amazon EKS - Managed Node Group
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: EKS Cluster
+        Parameters:
+          - ClusterName
+      - Label:
+          default: Worker Node Configuration
+        Parameters:
+          - NodeGroupName
+          - NodeAutoScalingGroupMinSize
+          - NodeAutoScalingGroupDesiredCapacity
+          - NodeAutoScalingGroupMaxSize
+          - NodeInstanceType
+          - NodeAmiType
+      - Label:
+          default: Worker Network Configuration
+        Parameters:
+          - Subnets
+
+Parameters:
+  ClusterName:
+    Type: String
+    Description: The cluster name provided when the cluster was created. If it is incorrect, nodes will not be able to join the cluster.
+  
+  NodeGroupName:
+    Type: String
+    Description: Unique identifier for the Node Group.
+
+  NodeAutoScalingGroupDesiredCapacity:
+    Type: Number
+    Default: 3
+    Description: Desired capacity of Node Group ASG.
+
+  NodeAutoScalingGroupMaxSize:
+    Type: Number
+    Default: 4
+    Description: Maximum size of Node Group ASG. Set to at least 1 greater than NodeAutoScalingGroupDesiredCapacity.
+
+  NodeAutoScalingGroupMinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum size of Node Group ASG.
+
+  NodeInstanceType:
+    Type: String
+    Default: t3.medium
+    Description: EC2 instance type for the node instances
+  
+  NodeAmiType:
+    Type: String
+    Default: AL2023_x86_64_STANDARD
+    Description: AMI type for the Node Group
+
+  Subnets:
+    Type: "List<AWS::EC2::Subnet::Id>"
+    Description: The subnets where workers can be created.
+
+Mappings:
+  PartitionMap:
+    aws:
+      EC2ServicePrincipal: "ec2.amazonaws.com"
+    aws-us-gov:
+      EC2ServicePrincipal: "ec2.amazonaws.com"
+    aws-cn:
+      EC2ServicePrincipal: "ec2.amazonaws.com.cn"
+    aws-iso:
+      EC2ServicePrincipal: "ec2.c2s.ic.gov"
+    aws-iso-b:
+      EC2ServicePrincipal: "ec2.sc2s.sgov.gov"
+
+Resources:
+  NodeInstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - !FindInMap [PartitionMap, !Ref "AWS::Partition", EC2ServicePrincipal]
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonEKS_CNI_Policy"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      Path: /
+
+  NodeGroup:
+    Type: "AWS::EKS::Nodegroup"
+    Properties:
+      NodegroupName: !Ref NodeGroupName
+      AmiType: !Ref NodeAmiType
+      ClusterName: !Ref ClusterName
+      InstanceTypes:
+        - !Ref NodeInstanceType
+      NodeRole: !GetAtt NodeInstanceRole.Arn
+      ScalingConfig:
+        DesiredSize: !Ref NodeAutoScalingGroupDesiredCapacity
+        MaxSize: !Ref NodeAutoScalingGroupMaxSize
+        MinSize: !Ref NodeAutoScalingGroupMinSize
+      Subnets: !Ref Subnets

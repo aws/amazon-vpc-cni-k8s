@@ -45,17 +45,15 @@ import (
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 )
 
-const ipamdAddress = "127.0.0.1:50051"
-
-const npAgentAddress = "127.0.0.1:50052"
-
-const dummyInterfacePrefix = "dummy"
-
-const npAgentConnTimeout = 2
-
-const multiNICPodAnnotation = "k8s.amazonaws.com/nicConfig"
-const multiNICAttachment = "multi-nic-attachment"
-const containerVethNamePrefix = "mNicIf"
+const (
+	ipamdAddress            = "127.0.0.1:50051"
+	dummyInterfacePrefix    = "dummy"
+	npAgentConnTimeout      = 2
+	npaSocketPath           = "/var/run/aws-node/npa.sock"
+	multiNICPodAnnotation   = "k8s.amazonaws.com/nicConfig"
+	multiNICAttachment      = "multi-nic-attachment"
+	containerVethNamePrefix = "mNicIf"
+)
 
 var version string
 
@@ -330,7 +328,7 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), npAgentConnTimeout*time.Second) // Set timeout
 	defer cancel()
-	npConn, err := grpcClient.DialContext(ctx, npAgentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	npConn, err := grpcClient.DialContext(ctx, "unix://"+npaSocketPath, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
 		log.Errorf("Failed to connect to network policy agent: %v", err)
 		return errors.New("add cmd: failed to setup network policy")
@@ -505,7 +503,7 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	// Set up a connection to the network policy agent
 	ctx, cancel := context.WithTimeout(context.Background(), npAgentConnTimeout*time.Second) // Set timeout
 	defer cancel()
-	npConn, err := grpcClient.DialContext(ctx, npAgentAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	npConn, err := grpcClient.DialContext(ctx, "unix://"+npaSocketPath, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
 		log.Errorf("Failed to connect to network policy agent: %v. Network Policy agent might not be running", err)
 		return errors.Wrap(err, "del cmd: failed to connect to network policy agent")
@@ -626,7 +624,7 @@ func teardownPodNetworkWithPrevResult(driverClient driver.NetworkAPIs, conf *Net
 	// We have a path for migration where the dummy interface can be completely removed for regular network pods when we move completely to v1.20+
 	// This is currently done to support downgrade to v1.19 and below
 
-	routeTableId := networkutils.CalculateRouteTableId(deviceNumber, 0, 0)
+	routeTableId := networkutils.CalculateRouteTableId(deviceNumber, 0)
 	// The number of interfaces attached to the pod is taken as the length of the interfaces array - 1 (for dummy interface) divided by 2 (for host and container interface)
 	var interfacesAttached = (len(prevResult.Interfaces) - 1) / 2
 	var vethMetadata []driver.VirtualInterfaceMetadata

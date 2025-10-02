@@ -107,6 +107,22 @@ func (mr *MockNetworkAPIsMockRecorder) GetLinkByMac(mac, retryInterval interface
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLinkByMac", reflect.TypeOf((*MockNetworkAPIs)(nil).GetLinkByMac), mac, retryInterval)
 }
 
+// GetRouteTableNumberForENI mocks base method.
+func (m *MockNetworkAPIs) GetRouteTableNumberForENI(networkCard int, eniIP string, deviceNumber, maxENIsPerNetworkCard int, isV6 bool) (int, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRouteTableNumberForENI", networkCard, eniIP, deviceNumber, maxENIsPerNetworkCard, isV6)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetRouteTableNumberForENI indicates an expected call of GetRouteTableNumberForENI.
+func (mr *MockNetworkAPIsMockRecorder) GetRouteTableNumberForENI(networkCard, eniIP, deviceNumber, maxENIsPerNetworkCard, isV6 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouteTableNumberForENI", reflect.TypeOf((*MockNetworkAPIs)(nil).GetRouteTableNumberForENI), networkCard, eniIP, deviceNumber, maxENIsPerNetworkCard, isV6)
+}
+
 // GetRuleList mocks base method.
 func (m *MockNetworkAPIs) GetRuleList(v6enabled bool) ([]netlink.Rule, error) {
 	m.ctrl.T.Helper()
@@ -138,17 +154,17 @@ func (mr *MockNetworkAPIsMockRecorder) GetRuleListBySrc(ruleList, src interface{
 }
 
 // SetupENINetwork mocks base method.
-func (m *MockNetworkAPIs) SetupENINetwork(eniIP, eniMAC string, deviceNumber, networkCard int, eniSubnetCIDR string, maxENIPerNIC int, isTrunkENI bool) error {
+func (m *MockNetworkAPIs) SetupENINetwork(eniIP, eniMAC string, networkCard int, eniSubnetCIDR string, maxENIPerNIC int, isTrunkENI bool, routeTableID int, isRuleConfigured bool) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetupENINetwork", eniIP, eniMAC, deviceNumber, networkCard, eniSubnetCIDR, maxENIPerNIC, isTrunkENI)
+	ret := m.ctrl.Call(m, "SetupENINetwork", eniIP, eniMAC, networkCard, eniSubnetCIDR, maxENIPerNIC, isTrunkENI, routeTableID, isRuleConfigured)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetupENINetwork indicates an expected call of SetupENINetwork.
-func (mr *MockNetworkAPIsMockRecorder) SetupENINetwork(eniIP, eniMAC, deviceNumber, networkCard, eniSubnetCIDR, maxENIPerNIC, isTrunkENI interface{}) *gomock.Call {
+func (mr *MockNetworkAPIsMockRecorder) SetupENINetwork(eniIP, eniMAC, networkCard, eniSubnetCIDR, maxENIPerNIC, isTrunkENI, routeTableID, isRuleConfigured interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupENINetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupENINetwork), eniIP, eniMAC, deviceNumber, networkCard, eniSubnetCIDR, maxENIPerNIC, isTrunkENI)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetupENINetwork", reflect.TypeOf((*MockNetworkAPIs)(nil).SetupENINetwork), eniIP, eniMAC, networkCard, eniSubnetCIDR, maxENIPerNIC, isTrunkENI, routeTableID, isRuleConfigured)
 }
 
 // SetupHostNetwork mocks base method.

@@ -1238,25 +1238,32 @@ func (c *IPAMContext) tryAssignPrefixes(networkCard int) (increasedPool bool, er
 }
 
 // setupENI does following:
-// 1) add ENI to datastore
-// 2) set up linux ENI related networking stack.
-// 3) add all ENI's secondary IP addresses to datastore
-
-// TODO: Will primary ENI so that we can skip Network Setup ?
+// 1) get route table ID for the ENI
+// 2) add ENI to datastore
+// 3) set up linux ENI related networking stack.
+// 4) add all ENI's secondary IP addresses to datastore
 func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isTrunkENI, isEFAENI bool) error {
 	primaryENI := c.awsClient.GetPrimaryENI()
+	var primaryIP string
+	if c.enableIPv6 {
+		primaryIP = eniMetadata.PrimaryIPv6Address()
+	} else {
+		primaryIP = eniMetadata.PrimaryIPv4Address()
+	}
+
+	// Get the route table ID for the ENI
+	routeTableID, isRuleConfigured, err := c.networkClient.GetRouteTableNumberForENI(eniMetadata.NetworkCard, primaryIP, eniMetadata.DeviceNumber, c.maxENI, c.enableIPv6)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get route table ID for ENI %s", eni)
+	}
+
 	// Add the ENI to the datastore
-	err := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI)
+	err = c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI, routeTableID)
 	if err != nil && err.Error() != datastore.DuplicatedENIError {
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
-
-	// Store the addressable IP for the ENI.
-	if c.enableIPv6 {
-		c.primaryIP[eni] = eniMetadata.PrimaryIPv6Address()
-	} else {
-		c.primaryIP[eni] = eniMetadata.PrimaryIPv4Address()
-	}
+	// Keep track of the primary IP for this ENI
+	c.primaryIP[eni] = primaryIP
 
 	if c.enableIPv6 {
 		if !isTrunkENI {
@@ -1275,7 +1282,7 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 		if c.enableIPv6 {
 			subnetCidr = eniMetadata.SubnetIPv6CIDR
 		}
-		err = c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.DeviceNumber, eniMetadata.NetworkCard, subnetCidr, c.maxENI, isTrunkENI)
+		err := c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.NetworkCard, subnetCidr, c.maxENI, isTrunkENI, routeTableID, isRuleConfigured)
 		if err != nil {
 			// Failed to set up the ENI
 			errRemove := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).RemoveENIFromDataStore(eni, true)
@@ -2484,7 +2491,7 @@ func (c *IPAMContext) isDatastorePoolEmpty(networkCard int) bool {
 // Return whether the maximum number of ENIs that can be attached to the node has already been reached
 func (c *IPAMContext) hasRoomForEni(networkCard int) bool {
 	trunkEni := 0
-	if c.enablePodENI && networkCard == DefaultNetworkCardIndex && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
+	if c.awsClient.IsTrunkingCompatible() && c.enablePodENI && networkCard == DefaultNetworkCardIndex && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
 		trunkEni = 1
 	}
 	return c.dataStoreAccess.GetDataStore(networkCard).GetENIs() < (c.maxENI - c.unmanagedENI[networkCard] - trunkEni)
