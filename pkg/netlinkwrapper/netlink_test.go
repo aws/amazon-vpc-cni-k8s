@@ -105,9 +105,9 @@ func TestRetryOnErrDumpInterrupted_Delay(t *testing.T) {
 	firstToSecond := timestamps[1].Sub(timestamps[0])
 	assert.Less(t, firstToSecond, 50*time.Millisecond, "First retry should happen immediately without delay")
 
-	for i := 2; i < len(timestamps); i++ {
-		delay := timestamps[i].Sub(timestamps[i-1])
-		assert.GreaterOrEqual(t, delay, 100*time.Millisecond, "Delay before attempt %d should be at least 100ms", i+1)
+	for attempt := 2; attempt < len(timestamps); attempt++ {
+		delay := timestamps[attempt].Sub(timestamps[attempt-1])
+		assert.GreaterOrEqual(t, delay, 100*time.Millisecond, "Delay before attempt %d should be at least 100ms", attempt+1)
 	}
 }
 
