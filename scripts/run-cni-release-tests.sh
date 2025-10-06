@@ -17,6 +17,7 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration"
 TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"617930562442.dkr.ecr.us-west-2.amazonaws.com"}
+RUN_SOAK_TEST=${RUN_SOAK_TEST:-false}
 
 source "$SCRIPT_DIR"/lib/set_kubeconfig.sh
 source "$SCRIPT_DIR"/lib/cluster.sh
@@ -34,7 +35,7 @@ function run_integration_test() {
 
   echo "Running cni integration tests"
   START=$SECONDS
-  cd $INTEGRATION_TEST_DIR/cni && CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --skip-file=soak_test.go -v -timeout 60m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" --test-image-registry=$TEST_IMAGE_REGISTRY || TEST_RESULT=fail
+  cd $INTEGRATION_TEST_DIR/cni && CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS -v -timeout 200m --no-color --fail-on-pending -- --cluster-kubeconfig="$KUBECONFIG" --cluster-name="$CLUSTER_NAME" --aws-region="$REGION" --aws-vpc-id="$VPC_ID" --ng-name-label-key="$NG_LABEL_KEY" --ng-name-label-val="$NG_LABEL_VAL" --test-image-registry=$TEST_IMAGE_REGISTRY || TEST_RESULT=fail
   echo "cni test took $((SECONDS - START)) seconds."
 
   if [[ ! -z $PROD_IMAGE_REGISTRY ]]; then
@@ -61,7 +62,7 @@ if [[ -n "${ENDPOINT}" ]]; then
 fi
 
 echo "Running release tests on cluster: $CLUSTER_NAME in region: $REGION"
-
+echo "test"
 if [[ -z $RUN_DEVEKS_TEST ]]; then
   load_cluster_details
 else
