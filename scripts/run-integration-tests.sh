@@ -32,7 +32,7 @@ ARCH=$(go env GOARCH)
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUN_SOAK_TEST:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
-: "${KOPS_VERSION=v1.33.0-beta.1}"
+: "${KOPS_VERSION=v1.34.0-beta.1}"
 
 if [[ -z $EKS_CLUSTER_VERSION || -z $K8S_VERSION ]]; then
     CLUSTER_INFO=$(eksctl utils describe-cluster-versions --region $AWS_DEFAULT_REGION)
