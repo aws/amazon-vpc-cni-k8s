@@ -17,6 +17,7 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration"
 TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"617930562442.dkr.ecr.us-west-2.amazonaws.com"}
+RUN_SOAK_TEST=${RUN_SOAK_TEST:-false}
 
 source "$SCRIPT_DIR"/lib/set_kubeconfig.sh
 source "$SCRIPT_DIR"/lib/cluster.sh
@@ -56,6 +57,27 @@ function run_integration_test() {
   echo "Integration tests completed successfully!"
 }
 
+function run_soak_test() {
+  TEST_RESULT=success
+  echo "Running cni soak tests"
+  START=$SECONDS
+    cd $INTEGRATION_TEST_DIR/cni && CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --no-color --focus="SOAK_TEST" -v --timeout 3h --fail-on-pending -- \
+      --cluster-kubeconfig="$KUBECONFIG" \
+      --cluster-name="$CLUSTER_NAME" \
+      --aws-region="$REGION" \
+      --aws-vpc-id="$VPC_ID" \
+      --ng-name-label-key="kubernetes.io/os" \
+      --ng-name-label-val="linux" \
+      --test-image-registry=$TEST_IMAGE_REGISTRY \
+      --publish-cw-metrics=true || TEST_RESULT=fail
+  echo "cni soak test took $((SECONDS - START)) seconds."
+  if [[ "$TEST_RESULT" == fail ]]; then
+      echo "Soak test failed."
+      exit 1
+  fi
+  echo "Soak tests completed successfully!"
+}
+
 if [[ -n "${ENDPOINT}" ]]; then
   ENDPOINT_FLAG="--endpoint $ENDPOINT"
 fi
@@ -70,5 +92,8 @@ fi
 
 START=$SECONDS
 run_integration_test
+if [[ "$RUN_SOAK_TEST" == true ]]; then
+  run_soak_test
+fi
 
 echo "Completed running all tests in $((SECONDS - START)) seconds."
