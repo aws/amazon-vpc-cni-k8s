@@ -1388,7 +1388,7 @@ func GetEthernetMTU() int {
 func GetPodMTU(podMTU string) int {
 	mtu, err := strconv.Atoi(podMTU)
 	if err != nil {
-		log.Errorf("Failed to parse pod MTU %s: %v", mtu, err)
+		log.Errorf("Failed to parse pod MTU %s: %v", podMTU, err)
 		return defaultMTU
 	}
 

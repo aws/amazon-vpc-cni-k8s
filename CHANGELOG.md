@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.20.4
+
+* Updating SNAT variable documentation by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3439
+* Bump the k8s-dependencies group with 5 updates by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3426
+* Bump the aws-dependencies group with 11 updates by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3424
+* Optimize ENI slot reservation for non-supported instance type by @phuhung273 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3250
+* Include all plugins for Multus by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3470
+* fix: format string bug in GetPodMTU error logging by @dcoppa in https://github.com/aws/amazon-vpc-cni-k8s/pull/3471
+
 ## v1.20.3
 
 * chore: update VPC IP resource limits by @github-actions[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3441
