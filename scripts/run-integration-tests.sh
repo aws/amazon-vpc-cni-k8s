@@ -28,7 +28,9 @@ ARCH=$(go env GOARCH)
 : "${RUN_CONFORMANCE:=false}"
 : "${RUN_KOPS_TEST:=false}"
 : "${RUN_BOTTLEROCKET_TEST:=false}"
+: "${RUN_UBUNTU_TEST:=false}"
 : "${RUN_PERFORMANCE_TESTS:=false}"
+: "${RUN_SOAK_TEST:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
 : "${KOPS_VERSION=v1.33.0-beta.1}"
 
@@ -56,6 +58,9 @@ on_error() {
     fi
     if [[ $RUN_PERFORMANCE_TESTS == true ]]; then
         emit_cloudwatch_metric "performance_test_status" "0"
+    fi
+    if [[ $RUN_SOAK_TEST == true ]]; then
+        emit_cloudwatch_metric "soak_test_status" "0"
     fi
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the 
@@ -284,6 +289,29 @@ if [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
     uninstall_cw_agent
 fi
 
+if [[ "$RUN_SOAK_TEST" == true ]]; then
+    echo "*******************************************************************************"
+    echo "Running soak tests on current image"
+    echo ""
+    START=$SECONDS
+    
+    GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
+    TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"public.ecr.aws/eks"}
+    
+    (CGO_ENABLED=0 ginkgo --no-color --focus="SOAK_TEST" -v --timeout 3h --fail-on-pending $GINKGO_TEST_BUILD/cni.test -- \
+        --cluster-kubeconfig="$KUBECONFIG_PATH" \
+        --cluster-name="$CLUSTER_NAME" \
+        --aws-region="$AWS_DEFAULT_REGION" \
+        --aws-vpc-id="$VPC_ID" \
+        --ng-name-label-key="kubernetes.io/os" \
+        --ng-name-label-val="ubuntu" \
+        --test-image-registry=$TEST_IMAGE_REGISTRY \
+        --publish-cw-metrics=true )
+    
+    SOAK_DURATION=$((SECONDS - START))
+    echo "TIMELINE: Soak tests took $SOAK_DURATION seconds."
+fi
+
 if [[ $RUN_KOPS_TEST == true ]]; then
     run_kops_conformance
 fi
@@ -299,6 +327,9 @@ if [[ "$DEPROVISION" == true ]]; then
     elif [[ "$RUN_PERFORMANCE_TESTS" == true ]]; then
         eksctl delete cluster $CLUSTER_NAME
         emit_cloudwatch_metric "performance_test_status" "1"
+    elif [[ "$RUN_SOAK_TEST" == true ]]; then
+        eksctl delete cluster $CLUSTER_NAME --disable-nodegroup-eviction
+        emit_cloudwatch_metric "soak_test_status" "1"
     else
         down-test-cluster
     fi

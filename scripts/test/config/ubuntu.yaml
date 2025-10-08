@@ -1,0 +1,52 @@
+---
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: CLUSTER_NAME_PLACEHOLDER
+  region: us-west-2
+
+managedNodeGroups:
+  - name: cni-test-arm64-ubuntu-mng
+    instanceType: c6g.xlarge
+    desiredCapacity: 3
+    amiFamily: UbuntuPro2404
+    minSize: 3
+    maxSize: 3
+    volumeSize: 40
+    releaseVersion: ""
+    preBootstrapCommands:
+      - |
+        # Enable unattended upgrades for soak testing
+        apt-get update
+        apt-get install -y unattended-upgrades
+        echo 'Unattended-Upgrade::Automatic-Reboot "false";' >> /etc/apt/apt.conf.d/50unattended-upgrades
+        echo 'Unattended-Upgrade::Remove-Unused-Dependencies "true";' >> /etc/apt/apt.conf.d/50unattended-upgrades
+        systemctl enable unattended-upgrades
+        systemctl start unattended-upgrades
+    tags:
+      group: amazon-vpc-cni-k8s-arm64-ubuntu
+  - name: cni-test-x86-ubuntu-mng
+    instanceType: c5.xlarge
+    desiredCapacity: 3
+    amiFamily: UbuntuPro2404
+    minSize: 3
+    maxSize: 3
+    volumeSize: 40
+    releaseVersion: ""
+    preBootstrapCommands:
+      - |
+        # Enable unattended upgrades for soak testing
+        apt-get update
+        apt-get install -y unattended-upgrades
+        echo 'Unattended-Upgrade::Automatic-Reboot "false";' >> /etc/apt/apt.conf.d/50unattended-upgrades
+        echo 'Unattended-Upgrade::Remove-Unused-Dependencies "true";' >> /etc/apt/apt.conf.d/50unattended-upgrades
+        systemctl enable unattended-upgrades
+        systemctl start unattended-upgrades
+    tags:
+      group: amazon-vpc-cni-k8s-x86-ubuntu
+availabilityZones:
+  - us-west-2a
+  - us-west-2b
+  - us-west-2c
+  - us-west-2d
