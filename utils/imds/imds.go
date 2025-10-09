@@ -9,12 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 )
 
-// EC2Metadata wraps the methods from the amazon-sdk-go's ec2metadata package
-// type EC2Metadata interface {
-// 	GetMetadata(path string) (string, error)
-//	Region() (string, error)
-// }
-
 func GetMetaData(key string) (string, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRetryMaxAttempts(10))
 	if err != nil {
@@ -28,6 +22,7 @@ func GetMetaData(key string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("get instance metadata: failed to retrieve %s - %s", key, err)
 	}
+	defer requestedData.Content.Close()
 	content, err := io.ReadAll(requestedData.Content)
 	if err != nil {
 		return "", fmt.Errorf("get instance metadata: failed to read %s - %s", key, err)

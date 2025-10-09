@@ -19,6 +19,6 @@ COPY ./misc/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
 
-COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/cni-metrics-helper /app
+COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/build/cni-metrics-helper /app
 
 ENTRYPOINT ["/app/cni-metrics-helper", "--cloudwatch=false"]

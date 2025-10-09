@@ -141,20 +141,20 @@ dist: all
 BUILD_MODE ?= -buildmode=pie
 build-linux: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
 build-linux:    ## Build the VPC CNI plugin agent using the host's Go toolchain.
-	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-k8s-agent     ./cmd/aws-k8s-agent
-	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-cni           ./cmd/routed-eni-cni-plugin
-	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o grpc-health-probe ./cmd/grpc-health-probe
-	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o egress-cni     ./cmd/egress-cni-plugin
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o build/aws-k8s-agent     ./cmd/aws-k8s-agent
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o build/aws-cni           ./cmd/routed-eni-cni-plugin
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o build/grpc-health-probe ./cmd/grpc-health-probe
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o build/egress-cni     ./cmd/egress-cni-plugin
 
 # Build VPC CNI init container entrypoint
 build-aws-vpc-cni-init: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
 build-aws-vpc-cni-init:    ## Build the VPC CNI init container using the host's Go toolchain.
-	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-vpc-cni-init     ./cmd/aws-vpc-cni-init
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o build/aws-vpc-cni-init     ./cmd/aws-vpc-cni-init
 
 # Build VPC CNI container entrypoint
 build-aws-vpc-cni: BUILD_FLAGS = $(BUILD_MODE) -ldflags '-s -w $(LDFLAGS)'
 build-aws-vpc-cni:    ## Build the VPC CNI container using the host's Go toolchain.
-	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o aws-vpc-cni     ./cmd/aws-vpc-cni
+	go build $(VENDOR_OVERRIDE_FLAG) $(BUILD_FLAGS) -o build/aws-vpc-cni     ./cmd/aws-vpc-cni
 
 # Build VPC CNI plugin & agent container image.
 docker:	setup-ec2-sdk-override     ## Build VPC CNI plugin & agent container image.
@@ -261,7 +261,7 @@ build-test-binaries:
 # Build metrics helper agent.
 
 build-metrics:     ## Build metrics helper agent.
-	go build $(VENDOR_OVERRIDE_FLAG) -ldflags="-s -w" -o cni-metrics-helper ./cmd/cni-metrics-helper
+	go build $(VENDOR_OVERRIDE_FLAG) -ldflags="-s -w" -o build/cni-metrics-helper ./cmd/cni-metrics-helper
 
 # Build metrics helper agent Docker image.
 docker-metrics:    ## Build metrics helper agent Docker image.

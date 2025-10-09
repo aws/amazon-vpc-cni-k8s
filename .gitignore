@@ -24,3 +24,4 @@ vendor/
 # Unignore charts directory as its confilcts with `aws-vpc-cni` binary ignore rule
 !charts/**
 scripts/cni-test/
+build/

@@ -16,13 +16,13 @@ FROM $base_image
 
 WORKDIR /app
 
-COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni \
+COPY --from=builder /go/src/github.com/aws/amazon-vpc-cni-k8s/build/aws-cni \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/misc/10-aws.conflist \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/misc/eni-max-pods.txt \
-    /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-k8s-agent \
-    /go/src/github.com/aws/amazon-vpc-cni-k8s/grpc-health-probe \
-    /go/src/github.com/aws/amazon-vpc-cni-k8s/egress-cni \
-    /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-vpc-cni /app/
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/build/aws-k8s-agent \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/build/grpc-health-probe \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/build/egress-cni \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/build/aws-vpc-cni /app/
 
 # Set iptables mode automatically based on kubelet hint
 RUN ["update-alternatives", "--set", "iptables", "/usr/sbin/iptables-wrapper"]
