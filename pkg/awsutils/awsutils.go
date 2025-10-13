@@ -734,9 +734,19 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		v6cidr, err := cache.imds.GetSubnetIPv6CIDRBlocks(ctx, eniMAC)
 		if err != nil {
 			awsAPIErrInc("GetSubnetIPv6CIDRBlocks", err)
-			return ENIMetadata{}, err
+			// Check if this is a 404 error (e.g., cross-VPC IPv4-only subnet)
+			// If so, handle it gracefully by continuing with empty IPv6 CIDR
+			if isNotFoundError(err) {
+				log.Debugf("IPv6 CIDR not found for ENI %s (likely IPv4-only subnet), continuing with empty IPv6 CIDR", eniMAC)
+				// subnetV6Cidr remains empty, continue processing
+			} else {
+				return ENIMetadata{}, err
+			}
 		} else {
-			subnetV6Cidr = v6cidr.String()
+			// Handle the case where GetSubnetIPv6CIDRBlocks returns empty IPNet for IPv4-only subnets
+			if v6cidr.IP != nil {
+				subnetV6Cidr = v6cidr.String()
+			}
 		}
 
 		imdsIPv6s, err := cache.imds.GetIPv6s(ctx, eniMAC)
@@ -1158,6 +1168,31 @@ func awsAPIErrInc(api string, err error) {
 	if errors.As(err, &awsAPIError) {
 		prometheusmetrics.AwsAPIErr.With(prometheus.Labels{"api": api, "error": awsAPIError.ErrorCode()}).Inc()
 	}
+}
+
+// isNotFoundError checks if the error is a 404 Not Found error
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for HTTP status code 404
+	type httpStatusCoder interface {
+		HTTPStatusCode() int
+	}
+	if httpErr, ok := err.(httpStatusCoder); ok && httpErr.HTTPStatusCode() == 404 {
+		return true
+	}
+
+	// Check for error code "NotFound"
+	type errorCoder interface {
+		ErrorCode() string
+	}
+	if codeErr, ok := err.(errorCoder); ok && codeErr.ErrorCode() == "NotFound" {
+		return true
+	}
+
+	return false
 }
 
 func awsUtilsErrInc(fn string, err error) {
