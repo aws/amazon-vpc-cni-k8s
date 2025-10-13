@@ -309,7 +309,7 @@ if [[ "$RUN_SOAK_TEST" == true ]]; then
         --aws-region="$AWS_DEFAULT_REGION" \
         --aws-vpc-id="$VPC_ID" \
         --ng-name-label-key="kubernetes.io/os" \
-        --ng-name-label-val="ubuntu" \
+        --ng-name-label-val="linux" \
         --test-image-registry=$TEST_IMAGE_REGISTRY \
         --publish-cw-metrics=true \
         $ENDPOINT_OPTION)
