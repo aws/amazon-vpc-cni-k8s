@@ -22,6 +22,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
@@ -103,6 +104,7 @@ func main() {
 		hostENI := eniConfig{name: device}
 		enis = append(enis, hostENI)
 	} else {
+		nl := netlinkwrapper.NewNetLink()
 
 		// read route tables to find the hostveth
 		routeFilter := &netlink.Route{
@@ -116,7 +118,7 @@ func main() {
 		for _, route := range routes {
 			if route.Dst != nil && ipToMonitor.Equal(route.Dst.IP) {
 				linkIndex := route.LinkIndex
-				link, err := netlink.LinkByIndex(linkIndex)
+				link, err := nl.LinkByIndex(linkIndex)
 				if err != nil {
 					fmt.Printf("unable to find index %d error %+v", linkIndex, err)
 					os.Exit(1)
@@ -129,7 +131,7 @@ func main() {
 
 		// get vlan devices
 		if vlanIDToMonitor != 0 {
-			link, err := netlink.LinkByName(fmt.Sprintf("vlan.eth.%d", vlanIDToMonitor))
+			link, err := nl.LinkByName(fmt.Sprintf("vlan.eth.%d", vlanIDToMonitor))
 			if err != nil {
 				fmt.Printf("unable to get vlan device, error: %+v", err)
 				os.Exit(1)
@@ -138,7 +140,7 @@ func main() {
 			enis = append(enis, vlanDevToMonitor)
 
 			// find the trunk dev
-			parentLink, err := netlink.LinkByIndex(link.Attrs().ParentIndex)
+			parentLink, err := nl.LinkByIndex(link.Attrs().ParentIndex)
 			if err != nil {
 				fmt.Printf("unable to get parent link %d. Error %+v", link.Attrs().ParentIndex, err)
 				os.Exit(1)
@@ -147,7 +149,7 @@ func main() {
 			enis = append(enis, trunkDevToMonitor)
 		} else {
 			// find the eni to monitor associated with the pod
-			rules, err := netlink.RuleList(netlink.FAMILY_V4)
+			rules, err := nl.RuleList(netlink.FAMILY_V4)
 			if err != nil {
 				fmt.Printf("unable to get ip rules due to %+v", err)
 				os.Exit(1)
@@ -165,7 +167,7 @@ func main() {
 					}
 
 					if len(routes) > 0 {
-						parentLink, err := netlink.LinkByIndex(routes[0].LinkIndex)
+						parentLink, err := nl.LinkByIndex(routes[0].LinkIndex)
 						if err != nil {
 							fmt.Printf("unable to get parent ENI for the link %+v", err)
 							os.Exit(1)

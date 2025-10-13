@@ -17,6 +17,7 @@ package main
 import (
 	"os"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/procsyswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/utils/cp"
@@ -24,7 +25,6 @@ import (
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"github.com/vishvananda/netlink"
 )
 
 const (
@@ -49,7 +49,8 @@ func getNodePrimaryIF() (string, error) {
 	}
 	log.Infof("Found primaryMAC %s", primaryMAC)
 
-	links, err := netlink.LinkList()
+	nl := netlinkwrapper.NewNetLink()
+	links, err := nl.LinkList()
 	if err != nil {
 		return primaryIF, errors.Wrap(err, "Failed to list links")
 	}

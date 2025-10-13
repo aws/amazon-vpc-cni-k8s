@@ -814,9 +814,9 @@ func (r iptablesRule) String() string {
 }
 
 // NetLinkRuleDelAll deletes all matching route rules (instead of only first instance).
-func NetLinkRuleDelAll(netlink netlinkwrapper.NetLink, rule *netlink.Rule) error {
+func NetLinkRuleDelAll(nl netlinkwrapper.NetLink, rule *netlink.Rule) error {
 	for {
-		if err := netlink.RuleDel(rule); err != nil {
+		if err := nl.RuleDel(rule); err != nil {
 			if !containsNoSuchRule(err) {
 				return err
 			}
