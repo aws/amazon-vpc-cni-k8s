@@ -32,6 +32,8 @@ ARCH=$(go env GOARCH)
 : "${RUN_PERFORMANCE_TESTS:=false}"
 : "${RUN_SOAK_TEST:=false}"
 : "${RUNNING_PERFORMANCE:=false}"
+: "${EXTRA_GINKGO_FLAGS:=""}"
+: "${ENDPOINT_OPTION:=""}"
 : "${KOPS_VERSION=v1.33.0-beta.1}"
 
 if [[ -z $EKS_CLUSTER_VERSION || -z $K8S_VERSION ]]; then
@@ -295,10 +297,13 @@ if [[ "$RUN_SOAK_TEST" == true ]]; then
     echo ""
     START=$SECONDS
     
+    echo "Building test binaries..."
+    make build-test-binaries
+    
     GINKGO_TEST_BUILD="$SCRIPT_DIR/../test/build"
     TEST_IMAGE_REGISTRY=${TEST_IMAGE_REGISTRY:-"public.ecr.aws/eks"}
     
-    (CGO_ENABLED=0 ginkgo --no-color --focus="SOAK_TEST" -v --timeout 3h --fail-on-pending $GINKGO_TEST_BUILD/cni.test -- \
+    (CGO_ENABLED=0 ginkgo $EXTRA_GINKGO_FLAGS --no-color --focus="SOAK_TEST" -v --timeout 3h --fail-on-pending $GINKGO_TEST_BUILD/cni.test -- \
         --cluster-kubeconfig="$KUBECONFIG_PATH" \
         --cluster-name="$CLUSTER_NAME" \
         --aws-region="$AWS_DEFAULT_REGION" \
@@ -306,7 +311,8 @@ if [[ "$RUN_SOAK_TEST" == true ]]; then
         --ng-name-label-key="kubernetes.io/os" \
         --ng-name-label-val="ubuntu" \
         --test-image-registry=$TEST_IMAGE_REGISTRY \
-        --publish-cw-metrics=true )
+        --publish-cw-metrics=true \
+        $ENDPOINT_OPTION)
     
     SOAK_DURATION=$((SECONDS - START))
     echo "TIMELINE: Soak tests took $SOAK_DURATION seconds."
