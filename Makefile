@@ -250,6 +250,12 @@ docker-unit-tests: build-docker-test     ## Run unit tests inside of the testing
 		$(TEST_IMAGE_NAME) \
 		make unit-test
 
+vpc-sweeper: ## Run VPC sweeper to clean up orphaned test resources (DRY_RUN=true by default)
+	./scripts/vpc-sweeper.sh
+
+vpc-sweeper-force: ## Run VPC sweeper with actual deletion (DRY_RUN=false)
+	DRY_RUN=false ./scripts/vpc-sweeper.sh
+
 ##@ Build the Test Binaries files in /test
 build-test-binaries:
 	mkdir -p ${MAKEFILE_PATH}test/build
