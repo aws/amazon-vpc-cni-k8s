@@ -29,7 +29,7 @@ init:
 nodeAgent:
   enabled: true
   image:
-    tag: v1.2.6
+    tag: v1.2.7
     domain: amazonaws.com
     region: us-west-2
     endpoint: ecr
