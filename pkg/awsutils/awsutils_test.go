@@ -2300,13 +2300,13 @@ func TestCrossVPCENIWithFix(t *testing.T) {
 
 		// IPv6 subnet CIDR request fails with 404 for cross-VPC IPv4-only subnet
 		// With the fix, this 404 should be handled gracefully
-		metadataMACPath + crossVPCMAC + metadataSubnetV6CIDR: &CustomRequestFailure{
+		metadataMACPath + crossVPCMAC + metadataSubnetV6CIDR: newIMDSRequestError("test", &CustomRequestFailure{
 			code:       "NotFound",
 			message:    "IPv6 CIDR not found for cross-VPC IPv4-only subnet",
 			fault:      smithy.FaultUnknown,
 			statusCode: 404,
 			requestID:  "test-req-id",
-		},
+		}),
 	})
 
 	// Create cache with IPv6 enabled (same as bug test)
