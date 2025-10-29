@@ -739,7 +739,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			// Handle the case where GetSubnetIPv6CIDRBlocks returns empty IPNet for IPv4-only subnets
 			// IMPORTANT: This scenario includes cross-VPC IPv4 ENIs attached to IPv6 nodes
 			// where the ENI subnet is IPv4-only but the node is configured for IPv6
-			if v6cidr != nil && v6cidr.IP != nil  && v6cidr.Mask != nil {
+			if v6cidr != nil && v6cidr.IP != nil && v6cidr.Mask != nil {
 				subnetV6Cidr = v6cidr.String()
 			}
 		}
