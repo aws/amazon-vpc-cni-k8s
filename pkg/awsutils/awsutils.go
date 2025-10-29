@@ -734,17 +734,12 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		v6cidr, err := cache.imds.GetSubnetIPv6CIDRBlocks(ctx, eniMAC)
 		if err != nil {
 			awsAPIErrInc("GetSubnetIPv6CIDRBlocks", err)
-			// Check if this is a 404 error (e.g., cross-VPC IPv4-only subnet)
-			// If so, handle it gracefully by continuing with empty IPv6 CIDR
-			if isNotFoundError(err) {
-				log.Debugf("IPv6 CIDR not found for ENI %s (likely IPv4-only subnet), continuing with empty IPv6 CIDR", eniMAC)
-				// subnetV6Cidr remains empty, continue processing
-			} else {
-				return ENIMetadata{}, err
-			}
+			return ENIMetadata{}, err
 		} else {
 			// Handle the case where GetSubnetIPv6CIDRBlocks returns empty IPNet for IPv4-only subnets
-			if v6cidr.IP != nil {
+			// IMPORTANT: This scenario includes cross-VPC IPv4 ENIs attached to IPv6 nodes
+			// where the ENI subnet is IPv4-only but the node is configured for IPv6
+			if v6cidr != nil && v6cidr.IP != nil  && v6cidr.Mask != nil {
 				subnetV6Cidr = v6cidr.String()
 			}
 		}
@@ -752,6 +747,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		imdsIPv6s, err := cache.imds.GetIPv6s(ctx, eniMAC)
 		if err != nil {
 			awsAPIErrInc("GetIPv6s", err)
+			return ENIMetadata{}, err
 		} else {
 			ec2ip6s = make([]ec2types.NetworkInterfaceIpv6Address, len(imdsIPv6s))
 			for i, ip6 := range imdsIPv6s {
