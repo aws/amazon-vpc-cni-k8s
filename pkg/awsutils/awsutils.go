@@ -747,7 +747,6 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		imdsIPv6s, err := cache.imds.GetIPv6s(ctx, eniMAC)
 		if err != nil {
 			awsAPIErrInc("GetIPv6s", err)
-			return ENIMetadata{}, err
 		} else {
 			ec2ip6s = make([]ec2types.NetworkInterfaceIpv6Address, len(imdsIPv6s))
 			for i, ip6 := range imdsIPv6s {
