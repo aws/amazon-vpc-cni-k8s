@@ -1166,31 +1166,6 @@ func awsAPIErrInc(api string, err error) {
 	}
 }
 
-// isNotFoundError checks if the error is a 404 Not Found error
-func isNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Check for HTTP status code 404
-	type httpStatusCoder interface {
-		HTTPStatusCode() int
-	}
-	if httpErr, ok := err.(httpStatusCoder); ok && httpErr.HTTPStatusCode() == 404 {
-		return true
-	}
-
-	// Check for error code "NotFound"
-	type errorCoder interface {
-		ErrorCode() string
-	}
-	if codeErr, ok := err.(errorCoder); ok && codeErr.ErrorCode() == "NotFound" {
-		return true
-	}
-
-	return false
-}
-
 func awsUtilsErrInc(fn string, err error) {
 	if errors.As(err, &awsAPIError) {
 		prometheusmetrics.AwsUtilsErr.With(prometheus.Labels{"fn": fn, "error": err.Error()}).Inc()
