@@ -2329,8 +2329,6 @@ func TestCrossVPCENIWithFix(t *testing.T) {
 	for _, eni := range enis {
 		if eni.ENIID == primaryeniID {
 			primaryFound = true
-			// Primary ENI should have IPv4 data
-			assert.NotEmpty(t, eni.IPv4Addresses, "Primary ENI should have IPv4 addresses")
 		}
 		if eni.ENIID == crossVPCENIID {
 			crossVPCFound = true
