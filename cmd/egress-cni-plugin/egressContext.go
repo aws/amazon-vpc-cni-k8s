@@ -267,7 +267,8 @@ func (ec *egressContext) cmdAddEgressV4() (err error) {
 		for _, ipc := range ec.TmpResult.IPs {
 			if ipc.Address.IP.To4() != nil {
 				// add SNAT chain/rules necessary for the container IPv6 egress traffic
-				if err = snat.Add(ec.IPTablesIface, ec.NetConf.NodeIP, ipc.Address.IP, ipv4MulticastRange, ec.SnatChain, ec.SnatComment, ec.NetConf.RandomizeSNAT); err != nil {
+				if err = snat.Add(ec.IPTablesIface, ec.NetConf.NodeIP, ipc.Address.IP, ipv4MulticastRange, ec.SnatChain, ec.SnatComment,
+					ec.NetConf.RandomizeSNAT, ec.NetConf.SNATFixedPorts); err != nil {
 					return err
 				}
 			}
@@ -392,7 +393,14 @@ func (ec *egressContext) cmdAddEgressV6() (err error) {
 
 	// set up SNAT in host for container IPv6 egress traffic
 	// following line adds an ip6tables entries to NAT for IPv6 traffic between container v6if0 and node primary ENI (eth0)
-	err = snat.Add(ec.IPTablesIface, ec.NetConf.NodeIP, containerIPv6, ipv6MulticastRange, ec.SnatChain, ec.SnatComment, ec.NetConf.RandomizeSNAT)
+	err = snat.Add(ec.IPTablesIface,
+		ec.NetConf.NodeIP,
+		containerIPv6,
+		ipv6MulticastRange,
+		ec.SnatChain,
+		ec.SnatComment,
+		ec.NetConf.RandomizeSNAT,
+		ec.NetConf.SNATFixedPorts)
 	if err != nil {
 		ec.Log.Errorf("setup host snat failed: %v", err)
 		return err
