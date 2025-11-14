@@ -796,7 +796,6 @@ Downgrade considerations
 This plugin interacts with the following tags on ENIs:
 
 * `cluster.k8s.amazonaws.com/name`
-* `kubernetes.io/role/cni`
 * `node.k8s.amazonaws.com/instance_id`
 * `node.k8s.amazonaws.com/no_manage`
 
@@ -804,17 +803,6 @@ This plugin interacts with the following tags on ENIs:
 
 The tag `cluster.k8s.amazonaws.com/name` will be set to the cluster name of the
 aws-node daemonset which created the ENI.
-
-#### CNI role tag
-
-The tag `kubernetes.io/role/cni` is read by the aws-node daemonset to determine
-if a secondary subnet can be used for creating secondary ENIs.
-
-This tag is not set by the cni plugin itself, but rather must be set by a user
-to indicate that a subnet can be used for secondary ENIs. Secondary subnets
-to be used must have this tag. The primary subnet (node's subnet) is not
-required to be tagged.
-
 
 #### Instance ID tag
 
@@ -835,6 +823,21 @@ process unrelated to Kubernetes.
 value for the Kubelet's `--max-pods` configuration option. Consider also
 updating the `MAX_ENI` and `--max-pods` configuration options on this plugin
 and the kubelet respectively if you are making use of this tag.
+
+## Subnet tags related to Allocation
+
+This plugin additionally interacts with the `kubernetes.io/role/cni` tag on subnets when `ENABLE_SUBNET_DISCOVERY` is set to `true`.
+
+#### CNI role tag
+
+The tag `kubernetes.io/role/cni` is read by the aws-node daemonset to determine
+if a secondary subnet can be used for creating secondary ENIs.
+
+This tag is not set by the cni plugin itself, but rather must be set by a user
+to indicate that a subnet can be used for secondary ENIs. Secondary subnets
+to be used must have this tag. The primary subnet (node's subnet) is not
+required to be tagged.
+
 
 ## Container Runtime
 

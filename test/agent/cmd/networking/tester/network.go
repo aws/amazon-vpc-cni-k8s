@@ -21,8 +21,8 @@ import (
 	"net"
 	"strings"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/test/agent/pkg/input"
-
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
@@ -35,7 +35,8 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 		ipFamily = netlink.FAMILY_V6
 	}
 	// Get the list of IP rules
-	ruleList, err := netlink.RuleList(ipFamily)
+	nl := netlinkwrapper.NewNetLink()
+	ruleList, err := nl.RuleList(ipFamily)
 	if err != nil {
 		log.Fatalf("failed to list ip rules %v", err)
 	}
@@ -64,7 +65,7 @@ func TestNetworkingSetupForRegularPod(podNetworkingValidationInput input.PodNetw
 
 		// Get the veth pair for pod in host network namespace
 		hostVethName := getHostVethPairName(pod, podNetworkingValidationInput.VethPrefix)
-		link, err := netlink.LinkByName(hostVethName)
+		link, err := nl.LinkByName(hostVethName)
 		if err != nil {
 			validationErrors = append(validationErrors,
 				fmt.Errorf("failed to find netlink %s: %v", hostVethName, err))
@@ -198,7 +199,8 @@ func TestNetworkingSetupForPodsUsingSecurityGroup(podNetworkingValidationInput i
 	}
 
 	// Get the list of IP rules
-	ruleList, err := netlink.RuleList(ipFamily)
+	nl := netlinkwrapper.NewNetLink()
+	ruleList, err := nl.RuleList(ipFamily)
 	if err != nil {
 		log.Fatalf("failed to list ip rules %v", err)
 	}
@@ -222,7 +224,7 @@ func TestNetworkingSetupForPodsUsingSecurityGroup(podNetworkingValidationInput i
 
 		// Get the veth pair for pod in host network namespace
 		hostVethName := getHostVethPairName(pod, podNetworkingValidationInput.VethPrefix)
-		link, err := netlink.LinkByName(hostVethName)
+		link, err := nl.LinkByName(hostVethName)
 		if err != nil {
 			validationErrors = append(validationErrors,
 				fmt.Errorf("failed to find netlink %s: %v", hostVethName, err))
@@ -243,7 +245,7 @@ func TestNetworkingSetupForPodsUsingSecurityGroup(podNetworkingValidationInput i
 				fmt.Errorf("Missing Branch ENI for pod: %s, podNamespace: %s", pod.PodName, pod.PodNamespace))
 		} else {
 			// Check if branchENI is in UP state
-			eniLink, err := netlink.LinkByName(branchENI)
+			eniLink, err := nl.LinkByName(branchENI)
 			if err != nil {
 				validationErrors = append(validationErrors,
 					fmt.Errorf("failed to find netlink %s: %v", branchENI, err))
@@ -323,7 +325,8 @@ func TestNetworkTearedDownForRegularPods(podNetworkingValidationInput input.PodN
 		maskLen = "128"
 	}
 	// Get the list of IP rules
-	ruleList, err := netlink.RuleList(ipFamily)
+	nl := netlinkwrapper.NewNetLink()
+	ruleList, err := nl.RuleList(ipFamily)
 	if err != nil {
 		log.Fatalf("failed to list ip rules %v", err)
 	}
@@ -348,7 +351,7 @@ func TestNetworkTearedDownForRegularPods(podNetworkingValidationInput input.PodN
 
 		// Make sure the veth pair doesn't exist anymore
 		hostVethName := getHostVethPairName(pod, podNetworkingValidationInput.VethPrefix)
-		link, err := netlink.LinkByName(hostVethName)
+		link, err := nl.LinkByName(hostVethName)
 		if err == nil {
 			validationError = append(validationError,
 				fmt.Errorf("found an existing veth pair for the pod %s: %v", pod.PodName, link))
@@ -409,7 +412,8 @@ func TestNetworkTearedDownForPodsUsingSecurityGroup(podNetworkingValidationInput
 		ipFamily = netlink.FAMILY_V6
 	}
 	// Get the list of IP rules
-	ruleList, err := netlink.RuleList(ipFamily)
+	nl := netlinkwrapper.NewNetLink()
+	ruleList, err := nl.RuleList(ipFamily)
 	if err != nil {
 		log.Fatalf("failed to list ip rules %v", err)
 	}
@@ -442,7 +446,7 @@ func TestNetworkTearedDownForPodsUsingSecurityGroup(podNetworkingValidationInput
 
 		// Make sure the veth pair doesn't exist anymore
 		hostVethName := getHostVethPairName(pod, podNetworkingValidationInput.VethPrefix)
-		link, err := netlink.LinkByName(hostVethName)
+		link, err := nl.LinkByName(hostVethName)
 		if err == nil {
 			// Found leaked veth pair
 			validationErrors = append(validationErrors,
