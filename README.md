@@ -791,7 +791,7 @@ Downgrade considerations
 | `IPv4`  | Yes               | Yes               | Yes                     | Yes                          | Yes           | Yes              |
 | `IPv6`  | No                | Yes               | No                      | No                           | No            | Yes              |
 
-## Tags related to ENI Allocation
+## ENI tags related to Allocation
 
 This plugin interacts with the following tags on ENIs:
 
@@ -823,6 +823,8 @@ process unrelated to Kubernetes.
 value for the Kubelet's `--max-pods` configuration option. Consider also
 updating the `MAX_ENI` and `--max-pods` configuration options on this plugin
 and the kubelet respectively if you are making use of this tag.
+
+## Subnet tags related to Allocation
 
 This plugin additionally interacts with the `kubernetes.io/role/cni` tag on subnets when `ENABLE_SUBNET_DISCOVERY=true`
 
