@@ -826,7 +826,7 @@ and the kubelet respectively if you are making use of this tag.
 
 ## Subnet tags related to Allocation
 
-This plugin additionally interacts with the `kubernetes.io/role/cni` tag on subnets when `ENABLE_SUBNET_DISCOVERY=true`
+This plugin additionally interacts with the `kubernetes.io/role/cni` tag on subnets when `ENABLE_SUBNET_DISCOVERY` is set to `true`.
 
 #### CNI role tag
 
