@@ -564,7 +564,7 @@ func (n *linuxNetwork) teardownIPBasedContainerRouteRules(containerAddr *net.IPN
 	log.Debugf("Successfully deleted toContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), "main")
 
 	if rtTable != unix.RT_TABLE_MAIN {
-		fromContainerRule := netlink.NewRule()
+		fromContainerRule := n.netLink.NewRule()
 		fromContainerRule.Src = containerAddr
 		fromContainerRule.Priority = networkutils.FromPodRulePriority
 		fromContainerRule.Table = rtTable
