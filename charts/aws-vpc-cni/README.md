@@ -103,6 +103,13 @@ The following table lists the configurable parameters for this chart and their d
 | `serviceAccount.annotations` | Specifies the annotations for ServiceAccount       | `{}`                                |
 | `livenessProbe`         | Livenness probe settings for daemonset                  | (see `values.yaml`)                 |
 | `readinessProbe`        | Readiness probe settings for daemonset                  | (see `values.yaml`)                 |
+| `healthProbe.useCustomProbeConfig` | Enable customizable probe configuration (connect-timeout, rpc-timeout, initialDelaySeconds) | `false`                      |
+| `healthProbe.livenessProbe.connectTimeout` | Connect timeout for liveness probe grpc calls | `5s`                                |
+| `healthProbe.livenessProbe.rpcTimeout`     | RPC timeout for liveness probe grpc calls     | `5s`                                |
+| `healthProbe.livenessProbe.initialDelaySeconds` | Initial delay for liveness probe         | `60`                                |
+| `healthProbe.readinessProbe.connectTimeout` | Connect timeout for readiness probe grpc calls | `5s`                               |
+| `healthProbe.readinessProbe.rpcTimeout`     | RPC timeout for readiness probe grpc calls     | `5s`                               |
+| `healthProbe.readinessProbe.initialDelaySeconds` | Initial delay for readiness probe        | `1`                                 |
 | `tolerations`           | Optional deployment tolerations                         | `[{"operator": "Exists"}]`          |
 | `updateStrategy`        | Optional update strategy                                | `type: RollingUpdate`               |
 

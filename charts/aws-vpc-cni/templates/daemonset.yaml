@@ -74,10 +74,30 @@ spec:
             - containerPort: 61678
               name: metrics
           livenessProbe:
+{{- if .Values.healthProbe.useCustomProbeConfig }}
+            exec:
+              command:
+                - /app/grpc-health-probe
+                - '-addr=:50051'
+                - '-connect-timeout={{ .Values.healthProbe.livenessProbe.connectTimeout }}'
+                - '-rpc-timeout={{ .Values.healthProbe.livenessProbe.rpcTimeout }}'
+            initialDelaySeconds: {{ .Values.healthProbe.livenessProbe.initialDelaySeconds }}
+{{- else }}
 {{ toYaml .Values.livenessProbe | indent 12 }}
+{{- end }}
             timeoutSeconds: {{ .Values.livenessProbeTimeoutSeconds }}
           readinessProbe:
+{{- if .Values.healthProbe.useCustomProbeConfig }}
+            exec:
+              command:
+                - /app/grpc-health-probe
+                - '-addr=:50051'
+                - '-connect-timeout={{ .Values.healthProbe.readinessProbe.connectTimeout }}'
+                - '-rpc-timeout={{ .Values.healthProbe.readinessProbe.rpcTimeout }}'
+            initialDelaySeconds: {{ .Values.healthProbe.readinessProbe.initialDelaySeconds }}
+{{- else }}
 {{ toYaml .Values.readinessProbe | indent 12 }}
+{{- end }}
             timeoutSeconds: {{ .Values.readinessProbeTimeoutSeconds }}
           env:
 {{- range $key, $value := .Values.env }}
