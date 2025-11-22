@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.20.5
+
+* enabling pod egress traffic test for under mac address policy variation by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3459
+* Bump the aws-dependencies group with 9 updates by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3465
+* chore: update VPC IP resource limits by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3476
+* bumping kops tag to v1.34 by @Supreeth095 in https://github.com/aws/amazon-vpc-cni-k8s/issues/3477
+* feat: add retry logic for netlink dump operations by yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3440
+* chore: update VPC IP resource limits by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3481
+* Updating network policy agent version by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3491
+* Bump actions/dependency-review-action from 4.3.3 to 4.8.1 by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3485
+* Bump actions/setup-go from 5.5.0 to 6.0.0 by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3486
+* Gracefully handle v4 (unmanaged) ENIs on IPv6 node by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3489
+* Go bump by @Supreeth095 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3500
+* chore: update VPC IP resource limits by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3502
+* nit: Update README to separate ENI Tags from Subnet Tags by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3508
+* Update NP agent version for release by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3492
+* Updating CNI cn yaml file by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/
+* Bumping up containerd version for CVE fix by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3512
+* chore: update VPC IP resource limits by @github-actions[bot] and @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3514
+
 ## v1.20.4
 
 * Updating SNAT variable documentation by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3439
