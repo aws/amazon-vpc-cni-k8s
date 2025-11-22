@@ -10,7 +10,7 @@
 # NG_LABEL_KEY: nodegroup label key, default "kubernetes.io/os"
 # NG_LABEL_VAL: nodegroup label val, default "linux"
 # RUN_DEVEKS_TEST: Set this variable for tests to run on a deveks cluster
-# CNI_METRICS_HELPER: cni metrics helper image tag, default "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.20.4"
+# CNI_METRICS_HELPER: cni metrics helper image tag, default "602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.20.5"
 # TEST_IMAGE_REGISTRY: the registry in test-infra-* accounts where e2e test images are stored
 set -e
 
@@ -38,9 +38,9 @@ function run_integration_test() {
   echo "cni test took $((SECONDS - START)) seconds."
 
   if [[ ! -z $PROD_IMAGE_REGISTRY ]]; then
-    CNI_METRICS_HELPER="$PROD_IMAGE_REGISTRY/cni-metrics-helper:v1.20.4"
+    CNI_METRICS_HELPER="$PROD_IMAGE_REGISTRY/cni-metrics-helper:v1.20.5"
   else
-    CNI_METRICS_HELPER="${CNI_METRICS_HELPER:=602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.20.4}"
+    CNI_METRICS_HELPER="${CNI_METRICS_HELPER:=602401143452.dkr.ecr.us-west-2.amazonaws.com/cni-metrics-helper:v1.20.5}"
   fi
 
   REPO_NAME=$(echo $CNI_METRICS_HELPER | cut -d ":" -f 1)

@@ -9582,6 +9582,99 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "nitro",
 		IsBareMetal:    false,
 	},
+	"p6-b300.48xlarge": {
+		ENILimit:                4,
+		IPv4Limit:               50,
+		DefaultNetworkCardIndex: 0,
+		NetworkCards: []NetworkCard{
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         0,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         1,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         2,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         3,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         4,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         5,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         6,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         7,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         8,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         9,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         10,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         11,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         12,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         13,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         14,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         15,
+			},
+
+			{
+				MaximumNetworkInterfaces: 4,
+				NetworkCardIndex:         16,
+			},
+		},
+		HypervisorType: "nitro",
+		IsBareMetal:    false,
+	},
 	"r3.2xlarge": {
 		ENILimit:                4,
 		IPv4Limit:               15,
