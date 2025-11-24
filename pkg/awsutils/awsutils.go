@@ -216,6 +216,12 @@ type APIs interface {
 	IsPrefixDelegationSupported() bool
 
 	IsTrunkingCompatible() bool
+
+	// CheckSubnetPrefixAvailability checks available /28 prefixes in a subnet
+	CheckSubnetPrefixAvailability(subnetID string) (int, error)
+
+	// GetSubnetIDByENI returns the subnet ID for a specific ENI
+	GetSubnetIDByENI(eniID string) (string, error)
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -2257,6 +2263,161 @@ func (cache *EC2InstanceMetadataCache) IsPrimaryENI(eniID string) bool {
 		return true
 	}
 	return false
+}
+
+// CheckSubnetPrefixAvailability checks if there are available /28 prefixes in the subnet
+func (cache *EC2InstanceMetadataCache) CheckSubnetPrefixAvailability(subnetID string) (int, error) {
+	// Get subnet CIDR
+	subnetResp, err := cache.ec2SVC.DescribeSubnets(context.Background(), &ec2.DescribeSubnetsInput{
+		SubnetIds: []string{subnetID},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to describe subnet: %w", err)
+	}
+
+	if len(subnetResp.Subnets) == 0 {
+		return 0, fmt.Errorf("subnet %s not found", subnetID)
+	}
+
+	subnet := subnetResp.Subnets[0]
+	cidr := aws.ToString(subnet.CidrBlock)
+
+	// Get all ENIs in the subnet
+	eniResp, err := cache.ec2SVC.DescribeNetworkInterfaces(context.Background(), &ec2.DescribeNetworkInterfacesInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("subnet-id"),
+				Values: []string{subnetID},
+			},
+		},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to describe network interfaces: %w", err)
+	}
+
+	// Collect all assigned IPs and prefixes
+	var assignedIPs []string
+	for _, eni := range eniResp.NetworkInterfaces {
+		// Add individual private IP addresses
+		for _, ip := range eni.PrivateIpAddresses {
+			assignedIPs = append(assignedIPs, aws.ToString(ip.PrivateIpAddress))
+		}
+		// Add all IPs from IPv4 prefixes
+		for _, prefix := range eni.Ipv4Prefixes {
+			prefixCIDR := aws.ToString(prefix.Ipv4Prefix)
+			if prefixIPs := cache.expandPrefix(prefixCIDR); prefixIPs != nil {
+				assignedIPs = append(assignedIPs, prefixIPs...)
+			}
+		}
+	}
+
+	return cache.calculateFreePrefixes(cidr, assignedIPs), nil
+}
+
+// CalculateFreePrefixes calculates free /28 prefixes in a subnet
+func (cache *EC2InstanceMetadataCache) CalculateFreePrefixes(cidr string, assignedIPs []string) int {
+	_, subnetNet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return 0
+	}
+
+	assignedSet := make(map[uint32]bool)
+	for _, ipStr := range assignedIPs {
+		if ip := net.ParseIP(ipStr); ip != nil {
+			assignedSet[cache.ipToUint32(ip.To4())] = true
+		}
+	}
+
+	return cache.countFreePrefixes(subnetNet, assignedSet)
+}
+
+func (cache *EC2InstanceMetadataCache) calculateFreePrefixes(cidr string, assignedIPs []string) int {
+	return cache.CalculateFreePrefixes(cidr, assignedIPs)
+}
+
+func (cache *EC2InstanceMetadataCache) countFreePrefixes(subnetNet *net.IPNet, assignedIPs map[uint32]bool) int {
+	subnetStart := cache.ipToUint32(subnetNet.IP)
+	subnetMask, _ := subnetNet.Mask.Size()
+	subnetSize := uint32(1) << (32 - subnetMask)
+	subnetEnd := subnetStart + subnetSize - 1
+
+	// Add AWS reserved IPs to assigned set
+	// First 4 IPs in subnet (network, router, DNS, future) and last IP in subnet for broadcast
+	for i := uint32(0); i < 4; i++ {
+		assignedIPs[subnetStart+i] = true
+	}
+	assignedIPs[subnetEnd] = true
+
+	// /28 has 16 IPs (2^4)
+	prefixSize := uint32(16)
+	numPrefixes := subnetSize / prefixSize
+
+	freeCount := 0
+
+	for i := uint32(0); i < numPrefixes; i++ {
+		prefixStart := subnetStart + (i * prefixSize)
+
+		// Check if any IP in this /28 prefix is assigned or reserved
+		isFree := true
+		for j := uint32(0); j < prefixSize; j++ {
+			if assignedIPs[prefixStart+j] {
+				isFree = false
+				break
+			}
+		}
+
+		if isFree {
+			freeCount++
+		}
+	}
+
+	return freeCount
+}
+
+func (cache *EC2InstanceMetadataCache) ipToUint32(ip net.IP) uint32 {
+	return uint32(ip[0])<<24 + uint32(ip[1])<<16 + uint32(ip[2])<<8 + uint32(ip[3])
+}
+
+// expandPrefix expands a CIDR prefix into all individual IP addresses
+func (cache *EC2InstanceMetadataCache) expandPrefix(prefixCIDR string) []string {
+	_, prefixNet, err := net.ParseCIDR(prefixCIDR)
+	if err != nil {
+		return nil
+	}
+
+	prefixStart := cache.ipToUint32(prefixNet.IP)
+	prefixMask, _ := prefixNet.Mask.Size()
+	prefixSize := uint32(1) << (32 - prefixMask)
+
+	var ips []string
+	for i := uint32(0); i < prefixSize; i++ {
+		ipUint := prefixStart + i
+		ip := net.IPv4(byte(ipUint>>24), byte(ipUint>>16), byte(ipUint>>8), byte(ipUint))
+		ips = append(ips, ip.String())
+	}
+
+	return ips
+}
+
+// GetSubnetIDByENI returns the subnet ID for a specific ENI using the EC2 API
+func (cache *EC2InstanceMetadataCache) GetSubnetIDByENI(eniID string) (string, error) {
+	resp, err := cache.ec2SVC.DescribeNetworkInterfaces(context.Background(), &ec2.DescribeNetworkInterfacesInput{
+		NetworkInterfaceIds: []string{eniID},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to describe ENI %s: %w", eniID, err)
+	}
+
+	if len(resp.NetworkInterfaces) == 0 {
+		return "", fmt.Errorf("ENI %s not found", eniID)
+	}
+
+	eni := resp.NetworkInterfaces[0]
+	if eni.SubnetId == nil {
+		return "", fmt.Errorf("ENI %s has no subnet ID", eniID)
+	}
+
+	return aws.ToString(eni.SubnetId), nil
 }
 
 func checkAPIErrorAndBroadcastEvent(err error, api string) {

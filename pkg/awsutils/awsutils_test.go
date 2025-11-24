@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"reflect"
 	"strconv"
@@ -2343,4 +2344,508 @@ func TestCrossVPCENIWithFix(t *testing.T) {
 
 	t.Logf("Result: IPv6-enabled cluster successfully initializes with cross-VPC IPv4-only ENIs")
 	t.Logf("Found %d ENIs: Primary (%s) and Cross-VPC (%s)", len(enis), primaryeniID, crossVPCENIID)
+}
+func TestCheckSubnetPrefixAvailability(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	tests := []struct {
+		name           string
+		subnetID       string
+		subnetResp     *ec2.DescribeSubnetsOutput
+		subnetErr      error
+		eniResp        *ec2.DescribeNetworkInterfacesOutput
+		eniErr         error
+		expectedResult int
+		expectedError  bool
+	}{
+		{
+			name:     "successful calculation with /24 subnet",
+			subnetID: "subnet-12345",
+			subnetResp: &ec2.DescribeSubnetsOutput{
+				Subnets: []ec2types.Subnet{
+					{
+						SubnetId:  aws.String("subnet-12345"),
+						CidrBlock: aws.String("10.0.1.0/24"),
+					},
+				},
+			},
+			eniResp: &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{
+					{
+						PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
+							{PrivateIpAddress: aws.String("10.0.1.10")},
+							{PrivateIpAddress: aws.String("10.0.1.11")},
+						},
+					},
+				},
+			},
+			expectedResult: 14, // A /24 prefix has 16 /28 prefixes, minus 1 reserved prefix(last /16), minus 1 prefix with assigned IPs (first /16) = 14
+			expectedError:  false,
+		},
+		{
+			name:     "subnet not found",
+			subnetID: "subnet-nonexistent",
+			subnetResp: &ec2.DescribeSubnetsOutput{
+				Subnets: []ec2types.Subnet{},
+			},
+			expectedError: true,
+		},
+		{
+			name:      "describe subnets error",
+			subnetID:  "subnet-12345",
+			subnetErr: errors.New("permission denied"),
+			expectedError: true,
+		},
+		{
+			name:     "describe network interfaces error",
+			subnetID: "subnet-12345",
+			subnetResp: &ec2.DescribeSubnetsOutput{
+				Subnets: []ec2types.Subnet{
+					{
+						SubnetId:  aws.String("subnet-12345"),
+						CidrBlock: aws.String("10.0.1.0/24"),
+					},
+				},
+			},
+			eniErr:        errors.New("permission denied"),
+			expectedError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.subnetErr != nil {
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(nil, tt.subnetErr)
+			} else if tt.subnetResp != nil {
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(tt.subnetResp, nil)
+				
+				if tt.eniErr != nil {
+					mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any()).Return(nil, tt.eniErr)
+				} else if tt.eniResp != nil {
+					mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any()).Return(tt.eniResp, nil)
+				}
+			}
+
+			cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+			result, err := cache.CheckSubnetPrefixAvailability(tt.subnetID)
+
+			if tt.expectedError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedResult, result)
+			}
+		})
+	}
+}
+
+func TestCalculateFreePrefixes(t *testing.T) {
+	cache := &EC2InstanceMetadataCache{}
+
+	tests := []struct {
+		name        string
+		cidr        string
+		assignedIPs []string
+		expected    int
+	}{
+		{
+			name:        "/24 subnet with no assigned IPs",
+			cidr:        "10.0.1.0/24",
+			assignedIPs: []string{},
+			expected:    14, // 16 total /28 prefixes minus 1 reserved prefix (first prefix with reserved IPs) minus 1 broadcast prefix
+		},
+		{
+			name:        "/24 subnet with some assigned IPs",
+			cidr:        "10.0.1.0/24",
+			assignedIPs: []string{"10.0.1.10", "10.0.1.20", "10.0.1.30"},
+			expected:    13, // 16 total - 1 reserved CIDR - 1 assigned CIDR - 1 broadcast prefix = 13
+		},
+		{
+			name:        "/28 subnet (single prefix)",
+			cidr:        "10.0.1.0/28",
+			assignedIPs: []string{},
+			expected:    0, // Single /28 prefix is fully reserved
+		},
+		{
+			name:        "/28 subnet with assigned IP",
+			cidr:        "10.0.1.0/28",
+			assignedIPs: []string{"10.0.1.10"},
+			expected:    0, // Single /28 prefix is occupied
+		},
+		{
+			name:        "/20 subnet (larger subnet)",
+			cidr:        "10.0.0.0/20",
+			assignedIPs: []string{},
+			expected:    254, // 256 total /28 prefixes minus 1 reserved prefix minus 1 broadcast prefix
+		},
+		{
+			name:        "invalid CIDR",
+			cidr:        "invalid-cidr",
+			assignedIPs: []string{},
+			expected:    0,
+		},
+		{
+			name:        "assigned IPs in different /28 blocks",
+			cidr:        "10.0.1.0/24",
+			assignedIPs: []string{"10.0.1.5", "10.0.1.17", "10.0.1.33", "10.0.1.49"},
+			expected:    11, // 16 total - 1 reserved - 3 prefixes with assigned IPs - 1 broadcast prefix = 11
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := cache.CalculateFreePrefixes(tt.cidr, tt.assignedIPs)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestCountFreePrefixes(t *testing.T) {
+	cache := &EC2InstanceMetadataCache{}
+
+	tests := []struct {
+		name        string
+		subnetCIDR  string
+		assignedIPs map[uint32]bool
+		expected    int
+	}{
+		{
+			name:       "/24 subnet with no assigned IPs",
+			subnetCIDR: "10.0.1.0/24",
+			assignedIPs: map[uint32]bool{},
+			expected:   14, // 16 total /28 prefixes minus reserved
+		},
+		{
+			name:       "/24 subnet with assigned IPs in first prefix",
+			subnetCIDR: "10.0.1.0/24",
+			assignedIPs: map[uint32]bool{
+				cache.ipToUint32([]byte{10, 0, 1, 10}): true,
+			},
+			expected: 14, // 16 total - 1 reserved - 1 broadcast = 12
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, subnetNet, err := net.ParseCIDR(tt.subnetCIDR)
+			assert.NoError(t, err)
+			
+			result := cache.countFreePrefixes(subnetNet, tt.assignedIPs)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestIpToUint32(t *testing.T) {
+	cache := &EC2InstanceMetadataCache{}
+
+	tests := []struct {
+		name     string
+		ip       net.IP
+		expected uint32
+	}{
+		{
+			name:     "10.0.1.1",
+			ip:       net.IPv4(10, 0, 1, 1),
+			expected: 0x0A000101, // 10*256^3 + 0*256^2 + 1*256 + 1
+		},
+		{
+			name:     "192.168.1.100",
+			ip:       net.IPv4(192, 168, 1, 100),
+			expected: 0xC0A80164, // 192*256^3 + 168*256^2 + 1*256 + 100
+		},
+		{
+			name:     "0.0.0.0",
+			ip:       net.IPv4(0, 0, 0, 0),
+			expected: 0x00000000,
+		},
+		{
+			name:     "255.255.255.255",
+			ip:       net.IPv4(255, 255, 255, 255),
+			expected: 0xFFFFFFFF,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := cache.ipToUint32(tt.ip.To4())
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExpandPrefix(t *testing.T) {
+	cache := &EC2InstanceMetadataCache{}
+
+	tests := []struct {
+		name       string
+		prefixCIDR string
+		expected   []string
+	}{
+		{
+			name:       "/28 prefix",
+			prefixCIDR: "10.0.1.0/28",
+			expected: []string{
+				"10.0.1.0", "10.0.1.1", "10.0.1.2", "10.0.1.3",
+				"10.0.1.4", "10.0.1.5", "10.0.1.6", "10.0.1.7",
+				"10.0.1.8", "10.0.1.9", "10.0.1.10", "10.0.1.11",
+				"10.0.1.12", "10.0.1.13", "10.0.1.14", "10.0.1.15",
+			},
+		},
+		{
+			name:       "/30 prefix (4 IPs)",
+			prefixCIDR: "192.168.1.0/30",
+			expected:   []string{"192.168.1.0", "192.168.1.1", "192.168.1.2", "192.168.1.3"},
+		},
+		{
+			name:       "/32 prefix (single IP)",
+			prefixCIDR: "10.0.1.5/32",
+			expected:   []string{"10.0.1.5"},
+		},
+		{
+			name:       "invalid CIDR",
+			prefixCIDR: "invalid-cidr",
+			expected:   nil,
+		},
+		{
+			name:       "/29 prefix (8 IPs)",
+			prefixCIDR: "172.16.0.8/29",
+			expected: []string{
+				"172.16.0.8", "172.16.0.9", "172.16.0.10", "172.16.0.11",
+				"172.16.0.12", "172.16.0.13", "172.16.0.14", "172.16.0.15",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := cache.expandPrefix(tt.prefixCIDR)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestCheckSubnetPrefixAvailabilityWithPrefixes(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	tests := []struct {
+		name           string
+		subnetID       string
+		subnetResp     *ec2.DescribeSubnetsOutput
+		eniResp        *ec2.DescribeNetworkInterfacesOutput
+		expectedResult int
+		expectedError  bool
+	}{
+		{
+			name:     "subnet with individual IPs and prefixes",
+			subnetID: "subnet-12345",
+			subnetResp: &ec2.DescribeSubnetsOutput{
+				Subnets: []ec2types.Subnet{
+					{
+						SubnetId:  aws.String("subnet-12345"),
+						CidrBlock: aws.String("10.0.1.0/24"),
+					},
+				},
+			},
+			eniResp: &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{
+					{
+						// Individual IPs
+						PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
+							{PrivateIpAddress: aws.String("10.0.1.80")},
+							{PrivateIpAddress: aws.String("10.0.1.11")},
+						},
+						// IPv4 prefixes that will be expanded
+						Ipv4Prefixes: []ec2types.Ipv4PrefixSpecification{
+							{Ipv4Prefix: aws.String("10.0.1.32/28")}, // Takes up one /28 block
+							{Ipv4Prefix: aws.String("10.0.1.48/28")}, // Takes up another /28 block
+						},
+					},
+				},
+			},
+			expectedResult: 11, // 16 total - 1 reserved - 1 broadcast - 2 prefix blocks - 1 block with ip = 11
+			expectedError:  false,
+		},
+		{
+			name:     "subnet with overlapping individual IPs and prefixes",
+			subnetID: "subnet-12345",
+			subnetResp: &ec2.DescribeSubnetsOutput{
+				Subnets: []ec2types.Subnet{
+					{
+						SubnetId:  aws.String("subnet-12345"),
+						CidrBlock: aws.String("10.0.1.0/24"),
+					},
+				},
+			},
+			eniResp: &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{
+					{
+						// Individual IPs within a prefix range
+						PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
+							{PrivateIpAddress: aws.String("10.0.1.33")}, // Within 10.0.1.32/28
+							{PrivateIpAddress: aws.String("10.0.1.34")}, // Within 10.0.1.32/28
+						},
+						// Prefix that overlaps with individual IPs
+						Ipv4Prefixes: []ec2types.Ipv4PrefixSpecification{
+							{Ipv4Prefix: aws.String("10.0.1.32/28")}, // Contains the individual IPs above
+						},
+					},
+				},
+			},
+			expectedResult: 13, // 16 total - 1 reserved - 1 broadcast - 1 prefix block = 13
+			expectedError:  false,
+		},
+		{
+			name:     "subnet with multiple ENIs having prefixes",
+			subnetID: "subnet-12345",
+			subnetResp: &ec2.DescribeSubnetsOutput{
+				Subnets: []ec2types.Subnet{
+					{
+						SubnetId:  aws.String("subnet-12345"),
+						CidrBlock: aws.String("10.0.1.0/24"),
+					},
+				},
+			},
+			eniResp: &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{
+					{
+						// First ENI with prefix
+						Ipv4Prefixes: []ec2types.Ipv4PrefixSpecification{
+							{Ipv4Prefix: aws.String("10.0.1.16/28")},
+						},
+					},
+					{
+						// Second ENI with different prefix
+						Ipv4Prefixes: []ec2types.Ipv4PrefixSpecification{
+							{Ipv4Prefix: aws.String("10.0.1.64/28")},
+						},
+					},
+				},
+			},
+			expectedResult: 12, // 16 total - 1 reserved - 1 broadcast - 2 prefix blocks = 12
+			expectedError:  false,
+		},
+		{
+			name:     "subnet with invalid prefix CIDR",
+			subnetID: "subnet-12345",
+			subnetResp: &ec2.DescribeSubnetsOutput{
+				Subnets: []ec2types.Subnet{
+					{
+						SubnetId:  aws.String("subnet-12345"),
+						CidrBlock: aws.String("10.0.1.0/24"),
+					},
+				},
+			},
+			eniResp: &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{
+					{
+						// Invalid prefix CIDR should be ignored
+						Ipv4Prefixes: []ec2types.Ipv4PrefixSpecification{
+							{Ipv4Prefix: aws.String("invalid-cidr")},
+						},
+						PrivateIpAddresses: []ec2types.NetworkInterfacePrivateIpAddress{
+							{PrivateIpAddress: aws.String("10.0.1.10")},
+						},
+					},
+				},
+			},
+			expectedResult: 14, // Invalid prefix ignored, only individual IP affects calculation
+			expectedError:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(tt.subnetResp, nil)
+			mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any()).Return(tt.eniResp, nil)
+
+			cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
+			result, err := cache.CheckSubnetPrefixAvailability(tt.subnetID)
+
+			if tt.expectedError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedResult, result)
+			}
+		})
+	}
+}
+
+func TestCalculateFreePrefixesWithExpandedPrefixes(t *testing.T) {
+	cache := &EC2InstanceMetadataCache{}
+
+	tests := []struct {
+		name        string
+		cidr        string
+		assignedIPs []string
+		expected    int
+		description string
+	}{
+		{
+			name: "prefix expansion covers entire /28 block",
+			cidr: "10.0.1.0/24",
+			assignedIPs: []string{
+				// Simulate expanded /28 prefix 10.0.1.32/28
+				"10.0.1.32", "10.0.1.33", "10.0.1.34", "10.0.1.35",
+				"10.0.1.36", "10.0.1.37", "10.0.1.38", "10.0.1.39",
+				"10.0.1.40", "10.0.1.41", "10.0.1.42", "10.0.1.43",
+				"10.0.1.44", "10.0.1.45", "10.0.1.46", "10.0.1.47",
+			},
+			expected:    13, // 16 total - 1 reserved - 1 broadcast - 1 fully occupied prefix = 13
+			description: "All IPs in a /28 prefix should block that entire prefix",
+		},
+		{
+			name: "partial prefix expansion",
+			cidr: "10.0.1.0/24",
+			assignedIPs: []string{
+				// Only some IPs from 10.0.1.32/28 prefix
+				"10.0.1.32", "10.0.1.33", "10.0.1.34",
+			},
+			expected:    13, // 16 total - 1 reserved - 1 broadcast - 1 partially occupied prefix = 13
+			description: "Any IP in a /28 prefix should block that entire prefix",
+		},
+		{
+			name: "multiple prefix expansions",
+			cidr: "10.0.1.0/24",
+			assignedIPs: []string{
+				// First /28 prefix: 10.0.1.16/28
+				"10.0.1.16", "10.0.1.17", "10.0.1.18", "10.0.1.19",
+				"10.0.1.20", "10.0.1.21", "10.0.1.22", "10.0.1.23",
+				"10.0.1.24", "10.0.1.25", "10.0.1.26", "10.0.1.27",
+				"10.0.1.28", "10.0.1.29", "10.0.1.30", "10.0.1.31",
+				// Second /28 prefix: 10.0.1.64/28
+				"10.0.1.64", "10.0.1.65", "10.0.1.66", "10.0.1.67",
+				"10.0.1.68", "10.0.1.69", "10.0.1.70", "10.0.1.71",
+				"10.0.1.72", "10.0.1.73", "10.0.1.74", "10.0.1.75",
+				"10.0.1.76", "10.0.1.77", "10.0.1.78", "10.0.1.79",
+			},
+			expected:    12, // 16 total - 1 reserved - 1 broadcast - 2 fully occupied prefixes = 12
+			description: "Multiple expanded prefixes should block multiple /28 blocks",
+		},
+		{
+			name: "mixed individual IPs and expanded prefixes",
+			cidr: "10.0.1.0/24",
+			assignedIPs: []string{
+				// Individual IPs in one /28 block
+				"10.0.1.50", "10.0.1.51",
+				// Full expanded prefix in another /28 block
+				"10.0.1.96", "10.0.1.97", "10.0.1.98", "10.0.1.99",
+				"10.0.1.100", "10.0.1.101", "10.0.1.102", "10.0.1.103",
+				"10.0.1.104", "10.0.1.105", "10.0.1.106", "10.0.1.107",
+				"10.0.1.108", "10.0.1.109", "10.0.1.110", "10.0.1.111",
+			},
+			expected:    12, // 16 total - 1 reserved - 1 broadcast - 2 occupied prefixes = 12
+			description: "Mix of individual IPs and expanded prefixes should work correctly",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := cache.CalculateFreePrefixes(tt.cidr, tt.assignedIPs)
+			assert.Equal(t, tt.expected, result, tt.description)
+		})
+	}
 }

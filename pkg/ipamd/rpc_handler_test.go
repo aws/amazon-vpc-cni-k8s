@@ -47,6 +47,8 @@ func TestServer_VersionCheck(t *testing.T) {
 
 	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return([]string{}, nil).AnyTimes()
 	m.awsutils.EXPECT().GetVPCIPv6CIDRs().Return([]string{}, nil).AnyTimes()
+	m.awsutils.EXPECT().GetSubnetIDByENI("eni-1").Return("subnet-12345", nil).AnyTimes()
+	m.awsutils.EXPECT().CheckSubnetPrefixAvailability("subnet-12345").Return(5, nil).AnyTimes()
 	m.network.EXPECT().UseExternalSNAT().Return(true).AnyTimes()
 
 	rpcServer := server{
@@ -466,6 +468,24 @@ func TestServer_AddNetwork(t *testing.T) {
 			m := setup(t)
 			defer m.ctrl.Finish()
 
+			// Set up mock expectations for all ENIs in the test
+			for _, eniMap := range tt.fields.ipV4AddressByENIID {
+				for eniID := range eniMap {
+					m.awsutils.EXPECT().GetSubnetIDByENI(eniID).Return("subnet-12345", nil).AnyTimes()
+				}
+			}
+			for _, eniMap := range tt.fields.ipV6PrefixByENIID {
+				for eniID := range eniMap {
+					m.awsutils.EXPECT().GetSubnetIDByENI(eniID).Return("subnet-12345", nil).AnyTimes()
+				}
+			}
+			
+			// Only expect CheckSubnetPrefixAvailability if there are IPv4 ENIs
+			if len(tt.fields.ipV4AddressByENIID) > 0 {
+				m.awsutils.EXPECT().CheckSubnetPrefixAvailability("subnet-12345").Return(10, nil).AnyTimes()
+			}
+
+			
 			for _, call := range tt.fields.getVPCIPv4CIDRsCalls {
 				m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return(call.cidrs, call.err)
 			}

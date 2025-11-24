@@ -2748,3 +2748,38 @@ type Decisions struct {
 	Stats *datastore.DataStoreStats
 	IsLow bool
 }
+
+// checkSubnetPrefixAvailability checks subnet prefix availability for all attached ENIs
+func (c *IPAMContext) checkSubnetPrefixAvailability() {
+	if !c.enableIPv4 || !c.enablePrefixDelegation {
+		return
+	}
+
+	// Check prefix availability for each ENI's subnet
+	checkedSubnets := make(map[string]bool)
+	
+	for _, ds := range c.dataStoreAccess.DataStores {
+		eniInfos := ds.GetENIInfos()
+		for eniID := range eniInfos.ENIs {
+			subnetID, err := c.awsClient.GetSubnetIDByENI(eniID)
+			if err != nil {
+				log.Debugf("Failed to get subnet ID for ENI %s: %v", eniID, err)
+				continue
+			}
+
+			// Skip if we already checked this subnet
+			if checkedSubnets[subnetID] {
+				continue
+			}
+			checkedSubnets[subnetID] = true
+
+			freePrefixes, err := c.awsClient.CheckSubnetPrefixAvailability(subnetID)
+			if err != nil {
+				log.Debugf("Failed to check subnet prefix availability for subnet %s: %v", subnetID, err)
+				continue
+			}
+
+			log.Infof("Subnet prefix availability: %d free /28 prefixes in subnet %s (ENI: %s)", freePrefixes, subnetID, eniID)
+		}
+	}
+}

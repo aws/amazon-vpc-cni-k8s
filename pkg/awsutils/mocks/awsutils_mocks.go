@@ -573,3 +573,33 @@ func (mr *MockAPIsMockRecorder) WaitForENIAndIPsAttached(eni, wantedSecondaryIPs
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForENIAndIPsAttached", reflect.TypeOf((*MockAPIs)(nil).WaitForENIAndIPsAttached), eni, wantedSecondaryIPs)
 }
+
+// CheckSubnetPrefixAvailability mocks base method.
+func (m *MockAPIs) CheckSubnetPrefixAvailability(subnetID string) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CheckSubnetPrefixAvailability", subnetID)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CheckSubnetPrefixAvailability indicates an expected call of CheckSubnetPrefixAvailability.
+func (mr *MockAPIsMockRecorder) CheckSubnetPrefixAvailability(subnetID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckSubnetPrefixAvailability", reflect.TypeOf((*MockAPIs)(nil).CheckSubnetPrefixAvailability), subnetID)
+}
+
+// GetSubnetIDByENI mocks base method.
+func (m *MockAPIs) GetSubnetIDByENI(eniID string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetSubnetIDByENI", eniID)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetSubnetIDByENI indicates an expected call of GetSubnetIDByENI.
+func (mr *MockAPIsMockRecorder) GetSubnetIDByENI(eniID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSubnetIDByENI", reflect.TypeOf((*MockAPIs)(nil).GetSubnetIDByENI), eniID)
+}

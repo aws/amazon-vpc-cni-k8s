@@ -235,7 +235,8 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 				if err == datastore.ErrNoAvailableIPInDataStore && ipsRequired == defaultIpPerPodRequired && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
 					continue
 				}
-
+				// Log subnet prefix availability for diagnostic purposes (CIDR Fragmentation)
+				s.ipamContext.checkSubnetPrefixAvailability()
 				errors = multiErr.Append(errors, err)
 				break
 			}
