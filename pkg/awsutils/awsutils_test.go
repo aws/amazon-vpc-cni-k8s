@@ -2392,9 +2392,9 @@ func TestCheckSubnetPrefixAvailability(t *testing.T) {
 			expectedError: true,
 		},
 		{
-			name:      "describe subnets error",
-			subnetID:  "subnet-12345",
-			subnetErr: errors.New("permission denied"),
+			name:          "describe subnets error",
+			subnetID:      "subnet-12345",
+			subnetErr:     errors.New("permission denied"),
 			expectedError: true,
 		},
 		{
@@ -2419,7 +2419,7 @@ func TestCheckSubnetPrefixAvailability(t *testing.T) {
 				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(nil, tt.subnetErr)
 			} else if tt.subnetResp != nil {
 				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(tt.subnetResp, nil)
-				
+
 				if tt.eniErr != nil {
 					mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any()).Return(nil, tt.eniErr)
 				} else if tt.eniResp != nil {
@@ -2511,10 +2511,10 @@ func TestCountFreePrefixes(t *testing.T) {
 		expected    int
 	}{
 		{
-			name:       "/24 subnet with no assigned IPs",
-			subnetCIDR: "10.0.1.0/24",
+			name:        "/24 subnet with no assigned IPs",
+			subnetCIDR:  "10.0.1.0/24",
 			assignedIPs: map[uint32]bool{},
-			expected:   14, // 16 total /28 prefixes minus reserved
+			expected:    14, // 16 total /28 prefixes minus reserved
 		},
 		{
 			name:       "/24 subnet with assigned IPs in first prefix",
@@ -2530,7 +2530,7 @@ func TestCountFreePrefixes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, subnetNet, err := net.ParseCIDR(tt.subnetCIDR)
 			assert.NoError(t, err)
-			
+
 			result := cache.countFreePrefixes(subnetNet, tt.assignedIPs)
 			assert.Equal(t, tt.expected, result)
 		})

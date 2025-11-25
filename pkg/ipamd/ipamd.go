@@ -2757,7 +2757,7 @@ func (c *IPAMContext) checkSubnetPrefixAvailability() {
 
 	// Check prefix availability for each ENI's subnet
 	checkedSubnets := make(map[string]bool)
-	
+
 	for _, ds := range c.dataStoreAccess.DataStores {
 		eniInfos := ds.GetENIInfos()
 		for eniID := range eniInfos.ENIs {

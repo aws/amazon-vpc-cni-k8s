@@ -479,13 +479,12 @@ func TestServer_AddNetwork(t *testing.T) {
 					m.awsutils.EXPECT().GetSubnetIDByENI(eniID).Return("subnet-12345", nil).AnyTimes()
 				}
 			}
-			
+
 			// Only expect CheckSubnetPrefixAvailability if there are IPv4 ENIs
 			if len(tt.fields.ipV4AddressByENIID) > 0 {
 				m.awsutils.EXPECT().CheckSubnetPrefixAvailability("subnet-12345").Return(10, nil).AnyTimes()
 			}
 
-			
 			for _, call := range tt.fields.getVPCIPv4CIDRsCalls {
 				m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return(call.cidrs, call.err)
 			}
