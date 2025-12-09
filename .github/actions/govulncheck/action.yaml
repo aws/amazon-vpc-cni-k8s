@@ -7,7 +7,7 @@ inputs:
   check-latest:
     description: 'Set this option to true if you want the action to always check for the latest available Go version that satisfies the version spec'
     required: false
-    default: false
+    default: true
   cache:
     description: 'Used to specify whether Go caching is needed. Set to true, if you would like to enable caching.'
     required: false
@@ -32,7 +32,7 @@ runs:
   steps:
     - if: inputs.repo-checkout != false # only explicit false prevents repo checkout
       uses: actions/checkout@v4
-    - uses: actions/setup-go@v4.0.0
+    - uses: actions/setup-go@v6.1.0
       with:
         go-version: ${{ inputs.go-version-input }}
         check-latest: ${{ inputs.check-latest }}
