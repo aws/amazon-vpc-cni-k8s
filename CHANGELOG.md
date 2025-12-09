@@ -6,7 +6,7 @@
 * Bump the aws-dependencies group with 9 updates by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3465
 * chore: update VPC IP resource limits by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3476
 * bumping kops tag to v1.34 by @Supreeth095 in https://github.com/aws/amazon-vpc-cni-k8s/issues/3477
-* feat: add retry logic for netlink dump operations by yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3440
+* feat: add retry logic for netlink dump operations by @dcoppa in https://github.com/aws/amazon-vpc-cni-k8s/pull/3440
 * chore: update VPC IP resource limits by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3481
 * Updating network policy agent version by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3491
 * Bump actions/dependency-review-action from 4.3.3 to 4.8.1 by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3485
