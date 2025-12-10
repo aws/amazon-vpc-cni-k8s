@@ -20,6 +20,6 @@ WORKDIR /init
 COPY --from=builder \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/core-plugins/* \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni-support.sh \
-    /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-vpc-cni-init /init/
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/build/aws-vpc-cni-init /init/
 
 CMD ["/init/aws-vpc-cni-init"]
