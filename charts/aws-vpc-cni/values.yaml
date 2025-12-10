@@ -164,6 +164,19 @@ serviceAccount:
   annotations: {}
     # To set annotations - serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=arn:aws:iam::<AWS_ACCOUNT_ID>:<IAM_ROLE_NAME>
 
+# Health probe timeout settings
+healthProbe:
+  # Set "useCustomProbeConfig" to true to use customizable probe configuration
+  useCustomProbeConfig: false
+  livenessProbe:
+    connectTimeout: "5s"
+    rpcTimeout: "5s"
+    initialDelaySeconds: 60
+  readinessProbe:
+    connectTimeout: "5s"
+    rpcTimeout: "5s"
+    initialDelaySeconds: 1
+
 livenessProbe:
   exec:
     command:
