@@ -46,3 +46,5 @@ rules:
     resources:
       - cninodes
     verbs: ["get", "list", "watch", "patch"]
+  - nonResourceURLs: ["/apis/networking.k8s.aws", "/apis/networking.k8s.aws/*"]
+    verbs: ["get"]
