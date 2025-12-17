@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.21.1
+
+* Bug fix for Network Policy Agent
+
 ## v1.21.0
 
 * chore: update VPC IP resource limits by @github-actions[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3521
