@@ -36,10 +36,12 @@ rules:
   - apiGroups: ["networking.k8s.aws"]
     resources:
       - policyendpoints
+      - clusterpolicyendpoints
     verbs: ["get", "list", "watch"]
   - apiGroups: ["networking.k8s.aws"]
     resources:
       - policyendpoints/status
+      - clusterpolicyendpoints/status
     verbs: ["get"]
   - apiGroups:
       - vpcresources.k8s.aws
