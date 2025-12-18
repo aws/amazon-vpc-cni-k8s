@@ -422,10 +422,10 @@ func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Ena
 	cache.v6Enabled = v6Enabled
 
 	version := utils.GetEnv(envVpcCniVersion, "")
-	awsCfg, err := config.LoadDefaultConfig(context.TODO(), 
+	awsCfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithRegion(region.Region),
 		config.WithAPIOptions([]func(*smithymiddleware.Stack) error{
-    		middleware.AddUserAgentKeyValue("amazon-vpc-cni-k8s", version),
+			middleware.AddUserAgentKeyValue("amazon-vpc-cni-k8s", version),
 		}),
 	)
 	if err != nil {
