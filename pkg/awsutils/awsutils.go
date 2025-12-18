@@ -30,7 +30,9 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/utils"
 
+	"github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/config"
+	smithymiddleware "github.com/aws/smithy-go/middleware"
 
 	"github.com/aws/smithy-go"
 
@@ -72,6 +74,8 @@ const (
 	additionalEniTagsEnvVar = "ADDITIONAL_ENI_TAGS"
 	reservedTagKeyPrefix    = "k8s.amazonaws.com"
 	subnetDiscoveryTagKey   = "kubernetes.io/role/cni"
+	envVpcCniVersion        = "VPC_CNI_VERSION"
+
 	// UnknownInstanceType indicates that the instance type is not yet supported
 	UnknownInstanceType = "vpc ip resource(eni ip limit): unknown instance type"
 
@@ -417,7 +421,13 @@ func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Ena
 	cache.v4Enabled = v4Enabled
 	cache.v6Enabled = v6Enabled
 
-	awsCfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region.Region))
+	version := utils.GetEnv(envVpcCniVersion, "")
+	awsCfg, err := config.LoadDefaultConfig(context.TODO(), 
+		config.WithRegion(region.Region),
+		config.WithAPIOptions([]func(*smithymiddleware.Stack) error{
+    		middleware.AddUserAgentKeyValue("amazon-vpc-cni-k8s", version),
+		}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to load SDK config, %v", err)
 	}
