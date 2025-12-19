@@ -22,24 +22,19 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/smithy-go"
 
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
-	smithymiddleware "github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 
 	"strconv"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-	"github.com/aws/amazon-vpc-cni-k8s/utils"
 )
 
 // Http client timeout env for sessions
 const (
-	httpTimeoutEnv   = "HTTP_TIMEOUT"
-	maxRetries       = 10
-	envVpcCniVersion = "VPC_CNI_VERSION"
+	httpTimeoutEnv = "HTTP_TIMEOUT"
+	maxRetries     = 10
 )
 
 var (
@@ -72,7 +67,6 @@ func New(ctx context.Context) (aws.Config, error) {
 		config.WithRetryer(func() aws.Retryer {
 			return retry.NewStandard()
 		}),
-		injectUserAgent,
 	}
 
 	endpoint := os.Getenv("AWS_EC2_ENDPOINT")
@@ -97,49 +91,4 @@ func New(ctx context.Context) (aws.Config, error) {
 	}
 
 	return cfg, nil
-}
-
-// injectUserAgent will inject app specific user-agent into awsSDK
-func injectUserAgent(loadOptions *config.LoadOptions) error {
-	version := utils.GetEnv(envVpcCniVersion, "")
-	userAgent := fmt.Sprintf("amazon-vpc-cni-k8s/version/%s", version)
-
-	loadOptions.APIOptions = append(loadOptions.APIOptions, func(stack *smithymiddleware.Stack) error {
-		return stack.Build.Add(&addUserAgentMiddleware{
-			userAgent: userAgent,
-		}, smithymiddleware.After)
-	})
-
-	return nil
-}
-
-type addUserAgentMiddleware struct {
-	userAgent string
-}
-
-func (m *addUserAgentMiddleware) HandleBuild(ctx context.Context, in smithymiddleware.BuildInput, next smithymiddleware.BuildHandler) (out smithymiddleware.BuildOutput, metadata smithymiddleware.Metadata, err error) {
-	// Simply pass through to the next handler in the middleware chain
-	return next.HandleBuild(ctx, in)
-}
-
-func (m *addUserAgentMiddleware) ID() string {
-	return "AddUserAgent"
-}
-
-func (m *addUserAgentMiddleware) HandleFinalize(ctx context.Context, in smithymiddleware.FinalizeInput, next smithymiddleware.FinalizeHandler) (
-	out smithymiddleware.FinalizeOutput, metadata smithymiddleware.Metadata, err error) {
-	req, ok := in.Request.(*smithyhttp.Request)
-	if !ok {
-		return out, metadata, &smithy.SerializationError{Err: fmt.Errorf("unknown request type %T", in.Request)}
-	}
-
-	userAgent := req.Header.Get("User-Agent")
-	if userAgent == "" {
-		userAgent = m.userAgent
-	} else {
-		userAgent += " " + m.userAgent
-	}
-	req.Header.Set("User-Agent", userAgent)
-
-	return next.HandleFinalize(ctx, in)
 }
