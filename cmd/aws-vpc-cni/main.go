@@ -108,6 +108,7 @@ const (
 	envIPCooldownPeriod      = "IP_COOLDOWN_PERIOD"
 	envDisablePodV6          = "DISABLE_POD_V6"
 	envEnableMultiNICSupport = "ENABLE_MULTI_NIC"
+	envVpcCniVersion         = "VPC_CNI_VERSION"
 )
 
 // NetConfList describes an ordered list of networks.
@@ -427,6 +428,10 @@ func _main() int {
 	if err != nil {
 		log.WithError(err).Error("Failed to install CNI binaries")
 		return 1
+	}
+
+	if vpcCniVersion := utils.GetEnv(envVpcCniVersion, ""); vpcCniVersion != "" {
+		log.Infof("VPC CNI Version: %s", vpcCniVersion)
 	}
 
 	log.Infof("Starting IPAM daemon... ")
