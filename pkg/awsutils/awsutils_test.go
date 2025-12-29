@@ -36,6 +36,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	mock_ec2wrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 
@@ -364,7 +365,7 @@ func TestAWSGetFreeDeviceNumberOnErr(t *testing.T) {
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any()).Return(nil, errors.New("error on DescribeInstances"))
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	_, err := cache.awsGetFreeDeviceNumber(0)
+	_, err := cache.awsGetFreeDeviceNumber(context.Background(), 0)
 	assert.Error(t, err)
 }
 
@@ -384,12 +385,13 @@ func TestAWSGetFreeDeviceNumberNoDevice(t *testing.T) {
 	result := &ec2.DescribeInstancesOutput{Reservations: []ec2types.Reservation{{
 		Instances: []ec2types.Instance{{
 			NetworkInterfaces: ec2ENIs,
-		}}}}}
+		}},
+	}}}
 
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	_, err := cache.awsGetFreeDeviceNumber(0)
+	_, err := cache.awsGetFreeDeviceNumber(context.Background(), 0)
 	assert.Error(t, err)
 }
 
@@ -456,7 +458,7 @@ func TestGetENIAttachmentID(t *testing.T) {
 		mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(tc.output, tc.err)
 
 		cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-		id, err := cache.getENIAttachmentID("test-eni")
+		id, err := cache.getENIAttachmentID(context.Background(), "test-eni")
 		assert.Equal(t, tc.expErr, err)
 		assert.Equal(t, tc.expID, id)
 	}
@@ -517,7 +519,7 @@ func TestDescribeAllENIs(t *testing.T) {
 			_ = os.Setenv(utils.EnvEnableImdsOnlyMode, "true")
 		}
 		vpc.SetInstance("test", 4, 10, 0, []vpc.NetworkCard{{MaximumNetworkInterfaces: 4, NetworkCardIndex: 0}}, "nitro", false)
-		metaData, err := cache.DescribeAllENIs()
+		metaData, err := cache.DescribeAllENIs(context.Background())
 		if !tc.expEC2call {
 			_ = os.Unsetenv(utils.EnvEnableImdsOnlyMode)
 		}
@@ -562,12 +564,14 @@ func TestAllocENI(t *testing.T) {
 	ec2ENIs = append(ec2ENIs, ec2ENI)
 
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+	}
 
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	attachmentID := "eni-attach-58ddda9d"
 	attachResult := &ec2.AttachNetworkInterfaceOutput{
-		AttachmentId: &attachmentID}
+		AttachmentId: &attachmentID,
+	}
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
@@ -578,7 +582,7 @@ func TestAllocENI(t *testing.T) {
 		useSubnetDiscovery: true,
 	}
 
-	_, err := cache.AllocENI(nil, "", 5, 0)
+	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
 	assert.NoError(t, err)
 }
 
@@ -616,7 +620,8 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 		ec2ENIs = append(ec2ENIs, ec2ENI)
 	}
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+	}
 
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().DeleteNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
@@ -628,7 +633,7 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 		useSubnetDiscovery: true,
 	}
 
-	_, err := cache.AllocENI(nil, "", 5, 0)
+	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
 	assert.Error(t, err)
 }
 
@@ -668,7 +673,8 @@ func TestAllocENIMaxReached(t *testing.T) {
 	ec2ENIs = append(ec2ENIs, ec2ENI)
 
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+	}
 
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("AttachmentLimitExceeded"))
@@ -681,7 +687,7 @@ func TestAllocENIMaxReached(t *testing.T) {
 		useSubnetDiscovery: true,
 	}
 
-	_, err := cache.AllocENI(nil, "", 5, 0)
+	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
 	assert.Error(t, err)
 }
 
@@ -719,16 +725,18 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	ec2ENIs = append(ec2ENIs, ec2ENI)
 
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+	}
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	attachmentID := "eni-attach-58ddda9d"
 	attachResult := &ec2.AttachNetworkInterfaceOutput{
-		AttachmentId: &attachmentID}
+		AttachmentId: &attachmentID,
+	}
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", useSubnetDiscovery: true}
-	_, err := cache.AllocENI(nil, subnetID, 5, 0)
+	_, err := cache.AllocENI(context.Background(), nil, subnetID, 5, 0)
 	assert.NoError(t, err)
 
 	// when required IP numbers(50) is higher than ENI's limit(49)
@@ -738,7 +746,7 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	cache = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", useSubnetDiscovery: true}
-	_, err = cache.AllocENI(nil, subnetID, 49, 0)
+	_, err = cache.AllocENI(context.Background(), nil, subnetID, 49, 0)
 	assert.NoError(t, err)
 }
 
@@ -772,7 +780,7 @@ func TestAllocENIWithIPAddressesAlreadyFull(t *testing.T) {
 		instanceType:       "t3.xlarge",
 		useSubnetDiscovery: true,
 	}
-	_, err := cache.AllocENI(nil, "", 14, 0)
+	_, err := cache.AllocENI(context.Background(), nil, "", 14, 0)
 	assert.Error(t, err)
 }
 
@@ -811,11 +819,13 @@ func TestAllocENIWithPrefixAddresses(t *testing.T) {
 	ec2ENIs = append(ec2ENIs, ec2ENI)
 
 	result := &ec2.DescribeInstancesOutput{
-		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}}}
+		Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+	}
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	attachmentID := "eni-attach-58ddda9d"
 	attachResult := &ec2.AttachNetworkInterfaceOutput{
-		AttachmentId: &attachmentID}
+		AttachmentId: &attachmentID,
+	}
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
@@ -826,7 +836,7 @@ func TestAllocENIWithPrefixAddresses(t *testing.T) {
 		enablePrefixDelegation: true,
 		useSubnetDiscovery:     true,
 	}
-	_, err := cache.AllocENI(nil, subnetID, 1, 0)
+	_, err := cache.AllocENI(context.Background(), nil, subnetID, 1, 0)
 	assert.NoError(t, err)
 }
 
@@ -861,7 +871,7 @@ func TestAllocENIWithPrefixesAlreadyFull(t *testing.T) {
 		enablePrefixDelegation: true,
 		useSubnetDiscovery:     true,
 	}
-	_, err := cache.AllocENI(nil, "", 1, 0)
+	_, err := cache.AllocENI(context.Background(), nil, "", 1, 0)
 	assert.Error(t, err)
 }
 
@@ -872,7 +882,8 @@ func TestFreeENI(t *testing.T) {
 	attachmentID := eniAttachID
 	attachment := &ec2types.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
 	result := &ec2.DescribeNetworkInterfacesOutput{
-		NetworkInterfaces: []ec2types.NetworkInterface{{Attachment: attachment}}}
+		NetworkInterfaces: []ec2types.NetworkInterface{{Attachment: attachment}},
+	}
 	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().DetachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	mockEC2.EXPECT().DeleteNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
@@ -881,7 +892,7 @@ func TestFreeENI(t *testing.T) {
 		ec2SVC: mockEC2,
 	}
 
-	err := cache.freeENI("test-eni", time.Millisecond, time.Millisecond)
+	err := cache.freeENI(context.Background(), "test-eni", time.Millisecond, time.Millisecond)
 	assert.NoError(t, err)
 }
 
@@ -892,7 +903,8 @@ func TestFreeENIRetry(t *testing.T) {
 	attachmentID := eniAttachID
 	attachment := &ec2types.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
 	result := &ec2.DescribeNetworkInterfacesOutput{
-		NetworkInterfaces: []ec2types.NetworkInterface{{Attachment: attachment}}}
+		NetworkInterfaces: []ec2types.NetworkInterface{{Attachment: attachment}},
+	}
 	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 
 	// retry 2 times
@@ -904,7 +916,7 @@ func TestFreeENIRetry(t *testing.T) {
 		ec2SVC: mockEC2,
 	}
 
-	err := cache.freeENI("test-eni", time.Millisecond, time.Millisecond)
+	err := cache.freeENI(context.Background(), "test-eni", time.Millisecond, time.Millisecond)
 	assert.NoError(t, err)
 }
 
@@ -946,7 +958,8 @@ func TestFreeENIRetryMax(t *testing.T) {
 	attachmentID := eniAttachID
 	attachment := &ec2types.NetworkInterfaceAttachment{AttachmentId: &attachmentID}
 	result := &ec2.DescribeNetworkInterfacesOutput{
-		NetworkInterfaces: []ec2types.NetworkInterface{{Attachment: attachment}}}
+		NetworkInterfaces: []ec2types.NetworkInterface{{Attachment: attachment}},
+	}
 	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().DetachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
@@ -958,7 +971,7 @@ func TestFreeENIRetryMax(t *testing.T) {
 		ec2SVC: mockEC2,
 	}
 
-	err := cache.freeENI("test-eni", time.Millisecond, time.Millisecond)
+	err := cache.freeENI(context.Background(), "test-eni", time.Millisecond, time.Millisecond)
 	assert.Error(t, err)
 }
 
@@ -972,7 +985,7 @@ func TestFreeENIDescribeErr(t *testing.T) {
 		ec2SVC: mockEC2,
 	}
 
-	err := cache.FreeENI("test-eni")
+	err := cache.FreeENI(context.Background(), "test-eni")
 	assert.Error(t, err)
 }
 
@@ -981,9 +994,11 @@ func TestDescribeInstanceTypes(t *testing.T) {
 	defer ctrl.Finish()
 	mockEC2.EXPECT().DescribeInstanceTypes(gomock.Any(), gomock.Any(), gomock.Any()).Return(&ec2.DescribeInstanceTypesOutput{
 		InstanceTypes: []ec2types.InstanceTypeInfo{
-			{InstanceType: "not-there", NetworkInfo: &ec2types.NetworkInfo{
-				MaximumNetworkInterfaces:  aws.Int32(9),
-				Ipv4AddressesPerInterface: aws.Int32(99)},
+			{
+				InstanceType: "not-there", NetworkInfo: &ec2types.NetworkInfo{
+					MaximumNetworkInterfaces:  aws.Int32(9),
+					Ipv4AddressesPerInterface: aws.Int32(99),
+				},
 			},
 		},
 		NextToken: nil,
@@ -991,7 +1006,7 @@ func TestDescribeInstanceTypes(t *testing.T) {
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
 	cache.instanceType = "not-there"
-	err := cache.FetchInstanceTypeLimits()
+	err := cache.FetchInstanceTypeLimits(context.Background())
 	assert.NoError(t, err)
 	value := cache.GetENILimit()
 	assert.Equal(t, 9, value)
@@ -1006,7 +1021,7 @@ func TestAllocIPAddress(t *testing.T) {
 	mockEC2.EXPECT().AssignPrivateIpAddresses(gomock.Any(), gomock.Any(), gomock.Any()).Return(&ec2.AssignPrivateIpAddressesOutput{}, nil)
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := cache.AllocIPAddress("eni-id")
+	err := cache.AllocIPAddress(context.Background(), "eni-id")
 	assert.NoError(t, err)
 }
 
@@ -1017,7 +1032,7 @@ func TestAllocIPAddressOnErr(t *testing.T) {
 	mockEC2.EXPECT().AssignPrivateIpAddresses(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("Error on AssignPrivateIpAddressesWithContext"))
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
-	err := cache.AllocIPAddress("eni-id")
+	err := cache.AllocIPAddress(context.Background(), "eni-id")
 	assert.Error(t, err)
 }
 
@@ -1033,7 +1048,7 @@ func TestAllocIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().AssignPrivateIpAddresses(gomock.Any(), input, gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
-	_, err := cache.AllocIPAddresses(eniID, 5)
+	_, err := cache.AllocIPAddresses(context.Background(), eniID, 5)
 	assert.NoError(t, err)
 
 	// when required IP numbers(50) is higher than ENI's limit(49)
@@ -1049,11 +1064,11 @@ func TestAllocIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().AssignPrivateIpAddresses(gomock.Any(), input, gomock.Any()).Return(&output, nil)
 
 	cache = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge"}
-	_, err = cache.AllocIPAddresses(eniID, 50)
+	_, err = cache.AllocIPAddresses(context.Background(), eniID, 50)
 	assert.NoError(t, err)
 
 	// Adding 0 should do nothing
-	_, err = cache.AllocIPAddresses(eniID, 0)
+	_, err = cache.AllocIPAddresses(context.Background(), eniID, 0)
 	assert.NoError(t, err)
 }
 
@@ -1070,7 +1085,7 @@ func TestAllocIPAddressesAlreadyFull(t *testing.T) {
 	retErr := &smithy.GenericAPIError{Code: "PrivateIpAddressLimitExceeded", Message: "Too many IPs already allocated"}
 	mockEC2.EXPECT().AssignPrivateIpAddresses(gomock.Any(), input, gomock.Any()).Return(nil, retErr)
 	// If EC2 says that all IPs are already attached, then DS is out of sync so alloc will fail
-	_, err := cache.AllocIPAddresses(eniID, 14)
+	_, err := cache.AllocIPAddresses(context.Background(), eniID, 14)
 	assert.Error(t, err)
 }
 
@@ -1078,7 +1093,7 @@ func TestAllocPrefixAddresses(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
-	//Allocate 1 prefix for the ENI
+	// Allocate 1 prefix for the ENI
 	input := &ec2.AssignPrivateIpAddressesInput{
 		NetworkInterfaceId: aws.String(eniID),
 		Ipv4PrefixCount:    aws.Int32(1),
@@ -1086,11 +1101,11 @@ func TestAllocPrefixAddresses(t *testing.T) {
 	mockEC2.EXPECT().AssignPrivateIpAddresses(gomock.Any(), input, gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
-	_, err := cache.AllocIPAddresses(eniID, 1)
+	_, err := cache.AllocIPAddresses(context.Background(), eniID, 1)
 	assert.NoError(t, err)
 
 	// Adding 0 should do nothing
-	_, err = cache.AllocIPAddresses(eniID, 0)
+	_, err = cache.AllocIPAddresses(context.Background(), eniID, 0)
 	assert.NoError(t, err)
 }
 
@@ -1107,7 +1122,7 @@ func TestAllocPrefixesAlreadyFull(t *testing.T) {
 	retErr := &smithy.GenericAPIError{Code: "PrivateIpAddressLimitExceeded", Message: "Too many IPs already allocated"}
 	mockEC2.EXPECT().AssignPrivateIpAddresses(gomock.Any(), input, gomock.Any()).Return(nil, retErr)
 	// If EC2 says that all IPs are already attached, then DS is out of sync so alloc will fail
-	_, err := cache.AllocIPAddresses(eniID, 1)
+	_, err := cache.AllocIPAddresses(context.Background(), eniID, 1)
 	assert.Error(t, err)
 }
 
@@ -1320,8 +1335,10 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 					metadataMACPath + eni2MAC + metaDataPrefixPath:     eniPrefixes,
 				})
 			}
-			cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2,
-				enablePrefixDelegation: true, v4Enabled: tt.args.v4Enabled, v6Enabled: tt.args.v6Enabled}
+			cache := &EC2InstanceMetadataCache{
+				imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2,
+				enablePrefixDelegation: true, v4Enabled: tt.args.v4Enabled, v6Enabled: tt.args.v6Enabled,
+			}
 			gotEniMetadata, err := cache.waitForENIAndIPsAttached(tt.args.eni, tt.args.wantedSecondaryIPs, tt.args.maxBackoffDelay)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("waitForENIAndIPsAttached() error = %+v, wantErr %+v", err, tt.wantErr)
@@ -1363,11 +1380,12 @@ func TestEC2InstanceMetadataCache_cleanUpLeakedENIsInternal(t *testing.T) {
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2}
 	// Test checks that both mocks gets called.
-	cache.cleanUpLeakedENIsInternal(time.Millisecond)
+	cache.cleanUpLeakedENIsInternal(context.Background(), time.Millisecond)
 }
 
 func setupDescribeNetworkInterfacesPagesWithContextMock(
-	t *testing.T, mockEC2 *mock_ec2wrapper.MockEC2, interfaces []ec2types.NetworkInterface, err error, times int) {
+	t *testing.T, mockEC2 *mock_ec2wrapper.MockEC2, interfaces []ec2types.NetworkInterface, err error, times int,
+) {
 	mockEC2.EXPECT().
 		DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).
 		Times(times).
@@ -1900,7 +1918,7 @@ func TestEC2InstanceMetadataCache_getLeakedENIs(t *testing.T) {
 					})
 			}
 			cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, clusterName: tt.fields.clusterName, vpcID: vpcID}
-			got, err := cache.getLeakedENIs()
+			got, err := cache.getLeakedENIs(context.Background())
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -2065,7 +2083,7 @@ func TestEC2InstanceMetadataCache_TagENI(t *testing.T) {
 				clusterName:       tt.fields.clusterName,
 				additionalENITags: tt.fields.additionalENITags,
 			}
-			err := cache.TagENI(tt.args.eniID, tt.args.currentTags)
+			err := cache.TagENI(context.Background(), tt.args.eniID, tt.args.currentTags)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {
@@ -2343,4 +2361,1368 @@ func TestCrossVPCENIWithFix(t *testing.T) {
 
 	t.Logf("Result: IPv6-enabled cluster successfully initializes with cross-VPC IPv4-only ENIs")
 	t.Logf("Found %d ENIs: Primary (%s) and Cross-VPC (%s)", len(enis), primaryeniID, crossVPCENIID)
+}
+
+func TestValidTagWithClusterSpecificTags(t *testing.T) {
+	// Save original environment and restore it after the test
+	originalClusterName := os.Getenv(clusterNameEnvVar)
+	defer os.Setenv(clusterNameEnvVar, originalClusterName)
+
+	// Set a test cluster name
+	const testClusterName = "my-example-cluster"
+	os.Setenv(clusterNameEnvVar, testClusterName)
+
+	tests := []struct {
+		name            string
+		subnet          ec2types.Subnet
+		isPrimarySubnet bool
+		want            bool
+		description     string
+	}{
+		{
+			name: "subnet-123: subnet with CNI tag but no cluster tag",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            true,
+			description:     "Should be available to all clusters when no cluster tags present",
+		},
+		{
+			name: "subnet-456: subnet with CNI tag and different cluster's tag",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-456"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+					{
+						Key:   aws.String("kubernetes.io/cluster/some-other-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            false,
+			description:     "Should not be available to our cluster when tagged for a different cluster",
+		},
+		{
+			name: "subnet-789: subnet with CNI tag and multiple cluster tags",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-789"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+					{
+						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
+						Value: aws.String("shared"),
+					},
+					{
+						Key:   aws.String("kubernetes.io/cluster/some-other-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            true,
+			description:     "Should be available to our cluster when tagged for multiple clusters including ours",
+		},
+		{
+			name: "subnet-abc: subnet with cluster tag but no CNI tag",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-abc"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            false,
+			description:     "Should NOT be available to any cluster when CNI tag is missing",
+		},
+		{
+			name: "primary subnet with wrong cluster value",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-def"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+					{
+						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
+						Value: aws.String("not-shared"), // Wrong value
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            false,
+			description:     "Should NOT be available when cluster tag has wrong value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validTag(tt.subnet, tt.isPrimarySubnet)
+			assert.Equal(t, tt.want, got, tt.description)
+		})
+	}
+}
+
+func TestValidTag(t *testing.T) {
+	tests := []struct {
+		name            string
+		subnet          ec2types.Subnet
+		isPrimarySubnet bool
+		want            bool
+	}{
+		{
+			name: "primary subnet with tag value 0 - should exclude",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("0"),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            false,
+		},
+		{
+			name: "primary subnet with tag value 1 - should include",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+		},
+		{
+			name: "primary subnet with empty tag value - should include",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String(""),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+		},
+		{
+			name: "primary subnet with nil tag value - should include",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: nil,
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+		},
+		{
+			name: "primary subnet without the tag - should include (backwards compatible)",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("some-other-tag"),
+						Value: aws.String("value"),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+		},
+		{
+			name: "secondary subnet without the tag - should exclude",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("some-other-tag"),
+						Value: aws.String("value"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            false,
+		},
+		{
+			name: "secondary subnet with tag value 0 - should exclude",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("0"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            false,
+		},
+		{
+			name: "secondary subnet with tag value 1 - should include",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            true,
+		},
+		{
+			name: "secondary subnet with tag value non-zero - should include",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-123"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("true"),
+					},
+				},
+			},
+			isPrimarySubnet: false,
+			want:            true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validTag(tt.subnet, tt.isPrimarySubnet)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestIsSubnetExcluded(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	tests := []struct {
+		name          string
+		subnetTags    []ec2types.Tag
+		describeError error
+		want          bool
+		wantErr       bool
+	}{
+		{
+			name: "subnet with tag value 0 - excluded",
+			subnetTags: []ec2types.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("0"),
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "subnet with tag value 1 - not excluded",
+			subnetTags: []ec2types.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name: "subnet without tag - not excluded",
+			subnetTags: []ec2types.Tag{
+				{
+					Key:   aws.String("other-tag"),
+					Value: aws.String("value"),
+				},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name:          "GetVpcSubnets API error",
+			describeError: errors.New("API error"),
+			want:          false,
+			wantErr:       true,
+		},
+		{
+			name:       "no subnets returned",
+			subnetTags: []ec2types.Tag{},
+			want:       false,
+			wantErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{
+				ec2SVC:           mockEC2,
+				vpcID:            "vpc-12345",
+				availabilityZone: "us-west-2a",
+			}
+
+			if tt.describeError != nil {
+				// Mock DescribeSubnets to return error
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(nil, tt.describeError)
+			} else {
+				// Mock DescribeSubnets for GetVpcSubnets
+				subnetResult := &ec2.DescribeSubnetsOutput{
+					Subnets: []ec2types.Subnet{
+						{
+							SubnetId: aws.String(subnetID),
+							Tags:     tt.subnetTags,
+							VpcId:    aws.String("vpc-12345"),
+						},
+					},
+				}
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(subnetResult, nil)
+			}
+
+			got, err := cache.IsSubnetExcluded(context.Background(), subnetID)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestAllocENIWithSubnetExclusion(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	tests := []struct {
+		name               string
+		subnets            []ec2types.Subnet
+		useSubnetDiscovery bool
+		expectError        bool
+		errorContains      string
+	}{
+		{
+			name: "multiple subnets with primary excluded",
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId:                aws.String(subnetID),
+					AvailableIpAddressCount: aws.Int32(100),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+				{
+					SubnetId:                aws.String("subnet-secondary"),
+					AvailableIpAddressCount: aws.Int32(100),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("1"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: true,
+			expectError:        false,
+		},
+		{
+			name: "all subnets excluded",
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId:                aws.String(subnetID),
+					AvailableIpAddressCount: aws.Int32(100),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+				{
+					SubnetId:                aws.String("subnet-secondary"),
+					AvailableIpAddressCount: aws.Int32(100),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: true,
+			expectError:        true,
+			errorContains:      "no valid subnets available for ENI creation",
+		},
+		{
+			name: "subnet discovery disabled with primary excluded",
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId: aws.String(subnetID),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: false,
+			expectError:        true,
+			errorContains:      "primary subnet is tagged with kubernetes.io/role/cni=0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.useSubnetDiscovery {
+				subnetResult := &ec2.DescribeSubnetsOutput{Subnets: tt.subnets}
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
+			} else {
+				// When subnet discovery is disabled, it will check if primary subnet is excluded
+				primarySubnetResult := &ec2.DescribeSubnetsOutput{Subnets: tt.subnets}
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(primarySubnetResult, nil)
+			}
+
+			if !tt.expectError {
+				// Setup successful ENI creation
+				cureniID := eniID
+				eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2types.NetworkInterface{NetworkInterfaceId: &cureniID}}
+				mockEC2.EXPECT().CreateNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(&eni, nil)
+
+				// Mock DescribeInstances for free device number
+				ec2ENIs := make([]ec2types.InstanceNetworkInterface, 0)
+				deviceNum1 := int32(0)
+				ec2ENI := ec2types.InstanceNetworkInterface{Attachment: &ec2types.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum1}}
+				ec2ENIs = append(ec2ENIs, ec2ENI)
+				result := &ec2.DescribeInstancesOutput{
+					Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+				}
+				mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+
+				// Mock AttachNetworkInterface
+				attachmentID := "eni-attach-123"
+				attachResult := &ec2.AttachNetworkInterfaceOutput{AttachmentId: &attachmentID}
+				mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
+				mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+			}
+
+			cache := &EC2InstanceMetadataCache{
+				ec2SVC:             mockEC2,
+				imds:               TypedIMDS{mockMetadata},
+				instanceType:       "c5n.18xlarge",
+				useSubnetDiscovery: tt.useSubnetDiscovery,
+				subnetID:           subnetID,
+			}
+
+			_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestAllocENIWithSubnetDiscoveryIPv6(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	// Define test variables
+	primaryENI := "eni-primary"
+	clusterName := "test-cluster"
+
+	tests := []struct {
+		name               string
+		subnets            []ec2types.Subnet
+		useSubnetDiscovery bool
+		v6Enabled          bool
+		expectError        bool
+		errorContains      string
+	}{
+		{
+			name: "IPv6 enabled with subnet discovery and primary excluded",
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId:                aws.String(subnetID),
+					AvailableIpAddressCount: aws.Int32(100),
+					Ipv6CidrBlockAssociationSet: []ec2types.SubnetIpv6CidrBlockAssociation{
+						{
+							Ipv6CidrBlock: aws.String("2001:db8::/64"),
+						},
+					},
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+				{
+					SubnetId:                aws.String("subnet-secondary-v6"),
+					AvailableIpAddressCount: aws.Int32(100),
+					Ipv6CidrBlockAssociationSet: []ec2types.SubnetIpv6CidrBlockAssociation{
+						{
+							Ipv6CidrBlock: aws.String("2001:db8:1::/64"),
+						},
+					},
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("1"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: true,
+			v6Enabled:          true,
+			expectError:        false,
+		},
+		{
+			name: "IPv6 enabled with subnet discovery and mixed IPv4/IPv6 subnets",
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId:                aws.String(subnetID),
+					AvailableIpAddressCount: aws.Int32(100),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("1"),
+						},
+					},
+				},
+				{
+					SubnetId:                aws.String("subnet-v6-only"),
+					AvailableIpAddressCount: aws.Int32(100),
+					Ipv6CidrBlockAssociationSet: []ec2types.SubnetIpv6CidrBlockAssociation{
+						{
+							Ipv6CidrBlock: aws.String("2001:db8:2::/64"),
+						},
+					},
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("1"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: true,
+			v6Enabled:          true,
+			expectError:        false,
+		},
+		{
+			name: "IPv6 enabled with all subnets excluded",
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId: aws.String(subnetID),
+					Ipv6CidrBlockAssociationSet: []ec2types.SubnetIpv6CidrBlockAssociation{
+						{
+							Ipv6CidrBlock: aws.String("2001:db8::/64"),
+						},
+					},
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("0"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: true,
+			v6Enabled:          true,
+			expectError:        true,
+			errorContains:      "no valid subnets available for ENI creation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ins := &EC2InstanceMetadataCache{
+				ec2SVC:                 mockEC2,
+				imds:                   TypedIMDS{mockMetadata},
+				primaryENImac:          primaryMAC,
+				useSubnetDiscovery:     tt.useSubnetDiscovery,
+				v6Enabled:              tt.v6Enabled,
+				instanceID:             instanceID,
+				vpcID:                  vpcID,
+				primaryENI:             primaryENI,
+				clusterName:            clusterName,
+				enablePrefixDelegation: false,
+				instanceType:           "c5n.18xlarge",
+				subnetID:               subnetID,
+			}
+
+			if tt.useSubnetDiscovery {
+				subnetResult := &ec2.DescribeSubnetsOutput{Subnets: tt.subnets}
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
+			}
+
+			if !tt.expectError {
+				// Setup successful ENI creation
+				mockEC2.EXPECT().CreateNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&ec2.CreateNetworkInterfaceOutput{
+						NetworkInterface: &ec2types.NetworkInterface{
+							NetworkInterfaceId: aws.String("eni-test-v6"),
+							TagSet: []ec2types.Tag{
+								{
+									Key:   aws.String(eniNodeTagKey),
+									Value: aws.String(ins.instanceID),
+								},
+							},
+						},
+					}, nil)
+
+				// Mock DescribeInstances to get available device indices
+				mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&ec2.DescribeInstancesOutput{
+						Reservations: []ec2types.Reservation{
+							{
+								Instances: []ec2types.Instance{
+									{
+										NetworkInterfaces: []ec2types.InstanceNetworkInterface{
+											{
+												Attachment: &ec2types.InstanceNetworkInterfaceAttachment{
+													DeviceIndex: aws.Int32(0),
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					}, nil)
+
+				// Mock AttachNetworkInterface
+				attachmentID := "eni-attach-123"
+				mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&ec2.AttachNetworkInterfaceOutput{AttachmentId: &attachmentID}, nil)
+
+				// Mock ModifyNetworkInterfaceAttribute
+				mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+			}
+
+			eniID, err := ins.AllocENI(context.Background(), nil, "", 5, 0)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, "eni-test-v6", eniID)
+			}
+		})
+	}
+}
+
+func TestAllocENIWithSubnetDiscoveryFailure(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	// Test when DescribeSubnets fails and fallback to primary subnet which is excluded
+	primarySubnetTags := []ec2types.Tag{
+		{
+			Key:   aws.String("kubernetes.io/role/cni"),
+			Value: aws.String("0"),
+		},
+	}
+
+	// First call to DescribeSubnets fails
+	mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("API error"))
+
+	// Then it checks if primary subnet is excluded
+	primarySubnetResult := &ec2.DescribeSubnetsOutput{
+		Subnets: []ec2types.Subnet{
+			{
+				SubnetId: aws.String(subnetID),
+				Tags:     primarySubnetTags,
+			},
+		},
+	}
+	mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(primarySubnetResult, nil)
+
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:             mockEC2,
+		imds:               TypedIMDS{mockMetadata},
+		instanceType:       "c5n.18xlarge",
+		useSubnetDiscovery: true,
+		subnetID:           subnetID,
+	}
+
+	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "primary subnet is tagged with kubernetes.io/role/cni=0")
+}
+
+// TestDiscoverCustomSecurityGroups tests the discoverCustomSecurityGroups method
+func TestDiscoverCustomSecurityGroups(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	tests := []struct {
+		name           string
+		describeOutput *ec2.DescribeSecurityGroupsOutput
+		describeError  error
+		expectedSGIDs  []string
+		expectError    bool
+		errorContains  string
+	}{
+		{
+			name: "successful discovery with multiple SGs",
+			describeOutput: &ec2.DescribeSecurityGroupsOutput{
+				SecurityGroups: []ec2types.SecurityGroup{
+					{
+						GroupId: aws.String("sg-custom1"),
+						Tags: []ec2types.Tag{
+							{
+								Key:   aws.String("kubernetes.io/role/cni"),
+								Value: aws.String("1"),
+							},
+						},
+					},
+					{
+						GroupId: aws.String("sg-custom2"),
+						Tags: []ec2types.Tag{
+							{
+								Key:   aws.String("kubernetes.io/role/cni"),
+								Value: aws.String("1"),
+							},
+						},
+					},
+				},
+			},
+			describeError: nil,
+			expectedSGIDs: []string{"sg-custom1", "sg-custom2"},
+			expectError:   false,
+		},
+		{
+			name: "empty security group list",
+			describeOutput: &ec2.DescribeSecurityGroupsOutput{
+				SecurityGroups: []ec2types.SecurityGroup{},
+			},
+			describeError: nil,
+			expectedSGIDs: []string{},
+			expectError:   false,
+		},
+		{
+			name:           "describe API error",
+			describeOutput: nil,
+			describeError:  errors.New("API error"),
+			expectedSGIDs:  nil,
+			expectError:    true,
+			errorContains:  "unable to describe security groups",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{
+				ec2SVC: mockEC2,
+				imds:   TypedIMDS{mockMetadata},
+				vpcID:  vpcID,
+			}
+
+			mockEC2.EXPECT().DescribeSecurityGroups(
+				gomock.Any(),
+				gomock.Any(),
+				gomock.Any(),
+			).Return(tt.describeOutput, tt.describeError)
+
+			sgIDs, err := cache.discoverCustomSecurityGroups(context.Background())
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+			} else {
+				assert.NoError(t, err)
+				if len(tt.expectedSGIDs) > 0 {
+					assert.ElementsMatch(t, tt.expectedSGIDs, sgIDs)
+				} else {
+					assert.Empty(t, sgIDs)
+				}
+			}
+		})
+	}
+}
+
+// TestGetENISubnetID tests the GetENISubnetID helper method
+func TestGetENISubnetID(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	tests := []struct {
+		name             string
+		eniID            string
+		describeOutput   *ec2.DescribeNetworkInterfacesOutput
+		describeError    error
+		expectedSubnetID string
+		expectError      bool
+		errorContains    string
+	}{
+		{
+			name:  "successful subnet lookup",
+			eniID: "eni-12345678",
+			describeOutput: &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{
+					{
+						NetworkInterfaceId: aws.String("eni-12345678"),
+						SubnetId:           aws.String("subnet-secondary"),
+					},
+				},
+			},
+			describeError:    nil,
+			expectedSubnetID: "subnet-secondary",
+			expectError:      false,
+		},
+		{
+			name:  "no matching ENI found",
+			eniID: "eni-nonexistent",
+			describeOutput: &ec2.DescribeNetworkInterfacesOutput{
+				NetworkInterfaces: []ec2types.NetworkInterface{},
+			},
+			describeError: nil,
+			expectError:   true,
+			errorContains: "no interfaces found",
+		},
+		{
+			name:           "describe API error",
+			eniID:          "eni-12345678",
+			describeOutput: nil,
+			describeError:  errors.New("API error"),
+			expectError:    true,
+			errorContains:  "unable to describe network interface",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{
+				ec2SVC: mockEC2,
+				imds:   TypedIMDS{mockMetadata},
+			}
+
+			mockEC2.EXPECT().DescribeNetworkInterfaces(
+				gomock.Any(),
+				gomock.Any(),
+				gomock.Any(),
+			).Return(tt.describeOutput, tt.describeError)
+
+			subnetID, err := cache.GetENISubnetID(context.Background(), tt.eniID)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedSubnetID, subnetID)
+			}
+		})
+	}
+}
+
+// TestCreateENIWithCustomSGs tests the custom SG application in createENI
+func TestCreateENIWithCustomSGs(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	tests := []struct {
+		name               string
+		isPrimarySubnet    bool
+		customSGs          []string
+		expectedGroups     []string
+		subnets            []ec2types.Subnet
+		useSubnetDiscovery bool
+	}{
+		{
+			name:            "primary subnet uses primary SGs",
+			isPrimarySubnet: true,
+			customSGs:       []string{"sg-custom1", "sg-custom2"},
+			expectedGroups:  []string{sg1, sg2}, // primary ENI security groups
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId: aws.String(subnetID),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("1"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: true,
+		},
+		{
+			name:            "secondary subnet with custom SGs",
+			isPrimarySubnet: false,
+			customSGs:       []string{"sg-custom1", "sg-custom2"},
+			expectedGroups:  []string{"sg-custom1", "sg-custom2"}, // custom security groups
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId: aws.String("subnet-secondary"),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("1"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: true,
+		},
+		{
+			name:            "secondary subnet without custom SGs",
+			isPrimarySubnet: false,
+			customSGs:       []string{},
+			expectedGroups:  []string{sg1, sg2}, // falls back to primary ENI security groups
+			subnets: []ec2types.Subnet{
+				{
+					SubnetId: aws.String("subnet-secondary"),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("1"),
+						},
+					},
+				},
+			},
+			useSubnetDiscovery: true,
+		},
+	}
+
+	// Define the initial security group IDs
+	initialSGIDs := []string{sg1, sg2}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{
+				ec2SVC:             mockEC2,
+				imds:               TypedIMDS{mockMetadata},
+				useSubnetDiscovery: tt.useSubnetDiscovery,
+				securityGroups:     StringSet{}, // Create a new StringSet to avoid copying mutex
+				subnetID:           subnetID,
+			}
+
+			// Initialize security groups and custom SG cache
+			cache.securityGroups.Set(initialSGIDs)
+			cache.customSecurityGroups.Set(tt.customSGs)
+
+			// Mock the subnet discovery
+			subnetResult := &ec2.DescribeSubnetsOutput{Subnets: tt.subnets}
+			mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
+
+			// Mock free device number detection
+			ec2ENIs := make([]ec2types.InstanceNetworkInterface, 0)
+			deviceNum1 := int32(0)
+			ec2ENI := ec2types.InstanceNetworkInterface{Attachment: &ec2types.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum1}}
+			ec2ENIs = append(ec2ENIs, ec2ENI)
+			result := &ec2.DescribeInstancesOutput{
+				Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+			}
+			mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+
+			// Mock the CreateNetworkInterface call and capture the input
+			var capturedInput *ec2.CreateNetworkInterfaceInput
+			cureniID := eniID
+			eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2types.NetworkInterface{NetworkInterfaceId: &cureniID}}
+			mockEC2.EXPECT().CreateNetworkInterface(
+				gomock.Any(),
+				gomock.Any(),
+				gomock.Any(),
+			).DoAndReturn(func(_ context.Context, input *ec2.CreateNetworkInterfaceInput, _ ...func(*ec2.Options)) (*ec2.CreateNetworkInterfaceOutput, error) {
+				capturedInput = input
+				return &eni, nil
+			})
+
+			// Mock AttachNetworkInterface
+			attachmentID := "eni-attach-123"
+			attachResult := &ec2.AttachNetworkInterfaceOutput{AttachmentId: &attachmentID}
+			mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
+			mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+
+			// Call the function under test
+			createdENI, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+
+			// Verify results
+			assert.NoError(t, err)
+			assert.NotNil(t, createdENI)
+
+			// Check that the correct security groups were used
+			assert.NotNil(t, capturedInput)
+			assert.NotNil(t, capturedInput.Groups)
+
+			// Convert []string to set for easier comparison
+			expectedGroupSet := StringSet{}
+			expectedGroupSet.Set(tt.expectedGroups)
+
+			// Convert the actual groups to set
+			actualGroupSet := StringSet{}
+			actualGroupSet.Set(capturedInput.Groups)
+
+			// Compare sets (order-independent)
+			assert.Equal(t, expectedGroupSet.SortedList(), actualGroupSet.SortedList())
+		})
+	}
+}
+
+// TestRefreshCustomSGIDsWithFallback tests fallback to primary SGs when custom SG discovery fails
+func TestRefreshCustomSGIDsWithFallback(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	// Mock primary security groups
+	primarySGs := []string{sg1, sg2}
+
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:               mockEC2,
+		imds:                 TypedIMDS{mockMetadata},
+		securityGroups:       StringSet{},
+		customSecurityGroups: StringSet{},
+		subnetID:             subnetID, // primary subnet
+		primaryENI:           primaryeniID,
+		unmanagedENIs:        StringSet{},
+		useSubnetDiscovery:   true, // This function should only be called when subnet discovery is enabled
+	}
+
+	// Initialize primary security groups
+	cache.securityGroups.Set(primarySGs)
+	// Set some custom SGs initially to verify they get cleared
+	cache.customSecurityGroups.Set([]string{"sg-custom1", "sg-custom2"})
+
+	tests := []struct {
+		name              string
+		describeError     error
+		expectedCustomSGs []string
+	}{
+		{
+			name:              "discovery fails - should fallback and clear custom SGs",
+			describeError:     errors.New("AccessDenied: insufficient permissions"),
+			expectedCustomSGs: []string{}, // empty after fallback
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Mock the failed DescribeSecurityGroups call
+			mockEC2.EXPECT().DescribeSecurityGroups(
+				gomock.Any(),
+				gomock.Any(),
+				gomock.Any(),
+			).Return(nil, tt.describeError)
+
+			// Create a simple datastore - for this test, we just care that
+			// the function handles the error gracefully and clears the cache
+			mockDataStore := &datastore.DataStore{}
+			mockDataStoreAccess := &datastore.DataStoreAccess{
+				DataStores: []*datastore.DataStore{mockDataStore},
+			}
+
+			// Call RefreshCustomSGIDs
+			err := cache.RefreshCustomSGIDs(context.Background(), mockDataStoreAccess)
+
+			// Should return (after doing a graceful fallback)
+			assert.Error(t, err)
+
+			// Custom SGs should be cleared for fallback
+			assert.Equal(t, tt.expectedCustomSGs, cache.customSecurityGroups.SortedList())
+		})
+	}
+}
+
+// TestENICreationFallbackLogging tests that ENI creation logs fallback behavior correctly
+func TestENICreationFallbackLogging(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	primarySGs := []string{sg1, sg2}
+	secondarySubnetID := "subnet-secondary"
+
+	tests := []struct {
+		name              string
+		customSGs         []string
+		targetSubnet      string
+		isPrimarySubnet   bool
+		expectedSGsUsed   []string
+		expectFallbackLog bool
+	}{
+		{
+			name:              "secondary subnet with custom SGs",
+			customSGs:         []string{"sg-custom1", "sg-custom2"},
+			targetSubnet:      secondarySubnetID,
+			isPrimarySubnet:   false,
+			expectedSGsUsed:   []string{"sg-custom1", "sg-custom2"},
+			expectFallbackLog: false,
+		},
+		{
+			name:              "secondary subnet without custom SGs - fallback",
+			customSGs:         []string{}, // no custom SGs available
+			targetSubnet:      secondarySubnetID,
+			isPrimarySubnet:   false,
+			expectedSGsUsed:   primarySGs, // should fallback to primary SGs
+			expectFallbackLog: true,
+		},
+		{
+			name:              "primary subnet always uses primary SGs",
+			customSGs:         []string{"sg-custom1", "sg-custom2"},
+			targetSubnet:      subnetID,
+			isPrimarySubnet:   true,
+			expectedSGsUsed:   primarySGs,
+			expectFallbackLog: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{
+				ec2SVC:               mockEC2,
+				imds:                 TypedIMDS{mockMetadata},
+				useSubnetDiscovery:   true,
+				securityGroups:       StringSet{},
+				customSecurityGroups: StringSet{},
+				subnetID:             subnetID,
+			}
+
+			// Initialize security groups
+			cache.securityGroups.Set(primarySGs)
+			cache.customSecurityGroups.Set(tt.customSGs)
+
+			// Mock subnet discovery
+			subnets := []ec2types.Subnet{
+				{
+					SubnetId:                aws.String(tt.targetSubnet),
+					AvailableIpAddressCount: aws.Int32(100),
+					Tags: []ec2types.Tag{
+						{
+							Key:   aws.String("kubernetes.io/role/cni"),
+							Value: aws.String("1"),
+						},
+					},
+				},
+			}
+			subnetResult := &ec2.DescribeSubnetsOutput{Subnets: subnets}
+			mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
+
+			// Mock free device number detection
+			ec2ENIs := make([]ec2types.InstanceNetworkInterface, 0)
+			deviceNum1 := int32(0)
+			ec2ENI := ec2types.InstanceNetworkInterface{Attachment: &ec2types.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum1}}
+			ec2ENIs = append(ec2ENIs, ec2ENI)
+			result := &ec2.DescribeInstancesOutput{
+				Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+			}
+			mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+
+			// Mock the CreateNetworkInterface call and capture the input
+			var capturedInput *ec2.CreateNetworkInterfaceInput
+			cureniID := eniID
+			eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2types.NetworkInterface{NetworkInterfaceId: &cureniID}}
+			mockEC2.EXPECT().CreateNetworkInterface(
+				gomock.Any(),
+				gomock.Any(),
+				gomock.Any(),
+			).DoAndReturn(func(_ context.Context, input *ec2.CreateNetworkInterfaceInput, _ ...func(*ec2.Options)) (*ec2.CreateNetworkInterfaceOutput, error) {
+				capturedInput = input
+				return &eni, nil
+			})
+
+			// Mock AttachNetworkInterface
+			attachmentID := "eni-attach-123"
+			attachResult := &ec2.AttachNetworkInterfaceOutput{AttachmentId: &attachmentID}
+			mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
+			mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+
+			// Call AllocENI
+			createdENI, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+
+			// Verify results
+			assert.NoError(t, err)
+			assert.NotNil(t, createdENI)
+			assert.NotNil(t, capturedInput)
+			assert.NotNil(t, capturedInput.Groups)
+
+			// Verify correct security groups were used
+			actualSGs := capturedInput.Groups
+			assert.ElementsMatch(t, tt.expectedSGsUsed, actualSGs)
+		})
+	}
+}
+
+func TestDeallocPrefixAddresses(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test deallocating IPv4 prefixes only
+	ipv4Prefixes := []string{"10.0.0.0/28", "10.0.1.0/28"}
+	inputIPv4 := &ec2.UnassignPrivateIpAddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv4Prefixes:       ipv4Prefixes,
+	}
+	mockEC2.EXPECT().UnassignPrivateIpAddresses(gomock.Any(), inputIPv4, gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, ipv4Prefixes)
+	assert.NoError(t, err)
+}
+
+func TestDeallocPrefixAddressesIPv6(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test deallocating IPv6 prefixes only
+	ipv6Prefixes := []string{"2001:db8:1234:5678::/80", "2001:db8:1234:5679::/80"}
+	inputIPv6 := &ec2.UnassignIpv6AddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv6Prefixes:       ipv6Prefixes,
+	}
+	mockEC2.EXPECT().UnassignIpv6Addresses(gomock.Any(), inputIPv6, gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, ipv6Prefixes)
+	assert.NoError(t, err)
+}
+
+func TestDeallocPrefixAddressesMixed(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test deallocating both IPv4 and IPv6 prefixes
+	mixedPrefixes := []string{"10.0.0.0/28", "2001:db8:1234:5678::/80", "10.0.1.0/28", "2001:db8:1234:5679::/80"}
+
+	// Expect IPv4 call
+	inputIPv4 := &ec2.UnassignPrivateIpAddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv4Prefixes:       []string{"10.0.0.0/28", "10.0.1.0/28"},
+	}
+	mockEC2.EXPECT().UnassignPrivateIpAddresses(gomock.Any(), inputIPv4, gomock.Any()).Return(nil, nil)
+
+	// Expect IPv6 call
+	inputIPv6 := &ec2.UnassignIpv6AddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv6Prefixes:       []string{"2001:db8:1234:5678::/80", "2001:db8:1234:5679::/80"},
+	}
+	mockEC2.EXPECT().UnassignIpv6Addresses(gomock.Any(), inputIPv6, gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, mixedPrefixes)
+	assert.NoError(t, err)
+}
+
+func TestDeallocPrefixAddressesEmpty(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test with empty prefix list - should do nothing and not call AWS
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, []string{})
+	assert.NoError(t, err)
+}
+
+func TestDeallocPrefixAddressesIPv4Error(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test IPv4 deallocation error
+	ipv4Prefixes := []string{"10.0.0.0/28"}
+	inputIPv4 := &ec2.UnassignPrivateIpAddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv4Prefixes:       ipv4Prefixes,
+	}
+
+	retErr := &smithy.GenericAPIError{Code: "InvalidNetworkInterfaceID.NotFound", Message: "Network interface not found"}
+	mockEC2.EXPECT().UnassignPrivateIpAddresses(gomock.Any(), inputIPv4, gomock.Any()).Return(nil, retErr)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, ipv4Prefixes)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "deallocate IPv4 prefix")
+}
+
+func TestDeallocPrefixAddressesIPv6Error(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test IPv6 deallocation error
+	ipv6Prefixes := []string{"2001:db8:1234:5678::/80"}
+	inputIPv6 := &ec2.UnassignIpv6AddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv6Prefixes:       ipv6Prefixes,
+	}
+
+	retErr := &smithy.GenericAPIError{Code: "InvalidNetworkInterfaceID.NotFound", Message: "Network interface not found"}
+	mockEC2.EXPECT().UnassignIpv6Addresses(gomock.Any(), inputIPv6, gomock.Any()).Return(nil, retErr)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, ipv6Prefixes)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "deallocate IPv6 prefix")
+}
+
+func TestDeallocPrefixAddressesInvalidCIDR(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Test with invalid CIDR - should skip the invalid one and process valid ones
+	mixedPrefixes := []string{"10.0.0.0/28", "invalid-cidr", "2001:db8:1234:5678::/80"}
+
+	// Only expect valid prefixes to be processed
+	inputIPv4 := &ec2.UnassignPrivateIpAddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv4Prefixes:       []string{"10.0.0.0/28"},
+	}
+	mockEC2.EXPECT().UnassignPrivateIpAddresses(gomock.Any(), inputIPv4, gomock.Any()).Return(nil, nil)
+
+	inputIPv6 := &ec2.UnassignIpv6AddressesInput{
+		NetworkInterfaceId: aws.String(eniID),
+		Ipv6Prefixes:       []string{"2001:db8:1234:5678::/80"},
+	}
+	mockEC2.EXPECT().UnassignIpv6Addresses(gomock.Any(), inputIPv6, gomock.Any()).Return(nil, nil)
+
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
+	err := cache.DeallocPrefixAddresses(context.Background(), eniID, mixedPrefixes)
+	assert.NoError(t, err)
 }
