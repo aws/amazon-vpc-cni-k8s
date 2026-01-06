@@ -2452,7 +2452,7 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 			description:     "Should NOT be available to any cluster when CNI tag is missing",
 		},
 		{
-			name: "primary subnet with wrong cluster value",
+			name: "primary subnet with cluster tag (value ignored)",
 			subnet: ec2types.Subnet{
 				SubnetId: aws.String("subnet-def"),
 				Tags: []ec2types.Tag{
@@ -2462,13 +2462,13 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 					},
 					{
 						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
-						Value: aws.String("not-shared"), // Wrong value
+						Value: aws.String("not-shared"), // Value doesn't matter, only key
 					},
 				},
 			},
 			isPrimarySubnet: true,
-			want:            false,
-			description:     "Should NOT be available when cluster tag has wrong value",
+			want:            true,
+			description:     "Should be available when cluster tag key matches (value ignored)",
 		},
 	}
 
