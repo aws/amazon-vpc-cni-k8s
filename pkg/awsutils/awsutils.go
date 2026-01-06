@@ -1364,7 +1364,7 @@ func checkClusterTags(tags []ec2types.Tag, localClusterTagKey string) (hasCluste
 	for _, tag := range tags {
 		if tag.Key != nil && strings.HasPrefix(*tag.Key, clusterTagKeyPrefix) {
 			hasClusterTags = true
-			if *tag.Key == localClusterTagKey && tag.Value != nil && *tag.Value == "shared" {
+			if *tag.Key == localClusterTagKey {
 				belongsToThisCluster = true
 			}
 		}
