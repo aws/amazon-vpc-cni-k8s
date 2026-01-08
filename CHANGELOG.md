@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.21.1
+
+* Bug fix for Network Policy Agent
+
+## v1.21.0
+
+* chore: update VPC IP resource limits by @github-actions[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3521
+* Bump peter-evans/create-pull-request from 7.0.5 to 7.0.9 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3519
+* Bump golang.org/x/crypto from 0.40.0 to 0.45.0 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3515
+* Merge into release branch  by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3522
+* updating changelog by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3525
+* chore: update VPC IP resource limits by @github-actions[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3532
+* updating setup go fo gh action by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3537
+* update tags by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3535
+* update golang version by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3536
+
 ## v1.20.5
 
 * enabling pod egress traffic test for under mac address policy variation by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3459
