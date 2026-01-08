@@ -14,7 +14,13 @@
 // Package iptableswrapper is a wrapper interface for the iptables package
 package iptableswrapper
 
-import "github.com/coreos/go-iptables/iptables"
+import (
+	"bytes"
+	"fmt"
+	"github.com/coreos/go-iptables/iptables"
+	"os/exec"
+	"regexp"
+)
 
 // IPTablesIface is an interface created to make code unit testable.
 // Both the iptables package version and mocked version implement the same interface
@@ -107,4 +113,27 @@ func (i ipTables) ChainExists(table, chain string) (bool, error) {
 // HasRandomFully implements IPTablesIface interface by calling iptables package
 func (i ipTables) HasRandomFully() bool {
 	return i.ipt.HasRandomFully()
+}
+
+// Runs "iptables --version" to get the mode  (nf_tables or legacy)
+func GetIptablesMode() (string, error) {
+	path := "iptables"
+	cmd := exec.Command(path, "--version")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+
+	versionMatcher := regexp.MustCompile(`v([0-9]+)\.([0-9]+)\.([0-9]+)(?:\s+\((\w+))?`)
+	result := versionMatcher.FindStringSubmatch(out.String())
+	if result == nil {
+		return "", fmt.Errorf("no iptables version found in iptables --version output: %s", result)
+	}
+	mode := "legacy"
+	if result[4] != "" {
+		mode = result[4]
+	}
+	return mode, nil
 }
