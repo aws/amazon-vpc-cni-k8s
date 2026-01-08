@@ -446,6 +446,11 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 		if err != nil {
 			return errors.Wrap(err, "host network setup: failed to create iptables")
 		}
+		mode, err := iptableswrapper.GetIptablesMode()
+		if err != nil {
+			log.Error("Failed to get iptables mode")
+		}
+		log.Info(fmt.Sprintf("Using iptables mode (%s)", mode))
 
 		iptablesSNATRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt)
 		if err != nil {
