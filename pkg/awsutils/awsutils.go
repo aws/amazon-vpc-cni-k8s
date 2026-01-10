@@ -106,7 +106,7 @@ var log = logger.Get()
 // APIs defines interfaces calls for adding/getting/deleting ENIs/secondary IPs. The APIs are not thread-safe.
 type APIs interface {
 	// AllocENI creates an ENI and attaches it to the instance
-	AllocENI(sg []*string, eniCfgSubnet string, numIPs int, networkCard int) (eni string, err error)
+	AllocENI(sg []*string, eniCfgSubnet string, eniCfgVpcId string, numIPs int, networkCard int) (eni string, err error)
 
 	// FreeENI detaches ENI interface and deletes it
 	FreeENI(eniName string) error
@@ -276,6 +276,9 @@ type ENIMetadata struct {
 
 	// Network card the ENI is attached on
 	NetworkCard int
+
+	// VpcId is the VPC ID this ENI belongs to (for multi-VPC support)
+	VpcId string
 }
 
 // PrimaryIPv4Address returns the primary IPv4 address of this node
@@ -625,6 +628,13 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		return ENIMetadata{}, err
 	}
 
+	vpcID, err := cache.imds.GetVpcID(ctx, eniMAC)
+	if err != nil {
+		awsAPIErrInc("GetVpcID", err)
+		log.Warnf("Failed to get VPC ID for ENI %s: %v. Using instance VPC ID", eniID, err)
+		vpcID = cache.vpcID
+	}
+
 	deviceNum, err = cache.imds.GetDeviceNumber(ctx, eniMAC)
 	if err != nil {
 		awsAPIErrInc("GetDeviceNumber", err)
@@ -697,6 +707,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 			IPv6Addresses:  make([]ec2types.NetworkInterfaceIpv6Address, 0),
 			IPv6Prefixes:   make([]ec2types.Ipv6PrefixSpecification, 0),
 			NetworkCard:    networkCard,
+			VpcId:          vpcID,
 		}, nil
 	}
 
@@ -800,6 +811,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 		IPv6Addresses:  ec2ip6s,
 		IPv6Prefixes:   ec2ipv6Prefixes,
 		NetworkCard:    networkCard,
+		VpcId:          vpcID,
 	}, nil
 }
 
@@ -852,9 +864,9 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber(networkCard int) (
 
 // AllocENI creates an ENI and attaches it to the instance
 // returns: newly created ENI ID
-func (cache *EC2InstanceMetadataCache) AllocENI(sg []*string, eniCfgSubnet string, numIPs int, networkCard int) (string, error) {
+func (cache *EC2InstanceMetadataCache) AllocENI(sg []*string, eniCfgSubnet string, eniCfgVpcId string, numIPs int, networkCard int) (string, error) {
 
-	eniID, err := cache.createENI(sg, eniCfgSubnet, numIPs)
+	eniID, err := cache.createENI(sg, eniCfgSubnet, eniCfgVpcId, numIPs)
 	if err != nil {
 		return "", errors.Wrap(err, "AllocENI: failed to create ENI")
 	}
@@ -970,7 +982,7 @@ func (cache *EC2InstanceMetadataCache) createENIInput(eniDescription string, tag
 }
 
 // return ENI id, error
-func (cache *EC2InstanceMetadataCache) createENI(sg []*string, eniCfgSubnet string, numIPs int) (string, error) {
+func (cache *EC2InstanceMetadataCache) createENI(sg []*string, eniCfgSubnet string, eniCfgVpcId string, numIPs int) (string, error) {
 	eniDescription := eniDescriptionPrefix + cache.instanceID
 	tags := cache.createENITags()
 
@@ -983,7 +995,14 @@ func (cache *EC2InstanceMetadataCache) createENI(sg []*string, eniCfgSubnet stri
 		}
 	}
 
-	log.Infof("Trying to allocate %d IP addresses on new ENI", needIPs)
+	// Determine which VPC to use
+	targetVpcID := cache.vpcID
+	if eniCfgVpcId != "" {
+		targetVpcID = eniCfgVpcId
+		log.Infof("Using multi-VPC configuration with VPC: %s", targetVpcID)
+	}
+
+	log.Infof("Trying to allocate %d IP addresses on new ENI in VPC %s", needIPs, targetVpcID)
 	log.Debugf("PD enabled - %t", cache.enablePrefixDelegation)
 
 	var err error
@@ -993,7 +1012,7 @@ func (cache *EC2InstanceMetadataCache) createENI(sg []*string, eniCfgSubnet stri
 
 	if cache.useCustomNetworking {
 		input = createENIUsingCustomCfg(sg, eniCfgSubnet, input)
-		log.Infof("Creating ENI with security groups: %v in subnet: %s", input.Groups, aws.ToString(input.SubnetId))
+		log.Infof("Creating ENI with security groups: %v in subnet: %s VPC: %s", input.Groups, aws.ToString(input.SubnetId), targetVpcID)
 
 		networkInterfaceID, err = cache.tryCreateNetworkInterface(input)
 		if err == nil {
@@ -1001,7 +1020,7 @@ func (cache *EC2InstanceMetadataCache) createENI(sg []*string, eniCfgSubnet stri
 		}
 	} else {
 		if cache.useSubnetDiscovery && !cache.v6Enabled {
-			subnetResult, vpcErr := cache.getVpcSubnets()
+			subnetResult, vpcErr := cache.getVpcSubnets(targetVpcID)
 			if vpcErr != nil {
 				log.Warnf("Failed to call ec2:DescribeSubnets: %v", vpcErr)
 				log.Info("Defaulting to same subnet as the primary interface for the new ENI")
@@ -1036,12 +1055,12 @@ func (cache *EC2InstanceMetadataCache) createENI(sg []*string, eniCfgSubnet stri
 	return "", errors.Wrap(err, "failed to create network interface")
 }
 
-func (cache *EC2InstanceMetadataCache) getVpcSubnets() ([]ec2types.Subnet, error) {
+func (cache *EC2InstanceMetadataCache) getVpcSubnets(targetVpcID string) ([]ec2types.Subnet, error) {
 	describeSubnetInput := &ec2.DescribeSubnetsInput{
 		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("vpc-id"),
-				Values: []string{cache.vpcID},
+				Values: []string{targetVpcID},
 			},
 			{
 				Name:   aws.String("availability-zone"),

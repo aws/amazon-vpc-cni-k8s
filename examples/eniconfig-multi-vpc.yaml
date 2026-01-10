@@ -1,0 +1,43 @@
+# Example ENIConfig for Multi-VPC ENI Support
+# This configuration creates ENIs in a secondary VPC for pod networking
+
+apiVersion: crd.k8s.amazonaws.com/v1alpha1
+kind: ENIConfig
+metadata:
+  name: secondary-vpc-config
+spec:
+  # Security groups in the secondary VPC
+  securityGroups:
+    - sg-0123456789abcdef0  # Replace with your security group ID
+    - sg-fedcba9876543210  # You can specify multiple security groups
+
+  # Subnet in the secondary VPC where ENIs will be created
+  subnet: subnet-0a1b2c3d4e5f6g7h8  # Replace with your subnet ID
+
+  # VPC ID for multi-VPC support (NEW FEATURE)
+  # If not specified, uses the instance's primary VPC
+  vpcId: vpc-0987654321fedcba  # Replace with your secondary VPC ID
+
+---
+# Example: ENIConfig for specific availability zone in secondary VPC
+apiVersion: crd.k8s.amazonaws.com/v1alpha1
+kind: ENIConfig
+metadata:
+  name: us-west-2a-vpc2
+spec:
+  securityGroups:
+    - sg-abc123def456
+  subnet: subnet-us-west-2a-vpc2
+  vpcId: vpc-secondary
+
+---
+# Example: Default ENIConfig (uses instance VPC)
+apiVersion: crd.k8s.amazonaws.com/v1alpha1
+kind: ENIConfig
+metadata:
+  name: default
+spec:
+  securityGroups:
+    - sg-default123
+  subnet: subnet-default456
+  # vpcId not specified - will use instance's primary VPC
