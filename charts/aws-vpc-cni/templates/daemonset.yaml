@@ -70,6 +70,7 @@ spec:
       containers:
         - name: aws-node
           image: {{ include "aws-vpc-cni.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: 61678
               name: metrics
