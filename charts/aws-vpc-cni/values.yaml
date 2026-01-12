@@ -13,7 +13,7 @@ init:
     region: us-west-2
     endpoint: ecr
     account: "602401143452"
-    pullPolicy: Always
+    pullPolicy: IfNotPresent
     # Set to use custom image
     overrideRepository:
     # overrideRepository: "repo/org/image"
@@ -34,7 +34,7 @@ nodeAgent:
     region: us-west-2
     endpoint: ecr
     account: "602401143452"
-    pullPolicy: Always
+    pullPolicy: IfNotPresent
     # Set to use custom image
     overrideRepository:
     # overrideRepository: "repo/org/image"
@@ -61,7 +61,7 @@ image:
   region: us-west-2
   endpoint: ecr
   account: "602401143452"
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
   # Set to use custom image
   overrideRepository:
   # overrideRepository: "repo/org/image"
