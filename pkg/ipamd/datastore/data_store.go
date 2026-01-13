@@ -720,6 +720,11 @@ func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 				// addr is nil when we are using a new IP from prefix or SIP pool
 				// if addr is out of cooldown or not assigned, we can reuse addr
 				addr = &AddressInfo{Address: strPrivateIPv4}
+				ds.log.Debugf("Allocating new IP %s from CIDR %s for pod", strPrivateIPv4, availableCidr.Cidr.String())
+			} else if !addr.UnassignedTime.IsZero() {
+				// IP was previously used and is being reassigned
+				timeSinceFree := time.Since(addr.UnassignedTime)
+				ds.log.Debugf("Reassigning IP %s (was free for %v)", addr.Address, timeSinceFree.Round(time.Second))
 			}
 
 			availableCidr.IPAddresses[strPrivateIPv4] = addr
@@ -1133,6 +1138,11 @@ func (ds *DataStore) UnassignPodIPAddress(ipamKey IPAMKey) (e *ENI, ip string, d
 	}
 	addr.UnassignedTime = time.Now()
 
+	// Debug log for IP entering cooldown
+	cooldownExpiry := addr.UnassignedTime.Add(ds.ipCooldownPeriod)
+	ds.log.Debugf("IP %s entering cooldown period of %v (available after %v)",
+		addr.Address, ds.ipCooldownPeriod, cooldownExpiry.Format(time.RFC3339))
+
 	// Interfaces Count 0 means this property did not exist in the datastore when we restored. A Pod entry always have atleast one interface
 	if originalIPAMMetadata.InterfacesCount == 0 {
 		originalIPAMMetadata.InterfacesCount += 1
@@ -1348,6 +1358,10 @@ func (ds *DataStore) getUnusedIP(availableCidr *CidrInfo) (string, error) {
 			//continue cleaning up the DB, this is to avoid stale entries and a new thread :)
 			if cachedIP == "" {
 				cachedIP = addr.Address
+				// Debug log for IP released from cooldown
+				timeSinceUnassigned := time.Since(addr.UnassignedTime)
+				ds.log.Debugf("IP %s released from cooldown after %v, available for reassignment in CIDR %s",
+					addr.Address, timeSinceUnassigned.Round(time.Second), availableCidr.Cidr.String())
 			}
 			//availableCidr.IPAddresses[addr.Address] = nil //Avoid mem leak - TODO
 			delete(availableCidr.IPAddresses, addr.Address)
