@@ -130,6 +130,8 @@ type ENI struct {
 	IPv6Cidrs map[string]*CidrInfo
 	// RouteTableID is the route table ID associated with the ENI on the host
 	RouteTableID int
+	// VpcId is the VPC ID this ENI belongs to (for multi-VPC support)
+	VpcId string
 }
 
 // AddressInfo contains information about an IP, Exported fields will be marshaled for introspection.
@@ -452,11 +454,11 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 }
 
 // AddENI add ENI to data store
-func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, isEFA bool, routeTableID int) error {
+func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, isEFA bool, routeTableID int, vpcId string) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
-	ds.log.Debugf("DataStore add an ENI %s", eniID)
+	ds.log.Debugf("DataStore add an ENI %s in VPC %s", eniID, vpcId)
 
 	_, ok := ds.eniPool[eniID]
 	if ok {
@@ -472,6 +474,7 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, 
 		AvailableIPv4Cidrs: make(map[string]*CidrInfo),
 		IPv6Cidrs:          make(map[string]*CidrInfo),
 		RouteTableID:       routeTableID,
+		VpcId:              vpcId,
 	}
 
 	prometheusmetrics.Enis.Set(float64(len(ds.eniPool)))

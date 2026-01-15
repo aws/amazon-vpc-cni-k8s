@@ -47,6 +47,8 @@ const (
 	grpcHealthServiceName = "grpc.health.v1.aws-node"
 
 	vpccniPodIPKey = "vpc.amazonaws.com/pod-ips"
+	podVPCAnnotation    = "vpc.amazonaws.com/vpc-id" // Annotation for multi-VPC pod assignment
+	podENILabelKey      = "vpc.amazonaws.com/eni"
 
 	defaultIpPerPodRequired = 1
 )

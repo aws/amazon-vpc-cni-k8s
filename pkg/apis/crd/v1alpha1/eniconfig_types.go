@@ -27,6 +27,9 @@ import (
 type ENIConfigSpec struct {
 	SecurityGroups []string `json:"securityGroups"`
 	Subnet         string   `json:"subnet"`
+	// VpcId is the VPC ID for multi-VPC ENI support (optional)
+	// If not specified, defaults to the instance's VPC
+	VpcId string `json:"vpcId,omitempty"`
 }
 
 // ENIConfigStatus defines the observed state of ENIConfig
