@@ -100,6 +100,17 @@ const (
 	imdsMACFieldsEfaOnly = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks device-number interface-id subnet-ipv4-cidr-block ipv4-prefix ipv6-prefix"
 	imdsMACFieldsV6Only  = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks vpc-ipv6-cidr-blocks device-number interface-id subnet-ipv6-cidr-blocks ipv6s ipv6-prefix"
 	imdsMACFieldsV4AndV6 = "security-group-ids subnet-id vpc-id vpc-ipv4-cidr-blocks device-number interface-id subnet-ipv4-cidr-block subnet-ipv6-cidr-blocks ipv6s local-ipv4s ipv6-prefix"
+
+	// Cross-VPC ENI test constants
+	crossVPCMAC        = "12:ef:2a:98:e5:5c"
+	crossVPCENIID      = "eni-crossvpc123"
+	crossVPCDevice     = "2"
+	crossVPCPrivateIP  = "172.16.0.10"
+	crossVPCSubnetID   = "subnet-crossvpc456"
+	crossVPCSubnetCIDR = "172.16.0.0/24"
+	crossVPCVpcID      = "vpc-crossvpc789"
+	noManageTagKey     = "node.k8s.amazonaws.com/no_manage"
+	noManageTagValue   = "true"
 )
 
 func testMetadata(overrides map[string]interface{}) FakeIMDS {
@@ -2235,4 +2246,101 @@ func Test_loadAdditionalENITags(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func Test_IsTrunkingCompatible(t *testing.T) {
+	tests := []struct {
+		name         string
+		instanceType string
+		want         bool
+	}{
+		{
+			name:         "Supported instance type",
+			instanceType: "m8g.12xlarge",
+			want:         true,
+		},
+		{
+			name:         "Unsupported instance type",
+			instanceType: "i3.2xlarge",
+			want:         false,
+		},
+		{
+			name:         "Any type else",
+			instanceType: "anyFamily.anyType",
+			want:         true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{instanceType: tt.instanceType}
+			got := cache.IsTrunkingCompatible()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestCrossVPCENIWithFix demonstrates that getCIDR now handles 404 errors gracefully,
+// fixing GetSubnetIPv6CIDRBlocks and other CIDR functions for cross-VPC IPv4-only ENIs
+func TestCrossVPCENIWithFix(t *testing.T) {
+	// Set up the same cross-VPC scenario as the bug reproduction test
+	mockMetadata := testMetadata(map[string]interface{}{
+		// Primary VPC ENI with IPv6 support
+		metadataMACPath: primaryMAC + " " + crossVPCMAC,
+
+		// Cross-VPC ENI basic metadata (this succeeds)
+		metadataMACPath + crossVPCMAC:                      imdsMACFields,
+		metadataMACPath + crossVPCMAC + metadataDeviceNum:  crossVPCDevice,
+		metadataMACPath + crossVPCMAC + metadataInterface:  crossVPCENIID,
+		metadataMACPath + crossVPCMAC + metadataSubnetID:   crossVPCSubnetID,
+		metadataMACPath + crossVPCMAC + metadataVpcID:      crossVPCVpcID,
+		metadataMACPath + crossVPCMAC + metadataSubnetCIDR: crossVPCSubnetCIDR,
+		metadataMACPath + crossVPCMAC + metadataIPv4s:      crossVPCPrivateIP,
+		metadataMACPath + crossVPCMAC + metadataSGs:        sgs,
+
+		// IPv6 subnet CIDR request fails with 404 for cross-VPC IPv4-only subnet
+		// With the fix, this 404 should be handled gracefully
+		metadataMACPath + crossVPCMAC + metadataSubnetV6CIDR: newIMDSRequestError("test", &CustomRequestFailure{
+			code:       "NotFound",
+			message:    "IPv6 CIDR not found for cross-VPC IPv4-only subnet",
+			fault:      smithy.FaultUnknown,
+			statusCode: 404,
+			requestID:  "test-req-id",
+		}),
+	})
+
+	// Create cache with IPv6 enabled (same as bug test)
+	cache := &EC2InstanceMetadataCache{
+		imds:      TypedIMDS{mockMetadata},
+		v6Enabled: true, // IPv6 enabled cluster
+		v4Enabled: true,
+	}
+
+	// With the fix, GetAttachedENIs should now succeed
+	enis, err := cache.GetAttachedENIs()
+
+	// Verify the fix: initialization should now succeed
+	assert.NoError(t, err, "Should succeed with fix - getCIDR now handles 404 gracefully for all CIDR functions")
+	assert.NotNil(t, enis, "Should return ENI list")
+	assert.Equal(t, 2, len(enis), "Should return both primary and cross-VPC ENIs")
+
+	// Verify that both ENIs are present
+	var primaryFound, crossVPCFound bool
+	for _, eni := range enis {
+		if eni.ENIID == primaryeniID {
+			primaryFound = true
+		}
+		if eni.ENIID == crossVPCENIID {
+			crossVPCFound = true
+			// Cross-VPC ENI should have IPv4 data but no IPv6 (due to 404 handled gracefully)
+			assert.NotEmpty(t, eni.IPv4Addresses, "Cross-VPC ENI should have IPv4 addresses")
+			assert.Empty(t, eni.SubnetIPv6CIDR, "Cross-VPC ENI should have empty IPv6 CIDR (404 handled gracefully)")
+		}
+	}
+
+	assert.True(t, primaryFound, "Primary ENI should be found")
+	assert.True(t, crossVPCFound, "Cross-VPC ENI should be found")
+
+	t.Logf("Result: IPv6-enabled cluster successfully initializes with cross-VPC IPv4-only ENIs")
+	t.Logf("Found %d ENIs: Primary (%s) and Cross-VPC (%s)", len(enis), primaryeniID, crossVPCENIID)
 }

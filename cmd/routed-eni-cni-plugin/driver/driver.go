@@ -297,10 +297,10 @@ func (n *linuxNetwork) TeardownPodNetwork(vethMetadata []VirtualInterfaceMetadat
 
 		log.Debugf("TeardownPodNetwork: containerAddr=%s, routeTable=%d", vethData.IPAddress.String(), vethData.RouteTable)
 
-		// Route table ID for primary ENI (Network 0, Device 0) => (0* MaxENI + 0 + 1)
-		// which is why we only update if the RT > 1
+		// Route table ID for primary ENI was previously calculated as (Network 0, Device 0) => (0* MaxENI + 0 + 1)
+		// which is why we only take action if the route table is not 1
 		rtTable := unix.RT_TABLE_MAIN
-		if vethData.RouteTable > 1 {
+		if vethData.RouteTable != 1 {
 			rtTable = vethData.RouteTable
 		}
 
@@ -564,7 +564,7 @@ func (n *linuxNetwork) teardownIPBasedContainerRouteRules(containerAddr *net.IPN
 	log.Debugf("Successfully deleted toContainer rule, containerAddr=%s, rtTable=%v", containerAddr.String(), "main")
 
 	if rtTable != unix.RT_TABLE_MAIN {
-		fromContainerRule := netlink.NewRule()
+		fromContainerRule := n.netLink.NewRule()
 		fromContainerRule.Src = containerAddr
 		fromContainerRule.Priority = networkutils.FromPodRulePriority
 		fromContainerRule.Table = rtTable

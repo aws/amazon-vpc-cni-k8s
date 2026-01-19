@@ -411,29 +411,39 @@ func (typedimds TypedIMDS) getIPs(ctx context.Context, key string) ([]net.IP, er
 	return ips, err
 }
 
-func (typedimds TypedIMDS) getCIDR(ctx context.Context, key string) (net.IPNet, error) {
+func (typedimds TypedIMDS) getCIDR(ctx context.Context, key string) (*net.IPNet, error) {
 	output, err := typedimds.GetMetadata(ctx, &imds.GetMetadataInput{
 		Path: key})
 	if err != nil {
-		return net.IPNet{}, err
+		imdsErr := new(imdsRequestError)
+		oe := new(smithy.OperationError)
+		if errors.As(err, &imdsErr) || errors.As(err, &oe) {
+			if IsNotFound(err) {
+				// No CIDR found. Not an error for IPv4-only subnets when requesting IPv6 CIDRs
+				return nil, nil
+			}
+			log.Warnf("%v", err)
+			return nil, newIMDSRequestError(err.Error(), err)
+		}
+		return nil, err
 	}
 	if output == nil || output.Content == nil {
-		return net.IPNet{}, newIMDSRequestError(key, fmt.Errorf("empty response"))
+		return nil, newIMDSRequestError(key, fmt.Errorf("empty response"))
 	}
 
 	defer output.Content.Close()
 	bytes, err := io.ReadAll(output.Content)
 	if err != nil {
-		return net.IPNet{}, newIMDSRequestError(key, fmt.Errorf("failed to read content: %w", err))
+		return nil, newIMDSRequestError(key, fmt.Errorf("failed to read content: %w", err))
 	}
 
 	data := strings.TrimSpace(string(bytes))
 	ip, network, err := net.ParseCIDR(data)
 	if err != nil {
-		return net.IPNet{}, err
+		return nil, err
 	}
 	// Why doesn't net.ParseCIDR just return values in this form?
-	cidr := net.IPNet{IP: ip, Mask: network.Mask}
+	cidr := &net.IPNet{IP: ip, Mask: network.Mask}
 	return cidr, err
 }
 
@@ -574,7 +584,7 @@ func (typedimds TypedIMDS) GetIPv6s(ctx context.Context, mac string) ([]net.IP, 
 }
 
 // GetSubnetIPv4CIDRBlock returns the IPv4 CIDR block for the subnet in which the interface resides.
-func (typedimds TypedIMDS) GetSubnetIPv4CIDRBlock(ctx context.Context, mac string) (net.IPNet, error) {
+func (typedimds TypedIMDS) GetSubnetIPv4CIDRBlock(ctx context.Context, mac string) (*net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/subnet-ipv4-cidr-block", mac)
 	return typedimds.getCIDR(ctx, key)
 }
@@ -616,7 +626,7 @@ func (typedimds TypedIMDS) GetVPCIPv6CIDRBlocks(ctx context.Context, mac string)
 }
 
 // GetSubnetIPv6CIDRBlocks returns the IPv6 CIDR block for the subnet in which the interface resides.
-func (typedimds TypedIMDS) GetSubnetIPv6CIDRBlocks(ctx context.Context, mac string) (net.IPNet, error) {
+func (typedimds TypedIMDS) GetSubnetIPv6CIDRBlocks(ctx context.Context, mac string) (*net.IPNet, error) {
 	key := fmt.Sprintf("network/interfaces/macs/%s/subnet-ipv6-cidr-blocks", mac)
 	return typedimds.getCIDR(ctx, key)
 }

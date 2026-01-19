@@ -8,8 +8,8 @@ HELM_VERSION="3.14.2"
 NAMESPACE="kube-system"
 
 MAKEFILEPATH=$SCRIPTPATH/../Makefile
-VPC_CNI_VERSION="v1.20.2"
-NODE_AGENT_VERSION="v1.2.6"
+VPC_CNI_VERSION="v1.21.1"
+NODE_AGENT_VERSION="v1.3.1"
 BUILD_DIR=$SCRIPTPATH/../build/cni-rel-yamls/$VPC_CNI_VERSION
 
 REGIONS_FILE=$SCRIPTPATH/../charts/regions.json
@@ -49,7 +49,7 @@ mv $BUILD_DIR/$PLATFORM-amd64/helm $BUILD_DIR/.
 rm -rf $BUILD_DIR/$PLATFORM-amd64
 chmod +x $BUILD_DIR/helm
 
-jq -c '.[]' $REGIONS_FILE | while read i; do
+while read i; do
     ecrRegion=`echo $i | jq '.ecrRegion' -r`
     ecrAccount=`echo $i | jq '.ecrAccount' -r`
     ecrDomain=`echo $i | jq '.ecrDomain' -r`
@@ -64,7 +64,7 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
         NEW_METRICS_RESOURCES_YAML="${METRICS_RESOURCES_YAML}-${ecrRegion}.yaml"
     fi
 
-    $BUILD_DIR/helm template aws-vpc-cni \
+    "$BUILD_DIR/helm" template aws-vpc-cni \
       --include-crds \
       --set originalMatchLabels=true \
       --set init.image.region=$ecrRegion \
@@ -81,20 +81,20 @@ jq -c '.[]' $REGIONS_FILE | while read i; do
       --set nodeAgent.image.tag=$NODE_AGENT_VERSION \
       --set env.VPC_CNI_VERSION=$VPC_CNI_VERSION \
       --namespace $NAMESPACE \
-      $SCRIPTPATH/../charts/aws-vpc-cni > $NEW_CNI_RESOURCES_YAML
+      "$SCRIPTPATH/../charts/aws-vpc-cni" > "$NEW_CNI_RESOURCES_YAML"
     # Remove 'managed-by: Helm' annotation
-    sed -i '/helm.sh\|app.kubernetes.io\/managed-by: Helm/d' $NEW_CNI_RESOURCES_YAML
+    sed '/helm.sh\|app.kubernetes.io\/managed-by: Helm/d' "$NEW_CNI_RESOURCES_YAML" > "$NEW_CNI_RESOURCES_YAML.tmp" && mv "$NEW_CNI_RESOURCES_YAML.tmp" "$NEW_CNI_RESOURCES_YAML"
 
-    $BUILD_DIR/helm template cni-metrics-helper \
+    "$BUILD_DIR/helm" template cni-metrics-helper \
       --set image.region=$ecrRegion \
       --set-string image.account=$ecrAccount \
       --set image.domain=$ecrDomain \
       --set image.tag=$VPC_CNI_VERSION \
       --namespace $NAMESPACE \
-      $SCRIPTPATH/../charts/cni-metrics-helper > $NEW_METRICS_RESOURCES_YAML
+      "$SCRIPTPATH/../charts/cni-metrics-helper" > "$NEW_METRICS_RESOURCES_YAML"
     # Remove 'managed-by: Helm' annotation
-    sed -i '/helm.sh\|app.kubernetes.io\/managed-by: Helm/d' $NEW_METRICS_RESOURCES_YAML
-done
+    sed '/helm.sh\|app.kubernetes.io\/managed-by: Helm/d' "$NEW_METRICS_RESOURCES_YAML" > "$NEW_METRICS_RESOURCES_YAML.tmp" && mv "$NEW_METRICS_RESOURCES_YAML.tmp" "$NEW_METRICS_RESOURCES_YAML"
+done < <(jq -c '.[]' $REGIONS_FILE)
 
 cd $SCRIPTPATH
 

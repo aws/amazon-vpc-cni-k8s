@@ -1,5 +1,58 @@
 # Changelog
 
+## v1.21.1
+
+* Bug fix for Network Policy Agent
+
+## v1.21.0
+
+* chore: update VPC IP resource limits by @github-actions[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3521
+* Bump peter-evans/create-pull-request from 7.0.5 to 7.0.9 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3519
+* Bump golang.org/x/crypto from 0.40.0 to 0.45.0 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3515
+* Merge into release branch  by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3522
+* updating changelog by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3525
+* chore: update VPC IP resource limits by @github-actions[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3532
+* updating setup go fo gh action by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3537
+* update tags by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3535
+* update golang version by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3536
+
+## v1.20.5
+
+* enabling pod egress traffic test for under mac address policy variation by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3459
+* Bump the aws-dependencies group with 9 updates by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3465
+* chore: update VPC IP resource limits by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3476
+* bumping kops tag to v1.34 by @Supreeth095 in https://github.com/aws/amazon-vpc-cni-k8s/issues/3477
+* feat: add retry logic for netlink dump operations by @dcoppa in https://github.com/aws/amazon-vpc-cni-k8s/pull/3440
+* chore: update VPC IP resource limits by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3481
+* Updating network policy agent version by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3491
+* Bump actions/dependency-review-action from 4.3.3 to 4.8.1 by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3485
+* Bump actions/setup-go from 5.5.0 to 6.0.0 by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3486
+* Gracefully handle v4 (unmanaged) ENIs on IPv6 node by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3489
+* Go bump by @Supreeth095 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3500
+* chore: update VPC IP resource limits by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3502
+* nit: Update README to separate ENI Tags from Subnet Tags by @yash97 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3508
+* Update NP agent version for release by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3492
+* Updating CNI cn yaml file by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/
+* Bumping up containerd version for CVE fix by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3512
+* chore: update VPC IP resource limits by @github-actions[bot] and @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3514
+
+## v1.20.4
+
+* Updating SNAT variable documentation by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3439
+* Bump the k8s-dependencies group with 5 updates by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3426
+* Bump the aws-dependencies group with 11 updates by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3424
+* Optimize ENI slot reservation for non-supported instance type by @phuhung273 in https://github.com/aws/amazon-vpc-cni-k8s/pull/3250
+* Include all plugins for Multus by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3470
+* fix: format string bug in GetPodMTU error logging by @dcoppa in https://github.com/aws/amazon-vpc-cni-k8s/pull/3471
+
+## v1.20.3
+
+* chore: update VPC IP resource limits by @github-actions[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3441
+* chore: update VPC IP resource limits by @github-actions[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3453
+* Optionally setting up Route table for non zero Network Cards if AMI is already configuring at bootup by @jaydeokar in https://github.com/aws/amazon-vpc-cni-k8s/pull/3452
+* Add overrideRepository images option by @QuentinBtd in https://github.com/aws/amazon-vpc-cni-k8s/pull/3435
+* Initialize controller-runtime logger by @dcoppa in https://github.com/aws/amazon-vpc-cni-k8s/pull/3443
+
 ## v1.20.2
 * Bump github.com/samber/lo from 1.49.1 to 1.51.0 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3386
 * Bump github.com/prometheus/client_model from 0.6.1 to 0.6.2 by @dependabot[bot] in https://github.com/aws/amazon-vpc-cni-k8s/pull/3385

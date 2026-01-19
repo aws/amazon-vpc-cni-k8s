@@ -68,9 +68,9 @@ For help, please consider the following venues (in order):
 For all Kubernetes releases, *we recommend installing the latest VPC CNI release*. The following table denotes our *oldest* recommended
 VPC CNI version for each actively supported Kubernetes release.
 
-| Kubernetes Release | 1.33     | 1.32     | 1.31     | 1.30     | 1.29     | 1.28     | 1.27     | 1.26     |
-| ------------------ | -------- | -------- | -------- | -------- | -------- | -------- | -------- | -------- |
-| VPC CNI Version    | v1.17.1+ | v1.17.1+ | v1.16.4+ | v1.16.0+ | v1.14.1+ | v1.13.4+ | v1.12.5+ | v1.12.0+ |
+| Kubernetes Release | 1.33     | 1.32     | 1.31     | 1.30     | 1.29     | 1.28     |
+| ------------------ | -------- | -------- | -------- | -------- | -------- | -------- |
+| VPC CNI Version    | v1.17.1+ | v1.17.1+ | v1.16.4+ | v1.16.0+ | v1.14.1+ | v1.13.4+ |
 
 ## Version Upgrade
 
@@ -236,9 +236,7 @@ Default: `false`
 
 Specifies whether an external NAT gateway should be used to provide SNAT of secondary ENI IP addresses. If set to `true`, the
 SNAT `iptables` rule and off\-VPC IP rule are not applied, and these rules are removed if they have already been applied.
-Disable SNAT if you need to allow inbound communication to your pods from external VPNs, direct connections, and external VPCs,
-and your pods do not need to access the Internet directly via an Internet Gateway. However, your nodes must be running in a
-private subnet and connected to the internet through an AWS NAT Gateway or another external NAT device.
+SNAT can be disabled in scenarios where pods need direct access to external networks (such as VPN, Direct Connect, or other VPCs) without NAT translation, and where pods are not expected to require direct Internet access via an Internet Gateway. When SNAT is disabled, nodes are typically placed in private subnets, with outbound Internet connectivity provided through an AWS NAT Gateway or another external NAT device.
 
 #### `AWS_VPC_K8S_CNI_RANDOMIZESNAT`
 
@@ -798,7 +796,6 @@ Downgrade considerations
 This plugin interacts with the following tags on ENIs:
 
 * `cluster.k8s.amazonaws.com/name`
-* `kubernetes.io/role/cni`
 * `node.k8s.amazonaws.com/instance_id`
 * `node.k8s.amazonaws.com/no_manage`
 
@@ -806,17 +803,6 @@ This plugin interacts with the following tags on ENIs:
 
 The tag `cluster.k8s.amazonaws.com/name` will be set to the cluster name of the
 aws-node daemonset which created the ENI.
-
-#### CNI role tag
-
-The tag `kubernetes.io/role/cni` is read by the aws-node daemonset to determine
-if a secondary subnet can be used for creating secondary ENIs.
-
-This tag is not set by the cni plugin itself, but rather must be set by a user
-to indicate that a subnet can be used for secondary ENIs. Secondary subnets
-to be used must have this tag. The primary subnet (node's subnet) is not
-required to be tagged.
-
 
 #### Instance ID tag
 
@@ -837,6 +823,21 @@ process unrelated to Kubernetes.
 value for the Kubelet's `--max-pods` configuration option. Consider also
 updating the `MAX_ENI` and `--max-pods` configuration options on this plugin
 and the kubelet respectively if you are making use of this tag.
+
+## Subnet tags related to Allocation
+
+This plugin additionally interacts with the `kubernetes.io/role/cni` tag on subnets when `ENABLE_SUBNET_DISCOVERY` is set to `true`.
+
+#### CNI role tag
+
+The tag `kubernetes.io/role/cni` is read by the aws-node daemonset to determine
+if a secondary subnet can be used for creating secondary ENIs.
+
+This tag is not set by the cni plugin itself, but rather must be set by a user
+to indicate that a subnet can be used for secondary ENIs. Secondary subnets
+to be used must have this tag. The primary subnet (node's subnet) is not
+required to be tagged.
+
 
 ## Container Runtime
 

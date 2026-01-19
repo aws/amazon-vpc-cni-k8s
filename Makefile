@@ -292,21 +292,24 @@ docker-metrics-test:     ## Run metrics helper unit test suite in a container.
 plugins: FETCH_VERSION=1.7.1
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/archive/refs/tags/v$(FETCH_VERSION).tar.gz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
-plugins: CORE_PLUGINS = bandwidth host-local loopback portmap sbr
 plugins:   ## Fetch the CNI plugins
-	@echo "Fetching Container networking plugins v$(FETCH_VERSION) from upstream release"
-	@echo
-	@echo "Visit upstream project for plugin details:"
-	@echo "$(VISIT_URL)"
-	@echo
-	mkdir -p $(CORE_PLUGIN_DIR) $(CORE_PLUGIN_TMP)
-	curl -s -L $(FETCH_URL) | tar xzf - -C $(CORE_PLUGIN_TMP)
-	cd $(CORE_PLUGIN_TMP)/plugins-$(FETCH_VERSION) && ./build_linux.sh
-	cp -a $(CORE_PLUGIN_TMP)/plugins-$(FETCH_VERSION)/LICENSE $(CORE_PLUGIN_DIR)
-	for PLUGIN in $(CORE_PLUGINS); do \
-			cp -a $(CORE_PLUGIN_TMP)/plugins-$(FETCH_VERSION)/bin/$$PLUGIN $(CORE_PLUGIN_DIR); \
-	done
-	rm -rf $(CORE_PLUGIN_TMP)
+	@if [ -d "$(CORE_PLUGIN_DIR)" ] && [ -n "$$(ls -A $(CORE_PLUGIN_DIR) 2>/dev/null)" ]; then \
+		echo "Using existing plugin binaries from $(CORE_PLUGIN_DIR)"; \
+		ls -lh $(CORE_PLUGIN_DIR); \
+	else \
+		echo "Fetching Container networking plugins v$(FETCH_VERSION) from upstream release"; \
+		echo; \
+		echo "Visit upstream project for plugin details:"; \
+		echo "$(VISIT_URL)"; \
+		echo; \
+		mkdir -p $(CORE_PLUGIN_DIR) $(CORE_PLUGIN_TMP) || exit 1; \
+		curl -fsSL $(FETCH_URL) | tar xzf - -C $(CORE_PLUGIN_TMP) || { echo "Error: Failed to download plugins"; rm -rf $(CORE_PLUGIN_TMP); exit 1; }; \
+		cd $(CORE_PLUGIN_TMP)/plugins-$(FETCH_VERSION) && ./build_linux.sh || { echo "Error: Failed to build plugins"; rm -rf $(CORE_PLUGIN_TMP); exit 1; }; \
+		cp -a $(CORE_PLUGIN_TMP)/plugins-$(FETCH_VERSION)/LICENSE $(CORE_PLUGIN_DIR) && \
+		cp -a $(CORE_PLUGIN_TMP)/plugins-$(FETCH_VERSION)/bin/* $(CORE_PLUGIN_DIR) && \
+		rm -rf $(CORE_PLUGIN_TMP) && \
+		echo "Successfully built and installed CNI plugins"; \
+	fi
 
 ##@ Debug script
 
