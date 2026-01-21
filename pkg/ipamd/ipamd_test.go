@@ -222,7 +222,7 @@ func TestNodeInit(t *testing.T) {
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any(), gomock.Any())
 	os.Setenv("MY_NODE_NAME", myNodeName)
-	err := mockContext.nodeInit()
+	err := mockContext.nodeInit(context.TODO())
 	assert.NoError(t, err)
 }
 
@@ -324,7 +324,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	m.k8sClient.Create(ctx, &fakeNode)
 
 	os.Setenv("MY_NODE_NAME", myNodeName)
-	err := mockContext.nodeInit()
+	err := mockContext.nodeInit(context.TODO())
 	assert.NoError(t, err)
 }
 
@@ -413,7 +413,7 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 	m.k8sClient.Create(ctx, &fakeNode)
 	os.Setenv("MY_NODE_NAME", myNodeName)
 
-	err := mockContext.nodeInit()
+	err := mockContext.nodeInit(context.TODO())
 	assert.NoError(t, err)
 }
 
@@ -2968,7 +2968,7 @@ func TestNodeInitPrimarySubnetExclusionWithExistingPodIPs(t *testing.T) {
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any(), gomock.Any()).Return(&ec2.AssignPrivateIpAddressesOutput{}, nil)
 	os.Setenv("MY_NODE_NAME", myNodeName)
-	err := mockContext.nodeInit()
+	err := mockContext.nodeInit(context.TODO())
 	assert.NoError(t, err)
 
 	// Verify that primary ENI exclusion is now always respected
@@ -3111,7 +3111,7 @@ func TestNodeInitPrimarySubnetExclusionWithoutExistingPodIPs(t *testing.T) {
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any(), gomock.Any()).Return(&ec2.AssignPrivateIpAddressesOutput{}, nil)
 	os.Setenv("MY_NODE_NAME", myNodeName)
-	err := mockContext.nodeInit()
+	err := mockContext.nodeInit(context.TODO())
 	assert.NoError(t, err)
 
 	// Verify that primary ENI remains excluded due to no existing pod IPs

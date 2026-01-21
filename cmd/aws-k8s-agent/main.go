@@ -144,7 +144,8 @@ func _main() int {
 	}
 	// Measure node initialization duration
 	IPAMDNodeInitStartTime := time.Now()
-	ipamContext, err := ipamd.New(k8sClient, withApiServer)
+	ctx := context.Background()
+	ipamContext, err := ipamd.New(ctx, k8sClient, withApiServer)
 	IPAMDNodeInitDuration := time.Since(IPAMDNodeInitStartTime).Seconds()
 
 	if err != nil {
@@ -164,7 +165,7 @@ func _main() int {
 	}
 
 	// Pool manager
-	go ipamContext.StartNodeIPPoolManager(context.Background())
+	go ipamContext.StartNodeIPPoolManager(ctx)
 
 	if !utils.GetBoolAsStringEnvVar(envDisableMetrics, false) {
 		// Prometheus metrics

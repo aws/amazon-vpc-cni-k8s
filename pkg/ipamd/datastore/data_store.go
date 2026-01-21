@@ -1773,9 +1773,6 @@ func (ds *DataStore) deallocateEmptyCIDR(eniID string, cidrToCleanup *CidrInfo) 
 	cidrStr := cidrToCleanup.Cidr.String()
 	ds.log.Infof("Starting async cleanup for empty CIDR %s on excluded ENI %s", cidrStr, eniID)
 
-	// Add delay to avoid race conditions with pod cleanup
-	time.Sleep(5 * time.Second)
-
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
