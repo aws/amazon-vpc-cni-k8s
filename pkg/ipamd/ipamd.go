@@ -144,7 +144,7 @@ const (
 	// envNodeName will be used to store Node name
 	envNodeName = "MY_NODE_NAME"
 
-	// envEnableIpv4PrefixDelegation is used to allocate /28 prefix instead of secondary IP for an ENI.
+	//envEnableIpv4PrefixDelegation is used to allocate /28 prefix instead of secondary IP for an ENI.
 	envEnableIpv4PrefixDelegation = "ENABLE_PREFIX_DELEGATION"
 
 	// envWarmPrefixTarget is used to keep a /28 prefix in warm pool.
@@ -394,7 +394,7 @@ func (c *IPAMContext) inInsufficientCidrCoolingPeriod() bool {
 
 // New retrieves IP address usage information from Instance MetaData service and Kubelet
 // then initializes IP address pool data store
-func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
+func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 	prometheusRegister()
 	ctx := context.Background()
 	c := &IPAMContext{}
@@ -407,7 +407,7 @@ func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
 	c.disableENIProvisioning = disableENIProvisioning()
-	client, err := awsutils.New(c.useSubnetDiscovery, c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6)
+	client, err := awsutils.New(ctx, c.useSubnetDiscovery, c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6)
 	if err != nil {
 		return nil, errors.Wrap(err, "ipamd: can not initialize with AWS SDK interface")
 	}
@@ -446,16 +446,15 @@ func New(k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 	c.myNodeName = os.Getenv(envNodeName)
 	c.withApiServer = withApiServer
 
-	if err := c.nodeInit(); err != nil {
+	if err := c.nodeInit(ctx); err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
-func (c *IPAMContext) nodeInit() error {
+func (c *IPAMContext) nodeInit(ctx context.Context) error {
 	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeInit").Add(float64(1))
 	defer prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeInit").Sub(float64(1))
-	ctx := context.TODO()
 	log.Debugf("Start node init")
 
 	if err := c.initENIAndIPLimits(); err != nil {
@@ -582,10 +581,10 @@ func (c *IPAMContext) nodeInit() error {
 		// Refresh security groups and VPC CIDR blocks in the background
 		// Ignoring errors since we will retry in 30s
 		go wait.Forever(func() {
-			c.awsClient.RefreshSGIDs(context.Background(), primaryENIMac, c.dataStoreAccess)
+			c.awsClient.RefreshSGIDs(ctx, primaryENIMac, c.dataStoreAccess)
 			// Also refresh custom security groups for secondary subnets
 			if c.useSubnetDiscovery {
-				c.awsClient.RefreshCustomSGIDs(context.Background(), c.dataStoreAccess)
+				c.awsClient.RefreshCustomSGIDs(ctx, c.dataStoreAccess)
 			}
 		}, 30*time.Second)
 	}
@@ -2519,8 +2518,6 @@ func (c *IPAMContext) cleanupExcludedENI(ctx context.Context, eniID string) {
 
 // checkAndHandleAllENIExclusion checks all existing ENIs (primary and secondary) across all network cards for subnet exclusion
 func (c *IPAMContext) checkAndHandleAllENIExclusion(ctx context.Context) {
-	log.Debugf("checkAndHandleAllENIExclusion: checking all existing ENIs for subnet exclusion")
-
 	// Iterate over all datastores (one per network card)
 	for _, ds := range c.dataStoreAccess.DataStores {
 		// Get ENI information using the public method

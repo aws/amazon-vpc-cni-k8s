@@ -412,10 +412,7 @@ func (i instrumentedIMDS) GetMetadataWithContext(ctx context.Context, p string) 
 }
 
 // New creates an EC2InstanceMetadataCache
-func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Enabled, v6Enabled bool) (*EC2InstanceMetadataCache, error) {
-	// ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
-	ctx := context.Background()
-
+func New(ctx context.Context, useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Enabled, v6Enabled bool) (*EC2InstanceMetadataCache, error) {
 	awsconfig, err := awssession.New(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create aws session")
@@ -459,7 +456,7 @@ func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Ena
 
 	// Clean up leaked ENIs in the background
 	if !disableLeakedENICleanup {
-		go wait.Forever(func() { cache.cleanUpLeakedENIs(context.Background()) }, time.Hour)
+		go wait.Forever(func() { cache.cleanUpLeakedENIs(ctx) }, time.Hour)
 	}
 	return cache, nil
 }
@@ -612,10 +609,7 @@ func (cache *EC2InstanceMetadataCache) getFilteredENIs(ctx context.Context, stor
 			isSecondarySubnet := cache.isENIInSecondarySubnet(ctx, eniID)
 
 			// Filter based on subnet type
-			if onlySecondarySubnets && !isSecondarySubnet {
-				continue
-			} else if !onlySecondarySubnets && isSecondarySubnet {
-				// When we want primary subnet ENIs, skip secondary subnet ENIs
+			if onlySecondarySubnets != isSecondarySubnet {
 				continue
 			}
 
@@ -686,8 +680,7 @@ func (cache *EC2InstanceMetadataCache) RefreshCustomSGIDs(ctx context.Context, d
 	sgIDs, err := cache.discoverCustomSecurityGroups(ctx)
 	if err != nil {
 		awsAPIErrInc("DiscoverCustomSecurityGroups", err)
-		log.Warnf("Failed to discover custom security groups: %v", err)
-		log.Info("Falling back to using primary security groups for ENIs in secondary subnets")
+		log.Warnf("Failed to discover custom security groups: %v. Falling back to using primary security groups for ENIs in secondary subnets", err)
 
 		// Clear custom security groups cache to trigger fallback behavior
 		cache.customSecurityGroups.Set([]string{})
