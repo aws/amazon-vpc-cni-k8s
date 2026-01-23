@@ -34,11 +34,13 @@ const (
 	defaultDisableIPv4TcpEarlyDemux = false
 	defaultEnableIPv6               = false
 	defaultEnableIPv6Egress         = false
+	defaultEnablePodENIDualStack    = false
 
 	envDisableIPv4TcpEarlyDemux = "DISABLE_TCP_EARLY_DEMUX"
 	envEnableIPv6               = "ENABLE_IPv6"
 	envHostCniBinPath           = "HOST_CNI_BIN_PATH"
 	envEgressV6                 = "ENABLE_V6_EGRESS"
+	envEnablePodENIDualStack    = "ENABLE_POD_ENI_DUAL_STACK"
 )
 
 func getNodePrimaryIF() (string, error) {
@@ -105,7 +107,12 @@ func configureIPv6Settings(procSys procsyswrapper.ProcSys, primaryIF string) err
 	// Enable IPv6 when environment variable is set
 	// Note that IPv6 is not disabled when environment variable is unset. This is omitted to preserve default host semantics.
 	enableIPv6 := utils.GetBoolAsStringEnvVar(envEnableIPv6, defaultEnableIPv6)
-	if enableIPv6 {
+	// Check if pod ENI dual-stack support is enabled (IPv4 primary + IPv6 secondary for SGPP)
+	podENIDualStackEnabled := utils.GetBoolAsStringEnvVar(envEnablePodENIDualStack, defaultEnablePodENIDualStack)
+	if podENIDualStackEnabled {
+		log.Infof("Pod ENI dual-stack support enabled")
+	}
+	if enableIPv6 || podENIDualStackEnabled {
 		entry := "net/ipv6/conf/all/disable_ipv6"
 		err = procSys.Set(entry, "0")
 		if err != nil {
@@ -116,8 +123,7 @@ func configureIPv6Settings(procSys procsyswrapper.ProcSys, primaryIF string) err
 	}
 	// Check if IPv6 egress support is enabled in IPv4 cluster.
 	ipv6EgressEnabled := utils.GetBoolAsStringEnvVar(envEgressV6, defaultEnableIPv6Egress)
-	if enableIPv6 || ipv6EgressEnabled {
-		// Enable IPv6 forwarding on all interfaces by default
+	if enableIPv6 || ipv6EgressEnabled || podENIDualStackEnabled {
 		entry := "net/ipv6/conf/all/forwarding"
 		err = procSys.Set(entry, "1")
 		if err != nil {
