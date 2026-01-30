@@ -513,18 +513,18 @@ func (mr *MockAPIsMockRecorder) IsPrimaryENI(arg0 interface{}) *gomock.Call {
 }
 
 // IsSubnetExcluded mocks base method.
-func (m *MockAPIs) IsSubnetExcluded(arg0 context.Context, arg1 string) (bool, error) {
+func (m *MockAPIs) IsSubnetExcluded(arg0 context.Context, arg1 string, arg2 bool) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsSubnetExcluded", arg0, arg1)
+	ret := m.ctrl.Call(m, "IsSubnetExcluded", arg0, arg1, arg2)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // IsSubnetExcluded indicates an expected call of IsSubnetExcluded.
-func (mr *MockAPIsMockRecorder) IsSubnetExcluded(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockAPIsMockRecorder) IsSubnetExcluded(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSubnetExcluded", reflect.TypeOf((*MockAPIs)(nil).IsSubnetExcluded), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSubnetExcluded", reflect.TypeOf((*MockAPIs)(nil).IsSubnetExcluded), arg0, arg1, arg2)
 }
 
 // IsUnmanagedENI mocks base method.

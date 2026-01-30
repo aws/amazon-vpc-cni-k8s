@@ -50,22 +50,48 @@ var defaultNetworkCard = 0
 func TestAddENI(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
-	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "subnet-1")
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-0", 0, true, false, false, networkutils.CalculateRouteTableId(0, 0))
+	err = ds.AddENI("eni-0", 0, true, false, false, networkutils.CalculateRouteTableId(0, 0), "subnet-0")
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(0, 0))
+	err = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(0, 0), "subnet-1")
 	assert.Error(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0))
+	err = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0), "subnet-2")
 	assert.NoError(t, err)
 
 	assert.Equal(t, len(ds.eniPool), 3)
 
 	eniInfos := ds.GetENIInfos()
 	assert.Equal(t, len(eniInfos.ENIs), 3)
+
+	// Verify SubnetID is correctly set
+	assert.Equal(t, "subnet-1", ds.eniPool["eni-1"].SubnetID)
+	assert.Equal(t, "subnet-0", ds.eniPool["eni-0"].SubnetID)
+	assert.Equal(t, "subnet-2", ds.eniPool["eni-2"].SubnetID)
+}
+
+func TestENISubnetID(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+
+	// Test adding ENI with SubnetID
+	err := ds.AddENI("eni-1", 1, false, false, false, networkutils.CalculateRouteTableId(1, 0), "subnet-abc123")
+	assert.NoError(t, err)
+
+	// Verify SubnetID is stored correctly
+	eni, ok := ds.eniPool["eni-1"]
+	assert.True(t, ok)
+	assert.Equal(t, "subnet-abc123", eni.SubnetID)
+
+	// Test adding ENI with empty SubnetID
+	err = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0), "")
+	assert.NoError(t, err)
+
+	eni2, ok := ds.eniPool["eni-2"]
+	assert.True(t, ok)
+	assert.Equal(t, "", eni2.SubnetID)
 }
 
 func TestDeleteENI(t *testing.T) {
@@ -84,7 +110,7 @@ func TestDeleteENI(t *testing.T) {
 
 	for _, eni := range enis {
 
-		err := ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, eni.networkCard))
+		err := ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, eni.networkCard), "")
 		assert.NoError(t, err)
 	}
 
@@ -140,7 +166,7 @@ func TestDeleteENIwithPDEnabled(t *testing.T) {
 	}
 
 	for _, eni := range enis {
-		err = ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, eni.networkCard))
+		err = ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, eni.networkCard), "")
 		assert.NoError(t, err)
 	}
 
@@ -183,10 +209,10 @@ func TestDeleteENIwithPDEnabled(t *testing.T) {
 func TestAddENIIPv4Address(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
-	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0))
+	err = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0), "")
 	assert.NoError(t, err)
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -226,10 +252,10 @@ func TestAddENIIPv4Address(t *testing.T) {
 func TestAddENIIPv4AddressWithPDEnabled(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
-	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0))
+	err = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0), "")
 	assert.NoError(t, err)
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
@@ -269,10 +295,10 @@ func TestAddENIIPv4AddressWithPDEnabled(t *testing.T) {
 func TestGetENIIPs(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
-	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+	err := ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0))
+	err = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0), "")
 	assert.NoError(t, err)
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -316,7 +342,7 @@ func TestGetENIIPsWithPDEnabled(t *testing.T) {
 	}
 
 	for _, eni := range enis {
-		err = ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, eni.networkCard))
+		err = ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, eni.networkCard), "")
 		assert.NoError(t, err)
 	}
 
@@ -349,7 +375,7 @@ func TestGetENIIPsWithPDEnabled(t *testing.T) {
 
 func TestDelENIIPv4Address(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
-	err := ds.AddENI("eni-1", 0, true, false, false, unix.RT_TABLE_MAIN)
+	err := ds.AddENI("eni-1", 0, true, false, false, unix.RT_TABLE_MAIN, "")
 	assert.NoError(t, err)
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -408,7 +434,7 @@ func TestDelENIIPv4Address(t *testing.T) {
 
 func TestDelENIIPv4AddressWithPDEnabled(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
-	err := ds.AddENI("eni-1", 0, true, false, false, networkutils.CalculateRouteTableId(0, 0))
+	err := ds.AddENI("eni-1", 0, true, false, false, networkutils.CalculateRouteTableId(0, 0), "")
 	assert.NoError(t, err)
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
@@ -478,7 +504,7 @@ func TestTogglePD(t *testing.T) {
 	}
 
 	for _, eni := range enis {
-		err := ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, 0))
+		err := ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, 0), "")
 		assert.NoError(t, err)
 	}
 
@@ -577,7 +603,7 @@ func TestPodIPv4Address(t *testing.T) {
 	}
 
 	for _, eni := range enis {
-		err := ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, 0))
+		err := ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, 0), "")
 		assert.NoError(t, err)
 	}
 
@@ -792,7 +818,7 @@ func TestPodIPv4AddressWithPDEnabled(t *testing.T) {
 	}
 
 	for _, eni := range enis {
-		err := ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, 0))
+		err := ds.AddENI(eni.id, eni.device, eni.isPrimary, false, false, networkutils.CalculateRouteTableId(eni.device, 0), "")
 		assert.NoError(t, err)
 
 	}
@@ -961,7 +987,7 @@ func TestGetIPStatsV4(t *testing.T) {
 	defer os.Unsetenv(envIPCooldownPeriod)
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
-	_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+	_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, false)
@@ -1015,7 +1041,7 @@ func TestGetIPStatsV4WithPD(t *testing.T) {
 	defer os.Unsetenv(envIPCooldownPeriod)
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
-	_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+	_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.IPv4Mask(255, 255, 255, 240)}
 	_ = ds.AddIPv4CidrToStore("eni-1", ipv4Addr, true)
@@ -1067,7 +1093,7 @@ func TestGetIPStatsV4WithPD(t *testing.T) {
 
 func TestGetIPStatsV6(t *testing.T) {
 	v6ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
-	_ = v6ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
+	_ = v6ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 	ipv6Addr := net.IPNet{IP: net.IP{0x21, 0xdb, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: net.CIDRMask(80, 128)}
 	_ = v6ds.AddIPv6CidrToStore("eni-1", ipv6Addr, true)
 	key3 := IPAMKey{"netv6", "sandbox-3", "eth0"}
@@ -1089,7 +1115,7 @@ func TestAssignedIPv6Addresses(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
 
 	// Test ENI with no IPv6 CIDRs
-	_ = ds.AddENI("eni-1", 1, true, false, false, 0)
+	_ = ds.AddENI("eni-1", 1, true, false, false, 0, "")
 	eniInfo, _ := ds.eniPool["eni-1"]
 	assert.Equal(t, 0, eniInfo.AssignedIPv6Addresses(), "ENI with no IPv6 CIDRs should have 0 assigned addresses")
 
@@ -1147,9 +1173,9 @@ func TestAssignedIPv6Addresses(t *testing.T) {
 func TestWarmENIInteractions(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
-	_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0))
-	_ = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0))
-	_ = ds.AddENI("eni-3", 3, false, false, false, networkutils.CalculateRouteTableId(3, 0))
+	_ = ds.AddENI("eni-1", 1, true, false, false, networkutils.CalculateRouteTableId(1, 0), "")
+	_ = ds.AddENI("eni-2", 2, false, false, false, networkutils.CalculateRouteTableId(2, 0), "")
+	_ = ds.AddENI("eni-3", 3, false, false, false, networkutils.CalculateRouteTableId(3, 0), "")
 
 	// Add an IP address to ENI 1 and assign it to a pod
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -1209,8 +1235,8 @@ func TestWarmENIInteractions(t *testing.T) {
 	assert.Contains(t, "eni-2", removedEni)
 
 	// Add 2 more ENIs to the datastore and add 1 IP address to each of them
-	ds.AddENI("eni-4", 4, false, true, false, networkutils.CalculateRouteTableId(4, 0)) // trunk ENI
-	ds.AddENI("eni-5", 5, false, false, true, networkutils.CalculateRouteTableId(5, 0)) // EFA ENI
+	ds.AddENI("eni-4", 4, false, true, false, networkutils.CalculateRouteTableId(4, 0), "") // trunk ENI
+	ds.AddENI("eni-5", 5, false, false, true, networkutils.CalculateRouteTableId(5, 0), "") // EFA ENI
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.4.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
 	ds.AddIPv4CidrToStore("eni-4", ipv4Addr, false)
 	ipv4Addr = net.IPNet{IP: net.ParseIP("1.1.5.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -1230,7 +1256,7 @@ func TestWarmENIInteractions(t *testing.T) {
 	assert.Equal(t, 3, ds.GetENIs())
 
 	// Add 1 more normal ENI to the datastore
-	ds.AddENI("eni-6", 6, false, false, false, networkutils.CalculateRouteTableId(6, 0)) // trunk ENI
+	ds.AddENI("eni-6", 6, false, false, false, networkutils.CalculateRouteTableId(6, 0), "") // trunk ENI
 	ds.eniPool["eni-6"].createTime = time.Time{}
 
 	// We have 4 ENIs, 4 IPs and 2 pods on ENI 1.
@@ -1684,7 +1710,7 @@ func TestForceRemovalMetrics(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	// Add an ENI and IP
-	err := ds.AddENI("eni-1", 1, false, false, false, networkutils.CalculateRouteTableId(1, 0))
+	err := ds.AddENI("eni-1", 1, false, false, false, networkutils.CalculateRouteTableId(1, 0), "")
 	assert.NoError(t, err)
 
 	ipv4Addr := net.IPNet{IP: net.ParseIP("1.1.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -1785,7 +1811,7 @@ func TestAssignPodIPv4AddressWithExcludedENI(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	// Add primary ENI and mark it as excluded
-	err := ds.AddENI("eni-1", 0, true, false, false, 0)
+	err := ds.AddENI("eni-1", 0, true, false, false, 0, "")
 	assert.NoError(t, err)
 	err = ds.SetENIExcludedForPodIPs("eni-1", true)
 	assert.NoError(t, err)
@@ -1811,7 +1837,7 @@ func TestAssignPodIPv4AddressWithExcludedENI(t *testing.T) {
 	assert.Contains(t, err.Error(), "no available IP/Prefix addresses")
 
 	// Add a secondary ENI that is not excluded
-	err = ds.AddENI("eni-2", 1, false, false, false, 0)
+	err = ds.AddENI("eni-2", 1, false, false, false, 0, "")
 	assert.NoError(t, err)
 
 	// Add IPs to the secondary ENI
@@ -1840,13 +1866,13 @@ func TestGetAllocatableENIsWithExclusion(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	// Add primary ENI and mark it as excluded
-	err := ds.AddENI("eni-1", 0, true, false, false, 0)
+	err := ds.AddENI("eni-1", 0, true, false, false, 0, "")
 	assert.NoError(t, err)
 	err = ds.SetENIExcludedForPodIPs("eni-1", true)
 	assert.NoError(t, err)
 
 	// Add secondary ENI (not excluded)
-	err = ds.AddENI("eni-2", 1, false, false, false, 0)
+	err = ds.AddENI("eni-2", 1, false, false, false, 0, "")
 	assert.NoError(t, err)
 
 	// Get allocatable ENIs - should only return the non-excluded one
@@ -1859,7 +1885,7 @@ func TestGetIPStatsWithExcludedENI(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	// Add primary ENI with IPs and mark it as excluded
-	err := ds.AddENI("eni-1", 0, true, false, false, 0)
+	err := ds.AddENI("eni-1", 0, true, false, false, 0, "")
 	assert.NoError(t, err)
 	err = ds.SetENIExcludedForPodIPs("eni-1", true)
 	assert.NoError(t, err)
@@ -1872,7 +1898,7 @@ func TestGetIPStatsWithExcludedENI(t *testing.T) {
 	}
 
 	// Add secondary ENI with IPs (not excluded)
-	err = ds.AddENI("eni-2", 1, false, false, false, 0)
+	err = ds.AddENI("eni-2", 1, false, false, false, 0, "")
 	assert.NoError(t, err)
 
 	for i := 11; i <= 12; i++ {
@@ -1890,7 +1916,7 @@ func TestGetIPStatsWithExcludedENI(t *testing.T) {
 
 func TestDelIPv6CidrFromStore(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
-	err := ds.AddENI("eni-1", 1, true, false, false, 0)
+	err := ds.AddENI("eni-1", 1, true, false, false, 0, "")
 	assert.NoError(t, err)
 
 	// Test 1: Add and delete unassigned IPv6 CIDRs
@@ -1948,7 +1974,7 @@ func TestDelIPv6CidrFromStore(t *testing.T) {
 
 func TestFreeablePrefixesBothIPv4AndIPv6(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
-	err := ds.AddENI("eni-1", 1, true, false, false, 0)
+	err := ds.AddENI("eni-1", 1, true, false, false, 0, "")
 	assert.NoError(t, err)
 
 	// Add IPv4 prefixes
@@ -2012,19 +2038,23 @@ func TestFreeablePrefixesBothIPv4AndIPv6(t *testing.T) {
 	// Verify the returned prefixes are the ones without assigned IPs
 	ipv4PrefixCount = 0
 	ipv6PrefixCount = 0
+	foundIPv4Prefix := ""
+	foundIPv6Prefix := ""
 	for _, prefix := range freeablePrefixes {
 		if prefix.IP.To4() != nil {
 			ipv4PrefixCount++
-			// Should be the second IPv4 prefix (10.0.1.0/28), not the first one with assigned IP
-			assert.Equal(t, "10.0.1.0", prefix.IP.String())
+			foundIPv4Prefix = prefix.IP.String()
 		} else {
 			ipv6PrefixCount++
-			// Should be the second IPv6 prefix (2001:db8:1::/80), not the first one with assigned IP
-			assert.Equal(t, "2001:db8:1::", prefix.IP.String())
+			foundIPv6Prefix = prefix.IP.String()
 		}
 	}
 	assert.Equal(t, 1, ipv4PrefixCount, "Should have 1 unassigned IPv4 prefix")
 	assert.Equal(t, 1, ipv6PrefixCount, "Should have 1 unassigned IPv6 prefix")
+	// Should be the second IPv4 prefix (10.0.1.0/28), not the first one with assigned IP
+	assert.Equal(t, "10.0.1.0", foundIPv4Prefix)
+	// Should be the second IPv6 prefix (2001:db8:1::/80), not the first one with assigned IP
+	assert.Equal(t, "2001:db8:1::", foundIPv6Prefix)
 
 	// Test with non-existent ENI
 	freeablePrefixes = ds.FreeablePrefixes("eni-nonexistent")
@@ -2036,7 +2066,7 @@ func TestDeallocateEmptyCIDR(t *testing.T) {
 
 	// Setup test ENI
 	eniID := "eni-test-dealloc"
-	err := ds.AddENI(eniID, 1, false, false, false, 0)
+	err := ds.AddENI(eniID, 1, false, false, false, 0, "")
 	assert.NoError(t, err)
 
 	// Mark ENI as excluded for pod IPs
@@ -2086,7 +2116,7 @@ func TestDeallocateEmptyCIDR(t *testing.T) {
 	t.Run("Skip cleanup when ENI is not excluded", func(t *testing.T) {
 		// Create new non-excluded ENI
 		nonExcludedENI := "eni-not-excluded"
-		err := ds.AddENI(nonExcludedENI, 1, false, false, false, 0)
+		err := ds.AddENI(nonExcludedENI, 1, false, false, false, 0, "")
 		assert.NoError(t, err)
 
 		// Don't mark as excluded (default is false)
@@ -2116,7 +2146,7 @@ func TestDeallocateEmptyCIDR(t *testing.T) {
 
 		// Create new excluded ENI
 		excludedENI := "eni-excluded-with-ips"
-		err := dsIsolated.AddENI(excludedENI, 1, false, false, false, 0)
+		err := dsIsolated.AddENI(excludedENI, 1, false, false, false, 0, "")
 		assert.NoError(t, err)
 
 		err = dsIsolated.SetENIExcludedForPodIPs(excludedENI, true)
@@ -2167,7 +2197,7 @@ func TestDeallocateEmptyCIDR(t *testing.T) {
 	t.Run("Handle non-existent CIDR gracefully", func(t *testing.T) {
 		// Create ENI
 		testENI := "eni-cidr-test"
-		err := ds.AddENI(testENI, 1, false, false, false, 0)
+		err := ds.AddENI(testENI, 1, false, false, false, 0, "")
 		assert.NoError(t, err)
 
 		err = ds.SetENIExcludedForPodIPs(testENI, true)

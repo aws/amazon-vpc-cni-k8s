@@ -29,7 +29,7 @@ func TestSecondaryENIExclusionFocused(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	// Setup: Primary ENI with one IP
-	err := ds.AddENI("eni-primary", 0, true, false, false, 0)
+	err := ds.AddENI("eni-primary", 0, true, false, false, 0, "")
 	assert.NoError(t, err)
 
 	primaryIP := net.IPNet{IP: net.ParseIP("10.0.1.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -37,7 +37,7 @@ func TestSecondaryENIExclusionFocused(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Setup: Secondary ENI with one IP
-	err = ds.AddENI("eni-secondary", 1, false, false, false, 0)
+	err = ds.AddENI("eni-secondary", 1, false, false, false, 0, "")
 	assert.NoError(t, err)
 
 	secondaryIP := net.IPNet{IP: net.ParseIP("10.0.2.1"), Mask: net.IPv4Mask(255, 255, 255, 255)}
@@ -107,10 +107,10 @@ func TestSecondaryENIExclusionWithPods(t *testing.T) {
 	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
 
 	// Setup ENIs
-	err := ds.AddENI("eni-primary", 0, true, false, false, 0)
+	err := ds.AddENI("eni-primary", 0, true, false, false, 0, "")
 	assert.NoError(t, err)
 
-	err = ds.AddENI("eni-secondary", 1, false, false, false, 0)
+	err = ds.AddENI("eni-secondary", 1, false, false, false, 0, "")
 	assert.NoError(t, err)
 
 	// Add IPs

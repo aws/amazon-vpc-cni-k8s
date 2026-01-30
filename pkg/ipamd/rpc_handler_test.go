@@ -487,7 +487,7 @@ func TestServer_AddNetwork(t *testing.T) {
 
 			for networkCard, eniMap := range tt.fields.ipV4AddressByENIID {
 				for eniID, eniConfig := range eniMap {
-					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard))
+					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard), "")
 					for _, ipv4Address := range eniConfig.IPs {
 						ipv4Addr := net.IPNet{IP: net.ParseIP(ipv4Address), Mask: net.IPv4Mask(255, 255, 255, 255)}
 						dsAccess.GetDataStore(networkCard).AddIPv4CidrToStore(eniID, ipv4Addr, false)
@@ -497,7 +497,7 @@ func TestServer_AddNetwork(t *testing.T) {
 
 			for networkCard, eniMap := range tt.fields.ipV6PrefixByENIID {
 				for eniID, eniConfig := range eniMap {
-					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard))
+					dsAccess.GetDataStore(networkCard).AddENI(eniID, eniConfig.DeviceNumber, eniConfig.IsPrimary, false, false, networkutils.CalculateRouteTableId(eniConfig.DeviceNumber, networkCard), "")
 					for _, ipv6Prefix := range eniConfig.IPs {
 						_, ipnet, _ := net.ParseCIDR(ipv6Prefix)
 						dsAccess.GetDataStore(networkCard).AddIPv6CidrToStore(eniID, *ipnet, true)

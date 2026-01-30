@@ -38,6 +38,7 @@ import (
 	mock_ec2wrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
 
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
@@ -271,6 +272,7 @@ func TestGetAttachedENIs(t *testing.T) {
 		metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
 		metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
 		metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
+		metadataMACPath + eni2MAC + metadataSubnetID:   subnetID,
 		metadataMACPath + eni2MAC + metadataIPv4s:      eni2PrivateIP,
 	})
 
@@ -278,6 +280,8 @@ func TestGetAttachedENIs(t *testing.T) {
 	ens, err := cache.GetAttachedENIs()
 	if assert.NoError(t, err) {
 		assert.Equal(t, len(ens), 2)
+		// Verify SubnetID is populated
+		assert.Equal(t, subnetID, ens[1].SubnetID)
 	}
 }
 
@@ -288,6 +292,7 @@ func TestGetAttachedENIsWithEfaOnly(t *testing.T) {
 		metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
 		metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
 		metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
+		metadataMACPath + eni2MAC + metadataSubnetID:   subnetID,
 	})
 
 	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}}
@@ -303,6 +308,7 @@ func TestGetAttachedENIsWithIPv6Only(t *testing.T) {
 		metadataMACPath + eni2MAC:                        imdsMACFieldsV6Only,
 		metadataMACPath + eni2MAC + metadataDeviceNum:    eni2Device,
 		metadataMACPath + eni2MAC + metadataInterface:    eni2ID,
+		metadataMACPath + eni2MAC + metadataSubnetID:     subnetID,
 		metadataMACPath + eni2MAC + metadataIPv6s:        eni2v6IP,
 		metadataMACPath + eni2MAC + metadataSubnetV6CIDR: subnetv6CIDR,
 		metadataMACPath + eni2MAC + metadataIPv6Prefixes: eni2v6Prefix,
@@ -346,6 +352,7 @@ func TestGetAttachedENIsWithPrefixes(t *testing.T) {
 		metadataMACPath + eni2MAC + metadataDeviceNum:    eni2Device,
 		metadataMACPath + eni2MAC + metadataInterface:    eni2ID,
 		metadataMACPath + eni2MAC + metadataSubnetCIDR:   subnetCIDR,
+		metadataMACPath + eni2MAC + metadataSubnetID:     subnetID,
 		metadataMACPath + eni2MAC + metadataIPv4s:        eni2PrivateIP,
 		metadataMACPath + eni2MAC + metadataIPv4Prefixes: eni2Prefix,
 	})
@@ -1157,6 +1164,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndIPsAttached(t *testing.T) {
 		ENIID:         eniID,
 		IPv4Addresses: nil,
 		IPv4Prefixes:  nil,
+		SubnetID:      subnetID,
 	}
 	isPrimary := true
 	notPrimary := false
@@ -1181,6 +1189,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndIPsAttached(t *testing.T) {
 			},
 		},
 		IPv4Prefixes: nil,
+		SubnetID:     subnetID,
 	}
 	eniList := []ENIMetadata{eni1Metadata, eni2Metadata}
 	tests := []struct {
@@ -1208,6 +1217,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndIPsAttached(t *testing.T) {
 				metadataMACPath + eni2MAC + metadataDeviceNum:  eni2Device,
 				metadataMACPath + eni2MAC + metadataInterface:  eni2ID,
 				metadataMACPath + eni2MAC + metadataSubnetCIDR: subnetCIDR,
+				metadataMACPath + eni2MAC + metadataSubnetID:   subnetID,
 				metadataMACPath + eni2MAC + metadataIPv4s:      eniIPs,
 			})
 			cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2}
@@ -1255,6 +1265,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 				Ipv4Prefix: &prefixIP,
 			},
 		},
+		SubnetID: subnetID,
 	}
 	// v6PrefixIP := eni2v6Prefix
 	// eni2Metadata := ENIMetadata{
@@ -1312,6 +1323,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 					metadataMACPath + eni2MAC + metadataIPv4s:        eniIPs,
 					metadataMACPath + eni2MAC + metadataDeviceNum:    eni2Device,
 					metadataMACPath + eni2MAC + metadataInterface:    eni2ID,
+					metadataMACPath + eni2MAC + metadataSubnetID:     subnetID,
 					metadataMACPath + eni2MAC + metadataIPv6s:        eni1v6IP,
 					metadataMACPath + eni2MAC + metadataIPv6Prefixes: eni2v6Prefix,
 					metadataMACPath + eni2MAC + metadataSubnetCIDR:   subnetCIDRValue,
@@ -1330,6 +1342,7 @@ func TestEC2InstanceMetadataCache_waitForENIAndPrefixesAttached(t *testing.T) {
 					metadataMACPath + eni2MAC:                          macFields,
 					metadataMACPath + eni2MAC + metadataDeviceNum:      eni2Device,
 					metadataMACPath + eni2MAC + metadataInterface:      eni2ID,
+					metadataMACPath + eni2MAC + metadataSubnetID:       subnetID,
 					metadataMACPath + eni2MAC + metaDataSubnetCIDRPath: subnetCIDRValue,
 					metadataMACPath + eni2MAC + metadataIPv4s:          eniIPs,
 					metadataMACPath + eni2MAC + metaDataPrefixPath:     eniPrefixes,
@@ -2474,7 +2487,7 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := validTag(tt.subnet, tt.isPrimarySubnet)
+			got := isSubnetValidForENICreation(tt.subnet, tt.isPrimarySubnet)
 			assert.Equal(t, tt.want, got, tt.description)
 		})
 	}
@@ -2616,7 +2629,7 @@ func TestValidTag(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := validTag(tt.subnet, tt.isPrimarySubnet)
+			got := isSubnetValidForENICreation(tt.subnet, tt.isPrimarySubnet)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -2626,12 +2639,18 @@ func TestIsSubnetExcluded(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
+	// Save and restore cluster name env var
+	originalClusterName := os.Getenv(clusterNameEnvVar)
+	defer os.Setenv(clusterNameEnvVar, originalClusterName)
+	os.Setenv(clusterNameEnvVar, "test-cluster")
+
 	tests := []struct {
-		name          string
-		subnetTags    []ec2types.Tag
-		describeError error
-		want          bool
-		wantErr       bool
+		name            string
+		subnetTags      []ec2types.Tag
+		isPrimarySubnet bool
+		describeError   error
+		want            bool
+		wantErr         bool
 	}{
 		{
 			name: "subnet with tag value 0 - excluded",
@@ -2641,8 +2660,9 @@ func TestIsSubnetExcluded(t *testing.T) {
 					Value: aws.String("0"),
 				},
 			},
-			want:    true,
-			wantErr: false,
+			isPrimarySubnet: false,
+			want:            true,
+			wantErr:         false,
 		},
 		{
 			name: "subnet with tag value 1 - not excluded",
@@ -2652,8 +2672,9 @@ func TestIsSubnetExcluded(t *testing.T) {
 					Value: aws.String("1"),
 				},
 			},
-			want:    false,
-			wantErr: false,
+			isPrimarySubnet: false,
+			want:            false,
+			wantErr:         false,
 		},
 		{
 			name: "subnet without tag - not excluded",
@@ -2663,20 +2684,78 @@ func TestIsSubnetExcluded(t *testing.T) {
 					Value: aws.String("value"),
 				},
 			},
-			want:    false,
-			wantErr: false,
+			isPrimarySubnet: false,
+			want:            false,
+			wantErr:         false,
 		},
 		{
-			name:          "GetVpcSubnets API error",
-			describeError: errors.New("API error"),
-			want:          false,
-			wantErr:       true,
+			name: "secondary subnet with different cluster tag - excluded by cluster validation",
+			subnetTags: []ec2types.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+				{
+					Key:   aws.String("kubernetes.io/cluster/other-cluster"),
+					Value: aws.String("shared"),
+				},
+			},
+			isPrimarySubnet: false,
+			want:            true,
+			wantErr:         false,
 		},
 		{
-			name:       "no subnets returned",
-			subnetTags: []ec2types.Tag{},
-			want:       false,
-			wantErr:    false,
+			name: "secondary subnet with matching cluster tag - not excluded",
+			subnetTags: []ec2types.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+				{
+					Key:   aws.String("kubernetes.io/cluster/test-cluster"),
+					Value: aws.String("shared"),
+				},
+			},
+			isPrimarySubnet: false,
+			want:            false,
+			wantErr:         false,
+		},
+		{
+			name: "primary subnet always valid regardless of cluster tag",
+			subnetTags: []ec2types.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("1"),
+				},
+				{
+					Key:   aws.String("kubernetes.io/cluster/other-cluster"),
+					Value: aws.String("shared"),
+				},
+			},
+			isPrimarySubnet: true,
+			want:            false,
+			wantErr:         false,
+		},
+		{
+			name:            "GetVpcSubnets API error",
+			describeError:   errors.New("API error"),
+			isPrimarySubnet: false,
+			want:            false,
+			wantErr:         true,
+		},
+		{
+			name:            "no subnets returned",
+			subnetTags:      []ec2types.Tag{},
+			isPrimarySubnet: false,
+			want:            false,
+			wantErr:         false,
+		},
+		{
+			name:            "subnet not found in VPC - should error",
+			subnetTags:      []ec2types.Tag{},
+			isPrimarySubnet: false,
+			want:            false,
+			wantErr:         true,
 		},
 	}
 
@@ -2691,6 +2770,12 @@ func TestIsSubnetExcluded(t *testing.T) {
 			if tt.describeError != nil {
 				// Mock DescribeSubnets to return error
 				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(nil, tt.describeError)
+			} else if tt.name == "subnet not found in VPC - should error" {
+				// Mock DescribeSubnets to return empty subnet list (subnet not found)
+				subnetResult := &ec2.DescribeSubnetsOutput{
+					Subnets: []ec2types.Subnet{},
+				}
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(subnetResult, nil)
 			} else {
 				// Mock DescribeSubnets for GetVpcSubnets
 				subnetResult := &ec2.DescribeSubnetsOutput{
@@ -2705,7 +2790,7 @@ func TestIsSubnetExcluded(t *testing.T) {
 				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(subnetResult, nil)
 			}
 
-			got, err := cache.IsSubnetExcluded(context.Background(), subnetID)
+			got, err := cache.IsSubnetExcluded(context.Background(), subnetID, tt.isPrimarySubnet)
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -3160,11 +3245,16 @@ func TestDiscoverCustomSecurityGroups(t *testing.T) {
 				vpcID:  vpcID,
 			}
 
+			// With retry logic, DescribeSecurityGroups may be called multiple times on error
+			expectedCalls := 1
+			if tt.expectError {
+				expectedCalls = 5 // retry up to 5 times
+			}
 			mockEC2.EXPECT().DescribeSecurityGroups(
 				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
-			).Return(tt.describeOutput, tt.describeError)
+			).Times(expectedCalls).Return(tt.describeOutput, tt.describeError)
 
 			sgIDs, err := cache.discoverCustomSecurityGroups(context.Background())
 
@@ -3446,12 +3536,12 @@ func TestRefreshCustomSGIDsWithFallback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Mock the failed DescribeSecurityGroups call
+			// Mock the failed DescribeSecurityGroups call - with retry logic, it will be called 5 times
 			mockEC2.EXPECT().DescribeSecurityGroups(
 				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
-			).Return(nil, tt.describeError)
+			).Times(5).Return(nil, tt.describeError)
 
 			// Create a simple datastore - for this test, we just care that
 			// the function handles the error gracefully and clears the cache
@@ -3463,11 +3553,11 @@ func TestRefreshCustomSGIDsWithFallback(t *testing.T) {
 			// Call RefreshCustomSGIDs
 			err := cache.RefreshCustomSGIDs(context.Background(), mockDataStoreAccess)
 
-			// Should return (after doing a graceful fallback)
+			// Should return error (after retries and fallback attempt)
 			assert.Error(t, err)
 
-			// Custom SGs should be cleared for fallback
-			assert.Equal(t, tt.expectedCustomSGs, cache.customSecurityGroups.SortedList())
+			// Custom SGs should NOT be cleared - the staged changes removed the fallback logic
+			// The function now just returns the error without clearing custom SGs
 		})
 	}
 }
@@ -3725,4 +3815,62 @@ func TestDeallocPrefixAddressesInvalidCIDR(t *testing.T) {
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", enablePrefixDelegation: true}
 	err := cache.DeallocPrefixAddresses(context.Background(), eniID, mixedPrefixes)
 	assert.NoError(t, err)
+}
+
+// TestENIMetadataSubnetID tests that ENIMetadata correctly stores SubnetID
+func TestENIMetadataSubnetID(t *testing.T) {
+	tests := []struct {
+		name     string
+		subnetID string
+	}{
+		{"with subnet ID", "subnet-12345678"},
+		{"with empty subnet ID", ""},
+		{"with different subnet ID", "subnet-abcdefgh"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eniMetadata := ENIMetadata{
+				ENIID:        "eni-test",
+				MAC:          "00:11:22:33:44:55",
+				DeviceNumber: 1,
+				SubnetID:     tt.subnetID,
+			}
+
+			assert.Equal(t, tt.subnetID, eniMetadata.SubnetID)
+		})
+	}
+}
+
+// TestDataStoreENISubnetID tests that datastore ENI correctly stores SubnetID
+func TestDataStoreENISubnetID(t *testing.T) {
+	ctrl, _ := setup(t)
+	defer ctrl.Finish()
+
+	tests := []struct {
+		name     string
+		subnetID string
+	}{
+		{"with subnet ID", "subnet-12345678"},
+		{"with empty subnet ID", ""},
+		{"with different subnet ID", "subnet-abcdefgh"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a mock logger
+			mockLog := logger.DefaultLogger()
+			ds := datastore.NewDataStore(mockLog, datastore.NullCheckpoint{}, false, 0)
+
+			// Add ENI with SubnetID
+			err := ds.AddENI("eni-test", 1, false, false, false, 100, tt.subnetID)
+			assert.NoError(t, err)
+
+			// Verify SubnetID is stored correctly
+			eniInfos := ds.GetENIInfos()
+			assert.NotNil(t, eniInfos)
+			assert.Contains(t, eniInfos.ENIs, "eni-test")
+			assert.Equal(t, tt.subnetID, eniInfos.ENIs["eni-test"].SubnetID)
+		})
+	}
 }

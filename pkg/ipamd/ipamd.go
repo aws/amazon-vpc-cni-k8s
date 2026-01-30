@@ -497,6 +497,29 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 		c.dataStoreAccess = datastore.InitializeDataStores(skipNetworkCards, dsBackingStorePath(), c.enablePrefixDelegation, log)
 	}
 
+	// check if primary ENI is excluded for ipv6 cluster
+	if c.enableIPv6 && c.useSubnetDiscovery {
+		for _, eni := range enis {
+			log.Debugf("check if eni is excluded: %s", eni.ENIID)
+			ok, err := c.excludedENIBasedOnSubnetTags(ctx, eni.ENIID, eni)
+			if err != nil {
+				return fmt.Errorf("checking to exclude configured subnet, error: %w", err)
+			}
+			if ok {
+				log.Debugf("excluding the eni: %s", eni.ENIID)
+				enis = lo.Reject(enis, func(e awsutils.ENIMetadata, _ int) bool { return e.ENIID == eni.ENIID })
+			}
+		}
+		if len(enis) == 0 {
+			log.Debug("the instance has no valid ENI attached")
+			if err := c.tryAllocateENI(ctx, DefaultNetworkCardIndex); err == nil {
+				log.Infof("Allocated ENI successfully to Network Card %d", DefaultNetworkCardIndex)
+			} else {
+				return fmt.Errorf("Error trying to allocate ENI when primary IPv6 ENI is excluded: %w", err)
+			}
+		}
+	}
+
 	for _, eni := range enis {
 		log.Debugf("Discovered ENI %s, trying to set it up", eni.ENIID)
 		isTrunkENI := eni.ENIID == metadataResult.TrunkENI
@@ -1266,32 +1289,15 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 	}
 
 	// Add the ENI to the datastore
-	err = c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI, routeTableID)
+	err = c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI, routeTableID, eniMetadata.SubnetID)
 	if err != nil && err.Error() != datastore.DuplicatedENIError {
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
 
 	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion
 	if c.useSubnetDiscovery {
-		subnetID, err := c.awsClient.GetENISubnetID(ctx, eni)
-		if err != nil {
-			log.Warnf("setupENI: failed to get subnet ID for ENI %s: %v", eni, err)
-		} else {
-			excluded, err := c.awsClient.IsSubnetExcluded(ctx, subnetID)
-			if err != nil {
-				log.Warnf("setupENI: failed to check subnet exclusion for ENI %s (subnet %s): %v", eni, subnetID, err)
-			} else if excluded {
-				primaryENI := c.awsClient.GetPrimaryENI()
-				eniType := "secondary"
-				if eni == primaryENI {
-					eniType = "primary"
-				}
-				log.Infof("Marking %s ENI %s as excluded from pod IP allocation (in excluded subnet %s)", eniType, eni, subnetID)
-				err := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).SetENIExcludedForPodIPs(eni, true)
-				if err != nil {
-					log.Warnf("Failed to mark %s ENI %s as excluded: %v", eniType, eni, err)
-				}
-			}
+		if _, err := c.excludedENIBasedOnSubnetTags(ctx, eni, eniMetadata); err != nil {
+			return fmt.Errorf("checking to excluded configured subnet, error: %w", err)
 		}
 	}
 
@@ -2859,6 +2865,33 @@ func (c *IPAMContext) SetAPIServerConnectivity(connected bool) {
 		// and we want to keep working with that value
 		log.Info("API server connection lost, continuing with current maxPods value")
 	}
+}
+
+// excludedENIBasedOnSubnetTags excludes ENIs in datastore if subnets have valid tags
+func (c *IPAMContext) excludedENIBasedOnSubnetTags(ctx context.Context, eni string, eniMetadata awsutils.ENIMetadata) (bool, error) {
+	primaryENI := c.awsClient.GetPrimaryENI()
+	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion
+	excluded, err := c.awsClient.IsSubnetExcluded(ctx, eniMetadata.SubnetID, eni == primaryENI)
+	if err != nil {
+		log.Warnf("setupENI: failed to check subnet exclusion for ENI %s (subnet %s): %v", eni, eniMetadata.SubnetID, err)
+		return false, err
+	}
+
+	if excluded {
+		eniType := "secondary"
+		if eni == primaryENI {
+			eniType = "primary"
+		}
+		if !c.enableIPv6 {
+			log.Infof("Marking %s ENI %s as excluded from pod IP allocation (in excluded subnet %s)", eniType, eni, eniMetadata.SubnetID)
+			err := c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).SetENIExcludedForPodIPs(eni, true)
+			if err != nil {
+				log.Warnf("Failed to mark %s ENI %s as excluded: %v", eniType, eni, err)
+			}
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 type Decisions struct {

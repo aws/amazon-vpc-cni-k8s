@@ -132,6 +132,8 @@ type ENI struct {
 	IsExcludedForPodIPs bool
 	// RouteTableID is the route table ID associated with the ENI on the host
 	RouteTableID int
+	// SubnetID is the subnet which the ENI was created
+	SubnetID string
 }
 
 // AddressInfo contains information about an IP, Exported fields will be marshaled for introspection.
@@ -463,7 +465,7 @@ func (ds *DataStore) writeBackingStoreUnsafe() error {
 }
 
 // AddENI add ENI to data store
-func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, isEFA bool, routeTableID int) error {
+func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, isEFA bool, routeTableID int, subnetID string) error {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
@@ -483,6 +485,7 @@ func (ds *DataStore) AddENI(eniID string, deviceNumber int, isPrimary, isTrunk, 
 		AvailableIPv4Cidrs: make(map[string]*CidrInfo),
 		IPv6Cidrs:          make(map[string]*CidrInfo),
 		RouteTableID:       routeTableID,
+		SubnetID:           subnetID,
 	}
 
 	prometheusmetrics.Enis.Set(float64(len(ds.eniPool)))
