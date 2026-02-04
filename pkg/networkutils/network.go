@@ -15,7 +15,6 @@
 package networkutils
 
 import (
-	"bytes"
 	"encoding/csv"
 	"fmt"
 	"math"
@@ -48,9 +47,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
-	"github.com/google/nftables"
-	"github.com/google/nftables/binaryutil"
-	"github.com/google/nftables/expr"
 )
 
 const (
@@ -161,7 +157,8 @@ type NetworkAPIs interface {
 	// SetupENINetwork performs ENI level network configuration. Not needed on the primary ENI
 	SetupENINetwork(eniIP string, eniMAC string, networkCard int, eniSubnetCIDR string, maxENIPerNIC int, isTrunkENI bool, routeTableID int, isRuleConfigured bool) error
 	// UpdateHostIptablesRules updates the nat table iptables rules on the host
-	UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v6Enabled bool) error
+	//UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v6Enabled bool) error
+	UpdateHostSNATRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v6Enabled bool) error
 	CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error
 	UseExternalSNAT() bool
 	GetExcludeSNATCIDRs() []string
@@ -190,6 +187,7 @@ type linuxNetwork struct {
 	ns          nswrapper.NS
 	newIptables func(IPProtocol iptables.Protocol) (iptableswrapper.IPTablesIface, error)
 	mainENIMark uint32
+	connmark    Connmark
 }
 
 type snatType uint32
@@ -202,6 +200,11 @@ const (
 
 // New creates a linuxNetwork object
 func New() NetworkAPIs {
+	connmark, err := NewConnmark(getVethPrefixName(), getConnmark())
+	if err != nil {
+		log.Fatalf("Failed to initialize nftables client: %v", err)
+	}
+
 	return &linuxNetwork{
 		useExternalSNAT:        useExternalSNAT(),
 		ipv6EgressEnabled:      ipV6EgressEnabled(),
@@ -220,6 +223,7 @@ func New() NetworkAPIs {
 			ipt, err := iptables.NewWithProtocol(IPProtocol)
 			return ipt, err
 		},
+		connmark: connmark,
 	}
 }
 
@@ -377,15 +381,14 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 			}
 		}
 	}
-
-	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr, v6Enabled)
+	return n.UpdateHostSNATRules(vpcCIDRs, primaryMAC, primaryAddr, v6Enabled)
 }
 
-// UpdateHostIptablesRules updates the NAT table rules based on the VPC CIDRs configuration
-func (n *linuxNetwork) UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP,
-	v6Enabled bool) error {
-	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr, v6Enabled)
-}
+// // UpdateHostIptablesRules updates the NAT table rules based on the VPC CIDRs configuration
+// func (n *linuxNetwork) UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP,
+// 	v6Enabled bool) error {
+// 	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr)
+// }
 
 func (n *linuxNetwork) CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error {
 	ipProtocol := iptables.ProtocolIPv4
@@ -432,51 +435,50 @@ func (n *linuxNetwork) CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error {
 	return nil
 }
 
-func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP,
+func (n *linuxNetwork) UpdateHostSNATRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP,
 	v6Enabled bool) error {
+	if v6Enabled {
+		// For v6, we don't add any SNAT or Connmark rules as traffic enters and exits from the ENI it came from
+		return nil
+	}
+	err := n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr)
+	if err != nil {
+		log.Error(fmt.Sprintf("failed to iptable rules for snat %s", err.Error()))
+		return err
+	}
+	if err := n.connmark.Setup(append(vpcCIDRs, n.excludeSNATCIDRs...)); err != nil {
+		log.Error(fmt.Sprintf("failed to update nftable rules for snat %s", err.Error()))
+		return err
+	}
+	ipt, err := n.newIptables(iptables.ProtocolIPv4)
+	if err != nil {
+		return errors.Wrap(err, "host network setup: failed to create iptables")
+	}
+	if err := n.cleanupIptablesConnmarkRules(ipt); err != nil {
+		return errors.Wrapf(err, "failed to clean up old  iptable connmark rules")
+	}
+	return err
+}
+
+func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error {
 	primaryIntf, err := findPrimaryInterfaceName(primaryMAC)
 	if err != nil {
 		return errors.Wrapf(err, "failed to SetupHostNetwork")
 	}
 
 	ipProtocol := iptables.ProtocolIPv4
-	if v6Enabled {
-		// For v6, we don't add any SNAT or Connmark rules as traffic enters and exits from the ENI it came from
-		return nil
+	ipt, err := n.newIptables(ipProtocol)
+	if err != nil {
+		return errors.Wrap(err, "host network setup: failed to create iptables")
 	}
 
-	if !v6Enabled {
-		ipt, err := n.newIptables(ipProtocol)
-		if err != nil {
-			return errors.Wrap(err, "host network setup: failed to create iptables")
-		}
-
-		iptablesSNATRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt)
-		if err != nil {
-			return err
-		}
-		if err := n.updateIptablesRules(iptablesSNATRules, ipt); err != nil {
-			return err
-		}
-
-		// iptablesConnmarkRules, err := n.buildIptablesConnmarkRules(vpcCIDRs, ipt)
-		// if err != nil {
-		// 	return err
-		// }
-		// if err := n.updateIptablesRules(iptablesConnmarkRules, ipt); err != nil {
-		// 	return err
-		// }
-
-		if err := n.setupNftablesConnmarkRules(vpcCIDRs); err != nil {
-			fmt.Printf("!!!!! ERROR IN CONNMARK: %s", err)
-			return err
-		}
-		if err := n.cleanupIptablesConnmarkRules(ipt); err != nil {
-			fmt.Printf("!!!!! ERROR IN CLEANUP: %s", err)
-			return err
-		}
+	iptablesSNATRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt)
+	if err != nil {
+		return err
 	}
-
+	if err := n.updateIptablesRules(iptablesSNATRules, ipt); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -512,373 +514,6 @@ func (n *linuxNetwork) cleanupIptablesConnmarkRules(ipt iptableswrapper.IPTables
 
 func isNotExistError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "does not exist")
-}
-
-const (
-	nftTableName     = "aws-cni"
-	nftBaseChainName = "nat-prerouting"
-	nftChainName     = "snat-mark"
-)
-
-func getBaseChain(conn *nftables.Conn, table *nftables.Table) *nftables.Chain {
-	chain, err := conn.ListChain(table, nftBaseChainName)
-	if err != nil {
-		log.Error(err.Error())
-		return nil
-	}
-	return chain
-}
-
-func getDesiredPriority(conn *nftables.Conn) nftables.ChainPriority {
-	return nftables.ChainPriority(-90)
-}
-
-func isBaseChainConfigCorrect(conn *nftables.Conn, chain *nftables.Chain) bool {
-	return chain.Hooknum == nftables.ChainHookPrerouting &&
-		chain.Priority != nil && *chain.Priority == getDesiredPriority(conn) &&
-		chain.Policy != nil && *chain.Policy == nftables.ChainPolicyAccept
-}
-
-func ensureBaseChain(conn *nftables.Conn, table *nftables.Table) *nftables.Chain {
-	existing := getBaseChain(conn, table)
-	if existing != nil && !isBaseChainConfigCorrect(conn, existing) {
-		// delete and re-add chain
-		// need to flush the rules before deleting chain.
-		// https://wiki.nftables.org/wiki-nftables/index.php/Configuring_chains#Deleting_chains
-		conn.FlushChain(existing)
-		conn.DelChain(existing)
-		existing = nil
-	}
-	if existing == nil {
-		priority := getDesiredPriority(conn)
-		chain := conn.AddChain(&nftables.Chain{
-			Name:     nftBaseChainName,
-			Table:    table,
-			Type:     nftables.ChainTypeNAT,
-			Hooknum:  nftables.ChainHookPrerouting,
-			Priority: &priority,
-		})
-		return chain
-	}
-	return existing
-}
-
-func ensureConnmarkChain(conn *nftables.Conn, table *nftables.Table) (*nftables.Chain, error) {
-	existing := getConnmarkChain(conn, table)
-	if existing != nil {
-		return existing, nil
-	}
-	return conn.AddChain(&nftables.Chain{
-		Name:  nftChainName,
-		Table: table,
-	}), nil
-}
-
-func getConnmarkChain(conn *nftables.Conn, table *nftables.Table) *nftables.Chain {
-	chain, err := conn.ListChain(table, nftChainName)
-	if err != nil {
-		log.Error(err.Error())
-		return nil
-	}
-	return chain
-}
-
-// it has two rules, one to match vethprefix and jump to connmark chain, second is to mark packet with conntrack mark
-func ensureBaseChainRules(conn *nftables.Conn, table *nftables.Table, baseChain, targetChain *nftables.Chain, vethPrefix string, mark uint32) error {
-	rules, err := conn.GetRules(table, baseChain)
-	if err != nil {
-		log.Error(err.Error())
-		return err
-	}
-	hasJumpRule := false
-	hasRestoreRule := false
-
-	for _, rule := range rules {
-		if isJumpRule(rule, targetChain.Name, vethPrefix) {
-			hasJumpRule = true
-			continue
-		}
-		if isRestoreRule(rule, mark) {
-			hasRestoreRule = true
-		}
-	}
-	if !hasJumpRule {
-		addJumpRule(conn, table, baseChain, targetChain, vethPrefix)
-	}
-	if !hasRestoreRule {
-		addRestoreRule(conn, table, baseChain, mark)
-	}
-	return nil
-}
-func addJumpRule(conn *nftables.Conn, table *nftables.Table, baseChain, targetChain *nftables.Chain, vethPrefix string) {
-	conn.AddRule(&nftables.Rule{
-		Table: table,
-		Chain: baseChain,
-		Exprs: []expr.Any{
-			&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
-			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte(vethPrefix + "*\x00")},
-			&expr.Counter{},
-			&expr.Verdict{
-				Kind:  expr.VerdictJump,
-				Chain: targetChain.Name,
-			},
-		},
-	})
-}
-
-func addRestoreRule(conn *nftables.Conn, table *nftables.Table, chain *nftables.Chain, mark uint32) {
-	markBytes := binaryutil.NativeEndian.PutUint32(mark)
-	conn.AddRule(&nftables.Rule{
-		Table: table,
-		Chain: chain,
-		Exprs: []expr.Any{
-			&expr.Counter{},
-			&expr.Ct{Key: expr.CtKeyMARK, Register: 1},                                                          // load ct mark
-			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: markBytes, Xor: []byte{0, 0, 0, 0}}, // AND with mask
-			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},                                // store to fwmark
-		},
-	})
-}
-
-func isJumpRule(rule *nftables.Rule, targetChain, vethPrefix string) bool {
-	// check if rule is a jump rule to connmark chain
-	// return true if it is
-	// return false if it is not
-	hasIFaceMatch := false
-	hasJump := false
-	hasCounter := false
-
-	for _, e := range rule.Exprs {
-		if cmp, ok := e.(*expr.Cmp); ok && bytes.Equal(cmp.Data, []byte(vethPrefix+"*\x00")) {
-			hasIFaceMatch = true
-		}
-		if _, ok := e.(*expr.Counter); ok {
-			hasCounter = true
-		}
-		if v, ok := e.(*expr.Verdict); ok && v.Kind == expr.VerdictJump && v.Chain == targetChain {
-			hasJump = true
-		}
-	}
-	return hasIFaceMatch && hasJump && hasCounter
-}
-
-func isRestoreRule(rule *nftables.Rule, mark uint32) bool {
-	// check if rule is a restore rule
-	// return true if it is
-	// return false if it is not
-	hasCounter := false
-	hasCtLoad := false
-	hasBitwise := false
-	hasMetaStore := false
-	markBytes := []byte{byte(mark), byte(mark >> 8), byte(mark >> 16), byte(mark >> 24)}
-	for _, e := range rule.Exprs {
-		if _, ok := e.(*expr.Counter); ok {
-			hasCounter = true
-		}
-		if ct, ok := e.(*expr.Ct); ok && ct.Key == expr.CtKeyMARK && !ct.SourceRegister {
-			hasCtLoad = true
-		}
-		if bw, ok := e.(*expr.Bitwise); ok && bytes.Equal(bw.Mask, markBytes) {
-			hasBitwise = true
-		}
-		if m, ok := e.(*expr.Meta); ok && m.Key == expr.MetaKeyMARK && m.SourceRegister {
-			hasMetaStore = true
-		}
-	}
-	return hasCounter && hasCtLoad && hasBitwise && hasMetaStore
-}
-
-func ensureConnmarkChainRules(conn *nftables.Conn, table *nftables.Table, chain *nftables.Chain, vpcCIDRs, excludeCIDRs []string, mark uint32) error {
-	rules, err := conn.GetRules(table, chain)
-	if err != nil {
-		return err
-	}
-
-	currentCIDRs := make(map[string]*nftables.Rule)
-	var setMarkRule *nftables.Rule
-	var unknownRules []*nftables.Rule
-
-	for _, r := range rules {
-		if cidr := extractCIDRFromRule(r); cidr != "" {
-			currentCIDRs[cidr] = r
-		} else if isSetMarkRule(r, mark) {
-			setMarkRule = r
-		} else {
-			unknownRules = append(unknownRules, r)
-		}
-	}
-
-	// Delete unknown rules
-	for _, r := range unknownRules {
-		conn.DelRule(r)
-	}
-
-	desiredCIDRs := make(map[string]bool)
-	for _, cidr := range append(vpcCIDRs, excludeCIDRs...) {
-		desiredCIDRs[cidr] = true
-	}
-
-	// Delete stale CIDRs
-	for cidr, rule := range currentCIDRs {
-		if !desiredCIDRs[cidr] {
-			conn.DelRule(rule)
-		}
-	}
-
-	// Insert missing CIDRs (prepends - order doesn't matter for CIDR rules)
-	for cidr := range desiredCIDRs {
-		if _, exists := currentCIDRs[cidr]; !exists {
-			insertCIDRReturnRule(conn, table, chain, cidr) // InsertRule
-		}
-	}
-
-	// Ensure set-mark rule exists (AddRule appends to end)
-	if setMarkRule == nil {
-		addSetMarkRule(conn, table, chain, mark)
-	}
-
-	return nil
-}
-func extractCIDRFromRule(rule *nftables.Rule) string {
-	var ip net.IP
-	var mask net.IPMask
-	hasPayload := false
-	hasReturn := false
-
-	for _, e := range rule.Exprs {
-		if _, ok := e.(*expr.Payload); ok {
-			hasPayload = true
-		}
-		if v, ok := e.(*expr.Verdict); ok && v.Kind == expr.VerdictReturn {
-			hasReturn = true
-		}
-		if bw, ok := e.(*expr.Bitwise); ok && len(bw.Mask) == 4 {
-			mask = net.IPMask(bw.Mask)
-		}
-		if cmp, ok := e.(*expr.Cmp); ok && cmp.Op == expr.CmpOpEq && len(cmp.Data) == 4 {
-			ip = net.IP(cmp.Data)
-		}
-	}
-
-	if ip == nil || mask == nil || !hasPayload || !hasReturn {
-		return ""
-	}
-	ones, bits := mask.Size()
-	if bits != 32 {
-		return ""
-	}
-	return fmt.Sprintf("%s/%d", ip.String(), ones)
-}
-
-func isSetMarkRule(rule *nftables.Rule, mark uint32) bool {
-	hasCtLoad := false
-	hasBitwise := false
-	hasCtStore := false
-	markBytes := binaryutil.NativeEndian.PutUint32(mark)
-
-	for _, e := range rule.Exprs {
-		if ct, ok := e.(*expr.Ct); ok && ct.Key == expr.CtKeyMARK {
-			if ct.SourceRegister {
-				hasCtStore = true
-			} else {
-				hasCtLoad = true
-			}
-		}
-		// ct mark | 0x80 uses Mask=0xFFFFFFFF, Xor=mark
-		if bw, ok := e.(*expr.Bitwise); ok {
-			if bytes.Equal(bw.Xor, markBytes) && bytes.Equal(bw.Mask, []byte{0xff, 0xff, 0xff, 0xff}) {
-				hasBitwise = true
-			}
-		}
-	}
-	return hasCtLoad && hasBitwise && hasCtStore
-}
-
-func addSetMarkRule(conn *nftables.Conn, table *nftables.Table, chain *nftables.Chain, mark uint32) {
-	markBytes := binaryutil.NativeEndian.PutUint32(mark)
-	conn.AddRule(&nftables.Rule{
-		Table: table,
-		Chain: chain,
-		Exprs: []expr.Any{
-			&expr.Counter{},
-			&expr.Ct{Key: expr.CtKeyMARK, Register: 1},
-			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: []byte{0xff, 0xff, 0xff, 0xff}, Xor: markBytes},
-			&expr.Ct{Key: expr.CtKeyMARK, Register: 1, SourceRegister: true},
-		},
-	})
-}
-
-func insertCIDRReturnRule(conn *nftables.Conn, table *nftables.Table, chain *nftables.Chain, cidrStr string) {
-	_, cidr, err := net.ParseCIDR(cidrStr)
-	if err != nil {
-		return
-	}
-	conn.InsertRule(&nftables.Rule{
-		Table: table,
-		Chain: chain,
-		Exprs: []expr.Any{
-			&expr.Counter{},
-			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
-			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: cidr.Mask, Xor: []byte{0, 0, 0, 0}},
-			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: cidr.IP.To4()},
-			&expr.Verdict{Kind: expr.VerdictReturn},
-		},
-	})
-}
-
-func (n *linuxNetwork) setupNftablesConnmarkRules(vpcCIDRs []string) error {
-	// 1. check for current state of nftable
-	// 2.
-	if n.useExternalSNAT {
-		return n.cleanupNftablesConnmarkRules()
-	}
-
-	conn, err := nftables.New()
-	if err != nil {
-		return errors.Wrap(err, "failed to create nftables connection")
-	}
-
-	// idempotent
-	table := conn.AddTable(&nftables.Table{
-		Family: nftables.TableFamilyIPv4,
-		Name:   nftTableName,
-	})
-
-	baseChain := ensureBaseChain(conn, table)
-	connmarkChain, _ := ensureConnmarkChain(conn, table)
-	if err := conn.Flush(); err != nil {
-		return errors.Wrap(err, "failed to flush nftable after base chain reconciliation")
-	}
-
-	err = ensureBaseChainRules(conn, table, baseChain, connmarkChain, n.vethPrefix, n.mainENIMark)
-	if err != nil {
-		log.Error(err.Error())
-	}
-	err = ensureConnmarkChainRules(conn, table, connmarkChain, vpcCIDRs, n.excludeSNATCIDRs, n.mainENIMark)
-	if err != nil {
-		log.Error(err.Error())
-	}
-
-	if err := conn.Flush(); err != nil {
-		return errors.Wrap(err, "failed to flush nftable after chain rules reconciliation")
-	}
-
-	return nil
-}
-
-func (n *linuxNetwork) cleanupNftablesConnmarkRules() error {
-	conn, err := nftables.New()
-	if err != nil {
-		return errors.Wrap(err, "failed to create nftables connection")
-	}
-
-	conn.DelTable(&nftables.Table{
-		Family: nftables.TableFamilyIPv4,
-		Name:   nftTableName,
-	})
-
-	_ = conn.Flush()
-	return nil
 }
 
 func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *net.IP, primaryIntf string, ipt iptableswrapper.IPTablesIface) ([]iptablesRule, error) {
