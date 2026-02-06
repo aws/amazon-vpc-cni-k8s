@@ -51,8 +51,8 @@ func TestGenerateJSONPlusBandwidthAndTuning(t *testing.T) {
 
 // Validate that generateJSON runs without error when ENABLE_TUNING_PLUGIN is set
 func TestGenerateJSONWithEnableTuningPlugin(t *testing.T) {
-	_ = os.Setenv(envEnTuningPlugin, "true")
-	defer os.Unsetenv(envEnTuningPlugin)
+	_ = os.Setenv(envEnableTuningPlugin, "true")
+	defer os.Unsetenv(envEnableTuningPlugin)
 	err := generateJSON(awsConflist, devNull, getPrimaryIPMock)
 	assert.NoError(t, err)
 }

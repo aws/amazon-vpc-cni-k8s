@@ -84,7 +84,7 @@ const (
 	defaultIPCooldownPeriod      = 30
 	defaultDisablePodV6          = false
 	defaultEnableMultiNICSupport = false
-	defaultEnTuningPlugin        = false
+	defaultEnableTuningPlugin    = false
 
 	envHostCniBinPath        = "HOST_CNI_BIN_PATH"
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
@@ -109,7 +109,7 @@ const (
 	envIPCooldownPeriod      = "IP_COOLDOWN_PERIOD"
 	envDisablePodV6          = "DISABLE_POD_V6"
 	envEnableMultiNICSupport = "ENABLE_MULTI_NIC"
-	envEnTuningPlugin        = "ENABLE_TUNING_PLUGIN"
+	envEnableTuningPlugin    = "ENABLE_TUNING_PLUGIN"
 	envTuningSysctls         = "TUNING_SYSCTLS"
 )
 
@@ -291,11 +291,11 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 	// Chain any requested CNI plugins
 	enBandwidthPlugin := utils.GetBoolAsStringEnvVar(envEnBandwidthPlugin, defaultEnBandwidthPlugin)
 	disablePodV6 := utils.GetBoolAsStringEnvVar(envDisablePodV6, defaultDisablePodV6)
-	enTuningPlugin := utils.GetBoolAsStringEnvVar(envEnTuningPlugin, defaultEnTuningPlugin)
+	enableTuningPlugin := utils.GetBoolAsStringEnvVar(envEnableTuningPlugin, defaultEnableTuningPlugin)
 	tuningSysctls := utils.GetEnv(envTuningSysctls, "")
 
 	// Determine if we need to chain the tuning plugin
-	chainTuningPlugin := disablePodV6 || enTuningPlugin || tuningSysctls != ""
+	chainTuningPlugin := disablePodV6 || enableTuningPlugin || tuningSysctls != ""
 
 	if enBandwidthPlugin || chainTuningPlugin {
 		// Unmarshall current conflist into data
