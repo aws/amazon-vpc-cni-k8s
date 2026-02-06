@@ -596,6 +596,29 @@ Setting `ENABLE_BANDWIDTH_PLUGIN` to `true` will update `10-aws.conflist` to inc
 
 NOTE: Kubernetes Network Policy is supported in Amazon VPC CNI starting with version v1.14.0. Note that bandwidth plugin is not compatible with Amazon VPC CNI based Network policy. Network Policy agent uses TC (traffic classifier) system to enforce configured network policies for the pods. The policy enforcement will fail if bandwidth plugin is enabled due to conflict between TC configuration of bandwidth plugin and Network policy agent. We're exploring options to support bandwidth plugin along with Network policy feature and the issue is tracked [here](https://github.com/aws/aws-network-policy-agent/issues/68)
 
+#### `ENABLE_TUNING_PLUGIN`
+
+Type: Boolean as a String
+
+Default: `false`
+
+Setting `ENABLE_TUNING_PLUGIN` to `true` will update `10-aws.conflist` to include the upstream [tuning plugin](https://www.cni.dev/plugins/current/meta/tuning/) as a chained plugin. The tuning plugin allows you to configure sysctl settings in the pod network namespace. Use this in combination with `TUNING_SYSCTLS` to specify which sysctls to set.
+
+#### `TUNING_SYSCTLS`
+
+Type: JSON-encoded string
+
+Default: `""`
+
+A JSON-encoded map of sysctl settings to apply in the pod network namespace. When this variable is set (non-empty), the tuning plugin will be automatically chained regardless of the `ENABLE_TUNING_PLUGIN` setting.
+
+Example:
+```
+TUNING_SYSCTLS='{"net.core.somaxconn":"1024","net.ipv4.tcp_max_syn_backlog":"2048"}'
+```
+
+Note: The `DISABLE_POD_V6` environment variable also enables the tuning plugin with IPv6 disable sysctls. If both `DISABLE_POD_V6` and `TUNING_SYSCTLS` are set, the sysctls will be merged, with `TUNING_SYSCTLS` values taking precedence for any overlapping keys.
+
 #### `ANNOTATE_POD_IP` (v1.9.3+)
 
 Type: Boolean as a String

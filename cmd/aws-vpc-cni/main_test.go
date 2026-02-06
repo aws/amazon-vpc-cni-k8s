@@ -49,6 +49,100 @@ func TestGenerateJSONPlusBandwidthAndTuning(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// Validate that generateJSON runs without error when ENABLE_TUNING_PLUGIN is set
+func TestGenerateJSONWithEnableTuningPlugin(t *testing.T) {
+	_ = os.Setenv(envEnTuningPlugin, "true")
+	defer os.Unsetenv(envEnTuningPlugin)
+	err := generateJSON(awsConflist, devNull, getPrimaryIPMock)
+	assert.NoError(t, err)
+}
+
+// Validate that generateJSON runs without error when TUNING_SYSCTLS is set
+func TestGenerateJSONWithTuningSysctls(t *testing.T) {
+	_ = os.Setenv(envTuningSysctls, `{"net.core.somaxconn":"1024"}`)
+	defer os.Unsetenv(envTuningSysctls)
+	err := generateJSON(awsConflist, devNull, getPrimaryIPMock)
+	assert.NoError(t, err)
+}
+
+// Validate that custom sysctls are applied to the conflist
+func TestGenerateJSONWithCustomSysctls(t *testing.T) {
+	_ = os.Setenv(envTuningSysctls, `{"net.core.somaxconn":"1024","net.ipv4.tcp_max_syn_backlog":"2048"}`)
+	defer os.Unsetenv(envTuningSysctls)
+
+	// Use a temporary file for the parsed output.
+	tmpfile, err := os.CreateTemp("", "temp-aws-vpc-cni.conflist")
+	assert.NoError(t, err)
+	defer os.Remove(tmpfile.Name())
+
+	err = generateJSON(awsConflist, tmpfile.Name(), getPrimaryIPMock)
+	assert.NoError(t, err)
+
+	// Read the json file and verify the tuning plugin is present with custom sysctls
+	var jsonData map[string]interface{}
+	jsonFile, err := os.ReadFile(tmpfile.Name())
+	assert.NoError(t, err)
+
+	err = json.Unmarshal(jsonFile, &jsonData)
+	assert.NoError(t, err)
+
+	plugins, _ := jsonData["plugins"].([]interface{})
+	// Find the tuning plugin (should be last)
+	lastPlugin := plugins[len(plugins)-1].(map[string]interface{})
+	assert.Equal(t, "tuning", lastPlugin["type"])
+
+	sysctls := lastPlugin["sysctl"].(map[string]interface{})
+	assert.Equal(t, "1024", sysctls["net.core.somaxconn"])
+	assert.Equal(t, "2048", sysctls["net.ipv4.tcp_max_syn_backlog"])
+}
+
+// Validate that DISABLE_POD_V6 and custom sysctls can be combined
+func TestGenerateJSONWithDisablePodV6AndCustomSysctls(t *testing.T) {
+	_ = os.Setenv(envDisablePodV6, "true")
+	_ = os.Setenv(envTuningSysctls, `{"net.core.somaxconn":"1024"}`)
+	defer func() {
+		os.Unsetenv(envDisablePodV6)
+		os.Unsetenv(envTuningSysctls)
+	}()
+
+	// Use a temporary file for the parsed output.
+	tmpfile, err := os.CreateTemp("", "temp-aws-vpc-cni.conflist")
+	assert.NoError(t, err)
+	defer os.Remove(tmpfile.Name())
+
+	err = generateJSON(awsConflist, tmpfile.Name(), getPrimaryIPMock)
+	assert.NoError(t, err)
+
+	// Read the json file and verify the tuning plugin has both IPv6 disable and custom sysctls
+	var jsonData map[string]interface{}
+	jsonFile, err := os.ReadFile(tmpfile.Name())
+	assert.NoError(t, err)
+
+	err = json.Unmarshal(jsonFile, &jsonData)
+	assert.NoError(t, err)
+
+	plugins, _ := jsonData["plugins"].([]interface{})
+	// Find the tuning plugin (should be last)
+	lastPlugin := plugins[len(plugins)-1].(map[string]interface{})
+	assert.Equal(t, "tuning", lastPlugin["type"])
+
+	sysctls := lastPlugin["sysctl"].(map[string]interface{})
+	// Custom sysctl
+	assert.Equal(t, "1024", sysctls["net.core.somaxconn"])
+	// IPv6 disable sysctls
+	assert.Equal(t, "1", sysctls["net.ipv6.conf.all.disable_ipv6"])
+	assert.Equal(t, "1", sysctls["net.ipv6.conf.default.disable_ipv6"])
+	assert.Equal(t, "1", sysctls["net.ipv6.conf.lo.disable_ipv6"])
+}
+
+// Validate that invalid JSON in TUNING_SYSCTLS returns an error
+func TestGenerateJSONWithInvalidTuningSysctls(t *testing.T) {
+	_ = os.Setenv(envTuningSysctls, `{invalid json}`)
+	defer os.Unsetenv(envTuningSysctls)
+	err := generateJSON(awsConflist, devNull, getPrimaryIPMock)
+	assert.Error(t, err)
+}
+
 // Validate setting environment POD_MTU/AWS_VPC_ENI_MTU, takes effect for egress-cni plugin
 func TestEgressCNIPluginIPv4EgressTakesMTUEnvVar(t *testing.T) {
 	_ = os.Setenv(envEnIPv4Egress, "true")
