@@ -76,7 +76,7 @@ The following table lists the configurable parameters for this chart and their d
 | `nodeAgent.image.region`| ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `nodeAgent.image.endpoint`   | ECR repository endpoint to use.                    | `ecr`                               |
 | `nodeAgent.image.account`    | ECR repository account number                      | `602401143452`                      |
-| `nodeAgent.image.pullPolicy` | Container pull policy                              | `IfNotPresent`                            |
+| `nodeAgent.image.pullPolicy` | Container pull policy                              | `IfNotPresent`                      |
 | `nodeAgent.image.overrideRepository` | Repository override for the image (does not change the tag) | `nil`              |
 | `nodeAgent.image.override`   | A custom docker image to use                       | `nil`                               |
 | `nodeAgent.securityContext`  | Node Agent container Security context              | `capabilities: add: - "NET_ADMIN" privileged: true` |
