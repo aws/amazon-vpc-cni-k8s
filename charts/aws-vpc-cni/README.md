@@ -53,7 +53,7 @@ The following table lists the configurable parameters for this chart and their d
 | `image.region`          | ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `image.endpoint`        | ECR repository endpoint to use.                         | `ecr`                               |
 | `image.account`         | ECR repository account number                           | `602401143452`                      |
-| `image.pullPolicy`      | Container pull policy                                   | `IfNotPresent`                            |
+| `image.pullPolicy`      | Container pull policy                                   | `IfNotPresent`                      |
 | `image.overrideRepository` | Repository override for the image (does not change the tag) | `nil`                        |
 | `image.override`        | A custom docker image to use                            | `nil`                               |
 | `imagePullSecrets`      | Docker registry pull secret                             | `[]`                                |
@@ -62,7 +62,7 @@ The following table lists the configurable parameters for this chart and their d
 | `init.image.region`     | ECR repository region to use. Should match your cluster | `us-west-2`                         |
 | `init.image.endpoint`   | ECR repository endpoint to use.                         | `ecr`                               |
 | `init.image.account`    | ECR repository account number                           | `602401143452`                      |
-| `init.image.pullPolicy` | Container pull policy                                   | `IfNotPresent`                            |
+| `init.image.pullPolicy` | Container pull policy                                   | `IfNotPresent`                      |
 | `init.image.overrideRepository` | Repository override for the image (does not change the tag) | `nil`                   |
 | `init.image.override`   | A custom docker image to use                            | `nil`                               |
 | `init.env`              | List of init container environment variables. See [here](https://github.com/aws/amazon-vpc-cni-k8s#cni-configuration-variables) for options | (see `values.yaml`) |
