@@ -2217,3 +2217,122 @@ func TestDeallocateEmptyCIDR(t *testing.T) {
 		assert.True(t, exists, "ENI should still exist")
 	})
 }
+
+func TestDataStore_IsENIExcludedForPodIPs(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	eniID := "eni-test"
+	err := ds.AddENI(eniID, 1, false, false, false, 0, "")
+	assert.NoError(t, err)
+	assert.False(t, ds.IsENIExcludedForPodIPs(eniID))
+	err = ds.SetENIExcludedForPodIPs(eniID, true)
+	assert.NoError(t, err)
+	assert.True(t, ds.IsENIExcludedForPodIPs(eniID))
+	assert.False(t, ds.IsENIExcludedForPodIPs("non-existent"))
+}
+
+func TestDataStore_GetTrunkENI(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	assert.Equal(t, "", ds.GetTrunkENI())
+	err := ds.AddENI("eni-regular", 1, false, false, false, 0, "")
+	assert.NoError(t, err)
+	assert.Equal(t, "", ds.GetTrunkENI())
+	err = ds.AddENI("eni-trunk", 2, false, true, false, 0, "")
+	assert.NoError(t, err)
+	assert.Equal(t, "eni-trunk", ds.GetTrunkENI())
+}
+
+func TestDataStore_GetEFAENIs(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	efas := ds.GetEFAENIs()
+	assert.Empty(t, efas)
+	err := ds.AddENI("eni-regular", 1, false, false, false, 0, "")
+	assert.NoError(t, err)
+	efas = ds.GetEFAENIs()
+	assert.Empty(t, efas)
+	err = ds.AddENI("eni-efa1", 2, false, false, true, 0, "")
+	assert.NoError(t, err)
+	err = ds.AddENI("eni-efa2", 3, false, false, true, 0, "")
+	assert.NoError(t, err)
+	efas = ds.GetEFAENIs()
+	assert.Len(t, efas, 2)
+	assert.True(t, efas["eni-efa1"])
+	assert.True(t, efas["eni-efa2"])
+}
+
+func TestDivCeil(t *testing.T) {
+	assert.Equal(t, 1, DivCeil(1, 1))
+	assert.Equal(t, 2, DivCeil(3, 2))
+	assert.Equal(t, 3, DivCeil(5, 2))
+	assert.Equal(t, 5, DivCeil(10, 2))
+	assert.Equal(t, 1, DivCeil(1, 10))
+}
+
+func TestGetPrefixDelegationDefaults(t *testing.T) {
+	numPrefixes, numIPs, prefixLen := GetPrefixDelegationDefaults()
+	assert.Equal(t, 1, numPrefixes)
+	assert.Equal(t, 16, numIPs)
+	assert.Equal(t, 28, prefixLen)
+}
+
+func TestDataStore_CheckFreeableENIexists(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	assert.False(t, ds.CheckFreeableENIexists())
+	err := ds.AddENI("eni-primary", 0, true, false, false, 0, "")
+	assert.NoError(t, err)
+	assert.False(t, ds.CheckFreeableENIexists())
+	err = ds.AddENI("eni-secondary", 1, false, false, false, 0, "")
+	assert.NoError(t, err)
+	assert.True(t, ds.CheckFreeableENIexists())
+	err = ds.AddENI("eni-trunk", 2, false, true, false, 0, "")
+	assert.NoError(t, err)
+	assert.True(t, ds.CheckFreeableENIexists())
+	err = ds.AddENI("eni-efa", 3, false, false, true, 0, "")
+	assert.NoError(t, err)
+	assert.True(t, ds.CheckFreeableENIexists())
+}
+
+func TestDataStoreStats_String(t *testing.T) {
+	stats := &DataStoreStats{TotalIPs: 10, AssignedIPs: 5}
+	str := stats.String()
+	assert.Contains(t, str, "Total")
+}
+
+func TestDataStore_FreeableIPs(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, false, defaultNetworkCard)
+	eniID := "eni-test"
+	err := ds.AddENI(eniID, 1, false, false, false, 0, "")
+	assert.NoError(t, err)
+	_, ipnet1, _ := net.ParseCIDR("10.0.1.1/32")
+	err = ds.AddIPv4CidrToStore(eniID, *ipnet1, false)
+	assert.NoError(t, err)
+	_, ipnet2, _ := net.ParseCIDR("10.0.1.2/32")
+	err = ds.AddIPv4CidrToStore(eniID, *ipnet2, false)
+	assert.NoError(t, err)
+	freeableIPs := ds.FreeableIPs(eniID)
+	assert.Len(t, freeableIPs, 2)
+}
+
+func TestDataStore_GetFreePrefixes(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+	eniID := "eni-test"
+	err := ds.AddENI(eniID, 1, false, false, false, 0, "")
+	assert.NoError(t, err)
+	_, ipnet, _ := net.ParseCIDR("10.0.1.0/28")
+	err = ds.AddIPv4CidrToStore(eniID, *ipnet, true)
+	assert.NoError(t, err)
+	freePrefixes := ds.GetFreePrefixes()
+	assert.Equal(t, 1, freePrefixes)
+}
+
+func TestDataStore_FindFreeableCidrs(t *testing.T) {
+	ds := NewDataStore(Testlog, NullCheckpoint{}, true, defaultNetworkCard)
+	eniID := "eni-test"
+	err := ds.AddENI(eniID, 1, false, false, false, 0, "")
+	assert.NoError(t, err)
+	_, ipnet, _ := net.ParseCIDR("10.0.1.0/28")
+	err = ds.AddIPv4CidrToStore(eniID, *ipnet, true)
+	assert.NoError(t, err)
+	cidrs := ds.FindFreeableCidrs(eniID)
+	assert.Len(t, cidrs, 1)
+}
+

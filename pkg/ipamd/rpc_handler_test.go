@@ -557,3 +557,22 @@ func TestServer_AddNetwork(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_GetNetworkPolicyConfigs(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		networkPolicyMode:      "standard",
+		enableMultiNICSupport:  true,
+	}
+
+	rpcServer := server{
+		ipamContext: mockContext,
+	}
+
+	resp, err := rpcServer.GetNetworkPolicyConfigs(context.TODO(), nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "standard", resp.NetworkPolicyMode)
+	assert.True(t, resp.MultiNICEnabled)
+}

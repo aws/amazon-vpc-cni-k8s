@@ -3874,3 +3874,30 @@ func TestDataStoreENISubnetID(t *testing.T) {
 		})
 	}
 }
+
+func TestIsPrimaryENI(t *testing.T) {
+	cache := &EC2InstanceMetadataCache{primaryENI: "eni-primary"}
+	
+	assert.True(t, cache.IsPrimaryENI("eni-primary"))
+	assert.False(t, cache.IsPrimaryENI("eni-secondary"))
+	assert.False(t, cache.IsPrimaryENI(""))
+}
+
+func TestIsEfaOnlyENI(t *testing.T) {
+	cache := &EC2InstanceMetadataCache{
+		efaOnlyENIsByNetworkCard: []string{"", "eni-efa"},
+	}
+	
+	assert.True(t, cache.IsEfaOnlyENI(1, "eni-efa"))
+	assert.False(t, cache.IsEfaOnlyENI(0, "eni-efa"))
+	assert.False(t, cache.IsEfaOnlyENI(1, "eni-other"))
+}
+
+func TestIsUnmanagedENI(t *testing.T) {
+	cache := &EC2InstanceMetadataCache{unmanagedENIs: StringSet{}}
+	cache.unmanagedENIs.Set([]string{"eni-unmanaged"})
+	
+	assert.True(t, cache.IsUnmanagedENI("eni-unmanaged"))
+	assert.False(t, cache.IsUnmanagedENI("eni-managed"))
+	assert.False(t, cache.IsUnmanagedENI(""))
+}

@@ -3627,3 +3627,396 @@ func TestNodeInit_IPv6_PrimaryENIExcluded(t *testing.T) {
 	err := mockContext.nodeInit(context.TODO())
 	assert.NoError(t, err)
 }
+
+func TestDsBackingStorePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     string
+	}{
+		{"default path when env not set", "", defaultBackingStorePath},
+		{"custom path from env", "/custom/path/ipam.json", "/custom/path/ipam.json"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				os.Setenv(envBackingStorePath, tt.envValue)
+				defer os.Unsetenv(envBackingStorePath)
+			} else {
+				os.Unsetenv(envBackingStorePath)
+			}
+			assert.Equal(t, tt.want, dsBackingStorePath())
+		})
+	}
+}
+
+func TestGetMinimumIPTarget(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     int
+	}{
+		{"not set returns default", "", noMinimumIPTarget},
+		{"valid positive value", "10", 10},
+		{"zero value", "0", 0},
+		{"negative value returns default", "-5", noMinimumIPTarget},
+		{"invalid string returns default", "invalid", noMinimumIPTarget},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				os.Setenv(envMinimumIPTarget, tt.envValue)
+				defer os.Unsetenv(envMinimumIPTarget)
+			} else {
+				os.Unsetenv(envMinimumIPTarget)
+			}
+			assert.Equal(t, tt.want, getMinimumIPTarget())
+		})
+	}
+}
+
+func TestDisableLeakedENICleanup(t *testing.T) {
+	tests := []struct {
+		name         string
+		ipv6Enabled  string
+		disableClean string
+		want         bool
+	}{
+		{"default returns false", "false", "false", false},
+		{"explicitly disabled", "false", "true", true},
+		{"ipv6 enabled disables cleanup", "true", "false", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Setenv(envEnableIPv6, tt.ipv6Enabled)
+			os.Setenv(envDisableLeakedENICleanup, tt.disableClean)
+			defer os.Unsetenv(envEnableIPv6)
+			defer os.Unsetenv(envDisableLeakedENICleanup)
+			assert.Equal(t, tt.want, disableLeakedENICleanup())
+		})
+	}
+}
+
+func TestEnableMultiNICSupport(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     bool
+	}{
+		{"default false", "", false},
+		{"enabled", "true", true},
+		{"disabled", "false", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				os.Setenv(envEnableMultiNICSupport, tt.envValue)
+				defer os.Unsetenv(envEnableMultiNICSupport)
+			} else {
+				os.Unsetenv(envEnableMultiNICSupport)
+			}
+			assert.Equal(t, tt.want, enableMultiNICSupport())
+		})
+	}
+}
+
+func TestUsePrefixDelegation(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     bool
+	}{
+		{"default false", "", false},
+		{"enabled", "true", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				os.Setenv(envEnableIpv4PrefixDelegation, tt.envValue)
+				defer os.Unsetenv(envEnableIpv4PrefixDelegation)
+			} else {
+				os.Unsetenv(envEnableIpv4PrefixDelegation)
+			}
+			assert.Equal(t, tt.want, usePrefixDelegation())
+		})
+	}
+}
+
+func TestIsIPv4Enabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     bool
+	}{
+		{"default false", "", false},
+		{"enabled", "true", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				os.Setenv(envEnableIPv4, tt.envValue)
+				defer os.Unsetenv(envEnableIPv4)
+			} else {
+				os.Unsetenv(envEnableIPv4)
+			}
+			assert.Equal(t, tt.want, isIPv4Enabled())
+		})
+	}
+}
+
+func TestIsIPv6Enabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     bool
+	}{
+		{"default false", "", false},
+		{"enabled", "true", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				os.Setenv(envEnableIPv6, tt.envValue)
+				defer os.Unsetenv(envEnableIPv6)
+			} else {
+				os.Unsetenv(envEnableIPv6)
+			}
+			assert.Equal(t, tt.want, isIPv6Enabled())
+		})
+	}
+}
+
+func TestEnableManageUntaggedMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     bool
+	}{
+		{"default true", "", true},
+		{"disabled", "false", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				os.Setenv(envManageUntaggedENI, tt.envValue)
+				defer os.Unsetenv(envManageUntaggedENI)
+			} else {
+				os.Unsetenv(envManageUntaggedENI)
+			}
+			assert.Equal(t, tt.want, enableManageUntaggedMode())
+		})
+	}
+}
+
+func TestEnablePodIPAnnotation(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     bool
+	}{
+		{"default false", "", false},
+		{"enabled", "true", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				os.Setenv(envAnnotatePodIP, tt.envValue)
+				defer os.Unsetenv(envAnnotatePodIP)
+			} else {
+				os.Unsetenv(envAnnotatePodIP)
+			}
+			assert.Equal(t, tt.want, EnablePodIPAnnotation())
+		})
+	}
+}
+
+func TestEnablePodENI(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     bool
+	}{
+		{"default false", "", false},
+		{"enabled", "true", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				os.Setenv(envEnablePodENI, tt.envValue)
+				defer os.Unsetenv(envEnablePodENI)
+			} else {
+				os.Unsetenv(envEnablePodENI)
+			}
+			assert.Equal(t, tt.want, EnablePodENI())
+		})
+	}
+}
+
+func TestDisableENIProvisioning(t *testing.T) {
+	tests := []struct {
+		name        string
+		imdsOnly    string
+		disableProv string
+		want        bool
+	}{
+		{"default false", "false", "false", false},
+		{"imds only mode disables provisioning", "true", "false", true},
+		{"explicitly disabled", "false", "true", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Setenv("ENABLE_IMDS_ONLY_MODE", tt.imdsOnly)
+			os.Setenv(envDisableENIProvisioning, tt.disableProv)
+			defer os.Unsetenv("ENABLE_IMDS_ONLY_MODE")
+			defer os.Unsetenv(envDisableENIProvisioning)
+			assert.Equal(t, tt.want, disableENIProvisioning())
+		})
+	}
+}
+
+func TestMinMax(t *testing.T) {
+	assert.Equal(t, 5, min(5, 10))
+	assert.Equal(t, 5, min(10, 5))
+	assert.Equal(t, 5, min(5, 5))
+	assert.Equal(t, 10, max(5, 10))
+	assert.Equal(t, 10, max(10, 5))
+	assert.Equal(t, 5, max(5, 5))
+}
+
+func TestReconcileCooldownCache_Add(t *testing.T) {
+	cache := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
+	cidr := "10.0.0.0/24"
+	cache.Add(cidr)
+	cache.RLock()
+	_, exists := cache.cache[cidr]
+	cache.RUnlock()
+	assert.True(t, exists)
+}
+
+func TestReconcileCooldownCache_Remove(t *testing.T) {
+	cache := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
+	cidr := "10.0.0.0/24"
+	cache.Add(cidr)
+	cache.Remove(cidr)
+	cache.RLock()
+	_, exists := cache.cache[cidr]
+	cache.RUnlock()
+	assert.False(t, exists)
+}
+
+func TestReconcileCooldownCache_RecentlyFreed(t *testing.T) {
+	cache := &ReconcileCooldownCache{cache: make(map[string]time.Time)}
+	cidr := "10.0.0.0/24"
+	found, recentlyFreed := cache.RecentlyFreed(cidr)
+	assert.False(t, found)
+	assert.False(t, recentlyFreed)
+	cache.Add(cidr)
+	found, recentlyFreed = cache.RecentlyFreed(cidr)
+	assert.True(t, found)
+	assert.True(t, recentlyFreed)
+	cache.Lock()
+	cache.cache[cidr] = time.Now().Add(-1 * time.Hour)
+	cache.Unlock()
+	found, recentlyFreed = cache.RecentlyFreed(cidr)
+	assert.True(t, found)
+	assert.False(t, recentlyFreed)
+}
+
+func TestIPAMContext_SetTerminating(t *testing.T) {
+	c := &IPAMContext{}
+	assert.False(t, c.isTerminating())
+	c.setTerminating()
+	assert.True(t, c.isTerminating())
+}
+
+func TestIPAMContext_WarmIPTargetsDefined(t *testing.T) {
+	tests := []struct {
+		name            string
+		warmIPTarget    int
+		minimumIPTarget int
+		want            bool
+	}{
+		{"both not defined", noWarmIPTarget, noMinimumIPTarget, false},
+		{"warmIPTarget defined", 5, noMinimumIPTarget, true},
+		{"minimumIPTarget defined", noWarmIPTarget, 10, true},
+		{"both defined", 5, 10, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &IPAMContext{warmIPTarget: tt.warmIPTarget, minimumIPTarget: tt.minimumIPTarget}
+			assert.Equal(t, tt.want, c.warmIPTargetsDefined())
+		})
+	}
+}
+
+func TestIPAMContext_WarmPrefixTargetDefined(t *testing.T) {
+	tests := []struct {
+		name                   string
+		warmPrefixTarget       int
+		enablePrefixDelegation bool
+		want                   bool
+	}{
+		{"not defined", 0, false, false},
+		{"defined with prefix delegation", 1, true, true},
+		{"defined without prefix delegation", 1, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &IPAMContext{warmPrefixTarget: tt.warmPrefixTarget, enablePrefixDelegation: tt.enablePrefixDelegation}
+			assert.Equal(t, tt.want, c.warmPrefixTargetDefined())
+		})
+	}
+}
+
+func TestContainsInsufficientCIDRsOrSubnetIPs(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil error", nil, false},
+		{"InsufficientCidrBlocks error", &smithy.GenericAPIError{Code: "InsufficientCidrBlocks"}, true},
+		{"InsufficientFreeAddressesInSubnet error", &smithy.GenericAPIError{Code: "InsufficientFreeAddressesInSubnet"}, true},
+		{"other error", &smithy.GenericAPIError{Code: "SomeOtherError"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, containsInsufficientCIDRsOrSubnetIPs(tt.err))
+		})
+	}
+}
+
+func TestContainsPrivateIPAddressLimitExceededError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil error", nil, false},
+		{"PrivateIpAddressLimitExceeded error", &smithy.GenericAPIError{Code: "PrivateIpAddressLimitExceeded"}, true},
+		{"other error", &smithy.GenericAPIError{Code: "SomeOtherError"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, containsPrivateIPAddressLimitExceededError(tt.err))
+		})
+	}
+}
+
+func TestIPAMContext_InInsufficientCidrCoolingPeriod(t *testing.T) {
+	tests := []struct {
+		name                      string
+		lastInsufficientCidrError time.Time
+		want                      bool
+	}{
+		{"no previous error", time.Time{}, false},
+		{"recent error within cooling period", time.Now().Add(-30 * time.Second), true},
+		{"old error outside cooling period", time.Now().Add(-2 * time.Minute), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &IPAMContext{lastInsufficientCidrError: tt.lastInsufficientCidrError}
+			assert.Equal(t, tt.want, c.inInsufficientCidrCoolingPeriod())
+		})
+	}
+}
