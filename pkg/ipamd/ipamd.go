@@ -396,7 +396,6 @@ func (c *IPAMContext) inInsufficientCidrCoolingPeriod() bool {
 // then initializes IP address pool data store
 func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPAMContext, error) {
 	prometheusRegister()
-	ctx := context.Background()
 	c := &IPAMContext{}
 	c.k8sClient = k8sClient
 	c.networkClient = networkutils.New()
@@ -2871,7 +2870,7 @@ func (c *IPAMContext) SetAPIServerConnectivity(connected bool) {
 func (c *IPAMContext) excludedENIBasedOnSubnetTags(ctx context.Context, eni string, eniMetadata awsutils.ENIMetadata) (bool, error) {
 	primaryENI := c.awsClient.GetPrimaryENI()
 	// Check if this ENI (primary or secondary) is in an excluded subnet and mark it for exclusion
-	excluded, err := c.awsClient.IsSubnetExcluded(ctx, eniMetadata.SubnetID, eni == primaryENI)
+	excluded, err := c.awsClient.IsSubnetExcluded(ctx, eniMetadata.SubnetID)
 	if err != nil {
 		log.Warnf("setupENI: failed to check subnet exclusion for ENI %s (subnet %s): %v", eni, eniMetadata.SubnetID, err)
 		return false, err

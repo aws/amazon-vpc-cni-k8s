@@ -237,7 +237,7 @@ type APIs interface {
 	GetVpcSubnets(ctx context.Context) ([]ec2types.Subnet, error)
 
 	// IsSubnetExcluded returns if a subnet is excluded for pod IPs based on its tags
-	IsSubnetExcluded(ctx context.Context, subnetID string, isPrimarySubnet bool) (bool, error)
+	IsSubnetExcluded(ctx context.Context, subnetID string) (bool, error)
 }
 
 // EC2InstanceMetadataCache caches instance metadata
@@ -1206,7 +1206,7 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 				log.Info("Defaulting to same subnet as the primary interface for the new ENI")
 
 				// Even in fallback, check if primary subnet is excluded
-				excluded, checkErr := cache.IsSubnetExcluded(ctx, cache.subnetID, true)
+				excluded, checkErr := cache.IsSubnetExcluded(ctx, cache.subnetID)
 				if checkErr != nil {
 					return "", fmt.Errorf("Failed to check if primary subnet is excluded: %w. Quit ENI creation attempt.", checkErr)
 				} else if excluded {
@@ -1260,7 +1260,7 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 		} else {
 			log.Info("Using same security group config as the primary interface for the new ENI")
 			// When subnet discovery is disabled, check if primary subnet is excluded
-			excluded, checkErr := cache.IsSubnetExcluded(ctx, cache.subnetID, true)
+			excluded, checkErr := cache.IsSubnetExcluded(ctx, cache.subnetID)
 			if checkErr != nil {
 				// If we can't determine exclusion status, log warning and proceed
 				log.Warnf("Failed to check if primary subnet is excluded: %v. Proceeding with ENI creation attempt.", checkErr)
@@ -1339,7 +1339,7 @@ func isSubnetValidForENICreation(subnet ec2types.Subnet, isPrimarySubnet bool) b
 	}
 
 	// Rule 3: Check cluster-specific tags
-	if ValidSubnetForCluster(subnet, isPrimarySubnet) {
+	if ValidSubnetTagsMatchingClusterName(subnet) {
 		return true
 	}
 
@@ -1349,13 +1349,8 @@ func isSubnetValidForENICreation(subnet ec2types.Subnet, isPrimarySubnet bool) b
 }
 
 // ValidSubnetForCluster checks if a subnet is valid for use by this cluster
-// For primary subnets, they are always valid for any cluster
 // For secondary subnets, they must either have no cluster tags or have a matching cluster tag
-func ValidSubnetForCluster(subnet ec2types.Subnet, isPrimarySubnet bool) bool {
-	if isPrimarySubnet {
-		// Primary subnets are always valid for any cluster
-		return true
-	}
+func ValidSubnetTagsMatchingClusterName(subnet ec2types.Subnet) bool {
 	// Get cluster name for cluster-specific tag checks
 	localClusterName := os.Getenv(clusterNameEnvVar)
 	localClusterTagKey := clusterTagKeyPrefix + localClusterName
@@ -2627,7 +2622,7 @@ func checkAPIErrorAndBroadcastEvent(err error, api string) {
 }
 
 // IsSubnetExcluded checks if a subnet is excluded by examining its kubernetes.io/role/cni tag
-func (cache *EC2InstanceMetadataCache) IsSubnetExcluded(ctx context.Context, subnetID string, isPrimarySubnet bool) (bool, error) {
+func (cache *EC2InstanceMetadataCache) IsSubnetExcluded(ctx context.Context, subnetID string) (bool, error) {
 	// Get all VPC subnets with their tags
 	subnets, err := cache.GetVpcSubnets(ctx)
 	if err != nil {
@@ -2637,8 +2632,8 @@ func (cache *EC2InstanceMetadataCache) IsSubnetExcluded(ctx context.Context, sub
 	// Find the specific subnet and check its tags
 	for _, subnet := range subnets {
 		if *subnet.SubnetId == subnetID {
-			if !ValidSubnetForCluster(subnet, isPrimarySubnet) {
-				log.Debugf("IsSubnetExcluded: subnet %s doesn't have valid cluster tag", subnetID)
+			if !ValidSubnetTagsMatchingClusterName(subnet) {
+				log.Debugf("IsSubnetExcluded: subnet %s doesn't have valid cluster name tag", subnetID)
 				return true, nil
 			}
 			// Check if the subnet has the exclusion tag kubernetes.io/role/cni=0

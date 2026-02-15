@@ -2645,12 +2645,11 @@ func TestIsSubnetExcluded(t *testing.T) {
 	os.Setenv(clusterNameEnvVar, "test-cluster")
 
 	tests := []struct {
-		name            string
-		subnetTags      []ec2types.Tag
-		isPrimarySubnet bool
-		describeError   error
-		want            bool
-		wantErr         bool
+		name          string
+		subnetTags    []ec2types.Tag
+		describeError error
+		want          bool
+		wantErr       bool
 	}{
 		{
 			name: "subnet with tag value 0 - excluded",
@@ -2660,9 +2659,8 @@ func TestIsSubnetExcluded(t *testing.T) {
 					Value: aws.String("0"),
 				},
 			},
-			isPrimarySubnet: false,
-			want:            true,
-			wantErr:         false,
+			want:    true,
+			wantErr: false,
 		},
 		{
 			name: "subnet with tag value 1 - not excluded",
@@ -2672,9 +2670,8 @@ func TestIsSubnetExcluded(t *testing.T) {
 					Value: aws.String("1"),
 				},
 			},
-			isPrimarySubnet: false,
-			want:            false,
-			wantErr:         false,
+			want:    false,
+			wantErr: false,
 		},
 		{
 			name: "subnet without tag - not excluded",
@@ -2684,12 +2681,11 @@ func TestIsSubnetExcluded(t *testing.T) {
 					Value: aws.String("value"),
 				},
 			},
-			isPrimarySubnet: false,
-			want:            false,
-			wantErr:         false,
+			want:    false,
+			wantErr: false,
 		},
 		{
-			name: "secondary subnet with different cluster tag - excluded by cluster validation",
+			name: "subnet with different cluster tag - excluded by cluster validation",
 			subnetTags: []ec2types.Tag{
 				{
 					Key:   aws.String("kubernetes.io/role/cni"),
@@ -2700,12 +2696,11 @@ func TestIsSubnetExcluded(t *testing.T) {
 					Value: aws.String("shared"),
 				},
 			},
-			isPrimarySubnet: false,
-			want:            true,
-			wantErr:         false,
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name: "secondary subnet with matching cluster tag - not excluded",
+			name: "subnet with matching cluster tag - not excluded",
 			subnetTags: []ec2types.Tag{
 				{
 					Key:   aws.String("kubernetes.io/role/cni"),
@@ -2716,46 +2711,26 @@ func TestIsSubnetExcluded(t *testing.T) {
 					Value: aws.String("shared"),
 				},
 			},
-			isPrimarySubnet: false,
-			want:            false,
-			wantErr:         false,
+			want:    false,
+			wantErr: false,
 		},
 		{
-			name: "primary subnet always valid regardless of cluster tag",
-			subnetTags: []ec2types.Tag{
-				{
-					Key:   aws.String("kubernetes.io/role/cni"),
-					Value: aws.String("1"),
-				},
-				{
-					Key:   aws.String("kubernetes.io/cluster/other-cluster"),
-					Value: aws.String("shared"),
-				},
-			},
-			isPrimarySubnet: true,
-			want:            false,
-			wantErr:         false,
+			name:          "GetVpcSubnets API error",
+			describeError: errors.New("API error"),
+			want:          false,
+			wantErr:       true,
 		},
 		{
-			name:            "GetVpcSubnets API error",
-			describeError:   errors.New("API error"),
-			isPrimarySubnet: false,
-			want:            false,
-			wantErr:         true,
+			name:       "no subnets returned",
+			subnetTags: []ec2types.Tag{},
+			want:       false,
+			wantErr:    false,
 		},
 		{
-			name:            "no subnets returned",
-			subnetTags:      []ec2types.Tag{},
-			isPrimarySubnet: false,
-			want:            false,
-			wantErr:         false,
-		},
-		{
-			name:            "subnet not found in VPC - should error",
-			subnetTags:      []ec2types.Tag{},
-			isPrimarySubnet: false,
-			want:            false,
-			wantErr:         true,
+			name:       "subnet not found in VPC - should error",
+			subnetTags: []ec2types.Tag{},
+			want:       false,
+			wantErr:    true,
 		},
 	}
 
@@ -2790,7 +2765,7 @@ func TestIsSubnetExcluded(t *testing.T) {
 				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(subnetResult, nil)
 			}
 
-			got, err := cache.IsSubnetExcluded(context.Background(), subnetID, tt.isPrimarySubnet)
+			got, err := cache.IsSubnetExcluded(context.Background(), subnetID)
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -3877,7 +3852,7 @@ func TestDataStoreENISubnetID(t *testing.T) {
 
 func TestIsPrimaryENI(t *testing.T) {
 	cache := &EC2InstanceMetadataCache{primaryENI: "eni-primary"}
-	
+
 	assert.True(t, cache.IsPrimaryENI("eni-primary"))
 	assert.False(t, cache.IsPrimaryENI("eni-secondary"))
 	assert.False(t, cache.IsPrimaryENI(""))
@@ -3887,7 +3862,7 @@ func TestIsEfaOnlyENI(t *testing.T) {
 	cache := &EC2InstanceMetadataCache{
 		efaOnlyENIsByNetworkCard: []string{"", "eni-efa"},
 	}
-	
+
 	assert.True(t, cache.IsEfaOnlyENI(1, "eni-efa"))
 	assert.False(t, cache.IsEfaOnlyENI(0, "eni-efa"))
 	assert.False(t, cache.IsEfaOnlyENI(1, "eni-other"))
@@ -3896,7 +3871,7 @@ func TestIsEfaOnlyENI(t *testing.T) {
 func TestIsUnmanagedENI(t *testing.T) {
 	cache := &EC2InstanceMetadataCache{unmanagedENIs: StringSet{}}
 	cache.unmanagedENIs.Set([]string{"eni-unmanaged"})
-	
+
 	assert.True(t, cache.IsUnmanagedENI("eni-unmanaged"))
 	assert.False(t, cache.IsUnmanagedENI("eni-managed"))
 	assert.False(t, cache.IsUnmanagedENI(""))

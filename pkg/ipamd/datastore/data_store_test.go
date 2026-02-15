@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -2017,44 +2018,53 @@ func TestFreeablePrefixesBothIPv4AndIPv6(t *testing.T) {
 	assert.Equal(t, 2, ipv4PrefixCount, "Should have 2 IPv4 prefixes")
 	assert.Equal(t, 2, ipv6PrefixCount, "Should have 2 IPv6 prefixes")
 
-	// Assign an IP from IPv4 prefix1 to a pod
+	// Assign an IP from an IPv4 prefix to a pod
 	key1 := IPAMKey{"net0", "sandbox-1", "eth0"}
 	ipv4Address, device, _, err := ds.AssignPodIPv4Address(key1, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-1"})
 	assert.NoError(t, err)
 	assert.NotEmpty(t, ipv4Address)
 	assert.Equal(t, 1, device)
 
-	// Assign an IP from IPv6 prefix1 to a pod
+	// Determine which IPv4 prefix was used for assignment
+	var assignedIPv4Prefix, unassignedIPv4Prefix string
+	if strings.Contains(ipv4Address, "10.0.1.") {
+		assignedIPv4Prefix = "10.0.1.0"
+		unassignedIPv4Prefix = "10.0.0.0"
+	} else {
+		assignedIPv4Prefix = "10.0.0.0"
+		unassignedIPv4Prefix = "10.0.1.0"
+	}
+
+	// Assign an IP from an IPv6 prefix to a pod
 	key2 := IPAMKey{"net0", "sandbox-2", "eth0"}
 	ipv6Address, device, _, err := ds.AssignPodIPv6Address(key2, IPAMMetadata{K8SPodNamespace: "default", K8SPodName: "pod-2"})
 	assert.NoError(t, err)
 	assert.NotEmpty(t, ipv6Address)
 	assert.Equal(t, 1, device)
 
+	// Determine which IPv6 prefix was used for assignment
+	var assignedIPv6Prefix, unassignedIPv6Prefix string
+	if strings.Contains(ipv6Address, "2001:db8:1:") {
+		assignedIPv6Prefix = "2001:db8:1::"
+		unassignedIPv6Prefix = "2001:db8::"
+	} else {
+		assignedIPv6Prefix = "2001:db8::"
+		unassignedIPv6Prefix = "2001:db8:1::"
+	}
+
 	// Now get freeable prefixes - should exclude prefixes with assigned IPs
 	freeablePrefixes = ds.FreeablePrefixes("eni-1")
 	assert.Equal(t, 2, len(freeablePrefixes)) // Only unassigned prefixes
 
-	// Verify the returned prefixes are the ones without assigned IPs
-	ipv4PrefixCount = 0
-	ipv6PrefixCount = 0
-	foundIPv4Prefix := ""
-	foundIPv6Prefix := ""
-	for _, prefix := range freeablePrefixes {
-		if prefix.IP.To4() != nil {
-			ipv4PrefixCount++
-			foundIPv4Prefix = prefix.IP.String()
-		} else {
-			ipv6PrefixCount++
-			foundIPv6Prefix = prefix.IP.String()
-		}
+	// Convert to string slice for easier assertion
+	freeablePrefixStrs := make([]string, len(freeablePrefixes))
+	for i, prefix := range freeablePrefixes {
+		freeablePrefixStrs[i] = prefix.IP.String()
 	}
-	assert.Equal(t, 1, ipv4PrefixCount, "Should have 1 unassigned IPv4 prefix")
-	assert.Equal(t, 1, ipv6PrefixCount, "Should have 1 unassigned IPv6 prefix")
-	// Should be the second IPv4 prefix (10.0.1.0/28), not the first one with assigned IP
-	assert.Equal(t, "10.0.1.0", foundIPv4Prefix)
-	// Should be the second IPv6 prefix (2001:db8:1::/80), not the first one with assigned IP
-	assert.Equal(t, "2001:db8:1::", foundIPv6Prefix)
+	assert.Contains(t, freeablePrefixStrs, unassignedIPv4Prefix, "Should contain unassigned IPv4 prefix")
+	assert.Contains(t, freeablePrefixStrs, unassignedIPv6Prefix, "Should contain unassigned IPv6 prefix")
+	assert.NotContains(t, freeablePrefixStrs, assignedIPv4Prefix, "Should NOT contain assigned IPv4 prefix")
+	assert.NotContains(t, freeablePrefixStrs, assignedIPv6Prefix, "Should NOT contain assigned IPv6 prefix")
 
 	// Test with non-existent ENI
 	freeablePrefixes = ds.FreeablePrefixes("eni-nonexistent")
@@ -2335,4 +2345,3 @@ func TestDataStore_FindFreeableCidrs(t *testing.T) {
 	cidrs := ds.FindFreeableCidrs(eniID)
 	assert.Len(t, cidrs, 1)
 }
-

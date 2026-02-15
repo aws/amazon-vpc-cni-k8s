@@ -563,8 +563,8 @@ func TestServer_GetNetworkPolicyConfigs(t *testing.T) {
 	defer m.ctrl.Finish()
 
 	mockContext := &IPAMContext{
-		networkPolicyMode:      "standard",
-		enableMultiNICSupport:  true,
+		networkPolicyMode:     "standard",
+		enableMultiNICSupport: true,
 	}
 
 	rpcServer := server{

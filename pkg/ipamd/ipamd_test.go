@@ -222,7 +222,7 @@ func TestNodeInit(t *testing.T) {
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any(), gomock.Any())
 	os.Setenv("MY_NODE_NAME", myNodeName)
-	err := mockContext.nodeInit()
+	err := mockContext.nodeInit(context.Background())
 	assert.NoError(t, err)
 }
 
@@ -324,7 +324,7 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	m.k8sClient.Create(ctx, &fakeNode)
 
 	os.Setenv("MY_NODE_NAME", myNodeName)
-	err := mockContext.nodeInit()
+	err := mockContext.nodeInit(context.Background())
 	assert.NoError(t, err)
 }
 
@@ -413,7 +413,7 @@ func TestNodeInitwithPDenabledIPv6Mode(t *testing.T) {
 	m.k8sClient.Create(ctx, &fakeNode)
 	os.Setenv("MY_NODE_NAME", myNodeName)
 
-	err := mockContext.nodeInit()
+	err := mockContext.nodeInit(context.Background())
 	assert.NoError(t, err)
 }
 
@@ -610,8 +610,8 @@ func testIncreaseIPPool(t *testing.T, useENIConfig bool, unschedulableNode bool,
 
 	// Add mock expectations for unified ENI exclusion approach (needed when UseSubnetDiscovery() is true)
 	if UseSubnetDiscovery() {
-		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-primary", false).AnyTimes().Return(false, nil)
-		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-secondary", false).AnyTimes().Return(false, nil)
+		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-primary").AnyTimes().Return(false, nil)
+		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-secondary").AnyTimes().Return(false, nil)
 	}
 
 	primary := true
@@ -751,8 +751,8 @@ func assertAllocationExternalCalls(shouldCall bool, useENIConfig bool, m *testMo
 	// Add expectations for unified ENI exclusion approach
 	if subnetDiscovery {
 		// Mock IsSubnetExcluded calls
-		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-primary", false).AnyTimes().Return(false, nil)
-		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-secondary", false).AnyTimes().Return(false, nil)
+		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-primary").AnyTimes().Return(false, nil)
+		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-secondary").AnyTimes().Return(false, nil)
 	}
 }
 
@@ -807,8 +807,8 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig, subnetDiscovery bool, en
 
 	// Add mock expectations for unified ENI exclusion approach (needed when UseSubnetDiscovery() is true)
 	if UseSubnetDiscovery() {
-		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-primary", false).AnyTimes().Return(false, nil)
-		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-secondary", false).AnyTimes().Return(false, nil)
+		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-primary").AnyTimes().Return(false, nil)
+		m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-secondary").AnyTimes().Return(false, nil)
 	}
 
 	primary := true
@@ -2921,8 +2921,8 @@ func TestNodeInitPrimarySubnetExclusionWithExistingPodIPs(t *testing.T) {
 	m.awsutils.EXPECT().RefreshCustomSGIDs(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 
 	// Mock expectations for unified ENI exclusion approach in setupENI
-	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-1", true).AnyTimes().Return(true, nil)   // Primary subnet excluded (isPrimary=true)
-	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-2", false).AnyTimes().Return(false, nil) // Secondary subnet not excluded (isPrimary=false)
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-1").AnyTimes().Return(true, nil)  // Primary subnet excluded (isPrimary=true)
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-2").AnyTimes().Return(false, nil) // Secondary subnet not excluded (isPrimary=false)
 
 	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
 	resp := awsutils.DescribeAllENIsResult{
@@ -2968,7 +2968,7 @@ func TestNodeInitPrimarySubnetExclusionWithExistingPodIPs(t *testing.T) {
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any(), gomock.Any()).Return(&ec2.AssignPrivateIpAddressesOutput{}, nil)
 	os.Setenv("MY_NODE_NAME", myNodeName)
-	err := mockContext.nodeInit()
+	err := mockContext.nodeInit(context.Background())
 	assert.NoError(t, err)
 
 	// Verify that primary ENI exclusion is now always respected
@@ -3063,8 +3063,8 @@ func TestNodeInitPrimarySubnetExclusionWithoutExistingPodIPs(t *testing.T) {
 	m.awsutils.EXPECT().RefreshCustomSGIDs(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 
 	// Mock expectations for unified ENI exclusion approach in setupENI
-	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-1", true).AnyTimes().Return(true, nil)   // Primary subnet excluded (isPrimary=true)
-	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-2", false).AnyTimes().Return(false, nil) // Secondary subnet not excluded (isPrimary=false)
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-1").AnyTimes().Return(true, nil)  // Primary subnet excluded (isPrimary=true)
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-2").AnyTimes().Return(false, nil) // Secondary subnet not excluded (isPrimary=false)
 
 	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
 	resp := awsutils.DescribeAllENIsResult{
@@ -3111,7 +3111,7 @@ func TestNodeInitPrimarySubnetExclusionWithoutExistingPodIPs(t *testing.T) {
 	// Add IPs
 	m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), gomock.Any(), gomock.Any()).Return(&ec2.AssignPrivateIpAddressesOutput{}, nil)
 	os.Setenv("MY_NODE_NAME", myNodeName)
-	err := mockContext.nodeInit()
+	err := mockContext.nodeInit(context.Background())
 	assert.NoError(t, err)
 
 	// Verify that primary ENI remains excluded due to no existing pod IPs
@@ -3416,7 +3416,7 @@ func TestExcludedENIBasedOnSubnetTags_IPv4(t *testing.T) {
 
 	// Test case 1: Subnet is excluded
 	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	m.awsutils.EXPECT().IsSubnetExcluded(ctx, "subnet-excluded", true).Return(true, nil)
+	m.awsutils.EXPECT().IsSubnetExcluded(ctx, "subnet-excluded").Return(true, nil)
 
 	excluded, err := mockContext.excludedENIBasedOnSubnetTags(ctx, primaryENIid, eniMetadata)
 	assert.NoError(t, err)
@@ -3437,7 +3437,7 @@ func TestExcludedENIBasedOnSubnetTags_IPv4(t *testing.T) {
 	}
 
 	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	m.awsutils.EXPECT().IsSubnetExcluded(ctx, "subnet-included", false).Return(false, nil)
+	m.awsutils.EXPECT().IsSubnetExcluded(ctx, "subnet-included").Return(false, nil)
 
 	excluded, err = mockContext.excludedENIBasedOnSubnetTags(ctx, secENIid, secEniMetadata)
 	assert.NoError(t, err)
@@ -3478,7 +3478,7 @@ func TestExcludedENIBasedOnSubnetTags_IPv6(t *testing.T) {
 
 	// Test case: IPv6 mode - ENI should be excluded but not marked in datastore
 	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	m.awsutils.EXPECT().IsSubnetExcluded(ctx, "subnet-excluded", true).Return(true, nil)
+	m.awsutils.EXPECT().IsSubnetExcluded(ctx, "subnet-excluded").Return(true, nil)
 
 	excluded, err := mockContext.excludedENIBasedOnSubnetTags(ctx, primaryENIid, eniMetadata)
 	assert.NoError(t, err)
@@ -3520,7 +3520,7 @@ func TestExcludedENIBasedOnSubnetTags_Error(t *testing.T) {
 
 	// Test case: IsSubnetExcluded returns error
 	m.awsutils.EXPECT().GetPrimaryENI().Return(primaryENIid)
-	m.awsutils.EXPECT().IsSubnetExcluded(ctx, "subnet-test", true).Return(false, errors.New("API error"))
+	m.awsutils.EXPECT().IsSubnetExcluded(ctx, "subnet-test").Return(false, errors.New("API error"))
 
 	excluded, err := mockContext.excludedENIBasedOnSubnetTags(ctx, primaryENIid, eniMetadata)
 	assert.Error(t, err)
@@ -3600,7 +3600,7 @@ func TestNodeInit_IPv6_PrimaryENIExcluded(t *testing.T) {
 	m.network.EXPECT().SetupENINetwork(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 	// Mock subnet exclusion check - primary ENI is excluded
-	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-excluded", true).Return(true, nil).AnyTimes()
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-excluded").Return(true, nil).AnyTimes()
 
 	// Expect ENI allocation since primary is excluded
 	m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", 1, defaultNetworkCard).Return(secENIid, nil).AnyTimes()
@@ -3613,7 +3613,7 @@ func TestNodeInit_IPv6_PrimaryENIExcluded(t *testing.T) {
 		NetworkCard:  defaultNetworkCard,
 	}
 	m.awsutils.EXPECT().WaitForENIAndIPsAttached(secENIid, 1).Return(secEniMetadata, nil).AnyTimes()
-	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-included", false).Return(false, nil).AnyTimes()
+	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-included").Return(false, nil).AnyTimes()
 
 	fakeNode := v1.Node{
 		TypeMeta:   metav1.TypeMeta{Kind: "Node"},
