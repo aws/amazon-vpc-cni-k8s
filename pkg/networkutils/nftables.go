@@ -109,8 +109,13 @@ func (c *connmark) ensureBaseChainRules(table *nftables.Table, baseChain, target
 	}
 	hasJumpRule := false
 	hasRestoreRule := false
+	hasFiblocalReturnRule := false
 
 	for _, rule := range rules {
+		if isFibLocalReturnRule(rule) {
+			hasFiblocalReturnRule = true
+			continue
+		}
 		if isJumpRule(rule, targetChain.Name, vethPrefix) {
 			hasJumpRule = true
 			continue
@@ -118,6 +123,10 @@ func (c *connmark) ensureBaseChainRules(table *nftables.Table, baseChain, target
 		if isRestoreRule(rule, mark) {
 			hasRestoreRule = true
 		}
+	}
+
+	if !hasFiblocalReturnRule {
+		c.addFibLocalReturnRule(table, baseChain)
 	}
 	if !hasJumpRule {
 		c.addJumpRule(table, baseChain, targetChain, vethPrefix)
@@ -127,6 +136,49 @@ func (c *connmark) ensureBaseChainRules(table *nftables.Table, baseChain, target
 	}
 	return nil
 }
+
+func isFibLocalReturnRule(rule *nftables.Rule) bool {
+	hasFib := false
+	hasCmpLo := false
+	hasReturn := false
+
+	for _, e := range rule.Exprs {
+		if _, ok := e.(*expr.Fib); ok {
+			hasFib = true
+		}
+		if cmp, ok := e.(*expr.Cmp); ok && bytes.HasPrefix(cmp.Data, []byte("lo")) {
+			hasCmpLo = true
+		}
+		if v, ok := e.(*expr.Verdict); ok && v.Kind == expr.VerdictReturn {
+			hasReturn = true
+		}
+	}
+	return hasFib && hasCmpLo && hasReturn
+}
+
+// Add this function
+func (c *connmark) addFibLocalReturnRule(table *nftables.Table, chain *nftables.Chain) {
+	loName := make([]byte, 16) // IFNAMSIZ
+	copy(loName, "lo")
+	c.nft.InsertRule(&nftables.Rule{
+		Table: table,
+		Chain: chain,
+		Exprs: []expr.Any{
+			&expr.Fib{
+				Register:      1,
+				FlagDADDR:     true,
+				ResultOIFNAME: true,
+			},
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				Data:     []byte(loName),
+			},
+			&expr.Verdict{Kind: expr.VerdictReturn},
+		},
+	})
+}
+
 func (c *connmark) ensureConnmarkChain(table *nftables.Table) (*nftables.Chain, error) {
 	existing := c.getConnmarkChain(table)
 	if existing != nil {
