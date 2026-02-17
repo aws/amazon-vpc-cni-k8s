@@ -1203,6 +1203,10 @@ func getRouteTableNumberForENI(networkCard int, eniIP string, mask int, deviceNu
 			IP:   net.ParseIP(eniIP),
 			Mask: net.CIDRMask(mask, mask),
 		})
+		if err != nil {
+			log.Errorf("checkENIHasExistingRules: failed to get rule list by source %v", err)
+			return 0, false, err
+		}
 
 		if len(srcRuleList) == 1 {
 			// Reuse the rules present on the node. This happens
