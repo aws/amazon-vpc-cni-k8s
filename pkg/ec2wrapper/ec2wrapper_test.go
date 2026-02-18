@@ -89,3 +89,15 @@ type mockEC2ServiceClient struct {
 func (m mockEC2ServiceClient) DescribeTags(ctx context.Context, input *ec2.DescribeTagsInput, f ...func(*ec2.Options)) (*ec2.DescribeTagsOutput, error) {
 	return m.tags, m.tagsErr
 }
+
+func TestNew(t *testing.T) {
+	cfg := aws.Config{Region: "us-east-1"}
+	client := New(cfg)
+	assert.NotNil(t, client)
+}
+
+func TestNewMetricsClient(t *testing.T) {
+	_, err := NewMetricsClient()
+	// This will fail in test environment without IMDS, which is expected
+	assert.Error(t, err)
+}
