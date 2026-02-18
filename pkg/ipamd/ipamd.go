@@ -1027,6 +1027,7 @@ func (c *IPAMContext) updateLastNodeIPPoolAction(networkCard int) {
 func (c *IPAMContext) tryAllocateENI(ctx context.Context, networkCard int) error {
 	var securityGroups []*string
 	var eniCfgSubnet string
+	var eniCfgVpcId string
 
 	if c.useCustomNetworking {
 		eniCfg, err := eniconfig.MyENIConfig(ctx, c.k8sClient)
@@ -1035,17 +1036,18 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context, networkCard int) error
 			return err
 		}
 
-		log.Infof("ipamd: using custom network config: %v, %s", eniCfg.SecurityGroups, eniCfg.Subnet)
+		log.Infof("ipamd: using custom network config: %v, %s, VPC: %s", eniCfg.SecurityGroups, eniCfg.Subnet, eniCfg.VpcId)
 		for _, sgID := range eniCfg.SecurityGroups {
 			log.Debugf("Found security-group id: %s", sgID)
 			securityGroups = append(securityGroups, aws.String(sgID))
 		}
 		eniCfgSubnet = eniCfg.Subnet
+		eniCfgVpcId = eniCfg.VpcId
 	}
 
 	resourcesToAllocate := c.GetENIResourcesToAllocate(networkCard)
 	if resourcesToAllocate > 0 {
-		eni, err := c.awsClient.AllocENI(securityGroups, eniCfgSubnet, resourcesToAllocate, networkCard)
+		eni, err := c.awsClient.AllocENI(securityGroups, eniCfgSubnet, eniCfgVpcId, resourcesToAllocate, networkCard)
 		if err != nil {
 			log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
 			ipamdErrInc("increaseIPPoolAllocENI")
@@ -1258,7 +1260,7 @@ func (c *IPAMContext) setupENI(eni string, eniMetadata awsutils.ENIMetadata, isT
 	}
 
 	// Add the ENI to the datastore
-	err = c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI, routeTableID)
+	err = c.dataStoreAccess.GetDataStore(eniMetadata.NetworkCard).AddENI(eni, eniMetadata.DeviceNumber, eni == primaryENI, isTrunkENI, isEFAENI, routeTableID, eniMetadata.VpcId)
 	if err != nil && err.Error() != datastore.DuplicatedENIError {
 		return errors.Wrapf(err, "failed to add ENI %s to data store", eni)
 	}
