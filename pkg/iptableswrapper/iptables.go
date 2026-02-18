@@ -17,9 +17,10 @@ package iptableswrapper
 import (
 	"bytes"
 	"fmt"
-	"github.com/coreos/go-iptables/iptables"
 	"os/exec"
 	"regexp"
+
+	"github.com/coreos/go-iptables/iptables"
 )
 
 // IPTablesIface is an interface created to make code unit testable.
