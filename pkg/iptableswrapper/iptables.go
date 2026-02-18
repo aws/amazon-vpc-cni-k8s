@@ -115,7 +115,6 @@ func (i ipTables) HasRandomFully() bool {
 	return i.ipt.HasRandomFully()
 }
 
-
 var iptablesModeExecCommand = exec.Command
 
 // Runs "iptables --version" to get the mode  (nf_tables or legacy)

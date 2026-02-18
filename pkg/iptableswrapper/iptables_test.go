@@ -21,11 +21,11 @@ import (
 
 func TestGetIptablesMode(t *testing.T) {
 	tests := []struct {
-		name        string
-		output      string
-		cmdErr      error
-		wantMode    string
-		wantErr     bool
+		name     string
+		output   string
+		cmdErr   error
+		wantMode string
+		wantErr  bool
 	}{
 		{
 			name:     "iptables-nft",
@@ -63,7 +63,7 @@ func TestGetIptablesMode(t *testing.T) {
 			// Mocked exec.Command
 			oldExecCommand := iptablesModeExecCommand
 			defer func() { iptablesModeExecCommand = oldExecCommand }()
-			
+
 			iptablesModeExecCommand = func(name string, args ...string) *exec.Cmd {
 				return mockCommand(tt.output, tt.cmdErr)
 			}
