@@ -124,6 +124,13 @@ func (ipt *MockIptables) NewChain(table, chain string) error {
 }
 
 func (ipt *MockIptables) ClearChain(table, chain string) error {
+	if ipt.DataplaneState[table] == nil {
+		return nil
+	}
+	if _, ok := ipt.DataplaneState[table][chain]; !ok {
+		return nil
+	}
+	ipt.DataplaneState[table][chain] = [][]string{{"-N", chain}}
 	return nil
 }
 

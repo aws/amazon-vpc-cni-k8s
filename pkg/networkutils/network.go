@@ -446,18 +446,11 @@ func (n *linuxNetwork) UpdateHostSNATRules(vpcCIDRs []string, primaryMAC string,
 		log.Error(fmt.Sprintf("failed to iptable rules for snat %s", err.Error()))
 		return err
 	}
-	if err := n.connmark.Setup(append(vpcCIDRs, n.excludeSNATCIDRs...)); err != nil {
-		log.Error(fmt.Sprintf("failed to update nftable rules for snat %s", err.Error()))
-		return err
+	if n.useExternalSNAT {
+		return n.connmark.Cleanup()
 	}
-	ipt, err := n.newIptables(iptables.ProtocolIPv4)
-	if err != nil {
-		return errors.Wrap(err, "host network setup: failed to create iptables")
-	}
-	if err := n.cleanupIptablesConnmarkRules(ipt); err != nil {
-		return errors.Wrapf(err, "failed to clean up old  iptable connmark rules")
-	}
-	return err
+	return n.connmark.Setup(append(vpcCIDRs, n.excludeSNATCIDRs...))
+
 }
 
 func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error {
@@ -479,6 +472,13 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 	if err := n.updateIptablesRules(iptablesSNATRules, ipt); err != nil {
 		return err
 	}
+	// iptablesConnmarkRules, err := n.buildIptablesConnmarkRules(vpcCIDRs, ipt)
+	// if err != nil {
+	// 	return err
+	// }
+	// if err := n.updateIptablesRules(iptablesConnmarkRules, ipt); err != nil {
+	// 	return err
+	// }
 	return nil
 }
 

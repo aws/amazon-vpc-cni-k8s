@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"sync"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nft"
+	"github.com/coreos/go-iptables/iptables"
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
@@ -23,28 +26,42 @@ type Connmark interface {
 	Cleanup() error
 }
 
-type connmark struct {
-	nft        nft.Client
-	vethPrefix string
-	mark       uint32
+type nftConnmark struct {
+	nft         nft.Client
+	vethPrefix  string
+	mark        uint32
+	cleanupOnce sync.Once
 }
 
-var _ Connmark = (*connmark)(nil)
+var _ Connmark = (*nftConnmark)(nil)
 
 func NewConnmark(vethPrefix string, mark uint32) (Connmark, error) {
+
+	mode, err := iptableswrapper.GetIptablesMode()
+	if err != nil {
+		log.Warnf("failed to detect iptables mode, defaulting to nftables: %v", err)
+		return nil, err
+	}
+	if mode.IsNFTables() {
+		return newNftablesConnmark(vethPrefix, mark)
+	}
+	return newIptablesConnmark(vethPrefix, mark)
+}
+
+func newNftablesConnmark(vethPrefix string, mark uint32) (Connmark, error) {
 	client, err := nft.New()
 	if err != nil {
 		log.Error(err.Error())
 		return nil, err
 	}
-	return &connmark{
+	return &nftConnmark{
 		nft:        client,
 		vethPrefix: vethPrefix,
 		mark:       mark,
 	}, nil
 }
 
-func (c *connmark) Setup(exemptCIDRs []string) error {
+func (c *nftConnmark) Setup(exemptCIDRs []string) error {
 
 	// idempotent
 	table := c.nft.AddTable(&nftables.Table{
@@ -73,10 +90,11 @@ func (c *connmark) Setup(exemptCIDRs []string) error {
 		return errors.Wrap(err, "failed to flush nftable after chain rules reconciliation")
 	}
 
+	c.cleanupOnce.Do(c.cleanupIptablesConnmarkRules)
 	return nil
 }
 
-func (c *connmark) ensureBaseChain(table *nftables.Table) *nftables.Chain {
+func (c *nftConnmark) ensureBaseChain(table *nftables.Table) *nftables.Chain {
 	existing := c.getBaseChain(table)
 	if existing != nil && !isBaseChainConfigCorrect(existing, c.getDesiredPriority()) {
 		// delete and re-add chain
@@ -100,8 +118,41 @@ func (c *connmark) ensureBaseChain(table *nftables.Table) *nftables.Chain {
 	return existing
 }
 
+func (c *nftConnmark) cleanupIptablesConnmarkRules() {
+	// Delete the PREROUTING jump rule to AWS-CONNMARK-CHAIN-0
+	ipt, err := iptableswrapper.NewIPTables(iptables.ProtocolIPv4)
+	if err != nil {
+		log.Errorf("failed to init iptables %s", err)
+	}
+
+	jumpRule := []string{
+		"-i", c.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections",
+		"-j", "AWS-CONNMARK-CHAIN-0",
+	}
+	if err := ipt.Delete("nat", "PREROUTING", jumpRule...); err != nil && !isNotExistError(err) {
+		log.Warnf("failed to delete connmark jump rule: %v", err)
+	}
+
+	// Delete the PREROUTING restore-mark rule
+	restoreRule := []string{
+		"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK",
+		"--restore-mark", "--mask", fmt.Sprintf("%#x", c.mark),
+	}
+	if err := ipt.Delete("nat", "PREROUTING", restoreRule...); err != nil && !isNotExistError(err) {
+		log.Warnf("failed to delete connmark restore rule: %v", err)
+	}
+
+	// Flush and delete AWS-CONNMARK-CHAIN-0 if it exists
+	if err := ipt.ClearChain("nat", "AWS-CONNMARK-CHAIN-0"); err != nil && !isNotExistError(err) {
+		log.Warnf("failed to clear AWS-CONNMARK-CHAIN-0: %v", err)
+	}
+	if err := ipt.DeleteChain("nat", "AWS-CONNMARK-CHAIN-0"); err != nil && !isNotExistError(err) {
+		log.Warnf("failed to delete AWS-CONNMARK-CHAIN-0: %v", err)
+	}
+}
+
 // it has two rules, one to match vethprefix and jump to connmark chain, second is to mark packet with conntrack mark
-func (c *connmark) ensureBaseChainRules(table *nftables.Table, baseChain, targetChain *nftables.Chain, vethPrefix string, mark uint32) error {
+func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, targetChain *nftables.Chain, vethPrefix string, mark uint32) error {
 	rules, err := c.nft.GetRules(table, baseChain)
 	if err != nil {
 		log.Error(err.Error())
@@ -137,49 +188,52 @@ func (c *connmark) ensureBaseChainRules(table *nftables.Table, baseChain, target
 	return nil
 }
 
+// isFibLocalReturnRule checks for: fib daddr type local return
 func isFibLocalReturnRule(rule *nftables.Rule) bool {
-	hasFib := false
-	hasCmpLo := false
+	hasFibAddrType := false
+	hasCmpLocal := false
 	hasReturn := false
 
 	for _, e := range rule.Exprs {
-		if _, ok := e.(*expr.Fib); ok {
-			hasFib = true
+		if fib, ok := e.(*expr.Fib); ok && fib.FlagDADDR && fib.ResultADDRTYPE {
+			hasFibAddrType = true
 		}
-		if cmp, ok := e.(*expr.Cmp); ok && bytes.HasPrefix(cmp.Data, []byte("lo")) {
-			hasCmpLo = true
+		// RTN_LOCAL = 2
+		if cmp, ok := e.(*expr.Cmp); ok && cmp.Op == expr.CmpOpEq && len(cmp.Data) == 4 {
+			val := binaryutil.NativeEndian.Uint32(cmp.Data)
+			if val == 2 { // RTN_LOCAL
+				hasCmpLocal = true
+			}
 		}
 		if v, ok := e.(*expr.Verdict); ok && v.Kind == expr.VerdictReturn {
 			hasReturn = true
 		}
 	}
-	return hasFib && hasCmpLo && hasReturn
+	return hasFibAddrType && hasCmpLocal && hasReturn
 }
 
 // Add this function
-func (c *connmark) addFibLocalReturnRule(table *nftables.Table, chain *nftables.Chain) {
-	loName := make([]byte, 16) // IFNAMSIZ
-	copy(loName, "lo")
+func (c *nftConnmark) addFibLocalReturnRule(table *nftables.Table, chain *nftables.Chain) {
 	c.nft.InsertRule(&nftables.Rule{
 		Table: table,
 		Chain: chain,
 		Exprs: []expr.Any{
 			&expr.Fib{
-				Register:      1,
-				FlagDADDR:     true,
-				ResultOIFNAME: true,
+				Register:       1,
+				FlagDADDR:      true,
+				ResultADDRTYPE: true,
 			},
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     []byte(loName),
+				Data:     binaryutil.NativeEndian.PutUint32(2),
 			},
 			&expr.Verdict{Kind: expr.VerdictReturn},
 		},
 	})
 }
 
-func (c *connmark) ensureConnmarkChain(table *nftables.Table) (*nftables.Chain, error) {
+func (c *nftConnmark) ensureConnmarkChain(table *nftables.Table) (*nftables.Chain, error) {
 	existing := c.getConnmarkChain(table)
 	if existing != nil {
 		return existing, nil
@@ -189,7 +243,7 @@ func (c *connmark) ensureConnmarkChain(table *nftables.Table) (*nftables.Chain, 
 		Table: table,
 	}), nil
 }
-func (c *connmark) ensureConnmarkChainRules(table *nftables.Table, chain *nftables.Chain, exemptCIDRs []string, mark uint32) error {
+func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nftables.Chain, exemptCIDRs []string, mark uint32) error {
 	rules, err := c.nft.GetRules(table, chain)
 	if err != nil {
 		return err
@@ -241,7 +295,7 @@ func (c *connmark) ensureConnmarkChainRules(table *nftables.Table, chain *nftabl
 	return nil
 }
 
-func (c *connmark) Cleanup() error {
+func (c *nftConnmark) Cleanup() error {
 	c.nft.DelTable(&nftables.Table{
 		Family: nftables.TableFamilyIPv4,
 		Name:   nftTableName,
@@ -251,7 +305,7 @@ func (c *connmark) Cleanup() error {
 	return err
 }
 
-func (c *connmark) getBaseChain(table *nftables.Table) *nftables.Chain {
+func (c *nftConnmark) getBaseChain(table *nftables.Table) *nftables.Chain {
 	chain, err := c.nft.ListChain(table, nftBaseChainName)
 	if err != nil {
 		log.Error(err.Error())
@@ -260,7 +314,7 @@ func (c *connmark) getBaseChain(table *nftables.Table) *nftables.Chain {
 	return chain
 }
 
-func (c *connmark) getDesiredPriority() nftables.ChainPriority {
+func (c *nftConnmark) getDesiredPriority() nftables.ChainPriority {
 	const priority nftables.ChainPriority = -90
 	return nftables.ChainPriority(priority)
 }
@@ -271,7 +325,7 @@ func isBaseChainConfigCorrect(chain *nftables.Chain, desiredPriority nftables.Ch
 		chain.Policy != nil && *chain.Policy == nftables.ChainPolicyAccept
 }
 
-func (c *connmark) getConnmarkChain(table *nftables.Table) *nftables.Chain {
+func (c *nftConnmark) getConnmarkChain(table *nftables.Table) *nftables.Chain {
 	chain, err := c.nft.ListChain(table, nftChainName)
 	if err != nil {
 		log.Error(err.Error())
@@ -280,7 +334,7 @@ func (c *connmark) getConnmarkChain(table *nftables.Table) *nftables.Chain {
 	return chain
 }
 
-func (c *connmark) addJumpRule(table *nftables.Table, baseChain, targetChain *nftables.Chain, vethPrefix string) {
+func (c *nftConnmark) addJumpRule(table *nftables.Table, baseChain, targetChain *nftables.Chain, vethPrefix string) {
 	c.nft.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: baseChain,
@@ -296,7 +350,7 @@ func (c *connmark) addJumpRule(table *nftables.Table, baseChain, targetChain *nf
 	})
 }
 
-func (c *connmark) addRestoreRule(table *nftables.Table, chain *nftables.Chain, mark uint32) {
+func (c *nftConnmark) addRestoreRule(table *nftables.Table, chain *nftables.Chain, mark uint32) {
 	markBytes := binaryutil.NativeEndian.PutUint32(mark)
 	c.nft.AddRule(&nftables.Rule{
 		Table: table,
@@ -410,7 +464,7 @@ func isSetMarkRule(rule *nftables.Rule, mark uint32) bool {
 	return hasCtLoad && hasBitwise && hasCtStore
 }
 
-func (c *connmark) addSetMarkRule(table *nftables.Table, chain *nftables.Chain, mark uint32) {
+func (c *nftConnmark) addSetMarkRule(table *nftables.Table, chain *nftables.Chain, mark uint32) {
 	markBytes := binaryutil.NativeEndian.PutUint32(mark)
 	c.nft.AddRule(&nftables.Rule{
 		Table: table,
@@ -424,7 +478,7 @@ func (c *connmark) addSetMarkRule(table *nftables.Table, chain *nftables.Chain, 
 	})
 }
 
-func (c *connmark) insertCIDRReturnRule(table *nftables.Table, chain *nftables.Chain, cidrStr string) {
+func (c *nftConnmark) insertCIDRReturnRule(table *nftables.Table, chain *nftables.Chain, cidrStr string) {
 	_, cidr, err := net.ParseCIDR(cidrStr)
 	if err != nil {
 		return

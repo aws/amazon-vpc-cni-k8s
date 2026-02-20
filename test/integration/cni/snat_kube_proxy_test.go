@@ -11,12 +11,14 @@ package cni
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
+	"github.com/samber/lo"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -39,6 +41,7 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 	)
 
 	BeforeEach(func() {
+		Expect(checkNodeShellPlugin()).To(BeNil())
 		serverContainer := manifest.NewBusyBoxContainerBuilder(f.Options.TestImageRegistry).
 			Image(utils.GetTestImage(f.Options.TestImageRegistry, utils.NginxImage)).
 			Command(nil).
@@ -84,6 +87,16 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 
 	DescribeTable("verifies VPC CNI is kube-proxy mode agnostic",
 		func(mode string) {
+
+			ver, err := f.DiscoveryClient.ServerVersion()
+			Expect(err).ToNot(HaveOccurred())
+			minor, err := strconv.Atoi(ver.Minor)
+			Expect(err).ToNot(HaveOccurred())
+
+			if minor <= 32 && mode == "nftables" {
+				return
+			}
+
 			originalMode, err := getKubeProxyMode()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -95,12 +108,19 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 			By(fmt.Sprintf("switching kube-proxy to %s mode", mode))
 			Expect(setKubeProxyMode(mode)).To(Succeed())
 
+			By("detecting iptables backend on node")
+			backend := detectIptablesBackend(primaryNode.Name)
+			fmt.Fprintf(GinkgoWriter, "detected iptables backend: %s\n", backend)
+
+			By("verifying CNI connmark rules exist")
+			verifyConnmarkRules(primaryNode.Name, backend)
+
 			By("testing pod on primary ENI")
 			primaryPod := interfaceToPodList.PodsOnPrimaryENI[0]
 			secondaryPod := interfaceToPodList.PodsOnSecondaryENI[0]
 			fmt.Println("!!!!!!primary pod to test ", primaryPod.Name)
 			fmt.Println("!!!!!!secondary pod to test ", secondaryPod.Name)
-			time.Sleep(10 * time.Minute)
+			//time.Sleep(10 * time.Minute)
 			verifyServiceConnectivity(primaryPod, service.Spec.ClusterIP)
 			verifyAPIServerConnectivity(primaryPod)
 			verifyExternalConnectivity(primaryPod)
@@ -192,4 +212,53 @@ func restartKubeProxyPods() error {
 	}
 	time.Sleep(30 * time.Second)
 	return nil
+}
+
+// detectIptablesBackend determines if the node uses iptables-legacy or nftables
+func detectIptablesBackend(nodeName string) string {
+	pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector("k8s-app", "aws-node")
+	if err != nil {
+		fmt.Fprintf(GinkgoWriter, "Failed to find aws-node pod: %v\n", err)
+		return ""
+	}
+	pod, found := lo.Find(pods.Items, func(p v1.Pod) bool {
+		return p.Spec.NodeName == nodeName
+	})
+	if !found {
+		fmt.Fprintf(GinkgoWriter, "Failed to find aws-node pod on node %s\n", nodeName)
+		return ""
+	}
+	stdout, _, err := f.K8sResourceManagers.PodManager().PodExecInContainer(pod.Namespace, pod.Name, "aws-node", []string{"iptables", "--version"})
+	if err != nil {
+		fmt.Fprintf(GinkgoWriter, "Failed to run iptables --version: %v\n", err)
+		return ""
+	}
+	if strings.Contains(stdout, "nf_tables") {
+		return "nftables"
+	} else if strings.Contains(stdout, "legacy") {
+		return "legacy"
+	}
+	return ""
+}
+
+// verifyConnmarkRules checks that CNI connmark rules exist ONLY in the appropriate backend
+func verifyConnmarkRules(nodeName, backend string) {
+	if backend == "nftables" {
+		out, err := execNodeShell(nodeName, "nft list table ip aws-cni")
+		fmt.Fprintf(GinkgoWriter, "nftables rules:\n%s\n", string(out))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("chain nat-prerouting"))
+		Expect(string(out)).To(ContainSubstring("chain snat-mark"))
+
+		out, _ = execNodeShell(nodeName, "iptables-legacy -t nat -L PREROUTING -n")
+		Expect(string(out)).ToNot(ContainSubstring("AWS-CONNMARK"))
+	} else {
+		out, err := execNodeShell(nodeName, "iptables-legacy -t nat -L PREROUTING -n")
+		fmt.Fprintf(GinkgoWriter, "iptables-legacy:\n%s\n", string(out))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(out)).To(ContainSubstring("AWS-CONNMARK"))
+
+		_, err = execNodeShell(nodeName, "nft list table ip aws-cni")
+		Expect(err).To(HaveOccurred())
+	}
 }

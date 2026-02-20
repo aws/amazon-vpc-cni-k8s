@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 	eventsv1 "k8s.io/api/events/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
@@ -45,6 +46,7 @@ type Framework struct {
 	K8sResourceManagers k8s.ResourceManagers
 	InstallationManager controller.InstallationManager
 	Logger              logr.Logger
+	DiscoveryClient     discovery.DiscoveryInterface
 }
 
 func New(options Options) *Framework {
@@ -104,7 +106,6 @@ func New(options Options) *Framework {
 	if err != nil {
 		log.Fatalf("failed to create AWS cloud client: %v", err)
 	}
-
 	return &Framework{
 		Options:             options,
 		K8sClient:           k8sClient,
@@ -112,6 +113,7 @@ func New(options Options) *Framework {
 		K8sResourceManagers: k8s.NewResourceManager(k8sClient, clientset, k8sSchema, config),
 		InstallationManager: controller.NewDefaultInstallationManager(
 			helm.NewDefaultReleaseManager(options.KubeConfig)),
-		Logger: utils.NewGinkgoLogger(),
+		Logger:          utils.NewGinkgoLogger(),
+		DiscoveryClient: clientset.Discovery(),
 	}
 }
