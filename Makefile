@@ -220,8 +220,7 @@ multi-arch-cni-init-build-push:
 # Run unit tests
 unit-test: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
 unit-test:    ## Run unit tests
-	go test -v $(VENDOR_OVERRIDE_FLAG) -coverprofile=coverage.txt -covermode=atomic ./cmd/...
-	go test -v $(VENDOR_OVERRIDE_FLAG) -coverprofile=coverage.txt -covermode=atomic ./pkg/...
+	go test -v $(VENDOR_OVERRIDE_FLAG) -coverprofile=coverage.txt -covermode=atomic ./cmd/... ./pkg/...
 
 # Run unit tests with race detection (can only be run natively)
 unit-test-race: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
