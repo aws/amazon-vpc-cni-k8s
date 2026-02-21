@@ -92,8 +92,9 @@ const (
 	envPodMTU                = "POD_MTU"
 	envEnablePodEni          = "ENABLE_POD_ENI"
 	envPodSGEnforcingMode    = "POD_SECURITY_GROUP_ENFORCING_MODE"
-	envPluginLogFile         = "AWS_VPC_K8S_PLUGIN_LOG_FILE"
-	envPluginLogLevel        = "AWS_VPC_K8S_PLUGIN_LOG_LEVEL"
+	envPluginLogFile              = "AWS_VPC_K8S_PLUGIN_LOG_FILE"
+	envPluginAdditionalLogFile   = "AWS_VPC_K8S_PLUGIN_ADDITIONAL_LOG_FILE"
+	envPluginLogLevel            = "AWS_VPC_K8S_PLUGIN_LOG_LEVEL"
 	envEgressV4PluginLogFile = "AWS_VPC_K8S_EGRESS_V4_PLUGIN_LOG_FILE"
 	envEgressV6PluginLogFile = "AWS_VPC_K8S_EGRESS_V6_PLUGIN_LOG_FILE"
 	envEnPrefixDelegation    = "ENABLE_PREFIX_DELEGATION"
@@ -266,6 +267,7 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 	podMTU := utils.GetEnv(envPodMTU, eniMTU)
 	podSGEnforcingMode := utils.GetEnv(envPodSGEnforcingMode, defaultPodSGEnforcingMode)
 	pluginLogFile := utils.GetEnv(envPluginLogFile, defaultPluginLogFile)
+	pluginAdditionalLogFile := utils.GetEnv(envPluginAdditionalLogFile, "")
 	pluginLogLevel := utils.GetEnv(envPluginLogLevel, defaultPluginLogLevel)
 	randomizeSNAT := utils.GetEnv(envRandomizeSNAT, defaultRandomizeSNAT)
 
@@ -274,6 +276,7 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 	netconf = strings.Replace(netconf, "__MTU__", podMTU, -1)
 	netconf = strings.Replace(netconf, "__PODSGENFORCINGMODE__", podSGEnforcingMode, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGFILE__", pluginLogFile, -1)
+	netconf = strings.Replace(netconf, "__PLUGINADDITIONALLOGFILE__", pluginAdditionalLogFile, -1)
 	netconf = strings.Replace(netconf, "__PLUGINLOGLEVEL__", pluginLogLevel, -1)
 	netconf = strings.Replace(netconf, "__EGRESSPLUGINLOGFILE__", egressPluginLogFile, -1)
 	netconf = strings.Replace(netconf, "__EGRESSPLUGINENABLED__", strconv.FormatBool(egressEnabled), -1)
