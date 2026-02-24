@@ -95,7 +95,6 @@ type cloudWatchPublisher struct {
 // not specified clusterID then its a Cx error
 // New returns a new instance of `Publisher`
 func New(ctx context.Context, region string, clusterID string, log logger.Logger) (Publisher, error) {
-	ctx = context.Background()
 	cfg, err := awssession.New(ctx)
 	if err != nil {
 		return nil, err
