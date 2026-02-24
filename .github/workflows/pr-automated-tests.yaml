@@ -41,7 +41,7 @@ jobs:
         uses: codecov/codecov-action@79066c46f8dcdf8d7355f820dbac958c5b4cb9d3 # refs/tags/v4.5.0
         with:
             token: ${{ secrets.CODECOV_TOKEN }}
-  docker-build-arch:
+  docker-build:
     name: Build Docker images (${{ matrix.arch }})
     strategy:
       matrix:
@@ -58,13 +58,7 @@ jobs:
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # refs/tags/v3.11.1
       - name: Build CNI image
         run: make docker
-  docker-build:
-    name: Build Docker images
-    needs: docker-build-arch
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "All docker builds completed successfully"
-  docker-build-init-arch:
+  docker-build-init:
     name: Build Docker init images (${{ matrix.arch }})
     strategy:
       matrix:
@@ -81,9 +75,3 @@ jobs:
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # refs/tags/v3.11.1
       - name: Build CNI Init image
         run: make docker-init
-  docker-build-init:
-    name: Build Docker init images
-    needs: docker-build-init-arch
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "All docker init builds completed successfully"
