@@ -1833,3 +1833,60 @@ func TestLoadNetConf(t *testing.T) {
 		})
 	}
 }
+
+func TestGetSecondaryIPv6AddressFromIpAllocationMetadata(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata *pb.IPAllocationMetadata
+		want     *net.IPNet
+	}{
+		{
+			name: "both IPv4 and IPv6 present - returns IPv6",
+			metadata: &pb.IPAllocationMetadata{
+				IPv4Addr: "10.0.1.5",
+				IPv6Addr: "2001:db8::1",
+			},
+			want: &net.IPNet{
+				IP:   net.ParseIP("2001:db8::1"),
+				Mask: net.CIDRMask(128, 128),
+			},
+		},
+		{
+			name: "only IPv4 present - returns nil",
+			metadata: &pb.IPAllocationMetadata{
+				IPv4Addr: "10.0.1.5",
+			},
+			want: nil,
+		},
+		{
+			name: "only IPv6 present - returns nil",
+			metadata: &pb.IPAllocationMetadata{
+				IPv6Addr: "2001:db8::1",
+			},
+			want: nil,
+		},
+		{
+			name: "neither present - returns nil",
+			metadata: &pb.IPAllocationMetadata{},
+			want:     nil,
+		},
+		{
+			name:     "nil metadata - returns nil",
+			metadata: nil,
+			want:     nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getSecondaryIPv6AddressFromIpAllocationMetadata(tt.metadata)
+			if tt.want == nil {
+				assert.Nil(t, got)
+			} else {
+				assert.NotNil(t, got)
+				assert.Equal(t, tt.want.IP.String(), got.IP.String())
+				assert.Equal(t, tt.want.Mask.String(), got.Mask.String())
+			}
+		})
+	}
+}

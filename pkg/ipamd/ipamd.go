@@ -141,6 +141,10 @@ const (
 	// envEnablePodENI is used to attach a Trunk ENI to every node. Required in order to give Branch ENIs to pods.
 	envEnablePodENI = "ENABLE_POD_ENI"
 
+	// Enable dual-stack (IPv4+IPv6) support for pod ENIs (security groups per pod)
+	// When enabled in IPv4 clusters, pod ENI pods can have both IPv4 and IPv6 addresses
+	envEnablePodENIDualStack = "ENABLE_POD_ENI_DUAL_STACK"
+
 	// envNodeName will be used to store Node name
 	envNodeName = "MY_NODE_NAME"
 
@@ -249,6 +253,7 @@ type IPAMContext struct {
 	maxPods                   int // maximum number of pods that can be scheduled on the node
 	networkPolicyMode         string
 	enableMultiNICSupport     bool
+	enablePodENIDualStack     bool
 	withApiServer             bool
 }
 
@@ -405,6 +410,7 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.enablePrefixDelegation = usePrefixDelegation()
 	c.enableIPv4 = isIPv4Enabled()
 	c.enableIPv6 = isIPv6Enabled()
+	c.enablePodENIDualStack = isPodENIDualStackEnabled()
 	c.disableENIProvisioning = disableENIProvisioning()
 	client, err := awsutils.New(ctx, c.useSubnetDiscovery, c.useCustomNetworking, disableLeakedENICleanup(), c.enableIPv4, c.enableIPv6)
 	if err != nil {
@@ -423,6 +429,9 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = EnablePodIPAnnotation()
 	c.enableMultiNICSupport = enableMultiNICSupport()
+	if c.enablePodENI && c.enablePodENIDualStack && c.enableIPv6 {
+		return nil, fmt.Errorf("ipamd: ENABLE_POD_ENI_DUAL_STACK is only supported for IPv4 clusters (ENABLE_IPv6=false)")
+	}
 	c.networkPolicyMode, err = getNetworkPolicyMode()
 	if err != nil {
 		return nil, err
@@ -2110,6 +2119,10 @@ func isIPv4Enabled() bool {
 
 func isIPv6Enabled() bool {
 	return utils.GetBoolAsStringEnvVar(envEnableIPv6, false)
+}
+
+func isPodENIDualStackEnabled() bool {
+	return utils.GetBoolAsStringEnvVar(envEnablePodENIDualStack, false)
 }
 
 func enableManageUntaggedMode() bool {

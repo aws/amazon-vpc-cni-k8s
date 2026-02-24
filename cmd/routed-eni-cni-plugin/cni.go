@@ -269,8 +269,30 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	// Non-zero value means pods are using branch ENI
 	if r.PodVlanId != 0 {
 		// SGP Pods will always get a single IP address, so it is safe to access the first element of vethMetadata
-		err = driverClient.SetupBranchENIPodNetwork(vethMetadata[0], args.Netns, int(r.PodVlanId), r.PodENIMAC,
+		// For dual-stack pod ENIs, populate the secondary IPv6 address if both IPv4 and IPv6 are available
+		branchVethMetadata := vethMetadata[0]
+		var secondaryIPv6 *net.IPNet
+		if len(r.IPAllocationMetadata) > 0 {
+			secondaryIPv6 = getSecondaryIPv6AddressFromIpAllocationMetadata(r.IPAllocationMetadata[0])
+			if secondaryIPv6 != nil {
+				log.Infof("Dual-stack pod ENI detected: primary=%v, secondary IPv6=%v", branchVethMetadata.IPAddress, secondaryIPv6)
+				branchVethMetadata.IPv6Address = secondaryIPv6
+			}
+		}
+		err = driverClient.SetupBranchENIPodNetwork(branchVethMetadata, args.Netns, int(r.PodVlanId), r.PodENIMAC,
 			r.PodENISubnetGW, int(r.ParentIfIndex), mtu, conf.PodSGEnforcingMode, log)
+
+		if secondaryIPv6 != nil && err == nil {
+			containerInterfaceIndex := len(podInterfaces) - 1
+			ipv6Gateway := networkutils.GetIPv6Gateway()
+			podIPs = append(podIPs, &current.IPConfig{
+				Interface: &containerInterfaceIndex,
+				Address:   *secondaryIPv6,
+				Gateway:   ipv6Gateway,
+			})
+			log.Debugf("Added secondary IPv6 %v with gateway %v to CNI result", secondaryIPv6, ipv6Gateway)
+		}
+
 		// For branch ENI mode, the pod VLAN ID is packed in Interface.Mac
 		// CNI currently uses dummyInterface to identify if a Pod is a SGP or a regular pod.
 		// To stop using dummy interface here, we have to let IPAMD store the SGP containers in a file, so the identification of such containers becomes easier during deletion flow and won't require API server call
@@ -482,7 +504,16 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 				log.Infof("Ignoring TeardownPodENI as Netns is empty for SG pod:%s namespace: %s containerID:%s", k8sArgs.K8S_POD_NAME, k8sArgs.K8S_POD_NAMESPACE, k8sArgs.K8S_POD_INFRA_CONTAINER_ID)
 				return nil
 			}
-			err = driverClient.TeardownBranchENIPodNetwork(vethMetadata[0], int(r.PodVlanId), conf.PodSGEnforcingMode, log)
+			// For dual-stack pod ENIs, populate the secondary IPv6 address for cleanup
+			branchVethMetadata := vethMetadata[0]
+			if len(r.IPAllocationMetadata) > 0 {
+				secondaryIPv6 := getSecondaryIPv6AddressFromIpAllocationMetadata(r.IPAllocationMetadata[0])
+				if secondaryIPv6 != nil {
+					log.Debugf("Dual-stack pod ENI teardown: primary=%v, secondary IPv6=%v", branchVethMetadata.IPAddress, secondaryIPv6)
+					branchVethMetadata.IPv6Address = secondaryIPv6
+				}
+			}
+			err = driverClient.TeardownBranchENIPodNetwork(branchVethMetadata, int(r.PodVlanId), conf.PodSGEnforcingMode, log)
 		} else {
 			err = driverClient.TeardownPodNetwork(vethMetadata, log)
 		}
@@ -529,16 +560,23 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	return nil
 }
 
-func getContainerNetworkMetadata(prevResult *current.Result, contVethName string) (net.IPNet, *current.Interface, error) {
+func getContainerNetworkMetadata(prevResult *current.Result, contVethName string) (net.IPNet, *net.IPNet, *current.Interface, error) {
 	containerIfaceIndex, containerInterface, found := cniutils.FindInterfaceByName(prevResult.Interfaces, contVethName)
 	if !found {
-		return net.IPNet{}, nil, errors.Errorf("cannot find contVethName %s in prevResult", contVethName)
+		return net.IPNet{}, nil, nil, errors.Errorf("cannot find contVethName %s in prevResult", contVethName)
 	}
 	containerIPs := cniutils.FindIPConfigsByIfaceIndex(prevResult.IPs, containerIfaceIndex)
-	if len(containerIPs) != 1 {
-		return net.IPNet{}, nil, errors.Errorf("found %d containerIPs for %v in prevResult", len(containerIPs), contVethName)
+	if len(containerIPs) < 1 {
+		return net.IPNet{}, nil, nil, errors.Errorf("found %d containerIPs for %v in prevResult", len(containerIPs), contVethName)
 	}
-	return containerIPs[0].Address, containerInterface, nil
+
+	// For dual-stack, first IP is primary (IPv4), second is secondary (IPv6)
+	primaryIP := containerIPs[0].Address
+	var secondaryIP *net.IPNet
+	if len(containerIPs) > 1 {
+		secondaryIP = &containerIPs[1].Address
+	}
+	return primaryIP, secondaryIP, containerInterface, nil
 }
 
 // tryDelWithPrevResult will try to process CNI delete request without IPAMD.
@@ -573,13 +611,14 @@ func tryDelWithPrevResult(driverClient driver.NetworkAPIs, conf *NetConf, k8sArg
 		return true, nil
 	}
 
-	containerIP, _, err := getContainerNetworkMetadata(prevResult, contVethName)
+	containerIP, secondaryIP, _, err := getContainerNetworkMetadata(prevResult, contVethName)
 	if err != nil {
 		return false, err
 	}
 
 	vethMetadata := driver.VirtualInterfaceMetadata{
-		IPAddress: &containerIP,
+		IPAddress:   &containerIP,
+		IPv6Address: secondaryIP, // May be nil for single-stack
 	}
 
 	if err := driverClient.TeardownBranchENIPodNetwork(vethMetadata, podVlanID, conf.PodSGEnforcingMode, log); err != nil {
@@ -630,7 +669,7 @@ func teardownPodNetworkWithPrevResult(driverClient driver.NetworkAPIs, conf *Net
 	var vethMetadata []driver.VirtualInterfaceMetadata
 	for v := range interfacesAttached {
 		containerInterfaceName := networkutils.GenerateContainerVethName(contVethName, containerVethNamePrefix, v)
-		containerIP, containerInterface, err := getContainerNetworkMetadata(prevResult, containerInterfaceName)
+		containerIP, _, containerInterface, err := getContainerNetworkMetadata(prevResult, containerInterfaceName)
 		if err != nil {
 			log.Errorf("container interface name %s does not exist %v", containerInterfaceName, err)
 			continue
@@ -695,6 +734,19 @@ func getIPAddressFromIpAllocationMetadata(v *pb.IPAllocationMetadata) *net.IPNet
 		}
 	}
 
+	return nil
+}
+
+// getSecondaryIPv6AddressFromIpAllocationMetadata returns the IPv6 address as a secondary address
+// when both IPv4 and IPv6 are present in the allocation metadata (dual-stack pod ENI case)
+func getSecondaryIPv6AddressFromIpAllocationMetadata(v *pb.IPAllocationMetadata) *net.IPNet {
+	// Only return IPv6 as secondary if BOTH IPv4 and IPv6 are present
+	if v != nil && v.IPv4Addr != "" && v.IPv6Addr != "" {
+		return &net.IPNet{
+			IP:   net.ParseIP(v.IPv6Addr),
+			Mask: net.CIDRMask(128, 128),
+		}
+	}
 	return nil
 }
 
