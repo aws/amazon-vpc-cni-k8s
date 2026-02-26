@@ -118,9 +118,6 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 			By("testing pod on primary ENI")
 			primaryPod := interfaceToPodList.PodsOnPrimaryENI[0]
 			secondaryPod := interfaceToPodList.PodsOnSecondaryENI[0]
-			fmt.Println("!!!!!!primary pod to test ", primaryPod.Name)
-			fmt.Println("!!!!!!secondary pod to test ", secondaryPod.Name)
-			//time.Sleep(10 * time.Minute)
 			verifyServiceConnectivity(primaryPod, service.Spec.ClusterIP)
 			verifyAPIServerConnectivity(primaryPod)
 			verifyExternalConnectivity(primaryPod)

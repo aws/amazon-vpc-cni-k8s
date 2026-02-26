@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
-	"sync"
+	"sync/atomic"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nft"
@@ -21,6 +21,9 @@ const (
 	nftChainName     = "snat-mark"
 )
 
+// Connmark manages connection marking rules for SNAT.
+// Setup configures rules to mark outbound pod traffic for SNAT, excluding specified CIDRs.
+// Cleanup removes all connmark rules when external SNAT is enabled.
 type Connmark interface {
 	Setup(exemptCIDRs []string) error
 	Cleanup() error
@@ -30,7 +33,7 @@ type nftConnmark struct {
 	nft         nft.Client
 	vethPrefix  string
 	mark        uint32
-	cleanupOnce sync.Once
+	cleanupOnce atomic.Bool
 }
 
 var _ Connmark = (*nftConnmark)(nil)
@@ -39,7 +42,6 @@ func NewConnmark(vethPrefix string, mark uint32) (Connmark, error) {
 
 	mode, err := iptableswrapper.GetIptablesMode()
 	if err != nil {
-		log.Warnf("failed to detect iptables mode, defaulting to nftables: %v", err)
 		return nil, err
 	}
 	if mode.IsNFTables() {
@@ -90,7 +92,13 @@ func (c *nftConnmark) Setup(exemptCIDRs []string) error {
 		return errors.Wrap(err, "failed to flush nftable after chain rules reconciliation")
 	}
 
-	c.cleanupOnce.Do(c.cleanupIptablesConnmarkRules)
+	// Cleanup legacy iptables rules once after successful nftables setup
+	if !c.cleanupOnce.Load() {
+		if err := c.cleanupIptablesConnmarkRules(); err != nil {
+			return errors.Wrap(err, "failed to cleanup legacy iptables connmark rules")
+		}
+		c.cleanupOnce.Store(true)
+	}
 	return nil
 }
 
@@ -118,11 +126,11 @@ func (c *nftConnmark) ensureBaseChain(table *nftables.Table) *nftables.Chain {
 	return existing
 }
 
-func (c *nftConnmark) cleanupIptablesConnmarkRules() {
+func (c *nftConnmark) cleanupIptablesConnmarkRules() error {
 	// Delete the PREROUTING jump rule to AWS-CONNMARK-CHAIN-0
 	ipt, err := iptableswrapper.NewIPTables(iptables.ProtocolIPv4)
 	if err != nil {
-		log.Errorf("failed to init iptables %s", err)
+		return err
 	}
 
 	jumpRule := []string{
@@ -130,7 +138,7 @@ func (c *nftConnmark) cleanupIptablesConnmarkRules() {
 		"-j", "AWS-CONNMARK-CHAIN-0",
 	}
 	if err := ipt.Delete("nat", "PREROUTING", jumpRule...); err != nil && !isNotExistError(err) {
-		log.Warnf("failed to delete connmark jump rule: %v", err)
+		return err
 	}
 
 	// Delete the PREROUTING restore-mark rule
@@ -139,16 +147,17 @@ func (c *nftConnmark) cleanupIptablesConnmarkRules() {
 		"--restore-mark", "--mask", fmt.Sprintf("%#x", c.mark),
 	}
 	if err := ipt.Delete("nat", "PREROUTING", restoreRule...); err != nil && !isNotExistError(err) {
-		log.Warnf("failed to delete connmark restore rule: %v", err)
+		return err
 	}
 
 	// Flush and delete AWS-CONNMARK-CHAIN-0 if it exists
 	if err := ipt.ClearChain("nat", "AWS-CONNMARK-CHAIN-0"); err != nil && !isNotExistError(err) {
-		log.Warnf("failed to clear AWS-CONNMARK-CHAIN-0: %v", err)
+		return err
 	}
 	if err := ipt.DeleteChain("nat", "AWS-CONNMARK-CHAIN-0"); err != nil && !isNotExistError(err) {
-		log.Warnf("failed to delete AWS-CONNMARK-CHAIN-0: %v", err)
+		return err
 	}
+	return nil
 }
 
 // it has two rules, one to match vethprefix and jump to connmark chain, second is to mark packet with conntrack mark
