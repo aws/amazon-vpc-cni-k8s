@@ -27,6 +27,18 @@ type MockIptables struct {
 	DataplaneState map[string]map[string][][]string
 }
 
+type IptErrNotExists struct{}
+
+func (e *IptErrNotExists) Error() string {
+	// ref https://github.com/coreos/go-iptables/blob/main/iptables/iptables.go#L52
+	return "does not exists"
+}
+
+// ref https://github.com/coreos/go-iptables/blob/v0.8.0/iptables/iptables.go#L56
+func (e *IptErrNotExists) IsNotExist() bool {
+	return true
+}
+
 func NewMockIptables() *MockIptables {
 	return &MockIptables{DataplaneState: map[string]map[string][][]string{}}
 }
@@ -87,7 +99,7 @@ func (ipt *MockIptables) Delete(table, chainName string, rulespec ...string) err
 		updatedChain = append(updatedChain, r)
 	}
 	if !found {
-		return errors.New("not found")
+		return &IptErrNotExists{}
 	}
 	ipt.DataplaneState[table][chainName] = updatedChain
 	return nil

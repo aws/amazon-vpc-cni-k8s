@@ -475,10 +475,6 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 	return nil
 }
 
-func isNotExistError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "does not exist")
-}
-
 func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *net.IP, primaryIntf string, ipt iptableswrapper.IPTablesIface) ([]iptablesRule, error) {
 	type snatCIDR struct {
 		cidr        string

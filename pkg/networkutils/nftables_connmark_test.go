@@ -1,10 +1,14 @@
 package networkutils
 
 import (
+	"fmt"
 	"net"
 	"testing"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
+	mock_iptables "github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper/mocks"
 	mock_nft "github.com/aws/amazon-vpc-cni-k8s/pkg/nft/mocks"
+	"github.com/coreos/go-iptables/iptables"
 	"github.com/golang/mock/gomock"
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
@@ -18,10 +22,14 @@ func TestNftConnmarkSetup(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockNft := mock_nft.NewMockClient(ctrl)
+	mockIpt := mock_iptables.NewMockIptables()
 	connmark := &nftConnmark{
 		nft:        mockNft,
 		vethPrefix: "eni",
 		mark:       0x80,
+		newIptables: func(protocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+			return mockIpt, nil
+		},
 	}
 
 	table := &nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName}
@@ -62,6 +70,7 @@ func TestNftConnmarkSetup_FlushError(t *testing.T) {
 		vethPrefix: "eni",
 		mark:       0x80,
 	}
+	connmark.cleanupOnce.Store(true) // skip iptables cleanup for this test
 
 	table := &nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName}
 	priority := nftables.ChainPriority(-90)
@@ -426,10 +435,20 @@ func TestNftConnmarkSetup_StaleRulesRemoved(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockNft := mock_nft.NewMockClient(ctrl)
+	mockIpt := mock_iptables.NewMockIptables()
+
+	// Pre-populate legacy iptables rules
+	_ = mockIpt.NewChain("nat", "AWS-CONNMARK-CHAIN-0")
+	_ = mockIpt.Append("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
+	_ = mockIpt.Append("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", uint32(0x80)))
+
 	connmark := &nftConnmark{
 		nft:        mockNft,
 		vethPrefix: "eni",
 		mark:       0x80,
+		newIptables: func(protocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+			return mockIpt, nil
+		},
 	}
 
 	table := &nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName}
@@ -470,4 +489,12 @@ func TestNftConnmarkSetup_StaleRulesRemoved(t *testing.T) {
 
 	err := connmark.Setup([]string{"10.0.0.0/8"})
 	assert.NoError(t, err)
+
+	// Verify legacy iptables rules were cleaned up
+	exists, _ := mockIpt.Exists("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0")
+	assert.False(t, exists, "jump rule should be deleted")
+	exists, _ = mockIpt.Exists("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", uint32(0x80)))
+	assert.False(t, exists, "restore rule should be deleted")
+	exists, _ = mockIpt.ChainExists("nat", "AWS-CONNMARK-CHAIN-0")
+	assert.False(t, exists, "chain should be deleted")
 }

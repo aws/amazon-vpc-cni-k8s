@@ -34,6 +34,7 @@ type nftConnmark struct {
 	vethPrefix  string
 	mark        uint32
 	cleanupOnce atomic.Bool
+	newIptables func(iptables.Protocol) (iptableswrapper.IPTablesIface, error)
 }
 
 var _ Connmark = (*nftConnmark)(nil)
@@ -57,9 +58,10 @@ func newNftablesConnmark(vethPrefix string, mark uint32) (Connmark, error) {
 		return nil, err
 	}
 	return &nftConnmark{
-		nft:        client,
-		vethPrefix: vethPrefix,
-		mark:       mark,
+		nft:         client,
+		vethPrefix:  vethPrefix,
+		mark:        mark,
+		newIptables: iptableswrapper.NewIPTables,
 	}, nil
 }
 
@@ -128,7 +130,7 @@ func (c *nftConnmark) ensureBaseChain(table *nftables.Table) *nftables.Chain {
 
 func (c *nftConnmark) cleanupIptablesConnmarkRules() error {
 	// Delete the PREROUTING jump rule to AWS-CONNMARK-CHAIN-0
-	ipt, err := iptableswrapper.NewIPTables(iptables.ProtocolIPv4)
+	ipt, err := c.newIptables(iptables.ProtocolIPv4)
 	if err != nil {
 		return err
 	}
@@ -503,4 +505,17 @@ func (c *nftConnmark) insertCIDRReturnRule(table *nftables.Table, chain *nftable
 			&expr.Verdict{Kind: expr.VerdictReturn},
 		},
 	})
+}
+
+func isNotExistError(err error) bool {
+	if err == nil {
+		return false
+	}
+	type notExister interface {
+		IsNotExist() bool
+	}
+	if ne, ok := err.(notExister); ok {
+		return ne.IsNotExist()
+	}
+	return false
 }
