@@ -11,10 +11,10 @@ package cni
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
@@ -90,10 +90,9 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 
 			ver, err := f.DiscoveryClient.ServerVersion()
 			Expect(err).ToNot(HaveOccurred())
-			minor, err := strconv.Atoi(ver.Minor)
+			semVer, err := semver.NewVersion(ver.String())
 			Expect(err).ToNot(HaveOccurred())
-
-			if minor <= 32 && mode == "nftables" {
+			if semVer.Minor() <= 32 && mode == "nftables" {
 				return
 			}
 

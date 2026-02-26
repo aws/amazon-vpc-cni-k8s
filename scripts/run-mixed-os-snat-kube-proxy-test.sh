@@ -9,7 +9,7 @@ INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration"
 
 # Defaults
 : "${AWS_DEFAULT_REGION:=us-west-2}"
-: "${CLUSTER_NAME:=cni-mixed-os-$RANDOM}"
+: "${CLUSTER_NAME:=cni-mixed-os-$(date +%s)}"
 : "${K8S_VERSION:=1.31}"
 : "${IP_FAMILY:=IPv4}"
 : "${NODES_PER_OS:=2}"
@@ -210,24 +210,24 @@ update_cni_image
 VPC_ID=$(get_vpc_id)
 echo "Using VPC: $VPC_ID"
 
-# # Run tests on each OS type
-# for os in "${OS_TYPES[@]}"; do
-#     run_tests_for_os "$os" || true
-# done
+# Run tests on each OS type
+for os in "${OS_TYPES[@]}"; do
+    run_tests_for_os "$os" || true
+done
 
-# # Summary
-# echo ""
-# echo "========================================"
-# echo "Test Summary"
-# echo "========================================"
-# if [[ ${#FAILED_OS[@]} -eq 0 ]]; then
-#     echo "All OS types PASSED"
-# else
-#     echo "FAILED OS types: ${FAILED_OS[*]}"
-# fi
+# Summary
+echo ""
+echo "========================================"
+echo "Test Summary"
+echo "========================================"
+if [[ ${#FAILED_OS[@]} -eq 0 ]]; then
+    echo "All OS types PASSED"
+else
+    echo "FAILED OS types: ${FAILED_OS[*]}"
+fi
 
-# if [[ "$DEPROVISION" == true ]]; then
-#     delete_cluster
-# fi
+if [[ "$DEPROVISION" == true ]]; then
+    delete_cluster
+fi
 
-# [[ ${#FAILED_OS[@]} -eq 0 ]]
+[[ ${#FAILED_OS[@]} -eq 0 ]]
