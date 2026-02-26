@@ -532,7 +532,7 @@ func (ds *DataStore) AddIPv4CidrToStore(eniID string, ipv4Cidr net.IPNet, isPref
 	defer ds.lock.Unlock()
 
 	strIPv4Cidr := ipv4Cidr.String()
-	ds.log.Infof("Adding %s to DS for %s", strIPv4Cidr, eniID)
+	ds.log.Debugf("Adding %s to DS for %s", strIPv4Cidr, eniID)
 	curENI, ok := ds.eniPool[eniID]
 	if !ok {
 		ds.log.Infof("unknown ENI")
@@ -541,7 +541,7 @@ func (ds *DataStore) AddIPv4CidrToStore(eniID string, ipv4Cidr net.IPNet, isPref
 	// Already there
 	_, ok = curENI.AvailableIPv4Cidrs[strIPv4Cidr]
 	if ok {
-		ds.log.Infof("IP already in DS")
+		ds.log.Debugf("IP already in DS")
 		return errors.New(IPAlreadyInStoreError)
 	}
 
