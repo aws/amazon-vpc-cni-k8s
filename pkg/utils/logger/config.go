@@ -15,26 +15,30 @@ package logger
 
 import (
 	"os"
+	"strings"
 )
 
 const (
-	defaultLogFilePath = "/host/var/log/aws-routed-eni/ipamd.log"
-	defaultLogLevel    = "Debug"
-	envLogLevel        = "AWS_VPC_K8S_CNI_LOGLEVEL"
-	envLogFilePath     = "AWS_VPC_K8S_CNI_LOG_FILE"
+	defaultLogFilePath     = "/host/var/log/aws-routed-eni/ipamd.log"
+	defaultLogLevel        = "Debug"
+	envLogLevel            = "AWS_VPC_K8S_CNI_LOGLEVEL"
+	envLogFilePath         = "AWS_VPC_K8S_CNI_LOG_FILE"
+	envAdditionalLogFile   = "AWS_VPC_K8S_CNI_ADDITIONAL_LOG_FILE"
 )
 
 // Configuration stores the config for the logger
 type Configuration struct {
-	LogLevel    string
-	LogLocation string
+	LogLevel               string
+	LogLocation            string
+	AdditionalLogLocations []string
 }
 
 // LoadLogConfig returns the log configuration
 func LoadLogConfig() *Configuration {
 	return &Configuration{
-		LogLevel:    GetLogLevel(),
-		LogLocation: GetLogLocation(),
+		LogLevel:               GetLogLevel(),
+		LogLocation:            GetLogLocation(),
+		AdditionalLogLocations: GetAdditionalLogLocations(),
 	}
 }
 
@@ -45,6 +49,28 @@ func GetLogLocation() string {
 		logFilePath = defaultLogFilePath
 	}
 	return logFilePath
+}
+
+// GetAdditionalLogLocations returns a list of additional log destinations
+// parsed from a comma-separated environment variable.
+func GetAdditionalLogLocations() []string {
+	return ParseAdditionalLogLocations(os.Getenv(envAdditionalLogFile))
+}
+
+// ParseAdditionalLogLocations parses a comma-separated string of log destinations
+// into a slice of trimmed, non-empty strings.
+func ParseAdditionalLogLocations(val string) []string {
+	if val == "" {
+		return nil
+	}
+	var locations []string
+	for _, s := range strings.Split(val, ",") {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			locations = append(locations, s)
+		}
+	}
+	return locations
 }
 
 // GetLogLevel returns the log level

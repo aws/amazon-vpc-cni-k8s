@@ -98,3 +98,101 @@ func TestGetPluginLogFilePath(t *testing.T) {
 	}
 	assert.Equal(t, zapcore.AddSync(expectedLumberJackLogger), getPluginLogFilePath(inputPluginLogFile))
 }
+
+func TestParseAdditionalLogLocationsEmpty(t *testing.T) {
+	assert.Nil(t, ParseAdditionalLogLocations(""))
+}
+
+func TestParseAdditionalLogLocationsSingle(t *testing.T) {
+	assert.Equal(t, []string{"stdout"}, ParseAdditionalLogLocations("stdout"))
+}
+
+func TestParseAdditionalLogLocationsMultiple(t *testing.T) {
+	result := ParseAdditionalLogLocations("stdout, /var/log/extra.log, stderr")
+	assert.Equal(t, []string{"stdout", "/var/log/extra.log", "stderr"}, result)
+}
+
+func TestParseAdditionalLogLocationsTrimsWhitespace(t *testing.T) {
+	result := ParseAdditionalLogLocations("  stdout , , /tmp/test.log  ")
+	assert.Equal(t, []string{"stdout", "/tmp/test.log"}, result)
+}
+
+func TestGetAdditionalLogLocationsFromEnv(t *testing.T) {
+	_ = os.Setenv(envAdditionalLogFile, "stdout,/var/log/extra.log")
+	defer os.Unsetenv(envAdditionalLogFile)
+
+	result := GetAdditionalLogLocations()
+	assert.Equal(t, []string{"stdout", "/var/log/extra.log"}, result)
+}
+
+func TestGetAdditionalLogLocationsNotSet(t *testing.T) {
+	assert.Nil(t, GetAdditionalLogLocations())
+}
+
+func TestMultiSinkLoggerFileAndStdout(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "cni-log-test-*.log")
+	assert.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	logConfig := &Configuration{
+		LogLevel:               "Debug",
+		LogLocation:            tmpFile.Name(),
+		AdditionalLogLocations: []string{"stdout"},
+	}
+	l := New(logConfig)
+	assert.NotNil(t, l)
+
+	// Write a log line and verify it appears in the file
+	l.Info("multi-sink test message")
+
+	content, err := os.ReadFile(tmpFile.Name())
+	assert.NoError(t, err)
+	assert.Contains(t, string(content), "multi-sink test message")
+}
+
+func TestMultiSinkLoggerTwoFiles(t *testing.T) {
+	tmpFile1, err := os.CreateTemp("", "cni-log-test1-*.log")
+	assert.NoError(t, err)
+	defer os.Remove(tmpFile1.Name())
+	tmpFile1.Close()
+
+	tmpFile2, err := os.CreateTemp("", "cni-log-test2-*.log")
+	assert.NoError(t, err)
+	defer os.Remove(tmpFile2.Name())
+	tmpFile2.Close()
+
+	logConfig := &Configuration{
+		LogLevel:               "Debug",
+		LogLocation:            tmpFile1.Name(),
+		AdditionalLogLocations: []string{tmpFile2.Name()},
+	}
+	l := New(logConfig)
+	l.Info("dual-file test message")
+
+	content1, err := os.ReadFile(tmpFile1.Name())
+	assert.NoError(t, err)
+	assert.Contains(t, string(content1), "dual-file test message")
+
+	content2, err := os.ReadFile(tmpFile2.Name())
+	assert.NoError(t, err)
+	assert.Contains(t, string(content2), "dual-file test message")
+}
+
+func TestSingleSinkBackwardCompat(t *testing.T) {
+	// When AdditionalLogLocations is nil, behavior is unchanged
+	logConfig := &Configuration{
+		LogLevel:    "Debug",
+		LogLocation: "stdout",
+	}
+	l := New(logConfig)
+	assert.NotNil(t, l)
+}
+
+func TestLoadLogConfigIncludesAdditionalLogLocations(t *testing.T) {
+	_ = os.Setenv(envAdditionalLogFile, "stdout")
+	defer os.Unsetenv(envAdditionalLogFile)
+
+	config := LoadLogConfig()
+	assert.Equal(t, []string{"stdout"}, config.AdditionalLogLocations)
+}
