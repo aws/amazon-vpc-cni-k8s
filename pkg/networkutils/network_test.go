@@ -848,7 +848,7 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 		}, mockIptables.(*mock_iptables.MockIptables).DataplaneState)
 }
 
-func TestUUpdateHostSNATRules(t *testing.T) {
+func TestUpdateHostSNATRules(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()
 

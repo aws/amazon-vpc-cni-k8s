@@ -110,6 +110,7 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 			By("detecting iptables backend on node")
 			backend := detectIptablesBackend(primaryNode.Name)
 			fmt.Fprintf(GinkgoWriter, "detected iptables backend: %s\n", backend)
+			Expect(backend).To(Or(Equal("legacy"), Equal("nftables")))
 
 			By("verifying CNI connmark rules exist")
 			verifyConnmarkRules(primaryNode.Name, backend)

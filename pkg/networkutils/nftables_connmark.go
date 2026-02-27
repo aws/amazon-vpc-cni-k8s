@@ -116,12 +116,14 @@ func (c *nftConnmark) ensureBaseChain(table *nftables.Table) *nftables.Chain {
 	}
 	if existing == nil {
 		priority := c.getDesiredPriority()
+		policy := nftables.ChainPolicyAccept
 		chain := c.nft.AddChain(&nftables.Chain{
 			Name:     nftBaseChainName,
 			Table:    table,
 			Type:     nftables.ChainTypeNAT,
 			Hooknum:  nftables.ChainHookPrerouting,
 			Priority: &priority,
+			Policy:   &policy,
 		})
 		return chain
 	}
@@ -276,7 +278,9 @@ func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nft
 
 	// Delete unknown rules
 	for _, r := range unknownRules {
-		c.nft.DelRule(r)
+		if err := c.nft.DelRule(r); err != nil {
+			log.Errorf("failed to delete unknown rule: %s, id: %d", err, r.Handle)
+		}
 	}
 
 	desiredCIDRs := make(map[string]bool)
@@ -287,13 +291,20 @@ func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nft
 	// Delete stale CIDRs
 	for cidr, rule := range currentCIDRs {
 		if !desiredCIDRs[cidr] {
-			c.nft.DelRule(rule)
+			if err := c.nft.DelRule(rule); err != nil {
+				log.Errorf("failed to delete stale cidr rule %s in nf table: %s, id: %d", cidr, err, rule.Handle)
+			}
 		}
 	}
 
 	// Insert missing CIDRs (prepends - order doesn't matter for CIDR rules)
-	for cidr := range desiredCIDRs {
-		if _, exists := currentCIDRs[cidr]; !exists {
+	for cidrStr := range desiredCIDRs {
+		if _, exists := currentCIDRs[cidrStr]; !exists {
+			_, cidr, err := net.ParseCIDR(cidrStr)
+			if err != nil {
+				log.Errorf("failed to insert cidr %s in nf table: %s", cidrStr, err)
+				continue
+			}
 			c.insertCIDRReturnRule(table, chain, cidr) // InsertRule
 		}
 	}
@@ -489,11 +500,7 @@ func (c *nftConnmark) addSetMarkRule(table *nftables.Table, chain *nftables.Chai
 	})
 }
 
-func (c *nftConnmark) insertCIDRReturnRule(table *nftables.Table, chain *nftables.Chain, cidrStr string) {
-	_, cidr, err := net.ParseCIDR(cidrStr)
-	if err != nil {
-		return
-	}
+func (c *nftConnmark) insertCIDRReturnRule(table *nftables.Table, chain *nftables.Chain, cidr *net.IPNet) {
 	c.nft.InsertRule(&nftables.Rule{
 		Table: table,
 		Chain: chain,

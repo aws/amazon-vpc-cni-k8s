@@ -59,7 +59,6 @@ func (c *iptablesConnmark) Cleanup() error {
 
 	// Clear and delete chain
 	_ = ipt.ClearChain("nat", "AWS-CONNMARK-CHAIN-0")
-	//_ = ipt.DeleteChain("nat", "AWS-CONNMARK-CHAIN-0")
 
 	return nil
 }
