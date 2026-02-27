@@ -157,7 +157,8 @@ type NetworkAPIs interface {
 	// SetupENINetwork performs ENI level network configuration. Not needed on the primary ENI
 	SetupENINetwork(eniIP string, eniMAC string, networkCard int, eniSubnetCIDR string, maxENIPerNIC int, isTrunkENI bool, routeTableID int, isRuleConfigured bool) error
 	// UpdateHostIptablesRules updates the nat table iptables rules on the host
-	UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v6Enabled bool) error
+	//UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v6Enabled bool) error
+	UpdateHostSNATRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v6Enabled bool) error
 	CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error
 	UseExternalSNAT() bool
 	GetExcludeSNATCIDRs() []string
@@ -186,6 +187,7 @@ type linuxNetwork struct {
 	ns          nswrapper.NS
 	newIptables func(IPProtocol iptables.Protocol) (iptableswrapper.IPTablesIface, error)
 	mainENIMark uint32
+	connmark    Connmark
 }
 
 type snatType uint32
@@ -198,6 +200,11 @@ const (
 
 // New creates a linuxNetwork object
 func New() NetworkAPIs {
+	connmark, err := NewConnmark(getVethPrefixName(), getConnmark())
+	if err != nil {
+		log.Fatalf("Failed to detect iptable mode vpc-cni is using: %v", err)
+	}
+
 	return &linuxNetwork{
 		useExternalSNAT:        useExternalSNAT(),
 		ipv6EgressEnabled:      ipV6EgressEnabled(),
@@ -216,6 +223,7 @@ func New() NetworkAPIs {
 			ipt, err := iptables.NewWithProtocol(IPProtocol)
 			return ipt, err
 		},
+		connmark: connmark,
 	}
 }
 
@@ -373,15 +381,14 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 			}
 		}
 	}
-
-	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr, v6Enabled)
+	return n.UpdateHostSNATRules(vpcCIDRs, primaryMAC, primaryAddr, v6Enabled)
 }
 
-// UpdateHostIptablesRules updates the NAT table rules based on the VPC CIDRs configuration
-func (n *linuxNetwork) UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP,
-	v6Enabled bool) error {
-	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr, v6Enabled)
-}
+// // UpdateHostIptablesRules updates the NAT table rules based on the VPC CIDRs configuration
+// func (n *linuxNetwork) UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP,
+// 	v6Enabled bool) error {
+// 	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr)
+// }
 
 func (n *linuxNetwork) CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error {
 	ipProtocol := iptables.ProtocolIPv4
@@ -428,42 +435,43 @@ func (n *linuxNetwork) CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error {
 	return nil
 }
 
-func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP,
+func (n *linuxNetwork) UpdateHostSNATRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP,
 	v6Enabled bool) error {
+	if v6Enabled {
+		// For v6, we don't add any SNAT or Connmark rules as traffic enters and exits from the ENI it came from
+		return nil
+	}
+	err := n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr)
+	if err != nil {
+		log.Error(fmt.Sprintf("failed to iptable rules for snat %s", err.Error()))
+		return err
+	}
+	if n.useExternalSNAT {
+		return n.connmark.Cleanup()
+	}
+	return n.connmark.Setup(append(vpcCIDRs, n.excludeSNATCIDRs...))
+
+}
+
+func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error {
 	primaryIntf, err := findPrimaryInterfaceName(primaryMAC)
 	if err != nil {
 		return errors.Wrapf(err, "failed to SetupHostNetwork")
 	}
 
 	ipProtocol := iptables.ProtocolIPv4
-	if v6Enabled {
-		// For v6, we don't add any SNAT or Connmark rules as traffic enters and exits from the ENI it came from
-		return nil
+	ipt, err := n.newIptables(ipProtocol)
+	if err != nil {
+		return errors.Wrap(err, "host network setup: failed to create iptables")
 	}
 
-	if !v6Enabled {
-		ipt, err := n.newIptables(ipProtocol)
-		if err != nil {
-			return errors.Wrap(err, "host network setup: failed to create iptables")
-		}
-
-		iptablesSNATRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt)
-		if err != nil {
-			return err
-		}
-		if err := n.updateIptablesRules(iptablesSNATRules, ipt); err != nil {
-			return err
-		}
-
-		iptablesConnmarkRules, err := n.buildIptablesConnmarkRules(vpcCIDRs, ipt)
-		if err != nil {
-			return err
-		}
-		if err := n.updateIptablesRules(iptablesConnmarkRules, ipt); err != nil {
-			return err
-		}
+	iptablesSNATRules, err := n.buildIptablesSNATRules(vpcCIDRs, primaryAddr, primaryIntf, ipt)
+	if err != nil {
+		return err
 	}
-
+	if err := n.updateIptablesRules(iptablesSNATRules, ipt); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -588,109 +596,6 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 		rule: []string{
 			"-m", "comment", "--comment", "AWS, primary ENI",
 			"-i", "vlan+", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", n.mainENIMark),
-		},
-	})
-
-	log.Debugf("iptableRules: %v", iptableRules)
-	return iptableRules, nil
-}
-
-func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptableswrapper.IPTablesIface) ([]iptablesRule, error) {
-	var allCIDRs []string
-	allCIDRs = append(allCIDRs, vpcCIDRs...)
-	allCIDRs = append(allCIDRs, n.excludeSNATCIDRs...)
-	excludeCIDRs := sets.NewString(n.excludeSNATCIDRs...)
-
-	log.Debugf("Total CIDRs to exempt from connmark rules - %d", len(allCIDRs))
-
-	var chains []string
-	chain := "AWS-CONNMARK-CHAIN-0"
-	log.Debugf("Setup Host Network: iptables -N %s -t nat", chain)
-	if err := ipt.NewChain("nat", chain); err != nil && !containChainExistErr(err) {
-		log.Errorf("ipt.NewChain error for chain [%s]: %v", chain, err)
-		return []iptablesRule{}, errors.Wrapf(err, "host network setup: failed to add chain")
-	}
-	chains = append(chains, chain)
-
-	var iptableRules []iptablesRule
-	log.Debugf("Setup Host Network: iptables -t nat -A PREROUTING -i %s+ -m comment --comment \"AWS, outbound connections\" -j AWS-CONNMARK-CHAIN-0", n.vethPrefix)
-	// Force delete legacy rule: the rule was matching on "-m state --state NEW", which is
-	// always true for packets traversing the nat table
-	iptableRules = append(iptableRules, iptablesRule{
-		name:        "connmark rule for non-VPC outbound traffic",
-		shouldExist: false,
-		table:       "nat",
-		chain:       "PREROUTING",
-		rule: []string{
-			"-i", n.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections",
-			"-m", "state", "--state", "NEW", "-j", "AWS-CONNMARK-CHAIN-0",
-		}})
-	iptableRules = append(iptableRules, iptablesRule{
-		name:        "connmark rule for non-VPC outbound traffic",
-		shouldExist: !n.useExternalSNAT,
-		table:       "nat",
-		chain:       "PREROUTING",
-		rule: []string{
-			"-i", n.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections",
-			"-j", "AWS-CONNMARK-CHAIN-0",
-		}})
-
-	for _, cidr := range allCIDRs {
-		comment := "AWS CONNMARK CHAIN, VPC CIDR"
-		if excludeCIDRs.Has(cidr) {
-			comment = "AWS CONNMARK CHAIN, EXCLUDED CIDR"
-		}
-		log.Debugf("Setup Host Network: iptables -A %s -d %s -t nat -j %s", chain, cidr, "RETURN")
-
-		iptableRules = append(iptableRules, iptablesRule{
-			name:        chain,
-			shouldExist: !n.useExternalSNAT,
-			table:       "nat",
-			chain:       chain,
-			rule: []string{
-				"-d", cidr, "-m", "comment", "--comment", comment, "-j", "RETURN",
-			}})
-	}
-
-	// Force delete existing restore mark rule so that the subsequent rule gets added to the end
-	iptableRules = append(iptableRules, iptablesRule{
-		name:        "connmark to fwmark copy",
-		shouldExist: false,
-		table:       "nat",
-		chain:       "PREROUTING",
-		rule: []string{
-			"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK",
-			"--restore-mark", "--mask", fmt.Sprintf("%#x", n.mainENIMark),
-		},
-	})
-
-	// Being in the nat table, this only applies to the first packet of the connection. The mark
-	// will be restored in the mangle table for subsequent packets.
-	iptableRules = append(iptableRules, iptablesRule{
-		name:        "connmark to fwmark copy",
-		shouldExist: !n.useExternalSNAT,
-		table:       "nat",
-		chain:       "PREROUTING",
-		rule: []string{
-			"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK",
-			"--restore-mark", "--mask", fmt.Sprintf("%#x", n.mainENIMark),
-		},
-	})
-
-	connmarkStaleRules, err := computeStaleIptablesRules(ipt, "nat", "AWS-CONNMARK-CHAIN", iptableRules, chains)
-	if err != nil {
-		return []iptablesRule{}, err
-	}
-	iptableRules = append(iptableRules, connmarkStaleRules...)
-
-	iptableRules = append(iptableRules, iptablesRule{
-		name:        "connmark rule for external outbound traffic",
-		shouldExist: !n.useExternalSNAT,
-		table:       "nat",
-		chain:       chain,
-		rule: []string{
-			"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK",
-			"--set-xmark", fmt.Sprintf("%#x/%#x", n.mainENIMark, n.mainENIMark),
 		},
 	})
 
