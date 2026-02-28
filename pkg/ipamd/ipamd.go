@@ -13,6 +13,7 @@
 
 package ipamd
 
+
 import (
 	"context"
 	"fmt"
@@ -23,13 +24,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/k8sapi"
-
 	"github.com/aws/smithy-go"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/pkg/errors"
@@ -40,7 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
-
+	"k8s.io/client-go/tools/record"    // ADD THIS LINE
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
@@ -51,6 +48,36 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/utils/prometheusmetrics"
 	rcv1alpha1 "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 )
+
+// Add these type definitions right after the imports, before the package comment:
+
+// IPAllocationError represents detailed error information for IP allocation failures
+type IPAllocationError struct {
+	Reason           string
+	Message          string
+	SubnetID         string
+	AvailableIPs     int
+	FragmentationInfo *FragmentationInfo
+	ENILimits        *ENILimitInfo
+}
+
+// FragmentationInfo provides details about subnet fragmentation
+type FragmentationInfo struct {
+	TotalSubnets      int
+	FragmentedSubnets int
+	LargestBlock      int
+}
+
+// ENILimitInfo provides details about ENI limitations
+type ENILimitInfo struct {
+	CurrentENIs int
+	MaxENIs     int
+	IPsPerENI   int
+}
+
+// The package ipamd is a long running daemon which manages a warm pool of available IP addresses.
+// It also monitors the size of the pool, dynamically allocates more ENIs when the pool size goes below
+// the minimum threshold and frees them back when the pool size goes above max threshold.
 
 // The package ipamd is a long running daemon which manages a warm pool of available IP addresses.
 // It also monitors the size of the pool, dynamically allocates more ENIs when the pool size goes below
@@ -1080,8 +1107,11 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context, networkCard int) error
 		if err != nil {
 			log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
 			ipamdErrInc("increaseIPPoolAllocENI")
-			log.Warnf("Failed to allocate %d IP addresses on an ENI: %v", resourcesToAllocate, err)
-			if containsInsufficientCIDRsOrSubnetIPs(err) {
+			// Get current ENI diagnostics
+      eniCount := len(c.dataStoreAccess.GetDataStore(networkCard).GetAllocatableENIs(c.maxIPsPerENI, c.useCustomNetworking))
+    log.Warnf("Failed to allocate %d IP addresses on an ENI: %v. ENI count: %d/%d, Check ENI limits and subnet capacity", 
+       resourcesToAllocate, err, eniCount, c.maxENI)
+	  		if containsInsufficientCIDRsOrSubnetIPs(err) {
 				ipamdErrInc("increaseIPPoolAllocIPAddressesFailed")
 				log.Errorf("Unable to attach IPs/Prefixes for the ENI, subnet doesn't seem to have enough IPs/Prefixes. Consider using new subnet or carve a reserved range using create-subnet-cidr-reservation")
 				c.lastInsufficientCidrError = time.Now()
@@ -1142,7 +1172,58 @@ func (c *IPAMContext) tryAssignIPs(ctx context.Context, networkCard int) (increa
 			resourcesToAllocate := min((c.maxIPsPerENI - currentNumberOfAllocatedIPs), toAllocate)
 			output, err := c.awsClient.AllocIPAddresses(ctx, eni.ID, resourcesToAllocate)
 			if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
-				log.Warnf("failed to allocate all available IP addresses on ENI %s, err: %v", eni.ID, err)
+// Replace line 1118 with this enhanced diagnostic code:
+
+// Build detailed allocation error information
+allocError := &IPAllocationError{
+    Reason:       c.determineFailureReason(err, availableSubnetIPs, eniLimit),
+    Message:      err.Error(),
+    SubnetID:     c.getCurrentSubnetID(eni),
+    AvailableIPs: availableSubnetIPs,
+}
+
+// Add fragmentation info if subnet has available IPs but allocation failed
+if availableSubnetIPs > 0 && len(eni.AvailableIPv4Cidrs) < availableSubnetIPs/10 {
+    allocError.FragmentationInfo = &FragmentationInfo{
+        TotalSubnets:      1, // current subnet
+        FragmentedSubnets: 1,
+        LargestBlock:      len(eni.AvailableIPv4Cidrs),
+    }
+}
+
+// Add ENI limit info if we're hitting ENI constraints
+if currentIPCount >= c.maxIPsPerENI || eniLimit <= 0 {
+    allocError.ENILimits = &ENILimitInfo{
+        CurrentENIs: c.dataStore.GetENIInfos().ENIs,
+        MaxENIs:     c.maxENI,
+        IPsPerENI:   c.maxIPsPerENI,
+    }
+}
+
+// Emit structured event instead of just logging
+c.emitIPAllocationFailureEvent(allocError, eni.ID)
+
+// Keep minimal debug logging
+log.Debugw("IP allocation failed with diagnostics",
+    "eniID", eni.ID,
+    "reason", allocError.Reason,
+    "availableIPs", availableSubnetIPs,
+    "currentUsage", fmt.Sprintf("%d/%d", currentIPCount, totalSubnetIPs))        eni.ID, err, currentIPCount, totalSubnetIPs, eniLimit, availableSubnetIPs, len(eni.AvailableIPv4Cidrs))              eni.ID, err, currentIPCount, totalSubnetIPs, eniLimit, availableSubnetIPs)
+	func (c *IPAMContext) emitIPAllocationFailureEvent(allocError *IPAllocationError, eniID string) {
+    if c.eventRecorder == nil {
+        return
+    }
+    
+    eventType := corev1.EventTypeWarning
+    reason := "IPAllocationFailed"
+    message := fmt.Sprintf("Failed to allocate IP on ENI %s: %s | Available IPs: %d", 
+        eniID, allocError.Reason, allocError.AvailableIPs)
+    
+    c.eventRecorder.Eventf(c.myNodeObj, eventType, reason, message)
+}		
+				
+				
+				
 				// Try to just get one more IP
 				output, err = c.awsClient.AllocIPAddresses(ctx, eni.ID, 1)
 				if err != nil && !containsPrivateIPAddressLimitExceededError(err) {
@@ -1150,7 +1231,13 @@ func (c *IPAMContext) tryAssignIPs(ctx context.Context, networkCard int) (increa
 					if c.useSubnetDiscovery && containsInsufficientCIDRsOrSubnetIPs(err) {
 						continue
 					}
-					return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IP addresses on ENI %s, err ", eni.ID))
+					 // Add prefix delegation diagnostics
+                    availablePrefixes := 0
+                    if eniMetadata != nil {
+                    availablePrefixes = len(eniMetadata.IPv6Prefixes)
+                }
+                 return errors.Wrapf(err, "Failed to allocate IPv6 Prefixes to ENI. Available prefixes: %d, Trunk ENI mode: %v", 
+              availablePrefixes, !isTrunkENI)
 				}
 			}
 
@@ -1240,8 +1327,10 @@ func (c *IPAMContext) tryAssignPrefixes(ctx context.Context, networkCard int) (i
 				if c.useSubnetDiscovery && containsInsufficientCIDRsOrSubnetIPs(err) {
 					continue
 				}
-				return false, errors.Wrap(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v", eni.ID, err))
-			}
+     // Add IPv4 prefix diagnostics
+       currentPrefixes := len(eni.IPv4Prefixes)
+    return false, errors.Wrapf(err, fmt.Sprintf("failed to allocate one IPv4 prefix on ENI %s, err: %v. Current prefixes: %d, Max prefixes per ENI: %d", 
+    eni.ID, err, currentPrefixes, c.maxPrefixesPerENI))			}
 		}
 
 		var ec2Prefixes []ec2types.Ipv4PrefixSpecification
@@ -1313,7 +1402,13 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 			// IP and custom networking modes for IPv6, this restriction can be relaxed.
 			err := c.assignIPv6Prefix(ctx, eni, eniMetadata.NetworkCard)
 			if err != nil {
-				return errors.Wrapf(err, "Failed to allocate IPv6 Prefixes to ENI")
+				// Add prefix delegation diagnostics
+        availablePrefixes := 0
+     if eniMetadata != nil && eniMetadata.IPv6Prefixes != nil {
+    availablePrefixes = len(eniMetadata.IPv6Prefixes)
+     } 
+return errors.Wrapf(err, "Failed to allocate IPv6 Prefixes to ENI. Available prefixes: %d, Trunk ENI mode: %v, PD mode active", 
+    availablePrefixes, !isTrunkENI)
 			}
 		}
 	}
