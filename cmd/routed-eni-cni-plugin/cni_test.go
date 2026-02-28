@@ -391,7 +391,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 			},
 			DeviceNumber:      devNum,
 			RouteTable:        devNum + 1,
-			HostVethName:      "3a52ce78095",
+			HostVethName:      "eni" + podHash,
 			ContainerVethName: ifName,
 		},
 		{
@@ -401,7 +401,7 @@ func TestCmdAddForMultiNICAttachment(t *testing.T) {
 			},
 			DeviceNumber:      devNum,
 			RouteTable:        (MAX_ENI * (NetworkCards - 1)) + devNum + 1,
-			HostVethName:      "ce799470a46",
+			HostVethName:      "enice799470a46",
 			ContainerVethName: "mNicIf1",
 		},
 	}
