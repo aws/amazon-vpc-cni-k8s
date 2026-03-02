@@ -1318,8 +1318,8 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 		}
 	}
 
-	// For other ENIs, set up the network
-	if eni != primaryENI {
+	// Set up network for non-primary, non-trunk ENIs
+	if eni != primaryENI && !isTrunkENI {
 		subnetCidr := eniMetadata.SubnetIPv4CIDR
 		if c.enableIPv6 {
 			subnetCidr = eniMetadata.SubnetIPv6CIDR
