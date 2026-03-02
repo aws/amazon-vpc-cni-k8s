@@ -96,6 +96,8 @@ env:
   NETWORK_POLICY_ENFORCING_MODE: "standard"
   ENABLE_IMDS_ONLY_MODE: "false"
   ENABLE_MULTI_NIC: "false"
+  # ENABLE_TUNING_PLUGIN: "false"
+  # TUNING_SYSCTLS: '{"net.core.somaxconn":"1024"}'
 
 # Add env from configMap or from secrets
 # - name: ENV_VAR1
