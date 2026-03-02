@@ -49,6 +49,7 @@ const (
 
 type VirtualInterfaceMetadata struct {
 	IPAddress         *net.IPNet
+	IPv6Address       *net.IPNet // Secondary IPv6 address for dual-stack configurations
 	DeviceNumber      int
 	RouteTable        int
 	HostVethName      string
@@ -270,8 +271,8 @@ func (createVethContext *createVethPairContext) run(hostNS ns.NetNS) error {
 func (n *linuxNetwork) SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, netnsPath string, mtu int, log logger.Logger) error {
 	for index, vethData := range vethMetadata {
 
-		log.Debugf("SetupPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, routeTableNumber=%d, mtu=%d",
-			vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, vethData.RouteTable, mtu)
+		log.Debugf("SetupPodNetwork: hostVethName=%s, contVethName=%s, netnsPath=%s, ipAddr=%v, ipv6Addr=%v, routeTableNumber=%d, mtu=%d",
+			vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, vethData.IPv6Address, vethData.RouteTable, mtu)
 
 		hostVeth, err := n.setupVeth(vethData.HostVethName, vethData.ContainerVethName, netnsPath, vethData.IPAddress, mtu, log, index)
 		if err != nil {
@@ -286,6 +287,27 @@ func (n *linuxNetwork) SetupPodNetwork(vethMetadata []VirtualInterfaceMetadata, 
 		if err := n.setupIPBasedContainerRouteRules(hostVeth, vethData.IPAddress, rtTable, log); err != nil {
 			return errors.Wrapf(err, "SetupPodNetwork: unable to setup IP based container routes and rules")
 		}
+
+		// Dual-stack: add secondary IPv6 address to container and set up host-side routes/rules
+		if vethData.IPv6Address != nil {
+			// Enable IPv6 forwarding on host veth
+			if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/forwarding", vethData.HostVethName), "1"); err != nil {
+				if !os.IsNotExist(err) {
+					return errors.Wrapf(err, "SetupPodNetwork: failed to enable IPv6 forwarding on hostVeth %s", vethData.HostVethName)
+				}
+			}
+
+			// Add IPv6 address + gateway + default route inside container
+			if err := n.addSecondaryIPToContainer(netnsPath, vethData.ContainerVethName,
+				vethData.IPv6Address, hostVeth.Attrs().HardwareAddr, log); err != nil {
+				return errors.Wrapf(err, "SetupPodNetwork: failed to add secondary IPv6 address")
+			}
+
+			// Host-side IPv6 route/rule — same route table as IPv4
+			if err := n.setupIPBasedContainerRouteRules(hostVeth, vethData.IPv6Address, rtTable, log); err != nil {
+				return errors.Wrapf(err, "SetupPodNetwork: unable to setup IP based container routes and rules for IPv6")
+			}
+		}
 	}
 	return nil
 }
@@ -295,7 +317,7 @@ func (n *linuxNetwork) TeardownPodNetwork(vethMetadata []VirtualInterfaceMetadat
 
 	for _, vethData := range vethMetadata {
 
-		log.Debugf("TeardownPodNetwork: containerAddr=%s, routeTable=%d", vethData.IPAddress.String(), vethData.RouteTable)
+		log.Debugf("TeardownPodNetwork: containerAddr=%s, containerIPv6Addr=%v, routeTable=%d", vethData.IPAddress.String(), vethData.IPv6Address, vethData.RouteTable)
 
 		// Route table ID for primary ENI was previously calculated as (Network 0, Device 0) => (0* MaxENI + 0 + 1)
 		// which is why we only take action if the route table is not 1
@@ -306,6 +328,13 @@ func (n *linuxNetwork) TeardownPodNetwork(vethMetadata []VirtualInterfaceMetadat
 
 		if err := n.teardownIPBasedContainerRouteRules(vethData.IPAddress, rtTable, log); err != nil {
 			return errors.Wrapf(err, "TeardownPodNetwork: unable to teardown IP based container routes and rules")
+		}
+
+		// Dual-stack: also clean up IPv6 rules
+		if vethData.IPv6Address != nil {
+			if err := n.teardownIPBasedContainerRouteRules(vethData.IPv6Address, rtTable, log); err != nil {
+				return errors.Wrapf(err, "TeardownPodNetwork: unable to teardown IP based container routes and rules for IPv6")
+			}
 		}
 	}
 
@@ -650,6 +679,85 @@ func (n *linuxNetwork) teardownIIFBasedContainerRouteRules(rtTable int, family i
 	log.Debugf("Successfully deleted IIF based rules, rtTable=%v", rtTable)
 
 	return nil
+}
+
+// addSecondaryIPToContainer adds a secondary IP address to an existing container veth interface.
+// Used for dual-stack IPAMD pods where IPv6 is the secondary address on top of IPv4.
+func (n *linuxNetwork) addSecondaryIPToContainer(netnsPath, containerIfName string,
+	addr *net.IPNet, hostMAC net.HardwareAddr, log logger.Logger) error {
+
+	return n.ns.WithNetNSPath(netnsPath, func(_ ns.NetNS) error {
+		contVeth, err := n.netLink.LinkByName(containerIfName)
+		if err != nil {
+			return errors.Wrapf(err, "failed to find container veth %s", containerIfName)
+		}
+
+		// For IPv6: disable DAD (static assignment in isolated netns, no conflict possible)
+		if addr.IP.To4() == nil {
+			if err := n.procSys.Set(fmt.Sprintf("net/ipv6/conf/%s/accept_dad", containerIfName), "0"); err != nil {
+				if !os.IsNotExist(err) {
+					return errors.Wrapf(err, "failed to disable DAD on container veth %s", containerIfName)
+				}
+			}
+		}
+
+		// Add address to container veth
+		if err := n.netLink.AddrAdd(contVeth, &netlink.Addr{IPNet: addr}); err != nil {
+			return errors.Wrapf(err, "failed to add secondary IP %s to container veth %s", addr.String(), containerIfName)
+		}
+		log.Debugf("Added secondary IP %s to container veth %s", addr.String(), containerIfName)
+
+		if addr.IP.To4() != nil {
+			// IPv4 secondary: gateway 169.254.1.1 onlink
+			gw := net.ParseIP("169.254.1.1")
+
+			// Static ARP entry for gateway -> host veth MAC
+			if err := n.netLink.NeighAdd(&netlink.Neigh{
+				LinkIndex:    contVeth.Attrs().Index,
+				State:        netlink.NUD_PERMANENT,
+				IP:           gw,
+				HardwareAddr: hostMAC,
+			}); err != nil {
+				return errors.Wrapf(err, "failed to add ARP entry for gateway %s", gw.String())
+			}
+
+			// Default IPv4 route via gateway, onlink
+			if err := n.netLink.RouteAdd(&netlink.Route{
+				LinkIndex: contVeth.Attrs().Index,
+				Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
+				Gw:        gw,
+				Flags:     int(netlink.FLAG_ONLINK),
+			}); err != nil {
+				return errors.Wrapf(err, "failed to add default IPv4 route via %s", gw.String())
+			}
+		} else {
+			// IPv6 secondary: gateway fe80::1 (IPAMD pod convention from setupVeth)
+			gw := networkutils.CalculatePodIPv6GatewayIP(0) // fe80::1
+
+			// Static NDP entry for gateway -> host veth MAC
+			if err := n.netLink.NeighAdd(&netlink.Neigh{
+				LinkIndex:    contVeth.Attrs().Index,
+				Family:       unix.AF_INET6,
+				State:        netlink.NUD_PERMANENT,
+				IP:           gw,
+				HardwareAddr: hostMAC,
+			}); err != nil {
+				return errors.Wrapf(err, "failed to add NDP entry for gateway %s", gw.String())
+			}
+
+			// Default IPv6 route via gateway
+			if err := n.netLink.RouteAdd(&netlink.Route{
+				LinkIndex: contVeth.Attrs().Index,
+				Dst:       &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 128)},
+				Gw:        gw,
+			}); err != nil {
+				return errors.Wrapf(err, "failed to add default IPv6 route via %s", gw.String())
+			}
+		}
+
+		log.Debugf("Successfully configured secondary IP %s with routes in container", addr.String())
+		return nil
+	})
 }
 
 // buildRoutesForVlan builds routes required for the vlan link.

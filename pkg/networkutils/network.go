@@ -169,6 +169,8 @@ type NetworkAPIs interface {
 	GetLinkByMac(mac string, retryInterval time.Duration) (netlink.Link, error)
 	DeleteRulesBySrc(eniIP string, v6enabled bool) error
 	GetRouteTableNumberForENI(networkCard int, eniIP string, deviceNumber int, maxENIsPerNetworkCard int, isV6 bool) (int, bool, error)
+	// AddIPv6DefaultRouteToENITable adds an IPv6 default route to a per-ENI route table (for dual-stack secondary ENIs)
+	AddIPv6DefaultRouteToENITable(eniMAC string, routeTableID int) error
 }
 
 type linuxNetwork struct {
@@ -1028,6 +1030,25 @@ func (n *linuxNetwork) GetRouteTableNumberForENI(networkCard int, eniIP string, 
 // SetupENINetwork adds default route to route table (eni-<eni_table>), so it does not need to be called on the primary ENI
 func (n *linuxNetwork) SetupENINetwork(eniIP string, eniMAC string, networkCard int, eniSubnetCIDR string, maxENIPerNIC int, isTrunkENI bool, routeTableID int, isRuleConfigured bool) error {
 	return setupENINetwork(eniIP, eniMAC, networkCard, eniSubnetCIDR, n.netLink, retryLinkByMacInterval, retryRouteAddInterval, n.mtu, maxENIPerNIC, isTrunkENI, routeTableID, isRuleConfigured)
+}
+
+// AddIPv6DefaultRouteToENITable adds an IPv6 default route to a per-ENI route table.
+// Used in dual-stack mode for secondary ENIs so that IPv6 traffic from pods on those ENIs
+// egresses through the correct ENI via source-based routing.
+func (n *linuxNetwork) AddIPv6DefaultRouteToENITable(eniMAC string, routeTableID int) error {
+	eniLink, err := n.GetLinkByMac(eniMAC, retryLinkByMacInterval)
+	if err != nil {
+		return errors.Wrapf(err, "AddIPv6DefaultRouteToENITable: failed to find ENI by MAC %s", eniMAC)
+	}
+
+	// ip -6 route add default via fe80::1 dev <eni> table <eni-table>
+	// Uses fe80::1 (IPAMD convention from CalculatePodIPv6GatewayIP), NOT fe80:ec2::1 (branch ENIs)
+	return n.netLink.RouteAdd(&netlink.Route{
+		LinkIndex: eniLink.Attrs().Index,
+		Dst:       &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 128)},
+		Gw:        CalculatePodIPv6GatewayIP(0), // fe80::1
+		Table:     routeTableID,
+	})
 }
 
 func setupENINetwork(eniIP string, eniMac string, networkCard int, eniSubnetCIDR string, netLink netlinkwrapper.NetLink,

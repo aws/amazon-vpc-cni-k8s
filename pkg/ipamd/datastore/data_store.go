@@ -676,6 +676,71 @@ func (ds *DataStore) AssignPodIPv6Address(ipamKey IPAMKey, ipamMetadata IPAMMeta
 	return "", -1, 0, ErrNoAvailableIPInDataStore
 }
 
+// AssignPodIPv6AddressFromENI allocates an IPv6 address from a specific ENI (identified by device number).
+// Used in dual-stack mode to ensure IPv6 is allocated from the same ENI as IPv4.
+func (ds *DataStore) AssignPodIPv6AddressFromENI(ipamKey IPAMKey, ipamMetadata IPAMMetadata, targetDeviceNumber int) (ipv6Address string, deviceNumber int, routeTableId int, err error) {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	// Dedup check
+	if eni, _, addr := ds.eniPool.FindAddressForSandbox(ipamKey); addr != nil {
+		return addr.Address, eni.DeviceNumber, eni.RouteTableID, nil
+	}
+
+	// Find the target ENI and allocate from its IPv6 pool
+	for _, eni := range ds.eniPool {
+		if eni.DeviceNumber != targetDeviceNumber {
+			continue
+		}
+		for _, v6Cidr := range eni.IPv6Cidrs {
+			if !v6Cidr.IsPrefix {
+				continue
+			}
+			ipv6Addr, err := ds.getFreeIPv6AddrFromCidr(v6Cidr)
+			if err != nil {
+				ds.log.Debugf("Unable to get IPv6 address from prefix on ENI device %d: %v", targetDeviceNumber, err)
+				continue
+			}
+			addr := &AddressInfo{Address: ipv6Addr}
+			v6Cidr.IPAddresses[ipv6Addr] = addr
+
+			ds.assignPodIPAddressUnsafe(addr, ipamKey, ipamMetadata, time.Now())
+			if err := ds.writeBackingStoreUnsafe(); err != nil {
+				ds.log.Warnf("Failed to update backing store: %v", err)
+				ds.unassignPodIPAddressUnsafe(addr)
+				delete(v6Cidr.IPAddresses, addr.Address)
+				return "", 0, 0, err
+			}
+			prometheusmetrics.EniIPsInUse.WithLabelValues(eni.ID).Inc()
+			return addr.Address, eni.DeviceNumber, eni.RouteTableID, nil
+		}
+		return "", 0, 0, fmt.Errorf("no available IPv6 address on ENI device %d", targetDeviceNumber)
+	}
+	return "", 0, 0, fmt.Errorf("ENI device %d not found in datastore", targetDeviceNumber)
+}
+
+// AllocatedIPv6s returns a snapshot of all assigned IPv6 addresses (for restart reconciliation in dual-stack).
+func (ds *DataStore) AllocatedIPv6s() []PodIPInfo {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	var ret []PodIPInfo
+	for _, eni := range ds.eniPool {
+		for _, v6Cidr := range eni.IPv6Cidrs {
+			for _, addr := range v6Cidr.IPAddresses {
+				if addr.Assigned() {
+					ret = append(ret, PodIPInfo{
+						IPAMKey:      addr.IPAMKey,
+						IP:           addr.Address,
+						DeviceNumber: eni.DeviceNumber,
+					})
+				}
+			}
+		}
+	}
+	return ret
+}
+
 // AssignPodIPv4Address assigns an IPv4 address to pod
 // It returns the assigned IPv4 address, device number, route table ID, and error
 func (ds *DataStore) AssignPodIPv4Address(ipamKey IPAMKey, ipamMetadata IPAMMetadata) (ipv4address string, deviceNumber int, routeTableId int, err error) {

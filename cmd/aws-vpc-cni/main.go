@@ -84,6 +84,7 @@ const (
 	defaultIPCooldownPeriod      = 30
 	defaultDisablePodV6          = false
 	defaultEnableMultiNICSupport = false
+	defaultEnableIPv4           = true
 
 	envHostCniBinPath        = "HOST_CNI_BIN_PATH"
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
@@ -101,6 +102,7 @@ const (
 	envMinIPTarget           = "MINIMUM_IP_TARGET"
 	envWarmPrefixTarget      = "WARM_PREFIX_TARGET"
 	envEnBandwidthPlugin     = "ENABLE_BANDWIDTH_PLUGIN"
+	envEnIPv4                = "ENABLE_IPv4"
 	envEnIPv6                = "ENABLE_IPv6"
 	envEnIPv6Egress          = "ENABLE_V6_EGRESS"
 	envEnIPv4Egress          = "ENABLE_V4_EGRESS"
@@ -218,9 +220,7 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 		return err
 	}
 
-	// enabledIPv6 is to determine if EKS cluster is IPv4 or IPv6 cluster
-	// if this EKS cluster is IPv6 cluster, egress-cni-plugin will enable IPv4 egress by default
-	// if this EKS cluster is IPv4 cluster, egress-cni-plugin will only enable IPv6 egress if env var "ENABLE_V6_EGRESS" is "true"
+	enabledIPv4 := utils.GetBoolAsStringEnvVar(envEnIPv4, defaultEnableIPv4)
 	enabledIPv6 := utils.GetBoolAsStringEnvVar(envEnIPv6, defaultEnableIPv6)
 	var egressIPAMSubnet string
 	var egressIPAMDst string
@@ -228,22 +228,28 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 	var egressEnabled bool
 	var egressPluginLogFile string
 	var nodeIP = ""
-	if enabledIPv6 {
-		// EKS IPv6 cluster
+	if enabledIPv4 && enabledIPv6 {
+		// Dual-stack: egress plugin not needed, both families on eth0
+		egressEnabled = false
 		egressIPAMSubnet = egressPluginIpamSubnetV4
 		egressIPAMDst = egressPluginIpamDstV4
 		egressIPAMDataDir = egressPluginIpamDataDirV4
-		// Enable IPv4 egress when "ENABLE_V4_EGRESS" is "true" (default)
+		egressPluginLogFile = utils.GetEnv(envEgressV4PluginLogFile, defaultEgressV4PluginLogFile)
+		log.Infof("Dual-stack mode: egress plugin disabled (both IPv4 and IPv6 on eth0)")
+	} else if enabledIPv6 {
+		// IPv6-only cluster: IPv4 egress via v4if0
+		egressIPAMSubnet = egressPluginIpamSubnetV4
+		egressIPAMDst = egressPluginIpamDstV4
+		egressIPAMDataDir = egressPluginIpamDataDirV4
 		egressEnabled = utils.GetBoolAsStringEnvVar(envEnIPv4Egress, defaultEnableIPv4Egress)
 		egressPluginLogFile = utils.GetEnv(envEgressV4PluginLogFile, defaultEgressV4PluginLogFile)
 		nodeIP, err = getPrimaryIP(true)
-		// Node should have a IPv4 address even in IPv6 cluster
 		if err != nil {
 			log.Errorf("Failed to get Node IP, error: %v", err)
 			return err
 		}
 	} else {
-		// EKS IPv4 cluster
+		// IPv4-only cluster: IPv6 egress via v6if0 (only if ENABLE_V6_EGRESS=true)
 		egressIPAMSubnet = egressPluginIpamSubnetV6
 		egressIPAMDst = egressPluginIpamDstV6
 		egressIPAMDataDir = egressPluginIpamDataDirV6
@@ -252,8 +258,6 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 		if egressEnabled {
 			nodeIP, err = getPrimaryIP(false)
 			if err != nil {
-				// When ENABLE_V6_EGRESS is set, but the node is lacking an IPv6 address, log a warning and disable the egress-v6-cni plugin.
-				// This allows IPv4-only nodes to function while still alerting the customer to the possibility of a misconfiguration.
 				log.Warnf("To support IPv6 egress, node primary ENI must have a global IPv6 address, error: %v", err)
 				egressEnabled = false
 			}

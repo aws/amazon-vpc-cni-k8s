@@ -239,8 +239,12 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 
 		containerVethName := networkutils.GenerateContainerVethName(args.IfName, containerVethNamePrefix, index)
 
+		// For dual-stack IPAMD pods, extract secondary IPv6 address
+		secondaryIPv6 := getSecondaryIPv6AddressFromIpAllocationMetadata(ipAllocMetadata)
+
 		vethMetadata = append(vethMetadata, driver.VirtualInterfaceMetadata{
 			IPAddress:         ipAddr,
+			IPv6Address:       secondaryIPv6, // nil for single-stack, populated for dual-stack
 			DeviceNumber:      getDeviceNumberFromIpAllocationMetadata(ipAllocMetadata),
 			RouteTable:        getRouteTableIdFromIpAllocationMetadata(ipAllocMetadata),
 			HostVethName:      hostVethName,
@@ -261,6 +265,15 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 			Address:   *ipAddr,
 			Gateway:   gw,
 		})
+
+		// Add secondary IPv6 to CNI result for dual-stack IPAMD pods
+		if secondaryIPv6 != nil {
+			podIPs = append(podIPs, &current.IPConfig{
+				Interface: &containerInterfaceIndex,
+				Address:   *secondaryIPv6,
+				Gateway:   networkutils.CalculatePodIPv6GatewayIP(0), // fe80::1 (IPAMD convention)
+			})
+		}
 	}
 
 	// The dummy interface is purely virtual and is stored in the prevResult struct to assist in cleanup during the DEL command.
@@ -466,8 +479,10 @@ func del(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 		addr := getIPAddressFromIpAllocationMetadata(ipAllocationMetadata)
 
 		if addr != nil {
+			secondaryIPv6 := getSecondaryIPv6AddressFromIpAllocationMetadata(ipAllocationMetadata)
 			vethMetadata = append(vethMetadata, driver.VirtualInterfaceMetadata{
 				IPAddress:    addr,
+				IPv6Address:  secondaryIPv6,
 				DeviceNumber: getDeviceNumberFromIpAllocationMetadata(ipAllocationMetadata),
 				RouteTable:   getRouteTableIdFromIpAllocationMetadata(ipAllocationMetadata),
 			})
@@ -695,6 +710,19 @@ func getIPAddressFromIpAllocationMetadata(v *pb.IPAllocationMetadata) *net.IPNet
 		}
 	}
 
+	return nil
+}
+
+// getSecondaryIPv6AddressFromIpAllocationMetadata returns the IPv6 address as a secondary address
+// when both IPv4 and IPv6 are present in the allocation metadata (dual-stack IPAMD case)
+func getSecondaryIPv6AddressFromIpAllocationMetadata(v *pb.IPAllocationMetadata) *net.IPNet {
+	// Only return IPv6 as secondary if BOTH IPv4 and IPv6 are present
+	if v != nil && v.IPv4Addr != "" && v.IPv6Addr != "" {
+		return &net.IPNet{
+			IP:   net.ParseIP(v.IPv6Addr),
+			Mask: net.CIDRMask(128, 128),
+		}
+	}
 	return nil
 }
 
