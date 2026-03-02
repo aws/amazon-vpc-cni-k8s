@@ -1810,7 +1810,7 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(ctx context.Context, eni string
 	for _, privateIPv4 := range attachedENIIPs {
 		strPrivateIPv4 := aws.ToString(privateIPv4.PrivateIpAddress)
 		if strPrivateIPv4 == c.primaryIP[eni] {
-			log.Infof("Reconcile and skip primary IP %s on ENI %s", strPrivateIPv4, eni)
+			log.Debugf("Reconcile and skip primary IP %s on ENI %s", strPrivateIPv4, eni)
 			continue
 		}
 
@@ -1856,7 +1856,7 @@ func (c *IPAMContext) verifyAndAddIPsToDatastore(ctx context.Context, eni string
 				c.reconcileCooldownCache.Remove(strPrivateIPv4)
 			}
 		}
-		log.Infof("Trying to add %s", strPrivateIPv4)
+		log.Debugf("Trying to add %s", strPrivateIPv4)
 		// Try to add the IP
 		err := c.dataStoreAccess.GetDataStore(networkCard).AddIPv4CidrToStore(eni, ipv4Addr, false)
 		if err != nil && err.Error() != datastore.IPAlreadyInStoreError {
