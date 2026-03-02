@@ -135,42 +135,48 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 					}
 					firstENI := podENIData[0]
 					// Get pod IPv4 or IPv6 address based on mode
-					if s.ipamContext.enableIPv6 {
+					// When dual-stack pod ENI is enabled, read both addresses if available
+					if s.ipamContext.enablePodENIDualStack {
+						ipv4Addr = firstENI.PrivateIP
+						ipv6Addr = firstENI.IPV6Addr
+						log.Debugf("Dual-stack pod ENI mode: IPv4=%s, IPv6=%s", ipv4Addr, ipv6Addr)
+					} else if s.ipamContext.enableIPv6 {
 						ipv6Addr = firstENI.IPV6Addr
 					} else {
 						ipv4Addr = firstENI.PrivateIP
 					}
 					branchENIMAC = firstENI.IfAddress
 					vlanID = firstENI.VlanID
-					log.Debugf("Pod vlandId: %d", vlanID)
+					log.Debugf("Pod vlanId: %d, IPv4: %s, IPv6: %s", vlanID, ipv4Addr, ipv6Addr)
 
 					if (ipv4Addr == "" && ipv6Addr == "") || branchENIMAC == "" || vlanID == 0 {
 						log.Errorf("Failed to parse pod-ENI annotation: %s", val)
 						return &failureResponse, nil
 					}
-					var subnetCIDR *net.IPNet
-					if s.ipamContext.enableIPv6 {
-						_, subnetCIDR, err = net.ParseCIDR(firstENI.SubnetV6CIDR)
+
+					// Parse subnet CIDRs - need at least one for gateway calculation
+					var subnetV4CIDR, subnetV6CIDR *net.IPNet
+					if firstENI.SubnetCIDR != "" {
+						_, subnetV4CIDR, err = net.ParseCIDR(firstENI.SubnetCIDR)
 						if err != nil {
-							log.Errorf("Failed to parse V6 subnet CIDR: %s", firstENI.SubnetV6CIDR)
-							return &failureResponse, nil
-						}
-					} else {
-						_, subnetCIDR, err = net.ParseCIDR(firstENI.SubnetCIDR)
-						if err != nil {
-							log.Errorf("Failed to parse V4 subnet CIDR: %s", firstENI.SubnetCIDR)
-							return &failureResponse, nil
+							log.Warnf("Failed to parse V4 subnet CIDR: %s", firstENI.SubnetCIDR)
 						}
 					}
-					var gw net.IP
-					// For IPv6, the gateway is derived from the RA route on the primary ENI. The primary ENI is always in the same subnet as the trunk and branch ENI.
-					// For IPv4, the gateway is always the .1 address for the subnet CIDR.
-					if s.ipamContext.enableIPv6 {
-						gw = networkutils.GetIPv6Gateway()
-					} else {
-						gw = networkutils.GetIPv4Gateway(subnetCIDR)
+					if s.ipamContext.enablePodENIDualStack && firstENI.SubnetV6CIDR != "" {
+						_, subnetV6CIDR, err = net.ParseCIDR(firstENI.SubnetV6CIDR)
+						if err != nil {
+							log.Warnf("Failed to parse V6 subnet CIDR: %s", firstENI.SubnetV6CIDR)
+						}
 					}
-					podENISubnetGW = gw.String()
+
+					// Calculate gateway - prefer IPv4 gateway for podENISubnetGW (used by CNI driver)
+					// For IPv6, the gateway is always fe80:ec2::1 and can be derived by the CNI
+					// For IPv4, the gateway is the .1 address of the subnet CIDR
+					if subnetV4CIDR != nil {
+						podENISubnetGW = networkutils.GetIPv4Gateway(subnetV4CIDR).String()
+					} else if subnetV6CIDR != nil {
+						podENISubnetGW = networkutils.GetIPv6Gateway().String()
+					}
 					deviceNumber = -1 // Not needed for branch ENI, they depend on trunkENIDeviceIndex
 
 					ipAddrs = append(ipAddrs, &rpc.IPAllocationMetadata{
@@ -408,7 +414,10 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 					return &rpc.DelNetworkReply{
 						Success:              true,
 						PodVlanId:            int32(podENIData[0].VlanID),
-						IPAllocationMetadata: []*rpc.IPAllocationMetadata{{IPv4Addr: podENIData[0].PrivateIP}},
+						IPAllocationMetadata: []*rpc.IPAllocationMetadata{{
+						IPv4Addr: podENIData[0].PrivateIP,
+						IPv6Addr: podENIData[0].IPV6Addr,
+					}},
 						NetworkPolicyMode:    s.ipamContext.networkPolicyMode,
 					}, err
 				}
