@@ -86,6 +86,7 @@ The following table lists the configurable parameters for this chart and their d
 | `nodeAgent.metricsBindAddr` | Node Agent port for metrics                         | `8162`                              |
 | `nodeAgent.healthProbeBindAddr` | Node Agent port for health probes               | `8163`                              |
 | `nodeAgent.conntrackCacheCleanupPeriod` | Cleanup interval for network policy agent conntrack cache | 300               |
+| `nodeAgent.conntrackCacheTableSize` | Size of the conntrack cache table (valid range: 32K-1024K) | `524288`            |
 | `nodeAgent.enableIpv6`  | Enable IPv6 support for Node Agent                      | `false`                             |
 | `nodeAgent.resources`   | Node Agent resources, will defualt to .Values.resources if not set | `{}`                     |
 | `nodeAgent.logLevel`    | Node Agent logging verbosity level.                     | `debug`                             |

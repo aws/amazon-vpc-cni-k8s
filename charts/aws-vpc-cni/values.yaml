@@ -52,6 +52,7 @@ nodeAgent:
   metricsBindAddr: "8162"
   healthProbeBindAddr: "8163"
   conntrackCacheCleanupPeriod: 300
+  conntrackCacheTableSize: 524288
   logLevel: "debug"
   resources: {}
 
