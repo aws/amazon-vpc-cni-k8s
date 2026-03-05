@@ -36,6 +36,29 @@ spec:
             spec:
               description: ENIConfigSpec defines the desired state of ENIConfig
               properties:
+                connectionTrackingSpec:
+                  description: ConnectionTrackingSpec configures connection tracking
+                    timeouts for ENIs created from this config.
+                  properties:
+                    tcpEstablishedTimeout:
+                      description: |-
+                        TcpEstablishedTimeout is the idle timeout (seconds) for established TCP connections.
+                        Min: 60, Max: 432000 (5 days). Default: 432000.
+                      format: int32
+                      type: integer
+                    udpStreamTimeout:
+                      description: |-
+                        UdpStreamTimeout is the idle timeout (seconds) for UDP flows with more than one
+                        request-response transaction. Min: 60, Max: 180. Default: 180.
+                      format: int32
+                      type: integer
+                    udpTimeout:
+                      description: |-
+                        UdpTimeout is the idle timeout (seconds) for UDP flows with a single
+                        request-response transaction. Min: 30, Max: 60. Default: 30.
+                      format: int32
+                      type: integer
+                  type: object
                 securityGroups:
                   items:
                     type: string
