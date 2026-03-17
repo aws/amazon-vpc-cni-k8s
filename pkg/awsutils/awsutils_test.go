@@ -2483,6 +2483,46 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 			want:            true,
 			description:     "Should be available when cluster tag key matches (value ignored)",
 		},
+		{
+			name: "primary subnet with no CNI tag and different cluster tag",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-primary-other-cluster"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/cluster/some-other-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+			description:     "Primary subnet without CNI tag should be included regardless of other cluster tags (backwards compatibility)",
+		},
+		{
+			name: "primary subnet with no CNI tag and matching cluster tag",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-primary-our-cluster"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+			description:     "Primary subnet without CNI tag should be included even with matching cluster tag",
+		},
+		{
+			name: "primary subnet with no tags at all",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-primary-no-tags"),
+				Tags:     []ec2types.Tag{},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+			description:     "Primary subnet with no tags should be included (backwards compatibility)",
+		},
 	}
 
 	for _, tt := range tests {

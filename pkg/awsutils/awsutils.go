@@ -1331,6 +1331,7 @@ func isSubnetValidForENICreation(subnet ec2types.Subnet, isPrimarySubnet bool) b
 		if isPrimarySubnet {
 			// Primary subnets are included by default (backwards compatibility)
 			log.Debugf("Primary subnet %s has no %s tag, including it for ENI creation (backwards compatibility)", *subnet.SubnetId, subnetDiscoveryTagKey)
+			return true
 		} else {
 			// Secondary subnets require explicit opt-in via CNI tag
 			log.Debugf("Subnet %s has no %s tag, excluding it from ENI creation", *subnet.SubnetId, subnetDiscoveryTagKey)
