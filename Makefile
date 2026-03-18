@@ -113,7 +113,6 @@ DOCKER_BUILD_FLAGS_CNI = --build-arg golang_image="$(GOLANG_IMAGE)" \
 # container image builds based on the requested build.
 DOCKER_BUILD_FLAGS_CNI_INIT = --build-arg golang_image="$(GOLANG_IMAGE)" \
 					  --build-arg base_image="$(BASE_IMAGE_CNI_INIT)"	\
-					  --build-arg core_plugin_dir="$(CORE_PLUGIN_DIR)" \
 					  --network=host \
 	  		          $(DOCKER_ARGS)
 # DOCKER_BUILD_FLAGS_CNI_METRICS is the set of flags passed during metrics
