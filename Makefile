@@ -97,7 +97,7 @@ BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper aws-vpc-cni aw
 # CORE_PLUGIN_DIR is the directory containing upstream containernetworking plugins
 CORE_PLUGIN_DIR = $(MAKEFILE_PATH)/core-plugins/
 CORE_PLUGIN_TMP = $(MAKEFILE_PATH)/core-plugins-tmp
-COPY_INTERNAL_PLUGINS ?= true
+COPY_INTERNAL_PLUGINS ?= false
 
 # DOCKER_ARGS is extra arguments passed during container image build.
 DOCKER_ARGS ?=
