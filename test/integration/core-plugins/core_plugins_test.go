@@ -17,8 +17,8 @@ import (
 	"fmt"
 	"strings"
 
-	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
+	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	. "github.com/onsi/ginkgo/v2"
