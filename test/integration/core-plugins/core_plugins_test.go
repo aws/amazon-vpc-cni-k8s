@@ -110,6 +110,8 @@ var _ = Describe("CNI init container core plugins", func() {
 			deployment := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Replicas(3).
 				PodLabel("app", "bandwidth-test").
+				PodAnnotation("kubernetes.io/ingress-bandwidth", "10M").
+				PodAnnotation("kubernetes.io/egress-bandwidth", "10M").
 				Build()
 
 			deployment, err := f.K8sResourceManagers.DeploymentManager().
