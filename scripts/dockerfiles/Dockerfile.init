@@ -18,7 +18,7 @@ FROM $base_image
 WORKDIR /init
 
 COPY --from=builder \
-    /go/src/github.com/aws/amazon-vpc-cni-k8s/core-plugins/* \
+    /go/src/github.com/aws/amazon-vpc-cni-k8s/core-plugins/ \.    
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-cni-support.sh \
     /go/src/github.com/aws/amazon-vpc-cni-k8s/aws-vpc-cni-init /init/
 
