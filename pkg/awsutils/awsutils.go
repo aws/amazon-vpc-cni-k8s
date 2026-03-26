@@ -38,6 +38,7 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
@@ -116,7 +117,7 @@ var log = logger.Get()
 // APIs defines interfaces calls for adding/getting/deleting ENIs/secondary IPs. The APIs are not thread-safe.
 type APIs interface {
 	// AllocENI creates an ENI and attaches it to the instance
-	AllocENI(ctx context.Context, sg []*string, eniCfgSubnet string, numIPs int, networkCard int) (eni string, err error)
+	AllocENI(ctx context.Context, sg []*string, eniCfgSubnet string, numIPs int, networkCard int, connTrack *v1alpha1.ConnectionTrackingSpec) (eni string, err error)
 
 	// FreeENI detaches ENI interface and deletes it
 	FreeENI(ctx context.Context, eniName string) error
@@ -1053,8 +1054,8 @@ func (cache *EC2InstanceMetadataCache) awsGetFreeDeviceNumber(ctx context.Contex
 
 // AllocENI creates an ENI and attaches it to the instance
 // returns: newly created ENI ID
-func (cache *EC2InstanceMetadataCache) AllocENI(ctx context.Context, sg []*string, eniCfgSubnet string, numIPs int, networkCard int) (string, error) {
-	eniID, err := cache.createENI(ctx, sg, eniCfgSubnet, numIPs)
+func (cache *EC2InstanceMetadataCache) AllocENI(ctx context.Context, sg []*string, eniCfgSubnet string, numIPs int, networkCard int, connTrack *v1alpha1.ConnectionTrackingSpec) (string, error) {
+	eniID, err := cache.createENI(ctx, sg, eniCfgSubnet, numIPs, connTrack)
 	if err != nil {
 		return "", errors.Wrap(err, "AllocENI: failed to create ENI")
 	}
@@ -1144,7 +1145,7 @@ func (cache *EC2InstanceMetadataCache) createENITags() []ec2types.TagSpecificati
 	}
 }
 
-func (cache *EC2InstanceMetadataCache) createENIInput(eniDescription string, tags []ec2types.TagSpecification, needIPs int) *ec2.CreateNetworkInterfaceInput {
+func (cache *EC2InstanceMetadataCache) createENIInput(eniDescription string, tags []ec2types.TagSpecification, needIPs int, connTrack *v1alpha1.ConnectionTrackingSpec) *ec2.CreateNetworkInterfaceInput {
 	input := &ec2.CreateNetworkInterfaceInput{
 		Description:       aws.String(eniDescription),
 		Groups:            cache.securityGroups.SortedList(),
@@ -1156,20 +1157,31 @@ func (cache *EC2InstanceMetadataCache) createENIInput(eniDescription string, tag
 	// We use assignIPv6Prefix to assign a prefix during setupENI
 	if cache.v6Enabled {
 		input.Ipv6AddressCount = aws.Int32(int32(needIPs))
-		return input
-	}
-
-	if cache.enablePrefixDelegation {
+	} else if cache.enablePrefixDelegation {
 		input.Ipv4PrefixCount = aws.Int32(int32(needIPs))
 	} else {
 		input.SecondaryPrivateIpAddressCount = aws.Int32(int32(needIPs))
+	}
+
+	if connTrack != nil {
+		spec := &ec2types.ConnectionTrackingSpecificationRequest{}
+		if connTrack.TcpEstablishedTimeout != nil {
+			spec.TcpEstablishedTimeout = connTrack.TcpEstablishedTimeout
+		}
+		if connTrack.UdpStreamTimeout != nil {
+			spec.UdpStreamTimeout = connTrack.UdpStreamTimeout
+		}
+		if connTrack.UdpTimeout != nil {
+			spec.UdpTimeout = connTrack.UdpTimeout
+		}
+		input.ConnectionTrackingSpecification = spec
 	}
 
 	return input
 }
 
 // return ENI id, error
-func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*string, eniCfgSubnet string, numIPs int) (string, error) {
+func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*string, eniCfgSubnet string, numIPs int, connTrack *v1alpha1.ConnectionTrackingSpec) (string, error) {
 	eniDescription := eniDescriptionPrefix + cache.instanceID
 	tags := cache.createENITags()
 
@@ -1188,7 +1200,7 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 	var err error
 	var networkInterfaceID string
 
-	input := cache.createENIInput(eniDescription, tags, needIPs)
+	input := cache.createENIInput(eniDescription, tags, needIPs, connTrack)
 
 	if cache.useCustomNetworking {
 		input = createENIUsingCustomCfg(sg, eniCfgSubnet, input)

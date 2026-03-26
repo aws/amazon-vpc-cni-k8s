@@ -23,10 +23,24 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// ConnectionTrackingSpec configures connection tracking timeouts for ENIs created from this config.
+type ConnectionTrackingSpec struct {
+	// TcpEstablishedTimeout is the idle timeout (seconds) for established TCP connections.
+	// Min: 60, Max: 432000 (5 days). Default: 432000.
+	TcpEstablishedTimeout *int32 `json:"tcpEstablishedTimeout,omitempty"`
+	// UdpStreamTimeout is the idle timeout (seconds) for UDP flows with more than one
+	// request-response transaction. Min: 60, Max: 180. Default: 180.
+	UdpStreamTimeout *int32 `json:"udpStreamTimeout,omitempty"`
+	// UdpTimeout is the idle timeout (seconds) for UDP flows with a single
+	// request-response transaction. Min: 30, Max: 60. Default: 30.
+	UdpTimeout *int32 `json:"udpTimeout,omitempty"`
+}
+
 // ENIConfigSpec defines the desired state of ENIConfig
 type ENIConfigSpec struct {
-	SecurityGroups []string `json:"securityGroups"`
-	Subnet         string   `json:"subnet"`
+	SecurityGroups         []string                `json:"securityGroups"`
+	Subnet                 string                  `json:"subnet"`
+	ConnectionTrackingSpec *ConnectionTrackingSpec `json:"connectionTrackingSpec,omitempty"`
 }
 
 // ENIConfigStatus defines the observed state of ENIConfig
