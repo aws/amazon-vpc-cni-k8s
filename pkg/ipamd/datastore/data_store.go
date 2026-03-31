@@ -37,7 +37,8 @@ const (
 	// minENILifeTime is the shortest time before we consider deleting a newly created ENI
 	minENILifeTime = 1 * time.Minute
 
-	// envIPCooldownPeriod (default 30 seconds) specifies the time after pod deletion before an IP can be assigned to a new pod
+	// envIPCooldownPeriod (default 130 seconds) specifies the time after pod deletion before an IP can be assigned to a new pod
+	// ensuring SYN_SENT conntrack entries are expired (120 seconds on most OS) and tcp_syn_retries are fully completed (which takes up to 130 seconds)
 	envIPCooldownPeriod = "IP_COOLDOWN_PERIOD"
 
 	// DuplicatedENIError is an error when caller tries to add an duplicate ENI to data store
@@ -241,9 +242,9 @@ func (addr AddressInfo) Assigned() bool {
 
 // getCooldownPeriod returns the time duration in seconds configured by the IP_COOLDOWN_PERIOD env variable
 func getCooldownPeriod() time.Duration {
-	cooldownVal, err, _ := utils.GetIntFromStringEnvVar(envIPCooldownPeriod, 30)
+	cooldownVal, err, _ := utils.GetIntFromStringEnvVar(envIPCooldownPeriod, 130)
 	if err != nil {
-		return 30 * time.Second
+		return 130 * time.Second
 	}
 	return time.Duration(cooldownVal) * time.Second
 }
