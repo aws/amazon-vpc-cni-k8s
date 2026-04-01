@@ -293,6 +293,7 @@ plugins: FETCH_VERSION=1.7.1
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/archive/refs/tags/v$(FETCH_VERSION).tar.gz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
 plugins:   ## Fetch the CNI plugins
+	@echo "[DEBUG] COPY_INTERNAL_PLUGINS=$(COPY_INTERNAL_PLUGINS)"
 	@if [ "$(COPY_INTERNAL_PLUGINS)" = "true" ]; then \
 		echo "Using existing plugin binaries from $(CORE_PLUGIN_DIR)"; \
 		ls -lh $(CORE_PLUGIN_DIR); \
