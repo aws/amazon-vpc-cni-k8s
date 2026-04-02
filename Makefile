@@ -97,7 +97,6 @@ BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper aws-vpc-cni aw
 # CORE_PLUGIN_DIR is the directory containing upstream containernetworking plugins
 CORE_PLUGIN_DIR = $(MAKEFILE_PATH)/core-plugins/
 CORE_PLUGIN_TMP = $(MAKEFILE_PATH)/core-plugins-tmp
-COPY_INTERNAL_PLUGINS ?= false
 
 # DOCKER_ARGS is extra arguments passed during container image build.
 DOCKER_ARGS ?=
@@ -293,8 +292,7 @@ plugins: FETCH_VERSION=1.7.1
 plugins: FETCH_URL=https://github.com/containernetworking/plugins/archive/refs/tags/v$(FETCH_VERSION).tar.gz
 plugins: VISIT_URL=https://github.com/containernetworking/plugins/tree/v$(FETCH_VERSION)/plugins/
 plugins:   ## Fetch the CNI plugins
-	@echo "[DEBUG] COPY_INTERNAL_PLUGINS=$(COPY_INTERNAL_PLUGINS)"
-	@if [ "$(COPY_INTERNAL_PLUGINS)" = "true" ]; then \
+	@if [ -d "$(CORE_PLUGIN_DIR)" ] && [ -n "$$(ls -A $(CORE_PLUGIN_DIR) 2>/dev/null)" ]; then \
 		echo "Using existing plugin binaries from $(CORE_PLUGIN_DIR)"; \
 		ls -lh $(CORE_PLUGIN_DIR); \
 	else \
