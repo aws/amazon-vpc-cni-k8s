@@ -1741,8 +1741,8 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		start := time.Now()
 
 		reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
 		ec2Response, err = cache.ec2SVC.DescribeNetworkInterfaces(reqCtx, input)
+		cancel()
 		prometheusmetrics.Ec2ApiReq.WithLabelValues("DescribeNetworkInterfaces").Inc()
 		prometheusmetrics.AwsAPILatency.WithLabelValues("DescribeNetworkInterfaces", fmt.Sprint(err != nil), awsReqStatus(err)).Observe(msSince(start))
 		if err == nil {
