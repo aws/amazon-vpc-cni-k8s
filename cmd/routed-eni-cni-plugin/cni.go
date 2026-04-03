@@ -74,6 +74,9 @@ type NetConf struct {
 
 	PluginLogFile string `json:"pluginLogFile"`
 
+	// PluginAdditionalLogFile is a comma-separated list of additional log destinations.
+	PluginAdditionalLogFile string `json:"pluginAdditionalLogFile"`
+
 	PluginLogLevel string        `json:"pluginLogLevel"`
 	RuntimeConfig  RuntimeConfig `json:"runtimeConfig"`
 }
@@ -127,6 +130,9 @@ func LoadNetConf(bytes []byte) (*NetConf, logger.Logger, error) {
 	logConfig := logger.Configuration{
 		LogLevel:    conf.PluginLogLevel,
 		LogLocation: conf.PluginLogFile,
+	}
+	if conf.PluginAdditionalLogFile != "" {
+		logConfig.AdditionalLogLocations = logger.ParseAdditionalLogLocations(conf.PluginAdditionalLogFile)
 	}
 	log := logger.New(&logConfig)
 

@@ -10,6 +10,7 @@
       "mtu": "__MTU__",
       "podSGEnforcingMode": "__PODSGENFORCINGMODE__",
       "pluginLogFile": "__PLUGINLOGFILE__",
+      "pluginAdditionalLogFile": "__PLUGINADDITIONALLOGFILE__",
       "pluginLogLevel": "__PLUGINLOGLEVEL__",
       "capabilities": {"io.kubernetes.cri.pod-annotations": true}
     },
