@@ -23,6 +23,7 @@ import (
 	net "net"
 	reflect "reflect"
 
+	v1alpha1 "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	awsutils "github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	datastore "github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	vpc "github.com/aws/amazon-vpc-cni-k8s/pkg/vpc"
@@ -55,18 +56,18 @@ func (m *MockAPIs) EXPECT() *MockAPIsMockRecorder {
 }
 
 // AllocENI mocks base method.
-func (m *MockAPIs) AllocENI(arg0 context.Context, arg1 []*string, arg2 string, arg3, arg4 int) (string, error) {
+func (m *MockAPIs) AllocENI(arg0 context.Context, arg1 []*string, arg2 string, arg3, arg4 int, arg5 *v1alpha1.ConnectionTrackingSpec) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AllocENI", arg0, arg1, arg2, arg3, arg4)
+	ret := m.ctrl.Call(m, "AllocENI", arg0, arg1, arg2, arg3, arg4, arg5)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // AllocENI indicates an expected call of AllocENI.
-func (mr *MockAPIsMockRecorder) AllocENI(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
+func (mr *MockAPIsMockRecorder) AllocENI(arg0, arg1, arg2, arg3, arg4, arg5 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocENI", reflect.TypeOf((*MockAPIs)(nil).AllocENI), arg0, arg1, arg2, arg3, arg4)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllocENI", reflect.TypeOf((*MockAPIs)(nil).AllocENI), arg0, arg1, arg2, arg3, arg4, arg5)
 }
 
 // AllocIPAddress mocks base method.
@@ -456,20 +457,6 @@ func (mr *MockAPIsMockRecorder) InitCachedPrefixDelegation(arg0 interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitCachedPrefixDelegation", reflect.TypeOf((*MockAPIs)(nil).InitCachedPrefixDelegation), arg0)
 }
 
-// IsTrunkingCompatible mocks base method.
-func (m *MockAPIs) IsTrunkingCompatible() bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsTrunkingCompatible")
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// IsTrunkingCompatible indicates an expected call of IsTrunkingCompatible.
-func (mr *MockAPIsMockRecorder) IsTrunkingCompatible() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsTrunkingCompatible", reflect.TypeOf((*MockAPIs)(nil).IsTrunkingCompatible))
-}
-
 // IsEfaOnlyENI mocks base method.
 func (m *MockAPIs) IsEfaOnlyENI(arg0 int, arg1 string) bool {
 	m.ctrl.T.Helper()
@@ -525,6 +512,20 @@ func (m *MockAPIs) IsSubnetExcluded(arg0 context.Context, arg1 string) (bool, er
 func (mr *MockAPIsMockRecorder) IsSubnetExcluded(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSubnetExcluded", reflect.TypeOf((*MockAPIs)(nil).IsSubnetExcluded), arg0, arg1)
+}
+
+// IsTrunkingCompatible mocks base method.
+func (m *MockAPIs) IsTrunkingCompatible() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsTrunkingCompatible")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsTrunkingCompatible indicates an expected call of IsTrunkingCompatible.
+func (mr *MockAPIsMockRecorder) IsTrunkingCompatible() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsTrunkingCompatible", reflect.TypeOf((*MockAPIs)(nil).IsTrunkingCompatible))
 }
 
 // IsUnmanagedENI mocks base method.

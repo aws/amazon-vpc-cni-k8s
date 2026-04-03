@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	mock_ec2wrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
@@ -589,7 +590,7 @@ func TestAllocENI(t *testing.T) {
 		useSubnetDiscovery: true,
 	}
 
-	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0, nil)
 	assert.NoError(t, err)
 }
 
@@ -640,7 +641,7 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 		useSubnetDiscovery: true,
 	}
 
-	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0, nil)
 	assert.Error(t, err)
 }
 
@@ -694,7 +695,7 @@ func TestAllocENIMaxReached(t *testing.T) {
 		useSubnetDiscovery: true,
 	}
 
-	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0, nil)
 	assert.Error(t, err)
 }
 
@@ -743,7 +744,7 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", useSubnetDiscovery: true}
-	_, err := cache.AllocENI(context.Background(), nil, subnetID, 5, 0)
+	_, err := cache.AllocENI(context.Background(), nil, subnetID, 5, 0, nil)
 	assert.NoError(t, err)
 
 	// when required IP numbers(50) is higher than ENI's limit(49)
@@ -753,7 +754,7 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	cache = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", useSubnetDiscovery: true}
-	_, err = cache.AllocENI(context.Background(), nil, subnetID, 49, 0)
+	_, err = cache.AllocENI(context.Background(), nil, subnetID, 49, 0, nil)
 	assert.NoError(t, err)
 }
 
@@ -787,7 +788,7 @@ func TestAllocENIWithIPAddressesAlreadyFull(t *testing.T) {
 		instanceType:       "t3.xlarge",
 		useSubnetDiscovery: true,
 	}
-	_, err := cache.AllocENI(context.Background(), nil, "", 14, 0)
+	_, err := cache.AllocENI(context.Background(), nil, "", 14, 0, nil)
 	assert.Error(t, err)
 }
 
@@ -843,7 +844,7 @@ func TestAllocENIWithPrefixAddresses(t *testing.T) {
 		enablePrefixDelegation: true,
 		useSubnetDiscovery:     true,
 	}
-	_, err := cache.AllocENI(context.Background(), nil, subnetID, 1, 0)
+	_, err := cache.AllocENI(context.Background(), nil, subnetID, 1, 0, nil)
 	assert.NoError(t, err)
 }
 
@@ -878,7 +879,7 @@ func TestAllocENIWithPrefixesAlreadyFull(t *testing.T) {
 		enablePrefixDelegation: true,
 		useSubnetDiscovery:     true,
 	}
-	_, err := cache.AllocENI(context.Background(), nil, "", 1, 0)
+	_, err := cache.AllocENI(context.Background(), nil, "", 1, 0, nil)
 	assert.Error(t, err)
 }
 
@@ -2905,7 +2906,7 @@ func TestAllocENIWithSubnetExclusion(t *testing.T) {
 				subnetID:           subnetID,
 			}
 
-			_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+			_, err := cache.AllocENI(context.Background(), nil, "", 5, 0, nil)
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorContains)
@@ -3096,7 +3097,7 @@ func TestAllocENIWithSubnetDiscoveryIPv6(t *testing.T) {
 				mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 			}
 
-			eniID, err := ins.AllocENI(context.Background(), nil, "", 5, 0)
+			eniID, err := ins.AllocENI(context.Background(), nil, "", 5, 0, nil)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -3145,7 +3146,7 @@ func TestAllocENIWithSubnetDiscoveryFailure(t *testing.T) {
 		subnetID:           subnetID,
 	}
 
-	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+	_, err := cache.AllocENI(context.Background(), nil, "", 5, 0, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "primary subnet is tagged with kubernetes.io/role/cni=0")
 }
@@ -3447,7 +3448,7 @@ func TestCreateENIWithCustomSGs(t *testing.T) {
 			mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 			// Call the function under test
-			createdENI, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+			createdENI, err := cache.AllocENI(context.Background(), nil, "", 5, 0, nil)
 
 			// Verify results
 			assert.NoError(t, err)
@@ -3642,7 +3643,7 @@ func TestENICreationFallbackLogging(t *testing.T) {
 			mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 			// Call AllocENI
-			createdENI, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+			createdENI, err := cache.AllocENI(context.Background(), nil, "", 5, 0, nil)
 
 			// Verify results
 			assert.NoError(t, err)
@@ -3866,6 +3867,47 @@ func TestIsEfaOnlyENI(t *testing.T) {
 	assert.True(t, cache.IsEfaOnlyENI(1, "eni-efa"))
 	assert.False(t, cache.IsEfaOnlyENI(0, "eni-efa"))
 	assert.False(t, cache.IsEfaOnlyENI(1, "eni-other"))
+}
+
+func TestCreateENIInputConnectionTracking(t *testing.T) {
+	tags := []ec2types.TagSpecification{}
+	cache := &EC2InstanceMetadataCache{
+		subnetID:       subnetID,
+		securityGroups: StringSet{},
+	}
+
+	t.Run("nil connTrack does not set ConnectionTrackingSpecification", func(t *testing.T) {
+		input := cache.createENIInput("desc", tags, 0, nil)
+		assert.Nil(t, input.ConnectionTrackingSpecification)
+	})
+
+	t.Run("all three fields set", func(t *testing.T) {
+		tcpTimeout := int32(300)
+		udpStream := int32(120)
+		udpTimeout := int32(45)
+		connTrack := &v1alpha1.ConnectionTrackingSpec{
+			TcpEstablishedTimeout: &tcpTimeout,
+			UdpStreamTimeout:      &udpStream,
+			UdpTimeout:            &udpTimeout,
+		}
+		input := cache.createENIInput("desc", tags, 0, connTrack)
+		assert.NotNil(t, input.ConnectionTrackingSpecification)
+		assert.Equal(t, &tcpTimeout, input.ConnectionTrackingSpecification.TcpEstablishedTimeout)
+		assert.Equal(t, &udpStream, input.ConnectionTrackingSpecification.UdpStreamTimeout)
+		assert.Equal(t, &udpTimeout, input.ConnectionTrackingSpecification.UdpTimeout)
+	})
+
+	t.Run("only UdpStreamTimeout set leaves others nil", func(t *testing.T) {
+		udpStream := int32(60)
+		connTrack := &v1alpha1.ConnectionTrackingSpec{
+			UdpStreamTimeout: &udpStream,
+		}
+		input := cache.createENIInput("desc", tags, 0, connTrack)
+		assert.NotNil(t, input.ConnectionTrackingSpecification)
+		assert.Nil(t, input.ConnectionTrackingSpecification.TcpEstablishedTimeout)
+		assert.Equal(t, &udpStream, input.ConnectionTrackingSpecification.UdpStreamTimeout)
+		assert.Nil(t, input.ConnectionTrackingSpecification.UdpTimeout)
+	})
 }
 
 func TestIsUnmanagedENI(t *testing.T) {
