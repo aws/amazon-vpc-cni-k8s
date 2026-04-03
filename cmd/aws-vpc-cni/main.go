@@ -84,6 +84,7 @@ const (
 	defaultIPCooldownPeriod      = 30
 	defaultDisablePodV6          = false
 	defaultEnableMultiNICSupport = false
+	defaultEnableTuningPlugin    = false
 
 	envHostCniBinPath        = "HOST_CNI_BIN_PATH"
 	envHostCniConfDirPath    = "HOST_CNI_CONFDIR_PATH"
@@ -108,6 +109,8 @@ const (
 	envIPCooldownPeriod      = "IP_COOLDOWN_PERIOD"
 	envDisablePodV6          = "DISABLE_POD_V6"
 	envEnableMultiNICSupport = "ENABLE_MULTI_NIC"
+	envEnableTuningPlugin    = "ENABLE_TUNING_PLUGIN"
+	envTuningSysctls         = "TUNING_SYSCTLS"
 )
 
 // NetConfList describes an ordered list of networks.
@@ -288,7 +291,13 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 	// Chain any requested CNI plugins
 	enBandwidthPlugin := utils.GetBoolAsStringEnvVar(envEnBandwidthPlugin, defaultEnBandwidthPlugin)
 	disablePodV6 := utils.GetBoolAsStringEnvVar(envDisablePodV6, defaultDisablePodV6)
-	if enBandwidthPlugin || disablePodV6 {
+	enableTuningPlugin := utils.GetBoolAsStringEnvVar(envEnableTuningPlugin, defaultEnableTuningPlugin)
+	tuningSysctls := utils.GetEnv(envTuningSysctls, "")
+
+	// Determine if we need to chain the tuning plugin
+	chainTuningPlugin := disablePodV6 || enableTuningPlugin || tuningSysctls != ""
+
+	if enBandwidthPlugin || chainTuningPlugin {
 		// Unmarshall current conflist into data
 		data := NetConfList{}
 		err = json.Unmarshal(byteValue, &data)
@@ -305,15 +314,33 @@ func generateJSON(jsonFile string, outFile string, getPrimaryIP func(ipv4 bool) 
 			data.Plugins = append(data.Plugins, &bwPlugin)
 		}
 
-		// Chain the tuning plugin (configured to disable IPv6 in pod network namespace) when requested
-		if disablePodV6 {
+		// Chain the tuning plugin when enabled via DISABLE_POD_V6, ENABLE_TUNING_PLUGIN, or TUNING_SYSCTLS
+		if chainTuningPlugin {
+			sysctls := make(map[string]string)
+
+			// Add IPv6 disable sysctls when DISABLE_POD_V6 is enabled
+			if disablePodV6 {
+				sysctls["net.ipv6.conf.all.disable_ipv6"] = "1"
+				sysctls["net.ipv6.conf.default.disable_ipv6"] = "1"
+				sysctls["net.ipv6.conf.lo.disable_ipv6"] = "1"
+			}
+
+			// Parse and merge custom sysctls from TUNING_SYSCTLS environment variable
+			if tuningSysctls != "" {
+				customSysctls := make(map[string]string)
+				err = json.Unmarshal([]byte(tuningSysctls), &customSysctls)
+				if err != nil {
+					log.Errorf("Failed to parse TUNING_SYSCTLS: %v", err)
+					return err
+				}
+				for k, v := range customSysctls {
+					sysctls[k] = v
+				}
+			}
+
 			tuningPlugin := NetConf{
-				Type: "tuning",
-				Sysctl: map[string]string{
-					"net.ipv6.conf.all.disable_ipv6":     "1",
-					"net.ipv6.conf.default.disable_ipv6": "1",
-					"net.ipv6.conf.lo.disable_ipv6":      "1",
-				},
+				Type:   "tuning",
+				Sysctl: sysctls,
 			}
 			data.Plugins = append(data.Plugins, &tuningPlugin)
 		}
