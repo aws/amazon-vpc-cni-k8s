@@ -35,12 +35,15 @@ import (
 const (
 	httpTimeoutEnv = "HTTP_TIMEOUT"
 	maxRetries     = 10
+
+	// DefaultAWSSDKClientTimeout is the default timeout for individual HTTP requests made by AWS SDK clients.
+	DefaultAWSSDKClientTimeout = 10 * time.Second
 )
 
 var (
 	log = logger.Get()
 	// HTTP timeout default value in seconds (10 seconds)
-	httpTimeoutValue = 10 * time.Second
+	httpTimeoutValue = DefaultAWSSDKClientTimeout
 )
 
 func getHTTPTimeout() time.Duration {
