@@ -294,6 +294,7 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 
 		Context("when using cluster-specific subnet tags", func() {
 			var clusterName string
+			var otherClusterSubnetID string
 
 			BeforeEach(func() {
 				// Get the cluster name from environment or use a default
@@ -309,7 +310,7 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 						[]string{createdSubnet},
 						[]ec2types.Tag{
 							{
-								Key:   aws.String("kubernetes.io/cluster/" + clusterName),
+								Key:   aws.String("cni.networking.k8s.aws/cluster/" + clusterName),
 								Value: aws.String("shared"),
 							},
 							{
@@ -342,16 +343,16 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 					CreateSubnet(context.TODO(), subnetCidr.String(), f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
 				Expect(err).ToNot(HaveOccurred())
 
-				otherSubnetID := *otherSubnetOutput.Subnet.SubnetId
+				otherClusterSubnetID = *otherSubnetOutput.Subnet.SubnetId
 
 				By("Tagging other subnet with different cluster tag")
 				_, err = f.CloudServices.EC2().
 					CreateTags(
 						context.TODO(),
-						[]string{otherSubnetID},
+						[]string{otherClusterSubnetID},
 						[]ec2types.Tag{
 							{
-								Key:   aws.String("kubernetes.io/cluster/different-cluster"),
+								Key:   aws.String("cni.networking.k8s.aws/cluster/different-cluster"),
 								Value: aws.String("shared"),
 							},
 							{
@@ -371,7 +372,7 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 						[]string{createdSubnet},
 						[]ec2types.Tag{
 							{
-								Key:   aws.String("kubernetes.io/cluster/" + clusterName),
+								Key:   aws.String("cni.networking.k8s.aws/cluster/" + clusterName),
 								Value: aws.String("shared"),
 							},
 							{
@@ -381,6 +382,14 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 						},
 					)
 				Expect(err).ToNot(HaveOccurred())
+
+				By("Deleting other cluster subnet")
+				if otherClusterSubnetID != "" {
+					err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), otherClusterSubnetID)
+					if err != nil {
+						GinkgoWriter.Printf("Warning: Failed to delete other cluster subnet %s: %v\n", otherClusterSubnetID, err)
+					}
+				}
 			})
 
 			It("should only use subnets tagged for this cluster", func() {
@@ -412,13 +421,136 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 				for _, nwInterface := range instance.NetworkInterfaces {
 					if !common.IsPrimaryENI(nwInterface, instance.PrivateIpAddress) {
 						secondaryENICount++
-						// All secondary ENIs should be in the cluster-tagged subnet
+						// All secondary ENIs should be in the cluster-tagged subnet, not the other cluster's subnet
 						Expect(*nwInterface.SubnetId).To(Equal(createdSubnet))
+						Expect(*nwInterface.SubnetId).ToNot(Equal(otherClusterSubnetID))
 					}
 				}
 
 				By("verifying at least one secondary ENI was created")
 				Expect(secondaryENICount).To(BeNumerically(">", 0))
+
+				By("deleting deployment")
+				err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("sleeping to allow CNI Plugin to delete unused ENIs")
+				time.Sleep(time.Second * 90)
+			})
+
+			It("should not exclude primary subnet when it has old kubernetes.io/cluster/ tag for different cluster", func() {
+				By("Tagging primary subnet with old-style cluster tag for a different cluster (should be ignored)")
+				_, err = f.CloudServices.EC2().
+					CreateTags(
+						context.TODO(),
+						[]string{primarySubnetID},
+						[]ec2types.Tag{
+							{
+								Key:   aws.String("kubernetes.io/cluster/some-other-cluster"),
+								Value: aws.String("shared"),
+							},
+						},
+					)
+				Expect(err).ToNot(HaveOccurred())
+
+				defer func() {
+					By("Removing old-style cluster tag from primary subnet")
+					_, err = f.CloudServices.EC2().
+						DeleteTags(
+							context.TODO(),
+							[]string{primarySubnetID},
+							[]ec2types.Tag{
+								{
+									Key:   aws.String("kubernetes.io/cluster/some-other-cluster"),
+									Value: aws.String("shared"),
+								},
+							},
+						)
+					Expect(err).ToNot(HaveOccurred())
+				}()
+
+				By("creating deployment")
+				container := manifest.NewNetCatAlpineContainer(f.Options.TestImageRegistry).
+					Command([]string{"sleep"}).
+					Args([]string{"3600"}).
+					Build()
+
+				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
+					Container(container).
+					Replicas(5).
+					PodLabel(enhancedPodLabelKey, "old-tag-compat").
+					NodeName(*primaryInstance.PrivateDnsName).
+					Build()
+
+				deployment, err = f.K8sResourceManagers.DeploymentManager().
+					CreateAndWaitTillDeploymentIsReady(deploymentBuilder, utils.DefaultDeploymentReadyTimeout)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("verifying pods are running (primary subnet not excluded despite old cluster tag)")
+				pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(enhancedPodLabelKey, "old-tag-compat")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(pods.Items)).To(BeNumerically(">", 0), "Pods should be running, primary subnet should not be excluded by old-style cluster tags")
+
+				By("deleting deployment")
+				err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("sleeping to allow CNI Plugin to delete unused ENIs")
+				time.Sleep(time.Second * 90)
+			})
+
+			It("should not exclude primary subnet when it has no cni tag but has new cluster tag for different cluster", func() {
+				By("Tagging primary subnet with new-style cluster tag for a different cluster but no cni tag")
+				_, err = f.CloudServices.EC2().
+					CreateTags(
+						context.TODO(),
+						[]string{primarySubnetID},
+						[]ec2types.Tag{
+							{
+								Key:   aws.String("cni.networking.k8s.aws/cluster/different-cluster"),
+								Value: aws.String("shared"),
+							},
+						},
+					)
+				Expect(err).ToNot(HaveOccurred())
+
+				defer func() {
+					By("Removing new-style cluster tag from primary subnet")
+					_, err = f.CloudServices.EC2().
+						DeleteTags(
+							context.TODO(),
+							[]string{primarySubnetID},
+							[]ec2types.Tag{
+								{
+									Key:   aws.String("cni.networking.k8s.aws/cluster/different-cluster"),
+									Value: aws.String("shared"),
+								},
+							},
+						)
+					Expect(err).ToNot(HaveOccurred())
+				}()
+
+				By("creating deployment")
+				container := manifest.NewNetCatAlpineContainer(f.Options.TestImageRegistry).
+					Command([]string{"sleep"}).
+					Args([]string{"3600"}).
+					Build()
+
+				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
+					Container(container).
+					Replicas(5).
+					PodLabel(enhancedPodLabelKey, "no-cni-tag-compat").
+					NodeName(*primaryInstance.PrivateDnsName).
+					Build()
+
+				deployment, err = f.K8sResourceManagers.DeploymentManager().
+					CreateAndWaitTillDeploymentIsReady(deploymentBuilder, utils.DefaultDeploymentReadyTimeout)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("verifying pods are running (primary subnet not excluded - cluster check only applies when cni=1)")
+				pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(enhancedPodLabelKey, "no-cni-tag-compat")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(pods.Items)).To(BeNumerically(">", 0), "Pods should be running, primary subnet should not be excluded when no cni tag present")
 
 				By("deleting deployment")
 				err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
