@@ -4,13 +4,25 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 )
 
+const (
+	// defaultAWSSDKClientTimeout is the timeout for individual HTTP requests made by AWS SDK clients.
+	defaultAWSSDKClientTimeout = 10 * time.Second
+)
+
 func GetMetaData(key string) (string, error) {
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRetryMaxAttempts(10))
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithHTTPClient(&http.Client{
+			Timeout: defaultAWSSDKClientTimeout,
+		}),
+		config.WithRetryMaxAttempts(10),
+	)
 	if err != nil {
 		return "", fmt.Errorf("unable to load SDK config, %v", err)
 	}

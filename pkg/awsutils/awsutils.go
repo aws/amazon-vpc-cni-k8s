@@ -36,6 +36,8 @@ import (
 
 	"github.com/aws/smithy-go"
 
+	"net/http"
+
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
@@ -443,6 +445,9 @@ func New(ctx context.Context, useSubnetDiscovery, useCustomNetworking, disableLe
 	version := utils.GetEnv(envVpcCniVersion, "")
 	awsCfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithRegion(region.Region),
+		config.WithHTTPClient(&http.Client{
+			Timeout: awssession.DefaultAWSSDKClientTimeout,
+		}),
 		config.WithAPIOptions([]func(*smithymiddleware.Stack) error{
 			middleware.AddUserAgentKeyValue("amazon-vpc-cni-k8s", version),
 		}),

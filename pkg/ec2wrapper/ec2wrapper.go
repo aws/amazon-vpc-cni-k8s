@@ -3,7 +3,9 @@ package ec2wrapper
 
 import (
 	"context"
+	"net/http"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -42,7 +44,12 @@ func NewMetricsClient() (*EC2Wrapper, error) {
 		return &EC2Wrapper{}, err
 	}
 
-	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(instanceIdentityDocumentOutput.Region))
+	awsCfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion(instanceIdentityDocumentOutput.Region),
+		config.WithHTTPClient(&http.Client{
+			Timeout: awssession.DefaultAWSSDKClientTimeout,
+		}),
+	)
 	if err != nil {
 		return &EC2Wrapper{}, err
 	}
