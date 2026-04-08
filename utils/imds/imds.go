@@ -4,23 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
-	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 )
 
-const (
-	// defaultAWSSDKClientTimeout is the timeout for individual HTTP requests made by AWS SDK clients.
-	defaultAWSSDKClientTimeout = 10 * time.Second
-)
-
 func GetMetaData(key string) (string, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithHTTPClient(&http.Client{
-			Timeout: defaultAWSSDKClientTimeout,
-		}),
+		config.WithHTTPClient(awssession.NewAWSSDKHTTPClient()),
 		config.WithRetryMaxAttempts(10),
 	)
 	if err != nil {

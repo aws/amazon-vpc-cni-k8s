@@ -41,7 +41,20 @@ func TestAwsEc2EndpointResolver(t *testing.T) {
 
 func TestNew_SetsHTTPClientTimeout(t *testing.T) {
 	t.Setenv("AWS_REGION", "us-west-2")
+	t.Setenv(httpTimeoutEnv, "15")
 	cfg, err := New(context.Background())
 	assert.NoError(t, err)
 	assert.NotNil(t, cfg.HTTPClient)
+}
+
+func TestNewAWSSDKHTTPClient_SetsTimeout(t *testing.T) {
+	client := NewAWSSDKHTTPClient()
+	assert.NotNil(t, client)
+	assert.Equal(t, DefaultAWSSDKClientTimeout, client.Timeout)
+}
+
+func TestNewAWSSDKHTTPClient_RespectsEnv(t *testing.T) {
+	t.Setenv(httpTimeoutEnv, "20")
+	client := NewAWSSDKHTTPClient()
+	assert.Equal(t, 20*time.Second, client.Timeout)
 }
