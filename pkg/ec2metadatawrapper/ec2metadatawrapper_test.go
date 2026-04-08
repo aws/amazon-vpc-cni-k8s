@@ -2,12 +2,11 @@ package ec2metadatawrapper
 
 import (
 	"context"
-	"net/http"
 	"testing"
 
 	mockec2metadatawrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper/mocks"
 
-	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	ec2metadata "github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
@@ -89,16 +88,7 @@ func TestGetRegionErr(t *testing.T) {
 
 func TestNew_SetsHTTPClientTimeout(t *testing.T) {
 	t.Setenv("AWS_REGION", "us-west-2")
-	// New() will fail without IMDS, but we can verify the config pattern
-	cfg, err := config.LoadDefaultConfig(context.Background(),
-		config.WithHTTPClient(&http.Client{
-			Timeout: defaultAWSSDKClientTimeout,
-		}),
-	)
-	assert.NoError(t, err)
-	assert.NotNil(t, cfg.HTTPClient)
-
-	httpClient, ok := cfg.HTTPClient.(*http.Client)
-	assert.True(t, ok, "HTTPClient should be *http.Client")
-	assert.Equal(t, defaultAWSSDKClientTimeout, httpClient.Timeout)
+	client := awssession.NewAWSSDKHTTPClient()
+	assert.NotNil(t, client)
+	assert.Equal(t, awssession.DefaultAWSSDKClientTimeout, client.Timeout)
 }

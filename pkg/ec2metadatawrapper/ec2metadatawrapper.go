@@ -3,16 +3,10 @@ package ec2metadatawrapper
 
 import (
 	"context"
-	"net/http"
-	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
-)
-
-const (
-	// defaultAWSSDKClientTimeout is the timeout for individual HTTP requests made by AWS SDK clients.
-	defaultAWSSDKClientTimeout = 10 * time.Second
 )
 
 // HTTPClient is used to help with testing
@@ -34,9 +28,7 @@ type ec2MetadataClientImpl struct {
 // New creates an ec2metadata client to retrieve metadata
 func New(ctx context.Context) (EC2MetadataClient, error) {
 	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithHTTPClient(&http.Client{
-			Timeout: defaultAWSSDKClientTimeout,
-		}),
+		config.WithHTTPClient(awssession.NewAWSSDKHTTPClient()),
 	)
 	if err != nil {
 		return nil, err

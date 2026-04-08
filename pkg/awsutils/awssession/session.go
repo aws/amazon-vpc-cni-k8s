@@ -16,6 +16,7 @@ package awssession
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -39,6 +40,11 @@ const (
 	// DefaultAWSSDKClientTimeout is the default timeout for individual HTTP requests made by AWS SDK clients.
 	DefaultAWSSDKClientTimeout = 10 * time.Second
 )
+
+// NewAWSSDKHTTPClient returns a new HTTP client with the default AWS SDK timeout.
+func NewAWSSDKHTTPClient() *http.Client {
+	return &http.Client{Timeout: DefaultAWSSDKClientTimeout}
+}
 
 var (
 	log = logger.Get()

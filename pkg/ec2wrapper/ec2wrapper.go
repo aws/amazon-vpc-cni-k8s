@@ -3,7 +3,6 @@ package ec2wrapper
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper"
@@ -46,9 +45,7 @@ func NewMetricsClient() (*EC2Wrapper, error) {
 
 	awsCfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRegion(instanceIdentityDocumentOutput.Region),
-		config.WithHTTPClient(&http.Client{
-			Timeout: awssession.DefaultAWSSDKClientTimeout,
-		}),
+		config.WithHTTPClient(awssession.NewAWSSDKHTTPClient()),
 	)
 	if err != nil {
 		return &EC2Wrapper{}, err

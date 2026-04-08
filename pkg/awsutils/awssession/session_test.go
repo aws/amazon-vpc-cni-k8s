@@ -45,3 +45,9 @@ func TestNew_SetsHTTPClientTimeout(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, cfg.HTTPClient)
 }
+
+func TestNewAWSSDKHTTPClient_SetsTimeout(t *testing.T) {
+	client := NewAWSSDKHTTPClient()
+	assert.NotNil(t, client)
+	assert.Equal(t, DefaultAWSSDKClientTimeout, client.Timeout)
+}

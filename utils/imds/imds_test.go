@@ -1,32 +1,17 @@
 package imds
 
 import (
-	"context"
-	"net/http"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 )
 
 func TestGetMetaData_ConfigSetsHTTPClientTimeout(t *testing.T) {
-	t.Setenv("AWS_REGION", "us-west-2")
-	cfg, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithHTTPClient(&http.Client{
-			Timeout: defaultAWSSDKClientTimeout,
-		}),
-		config.WithRetryMaxAttempts(10),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
+	client := awssession.NewAWSSDKHTTPClient()
+	if client == nil {
+		t.Fatal("NewAWSSDKHTTPClient should not return nil")
 	}
-	if cfg.HTTPClient == nil {
-		t.Fatal("HTTPClient should not be nil")
-	}
-	httpClient, ok := cfg.HTTPClient.(*http.Client)
-	if !ok {
-		t.Fatal("HTTPClient should be *http.Client")
-	}
-	if httpClient.Timeout != defaultAWSSDKClientTimeout {
-		t.Fatalf("expected timeout %v, got %v", defaultAWSSDKClientTimeout, httpClient.Timeout)
+	if client.Timeout != awssession.DefaultAWSSDKClientTimeout {
+		t.Fatalf("expected timeout %v, got %v", awssession.DefaultAWSSDKClientTimeout, client.Timeout)
 	}
 }
