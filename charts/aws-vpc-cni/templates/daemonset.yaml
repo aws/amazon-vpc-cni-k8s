@@ -47,10 +47,6 @@ spec:
           - name: {{ $key }}
             value: {{ $value | quote }}
 {{- end }}
-{{- if .Values.fips }}
-          - name: AWS_USE_FIPS_ENDPOINT
-            value: "true"
-{{- end }}
         securityContext:
           {{- toYaml .Values.init.securityContext | nindent 12 }}
         {{- with default .Values.resources .Values.init.resources }}
@@ -110,10 +106,6 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.name
-{{- if .Values.fips }}
-            - name: AWS_USE_FIPS_ENDPOINT
-              value: "true"
-{{- end }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -149,15 +141,15 @@ spec:
             - containerPort: {{ .Values.nodeAgent.metricsBindAddr}}
               name: agentmetrics
           env:
+{{- range $key, $value := .Values.nodeAgent.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+{{- end }}
             - name: MY_NODE_NAME
               valueFrom:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: spec.nodeName
-{{- if .Values.fips }}
-            - name: AWS_USE_FIPS_ENDPOINT
-              value: "true"
-{{- end }}
           args:
             - --enable-ipv6={{ .Values.nodeAgent.enableIpv6 }}
             - --enable-network-policy={{ .Values.enableNetworkPolicy }}

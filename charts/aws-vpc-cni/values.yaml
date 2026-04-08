@@ -6,9 +6,6 @@
 # existing naming
 nameOverride: aws-node
 
-# Set to true to enable FIPS endpoints for the CNI and Node Agent
-fips: false
-
 init:
   image:
     tag: v1.21.1
@@ -58,6 +55,8 @@ nodeAgent:
   conntrackCacheTableSize: 524288
   logLevel: "debug"
   resources: {}
+  # env:
+  #   KEY: "VALUE"
 
 image:
   tag: v1.21.1
