@@ -28,6 +28,7 @@ type DeploymentBuilder struct {
 	replicas               int
 	container              corev1.Container
 	labels                 map[string]string
+	annotations            map[string]string
 	nodeSelector           map[string]string
 	terminationGracePeriod int
 	nodeName               string
@@ -111,6 +112,14 @@ func (d *DeploymentBuilder) PodLabel(labelKey string, labelValue string) *Deploy
 	return d
 }
 
+func (d *DeploymentBuilder) PodAnnotation(key string, value string) *DeploymentBuilder {
+	if d.annotations == nil {
+		d.annotations = map[string]string{}
+	}
+	d.annotations[key] = value
+	return d
+}
+
 func (d *DeploymentBuilder) HostNetwork(hostNetwork bool) *DeploymentBuilder {
 	d.hostNetwork = hostNetwork
 	return d
@@ -136,7 +145,8 @@ func (d *DeploymentBuilder) Build() *v1.Deployment {
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: d.labels,
+					Labels:      d.labels,
+					Annotations: d.annotations,
 				},
 				Spec: corev1.PodSpec{
 					HostNetwork:                   d.hostNetwork,
