@@ -725,7 +725,7 @@ func assertAllocationExternalCalls(shouldCall bool, useENIConfig bool, m *testMo
 	m.awsutils.EXPECT().IsTrunkingCompatible().Times(callCount).Return(eniTrunking)
 
 	if useENIConfig {
-		m.awsutils.EXPECT().AllocENI(gomock.Any(), sg, podENIConfig.Subnet, 14, 0).Times(callCount).Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(gomock.Any(), sg, podENIConfig.Subnet, 14, 0, gomock.Any()).Times(callCount).Return(eni2, nil)
 	} else if subnetDiscovery {
 		m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), primaryENIid, 14).Times(callCount).Return(nil, &smithy.GenericAPIError{
 			Code:    "InsufficientFreeAddressesInSubnet",
@@ -737,9 +737,9 @@ func assertAllocationExternalCalls(shouldCall bool, useENIConfig bool, m *testMo
 			Message: originalErr.Error(),
 			Fault:   smithy.FaultUnknown,
 		})
-		m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", 14, 0).Times(callCount).Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", 14, 0, gomock.Nil()).Times(callCount).Return(eni2, nil)
 	} else {
-		m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", 14, 0).Times(callCount).Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", 14, 0, gomock.Nil()).Times(callCount).Return(eni2, nil)
 	}
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.awsutils.EXPECT().WaitForENIAndIPsAttached(secENIid, 14).Times(callCount).Return(eniMetadata[1], nil)
@@ -833,7 +833,7 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig, subnetDiscovery bool, en
 	m.awsutils.EXPECT().IsTrunkingCompatible().Return(eniTrunking)
 
 	if useENIConfig {
-		m.awsutils.EXPECT().AllocENI(gomock.Any(), sg, podENIConfig.Subnet, 1, defaultNetworkCard).Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(gomock.Any(), sg, podENIConfig.Subnet, 1, defaultNetworkCard, gomock.Any()).Return(eni2, nil)
 	} else if subnetDiscovery {
 		m.awsutils.EXPECT().AllocIPAddresses(gomock.Any(), primaryENIid, 1).Return(nil, &smithy.GenericAPIError{
 			Code:    "InsufficientFreeAddressesInSubnet",
@@ -845,9 +845,9 @@ func testIncreasePrefixPool(t *testing.T, useENIConfig, subnetDiscovery bool, en
 			Message: originalErr.Error(),
 			Fault:   smithy.FaultUnknown,
 		})
-		m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", 1, defaultNetworkCard).Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", 1, defaultNetworkCard, gomock.Nil()).Return(eni2, nil)
 	} else {
-		m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", 1, defaultNetworkCard).Return(eni2, nil)
+		m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", 1, defaultNetworkCard, gomock.Nil()).Return(eni2, nil)
 	}
 
 	eniMetadata := []awsutils.ENIMetadata{
@@ -1010,7 +1010,7 @@ func TestTryAddIPToENI(t *testing.T) {
 	mockContext.dataStoreAccess = testDatastore()
 
 	m.awsutils.EXPECT().IsTrunkingCompatible().Return(true)
-	m.awsutils.EXPECT().AllocENI(context.Background(), nil, "", warmIPTarget, defaultNetworkCard).Return(secENIid, nil)
+	m.awsutils.EXPECT().AllocENI(context.Background(), nil, "", warmIPTarget, defaultNetworkCard, gomock.Nil()).Return(secENIid, nil)
 	eniMetadata := []awsutils.ENIMetadata{
 		{
 			ENIID:          primaryENIid,
@@ -2653,7 +2653,7 @@ func TestPodENIErrInc(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Mock AWS API error
-	m.awsutils.EXPECT().AllocENI(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	m.awsutils.EXPECT().AllocENI(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return("", errors.New("API error")).Times(2) // Expect 2 calls
 
 	// Test case 1: First error
@@ -2684,7 +2684,7 @@ func TestPodENIErrInc(t *testing.T) {
 
 func (c *IPAMContext) tryAssignPodENI(ctx context.Context, pod *corev1.Pod, fnName string) error {
 	// Mock implementation for the test
-	_, err := c.awsClient.AllocENI(context.Background(), nil, "", 0, defaultNetworkCard)
+	_, err := c.awsClient.AllocENI(context.Background(), nil, "", 0, defaultNetworkCard, nil)
 	if err != nil {
 		prometheusmetrics.PodENIErr.With(prometheus.Labels{"fn": fnName}).Inc()
 		return err
@@ -3603,7 +3603,7 @@ func TestNodeInit_IPv6_PrimaryENIExcluded(t *testing.T) {
 	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-excluded").Return(true, nil).AnyTimes()
 
 	// Expect ENI allocation since primary is excluded
-	m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", 1, defaultNetworkCard).Return(secENIid, nil).AnyTimes()
+	m.awsutils.EXPECT().AllocENI(gomock.Any(), nil, "", 1, defaultNetworkCard, gomock.Nil()).Return(secENIid, nil).AnyTimes()
 
 	secEniMetadata := awsutils.ENIMetadata{
 		ENIID:        secENIid,
