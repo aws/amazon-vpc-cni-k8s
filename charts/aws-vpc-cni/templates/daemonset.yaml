@@ -56,6 +56,9 @@ spec:
         volumeMounts:
           - mountPath: /host/opt/cni/bin
             name: cni-bin-dir
+          {{- with .Values.extraVolumeMounts }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
       terminationGracePeriodSeconds: 10
       {{- with .Values.tolerations }}
       tolerations:
