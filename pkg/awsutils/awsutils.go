@@ -484,9 +484,9 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 	cache.localIPv4, err = cache.imds.GetLocalIPv4(ctx)
 	if err != nil {
 		awsAPIErrInc("GetLocalIPv4", err)
-		return err
+	} else {
+		log.Debugf("Discovered the instance primary IPv4 address: %s", cache.localIPv4)
 	}
-	log.Debugf("Discovered the instance primary IPv4 address: %s", cache.localIPv4)
 
 	// retrieve instance-id
 	cache.instanceID, err = cache.imds.GetInstanceID(ctx)
