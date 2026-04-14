@@ -28,6 +28,7 @@ jobs:
       - name: Run code checks
         run: |
           make check-format
+          make verify-copyright
           make vet
       - name: Build
         run: make build-linux
