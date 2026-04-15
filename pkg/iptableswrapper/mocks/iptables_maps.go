@@ -45,8 +45,9 @@ func NewMockIptables() *MockIptables {
 
 func (ipt *MockIptables) Exists(table, chainName string, rulespec ...string) (bool, error) {
 	chain := ipt.DataplaneState[table][chainName]
+	normalizedInput := normalizeIptablesRule(rulespec)
 	for _, r := range chain {
-		if reflect.DeepEqual(rulespec, r) {
+		if reflect.DeepEqual(normalizedInput, normalizeIptablesRule(r)) {
 			return true, nil
 		}
 	}
@@ -91,8 +92,9 @@ func (ipt *MockIptables) Delete(table, chainName string, rulespec ...string) err
 	chain := ipt.DataplaneState[table][chainName]
 	updatedChain := chain[:0]
 	found := false
+	normalizedInput := normalizeIptablesRule(rulespec)
 	for _, r := range chain {
-		if !found && reflect.DeepEqual(rulespec, r) {
+		if !found && reflect.DeepEqual(normalizedInput, normalizeIptablesRule(r)) {
 			found = true
 			continue
 		}
@@ -114,7 +116,8 @@ func (ipt *MockIptables) List(table, chain string) ([]string, error) {
 			continue
 		}
 		sanitizedRuleSpec := []string{"-A", chain}
-		for _, item := range ruleSpec {
+		normalized := normalizeIptablesRule(ruleSpec)
+		for _, item := range normalized {
 			if strings.Contains(item, " ") {
 				item = fmt.Sprintf("%q", item)
 			}
@@ -123,6 +126,21 @@ func (ipt *MockIptables) List(table, chain string) ([]string, error) {
 		chains = append(chains, strings.Join(sanitizedRuleSpec, " "))
 	}
 	return chains, nil
+}
+
+// normalizeIptablesRule strips -d 0.0.0.0/0 and -s 0.0.0.0/0 from a rule spec,
+// matching the behavior of real iptables which omits these implicit defaults from
+// its -S (list-rules) output.
+func normalizeIptablesRule(rule []string) []string {
+	var out []string
+	for i := 0; i < len(rule); i++ {
+		if (rule[i] == "-d" || rule[i] == "-s") && i+1 < len(rule) && rule[i+1] == "0.0.0.0/0" {
+			i++
+			continue
+		}
+		out = append(out, rule[i])
+	}
+	return out
 }
 
 func (ipt *MockIptables) NewChain(table, chain string) error {

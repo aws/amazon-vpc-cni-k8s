@@ -529,6 +529,59 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 		}, mockIptables.(*mock_iptables.MockIptables).DataplaneState)
 }
 
+// TestSetupHostNetwork_ZeroCIDRNormalization verifies that iptables rules with
+// -d 0.0.0.0/0 survive repeated reconciliation. iptables -S normalizes away
+// -d 0.0.0.0/0 from its output, so the desired and listed rule specs must match.
+func TestSetupHostNetwork_ZeroCIDRNormalization(t *testing.T) {
+	ctrl, mockNetLink, _, mockNS, mockIpt := setup(t)
+	defer ctrl.Finish()
+
+	_ = mockNS
+
+	ln := &linuxNetwork{
+		useExternalSNAT:        false,
+		ipv6EgressEnabled:      false,
+		excludeSNATCIDRs:       []string{"0.0.0.0/0"},
+		nodePortSupportEnabled: true,
+		mainENIMark:            defaultConnmark,
+		mtu:                    testMTU,
+		vethPrefix:             eniPrefix,
+
+		netLink: mockNetLink,
+		ns:      mockNS,
+		connmark: &iptablesConnmark{
+			vethPrefix: eniPrefix,
+			mark:       defaultConnmark,
+			newIptables: func(iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+				return mockIpt, nil
+			},
+		},
+		newIptables: func(iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+			return mockIpt, nil
+		},
+	}
+	setupNetLinkMocks(ctrl, mockNetLink)
+
+	vpcCIDRs := []string{"10.10.0.0/16"}
+	err := ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, false)
+	assert.NoError(t, err)
+
+	mockIptConcrete := mockIpt.(*mock_iptables.MockIptables)
+	exists, _ := mockIptConcrete.Exists("nat", "AWS-SNAT-CHAIN-0", "-d", "0.0.0.0/0", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	assert.True(t, exists, "SNAT exclusion rule for 0.0.0.0/0 should exist after first setup")
+
+	setupNetLinkMocks(ctrl, mockNetLink)
+
+	err = ln.SetupHostNetwork(vpcCIDRs, loopback, &testEniIPNet, false, false)
+	assert.NoError(t, err)
+
+	exists, _ = mockIptConcrete.Exists("nat", "AWS-SNAT-CHAIN-0", "-d", "0.0.0.0/0", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "RETURN")
+	assert.True(t, exists, "SNAT exclusion rule for 0.0.0.0/0 should survive second setup")
+
+	exists, _ = mockIptConcrete.Exists("nat", "AWS-CONNMARK-CHAIN-0", "-d", "0.0.0.0/0", "-m", "comment", "--comment", "AWS CONNMARK CHAIN", "-j", "RETURN")
+	assert.True(t, exists, "CONNMARK exclusion rule for 0.0.0.0/0 should survive second setup")
+}
+
 func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 	ctrl, mockNetLink, _, mockNS, mockIptables := setup(t)
 	defer ctrl.Finish()

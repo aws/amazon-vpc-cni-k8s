@@ -160,8 +160,6 @@ type NetworkAPIs interface {
 		v6Enabled bool) error
 	// SetupENINetwork performs ENI level network configuration. Not needed on the primary ENI
 	SetupENINetwork(eniIP string, eniMAC string, networkCard int, eniSubnetCIDR string, maxENIPerNIC int, isTrunkENI bool, routeTableID int, isRuleConfigured bool) error
-	// UpdateHostIptablesRules updates the nat table iptables rules on the host
-	//UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v6Enabled bool) error
 	UpdateHostSNATRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v6Enabled bool) error
 	CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error
 	UseExternalSNAT() bool
@@ -388,12 +386,6 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDRs []string, primaryMAC string, pr
 	return n.UpdateHostSNATRules(vpcCIDRs, primaryMAC, primaryAddr, v6Enabled)
 }
 
-// // UpdateHostIptablesRules updates the NAT table rules based on the VPC CIDRs configuration
-// func (n *linuxNetwork) UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP,
-// 	v6Enabled bool) error {
-// 	return n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr)
-// }
-
 func (n *linuxNetwork) CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error {
 	ipProtocol := iptables.ProtocolIPv4
 	if v6Enabled {
@@ -417,7 +409,7 @@ func (n *linuxNetwork) CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error {
 		}
 
 		for _, chain := range existingChains {
-			if !strings.HasPrefix(chain, "AWS-CONNMARK-CHAIN") && !strings.HasPrefix(chain, "AWS-SNAT-CHAIN") {
+			if !strings.HasPrefix(chain, connmarkChainName) && !strings.HasPrefix(chain, "AWS-SNAT-CHAIN") {
 				continue
 			}
 			parsedChain := strings.Split(chain, "-")
@@ -439,6 +431,16 @@ func (n *linuxNetwork) CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error {
 	return nil
 }
 
+// UpdateHostSNATRules reconciles iptables SNAT rules and connmark rules based on the current
+// configuration. It is called during node initialization and on config changes (e.g. VPC CIDR updates).
+//
+// In IPv6 mode, this is a no-op since traffic enters and exits from the same ENI.
+//
+// In IPv4 mode, it:
+//   - Updates iptables SNAT rules to masquerade non-VPC outbound traffic via the primary ENI IP
+//   - If external SNAT is enabled, cleans up connmark rules (an external NAT gateway handles SNAT)
+//   - If external SNAT is disabled, sets up connmark rules to mark pod traffic so that return
+//     traffic is routed back out through the correct ENI (required for NodePort support)
 func (n *linuxNetwork) UpdateHostSNATRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP,
 	v6Enabled bool) error {
 	if v6Enabled {
@@ -447,7 +449,7 @@ func (n *linuxNetwork) UpdateHostSNATRules(vpcCIDRs []string, primaryMAC string,
 	}
 	err := n.updateHostIptablesRules(vpcCIDRs, primaryMAC, primaryAddr)
 	if err != nil {
-		log.Error(fmt.Sprintf("failed to iptable rules for snat %s", err.Error()))
+		log.Errorf("failed to update iptable rules for snat %s", err.Error())
 		return err
 	}
 	if n.useExternalSNAT {
@@ -665,15 +667,17 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 			comment += " EXCLUSION"
 		}
 		log.Debugf("Setup Host Network: iptables -A %s -d %s -m comment --comment %s -t nat -j %s", chain, cidr.cidr, comment, "RETURN")
-
+		rule := []string{"-d", cidr.cidr, "-m", "comment", "--comment", comment, "-j", "RETURN"}
+		if cidr.isExclusion && cidr.cidr == "0.0.0.0/0" {
+			rule = []string{"-m", "comment", "--comment", comment, "-j", "RETURN"}
+		}
 		iptableRules = append(iptableRules, iptablesRule{
 			name:        chain,
 			shouldExist: !n.useExternalSNAT,
 			table:       "nat",
 			chain:       chain,
-			rule: []string{
-				"-d", cidr.cidr, "-m", "comment", "--comment", comment, "-j", "RETURN",
-			}})
+			rule:        rule,
+		})
 	}
 
 	// Prepare the Desired Rule for SNAT Rule for non-pod ENIs
@@ -759,7 +763,7 @@ func (n *linuxNetwork) updateIptablesRules(iptableRules []iptablesRule, ipt ipta
 		}
 
 		if !exists && rule.shouldExist {
-			if rule.name == "AWS-CONNMARK-CHAIN-0" || rule.name == "AWS-SNAT-CHAIN-0" {
+			if rule.name == connmarkChainName || rule.name == "AWS-SNAT-CHAIN-0" {
 				// All CIDR rules must go before the SNAT/Mark rule
 				err = ipt.Insert(rule.table, rule.chain, 1, rule.rule...)
 				if err != nil {
@@ -827,6 +831,8 @@ func computeStaleIptablesRules(ipt iptableswrapper.IPTablesIface, table, chainPr
 	}
 	activeChains := sets.NewString(chains...)
 	log.Debugf("Setup Host Network: computing stale iptables rules for %s table with chain prefix %s", table, chainPrefix)
+	fmt.Println("!!!!!!new rules")
+	fmt.Println(newRules)
 	for _, staleRule := range existingRules {
 		if len(staleRule.rule) == 0 && activeChains.Has(staleRule.chain) {
 			log.Debugf("Setup Host Network: active chain found: %s", staleRule.chain)
@@ -842,6 +848,8 @@ func computeStaleIptablesRules(ipt iptableswrapper.IPTablesIface, table, chainPr
 		}
 		if !keepRule {
 			log.Debugf("Setup Host Network: stale rule found: %s", staleRule)
+			fmt.Println("!!!!!!stale rules")
+			fmt.Println(staleRule)
 			staleRules = append(staleRules, staleRule)
 		}
 	}

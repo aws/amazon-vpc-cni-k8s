@@ -50,22 +50,30 @@ func (c *iptablesConnmark) Cleanup() error {
 	}
 
 	// Delete jump rule
-	jumpRule := []string{"-i", c.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", "AWS-CONNMARK-CHAIN-0"}
-	_ = ipt.Delete("nat", "PREROUTING", jumpRule...)
+	jumpRule := []string{"-i", c.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", connmarkChainName}
+	err = ipt.Delete("nat", "PREROUTING", jumpRule...)
+	if err != nil {
+		return err
+	}
 
 	// Delete restore rule
 	restoreRule := []string{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", c.mark)}
-	_ = ipt.Delete("nat", "PREROUTING", restoreRule...)
+	err = ipt.Delete("nat", "PREROUTING", restoreRule...)
+	if err != nil {
+		return err
+	}
 
 	// Clear and delete chain
-	_ = ipt.ClearChain("nat", "AWS-CONNMARK-CHAIN-0")
+	err = ipt.ClearChain("nat", connmarkChainName)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
 
 func (c *iptablesConnmark) buildRules(exemptCIDRs []string, ipt iptableswrapper.IPTablesIface) ([]iptablesRule, error) {
-	chain := "AWS-CONNMARK-CHAIN-0"
-	if err := ipt.NewChain("nat", chain); err != nil && !containChainExistErr(err) {
+	if err := ipt.NewChain("nat", connmarkChainName); err != nil && !containChainExistErr(err) {
 		return nil, err
 	}
 
@@ -74,20 +82,25 @@ func (c *iptablesConnmark) buildRules(exemptCIDRs []string, ipt iptableswrapper.
 	rules = append(rules, iptablesRule{
 		name: "legacy connmark", shouldExist: false, table: "nat", chain: "PREROUTING",
 		rule: []string{"-i", c.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections",
-			"-m", "state", "--state", "NEW", "-j", chain},
+			"-m", "state", "--state", "NEW", "-j", connmarkChainName},
 	})
 
 	// Jump rule
 	rules = append(rules, iptablesRule{
 		name: "connmark jump", shouldExist: true, table: "nat", chain: "PREROUTING",
-		rule: []string{"-i", c.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", chain},
+		rule: []string{"-i", c.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", connmarkChainName},
 	})
 
 	// CIDR return rules
 	for _, cidr := range exemptCIDRs {
+		rule := []string{"-d", cidr, "-m", "comment", "--comment", "AWS CONNMARK CHAIN", "-j", "RETURN"}
+		// Kernel will strip -d, if dst is 0.0.0.0/0
+		if cidr == "0.0.0.0/0" {
+			rule = []string{"-m", "comment", "--comment", "AWS CONNMARK CHAIN", "-j", "RETURN"}
+		}
 		rules = append(rules, iptablesRule{
-			name: chain, shouldExist: true, table: "nat", chain: chain,
-			rule: []string{"-d", cidr, "-m", "comment", "--comment", "AWS CONNMARK CHAIN", "-j", "RETURN"},
+			name: connmarkChainName, shouldExist: true, table: "nat", chain: connmarkChainName,
+			rule: rule,
 		})
 	}
 	// we might not need to mark this packet for delete.
@@ -109,14 +122,14 @@ func (c *iptablesConnmark) buildRules(exemptCIDRs []string, ipt iptableswrapper.
 	})
 
 	// Compute stale rules (handles removed CIDRs)
-	staleRules, err := computeStaleIptablesRules(ipt, "nat", "AWS-CONNMARK-CHAIN", rules, []string{chain})
+	staleRules, err := computeStaleIptablesRules(ipt, "nat", connmarkChainName, rules, []string{connmarkChainName})
 	if err != nil {
 		return nil, err
 	}
 	rules = append(rules, staleRules...)
 	// Set mark rule
 	rules = append(rules, iptablesRule{
-		name: "set connmark", shouldExist: true, table: "nat", chain: chain,
+		name: "set connmark", shouldExist: true, table: "nat", chain: connmarkChainName,
 		rule: []string{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", fmt.Sprintf("%#x/%#x", c.mark, c.mark)},
 	})
 
@@ -131,7 +144,7 @@ func (c *iptablesConnmark) applyRules(rules []iptablesRule, ipt iptableswrapper.
 		}
 
 		if !exists && rule.shouldExist {
-			if rule.name == "AWS-CONNMARK-CHAIN-0" { // CIDR rules
+			if rule.name == connmarkChainName { // CIDR rules
 				err = ipt.Insert(rule.table, rule.chain, 1, rule.rule...)
 			} else {
 				err = ipt.Append(rule.table, rule.chain, rule.rule...)
@@ -140,7 +153,11 @@ func (c *iptablesConnmark) applyRules(rules []iptablesRule, ipt iptableswrapper.
 				return err
 			}
 		} else if exists && !rule.shouldExist {
-			_ = ipt.Delete(rule.table, rule.chain, rule.rule...)
+			err = ipt.Delete(rule.table, rule.chain, rule.rule...)
+			if err != nil {
+				log.Errorf("Failed to delete rule %v: %v", rule.rule, err)
+				return err
+			}
 		}
 	}
 	return nil

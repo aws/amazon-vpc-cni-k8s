@@ -143,3 +143,26 @@ func TestIptablesConnmarkSetup_LegacyRuleDeleted(t *testing.T) {
 	exists, _ = mockIpt.Exists("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", connmarkChainName)
 	assert.True(t, exists)
 }
+
+func TestIptablesConnmarkSetup_ZeroCIDRNormalization(t *testing.T) {
+	mockIpt := mock_iptables.NewMockIptables()
+	connmark := &iptablesConnmark{
+		vethPrefix: "eni",
+		mark:       0x80,
+		newIptables: func(protocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+			return mockIpt, nil
+		},
+	}
+
+	err := connmark.Setup([]string{"0.0.0.0/0"})
+	assert.NoError(t, err)
+
+	exists, _ := mockIpt.Exists("nat", connmarkChainName, "-d", "0.0.0.0/0", "-m", "comment", "--comment", "AWS CONNMARK CHAIN", "-j", "RETURN")
+	assert.True(t, exists, "exclusion rule should exist after first Setup")
+
+	err = connmark.Setup([]string{"0.0.0.0/0"})
+	assert.NoError(t, err)
+
+	exists, _ = mockIpt.Exists("nat", connmarkChainName, "-d", "0.0.0.0/0", "-m", "comment", "--comment", "AWS CONNMARK CHAIN", "-j", "RETURN")
+	assert.True(t, exists, "exclusion rule should survive second Setup")
+}
