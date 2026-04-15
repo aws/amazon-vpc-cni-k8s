@@ -93,7 +93,7 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 			semVer, err := semver.NewVersion(ver.String())
 			Expect(err).ToNot(HaveOccurred())
 			if semVer.Minor() <= 32 && mode == "nftables" {
-				return
+				Skip("kube-proxy nftables mode is not supported on Kubernetes<=1.32")
 			}
 
 			originalMode, err := getKubeProxyMode()
@@ -205,7 +205,10 @@ func restartKubeProxyPods() error {
 		return err
 	}
 	for _, pod := range pods.Items {
-		f.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(&pod)
+		err := f.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(&pod)
+		if err != nil {
+			return err
+		}
 	}
 	time.Sleep(30 * time.Second)
 	return nil
