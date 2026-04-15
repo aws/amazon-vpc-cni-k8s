@@ -3,6 +3,7 @@ package networkutils
 import (
 	"fmt"
 	"net"
+	"syscall"
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
@@ -48,7 +49,7 @@ func TestNftConnmarkSetup(t *testing.T) {
 	// Setup expectations
 	mockNft.EXPECT().AddTable(gomock.Any()).Return(table)
 	mockNft.EXPECT().ListChain(table, nftBaseChainName).Return(baseChain, nil)
-	mockNft.EXPECT().ListChain(table, nftChainName).Return(nil, errors.New("not found"))
+	mockNft.EXPECT().ListChain(table, nftChainName).Return(nil, syscall.ENOENT)
 	mockNft.EXPECT().AddChain(gomock.Any()).Return(connmarkChain)
 	mockNft.EXPECT().Flush().Return(nil).Times(2)
 	mockNft.EXPECT().GetRules(table, baseChain).Return([]*nftables.Rule{}, nil)
@@ -85,7 +86,7 @@ func TestNftConnmarkSetup_FlushError(t *testing.T) {
 
 	mockNft.EXPECT().AddTable(gomock.Any()).Return(table)
 	mockNft.EXPECT().ListChain(table, nftBaseChainName).Return(baseChain, nil)
-	mockNft.EXPECT().ListChain(table, nftChainName).Return(nil, errors.New("not found"))
+	mockNft.EXPECT().ListChain(table, nftChainName).Return(nil, syscall.ENOENT)
 	mockNft.EXPECT().AddChain(gomock.Any()).Return(&nftables.Chain{})
 	mockNft.EXPECT().Flush().Return(errors.New("flush failed"))
 

@@ -2,9 +2,11 @@ package networkutils
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net"
 	"sync/atomic"
+	"syscall"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nft"
@@ -12,7 +14,6 @@ import (
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -22,10 +23,15 @@ const (
 )
 
 // Connmark manages connection marking rules for SNAT.
-// Setup configures rules to mark outbound pod traffic for SNAT, excluding specified CIDRs.
-// Cleanup removes all connmark rules when external SNAT is enabled.
+// Implementations may use nftables or iptables as the backend.
+//
+// Both Setup and Cleanup are idempotent: they can be called repeatedly and will
+// converge to the desired state without creating duplicate rules or errors.
 type Connmark interface {
+	// Setup configures rules to mark outbound pod traffic for SNAT, excluding exemptCIDRs.
 	Setup(exemptCIDRs []string) error
+
+	// Cleanup removes all connmark rules when external SNAT is enabled.
 	Cleanup() error
 }
 
@@ -65,23 +71,47 @@ func newNftablesConnmark(vethPrefix string, mark uint32) (Connmark, error) {
 	}, nil
 }
 
+// Setup creates the nftables rules for SNAT connmark. With vethPrefix="eni", mark=0x80,
+// and exemptCIDRs=["10.0.0.0/8", "172.16.0.0/12"], the resulting table looks like:
+//
+//	table ip aws-cni {
+//	    chain nat-prerouting {
+//	        type nat hook prerouting priority -90; policy accept;
+//	        fib daddr type local return
+//	        iifname "eni*" counter jump snat-mark
+//	        counter ct mark & 0x80 meta mark set ct mark & 0x80
+//	    }
+//	    chain snat-mark {
+//	        counter ip daddr 172.16.0.0/12 return
+//	        counter ip daddr 10.0.0.0/8 return
+//	        counter ct mark set ct mark | 0x80
+//	    }
+//	}
+//
+// On first successful setup, it also cleans up stale legacy iptables connmark
+// rules (PREROUTING jump, restore-mark, and AWS-CONNMARK-CHAIN-0) that may
+// remain from a previous iptables-based backend.
 func (c *nftConnmark) Setup(exemptCIDRs []string) error {
-
-	// idempotent
+	// nft add table ip aws-cni
 	table := c.nft.AddTable(&nftables.Table{
 		Family: nftables.TableFamilyIPv4,
 		Name:   nftTableName,
 	})
 
-	baseChain := c.ensureBaseChain(table)
-	connmarkChain, _ := c.ensureConnmarkChain(table)
+	baseChain, err := c.ensureBaseChain(table)
+	if err != nil {
+		return err
+	}
+	connmarkChain, err := c.ensureConnmarkChain(table)
+	if err != nil {
+		return err
+	}
 	if err := c.nft.Flush(); err != nil {
-		return errors.Wrap(err, "failed to flush nftable after base chain reconciliation")
+		return fmt.Errorf("failed to flush nftable after base chain reconciliation: %w", err)
 	}
 
-	err := c.ensureBaseChainRules(table, baseChain, connmarkChain, c.vethPrefix, c.mark)
+	err = c.ensureBaseChainRules(table, baseChain, connmarkChain)
 	if err != nil {
-		log.Error(err.Error())
 		return err
 	}
 	err = c.ensureConnmarkChainRules(table, connmarkChain, exemptCIDRs, c.mark)
@@ -91,21 +121,31 @@ func (c *nftConnmark) Setup(exemptCIDRs []string) error {
 	}
 
 	if err := c.nft.Flush(); err != nil {
-		return errors.Wrap(err, "failed to flush nftable after chain rules reconciliation")
+		return fmt.Errorf("failed to flush nftable after chain rules reconciliation: %w", err)
 	}
 
 	// Cleanup legacy iptables rules once after successful nftables setup
 	if !c.cleanupOnce.Load() {
 		if err := c.cleanupIptablesConnmarkRules(); err != nil {
-			return errors.Wrap(err, "failed to cleanup legacy iptables connmark rules")
+			return fmt.Errorf("failed to cleanup legacy iptables connmark rules: %w", err)
 		}
 		c.cleanupOnce.Store(true)
 	}
 	return nil
 }
 
-func (c *nftConnmark) ensureBaseChain(table *nftables.Table) *nftables.Chain {
-	existing := c.getBaseChain(table)
+// ensureBaseChain creates or recreates the base chain: nft add chain ip aws-cni nat-prerouting '{ type nat hook prerouting priority -90; policy accept; }'
+func (c *nftConnmark) ensureBaseChain(table *nftables.Table) (*nftables.Chain, error) {
+	existing, err := c.nft.ListChain(table, nftBaseChainName)
+	if err != nil {
+		if isNFTNotExistsError(err) {
+			log.Infof("chain does not exists %s: %v", nftBaseChainName, err)
+			// We will recreate chain.
+			existing = nil
+		} else {
+			return nil, err
+		}
+	}
 	if existing != nil && !isBaseChainConfigCorrect(existing, c.getDesiredPriority()) {
 		// delete and re-add chain
 		// need to flush the rules before deleting chain.
@@ -125,9 +165,9 @@ func (c *nftConnmark) ensureBaseChain(table *nftables.Table) *nftables.Chain {
 			Priority: &priority,
 			Policy:   &policy,
 		})
-		return chain
+		return chain, nil
 	}
-	return existing
+	return existing, nil
 }
 
 func (c *nftConnmark) cleanupIptablesConnmarkRules() error {
@@ -139,7 +179,7 @@ func (c *nftConnmark) cleanupIptablesConnmarkRules() error {
 
 	jumpRule := []string{
 		"-i", c.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections",
-		"-j", "AWS-CONNMARK-CHAIN-0",
+		"-j", connmarkChainName,
 	}
 	if err := ipt.Delete("nat", "PREROUTING", jumpRule...); err != nil && !isNotExistError(err) {
 		return err
@@ -155,17 +195,17 @@ func (c *nftConnmark) cleanupIptablesConnmarkRules() error {
 	}
 
 	// Flush and delete AWS-CONNMARK-CHAIN-0 if it exists
-	if err := ipt.ClearChain("nat", "AWS-CONNMARK-CHAIN-0"); err != nil && !isNotExistError(err) {
+	if err := ipt.ClearChain("nat", connmarkChainName); err != nil && !isNotExistError(err) {
 		return err
 	}
-	if err := ipt.DeleteChain("nat", "AWS-CONNMARK-CHAIN-0"); err != nil && !isNotExistError(err) {
+	if err := ipt.DeleteChain("nat", connmarkChainName); err != nil && !isNotExistError(err) {
 		return err
 	}
 	return nil
 }
 
 // it has two rules, one to match vethprefix and jump to connmark chain, second is to mark packet with conntrack mark
-func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, targetChain *nftables.Chain, vethPrefix string, mark uint32) error {
+func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, targetChain *nftables.Chain) error {
 	rules, err := c.nft.GetRules(table, baseChain)
 	if err != nil {
 		log.Error(err.Error())
@@ -180,11 +220,11 @@ func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, tar
 			hasFiblocalReturnRule = true
 			continue
 		}
-		if isJumpRule(rule, targetChain.Name, vethPrefix) {
+		if isJumpRule(rule, targetChain.Name, c.vethPrefix) {
 			hasJumpRule = true
 			continue
 		}
-		if isRestoreRule(rule, mark) {
+		if isRestoreRule(rule, c.mark) {
 			hasRestoreRule = true
 		}
 	}
@@ -193,10 +233,10 @@ func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, tar
 		c.addFibLocalReturnRule(table, baseChain)
 	}
 	if !hasJumpRule {
-		c.addJumpRule(table, baseChain, targetChain, vethPrefix)
+		c.addJumpRule(table, baseChain, targetChain, c.vethPrefix)
 	}
 	if !hasRestoreRule {
-		c.addRestoreRule(table, baseChain, mark)
+		c.addRestoreRule(table, baseChain, c.mark)
 	}
 	return nil
 }
@@ -225,7 +265,7 @@ func isFibLocalReturnRule(rule *nftables.Rule) bool {
 	return hasFibAddrType && hasCmpLocal && hasReturn
 }
 
-// Add this function
+// addFibLocalReturnRule inserts: nft insert rule ip aws-cni nat-prerouting fib daddr type local return
 func (c *nftConnmark) addFibLocalReturnRule(table *nftables.Table, chain *nftables.Chain) {
 	c.nft.InsertRule(&nftables.Rule{
 		Table: table,
@@ -246,22 +286,36 @@ func (c *nftConnmark) addFibLocalReturnRule(table *nftables.Table, chain *nftabl
 	})
 }
 
+// ensureConnmarkChain creates the regular (non-base) chain: nft add chain ip aws-cni snat-mark
 func (c *nftConnmark) ensureConnmarkChain(table *nftables.Table) (*nftables.Chain, error) {
-	existing := c.getConnmarkChain(table)
+	existing, err := c.getConnmarkChain(table)
+	if err != nil {
+		if isNFTNotExistsError(err) {
+			log.Infof("chain does not exists %s: %v", nftChainName, err)
+			// We will recreate chain.
+			existing = nil
+		} else {
+			return nil, err
+		}
+	}
 	if existing != nil {
 		return existing, nil
 	}
+
+	// Add chain is idempotent
 	return c.nft.AddChain(&nftables.Chain{
 		Name:  nftChainName,
 		Table: table,
 	}), nil
 }
+
 func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nftables.Chain, exemptCIDRs []string, mark uint32) error {
 	rules, err := c.nft.GetRules(table, chain)
 	if err != nil {
 		return err
 	}
 
+	// Classify current rules
 	currentCIDRs := make(map[string]*nftables.Rule)
 	var setMarkRule *nftables.Rule
 	var unknownRules []*nftables.Rule
@@ -276,10 +330,11 @@ func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nft
 		}
 	}
 
+	var errs []error
 	// Delete unknown rules
 	for _, r := range unknownRules {
 		if err := c.nft.DelRule(r); err != nil {
-			log.Errorf("failed to delete unknown rule: %s, id: %d", err, r.Handle)
+			errs = append(errs, fmt.Errorf("delete unknown rule (handle %d): %w", r.Handle, err))
 		}
 	}
 
@@ -292,7 +347,7 @@ func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nft
 	for cidr, rule := range currentCIDRs {
 		if !desiredCIDRs[cidr] {
 			if err := c.nft.DelRule(rule); err != nil {
-				log.Errorf("failed to delete stale cidr rule %s in nf table: %s, id: %d", cidr, err, rule.Handle)
+				errs = append(errs, fmt.Errorf("delete stale CIDR %s (handle %d): %w", cidr, rule.Handle, err))
 			}
 		}
 	}
@@ -302,10 +357,10 @@ func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nft
 		if _, exists := currentCIDRs[cidrStr]; !exists {
 			_, cidr, err := net.ParseCIDR(cidrStr)
 			if err != nil {
-				log.Errorf("failed to insert cidr %s in nf table: %s", cidrStr, err)
+				errs = append(errs, fmt.Errorf("parse CIDR %s: %w", cidrStr, err))
 				continue
 			}
-			c.insertCIDRReturnRule(table, chain, cidr) // InsertRule
+			c.insertCIDRReturnRule(table, chain, cidr)
 		}
 	}
 
@@ -314,26 +369,19 @@ func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nft
 		c.addSetMarkRule(table, chain, mark)
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
+// Cleanup removes the entire nftables table: nft delete table ip aws-cni
 func (c *nftConnmark) Cleanup() error {
 	c.nft.DelTable(&nftables.Table{
 		Family: nftables.TableFamilyIPv4,
 		Name:   nftTableName,
 	})
-
-	err := c.nft.Flush()
-	return err
-}
-
-func (c *nftConnmark) getBaseChain(table *nftables.Table) *nftables.Chain {
-	chain, err := c.nft.ListChain(table, nftBaseChainName)
-	if err != nil {
-		log.Error(err.Error())
-		return nil
+	if err := c.nft.Flush(); err != nil && !isNFTNotExistsError(err) {
+		return err
 	}
-	return chain
+	return nil
 }
 
 func (c *nftConnmark) getDesiredPriority() nftables.ChainPriority {
@@ -347,15 +395,15 @@ func isBaseChainConfigCorrect(chain *nftables.Chain, desiredPriority nftables.Ch
 		chain.Policy != nil && *chain.Policy == nftables.ChainPolicyAccept
 }
 
-func (c *nftConnmark) getConnmarkChain(table *nftables.Table) *nftables.Chain {
+func (c *nftConnmark) getConnmarkChain(table *nftables.Table) (*nftables.Chain, error) {
 	chain, err := c.nft.ListChain(table, nftChainName)
 	if err != nil {
-		log.Error(err.Error())
-		return nil
+		return nil, err
 	}
-	return chain
+	return chain, nil
 }
 
+// addJumpRule adds: nft add rule ip aws-cni nat-prerouting iifname "eni*" counter jump snat-mark
 func (c *nftConnmark) addJumpRule(table *nftables.Table, baseChain, targetChain *nftables.Chain, vethPrefix string) {
 	c.nft.AddRule(&nftables.Rule{
 		Table: table,
@@ -372,6 +420,7 @@ func (c *nftConnmark) addJumpRule(table *nftables.Table, baseChain, targetChain 
 	})
 }
 
+// addRestoreRule adds: nft add rule ip aws-cni nat-prerouting counter ct mark & 0x80 meta mark set ct mark & 0x80
 func (c *nftConnmark) addRestoreRule(table *nftables.Table, chain *nftables.Chain, mark uint32) {
 	markBytes := binaryutil.NativeEndian.PutUint32(mark)
 	c.nft.AddRule(&nftables.Rule{
@@ -413,7 +462,7 @@ func isRestoreRule(rule *nftables.Rule, mark uint32) bool {
 	hasCtLoad := false
 	hasBitwise := false
 	hasMetaStore := false
-	markBytes := []byte{byte(mark), byte(mark >> 8), byte(mark >> 16), byte(mark >> 24)}
+	markBytes := binaryutil.NativeEndian.PutUint32(mark)
 	for _, e := range rule.Exprs {
 		if _, ok := e.(*expr.Counter); ok {
 			hasCounter = true
@@ -486,6 +535,7 @@ func isSetMarkRule(rule *nftables.Rule, mark uint32) bool {
 	return hasCtLoad && hasBitwise && hasCtStore
 }
 
+// addSetMarkRule adds: nft add rule ip aws-cni snat-mark counter ct mark set ct mark | 0x80
 func (c *nftConnmark) addSetMarkRule(table *nftables.Table, chain *nftables.Chain, mark uint32) {
 	markBytes := binaryutil.NativeEndian.PutUint32(mark)
 	c.nft.AddRule(&nftables.Rule{
@@ -500,6 +550,7 @@ func (c *nftConnmark) addSetMarkRule(table *nftables.Table, chain *nftables.Chai
 	})
 }
 
+// insertCIDRReturnRule inserts: nft insert rule ip aws-cni snat-mark counter ip daddr <cidr> return
 func (c *nftConnmark) insertCIDRReturnRule(table *nftables.Table, chain *nftables.Chain, cidr *net.IPNet) {
 	c.nft.InsertRule(&nftables.Rule{
 		Table: table,
@@ -525,4 +576,8 @@ func isNotExistError(err error) bool {
 		return ne.IsNotExist()
 	}
 	return false
+}
+
+func isNFTNotExistsError(err error) bool {
+	return errors.Is(err, syscall.ENOENT)
 }
