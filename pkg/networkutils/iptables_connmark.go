@@ -15,15 +15,20 @@ package networkutils
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/iptableswrapper"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/nft"
 	"github.com/coreos/go-iptables/iptables"
+	"github.com/google/nftables"
 )
 
 type iptablesConnmark struct {
-	vethPrefix  string
-	mark        uint32
-	newIptables func(iptables.Protocol) (iptableswrapper.IPTablesIface, error)
+	vethPrefix      string
+	mark            uint32
+	newIptables     func(iptables.Protocol) (iptableswrapper.IPTablesIface, error)
+	cleanupOnce     atomic.Bool
+	cleanupNftables func() error
 }
 
 var connmarkChainName string = "AWS-CONNMARK-CHAIN-0"
@@ -31,9 +36,10 @@ var _ Connmark = (*iptablesConnmark)(nil)
 
 func newIptablesConnmark(vethPrefix string, mark uint32) (*iptablesConnmark, error) {
 	return &iptablesConnmark{
-		vethPrefix:  vethPrefix,
-		mark:        mark,
-		newIptables: iptableswrapper.NewIPTables,
+		vethPrefix:      vethPrefix,
+		mark:            mark,
+		newIptables:     iptableswrapper.NewIPTables,
+		cleanupNftables: cleanupNFTStaleRules,
 	}, nil
 }
 
@@ -51,7 +57,32 @@ func (c *iptablesConnmark) Setup(exemptCIDRs []string) error {
 		return err
 	}
 
-	return c.applyRules(rules, ipt)
+	if err = c.applyRules(rules, ipt); err != nil {
+		return err
+	}
+	if !c.cleanupOnce.Load() && c.cleanupNftables != nil {
+		if err := c.cleanupNftables(); err != nil {
+			return fmt.Errorf("failed to cleanup nft stale connmark rules: %w", err)
+		}
+		c.cleanupOnce.Store(true)
+	}
+	return nil
+}
+
+func cleanupNFTStaleRules() error {
+	client, err := nft.New()
+	if err != nil {
+		return err
+	}
+	client.DelTable(&nftables.Table{
+		Family: nftables.TableFamilyIPv4,
+		Name:   nftTableName,
+	})
+
+	if err := client.Flush(); err != nil && !isNFTNotExistsError(err) {
+		return err
+	}
+	return nil
 }
 
 func (c *iptablesConnmark) Cleanup() error {
@@ -63,20 +94,20 @@ func (c *iptablesConnmark) Cleanup() error {
 	// Delete jump rule
 	jumpRule := []string{"-i", c.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", connmarkChainName}
 	err = ipt.Delete("nat", "PREROUTING", jumpRule...)
-	if err != nil {
+	if err != nil && !isNotExistError(err) {
 		return err
 	}
 
 	// Delete restore rule
 	restoreRule := []string{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", c.mark)}
 	err = ipt.Delete("nat", "PREROUTING", restoreRule...)
-	if err != nil {
+	if err != nil && !isNotExistError(err) {
 		return err
 	}
 
 	// Clear and delete chain
 	err = ipt.ClearChain("nat", connmarkChainName)
-	if err != nil {
+	if err != nil && !isNotExistError(err) {
 		return err
 	}
 
