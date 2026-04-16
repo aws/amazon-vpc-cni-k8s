@@ -232,7 +232,7 @@ The symptom for this issue is the presence of routing table 30200 or 30400.
 
 ## CNI Compatibility
 
-The [CNI image](../scripts/dockerfiles/Dockerfile.release) built for the `aws-node` manifest uses Amazon Linux 2 as the base image. Support for other Linux distributions (custom AMIs) is best-effort. Known issues with other Linux distributions are captured here:
+The [CNI image](../scripts/dockerfiles/Dockerfile.release) built for the `aws-node` manifest uses Amazon Linux 2023 (AL23) as the base image. Support for other Linux distributions (custom AMIs) is best-effort. Known issues with other Linux distributions are captured here:
 
 - **iptables**
   Prior to v1.12.1, the VPC CNI image only contained `iptables-legacy`. Newer distributions of RHEL (RHEL 8.x+), Ubuntu (Ubuntu 21.x+), etc. have moved to using `nftables`. This leads to issues such as [this](https://github.com/aws/amazon-vpc-cni-k8s/issues/1847) when running IPAMD.
