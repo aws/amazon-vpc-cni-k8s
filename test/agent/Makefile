@@ -18,7 +18,7 @@ PUBLIC_REPO_IMAGE=public.ecr.aws/$(REGISTRY_ID)/${IMAGE_NAME}:$(VERSION)
 PRIVATE_REPO_IMAGE=$(AWS_ACCOUNT).dkr.ecr.$(AWS_REGION).amazonaws.com/$(IMAGE_NAME):$(VERSION)
 
 GOLANG_VERSION ?= $(shell cat ../../.go-version)
-GOLANG_IMAGE ?= public.ecr.aws/eks-distro-build-tooling/golang:$(GOLANG_VERSION)-gcc-al2
+GOLANG_IMAGE ?= public.ecr.aws/eks-distro-build-tooling/golang:$(GOLANG_VERSION)-gcc-al23
 
 fmt:
 	go fmt ./...
