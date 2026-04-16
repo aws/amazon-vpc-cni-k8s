@@ -31,7 +31,7 @@ RUN CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build \
 RUN CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build \
     -a -o snat-utils cmd/snat-utils/main.go
 
-FROM public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-iptables:latest.2
+FROM public.ecr.aws/eks-distro-build-tooling/eks-distro-minimal-base-iptables:latest-al23
 
 WORKDIR /
 COPY --from=builder /workspace/ .
