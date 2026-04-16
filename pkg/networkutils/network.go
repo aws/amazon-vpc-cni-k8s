@@ -409,7 +409,7 @@ func (n *linuxNetwork) CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error {
 		}
 
 		for _, chain := range existingChains {
-			if !strings.HasPrefix(chain, connmarkChainName) && !strings.HasPrefix(chain, "AWS-SNAT-CHAIN") {
+			if !strings.HasPrefix(chain, "AWS-CONNMARK-CHAIN") && !strings.HasPrefix(chain, "AWS-SNAT-CHAIN") {
 				continue
 			}
 			parsedChain := strings.Split(chain, "-")
