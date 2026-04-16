@@ -66,6 +66,7 @@ func TestNftConnmarkSetup(t *testing.T) {
 	mockNft.EXPECT().AddChain(gomock.Any()).Return(connmarkChain)
 	mockNft.EXPECT().Flush().Return(nil).Times(2)
 	mockNft.EXPECT().GetRules(table, baseChain).Return([]*nftables.Rule{}, nil)
+	mockNft.EXPECT().FlushChain(baseChain)
 	mockNft.EXPECT().GetRules(table, connmarkChain).Return([]*nftables.Rule{}, nil)
 	mockNft.EXPECT().InsertRule(gomock.Any()).Return(&nftables.Rule{}).Times(3) // fib rule + 2 CIDRs
 	mockNft.EXPECT().AddRule(gomock.Any()).Return(&nftables.Rule{}).Times(3)    // jump, restore, set mark
@@ -496,6 +497,7 @@ func TestNftConnmarkSetup_StaleRulesRemoved(t *testing.T) {
 	mockNft.EXPECT().ListChain(table, nftChainName).Return(connmarkChain, nil)
 	mockNft.EXPECT().Flush().Return(nil).Times(2)
 	mockNft.EXPECT().GetRules(table, baseChain).Return([]*nftables.Rule{}, nil)
+	mockNft.EXPECT().FlushChain(baseChain)
 	mockNft.EXPECT().GetRules(table, connmarkChain).Return([]*nftables.Rule{staleRule}, nil)
 	mockNft.EXPECT().DelRule(staleRule).Return(nil) // stale rule should be deleted
 	mockNft.EXPECT().InsertRule(gomock.Any()).Return(&nftables.Rule{}).Times(2)

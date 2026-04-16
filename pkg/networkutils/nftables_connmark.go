@@ -217,40 +217,58 @@ func (c *nftConnmark) cleanupIptablesConnmarkRules() error {
 	return nil
 }
 
-// it has two rules, one to match vethprefix and jump to connmark chain, second is to mark packet with conntrack mark
+// ensureBaseChainRules ensures the nat-prerouting base chain contains exactly three
+// rules in the correct order, adding any that are missing:
+//
+//  1. fib daddr type local return — short-circuits locally-destined traffic so it
+//     is never marked for SNAT.
+//  2. iifname "<vethPrefix>*" counter jump <targetChain> — matches ingress traffic
+//     from pod veth interfaces and jumps to the snat-mark chain for CIDR-based
+//     exemption checks and conntrack mark setting.
+//  3. counter ct mark & <mark> meta mark set ct mark & <mark> — restores the
+//     conntrack mark into the packet's firewall mark (fwmark) so that the SNAT
+//     decision persists across subsequent packets in the same connection.
+//
+// This function will remove rules which are not present in above list, and maintain sequence of this rules.
 func (c *nftConnmark) ensureBaseChainRules(table *nftables.Table, baseChain, targetChain *nftables.Chain) error {
 	rules, err := c.nft.GetRules(table, baseChain)
 	if err != nil {
-		log.Error(err.Error())
 		return err
 	}
-	hasJumpRule := false
-	hasRestoreRule := false
-	hasFiblocalReturnRule := false
+	var fibRule, restoreRule, jumpRule *nftables.Rule
+	var staleRules []*nftables.Rule
 
 	for _, rule := range rules {
-		if isFibLocalReturnRule(rule) {
-			hasFiblocalReturnRule = true
-			continue
+		switch {
+		case isFibLocalReturnRule(rule) && fibRule == nil:
+			fibRule = rule
+		case isJumpRule(rule, targetChain.Name, c.vethPrefix) && jumpRule == nil:
+			jumpRule = rule
+		case isRestoreRule(rule, c.mark) && restoreRule == nil:
+			restoreRule = rule
+		default:
+			staleRules = append(staleRules, rule)
 		}
-		if isJumpRule(rule, targetChain.Name, c.vethPrefix) {
-			hasJumpRule = true
-			continue
+	}
+	allRulesPresent := fibRule != nil && jumpRule != nil && restoreRule != nil
+	ordered := allRulesPresent && fibRule.Handle < jumpRule.Handle && jumpRule.Handle < restoreRule.Handle
+	if allRulesPresent && ordered && len(staleRules) == 0 {
+		return nil
+	}
+	var errs []error
+	if allRulesPresent && ordered {
+		for _, r := range staleRules {
+			if err := c.nft.DelRule(r); err != nil {
+				errs = append(errs, fmt.Errorf("failed to delete stale rule with handle %d: %w", r.Handle, err))
+			}
 		}
-		if isRestoreRule(rule, c.mark) {
-			hasRestoreRule = true
-		}
+		return errors.Join(errs...)
 	}
 
-	if !hasFiblocalReturnRule {
-		c.addFibLocalReturnRule(table, baseChain)
-	}
-	if !hasJumpRule {
-		c.addJumpRule(table, baseChain, targetChain, c.vethPrefix)
-	}
-	if !hasRestoreRule {
-		c.addRestoreRule(table, baseChain, c.mark)
-	}
+	c.nft.FlushChain(baseChain)
+	c.addFibLocalReturnRule(table, baseChain)
+	c.addJumpRule(table, baseChain, targetChain)
+	c.addRestoreRule(table, baseChain)
 	return nil
 }
 
@@ -417,13 +435,13 @@ func (c *nftConnmark) getConnmarkChain(table *nftables.Table) (*nftables.Chain, 
 }
 
 // addJumpRule adds: nft add rule ip aws-cni nat-prerouting iifname "eni*" counter jump snat-mark
-func (c *nftConnmark) addJumpRule(table *nftables.Table, baseChain, targetChain *nftables.Chain, vethPrefix string) {
+func (c *nftConnmark) addJumpRule(table *nftables.Table, baseChain, targetChain *nftables.Chain) {
 	c.nft.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: baseChain,
 		Exprs: []expr.Any{
 			&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
-			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte(vethPrefix)},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte(c.vethPrefix)},
 			&expr.Counter{},
 			&expr.Verdict{
 				Kind:  expr.VerdictJump,
@@ -434,8 +452,8 @@ func (c *nftConnmark) addJumpRule(table *nftables.Table, baseChain, targetChain 
 }
 
 // addRestoreRule adds: nft add rule ip aws-cni nat-prerouting counter ct mark & 0x80 meta mark set ct mark & 0x80
-func (c *nftConnmark) addRestoreRule(table *nftables.Table, chain *nftables.Chain, mark uint32) {
-	markBytes := binaryutil.NativeEndian.PutUint32(mark)
+func (c *nftConnmark) addRestoreRule(table *nftables.Table, chain *nftables.Chain) {
+	markBytes := binaryutil.NativeEndian.PutUint32(c.mark)
 	c.nft.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: chain,
