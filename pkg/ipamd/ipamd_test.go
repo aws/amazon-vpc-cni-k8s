@@ -1799,6 +1799,58 @@ func TestIPAMContext_filterUnmanagedENIs_disableManageUntaggedMode(t *testing.T)
 	}
 }
 
+func TestFilterUnmanagedENIs_NoAccumulationAcrossCalls(t *testing.T) {
+	eni1, eni2, eni3 := getDummyENIMetadata()
+	allENIs := []awsutils.ENIMetadata{eni1, eni2, eni3}
+
+	// eni2 and eni3 are unmanaged
+	tagMap := map[string]awsutils.TagMap{
+		eni2.ENIID: {eniNoManageTagKey: "true"},
+		eni3.ENIID: {eniNoManageTagKey: "true"},
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAWSUtils := mock_awsutils.NewMockAPIs(ctrl)
+
+	c := &IPAMContext{
+		awsClient:                mockAWSUtils,
+		enableManageUntaggedMode: true,
+		unmanagedENI:             make([]int, 1),
+		numNetworkCards:          1,
+	}
+
+	mockAWSUtils.EXPECT().SetUnmanagedENIs(gomock.Any()).AnyTimes()
+	mockAWSUtils.EXPECT().GetPrimaryENI().AnyTimes().Return(eni1.ENIID)
+	mockAWSUtils.EXPECT().GetInstanceID().AnyTimes().Return(instanceID)
+
+	c.setUnmanagedENIs(tagMap)
+
+	mockAWSUtils.EXPECT().IsUnmanagedENI(gomock.Any()).DoAndReturn(
+		func(eni string) bool {
+			tags := tagMap[eni]
+			return tags[eniNoManageTagKey] == "true"
+		}).AnyTimes()
+	mockAWSUtils.EXPECT().IsUnmanagedNIC(gomock.Any()).Return(false).AnyTimes()
+	mockAWSUtils.EXPECT().IsEfaOnlyENI(gomock.Any(), gomock.Any()).Return(false).AnyTimes()
+
+	// Call filterUnmanagedENIs twice with the same input
+	got1 := c.filterUnmanagedENIs(allENIs)
+	countAfterFirst := c.unmanagedENI[0]
+
+	got2 := c.filterUnmanagedENIs(allENIs)
+	countAfterSecond := c.unmanagedENI[0]
+
+	// Both calls should return only the primary ENI
+	assert.Equal(t, []awsutils.ENIMetadata{eni1}, got1)
+	assert.Equal(t, []awsutils.ENIMetadata{eni1}, got2)
+
+	// The unmanaged count must NOT accumulate — it should be the same after both calls
+	assert.Equal(t, 2, countAfterFirst, "expected 2 unmanaged ENIs after first call")
+	assert.Equal(t, countAfterFirst, countAfterSecond, "unmanagedENI count should not accumulate across calls")
+}
+
 func TestDisablingENIProvisioning(t *testing.T) {
 	m := setup(t)
 	defer m.ctrl.Finish()
