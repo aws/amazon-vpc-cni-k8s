@@ -203,7 +203,6 @@ func (d *defaultPodManager) PodExec(namespace string, name string, command []str
 	return stdout.String(), stderr.String(), err
 }
 
-// Implementation
 func (d *defaultPodManager) PodExecInContainer(namespace, name, container string, command []string) (string, string, error) {
 	execOptions := &v1.PodExecOptions{
 		Container: container,
