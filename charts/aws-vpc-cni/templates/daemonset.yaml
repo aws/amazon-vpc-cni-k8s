@@ -141,6 +141,10 @@ spec:
             - containerPort: {{ .Values.nodeAgent.metricsBindAddr}}
               name: agentmetrics
           env:
+{{- range $key, $value := .Values.nodeAgent.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+{{- end }}
             - name: MY_NODE_NAME
               valueFrom:
                 fieldRef:
