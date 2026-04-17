@@ -31,7 +31,7 @@ type IptErrNotExists struct{}
 
 func (e *IptErrNotExists) Error() string {
 	// ref https://github.com/coreos/go-iptables/blob/main/iptables/iptables.go#L52
-	return "does not exists"
+	return "does not exist"
 }
 
 // ref https://github.com/coreos/go-iptables/blob/v0.8.0/iptables/iptables.go#L56
