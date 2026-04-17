@@ -96,6 +96,7 @@ func TestNftConnmarkSetup_FlushError(t *testing.T) {
 		Priority: &priority,
 		Policy:   &policy,
 		Hooknum:  nftables.ChainHookPrerouting,
+		Type:     nftables.ChainTypeNAT,
 	}
 
 	mockNft.EXPECT().AddTable(gomock.Any()).Return(table)
@@ -412,6 +413,7 @@ func TestIsBaseChainConfigCorrect(t *testing.T) {
 				Hooknum:  nftables.ChainHookPrerouting,
 				Priority: &priority,
 				Policy:   &policy,
+				Type:     nftables.ChainTypeNAT,
 			},
 			desiredPriority: -90,
 			expected:        true,
@@ -472,6 +474,7 @@ func TestNftConnmarkSetup_StaleRulesRemoved(t *testing.T) {
 	baseChain := &nftables.Chain{
 		Name:     nftBaseChainName,
 		Table:    table,
+		Type:     nftables.ChainTypeNAT,
 		Priority: &priority,
 		Policy:   &policy,
 		Hooknum:  nftables.ChainHookPrerouting,

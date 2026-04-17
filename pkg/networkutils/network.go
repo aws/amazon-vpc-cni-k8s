@@ -15,7 +15,6 @@
 package networkutils
 
 import (
-	"bytes"
 	"encoding/csv"
 	"fmt"
 	"math"
@@ -48,9 +47,6 @@ import (
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/nswrapper"
-	"github.com/google/nftables"
-	"github.com/google/nftables/binaryutil"
-	"github.com/google/nftables/expr"
 )
 
 const (
@@ -478,147 +474,6 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 	if err := n.updateIptablesRules(iptablesSNATRules, ipt); err != nil {
 		return err
 	}
-	return nil
-}
-func extractCIDRFromRule(rule *nftables.Rule) string {
-	var ip net.IP
-	var mask net.IPMask
-	hasPayload := false
-	hasReturn := false
-
-	for _, e := range rule.Exprs {
-		if _, ok := e.(*expr.Payload); ok {
-			hasPayload = true
-		}
-		if v, ok := e.(*expr.Verdict); ok && v.Kind == expr.VerdictReturn {
-			hasReturn = true
-		}
-		if bw, ok := e.(*expr.Bitwise); ok && len(bw.Mask) == 4 {
-			mask = net.IPMask(bw.Mask)
-		}
-		if cmp, ok := e.(*expr.Cmp); ok && cmp.Op == expr.CmpOpEq && len(cmp.Data) == 4 {
-			ip = net.IP(cmp.Data)
-		}
-	}
-
-	if ip == nil || mask == nil || !hasPayload || !hasReturn {
-		return ""
-	}
-	ones, bits := mask.Size()
-	if bits != 32 {
-		return ""
-	}
-	return fmt.Sprintf("%s/%d", ip.String(), ones)
-}
-
-func isSetMarkRule(rule *nftables.Rule, mark uint32) bool {
-	hasCtLoad := false
-	hasBitwise := false
-	hasCtStore := false
-	markBytes := binaryutil.NativeEndian.PutUint32(mark)
-
-	for _, e := range rule.Exprs {
-		if ct, ok := e.(*expr.Ct); ok && ct.Key == expr.CtKeyMARK {
-			if ct.SourceRegister {
-				hasCtStore = true
-			} else {
-				hasCtLoad = true
-			}
-		}
-		// ct mark | 0x80 uses Mask=0xFFFFFFFF, Xor=mark
-		if bw, ok := e.(*expr.Bitwise); ok {
-			if bytes.Equal(bw.Xor, markBytes) && bytes.Equal(bw.Mask, []byte{0xff, 0xff, 0xff, 0xff}) {
-				hasBitwise = true
-			}
-		}
-	}
-	return hasCtLoad && hasBitwise && hasCtStore
-}
-
-func addSetMarkRule(conn *nftables.Conn, table *nftables.Table, chain *nftables.Chain, mark uint32) {
-	markBytes := binaryutil.NativeEndian.PutUint32(mark)
-	conn.AddRule(&nftables.Rule{
-		Table: table,
-		Chain: chain,
-		Exprs: []expr.Any{
-			&expr.Counter{},
-			&expr.Ct{Key: expr.CtKeyMARK, Register: 1},
-			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: []byte{0xff, 0xff, 0xff, 0xff}, Xor: markBytes},
-			&expr.Ct{Key: expr.CtKeyMARK, Register: 1, SourceRegister: true},
-		},
-	})
-}
-
-func insertCIDRReturnRule(conn *nftables.Conn, table *nftables.Table, chain *nftables.Chain, cidrStr string) {
-	_, cidr, err := net.ParseCIDR(cidrStr)
-	if err != nil {
-		return
-	}
-	conn.InsertRule(&nftables.Rule{
-		Table: table,
-		Chain: chain,
-		Exprs: []expr.Any{
-			&expr.Counter{},
-			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
-			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: cidr.Mask, Xor: []byte{0, 0, 0, 0}},
-			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: cidr.IP.To4()},
-			&expr.Verdict{Kind: expr.VerdictReturn},
-		},
-	})
-}
-
-func (n *linuxNetwork) setupNftablesConnmarkRules(vpcCIDRs []string) error {
-	// 1. check for current state of nftable
-	// 2.
-	if n.useExternalSNAT {
-		return n.cleanupNftablesConnmarkRules()
-	}
-
-	conn, err := nftables.New()
-	if err != nil {
-		return errors.Wrap(err, "failed to create nftables connection")
-	}
-
-	// idempotent
-	table := conn.AddTable(&nftables.Table{
-		Family: nftables.TableFamilyIPv4,
-		Name:   nftTableName,
-	})
-
-	baseChain := ensureBaseChain(conn, table)
-	connmarkChain, _ := ensureConnmarkChain(conn, table)
-	if err := conn.Flush(); err != nil {
-		return errors.Wrap(err, "failed to flush nftable after base chain reconciliation")
-	}
-
-	err = ensureBaseChainRules(conn, table, baseChain, connmarkChain, n.vethPrefix, n.mainENIMark)
-	if err != nil {
-		log.Error(err.Error())
-	}
-	err = ensureConnmarkChainRules(conn, table, connmarkChain, vpcCIDRs, n.excludeSNATCIDRs, n.mainENIMark)
-	if err != nil {
-		log.Error(err.Error())
-	}
-
-	if err := conn.Flush(); err != nil {
-		return errors.Wrap(err, "failed to flush nftable after chain rules reconciliation")
-	}
-
-	return nil
-}
-
-func (n *linuxNetwork) cleanupNftablesConnmarkRules() error {
-	conn, err := nftables.New()
-	if err != nil {
-		return errors.Wrap(err, "failed to create nftables connection")
-	}
-
-	conn.DelTable(&nftables.Table{
-		Family: nftables.TableFamilyIPv4,
-		Name:   nftTableName,
-	})
-
-	_ = conn.Flush()
 	return nil
 }
 

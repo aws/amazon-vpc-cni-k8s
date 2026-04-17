@@ -33,6 +33,8 @@ const (
 	nftTableName     = "aws-cni"
 	nftBaseChainName = "nat-prerouting"
 	nftChainName     = "snat-mark"
+	// https://github.com/torvalds/linux/blob/v7.0/include/uapi/linux/rtnetlink.h#L264
+	rtn_local = uint32(2)
 )
 
 // Connmark manages connection marking rules for SNAT.
@@ -105,6 +107,9 @@ func newNftablesConnmark(vethPrefix string, mark uint32) (Connmark, error) {
 // rules (PREROUTING jump, restore-mark, and AWS-CONNMARK-CHAIN-0) that may
 // remain from a previous iptables-based backend.
 func (c *nftConnmark) Setup(exemptCIDRs []string) error {
+	if len(exemptCIDRs) == 0 {
+		return fmt.Errorf("exemptCIDRs cannot be empty")
+	}
 	// nft add table ip aws-cni
 	table := c.nft.AddTable(&nftables.Table{
 		Family: nftables.TableFamilyIPv4,
@@ -127,7 +132,7 @@ func (c *nftConnmark) Setup(exemptCIDRs []string) error {
 	if err != nil {
 		return err
 	}
-	err = c.ensureConnmarkChainRules(table, connmarkChain, exemptCIDRs, c.mark)
+	err = c.ensureConnmarkChainRules(table, connmarkChain, exemptCIDRs)
 	if err != nil {
 		log.Error(err.Error())
 		return err
@@ -277,15 +282,14 @@ func isFibLocalReturnRule(rule *nftables.Rule) bool {
 	hasFibAddrType := false
 	hasCmpLocal := false
 	hasReturn := false
-
 	for _, e := range rule.Exprs {
+		// FlagDADDR(flag) - Use destination address and ResultADDRTYPE(flag) - Store the address type (RTN_LOCAL, RTN_UNICAST, etc.)
 		if fib, ok := e.(*expr.Fib); ok && fib.FlagDADDR && fib.ResultADDRTYPE {
 			hasFibAddrType = true
 		}
-		// RTN_LOCAL = 2
-		if cmp, ok := e.(*expr.Cmp); ok && cmp.Op == expr.CmpOpEq && len(cmp.Data) == 4 {
+		if cmp, ok := e.(*expr.Cmp); ok && cmp.Op == expr.CmpOpEq && len(cmp.Data) == 4 && cmp.Register == 1 {
 			val := binaryutil.NativeEndian.Uint32(cmp.Data)
-			if val == 2 { // RTN_LOCAL
+			if val == rtn_local {
 				hasCmpLocal = true
 			}
 		}
@@ -303,14 +307,16 @@ func (c *nftConnmark) addFibLocalReturnRule(table *nftables.Table, chain *nftabl
 		Chain: chain,
 		Exprs: []expr.Any{
 			&expr.Fib{
-				Register:       1,
-				FlagDADDR:      true,
+				Register: 1,
+				// Use destination address
+				FlagDADDR: true,
+				// Store the address type (RTN_LOCAL, RTN_UNICAST, etc.)
 				ResultADDRTYPE: true,
 			},
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     binaryutil.NativeEndian.PutUint32(2),
+				Data:     binaryutil.NativeEndian.PutUint32(rtn_local),
 			},
 			&expr.Verdict{Kind: expr.VerdictReturn},
 		},
@@ -318,6 +324,9 @@ func (c *nftConnmark) addFibLocalReturnRule(table *nftables.Table, chain *nftabl
 }
 
 // ensureConnmarkChain creates the regular (non-base) chain: nft add chain ip aws-cni snat-mark
+// Skips SNAT marking for traffic destined to the node's own IPs.
+// Compares fib lookup result against RTN_LOCAL (2) from the kernel's rtm_type enum:
+// https://github.com/torvalds/linux/blob/v7.0/include/uapi/linux/rtnetlink.h#L264
 func (c *nftConnmark) ensureConnmarkChain(table *nftables.Table) (*nftables.Chain, error) {
 	existing, err := c.getConnmarkChain(table)
 	if err != nil {
@@ -340,7 +349,7 @@ func (c *nftConnmark) ensureConnmarkChain(table *nftables.Table) (*nftables.Chai
 	}), nil
 }
 
-func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nftables.Chain, exemptCIDRs []string, mark uint32) error {
+func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nftables.Chain, exemptCIDRs []string) error {
 	rules, err := c.nft.GetRules(table, chain)
 	if err != nil {
 		return err
@@ -354,7 +363,7 @@ func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nft
 	for _, r := range rules {
 		if cidr := extractCIDRFromRule(r); cidr != "" {
 			currentCIDRs[cidr] = r
-		} else if isSetMarkRule(r, mark) {
+		} else if isSetMarkRule(r, c.mark) {
 			setMarkRule = r
 		} else {
 			unknownRules = append(unknownRules, r)
@@ -397,7 +406,7 @@ func (c *nftConnmark) ensureConnmarkChainRules(table *nftables.Table, chain *nft
 
 	// Ensure set-mark rule exists (AddRule appends to end)
 	if setMarkRule == nil {
-		c.addSetMarkRule(table, chain, mark)
+		c.addSetMarkRule(table, chain, c.mark)
 	}
 
 	return errors.Join(errs...)
@@ -416,14 +425,16 @@ func (c *nftConnmark) Cleanup() error {
 }
 
 func (c *nftConnmark) getDesiredPriority() nftables.ChainPriority {
+	// This is -90 right now, as default Kubeproxy priority is -100, and we want to run over rules after Kube-proxy DNAT's packet.
 	const priority nftables.ChainPriority = -90
-	return nftables.ChainPriority(priority)
+	return priority
 }
 
 func isBaseChainConfigCorrect(chain *nftables.Chain, desiredPriority nftables.ChainPriority) bool {
 	return chain.Hooknum == nftables.ChainHookPrerouting &&
 		chain.Priority != nil && *chain.Priority == desiredPriority &&
-		chain.Policy != nil && *chain.Policy == nftables.ChainPolicyAccept
+		chain.Policy != nil && *chain.Policy == nftables.ChainPolicyAccept &&
+		chain.Type == nftables.ChainTypeNAT
 }
 
 func (c *nftConnmark) getConnmarkChain(table *nftables.Table) (*nftables.Chain, error) {
@@ -467,14 +478,15 @@ func (c *nftConnmark) addRestoreRule(table *nftables.Table, chain *nftables.Chai
 }
 
 func isJumpRule(rule *nftables.Rule, targetChain, vethPrefix string) bool {
-	// check if rule is a jump rule to connmark chain
-	// return true if it is
-	// return false if it is not
 	hasIFaceMatch := false
 	hasJump := false
 	hasCounter := false
+	hasMetaKeyIIFNAME := false
 
 	for _, e := range rule.Exprs {
+		if m, ok := e.(*expr.Meta); ok && m.Key == expr.MetaKeyIIFNAME && m.Register == 1 {
+			hasMetaKeyIIFNAME = true
+		}
 		if cmp, ok := e.(*expr.Cmp); ok && bytes.Equal(cmp.Data, []byte(vethPrefix+"*\x00")) {
 			hasIFaceMatch = true
 		}
@@ -485,7 +497,7 @@ func isJumpRule(rule *nftables.Rule, targetChain, vethPrefix string) bool {
 			hasJump = true
 		}
 	}
-	return hasIFaceMatch && hasJump && hasCounter
+	return hasIFaceMatch && hasJump && hasCounter && hasMetaKeyIIFNAME
 }
 
 func isRestoreRule(rule *nftables.Rule, mark uint32) bool {
@@ -501,7 +513,8 @@ func isRestoreRule(rule *nftables.Rule, mark uint32) bool {
 		if ct, ok := e.(*expr.Ct); ok && ct.Key == expr.CtKeyMARK && !ct.SourceRegister {
 			hasCtLoad = true
 		}
-		if bw, ok := e.(*expr.Bitwise); ok && bytes.Equal(bw.Mask, markBytes) {
+		// Restore rule uses AND: (ct_mark & mark) ^ 0x00, so Xor must be zero
+		if bw, ok := e.(*expr.Bitwise); ok && bytes.Equal(bw.Mask, markBytes) && bytes.Equal(bw.Xor, []byte{0, 0, 0, 0}) {
 			hasBitwise = true
 		}
 		if m, ok := e.(*expr.Meta); ok && m.Key == expr.MetaKeyMARK && m.SourceRegister {
@@ -543,12 +556,16 @@ func extractCIDRFromRule(rule *nftables.Rule) string {
 }
 
 func isSetMarkRule(rule *nftables.Rule, mark uint32) bool {
+	hasCounter := false
 	hasCtLoad := false
 	hasBitwise := false
 	hasCtStore := false
 	markBytes := binaryutil.NativeEndian.PutUint32(mark)
 
 	for _, e := range rule.Exprs {
+		if _, ok := e.(*expr.Counter); ok {
+			hasCounter = true
+		}
 		if ct, ok := e.(*expr.Ct); ok && ct.Key == expr.CtKeyMARK {
 			if ct.SourceRegister {
 				hasCtStore = true
@@ -563,7 +580,7 @@ func isSetMarkRule(rule *nftables.Rule, mark uint32) bool {
 			}
 		}
 	}
-	return hasCtLoad && hasBitwise && hasCtStore
+	return hasCtLoad && hasBitwise && hasCtStore && hasCounter
 }
 
 // addSetMarkRule adds: nft add rule ip aws-cni snat-mark counter ct mark set ct mark | 0x80
