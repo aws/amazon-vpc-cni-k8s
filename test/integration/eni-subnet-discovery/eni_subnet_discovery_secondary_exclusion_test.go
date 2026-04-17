@@ -270,7 +270,7 @@ func validateSecondaryENIExclusionInDatastore() {
 			By(fmt.Sprintf("Checking secondary ENI exclusion in aws-node pod %s", pod.Name))
 
 			// Execute introspection command in the aws-node container
-			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecWithContainer(
+			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecInContainer(
 				pod.Namespace,
 				pod.Name,
 				"aws-node", // Specify the aws-node container
@@ -369,7 +369,7 @@ func validateExcludedSecondaryENIDeletable() {
 			By(fmt.Sprintf("Checking secondary ENI deletability in aws-node pod %s", pod.Name))
 
 			// Execute introspection command to check ENI status in the aws-node container
-			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecWithContainer(
+			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecInContainer(
 				pod.Namespace,
 				pod.Name,
 				"aws-node", // Specify the aws-node container
@@ -399,7 +399,7 @@ func validatePrefixCleanupOnExcludedSecondaryENI() {
 			By(fmt.Sprintf("Checking prefix cleanup on secondary ENIs in pod %s", pod.Name))
 
 			// Execute ENI introspection to check prefix allocation in the aws-node container
-			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecWithContainer(
+			stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExecInContainer(
 				pod.Namespace,
 				pod.Name,
 				"aws-node", // Specify the aws-node container
