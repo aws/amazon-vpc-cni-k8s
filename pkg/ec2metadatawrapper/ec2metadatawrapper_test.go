@@ -6,6 +6,7 @@ import (
 
 	mockec2metadatawrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2metadatawrapper/mocks"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	ec2metadata "github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
@@ -83,4 +84,11 @@ func TestGetRegionErr(t *testing.T) {
 	region, err := testClient.GetRegion(context.Background(), &ec2metadata.GetRegionInput{})
 	assert.Error(t, err)
 	assert.Empty(t, region)
+}
+
+func TestNew_SetsHTTPClientTimeout(t *testing.T) {
+	t.Setenv("AWS_REGION", "us-west-2")
+	client := awssession.NewAWSSDKHTTPClient()
+	assert.NotNil(t, client)
+	assert.Equal(t, awssession.DefaultAWSSDKClientTimeout, client.Timeout)
 }
