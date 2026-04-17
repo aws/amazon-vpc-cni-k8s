@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
-	"regexp"
+	"strings"
 
 	"github.com/coreos/go-iptables/iptables"
 )
@@ -127,8 +127,6 @@ func (m IptablesMode) IsNFTables() bool {
 	return m == IptablesModeNFT
 }
 
-var iptablesVersionRegex = regexp.MustCompile(`v([0-9]+)\.([0-9]+)\.([0-9]+)(?:\s+\((\w+))?`)
-
 // GetIptablesMode runs "iptables --version" to detect backend (nf_tables or legacy)
 func GetIptablesMode() (IptablesMode, error) {
 	cmd := exec.Command("iptables", "--version")
@@ -139,12 +137,7 @@ func GetIptablesMode() (IptablesMode, error) {
 		return "", fmt.Errorf("iptables --version failed: %w, stderr: %s", err, stderr.String())
 	}
 
-	result := iptablesVersionRegex.FindStringSubmatch(out.String())
-	if result == nil {
-		return "", fmt.Errorf("failed to parse iptables version from: %s", out.String())
-	}
-
-	if result[4] == string(IptablesModeNFT) {
+	if strings.Contains(out.String(), string(IptablesModeNFT)) {
 		return IptablesModeNFT, nil
 	}
 	return IptablesModeLegacy, nil

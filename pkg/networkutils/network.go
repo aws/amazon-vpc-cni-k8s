@@ -686,8 +686,6 @@ func computeStaleIptablesRules(ipt iptableswrapper.IPTablesIface, table, chainPr
 	}
 	activeChains := sets.NewString(chains...)
 	log.Debugf("Setup Host Network: computing stale iptables rules for %s table with chain prefix %s", table, chainPrefix)
-	fmt.Println("!!!!!!new rules")
-	fmt.Println(newRules)
 	for _, staleRule := range existingRules {
 		if len(staleRule.rule) == 0 && activeChains.Has(staleRule.chain) {
 			log.Debugf("Setup Host Network: active chain found: %s", staleRule.chain)
@@ -703,8 +701,6 @@ func computeStaleIptablesRules(ipt iptableswrapper.IPTablesIface, table, chainPr
 		}
 		if !keepRule {
 			log.Debugf("Setup Host Network: stale rule found: %s", staleRule)
-			fmt.Println("!!!!!!stale rules")
-			fmt.Println(staleRule)
 			staleRules = append(staleRules, staleRule)
 		}
 	}
