@@ -41,6 +41,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
@@ -1058,6 +1059,7 @@ func (c *IPAMContext) updateLastNodeIPPoolAction(networkCard int) {
 func (c *IPAMContext) tryAllocateENI(ctx context.Context, networkCard int) error {
 	var securityGroups []*string
 	var eniCfgSubnet string
+	var connTrack *v1alpha1.ConnectionTrackingSpec
 
 	if c.useCustomNetworking {
 		eniCfg, err := eniconfig.MyENIConfig(ctx, c.k8sClient)
@@ -1072,11 +1074,12 @@ func (c *IPAMContext) tryAllocateENI(ctx context.Context, networkCard int) error
 			securityGroups = append(securityGroups, aws.String(sgID))
 		}
 		eniCfgSubnet = eniCfg.Subnet
+		connTrack = eniCfg.ConnectionTrackingSpec
 	}
 
 	resourcesToAllocate := c.GetENIResourcesToAllocate(networkCard)
 	if resourcesToAllocate > 0 {
-		eni, err := c.awsClient.AllocENI(ctx, securityGroups, eniCfgSubnet, resourcesToAllocate, networkCard)
+		eni, err := c.awsClient.AllocENI(ctx, securityGroups, eniCfgSubnet, resourcesToAllocate, networkCard, connTrack)
 		if err != nil {
 			log.Errorf("Failed to increase pool size due to not able to allocate ENI %v", err)
 			ipamdErrInc("increaseIPPoolAllocENI")

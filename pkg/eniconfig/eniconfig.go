@@ -89,8 +89,9 @@ func MyENIConfig(ctx context.Context, k8sClient client.Client) (*v1alpha1.ENICon
 	}
 
 	return &v1alpha1.ENIConfigSpec{
-		SecurityGroups: eniConfig.Spec.SecurityGroups,
-		Subnet:         eniConfig.Spec.Subnet,
+		SecurityGroups:         eniConfig.Spec.SecurityGroups,
+		Subnet:                 eniConfig.Spec.Subnet,
+		ConnectionTrackingSpec: eniConfig.Spec.ConnectionTrackingSpec,
 	}, nil
 }
 
