@@ -162,7 +162,7 @@ func TestIsJumpRule(t *testing.T) {
 			rule: &nftables.Rule{
 				Exprs: []expr.Any{
 					&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
-					&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte("eni*\x00")},
+					&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte("eni")},
 					&expr.Counter{},
 					&expr.Verdict{Kind: expr.VerdictJump, Chain: "snat-mark"},
 				},
@@ -175,7 +175,7 @@ func TestIsJumpRule(t *testing.T) {
 			name: "wrong target chain",
 			rule: &nftables.Rule{
 				Exprs: []expr.Any{
-					&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte("eni*\x00")},
+					&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte("eni")},
 					&expr.Counter{},
 					&expr.Verdict{Kind: expr.VerdictJump, Chain: "other-chain"},
 				},
@@ -188,7 +188,7 @@ func TestIsJumpRule(t *testing.T) {
 			name: "missing counter",
 			rule: &nftables.Rule{
 				Exprs: []expr.Any{
-					&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte("eni*\x00")},
+					&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte("eni")},
 					&expr.Verdict{Kind: expr.VerdictJump, Chain: "snat-mark"},
 				},
 			},

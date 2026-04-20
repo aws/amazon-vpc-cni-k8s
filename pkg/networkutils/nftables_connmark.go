@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync/atomic"
 	"syscall"
 
@@ -487,7 +488,7 @@ func isJumpRule(rule *nftables.Rule, targetChain, vethPrefix string) bool {
 		if m, ok := e.(*expr.Meta); ok && m.Key == expr.MetaKeyIIFNAME && m.Register == 1 {
 			hasMetaKeyIIFNAME = true
 		}
-		if cmp, ok := e.(*expr.Cmp); ok && bytes.Equal(cmp.Data, []byte(vethPrefix+"*\x00")) {
+		if cmp, ok := e.(*expr.Cmp); ok && bytes.Equal(cmp.Data, []byte(vethPrefix)) {
 			hasIFaceMatch = true
 		}
 		if _, ok := e.(*expr.Counter); ok {
@@ -627,5 +628,8 @@ func isNotExistError(err error) bool {
 }
 
 func isNFTNotExistsError(err error) bool {
-	return errors.Is(err, syscall.ENOENT)
+	if errors.Is(err, syscall.ENOENT) {
+		return true
+	}
+	return strings.Contains(err.Error(), "no such file or directory")
 }
