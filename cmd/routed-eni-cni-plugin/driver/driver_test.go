@@ -584,6 +584,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 	oldFromHostVethRule := netlink.NewRule()
 	oldFromHostVethRule.IifName = "eni8ea2c11fe35"
 	oldFromHostVethRule.Priority = networkutils.VlanRulePriority
+	oldFromHostVethRule.Family = netlink.FAMILY_V4
 
 	oldFromHostVethV6Rule := netlink.NewRule()
 	oldFromHostVethV6Rule.IifName = "eni8ea2c11fe35"
@@ -689,6 +690,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 		contVethName       string
 		netnsPath          string
 		ipAddr             *net.IPNet
+		ipv6Addr           *net.IPNet
 		vlanID             int
 		eniMAC             string
 		subnetGW           string
@@ -1171,6 +1173,344 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 			},
 		},
 		{
+			name: "successfully setup dual-stack pod network - traffic enforced with strict mode",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "eni8ea2c11fe35",
+						err:      errors.New("not exists"),
+					},
+					{
+						linkName: "eni8ea2c11fe35",
+						link:     hostVethWithIndex9,
+					},
+					{
+						linkName: "vlan.eth.7",
+						err:      errors.New("not exists"),
+					},
+				},
+				linkAddCalls: []linkAddCall{
+					{
+						link:      buildVlanLink("vlan.eth.7", vlanID, parentIfIndex, eniMac),
+						linkIndex: 11,
+					},
+				},
+				linkSetupCalls: []linkSetupCall{
+					{
+						link: hostVethWithIndex9,
+					},
+					{
+						link: vlanLinkPostAddWithIndex11,
+					},
+				},
+				routeReplaceCalls: []routeReplaceCall{
+					// IPv4 vlan routes
+					{
+						route: &netlink.Route{
+							LinkIndex: vlanLinkPostAddWithIndex11.Index,
+							Dst:       &net.IPNet{IP: net.ParseIP(subnetGW), Mask: net.CIDRMask(32, 32)},
+							Scope:     netlink.SCOPE_LINK,
+							Table:     107,
+						},
+					},
+					{
+						route: &netlink.Route{
+							LinkIndex: vlanLinkPostAddWithIndex11.Index,
+							Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
+							Scope:     netlink.SCOPE_UNIVERSE,
+							Gw:        net.ParseIP(subnetGW),
+							Table:     107,
+						},
+					},
+					// IPv6 vlan routes (dual-stack)
+					{
+						route: &netlink.Route{
+							LinkIndex: vlanLinkPostAddWithIndex11.Index,
+							Dst:       &net.IPNet{IP: networkutils.GetIPv6Gateway(), Mask: net.CIDRMask(128, 128)},
+							Scope:     netlink.SCOPE_LINK,
+							Table:     107,
+						},
+					},
+					{
+						route: &netlink.Route{
+							LinkIndex: vlanLinkPostAddWithIndex11.Index,
+							Dst:       &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 128)},
+							Scope:     netlink.SCOPE_UNIVERSE,
+							Gw:        networkutils.GetIPv6Gateway(),
+							Table:     107,
+						},
+					},
+					// IPv4 container route
+					{
+						route: &netlink.Route{
+							LinkIndex: hostVethWithIndex9.Index,
+							Scope:     netlink.SCOPE_LINK,
+							Dst:       containerAddr,
+							Table:     107,
+						},
+					},
+					// IPv6 container route (dual-stack)
+					{
+						route: &netlink.Route{
+							LinkIndex: hostVethWithIndex9.Index,
+							Scope:     netlink.SCOPE_LINK,
+							Dst:       containerV6Addr,
+							Table:     107,
+						},
+					},
+				},
+				ruleAddCalls: []ruleAddCall{
+					// IPv4 rules
+					{
+						rule: fromHostVlanRule,
+					},
+					{
+						rule: fromHostVethRule,
+					},
+					// IPv6 rules (dual-stack)
+					{
+						rule: fromHostVlanV6Rule,
+					},
+					{
+						rule: fromHostVethV6Rule,
+					},
+				},
+				ruleDelCalls: []ruleDelCall{
+					// Dual-stack deletes both AF_INET and AF_INET6
+					{
+						rule: oldFromHostVethRule,
+						err:  syscall.ENOENT,
+					},
+					{
+						rule: oldFromHostVethV6Rule,
+						err:  syscall.ENOENT,
+					},
+				},
+				withNetNSPathCalls: []withNetNSPathCall{
+					{
+						netNSPath: "/proc/42/ns/net",
+					},
+					// Second call for addSecondaryIPToContainer
+					{
+						netNSPath: "/proc/42/ns/net",
+					},
+				},
+				procSysSetCalls: []procSysSetCall{
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
+						value: "0",
+					},
+					// Dual-stack enables IPv6 forwarding on hostVeth
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
+						value: "0",
+					},
+				},
+			},
+			args: args{
+				hostVethName:       "eni8ea2c11fe35",
+				contVethName:       "eth0",
+				netnsPath:          "/proc/42/ns/net",
+				ipAddr:             containerAddr,
+				ipv6Addr:           containerV6Addr,
+				vlanID:             vlanID,
+				eniMAC:             eniMac,
+				subnetGW:           subnetGW,
+				parentIfIndex:      parentIfIndex,
+				mtu:                9001,
+				podSGEnforcingMode: sgpp.EnforcingModeStrict,
+			},
+		},
+		{
+			name: "successfully setup dual-stack pod network - traffic enforced with standard mode",
+			fields: fields{
+				linkByNameCalls: []linkByNameCall{
+					{
+						linkName: "eni8ea2c11fe35",
+						err:      errors.New("not exists"),
+					},
+					{
+						linkName: "eni8ea2c11fe35",
+						link:     hostVethWithIndex9,
+					},
+					{
+						linkName: "vlan.eth.7",
+						err:      errors.New("not exists"),
+					},
+				},
+				linkAddCalls: []linkAddCall{
+					{
+						link:      buildVlanLink("vlan.eth.7", vlanID, parentIfIndex, eniMac),
+						linkIndex: 11,
+					},
+				},
+				linkSetupCalls: []linkSetupCall{
+					{
+						link: hostVethWithIndex9,
+					},
+					{
+						link: vlanLinkPostAddWithIndex11,
+					},
+				},
+				routeReplaceCalls: []routeReplaceCall{
+					// IPv4 vlan routes
+					{
+						route: &netlink.Route{
+							LinkIndex: vlanLinkPostAddWithIndex11.Index,
+							Dst:       &net.IPNet{IP: net.ParseIP(subnetGW), Mask: net.CIDRMask(32, 32)},
+							Scope:     netlink.SCOPE_LINK,
+							Table:     107,
+						},
+					},
+					{
+						route: &netlink.Route{
+							LinkIndex: vlanLinkPostAddWithIndex11.Index,
+							Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
+							Scope:     netlink.SCOPE_UNIVERSE,
+							Gw:        net.ParseIP(subnetGW),
+							Table:     107,
+						},
+					},
+					// IPv6 vlan routes (dual-stack)
+					{
+						route: &netlink.Route{
+							LinkIndex: vlanLinkPostAddWithIndex11.Index,
+							Dst:       &net.IPNet{IP: networkutils.GetIPv6Gateway(), Mask: net.CIDRMask(128, 128)},
+							Scope:     netlink.SCOPE_LINK,
+							Table:     107,
+						},
+					},
+					{
+						route: &netlink.Route{
+							LinkIndex: vlanLinkPostAddWithIndex11.Index,
+							Dst:       &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 128)},
+							Scope:     netlink.SCOPE_UNIVERSE,
+							Gw:        networkutils.GetIPv6Gateway(),
+							Table:     107,
+						},
+					},
+					// IPv4 container route (standard mode uses RT_TABLE_MAIN)
+					{
+						route: &netlink.Route{
+							LinkIndex: hostVethWithIndex9.Index,
+							Scope:     netlink.SCOPE_LINK,
+							Dst:       containerAddr,
+							Table:     unix.RT_TABLE_MAIN,
+						},
+					},
+					// IPv6 container route (dual-stack, standard mode uses RT_TABLE_MAIN)
+					{
+						route: &netlink.Route{
+							LinkIndex: hostVethWithIndex9.Index,
+							Scope:     netlink.SCOPE_LINK,
+							Dst:       containerV6Addr,
+							Table:     unix.RT_TABLE_MAIN,
+						},
+					},
+				},
+				ruleAddCalls: []ruleAddCall{
+					// IPv4 rules (standard mode uses IP-based rules)
+					{
+						rule: toContainerRule,
+					},
+					{
+						rule: fromContainerRule,
+					},
+					// IPv6 rules (dual-stack)
+					{
+						rule: toContainerV6Rule,
+					},
+					{
+						rule: fromContainerV6Rule,
+					},
+				},
+				ruleDelCalls: []ruleDelCall{
+					// Dual-stack deletes both AF_INET and AF_INET6
+					{
+						rule: oldFromHostVethRule,
+						err:  syscall.ENOENT,
+					},
+					{
+						rule: oldFromHostVethV6Rule,
+						err:  syscall.ENOENT,
+					},
+				},
+				withNetNSPathCalls: []withNetNSPathCall{
+					{
+						netNSPath: "/proc/42/ns/net",
+					},
+					// Second call for addSecondaryIPToContainer
+					{
+						netNSPath: "/proc/42/ns/net",
+					},
+				},
+				procSysSetCalls: []procSysSetCall{
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
+						value: "0",
+					},
+					// Dual-stack enables IPv6 forwarding on hostVeth
+					{
+						key:   "net/ipv6/conf/eni8ea2c11fe35/forwarding",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_ra",
+						value: "0",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/accept_redirects",
+						value: "1",
+					},
+					{
+						key:   "net/ipv6/conf/vlan.eth.7/forwarding",
+						value: "0",
+					},
+				},
+			},
+			args: args{
+				hostVethName:       "eni8ea2c11fe35",
+				contVethName:       "eth0",
+				netnsPath:          "/proc/42/ns/net",
+				ipAddr:             containerAddr,
+				ipv6Addr:           containerV6Addr,
+				vlanID:             vlanID,
+				eniMAC:             eniMac,
+				subnetGW:           subnetGW,
+				parentIfIndex:      parentIfIndex,
+				mtu:                9001,
+				podSGEnforcingMode: sgpp.EnforcingModeStandard,
+			},
+		},
+		{
 			name: "failed to setup vethPair",
 			fields: fields{
 				linkByNameCalls: []linkByNameCall{
@@ -1256,7 +1596,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 				mtu:                9001,
 				podSGEnforcingMode: sgpp.EnforcingModeStandard,
 			},
-			wantErr: errors.New("SetupBranchENIPodNetwork: failed to delete hostVeth rule for eni8ea2c11fe35: some error"),
+			wantErr: errors.New("SetupBranchENIPodNetwork: failed to delete hostVeth rule for eni8ea2c11fe35 (family=2): some error"),
 		},
 		{
 			name: "failed to setup vlan",
@@ -1605,6 +1945,7 @@ func Test_linuxNetwork_SetupBranchENIPodNetwork(t *testing.T) {
 
 			vIfMetadata := VirtualInterfaceMetadata{
 				IPAddress:         tt.args.ipAddr,
+				IPv6Address:       tt.args.ipv6Addr,
 				HostVethName:      tt.args.hostVethName,
 				ContainerVethName: tt.args.contVethName,
 			}
