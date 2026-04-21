@@ -63,6 +63,31 @@ func TestIptablesConnmarkSetup(t *testing.T) {
 	exists, _ = mockIpt.Exists("nat", connmarkChainName, "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", fmt.Sprintf("%#x/%#x", uint32(0x80), uint32(0x80)))
 	assert.True(t, exists)
 
+	// Test idempotent behavior
+	err = connmark.Setup(exemptCIDRs)
+	assert.NoError(t, err)
+	// Verify chain was created
+	exists, _ = mockIpt.ChainExists("nat", connmarkChainName)
+	assert.True(t, exists)
+
+	//Verify Jump Rule Exists
+	exists, _ = mockIpt.Exists("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", connmarkChainName)
+	assert.True(t, exists)
+
+	// Verify Cidr rules
+	for _, cidr := range exemptCIDRs {
+		exists, _ := mockIpt.Exists("nat", connmarkChainName, "-d", cidr, "-m", "comment", "--comment", "AWS CONNMARK CHAIN", "-j", "RETURN")
+		assert.True(t, exists)
+	}
+
+	// Verify Restore Mark Exists
+	exists, _ = mockIpt.Exists("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", uint32(0x80)))
+	assert.True(t, exists)
+
+	// Verify set mark rule exists
+	exists, _ = mockIpt.Exists("nat", connmarkChainName, "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", fmt.Sprintf("%#x/%#x", uint32(0x80), uint32(0x80)))
+	assert.True(t, exists)
+
 }
 
 func TestIptablesConnmarkSetup_NewIptablesError(t *testing.T) {

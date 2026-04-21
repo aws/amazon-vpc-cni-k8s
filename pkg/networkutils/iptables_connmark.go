@@ -35,6 +35,7 @@ type iptablesConnmark struct {
 }
 
 const connmarkChainName string = "AWS-CONNMARK-CHAIN-0"
+const defaultRouteCIDR = "0.0.0.0/0"
 
 var _ Connmark = (*iptablesConnmark)(nil)
 
@@ -159,7 +160,7 @@ func (c *iptablesConnmark) buildRules(exemptCIDRs []string, ipt iptableswrapper.
 	for _, cidr := range exemptCIDRs {
 		rule := []string{"-d", cidr, "-m", "comment", "--comment", "AWS CONNMARK CHAIN", "-j", "RETURN"}
 		// Kernel will strip -d, if dst is 0.0.0.0/0
-		if cidr == "0.0.0.0/0" {
+		if cidr == defaultRouteCIDR {
 			rule = []string{"-m", "comment", "--comment", "AWS CONNMARK CHAIN", "-j", "RETURN"}
 		}
 		rules = append(rules, iptablesRule{

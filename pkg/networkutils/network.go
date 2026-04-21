@@ -523,7 +523,7 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 		}
 		log.Debugf("Setup Host Network: iptables -A %s -d %s -m comment --comment %s -t nat -j %s", chain, cidr.cidr, comment, "RETURN")
 		rule := []string{"-d", cidr.cidr, "-m", "comment", "--comment", comment, "-j", "RETURN"}
-		if cidr.isExclusion && cidr.cidr == "0.0.0.0/0" {
+		if cidr.isExclusion && cidr.cidr == defaultRouteCIDR {
 			rule = []string{"-m", "comment", "--comment", comment, "-j", "RETURN"}
 		}
 		iptableRules = append(iptableRules, iptablesRule{
