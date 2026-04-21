@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Creates an EKS cluster with mixed OS node groups AL2, AL2023, Bottlerocket, Ubuntu  and runs SNAT/kube-proxy tests on each.
+# Creates an EKS cluster with mixed OS node groups AL2023, AL2023 (iptables-legacy), Ubuntu and runs SNAT/kube-proxy tests on each.
 
 set -Euo pipefail
 
@@ -9,8 +9,8 @@ INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration"
 
 # Defaults
 : "${AWS_DEFAULT_REGION:=us-west-2}"
-: "${CLUSTER_NAME:=cni-mixed-os-$(date +%s)}"
-: "${K8S_VERSION:=1.31}"
+: "${CLUSTER_NAME:=cni-mixed-os-1-$(date +%s)}"
+: "${K8S_VERSION:=1.33}"
 : "${IP_FAMILY:=IPv4}"
 : "${NODES_PER_OS:=2}"
 : "${INSTANCE_TYPE:=m5.large}"
@@ -19,7 +19,7 @@ INTEGRATION_TEST_DIR="$SCRIPT_DIR/../test/integration"
 : "${KUBECONFIG:=}"
 : "${CNI_IMAGE:=}"
 
-OS_TYPES=("al2" "al2023" "ubuntu" "bottlerocket")
+OS_TYPES=("al2023" "al2023-legacy" "ubuntu")
 
 usage() {
     cat <<EOF
@@ -112,12 +112,6 @@ availabilityZones:
   - ${AWS_DEFAULT_REGION}b
 
 managedNodeGroups:
-  - name: al2-nodes
-    instanceType: ${INSTANCE_TYPE}
-    desiredCapacity: ${NODES_PER_OS}
-    amiFamily: AmazonLinux2
-    labels:
-      os-type: al2
 
   - name: al2023-nodes
     instanceType: ${INSTANCE_TYPE}
@@ -126,26 +120,24 @@ managedNodeGroups:
     labels:
       os-type: al2023
 
+  - name: al2023-legacy-nodes
+    instanceType: ${INSTANCE_TYPE}
+    desiredCapacity: ${NODES_PER_OS}
+    amiFamily: AmazonLinux2023
+    labels:
+      os-type: al2023-legacy
+    preBootstrapCommands:
+      - yum install -y iptables-legacy
+      - update-alternatives --set iptables /usr/sbin/iptables-legacy
+      - update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
+
   - name: ubuntu-nodes
     instanceType: ${INSTANCE_TYPE}
     desiredCapacity: ${NODES_PER_OS}
-    amiFamily: Ubuntu2204
+    amiFamily: Ubuntu2404
     labels:
       os-type: ubuntu
 
-nodeGroups:
-  - name: bottlerocket-nodes
-    instanceType: ${INSTANCE_TYPE}
-    desiredCapacity: ${NODES_PER_OS}
-    amiFamily: Bottlerocket
-    labels:
-      os-type: bottlerocket
-    iam:
-      attachPolicyARNs:
-        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
-        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
-        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
-        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
 EOF
 }
 

@@ -23,6 +23,9 @@ import (
 	"github.com/google/nftables"
 )
 
+// iptablesConnmark implements Connmark using iptables-legacy backend.
+// It manages rules in the nat table's PREROUTING chain and a dedicated
+// AWS-CONNMARK-CHAIN-0 chain.
 type iptablesConnmark struct {
 	vethPrefix      string
 	mark            uint32
@@ -31,10 +34,11 @@ type iptablesConnmark struct {
 	cleanupNftables func() error
 }
 
-var connmarkChainName string = "AWS-CONNMARK-CHAIN-0"
+const connmarkChainName string = "AWS-CONNMARK-CHAIN-0"
+
 var _ Connmark = (*iptablesConnmark)(nil)
 
-func newIptablesConnmark(vethPrefix string, mark uint32) (*iptablesConnmark, error) {
+func newIptablesConnmark(vethPrefix string, mark uint32) (Connmark, error) {
 	return &iptablesConnmark{
 		vethPrefix:      vethPrefix,
 		mark:            mark,
@@ -43,6 +47,20 @@ func newIptablesConnmark(vethPrefix string, mark uint32) (*iptablesConnmark, err
 	}, nil
 }
 
+// Setup creates iptables connmark rules for SNAT. With vethPrefix="eni", mark=0x80,
+// and exemptCIDRs=["10.0.0.0/8", "172.16.0.0/12"], the resulting rules look like:
+//
+//	nat/PREROUTING:
+//	  -i eni+ -m comment --comment "AWS, outbound connections" -j AWS-CONNMARK-CHAIN-0
+//	  -m comment --comment "AWS, CONNMARK" -j CONNMARK --restore-mark --mask 0x80
+//
+//	nat/AWS-CONNMARK-CHAIN-0:
+//	  -d 10.0.0.0/8    -m comment --comment "AWS CONNMARK CHAIN" -j RETURN
+//	  -d 172.16.0.0/12 -m comment --comment "AWS CONNMARK CHAIN" -j RETURN
+//	  -m comment --comment "AWS, CONNMARK" -j CONNMARK --set-xmark 0x80/0x80
+//
+// On first successful setup, it also cleans up stale nftables connmark rules
+// (table ip aws-cni) that may remain from a previous nftables-based backend.
 func (c *iptablesConnmark) Setup(exemptCIDRs []string) error {
 	if len(exemptCIDRs) == 0 {
 		return fmt.Errorf("exemptCIDRs cannot be empty")
@@ -85,28 +103,32 @@ func cleanupNFTStaleRules() error {
 	return nil
 }
 
+// Cleanup removes all iptables connmark rules: the PREROUTING jump and restore-mark
+// rules, and flushes/deletes the AWS-CONNMARK-CHAIN-0 chain.
 func (c *iptablesConnmark) Cleanup() error {
 	ipt, err := c.newIptables(iptables.ProtocolIPv4)
 	if err != nil {
 		return err
 	}
 
-	// Delete jump rule
 	jumpRule := []string{"-i", c.vethPrefix + "+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", connmarkChainName}
 	err = ipt.Delete("nat", "PREROUTING", jumpRule...)
 	if err != nil && !isNotExistError(err) {
 		return err
 	}
 
-	// Delete restore rule
 	restoreRule := []string{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", c.mark)}
 	err = ipt.Delete("nat", "PREROUTING", restoreRule...)
 	if err != nil && !isNotExistError(err) {
 		return err
 	}
 
-	// Clear and delete chain
 	err = ipt.ClearChain("nat", connmarkChainName)
+	if err != nil && !isNotExistError(err) {
+		return err
+	}
+
+	err = ipt.DeleteChain("nat", connmarkChainName)
 	if err != nil && !isNotExistError(err) {
 		return err
 	}
@@ -145,7 +167,7 @@ func (c *iptablesConnmark) buildRules(exemptCIDRs []string, ipt iptableswrapper.
 			rule: rule,
 		})
 	}
-	// we might not need to mark this packet for delete.
+	// Force delete restore-mark so the subsequent Append places it after the jump rule in PREROUTING
 	rules = append(rules, iptablesRule{
 		name:        "connmark to fwmark copy",
 		shouldExist: false,
@@ -174,6 +196,8 @@ func (c *iptablesConnmark) buildRules(exemptCIDRs []string, ipt iptableswrapper.
 		name: "set connmark", shouldExist: true, table: "nat", chain: connmarkChainName,
 		rule: []string{"-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--set-xmark", fmt.Sprintf("%#x/%#x", c.mark, c.mark)},
 	})
+
+	log.Debugf("iptableRules: %+v", rules)
 
 	return rules, nil
 }
