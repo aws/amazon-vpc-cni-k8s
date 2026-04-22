@@ -846,11 +846,6 @@ func (c *IPAMContext) tryFreeENI(networkCard int) {
 		return
 	}
 
-	// Check if this ENI was unmanaged before freeing it
-	isUnmanagedENI := c.awsClient.IsUnmanagedENI(eni)
-	isEfaOnlyENI := c.awsClient.IsEfaOnlyENI(networkCard, eni)
-	wasUnmanaged := isUnmanagedENI || isEfaOnlyENI
-
 	log.Debugf("Start freeing ENI %s from network card %d", eni, networkCard)
 	err := c.awsClient.FreeENI(eni)
 	if err != nil {
@@ -860,13 +855,6 @@ func (c *IPAMContext) tryFreeENI(networkCard int) {
 		if errors.Is(err, awsutils.ErrENIAttachmentIdNotFound) || errors.Is(err, awsutils.ErrUnableToDetachENI) {
 			return
 		}
-	}
-
-	// Decrement the counter if this ENI was unmanaged
-	if wasUnmanaged && c.unmanagedENI[networkCard] > 0 {
-		c.unmanagedENI[networkCard] -= 1
-		log.Debugf("Decremented unmanagedENI counter for network card %d to %d after freeing ENI %s",
-			networkCard, c.unmanagedENI[networkCard], eni)
 	}
 
 	err = c.networkClient.DeleteRulesBySrc(c.primaryIP[eni], c.enableIPv6)
@@ -1665,11 +1653,6 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		for eni := range currentENIs {
 			log.Infof("Reconcile and delete detached ENI %s", eni)
 
-			// Check if this ENI was unmanaged before removing it
-			isUnmanagedENI := c.awsClient.IsUnmanagedENI(eni)
-			isEfaOnlyENI := c.awsClient.IsEfaOnlyENI(networkCard, eni)
-			wasUnmanaged := isUnmanagedENI || isEfaOnlyENI
-
 			// Force the delete, since aws local metadata has told us that this ENI is no longer
 			// attached, so any IPs assigned from this ENI will no longer work.
 			err = ds.RemoveENIFromDataStore(eni, true /* force */)
@@ -1677,13 +1660,6 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 				log.Errorf("IP pool reconcile: Failed to delete ENI during reconcile: %v", err)
 				ipamdErrInc("eniReconcileDel")
 				continue
-			}
-
-			// Decrement the counter if this ENI was unmanaged
-			if wasUnmanaged && c.unmanagedENI[networkCard] > 0 {
-				c.unmanagedENI[networkCard] -= 1
-				log.Debugf("Decremented unmanagedENI counter for network card %d to %d after reconciling ENI %s",
-					networkCard, c.unmanagedENI[networkCard], eni)
 			}
 
 			delete(c.primaryIP, eni)
@@ -2110,6 +2086,12 @@ func EnablePodIPAnnotation() bool {
 func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
 	numFiltered := 0
 	ret := make([]awsutils.ENIMetadata, 0, len(enis))
+
+	// Reset the counter before recomputing; it reflects the current snapshot of attached unmanaged ENIs.
+	// Without this reset the counter accumulates across periodic reconciliation calls.
+	for k := range c.unmanagedENI {
+		c.unmanagedENI[k] = 0
+	}
 
 	for _, eni := range enis {
 		//Filter out any Unmanaged ENIs. VPC CNI will only work with Primary ENI in IPv6 Prefix Delegation mode until
