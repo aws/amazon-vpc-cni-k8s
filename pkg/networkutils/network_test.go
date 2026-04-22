@@ -805,7 +805,6 @@ func TestSetupHostNetworkExternalNATCleanupConnmark(t *testing.T) {
 			"nat": {
 				"AWS-SNAT-CHAIN-0":     [][]string{{"-N", "AWS-SNAT-CHAIN-0"}},
 				"POSTROUTING":          [][]string{},
-				"AWS-CONNMARK-CHAIN-0": [][]string{{"-N", "AWS-CONNMARK-CHAIN-0"}},
 				"PREROUTING":           [][]string{},
 			},
 			"mangle": {

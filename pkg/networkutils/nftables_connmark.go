@@ -574,9 +574,10 @@ func isSetMarkRule(rule *nftables.Rule, mark uint32) bool {
 				hasCtLoad = true
 			}
 		}
-		// ct mark | 0x80 uses Mask=0xFFFFFFFF, Xor=mark
+		// ct mark | 0x80 uses Mask=^mark, Xor=mark (OR operation)
 		if bw, ok := e.(*expr.Bitwise); ok {
-			if bytes.Equal(bw.Xor, markBytes) && bytes.Equal(bw.Mask, []byte{0xff, 0xff, 0xff, 0xff}) {
+			maskBytes := binaryutil.NativeEndian.PutUint32(^mark)
+			if bytes.Equal(bw.Xor, markBytes) && bytes.Equal(bw.Mask, maskBytes) {
 				hasBitwise = true
 			}
 		}
@@ -584,16 +585,22 @@ func isSetMarkRule(rule *nftables.Rule, mark uint32) bool {
 	return hasCtLoad && hasBitwise && hasCtStore && hasCounter
 }
 
+
 // addSetMarkRule adds: nft add rule ip aws-cni snat-mark counter ct mark set ct mark | 0x80
+//
+// Equivalent to iptables: -j CONNMARK --set-xmark 0x80/0x80 (OR operation).
+// nftables bitwise computes: result = (reg & Mask) ^ Xor
+// With Mask=^mark and Xor=mark: (ct_mark & ~0x80) ^ 0x80 = ct_mark | 0x80
 func (c *nftConnmark) addSetMarkRule(table *nftables.Table, chain *nftables.Chain, mark uint32) {
 	markBytes := binaryutil.NativeEndian.PutUint32(mark)
+	maskBytes := binaryutil.NativeEndian.PutUint32(^mark)
 	c.nft.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: chain,
 		Exprs: []expr.Any{
 			&expr.Counter{},
 			&expr.Ct{Key: expr.CtKeyMARK, Register: 1},
-			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: []byte{0xff, 0xff, 0xff, 0xff}, Xor: markBytes},
+			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: maskBytes, Xor: markBytes},
 			&expr.Ct{Key: expr.CtKeyMARK, Register: 1, SourceRegister: true},
 		},
 	})

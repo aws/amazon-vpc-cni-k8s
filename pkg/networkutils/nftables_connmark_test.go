@@ -320,7 +320,7 @@ func TestIsSetMarkRule(t *testing.T) {
 				Exprs: []expr.Any{
 					&expr.Counter{},
 					&expr.Ct{Key: expr.CtKeyMARK, Register: 1},
-					&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: []byte{0xff, 0xff, 0xff, 0xff}, Xor: markBytes},
+					&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: binaryutil.NativeEndian.PutUint32(^mark), Xor: markBytes},
 					&expr.Ct{Key: expr.CtKeyMARK, Register: 1, SourceRegister: true},
 				},
 			},
@@ -332,7 +332,7 @@ func TestIsSetMarkRule(t *testing.T) {
 			rule: &nftables.Rule{
 				Exprs: []expr.Any{
 					&expr.Ct{Key: expr.CtKeyMARK, Register: 1},
-					&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: []byte{0xff, 0xff, 0xff, 0xff}, Xor: markBytes},
+					&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: binaryutil.NativeEndian.PutUint32(^mark), Xor: markBytes},
 				},
 			},
 			mark:     mark,
