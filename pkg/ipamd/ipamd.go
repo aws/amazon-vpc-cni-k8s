@@ -1692,6 +1692,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 		// Sweep phase: since the marked ENI have been removed, the remaining ones needs to be sweeped
 		for eni := range currentENIs {
 			log.Infof("Reconcile and delete detached ENI %s", eni)
+
 			// Force the delete, since aws local metadata has told us that this ENI is no longer
 			// attached, so any IPs assigned from this ENI will no longer work.
 			err = ds.RemoveENIFromDataStore(eni, true /* force */)
@@ -2124,6 +2125,12 @@ func EnablePodIPAnnotation() bool {
 func (c *IPAMContext) filterUnmanagedENIs(enis []awsutils.ENIMetadata) []awsutils.ENIMetadata {
 	numFiltered := 0
 	ret := make([]awsutils.ENIMetadata, 0, len(enis))
+
+	// Reset the counter before recomputing; it reflects the current snapshot of attached unmanaged ENIs.
+	// Without this reset the counter accumulates across periodic reconciliation calls.
+	for k := range c.unmanagedENI {
+		c.unmanagedENI[k] = 0
+	}
 
 	for _, eni := range enis {
 		// Filter out any Unmanaged ENIs. VPC CNI will only work with Primary ENI in IPv6 Prefix Delegation mode until
