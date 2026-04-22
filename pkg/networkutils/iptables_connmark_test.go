@@ -204,3 +204,57 @@ func TestIptablesConnmarkSetup_ZeroCIDRNormalization(t *testing.T) {
 	exists, _ = mockIpt.Exists("nat", connmarkChainName, "-d", "0.0.0.0/0", "-m", "comment", "--comment", "AWS CONNMARK CHAIN", "-j", "RETURN")
 	assert.True(t, exists, "exclusion rule should survive second Setup")
 }
+
+func TestIptablesConnmarkCleanup(t *testing.T) {
+	mockIpt := mock_iptables.NewMockIptables()
+	connmark := &iptablesConnmark{
+		vethPrefix: "eni",
+		mark:       0x80,
+		newIptables: func(protocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+			return mockIpt, nil
+		},
+	}
+
+	// Setup first
+	err := connmark.Setup([]string{"10.0.0.0/8", "172.16.0.0/12"})
+	assert.NoError(t, err)
+
+	// Verify rules exist before cleanup
+	exists, _ := mockIpt.ChainExists("nat", connmarkChainName)
+	assert.True(t, exists)
+	exists, _ = mockIpt.Exists("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", connmarkChainName)
+	assert.True(t, exists)
+	exists, _ = mockIpt.Exists("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", uint32(0x80)))
+	assert.True(t, exists)
+
+	// Cleanup
+	err = connmark.Cleanup()
+	assert.NoError(t, err)
+
+	// Verify jump rule removed
+	exists, _ = mockIpt.Exists("nat", "PREROUTING", "-i", "eni+", "-m", "comment", "--comment", "AWS, outbound connections", "-j", connmarkChainName)
+	assert.False(t, exists, "jump rule should be deleted")
+
+	// Verify restore-mark rule removed
+	exists, _ = mockIpt.Exists("nat", "PREROUTING", "-m", "comment", "--comment", "AWS, CONNMARK", "-j", "CONNMARK", "--restore-mark", "--mask", fmt.Sprintf("%#x", uint32(0x80)))
+	assert.False(t, exists, "restore-mark rule should be deleted")
+
+	// Verify chain deleted
+	exists, _ = mockIpt.ChainExists("nat", connmarkChainName)
+	assert.False(t, exists, "chain should be deleted")
+}
+
+func TestIptablesConnmarkCleanup_AlreadyClean(t *testing.T) {
+	mockIpt := mock_iptables.NewMockIptables()
+	connmark := &iptablesConnmark{
+		vethPrefix: "eni",
+		mark:       0x80,
+		newIptables: func(protocol iptables.Protocol) (iptableswrapper.IPTablesIface, error) {
+			return mockIpt, nil
+		},
+	}
+
+	// Cleanup without prior Setup — should not error
+	err := connmark.Cleanup()
+	assert.NoError(t, err)
+}
