@@ -585,7 +585,6 @@ func isSetMarkRule(rule *nftables.Rule, mark uint32) bool {
 	return hasCtLoad && hasBitwise && hasCtStore && hasCounter
 }
 
-
 // addSetMarkRule adds: nft add rule ip aws-cni snat-mark counter ct mark set ct mark | 0x80
 //
 // Equivalent to iptables: -j CONNMARK --set-xmark 0x80/0x80 (OR operation).

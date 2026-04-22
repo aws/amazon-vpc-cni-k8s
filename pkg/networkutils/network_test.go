@@ -803,9 +803,9 @@ func TestSetupHostNetworkExternalNATCleanupConnmark(t *testing.T) {
 	assert.Equal(t,
 		map[string]map[string][][]string{
 			"nat": {
-				"AWS-SNAT-CHAIN-0":     [][]string{{"-N", "AWS-SNAT-CHAIN-0"}},
-				"POSTROUTING":          [][]string{},
-				"PREROUTING":           [][]string{},
+				"AWS-SNAT-CHAIN-0": [][]string{{"-N", "AWS-SNAT-CHAIN-0"}},
+				"POSTROUTING":      [][]string{},
+				"PREROUTING":       [][]string{},
 			},
 			"mangle": {
 				"PREROUTING": [][]string{
