@@ -326,7 +326,10 @@ debug-script:    ## Fetching debug script from awslabs/amazon-eks-ami
 ##@ Formatting
 
 # Run all source code checks.
-check: check-format lint vet   ## Run all source code checks.
+check: check-format lint vet verify-copyright   ## Run all source code checks.
+
+verify-copyright:   ## Verify all .go files have the Amazon copyright header.
+	@scripts/verify-copyright.sh
 
 # Run golint on source code.
 #
@@ -355,6 +358,7 @@ docker-vet: build-docker-test   ## Run go vet inside of a container.
 		$(TEST_IMAGE_NAME) make vet
 
 format:       ## Format all Go source code files. (Note! integration_test.go has an upstream import dependency that doesn't match)
+	@if [ -z "$(FORMAT_FLAGS)" ]; then scripts/boilerplate.sh; fi
 	@command -v goimports >/dev/null || { echo "ERROR: goimports not installed"; exit 1; }
 	@exit $(shell find ./* \
 	  -type f \
