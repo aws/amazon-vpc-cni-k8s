@@ -4038,3 +4038,211 @@ func TestIsUnmanagedENI(t *testing.T) {
 	assert.False(t, cache.IsUnmanagedENI("eni-managed"))
 	assert.False(t, cache.IsUnmanagedENI(""))
 }
+
+func TestSetConnectionTrackingSettings(t *testing.T) {
+	tests := []struct {
+		name           string
+		config         *ec2types.ConnectionTrackingConfiguration
+		expectSettings bool
+		expectedTCP    int32
+		expectedUDPS   int32
+		expectedUDP    int32
+	}{
+		{
+			name:           "nil config leaves settings nil",
+			config:         nil,
+			expectSettings: false,
+		},
+		{
+			name:           "all fields nil in config leaves settings nil",
+			config:         &ec2types.ConnectionTrackingConfiguration{},
+			expectSettings: false,
+		},
+		{
+			name: "all fields set uses actual values",
+			config: &ec2types.ConnectionTrackingConfiguration{
+				TcpEstablishedTimeout: aws.Int32(350),
+				UdpStreamTimeout:      aws.Int32(120),
+				UdpTimeout:            aws.Int32(45),
+			},
+			expectSettings: true,
+			expectedTCP:    350,
+			expectedUDPS:   120,
+			expectedUDP:    45,
+		},
+		{
+			name: "partial config leaves missing fields nil",
+			config: &ec2types.ConnectionTrackingConfiguration{
+				TcpEstablishedTimeout: aws.Int32(350),
+			},
+			expectSettings: true,
+			expectedTCP:    350,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{}
+			cache.setConnectionTrackingSettings(tt.config)
+			if !tt.expectSettings {
+				assert.Nil(t, cache.connectionTrackingSpec)
+				return
+			}
+			assert.NotNil(t, cache.connectionTrackingSpec)
+			if tt.config.TcpEstablishedTimeout != nil {
+				assert.Equal(t, tt.expectedTCP, *cache.connectionTrackingSpec.TcpEstablishedTimeout)
+			} else {
+				assert.Nil(t, cache.connectionTrackingSpec.TcpEstablishedTimeout)
+			}
+			if tt.config.UdpStreamTimeout != nil {
+				assert.Equal(t, tt.expectedUDPS, *cache.connectionTrackingSpec.UdpStreamTimeout)
+			} else {
+				assert.Nil(t, cache.connectionTrackingSpec.UdpStreamTimeout)
+			}
+			if tt.config.UdpTimeout != nil {
+				assert.Equal(t, tt.expectedUDP, *cache.connectionTrackingSpec.UdpTimeout)
+			} else {
+				assert.Nil(t, cache.connectionTrackingSpec.UdpTimeout)
+			}
+		})
+	}
+}
+
+func TestCreateENIInputConnectionTrackingSpecification(t *testing.T) {
+	tests := []struct {
+		name      string
+		settings  *ec2types.ConnectionTrackingSpecificationRequest
+		expectNil bool
+	}{
+		{
+			name:      "nil settings omits connection tracking from ENI input",
+			settings:  nil,
+			expectNil: true,
+		},
+		{
+			name: "non-nil settings includes connection tracking in ENI input",
+			settings: &ec2types.ConnectionTrackingSpecificationRequest{
+				TcpEstablishedTimeout: aws.Int32(350),
+				UdpStreamTimeout:      aws.Int32(120),
+				UdpTimeout:            aws.Int32(45),
+			},
+			expectNil: false,
+		},
+		{
+			name: "partial settings only includes non-nil fields in ENI input",
+			settings: &ec2types.ConnectionTrackingSpecificationRequest{
+				TcpEstablishedTimeout: aws.Int32(350),
+			},
+			expectNil: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{
+				securityGroups:         StringSet{},
+				subnetID:               subnetID,
+				connectionTrackingSpec: tt.settings,
+			}
+			input := cache.createENIInput("test", nil, 1)
+			if tt.expectNil {
+				assert.Nil(t, input.ConnectionTrackingSpecification)
+			} else {
+				assert.NotNil(t, input.ConnectionTrackingSpecification)
+				assert.Equal(t, tt.settings.TcpEstablishedTimeout, input.ConnectionTrackingSpecification.TcpEstablishedTimeout)
+				assert.Equal(t, tt.settings.UdpStreamTimeout, input.ConnectionTrackingSpecification.UdpStreamTimeout)
+				assert.Equal(t, tt.settings.UdpTimeout, input.ConnectionTrackingSpecification.UdpTimeout)
+			}
+		})
+	}
+
+	// IPv6 mode also applies connection tracking settings
+	t.Run("IPv6 mode applies connection tracking settings", func(t *testing.T) {
+		settings := &ec2types.ConnectionTrackingSpecificationRequest{
+			TcpEstablishedTimeout: aws.Int32(350),
+			UdpStreamTimeout:      aws.Int32(120),
+			UdpTimeout:            aws.Int32(45),
+		}
+		cache := &EC2InstanceMetadataCache{
+			securityGroups:         StringSet{},
+			subnetID:               subnetID,
+			v6Enabled:              true,
+			connectionTrackingSpec: settings,
+		}
+		input := cache.createENIInput("test", nil, 1)
+		assert.NotNil(t, input.Ipv6AddressCount)
+		assert.NotNil(t, input.ConnectionTrackingSpecification)
+		assert.Equal(t, settings.TcpEstablishedTimeout, input.ConnectionTrackingSpecification.TcpEstablishedTimeout)
+		assert.Equal(t, settings.UdpStreamTimeout, input.ConnectionTrackingSpecification.UdpStreamTimeout)
+		assert.Equal(t, settings.UdpTimeout, input.ConnectionTrackingSpecification.UdpTimeout)
+	})
+
+	t.Run("IPv6 mode without connection tracking settings", func(t *testing.T) {
+		cache := &EC2InstanceMetadataCache{
+			securityGroups: StringSet{},
+			subnetID:       subnetID,
+			v6Enabled:      true,
+		}
+		input := cache.createENIInput("test", nil, 1)
+		assert.NotNil(t, input.Ipv6AddressCount)
+		assert.Nil(t, input.ConnectionTrackingSpecification)
+	})
+}
+
+func TestDescribeAllENIsConnectionTracking(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	result := &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: []ec2types.NetworkInterface{{
+			NetworkInterfaceId: aws.String(primaryeniID),
+			Attachment: &ec2types.NetworkInterfaceAttachment{
+				DeviceIndex:      aws.Int32(0),
+				NetworkCardIndex: aws.Int32(0),
+			},
+			ConnectionTrackingConfiguration: &ec2types.ConnectionTrackingConfiguration{
+				TcpEstablishedTimeout: aws.Int32(350),
+				UdpStreamTimeout:      aws.Int32(120),
+				UdpTimeout:            aws.Int32(45),
+			},
+		}},
+	}
+
+	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, instanceType: "test"}
+	vpc.SetInstance("test", 4, 10, 0, []vpc.NetworkCard{{MaximumNetworkInterfaces: 4, NetworkCardIndex: 0}}, "nitro", false)
+
+	_, err := cache.DescribeAllENIs(context.Background())
+	assert.NoError(t, err)
+	assert.NotNil(t, cache.connectionTrackingSpec)
+	assert.Equal(t, int32(350), *cache.connectionTrackingSpec.TcpEstablishedTimeout)
+	assert.Equal(t, int32(120), *cache.connectionTrackingSpec.UdpStreamTimeout)
+	assert.Equal(t, int32(45), *cache.connectionTrackingSpec.UdpTimeout)
+}
+
+func TestDescribeAllENIsNoConnectionTracking(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	result := &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: []ec2types.NetworkInterface{{
+			NetworkInterfaceId: aws.String(primaryeniID),
+			Attachment: &ec2types.NetworkInterfaceAttachment{
+				DeviceIndex:      aws.Int32(0),
+				NetworkCardIndex: aws.Int32(0),
+			},
+		}},
+	}
+
+	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, instanceType: "test"}
+	vpc.SetInstance("test", 4, 10, 0, []vpc.NetworkCard{{MaximumNetworkInterfaces: 4, NetworkCardIndex: 0}}, "nitro", false)
+
+	_, err := cache.DescribeAllENIs(context.Background())
+	assert.NoError(t, err)
+	assert.Nil(t, cache.connectionTrackingSpec)
+}

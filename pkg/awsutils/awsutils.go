@@ -266,6 +266,7 @@ type EC2InstanceMetadataCache struct {
 	additionalENITags        map[string]string
 	imds                     TypedIMDS
 	ec2SVC                   ec2wrapper.EC2
+	connectionTrackingSpec   *ec2types.ConnectionTrackingSpecificationRequest
 }
 
 // ENIMetadata contains information about an ENI
@@ -1152,6 +1153,11 @@ func (cache *EC2InstanceMetadataCache) createENIInput(eniDescription string, tag
 		SubnetId:          aws.String(cache.subnetID),
 		TagSpecifications: tags,
 	}
+
+	if cache.connectionTrackingSpec != nil {
+		input.ConnectionTrackingSpecification = cache.connectionTrackingSpec
+	}
+
 	// Even though IPv6 PD is enabled, we require a Primary IP for the ENI.
 	// This always creates an ENI which has 1 Primary IPv6 address
 	// We use assignIPv6Prefix to assign a prefix during setupENI
@@ -1167,6 +1173,32 @@ func (cache *EC2InstanceMetadataCache) createENIInput(eniDescription string, tag
 	}
 
 	return input
+}
+
+// setConnectionTrackingSettings applies connection tracking settings only if the primary ENI has it configured.
+// Only non-nil values from the primary ENI configuration are stored.
+func (cache *EC2InstanceMetadataCache) setConnectionTrackingSettings(config *ec2types.ConnectionTrackingConfiguration) {
+	if config == nil || (config.TcpEstablishedTimeout == nil && config.UdpStreamTimeout == nil && config.UdpTimeout == nil) {
+		cache.connectionTrackingSpec = nil
+		return
+	}
+
+	settings := &ec2types.ConnectionTrackingSpecificationRequest{}
+	msg := "Connection tracking settings from primary ENI"
+	if config.TcpEstablishedTimeout != nil {
+		settings.TcpEstablishedTimeout = config.TcpEstablishedTimeout
+		msg += fmt.Sprintf(" tcpEstablishedTimeout=%d", *config.TcpEstablishedTimeout)
+	}
+	if config.UdpStreamTimeout != nil {
+		settings.UdpStreamTimeout = config.UdpStreamTimeout
+		msg += fmt.Sprintf(" udpStreamTimeout=%d", *config.UdpStreamTimeout)
+	}
+	if config.UdpTimeout != nil {
+		settings.UdpTimeout = config.UdpTimeout
+		msg += fmt.Sprintf(" udpTimeout=%d", *config.UdpTimeout)
+	}
+	cache.connectionTrackingSpec = settings
+	log.Debug(msg)
 }
 
 // return ENI id, error
@@ -1803,8 +1835,13 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		// Validate that Attachment is populated by EC2 response before logging
 		if attachment != nil {
 			log.Infof("Got network card index %v for ENI %v", aws.ToInt32(attachment.NetworkCardIndex), eniID)
-			if aws.ToInt32(attachment.DeviceIndex) == 0 && aws.ToInt32(attachment.NetworkCardIndex) == 0 && !aws.ToBool(attachment.DeleteOnTermination) {
-				log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
+			if aws.ToInt32(attachment.DeviceIndex) == 0 && aws.ToInt32(attachment.NetworkCardIndex) == 0 {
+				// Check if DeleteOnTermination is set for Primary ENI
+				if !aws.ToBool(attachment.DeleteOnTermination) {
+					log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
+				}
+				// Set Connection Tracking settings from Primary ENI
+				cache.setConnectionTrackingSettings(ec2res.ConnectionTrackingConfiguration)
 			}
 			enisByNetworkCard[int(aws.ToInt32(attachment.NetworkCardIndex))] = append(enisByNetworkCard[int(aws.ToInt32(attachment.NetworkCardIndex))], eniID)
 			// Network Card where EFA-only ENI is attached
