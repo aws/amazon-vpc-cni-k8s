@@ -146,6 +146,30 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 			verifyAPIServerConnectivity(5, secondaryPod)
 			verifyExternalConnectivity(5, secondaryPod)
 
+			By("deleting aws-node pod and waiting for it to be healthy")
+			awsNodePods, err = f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector("k8s-app", "aws-node")
+			Expect(err).ToNot(HaveOccurred())
+			for _, pod := range awsNodePods.Items {
+				if pod.Spec.NodeName == primaryNode.Name {
+					err := f.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(&pod)
+					Expect(err).ToNot(HaveOccurred())
+				}
+			}
+
+			By("waiting for aws-node daemonset to be ready")
+			err = f.K8sResourceManagers.DaemonSetManager().CheckIfDaemonSetIsReady(utils.AwsNodeNamespace, utils.AwsNodeName)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("verifying connectivity after aws-node pod is healthy - primary ENI")
+			verifyServiceConnectivity(5, primaryPod, service.Spec.ClusterIP)
+			verifyAPIServerConnectivity(5, primaryPod)
+			verifyExternalConnectivity(5, primaryPod)
+
+			By("verifying connectivity after aws-node pod is healthy - secondary ENI")
+			verifyServiceConnectivity(5, secondaryPod, service.Spec.ClusterIP)
+			verifyAPIServerConnectivity(5, secondaryPod)
+			verifyExternalConnectivity(5, secondaryPod)
+
 		},
 		Entry("iptables", "iptables"),
 		Entry("nftables", "nftables"),
