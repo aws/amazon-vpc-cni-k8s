@@ -118,14 +118,33 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 			By("testing pod on primary ENI")
 			primaryPod := interfaceToPodList.PodsOnPrimaryENI[0]
 			secondaryPod := interfaceToPodList.PodsOnSecondaryENI[0]
-			verifyServiceConnectivity(primaryPod, service.Spec.ClusterIP)
-			verifyAPIServerConnectivity(primaryPod)
-			verifyExternalConnectivity(primaryPod)
+			verifyServiceConnectivity(5, primaryPod, service.Spec.ClusterIP)
+			verifyAPIServerConnectivity(5, primaryPod)
+			verifyExternalConnectivity(5, primaryPod)
 
 			By("testing pod on secondary ENI")
-			verifyServiceConnectivity(secondaryPod, service.Spec.ClusterIP)
-			verifyAPIServerConnectivity(secondaryPod)
-			verifyExternalConnectivity(secondaryPod)
+			verifyServiceConnectivity(5, secondaryPod, service.Spec.ClusterIP)
+			verifyAPIServerConnectivity(5, secondaryPod)
+			verifyExternalConnectivity(5, secondaryPod)
+
+			By("restarting aws-node pod of node where deployment is running")
+			awsNodePods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector("k8s-app", "aws-node")
+			Expect(err).ToNot(HaveOccurred())
+			for _, pod := range awsNodePods.Items {
+				if pod.Spec.NodeName == primaryNode.Name {
+					err := f.K8sResourceManagers.PodManager().DeleteAndWaitTillPodDeleted(&pod)
+					Expect(err).ToNot(HaveOccurred())
+				}
+			}
+			By("reverifying connectivity on primary ENI")
+			verifyServiceConnectivity(5, primaryPod, service.Spec.ClusterIP)
+			verifyAPIServerConnectivity(5, primaryPod)
+			verifyExternalConnectivity(5, primaryPod)
+
+			By("testing pod on secondary ENI")
+			verifyServiceConnectivity(5, secondaryPod, service.Spec.ClusterIP)
+			verifyAPIServerConnectivity(5, secondaryPod)
+			verifyExternalConnectivity(5, secondaryPod)
 
 		},
 		Entry("iptables", "iptables"),
@@ -134,25 +153,31 @@ var _ = Describe("test SNAT with kube-proxy modes", func() {
 	)
 })
 
-func verifyServiceConnectivity(pod v1.Pod, serviceIP string) {
-	cmd := []string{"curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "5", fmt.Sprintf("http://%s:80", serviceIP)}
-	stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExec(pod.Namespace, pod.Name, cmd)
-	fmt.Fprintf(GinkgoWriter, "service [%s]: stdout=%s stderr=%s\n", pod.Name, stdout, stderr)
-	Expect(err).ToNot(HaveOccurred(), "service connectivity failed from pod %s", pod.Name)
+func verifyServiceConnectivity(times int, pod v1.Pod, serviceIP string) {
+	for i := 0; i < times; i++ {
+		cmd := []string{"curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "5", fmt.Sprintf("http://%s:80", serviceIP)}
+		stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExec(pod.Namespace, pod.Name, cmd)
+		fmt.Fprintf(GinkgoWriter, "service [%s]: stdout=%s stderr=%s\n", pod.Name, stdout, stderr)
+		Expect(err).ToNot(HaveOccurred(), "service connectivity failed from pod %s", pod.Name)
+	}
 }
 
-func verifyAPIServerConnectivity(pod v1.Pod) {
-	cmd := []string{"curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "5", "-k", "https://kubernetes.default.svc:443/healthz"}
-	stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExec(pod.Namespace, pod.Name, cmd)
-	fmt.Fprintf(GinkgoWriter, "api-server [%s]: stdout=%s stderr=%s\n", pod.Name, stdout, stderr)
-	Expect(err).ToNot(HaveOccurred(), "API server connectivity failed from pod %s", pod.Name)
+func verifyAPIServerConnectivity(times int, pod v1.Pod) {
+	for i := 0; i < times; i++ {
+		cmd := []string{"curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "5", "-k", "https://kubernetes.default.svc:443/healthz"}
+		stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExec(pod.Namespace, pod.Name, cmd)
+		fmt.Fprintf(GinkgoWriter, "api-server [%s]: stdout=%s stderr=%s\n", pod.Name, stdout, stderr)
+		Expect(err).ToNot(HaveOccurred(), "API server connectivity failed from pod %s", pod.Name)
+	}
 }
 
-func verifyExternalConnectivity(pod v1.Pod) {
-	cmd := []string{"curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "5", "http://checkip.amazonaws.com"}
-	stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExec(pod.Namespace, pod.Name, cmd)
-	fmt.Fprintf(GinkgoWriter, "external [%s]: stdout=%s stderr=%s\n", pod.Name, stdout, stderr)
-	Expect(err).ToNot(HaveOccurred(), "external connectivity failed from pod %s", pod.Name)
+func verifyExternalConnectivity(times int, pod v1.Pod) {
+	for i := 0; i < times; i++ {
+		cmd := []string{"curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "5", "http://checkip.amazonaws.com"}
+		stdout, stderr, err := f.K8sResourceManagers.PodManager().PodExec(pod.Namespace, pod.Name, cmd)
+		fmt.Fprintf(GinkgoWriter, "external [%s]: stdout=%s stderr=%s\n", pod.Name, stdout, stderr)
+		Expect(err).ToNot(HaveOccurred(), "external connectivity failed from pod %s", pod.Name)
+	}
 }
 
 func getKubeProxyMode() (string, error) {

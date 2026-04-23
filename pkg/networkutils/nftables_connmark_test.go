@@ -447,6 +447,64 @@ func TestIsBaseChainConfigCorrect(t *testing.T) {
 	}
 }
 
+func TestEnsureBaseChain_CreatesChain(t *testing.T) {
+	wrongPriority := nftables.ChainPriority(-100)
+	policy := nftables.ChainPolicyAccept
+
+	tests := []struct {
+		name      string
+		setupMock func(mockNft *mock_nft.MockClient, table *nftables.Table, newChain *nftables.Chain)
+	}{
+		{
+			name: "chain does not exist",
+			setupMock: func(mockNft *mock_nft.MockClient, table *nftables.Table, newChain *nftables.Chain) {
+				mockNft.EXPECT().ListChain(table, nftBaseChainName).Return(nil, syscall.ENOENT)
+				mockNft.EXPECT().AddChain(gomock.Any()).Return(newChain)
+			},
+		},
+		{
+			name: "chain exists with incorrect config",
+			setupMock: func(mockNft *mock_nft.MockClient, table *nftables.Table, newChain *nftables.Chain) {
+				existingChain := &nftables.Chain{
+					Name:     nftBaseChainName,
+					Table:    table,
+					Type:     nftables.ChainTypeNAT,
+					Hooknum:  nftables.ChainHookPrerouting,
+					Priority: &wrongPriority,
+					Policy:   &policy,
+				}
+				mockNft.EXPECT().ListChain(table, nftBaseChainName).Return(existingChain, nil)
+				mockNft.EXPECT().FlushChain(existingChain)
+				mockNft.EXPECT().DelChain(existingChain)
+				mockNft.EXPECT().AddChain(gomock.Any()).Return(newChain)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockNft := mock_nft.NewMockClient(ctrl)
+			connmark := &nftConnmark{
+				nft:        mockNft,
+				vethPrefix: "eni",
+				mark:       0x80,
+			}
+
+			table := &nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName}
+			newChain := &nftables.Chain{Name: nftBaseChainName, Table: table}
+
+			tt.setupMock(mockNft, table, newChain)
+
+			chain, err := connmark.ensureBaseChain(table)
+			assert.NoError(t, err)
+			assert.Equal(t, newChain, chain)
+		})
+	}
+}
+
 func TestNftConnmarkSetup_StaleRulesRemoved(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
