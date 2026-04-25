@@ -29,6 +29,9 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	cloudformationtypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -366,18 +369,64 @@ func TerminateInstances(f *framework.Framework) error {
 	if err != nil {
 		return fmt.Errorf("failed to get list of nodes created: %v", err)
 	}
+	if len(nodeList.Items) == 0 {
+		return nil
+	}
 
 	var instanceIDs []string
 	for _, node := range nodeList.Items {
 		instanceIDs = append(instanceIDs, k8sUtils.GetInstanceIDFromNode(node))
 	}
+	expected := int32(len(instanceIDs))
 
-	err = f.CloudServices.EC2().TerminateInstance(context.TODO(), instanceIDs)
+	// Find the ASG owning the first instance. Assumes all nodes belong to the same ASG.
+	asgName, err := f.CloudServices.AutoScaling().GetASGForInstance(context.TODO(), instanceIDs[0])
 	if err != nil {
-		return fmt.Errorf("failed to terminate instances: %v", err)
+		return fmt.Errorf("failed to find ASG for instance %s: %v", instanceIDs[0], err)
 	}
 
-	// Wait for instances to be replaced
-	time.Sleep(time.Minute * 8)
-	return nil
+	// Scale the ASG to 0 so it terminates all instances through its own lifecycle
+	if err := f.CloudServices.AutoScaling().SetDesiredCapacity(context.TODO(), asgName, 0); err != nil {
+		return fmt.Errorf("failed to set desired capacity to 0 on %s: %v", asgName, err)
+	}
+
+	// Wait until ASG has actually finished terminating its instances before scaling
+	if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+		asgs, derr := f.CloudServices.AutoScaling().DescribeAutoScalingGroup(ctx, asgName)
+		if derr != nil || len(asgs) == 0 {
+			return false, nil
+		}
+		return len(asgs[0].Instances) == 0, nil
+	}); err != nil {
+		return fmt.Errorf("timed out waiting for ASG %s to scale to 0: %v", asgName, err)
+	}
+
+	// Force-delete stale Node objects so the scheduler/aws-node don't wait on wedged kubelets.
+	zero := int64(0)
+	opts := &client.DeleteOptions{GracePeriodSeconds: &zero, PropagationPolicy: func() *metav1.DeletionPropagation {
+		p := metav1.DeletePropagationBackground
+		return &p
+	}()}
+	for i := range nodeList.Items {
+		_ = f.K8sResourceManagers.NodeManager().DeleteNode(&nodeList.Items[i], opts)
+	}
+
+	if err := f.CloudServices.AutoScaling().SetDesiredCapacity(context.TODO(), asgName, expected); err != nil {
+		return fmt.Errorf("failed to set desired capacity back to %d on %s: %v", expected, asgName, err)
+	}
+
+	// Wait until ASG reports `expected` instances InService.
+	return wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 8*time.Minute, true, func(ctx context.Context) (bool, error) {
+		asgs, derr := f.CloudServices.AutoScaling().DescribeAutoScalingGroup(ctx, asgName)
+		if derr != nil || len(asgs) == 0 {
+			return false, nil
+		}
+		inService := int32(0)
+		for _, inst := range asgs[0].Instances {
+			if inst.LifecycleState == "InService" {
+				inService++
+			}
+		}
+		return inService >= expected, nil
+	})
 }

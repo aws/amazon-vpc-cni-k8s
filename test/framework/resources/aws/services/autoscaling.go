@@ -24,6 +24,8 @@ import (
 
 type AutoScaling interface {
 	DescribeAutoScalingGroup(ctx context.Context, autoScalingGroupName string) ([]types.AutoScalingGroup, error)
+	GetASGForInstance(ctx context.Context, instanceID string) (string, error)
+	SetDesiredCapacity(ctx context.Context, asgName string, desired int32) error
 }
 
 // Directly using the client to interact with the service instead of an interface.
@@ -50,4 +52,43 @@ func (d defaultAutoScaling) DescribeAutoScalingGroup(ctx context.Context, autoSc
 	}
 
 	return asg.AutoScalingGroups, nil
+}
+
+func (d defaultAutoScaling) GetASGForInstance(ctx context.Context, instanceID string) (string, error) {
+	out, err := d.client.DescribeAutoScalingInstances(ctx, &autoscaling.DescribeAutoScalingInstancesInput{
+		InstanceIds: []string{instanceID},
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(out.AutoScalingInstances) == 0 || out.AutoScalingInstances[0].AutoScalingGroupName == nil {
+		return "", fmt.Errorf("instance %s is not part of any ASG", instanceID)
+	}
+	return *out.AutoScalingInstances[0].AutoScalingGroupName, nil
+}
+
+func (d defaultAutoScaling) SetDesiredCapacity(ctx context.Context, asgName string, desired int32) error {
+	descOut, err := d.client.DescribeAutoScalingGroups(ctx, &autoscaling.DescribeAutoScalingGroupsInput{
+		AutoScalingGroupNames: []string{asgName},
+	})
+	if err != nil {
+		return err
+	}
+	if len(descOut.AutoScalingGroups) == 0 {
+		return fmt.Errorf("ASG %s not found", asgName)
+	}
+	if aws.ToInt32(descOut.AutoScalingGroups[0].MaxSize) < desired {
+		if _, err := d.client.UpdateAutoScalingGroup(ctx, &autoscaling.UpdateAutoScalingGroupInput{
+			AutoScalingGroupName: aws.String(asgName),
+			MaxSize:              aws.Int32(desired),
+		}); err != nil {
+			return fmt.Errorf("raise MaxSize: %v", err)
+		}
+	}
+	_, err = d.client.SetDesiredCapacity(ctx, &autoscaling.SetDesiredCapacityInput{
+		AutoScalingGroupName: aws.String(asgName),
+		DesiredCapacity:      aws.Int32(desired),
+		HonorCooldown:        aws.Bool(false),
+	})
+	return err
 }

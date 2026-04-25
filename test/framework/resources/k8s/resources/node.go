@@ -19,6 +19,7 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -27,6 +28,7 @@ type NodeManager interface {
 	GetNodes(nodeLabelKey string, nodeLabelVal string) (v1.NodeList, error)
 	GetAllNodes() (v1.NodeList, error)
 	UpdateNode(oldNode *v1.Node, newNode *v1.Node) error
+	DeleteNode(node *v1.Node, opts ...client.DeleteOption) error
 	WaitTillNodesReady(nodeLabelKey string, nodeLabelVal string, asgSize int) error
 }
 
@@ -71,6 +73,14 @@ func (d *defaultNodeManager) GetAllNodes() (v1.NodeList, error) {
 
 func (d *defaultNodeManager) UpdateNode(oldNode *v1.Node, newNode *v1.Node) error {
 	return d.k8sClient.Patch(context.Background(), newNode, client.MergeFrom(oldNode))
+}
+
+func (d *defaultNodeManager) DeleteNode(node *v1.Node, opts ...client.DeleteOption) error {
+	err := d.k8sClient.Delete(context.Background(), node, opts...)
+	if errors.IsNotFound(err) {
+		return nil
+	}
+	return err
 }
 
 func (d *defaultNodeManager) WaitTillNodesReady(nodeLabelKey string, nodeLabelVal string, asgSize int) error {
