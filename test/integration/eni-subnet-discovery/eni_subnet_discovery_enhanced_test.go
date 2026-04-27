@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/apparentlymart/go-cidr/cidr"
@@ -30,6 +31,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -738,5 +740,274 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 				Expect(finalSGIDs).ToNot(ContainElements(primarySGs), "Primary SGs should remain replaced")
 			})
 		})
+
+		Context("when security group without cni tag should be excluded", func() {
+			var untaggedSGID string
+
+			BeforeEach(func() {
+				By("Creating a security group WITHOUT cni=1 tag")
+				createSGOutput, err := f.CloudServices.EC2().
+					CreateSecurityGroup(context.TODO(), fmt.Sprintf("cni-exclusion-test-sg-%d", time.Now().Unix()), "SG without cni tag for exclusion test", f.Options.AWSVPCID)
+				Expect(err).ToNot(HaveOccurred())
+				untaggedSGID = *createSGOutput.GroupId
+
+				By("Tagging secondary subnet with cni=1")
+				_, err = f.CloudServices.EC2().
+					CreateTags(
+						context.TODO(),
+						[]string{createdSubnet},
+						[]ec2types.Tag{
+							{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")},
+						},
+					)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Excluding primary subnet to force ENI creation in secondary subnet")
+				_, err = f.CloudServices.EC2().
+					CreateTags(context.TODO(), []string{primarySubnetID},
+						[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("0")}})
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Setting WARM_ENI_TARGET=2 to force ENI creation")
+				k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
+					utils.AwsNodeName, map[string]string{
+						"WARM_ENI_TARGET":         "2",
+						"ENABLE_SUBNET_DISCOVERY": "true",
+					})
+				time.Sleep(60 * time.Second)
+			})
+
+			AfterEach(func() {
+				By("Restoring primary subnet tag")
+				_, _ = f.CloudServices.EC2().
+					CreateTags(context.TODO(), []string{primarySubnetID},
+						[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
+
+				By("Resetting WARM_ENI_TARGET to 0")
+				k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
+					utils.AwsNodeName, map[string]string{"WARM_ENI_TARGET": "0"})
+				time.Sleep(60 * time.Second)
+
+				By("Cleaning up untagged security group")
+				if untaggedSGID != "" {
+					_ = f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), untaggedSGID)
+				}
+				_, _ = f.CloudServices.EC2().
+					DeleteTags(context.TODO(), []string{createdSubnet},
+						[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
+			})
+
+			It("should not apply untagged security group to secondary ENIs and pods should have API server connectivity", func() {
+				By("Checking secondary ENI exists in tagged subnet")
+				var testENIID string
+				instance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
+				Expect(err).ToNot(HaveOccurred())
+
+				for _, nwInterface := range instance.NetworkInterfaces {
+					if !common.IsPrimaryENI(nwInterface, instance.PrivateIpAddress) && *nwInterface.SubnetId == createdSubnet {
+						testENIID = *nwInterface.NetworkInterfaceId
+						break
+					}
+				}
+				Expect(testENIID).ToNot(BeEmpty(), "Should have a secondary ENI in tagged subnet")
+
+				By("Verifying untagged SG is NOT applied to secondary ENI")
+				eni, err := f.CloudServices.EC2().DescribeNetworkInterface(context.TODO(), []string{testENIID})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(eni.NetworkInterfaces)).To(BeNumerically(">", 0))
+
+				var sgIDs []string
+				for _, sg := range eni.NetworkInterfaces[0].Groups {
+					sgIDs = append(sgIDs, *sg.GroupId)
+				}
+				GinkgoWriter.Printf("ENI %s security groups: %v (untagged SG: %s)\n", testENIID, sgIDs, untaggedSGID)
+				Expect(sgIDs).ToNot(ContainElement(untaggedSGID),
+					"Security group without cni=1 tag should NOT be applied to secondary ENIs")
+
+				By("Deploying pods and verifying API server connectivity")
+				container := manifest.NewNetCatAlpineContainer(f.Options.TestImageRegistry).
+					Command([]string{"sleep"}).Args([]string{"3600"}).Build()
+				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
+					Container(container).Replicas(3).
+					PodLabel(enhancedPodLabelKey, "sg-exclusion").
+					NodeName(*primaryInstance.PrivateDnsName).Build()
+				dep, err := f.K8sResourceManagers.DeploymentManager().
+					CreateAndWaitTillDeploymentIsReady(deploymentBuilder, utils.DefaultDeploymentReadyTimeout)
+				Expect(err).ToNot(HaveOccurred())
+				defer func() {
+					_ = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(dep)
+				}()
+
+				time.Sleep(10 * time.Second) // Allow DNS to be ready
+				verifyAPIServerConnectivity(enhancedPodLabelKey, "sg-exclusion")
+			})
+		})
+
+		Context("when tagged security group is removed (cni=1 tag deleted)", func() {
+			var removableSGID string
+
+			BeforeEach(func() {
+				By("Creating a security group with cni=1 tag")
+				createSGOutput, err := f.CloudServices.EC2().
+					CreateSecurityGroup(context.TODO(), fmt.Sprintf("cni-removal-test-sg-%d", time.Now().Unix()), "SG for removal test", f.Options.AWSVPCID)
+				Expect(err).ToNot(HaveOccurred())
+				removableSGID = *createSGOutput.GroupId
+
+				_, err = f.CloudServices.EC2().
+					CreateTags(context.TODO(), []string{removableSGID},
+						[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Tagging secondary subnet with cni=1")
+				_, err = f.CloudServices.EC2().
+					CreateTags(context.TODO(), []string{createdSubnet},
+						[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Excluding primary subnet to force ENI creation in secondary subnet")
+				_, err = f.CloudServices.EC2().
+					CreateTags(context.TODO(), []string{primarySubnetID},
+						[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("0")}})
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Setting WARM_ENI_TARGET=2 to force ENI creation")
+				k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
+					utils.AwsNodeName, map[string]string{
+						"WARM_ENI_TARGET":         "2",
+						"ENABLE_SUBNET_DISCOVERY": "true",
+					})
+				time.Sleep(60 * time.Second)
+			})
+
+			AfterEach(func() {
+				By("Restoring primary subnet tag")
+				_, _ = f.CloudServices.EC2().
+					CreateTags(context.TODO(), []string{primarySubnetID},
+						[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
+
+				By("Resetting WARM_ENI_TARGET to 0")
+				k8sUtils.AddEnvVarToDaemonSetAndWaitTillUpdated(f, utils.AwsNodeName, utils.AwsNodeNamespace,
+					utils.AwsNodeName, map[string]string{"WARM_ENI_TARGET": "0"})
+				time.Sleep(60 * time.Second)
+
+				By("Cleaning up removable security group")
+				if removableSGID != "" {
+					_, _ = f.CloudServices.EC2().
+						DeleteTags(context.TODO(), []string{removableSGID},
+							[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
+					_ = f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), removableSGID)
+				}
+				_, _ = f.CloudServices.EC2().
+					DeleteTags(context.TODO(), []string{createdSubnet},
+						[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
+			})
+
+			It("should revert to primary SGs after custom SG tag is removed and maintain API server connectivity", func() {
+				By("Finding secondary ENI in tagged subnet")
+				var testENIID string
+				instance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
+				Expect(err).ToNot(HaveOccurred())
+
+				for _, nwInterface := range instance.NetworkInterfaces {
+					if !common.IsPrimaryENI(nwInterface, instance.PrivateIpAddress) && *nwInterface.SubnetId == createdSubnet {
+						testENIID = *nwInterface.NetworkInterfaceId
+						break
+					}
+				}
+				Expect(testENIID).ToNot(BeEmpty(), "Should have a secondary ENI in tagged subnet")
+
+				By("Verifying custom SG is applied to secondary ENI")
+				Eventually(func() []string {
+					eni, err := f.CloudServices.EC2().DescribeNetworkInterface(context.TODO(), []string{testENIID})
+					if err != nil || len(eni.NetworkInterfaces) == 0 {
+						return nil
+					}
+					var ids []string
+					for _, sg := range eni.NetworkInterfaces[0].Groups {
+						ids = append(ids, *sg.GroupId)
+					}
+					return ids
+				}, 50*time.Second, 5*time.Second).Should(ContainElement(removableSGID),
+					"Custom SG should be applied to secondary ENI")
+
+				By("Deploying pods to verify they can run with the custom SG")
+				container := manifest.NewNetCatAlpineContainer(f.Options.TestImageRegistry).
+					Command([]string{"sleep"}).Args([]string{"3600"}).Build()
+				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
+					Container(container).Replicas(3).
+					PodLabel(enhancedPodLabelKey, "sg-removal").
+					NodeName(*primaryInstance.PrivateDnsName).Build()
+				dep, err := f.K8sResourceManagers.DeploymentManager().
+					CreateAndWaitTillDeploymentIsReady(deploymentBuilder, utils.DefaultDeploymentReadyTimeout)
+				Expect(err).ToNot(HaveOccurred())
+				defer func() {
+					_ = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(dep)
+				}()
+
+				By("Removing cni=1 tag from custom security group")
+				_, err = f.CloudServices.EC2().
+					DeleteTags(context.TODO(), []string{removableSGID},
+						[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Getting primary ENI security groups for comparison")
+				instance, err = f.CloudServices.EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
+				Expect(err).ToNot(HaveOccurred())
+				var primarySGs []string
+				for _, nwInterface := range instance.NetworkInterfaces {
+					if common.IsPrimaryENI(nwInterface, instance.PrivateIpAddress) {
+						for _, sg := range nwInterface.Groups {
+							primarySGs = append(primarySGs, *sg.GroupId)
+						}
+						break
+					}
+				}
+
+				By("Waiting for refresh to revert ENI to primary security groups")
+				Eventually(func() []string {
+					eni, err := f.CloudServices.EC2().DescribeNetworkInterface(context.TODO(), []string{testENIID})
+					if err != nil || len(eni.NetworkInterfaces) == 0 {
+						return nil
+					}
+					var ids []string
+					for _, sg := range eni.NetworkInterfaces[0].Groups {
+						ids = append(ids, *sg.GroupId)
+					}
+					GinkgoWriter.Printf("ENI %s SGs after tag removal: %v\n", testENIID, ids)
+					return ids
+				}, 50*time.Second, 5*time.Second).Should(And(
+					ContainElements(primarySGs),
+					Not(ContainElement(removableSGID)),
+				), "ENI should revert to primary SGs after custom SG tag is removed")
+			})
+		})
 	})
 })
+
+// verifyAPIServerConnectivity checks that pods can reach the Kubernetes API server
+func verifyAPIServerConnectivity(labelKey, labelVal string) {
+	pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(labelKey, labelVal)
+	Expect(err).ToNot(HaveOccurred())
+
+	testedCount := 0
+	for _, pod := range pods.Items {
+		if pod.Status.Phase != corev1.PodRunning || testedCount >= 3 {
+			continue
+		}
+		By(fmt.Sprintf("Testing API server connectivity from pod %s", pod.Name))
+		// Use the KUBERNETES_SERVICE_HOST env var inside the pod (always set by kubelet)
+		// to avoid DNS dependency. A 401 response confirms network connectivity.
+		stdout, stderr, _ := f.K8sResourceManagers.PodManager().PodExec(
+			pod.Namespace, pod.Name,
+			[]string{"sh", "-c", "wget --spider --timeout=5 -q https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT/api --no-check-certificate 2>&1; echo EXIT:$?"},
+		)
+		combined := stdout + stderr
+		if strings.Contains(combined, "401") || strings.Contains(combined, "EXIT:0") {
+			GinkgoWriter.Printf("Pod %s reached API server\n", pod.Name)
+		} else {
+			Fail(fmt.Sprintf("Pod %s failed to reach API server. output: %s", pod.Name, combined))
+		}
+		testedCount++
+	}
+	Expect(testedCount).To(BeNumerically(">", 0), "Should have tested at least one pod for connectivity")
+}

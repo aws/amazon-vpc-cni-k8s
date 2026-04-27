@@ -21,6 +21,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	"github.com/apparentlymart/go-cidr/cidr"
@@ -128,10 +131,31 @@ var _ = BeforeSuite(func() {
 			Skip("IPv6 tests require a VPC with IPv6 already enabled")
 		}
 	} else {
-		// IPv4 association works with current framework
-		association, err := f.CloudServices.EC2().AssociateVPCCIDRBlock(context.TODO(), f.Options.AWSVPCID, cidrRange.String())
+		// IPv4: check if the CIDR is already associated (from a previous leaked run)
+		vpcInfo, err := f.CloudServices.EC2().DescribeVPC(context.TODO(), f.Options.AWSVPCID)
 		Expect(err).ToNot(HaveOccurred())
-		cidrBlockAssociationID = *association.CidrBlockAssociation.AssociationId
+
+		alreadyAssociated := false
+		for _, assoc := range vpcInfo.Vpcs[0].CidrBlockAssociationSet {
+			if assoc.CidrBlock != nil && *assoc.CidrBlock == cidrRange.String() {
+				state := assoc.CidrBlockState.State
+				if state == "associated" {
+					By(fmt.Sprintf("CIDR %s already associated (id: %s), reusing", cidrRange.String(), *assoc.AssociationId))
+					cidrBlockAssociationID = *assoc.AssociationId
+					alreadyAssociated = true
+					break
+				} else if state == "disassociating" {
+					By(fmt.Sprintf("CIDR %s is disassociating, waiting for it to complete", cidrRange.String()))
+					time.Sleep(30 * time.Second)
+				}
+			}
+		}
+
+		if !alreadyAssociated {
+			association, err := f.CloudServices.EC2().AssociateVPCCIDRBlock(context.TODO(), f.Options.AWSVPCID, cidrRange.String())
+			Expect(err).ToNot(HaveOccurred())
+			cidrBlockAssociationID = *association.CidrBlockAssociation.AssociationId
+		}
 	}
 
 	By(fmt.Sprintf("creating the subnet in %s", *primaryInstance.Placement.AvailabilityZone))
@@ -152,6 +176,10 @@ var _ = BeforeSuite(func() {
 		subnetCidr, err = cidr.Subnet(cidrRange, 2, 0)
 		Expect(err).ToNot(HaveOccurred())
 	}
+
+	// Clean up stale subnets from previous failed runs in the secondary CIDR range
+	By("cleaning up any stale subnets from previous runs")
+	cleanupStaleSubnetsInCIDR()
 
 	createSubnetOutput, err := f.CloudServices.EC2().
 		CreateSubnet(context.TODO(), subnetCidr.String(), f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
@@ -223,3 +251,88 @@ var _ = AfterSuite(func() {
 		// Don't fail the test suite for cleanup issues, just log them
 	}
 })
+
+// cleanupStaleSubnetsInCIDR removes any subnets in the secondary CIDR range that were
+// leaked from previous failed test runs. This makes BeforeSuite idempotent so repeated
+// runs on the same cluster don't fail with subnet conflicts.
+func cleanupStaleSubnetsInCIDR() {
+	ctx := context.TODO()
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(f.Options.AWSRegion))
+	if err != nil {
+		GinkgoWriter.Printf("Warning: failed to create EC2 client for cleanup: %v\n", err)
+		return
+	}
+	ec2Client := ec2.NewFromConfig(cfg)
+
+	// Find all subnets in the VPC within the secondary CIDR range
+	result, err := ec2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("vpc-id"), Values: []string{f.Options.AWSVPCID}},
+			{Name: aws.String("cidr-block"), Values: []string{cidrRange.String()}},
+		},
+	})
+	if err != nil {
+		GinkgoWriter.Printf("Warning: failed to describe subnets for cleanup: %v\n", err)
+		return
+	}
+
+	// Also find subnets in smaller CIDRs within the range (e.g. /24 subnets from individual tests)
+	smallerResult, err := ec2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("vpc-id"), Values: []string{f.Options.AWSVPCID}},
+		},
+	})
+	if err != nil {
+		GinkgoWriter.Printf("Warning: failed to describe all subnets for cleanup: %v\n", err)
+		return
+	}
+
+	for _, subnet := range append(result.Subnets, smallerResult.Subnets...) {
+		if subnet.CidrBlock == nil || subnet.SubnetId == nil {
+			continue
+		}
+		// Check if this subnet falls within our secondary CIDR range
+		_, subnetNet, err := net.ParseCIDR(*subnet.CidrBlock)
+		if err != nil {
+			continue
+		}
+		if !cidrRange.Contains(subnetNet.IP) {
+			continue
+		}
+
+		GinkgoWriter.Printf("Found stale subnet %s (%s), cleaning up\n", *subnet.SubnetId, *subnet.CidrBlock)
+
+		// Detach and delete any ENIs in this subnet
+		eniResult, err := ec2Client.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
+			Filters: []ec2types.Filter{
+				{Name: aws.String("subnet-id"), Values: []string{*subnet.SubnetId}},
+			},
+		})
+		if err == nil {
+			for _, eni := range eniResult.NetworkInterfaces {
+				if eni.Attachment != nil && eni.Attachment.AttachmentId != nil {
+					GinkgoWriter.Printf("  Detaching ENI %s\n", *eni.NetworkInterfaceId)
+					_, _ = ec2Client.DetachNetworkInterface(ctx, &ec2.DetachNetworkInterfaceInput{
+						AttachmentId: eni.Attachment.AttachmentId,
+						Force:        aws.Bool(true),
+					})
+					time.Sleep(5 * time.Second)
+				}
+				GinkgoWriter.Printf("  Deleting ENI %s\n", *eni.NetworkInterfaceId)
+				_, _ = ec2Client.DeleteNetworkInterface(ctx, &ec2.DeleteNetworkInterfaceInput{
+					NetworkInterfaceId: eni.NetworkInterfaceId,
+				})
+			}
+			if len(eniResult.NetworkInterfaces) > 0 {
+				time.Sleep(10 * time.Second)
+			}
+		}
+
+		// Delete the subnet
+		if err := f.CloudServices.EC2().DeleteSubnet(ctx, *subnet.SubnetId); err != nil {
+			GinkgoWriter.Printf("  Warning: failed to delete stale subnet %s: %v\n", *subnet.SubnetId, err)
+		} else {
+			GinkgoWriter.Printf("  Deleted stale subnet %s\n", *subnet.SubnetId)
+		}
+	}
+}
