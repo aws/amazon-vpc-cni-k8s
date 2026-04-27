@@ -138,7 +138,7 @@ func (c *iptablesConnmark) Cleanup() error {
 }
 
 func (c *iptablesConnmark) buildRules(exemptCIDRs []string, ipt iptableswrapper.IPTablesIface) ([]iptablesRule, error) {
-	if err := ipt.NewChain("nat", connmarkChainName); err != nil && !containChainExistErr(err) {
+	if err := ipt.NewChain("nat", connmarkChainName); err != nil && !chainExistErr(err) {
 		return nil, err
 	}
 

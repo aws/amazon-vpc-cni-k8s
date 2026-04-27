@@ -497,7 +497,7 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 	var chains []string
 	chain := "AWS-SNAT-CHAIN-0"
 	log.Debugf("Setup Host Network: iptables -N %s -t nat", chain)
-	if err := ipt.NewChain("nat", chain); err != nil && !containChainExistErr(err) {
+	if err := ipt.NewChain("nat", chain); err != nil && !chainExistErr(err) {
 		log.Errorf("ipt.NewChain error for chain [%s]: %v", chain, err)
 		return []iptablesRule{}, errors.Wrapf(err, "host network setup: failed to add chain")
 	}
@@ -707,7 +707,7 @@ func computeStaleIptablesRules(ipt iptableswrapper.IPTablesIface, table, chainPr
 	return staleRules, nil
 }
 
-func containChainExistErr(err error) bool {
+func chainExistErr(err error) bool {
 	return strings.Contains(err.Error(), "Chain already exists")
 }
 
