@@ -94,8 +94,9 @@ var _ = BeforeSuite(func() {
 	clusterSGID = *(clusterRes.Cluster.ResourcesVpcConfig.ClusterSecurityGroupId)
 
 	By("allowing custom networking SG in cluster SG")
-	f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), clusterSGID, "-1",
+	err = f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), clusterSGID, "-1",
 		-1, -1, customNetworkingSGID, true)
+	Expect(err).ToNot(HaveOccurred())
 
 	By("authorizing egress and ingress on security group for single port")
 	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(context.TODO(), customNetworkingSGID, "TCP",

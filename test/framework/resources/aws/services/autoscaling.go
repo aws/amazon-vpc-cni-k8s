@@ -77,10 +77,11 @@ func (d defaultAutoScaling) SetDesiredCapacity(ctx context.Context, asgName stri
 	if len(descOut.AutoScalingGroups) == 0 {
 		return fmt.Errorf("ASG %s not found", asgName)
 	}
-	if aws.ToInt32(descOut.AutoScalingGroups[0].MaxSize) < desired {
+	if aws.ToInt32(descOut.AutoScalingGroups[0].MaxSize) < desired || aws.ToInt32(descOut.AutoScalingGroups[0].MinSize) > desired {
 		if _, err := d.client.UpdateAutoScalingGroup(ctx, &autoscaling.UpdateAutoScalingGroupInput{
 			AutoScalingGroupName: aws.String(asgName),
-			MaxSize:              aws.Int32(desired),
+			MaxSize:              aws.Int32(max(desired, aws.ToInt32(descOut.AutoScalingGroups[0].MaxSize))),
+			MinSize:              aws.Int32(min(desired, aws.ToInt32(descOut.AutoScalingGroups[0].MinSize))),
 		}); err != nil {
 			return fmt.Errorf("raise MaxSize: %v", err)
 		}
