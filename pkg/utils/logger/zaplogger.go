@@ -106,14 +106,20 @@ func getEncoder() zapcore.Encoder {
 }
 
 // createZapLogger creates a zap.Logger with the given configuration and caller skip.
+// It supports multiple log output sinks via AdditionalLogLocations.
 func (logConfig *Configuration) createZapLogger(callerSkip int) *zap.Logger {
 	var cores []zapcore.Core
 
 	logLevel := getZapLevel(logConfig.LogLevel)
+	encoder := getEncoder()
 
 	writer := getPluginLogFilePath(logConfig.LogLocation)
+	cores = append(cores, zapcore.NewCore(encoder, writer, logLevel))
 
-	cores = append(cores, zapcore.NewCore(getEncoder(), writer, logLevel))
+	for _, sink := range logConfig.AdditionalLogLocations {
+		w := getPluginLogFilePath(sink)
+		cores = append(cores, zapcore.NewCore(encoder, w, logLevel))
+	}
 
 	combinedCore := zapcore.NewTee(cores...)
 

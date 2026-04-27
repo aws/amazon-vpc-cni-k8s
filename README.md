@@ -379,6 +379,16 @@ Note: `/host/var/log/...` is the container file-system path, which maps to `/var
 
 Note: The IPAMD process runs within the `aws-node` pod, so writing to `stdout` or `stderr` will write to `aws-node` pod logs.
 
+#### `AWS_VPC_K8S_CNI_ADDITIONAL_LOG_FILE`
+
+Type: String
+
+Default: empty (disabled)
+
+Valid Values: A comma-separated list of additional log destinations. Each entry can be `stdout`, `stderr`, or an absolute file path.
+
+Specifies additional log output destinations for `ipamd`, in addition to the primary destination set by `AWS_VPC_K8S_CNI_LOG_FILE`. This allows logs to be written to multiple destinations simultaneously. For example, setting `AWS_VPC_K8S_CNI_LOG_FILE=/host/var/log/aws-routed-eni/ipamd.log` and `AWS_VPC_K8S_CNI_ADDITIONAL_LOG_FILE=stdout` will write logs to both the file (for AWS Support node log bundles) and to the pod's standard output (for log collection systems like Fluentd or CloudWatch).
+
 #### `AWS_VPC_K8S_PLUGIN_LOG_FILE`
 
 Type: String
@@ -394,6 +404,18 @@ Note: `stdout` cannot be supported for plugin log. Please refer to [#1248](https
 Note: In EKS 1.24+, the CNI plugin is exec'ed by the container runtime, so `stderr` is for the container-runtime process, NOT the `aws-node` pod. In older versions, the CNI plugin was exec'ed by kubelet, so `stderr` is for the kubelet process.
 
 Note: If chaining an external plugin (i.e. Cilium) that does not provide a `pluginLogFile` in its config file, the CNI plugin will by default write to `os.Stderr`.
+
+#### `AWS_VPC_K8S_PLUGIN_ADDITIONAL_LOG_FILE`
+
+Type: String
+
+Default: empty (disabled)
+
+Valid Values: A comma-separated list of additional log destinations. Each entry can be `stderr` or an absolute file path.
+
+Specifies additional log output destinations for the `aws-cni` plugin, in addition to the primary destination set by `AWS_VPC_K8S_PLUGIN_LOG_FILE`. This allows plugin logs to be written to multiple destinations simultaneously.
+
+Note: The same constraints as `AWS_VPC_K8S_PLUGIN_LOG_FILE` apply — `stdout` is not supported for the CNI plugin (see [#1248](https://github.com/aws/amazon-vpc-cni-k8s/issues/1248)).
 
 #### `AWS_VPC_K8S_PLUGIN_LOG_LEVEL`
 
