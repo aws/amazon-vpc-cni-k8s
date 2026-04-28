@@ -424,6 +424,7 @@ func New(useSubnetDiscovery, useCustomNetworking, disableLeakedENICleanup, v4Ena
 	version := utils.GetEnv(envVpcCniVersion, "")
 	awsCfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithRegion(region.Region),
+		config.WithHTTPClient(awssession.NewAWSSDKHTTPClient()),
 		config.WithAPIOptions([]func(*smithymiddleware.Stack) error{
 			middleware.AddUserAgentKeyValue("amazon-vpc-cni-k8s", version),
 		}),
