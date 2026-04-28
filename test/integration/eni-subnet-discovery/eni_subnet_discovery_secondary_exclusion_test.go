@@ -237,6 +237,7 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 		Context("when secondary subnet has no cni tag (discovery gating)", func() {
 			var untaggedSubnetID string
 			var untaggedSubnetCIDR *net.IPNet
+			var taggedSubnetID string
 
 			BeforeEach(func() {
 				By("Creating an untagged secondary subnet")
@@ -252,7 +253,7 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 					CreateSubnet(context.TODO(), "100.64.65.0/24", f.Options.AWSVPCID, *primaryInstance.Placement.AvailabilityZone)
 				Expect(err).ToNot(HaveOccurred())
 
-				taggedSubnetID := *taggedSubnetOutput.Subnet.SubnetId
+				taggedSubnetID = *taggedSubnetOutput.Subnet.SubnetId
 
 				By("Tagging comparison subnet with cni=1")
 				_, err = f.CloudServices.EC2().
@@ -280,6 +281,12 @@ var _ = Describe("Secondary ENI Exclusion Tests", func() {
 				err := f.CloudServices.EC2().DeleteSubnet(context.TODO(), untaggedSubnetID)
 				if err != nil {
 					GinkgoWriter.Printf("Warning: Failed to delete untagged subnet %s: %v\n", untaggedSubnetID, err)
+				}
+
+				By("Deleting tagged comparison subnet")
+				err = f.CloudServices.EC2().DeleteSubnet(context.TODO(), taggedSubnetID)
+				if err != nil {
+					GinkgoWriter.Printf("Warning: Failed to delete tagged subnet %s: %v\n", taggedSubnetID, err)
 				}
 			})
 

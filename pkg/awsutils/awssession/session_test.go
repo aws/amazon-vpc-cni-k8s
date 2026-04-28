@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/stretchr/testify/assert"
 )
@@ -45,6 +46,10 @@ func TestNew_SetsHTTPClientTimeout(t *testing.T) {
 	cfg, err := New(context.Background())
 	assert.NoError(t, err)
 	assert.NotNil(t, cfg.HTTPClient)
+	// Verify the HTTP client is the buildable client type with timeout configured
+	httpClient, ok := cfg.HTTPClient.(*http.BuildableClient)
+	assert.True(t, ok, "HTTPClient should be BuildableClient")
+	assert.NotNil(t, httpClient)
 }
 
 func TestNewAWSSDKHTTPClient_SetsTimeout(t *testing.T) {

@@ -145,8 +145,19 @@ var _ = BeforeSuite(func() {
 					alreadyAssociated = true
 					break
 				} else if state == "disassociating" {
-					By(fmt.Sprintf("CIDR %s is disassociating, waiting for it to complete", cidrRange.String()))
-					time.Sleep(30 * time.Second)
+					By(fmt.Sprintf("CIDR %s is disassociating, polling until complete", cidrRange.String()))
+					Eventually(func() bool {
+						info, err := f.CloudServices.EC2().DescribeVPC(context.TODO(), f.Options.AWSVPCID)
+						if err != nil {
+							return false
+						}
+						for _, a := range info.Vpcs[0].CidrBlockAssociationSet {
+							if a.CidrBlock != nil && *a.CidrBlock == cidrRange.String() {
+								return a.CidrBlockState.State != "disassociating"
+							}
+						}
+						return true // CIDR no longer listed, disassociation complete
+					}, 5*time.Minute, 10*time.Second).Should(BeTrue(), "CIDR disassociation should complete")
 				}
 			}
 		}
@@ -186,6 +197,12 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	subnetID := *createSubnetOutput.Subnet.SubnetId
+
+	By("tagging the subnet for test ownership")
+	_, err = f.CloudServices.EC2().CreateTags(context.TODO(), []string{subnetID}, []ec2types.Tag{
+		{Key: aws.String(staleSubnetTag), Value: aws.String("true")},
+	})
+	Expect(err).ToNot(HaveOccurred())
 
 	By("associating the route table with the newly created subnet")
 	err = f.CloudServices.EC2().AssociateRouteTableToSubnet(context.TODO(), clusterVPCConfig.PublicRouteTableID, subnetID)
@@ -252,9 +269,13 @@ var _ = AfterSuite(func() {
 	}
 })
 
-// cleanupStaleSubnetsInCIDR removes any subnets in the secondary CIDR range that were
-// leaked from previous failed test runs. This makes BeforeSuite idempotent so repeated
-// runs on the same cluster don't fail with subnet conflicts.
+// staleSubnetTag is applied to all subnets created by this test suite so that
+// cleanupStaleSubnetsInCIDR only removes resources it owns.
+const staleSubnetTag = "eni-subnet-discovery-test"
+
+// cleanupStaleSubnetsInCIDR removes subnets in the secondary CIDR range that were
+// leaked from previous failed test runs. Only subnets tagged by this suite are removed,
+// preventing accidental deletion of unrelated infrastructure in the VPC.
 func cleanupStaleSubnetsInCIDR() {
 	ctx := context.TODO()
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(f.Options.AWSRegion))
@@ -264,11 +285,11 @@ func cleanupStaleSubnetsInCIDR() {
 	}
 	ec2Client := ec2.NewFromConfig(cfg)
 
-	// Find all subnets in the VPC within the secondary CIDR range
+	// Only find subnets tagged by this test suite
 	result, err := ec2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
 		Filters: []ec2types.Filter{
 			{Name: aws.String("vpc-id"), Values: []string{f.Options.AWSVPCID}},
-			{Name: aws.String("cidr-block"), Values: []string{cidrRange.String()}},
+			{Name: aws.String("tag-key"), Values: []string{staleSubnetTag}},
 		},
 	})
 	if err != nil {
@@ -276,31 +297,17 @@ func cleanupStaleSubnetsInCIDR() {
 		return
 	}
 
-	// Also find subnets in smaller CIDRs within the range (e.g. /24 subnets from individual tests)
-	smallerResult, err := ec2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
-		Filters: []ec2types.Filter{
-			{Name: aws.String("vpc-id"), Values: []string{f.Options.AWSVPCID}},
-		},
-	})
-	if err != nil {
-		GinkgoWriter.Printf("Warning: failed to describe all subnets for cleanup: %v\n", err)
-		return
-	}
-
-	for _, subnet := range append(result.Subnets, smallerResult.Subnets...) {
+	for _, subnet := range result.Subnets {
 		if subnet.CidrBlock == nil || subnet.SubnetId == nil {
 			continue
 		}
-		// Check if this subnet falls within our secondary CIDR range
+		// Double-check the subnet falls within our secondary CIDR range
 		_, subnetNet, err := net.ParseCIDR(*subnet.CidrBlock)
-		if err != nil {
-			continue
-		}
-		if !cidrRange.Contains(subnetNet.IP) {
+		if err != nil || !cidrRange.Contains(subnetNet.IP) {
 			continue
 		}
 
-		GinkgoWriter.Printf("Found stale subnet %s (%s), cleaning up\n", *subnet.SubnetId, *subnet.CidrBlock)
+		GinkgoWriter.Printf("Found stale test subnet %s (%s), cleaning up\n", *subnet.SubnetId, *subnet.CidrBlock)
 
 		// Detach and delete any ENIs in this subnet
 		eniResult, err := ec2Client.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
@@ -328,7 +335,6 @@ func cleanupStaleSubnetsInCIDR() {
 			}
 		}
 
-		// Delete the subnet
 		if err := f.CloudServices.EC2().DeleteSubnet(ctx, *subnet.SubnetId); err != nil {
 			GinkgoWriter.Printf("  Warning: failed to delete stale subnet %s: %v\n", *subnet.SubnetId, err)
 		} else {

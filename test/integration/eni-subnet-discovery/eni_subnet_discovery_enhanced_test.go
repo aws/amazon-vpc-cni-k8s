@@ -441,125 +441,19 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 			})
 
 			It("should not exclude primary subnet when it has old kubernetes.io/cluster/ tag for different cluster", func() {
-				By("Tagging primary subnet with old-style cluster tag for a different cluster (should be ignored)")
-				_, err = f.CloudServices.EC2().
-					CreateTags(
-						context.TODO(),
-						[]string{primarySubnetID},
-						[]ec2types.Tag{
-							{
-								Key:   aws.String("kubernetes.io/cluster/some-other-cluster"),
-								Value: aws.String("shared"),
-							},
-						},
-					)
-				Expect(err).ToNot(HaveOccurred())
-
-				defer func() {
-					By("Removing old-style cluster tag from primary subnet")
-					_, err = f.CloudServices.EC2().
-						DeleteTags(
-							context.TODO(),
-							[]string{primarySubnetID},
-							[]ec2types.Tag{
-								{
-									Key:   aws.String("kubernetes.io/cluster/some-other-cluster"),
-									Value: aws.String("shared"),
-								},
-							},
-						)
-					Expect(err).ToNot(HaveOccurred())
-				}()
-
-				By("creating deployment")
-				container := manifest.NewNetCatAlpineContainer(f.Options.TestImageRegistry).
-					Command([]string{"sleep"}).
-					Args([]string{"3600"}).
-					Build()
-
-				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
-					Container(container).
-					Replicas(5).
-					PodLabel(enhancedPodLabelKey, "old-tag-compat").
-					NodeName(*primaryInstance.PrivateDnsName).
-					Build()
-
-				deployment, err = f.K8sResourceManagers.DeploymentManager().
-					CreateAndWaitTillDeploymentIsReady(deploymentBuilder, utils.DefaultDeploymentReadyTimeout)
-				Expect(err).ToNot(HaveOccurred())
-
-				By("verifying pods are running (primary subnet not excluded despite old cluster tag)")
-				pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(enhancedPodLabelKey, "old-tag-compat")
-				Expect(err).ToNot(HaveOccurred())
-				Expect(len(pods.Items)).To(BeNumerically(">", 0), "Pods should be running, primary subnet should not be excluded by old-style cluster tags")
-
-				By("deleting deployment")
-				err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
-				Expect(err).ToNot(HaveOccurred())
-
-				By("sleeping to allow CNI Plugin to delete unused ENIs")
-				time.Sleep(time.Second * 90)
+				verifyPrimarySubnetNotExcludedWithTag(
+					"kubernetes.io/cluster/some-other-cluster", "shared",
+					"old-tag-compat",
+					"primary subnet should not be excluded by old-style cluster tags",
+				)
 			})
 
 			It("should not exclude primary subnet when it has no cni tag but has new cluster tag for different cluster", func() {
-				By("Tagging primary subnet with new-style cluster tag for a different cluster but no cni tag")
-				_, err = f.CloudServices.EC2().
-					CreateTags(
-						context.TODO(),
-						[]string{primarySubnetID},
-						[]ec2types.Tag{
-							{
-								Key:   aws.String("cni.networking.k8s.aws/cluster/different-cluster"),
-								Value: aws.String("shared"),
-							},
-						},
-					)
-				Expect(err).ToNot(HaveOccurred())
-
-				defer func() {
-					By("Removing new-style cluster tag from primary subnet")
-					_, err = f.CloudServices.EC2().
-						DeleteTags(
-							context.TODO(),
-							[]string{primarySubnetID},
-							[]ec2types.Tag{
-								{
-									Key:   aws.String("cni.networking.k8s.aws/cluster/different-cluster"),
-									Value: aws.String("shared"),
-								},
-							},
-						)
-					Expect(err).ToNot(HaveOccurred())
-				}()
-
-				By("creating deployment")
-				container := manifest.NewNetCatAlpineContainer(f.Options.TestImageRegistry).
-					Command([]string{"sleep"}).
-					Args([]string{"3600"}).
-					Build()
-
-				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
-					Container(container).
-					Replicas(5).
-					PodLabel(enhancedPodLabelKey, "no-cni-tag-compat").
-					NodeName(*primaryInstance.PrivateDnsName).
-					Build()
-
-				deployment, err = f.K8sResourceManagers.DeploymentManager().
-					CreateAndWaitTillDeploymentIsReady(deploymentBuilder, utils.DefaultDeploymentReadyTimeout)
-				Expect(err).ToNot(HaveOccurred())
-
-				By("verifying pods are running (primary subnet not excluded - cluster check only applies when cni=1)")
-				pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(enhancedPodLabelKey, "no-cni-tag-compat")
-				Expect(err).ToNot(HaveOccurred())
-				Expect(len(pods.Items)).To(BeNumerically(">", 0), "Pods should be running, primary subnet should not be excluded when no cni tag present")
-
-				By("deleting deployment")
-				err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
-				Expect(err).ToNot(HaveOccurred())
-
-				By("sleeping to allow CNI Plugin to delete unused ENIs")
-				time.Sleep(time.Second * 90)
+				verifyPrimarySubnetNotExcludedWithTag(
+					"cni.networking.k8s.aws/cluster/different-cluster", "shared",
+					"no-cni-tag-compat",
+					"primary subnet should not be excluded when no cni tag present",
+				)
 			})
 		})
 
@@ -984,7 +878,10 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 	})
 })
 
-// verifyAPIServerConnectivity checks that pods can reach the Kubernetes API server
+// verifyAPIServerConnectivity checks that pods can reach the Kubernetes API server.
+// Uses wget --server-response (not -q) so the HTTP status is always printed,
+// and parses the echoed exit code to distinguish connectivity failures from
+// expected auth errors (401/403).
 func verifyAPIServerConnectivity(labelKey, labelVal string) {
 	pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(labelKey, labelVal)
 	Expect(err).ToNot(HaveOccurred())
@@ -995,19 +892,70 @@ func verifyAPIServerConnectivity(labelKey, labelVal string) {
 			continue
 		}
 		By(fmt.Sprintf("Testing API server connectivity from pod %s", pod.Name))
-		// Use the KUBERNETES_SERVICE_HOST env var inside the pod (always set by kubelet)
-		// to avoid DNS dependency. A 401 response confirms network connectivity.
+		// Use --server-response so wget always prints the HTTP status line.
+		// The API server returns 401/403 for unauthenticated requests, which
+		// still proves network connectivity. wget returns non-zero for HTTP
+		// errors, so we echo the exit code and only fail on network-level errors.
 		stdout, stderr, _ := f.K8sResourceManagers.PodManager().PodExec(
 			pod.Namespace, pod.Name,
-			[]string{"sh", "-c", "wget --spider --timeout=5 -q https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT/api --no-check-certificate 2>&1; echo EXIT:$?"},
+			[]string{"sh", "-c",
+				"wget --server-response --timeout=5 -O /dev/null " +
+					"https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT/api " +
+					"--no-check-certificate 2>&1; echo EXIT:$?"},
 		)
 		combined := stdout + stderr
-		if strings.Contains(combined, "401") || strings.Contains(combined, "EXIT:0") {
-			GinkgoWriter.Printf("Pod %s reached API server\n", pod.Name)
-		} else {
-			Fail(fmt.Sprintf("Pod %s failed to reach API server. output: %s", pod.Name, combined))
+		// wget exit code 4 = network failure (timeout/connection refused).
+		// Any other exit code (0, 6, 8) means the server was reached.
+		if strings.Contains(combined, "EXIT:4") {
+			Fail(fmt.Sprintf("Pod %s failed to reach API server (network failure). output: %s", pod.Name, combined))
 		}
+		GinkgoWriter.Printf("Pod %s reached API server\n", pod.Name)
 		testedCount++
 	}
 	Expect(testedCount).To(BeNumerically(">", 0), "Should have tested at least one pod for connectivity")
+}
+
+// verifyPrimarySubnetNotExcludedWithTag is a shared helper for tests that verify
+// the primary subnet is not excluded when tagged with various cluster tag prefixes.
+func verifyPrimarySubnetNotExcludedWithTag(tagKey, tagValue, labelVal, assertMsg string) {
+	By(fmt.Sprintf("Tagging primary subnet with %s=%s", tagKey, tagValue))
+	_, err := f.CloudServices.EC2().
+		CreateTags(context.TODO(), []string{primarySubnetID}, []ec2types.Tag{
+			{Key: aws.String(tagKey), Value: aws.String(tagValue)},
+		})
+	Expect(err).ToNot(HaveOccurred())
+
+	defer func() {
+		By(fmt.Sprintf("Removing tag %s from primary subnet", tagKey))
+		_, err = f.CloudServices.EC2().
+			DeleteTags(context.TODO(), []string{primarySubnetID}, []ec2types.Tag{
+				{Key: aws.String(tagKey), Value: aws.String(tagValue)},
+			})
+		Expect(err).ToNot(HaveOccurred())
+	}()
+
+	By("creating deployment")
+	container := manifest.NewNetCatAlpineContainer(f.Options.TestImageRegistry).
+		Command([]string{"sleep"}).Args([]string{"3600"}).Build()
+
+	deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
+		Container(container).Replicas(5).
+		PodLabel(enhancedPodLabelKey, labelVal).
+		NodeName(*primaryInstance.PrivateDnsName).Build()
+
+	dep, err := f.K8sResourceManagers.DeploymentManager().
+		CreateAndWaitTillDeploymentIsReady(deploymentBuilder, utils.DefaultDeploymentReadyTimeout)
+	Expect(err).ToNot(HaveOccurred())
+
+	By("verifying pods are running")
+	pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(enhancedPodLabelKey, labelVal)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(len(pods.Items)).To(BeNumerically(">", 0), "Pods should be running, "+assertMsg)
+
+	By("deleting deployment")
+	err = f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(dep)
+	Expect(err).ToNot(HaveOccurred())
+
+	By("sleeping to allow CNI Plugin to delete unused ENIs")
+	time.Sleep(time.Second * 90)
 }

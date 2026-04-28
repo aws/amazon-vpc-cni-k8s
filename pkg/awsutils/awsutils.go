@@ -1356,6 +1356,7 @@ func ValidSubnetTagsMatchingClusterName(subnet ec2types.Subnet) bool {
 	// Get cluster name for cluster-specific tag checks
 	localClusterName := os.Getenv(clusterNameEnvVar)
 	if localClusterName == "" {
+		log.Debugf("CLUSTER_NAME is not set, skipping cluster tag validation for subnet %s", *subnet.SubnetId)
 		return true
 	}
 	localClusterTagKey := clusterTagKeyPrefix + localClusterName
@@ -2640,26 +2641,20 @@ func (cache *EC2InstanceMetadataCache) IsSubnetExcluded(ctx context.Context, sub
 	// Find the specific subnet and check its tags
 	for _, subnet := range subnets {
 		if *subnet.SubnetId == subnetID {
-			// Check the cni role tag first
-			for _, tag := range subnet.Tags {
-				if *tag.Key == "kubernetes.io/role/cni" {
-					tagValue := *tag.Value
-					tagExcluded := tagValue == "0"
-					log.Debugf("IsSubnetExcluded: subnet %s has tag kubernetes.io/role/cni=%s, excluded=%t", subnetID, tagValue, tagExcluded)
-					if tagExcluded {
-						return true, nil
-					}
-					// cni=1, now check cluster tags
-					if !ValidSubnetTagsMatchingClusterName(subnet) {
-						log.Debugf("IsSubnetExcluded: subnet %s doesn't have valid cluster name tag", subnetID)
-						return true, nil
-					}
-					return false, nil
-				}
+			cniTagValue := getTagValue(subnet.Tags, subnetDiscoveryTagKey)
+			if cniTagValue == "" {
+				log.Debugf("IsSubnetExcluded: subnet %s has no %s tag, not excluded", subnetID, subnetDiscoveryTagKey)
+				return false, nil
 			}
-
-			// If no kubernetes.io/role/cni tag found, subnet is not explicitly excluded
-			log.Debugf("IsSubnetExcluded: subnet %s has no kubernetes.io/role/cni tag, not excluded", subnetID)
+			if cniTagValue == subnetDiscoveryTagValueExcluded {
+				log.Debugf("IsSubnetExcluded: subnet %s has %s=0, excluded", subnetID, subnetDiscoveryTagKey)
+				return true, nil
+			}
+			// cni=1, now check cluster tags
+			if !ValidSubnetTagsMatchingClusterName(subnet) {
+				log.Debugf("IsSubnetExcluded: subnet %s doesn't have valid cluster name tag", subnetID)
+				return true, nil
+			}
 			return false, nil
 		}
 	}
