@@ -4,6 +4,7 @@ package ec2metadatawrapper
 import (
 	"context"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils/awssession"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 )
@@ -26,7 +27,9 @@ type ec2MetadataClientImpl struct {
 
 // New creates an ec2metadata client to retrieve metadata
 func New(ctx context.Context) (EC2MetadataClient, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithHTTPClient(awssession.NewAWSSDKHTTPClient()),
+	)
 	if err != nil {
 		return nil, err
 	}
