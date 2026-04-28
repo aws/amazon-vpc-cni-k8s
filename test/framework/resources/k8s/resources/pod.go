@@ -169,6 +169,9 @@ func (d *defaultPodManager) PodLogs(namespace string, name string) (string, erro
 	req := d.k8sClientset.CoreV1().Pods(namespace).GetLogs(name, &podLogOpts)
 
 	podLogs, err := req.Stream(context.Background())
+	if err != nil {
+		return "", err
+	}
 	defer podLogs.Close()
 
 	buf := new(bytes.Buffer)
