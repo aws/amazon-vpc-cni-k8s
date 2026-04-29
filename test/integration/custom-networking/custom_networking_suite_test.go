@@ -57,6 +57,7 @@ var (
 	corednsSGOpenPort            = 53
 	primaryENISGID               string
 	primaryENISGList             []string
+	clusterSGID                  string
 	// List of ENIConfig per Availability Zone
 	eniConfigList        []*v1alpha1.ENIConfig
 	eniConfigBuilderList []*manifest.ENIConfigBuilder
@@ -86,6 +87,16 @@ var _ = BeforeSuite(func() {
 		CreateSecurityGroup(context.TODO(), "custom-networking-test", "custom networking", f.Options.AWSVPCID)
 	Expect(err).ToNot(HaveOccurred())
 	customNetworkingSGID = *createSecurityGroupOutput.GroupId
+
+	By("Getting Cluster Security Group ID")
+	clusterRes, err := f.CloudServices.EKS().DescribeCluster(context.TODO(), f.Options.ClusterName)
+	Expect(err).NotTo(HaveOccurred())
+	clusterSGID = *(clusterRes.Cluster.ResourcesVpcConfig.ClusterSecurityGroupId)
+
+	By("allowing custom networking SG in cluster SG")
+	err = f.CloudServices.EC2().AuthorizeSecurityGroupIngress(context.TODO(), clusterSGID, "-1",
+		-1, -1, customNetworkingSGID, true)
+	Expect(err).ToNot(HaveOccurred())
 
 	By("authorizing egress and ingress on security group for single port")
 	f.CloudServices.EC2().AuthorizeSecurityGroupEgress(context.TODO(), customNetworkingSGID, "TCP",
@@ -217,6 +228,10 @@ var _ = AfterSuite(func() {
 		_ = f.CloudServices.EC2().RevokeSecurityGroupIngress(context.TODO(), sg, "-1",
 			-1, -1, customNetworkingSGID, true)
 	}
+
+	By("removing custom networking SG from cluster SG")
+	_ = f.CloudServices.EC2().RevokeSecurityGroupIngress(context.TODO(), clusterSGID, "-1",
+		-1, -1, customNetworkingSGID, true)
 
 	By("deleting security group")
 	errs.Append(f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), customNetworkingSGID))

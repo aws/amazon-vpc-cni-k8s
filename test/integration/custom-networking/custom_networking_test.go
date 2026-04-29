@@ -14,6 +14,7 @@
 package custom_networking
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strconv"
@@ -21,12 +22,14 @@ import (
 
 	awsUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/aws/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/manifest"
+	k8sUtils "github.com/aws/amazon-vpc-cni-k8s/test/framework/resources/k8s/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/apps/v1"
 	coreV1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 var _ = Describe("Custom Networking Test", func() {
@@ -51,7 +54,6 @@ var _ = Describe("Custom Networking Test", func() {
 				Command([]string{"nc"}).
 				Args([]string{"-k", "-l", strconv.Itoa(port)}).
 				Build()
-
 			deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
 				Container(container).
 				Replicas(replicaCount).
@@ -90,7 +92,29 @@ var _ = Describe("Custom Networking Test", func() {
 					Parallelism(1).
 					Build()
 
+				// Force client Job onto a DIFFERENT node than THIS target pod so that
+				// traffic actually traverses the ENI and AWS SG enforcement applies
+				// (same-node pod-to-pod bypasses ENI-level SG evaluation in the Linux bridge).
+				// We only exclude the one target pod's node, not all target nodes, so the
+				// Job can still schedule on 2-node clusters when targets span both nodes.
+				testJob.Spec.Template.Spec.Affinity = &coreV1.Affinity{
+					NodeAffinity: &coreV1.NodeAffinity{
+						RequiredDuringSchedulingIgnoredDuringExecution: &coreV1.NodeSelector{
+							NodeSelectorTerms: []coreV1.NodeSelectorTerm{{
+								MatchExpressions: []coreV1.NodeSelectorRequirement{{
+									Key:      "kubernetes.io/hostname",
+									Operator: coreV1.NodeSelectorOpNotIn,
+									Values:   []string{pod.Spec.NodeName},
+								}},
+							}},
+						},
+					},
+				}
+
 				_, err := f.K8sResourceManagers.JobManager().CreateAndWaitTillJobCompleted(testJob)
+				logJobPodDiag(testJob.Name)
+				logTargetENIDiag(pod)
+
 				if shouldConnect {
 					By("verifying connection to pod succeeds on port " + strconv.Itoa(port))
 					Expect(err).ToNot(HaveOccurred())
@@ -116,6 +140,7 @@ var _ = Describe("Custom Networking Test", func() {
 				shouldConnect = true
 			})
 			It("should connect", func() {})
+
 		})
 
 		Context("when connecting to unreachable port", func() {
@@ -125,6 +150,49 @@ var _ = Describe("Custom Networking Test", func() {
 				shouldConnect = false
 			})
 			It("should fail to connect", func() {})
+		})
+	})
+
+	Context("when a custom-networking pod connects to an external endpoint on an egress-allowed port", func() {
+		It("should succeed reaching 1.1.1.1:53", func() {
+			testJob := manifest.NewDefaultJobBuilder().
+				Container(manifest.NewNetCatAlpineContainer(f.Options.TestImageRegistry).
+					Command([]string{"nc"}).
+					Args([]string{"-z", "-v", "-w5", "1.1.1.1", "53"}).
+					Build()).
+				Name("external-reachability").
+				Parallelism(1).
+				Build()
+			_, err := f.K8sResourceManagers.JobManager().CreateAndWaitTillJobCompleted(testJob)
+			logJobPodDiag(testJob.Name)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(f.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(testJob)).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("when a custom-networking pod connects to the Kubernetes API ClusterIP", func() {
+		It("should reach the API server via ClusterIP", func() {
+			// Use the well-known kubernetes.default ClusterIP service which exists on every cluster.
+			// Resolve the ClusterIP dynamically to avoid hardcoding.
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			kubeSvc, err := f.K8sResourceManagers.ServiceManager().GetService(ctx, "default", "kubernetes")
+			Expect(err).ToNot(HaveOccurred())
+			clusterIP := kubeSvc.Spec.ClusterIP
+
+			testJob := manifest.NewDefaultJobBuilder().
+				Container(manifest.NewNetCatAlpineContainer(f.Options.TestImageRegistry).
+					Command([]string{"nc"}).
+					Args([]string{"-z", "-v", "-w5", clusterIP, "443"}).
+					Build()).
+				Name("k8s-api-clusterip").
+				Parallelism(1).
+				Build()
+			_, err = f.K8sResourceManagers.JobManager().CreateAndWaitTillJobCompleted(testJob)
+			logJobPodDiag(testJob.Name)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(f.K8sResourceManagers.JobManager().DeleteAndWaitTillJobIsDeleted(testJob)).ToNot(HaveOccurred())
 		})
 	})
 
@@ -158,7 +226,7 @@ var _ = Describe("Custom Networking Test", func() {
 
 			By("verifying deployment should not succeed")
 			deployment, err = f.K8sResourceManagers.DeploymentManager().
-				CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
+				CreateAndWaitTillDeploymentIsReady(deployment, utils.ShortDeploymentReadyTimeout)
 			Expect(err).To(HaveOccurred())
 
 			By("deleting the failed deployment")
@@ -208,3 +276,46 @@ var _ = Describe("Custom Networking Test", func() {
 		})
 	})
 })
+
+// logJobPodDiag prints pod name, node, IP, phase, and container logs for every
+// pod belonging to the given Job. Useful for post-mortem when a Job fails.
+func logJobPodDiag(jobName string) {
+	pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector("job-name", jobName)
+	if err != nil {
+		return
+	}
+	for _, p := range pods.Items {
+		logs, _ := f.K8sResourceManagers.PodManager().PodLogs(p.Namespace, p.Name)
+		fmt.Fprintf(GinkgoWriter, "[DIAG] pod=%s node=%s ip=%s phase=%s\n%s\n",
+			p.Name, p.Spec.NodeName, p.Status.PodIP, p.Status.Phase, logs)
+	}
+}
+
+// logTargetENIDiag looks up the EC2 ENI that owns the target pod's IP and
+// prints its ENI ID, subnet, and security groups.
+func logTargetENIDiag(pod coreV1.Pod) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	node := &coreV1.Node{}
+	if err := f.K8sClient.Get(ctx, types.NamespacedName{Name: pod.Spec.NodeName}, node); err != nil {
+		return
+	}
+	instance, err := f.CloudServices.EC2().DescribeInstance(ctx, k8sUtils.GetInstanceIDFromNode(*node))
+	if err != nil {
+		return
+	}
+	for _, nic := range instance.NetworkInterfaces {
+		for _, pip := range nic.PrivateIpAddresses {
+			if pip.PrivateIpAddress != nil && *pip.PrivateIpAddress == pod.Status.PodIP {
+				var sgs []string
+				for _, g := range nic.Groups {
+					sgs = append(sgs, *g.GroupId)
+				}
+				fmt.Fprintf(GinkgoWriter, "[DIAG] target ENI=%s subnet=%s SGs=%v\n",
+					*nic.NetworkInterfaceId, *nic.SubnetId, sgs)
+				return
+			}
+		}
+	}
+}
