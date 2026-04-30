@@ -16,7 +16,6 @@ package awssession
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -39,8 +38,10 @@ const (
 )
 
 // NewAWSSDKHTTPClient returns a new HTTP client with the configured AWS SDK timeout.
-func NewAWSSDKHTTPClient() *http.Client {
-	return &http.Client{Timeout: getHTTPTimeout()}
+// It returns *awshttp.BuildableClient (instead of *http.Client) so the SDK can
+// inject custom CA bundles via WithTransportOptions in air-gapped regions.
+func NewAWSSDKHTTPClient() *awshttp.BuildableClient {
+	return awshttp.NewBuildableClient().WithTimeout(getHTTPTimeout())
 }
 
 var (
@@ -62,7 +63,7 @@ func getHTTPTimeout() time.Duration {
 
 // New will return aws.Config to be used by Service Clients.
 func New(ctx context.Context) (aws.Config, error) {
-	httpClient := awshttp.NewBuildableClient().WithTimeout(getHTTPTimeout())
+	httpClient := NewAWSSDKHTTPClient()
 	optFns := []func(*config.LoadOptions) error{
 		config.WithHTTPClient(httpClient),
 		config.WithRetryMaxAttempts(maxRetries),

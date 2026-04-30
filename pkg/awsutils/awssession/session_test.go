@@ -55,11 +55,11 @@ func TestNew_SetsHTTPClientTimeout(t *testing.T) {
 func TestNewAWSSDKHTTPClient_SetsTimeout(t *testing.T) {
 	client := NewAWSSDKHTTPClient()
 	assert.NotNil(t, client)
-	assert.Equal(t, DefaultAWSSDKClientTimeout, client.Timeout)
+	assert.Equal(t, DefaultAWSSDKClientTimeout, client.GetTimeout())
 }
 
 func TestNewAWSSDKHTTPClient_RespectsEnv(t *testing.T) {
 	t.Setenv(httpTimeoutEnv, "20")
 	client := NewAWSSDKHTTPClient()
-	assert.Equal(t, 20*time.Second, client.Timeout)
+	assert.Equal(t, 20*time.Second, client.GetTimeout())
 }
