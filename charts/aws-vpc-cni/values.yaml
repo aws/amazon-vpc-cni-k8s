@@ -55,6 +55,8 @@ nodeAgent:
   conntrackCacheTableSize: 524288
   logLevel: "debug"
   resources: {}
+  # env:
+  #   KEY: "VALUE"
 
 image:
   tag: v1.21.1
