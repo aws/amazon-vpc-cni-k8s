@@ -49,7 +49,7 @@ func TestNew_SetsHTTPClientTimeout(t *testing.T) {
 	// Verify the HTTP client is the buildable client type with timeout configured
 	httpClient, ok := cfg.HTTPClient.(*http.BuildableClient)
 	assert.True(t, ok, "HTTPClient should be BuildableClient")
-	assert.NotNil(t, httpClient)
+	assert.Equal(t, 15*time.Second, httpClient.GetTimeout(), "HTTPClient timeout should match HTTP_TIMEOUT env")
 }
 
 func TestNewAWSSDKHTTPClient_SetsTimeout(t *testing.T) {
