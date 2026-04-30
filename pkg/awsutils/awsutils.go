@@ -68,7 +68,7 @@ const (
 	clusterNameEnvVar = "CLUSTER_NAME"
 
 	// clusterTagKeyPrefix is the prefix for the cluster-specific subnet tags
-	clusterTagKeyPrefix = "kubernetes.io/cluster/"
+	clusterTagKeyPrefix = "cni.networking.k8s.aws/cluster/"
 
 	eniNodeTagKey                   = "node.k8s.amazonaws.com/instance_id"
 	eniCreatedAtTagKey              = "node.k8s.amazonaws.com/createdAt"
@@ -1332,6 +1332,7 @@ func isSubnetValidForENICreation(subnet ec2types.Subnet, isPrimarySubnet bool) b
 		if isPrimarySubnet {
 			// Primary subnets are included by default (backwards compatibility)
 			log.Debugf("Primary subnet %s has no %s tag, including it for ENI creation (backwards compatibility)", *subnet.SubnetId, subnetDiscoveryTagKey)
+			return true
 		} else {
 			// Secondary subnets require explicit opt-in via CNI tag
 			log.Debugf("Subnet %s has no %s tag, excluding it from ENI creation", *subnet.SubnetId, subnetDiscoveryTagKey)
@@ -1354,6 +1355,10 @@ func isSubnetValidForENICreation(subnet ec2types.Subnet, isPrimarySubnet bool) b
 func ValidSubnetTagsMatchingClusterName(subnet ec2types.Subnet) bool {
 	// Get cluster name for cluster-specific tag checks
 	localClusterName := os.Getenv(clusterNameEnvVar)
+	if localClusterName == "" {
+		log.Debugf("CLUSTER_NAME is not set, skipping cluster tag validation for subnet %s", *subnet.SubnetId)
+		return true
+	}
 	localClusterTagKey := clusterTagKeyPrefix + localClusterName
 	hasClusterTags, belongsToThisCluster := checkClusterTags(subnet.Tags, localClusterTagKey)
 	if !hasClusterTags || belongsToThisCluster {
@@ -2636,22 +2641,20 @@ func (cache *EC2InstanceMetadataCache) IsSubnetExcluded(ctx context.Context, sub
 	// Find the specific subnet and check its tags
 	for _, subnet := range subnets {
 		if *subnet.SubnetId == subnetID {
+			cniTagValue := getTagValue(subnet.Tags, subnetDiscoveryTagKey)
+			if cniTagValue == "" {
+				log.Debugf("IsSubnetExcluded: subnet %s has no %s tag, not excluded", subnetID, subnetDiscoveryTagKey)
+				return false, nil
+			}
+			if cniTagValue == subnetDiscoveryTagValueExcluded {
+				log.Debugf("IsSubnetExcluded: subnet %s has %s=0, excluded", subnetID, subnetDiscoveryTagKey)
+				return true, nil
+			}
+			// cni=1, now check cluster tags
 			if !ValidSubnetTagsMatchingClusterName(subnet) {
 				log.Debugf("IsSubnetExcluded: subnet %s doesn't have valid cluster name tag", subnetID)
 				return true, nil
 			}
-			// Check if the subnet has the exclusion tag kubernetes.io/role/cni=0
-			for _, tag := range subnet.Tags {
-				if *tag.Key == "kubernetes.io/role/cni" {
-					tagValue := *tag.Value
-					tagExcluded := tagValue == "0"
-					log.Debugf("IsSubnetExcluded: subnet %s has tag kubernetes.io/role/cni=%s, excluded=%t", subnetID, tagValue, tagExcluded)
-					return tagExcluded, nil
-				}
-			}
-
-			// If no kubernetes.io/role/cni tag found, subnet is not explicitly excluded
-			log.Debugf("IsSubnetExcluded: subnet %s has no kubernetes.io/role/cni tag, not excluded", subnetID)
 			return false, nil
 		}
 	}

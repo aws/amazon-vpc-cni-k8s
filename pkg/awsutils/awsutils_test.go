@@ -2417,7 +2417,7 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 						Value: aws.String("1"),
 					},
 					{
-						Key:   aws.String("kubernetes.io/cluster/some-other-cluster"),
+						Key:   aws.String("cni.networking.k8s.aws/cluster/some-other-cluster"),
 						Value: aws.String("shared"),
 					},
 				},
@@ -2436,11 +2436,11 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 						Value: aws.String("1"),
 					},
 					{
-						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
+						Key:   aws.String("cni.networking.k8s.aws/cluster/" + testClusterName),
 						Value: aws.String("shared"),
 					},
 					{
-						Key:   aws.String("kubernetes.io/cluster/some-other-cluster"),
+						Key:   aws.String("cni.networking.k8s.aws/cluster/some-other-cluster"),
 						Value: aws.String("shared"),
 					},
 				},
@@ -2455,7 +2455,7 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 				SubnetId: aws.String("subnet-abc"),
 				Tags: []ec2types.Tag{
 					{
-						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
+						Key:   aws.String("cni.networking.k8s.aws/cluster/" + testClusterName),
 						Value: aws.String("shared"),
 					},
 				},
@@ -2474,7 +2474,7 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 						Value: aws.String("1"),
 					},
 					{
-						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
+						Key:   aws.String("cni.networking.k8s.aws/cluster/" + testClusterName),
 						Value: aws.String("not-shared"), // Value doesn't matter, only key
 					},
 				},
@@ -2482,6 +2482,46 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 			isPrimarySubnet: true,
 			want:            true,
 			description:     "Should be available when cluster tag key matches (value ignored)",
+		},
+		{
+			name: "primary subnet with no CNI tag and different cluster tag",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-primary-other-cluster"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/some-other-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+			description:     "Primary subnet without CNI tag should be included regardless of other cluster tags (backwards compatibility)",
+		},
+		{
+			name: "primary subnet with no CNI tag and matching cluster tag",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-primary-our-cluster"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/" + testClusterName),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+			description:     "Primary subnet without CNI tag should be included even with matching cluster tag",
+		},
+		{
+			name: "primary subnet with no tags at all",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-primary-no-tags"),
+				Tags:     []ec2types.Tag{},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+			description:     "Primary subnet with no tags should be included (backwards compatibility)",
 		},
 	}
 
@@ -2635,6 +2675,102 @@ func TestValidTag(t *testing.T) {
 	}
 }
 
+func TestValidSubnetTagsMatchingClusterName(t *testing.T) {
+	// Save original environment and restore it after the test
+	originalClusterName := os.Getenv(clusterNameEnvVar)
+	defer os.Setenv(clusterNameEnvVar, originalClusterName)
+
+	tests := []struct {
+		name        string
+		clusterName string
+		subnet      ec2types.Subnet
+		want        bool
+	}{
+		{
+			name:        "empty CLUSTER_NAME returns true",
+			clusterName: "",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-1"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/some-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name:        "no cluster tags returns true",
+			clusterName: "my-cluster",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-2"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name:        "matching cluster tag returns true",
+			clusterName: "my-cluster",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-3"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/my-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name:        "different cluster tag returns false",
+			clusterName: "my-cluster",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-4"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/other-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name:        "both matching and different cluster tags returns true",
+			clusterName: "my-cluster",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-5"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/my-cluster"),
+						Value: aws.String("shared"),
+					},
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/other-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Setenv(clusterNameEnvVar, tt.clusterName)
+			got := ValidSubnetTagsMatchingClusterName(tt.subnet)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestIsSubnetExcluded(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
@@ -2692,7 +2828,7 @@ func TestIsSubnetExcluded(t *testing.T) {
 					Value: aws.String("1"),
 				},
 				{
-					Key:   aws.String("kubernetes.io/cluster/other-cluster"),
+					Key:   aws.String("cni.networking.k8s.aws/cluster/other-cluster"),
 					Value: aws.String("shared"),
 				},
 			},
@@ -2707,7 +2843,7 @@ func TestIsSubnetExcluded(t *testing.T) {
 					Value: aws.String("1"),
 				},
 				{
-					Key:   aws.String("kubernetes.io/cluster/test-cluster"),
+					Key:   aws.String("cni.networking.k8s.aws/cluster/test-cluster"),
 					Value: aws.String("shared"),
 				},
 			},
@@ -2719,6 +2855,32 @@ func TestIsSubnetExcluded(t *testing.T) {
 			describeError: errors.New("API error"),
 			want:          false,
 			wantErr:       true,
+		},
+		{
+			name: "subnet without cni tag but with different cluster tag - not excluded",
+			subnetTags: []ec2types.Tag{
+				{
+					Key:   aws.String("cni.networking.k8s.aws/cluster/other-cluster"),
+					Value: aws.String("shared"),
+				},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name: "subnet with cni=0 and matching cluster tag - still excluded",
+			subnetTags: []ec2types.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("0"),
+				},
+				{
+					Key:   aws.String("cni.networking.k8s.aws/cluster/test-cluster"),
+					Value: aws.String("shared"),
+				},
+			},
+			want:    true,
+			wantErr: false,
 		},
 		{
 			name:       "no subnets returned",
