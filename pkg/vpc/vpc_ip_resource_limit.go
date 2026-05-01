@@ -4365,45 +4365,6 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		HypervisorType: "nitro",
 		IsBareMetal:    false,
 	},
-	"f1.16xlarge": {
-		ENILimit:                8,
-		IPv4Limit:               50,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 8,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "xen",
-		IsBareMetal:    false,
-	},
-	"f1.2xlarge": {
-		ENILimit:                4,
-		IPv4Limit:               15,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 4,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "xen",
-		IsBareMetal:    false,
-	},
-	"f1.4xlarge": {
-		ENILimit:                8,
-		IPv4Limit:               30,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 8,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "xen",
-		IsBareMetal:    false,
-	},
 	"f2.12xlarge": {
 		ENILimit:                8,
 		IPv4Limit:               30,
@@ -11049,45 +11010,6 @@ var instanceNetworkingLimits = map[string]InstanceTypeLimits{
 		},
 		HypervisorType: "unknown",
 		IsBareMetal:    true,
-	},
-	"p3.16xlarge": {
-		ENILimit:                8,
-		IPv4Limit:               30,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 8,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "xen",
-		IsBareMetal:    false,
-	},
-	"p3.2xlarge": {
-		ENILimit:                4,
-		IPv4Limit:               15,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 4,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "xen",
-		IsBareMetal:    false,
-	},
-	"p3.8xlarge": {
-		ENILimit:                8,
-		IPv4Limit:               30,
-		DefaultNetworkCardIndex: 0,
-		NetworkCards: []NetworkCard{
-			{
-				MaximumNetworkInterfaces: 8,
-				NetworkCardIndex:         0,
-			},
-		},
-		HypervisorType: "xen",
-		IsBareMetal:    false,
 	},
 	"p3dn.24xlarge": {
 		ENILimit:                15,
