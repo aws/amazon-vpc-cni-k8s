@@ -368,9 +368,6 @@ d3en.8xlarge 78
 d3en.xlarge 10
 dl1.24xlarge 737
 dl2q.24xlarge 737
-f1.16xlarge 394
-f1.2xlarge 58
-f1.4xlarge 234
 f2.12xlarge 234
 f2.48xlarge 737
 f2.6xlarge 234
@@ -873,9 +870,6 @@ mac2-m1ultra.metal 234
 mac2-m2.metal 234
 mac2-m2pro.metal 234
 mac2.metal 234
-p3.16xlarge 234
-p3.2xlarge 58
-p3.8xlarge 234
 p3dn.24xlarge 737
 p4d.24xlarge 737
 p4de.24xlarge 737
