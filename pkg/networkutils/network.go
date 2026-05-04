@@ -462,9 +462,48 @@ func (n *linuxNetwork) updateHostIptablesRules(vpcCIDRs []string, primaryMAC str
 		if err := n.updateIptablesRules(iptablesConnmarkRules, ipt); err != nil {
 			return err
 		}
+
+		iptablesConntrackZoneRules := n.buildIptablesConntrackZoneRules()
+		if err := n.updateIptablesRules(iptablesConntrackZoneRules, ipt); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+// buildIptablesConntrackZoneRules creates iptables rules to assign conntrack zone 1
+// to traffic on Branch ENIs (vlan+ interfaces) in SGP strict mode.
+//
+// In strict mode, kube-proxy DNAT (via iptables) and local connections to Pods
+// (e.g., kubelet liveness probes) can independently select the same source port,
+// causing conntrack insert_failed when both use the same 5-tuple. By placing
+// Branch ENI traffic in a separate conntrack zone, DNAT entries (zone 0) and
+// local-to-Pod entries (zone 1) no longer collide.
+func (n *linuxNetwork) buildIptablesConntrackZoneRules() []iptablesRule {
+	shouldExist := n.podSGEnforcingMode == sgpp.EnforcingModeStrict
+	return []iptablesRule{
+		{
+			name:        "conntrack zone for Branch ENI outbound",
+			shouldExist: shouldExist,
+			table:       "raw",
+			chain:       "OUTPUT",
+			rule: []string{
+				"-m", "comment", "--comment", "AWS, conntrack zone for SGP strict mode",
+				"-o", "vlan+", "-j", "CT", "--zone", "1",
+			},
+		},
+		{
+			name:        "conntrack zone for Branch ENI inbound",
+			shouldExist: shouldExist,
+			table:       "raw",
+			chain:       "PREROUTING",
+			rule: []string{
+				"-m", "comment", "--comment", "AWS, conntrack zone for SGP strict mode",
+				"-i", "vlan+", "-j", "CT", "--zone", "1",
+			},
+		},
+	}
 }
 
 func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *net.IP, primaryIntf string, ipt iptableswrapper.IPTablesIface) ([]iptablesRule, error) {
