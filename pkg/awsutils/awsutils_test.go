@@ -2417,7 +2417,7 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 						Value: aws.String("1"),
 					},
 					{
-						Key:   aws.String("kubernetes.io/cluster/some-other-cluster"),
+						Key:   aws.String("cni.networking.k8s.aws/cluster/some-other-cluster"),
 						Value: aws.String("shared"),
 					},
 				},
@@ -2436,11 +2436,11 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 						Value: aws.String("1"),
 					},
 					{
-						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
+						Key:   aws.String("cni.networking.k8s.aws/cluster/" + testClusterName),
 						Value: aws.String("shared"),
 					},
 					{
-						Key:   aws.String("kubernetes.io/cluster/some-other-cluster"),
+						Key:   aws.String("cni.networking.k8s.aws/cluster/some-other-cluster"),
 						Value: aws.String("shared"),
 					},
 				},
@@ -2455,7 +2455,7 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 				SubnetId: aws.String("subnet-abc"),
 				Tags: []ec2types.Tag{
 					{
-						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
+						Key:   aws.String("cni.networking.k8s.aws/cluster/" + testClusterName),
 						Value: aws.String("shared"),
 					},
 				},
@@ -2474,7 +2474,7 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 						Value: aws.String("1"),
 					},
 					{
-						Key:   aws.String("kubernetes.io/cluster/" + testClusterName),
+						Key:   aws.String("cni.networking.k8s.aws/cluster/" + testClusterName),
 						Value: aws.String("not-shared"), // Value doesn't matter, only key
 					},
 				},
@@ -2482,6 +2482,46 @@ func TestValidTagWithClusterSpecificTags(t *testing.T) {
 			isPrimarySubnet: true,
 			want:            true,
 			description:     "Should be available when cluster tag key matches (value ignored)",
+		},
+		{
+			name: "primary subnet with no CNI tag and different cluster tag",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-primary-other-cluster"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/some-other-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+			description:     "Primary subnet without CNI tag should be included regardless of other cluster tags (backwards compatibility)",
+		},
+		{
+			name: "primary subnet with no CNI tag and matching cluster tag",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-primary-our-cluster"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/" + testClusterName),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+			description:     "Primary subnet without CNI tag should be included even with matching cluster tag",
+		},
+		{
+			name: "primary subnet with no tags at all",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-primary-no-tags"),
+				Tags:     []ec2types.Tag{},
+			},
+			isPrimarySubnet: true,
+			want:            true,
+			description:     "Primary subnet with no tags should be included (backwards compatibility)",
 		},
 	}
 
@@ -2635,6 +2675,102 @@ func TestValidTag(t *testing.T) {
 	}
 }
 
+func TestValidSubnetTagsMatchingClusterName(t *testing.T) {
+	// Save original environment and restore it after the test
+	originalClusterName := os.Getenv(clusterNameEnvVar)
+	defer os.Setenv(clusterNameEnvVar, originalClusterName)
+
+	tests := []struct {
+		name        string
+		clusterName string
+		subnet      ec2types.Subnet
+		want        bool
+	}{
+		{
+			name:        "empty CLUSTER_NAME returns true",
+			clusterName: "",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-1"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/some-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name:        "no cluster tags returns true",
+			clusterName: "my-cluster",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-2"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("kubernetes.io/role/cni"),
+						Value: aws.String("1"),
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name:        "matching cluster tag returns true",
+			clusterName: "my-cluster",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-3"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/my-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name:        "different cluster tag returns false",
+			clusterName: "my-cluster",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-4"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/other-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name:        "both matching and different cluster tags returns true",
+			clusterName: "my-cluster",
+			subnet: ec2types.Subnet{
+				SubnetId: aws.String("subnet-5"),
+				Tags: []ec2types.Tag{
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/my-cluster"),
+						Value: aws.String("shared"),
+					},
+					{
+						Key:   aws.String("cni.networking.k8s.aws/cluster/other-cluster"),
+						Value: aws.String("shared"),
+					},
+				},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Setenv(clusterNameEnvVar, tt.clusterName)
+			got := ValidSubnetTagsMatchingClusterName(tt.subnet)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestIsSubnetExcluded(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
@@ -2692,7 +2828,7 @@ func TestIsSubnetExcluded(t *testing.T) {
 					Value: aws.String("1"),
 				},
 				{
-					Key:   aws.String("kubernetes.io/cluster/other-cluster"),
+					Key:   aws.String("cni.networking.k8s.aws/cluster/other-cluster"),
 					Value: aws.String("shared"),
 				},
 			},
@@ -2707,7 +2843,7 @@ func TestIsSubnetExcluded(t *testing.T) {
 					Value: aws.String("1"),
 				},
 				{
-					Key:   aws.String("kubernetes.io/cluster/test-cluster"),
+					Key:   aws.String("cni.networking.k8s.aws/cluster/test-cluster"),
 					Value: aws.String("shared"),
 				},
 			},
@@ -2719,6 +2855,32 @@ func TestIsSubnetExcluded(t *testing.T) {
 			describeError: errors.New("API error"),
 			want:          false,
 			wantErr:       true,
+		},
+		{
+			name: "subnet without cni tag but with different cluster tag - not excluded",
+			subnetTags: []ec2types.Tag{
+				{
+					Key:   aws.String("cni.networking.k8s.aws/cluster/other-cluster"),
+					Value: aws.String("shared"),
+				},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name: "subnet with cni=0 and matching cluster tag - still excluded",
+			subnetTags: []ec2types.Tag{
+				{
+					Key:   aws.String("kubernetes.io/role/cni"),
+					Value: aws.String("0"),
+				},
+				{
+					Key:   aws.String("cni.networking.k8s.aws/cluster/test-cluster"),
+					Value: aws.String("shared"),
+				},
+			},
+			want:    true,
+			wantErr: false,
 		},
 		{
 			name:       "no subnets returned",
@@ -3875,4 +4037,212 @@ func TestIsUnmanagedENI(t *testing.T) {
 	assert.True(t, cache.IsUnmanagedENI("eni-unmanaged"))
 	assert.False(t, cache.IsUnmanagedENI("eni-managed"))
 	assert.False(t, cache.IsUnmanagedENI(""))
+}
+
+func TestSetConnectionTrackingSettings(t *testing.T) {
+	tests := []struct {
+		name           string
+		config         *ec2types.ConnectionTrackingConfiguration
+		expectSettings bool
+		expectedTCP    int32
+		expectedUDPS   int32
+		expectedUDP    int32
+	}{
+		{
+			name:           "nil config leaves settings nil",
+			config:         nil,
+			expectSettings: false,
+		},
+		{
+			name:           "all fields nil in config leaves settings nil",
+			config:         &ec2types.ConnectionTrackingConfiguration{},
+			expectSettings: false,
+		},
+		{
+			name: "all fields set uses actual values",
+			config: &ec2types.ConnectionTrackingConfiguration{
+				TcpEstablishedTimeout: aws.Int32(350),
+				UdpStreamTimeout:      aws.Int32(120),
+				UdpTimeout:            aws.Int32(45),
+			},
+			expectSettings: true,
+			expectedTCP:    350,
+			expectedUDPS:   120,
+			expectedUDP:    45,
+		},
+		{
+			name: "partial config leaves missing fields nil",
+			config: &ec2types.ConnectionTrackingConfiguration{
+				TcpEstablishedTimeout: aws.Int32(350),
+			},
+			expectSettings: true,
+			expectedTCP:    350,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{}
+			cache.setConnectionTrackingSettings(tt.config)
+			if !tt.expectSettings {
+				assert.Nil(t, cache.connectionTrackingSpec)
+				return
+			}
+			assert.NotNil(t, cache.connectionTrackingSpec)
+			if tt.config.TcpEstablishedTimeout != nil {
+				assert.Equal(t, tt.expectedTCP, *cache.connectionTrackingSpec.TcpEstablishedTimeout)
+			} else {
+				assert.Nil(t, cache.connectionTrackingSpec.TcpEstablishedTimeout)
+			}
+			if tt.config.UdpStreamTimeout != nil {
+				assert.Equal(t, tt.expectedUDPS, *cache.connectionTrackingSpec.UdpStreamTimeout)
+			} else {
+				assert.Nil(t, cache.connectionTrackingSpec.UdpStreamTimeout)
+			}
+			if tt.config.UdpTimeout != nil {
+				assert.Equal(t, tt.expectedUDP, *cache.connectionTrackingSpec.UdpTimeout)
+			} else {
+				assert.Nil(t, cache.connectionTrackingSpec.UdpTimeout)
+			}
+		})
+	}
+}
+
+func TestCreateENIInputConnectionTrackingSpecification(t *testing.T) {
+	tests := []struct {
+		name      string
+		settings  *ec2types.ConnectionTrackingSpecificationRequest
+		expectNil bool
+	}{
+		{
+			name:      "nil settings omits connection tracking from ENI input",
+			settings:  nil,
+			expectNil: true,
+		},
+		{
+			name: "non-nil settings includes connection tracking in ENI input",
+			settings: &ec2types.ConnectionTrackingSpecificationRequest{
+				TcpEstablishedTimeout: aws.Int32(350),
+				UdpStreamTimeout:      aws.Int32(120),
+				UdpTimeout:            aws.Int32(45),
+			},
+			expectNil: false,
+		},
+		{
+			name: "partial settings only includes non-nil fields in ENI input",
+			settings: &ec2types.ConnectionTrackingSpecificationRequest{
+				TcpEstablishedTimeout: aws.Int32(350),
+			},
+			expectNil: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &EC2InstanceMetadataCache{
+				securityGroups:         StringSet{},
+				subnetID:               subnetID,
+				connectionTrackingSpec: tt.settings,
+			}
+			input := cache.createENIInput("test", nil, 1)
+			if tt.expectNil {
+				assert.Nil(t, input.ConnectionTrackingSpecification)
+			} else {
+				assert.NotNil(t, input.ConnectionTrackingSpecification)
+				assert.Equal(t, tt.settings.TcpEstablishedTimeout, input.ConnectionTrackingSpecification.TcpEstablishedTimeout)
+				assert.Equal(t, tt.settings.UdpStreamTimeout, input.ConnectionTrackingSpecification.UdpStreamTimeout)
+				assert.Equal(t, tt.settings.UdpTimeout, input.ConnectionTrackingSpecification.UdpTimeout)
+			}
+		})
+	}
+
+	// IPv6 mode also applies connection tracking settings
+	t.Run("IPv6 mode applies connection tracking settings", func(t *testing.T) {
+		settings := &ec2types.ConnectionTrackingSpecificationRequest{
+			TcpEstablishedTimeout: aws.Int32(350),
+			UdpStreamTimeout:      aws.Int32(120),
+			UdpTimeout:            aws.Int32(45),
+		}
+		cache := &EC2InstanceMetadataCache{
+			securityGroups:         StringSet{},
+			subnetID:               subnetID,
+			v6Enabled:              true,
+			connectionTrackingSpec: settings,
+		}
+		input := cache.createENIInput("test", nil, 1)
+		assert.NotNil(t, input.Ipv6AddressCount)
+		assert.NotNil(t, input.ConnectionTrackingSpecification)
+		assert.Equal(t, settings.TcpEstablishedTimeout, input.ConnectionTrackingSpecification.TcpEstablishedTimeout)
+		assert.Equal(t, settings.UdpStreamTimeout, input.ConnectionTrackingSpecification.UdpStreamTimeout)
+		assert.Equal(t, settings.UdpTimeout, input.ConnectionTrackingSpecification.UdpTimeout)
+	})
+
+	t.Run("IPv6 mode without connection tracking settings", func(t *testing.T) {
+		cache := &EC2InstanceMetadataCache{
+			securityGroups: StringSet{},
+			subnetID:       subnetID,
+			v6Enabled:      true,
+		}
+		input := cache.createENIInput("test", nil, 1)
+		assert.NotNil(t, input.Ipv6AddressCount)
+		assert.Nil(t, input.ConnectionTrackingSpecification)
+	})
+}
+
+func TestDescribeAllENIsConnectionTracking(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	result := &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: []ec2types.NetworkInterface{{
+			NetworkInterfaceId: aws.String(primaryeniID),
+			Attachment: &ec2types.NetworkInterfaceAttachment{
+				DeviceIndex:      aws.Int32(0),
+				NetworkCardIndex: aws.Int32(0),
+			},
+			ConnectionTrackingConfiguration: &ec2types.ConnectionTrackingConfiguration{
+				TcpEstablishedTimeout: aws.Int32(350),
+				UdpStreamTimeout:      aws.Int32(120),
+				UdpTimeout:            aws.Int32(45),
+			},
+		}},
+	}
+
+	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, instanceType: "test"}
+	vpc.SetInstance("test", 4, 10, 0, []vpc.NetworkCard{{MaximumNetworkInterfaces: 4, NetworkCardIndex: 0}}, "nitro", false)
+
+	_, err := cache.DescribeAllENIs(context.Background())
+	assert.NoError(t, err)
+	assert.NotNil(t, cache.connectionTrackingSpec)
+	assert.Equal(t, int32(350), *cache.connectionTrackingSpec.TcpEstablishedTimeout)
+	assert.Equal(t, int32(120), *cache.connectionTrackingSpec.UdpStreamTimeout)
+	assert.Equal(t, int32(45), *cache.connectionTrackingSpec.UdpTimeout)
+}
+
+func TestDescribeAllENIsNoConnectionTracking(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	mockMetadata := testMetadata(nil)
+
+	result := &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: []ec2types.NetworkInterface{{
+			NetworkInterfaceId: aws.String(primaryeniID),
+			Attachment: &ec2types.NetworkInterfaceAttachment{
+				DeviceIndex:      aws.Int32(0),
+				NetworkCardIndex: aws.Int32(0),
+			},
+		}},
+	}
+
+	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, instanceType: "test"}
+	vpc.SetInstance("test", 4, 10, 0, []vpc.NetworkCard{{MaximumNetworkInterfaces: 4, NetworkCardIndex: 0}}, "nitro", false)
+
+	_, err := cache.DescribeAllENIs(context.Background())
+	assert.NoError(t, err)
+	assert.Nil(t, cache.connectionTrackingSpec)
 }

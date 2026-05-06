@@ -593,8 +593,10 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 		}
 
 		// Also refresh custom security groups for secondary subnets
-		// Custom security groups are only relevant when subnet discovery is enabled
-		if c.useSubnetDiscovery {
+		// Custom security groups are only relevant when subnet discovery is enabled and custom networking is disabled.
+		// When custom networking is enabled, ENIConfig defines the security groups for secondary ENIs,
+		// and auto-discovered SGs should not overwrite them.
+		if c.useSubnetDiscovery && !c.useCustomNetworking {
 			if err := c.awsClient.RefreshCustomSGIDs(ctx, c.dataStoreAccess); err != nil {
 				return err
 			}
@@ -605,7 +607,7 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 		go wait.Forever(func() {
 			c.awsClient.RefreshSGIDs(ctx, primaryENIMac, c.dataStoreAccess)
 			// Also refresh custom security groups for secondary subnets
-			if c.useSubnetDiscovery {
+			if c.useSubnetDiscovery && !c.useCustomNetworking {
 				c.awsClient.RefreshCustomSGIDs(ctx, c.dataStoreAccess)
 			}
 		}, 30*time.Second)

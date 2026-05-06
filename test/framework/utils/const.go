@@ -35,4 +35,5 @@ const (
 	PollIntervalLong   = time.Second * 20
 
 	DefaultDeploymentReadyTimeout = time.Second * 300
+	ShortDeploymentReadyTimeout   = time.Second * 120
 )

@@ -17,50 +17,53 @@ import (
 	"context"
 	"fmt"
 	"os"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/retry"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-
-	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
-
 	"strconv"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
 // Http client timeout env for sessions
 const (
 	httpTimeoutEnv = "HTTP_TIMEOUT"
 	maxRetries     = 10
+
+	// DefaultAWSSDKClientTimeout is the default timeout for individual HTTP requests made by AWS SDK clients.
+	DefaultAWSSDKClientTimeout = 10 * time.Second
 )
+
+// NewAWSSDKHTTPClient returns a new HTTP client with the configured AWS SDK timeout.
+// It returns *awshttp.BuildableClient (instead of *http.Client) so the SDK can
+// inject custom CA bundles via WithTransportOptions in air-gapped regions.
+func NewAWSSDKHTTPClient() *awshttp.BuildableClient {
+	return awshttp.NewBuildableClient().WithTimeout(getHTTPTimeout())
+}
 
 var (
 	log = logger.Get()
-	// HTTP timeout default value in seconds (10 seconds)
-	httpTimeoutValue = 10 * time.Second
 )
 
 func getHTTPTimeout() time.Duration {
 	httpTimeoutEnvInput := os.Getenv(httpTimeoutEnv)
-	// if httpTimeout is not empty, we convert value to int and overwrite default httpTimeoutValue
 	if httpTimeoutEnvInput != "" {
 		input, err := strconv.Atoi(httpTimeoutEnvInput)
 		if err == nil && input >= 10 {
 			log.Debugf("Using HTTP_TIMEOUT %v", input)
-			httpTimeoutValue = time.Duration(input) * time.Second
-			return httpTimeoutValue
+			return time.Duration(input) * time.Second
 		}
 	}
-	log.Warn("HTTP_TIMEOUT env is not set or set to less than 10 seconds, defaulting to httpTimeout to 10sec")
-	return httpTimeoutValue
+	log.Debugf("HTTP_TIMEOUT env is not set or set to less than 10 seconds, defaulting to httpTimeout to %v", DefaultAWSSDKClientTimeout)
+	return DefaultAWSSDKClientTimeout
 }
 
 // New will return aws.Config to be used by Service Clients.
 func New(ctx context.Context) (aws.Config, error) {
-	httpClient := awshttp.NewBuildableClient().WithTimeout(getHTTPTimeout())
+	httpClient := NewAWSSDKHTTPClient()
 	optFns := []func(*config.LoadOptions) error{
 		config.WithHTTPClient(httpClient),
 		config.WithRetryMaxAttempts(maxRetries),
