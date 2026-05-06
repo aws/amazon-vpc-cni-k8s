@@ -17,62 +17,59 @@ import (
 	"context"
 	"fmt"
 	"os"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/retry"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/smithy-go"
-
-	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
-	smithymiddleware "github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
-
 	"strconv"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
-	"github.com/aws/amazon-vpc-cni-k8s/utils"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
 // Http client timeout env for sessions
 const (
-	httpTimeoutEnv   = "HTTP_TIMEOUT"
-	maxRetries       = 10
-	envVpcCniVersion = "VPC_CNI_VERSION"
+	httpTimeoutEnv = "HTTP_TIMEOUT"
+	maxRetries     = 10
+
+	// DefaultAWSSDKClientTimeout is the default timeout for individual HTTP requests made by AWS SDK clients.
+	DefaultAWSSDKClientTimeout = 10 * time.Second
 )
+
+// NewAWSSDKHTTPClient returns a new HTTP client with the configured AWS SDK timeout.
+// It returns *awshttp.BuildableClient (instead of *http.Client) so the SDK can
+// inject custom CA bundles via WithTransportOptions in air-gapped regions.
+func NewAWSSDKHTTPClient() *awshttp.BuildableClient {
+	return awshttp.NewBuildableClient().WithTimeout(getHTTPTimeout())
+}
 
 var (
 	log = logger.Get()
-	// HTTP timeout default value in seconds (10 seconds)
-	httpTimeoutValue = 10 * time.Second
 )
 
 func getHTTPTimeout() time.Duration {
 	httpTimeoutEnvInput := os.Getenv(httpTimeoutEnv)
-	// if httpTimeout is not empty, we convert value to int and overwrite default httpTimeoutValue
 	if httpTimeoutEnvInput != "" {
 		input, err := strconv.Atoi(httpTimeoutEnvInput)
 		if err == nil && input >= 10 {
 			log.Debugf("Using HTTP_TIMEOUT %v", input)
-			httpTimeoutValue = time.Duration(input) * time.Second
-			return httpTimeoutValue
+			return time.Duration(input) * time.Second
 		}
 	}
-	log.Warn("HTTP_TIMEOUT env is not set or set to less than 10 seconds, defaulting to httpTimeout to 10sec")
-	return httpTimeoutValue
+	log.Debugf("HTTP_TIMEOUT env is not set or set to less than 10 seconds, defaulting to httpTimeout to %v", DefaultAWSSDKClientTimeout)
+	return DefaultAWSSDKClientTimeout
 }
 
 // New will return aws.Config to be used by Service Clients.
 func New(ctx context.Context) (aws.Config, error) {
-	httpClient := awshttp.NewBuildableClient().WithTimeout(getHTTPTimeout())
+	httpClient := NewAWSSDKHTTPClient()
 	optFns := []func(*config.LoadOptions) error{
 		config.WithHTTPClient(httpClient),
 		config.WithRetryMaxAttempts(maxRetries),
 		config.WithRetryer(func() aws.Retryer {
 			return retry.NewStandard()
 		}),
-		injectUserAgent,
 	}
 
 	endpoint := os.Getenv("AWS_EC2_ENDPOINT")
@@ -97,49 +94,4 @@ func New(ctx context.Context) (aws.Config, error) {
 	}
 
 	return cfg, nil
-}
-
-// injectUserAgent will inject app specific user-agent into awsSDK
-func injectUserAgent(loadOptions *config.LoadOptions) error {
-	version := utils.GetEnv(envVpcCniVersion, "")
-	userAgent := fmt.Sprintf("amazon-vpc-cni-k8s/version/%s", version)
-
-	loadOptions.APIOptions = append(loadOptions.APIOptions, func(stack *smithymiddleware.Stack) error {
-		return stack.Build.Add(&addUserAgentMiddleware{
-			userAgent: userAgent,
-		}, smithymiddleware.After)
-	})
-
-	return nil
-}
-
-type addUserAgentMiddleware struct {
-	userAgent string
-}
-
-func (m *addUserAgentMiddleware) HandleBuild(ctx context.Context, in smithymiddleware.BuildInput, next smithymiddleware.BuildHandler) (out smithymiddleware.BuildOutput, metadata smithymiddleware.Metadata, err error) {
-	// Simply pass through to the next handler in the middleware chain
-	return next.HandleBuild(ctx, in)
-}
-
-func (m *addUserAgentMiddleware) ID() string {
-	return "AddUserAgent"
-}
-
-func (m *addUserAgentMiddleware) HandleFinalize(ctx context.Context, in smithymiddleware.FinalizeInput, next smithymiddleware.FinalizeHandler) (
-	out smithymiddleware.FinalizeOutput, metadata smithymiddleware.Metadata, err error) {
-	req, ok := in.Request.(*smithyhttp.Request)
-	if !ok {
-		return out, metadata, &smithy.SerializationError{Err: fmt.Errorf("unknown request type %T", in.Request)}
-	}
-
-	userAgent := req.Header.Get("User-Agent")
-	if userAgent == "" {
-		userAgent = m.userAgent
-	} else {
-		userAgent += " " + m.userAgent
-	}
-	req.Header.Set("User-Agent", userAgent)
-
-	return next.HandleFinalize(ctx, in)
 }
