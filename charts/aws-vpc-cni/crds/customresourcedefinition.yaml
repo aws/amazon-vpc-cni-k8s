@@ -42,6 +42,37 @@ spec:
                   type: array
                 subnet:
                   type: string
+                warmIPTarget:
+                  description: |-
+                    WarmIPTarget overrides WARM_IP_TARGET for nodes selecting this ENIConfig.
+                    Only consulted when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Read at daemon startup.
+                  type: integer
+                  minimum: 0
+                minimumIPTarget:
+                  description: |-
+                    MinimumIPTarget overrides MINIMUM_IP_TARGET for nodes selecting this ENIConfig.
+                    Only consulted when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Read at daemon startup.
+                  type: integer
+                  minimum: 0
+                warmENITarget:
+                  description: |-
+                    WarmENITarget overrides WARM_ENI_TARGET for nodes selecting this ENIConfig.
+                    Only consulted when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Read at daemon startup.
+                  type: integer
+                  minimum: 0
+                warmPrefixTarget:
+                  description: |-
+                    WarmPrefixTarget overrides WARM_PREFIX_TARGET for nodes selecting this ENIConfig.
+                    Only consulted when AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Read at daemon startup.
+                  type: integer
+                  minimum: 0
+                maxENI:
+                  description: |-
+                    MaxENI overrides MAX_ENI for nodes selecting this ENIConfig. The result is
+                    clamped to the instance type's ENI limit. Only consulted when
+                    AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true. Read at daemon startup.
+                  type: integer
+                  minimum: 1
               required:
               - subnet
               type: object

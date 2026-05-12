@@ -52,3 +52,58 @@ or IPs can be attached to any instance in the cluster.
 That is the main reason why we have `WARM_ENI_TARGET=1` as the default setting. It's a good balance between having too
 many unused IPs attached, and the risk of being throttled by the EC2 API. Creating and attaching a new ENI to a node
 can take up to 10 seconds.
+
+## Per-node overrides for IPAM tuning settings
+
+The following five settings can be overridden on a per-node basis when nodes in a cluster have heterogeneous workloads (e.g. dense pod nodes vs. sparsely scheduled GPU nodes) and a single cluster-wide value isn't a good fit:
+
+| Env var              | Node annotation/label key                | ENIConfig field    |
+|----------------------|------------------------------------------|--------------------|
+| `WARM_IP_TARGET`     | `vpc.amazonaws.com/warm-ip-target`       | `warmIPTarget`     |
+| `MINIMUM_IP_TARGET`  | `vpc.amazonaws.com/minimum-ip-target`    | `minimumIPTarget`  |
+| `WARM_ENI_TARGET`    | `vpc.amazonaws.com/warm-eni-target`      | `warmENITarget`    |
+| `WARM_PREFIX_TARGET` | `vpc.amazonaws.com/warm-prefix-target`   | `warmPrefixTarget` |
+| `MAX_ENI`            | `vpc.amazonaws.com/max-eni`              | `maxENI`           |
+
+Overrides are **read once at aws-node startup** — changing a value requires restarting the aws-node pod on the affected node.
+
+### Sources, in precedence order
+
+1. **Node annotation** — keys above
+2. **Node label** — same keys as above
+3. **`ENIConfig` spec fields** — fields above on the ENIConfig the node selects (only consulted when `AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG=true`)
+4. Falls back to the cluster-wide env var
+
+Each setting is resolved independently: a node may pick up `WARM_IP_TARGET` from a label and `MAX_ENI` from the env var, for example.
+
+### Example: per-node label override
+
+```bash
+kubectl label node ip-10-0-1-23.ec2.internal vpc.amazonaws.com/warm-ip-target=5
+kubectl label node ip-10-0-1-23.ec2.internal vpc.amazonaws.com/max-eni=4
+kubectl delete pod -n kube-system -l k8s-app=aws-node \
+  --field-selector spec.nodeName=ip-10-0-1-23.ec2.internal
+```
+
+### Example: ENIConfig field (custom networking)
+
+```yaml
+apiVersion: crd.k8s.amazonaws.com/v1alpha1
+kind: ENIConfig
+metadata:
+  name: dense-pool
+spec:
+  subnet: subnet-xxxxxxxx
+  securityGroups:
+    - sg-xxxxxxxx
+  warmIPTarget: 8
+  minimumIPTarget: 16
+  warmENITarget: 2
+  warmPrefixTarget: 1
+  maxENI: 4
+```
+
+Validation:
+
+- For `WARM_IP_TARGET`, `MINIMUM_IP_TARGET`, `WARM_ENI_TARGET`, and `WARM_PREFIX_TARGET`, a value of `0` is valid and explicitly disables the target. Negative or non-integer label/annotation values are ignored with a warning and the next source in the precedence chain is used.
+- For `MAX_ENI`, the override must be `>= 1` (matching the existing env-var convention where `<1` means "use the instance default"). The resulting value is always clamped to the instance type's ENI limit, so an over-sized override is safely capped.

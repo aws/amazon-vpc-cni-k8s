@@ -232,6 +232,7 @@ type IPAMContext struct {
 	warmIPTarget         int
 	minimumIPTarget      int
 	warmPrefixTarget     int
+	nodeOverrides        eniconfig.NodeOverrides
 	primaryIP            map[string]string // primaryIP is a map from ENI ID to primary IP of that ENI
 	lastNodeIPPoolAction time.Time
 	lastDecreaseIPPool   time.Time
@@ -415,10 +416,31 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.primaryIP = make(map[string]string)
 	c.reconcileCooldownCache.cache = make(map[string]time.Time)
 	// WARM and Min IP/Prefix targets are ignored in IPv6 mode
-	c.warmENITarget = getWarmENITarget()
-	c.warmIPTarget = getWarmIPTarget()
-	c.minimumIPTarget = getMinimumIPTarget()
-	c.warmPrefixTarget = getWarmPrefixTarget()
+	c.nodeOverrides = eniconfig.ResolveNodeOverrides(ctx, c.k8sClient, c.useCustomNetworking)
+	if v := c.nodeOverrides.WarmIPTarget; v != nil {
+		log.Infof("Using per-node WARM_IP_TARGET override: %d", *v)
+		c.warmIPTarget = *v
+	} else {
+		c.warmIPTarget = getWarmIPTarget()
+	}
+	if v := c.nodeOverrides.MinimumIPTarget; v != nil {
+		log.Infof("Using per-node MINIMUM_IP_TARGET override: %d", *v)
+		c.minimumIPTarget = *v
+	} else {
+		c.minimumIPTarget = getMinimumIPTarget()
+	}
+	if v := c.nodeOverrides.WarmENITarget; v != nil {
+		log.Infof("Using per-node WARM_ENI_TARGET override: %d", *v)
+		c.warmENITarget = *v
+	} else {
+		c.warmENITarget = getWarmENITarget()
+	}
+	if v := c.nodeOverrides.WarmPrefixTarget; v != nil {
+		log.Infof("Using per-node WARM_PREFIX_TARGET override: %d", *v)
+		c.warmPrefixTarget = *v
+	} else {
+		c.warmPrefixTarget = getWarmPrefixTarget()
+	}
 	c.enablePodENI = EnablePodENI()
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = EnablePodIPAnnotation()
@@ -1416,9 +1438,11 @@ func (c *IPAMContext) addENIv6prefixesToDataStore(ec2PrefixAddrs []ec2types.Ipv6
 func (c *IPAMContext) getMaxENI() (int, error) {
 	instanceMaxENI := c.awsClient.GetENILimit()
 
-	inputStr, found := os.LookupEnv(envMaxENI)
 	envMax := defaultMaxENI
-	if found {
+	if v := c.nodeOverrides.MaxENI; v != nil {
+		log.Infof("Using per-node MAX_ENI override: %d", *v)
+		envMax = *v
+	} else if inputStr, found := os.LookupEnv(envMaxENI); found {
 		if input, err := strconv.Atoi(inputStr); err == nil && input >= 1 {
 			log.Debugf("Using MAX_ENI %v", input)
 			envMax = input
