@@ -1866,7 +1866,10 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		}
 
 		if interfaceType != "efa-only" {
-			if len(eniMetadata.IPv4Addresses) == 0 && len(eniMetadata.IPv6Addresses) == 0 {
+			// Check both IMDS metadata and EC2 response for IP addresses.
+			// When the node runs in IPv4 mode, IMDS IPv6 addresses are not fetched,
+			// so an IPv6-only ENI would appear to have no IPs from IMDS alone.
+			if len(eniMetadata.IPv4Addresses) == 0 && len(eniMetadata.IPv6Addresses) == 0 && len(ec2res.Ipv6Addresses) == 0 {
 				log.Errorf("Missing IP addresses from IMDS. Non efa-only interface should have IP address associated with it %s", eniID)
 				outOfSyncErr := errors.New("DescribeAllENIs: No IPv4 and IPv6 addresses found")
 				return DescribeAllENIsResult{}, outOfSyncErr

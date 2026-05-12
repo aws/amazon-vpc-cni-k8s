@@ -4246,3 +4246,47 @@ func TestDescribeAllENIsNoConnectionTracking(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Nil(t, cache.connectionTrackingSpec)
 }
+
+func TestDescribeAllENIsIPv6OnlyENINotFlaggedAsOutOfSync(t *testing.T) {
+	ctrl, mockEC2 := setup(t)
+	defer ctrl.Finish()
+
+	// Simulate unmanaged IPv6-ony eni
+	mockMetadata := testMetadata(map[string]interface{}{
+		metadataMACPath:                               primaryMAC + " " + eni2MAC,
+		metadataMACPath + eni2MAC:                     imdsMACFields,
+		metadataMACPath + eni2MAC + metadataDeviceNum: eni2Device,
+		metadataMACPath + eni2MAC + metadataInterface: eni2ID,
+		metadataMACPath + eni2MAC + metadataSubnetID:  subnetID,
+	})
+
+	result := &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: []ec2types.NetworkInterface{
+			{
+				NetworkInterfaceId: aws.String(primaryeniID),
+				Attachment: &ec2types.NetworkInterfaceAttachment{
+					DeviceIndex:      aws.Int32(0),
+					NetworkCardIndex: aws.Int32(0),
+				},
+			},
+			{
+				NetworkInterfaceId: aws.String(eni2ID),
+				Attachment: &ec2types.NetworkInterfaceAttachment{
+					DeviceIndex:      aws.Int32(1),
+					NetworkCardIndex: aws.Int32(0),
+				},
+				// IPv6 addresses present in EC2 response
+				Ipv6Addresses: []ec2types.NetworkInterfaceIpv6Address{
+					{Ipv6Address: aws.String("2001:db8::1")},
+				},
+			},
+		},
+	}
+
+	mockEC2.EXPECT().DescribeNetworkInterfaces(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+	cache := &EC2InstanceMetadataCache{imds: TypedIMDS{mockMetadata}, ec2SVC: mockEC2, instanceType: "test"}
+	vpc.SetInstance("test", 4, 10, 0, []vpc.NetworkCard{{MaximumNetworkInterfaces: 4, NetworkCardIndex: 0}}, "nitro", false)
+
+	_, err := cache.DescribeAllENIs(context.Background())
+	assert.NoError(t, err)
+}
