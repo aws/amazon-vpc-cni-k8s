@@ -931,7 +931,7 @@ func (cache *EC2InstanceMetadataCache) getENIMetadata(eniMAC string) (ENIMetadat
 
 	var ec2ip6s []ec2types.NetworkInterfaceIpv6Address
 	var subnetV6Cidr string
-	if cache.v6Enabled {
+	if ipv6Available {
 		// For IPv6 ENIs, we have to return the error if Subnet is not discovered
 		v6cidr, err := cache.imds.GetSubnetIPv6CIDRBlocks(ctx, eniMAC)
 		if err != nil {
@@ -1866,10 +1866,7 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs(ctx context.Context) (Des
 		}
 
 		if interfaceType != "efa-only" {
-			// Check both IMDS metadata and EC2 response for IP addresses.
-			// When the node runs in IPv4 mode, IMDS IPv6 addresses are not fetched,
-			// so an IPv6-only ENI would appear to have no IPs from IMDS alone.
-			if len(eniMetadata.IPv4Addresses) == 0 && len(eniMetadata.IPv6Addresses) == 0 && len(ec2res.Ipv6Addresses) == 0 {
+			if len(eniMetadata.IPv4Addresses) == 0 && len(eniMetadata.IPv6Addresses) == 0 {
 				log.Errorf("Missing IP addresses from IMDS. Non efa-only interface should have IP address associated with it %s", eniID)
 				outOfSyncErr := errors.New("DescribeAllENIs: No IPv4 and IPv6 addresses found")
 				return DescribeAllENIsResult{}, outOfSyncErr
