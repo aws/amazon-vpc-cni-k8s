@@ -134,16 +134,35 @@ func getEniConfigLabelDef() string {
 	return defaultEniConfigLabelDef
 }
 
+// Source labels used in NodeOverrides.Sources to identify where a resolved
+// value came from. Useful for verifying precedence in logs.
+const (
+	SourceAnnotation = "annotation"
+	SourceLabel      = "label"
+	SourceENIConfig  = "eniconfig"
+)
+
 // NodeOverrides carries per-node values for IPAM tuning settings that an
 // operator wants set differently for individual nodes. A nil pointer means
-// "no override; fall back to the cluster-wide env-var default".
+// "no override; fall back to the cluster-wide env-var default". Sources records
+// which source ("annotation"/"label"/"eniconfig") each override came from.
 type NodeOverrides struct {
 	WarmIPTarget     *int
 	MinimumIPTarget  *int
 	WarmENITarget    *int
 	WarmPrefixTarget *int
 	MaxENI           *int
+	Sources          map[string]string
 }
+
+// Setting names used as keys in NodeOverrides.Sources.
+const (
+	SettingWarmIPTarget     = "WARM_IP_TARGET"
+	SettingMinimumIPTarget  = "MINIMUM_IP_TARGET"
+	SettingWarmENITarget    = "WARM_ENI_TARGET"
+	SettingWarmPrefixTarget = "WARM_PREFIX_TARGET"
+	SettingMaxENI           = "MAX_ENI"
+)
 
 // ResolveNodeOverrides returns per-node overrides for the IPAM tuning settings
 // (WARM_IP_TARGET, MINIMUM_IP_TARGET, WARM_ENI_TARGET, WARM_PREFIX_TARGET,
@@ -153,7 +172,7 @@ type NodeOverrides struct {
 // Precedence per setting: node annotation > node label > ENIConfig spec
 // (the ENIConfig is only consulted when useCustomNetworking is true).
 func ResolveNodeOverrides(ctx context.Context, k8sClient client.Client, useCustomNetworking bool) NodeOverrides {
-	var out NodeOverrides
+	out := NodeOverrides{Sources: map[string]string{}}
 
 	node, err := k8sapi.GetNode(ctx, k8sClient)
 	if err != nil {
@@ -162,11 +181,11 @@ func ResolveNodeOverrides(ctx context.Context, k8sClient client.Client, useCusto
 		annotations := node.GetAnnotations()
 		labels := node.GetLabels()
 
-		out.WarmIPTarget = pickNonNegative(annotations[NodeAnnotationWarmIPTarget], labels[NodeLabelWarmIPTarget])
-		out.MinimumIPTarget = pickNonNegative(annotations[NodeAnnotationMinimumIPTarget], labels[NodeLabelMinimumIPTarget])
-		out.WarmENITarget = pickNonNegative(annotations[NodeAnnotationWarmENITarget], labels[NodeLabelWarmENITarget])
-		out.WarmPrefixTarget = pickNonNegative(annotations[NodeAnnotationWarmPrefixTarget], labels[NodeLabelWarmPrefixTarget])
-		out.MaxENI = pickPositive(annotations[NodeAnnotationMaxENI], labels[NodeLabelMaxENI])
+		out.WarmIPTarget, out.Sources[SettingWarmIPTarget] = pickNonNegative(annotations[NodeAnnotationWarmIPTarget], labels[NodeLabelWarmIPTarget])
+		out.MinimumIPTarget, out.Sources[SettingMinimumIPTarget] = pickNonNegative(annotations[NodeAnnotationMinimumIPTarget], labels[NodeLabelMinimumIPTarget])
+		out.WarmENITarget, out.Sources[SettingWarmENITarget] = pickNonNegative(annotations[NodeAnnotationWarmENITarget], labels[NodeLabelWarmENITarget])
+		out.WarmPrefixTarget, out.Sources[SettingWarmPrefixTarget] = pickNonNegative(annotations[NodeAnnotationWarmPrefixTarget], labels[NodeLabelWarmPrefixTarget])
+		out.MaxENI, out.Sources[SettingMaxENI] = pickPositive(annotations[NodeAnnotationMaxENI], labels[NodeLabelMaxENI])
 	}
 
 	if useCustomNetworking && !out.complete() {
@@ -177,22 +196,27 @@ func ResolveNodeOverrides(ctx context.Context, k8sClient client.Client, useCusto
 			if out.WarmIPTarget == nil && spec.WarmIPTarget != nil && *spec.WarmIPTarget >= 0 {
 				v := *spec.WarmIPTarget
 				out.WarmIPTarget = &v
+				out.Sources[SettingWarmIPTarget] = SourceENIConfig
 			}
 			if out.MinimumIPTarget == nil && spec.MinimumIPTarget != nil && *spec.MinimumIPTarget >= 0 {
 				v := *spec.MinimumIPTarget
 				out.MinimumIPTarget = &v
+				out.Sources[SettingMinimumIPTarget] = SourceENIConfig
 			}
 			if out.WarmENITarget == nil && spec.WarmENITarget != nil && *spec.WarmENITarget >= 0 {
 				v := *spec.WarmENITarget
 				out.WarmENITarget = &v
+				out.Sources[SettingWarmENITarget] = SourceENIConfig
 			}
 			if out.WarmPrefixTarget == nil && spec.WarmPrefixTarget != nil && *spec.WarmPrefixTarget >= 0 {
 				v := *spec.WarmPrefixTarget
 				out.WarmPrefixTarget = &v
+				out.Sources[SettingWarmPrefixTarget] = SourceENIConfig
 			}
 			if out.MaxENI == nil && spec.MaxENI != nil && *spec.MaxENI >= 1 {
 				v := *spec.MaxENI
 				out.MaxENI = &v
+				out.Sources[SettingMaxENI] = SourceENIConfig
 			}
 		}
 	}
@@ -207,28 +231,30 @@ func (o NodeOverrides) complete() bool {
 }
 
 // pickNonNegative returns the first of annotation/label that parses as a
-// non-negative integer. Empty strings are treated as "not set".
-func pickNonNegative(annotation, label string) *int {
+// non-negative integer along with the source it came from ("annotation" or
+// "label"). Empty strings are treated as "not set"; if neither parses,
+// (nil, "") is returned.
+func pickNonNegative(annotation, label string) (*int, string) {
 	if v, ok := parseNonNegativeInt(annotation); ok {
-		return &v
+		return &v, SourceAnnotation
 	}
 	if v, ok := parseNonNegativeInt(label); ok {
-		return &v
+		return &v, SourceLabel
 	}
-	return nil
+	return nil, ""
 }
 
 // pickPositive returns the first of annotation/label that parses as an integer
-// >= 1. Used for MAX_ENI, where 0 / negative is not meaningful (env-var
-// convention treats <1 as "use the instance default").
-func pickPositive(annotation, label string) *int {
+// >= 1 along with its source. Used for MAX_ENI, where 0 / negative is not
+// meaningful (env-var convention treats <1 as "use the instance default").
+func pickPositive(annotation, label string) (*int, string) {
 	if v, ok := parsePositiveInt(annotation); ok {
-		return &v
+		return &v, SourceAnnotation
 	}
 	if v, ok := parsePositiveInt(label); ok {
-		return &v
+		return &v, SourceLabel
 	}
-	return nil
+	return nil, ""
 }
 
 // parseNonNegativeInt parses s as a non-negative integer. Returns ok=false on
