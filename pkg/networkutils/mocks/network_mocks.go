@@ -121,6 +121,20 @@ func (mr *MockNetworkAPIsMockRecorder) GetLinkByMac(arg0, arg1 interface{}) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLinkByMac", reflect.TypeOf((*MockNetworkAPIs)(nil).GetLinkByMac), arg0, arg1)
 }
 
+// AddIPv6DefaultRouteToENITable mocks base method.
+func (m *MockNetworkAPIs) AddIPv6DefaultRouteToENITable(eniMAC string, routeTableID int) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddIPv6DefaultRouteToENITable", eniMAC, routeTableID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddIPv6DefaultRouteToENITable indicates an expected call of AddIPv6DefaultRouteToENITable.
+func (mr *MockNetworkAPIsMockRecorder) AddIPv6DefaultRouteToENITable(eniMAC, routeTableID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddIPv6DefaultRouteToENITable", reflect.TypeOf((*MockNetworkAPIs)(nil).AddIPv6DefaultRouteToENITable), eniMAC, routeTableID)
+}
+
 // GetRuleList mocks base method.
 func (m *MockNetworkAPIs) GetRuleList(arg0 bool) ([]netlink.Rule, error) {
 	m.ctrl.T.Helper()

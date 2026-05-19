@@ -249,6 +249,7 @@ type IPAMContext struct {
 	maxPods                   int // maximum number of pods that can be scheduled on the node
 	networkPolicyMode         string
 	enableMultiNICSupport     bool
+	enableDualStack           bool // derived: enableIPv4 && enableIPv6 && enablePrefixDelegation
 	withApiServer             bool
 }
 
@@ -423,6 +424,10 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	c.enableManageUntaggedMode = enableManageUntaggedMode()
 	c.enablePodIPAnnotation = EnablePodIPAnnotation()
 	c.enableMultiNICSupport = enableMultiNICSupport()
+	c.enableDualStack = c.enableIPv4 && c.enableIPv6 && c.enablePrefixDelegation
+	if c.enableDualStack {
+		log.Infof("Dual-stack mode: IPv6 + IPv4 prefixes on same ENI (primary first)")
+	}
 	c.networkPolicyMode, err = getNetworkPolicyMode()
 	if err != nil {
 		return nil, err
@@ -667,11 +672,13 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 	}
 
 	if !c.disableENIProvisioning {
-		if c.enableIPv6 {
+		if c.enableIPv6 && !c.enableDualStack {
+			// Pure IPv6-only: create secondary ENIs for multi-NIC support
 			// We do not return an error here as create ENI failure shouldn not cause the node to go in not ready state.
 			// However that does restrict multi-nic pods to get failed
 			c.createSecondaryIPv6ENIs(ctx)
 		} else {
+			// IPv4 or dual-stack: run warm pool pre-scaling for IPv4 prefixes
 			if err = c.handlePreScaling(ctx); err != nil {
 				return err
 			}
@@ -715,7 +722,8 @@ func (c *IPAMContext) configureIPRulesForPods() error {
 			// TODO(gus): This should really be done via CNI CHECK calls, rather than in ipam (requires upstream k8s changes).
 			var mask int
 			// Update ip rules in case there is a change in VPC CIDRs, AWS_VPC_K8S_CNI_EXTERNALSNAT setting
-			if c.enableIPv6 {
+			// Only use /128 mask for pure IPv6-only mode; dual-stack IPv4 loop always uses /32
+			if c.enableIPv6 && !c.enableIPv4 {
 				mask = 128
 			} else {
 				mask = 32
@@ -725,6 +733,17 @@ func (c *IPAMContext) configureIPRulesForPods() error {
 			err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet)
 			if err != nil {
 				log.Warnf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", info.IP, err)
+			}
+		}
+
+		// Restore IPv6 host-side rules (dual-stack only)
+		if c.enableDualStack {
+			for _, ipv6Info := range ds.AllocatedIPv6s() {
+				srcIPNet := net.IPNet{IP: net.ParseIP(ipv6Info.IP), Mask: net.CIDRMask(128, 128)}
+				err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet)
+				if err != nil {
+					log.Warnf("UpdateRuleListBySrc in nodeInit() failed for IPv6 %s: %v", ipv6Info.IP, err)
+				}
 			}
 		}
 	}
@@ -746,7 +765,7 @@ func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 	var err error
 	var primaryIP net.IP
 
-	if c.enableIPv6 {
+	if c.enableIPv6 && !c.enableIPv4 {
 		newVPCCIDRs, err = c.awsClient.GetVPCIPv6CIDRs()
 		primaryIP = c.awsClient.GetLocalIPv6()
 	} else {
@@ -778,8 +797,9 @@ func (c *IPAMContext) updateIPStats(unmanaged int) {
 
 // StartNodeIPPoolManager monitors the IP pool, add or del them when it is required.
 func (c *IPAMContext) StartNodeIPPoolManager(ctx context.Context) {
-	// For IPv6, if Security Groups for Pods is enabled, wait until trunk ENI is attached and add it to the datastore.
-	if c.enableIPv6 {
+	// For pure IPv6-only (no dual-stack), no warm pool needed (one /80 = 2^48 addresses).
+	// If Security Groups for Pods is enabled, wait until trunk ENI is attached and add it to the datastore.
+	if c.enableIPv6 && !c.enableDualStack {
 		if c.enablePodENI && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
 			for !c.checkForTrunkENI(ctx) {
 				time.Sleep(ipPoolMonitorInterval)
@@ -789,6 +809,7 @@ func (c *IPAMContext) StartNodeIPPoolManager(ctx context.Context) {
 		// The prefix used for the primary ENI is more than enough for all pods.
 		return
 	}
+	// IPv4 or dual-stack: run warm pool for IPv4 prefixes (primary ENI first, then secondary)
 
 	log.Infof("IP pool manager - max pods: %d, warm IP target: %d, warm prefix target: %d, warm ENI target: %d, minimum IP target: %d",
 		c.maxPods, c.warmIPTarget, c.warmPrefixTarget, c.warmENITarget, c.minimumIPTarget)
@@ -951,14 +972,15 @@ func (c *IPAMContext) tryUnassignCidrsFromAll(ctx context.Context, networkCard i
 }
 
 func (c *IPAMContext) initNetworkConfig() ([]string, net.IP, error) {
-	if c.enableIPv4 {
-		primaryIP := c.awsClient.GetLocalIPv4()
-		vpcCIDRs, err := c.awsClient.GetVPCIPv4CIDRs()
+	if c.enableIPv6 && !c.enableIPv4 {
+		// IPv6-only
+		primaryIP := c.awsClient.GetLocalIPv6()
+		vpcCIDRs, err := c.awsClient.GetVPCIPv6CIDRs()
 		return vpcCIDRs, primaryIP, err
 	}
-
-	primaryIP := c.awsClient.GetLocalIPv6()
-	vpcCIDRs, err := c.awsClient.GetVPCIPv6CIDRs()
+	// IPv4 or dual-stack: use IPv4 CIDRs
+	primaryIP := c.awsClient.GetLocalIPv4()
+	vpcCIDRs, err := c.awsClient.GetVPCIPv4CIDRs()
 	return vpcCIDRs, primaryIP, err
 }
 
@@ -1277,7 +1299,8 @@ func (c *IPAMContext) tryAssignPrefixes(ctx context.Context, networkCard int) (i
 func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsutils.ENIMetadata, isTrunkENI, isEFAENI bool) error {
 	primaryENI := c.awsClient.GetPrimaryENI()
 	var primaryIP string
-	if c.enableIPv6 {
+	// In dual-stack, use IPv4 ENI primary (IPv6 has no per-ENI primary)
+	if c.enableIPv6 && !c.enableIPv4 {
 		primaryIP = eniMetadata.PrimaryIPv6Address()
 	} else {
 		primaryIP = eniMetadata.PrimaryIPv4Address()
@@ -1311,8 +1334,10 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 
 	if c.enableIPv6 {
 		if !isTrunkENI {
-			// In v6 PD mode, VPC CNI will manage the primary ENI, ENIs on NC > 0 and trunk ENI. Once we start supporting secondary
-			// IP and custom networking modes for IPv6, this restriction can be relaxed.
+			// In v6 PD mode, VPC CNI will manage the primary ENI, ENIs on NC > 0 and trunk ENI.
+			// Once we start supporting secondary IP and custom networking modes for IPv6,
+			// this restriction can be relaxed.
+			// In dual-stack, both primary and secondary ENIs get IPv6 prefixes (same-ENI invariant).
 			err := c.assignIPv6Prefix(ctx, eni, eniMetadata.NetworkCard)
 			if err != nil {
 				return errors.Wrapf(err, "Failed to allocate IPv6 Prefixes to ENI")
@@ -1320,10 +1345,13 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 		}
 	}
 
-	// For other ENIs, set up the network
-	if eni != primaryENI {
+	// Set up network for non-primary, non-trunk ENIs.
+	// Trunk ENIs are excluded because they carry traffic via branch ENI sub-interfaces,
+	// not directly — they have no usable primary IP for route table setup, and calling
+	// SetupENINetwork with an empty primary IP causes a nil-pointer panic in net.ParseIP.
+	if eni != primaryENI && !isTrunkENI {
 		subnetCidr := eniMetadata.SubnetIPv4CIDR
-		if c.enableIPv6 {
+		if c.enableIPv6 && !c.enableIPv4 {
 			subnetCidr = eniMetadata.SubnetIPv6CIDR
 		}
 		err := c.networkClient.SetupENINetwork(c.primaryIP[eni], eniMetadata.MAC, eniMetadata.NetworkCard, subnetCidr, c.maxENI, isTrunkENI, routeTableID, isRuleConfigured)
@@ -1336,9 +1364,17 @@ func (c *IPAMContext) setupENI(ctx context.Context, eni string, eniMetadata awsu
 			delete(c.primaryIP, eni)
 			return errors.Wrapf(err, "failed to set up ENI %s network", eni)
 		}
+
+		// Add IPv6 default route to the per-ENI route table for dual-stack secondary ENIs
+		if c.enableDualStack {
+			if err := c.networkClient.AddIPv6DefaultRouteToENITable(eniMetadata.MAC, routeTableID); err != nil {
+				log.Warnf("Failed to add IPv6 default route to ENI %s table %d: %v", eni, routeTableID, err)
+			}
+		}
 	}
 
-	if !c.enableIPv6 {
+	// Add IPv4 IPs/prefixes to datastore when IPv4 is enabled (including dual-stack)
+	if c.enableIPv4 {
 		log.Infof("Found ENIs having %d secondary IPs and %d Prefixes", len(eniMetadata.IPv4Addresses), len(eniMetadata.IPv4Prefixes))
 		// Either case add the IPs and prefixes to datastore.
 		c.addENIsecondaryIPsToDataStore(eniMetadata.IPv4Addresses, eni, eniMetadata.NetworkCard)
@@ -2756,17 +2792,23 @@ func (c *IPAMContext) initENIAndIPLimits() (err error) {
 }
 
 func (c *IPAMContext) isConfigValid() bool {
-	// Validate that only one among v4 and v6 is enabled.
 	if c.enableIPv4 && c.enableIPv6 {
-		log.Errorf("IPv4 and IPv6 are both enabled. VPC CNI currently does not support dual stack mode")
-		return false
+		if !c.enablePrefixDelegation {
+			log.Errorf("Dual-stack requires ENABLE_PREFIX_DELEGATION=true")
+			return false
+		}
+		if c.useCustomNetworking {
+			log.Errorf("Custom networking not supported in dual-stack mode")
+			return false
+		}
+		log.Infof("Dual-stack mode: IPv6 + IPv4 prefixes on same ENI")
 	} else if !c.enableIPv4 && !c.enableIPv6 {
-		log.Errorf("IPv4 and IPv6 are both disabled. One of them have to be enabled")
+		log.Errorf("At least one of ENABLE_IPv4 or ENABLE_IPv6 must be true")
 		return false
 	}
 
 	// Validate PD mode is enabled if VPC CNI is operating in IPv6 mode. Custom networking is not supported in IPv6 mode.
-	if c.enableIPv6 && (c.useCustomNetworking || !c.enablePrefixDelegation) {
+	if c.enableIPv6 && !c.enableIPv4 && (c.useCustomNetworking || !c.enablePrefixDelegation) {
 		log.Errorf("IPv6 is supported only in Prefix Delegation mode. Custom Networking is not supported in IPv6 mode. Please set the env variables accordingly.")
 		return false
 	}

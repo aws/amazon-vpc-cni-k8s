@@ -214,33 +214,68 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 				break
 			}
 
-			ipamKey = datastore.IPAMKey{
-				ContainerID: in.ContainerID,
-				IfName:      in.IfName,
-				NetworkName: in.NetworkName,
-			}
-
 			ipamMetadata = datastore.IPAMMetadata{
 				K8SPodNamespace: in.K8S_POD_NAMESPACE,
 				K8SPodName:      in.K8S_POD_NAME,
 				InterfacesCount: ipsRequired,
 			}
 
-			ipv4Addr, ipv6Addr, deviceNumber, routeTableId, err = ds.AssignPodIPAddress(ipamKey, ipamMetadata, s.ipamContext.enableIPv4, s.ipamContext.enableIPv6)
-
-			if err != nil {
-				log.Warnf("Failed to assign IPs from network card %d: %v", networkCard, err)
-				// continue to look through other datastores till you are unable to find an IP address when ONLY 1 ip is required
-				// if the last datastore also return ErrNoAvailableIPInDataStore, return an error
-				if err == datastore.ErrNoAvailableIPInDataStore && ipsRequired == defaultIpPerPodRequired && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
-					continue
+			if s.ipamContext.enableDualStack {
+				// Dual-stack: allocate IPv4 first (scarce), then IPv6 from same ENI
+				v4Key := datastore.IPAMKey{
+					ContainerID: in.ContainerID,
+					IfName:      in.IfName,
+					NetworkName: in.NetworkName + "/v4",
+				}
+				v6Key := datastore.IPAMKey{
+					ContainerID: in.ContainerID,
+					IfName:      in.IfName,
+					NetworkName: in.NetworkName + "/v6",
 				}
 
-				errors = multiErr.Append(errors, err)
-				break
+				ipv4Addr, _, deviceNumber, routeTableId, err = ds.AssignPodIPAddress(v4Key, ipamMetadata, true, false)
+				if err != nil {
+					log.Warnf("Dual-stack: failed to assign IPv4 from network card %d: %v", networkCard, err)
+					if err == datastore.ErrNoAvailableIPInDataStore && ipsRequired == defaultIpPerPodRequired && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
+						continue
+					}
+					errors = multiErr.Append(errors, err)
+					break
+				}
+
+				// Allocate IPv6 from the SAME ENI
+				ipv6Addr, _, _, err = ds.AssignPodIPv6AddressFromENI(v6Key, ipamMetadata, deviceNumber)
+				if err != nil {
+					// Rollback: release IPv4 before returning error
+					ds.UnassignPodIPAddress(v4Key)
+					log.Errorf("Dual-stack: IPv4 allocated but IPv6 failed on ENI device %d: %v", deviceNumber, err)
+					errors = multiErr.Append(errors, fmt.Errorf("dual-stack: IPv4 allocated but IPv6 failed on ENI device %d: %w", deviceNumber, err))
+					break
+				}
+
+				log.Infof("Dual-stack assigned from network card %d -> IPv4: %s, IPv6: %s, device: %d", networkCard, ipv4Addr, ipv6Addr, deviceNumber)
+			} else {
+				// Single-family path (unchanged)
+				ipamKey = datastore.IPAMKey{
+					ContainerID: in.ContainerID,
+					IfName:      in.IfName,
+					NetworkName: in.NetworkName,
+				}
+
+				ipv4Addr, ipv6Addr, deviceNumber, routeTableId, err = ds.AssignPodIPAddress(ipamKey, ipamMetadata, s.ipamContext.enableIPv4, s.ipamContext.enableIPv6)
+
+				if err != nil {
+					log.Warnf("Failed to assign IPs from network card %d: %v", networkCard, err)
+					if err == datastore.ErrNoAvailableIPInDataStore && ipsRequired == defaultIpPerPodRequired && networkCard != len(s.ipamContext.dataStoreAccess.DataStores)-1 {
+						continue
+					}
+					errors = multiErr.Append(errors, err)
+					break
+				}
+
+				log.Infof("Assigned IP from network card: %d -> IPv4: %s, IPv6: %s, device number: %d, ", networkCard, ipv4Addr, ipv6Addr, deviceNumber)
 			}
 
-			log.Infof("Assigned IP from network card: %d -> IPv4: %s, IPv6: %s, device number: %d, ", networkCard, ipv4Addr, ipv6Addr, deviceNumber)
 			ipAddrs = append(ipAddrs, &rpc.IPAllocationMetadata{
 				IPv4Addr:     ipv4Addr,
 				IPv6Addr:     ipv6Addr,
@@ -350,20 +385,59 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 			break
 		}
 
-		eni, ip, deviceNumber, ipsAllocated, routeTableId, err := ds.UnassignPodIPAddress(ipamKey)
+		var eni *datastore.ENI
+		var ip string
+		var deviceNumber, ipsAllocated, routeTableId int
+		var err error
+
+		if s.ipamContext.enableDualStack {
+			// Dual-stack: release both IPv4 and IPv6 with family-qualified keys
+			v4Key := datastore.IPAMKey{
+				ContainerID: in.ContainerID,
+				IfName:      in.IfName,
+				NetworkName: in.NetworkName + "/v4",
+			}
+			v6Key := datastore.IPAMKey{
+				ContainerID: in.ContainerID,
+				IfName:      in.IfName,
+				NetworkName: in.NetworkName + "/v6",
+			}
+
+			// Best-effort cleanup: release both regardless of individual errors
+			eni, ip, deviceNumber, ipsAllocated, routeTableId, err = ds.UnassignPodIPAddress(v4Key)
+			_, v6IP, _, _, _, v6Err := ds.UnassignPodIPAddress(v6Key)
+
+			if err == nil {
+				ipv4Addr = ip
+				cidr := net.IPNet{IP: net.ParseIP(ip), Mask: net.IPv4Mask(255, 255, 255, 255)}
+				cidrStr = cidr.String()
+			}
+			if v6Err == nil {
+				ipv6Addr = v6IP
+			}
+
+			if err != nil && v6Err != nil {
+				// Both failed — treat as unknown pod
+				err = fmt.Errorf("dual-stack cleanup failed: v4=%v, v6=%v", err, v6Err)
+			} else if v6Err != nil {
+				log.Warnf("Failed to unassign IPv6 address: %v", v6Err)
+			}
+		} else {
+			eni, ip, deviceNumber, ipsAllocated, routeTableId, err = ds.UnassignPodIPAddress(ipamKey)
+
+			if s.ipamContext.enableIPv4 {
+				ipv4Addr = ip
+				cidr := net.IPNet{IP: net.ParseIP(ip), Mask: net.IPv4Mask(255, 255, 255, 255)}
+				cidrStr = cidr.String()
+			} else if s.ipamContext.enableIPv6 {
+				ipv6Addr = ip
+			}
+		}
 
 		// ipsAllocated will always be same in all datastores for a Pod, so this will not change ever between datastores
 		if ipsAllocated > 0 {
 			log.Debugf("IPs allocated for the pod: %d", ipsAllocated)
 			ipsToMatch = ipsAllocated
-		}
-
-		if s.ipamContext.enableIPv4 {
-			ipv4Addr = ip
-			cidr := net.IPNet{IP: net.ParseIP(ip), Mask: net.IPv4Mask(255, 255, 255, 255)}
-			cidrStr = cidr.String()
-		} else if s.ipamContext.enableIPv6 {
-			ipv6Addr = ip
 		}
 
 		if s.ipamContext.enableIPv4 && eni != nil {
