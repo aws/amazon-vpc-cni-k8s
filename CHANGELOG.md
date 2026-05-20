@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.22.1
+
+* feat: Enhanced subnet discovery - allow customers to exclude specific subnets from pod allocation by tagging with `kubernetes.io/role/cni=0` and include subnets with `kubernetes.io/role/cni=1`
+* feat: Custom security groups for pods on secondary ENIs - tag security groups with `kubernetes.io/role/cni=1` to apply them to ENIs in discovered subnets
+* feat: Cluster-specific subnet filtering using `cni.networking.k8s.aws/cluster/<cluster-name>` tag for multi-cluster VPC environments
+* feat: Primary ENI subnet exclusion - when primary subnet is tagged with `cni=0`, new ENIs are created only in secondary subnets
+
 ## v1.21.2
 
 * Bug fixes and improvements
