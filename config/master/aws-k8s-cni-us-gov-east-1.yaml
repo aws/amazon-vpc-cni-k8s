@@ -54,6 +54,7 @@ spec:
     plural: eniconfigs
     singular: eniconfig
     kind: ENIConfig
+
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -315,7 +316,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.21.1"
+    app.kubernetes.io/version: "v1.21.2"
 ---
 # Source: aws-vpc-cni/templates/configmap.yaml
 apiVersion: v1
@@ -327,7 +328,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.21.1"
+    app.kubernetes.io/version: "v1.21.2"
 data:
   enable-windows-ipam: "false"
   enable-network-policy-controller: "false"
@@ -346,7 +347,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.21.1"
+    app.kubernetes.io/version: "v1.21.2"
 rules:
   - apiGroups:
       - crd.k8s.amazonaws.com
@@ -396,7 +397,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.21.1"
+    app.kubernetes.io/version: "v1.21.2"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -416,7 +417,7 @@ metadata:
     app.kubernetes.io/name: aws-node
     app.kubernetes.io/instance: aws-vpc-cni
     k8s-app: aws-node
-    app.kubernetes.io/version: "v1.21.1"
+    app.kubernetes.io/version: "v1.21.2"
 spec:
   updateStrategy:
     rollingUpdate:
@@ -437,7 +438,7 @@ spec:
       hostNetwork: true
       initContainers:
       - name: aws-vpc-cni-init
-        image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni-init:v1.21.1
+        image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni-init:v1.21.2
         imagePullPolicy: Always
         env:
           - name: DISABLE_TCP_EARLY_DEMUX
@@ -459,7 +460,7 @@ spec:
         {}
       containers:
         - name: aws-node
-          image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni:v1.21.1
+          image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon-k8s-cni:v1.21.2
           ports:
             - containerPort: 61678
               name: metrics
@@ -527,7 +528,7 @@ spec:
             - name: NETWORK_POLICY_ENFORCING_MODE
               value: "standard"
             - name: VPC_CNI_VERSION
-              value: "v1.21.1"
+              value: "v1.21.2"
             - name: WARM_ENI_TARGET
               value: "1"
             - name: WARM_PREFIX_TARGET
@@ -562,7 +563,7 @@ spec:
           - mountPath: /run/xtables.lock
             name: xtables-lock
         - name: aws-eks-nodeagent
-          image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon/aws-network-policy-agent:v1.3.1
+          image: 151742754352.dkr.ecr.us-gov-east-1.amazonaws.com/amazon/aws-network-policy-agent:v1.3.5
           imagePullPolicy: Always
           ports:
             - containerPort: 8162
@@ -582,6 +583,7 @@ spec:
             - --metrics-bind-addr=:8162
             - --health-probe-bind-addr=:8163
             - --conntrack-cache-cleanup-period=300
+            - --conntrack-cache-table-size=524288
             - --log-level=debug
           resources:
             requests:
