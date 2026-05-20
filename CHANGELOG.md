@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.21.2
+
+* Bug fixes and improvements
+* Bump Network Policy Agent to v1.3.5 - Removing CPE CRD checks as the CRD should be installed by default
+
 ## v1.21.1
 
 * Bug fix for Network Policy Agent
