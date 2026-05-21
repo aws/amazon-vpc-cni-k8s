@@ -157,6 +157,18 @@ spec:
             - --conntrack-cache-cleanup-period={{ .Values.nodeAgent.conntrackCacheCleanupPeriod }}
             - --conntrack-cache-table-size={{ .Values.nodeAgent.conntrackCacheTableSize }}
             - --log-level={{ .Values.nodeAgent.logLevel }}
+          {{- with .Values.nodeAgent.livenessProbe }}
+          livenessProbe:
+            {{- include "aws-vpc-cni.nodeAgentProbe" (dict "probe" . "port" $.Values.nodeAgent.healthProbeBindAddr) | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nodeAgent.readinessProbe }}
+          readinessProbe:
+            {{- include "aws-vpc-cni.nodeAgentProbe" (dict "probe" . "port" $.Values.nodeAgent.healthProbeBindAddr) | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nodeAgent.startupProbe }}
+          startupProbe:
+            {{- include "aws-vpc-cni.nodeAgentProbe" (dict "probe" . "port" $.Values.nodeAgent.healthProbeBindAddr) | nindent 12 }}
+          {{- end }}
           {{- with default .Values.resources .Values.nodeAgent.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
