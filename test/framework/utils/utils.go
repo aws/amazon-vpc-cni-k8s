@@ -49,5 +49,18 @@ func GetProjectRoot() string {
 		// in prow tests, the repository name is "vpc-cni"
 		projectRoot = strings.SplitAfter(dir, "vpc-cni")[0]
 	}
+
+	// When running via 'go test', the binary is in a temp dir.
+	// Fall back to working directory if project root wasn't found.
+	if dir == projectRoot || !strings.Contains(projectRoot, "amazon-vpc-cni-k8s") {
+		cwd, err := os.Getwd()
+		if err == nil {
+			if idx := strings.Index(cwd, "amazon-vpc-cni-k8s"); idx >= 0 {
+				projectRoot = cwd[:idx+len("amazon-vpc-cni-k8s")]
+			} else if idx := strings.Index(cwd, "vpc-cni"); idx >= 0 {
+				projectRoot = cwd[:idx+len("vpc-cni")]
+			}
+		}
+	}
 	return projectRoot
 }

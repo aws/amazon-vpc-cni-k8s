@@ -27,6 +27,8 @@ import (
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
 	"github.com/aws/amazon-vpc-cni-k8s/test/integration/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -488,6 +490,10 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 			AfterEach(func() {
 				By("Cleaning up refresh test security group")
 				if refreshTestSGID != "" {
+					// Remove cni tag first so it doesn't interfere with subsequent tests
+					_, _ = f.CloudServices.EC2().
+						DeleteTags(context.TODO(), []string{refreshTestSGID},
+							[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
 					err := f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), refreshTestSGID)
 					if err != nil {
 						GinkgoWriter.Printf("Warning: Failed to delete refresh test SG %s: %v\n", refreshTestSGID, err)
@@ -741,6 +747,30 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 			var removableSGID string
 
 			BeforeEach(func() {
+				By("Cleaning up any stale cni-tagged security groups from prior tests")
+				cfg, cfgErr := config.LoadDefaultConfig(context.TODO(), config.WithRegion(f.Options.AWSRegion))
+				if cfgErr == nil {
+					ec2Client := ec2.NewFromConfig(cfg)
+					sgOutput, sgErr := ec2Client.DescribeSecurityGroups(context.TODO(), &ec2.DescribeSecurityGroupsInput{
+						Filters: []ec2types.Filter{
+							{Name: aws.String("vpc-id"), Values: []string{f.Options.AWSVPCID}},
+							{Name: aws.String("tag:kubernetes.io/role/cni"), Values: []string{"1"}},
+						},
+					})
+					if sgErr == nil {
+						for _, sg := range sgOutput.SecurityGroups {
+							GinkgoWriter.Printf("Removing stale cni=1 tag from SG %s (%s)\n", *sg.GroupId, *sg.GroupName)
+							_, _ = f.CloudServices.EC2().
+								DeleteTags(context.TODO(), []string{*sg.GroupId},
+									[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
+						}
+						if len(sgOutput.SecurityGroups) > 0 {
+							// Wait for CNI to pick up the tag removal on next refresh cycle
+							time.Sleep(35 * time.Second)
+						}
+					}
+				}
+
 				By("Creating a security group with cni=1 tag")
 				createSGOutput, err := f.CloudServices.EC2().
 					CreateSecurityGroup(context.TODO(), fmt.Sprintf("cni-removal-test-sg-%d", time.Now().Unix()), "SG for removal test", f.Options.AWSVPCID)
