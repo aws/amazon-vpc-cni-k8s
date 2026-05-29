@@ -3,7 +3,8 @@ name: Weekly Cron tests
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "0 16 * * 3" # every Wednesday
+    - cron: "0 16 * * 3" # every Wednesday — perf + bottlerocket
+    - cron: "0 16 * * 0" # every Sunday — mixed-OS SNAT/kube-proxy
 
 permissions:
   id-token: write
@@ -11,7 +12,7 @@ permissions:
 
 jobs:
   weekly-cron:
-    if: github.repository == 'aws/amazon-vpc-cni-k8s'
+    if: github.repository == 'aws/amazon-vpc-cni-k8s' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '0 16 * * 3')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout latest commit in the PR
@@ -57,3 +58,30 @@ jobs:
         run: |
           ./scripts/run-integration-tests.sh
         if: always()
+
+  mixed-os-snat-cron:
+    if: github.repository == 'aws/amazon-vpc-cni-k8s' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '0 16 * * 0')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout latest commit in the PR
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # refs/tags/v5.0.0
+      - name: Set up Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # refs/tags/v6.0.0
+        with:
+          go-version: "1.25"
+      - name: Set up tools
+        run: |
+          go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin/
+      - name: Set up AWS credentials
+        uses: aws-actions/configure-aws-credentials@5579c002bb4778aa43395ef1df492868a9a1c83f # refs/tags/v4.0.2
+        with:
+          role-to-assume: ${{ secrets.OSS_TEST_ROLE_ARN }}
+          role-duration-seconds: 28800 # 8 hours
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+      - name: Run mixed-OS SNAT/kube-proxy tests
+        env:
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+        run: |
+          ./scripts/run-mixed-os-snat-kube-proxy-test.sh
