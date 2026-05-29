@@ -83,5 +83,7 @@ jobs:
       - name: Run mixed-OS SNAT/kube-proxy tests
         env:
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          # Bump when EKS releases a newer minor version
+          K8S_VERSION: "1.35"
         run: |
           ./scripts/run-mixed-os-snat-kube-proxy-test.sh
