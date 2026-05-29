@@ -1,7 +1,16 @@
 name: Weekly Cron tests
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Which job to run on manual dispatch'
+        type: choice
+        options:
+          - all
+          - weekly-cron
+          - mixed-os-snat-cron
+        default: all
   schedule:
     - cron: "0 16 * * 3" # every Wednesday — perf + bottlerocket
     - cron: "0 16 * * 0" # every Sunday — mixed-OS SNAT/kube-proxy
@@ -12,7 +21,11 @@ permissions:
 
 jobs:
   weekly-cron:
-    if: github.repository == 'aws/amazon-vpc-cni-k8s' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '0 16 * * 3')
+    if: |
+      github.repository == 'aws/amazon-vpc-cni-k8s' && (
+        github.event.schedule == '0 16 * * 3' ||
+        (github.event_name == 'workflow_dispatch' && (inputs.job == 'all' || inputs.job == 'weekly-cron'))
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout latest commit in the PR
@@ -60,13 +73,17 @@ jobs:
         if: always()
 
   mixed-os-snat-cron:
-    if: github.repository == 'aws/amazon-vpc-cni-k8s' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '0 16 * * 0')
+    if: |
+      github.repository == 'aws/amazon-vpc-cni-k8s' && (
+        github.event.schedule == '0 16 * * 0' ||
+        (github.event_name == 'workflow_dispatch' && (inputs.job == 'all' || inputs.job == 'mixed-os-snat-cron'))
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout latest commit in the PR
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # refs/tags/v5.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # refs/tags/v6.0.2
       - name: Set up Go
-        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # refs/tags/v6.0.0
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # refs/tags/v6.4.0
         with:
           go-version: "1.25"
       - name: Set up tools
