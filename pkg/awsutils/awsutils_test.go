@@ -586,6 +586,7 @@ func TestAllocENI(t *testing.T) {
 		ec2SVC:             mockEC2,
 		imds:               TypedIMDS{mockMetadata},
 		instanceType:       "c5n.18xlarge",
+		subnetID:           subnetID,
 		useSubnetDiscovery: true,
 	}
 
@@ -637,6 +638,7 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 		ec2SVC:             mockEC2,
 		imds:               TypedIMDS{mockMetadata},
 		instanceType:       "c5n.18xlarge",
+		subnetID:           subnetID,
 		useSubnetDiscovery: true,
 	}
 
@@ -691,6 +693,7 @@ func TestAllocENIMaxReached(t *testing.T) {
 		ec2SVC:             mockEC2,
 		imds:               TypedIMDS{mockMetadata},
 		instanceType:       "c5n.18xlarge",
+		subnetID:           subnetID,
 		useSubnetDiscovery: true,
 	}
 
@@ -742,7 +745,7 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
-	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", useSubnetDiscovery: true}
+	cache := &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", subnetID: subnetID, useSubnetDiscovery: true}
 	_, err := cache.AllocENI(context.Background(), nil, subnetID, 5, 0)
 	assert.NoError(t, err)
 
@@ -752,7 +755,7 @@ func TestAllocENIWithIPAddresses(t *testing.T) {
 	mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
 	mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	cache = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", useSubnetDiscovery: true}
+	cache = &EC2InstanceMetadataCache{ec2SVC: mockEC2, instanceType: "c5n.18xlarge", subnetID: subnetID, useSubnetDiscovery: true}
 	_, err = cache.AllocENI(context.Background(), nil, subnetID, 49, 0)
 	assert.NoError(t, err)
 }
@@ -785,6 +788,7 @@ func TestAllocENIWithIPAddressesAlreadyFull(t *testing.T) {
 		ec2SVC:             mockEC2,
 		imds:               TypedIMDS{mockMetadata},
 		instanceType:       "t3.xlarge",
+		subnetID:           subnetID,
 		useSubnetDiscovery: true,
 	}
 	_, err := cache.AllocENI(context.Background(), nil, "", 14, 0)
@@ -841,6 +845,7 @@ func TestAllocENIWithPrefixAddresses(t *testing.T) {
 		imds:                   TypedIMDS{mockMetadata},
 		instanceType:           "c5n.18xlarge",
 		enablePrefixDelegation: true,
+		subnetID:               subnetID,
 		useSubnetDiscovery:     true,
 	}
 	_, err := cache.AllocENI(context.Background(), nil, subnetID, 1, 0)
@@ -876,6 +881,7 @@ func TestAllocENIWithPrefixesAlreadyFull(t *testing.T) {
 		imds:                   TypedIMDS{mockMetadata},
 		instanceType:           "c5n.18xlarge",
 		enablePrefixDelegation: true,
+		subnetID:               subnetID,
 		useSubnetDiscovery:     true,
 	}
 	_, err := cache.AllocENI(context.Background(), nil, "", 1, 0)
@@ -3060,12 +3066,16 @@ func TestAllocENIWithSubnetExclusion(t *testing.T) {
 			}
 
 			cache := &EC2InstanceMetadataCache{
-				ec2SVC:             mockEC2,
-				imds:               TypedIMDS{mockMetadata},
-				instanceType:       "c5n.18xlarge",
-				useSubnetDiscovery: tt.useSubnetDiscovery,
-				subnetID:           subnetID,
+				ec2SVC:               mockEC2,
+				imds:                 TypedIMDS{mockMetadata},
+				instanceType:         "c5n.18xlarge",
+				useSubnetDiscovery:   tt.useSubnetDiscovery,
+				subnetID:             subnetID,
+				securityGroups:       StringSet{},
+				customSecurityGroups: StringSet{},
 			}
+			cache.securityGroups.Set([]string{sg1, sg2})
+			cache.customSecurityGroups.Set([]string{"sg-custom1"})
 
 			_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
 			if tt.expectError {
@@ -3207,7 +3217,11 @@ func TestAllocENIWithSubnetDiscoveryIPv6(t *testing.T) {
 				enablePrefixDelegation: false,
 				instanceType:           "c5n.18xlarge",
 				subnetID:               subnetID,
+				securityGroups:         StringSet{},
+				customSecurityGroups:   StringSet{},
 			}
+			ins.securityGroups.Set([]string{sg1, sg2})
+			ins.customSecurityGroups.Set([]string{"sg-custom1"})
 
 			if tt.useSubnetDiscovery {
 				subnetResult := &ec2.DescribeSubnetsOutput{Subnets: tt.subnets}
@@ -3489,9 +3503,6 @@ func TestGetENISubnetID(t *testing.T) {
 
 // TestCreateENIWithCustomSGs tests the custom SG application in createENI
 func TestCreateENIWithCustomSGs(t *testing.T) {
-	ctrl, mockEC2 := setup(t)
-	defer ctrl.Finish()
-
 	mockMetadata := testMetadata(nil)
 
 	tests := []struct {
@@ -3501,20 +3512,18 @@ func TestCreateENIWithCustomSGs(t *testing.T) {
 		expectedGroups     []string
 		subnets            []ec2types.Subnet
 		useSubnetDiscovery bool
+		expectError        bool
 	}{
 		{
 			name:            "primary subnet uses primary SGs",
 			isPrimarySubnet: true,
 			customSGs:       []string{"sg-custom1", "sg-custom2"},
-			expectedGroups:  []string{sg1, sg2}, // primary ENI security groups
+			expectedGroups:  []string{sg1, sg2},
 			subnets: []ec2types.Subnet{
 				{
 					SubnetId: aws.String(subnetID),
 					Tags: []ec2types.Tag{
-						{
-							Key:   aws.String("kubernetes.io/role/cni"),
-							Value: aws.String("1"),
-						},
+						{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")},
 					},
 				},
 			},
@@ -3524,227 +3533,211 @@ func TestCreateENIWithCustomSGs(t *testing.T) {
 			name:            "secondary subnet with custom SGs",
 			isPrimarySubnet: false,
 			customSGs:       []string{"sg-custom1", "sg-custom2"},
-			expectedGroups:  []string{"sg-custom1", "sg-custom2"}, // custom security groups
+			expectedGroups:  []string{"sg-custom1", "sg-custom2"},
 			subnets: []ec2types.Subnet{
 				{
 					SubnetId: aws.String("subnet-secondary"),
 					Tags: []ec2types.Tag{
-						{
-							Key:   aws.String("kubernetes.io/role/cni"),
-							Value: aws.String("1"),
-						},
+						{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")},
 					},
 				},
 			},
 			useSubnetDiscovery: true,
 		},
 		{
-			name:            "secondary subnet without custom SGs",
+			name:            "secondary subnet without custom SGs - fails",
 			isPrimarySubnet: false,
 			customSGs:       []string{},
-			expectedGroups:  []string{sg1, sg2}, // falls back to primary ENI security groups
 			subnets: []ec2types.Subnet{
 				{
 					SubnetId: aws.String("subnet-secondary"),
 					Tags: []ec2types.Tag{
-						{
-							Key:   aws.String("kubernetes.io/role/cni"),
-							Value: aws.String("1"),
-						},
+						{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")},
 					},
 				},
 			},
 			useSubnetDiscovery: true,
+			expectError:        true,
 		},
 	}
 
-	// Define the initial security group IDs
 	initialSGIDs := []string{sg1, sg2}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctrl, mockEC2 := setup(t)
+			defer ctrl.Finish()
+
 			cache := &EC2InstanceMetadataCache{
 				ec2SVC:             mockEC2,
 				imds:               TypedIMDS{mockMetadata},
 				useSubnetDiscovery: tt.useSubnetDiscovery,
-				securityGroups:     StringSet{}, // Create a new StringSet to avoid copying mutex
+				securityGroups:     StringSet{},
 				subnetID:           subnetID,
 			}
 
-			// Initialize security groups and custom SG cache
 			cache.securityGroups.Set(initialSGIDs)
 			cache.customSecurityGroups.Set(tt.customSGs)
 
-			// Mock the subnet discovery
 			subnetResult := &ec2.DescribeSubnetsOutput{Subnets: tt.subnets}
 			mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
 
-			// Mock free device number detection
-			ec2ENIs := make([]ec2types.InstanceNetworkInterface, 0)
-			deviceNum1 := int32(0)
-			ec2ENI := ec2types.InstanceNetworkInterface{Attachment: &ec2types.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum1}}
-			ec2ENIs = append(ec2ENIs, ec2ENI)
-			result := &ec2.DescribeInstancesOutput{
-				Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+			if !tt.expectError {
+				// Mock free device number detection
+				ec2ENIs := make([]ec2types.InstanceNetworkInterface, 0)
+				deviceNum1 := int32(0)
+				ec2ENI := ec2types.InstanceNetworkInterface{Attachment: &ec2types.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum1}}
+				ec2ENIs = append(ec2ENIs, ec2ENI)
+				result := &ec2.DescribeInstancesOutput{
+					Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+				}
+				mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+
+				var capturedInput *ec2.CreateNetworkInterfaceInput
+				cureniID := eniID
+				eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2types.NetworkInterface{NetworkInterfaceId: &cureniID}}
+				mockEC2.EXPECT().CreateNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(_ context.Context, input *ec2.CreateNetworkInterfaceInput, _ ...func(*ec2.Options)) (*ec2.CreateNetworkInterfaceOutput, error) {
+						capturedInput = input
+						return &eni, nil
+					})
+
+				attachmentID := "eni-attach-123"
+				attachResult := &ec2.AttachNetworkInterfaceOutput{AttachmentId: &attachmentID}
+				mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
+				mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+
+				createdENI, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+				assert.NoError(t, err)
+				assert.NotNil(t, createdENI)
+				assert.NotNil(t, capturedInput)
+				assert.ElementsMatch(t, tt.expectedGroups, capturedInput.Groups)
+			} else {
+				_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+				assert.Error(t, err)
 			}
-			mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
-
-			// Mock the CreateNetworkInterface call and capture the input
-			var capturedInput *ec2.CreateNetworkInterfaceInput
-			cureniID := eniID
-			eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2types.NetworkInterface{NetworkInterfaceId: &cureniID}}
-			mockEC2.EXPECT().CreateNetworkInterface(
-				gomock.Any(),
-				gomock.Any(),
-				gomock.Any(),
-			).DoAndReturn(func(_ context.Context, input *ec2.CreateNetworkInterfaceInput, _ ...func(*ec2.Options)) (*ec2.CreateNetworkInterfaceOutput, error) {
-				capturedInput = input
-				return &eni, nil
-			})
-
-			// Mock AttachNetworkInterface
-			attachmentID := "eni-attach-123"
-			attachResult := &ec2.AttachNetworkInterfaceOutput{AttachmentId: &attachmentID}
-			mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
-			mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-
-			// Call the function under test
-			createdENI, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
-
-			// Verify results
-			assert.NoError(t, err)
-			assert.NotNil(t, createdENI)
-
-			// Check that the correct security groups were used
-			assert.NotNil(t, capturedInput)
-			assert.NotNil(t, capturedInput.Groups)
-
-			// Convert []string to set for easier comparison
-			expectedGroupSet := StringSet{}
-			expectedGroupSet.Set(tt.expectedGroups)
-
-			// Convert the actual groups to set
-			actualGroupSet := StringSet{}
-			actualGroupSet.Set(capturedInput.Groups)
-
-			// Compare sets (order-independent)
-			assert.Equal(t, expectedGroupSet.SortedList(), actualGroupSet.SortedList())
 		})
 	}
 }
 
-// TestRefreshCustomSGIDsWithFallback tests fallback to primary SGs when custom SG discovery fails
-func TestRefreshCustomSGIDsWithFallback(t *testing.T) {
+// TestRefreshCustomSGIDsFailsOnDiscoveryError tests that RefreshCustomSGIDs returns error when discovery fails
+func TestRefreshCustomSGIDsFailsOnDiscoveryError(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
 	mockMetadata := testMetadata(nil)
-
-	// Mock primary security groups
-	primarySGs := []string{sg1, sg2}
 
 	cache := &EC2InstanceMetadataCache{
 		ec2SVC:               mockEC2,
 		imds:                 TypedIMDS{mockMetadata},
 		securityGroups:       StringSet{},
 		customSecurityGroups: StringSet{},
-		subnetID:             subnetID, // primary subnet
+		subnetID:             subnetID,
 		primaryENI:           primaryeniID,
 		unmanagedENIs:        StringSet{},
-		useSubnetDiscovery:   true, // This function should only be called when subnet discovery is enabled
+		useSubnetDiscovery:   true,
 	}
 
-	// Initialize primary security groups
-	cache.securityGroups.Set(primarySGs)
-	// Set some custom SGs initially to verify they get cleared
+	cache.securityGroups.Set([]string{sg1, sg2})
 	cache.customSecurityGroups.Set([]string{"sg-custom1", "sg-custom2"})
 
-	tests := []struct {
-		name              string
-		describeError     error
-		expectedCustomSGs []string
-	}{
-		{
-			name:              "discovery fails - should fallback and clear custom SGs",
-			describeError:     errors.New("AccessDenied: insufficient permissions"),
-			expectedCustomSGs: []string{}, // empty after fallback
-		},
+	// Mock the failed DescribeSecurityGroups call - with retry logic, it will be called 5 times
+	mockEC2.EXPECT().DescribeSecurityGroups(
+		gomock.Any(),
+		gomock.Any(),
+		gomock.Any(),
+	).Times(5).Return(nil, errors.New("AccessDenied: insufficient permissions"))
+
+	mockDataStoreAccess := &datastore.DataStoreAccess{
+		DataStores: []*datastore.DataStore{{}},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Mock the failed DescribeSecurityGroups call - with retry logic, it will be called 5 times
-			mockEC2.EXPECT().DescribeSecurityGroups(
-				gomock.Any(),
-				gomock.Any(),
-				gomock.Any(),
-			).Times(5).Return(nil, tt.describeError)
-
-			// Create a simple datastore - for this test, we just care that
-			// the function handles the error gracefully and clears the cache
-			mockDataStore := &datastore.DataStore{}
-			mockDataStoreAccess := &datastore.DataStoreAccess{
-				DataStores: []*datastore.DataStore{mockDataStore},
-			}
-
-			// Call RefreshCustomSGIDs
-			err := cache.RefreshCustomSGIDs(context.Background(), mockDataStoreAccess)
-
-			// Should return error (after retries and fallback attempt)
-			assert.Error(t, err)
-
-			// Custom SGs should NOT be cleared - the staged changes removed the fallback logic
-			// The function now just returns the error without clearing custom SGs
-		})
-	}
+	err := cache.RefreshCustomSGIDs(context.Background(), mockDataStoreAccess)
+	assert.Error(t, err)
+	// Cache should NOT be cleared - preserve last known good state
+	assert.Equal(t, []string{"sg-custom1", "sg-custom2"}, cache.customSecurityGroups.SortedList())
 }
 
-// TestENICreationFallbackLogging tests that ENI creation logs fallback behavior correctly
-func TestENICreationFallbackLogging(t *testing.T) {
+// TestRefreshCustomSGIDsFailsOnEmptySGs tests that RefreshCustomSGIDs returns error when no SGs are found
+func TestRefreshCustomSGIDsFailsOnEmptySGs(t *testing.T) {
 	ctrl, mockEC2 := setup(t)
 	defer ctrl.Finish()
 
 	mockMetadata := testMetadata(nil)
 
+	cache := &EC2InstanceMetadataCache{
+		ec2SVC:               mockEC2,
+		imds:                 TypedIMDS{mockMetadata},
+		securityGroups:       StringSet{},
+		customSecurityGroups: StringSet{},
+		subnetID:             subnetID,
+		primaryENI:           primaryeniID,
+		unmanagedENIs:        StringSet{},
+		useSubnetDiscovery:   true,
+	}
+
+	cache.securityGroups.Set([]string{sg1, sg2})
+	cache.customSecurityGroups.Set([]string{"sg-custom1"})
+
+	// Return empty results (no SGs found)
+	mockEC2.EXPECT().DescribeSecurityGroups(
+		gomock.Any(),
+		gomock.Any(),
+		gomock.Any(),
+	).Return(&ec2.DescribeSecurityGroupsOutput{SecurityGroups: []ec2types.SecurityGroup{}}, nil)
+
+	mockDataStoreAccess := &datastore.DataStoreAccess{
+		DataStores: []*datastore.DataStore{{}},
+	}
+
+	err := cache.RefreshCustomSGIDs(context.Background(), mockDataStoreAccess)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no custom security groups found")
+	// Cache should NOT be cleared
+	assert.Equal(t, []string{"sg-custom1"}, cache.customSecurityGroups.SortedList())
+}
+
+// TestENICreationSecurityGroupSelection tests that ENI creation uses correct security groups
+func TestENICreationSecurityGroupSelection(t *testing.T) {
 	primarySGs := []string{sg1, sg2}
 	secondarySubnetID := "subnet-secondary"
 
 	tests := []struct {
-		name              string
-		customSGs         []string
-		targetSubnet      string
-		isPrimarySubnet   bool
-		expectedSGsUsed   []string
-		expectFallbackLog bool
+		name            string
+		customSGs       []string
+		targetSubnet    string
+		expectedSGsUsed []string
+		expectError     bool
 	}{
 		{
-			name:              "secondary subnet with custom SGs",
-			customSGs:         []string{"sg-custom1", "sg-custom2"},
-			targetSubnet:      secondarySubnetID,
-			isPrimarySubnet:   false,
-			expectedSGsUsed:   []string{"sg-custom1", "sg-custom2"},
-			expectFallbackLog: false,
+			name:            "secondary subnet with custom SGs",
+			customSGs:       []string{"sg-custom1", "sg-custom2"},
+			targetSubnet:    secondarySubnetID,
+			expectedSGsUsed: []string{"sg-custom1", "sg-custom2"},
+			expectError:     false,
 		},
 		{
-			name:              "secondary subnet without custom SGs - fallback",
-			customSGs:         []string{}, // no custom SGs available
-			targetSubnet:      secondarySubnetID,
-			isPrimarySubnet:   false,
-			expectedSGsUsed:   primarySGs, // should fallback to primary SGs
-			expectFallbackLog: true,
+			name:         "secondary subnet without custom SGs - fails",
+			customSGs:    []string{},
+			targetSubnet: secondarySubnetID,
+			expectError:  true,
 		},
 		{
-			name:              "primary subnet always uses primary SGs",
-			customSGs:         []string{"sg-custom1", "sg-custom2"},
-			targetSubnet:      subnetID,
-			isPrimarySubnet:   true,
-			expectedSGsUsed:   primarySGs,
-			expectFallbackLog: false,
+			name:            "primary subnet always uses primary SGs",
+			customSGs:       []string{"sg-custom1", "sg-custom2"},
+			targetSubnet:    subnetID,
+			expectedSGsUsed: primarySGs,
+			expectError:     false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctrl, mockEC2 := setup(t)
+			defer ctrl.Finish()
+
+			mockMetadata := testMetadata(nil)
+
 			cache := &EC2InstanceMetadataCache{
 				ec2SVC:               mockEC2,
 				imds:                 TypedIMDS{mockMetadata},
@@ -3754,7 +3747,6 @@ func TestENICreationFallbackLogging(t *testing.T) {
 				subnetID:             subnetID,
 			}
 
-			// Initialize security groups
 			cache.securityGroups.Set(primarySGs)
 			cache.customSecurityGroups.Set(tt.customSGs)
 
@@ -3774,47 +3766,44 @@ func TestENICreationFallbackLogging(t *testing.T) {
 			subnetResult := &ec2.DescribeSubnetsOutput{Subnets: subnets}
 			mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any(), gomock.Any()).Return(subnetResult, nil)
 
-			// Mock free device number detection
-			ec2ENIs := make([]ec2types.InstanceNetworkInterface, 0)
-			deviceNum1 := int32(0)
-			ec2ENI := ec2types.InstanceNetworkInterface{Attachment: &ec2types.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum1}}
-			ec2ENIs = append(ec2ENIs, ec2ENI)
-			result := &ec2.DescribeInstancesOutput{
-				Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+			if !tt.expectError {
+				// Mock free device number detection (only called when ENI is created and attached)
+				ec2ENIs := make([]ec2types.InstanceNetworkInterface, 0)
+				deviceNum1 := int32(0)
+				ec2ENI := ec2types.InstanceNetworkInterface{Attachment: &ec2types.InstanceNetworkInterfaceAttachment{DeviceIndex: &deviceNum1}}
+				ec2ENIs = append(ec2ENIs, ec2ENI)
+				result := &ec2.DescribeInstancesOutput{
+					Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{{NetworkInterfaces: ec2ENIs}}}},
+				}
+				mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
+				// Mock the CreateNetworkInterface call and capture the input
+				var capturedInput *ec2.CreateNetworkInterfaceInput
+				cureniID := eniID
+				eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2types.NetworkInterface{NetworkInterfaceId: &cureniID}}
+				mockEC2.EXPECT().CreateNetworkInterface(
+					gomock.Any(),
+					gomock.Any(),
+					gomock.Any(),
+				).DoAndReturn(func(_ context.Context, input *ec2.CreateNetworkInterfaceInput, _ ...func(*ec2.Options)) (*ec2.CreateNetworkInterfaceOutput, error) {
+					capturedInput = input
+					return &eni, nil
+				})
+
+				// Mock AttachNetworkInterface
+				attachmentID := "eni-attach-123"
+				attachResult := &ec2.AttachNetworkInterfaceOutput{AttachmentId: &attachmentID}
+				mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
+				mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+
+				createdENI, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+				assert.NoError(t, err)
+				assert.NotNil(t, createdENI)
+				assert.NotNil(t, capturedInput)
+				assert.ElementsMatch(t, tt.expectedSGsUsed, capturedInput.Groups)
+			} else {
+				_, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
+				assert.Error(t, err)
 			}
-			mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any(), gomock.Any()).Return(result, nil)
-
-			// Mock the CreateNetworkInterface call and capture the input
-			var capturedInput *ec2.CreateNetworkInterfaceInput
-			cureniID := eniID
-			eni := ec2.CreateNetworkInterfaceOutput{NetworkInterface: &ec2types.NetworkInterface{NetworkInterfaceId: &cureniID}}
-			mockEC2.EXPECT().CreateNetworkInterface(
-				gomock.Any(),
-				gomock.Any(),
-				gomock.Any(),
-			).DoAndReturn(func(_ context.Context, input *ec2.CreateNetworkInterfaceInput, _ ...func(*ec2.Options)) (*ec2.CreateNetworkInterfaceOutput, error) {
-				capturedInput = input
-				return &eni, nil
-			})
-
-			// Mock AttachNetworkInterface
-			attachmentID := "eni-attach-123"
-			attachResult := &ec2.AttachNetworkInterfaceOutput{AttachmentId: &attachmentID}
-			mockEC2.EXPECT().AttachNetworkInterface(gomock.Any(), gomock.Any(), gomock.Any()).Return(attachResult, nil)
-			mockEC2.EXPECT().ModifyNetworkInterfaceAttribute(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-
-			// Call AllocENI
-			createdENI, err := cache.AllocENI(context.Background(), nil, "", 5, 0)
-
-			// Verify results
-			assert.NoError(t, err)
-			assert.NotNil(t, createdENI)
-			assert.NotNil(t, capturedInput)
-			assert.NotNil(t, capturedInput.Groups)
-
-			// Verify correct security groups were used
-			actualSGs := capturedInput.Groups
-			assert.ElementsMatch(t, tt.expectedSGsUsed, actualSGs)
 		})
 	}
 }

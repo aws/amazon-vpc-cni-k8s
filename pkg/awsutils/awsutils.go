@@ -684,25 +684,16 @@ func (cache *EC2InstanceMetadataCache) RefreshCustomSGIDs(ctx context.Context, d
 	sgIDs, err := cache.discoverCustomSecurityGroups(ctx)
 	if err != nil {
 		awsAPIErrInc("DiscoverCustomSecurityGroups", err)
-		log.Warnf("Failed to discover custom security groups: %v. Falling back to using primary security groups for ENIs in secondary subnets", err)
+		log.Errorf("Failed to discover custom security groups: %v", err)
 		if eventRecorder := eventrecorder.Get(); eventRecorder != nil {
 			eventRecorder.SendPodEvent(v1.EventTypeWarning, "FailedCustomSecurityGroupsDiscovery", "DescribeSecurityGroups",
-				"aws-node failed calling ec2 api to discover custmized security groups for network interfaces from secondary subnets")
+				"aws-node failed calling ec2 api to discover customized security groups for network interfaces from secondary subnets")
 		}
 		return err
 	}
 
-	// Check if no custom security groups were found (empty list)
 	if len(sgIDs) == 0 {
-		log.Info("No custom security groups found, using primary security groups for ENIs in secondary subnets")
-
-		// Clear custom security groups cache
-		cache.customSecurityGroups.Set([]string{})
-
-		// Apply primary security groups to ENIs in secondary subnets as fallback
-		cache.applyPrimarySGsToSecondarySubnetENIs(ctx, dsAccess)
-
-		return nil
+		return fmt.Errorf("no custom security groups found: cannot create ENIs in secondary subnets without security group configuration")
 	}
 
 	addedCount, deletedCount := cache.detectSecurityGroupChanges(sgIDs, &cache.customSecurityGroups, "custom")
@@ -718,23 +709,6 @@ func (cache *EC2InstanceMetadataCache) RefreshCustomSGIDs(ctx context.Context, d
 	}
 
 	return nil
-}
-
-// applyPrimarySGsToSecondarySubnetENIs applies primary security groups to ENIs in secondary subnets across all datastores
-func (cache *EC2InstanceMetadataCache) applyPrimarySGsToSecondarySubnetENIs(ctx context.Context, dsAccess *datastore.DataStoreAccess) {
-	log.Info("Applying primary security groups as fallback for ENIs in secondary subnets across all datastores")
-
-	primarySGs := cache.securityGroups.SortedList()
-	if len(primarySGs) == 0 {
-		log.Warn("No primary security groups available for fallback")
-	}
-
-	var eniIDs []string
-	for _, ds := range dsAccess.DataStores {
-		eniIDs = append(eniIDs, cache.getFilteredENIs(ds, true)...) // only secondary subnet ENIs
-	}
-
-	cache.applySecurityGroupsToENIs(ctx, eniIDs, primarySGs, "Applying primary security groups to")
 }
 
 // RefreshSGIDs retrieves security groups
@@ -1270,11 +1244,10 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 					// We already determined isPrimarySubnet above, just reuse the variable
 					if !isPrimarySubnet && len(cache.customSecurityGroups.SortedList()) > 0 {
 						log.Infof("Using custom security groups for ENI in secondary subnet %s", *subnet.SubnetId)
-						// overring SGs if using secondary subnets and sgs
 						input.Groups = cache.customSecurityGroups.SortedList()
 					} else if !isPrimarySubnet {
-						// Secondary subnet but no custom security groups available - use primary SGs as fallback
-						log.Infof("No custom security groups available, using primary security groups for ENI in secondary subnet %s", *subnet.SubnetId)
+						log.Errorf("No custom security groups available for ENI in secondary subnet %s, skipping", *subnet.SubnetId)
+						continue
 					}
 					log.Infof("Creating ENI with security groups: %v in subnet: %s", input.Groups, aws.ToString(subnet.SubnetId))
 
@@ -1288,6 +1261,10 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 				// If no valid subnets found, return appropriate error
 				if !validSubnetsFound {
 					return "", fmt.Errorf("no valid subnets available for ENI creation - all subnets are either not tagged or tagged with kubernetes.io/role/cni=0")
+				}
+				// If we got here, subnets were found but ENI creation failed for all of them
+				if err == nil {
+					return "", fmt.Errorf("no ENI created: secondary subnets require custom security groups tagged with kubernetes.io/role/cni")
 				}
 			}
 		} else {

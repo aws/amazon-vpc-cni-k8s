@@ -459,12 +459,32 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 
 		Context("when security group tags change after ENI creation (automatic refresh)", func() {
 			var (
+				initialSGID   string
 				refreshTestSGID string
 				testENIID       string
 			)
 
 			BeforeEach(func() {
-				By("Creating custom security group for refresh testing (initially untagged)")
+				By("Creating initial custom security group tagged for CNI")
+				createInitialSGOutput, err := f.CloudServices.EC2().
+					CreateSecurityGroup(context.TODO(), "cni-initial-test-sg", "Initial SG for CNI secondary ENIs", f.Options.AWSVPCID)
+				Expect(err).ToNot(HaveOccurred())
+				initialSGID = *createInitialSGOutput.GroupId
+
+				_, err = f.CloudServices.EC2().
+					CreateTags(
+						context.TODO(),
+						[]string{initialSGID},
+						[]ec2types.Tag{
+							{
+								Key:   aws.String("kubernetes.io/role/cni"),
+								Value: aws.String("1"),
+							},
+						},
+					)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Creating second custom security group for refresh testing (initially untagged)")
 				createSecurityGroupOutput, err := f.CloudServices.EC2().
 					CreateSecurityGroup(context.TODO(), "cni-refresh-test-sg", "Test SG for automatic refresh", f.Options.AWSVPCID)
 				Expect(err).ToNot(HaveOccurred())
@@ -486,6 +506,19 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 			})
 
 			AfterEach(func() {
+				By("Cleaning up initial test security group")
+				if initialSGID != "" {
+					// Remove tag first to avoid affecting other tests
+					_, _ = f.CloudServices.EC2().
+						DeleteTags(context.TODO(), []string{initialSGID}, []ec2types.Tag{
+							{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")},
+						})
+					err := f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), initialSGID)
+					if err != nil {
+						GinkgoWriter.Printf("Warning: Failed to delete initial test SG %s: %v\n", initialSGID, err)
+					}
+				}
+
 				By("Cleaning up refresh test security group")
 				if refreshTestSGID != "" {
 					err := f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), refreshTestSGID)
@@ -555,22 +588,7 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 					return len(secondaryENIs) > 0
 				}, time.Minute*2, time.Second*10).Should(BeTrue(), "Should create at least one secondary ENI in tagged subnet")
 
-				By("verifying secondary ENI initially uses primary security groups")
-				var primarySGs []string
-				instance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
-				Expect(err).ToNot(HaveOccurred())
-
-				// Get primary ENI security groups
-				for _, nwInterface := range instance.NetworkInterfaces {
-					if common.IsPrimaryENI(nwInterface, instance.PrivateIpAddress) {
-						for _, sg := range nwInterface.Groups {
-							primarySGs = append(primarySGs, *sg.GroupId)
-						}
-						break
-					}
-				}
-
-				// Verify secondary ENI has primary SGs initially (and not the refresh test SG)
+				By("verifying secondary ENI initially uses the initial custom security group")
 				Eventually(func() []string {
 					eni, err := f.CloudServices.EC2().DescribeNetworkInterface(context.TODO(), []string{testENIID})
 					if err != nil || len(eni.NetworkInterfaces) == 0 {
@@ -581,12 +599,12 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 						sgIDs = append(sgIDs, *sg.GroupId)
 					}
 					return sgIDs
-				}, time.Second*30, time.Second*5).Should(And(
-					ContainElements(primarySGs),
-					Not(ContainElement(refreshTestSGID)),
-				), "Secondary ENI should initially have primary security groups")
+				}, time.Second*30, time.Second*5).Should(
+					ContainElement(initialSGID),
+					"Secondary ENI should initially have the initial custom security group",
+				)
 
-				By("tagging custom security group with kubernetes.io/role/cni=1 to trigger refresh")
+				By("tagging refresh test security group with kubernetes.io/role/cni=1 to trigger refresh")
 				_, err = f.CloudServices.EC2().
 					CreateTags(
 						context.TODO(),
@@ -615,8 +633,8 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 					return sgIDs
 				}, time.Second*50, time.Second*5).Should(And(
 					ContainElement(refreshTestSGID),
-					Not(ContainElements(primarySGs)),
-				), "Custom security group should be automatically applied within 50 seconds")
+					ContainElement(initialSGID),
+				), "Both custom security groups should be applied within 50 seconds")
 
 				By("verifying the change persists after another refresh cycle")
 				time.Sleep(35 * time.Second)
@@ -630,15 +648,27 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 					finalSGIDs = append(finalSGIDs, *sg.GroupId)
 				}
 
-				Expect(finalSGIDs).To(ContainElement(refreshTestSGID), "Custom SG should persist after additional refresh cycle")
-				Expect(finalSGIDs).ToNot(ContainElements(primarySGs), "Primary SGs should remain replaced")
+				Expect(finalSGIDs).To(ContainElement(refreshTestSGID), "Refresh test SG should persist after additional refresh cycle")
+				Expect(finalSGIDs).To(ContainElement(initialSGID), "Initial SG should persist after additional refresh cycle")
 			})
 		})
 
 		Context("when security group without cni tag should be excluded", func() {
 			var untaggedSGID string
+			var taggedSGID string
 
 			BeforeEach(func() {
+				By("Creating a security group WITH cni=1 tag (required for ENI creation)")
+				createTaggedSGOutput, err := f.CloudServices.EC2().
+					CreateSecurityGroup(context.TODO(), fmt.Sprintf("cni-tagged-test-sg-%d", time.Now().Unix()), "SG with cni tag for ENI creation", f.Options.AWSVPCID)
+				Expect(err).ToNot(HaveOccurred())
+				taggedSGID = *createTaggedSGOutput.GroupId
+
+				_, err = f.CloudServices.EC2().
+					CreateTags(context.TODO(), []string{taggedSGID},
+						[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
+				Expect(err).ToNot(HaveOccurred())
+
 				By("Creating a security group WITHOUT cni=1 tag")
 				createSGOutput, err := f.CloudServices.EC2().
 					CreateSecurityGroup(context.TODO(), fmt.Sprintf("cni-exclusion-test-sg-%d", time.Now().Unix()), "SG without cni tag for exclusion test", f.Options.AWSVPCID)
@@ -685,6 +715,13 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 				By("Cleaning up untagged security group")
 				if untaggedSGID != "" {
 					_ = f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), untaggedSGID)
+				}
+				By("Cleaning up tagged security group")
+				if taggedSGID != "" {
+					_, _ = f.CloudServices.EC2().
+						DeleteTags(context.TODO(), []string{taggedSGID},
+							[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
+					_ = f.CloudServices.EC2().DeleteSecurityGroup(context.TODO(), taggedSGID)
 				}
 				_, _ = f.CloudServices.EC2().
 					DeleteTags(context.TODO(), []string{createdSubnet},
@@ -796,7 +833,7 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 						[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
 			})
 
-			It("should revert to primary SGs after custom SG tag is removed and maintain API server connectivity", func() {
+			It("should fail refresh and preserve existing SGs after custom SG tag is removed", func() {
 				By("Finding secondary ENI in tagged subnet")
 				var testENIID string
 				instance, err := f.CloudServices.EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
@@ -844,35 +881,22 @@ var _ = Describe("ENI Subnet Discovery Enhanced Tests", func() {
 						[]ec2types.Tag{{Key: aws.String("kubernetes.io/role/cni"), Value: aws.String("1")}})
 				Expect(err).ToNot(HaveOccurred())
 
-				By("Getting primary ENI security groups for comparison")
-				instance, err = f.CloudServices.EC2().DescribeInstance(context.TODO(), *primaryInstance.InstanceId)
-				Expect(err).ToNot(HaveOccurred())
-				var primarySGs []string
-				for _, nwInterface := range instance.NetworkInterfaces {
-					if common.IsPrimaryENI(nwInterface, instance.PrivateIpAddress) {
-						for _, sg := range nwInterface.Groups {
-							primarySGs = append(primarySGs, *sg.GroupId)
-						}
-						break
-					}
-				}
+				By("Waiting for refresh cycle and verifying ENI retains existing SGs (no fallback)")
+				// With no custom SGs found, refresh returns error and preserves existing state
+				time.Sleep(50 * time.Second)
 
-				By("Waiting for refresh to revert ENI to primary security groups")
-				Eventually(func() []string {
-					eni, err := f.CloudServices.EC2().DescribeNetworkInterface(context.TODO(), []string{testENIID})
-					if err != nil || len(eni.NetworkInterfaces) == 0 {
-						return nil
-					}
-					var ids []string
-					for _, sg := range eni.NetworkInterfaces[0].Groups {
-						ids = append(ids, *sg.GroupId)
-					}
-					GinkgoWriter.Printf("ENI %s SGs after tag removal: %v\n", testENIID, ids)
-					return ids
-				}, 50*time.Second, 5*time.Second).Should(And(
-					ContainElements(primarySGs),
-					Not(ContainElement(removableSGID)),
-				), "ENI should revert to primary SGs after custom SG tag is removed")
+				eni, err := f.CloudServices.EC2().DescribeNetworkInterface(context.TODO(), []string{testENIID})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(eni.NetworkInterfaces)).To(BeNumerically(">", 0))
+
+				var finalSGIDs []string
+				for _, sg := range eni.NetworkInterfaces[0].Groups {
+					finalSGIDs = append(finalSGIDs, *sg.GroupId)
+				}
+				GinkgoWriter.Printf("ENI %s SGs after tag removal: %v\n", testENIID, finalSGIDs)
+				// ENI should still have the removable SG since refresh failed (no fallback to primary)
+				Expect(finalSGIDs).To(ContainElement(removableSGID),
+					"ENI should retain existing SGs when refresh fails due to no custom SGs found")
 			})
 		})
 	})
