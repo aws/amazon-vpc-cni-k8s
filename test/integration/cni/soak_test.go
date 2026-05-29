@@ -58,8 +58,8 @@ var _ = Describe("SOAK Test pod networking", Ordered, func() {
 		waitDuringInMinutes               = time.Duration(5) * time.Minute
 	)
 
-	// External probe is opt-in so this suite stays runnable in isolated regions
-	// (ADC, MDW, etc.) where checkip.amazonaws.com is unreachable.
+	// External probe is opt-in so it only runs where we have outbound
+	// internet access.
 	externalProbeEnabled := os.Getenv("RUN_EXTERNAL_PROBE") == "true"
 	externalProbeHost := os.Getenv("EXTERNAL_PROBE_HOST")
 	if externalProbeHost == "" {
@@ -272,8 +272,8 @@ func verifyClusterIPConnectivity(senderPod coreV1.Pod, clusterIP string, port in
 
 // verifySoakExternalConnectivity exercises the mark-set side of the snat-mark
 // chain by opening a TCP connection to a non-VPC destination. Opt-in via
-// RUN_EXTERNAL_PROBE=true; not safe to run in isolated regions where the
-// default host (checkip.amazonaws.com:80) is unreachable.
+// RUN_EXTERNAL_PROBE=true; only enable where outbound internet access is
+// available.
 func verifySoakExternalConnectivity(senderPod coreV1.Pod, host string) {
 	cmd := []string{"nc", "-v", "-w5", host, "80"}
 	stdout, stderr, err := f.K8sResourceManagers.PodManager().

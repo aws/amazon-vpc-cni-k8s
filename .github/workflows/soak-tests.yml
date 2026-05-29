@@ -36,6 +36,5 @@ jobs:
           RUN_CNI_INTEGRATION_TESTS=false RUN_SOAK_TEST=true RUN_UBUNTU_TEST=true ./scripts/run-integration-tests.sh
         env:
           AWS_DEFAULT_REGION: us-west-2
-          # us-west-2 has public-internet egress; safe to enable. Skip in
-          # isolated regions by leaving this unset or setting to "false".
+          # Enabled here because this runner has outbound internet access.
           RUN_EXTERNAL_PROBE: "true"
