@@ -86,21 +86,21 @@ var _ = Describe("[CANARY] test service connectivity", FlakeAttempts(3), func() 
 		Expect(err).ToNot(HaveOccurred())
 
 		if serviceType == v1.ServiceTypeClusterIP {
-         service = manifest.NewHTTPService().
-             ServiceType(serviceType).
-             Name("test-service").
-             Selector(serviceLabelSelectorKey, serviceLabelSelectorVal).
-             Annotations(serviceAnnotation).
-             Build()
+			service = manifest.NewHTTPService().
+				ServiceType(serviceType).
+				Name("test-service").
+				Selector(serviceLabelSelectorKey, serviceLabelSelectorVal).
+				Annotations(serviceAnnotation).
+				Build()
 		} else {
-		 service = manifest.NewHTTPService().
-             ServiceType(serviceType).
-             NodePort(serviceNodePort).
-             Name("test-service").
-             Selector(serviceLabelSelectorKey, serviceLabelSelectorVal).
-             Annotations(serviceAnnotation).
-             Build()
-		} 
+			service = manifest.NewHTTPService().
+				ServiceType(serviceType).
+				NodePort(serviceNodePort).
+				Name("test-service").
+				Selector(serviceLabelSelectorKey, serviceLabelSelectorVal).
+				Annotations(serviceAnnotation).
+				Build()
+		}
 
 		By(fmt.Sprintf("creating the service of type %s", serviceType))
 		service, err = f.K8sResourceManagers.ServiceManager().
