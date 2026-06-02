@@ -45,6 +45,7 @@ var _ = Describe("[CANARY] test service connectivity", FlakeAttempts(3), func() 
 	// Service front ending the http server deployment
 	var service *v1.Service
 	var serviceType v1.ServiceType
+	var serviceNodePort int32
 	var serviceAnnotation map[string]string
 
 	// Test job that verifies connectivity to the http server
@@ -84,12 +85,22 @@ var _ = Describe("[CANARY] test service connectivity", FlakeAttempts(3), func() 
 			CreateAndWaitTillDeploymentIsReady(deployment, utils.DefaultDeploymentReadyTimeout)
 		Expect(err).ToNot(HaveOccurred())
 
-		service = manifest.NewHTTPService().
-			ServiceType(serviceType).
-			Name("test-service").
-			Selector(serviceLabelSelectorKey, serviceLabelSelectorVal).
-			Annotations(serviceAnnotation).
-			Build()
+		if serviceType == v1.ServiceTypeClusterIP {
+         service = manifest.NewHTTPService().
+             ServiceType(serviceType).
+             Name("test-service").
+             Selector(serviceLabelSelectorKey, serviceLabelSelectorVal).
+             Annotations(serviceAnnotation).
+             Build()
+		} else {
+		 service = manifest.NewHTTPService().
+             ServiceType(serviceType).
+             NodePort(serviceNodePort).
+             Name("test-service").
+             Selector(serviceLabelSelectorKey, serviceLabelSelectorVal).
+             Annotations(serviceAnnotation).
+             Build()
+		} 
 
 		By(fmt.Sprintf("creating the service of type %s", serviceType))
 		service, err = f.K8sResourceManagers.ServiceManager().
@@ -173,6 +184,7 @@ var _ = Describe("[CANARY] test service connectivity", FlakeAttempts(3), func() 
 	Context("when a deployment behind clb service is created", func() {
 		BeforeEach(func() {
 			serviceType = v1.ServiceTypeLoadBalancer
+			serviceNodePort = 30443
 		})
 
 		It("clb service pod should be reachable", func() {})
@@ -181,6 +193,7 @@ var _ = Describe("[CANARY] test service connectivity", FlakeAttempts(3), func() 
 	Context("when a deployment behind nlb service is created", func() {
 		BeforeEach(func() {
 			serviceType = v1.ServiceTypeLoadBalancer
+			serviceNodePort = 30443
 			serviceAnnotation = map[string]string{"service.beta.kubernetes.io/" +
 				"aws-load-balancer-type": "nlb"}
 		})
@@ -199,6 +212,7 @@ var _ = Describe("[CANARY] test service connectivity", FlakeAttempts(3), func() 
 	Context("when a deployment behind node port is created", func() {
 		BeforeEach(func() {
 			serviceType = v1.ServiceTypeNodePort
+			serviceNodePort = 30443
 		})
 
 		It("node port service pod should be reachable", func() {})
