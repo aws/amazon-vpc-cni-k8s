@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -161,6 +162,7 @@ type NetworkAPIs interface {
 	CleanUpStaleAWSChains(v4Enabled, v6Enabled bool) error
 	UseExternalSNAT() bool
 	GetExcludeSNATCIDRs() []string
+	SetExcludeSNATCIDRs(cidrs []string)
 	GetExternalServiceCIDRs() []string
 	GetRuleList(v6enabled bool) ([]netlink.Rule, error)
 	GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error)
@@ -175,6 +177,7 @@ type linuxNetwork struct {
 	useExternalSNAT        bool
 	ipv6EgressEnabled      bool
 	excludeSNATCIDRs       []string
+	excludeSNATCIDRsMu     sync.RWMutex
 	externalServiceCIDRs   []string
 	typeOfSNAT             snatType
 	nodePortSupportEnabled bool
@@ -477,7 +480,11 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 		log.Debugf("Adding %s CIDR to NAT chain", cidr)
 		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
 	}
-	for _, cidr := range n.excludeSNATCIDRs {
+	n.excludeSNATCIDRsMu.RLock()
+	excludeCIDRs := make([]string, len(n.excludeSNATCIDRs))
+	copy(excludeCIDRs, n.excludeSNATCIDRs)
+	n.excludeSNATCIDRsMu.RUnlock()
+	for _, cidr := range excludeCIDRs {
 		log.Debugf("Adding %s Excluded CIDR to NAT chain", cidr)
 		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: true})
 	}
@@ -887,7 +894,19 @@ func (n *linuxNetwork) GetExcludeSNATCIDRs() []string {
 	if useExternalSNAT() {
 		return nil
 	}
-	return parseCIDRString(envExcludeSNATCIDRs)
+	n.excludeSNATCIDRsMu.RLock()
+	defer n.excludeSNATCIDRsMu.RUnlock()
+	result := make([]string, len(n.excludeSNATCIDRs))
+	copy(result, n.excludeSNATCIDRs)
+	return result
+}
+
+// SetExcludeSNATCIDRs replaces the SNAT exclusion CIDR list. Called by IPAMD after merging
+// env var + ConfigMap sources. Thread-safe.
+func (n *linuxNetwork) SetExcludeSNATCIDRs(cidrs []string) {
+	n.excludeSNATCIDRsMu.Lock()
+	defer n.excludeSNATCIDRsMu.Unlock()
+	n.excludeSNATCIDRs = cidrs
 }
 
 // GetExternalServiceCIDRs return a list of CIDRs that should always be routed to via main routing table.

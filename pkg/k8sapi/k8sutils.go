@@ -45,6 +45,11 @@ func getIPAMDCacheFilters() map[client.Object]cache.ByObject {
 			&corev1.Node{}: {
 				Field: fields.Set{"metadata.name": nodeName}.AsSelector(),
 			},
+			// Cache the SNAT exclusion ConfigMap for dynamic SNAT config (Phase 2).
+			// The cached client will serve reads locally after initial sync.
+			&corev1.ConfigMap{}: {
+				Field: fields.Set{"metadata.name": "aws-node-vpc-cidrs", "metadata.namespace": "kube-system"}.AsSelector(),
+			},
 		}
 		// only cache CNINode when SGP is in use
 		enabledPodENI := utils.GetBoolAsStringEnvVar(envEnablePodENI, false)
