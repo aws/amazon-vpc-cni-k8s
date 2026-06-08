@@ -186,6 +186,20 @@ var (
 		},
 		[]string{"success"},
 	)
+	ConnmarkBackend = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "awscni_connmark_backend",
+			Help: "The connmark backend in use; the active backend's series is set to 1",
+		},
+		[]string{"backend"},
+	)
+	ConnmarkReconcileCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "awscni_connmark_reconcile_total",
+			Help: "The number of connmark Setup/Cleanup reconciliations by result",
+		},
+		[]string{"result"},
+	)
 )
 
 // ServeMetrics sets up ipamd metrics and introspection endpoints
@@ -241,6 +255,10 @@ func PrometheusRegister() {
 	prometheus.MustRegister(EniIPsInUse)
 	prometheus.MustRegister(IpamdStartupDuration)
 	prometheus.MustRegister(IpamdNodeInitDuration)
+	prometheus.MustRegister(ConnmarkBackend)
+	prometheus.MustRegister(ConnmarkReconcileCount)
+	ConnmarkReconcileCount.WithLabelValues("success")
+	ConnmarkReconcileCount.WithLabelValues("error")
 }
 
 // This can be enhanced to get it programatically.
