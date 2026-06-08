@@ -681,16 +681,18 @@ func (cache *EC2InstanceMetadataCache) detectSecurityGroupChanges(newSGs []strin
 
 // RefreshCustomSGIDs discovers and refreshes security groups tagged for use with the CNI
 func (cache *EC2InstanceMetadataCache) RefreshCustomSGIDs(ctx context.Context, dsAccess *datastore.DataStoreAccess) error {
-	sgIDs, err := cache.discoverCustomSecurityGroups(ctx)
-	if err != nil {
-		awsAPIErrInc("DiscoverCustomSecurityGroups", err)
-		log.Warnf("Failed to discover custom security groups: %v. Falling back to using primary security groups for ENIs in secondary subnets", err)
-		if eventRecorder := eventrecorder.Get(); eventRecorder != nil {
-			eventRecorder.SendPodEvent(v1.EventTypeWarning, "FailedCustomSecurityGroupsDiscovery", "DescribeSecurityGroups",
-				"aws-node failed calling ec2 api to discover custmized security groups for network interfaces from secondary subnets")
-		}
-		return err
-	}
+	// Temporarily reverting SG discovery, using primary SGs
+	var sgIDs []string
+	// sgIDs, err := cache.discoverCustomSecurityGroups(ctx)
+	// if err != nil {
+	// 	awsAPIErrInc("DiscoverCustomSecurityGroups", err)
+	// 	log.Warnf("Failed to discover custom security groups: %v. Falling back to using primary security groups for ENIs in secondary subnets", err)
+	// 	if eventRecorder := eventrecorder.Get(); eventRecorder != nil {
+	// 		eventRecorder.SendPodEvent(v1.EventTypeWarning, "FailedCustomSecurityGroupsDiscovery", "DescribeSecurityGroups",
+	// 			"aws-node failed calling ec2 api to discover custmized security groups for network interfaces from secondary subnets")
+	// 	}
+	// 	return err
+	// }
 
 	// Check if no custom security groups were found (empty list)
 	if len(sgIDs) == 0 {
