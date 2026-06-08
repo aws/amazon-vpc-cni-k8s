@@ -608,13 +608,13 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 
 		// Refresh security groups and VPC CIDR blocks in the background
 		// Ignoring errors since we will retry in 30s
-		go wait.Forever(func() {
-			c.awsClient.RefreshSGIDs(ctx, primaryENIMac, c.dataStoreAccess)
-			// Also refresh custom security groups for secondary subnets
-			if c.useSubnetDiscovery && !c.useCustomNetworking {
-				c.awsClient.RefreshCustomSGIDs(ctx, c.dataStoreAccess)
-			}
-		}, 30*time.Second)
+		// go wait.Forever(func() {
+		// 	c.awsClient.RefreshSGIDs(ctx, primaryENIMac, c.dataStoreAccess)
+		// 	// Also refresh custom security groups for secondary subnets
+		// 	if c.useSubnetDiscovery && !c.useCustomNetworking {
+		// 		c.awsClient.RefreshCustomSGIDs(ctx, c.dataStoreAccess)
+		// 	}
+		// }, 30*time.Second)
 	}
 
 	// if apiserver is connected, get the maxPods from node
