@@ -22,6 +22,7 @@ In general, you can grant below IAM policies to Amazon VPC CNI plugin depending 
                 "ec2:DescribeTags",
                 "ec2:DescribeNetworkInterfaces",
                 "ec2:DescribeInstanceTypes",
+                "ec2:DescribeSecurityGroups",
                 "ec2:DescribeSubnets",
                 "ec2:DetachNetworkInterface",
                 "ec2:ModifyNetworkInterfaceAttribute",
@@ -56,6 +57,8 @@ The above policy is also available under: `arn:aws:iam::aws:policy/AmazonEKS_CNI
             "Action": [
                 "ec2:AssignIpv6Addresses",
                 "ec2:DescribeInstances",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeSubnets",
                 "ec2:DescribeTags",
                 "ec2:DescribeNetworkInterfaces",
                 "ec2:DescribeInstanceTypes"

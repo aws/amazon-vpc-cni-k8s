@@ -398,7 +398,11 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	prometheusRegister()
 	c := &IPAMContext{}
 	c.k8sClient = k8sClient
-	c.networkClient = networkutils.New()
+	networkClient, err := networkutils.New()
+	if err != nil {
+		return nil, errors.Wrap(err, "ipamd: failed to initialize network utils")
+	}
+	c.networkClient = networkClient
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.manageENIsNonScheduleable = ManageENIsOnNonSchedulableNode()
 	c.useSubnetDiscovery = UseSubnetDiscovery()
@@ -747,7 +751,7 @@ func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 	old := sets.NewString(oldVPCCIDRs...)
 	new := sets.NewString(newVPCCIDRs...)
 	if !old.Equal(new) {
-		err = c.networkClient.UpdateHostIptablesRules(newVPCCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP,
+		err = c.networkClient.UpdateHostSNATRules(newVPCCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP,
 			c.enableIPv6)
 		if err != nil {
 			log.Warnf("unable to update host iptables rules for VPC CIDRs due to error: %v", err)
