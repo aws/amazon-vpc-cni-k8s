@@ -681,16 +681,18 @@ func (cache *EC2InstanceMetadataCache) detectSecurityGroupChanges(newSGs []strin
 
 // RefreshCustomSGIDs discovers and refreshes security groups tagged for use with the CNI
 func (cache *EC2InstanceMetadataCache) RefreshCustomSGIDs(ctx context.Context, dsAccess *datastore.DataStoreAccess) error {
-	sgIDs, err := cache.discoverCustomSecurityGroups(ctx)
-	if err != nil {
-		awsAPIErrInc("DiscoverCustomSecurityGroups", err)
-		log.Warnf("Failed to discover custom security groups: %v. Falling back to using primary security groups for ENIs in secondary subnets", err)
-		if eventRecorder := eventrecorder.Get(); eventRecorder != nil {
-			eventRecorder.SendPodEvent(v1.EventTypeWarning, "FailedCustomSecurityGroupsDiscovery", "DescribeSecurityGroups",
-				"aws-node failed calling ec2 api to discover custmized security groups for network interfaces from secondary subnets")
-		}
-		return err
-	}
+	// Temporarily reverting SG discovery, using primary SGs
+	var sgIDs []string
+	// sgIDs, err := cache.discoverCustomSecurityGroups(ctx)
+	// if err != nil {
+	// 	awsAPIErrInc("DiscoverCustomSecurityGroups", err)
+	// 	log.Warnf("Failed to discover custom security groups: %v. Falling back to using primary security groups for ENIs in secondary subnets", err)
+	// 	if eventRecorder := eventrecorder.Get(); eventRecorder != nil {
+	// 		eventRecorder.SendPodEvent(v1.EventTypeWarning, "FailedCustomSecurityGroupsDiscovery", "DescribeSecurityGroups",
+	// 			"aws-node failed calling ec2 api to discover custmized security groups for network interfaces from secondary subnets")
+	// 	}
+	// 	return err
+	// }
 
 	// Check if no custom security groups were found (empty list)
 	if len(sgIDs) == 0 {
@@ -751,34 +753,18 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(ctx context.Context, mac str
 	if !cache.useCustomNetworking && (addedCount != 0 || deletedCount != 0) {
 		var eniIDs []string
 
-		// When subnet discovery is enabled, only apply primary SGs to primary subnet ENIs
-		if cache.useSubnetDiscovery {
-			for _, ds := range dsAccess.DataStores {
-				// Get only primary subnet ENIs (onlySecondarySubnets=false)
-				primarySubnetENIs := cache.getFilteredENIs(ds, false)
-				for _, eniID := range primarySubnetENIs {
-					// Filter out unmanaged ENIs
-					if !cache.unmanagedENIs.Has(eniID) {
-						eniIDs = append(eniIDs, eniID)
-					}
-				}
+		for _, ds := range dsAccess.DataStores {
+			eniInfos := ds.GetENIInfos()
+			for eniID := range eniInfos.ENIs {
+				eniIDs = append(eniIDs, eniID)
 			}
-		} else {
-			// Original behavior: apply to all managed ENIs when subnet discovery is disabled
-			for _, ds := range dsAccess.DataStores {
-				eniInfos := ds.GetENIInfos()
-				for eniID := range eniInfos.ENIs {
-					eniIDs = append(eniIDs, eniID)
-				}
-			}
-
-			newENIs := StringSet{}
-			newENIs.Set(eniIDs)
-			filteredENIs := newENIs.Difference(&cache.unmanagedENIs)
-			eniIDs = filteredENIs.SortedList()
 		}
 
-		// Apply security groups to the filtered ENIs
+		newENIs := StringSet{}
+		newENIs.Set(eniIDs)
+		filteredENIs := newENIs.Difference(&cache.unmanagedENIs)
+		eniIDs = filteredENIs.SortedList()
+
 		cache.applySecurityGroupsToENIs(ctx, eniIDs, sgIDs, "Update")
 	}
 	return nil
