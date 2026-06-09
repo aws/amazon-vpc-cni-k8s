@@ -753,34 +753,18 @@ func (cache *EC2InstanceMetadataCache) RefreshSGIDs(ctx context.Context, mac str
 	if !cache.useCustomNetworking && (addedCount != 0 || deletedCount != 0) {
 		var eniIDs []string
 
-		// When subnet discovery is enabled, only apply primary SGs to primary subnet ENIs
-		if cache.useSubnetDiscovery {
-			for _, ds := range dsAccess.DataStores {
-				// Get only primary subnet ENIs (onlySecondarySubnets=false)
-				primarySubnetENIs := cache.getFilteredENIs(ds, false)
-				for _, eniID := range primarySubnetENIs {
-					// Filter out unmanaged ENIs
-					if !cache.unmanagedENIs.Has(eniID) {
-						eniIDs = append(eniIDs, eniID)
-					}
-				}
+		for _, ds := range dsAccess.DataStores {
+			eniInfos := ds.GetENIInfos()
+			for eniID := range eniInfos.ENIs {
+				eniIDs = append(eniIDs, eniID)
 			}
-		} else {
-			// Original behavior: apply to all managed ENIs when subnet discovery is disabled
-			for _, ds := range dsAccess.DataStores {
-				eniInfos := ds.GetENIInfos()
-				for eniID := range eniInfos.ENIs {
-					eniIDs = append(eniIDs, eniID)
-				}
-			}
-
-			newENIs := StringSet{}
-			newENIs.Set(eniIDs)
-			filteredENIs := newENIs.Difference(&cache.unmanagedENIs)
-			eniIDs = filteredENIs.SortedList()
 		}
 
-		// Apply security groups to the filtered ENIs
+		newENIs := StringSet{}
+		newENIs.Set(eniIDs)
+		filteredENIs := newENIs.Difference(&cache.unmanagedENIs)
+		eniIDs = filteredENIs.SortedList()
+
 		cache.applySecurityGroupsToENIs(ctx, eniIDs, sgIDs, "Update")
 	}
 	return nil
