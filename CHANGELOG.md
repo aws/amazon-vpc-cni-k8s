@@ -2,7 +2,7 @@
 
 ## v1.22.2
 
-* Disabling Security Group Discovery feature in https://github.com/aws/amazon-vpc-cni-k8s/pull/3720
+* Reverting Security Group Discovery feature in https://github.com/aws/amazon-vpc-cni-k8s/pull/3720
 
 ## v1.22.1
 
