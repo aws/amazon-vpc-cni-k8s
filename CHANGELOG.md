@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.22.2
+
+* Reverting Security Group Discovery feature in https://github.com/aws/amazon-vpc-cni-k8s/pull/3720
+
 ## v1.22.1
 
 * feat: Enhanced subnet discovery - allow customers to exclude specific subnets from pod allocation by tagging with `kubernetes.io/role/cni=0` and include subnets with `kubernetes.io/role/cni=1`
