@@ -980,6 +980,49 @@ func TestDecreaseIPPool(t *testing.T) {
 	assert.Equal(t, true, enabled) // there is warm ip target enabled with the value of 1
 }
 
+func TestTryFreeENI_DeletesPrimaryIPEntry(t *testing.T) {
+	m := setup(t)
+	defer m.ctrl.Finish()
+
+	mockContext := &IPAMContext{
+		awsClient:     m.awsutils,
+		networkClient: m.network,
+		k8sClient:     m.k8sClient,
+		primaryIP:     make(map[string]string),
+		terminating:   int32(0),
+	}
+	mockContext.dataStoreAccess = testDatastore()
+
+	// Add primary ENI
+	mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(primaryENIid, primaryDevice, true, false, false, networkutils.CalculateRouteTableId(primaryDevice, 0), "")
+	testAddr1 := net.IPNet{IP: net.ParseIP(ipaddr01), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddIPv4CidrToStore(primaryENIid, testAddr1, false)
+
+	// Add secondary ENI with one IP
+	mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddENI(secENIid, secDevice, false, false, false, networkutils.CalculateRouteTableId(secDevice, 0), "")
+	testAddr11 := net.IPNet{IP: net.ParseIP(ipaddr11), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).AddIPv4CidrToStore(secENIid, testAddr11, false)
+	mockContext.primaryIP[secENIid] = ipaddr11
+
+	// Wait for ENI to pass minENILifeTime (1m) so it becomes deletable
+	time.Sleep(61 * time.Second)
+
+	// Expect FreeENI and DeleteRulesBySrc to succeed
+	m.awsutils.EXPECT().FreeENI(gomock.Any(), secENIid).Return(nil)
+	m.network.EXPECT().DeleteRulesBySrc(ipaddr11, false).Return(nil)
+
+	mockContext.tryFreeENI(context.Background(), defaultNetworkCard)
+
+	// Verify ENI is removed from datastore
+	eniInfos := mockContext.dataStoreAccess.GetDataStore(defaultNetworkCard).GetENIInfos()
+	_, eniInDatastore := eniInfos.ENIs[secENIid]
+	assert.False(t, eniInDatastore, "freed ENI should be removed from datastore")
+
+	// Verify primaryIP entry was deleted
+	_, exists := mockContext.primaryIP[secENIid]
+	assert.False(t, exists, "primaryIP entry for freed ENI should be deleted")
+}
+
 func TestTryAddIPToENI(t *testing.T) {
 	_ = os.Unsetenv(envCustomNetworkCfg)
 	m := setup(t)
