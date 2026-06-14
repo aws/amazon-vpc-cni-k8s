@@ -35,7 +35,7 @@ import (
 
 type PodManager interface {
 	PodExec(namespace string, name string, command []string) (string, string, error)
-	PodExecWithContainer(namespace string, name string, container string, command []string) (string, string, error)
+	PodExecInContainer(namespace, name, container string, command []string) (string, string, error)
 	PodLogs(namespace string, name string) (string, error)
 	GetPodsWithLabelSelector(labelKey string, labelVal string) (v1.PodList, error)
 	GetPodsWithLabelSelectorMap(labels map[string]string) (v1.PodList, error)
@@ -169,6 +169,9 @@ func (d *defaultPodManager) PodLogs(namespace string, name string) (string, erro
 	req := d.k8sClientset.CoreV1().Pods(namespace).GetLogs(name, &podLogOpts)
 
 	podLogs, err := req.Stream(context.Background())
+	if err != nil {
+		return "", err
+	}
 	defer podLogs.Close()
 
 	buf := new(bytes.Buffer)
@@ -203,7 +206,7 @@ func (d *defaultPodManager) PodExec(namespace string, name string, command []str
 	return stdout.String(), stderr.String(), err
 }
 
-func (d *defaultPodManager) PodExecWithContainer(namespace string, name string, container string, command []string) (string, string, error) {
+func (d *defaultPodManager) PodExecInContainer(namespace, name, container string, command []string) (string, string, error) {
 	execOptions := &v1.PodExecOptions{
 		Container: container,
 		Stdout:    true,

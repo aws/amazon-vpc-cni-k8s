@@ -398,7 +398,11 @@ func New(ctx context.Context, k8sClient client.Client, withApiServer bool) (*IPA
 	prometheusRegister()
 	c := &IPAMContext{}
 	c.k8sClient = k8sClient
-	c.networkClient = networkutils.New()
+	networkClient, err := networkutils.New()
+	if err != nil {
+		return nil, errors.Wrap(err, "ipamd: failed to initialize network utils")
+	}
+	c.networkClient = networkClient
 	c.useCustomNetworking = UseCustomNetworkCfg()
 	c.manageENIsNonScheduleable = ManageENIsOnNonSchedulableNode()
 	c.useSubnetDiscovery = UseSubnetDiscovery()
@@ -591,23 +595,10 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 		if err := c.awsClient.RefreshSGIDs(ctx, primaryENIMac, c.dataStoreAccess); err != nil {
 			return err
 		}
-
-		// Also refresh custom security groups for secondary subnets
-		// Custom security groups are only relevant when subnet discovery is enabled
-		if c.useSubnetDiscovery {
-			if err := c.awsClient.RefreshCustomSGIDs(ctx, c.dataStoreAccess); err != nil {
-				return err
-			}
-		}
-
-		// Refresh security groups and VPC CIDR blocks in the background
+		// Refresh security groups in the background
 		// Ignoring errors since we will retry in 30s
 		go wait.Forever(func() {
 			c.awsClient.RefreshSGIDs(ctx, primaryENIMac, c.dataStoreAccess)
-			// Also refresh custom security groups for secondary subnets
-			if c.useSubnetDiscovery {
-				c.awsClient.RefreshCustomSGIDs(ctx, c.dataStoreAccess)
-			}
 		}, 30*time.Second)
 	}
 
@@ -760,7 +751,7 @@ func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCIDRs []string) []string {
 	old := sets.NewString(oldVPCCIDRs...)
 	new := sets.NewString(newVPCCIDRs...)
 	if !old.Equal(new) {
-		err = c.networkClient.UpdateHostIptablesRules(newVPCCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP,
+		err = c.networkClient.UpdateHostSNATRules(newVPCCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP,
 			c.enableIPv6)
 		if err != nil {
 			log.Warnf("unable to update host iptables rules for VPC CIDRs due to error: %v", err)
