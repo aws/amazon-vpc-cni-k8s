@@ -555,7 +555,6 @@ func (mr *MockAPIsMockRecorder) IsUnmanagedNIC(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsUnmanagedNIC", reflect.TypeOf((*MockAPIs)(nil).IsUnmanagedNIC), arg0)
 }
 
-
 // RefreshSGIDs mocks base method.
 func (m *MockAPIs) RefreshSGIDs(arg0 context.Context, arg1 string, arg2 *datastore.DataStoreAccess) error {
 	m.ctrl.T.Helper()

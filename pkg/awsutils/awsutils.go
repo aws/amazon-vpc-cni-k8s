@@ -642,7 +642,6 @@ func (cache *EC2InstanceMetadataCache) detectSecurityGroupChanges(newSGs []strin
 	return addedCount, deletedCount
 }
 
-
 // applyPrimarySGsToSecondarySubnetENIs applies primary security groups to ENIs in secondary subnets across all datastores
 func (cache *EC2InstanceMetadataCache) applyPrimarySGsToSecondarySubnetENIs(ctx context.Context, dsAccess *datastore.DataStoreAccess) {
 	log.Info("Applying primary security groups as fallback for ENIs in secondary subnets across all datastores")
