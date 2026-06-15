@@ -208,9 +208,6 @@ type APIs interface {
 	// RefreshSGIDs
 	RefreshSGIDs(ctx context.Context, mac string, ds *datastore.DataStoreAccess) error
 
-	// RefreshCustomSGIDs discovers and refreshes security groups tagged with kubernetes.io/role/cni=1
-	RefreshCustomSGIDs(ctx context.Context, dsAccess *datastore.DataStoreAccess) error
-
 	// GetInstanceHypervisorFamily returns the hypervisor family for the instance
 	GetInstanceHypervisorFamily() string
 
@@ -244,7 +241,6 @@ type APIs interface {
 type EC2InstanceMetadataCache struct {
 	// metadata info
 	securityGroups           StringSet
-	customSecurityGroups     StringSet
 	subnetID                 string
 	localIPv4                net.IP
 	v4Enabled                bool
@@ -547,39 +543,6 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) 
 	return nil
 }
 
-// discoverCustomSecurityGroups discovers security groups with the cni-role tag
-func (cache *EC2InstanceMetadataCache) discoverCustomSecurityGroups(ctx context.Context) ([]string, error) {
-	describeSGInput := &ec2.DescribeSecurityGroupsInput{
-		Filters: []ec2types.Filter{
-			{
-				Name:   aws.String("vpc-id"),
-				Values: []string{cache.vpcID},
-			},
-			{
-				Name:   aws.String("tag:" + subnetDiscoveryTagKey),
-				Values: []string{subnetDiscoveryTagValueIncluded},
-			},
-		},
-	}
-
-	var result *ec2.DescribeSecurityGroupsOutput
-	err := retry.NWithBackoffCtx(ctx, retry.NewSimpleBackoff(time.Millisecond*100, time.Second*5, 0.15, 2.0), 5, func() error {
-		var err error
-		result, err = cache.ec2SVC.DescribeSecurityGroups(ctx, describeSGInput)
-		return err
-	})
-	if err != nil {
-		return nil, fmt.Errorf("discoverCustomSecurityGroups: unable to describe security groups: %v", err)
-	}
-
-	var sgIDs []string
-	for _, sg := range result.SecurityGroups {
-		sgIDs = append(sgIDs, *sg.GroupId)
-	}
-
-	return sgIDs, nil
-}
-
 // GetENISubnetID gets the subnet ID for an ENI from AWS
 func (cache *EC2InstanceMetadataCache) GetENISubnetID(ctx context.Context, eniID string) (string, error) {
 	describeInput := &ec2.DescribeNetworkInterfacesInput{
@@ -679,48 +642,6 @@ func (cache *EC2InstanceMetadataCache) detectSecurityGroupChanges(newSGs []strin
 	return addedCount, deletedCount
 }
 
-// RefreshCustomSGIDs discovers and refreshes security groups tagged for use with the CNI
-func (cache *EC2InstanceMetadataCache) RefreshCustomSGIDs(ctx context.Context, dsAccess *datastore.DataStoreAccess) error {
-	// Temporarily reverting SG discovery, using primary SGs
-	var sgIDs []string
-	// sgIDs, err := cache.discoverCustomSecurityGroups(ctx)
-	// if err != nil {
-	// 	awsAPIErrInc("DiscoverCustomSecurityGroups", err)
-	// 	log.Warnf("Failed to discover custom security groups: %v. Falling back to using primary security groups for ENIs in secondary subnets", err)
-	// 	if eventRecorder := eventrecorder.Get(); eventRecorder != nil {
-	// 		eventRecorder.SendPodEvent(v1.EventTypeWarning, "FailedCustomSecurityGroupsDiscovery", "DescribeSecurityGroups",
-	// 			"aws-node failed calling ec2 api to discover custmized security groups for network interfaces from secondary subnets")
-	// 	}
-	// 	return err
-	// }
-
-	// Check if no custom security groups were found (empty list)
-	if len(sgIDs) == 0 {
-		log.Info("No custom security groups found, using primary security groups for ENIs in secondary subnets")
-
-		// Clear custom security groups cache
-		cache.customSecurityGroups.Set([]string{})
-
-		// Apply primary security groups to ENIs in secondary subnets as fallback
-		cache.applyPrimarySGsToSecondarySubnetENIs(ctx, dsAccess)
-
-		return nil
-	}
-
-	addedCount, deletedCount := cache.detectSecurityGroupChanges(sgIDs, &cache.customSecurityGroups, "custom")
-	cache.customSecurityGroups.Set(sgIDs)
-
-	// If there are changes, update ENIs in secondary subnets
-	if addedCount != 0 || deletedCount != 0 {
-		var eniIDs []string
-		for _, ds := range dsAccess.DataStores {
-			eniIDs = append(eniIDs, cache.getFilteredENIs(ds, true)...) // only secondary subnet ENIs
-		}
-		cache.applySecurityGroupsToENIs(ctx, eniIDs, sgIDs, "Update")
-	}
-
-	return nil
-}
 
 // applyPrimarySGsToSecondarySubnetENIs applies primary security groups to ENIs in secondary subnets across all datastores
 func (cache *EC2InstanceMetadataCache) applyPrimarySGsToSecondarySubnetENIs(ctx context.Context, dsAccess *datastore.DataStoreAccess) {
@@ -1250,18 +1171,8 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 						continue
 					}
 					validSubnetsFound = true
-					// preset security groups for ENI with primary SGs
+					// security groups for ENI set to primary SGs
 					input.Groups = cache.securityGroups.SortedList()
-					// If this is a secondary subnet and we have custom security groups, use those instead
-					// We already determined isPrimarySubnet above, just reuse the variable
-					if !isPrimarySubnet && len(cache.customSecurityGroups.SortedList()) > 0 {
-						log.Infof("Using custom security groups for ENI in secondary subnet %s", *subnet.SubnetId)
-						// overring SGs if using secondary subnets and sgs
-						input.Groups = cache.customSecurityGroups.SortedList()
-					} else if !isPrimarySubnet {
-						// Secondary subnet but no custom security groups available - use primary SGs as fallback
-						log.Infof("No custom security groups available, using primary security groups for ENI in secondary subnet %s", *subnet.SubnetId)
-					}
 					log.Infof("Creating ENI with security groups: %v in subnet: %s", input.Groups, aws.ToString(subnet.SubnetId))
 
 					input.SubnetId = subnet.SubnetId
@@ -1277,7 +1188,6 @@ func (cache *EC2InstanceMetadataCache) createENI(ctx context.Context, sg []*stri
 				}
 			}
 		} else {
-			log.Info("Using same security group config as the primary interface for the new ENI")
 			// When subnet discovery is disabled, check if primary subnet is excluded
 			excluded, checkErr := cache.IsSubnetExcluded(ctx, cache.subnetID)
 			if checkErr != nil {

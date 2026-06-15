@@ -183,7 +183,6 @@ func TestNodeInit(t *testing.T) {
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 	m.awsutils.EXPECT().SetUnmanagedNetworkCards(gomock.Any()).AnyTimes()
-	m.awsutils.EXPECT().RefreshCustomSGIDs(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
 	resp := awsutils.DescribeAllENIsResult{
 		ENIMetadata:             eniMetadataSlice,
@@ -286,7 +285,6 @@ func TestNodeInitwithPDenabledIPv4Mode(t *testing.T) {
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 	m.awsutils.EXPECT().SetUnmanagedNetworkCards(gomock.Any()).AnyTimes()
-	m.awsutils.EXPECT().RefreshCustomSGIDs(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 
 	eniMetadataSlice := []awsutils.ENIMetadata{eni1, eni2}
 	resp := awsutils.DescribeAllENIsResult{
@@ -2919,7 +2917,6 @@ func TestNodeInitPrimarySubnetExclusionWithExistingPodIPs(t *testing.T) {
 	m.network.EXPECT().CleanUpStaleAWSChains(true, false).Return(nil)
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
-	m.awsutils.EXPECT().RefreshCustomSGIDs(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 
 	// Mock expectations for unified ENI exclusion approach in setupENI
 	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-1").AnyTimes().Return(true, nil)  // Primary subnet excluded (isPrimary=true)
@@ -3061,7 +3058,6 @@ func TestNodeInitPrimarySubnetExclusionWithoutExistingPodIPs(t *testing.T) {
 	m.network.EXPECT().CleanUpStaleAWSChains(true, false).Return(nil)
 	m.awsutils.EXPECT().GetPrimaryENI().AnyTimes().Return(primaryENIid)
 	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
-	m.awsutils.EXPECT().RefreshCustomSGIDs(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 
 	// Mock expectations for unified ENI exclusion approach in setupENI
 	m.awsutils.EXPECT().IsSubnetExcluded(gomock.Any(), "subnet-1").AnyTimes().Return(true, nil)  // Primary subnet excluded (isPrimary=true)
@@ -3590,7 +3586,6 @@ func TestNodeInit_IPv6_PrimaryENIExcluded(t *testing.T) {
 	m.awsutils.EXPECT().GetIPv6PrefixesFromEC2(gomock.Any(), gomock.Any()).AnyTimes().Return(eni1.IPv6Prefixes, nil)
 	m.awsutils.EXPECT().GetLocalIPv6().Return(primaryIPv6).AnyTimes()
 	m.awsutils.EXPECT().RefreshSGIDs(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
-	m.awsutils.EXPECT().RefreshCustomSGIDs(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 	m.awsutils.EXPECT().IsTrunkingCompatible().Return(false).AnyTimes()
 
 	var rules []netlink.Rule
