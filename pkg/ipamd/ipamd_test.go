@@ -2485,6 +2485,7 @@ func TestAnnotatePod(t *testing.T) {
 	assert.Equal(t, fmt.Errorf("released IP %s does not match existing annotation. Not patching pod", ipOne), err)
 
 	updatedPod, err = mockContext.GetPod(pod.Name, pod.Namespace)
+	assert.NoError(t, err)
 	assert.Equal(t, ipTwo, updatedPod.Annotations["ip-address"])
 
 	// Test that delete operation succeeds when IP being released matches existing value
