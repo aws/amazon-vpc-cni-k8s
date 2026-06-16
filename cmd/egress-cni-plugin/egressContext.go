@@ -206,11 +206,15 @@ func (ec *egressContext) addRouteWithRetry(route *netlink.Route) error {
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		lastErr = ec.Link.RouteAdd(route)
 		if lastErr == nil {
+			if attempt > 0 {
+				ec.Log.Infof("addRouteWithRetry: route %v added successfully on attempt %d", route, attempt+1)
+			}
 			return nil
 		}
 		if !os.IsExist(lastErr) {
 			return lastErr
 		}
+		ec.Log.Warnf("addRouteWithRetry: route %v already exists (attempt %d/%d), retrying in %v", route, attempt+1, maxAttempts, routeRetryInterval)
 		if attempt < maxAttempts-1 {
 			time.Sleep(routeRetryInterval)
 		}

@@ -25,6 +25,7 @@ import (
 	"github.com/vishvananda/netlink"
 
 	mock_netlink "github.com/aws/amazon-vpc-cni-k8s/pkg/netlinkwrapper/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
 func testRoute() *netlink.Route {
@@ -52,7 +53,8 @@ func TestAddRouteWithRetry_SuccessFirstAttempt(t *testing.T) {
 func TestAddRouteWithRetry_SuccessAfterEEXIST(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockLink := mock_netlink.NewMockNetLink(ctrl)
-	ec := egressContext{Link: mockLink}
+	log := logger.New(&logger.Configuration{LogLevel: "DEBUG"})
+	ec := egressContext{Link: mockLink, Log: log}
 
 	gomock.InOrder(
 		mockLink.EXPECT().RouteAdd(gomock.Any()).Return(syscall.EEXIST),
@@ -78,7 +80,8 @@ func TestAddRouteWithRetry_NonEEXISTError(t *testing.T) {
 func TestAddRouteWithRetry_ExhaustedRetries(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockLink := mock_netlink.NewMockNetLink(ctrl)
-	ec := egressContext{Link: mockLink}
+	log := logger.New(&logger.Configuration{LogLevel: "DEBUG"})
+	ec := egressContext{Link: mockLink, Log: log}
 
 	mockLink.EXPECT().RouteAdd(gomock.Any()).Return(syscall.EEXIST).Times(5)
 
