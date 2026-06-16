@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.22.3
+
+* Bump golang.org/x/net to v0.55.0 to address HTTP/2 vulnerability in https://github.com/aws/amazon-vpc-cni-k8s/pull/3716
+* chore: specific NodePort in integration tests
+
 ## v1.22.2
 
 * Reverting Security Group Discovery feature in https://github.com/aws/amazon-vpc-cni-k8s/pull/3720
